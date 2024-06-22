@@ -2152,12 +2152,12 @@ bool MutateTask::prepare()
             prefix = "tmp_clone_";
 
         IDataPartStorage::ClonePartParams clone_params
-            {
-                .txn = ctx->txn, .hardlinked_files = &ctx->hardlinked_files,
-                .copy_instead_of_hardlink = settings_ptr->always_use_copy_instead_of_hardlinks,
-                .files_to_copy_instead_of_hardlinks = std::move(files_to_copy_instead_of_hardlinks),
-                .keep_metadata_version = true,
-            };
+        {
+            .txn = ctx->txn, .hardlinked_files = &ctx->hardlinked_files,
+            .copy_instead_of_hardlink = settings_ptr->always_use_copy_instead_of_hardlinks,
+            .files_to_copy_instead_of_hardlinks = std::move(files_to_copy_instead_of_hardlinks),
+            .keep_metadata_version = true,
+        };
         MergeTreeData::MutableDataPartPtr part;
         scope_guard lock;
 
