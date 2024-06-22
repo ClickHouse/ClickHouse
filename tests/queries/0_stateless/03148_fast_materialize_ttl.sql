@@ -1,4 +1,3 @@
-SET enable_fast_materialize_ttl = true;
 SET alter_sync = 2;
 
 SELECT 'Test MergeTree to modify TTL.';
