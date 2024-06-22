@@ -298,7 +298,7 @@ $CLICKHOUSE_CLIENT -nq "
 $CLICKHOUSE_CLIENT -nq "system wait view h2;" 2>/dev/null && echo "SYSTEM WAIT VIEW failed to fail at $LINENO"
 $CLICKHOUSE_CLIENT -nq "
     select '<31.5: will retry>', last_refresh_result, retry > 0 from refreshes;
-    create table src2 empty as src;
+    create table src2 (x Int8) engine Memory;
     insert into src2 values (1)
     exchange tables src and src2;
     drop table src2;"
