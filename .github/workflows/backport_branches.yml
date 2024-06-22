@@ -159,31 +159,13 @@ jobs:
 ############################################################################################
 ##################################### BUILD REPORTER #######################################
 ############################################################################################
-  BuilderReport:
+  Builds_Report:
     # run report check for failed builds to indicate the CI error
-    if: ${{ !cancelled() }}
-    needs:
-      - RunConfig
-      - BuilderDebAarch64
-      - BuilderDebAsan
-      - BuilderDebDebug
-      - BuilderDebRelease
-      - BuilderDebTsan
+    if: ${{ !cancelled() && needs.RunConfig.result == 'success' && contains(fromJson(needs.RunConfig.outputs.data).jobs_data.jobs_to_do, 'Builds') }}
+    needs: [RunConfig, BuilderDebAarch64, BuilderDebAsan, BuilderDebDebug, BuilderDebRelease, BuilderDebTsan, BuilderBinDarwin, BuilderBinDarwinAarch64]
     uses: ./.github/workflows/reusable_test.yml
     with:
-      test_name: ClickHouse build check
-      runner_type: style-checker-aarch64
-      data: ${{ needs.RunConfig.outputs.data }}
-  BuilderSpecialReport:
-    # run report check for failed builds to indicate the CI error
-    if: ${{ !cancelled() }}
-    needs:
-      - RunConfig
-      - BuilderBinDarwin
-      - BuilderBinDarwinAarch64
-    uses: ./.github/workflows/reusable_test.yml
-    with:
-      test_name: ClickHouse special build check
+      test_name: Builds
       runner_type: style-checker-aarch64
       data: ${{ needs.RunConfig.outputs.data }}
 ############################################################################################
