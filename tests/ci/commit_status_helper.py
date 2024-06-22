@@ -19,7 +19,6 @@ from github.Repository import Repository
 
 from ci_config import CI
 from env_helper import GITHUB_REPOSITORY, TEMP_PATH
-from lambda_shared_package.lambda_shared.pr import Labels
 from pr_info import PRInfo
 from report import (
     ERROR,
@@ -102,7 +101,12 @@ def post_commit_status(
             if i == RETRY - 1:
                 raise ex
             time.sleep(i)
-    if pr_info:
+    if pr_info and check_name not in (
+        CI.StatusNames.MERGEABLE,
+        CI.StatusNames.CI,
+        CI.StatusNames.PR_CHECK,
+        CI.StatusNames.SYNC,
+    ):
         status_updated = False
         for i in range(RETRY):
             try:
@@ -443,29 +447,9 @@ def set_mergeable_check(
     )
 
 
-def update_mergeable_check(commit: Commit, pr_info: PRInfo, check_name: str) -> None:
-    "check if the check_name in REQUIRED_CHECKS and then trigger update"
-    not_run = (
-        pr_info.labels.intersection({Labels.SKIP_MERGEABLE_CHECK, Labels.RELEASE})
-        or not CI.is_required(check_name)
-        or pr_info.release_pr
-        or pr_info.number == 0
-    )
-
-    if not_run:
-        # Let's avoid unnecessary work
-        return
-
-    logging.info("Update Mergeable Check by %s", check_name)
-
-    statuses = get_commit_filtered_statuses(commit)
-    trigger_mergeable_check(commit, statuses)
-
-
 def trigger_mergeable_check(
     commit: Commit,
     statuses: CommitStatuses,
-    set_if_green: bool = False,
     set_from_sync: bool = False,
     workflow_failed: bool = False,
 ) -> StatusType:
@@ -505,10 +489,6 @@ def trigger_mergeable_check(
         description = ", ".join(success)
 
     description = format_description(description)
-
-    if not set_if_green and state == SUCCESS:
-        # do not set green Mergeable Check status
-        return state
 
     if set_from_sync:
         # update Mergeable Check from sync WF only if its status already present or its new status is not SUCCESS

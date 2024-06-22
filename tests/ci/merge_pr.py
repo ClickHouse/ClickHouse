@@ -23,7 +23,7 @@ from commit_status_helper import (
 from get_robot_token import get_best_robot_token
 from github_helper import GitHub, NamedUser, PullRequest, Repository
 from pr_info import PRInfo
-from report import SUCCESS
+from report import SUCCESS, FAILURE
 from env_helper import GITHUB_UPSTREAM_REPOSITORY, GITHUB_REPOSITORY
 from synchronizer_utils import SYNC_BRANCH_PREFIX
 
@@ -247,14 +247,13 @@ def main():
     repo = gh.get_repo(args.repo)
 
     if args.set_ci_status:
-        assert args.wf_status in ("failure", "success")
+        assert args.wf_status in (FAILURE, SUCCESS)
         # set mergeable check status and exit
         commit = get_commit(gh, args.pr_info.sha)
         statuses = get_commit_filtered_statuses(commit)
         state = trigger_mergeable_check(
             commit,
             statuses,
-            set_if_green=True,
             workflow_failed=(args.wf_status != "success"),
         )
 
@@ -264,6 +263,7 @@ def main():
             pr_info.head_ref.startswith(f"{SYNC_BRANCH_PREFIX}/pr/")
             and GITHUB_REPOSITORY != GITHUB_UPSTREAM_REPOSITORY
         ):
+            print("Updating upstream statuses")
             update_upstream_sync_status(pr_info, state)
 
         if args.wf_status != "success":
