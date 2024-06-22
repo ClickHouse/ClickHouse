@@ -1724,7 +1724,7 @@ MutationCommands AlterCommands::getMutationCommands(StorageInMemoryMetadata meta
             if (alter_cmd.isTTLAlter(metadata))
             {
                 /// FAST_MATERIALIZE_TTL cannot be executed together with other commands.
-                if (context->getSettingsRef().enable_fast_materialize_ttl && result.empty())
+                if (result.empty())
                 {
                     /// Try optimizing TTL changes for the same column.
                     time_t delta = tryOptimizeModifyTLL(metadata, context, alter_cmd);
@@ -1733,9 +1733,7 @@ MutationCommands AlterCommands::getMutationCommands(StorageInMemoryMetadata meta
                        result.push_back(createFastMaterializeTTLCommand(delta));
                        break;
                     }
-
                 }
-
                 result.push_back(createMaterializeTTLCommand());
                 break;
             }
@@ -1747,22 +1745,23 @@ MutationCommands AlterCommands::getMutationCommands(StorageInMemoryMetadata meta
 
 time_t AlterCommands::tryOptimizeModifyTLL(const StorageInMemoryMetadata & metadata, ContextPtr context, const AlterCommand & alter_cmd) const
 {
-    if (!metadata.hasAnyTableTTL() || !alter_cmd.ttl)
+    if (alter_cmd.type != AlterCommand::MODIFY_TTL || !alter_cmd.ttl || !metadata.hasAnyTableTTL())
+        return 0;
+
+    TTLTableDescription new_table_ttl = TTLTableDescription::getTTLForTableFromAST(
+        alter_cmd.ttl, metadata.columns, context, metadata.primary_key, context->getSettingsRef().allow_suspicious_ttl_expressions);
+    if (!new_table_ttl.rows_ttl.expression_ast || !new_table_ttl.rows_where_ttl.empty() || !new_table_ttl.move_ttl.empty()
+        || !new_table_ttl.recompression_ttl.empty() || !new_table_ttl.group_by_ttl.empty())
         return 0;
 
     const TTLTableDescription & old_table_ttl = metadata.table_ttl;
-    TTLTableDescription new_table_ttl = TTLTableDescription::getTTLForTableFromAST(
-        alter_cmd.ttl, metadata.columns, context, metadata.primary_key, context->getSettingsRef().allow_suspicious_ttl_expressions);
-
-    if (!isSameExpressionTemplate(new_table_ttl.rows_ttl.expression_ast, old_table_ttl.rows_ttl.expression_ast))
-    {
-        /// Only expression modifications for the same column are supported
+    if (!old_table_ttl.rows_ttl.expression_ast ||
+        !isSameExpressionTemplate(new_table_ttl.rows_ttl.expression_ast, old_table_ttl.rows_ttl.expression_ast))
         return 0;
-    }
 
     /**
-     * old_ttl : d + toIntervalDay(100).
-     * new_ttl : d + toIntervalDay(1).
+     * old_ttl : col + toIntervalDay(100).
+     * new_ttl : col + toIntervalDay(1).
      * delta =  (0 + toIntervalDay(100)) - (0 + toIntervalDay(1))
      */
     Block block;
