@@ -440,8 +440,7 @@ jobs:
     needs:
       - DockerServerImage
       - DockerKeeperImage
-      - BuilderReport
-      - BuilderSpecialReport
+      - Builds_Report
       - MarkReleaseReady
       - FunctionalStatelessTestDebug
       - FunctionalStatelessTestRelease

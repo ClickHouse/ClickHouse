@@ -238,8 +238,7 @@ jobs:
   FinishCheck:
     if: ${{ !failure() && !cancelled() }}
     needs:
-      - BuilderReport
-      - BuilderSpecialReport
+      - Builds_Report
       - FunctionalStatelessTestAsan
       - FunctionalStatefulTestDebug
       - StressTestTsan
