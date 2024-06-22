@@ -1,20 +1,20 @@
 ---
-title: "varSamp"
-slug: /en/sql-reference/aggregate-functions/reference/varsamp
+title: "varSampStable"
+slug: /en/sql-reference/aggregate-functions/reference/varsampstable
 sidebar_position: 33
 ---
 
-## varSamp
+## varSampStable
 
-Calculate the sample variance of a data set.
+Calculate the sample variance of a data set. Unlike [`varSamp`](../reference/varsamp.md), this function uses a numerically stable algorithm. It works slower but provides a lower computational error.
 
 **Syntax**
 
 ```sql
-varSamp(x)
+varSampStable(x)
 ```
 
-Alias: `VAR_SAMP`.
+Alias: `VAR_SAMP_STABLE`
 
 **Parameters**
 
@@ -22,24 +22,20 @@ Alias: `VAR_SAMP`.
 
 **Returned value**
 
-
-- Returns the sample variance of the input data set `x`. [Float64](../../data-types/float.md).
+- Returns the sample variance of the input data set. [Float64](../../data-types/float.md).
 
 **Implementation details**
 
-The `varSamp` function calculates the sample variance using the following formula:
+The `varSampStable` function calculates the sample variance using the same formula as the [`varSamp`](../reference/varsamp.md):
 
 $$
 \sum\frac{(x - \text{mean}(x))^2}{(n - 1)}
 $$
 
 Where:
-
 - `x` is each individual data point in the data set.
 - `mean(x)` is the arithmetic mean of the data set.
 - `n` is the number of data points in the data set.
-
-The function assumes that the input data set represents a sample from a larger population. If you want to calculate the variance of the entire population (when you have the complete data set), you should use [`varPop`](../reference/varpop.md) instead.
 
 **Example**
 
@@ -55,13 +51,13 @@ ENGINE = Memory;
 
 INSERT INTO test_data VALUES (10.5), (12.3), (9.8), (11.2), (10.7);
 
-SELECT round(varSamp(x),3) AS var_samp FROM test_data;
+SELECT round(varSampStable(x),3) AS var_samp_stable FROM test_data;
 ```
 
 Response:
 
 ```response
-┌─var_samp─┐
-│    0.865 │
-└──────────┘
+┌─var_samp_stable─┐
+│           0.865 │
+└─────────────────┘
 ```
