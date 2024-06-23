@@ -194,13 +194,17 @@ void KafkaConsumer2::drainConsumerQueue()
 
 void KafkaConsumer2::pollEvents()
 {
-    auto msg = consumer->poll(EVENT_POLL_TIMEOUT);
-    // All the partition queues are detached, so the consumer shouldn't be able to poll any messages
-    chassert(!msg && "Consumer returned a message when it was not expected");
-
-    // static constexpr int64_t max_tries = 5;
-    // for(auto i = 0; i < max_tries; ++i)
-    //     consumer->poll(EVENT_POLL_TIMEOUT);
+    static constexpr auto max_tries = 5;
+    for (auto i = 0; i < max_tries; ++i)
+    {
+        auto msg = consumer->poll(EVENT_POLL_TIMEOUT);
+        if (!msg)
+            return;
+        // All the partition queues are detached, so the consumer shouldn't be able to poll any real messages
+        const auto err = msg.get_error();
+        chassert(RD_KAFKA_RESP_ERR_NO_ERROR != err.get_error() && "Consumer returned a message when it was not expected");
+        LOG_ERROR(log, "Consumer received error while polling events, code {}, error '{}'", err.get_error(), err.to_string());
+    }
 };
 
 KafkaConsumer2::TopicPartitionCounts KafkaConsumer2::getPartitionCounts() const
