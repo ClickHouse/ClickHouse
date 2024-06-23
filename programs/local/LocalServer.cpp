@@ -732,11 +732,8 @@ void LocalServer::processConfig()
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE));
     }
 
-    server_display_name = config().getString("display_name", getFQDNOrHostName());
-    prompt_by_server_display_name = config().getRawString("prompt_by_server_display_name.default", "{display_name} :) ");
-    std::map<String, String> prompt_substitutions{{"display_name", server_display_name}};
-    for (const auto & [key, value] : prompt_substitutions)
-        boost::replace_all(prompt_by_server_display_name, "{" + key + "}", value);
+    server_display_name = config().getString("display_name", "");
+    prompt_by_server_display_name = config().getRawString("prompt_by_server_display_name.default", ":) ");
 
     global_context->setQueryKindInitial();
     global_context->setQueryKind(query_kind);

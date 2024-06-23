@@ -10,6 +10,7 @@ function xargs-pylint {
   xargs -P "$(nproc)" -n "$1" pylint --rcfile="$ROOT_PATH/pyproject.toml" --persistent=no --score=n
 }
 
-find "$ROOT_PATH/tests" -maxdepth 2 -type f -exec file -F' ' --mime-type {} + | xargs-pylint 50
+# exclude ci unittest scripts from check: test_*
+find "$ROOT_PATH/tests" -maxdepth 2 -type f -exec file -F' ' --mime-type {} + | grep -v "/test_" | xargs-pylint 50
 # Beware, there lambdas are checked. All of them contain `app`, and it causes brain-cucumber-zalgo
 find "$ROOT_PATH/tests/ci" -mindepth 2 -type f -exec file -F' ' --mime-type {} + | xargs-pylint 1
