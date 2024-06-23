@@ -543,7 +543,7 @@ def test_az(started_cluster):
         # fallback_session_lifetime.max is 1 second, but it shouldn't drop current session until the node becomes available
 
         time.sleep(5)  # this is fine
-        assert 5 >= int(node4.query("select zookeeperSessionUptime()").strip())
+        assert 5 <= int(node4.query("select zookeeperSessionUptime()").strip())
 
         pm.heal_all()
         assert_eq_with_retry(
