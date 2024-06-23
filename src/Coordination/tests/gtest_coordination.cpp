@@ -2019,6 +2019,67 @@ TEST_P(CoordinationTest, TestCreateNodeWithAuthSchemeForAclWhenAuthIsPrecommitte
     EXPECT_EQ(acls[0].permissions, 31);
 }
 
+TEST_P(CoordinationTest, TestPreprocessWhenCloseSessionIsPrecommitted)
+{
+    using namespace Coordination;
+    using namespace DB;
+
+    ChangelogDirTest snapshots("./snapshots");
+    setSnapshotDirectory("./snapshots");
+    ResponsesQueue queue(std::numeric_limits<size_t>::max());
+    SnapshotsQueue snapshots_queue{1};
+    int64_t session_id = 1;
+    size_t term = 0;
+
+    auto state_machine = std::make_shared<KeeperStateMachine>(queue, snapshots_queue, keeper_context, nullptr);
+    state_machine->init();
+
+    auto & storage = state_machine->getStorageUnsafe();    
+    const auto & uncommitted_state = storage.uncommitted_state;    
+
+    // Create first node for the session
+    String node_path_1 = "/node_1";
+    std::shared_ptr<ZooKeeperCreateRequest> create_req_1 = std::make_shared<ZooKeeperCreateRequest>();
+    create_req_1->path = node_path_1;
+    auto create_entry_1 = getLogEntryFromZKRequest(term, session_id, state_machine->getNextZxid(), create_req_1);
+
+    state_machine->pre_commit(1, create_entry_1->get_buf());    
+    EXPECT_TRUE(uncommitted_state.nodes.contains(node_path_1));
+
+    state_machine->commit(1, create_entry_1->get_buf());
+    EXPECT_TRUE(storage.container.contains(node_path_1));
+
+    // Close session
+    std::shared_ptr<ZooKeeperCloseRequest> close_req = std::make_shared<ZooKeeperCloseRequest>();
+    auto close_entry = getLogEntryFromZKRequest(term, session_id, state_machine->getNextZxid(), close_req);
+    // Pre-commit close session
+    state_machine->pre_commit(2, close_entry->get_buf());
+
+    // Try to create second node after close session is pre-committed
+    String node_path_2 = "/node_2";
+    std::shared_ptr<ZooKeeperCreateRequest> create_req_2 = std::make_shared<ZooKeeperCreateRequest>();
+    create_req_2->path = node_path_2;
+    auto create_entry_2 = getLogEntryFromZKRequest(term, session_id, state_machine->getNextZxid(), create_req_2);
+    
+    // Pre-commit creating second node
+    state_machine->pre_commit(3, create_entry_2->get_buf());
+    // Second node wasn't created
+    EXPECT_FALSE(uncommitted_state.nodes.contains(node_path_2));
+
+    // Rollback pre-committed closing session
+    state_machine->rollback(3, create_entry_2->get_buf());
+    state_machine->rollback(2, close_entry->get_buf());
+
+    // Pre-commit creating second node
+    state_machine->pre_commit(2, create_entry_2->get_buf());
+    // Now second node was created
+    EXPECT_TRUE(uncommitted_state.nodes.contains(node_path_2));
+
+    state_machine->commit(2, create_entry_2->get_buf());
+    EXPECT_TRUE(storage.container.contains(node_path_1));
+    EXPECT_TRUE(storage.container.contains(node_path_2));
+}
+
 TEST_P(CoordinationTest, TestSetACLWithAuthSchemeForAclWhenAuthIsPrecommitted)
 {
     using namespace Coordination;
