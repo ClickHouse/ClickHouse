@@ -2137,16 +2137,10 @@ MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
     }
 
     // INSERT queries may have the inserted data in the query text
-    // that follow the query itself, e.g. "insert into t format CSV 1;2".
-    // They need special handling. First of all, here we find where the
-    // inserted data ends. In multi-query mode, it is delimited by a
-    // newline.
-    // The VALUES format needs even more handling - we also allow the
-    // data to be delimited by semicolon. This case is handled later by
-    // the format parser itself.
-    // We can't do multiline INSERTs with inline data, because most
-    // row input formats (e.g. TSV) can't tell when the input stops,
-    // unlike VALUES.
+    // that follow the query itself, e.g. "insert into t format CSV 1,2".
+    // They need special handling. If Insert format is Values, we use
+    // values format parser to skip valid rows until a single semicolon.
+    // The end of other insert statements is directly determined by \n\n.
     auto * insert_ast = parsed_query->as<ASTInsertQuery>();
     const char * query_to_execute_end = this_query_end;
     if (insert_ast && insert_ast->data)
@@ -2189,7 +2183,7 @@ MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
             {
                 this_query_end = all_queries_end;
             }
-            // If we want to use error hint for other format, make sure this query is
+            // If we want to use error hint for other insert format, make sure this query is
             // the last line of multiquery or single query
         }
         insert_ast->end = this_query_end;
@@ -2240,6 +2234,7 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
     String query_to_execute;
     ASTPtr parsed_query;
     std::unique_ptr<Exception> current_exception;
+    bool is_first = true;
     while (true)
     {
         auto stage = analyzeMultiQueryText(this_query_begin, this_query_end, all_queries_end,
@@ -2247,16 +2242,27 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
         switch (stage)
         {
             case MultiQueryProcessingStage::QUERIES_END:
+            {
+                // Compatible with old version when run interactive
+                // e.g. "", "\ld"
+                if (is_first && is_interactive)
+                {
+                    processTextAsSingleQuery(all_queries_text);
+                }
+                return true;
+            }
             case MultiQueryProcessingStage::PARSING_FAILED:
             {
                 return true;
             }
             case MultiQueryProcessingStage::CONTINUE_PARSING:
             {
+                is_first = false;
                 continue;
             }
             case MultiQueryProcessingStage::PARSING_EXCEPTION:
             {
+                is_first = false;
                 this_query_end = find_first_symbols<'\n'>(this_query_end, all_queries_end);
 
                 // Try to find test hint for syntax error. We don't know where
@@ -2286,6 +2292,7 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
             }
             case MultiQueryProcessingStage::EXECUTE_QUERY:
             {
+                is_first = false;
                 full_query = all_queries_text.substr(this_query_begin - all_queries_text.data(), this_query_end - this_query_begin);
                 if (query_fuzzer_runs)
                 {
@@ -2438,6 +2445,15 @@ bool ClientBase::processQueryText(const String & text)
 
         return processMultiQueryFromFile(file_name);
     }
+    /*
+     if (is_interactive)
+    {
+        assert(!query_fuzzer_runs);
+        processTextAsSingleQuery(text);
+
+        return true;
+    }
+    */
 
     if (query_fuzzer_runs)
     {
