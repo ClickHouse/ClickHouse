@@ -1,6 +1,3 @@
-#include <Core/ServerSettings.h>
-#include <Interpreters/Context.h>
-
 #include <Storages/StorageFactory.h>
 #include <Storages/registerStorages.h>
 
@@ -105,7 +102,7 @@ void registerStorageKeeperMap(StorageFactory & factory);
 
 void registerStorageObjectStorage(StorageFactory & factory);
 
-void registerStorages()
+void registerStorages(bool use_legacy_mongodb_integration [[maybe_unused]])
 {
     auto & factory = StorageFactory::instance();
 
@@ -161,7 +158,7 @@ void registerStorages()
     #endif
 
     #if USE_MONGODB
-    if (Context::getGlobalContextInstance()->getServerSettings().use_legacy_mongodb_integration)
+    if (use_legacy_mongodb_integration)
         registerStorageMongoDBPocoLegacy(factory);
     else
         registerStorageMongoDB(factory);

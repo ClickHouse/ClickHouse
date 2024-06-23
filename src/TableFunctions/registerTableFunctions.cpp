@@ -1,12 +1,9 @@
 #include "registerTableFunctions.h"
 #include <TableFunctions/TableFunctionFactory.h>
 
-#include <Core/ServerSettings.h>
-#include <Interpreters/Context.h>
-
 namespace DB
 {
-void registerTableFunctions()
+void registerTableFunctions(bool use_legacy_mongodb_integration [[maybe_unused]])
 {
     auto & factory = TableFunctionFactory::instance();
 
@@ -26,7 +23,7 @@ void registerTableFunctions()
     registerTableFunctionInput(factory);
     registerTableFunctionGenerate(factory);
 #if USE_MONGODB
-    if (Context::getGlobalContextInstance()->getServerSettings().use_legacy_mongodb_integration)
+    if (use_legacy_mongodb_integration)
         registerTableFunctionMongoDBPocoLegacy(factory);
     else
         registerTableFunctionMongoDB(factory);

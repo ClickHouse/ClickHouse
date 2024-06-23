@@ -2,5 +2,5 @@
 
 namespace DB
 {
-void registerStorages();
+void registerStorages(bool use_legacy_mongodb_integration);
 }
