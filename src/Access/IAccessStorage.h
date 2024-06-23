@@ -44,6 +44,11 @@ public:
     explicit IAccessStorage(const String & storage_name_) : storage_name(storage_name_) {}
     virtual ~IAccessStorage() = default;
 
+    /// If the AccessStorage has to do some complicated work when destroying - do it in advance.
+    /// For example, if the AccessStorage contains any threads for background work - ask them to complete and wait for completion.
+    /// By default, does nothing.
+    virtual void shutdown() {}
+
     /// Returns the name of this storage.
     const String & getStorageName() const { return storage_name; }
     virtual const char * getStorageType() const = 0;
