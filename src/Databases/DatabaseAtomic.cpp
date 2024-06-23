@@ -472,7 +472,10 @@ LoadTaskPtr DatabaseAtomic::startupDatabaseAsync(AsyncLoader & async_loader, Loa
                 /// All tables in database should be loaded at this point
                 StoragePtr table_ptr = tryGetTable(table.first, getContext());
                 if (table_ptr)
-                    tryCreateSymlink(table_ptr, true);
+                {
+                    if (table_ptr->storesDataOnDisk())
+                        tryCreateSymlink(table_ptr, true);
+                }
                 else
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Table {} is not loaded before database startup", table.first);
             }
