@@ -2,7 +2,7 @@
 
 #include <Interpreters/Context.h>
 #include <Poco/Util/AbstractConfiguration.h>
-#include <Storages/StorageS3Settings.h>
+#include <IO/S3Settings.h>
 #include <IO/HTTPHeaderEntries.h>
 
 
@@ -39,7 +39,6 @@ using StorageSpecificArgs = std::vector<std::pair<String, ASTPtr>>;
 struct ExternalDataSourceInfo
 {
     ExternalDataSourceConfiguration configuration;
-    StorageSpecificArgs specific_args;
     SettingsChanges settings_changes;
 };
 
@@ -85,7 +84,6 @@ struct URLBasedDataSourceConfiguration
 struct URLBasedDataSourceConfig
 {
     URLBasedDataSourceConfiguration configuration;
-    StorageSpecificArgs specific_args;
 };
 
 std::optional<URLBasedDataSourceConfig> getURLBasedDataSourceConfiguration(

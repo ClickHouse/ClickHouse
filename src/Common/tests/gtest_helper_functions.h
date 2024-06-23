@@ -73,3 +73,31 @@ inline std::string xmlNodeAsString(Poco::XML::Node *pNode)
     result += ("</"+ node_name + ">\n");
     return Poco::XML::fromXMLString(result);
 }
+
+struct EnvironmentProxySetter
+{
+    static constexpr auto * NO_PROXY = "*";
+    static constexpr auto * HTTP_PROXY = "http://proxy_server:3128";
+    static constexpr auto * HTTPS_PROXY = "https://proxy_server:3128";
+
+    EnvironmentProxySetter()
+    {
+        setenv("http_proxy", HTTP_PROXY, 1); // NOLINT(concurrency-mt-unsafe)
+
+        setenv("https_proxy", HTTPS_PROXY, 1); // NOLINT(concurrency-mt-unsafe)
+
+        // Some other tests rely on HTTP clients (e.g, gtest_aws_s3_client), which depend on proxy configuration
+        // since in https://github.com/ClickHouse/ClickHouse/pull/63314 the environment proxy resolver reads only once
+        // from the environment, the proxy configuration will always be there.
+        // The problem is that the proxy server does not exist, causing the test to fail.
+        // To work around this issue, `no_proxy` is set to bypass all domains.
+        setenv("no_proxy", NO_PROXY, 1); // NOLINT(concurrency-mt-unsafe)
+    }
+
+    ~EnvironmentProxySetter()
+    {
+        unsetenv("http_proxy"); // NOLINT(concurrency-mt-unsafe)
+        unsetenv("https_proxy"); // NOLINT(concurrency-mt-unsafe)
+        unsetenv("no_proxy"); // NOLINT(concurrency-mt-unsafe)
+    }
+};

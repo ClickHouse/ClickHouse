@@ -20,6 +20,9 @@
 #include <Common/CurrentMetrics.h>
 
 
+using ThreadFromGlobalPoolSimple = ThreadFromGlobalPoolImpl</* propagate_opentelemetry_context= */ false, /* global_trace_collector_allowed= */ false>;
+using SimpleThreadPool = ThreadPoolImpl<ThreadFromGlobalPoolSimple>;
+
 using Key = UInt64;
 using Value = UInt64;
 using Source = std::vector<Key>;
@@ -29,6 +32,7 @@ namespace CurrentMetrics
 {
     extern const Metric LocalThread;
     extern const Metric LocalThreadActive;
+    extern const Metric LocalThreadScheduled;
 }
 
 template <typename Map>
@@ -37,7 +41,7 @@ struct AggregateIndependent
     template <typename Creator, typename Updater>
     static void NO_INLINE execute(const Source & data, size_t num_threads, std::vector<std::unique_ptr<Map>> & results,
                         Creator && creator, Updater && updater,
-                        ThreadPool & pool)
+                        SimpleThreadPool & pool)
     {
         results.reserve(num_threads);
         for (size_t i = 0; i < num_threads; ++i)
@@ -75,7 +79,7 @@ struct AggregateIndependentWithSequentialKeysOptimization
     template <typename Creator, typename Updater>
     static void NO_INLINE execute(const Source & data, size_t num_threads, std::vector<std::unique_ptr<Map>> & results,
                         Creator && creator, Updater && updater,
-                        ThreadPool & pool)
+                        SimpleThreadPool & pool)
     {
         results.reserve(num_threads);
         for (size_t i = 0; i < num_threads; ++i)
@@ -123,7 +127,7 @@ struct MergeSequential
     template <typename Merger>
     static void NO_INLINE execute(Map ** source_maps, size_t num_maps, Map *& result_map,
                         Merger && merger,
-                        ThreadPool &)
+                        SimpleThreadPool &)
     {
         for (size_t i = 1; i < num_maps; ++i)
         {
@@ -143,7 +147,7 @@ struct MergeSequentialTransposed    /// In practice not better than usual.
     template <typename Merger>
     static void NO_INLINE execute(Map ** source_maps, size_t num_maps, Map *& result_map,
                         Merger && merger,
-                        ThreadPool &)
+                        SimpleThreadPool &)
     {
         std::vector<typename Map::iterator> iterators(num_maps);
         for (size_t i = 1; i < num_maps; ++i)
@@ -176,7 +180,7 @@ struct MergeParallelForTwoLevelTable
     template <typename Merger>
     static void NO_INLINE execute(Map ** source_maps, size_t num_maps, Map *& result_map,
                         Merger && merger,
-                        ThreadPool & pool)
+                        SimpleThreadPool & pool)
     {
         for (size_t bucket = 0; bucket < Map::NUM_BUCKETS; ++bucket)
             pool.scheduleOrThrowOnError([&, bucket, num_maps]
@@ -201,7 +205,7 @@ struct Work
     template <typename Creator, typename Updater, typename Merger>
     static void NO_INLINE execute(const Source & data, size_t num_threads,
                         Creator && creator, Updater && updater, Merger && merger,
-                        ThreadPool & pool)
+                        SimpleThreadPool & pool)
     {
         std::vector<std::unique_ptr<Map>> intermediate_results;
 
@@ -281,7 +285,7 @@ int main(int argc, char ** argv)
 
     std::cerr << std::fixed << std::setprecision(2);
 
-    ThreadPool pool(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, num_threads);
+    SimpleThreadPool pool(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, CurrentMetrics::LocalThreadScheduled, num_threads);
 
     Source data(n);
 

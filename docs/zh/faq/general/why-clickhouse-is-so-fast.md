@@ -1,62 +1,63 @@
 ---
 slug: /zh/faq/general/why-clickhouse-is-so-fast
-title: Why is ClickHouse so fast?
+title: 为什么 ClickHouse 如此快速？
 toc_hidden: true
 sidebar_position: 8
 ---
 
-# Why ClickHouse Is So Fast? {#why-clickhouse-is-so-fast}
+# 为什么 ClickHouse 如此快速？ {#why-clickhouse-is-so-fast}
 
-It was designed to be fast. Query execution performance has always been a top priority during the development process, but other important characteristics like user-friendliness, scalability, and security were also considered so ClickHouse could become a real production system.
+它被设计成一个快速的系统。在开发过程中，查询执行性能一直是首要考虑的优先级，但也考虑了其他重要特性，如用户友好性、可扩展性和安全性，使 ClickHouse 成为一个真正的生产系统。
 
-ClickHouse was initially built as a prototype to do just a single task well: to filter and aggregate data as fast as possible. That’s what needs to be done to build a typical analytical report and that’s what a typical [GROUP BY](../../sql-reference/statements/select/group-by.md) query does. ClickHouse team has made several high-level decisions that combined made achieving this task possible:
+ClickHouse 最初是作为一个原型构建的，它的单一任务就是尽可能快速地过滤和聚合数据。这正是构建典型分析报告所需做的，也是典型 [GROUP BY](../../sql-reference/statements/select/group-by.md) 查询所做的。ClickHouse 团队做出了几个高层次的决策，这些决策组合在一起使得实现这一任务成为可能：
 
-Column-oriented storage
-:   Source data often contain hundreds or even thousands of columns, while a report can use just a few of them. The system needs to avoid reading unnecessary columns, or most expensive disk read operations would be wasted.
+列式存储
+:   源数据通常包含数百甚至数千列，而报告可能只使用其中的几列。系统需要避免读取不必要的列，否则大部分昂贵的磁盘读取操作将被浪费。
 
-Indexes
-:   ClickHouse keeps data structures in memory that allows reading not only used columns but only necessary row ranges of those columns.
+索引
+:   ClickHouse 在内存中保留数据结构，允许不仅读取使用的列，而且只读取这些列的必要行范围。
 
-Data compression
-:   Storing different values of the same column together often leads to better compression ratios (compared to row-oriented systems) because in real data column often has the same or not so many different values for neighboring rows. In addition to general-purpose compression, ClickHouse supports [specialized codecs](../../sql-reference/statements/create/table.mdx/#create-query-specialized-codecs) that can make data even more compact.
+数据压缩
+:   将同一列的不同值存储在一起通常会导致更好的压缩比（与行式系统相比），因为在实际数据中列通常对相邻行有相同或不太多的不同值。除了通用压缩之外，ClickHouse 还支持 [专用编解码器](../../sql-reference/statements/create/table.mdx/#create-query-specialized-codecs)，可以使数据更加紧凑。
 
-Vectorized query execution
-:   ClickHouse not only stores data in columns but also processes data in columns. It leads to better CPU cache utilization and allows for [SIMD](https://en.wikipedia.org/wiki/SIMD) CPU instructions usage.
+向量化查询执行
+:   ClickHouse 不仅以列的形式存储数据，而且以列的形式处理数据。这导致更好的 CPU 缓存利用率，并允许使用 [SIMD](https://en.wikipedia.org/wiki/SIMD) CPU 指令。
 
-Scalability
-:   ClickHouse can leverage all available CPU cores and disks to execute even a single query. Not only on a single server but all CPU cores and disks of a cluster as well.
+可扩展性
+:   ClickHouse 可以利用所有可用的 CPU 核心和磁盘来执行甚至是单个查询。不仅在单个服务器上，而且在集群的所有 CPU 核心和磁盘上。
 
-But many other database management systems use similar techniques. What really makes ClickHouse stand out is **attention to low-level details**. Most programming languages provide implementations for most common algorithms and data structures, but they tend to be too generic to be effective. Every task can be considered as a landscape with various characteristics, instead of just throwing in random implementation. For example, if you need a hash table, here are some key questions to consider:
+但许多其他数据库管理系统也使用类似的技术。真正使 ClickHouse 脱颖而出的是 **对底层细节的关注**。大多数编程语言为最常见的算法和数据结构提供了实现，但它们往往过于通用而无法高效。每个任务都可以被视为具有各种特征的景观，而不是仅仅随意投入某个实现。例如，如果您需要一个哈希表，这里有一些关键问题需要考虑：
 
--   Which hash function to choose?
--   Collision resolution algorithm: [open addressing](https://en.wikipedia.org/wiki/Open_addressing) vs [chaining](https://en.wikipedia.org/wiki/Hash_table#Separate_chaining)?
--   Memory layout: one array for keys and values or separate arrays? Will it store small or large values?
--   Fill factor: when and how to resize? How to move values around on resize?
--   Will values be removed and which algorithm will work better if they will?
--   Will we need fast probing with bitmaps, inline placement of string keys, support for non-movable values, prefetch, and batching?
+-   选择哪种哈希函数？
+-   冲突解决算法：[开放寻址](https://en.wikipedia.org/wiki/Open_addressing)还是[链接](https://en.wikipedia.org/wiki/Hash_table#Separate_chaining)？
+-   内存布局：一个数组用于键和值还是分开的数组？它会存储小值还是大值？
+-   填充因子：何时以及如何调整大小？在调整大小时如何移动值？
+-   是否会移除值，如果会，哪种算法会更好？
+-   我们是否需要使用位图进行快速探测，字符串键的内联放置，对不可移动值的支持，预取和批处理？
 
-Hash table is a key data structure for `GROUP BY` implementation and ClickHouse automatically chooses one of [30+ variations](https://github.com/ClickHouse/ClickHouse/blob/master/src/Interpreters/Aggregator.h) for each specific query.
+哈希表是 `GROUP BY` 实现的关键数据结构，ClickHouse 会根据每个特定查询自动选择 [30 多种变体](https://github.com/ClickHouse/ClickHouse/blob/master/src/Interpreters/Aggregator.h) 中的一种。
 
-The same goes for algorithms, for example, in sorting you might consider:
+算法也是如此，例如，在排序中，您可能会考虑：
 
--   What will be sorted: an array of numbers, tuples, strings, or structures?
--   Is all data available completely in RAM?
--   Do we need a stable sort?
--   Do we need a full sort? Maybe partial sort or n-th element will suffice?
--   How to implement comparisons?
--   Are we sorting data that has already been partially sorted?
+-   将要排序的是数字数组、元组、字符串还是结构？
+-   所有数据是否完全可用于 RAM？
+-   我们需要稳定排序吗？
+-   我们需要完全排序吗？也许部分排序或第 n 个元素就足够了？
+-   如何实现比较？
+-   我们正在对已经部分排序的数据进行排序吗？
 
-Algorithms that they rely on characteristics of data they are working with can often do better than their generic counterparts. If it is not really known in advance, the system can try various implementations and choose the one that works best in runtime. For example, see an [article on how LZ4 decompression is implemented in ClickHouse](https://habr.com/en/company/yandex/blog/457612/).
+他们所依赖的算法根据其所处理的数据特性，往往可以比通用算法做得更好。如果事先真的不知道，系统可以尝试各种实现，并在运行时选择最佳的一种。例如，看一篇关于 [ClickHouse 中 LZ4 解压缩是如何实现的文章](https://habr.com/en/company/yandex/blog/457612/)。
 
-Last but not least, the ClickHouse team always monitors the Internet on people claiming that they came up with the best implementation, algorithm, or data structure to do something and tries it out. Those claims mostly appear to be false, but from time to time you’ll indeed find a gem.
+最后但同样重要的是，ClickHouse 团队始终关注互联网上人们声称他们提出了最佳的实现、算法或数据结构来做某事，并尝试它。这些声称大多是虚假的，但有时你确实会找到一颗宝石。
 
-:::info Tips for building your own high-performance software
--   Keep in mind low-level details when designing your system.
--   Design based on hardware capabilities.
--   Choose data structures and abstractions based on the needs of the task.
--   Provide specializations for special cases.
--   Try new, “best” algorithms, that you read about yesterday.
--   Choose an algorithm in runtime based on statistics.
--   Benchmark on real datasets.
--   Test for performance regressions in CI.
--   Measure and observe everything.
+:::info 构建高性能软件的提示
+-   设计系统时要考虑到底层细节。
+-   基于硬件能力进行设计。
+-   根据任务的需求选择数据结构和抽象。
+-   为特殊情况提供专门化。
+-   尝试您昨天阅读的关于新的“最佳”算法。
+-   根据统计数据在运行时选择算法。
+-   在真实数据集上进行基准测试。
+-   在 CI 中测试性能回归。
+-   测量并观察一切。
+:::

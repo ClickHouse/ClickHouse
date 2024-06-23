@@ -67,7 +67,7 @@ DirectKeyValueJoin::DirectKeyValueJoin(std::shared_ptr<TableJoin> table_join_,
     : table_join(table_join_)
     , storage(storage_)
     , right_sample_block(right_sample_block_)
-    , log(&Poco::Logger::get("DirectKeyValueJoin"))
+    , log(getLogger("DirectKeyValueJoin"))
 {
     if (!table_join->oneDisjunct() ||
         table_join->getOnlyClause().key_names_left.size() != 1 ||
@@ -103,7 +103,7 @@ DirectKeyValueJoin::DirectKeyValueJoin(
     right_sample_block_with_storage_column_names = right_sample_block_with_storage_column_names_;
 }
 
-bool DirectKeyValueJoin::addJoinedBlock(const Block &, bool)
+bool DirectKeyValueJoin::addBlockToJoin(const Block &, bool)
 {
     throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Unreachable code reached");
 }

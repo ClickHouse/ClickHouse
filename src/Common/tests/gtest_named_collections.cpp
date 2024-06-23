@@ -1,11 +1,39 @@
 #include <Common/tests/gtest_global_context.h>
-#include <Common/NamedCollections/NamedCollections.h>
-#include <Common/NamedCollections/NamedCollectionUtils.h>
+#include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <Poco/DOM/DOMParser.h>
 #include <gtest/gtest.h>
 
 using namespace DB;
+
+/// A class which allows to test private methods of NamedCollectionFactory.
+class NamedCollectionFactoryFriend : public NamedCollectionFactory
+{
+public:
+    static NamedCollectionFactoryFriend & instance()
+    {
+        static NamedCollectionFactoryFriend instance;
+        return instance;
+    }
+
+    void loadFromConfig(const Poco::Util::AbstractConfiguration & config)
+    {
+        std::lock_guard lock(mutex);
+        NamedCollectionFactory::loadFromConfig(config, lock);
+    }
+
+    void add(const std::string & collection_name, MutableNamedCollectionPtr collection)
+    {
+        std::lock_guard lock(mutex);
+        NamedCollectionFactory::add(collection_name, collection, lock);
+    }
+
+    void remove(const std::string & collection_name)
+    {
+        std::lock_guard lock(mutex);
+        NamedCollectionFactory::remove(collection_name, lock);
+    }
+};
 
 TEST(NamedCollections, SimpleConfig)
 {
@@ -29,13 +57,13 @@ TEST(NamedCollections, SimpleConfig)
     Poco::AutoPtr<Poco::XML::Document> document = dom_parser.parseString(xml);
     Poco::AutoPtr<Poco::Util::XMLConfiguration> config = new Poco::Util::XMLConfiguration(document);
 
-    NamedCollectionUtils::loadFromConfig(*config);
+    NamedCollectionFactoryFriend::instance().loadFromConfig(*config);
 
-    ASSERT_TRUE(NamedCollectionFactory::instance().exists("collection1"));
-    ASSERT_TRUE(NamedCollectionFactory::instance().exists("collection2"));
-    ASSERT_TRUE(NamedCollectionFactory::instance().tryGet("collection3") == nullptr);
+    ASSERT_TRUE(NamedCollectionFactoryFriend::instance().exists("collection1"));
+    ASSERT_TRUE(NamedCollectionFactoryFriend::instance().exists("collection2"));
+    ASSERT_TRUE(NamedCollectionFactoryFriend::instance().tryGet("collection3") == nullptr);
 
-    auto collections = NamedCollectionFactory::instance().getAll();
+    auto collections = NamedCollectionFactoryFriend::instance().getAll();
     ASSERT_EQ(collections.size(), 2);
     ASSERT_TRUE(collections.contains("collection1"));
     ASSERT_TRUE(collections.contains("collection2"));
@@ -47,7 +75,7 @@ key3:	3.3
 key4:	-4
 )CONFIG");
 
-    auto collection1 = NamedCollectionFactory::instance().get("collection1");
+    auto collection1 = NamedCollectionFactoryFriend::instance().get("collection1");
     ASSERT_TRUE(collection1 != nullptr);
 
     ASSERT_TRUE(collection1->get<String>("key1") == "value1");
@@ -61,7 +89,7 @@ key5:	5
 key6:	6.6
 )CONFIG");
 
-    auto collection2 = NamedCollectionFactory::instance().get("collection2");
+    auto collection2 = NamedCollectionFactoryFriend::instance().get("collection2");
     ASSERT_TRUE(collection2 != nullptr);
 
     ASSERT_TRUE(collection2->get<String>("key4") == "value4");
@@ -69,15 +97,15 @@ key6:	6.6
     ASSERT_TRUE(collection2->get<Float64>("key6") == 6.6);
 
     auto collection2_copy = collections["collection2"]->duplicate();
-    NamedCollectionFactory::instance().add("collection2_copy", collection2_copy);
-    ASSERT_TRUE(NamedCollectionFactory::instance().exists("collection2_copy"));
-    ASSERT_EQ(NamedCollectionFactory::instance().get("collection2_copy")->dumpStructure(),
+    NamedCollectionFactoryFriend::instance().add("collection2_copy", collection2_copy);
+    ASSERT_TRUE(NamedCollectionFactoryFriend::instance().exists("collection2_copy"));
+    ASSERT_EQ(NamedCollectionFactoryFriend::instance().get("collection2_copy")->dumpStructure(),
               R"CONFIG(key4:	value4
 key5:	5
 key6:	6.6
 )CONFIG");
 
-    collection2_copy->setOrUpdate<String>("key4", "value44");
+    collection2_copy->setOrUpdate<String>("key4", "value44", {});
     ASSERT_EQ(collection2_copy->get<String>("key4"), "value44");
     ASSERT_EQ(collection2->get<String>("key4"), "value4");
 
@@ -85,11 +113,11 @@ key6:	6.6
     ASSERT_EQ(collection2_copy->getOrDefault<String>("key4", "N"), "N");
     ASSERT_EQ(collection2->getOrDefault<String>("key4", "N"), "value4");
 
-    collection2_copy->setOrUpdate<String>("key4", "value45");
+    collection2_copy->setOrUpdate<String>("key4", "value45", {});
     ASSERT_EQ(collection2_copy->getOrDefault<String>("key4", "N"), "value45");
 
-    NamedCollectionFactory::instance().remove("collection2_copy");
-    ASSERT_FALSE(NamedCollectionFactory::instance().exists("collection2_copy"));
+    NamedCollectionFactoryFriend::instance().remove("collection2_copy");
+    ASSERT_FALSE(NamedCollectionFactoryFriend::instance().exists("collection2_copy"));
 
     config.reset();
 }
@@ -119,11 +147,11 @@ TEST(NamedCollections, NestedConfig)
     Poco::AutoPtr<Poco::XML::Document> document = dom_parser.parseString(xml);
     Poco::AutoPtr<Poco::Util::XMLConfiguration> config = new Poco::Util::XMLConfiguration(document);
 
-    NamedCollectionUtils::loadFromConfig(*config);
+    NamedCollectionFactoryFriend::instance().loadFromConfig(*config);
 
-    ASSERT_TRUE(NamedCollectionFactory::instance().exists("collection3"));
+    ASSERT_TRUE(NamedCollectionFactoryFriend::instance().exists("collection3"));
 
-    auto collection = NamedCollectionFactory::instance().get("collection3");
+    auto collection = NamedCollectionFactoryFriend::instance().get("collection3");
     ASSERT_TRUE(collection != nullptr);
 
     ASSERT_EQ(collection->dumpStructure(),
@@ -171,8 +199,8 @@ TEST(NamedCollections, NestedConfigDuplicateKeys)
     Poco::AutoPtr<Poco::XML::Document> document = dom_parser.parseString(xml);
     Poco::AutoPtr<Poco::Util::XMLConfiguration> config = new Poco::Util::XMLConfiguration(document);
 
-    NamedCollectionUtils::loadFromConfig(*config);
-    auto collection = NamedCollectionFactory::instance().get("collection");
+    NamedCollectionFactoryFriend::instance().loadFromConfig(*config);
+    auto collection = NamedCollectionFactoryFriend::instance().get("collection");
 
     auto keys = collection->getKeys();
     ASSERT_EQ(keys.size(), 6);

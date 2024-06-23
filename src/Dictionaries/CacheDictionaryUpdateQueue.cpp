@@ -9,6 +9,7 @@ namespace CurrentMetrics
 {
     extern const Metric CacheDictionaryThreads;
     extern const Metric CacheDictionaryThreadsActive;
+    extern const Metric CacheDictionaryThreadsScheduled;
 }
 
 namespace DB
@@ -33,10 +34,18 @@ CacheDictionaryUpdateQueue<dictionary_key_type>::CacheDictionaryUpdateQueue(
     , configuration(configuration_)
     , update_func(std::move(update_func_))
     , update_queue(configuration.max_update_queue_size)
-    , update_pool(CurrentMetrics::CacheDictionaryThreads, CurrentMetrics::CacheDictionaryThreadsActive, configuration.max_threads_for_updates)
+    , update_pool(CurrentMetrics::CacheDictionaryThreads, CurrentMetrics::CacheDictionaryThreadsActive, CurrentMetrics::CacheDictionaryThreadsScheduled, configuration.max_threads_for_updates)
 {
-    for (size_t i = 0; i < configuration.max_threads_for_updates; ++i)
-        update_pool.scheduleOrThrowOnError([this] { updateThreadFunction(); });
+    try
+    {
+        for (size_t i = 0; i < configuration.max_threads_for_updates; ++i)
+            update_pool.scheduleOrThrowOnError([this] { updateThreadFunction(); });
+    }
+    catch (...)
+    {
+        stopAndWait();
+        throw;
+    }
 }
 
 template <DictionaryKeyType dictionary_key_type>
@@ -48,7 +57,7 @@ CacheDictionaryUpdateQueue<dictionary_key_type>::~CacheDictionaryUpdateQueue()
     try {
         stopAndWait();
     }
-    catch (...)
+    catch (...) // NOLINT(bugprone-empty-catch)
     {
         /// TODO: Write log
     }

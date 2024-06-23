@@ -40,7 +40,7 @@ ExecutablePoolDictionarySource::ExecutablePoolDictionarySource(
     , sample_block(sample_block_)
     , coordinator(std::move(coordinator_))
     , context(context_)
-    , log(&Poco::Logger::get("ExecutablePoolDictionarySource"))
+    , log(getLogger("ExecutablePoolDictionarySource"))
 {
     /// Remove keys from sample_block for implicit_key dictionary because
     /// these columns will not be returned from source
@@ -64,7 +64,7 @@ ExecutablePoolDictionarySource::ExecutablePoolDictionarySource(const ExecutableP
     , sample_block(other.sample_block)
     , coordinator(other.coordinator)
     , context(Context::createCopy(other.context))
-    , log(&Poco::Logger::get("ExecutablePoolDictionarySource"))
+    , log(getLogger("ExecutablePoolDictionarySource"))
 {
 }
 
@@ -132,7 +132,6 @@ QueryPipeline ExecutablePoolDictionarySource::getStreamForBlock(const Block & bl
     ShellCommandSourceConfiguration command_configuration;
     command_configuration.read_fixed_number_of_rows = true;
     command_configuration.number_of_rows_to_read = block.rows();
-    command_configuration.check_exit_code = true;
 
     Pipes shell_input_pipes;
     shell_input_pipes.emplace_back(std::move(shell_input_pipe));
@@ -233,6 +232,8 @@ void registerDictionarySourceExecutablePool(DictionarySourceFactory & factory)
             .command_termination_timeout_seconds = config.getUInt64(settings_config_prefix + ".command_termination_timeout", 10),
             .command_read_timeout_milliseconds = config.getUInt64(settings_config_prefix + ".command_read_timeout", 10000),
             .command_write_timeout_milliseconds = config.getUInt64(settings_config_prefix + ".command_write_timeout", 10000),
+            .stderr_reaction = parseExternalCommandStderrReaction(config.getString(settings_config_prefix + ".stderr_reaction", "none")),
+            .check_exit_code = config.getBool(settings_config_prefix + ".check_exit_code", true),
             .pool_size = config.getUInt64(settings_config_prefix + ".pool_size", 16),
             .max_command_execution_time_seconds = max_command_execution_time,
             .is_executable_pool = true,

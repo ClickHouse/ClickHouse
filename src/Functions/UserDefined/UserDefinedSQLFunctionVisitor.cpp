@@ -20,7 +20,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNSUPPORTED_METHOD;
-    extern const int FUNCTION_CANNOT_HAVE_PARAMETERS;
 }
 
 void UserDefinedSQLFunctionVisitor::visit(ASTPtr & ast)
@@ -31,6 +30,9 @@ void UserDefinedSQLFunctionVisitor::visit(ASTPtr & ast)
         return;
     }
 
+    /// FIXME: this helper should use updatePointerToChild(), but
+    /// forEachPointerToChild() is not implemented for ASTColumnDeclaration
+    /// (and also some members should be adjusted for this).
     const auto visit_child_with_shared_ptr = [&](ASTPtr & child)
     {
         if (!child)
@@ -87,22 +89,24 @@ void UserDefinedSQLFunctionVisitor::visit(ASTPtr & ast)
 
     if (auto * alter = ast->as<ASTAlterCommand>())
     {
-        visit_child_with_shared_ptr(alter->col_decl);
-        visit_child_with_shared_ptr(alter->column);
-        visit_child_with_shared_ptr(alter->partition);
-        visit_child_with_shared_ptr(alter->order_by);
-        visit_child_with_shared_ptr(alter->sample_by);
-        visit_child_with_shared_ptr(alter->index_decl);
-        visit_child_with_shared_ptr(alter->index);
-        visit_child_with_shared_ptr(alter->constraint_decl);
-        visit_child_with_shared_ptr(alter->constraint);
-        visit_child_with_shared_ptr(alter->projection_decl);
-        visit_child_with_shared_ptr(alter->projection);
-        visit_child_with_shared_ptr(alter->predicate);
-        visit_child_with_shared_ptr(alter->update_assignments);
-        visit_child_with_shared_ptr(alter->values);
-        visit_child_with_shared_ptr(alter->ttl);
-        visit_child_with_shared_ptr(alter->select);
+        /// It is OK to use updatePointerToChild() because ASTAlterCommand implements forEachPointerToChild()
+        const auto visit_child_update_parent = [&](ASTPtr & child)
+        {
+            if (!child)
+                return;
+
+            auto * old_ptr = child.get();
+            visit(child);
+            auto * new_ptr = child.get();
+
+            /// Some AST classes have naked pointers to children elements as members.
+            /// We have to replace them if the child was replaced.
+            if (new_ptr != old_ptr)
+                ast->updatePointerToChild(old_ptr, new_ptr);
+        };
+
+        for (auto & children : alter->children)
+            visit_child_update_parent(children);
 
         return;
     }
@@ -138,12 +142,6 @@ ASTPtr UserDefinedSQLFunctionVisitor::tryToReplaceFunction(const ASTFunction & f
     auto user_defined_function = UserDefinedSQLFunctionFactory::instance().tryGet(function.name);
     if (!user_defined_function)
         return nullptr;
-
-    /// All UDFs are not parametric for now.
-    if (function.parameters)
-    {
-        throw Exception(ErrorCodes::FUNCTION_CANNOT_HAVE_PARAMETERS, "Function {} is not parametric", function.name);
-    }
 
     const auto & function_arguments_list = function.children.at(0)->as<ASTExpressionList>();
     auto & function_arguments = function_arguments_list->children;

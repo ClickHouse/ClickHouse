@@ -4,13 +4,14 @@ namespace DB
 {
 
 TTLUpdateInfoAlgorithm::TTLUpdateInfoAlgorithm(
+    const TTLExpressions & ttl_expressions_,
     const TTLDescription & description_,
-    const TTLUpdateField ttl_update_field_,
-    const String ttl_update_key_,
+    TTLUpdateField ttl_update_field_,
+    String ttl_update_key_,
     const TTLInfo & old_ttl_info_,
     time_t current_time_,
     bool force_)
-    : ITTLAlgorithm(description_, old_ttl_info_, current_time_, force_)
+    : ITTLAlgorithm(ttl_expressions_, description_, old_ttl_info_, current_time_, force_)
     , ttl_update_field(ttl_update_field_)
     , ttl_update_key(ttl_update_key_)
 {
@@ -21,7 +22,7 @@ void TTLUpdateInfoAlgorithm::execute(Block & block)
     if (!block)
         return;
 
-    auto ttl_column = executeExpressionAndGetColumn(description.expression, block, description.result_column);
+    auto ttl_column = executeExpressionAndGetColumn(ttl_expressions.expression, block, description.result_column);
     for (size_t i = 0; i < block.rows(); ++i)
     {
         UInt32 cur_ttl = ITTLAlgorithm::getTimestampByIndex(ttl_column.get(), i);

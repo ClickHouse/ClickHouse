@@ -15,8 +15,11 @@ namespace DB
 
 bool ParserCreateIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    ParserKeyword s_type("TYPE");
-    ParserKeyword s_granularity("GRANULARITY");
+    ParserKeyword s_type(Keyword::TYPE);
+    ParserKeyword s_granularity(Keyword::GRANULARITY);
+    ParserToken open_p(TokenType::OpeningRoundBracket);
+    ParserToken close_p(TokenType::ClosingRoundBracket);
+    ParserOrderByExpressionList order_list_p;
 
     ParserDataType data_type_p;
     ParserExpression expression_p;
@@ -26,15 +29,48 @@ bool ParserCreateIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected 
     ASTPtr type;
     ASTPtr granularity;
 
-    /// Skip name parser for SQL-standard CREATE INDEX
-    if (!expression_p.parse(pos, expr, expected))
-        return false;
+    if (open_p.ignore(pos, expected))
+    {
+        ASTPtr order_list;
+        if (!order_list_p.parse(pos, order_list, expected))
+            return false;
 
-    if (!s_type.ignore(pos, expected))
-        return false;
+        if (!close_p.ignore(pos, expected))
+            return false;
 
-    if (!data_type_p.parse(pos, type, expected))
+        if (order_list->children.empty())
+            return false;
+
+        /// CREATE INDEX with ASC, DESC is implemented only for SQL compatibility.
+        /// ASC and DESC modifiers are not supported and are ignored further.
+        if (order_list->children.size() == 1)
+        {
+            auto order_by_elem = order_list->children[0];
+            expr = order_by_elem->children[0];
+        }
+        else
+        {
+            auto tuple_func = makeASTFunction("tuple");
+            tuple_func->arguments = std::make_shared<ASTExpressionList>();
+
+            for (const auto & order_by_elem : order_list->children)
+            {
+                auto elem_expr = order_by_elem->children[0];
+                tuple_func->arguments->children.push_back(std::move(elem_expr));
+            }
+            expr = std::move(tuple_func);
+        }
+    }
+    else if (!expression_p.parse(pos, expr, expected))
+    {
         return false;
+    }
+
+    if (s_type.ignore(pos, expected))
+    {
+        if (!data_type_p.parse(pos, type, expected))
+            return false;
+    }
 
     if (s_granularity.ignore(pos, expected))
     {
@@ -42,22 +78,25 @@ bool ParserCreateIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected 
             return false;
     }
 
-    auto index = std::make_shared<ASTIndexDeclaration>();
+    /// name is set below in ParserCreateIndexQuery
+    auto index = std::make_shared<ASTIndexDeclaration>(expr, type, "");
     index->part_of_create_index_query = true;
-    index->set(index->expr, expr);
-    index->set(index->type, type);
 
     if (granularity)
+    {
         index->granularity = granularity->as<ASTLiteral &>().value.safeGet<UInt64>();
+    }
     else
     {
-        if (index->type->name == "annoy")
+        auto index_type = index->getType();
+        if (index_type && index_type->name == "annoy")
             index->granularity = ASTIndexDeclaration::DEFAULT_ANNOY_INDEX_GRANULARITY;
+        else if (index_type && index_type->name == "usearch")
+            index->granularity = ASTIndexDeclaration::DEFAULT_USEARCH_INDEX_GRANULARITY;
         else
             index->granularity = ASTIndexDeclaration::DEFAULT_INDEX_GRANULARITY;
     }
     node = index;
-
     return true;
 }
 
@@ -66,10 +105,12 @@ bool ParserCreateIndexQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expect
     auto query = std::make_shared<ASTCreateIndexQuery>();
     node = query;
 
-    ParserKeyword s_create("CREATE");
-    ParserKeyword s_index("INDEX");
-    ParserKeyword s_if_not_exists("IF NOT EXISTS");
-    ParserKeyword s_on("ON");
+    ParserKeyword s_create(Keyword::CREATE);
+    ParserKeyword s_unique(Keyword::UNIQUE);
+    ParserKeyword s_index(Keyword::INDEX);
+    ParserKeyword s_if_not_exists(Keyword::IF_NOT_EXISTS);
+    ParserKeyword s_on(Keyword::ON);
+
     ParserIdentifier index_name_p;
     ParserCreateIndexDeclaration parser_create_idx_decl;
 
@@ -78,9 +119,13 @@ bool ParserCreateIndexQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expect
 
     String cluster_str;
     bool if_not_exists = false;
+    bool unique = false;
 
     if (!s_create.ignore(pos, expected))
         return false;
+
+    if (s_unique.ignore(pos, expected))
+        unique = true;
 
     if (!s_index.ignore(pos, expected))
         return false;
@@ -118,6 +163,7 @@ bool ParserCreateIndexQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expect
     query->children.push_back(index_decl);
 
     query->if_not_exists = if_not_exists;
+    query->unique = unique;
     query->cluster = cluster_str;
 
     if (query->database)

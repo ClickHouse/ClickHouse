@@ -19,8 +19,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        this->checkArguments(arguments);
-
+        this->checkArguments(arguments, /*is_result_type_date_or_date32*/ false, Transform::value_may_be_string);
         return std::make_shared<ToDataType>();
     }
 
@@ -30,20 +29,16 @@ public:
         WhichDataType which(from_type);
 
         if (which.isDate())
-            return CustomWeekTransformImpl<DataTypeDate, ToDataType>::execute(
-                arguments, result_type, input_rows_count, Transform{});
+            return CustomWeekTransformImpl<DataTypeDate, ToDataType>::execute(arguments, result_type, input_rows_count, Transform{});
         else if (which.isDate32())
-            return CustomWeekTransformImpl<DataTypeDate32, ToDataType>::execute(
-                arguments, result_type, input_rows_count, Transform{});
+            return CustomWeekTransformImpl<DataTypeDate32, ToDataType>::execute(arguments, result_type, input_rows_count, Transform{});
         else if (which.isDateTime())
-            return CustomWeekTransformImpl<DataTypeDateTime, ToDataType>::execute(
-                arguments, result_type, input_rows_count, Transform{});
+            return CustomWeekTransformImpl<DataTypeDateTime, ToDataType>::execute(arguments, result_type, input_rows_count, Transform{});
         else if (which.isDateTime64())
-        {
-            return CustomWeekTransformImpl<DataTypeDateTime64, ToDataType>::execute(
-                arguments, result_type, input_rows_count,
+            return CustomWeekTransformImpl<DataTypeDateTime64, ToDataType>::execute(arguments, result_type, input_rows_count,
                 TransformDateTime64<Transform>{assert_cast<const DataTypeDateTime64 *>(from_type)->getScale()});
-        }
+        else if (Transform::value_may_be_string && which.isString())
+            return CustomWeekTransformImpl<DataTypeString, ToDataType>::execute(arguments, result_type, input_rows_count, Transform{});
         else
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Illegal type {} of argument of function {}",

@@ -114,26 +114,24 @@ size_t IAST::checkSize(size_t max_size) const
 }
 
 
-IAST::Hash IAST::getTreeHash() const
+IAST::Hash IAST::getTreeHash(bool ignore_aliases) const
 {
     SipHash hash_state;
-    updateTreeHash(hash_state);
-    IAST::Hash res;
-    hash_state.get128(res);
-    return res;
+    updateTreeHash(hash_state, ignore_aliases);
+    return getSipHash128AsPair(hash_state);
 }
 
 
-void IAST::updateTreeHash(SipHash & hash_state) const
+void IAST::updateTreeHash(SipHash & hash_state, bool ignore_aliases) const
 {
-    updateTreeHashImpl(hash_state);
+    updateTreeHashImpl(hash_state, ignore_aliases);
     hash_state.update(children.size());
     for (const auto & child : children)
-        child->updateTreeHash(hash_state);
+        child->updateTreeHash(hash_state, ignore_aliases);
 }
 
 
-void IAST::updateTreeHashImpl(SipHash & hash_state) const
+void IAST::updateTreeHashImpl(SipHash & hash_state, bool /*ignore_aliases*/) const
 {
     auto id = getID();
     hash_state.update(id.data(), id.size());
@@ -170,7 +168,9 @@ size_t IAST::checkDepthImpl(size_t max_depth) const
 String IAST::formatWithPossiblyHidingSensitiveData(size_t max_length, bool one_line, bool show_secrets) const
 {
     WriteBufferFromOwnString buf;
-    format({buf, one_line, show_secrets});
+    FormatSettings settings(buf, one_line);
+    settings.show_secrets = show_secrets;
+    format(settings);
     return wipeSensitiveDataAndCutToLength(buf.str(), max_length);
 }
 

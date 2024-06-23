@@ -155,7 +155,7 @@ namespace
 
 
 AccessRightsElement::AccessRightsElement(AccessFlags access_flags_, std::string_view database_)
-    : access_flags(access_flags_), database(database_), any_database(false)
+    : access_flags(access_flags_), database(database_), parameter(database_), any_database(false), any_parameter(false)
 {
 }
 
@@ -245,7 +245,7 @@ bool AccessRightsElements::sameOptions() const
 
 void AccessRightsElements::eraseNonGrantable()
 {
-    boost::range::remove_erase_if(*this, [](AccessRightsElement & element)
+    std::erase_if(*this, [](AccessRightsElement & element)
     {
         element.eraseNonGrantable();
         return element.empty();

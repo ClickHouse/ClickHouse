@@ -26,6 +26,9 @@ private:
     bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
 
     void readLineObject(IColumn & column);
+
+    size_t countRows(size_t max_block_size) override;
+    bool supportsCountRows() const override { return true; }
 };
 
 class LinaAsStringSchemaReader : public IExternalSchemaReader

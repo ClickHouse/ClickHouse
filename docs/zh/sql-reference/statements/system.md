@@ -93,7 +93,7 @@ SYSTEM RELOAD CONFIG [ON CLUSTER cluster_name]
 
 ## Managing Distributed Tables {#query-language-system-distributed}
 
-ClickHouse可以管理 [distribute](../../engines/table-engines/special/distributed.md)表。当用户向这类表插入数据时，ClickHouse首先为需要发送到集群节点的数据创建一个队列，然后异步的发送它们。你可以维护队列的处理过程，通过[STOP DISTRIBUTED SENDS](#query_language-system-stop-distributed-sends), [FLUSH DISTRIBUTED](#query_language-system-flush-distributed), 以及 [START DISTRIBUTED SENDS](#query_language-system-start-distributed-sends)。你也可以设置 `insert_distributed_sync`参数来以同步的方式插入分布式数据。
+ClickHouse可以管理 [distribute](../../engines/table-engines/special/distributed.md)表。当用户向这类表插入数据时，ClickHouse首先为需要发送到集群节点的数据创建一个队列，然后异步的发送它们。你可以维护队列的处理过程，通过[STOP DISTRIBUTED SENDS](#query_language-system-stop-distributed-sends), [FLUSH DISTRIBUTED](#query_language-system-flush-distributed), 以及 [START DISTRIBUTED SENDS](#query_language-system-start-distributed-sends)。你也可以设置 `distributed_foreground_insert`参数来以同步的方式插入分布式数据。
 
 
 ### STOP DISTRIBUTED SENDS {#query_language-system-stop-distributed-sends}
@@ -248,7 +248,7 @@ SYSTEM START REPLICATION QUEUES [ON CLUSTER cluster_name] [[db.]replicated_merge
 
 
 ``` sql
-SYSTEM SYNC REPLICA [db.]replicated_merge_tree_family_table_name [STRICT | LIGHTWEIGHT | PULL]
+SYSTEM SYNC REPLICA [db.]replicated_merge_tree_family_table_name [STRICT | LIGHTWEIGHT [FROM 'srcReplica1'[, 'srcReplica2'[, ...]]] | PULL]
 ```
 
 ### RESTART REPLICA {#query_language-system-restart-replica}

@@ -14,19 +14,19 @@ using DiskConfigurationPtr = Poco::AutoPtr<Poco::Util::AbstractConfiguration>;
 /**
  * Transform a list of pairs ( key1=value1, key2=value2, ... ), where keys and values are ASTLiteral or ASTIdentifier
  * into
- * <root_name>
+ * <disk>
  *     <key1>value1</key1>
  *     <key2>value2</key2>
  *     ...
- * </root_name>
+ * </disk>
  *
  * Used in case disk configuration is passed via AST when creating
  * a disk object on-the-fly without any configuration file.
  */
-DiskConfigurationPtr getDiskConfigurationFromAST(const std::string & root_name, const ASTs & disk_args, ContextPtr context);
+DiskConfigurationPtr getDiskConfigurationFromAST(const ASTs & disk_args, ContextPtr context);
 
 /// The same as above function, but return XML::Document for easier modification of result configuration.
-[[ maybe_unused ]] Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const std::string & root_name, const ASTs & disk_args, ContextPtr context);
+[[ maybe_unused ]] Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & disk_args, ContextPtr context);
 
 /*
  * A reverse function.

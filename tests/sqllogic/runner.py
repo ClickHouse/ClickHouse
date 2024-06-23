@@ -2,20 +2,22 @@
 # -*- coding: utf-8 -*-
 
 import argparse
-import enum
-import os
-import logging
 import csv
+import enum
 import json
+import logging
 import multiprocessing
+import os
 from functools import reduce
-from deepdiff import DeepDiff
 
-from connection import setup_connection, Engines, default_clickhouse_odbc_conn_str
-from test_runner import TestRunner, Status, RequestType
+from deepdiff import DeepDiff  # pylint:disable=import-error; for style check
 
+from connection import Engines, default_clickhouse_odbc_conn_str, setup_connection
+from test_runner import RequestType, Status, TestRunner
 
-LEVEL_NAMES = [x.lower() for x in logging._nameToLevel.keys() if x != logging.NOTSET]
+LEVEL_NAMES = [  # pylint:disable-next=protected-access
+    l.lower() for l, n in logging._nameToLevel.items() if n != logging.NOTSET
+]
 
 
 def setup_logger(args):
@@ -41,7 +43,7 @@ def __write_check_status(status_row, out_dir):
     if len(status_row) > 140:
         status_row = status_row[0:135] + "..."
     check_status_path = os.path.join(out_dir, "check_status.tsv")
-    with open(check_status_path, "a") as stream:
+    with open(check_status_path, "a", encoding="utf-8") as stream:
         writer = csv.writer(stream, delimiter="\t", lineterminator="\n")
         writer.writerow(status_row)
 
@@ -60,7 +62,7 @@ def __write_test_result(
 ):
     all_stages = reports.keys()
     test_results_path = os.path.join(out_dir, "test_results.tsv")
-    with open(test_results_path, "a") as stream:
+    with open(test_results_path, "a", encoding="utf-8") as stream:
         writer = csv.writer(stream, delimiter="\t", lineterminator="\n")
         for stage in all_stages:
             report = reports[stage]
@@ -182,14 +184,14 @@ def mode_check_statements(parser):
                 input_dir, f"check statements:: not a dir {input_dir}"
             )
 
-        reports = dict()
+        reports = {}
 
         out_stages_dir = os.path.join(out_dir, f"{args.mode}-stages")
 
-        complete_sqlite_dir = os.path.join(out_stages_dir, "complete-sqlite")
+        complete_sqlite_dir = os.path.join(out_stages_dir, "statements-sqlite")
         os.makedirs(complete_sqlite_dir, exist_ok=True)
 
-        reports["complete-sqlite"] = run_all_tests_in_parallel(
+        reports["statements-sqlite"] = run_all_tests_in_parallel(
             setup_kwargs=as_kwargs(
                 engine=Engines.SQLITE,
             ),
@@ -224,13 +226,71 @@ def mode_check_statements(parser):
     parser.set_defaults(func=calle)
 
 
+def mode_check_complete(parser):
+    parser.add_argument("--input-dir", metavar="DIR", required=True)
+    parser.add_argument("--out-dir", metavar="DIR", required=True)
+
+    def calle(args):
+        input_dir = os.path.realpath(args.input_dir)
+        out_dir = os.path.realpath(args.out_dir)
+
+        if not os.path.exists(input_dir):
+            raise FileNotFoundError(
+                input_dir, f"check statements: no such file or directory {input_dir}"
+            )
+
+        if not os.path.isdir(input_dir):
+            raise NotADirectoryError(
+                input_dir, f"check statements:: not a dir {input_dir}"
+            )
+
+        reports = {}
+
+        out_stages_dir = os.path.join(out_dir, f"{args.mode}-stages")
+
+        complete_sqlite_dir = os.path.join(out_stages_dir, "complete-sqlite")
+        os.makedirs(complete_sqlite_dir, exist_ok=True)
+
+        reports["complete-sqlite"] = run_all_tests_in_parallel(
+            setup_kwargs=as_kwargs(
+                engine=Engines.SQLITE,
+            ),
+            runner_kwargs=as_kwargs(
+                verify_mode=False,
+                stop_at_statement_error=True,
+            ),
+            input_dir=input_dir,
+            output_dir=complete_sqlite_dir,
+        )
+
+        verify_clickhouse_dir = os.path.join(out_stages_dir, "complete-clickhouse")
+        os.makedirs(verify_clickhouse_dir, exist_ok=True)
+
+        reports["complete-clickhouse"] = run_all_tests_in_parallel(
+            setup_kwargs=as_kwargs(
+                engine=Engines.ODBC,
+                conn_str=default_clickhouse_odbc_conn_str(),
+            ),
+            runner_kwargs=as_kwargs(
+                verify_mode=True,
+                stop_at_statement_error=True,
+            ),
+            input_dir=complete_sqlite_dir,
+            output_dir=verify_clickhouse_dir,
+        )
+
+        statements_report(reports, out_dir, args.mode)
+
+    parser.set_defaults(func=calle)
+
+
 def make_actual_report(reports):
     return {stage: report.get_map() for stage, report in reports.items()}
 
 
-def write_actual_report(actial, out_dir):
-    with open(os.path.join(out_dir, "actual_report.json"), "w") as f:
-        f.write(json.dumps(actial))
+def write_actual_report(actual, out_dir):
+    with open(os.path.join(out_dir, "actual_report.json"), "w", encoding="utf-8") as f:
+        f.write(json.dumps(actual))
 
 
 def read_canonic_report(input_dir):
@@ -238,13 +298,15 @@ def read_canonic_report(input_dir):
     if not os.path.exists(file):
         return {}
 
-    with open(os.path.join(input_dir, "canonic_report.json"), "r") as f:
+    with open(
+        os.path.join(input_dir, "canonic_report.json"), "r", encoding="utf-8"
+    ) as f:
         data = f.read()
     return json.loads(data)
 
 
 def write_canonic_report(canonic, out_dir):
-    with open(os.path.join(out_dir, "canonic_report.json"), "w") as f:
+    with open(os.path.join(out_dir, "canonic_report.json"), "w", encoding="utf-8") as f:
         f.write(json.dumps(canonic))
 
 
@@ -312,7 +374,7 @@ def mode_self_test(parser):
         if not os.path.isdir(out_dir):
             raise NotADirectoryError(out_dir, f"self test: not a dir {out_dir}")
 
-        reports = dict()
+        reports = {}
 
         out_stages_dir = os.path.join(out_dir, f"{args.mode}-stages")
 
@@ -399,16 +461,22 @@ def parse_args():
     )
 
     subparsers = parser.add_subparsers(dest="mode")
+    mode_check_complete(
+        subparsers.add_parser(
+            "complete-test",
+            help="Run all tests. Check that all statements and queries are passed",
+        )
+    )
     mode_check_statements(
         subparsers.add_parser(
             "statements-test",
-            help="Run all test. Check that all statements are passed",
+            help="Run all tests. Check that all statements are passed",
         )
     )
     mode_self_test(
         subparsers.add_parser(
             "self-test",
-            help="Run all test. Check that all statements are passed",
+            help="Run all tests. Check that all statements are passed",
         )
     )
     args = parser.parse_args()

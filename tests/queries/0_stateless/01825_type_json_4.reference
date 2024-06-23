@@ -1,5 +1,5 @@
 Code: 645
 Code: 15
 Code: 53
-1	('v1')	Tuple(k1 String)
+1	('v1')	Tuple(\n    k1 String)
 1	v1

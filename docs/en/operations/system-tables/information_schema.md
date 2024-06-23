@@ -3,29 +3,45 @@ slug: /en/operations/system-tables/information_schema
 ---
 # INFORMATION_SCHEMA
 
-`INFORMATION_SCHEMA` (`information_schema`) is a system database that contains views. Using these views, you can get information about the metadata of database objects. These views read data from the columns of the [system.columns](../../operations/system-tables/columns.md), [system.databases](../../operations/system-tables/databases.md) and [system.tables](../../operations/system-tables/tables.md) system tables.
-
-The structure and composition of system tables may change in different versions of the product, but the support of the `information_schema` makes it possible to change the structure of system tables without changing the method of access to metadata. Metadata requests do not depend on the DBMS used.
+`INFORMATION_SCHEMA` (or: `information_schema`) is a system database which provides a (somewhat) standardized, [DBMS-agnostic view](https://en.wikipedia.org/wiki/Information_schema) on metadata of database objects. The views in `INFORMATION_SCHEMA` are generally inferior to normal system tables but tools can use them to obtain basic information in a cross-DBMS manner. The structure and content of views in `INFORMATION_SCHEMA` is supposed to evolves in a backwards-compatible way, i.e. only new functionality is added but existing functionality is not changed or removed. In terms of internal implementation, views in `INFORMATION_SCHEMA` usually map to to normal system tables like [system.columns](../../operations/system-tables/columns.md), [system.databases](../../operations/system-tables/databases.md) and [system.tables](../../operations/system-tables/tables.md).
 
 ``` sql
 SHOW TABLES FROM INFORMATION_SCHEMA;
+
+-- or:
+SHOW TABLES FROM information_schema;
 ```
 
 ``` text
-┌─name─────┐
-│ COLUMNS  │
-│ SCHEMATA │
-│ TABLES   │
-│ VIEWS    │
-└──────────┘
+┌─name────────────────────┐
+│ COLUMNS                 │
+│ KEY_COLUMN_USAGE        │
+│ REFERENTIAL_CONSTRAINTS │
+│ SCHEMATA                │
+| STATISTICS              |
+│ TABLES                  │
+│ VIEWS                   │
+│ columns                 │
+│ key_column_usage        │
+│ referential_constraints │
+│ schemata                │
+| statistics              |
+│ tables                  │
+│ views                   │
+└─────────────────────────┘
 ```
 
 `INFORMATION_SCHEMA` contains the following views:
 
 - [COLUMNS](#columns)
+- [KEY_COLUMN_USAGE](#key_column_usage)
+- [REFERENTIAL_CONSTRAINTS](#referential_constraints)
 - [SCHEMATA](#schemata)
+- [STATISTICS](#statistics)
 - [TABLES](#tables)
 - [VIEWS](#views)
+
+Case-insensitive equivalent views, e.g. `INFORMATION_SCHEMA.columns` are provided for reasons of compatibility with other databases. The same applies to all the columns in these views - both lowercase (for example, `table_name`) and uppercase (`TABLE_NAME`) variants are provided.
 
 ## COLUMNS {#columns}
 
@@ -56,13 +72,43 @@ Columns:
 - `domain_catalog` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — `NULL`, not supported.
 - `domain_schema` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — `NULL`, not supported.
 - `domain_name` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — `NULL`, not supported.
+- `extra` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — `STORED GENERATED` for `MATERIALIZED`-type columns, `VIRTUAL GENERATED` for `ALIAS`-type columns, `DEFAULT_GENERATED` for `DEFAULT`-type columns, or `NULL`.
 
 **Example**
 
 Query:
 
 ``` sql
-SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE (table_schema=currentDatabase() OR table_schema='') AND table_name NOT LIKE '%inner%' LIMIT 1 FORMAT Vertical;
+SELECT table_catalog,
+       table_schema,
+       table_name,
+       column_name,
+       ordinal_position,
+       column_default,
+       is_nullable,
+       data_type,
+       character_maximum_length,
+       character_octet_length,
+       numeric_precision,
+       numeric_precision_radix,
+       numeric_scale,
+       datetime_precision,
+       character_set_catalog,
+       character_set_schema,
+       character_set_name,
+       collation_catalog,
+       collation_schema,
+       collation_name,
+       domain_catalog,
+       domain_schema,
+       domain_name,
+       column_comment,
+       column_type
+FROM INFORMATION_SCHEMA.COLUMNS
+WHERE (table_schema = currentDatabase() OR table_schema = '')
+  AND table_name NOT LIKE '%inner%' 
+LIMIT 1 
+FORMAT Vertical;
 ```
 
 Result:
@@ -114,7 +160,17 @@ Columns:
 Query:
 
 ``` sql
-SELECT * FROM information_schema.schemata WHERE schema_name ILIKE 'information_schema' LIMIT 1 FORMAT Vertical;
+SELECT catalog_name,
+       schema_name,
+       schema_owner,
+       default_character_set_catalog,
+       default_character_set_schema,
+       default_character_set_name,
+       sql_path
+FROM information_schema.schemata
+WHERE schema_name ilike 'information_schema' 
+LIMIT 1 
+FORMAT Vertical;
 ```
 
 Result:
@@ -140,19 +196,35 @@ Columns:
 - `table_catalog` ([String](../../sql-reference/data-types/string.md)) — The name of the database in which the table is located.
 - `table_schema` ([String](../../sql-reference/data-types/string.md)) — The name of the database in which the table is located.
 - `table_name` ([String](../../sql-reference/data-types/string.md)) — Table name.
-- `table_type` ([Enum8](../../sql-reference/data-types/enum.md)) — Table type. Possible values:
+- `table_type` ([String](../../sql-reference/data-types/string.md)) — Table type. Possible values:
     - `BASE TABLE`
     - `VIEW`
     - `FOREIGN TABLE`
     - `LOCAL TEMPORARY`
     - `SYSTEM VIEW`
+- `table_rows` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — The total
+  number of rows. NULL if it could not be determined.
+- `data_length` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — The size of
+  the data on-disk. NULL if it could not be determined.
+- `table_collation` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — The table default collation. Always `utf8mb4_0900_ai_ci`.
+- `table_comment` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — The comment used when creating the table.
 
 **Example**
 
 Query:
 
 ``` sql
-SELECT * FROM INFORMATION_SCHEMA.TABLES WHERE (table_schema = currentDatabase() OR table_schema = '') AND table_name NOT LIKE '%inner%' LIMIT 1 FORMAT Vertical;
+SELECT table_catalog, 
+       table_schema, 
+       table_name, 
+       table_type, 
+       table_collation, 
+       table_comment
+FROM INFORMATION_SCHEMA.TABLES
+WHERE (table_schema = currentDatabase() OR table_schema = '')
+  AND table_name NOT LIKE '%inner%'
+LIMIT 1 
+FORMAT Vertical;
 ```
 
 Result:
@@ -160,10 +232,12 @@ Result:
 ``` text
 Row 1:
 ──────
-table_catalog: default
-table_schema:  default
-table_name:    describe_example
-table_type:    BASE TABLE
+table_catalog:   default
+table_schema:    default
+table_name:      describe_example
+table_type:      BASE TABLE
+table_collation: utf8mb4_0900_ai_ci
+table_comment:   
 ```
 
 ## VIEWS {#views}
@@ -192,7 +266,20 @@ Query:
 ``` sql
 CREATE VIEW v (n Nullable(Int32), f Float64) AS SELECT n, f FROM t;
 CREATE MATERIALIZED VIEW mv ENGINE = Null AS SELECT * FROM system.one;
-SELECT * FROM information_schema.views WHERE table_schema = currentDatabase() LIMIT 1 FORMAT Vertical;
+SELECT table_catalog,
+       table_schema,
+       table_name,
+       view_definition,
+       check_option,
+       is_updatable,
+       is_insertable_into,
+       is_trigger_updatable,
+       is_trigger_deletable,
+       is_trigger_insertable_into
+FROM information_schema.views
+WHERE table_schema = currentDatabase() 
+LIMIT 1
+FORMAT Vertical;
 ```
 
 Result:
@@ -211,3 +298,105 @@ is_trigger_updatable:       NO
 is_trigger_deletable:       NO
 is_trigger_insertable_into: NO
 ```
+
+## KEY_COLUMN_USAGE {#key_column_usage}
+
+Contains columns from the [system.tables](../../operations/system-tables/tables.md) system table which are restricted by constraints.
+
+Columns:
+
+- `constraint_catalog` ([String](../../sql-reference/data-types/string.md)) — Currently unused. Always `def`.
+- `constraint_schema` ([String](../../sql-reference/data-types/string.md)) — The name of the schema (database) to which the constraint belongs.
+- `constraint_name` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — The name of the constraint.
+- `table_catalog` ([String](../../sql-reference/data-types/string.md)) — Currently unused. Always `def`.
+- `table_schema` ([String](../../sql-reference/data-types/string.md)) — The name of the schema (database) to which the table belongs.
+- `table_name` ([String](../../sql-reference/data-types/string.md)) — The name of the table that has the constraint.
+- `column_name` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — The name of the column that has the constraint.
+- `ordinal_position` ([UInt32](../../sql-reference/data-types/int-uint.md)) — Currently unused. Always `1`.
+- `position_in_unique_constraint` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt32](../../sql-reference/data-types/int-uint.md))) — Currently unused. Always `NULL`.
+- `referenced_table_schema` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — Currently unused. Always NULL.
+- `referenced_table_name` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — Currently unused. Always NULL.
+- `referenced_column_name` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — Currently unused. Always NULL.
+
+**Example**
+
+```sql
+CREATE TABLE test (i UInt32, s String) ENGINE MergeTree ORDER BY i;
+SELECT constraint_catalog,
+       constraint_schema,
+       constraint_name,
+       table_catalog,
+       table_schema,
+       table_name,
+       column_name,
+       ordinal_position,
+       position_in_unique_constraint,
+       referenced_table_schema,
+       referenced_table_name,
+       referenced_column_name
+FROM information_schema.key_column_usage 
+WHERE table_name = 'test' 
+FORMAT Vertical;
+```
+
+Result:
+
+```
+Row 1:
+──────
+constraint_catalog:            def
+constraint_schema:             default
+constraint_name:               PRIMARY
+table_catalog:                 def
+table_schema:                  default
+table_name:                    test
+column_name:                   i
+ordinal_position:              1
+position_in_unique_constraint: ᴺᵁᴸᴸ
+referenced_table_schema:       ᴺᵁᴸᴸ
+referenced_table_name:         ᴺᵁᴸᴸ
+referenced_column_name:        ᴺᵁᴸᴸ
+```
+
+## REFERENTIAL_CONSTRAINTS {#referential_constraints}
+
+Contains information about foreign keys. Currently returns an empty result (no rows) which is just enough to provide compatibility with 3rd party tools like Tableau Online.
+
+Columns:
+
+- `constraint_catalog` ([String](../../sql-reference/data-types/string.md)) — Currently unused.
+- `constraint_schema` ([String](../../sql-reference/data-types/string.md)) — Currently unused.
+- `constraint_name` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — Currently unused.
+- `unique_constraint_catalog` ([String](../../sql-reference/data-types/string.md)) — Currently unused.
+- `unique_constraint_schema` ([String](../../sql-reference/data-types/string.md)) — Currently unused.
+- `unique_constraint_name` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — Currently unused.
+- `match_option` ([String](../../sql-reference/data-types/string.md)) — Currently unused.
+- `update_rule` ([String](../../sql-reference/data-types/string.md)) — Currently unused.
+- `delete_rule` ([String](../../sql-reference/data-types/string.md)) — Currently unused.
+- `table_name` ([String](../../sql-reference/data-types/string.md)) — Currently unused.
+- `referenced_table_name` ([String](../../sql-reference/data-types/string.md)) — Currently unused.
+
+## STATISTICS {#statistics}
+
+Provides information about table indexes. Currently returns an empty result (no rows) which is just enough to provide compatibility with 3rd party tools like Tableau Online.
+
+Columns:
+
+- `table_catalog` ([String](../../sql-reference/data-types/string.md)) — Currently unused.
+- `table_schema` ([String](../../sql-reference/data-types/string.md)) — Currently unused.
+- `table_name` ([String](../../sql-reference/data-types/string.md)) — Currently unused.
+- `non_unique` ([Int32](../../sql-reference/data-types/int-uint.md)) — Currently unused.
+- `index_schema` ([String](../../sql-reference/data-types/string.md)) — Currently unused.
+- `index_name` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — Currently unused.
+- `seq_in_index` ([UInt32](../../sql-reference/data-types/int-uint.md)) — Currently unused.
+- `column_name` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — Currently unused.
+- `collation` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — Currently unused.
+- `cardinality` ([Nullable](../../sql-reference/data-types/nullable.md)([Int64](../../sql-reference/data-types/int-uint.md))) — Currently unused.
+- `sub_part` ([Nullable](../../sql-reference/data-types/nullable.md)([Int64](../../sql-reference/data-types/int-uint.md))) — Currently unused.
+- `packed` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — Currently unused.
+- `nullable` ([String](../../sql-reference/data-types/string.md)) — Currently unused.
+- `index_type` ([String](../../sql-reference/data-types/string.md)) — Currently unused.
+- `comment` ([String](../../sql-reference/data-types/string.md)) — Currently unused.
+- `index_comment` ([String](../../sql-reference/data-types/string.md)) — Currently unused.
+- `is_visible` ([String](../../sql-reference/data-types/string.md)) — Currently unused.
+- `expression` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — Currently unused.

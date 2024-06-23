@@ -1,4 +1,4 @@
-(2,('qqq',[44,55]))	Tuple(k1 Int8, k2 Tuple(k3 String, k4 Array(Int8)))
-(2,('qqq',[44,55]))	Tuple(k1 Int8, k2 Tuple(k3 String, k4 Array(Int8)))
+(2,('qqq',[44,55]))	Tuple(\n    k1 Int8,\n    k2 Tuple(\n        k3 String,\n        k4 Array(Int8)))
+(2,('qqq',[44,55]))	Tuple(\n    k1 Int8,\n    k2 Tuple(\n        k3 String,\n        k4 Array(Int8)))
 2	qqq	[44,55]
 2	qqq	[44,55]

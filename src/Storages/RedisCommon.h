@@ -16,7 +16,7 @@ namespace DB
 static constexpr size_t REDIS_MAX_BLOCK_SIZE = DEFAULT_BLOCK_SIZE;
 static constexpr size_t REDIS_LOCK_ACQUIRE_TIMEOUT_MS = 5000;
 
-enum class RedisStorageType
+enum class RedisStorageType : uint8_t
 {
     SIMPLE,
     HASH_MAP,

@@ -14,7 +14,7 @@ ClickHouse提供了一个原生命令行客户端`clickhouse-client`客户端支
 $ clickhouse-client
 ClickHouse client version 19.17.1.1579 (official build).
 Connecting to localhost:9000 as user default.
-Connected to ClickHouse server version 19.17.1 revision 54428.
+Connected to ClickHouse server version 19.17.1.
 
 :)
 ```
@@ -116,7 +116,7 @@ $ clickhouse-client --param_tuple_in_tuple="(10, ('dt', 10))" -q "SELECT * FROM 
 -   `--port` – 连接的端口，默认值：9000。注意HTTP接口以及TCP原生接口使用的是不同端口。
 -   `--user, -u` – 用户名。 默认值：`default`。
 -   `--password` – 密码。 默认值：空字符串。
--   `--query, -q` – 使用非交互模式查询。
+-   `--query, -q` – 使用非交互模式查询。 允许多次指定 `--query`（`--query "SELECT 1;" --query "SELECT 2;"...`）。
 -   `--database, -d` – 默认当前操作的数据库. 默认值：服务端默认的配置（默认是`default`）。
 -   `--multiline, -m` – 如果指定，允许多行语句查询（Enter仅代表换行，不代表查询语句完结）。
 -   `--multiquery, -n` – 如果指定, 允许处理用`;`号分隔的多个查询，只在非交互模式下生效。

@@ -1,0 +1,23 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <function_sleep_max_microseconds_per_block>0</function_sleep_max_microseconds_per_block>
+        </default>
+    </profiles>
+    <users>
+        <default>
+        </default>
+        <mysql_user>
+            <password>pass</password>
+        </mysql_user>
+        <postgres_user>
+            <password>pass</password>
+        </postgres_user>
+        <grpc_user>
+            <password>pass</password>
+        </grpc_user>
+        <parallel_user>
+            <password>pass</password>
+        </parallel_user>
+    </users>
+</clickhouse>

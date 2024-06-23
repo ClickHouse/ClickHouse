@@ -7,6 +7,9 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=./replication.lib
 . "$CURDIR"/replication.lib
 
+SHARD=$($CLICKHOUSE_CLIENT --query "Select getMacro('shard')")
+REPLICA=$($CLICKHOUSE_CLIENT --query "Select getMacro('replica')")
+
 REPLICAS=5
 
 for i in $(seq $REPLICAS); do
@@ -79,9 +82,9 @@ while true; do
 done
 
 
-metadata_version=$($CLICKHOUSE_CLIENT --query "SELECT value FROM system.zookeeper WHERE path = '/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/s1/replicas/r11/' and name = 'metadata_version'")
+metadata_version=$($CLICKHOUSE_CLIENT --query "SELECT value FROM system.zookeeper WHERE path = '/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/$SHARD/replicas/${REPLICA}1/' and name = 'metadata_version'")
 for i in $(seq $REPLICAS); do
-    replica_metadata_version=$($CLICKHOUSE_CLIENT --query "SELECT value FROM system.zookeeper WHERE path = '/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/s1/replicas/r1$i/' and name = 'metadata_version'")
+    replica_metadata_version=$($CLICKHOUSE_CLIENT --query "SELECT value FROM system.zookeeper WHERE path = '/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/$SHARD/replicas/${REPLICA}$i/' and name = 'metadata_version'")
 
     if [ "$metadata_version" != "$replica_metadata_version" ]; then
         echo "Metadata version on replica $i differs from the first replica, FAIL"

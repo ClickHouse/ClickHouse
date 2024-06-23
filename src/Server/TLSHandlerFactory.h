@@ -19,7 +19,7 @@ class TLSHandlerFactory : public TCPServerConnectionFactory
 {
 private:
     IServer & server;
-    Poco::Logger * log;
+    LoggerPtr log;
     std::string conf_name;
 
     class DummyTCPHandler : public Poco::Net::TCPServerConnection
@@ -31,7 +31,7 @@ private:
 
 public:
     explicit TLSHandlerFactory(IServer & server_, const std::string & conf_name_)
-        : server(server_), log(&Poco::Logger::get("TLSHandlerFactory")), conf_name(conf_name_)
+        : server(server_), log(getLogger("TLSHandlerFactory")), conf_name(conf_name_)
     {
     }
 

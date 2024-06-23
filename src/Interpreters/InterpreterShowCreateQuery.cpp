@@ -9,7 +9,9 @@
 #include <Common/typeid_cast.h>
 #include <Access/Common/AccessFlags.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/formatWithPossiblyHidingSecrets.h>
+#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterShowCreateQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 
@@ -104,4 +106,13 @@ QueryPipeline InterpreterShowCreateQuery::executeImpl()
         "statement"}}));
 }
 
+void registerInterpreterShowCreateQuery(InterpreterFactory & factory)
+{
+    auto create_fn = [] (const InterpreterFactory::Arguments & args)
+    {
+        return std::make_unique<InterpreterShowCreateQuery>(args.query, args.context);
+    };
+
+    factory.registerInterpreter("InterpreterShowCreateQuery", create_fn);
+}
 }

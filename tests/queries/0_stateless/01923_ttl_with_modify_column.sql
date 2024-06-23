@@ -38,6 +38,6 @@ INSERT INTO t_ttl_modify_column VALUES (now());
 SELECT sum(rows), groupUniqArray(type) FROM system.parts_columns
 WHERE database = currentDatabase() AND table = 't_ttl_modify_column' AND column = 'InsertionDateTime' AND active;
 
-ALTER TABLE t_ttl_modify_column MODIFY COLUMN InsertionDateTime String; -- { serverError 43 }
+ALTER TABLE t_ttl_modify_column MODIFY COLUMN InsertionDateTime Float32; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 DROP TABLE IF EXISTS t_ttl_modify_column;

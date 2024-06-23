@@ -39,7 +39,7 @@ IAST::QueryKind ASTTransactionControl::getQueryKind() const
     }
 }
 
-void ASTTransactionControl::updateTreeHashImpl(SipHash & hash_state) const
+void ASTTransactionControl::updateTreeHashImpl(SipHash & hash_state, bool /*ignore_aliases*/) const
 {
     hash_state.update(action);
 }

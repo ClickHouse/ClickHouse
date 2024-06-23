@@ -3,11 +3,16 @@
 #include <string>
 #include <vector>
 #include <boost/noncopyable.hpp>
-#include <Disks/IDisk.h>
 #include <sys/types.h>
+#include <Disks/IDisk.h>
+
 
 namespace DB
 {
+
+struct ReadSettings;
+struct WriteSettings;
+class WriteBufferFromFileBase;
 
 struct RemoveRequest
 {
@@ -47,7 +52,7 @@ public:
     /// Move directory from `from_path` to `to_path`.
     virtual void moveDirectory(const std::string & from_path, const std::string & to_path) = 0;
 
-    virtual void moveFile(const String & from_path, const String & to_path) = 0;
+    virtual void moveFile(const std::string & from_path, const std::string & to_path) = 0;
 
     virtual void createFile(const String & path) = 0;
 
@@ -59,7 +64,11 @@ public:
     /// but it's impossible to implement correctly in transactions because other disk can
     /// use different metadata storage.
     /// TODO: maybe remove it at all, we don't want copies
-    virtual void copyFile(const std::string & from_file_path, const std::string & to_file_path) = 0;
+    virtual void copyFile(
+        const std::string & from_file_path,
+        const std::string & to_file_path,
+        const ReadSettings & read_settings,
+        const WriteSettings & write_settings) = 0;
 
     /// Open the file for write and return WriteBufferFromFileBase object.
     virtual std::unique_ptr<WriteBufferFromFileBase> writeFile( /// NOLINT
@@ -69,10 +78,10 @@ public:
         const WriteSettings & settings = {},
         bool autocommit = true) = 0;
 
-    using WriteBlobFunction = std::function<size_t(const Strings & blob_path, WriteMode mode, const std::optional<ObjectAttributes> & object_attributes)>;
+    using WriteBlobFunction = std::function<size_t(const std::vector<std::string> & blob_path, WriteMode mode, const std::optional<ObjectAttributes> & object_attributes)>;
 
     /// Write a file using a custom function to write an object to the disk's object storage.
-    virtual void writeFileUsingBlobWritingFunction(const String & path, WriteMode mode, WriteBlobFunction && write_blob_function) = 0;
+    virtual void writeFileUsingBlobWritingFunction(const std::string & path, WriteMode mode, WriteBlobFunction && write_blob_function) = 0;
 
     /// Remove file. Throws exception if file doesn't exists or it's a directory.
     virtual void removeFile(const std::string & path) = 0;
@@ -119,6 +128,9 @@ public:
 
     /// Create hardlink from `src_path` to `dst_path`.
     virtual void createHardLink(const std::string & src_path, const std::string & dst_path) = 0;
+
+    /// Truncate file to the target size.
+    virtual void truncateFile(const std::string & src_path, size_t target_size) = 0;
 };
 
 using DiskTransactionPtr = std::shared_ptr<IDiskTransaction>;

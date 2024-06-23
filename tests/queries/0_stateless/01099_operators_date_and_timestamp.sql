@@ -13,17 +13,35 @@ select (date '2001-10-01' - date '2001-09-28') x, toTypeName(x);
 select timestamp '2001-09-28 01:00:00' + interval 23 hour;
 select timestamp '2001-09-28 23:00:00' - interval 23 hour;
 
--- TODO: return interval
-select (timestamp '2001-12-29 03:00:00' - timestamp '2001-12-27 12:00:00') x, toTypeName(x); -- interval '1 day 15:00:00'
+SET session_timezone = 'Europe/Amsterdam';
 
--- select -interval 23 hour; -- interval '-23:00:00'
--- select interval 1 day + interval 1 hour; -- interval '1 day 01:00:00'
--- select interval '1 day' - interval '1 hour'; -- interval '1 day -01:00:00'
+select (date '2001-09-29' + interval 12345 second) x, toTypeName(x);
+select (date '2001-09-29' + interval 12345 millisecond) x, toTypeName(x); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+select (date '2001-09-29' + interval 12345 microsecond) x, toTypeName(x); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+select (date '2001-09-29' + interval 12345 nanosecond) x, toTypeName(x); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+select (date '2001-09-29' - interval 12345 second) x, toTypeName(x);
+select (date '2001-09-29' - interval 12345 millisecond) x, toTypeName(x); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+select (date '2001-09-29' - interval 12345 microsecond) x, toTypeName(x); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+select (date '2001-09-29' - interval 12345 nanosecond) x, toTypeName(x); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+select (toDate32('2001-09-29') + interval 12345 second) x, toTypeName(x);
+select (toDate32('2001-09-29') + interval 12345 millisecond) x, toTypeName(x); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+select (toDate32('2001-09-29') + interval 12345 microsecond) x, toTypeName(x); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+select (toDate32('2001-09-29') + interval 12345 nanosecond) x, toTypeName(x); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+select (toDate32('2001-09-29') - interval 12345 second) x, toTypeName(x);
+select (toDate32('2001-09-29') - interval 12345 millisecond) x, toTypeName(x); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+select (toDate32('2001-09-29') - interval 12345 microsecond) x, toTypeName(x); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+select (toDate32('2001-09-29') - interval 12345 nanosecond) x, toTypeName(x); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
--- select date '2001-09-28' + time '03:00'; -- timestamp '2001-09-28 03:00:00'
--- select time '01:00' + interval '3 hours'; -- time '04:00:00'
--- select time '05:00' - time '03:00'; -- interval '02:00:00'
--- select time '05:00' - interval '2 hours'; -- time '03:00:00'
+select (timestamp '2001-12-29 03:00:00' - timestamp '2001-12-27 12:00:00') x, toTypeName(x);
+
+select -interval 23 hour;
+select interval 1 day + interval 1 hour;
+select interval '1 day' - interval '1 hour';
+
+-- select date '2001-09-28' + time '03:00';
+-- select time '01:00' + interval '3 hours';
+-- select time '05:00' - time '03:00';
+-- select time '05:00' - interval '2 hours';
 
 -- select 900 * interval '1 second'; -- interval '00:15:00'
 -- select (21 * interval '1 day') x, toTypeName(x); -- interval '21 days'

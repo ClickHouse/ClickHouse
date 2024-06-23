@@ -18,6 +18,8 @@ ASTPtr ASTCreateNamedCollectionQuery::clone() const
 void ASTCreateNamedCollectionQuery::formatImpl(const IAST::FormatSettings & settings, IAST::FormatState &, IAST::FormatStateStacked) const
 {
     settings.ostr << (settings.hilite ? hilite_keyword : "") << "CREATE NAMED COLLECTION ";
+    if (if_not_exists)
+        settings.ostr << "IF NOT EXISTS ";
     settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(collection_name) << (settings.hilite ? hilite_none : "");
 
     formatOnCluster(settings);
@@ -37,6 +39,9 @@ void ASTCreateNamedCollectionQuery::formatImpl(const IAST::FormatSettings & sett
             settings.ostr << " = " << applyVisitor(FieldVisitorToString(), change.value);
         else
             settings.ostr << " = '[HIDDEN]'";
+        auto override_value = overridability.find(change.name);
+        if (override_value != overridability.end())
+            settings.ostr << " " << (override_value->second ? "" : "NOT ") << "OVERRIDABLE";
     }
 }
 

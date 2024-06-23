@@ -8,21 +8,27 @@
 
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
 {
-    DB::String query;
-    DB::ReadBufferFromMemory in(data, size);
-    readStringUntilEOF(query, in);
-
-    DB::Lexer lexer(query.data(), query.data() + query.size());
-
-    while (true)
+    try
     {
-        DB::Token token = lexer.nextToken();
+        String query;
+        DB::ReadBufferFromMemory in(data, size);
+        readStringUntilEOF(query, in);
 
-        if (token.isEnd())
-            break;
+        DB::Lexer lexer(query.data(), query.data() + query.size());
 
-        if (token.isError())
-            return 1;
+        while (true)
+        {
+            DB::Token token = lexer.nextToken();
+
+            if (token.isEnd())
+                break;
+
+            if (token.isError())
+                return 0;
+        }
+    }
+    catch (...)
+    {
     }
 
     return 0;

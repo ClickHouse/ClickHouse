@@ -136,7 +136,6 @@
          https://clickhouse.com/docs/en/table_engines/distributed/
       -->
     <remote_servers incl="clickhouse_remote_servers" >
-        <!-- Test only shard config for testing distributed storage -->
         <test_shard_localhost>
             <shard>
                 <replica>
@@ -145,43 +144,6 @@
                 </replica>
             </shard>
         </test_shard_localhost>
-        <test_cluster_two_shards_localhost>
-             <shard>
-                 <replica>
-                     <host>localhost</host>
-                     <port>9000</port>
-                 </replica>
-             </shard>
-             <shard>
-                 <replica>
-                     <host>localhost</host>
-                     <port>9000</port>
-                 </replica>
-             </shard>
-         </test_cluster_two_shards_localhost>
-        <test_shard_localhost_secure>
-            <shard>
-                <replica>
-                    <host>localhost</host>
-                    <port>9440</port>
-                    <secure>1</secure>
-                </replica>
-            </shard>
-        </test_shard_localhost_secure>
-        <test_unavailable_shard>
-            <shard>
-                <replica>
-                    <host>localhost</host>
-                    <port>9000</port>
-                </replica>
-            </shard>
-            <shard>
-                <replica>
-                    <host>localhost</host>
-                    <port>1</port>
-                </replica>
-            </shard>
-        </test_unavailable_shard>
     </remote_servers>
 
 

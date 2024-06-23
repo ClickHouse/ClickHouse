@@ -9,68 +9,76 @@ from typing import Tuple
 TRUSTED_CONTRIBUTORS = {
     e.lower()
     for e in [
-        "achimbab",
-        "adevyatova ",  # DOCSUP
-        "Algunenano",  # Raúl Marín, Tinybird
+        "achimbab",  # Kakao corp
+        "Algunenano",  # Raúl Marín, ClickHouse, Inc
         "amosbird",
-        "AnaUvarova",  # DOCSUP
-        "anauvarova",  # technical writer, Yandex
-        "annvsh",  # technical writer, Yandex
-        "atereh",  # DOCSUP
-        "azat",
-        "bharatnc",  # Newbie, but already with many contributions.
+        "azat",  # SEMRush
+        "bharatnc",  # Many contributions.
         "bobrik",  # Seasoned contributor, CloudFlare
-        "BohuTANG",
-        "codyrobert",  # Flickerbox engineer
-        "cwurm",  # Employee
-        "damozhaeva",  # DOCSUP
-        "den-crane",
-        "flickerbox-tom",  # Flickerbox
-        "gyuton",  # DOCSUP
+        "cwurm",  # ClickHouse, Inc
+        "den-crane",  # Documentation contributor
         "hagen1778",  # Roman Khavronenko, seasoned contributor
         "hczhcz",
         "hexiaoting",  # Seasoned contributor
         "ildus",  # adjust, ex-pgpro
         "javisantana",  # a Spanish ClickHouse enthusiast, ex-Carto
-        "ka1bi4",  # DOCSUP
-        "kirillikoff",  # DOCSUP
         "kreuzerkrieg",
-        "lehasm",  # DOCSUP
-        "michon470",  # DOCSUP
         "nikvas0",
-        "nvartolomei",
-        "olgarev",  # DOCSUP
-        "otrazhenia",  # Yandex docs contractor
-        "pdv-ru",  # DOCSUP
-        "podshumok",  # cmake expert from QRator Labs
-        "s-mx",  # Maxim Sabyanin, former employee, present contributor
-        "sevirov",  # technical writer, Yandex
+        "nvartolomei",  # Seasoned contributor, CloudFlare
         "spongedu",  # Seasoned contributor
         "taiyang-li",
         "ucasFL",  # Amos Bird's friend
-        "vdimir",  # Employee
-        "vzakaznikov",
+        "vdimir",  # ClickHouse, Inc
         "YiuRULE",
         "zlobober",  # Developer of YT
         "ilejn",  # Arenadata, responsible for Kerberized Kafka
-        "thomoco",  # ClickHouse
+        "thomoco",  # ClickHouse, Inc
         "BoloniniD",  # Seasoned contributor, HSE
         "tonickkozlov",  # Cloudflare
-        "tylerhannan",  # ClickHouse Employee
+        "tylerhannan",  # ClickHouse, Inc
         "myrrc",  # Mike Kot, DoubleCloud
-        "thevar1able",  # ClickHouse Employee
+        "thevar1able",  # ClickHouse, Inc
         "aalexfvk",
         "MikhailBurdukov",
-        "tsolodov",  # ClickHouse Employee
+        "tsolodov",  # ClickHouse, Inc
         "kitaisreal",
+        "k-morozov",  # Konstantin Morozov, Yandex Cloud
+        "justindeguzman",  # ClickHouse, Inc
+        "jrdi",  # ClickHouse contributor, TinyBird
     ]
 }
+
+
+class Labels:
+    PR_BUGFIX = "pr-bugfix"
+    PR_CRITICAL_BUGFIX = "pr-critical-bugfix"
+    CAN_BE_TESTED = "can be tested"
+    DO_NOT_TEST = "do not test"
+    MUST_BACKPORT = "pr-must-backport"
+    MUST_BACKPORT_CLOUD = "pr-must-backport-cloud"
+    JEPSEN_TEST = "jepsen-test"
+    SKIP_MERGEABLE_CHECK = "skip mergeable check"
+    PR_BACKPORT = "pr-backport"
+    PR_BACKPORTS_CREATED = "pr-backports-created"
+    PR_BACKPORTS_CREATED_CLOUD = "pr-backports-created-cloud"
+    PR_CHERRYPICK = "pr-cherrypick"
+    PR_CI = "pr-ci"
+    PR_FEATURE = "pr-feature"
+    PR_SYNCED_TO_CLOUD = "pr-synced-to-cloud"
+    PR_SYNC_UPSTREAM = "pr-sync-upstream"
+    RELEASE = "release"
+    RELEASE_LTS = "release-lts"
+    SUBMODULE_CHANGED = "submodule changed"
+
+    # automatic backport for critical bug fixes
+    AUTO_BACKPORT = {"pr-critical-bugfix"}
+
 
 # Descriptions are used in .github/PULL_REQUEST_TEMPLATE.md, keep comments there
 # updated accordingly
 # The following lists are append only, try to avoid editing them
 # They still could be cleaned out after the decent time though.
-LABELS = {
+LABEL_CATEGORIES = {
     "pr-backward-incompatible": ["Backward Incompatible Change"],
     "pr-bugfix": [
         "Bug Fix",
@@ -78,6 +86,7 @@ LABELS = {
         "Bug Fix (user-visible misbehaviour in official stable or prestable release)",
         "Bug Fix (user-visible misbehavior in official stable or prestable release)",
     ],
+    "pr-critical-bugfix": ["Critical Bug Fix (crash, LOGICAL_ERROR, data loss, RBAC)"],
     "pr-build": [
         "Build/Testing/Packaging Improvement",
         "Build Improvement",
@@ -96,12 +105,15 @@ LABELS = {
         "Not for changelog",
     ],
     "pr-performance": ["Performance Improvement"],
+    "pr-ci": ["CI Fix or Improvement (changelog entry is not required)"],
 }
 
-CATEGORY_TO_LABEL = {c: lb for lb, categories in LABELS.items() for c in categories}
+CATEGORY_TO_LABEL = {
+    c: lb for lb, categories in LABEL_CATEGORIES.items() for c in categories
+}
 
 
-def check_pr_description(pr_body: str) -> Tuple[str, str]:
+def check_pr_description(pr_body: str, repo_name: str) -> Tuple[str, str]:
     """The function checks the body to being properly formatted according to
     .github/PULL_REQUEST_TEMPLATE.md, if the first returned string is not empty,
     then there is an error."""
@@ -109,12 +121,8 @@ def check_pr_description(pr_body: str) -> Tuple[str, str]:
     lines = [re.sub(r"\s+", " ", line) for line in lines]
 
     # Check if body contains "Reverts ClickHouse/ClickHouse#36337"
-    if [
-        True
-        for line in lines
-        if re.match(r"\AReverts {GITHUB_REPOSITORY}#[\d]+\Z", line)
-    ]:
-        return "", LABELS["pr-not-for-changelog"][0]
+    if [True for line in lines if re.match(rf"\AReverts {repo_name}#[\d]+\Z", line)]:
+        return "", LABEL_CATEGORIES["pr-not-for-changelog"][0]
 
     category = ""
     entry = ""
@@ -171,10 +179,7 @@ def check_pr_description(pr_body: str) -> Tuple[str, str]:
     if not category:
         description_error = "Changelog category is empty"
     # Filter out the PR categories that are not for changelog.
-    elif re.match(
-        r"(?i)doc|((non|in|not|un)[-\s]*significant)|(not[ ]*for[ ]*changelog)",
-        category,
-    ):
+    elif "(changelog entry is not required)" in category:
         pass  # to not check the rest of the conditions
     elif category not in CATEGORY_TO_LABEL:
         description_error, category = f"Category '{category}' is not valid", ""

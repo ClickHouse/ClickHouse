@@ -1,19 +1,20 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 if [[ "$OSTYPE" == "darwin"* ]]; then
     # use GNU versions, their presence is ensured in cmake/tools.cmake
     GREP_CMD=ggrep
     FIND_CMD=gfind
 else
-    FIND_CMD=find
-    GREP_CMD=grep
+    FIND_CMD='find'
+    GREP_CMD='grep'
 fi
 
 ROOT_PATH="$(git rev-parse --show-toplevel)"
 LIBS_PATH="${ROOT_PATH}/contrib"
 
-ls -1 -d ${LIBS_PATH}/*/ | ${GREP_CMD} -F -v -- '-cmake' | LC_ALL=C sort | while read LIB; do
-    LIB_NAME=$(basename $LIB)
+mapfile -t libs < <(echo "${ROOT_PATH}/base/poco"; find "${LIBS_PATH}" -type d -maxdepth 1 ! -name '*-cmake' | LC_ALL=C sort)
+for LIB in "${libs[@]}"; do
+    LIB_NAME=$(basename "$LIB")
 
     LIB_LICENSE=$(
         LC_ALL=C ${FIND_CMD} "$LIB" -type f -and '(' -iname 'LICENSE*' -or -iname 'COPYING*' -or -iname 'COPYRIGHT*' ')' -and -not '(' -iname '*.html' -or -iname '*.htm' -or -iname '*.rtf' -or -name '*.cpp' -or -name '*.h' -or -iname '*.json' ')' -printf "%d\t%p\n" |
@@ -72,7 +73,7 @@ ls -1 -d ${LIBS_PATH}/*/ | ${GREP_CMD} -F -v -- '-cmake' | LC_ALL=C sort | while
          echo "HPND") ||
         echo "Unknown")
 
-        RELATIVE_PATH=$(echo "$LIB_LICENSE" | sed -r -e 's!^.+/contrib/!/contrib/!')
+        RELATIVE_PATH=$(echo "$LIB_LICENSE" | sed -r -e 's!^.+/(contrib|base)/!/\1/!')
 
         echo -e "$LIB_NAME\t$LICENSE_TYPE\t$RELATIVE_PATH"
     fi

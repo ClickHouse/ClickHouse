@@ -262,7 +262,7 @@ namespace detail
         UInt64 count_big[BIG_SIZE];
 
         /// Get value of quantile by index in array `count_big`.
-        static inline UInt16 indexInBigToValue(size_t i)
+        static UInt16 indexInBigToValue(size_t i)
         {
             return (i * BIG_PRECISION) + SMALL_THRESHOLD
                 + (intHash32<0>(i) % BIG_PRECISION - (BIG_PRECISION / 2));    /// A small randomization so that it is not noticeable that all the values are even.
@@ -782,6 +782,16 @@ public:
         else
             for (size_t i = 0; i < size; ++i)
                 result[i] = std::numeric_limits<float>::quiet_NaN();
+    }
+
+    friend void writeBinary(const Kind & x, WriteBuffer & buf)
+    {
+        writePODBinary(x, buf);
+    }
+
+    friend void readBinary(Kind & x, ReadBuffer & buf)
+    {
+        readPODBinary(x, buf);
     }
 };
 

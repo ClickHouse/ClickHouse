@@ -1,11 +1,12 @@
 #include <iomanip>
-#include <iostream>
+#include <numeric>
 
 #include <Interpreters/AggregationCommon.h>
 
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/HashTable/Hash.h>
+#include <Common/iota.h>
 
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteHelpers.h>
@@ -20,7 +21,7 @@ namespace
 std::vector<UInt64> getVectorWithNumbersUpToN(size_t n)
 {
     std::vector<UInt64> res(n);
-    std::iota(res.begin(), res.end(), 0);
+    iota(res.data(), res.size(), UInt64(0));
     return res;
 }
 

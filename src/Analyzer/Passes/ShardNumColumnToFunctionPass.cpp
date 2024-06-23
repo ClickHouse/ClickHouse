@@ -24,7 +24,7 @@ public:
     using Base = InDepthQueryTreeVisitorWithContext<ShardNumColumnToFunctionVisitor>;
     using Base::Base;
 
-    void visitImpl(QueryTreeNodePtr & node) const
+    void enterImpl(QueryTreeNodePtr & node) const
     {
         auto * column_node = node->as<ColumnNode>();
         if (!column_node)
@@ -58,7 +58,7 @@ public:
 
 }
 
-void ShardNumColumnToFunctionPass::run(QueryTreeNodePtr query_tree_node, ContextPtr context)
+void ShardNumColumnToFunctionPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
 {
     ShardNumColumnToFunctionVisitor visitor(context);
     visitor.visit(query_tree_node);

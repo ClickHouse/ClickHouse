@@ -3,13 +3,14 @@
 #include <map>
 #include <memory>
 #include <string>
-#include <unordered_map>
 #include <unordered_set>
 #include <vector>
 #include <Core/Types.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBuffer.h>
 #include <base/types.h>
+#include <absl/container/flat_hash_map.h>
+
 
 namespace DB
 {
@@ -70,7 +71,7 @@ class State
 {
 public:
     static constexpr size_t MAX_ARCS_IN_SEQUENTIAL_METHOD = 32;
-    enum class EncodingMethod
+    enum class EncodingMethod : uint8_t
     {
         /// Serialize arcs sequentially
         Sequential = 0,
@@ -107,7 +108,7 @@ public:
     UInt64 state_index = 0;
 
     /// Arcs which are started from state, the 'char' is the label on the arc
-    std::unordered_map<char, Arc> arcs;
+    absl::flat_hash_map<char, Arc> arcs;
 
 private:
     struct FlagValues
@@ -146,7 +147,7 @@ private:
     StatePtr initial_state;
 
     /// map of (state_hash, StatePtr)
-    std::unordered_map<UInt64, StatePtr> minimized_states;
+    absl::flat_hash_map<UInt64, StatePtr> minimized_states;
 
     /// Next available ID of state
     UInt64 next_id = 1;

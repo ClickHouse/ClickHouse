@@ -1,3 +1,5 @@
+-- Tags: no-parallel
+
 DROP ROW POLICY IF EXISTS p1_01295, p2_01295, p3_01295, p4_01295, p5_01295, p6_01295, p7_01295, p8_01295, p9_01295, p10_01295 ON db.table;
 DROP ROW POLICY IF EXISTS p2_01295_renamed ON db.table;
 DROP ROW POLICY IF EXISTS p3_01295 ON db.table, db2.table2;
@@ -17,7 +19,7 @@ SHOW CREATE ROW POLICY p3_01295 ON db.table;
 
 SELECT '-- rename';
 ALTER ROW POLICY p2_01295 ON db.table RENAME TO 'p2_01295_renamed';
-SHOW CREATE ROW POLICY p2_01295 ON db.table; -- { serverError 523 } -- Policy not found
+SHOW CREATE ROW POLICY p2_01295 ON db.table; -- { serverError UNKNOWN_ROW_POLICY } -- Policy not found
 SHOW CREATE ROW POLICY p2_01295_renamed ON db.table;
 DROP ROW POLICY p1_01295, p2_01295_renamed, p3_01295 ON db.table;
 

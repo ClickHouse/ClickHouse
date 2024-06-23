@@ -1,11 +1,13 @@
+#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/Access/InterpreterDropAccessEntityQuery.h>
-#include <Parsers/Access/ASTDropAccessEntityQuery.h>
-#include <Parsers/Access/ASTRowPolicyName.h>
+
 #include <Access/AccessControl.h>
 #include <Access/Common/AccessRightsElement.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
-
+#include <Interpreters/removeOnClusterClauseIfNeeded.h>
+#include <Parsers/Access/ASTDropAccessEntityQuery.h>
+#include <Parsers/Access/ASTRowPolicyName.h>
 
 namespace DB
 {
@@ -17,27 +19,37 @@ namespace ErrorCodes
 
 BlockIO InterpreterDropAccessEntityQuery::execute()
 {
-    auto & query = query_ptr->as<ASTDropAccessEntityQuery &>();
+    const auto updated_query_ptr = removeOnClusterClauseIfNeeded(query_ptr, getContext());
+    auto & query = updated_query_ptr->as<ASTDropAccessEntityQuery &>();
+
     auto & access_control = getContext()->getAccessControl();
     getContext()->checkAccess(getRequiredAccess());
 
     if (!query.cluster.empty())
-        return executeDDLQueryOnCluster(query_ptr, getContext());
+        return executeDDLQueryOnCluster(updated_query_ptr, getContext());
 
     query.replaceEmptyDatabase(getContext()->getCurrentDatabase());
 
-    auto do_drop = [&](const Strings & names)
+    auto do_drop = [&](const Strings & names, const String & storage_name)
     {
+        IAccessStorage * storage = &access_control;
+        MultipleAccessStorage::StoragePtr storage_ptr;
+        if (!storage_name.empty())
+        {
+            storage_ptr = access_control.getStorageByName(storage_name);
+            storage = storage_ptr.get();
+        }
+
         if (query.if_exists)
-            access_control.tryRemove(access_control.find(query.type, names));
+            storage->tryRemove(storage->find(query.type, names));
         else
-            access_control.remove(access_control.getIDs(query.type, names));
+            storage->remove(storage->getIDs(query.type, names));
     };
 
     if (query.type == AccessEntityType::ROW_POLICY)
-        do_drop(query.row_policy_names->toStrings());
+        do_drop(query.row_policy_names->toStrings(), query.storage_name);
     else
-        do_drop(query.names);
+        do_drop(query.names, query.storage_name);
 
     return {};
 }
@@ -82,6 +94,15 @@ AccessRightsElements InterpreterDropAccessEntityQuery::getRequiredAccess() const
             break;
     }
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{}: type is not supported by DROP query", toString(query.type));
+}
+
+void registerInterpreterDropAccessEntityQuery(InterpreterFactory & factory)
+{
+    auto create_fn = [] (const InterpreterFactory::Arguments & args)
+    {
+        return std::make_unique<InterpreterDropAccessEntityQuery>(args.query, args.context);
+    };
+    factory.registerInterpreter("InterpreterDropAccessEntityQuery", create_fn);
 }
 
 }

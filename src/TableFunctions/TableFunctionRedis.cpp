@@ -1,5 +1,3 @@
-#include <TableFunctions/TableFunctionRedis.h>
-
 #include <Common/Exception.h>
 #include <Common/parseAddress.h>
 
@@ -15,6 +13,10 @@
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Interpreters/evaluateConstantExpression.h>
 
+#include <Storages/StorageRedis.h>
+#include <TableFunctions/ITableFunction.h>
+#include <Storages/ExternalDataSourceConfiguration.h>
+
 
 namespace DB
 {
@@ -24,10 +26,37 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-StoragePtr TableFunctionRedis::executeImpl(
-    const ASTPtr & /*ast_function*/, ContextPtr context, const String & table_name, ColumnsDescription /*cached_columns*/) const
+namespace
 {
-    auto columns = getActualTableStructure(context);
+
+/* Implements Redis table function.
+ * Use redis(host:port, key, structure[, db_index[, password[, pool_size]]]);
+ */
+class TableFunctionRedis : public ITableFunction
+{
+public:
+    static constexpr auto name = "redis";
+    String getName() const override { return name; }
+
+private:
+    StoragePtr executeImpl(
+        const ASTPtr & ast_function, ContextPtr context,
+        const String & table_name, ColumnsDescription cached_columns, bool is_insert_query) const override;
+
+    const char * getStorageTypeName() const override { return "Redis"; }
+
+    ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
+    void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
+
+    RedisConfiguration configuration;
+    String structure;
+    String primary_key;
+};
+
+StoragePtr TableFunctionRedis::executeImpl(
+    const ASTPtr & /*ast_function*/, ContextPtr context, const String & table_name, ColumnsDescription /*cached_columns*/, bool is_insert_query) const
+{
+    auto columns = getActualTableStructure(context, is_insert_query);
 
     StorageInMemoryMetadata metadata;
     metadata.setColumns(columns);
@@ -39,7 +68,7 @@ StoragePtr TableFunctionRedis::executeImpl(
     return storage;
 }
 
-ColumnsDescription TableFunctionRedis::getActualTableStructure(ContextPtr context) const
+ColumnsDescription TableFunctionRedis::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
 {
     return parseColumnsListFromString(structure, context);
 }
@@ -85,6 +114,7 @@ void TableFunctionRedis::parseArguments(const ASTPtr & ast_function, ContextPtr 
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bad arguments redis table function structure should contains key.");
 }
 
+}
 
 void registerTableFunctionRedis(TableFunctionFactory & factory)
 {

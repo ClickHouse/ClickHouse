@@ -15,6 +15,7 @@
 #include <IO/Operators.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <AggregateFunctions/IAggregateFunction.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTLiteral.h>
@@ -30,6 +31,11 @@ namespace ErrorCodes
     extern const int PARAMETERS_TO_AGGREGATE_FUNCTIONS_MUST_BE_LITERALS;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int LOGICAL_ERROR;
+}
+
+String DataTypeAggregateFunction::getFunctionName() const
+{
+    return function->getName();
 }
 
 
@@ -52,6 +58,25 @@ size_t DataTypeAggregateFunction::getVersion() const
     return function->getDefaultVersion();
 }
 
+DataTypePtr DataTypeAggregateFunction::getReturnType() const
+{
+    return function->getResultType();
+}
+
+DataTypePtr DataTypeAggregateFunction::getReturnTypeToPredict() const
+{
+    return function->getReturnTypeToPredict();
+}
+
+bool DataTypeAggregateFunction::isVersioned() const
+{
+    return function->isVersioned();
+}
+
+void DataTypeAggregateFunction::updateVersionFromRevision(size_t revision, bool if_empty) const
+{
+    setVersion(function->getVersionFromRevision(revision), if_empty);
+}
 
 String DataTypeAggregateFunction::getNameImpl(bool with_version) const
 {
@@ -117,6 +142,33 @@ Field DataTypeAggregateFunction::getDefault() const
     return field;
 }
 
+bool DataTypeAggregateFunction::strictEquals(const DataTypePtr & lhs_state_type, const DataTypePtr & rhs_state_type)
+{
+    const auto * lhs_state = typeid_cast<const DataTypeAggregateFunction *>(lhs_state_type.get());
+    const auto * rhs_state = typeid_cast<const DataTypeAggregateFunction *>(rhs_state_type.get());
+
+    if (!lhs_state || !rhs_state)
+        return false;
+
+    if (lhs_state->function->getName() != rhs_state->function->getName())
+        return false;
+
+    if (lhs_state->parameters.size() != rhs_state->parameters.size())
+        return false;
+
+    for (size_t i = 0; i < lhs_state->parameters.size(); ++i)
+        if (lhs_state->parameters[i] != rhs_state->parameters[i])
+            return false;
+
+    if (lhs_state->argument_types.size() != rhs_state->argument_types.size())
+        return false;
+
+    for (size_t i = 0; i < lhs_state->argument_types.size(); ++i)
+        if (!lhs_state->argument_types[i]->equals(*rhs_state->argument_types[i]))
+            return false;
+
+    return true;
+}
 
 bool DataTypeAggregateFunction::equals(const IDataType & rhs) const
 {
@@ -126,34 +178,7 @@ bool DataTypeAggregateFunction::equals(const IDataType & rhs) const
     auto lhs_state_type = function->getNormalizedStateType();
     auto rhs_state_type = typeid_cast<const DataTypeAggregateFunction &>(rhs).function->getNormalizedStateType();
 
-    if (typeid(lhs_state_type.get()) != typeid(rhs_state_type.get()))
-        return false;
-
-    if (const auto * lhs_state = typeid_cast<const DataTypeAggregateFunction *>(lhs_state_type.get()))
-    {
-        const auto & rhs_state = typeid_cast<const DataTypeAggregateFunction &>(*rhs_state_type);
-
-        if (lhs_state->function->getName() != rhs_state.function->getName())
-            return false;
-
-        if (lhs_state->parameters.size() != rhs_state.parameters.size())
-            return false;
-
-        for (size_t i = 0; i < lhs_state->parameters.size(); ++i)
-            if (lhs_state->parameters[i] != rhs_state.parameters[i])
-                return false;
-
-        if (lhs_state->argument_types.size() != rhs_state.argument_types.size())
-            return false;
-
-        for (size_t i = 0; i < lhs_state->argument_types.size(); ++i)
-            if (!lhs_state->argument_types[i]->equals(*rhs_state.argument_types[i]))
-                return false;
-
-        return true;
-    }
-
-    return lhs_state_type->equals(*rhs_state_type);
+    return strictEquals(lhs_state_type, rhs_state_type);
 }
 
 
@@ -166,7 +191,6 @@ SerializationPtr DataTypeAggregateFunction::doGetDefaultSerialization() const
 static DataTypePtr create(const ASTPtr & arguments)
 {
     String function_name;
-    AggregateFunctionPtr function;
     DataTypes argument_types;
     Array params_row;
     std::optional<size_t> version;
@@ -193,12 +217,14 @@ static DataTypePtr create(const ASTPtr & arguments)
         argument_types_start_idx = 2;
     }
 
+    auto action = NullsAction::EMPTY;
     if (const auto * parametric = data_type_ast->as<ASTFunction>())
     {
         if (parametric->parameters)
             throw Exception(ErrorCodes::SYNTAX_ERROR, "Unexpected level of parameters to aggregate function");
 
         function_name = parametric->name;
+        action = parametric->nulls_action;
 
         if (parametric->arguments)
         {
@@ -238,10 +264,10 @@ static DataTypePtr create(const ASTPtr & arguments)
         argument_types.push_back(DataTypeFactory::instance().get(arguments->children[i]));
 
     if (function_name.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: empty name of aggregate function passed");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty name of aggregate function passed");
 
     AggregateFunctionProperties properties;
-    function = AggregateFunctionFactory::instance().get(function_name, argument_types, params_row, properties);
+    AggregateFunctionPtr function = AggregateFunctionFactory::instance().get(function_name, action, argument_types, params_row, properties);
     return std::make_shared<DataTypeAggregateFunction>(function, argument_types, params_row, version);
 }
 

@@ -22,7 +22,7 @@ sidebar_label: Distributed
 
     Смотрите также:
 
-    -  настройка `insert_distributed_sync`
+    -  настройка `distributed_foreground_insert`
     -   [MergeTree](../mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes) для примера
 
 Пример:
@@ -131,7 +131,7 @@ logs - имя кластера в конфигурационном файле с
 - используются запросы, требующие соединение данных (IN, JOIN) по определённому ключу - тогда если данные шардированы по этому ключу, то можно использовать локальные IN, JOIN вместо GLOBAL IN, GLOBAL JOIN, что кардинально более эффективно.
 - используется большое количество серверов (сотни и больше) и большое количество маленьких запросов (запросы отдельных клиентов - сайтов, рекламодателей, партнёров) - тогда, для того, чтобы маленькие запросы не затрагивали весь кластер, имеет смысл располагать данные одного клиента на одном шарде, или сделать двухуровневое шардирование: разбить весь кластер на «слои», где слой может состоять из нескольких шардов; данные для одного клиента располагаются на одном слое, но в один слой можно по мере необходимости добавлять шарды, в рамках которых данные распределены произвольным образом; создаются распределённые таблицы на каждый слой и одна общая распределённая таблица для глобальных запросов.
 
-Запись данных осуществляется полностью асинхронно. При вставке в таблицу, блок данных сначала записывается в файловую систему. Затем, в фоновом режиме отправляются на удалённые серверы при первой возможности. Период отправки регулируется настройками [distributed_directory_monitor_sleep_time_ms](../../../operations/settings/settings.md#distributed_directory_monitor_sleep_time_ms) и [distributed_directory_monitor_max_sleep_time_ms](../../../operations/settings/settings.md#distributed_directory_monitor_max_sleep_time_ms). Движок таблиц `Distributed` отправляет каждый файл со вставленными данными отдельно, но можно включить пакетную отправку данных настройкой [distributed_directory_monitor_batch_inserts](../../../operations/settings/settings.md#distributed_directory_monitor_batch_inserts). Эта настройка улучшает производительность кластера за счет более оптимального использования ресурсов сервера-отправителя и сети. Необходимо проверять, что данные отправлены успешно, для этого проверьте список файлов (данных, ожидающих отправки) в каталоге таблицы `/var/lib/clickhouse/data/database/table/`. Количество потоков для выполнения фоновых задач можно задать с помощью настройки [background_distributed_schedule_pool_size](../../../operations/settings/settings.md#background_distributed_schedule_pool_size).
+Запись данных осуществляется полностью асинхронно. При вставке в таблицу, блок данных сначала записывается в файловую систему. Затем, в фоновом режиме отправляются на удалённые серверы при первой возможности. Период отправки регулируется настройками [distributed_background_insert_sleep_time_ms](../../../operations/settings/settings.md#distributed_background_insert_sleep_time_ms) и [distributed_background_insert_max_sleep_time_ms](../../../operations/settings/settings.md#distributed_background_insert_max_sleep_time_ms). Движок таблиц `Distributed` отправляет каждый файл со вставленными данными отдельно, но можно включить пакетную отправку данных настройкой [distributed_background_insert_batch](../../../operations/settings/settings.md#distributed_background_insert_batch). Эта настройка улучшает производительность кластера за счет более оптимального использования ресурсов сервера-отправителя и сети. Необходимо проверять, что данные отправлены успешно, для этого проверьте список файлов (данных, ожидающих отправки) в каталоге таблицы `/var/lib/clickhouse/data/database/table/`. Количество потоков для выполнения фоновых задач можно задать с помощью настройки [background_distributed_schedule_pool_size](../../../operations/settings/settings.md#background_distributed_schedule_pool_size).
 
 Если после INSERT-а в Distributed таблицу, сервер перестал существовать или был грубо перезапущен (например, в следствие аппаратного сбоя), то записанные данные могут быть потеряны. Если в директории таблицы обнаружен повреждённый кусок данных, то он переносится в поддиректорию broken и больше не используется.
 
@@ -141,9 +141,10 @@ logs - имя кластера в конфигурационном файле с
 
 -   `_shard_num` — содержит значение `shard_num` из таблицы `system.clusters`. Тип: [UInt32](../../../sql-reference/data-types/int-uint.md).
 
-    :::note "Примечание"
-    Так как табличные функции [remote](../../../sql-reference/table-functions/remote.md) и [cluster](../../../sql-reference/table-functions/cluster.md) создают временную таблицу на движке `Distributed`, то в ней также доступен столбец `_shard_num`.
-    :::
+:::note Примечание
+Так как табличные функции [remote](../../../sql-reference/table-functions/remote.md) и [cluster](../../../sql-reference/table-functions/cluster.md) создают временную таблицу на движке `Distributed`, то в ней также доступен столбец `_shard_num`.
+:::
+
 **См. также**
 
 -   общее описание [виртуальных столбцов](../../../engines/table-engines/index.md#table_engines-virtual_columns)

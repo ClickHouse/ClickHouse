@@ -16,8 +16,8 @@ private:
     bool nextImpl() override;
 
 public:
-    explicit CompressedReadBuffer(ReadBuffer & in_, bool allow_different_codecs_ = false)
-        : CompressedReadBufferBase(&in_, allow_different_codecs_), BufferWithOwnMemory<ReadBuffer>(0)
+    explicit CompressedReadBuffer(ReadBuffer & in_, bool allow_different_codecs_ = false, bool external_data_ = false)
+        : CompressedReadBufferBase(&in_, allow_different_codecs_, external_data_), BufferWithOwnMemory<ReadBuffer>(0)
     {
     }
 

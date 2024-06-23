@@ -20,6 +20,7 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace
@@ -100,14 +101,36 @@ public:
             const Float64 lon = data_col_lon[row];
             const Float64 lat = data_col_lat[row];
 
-            if (isNaN(lon) || isNaN(lat))
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Arguments must not be NaN");
+            if (isNaN(lon))
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal argument for longitude in function {}. It must not be NaN", getName());
+            if (!isFinite(lon))
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Illegal argument for longitude in function {}. It must not be infinite",
+                    getName());
 
-            if (!(isFinite(lon) && isFinite(lat)))
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Arguments must not be infinite");
+            if (isNaN(lat))
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal argument for latitude in function {}. It must not be NaN", getName());
+            if (!isFinite(lat))
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Illegal argument for latitude in function {}. It must not be infinite",
+                    getName());
 
-            /// S2 acceptes point as (latitude, longitude)
+            /// S2 accepts point as (latitude, longitude)
             S2LatLng lat_lng = S2LatLng::FromDegrees(lat, lon);
+
+            if (!lat_lng.is_valid())
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Point ({}, {}) is invalid in function {}. For valid point the latitude is between -90 and 90 degrees inclusive"
+                    "and the longitude is between -180 and 180 degrees inclusive.",
+                    lon,
+                    lat,
+                    getName());
+
             S2CellId id(lat_lng);
 
             dst_data[row] = id.id();

@@ -1,0 +1,6 @@
+<clickhouse>
+    <s3queue_log>
+        <database>system</database>
+        <table>s3queue_log</table>
+    </s3queue_log>
+</clickhouse>

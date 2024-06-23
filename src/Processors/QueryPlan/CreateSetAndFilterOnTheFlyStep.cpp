@@ -141,7 +141,7 @@ void CreateSetAndFilterOnTheFlyStep::transformPipeline(QueryPipelineBuilder & pi
         /// Add balancing transform
         auto idx = position == JoinTableSide::Left ? PingPongProcessor::First : PingPongProcessor::Second;
         auto stream_balancer = std::make_shared<ReadHeadBalancedProcessor>(input_header, num_ports, max_rows_in_set, idx);
-        stream_balancer->setDescription(getStepDescription());
+        stream_balancer->setDescription("Reads rows from two streams evenly");
 
         /// Regular inputs just bypass data for respective ports
         connectAllInputs(ports, stream_balancer->getInputs(), num_ports);
@@ -163,7 +163,7 @@ void CreateSetAndFilterOnTheFlyStep::transformPipeline(QueryPipelineBuilder & pi
         {
             auto & port = *output_it++;
             auto transform = std::make_shared<FilterBySetOnTheFlyTransform>(port.getHeader(), column_names, filtering_set);
-            transform->setDescription(this->getStepDescription());
+            transform->setDescription("Filter rows using other join table side's set");
             connect(port, transform->getInputPort());
             result_transforms.emplace_back(std::move(transform));
         }
@@ -201,5 +201,9 @@ void CreateSetAndFilterOnTheFlyStep::updateOutputStream()
     output_stream = createOutputStream(input_streams.front(), input_streams.front().header, getDataStreamTraits());
 }
 
+bool CreateSetAndFilterOnTheFlyStep::isColumnPartOfSetKey(const String & column_name) const
+{
+    return std::find(column_names.begin(), column_names.end(), column_name) != column_names.end();
+}
 
 }

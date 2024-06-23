@@ -6,6 +6,7 @@
 
 #include <pqxx/pqxx>
 #include <Core/Types.h>
+#include <Common/Logger.h>
 #include <boost/noncopyable.hpp>
 
 /** Methods to work with PostgreSQL connection object.
@@ -47,6 +48,8 @@ public:
 
     void tryUpdateConnection();
 
+    bool isConnected() const { return connection != nullptr && connection->is_open(); }
+
     const ConnectionInfo & getConnectionInfo() { return connection_info; }
 
     String getInfoForLog() const { return connection_info.host_port; }
@@ -59,7 +62,7 @@ private:
     bool replication;
     size_t num_tries;
 
-    Poco::Logger * log;
+    LoggerPtr log;
 };
 
 using ConnectionPtr = std::unique_ptr<Connection>;

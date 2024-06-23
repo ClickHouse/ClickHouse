@@ -4,7 +4,6 @@
 #include <IO/WriteHelpers.h>
 
 #include <Columns/ColumnsNumber.h>
-#include <Formats/ProtobufReader.h>
 
 #include <Common/assert_cast.h>
 
@@ -23,11 +22,29 @@ void SerializationDate::deserializeWholeText(IColumn & column, ReadBuffer & istr
         throwUnexpectedDataAfterParsedValue(column, istr, settings, "Date");
 }
 
+bool SerializationDate::tryDeserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
+{
+    DayNum x;
+    if (!tryReadDateText(x, istr, time_zone) || !istr.eof())
+        return false;
+    assert_cast<ColumnUInt16 &>(column).getData().push_back(x);
+    return true;
+}
+
 void SerializationDate::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
     DayNum x;
     readDateText(x, istr, time_zone);
     assert_cast<ColumnUInt16 &>(column).getData().push_back(x);
+}
+
+bool SerializationDate::tryDeserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
+{
+    DayNum x;
+    if (!tryReadDateText(x, istr, time_zone))
+        return false;
+    assert_cast<ColumnUInt16 &>(column).getData().push_back(x);
+    return true;
 }
 
 void SerializationDate::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -51,6 +68,16 @@ void SerializationDate::deserializeTextQuoted(IColumn & column, ReadBuffer & ist
     assert_cast<ColumnUInt16 &>(column).getData().push_back(x);    /// It's important to do this at the end - for exception safety.
 }
 
+bool SerializationDate::tryDeserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
+{
+    DayNum x;
+    if (!checkChar('\'', istr) || !tryReadDateText(x, istr, time_zone) || !checkChar('\'', istr))
+        return false;
+
+    assert_cast<ColumnUInt16 &>(column).getData().push_back(x);
+    return true;
+}
+
 void SerializationDate::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     writeChar('"', ostr);
@@ -67,6 +94,15 @@ void SerializationDate::deserializeTextJSON(IColumn & column, ReadBuffer & istr,
     assert_cast<ColumnUInt16 &>(column).getData().push_back(x);
 }
 
+bool SerializationDate::tryDeserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
+{
+    DayNum x;
+    if (!checkChar('"', istr) || !tryReadDateText(x, istr, time_zone) || !checkChar('"', istr))
+        return false;
+    assert_cast<ColumnUInt16 &>(column).getData().push_back(x);
+    return true;
+}
+
 void SerializationDate::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     writeChar('"', ostr);
@@ -79,6 +115,15 @@ void SerializationDate::deserializeTextCSV(IColumn & column, ReadBuffer & istr, 
     DayNum value;
     readCSV(value, istr, time_zone);
     assert_cast<ColumnUInt16 &>(column).getData().push_back(value);
+}
+
+bool SerializationDate::tryDeserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
+{
+    DayNum value;
+    if (!tryReadCSV(value, istr, time_zone))
+        return false;
+    assert_cast<ColumnUInt16 &>(column).getData().push_back(value);
+    return true;
 }
 
 SerializationDate::SerializationDate(const DateLUTImpl & time_zone_) : time_zone(time_zone_)

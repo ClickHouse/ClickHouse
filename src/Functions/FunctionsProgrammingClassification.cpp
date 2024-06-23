@@ -1,5 +1,8 @@
 #include <Common/FrequencyHolder.h>
-#include <Common/StringUtils/StringUtils.h>
+
+#if USE_NLP
+
+#include <Common/StringUtils.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsTextClassification.h>
 
@@ -118,3 +121,5 @@ REGISTER_FUNCTION(DetectProgrammingLanguage)
 }
 
 }
+
+#endif

@@ -18,7 +18,7 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int CANNOT_CLOCK_GETTIME;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
 }
 
 namespace
@@ -30,7 +30,7 @@ Field nowSubsecond(UInt32 scale)
 
     timespec spec{};
     if (clock_gettime(CLOCK_REALTIME, &spec))
-        throwFromErrno("Cannot clock_gettime.", ErrorCodes::CANNOT_CLOCK_GETTIME);
+        throw ErrnoException(ErrorCodes::CANNOT_CLOCK_GETTIME, "Cannot clock_gettime");
 
     DecimalUtils::DecimalComponents<DateTime64> components{spec.tv_sec, spec.tv_nsec};
 
@@ -128,7 +128,7 @@ public:
 
         if (arguments.size() > 2)
         {
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Arguments size of function {} should be 0, or 1, or 2", getName());
+            throw Exception(ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION, "Arguments size of function {} should be 0, or 1, or 2", getName());
         }
         if (!arguments.empty())
         {

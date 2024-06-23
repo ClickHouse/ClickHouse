@@ -40,7 +40,10 @@ server_port = 5433
 def started_cluster():
     try:
         cluster.start()
-
+        # Wait for the PostgreSQL handler to start.
+        # Cluster.start waits until port 9000 becomes accessible.
+        # Server opens the PostgreSQL compatibility port a bit later.
+        cluster.instances["node"].wait_for_log_line("PostgreSQL compatibility protocol")
         yield cluster
     except Exception as ex:
         logging.exception(ex)

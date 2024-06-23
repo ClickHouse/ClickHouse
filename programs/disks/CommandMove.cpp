@@ -15,7 +15,7 @@ public:
     CommandMove()
     {
         command_name = "move";
-        description = "Move file or directory from `from_path` to `to_path`\nPath should be in format './' or './path' or 'path'";
+        description = "Move file or directory from `from_path` to `to_path`";
         usage = "move [OPTION]... <FROM_PATH> <TO_PATH>";
     }
 
@@ -26,7 +26,7 @@ public:
 
     void execute(
         const std::vector<String> & command_arguments,
-        DB::ContextMutablePtr & global_context,
+        std::shared_ptr<DiskSelector> & disk_selector,
         Poco::Util::LayeredConfiguration & config) override
     {
         if (command_arguments.size() != 2)
@@ -40,7 +40,7 @@ public:
         const String & path_from = command_arguments[0];
         const String & path_to = command_arguments[1];
 
-        DiskPtr disk = global_context->getDisk(disk_name);
+        DiskPtr disk = disk_selector->get(disk_name);
 
         String relative_path_from = validatePathAndGetAsRelative(path_from);
         String relative_path_to = validatePathAndGetAsRelative(path_to);

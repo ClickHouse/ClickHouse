@@ -16,7 +16,7 @@ ConnectionInfo formatConnectionString(String dbname, String host, UInt16 port, S
         << " port=" << port
         << " user=" << DB::quote << user
         << " password=" << DB::quote << password
-        << " connect_timeout=10";
+        << " connect_timeout=2";
     return {out.str(), host + ':' + DB::toString(port)};
 }
 

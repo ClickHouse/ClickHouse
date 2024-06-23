@@ -1,6 +1,6 @@
 #include "IVolume.h"
 
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/quoteString.h>
 
 #include <memory>
@@ -46,14 +46,21 @@ IVolume::IVolume(
     }
 
     if (disks.empty())
-        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Volume must contain at least one disk");
+        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Volume {} must contain at least one disk", name);
 }
 
-UInt64 IVolume::getMaxUnreservedFreeSpace() const
+std::optional<UInt64> IVolume::getMaxUnreservedFreeSpace() const
 {
-    UInt64 res = 0;
+    std::optional<UInt64> res;
     for (const auto & disk : disks)
-        res = std::max(res, disk->getUnreservedSpace());
+    {
+        auto disk_unreserved_space = disk->getUnreservedSpace();
+        if (!disk_unreserved_space)
+            return std::nullopt; /// There is at least one unlimited disk.
+
+        if (!res || *disk_unreserved_space > *res)
+            res = disk_unreserved_space;
+    }
     return res;
 }
 

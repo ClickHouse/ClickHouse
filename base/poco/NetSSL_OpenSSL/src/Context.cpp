@@ -41,7 +41,7 @@ Context::Params::Params():
 	verificationMode(VERIFY_RELAXED),
 	verificationDepth(9),
 	loadDefaultCAs(false),
-	cipherList("ALL:!ADH:!LOW:!EXP:!MD5:@STRENGTH")
+	cipherList("ALL:!ADH:!LOW:!EXP:!MD5:!3DES:@STRENGTH")
 {
 }
 
@@ -592,6 +592,7 @@ void Context::createSSLContext()
 	SSL_CTX_set_default_passwd_cb(_pSSLContext, &SSLManager::privateKeyPassphraseCallback);
 	Utility::clearErrorStack();
 	SSL_CTX_set_options(_pSSLContext, SSL_OP_ALL);
+	SSL_CTX_set_options(_pSSLContext, SSL_OP_IGNORE_UNEXPECTED_EOF);
 }
 
 

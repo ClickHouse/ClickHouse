@@ -1,4 +1,3 @@
-#include <iostream>
 
 #include <Interpreters/ProcessList.h>
 #include <Processors/Transforms/CountingTransform.h>

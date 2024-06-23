@@ -1,6 +1,13 @@
 # package sources should be placed in ${PWD}/root
 # nfpm should run from the same directory with a config
 name: "clickhouse-client"
+description: |
+  Client binary for ClickHouse
+    ClickHouse is a column-oriented database management system.
+    that allows generating analytical data reports in real time.
+    This package provides clickhouse-client, clickhouse-local and clickhouse-benchmark.
+
+# Common packages config
 arch: "${DEB_ARCH}" # amd64, arm64
 platform: "linux"
 version: "${CLICKHOUSE_VERSION_STRING}"
@@ -9,18 +16,16 @@ homepage: "https://clickhouse.com"
 license: "Apache"
 section: "database"
 priority: "optional"
+maintainer: "ClickHouse Dev Team <packages+linux@clickhouse.com>"
+deb:
+  fields:
+    Source: clickhouse
 
+# Package specific content
 replaces:
 - clickhouse-compressor
 conflicts:
 - clickhouse-compressor
-
-maintainer: "ClickHouse Dev Team <packages+linux@clickhouse.com>"
-description: |
-  Client binary for ClickHouse
-    ClickHouse is a column-oriented database management system.
-    that allows generating analytical data reports in real time.
-    This package provides clickhouse-client, clickhouse-local and clickhouse-benchmark.
 
 overrides:
   deb:
@@ -29,10 +34,6 @@ overrides:
   rpm:
     depends:
     - clickhouse-common-static = ${CLICKHOUSE_VERSION_STRING}
-
-deb:
-  fields:
-    Source: clickhouse
 
 contents:
 - src: root/etc/clickhouse-client/config.xml
@@ -48,6 +49,12 @@ contents:
   dst: /usr/bin/clickhouse-client
 - src: root/usr/bin/clickhouse-local
   dst: /usr/bin/clickhouse-local
+- src: root/usr/bin/ch
+  dst: /usr/bin/ch
+- src: root/usr/bin/chc
+  dst: /usr/bin/chc
+- src: root/usr/bin/chl
+  dst: /usr/bin/chl
 - src: root/usr/bin/clickhouse-obfuscator
   dst: /usr/bin/clickhouse-obfuscator
 # docs

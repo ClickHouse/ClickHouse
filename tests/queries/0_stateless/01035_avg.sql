@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS test_01035_avg (
     d64 Decimal64(18)   DEFAULT toDecimal64(u64 / 1000000, 8),
     d128 Decimal128(20) DEFAULT toDecimal128(i128 / 100000, 20),
     d256 Decimal256(40) DEFAULT toDecimal256(i256 / 100000, 40)
-) ENGINE = MergeTree() ORDER BY i64;
+) ENGINE = MergeTree() ORDER BY i64 SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
 
 SELECT avg(i8), avg(i16), avg(i32), avg(i64), avg(i128), avg(i256),
        avg(u8), avg(u16), avg(u32), avg(u64), avg(u128), avg(u256),

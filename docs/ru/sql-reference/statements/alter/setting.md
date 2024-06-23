@@ -15,9 +15,9 @@ sidebar_label: SETTING
 ALTER TABLE [db].name [ON CLUSTER cluster] MODIFY|RESET SETTING ...
 ```
 
-    :::note "Примечание"
-    Эти запросы могут применяться только к таблицам на движке [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md).
-    :::
+:::note Примечание
+Эти запросы могут применяться только к таблицам на движке [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md).
+:::
 
 ## MODIFY SETTING {#alter_modify_setting}
 

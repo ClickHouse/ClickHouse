@@ -9,6 +9,10 @@ default precision:
 ezs42d000000
 mixing const and non-const-columns:
 ezs42d000000
+ezs42d000000
+ezs42d000000
+ezs42d000000
+ezs42d000000
 from table (with const precision):
 1	6	Ok
 1	6	Ok

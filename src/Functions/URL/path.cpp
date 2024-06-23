@@ -1,6 +1,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionStringToString.h>
-#include "FunctionsURL.h"
+#include <Functions/StringHelpers.h>
 #include "path.h"
 #include <base/find_symbols.h>
 

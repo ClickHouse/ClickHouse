@@ -1,0 +1,8 @@
+<clickhouse>
+    <backup_log>
+        <database>system</database>
+        <table>backup_log</table>
+        <partition_by>toYYYYMM(event_date)</partition_by>
+        <flush_interval_milliseconds>0</flush_interval_milliseconds>
+    </backup_log>
+</clickhouse>

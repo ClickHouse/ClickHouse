@@ -63,7 +63,7 @@ SELECT arrayPartialShuffle(groupArray(x),20,0xbad_cafe) FROM (SELECT number as x
 SELECT arrayPartialShuffle(groupArray(toUInt64(x)),20,0xbad_cafe) FROM (SELECT number as x from system.numbers LIMIT 100);
 SELECT arrayPartialShuffle([tuple(1, -1), tuple(99999999, -99999999), tuple(3, -3)], 2, 0xbad_cafe);
 SELECT arrayPartialShuffle([tuple(1, NULL), tuple(2, 'a'), tuple(3, 'A')], 2, 0xbad_cafe);
-SELECT arrayShuffle([1, 2, 3], 42) FROM numbers(10); -- for constant array we don not materialize it and each row gets the same permutation
+SELECT arrayShuffle([1, 2, 3], 42) FROM numbers(10); -- for constant array we do not materialize it and each row gets the same permutation
 SELECT arrayShuffle(materialize([1, 2, 3]), 42) FROM numbers(10);
 SELECT arrayShuffle(1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT arrayShuffle([1], 'a'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }

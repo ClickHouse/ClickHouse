@@ -12,6 +12,7 @@
                 <errors>1</errors>
                 <read_rows>1</read_rows>
                 <result_rows>1</result_rows>
+                <failed_sequential_authentications>1</failed_sequential_authentications>
             </interval>
         </myQuota>
     </quotas>

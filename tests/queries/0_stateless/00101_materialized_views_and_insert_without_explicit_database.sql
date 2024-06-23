@@ -1,8 +1,3 @@
--- Tags: no-parallel
-
-CREATE DATABASE IF NOT EXISTS test_00101_0;
-
-USE test_00101_0;
 
 DROP TABLE IF EXISTS test_table;
 DROP TABLE IF EXISTS test_view;
@@ -25,9 +20,9 @@ DROP TABLE test_view_filtered;
 
 -- Check only sophisticated constructors and desctructors:
 
-CREATE DATABASE IF NOT EXISTS test_00101_1;
+CREATE DATABASE IF NOT EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
 
-USE test_00101_1;
+USE {CLICKHOUSE_DATABASE_1:Identifier};
 
 DROP TABLE IF EXISTS tmp;
 DROP TABLE IF EXISTS tmp_mv;
@@ -57,5 +52,5 @@ EXISTS TABLE `.inner.tmp_mv4`;
 
 DROP TABLE tmp;
 
-DROP DATABASE test_00101_0;
-DROP DATABASE test_00101_1;
+DROP DATABASE {CLICKHOUSE_DATABASE:Identifier};
+DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};

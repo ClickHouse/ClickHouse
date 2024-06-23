@@ -4,7 +4,6 @@
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/QueryAliasesVisitor.h>
-#include <Interpreters/getHeaderForProcessingStage.h>
 #include <Interpreters/getTableExpressions.h>
 
 namespace DB
@@ -26,7 +25,7 @@ struct IdentifierSemanticImpl
 /// Static class to manipulate IdentifierSemanticImpl via ASTIdentifier
 struct IdentifierSemantic
 {
-    enum class ColumnMatch
+    enum class ColumnMatch : uint8_t
     {
         NoMatch,
         ColumnName,       /// column qualified with column names list

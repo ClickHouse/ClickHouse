@@ -24,7 +24,6 @@ namespace ErrorCodes
 
 namespace JSONUtils
 {
-
     template <const char opening_bracket, const char closing_bracket>
     static std::pair<bool, size_t>
     fileSegmentationEngineJSONEachRowImpl(ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t min_rows, size_t max_rows)
@@ -44,7 +43,7 @@ namespace JSONUtils
         {
             const auto current_object_size = memory.size() + static_cast<size_t>(pos - in.position());
             if (min_bytes != 0 && current_object_size > 10 * min_bytes)
-                throw ParsingException(ErrorCodes::INCORRECT_DATA,
+                throw Exception(ErrorCodes::INCORRECT_DATA,
                     "Size of JSON object at position {} is extremely large. Expected not greater than {} bytes, but current is {} bytes per row. "
                     "Increase the value setting 'min_chunk_bytes_for_parallel_parsing' or check your data manually, "
                     "most likely JSON is malformed", in.count(), min_bytes, current_object_size);
@@ -72,7 +71,7 @@ namespace JSONUtils
             }
             else
             {
-                pos = find_first_symbols<opening_bracket, closing_bracket, '\\', '"'>(pos, in.buffer().end());
+                pos = find_first_symbols<opening_bracket, closing_bracket, '"'>(pos, in.buffer().end());
 
                 if (pos > in.buffer().end())
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Position in buffer is out of bounds. There must be a bug.");
@@ -89,19 +88,13 @@ namespace JSONUtils
                     --balance;
                     ++pos;
                 }
-                else if (*pos == '\\')
-                {
-                    ++pos;
-                    if (loadAtPosition(in, memory, pos))
-                        ++pos;
-                }
                 else if (*pos == '"')
                 {
                     quotes = true;
                     ++pos;
                 }
 
-                if (balance == 0)
+                if (!quotes && balance == 0)
                 {
                     ++number_of_rows;
                     if ((number_of_rows >= min_rows)
@@ -115,15 +108,96 @@ namespace JSONUtils
         return {loadAtPosition(in, memory, pos), number_of_rows};
     }
 
-    std::pair<bool, size_t> fileSegmentationEngineJSONEachRow(ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t max_rows)
+    std::pair<bool, size_t> fileSegmentationEngineJSONEachRow(
+        ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t max_rows)
     {
         return fileSegmentationEngineJSONEachRowImpl<'{', '}'>(in, memory, min_bytes, 1, max_rows);
     }
 
-    std::pair<bool, size_t>
-    fileSegmentationEngineJSONCompactEachRow(ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t min_rows, size_t max_rows)
+    std::pair<bool, size_t> fileSegmentationEngineJSONCompactEachRow(
+        ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t min_rows, size_t max_rows)
     {
         return fileSegmentationEngineJSONEachRowImpl<'[', ']'>(in, memory, min_bytes, min_rows, max_rows);
+    }
+
+    template <const char opening_bracket, const char closing_bracket>
+    void skipRowForJSONEachRowImpl(ReadBuffer & in)
+    {
+        size_t balance = 0;
+        bool quotes = false;
+        while (!in.eof())
+        {
+            if (quotes)
+            {
+                auto * pos = find_first_symbols<'\\', '"'>(in.position(), in.buffer().end());
+                in.position() = pos;
+
+                if (in.position() > in.buffer().end())
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Position in buffer is out of bounds. There must be a bug.");
+                else if (in.position() == in.buffer().end())
+                    continue;
+
+                if (*in.position() == '\\')
+                {
+                    ++in.position();
+                    if (!in.eof())
+                        ++in.position();
+                }
+                else if (*in.position() == '"')
+                {
+                    ++in.position();
+                    quotes = false;
+                }
+            }
+            else
+            {
+                auto * pos = find_first_symbols<opening_bracket, closing_bracket, '\\', '"'>(in.position(), in.buffer().end());
+                in.position() = pos;
+
+                if (in.position() > in.buffer().end())
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Position in buffer is out of bounds. There must be a bug.");
+                else if (in.position() == in.buffer().end())
+                    continue;
+
+                else if (*in.position() == opening_bracket)
+                {
+                    ++balance;
+                    ++in.position();
+                }
+                else if (*in.position() == closing_bracket)
+                {
+                    --balance;
+                    ++in.position();
+                }
+                else if (*in.position() == '\\')
+                {
+                    ++in.position();
+                    if (!in.eof())
+                        ++in.position();
+                }
+                else if (*in.position() == '"')
+                {
+                    quotes = true;
+                    ++in.position();
+                }
+
+                if (balance == 0)
+                    return;
+            }
+        }
+
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected eof");
+
+    }
+
+    void skipRowForJSONEachRow(ReadBuffer & in)
+    {
+        skipRowForJSONEachRowImpl<'{', '}'>(in);
+    }
+
+    void skipRowForJSONCompactEachRow(ReadBuffer & in)
+    {
+        skipRowForJSONEachRowImpl<'[', ']'>(in);
     }
 
     NamesAndTypesList readRowAndGetNamesAndDataTypesForJSONEachRow(ReadBuffer & in, const FormatSettings & settings, JSONInferenceInfo * inference_info)
@@ -133,7 +207,6 @@ namespace JSONUtils
         skipWhitespaceIfAny(in);
         bool first = true;
         NamesAndTypesList names_and_types;
-        String field;
         while (!in.eof() && *in.position() != '}')
         {
             if (!first)
@@ -141,7 +214,7 @@ namespace JSONUtils
             else
                 first = false;
 
-            auto name = readFieldName(in);
+            auto name = readFieldName(in, settings.json);
             auto type = tryInferDataTypeForSingleJSONField(in, settings, inference_info);
             names_and_types.emplace_back(name, type);
             skipWhitespaceIfAny(in);
@@ -161,7 +234,6 @@ namespace JSONUtils
         skipWhitespaceIfAny(in);
         bool first = true;
         DataTypes types;
-        String field;
         while (!in.eof() && *in.position() != ']')
         {
             if (!first)
@@ -203,19 +275,19 @@ namespace JSONUtils
             if (yield_strings)
             {
                 String str;
-                readJSONString(str, in);
+                readJSONString(str, in, format_settings.json);
 
                 ReadBufferFromString buf(str);
 
                 if (as_nullable)
-                    return SerializationNullable::deserializeWholeTextImpl(column, buf, format_settings, serialization);
+                    return SerializationNullable::deserializeNullAsDefaultOrNestedWholeText(column, buf, format_settings, serialization);
 
                 serialization->deserializeWholeText(column, buf, format_settings);
                 return true;
             }
 
             if (as_nullable)
-                return SerializationNullable::deserializeTextJSONImpl(column, in, format_settings, serialization);
+                return SerializationNullable::deserializeNullAsDefaultOrNestedTextJSON(column, in, format_settings, serialization);
 
             serialization->deserializeTextJSON(column, in, format_settings);
             return true;
@@ -451,6 +523,12 @@ namespace JSONUtils
         }
     }
 
+    void writeException(const String & exception_message, WriteBuffer & out, const FormatSettings & settings, size_t indent)
+    {
+        writeTitle("exception", out, indent, " ");
+        writeJSONString(exception_message, out, settings);
+    }
+
     Strings makeNamesValidJSONStrings(const Strings & names, const FormatSettings & settings, bool validate_utf8)
     {
         Strings result;
@@ -478,22 +556,46 @@ namespace JSONUtils
         skipWhitespaceIfAny(in);
     }
 
-    String readFieldName(ReadBuffer & in)
+    bool checkAndSkipColon(ReadBuffer & in)
+    {
+        skipWhitespaceIfAny(in);
+        if (!checkChar(':', in))
+            return false;
+        skipWhitespaceIfAny(in);
+        return true;
+    }
+
+    String readFieldName(ReadBuffer & in, const FormatSettings::JSON & settings)
     {
         skipWhitespaceIfAny(in);
         String field;
-        readJSONString(field, in);
+        readJSONString(field, in, settings);
         skipColon(in);
         return field;
     }
 
-    String readStringField(ReadBuffer & in)
+    bool tryReadFieldName(ReadBuffer & in, String & field, const FormatSettings::JSON & settings)
+    {
+        skipWhitespaceIfAny(in);
+        return tryReadJSONStringInto(field, in, settings) && checkAndSkipColon(in);
+    }
+
+    String readStringField(ReadBuffer & in, const FormatSettings::JSON & settings)
     {
         skipWhitespaceIfAny(in);
         String value;
-        readJSONString(value, in);
+        readJSONString(value, in, settings);
         skipWhitespaceIfAny(in);
         return value;
+    }
+
+    bool tryReadStringField(ReadBuffer & in, String & value, const FormatSettings::JSON & settings)
+    {
+        skipWhitespaceIfAny(in);
+        if (!tryReadJSONStringInto(value, in, settings))
+            return false;
+        skipWhitespaceIfAny(in);
+        return true;
     }
 
     void skipArrayStart(ReadBuffer & in)
@@ -542,6 +644,15 @@ namespace JSONUtils
         skipWhitespaceIfAny(in);
     }
 
+    bool checkAndSkipObjectStart(ReadBuffer & in)
+    {
+        skipWhitespaceIfAny(in);
+        if (!checkChar('{', in))
+            return false;
+        skipWhitespaceIfAny(in);
+        return true;
+    }
+
     bool checkAndSkipObjectEnd(ReadBuffer & in)
     {
         skipWhitespaceIfAny(in);
@@ -558,19 +669,33 @@ namespace JSONUtils
         skipWhitespaceIfAny(in);
     }
 
-    std::pair<String, String> readStringFieldNameAndValue(ReadBuffer & in)
+    bool checkAndSkipComma(ReadBuffer & in)
     {
-        auto field_name = readFieldName(in);
-        auto field_value = readStringField(in);
+        skipWhitespaceIfAny(in);
+        if (!checkChar(',', in))
+            return false;
+        skipWhitespaceIfAny(in);
+        return true;
+    }
+
+    std::pair<String, String> readStringFieldNameAndValue(ReadBuffer & in, const FormatSettings::JSON & settings)
+    {
+        auto field_name = readFieldName(in, settings);
+        auto field_value = readStringField(in, settings);
         return {field_name, field_value};
     }
 
-    NameAndTypePair readObjectWithNameAndType(ReadBuffer & in)
+    bool tryReadStringFieldNameAndValue(ReadBuffer & in, std::pair<String, String> & field_and_value, const FormatSettings::JSON & settings)
+    {
+        return tryReadFieldName(in, field_and_value.first, settings) && tryReadStringField(in, field_and_value.second, settings);
+    }
+
+    NameAndTypePair readObjectWithNameAndType(ReadBuffer & in, const FormatSettings::JSON & settings)
     {
         skipObjectStart(in);
-        auto [first_field_name, first_field_value] = readStringFieldNameAndValue(in);
+        auto [first_field_name, first_field_value] = readStringFieldNameAndValue(in, settings);
         skipComma(in);
-        auto [second_field_name, second_field_value] = readStringFieldNameAndValue(in);
+        auto [second_field_name, second_field_value] = readStringFieldNameAndValue(in, settings);
 
         NameAndTypePair name_and_type;
         if (first_field_name == "name" && second_field_name == "type")
@@ -587,9 +712,47 @@ namespace JSONUtils
         return name_and_type;
     }
 
-    NamesAndTypesList readMetadata(ReadBuffer & in)
+    bool tryReadObjectWithNameAndType(ReadBuffer & in, NameAndTypePair & name_and_type, const FormatSettings::JSON & settings)
     {
-        auto field_name = readFieldName(in);
+        if (!checkAndSkipObjectStart(in))
+            return false;
+
+        std::pair<String, String> first_field_and_value;
+        if (!tryReadStringFieldNameAndValue(in, first_field_and_value, settings))
+            return false;
+
+        if (!checkAndSkipComma(in))
+            return false;
+
+        std::pair<String, String> second_field_and_value;
+        if (!tryReadStringFieldNameAndValue(in, second_field_and_value, settings))
+            return false;
+
+        if (first_field_and_value.first == "name" && second_field_and_value.first == "type")
+        {
+            auto type = DataTypeFactory::instance().tryGet(second_field_and_value.second);
+            if (!type)
+                return false;
+            name_and_type = {first_field_and_value.second, type};
+        }
+        else if (second_field_and_value.first == "name" && first_field_and_value.first == "type")
+        {
+            auto type = DataTypeFactory::instance().tryGet(first_field_and_value.second);
+            if (!type)
+                return false;
+            name_and_type = {second_field_and_value.second, type};
+        }
+        else
+        {
+            return false;
+        }
+
+        return checkAndSkipObjectEnd(in);
+    }
+
+    NamesAndTypesList readMetadata(ReadBuffer & in, const FormatSettings::JSON & settings)
+    {
+        auto field_name = readFieldName(in, settings);
         if (field_name != "meta")
             throw Exception(ErrorCodes::INCORRECT_DATA, "Expected field \"meta\" with columns names and types, found field {}", field_name);
         skipArrayStart(in);
@@ -602,31 +765,70 @@ namespace JSONUtils
             else
                 first = false;
 
-            names_and_types.push_back(readObjectWithNameAndType(in));
+            names_and_types.push_back(readObjectWithNameAndType(in, settings));
         }
         return names_and_types;
     }
 
-    NamesAndTypesList readMetadataAndValidateHeader(ReadBuffer & in, const Block & header)
+    bool tryReadMetadata(ReadBuffer & in, NamesAndTypesList & names_and_types, const FormatSettings::JSON & settings)
     {
-        auto names_and_types = JSONUtils::readMetadata(in);
-        for (const auto & [name, type] : names_and_types)
+        String field_name;
+        if (!tryReadFieldName(in, field_name, settings) || field_name != "meta")
+            return false;
+
+        if (!checkAndSkipArrayStart(in))
+            return false;
+
+        bool first = true;
+        while (!checkAndSkipArrayEnd(in))
         {
-            auto header_type = header.getByName(name).type;
-            if (header.has(name) && !type->equals(*header_type))
-                throw Exception(
-                                ErrorCodes::INCORRECT_DATA,
-                                "Type {} of column '{}' from metadata is not the same as type in header {}",
-                                type->getName(), name, header_type->getName());
+            if (!first)
+            {
+                if (!checkAndSkipComma(in))
+                    return false;
+            }
+            else
+            {
+                first = false;
+            }
+
+            NameAndTypePair name_and_type;
+            if (!tryReadObjectWithNameAndType(in, name_and_type, settings))
+                return false;
+            names_and_types.push_back(name_and_type);
         }
+
+        return !names_and_types.empty();
+    }
+
+    void validateMetadataByHeader(const NamesAndTypesList & names_and_types_from_metadata, const Block & header)
+    {
+        for (const auto & [name, type] : names_and_types_from_metadata)
+        {
+            if (!header.has(name))
+                continue;
+
+            auto header_type = header.getByName(name).type;
+            if (!type->equals(*header_type))
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "Type {} of column '{}' from metadata is not the same as type in header {}",
+                    type->getName(), name, header_type->getName());
+        }
+    }
+
+    NamesAndTypesList readMetadataAndValidateHeader(ReadBuffer & in, const Block & header, const FormatSettings::JSON & settings)
+    {
+        auto names_and_types = JSONUtils::readMetadata(in, settings);
+        validateMetadataByHeader(names_and_types, header);
         return names_and_types;
     }
 
-    bool skipUntilFieldInObject(ReadBuffer & in, const String & desired_field_name)
+    bool skipUntilFieldInObject(ReadBuffer & in, const String & desired_field_name, const FormatSettings::JSON & settings)
     {
         while (!checkAndSkipObjectEnd(in))
         {
-            auto field_name = JSONUtils::readFieldName(in);
+            auto field_name = JSONUtils::readFieldName(in, settings);
             if (field_name == desired_field_name)
                 return true;
         }
@@ -634,14 +836,14 @@ namespace JSONUtils
         return false;
     }
 
-    void skipTheRestOfObject(ReadBuffer & in)
+    void skipTheRestOfObject(ReadBuffer & in, const FormatSettings::JSON & settings)
     {
         while (!checkAndSkipObjectEnd(in))
         {
             skipComma(in);
-            auto name = readFieldName(in);
+            auto name = readFieldName(in, settings);
             skipWhitespaceIfAny(in);
-            skipJSONField(in, name);
+            skipJSONField(in, name, settings);
         }
     }
 

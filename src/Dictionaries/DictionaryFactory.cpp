@@ -17,13 +17,13 @@ namespace ErrorCodes
     extern const int UNKNOWN_ELEMENT_IN_CONFIG;
 }
 
-void DictionaryFactory::registerLayout(const std::string & layout_type, LayoutCreateFunction create_layout, bool is_layout_complex)
+void DictionaryFactory::registerLayout(const std::string & layout_type, LayoutCreateFunction create_layout, bool is_layout_complex, bool has_layout_complex)
 {
     auto it = registered_layouts.find(layout_type);
     if (it != registered_layouts.end())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "DictionaryFactory: the layout name '{}' is not unique", layout_type);
 
-    RegisteredLayout layout { .layout_create_function = create_layout, .is_layout_complex = is_layout_complex };
+    RegisteredLayout layout { .layout_create_function = create_layout, .is_layout_complex = is_layout_complex, .has_layout_complex = has_layout_complex };
     registered_layouts.emplace(layout_type, std::move(layout));
 }
 
@@ -46,7 +46,7 @@ DictionaryPtr DictionaryFactory::create(
 
     DictionarySourcePtr source_ptr = DictionarySourceFactory::instance().create(
         name, config, config_prefix + ".source", dict_struct, global_context, config.getString(config_prefix + ".database", ""), created_from_ddl);
-    LOG_TRACE(&Poco::Logger::get("DictionaryFactory"), "Created dictionary source '{}' for dictionary '{}'", source_ptr->toString(), name);
+    LOG_TRACE(getLogger("DictionaryFactory"), "Created dictionary source '{}' for dictionary '{}'", source_ptr->toString(), name);
 
     const auto & layout_type = keys.front();
 
@@ -55,11 +55,7 @@ DictionaryPtr DictionaryFactory::create(
         if (found != registered_layouts.end())
         {
             const auto & layout_creator = found->second.layout_create_function;
-            auto result = layout_creator(name, dict_struct, config, config_prefix, std::move(source_ptr), global_context, created_from_ddl);
-            if (config.hasProperty(config_prefix + ".comment"))
-                result->setDictionaryComment(config.getString(config_prefix + ".comment"));
-
-            return result;
+            return layout_creator(name, dict_struct, config, config_prefix, std::move(source_ptr), global_context, created_from_ddl);
         }
     }
 
@@ -67,12 +63,6 @@ DictionaryPtr DictionaryFactory::create(
         "{}: unknown dictionary layout type: {}",
         name,
         layout_type);
-}
-
-DictionaryPtr DictionaryFactory::create(const std::string & name, const ASTCreateQuery & ast, ContextPtr global_context) const
-{
-    auto configuration = getDictionaryConfigurationFromAST(ast, global_context);
-    return DictionaryFactory::create(name, *configuration, "dictionary", global_context, true);
 }
 
 bool DictionaryFactory::isComplex(const std::string & layout_type) const
@@ -87,6 +77,25 @@ bool DictionaryFactory::isComplex(const std::string & layout_type) const
     }
 
     return it->second.is_layout_complex;
+}
+
+bool DictionaryFactory::convertToComplex(std::string & layout_type) const
+{
+    auto it = registered_layouts.find(layout_type);
+
+    if (it == registered_layouts.end())
+    {
+        throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG,
+                        "Unknown dictionary layout type: {}",
+                        layout_type);
+    }
+
+    if (!it->second.is_layout_complex && it->second.has_layout_complex)
+    {
+        layout_type = "complex_key_" + layout_type;
+        return true;
+    }
+    return false;
 }
 
 

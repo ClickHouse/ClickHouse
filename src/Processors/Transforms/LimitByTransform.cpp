@@ -33,14 +33,11 @@ void LimitByTransform::transform(Chunk & chunk)
 
     for (UInt64 row = 0; row < num_rows; ++row)
     {
-        UInt128 key{};
         SipHash hash;
-
         for (auto position : key_positions)
             columns[position]->updateHashWithValue(row, hash);
 
-        hash.get128(key);
-
+        const auto key = hash.get128();
         auto count = keys_counts[key]++;
         if (count >= group_offset
             && (group_length > std::numeric_limits<UInt64>::max() - group_offset || count < group_length + group_offset))

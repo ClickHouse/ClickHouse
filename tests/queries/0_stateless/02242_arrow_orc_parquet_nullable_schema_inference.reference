@@ -2,7 +2,7 @@ Arrow
 x	Nullable(UInt64)					
 arr1	Array(Nullable(UInt64))					
 arr2	Array(Array(Nullable(String)))					
-arr3	Array(Tuple(`1` Nullable(String), `2` Nullable(UInt64)))					
+arr3	Array(Tuple(\n    `1` Nullable(String),\n    `2` Nullable(UInt64)))					
 0	[0,1]	[[NULL,'String'],[NULL],[]]	[(NULL,NULL),('String',NULL),(NULL,0)]
 \N	[NULL,2]	[[NULL,'String'],[NULL],[]]	[(NULL,NULL),('String',NULL),(NULL,1)]
 2	[2,3]	[[NULL,'String'],[NULL],[]]	[(NULL,NULL),('String',NULL),(NULL,2)]
@@ -12,7 +12,7 @@ ArrowStream
 x	Nullable(UInt64)					
 arr1	Array(Nullable(UInt64))					
 arr2	Array(Array(Nullable(String)))					
-arr3	Array(Tuple(`1` Nullable(String), `2` Nullable(UInt64)))					
+arr3	Array(Tuple(\n    `1` Nullable(String),\n    `2` Nullable(UInt64)))					
 0	[0,1]	[[NULL,'String'],[NULL],[]]	[(NULL,NULL),('String',NULL),(NULL,0)]
 \N	[NULL,2]	[[NULL,'String'],[NULL],[]]	[(NULL,NULL),('String',NULL),(NULL,1)]
 2	[2,3]	[[NULL,'String'],[NULL],[]]	[(NULL,NULL),('String',NULL),(NULL,2)]
@@ -22,7 +22,7 @@ Parquet
 x	Nullable(UInt64)					
 arr1	Array(Nullable(UInt64))					
 arr2	Array(Array(Nullable(String)))					
-arr3	Array(Tuple(`1` Nullable(String), `2` Nullable(UInt64)))					
+arr3	Array(Tuple(\n    `1` Nullable(String),\n    `2` Nullable(UInt64)))					
 0	[0,1]	[[NULL,'String'],[NULL],[]]	[(NULL,NULL),('String',NULL),(NULL,0)]
 \N	[NULL,2]	[[NULL,'String'],[NULL],[]]	[(NULL,NULL),('String',NULL),(NULL,1)]
 2	[2,3]	[[NULL,'String'],[NULL],[]]	[(NULL,NULL),('String',NULL),(NULL,2)]
@@ -32,7 +32,7 @@ ORC
 x	Nullable(Int64)					
 arr1	Array(Nullable(Int64))					
 arr2	Array(Array(Nullable(String)))					
-arr3	Array(Tuple(`1` Nullable(String), `2` Nullable(Int64)))					
+arr3	Array(Tuple(\n    `1` Nullable(String),\n    `2` Nullable(Int64)))					
 0	[0,1]	[[NULL,'String'],[NULL],[]]	[(NULL,NULL),('String',NULL),(NULL,0)]
 \N	[NULL,2]	[[NULL,'String'],[NULL],[]]	[(NULL,NULL),('String',NULL),(NULL,1)]
 2	[2,3]	[[NULL,'String'],[NULL],[]]	[(NULL,NULL),('String',NULL),(NULL,2)]

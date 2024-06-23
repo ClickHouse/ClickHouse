@@ -76,3 +76,5 @@ function tx_sync()
     tx_wait "$tx_num"
     tx "$tx_num" "$query"
 }
+
+# vi: ft=bash

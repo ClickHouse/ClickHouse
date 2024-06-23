@@ -18,7 +18,7 @@ ALTER TABLE not_partitioned DETACH PARTITION ID 'all';
 SELECT 'Sum after DETACH PARTITION:';
 SELECT sum(x) FROM not_partitioned;
 SELECT 'system.detached_parts after DETACH PARTITION:';
-SELECT system.detached_parts.* EXCEPT (bytes_on_disk, `path`, disk) FROM system.detached_parts WHERE database = currentDatabase() AND table = 'not_partitioned';
+SELECT system.detached_parts.* EXCEPT (bytes_on_disk, `path`, disk, modification_time) FROM system.detached_parts WHERE database = currentDatabase() AND table = 'not_partitioned';
 
 DROP TABLE not_partitioned;
 

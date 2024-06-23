@@ -40,3 +40,5 @@ function wait_for_delete_inactive_parts()
 
 export -f wait_for_delete_empty_parts
 export -f wait_for_delete_inactive_parts
+
+# vi: ft=bash

@@ -9,9 +9,10 @@ namespace DB
 
 bool ParserDropNamedCollectionQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & expected)
 {
-    ParserKeyword s_drop("DROP");
-    ParserKeyword s_collection("NAMED COLLECTION");
-    ParserKeyword s_if_exists("IF EXISTS");
+    ParserKeyword s_drop(Keyword::DROP);
+    ParserKeyword s_collection(Keyword::NAMED_COLLECTION);
+    ParserKeyword s_if_exists(Keyword::IF_EXISTS);
+    ParserKeyword s_on(Keyword::ON);
     ParserIdentifier name_p;
 
     String cluster_str;
@@ -31,7 +32,7 @@ bool ParserDropNamedCollectionQuery::parseImpl(IParser::Pos & pos, ASTPtr & node
     if (!name_p.parse(pos, collection_name, expected))
         return false;
 
-    if (ParserKeyword{"ON"}.ignore(pos, expected))
+    if (s_on.ignore(pos, expected))
     {
         if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
             return false;

@@ -56,7 +56,7 @@ void setUserAndGroup(std::string arg_uid, std::string arg_gid)
             group * result{};
 
             if (0 != getgrnam_r(arg_gid.data(), &entry, buf.get(), buf_size, &result))
-                throwFromErrno(fmt::format("Cannot do 'getgrnam_r' to obtain gid from group name ({})", arg_gid), ErrorCodes::SYSTEM_ERROR);
+                throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot do 'getgrnam_r' to obtain gid from group name ({})", arg_gid);
 
             if (!result)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Group {} is not found in the system", arg_gid);
@@ -68,7 +68,7 @@ void setUserAndGroup(std::string arg_uid, std::string arg_gid)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Group has id 0, but dropping privileges to gid 0 does not make sense");
 
         if (0 != setgid(gid))
-            throwFromErrno(fmt::format("Cannot do 'setgid' to user ({})", arg_gid), ErrorCodes::SYSTEM_ERROR);
+            throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot do 'setgid' to user ({})", arg_gid);
     }
 
     if (!arg_uid.empty())
@@ -81,7 +81,7 @@ void setUserAndGroup(std::string arg_uid, std::string arg_gid)
             passwd * result{};
 
             if (0 != getpwnam_r(arg_uid.data(), &entry, buf.get(), buf_size, &result))
-                throwFromErrno(fmt::format("Cannot do 'getpwnam_r' to obtain uid from user name ({})", arg_uid), ErrorCodes::SYSTEM_ERROR);
+                throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot do 'getpwnam_r' to obtain uid from user name ({})", arg_uid);
 
             if (!result)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "User {} is not found in the system", arg_uid);
@@ -93,7 +93,7 @@ void setUserAndGroup(std::string arg_uid, std::string arg_gid)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "User has id 0, but dropping privileges to uid 0 does not make sense");
 
         if (0 != setuid(uid))
-            throwFromErrno(fmt::format("Cannot do 'setuid' to user ({})", arg_uid), ErrorCodes::SYSTEM_ERROR);
+            throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot do 'setuid' to user ({})", arg_uid);
     }
 }
 
@@ -107,6 +107,7 @@ try
 
     if (argc < 3)
     {
+        std::cout << "A tool similar to 'su'" << std::endl;
         std::cout << "Usage: ./clickhouse su user:group ..." << std::endl;
         exit(0); // NOLINT(concurrency-mt-unsafe)
     }
@@ -136,7 +137,7 @@ try
 
     execvp(new_argv.front(), new_argv.data());
 
-    throwFromErrno("Cannot execvp", ErrorCodes::SYSTEM_ERROR);
+    throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot execvp");
 }
 catch (...)
 {

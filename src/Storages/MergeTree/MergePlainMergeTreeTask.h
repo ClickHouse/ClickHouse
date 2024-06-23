@@ -39,8 +39,9 @@ public:
 
     bool executeStep() override;
     void onCompleted() override;
-    StorageID getStorageID() override;
-    Priority getPriority() override { return priority; }
+    StorageID getStorageID() const override;
+    Priority getPriority() const override { return priority; }
+    String getQueryId() const override { return getStorageID().getShortName() + "::" + merge_mutate_entry->future_part->name; }
 
     void setCurrentTransaction(MergeTreeTransactionHolder && txn_holder_, MergeTreeTransactionPtr && txn_)
     {
@@ -52,7 +53,7 @@ private:
     void prepare();
     void finish();
 
-    enum class State
+    enum class State : uint8_t
     {
         NEED_PREPARE,
         NEED_EXECUTE,

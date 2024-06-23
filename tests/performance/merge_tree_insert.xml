@@ -18,14 +18,28 @@
                 <value>merge_tree_insert_6</value>
             </values>
         </substitution>
+
+        <substitution>
+            <name>decimal_primary_key_table_name</name>
+            <values>
+                <value>merge_tree_insert_7</value>
+                <value>merge_tree_insert_8</value>
+                <value>merge_tree_insert_9</value>
+            </values>
+        </substitution>
     </substitutions>
 
     <create_query>CREATE TABLE merge_tree_insert_1 (value_1 UInt64, value_2 UInt64, value_3 UInt64) ENGINE = MergeTree ORDER BY (value_1)</create_query>
     <create_query>CREATE TABLE merge_tree_insert_2 (value_1 UInt64, value_2 UInt64, value_3 UInt64) ENGINE = MergeTree ORDER BY (value_1, value_2)</create_query>
     <create_query>CREATE TABLE merge_tree_insert_3 (value_1 UInt64, value_2 UInt64, value_3 UInt64) ENGINE = MergeTree ORDER BY (value_1, value_2, value_3)</create_query>
+
     <create_query>CREATE TABLE merge_tree_insert_4 (value_1 String, value_2 String, value_3 String) ENGINE = MergeTree ORDER BY (value_1)</create_query>
     <create_query>CREATE TABLE merge_tree_insert_5 (value_1 String, value_2 String, value_3 String) ENGINE = MergeTree ORDER BY (value_1, value_2)</create_query>
     <create_query>CREATE TABLE merge_tree_insert_6 (value_1 String, value_2 String, value_3 String) ENGINE = MergeTree ORDER BY (value_1, value_2, value_3)</create_query>
+
+    <create_query>CREATE TABLE merge_tree_insert_7 (value_1 Decimal64(8), value_2  Decimal64(8), value_3  Decimal64(8)) ENGINE = MergeTree ORDER BY (value_1)</create_query>
+    <create_query>CREATE TABLE merge_tree_insert_8 (value_1 Decimal64(8), value_2  Decimal64(8), value_3  Decimal64(8)) ENGINE = MergeTree ORDER BY (value_1, value_2)</create_query>
+    <create_query>CREATE TABLE merge_tree_insert_9 (value_1 Decimal64(8), value_2  Decimal64(8), value_3  Decimal64(8)) ENGINE = MergeTree ORDER BY (value_1, value_2, value_3)</create_query>
 
     <query>INSERT INTO {integer_primary_key_table_name} SELECT rand64(0), rand64(1), rand64(2) FROM system.numbers LIMIT 500000</query>
     <query>INSERT INTO {integer_primary_key_table_name} SELECT rand64(0), rand64(1), rand64(2) FROM system.numbers LIMIT 1000000</query>
@@ -35,7 +49,12 @@
     <query>INSERT INTO {string_primary_key_table_name} SELECT toString(rand64(0)), toString(rand64(1)), toString(rand64(2)) FROM system.numbers LIMIT 1000000</query>
     <query>INSERT INTO {string_primary_key_table_name} SELECT toString(rand64(0)), toString(rand64(1)), toString(rand64(2)) FROM system.numbers LIMIT 1500000</query>
 
+    <query>INSERT INTO {decimal_primary_key_table_name} SELECT rand64(0) % 1000000, rand64(1) % 1500000, rand64(2) % 2000000 FROM system.numbers LIMIT 500000</query>
+    <query>INSERT INTO {decimal_primary_key_table_name} SELECT rand64(0) % 1000000, rand64(1) % 1500000, rand64(2) % 2000000 FROM system.numbers LIMIT 1000000</query>
+    <query>INSERT INTO {decimal_primary_key_table_name} SELECT rand64(0) % 1000000, rand64(1) % 1500000, rand64(2) % 2000000 FROM system.numbers LIMIT 1500000</query>
+
     <drop_query>DROP TABLE IF EXISTS {integer_primary_key_table_name}</drop_query>
     <drop_query>DROP TABLE IF EXISTS {string_primary_key_table_name}</drop_query>
+    <drop_query>DROP TABLE IF EXISTS {decimal_primary_key_table_name}</drop_query>
 
 </test>

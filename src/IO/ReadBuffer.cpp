@@ -1,4 +1,5 @@
 #include <IO/ReadBuffer.h>
+#include <IO/ReadBufferWrapperBase.h>
 
 
 namespace DB
@@ -7,13 +8,15 @@ namespace DB
 namespace
 {
     template <typename CustomData>
-    class ReadBufferWrapper : public ReadBuffer
+    class ReadBufferWrapper : public ReadBuffer, public ReadBufferWrapperBase
     {
     public:
         ReadBufferWrapper(ReadBuffer & in_, CustomData && custom_data_)
             : ReadBuffer(in_.buffer().begin(), in_.buffer().size(), in_.offset()), in(in_), custom_data(std::move(custom_data_))
         {
         }
+
+        const ReadBuffer & getWrappedReadBuffer() const override { return in; }
 
     private:
         ReadBuffer & in;

@@ -73,8 +73,8 @@ struct uint128
 
     uint128() = default;
     uint128(uint64 low64_, uint64 high64_) : low64(low64_), high64(high64_) {}
-    friend bool operator ==(const uint128 & x, const uint128 & y) { return (x.low64 == y.low64) && (x.high64 == y.high64); }
-    friend bool operator !=(const uint128 & x, const uint128 & y) { return !(x == y); }
+
+    friend auto operator<=>(const uint128 &, const uint128 &) = default;
 };
 
 inline uint64 Uint128Low64(const uint128 & x) { return x.low64; }

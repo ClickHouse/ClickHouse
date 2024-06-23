@@ -16,7 +16,8 @@ class WindowStep : public ITransformingStep
 public:
     explicit WindowStep(const DataStream & input_stream_,
             const WindowDescription & window_description_,
-            const std::vector<WindowFunctionDescription> & window_functions_);
+            const std::vector<WindowFunctionDescription> & window_functions_,
+            bool streams_fan_out_);
 
     String getName() const override { return "Window"; }
 
@@ -32,6 +33,7 @@ private:
 
     WindowDescription window_description;
     std::vector<WindowFunctionDescription> window_functions;
+    bool streams_fan_out;
 };
 
 }

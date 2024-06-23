@@ -1,4 +1,6 @@
 #include "ICommand.h"
+#include <iostream>
+
 
 namespace DB
 {

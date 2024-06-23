@@ -27,6 +27,7 @@ public:
         size_t max_array_size;
         bool require_nonempty;
         DictionaryLifetime dict_lifetime;
+        bool use_async_executor = false;
     };
 
     FlatDictionary(
@@ -40,14 +41,14 @@ public:
 
     size_t getBytesAllocated() const override { return bytes_allocated; }
 
-    size_t getQueryCount() const override { return query_count.load(std::memory_order_relaxed); }
+    size_t getQueryCount() const override { return query_count.load(); }
 
     double getFoundRate() const override
     {
-        size_t queries = query_count.load(std::memory_order_relaxed);
+        size_t queries = query_count.load();
         if (!queries)
             return 0;
-        return static_cast<double>(found_count.load(std::memory_order_relaxed)) / queries;
+        return std::min(1.0, static_cast<double>(found_count.load()) / queries);
     }
 
     double getHitRate() const override { return 1.0; }
@@ -56,7 +57,7 @@ public:
 
     double getLoadFactor() const override { return static_cast<double>(element_count) / bucket_count; }
 
-    std::shared_ptr<const IExternalLoadable> clone() const override
+    std::shared_ptr<IExternalLoadable> clone() const override
     {
         return std::make_shared<FlatDictionary>(getDictionaryID(), dict_struct, source_ptr->clone(), configuration, update_field_loaded_block);
     }
@@ -75,11 +76,11 @@ public:
     DictionaryKeyType getKeyType() const override { return DictionaryKeyType::Simple; }
 
     ColumnPtr getColumn(
-        const std::string& attribute_name,
-        const DataTypePtr & result_type,
+        const std::string & attribute_name,
+        const DataTypePtr & attribute_type,
         const Columns & key_columns,
         const DataTypes & key_types,
-        const ColumnPtr & default_values_column) const override;
+        DefaultOrFilter default_or_filter) const override;
 
     ColumnUInt8::Ptr hasKeys(const Columns & key_columns, const DataTypes & key_types) const override;
 
@@ -163,6 +164,10 @@ private:
         const PaddedPODArray<UInt64> & keys,
         ValueSetter && set_value,
         DefaultValueExtractor & default_value_extractor) const;
+
+    template <typename AttributeType, bool is_nullable, typename ValueSetter>
+    void getItemsShortCircuitImpl(
+        const Attribute & attribute, const PaddedPODArray<UInt64> & keys, ValueSetter && set_value, IColumn::Filter & default_mask) const;
 
     template <typename T>
     void resize(Attribute & attribute, UInt64 key);

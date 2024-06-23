@@ -4,7 +4,7 @@ import os
 import json
 
 import helpers.client
-from helpers.cluster import ClickHouseCluster
+from helpers.cluster import ClickHouseCluster, ClickHouseInstance
 from helpers.test_tools import TSV
 from helpers.s3_tools import prepare_s3_bucket, upload_directory, get_file_contents
 
@@ -51,6 +51,7 @@ def started_cluster():
         cluster.add_instance(
             "node1",
             main_configs=["configs/config.d/named_collections.xml"],
+            user_configs=["configs/users.d/users.xml"],
             with_minio=True,
         )
 

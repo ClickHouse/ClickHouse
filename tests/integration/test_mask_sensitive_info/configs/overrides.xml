@@ -1,0 +1,30 @@
+<clickhouse>
+    <display_secrets_in_show_and_select>1</display_secrets_in_show_and_select>
+
+    <remote_servers>
+        <test_shard_localhost>
+            <shard>
+                <replica>
+                    <host>localhost</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </test_shard_localhost>
+    </remote_servers>
+
+    <named_collections>
+        <named_collection_1/>
+        <named_collection_2/>
+        <named_collection_3>
+            <user>user</user>
+            <password>pass</password>
+        </named_collection_3>
+        <named_collection_4>
+            <host></host>
+        </named_collection_4>
+        <named_collection_5>
+            <host></host>
+        </named_collection_5>
+        <named_collection_6/>
+    </named_collections>
+</clickhouse>

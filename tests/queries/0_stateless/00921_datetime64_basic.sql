@@ -1,20 +1,20 @@
 DROP TABLE IF EXISTS A;
 
-SELECT CAST(1 as DateTime64('abc')); -- { serverError 43 } # Invalid scale parameter type
-SELECT CAST(1 as DateTime64(100)); -- { serverError 69 } # too big scale
-SELECT CAST(1 as DateTime64(-1)); -- { serverError 43 } # signed scale parameter type
-SELECT CAST(1 as DateTime64(3, 'qqq')); -- { serverError 1000 } # invalid timezone
+SELECT CAST(1 as DateTime64('abc')); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT } # Invalid scale parameter type
+SELECT CAST(1 as DateTime64(100)); -- { serverError ARGUMENT_OUT_OF_BOUND } # too big scale
+SELECT CAST(1 as DateTime64(-1)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT } # signed scale parameter type
+SELECT CAST(1 as DateTime64(3, 'qqq')); -- { serverError BAD_ARGUMENTS } # invalid timezone
 
-SELECT toDateTime64('2019-09-16 19:20:11.234', 'abc'); -- { serverError 43 } # invalid scale
-SELECT toDateTime64('2019-09-16 19:20:11.234', 100); -- { serverError 69 } # too big scale
-SELECT toDateTime64(CAST([['CLb5Ph ']], 'String'), uniqHLL12('2Gs1V', 752)); -- { serverError 44 } # non-const string and non-const scale
-SELECT toDateTime64('2019-09-16 19:20:11.234', 3, 'qqq'); -- { serverError 1000 } # invalid timezone
+SELECT toDateTime64('2019-09-16 19:20:11.234', 'abc'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT } # invalid scale
+SELECT toDateTime64('2019-09-16 19:20:11.234', 100); -- { serverError ARGUMENT_OUT_OF_BOUND } # too big scale
+SELECT toDateTime64(CAST([['CLb5Ph ']], 'String'), uniqHLL12('2Gs1V', 752)); -- { serverError ILLEGAL_COLUMN } # non-const string and non-const scale
+SELECT toDateTime64('2019-09-16 19:20:11.234', 3, 'qqq'); -- { serverError BAD_ARGUMENTS } # invalid timezone
 
-SELECT ignore(now64(gccMurmurHash())); -- { serverError 43 } # Illegal argument type
-SELECT ignore(now64('abcd')); -- { serverError 43 } # Illegal argument type
-SELECT ignore(now64(number)) FROM system.numbers LIMIT 10; -- { serverError 43 } # Illegal argument type
-SELECT ignore(now64(3, 'invalid timezone')); -- { serverError 1000 }
-SELECT ignore(now64(3, 1111)); -- { serverError 44 } # invalid timezone parameter type
+SELECT ignore(now64(gccMurmurHash())); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT } # Illegal argument type
+SELECT ignore(now64('abcd')); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT } # Illegal argument type
+SELECT ignore(now64(number)) FROM system.numbers LIMIT 10; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT } # Illegal argument type
+SELECT ignore(now64(3, 'invalid timezone')); -- { serverError BAD_ARGUMENTS }
+SELECT ignore(now64(3, 1111)); -- { serverError ILLEGAL_COLUMN } # invalid timezone parameter type
 
 WITH 'UTC' as timezone SELECT timezone, timeZoneOf(now64(3, timezone)) == timezone;
 WITH 'Europe/Minsk' as timezone SELECT timezone, timeZoneOf(now64(3, timezone)) == timezone;

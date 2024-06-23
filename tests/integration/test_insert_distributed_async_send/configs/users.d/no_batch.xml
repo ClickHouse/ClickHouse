@@ -1,7 +1,7 @@
 <clickhouse>
     <profiles>
         <default>
-            <distributed_directory_monitor_batch_inserts>0</distributed_directory_monitor_batch_inserts>
+            <distributed_background_insert_batch>0</distributed_background_insert_batch>
         </default>
     </profiles>
 </clickhouse>

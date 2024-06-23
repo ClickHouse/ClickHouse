@@ -10,7 +10,7 @@ namespace DB
 class AccessRightsElements;
 class DDLGuard;
 
-/// To avoid deadlocks, we must acquire locks for tables in same order in any different RENAMES.
+/// To avoid deadlocks, we must acquire locks for tables in same order in any different RENAMEs.
 struct UniqueTableName
 {
     String database_name;
@@ -64,7 +64,7 @@ private:
     BlockIO executeToTables(const ASTRenameQuery & rename, const RenameDescriptions & descriptions, TableGuards & ddl_guards);
     BlockIO executeToDatabase(const ASTRenameQuery & rename, const RenameDescriptions & descriptions);
 
-    enum class RenameType
+    enum class RenameType : uint8_t
     {
         RenameTable,
         RenameDatabase

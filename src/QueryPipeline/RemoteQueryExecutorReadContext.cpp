@@ -22,7 +22,7 @@ RemoteQueryExecutorReadContext::RemoteQueryExecutorReadContext(RemoteQueryExecut
     : AsyncTaskExecutor(std::make_unique<Task>(*this)), executor(executor_), suspend_when_query_sent(suspend_when_query_sent_)
 {
     if (-1 == pipe2(pipe_fd, O_NONBLOCK))
-        throwFromErrno("Cannot create pipe", ErrorCodes::CANNOT_OPEN_FILE);
+        throw ErrnoException(ErrorCodes::CANNOT_OPEN_FILE, "Cannot create pipe");
 
     epoll.add(pipe_fd[0]);
     epoll.add(timer.getDescriptor());
@@ -76,7 +76,7 @@ bool RemoteQueryExecutorReadContext::checkTimeout(bool blocking)
     epoll_event events[3];
     events[0].data.fd = events[1].data.fd = events[2].data.fd = -1;
 
-    size_t num_events = epoll.getManyReady(3, events, blocking);
+    size_t num_events = epoll.getManyReady(3, events, blocking ? -1 : 0);
 
     bool is_socket_ready = false;
 
@@ -132,7 +132,7 @@ void RemoteQueryExecutorReadContext::cancelBefore()
             break;
 
         if (errno != EINTR)
-            throwFromErrno("Cannot write to pipe", ErrorCodes::CANNOT_READ_FROM_SOCKET);
+            throw ErrnoException(ErrorCodes::CANNOT_READ_FROM_SOCKET, "Cannot write to pipe");
     }
 }
 

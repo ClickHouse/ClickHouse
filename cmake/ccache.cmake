@@ -9,10 +9,10 @@ if (CMAKE_CXX_COMPILER_LAUNCHER MATCHES "ccache" OR CMAKE_C_COMPILER_LAUNCHER MA
     return()
 endif()
 
-set(COMPILER_CACHE "auto" CACHE STRING "Speedup re-compilations using the caching tools; valid options are 'auto' (ccache, then sccache), 'ccache', 'sccache', or 'disabled'")
+set(COMPILER_CACHE "auto" CACHE STRING "Speedup re-compilations using the caching tools; valid options are 'auto' (sccache, then ccache), 'ccache', 'sccache', or 'disabled'")
 
 if(COMPILER_CACHE STREQUAL "auto")
-    find_program (CCACHE_EXECUTABLE ccache sccache)
+    find_program (CCACHE_EXECUTABLE NAMES sccache ccache)
 elseif (COMPILER_CACHE STREQUAL "ccache")
     find_program (CCACHE_EXECUTABLE ccache)
 elseif(COMPILER_CACHE STREQUAL "sccache")
@@ -21,7 +21,7 @@ elseif(COMPILER_CACHE STREQUAL "disabled")
     message(STATUS "Using *ccache: no (disabled via configuration)")
     return()
 else()
-    message(${RECONFIGURE_MESSAGE_LEVEL} "The COMPILER_CACHE must be one of (auto|ccache|sccache|disabled), value: '${COMPILER_CACHE}'")
+    message(${RECONFIGURE_MESSAGE_LEVEL} "The COMPILER_CACHE must be one of (auto|sccache|ccache|disabled), value: '${COMPILER_CACHE}'")
 endif()
 
 

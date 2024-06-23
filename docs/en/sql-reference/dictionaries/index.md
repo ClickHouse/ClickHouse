@@ -16,7 +16,7 @@ ClickHouse supports special functions for working with dictionaries that can be 
 ClickHouse supports:
 
 - Dictionaries with a [set of functions](../../sql-reference/functions/ext-dict-functions.md).
-- [Embedded dictionaries](#embedded_dictionaries) with a specific [set of functions](../../sql-reference/functions/ym-dict-functions.md).
+- [Embedded dictionaries](#embedded-dictionaries) with a specific [set of functions](../../sql-reference/functions/ym-dict-functions.md).
 
 
 :::tip Tutorial
@@ -82,7 +82,7 @@ You can [configure](#configuring-a-dictionary) any number of dictionaries in the
 You can convert values for a small dictionary by describing it in a `SELECT` query (see the [transform](../../sql-reference/functions/other-functions.md) function). This functionality is not related to dictionaries.
 :::
 
-## Configuring a Dictionary {#configuring-a-dictionary}
+## Configuring a Dictionary
 
 <CloudDetails />
 
@@ -123,7 +123,7 @@ LAYOUT(...) -- Memory layout configuration
 LIFETIME(...) -- Lifetime of dictionary in memory
 ```
 
-## Storing Dictionaries in Memory {#storig-dictionaries-in-memory}
+## Storing Dictionaries in Memory
 
 There are a variety of ways to store dictionaries in memory.
 
@@ -394,7 +394,7 @@ Configuration example:
 or
 
 ``` sql
-LAYOUT(HASHED_ARRAY())
+LAYOUT(HASHED_ARRAY([SHARDS 1]))
 ```
 
 ### complex_key_hashed_array
@@ -412,10 +412,10 @@ Configuration example:
 or
 
 ``` sql
-LAYOUT(COMPLEX_KEY_HASHED_ARRAY())
+LAYOUT(COMPLEX_KEY_HASHED_ARRAY([SHARDS 1]))
 ```
 
-### range_hashed {#range_hashed}
+### range_hashed
 
 The dictionary is stored in memory in the form of a hash table with an ordered array of ranges and their corresponding values.
 
@@ -679,7 +679,7 @@ When searching for a dictionary, the cache is searched first. For each block of 
 
 If keys are not found in dictionary, then update cache task is created and added into update queue. Update queue properties can be controlled with settings `max_update_queue_size`, `update_queue_push_timeout_milliseconds`, `query_wait_timeout_milliseconds`, `max_threads_for_updates`.
 
-For cache dictionaries, the expiration [lifetime](#dictionary-updates) of data in the cache can be set. If more time than `lifetime` has passed since loading the data in a cell, the cell’s value is not used and key becomes expired. The key is re-requested the next time it needs to be used. This behaviour can be configured with setting `allow_read_expired_keys`.
+For cache dictionaries, the expiration [lifetime](#refreshing-dictionary-data-using-lifetime) of data in the cache can be set. If more time than `lifetime` has passed since loading the data in a cell, the cell’s value is not used and key becomes expired. The key is re-requested the next time it needs to be used. This behaviour can be configured with setting `allow_read_expired_keys`.
 
 This is the least effective of all the ways to store dictionaries. The speed of the cache depends strongly on correct settings and the usage scenario. A cache type dictionary performs well only when the hit rates are high enough (recommended 99% and higher). You can view the average hit rate in the [system.dictionaries](../../operations/system-tables/dictionaries.md) table.
 
@@ -899,11 +899,11 @@ Other types are not supported yet. The function returns the attribute for the pr
 
 Data must completely fit into RAM.
 
-## Dictionary Updates {#dictionary-updates}
+## Refreshing dictionary data using LIFETIME
 
-ClickHouse periodically updates the dictionaries. The update interval for fully downloaded dictionaries and the invalidation interval for cached dictionaries are defined in the `lifetime` tag in seconds.
+ClickHouse periodically updates dictionaries based on the `LIFETIME` tag (defined in seconds). `LIFETIME` is the update interval for fully downloaded dictionaries and the invalidation interval for cached dictionaries.
 
-Dictionary updates (other than loading for first use) do not block queries. During updates, the old version of a dictionary is used. If an error occurs during an update, the error is written to the server log, and queries continue using the old version of dictionaries.
+During updates, the old version of a dictionary can still be queried. Dictionary updates (other than when loading the dictionary for first use) do not block queries. If an error occurs during an update, the error is written to the server log and queries can continue using the old version of the dictionary. If a dictionary update is successful, the old version of the dictionary is replaced atomically.
 
 Example of settings:
 
@@ -1031,7 +1031,7 @@ SOURCE(CLICKHOUSE(... update_field 'added_time' update_lag 15))
 ...
 ```
 
-## Dictionary Sources {#dictionary-sources}
+## Dictionary Sources
 
 <CloudDetails />
 
@@ -1065,7 +1065,7 @@ SOURCE(SOURCE_TYPE(param1 val1 ... paramN valN)) -- Source configuration
 
 The source is configured in the `source` section.
 
-For source types [Local file](#local_file), [Executable file](#executable), [HTTP(s)](#https), [ClickHouse](#clickhouse)
+For source types [Local file](#local-file), [Executable file](#executable-file), [HTTP(s)](#https), [ClickHouse](#clickhouse)
 optional settings are available:
 
 ``` xml
@@ -1089,10 +1089,10 @@ SETTINGS(format_csv_allow_single_quotes = 0)
 
 Types of sources (`source_type`):
 
-- [Local file](#local_file)
-- [Executable File](#executable)
-- [Executable Pool](#executable_pool)
-- [HTTP(s)](#http)
+- [Local file](#local-file)
+- [Executable File](#executable-file)
+- [Executable Pool](#executable-pool)
+- [HTTP(S)](#https)
 - DBMS
     - [ODBC](#odbc)
     - [MySQL](#mysql)
@@ -1102,7 +1102,7 @@ Types of sources (`source_type`):
     - [Cassandra](#cassandra)
     - [PostgreSQL](#postgresql)
 
-## Local File {#local_file}
+### Local File
 
 Example of settings:
 
@@ -1132,9 +1132,9 @@ When a dictionary with source `FILE` is created via DDL command (`CREATE DICTION
 
 - [Dictionary function](../../sql-reference/table-functions/dictionary.md#dictionary-function)
 
-## Executable File {#executable}
+### Executable File
 
-Working with executable files depends on [how the dictionary is stored in memory](#storig-dictionaries-in-memory). If the dictionary is stored using `cache` and `complex_key_cache`, ClickHouse requests the necessary keys by sending a request to the executable file’s STDIN. Otherwise, ClickHouse starts the executable file and treats its output as dictionary data.
+Working with executable files depends on [how the dictionary is stored in memory](#storing-dictionaries-in-memory). If the dictionary is stored using `cache` and `complex_key_cache`, ClickHouse requests the necessary keys by sending a request to the executable file’s STDIN. Otherwise, ClickHouse starts the executable file and treats its output as dictionary data.
 
 Example of settings:
 
@@ -1161,7 +1161,7 @@ Setting fields:
 
 That dictionary source can be configured only via XML configuration. Creating dictionaries with executable source via DDL is disabled; otherwise, the DB user would be able to execute arbitrary binaries on the ClickHouse node.
 
-## Executable Pool {#executable_pool}
+### Executable Pool
 
 Executable pool allows loading data from pool of processes. This source does not work with dictionary layouts that need to load all data from source. Executable pool works if the dictionary [is stored](#ways-to-store-dictionaries-in-memory) using `cache`, `complex_key_cache`, `ssd_cache`, `complex_key_ssd_cache`, `direct`, or `complex_key_direct` layouts.
 
@@ -1196,9 +1196,9 @@ Setting fields:
 
 That dictionary source can be configured only via XML configuration. Creating dictionaries with executable source via DDL is disabled, otherwise, the DB user would be able to execute arbitrary binary on ClickHouse node.
 
-## Http(s) {#https}
+### HTTP(S)
 
-Working with an HTTP(s) server depends on [how the dictionary is stored in memory](#storig-dictionaries-in-memory). If the dictionary is stored using `cache` and `complex_key_cache`, ClickHouse requests the necessary keys by sending a request via the `POST` method.
+Working with an HTTP(S) server depends on [how the dictionary is stored in memory](#storing-dictionaries-in-memory). If the dictionary is stored using `cache` and `complex_key_cache`, ClickHouse requests the necessary keys by sending a request via the `POST` method.
 
 Example of settings:
 
@@ -1248,7 +1248,55 @@ Setting fields:
 
 When creating a dictionary using the DDL command (`CREATE DICTIONARY ...`) remote hosts for HTTP dictionaries are checked against the contents of `remote_url_allow_hosts` section from config to prevent database users to access arbitrary HTTP server.
 
-### Known Vulnerability of the ODBC Dictionary Functionality
+### DBMS
+
+#### ODBC
+
+You can use this method to connect any database that has an ODBC driver.
+
+Example of settings:
+
+``` xml
+<source>
+    <odbc>
+        <db>DatabaseName</db>
+        <table>ShemaName.TableName</table>
+        <connection_string>DSN=some_parameters</connection_string>
+        <invalidate_query>SQL_QUERY</invalidate_query>
+        <query>SELECT id, value_1, value_2 FROM ShemaName.TableName</query>
+    </odbc>
+</source>
+```
+
+or
+
+``` sql
+SOURCE(ODBC(
+    db 'DatabaseName'
+    table 'SchemaName.TableName'
+    connection_string 'DSN=some_parameters'
+    invalidate_query 'SQL_QUERY'
+    query 'SELECT id, value_1, value_2 FROM db_name.table_name'
+))
+```
+
+Setting fields:
+
+- `db` – Name of the database. Omit it if the database name is set in the `<connection_string>` parameters.
+- `table` – Name of the table and schema if exists.
+- `connection_string` – Connection string.
+- `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Refreshing dictionary data using LIFETIME](#refreshing-dictionary-data-using-lifetime).
+- `query` – The custom query. Optional parameter.
+
+:::note
+The `table` and `query` fields cannot be used together. And either one of the `table` or `query` fields must be declared.
+:::
+
+ClickHouse receives quoting symbols from ODBC-driver and quote all settings in queries to driver, so it’s necessary to set table name accordingly to table name case in database.
+
+If you have a problems with encodings when using Oracle, see the corresponding [FAQ](/knowledgebase/oracle-odbc) item.
+
+##### Known Vulnerability of the ODBC Dictionary Functionality
 
 :::note
 When connecting to the database through the ODBC driver connection parameter `Servername` can be substituted. In this case values of `USERNAME` and `PASSWORD` from `odbc.ini` are sent to the remote server and can be compromised.
@@ -1277,7 +1325,7 @@ SELECT * FROM odbc('DSN=gregtest;Servername=some-server.com', 'test_db');
 
 ODBC driver will send values of `USERNAME` and `PASSWORD` from `odbc.ini` to `some-server.com`.
 
-### Example of Connecting Postgresql
+##### Example of Connecting Postgresql
 
 Ubuntu OS.
 
@@ -1358,7 +1406,7 @@ LIFETIME(MIN 300 MAX 360)
 
 You may need to edit `odbc.ini` to specify the full path to the library with the driver `DRIVER=/usr/local/lib/psqlodbcw.so`.
 
-### Example of Connecting MS SQL Server
+##### Example of Connecting MS SQL Server
 
 Ubuntu OS.
 
@@ -1462,55 +1510,7 @@ LAYOUT(FLAT())
 LIFETIME(MIN 300 MAX 360)
 ```
 
-## DBMS
-
-### ODBC
-
-You can use this method to connect any database that has an ODBC driver.
-
-Example of settings:
-
-``` xml
-<source>
-    <odbc>
-        <db>DatabaseName</db>
-        <table>ShemaName.TableName</table>
-        <connection_string>DSN=some_parameters</connection_string>
-        <invalidate_query>SQL_QUERY</invalidate_query>
-        <query>SELECT id, value_1, value_2 FROM ShemaName.TableName</query>
-    </odbc>
-</source>
-```
-
-or
-
-``` sql
-SOURCE(ODBC(
-    db 'DatabaseName'
-    table 'SchemaName.TableName'
-    connection_string 'DSN=some_parameters'
-    invalidate_query 'SQL_QUERY'
-    query 'SELECT id, value_1, value_2 FROM db_name.table_name'
-))
-```
-
-Setting fields:
-
-- `db` – Name of the database. Omit it if the database name is set in the `<connection_string>` parameters.
-- `table` – Name of the table and schema if exists.
-- `connection_string` – Connection string.
-- `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Updating dictionaries](#dictionary-updates).
-- `query` – The custom query. Optional parameter.
-
-:::note
-The `table` and `query` fields cannot be used together. And either one of the `table` or `query` fields must be declared.
-:::
-
-ClickHouse receives quoting symbols from ODBC-driver and quote all settings in queries to driver, so it’s necessary to set table name accordingly to table name case in database.
-
-If you have a problems with encodings when using Oracle, see the corresponding [FAQ](/knowledgebase/oracle-odbc) item.
-
-### Mysql
+#### Mysql
 
 Example of settings:
 
@@ -1575,7 +1575,7 @@ Setting fields:
 
 - `where` – The selection criteria. The syntax for conditions is the same as for `WHERE` clause in MySQL, for example, `id > 10 AND id < 20`. Optional parameter.
 
-- `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Updating dictionaries](#dictionary-updates).
+- `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Refreshing dictionary data using LIFETIME](#refreshing-dictionary-data-using-lifetime).
 
 - `fail_on_connection_loss` – The configuration parameter that controls behavior of the server on connection loss. If `true`, an exception is thrown immediately if the connection between client and server was lost. If `false`, the ClickHouse server retries to execute the query three times before throwing an exception. Note that retrying leads to increased response times. Default value: `false`.
 
@@ -1627,7 +1627,7 @@ SOURCE(MYSQL(
 ))
 ```
 
-### ClickHouse
+#### ClickHouse
 
 Example of settings:
 
@@ -1672,7 +1672,7 @@ Setting fields:
 - `db` – Name of the database.
 - `table` – Name of the table.
 - `where` – The selection criteria. May be omitted.
-- `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Updating dictionaries](#dictionary-updates).
+- `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Refreshing dictionary data using LIFETIME](#refreshing-dictionary-data-using-lifetime).
 - `secure` - Use ssl for connection.
 - `query` – The custom query. Optional parameter.
 
@@ -1680,7 +1680,7 @@ Setting fields:
 The `table` or `where` fields cannot be used together with the `query` field. And either one of the `table` or `query` fields must be declared.
 :::
 
-### Mongodb
+#### Mongodb
 
 Example of settings:
 
@@ -1723,7 +1723,7 @@ Setting fields:
 - `options` -  MongoDB connection string options (optional parameter).
 
 
-### Redis
+#### Redis
 
 Example of settings:
 
@@ -1756,7 +1756,7 @@ Setting fields:
 - `storage_type` – The structure of internal Redis storage using for work with keys. `simple` is for simple sources and for hashed single key sources, `hash_map` is for hashed sources with two keys. Ranged sources and cache sources with complex key are unsupported. May be omitted, default value is `simple`.
 - `db_index` – The specific numeric index of Redis logical database. May be omitted, default value is 0.
 
-### Cassandra
+#### Cassandra
 
 Example of settings:
 
@@ -1769,7 +1769,7 @@ Example of settings:
         <password>qwerty123</password>
         <keyspase>database_name</keyspase>
         <column_family>table_name</column_family>
-        <allow_filering>1</allow_filering>
+        <allow_filtering>1</allow_filtering>
         <partition_key_prefix>1</partition_key_prefix>
         <consistency>One</consistency>
         <where>"SomeColumn" = 42</where>
@@ -1787,7 +1787,7 @@ Setting fields:
 - `password` – Password of the Cassandra user.
 - `keyspace` – Name of the keyspace (database).
 - `column_family` – Name of the column family (table).
-- `allow_filering` – Flag to allow or not potentially expensive conditions on clustering key columns. Default value is 1.
+- `allow_filtering` – Flag to allow or not potentially expensive conditions on clustering key columns. Default value is 1.
 - `partition_key_prefix` – Number of partition key columns in primary key of the Cassandra table. Required for compose key dictionaries. Order of key columns in the dictionary definition must be the same as in Cassandra. Default value is 1 (the first key column is a partition key and other key columns are clustering key).
 - `consistency` – Consistency level. Possible values: `One`, `Two`, `Three`, `All`, `EachQuorum`, `Quorum`, `LocalQuorum`, `LocalOne`, `Serial`, `LocalSerial`. Default value is `One`.
 - `where` – Optional selection criteria.
@@ -1798,13 +1798,14 @@ Setting fields:
 The `column_family` or `where` fields cannot be used together with the `query` field. And either one of the `column_family` or `query` fields must be declared.
 :::
 
-### PostgreSQL
+#### PostgreSQL
 
 Example of settings:
 
 ``` xml
 <source>
   <postgresql>
+      <host>postgresql-hostname</hoat>
       <port>5432</port>
       <user>clickhouse</user>
       <password>qwerty</password>
@@ -1848,14 +1849,14 @@ Setting fields:
 - `db` – Name of the database.
 - `table` – Name of the table.
 - `where` – The selection criteria. The syntax for conditions is the same as for `WHERE` clause in PostgreSQL. For example, `id > 10 AND id < 20`. Optional parameter.
-- `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Updating dictionaries](#dictionary-updates).
+- `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Refreshing dictionary data using LIFETIME](#refreshing-dictionary-data-using-lifetime).
 - `query` – The custom query. Optional parameter.
 
 :::note
 The `table` or `where` fields cannot be used together with the `query` field. And either one of the `table` or `query` fields must be declared.
 :::
 
-## Null
+### Null
 
 A special source that can be used to create dummy (empty) dictionaries. Such dictionaries can useful for tests or with setups with separated data and query nodes at nodes with Distributed tables.
 
@@ -1872,7 +1873,7 @@ LAYOUT(FLAT())
 LIFETIME(0);
 ```
 
-## Dictionary Key and Fields {#dictionary-key-and-fields}
+## Dictionary Key and Fields
 
 <CloudDetails />
 
@@ -1962,7 +1963,7 @@ PRIMARY KEY Id
 
 ### Composite Key
 
-The key can be a `tuple` from any types of fields. The [layout](#storig-dictionaries-in-memory) in this case must be `complex_key_hashed` or `complex_key_cache`.
+The key can be a `tuple` from any types of fields. The [layout](#storing-dictionaries-in-memory) in this case must be `complex_key_hashed` or `complex_key_cache`.
 
 :::tip
 A composite key can consist of a single element. This makes it possible to use a string as the key, for instance.
@@ -2029,17 +2030,17 @@ CREATE DICTIONARY somename (
 
 Configuration fields:
 
-| Tag                                                  | Description                                                                                                                                                                                                                                                                                                                                     | Required |
-|------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|----------|
-| `name`                                               | Column name.                                                                                                                                                                                                                                                                                                                                    | Yes      |
-| `type`                                               | ClickHouse data type: [UInt8](../../sql-reference/data-types/int-uint.md), [UInt16](../../sql-reference/data-types/int-uint.md), [UInt32](../../sql-reference/data-types/int-uint.md), [UInt64](../../sql-reference/data-types/int-uint.md), [Int8](../../sql-reference/data-types/int-uint.md), [Int16](../../sql-reference/data-types/int-uint.md), [Int32](../../sql-reference/data-types/int-uint.md), [Int64](../../sql-reference/data-types/int-uint.md), [Float32](../../sql-reference/data-types/float.md), [Float64](../../sql-reference/data-types/float.md), [UUID](../../sql-reference/data-types/uuid.md), [Decimal32](../../sql-reference/data-types/decimal.md), [Decimal64](../../sql-reference/data-types/decimal.md), [Decimal128](../../sql-reference/data-types/decimal.md), [Decimal256](../../sql-reference/data-types/decimal.md),[Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md), [DateTime64](../../sql-reference/data-types/datetime64.md), [String](../../sql-reference/data-types/string.md), [Array](../../sql-reference/data-types/array.md).<br/>ClickHouse tries to cast value from dictionary to the specified data type. For example, for MySQL, the field might be `TEXT`, `VARCHAR`, or `BLOB` in the MySQL source table, but it can be uploaded as `String` in ClickHouse.<br/>[Nullable](../../sql-reference/data-types/nullable.md) is currently supported for [Flat](#flat), [Hashed](#hashed), [ComplexKeyHashed](#complex_key_hashed), [Direct](#direct), [ComplexKeyDirect](#complex_key_direct), [RangeHashed](#range_hashed), Polygon, [Cache](#cache), [ComplexKeyCache](#complex_key_cache), [SSDCache](#ssd_cache), [SSDComplexKeyCache](#complex_key_ssd_cache) dictionaries. In [IPTrie](#ip_trie) dictionaries `Nullable` types are not supported.       | Yes      |
-| `null_value`                                         | Default value for a non-existing element.<br/>In the example, it is an empty string. [NULL](../syntax.md#null) value can be used only for the `Nullable` types (see the previous line with types description).                                                                                                                                                                                                                       | Yes      |
-| `expression`                                         | [Expression](../../sql-reference/syntax.md#expressions) that ClickHouse executes on the value.<br/>The expression can be a column name in the remote SQL database. Thus, you can use it to create an alias for the remote column.<br/><br/>Default value: no expression.                                                              | No       |
-| <a name="hierarchical-dict-attr"></a> `hierarchical` | If `true`, the attribute contains the value of a parent key for the current key. See [Hierarchical Dictionaries](#hierarchical-dictionaries).<br/><br/>Default value: `false`.                                                                                               | No       |
-| `injective`                                          | Flag that shows whether the `id -> attribute` image is [injective](https://en.wikipedia.org/wiki/Injective_function).<br/>If `true`, ClickHouse can automatically place after the `GROUP BY` clause the requests to dictionaries with injection. Usually it significantly reduces the amount of such requests.<br/><br/>Default value: `false`. | No       |
-| `is_object_id`                                       | Flag that shows whether the query is executed for a MongoDB document by `ObjectID`.<br/><br/>Default value: `false`.
+| Tag                                                  | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | Required |
+|------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|----------|
+| `name`                                               | Column name.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | Yes      |
+| `type`                                               | ClickHouse data type: [UInt8](../../sql-reference/data-types/int-uint.md), [UInt16](../../sql-reference/data-types/int-uint.md), [UInt32](../../sql-reference/data-types/int-uint.md), [UInt64](../../sql-reference/data-types/int-uint.md), [Int8](../../sql-reference/data-types/int-uint.md), [Int16](../../sql-reference/data-types/int-uint.md), [Int32](../../sql-reference/data-types/int-uint.md), [Int64](../../sql-reference/data-types/int-uint.md), [Float32](../../sql-reference/data-types/float.md), [Float64](../../sql-reference/data-types/float.md), [UUID](../../sql-reference/data-types/uuid.md), [Decimal32](../../sql-reference/data-types/decimal.md), [Decimal64](../../sql-reference/data-types/decimal.md), [Decimal128](../../sql-reference/data-types/decimal.md), [Decimal256](../../sql-reference/data-types/decimal.md),[Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md), [DateTime64](../../sql-reference/data-types/datetime64.md), [String](../../sql-reference/data-types/string.md), [Array](../../sql-reference/data-types/array.md).<br/>ClickHouse tries to cast value from dictionary to the specified data type. For example, for MySQL, the field might be `TEXT`, `VARCHAR`, or `BLOB` in the MySQL source table, but it can be uploaded as `String` in ClickHouse.<br/>[Nullable](../../sql-reference/data-types/nullable.md) is currently supported for [Flat](#flat), [Hashed](#hashed), [ComplexKeyHashed](#complex_key_hashed), [Direct](#direct), [ComplexKeyDirect](#complex_key_direct), [RangeHashed](#range_hashed), Polygon, [Cache](#cache), [ComplexKeyCache](#complex_key_cache), [SSDCache](#ssd_cache), [SSDComplexKeyCache](#complex_key_ssd_cache) dictionaries. In [IPTrie](#ip_trie) dictionaries `Nullable` types are not supported. | Yes      |
+| `null_value`                                         | Default value for a non-existing element.<br/>In the example, it is an empty string. [NULL](../syntax.md#null) value can be used only for the `Nullable` types (see the previous line with types description).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | Yes      |
+| `expression`                                         | [Expression](../../sql-reference/syntax.md#expressions) that ClickHouse executes on the value.<br/>The expression can be a column name in the remote SQL database. Thus, you can use it to create an alias for the remote column.<br/><br/>Default value: no expression.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | No       |
+| <a name="hierarchical-dict-attr"></a> `hierarchical` | If `true`, the attribute contains the value of a parent key for the current key. See [Hierarchical Dictionaries](#hierarchical-dictionaries).<br/><br/>Default value: `false`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | No       |
+| `injective`                                          | Flag that shows whether the `id -> attribute` image is [injective](https://en.wikipedia.org/wiki/Injective_function).<br/>If `true`, ClickHouse can automatically place after the `GROUP BY` clause the requests to dictionaries with injection. Usually it significantly reduces the amount of such requests.<br/><br/>Default value: `false`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | No       |
+| `is_object_id`                                       | Flag that shows whether the query is executed for a MongoDB document by `ObjectID`.<br/><br/>Default value: `false`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             
 
-## Hierarchical Dictionaries {#hierarchical-dictionaries}
+## Hierarchical Dictionaries
 
 ClickHouse supports hierarchical dictionaries with a [numeric key](#numeric-key).
 
@@ -2164,7 +2165,7 @@ Points can be specified as an array or a tuple of their coordinates. In the curr
 
 The user can upload their own data in all formats supported by ClickHouse.
 
-There are 3 types of [in-memory storage](#storig-dictionaries-in-memory) available:
+There are 3 types of [in-memory storage](#storing-dictionaries-in-memory) available:
 
 - `POLYGON_SIMPLE`. This is a naive implementation, where a linear pass through all polygons is made for each query, and membership is checked for each one without using additional indexes.
 
@@ -2361,6 +2362,12 @@ Result:
 └────────────────────────────────────────┴───────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
+#### Matching Modes
+
+Pattern matching behavior can be modified with certain dictionary settings:
+- `regexp_dict_flag_case_insensitive`: Use case-insensitive matching (defaults to `false`). Can be overridden in individual expressions with `(?i)` and `(?-i)`.
+- `regexp_dict_flag_dotall`: Allow '.' to match newline characters (defaults to `false`).
+
 ### Use Regular Expression Tree Dictionary in ClickHouse Cloud
 
 Above used `YAMLRegExpTree` source works in ClickHouse Open Source but not in ClickHouse Cloud. To use regexp tree dictionaries in ClickHouse could, first create a regexp tree dictionary from a YAML file locally in ClickHouse Open Source, then dump this dictionary into a CSV file using the `dictionary` table function and the [INTO OUTFILE](../statements/select/into-outfile.md) clause.
@@ -2409,8 +2416,8 @@ clickhouse client \
     --secure \
     --password MY_PASSWORD \
     --query "
-    INSERT INTO regexp_dictionary_source_table 
-    SELECT * FROM input ('id UInt64, parent_id UInt64, regexp String, keys Array(String), values Array(String)') 
+    INSERT INTO regexp_dictionary_source_table
+    SELECT * FROM input ('id UInt64, parent_id UInt64, regexp String, keys Array(String), values Array(String)')
     FORMAT CSV" < regexp_dict.csv
 ```
 
@@ -2427,55 +2434,6 @@ SOURCE(CLICKHOUSE(TABLE 'regexp_dictionary_source_table'))
 LIFETIME(0)
 LAYOUT(regexp_tree);
 ```
-
-## Embedded Dictionaries {#embedded-dictionaries}
-
-<SelfManaged />
-
-ClickHouse contains a built-in feature for working with a geobase.
-
-This allows you to:
-
-- Use a region’s ID to get its name in the desired language.
-- Use a region’s ID to get the ID of a city, area, federal district, country, or continent.
-- Check whether a region is part of another region.
-- Get a chain of parent regions.
-
-All the functions support “translocality,” the ability to simultaneously use different perspectives on region ownership. For more information, see the section “Functions for working with web analytics dictionaries”.
-
-The internal dictionaries are disabled in the default package.
-To enable them, uncomment the parameters `path_to_regions_hierarchy_file` and `path_to_regions_names_files` in the server configuration file.
-
-The geobase is loaded from text files.
-
-Place the `regions_hierarchy*.txt` files into the `path_to_regions_hierarchy_file` directory. This configuration parameter must contain the path to the `regions_hierarchy.txt` file (the default regional hierarchy), and the other files (`regions_hierarchy_ua.txt`) must be located in the same directory.
-
-Put the `regions_names_*.txt` files in the `path_to_regions_names_files` directory.
-
-You can also create these files yourself. The file format is as follows:
-
-`regions_hierarchy*.txt`: TabSeparated (no header), columns:
-
-- region ID (`UInt32`)
-- parent region ID (`UInt32`)
-- region type (`UInt8`): 1 - continent, 3 - country, 4 - federal district, 5 - region, 6 - city; other types do not have values
-- population (`UInt32`) — optional column
-
-`regions_names_*.txt`: TabSeparated (no header), columns:
-
-- region ID (`UInt32`)
-- region name (`String`) — Can’t contain tabs or line feeds, even escaped ones.
-
-A flat array is used for storing in RAM. For this reason, IDs shouldn’t be more than a million.
-
-Dictionaries can be updated without restarting the server. However, the set of available dictionaries is not updated.
-For updates, the file modification times are checked. If a file has changed, the dictionary is updated.
-The interval to check for changes is configured in the `builtin_dictionaries_reload_interval` parameter.
-Dictionary updates (other than loading at first use) do not block queries. During updates, queries use the old versions of dictionaries. If an error occurs during an update, the error is written to the server log, and queries continue using the old version of dictionaries.
-
-We recommend periodically updating the dictionaries with the geobase. During an update, generate new files and write them to a separate location. When everything is ready, rename them to the files used by the server.
-
-There are also functions for working with OS identifiers and search engines, but they shouldn’t be used.
 
 ## Embedded Dictionaries
 

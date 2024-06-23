@@ -25,7 +25,7 @@ protected:
 
     String getName() const override { return "client"; }
 
-    void printHelpMessage(const OptionsDescription & options_description) override;
+    void printHelpMessage(const OptionsDescription & options_description, bool verbose) override;
 
     void addOptions(OptionsDescription & options_description) override;
 
@@ -47,7 +47,7 @@ protected:
 private:
     void printChangedSettings() const;
     void showWarnings();
-    void parseConnectionsCredentials();
+    void parseConnectionsCredentials(Poco::Util::AbstractConfiguration & config, const std::string & connection_name);
     std::vector<String> loadWarningMessages();
 };
 }

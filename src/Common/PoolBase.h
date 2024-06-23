@@ -174,7 +174,7 @@ public:
             items.emplace_back(std::make_shared<PooledObject>(allocObject(), *this));
     }
 
-    inline size_t size()
+    size_t size()
     {
         std::lock_guard lock(mutex);
         return items.size();
@@ -192,10 +192,9 @@ private:
     std::condition_variable available;
 
 protected:
+    LoggerPtr log;
 
-    Poco::Logger * log;
-
-    PoolBase(unsigned max_items_, Poco::Logger * log_)
+    PoolBase(unsigned max_items_, LoggerPtr log_)
        : max_items(max_items_), log(log_)
     {
         items.reserve(max_items);

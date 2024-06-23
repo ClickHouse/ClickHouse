@@ -1,11 +1,10 @@
-#include <re2/re2.h>
 #include <Poco/URI.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/RemoteHostFilter.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/Exception.h>
+#include <Common/re2.h>
 #include <IO/WriteHelpers.h>
-
 
 namespace DB
 {

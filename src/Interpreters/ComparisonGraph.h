@@ -118,14 +118,14 @@ private:
         {
             size_t operator() (const IAST::Hash & hash) const
             {
-                return hash.first;
+                return hash.low64;
             }
         };
 
         static auto getHash(const Node & node)
         {
             if constexpr (with_ast)
-                return node->getTreeHash();
+                return node->getTreeHash(/*ignore_aliases=*/ true);
             else
                 return QueryTreeNodePtrWithHash{node};
         }
@@ -154,7 +154,7 @@ private:
         const Graph & reversed_graph, size_t v,
         OptionalIndices & components, size_t component);
 
-    enum class Path
+    enum class Path : uint8_t
     {
         GREATER,
         GREATER_OR_EQUAL,

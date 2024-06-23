@@ -19,7 +19,6 @@ Don't use Docker from your system repository.
 ```
 sudo -H pip install \
     PyMySQL \
-    aerospike \
     avro \
     cassandra-driver \
     confluent-kafka \
@@ -46,11 +45,12 @@ sudo -H pip install \
     hypothesis \
     pyhdfs \
     pika \
-    meilisearch \
     nats-py
 ```
 
 (highly not recommended) If you really want to use OS packages on modern debian/ubuntu instead of "pip": `sudo apt install -y docker docker-compose python3-pytest python3-dicttoxml python3-docker python3-pymysql python3-protobuf python3-pymongo python3-tzlocal python3-kazoo python3-psycopg2 kafka-python python3-pytest-timeout python3-minio`
+
+Some tests have other dependencies, e.g. spark. See docker/test/integration/runner/Dockerfile for how to install those. See docker/test/integration/runner/dockerd-entrypoint.sh for environment variables that need to be set (e.g. JAVA_PATH).
 
 If you want to run the tests under a non-privileged user, you must add this user to `docker` group: `sudo usermod -aG docker $USER` and re-login.
 (You must close all your sessions (for example, restart your computer))
@@ -66,7 +66,6 @@ set the following environment variables:
 
 Please note that if you use separate build (`ENABLE_CLICKHOUSE_ALL=OFF`), you need to build different components, including but not limited to `ENABLE_CLICKHOUSE_LIBRARY_BRIDGE=ON ENABLE_CLICKHOUSE_ODBC_BRIDGE=ON ENABLE_CLICKHOUSE_KEEPER=ON`. So it is easier to use `ENABLE_CLICKHOUSE_ALL=ON`
 
-For tests that use common docker compose files you may need to set up their path with environment variable: `DOCKER_COMPOSE_DIR=$HOME/ClickHouse/docker/test/integration/runner/compose`
 
 ### Running with runner script
 
@@ -76,7 +75,7 @@ docker pull clickhouse/integration-tests-runner
 Notes:
 * If you want to run integration tests without `sudo` you have to add your user to docker group `sudo usermod -aG docker $USER`. [More information](https://docs.docker.com/install/linux/linux-postinstall/) about docker configuration.
 * If you already had run these tests without `./runner` script you may have problems with pytest cache. It can be removed with `rm -r __pycache__ .pytest_cache/`.
-* Some tests maybe require a lot of resources (CPU, RAM, etc.). Better not try large tests like `test_cluster_copier` or `test_distributed_ddl*` on your laptop.
+* Some tests maybe require a lot of resources (CPU, RAM, etc.). Better not try large tests like `test_distributed_ddl*` on your laptop.
 
 You can run tests via `./runner` script and pass pytest arguments as last arg:
 ```
@@ -90,7 +89,7 @@ plugins: repeat-0.9.1, xdist-2.5.0, forked-1.4.0, order-1.0.0, timeout-2.1.0
 timeout: 900.0s
 timeout method: signal
 timeout func_only: False
-collected 4 items                                                                                                                                                                                                               
+collected 4 items
 
 test_ssl_cert_authentication/test.py::test_https Copy common default production configuration from /clickhouse-config. Files: config.xml, users.xml
 PASSED

@@ -20,8 +20,12 @@ public:
 
     void visit(ASTPtr & ast);
 
+    size_t getNumberOfReplacedParameters() const { return num_replaced_parameters; }
+
 private:
     const NameToNameMap & query_parameters;
+    size_t num_replaced_parameters = 0;
+
     const String & getParamValue(const String & name);
     void visitIdentifier(ASTPtr & ast);
     void visitQueryParameter(ASTPtr & ast);

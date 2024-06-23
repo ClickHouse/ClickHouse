@@ -11,9 +11,9 @@ sidebar_label: WHERE
 
 ClickHouse использует в выражении индексы, если это позволяет [движок таблицы](../../../engines/table-engines/index.md).
 
-    :::note "Примечание"
-    Существует оптимизация фильтрации под названием [PREWHERE](prewhere.md).
-    :::
+:::note Примечание
+Существует оптимизация фильтрации под названием [PREWHERE](prewhere.md).
+:::
 Если в секции необходимо проверить [NULL](../../../sql-reference/syntax.md#null-literal), то используйте операторы [IS NULL](../../operators/index.md#operator-is-null) и [IS NOT NULL](../../operators/index.md#is-not-null), а также соответствующие функции [isNull](../../../sql-reference/functions/functions-for-nulls.md#isnull) и [isNotNull](../../../sql-reference/functions/functions-for-nulls.md#isnotnull). В противном случае выражение будет считаться всегда не выполненным.
 
 **Пример**

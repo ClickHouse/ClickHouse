@@ -39,11 +39,6 @@ public:
         ContextPtr global_context,
         bool created_from_ddl) const;
 
-    /// Create dictionary from DDL-query
-    DictionaryPtr create(const std::string & name,
-        const ASTCreateQuery & ast,
-        ContextPtr global_context) const;
-
     using LayoutCreateFunction = std::function<DictionaryPtr(
         const std::string & name,
         const DictionaryStructure & dict_struct,
@@ -55,13 +50,18 @@ public:
 
     bool isComplex(const std::string & layout_type) const;
 
-    void registerLayout(const std::string & layout_type, LayoutCreateFunction create_layout, bool is_layout_complex);
+    /// If the argument `layout_type` is not complex layout and has corresponding complex layout,
+    /// change `layout_type` to corresponding complex and return true; otherwise do nothing and return false.
+    bool convertToComplex(std::string & layout_type) const;
+
+    void registerLayout(const std::string & layout_type, LayoutCreateFunction create_layout, bool is_layout_complex, bool has_layout_complex = true);
 
 private:
     struct RegisteredLayout
     {
         LayoutCreateFunction layout_create_function;
         bool is_layout_complex;
+        bool has_layout_complex;
     };
 
     using LayoutRegistry = std::unordered_map<std::string, RegisteredLayout>;

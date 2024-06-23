@@ -7,6 +7,9 @@
     <column_family_options>
       <num_levels>2</num_levels>
     </column_family_options>
+    <block_based_table_options>
+      <block_size>1024</block_size>
+    </block_based_table_options>
     <tables>
       <table>
         <name>test</name>
@@ -16,6 +19,9 @@
         <column_family_options>
           <max_bytes_for_level_base>14</max_bytes_for_level_base>
         </column_family_options>
+        <block_based_table_options>
+          <format_version>5</format_version>
+        </block_based_table_options>
       </table>
     </tables>
   </rocksdb>

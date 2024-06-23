@@ -81,14 +81,19 @@ size_t MarkRanges::getNumberOfMarks() const
     return result;
 }
 
+bool MarkRanges::isOneRangeForWholePart(size_t num_marks_in_part) const
+{
+    return size() == 1 && front().begin == 0 && front().end == num_marks_in_part;
+}
+
 void MarkRanges::serialize(WriteBuffer & out) const
 {
-    writeIntBinary(this->size(), out);
+    writeBinaryLittleEndian(this->size(), out);
 
     for (const auto & [begin, end] : *this)
     {
-        writeIntBinary(begin, out);
-        writeIntBinary(end, out);
+        writeBinaryLittleEndian(begin, out);
+        writeBinaryLittleEndian(end, out);
     }
 }
 
@@ -100,13 +105,13 @@ String MarkRanges::describe() const
 void MarkRanges::deserialize(ReadBuffer & in)
 {
     size_t size = 0;
-    readIntBinary(size, in);
+    readBinaryLittleEndian(size, in);
 
     this->resize(size);
     for (size_t i = 0; i < size; ++i)
     {
-        readIntBinary((*this)[i].begin, in);
-        readIntBinary((*this)[i].end, in);
+        readBinaryLittleEndian((*this)[i].begin, in);
+        readBinaryLittleEndian((*this)[i].end, in);
     }
 }
 

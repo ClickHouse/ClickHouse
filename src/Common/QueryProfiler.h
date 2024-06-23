@@ -7,6 +7,8 @@
 
 #include "config.h"
 
+#include <Common/Logger.h>
+
 
 namespace Poco
 {
@@ -28,7 +30,7 @@ namespace DB
   * Note that signal handler implementation is defined by template parameter. See QueryProfilerReal and QueryProfilerCPU.
   */
 
-#if USE_UNWIND
+#ifndef __APPLE__
 class Timer
 {
 public:
@@ -43,7 +45,7 @@ public:
     void cleanup();
 
 private:
-    Poco::Logger * log;
+    LoggerPtr log;
     std::optional<timer_t> timer_id;
 };
 #endif
@@ -55,12 +57,14 @@ public:
     QueryProfilerBase(UInt64 thread_id, int clock_type, UInt32 period, int pause_signal_);
     ~QueryProfilerBase();
 
+    void setPeriod(UInt32 period_);
+
 private:
     void cleanup();
 
-    Poco::Logger * log;
+    LoggerPtr log;
 
-#if USE_UNWIND
+#ifndef __APPLE__
     inline static thread_local Timer timer = Timer();
 #endif
 

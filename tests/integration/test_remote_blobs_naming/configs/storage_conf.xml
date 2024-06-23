@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<clickhouse>
+    <logger>
+        <level>test</level>
+    </logger>
+
+    <storage_configuration>
+        <disks>
+            <s3>
+                <type>s3</type>
+                <endpoint>http://minio1:9001/root/old-style-prefix/with-several-section/</endpoint>
+                <access_key_id>minio</access_key_id>
+                <secret_access_key>minio123</secret_access_key>
+            </s3>
+            <s3_plain>
+                <type>s3_plain</type>
+                <endpoint>http://minio1:9001/root/data/s3_pain_key_prefix</endpoint>
+                <access_key_id>minio</access_key_id>
+                <secret_access_key>minio123</secret_access_key>
+                <s3_allow_native_copy>true</s3_allow_native_copy>
+            </s3_plain>
+        </disks>
+
+        <policies>
+            <s3>
+                <volumes>
+                    <main>
+                        <disk>s3</disk>
+                    </main>
+                </volumes>
+            </s3>
+            <s3_plain>
+                <volumes>
+                    <main>
+                        <disk>s3_plain</disk>
+                    </main>
+                </volumes>
+            </s3_plain>
+            <s3_template_key>
+                <volumes>
+                    <main>
+                        <disk>s3</disk>
+                    </main>
+                </volumes>
+            </s3_template_key>
+        </policies>
+    </storage_configuration>
+
+    <merge_tree>
+        <storage_policy>s3</storage_policy>
+    </merge_tree>
+</clickhouse>

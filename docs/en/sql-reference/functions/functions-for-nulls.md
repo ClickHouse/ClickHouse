@@ -10,6 +10,10 @@ sidebar_label: Nullable
 
 Returns whether the argument is [NULL](../../sql-reference/syntax.md#null).
 
+See also operator [`IS NULL`](../operators/index.md#is_null).
+
+**Syntax**
+
 ``` sql
 isNull(x)
 ```
@@ -50,9 +54,50 @@ Result:
 └───┘
 ```
 
+## isNullable
+
+Returns `1` if a column is [Nullable](../data-types/nullable.md) (i.e allows `NULL` values), `0` otherwise.
+
+**Syntax**
+
+``` sql
+isNullable(x)
+```
+
+**Arguments**
+
+- `x` — column.
+
+**Returned value**
+
+- `1` if `x` allows `NULL` values. [UInt8](../data-types/int-uint.md).
+- `0` if `x` does not allow `NULL` values. [UInt8](../data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+``` sql
+CREATE TABLE tab (ordinary_col UInt32, nullable_col Nullable(UInt32)) ENGINE = Log;
+INSERT INTO tab (ordinary_col, nullable_col) VALUES (1,1), (2, 2), (3,3);
+SELECT isNullable(ordinary_col), isNullable(nullable_col) FROM tab;    
+```
+
+Result:
+
+``` text
+   ┌───isNullable(ordinary_col)──┬───isNullable(nullable_col)──┐
+1. │                           0 │                           1 │
+2. │                           0 │                           1 │
+3. │                           0 │                           1 │
+   └─────────────────────────────┴─────────────────────────────┘
+```
+
 ## isNotNull
 
 Returns whether the argument is not [NULL](../../sql-reference/syntax.md#null-literal).
+
+See also operator [`IS NOT NULL`](../operators/index.md#is_not_null).
 
 ``` sql
 isNotNull(x)
@@ -92,6 +137,80 @@ Result:
 └───┘
 ```
 
+## isNotDistinctFrom
+
+Performs null-safe comparison. Used to compare JOIN keys which contain NULL values in the JOIN ON section.
+This function will consider two `NULL` values as identical and will return `true`, which is distinct from the usual
+equals behavior where comparing two `NULL` values would return `NULL`.
+
+:::note
+This function is an internal function used by the implementation of JOIN ON. Please do not use it manually in queries.
+:::
+
+**Syntax**
+
+``` sql
+isNotDistinctFrom(x, y)
+```
+
+**Arguments**
+
+- `x` — first JOIN key.
+- `y` — second JOIN key.
+
+**Returned value**
+
+- `true` when `x` and `y` are both `NULL`.
+- `false` otherwise.
+
+**Example**
+
+For a complete example see: [NULL values in JOIN keys](../../sql-reference/statements/select/join#null-values-in-join-keys).
+
+## isZeroOrNull
+
+Returns whether the argument is 0 (zero) or [NULL](../../sql-reference/syntax.md#null-literal).
+
+``` sql
+isZeroOrNull(x)
+```
+
+**Arguments:**
+
+- `x` — A value of non-compound data type.
+
+**Returned value**
+
+- `1` if `x` is 0 (zero) or `NULL`.
+- `0` else.
+
+**Example**
+
+Table:
+
+``` text
+┌─x─┬────y─┐
+│ 1 │ ᴺᵁᴸᴸ │
+│ 2 │    0 │
+│ 3 │    3 │
+└───┴──────┘
+```
+
+Query:
+
+``` sql
+SELECT x FROM t_null WHERE isZeroOrNull(y);
+```
+
+Result:
+
+``` text
+┌─x─┐
+│ 1 │
+│ 2 │
+└───┘
+```
+
 ## coalesce
 
 Returns the leftmost non-`NULL` argument.
@@ -120,7 +239,7 @@ Consider a list of contacts that may specify multiple ways to contact a customer
 └──────────┴──────┴───────────┴───────────┘
 ```
 
-The `mail` and `phone` fields are of type String, but the `icq` field is `UInt32`, so it needs to be converted to `String`.
+The `mail` and `phone` fields are of type String, but the `telegram` field is `UInt32`, so it needs to be converted to `String`.
 
 Get the first available contact method for the customer from the contact list:
 
@@ -232,7 +351,7 @@ Result:
 
 ## assumeNotNull
 
-Returns the corresponding non-`Nullable` value for a value of [Nullable](../../sql-reference/data-types/nullable.md) type. If the original value is `NULL`, an arbitrary result can be returned. See also functions `ifNull` and `coalesce`.
+Returns the corresponding non-`Nullable` value for a value of [Nullable](../data-types/nullable.md) type. If the original value is `NULL`, an arbitrary result can be returned. See also functions `ifNull` and `coalesce`.
 
 ``` sql
 assumeNotNull(x)

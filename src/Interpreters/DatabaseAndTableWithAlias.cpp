@@ -16,6 +16,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int INVALID_IDENTIFIER;
 }
 
 DatabaseAndTableWithAlias::DatabaseAndTableWithAlias(const ASTTableIdentifier & identifier, const String & current_database)
@@ -37,7 +38,7 @@ DatabaseAndTableWithAlias::DatabaseAndTableWithAlias(const ASTIdentifier & ident
     else if (identifier.name_parts.size() == 1)
         table = identifier.name_parts[0];
     else
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: invalid identifier");
+        throw Exception(ErrorCodes::INVALID_IDENTIFIER, "Invalid identifier {}", backQuote(identifier.name()));
 
     if (database.empty())
         database = current_database;
@@ -50,7 +51,7 @@ DatabaseAndTableWithAlias::DatabaseAndTableWithAlias(const ASTPtr & node, const 
     else if (const auto * identifier = node->as<ASTIdentifier>())
         *this = DatabaseAndTableWithAlias(*identifier, current_database);
     else
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: identifier or table identifier expected");
+        throw Exception(ErrorCodes::INVALID_IDENTIFIER, "Identifier or table identifier expected");
 }
 
 DatabaseAndTableWithAlias::DatabaseAndTableWithAlias(const ASTTableExpression & table_expression, const String & current_database)
@@ -70,7 +71,7 @@ DatabaseAndTableWithAlias::DatabaseAndTableWithAlias(const ASTTableExpression & 
         alias = table_expression.subquery->tryGetAlias();
     }
     else
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: no known elements in ASTTableExpression");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "No known elements in ASTTableExpression");
 }
 
 bool DatabaseAndTableWithAlias::satisfies(const DatabaseAndTableWithAlias & db_table, bool table_may_be_an_alias) const

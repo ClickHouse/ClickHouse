@@ -11,6 +11,9 @@ ClickHouse runs sampling profiler that allows analyzing query execution. Using p
 
 Query profiler is automatically enabled in ClickHouse Cloud and you can run a sample query as follows
 
+:::note If you are running the following query in ClickHouse Cloud, make sure to change `FROM system.trace_log` to `FROM clusterAllReplicas(default, system.trace_log)` to select from all nodes of the cluster
+:::
+
 ``` sql
 SELECT
     count(),
@@ -39,7 +42,7 @@ To analyze the `trace_log` system table:
 
 - Install the `clickhouse-common-static-dbg` package. See [Install from DEB Packages](../../getting-started/install.md#install-from-deb-packages).
 
-- Allow introspection functions by the [allow_introspection_functions](../../operations/settings/settings.md#settings-allow_introspection_functions) setting.
+- Allow introspection functions by the [allow_introspection_functions](../../operations/settings/settings.md#allow_introspection_functions) setting.
 
     For security reasons, introspection functions are disabled by default.
 

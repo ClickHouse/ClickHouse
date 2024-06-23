@@ -12,7 +12,7 @@
 namespace DB
 {
 
-namespace FileEncryption { enum class Algorithm; }
+namespace FileEncryption { enum class Algorithm : uint8_t; }
 
 struct DiskEncryptedSettings
 {
@@ -116,7 +116,7 @@ public:
     /// but it's impossible to implement correctly in transactions because other disk can
     /// use different metadata storage.
     /// TODO: maybe remove it at all, we don't want copies
-    void copyFile(const std::string & from_file_path, const std::string & to_file_path) override;
+    void copyFile(const std::string & from_file_path, const std::string & to_file_path, const ReadSettings & read_settings, const WriteSettings & write_settings) override;
 
     /// Open the file for write and return WriteBufferFromFileBase object.
     std::unique_ptr<WriteBufferFromFileBase> writeFile( /// NOLINT
@@ -242,6 +242,13 @@ public:
     {
         auto wrapped_path = wrappedPath(path);
         return delegate_transaction->writeFile(wrapped_path, buf_size, mode, settings);
+    }
+
+    /// Truncate file to the target size.
+    void truncateFile(const std::string & src_path, size_t target_size) override
+    {
+        auto wrapped_path = wrappedPath(src_path);
+        delegate_transaction->truncateFile(wrapped_path, target_size);
     }
 
 

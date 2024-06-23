@@ -37,6 +37,16 @@ def get_status(dictionary_name):
     ).rstrip("\n")
 
 
+def get_status_retry(dictionary_name, expect, retry_count=10, sleep_time=0.5):
+    for _ in range(retry_count):
+        res = get_status(dictionary_name)
+        if res == expect:
+            return res
+        time.sleep(sleep_time)
+
+    raise Exception(f'Expected result "{expect}" did not occur')
+
+
 def get_last_exception(dictionary_name):
     return (
         instance.query(
@@ -92,16 +102,16 @@ def test_reload_while_loading(started_cluster):
     assert get_status("slow") == "NOT_LOADED"
     assert get_loading_duration("slow") == 0
 
-    # It's not possible to get a value from the dictionary within 0.5 second, so the following query fails by timeout.
+    # It's not possible to get a value from the dictionary within 1 second, so the following query fails by timeout.
     with pytest.raises(QueryTimeoutExceedException):
-        query("SELECT dictGetInt32('slow', 'a', toUInt64(5))", timeout=0.5)
+        query("SELECT dictGetInt32('slow', 'a', toUInt64(5))", timeout=1)
 
     # The dictionary is now loading.
     assert get_status("slow") == "LOADING"
     start_time, duration = get_loading_start_time("slow"), get_loading_duration("slow")
     assert duration > 0
 
-    time.sleep(0.5)  # Still loading.
+    time.sleep(1)  # Still loading.
     assert get_status("slow") == "LOADING"
     prev_start_time, prev_duration = start_time, duration
     start_time, duration = get_loading_start_time("slow"), get_loading_duration("slow")
@@ -110,14 +120,14 @@ def test_reload_while_loading(started_cluster):
 
     # SYSTEM RELOAD DICTIONARY should restart loading.
     with pytest.raises(QueryTimeoutExceedException):
-        query("SYSTEM RELOAD DICTIONARY 'slow'", timeout=0.5)
+        query("SYSTEM RELOAD DICTIONARY 'slow'", timeout=1)
     assert get_status("slow") == "LOADING"
     prev_start_time, prev_duration = start_time, duration
     start_time, duration = get_loading_start_time("slow"), get_loading_duration("slow")
     assert start_time > prev_start_time
     assert duration < prev_duration
 
-    time.sleep(0.5)  # Still loading.
+    time.sleep(1)  # Still loading.
     assert get_status("slow") == "LOADING"
     prev_start_time, prev_duration = start_time, duration
     start_time, duration = get_loading_start_time("slow"), get_loading_duration("slow")
@@ -128,7 +138,7 @@ def test_reload_while_loading(started_cluster):
     replace_in_file_in_container(
         "/etc/clickhouse-server/dictionaries/slow.xml", "sleep 100", "sleep 0"
     )
-    time.sleep(5)  # Configuration files are reloaded once in 5 seconds.
+    query("SYSTEM RELOAD CONFIG")
 
     # This time loading should finish quickly.
     assert get_status("slow") == "LOADED"
@@ -250,6 +260,15 @@ def test_reload_after_fail_by_timer(started_cluster):
     assert expected_error in instance.query_and_get_error(
         "SELECT dictGetInt32('no_file_2', 'a', toUInt64(9))"
     )
+
+    # on sanitizers builds it can return 'FAILED_AND_RELOADING' which is not quite right
+    # add retry for these builds
+    if (
+        instance.is_built_with_sanitizer()
+        and get_status("no_file_2") == "FAILED_AND_RELOADING"
+    ):
+        get_status_retry("no_file_2", expect="FAILED")
+
     assert get_status("no_file_2") == "FAILED"
 
     # Creating the file source makes the dictionary able to load.
@@ -281,7 +300,7 @@ def test_reload_after_fail_in_cache_dictionary(started_cluster):
     query_and_get_error = instance.query_and_get_error
 
     # Can't get a value from the cache dictionary because the source (table `test.xypairs`) doesn't respond.
-    expected_error = "Table test.xypairs doesn't exist"
+    expected_error = "UNKNOWN_TABLE"
     update_error = "Could not update cache dictionary cache_xypairs now"
     assert expected_error in query_and_get_error(
         "SELECT dictGetUInt64('cache_xypairs', 'y', toUInt64(1))"

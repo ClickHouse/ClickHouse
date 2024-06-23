@@ -5,7 +5,7 @@ sidebar_label: cluster
 title: "cluster, clusterAllReplicas"
 ---
 
-Allows to access all shards in an existing cluster which configured in `remote_servers` section without creating a [Distributed](../../engines/table-engines/special/distributed.md) table. One replica of each shard is queried.
+Allows to access all shards (configured in the `remote_servers` section) of a cluster without creating a [Distributed](../../engines/table-engines/special/distributed.md) table. Only one replica of each shard is queried.
 
 `clusterAllReplicas` function — same as `cluster`, but all replicas are queried. Each replica in a cluster is used as a separate shard/connection.
 
@@ -16,14 +16,14 @@ All available clusters are listed in the [system.clusters](../../operations/syst
 **Syntax**
 
 ``` sql
-cluster('cluster_name', db.table[, sharding_key])
-cluster('cluster_name', db, table[, sharding_key])
-clusterAllReplicas('cluster_name', db.table[, sharding_key])
-clusterAllReplicas('cluster_name', db, table[, sharding_key])
+cluster(['cluster_name', db.table, sharding_key])
+cluster(['cluster_name', db, table, sharding_key])
+clusterAllReplicas(['cluster_name', db.table, sharding_key])
+clusterAllReplicas(['cluster_name', db, table, sharding_key])
 ```
 **Arguments**
 
-- `cluster_name` – Name of a cluster that is used to build a set of addresses and connection parameters to remote and local servers.
+- `cluster_name` – Name of a cluster that is used to build a set of addresses and connection parameters to remote and local servers, set `default` if not specified.
 - `db.table` or `db`, `table` - Name of a database and a table.
 - `sharding_key` - A sharding key. Optional. Needs to be specified if the cluster has more than one shard.
 
@@ -55,5 +55,5 @@ Connection settings like `host`, `port`, `user`, `password`, `compression`, `sec
 
 **See Also**
 
-- [skip_unavailable_shards](../../operations/settings/settings.md#settings-skip_unavailable_shards)
-- [load_balancing](../../operations/settings/settings.md#settings-load_balancing)
+- [skip_unavailable_shards](../../operations/settings/settings.md#skip_unavailable_shards)
+- [load_balancing](../../operations/settings/settings.md#load_balancing)

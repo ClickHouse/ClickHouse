@@ -1,0 +1,64 @@
+<test>
+    <settings>
+        <max_threads>16</max_threads>
+        <max_memory_usage>10G</max_memory_usage>
+    </settings>
+
+    <substitutions>
+        <substitution>
+            <name>settings</name>
+            <values>
+                <value>join_algorithm='hash'</value>
+                <value>join_algorithm='grace_hash'</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <create_query>
+        create table test_left
+        (
+        k1 String,
+        v1 String
+        )
+        engine = Memory();
+    </create_query>
+    <create_query>
+        create table test_right
+        (
+        k1 String,
+        v1 String,
+        v2 String,
+        v3 String,
+        v4 String,
+        v5 String,
+        v6 String,
+        v7 String,
+        v8 String,
+        v9 String
+        )
+        engine = Memory();
+    </create_query>
+    <fill_query>insert into test_left SELECT toString(number % 20), toString(number) from system.numbers limit 10000;</fill_query>
+    <fill_query>
+        insert into test_right
+        SELECT
+        toString(number % 20),
+        toString(number * 10000),
+        toString(number * 10000 + 1),
+        toString(number * 10000 + 2),
+        toString(number * 10000 + 3),
+        toString(number * 10000 + 4),
+        toString(number * 10000 + 5),
+        toString(number * 10000 + 6),
+        toString(number * 10000 + 7),
+        toString(number * 10000 + 8)
+        from system.numbers limit 10000;
+    </fill_query>
+
+    <query>
+        select * from test_left all inner join test_right on test_left.k1 = test_right.k1  SETTINGS {settings} format Null
+    </query>
+
+    <drop_query>DROP TABLE IF EXISTS test_left</drop_query>
+    <drop_query>DROP TABLE IF EXISTS test_right</drop_query>
+</test>

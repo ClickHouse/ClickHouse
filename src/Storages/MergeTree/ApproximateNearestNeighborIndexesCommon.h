@@ -9,6 +9,9 @@
 namespace DB
 {
 
+static constexpr auto DISTANCE_FUNCTION_L2 = "L2Distance";
+static constexpr auto DISTANCE_FUNCTION_COSINE = "cosineDistance";
+
 /// Approximate Nearest Neighbour queries have a similar structure:
 /// - reference vector from which all distances are calculated
 /// - metric name (e.g L2Distance, LpDistance, etc.)
@@ -26,7 +29,7 @@ struct ApproximateNearestNeighborInformation
     using Embedding = std::vector<float>;
     Embedding reference_vector;
 
-    enum class Metric
+    enum class Metric : uint8_t
     {
         Unknown,
         L2,
@@ -37,7 +40,7 @@ struct ApproximateNearestNeighborInformation
     String column_name;
     UInt64 limit;
 
-    enum class Type
+    enum class Type : uint8_t
     {
         OrderBy,
         Where

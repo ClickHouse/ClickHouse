@@ -24,14 +24,19 @@ class ReadBuffer;
 class CapnProtoRowInputFormat final : public IRowInputFormat
 {
 public:
-    CapnProtoRowInputFormat(ReadBuffer & in_, Block header, Params params_, const FormatSchemaInfo & info, const FormatSettings & format_settings_);
+    CapnProtoRowInputFormat(ReadBuffer & in_, Block header, Params params_, const CapnProtoSchemaInfo & info, const FormatSettings & format_settings);
 
     String getName() const override { return "CapnProtoRowInputFormat"; }
 
 private:
     bool readRow(MutableColumns & columns, RowReadExtension &) override;
 
+    bool supportsCountRows() const override { return true; }
+    size_t countRows(size_t max_block_size) override;
+
+    std::pair<kj::Array<capnp::word>, size_t> readMessagePrefix();
     kj::Array<capnp::word> readMessage();
+    void skipMessage();
 
     std::shared_ptr<CapnProtoSchemaParser> parser;
     capnp::StructSchema schema;

@@ -14,7 +14,7 @@ cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
     "node1",
     with_odbc_drivers=True,
-    with_mysql=True,
+    with_mysql8=True,
     with_postgres=True,
     main_configs=["configs/openssl.xml", "configs/odbc_logging.xml"],
     dictionaries=[
@@ -55,13 +55,13 @@ def get_mysql_conn():
                 conn = pymysql.connect(
                     user="root",
                     password="clickhouse",
-                    host=cluster.mysql_ip,
-                    port=cluster.mysql_port,
+                    host=cluster.mysql8_ip,
+                    port=cluster.mysql8_port,
                 )
             else:
                 conn.ping(reconnect=True)
             logging.debug(
-                f"MySQL Connection establised: {cluster.mysql_ip}:{cluster.mysql_port}"
+                f"MySQL Connection establised: {cluster.mysql8_ip}:{cluster.mysql8_port}"
             )
             return conn
         except Exception as e:
@@ -230,7 +230,7 @@ def test_mysql_simple_select_works(started_cluster):
 
     node1.query(
         """
-CREATE TABLE {}(id UInt32, name String, age UInt32, money UInt32, column_x Nullable(UInt32)) ENGINE = MySQL('mysql57:3306', 'clickhouse', '{}', 'root', 'clickhouse');
+CREATE TABLE {}(id UInt32, name String, age UInt32, money UInt32, column_x Nullable(UInt32)) ENGINE = MySQL('mysql80:3306', 'clickhouse', '{}', 'root', 'clickhouse');
 """.format(
             table_name, table_name
         )
@@ -582,75 +582,83 @@ def test_sqlite_odbc_cached_dictionary(started_cluster):
 def test_postgres_odbc_hashed_dictionary_with_schema(started_cluster):
     skip_test_msan(node1)
 
-    conn = get_postgres_conn(started_cluster)
-    cursor = conn.cursor()
-    cursor.execute(
-        "insert into clickhouse.test_table values(1, 1, 'hello'),(2, 2, 'world')"
-    )
-    node1.query("SYSTEM RELOAD DICTIONARY postgres_odbc_hashed")
-    node1.exec_in_container(
-        ["ss", "-K", "dport", "postgresql"], privileged=True, user="root"
-    )
-    node1.query("SYSTEM RELOAD DICTIONARY postgres_odbc_hashed")
-    assert_eq_with_retry(
-        node1,
-        "select dictGetString('postgres_odbc_hashed', 'column2', toUInt64(1))",
-        "hello",
-    )
-    assert_eq_with_retry(
-        node1,
-        "select dictGetString('postgres_odbc_hashed', 'column2', toUInt64(2))",
-        "world",
-    )
-    cursor.execute("truncate table clickhouse.test_table")
+    try:
+        conn = get_postgres_conn(started_cluster)
+        cursor = conn.cursor()
+        cursor.execute(
+            "insert into clickhouse.test_table values(1, 1, 'hello'),(2, 2, 'world')"
+        )
+        node1.query("SYSTEM RELOAD DICTIONARY postgres_odbc_hashed")
+        node1.exec_in_container(
+            ["ss", "-K", "dport", "postgresql"], privileged=True, user="root"
+        )
+        node1.query("SYSTEM RELOAD DICTIONARY postgres_odbc_hashed")
+        assert_eq_with_retry(
+            node1,
+            "select dictGetString('postgres_odbc_hashed', 'column2', toUInt64(1))",
+            "hello",
+        )
+        assert_eq_with_retry(
+            node1,
+            "select dictGetString('postgres_odbc_hashed', 'column2', toUInt64(2))",
+            "world",
+        )
+    finally:
+        cursor.execute("truncate table clickhouse.test_table")
 
 
 def test_postgres_odbc_hashed_dictionary_no_tty_pipe_overflow(started_cluster):
     skip_test_msan(node1)
 
-    conn = get_postgres_conn(started_cluster)
-    cursor = conn.cursor()
-    cursor.execute("insert into clickhouse.test_table values(3, 3, 'xxx')")
-    for i in range(100):
-        try:
-            node1.query("system reload dictionary postgres_odbc_hashed", timeout=15)
-        except Exception as ex:
-            assert False, "Exception occured -- odbc-bridge hangs: " + str(ex)
+    try:
+        conn = get_postgres_conn(started_cluster)
+        cursor = conn.cursor()
+        cursor.execute("insert into clickhouse.test_table values(3, 3, 'xxx')")
+        for i in range(100):
+            try:
+                node1.query("system reload dictionary postgres_odbc_hashed", timeout=15)
+            except Exception as ex:
+                assert False, "Exception occured -- odbc-bridge hangs: " + str(ex)
 
-    assert_eq_with_retry(
-        node1,
-        "select dictGetString('postgres_odbc_hashed', 'column2', toUInt64(3))",
-        "xxx",
-    )
-    cursor.execute("truncate table clickhouse.test_table")
+        assert_eq_with_retry(
+            node1,
+            "select dictGetString('postgres_odbc_hashed', 'column2', toUInt64(3))",
+            "xxx",
+        )
+    finally:
+        cursor.execute("truncate table clickhouse.test_table")
 
 
 def test_no_connection_pooling(started_cluster):
     skip_test_msan(node1)
 
-    conn = get_postgres_conn(started_cluster)
-    cursor = conn.cursor()
-    cursor.execute(
-        "insert into clickhouse.test_table values(1, 1, 'hello'),(2, 2, 'world')"
-    )
-    node1.exec_in_container(["ss", "-K", "dport", "5432"], privileged=True, user="root")
-    node1.query("SYSTEM RELOAD DICTIONARY postgres_odbc_nopool")
-    assert_eq_with_retry(
-        node1,
-        "select dictGetString('postgres_odbc_nopool', 'column2', toUInt64(1))",
-        "hello",
-    )
-    assert_eq_with_retry(
-        node1,
-        "select dictGetString('postgres_odbc_nopool', 'column2', toUInt64(2))",
-        "world",
-    )
+    try:
+        conn = get_postgres_conn(started_cluster)
+        cursor = conn.cursor()
+        cursor.execute(
+            "insert into clickhouse.test_table values(1, 1, 'hello'),(2, 2, 'world')"
+        )
+        node1.exec_in_container(
+            ["ss", "-K", "dport", "5432"], privileged=True, user="root"
+        )
+        node1.query("SYSTEM RELOAD DICTIONARY postgres_odbc_nopool")
+        assert_eq_with_retry(
+            node1,
+            "select dictGetString('postgres_odbc_nopool', 'column2', toUInt64(1))",
+            "hello",
+        )
+        assert_eq_with_retry(
+            node1,
+            "select dictGetString('postgres_odbc_nopool', 'column2', toUInt64(2))",
+            "world",
+        )
 
-    # No open connections should be left because we don't use connection pooling.
-    assert "" == node1.exec_in_container(
-        ["ss", "-H", "dport", "5432"], privileged=True, user="root"
-    )
-    cursor.execute("truncate table clickhouse.test_table")
+        # No open connections should be left because we don't use connection pooling.
+        assert "" == node1.exec_in_container(
+            ["ss", "-H", "dport", "5432"], privileged=True, user="root"
+        )
+    finally:
+        cursor.execute("truncate table clickhouse.test_table")
 
 
 def test_postgres_insert(started_cluster):
@@ -662,112 +670,119 @@ def test_postgres_insert(started_cluster):
     # postgres .yml file). This is needed to check parsing, validation and
     # reconstruction of connection string.
 
-    node1.query(
-        "create table pg_insert (id UInt64, column1 UInt8, column2 String) engine=ODBC('DSN=postgresql_odbc;Servername=postgre-sql.local', 'clickhouse', 'test_table')"
-    )
-    node1.query("insert into pg_insert values (1, 1, 'hello'), (2, 2, 'world')")
-    assert node1.query("select * from pg_insert") == "1\t1\thello\n2\t2\tworld\n"
-    node1.query(
-        "insert into table function odbc('DSN=postgresql_odbc', 'clickhouse', 'test_table') format CSV 3,3,test"
-    )
-    node1.query(
-        "insert into table function odbc('DSN=postgresql_odbc;Servername=postgre-sql.local', 'clickhouse', 'test_table')"
-        " select number, number, 's' || toString(number) from numbers (4, 7)"
-    )
-    assert (
-        node1.query("select sum(column1), count(column1) from pg_insert") == "55\t10\n"
-    )
-    assert (
+    try:
         node1.query(
-            "select sum(n), count(n) from (select (*,).1 as n from (select * from odbc('DSN=postgresql_odbc', 'clickhouse', 'test_table')))"
+            "create table pg_insert (id UInt64, column1 UInt8, column2 String) engine=ODBC('DSN=postgresql_odbc;Servername=postgre-sql.local', 'clickhouse', 'test_table')"
         )
-        == "55\t10\n"
-    )
-    node1.query("DROP TABLE pg_insert")
-    conn.cursor().execute("truncate table clickhouse.test_table")
+        node1.query("insert into pg_insert values (1, 1, 'hello'), (2, 2, 'world')")
+        assert node1.query("select * from pg_insert") == "1\t1\thello\n2\t2\tworld\n"
+        node1.query(
+            "insert into table function odbc('DSN=postgresql_odbc', 'clickhouse', 'test_table') format CSV 3,3,test"
+        )
+        node1.query(
+            "insert into table function odbc('DSN=postgresql_odbc;Servername=postgre-sql.local', 'clickhouse', 'test_table')"
+            " select number, number, 's' || toString(number) from numbers (4, 7)"
+        )
+        assert (
+            node1.query("select sum(column1), count(column1) from pg_insert")
+            == "55\t10\n"
+        )
+        assert (
+            node1.query(
+                "select sum(n), count(n) from (select (*,).1 as n from (select * from odbc('DSN=postgresql_odbc', 'clickhouse', 'test_table')))"
+            )
+            == "55\t10\n"
+        )
+    finally:
+        node1.query("DROP TABLE IF EXISTS pg_insert")
+        conn.cursor().execute("truncate table clickhouse.test_table")
 
 
 def test_odbc_postgres_date_data_type(started_cluster):
     skip_test_msan(node1)
 
-    conn = get_postgres_conn(started_cluster)
-    cursor = conn.cursor()
-    cursor.execute(
-        "CREATE TABLE clickhouse.test_date (id integer, column1 integer, column2 date)"
-    )
+    try:
+        conn = get_postgres_conn(started_cluster)
+        cursor = conn.cursor()
+        cursor.execute(
+            "CREATE TABLE clickhouse.test_date (id integer, column1 integer, column2 date)"
+        )
 
-    cursor.execute("INSERT INTO clickhouse.test_date VALUES (1, 1, '2020-12-01')")
-    cursor.execute("INSERT INTO clickhouse.test_date VALUES (2, 2, '2020-12-02')")
-    cursor.execute("INSERT INTO clickhouse.test_date VALUES (3, 3, '2020-12-03')")
-    conn.commit()
+        cursor.execute("INSERT INTO clickhouse.test_date VALUES (1, 1, '2020-12-01')")
+        cursor.execute("INSERT INTO clickhouse.test_date VALUES (2, 2, '2020-12-02')")
+        cursor.execute("INSERT INTO clickhouse.test_date VALUES (3, 3, '2020-12-03')")
+        conn.commit()
 
-    node1.query(
-        """
-        CREATE TABLE test_date (id UInt64, column1 UInt64, column2 Date)
-        ENGINE=ODBC('DSN=postgresql_odbc; Servername=postgre-sql.local', 'clickhouse', 'test_date')"""
-    )
+        node1.query(
+            """
+            CREATE TABLE test_date (id UInt64, column1 UInt64, column2 Date)
+            ENGINE=ODBC('DSN=postgresql_odbc; Servername=postgre-sql.local', 'clickhouse', 'test_date')"""
+        )
 
-    expected = "1\t1\t2020-12-01\n2\t2\t2020-12-02\n3\t3\t2020-12-03\n"
-    result = node1.query("SELECT * FROM test_date")
-    assert result == expected
-    cursor.execute("DROP TABLE clickhouse.test_date")
-    node1.query("DROP TABLE test_date")
+        expected = "1\t1\t2020-12-01\n2\t2\t2020-12-02\n3\t3\t2020-12-03\n"
+        result = node1.query("SELECT * FROM test_date")
+        assert result == expected
+    finally:
+        cursor.execute("DROP TABLE clickhouse.test_date")
+        node1.query("DROP TABLE IF EXISTS test_date")
 
 
 def test_odbc_postgres_conversions(started_cluster):
     skip_test_msan(node1)
 
-    conn = get_postgres_conn(started_cluster)
-    cursor = conn.cursor()
+    try:
+        conn = get_postgres_conn(started_cluster)
+        cursor = conn.cursor()
 
-    cursor.execute(
-        """CREATE TABLE clickhouse.test_types (
-        a smallint, b integer, c bigint, d real, e double precision, f serial, g bigserial,
-        h timestamp)"""
-    )
+        cursor.execute(
+            """CREATE TABLE clickhouse.test_types (
+            a smallint, b integer, c bigint, d real, e double precision, f serial, g bigserial,
+            h timestamp)"""
+        )
 
-    node1.query(
-        """
-        INSERT INTO TABLE FUNCTION
-        odbc('DSN=postgresql_odbc; Servername=postgre-sql.local', 'clickhouse', 'test_types')
-        VALUES (-32768, -2147483648, -9223372036854775808, 1.12345, 1.1234567890, 2147483647, 9223372036854775807, '2000-05-12 12:12:12')"""
-    )
+        node1.query(
+            """
+            INSERT INTO TABLE FUNCTION
+            odbc('DSN=postgresql_odbc; Servername=postgre-sql.local', 'clickhouse', 'test_types')
+            VALUES (-32768, -2147483648, -9223372036854775808, 1.12345, 1.1234567890, 2147483647, 9223372036854775807, '2000-05-12 12:12:12')"""
+        )
 
-    result = node1.query(
-        """
-        SELECT a, b, c, d, e, f, g, h
-        FROM odbc('DSN=postgresql_odbc; Servername=postgre-sql.local', 'clickhouse', 'test_types')
-        """
-    )
+        result = node1.query(
+            """
+            SELECT a, b, c, d, e, f, g, h
+            FROM odbc('DSN=postgresql_odbc; Servername=postgre-sql.local', 'clickhouse', 'test_types')
+            """
+        )
 
-    assert (
-        result
-        == "-32768\t-2147483648\t-9223372036854775808\t1.12345\t1.123456789\t2147483647\t9223372036854775807\t2000-05-12 12:12:12\n"
-    )
-    cursor.execute("DROP TABLE IF EXISTS clickhouse.test_types")
+        assert (
+            result
+            == "-32768\t-2147483648\t-9223372036854775808\t1.12345\t1.123456789\t2147483647\t9223372036854775807\t2000-05-12 12:12:12\n"
+        )
+        cursor.execute("DROP TABLE IF EXISTS clickhouse.test_types")
 
-    cursor.execute(
-        """CREATE TABLE clickhouse.test_types (column1 Timestamp, column2 Numeric)"""
-    )
+        cursor.execute(
+            """CREATE TABLE clickhouse.test_types (column1 Timestamp, column2 Numeric)"""
+        )
 
-    node1.query(
-        """
-        CREATE TABLE test_types (column1 DateTime64, column2 Decimal(5, 1))
-        ENGINE=ODBC('DSN=postgresql_odbc; Servername=postgre-sql.local', 'clickhouse', 'test_types')"""
-    )
+        node1.query(
+            """
+            CREATE TABLE test_types (column1 DateTime64, column2 Decimal(5, 1))
+            ENGINE=ODBC('DSN=postgresql_odbc; Servername=postgre-sql.local', 'clickhouse', 'test_types')"""
+        )
 
-    node1.query(
-        """INSERT INTO test_types
-        SELECT toDateTime64('2019-01-01 00:00:00', 3, 'Etc/UTC'), toDecimal32(1.1, 1)"""
-    )
+        node1.query(
+            """INSERT INTO test_types
+            SELECT toDateTime64('2019-01-01 00:00:00', 3, 'Etc/UTC'), toDecimal32(1.1, 1)"""
+        )
 
-    expected = node1.query(
-        "SELECT toDateTime64('2019-01-01 00:00:00', 3, 'Etc/UTC'), toDecimal32(1.1, 1)"
-    )
-    result = node1.query("SELECT * FROM test_types")
-    cursor.execute("DROP TABLE clickhouse.test_types")
-    node1.query("DROP TABLE test_types")
-    assert result == expected
+        expected = node1.query(
+            "SELECT toDateTime64('2019-01-01 00:00:00', 3, 'Etc/UTC'), toDecimal32(1.1, 1)"
+        )
+        result = node1.query("SELECT * FROM test_types")
+        assert result == expected
+    finally:
+        cursor.execute("DROP TABLE IF EXISTS clickhouse.test_types")
+        node1.query("DROP TABLE IF EXISTS test_types")
 
 
 def test_odbc_cyrillic_with_varchar(started_cluster):

@@ -6,7 +6,7 @@
 
 namespace DB
 {
-void PingHandler::handleRequest(HTTPServerRequest & /* request */, HTTPServerResponse & response)
+void PingHandler::handleRequest(HTTPServerRequest & /* request */, HTTPServerResponse & response, const ProfileEvents::Event & /*write_event*/)
 {
     try
     {

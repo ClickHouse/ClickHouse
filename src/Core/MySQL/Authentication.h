@@ -61,7 +61,7 @@ private:
 class Sha256Password : public IPlugin
 {
 public:
-    Sha256Password(RSA & public_key_, RSA & private_key_, Poco::Logger * log_);
+    Sha256Password(RSA & public_key_, RSA & private_key_, LoggerPtr log_);
 
     String getName() override { return "sha256_password"; }
 
@@ -74,7 +74,7 @@ public:
 private:
     RSA & public_key;
     RSA & private_key;
-    Poco::Logger * log;
+    LoggerPtr log;
     String scramble;
 };
 #endif

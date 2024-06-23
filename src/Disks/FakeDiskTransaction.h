@@ -2,9 +2,15 @@
 
 #include <Disks/IDiskTransaction.h>
 #include <IO/WriteBufferFromFileBase.h>
+#include <Common/Exception.h>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
 
 /// Fake disk transaction implementation.
 /// Just execute all operations immediately, commit is noop operation.
@@ -54,9 +60,9 @@ public:
         disk.replaceFile(from_path, to_path);
     }
 
-    void copyFile(const std::string & from_file_path, const std::string & to_file_path) override
+    void copyFile(const std::string & from_file_path, const std::string & to_file_path, const ReadSettings & read_settings, const WriteSettings & write_settings) override
     {
-        disk.copyFile(from_file_path, disk, to_file_path);
+        disk.copyFile(from_file_path, disk, to_file_path, read_settings, write_settings);
     }
 
     std::unique_ptr<WriteBufferFromFileBase> writeFile( /// NOLINT
@@ -132,6 +138,11 @@ public:
     void createHardLink(const std::string & src_path, const std::string & dst_path) override
     {
         disk.createHardLink(src_path, dst_path);
+    }
+
+    void truncateFile(const std::string & /* src_path */, size_t /* target_size */) override
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Operation `truncateFile` is not implemented");
     }
 
 private:

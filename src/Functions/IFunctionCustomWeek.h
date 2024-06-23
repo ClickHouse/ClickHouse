@@ -65,41 +65,47 @@ public:
     }
 
 protected:
-    void checkArguments(const ColumnsWithTypeAndName & arguments, bool is_result_type_date_or_date32 = false) const
+    void checkArguments(const ColumnsWithTypeAndName & arguments, bool is_result_type_date_or_date32, bool value_may_be_string) const
     {
         if (arguments.size() == 1)
         {
-            if (!isDate(arguments[0].type) && !isDate32(arguments[0].type) && !isDateTime(arguments[0].type) && !isDateTime64(arguments[0].type))
+            auto type0 = arguments[0].type;
+            if (!isDate(type0) && !isDate32(type0) && !isDateTime(type0) && !isDateTime64(type0) && !(value_may_be_string && isString(type0)))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Illegal type {} of argument of function {}. Must be Date, Date32, DateTime or DateTime64.",
-                    arguments[0].type->getName(), getName());
+                    type0->getName(), getName());
         }
         else if (arguments.size() == 2)
         {
-            if (!isDate(arguments[0].type) && !isDate32(arguments[0].type) && !isDateTime(arguments[0].type) && !isDateTime64(arguments[0].type))
+            auto type0 = arguments[0].type;
+            auto type1 = arguments[1].type;
+            if (!isDate(type0) && !isDate32(type0) && !isDateTime(type0) && !isDateTime64(type0) && !(value_may_be_string && isString(type0)))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Illegal type {} of 1st argument of function {}. Must be Date, Date32, DateTime or DateTime64.",
-                    arguments[0].type->getName(), getName());
-            if (!isUInt8(arguments[1].type))
+                    type0->getName(), getName());
+            if (!isUInt8(type1))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Illegal type {} of 2nd (optional) argument of function {}. Must be constant UInt8 (week mode).",
-                    arguments[1].type->getName(), getName());
+                    type1->getName(), getName());
         }
         else if (arguments.size() == 3)
         {
-            if (!isDate(arguments[0].type) && !isDate32(arguments[0].type) && !isDateTime(arguments[0].type) && !isDateTime64(arguments[0].type))
+            auto type0 = arguments[0].type;
+            auto type1 = arguments[1].type;
+            auto type2 = arguments[2].type;
+            if (!isDate(type0) && !isDate32(type0) && !isDateTime(type0) && !isDateTime64(type0) && !(value_may_be_string && isString(type0)))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Illegal type {} of argument of function {}. Must be Date, Date32, DateTime or DateTime64",
-                    arguments[0].type->getName(), getName());
-            if (!isUInt8(arguments[1].type))
+                    type0->getName(), getName());
+            if (!isUInt8(type1))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Illegal type {} of 2nd (optional) argument of function {}. Must be constant UInt8 (week mode).",
-                    arguments[1].type->getName(), getName());
-            if (!isString(arguments[2].type))
+                    type1->getName(), getName());
+            if (!isString(type2))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Illegal type {} of 3rd (optional) argument of function {}. Must be constant string (timezone name).",
-                    arguments[2].type->getName(), getName());
-            if ((isDate(arguments[0].type) || isDate32(arguments[0].type)) && is_result_type_date_or_date32)
+                    type2->getName(), getName());
+            if (is_result_type_date_or_date32 && (isDate(type0) || isDate32(type0)))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "The timezone argument of function {} is allowed only when the 1st argument is DateTime or DateTime64.",
                     getName());

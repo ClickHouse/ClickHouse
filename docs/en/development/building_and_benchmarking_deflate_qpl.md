@@ -7,12 +7,8 @@ description: How to build Clickhouse and run benchmark with DEFLATE_QPL Codec
 
 # Build Clickhouse with DEFLATE_QPL
 
-- Make sure your target machine meet the QPL required [prerequisites](https://intel.github.io/qpl/documentation/get_started_docs/installation.html#prerequisites)
-- Pass the following flag to CMake when building ClickHouse:
-
-``` bash
-cmake -DENABLE_QPL=1 ..
-```
+- Make sure your host machine meet the QPL required [prerequisites](https://intel.github.io/qpl/documentation/get_started_docs/installation.html#prerequisites)
+- deflate_qpl is enabled by default during cmake build. In case you accidentally change it, please double-check build flag: ENABLE_QPL=1
 
 - For generic requirements, please refer to Clickhouse generic [build instructions](/docs/en/development/build.md)
 
@@ -99,7 +95,7 @@ Complete below three steps mentioned in [Star Schema Benchmark](https://clickhou
 - Inserting data. Here should use `./benchmark_sample/rawdata_dir/ssb-dbgen/*.tbl` as input data.
 - Converting “star schema” to de-normalized “flat schema”
 
-Set up database with with IAA Deflate codec
+Set up database with IAA Deflate codec
 
 ``` bash
 $ cd ./database_dir/deflate
@@ -108,7 +104,7 @@ $ [CLICKHOUSE_EXE] client
 ```
 Complete three steps same as lz4 above
 
-Set up database with with ZSTD codec
+Set up database with ZSTD codec
 
 ``` bash
 $ cd ./database_dir/zstd

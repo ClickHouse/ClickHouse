@@ -1,11 +1,14 @@
 #include <Access/ExternalAuthenticators.h>
 #include <Access/LDAPClient.h>
+#include <Access/SettingsAuthResponseParser.h>
+#include <Access/resolveSetting.h>
 #include <Common/Exception.h>
-#include <Common/quoteString.h>
+#include <Common/SettingsChanges.h>
 #include <Common/SipHash.h>
+#include <Common/quoteString.h>
 
-#include <Poco/Util/AbstractConfiguration.h>
 #include <boost/algorithm/string/case_conv.hpp>
+#include <Poco/Util/AbstractConfiguration.h>
 
 #include <optional>
 #include <utility>
@@ -230,6 +233,27 @@ void parseKerberosParams(GSSAcceptorContext::Params & params, const Poco::Util::
     params.keytab = config.getString("kerberos.keytab", "");
 }
 
+HTTPAuthClientParams parseHTTPAuthParams(const Poco::Util::AbstractConfiguration & config, const String & prefix)
+{
+    HTTPAuthClientParams http_auth_params;
+
+    http_auth_params.uri = config.getString(prefix + ".uri");
+
+    size_t connection_timeout_ms = config.getInt(prefix + ".connection_timeout_ms", 1000);
+    size_t receive_timeout_ms = config.getInt(prefix + ".receive_timeout_ms", 1000);
+    size_t send_timeout_ms = config.getInt(prefix + ".send_timeout_ms", 1000);
+    http_auth_params.timeouts = ConnectionTimeouts()
+        .withConnectionTimeout(Poco::Timespan(connection_timeout_ms * 1000))
+        .withReceiveTimeout(Poco::Timespan(receive_timeout_ms * 1000))
+        .withSendTimeout(Poco::Timespan(send_timeout_ms * 1000));
+
+    http_auth_params.max_tries = config.getInt(prefix + ".max_tries", 3);
+    http_auth_params.retry_initial_backoff_ms = config.getInt(prefix + ".retry_initial_backoff_ms", 50);
+    http_auth_params.retry_max_backoff_ms = config.getInt(prefix + ".retry_max_backoff_ms", 1000);
+
+    return http_auth_params;
+}
+
 }
 
 void parseLDAPRoleSearchParams(LDAPClient::RoleSearchParams & params, const Poco::Util::AbstractConfiguration & config, const String & prefix)
@@ -251,13 +275,13 @@ void ExternalAuthenticators::resetImpl()
 
 void ExternalAuthenticators::reset()
 {
-    std::scoped_lock lock(mutex);
+    std::lock_guard lock(mutex);
     resetImpl();
 }
 
-void ExternalAuthenticators::setConfiguration(const Poco::Util::AbstractConfiguration & config, Poco::Logger * log)
+void ExternalAuthenticators::setConfiguration(const Poco::Util::AbstractConfiguration & config, LoggerPtr log)
 {
-    std::scoped_lock lock(mutex);
+    std::lock_guard lock(mutex);
     resetImpl();
 
     Poco::Util::AbstractConfiguration::Keys all_keys;
@@ -265,6 +289,9 @@ void ExternalAuthenticators::setConfiguration(const Poco::Util::AbstractConfigur
 
     std::size_t ldap_servers_key_count = 0;
     std::size_t kerberos_keys_count = 0;
+    std::size_t http_auth_server_keys_count = 0;
+
+    const String http_auth_servers_config = "http_authentication_servers";
 
     for (auto key : all_keys)
     {
@@ -276,6 +303,7 @@ void ExternalAuthenticators::setConfiguration(const Poco::Util::AbstractConfigur
 
         ldap_servers_key_count += (key == "ldap_servers");
         kerberos_keys_count += (key == "kerberos");
+        http_auth_server_keys_count += (key == http_auth_servers_config);
     }
 
     if (ldap_servers_key_count > 1)
@@ -283,6 +311,25 @@ void ExternalAuthenticators::setConfiguration(const Poco::Util::AbstractConfigur
 
     if (kerberos_keys_count > 1)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Multiple kerberos sections are not allowed");
+
+    if (http_auth_server_keys_count > 1)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Multiple http_authentication_servers sections are not allowed");
+
+    Poco::Util::AbstractConfiguration::Keys http_auth_server_names;
+    config.keys(http_auth_servers_config, http_auth_server_names);
+    http_auth_servers.clear();
+    for (const auto & http_auth_server_name : http_auth_server_names)
+    {
+        String prefix = fmt::format("{}.{}", http_auth_servers_config, http_auth_server_name);
+        try
+        {
+            http_auth_servers[http_auth_server_name] = parseHTTPAuthParams(config, prefix);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Could not parse HTTP auth server" + backQuote(http_auth_server_name));
+        }
+    }
 
     Poco::Util::AbstractConfiguration::Keys ldap_server_names;
     config.keys("ldap_servers", ldap_server_names);
@@ -346,7 +393,7 @@ bool ExternalAuthenticators::checkLDAPCredentials(const String & server, const B
     UInt128 params_hash = 0;
 
     {
-        std::scoped_lock lock(mutex);
+        std::lock_guard lock(mutex);
 
         // Retrieve the server parameters.
         const auto pit = ldap_client_params_blueprint.find(server);
@@ -416,7 +463,7 @@ bool ExternalAuthenticators::checkLDAPCredentials(const String & server, const B
     // Update the cache, but only if this is the latest check and the server is still configured in a compatible way.
     if (result)
     {
-        std::scoped_lock lock(mutex);
+        std::lock_guard lock(mutex);
 
         // If the server was removed from the config while we were checking the password, we discard the current result.
         const auto pit = ldap_client_params_blueprint.find(server);
@@ -463,7 +510,7 @@ bool ExternalAuthenticators::checkLDAPCredentials(const String & server, const B
 
 bool ExternalAuthenticators::checkKerberosCredentials(const String & realm, const GSSAcceptorContext & credentials) const
 {
-    std::scoped_lock lock(mutex);
+    std::lock_guard lock(mutex);
 
     if (!kerberos_params.has_value())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Kerberos is not enabled");
@@ -482,7 +529,7 @@ bool ExternalAuthenticators::checkKerberosCredentials(const String & realm, cons
 
 GSSAcceptorContext::Params ExternalAuthenticators::getKerberosParams() const
 {
-    std::scoped_lock lock(mutex);
+    std::lock_guard lock(mutex);
 
     if (!kerberos_params.has_value())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Kerberos is not enabled");
@@ -490,4 +537,27 @@ GSSAcceptorContext::Params ExternalAuthenticators::getKerberosParams() const
     return kerberos_params.value();
 }
 
+HTTPAuthClientParams ExternalAuthenticators::getHTTPAuthenticationParams(const String& server) const
+{
+    std::lock_guard lock{mutex};
+
+    const auto it = http_auth_servers.find(server);
+    if (it == http_auth_servers.end())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "HTTP server '{}' is not configured", server);
+    return it->second;
+}
+
+bool ExternalAuthenticators::checkHTTPBasicCredentials(
+    const String & server, const BasicCredentials & credentials, SettingsChanges & settings) const
+{
+    auto params = getHTTPAuthenticationParams(server);
+    HTTPBasicAuthClient<SettingsAuthResponseParser> client(params);
+
+    auto [is_ok, settings_from_auth_server] = client.authenticate(credentials.getUserName(), credentials.getPassword());
+
+    if (is_ok)
+        std::ranges::move(settings_from_auth_server, std::back_inserter(settings));
+
+    return is_ok;
+}
 }

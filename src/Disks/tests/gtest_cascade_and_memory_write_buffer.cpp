@@ -33,7 +33,7 @@ public:
     void SetUp() override
     {
         fs::create_directories(tmp_root);
-        disk = std::make_shared<DB::DiskLocal>("local_disk", tmp_root, 0);
+        disk = std::make_shared<DB::DiskLocal>("local_disk", tmp_root);
     }
 
     void TearDown() override
@@ -69,7 +69,7 @@ static void testCascadeBufferRedability(
         auto rbuf = wbuf_readable.tryGetReadBuffer();
         ASSERT_FALSE(!rbuf);
 
-        concat.appendBuffer(wrapReadBufferPointer(rbuf));
+        concat.appendBuffer(wrapReadBufferPointer(std::move(rbuf)));
     }
 
     std::string decoded_data;
