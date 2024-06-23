@@ -118,8 +118,6 @@ void registerOutputFormatJSONCompactWithProgress(FormatFactory & factory)
     {
         return std::make_shared<JSONCompactWithProgressRowOutputFormat>(buf, sample, format_settings, false);
     });
-
-    factory.markOutputFormatSupportsParallelFormatting("JSONCompactWithProgress");
 }
 
 }
