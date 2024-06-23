@@ -33,6 +33,6 @@ $CLICKHOUSE_LOCAL --multiquery "SELECT 309; SELECT 310;" --multiquery
 $CLICKHOUSE_LOCAL --multiquery "SELECT 311;" --multiquery "SELECT 312;"
 $CLICKHOUSE_LOCAL --multiquery "SELECT 313;" -n "SELECT 314;"
 $CLICKHOUSE_LOCAL -n "SELECT 320" --query "SELECT 317;"
+# --query should be followed by SQL
 $CLICKHOUSE_LOCAL --query -n "SELECT 400;" 2>&1 | grep -o 'Bad arguments'
-# trans to $CLICKHOUSE_LOCAL --query -q "SELECT 401"
-$CLICKHOUSE_LOCAL --query -n --multiquery "SELECT 401;"
+$CLICKHOUSE_LOCAL --query -n --multiquery "SELECT 401;" 2>&1 | grep -o 'Bad arguments'

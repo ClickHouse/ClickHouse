@@ -2445,15 +2445,6 @@ bool ClientBase::processQueryText(const String & text)
 
         return processMultiQueryFromFile(file_name);
     }
-    /*
-     if (is_interactive)
-    {
-        assert(!query_fuzzer_runs);
-        processTextAsSingleQuery(text);
-
-        return true;
-    }
-    */
 
     if (query_fuzzer_runs)
     {
