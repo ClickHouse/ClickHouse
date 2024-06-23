@@ -196,6 +196,7 @@ namespace DB
 namespace S3
 {
 std::string getRunningAvailabilityZone();
+std::string tryGetRunningAvailabilityZone();
 }
 
 }
