@@ -40,10 +40,10 @@ private:
     void addMissingInnerEnginesFromAsTable(ASTCreateQuery & create, const ASTCreateQuery & as_create_query) const;
 
     /// Adds engines of inner tables to the definition if they aren't specified yet.
-    void addMissingInnerEngines(ASTCreateQuery & create) const;
+    void addMissingInnerEngines(ASTCreateQuery & create, const TimeSeriesSettings & time_series_settings) const;
 
     /// Sets the engine of an inner table by default.
-    void setInnerEngineByDefault(TargetKind kind, ASTStorage & inner_storage_def) const;
+    void setInnerEngineByDefault(TargetKind kind, ASTStorage & inner_storage_def, const TimeSeriesSettings & time_series_settings) const;
 
     StorageID time_series_storage_id;
 };
