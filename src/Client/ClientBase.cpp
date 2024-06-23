@@ -1872,7 +1872,7 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
         ASTPtr parsed_query, std::optional<bool> echo_query_, bool report_error)
 {
     query_context = Context::createCopy(global_context);
-    query_context->makeQueryContext();
+    CurrentThread::QueryScope query_scope(query_context);
 
     resetOutput();
     have_error = false;
@@ -2925,6 +2925,8 @@ void ClientBase::init(int argc, char ** argv)
 
     /// Don't parse options with Poco library, we prefer neat boost::program_options.
     stopOptionsProcessing();
+
+    MainThreadStatus::getInstance();
 
     stdin_is_a_tty = isatty(STDIN_FILENO);
     stdout_is_a_tty = isatty(STDOUT_FILENO);
