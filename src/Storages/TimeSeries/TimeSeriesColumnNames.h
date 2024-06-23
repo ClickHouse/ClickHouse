@@ -24,6 +24,10 @@ struct TimeSeriesColumnNames
     /// This is a generated column, it's not stored anywhere, it's generated on the fly.
     static constexpr const char * AllTags = "all_tags";
 
+    /// Contains the time range of a time series.
+    static constexpr const char * MinTime = "min_time";
+    static constexpr const char * MaxTime = "max_time";
+
     /// The "metrics" table contains general information (metadata) about metrics:
     static constexpr const char * MetricFamilyName = "metric_family_name";
     static constexpr const char * Type = "type";

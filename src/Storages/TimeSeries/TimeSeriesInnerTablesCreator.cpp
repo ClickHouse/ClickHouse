@@ -1,5 +1,8 @@
 #include <Storages/TimeSeries/TimeSeriesInnerTablesCreator.h>
 
+#include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
+#include <DataTypes/DataTypeFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterCreateQuery.h>
@@ -86,6 +89,26 @@ ColumnsDescription TimeSeriesInnerTablesCreator::getInnerTableColumnsDescription
                 all_tags_column.default_desc.expression = makeASTFunction("defaultValueOfTypeName", std::make_shared<ASTLiteral>(all_tags_column.type->getName()));
             }
             columns.add(std::move(all_tags_column));
+
+            /// Columns "min_time" and "max_time".
+            if (time_series_settings.store_min_time_and_max_time)
+            {
+                auto min_time_column = time_series_columns.get(TimeSeriesColumnNames::MinTime);
+                auto max_time_column = time_series_columns.get(TimeSeriesColumnNames::MaxTime);
+                if (time_series_settings.aggregate_min_time_and_max_time)
+                {
+                    AggregateFunctionProperties properties;
+                    auto min_function = AggregateFunctionFactory::instance().get("min", NullsAction::EMPTY, {min_time_column.type}, {}, properties);
+                    auto custom_name = std::make_unique<DataTypeCustomSimpleAggregateFunction>(min_function, DataTypes{min_time_column.type}, Array{});
+                    min_time_column.type = DataTypeFactory::instance().getCustom(std::make_unique<DataTypeCustomDesc>(std::move(custom_name)));
+
+                    auto max_function = AggregateFunctionFactory::instance().get("max", NullsAction::EMPTY, {max_time_column.type}, {}, properties);
+                    custom_name = std::make_unique<DataTypeCustomSimpleAggregateFunction>(max_function, DataTypes{max_time_column.type}, Array{});
+                    max_time_column.type = DataTypeFactory::instance().getCustom(std::make_unique<DataTypeCustomDesc>(std::move(custom_name)));
+                }
+                columns.add(std::move(min_time_column));
+                columns.add(std::move(max_time_column));
+            }
 
             break;
         }

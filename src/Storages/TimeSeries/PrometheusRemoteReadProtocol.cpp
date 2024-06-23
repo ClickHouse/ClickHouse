@@ -61,6 +61,22 @@ namespace
                                std::make_shared<ASTLiteral>(Field{DecimalField{DateTime64{max_timestamp_ms}, 3}}));
     }
 
+    /// Makes an AST for condition `tags_table.max_time >= min_timestamp_ms`
+    ASTPtr makeASTMaxTimeGreaterOrEquals(Int64 min_timestamp_ms, const StorageID & tags_table_id)
+    {
+        return makeASTFunction("greaterOrEquals",
+                               makeASTColumn(tags_table_id, TimeSeriesColumnNames::MaxTime),
+                               std::make_shared<ASTLiteral>(Field{DecimalField{DateTime64{min_timestamp_ms}, 3}}));
+    }
+
+    /// Makes an AST for condition `tags_table.min_time <= max_timestamp_ms`
+    ASTPtr makeASTMinTimeLessOrEquals(Int64 max_timestamp_ms, const StorageID & tags_table_id)
+    {
+        return makeASTFunction("lessOrEquals",
+                               makeASTColumn(tags_table_id, TimeSeriesColumnNames::MinTime),
+                               std::make_shared<ASTLiteral>(Field{DecimalField{DateTime64{max_timestamp_ms}, 3}}));
+    }
+
     /// Makes an AST for the expression referencing a tag value.
     ASTPtr makeASTLabelName(const String & label_name, const StorageID & tags_table_id, const std::unordered_map<String, String> & column_name_by_tag_name)
     {
@@ -104,15 +120,24 @@ namespace
         Int64 max_timestamp_ms,
         const StorageID & data_table_id,
         const StorageID & tags_table_id,
-        const std::unordered_map<String, String> & column_name_by_tag_name)
+        const std::unordered_map<String, String> & column_name_by_tag_name,
+        bool filter_by_min_time_and_max_time)
     {
         ASTs filters;
 
         if (min_timestamp_ms)
+        {
             filters.push_back(makeASTTimestampGreaterOrEquals(min_timestamp_ms, data_table_id));
+            if (filter_by_min_time_and_max_time)
+                filters.push_back(makeASTMaxTimeGreaterOrEquals(min_timestamp_ms, tags_table_id));
+        }
 
         if (max_timestamp_ms)
+        {
             filters.push_back(makeASTTimestampLessOrEquals(max_timestamp_ms, data_table_id));
+            if (filter_by_min_time_and_max_time)
+                filters.push_back(makeASTMinTimeLessOrEquals(max_timestamp_ms, tags_table_id));
+        }
 
         for (const auto & label_matcher_element : label_matcher)
             filters.push_back(makeASTLabelMatcher(label_matcher_element, tags_table_id, column_name_by_tag_name));
@@ -221,8 +246,11 @@ namespace
         auto column_name_by_tag_name = makeColumnNameByTagNameMap(time_series_settings);
 
         /// WHERE <filter>
-        if (auto where = makeASTFilterForReadingTimeSeries(label_matcher, min_timestamp_ms, max_timestamp_ms, data_table_id, tags_table_id, column_name_by_tag_name))
+        if (auto where = makeASTFilterForReadingTimeSeries(label_matcher, min_timestamp_ms, max_timestamp_ms, data_table_id, tags_table_id,
+                                                           column_name_by_tag_name, time_series_settings.filter_by_min_time_and_max_time))
+        {
             select_query->setExpression(ASTSelectQuery::Expression::WHERE, std::move(where));
+        }
 
         /// GROUP BY tags_table.metric_name, tags_table.tag_column1, ..., tags_table.tag_columnN, tags_table.tags
         {
