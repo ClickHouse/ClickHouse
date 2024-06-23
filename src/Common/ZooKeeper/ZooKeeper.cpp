@@ -171,6 +171,7 @@ void ZooKeeper::init(ZooKeeperArgs args_, std::unique_ptr<Coordination::IKeeper>
             if (args.availability_zone_autodetect)
                 updateAvailabilityZones();
         }
+        chassert(availability_zones.size() == args.hosts.size());
 
         /// Shuffle the hosts to distribute the load among ZooKeeper nodes.
         std::vector<ShuffleHost> shuffled_hosts = shuffleHosts();
@@ -1586,7 +1587,10 @@ int32_t ZooKeeper::getConnectionXid() const
 
 String ZooKeeper::getConnectedHostAvailabilityZone() const
 {
-    return availability_zones.at(impl->getConnectedNodeIdx());
+    auto idx = impl->getConnectedNodeIdx();
+    if (idx < 0)
+        return "";
+    return availability_zones.at(idx);
 }
 
 size_t getFailedOpIndex(Coordination::Error exception_code, const Coordination::Responses & responses)

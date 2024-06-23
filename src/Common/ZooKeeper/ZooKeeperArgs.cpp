@@ -105,8 +105,11 @@ void ZooKeeperArgs::initFromKeeperServerSection(const Poco::Util::AbstractConfig
     for (const auto & key : keys)
     {
         if (startsWith(key, "server"))
+        {
             hosts.push_back(
                 (secure ? "secure://" : "") + config.getString(raft_configuration_key + "." + key + ".hostname") + ":" + tcp_port);
+            availability_zones.push_back(config.getString(raft_configuration_key + "." + key + ".availability_zone", ""));
+        }
     }
 
     static constexpr std::array load_balancing_keys
@@ -130,6 +133,9 @@ void ZooKeeperArgs::initFromKeeperServerSection(const Poco::Util::AbstractConfig
         }
     }
 
+    availability_zone_autodetect = config.getBool(std::string{config_name} + ".availability_zone_autodetect", false);
+    if (availability_zone_autodetect)
+        client_availability_zone = DB::S3::tryGetRunningAvailabilityZone();
 }
 
 void ZooKeeperArgs::initFromKeeperSection(const Poco::Util::AbstractConfiguration & config, const std::string & config_name)

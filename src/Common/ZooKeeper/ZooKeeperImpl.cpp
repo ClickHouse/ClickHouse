@@ -438,9 +438,8 @@ void ZooKeeper::connect(
     WriteBufferFromOwnString fail_reasons;
     for (size_t try_no = 0; try_no < num_tries; ++try_no)
     {
-        for (size_t i = 0; i < nodes.size(); ++i)
+        for (const auto & node : nodes)
         {
-            const auto & node = nodes[i];
             try
             {
                 /// Reset the state of previous attempt.
