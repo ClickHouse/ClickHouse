@@ -54,6 +54,7 @@ ZooKeeperArgs::ZooKeeperArgs(const Poco::Util::AbstractConfiguration & config, c
 ZooKeeperArgs::ZooKeeperArgs(const String & hosts_string)
 {
     splitInto<','>(hosts, hosts_string);
+    availability_zones.resize(hosts.size());
 }
 
 void ZooKeeperArgs::initFromKeeperServerSection(const Poco::Util::AbstractConfiguration & config)
