@@ -120,6 +120,7 @@ namespace ProfileEvents
     extern const Event SelectedParts;
     extern const Event SelectedRanges;
     extern const Event SelectedMarks;
+    extern const Event SelectQueriesWithPrimaryKeyUsage;
 }
 
 namespace DB
@@ -500,11 +501,11 @@ Pipe ReadFromMergeTree::readInOrder(
     Names required_columns,
     PoolSettings pool_settings,
     ReadType read_type,
-    UInt64 limit)
+    UInt64 read_limit)
 {
     /// For reading in order it makes sense to read only
     /// one range per task to reduce number of read rows.
-    bool has_limit_below_one_block = read_type != ReadType::Default && limit && limit < block_size.max_block_size_rows;
+    bool has_limit_below_one_block = read_type != ReadType::Default && read_limit && read_limit < block_size.max_block_size_rows;
     MergeTreeReadPoolPtr pool;
 
     if (is_parallel_reading_from_replicas)
@@ -1569,11 +1570,17 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     if (indexes->part_values && indexes->part_values->empty())
         return std::make_shared<AnalysisResult>(std::move(result));
 
-    if (settings.force_primary_key && indexes->key_condition.alwaysUnknownOrTrue())
+    if (indexes->key_condition.alwaysUnknownOrTrue())
     {
-        throw Exception(ErrorCodes::INDEX_NOT_USED,
-            "Primary key ({}) is not used and setting 'force_primary_key' is set",
-            fmt::join(primary_key_column_names, ", "));
+        if (settings.force_primary_key)
+        {
+            throw Exception(ErrorCodes::INDEX_NOT_USED,
+                "Primary key ({}) is not used and setting 'force_primary_key' is set",
+                fmt::join(primary_key_column_names, ", "));
+        }
+    } else
+    {
+        ProfileEvents::increment(ProfileEvents::SelectQueriesWithPrimaryKeyUsage);
     }
 
     LOG_DEBUG(log, "Key condition: {}", indexes->key_condition.toString());
@@ -1669,7 +1676,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     return std::make_shared<AnalysisResult>(std::move(result));
 }
 
-bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction, size_t limit)
+bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction, size_t read_limit)
 {
     /// if dirction is not set, use current one
     if (!direction)
@@ -1680,7 +1687,7 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
     if (direction != 1 && query_info.isFinal())
         return false;
 
-    query_info.input_order_info = std::make_shared<InputOrderInfo>(SortDescription{}, prefix_size, direction, limit);
+    query_info.input_order_info = std::make_shared<InputOrderInfo>(SortDescription{}, prefix_size, direction, read_limit);
     reader_settings.read_in_order = true;
 
     /// In case or read-in-order, don't create too many reading streams.

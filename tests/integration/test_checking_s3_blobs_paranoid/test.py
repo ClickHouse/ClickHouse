@@ -300,7 +300,7 @@ def test_when_s3_broken_pipe_at_upload_is_retried(cluster, broken_s3):
         LIMIT 1000000
         SETTINGS
             s3_max_single_part_upload_size=100,
-            s3_min_upload_part_size=100000,
+            s3_min_upload_part_size=1000000,
             s3_check_objects_after_upload=0
         """,
         query_id=insert_query_id,
@@ -311,7 +311,7 @@ def test_when_s3_broken_pipe_at_upload_is_retried(cluster, broken_s3):
     )
 
     assert create_multipart == 1
-    assert upload_parts == 69
+    assert upload_parts == 7
     assert s3_errors == 3
 
     broken_s3.setup_at_part_upload(
