@@ -9,6 +9,7 @@ cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node",
     main_configs=["configs/prometheus.xml"],
+    user_configs=["configs/allow_experimental_time_series_table.xml"],
     with_prometheus=True,
     handle_prometheus_remote_write=True,
     handle_prometheus_remote_read=True,

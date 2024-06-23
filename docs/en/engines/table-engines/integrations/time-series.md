@@ -13,6 +13,13 @@ metric_name1[tag1=value1, tag2=value2, ...] = {timestamp1: value1, timestamp2: v
 metric_name2[...] = ...
 ```
 
+:::info
+This is an experimental feature that may change in backwards-incompatible ways in the future releases.
+Enable usage of the TimeSeries table engine
+with [allow_experimental_time_series_table](../../../operations/settings/settings.md#allow-experimental-time-series-table) setting.
+Input the command `set allow_experimental_time_series_table = 1`.
+:::
+
 ## Syntax {#syntax}
 
 ``` sql
