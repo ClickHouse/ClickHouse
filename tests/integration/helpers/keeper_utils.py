@@ -137,7 +137,7 @@ class KeeperClient(object):
 
     def set(self, path: str, value: str, version: tp.Optional[int] = None) -> None:
         self.execute_query(
-            f"set '{path}' '{value}' '{version if version is not None else ''}'"
+            f"set '{path}' '{value}' {version if version is not None else ''}"
         )
 
     def rm(self, path: str, version: tp.Optional[int] = None) -> None:
@@ -196,7 +196,7 @@ class KeeperClient(object):
             )
 
         return self.execute_query(
-            f"reconfig '{operation}' '{joining or leaving or new_members}'", timeout
+            f"reconfig {operation} '{joining or leaving or new_members}'", timeout
         )
 
     @classmethod
