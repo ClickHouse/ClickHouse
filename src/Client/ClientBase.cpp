@@ -709,7 +709,7 @@ void ClientBase::adjustSettings()
 
     /// In case of multi-query we allow data after semicolon since it will be
     /// parsed by the client and interpreted as new query
-    if (is_multiquery && !global_context->getSettingsRef().input_format_values_allow_data_after_semicolon.changed)
+    if (!global_context->getSettingsRef().input_format_values_allow_data_after_semicolon.changed)
     {
         settings.input_format_values_allow_data_after_semicolon = true;
         settings.input_format_values_allow_data_after_semicolon.changed = false;
@@ -1485,7 +1485,6 @@ void ClientBase::setInsertionTable(const ASTInsertQuery & insert_query)
 
 void ClientBase::addMultiquery(std::string_view query, Arguments & common_arguments) const
 {
-    common_arguments.emplace_back("--multiquery");
     common_arguments.emplace_back("-q");
     common_arguments.emplace_back(query);
 }
@@ -2227,8 +2226,10 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
     size_t test_tags_length = getTestTagsLength(all_queries_text);
 
     /// Several queries separated by ';'.
-    /// INSERT data is ended by the empty line(\n\n), not ';'.
+    /// INSERT data is ended by the empty line (\n\n), not ';'.
     /// Unnecessary semicolons may cause data to be parsed containing ';'
+    /// e.g. 'insert into xx format csv val;' will insert "val;" instead of "val"
+    ///      'insert into xx format csv val\n;' will insert "val" and ";"
     /// An exception is VALUES format where we also support semicolon in
     /// addition to end of line.
     const char * this_query_begin = all_queries_text.data() + test_tags_length;
@@ -2436,14 +2437,6 @@ bool ClientBase::processQueryText(const String & text)
             [](char c) { return isWhitespaceASCII(c); });
 
         return processMultiQueryFromFile(file_name);
-    }
-
-    if (!is_multiquery)
-    {
-        assert(!query_fuzzer_runs);
-        processTextAsSingleQuery(text);
-
-        return true;
     }
 
     if (query_fuzzer_runs)
@@ -3069,7 +3062,7 @@ void ClientBase::init(int argc, char ** argv)
         ("vertical,E", "vertical output format, same as --format=Vertical or FORMAT Vertical or \\G at end of command")
         ("highlight", po::value<bool>()->default_value(true), "enable or disable basic syntax highlight in interactive command line")
 
-        ("ignore-error", "do not stop processing in multiquery mode")
+        ("ignore-error", "do not stop processing when an error occurs")
         ("stacktrace", "print stack traces of exceptions")
         ("hardware-utilization", "print hardware utilization information in progress bar")
         ("print-profile-events", po::value(&profile_events.print)->zero_tokens(), "Printing ProfileEvents packets")
@@ -3150,8 +3143,6 @@ void ClientBase::init(int argc, char ** argv)
         queries_files = options["queries-file"].as<std::vector<std::string>>();
     if (options.count("multiline"))
         config().setBool("multiline", true);
-    if (options.count("multiquery"))
-        config().setBool("multiquery", true);
     if (options.count("ignore-error"))
         config().setBool("ignore-error", true);
     if (options.count("format"))

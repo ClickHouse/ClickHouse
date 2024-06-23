@@ -1112,8 +1112,6 @@ void Client::processOptions(const OptionsDescription & options_description,
 
     if ((query_fuzzer_runs = options["query-fuzzer-runs"].as<int>()))
     {
-        // Fuzzer implies multiquery.
-        config().setBool("multiquery", true);
         // Ignore errors in parsing queries.
         config().setBool("ignore-error", true);
         ignore_error = true;
@@ -1121,8 +1119,6 @@ void Client::processOptions(const OptionsDescription & options_description,
 
     if ((create_query_fuzzer_runs = options["create-query-fuzzer-runs"].as<int>()))
     {
-        // Fuzzer implies multiquery.
-        config().setBool("multiquery", true);
         // Ignore errors in parsing queries.
         config().setBool("ignore-error", true);
 
@@ -1172,9 +1168,6 @@ void Client::processConfig()
             global_context->setCurrentQueryId(query_id);
     }
     print_stack_trace = config().getBool("stacktrace", false);
-
-    // set default to multiquery
-    is_multiquery = true;
 
     pager = config().getString("pager", "");
 
@@ -1338,7 +1331,7 @@ void Client::readArguments(
                 allow_merge_tree_settings = true;
             else if (arg == "--multiquery" && (arg_num + 1) < argc && !std::string_view(argv[arg_num + 1]).starts_with('-'))
             {
-                /// Transform the abbreviated syntax '--multiquery <SQL>' into the full syntax '--multiquery -q <SQL>'
+                /// Transform the obsolete 'multiquery' option into 'query', compatible with '--multiquery <SQL>'
                 ++arg_num;
                 arg = argv[arg_num];
                 addMultiquery(arg, common_arguments);
