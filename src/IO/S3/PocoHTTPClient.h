@@ -172,7 +172,7 @@ protected:
     const RemoteHostFilter & remote_host_filter;
     unsigned int s3_max_redirects;
     bool s3_use_adaptive_timeouts = true;
-    bool enable_s3_requests_logging;
+    bool enable_s3_requests_logging = false;
     bool for_disk_s3;
 
     /// Limits get request per second rate for GET, SELECT and all other requests, excluding throttled by put throttler
