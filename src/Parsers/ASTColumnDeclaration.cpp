@@ -39,10 +39,10 @@ ASTPtr ASTColumnDeclaration::clone() const
         res->children.push_back(res->codec);
     }
 
-    if (stat_type)
+    if (statistics_desc)
     {
-        res->stat_type = stat_type->clone();
-        res->children.push_back(res->stat_type);
+        res->statistics_desc = statistics_desc->clone();
+        res->children.push_back(res->statistics_desc);
     }
 
     if (ttl)
@@ -111,10 +111,10 @@ void ASTColumnDeclaration::formatImpl(const FormatSettings & format_settings, Fo
         codec->formatImpl(format_settings, state, frame);
     }
 
-    if (stat_type)
+    if (statistics_desc)
     {
         format_settings.ostr << ' ';
-        stat_type->formatImpl(format_settings, state, frame);
+        statistics_desc->formatImpl(format_settings, state, frame);
     }
 
     if (ttl)

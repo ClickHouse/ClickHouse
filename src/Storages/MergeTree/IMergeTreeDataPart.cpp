@@ -673,16 +673,16 @@ String IMergeTreeDataPart::getColumnNameWithMinimumCompressedSize(bool with_subc
     return *minimum_size_column;
 }
 
-Statistics IMergeTreeDataPart::loadStatistics() const
+ColumnsStatistics IMergeTreeDataPart::loadStatistics() const
 {
     const auto & metadata_snaphost = storage.getInMemoryMetadata();
 
     auto total_statistics = MergeTreeStatisticsFactory::instance().getMany(metadata_snaphost.getColumns());
 
-    Statistics result;
+    ColumnsStatistics result;
     for (auto & stat : total_statistics)
     {
-        String file_name = stat->getFileName() + STAT_FILE_SUFFIX;
+        String file_name = stat->getFileName() + STATS_FILE_SUFFIX;
         String file_path = fs::path(getDataPartStorage().getRelativePath()) / file_name;
 
         if (!metadata_manager->exists(file_name))
@@ -737,10 +737,10 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
     {
         /// Don't scare people with broken part error
         if (!isRetryableException(std::current_exception()))
-            LOG_ERROR(storage.log, "Part {} is broken and need manual correction", getDataPartStorage().getFullPath());
+            LOG_ERROR(storage.log, "Part {} is broken and needs manual correction", getDataPartStorage().getFullPath());
 
         // There could be conditions that data part to be loaded is broken, but some of meta infos are already written
-        // into meta data before exception, need to clean them all.
+        // into metadata before exception, need to clean them all.
         metadata_manager->deleteAll(/*include_projection*/ true);
         metadata_manager->assertAllDeleted(/*include_projection*/ true);
         throw;
