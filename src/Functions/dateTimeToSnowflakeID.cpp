@@ -18,7 +18,7 @@ namespace
 {
 
 /// See generateSnowflakeID.cpp
-constexpr int time_shift = 22;
+constexpr size_t time_shift = 22;
 
 }
 
@@ -41,7 +41,7 @@ public:
             {"value", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isDateTime), nullptr, "DateTime"}
         };
         FunctionArgumentDescriptors optional_args{
-            {"epoch", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeUInt), isColumnConst, "UInt*"}
+            {"epoch", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeUInt), isColumnConst, "const UInt*"}
         };
         validateFunctionArgumentTypes(*this, arguments, args, optional_args);
 
@@ -52,7 +52,7 @@ public:
     {
         const auto & col_src = *arguments[0].column;
 
-        size_t epoch = 0;
+        UInt64 epoch = 0;
         if (arguments.size() == 2 && input_rows_count != 0)
         {
             const auto & col_epoch = *arguments[1].column;
@@ -89,7 +89,7 @@ public:
             {"value", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isDateTime64), nullptr, "DateTime64"}
         };
         FunctionArgumentDescriptors optional_args{
-            {"epoch", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeUInt), isColumnConst, "UInt*"}
+            {"epoch", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeUInt), isColumnConst, "const UInt*"}
         };
         validateFunctionArgumentTypes(*this, arguments, args, optional_args);
 
@@ -101,7 +101,7 @@ public:
         const auto & col_src = *arguments[0].column;
         const auto & src_data = typeid_cast<const ColumnDateTime64 &>(col_src).getData();
 
-        size_t epoch = 0;
+        UInt64 epoch = 0;
         if (arguments.size() == 2 && input_rows_count != 0)
         {
             const auto & col_epoch = *arguments[1].column;
@@ -118,7 +118,7 @@ public:
         auto factor = multiplier_msec / static_cast<double>(multiplier_src);
 
         for (size_t i = 0; i < input_rows_count; ++i)
-            res_data[i] = static_cast<UInt64>(src_data[i] * factor - epoch) << time_shift;
+            res_data[i] = std::llround(src_data[i] * factor - epoch) << time_shift;
 
         return col_res;
     }
