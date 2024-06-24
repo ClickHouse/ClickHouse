@@ -1,5 +1,6 @@
  ---
- toc_priority: 112
+slug: /en/sql-reference/aggregate-functions/reference/groupArraySorted
+sidebar_position: 145
  ---
 
  # groupArraySorted {#groupArraySorted}

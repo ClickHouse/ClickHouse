@@ -1,6 +1,6 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/exponentialtimedecayedmax
-sidebar_position: 108
+slug: /en/sql-reference/aggregate-functions/reference/exponentialTimeDecayedMax
+sidebar_position: 135
 sidebar_title: exponentialTimeDecayedMax
 ---
 

@@ -1,6 +1,6 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/exponentialtimedecayedavg
-sidebar_position: 108
+slug: /en/sql-reference/aggregate-functions/reference/exponentialTimeDecayedAvg
+sidebar_position: 133
 sidebar_title: exponentialTimeDecayedAvg
 ---
 

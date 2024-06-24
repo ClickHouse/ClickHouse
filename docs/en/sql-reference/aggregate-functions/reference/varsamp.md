@@ -1,7 +1,7 @@
 ---
 title: "varSamp"
-slug: /en/sql-reference/aggregate-functions/reference/varsamp
-sidebar_position: 33
+slug: /en/sql-reference/aggregate-functions/reference/varSamp
+sidebar_position: 211
 ---
 
 This page contains information on the `varSamp` and `varSampStable` ClickHouse functions.

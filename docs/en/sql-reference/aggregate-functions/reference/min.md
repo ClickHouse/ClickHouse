@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/aggregate-functions/reference/min
-sidebar_position: 2
+sidebar_position: 166
 title: min
 ---
 

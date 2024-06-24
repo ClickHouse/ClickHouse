@@ -1,6 +1,6 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/exponentialtimedecayedcount
-sidebar_position: 108
+slug: /en/sql-reference/aggregate-functions/reference/exponentialTimeDecayedCount
+sidebar_position: 134
 sidebar_title: exponentialTimeDecayedCount
 ---
 
