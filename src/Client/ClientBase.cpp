@@ -2302,6 +2302,9 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                     this_query_begin = this_query_end;
                     continue;
                 }
+                /// handle interactive suggestion
+                if (suggest)
+                    updateSuggest(parsed_query);
 
                 // Now we know for sure where the query ends.
                 // Look for the hint in the text of query + insert data + trailing

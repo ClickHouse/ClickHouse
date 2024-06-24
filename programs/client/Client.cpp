@@ -1334,7 +1334,7 @@ void Client::readArguments(
                 /// Transform the obsolete 'multiquery' option into 'query', compatible with '--multiquery <SQL>'
                 if ((arg_num + 1) < argc && !std::string_view(argv[arg_num + 1]).starts_with('-'))
                 {
-                    ++ arg_num;
+                    ++arg_num;
                     arg = argv[arg_num];
                     addMultiquery(arg, common_arguments);
                 }
