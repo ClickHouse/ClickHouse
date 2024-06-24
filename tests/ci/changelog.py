@@ -33,10 +33,11 @@ from version_helper import (
 categories_preferred_order = (
     "Backward Incompatible Change",
     "New Feature",
+    "Experimental Feature",
     "Performance Improvement",
     "Improvement",
-    "Critical Bug Fix",
-    "Bug Fix",
+    "Critical Bug Fix (crash, LOGICAL_ERROR, data loss, RBAC)",
+    "Bug Fix (user-visible misbehavior in an official stable release)",
     "Build/Testing/Packaging Improvement",
     "Other",
 )
@@ -205,7 +206,7 @@ def generate_description(item: PullRequest, repo: Repository) -> Optional[Descri
             try:
                 item = gh.get_pull_cached(repo, int(branch_parts[-1]))
             except Exception as e:
-                logging.warning("unable to get backpoted PR, exception: %s", e)
+                logging.warning("unable to get backported PR, exception: %s", e)
         else:
             logging.warning(
                 "The branch %s doesn't match backport template, using PR %s as is",
@@ -280,12 +281,17 @@ def generate_description(item: PullRequest, repo: Repository) -> Optional[Descri
         category,
     ):
         category = "NOT FOR CHANGELOG / INSIGNIFICANT"
-        entry = item.title
+        # Sometimes we declare not for changelog but still write a description. Keep it
+        if len(entry) <= 4 or "Documentation entry" in entry:
+            entry = item.title
 
     # Normalize bug fixes
-    if re.match(
-        r"(?i)bug\Wfix",
-        category,
+    if (
+        re.match(
+            r"(?i)bug\Wfix",
+            category,
+        )
+        and "Critical Bug Fix" not in category
     ):
         category = "Bug Fix (user-visible misbehavior in an official stable release)"
 
