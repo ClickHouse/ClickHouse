@@ -374,7 +374,7 @@ nuraft::ptr<nuraft::srv_state> KeeperStateManager::read_state()
     {
         try
         {
-            auto read_buf = disk->readFile(path);
+            auto read_buf = disk->readFile(path, getReadSettings());
             auto content_size = read_buf->getFileSize();
 
             if (content_size == 0)

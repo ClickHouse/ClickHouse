@@ -137,4 +137,6 @@ struct ReadSettings
     }
 };
 
+ReadSettings getReadSettings();
+
 }

@@ -63,7 +63,7 @@ public:
         else
         {
             String relative_path_input = validatePathAndGetAsRelative(path_input);
-            in = disk->readFile(relative_path_input);
+            in = disk->readFile(relative_path_input, getReadSettings());
         }
 
         auto out = disk->writeFile(relative_path);

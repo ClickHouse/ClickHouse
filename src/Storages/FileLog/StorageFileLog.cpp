@@ -550,7 +550,7 @@ StorageFileLog::ReadMetadataResult StorageFileLog::readMetadata(const String & f
             filename, metadata_base_path);
     }
 
-    auto in = disk->readFile(full_path);
+    auto in = disk->readFile(full_path, getReadSettings());
     FileMeta metadata;
     UInt64 inode, last_written_pos;
 

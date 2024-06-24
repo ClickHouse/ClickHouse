@@ -280,7 +280,7 @@ void StorageSetOrJoinBase::restore()
 void StorageSetOrJoinBase::restoreFromFile(const String & file_path)
 {
     ContextPtr ctx = nullptr;
-    auto backup_buf = disk->readFile(file_path);
+    auto backup_buf = disk->readFile(file_path, getReadSettings());
     CompressedReadBuffer compressed_backup_buf(*backup_buf);
     NativeReader backup_stream(compressed_backup_buf, 0);
 
