@@ -18,8 +18,8 @@ SELECT * FROM (SELECT id FROM test_00808 GROUP BY id LIMIT 1 BY id) WHERE id = 1
 SET force_primary_key = 1;
 
 SELECT '-------FORCE PRIMARY KEY-------';
-SELECT * FROM (SELECT * FROM test_00808 LIMIT 1) WHERE id = 1; -- { serverError INDEX_NOT_USED }
-SELECT * FROM (SELECT id FROM test_00808 GROUP BY id LIMIT 1 BY id) WHERE id = 1; -- { serverError INDEX_NOT_USED }
+SELECT * FROM (SELECT * FROM test_00808 LIMIT 1) WHERE id = 1; -- { serverError 277 }
+SELECT * FROM (SELECT id FROM test_00808 GROUP BY id LIMIT 1 BY id) WHERE id = 1; -- { serverError 277 }
 
 SELECT '-------CHECK STATEFUL FUNCTIONS-------';
 SELECT n, z, changed FROM (

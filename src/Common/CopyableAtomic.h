@@ -13,9 +13,8 @@ struct CopyableAtomic
         : value(other.value.load())
     {}
 
-    template <std::convertible_to<T> U>
-    explicit CopyableAtomic(U && value_)
-        : value(std::forward<U>(value_))
+    explicit CopyableAtomic(T && value_)
+        : value(std::forward<T>(value_))
     {}
 
     CopyableAtomic & operator=(const CopyableAtomic & other)
@@ -24,10 +23,9 @@ struct CopyableAtomic
         return *this;
     }
 
-    template <std::convertible_to<T> U>
-    CopyableAtomic & operator=(U && value_)
+    CopyableAtomic & operator=(bool value_)
     {
-        value = std::forward<U>(value_);
+        value = value_;
         return *this;
     }
 

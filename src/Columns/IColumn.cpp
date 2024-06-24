@@ -83,11 +83,6 @@ ColumnPtr IColumn::createWithOffsets(const Offsets & offsets, const ColumnConst 
     return res;
 }
 
-size_t IColumn::estimateCardinalityInPermutedRange(const IColumn::Permutation & /*permutation*/, const EqualRange & equal_range) const
-{
-    return equal_range.size();
-}
-
 void IColumn::forEachSubcolumn(ColumnCallback callback) const
 {
     const_cast<IColumn*>(this)->forEachSubcolumn([&callback](WrappedPtr & subcolumn)

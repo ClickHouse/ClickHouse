@@ -52,7 +52,7 @@ public:
 
     SerializationPtr doGetDefaultSerialization() const override;
 
-    static bool isValidKeyType(DataTypePtr key_type);
+    static bool checkKeyType(DataTypePtr key_type);
 
     void forEachChild(const ChildCallback & callback) const override;
 
