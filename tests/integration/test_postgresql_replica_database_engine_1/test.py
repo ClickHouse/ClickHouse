@@ -87,7 +87,8 @@ def started_cluster():
 def setup_teardown():
     print("PostgreSQL is available - running test")
     yield  # run test
-    pg_manager.restart()
+    pg_manager1.restart()
+    pg_manager2.restart()
 
 
 @pytest.mark.parametrize("instance_name", ["instance1", "instance2"])
