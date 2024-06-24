@@ -207,17 +207,11 @@ std::vector<ConnectionPoolWithFailover::TryResult> ConnectionPoolWithFailover::g
         max_entries = nested_pools.size();
     }
     else if (pool_mode == PoolMode::GET_ONE)
-    {
         max_entries = 1;
-    }
     else if (pool_mode == PoolMode::GET_MANY)
-    {
         max_entries = settings.max_parallel_replicas;
-    }
     else
-    {
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Unknown pool allocation mode");
-    }
 
     if (!priority_func)
         priority_func = makeGetPriorityFunc(settings);

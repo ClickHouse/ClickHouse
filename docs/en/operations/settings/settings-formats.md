@@ -15,7 +15,7 @@ table functions, and dictionaries.
 User wishing to see secrets must also have
 [`display_secrets_in_show_and_select` server setting](../server-configuration-parameters/settings#display_secrets_in_show_and_select)
 turned on and a
-[`displaySecretsInShowAndSelect`](../../sql-reference/statements/grant#display-secrets) privilege.
+[`displaySecretsInShowAndSelect`](../../sql-reference/statements/grant#grant-display-secrets) privilege.
 
 Possible values:
 
@@ -651,12 +651,6 @@ This setting works only when setting `input_format_json_named_tuples_as_objects`
 
 Enabled by default.
 
-## input_format_json_throw_on_bad_escape_sequence {#input_format_json_throw_on_bad_escape_sequence}
-
-Throw an exception if JSON string contains bad escape sequence in JSON input formats. If disabled, bad escape sequences will remain as is in the data.
-
-Enabled by default.
-
 ## output_format_json_array_of_rows {#output_format_json_array_of_rows}
 
 Enables the ability to output all rows as a JSON array in the [JSONEachRow](../../interfaces/formats.md/#jsoneachrow) format.
@@ -831,13 +825,7 @@ Default value: `0`.
 
 ### output_format_tsv_crlf_end_of_line {#output_format_tsv_crlf_end_of_line}
 
-Use DOS/Windows-style line separator (CRLF) in TSV instead of Unix style (LF).
-
-Disabled by default.
-
-### input_format_tsv_crlf_end_of_line {#input_format_tsv_crlf_end_of_line}
-
-Use DOS/Windows-style line separator (CRLF) for TSV input files instead of Unix style (LF).
+Use DOC/Windows-style line separator (CRLF) in TSV instead of Unix style (LF).
 
 Disabled by default.
 
@@ -1379,7 +1367,7 @@ Default value: `1'000'000`.
 
 While importing data, when column is not found in schema default value will be used instead of error.
 
-Enabled by default.
+Disabled by default.
 
 ### input_format_parquet_skip_columns_with_unsupported_types_in_schema_inference {#input_format_parquet_skip_columns_with_unsupported_types_in_schema_inference}
 
@@ -1648,7 +1636,7 @@ Possible values:
 - 0 — Output without row numbers.
 - 1 — Output with row numbers.
 
-Default value: `1`.
+Default value: `0`.
 
 **Example**
 

@@ -1,26 +1,22 @@
-#include <Access/Common/AccessEntityType.h>
-#include <Backups/BackupCoordinationStage.h>
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/BackupEntryFromMemory.h>
+#include <Backups/IBackupCoordination.h>
+#include <Backups/BackupCoordinationStage.h>
 #include <Backups/BackupUtils.h>
 #include <Backups/DDLAdjustingForBackupVisitor.h>
-#include <Backups/IBackupCoordination.h>
 #include <Databases/IDatabase.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/formatAST.h>
 #include <Storages/IStorage.h>
-#include <Storages/MergeTree/extractZooKeeperPathFromReplicatedTableDef.h>
+#include <Access/Common/AccessEntityType.h>
 #include <base/chrono_io.h>
 #include <base/insertAtEnd.h>
-#include <base/scope_guard.h>
 #include <base/sleep.h>
 #include <Common/escapeForFileName.h>
-
-#include <boost/range/adaptor/map.hpp>
 #include <boost/range/algorithm/copy.hpp>
-
+#include <base/scope_guard.h>
 #include <filesystem>
 
 namespace fs = std::filesystem;
@@ -126,7 +122,7 @@ BackupEntries BackupEntriesCollector::run()
         = BackupSettings::Util::filterHostIDs(backup_settings.cluster_host_ids, backup_settings.shard_num, backup_settings.replica_num);
 
     /// Do renaming in the create queries according to the renaming config.
-    renaming_map = BackupUtils::makeRenamingMap(backup_query_elements);
+    renaming_map = makeRenamingMapFromBackupQuery(backup_query_elements);
 
     /// Calculate the root path for collecting backup entries, it's either empty or has the format "shards/<shard_num>/replicas/<replica_num>/".
     calculateRootPathInBackup();
@@ -571,16 +567,17 @@ std::vector<std::pair<ASTPtr, StoragePtr>> BackupEntriesCollector::findTablesInD
 
     checkIsQueryCancelled();
 
-    auto filter_by_table_name = [&](const String & table_name)
+    auto filter_by_table_name = [my_database_info = &database_info](const String & table_name)
     {
-        if (BackupUtils::isInnerTable(database_name, table_name))
+        /// We skip inner tables of materialized views.
+        if (table_name.starts_with(".inner_id."))
             return false;
 
-        if (database_info.tables.contains(table_name))
+        if (my_database_info->tables.contains(table_name))
             return true;
 
-        if (database_info.all_tables)
-            return !database_info.except_table_names.contains(table_name);
+        if (my_database_info->all_tables)
+            return !my_database_info->except_table_names.contains(table_name);
 
         return false;
     };
@@ -689,13 +686,7 @@ bool BackupEntriesCollector::compareWithPrevious(String & mismatch_description)
         previous_tables_metadata = std::move(tables_metadata);
     });
 
-    enum class MismatchType : uint8_t
-    {
-        ADDED,
-        REMOVED,
-        CHANGED,
-        NONE
-    };
+    enum class MismatchType { ADDED, REMOVED, CHANGED, NONE };
 
     /// Helper function - used to compare the metadata of databases and tables.
     auto find_mismatch = [](const auto & metadata, const auto & previous_metadata)
@@ -765,7 +756,7 @@ void BackupEntriesCollector::makeBackupEntriesForDatabasesDefs()
         checkIsQueryCancelled();
 
         ASTPtr new_create_query = database_info.create_database_query;
-        adjustCreateQueryForBackup(new_create_query, context->getGlobalContext());
+        adjustCreateQueryForBackup(new_create_query, context->getGlobalContext(), nullptr);
         renameDatabaseAndTableNameInCreateQuery(new_create_query, renaming_map, context->getGlobalContext());
 
         const String & metadata_path_in_backup = database_info.metadata_path_in_backup;
@@ -782,8 +773,7 @@ void BackupEntriesCollector::makeBackupEntriesForTablesDefs()
         checkIsQueryCancelled();
 
         ASTPtr new_create_query = table_info.create_table_query;
-        table_info.replicated_table_zk_path = extractZooKeeperPathFromReplicatedTableDef(new_create_query->as<const ASTCreateQuery &>(), context);
-        adjustCreateQueryForBackup(new_create_query, context->getGlobalContext());
+        adjustCreateQueryForBackup(new_create_query, context->getGlobalContext(), &table_info.replicated_table_shared_id);
         renameDatabaseAndTableNameInCreateQuery(new_create_query, renaming_map, context->getGlobalContext());
 
         const String & metadata_path_in_backup = table_info.metadata_path_in_backup;
@@ -796,15 +786,20 @@ void BackupEntriesCollector::makeBackupEntriesForTablesData()
     if (backup_settings.structure_only)
         return;
 
-    ThreadPoolCallbackRunnerLocal<void> runner(threadpool, "BackupCollect");
+    std::vector<std::future<void>> futures;
     for (const auto & table_name : table_infos | boost::adaptors::map_keys)
     {
-        runner([&]()
+        futures.push_back(scheduleFromThreadPool<void>([&]()
         {
             makeBackupEntriesForTableData(table_name);
-        });
+        }, threadpool, "BackupCollect"));
     }
-    runner.waitForAllToFinishAndRethrowFirstError();
+    /// Wait for all tasks.
+    for (auto & future : futures)
+        future.wait();
+    /// Make sure there is no exception.
+    for (auto & future : futures)
+        future.get();
 }
 
 void BackupEntriesCollector::makeBackupEntriesForTableData(const QualifiedTableName & table_name)
@@ -822,8 +817,8 @@ void BackupEntriesCollector::makeBackupEntriesForTableData(const QualifiedTableN
         /// If this table is replicated in this case we call IBackupCoordination::addReplicatedDataPath() which will cause
         /// other replicas to fill the storage's data in the backup.
         /// If this table is not replicated we'll do nothing leaving the storage's data empty in the backup.
-        if (table_info.replicated_table_zk_path)
-            backup_coordination->addReplicatedDataPath(*table_info.replicated_table_zk_path, data_path_in_backup);
+        if (table_info.replicated_table_shared_id)
+            backup_coordination->addReplicatedDataPath(*table_info.replicated_table_shared_id, data_path_in_backup);
         return;
     }
 

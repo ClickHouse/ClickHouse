@@ -86,7 +86,8 @@ void SystemLogQueue<LogElement>::push(LogElement&& element)
             // It is enough to only wake the flushing thread once, after the message
             // count increases past half available size.
             const uint64_t queue_end = queue_front_index + queue.size();
-            requested_flush_up_to = std::max(requested_flush_up_to, queue_end);
+            if (requested_flush_up_to < queue_end)
+                requested_flush_up_to = queue_end;
 
             flush_event.notify_all();
         }

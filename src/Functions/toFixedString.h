@@ -21,7 +21,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-enum class ConvertToFixedStringExceptionMode : uint8_t
+enum class ConvertToFixedStringExceptionMode
 {
     Throw,
     Null

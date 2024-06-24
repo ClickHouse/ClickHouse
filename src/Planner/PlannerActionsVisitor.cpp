@@ -60,7 +60,6 @@ String calculateActionNodeNameWithCastIfNeeded(const ConstantNode & constant_nod
 
     if (constant_node.requiresCastCall())
     {
-        /// Projection name for constants is <value>_<type> so for _cast(1, 'String') we will have _cast(1_Uint8, 'String'_String)
         buffer << ", '" << constant_node.getResultType()->getName() << "'_String)";
     }
 
@@ -181,7 +180,7 @@ public:
                 {
                     const auto & in_first_argument_node = function_node.getArguments().getNodes().at(0);
                     const auto & in_second_argument_node = function_node.getArguments().getNodes().at(1);
-                    in_function_second_argument_node_name = PlannerContext::createSetKey(in_first_argument_node->getResultType(), in_second_argument_node);
+                    in_function_second_argument_node_name = planner_context.createSetKey(in_first_argument_node->getResultType(), in_second_argument_node);
                 }
 
                 WriteBufferFromOwnString buffer;

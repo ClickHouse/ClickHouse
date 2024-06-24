@@ -7,6 +7,7 @@
 #include <Common/logger_useful.h>
 
 #include <Columns/ColumnTuple.h>
+#include <DataTypes/DataTypeTuple.h>
 
 #include <memory>
 

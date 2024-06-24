@@ -291,7 +291,7 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
         global_context, "system", "filesystem_read_prefetches_log", config, "filesystem_read_prefetches_log", "Contains a history of all prefetches done during reading from MergeTables backed by a remote filesystem.");
     asynchronous_metric_log = createSystemLog<AsynchronousMetricLog>(
         global_context, "system", "asynchronous_metric_log", config,
-        "asynchronous_metric_log", "Contains the historical values for system.asynchronous_metrics, once per time interval (one second by default).");
+        "asynchronous_metric_log", "Contains the historical values for system.asynchronous_metrics, which are saved once per minute.");
     opentelemetry_span_log = createSystemLog<OpenTelemetrySpanLog>(
         global_context, "system", "opentelemetry_span_log", config,
         "opentelemetry_span_log", "Contains information about trace spans for executed queries.");
@@ -519,7 +519,8 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
         // we need query context to do inserts to target table with MV containing subqueries or joins
         auto insert_context = Context::createCopy(context);
         insert_context->makeQueryContext();
-        addSettingsForQuery(insert_context, IAST::QueryKind::Insert);
+        /// We always want to deliver the data to the original table regardless of the MVs
+        insert_context->setSetting("materialized_views_ignore_errors", true);
 
         InterpreterInsertQuery interpreter(query_ptr, insert_context);
         BlockIO io = interpreter.execute();
@@ -540,18 +541,13 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
     LOG_TRACE(log, "Flushed system log up to offset {}", to_flush_end);
 }
 
-template <typename LogElement>
-StoragePtr SystemLog<LogElement>::getStorage() const
-{
-    return DatabaseCatalog::instance().tryGetTable(table_id, getContext());
-}
 
 template <typename LogElement>
 void SystemLog<LogElement>::prepareTable()
 {
     String description = table_id.getNameForLogs();
 
-    auto table = getStorage();
+    auto table = DatabaseCatalog::instance().tryGetTable(table_id, getContext());
     if (table)
     {
         if (old_create_query.empty())
@@ -600,9 +596,10 @@ void SystemLog<LogElement>::prepareTable()
                 merges_lock = table->getActionLock(ActionLocks::PartsMerge);
 
             auto query_context = Context::createCopy(context);
+            /// As this operation is performed automatically we don't want it to fail because of user dependencies on log tables
+            query_context->setSetting("check_table_dependencies", Field{false});
+            query_context->setSetting("check_referential_table_dependencies", Field{false});
             query_context->makeQueryContext();
-            addSettingsForQuery(query_context, IAST::QueryKind::Rename);
-
             InterpreterRenameQuery(rename, query_context).execute();
 
             /// The required table will be created.
@@ -619,7 +616,6 @@ void SystemLog<LogElement>::prepareTable()
 
         auto query_context = Context::createCopy(context);
         query_context->makeQueryContext();
-        addSettingsForQuery(query_context, IAST::QueryKind::Create);
 
         auto create_query_ast = getCreateTableQuery();
         InterpreterCreateQuery interpreter(create_query_ast, query_context);
@@ -632,22 +628,6 @@ void SystemLog<LogElement>::prepareTable()
     }
 
     is_prepared = true;
-}
-
-template <typename LogElement>
-void SystemLog<LogElement>::addSettingsForQuery(ContextMutablePtr & mutable_context, IAST::QueryKind query_kind) const
-{
-    if (query_kind == IAST::QueryKind::Insert)
-    {
-        /// We always want to deliver the data to the original table regardless of the MVs
-        mutable_context->setSetting("materialized_views_ignore_errors", true);
-    }
-    else if (query_kind == IAST::QueryKind::Rename)
-    {
-        /// As this operation is performed automatically we don't want it to fail because of user dependencies on log tables
-        mutable_context->setSetting("check_table_dependencies", Field{false});
-        mutable_context->setSetting("check_referential_table_dependencies", Field{false});
-    }
 }
 
 template <typename LogElement>
