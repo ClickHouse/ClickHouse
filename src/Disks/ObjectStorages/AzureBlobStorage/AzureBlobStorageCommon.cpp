@@ -197,7 +197,7 @@ void processURL(const String & url, const String & container_name, Endpoint & en
         return;
     }
 
-    size_t pos = url.find('?');
+    auto pos = url.find('?');
 
     /// If conneciton_url does not have '?', then its not SAS
     if (pos == std::string::npos)
@@ -273,42 +273,60 @@ BlobClientOptions getClientOptions(const RequestSettings & settings, bool for_di
 
 std::unique_ptr<RequestSettings> getRequestSettings(const Settings & query_settings)
 {
-    auto settings_ptr = std::make_unique<RequestSettings>();
+    auto settings = std::make_unique<RequestSettings>();
 
-    settings_ptr->max_single_part_upload_size = query_settings.azure_max_single_part_upload_size;
-    settings_ptr->max_single_read_retries = query_settings.azure_max_single_read_retries;
-    settings_ptr->list_object_keys_size = static_cast<int32_t>(query_settings.azure_list_object_keys_size);
+    settings->max_single_part_upload_size = query_settings.azure_max_single_part_upload_size;
+    settings->max_single_read_retries = query_settings.azure_max_single_read_retries;
+    settings->max_single_download_retries = query_settings.azure_max_single_read_retries;
+    settings->list_object_keys_size = query_settings.azure_list_object_keys_size;
+    settings->min_upload_part_size = query_settings.azure_min_upload_part_size;
+    settings->max_upload_part_size = query_settings.azure_max_upload_part_size;
+    settings->max_single_part_copy_size = query_settings.azure_max_single_part_copy_size;
+    settings->max_blocks_in_multipart_upload = query_settings.azure_max_blocks_in_multipart_upload;
+    settings->max_unexpected_write_error_retries = query_settings.azure_max_unexpected_write_error_retries;
+    settings->max_inflight_parts_for_one_file = query_settings.azure_max_inflight_parts_for_one_file;
+    settings->strict_upload_part_size = query_settings.azure_strict_upload_part_size;
+    settings->upload_part_size_multiply_factor = query_settings.azure_upload_part_size_multiply_factor;
+    settings->upload_part_size_multiply_parts_count_threshold = query_settings.azure_upload_part_size_multiply_parts_count_threshold;
+    settings->sdk_max_retries = query_settings.azure_sdk_max_retries;
+    settings->sdk_retry_initial_backoff_ms = query_settings.azure_sdk_retry_initial_backoff_ms;
+    settings->sdk_retry_max_backoff_ms = query_settings.azure_sdk_retry_max_backoff_ms;
 
-    settings_ptr->sdk_max_retries = query_settings.azure_sdk_max_retries;
-    settings_ptr->sdk_retry_initial_backoff_ms = query_settings.azure_sdk_retry_initial_backoff_ms;
-    settings_ptr->sdk_retry_max_backoff_ms = query_settings.azure_sdk_retry_max_backoff_ms;
+    return settings;
+}
 
-    return settings_ptr;
+std::unique_ptr<RequestSettings> getRequestSettingsForBackup(const Settings & query_settings, bool use_native_copy)
+{
+    auto settings = getRequestSettings(query_settings);
+    settings->use_native_copy = use_native_copy;
+    return settings;
 }
 
 std::unique_ptr<RequestSettings> getRequestSettings(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr context)
 {
     auto settings = std::make_unique<RequestSettings>();
+    const auto & settings_ref = context->getSettingsRef();
 
-    settings->max_single_part_upload_size = config.getUInt64(config_prefix + ".max_single_part_upload_size", context->getSettings().azure_max_single_part_upload_size);
     settings->min_bytes_for_seek = config.getUInt64(config_prefix + ".min_bytes_for_seek", 1024 * 1024);
-    settings->max_single_read_retries = config.getInt(config_prefix + ".max_single_read_retries", 3);
-    settings->max_single_download_retries = config.getInt(config_prefix + ".max_single_download_retries", 3);
-    settings->list_object_keys_size = config.getInt(config_prefix + ".list_object_keys_size", 1000);
-    settings->min_upload_part_size = config.getUInt64(config_prefix + ".min_upload_part_size", context->getSettings().azure_min_upload_part_size);
-    settings->max_upload_part_size = config.getUInt64(config_prefix + ".max_upload_part_size", context->getSettings().azure_max_upload_part_size);
-    settings->max_single_part_copy_size = config.getUInt64(config_prefix + ".max_single_part_copy_size", context->getSettings().azure_max_single_part_copy_size);
     settings->use_native_copy = config.getBool(config_prefix + ".use_native_copy", false);
-    settings->max_blocks_in_multipart_upload = config.getUInt64(config_prefix + ".max_blocks_in_multipart_upload", 50000);
-    settings->max_unexpected_write_error_retries = config.getUInt64(config_prefix + ".max_unexpected_write_error_retries", context->getSettings().azure_max_unexpected_write_error_retries);
-    settings->max_inflight_parts_for_one_file = config.getUInt64(config_prefix + ".max_inflight_parts_for_one_file", context->getSettings().azure_max_inflight_parts_for_one_file);
-    settings->strict_upload_part_size = config.getUInt64(config_prefix + ".strict_upload_part_size", context->getSettings().azure_strict_upload_part_size);
-    settings->upload_part_size_multiply_factor = config.getUInt64(config_prefix + ".upload_part_size_multiply_factor", context->getSettings().azure_upload_part_size_multiply_factor);
-    settings->upload_part_size_multiply_parts_count_threshold = config.getUInt64(config_prefix + ".upload_part_size_multiply_parts_count_threshold", context->getSettings().azure_upload_part_size_multiply_parts_count_threshold);
 
-    settings->sdk_max_retries = config.getUInt(config_prefix + ".max_tries", 10);
-    settings->sdk_retry_initial_backoff_ms = config.getUInt(config_prefix + ".retry_initial_backoff_ms", 10);
-    settings->sdk_retry_max_backoff_ms = config.getUInt(config_prefix + ".retry_max_backoff_ms", 1000);
+    settings->max_single_part_upload_size = config.getUInt64(config_prefix + ".max_single_part_upload_size", settings_ref.azure_max_single_part_upload_size);
+    settings->max_single_read_retries = config.getUInt64(config_prefix + ".max_single_read_retries", settings_ref.azure_max_single_read_retries);
+    settings->max_single_download_retries = config.getUInt64(config_prefix + ".max_single_download_retries", settings_ref.azure_max_single_read_retries);
+    settings->list_object_keys_size = config.getUInt64(config_prefix + ".list_object_keys_size", settings_ref.azure_list_object_keys_size);
+    settings->min_upload_part_size = config.getUInt64(config_prefix + ".min_upload_part_size", settings_ref.azure_min_upload_part_size);
+    settings->max_upload_part_size = config.getUInt64(config_prefix + ".max_upload_part_size", settings_ref.azure_max_upload_part_size);
+    settings->max_single_part_copy_size = config.getUInt64(config_prefix + ".max_single_part_copy_size", settings_ref.azure_max_single_part_copy_size);
+    settings->max_blocks_in_multipart_upload = config.getUInt64(config_prefix + ".max_blocks_in_multipart_upload", settings_ref.azure_max_blocks_in_multipart_upload);
+    settings->max_unexpected_write_error_retries = config.getUInt64(config_prefix + ".max_unexpected_write_error_retries", settings_ref.azure_max_unexpected_write_error_retries);
+    settings->max_inflight_parts_for_one_file = config.getUInt64(config_prefix + ".max_inflight_parts_for_one_file", settings_ref.azure_max_inflight_parts_for_one_file);
+    settings->strict_upload_part_size = config.getUInt64(config_prefix + ".strict_upload_part_size", settings_ref.azure_strict_upload_part_size);
+    settings->upload_part_size_multiply_factor = config.getUInt64(config_prefix + ".upload_part_size_multiply_factor", settings_ref.azure_upload_part_size_multiply_factor);
+    settings->upload_part_size_multiply_parts_count_threshold = config.getUInt64(config_prefix + ".upload_part_size_multiply_parts_count_threshold", settings_ref.azure_upload_part_size_multiply_parts_count_threshold);
+
+    settings->sdk_max_retries = config.getUInt64(config_prefix + ".max_tries", settings_ref.azure_sdk_max_retries);
+    settings->sdk_retry_initial_backoff_ms = config.getUInt64(config_prefix + ".retry_initial_backoff_ms", settings_ref.azure_sdk_retry_initial_backoff_ms);
+    settings->sdk_retry_max_backoff_ms = config.getUInt64(config_prefix + ".retry_max_backoff_ms", settings_ref.azure_sdk_retry_max_backoff_ms);
 
     if (config.has(config_prefix + ".curl_ip_resolve"))
     {

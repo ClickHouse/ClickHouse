@@ -73,10 +73,16 @@ StorageObjectStorage::QuerySettings StorageAzureConfiguration::getQuerySettings(
 ObjectStoragePtr StorageAzureConfiguration::createObjectStorage(ContextPtr context, bool is_readonly) /// NOLINT
 {
     assertInitialized();
-    auto client = createClient(is_readonly, /* attempt_to_create_container */true);
-    auto settings = createSettings(context);
+
+    auto settings = AzureBlobStorage::getRequestSettings(context->getSettingsRef());
+    auto client = AzureBlobStorage::getContainerClient(connection_params, is_readonly);
+
     return std::make_unique<AzureObjectStorage>(
-        "AzureBlobStorage", std::move(client), std::move(settings), container, getConnectionURL().toString());
+        "AzureBlobStorage",
+        connection_params.createForContainer(),
+        std::move(settings),
+        connection_params.getContainer(),
+        connection_params.getConnectionURL());
 }
 
 static AzureBlobStorage::ConnectionParams getConnectionParams(

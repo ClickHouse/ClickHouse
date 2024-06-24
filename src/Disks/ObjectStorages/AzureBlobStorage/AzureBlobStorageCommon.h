@@ -32,22 +32,23 @@ struct RequestSettings
     RequestSettings() = default;
 
     size_t max_single_part_upload_size = 100 * 1024 * 1024; /// NOTE: on 32-bit machines it will be at most 4GB, but size_t is also used in BufferBase for offset
-    uint64_t min_bytes_for_seek = 1024 * 1024;
+    size_t min_bytes_for_seek = 1024 * 1024;
     size_t max_single_read_retries = 3;
     size_t max_single_download_retries = 3;
-    int list_object_keys_size = 1000;
+    size_t list_object_keys_size = 1000;
     size_t min_upload_part_size = 16 * 1024 * 1024;
     size_t max_upload_part_size = 5ULL * 1024 * 1024 * 1024;
     size_t max_single_part_copy_size = 256 * 1024 * 1024;
-    bool use_native_copy = false;
     size_t max_unexpected_write_error_retries = 4;
     size_t max_inflight_parts_for_one_file = 20;
+    size_t max_blocks_in_multipart_upload = 50000;
     size_t strict_upload_part_size = 0;
     size_t upload_part_size_multiply_factor = 2;
     size_t upload_part_size_multiply_parts_count_threshold = 500;
     size_t sdk_max_retries = 10;
     size_t sdk_retry_initial_backoff_ms = 10;
     size_t sdk_retry_max_backoff_ms = 1000;
+    bool use_native_copy = false;
 
     using CurlOptions = Azure::Core::Http::CurlTransportOptions;
     CurlOptions::CurlOptIPResolve curl_ip_resolve = CurlOptions::CURL_IPRESOLVE_WHATEVER;
@@ -125,7 +126,9 @@ std::unique_ptr<ContainerClient> getContainerClient(const ConnectionParams & par
 
 BlobClientOptions getClientOptions(const RequestSettings & settings, bool for_disk);
 AuthMethod getAuthMethod(const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
+
 std::unique_ptr<RequestSettings> getRequestSettings(const Settings & query_settings);
+std::unique_ptr<RequestSettings> getRequestSettingsForBackup(const Settings & query_settings, bool use_native_copy);
 std::unique_ptr<RequestSettings> getRequestSettings(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr context);
 
 }
