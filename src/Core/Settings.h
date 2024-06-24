@@ -126,8 +126,8 @@ class IColumn;
     M(Bool, hdfs_ignore_file_doesnt_exist, false, "Return 0 rows when the requested files don't exist, instead of throwing an exception in HDFS table engine", 0) \
     M(Bool, azure_ignore_file_doesnt_exist, false, "Return 0 rows when the requested files don't exist, instead of throwing an exception in AzureBlobStorage table engine", 0) \
     M(UInt64, azure_sdk_max_retries, 10, "Maximum number of retries in azure sdk", 0) \
-    M(UInt64, azure_sdk_retry_initial_backoff_ms, 10, "Minimal backoff beetween retries in azure sdk", 0) \
-    M(UInt64, azure_sdk_retry_max_backoff_ms, 1000, "Maximal backoff beetween retries in azure sdk", 0) \
+    M(UInt64, azure_sdk_retry_initial_backoff_ms, 10, "Minimal backoff between retries in azure sdk", 0) \
+    M(UInt64, azure_sdk_retry_max_backoff_ms, 1000, "Maximal backoff between retries in azure sdk", 0) \
     M(Bool, s3_validate_request_settings, true, "Validate S3 request settings", 0) \
     M(Bool, s3_disable_checksum, S3::DEFAULT_DISABLE_CHECKSUM, "Do not calculate a checksum when sending a file to S3. This speeds up writes by avoiding excessive processing passes on a file. It is mostly safe as the data of MergeTree tables is checksummed by ClickHouse anyway, and when S3 is accessed with HTTPS, the TLS layer already provides integrity while transferring through the network. While additional checksums on S3 give defense in depth.", 0) \
     M(UInt64, s3_retry_attempts, S3::DEFAULT_RETRY_ATTEMPTS, "Setting for Aws::Client::RetryStrategy, Aws::Client does retries itself, 0 means no retries", 0) \
