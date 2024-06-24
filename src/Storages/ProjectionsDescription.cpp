@@ -16,7 +16,8 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
-#include <Processors/Transforms/SquashingChunksTransform.h>
+#include <Processors/Transforms/PlanSquashingTransform.h>
+#include <Processors/Transforms/SquashingTransform.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <base/range.h>
@@ -64,7 +65,6 @@ ProjectionDescription ProjectionDescription::clone() const
     other.sample_block_for_keys = sample_block_for_keys;
     other.metadata = metadata;
     other.key_size = key_size;
-    other.is_minmax_count_projection = is_minmax_count_projection;
     other.primary_key_max_column_name = primary_key_max_column_name;
     other.partition_value_indices = partition_value_indices;
 
@@ -195,7 +195,6 @@ ProjectionDescription ProjectionDescription::getMinMaxCountProjection(
     ContextPtr query_context)
 {
     ProjectionDescription result;
-    result.is_minmax_count_projection = true;
 
     auto select_query = std::make_shared<ASTProjectionSelectQuery>();
     ASTPtr select_expression_list = std::make_shared<ASTExpressionList>();
@@ -282,12 +281,10 @@ ProjectionDescription ProjectionDescription::getMinMaxCountProjection(
     return result;
 }
 
-
 void ProjectionDescription::recalculateWithNewColumns(const ColumnsDescription & new_columns, ContextPtr query_context)
 {
     *this = getProjectionFromAST(definition_ast, new_columns, query_context);
 }
-
 
 Block ProjectionDescription::calculate(const Block & block, ContextPtr context) const
 {
@@ -310,7 +307,9 @@ Block ProjectionDescription::calculate(const Block & block, ContextPtr context) 
     builder.resize(1);
     // Generate aggregated blocks with rows less or equal than the original block.
     // There should be only one output block after this transformation.
-    builder.addTransform(std::make_shared<SquashingChunksTransform>(builder.getHeader(), block.rows(), 0));
+
+    builder.addTransform(std::make_shared<PlanSquashingTransform>(builder.getHeader(), block.rows(), 0, 1));
+    builder.addTransform(std::make_shared<ApplySquashingTransform>(builder.getHeader(), block.rows(), 0));
 
     auto pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
     PullingPipelineExecutor executor(pipeline);
