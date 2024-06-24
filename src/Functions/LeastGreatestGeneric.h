@@ -128,10 +128,10 @@ public:
         if (isNothing(removeNullable(return_type)))
         {
             DataTypes non_null_types;
-            for (size_t i = 0; i < argument_types.size(); ++i)
+            for (const auto & t : argument_types)
             {
-                if (!removeNullable(argument_types[i])->onlyNull())
-                    non_null_types.push_back(argument_types[i]);
+                if (!isNothing(removeNullable(t)))
+                    non_null_types.push_back(t);
             }
             if (!non_null_types.empty())
             {
