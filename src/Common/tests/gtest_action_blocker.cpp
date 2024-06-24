@@ -31,7 +31,6 @@ TEST(ActionBlocker, TestCancelForever)
 
 TEST(ActionBlocker, TestCancel)
 {
-    const std::string partition_id = "some partition id";
     ActionBlocker blocker;
 
     {
