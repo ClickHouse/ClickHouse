@@ -48,7 +48,7 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.size() != 1)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Number of arguments for function {} can't be {}, should be 1 or 0", getName(), arguments.size());
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Number of arguments for function {} can't be {}, should be 1", getName(), arguments.size());
 
         WhichDataType which(arguments[0]);
 
@@ -90,22 +90,15 @@ public:
         WhichDataType which(arguments[0].type);
 
         if (which.isString())
-        {
             col = checkAndGetColumn<ColumnString>(col);
-            database_name = col->getDataAt(1).toString();
-
-        }
         else
-        {
             col = checkAndGetColumn<ColumnFixedString>(col);
-            database_name = col->getDataAt(1).toString();
-        }
+
+        database_name = col->getDataAt(1).toString();
 
         if (!DatabaseCatalog::instance().isDatabaseExist(database_name))
-        {
             throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} doesn't exist.", database_name);
 
-        }
         //36 is prepared for renaming table operation while dropping
         //max_to_drop = max_dropped_length - length_of(database_name)- length_of(uuid) - lenght_of('sql' + 3 dots)
         auto max_to_drop = static_cast<size_t>(max_dropped_length) - escapeForFileName(database_name).length() - 48;
