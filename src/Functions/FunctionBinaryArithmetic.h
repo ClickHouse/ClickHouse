@@ -266,42 +266,43 @@ struct BinaryOperation
         }
         else
         {
-            if constexpr (is_compare)
+            if (right_nullmap)
             {
                 for (size_t i = 0; i < size; ++i)
-                {
-                    if (left_nullmap && (*left_nullmap)[i])
+                    if ((*right_nullmap)[i])
                     {
-                        if constexpr (op_case == OpCase::RightConstant)
-                            c[i] = *b;
+                        if constexpr (is_compare)
+                        {
+                            if constexpr (op_case == OpCase::LeftConstant)
+                                c[i] = *a;
+                            else
+                                c[i] = static_cast<ResultType>(a[i]);
+                        }
                         else
-                            c[i] = static_cast<ResultType>(b[i]);
-                    }
-                    else if (right_nullmap && (*right_nullmap)[i])
-                    {
-                        if constexpr (op_case == OpCase::LeftConstant)
-                            c[i] = *a;
-                        else
-                            c[i] = static_cast<ResultType>(a[i]);
+                            c[i] = ResultType();
                     }
                     else
                         apply<op_case>(a, b, c, i);
-                }
             }
-            else
+            else if (left_nullmap)
             {
-                if (right_nullmap)
-                {
-                    for (size_t i = 0; i < size; ++i)
-                        if ((*right_nullmap)[i])
-                            c[i] = ResultType();
-                        else
-                            apply<op_case>(a, b, c, i);
-                }
-                else
-                    for (size_t i = 0; i < size; ++i)
+                for (size_t i = 0; i < size; ++i)
+                    if ((*left_nullmap)[i])
+                    {
+                        if constexpr (is_compare)
+                        {
+                            if constexpr (op_case == OpCase::RightConstant)
+                                c[i] = *b;
+                            else
+                                c[i] = static_cast<ResultType>(b[i]);
+                        }
+                    }
+                    else
                         apply<op_case>(a, b, c, i);
             }
+            else
+                for (size_t i = 0; i < size; ++i)
+                    apply<op_case>(a, b, c, i);
         }
     }
 
@@ -588,21 +589,26 @@ public:
 
         if constexpr (is_plus_minus_compare)
         {
+            auto checkLeftRightNull = [&](size_t i) -> std::pair<bool, bool>
+            {
+                bool left_null = false;
+                bool right_null = false;
+                if constexpr (is_compare)
+                {
+                    left_null = left_nullmap && (*left_nullmap)[i];
+                    right_null = right_nullmap && (*right_nullmap)[i];
+                }
+                return std::pair<bool, bool>(left_null, right_null);
+            };
             if (scale_a != 1)
             {
                 for (size_t i = 0; i < size; ++i)
                 {
-                    bool left_null = false;
-                    bool right_null = false;
-                    if constexpr (is_compare)
-                    {
-                        left_null = left_nullmap && (*left_nullmap)[i];
-                        right_null = right_nullmap && (*right_nullmap)[i];
-                    }
+                    auto left_right_null = checkLeftRightNull(i);
                     c[i] = applyScaled<true>(
                         static_cast<NativeResultType>(unwrap<op_case, OpCase::LeftConstant>(a, i)),
                         static_cast<NativeResultType>(unwrap<op_case, OpCase::RightConstant>(b, i)),
-                        scale_a, left_null, right_null);
+                        scale_a, left_right_null.first, left_right_null.second);
                 }
                 return;
             }
@@ -610,17 +616,11 @@ public:
             {
                 for (size_t i = 0; i < size; ++i)
                 {
-                    bool left_null = false;
-                    bool right_null = false;
-                    if constexpr (is_compare)
-                    {
-                        left_null = left_nullmap && (*left_nullmap)[i];
-                        right_null = right_nullmap && (*right_nullmap)[i];
-                    }
+                    auto left_right_null = checkLeftRightNull(i);
                     c[i] = applyScaled<false>(
                         static_cast<NativeResultType>(unwrap<op_case, OpCase::LeftConstant>(a, i)),
                         static_cast<NativeResultType>(unwrap<op_case, OpCase::RightConstant>(b, i)),
-                        scale_b, left_null, right_null);
+                        scale_b, left_right_null.first, left_right_null.second);
                 }
                 return;
             }
@@ -771,16 +771,13 @@ private:
             return res;
         }
         else
-        {
             return Op::template apply<NativeResultType>(a, b);
-        }
     }
 
     template <bool scale_left, bool may_check_overflow = true>
     static NO_SANITIZE_UNDEFINED NativeResultType applyScaled(NativeResultType a, NativeResultType b, NativeResultType scale, bool left_null=false, bool right_null=false)
     {
         static_assert(is_plus_minus_compare || is_multiply);
-        NativeResultType res;
         if constexpr (is_compare)
         {
             if (left_null)
@@ -788,6 +785,7 @@ private:
             else if (right_null)
                 return a * scale;
         }
+        NativeResultType res;
         if constexpr (check_overflow && may_check_overflow)
         {
             bool overflow = false;
@@ -2355,22 +2353,20 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
 
         if (is_compare && (left_argument.type->isNullable() || right_argument.type->isNullable()))
         {
-            const NullMap * left_nullmap_col = nullptr;
-            const NullMap * right_nullmap_col = nullptr;
-            if (left_argument.type->isNullable())
+            auto checkAndGetNullMap = [&](const ColumnWithTypeAndName & arg) -> const NullMap *
             {
-                bool is_const = checkColumnConst<ColumnNullable>(left_argument.column.get());
-                const ColumnNullable * left_col = is_const ? checkAndGetColumnConstData<ColumnNullable>(left_argument.column.get()) :
-                        checkAndGetColumn<ColumnNullable>(left_argument.column.get());
-                left_nullmap_col = &(left_col->getNullMapData());
-            }
-            if (right_argument.type->isNullable())
-            {
-                bool is_const = checkColumnConst<ColumnNullable>(right_argument.column.get());
-                const ColumnNullable * right_col = is_const ? checkAndGetColumnConstData<ColumnNullable>(right_argument.column.get()) :
-                        checkAndGetColumn<ColumnNullable>(right_argument.column.get());
-                right_nullmap_col = &(right_col->getNullMapData());
-            }
+                const NullMap * nullmap = nullptr;
+                if (arg.type->isNullable())
+                {
+                    bool is_const = checkColumnConst<ColumnNullable>(arg.column.get());
+                    const ColumnNullable * col = is_const ? checkAndGetColumnConstData<ColumnNullable>(arg.column.get()) :
+                        checkAndGetColumn<ColumnNullable>(arg.column.get());
+                    nullmap = &(col->getNullMapData());
+                }
+                return nullmap;
+            };
+            const NullMap * left_nullmap_col = checkAndGetNullMap(left_argument);
+            const NullMap * right_nullmap_col = checkAndGetNullMap(right_argument);
             auto res = executeImpl2(createBlockWithNestedColumns(arguments), removeNullable(result_type), input_rows_count, left_nullmap_col, right_nullmap_col);
             if (!left_argument.type->isNullable() && !right_argument.type->isNullable())
                 return res;
