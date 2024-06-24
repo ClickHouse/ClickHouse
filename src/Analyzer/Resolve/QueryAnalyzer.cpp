@@ -61,7 +61,6 @@
 #include <Analyzer/Resolve/IdentifierResolveScope.h>
 #include <Analyzer/Resolve/TableExpressionsAliasVisitor.h>
 #include <Analyzer/Resolve/ReplaceColumnsVisitor.h>
-#include <Analyzer/Resolve/ParametrizedViewFunctionVisitor.h>
 
 namespace ProfileEvents
 {
@@ -4507,25 +4506,34 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
             table_name = table_identifier[1];
         }
 
-        auto context = scope_context->getQueryContext();
-        auto params_visitor = ParametrizedViewFunctionParamsVisitor(
-            [&](QueryTreeNodePtr node)
+        /// Collect parametrized view arguments
+        NameToNameMap view_params;
+        for (const auto & argument : table_function_node_typed.getArguments())
+        {
+            if (auto * arg_func = argument->as<FunctionNode>())
             {
-                resolveExpressionNode(node, scope, /* allow_lambda_expression */true, /* allow_table_function */false);
-                auto alias_node = scope.aliases.alias_name_to_expression_node->find(node->getAlias());
-                if (alias_node != scope.aliases.alias_name_to_expression_node->end())
-                    return alias_node->second;
-                else
-                    return node;
-            },
-            context);
+                if (arg_func->getFunctionName() != "equals")
+                    continue;
 
-        params_visitor.visit(table_function_node);
+                auto nodes = arg_func->getArguments().getNodes();
+                if (nodes.size() != 2)
+                    return;
+
+                if (auto * identifier_node = nodes[0]->as<IdentifierNode>())
+                {
+                    resolveExpressionNode(nodes[1], scope, /* allow_lambda_expression */false, /* allow_table_function */false);
+                    if (auto * constant = nodes[1]->as<ConstantNode>())
+                    {
+                        view_params[identifier_node->getIdentifier().getFullName()] = constant->getValueStringRepresentation();
+                    }
+                }
+            }
+        }
 
         auto parametrized_view_storage = context->buildParametrizedViewStorage(
             database_name,
             table_name,
-            params_visitor.getParametersMap());
+            view_params);
 
         if (parametrized_view_storage)
         {
