@@ -11,6 +11,7 @@
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
+#include <Interpreters/executeQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterCreateQuery.h>
@@ -369,26 +370,12 @@ void DatabaseOnDisk::checkMetadataFilenameAvailability(const String & to_table_n
 
 void DatabaseOnDisk::checkMetadataFilenameAvailabilityUnlocked(const String & to_table_name) const
 {
+    String query = fmt::format("SELECT getMaxTableName('{}')", database_name);
+    auto mutable_context = std::const_pointer_cast<Context>(getContext());
+    const auto & res = executeQuery(query, mutable_context, QueryFlags{ .internal = true }).second;
+    const auto & res_col = res.pipeline.getHeader().getColumnsWithTypeAndName()[0].column;
+    const auto allowed_max_length = res_col->getUInt(1);
     String table_metadata_path = getObjectMetadataPath(to_table_name);
-    String suffix = ".sql.detached";
-    auto max_create_length = pathconf(metadata_path.data(), _PC_NAME_MAX);
-    String dropped_directory_name = (std::filesystem::path(getContext()->getPath()) / "metadata_dropped").string();
-    auto max_dropped_length = pathconf(dropped_directory_name.data(), _PC_NAME_MAX);
-
-    if (max_dropped_length == -1)
-        max_dropped_length = NAME_MAX;
-
-    if (max_create_length == -1)
-        max_create_length = NAME_MAX;
-
-    //File name to drop is escaped_db_name.escaped_table_name.uuid.sql
-    //File name to create is table_name.sql
-    auto max_to_create = static_cast<size_t>(max_create_length)  - suffix.length();
-
-    //36 is prepared for renaming table operation while dropping
-    //max_to_drop = max_dropped_length - length_of(database_name)- length_of(uuid) - lenght_of('sql' + 3 dots)
-    auto max_to_drop = static_cast<size_t>(max_dropped_length) - escapeForFileName(database_name).length() - 48;
-    auto allowed_max_length = max_to_create > max_to_drop ? max_to_drop : max_to_create;
 
     if (escapeForFileName(to_table_name).length() > allowed_max_length)
         throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "The max length of table name for database {} is {}, current length is {}",
