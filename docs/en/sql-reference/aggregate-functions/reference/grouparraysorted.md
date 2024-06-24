@@ -1,7 +1,7 @@
- ---
-slug: /en/sql-reference/aggregate-functions/reference/groupArraySorted
-sidebar_position: 145
- ---
+---
+slug: /en/sql-reference/aggregate-functions/reference/grouparraysorted
+sidebar_position: 146
+---
 
  # groupArraySorted {#groupArraySorted}
 

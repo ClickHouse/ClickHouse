@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/aggregate-functions/reference/groupbitmapand
-sidebar_position: 148
+sidebar_position: 149
 title: groupBitmapAnd
 ---
 

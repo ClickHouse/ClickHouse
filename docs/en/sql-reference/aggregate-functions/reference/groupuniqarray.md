@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/aggregate-functions/reference/groupuniqarray
-sidebar_position: 153
+sidebar_position: 154
 ---
 
 # groupUniqArray

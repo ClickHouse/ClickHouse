@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/aggregate-functions/reference/minmap
-sidebar_position: 167
+sidebar_position: 169
 ---
 
 # minMap

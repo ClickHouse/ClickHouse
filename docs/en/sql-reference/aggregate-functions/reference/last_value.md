@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/aggregate-functions/reference/last_value
-sidebar_position: 159
+sidebar_position: 160
 ---
 
 # last_value
