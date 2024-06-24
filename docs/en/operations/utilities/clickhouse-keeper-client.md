@@ -35,7 +35,7 @@ api_version
 /keeper/api_version :) ls
 
 /keeper/api_version :) cd xyz
-Path /keeper/api_version/xyz does not exist
+Path /keeper/api_version/xyz does not exists
 /keeper/api_version :) cd ../../
 / :) ls
 keeper foo bar

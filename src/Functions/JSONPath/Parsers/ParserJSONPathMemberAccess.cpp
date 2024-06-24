@@ -5,7 +5,7 @@
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/Lexer.h>
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 
 namespace DB
 {

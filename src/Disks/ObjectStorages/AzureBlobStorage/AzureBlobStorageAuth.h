@@ -21,8 +21,6 @@ struct AzureBlobStorageEndpoint
     String getEndpoint()
     {
         String url = storage_account_url;
-        if (url.ends_with('/'))
-          url.pop_back();
 
         if (!account_name.empty())
             url += "/" + account_name;
@@ -47,11 +45,12 @@ struct AzureBlobStorageEndpoint
     }
 };
 
-std::unique_ptr<Azure::Storage::Blobs::BlobContainerClient> getAzureBlobContainerClient(const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
+std::unique_ptr<Azure::Storage::Blobs::BlobContainerClient> getAzureBlobContainerClient(
+    const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
 
 AzureBlobStorageEndpoint processAzureBlobStorageEndpoint(const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
 
-std::unique_ptr<AzureObjectStorageSettings> getAzureBlobStorageSettings(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr context);
+std::unique_ptr<AzureObjectStorageSettings> getAzureBlobStorageSettings(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr /*context*/);
 
 }
 

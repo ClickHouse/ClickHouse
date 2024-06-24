@@ -184,7 +184,7 @@ public:
     }
 
 private:
-    enum class PatternActionType : uint8_t
+    enum class PatternActionType
     {
         SpecificEvent,
         AnyEvent,
@@ -577,7 +577,7 @@ protected:
     }
 
 private:
-    enum class DFATransition : uint8_t
+    enum class DFATransition : char
     {
         ///   .-------.
         ///   |       |

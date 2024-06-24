@@ -7,7 +7,7 @@
 
 namespace DB
 {
-enum class AccessEntityType : uint8_t;
+enum class AccessEntityType;
 
 /// This class is used by hosts to coordinate the access entities of ReplicatedAccessStorage they're writing to a backup.
 /// It's designed to make all hosts save the same access entities to the backup even in case the ReplicatedAccessStorage changes

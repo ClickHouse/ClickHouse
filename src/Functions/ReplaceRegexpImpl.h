@@ -16,7 +16,7 @@ namespace ErrorCodes
 
 struct ReplaceRegexpTraits
 {
-    enum class Replace : uint8_t
+    enum class Replace
     {
         First,
         All

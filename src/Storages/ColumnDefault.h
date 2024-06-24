@@ -9,7 +9,7 @@
 namespace DB
 {
 
-enum class ColumnDefaultKind : uint8_t
+enum class ColumnDefaultKind
 {
     Default,
     Materialized,

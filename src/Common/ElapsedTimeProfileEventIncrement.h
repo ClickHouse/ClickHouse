@@ -17,18 +17,19 @@ enum Time
 template <Time unit>
 struct ProfileEventTimeIncrement
 {
-    explicit ProfileEventTimeIncrement(ProfileEvents::Event event_)
+    explicit ProfileEventTimeIncrement<time>(ProfileEvents::Event event_)
         : event(event_), watch(CLOCK_MONOTONIC) {}
 
+    template <Time time = unit>
     UInt64 elapsed()
     {
-        if constexpr (unit == Time::Nanoseconds)
+        if constexpr (time == Time::Nanoseconds)
             return watch.elapsedNanoseconds();
-        else if constexpr (unit == Time::Microseconds)
+        else if constexpr (time == Time::Microseconds)
             return watch.elapsedMicroseconds();
-        else if constexpr (unit == Time::Milliseconds)
+        else if constexpr (time == Time::Milliseconds)
             return watch.elapsedMilliseconds();
-        else if constexpr (unit == Time::Seconds)
+        else if constexpr (time == Time::Seconds)
             return watch.elapsedSeconds();
     }
 

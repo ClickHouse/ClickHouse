@@ -74,6 +74,7 @@ std::unique_ptr<ReadBuffer> RemoteReadBuffer::create(
     bool is_random_accessed)
 
 {
+    auto remote_path = remote_file_metadata->remote_path;
     auto remote_read_buffer = std::make_unique<RemoteReadBuffer>(buff_size);
 
     std::tie(remote_read_buffer->local_file_holder, read_buffer)
@@ -204,7 +205,7 @@ void ExternalDataSourceCache::recoverTask()
         }
     }
     for (auto & path : invalid_paths)
-        (void)fs::remove_all(path);
+        fs::remove_all(path);
     initialized = true;
 
     auto root_dirs_to_string = [&]()

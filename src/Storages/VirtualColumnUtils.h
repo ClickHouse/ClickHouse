@@ -68,18 +68,8 @@ void filterByPathOrFile(std::vector<T> & sources, const std::vector<String> & pa
     sources = std::move(filtered_sources);
 }
 
-struct VirtualsForFileLikeStorage
-{
-    const String & path;
-    std::optional<size_t> size { std::nullopt };
-    const String * filename { nullptr };
-    std::optional<Poco::Timestamp> last_modified { std::nullopt };
-
-};
-
-void addRequestedFileLikeStorageVirtualsToChunk(
-    Chunk & chunk, const NamesAndTypesList & requested_virtual_columns,
-    VirtualsForFileLikeStorage virtual_values);
+void addRequestedPathFileAndSizeVirtualsToChunk(
+    Chunk & chunk, const NamesAndTypesList & requested_virtual_columns, const String & path, std::optional<size_t> size, const String * filename = nullptr);
 }
 
 }
