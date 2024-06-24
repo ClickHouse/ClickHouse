@@ -287,6 +287,7 @@ As the new engine is experimental, it is not production ready yet. There are few
  - The biggest limitation is the engine doesn't support direct reading from Kafka topic (insertion works, but reading doesn't), thus the direct `SELECT` queries will fail.
  - Rapidly dropping and recreating the table or specifying the same ClickHouse Keeper path to different engines might cause issues. As best practice you can use the `{uuid}` to avoid clashing paths.
  - To make repeatable reads possible messages cannot be consumed from multiple partitions on a single thread. On the other hand the Kafka consumers has to be polled regularly to keep them alive. As a result of these two we decided to only allow creating multiple consumer if `kafka_thread_per_consumer` is enabled, otherwise it is too complicated to avoid issues regarding polling consumers regularly.
+ - Consumers created by the new storage engine do not show up in [`system.kafka_consumers`](../../../operations/system-tables/kafka_consumers.md) table.
 
 **See Also**
 
