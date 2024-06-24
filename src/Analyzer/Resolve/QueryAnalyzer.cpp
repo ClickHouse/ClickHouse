@@ -4530,6 +4530,7 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
             }
         }
 
+        auto context = scope_context->getQueryContext();
         auto parametrized_view_storage = context->buildParametrizedViewStorage(
             database_name,
             table_name,
