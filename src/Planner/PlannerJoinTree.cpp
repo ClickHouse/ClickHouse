@@ -1149,7 +1149,7 @@ void joinCastPlanColumnsToNullable(QueryPlan & plan_to_add_cast, PlannerContextP
         }
     }
 
-    cast_actions_dag->projectInput();
+    cast_actions_dag->appendInputsForUnusedColumns(plan_to_add_cast.getCurrentDataStream().header);
     auto cast_join_columns_step = std::make_unique<ExpressionStep>(plan_to_add_cast.getCurrentDataStream(), std::move(cast_actions_dag));
     cast_join_columns_step->setStepDescription("Cast JOIN columns to Nullable");
     plan_to_add_cast.addStep(std::move(cast_join_columns_step));
@@ -1195,12 +1195,12 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
             join_table_expression,
             planner_context);
 
-        join_clauses_and_actions.left_join_expressions_actions->projectInput();
+        join_clauses_and_actions.left_join_expressions_actions->appendInputsForUnusedColumns(left_plan.getCurrentDataStream().header);
         auto left_join_expressions_actions_step = std::make_unique<ExpressionStep>(left_plan.getCurrentDataStream(), join_clauses_and_actions.left_join_expressions_actions);
         left_join_expressions_actions_step->setStepDescription("JOIN actions");
         left_plan.addStep(std::move(left_join_expressions_actions_step));
 
-        join_clauses_and_actions.right_join_expressions_actions->projectInput();
+        join_clauses_and_actions.right_join_expressions_actions->appendInputsForUnusedColumns(right_plan.getCurrentDataStream().header);
         auto right_join_expressions_actions_step = std::make_unique<ExpressionStep>(right_plan.getCurrentDataStream(), join_clauses_and_actions.right_join_expressions_actions);
         right_join_expressions_actions_step->setStepDescription("JOIN actions");
         right_plan.addStep(std::move(right_join_expressions_actions_step));
@@ -1252,7 +1252,7 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
             output_node = &cast_actions_dag->addCast(*output_node, cast_type, output_node->result_name);
         }
 
-        cast_actions_dag->projectInput();
+        cast_actions_dag->appendInputsForUnusedColumns(plan_to_add_cast.getCurrentDataStream().header);
         auto cast_join_columns_step
             = std::make_unique<ExpressionStep>(plan_to_add_cast.getCurrentDataStream(), std::move(cast_actions_dag));
         cast_join_columns_step->setStepDescription("Cast JOIN USING columns");
@@ -1647,7 +1647,7 @@ JoinTreeQueryPlan buildQueryPlanForArrayJoinNode(const QueryTreeNodePtr & array_
         array_join_column_names.insert(array_join_column_identifier);
 
         auto & array_join_expression_column = array_join_expression->as<ColumnNode &>();
-        auto expression_dag_index_nodes = actions_visitor.visit(array_join_action_dag, array_join_expression_column.getExpressionOrThrow());
+        auto expression_dag_index_nodes = actions_visitor.visit(*array_join_action_dag, array_join_expression_column.getExpressionOrThrow());
 
         for (auto & expression_dag_index_node : expression_dag_index_nodes)
         {
@@ -1657,7 +1657,7 @@ JoinTreeQueryPlan buildQueryPlanForArrayJoinNode(const QueryTreeNodePtr & array_
         }
     }
 
-    array_join_action_dag->projectInput();
+    array_join_action_dag->appendInputsForUnusedColumns(plan.getCurrentDataStream().header);
 
     join_tree_query_plan.actions_dags.push_back(array_join_action_dag);
 

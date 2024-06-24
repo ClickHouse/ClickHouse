@@ -462,7 +462,9 @@ def _configure_jobs(
     return ci_cache
 
 
-def _generate_ci_stage_config(jobs_data: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+def _generate_ci_stage_config(
+    jobs_data: Dict[str, Any], non_blocking_mode: bool = False
+) -> Dict[str, Dict[str, Any]]:
     """
     populates GH Actions' workflow with real jobs
     "Builds_1": [{"job_name": NAME, "runner_type": RUNNER_TYPE}]
@@ -472,7 +474,7 @@ def _generate_ci_stage_config(jobs_data: Dict[str, Any]) -> Dict[str, Dict[str, 
     result = {}  # type: Dict[str, Any]
     stages_to_do = []
     for job in jobs_data:
-        stage_type = CI.get_job_ci_stage(job)
+        stage_type = CI.get_job_ci_stage(job, non_blocking_ci=non_blocking_mode)
         if stage_type == CI.WorkflowStages.NA:
             continue
         if stage_type not in result:
@@ -1007,7 +1009,9 @@ def main() -> int:
         result["docs"] = ci_cache.job_digests[CI.JobNames.DOCS_CHECK]
         result["ci_settings"] = ci_settings.as_dict()
         if not args.skip_jobs:
-            result["stages_data"] = _generate_ci_stage_config(ci_cache.jobs_to_do)
+            result["stages_data"] = _generate_ci_stage_config(
+                ci_cache.jobs_to_do, ci_settings.woolen_wolfdog
+            )
             result["jobs_data"] = {
                 "jobs_to_do": list(ci_cache.jobs_to_do),
                 "jobs_to_skip": ci_cache.jobs_to_skip,
@@ -1061,18 +1065,19 @@ def main() -> int:
             )
 
             # rerun helper check
-            # FIXME: remove rerun_helper check and rely on ci cache only
             if check_name not in (
                 CI.JobNames.BUILD_CHECK,
             ):  # we might want to rerun build report job
                 rerun_helper = RerunHelper(commit, check_name_with_group)
                 if rerun_helper.is_already_finished_by_status():
+                    print("WARNING: Rerunning job with GH status ")
                     status = rerun_helper.get_finished_status()
                     assert status
-                    previous_status = status.state
                     print("::group::Commit Status")
                     print(status)
                     print("::endgroup::")
+                    # FIXME: try rerun, even if status is present. To enable manual restart via GH interface
+                    # previous_status = status.state
 
             # ci cache check
             if not previous_status and not ci_settings.no_ci_cache:
