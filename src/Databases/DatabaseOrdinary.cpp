@@ -244,7 +244,10 @@ void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTables
                     SnapshotDetachedTable snapshot_detached_table;
                     snapshot_detached_table.database = storage_id.getDatabaseName();
                     snapshot_detached_table.table = detached_table_name;
-                    snapshot_detached_table.uuid = storage_id.uuid;
+                    if (storage_id.hasUUID())
+                    {
+                        snapshot_detached_table.uuid = storage_id.uuid;
+                    }
                     snapshot_detached_table.is_permanently = true;
                     snapshot_detached_table.metadata_path = getObjectMetadataPath(snapshot_detached_table.table);
 
