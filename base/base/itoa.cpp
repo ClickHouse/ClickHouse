@@ -59,8 +59,8 @@ namespace jeaiii
 struct pair
 {
     char dd[2];
-    constexpr pair(char c) : dd{c, '\0'} { }
-    constexpr pair(int n) : dd{"0123456789"[n / 10], "0123456789"[n % 10]} { }
+    constexpr pair(char c) : dd{c, '\0'} { } /// NOLINT(google-explicit-constructor)
+    constexpr pair(int n) : dd{"0123456789"[n / 10], "0123456789"[n % 10]} { } /// NOLINT(google-explicit-constructor)
 };
 
 constexpr struct
