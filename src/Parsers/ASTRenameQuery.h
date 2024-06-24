@@ -94,7 +94,24 @@ public:
     ASTPtr clone() const override
     {
         auto res = std::make_shared<ASTRenameQuery>(*this);
-        res->cloneChildren();
+        res->children.clear();
+
+        auto clone_child = [&res](ASTPtr & node)
+        {
+            if (node)
+            {
+                node = node->clone();
+                res->children.push_back(node);
+            }
+        };
+
+        for (auto & elem : res->elements)
+        {
+            clone_child(elem.from.database);
+            clone_child(elem.from.table);
+            clone_child(elem.to.database);
+            clone_child(elem.to.table);
+        }
         cloneOutputOptions(*res);
         return res;
     }
@@ -108,9 +125,15 @@ public:
         for (Element & elem : query.elements)
         {
             if (!elem.from.database)
+            {
                 elem.from.database = std::make_shared<ASTIdentifier>(params.default_database);
+                query.children.push_back(elem.from.database);
+            }
             if (!elem.to.database)
+            {
                 elem.to.database = std::make_shared<ASTIdentifier>(params.default_database);
+                query.children.push_back(elem.to.database);
+            }
         }
 
         return query_ptr;

@@ -53,19 +53,28 @@ IMergeTreeDataPart::MergeTreeReaderPtr MergeTreeDataPartWide::getReader(
         profile_callback);
 }
 
-IMergeTreeDataPart::MergeTreeWriterPtr MergeTreeDataPartWide::getWriter(
+MergeTreeDataPartWriterPtr createMergeTreeDataPartWideWriter(
+    const String & data_part_name_,
+    const String & logger_name_,
+    const SerializationByName & serializations_,
+    MutableDataPartStoragePtr data_part_storage_,
+    const MergeTreeIndexGranularityInfo & index_granularity_info_,
+    const MergeTreeSettingsPtr & storage_settings_,
     const NamesAndTypesList & columns_list,
     const StorageMetadataPtr & metadata_snapshot,
+    const VirtualsDescriptionPtr & virtual_columns,
     const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
-    const Statistics & stats_to_recalc_,
+    const ColumnsStatistics & stats_to_recalc_,
+    const String & marks_file_extension_,
     const CompressionCodecPtr & default_codec_,
     const MergeTreeWriterSettings & writer_settings,
     const MergeTreeIndexGranularity & computed_index_granularity)
 {
     return std::make_unique<MergeTreeDataPartWriterWide>(
-        shared_from_this(), columns_list,
-        metadata_snapshot, indices_to_recalc, stats_to_recalc_,
-        getMarksFileExtension(),
+        data_part_name_, logger_name_, serializations_, data_part_storage_,
+        index_granularity_info_, storage_settings_, columns_list,
+        metadata_snapshot, virtual_columns, indices_to_recalc, stats_to_recalc_,
+        marks_file_extension_,
         default_codec_, writer_settings, computed_index_granularity);
 }
 
@@ -189,9 +198,8 @@ MergeTreeDataPartWide::~MergeTreeDataPartWide()
     removeIfNeeded();
 }
 
-void MergeTreeDataPartWide::checkConsistency(bool require_part_metadata) const
+void MergeTreeDataPartWide::doCheckConsistency(bool require_part_metadata) const
 {
-    checkConsistencyBase();
     std::string marks_file_extension = index_granularity_info.mark_type.getFileExtension();
 
     if (!checksums.empty())

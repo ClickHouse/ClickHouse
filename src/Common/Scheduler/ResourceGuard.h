@@ -2,9 +2,10 @@
 
 #include <base/types.h>
 
+#include <Common/Scheduler/ISchedulerConstraint.h>
+#include <Common/Scheduler/ISchedulerQueue.h>
 #include <Common/Scheduler/ResourceRequest.h>
 #include <Common/Scheduler/ResourceLink.h>
-#include <Common/Scheduler/ISchedulerConstraint.h>
 
 #include <condition_variable>
 #include <mutex>
@@ -71,8 +72,7 @@ public:
             // lock(mutex) is not required because `Dequeued` request cannot be used by the scheduler thread
             chassert(state == Dequeued);
             state = Finished;
-            if (constraint)
-                constraint->finishRequest(this);
+            ResourceRequest::finish();
         }
 
         static Request & local()
@@ -124,12 +124,6 @@ public:
             request.finish();
             link.queue = nullptr;
         }
-    }
-
-    /// Mark request as unsuccessful; by default request is considered to be successful
-    void setFailure()
-    {
-        request.successful = false;
     }
 
     ResourceLink link;

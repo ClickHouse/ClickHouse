@@ -23,7 +23,6 @@ node4 = cluster.add_instance(
     main_configs=[
         "configs/compat.xml",
     ],
-    allow_analyzer=False,
 )
 
 node5 = cluster.add_instance(
@@ -36,7 +35,6 @@ node5 = cluster.add_instance(
     main_configs=[
         "configs/compat.xml",
     ],
-    allow_analyzer=False,
 )
 node6 = cluster.add_instance(
     "node6",
@@ -48,7 +46,6 @@ node6 = cluster.add_instance(
     main_configs=[
         "configs/compat.xml",
     ],
-    allow_analyzer=False,
 )
 
 
@@ -328,7 +325,7 @@ def optimize_with_retry(node, table_name, retry=20):
                 settings={"optimize_throw_if_noop": "1"},
             )
             break
-        except e:
+        except:
             time.sleep(0.5)
 
 

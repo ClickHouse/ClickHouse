@@ -325,16 +325,17 @@ void KeeperDispatcher::snapshotThread()
         if (!snapshots_queue.pop(task))
             break;
 
-        if (shutdown_called)
-            break;
-
         try
         {
-            auto snapshot_file_info = task.create_snapshot(std::move(task.snapshot));
+            auto snapshot_file_info = task.create_snapshot(std::move(task.snapshot), /*execute_only_cleanup=*/shutdown_called);
 
-            if (snapshot_file_info.path.empty())
+            if (shutdown_called)
+                break;
+
+            if (!snapshot_file_info)
                 continue;
 
+            chassert(snapshot_file_info->disk != nullptr);
             if (isLeader())
                 snapshot_s3.uploadSnapshot(snapshot_file_info);
         }

@@ -317,7 +317,7 @@ public:
                             ErrorCodes::ILLEGAL_COLUMN, "Expected Array column, found {}", column_array_ptr->getName());
 
                     column_array_ptr = recursiveRemoveLowCardinality(column_const_array->convertToFullColumn());
-                    column_array = checkAndGetColumn<ColumnArray>(column_array_ptr.get());
+                    column_array = &checkAndGetColumn<ColumnArray>(*column_array_ptr);
                 }
 
                 if (!array_type)
@@ -355,7 +355,7 @@ public:
                     {
                         arrays.emplace_back(
                             column_tuple->getColumnPtr(j),
-                            recursiveRemoveLowCardinality(type_tuple.getElement(j)),
+                            type_tuple.getElement(j),
                             array_with_type_and_name.name + "." + tuple_names[j]);
                     }
                 }
@@ -363,7 +363,7 @@ public:
                 {
                     arrays.emplace_back(
                         column_array->getDataPtr(),
-                        recursiveRemoveLowCardinality(array_type->getNestedType()),
+                        array_type->getNestedType(),
                         array_with_type_and_name.name);
                 }
 

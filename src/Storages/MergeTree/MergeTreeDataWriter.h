@@ -53,7 +53,7 @@ public:
       *  (split rows by partition)
       * Works deterministically: if same block was passed, function will return same result in same order.
       */
-    static BlocksWithPartition splitBlockIntoParts(const Block & block, size_t max_parts, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, AsyncInsertInfoPtr async_insert_info = nullptr);
+    static BlocksWithPartition splitBlockIntoParts(Block && block, size_t max_parts, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, AsyncInsertInfoPtr async_insert_info = nullptr);
 
     /// This structure contains not completely written temporary part.
     /// Some writes may happen asynchronously, e.g. for blob storages.
@@ -95,7 +95,8 @@ public:
         LoggerPtr log,
         Block block,
         const ProjectionDescription & projection,
-        IMergeTreeDataPart * parent_part);
+        IMergeTreeDataPart * parent_part,
+        bool merge_is_needed);
 
     /// For mutation: MATERIALIZE PROJECTION.
     static TemporaryPart writeTempProjectionPart(
@@ -107,7 +108,7 @@ public:
         size_t block_num);
 
     static Block mergeBlock(
-        const Block & block,
+        Block && block,
         SortDescription sort_description,
         const Names & partition_key_columns,
         IColumn::Permutation *& permutation,
@@ -129,7 +130,8 @@ private:
         const MergeTreeData & data,
         LoggerPtr log,
         Block block,
-        const ProjectionDescription & projection);
+        const ProjectionDescription & projection,
+        bool merge_is_needed);
 
     MergeTreeData & data;
     LoggerPtr log;

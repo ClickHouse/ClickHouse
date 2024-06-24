@@ -100,7 +100,7 @@ protected:
     /// Position and level (of nesting).
     using ColumnNameLevel = std::optional<std::pair<String, size_t>>;
 
-    /// In case of part of the nested column does not exists, offsets should be
+    /// In case of part of the nested column does not exist, offsets should be
     /// read, but only the offsets for the current column, that is why it
     /// returns pair of size_t, not just one.
     ColumnNameLevel findColumnForOffsets(const NameAndTypePair & column) const;

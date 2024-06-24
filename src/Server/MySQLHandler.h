@@ -46,6 +46,8 @@ public:
         const ProfileEvents::Event & read_event_ = ProfileEvents::end(),
         const ProfileEvents::Event & write_event_ = ProfileEvents::end());
 
+    ~MySQLHandler() override;
+
     void run() final;
 
 protected:

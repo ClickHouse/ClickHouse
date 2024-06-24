@@ -30,6 +30,7 @@ namespace ProfileEvents
 {
     extern const Event DistributedConnectionFailTry;
     extern const Event DistributedConnectionFailAtAll;
+    extern const Event DistributedConnectionSkipReadOnlyReplica;
 }
 
 /// This class provides a pool with fault tolerance. It is used for pooling of connections to replicated DB.
@@ -73,13 +74,7 @@ public:
     {
         TryResult() = default;
 
-        void reset()
-        {
-            entry = Entry();
-            is_usable = false;
-            is_up_to_date = false;
-            delay = 0;
-        }
+        void reset() { *this = {}; }
 
         Entry entry; /// use isNull() to check if connection is established
         bool is_usable = false; /// if connection is established, then can be false only with table check
@@ -87,6 +82,7 @@ public:
         bool is_up_to_date = false; /// If true, the entry is a connection to up-to-date replica
                                     /// Depends on max_replica_delay_for_distributed_queries setting
         UInt32 delay = 0; /// Helps choosing the "least stale" option when all replicas are stale.
+        bool is_readonly = false;   /// Table is in read-only mode, INSERT can ignore such replicas.
     };
 
     struct PoolState;
@@ -117,6 +113,7 @@ public:
             size_t min_entries, size_t max_entries, size_t max_tries,
             size_t max_ignored_errors,
             bool fallback_to_stale_replicas,
+            bool skip_read_only_replicas,
             const TryGetEntryFunc & try_get_entry,
             const GetPriorityFunc & get_priority);
 
@@ -205,8 +202,12 @@ PoolWithFailoverBase<TNestedPool>::get(size_t max_ignored_errors, bool fallback_
     const TryGetEntryFunc & try_get_entry, const GetPriorityFunc & get_priority)
 {
     std::vector<TryResult> results = getMany(
-        1 /* min entries */, 1 /* max entries */, 1 /* max tries */,
-        max_ignored_errors, fallback_to_stale_replicas,
+        /* min_entries= */ 1,
+        /* max_entries= */ 1,
+        /* max_tries= */ 1,
+        max_ignored_errors,
+        fallback_to_stale_replicas,
+        /* skip_read_only_replicas= */ false,
         try_get_entry, get_priority);
     if (results.empty() || results[0].entry.isNull())
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR,
@@ -220,14 +221,14 @@ PoolWithFailoverBase<TNestedPool>::getMany(
         size_t min_entries, size_t max_entries, size_t max_tries,
         size_t max_ignored_errors,
         bool fallback_to_stale_replicas,
+        bool skip_read_only_replicas,
         const TryGetEntryFunc & try_get_entry,
         const GetPriorityFunc & get_priority)
 {
     std::vector<ShuffledPool> shuffled_pools = getShuffledPools(max_ignored_errors, get_priority);
 
     /// Limit `max_tries` value by `max_error_cap` to avoid unlimited number of retries
-    if (max_tries > max_error_cap)
-        max_tries = max_error_cap;
+    max_tries = std::min(max_tries, max_error_cap);
 
     /// We will try to get a connection from each pool until a connection is produced or max_tries is reached.
     std::vector<TryResult> try_results(shuffled_pools.size());
@@ -271,9 +272,14 @@ PoolWithFailoverBase<TNestedPool>::getMany(
                 ++entries_count;
                 if (result.is_usable)
                 {
-                    ++usable_count;
-                    if (result.is_up_to_date)
-                        ++up_to_date_count;
+                    if (skip_read_only_replicas && result.is_readonly)
+                        ProfileEvents::increment(ProfileEvents::DistributedConnectionSkipReadOnlyReplica);
+                    else
+                    {
+                        ++usable_count;
+                        if (result.is_up_to_date)
+                            ++up_to_date_count;
+                    }
                 }
             }
             else
@@ -296,7 +302,7 @@ PoolWithFailoverBase<TNestedPool>::getMany(
         throw DB::NetException(DB::ErrorCodes::ALL_CONNECTION_TRIES_FAILED,
                 "All connection tries failed. Log: \n\n{}\n", fail_messages);
 
-    std::erase_if(try_results, [](const TryResult & r) { return r.entry.isNull() || !r.is_usable; });
+    std::erase_if(try_results, [&](const TryResult & r) { return r.entry.isNull() || !r.is_usable || (skip_read_only_replicas && r.is_readonly); });
 
     /// Sort so that preferred items are near the beginning.
     std::stable_sort(

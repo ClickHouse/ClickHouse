@@ -77,7 +77,7 @@ ColumnsDescription SessionLogElement::getColumnsDescription()
             {"Logout",                 static_cast<Int8>(SESSION_LOGOUT)}
         });
 
-#define AUTH_TYPE_NAME_AND_VALUE(v) std::make_pair(AuthenticationTypeInfo::get(v).raw_name, static_cast<Int8>(v))
+#define AUTH_TYPE_NAME_AND_VALUE(v) std::make_pair(toString(v), static_cast<Int8>(v))
     auto identified_with_column = std::make_shared<DataTypeEnum8>(
         DataTypeEnum8::Values
         {
@@ -214,7 +214,7 @@ void SessionLog::addLoginSuccess(const UUID & auth_id,
                                  const ClientInfo & client_info,
                                  const UserPtr & login_user)
 {
-    DB::SessionLogElement log_entry(auth_id, SESSION_LOGIN_SUCCESS);
+    SessionLogElement log_entry(auth_id, SESSION_LOGIN_SUCCESS);
     log_entry.client_info = client_info;
 
     if (login_user)

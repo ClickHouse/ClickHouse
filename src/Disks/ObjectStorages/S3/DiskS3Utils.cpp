@@ -15,16 +15,10 @@ namespace ErrorCodes
 }
 
 ObjectStorageKeysGeneratorPtr getKeyGenerator(
-    String type,
     const S3::URI & uri,
     const Poco::Util::AbstractConfiguration & config,
     const String & config_prefix)
 {
-    if (type == "s3_plain")
-        return createObjectStorageKeysGeneratorAsIsWithPrefix(uri.key);
-
-    chassert(type == "s3");
-
     bool storage_metadata_write_full_object_key = DiskObjectStorageMetadata::getWriteFullObjectKeySetting();
     bool send_metadata = config.getBool(config_prefix + ".send_metadata", false);
 

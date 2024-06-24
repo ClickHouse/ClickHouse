@@ -19,13 +19,13 @@ ln -s /usr/share/clickhouse-test/clickhouse-test /usr/bin/clickhouse-test
 # install test configs
 /usr/share/clickhouse-test/config/install.sh
 
-azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --debug /azurite_log &
+azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --silent --inMemoryPersistence &
 ./setup_minio.sh stateful
 
 config_logs_export_cluster /etc/clickhouse-server/config.d/system_logs_export.yaml
 
 cache_policy=""
-if [ $(( $(date +%-d) % 2 )) -eq 1 ]; then
+if [ $((RANDOM % 2)) -eq 1 ]; then
     cache_policy="SLRU"
 else
     cache_policy="LRU"
@@ -87,7 +87,7 @@ function start()
             tail -n1000 /var/log/clickhouse-server/clickhouse-server.log
             break
         fi
-        timeout 120 service clickhouse-server start
+        timeout 120 sudo -E -u clickhouse /usr/bin/clickhouse-server --config /etc/clickhouse-server/config.xml --daemon --pid-file /var/run/clickhouse-server/clickhouse-server.pid
         sleep 0.5
         counter=$((counter + 1))
     done

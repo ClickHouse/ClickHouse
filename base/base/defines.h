@@ -28,8 +28,8 @@
 #define NO_INLINE __attribute__((__noinline__))
 #define MAY_ALIAS __attribute__((__may_alias__))
 
-#if !defined(__x86_64__) && !defined(__aarch64__) && !defined(__PPC__) && !defined(__s390x__) && !(defined(__riscv) && (__riscv_xlen == 64))
-#    error "The only supported platforms are x86_64 and AArch64, PowerPC (work in progress), s390x (work in progress) and RISC-V 64 (experimental)"
+#if !defined(__x86_64__) && !defined(__aarch64__) && !defined(__PPC__) && !defined(__s390x__) && !(defined(__loongarch64)) && !(defined(__riscv) && (__riscv_xlen == 64))
+#    error "The only supported platforms are x86_64 and AArch64, PowerPC (work in progress), s390x (work in progress), loongarch64 (experimental) and RISC-V 64 (experimental)"
 #endif
 
 /// Check for presence of address sanitizer
@@ -108,16 +108,22 @@
         {
             [[noreturn]] void abortOnFailedAssertion(const String & description);
         }
-        #define chassert(x) do { static_cast<bool>(x) ? void(0) : ::DB::abortOnFailedAssertion(#x); } while (0)
+        #define chassert_1(x, ...) do { static_cast<bool>(x) ? void(0) : ::DB::abortOnFailedAssertion(#x); } while (0)
+        #define chassert_2(x, comment, ...) do { static_cast<bool>(x) ? void(0) : ::DB::abortOnFailedAssertion(comment); } while (0)
         #define UNREACHABLE() abort()
         // clang-format off
     #else
         /// Here sizeof() trick is used to suppress unused warning for result,
         /// since simple "(void)x" will evaluate the expression, while
         /// "sizeof(!(x))" will not.
-        #define chassert(x) (void)sizeof(!(x))
+        #define chassert_1(x, ...) (void)sizeof(!(x))
+        #define chassert_2(x, comment, ...) (void)sizeof(!(x))
         #define UNREACHABLE() __builtin_unreachable()
     #endif
+        #define CHASSERT_DISPATCH(_1,_2, N,...) N(_1, _2)
+        #define CHASSERT_INVOKE(tuple) CHASSERT_DISPATCH tuple
+        #define chassert(...) CHASSERT_INVOKE((__VA_ARGS__, chassert_2, chassert_1))
+
 #endif
 
 /// Macros for Clang Thread Safety Analysis (TSA). They can be safely ignored by other compilers.

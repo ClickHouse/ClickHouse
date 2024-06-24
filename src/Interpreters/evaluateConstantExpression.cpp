@@ -73,7 +73,7 @@ std::optional<EvaluateConstantExpressionResult> evaluateConstantExpressionImpl(c
     /// already normalized on initiator node, or not normalized and should remain unnormalized for
     /// compatibility.
     if (context->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY && context->getSettingsRef().normalize_function_names)
-        FunctionNameNormalizer().visit(ast.get());
+        FunctionNameNormalizer::visit(ast.get());
 
     auto syntax_result = TreeRewriter(context, no_throw).analyze(ast, source_columns);
     if (!syntax_result)

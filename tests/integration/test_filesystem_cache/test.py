@@ -426,3 +426,135 @@ def test_force_filesystem_cache_on_merges(cluster):
     test(node, True)
     node = cluster.instances["node"]
     test(node, False)
+
+
+def test_system_sync_filesystem_cache(cluster):
+    node = cluster.instances["node"]
+    node.query(
+        """
+DROP TABLE IF EXISTS test;
+
+CREATE TABLE test (a Int32, b String)
+ENGINE = MergeTree() ORDER BY tuple()
+SETTINGS disk = disk(type = cache,
+            max_size = '100Ki',
+            path = "test_system_sync_filesystem_cache",
+            delayed_cleanup_interval_ms = 10000000, disk = hdd_blob),
+        min_bytes_for_wide_part = 10485760;
+
+INSERT INTO test SELECT 1, 'test';
+    """
+    )
+
+    query_id = "system_sync_filesystem_cache_1"
+    node.query(
+        "SELECT * FROM test FORMAT Null SETTINGS enable_filesystem_cache_log = 1",
+        query_id=query_id,
+    )
+
+    key, offset = (
+        node.query(
+            f"""
+    SYSTEM FLUSH LOGS;
+    SELECT key, offset FROM system.filesystem_cache_log WHERE query_id = '{query_id}' ORDER BY size DESC LIMIT 1;
+    """
+        )
+        .strip()
+        .split("\t")
+    )
+
+    cache_path = node.query(
+        f"SELECT cache_path FROM system.filesystem_cache WHERE key = '{key}' and file_segment_range_begin = {offset}"
+    )
+
+    node.exec_in_container(["bash", "-c", f"rm {cache_path}"])
+
+    assert key in node.query("SYSTEM SYNC FILESYSTEM CACHE")
+
+    node.query("SELECT * FROM test FORMAT Null")
+    assert key not in node.query("SYSTEM SYNC FILESYSTEM CACHE")
+
+    query_id = "system_sync_filesystem_cache_2"
+    node.query(
+        "SELECT * FROM test FORMAT Null SETTINGS enable_filesystem_cache_log = 1",
+        query_id=query_id,
+    )
+
+    key, offset = (
+        node.query(
+            f"""
+    SYSTEM FLUSH LOGS;
+    SELECT key, offset FROM system.filesystem_cache_log WHERE query_id = '{query_id}' ORDER BY size DESC LIMIT 1;
+    """
+        )
+        .strip()
+        .split("\t")
+    )
+    cache_path = node.query(
+        f"SELECT cache_path FROM system.filesystem_cache WHERE key = '{key}' and file_segment_range_begin = {offset}"
+    )
+
+    node.exec_in_container(["bash", "-c", f"echo -n 'fff' > {cache_path}"])
+
+    assert key in node.query("SYSTEM SYNC FILESYSTEM CACHE")
+
+    node.query("SELECT * FROM test FORMAT Null")
+
+    assert key not in node.query("SYSTEM SYNC FILESYSTEM CACHE")
+
+
+def test_keep_up_size_ratio(cluster):
+    node = cluster.instances["node"]
+    max_elements = 20
+    elements_ratio = 0.5
+    cache_name = "keep_up_size_ratio"
+    node.query(
+        f"""
+DROP TABLE IF EXISTS test;
+
+CREATE TABLE test (a String)
+ENGINE = MergeTree() ORDER BY tuple()
+SETTINGS disk = disk(type = cache,
+            name = {cache_name},
+            max_size = '100Ki',
+            max_elements = {max_elements},
+            max_file_segment_size = 10,
+            boundary_alignment = 10,
+            path = "test_keep_up_size_ratio",
+            keep_free_space_size_ratio = 0.5,
+            keep_free_space_elements_ratio = {elements_ratio},
+            disk = hdd_blob),
+        min_bytes_for_wide_part = 10485760;
+
+INSERT INTO test SELECT randomString(200);
+    """
+    )
+
+    query_id = "test_keep_up_size_ratio_1"
+    node.query(
+        "SELECT * FROM test FORMAT Null SETTINGS enable_filesystem_cache_log = 1",
+        query_id=query_id,
+    )
+    count = int(
+        node.query(
+            f"""
+    SYSTEM FLUSH LOGS;
+    SELECT uniqExact(concat(key, toString(offset)))
+    FROM system.filesystem_cache_log
+    WHERE read_type = 'READ_FROM_FS_AND_DOWNLOADED_TO_CACHE';
+    """
+        )
+    )
+    assert count > max_elements
+
+    expected = 10
+    for _ in range(100):
+        elements = int(
+            node.query(
+                f"SELECT count() FROM system.filesystem_cache WHERE cache_name = '{cache_name}'"
+            )
+        )
+        if elements <= expected:
+            break
+        time.sleep(1)
+    assert elements <= expected

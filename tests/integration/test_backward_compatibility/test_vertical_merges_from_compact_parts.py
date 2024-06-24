@@ -11,7 +11,6 @@ node_old = cluster.add_instance(
     stay_alive=True,
     with_installed_binary=True,
     with_zookeeper=True,
-    allow_analyzer=False,
 )
 node_new = cluster.add_instance(
     "node2",
@@ -21,7 +20,7 @@ node_new = cluster.add_instance(
     ],
     with_zookeeper=True,
     stay_alive=True,
-    allow_analyzer=False,
+    use_old_analyzer=True,
 )
 
 

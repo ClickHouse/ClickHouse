@@ -13,6 +13,10 @@ namespace DB
 
 struct StorageSnapshot;
 using StorageSnapshotPtr = std::shared_ptr<StorageSnapshot>;
+class ColumnsDescription;
+
+class IQueryTreeNode;
+using QueryTreeNodePtr = std::shared_ptr<IQueryTreeNode>;
 
 /// Returns number of dimensions in Array type. 0 if type is not array.
 size_t getNumberOfDimensions(const IDataType & type);
@@ -97,6 +101,12 @@ void replaceMissedSubcolumnsByConstants(
     const ColumnsDescription & available_columns,
     ASTPtr query);
 
+bool replaceMissedSubcolumnsByConstants(
+    const ColumnsDescription & expected_columns,
+    const ColumnsDescription & available_columns,
+    QueryTreeNodePtr & query,
+    const ContextPtr & context);
+
 /// Visitor that keeps @num_dimensions_to_keep dimensions in arrays
 /// and replaces all scalars or nested arrays to @replacement at that level.
 class FieldVisitorReplaceScalars : public StaticVisitor<Field>
@@ -139,7 +149,7 @@ public:
 
     Field operator()(const Array & x) const;
 
-    Field operator()(const Null & x) const { return x; }
+    Field operator()(const Null & x) const;
 
     template <typename T>
     Field operator()(const T & x) const
@@ -184,7 +194,7 @@ ColumnsDescription getConcreteObjectColumns(
     /// dummy column will be removed.
     for (const auto & column : storage_columns)
     {
-        if (column.type->hasDynamicSubcolumns())
+        if (column.type->hasDynamicSubcolumnsDeprecated())
             types_in_entries[column.name].push_back(createConcreteEmptyDynamicColumn(column.type));
     }
 
@@ -194,7 +204,7 @@ ColumnsDescription getConcreteObjectColumns(
         for (const auto & column : entry_columns)
         {
             auto storage_column = storage_columns.tryGetPhysical(column.name);
-            if (storage_column && storage_column->type->hasDynamicSubcolumns())
+            if (storage_column && storage_column->type->hasDynamicSubcolumnsDeprecated())
                 types_in_entries[column.name].push_back(column.type);
         }
     }

@@ -150,6 +150,8 @@ public:
         ++s;
     }
 
+    void insertManyFrom(const IColumn & /*src*/, size_t /* position */, size_t length) override { s += length; }
+
     void insertDefault() override
     {
         ++s;
@@ -304,6 +306,8 @@ public:
     T getValue() const { return static_cast<T>(getField().safeGet<T>()); }
 
     bool isCollationSupported() const override { return data->isCollationSupported(); }
+
+    bool hasDynamicStructure() const override { return data->hasDynamicStructure(); }
 };
 
 ColumnConst::Ptr createColumnConst(const ColumnPtr & column, Field value);

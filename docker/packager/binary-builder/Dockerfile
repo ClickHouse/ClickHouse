@@ -4,14 +4,17 @@ FROM clickhouse/fasttest:$FROM_TAG
 ENV CC=clang-${LLVM_VERSION}
 ENV CXX=clang++-${LLVM_VERSION}
 
+# If the cctools is updated, then first build it in the CI, then update here in a different commit
+COPY --from=clickhouse/cctools:d9e3596e706b /cctools /cctools
+
 # Rust toolchain and libraries
 ENV RUSTUP_HOME=/rust/rustup
 ENV CARGO_HOME=/rust/cargo
 ENV PATH="/rust/cargo/bin:${PATH}"
 RUN curl https://sh.rustup.rs -sSf | bash -s -- -y && \
     chmod 777 -R /rust && \
-    rustup toolchain install nightly-2023-07-04 && \
-    rustup default nightly-2023-07-04 && \
+    rustup toolchain install nightly-2024-04-01 && \
+    rustup default nightly-2024-04-01 && \
     rustup toolchain remove stable && \
     rustup component add rust-src && \
     rustup target add x86_64-unknown-linux-gnu && \
@@ -58,7 +61,7 @@ RUN arch=${TARGETARCH:-amd64} \
     && rm /tmp/nfpm.deb
 
 ARG GO_VERSION=1.19.10
-# We need go for clickhouse-diagnostics
+# We needed go for clickhouse-diagnostics (it is not used anymore)
 RUN arch=${TARGETARCH:-amd64} \
     && curl -Lo /tmp/go.tgz "https://go.dev/dl/go${GO_VERSION}.linux-${arch}.tar.gz" \
     && tar -xzf /tmp/go.tgz -C /usr/local/ \
@@ -72,9 +75,6 @@ ARG CLANG_TIDY_SHA1=c191254ea00d47ade11d7170ef82fe038c213774
 RUN curl -Lo /usr/bin/clang-tidy-cache \
         "https://raw.githubusercontent.com/matus-chochlik/ctcache/$CLANG_TIDY_SHA1/clang-tidy-cache" \
     && chmod +x /usr/bin/clang-tidy-cache
-
-# If the cctools is updated, then first build it in the CI, then update here in a different commit
-COPY --from=clickhouse/cctools:5a908f73878a /cctools /cctools
 
 RUN mkdir /workdir && chmod 777 /workdir
 WORKDIR /workdir

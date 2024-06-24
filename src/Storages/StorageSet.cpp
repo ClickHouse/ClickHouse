@@ -8,7 +8,7 @@
 #include <QueryPipeline/ProfileInfo.h>
 #include <Disks/IDisk.h>
 #include <Common/formatReadable.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Interpreters/Context.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <Common/logger_useful.h>
@@ -130,7 +130,6 @@ StorageSetOrJoinBase::StorageSetOrJoinBase(
     storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
 
-
     if (relative_path_.empty())
         throw Exception(ErrorCodes::INCORRECT_FILE_NAME, "Join and Set storages require data path");
 
@@ -247,6 +246,8 @@ void StorageSetOrJoinBase::restore()
     static const char * file_suffix = ".bin";
     static const auto file_suffix_size = strlen(".bin");
 
+    using FilePriority = std::pair<UInt64, String>;
+    std::priority_queue<FilePriority, std::vector<FilePriority>, std::greater<>> backup_files;
     for (auto dir_it{disk->iterateDirectory(path)}; dir_it->isValid(); dir_it->next())
     {
         const auto & name = dir_it->name();
@@ -261,8 +262,17 @@ void StorageSetOrJoinBase::restore()
             if (file_num > increment)
                 increment = file_num;
 
-            restoreFromFile(dir_it->path());
+            backup_files.push({file_num, file_path});
         }
+    }
+
+    /// Restore in the same order as blocks were written
+    /// It may be important for storage Join, user expect to get the first row (unless `join_any_take_last_row` setting is set)
+    /// but after restart we may have different order of blocks in memory.
+    while (!backup_files.empty())
+    {
+        restoreFromFile(backup_files.top().second);
+        backup_files.pop();
     }
 }
 
