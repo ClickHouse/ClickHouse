@@ -261,7 +261,6 @@ namespace
         }
         else
         {
-            // remember to clean it up.. do I need to? smth in my memory tells me I don't need to
             user->authentication_methods.emplace_back();
         }
 
