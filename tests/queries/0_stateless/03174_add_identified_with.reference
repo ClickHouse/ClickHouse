@@ -7,7 +7,6 @@ New password should work
 Two new passwords were added, should both work
 1
 1
-Gen ssh key
 Authenticating with ssh key
 1
 Altering credentials and keeping only bcrypt_password
