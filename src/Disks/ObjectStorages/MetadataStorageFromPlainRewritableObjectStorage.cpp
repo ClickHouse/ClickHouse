@@ -60,12 +60,18 @@ MetadataStorageFromPlainObjectStorage::PathMap loadPathPrefixMap(const std::stri
                 auto read_buf = object_storage->readObject(object, settings);
                 readStringUntilEOF(local_path, *read_buf);
             }
+#if USE_AWS_S3
             catch (const S3Exception & e)
             {
                 /// It is ok if a directory was removed just now.
                 /// We support attaching a filesystem that is concurrently modified by someone else.
                 if (e.getS3ErrorCode() == Aws::S3::S3Errors::NO_SUCH_KEY)
                     return;
+                throw;
+            }
+#endif
+            catch (...)
+            {
                 throw;
             }
 
