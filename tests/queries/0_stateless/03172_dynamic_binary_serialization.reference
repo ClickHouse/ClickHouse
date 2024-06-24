@@ -15,8 +15,10 @@
 42.42	Float64
 2020-01-01	Date
 2020-01-01	Date32
-2020-01-01 00:00:00	DateTime
-2020-01-01 00:00:00.000000	DateTime64(6)
+2020-01-01 00:00:00	DateTime(\'CET\')
+2020-01-01 00:00:00	DateTime(\'EST\')
+2020-01-01 00:00:00.000000	DateTime64(6, \'EST\')
+2020-01-01 00:00:00.000000	DateTime64(6, \'CET\')
 Hello, World!	String
 aaaaa	FixedString(5)
 a	Enum8(\'c\' = -128, \'a\' = 1, \'b\' = 2)

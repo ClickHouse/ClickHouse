@@ -64,36 +64,38 @@ enum class BinaryTypeIndex : uint8_t
     Float64 = 0x0E,
     Date = 0x0F,
     Date32 = 0x10,
-    DateTime = 0x11,
-    DateTime64 = 0x12,
-    String = 0x13,
-    FixedString = 0x14,
-    Enum8 = 0x15,
-    Enum16 = 0x16,
-    Decimal32 = 0x17,
-    Decimal64 = 0x18,
-    Decimal128 = 0x19,
-    Decimal256 = 0x1A,
-    UUID = 0x1B,
-    Array = 0x1C,
-    UnnamedTuple = 0x1D,
-    NamedTuple = 0x1E,
-    Set = 0x1F,
-    Interval = 0x20,
-    Nullable = 0x21,
-    Function = 0x22,
-    AggregateFunction = 0x23,
-    LowCardinality = 0x24,
-    Map = 0x25,
-    Object = 0x26,
-    IPv4 = 0x27,
-    IPv6 = 0x28,
-    Variant = 0x29,
-    Dynamic = 0x2A,
-    Custom = 0x2B,
-    Bool = 0x2C,
-    SimpleAggregateFunction = 0x2D,
-    Nested = 0x2E,
+    DateTimeUTC = 0x11,
+    DateTimeWithTimezone = 0x12,
+    DateTime64UTC = 0x13,
+    DateTime64WithTimezone = 0x14,
+    String = 0x15,
+    FixedString = 0x16,
+    Enum8 = 0x17,
+    Enum16 = 0x18,
+    Decimal32 = 0x19,
+    Decimal64 = 0x1A,
+    Decimal128 = 0x1B,
+    Decimal256 = 0x1C,
+    UUID = 0x1D,
+    Array = 0x1E,
+    UnnamedTuple = 0x1F,
+    NamedTuple = 0x20,
+    Set = 0x21,
+    Interval = 0x22,
+    Nullable = 0x23,
+    Function = 0x24,
+    AggregateFunction = 0x25,
+    LowCardinality = 0x26,
+    Map = 0x27,
+    Object = 0x28,
+    IPv4 = 0x29,
+    IPv6 = 0x2A,
+    Variant = 0x2B,
+    Dynamic = 0x2C,
+    Custom = 0x2D,
+    Bool = 0x2E,
+    SimpleAggregateFunction = 0x2F,
+    Nested = 0x30,
 };
 
 BinaryTypeIndex getBinaryTypeIndex(const DataTypePtr & type)
@@ -154,9 +156,13 @@ BinaryTypeIndex getBinaryTypeIndex(const DataTypePtr & type)
         case TypeIndex::Date32:
             return BinaryTypeIndex::Date32;
         case TypeIndex::DateTime:
-            return BinaryTypeIndex::DateTime;
+            if (assert_cast<const DataTypeDateTime &>(*type).hasExplicitTimeZone())
+                return BinaryTypeIndex::DateTimeWithTimezone;
+            return BinaryTypeIndex::DateTimeUTC;
         case TypeIndex::DateTime64:
-            return BinaryTypeIndex::DateTime64;
+            if (assert_cast<const DataTypeDateTime64 &>(*type).hasExplicitTimeZone())
+                return BinaryTypeIndex::DateTime64WithTimezone;
+            return BinaryTypeIndex::DateTime64UTC;
         case TypeIndex::String:
             return BinaryTypeIndex::String;
         case TypeIndex::FixedString:
@@ -307,11 +313,24 @@ void encodeDataType(const DataTypePtr & type, WriteBuffer & buf)
     /// Then, write additional information depending on the data type.
     switch (binary_type_index)
     {
-        case BinaryTypeIndex::DateTime64:
+        case BinaryTypeIndex::DateTimeWithTimezone:
+        {
+            const auto & datetime_type = assert_cast<const DataTypeDateTime &>(*type);
+            writeStringBinary(datetime_type.getTimeZone().getTimeZone(), buf);
+            break;
+        }
+        case BinaryTypeIndex::DateTime64UTC:
         {
             const auto & datetime64_type = assert_cast<const DataTypeDateTime64 &>(*type);
             /// Maximum scale for DateTime64 is 9, so we can write it as 1 byte.
             buf.write(UInt8(datetime64_type.getScale()));
+            break;
+        }
+        case BinaryTypeIndex::DateTime64WithTimezone:
+        {
+            const auto & datetime64_type = assert_cast<const DataTypeDateTime64 &>(*type);
+            buf.write(UInt8(datetime64_type.getScale()));
+            writeStringBinary(datetime64_type.getTimeZone().getTimeZone(), buf);
             break;
         }
         case BinaryTypeIndex::FixedString:
@@ -372,10 +391,10 @@ void encodeDataType(const DataTypePtr & type, WriteBuffer & buf)
         case BinaryTypeIndex::UnnamedTuple:
         {
             const auto & tuple_type = assert_cast<const DataTypeTuple &>(*type);
-            const auto & types = tuple_type.getElements();
-            writeVarUInt(types.size(), buf);
-            for (size_t i = 0; i != types.size(); ++i)
-                encodeDataType(types[i], buf);
+            const auto & element_types = tuple_type.getElements();
+            writeVarUInt(element_types.size(), buf);
+            for (const auto & element_type : element_types)
+                encodeDataType(element_type, buf);
             break;
         }
         case BinaryTypeIndex::Interval:
@@ -428,6 +447,13 @@ void encodeDataType(const DataTypePtr & type, WriteBuffer & buf)
             writeVarUInt(variants.size(), buf);
             for (const auto & variant : variants)
                 encodeDataType(variant, buf);
+            break;
+        }
+        case BinaryTypeIndex::Dynamic:
+        {
+            const auto & dynamic_type = assert_cast<const DataTypeDynamic &>(*type);
+            /// Maximum number of dynamic types is 255, we can write it as 1 byte.
+            writeBinary(UInt8(dynamic_type.getMaxDynamicTypes()), buf);
             break;
         }
         case BinaryTypeIndex::AggregateFunction:
@@ -516,13 +542,27 @@ DataTypePtr decodeDataType(ReadBuffer & buf)
             return std::make_shared<DataTypeDate>();
         case BinaryTypeIndex::Date32:
             return std::make_shared<DataTypeDate32>();
-        case BinaryTypeIndex::DateTime:
+        case BinaryTypeIndex::DateTimeUTC:
             return std::make_shared<DataTypeDateTime>();
-        case BinaryTypeIndex::DateTime64:
+        case BinaryTypeIndex::DateTimeWithTimezone:
+        {
+            String time_zone;
+            readStringBinary(time_zone, buf);
+            return std::make_shared<DataTypeDateTime>(time_zone);
+        }
+        case BinaryTypeIndex::DateTime64UTC:
         {
             UInt8 scale;
             readBinary(scale, buf);
             return std::make_shared<DataTypeDateTime64>(scale);
+        }
+        case BinaryTypeIndex::DateTime64WithTimezone:
+        {
+            UInt8 scale;
+            readBinary(scale, buf);
+            String time_zone;
+            readStringBinary(time_zone, buf);
+            return std::make_shared<DataTypeDateTime64>(scale, time_zone);
         }
         case BinaryTypeIndex::String:
             return std::make_shared<DataTypeString>();
@@ -627,7 +667,11 @@ DataTypePtr decodeDataType(ReadBuffer & buf)
             return std::make_shared<DataTypeVariant>(variants);
         }
         case BinaryTypeIndex::Dynamic:
-            return std::make_shared<DataTypeDynamic>();
+        {
+            UInt8 max_dynamic_types;
+            readBinary(max_dynamic_types, buf);
+            return std::make_shared<DataTypeDynamic>(max_dynamic_types);
+        }
         case BinaryTypeIndex::AggregateFunction:
         {
             size_t version;

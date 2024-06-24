@@ -21,6 +21,7 @@
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/ReadBufferFromString.h>
+#include <Common/tests/gtest_global_register.h>
 
 using namespace DB;
 
@@ -44,7 +45,7 @@ void check(const DataTypePtr & type)
 
 GTEST_TEST(DataTypesBinaryEncoding, EncodeAndDecode)
 {
-    registerAggregateFunctions();
+    tryRegisterAggregateFunctions();
     check(std::make_shared<DataTypeNothing>());
     check(std::make_shared<DataTypeInt8>());
     check(std::make_shared<DataTypeUInt8>());
@@ -63,7 +64,11 @@ GTEST_TEST(DataTypesBinaryEncoding, EncodeAndDecode)
     check(std::make_shared<DataTypeDate>());
     check(std::make_shared<DataTypeDate32>());
     check(std::make_shared<DataTypeDateTime>());
+    check(std::make_shared<DataTypeDateTime>("EST"));
+    check(std::make_shared<DataTypeDateTime>("CET"));
     check(std::make_shared<DataTypeDateTime64>(3));
+    check(std::make_shared<DataTypeDateTime64>(3, "EST"));
+    check(std::make_shared<DataTypeDateTime64>(3, "CET"));
     check(std::make_shared<DataTypeString>());
     check(std::make_shared<DataTypeFixedString>(10));
     check(DataTypeFactory::instance().get("Enum8('a' = 1, 'b' = 2, 'c' = 3, 'd' = -128)"));
@@ -109,6 +114,8 @@ GTEST_TEST(DataTypesBinaryEncoding, EncodeAndDecode)
     check(std::make_shared<DataTypeIPv6>());
     check(DataTypeFactory::instance().get("Variant(String, UInt32, Date32)"));
     check(std::make_shared<DataTypeDynamic>());
+    check(std::make_shared<DataTypeDynamic>(10));
+    check(std::make_shared<DataTypeDynamic>(255));
     check(DataTypeFactory::instance().get("Bool"));
     check(DataTypeFactory::instance().get("SimpleAggregateFunction(sum, UInt64)"));
     check(DataTypeFactory::instance().get("SimpleAggregateFunction(maxMap, Tuple(Array(UInt32), Array(UInt32)))"));
