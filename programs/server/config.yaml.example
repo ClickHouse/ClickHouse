@@ -726,6 +726,13 @@ metric_log:
     flush_interval_milliseconds: 7500
     collect_interval_milliseconds: 1000
 
+# Error log contains rows with current values of errors collected with "collect_interval_milliseconds" interval.
+error_log:
+    database: system
+    table: error_log
+    flush_interval_milliseconds: 7500
+    collect_interval_milliseconds: 1000
+
 # Asynchronous metric log contains values of metrics from
 # system.asynchronous_metrics.
 asynchronous_metric_log:

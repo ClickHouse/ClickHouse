@@ -2178,6 +2178,32 @@ Result:
 
 Alias: levenshteinDistance
 
+## editDistanceUTF8
+
+Calculates the [edit distance](https://en.wikipedia.org/wiki/Edit_distance) between two UTF8 strings.
+
+**Syntax**
+
+```sql
+editDistanceUTF8(string1, string2)
+```
+
+**Examples**
+
+``` sql
+SELECT editDistanceUTF8('我是谁', '我是我');
+```
+
+Result:
+
+``` text
+┌─editDistanceUTF8('我是谁', '我是我')──┐
+│                                   1 │
+└─────────────────────────────────────┘
+```
+
+Alias: levenshteinDistanceUTF8
+
 ## damerauLevenshteinDistance
 
 Calculates the [Damerau-Levenshtein distance](https://en.wikipedia.org/wiki/Damerau%E2%80%93Levenshtein_distance) between two byte strings.
