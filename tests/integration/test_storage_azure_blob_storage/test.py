@@ -10,13 +10,10 @@ import threading
 import time
 
 from azure.storage.blob import BlobServiceClient
-import helpers.client
 import pytest
 from helpers.cluster import ClickHouseCluster, ClickHouseInstance
-from helpers.network import PartitionManager
-from helpers.mock_servers import start_mock_servers
-from helpers.test_tools import exec_query_with_retry
 from helpers.test_tools import assert_logs_contain_with_retry
+from helpers.test_tools import TSV
 
 
 @pytest.fixture(scope="module")
@@ -1431,3 +1428,37 @@ def test_respect_object_existence_on_partitioned_write(cluster):
     )
 
     assert int(result) == 44
+
+
+def test_insert_create_new_file(cluster):
+    node = cluster.instances["node"]
+    storage_account_url = cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]
+    account_name = "devstoreaccount1"
+    account_key = "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw=="
+
+    azure_query(
+        node,
+        f"INSERT INTO TABLE FUNCTION azureBlobStorage('{storage_account_url}', 'cont', 'test_create_new_file.csv', '{account_name}', '{account_key}', 'a UInt64') VALUES (1)",
+        settings={
+            "azure_truncate_on_insert": False,
+            "azure_create_new_file_on_insert": True,
+        },
+    )
+
+    azure_query(
+        node,
+        f"INSERT INTO TABLE FUNCTION azureBlobStorage('{storage_account_url}', 'cont', 'test_create_new_file.csv', '{account_name}', '{account_key}', 'a UInt64') VALUES (2)",
+        settings={
+            "azure_truncate_on_insert": False,
+            "azure_create_new_file_on_insert": True,
+        },
+    )
+
+    res = azure_query(
+        node,
+        f"SELECT _file, * FROM azureBlobStorage('{storage_account_url}', 'cont', 'test_create_new_file*', '{account_name}', '{account_key}', 'a UInt64') ORDER BY a",
+    )
+
+    assert TSV(res) == TSV(
+        "test_create_new_file.csv\t1\ntest_create_new_file.1.csv\t2\n"
+    )
