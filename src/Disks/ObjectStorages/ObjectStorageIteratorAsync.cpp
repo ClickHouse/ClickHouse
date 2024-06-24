@@ -37,10 +37,11 @@ void IObjectStorageIteratorAsync::nextBatch()
 {
     std::lock_guard lock(mutex);
 
-    if (is_finished)
+    if (!has_next_batch)
     {
         current_batch.clear();
         current_batch_iterator = current_batch.begin();
+        is_finished = true;
         return;
     }
 
@@ -60,14 +61,13 @@ void IObjectStorageIteratorAsync::nextBatch()
 
         accumulated_size.fetch_add(current_batch.size(), std::memory_order_relaxed);
 
-        if (result.has_next)
+        has_next_batch = result.has_next;
+        if (has_next_batch)
             outcome_future = scheduleBatch();
-        else
-            is_finished = true;
     }
     catch (...)
     {
-        is_finished = true;
+        has_next_batch = false;
         throw;
     }
 }
@@ -76,10 +76,12 @@ void IObjectStorageIteratorAsync::next()
 {
     std::lock_guard lock(mutex);
 
+    if (is_finished)
+        return;
+
+    ++current_batch_iterator;
     if (current_batch_iterator == current_batch.end())
         nextBatch();
-    else
-        ++current_batch_iterator;
 }
 
 std::future<IObjectStorageIteratorAsync::BatchAndHasNext> IObjectStorageIteratorAsync::scheduleBatch()
@@ -99,7 +101,7 @@ bool IObjectStorageIteratorAsync::isValid()
     if (!is_initialized)
         nextBatch();
 
-    return current_batch_iterator != current_batch.end();
+    return !is_finished;
 }
 
 RelativePathWithMetadataPtr IObjectStorageIteratorAsync::current()
