@@ -591,14 +591,9 @@ public:
         {
             auto checkLeftRightNull = [&](size_t i) -> std::pair<bool, bool>
             {
-                bool left_null = false;
-                bool right_null = false;
                 if constexpr (is_compare)
-                {
-                    left_null = left_nullmap && (*left_nullmap)[i];
-                    right_null = right_nullmap && (*right_nullmap)[i];
-                }
-                return std::pair<bool, bool>(left_null, right_null);
+                    return std::pair<bool, bool>(left_nullmap && (*left_nullmap)[i], right_nullmap && (*right_nullmap)[i]);
+                return std::pair<bool, bool>(false, false);
             };
             if (scale_a != 1)
             {
