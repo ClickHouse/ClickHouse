@@ -13,7 +13,6 @@ import requests
 
 from build_download_helper import (
     download_build_with_progress,
-    get_build_name_for_check,
     read_build_urls,
 )
 from compress_files import compress_fast
@@ -25,6 +24,7 @@ from report import FAILURE, SUCCESS, JobReport, TestResult, TestResults
 from ssh import SSHKey
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
+from ci_config import CI
 
 JEPSEN_GROUP_NAME = "jepsen_group"
 
@@ -224,7 +224,7 @@ def main():
         head = requests.head(build_url, timeout=60)
         assert head.status_code == 200, f"Clickhouse binary not found: {build_url}"
     else:
-        build_name = get_build_name_for_check(check_name)
+        build_name = CI.get_required_build_name(check_name)
         urls = read_build_urls(build_name, REPORT_PATH)
         build_url = None
         for url in urls:
