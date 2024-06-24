@@ -1,7 +1,7 @@
 ---
 slug: /en/sql-reference/aggregate-functions/reference/exponentialTimeDecayedCount
 sidebar_position: 134
-sidebar_title: exponentialTimeDecayedCount
+title: exponentialTimeDecayedCount
 ---
 
 ## exponentialTimeDecayedCount
