@@ -130,7 +130,7 @@ public:
             DataTypes non_null_types;
             for (const auto & t : argument_types)
             {
-                if (!isNothing(removeNullable(t)))
+                if (!removeNullable(t)->onlyNull())
                     non_null_types.push_back(t);
             }
             if (!non_null_types.empty())
