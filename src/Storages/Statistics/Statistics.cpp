@@ -1,15 +1,15 @@
 #include <optional>
 #include <numeric>
 
-#include <Storages/Statistics/Statistics.h>
-#include <Storages/Statistics/ConditionSelectivityEstimator.h>
-#include <Storages/Statistics/TDigestStatistics.h>
-#include <Storages/Statistics/UniqStatistics.h>
-#include <Storages/Statistics/CMSketchStatistics.h>
-#include <Storages/StatisticsDescription.h>
-#include <Storages/ColumnsDescription.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <Storages/ColumnsDescription.h>
+#include <Storages/Statistics/ConditionSelectivityEstimator.h>
+#include <Storages/Statistics/CountMinSketchStatistics.h>
+#include <Storages/Statistics/Statistics.h>
+#include <Storages/Statistics/TDigestStatistics.h>
+#include <Storages/Statistics/UniqStatistics.h>
+#include <Storages/StatisticsDescription.h>
 #include <Common/Exception.h>
 
 namespace DB
@@ -92,10 +92,10 @@ Float64 ColumnStatistics::estimateEqual(Field val) const
         }
     }
 #if USE_DATASKETCHES
-    if (stats.contains(StatisticsType::CMSketch))
+    if (stats.contains(StatisticsType::CountMinSketch))
     {
-        auto cmsketch_static = std::static_pointer_cast<CMSketchStatistics>(stats.at(StatisticsType::CMSketch));
-        return cmsketch_static->estimateEqual(val);
+        auto count_min_sketch_static = std::static_pointer_cast<CountMinSketchStatistics>(stats.at(StatisticsType::CountMinSketch));
+        return count_min_sketch_static->estimateEqual(val);
     }
 #endif
     if (val < - ConditionSelectivityEstimator::threshold || val > ConditionSelectivityEstimator::threshold)
@@ -177,8 +177,8 @@ MergeTreeStatisticsFactory::MergeTreeStatisticsFactory()
     registerValidator(StatisticsType::TDigest, TDigestValidator);
     registerValidator(StatisticsType::Uniq, UniqValidator);
 #if USE_DATASKETCHES
-    registerCreator(StatisticsType::CMSketch, CMSketchCreator);
-    registerValidator(StatisticsType::CMSketch, CMSketchValidator);
+    registerCreator(StatisticsType::CountMinSketch, CountMinSketchCreator);
+    registerValidator(StatisticsType::CountMinSketch, CountMinSketchValidator);
 #endif
 }
 

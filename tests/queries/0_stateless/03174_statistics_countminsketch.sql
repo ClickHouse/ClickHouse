@@ -6,9 +6,9 @@ SET allow_statistics_optimize = 1;
 
 CREATE TABLE t1
 (
-    a String STATISTICS(cmsketch),
-    b Int64 STATISTICS(cmsketch),
-    c UInt64 STATISTICS(cmsketch),
+    a String STATISTICS(countminsketch),
+    b Int64 STATISTICS(countminsketch),
+    c UInt64 STATISTICS(countminsketch),
     pk String,
 ) Engine = MergeTree() ORDER BY pk
 SETTINGS min_bytes_for_wide_part = 0;
@@ -31,9 +31,9 @@ DROP TABLE IF EXISTS t2;
 SET allow_suspicious_low_cardinality_types=1;
 CREATE TABLE t2
 (
-    a LowCardinality(String) STATISTICS(cmsketch),
-    b Int64 STATISTICS(cmsketch),
-    c UInt64 STATISTICS(cmsketch),
+    a LowCardinality(String) STATISTICS(countminsketch),
+    b Int64 STATISTICS(countminsketch),
+    c UInt64 STATISTICS(countminsketch),
     pk String,
 ) Engine = MergeTree() ORDER BY pk
 SETTINGS min_bytes_for_wide_part = 0;
@@ -48,9 +48,9 @@ DROP TABLE IF EXISTS t3;
 
 CREATE TABLE t3
 (
-    a Nullable(String) STATISTICS(cmsketch),
-    b Int64 STATISTICS(cmsketch),
-    c UInt64 STATISTICS(cmsketch),
+    a Nullable(String) STATISTICS(countminsketch),
+    b Int64 STATISTICS(countminsketch),
+    c UInt64 STATISTICS(countminsketch),
     pk String,
 ) Engine = MergeTree() ORDER BY pk
 SETTINGS min_bytes_for_wide_part = 0;
@@ -64,9 +64,9 @@ DROP TABLE IF EXISTS t4;
 
 CREATE TABLE t4
 (
-    a LowCardinality(Nullable(String)) STATISTICS(cmsketch),
-    b Int64 STATISTICS(cmsketch),
-    c UInt64 STATISTICS(cmsketch),
+    a LowCardinality(Nullable(String)) STATISTICS(countminsketch),
+    b Int64 STATISTICS(countminsketch),
+    c UInt64 STATISTICS(countminsketch),
     pk String,
 ) Engine = MergeTree() ORDER BY pk
 SETTINGS min_bytes_for_wide_part = 0;
