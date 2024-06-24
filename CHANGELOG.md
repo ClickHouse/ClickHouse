@@ -96,15 +96,22 @@
 * Returned back the behaviour of how ClickHouse works and interprets Tuples in CSV format. This change effectively reverts https://github.com/ClickHouse/ClickHouse/pull/60994 and makes it available only under a few settings: `output_format_csv_serialize_tuple_into_separate_columns`, `input_format_csv_deserialize_separate_columns_into_tuple` and `input_format_csv_try_infer_strings_from_quoted_tuples`. [#65170](https://github.com/ClickHouse/ClickHouse/pull/65170) ([Nikita Mikhaylov](https://github.com/nikitamikhaylov)).
 * Initialize global trace collector for Poco::ThreadPool (needed for keeper, etc). [#65239](https://github.com/ClickHouse/ClickHouse/pull/65239) ([Kseniia Sumarokova](https://github.com/kssenii)).
 * Add validation when creating a user with bcrypt_hash. [#65242](https://github.com/ClickHouse/ClickHouse/pull/65242) ([Raúl Marín](https://github.com/Algunenano)).
+* Unite s3/hdfs/azure storage implementations into a single class working with IObjectStorage. Same for *Cluster, data lakes and Queue storages. [#59767](https://github.com/ClickHouse/ClickHouse/pull/59767) ([Kseniia Sumarokova](https://github.com/kssenii)).
+* Refactor data part writer to remove dependencies on MergeTreeData and DataPart. [#63620](https://github.com/ClickHouse/ClickHouse/pull/63620) ([Alexander Gololobov](https://github.com/davenger)).
+* Add profile events for number of rows read during/after prewhere. [#64198](https://github.com/ClickHouse/ClickHouse/pull/64198) ([Nikita Taranov](https://github.com/nickitat)).
+* Print query in explain plan with parallel replicas. [#64298](https://github.com/ClickHouse/ClickHouse/pull/64298) ([vdimir](https://github.com/vdimir)).
+* Rename `allow_deprecated_functions` to `allow_deprecated_error_prone_window_functions`. [#64358](https://github.com/ClickHouse/ClickHouse/pull/64358) ([Raúl Marín](https://github.com/Algunenano)).
+* Respect `max_read_buffer_size` setting for file descriptors as well in file() table function. [#64532](https://github.com/ClickHouse/ClickHouse/pull/64532) ([Azat Khuzhin](https://github.com/azat)).
+* Disable transactions for unsupported storages even for materialized views. [#64918](https://github.com/ClickHouse/ClickHouse/pull/64918) ([alesapin](https://github.com/alesapin)).
+* Refactor `KeyCondition` and key analysis to improve PartitionPruner and trivial count optimization. This is separated from [#60463](https://github.com/ClickHouse/ClickHouse/issues/60463) . [#61459](https://github.com/ClickHouse/ClickHouse/pull/61459) ([Amos Bird](https://github.com/amosbird)).
 
-#### Critical Bug Fix (crash, LOGICAL_ERROR, data loss, RBAC)
+#### Bug Fix (user-visible misbehavior in an official stable release)
 * Fix a permission error where a user in a specific situation can escalate their privileges on the default database without necessary grants. [#64769](https://github.com/ClickHouse/ClickHouse/pull/64769) ([pufit](https://github.com/pufit)).
 * Fix crash with UniqInjectiveFunctionsEliminationPass and uniqCombined. [#65188](https://github.com/ClickHouse/ClickHouse/pull/65188) ([Raúl Marín](https://github.com/Algunenano)).
 * Fix a bug in ClickHouse Keeper that causes digest mismatch during closing session. [#65198](https://github.com/ClickHouse/ClickHouse/pull/65198) ([Aleksei Filatov](https://github.com/aalexfvk)).
 * Forbid `QUALIFY` clause in the old analyzer. The old analyzer ignored `QUALIFY`, so it could lead to unexpected data removal in mutations. [#65356](https://github.com/ClickHouse/ClickHouse/pull/65356) ([Dmitry Novik](https://github.com/novikd)).
 * Use correct memory alignment for Distinct combinator. Previously, crash could happen because of invalid memory allocation when the combinator was used. [#65379](https://github.com/ClickHouse/ClickHouse/pull/65379) ([Antonio Andelic](https://github.com/antonio2368)).
-
-#### Bug Fix (user-visible misbehavior in an official stable release)
+* Fix crash with `DISTINCT` and window functions. [#64767](https://github.com/ClickHouse/ClickHouse/pull/64767) ([Igor Nikonov](https://github.com/devcrafter)).
 * Fixed 'set' skip index not working with IN and indexHint(). [#62083](https://github.com/ClickHouse/ClickHouse/pull/62083) ([Michael Kolupaev](https://github.com/al13n321)).
 * Support executing function during assignment of parameterized view value. [#63502](https://github.com/ClickHouse/ClickHouse/pull/63502) ([SmitaRKulkarni](https://github.com/SmitaRKulkarni)).
 * Fixed parquet memory tracking. [#63584](https://github.com/ClickHouse/ClickHouse/pull/63584) ([Michael Kolupaev](https://github.com/al13n321)).
@@ -156,7 +163,7 @@
 * Respond with 5xx instead of 200 OK in case of receive timeout while reading (parts of) the request body from the client socket. [#65118](https://github.com/ClickHouse/ClickHouse/pull/65118) ([Julian Maicher](https://github.com/jmaicher)).
 * Fix possible crash for hedged requests. [#65206](https://github.com/ClickHouse/ClickHouse/pull/65206) ([Azat Khuzhin](https://github.com/azat)).
 * Fix the bug in Hashed and Hashed_Array dictionary short circuit evaluation, which may read uninitialized number, leading to various errors. [#65256](https://github.com/ClickHouse/ClickHouse/pull/65256) ([jsc0218](https://github.com/jsc0218)).
-* This PR ensures that the type of the constant(IN operator's second parameter) is always visible during the IN operator's type conversion process. Otherwise, losing type information may cause some conversions to fail, such as the conversion from DateTime to Date. fix ([#64487](https://github.com/ClickHouse/ClickHouse/issues/64487)). [#65315](https://github.com/ClickHouse/ClickHouse/pull/65315) ([pn](https://github.com/chloro-pn)).
+* This PR ensures that the type of the constant(IN operator's second parameter) is always visible during the IN operator's type conversion process. Otherwise, losing type information may cause some conversions to fail, such as the conversion from DateTime to Date. This fixes ([#64487](https://github.com/ClickHouse/ClickHouse/issues/64487)). [#65315](https://github.com/ClickHouse/ClickHouse/pull/65315) ([pn](https://github.com/chloro-pn)).
 
 #### Build/Testing/Packaging Improvement
 * Make `network` service be required when using the rc init script to start the ClickHouse server daemon. [#60650](https://github.com/ClickHouse/ClickHouse/pull/60650) ([Chun-Sheng, Li](https://github.com/peter279k)).
@@ -172,233 +179,8 @@
 * Support LLVM XRay on Linux amd64 only. [#64837](https://github.com/ClickHouse/ClickHouse/pull/64837) ([Tomer Shafir](https://github.com/tomershafir)).
 * Get rid of custom code in `tests/ci/download_release_packages.py` and `tests/ci/get_previous_release_tag.py` to avoid issues after the https://github.com/ClickHouse/ClickHouse/pull/64759 is merged. [#64848](https://github.com/ClickHouse/ClickHouse/pull/64848) ([Mikhail f. Shiryaev](https://github.com/Felixoid)).
 * Decrease the `unit-test` image a few times. [#65102](https://github.com/ClickHouse/ClickHouse/pull/65102) ([Mikhail f. Shiryaev](https://github.com/Felixoid)).
-
-#### NO CL ENTRY
-
-* NO CL ENTRY:  'Revert "Refactoring of Server.h: Isolate server management from other logic"'. [#64425](https://github.com/ClickHouse/ClickHouse/pull/64425) ([Alexander Tokmakov](https://github.com/tavplubix)).
-* NO CL ENTRY:  'Revert "Remove some unnecessary `UNREACHABLE`s"'. [#64430](https://github.com/ClickHouse/ClickHouse/pull/64430) ([Alexander Tokmakov](https://github.com/tavplubix)).
-* NO CL ENTRY:  'Revert "CI: fix build_report selection in case of job reuse"'. [#64516](https://github.com/ClickHouse/ClickHouse/pull/64516) ([Max K.](https://github.com/maxknv)).
-* NO CL ENTRY:  'Revert "Revert "CI: fix build_report selection in case of job reuse""'. [#64531](https://github.com/ClickHouse/ClickHouse/pull/64531) ([Max K.](https://github.com/maxknv)).
-* NO CL ENTRY:  'Revert "Add `fromReadableSize` function"'. [#64616](https://github.com/ClickHouse/ClickHouse/pull/64616) ([Robert Schulze](https://github.com/rschu1ze)).
-* NO CL ENTRY:  'Update CHANGELOG.md'. [#64816](https://github.com/ClickHouse/ClickHouse/pull/64816) ([Paweł Kudzia](https://github.com/pakud)).
-* NO CL ENTRY:  'Revert "Reduce lock contention for MergeTree tables (by renaming parts without holding lock)"'. [#64899](https://github.com/ClickHouse/ClickHouse/pull/64899) ([alesapin](https://github.com/alesapin)).
-* NO CL ENTRY:  'Revert "Add dynamic untracked memory limits for more precise memory tracking"'. [#64969](https://github.com/ClickHouse/ClickHouse/pull/64969) ([Sergei Trifonov](https://github.com/serxa)).
-* NO CL ENTRY:  'Revert "Fix duplicating Delete events in blob_storage_log"'. [#65049](https://github.com/ClickHouse/ClickHouse/pull/65049) ([Alexander Tokmakov](https://github.com/tavplubix)).
-* NO CL ENTRY:  'Revert "Revert "Fix duplicating Delete events in blob_storage_log""'. [#65053](https://github.com/ClickHouse/ClickHouse/pull/65053) ([vdimir](https://github.com/vdimir)).
-* NO CL ENTRY:  'Revert "S3: reduce retires time for queries, increase retries count for backups"'. [#65148](https://github.com/ClickHouse/ClickHouse/pull/65148) ([Raúl Marín](https://github.com/Algunenano)).
-* NO CL ENTRY:  'Revert "Small fix for 02340_parts_refcnt_mergetree"'. [#65149](https://github.com/ClickHouse/ClickHouse/pull/65149) ([Raúl Marín](https://github.com/Algunenano)).
-* NO CL ENTRY:  'Revert "Change default s3_throw_on_zero_files_match to true, document that presigned S3 URLs are not supported"'. [#65250](https://github.com/ClickHouse/ClickHouse/pull/65250) ([Max K.](https://github.com/maxknv)).
-* NO CL ENTRY:  'Revert "Fix AWS ECS"'. [#65361](https://github.com/ClickHouse/ClickHouse/pull/65361) ([Alexander Tokmakov](https://github.com/tavplubix)).
-
-#### NOT FOR CHANGELOG / INSIGNIFICANT
-
-* Try abort on current thread join. [#42544](https://github.com/ClickHouse/ClickHouse/pull/42544) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
-* This change was reverted. [#51008](https://github.com/ClickHouse/ClickHouse/pull/51008) ([Michael Kolupaev](https://github.com/al13n321)).
-* Analyzer fuzzer 2. [#57098](https://github.com/ClickHouse/ClickHouse/pull/57098) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
-* Analyzer fuzzer 4. [#57101](https://github.com/ClickHouse/ClickHouse/pull/57101) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
-* Check python code with flake8. [#58349](https://github.com/ClickHouse/ClickHouse/pull/58349) ([Azat Khuzhin](https://github.com/azat)).
-* Unite s3/hdfs/azure storage implementations into a single class working with IObjectStorage. Same for *Cluster, data lakes and Queue storages. [#59767](https://github.com/ClickHouse/ClickHouse/pull/59767) ([Kseniia Sumarokova](https://github.com/kssenii)).
-* Refactor KeyCondition and key analysis to improve PartitionPruner and trivial count optimization. This is separated from [#60463](https://github.com/ClickHouse/ClickHouse/issues/60463) . [#61459](https://github.com/ClickHouse/ClickHouse/pull/61459) ([Amos Bird](https://github.com/amosbird)).
-* This change was reverted. [#61973](https://github.com/ClickHouse/ClickHouse/pull/61973) ([Azat Khuzhin](https://github.com/azat)).
-* Replay ZK logs using keeper-bench. [#62481](https://github.com/ClickHouse/ClickHouse/pull/62481) ([Antonio Andelic](https://github.com/antonio2368)).
-* Reduce time-to-insert profiling data in case of logs cluster issues. [#63325](https://github.com/ClickHouse/ClickHouse/pull/63325) ([Mikhail f. Shiryaev](https://github.com/Felixoid)).
-* Refactor data part writer to remove dependencies on MergeTreeData and DataPart. [#63620](https://github.com/ClickHouse/ClickHouse/pull/63620) ([Alexander Gololobov](https://github.com/davenger)).
-* Try to fix flaky s3 tests test_seekable_formats and test_seekable_formats_url. [#63720](https://github.com/ClickHouse/ClickHouse/pull/63720) ([Kruglov Pavel](https://github.com/Avogar)).
-* Rewrite plan for parallel replicas in Planner. [#63796](https://github.com/ClickHouse/ClickHouse/pull/63796) ([Igor Nikonov](https://github.com/devcrafter)).
-* This PR was reverted. [#63857](https://github.com/ClickHouse/ClickHouse/pull/63857) ([Sema Checherinda](https://github.com/CheSema)).
-* Make events like [timeouts](https://play.clickhouse.com/play?user=play#U0VMRUNUICogRlJPTSBjaGVja3MgV0hFUkUgdGVzdF9uYW1lID09ICdDaGVjayB0aW1lb3V0IGV4cGlyZWQnIEFORCBjaGVja19zdGFydF90aW1lIEJFVFdFRU4gdG9EYXRlKCcyMDI0LTA1LTEwJykgQU5EIHRvRGF0ZSgnMjAyNC0wNS0xNScp) visible in CI DB. [#63982](https://github.com/ClickHouse/ClickHouse/pull/63982) ([Mikhail f. Shiryaev](https://github.com/Felixoid)).
-* Remove some unnecessary `UNREACHABLE`s. [#64035](https://github.com/ClickHouse/ClickHouse/pull/64035) ([Robert Schulze](https://github.com/rschu1ze)).
-* Throw out some `inline`s. [#64110](https://github.com/ClickHouse/ClickHouse/pull/64110) ([Robert Schulze](https://github.com/rschu1ze)).
-* Refactoring of Server.h: Isolate server management from other logic. [#64132](https://github.com/ClickHouse/ClickHouse/pull/64132) ([TTPO100AJIEX](https://github.com/TTPO100AJIEX)).
-* Fix: 02124_insert_deduplication_token_multiple_blocks_replica. [#64181](https://github.com/ClickHouse/ClickHouse/pull/64181) ([Igor Nikonov](https://github.com/devcrafter)).
-* Add profile events for number of rows read during/after prewhere. [#64198](https://github.com/ClickHouse/ClickHouse/pull/64198) ([Nikita Taranov](https://github.com/nickitat)).
-* Update InterpreterCreateQuery.cpp. [#64207](https://github.com/ClickHouse/ClickHouse/pull/64207) ([Alexander Tokmakov](https://github.com/tavplubix)).
-* Remove unused storage_snapshot field from MergeTreeSelectProcessor. [#64217](https://github.com/ClickHouse/ClickHouse/pull/64217) ([Alexander Gololobov](https://github.com/davenger)).
-* Add test for [#37090](https://github.com/ClickHouse/ClickHouse/issues/37090). [#64220](https://github.com/ClickHouse/ClickHouse/pull/64220) ([Yarik Briukhovetskyi](https://github.com/yariks5s)).
-* Make `settings_changes_history` const. [#64230](https://github.com/ClickHouse/ClickHouse/pull/64230) ([János Benjamin Antal](https://github.com/antaljanosbenjamin)).
-* test for [#45804](https://github.com/ClickHouse/ClickHouse/issues/45804). [#64245](https://github.com/ClickHouse/ClickHouse/pull/64245) ([Denny Crane](https://github.com/den-crane)).
-* Update version after release. [#64283](https://github.com/ClickHouse/ClickHouse/pull/64283) ([Raúl Marín](https://github.com/Algunenano)).
-* Followup for [#63691](https://github.com/ClickHouse/ClickHouse/issues/63691). [#64285](https://github.com/ClickHouse/ClickHouse/pull/64285) ([vdimir](https://github.com/vdimir)).
-* CI: dependency fix for changelog.py. [#64293](https://github.com/ClickHouse/ClickHouse/pull/64293) ([Max K.](https://github.com/maxknv)).
-* Print query in explain plan with parallel replicas. [#64298](https://github.com/ClickHouse/ClickHouse/pull/64298) ([vdimir](https://github.com/vdimir)).
-* CI: Cancel sync wf on new push. [#64299](https://github.com/ClickHouse/ClickHouse/pull/64299) ([Max K.](https://github.com/maxknv)).
-* CI: master workflow with folded jobs. [#64340](https://github.com/ClickHouse/ClickHouse/pull/64340) ([Max K.](https://github.com/maxknv)).
-* CI: Sync, Merge check, CI gh's statuses fixes. [#64348](https://github.com/ClickHouse/ClickHouse/pull/64348) ([Max K.](https://github.com/maxknv)).
-* Enable 02494_query_cache_nested_query_bug for Analyzer. [#64357](https://github.com/ClickHouse/ClickHouse/pull/64357) ([Robert Schulze](https://github.com/rschu1ze)).
-* Rename allow_deprecated_functions to allow_deprecated_error_prone_window_functions. [#64358](https://github.com/ClickHouse/ClickHouse/pull/64358) ([Raúl Marín](https://github.com/Algunenano)).
-* Change input_format_parquet_use_native_reader to 24.6. [#64359](https://github.com/ClickHouse/ClickHouse/pull/64359) ([Raúl Marín](https://github.com/Algunenano)).
-* Update description for settings `cross_join_min_rows_to_compress` and `cross_join_min_bytes_to_compress`. [#64360](https://github.com/ClickHouse/ClickHouse/pull/64360) ([Nikita Fomichev](https://github.com/fm4v)).
-* Changed the unreleased setting `aggregate_function_group_array_has_limit_size` to `aggregate_function_group_array_action_when_limit_is_reached`. [#64362](https://github.com/ClickHouse/ClickHouse/pull/64362) ([Raúl Marín](https://github.com/Algunenano)).
-* Split tests 03039_dynamic_all_merge_algorithms to avoid timeouts. [#64363](https://github.com/ClickHouse/ClickHouse/pull/64363) ([Kruglov Pavel](https://github.com/Avogar)).
-* Try to fix GWPAsan. [#64365](https://github.com/ClickHouse/ClickHouse/pull/64365) ([Antonio Andelic](https://github.com/antonio2368)).
-* CI: add secrets to reusable stage wf yml. [#64366](https://github.com/ClickHouse/ClickHouse/pull/64366) ([Max K.](https://github.com/maxknv)).
-* Do not run tests tagged 'no-s3-storage-with-slow-build' with ASan. [#64367](https://github.com/ClickHouse/ClickHouse/pull/64367) ([vdimir](https://github.com/vdimir)).
-* This change was reverted. [#64386](https://github.com/ClickHouse/ClickHouse/pull/64386) ([Francisco J. Jurado Moreno](https://github.com/Beetelbrox)).
-* Update s3queue.md. [#64389](https://github.com/ClickHouse/ClickHouse/pull/64389) ([Kseniia Sumarokova](https://github.com/kssenii)).
-* test for [#64211](https://github.com/ClickHouse/ClickHouse/issues/64211). [#64390](https://github.com/ClickHouse/ClickHouse/pull/64390) ([Denny Crane](https://github.com/den-crane)).
-* Follow-up to [#59767](https://github.com/ClickHouse/ClickHouse/issues/59767). [#64398](https://github.com/ClickHouse/ClickHouse/pull/64398) ([Kseniia Sumarokova](https://github.com/kssenii)).
-* Remove wrong comment. [#64403](https://github.com/ClickHouse/ClickHouse/pull/64403) ([Sergei Trifonov](https://github.com/serxa)).
-* Follow up to [#59767](https://github.com/ClickHouse/ClickHouse/issues/59767). [#64404](https://github.com/ClickHouse/ClickHouse/pull/64404) ([Kseniia Sumarokova](https://github.com/kssenii)).
-* Refactor s3 settings (move settings parsing into single place). [#64412](https://github.com/ClickHouse/ClickHouse/pull/64412) ([Kseniia Sumarokova](https://github.com/kssenii)).
-* This PR was reverted. [#64423](https://github.com/ClickHouse/ClickHouse/pull/64423) ([Sergei Trifonov](https://github.com/serxa)).
-* Fix test after [#64404](https://github.com/ClickHouse/ClickHouse/issues/64404). [#64432](https://github.com/ClickHouse/ClickHouse/pull/64432) ([Kseniia Sumarokova](https://github.com/kssenii)).
-* Faster TestKeeper shutdown. [#64433](https://github.com/ClickHouse/ClickHouse/pull/64433) ([Alexander Gololobov](https://github.com/davenger)).
-* Remove some logging. [#64434](https://github.com/ClickHouse/ClickHouse/pull/64434) ([Kseniia Sumarokova](https://github.com/kssenii)).
-* Revert "Revert "Remove some unnecessary UNREACHABLEs"". [#64435](https://github.com/ClickHouse/ClickHouse/pull/64435) ([Robert Schulze](https://github.com/rschu1ze)).
-* Clean settings in 02943_variant_read_subcolumns test. [#64437](https://github.com/ClickHouse/ClickHouse/pull/64437) ([Kruglov Pavel](https://github.com/Avogar)).
-* Add a comment after [#64226](https://github.com/ClickHouse/ClickHouse/issues/64226). [#64449](https://github.com/ClickHouse/ClickHouse/pull/64449) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
-* CI: fix build_report selection in case of job reuse. [#64459](https://github.com/ClickHouse/ClickHouse/pull/64459) ([Max K.](https://github.com/maxknv)).
-* Add Critical bugfix category in PR template. [#64480](https://github.com/ClickHouse/ClickHouse/pull/64480) ([Max K.](https://github.com/maxknv)).
-* Remove `generateSnowflakeIDThreadMonotonic`. [#64499](https://github.com/ClickHouse/ClickHouse/pull/64499) ([Robert Schulze](https://github.com/rschu1ze)).
-* Move analyzer attempt 2. [#64500](https://github.com/ClickHouse/ClickHouse/pull/64500) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
-* Sync some code back from internal to public repository. [#64502](https://github.com/ClickHouse/ClickHouse/pull/64502) ([Robert Schulze](https://github.com/rschu1ze)).
-* Remove `generateUUIDv7(NonMonotonic|ThreadMonotonic)` functions. [#64506](https://github.com/ClickHouse/ClickHouse/pull/64506) ([Robert Schulze](https://github.com/rschu1ze)).
-* Fix bash completion for settings. [#64521](https://github.com/ClickHouse/ClickHouse/pull/64521) ([Azat Khuzhin](https://github.com/azat)).
-* Use max_read_buffer_size for file descriptors as well in file(). [#64532](https://github.com/ClickHouse/ClickHouse/pull/64532) ([Azat Khuzhin](https://github.com/azat)).
-* Temporarily disable `enable_vertical_final` setting by default. This feature should not be used in older releases because it [might crash](https://github.com/ClickHouse/ClickHouse/issues/64543), but it's already fixed in 24.6 where this setting change has been reverted and `enable_vertical_final` is again enabled by default. [#64544](https://github.com/ClickHouse/ClickHouse/pull/64544) ([Alexander Tokmakov](https://github.com/tavplubix)).
-* Removed excessive calls to `flush logs` and disabled under sanitizers. [#64550](https://github.com/ClickHouse/ClickHouse/pull/64550) ([Nikita Taranov](https://github.com/nickitat)).
-* Sync code moved in private repo back back to public repo. [#64551](https://github.com/ClickHouse/ClickHouse/pull/64551) ([Robert Schulze](https://github.com/rschu1ze)).
-* Add support for custom type to ASTLiteral, or else the type may be lost when parse the ast. E.g. set a ASTLiteral to DataTime32 with value 19870, then it will be parsed to Int16. [#64562](https://github.com/ClickHouse/ClickHouse/pull/64562) ([shuai.xu](https://github.com/shuai-xu)).
-* Add a temporary known host for git over ssh. [#64569](https://github.com/ClickHouse/ClickHouse/pull/64569) ([Mikhail f. Shiryaev](https://github.com/Felixoid)).
-* Cache first analysis result in ReadFromMergeTree. [#64579](https://github.com/ClickHouse/ClickHouse/pull/64579) ([Igor Nikonov](https://github.com/devcrafter)).
-* Derive script parameters (labels) from the --repo/--from-repo - fix to not create backports for all release branches if backport for specific branch only. [#64603](https://github.com/ClickHouse/ClickHouse/pull/64603) ([Max K.](https://github.com/maxknv)).
-* Add Stateful asan test, Stateless asan, Stateless flaky chek into Required - Move binary_release to normal builds (not special). It builds fast and there are test jobs depending on it. - Add job description for A Sync. [#64605](https://github.com/ClickHouse/ClickHouse/pull/64605) ([Max K.](https://github.com/maxknv)).
-* Double-checking [#59318](https://github.com/ClickHouse/ClickHouse/issues/59318) and docs for `Map`. [#64606](https://github.com/ClickHouse/ClickHouse/pull/64606) ([Robert Schulze](https://github.com/rschu1ze)).
-* Update CHANGELOG.md. [#64609](https://github.com/ClickHouse/ClickHouse/pull/64609) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
-* Tests: Convert numeric to symbolic error codes. [#64635](https://github.com/ClickHouse/ClickHouse/pull/64635) ([Robert Schulze](https://github.com/rschu1ze)).
-* Move NamedCollectionsFactory into a separate file. [#64642](https://github.com/ClickHouse/ClickHouse/pull/64642) ([Kseniia Sumarokova](https://github.com/kssenii)).
-* Shuffle tests for parallel execution. [#64646](https://github.com/ClickHouse/ClickHouse/pull/64646) ([Nikita Mikhaylov](https://github.com/nikitamikhaylov)).
-* CI: Do not upload binaries for special builds in PRs. [#64653](https://github.com/ClickHouse/ClickHouse/pull/64653) ([Max K.](https://github.com/maxknv)).
-* Update changelog. [#64654](https://github.com/ClickHouse/ClickHouse/pull/64654) ([Robert Schulze](https://github.com/rschu1ze)).
-* Parallel replicas: simple cleanup. [#64655](https://github.com/ClickHouse/ClickHouse/pull/64655) ([Igor Nikonov](https://github.com/devcrafter)).
-* Be more graceful with existing tables with `inverted` indexes. [#64656](https://github.com/ClickHouse/ClickHouse/pull/64656) ([Robert Schulze](https://github.com/rschu1ze)).
-* CI: Build Report Check to verify only enabled builds. [#64669](https://github.com/ClickHouse/ClickHouse/pull/64669) ([Max K.](https://github.com/maxknv)).
-* Tests: Convert error numbers to symbolic error codes, pt. II. [#64670](https://github.com/ClickHouse/ClickHouse/pull/64670) ([Robert Schulze](https://github.com/rschu1ze)).
-* Split query analyzer. [#64672](https://github.com/ClickHouse/ClickHouse/pull/64672) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
-* By the end of CI, CI_Running status must be SUCCESS or FAILURE never PENDING. [#64693](https://github.com/ClickHouse/ClickHouse/pull/64693) ([Max K.](https://github.com/maxknv)).
-* The following list of merged PRs is not present in the release branch and was added to the changelog by mistake:. [#64704](https://github.com/ClickHouse/ClickHouse/pull/64704) ([Nikita Mikhaylov](https://github.com/nikitamikhaylov)).
-* CI: MergeQueue: add binary_release and unit tests. [#64705](https://github.com/ClickHouse/ClickHouse/pull/64705) ([Max K.](https://github.com/maxknv)).
-* Fix to get first good enough GH token instead of getting and comparing all of them. [#64709](https://github.com/ClickHouse/ClickHouse/pull/64709) ([Max K.](https://github.com/maxknv)).
-* Check for missing Upload ID in CreateMultipartUpload reply. [#64714](https://github.com/ClickHouse/ClickHouse/pull/64714) ([Michael Kolupaev](https://github.com/al13n321)).
-* Update version_date.tsv and changelogs after v24.5.1.1763-stable. [#64715](https://github.com/ClickHouse/ClickHouse/pull/64715) ([robot-clickhouse](https://github.com/robot-clickhouse)).
-* Fix (unreleased) `loop()` table function crashing on empty table name. [#64716](https://github.com/ClickHouse/ClickHouse/pull/64716) ([Michael Kolupaev](https://github.com/al13n321)).
-* Update CHANGELOG.md. [#64730](https://github.com/ClickHouse/ClickHouse/pull/64730) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
-* CI: ci.py refactoring. [#64734](https://github.com/ClickHouse/ClickHouse/pull/64734) ([Max K.](https://github.com/maxknv)).
-* Return the explanation for session moved error. [#64747](https://github.com/ClickHouse/ClickHouse/pull/64747) ([Antonio Andelic](https://github.com/antonio2368)).
-* It's another follow-up for https://github.com/ClickHouse/ClickHouse/pull/64039. We need to backport it to avoid issues with the new tag name. [#64759](https://github.com/ClickHouse/ClickHouse/pull/64759) ([Mikhail f. Shiryaev](https://github.com/Felixoid)).
-* Do not try to write columns.txt if it does not exist for write-once storages. [#64762](https://github.com/ClickHouse/ClickHouse/pull/64762) ([Azat Khuzhin](https://github.com/azat)).
-* Update 02482_load_parts_refcounts.sh. [#64765](https://github.com/ClickHouse/ClickHouse/pull/64765) ([Alexander Tokmakov](https://github.com/tavplubix)).
-* Fix crash with DISTINCT and window functions. [#64767](https://github.com/ClickHouse/ClickHouse/pull/64767) ([Igor Nikonov](https://github.com/devcrafter)).
-* Fix assert in IObjectStorageIteratorAsync. [#64770](https://github.com/ClickHouse/ClickHouse/pull/64770) ([Michael Kolupaev](https://github.com/al13n321)).
-* Make table functions always report engine 'StorageProxy' in system.tables. [#64771](https://github.com/ClickHouse/ClickHouse/pull/64771) ([Michael Kolupaev](https://github.com/al13n321)).
-* Ask about company name on GitHub. [#64774](https://github.com/ClickHouse/ClickHouse/pull/64774) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
-* Fix flaky tests about SQLite. [#64776](https://github.com/ClickHouse/ClickHouse/pull/64776) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
-* Remove iostream debug helpers. [#64777](https://github.com/ClickHouse/ClickHouse/pull/64777) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
-* Remove unnecessary comment. [#64785](https://github.com/ClickHouse/ClickHouse/pull/64785) ([Raúl Marín](https://github.com/Algunenano)).
-* Follow-ups to some PRs. [#64787](https://github.com/ClickHouse/ClickHouse/pull/64787) ([Mikhail f. Shiryaev](https://github.com/Felixoid)).
-* Attempt to fix 02228_merge_tree_insert_memory_usage.sql flakiness for s3. [#64800](https://github.com/ClickHouse/ClickHouse/pull/64800) ([Raúl Marín](https://github.com/Algunenano)).
-* Add regression test for filter propagation through `Merge` engine. [#64806](https://github.com/ClickHouse/ClickHouse/pull/64806) ([Nikita Taranov](https://github.com/nickitat)).
-* Migrate changelog.py to a descendant of fuzzywuzzy. [#64807](https://github.com/ClickHouse/ClickHouse/pull/64807) ([Mikhail f. Shiryaev](https://github.com/Felixoid)).
-* A follow-up for https://github.com/ClickHouse/ClickHouse/pull/64039 and [#64759](https://github.com/ClickHouse/ClickHouse/issues/64759). [#64813](https://github.com/ClickHouse/ClickHouse/pull/64813) ([Mikhail f. Shiryaev](https://github.com/Felixoid)).
-* Make row order optimization non-experimental. [#64814](https://github.com/ClickHouse/ClickHouse/pull/64814) ([Robert Schulze](https://github.com/rschu1ze)).
-* Didn't catch it at the time when all versions belonged to the current year. [#64817](https://github.com/ClickHouse/ClickHouse/pull/64817) ([Mikhail f. Shiryaev](https://github.com/Felixoid)).
-* Fix clang-tidy build. [#64823](https://github.com/ClickHouse/ClickHouse/pull/64823) ([Robert Schulze](https://github.com/rschu1ze)).
-* Sets all builds that we run tests on to normal build list. [#64824](https://github.com/ClickHouse/ClickHouse/pull/64824) ([Max K.](https://github.com/maxknv)).
-* CI: fix CI await feature. [#64825](https://github.com/ClickHouse/ClickHouse/pull/64825) ([Max K.](https://github.com/maxknv)).
-* Fix clang-tidy. [#64827](https://github.com/ClickHouse/ClickHouse/pull/64827) ([Kseniia Sumarokova](https://github.com/kssenii)).
-* Upload blob_storage_log from stateless tests. [#64843](https://github.com/ClickHouse/ClickHouse/pull/64843) ([alesapin](https://github.com/alesapin)).
-* Follow-up to [#64349](https://github.com/ClickHouse/ClickHouse/issues/64349). [#64845](https://github.com/ClickHouse/ClickHouse/pull/64845) ([Kseniia Sumarokova](https://github.com/kssenii)).
-* Simplify handling of old 'inverted' indexes. [#64846](https://github.com/ClickHouse/ClickHouse/pull/64846) ([Robert Schulze](https://github.com/rschu1ze)).
-* Templates defined in YAML provide more user-friendly experience. References: - [Documentation](https://docs.github.com/en/communities/using-templates-to-encourage-useful-issues-and-pull-requests/syntax-for-issue-forms) - [How it looks like in other projects. ](https://github.com/angular/angular/issues/new?assignees=&labels=&projects=&template=1-bug-report.yaml). [#64850](https://github.com/ClickHouse/ClickHouse/pull/64850) ([Nikita Mikhaylov](https://github.com/nikitamikhaylov)).
-* Handle logs from rocksdb by ClickHouse internal logging. [#64856](https://github.com/ClickHouse/ClickHouse/pull/64856) ([Azat Khuzhin](https://github.com/azat)).
-* Follow-up for https://github.com/ClickHouse/ClickHouse/pull/59357. [#64860](https://github.com/ClickHouse/ClickHouse/pull/64860) ([Nikita Mikhaylov](https://github.com/nikitamikhaylov)).
-* added mlock and mlockall to aspell-dict to be ignored. [#64863](https://github.com/ClickHouse/ClickHouse/pull/64863) ([Ali](https://github.com/xogoodnow)).
-* A tiny fix for fancy quotes. [#64883](https://github.com/ClickHouse/ClickHouse/pull/64883) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
-* Fix possible loss of "Query was cancelled" message in client. [#64888](https://github.com/ClickHouse/ClickHouse/pull/64888) ([Azat Khuzhin](https://github.com/azat)).
-* We accidentally lost the way to set `PR Check` failure at some point. [#64890](https://github.com/ClickHouse/ClickHouse/pull/64890) ([Mikhail f. Shiryaev](https://github.com/Felixoid)).
-* Fix global trace collector. [#64896](https://github.com/ClickHouse/ClickHouse/pull/64896) ([Antonio Andelic](https://github.com/antonio2368)).
-* Fix test_mask_sensitive_info/test.py::test_create_table. [#64901](https://github.com/ClickHouse/ClickHouse/pull/64901) ([Azat Khuzhin](https://github.com/azat)).
-* Update 03165_string_functions_with_token_text_indexes.sql. [#64903](https://github.com/ClickHouse/ClickHouse/pull/64903) ([Alexander Tokmakov](https://github.com/tavplubix)).
-* When the branch is removed, it's impossible to get the diff by the labels. `print` in imported files spoils the `ipython` output. [#64904](https://github.com/ClickHouse/ClickHouse/pull/64904) ([Mikhail f. Shiryaev](https://github.com/Felixoid)).
-* Disable transactions for unsupported storages even for materialized v…. [#64918](https://github.com/ClickHouse/ClickHouse/pull/64918) ([alesapin](https://github.com/alesapin)).
-* additional log for cleanupDetachedTables. [#64919](https://github.com/ClickHouse/ClickHouse/pull/64919) ([Konstantin Morozov](https://github.com/k-morozov)).
-* Fix tupleConcat of two empty tuples. This fixes [#64885](https://github.com/ClickHouse/ClickHouse/issues/64885). [#64923](https://github.com/ClickHouse/ClickHouse/pull/64923) ([Amos Bird](https://github.com/amosbird)).
-* CI: Minor fixes in ci scripts. [#64950](https://github.com/ClickHouse/ClickHouse/pull/64950) ([Max K.](https://github.com/maxknv)).
-* Fix error message (it was strange). [#64952](https://github.com/ClickHouse/ClickHouse/pull/64952) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
-* Update fmtlib version to 9.1.0. [#64959](https://github.com/ClickHouse/ClickHouse/pull/64959) ([Duc Canh Le](https://github.com/canhld94)).
-* Test 02908_many_requests_to_system_replicas makes a lot of heavy requests and it overloads server if it's an ASAN build. [#64966](https://github.com/ClickHouse/ClickHouse/pull/64966) ([Alexander Gololobov](https://github.com/davenger)).
-* Fix (unreleased) bug in short circuit evaluation. [#64967](https://github.com/ClickHouse/ClickHouse/pull/64967) ([Raúl Marín](https://github.com/Algunenano)).
-* Update version_date.tsv and changelogs after v24.4.2.141-stable. [#64968](https://github.com/ClickHouse/ClickHouse/pull/64968) ([robot-clickhouse](https://github.com/robot-clickhouse)).
-* Fix `test_attach_partition_using_copy`. [#64977](https://github.com/ClickHouse/ClickHouse/pull/64977) ([Alexander Tokmakov](https://github.com/tavplubix)).
-* Faster processing of scheduler queue activations. [#64985](https://github.com/ClickHouse/ClickHouse/pull/64985) ([Sergei Trifonov](https://github.com/serxa)).
-* CI: Fix nightly workflow. [#64987](https://github.com/ClickHouse/ClickHouse/pull/64987) ([Max K.](https://github.com/maxknv)).
-* Fix innocuous data race in detectLanguage. [#64988](https://github.com/ClickHouse/ClickHouse/pull/64988) ([Raúl Marín](https://github.com/Algunenano)).
-* CI: Builds in CI settings. [#64994](https://github.com/ClickHouse/ClickHouse/pull/64994) ([Max K.](https://github.com/maxknv)).
-* REVERTED. [#65009](https://github.com/ClickHouse/ClickHouse/pull/65009) ([Yarik Briukhovetskyi](https://github.com/yariks5s)).
-* CI: Fix backports. [#65010](https://github.com/ClickHouse/ClickHouse/pull/65010) ([Max K.](https://github.com/maxknv)).
-* Try fix 03143_prewhere_profile_events. [#65014](https://github.com/ClickHouse/ClickHouse/pull/65014) ([Nikita Taranov](https://github.com/nickitat)).
-* Fix 03165_string_functions_with_token_text_indexes. [#65018](https://github.com/ClickHouse/ClickHouse/pull/65018) ([Julia Kartseva](https://github.com/jkartseva)).
-* This change was reverted. [#65028](https://github.com/ClickHouse/ClickHouse/pull/65028) ([Sergei Trifonov](https://github.com/serxa)).
-* Bump googletest to latest HEAD. [#65038](https://github.com/ClickHouse/ClickHouse/pull/65038) ([Robert Schulze](https://github.com/rschu1ze)).
-* Improve comment about AsynchronousMetrics. [#65040](https://github.com/ClickHouse/ClickHouse/pull/65040) ([Antonio Andelic](https://github.com/antonio2368)).
-* CI: Remove fuzzer build from normal CI run (bugfix). [#65041](https://github.com/ClickHouse/ClickHouse/pull/65041) ([Max K.](https://github.com/maxknv)).
-* CI config refactoring [#65045](https://github.com/ClickHouse/ClickHouse/pull/65045) ([Max K.](https://github.com/maxknv)).
-* Bump abseil to latest HEAD. [#65048](https://github.com/ClickHouse/ClickHouse/pull/65048) ([Robert Schulze](https://github.com/rschu1ze)).
-* Capture weak_ptr of ContextAccess for safety. [#65051](https://github.com/ClickHouse/ClickHouse/pull/65051) ([Alexander Gololobov](https://github.com/davenger)).
-* Stateless tests: add test for SIZES_OF_NESTED_COLUMNS_ARE_INCONSISTENT. [#65056](https://github.com/ClickHouse/ClickHouse/pull/65056) ([Nikita Fomichev](https://github.com/fm4v)).
-* Increase timeout in wait_for_all_mutations. [#65058](https://github.com/ClickHouse/ClickHouse/pull/65058) ([Alexander Gololobov](https://github.com/davenger)).
-* Tests for _time virtual column in file alike storages. [#65064](https://github.com/ClickHouse/ClickHouse/pull/65064) ([Ilya Golshtein](https://github.com/ilejn)).
-* Update odbc-bridge.md. [#65099](https://github.com/ClickHouse/ClickHouse/pull/65099) ([Alexander Gololobov](https://github.com/davenger)).
-* Small fix for 02340_parts_refcnt_mergetree. [#65105](https://github.com/ClickHouse/ClickHouse/pull/65105) ([Nikita Taranov](https://github.com/nickitat)).
+* Replay ZooKeeper logs using keeper-bench. [#62481](https://github.com/ClickHouse/ClickHouse/pull/62481) ([Antonio Andelic](https://github.com/antonio2368)).
 * Re-enable OpenSSL session caching. [#65111](https://github.com/ClickHouse/ClickHouse/pull/65111) ([Robert Schulze](https://github.com/rschu1ze)).
-* Update test_replicated_database/test.py. [#65112](https://github.com/ClickHouse/ClickHouse/pull/65112) ([Alexander Tokmakov](https://github.com/tavplubix)).
-* Fix false positives leaky memory warnings in OpenSSL. [#65125](https://github.com/ClickHouse/ClickHouse/pull/65125) ([Robert Schulze](https://github.com/rschu1ze)).
-* Fix `Initiator received more initial requests than there are replicas` with `loop` engine. [#65133](https://github.com/ClickHouse/ClickHouse/pull/65133) ([Nikita Taranov](https://github.com/nickitat)).
-* Fix 'Tasks in BackgroundSchedulePool cannot throw' caused by MergeTreeData::loadUnexpectedDataParts(). [#65135](https://github.com/ClickHouse/ClickHouse/pull/65135) ([Michael Kolupaev](https://github.com/al13n321)).
-* Fix bad error message. [#65137](https://github.com/ClickHouse/ClickHouse/pull/65137) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
-* Just fixing flaky unit tests. [#65152](https://github.com/ClickHouse/ClickHouse/pull/65152) ([Sema Checherinda](https://github.com/CheSema)).
-* This change was reverted. [#65164](https://github.com/ClickHouse/ClickHouse/pull/65164) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
-* Ensure submodules are named consistently. [#65167](https://github.com/ClickHouse/ClickHouse/pull/65167) ([Robert Schulze](https://github.com/rschu1ze)).
-* Remove obsolete fix from aws submodule. [#65168](https://github.com/ClickHouse/ClickHouse/pull/65168) ([Robert Schulze](https://github.com/rschu1ze)).
-* CI: Fix not-merged cherry-picks for backports. [#65181](https://github.com/ClickHouse/ClickHouse/pull/65181) ([Max K.](https://github.com/maxknv)).
-* Add an assertion in ReplicatedMergeTreeQueue. [#65184](https://github.com/ClickHouse/ClickHouse/pull/65184) ([Alexander Tokmakov](https://github.com/tavplubix)).
-* Fix bug in unreleased code. [#65185](https://github.com/ClickHouse/ClickHouse/pull/65185) ([Raúl Marín](https://github.com/Algunenano)).
-* Fix docs for skipping-indexes.md. [#65194](https://github.com/ClickHouse/ClickHouse/pull/65194) ([morning-color](https://github.com/morning-color)).
-* Fix the descriptions of some server settings. [#65200](https://github.com/ClickHouse/ClickHouse/pull/65200) ([Raúl Marín](https://github.com/Algunenano)).
-* Fix issue after [#64813](https://github.com/ClickHouse/ClickHouse/issues/64813) with broken search in the changelog, and missing zstd in a style-check image. [#65202](https://github.com/ClickHouse/ClickHouse/pull/65202) ([Mikhail f. Shiryaev](https://github.com/Felixoid)).
-* Fix bug in unreleased code. [#65203](https://github.com/ClickHouse/ClickHouse/pull/65203) ([Raúl Marín](https://github.com/Algunenano)).
-* Add test prewhere merge. [#65207](https://github.com/ClickHouse/ClickHouse/pull/65207) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
-* Sync ProfileEvents.h. [#65208](https://github.com/ClickHouse/ClickHouse/pull/65208) ([Kseniia Sumarokova](https://github.com/kssenii)).
-* FinishCheck to set failure if workflow failed. [#65228](https://github.com/ClickHouse/ClickHouse/pull/65228) ([Max K.](https://github.com/maxknv)).
-* Update version_date.tsv and changelogs after v24.3.4.147-lts. [#65235](https://github.com/ClickHouse/ClickHouse/pull/65235) ([robot-clickhouse](https://github.com/robot-clickhouse)).
-* Update version_date.tsv and changelogs after v24.5.3.5-stable. [#65240](https://github.com/ClickHouse/ClickHouse/pull/65240) ([robot-clickhouse](https://github.com/robot-clickhouse)).
-* Fails sometimes for debug build https://s3.amazonaws.com/clickhouse-test-reports/0/af6afd904316bfb771737faa147ce8aea72dd705/stateless_tests__debug__[4_5].html. [#65245](https://github.com/ClickHouse/ClickHouse/pull/65245) ([Antonio Andelic](https://github.com/antonio2368)).
-* Fix libunwind in CI. [#65247](https://github.com/ClickHouse/ClickHouse/pull/65247) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
-* CI: Do not skip FinishCheck in Merge Queue. [#65249](https://github.com/ClickHouse/ClickHouse/pull/65249) ([Max K.](https://github.com/maxknv)).
-* Add a test just in case. [#65271](https://github.com/ClickHouse/ClickHouse/pull/65271) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
-* Disable 02581_share_big_sets_between_multiple_mutations_tasks_long in coverage run. [#65295](https://github.com/ClickHouse/ClickHouse/pull/65295) ([Alexander Gololobov](https://github.com/davenger)).
-* Update version_date.tsv and changelogs after v23.8.15.35-lts. [#65300](https://github.com/ClickHouse/ClickHouse/pull/65300) ([robot-clickhouse](https://github.com/robot-clickhouse)).
-* mute test test_query_is_canceled_with_inf_retries. [#65301](https://github.com/ClickHouse/ClickHouse/pull/65301) ([Sema Checherinda](https://github.com/CheSema)).
-* Fix silly typo that caused wrong tags messages. [#65307](https://github.com/ClickHouse/ClickHouse/pull/65307) ([Mikhail f. Shiryaev](https://github.com/Felixoid)).
-* Save server data for failed stateless tests. [#65309](https://github.com/ClickHouse/ClickHouse/pull/65309) ([Alexander Tokmakov](https://github.com/tavplubix)).
-* Fix 01246_buffer_flush flakiness (by tuning timeouts). [#65310](https://github.com/ClickHouse/ClickHouse/pull/65310) ([Azat Khuzhin](https://github.com/azat)).
-* Remove outdated override in stress tests. [#65323](https://github.com/ClickHouse/ClickHouse/pull/65323) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
-* Fix bad code in `system.session_log`. [#65332](https://github.com/ClickHouse/ClickHouse/pull/65332) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
-* add tests for 'boom filter index with map'. [#65333](https://github.com/ClickHouse/ClickHouse/pull/65333) ([iceFireser](https://github.com/iceFireser)).
-* Fix crash in 03036_dynamic_read_subcolumns. [#65341](https://github.com/ClickHouse/ClickHouse/pull/65341) ([Kruglov Pavel](https://github.com/Avogar)).
-* Move tests 02942_variant_cast and 02944_variant_as_common_type to analyzer_tech_debt.txt. [#65342](https://github.com/ClickHouse/ClickHouse/pull/65342) ([Kruglov Pavel](https://github.com/Avogar)).
-* Add docs for groupConcat. [#65384](https://github.com/ClickHouse/ClickHouse/pull/65384) ([Yarik Briukhovetskyi](https://github.com/yariks5s)).
-* CI: Add Non-blocking (Woolen wolfdog) CI mode. [#65385](https://github.com/ClickHouse/ClickHouse/pull/65385) ([Max K.](https://github.com/maxknv)).
-* Fix compatibility release check. [#65394](https://github.com/ClickHouse/ClickHouse/pull/65394) ([Alexey Katsman](https://github.com/alexkats)).
-* Move a leaksan suppression from Poco into OpenSSL. [#65396](https://github.com/ClickHouse/ClickHouse/pull/65396) ([Robert Schulze](https://github.com/rschu1ze)).
-* Fix tidy build. [#65415](https://github.com/ClickHouse/ClickHouse/pull/65415) ([Sergei Trifonov](https://github.com/serxa)).
-* Remove Tests dependency on Builds_2. No tests depend on Builds_2. [#65416](https://github.com/ClickHouse/ClickHouse/pull/65416) ([Max K.](https://github.com/maxknv)).
-* CI: PR workflow dependencies fix. [#65442](https://github.com/ClickHouse/ClickHouse/pull/65442) ([Max K.](https://github.com/maxknv)).
-* Fix test_storage_s3_queue/test.py::test_max_set_age. [#65452](https://github.com/ClickHouse/ClickHouse/pull/65452) ([Kseniia Sumarokova](https://github.com/kssenii)).
-* CI: Rename A Sync status. [#65456](https://github.com/ClickHouse/ClickHouse/pull/65456) ([Max K.](https://github.com/maxknv)).
-* CI: Rename sync status. [#65464](https://github.com/ClickHouse/ClickHouse/pull/65464) ([Max K.](https://github.com/maxknv)).
-* This change was reverted. [#65466](https://github.com/ClickHouse/ClickHouse/pull/65466) ([Sergei Trifonov](https://github.com/serxa)).
-* Remove a feature wasn't part of any release yet. [#65480](https://github.com/ClickHouse/ClickHouse/pull/65480) ([Raúl Marín](https://github.com/Algunenano)).
 
 ### <a id="245"></a> ClickHouse release 24.5, 2024-05-30
 
