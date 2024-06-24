@@ -1,0 +1,38 @@
+Basic authentication after user creation
+1
+Changed password, old password should not work
+AUTHENTICATION_FAILED
+New password should work
+1
+Two new passwords were added, should both work
+1
+1
+Gen ssh key
+Authenticating with ssh key
+1
+Altering credentials and keeping only bcrypt_password
+Asserting SSH does not work anymore
+AUTHENTICATION_FAILED
+Asserting bcrypt_password works
+1
+Adding new bcrypt_password
+Both current authentication methods should work
+1
+1
+Reset authentication methods to new
+Only the latest should work, below should fail
+AUTHENTICATION_FAILED
+Should work
+1
+Multiple identified with, not allowed
+SYNTAX_ERROR
+Multiple identified with, not allowed, even if mixed
+SYNTAX_ERROR
+Identified with must precede all add identified with, not allowed
+SYNTAX_ERROR
+CREATE Multiple identified with, not allowed
+SYNTAX_ERROR
+CREATE Multiple identified with, not allowed, even if mixed
+SYNTAX_ERROR
+CREATE Identified with must precede all add identified with, not allowed
+SYNTAX_ERROR
