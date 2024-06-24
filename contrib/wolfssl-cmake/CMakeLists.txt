@@ -1,0 +1,152 @@
+option(ENABLE_SSL "Use SSL" ${ENABLE_LIBRARIES})
+
+if(NOT ENABLE_SSL)
+    message(STATUS "Not using wolfSSL")
+    return()
+endif()
+
+include(${ClickHouse_SOURCE_DIR}/contrib/wolfssl/cmake/functions.cmake)
+
+set(WOLFSSL_SOURCE_DIR ${ClickHouse_SOURCE_DIR}/contrib/wolfssl)
+set(WOLFSSL_BINARY_DIR ${ClickHouse_BINARY_DIR}/contrib/wolfssl/wolfcrypt)
+
+set(WOLFSSL_INCLUDE_DIR
+    # "${ClickHouse_SOURCE_DIR}/contrib/wolfssl-cmake/includes"
+    # "${ClickHouse_SOURCE_DIR}/contrib/wolfssl"
+    "${ClickHouse_SOURCE_DIR}/contrib/wolfssl/wolfssl"  # OpenSSL compatibility headers
+)
+
+set(WOLFSSL_INCLUDE_DIR_PRIVATE
+    # "${ClickHouse_SOURCE_DIR}/contrib/wolfssl-cmake/includes"
+    # "${ClickHouse_SOURCE_DIR}/contrib/wolfssl/wolfssl"  # OpenSSL compatibility headers
+)
+
+set(WOLFSSL_INCLUDE_DIR_DD
+    "${ClickHouse_SOURCE_DIR}/contrib/wolfssl"
+    "${ClickHouse_SOURCE_DIR}/contrib/wolfssl-cmake/includes"
+)
+
+set(WOLFSSL_SOURCES)
+set(WOLFSSL_DEFINITIONS)
+
+# --- Configuration
+# set(HAVE___UINT128_T 1)
+# set(HAVE_THREAD_LS 1)
+# set(HAVE_PTHREAD 1)
+# set(_POSIX_THREADS 1)
+# set(NO_WOLFSSL_SERVER 0)
+# set(NO_WOLFSSL_CLIENT 0)
+# set(WOLFSSL_ALLOW_TLSV10 1)
+set(ASIO_USE_WOLFSSL 1)
+set(WOLFSSL_ASIO 1)
+set(BOOST_ASIO_USE_WOLFSSL 1)
+set(TFM_TIMING_RESISTANT 1)
+set(ECC_TIMING_RESISTANT 1)
+set(WC_RSA_BLINDING 1)
+set(GCM_TABLE_4BIT 1)
+set(HAVE_AESGCM 1)
+set(WOLFSSL_USE_ALIGN 1)
+set(WOLFSSL_SHA512 1)
+set(WOLFSSL_SHA384 1)
+set(WOLFSSL_SHA224 1)
+set(WOLFSSL_SHA3 1)
+set(WOLFSSL_NO_SHAKE256 1)
+set(WOLFSSL_NO_SHAKE128 1)
+set(HAVE_HKDF 1)
+set(NO_DSA 0)
+set(HAVE_ECC 1)
+set(ECC_TIMING_RESISTANT 1)
+set(TFM_ECC256 1)
+set(ECC_SHAMIR 1)
+set(WC_RSA_PSS 1)
+set(WOLFSSL_PSS_LONG_SALT 1)
+set(WOLFSSL_BASE64_ENCODE 1)
+set(HAVE_POLY1305 1)
+set(HAVE_ONE_TIME_AUTH 1)
+set(HAVE_CHACHA 1)
+set(HAVE_HASHDRBG 1)
+set(HAVE_TLS_EXTENSIONS 1)
+set(HAVE_SUPPORTED_CURVES 1)
+set(HAVE_FFDHE_2048 1)
+set(WOLFSSL_TLS13 1)
+set(HAVE_EXTENDED_MASTER 1)
+set(NO_RC4 0)
+set(HAVE_ENCRYPT_THEN_MAC 1)
+set(NO_PSK 0)
+set(NO_MD4 0)
+set(WOLFSSL_X86_64_BUILD 1)
+set(WC_NO_ASYNC_THREADING 1)
+set(HAVE_DH_DEFAULT_PARAMS 1)
+set(NO_DES3 0)
+set(WOLFSSL_SYS_CA_CERTS 1)
+set(HAVE_SNI 1)
+set(HAVE_ALPN 1)
+set(HAVE_OCSP 1)
+set(KEEP_OUR_CERT 1)
+set(HAVE_GETADDRINFO 1)
+set(OPENSSL_EXTRA 1)
+set(WOLFSSL_AES_DIRECT 1)
+set(OPENSSL_ALL 1)
+set(HAVE_AESGCM 1)
+# ---
+
+list(APPEND WOLFSSL_DEFINITIONS
+  "-DOPENSSL_EXTRA" "-DOPENSSL_ALL" "-DWOLFSSL_EITHER_SIDE" "-DWC_RSA_NO_PADDING" "-DHAVE_CHACHA" "-DHAVE_POLY1305"
+  "-DWC_RSA_PSS" "-DWOLFSSL_PSS_LONG_SALT" "-DWOLFSSL_TICKET_HAVE_ID"
+  "-DWOLFSSL_ERROR_CODE_OPENSSL" "-DWOLFSSL_CERT_NAME_ALL" "-DHAVE_TLS_EXTENSIONS" "-DHAVE_SUPPORTED_CURVES" "-DHAVE_ECC" "-DWOLFSSL_AES_DIRECT" "-DHAVE_OCSP" "-DHAVE_GETADDRINFO" "-DHAVE_SOCKADDR" "-DHAVE_NETDB_H" "-DHAVE_GETTIMEOFDAY"
+  "-DWOLFSSL_SHA512"
+  "-DWOLFSSL_SHA384"
+  "-DWOLFSSL_SHA224"
+  "-DWOLFSSL_SHA3"
+  "-DWOLFSSL_AES_256"
+  "-DHAVE_AESGCM"
+  "-DHAVE_AESCCM"
+  "-DHAVE_AES_CBC"
+  "-DHAVE_AES_ECB"
+  "-DHAVE_DES_ECB"
+  "-DHAVE_ALPN"
+  "-DHAVE_HKDF"
+  "-DHAVE_FFDHE_2048"
+  "-DWOLFSSL_DES_ECB"
+  "-DHAVE_CRL"
+  "-DWOLFSSL_KEY_GEN"
+  "-DWOLFSSL_CERT_GEN"
+  "-DWOLFSSL_AES_COUNTER"
+  "-DHAVE_EX_DATA"
+  "-DWOLFSSL_TLS13"
+  "-DHAVE_CHACHA"
+  "-DWOLFSSL_SYS_CA_CERTS"
+  )
+
+file(GLOB WOLFSSL_SOURCES "${WOLFSSL_SOURCE_DIR}/wolfcrypt/src/*.c" "${WOLFSSL_SOURCE_DIR}/src/*.c")
+
+# message(STATUS "Hello")
+# message(STATUS "${WOLFSSL_SOURCE_DIR}")
+# message(STATUS "${WOLFSSL_SOURCES}")
+# message(STATUS "${WOLFSSL_INCLUDE_DIR}")
+# message(STATUS "${CMAKE_CURRENT_SOURCE_DIR}")
+
+# --- Ctrl-C Ctrl-V
+set(OPTION_FILE "${CMAKE_CURRENT_SOURCE_DIR}/includes/wolfssl/options.h")
+
+file(REMOVE ${OPTION_FILE})
+
+configure_file("${ClickHouse_SOURCE_DIR}/contrib/wolfssl/cmake/options.h.in" ${OPTION_FILE})
+# ---
+
+# add_library(_wolfssl "${WOLFSSL_SOURCES}")
+# target_include_directories(_wolfssl SYSTEM PUBLIC ${WOLFSSL_INCLUDE_DIR})
+# target_link_libraries(_wolfssl PRIVATE "${}")
+
+add_library(crypto ${WOLFSSL_SOURCES})
+add_library(ssl ${WOLFSSL_SOURCES})
+
+target_include_directories(crypto SYSTEM PUBLIC "${WOLFSSL_INCLUDE_DIR}" PUBLIC "${WOLFSSL_INCLUDE_DIR_DD}" PRIVATE "${WOLFSSL_INCLUDE_DIR_PRIVATE}")
+target_include_directories(ssl SYSTEM PUBLIC "${WOLFSSL_INCLUDE_DIR}" PUBLIC "${WOLFSSL_INCLUDE_DIR_DD}" PRIVATE "${WOLFSSL_INCLUDE_DIR_PRIVATE}")
+target_compile_definitions(crypto PRIVATE ${WOLFSSL_DEFINITIONS} PUBLIC "-DOPENSSL_EXTRA" "-DOPENSSL_ALL" "-DWOLFSSL_SHA3" "-DWOLFSSL_SHA384" "-DWOLFSSL_SHA512" "-DWOLFSSL_SHA224" "-DHAVE_AESGCM" "-DHAVE_CHACHA" "-DHAVE_POLY1305" "-DHAVE_ECC" "-DHAVE_CRL")
+target_compile_definitions(ssl PRIVATE ${WOLFSSL_DEFINITIONS} PUBLIC "-DOPENSSL_EXTRA" "-DOPENSSL_ALL" "-DWOLFSSL_SHA3" "-DWOLFSSL_SHA384" "-DWOLFSSL_SHA512" "-DWOLFSSL_SHA224" "-DHAVE_AESGCM" "-DHAVE_CHACHA" "-DHAVE_POLY1305" "-DHAVE_ECC" "-DHAVE_CRL")
+
+add_library(OpenSSL::Crypto ALIAS crypto)
+add_library(OpenSSL::SSL ALIAS ssl)
+
+# add_library(ch_contrib::wolfssl ALIAS _wolfssl)
