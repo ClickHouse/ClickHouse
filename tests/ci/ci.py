@@ -1065,18 +1065,19 @@ def main() -> int:
             )
 
             # rerun helper check
-            # FIXME: remove rerun_helper check and rely on ci cache only
             if check_name not in (
                 CI.JobNames.BUILD_CHECK,
             ):  # we might want to rerun build report job
                 rerun_helper = RerunHelper(commit, check_name_with_group)
                 if rerun_helper.is_already_finished_by_status():
+                    print("WARNING: Rerunning job with GH status ")
                     status = rerun_helper.get_finished_status()
                     assert status
-                    previous_status = status.state
                     print("::group::Commit Status")
                     print(status)
                     print("::endgroup::")
+                    # FIXME: try rerun, even if status is present. To enable manual restart via GH interface
+                    # previous_status = status.state
 
             # ci cache check
             if not previous_status and not ci_settings.no_ci_cache:

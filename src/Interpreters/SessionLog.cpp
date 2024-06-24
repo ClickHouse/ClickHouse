@@ -214,7 +214,7 @@ void SessionLog::addLoginSuccess(const UUID & auth_id,
                                  const ClientInfo & client_info,
                                  const UserPtr & login_user)
 {
-    DB::SessionLogElement log_entry(auth_id, SESSION_LOGIN_SUCCESS);
+    SessionLogElement log_entry(auth_id, SESSION_LOGIN_SUCCESS);
     log_entry.client_info = client_info;
 
     if (login_user)
