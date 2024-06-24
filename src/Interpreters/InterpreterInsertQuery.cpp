@@ -693,7 +693,6 @@ BlockIO InterpreterInsertQuery::execute()
 
         if (shouldAddSquashingFroStorage(table))
         {
-            size_t threads = presink_chains.size();
             bool table_prefers_large_blocks = table->prefersLargeBlocks();
 
             auto squashing = std::make_shared<ApplySquashingTransform>(
