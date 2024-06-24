@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/aggregate-functions/reference/welchttest
-sidebar_position: 212
+sidebar_position: 214
 sidebar_label: welchTTest
 ---
 
