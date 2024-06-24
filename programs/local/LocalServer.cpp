@@ -145,7 +145,6 @@ void LocalServer::initialize(Poco::Util::Application & self)
         config().getUInt("max_io_thread_pool_free_size", 0),
         config().getUInt("io_thread_pool_queue_size", 10000));
 
-
     const size_t active_parts_loading_threads = config().getUInt("max_active_parts_loading_thread_pool_size", 64);
     getActivePartsLoadingThreadPool().initialize(
         active_parts_loading_threads,
