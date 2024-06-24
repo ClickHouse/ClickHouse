@@ -29,7 +29,6 @@ TEST(PartitionActionBlocker, TestCancelForever)
 
 TEST(PartitionActionBlocker, TestCancel)
 {
-//    const std::string partition_id = "some partition id";
     PartitionActionBlocker blocker;
 
     {
