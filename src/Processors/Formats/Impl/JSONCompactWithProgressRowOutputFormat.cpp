@@ -4,9 +4,6 @@
 
 #include <IO/WriteHelpers.h>
 
-#include <Common/logger_useful.h>
-
-
 
 namespace DB
 {
@@ -24,7 +21,6 @@ void JSONCompactWithProgressRowOutputFormat::writeField(const IColumn & column, 
 {
     JSONUtils::writeFieldFromColumn(column, serialization, row_num, yield_strings, settings, *ostr);
     ++field_number;
-    LOG_DEBUG(getLogger("JSONCompactWithProgressRowOutputFormat"), "Field number: {}", field_number);
 }
 
 void JSONCompactWithProgressRowOutputFormat::writeFieldDelimiter()
@@ -71,8 +67,6 @@ void JSONCompactWithProgressRowOutputFormat::writeExtremesElement(const char * t
 
 void JSONCompactWithProgressRowOutputFormat::onProgress(const Progress & value)
 {
-    LOG_DEBUG(getLogger("JSONCompactWithProgressRowOutputFormat"), "onProgress: {}", value.read_rows);
-
     progress.incrementPiecewiseAtomically(value);
     String progress_line;
     WriteBufferFromString buf(progress_line);
