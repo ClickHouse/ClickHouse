@@ -2355,32 +2355,25 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
         {
             auto checkAndGetNullMap = [&](const ColumnWithTypeAndName & arg) -> const NullMap *
             {
-                const NullMap * nullmap = nullptr;
                 if (arg.type->isNullable())
                 {
                     bool is_const = checkColumnConst<ColumnNullable>(arg.column.get());
-                    const ColumnNullable * col = is_const ? checkAndGetColumnConstData<ColumnNullable>(arg.column.get()) :
-                        checkAndGetColumn<ColumnNullable>(arg.column.get());
-                    nullmap = &(col->getNullMapData());
+                    const ColumnNullable * col = is_const ? checkAndGetColumnConstData<ColumnNullable>(arg.column.get()) : checkAndGetColumn<ColumnNullable>(arg.column.get());
+                    return &(col->getNullMapData());
                 }
-                return nullmap;
+                return nullptr;
             };
             const NullMap * left_nullmap_col = checkAndGetNullMap(left_argument);
             const NullMap * right_nullmap_col = checkAndGetNullMap(right_argument);
             auto res = executeImpl2(createBlockWithNestedColumns(arguments), removeNullable(result_type), input_rows_count, left_nullmap_col, right_nullmap_col);
-            if (!left_argument.type->isNullable() && !right_argument.type->isNullable())
-                return res;
-            else
+            auto result_nullmap_col = ColumnUInt8::create(res->size(), 0);
+            PaddedPODArray<UInt8> & result_nullmap_data = result_nullmap_col->getData();
+            if (left_argument.type->isNullable() && right_argument.type->isNullable())
             {
-                auto result_nullmap_col = ColumnUInt8::create(res->size(), 0);
-                PaddedPODArray<UInt8> & result_nullmap_data = result_nullmap_col->getData();
-                if (left_argument.type->isNullable() && right_argument.type->isNullable())
-                {
-                    for (size_t i = 0; i < res->size(); ++i)
-                        result_nullmap_data[i] = (*left_nullmap_col)[i] && (*right_nullmap_col)[i];
-                }
-                return ColumnNullable::create(std::move(res), std::move(result_nullmap_col));
+                for (size_t i = 0; i < res->size(); ++i)
+                    result_nullmap_data[i] = (*left_nullmap_col)[i] && (*right_nullmap_col)[i];
             }
+            return ColumnNullable::create(std::move(res), std::move(result_nullmap_col));
         }
 
         const auto * const left_generic = left_argument.type.get();
