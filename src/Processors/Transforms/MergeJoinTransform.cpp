@@ -9,7 +9,6 @@
 #include <base/defines.h>
 #include <base/types.h>
 
-#include <Common/logger_useful.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/IColumn.h>
@@ -19,6 +18,7 @@
 #include <Interpreters/FullSortingMergeJoin.h>
 #include <Interpreters/TableJoin.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
+#include <Processors/Chunk.h>
 #include <Processors/Transforms/MergeJoinTransform.h>
 
 
@@ -260,6 +260,7 @@ void FullMergeJoinCursor::setChunk(Chunk && chunk)
         return;
     }
 
+    convertToFullIfSparse(chunk);
     current_chunk = std::move(chunk);
     cursor = SortCursorImpl(sample_block, current_chunk.getColumns(), desc);
 }
