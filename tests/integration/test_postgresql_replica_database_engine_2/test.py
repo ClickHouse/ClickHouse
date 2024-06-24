@@ -39,9 +39,8 @@ from helpers.postgres_utility import queries
 
 
 cluster = ClickHouseCluster(__file__)
-
-instance1 = cluster.add_instance(
-    "instance1",
+instance = cluster.add_instance(
+    "instance",
     main_configs=["configs/log_conf.xml"],
     user_configs=["configs/users.xml"],
     with_postgres=True,
@@ -56,37 +55,19 @@ instance2 = cluster.add_instance(
     stay_alive=True,
 )
 
-instance4 = cluster.add_instance(
-    "instance4",
-    main_configs=["configs/log_conf.xml"],
-    user_configs=["configs/users.xml"],
-    with_postgres11=True,
-    stay_alive=True,
-)
 
-pg_manager1 = PostgresManager()
+pg_manager = PostgresManager()
 pg_manager2 = PostgresManager()
 pg_manager_instance2 = PostgresManager()
 pg_manager3 = PostgresManager()
-pg_manager4 = PostgresManager()
-
-pg_managers = {
-    "instance1": pg_manager1,
-    "instance4": pg_manager4,
-}
-
-pg_hostnames = {
-    "instance1": "postgres1",
-    "instance4": "postgres11",
-}
 
 
 @pytest.fixture(scope="module")
 def started_cluster():
     try:
         cluster.start()
-        pg_manager1.init(
-            instance1,
+        pg_manager.init(
+            instance,
             cluster.postgres_ip,
             cluster.postgres_port,
             default_database="postgres_database",
@@ -107,12 +88,6 @@ def started_cluster():
             cluster.postgres_port,
             default_database="postgres-postgres",
         )
-        pg_manager4.init(
-            instance4,
-            cluster.postgres_ip,
-            cluster.postgres_port,
-            default_database="postgres_database",
-        )
 
         yield cluster
 
@@ -127,12 +102,8 @@ def setup_teardown():
     pg_manager.restart()
 
 
-@pytest.mark.parametrize("instance_name", ["instance1", "instance4"])
 def test_add_new_table_to_replication(started_cluster):
     NUM_TABLES = 5
-
-    instance = cluster.instances[instance_name]
-    pg_manager = pg_managers.get(instance_name)
 
     pg_manager.create_and_fill_postgres_tables(NUM_TABLES, 10000)
     pg_manager.create_materialized_db(
@@ -241,13 +212,8 @@ def test_add_new_table_to_replication(started_cluster):
     check_several_tables_are_synchronized(instance, NUM_TABLES + 3)
 
 
-@pytest.mark.parametrize("instance_name", ["instance1", "instance4"])
 def test_remove_table_from_replication(started_cluster):
     NUM_TABLES = 5
-
-    instance = cluster.instances[instance_name]
-    pg_manager = pg_managers.get(instance_name)
-
     pg_manager.create_and_fill_postgres_tables(NUM_TABLES, 10000)
     pg_manager.create_materialized_db(
         ip=started_cluster.postgres_ip, port=started_cluster.postgres_port
@@ -327,11 +293,7 @@ def test_remove_table_from_replication(started_cluster):
     )
 
 
-@pytest.mark.parametrize("instance_name", ["instance1", "instance4"])
 def test_predefined_connection_configuration(started_cluster):
-    instance = cluster.instances[instance_name]
-    pg_manager = pg_managers.get(instance_name)
-
     pg_manager.execute(f"DROP TABLE IF EXISTS test_table")
     pg_manager.execute(
         f"CREATE TABLE test_table (key integer PRIMARY KEY, value integer)"
@@ -347,7 +309,6 @@ def test_predefined_connection_configuration(started_cluster):
 insert_counter = 0
 
 
-@pytest.mark.parametrize("instance_name", ["instance1"])
 def test_database_with_single_non_default_schema(started_cluster):
     cursor = pg_manager.get_db_cursor()
     NUM_TABLES = 5
@@ -356,9 +317,6 @@ def test_database_with_single_non_default_schema(started_cluster):
     clickhouse_postgres_db = "postgres_database_with_schema"
     global insert_counter
     insert_counter = 0
-
-    instance = cluster.instances[instance_name]
-    pg_manager = pg_managers.get(instance_name)
 
     def insert_into_tables():
         global insert_counter
@@ -449,7 +407,6 @@ def test_database_with_single_non_default_schema(started_cluster):
     )
 
 
-@pytest.mark.parametrize("instance_name", ["instance1"])
 def test_database_with_multiple_non_default_schemas_1(started_cluster):
     cursor = pg_manager.get_db_cursor()
 
@@ -460,9 +417,6 @@ def test_database_with_multiple_non_default_schemas_1(started_cluster):
     publication_tables = ""
     global insert_counter
     insert_counter = 0
-
-    instance = cluster.instances[instance_name]
-    pg_manager = pg_managers.get(instance_name)
 
     def insert_into_tables():
         global insert_counter
@@ -562,7 +516,6 @@ def test_database_with_multiple_non_default_schemas_1(started_cluster):
     )
 
 
-@pytest.mark.parametrize("instance_name", ["instance1"])
 def test_database_with_multiple_non_default_schemas_2(started_cluster):
     cursor = pg_manager.get_db_cursor()
     NUM_TABLES = 2
@@ -571,9 +524,6 @@ def test_database_with_multiple_non_default_schemas_2(started_cluster):
     materialized_db = "test_database"
     global insert_counter
     insert_counter = 0
-
-    instance = cluster.instances[instance_name]
-    pg_manager = pg_managers.get(instance_name)
 
     def check_all_tables_are_synchronized():
         for i in range(schemas_num):
@@ -678,13 +628,9 @@ def test_database_with_multiple_non_default_schemas_2(started_cluster):
     )
 
 
-@pytest.mark.parametrize("instance_name", ["instance1"])
 def test_table_override(started_cluster):
     table_name = "table_override"
     materialized_database = "test_database"
-
-    instance = cluster.instances[instance_name]
-    pg_manager = pg_managers.get(instance_name)
 
     pg_manager.create_postgres_table(table_name, template=postgres_table_template_6)
     instance.query(
@@ -758,11 +704,7 @@ def test_table_override(started_cluster):
     )
 
 
-@pytest.mark.parametrize("instance_name", ["instance1", "instance4"])
 def test_materialized_view(started_cluster):
-    instance = cluster.instances[instance_name]
-    pg_manager = pg_managers.get(instance_name)
-
     pg_manager.execute(f"DROP TABLE IF EXISTS test_table")
     pg_manager.execute(
         f"CREATE TABLE test_table (key integer PRIMARY KEY, value integer)"
@@ -842,13 +784,8 @@ def test_too_many_parts(started_cluster):
     pg_manager2.drop_materialized_db()
 
 
-@pytest.mark.parametrize("instance_name", ["instance1", "instance4"])
 def test_toast(started_cluster):
     table = "test_toast"
-
-    instance = cluster.instances[instance_name]
-    pg_manager = pg_managers.get(instance_name)
-
     pg_manager.create_postgres_table(
         table,
         "",
@@ -879,13 +816,8 @@ VALUES (1, (SELECT array_to_string(ARRAY(SELECT chr((100 + round(random() * 25))
     )
 
 
-@pytest.mark.parametrize("instance_name", ["instance1"])
 def test_replica_consumer(started_cluster):
     table = "test_replica_consumer"
-
-    instance = cluster.instances[instance_name]
-    pg_manager = pg_managers.get(instance_name)
-
     pg_manager_instance2.restart()
 
     pg_manager.create_postgres_table(table)
@@ -934,12 +866,8 @@ def test_replica_consumer(started_cluster):
     pg_manager_instance2.clear()
 
 
-@pytest.mark.parametrize("instance_name", ["instance1", "instance4"])
 def test_bad_connection_options(started_cluster):
     table = "test_bad_connection_options"
-
-    instance = cluster.instances[instance_name]
-    pg_manager = pg_managers.get(instance_name)
 
     pg_manager.create_postgres_table(table)
     instance.query(
@@ -967,11 +895,7 @@ def test_bad_connection_options(started_cluster):
     pg_manager.drop_materialized_db("test_database")
 
 
-@pytest.mark.parametrize("instance_name", ["instance1", "instance4"])
 def test_failed_load_from_snapshot(started_cluster):
-    instance = cluster.instances[instance_name]
-    pg_manager = pg_managers.get(instance_name)
-
     if instance.is_built_with_sanitizer() or instance.is_debug_build():
         pytest.skip(
             "Sanitizers and debug mode are skipped, because this test thrown logical error"
@@ -999,12 +923,8 @@ def test_failed_load_from_snapshot(started_cluster):
     )
 
 
-@pytest.mark.parametrize("instance_name", ["instance1"])
 def test_symbols_in_publication_name(started_cluster):
     table = "test_symbols_in_publication_name"
-
-    instance = cluster.instances[instance_name]
-    pg_manager = pg_managers.get(instance_name)
 
     pg_manager3.create_postgres_table(table)
     instance.query(
@@ -1025,12 +945,8 @@ def test_symbols_in_publication_name(started_cluster):
     )
 
 
-@pytest.mark.parametrize("instance_name", ["instance1", "instance4"])
 def test_generated_columns(started_cluster):
     table = "test_generated_columns"
-
-    instance = cluster.instances[instance_name]
-    pg_manager = pg_managers.get(instance_name)
 
     pg_manager.create_postgres_table(
         table,
@@ -1075,12 +991,8 @@ def test_generated_columns(started_cluster):
     )
 
 
-@pytest.mark.parametrize("instance_name", ["instance1", "instance4"])
 def test_default_columns(started_cluster):
     table = "test_default_columns"
-
-    instance = cluster.instances[instance_name]
-    pg_manager = pg_managers.get(instance_name)
 
     pg_manager.create_postgres_table(
         table,
@@ -1127,12 +1039,8 @@ def test_default_columns(started_cluster):
     )
 
 
-@pytest.mark.parametrize("instance_name", ["instance1", "instance4"])
 def test_dependent_loading(started_cluster):
     table = "test_dependent_loading"
-
-    instance = cluster.instances[instance_name]
-    pg_manager = pg_managers.get(instance_name)
 
     pg_manager.create_postgres_table(table)
     instance.query(
