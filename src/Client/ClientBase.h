@@ -190,7 +190,7 @@ protected:
     /// Adjust some settings after command line options and config had been processed.
     void adjustSettings();
 
-    void setDefaultFormatsAndCompressionFromConfiguration();
+    void setDefaultFormatsFromConfiguration();
 
     void initTTYBuffer(ProgressOption progress);
 
@@ -224,7 +224,6 @@ protected:
     String pager;
 
     String default_output_format; /// Query results output format.
-    CompressionMethod default_output_compression_method = CompressionMethod::None;
     String default_input_format; /// Tables' format for clickhouse-local.
 
     bool select_into_file = false; /// If writing result INTO OUTFILE. It affects progress rendering.

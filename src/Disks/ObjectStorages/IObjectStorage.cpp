@@ -18,11 +18,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-const MetadataStorageMetrics & IObjectStorage::getMetadataStorageMetrics() const
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'getMetadataStorageMetrics' is not implemented");
-}
-
 bool IObjectStorage::existsOrHasAnyChild(const std::string & path) const
 {
     RelativePathsWithMetadata files;
@@ -30,16 +25,16 @@ bool IObjectStorage::existsOrHasAnyChild(const std::string & path) const
     return !files.empty();
 }
 
-void IObjectStorage::listObjects(const std::string &, RelativePathsWithMetadata &, size_t) const
+void IObjectStorage::listObjects(const std::string &, RelativePathsWithMetadata &, int) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "listObjects() is not supported");
 }
 
 
-ObjectStorageIteratorPtr IObjectStorage::iterate(const std::string & path_prefix, size_t max_keys) const
+ObjectStorageIteratorPtr IObjectStorage::iterate(const std::string & path_prefix) const
 {
     RelativePathsWithMetadata files;
-    listObjects(path_prefix, files, max_keys);
+    listObjects(path_prefix, files, 0);
 
     return std::make_shared<ObjectStorageIteratorFromList>(std::move(files));
 }
@@ -89,12 +84,16 @@ const std::string & IObjectStorage::getCacheName() const
 
 ReadSettings IObjectStorage::patchSettings(const ReadSettings & read_settings) const
 {
-    return read_settings;
+    ReadSettings settings{read_settings};
+    settings.for_object_storage = true;
+    return settings;
 }
 
 WriteSettings IObjectStorage::patchSettings(const WriteSettings & write_settings) const
 {
-    return write_settings;
+    WriteSettings settings{write_settings};
+    settings.for_object_storage = true;
+    return settings;
 }
 
 }

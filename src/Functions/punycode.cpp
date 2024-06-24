@@ -24,7 +24,7 @@ namespace ErrorCodes
 /// Implementation of
 /// - punycodeEncode(), punycodeDecode() and tryPunycodeDecode(), see https://en.wikipedia.org/wiki/Punycode
 
-enum class ErrorHandling : uint8_t
+enum class ErrorHandling
 {
     Throw,  /// Throw exception
     Empty   /// Return empty string

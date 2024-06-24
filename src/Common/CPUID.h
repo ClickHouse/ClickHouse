@@ -69,9 +69,9 @@ union CPUInfo
         UInt32 edx;
     } registers;
 
-    explicit CPUInfo(UInt32 op) noexcept { cpuid(op, info); }
+    inline explicit CPUInfo(UInt32 op) noexcept { cpuid(op, info); }
 
-    CPUInfo(UInt32 op, UInt32 sub_op) noexcept { cpuid(op, sub_op, info); }
+    inline CPUInfo(UInt32 op, UInt32 sub_op) noexcept { cpuid(op, sub_op, info); }
 };
 
 inline bool haveRDTSCP() noexcept

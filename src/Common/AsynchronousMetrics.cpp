@@ -1159,7 +1159,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
 
                     core_id = std::stoi(s.substr(core_id_start));
                 }
-                else if (s.starts_with("cpu MHz"))
+                else if (s.rfind("cpu MHz", 0) == 0)
                 {
                     if (auto colon = s.find_first_of(':'))
                     {

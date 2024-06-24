@@ -297,6 +297,7 @@ namespace
             CASE_WINDOW_KIND(Year)
 #undef CASE_WINDOW_KIND
         }
+        UNREACHABLE();
     }
 
     class AddingAggregatedChunkInfoTransform : public ISimpleTransform
@@ -919,6 +920,7 @@ UInt32 StorageWindowView::getWindowLowerBound(UInt32 time_sec)
         CASE_WINDOW_KIND(Year)
 #undef CASE_WINDOW_KIND
     }
+    UNREACHABLE();
 }
 
 UInt32 StorageWindowView::getWindowUpperBound(UInt32 time_sec)
@@ -946,6 +948,7 @@ UInt32 StorageWindowView::getWindowUpperBound(UInt32 time_sec)
         CASE_WINDOW_KIND(Year)
 #undef CASE_WINDOW_KIND
     }
+    UNREACHABLE();
 }
 
 void StorageWindowView::addFireSignal(std::set<UInt32> & signals)
@@ -960,7 +963,8 @@ void StorageWindowView::addFireSignal(std::set<UInt32> & signals)
 void StorageWindowView::updateMaxTimestamp(UInt32 timestamp)
 {
     std::lock_guard lock(fire_signal_mutex);
-    max_timestamp = std::max(timestamp, max_timestamp);
+    if (timestamp > max_timestamp)
+        max_timestamp = timestamp;
 }
 
 void StorageWindowView::updateMaxWatermark(UInt32 watermark)
@@ -1450,7 +1454,8 @@ void StorageWindowView::writeIntoWindowView(
             UInt32 watermark_lower_bound
                 = addTime(t_max_watermark, window_view.slide_kind, -window_view.slide_num_units, *window_view.time_zone);
 
-            lateness_bound = std::min(watermark_lower_bound, lateness_bound);
+            if (watermark_lower_bound < lateness_bound)
+                lateness_bound = watermark_lower_bound;
         }
     }
     else if (!window_view.is_time_column_func_now)
@@ -1546,7 +1551,10 @@ void StorageWindowView::writeIntoWindowView(
             const auto & timestamp_column = *block.getByName(window_view.timestamp_column_name).column;
             const auto & timestamp_data = typeid_cast<const ColumnUInt32 &>(timestamp_column).getData();
             for (const auto & timestamp : timestamp_data)
-                block_max_timestamp = std::max(timestamp, block_max_timestamp);
+            {
+                if (timestamp > block_max_timestamp)
+                    block_max_timestamp = timestamp;
+            }
         }
 
         if (block_max_timestamp)

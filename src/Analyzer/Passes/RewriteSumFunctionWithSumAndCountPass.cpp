@@ -110,7 +110,7 @@ private:
         function_node.resolveAsFunction(function->build(function_node.getArgumentColumns()));
     }
 
-    static void resolveAsAggregateFunctionNode(FunctionNode & function_node, const DataTypePtr & argument_type)
+    static inline void resolveAsAggregateFunctionNode(FunctionNode & function_node, const DataTypePtr & argument_type)
     {
         AggregateFunctionProperties properties;
         const auto aggregate_function = AggregateFunctionFactory::instance().get(function_node.getFunctionName(),

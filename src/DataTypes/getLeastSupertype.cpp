@@ -19,7 +19,6 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeVariant.h>
-#include <DataTypes/DataTypeDynamic.h>
 
 
 namespace DB
@@ -80,7 +79,8 @@ DataTypePtr getNumericType(const TypeIndexSet & types)
 
     auto maximize = [](size_t & what, size_t value)
     {
-        what = std::max(value, what);
+        if (value > what)
+            what = value;
     };
 
     for (const auto & type : types)
@@ -255,24 +255,6 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
 
         if (all_equal)
             return types[0];
-    }
-
-    /// If one of the types is Dynamic, the supertype is Dynamic
-    {
-        bool have_dynamic = false;
-        size_t max_dynamic_types = 0;
-
-        for (const auto & type : types)
-        {
-            if (const auto & dynamic_type = typeid_cast<const DataTypeDynamic *>(type.get()))
-            {
-                have_dynamic = true;
-                max_dynamic_types = std::max(max_dynamic_types, dynamic_type->getMaxDynamicTypes());
-            }
-        }
-
-        if (have_dynamic)
-            return std::make_shared<DataTypeDynamic>(max_dynamic_types);
     }
 
     /// Recursive rules
@@ -614,7 +596,9 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
                     continue;
                 }
 
-                max_scale = std::max(max_scale, getDecimalScale(*type));
+                UInt32 scale = getDecimalScale(*type);
+                if (scale > max_scale)
+                    max_scale = scale;
             }
 
             UInt32 min_precision = max_scale + leastDecimalPrecisionFor(max_int);
