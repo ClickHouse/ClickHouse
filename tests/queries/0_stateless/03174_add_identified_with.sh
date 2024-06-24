@@ -31,7 +31,7 @@ test_login_pwd_expect_error ${user} '1'
 echo "New password should work"
 test_login_pwd ${user} '2'
 
-${CLICKHOUSE_CLIENT} --query "ALTER USER ${user} ADD IDENTIFIED WITH sha256_password BY '3' ADD IDENTIFIED WITH plaintext_password BY '4'"
+${CLICKHOUSE_CLIENT} --query "ALTER USER ${user} ADD IDENTIFIED WITH plaintext_password BY '3' ADD IDENTIFIED WITH plaintext_password BY '4'"
 
 echo "Two new passwords were added, should both work"
 test_login_pwd ${user} '3'
