@@ -590,48 +590,37 @@ public:
         {
             if (scale_a != 1)
             {
-                if constexpr (is_compare)
+                for (size_t i = 0; i < size; ++i)
                 {
-                    for (size_t i = 0; i < size; ++i)
-                        c[i] = applyScaled<true>(
-                            static_cast<NativeResultType>(unwrap<op_case, OpCase::LeftConstant>(a, i)),
-                            static_cast<NativeResultType>(unwrap<op_case, OpCase::RightConstant>(b, i)),
-                            scale_a,
-                            left_nullmap && ((*left_nullmap)[i]),
-                            right_nullmap && ((*right_nullmap)[i]));
-                }
-                else
-                {
-                    for (size_t i = 0; i < size; ++i)
-                        c[i] = applyScaled<true>(
-                            static_cast<NativeResultType>(unwrap<op_case, OpCase::LeftConstant>(a, i)),
-                            static_cast<NativeResultType>(unwrap<op_case, OpCase::RightConstant>(b, i)),
-                            scale_a
-                            );
+                    bool left_null = false;
+                    bool right_null = false;
+                    if constexpr (is_compare)
+                    {
+                        left_null = left_nullmap && (*left_nullmap)[i];
+                        right_null = right_nullmap && (*right_nullmap)[i];
+                    }
+                    c[i] = applyScaled<true>(
+                        static_cast<NativeResultType>(unwrap<op_case, OpCase::LeftConstant>(a, i)),
+                        static_cast<NativeResultType>(unwrap<op_case, OpCase::RightConstant>(b, i)),
+                        scale_a, left_null, right_null);
                 }
                 return;
             }
             else if (scale_b != 1)
             {
-                if constexpr (is_compare)
+                for (size_t i = 0; i < size; ++i)
                 {
-                    for (size_t i = 0; i < size; ++i)
+                    bool left_null = false;
+                    bool right_null = false;
+                    if constexpr (is_compare)
                     {
-                        c[i] = applyScaled<false>(
-                            static_cast<NativeResultType>(unwrap<op_case, OpCase::LeftConstant>(a, i)),
-                            static_cast<NativeResultType>(unwrap<op_case, OpCase::RightConstant>(b, i)),
-                            scale_b,
-                            left_nullmap && ((*left_nullmap)[i]),
-                            right_nullmap && ((*right_nullmap)[i]));
+                        left_null = left_nullmap && (*left_nullmap)[i];
+                        right_null = right_nullmap && (*right_nullmap)[i];
                     }
-                }
-                else
-                {
-                    for (size_t i = 0; i < size; ++i)
-                        c[i] = applyScaled<false>(
-                            static_cast<NativeResultType>(unwrap<op_case, OpCase::LeftConstant>(a, i)),
-                            static_cast<NativeResultType>(unwrap<op_case, OpCase::RightConstant>(b, i)),
-                            scale_b);
+                    c[i] = applyScaled<false>(
+                        static_cast<NativeResultType>(unwrap<op_case, OpCase::LeftConstant>(a, i)),
+                        static_cast<NativeResultType>(unwrap<op_case, OpCase::RightConstant>(b, i)),
+                        scale_b, left_null, right_null);
                 }
                 return;
             }
