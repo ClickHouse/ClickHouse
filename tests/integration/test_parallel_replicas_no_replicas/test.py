@@ -9,6 +9,7 @@ initiator = cluster.add_instance(
     "initiator", main_configs=["configs/remote_servers.xml"], with_zookeeper=True
 )
 
+
 @pytest.fixture(scope="module")
 def start_cluster():
     try:
@@ -40,10 +41,10 @@ def test_skip_all_replicas(start_cluster, skip_unavailable_shards):
     with pytest.raises(QueryRuntimeException):
         initiator.query(
             f"SELECT key, count() FROM {table_name}  GROUP BY key ORDER BY key",
-            settings = {
+            settings={
                 "allow_experimental_parallel_reading_from_replicas": 2,
                 "max_parallel_replicas": 3,
                 "cluster_for_parallel_replicas": cluster_name,
                 "skip_unavailable_shards": skip_unavailable_shards,
-            }
+            },
         )
