@@ -2,15 +2,20 @@
 /// This file was edited for ClickHouse.
 
 #include <memory>
+#include <string>
 
 #include "rocksdb/version.h"
-#include "util/string_util.h"
+#include "rocksdb/utilities/object_registry.h"
 
 // The build script may replace these values with real values based
 // on whether or not GIT is available and the platform settings
 static const std::string rocksdb_build_git_sha  = "rocksdb_build_git_sha:0";
 static const std::string rocksdb_build_git_tag = "rocksdb_build_git_tag:master";
 static const std::string rocksdb_build_date = "rocksdb_build_date:2000-01-01";
+
+std::unordered_map<std::string, ROCKSDB_NAMESPACE::RegistrarFunc> ROCKSDB_NAMESPACE::ObjectRegistry::builtins_ = {
+
+};
 
 namespace ROCKSDB_NAMESPACE {
 static void AddProperty(std::unordered_map<std::string, std::string> *props, const std::string& name) {
@@ -39,9 +44,9 @@ const std::unordered_map<std::string, std::string>& GetRocksBuildProperties() {
 }
 
 std::string GetRocksVersionAsString(bool with_patch) {
-  std::string version = ToString(ROCKSDB_MAJOR) + "." + ToString(ROCKSDB_MINOR);
+  std::string version = std::to_string(ROCKSDB_MAJOR) + "." + std::to_string(ROCKSDB_MINOR);
   if (with_patch) {
-    return version + "." + ToString(ROCKSDB_PATCH);
+    return version + "." + std::to_string(ROCKSDB_PATCH);
   } else {
     return version;
   }

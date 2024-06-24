@@ -38,6 +38,7 @@
 #include <rocksdb/advanced_options.h>
 #include <rocksdb/env.h>
 #include <rocksdb/options.h>
+#include <rocksdb/statistics.h>
 #include <rocksdb/table.h>
 #include <rocksdb/convenience.h>
 #include <rocksdb/utilities/db_ttl.h>
@@ -434,12 +435,22 @@ void StorageEmbeddedRocksDB::initDB()
 
     rocksdb::Options merged = base;
     rocksdb::BlockBasedTableOptions table_options;
+    /// For backward compatibility with rocksdb 6.26, currently we use checksum type 3 and format_version 5 by default
+    /// TODO: @canhld94 once verify that the new rocksdb version is stable, we can change the default value (checksum type -> 4 and format_version -> 6)
+    if (getSettings().rocksdb_buildin_block_based_table_options_checksum.value > static_cast<UInt32>(rocksdb::ChecksumType::kXXH3))
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Invalid checksum type for block based table options: {}, max value: {}",
+            getSettings().rocksdb_buildin_block_based_table_options_checksum.value,
+            static_cast<UInt32>(rocksdb::ChecksumType::kXXH3));
+    table_options.checksum = static_cast<rocksdb::ChecksumType>(getSettings().rocksdb_buildin_block_based_table_options_checksum.value);
+    table_options.format_version = getSettings().rocksdb_buildin_block_based_table_options_format_version;
 
     const auto & config = getContext()->getConfigRef();
     if (config.has("rocksdb.options"))
     {
         auto config_options = getOptionsFromConfig(config, "rocksdb.options");
-        status = rocksdb::GetDBOptionsFromMap(merged, config_options, &merged);
+        status = rocksdb::GetDBOptionsFromMap({}, merged, config_options, &merged);
         if (!status.ok())
         {
             throw Exception(ErrorCodes::ROCKSDB_ERROR, "Fail to merge rocksdb options from 'rocksdb.options' at: {}: {}",
@@ -449,7 +460,7 @@ void StorageEmbeddedRocksDB::initDB()
     if (config.has("rocksdb.column_family_options"))
     {
         auto column_family_options = getOptionsFromConfig(config, "rocksdb.column_family_options");
-        status = rocksdb::GetColumnFamilyOptionsFromMap(merged, column_family_options, &merged);
+        status = rocksdb::GetColumnFamilyOptionsFromMap({}, merged, column_family_options, &merged);
         if (!status.ok())
         {
             throw Exception(ErrorCodes::ROCKSDB_ERROR, "Fail to merge rocksdb options from 'rocksdb.column_family_options' at: {}: {}",
@@ -459,7 +470,7 @@ void StorageEmbeddedRocksDB::initDB()
     if (config.has("rocksdb.block_based_table_options"))
     {
         auto block_based_table_options = getOptionsFromConfig(config, "rocksdb.block_based_table_options");
-        status = rocksdb::GetBlockBasedTableOptionsFromMap(table_options, block_based_table_options, &table_options);
+        status = rocksdb::GetBlockBasedTableOptionsFromMap({}, table_options, block_based_table_options, &table_options);
         if (!status.ok())
         {
             throw Exception(ErrorCodes::ROCKSDB_ERROR, "Fail to merge rocksdb options from 'rocksdb.block_based_table_options' at: {}: {}",
@@ -484,7 +495,7 @@ void StorageEmbeddedRocksDB::initDB()
             if (config.has(config_key))
             {
                 auto table_config_options = getOptionsFromConfig(config, config_key);
-                status = rocksdb::GetDBOptionsFromMap(merged, table_config_options, &merged);
+                status = rocksdb::GetDBOptionsFromMap({}, merged, table_config_options, &merged);
                 if (!status.ok())
                 {
                     throw Exception(ErrorCodes::ROCKSDB_ERROR, "Fail to merge rocksdb options from '{}' at: {}: {}",
@@ -496,7 +507,7 @@ void StorageEmbeddedRocksDB::initDB()
             if (config.has(config_key))
             {
                 auto table_column_family_options = getOptionsFromConfig(config, config_key);
-                status = rocksdb::GetColumnFamilyOptionsFromMap(merged, table_column_family_options, &merged);
+                status = rocksdb::GetColumnFamilyOptionsFromMap({}, merged, table_column_family_options, &merged);
                 if (!status.ok())
                 {
                     throw Exception(ErrorCodes::ROCKSDB_ERROR, "Fail to merge rocksdb options from '{}' at: {}: {}",
@@ -508,7 +519,7 @@ void StorageEmbeddedRocksDB::initDB()
             if (config.has(config_key))
             {
                 auto block_based_table_options = getOptionsFromConfig(config, config_key);
-                status = rocksdb::GetBlockBasedTableOptionsFromMap(table_options, block_based_table_options, &table_options);
+                status = rocksdb::GetBlockBasedTableOptionsFromMap({}, table_options, block_based_table_options, &table_options);
                 if (!status.ok())
                 {
                     throw Exception(ErrorCodes::ROCKSDB_ERROR, "Fail to merge rocksdb options from '{}' at: {}: {}",
