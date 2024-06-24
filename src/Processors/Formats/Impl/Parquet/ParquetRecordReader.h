@@ -49,7 +49,8 @@ private:
 
     Poco::Logger * log;
 
-    struct ChunkReader {
+    struct ChunkReader
+    {
         Block sample_block;
         std::vector<int> col_indice;
         ParquetColReaders column_readers;
