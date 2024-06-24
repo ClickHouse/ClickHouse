@@ -679,6 +679,9 @@ struct ContextSharedPart : boost::noncopyable
             }
         }
 
+        LOG_TRACE(log, "Shutting down AccessControl");
+        access_control->shutdown();
+
         {
             std::lock_guard lock(mutex);
 
