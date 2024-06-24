@@ -1,6 +1,7 @@
 #include <Columns/ColumnArray.h>
 
 #include <Formats/FormatSettings.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/Serializations/SerializationArray.h>
@@ -12,6 +13,7 @@
 
 #include <Core/NamesAndTypes.h>
 #include <Columns/ColumnConst.h>
+#include <Functions/FunctionHelpers.h>
 
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
@@ -61,7 +63,12 @@ SerializationPtr DataTypeArray::doGetDefaultSerialization() const
 
 size_t DataTypeArray::getNumberOfDimensions() const
 {
-    const DataTypeArray * nested_array = typeid_cast<const DataTypeArray *>(nested.get());
+    DataTypePtr nestedType = nested;
+    if (nested->isNullable())
+    {
+        nestedType = checkAndGetDataType<DataTypeNullable>(nested.get())->getNestedType();
+    }
+    const DataTypeArray * nested_array = typeid_cast<const DataTypeArray *>(nestedType.get());
     if (!nested_array)
         return 1;
     return 1 + nested_array->getNumberOfDimensions();   /// Every modern C++ compiler optimizes tail recursion.
