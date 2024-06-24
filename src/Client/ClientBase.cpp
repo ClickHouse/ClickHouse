@@ -3042,9 +3042,9 @@ void ClientBase::init(int argc, char ** argv)
 
         ("config-file,C", po::value<std::string>(), "config-file path")
 
-        ("query,q", po::value<std::vector<std::string>>()->multitoken(), R"(query; can be specified multiple times (--query "SELECT 1" --query "SELECT 2"...))")
+        ("query,q", po::value<std::vector<std::string>>()->multitoken(), R"(query; can be specified multiple times (--query "SELECT 1" --query "SELECT 2"...); it is also possible to pass multiple queries separated by semicolon (--query "SELECT 1; SELECT 2; ..."), but insert into queries with any format are special cases, and they are separated by empty line)")
         ("queries-file", po::value<std::vector<std::string>>()->multitoken(), "file path with queries to execute; multiple files can be specified (--queries-file file1 file2...)")
-        ("multiquery,n", "Obsolete (does nothing, multiquery is the default)")
+        ("multiquery,n", "Obsolete (does nothing)")
         ("multiline,m", "If specified, allow multiline queries (do not send the query on Enter)")
         ("database,d", po::value<std::string>(), "database")
         ("query_kind", po::value<std::string>()->default_value("initial_query"), "One of initial_query/secondary_query/no_query")
