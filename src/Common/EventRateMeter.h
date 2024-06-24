@@ -14,8 +14,9 @@ namespace DB
 class EventRateMeter
 {
 public:
-    explicit EventRateMeter(double now, double period_)
+    explicit EventRateMeter(double now, double period_, double step_ = 0.0)
         : period(period_)
+        , step(step_)
         , half_decay_time(period * std::numbers::ln2) // for `ExponentiallySmoothedAverage::sumWeights()` to be equal to `1/period`
     {
         reset(now);
@@ -38,7 +39,16 @@ public:
         if (now - period <= start) // precise counting mode
             events = ExponentiallySmoothedAverage(events.value + count, now);
         else // exponential smoothing mode
-            events.add(count, now, half_decay_time);
+        {
+            // Adding events too often lead to low precision due to smoothing too often, so we buffer new events and add them in steps
+            step_count += count;
+            if (step_start + step <= now)
+            {
+                events.add(step_count, now, half_decay_time);
+                step_start = now;
+                step_count = 0;
+            }
+        }
     }
 
     /// Compute average event rate throughout `[now - period, now]` period.
@@ -58,16 +68,20 @@ public:
     void reset(double now)
     {
         start = now;
+        step_start = now;
         events = ExponentiallySmoothedAverage();
         data_points = 0;
     }
 
 private:
     const double period;
+    const double step; // duration of a step
     const double half_decay_time;
     double start; // Instant in past without events before it; when measurement started or reset
     ExponentiallySmoothedAverage events; // Estimated number of events in the last `period`
     size_t data_points = 0;
+    double step_start; // start instant of the last step
+    double step_count = 0.0; // number of events accumulated since step start
 };
 
 }
