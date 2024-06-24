@@ -54,10 +54,13 @@ def test_observe_memory_limit(started_cluster):
 
 
 def test_memory_usage_doesnt_include_page_cache_size(started_cluster):
-    # populate page cache with 10GB of data
-    node1.exec_in_container(
-        ["dd", "if=/dev/zero", "of=outputfile", "bs=1M", "count=10K"]
-    )
+    try:
+        # populate page cache with 10GB of data; it might be killed by OOM killer but it is fine
+        node1.exec_in_container(
+            ["dd", "if=/dev/zero", "of=outputfile", "bs=1M", "count=10K"]
+        )
+    except Exception:
+        pass
 
     observer_refresh_period = int(
         node1.query(
