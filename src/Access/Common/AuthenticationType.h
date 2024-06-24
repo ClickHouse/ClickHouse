@@ -6,7 +6,7 @@
 namespace DB
 {
 
-enum class AuthenticationType
+enum class AuthenticationType : uint8_t
 {
     /// User doesn't have to enter password.
     NO_PASSWORD,

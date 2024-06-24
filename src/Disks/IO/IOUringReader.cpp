@@ -1,5 +1,4 @@
 #include "IOUringReader.h"
-#include <memory>
 
 #if USE_LIBURING
 
@@ -13,6 +12,7 @@
 #include <Common/ThreadPool.h>
 #include <Common/logger_useful.h>
 #include <future>
+#include <memory>
 
 namespace ProfileEvents
 {

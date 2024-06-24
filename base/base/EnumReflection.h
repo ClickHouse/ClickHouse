@@ -11,7 +11,7 @@ namespace detail
 template <is_enum E, class F, size_t ...I>
 constexpr void static_for(F && f, std::index_sequence<I...>)
 {
-    (std::forward<F>(f)(std::integral_constant<E, magic_enum::enum_value<E>(I)>()) , ...);
+    (f(std::integral_constant<E, magic_enum::enum_value<E>(I)>()) , ...);
 }
 }
 

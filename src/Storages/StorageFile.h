@@ -90,6 +90,8 @@ public:
 
     bool supportsSubcolumns() const override { return true; }
 
+    bool supportsDynamicSubcolumns() const override { return true; }
+
     bool prefersLargeBlocks() const override;
 
     bool parallelizeOutputAfterReading(ContextPtr context) const override;
@@ -100,7 +102,7 @@ public:
     {
         std::vector<std::string> paths_to_archives;
         std::string path_in_archive; // used when reading a single file from archive
-        IArchiveReader::NameFilter filter = {}; // used when files inside archive are defined with a glob
+        IArchiveReader::NameFilter filter; // used when files inside archive are defined with a glob
 
         bool isSingleFileRead() const
         {

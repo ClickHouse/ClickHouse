@@ -23,7 +23,7 @@ using MergeTreeReaderPtr = std::unique_ptr<IMergeTreeReader>;
 using VirtualFields = std::unordered_map<String, Field>;
 
 
-enum class MergeTreeReadType
+enum class MergeTreeReadType : uint8_t
 {
     /// By default, read will use MergeTreeReadPool and return pipe with num_streams outputs.
     /// If num_streams == 1, will read without pool, in order specified in parts.
@@ -56,6 +56,8 @@ struct MergeTreeReadTaskInfo
 {
     /// Data part which should be read while performing this task
     DataPartPtr data_part;
+    /// Parent part of the projection part
+    DataPartPtr parent_part;
     /// For `part_index` virtual column
     size_t part_index_in_query;
     /// Alter converversionss that should be applied on-fly for part.

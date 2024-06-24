@@ -47,6 +47,7 @@ public:
 protected:
     const char * getName() const override { return "string literal table identifier"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    Highlight highlight() const override { return Highlight::identifier; }
 };
 
 

@@ -75,7 +75,7 @@ The supported formats are:
 | [ArrowStream](#data-format-arrow-stream)                                                  | ✔    | ✔     |
 | [ORC](#data-format-orc)                                                                   | ✔    | ✔     |
 | [One](#data-format-one)                                                                   | ✔    | ✗     |
-| [Npy](#data-format-npy)                                                                   | ✔    | ✗     |
+| [Npy](#data-format-npy)                                                                   | ✔    | ✔     |
 | [RowBinary](#rowbinary)                                                                   | ✔    | ✔     |
 | [RowBinaryWithNames](#rowbinarywithnamesandtypes)                                         | ✔    | ✔     |
 | [RowBinaryWithNamesAndTypes](#rowbinarywithnamesandtypes)                                 | ✔    | ✔     |
@@ -91,6 +91,7 @@ The supported formats are:
 | [MySQLDump](#mysqldump)                                                                   | ✔    | ✗     |
 | [DWARF](#dwarf)                                                                           | ✔    | ✗     |
 | [Markdown](#markdown)                                                                     | ✗    | ✔     |
+| [Form](#form)                                                                             | ✔    | ✗     |
 
 
 You can control some format processing parameters with the ClickHouse settings. For more information read the [Settings](/docs/en/operations/settings/settings-formats.md) section.
@@ -196,6 +197,7 @@ SELECT * FROM nestedt FORMAT TSV
 - [input_format_tsv_enum_as_number](/docs/en/operations/settings/settings-formats.md/#input_format_tsv_enum_as_number) - treat inserted enum values in TSV formats as enum indices. Default value - `false`.
 - [input_format_tsv_use_best_effort_in_schema_inference](/docs/en/operations/settings/settings-formats.md/#input_format_tsv_use_best_effort_in_schema_inference) - use some tweaks and heuristics to infer schema in TSV format. If disabled, all fields will be inferred as Strings. Default value - `true`.
 - [output_format_tsv_crlf_end_of_line](/docs/en/operations/settings/settings-formats.md/#output_format_tsv_crlf_end_of_line) - if it is set true, end of line in TSV output format will be `\r\n` instead of `\n`. Default value - `false`.
+- [input_format_tsv_crlf_end_of_line](/docs/en/operations/settings/settings-formats.md/#input_format_tsv_crlf_end_of_line) - if it is set true, end of line in TSV input format will be `\r\n` instead of `\n`. Default value - `false`.
 - [input_format_tsv_skip_first_lines](/docs/en/operations/settings/settings-formats.md/#input_format_tsv_skip_first_lines) - skip specified number of lines at the beginning of data. Default value - `0`.
 - [input_format_tsv_detect_header](/docs/en/operations/settings/settings-formats.md/#input_format_tsv_detect_header) - automatically detect header with names and types in TSV format. Default value - `true`.
 - [input_format_tsv_skip_trailing_empty_lines](/docs/en/operations/settings/settings-formats.md/#input_format_tsv_skip_trailing_empty_lines) - skip trailing empty lines at the end of data. Default value - `false`.
@@ -206,7 +208,7 @@ SELECT * FROM nestedt FORMAT TSV
 Differs from `TabSeparated` format in that the rows are written without escaping.
 When parsing with this format, tabs or linefeeds are not allowed in each field.
 
-This format is also available under the name `TSVRaw`.
+This format is also available under the names `TSVRaw`, `Raw`.
 
 ## TabSeparatedWithNames {#tabseparatedwithnames}
 
@@ -241,14 +243,14 @@ This format is also available under the name `TSVWithNamesAndTypes`.
 Differs from `TabSeparatedWithNames` format in that the rows are written without escaping.
 When parsing with this format, tabs or linefeeds are not allowed in each field.
 
-This format is also available under the name `TSVRawWithNames`.
+This format is also available under the names `TSVRawWithNames`, `RawWithNames`.
 
 ## TabSeparatedRawWithNamesAndTypes {#tabseparatedrawwithnamesandtypes}
 
 Differs from `TabSeparatedWithNamesAndTypes` format in that the rows are written without escaping.
 When parsing with this format, tabs or linefeeds are not allowed in each field.
 
-This format is also available under the name `TSVRawWithNamesAndNames`.
+This format is also available under the names `TSVRawWithNamesAndNames`, `RawWithNamesAndNames`.
 
 ## Template {#format-template}
 
@@ -2465,23 +2467,22 @@ Result:
 
 ## Npy {#data-format-npy}
 
-This function is designed to load a NumPy array from a .npy file into ClickHouse. The NumPy file format is a binary format used for efficiently storing arrays of numerical data. During import, ClickHouse treats top level dimension as an array of rows with single column. Supported Npy data types and their corresponding type in ClickHouse:
-| Npy type | ClickHouse type |
-|:--------:|:---------------:|
-| b1       |    UInt8        |
-| i1       |    Int8         |
-| i2       |    Int16        |
-| i4       |    Int32        |
-| i8       |    Int64        |
-| u1       |    UInt8        |
-| u2       |    UInt16       |
-| u4       |    UInt32       |
-| u8       |    UInt64       |
-| f2       |    Float32      |
-| f4       |    Float32      |
-| f8       |    Float64      |
-| S        |    String       |
-| U        |    String       |
+This function is designed to load a NumPy array from a .npy file into ClickHouse. The NumPy file format is a binary format used for efficiently storing arrays of numerical data. During import, ClickHouse treats top level dimension as an array of rows with single column. Supported Npy data types and their corresponding type in ClickHouse: 
+
+| Npy data type (`INSERT`) | ClickHouse data type                                            | Npy data type (`SELECT`) |
+|--------------------------|-----------------------------------------------------------------|--------------------------|
+| `i1`                     | [Int8](/docs/en/sql-reference/data-types/int-uint.md)           | `i1`                     |
+| `i2`                     | [Int16](/docs/en/sql-reference/data-types/int-uint.md)          | `i2`                     |
+| `i4`                     | [Int32](/docs/en/sql-reference/data-types/int-uint.md)          | `i4`                     |
+| `i8`                     | [Int64](/docs/en/sql-reference/data-types/int-uint.md)          | `i8`                     |
+| `u1`, `b1`               | [UInt8](/docs/en/sql-reference/data-types/int-uint.md)          | `u1`                     |
+| `u2`                     | [UInt16](/docs/en/sql-reference/data-types/int-uint.md)         | `u2`                     |
+| `u4`                     | [UInt32](/docs/en/sql-reference/data-types/int-uint.md)         | `u4`                     |
+| `u8`                     | [UInt64](/docs/en/sql-reference/data-types/int-uint.md)         | `u8`                     |
+| `f2`, `f4`               | [Float32](/docs/en/sql-reference/data-types/float.md)           | `f4`                     |
+| `f8`                     | [Float64](/docs/en/sql-reference/data-types/float.md)           | `f8`                     |
+| `S`, `U`                 | [String](/docs/en/sql-reference/data-types/string.md)           | `S`                      |
+|                          | [FixedString](/docs/en/sql-reference/data-types/fixedstring.md) | `S`                      |
 
 **Example of saving an array in .npy format using Python**
 
@@ -2506,6 +2507,14 @@ Result:
 │ [[1],[2],[3]] │
 │ [[4],[5],[6]] │
 └───────────────┘
+```
+
+**Selecting Data**
+
+You can select data from a ClickHouse table and save them into some file in the Npy format by the following command:
+
+```bash
+$ clickhouse-client --query="SELECT {column} FROM {some_table} FORMAT Npy" > {filename.npy}
 ```
 
 ## LineAsString {#lineasstring}
@@ -2843,3 +2852,31 @@ FORMAT Markdown
 ```
 
 Markdown table will be generated automatically and can be used on markdown-enabled platforms, like Github. This format is used only for output.
+
+## Form {#form}
+
+The Form format can be used to read or write a single record in the application/x-www-form-urlencoded format in which data is formatted `key1=value1&key2=value2`
+
+Examples:
+
+Given a file `data.tmp` placed in the `user_files` path with some URL encoded data:
+
+```text
+t_page=116&c.e=ls7xfkpm&c.tti.m=raf&rt.start=navigation&rt.bmr=390%2C11%2C10
+```
+
+```sql
+SELECT * FROM file(data.tmp, Form) FORMAT vertical;
+```
+
+Result:
+
+```text
+Row 1:
+──────
+t_page:   116
+c.e:      ls7xfkpm
+c.tti.m:  raf
+rt.start: navigation
+rt.bmr:   390,11,10
+```

@@ -1,6 +1,6 @@
 ---
 slug: /en/development/tests
-sidebar_position: 71
+sidebar_position: 72
 sidebar_label: Testing
 title: ClickHouse Testing
 description: Most of ClickHouse features can be tested with functional tests and they are mandatory to use for every change in ClickHouse code that can be tested that way.

@@ -66,13 +66,13 @@ bool ParserNestedTable::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (!name_p.parse(pos, name, expected))
         return false;
 
-    if (!open.ignore(pos))
+    if (!open.ignore(pos, expected))
         return false;
 
     if (!columns_p.parse(pos, columns, expected))
         return false;
 
-    if (!close.ignore(pos))
+    if (!close.ignore(pos, expected))
         return false;
 
     auto func = std::make_shared<ASTFunction>();
@@ -1618,6 +1618,29 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         query->set(query->comment, comment);
     if (sql_security)
         query->sql_security = typeid_cast<std::shared_ptr<ASTSQLSecurity>>(sql_security);
+
+    if (query->columns_list && query->columns_list->primary_key)
+    {
+        /// If engine is not set will use default one
+        if (!query->storage)
+            query->set(query->storage, std::make_shared<ASTStorage>());
+        else if (query->storage->primary_key)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Multiple primary keys are not allowed.");
+
+        query->storage->primary_key = query->columns_list->primary_key;
+
+    }
+
+    if (query->columns_list && (query->columns_list->primary_key_from_columns))
+    {
+        /// If engine is not set will use default one
+        if (!query->storage)
+            query->set(query->storage, std::make_shared<ASTStorage>());
+        else if (query->storage->primary_key)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Multiple primary keys are not allowed.");
+
+        query->storage->primary_key = query->columns_list->primary_key_from_columns;
+    }
 
     tryGetIdentifierNameInto(as_database, query->as_database);
     tryGetIdentifierNameInto(as_table, query->as_table);

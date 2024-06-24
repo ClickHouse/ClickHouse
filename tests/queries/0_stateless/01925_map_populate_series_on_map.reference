@@ -67,6 +67,6 @@ select mapPopulateSeries(map(toInt64(-10), toInt64(1), 2, 1)) as res, toTypeName
 {-10:1,-9:0,-8:0,-7:0,-6:0,-5:0,-4:0,-3:0,-2:0,-1:0,0:0,1:0,2:1}	Map(Int64, Int64)
 select mapPopulateSeries(map(toInt64(-10), toInt64(1), 2, 1), toInt64(-5)) as res, toTypeName(res);
 {-10:1,-9:0,-8:0,-7:0,-6:0,-5:0}	Map(Int64, Int64)
-select mapPopulateSeries(); -- { serverError 42 }
-select mapPopulateSeries('asdf'); -- { serverError 43 }
-select mapPopulateSeries(map('1', 1, '2', 1)) as res, toTypeName(res); -- { serverError 43 }
+select mapPopulateSeries(); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+select mapPopulateSeries('asdf'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+select mapPopulateSeries(map('1', 1, '2', 1)) as res, toTypeName(res); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }

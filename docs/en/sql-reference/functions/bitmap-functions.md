@@ -75,8 +75,8 @@ bitmapSubsetInRange(bitmap, range_start, range_end)
 **Arguments**
 
 - `bitmap` – [Bitmap object](#bitmap_functions-bitmapbuild).
-- `range_start` – Start of the range (inclusive). Type: [UInt32](../../sql-reference/data-types/int-uint.md).
-- `range_end` – End of the range (exclusive). Type: [UInt32](../../sql-reference/data-types/int-uint.md).
+- `range_start` – Start of the range (inclusive). [UInt32](../data-types/int-uint.md).
+- `range_end` – End of the range (exclusive). [UInt32](../data-types/int-uint.md).
 
 **Example**
 
@@ -105,8 +105,8 @@ bitmapSubsetLimit(bitmap, range_start, cardinality_limit)
 **Arguments**
 
 - `bitmap` – [Bitmap object](#bitmap_functions-bitmapbuild).
-- `range_start` – Start of the range (inclusive). Type: [UInt32](../../sql-reference/data-types/int-uint.md).
-- `cardinality_limit` – Maximum cardinality of the subset. Type: [UInt32](../../sql-reference/data-types/int-uint.md).
+- `range_start` – Start of the range (inclusive). [UInt32](../data-types/int-uint.md).
+- `cardinality_limit` – Maximum cardinality of the subset. [UInt32](../data-types/int-uint.md).
 
 **Example**
 
@@ -134,9 +134,9 @@ subBitmap(bitmap, offset, cardinality_limit)
 
 **Arguments**
 
-- `bitmap` – The bitmap. Type: [Bitmap object](#bitmap_functions-bitmapbuild).
-- `offset` – The position of the first element of the subset. Type: [UInt32](../../sql-reference/data-types/int-uint.md).
-- `cardinality_limit` – The maximum number of elements in the subset. Type: [UInt32](../../sql-reference/data-types/int-uint.md).
+- `bitmap` – The bitmap. [Bitmap object](#bitmap_functions-bitmapbuild).
+- `offset` – The position of the first element of the subset. [UInt32](../data-types/int-uint.md).
+- `cardinality_limit` – The maximum number of elements in the subset. [UInt32](../data-types/int-uint.md).
 
 **Example**
 
@@ -163,14 +163,12 @@ bitmapContains(bitmap, needle)
 **Arguments**
 
 - `bitmap` – [Bitmap object](#bitmap_functions-bitmapbuild).
-- `needle` – Searched bit value. Type: [UInt32](../../sql-reference/data-types/int-uint.md).
+- `needle` – Searched bit value. [UInt32](../data-types/int-uint.md).
 
 **Returned values**
 
-- 0 — If `bitmap` does not contain `needle`.
-- 1 — If `bitmap` contains `needle`.
-
-Type: `UInt8`.
+- 0 — If `bitmap` does not contain `needle`. [UInt8](../data-types/int-uint.md).
+- 1 — If `bitmap` contains `needle`. [UInt8](../data-types/int-uint.md).
 
 **Example**
 

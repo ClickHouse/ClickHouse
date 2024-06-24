@@ -26,7 +26,7 @@
 #include <base/IPv4andIPv6.h>
 
 #include <Common/Exception.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/NaNUtils.h>
 #include <Common/typeid_cast.h>
 

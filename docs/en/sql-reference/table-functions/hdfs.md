@@ -85,7 +85,7 @@ If your listing of files contains number ranges with leading zeros, use the cons
 
 **Example**
 
-Query the data from files named `file000`, `file001`, … , `file999`:
+Query the data from files named `file000`, `file001`, ... , `file999`:
 
 ``` sql
 SELECT count(*)

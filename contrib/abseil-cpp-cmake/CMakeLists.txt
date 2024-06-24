@@ -52,7 +52,7 @@ function(absl_cc_library)
       )
 
     target_include_directories(${_NAME}
-      PUBLIC "${ABSL_COMMON_INCLUDE_DIRS}")
+      SYSTEM PUBLIC "${ABSL_COMMON_INCLUDE_DIRS}")
     target_compile_options(${_NAME}
       PRIVATE ${ABSL_CC_LIB_COPTS})
     target_compile_definitions(${_NAME} PUBLIC ${ABSL_CC_LIB_DEFINES})
@@ -61,7 +61,7 @@ function(absl_cc_library)
     # Generating header-only library
     add_library(${_NAME} INTERFACE)
     target_include_directories(${_NAME}
-      INTERFACE "${ABSL_COMMON_INCLUDE_DIRS}")
+      SYSTEM INTERFACE "${ABSL_COMMON_INCLUDE_DIRS}")
 
     target_link_libraries(${_NAME}
       INTERFACE

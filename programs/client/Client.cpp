@@ -263,7 +263,7 @@ void Client::initialize(Poco::Util::Application & self)
         config().add(loaded_config.configuration);
     }
     else if (config().has("connection"))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "--connection was specified, but config does not exists");
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "--connection was specified, but config does not exist");
 
     /** getenv is thread-safe in Linux glibc and in all sane libc implementations.
       * But the standard does not guarantee that subsequent calls will not rewrite the value by returned pointer.
@@ -918,11 +918,13 @@ bool Client::processWithFuzzing(const String & full_query)
 }
 
 
-void Client::printHelpMessage(const OptionsDescription & options_description)
+void Client::printHelpMessage(const OptionsDescription & options_description, bool verbose)
 {
     std::cout << options_description.main_description.value() << "\n";
     std::cout << options_description.external_description.value() << "\n";
     std::cout << options_description.hosts_and_ports_description.value() << "\n";
+    if (verbose)
+        std::cout << "All settings are documented at https://clickhouse.com/docs/en/operations/settings/settings.\n\n";
     std::cout << "In addition, --param_name=value can be specified for substitution of parameters for parametrized queries.\n";
     std::cout << "\nSee also: https://clickhouse.com/docs/en/integrations/sql-clients/cli\n";
 }
@@ -1176,7 +1178,7 @@ void Client::processConfig()
 
     pager = config().getString("pager", "");
 
-    setDefaultFormatsFromConfiguration();
+    setDefaultFormatsAndCompressionFromConfiguration();
 
     global_context->setClientName(std::string(DEFAULT_CLIENT_NAME));
     global_context->setQueryKindInitial();

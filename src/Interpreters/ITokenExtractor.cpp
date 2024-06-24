@@ -2,7 +2,7 @@
 
 #include <boost/algorithm/string.hpp>
 
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/UTF8Helpers.h>
 #include <bit>
 

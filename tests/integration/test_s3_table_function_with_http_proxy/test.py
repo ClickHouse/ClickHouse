@@ -53,7 +53,7 @@ def test_s3_with_http_proxy_list(cluster):
 
 
 def test_s3_with_http_remote_proxy(cluster):
-    proxy_util.simple_test(cluster, ["proxy1"], "http", "remote_proxy_node")
+    proxy_util.simple_test(cluster, ["proxy1", "proxy2"], "http", "remote_proxy_node")
 
 
 def test_s3_with_http_env_proxy(cluster):

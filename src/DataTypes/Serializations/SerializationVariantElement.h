@@ -43,7 +43,8 @@ public:
 
     void deserializeBinaryBulkStatePrefix(
         DeserializeBinaryBulkSettings & settings,
-        DeserializeBinaryBulkStatePtr & state) const override;
+        DeserializeBinaryBulkStatePtr & state,
+        SubstreamsDeserializeStatesCache * cache) const override;
 
     void serializeBinaryBulkWithMultipleStreams(
         const IColumn & column,
@@ -58,12 +59,6 @@ public:
         DeserializeBinaryBulkSettings & settings,
         DeserializeBinaryBulkStatePtr & state,
         SubstreamsCache * cache) const override;
-
-private:
-    friend SerializationVariant;
-
-    void addVariantToPath(SubstreamPath & path) const;
-    void removeVariantFromPath(SubstreamPath & path) const;
 
     struct VariantSubcolumnCreator : public ISubcolumnCreator
     {
@@ -82,6 +77,11 @@ private:
         ColumnPtr create(const ColumnPtr & prev) const override;
         SerializationPtr create(const SerializationPtr & prev) const override;
     };
+private:
+    friend SerializationVariant;
+
+    void addVariantToPath(SubstreamPath & path) const;
+    void removeVariantFromPath(SubstreamPath & path) const;
 };
 
 }

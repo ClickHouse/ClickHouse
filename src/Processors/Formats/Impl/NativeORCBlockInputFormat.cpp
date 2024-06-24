@@ -1548,7 +1548,7 @@ static ColumnWithTypeAndName readColumnFromORCColumn(
                         if (pos)
                             nested_type_hint = tuple_type_hint->getElement(*pos);
                     }
-                    else if (size_t(i) < tuple_type_hint->getElements().size())
+                    else if (i < tuple_type_hint->getElements().size())
                         nested_type_hint = tuple_type_hint->getElement(i);
                 }
 

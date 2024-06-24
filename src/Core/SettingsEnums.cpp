@@ -230,7 +230,8 @@ IMPLEMENT_SETTING_ENUM(SQLSecurityType, ErrorCodes::BAD_ARGUMENTS,
      {"INVOKER", SQLSecurityType::INVOKER},
      {"NONE", SQLSecurityType::NONE}})
 
-IMPLEMENT_SETTING_ENUM(FirstDayOfWeek, ErrorCodes::BAD_ARGUMENTS,
-                       {{"Monday", FirstDayOfWeek::Monday},
-                        {"Sunday", FirstDayOfWeek::Sunday}})
+IMPLEMENT_SETTING_ENUM(
+    GroupArrayActionWhenLimitReached,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"throw", GroupArrayActionWhenLimitReached::THROW}, {"discard", GroupArrayActionWhenLimitReached::DISCARD}})
 }

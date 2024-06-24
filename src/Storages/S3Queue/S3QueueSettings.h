@@ -13,7 +13,7 @@ class ASTStorage;
 #define S3QUEUE_RELATED_SETTINGS(M, ALIAS) \
     M(S3QueueMode, \
       mode, \
-      S3QueueMode::ORDERED, \
+      S3QueueMode::UNORDERED, \
       "With unordered mode, the set of all already processed files is tracked with persistent nodes in ZooKepeer." \
       "With ordered mode, only the max name of the successfully consumed file stored.", \
       0) \
@@ -30,8 +30,7 @@ class ASTStorage;
     M(UInt32, s3queue_tracked_files_limit, 1000, "For unordered mode. Max set size for tracking processed files in ZooKeeper", 0) \
     M(UInt32, s3queue_cleanup_interval_min_ms, 60000, "For unordered mode. Polling backoff min for cleanup", 0) \
     M(UInt32, s3queue_cleanup_interval_max_ms, 60000, "For unordered mode. Polling backoff max for cleanup", 0) \
-    M(UInt32, s3queue_total_shards_num, 1, "Value 0 means disabled", 0) \
-    M(UInt32, s3queue_current_shard_num, 0, "", 0) \
+    M(UInt32, s3queue_buckets, 0, "Number of buckets for Ordered mode parallel processing", 0) \
 
 #define LIST_OF_S3QUEUE_SETTINGS(M, ALIAS) \
     S3QUEUE_RELATED_SETTINGS(M, ALIAS) \

@@ -47,18 +47,18 @@ SELECT greatest(a, 0), greatest(b, 0), greatest(g, 0) FROM decimal ORDER BY a;
 SELECT (a, d, g) = (b, e, h), (a, d, g) != (b, e, h) FROM decimal ORDER BY a;
 SELECT (a, d, g) = (c, f, i), (a, d, g) != (c, f, i) FROM decimal ORDER BY a;
 
-SELECT toUInt32(2147483648) AS x, a == x FROM decimal WHERE a = 42; -- { serverError 407 }
+SELECT toUInt32(2147483648) AS x, a == x FROM decimal WHERE a = 42; -- { serverError DECIMAL_OVERFLOW }
 SELECT toUInt64(2147483648) AS x, b == x, x == ((b - 42) + x) FROM decimal WHERE a = 42;
-SELECT toUInt64(9223372036854775808) AS x, b == x FROM decimal WHERE a = 42; -- { serverError 407 }
+SELECT toUInt64(9223372036854775808) AS x, b == x FROM decimal WHERE a = 42; -- { serverError DECIMAL_OVERFLOW }
 SELECT toUInt64(9223372036854775808) AS x, c == x, x == ((c - 42) + x) FROM decimal WHERE a = 42;
 
 SELECT g = 10000, (g - g + 10000) == 10000 FROM decimal WHERE a = 42;
 SELECT 10000 = g, 10000 = (g - g + 10000) FROM decimal WHERE a = 42;
-SELECT g = 30000 FROM decimal WHERE a = 42; -- { serverError 407 }
-SELECT 30000 = g FROM decimal WHERE a = 42; -- { serverError 407 }
+SELECT g = 30000 FROM decimal WHERE a = 42; -- { serverError DECIMAL_OVERFLOW }
+SELECT 30000 = g FROM decimal WHERE a = 42; -- { serverError DECIMAL_OVERFLOW }
 SELECT h = 30000, (h - g + 30000) = 30000 FROM decimal WHERE a = 42;
 SELECT 30000 = h, 30000 = (h - g + 30000) FROM decimal WHERE a = 42;
-SELECT h = 10000000000 FROM decimal WHERE a = 42; -- { serverError 407 }
+SELECT h = 10000000000 FROM decimal WHERE a = 42; -- { serverError DECIMAL_OVERFLOW }
 SELECT i = 10000000000, (i - g + 10000000000) = 10000000000 FROM decimal WHERE a = 42;
 SELECT 10000000000 = i, 10000000000 = (i - g + 10000000000) FROM decimal WHERE a = 42;
 

@@ -112,7 +112,7 @@ Float64 ConditionEstimator::estimateSelectivity(const RPNBuilderTreeNode & node)
     auto [op, val] = extractBinaryOp(node, col);
     if (op == "equals")
     {
-        if (val < - threshold || val > threshold)
+        if (val < -threshold || val > threshold)
             return default_normal_cond_factor;
         else
             return default_good_cond_factor;

@@ -264,7 +264,8 @@ void IMergeTreeReader::performRequiredConversions(Columns & res_columns) const
         /// Move columns from block.
         name_and_type = requested_columns.begin();
         for (size_t pos = 0; pos < num_columns; ++pos, ++name_and_type)
-            res_columns[pos] = std::move(copy_block.getByName(name_and_type->name).column);
+            if (copy_block.has(name_and_type->name))
+                res_columns[pos] = std::move(copy_block.getByName(name_and_type->name).column);
     }
     catch (Exception & e)
     {

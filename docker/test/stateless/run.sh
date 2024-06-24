@@ -42,12 +42,6 @@ source /utils.lib
 # install test configs
 /usr/share/clickhouse-test/config/install.sh
 
-if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
-    echo "Azure is disabled"
-else
-    azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --debug /azurite_log &
-fi
-
 ./setup_minio.sh stateless
 ./setup_hdfs_minicluster.sh
 
@@ -97,11 +91,10 @@ if [ "$NUM_TRIES" -gt "1" ]; then
     export THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_TIME_US_MAX=10000
 
     mkdir -p /var/run/clickhouse-server
-    # simplest way to forward env variables to server
-    sudo -E -u clickhouse /usr/bin/clickhouse-server --config /etc/clickhouse-server/config.xml --daemon --pid-file /var/run/clickhouse-server/clickhouse-server.pid
-else
-    sudo clickhouse start
 fi
+
+# simplest way to forward env variables to server
+sudo -E -u clickhouse /usr/bin/clickhouse-server --config /etc/clickhouse-server/config.xml --daemon --pid-file /var/run/clickhouse-server/clickhouse-server.pid
 
 if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
     sudo sed -i "s|<filesystem_caches_path>/var/lib/clickhouse/filesystem_caches/</filesystem_caches_path>|<filesystem_caches_path>/var/lib/clickhouse/filesystem_caches_1/</filesystem_caches_path>|" /etc/clickhouse-server1/config.d/filesystem_caches_path.xml
@@ -212,6 +205,14 @@ function run_tests()
         ADDITIONAL_OPTIONS+=('--s3-storage')
     fi
 
+    if [[ -n "$USE_AZURE_STORAGE_FOR_MERGE_TREE" ]] && [[ "$USE_AZURE_STORAGE_FOR_MERGE_TREE"  -eq 1 ]]; then
+        # to disable the same tests
+        ADDITIONAL_OPTIONS+=('--s3-storage')
+        # azurite is slow, but with these two settings it can be super slow
+        ADDITIONAL_OPTIONS+=('--no-random-settings')
+        ADDITIONAL_OPTIONS+=('--no-random-merge-tree-settings')
+    fi
+
     if [[ -n "$USE_SHARED_CATALOG" ]] && [[ "$USE_SHARED_CATALOG" -eq 1 ]]; then
         ADDITIONAL_OPTIONS+=('--shared-catalog')
     fi
@@ -286,7 +287,7 @@ stop_logs_replication
 failed_to_save_logs=0
 for table in query_log zookeeper_log trace_log transactions_info_log metric_log
 do
-    err=$( { clickhouse-client -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.tsv.zst; } 2>&1 )
+    err=$(clickhouse-client -q "select * from system.$table into outfile '/test_output/$table.tsv.gz' format TSVWithNamesAndTypes")
     echo "$err"
     [[ "0" != "${#err}"  ]] && failed_to_save_logs=1
     if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then

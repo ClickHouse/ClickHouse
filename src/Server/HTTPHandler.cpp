@@ -26,7 +26,7 @@
 #include <Server/IServer.h>
 #include <Common/logger_useful.h>
 #include <Common/SettingsChanges.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
 #include <Common/typeid_cast.h>
@@ -364,12 +364,12 @@ bool HTTPHandler::authenticateUser(
     /// The header 'X-ClickHouse-SSL-Certificate-Auth: on' enables checking the common name
     /// extracted from the SSL certificate used for this connection instead of checking password.
     bool has_ssl_certificate_auth = (request.get("X-ClickHouse-SSL-Certificate-Auth", "") == "on");
-    bool has_auth_headers = !user.empty() || !password.empty() || !quota_key.empty() || has_ssl_certificate_auth;
+    bool has_auth_headers = !user.empty() || !password.empty() || has_ssl_certificate_auth;
 
     /// User name and password can be passed using HTTP Basic auth or query parameters
     /// (both methods are insecure).
     bool has_http_credentials = request.hasCredentials();
-    bool has_credentials_in_query_params = params.has("user") || params.has("password") || params.has("quota_key");
+    bool has_credentials_in_query_params = params.has("user") || params.has("password");
 
     std::string spnego_challenge;
     std::string certificate_common_name;
@@ -435,15 +435,12 @@ bool HTTPHandler::authenticateUser(
         {
             throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Invalid authentication: '{}' HTTP Authorization scheme is not supported", scheme);
         }
-
-        quota_key = params.get("quota_key", "");
     }
     else
     {
         /// If the user name is not set we assume it's the 'default' user.
         user = params.get("user", "default");
         password = params.get("password", "");
-        quota_key = params.get("quota_key", "");
     }
 
     if (!certificate_common_name.empty())
@@ -493,6 +490,16 @@ bool HTTPHandler::authenticateUser(
 
         basic_credentials->setUserName(user);
         basic_credentials->setPassword(password);
+    }
+
+    if (params.has("quota_key"))
+    {
+        if (!quota_key.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Invalid authentication: it is not allowed "
+                            "to use quota key as HTTP header and as parameter simultaneously");
+
+        quota_key = params.get("quota_key");
     }
 
     /// Set client info. It will be used for quota accounting parameters in 'setUser' method.
@@ -700,11 +707,11 @@ void HTTPHandler::processQuery(
     /// The data can also be compressed using incompatible internal algorithm. This is indicated by
     /// 'decompress' query parameter.
     std::unique_ptr<ReadBuffer> in_post_maybe_compressed;
-    bool in_post_compressed = false;
+    bool is_in_post_compressed = false;
     if (params.getParsed<bool>("decompress", false))
     {
-        in_post_maybe_compressed = std::make_unique<CompressedReadBuffer>(*in_post);
-        in_post_compressed = true;
+        in_post_maybe_compressed = std::make_unique<CompressedReadBuffer>(*in_post, /* allow_different_codecs_ = */ false, /* external_data_ = */ true);
+        is_in_post_compressed = true;
     }
     else
         in_post_maybe_compressed = std::move(in_post);
@@ -838,7 +845,7 @@ void HTTPHandler::processQuery(
 
     /// If 'http_native_compression_disable_checksumming_on_decompress' setting is turned on,
     /// checksums of client data compressed with internal algorithm are not checked.
-    if (in_post_compressed && settings.http_native_compression_disable_checksumming_on_decompress)
+    if (is_in_post_compressed && settings.http_native_compression_disable_checksumming_on_decompress)
         static_cast<CompressedReadBuffer &>(*in_post_maybe_compressed).disableChecksumming();
 
     /// Add CORS header if 'add_http_cors_header' setting is turned on send * in Access-Control-Allow-Origin
@@ -1101,7 +1108,7 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
             client_trace_context,
             context->getSettingsRef(),
             context->getOpenTelemetrySpanLog());
-        thread_trace_context->root_span.kind = OpenTelemetry::SERVER;
+        thread_trace_context->root_span.kind = OpenTelemetry::SpanKind::SERVER;
         thread_trace_context->root_span.addAttribute("clickhouse.uri", request.getURI());
 
         response.setContentType("text/plain; charset=UTF-8");

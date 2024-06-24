@@ -13,7 +13,7 @@ class ASTDropNamedCollectionQuery;
 namespace NamedCollectionUtils
 {
 
-enum class SourceId
+enum class SourceId : uint8_t
 {
     NONE = 0,
     CONFIG = 1,

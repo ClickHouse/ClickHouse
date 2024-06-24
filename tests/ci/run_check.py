@@ -5,9 +5,8 @@ from typing import Tuple
 
 from github import Github
 
-from cherry_pick import Labels
+from ci_config import StatusNames
 from commit_status_helper import (
-    CI_STATUS_NAME,
     create_ci_report,
     format_description,
     get_commit,
@@ -20,6 +19,7 @@ from get_robot_token import get_best_robot_token
 from lambda_shared_package.lambda_shared.pr import (
     CATEGORY_TO_LABEL,
     TRUSTED_CONTRIBUTORS,
+    Labels,
     check_pr_description,
 )
 from pr_info import PRInfo
@@ -29,13 +29,8 @@ TRUSTED_ORG_IDS = {
     54801242,  # clickhouse
 }
 
-OK_SKIP_LABELS = {"release", "pr-backport", "pr-cherrypick"}
-CAN_BE_TESTED_LABEL = "can be tested"
-FEATURE_LABEL = "pr-feature"
-SUBMODULE_CHANGED_LABEL = "submodule changed"
+OK_SKIP_LABELS = {Labels.RELEASE, Labels.PR_BACKPORT, Labels.PR_CHERRYPICK}
 PR_CHECK = "PR Check"
-# pr-bugfix autoport can lead to issues in releases, let's do ci fixes only
-AUTO_BACKPORT_LABELS = ["pr-ci"]
 
 
 def pr_is_by_trusted_user(pr_user_login, pr_user_orgs):
@@ -68,11 +63,12 @@ def should_run_ci_for_pr(pr_info: PRInfo) -> Tuple[bool, str]:
     if OK_SKIP_LABELS.intersection(pr_info.labels):
         return True, "Don't try new checks for release/backports/cherry-picks"
 
-    if CAN_BE_TESTED_LABEL not in pr_info.labels and not pr_is_by_trusted_user(
+    if Labels.CAN_BE_TESTED not in pr_info.labels and not pr_is_by_trusted_user(
         pr_info.user_login, pr_info.user_orgs
     ):
         print(
-            f"PRs by untrusted users need the '{CAN_BE_TESTED_LABEL}' label - please contact a member of the core team"
+            f"PRs by untrusted users need the '{Labels.CAN_BE_TESTED}' label - "
+            "please contact a member of the core team"
         )
         return False, "Needs 'can be tested' label"
 
@@ -116,11 +112,11 @@ def main():
             pr_labels_to_remove.append(label)
 
     if pr_info.has_changes_in_submodules():
-        pr_labels_to_add.append(SUBMODULE_CHANGED_LABEL)
-    elif SUBMODULE_CHANGED_LABEL in pr_info.labels:
-        pr_labels_to_remove.append(SUBMODULE_CHANGED_LABEL)
+        pr_labels_to_add.append(Labels.SUBMODULE_CHANGED)
+    elif Labels.SUBMODULE_CHANGED in pr_info.labels:
+        pr_labels_to_remove.append(Labels.SUBMODULE_CHANGED)
 
-    if any(label in AUTO_BACKPORT_LABELS for label in pr_labels_to_add):
+    if any(label in Labels.AUTO_BACKPORT for label in pr_labels_to_add):
         backport_labels = [Labels.MUST_BACKPORT, Labels.MUST_BACKPORT_CLOUD]
         pr_labels_to_add += [
             label for label in backport_labels if label not in pr_info.labels
@@ -160,16 +156,19 @@ def main():
         )
         sys.exit(1)
 
-    if FEATURE_LABEL in pr_info.labels and not pr_info.has_changes_in_documentation():
+    if (
+        Labels.PR_FEATURE in pr_info.labels
+        and not pr_info.has_changes_in_documentation()
+    ):
         print(
-            f"The '{FEATURE_LABEL}' in the labels, "
+            f"The '{Labels.PR_FEATURE}' in the labels, "
             "but there's no changed documentation"
         )
         post_commit_status(
             commit,
             FAILURE,
             "",
-            f"expect adding docs for {FEATURE_LABEL}",
+            f"expect adding docs for {Labels.PR_FEATURE}",
             PR_CHECK,
             pr_info,
         )
@@ -206,7 +205,7 @@ def main():
             PENDING,
             ci_report_url,
             description,
-            CI_STATUS_NAME,
+            StatusNames.CI,
             pr_info,
         )
 

@@ -921,6 +921,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         /// We will execute some CREATE queries for recovery (not ATTACH queries),
         /// so we need to allow experimental features that can be used in a CREATE query
         query_context->setSetting("allow_experimental_inverted_index", 1);
+        query_context->setSetting("allow_experimental_full_text_index", 1);
         query_context->setSetting("allow_experimental_codecs", 1);
         query_context->setSetting("allow_experimental_live_view", 1);
         query_context->setSetting("allow_experimental_window_view", 1);
@@ -929,12 +930,14 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         query_context->setSetting("allow_experimental_hash_functions", 1);
         query_context->setSetting("allow_experimental_object_type", 1);
         query_context->setSetting("allow_experimental_variant_type", 1);
+        query_context->setSetting("allow_experimental_dynamic_type", 1);
         query_context->setSetting("allow_experimental_annoy_index", 1);
         query_context->setSetting("allow_experimental_usearch_index", 1);
         query_context->setSetting("allow_experimental_bigint_types", 1);
         query_context->setSetting("allow_experimental_window_functions", 1);
         query_context->setSetting("allow_experimental_geo_types", 1);
         query_context->setSetting("allow_experimental_map_type", 1);
+        query_context->setSetting("allow_deprecated_error_prone_window_functions", 1);
 
         query_context->setSetting("allow_suspicious_low_cardinality_types", 1);
         query_context->setSetting("allow_suspicious_fixed_string_types", 1);
@@ -943,6 +946,13 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         query_context->setSetting("allow_hyperscan", 1);
         query_context->setSetting("allow_simdjson", 1);
         query_context->setSetting("allow_deprecated_syntax_for_merge_tree", 1);
+        query_context->setSetting("allow_suspicious_primary_key", 1);
+        query_context->setSetting("allow_suspicious_ttl_expressions", 1);
+        query_context->setSetting("allow_suspicious_variant_types", 1);
+        query_context->setSetting("enable_deflate_qpl_codec", 1);
+        query_context->setSetting("enable_zstd_qat_codec", 1);
+        query_context->setSetting("allow_create_index_without_type", 1);
+        query_context->setSetting("allow_experimental_s3queue", 1);
 
         auto txn = std::make_shared<ZooKeeperMetadataTransaction>(current_zookeeper, zookeeper_path, false, "");
         query_context->initZooKeeperMetadataTransaction(txn);
@@ -1139,8 +1149,10 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
     }
     LOG_INFO(log, "All tables are created successfully");
 
-    chassert(max_log_ptr_at_creation || our_log_ptr);
     UInt32 first_entry_to_mark_finished = new_replica ? max_log_ptr_at_creation : our_log_ptr;
+    /// NOTE first_entry_to_mark_finished can be 0 if our replica has crashed just after creating its nodes in ZK,
+    /// so it's a new replica, but after restarting we don't know max_log_ptr_at_creation anymore...
+    /// It's a very rare case, and it's okay if some queries throw TIMEOUT_EXCEEDED when waiting for all replicas
     if (first_entry_to_mark_finished)
     {
         /// If the replica is new and some of the queries applied during recovery

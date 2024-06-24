@@ -22,7 +22,7 @@ INSERT INTO combinator_argMin_table_r1
     SELECT
         number % 10 as id,
         number as value,
-        '01-01-2024 00:00:00' + INTERVAL number DAY
+        '2024-01-01 00:00:00' + INTERVAL number SECOND
     FROM
         numbers(100);
 
@@ -30,7 +30,7 @@ INSERT INTO combinator_argMin_table_r1
     SELECT
         number % 10 as id,
         number * 10 as value,
-        '01-01-2024 00:00:00' + INTERVAL number DAY
+        '2024-01-01 00:00:00' + INTERVAL number SECOND
     FROM
         numbers(100);
 

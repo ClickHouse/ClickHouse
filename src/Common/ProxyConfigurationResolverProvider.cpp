@@ -4,7 +4,7 @@
 #include <Common/Exception.h>
 #include <Common/ProxyListConfigurationResolver.h>
 #include <Common/RemoteProxyConfigurationResolver.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/logger_useful.h>
 
 namespace DB
@@ -43,12 +43,13 @@ namespace
             endpoint,
             proxy_scheme,
             proxy_port,
-            cache_ttl
+            std::chrono::seconds {cache_ttl}
         };
 
         return std::make_shared<RemoteProxyConfigurationResolver>(
             server_configuration,
             request_protocol,
+            std::make_shared<RemoteProxyHostFetcherImpl>(),
             isTunnelingDisabledForHTTPSRequestsOverHTTPProxy(configuration));
     }
 
