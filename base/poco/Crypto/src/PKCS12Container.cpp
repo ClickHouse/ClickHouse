@@ -132,10 +132,10 @@ std::string PKCS12Container::extractFriendlyName(X509* pCert)
 	if(!pCert) throw NullPointerException("PKCS12Container::extractFriendlyName(X509)");
 
 	// This is how PKCS12_add_cert() sets friendlyName (via PKCS12_add_friendlyname())
-	int namelen = 0;
-	char *name = (char *)X509_alias_get0(pCert, &namelen);
+	// int namelen = 0;
+	// char *name = (char *)X509_alias_get0(pCert, &namelen);
 
-	friendlyName = std::string(name, namelen);
+	friendlyName = std::string();
 	return friendlyName;
 }
 

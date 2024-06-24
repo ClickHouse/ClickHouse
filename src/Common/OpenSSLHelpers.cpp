@@ -5,6 +5,7 @@
 #include <base/scope_guard.h>
 #include <openssl/err.h>
 #include <openssl/sha.h>
+#include <openssl/ssl.h>
 
 namespace DB
 {

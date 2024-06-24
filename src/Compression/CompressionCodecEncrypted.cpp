@@ -10,6 +10,7 @@
 #include <Common/safe_cast.h>
 
 #if USE_SSL
+#    include <wolfssl/options.h>
 #    include <openssl/err.h>
 #    include <boost/algorithm/hex.hpp>
 #    include <openssl/evp.h>
@@ -136,7 +137,7 @@ size_t encrypt(std::string_view plaintext, char * ciphertext_and_tag, Encryption
     int out_len;
     int ciphertext_len;
     EVP_CIPHER_CTX * ctx;
-    EVP_CIPHER * cipher;
+    const EVP_CIPHER * cipher;
 
     ctx = EVP_CIPHER_CTX_new();
     if (ctx == nullptr)
@@ -144,7 +145,8 @@ size_t encrypt(std::string_view plaintext, char * ciphertext_and_tag, Encryption
 
     try
     {
-        cipher = EVP_CIPHER_fetch(nullptr, getMethod(method), nullptr);
+        // cipher = EVP_CIPHER_fetch(nullptr, getMethod(method), nullptr);
+        cipher = getMethod(method);
         if (cipher == nullptr)
             throw Exception::createDeprecated(lastErrorString(), ErrorCodes::OPENSSL_ERROR);
 
@@ -185,11 +187,11 @@ size_t encrypt(std::string_view plaintext, char * ciphertext_and_tag, Encryption
     }
     catch (...)
     {
-        EVP_CIPHER_free(cipher);
+        // EVP_CIPHER_free(cipher);
         EVP_CIPHER_CTX_free(ctx);
         throw;
     }
-    EVP_CIPHER_free(cipher);
+    // EVP_CIPHER_free(cipher);
     EVP_CIPHER_CTX_free(ctx);
     return ciphertext_len + tag_size;
 }
@@ -203,7 +205,7 @@ size_t decrypt(std::string_view ciphertext, char * plaintext, EncryptionMethod m
     int out_len;
     int plaintext_len;
     EVP_CIPHER_CTX * ctx;
-    EVP_CIPHER * cipher;
+    const EVP_CIPHER * cipher;
 
     ctx = EVP_CIPHER_CTX_new();
     if (ctx == nullptr)
@@ -211,7 +213,8 @@ size_t decrypt(std::string_view ciphertext, char * plaintext, EncryptionMethod m
 
     try
     {
-        cipher = EVP_CIPHER_fetch(nullptr, getMethod(method), nullptr);
+        // cipher = EVP_CIPHER_fetch(nullptr, getMethod(method), nullptr);
+        cipher = getMethod(method);
         if (cipher == nullptr)
             throw Exception::createDeprecated(lastErrorString(), ErrorCodes::OPENSSL_ERROR);
 
@@ -252,11 +255,11 @@ size_t decrypt(std::string_view ciphertext, char * plaintext, EncryptionMethod m
     }
     catch (...)
     {
-        EVP_CIPHER_free(cipher);
+        // EVP_CIPHER_free(cipher);
         EVP_CIPHER_CTX_free(ctx);
         throw;
     }
-    EVP_CIPHER_free(cipher);
+    // EVP_CIPHER_free(cipher);
     EVP_CIPHER_CTX_free(ctx);
 
     return plaintext_len + out_len;

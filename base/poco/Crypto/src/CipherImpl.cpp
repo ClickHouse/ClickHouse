@@ -16,6 +16,7 @@
 #include "Poco/Crypto/CryptoTransform.h"
 #include "Poco/Exception.h"
 #include "Poco/Buffer.h"
+#include <openssl/opensslv.h>
 #include <openssl/err.h>
 
 

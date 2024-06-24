@@ -22,6 +22,7 @@
 #include <istream>
 #include <ostream>
 #include <vector>
+#include <openssl/compat_types.h>
 #include <openssl/ec.h>
 #include <openssl/objects.h>
 #include "Poco/AutoPtr.h"

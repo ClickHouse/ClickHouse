@@ -5,6 +5,7 @@
 #if USE_SSL
 #    include <base/types.h>
 
+#include <wolfssl/options.h>
 
 namespace DB
 {

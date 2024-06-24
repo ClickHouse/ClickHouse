@@ -48,7 +48,7 @@ add_library(_nuraft ${SRCS})
 if(NOT TARGET OpenSSL::Crypto)
     target_compile_definitions(_nuraft PRIVATE USE_BOOST_ASIO=1 BOOST_ASIO_STANDALONE=1 SSL_LIBRARY_NOT_FOUND=1)
 else()
-    target_compile_definitions(_nuraft PRIVATE USE_BOOST_ASIO=1 BOOST_ASIO_STANDALONE=1)
+    target_compile_definitions(_nuraft PRIVATE USE_BOOST_ASIO=0 BOOST_ASIO_STANDALONE=1 ASIO_USE_WOLFSSL=1 BOOST_ASIO_USE_WOLFSSL=1)
 endif()
 
 target_link_libraries (_nuraft PRIVATE clickhouse_common_io)

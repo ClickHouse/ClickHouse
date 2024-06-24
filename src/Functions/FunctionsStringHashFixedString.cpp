@@ -14,6 +14,7 @@
 #endif
 
 #if USE_SSL
+#    include <wolfssl/options.h>
 #    include <openssl/md4.h>
 #    include <openssl/md5.h>
 #    include <openssl/sha.h>
@@ -40,7 +41,7 @@ struct MD4Impl
     static constexpr auto name = "MD4";
     enum
     {
-        length = MD4_DIGEST_LENGTH
+        length = MD4_DIGEST_SIZE
     };
 
     static void apply(const char * begin, const size_t size, unsigned char * out_char_data)
@@ -57,7 +58,7 @@ struct MD5Impl
     static constexpr auto name = "MD5";
     enum
     {
-        length = MD5_DIGEST_LENGTH
+        length = MD5_DIGEST_SIZE
     };
 
     static void apply(const char * begin, const size_t size, unsigned char * out_char_data)
@@ -74,7 +75,7 @@ struct SHA1Impl
     static constexpr auto name = "SHA1";
     enum
     {
-        length = SHA_DIGEST_LENGTH
+        length = SHA_DIGEST_SIZE
     };
 
     static void apply(const char * begin, const size_t size, unsigned char * out_char_data)
@@ -91,12 +92,12 @@ struct SHA224Impl
     static constexpr auto name = "SHA224";
     enum
     {
-        length = SHA224_DIGEST_LENGTH
+        length = SHA224_DIGEST_SIZE
     };
 
     static void apply(const char * begin, const size_t size, unsigned char * out_char_data)
     {
-        SHA256_CTX ctx;
+        SHA224_CTX ctx;
         SHA224_Init(&ctx);
         SHA224_Update(&ctx, reinterpret_cast<const unsigned char *>(begin), size);
         SHA224_Final(out_char_data, &ctx);
@@ -108,7 +109,7 @@ struct SHA256Impl
     static constexpr auto name = "SHA256";
     enum
     {
-        length = SHA256_DIGEST_LENGTH
+        length = SHA256_DIGEST_SIZE
     };
 
     static void apply(const char * begin, const size_t size, unsigned char * out_char_data)
@@ -125,12 +126,12 @@ struct SHA384Impl
     static constexpr auto name = "SHA384";
     enum
     {
-        length = SHA384_DIGEST_LENGTH
+        length = SHA384_DIGEST_SIZE
     };
 
     static void apply(const char * begin, const size_t size, unsigned char * out_char_data)
     {
-        SHA512_CTX ctx;
+        SHA384_CTX ctx;
         SHA384_Init(&ctx);
         SHA384_Update(&ctx, reinterpret_cast<const unsigned char *>(begin), size);
         SHA384_Final(out_char_data, &ctx);

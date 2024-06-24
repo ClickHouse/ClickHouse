@@ -42,7 +42,7 @@ RSAKey::RSAKey(const PKCS12Container& cont):
 
 
 RSAKey::RSAKey(KeyLength keyLength, Exponent exp):
-	KeyPair(new RSAKeyImpl(keyLength, (exp == EXP_LARGE) ? RSA_F4 : RSA_3)),
+	KeyPair(new RSAKeyImpl(keyLength, (exp == EXP_LARGE) ? RSA_F4 : 0)),
 	_pImpl(KeyPair::impl().cast<RSAKeyImpl>())
 {
 }

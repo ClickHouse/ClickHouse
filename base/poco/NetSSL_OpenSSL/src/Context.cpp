@@ -13,6 +13,7 @@
 
 
 #include "Poco/Net/Context.h"
+#include <ssl.h>
 #include "Poco/Net/SSLManager.h"
 #include "Poco/Net/SSLException.h"
 #include "Poco/Net/Utility.h"
@@ -22,6 +23,7 @@
 #include "Poco/DirectoryIterator.h"
 #include "Poco/RegularExpression.h"
 #include "Poco/Timestamp.h"
+#include <wolfssl/options.h>
 #include <openssl/bio.h>
 #include <openssl/err.h>
 #include <openssl/ssl.h>
@@ -140,14 +142,14 @@ static bool poco_dir_contains_certs(const std::string & dir)
 	return false;
 }
 
-static bool poco_file_cert(const std::string & file)
-{
-	if (file.empty())
-		return false;
-
-	File f(file);
-	return f.exists() && f.isFile();
-}
+// static bool poco_file_cert(const std::string & file)
+// {
+// 	if (file.empty())
+// 		return false;
+//
+// 	File f(file);
+// 	return f.exists() && f.isFile();
+// }
 
 static int poco_ssl_probe_and_set_default_ca_location(SSL_CTX *ctx, Context::CAPaths &caPaths)
 {
@@ -252,36 +254,38 @@ void Context::init(const Params& params)
 
 		if (params.loadDefaultCAs)
 		{
-			const char * dir = getenv(X509_get_default_cert_dir_env());
-			if (!dir)
-				dir = X509_get_default_cert_dir();
+			// const char * dir = getenv(X509_get_default_cert_dir_env());
+			// if (!dir)
+			// 	dir = X509_get_default_cert_dir();
+			//
+			// const char * file = getenv(X509_get_default_cert_file_env());
+			// if (!file)
+			// 	file = X509_get_default_cert_file();
 
-			const char * file = getenv(X509_get_default_cert_file_env());
-			if (!file)
-				file = X509_get_default_cert_file();
+            // errCode = wolfSSL_CTX_load_system_CA_certs(_pSSLContext);
 
-			if (poco_file_cert(file))
-			{
-				_caPaths.caDefaultFile = file;
-				errCode = SSL_CTX_set_default_verify_paths(_pSSLContext);
-			}
-			else
-			{
-				if (poco_dir_cert(dir))
-				{
-					errCode = 0;
-					if (!poco_dir_contains_certs(dir))
-						errCode = poco_ssl_probe_and_set_default_ca_location(_pSSLContext, _caPaths);
-
-					if (errCode == 0)
-					{
-						errCode = SSL_CTX_set_default_verify_paths(_pSSLContext);
-						_caPaths.caDefaultDir = dir;
-					}
-				}
-				else
+			// if (poco_file_cert(file))
+			// {
+			// 	_caPaths.caDefaultFile = file;
+			// 	errCode = SSL_CTX_set_default_verify_paths(_pSSLContext);
+			// }
+			// else
+			// {
+			// 	if (poco_dir_cert(dir))
+			// 	{
+			// 		errCode = 0;
+			// 		if (!poco_dir_contains_certs(dir))
+			// 			errCode = poco_ssl_probe_and_set_default_ca_location(_pSSLContext, _caPaths);
+			//
+			// 		if (errCode == 0)
+			// 		{
+			// 			errCode = SSL_CTX_set_default_verify_paths(_pSSLContext);
+			// 			_caPaths.caDefaultDir = dir;
+			// 		}
+			// 	}
+			// 	else
 					errCode = poco_ssl_probe_and_set_default_ca_location(_pSSLContext, _caPaths);
-			}
+			// }
 
 			if (errCode != 1)
 			{
@@ -592,7 +596,7 @@ void Context::createSSLContext()
 	SSL_CTX_set_default_passwd_cb(_pSSLContext, &SSLManager::privateKeyPassphraseCallback);
 	Utility::clearErrorStack();
 	SSL_CTX_set_options(_pSSLContext, SSL_OP_ALL);
-	SSL_CTX_set_options(_pSSLContext, SSL_OP_IGNORE_UNEXPECTED_EOF);
+	// SSL_CTX_set_options(_pSSLContext, SSL_OP_IGNORE_UNEXPECTED_EOF);
 }
 
 

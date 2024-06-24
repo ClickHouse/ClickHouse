@@ -21,6 +21,7 @@
 #include <istream>
 #include <set>
 #include <vector>
+#include <wolfssl/options.h>
 #include <openssl/ssl.h>
 #include "Poco/Crypto/Crypto.h"
 #include "Poco/Crypto/OpenSSLInitializer.h"

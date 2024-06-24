@@ -252,7 +252,7 @@ EVP_PKEY* EVPPKey::duplicate(const EVP_PKEY* pFromKey, EVP_PKEY** pToKey)
 			{
 				EVP_PKEY_set1_EC_KEY(*pToKey, pEC);
 				EC_KEY_free(pEC);
-				int cmp = EVP_PKEY_cmp_parameters(*pToKey, pFromKey);
+				int cmp = EVP_PKEY_cmp(*pToKey, pFromKey);
 				if (cmp < 0)
 					throw OpenSSLException("EVPPKey::duplicate(): EVP_PKEY_cmp_parameters()");
 				if (0 == cmp)

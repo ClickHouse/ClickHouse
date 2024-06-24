@@ -28,11 +28,16 @@
 #include "Poco/Crypto/OpenSSLInitializer.h"
 #include "Poco/RefCountedObject.h"
 
+#include <openssl/compat_types.h>
+#include <openssl/evp.h>
+#include <openssl/rsa.h>
+#include <openssl/ssl.h>
+#include <openssl/bn.h>
 
 struct bignum_st;
 struct rsa_st;
-typedef struct bignum_st BIGNUM;
-typedef struct rsa_st RSA;
+// typedef struct bignum_st BIGNUM;
+// typedef struct rsa_st RSA;
 
 
 namespace Poco
