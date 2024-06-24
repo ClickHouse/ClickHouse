@@ -12,8 +12,6 @@
 #include <base/types.h>
 #include <base/unaligned.h>
 #include <base/simd.h>
-#include <fmt/core.h>
-#include <fmt/ostream.h>
 
 #include <city.h>
 
@@ -378,5 +376,3 @@ namespace PackedZeroTraits
 
 
 std::ostream & operator<<(std::ostream & os, const StringRef & str);
-
-template<> struct fmt::formatter<StringRef> : fmt::ostream_formatter {};

@@ -155,8 +155,8 @@ auto instructionFailToString(InstructionFail fail)
             ret("AVX2");
         case InstructionFail::AVX512:
             ret("AVX512");
-#undef ret
     }
+    UNREACHABLE();
 }
 
 

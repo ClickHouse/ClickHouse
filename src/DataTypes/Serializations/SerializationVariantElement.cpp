@@ -146,7 +146,7 @@ void SerializationVariantElement::deserializeBinaryBulkWithMultipleStreams(
     }
 
     /// If we started to read a new column, reinitialize variant column in deserialization state.
-    if (!variant_element_state->variant || mutable_column->empty())
+    if (!variant_element_state->variant || result_column->empty())
     {
         variant_element_state->variant = mutable_column->cloneEmpty();
 

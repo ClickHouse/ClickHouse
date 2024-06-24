@@ -9,7 +9,6 @@
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
-#include <Parsers/ASTSetQuery.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadBuffer.h>
@@ -25,6 +24,7 @@
 #include <Interpreters/Context.h>
 #include <Storages/IStorage.h>
 #include <Common/typeid_cast.h>
+#include "Parsers/ASTSetQuery.h"
 #include <Core/Defines.h>
 #include <Compression/CompressionFactory.h>
 #include <Interpreters/ExpressionAnalyzer.h>
@@ -72,7 +72,7 @@ ColumnDescription & ColumnDescription::operator=(const ColumnDescription & other
     codec = other.codec ? other.codec->clone() : nullptr;
     settings = other.settings;
     ttl = other.ttl ? other.ttl->clone() : nullptr;
-    statistics = other.statistics;
+    stat = other.stat;
 
     return *this;
 }
@@ -95,7 +95,7 @@ ColumnDescription & ColumnDescription::operator=(ColumnDescription && other) noe
     ttl = other.ttl ? other.ttl->clone() : nullptr;
     other.ttl.reset();
 
-    statistics = std::move(other.statistics);
+    stat = std::move(other.stat);
 
     return *this;
 }
@@ -107,7 +107,7 @@ bool ColumnDescription::operator==(const ColumnDescription & other) const
     return name == other.name
         && type->equals(*other.type)
         && default_desc == other.default_desc
-        && statistics == other.statistics
+        && stat == other.stat
         && ast_to_str(codec) == ast_to_str(other.codec)
         && settings == other.settings
         && ast_to_str(ttl) == ast_to_str(other.ttl);
@@ -154,10 +154,10 @@ void ColumnDescription::writeText(WriteBuffer & buf) const
         DB::writeText(")", buf);
     }
 
-    if (!statistics.empty())
+    if (stat)
     {
         writeChar('\t', buf);
-        writeEscapedString(queryToString(statistics.getAST()), buf);
+        writeEscapedString(queryToString(stat->ast), buf);
     }
 
     if (ttl)
@@ -207,13 +207,6 @@ void ColumnDescription::readText(ReadBuffer & buf)
 
             if (col_ast->settings)
                 settings = col_ast->settings->as<ASTSetQuery &>().changes;
-
-            if (col_ast->statistics_desc)
-            {
-                statistics = ColumnStatisticsDescription::fromColumnDeclaration(*col_ast, type);
-                /// every column has name `x` here, so we have to set the name manually.
-                statistics.column_name = name;
-            }
         }
         else
             throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Cannot parse column description");

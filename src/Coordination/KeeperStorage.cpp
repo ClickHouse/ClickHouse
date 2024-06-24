@@ -609,10 +609,7 @@ void KeeperStorage::UncommittedState::commit(int64_t commit_zxid)
             uncommitted_auth.pop_front();
             if (uncommitted_auth.empty())
                 session_and_auth.erase(add_auth->session_id);
-        }
-        else if (auto * close_session = std::get_if<CloseSessionDelta>(&front_delta.operation))
-        {
-            closed_sessions.erase(close_session->session_id);
+
         }
 
         deltas.pop_front();
@@ -684,10 +681,6 @@ void KeeperStorage::UncommittedState::rollback(int64_t rollback_zxid)
                 if (uncommitted_auth.empty())
                     session_and_auth.erase(add_auth->session_id);
             }
-        }
-        else if (auto * close_session = std::get_if<CloseSessionDelta>(&delta_it->operation))
-        {
-           closed_sessions.erase(close_session->session_id);
         }
     }
 
@@ -883,10 +876,6 @@ Coordination::Error KeeperStorage::commit(int64_t commit_zxid)
                 else if constexpr (std::same_as<DeltaType, KeeperStorage::AddAuthDelta>)
                 {
                     session_and_auth[operation.session_id].emplace_back(std::move(operation.auth_id));
-                    return Coordination::Error::ZOK;
-                }
-                else if constexpr (std::same_as<DeltaType, KeeperStorage::CloseSessionDelta>)
-                {
                     return Coordination::Error::ZOK;
                 }
                 else
@@ -2377,15 +2366,12 @@ void KeeperStorage::preprocessRequest(
 
             ephemerals.erase(session_ephemerals);
         }
-        new_deltas.emplace_back(transaction.zxid, CloseSessionDelta{session_id});
-        uncommitted_state.closed_sessions.insert(session_id);
 
         new_digest = calculateNodesDigest(new_digest, new_deltas);
         return;
     }
 
-    if ((check_acl && !request_processor->checkAuth(*this, session_id, false)) ||
-        uncommitted_state.closed_sessions.contains(session_id))  // Is session closed but not committed yet
+    if (check_acl && !request_processor->checkAuth(*this, session_id, false))
     {
         uncommitted_state.deltas.emplace_back(new_last_zxid, Coordination::Error::ZNOAUTH);
         return;

@@ -37,7 +37,7 @@ struct fmt::formatter<DB::RowNumber>
     }
 
     template <typename FormatContext>
-    auto format(const DB::RowNumber & x, FormatContext & ctx) const
+    auto format(const DB::RowNumber & x, FormatContext & ctx)
     {
         return fmt::format_to(ctx.out(), "{}:{}", x.block, x.row);
     }

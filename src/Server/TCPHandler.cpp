@@ -34,7 +34,6 @@
 #include <Server/TCPServer.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
-#include <Storages/ObjectStorage/StorageObjectStorageCluster.h>
 #include <Core/ExternalTable.h>
 #include <Core/ServerSettings.h>
 #include <Access/AccessControl.h>

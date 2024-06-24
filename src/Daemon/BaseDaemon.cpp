@@ -6,7 +6,6 @@
 #include <Common/MemoryTracker.h>
 #include <Daemon/BaseDaemon.h>
 #include <Daemon/SentryWriter.h>
-#include <Common/GWPAsan.h>
 
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -156,12 +155,6 @@ static void signalHandler(int sig, siginfo_t * info, void * context)
 
     const ucontext_t * signal_context = reinterpret_cast<ucontext_t *>(context);
     const StackTrace stack_trace(*signal_context);
-
-#if USE_GWP_ASAN
-    if (const auto fault_address = reinterpret_cast<uintptr_t>(info->si_addr);
-        GWPAsan::isGWPAsanError(fault_address))
-        GWPAsan::printReport(fault_address);
-#endif
 
     writeBinary(sig, out);
     writePODBinary(*info, out);
@@ -749,7 +742,6 @@ std::string BaseDaemon::getDefaultConfigFileName() const
 
 void BaseDaemon::closeFDs()
 {
-#if !defined(USE_XRAY)
     /// NOTE: may benefit from close_range() (linux 5.9+)
 #if defined(OS_FREEBSD) || defined(OS_DARWIN)
     fs::path proc_path{"/dev/fd"};
@@ -797,13 +789,13 @@ void BaseDaemon::closeFDs()
             }
         }
     }
-#endif
 }
 
 
 void BaseDaemon::initialize(Application & self)
 {
     closeFDs();
+
     ServerApplication::initialize(self);
 
     /// now highest priority (lowest value) is PRIO_APPLICATION = -100, we want higher!

@@ -23,9 +23,6 @@ void BlobStorageLogWriter::addEvent(
     if (!log)
         return;
 
-    if (log->shouldIgnorePath(local_path_.empty() ? local_path : local_path_))
-        return;
-
     if (!time_now.time_since_epoch().count())
         time_now = std::chrono::system_clock::now();
 

@@ -596,34 +596,6 @@ void ActionsDAG::removeUnusedActions(const std::unordered_set<const Node *> & us
     std::erase_if(inputs, [&](const Node * node) { return !visited_nodes.contains(node); });
 }
 
-
-void ActionsDAG::removeAliasesForFilter(const std::string & filter_name)
-{
-    const auto & filter_node = findInOutputs(filter_name);
-    std::stack<Node *> stack;
-    stack.push(const_cast<Node *>(&filter_node));
-
-    std::unordered_set<const Node *> visited;
-    visited.insert(stack.top());
-
-    while (!stack.empty())
-    {
-        auto * node = stack.top();
-        stack.pop();
-        for (auto & child : node->children)
-        {
-            while (child->type == ActionType::ALIAS)
-                child = child->children.front();
-
-            if (!visited.contains(child))
-            {
-                stack.push(const_cast<Node *>(child));
-                visited.insert(child);
-            }
-        }
-    }
-}
-
 ActionsDAGPtr ActionsDAG::cloneSubDAG(const NodeRawConstPtrs & outputs, bool remove_aliases)
 {
     auto actions = std::make_shared<ActionsDAG>();
@@ -1649,7 +1621,7 @@ void ActionsDAG::mergeInplace(ActionsDAG && second)
     first.projected_output = second.projected_output;
 }
 
-void ActionsDAG::mergeNodes(ActionsDAG && second, NodeRawConstPtrs * out_outputs)
+void ActionsDAG::mergeNodes(ActionsDAG && second)
 {
     std::unordered_map<std::string, const ActionsDAG::Node *> node_name_to_node;
     for (auto & node : nodes)
@@ -1703,12 +1675,6 @@ void ActionsDAG::mergeNodes(ActionsDAG && second, NodeRawConstPtrs * out_outputs
         nodes_to_move_from_second_dag.insert(node);
 
         nodes_to_process.pop_back();
-    }
-
-    if (out_outputs)
-    {
-        for (auto & node : second.getOutputs())
-            out_outputs->push_back(node_name_to_node.at(node->result_name));
     }
 
     if (nodes_to_move_from_second_dag.empty())
@@ -2956,7 +2922,6 @@ ActionsDAGPtr ActionsDAG::buildFilterActionsDAG(
 
                 FunctionOverloadResolverPtr function_overload_resolver;
 
-                String result_name;
                 if (node->function_base->getName() == "indexHint")
                 {
                     ActionsDAG::NodeRawConstPtrs children;
@@ -2977,11 +2942,6 @@ ActionsDAGPtr ActionsDAG::buildFilterActionsDAG(
                             auto index_hint_function_clone = std::make_shared<FunctionIndexHint>();
                             index_hint_function_clone->setActions(std::move(index_hint_filter_dag));
                             function_overload_resolver = std::make_shared<FunctionToOverloadResolverAdaptor>(std::move(index_hint_function_clone));
-                            /// Keep the unique name like "indexHint(foo)" instead of replacing it
-                            /// with "indexHint()". Otherwise index analysis (which does look at
-                            /// indexHint arguments that we're hiding here) will get confused by the
-                            /// multiple substantially different nodes with the same result name.
-                            result_name = node->result_name;
                         }
                     }
                 }
@@ -2996,7 +2956,7 @@ ActionsDAGPtr ActionsDAG::buildFilterActionsDAG(
                     function_base,
                     std::move(function_children),
                     std::move(arguments),
-                    result_name,
+                    {},
                     node->result_type,
                     all_const);
                 break;

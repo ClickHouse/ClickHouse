@@ -637,9 +637,6 @@ void TestKeeper::finalize(const String &)
         expired = true;
     }
 
-    /// Signal request_queue to wake up processing thread without waiting for timeout
-    requests_queue.finish();
-
     processing_thread.join();
 
     try

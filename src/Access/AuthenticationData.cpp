@@ -31,7 +31,6 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int AUTHENTICATION_FAILED;
     extern const int SUPPORT_IS_DISABLED;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
@@ -91,10 +90,8 @@ bool AuthenticationData::Util::checkPasswordBcrypt(std::string_view password [[m
 {
 #if USE_BCRYPT
     int ret = bcrypt_checkpw(password.data(), reinterpret_cast<const char *>(password_bcrypt.data()));
-    /// Before 24.6 we didn't validate hashes on creation, so it could be that the stored hash is invalid
-    /// and it could not be decoded by the library
     if (ret == -1)
-        throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Internal failure decoding Bcrypt hash");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "BCrypt library failed: bcrypt_checkpw returned {}", ret);
     return (ret == 0);
 #else
     throw Exception(
@@ -233,17 +230,6 @@ void AuthenticationData::setPasswordHashBinary(const Digest & hash)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                                 "Password hash for the 'BCRYPT_PASSWORD' authentication type has length {} "
                                 "but must be 59 or 60 bytes.", hash.size());
-
-            auto resized = hash;
-            resized.resize(64);
-
-#if USE_BCRYPT
-            /// Verify that it is a valid hash
-            int ret = bcrypt_checkpw("", reinterpret_cast<const char *>(resized.data()));
-            if (ret == -1)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Could not decode the provided hash with 'bcrypt_hash'");
-#endif
-
             password_hash = hash;
             password_hash.resize(64);
             return;

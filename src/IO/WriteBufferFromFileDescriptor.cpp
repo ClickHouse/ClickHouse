@@ -105,14 +105,7 @@ WriteBufferFromFileDescriptor::WriteBufferFromFileDescriptor(
 
 WriteBufferFromFileDescriptor::~WriteBufferFromFileDescriptor()
 {
-    try
-    {
-        finalize();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
+    finalize();
 }
 
 void WriteBufferFromFileDescriptor::finalizeImpl()

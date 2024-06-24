@@ -85,18 +85,9 @@ StatusFile::StatusFile(std::string path_, FillFunction fill_)
 
         /// Write information about current server instance to the file.
         WriteBufferFromFileDescriptor out(fd, 1024);
-        try
-        {
-            fill(out);
-            /// Finalize here to avoid throwing exceptions in destructor.
-            out.finalize();
-        }
-        catch (...)
-        {
-            /// Finalize in case of exception to avoid throwing exceptions in destructor
-            out.finalize();
-            throw;
-        }
+        fill(out);
+        /// Finalize here to avoid throwing exceptions in destructor.
+        out.finalize();
     }
     catch (...)
     {

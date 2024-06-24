@@ -89,6 +89,10 @@ function configure()
     # since we run clickhouse from root
     sudo chown root: /var/lib/clickhouse
 
+    # Set more frequent update period of asynchronous metrics to more frequently update information about real memory usage (less chance of OOM).
+    echo "<clickhouse><asynchronous_metrics_update_period_s>1</asynchronous_metrics_update_period_s></clickhouse>" \
+        > /etc/clickhouse-server/config.d/asynchronous_metrics_update_period_s.xml
+
     local total_mem
     total_mem=$(awk '/MemTotal/ { print $(NF-1) }' /proc/meminfo) # KiB
     total_mem=$(( total_mem*1024 )) # bytes

@@ -77,15 +77,7 @@ WriteBufferFromFile::~WriteBufferFromFile()
     if (fd < 0)
         return;
 
-    try
-    {
-        finalize();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
-
+    finalize();
     int err = ::close(fd);
     /// Everything except for EBADF should be ignored in dtor, since all of
     /// others (EINTR/EIO/ENOSPC/EDQUOT) could be possible during writing to
