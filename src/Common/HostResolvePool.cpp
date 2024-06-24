@@ -8,8 +8,6 @@
 #include <Common/MemoryTrackerSwitcher.h>
 
 #include <mutex>
-#include <algorithm>
-
 
 namespace ProfileEvents
 {
@@ -21,7 +19,6 @@ namespace ProfileEvents
 namespace CurrentMetrics
 {
     extern const Metric AddressesActive;
-    extern const Metric AddressesBanned;
 }
 
 namespace DB
@@ -39,7 +36,6 @@ HostResolverMetrics HostResolver::getMetrics()
         .expired = ProfileEvents::AddressesExpired,
         .failed = ProfileEvents::AddressesMarkedAsFailed,
         .active_count = CurrentMetrics::AddressesActive,
-        .banned_count = CurrentMetrics::AddressesBanned,
     };
 }
 
@@ -51,7 +47,7 @@ HostResolver::WeakPtr HostResolver::getWeakFromThis()
 HostResolver::HostResolver(String host_, Poco::Timespan history_)
     : host(std::move(host_))
     , history(history_)
-    , resolve_function([](const String & host_to_resolve) { return DNSResolver::instance().resolveHostAllInOriginOrder(host_to_resolve); })
+    , resolve_function([](const String & host_to_resolve) { return DNSResolver::instance().resolveHostAll(host_to_resolve); })
 {
     update();
 }
@@ -66,12 +62,6 @@ HostResolver::HostResolver(
 HostResolver::~HostResolver()
 {
     std::lock_guard lock(mutex);
-
-    auto banned_count = 0;
-    for (const auto & rec: records)
-        banned_count += rec.failed;
-    CurrentMetrics::sub(metrics.banned_count, banned_count);
-
     CurrentMetrics::sub(metrics.active_count, records.size());
     records.clear();
 }
@@ -123,7 +113,6 @@ void HostResolver::updateWeights()
 
     if (getTotalWeight() == 0 && !records.empty())
     {
-        CurrentMetrics::sub(metrics.banned_count, records.size());
         for (auto & rec : records)
             rec.failed = false;
 
@@ -151,7 +140,7 @@ void HostResolver::setSuccess(const Poco::Net::IPAddress & address)
         return;
 
     auto old_weight = it->getWeight();
-    it->setSuccess();
+    ++it->usage;
     auto new_weight = it->getWeight();
 
     if (old_weight != new_weight)
@@ -169,8 +158,8 @@ void HostResolver::setFail(const Poco::Net::IPAddress & address)
         if (it == records.end())
             return;
 
-        if (it->setFail(now))
-            CurrentMetrics::add(metrics.banned_count);
+        it->failed = true;
+        it->fail_time = now;
     }
 
     ProfileEvents::increment(metrics.failed);
@@ -227,20 +216,14 @@ void HostResolver::updateImpl(Poco::Timestamp now, std::vector<Poco::Net::IPAddr
             {
                 CurrentMetrics::sub(metrics.active_count, 1);
                 ProfileEvents::increment(metrics.expired, 1);
-                if (it_before->failed)
-                    CurrentMetrics::sub(metrics.banned_count);
             }
             ++it_before;
         }
         else if (it_before == records.end() || (it_next != next_gen.end() && *it_next < it_before->address))
         {
-            /// there are could be duplicates in next_gen vector
-            if (merged.empty() || merged.back().address != *it_next)
-            {
-                CurrentMetrics::add(metrics.active_count, 1);
-                ProfileEvents::increment(metrics.discovered, 1);
-                merged.push_back(Record(*it_next, now));
-            }
+            CurrentMetrics::add(metrics.active_count, 1);
+            ProfileEvents::increment(metrics.discovered, 1);
+            merged.push_back(Record(*it_next, now));
             ++it_next;
         }
         else
@@ -254,22 +237,10 @@ void HostResolver::updateImpl(Poco::Timestamp now, std::vector<Poco::Net::IPAddr
     }
 
     for (auto & rec : merged)
-    {
-            if (!rec.failed)
-                continue;
-
-            /// Exponential increased time for each consecutive fail
-            auto banned_until = now - Poco::Timespan(history.totalMicroseconds() * (1ull << (rec.consecutive_fail_count - 1)));
-            if (rec.fail_time < banned_until)
-            {
-                rec.failed = false;
-                CurrentMetrics::sub(metrics.banned_count);
-            }
-    }
+        if (rec.failed && rec.fail_time < last_effective_resolve)
+            rec.failed = false;
 
     chassert(std::is_sorted(merged.begin(), merged.end()));
-    // check that merged contains unuque elements
-    chassert(std::adjacent_find(merged.begin(), merged.end()) == merged.end());
 
     last_resolve_time = now;
     records.swap(merged);
@@ -279,7 +250,6 @@ void HostResolver::updateImpl(Poco::Timestamp now, std::vector<Poco::Net::IPAddr
 
     updateWeights();
 }
-
 
 size_t HostResolver::getTotalWeight() const
 {

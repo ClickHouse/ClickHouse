@@ -1259,13 +1259,11 @@ void ZooKeeper::initFeatureFlags()
 
 void ZooKeeper::executeGenericRequest(
     const ZooKeeperRequestPtr & request,
-    ResponseCallback callback,
-    WatchCallbackPtr watch)
+    ResponseCallback callback)
 {
     RequestInfo request_info;
     request_info.request = request;
     request_info.callback = callback;
-    request_info.watch = watch;
 
     pushRequest(std::move(request_info));
 }

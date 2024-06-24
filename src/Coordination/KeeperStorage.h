@@ -314,13 +314,8 @@ public:
         AuthID auth_id;
     };
 
-    struct CloseSessionDelta
-    {
-        int64_t session_id;
-    };
-
     using Operation = std::
-        variant<CreateNodeDelta, RemoveNodeDelta, UpdateNodeDelta, SetACLDelta, AddAuthDelta, ErrorDelta, SubDeltaEnd, FailedMultiDelta, CloseSessionDelta>;
+        variant<CreateNodeDelta, RemoveNodeDelta, UpdateNodeDelta, SetACLDelta, AddAuthDelta, ErrorDelta, SubDeltaEnd, FailedMultiDelta>;
 
     struct Delta
     {
@@ -356,7 +351,6 @@ public:
         std::shared_ptr<Node> tryGetNodeFromStorage(StringRef path) const;
 
         std::unordered_map<int64_t, std::list<const AuthID *>> session_and_auth;
-        std::unordered_set<int64_t> closed_sessions;
 
         struct UncommittedNode
         {

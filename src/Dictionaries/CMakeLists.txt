@@ -39,6 +39,7 @@ target_link_libraries(clickhouse_dictionaries
         Poco::Data
         Poco::MongoDB
         Poco::Redis
+        string_utils
 )
 
 target_link_libraries(clickhouse_dictionaries PUBLIC ch_contrib::abseil_swiss_tables)

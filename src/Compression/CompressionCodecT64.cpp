@@ -27,7 +27,7 @@ public:
     /// There're 2 compression variants:
     /// Byte - transpose bit matrix by bytes (only the last not full byte is transposed by bits). It's default.
     /// Bits - full bit-transpose of the bit matrix. It uses more resources and leads to better compression with ZSTD (but worse with LZ4).
-    enum class Variant : uint8_t
+    enum class Variant
     {
         Byte,
         Bit
@@ -689,29 +689,21 @@ void CompressionCodecT64::doDecompressData(const char * src, UInt32 src_size, ch
     switch (baseType(saved_type_id))
     {
         case TypeIndex::Int8:
-            decompressData<Int8>(src, src_size, dst, uncompressed_size, saved_variant);
-            return;
+            return decompressData<Int8>(src, src_size, dst, uncompressed_size, saved_variant);
         case TypeIndex::Int16:
-            decompressData<Int16>(src, src_size, dst, uncompressed_size, saved_variant);
-            return;
+            return decompressData<Int16>(src, src_size, dst, uncompressed_size, saved_variant);
         case TypeIndex::Int32:
-            decompressData<Int32>(src, src_size, dst, uncompressed_size, saved_variant);
-            return;
+            return decompressData<Int32>(src, src_size, dst, uncompressed_size, saved_variant);
         case TypeIndex::Int64:
-            decompressData<Int64>(src, src_size, dst, uncompressed_size, saved_variant);
-            return;
+            return decompressData<Int64>(src, src_size, dst, uncompressed_size, saved_variant);
         case TypeIndex::UInt8:
-            decompressData<UInt8>(src, src_size, dst, uncompressed_size, saved_variant);
-            return;
+            return decompressData<UInt8>(src, src_size, dst, uncompressed_size, saved_variant);
         case TypeIndex::UInt16:
-            decompressData<UInt16>(src, src_size, dst, uncompressed_size, saved_variant);
-            return;
+            return decompressData<UInt16>(src, src_size, dst, uncompressed_size, saved_variant);
         case TypeIndex::UInt32:
-            decompressData<UInt32>(src, src_size, dst, uncompressed_size, saved_variant);
-            return;
+            return decompressData<UInt32>(src, src_size, dst, uncompressed_size, saved_variant);
         case TypeIndex::UInt64:
-            decompressData<UInt64>(src, src_size, dst, uncompressed_size, saved_variant);
-            return;
+            return decompressData<UInt64>(src, src_size, dst, uncompressed_size, saved_variant);
         default:
             break;
     }

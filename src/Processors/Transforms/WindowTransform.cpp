@@ -37,7 +37,7 @@ struct fmt::formatter<DB::RowNumber>
     }
 
     template <typename FormatContext>
-    auto format(const DB::RowNumber & x, FormatContext & ctx) const
+    auto format(const DB::RowNumber & x, FormatContext & ctx)
     {
         return fmt::format_to(ctx.out(), "{}:{}", x.block, x.row);
     }
@@ -1630,14 +1630,15 @@ struct StatefulWindowFunction : public WindowFunction
 
     void destroy(AggregateDataPtr __restrict place) const noexcept override
     {
-        reinterpret_cast<State *>(place)->~State();
+        auto * const state = static_cast<State *>(static_cast<void *>(place));
+        state->~State();
     }
 
     bool hasTrivialDestructor() const override { return std::is_trivially_destructible_v<State>; }
 
     State & getState(const WindowFunctionWorkspace & workspace) const
     {
-        return *reinterpret_cast<State *>(workspace.aggregate_function_state.data());
+        return *static_cast<State *>(static_cast<void *>(workspace.aggregate_function_state.data()));
     }
 };
 
@@ -2515,7 +2516,7 @@ struct WindowFunctionNonNegativeDerivative final : public StatefulWindowFunction
         if (ts_scale_multiplier)
         {
             const auto & column = transform->blockAt(transform->current_row.block).input_columns[workspace.argument_column_indices[ARGUMENT_TIMESTAMP]];
-            const auto & curr_timestamp = checkAndGetColumn<DataTypeDateTime64::ColumnType>(*column).getInt(transform->current_row.row);
+            const auto & curr_timestamp = checkAndGetColumn<DataTypeDateTime64::ColumnType>(column.get())->getInt(transform->current_row.row);
 
             Float64 time_elapsed = curr_timestamp - state.previous_timestamp;
             result = (time_elapsed > 0) ? (metric_diff * ts_scale_multiplier / time_elapsed  * interval_duration) : 0;
