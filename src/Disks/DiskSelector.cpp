@@ -26,7 +26,7 @@ void DiskSelector::assertInitialized() const
 }
 
 
-void DiskSelector::(
+void DiskSelector::initialize(
     const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr context, DiskValidator disk_validator)
 {
     Poco::Util::AbstractConfiguration::Keys keys;
