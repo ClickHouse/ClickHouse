@@ -20,6 +20,7 @@ namespace ErrorCodes
 }
 
 
+
 /** A simple abstract class for buffered data writing (char sequences) somewhere.
   * Unlike std::ostream, it provides access to the internal buffer,
   *  and also allows you to manually manage the position inside the buffer.
@@ -29,6 +30,14 @@ namespace ErrorCodes
 class WriteBuffer : public BufferBase
 {
 public:
+    /// Special exception to throw when the current WriteBuffer cannot receive data
+    /// It is used in MemoryWriteBuffer and CascadeWriteBuffer
+    class CurrentBufferExhausted : public std::exception
+    {
+    public:
+        const char * what() const noexcept override { return "WriteBuffer limit is exhausted"; }
+    };
+
     using BufferBase::set;
     using BufferBase::position;
     void set(Position ptr, size_t size) { BufferBase::set(ptr, size, 0); }
@@ -51,6 +60,13 @@ public:
         try
         {
             nextImpl();
+        }
+        catch (const CurrentBufferExhausted &)
+        {
+            pos = working_buffer.begin();
+            bytes += bytes_in_buffer;
+
+            throw;
         }
         catch (...)
         {
