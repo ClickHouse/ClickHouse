@@ -127,6 +127,7 @@ public:
     /// /, /a, /a/b, /a/b/c, /a/b/c/d while exists will return true only for /a/b/c/d
     virtual bool existsOrHasAnyChild(const std::string & path) const;
 
+    /// List objects by certain prefix (recursively).
     virtual void listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const;
 
     virtual ObjectStorageIteratorPtr iterate(const std::string & path_prefix, size_t max_keys) const;
