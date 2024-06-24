@@ -10,7 +10,7 @@
 #include <Common/re2.h>
 
 #include <Common/Exception.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/ProfileEvents.h>
 
 #ifndef NDEBUG

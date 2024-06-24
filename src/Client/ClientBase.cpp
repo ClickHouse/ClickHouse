@@ -18,9 +18,10 @@
 #include <Common/typeid_cast.h>
 #include <Common/TerminalSize.h>
 #include <Common/clearPasswordFromCommandLine.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/NetException.h>
+#include <Common/tryGetFileNameByFileDescriptor.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Formats/FormatFactory.h>
@@ -43,13 +44,12 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/Kusto/ParserKQLStatement.h>
 #include <Parsers/PRQL/ParserPRQLQuery.h>
+#include <Parsers/Kusto/ParserKQLStatement.h>
 #include <Parsers/Kusto/parseKQLQuery.h>
 
 #include <Processors/Formats/Impl/NullFormat.h>
 #include <Processors/Formats/IInputFormat.h>
-#include <Processors/Formats/IOutputFormat.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -643,6 +643,9 @@ try
         bool extras_into_stdout = need_render_progress || logs_into_stdout;
         bool select_only_into_file = select_into_file && !select_into_file_and_stdout;
 
+        if (!out_file_buf && default_output_compression_method != CompressionMethod::None)
+            out_file_buf = wrapWriteBufferWithCompressionMethod(out_buf, default_output_compression_method, 3, 0);
+
         /// It is not clear how to write progress and logs
         /// intermixed with data with parallel formatting.
         /// It may increase code complexity significantly.
@@ -710,8 +713,8 @@ void ClientBase::adjustSettings()
         settings.input_format_values_allow_data_after_semicolon.changed = false;
     }
 
-    /// Do not limit pretty format output in case of --pager specified.
-    if (!pager.empty())
+    /// Do not limit pretty format output in case of --pager specified or in case of stdout is not a tty.
+    if (!pager.empty() || !stdout_is_a_tty)
     {
         if (!global_context->getSettingsRef().output_format_pretty_max_rows.changed)
         {
@@ -735,7 +738,7 @@ bool ClientBase::isRegularFile(int fd)
     return fstat(fd, &file_stat) == 0 && S_ISREG(file_stat.st_mode);
 }
 
-void ClientBase::setDefaultFormatsFromConfiguration()
+void ClientBase::setDefaultFormatsAndCompressionFromConfiguration()
 {
     if (config().has("output-format"))
     {
@@ -759,6 +762,10 @@ void ClientBase::setDefaultFormatsFromConfiguration()
             default_output_format = *format_from_file_name;
         else
             default_output_format = "TSV";
+
+        std::optional<String> file_name = tryGetFileNameFromFileDescriptor(STDOUT_FILENO);
+        if (file_name)
+            default_output_compression_method = chooseCompressionMethod(*file_name, "");
     }
     else if (is_interactive)
     {
@@ -1180,7 +1187,10 @@ void ClientBase::receiveResult(ASTPtr parsed_query, Int32 signals_before_stop, b
         std::rethrow_exception(local_format_error);
 
     if (cancelled && is_interactive)
+    {
         std::cout << "Query was cancelled." << std::endl;
+        cancelled_printed = true;
+    }
 }
 
 
@@ -1294,8 +1304,13 @@ void ClientBase::onEndOfStream()
 
     resetOutput();
 
-    if (is_interactive && !written_first_block)
-        std::cout << "Ok." << std::endl;
+    if (is_interactive)
+    {
+        if (cancelled && !cancelled_printed)
+            std::cout << "Query was cancelled." << std::endl;
+        else if (!written_first_block)
+            std::cout << "Ok." << std::endl;
+    }
 }
 
 
@@ -1858,6 +1873,7 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
     resetOutput();
     have_error = false;
     cancelled = false;
+    cancelled_printed = false;
     client_exception.reset();
     server_exception.reset();
 

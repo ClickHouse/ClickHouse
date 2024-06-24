@@ -28,11 +28,12 @@ public:
         const String & name_,
         ClientPtr && client_,
         SettingsPtr && settings_,
-        const String & object_namespace_);
+        const String & object_namespace_,
+        const String & description_);
 
-    void listObjects(const std::string & path, RelativePathsWithMetadata & children, int max_keys) const override;
+    void listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const override;
 
-    ObjectStorageIteratorPtr iterate(const std::string & path_prefix) const override;
+    ObjectStorageIteratorPtr iterate(const std::string & path_prefix, size_t max_keys) const override;
 
     std::string getName() const override { return "AzureObjectStorage"; }
 
@@ -40,7 +41,7 @@ public:
 
     std::string getCommonKeyPrefix() const override { return ""; }
 
-    std::string getDescription() const override { return client.get()->GetUrl(); }
+    std::string getDescription() const override { return description; }
 
     bool exists(const StoredObject & object) const override;
 
@@ -89,7 +90,8 @@ public:
     void applyNewSettings(
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
-        ContextPtr context) override;
+        ContextPtr context,
+        const ApplyNewSettingsOptions & options) override;
 
     String getObjectsNamespace() const override { return object_namespace ; }
 
@@ -104,7 +106,9 @@ public:
     bool isRemote() const override { return true; }
 
     std::shared_ptr<const AzureBlobStorage::RequestSettings> getSettings() const  { return settings.get(); }
-    std::shared_ptr<const AzureBlobStorage::ContainerClient> getAzureBlobStorageClient() const  override{ return client.get(); }
+    std::shared_ptr<const AzureBlobStorage::ContainerClient> getAzureBlobStorageClient() const override { return client.get(); }
+
+    bool supportParallelWrite() const override { return true; }
 
 private:
     using SharedAzureClientPtr = std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient>;
@@ -115,6 +119,9 @@ private:
     MultiVersion<AzureBlobStorage::ContainerClient> client;
     MultiVersion<AzureBlobStorage::RequestSettings> settings;
     const String object_namespace; /// container + prefix
+
+    /// We use source url without container and prefix as description, because in Azure there are no limitations for operations between different containers.
+    const String description;
 
     LoggerPtr log;
 };

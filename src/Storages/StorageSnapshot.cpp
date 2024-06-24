@@ -115,7 +115,7 @@ std::optional<NameAndTypePair> StorageSnapshot::tryGetColumn(const GetColumnsOpt
 {
     const auto & columns = getMetadataForQuery()->getColumns();
     auto column = columns.tryGetColumn(options, column_name);
-    if (column && (!column->type->hasDynamicSubcolumns() || !options.with_extended_objects))
+    if (column && (!column->type->hasDynamicSubcolumnsDeprecated() || !options.with_extended_objects))
         return column;
 
     if (options.with_extended_objects)

@@ -37,7 +37,7 @@ public:
       * Necessary actions are not added in actions dag output.
       * Returns query tree expression node actions dag nodes.
       */
-    ActionsDAG::NodeRawConstPtrs visit(ActionsDAGPtr actions_dag, QueryTreeNodePtr expression_node);
+    ActionsDAG::NodeRawConstPtrs visit(ActionsDAG & actions_dag, QueryTreeNodePtr expression_node);
 
 private:
     const PlannerContextPtr planner_context;

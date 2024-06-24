@@ -10,6 +10,7 @@
 #include <IO/Archives/hasRegisteredArchiveFileExtension.h>
 #include <Interpreters/Context.h>
 #include <Poco/Util/AbstractConfiguration.h>
+#include <Storages/ObjectStorage/Azure/Configuration.h>
 #include <filesystem>
 #endif
 
@@ -69,7 +70,8 @@ void registerBackupEngineAzureBlobStorage(BackupFactory & factory)
             };
 
             if (args.size() > 1)
-                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Backup AzureBlobStorage requires 1 or 2 arguments: named_collection, [filename]");
+                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                                "Backup AzureBlobStorage requires 1 or 2 arguments: named_collection, [filename]");
 
             if (args.size() == 1)
                 blob_path = args[0].safeGet<String>();
@@ -125,11 +127,12 @@ void registerBackupEngineAzureBlobStorage(BackupFactory & factory)
         if (params.open_mode == IBackup::OpenMode::READ)
         {
             auto reader = std::make_shared<BackupReaderAzureBlobStorage>(
-                                                           connection_params,
-                                                           blob_path,
-                                                           params.read_settings,
-                                                           params.write_settings,
-                                                           params.context);
+                connection_params,
+                blob_path,
+                params.allow_azure_native_copy,
+                params.read_settings,
+                params.write_settings,
+                params.context);
 
             return std::make_unique<BackupImpl>(
                 params.backup_info,
@@ -137,17 +140,19 @@ void registerBackupEngineAzureBlobStorage(BackupFactory & factory)
                 params.base_backup_info,
                 reader,
                 params.context,
+                params.is_internal_backup,
                 /* use_same_s3_credentials_for_base_backup*/ false);
         }
         else
         {
             auto writer = std::make_shared<BackupWriterAzureBlobStorage>(
-                                                           connection_params,
-                                                           blob_path,
-                                                           params.read_settings,
-                                                           params.write_settings,
-                                                           params.context,
-                                                           params.azure_attempt_to_create_container);
+                connection_params,
+                blob_path,
+                params.allow_azure_native_copy,
+                params.read_settings,
+                params.write_settings,
+                params.context,
+                params.azure_attempt_to_create_container);
 
             return std::make_unique<BackupImpl>(
                 params.backup_info,

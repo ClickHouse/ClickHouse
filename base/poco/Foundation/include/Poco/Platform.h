@@ -120,6 +120,7 @@
 #define POCO_ARCH_AARCH64 0x0f
 #define POCO_ARCH_ARM64 0x0f // same as POCO_ARCH_AARCH64
 #define POCO_ARCH_RISCV64 0x10
+#define POCO_ARCH_LOONGARCH64 0x12
 
 
 #if defined(__ALPHA) || defined(__alpha) || defined(__alpha__) || defined(_M_ALPHA)
@@ -208,6 +209,9 @@
 #    define POCO_ARCH_BIG_ENDIAN 1
 #elif defined(__riscv) && (__riscv_xlen == 64)
 #    define POCO_ARCH POCO_ARCH_RISCV64
+#    define POCO_ARCH_LITTLE_ENDIAN 1
+#elif defined(__loongarch64)
+#    define POCO_ARCH POCO_ARCH_LOONGARCH64
 #    define POCO_ARCH_LITTLE_ENDIAN 1
 #endif
 

@@ -183,7 +183,7 @@ const ActionsDAG::Node * appendExpression(
     const JoinNode & join_node)
 {
     PlannerActionsVisitor join_expression_visitor(planner_context);
-    auto join_expression_dag_node_raw_pointers = join_expression_visitor.visit(dag, expression);
+    auto join_expression_dag_node_raw_pointers = join_expression_visitor.visit(*dag, expression);
     if (join_expression_dag_node_raw_pointers.size() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "JOIN {} ON clause contains multiple expressions",
@@ -328,7 +328,7 @@ void buildJoinClause(
             {
                 throw Exception(
                     ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
-                    "JOIN {} join expression contains column from left and right table",
+                    "JOIN {} join expression contains column from left and right table, you may try experimental support of this feature by `SET allow_experimental_join_condition = 1`",
                     join_node.formatASTForErrorMessage());
             }
         }
@@ -363,7 +363,7 @@ void buildJoinClause(
             {
                 throw Exception(
                     ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
-                    "JOIN {} join expression contains column from left and right table",
+                    "JOIN {} join expression contains column from left and right table, you may try experimental support of this feature by `SET allow_experimental_join_condition = 1`",
                     join_node.formatASTForErrorMessage());
             }
         }
@@ -603,7 +603,7 @@ JoinClausesAndActions buildJoinClausesAndActions(
         {
             auto mixed_join_expressions_actions = std::make_shared<ActionsDAG>(mixed_table_expression_columns);
             PlannerActionsVisitor join_expression_visitor(planner_context);
-            auto join_expression_dag_node_raw_pointers = join_expression_visitor.visit(mixed_join_expressions_actions, join_expression);
+            auto join_expression_dag_node_raw_pointers = join_expression_visitor.visit(*mixed_join_expressions_actions, join_expression);
             if (join_expression_dag_node_raw_pointers.size() != 1)
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR, "JOIN {} ON clause contains multiple expressions", join_node.formatASTForErrorMessage());

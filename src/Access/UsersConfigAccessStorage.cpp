@@ -10,7 +10,7 @@
 #include <Dictionaries/IDictionary.h>
 #include <Common/Config/ConfigReloader.h>
 #include <Common/SSHWrapper.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/quoteString.h>
 #include <Common/transformEndianness.h>
 #include <Core/Settings.h>

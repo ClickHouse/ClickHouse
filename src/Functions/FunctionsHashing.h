@@ -49,6 +49,8 @@
 #include <base/bit_cast.h>
 #include <base/unaligned.h>
 
+#include <algorithm>
+
 namespace DB
 {
 
@@ -75,17 +77,29 @@ namespace impl
         ColumnPtr key0;
         ColumnPtr key1;
         bool is_const;
+        const ColumnArray::Offsets * offsets{};
 
         size_t size() const
         {
             assert(key0 && key1);
             assert(key0->size() == key1->size());
+            assert(offsets == nullptr || offsets->size() == key0->size());
+            if (offsets != nullptr)
+                return offsets->back();
             return key0->size();
         }
         SipHashKey getKey(size_t i) const
         {
             if (is_const)
                 i = 0;
+            if (offsets != nullptr)
+            {
+                const auto *const begin = offsets->begin();
+                const auto * upper = std::upper_bound(begin, offsets->end(), i);
+                if (upper == offsets->end())
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "offset {} not found in function SipHashKeyColumns::getKey", i);
+                i = upper - begin;
+            }
             const auto & key0data = assert_cast<const ColumnUInt64 &>(*key0).getData();
             const auto & key1data = assert_cast<const ColumnUInt64 &>(*key1).getData();
             return {key0data[i], key1data[i]};
@@ -1112,7 +1126,15 @@ private:
 
             typename ColumnVector<ToType>::Container vec_temp(nested_size);
             bool nested_is_first = true;
-            executeForArgument(key_cols, nested_type, nested_column, vec_temp, nested_is_first);
+
+            if constexpr (Keyed)
+            {
+                KeyColumnsType key_cols_tmp{key_cols};
+                key_cols_tmp.offsets = &offsets;
+                executeForArgument(key_cols_tmp, nested_type, nested_column, vec_temp, nested_is_first);
+            }
+            else
+                executeForArgument(key_cols, nested_type, nested_column, vec_temp, nested_is_first);
 
             const size_t size = offsets.size();
 

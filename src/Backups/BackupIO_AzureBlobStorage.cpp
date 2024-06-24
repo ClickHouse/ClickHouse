@@ -6,7 +6,6 @@
 #include <Interpreters/Context.h>
 #include <IO/SharedThreadPools.h>
 #include <IO/HTTPHeaderEntries.h>
-#include <Storages/StorageAzureBlobCluster.h>
 #include <Disks/IO/ReadBufferFromAzureBlobStorage.h>
 #include <Disks/IO/WriteBufferFromAzureBlobStorage.h>
 #include <IO/AzureBlobStorage/copyAzureBlobStorageFile.h>
@@ -32,21 +31,28 @@ namespace ErrorCodes
 BackupReaderAzureBlobStorage::BackupReaderAzureBlobStorage(
     const AzureBlobStorage::ConnectionParams & connection_params_,
     const String & blob_path_,
+    bool allow_azure_native_copy,
     const ReadSettings & read_settings_,
     const WriteSettings & write_settings_,
     const ContextPtr & context_)
     : BackupReaderDefault(read_settings_, write_settings_, getLogger("BackupReaderAzureBlobStorage"))
-    , data_source_description{DataSourceType::ObjectStorage, ObjectStorageType::Azure, MetadataStorageType::None, connection_params_.endpoint.container_name, false, false}
+    , data_source_description{DataSourceType::ObjectStorage, ObjectStorageType::Azure, MetadataStorageType::None, connection_params_.getContainer(), false, false}
     , connection_params(connection_params_)
     , blob_path(blob_path_)
 {
     auto client_ptr = AzureBlobStorage::getContainerClient(connection_params, /*readonly=*/ false);
-    object_storage = std::make_unique<AzureObjectStorage>("BackupReaderAzureBlobStorage",
-                                                          std::move(client_ptr),
-                                                          AzureBlobStorage::getRequestSettings(context_->getSettingsRef()),
-                                                          connection_params.endpoint.container_name);
+
+    object_storage = std::make_unique<AzureObjectStorage>(
+        "BackupReaderAzureBlobStorage",
+        std::move(client_ptr),
+        AzureBlobStorage::getRequestSettings(context_->getSettingsRef()),
+        connection_params.getContainer(),
+        connection_params.getConnectionURL());
+
     client = object_storage->getAzureBlobStorageClient();
-    settings = object_storage->getSettings();
+    auto settings_copy = *object_storage->getSettings();
+    settings_copy.use_native_copy = allow_azure_native_copy;
+    settings = std::make_unique<const AzureObjectStorageSettings>(settings_copy);
 }
 
 BackupReaderAzureBlobStorage::~BackupReaderAzureBlobStorage() = default;
@@ -76,9 +82,9 @@ void BackupReaderAzureBlobStorage::copyFileToDisk(const String & path_in_backup,
                                     DiskPtr destination_disk, const String & destination_path, WriteMode write_mode)
 {
     auto destination_data_source_description = destination_disk->getDataSourceDescription();
-    if ((destination_data_source_description.type == DataSourceType::ObjectStorage)
-        && (destination_data_source_description.object_storage_type == ObjectStorageType::Azure)
-        && (destination_data_source_description.is_encrypted == encrypted_in_backup))
+    LOG_TRACE(log, "Source description {}, destination description {}", data_source_description.description, destination_data_source_description.description);
+    if (destination_data_source_description.object_storage_type == ObjectStorageType::Azure
+        && destination_data_source_description.is_encrypted == encrypted_in_backup)
     {
         LOG_TRACE(log, "Copying {} from AzureBlobStorage to disk {}", path_in_backup, destination_disk->getName());
         auto write_blob_function = [&](const Strings & dst_blob_path, WriteMode mode, const std::optional<ObjectAttributes> &) -> size_t
@@ -92,7 +98,7 @@ void BackupReaderAzureBlobStorage::copyFileToDisk(const String & path_in_backup,
             copyAzureBlobStorageFile(
                 client,
                 destination_disk->getObjectStorage()->getAzureBlobStorageClient(),
-                connection_params.endpoint.container_name,
+                connection_params.getContainer(),
                 fs::path(blob_path) / path_in_backup,
                 0,
                 file_size,
@@ -116,13 +122,14 @@ void BackupReaderAzureBlobStorage::copyFileToDisk(const String & path_in_backup,
 
 BackupWriterAzureBlobStorage::BackupWriterAzureBlobStorage(
     const AzureBlobStorage::ConnectionParams & connection_params_,
+    bool allow_azure_native_copy,
     const String & blob_path_,
     const ReadSettings & read_settings_,
     const WriteSettings & write_settings_,
     const ContextPtr & context_,
     bool attempt_to_create_container)
     : BackupWriterDefault(read_settings_, write_settings_, getLogger("BackupWriterAzureBlobStorage"))
-    , data_source_description{DataSourceType::ObjectStorage, ObjectStorageType::Azure, MetadataStorageType::None, connection_params_.endpoint.container_name, false, false}
+    , data_source_description{DataSourceType::ObjectStorage, ObjectStorageType::Azure, MetadataStorageType::None, connection_params_.getContainer(), false, false}
     , connection_params(connection_params_)
     , blob_path(blob_path_)
 {
@@ -130,20 +137,32 @@ BackupWriterAzureBlobStorage::BackupWriterAzureBlobStorage(
         connection_params.endpoint.container_already_exists = true;
 
     auto client_ptr = AzureBlobStorage::getContainerClient(connection_params, /*readonly=*/ false);
-    object_storage = std::make_unique<AzureObjectStorage>("BackupWriterAzureBlobStorage",
-                                                          std::move(client_ptr),
-                                                          AzureBlobStorage::getRequestSettings(context_->getSettingsRef()),
-                                                          connection_params.endpoint.container_name);
+    object_storage = std::make_unique<AzureObjectStorage>(
+        "BackupWriterAzureBlobStorage",
+        std::move(client_ptr),
+        AzureBlobStorage::getRequestSettings(context_->getSettingsRef()),
+        connection_params.getContainer(),
+        connection_params.getConnectionURL());
+
     client = object_storage->getAzureBlobStorageClient();
-    settings = object_storage->getSettings();
+    auto settings_copy = *object_storage->getSettings();
+    settings_copy.use_native_copy = allow_azure_native_copy;
+    settings = std::make_unique<const AzureObjectStorageSettings>(settings_copy);
 }
 
-void BackupWriterAzureBlobStorage::copyFileFromDisk(const String & path_in_backup, DiskPtr src_disk, const String & src_path,
-                                      bool copy_encrypted, UInt64 start_pos, UInt64 length)
+void BackupWriterAzureBlobStorage::copyFileFromDisk(
+    const String & path_in_backup,
+    DiskPtr src_disk,
+    const String & src_path,
+    bool copy_encrypted,
+    UInt64 start_pos,
+    UInt64 length)
 {
     /// Use the native copy as a more optimal way to copy a file from AzureBlobStorage to AzureBlobStorage if it's possible.
     auto source_data_source_description = src_disk->getDataSourceDescription();
-    if (source_data_source_description.sameKind(data_source_description) && (source_data_source_description.is_encrypted == copy_encrypted))
+    LOG_TRACE(log, "Source description {}, destination description {}", source_data_source_description.description, data_source_description.description);
+    if (source_data_source_description.object_storage_type == ObjectStorageType::Azure
+        && source_data_source_description.is_encrypted == copy_encrypted)
     {
         /// getBlobPath() can return more than 3 elements if the file is stored as multiple objects in AzureBlobStorage container.
         /// In this case we can't use the native copy.
@@ -157,7 +176,7 @@ void BackupWriterAzureBlobStorage::copyFileFromDisk(const String & path_in_backu
                 /* src_path */ src_blob_path[0],
                 start_pos,
                 length,
-                connection_params.endpoint.container_name,
+                connection_params.getContainer(),
                 fs::path(blob_path) / path_in_backup,
                 settings,
                 read_settings,
@@ -176,25 +195,29 @@ void BackupWriterAzureBlobStorage::copyFile(const String & destination, const St
     copyAzureBlobStorageFile(
        client,
        client,
-       connection_params.endpoint.container_name,
+       connection_params.getContainer(),
        fs::path(blob_path)/ source,
        0,
        size,
-       /* dest_container */ connection_params.endpoint.container_name,
+       /* dest_container */ connection_params.getContainer(),
        /* dest_path */ destination,
        settings,
        read_settings,
        threadPoolCallbackRunnerUnsafe<void>(getBackupsIOThreadPool().get(), "BackupWRAzure"));
 }
 
-void BackupWriterAzureBlobStorage::copyDataToFile(const String & path_in_backup, const CreateReadBufferFunction & create_read_buffer, UInt64 start_pos, UInt64 length)
+void BackupWriterAzureBlobStorage::copyDataToFile(
+    const String & path_in_backup,
+    const CreateReadBufferFunction & create_read_buffer,
+    UInt64 start_pos,
+    UInt64 length)
 {
     copyDataToAzureBlobStorageFile(
         create_read_buffer,
         start_pos,
         length,
         client,
-        connection_params.endpoint.container_name,
+        connection_params.getContainer(),
         fs::path(blob_path) / path_in_backup,
         settings,
         threadPoolCallbackRunnerUnsafe<void>(getBackupsIOThreadPool().get(),
@@ -216,7 +239,7 @@ UInt64 BackupWriterAzureBlobStorage::getFileSize(const String & file_name)
     object_storage->listObjects(key,children,/*max_keys*/0);
     if (children.empty())
         throw Exception(ErrorCodes::AZURE_BLOB_STORAGE_ERROR, "Object must exist");
-    return children[0].metadata.size_bytes;
+    return children[0]->metadata->size_bytes;
 }
 
 std::unique_ptr<ReadBuffer> BackupWriterAzureBlobStorage::readFile(const String & file_name, size_t /*expected_file_size*/)
