@@ -290,7 +290,8 @@ ZooKeeper::ZooKeeper(const Poco::Util::AbstractConfiguration & config, const std
 
 std::vector<ShuffleHost> ZooKeeper::shuffleHosts() const
 {
-    std::function<Priority(size_t index)> get_priority = args.get_priority_load_balancing.getPriorityFunc(args.hosts.size());
+    std::function<Priority(size_t index)> get_priority = args.get_priority_load_balancing.getPriorityFunc(
+        args.get_priority_load_balancing.load_balancing, /* offset for first_or_random */ 0, args.hosts.size());
     std::vector<ShuffleHost> shuffle_hosts;
     for (size_t i = 0; i < args.hosts.size(); ++i)
     {

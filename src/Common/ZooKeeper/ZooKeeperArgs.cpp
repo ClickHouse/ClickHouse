@@ -128,7 +128,7 @@ void ZooKeeperArgs::initFromKeeperServerSection(const Poco::Util::AbstractConfig
             auto load_balancing = magic_enum::enum_cast<DB::LoadBalancing>(Poco::toUpper(load_balancing_str));
             if (!load_balancing)
                 throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Unknown load balancing: {}", load_balancing_str);
-            get_priority_load_balancing.load_balancing = *load_balancing;
+            get_priority_load_balancing = DB::GetPriorityForLoadBalancing(*load_balancing, thread_local_rng() % hosts.size());
             break;
         }
     }
@@ -144,6 +144,8 @@ void ZooKeeperArgs::initFromKeeperSection(const Poco::Util::AbstractConfiguratio
 
     Poco::Util::AbstractConfiguration::Keys keys;
     config.keys(config_name, keys);
+
+    std::optional<DB::LoadBalancing> load_balancing;
 
     for (const auto & key : keys)
     {
@@ -220,10 +222,9 @@ void ZooKeeperArgs::initFromKeeperSection(const Poco::Util::AbstractConfiguratio
         {
             String load_balancing_str = config.getString(config_name + "." + key);
             /// Use magic_enum to avoid dependency from dbms (`SettingFieldLoadBalancingTraits::fromString(...)`)
-            auto load_balancing = magic_enum::enum_cast<DB::LoadBalancing>(Poco::toUpper(load_balancing_str));
+            load_balancing = magic_enum::enum_cast<DB::LoadBalancing>(Poco::toUpper(load_balancing_str));
             if (!load_balancing)
                 throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Unknown load balancing: {}", load_balancing_str);
-            get_priority_load_balancing.load_balancing = *load_balancing;
         }
         else if (key == "fallback_session_lifetime")
         {
@@ -244,6 +245,9 @@ void ZooKeeperArgs::initFromKeeperSection(const Poco::Util::AbstractConfiguratio
         else
             throw KeeperException(Coordination::Error::ZBADARGUMENTS, "Unknown key {} in config file", key);
     }
+
+    if (load_balancing)
+        get_priority_load_balancing = DB::GetPriorityForLoadBalancing(*load_balancing, thread_local_rng() % hosts.size());
 
     if (availability_zone_autodetect)
         client_availability_zone = DB::S3::tryGetRunningAvailabilityZone();

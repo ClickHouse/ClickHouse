@@ -14,7 +14,6 @@ public:
     explicit GetPriorityForLoadBalancing(LoadBalancing load_balancing_, size_t last_used_ = 0)
         : load_balancing(load_balancing_), last_used(last_used_)
     {
-        saved_offset = thread_local_rng();
     }
     GetPriorityForLoadBalancing() = default;
 
@@ -31,10 +30,6 @@ public:
     }
 
     Func getPriorityFunc(LoadBalancing load_balance, size_t offset, size_t pool_size) const;
-    Func getPriorityFunc(size_t pool_size) const
-    {
-        return getPriorityFunc(load_balancing, saved_offset % pool_size, pool_size);
-    }
 
     bool hasOptimalNode() const;
 
@@ -45,7 +40,6 @@ public:
 
 private:
     mutable size_t last_used = 0; /// Last used for round_robin policy.
-    size_t saved_offset;    /// Default random offset for round_robin policy.
 };
 
 }
