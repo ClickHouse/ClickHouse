@@ -3,9 +3,11 @@
 
 #include <IO/ReadHelpers.h>
 #include <IO/SharedThreadPools.h>
+#include <IO/S3Common.h>
 #include <Common/ErrorCodes.h>
 #include <Common/logger_useful.h>
 #include "CommonPathPrefixKeyGenerator.h"
+
 
 namespace DB
 {
@@ -51,11 +53,21 @@ MetadataStorageFromPlainObjectStorage::PathMap loadPathPrefixMap(const std::stri
             setThreadName("PlainRWMetaLoad");
 
             StoredObject object{path};
-
-            /// TODO: If an object was removed just now, skip it.
-            auto read_buf = object_storage->readObject(object, settings);
             String local_path;
-            readStringUntilEOF(local_path, *read_buf);
+
+            try
+            {
+                auto read_buf = object_storage->readObject(object, settings);
+                readStringUntilEOF(local_path, *read_buf);
+            }
+            catch (const S3Exception & e)
+            {
+                /// It is ok if a directory was removed just now.
+                /// We support attaching a filesystem that is concurrently modified by someone else.
+                if (e.getS3ErrorCode() == Aws::S3::S3Errors::NO_SUCH_KEY)
+                    return;
+                throw;
+            }
 
             chassert(remote_path.has_parent_path());
             std::pair<MetadataStorageFromPlainObjectStorage::PathMap::iterator, bool> res;
