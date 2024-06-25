@@ -14,6 +14,5 @@ std::unique_ptr<QueryPlan> createLocalPlanForParallelReplicas(
     ContextPtr context,
     QueryProcessingStage::Enum processed_stage,
     ParallelReplicasReadingCoordinatorPtr coordinator,
-    QueryPlanStepPtr read_from_merge_tree,
-    bool has_missing_objects);
+    QueryPlanStepPtr read_from_merge_tree);
 }

@@ -20,34 +20,7 @@
 namespace DB
 {
 
-namespace
-{
-
-void addConvertingActions(QueryPlan & plan, const Block & header, bool has_missing_objects)
-{
-    if (blocksHaveEqualStructure(plan.getCurrentDataStream().header, header))
-        return;
-
-    auto mode = has_missing_objects ? ActionsDAG::MatchColumnsMode::Position : ActionsDAG::MatchColumnsMode::Name;
-
-    auto get_converting_dag = [mode](const Block & block_, const Block & header_)
-    {
-        /// Convert header structure to expected.
-        /// Also we ignore constants from result and replace it with constants from header.
-        /// It is needed for functions like `now64()` or `randConstant()` because their values may be different.
-        return ActionsDAG::makeConvertingActions(
-            block_.getColumnsWithTypeAndName(),
-            header_.getColumnsWithTypeAndName(),
-            mode,
-            true);
-    };
-
-    auto convert_actions_dag = get_converting_dag(plan.getCurrentDataStream().header, header);
-    auto converting = std::make_unique<ExpressionStep>(plan.getCurrentDataStream(), convert_actions_dag);
-    plan.addStep(std::move(converting));
-}
-
-}
+void addConvertingActions(QueryPlan & plan, const Block & header, bool has_missing_objects);
 
 std::unique_ptr<QueryPlan> createLocalPlanForParallelReplicas(
     const ASTPtr & query_ast,
@@ -55,8 +28,7 @@ std::unique_ptr<QueryPlan> createLocalPlanForParallelReplicas(
     ContextPtr context,
     QueryProcessingStage::Enum processed_stage,
     ParallelReplicasReadingCoordinatorPtr coordinator,
-    QueryPlanStepPtr analyzed_read_from_merge_tree,
-    bool has_missing_objects)
+    QueryPlanStepPtr analyzed_read_from_merge_tree)
 {
     checkStackSize();
 
@@ -112,7 +84,7 @@ std::unique_ptr<QueryPlan> createLocalPlanForParallelReplicas(
         = reading->createLocalParallelReplicasReadingStep(analyzed_merge_tree, all_ranges_cb, read_task_cb, number_of_local_replica);
     node->step = std::move(read_from_merge_tree_parallel_replicas);
 
-    addConvertingActions(*query_plan, header, has_missing_objects);
+    addConvertingActions(*query_plan, header, /*has_missing_objects=*/false);
     return query_plan;
 }
 
