@@ -180,18 +180,14 @@ public:
 
     /// Appends n-th element from other column with the same type.
     /// Is used in merge-sort and merges. It could be implemented in inherited classes more optimally than default implementation.
-    virtual void insertFrom(const IColumn & src, size_t n);
+    void insertFrom(const IColumn & src, size_t n) { doInsertFrom(src, n); }
 
     /// Appends range of elements from other column with the same type.
     /// Could be used to concatenate columns.
-    virtual void insertRangeFrom(const IColumn & src, size_t start, size_t length) = 0;
+    void insertRangeFrom(const IColumn & src, size_t start, size_t length) { doInsertRangeFrom(src, start, length); }
 
     /// Appends one element from other column with the same type multiple times.
-    virtual void insertManyFrom(const IColumn & src, size_t position, size_t length)
-    {
-        for (size_t i = 0; i < length; ++i)
-            insertFrom(src, position);
-    }
+    void insertManyFrom(const IColumn & src, size_t position, size_t length) { doInsertManyFrom(src, position, length); }
 
     /// Appends one field multiple times. Can be optimized in inherited classes.
     virtual void insertMany(const Field & field, size_t length)
@@ -322,7 +318,10 @@ public:
       *
       * For non Nullable and non floating point types, nan_direction_hint is ignored.
       */
-    [[nodiscard]] virtual int compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const = 0;
+    [[nodiscard]] int compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const
+    {
+        return doCompareAt(n, m, rhs, nan_direction_hint);
+    }
 
 #if USE_EMBEDDED_COMPILER
 
@@ -633,6 +632,18 @@ protected:
         Equals equals,
         Sort full_sort,
         PartialSort partial_sort) const;
+
+    virtual void doInsertFrom(const IColumn & src, size_t n);
+
+    virtual void doInsertRangeFrom(const IColumn & src, size_t start, size_t length) = 0;
+
+    virtual void doInsertManyFrom(const IColumn & src, size_t position, size_t length)
+    {
+        for (size_t i = 0; i < length; ++i)
+            insertFrom(src, position);
+    }
+
+    virtual int doCompareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const = 0;
 };
 
 using ColumnPtr = IColumn::Ptr;

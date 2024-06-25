@@ -145,7 +145,9 @@ public:
 
     void insertData(const char * pos, size_t length) override;
 
-    void insertFrom(const IColumn & from, size_t n) override;
+    void doInsertFrom(const IColumn & from, size_t n) override;
+
+    using IColumn::insertFrom;
 
     void insertFrom(ConstAggregateDataPtr place);
 
@@ -182,7 +184,7 @@ public:
 
     void protect() override;
 
-    void insertRangeFrom(const IColumn & from, size_t start, size_t length) override;
+    void doInsertRangeFrom(const IColumn & from, size_t start, size_t length) override;
 
     void popBack(size_t n) override;
 
@@ -201,7 +203,7 @@ public:
 
     MutableColumns scatter(ColumnIndex num_columns, const Selector & selector) const override;
 
-    int compareAt(size_t, size_t, const IColumn &, int) const override
+    int doCompareAt(size_t, size_t, const IColumn &, int) const override
     {
         return 0;
     }

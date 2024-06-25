@@ -209,8 +209,8 @@ public:
     void insert(const Field & field) override;
     bool tryInsert(const Field & field) override;
     void insertDefault() override;
-    void insertFrom(const IColumn & src, size_t n) override;
-    void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
+    void doInsertFrom(const IColumn & src, size_t n) override;
+    void doInsertRangeFrom(const IColumn & src, size_t start, size_t length) override;
     void popBack(size_t length) override;
     Field operator[](size_t n) const override;
     void get(size_t n, Field & res) const override;
@@ -228,7 +228,7 @@ public:
     /// Order of rows in ColumnObject is undefined.
     void getPermutation(PermutationSortDirection, PermutationSortStability, size_t, int, Permutation & res) const override;
     void updatePermutation(PermutationSortDirection, PermutationSortStability, size_t, int, Permutation &, EqualRanges &) const override {}
-    int compareAt(size_t, size_t, const IColumn &, int) const override { return 0; }
+    int doCompareAt(size_t, size_t, const IColumn &, int) const override { return 0; }
     void getExtremes(Field & min, Field & max) const override;
 
     /// All other methods throw exception.

@@ -121,7 +121,7 @@ public:
         return data->isNullAt(0);
     }
 
-    void insertRangeFrom(const IColumn &, size_t /*start*/, size_t length) override
+    void doInsertRangeFrom(const IColumn &, size_t /*start*/, size_t length) override
     {
         s += length;
     }
@@ -145,12 +145,12 @@ public:
         ++s;
     }
 
-    void insertFrom(const IColumn &, size_t) override
+    void doInsertFrom(const IColumn &, size_t) override
     {
         ++s;
     }
 
-    void insertManyFrom(const IColumn & /*src*/, size_t /* position */, size_t length) override { s += length; }
+    void doInsertManyFrom(const IColumn & /*src*/, size_t /* position */, size_t length) override { s += length; }
 
     void insertDefault() override
     {
@@ -223,7 +223,7 @@ public:
         return data->allocatedBytes() + sizeof(s);
     }
 
-    int compareAt(size_t, size_t, const IColumn & rhs, int nan_direction_hint) const override
+    int doCompareAt(size_t, size_t, const IColumn & rhs, int nan_direction_hint) const override
     {
         return data->compareAt(0, 0, *assert_cast<const ColumnConst &>(rhs).data, nan_direction_hint);
     }

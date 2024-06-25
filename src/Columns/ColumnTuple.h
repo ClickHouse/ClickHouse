@@ -65,8 +65,8 @@ public:
     void insertData(const char * pos, size_t length) override;
     void insert(const Field & x) override;
     bool tryInsert(const Field & x) override;
-    void insertFrom(const IColumn & src_, size_t n) override;
-    void insertManyFrom(const IColumn & src, size_t position, size_t length) override;
+    void doInsertFrom(const IColumn & src_, size_t n) override;
+    void doInsertManyFrom(const IColumn & src, size_t position, size_t length) override;
     void insertDefault() override;
     void popBack(size_t n) override;
     StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
@@ -76,14 +76,14 @@ public:
     void updateHashWithValue(size_t n, SipHash & hash) const override;
     void updateWeakHash32(WeakHash32 & hash) const override;
     void updateHashFast(SipHash & hash) const override;
-    void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
+    void doInsertRangeFrom(const IColumn & src, size_t start, size_t length) override;
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
     void expand(const Filter & mask, bool inverted) override;
     ColumnPtr permute(const Permutation & perm, size_t limit) const override;
     ColumnPtr index(const IColumn & indexes, size_t limit) const override;
     ColumnPtr replicate(const Offsets & offsets) const override;
     MutableColumns scatter(ColumnIndex num_columns, const Selector & selector) const override;
-    int compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const override;
+    int doCompareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const override;
     int compareAtWithCollation(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint, const Collator & collator) const override;
     void getExtremes(Field & min, Field & max) const override;
     void getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,

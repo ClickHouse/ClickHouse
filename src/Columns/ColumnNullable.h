@@ -69,11 +69,11 @@ public:
     char * serializeValueIntoMemory(size_t n, char * memory) const override;
     const char * deserializeAndInsertFromArena(const char * pos) override;
     const char * skipSerializedInArena(const char * pos) const override;
-    void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
+    void doInsertRangeFrom(const IColumn & src, size_t start, size_t length) override;
     void insert(const Field & x) override;
     bool tryInsert(const Field & x) override;
-    void insertFrom(const IColumn & src, size_t n) override;
-    void insertManyFrom(const IColumn & src, size_t position, size_t length) override;
+    void doInsertFrom(const IColumn & src, size_t n) override;
+    void doInsertManyFrom(const IColumn & src, size_t position, size_t length) override;
 
     void insertFromNotNullable(const IColumn & src, size_t n);
     void insertRangeFromNotNullable(const IColumn & src, size_t start, size_t length);
@@ -90,7 +90,7 @@ public:
     void expand(const Filter & mask, bool inverted) override;
     ColumnPtr permute(const Permutation & perm, size_t limit) const override;
     ColumnPtr index(const IColumn & indexes, size_t limit) const override;
-    int compareAt(size_t n, size_t m, const IColumn & rhs_, int null_direction_hint) const override;
+    int doCompareAt(size_t n, size_t m, const IColumn & rhs_, int null_direction_hint) const override;
 
 #if USE_EMBEDDED_COMPILER
 

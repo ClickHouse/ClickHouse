@@ -221,7 +221,7 @@ const char * ColumnNullable::skipSerializedInArena(const char * pos) const
     return pos;
 }
 
-void ColumnNullable::insertRangeFrom(const IColumn & src, size_t start, size_t length)
+void ColumnNullable::doInsertRangeFrom(const IColumn & src, size_t start, size_t length)
 {
     const ColumnNullable & nullable_col = assert_cast<const ColumnNullable &>(src);
     getNullMapColumn().insertRangeFrom(*nullable_col.null_map, start, length);
@@ -258,7 +258,7 @@ bool ColumnNullable::tryInsert(const Field & x)
     return true;
 }
 
-void ColumnNullable::insertFrom(const IColumn & src, size_t n)
+void ColumnNullable::doInsertFrom(const IColumn & src, size_t n)
 {
     const ColumnNullable & src_concrete = assert_cast<const ColumnNullable &>(src);
     getNestedColumn().insertFrom(src_concrete.getNestedColumn(), n);
@@ -266,7 +266,7 @@ void ColumnNullable::insertFrom(const IColumn & src, size_t n)
 }
 
 
-void ColumnNullable::insertManyFrom(const IColumn & src, size_t position, size_t length)
+void ColumnNullable::doInsertManyFrom(const IColumn & src, size_t position, size_t length)
 {
     const ColumnNullable & src_concrete = assert_cast<const ColumnNullable &>(src);
     getNestedColumn().insertManyFrom(src_concrete.getNestedColumn(), position, length);
@@ -402,7 +402,7 @@ int ColumnNullable::compareAtImpl(size_t n, size_t m, const IColumn & rhs_, int 
     return getNestedColumn().compareAt(n, m, nested_rhs, null_direction_hint);
 }
 
-int ColumnNullable::compareAt(size_t n, size_t m, const IColumn & rhs_, int null_direction_hint) const
+int ColumnNullable::doCompareAt(size_t n, size_t m, const IColumn & rhs_, int null_direction_hint) const
 {
     return compareAtImpl(n, m, rhs_, null_direction_hint);
 }

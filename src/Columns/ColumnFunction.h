@@ -94,8 +94,8 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot insert into {}", getName());
     }
 
-    void insertFrom(const IColumn & src, size_t n) override;
-    void insertRangeFrom(const IColumn &, size_t start, size_t length) override;
+    void doInsertFrom(const IColumn & src, size_t n) override;
+    void doInsertRangeFrom(const IColumn &, size_t start, size_t length) override;
 
     void insertData(const char *, size_t) override
     {
@@ -137,7 +137,7 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "popBack is not implemented for {}", getName());
     }
 
-    int compareAt(size_t, size_t, const IColumn &, int) const override
+    int doCompareAt(size_t, size_t, const IColumn &, int) const override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "compareAt is not implemented for {}", getName());
     }

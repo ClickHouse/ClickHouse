@@ -174,7 +174,7 @@ const char * ColumnSparse::skipSerializedInArena(const char * pos) const
     return values->skipSerializedInArena(pos);
 }
 
-void ColumnSparse::insertRangeFrom(const IColumn & src, size_t start, size_t length)
+void ColumnSparse::doInsertRangeFrom(const IColumn & src, size_t start, size_t length)
 {
     if (length == 0)
         return;
@@ -248,7 +248,7 @@ bool ColumnSparse::tryInsert(const Field & x)
     return true;
 }
 
-void ColumnSparse::insertFrom(const IColumn & src, size_t n)
+void ColumnSparse::doInsertFrom(const IColumn & src, size_t n)
 {
     if (const auto * src_sparse = typeid_cast<const ColumnSparse *>(&src))
     {
@@ -446,7 +446,7 @@ ColumnPtr ColumnSparse::indexImpl(const PaddedPODArray<Type> & indexes, size_t l
     return ColumnSparse::create(std::move(res_values), std::move(res_offsets), limit);
 }
 
-int ColumnSparse::compareAt(size_t n, size_t m, const IColumn & rhs_, int null_direction_hint) const
+int ColumnSparse::doCompareAt(size_t n, size_t m, const IColumn & rhs_, int null_direction_hint) const
 {
     if (const auto * rhs_sparse = typeid_cast<const ColumnSparse *>(&rhs_))
         return values->compareAt(getValueIndex(n), rhs_sparse->getValueIndex(m), rhs_sparse->getValuesColumn(), null_direction_hint);

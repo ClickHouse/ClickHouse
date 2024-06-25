@@ -78,10 +78,10 @@ public:
     bool tryInsert(const Field & x) override;
     void insertDefault() override;
 
-    void insertFrom(const IColumn & src, size_t n) override;
+    void doInsertFrom(const IColumn & src, size_t n) override;
     void insertFromFullColumn(const IColumn & src, size_t n);
 
-    void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
+    void doInsertRangeFrom(const IColumn & src, size_t start, size_t length) override;
     void insertRangeFromFullColumn(const IColumn & src, size_t start, size_t length);
     void insertRangeFromDictionaryEncodedColumn(const IColumn & keys, const IColumn & positions);
 
@@ -127,7 +127,7 @@ public:
         return ColumnLowCardinality::create(dictionary.getColumnUniquePtr(), getIndexes().index(indexes_, limit));
     }
 
-    int compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const override;
+    int doCompareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const override;
 
     int compareAtWithCollation(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint, const Collator &) const override;
 

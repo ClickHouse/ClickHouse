@@ -180,9 +180,12 @@ public:
     void insert(const Field & x) override;
     bool tryInsert(const Field & x) override;
 
-    void insertFrom(const IColumn & src_, size_t n) override;
-    void insertRangeFrom(const IColumn & src_, size_t start, size_t length) override;
-    void insertManyFrom(const IColumn & src_, size_t position, size_t length) override;
+    void doInsertFrom(const IColumn & src_, size_t n) override;
+    void doInsertRangeFrom(const IColumn & src_, size_t start, size_t length) override;
+    void doInsertManyFrom(const IColumn & src_, size_t position, size_t length) override;
+
+    using IColumn::insertFrom;
+    using IColumn::insertRangeFrom;
 
     /// Methods for insertion from another Variant but with known mapping between global discriminators.
     void insertFrom(const IColumn & src_, size_t n, const std::vector<ColumnVariant::Discriminator> & global_discriminators_mapping);
@@ -213,7 +216,7 @@ public:
     ColumnPtr indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const;
     ColumnPtr replicate(const Offsets & replicate_offsets) const override;
     MutableColumns scatter(ColumnIndex num_columns, const Selector & selector) const override;
-    int compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const override;
+    int doCompareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const override;
     bool hasEqualValues() const override;
     void getExtremes(Field & min, Field & max) const override;
     void getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,

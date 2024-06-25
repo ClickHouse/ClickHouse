@@ -153,17 +153,17 @@ void ColumnMap::updateHashFast(SipHash & hash) const
     nested->updateHashFast(hash);
 }
 
-void ColumnMap::insertFrom(const IColumn & src, size_t n)
+void ColumnMap::doInsertFrom(const IColumn & src, size_t n)
 {
     nested->insertFrom(assert_cast<const ColumnMap &>(src).getNestedColumn(), n);
 }
 
-void ColumnMap::insertManyFrom(const IColumn & src, size_t position, size_t length)
+void ColumnMap::doInsertManyFrom(const IColumn & src, size_t position, size_t length)
 {
     assert_cast<ColumnArray &>(*nested).insertManyFrom(assert_cast<const ColumnMap &>(src).getNestedColumn(), position, length);
 }
 
-void ColumnMap::insertRangeFrom(const IColumn & src, size_t start, size_t length)
+void ColumnMap::doInsertRangeFrom(const IColumn & src, size_t start, size_t length)
 {
     nested->insertRangeFrom(
         assert_cast<const ColumnMap &>(src).getNestedColumn(),
@@ -210,7 +210,7 @@ MutableColumns ColumnMap::scatter(ColumnIndex num_columns, const Selector & sele
     return res;
 }
 
-int ColumnMap::compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const
+int ColumnMap::doCompareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const
 {
     const auto & rhs_map = assert_cast<const ColumnMap &>(rhs);
     return nested->compareAt(n, m, rhs_map.getNestedColumn(), nan_direction_hint);

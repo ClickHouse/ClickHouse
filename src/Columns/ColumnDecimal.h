@@ -55,9 +55,9 @@ public:
     void reserve(size_t n) override { data.reserve_exact(n); }
     void shrinkToFit() override { data.shrink_to_fit(); }
 
-    void insertFrom(const IColumn & src, size_t n) override { data.push_back(static_cast<const Self &>(src).getData()[n]); }
+    void doInsertFrom(const IColumn & src, size_t n) override { data.push_back(static_cast<const Self &>(src).getData()[n]); }
 
-    void insertManyFrom(const IColumn & src, size_t position, size_t length) override
+    void doInsertManyFrom(const IColumn & src, size_t position, size_t length) override
     {
         ValueType v = assert_cast<const Self &>(src).getData()[position];
         data.resize_fill(data.size() + length, v);
@@ -68,7 +68,7 @@ public:
     void insertManyDefaults(size_t length) override { data.resize_fill(data.size() + length); }
     void insert(const Field & x) override { data.push_back(x.get<T>()); }
     bool tryInsert(const Field & x) override;
-    void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
+    void doInsertRangeFrom(const IColumn & src, size_t start, size_t length) override;
 
     void popBack(size_t n) override
     {
@@ -92,7 +92,7 @@ public:
     void updateHashWithValue(size_t n, SipHash & hash) const override;
     void updateWeakHash32(WeakHash32 & hash) const override;
     void updateHashFast(SipHash & hash) const override;
-    int compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const override;
+    int doCompareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const override;
     void getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
                         size_t limit, int nan_direction_hint, IColumn::Permutation & res) const override;
     void updatePermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
