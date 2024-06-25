@@ -907,11 +907,10 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     }
 
                     chassert(reading);
-                    if (query_context->canUseParallelReplicasCustomKey())
+                    if (query_context->canUseParallelReplicasCustomKey() && query_context->getClientInfo().distributed_depth == 0)
                     {
-                        auto cluster = query_context->getClusterForParallelReplicas();
-                        if (query_context->canUseParallelReplicasCustomKeyForCluster(*cluster)
-                            && query_context->getClientInfo().distributed_depth == 0)
+                        if (auto cluster = query_context->getClusterForParallelReplicas();
+                            query_context->canUseParallelReplicasCustomKeyForCluster(*cluster))
                         {
                             planner_context->getMutableQueryContext()->setSetting("prefer_localhost_replica", Field{0});
                             auto modified_query_info = select_query_info;

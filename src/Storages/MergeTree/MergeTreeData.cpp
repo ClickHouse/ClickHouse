@@ -7081,7 +7081,7 @@ QueryProcessingStage::Enum MergeTreeData::getQueryProcessingStage(
             if (query_context->getClientInfo().distributed_depth > 0)
                 return QueryProcessingStage::FetchColumns;
 
-            if (!settings.parallel_replicas_for_non_replicated_merge_tree)
+            if (!supportsReplication() && !settings.parallel_replicas_for_non_replicated_merge_tree)
                 return QueryProcessingStage::Enum::FetchColumns;
 
             if (to_stage >= QueryProcessingStage::WithMergeableState

@@ -91,6 +91,7 @@ def test_parallel_replicas_custom_key_distributed(
                 "max_parallel_replicas": 4,
                 "parallel_replicas_custom_key": custom_key,
                 "parallel_replicas_custom_key_filter_type": filter_type,
+                "prefer_localhost_replica": 0,
             },
         )
         == expected_result

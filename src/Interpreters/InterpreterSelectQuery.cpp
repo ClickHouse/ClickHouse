@@ -600,6 +600,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         }
         else if (
             storage->isMergeTree() && (storage->supportsReplication() || settings.parallel_replicas_for_non_replicated_merge_tree)
+            && context->getClientInfo().distributed_depth == 0
             && context->canUseParallelReplicasCustomKeyForCluster(*context->getClusterForParallelReplicas()))
         {
             context->setSetting("prefer_localhost_replica", Field(0));
