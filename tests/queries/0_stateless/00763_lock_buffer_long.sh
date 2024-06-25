@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-s3-storage
+# Tags: long, no-s3-storage, no-msan, no-asan, no-tsan, no-debug
 
 set -e
 
