@@ -471,7 +471,7 @@ void DatabaseReplicated::tryConnectToZooKeeperAndInitDatabase(LoadingStrictnessL
         auto db_name_path = fs::path(zookeeper_path) / FIRST_REPLICA_DATABASE_NAME;
         auto error_code = current_zookeeper->trySet(db_name_path, getDatabaseName());
         if (error_code == Coordination::Error::ZNONODE)
-            current_zookeeper->create(db_name_path, getDatabaseName(), zkutil::CreateMode::Persistent);
+            current_zookeeper->tryCreate(db_name_path, getDatabaseName(), zkutil::CreateMode::Persistent);
 
         is_readonly = false;
     }
