@@ -24,6 +24,8 @@ void WriteBufferFromPocoSocketChunked::enableChunked()
     /// Initialize next chunk
     chunk_size_ptr = reinterpret_cast<decltype(chunk_size_ptr)>(pos);
     pos += std::min(available(), sizeof(*chunk_size_ptr));
+    /// Pretend finishChunk() was just called to prevent sending empty chunk if finishChunk() called immediately
+    last_finish_chunk = chunk_size_ptr;
 }
 
 void WriteBufferFromPocoSocketChunked::finishChunk()
@@ -33,7 +35,8 @@ void WriteBufferFromPocoSocketChunked::finishChunk()
 
     if (pos <= reinterpret_cast<Position>(chunk_size_ptr) + sizeof(*chunk_size_ptr))
     {
-        if (chunk_size_ptr == last_finish_chunk) // prevent duplicate finish chunk
+        /// Prevent duplicate finish chunk (and finish chunk right after enableChunked())
+        if (chunk_size_ptr == last_finish_chunk)
             return;
 
         /// If current chunk is empty it means we are finishing a chunk previously sent by next(),
@@ -85,7 +88,7 @@ void WriteBufferFromPocoSocketChunked::finishChunk()
     }
 
     /// Buffer end-of-chunk
-    *reinterpret_cast<decltype(chunk_size_ptr)>(pos) = 0;
+    setValue(reinterpret_cast<decltype(chunk_size_ptr)>(pos), 0);
     pos += sizeof(*chunk_size_ptr);
     /// Initialize next chunk
     chunk_size_ptr = reinterpret_cast<decltype(chunk_size_ptr)>(pos);
@@ -114,7 +117,7 @@ void WriteBufferFromPocoSocketChunked::nextImpl()
         return;
     }
 
-    /// next() after finishChunk ar the end of the buffer
+    /// next() after finishChunk at the end of the buffer
     if (finishing < sizeof(*chunk_size_ptr))
     {
         pos -= finishing;
@@ -126,21 +129,6 @@ void WriteBufferFromPocoSocketChunked::nextImpl()
 
         finishing = sizeof(*chunk_size_ptr);
 
-        /// Initialize next chunk
-        chunk_size_ptr = reinterpret_cast<decltype(chunk_size_ptr)>(working_buffer.begin());
-        nextimpl_working_buffer_offset = sizeof(*chunk_size_ptr);
-
-        last_finish_chunk = chunk_size_ptr;
-
-        return;
-    }
-
-    /// Send end-of-chunk buffered by finishChunk
-    if (offset() == 2 * sizeof(*chunk_size_ptr) && last_finish_chunk == chunk_size_ptr)
-    {
-        pos -= sizeof(*chunk_size_ptr);
-        /// Send end-of-chunk
-        WriteBufferFromPocoSocket::nextImpl();
         /// Initialize next chunk
         chunk_size_ptr = reinterpret_cast<decltype(chunk_size_ptr)>(working_buffer.begin());
         nextimpl_working_buffer_offset = sizeof(*chunk_size_ptr);
@@ -172,8 +160,12 @@ void WriteBufferFromPocoSocketChunked::nextImpl()
         return;
     }
 
+    bool initialize_last_finish_chunk = false;
     if (pos - reinterpret_cast<Position>(chunk_size_ptr) == sizeof(*chunk_size_ptr)) // next() after finishChunk
+    {
         pos -= sizeof(*chunk_size_ptr);
+        initialize_last_finish_chunk = true;
+    }
     else // fill up current chunk size
     {
         setValue(chunk_size_ptr, toLittleEndian(static_cast<UInt32>(pos - reinterpret_cast<Position>(chunk_size_ptr) - sizeof(*chunk_size_ptr))));
@@ -194,7 +186,7 @@ void WriteBufferFromPocoSocketChunked::nextImpl()
     chunk_size_ptr = reinterpret_cast<decltype(chunk_size_ptr)>(working_buffer.begin());
     nextimpl_working_buffer_offset = sizeof(*chunk_size_ptr);
 
-    last_finish_chunk = nullptr;
+    last_finish_chunk = initialize_last_finish_chunk ? chunk_size_ptr : nullptr;
 }
 
 void WriteBufferFromPocoSocketChunked::finalizeImpl()
