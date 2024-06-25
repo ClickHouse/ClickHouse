@@ -119,6 +119,41 @@ Result:
 └───────────────────────┘
 ```
 
+## detectProgrammingLanguage
+
+Determines the programming language from the source code. Calculates all the unigrams and bigrams of commands in the source code. 
+Then using a marked-up dictionary with weights of unigrams and bigrams of commands for various programming languages finds the biggest weight of the programming language and returns it.
+
+*Syntax*
+
+``` sql
+detectProgrammingLanguage('source_code')
+```
+
+*Arguments*
+
+- `source_code` — String representation of the source code to analyze. [String](../data-types/string.md#string).
+
+*Returned value*
+
+- Programming language. [String](../data-types/string.md).
+
+*Examples*
+
+Query:
+
+```sql
+SELECT detectProgrammingLanguage('#include <iostream>');
+```
+
+Result:
+
+```response
+┌─detectProgrammingLanguage('#include <iostream>')─┐
+│ C++                                              │
+└──────────────────────────────────────────────────┘
+```
+
 ## detectLanguageUnknown
 
 Similar to the `detectLanguage` function, except the `detectLanguageUnknown` function works with non-UTF8-encoded strings. Prefer this version when your character set is UTF-16 or UTF-32.
