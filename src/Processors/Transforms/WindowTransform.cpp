@@ -22,6 +22,7 @@
 
 #include <Poco/Logger.h>
 #include <Common/logger_useful.h>
+#include "WindowTransform.h"
 
 #include <algorithm>
 #include <limits>
@@ -64,6 +65,11 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
     extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
+}
+
+RowNumber IWindowFunction::firstRequiredRowInFrame(const WindowTransform * transform) const
+{
+    return transform->current_row;
 }
 
 // Compares ORDER BY column values at given rows to find the boundaries of frame:
@@ -1075,6 +1081,27 @@ void WindowTransform::writeOutCurrentRow()
     }
 }
 
+void WindowTransform::updateMiniRequiredRow()
+{
+    mini_required_row = current_row;
+    for (size_t wi = 0; wi < workspaces.size(); ++wi)
+    {
+        RowNumber row;
+        auto & ws = workspaces[wi];
+        if (ws.window_function_impl)
+            row = ws.window_function_impl->firstRequiredRowInFrame(this);
+        else
+        {
+            if (window_description.frame.begin_type == WindowFrame::BoundaryType::Unbounded)
+                row = current_row;
+            else
+                row = prev_frame_start;
+        }
+        if (row < mini_required_row)
+            mini_required_row = row;
+    }
+}
+
 static void assertSameColumns(const Columns & left_all,
     const Columns & right_all)
 {
@@ -1238,6 +1265,8 @@ void WindowTransform::appendChunk(Chunk & chunk)
 
             // Write out the aggregation results.
             writeOutCurrentRow();
+
+            updateMiniRequiredRow();
 
             if (isCancelled())
             {
@@ -1480,7 +1509,8 @@ void WindowTransform::work()
     // that the frame start can be further than current row for some frame specs
     // (e.g. EXCLUDE CURRENT ROW), so we have to check both.
     assert(prev_frame_start <= frame_start);
-    const auto first_used_block = std::min({next_output_block_number, prev_frame_start.block, current_row.block});
+    const auto first_used_block = std::min(next_output_block_number,
+        std::min(mini_required_row.block, current_row.block));
     if (first_block_number < first_used_block)
     {
         blocks.erase(blocks.begin(),
@@ -1511,6 +1541,12 @@ struct WindowFunctionRank final : public StatelessWindowFunction
         assert_cast<ColumnUInt64 &>(to).getData().push_back(
             transform->peer_group_start_row_number);
     }
+
+    RowNumber firstRequiredRowInFrame(const WindowTransform * transform) const override
+    {
+        /// Current block is the only one required to be kept in memory.
+        return transform->current_row;
+    }
 };
 
 struct WindowFunctionDenseRank final : public StatelessWindowFunction
@@ -1528,6 +1564,12 @@ struct WindowFunctionDenseRank final : public StatelessWindowFunction
             .output_columns[function_index];
         assert_cast<ColumnUInt64 &>(to).getData().push_back(
             transform->peer_group_number);
+    }
+
+    RowNumber firstRequiredRowInFrame(const WindowTransform * transform) const override
+    {
+        /// Current block is the only one required to be kept in memory.
+        return transform->current_row;
     }
 };
 
@@ -2003,6 +2045,12 @@ struct WindowFunctionRowNumber final : public StatelessWindowFunction
             .output_columns[function_index];
         assert_cast<ColumnUInt64 &>(to).getData().push_back(
             transform->current_row_number);
+    }
+
+    RowNumber firstRequiredRowInFrame(const WindowTransform * transform) const override
+    {
+        /// Current block is the only one required to be kept in memory.
+        return transform->current_row;
     }
 };
 
