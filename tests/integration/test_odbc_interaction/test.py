@@ -16,6 +16,7 @@ node1 = cluster.add_instance(
     with_odbc_drivers=True,
     with_mysql8=True,
     with_postgres=True,
+    with_postgres11=False,
     main_configs=["configs/openssl.xml", "configs/odbc_logging.xml"],
     dictionaries=[
         "configs/dictionaries/sqlite3_odbc_hashed_dictionary.xml",
