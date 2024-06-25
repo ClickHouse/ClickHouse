@@ -29,15 +29,17 @@ DiskWithPath::DiskWithPath(DiskPtr disk_, std::optional<String> path_) : disk(di
         path = String{"/"};
     }
 
-    if (!disk->isDirectory(normalizePathAndGetAsRelative(path)))
+    String relative_path = normalizePathAndGetAsRelative(path);
+    if (disk->isDirectory(relative_path) || (relative_path.empty() && (disk->isDirectory("/"))))
     {
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Initializing path {} (normalized path: {}) at disk {} is not a directory",
-            path,
-            normalizePathAndGetAsRelative(path),
-            disk->getName());
+        return;
     }
+    throw Exception(
+        ErrorCodes::BAD_ARGUMENTS,
+        "Initializing path {} (normalized path: {}) at disk {} is not a directory",
+        path,
+        relative_path,
+        disk->getName());
 }
 
 std::vector<String> DiskWithPath::listAllFilesByPath(const String & any_path) const
