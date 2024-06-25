@@ -24,6 +24,9 @@ void ArrayJoinNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_stat
     buffer << std::string(indent, ' ') << "ARRAY_JOIN id: " << format_state.getNodeId(this);
     buffer << ", is_left: " << is_left;
 
+    if (hasAlias())
+        buffer << ", alias: " << getAlias();
+
     buffer << '\n' << std::string(indent + 2, ' ') << "TABLE EXPRESSION\n";
     getTableExpression()->dumpTreeImpl(buffer, format_state, indent + 4);
 
