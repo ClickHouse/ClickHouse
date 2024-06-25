@@ -66,10 +66,7 @@ namespace
 
         for (const auto & authentication_method : user.authentication_methods)
         {
-            if (authentication_method.getType() != AuthenticationType::NO_PASSWORD)
-            {
-                query->auth_data.push_back(authentication_method.toAST());
-            }
+            query->auth_data.push_back(authentication_method.toAST());
         }
 
         if (user.valid_until)

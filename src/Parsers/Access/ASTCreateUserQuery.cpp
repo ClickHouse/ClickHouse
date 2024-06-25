@@ -189,8 +189,15 @@ ASTPtr ASTCreateUserQuery::clone() const
     if (settings)
         res->settings = std::static_pointer_cast<ASTSettingsProfileElements>(settings->clone());
 
-    // this is weird.
-    if (!auth_data.empty())
+    if (auth_data.empty())
+    {
+        auto ast = std::make_shared<ASTAuthenticationData>();
+        ast->type = AuthenticationType::NO_PASSWORD;
+
+        res->auth_data.push_back(ast);
+        res->children.push_back(ast);
+    }
+    else
     {
         for (const auto & authentication_method : auth_data)
         {

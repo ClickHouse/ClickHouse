@@ -44,7 +44,7 @@ void ASTAuthenticationData::formatImpl(const FormatSettings & settings, FormatSt
 {
     if (type && *type == AuthenticationType::NO_PASSWORD)
     {
-        settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " NOT IDENTIFIED"
+        settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " IDENTIFIED WITH no_password"
                       << (settings.hilite ? IAST::hilite_none : "");
         return;
     }
