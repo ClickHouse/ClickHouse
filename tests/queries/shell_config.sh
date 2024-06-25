@@ -204,7 +204,7 @@ function query_with_retry
 #   # at this point both `foo` and any clickhouse clients it ran have exited
 function spawn_with_timeout
 {
-    export -f $2
+    export -f ${2}
     timeout $1 bash -c "trap wait TERM; $2" &
 }
 
