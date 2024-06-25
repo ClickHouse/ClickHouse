@@ -524,8 +524,7 @@ void executeQueryWithParallelReplicas(
             new_context,
             processed_stage,
             coordinator,
-            std::move(analyzed_read_from_merge_tree),
-            /*has_missing_objects=*/false);
+            std::move(analyzed_read_from_merge_tree));
 
         DataStreams input_streams;
         input_streams.reserve(2);

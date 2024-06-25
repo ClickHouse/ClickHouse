@@ -9,9 +9,6 @@
 namespace DB
 {
 
-namespace
-{
-
 void addConvertingActions(QueryPlan & plan, const Block & header, bool has_missing_objects)
 {
     if (blocksHaveEqualStructure(plan.getCurrentDataStream().header, header))
@@ -34,8 +31,6 @@ void addConvertingActions(QueryPlan & plan, const Block & header, bool has_missi
     auto convert_actions_dag = get_converting_dag(plan.getCurrentDataStream().header, header);
     auto converting = std::make_unique<ExpressionStep>(plan.getCurrentDataStream(), convert_actions_dag);
     plan.addStep(std::move(converting));
-}
-
 }
 
 std::unique_ptr<QueryPlan> createLocalPlan(

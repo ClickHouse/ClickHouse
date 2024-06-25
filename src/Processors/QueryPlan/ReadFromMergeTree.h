@@ -123,12 +123,12 @@ public:
         AnalysisResultPtr analyzed_result_ptr_,
         bool enable_parallel_reading_,
         std::optional<MergeTreeAllRangesCallback> all_ranges_callback_ = std::nullopt,
-        std::optional<MergeTreeReadTaskCallback> read_task_callback_ = std::nullopt);
+        std::optional<MergeTreeReadTaskCallback> read_task_callback_ = std::nullopt,
         std::optional<size_t> number_of_current_replica_ = std::nullopt);
 
     std::unique_ptr<ReadFromMergeTree> createLocalParallelReplicasReadingStep(
         const ReadFromMergeTree * analyzed_merge_tree,
-        std::optional<MergeTreeAllRangesCallback> all_ranges_callback,
+        std::optional<MergeTreeAllRangesCallback> all_ranges_callback_,
         std::optional<MergeTreeReadTaskCallback> read_task_callback);
 
     static constexpr auto name = "ReadFromMergeTree";

@@ -79,9 +79,8 @@ std::unique_ptr<QueryPlan> createLocalPlanForParallelReplicas(
     MergeTreeReadTaskCallback read_task_cb = [coordinator](ParallelReadRequest req) -> std::optional<ParallelReadResponse>
     { return coordinator->handleRequest(std::move(req)); };
 
-    const auto number_of_local_replica = 0;
     auto read_from_merge_tree_parallel_replicas
-        = reading->createLocalParallelReplicasReadingStep(analyzed_merge_tree, all_ranges_cb, read_task_cb, number_of_local_replica);
+        = reading->createLocalParallelReplicasReadingStep(analyzed_merge_tree, all_ranges_cb, read_task_cb);
     node->step = std::move(read_from_merge_tree_parallel_replicas);
 
     addConvertingActions(*query_plan, header, /*has_missing_objects=*/false);

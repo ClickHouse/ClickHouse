@@ -356,8 +356,8 @@ std::unique_ptr<ReadFromMergeTree> ReadFromMergeTree::createLocalParallelReplica
         log,
         (analyzed_merge_tree ? analyzed_merge_tree->analyzed_result_ptr : nullptr),
         true,
-        all_ranges_callback,
-        read_task_callback,
+        all_ranges_callback_,
+        read_task_callback_,
         number_of_local_replica);
 }
 
