@@ -49,6 +49,20 @@ std::optional<String> getString(const Field & f)
     return {};
 }
 
+bool checkType(const Field & f)
+{
+    switch (f.getType())
+    {
+        case Field::Types::Int64:
+        case Field::Types::UInt64:
+        case Field::Types::Float64:
+        case Field::Types::String:
+            return true;
+        default:
+            return false;
+    }
+}
+
 IStatistics::IStatistics(const SingleStatisticsDescription & stat_) : stat(stat_) {}
 
 ColumnStatistics::ColumnStatistics(const ColumnStatisticsDescription & stats_desc_)
@@ -94,6 +108,8 @@ Float64 ColumnStatistics::estimateEqual(Field val) const
 #if USE_DATASKETCHES
     if (stats.contains(StatisticsType::CountMinSketch))
     {
+        if (!checkType(val))
+            return rows * ConditionSelectivityEstimator::default_normal_cond_factor;
         auto count_min_sketch_static = std::static_pointer_cast<CountMinSketchStatistics>(stats.at(StatisticsType::CountMinSketch));
         return count_min_sketch_static->estimateEqual(val);
     }

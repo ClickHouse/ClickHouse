@@ -103,4 +103,6 @@ private:
 
 std::optional<Float64> getFloat64(const Field & f);
 std::optional<String> getString(const Field & f);
+bool checkType(const Field & f);
+
 }
