@@ -848,7 +848,7 @@ void StorageDistributed::read(
             remote_storage_id = StorageID{remote_database, remote_table};
 
         auto query_tree_distributed = buildQueryTreeDistributed(modified_query_info,
-            storage_snapshot,
+            query_info.merge_storage_snapshot ? query_info.merge_storage_snapshot : storage_snapshot,
             remote_storage_id,
             remote_table_function_ptr,
             changes);
