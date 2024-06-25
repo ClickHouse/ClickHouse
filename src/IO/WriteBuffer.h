@@ -29,14 +29,6 @@ namespace ErrorCodes
 class WriteBuffer : public BufferBase
 {
 public:
-    /// Special exception to throw when the current WriteBuffer cannot receive data
-    /// It is used in MemoryWriteBuffer and CascadeWriteBuffer
-    class CurrentBufferExhausted : public std::exception
-    {
-    public:
-        const char * what() const noexcept override { return "WriteBuffer limit is exhausted"; }
-    };
-
     using BufferBase::set;
     using BufferBase::position;
     void set(Position ptr, size_t size) { BufferBase::set(ptr, size, 0); }
@@ -60,13 +52,6 @@ public:
         {
             nextImpl();
         }
-        catch (const CurrentBufferExhausted &)
-        {
-            pos = working_buffer.begin();
-            bytes += bytes_in_buffer;
-
-            throw;
-        }
         catch (...)
         {
             /** If the nextImpl() call was unsuccessful, move the cursor to the beginning,
@@ -74,8 +59,6 @@ public:
               */
             pos = working_buffer.begin();
             bytes += bytes_in_buffer;
-
-            cancel();
 
             throw;
         }
@@ -157,15 +140,7 @@ public:
         }
     }
 
-    void cancel() noexcept
-    {
-        if (canceled || finalized)
-            return;
-
-        LockMemoryExceptionInThread lock(VariableContext::Global);
-        cancelImpl();
-        canceled = true;
-    }
+    void cancel() noexcept;
 
     /// Wait for data to be reliably written. Mainly, call fsync for fd.
     /// May be called after finalize() if needed.

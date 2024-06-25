@@ -30,4 +30,19 @@ WriteBuffer::~WriteBuffer()
     }
 }
 
+void WriteBuffer::cancel() noexcept
+{
+    if (canceled || finalized)
+        return;
+
+    LoggerPtr log = getLogger("WriteBuffer");
+    LOG_INFO(
+        log,
+        "Cancel has been called. Stack trace: {}",
+        StackTrace().toString());
+
+    LockMemoryExceptionInThread lock(VariableContext::Global);
+    cancelImpl();
+    canceled = true;
+}
 }

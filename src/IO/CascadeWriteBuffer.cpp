@@ -36,7 +36,7 @@ void CascadeWriteBuffer::nextImpl()
         curr_buffer->position() = position();
         curr_buffer->next();
     }
-    catch (const WriteBuffer::CurrentBufferExhausted &)
+    catch (const MemoryWriteBuffer::CurrentBufferExhausted &)
     {
         if (curr_buffer_num < num_sources)
         {
