@@ -1,6 +1,5 @@
 SET session_timezone = 'UTC'; -- disable timezone randomization
 SET allow_experimental_analyzer = 1; -- The old path formats the result with different whitespaces
-SET uniform_snowflake_conversion_functions = 1; -- Force-enable uniform snowflake conversion functions (in case this is randomized in CI)
 
 SELECT '-- Negative tests';
 SELECT dateTimeToSnowflakeID();  -- {serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH}
@@ -11,9 +10,6 @@ SELECT dateTimeToSnowflakeID(now(), 'invalid_epoch');  -- {serverError ILLEGAL_T
 SELECT dateTime64ToSnowflakeID(now64(), 'invalid_epoch');  -- {serverError ILLEGAL_TYPE_OF_ARGUMENT}
 SELECT dateTimeToSnowflakeID(now(), 42, 'too_many_args');  -- {serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH}
 SELECT dateTime64ToSnowflakeID(now64(), 42, 'too_many_args');  -- {serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH}
-
-SELECT dateTimeToSnowflakeID(now()) SETTINGS uniform_snowflake_conversion_functions = 0; -- { serverError UNKNOWN_FUNCTION }
-SELECT dateTime64ToSnowflakeID(now64()) SETTINGS uniform_snowflake_conversion_functions = 0; -- { serverError UNKNOWN_FUNCTION }
 
 SELECT '-- Return type';
 SELECT toTypeName(dateTimeToSnowflakeID(now()));

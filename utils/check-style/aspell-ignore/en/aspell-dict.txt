@@ -1576,6 +1576,10 @@ exFAT
 expiryMsec
 exponentialMovingAverage
 exponentialmovingaverage
+exponentialTimeDecayedAvg
+exponentialTimeDecayedCount
+exponentialTimeDecayedMax
+exponentialTimeDecayedSum
 expr
 exprN
 extendedVerification
@@ -1794,6 +1798,7 @@ incrementing
 indexHint
 indexOf
 infi
+infty
 inflight
 initcap
 initcapUTF
@@ -2852,7 +2857,9 @@ variantElement
 variantType
 varint
 varpop
+varpopstable
 varsamp
+varsampstable
 vectorized
 vectorscan
 vendoring
