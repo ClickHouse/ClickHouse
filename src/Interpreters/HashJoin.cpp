@@ -1305,7 +1305,6 @@ template<> void AddedColumns<true>::buildOutputFromRowRef()
             }
         }
         insertFromBlockArray(col, i, blocks, rows, next_pos);
-        next_pos = 0;
     }
 }
 
@@ -1336,7 +1335,6 @@ template<> void AddedColumns<true>::buildOutputFromRowRefList()
             }
         }
         insertFromBlockArray(col, i, blocks, rows, next_pos);
-        next_pos = 0;
     }
 }
 
