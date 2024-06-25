@@ -561,8 +561,15 @@ bool ReplicatedMergeTreeSinkImpl<false>::writeExistingPart(MergeTreeData::Mutabl
         String block_id = deduplicate ? fmt::format("{}_{}", part->info.partition_id, part->checksums.getTotalChecksumHex()) : "";
         bool deduplicated = commitPart(zookeeper, part, block_id, replicas_num).second;
 
+        int error = 0;
         /// Set a special error code if the block is duplicate
-        int error = (deduplicate && deduplicated) ? ErrorCodes::INSERT_WAS_DEDUPLICATED : 0;
+        /// And remove attaching_ prefix
+        if (deduplicate && deduplicated)
+        {
+            error = ErrorCodes::INSERT_WAS_DEDUPLICATED;
+            fs::path new_relative_path = fs::path("detached") / part->getNewName(part->info);
+            part->renameTo(new_relative_path, false);
+        }
         PartLog::addNewPart(storage.getContext(), PartLog::PartLogEntry(part, watch.elapsed(), profile_events_scope.getSnapshot()), ExecutionStatus(error));
         return deduplicated;
     }
