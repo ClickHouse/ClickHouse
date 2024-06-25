@@ -55,7 +55,6 @@ path=${path%/}
 
 echo "Files before DETACH TABLE"
 # sed to match any part, since in case of fault injection part name may not be all_0_0_0 but all_1_1_0
-echo "Path $path"
 clickhouse-disks -C "$config" --disk s3_plain_disk --query "list --recursive $path" | tail -n+2 | sed 's/all_[^_]*_[^_]*_0/all_X_X_X/g'
 
 $CLICKHOUSE_CLIENT -nm -q "
@@ -63,7 +62,6 @@ $CLICKHOUSE_CLIENT -nm -q "
     detach table data_write;
 "
 echo "Files after DETACH TABLE"
-echo "Path $path"
 clickhouse-disks -C "$config" --disk s3_plain_disk --query "list --recursive $path" | tail -n+2 | sed 's/all_[^_]*_[^_]*_0/all_X_X_X/g'
 
 # metadata file is left
