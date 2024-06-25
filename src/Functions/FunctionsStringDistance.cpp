@@ -113,6 +113,36 @@ struct ByteHammingDistanceImpl
     }
 };
 
+void parseUTF8String(const char * __restrict data, size_t size, std::function<void(UInt32)> utf8_consumer, std::function<void(unsigned char)> ascii_consumer = nullptr)
+{
+    const char * end = data + size;
+    while (data < end)
+    {
+        size_t len = UTF8::seqLength(*data);
+        if (len == 1)
+        {
+            if (ascii_consumer)
+                ascii_consumer(static_cast<unsigned char>(*data));
+            else
+                utf8_consumer(static_cast<UInt32>(*data));
+            ++data;
+        }
+        else
+        {
+            auto code_point = UTF8::convertUTF8ToCodePoint(data, end - data);
+            if (code_point.has_value())
+            {
+                utf8_consumer(code_point.value());
+                data += len;
+            }
+            else
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Illegal UTF-8 sequence, while processing '{}'", StringRef(data, end - data));
+            }
+        }
+    }
+}
+
 template <bool is_utf8>
 struct ByteJaccardIndexImpl
 {
@@ -138,56 +168,27 @@ struct ByteJaccardIndexImpl
         haystack_set.fill(0);
         needle_set.fill(0);
 
-        while (haystack < haystack_end)
+        if constexpr (is_utf8)
         {
-            size_t len = 1;
-            if constexpr (is_utf8)
-                len = UTF8::seqLength(*haystack);
-
-            if (len == 1)
+            parseUTF8String(
+                haystack,
+                haystack_size,
+                [&](UInt32 data) { haystack_utf8_set.insert(data); },
+                [&](unsigned char data) { haystack_set[data] = 1; });
+            parseUTF8String(
+                needle, needle_size, [&](UInt32 data) { needle_utf8_set.insert(data); }, [&](unsigned char data) { needle_set[data] = 1; });
+        }
+        else
+        {
+            while (haystack < haystack_end)
             {
                 haystack_set[static_cast<unsigned char>(*haystack)] = 1;
                 ++haystack;
             }
-            else
-            {
-                auto code_point = UTF8::convertUTF8ToCodePoint(haystack, haystack_end - haystack);
-                if (code_point.has_value())
-                {
-                    haystack_utf8_set.insert(code_point.value());
-                    haystack += len;
-                }
-                else
-                {
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Illegal UTF-8 sequence, while processing '{}'", StringRef(haystack, haystack_end - haystack));
-                }
-            }
-        }
-
-        while (needle < needle_end)
-        {
-
-            size_t len = 1;
-            if constexpr (is_utf8)
-                len = UTF8::seqLength(*needle);
-
-            if (len == 1)
+            while (needle < needle_end)
             {
                 needle_set[static_cast<unsigned char>(*needle)] = 1;
                 ++needle;
-            }
-            else
-            {
-                auto code_point = UTF8::convertUTF8ToCodePoint(needle, needle_end - needle);
-                if (code_point.has_value())
-                {
-                    needle_utf8_set.insert(code_point.value());
-                    needle += len;
-                }
-                else
-                {
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Illegal UTF-8 sequence, while processing '{}'", StringRef(needle, needle_end - needle));
-                }
             }
         }
 
@@ -226,6 +227,7 @@ struct ByteJaccardIndexImpl
 
 static constexpr size_t max_string_size = 1u << 16;
 
+template<bool is_utf8>
 struct ByteEditDistanceImpl
 {
     using ResultType = UInt64;
@@ -241,6 +243,16 @@ struct ByteEditDistanceImpl
             throw Exception(
                 ErrorCodes::TOO_LARGE_STRING_SIZE,
                 "The string size is too big for function editDistance, should be at most {}", max_string_size);
+
+        PaddedPODArray<UInt32> haystack_utf8;
+        PaddedPODArray<UInt32> needle_utf8;
+        if constexpr (is_utf8)
+        {
+            parseUTF8String(haystack, haystack_size, [&](UInt32 data) { haystack_utf8.push_back(data); });
+            parseUTF8String(needle, needle_size, [&](UInt32 data) { needle_utf8.push_back(data); });
+            haystack_size = haystack_utf8.size();
+            needle_size = needle_utf8.size();
+        }
 
         PaddedPODArray<ResultType> distances0(haystack_size + 1, 0);
         PaddedPODArray<ResultType> distances1(haystack_size + 1, 0);
@@ -261,9 +273,16 @@ struct ByteEditDistanceImpl
                 insertion = distances1[pos_haystack] + 1;
                 substitution = distances0[pos_haystack];
 
-                if (*(needle + pos_needle) != *(haystack + pos_haystack))
-                    substitution += 1;
-
+                if constexpr (is_utf8)
+                {
+                    if (needle_utf8[pos_needle] != haystack_utf8[pos_haystack])
+                        substitution += 1;
+                }
+                else
+                {
+                    if (*(needle + pos_needle) != *(haystack + pos_haystack))
+                        substitution += 1;
+                }
                 distances1[pos_haystack + 1] = std::min(deletion, std::min(substitution, insertion));
             }
             distances0.swap(distances1);
@@ -457,7 +476,12 @@ struct NameEditDistance
 {
     static constexpr auto name = "editDistance";
 };
-using FunctionEditDistance = FunctionsStringSimilarity<FunctionStringDistanceImpl<ByteEditDistanceImpl>, NameEditDistance>;
+using FunctionEditDistance = FunctionsStringSimilarity<FunctionStringDistanceImpl<ByteEditDistanceImpl<false>>, NameEditDistance>;
+struct NameEditDistanceUTF8
+{
+    static constexpr auto name = "editDistanceUTF8";
+};
+using FunctionEditDistanceUTF8 = FunctionsStringSimilarity<FunctionStringDistanceImpl<ByteEditDistanceImpl<true>>, NameEditDistanceUTF8>;
 
 struct NameDamerauLevenshteinDistance
 {
@@ -498,6 +522,10 @@ REGISTER_FUNCTION(StringDistance)
     factory.registerFunction<FunctionEditDistance>(
         FunctionDocumentation{.description = R"(Calculates the edit distance between two byte-strings.)"});
     factory.registerAlias("levenshteinDistance", NameEditDistance::name);
+
+    factory.registerFunction<FunctionEditDistanceUTF8>(
+        FunctionDocumentation{.description = R"(Calculates the edit distance between two UTF8 strings.)"});
+    factory.registerAlias("levenshteinDistanceUTF8", NameEditDistanceUTF8::name);
 
     factory.registerFunction<FunctionDamerauLevenshteinDistance>(
         FunctionDocumentation{.description = R"(Calculates the Damerau-Levenshtein distance two between two byte-string.)"});
