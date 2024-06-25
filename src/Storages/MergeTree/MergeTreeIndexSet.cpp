@@ -349,6 +349,9 @@ bool MergeTreeIndexConditionSet::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx
     if (size == 0 || (max_rows != 0 && size > max_rows))
         return true;
 
+    if (!condition.checkInHyperrectangle(granule.set_hyperrectangle, index_data_types).can_be_true)
+        return false;
+
     Block result = granule.block;
     actions->execute(result);
 

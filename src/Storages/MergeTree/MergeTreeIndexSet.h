@@ -123,7 +123,7 @@ private:
     std::unordered_set<String> key_columns;
     ExpressionActionsPtr actions;
     String actions_output_column_name;
-    
+
     DataTypes index_data_types;
     KeyCondition condition;
 };
