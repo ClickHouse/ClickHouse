@@ -199,7 +199,6 @@ public:
 
     AnalysisResultPtr getAnalyzedResult() const { return analyzed_result_ptr; }
     void setAnalyzedResult(AnalysisResultPtr analyzed_result_ptr_) { analyzed_result_ptr = std::move(analyzed_result_ptr_); }
-    ReadFromMergeTree::AnalysisResult getAnalysisResult() const;
 
     const MergeTreeData::DataPartsVector & getParts() const { return prepared_parts; }
     const std::vector<AlterConversionsPtr> & getAlterConvertionsForParts() const { return alter_conversions_for_parts; }
@@ -210,12 +209,6 @@ public:
     bool isParallelReadingEnabled() const { return read_task_callback != std::nullopt; }
 
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
-
-    ReadType getReadType() const
-    {
-        chassert(analyzed_result_ptr);
-        return analyzed_result_ptr->read_type;
-    }
 
 private:
     int getSortDirection() const
@@ -280,6 +273,8 @@ private:
 
     Pipe spreadMarkRangesAmongStreamsFinal(
         RangesInDataParts && parts, size_t num_streams, const Names & origin_column_names, const Names & column_names, ActionsDAGPtr & out_projection);
+
+    ReadFromMergeTree::AnalysisResult getAnalysisResult() const;
 
     mutable AnalysisResultPtr analyzed_result_ptr;
     VirtualFields shared_virtual_fields;
