@@ -127,7 +127,7 @@ def test_base_commands(client: KeeperClient):
     assert client.get("/test_create_zk_node1") == "testvalue1"
 
     client.create("/123", "1=2")
-    client.create("/123/321", "'foo;bar'")
+    client.create("/123/321", "foo;bar")
     assert client.get("/123") == "1=2"
     assert client.get("/123/321") == "foo;bar"
 
