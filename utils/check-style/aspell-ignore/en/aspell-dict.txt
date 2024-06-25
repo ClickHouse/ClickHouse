@@ -48,6 +48,7 @@ AutoML
 Autocompletion
 AvroConfluent
 BIGINT
+bigrams
 BIGSERIAL
 BORO
 BSON
@@ -1008,6 +1009,7 @@ UncompressedCacheBytes
 UncompressedCacheCells
 UnidirectionalEdgeIsValid
 UniqThetaSketch
+unigrams
 Updatable
 Uppercased
 Uptime
@@ -1507,9 +1509,11 @@ deserializing
 destructor
 destructors
 detectCharset
+detectTonality
 detectLanguage
 detectLanguageMixed
 detectLanguageUnknown
+detectProgrammingLanguage
 determinator
 deterministically
 dictGet
@@ -1526,6 +1530,7 @@ disableProtocols
 disjunction
 disjunctions
 displaySecretsInShowAndSelect
+displayName
 distro
 divideDecimal
 dmesg
