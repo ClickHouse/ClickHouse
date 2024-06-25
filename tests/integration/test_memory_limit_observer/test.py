@@ -55,9 +55,9 @@ def test_observe_memory_limit(started_cluster):
 
 def test_memory_usage_doesnt_include_page_cache_size(started_cluster):
     try:
-        # populate page cache with 10GB of data; it might be killed by OOM killer but it is fine
+        # populate page cache with 4GB of data; it might be killed by OOM killer but it is fine
         node1.exec_in_container(
-            ["dd", "if=/dev/zero", "of=outputfile", "bs=1M", "count=10K"]
+            ["dd", "if=/dev/zero", "of=outputfile", "bs=1M", "count=4K"]
         )
     except Exception:
         pass
@@ -76,4 +76,4 @@ def test_memory_usage_doesnt_include_page_cache_size(started_cluster):
        WHERE logger_name = 'CgroupsMemoryUsageObserver' AND message LIKE 'Read current memory usage%bytes%'
         """
     ).strip()
-    assert int(max_mem_usage_from_cgroup) < 2 * 2**30
+    assert int(max_mem_usage_from_cgroup) < 2 * 2 ** 30
