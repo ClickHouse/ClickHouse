@@ -44,7 +44,7 @@ BufferAllocationPolicyPtr createBufferAllocationPolicy(const AzureBlobStorage::R
 }
 
 WriteBufferFromAzureBlobStorage::WriteBufferFromAzureBlobStorage(
-    std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> blob_container_client_,
+    AzureClientPtr blob_container_client_,
     const String & blob_path_,
     size_t buf_size_,
     const WriteSettings & write_settings_,

@@ -6,7 +6,6 @@
 #include <Common/filesystemHelpers.h>
 
 #include <filesystem>
-#include <tuple>
 
 namespace DB
 {

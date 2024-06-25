@@ -234,11 +234,8 @@ bool BackupWriterAzureBlobStorage::fileExists(const String & file_name)
 UInt64 BackupWriterAzureBlobStorage::getFileSize(const String & file_name)
 {
     String key = fs::path(blob_path) / file_name;
-    RelativePathsWithMetadata children;
-    object_storage->listObjects(key,children,/*max_keys*/0);
-    if (children.empty())
-        throw Exception(ErrorCodes::AZURE_BLOB_STORAGE_ERROR, "Object must exist");
-    return children[0]->metadata->size_bytes;
+    ObjectMetadata object_metadata = object_storage->getObjectMetadata(key);
+    return object_metadata.size_bytes;
 }
 
 std::unique_ptr<ReadBuffer> BackupWriterAzureBlobStorage::readFile(const String & file_name, size_t /*expected_file_size*/)

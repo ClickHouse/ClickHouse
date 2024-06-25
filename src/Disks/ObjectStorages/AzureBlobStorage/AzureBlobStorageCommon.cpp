@@ -1,4 +1,6 @@
 #include <Disks/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
+#include "Common/StackTrace.h"
+#include "Common/logger_useful.h"
 
 #if USE_AZURE_BLOB_STORAGE
 
@@ -52,6 +54,33 @@ static bool isConnectionString(const std::string & candidate)
     return !candidate.starts_with("http");
 }
 
+ContainerClientWrapper::ContainerClientWrapper(RawContainerClient client_, String blob_prefix_)
+    : client(std::move(client_)), blob_prefix(std::move(blob_prefix_))
+{
+}
+
+BlobClient ContainerClientWrapper::GetBlobClient(const String & blob_name) const
+{
+    return client.GetBlobClient(blob_prefix / blob_name);
+}
+
+BlockBlobClient ContainerClientWrapper::GetBlockBlobClient(const String & blob_name) const
+{
+    return client.GetBlockBlobClient(blob_prefix / blob_name);
+}
+
+ListBlobsPagedResponse ContainerClientWrapper::ListBlobs(const ListBlobsOptions & options) const
+{
+    auto new_options = options;
+    new_options.Prefix = blob_prefix / options.Prefix.ValueOr("");
+    return client.ListBlobs(new_options);
+}
+
+bool ContainerClientWrapper::IsClientForDisk() const
+{
+    return client.GetClickhouseOptions().IsClientForDisk;
+}
+
 String ConnectionParams::getConnectionURL() const
 {
     if (std::holds_alternative<ConnectionString>(auth_method))
@@ -70,7 +99,7 @@ std::unique_ptr<ServiceClient> ConnectionParams::createForService() const
         if constexpr (std::is_same_v<T, ConnectionString>)
             return std::make_unique<ServiceClient>(ServiceClient::CreateFromConnectionString(auth.toUnderType(), client_options));
         else
-            return std::make_unique<ServiceClient>(endpoint.getEndpointWithoutContainer(), auth, client_options);
+            return std::make_unique<ServiceClient>(endpoint.getServiceEndpoint(), auth, client_options);
     }, auth_method);
 }
 
@@ -79,9 +108,15 @@ std::unique_ptr<ContainerClient> ConnectionParams::createForContainer() const
     return std::visit([this]<typename T>(const T & auth)
     {
         if constexpr (std::is_same_v<T, ConnectionString>)
-            return std::make_unique<ContainerClient>(ContainerClient::CreateFromConnectionString(auth.toUnderType(), endpoint.container_name, client_options));
+        {
+            auto raw_client = RawContainerClient::CreateFromConnectionString(auth.toUnderType(), endpoint.container_name, client_options);
+            return std::make_unique<ContainerClient>(std::move(raw_client), endpoint.prefix);
+        }
         else
-            return std::make_unique<ContainerClient>(endpoint.getEndpoint(), auth, client_options);
+        {
+            RawContainerClient raw_client{endpoint.getContainerEndpoint(), auth, client_options};
+            return std::make_unique<ContainerClient>(std::move(raw_client), endpoint.prefix);
+        }
     }, auth_method);
 }
 
@@ -221,7 +256,8 @@ std::unique_ptr<ContainerClient> getContainerClient(const ConnectionParams & par
     try
     {
         auto service_client = params.createForService();
-        return std::make_unique<ContainerClient>(service_client->CreateBlobContainer(params.endpoint.container_name).Value);
+        auto raw_client = service_client->CreateBlobContainer(params.endpoint.container_name).Value;
+        return std::make_unique<ContainerClient>(std::move(raw_client), params.endpoint.prefix);
     }
     catch (const Azure::Storage::StorageException & e)
     {

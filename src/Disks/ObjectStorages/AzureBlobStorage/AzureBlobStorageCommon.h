@@ -16,16 +16,13 @@
 #include <Interpreters/Context_fwd.h>
 #include <base/strong_typedef.h>
 
+namespace fs = std::filesystem;
+
 namespace DB
 {
 
 namespace AzureBlobStorage
 {
-
-using ServiceClient = Azure::Storage::Blobs::BlobServiceClient;
-using ContainerClient = Azure::Storage::Blobs::BlobContainerClient;
-using BlobClient = Azure::Storage::Blobs::BlobClient;
-using BlobClientOptions = Azure::Storage::Blobs::BlobClientOptions;
 
 struct RequestSettings
 {
@@ -63,7 +60,7 @@ struct Endpoint
     String sas_auth;
     std::optional<bool> container_already_exists;
 
-    String getEndpoint() const
+    String getContainerEndpoint() const
     {
         String url = storage_account_url;
         if (url.ends_with('/'))
@@ -75,16 +72,13 @@ struct Endpoint
         if (!container_name.empty())
             url += "/" + container_name;
 
-        if (!prefix.empty())
-            url += "/" + prefix;
-
         if (!sas_auth.empty())
             url += "?" + sas_auth;
 
         return url;
     }
 
-    String getEndpointWithoutContainer() const
+    String getServiceEndpoint() const
     {
         String url = storage_account_url;
 
@@ -98,6 +92,31 @@ struct Endpoint
     }
 };
 
+using BlobClient = Azure::Storage::Blobs::BlobClient;
+using BlockBlobClient = Azure::Storage::Blobs::BlockBlobClient;
+using RawContainerClient = Azure::Storage::Blobs::BlobContainerClient;
+
+using Azure::Storage::Blobs::ListBlobsOptions;
+using Azure::Storage::Blobs::ListBlobsPagedResponse;
+
+class ContainerClientWrapper
+{
+public:
+    ContainerClientWrapper(RawContainerClient client_, String blob_prefix_);
+
+    bool IsClientForDisk() const;
+    BlobClient GetBlobClient(const String & blob_name) const;
+    BlockBlobClient GetBlockBlobClient(const String & blob_name) const;
+    ListBlobsPagedResponse ListBlobs(const ListBlobsOptions & options) const;
+
+private:
+    RawContainerClient client;
+    fs::path blob_prefix;
+};
+
+using ContainerClient = ContainerClientWrapper;
+using ServiceClient = Azure::Storage::Blobs::BlobServiceClient;
+using BlobClientOptions = Azure::Storage::Blobs::BlobClientOptions;
 using ConnectionString = StrongTypedef<String, struct ConnectionStringTag>;
 
 using AuthMethod = std::variant<
