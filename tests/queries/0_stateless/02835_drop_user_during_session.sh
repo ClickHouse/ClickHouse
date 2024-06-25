@@ -54,13 +54,10 @@ ${CLICKHOUSE_CLIENT} -q "DELETE FROM system.session_log WHERE user = '${TEST_USE
 ${CLICKHOUSE_CLIENT} -q "CREATE USER IF NOT EXISTS ${TEST_USER}"
 ${CLICKHOUSE_CLIENT} -q "GRANT SELECT ON system.numbers TO ${TEST_USER}"
 
-export -f tcp_session;
-export -f http_session;
-export -f http_with_session_id_session;
 
-timeout 10s bash -c "tcp_session ${TEST_USER}" >/dev/null 2>&1 &
-timeout 10s bash -c "http_session ${TEST_USER}" >/dev/null 2>&1 &
-timeout 10s bash -c "http_with_session_id_session ${TEST_USER}" >/dev/null 2>&1 &
+spawn_with_timeout 10s "tcp_session ${TEST_USER}" >/dev/null 2>&1
+spawn_with_timeout 10s "http_session ${TEST_USER}" >/dev/null 2>&1
+spawn_with_timeout 10s "http_with_session_id_session ${TEST_USER}" >/dev/null 2>&1
 
 wait_for_queries_start $TEST_USER 3
 ${CLICKHOUSE_CLIENT} -q "DROP USER ${TEST_USER}"
@@ -73,9 +70,9 @@ ${CLICKHOUSE_CLIENT} -q "CREATE ROLE IF NOT EXISTS ${TEST_ROLE}"
 ${CLICKHOUSE_CLIENT} -q "CREATE USER ${TEST_USER} DEFAULT ROLE ${TEST_ROLE}"
 ${CLICKHOUSE_CLIENT} -q "GRANT SELECT ON system.numbers TO ${TEST_USER}"
 
-timeout 10s bash -c "tcp_session ${TEST_USER}" >/dev/null 2>&1 &
-timeout 10s bash -c "http_session ${TEST_USER}" >/dev/null 2>&1 &
-timeout 10s bash -c "http_with_session_id_session ${TEST_USER}" >/dev/null 2>&1 &
+spawn_with_timeout 10s "tcp_session ${TEST_USER}" >/dev/null 2>&1
+spawn_with_timeout 10s "http_session ${TEST_USER}" >/dev/null 2>&1
+spawn_with_timeout 10s "http_with_session_id_session ${TEST_USER}" >/dev/null 2>&1
 
 wait_for_queries_start $TEST_USER 3
 ${CLICKHOUSE_CLIENT} -q "DROP ROLE ${TEST_ROLE}"
@@ -90,9 +87,9 @@ ${CLICKHOUSE_CLIENT} -q "CREATE SETTINGS PROFILE IF NOT EXISTS '${TEST_PROFILE}'
 ${CLICKHOUSE_CLIENT} -q "CREATE USER ${TEST_USER} SETTINGS PROFILE '${TEST_PROFILE}'"
 ${CLICKHOUSE_CLIENT} -q "GRANT SELECT ON system.numbers TO ${TEST_USER}"
 
-timeout 10s bash -c "tcp_session ${TEST_USER}" >/dev/null 2>&1 &
-timeout 10s bash -c "http_session ${TEST_USER}" >/dev/null 2>&1 &
-timeout 10s bash -c "http_with_session_id_session ${TEST_USER}" >/dev/null 2>&1 &
+spawn_with_timeout 10s "tcp_session ${TEST_USER}" >/dev/null 2>&1
+spawn_with_timeout 10s "http_session ${TEST_USER}" >/dev/null 2>&1
+spawn_with_timeout 10s "http_with_session_id_session ${TEST_USER}" >/dev/null 2>&1
 
 wait_for_queries_start $TEST_USER 3
 ${CLICKHOUSE_CLIENT} -q "DROP SETTINGS PROFILE '${TEST_PROFILE}'"

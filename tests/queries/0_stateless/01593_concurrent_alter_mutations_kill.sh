@@ -36,13 +36,11 @@ function kill_mutation_thread
 }
 
 
-export -f alter_thread;
-export -f kill_mutation_thread;
 
 TIMEOUT=30
 
-timeout $TIMEOUT bash -c alter_thread 2> /dev/null &
-timeout $TIMEOUT bash -c kill_mutation_thread 2> /dev/null &
+spawn_with_timeout $TIMEOUT alter_thread 2> /dev/null
+spawn_with_timeout $TIMEOUT kill_mutation_thread 2> /dev/null
 
 wait
 

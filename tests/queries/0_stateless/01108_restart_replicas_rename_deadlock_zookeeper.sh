@@ -45,15 +45,12 @@ function restart_replicas_loop()
     done
 }
 
-export -f rename_thread_1;
-export -f rename_thread_2;
-export -f restart_replicas_loop
 
 TIMEOUT=10
 
-timeout $TIMEOUT bash -c rename_thread_1 2> /dev/null &
-timeout $TIMEOUT bash -c rename_thread_2 2> /dev/null &
-timeout $TIMEOUT bash -c restart_replicas_loop 2> /dev/null &
+spawn_with_timeout $TIMEOUT rename_thread_1 2> /dev/null
+spawn_with_timeout $TIMEOUT rename_thread_2 2> /dev/null
+spawn_with_timeout $TIMEOUT restart_replicas_loop 2> /dev/null
 
 wait
 

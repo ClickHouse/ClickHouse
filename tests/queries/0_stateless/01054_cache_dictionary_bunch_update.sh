@@ -55,18 +55,14 @@ function thread4()
 }
 
 
-export -f thread1;
-export -f thread2;
-export -f thread3;
-export -f thread4;
 
 TIMEOUT=10
 
 # shellcheck disable=SC2188
-timeout $TIMEOUT bash -c thread1 > /dev/null 2>&1 &
-timeout $TIMEOUT bash -c thread2 > /dev/null 2>&1 &
-timeout $TIMEOUT bash -c thread3 > /dev/null 2>&1 &
-timeout $TIMEOUT bash -c thread4 > /dev/null 2>&1 &
+spawn_with_timeout $TIMEOUT thread1 > /dev/null 2>&1
+spawn_with_timeout $TIMEOUT thread2 > /dev/null 2>&1
+spawn_with_timeout $TIMEOUT thread3 > /dev/null 2>&1
+spawn_with_timeout $TIMEOUT thread4 > /dev/null 2>&1
 
 wait
 

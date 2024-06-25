@@ -22,8 +22,7 @@ function thread_optimize()
 }
 
 TIMEOUT=15
-export -f thread_optimize
-timeout $TIMEOUT bash -c thread_optimize 2> /dev/null &
+spawn_with_timeout $TIMEOUT thread_optimize 2> /dev/null
 
 for i in {1..100};
 do

@@ -33,14 +33,11 @@ function truncate_thread()
     done
 }
 
-# https://stackoverflow.com/questions/9954794/execute-a-shell-function-with-timeout
-export -f read_stat_thread;
-export -f truncate_thread;
 
 TIMEOUT=20
 
-timeout $TIMEOUT bash -c read_stat_thread 2> /dev/null &
-timeout $TIMEOUT bash -c truncate_thread 2> /dev/null &
+spawn_with_timeout $TIMEOUT read_stat_thread 2> /dev/null
+spawn_with_timeout $TIMEOUT truncate_thread 2> /dev/null
 
 wait
 

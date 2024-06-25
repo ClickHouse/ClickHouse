@@ -33,11 +33,9 @@ function thread_rename {
     done
 }
 
-export -f thread_detach_attach
-export -f thread_rename
 
-timeout 20 bash -c "thread_detach_attach" &
-timeout 20 bash -c 'thread_rename' &
+spawn_with_timeout 20 "thread_detach_attach"
+spawn_with_timeout 20 'thread_rename'
 wait
 sleep 1
 

@@ -189,3 +189,26 @@ function query_with_retry
     done
     echo "Query '$query' failed with '$result'"
 }
+
+# Run a bash function in background and with timeout.
+#
+# Usage:
+#   function foo {
+#       # do something, e.g. run clickhouse queries in infinite loop
+#   }
+#   # start some processes to run in parallel
+#   spawn_with_timeout 30 foo
+#   spawn_with_timeout 30 foo
+#   # wait for all processes to complete
+#   wait
+#   # at this point both `foo` and any clickhouse clients it ran have exited
+function spawn_with_timeout
+{
+    export -f $2
+    timeout $1 bash -c "trap wait TERM; $2" &
+}
+
+# By default, kill children (e.g. clickhouse clients) if the script gets SIGTERM or SIGINT.
+# Just for convenience when running tests manually.
+# If the test overrides this with its own cleanup trap, it's ok.
+trap 'kill -9 $(jobs -p) && wait' INT TERM

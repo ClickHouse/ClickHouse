@@ -74,12 +74,10 @@ function alter_thread() {
     done
 }
 
-export -f insert_thread;
-export -f alter_thread;
 
 # finishes much faster with all builds, except debug with coverage
-timeout 120 bash -c insert_thread &
-timeout 120 bash -c alter_thread &
+spawn_with_timeout 120 insert_thread
+spawn_with_timeout 120 alter_thread
 
 wait
 

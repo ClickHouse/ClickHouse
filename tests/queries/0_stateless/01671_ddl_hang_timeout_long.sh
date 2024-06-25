@@ -21,10 +21,8 @@ function thread_alter_table {
     done
 }
 
-export -f thread_create_drop_table
-export -f thread_alter_table
-timeout 20 bash -c "thread_create_drop_table" &
-timeout 20 bash -c 'thread_alter_table' &
+spawn_with_timeout 20 "thread_create_drop_table"
+spawn_with_timeout 20 'thread_alter_table'
 wait
 sleep 1
 

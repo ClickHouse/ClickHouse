@@ -36,7 +36,6 @@ function insert_data
     fi
 }
 
-export -f insert_data
 
 ID="02434_insert_init_${CLICKHOUSE_DATABASE}_$RANDOM"
 insert_data
@@ -77,15 +76,12 @@ function thread_cancel
     done
 }
 
-export -f thread_insert;
-export -f thread_select;
-export -f thread_cancel;
 
 TIMEOUT=40
 
-timeout $TIMEOUT bash -c thread_insert &
-timeout $TIMEOUT bash -c thread_select &
-timeout $TIMEOUT bash -c thread_cancel 2> /dev/null &
+spawn_with_timeout $TIMEOUT thread_insert
+spawn_with_timeout $TIMEOUT thread_select
+spawn_with_timeout $TIMEOUT thread_cancel 2> /dev/null
 
 wait
 

@@ -43,21 +43,18 @@ function nemesis_thread2 {
 
 
 
-export -f thread
-export -f nemesis_thread1
-export -f nemesis_thread2
 
 TIMEOUT=20
 
-timeout $TIMEOUT bash -c thread 2>/dev/null &
-timeout $TIMEOUT bash -c thread 2>/dev/null &
-timeout $TIMEOUT bash -c thread 2>/dev/null &
-timeout $TIMEOUT bash -c nemesis_thread1 2>/dev/null &
-timeout $TIMEOUT bash -c nemesis_thread1 2>/dev/null &
-timeout $TIMEOUT bash -c nemesis_thread1 2>/dev/null &
-timeout $TIMEOUT bash -c nemesis_thread2 2>/dev/null &
-timeout $TIMEOUT bash -c nemesis_thread2 2>/dev/null &
-timeout $TIMEOUT bash -c nemesis_thread2 2>/dev/null &
+spawn_with_timeout $TIMEOUT thread 2>/dev/null
+spawn_with_timeout $TIMEOUT thread 2>/dev/null
+spawn_with_timeout $TIMEOUT thread 2>/dev/null
+spawn_with_timeout $TIMEOUT nemesis_thread1 2>/dev/null
+spawn_with_timeout $TIMEOUT nemesis_thread1 2>/dev/null
+spawn_with_timeout $TIMEOUT nemesis_thread1 2>/dev/null
+spawn_with_timeout $TIMEOUT nemesis_thread2 2>/dev/null
+spawn_with_timeout $TIMEOUT nemesis_thread2 2>/dev/null
+spawn_with_timeout $TIMEOUT nemesis_thread2 2>/dev/null
 
 wait
 

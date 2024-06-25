@@ -78,37 +78,32 @@ function select_thread()
 
 
 echo "Starting alters"
-export -f alter_thread;
-export -f alter_thread_1;
-export -f select_thread;
-export -f optimize_thread;
-export -f insert_thread;
 
 
 TIMEOUT=30
 
 # Sometimes we detach and attach tables
-timeout $TIMEOUT bash -c alter_thread 2> /dev/null &
-timeout $TIMEOUT bash -c alter_thread 2> /dev/null &
-timeout $TIMEOUT bash -c alter_thread 2> /dev/null &
+spawn_with_timeout $TIMEOUT alter_thread 2> /dev/null
+spawn_with_timeout $TIMEOUT alter_thread 2> /dev/null
+spawn_with_timeout $TIMEOUT alter_thread 2> /dev/null
 
-timeout $TIMEOUT bash -c alter_thread_1 2> /dev/null &
-timeout $TIMEOUT bash -c alter_thread_1 2> /dev/null &
-timeout $TIMEOUT bash -c alter_thread_1 2> /dev/null &
+spawn_with_timeout $TIMEOUT alter_thread_1 2> /dev/null
+spawn_with_timeout $TIMEOUT alter_thread_1 2> /dev/null
+spawn_with_timeout $TIMEOUT alter_thread_1 2> /dev/null
 
-timeout $TIMEOUT bash -c select_thread 2> /dev/null &
-timeout $TIMEOUT bash -c select_thread 2> /dev/null &
-timeout $TIMEOUT bash -c select_thread 2> /dev/null &
+spawn_with_timeout $TIMEOUT select_thread 2> /dev/null
+spawn_with_timeout $TIMEOUT select_thread 2> /dev/null
+spawn_with_timeout $TIMEOUT select_thread 2> /dev/null
 
-timeout $TIMEOUT bash -c optimize_thread 2> /dev/null &
-timeout $TIMEOUT bash -c optimize_thread 2> /dev/null &
-timeout $TIMEOUT bash -c optimize_thread 2> /dev/null &
+spawn_with_timeout $TIMEOUT optimize_thread 2> /dev/null
+spawn_with_timeout $TIMEOUT optimize_thread 2> /dev/null
+spawn_with_timeout $TIMEOUT optimize_thread 2> /dev/null
 
-timeout $TIMEOUT bash -c insert_thread 2> /dev/null &
-timeout $TIMEOUT bash -c insert_thread 2> /dev/null &
-timeout $TIMEOUT bash -c insert_thread 2> /dev/null &
-timeout $TIMEOUT bash -c insert_thread 2> /dev/null &
-timeout $TIMEOUT bash -c insert_thread 2> /dev/null &
+spawn_with_timeout $TIMEOUT insert_thread 2> /dev/null
+spawn_with_timeout $TIMEOUT insert_thread 2> /dev/null
+spawn_with_timeout $TIMEOUT insert_thread 2> /dev/null
+spawn_with_timeout $TIMEOUT insert_thread 2> /dev/null
+spawn_with_timeout $TIMEOUT insert_thread 2> /dev/null
 
 wait
 

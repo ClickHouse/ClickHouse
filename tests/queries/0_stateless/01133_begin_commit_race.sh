@@ -49,17 +49,13 @@ function introspection()
   done
 }
 
-export -f begin_commit_readonly
-export -f begin_rollback_readonly
-export -f begin_insert_commit
-export -f introspection
 
 TIMEOUT=20
 
-timeout $TIMEOUT bash -c begin_commit_readonly &
-timeout $TIMEOUT bash -c begin_rollback_readonly &
-timeout $TIMEOUT bash -c begin_insert_commit &
-timeout $TIMEOUT bash -c introspection &
+spawn_with_timeout $TIMEOUT begin_commit_readonly
+spawn_with_timeout $TIMEOUT begin_rollback_readonly
+spawn_with_timeout $TIMEOUT begin_insert_commit
+spawn_with_timeout $TIMEOUT introspection
 
 wait
 

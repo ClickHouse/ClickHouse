@@ -55,13 +55,11 @@ function thread2()
     done
 }
 
-export -f thread1;
-export -f thread2;
 
 TIMEOUT=5
 
-timeout $TIMEOUT bash -c thread1 > /dev/null 2>&1 &
-timeout $TIMEOUT bash -c thread2 > /dev/null 2>&1 &
+spawn_with_timeout $TIMEOUT thread1 > /dev/null 2>&1
+spawn_with_timeout $TIMEOUT thread2 > /dev/null 2>&1
 
 wait
 

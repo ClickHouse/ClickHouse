@@ -37,7 +37,7 @@ done
 # These functions try to create a session with successful login and logout.
 # Sleep a small, random amount of time to make concurrency more intense.
 # and try to login with an invalid password.
-function tcp_session() 
+function tcp_session()
 {
     local user=$1
     local i=0
@@ -49,7 +49,7 @@ function tcp_session()
     done
 }
 
-function http_session() 
+function http_session()
 {
     local user=$1
     local i=0
@@ -62,7 +62,7 @@ function http_session()
     done
 }
 
-function http_with_session_id_session() 
+function http_with_session_id_session()
 {
     local user=$1
     local i=0
@@ -75,7 +75,7 @@ function http_with_session_id_session()
     done
 }
 
-function mysql_session() 
+function mysql_session()
 {
     local user=$1
     local i=0
@@ -97,29 +97,29 @@ export -f http_with_session_id_session;
 export -f mysql_session;
 
 for user in "${TCP_USERS[@]}"; do
-    timeout 60s bash -c "tcp_session ${user}" >/dev/null 2>&1 &
+    timeout 60s bash -c "trap wait TERM; tcp_session ${user}" >/dev/null 2>&1 &
 done
 
 for user in "${HTTP_USERS[@]}"; do
-    timeout 60s bash -c "http_session ${user}" >/dev/null 2>&1 &
+    timeout 60s bash -c "trap wait TERM; http_session ${user}" >/dev/null 2>&1 &
 done
 
 for user in "${HTTP_WITH_SESSION_ID_SESSION_USERS[@]}"; do
-    timeout 60s bash -c "http_with_session_id_session ${user}" >/dev/null 2>&1 &
+    timeout 60s bash -c "trap wait TERM; http_with_session_id_session ${user}" >/dev/null 2>&1 &
 done
 
 for user in "${MYSQL_USERS[@]}"; do
-    timeout 60s bash -c "mysql_session ${user}" >/dev/null 2>&1 &
+    timeout 60s bash -c "trap wait TERM; mysql_session ${user}" >/dev/null 2>&1 &
 done
 
 wait
 
 ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS"
 
-echo "sessions:" 
+echo "sessions:"
 ${CLICKHOUSE_CLIENT} -q "SELECT count(*) FROM system.session_log WHERE user IN (${ALL_USERS_SQL_COLLECTION_STRING})"
 
-echo "port_0_sessions:" 
+echo "port_0_sessions:"
 ${CLICKHOUSE_CLIENT} -q "SELECT count(*) FROM system.session_log WHERE user IN (${ALL_USERS_SQL_COLLECTION_STRING}) AND client_port = 0"
 
 echo "address_0_sessions:"
@@ -136,8 +136,8 @@ ${CLICKHOUSE_CLIENT} -q "SELECT count(*) FROM system.session_log WHERE user IN (
 
 for user in "${ALL_USERS[@]}"; do
     ${CLICKHOUSE_CLIENT} -q "DROP USER ${user}"
-    echo "Corresponding LoginSuccess/Logout" 
+    echo "Corresponding LoginSuccess/Logout"
     ${CLICKHOUSE_CLIENT} -q "SELECT COUNT(*) FROM (SELECT ${SESSION_LOG_MATCHING_FIELDS} FROM system.session_log WHERE user = '${user}' AND type = 'LoginSuccess' INTERSECT SELECT ${SESSION_LOG_MATCHING_FIELDS} FROM system.session_log WHERE user = '${user}' AND type = 'Logout')"
     echo "LoginFailure"
-    ${CLICKHOUSE_CLIENT} -q "SELECT COUNT(*) FROM system.session_log WHERE user = '${user}' AND type = 'LoginFailure'" 
+    ${CLICKHOUSE_CLIENT} -q "SELECT COUNT(*) FROM system.session_log WHERE user = '${user}' AND type = 'LoginFailure'"
  done

@@ -71,34 +71,31 @@ function select_thread()
 
 
 echo "Starting alters"
-export -f correct_alter_thread;
-export -f insert_thread;
-export -f select_thread;
 
 
 TIMEOUT=30
 
 
 # Selects should run successfully
-timeout $TIMEOUT bash -c select_thread &
-timeout $TIMEOUT bash -c select_thread &
-timeout $TIMEOUT bash -c select_thread &
+spawn_with_timeout $TIMEOUT select_thread
+spawn_with_timeout $TIMEOUT select_thread
+spawn_with_timeout $TIMEOUT select_thread
 
 
-timeout $TIMEOUT bash -c correct_alter_thread 2> /dev/null &
-timeout $TIMEOUT bash -c correct_alter_thread 2> /dev/null &
-timeout $TIMEOUT bash -c correct_alter_thread 2> /dev/null &
+spawn_with_timeout $TIMEOUT correct_alter_thread 2> /dev/null
+spawn_with_timeout $TIMEOUT correct_alter_thread 2> /dev/null
+spawn_with_timeout $TIMEOUT correct_alter_thread 2> /dev/null
 
 
-timeout $TIMEOUT bash -c insert_thread 2> /dev/null &
-timeout $TIMEOUT bash -c insert_thread 2> /dev/null &
-timeout $TIMEOUT bash -c insert_thread 2> /dev/null &
-timeout $TIMEOUT bash -c insert_thread 2> /dev/null &
-timeout $TIMEOUT bash -c insert_thread 2> /dev/null &
-timeout $TIMEOUT bash -c insert_thread 2> /dev/null &
-timeout $TIMEOUT bash -c insert_thread 2> /dev/null &
-timeout $TIMEOUT bash -c insert_thread 2> /dev/null &
-timeout $TIMEOUT bash -c insert_thread 2> /dev/null &
+spawn_with_timeout $TIMEOUT insert_thread 2> /dev/null
+spawn_with_timeout $TIMEOUT insert_thread 2> /dev/null
+spawn_with_timeout $TIMEOUT insert_thread 2> /dev/null
+spawn_with_timeout $TIMEOUT insert_thread 2> /dev/null
+spawn_with_timeout $TIMEOUT insert_thread 2> /dev/null
+spawn_with_timeout $TIMEOUT insert_thread 2> /dev/null
+spawn_with_timeout $TIMEOUT insert_thread 2> /dev/null
+spawn_with_timeout $TIMEOUT insert_thread 2> /dev/null
+spawn_with_timeout $TIMEOUT insert_thread 2> /dev/null
 
 wait
 

@@ -69,47 +69,40 @@ function thread7()
 }
 
 
-export -f thread1;
-export -f thread2;
-export -f thread3;
-export -f thread4;
-export -f thread5;
-export -f thread6;
-export -f thread7;
 
 TIMEOUT=10
 
-timeout $TIMEOUT bash -c thread1 2> /dev/null &
-timeout $TIMEOUT bash -c thread2 2> /dev/null &
-timeout $TIMEOUT bash -c thread3 2> /dev/null &
-timeout $TIMEOUT bash -c thread4 2> /dev/null &
-timeout $TIMEOUT bash -c thread5 2> /dev/null &
-timeout $TIMEOUT bash -c thread6 2> /dev/null &
-timeout $TIMEOUT bash -c thread7 2> /dev/null &
+spawn_with_timeout $TIMEOUT thread1 2> /dev/null
+spawn_with_timeout $TIMEOUT thread2 2> /dev/null
+spawn_with_timeout $TIMEOUT thread3 2> /dev/null
+spawn_with_timeout $TIMEOUT thread4 2> /dev/null
+spawn_with_timeout $TIMEOUT thread5 2> /dev/null
+spawn_with_timeout $TIMEOUT thread6 2> /dev/null
+spawn_with_timeout $TIMEOUT thread7 2> /dev/null
 
-timeout $TIMEOUT bash -c thread1 2> /dev/null &
-timeout $TIMEOUT bash -c thread2 2> /dev/null &
-timeout $TIMEOUT bash -c thread3 2> /dev/null &
-timeout $TIMEOUT bash -c thread4 2> /dev/null &
-timeout $TIMEOUT bash -c thread5 2> /dev/null &
-timeout $TIMEOUT bash -c thread6 2> /dev/null &
-timeout $TIMEOUT bash -c thread7 2> /dev/null &
+spawn_with_timeout $TIMEOUT thread1 2> /dev/null
+spawn_with_timeout $TIMEOUT thread2 2> /dev/null
+spawn_with_timeout $TIMEOUT thread3 2> /dev/null
+spawn_with_timeout $TIMEOUT thread4 2> /dev/null
+spawn_with_timeout $TIMEOUT thread5 2> /dev/null
+spawn_with_timeout $TIMEOUT thread6 2> /dev/null
+spawn_with_timeout $TIMEOUT thread7 2> /dev/null
 
-timeout $TIMEOUT bash -c thread1 2> /dev/null &
-timeout $TIMEOUT bash -c thread2 2> /dev/null &
-timeout $TIMEOUT bash -c thread3 2> /dev/null &
-timeout $TIMEOUT bash -c thread4 2> /dev/null &
-timeout $TIMEOUT bash -c thread5 2> /dev/null &
-timeout $TIMEOUT bash -c thread6 2> /dev/null &
-timeout $TIMEOUT bash -c thread7 2> /dev/null &
+spawn_with_timeout $TIMEOUT thread1 2> /dev/null
+spawn_with_timeout $TIMEOUT thread2 2> /dev/null
+spawn_with_timeout $TIMEOUT thread3 2> /dev/null
+spawn_with_timeout $TIMEOUT thread4 2> /dev/null
+spawn_with_timeout $TIMEOUT thread5 2> /dev/null
+spawn_with_timeout $TIMEOUT thread6 2> /dev/null
+spawn_with_timeout $TIMEOUT thread7 2> /dev/null
 
-timeout $TIMEOUT bash -c thread1 2> /dev/null &
-timeout $TIMEOUT bash -c thread2 2> /dev/null &
-timeout $TIMEOUT bash -c thread3 2> /dev/null &
-timeout $TIMEOUT bash -c thread4 2> /dev/null &
-timeout $TIMEOUT bash -c thread5 2> /dev/null &
-timeout $TIMEOUT bash -c thread6 2> /dev/null &
-timeout $TIMEOUT bash -c thread7 2> /dev/null &
+spawn_with_timeout $TIMEOUT thread1 2> /dev/null
+spawn_with_timeout $TIMEOUT thread2 2> /dev/null
+spawn_with_timeout $TIMEOUT thread3 2> /dev/null
+spawn_with_timeout $TIMEOUT thread4 2> /dev/null
+spawn_with_timeout $TIMEOUT thread5 2> /dev/null
+spawn_with_timeout $TIMEOUT thread6 2> /dev/null
+spawn_with_timeout $TIMEOUT thread7 2> /dev/null
 
 wait
 $CLICKHOUSE_CLIENT -q "SELECT 'Still alive'"

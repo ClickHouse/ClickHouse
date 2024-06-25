@@ -65,18 +65,18 @@ export -f thread_insert_select
 function test_with_engine {
     echo "Testing $1"
 
-    timeout 10 bash -c "thread_create t1 $1" &
-    timeout 10 bash -c "thread_create t2 $1" &
-    timeout 10 bash -c 'thread_drop t1' &
-    timeout 10 bash -c 'thread_drop t2' &
-    timeout 10 bash -c 'thread_rename t1 t2' &
-    timeout 10 bash -c 'thread_rename t2 t1' &
-    timeout 10 bash -c 'thread_select t1' &
-    timeout 10 bash -c 'thread_select t2' &
-    timeout 10 bash -c 'thread_insert t1 5' &
-    timeout 10 bash -c 'thread_insert t2 10' &
-    timeout 10 bash -c 'thread_insert_select t1 t2' &
-    timeout 10 bash -c 'thread_insert_select t2 t1' &
+    timeout 10 bash -c "trap wait TERM; thread_create t1 $1" &
+    timeout 10 bash -c "trap wait TERM; thread_create t2 $1" &
+    timeout 10 bash -c 'trap wait TERM; thread_drop t1' &
+    timeout 10 bash -c 'trap wait TERM; thread_drop t2' &
+    timeout 10 bash -c 'trap wait TERM; thread_rename t1 t2' &
+    timeout 10 bash -c 'trap wait TERM; thread_rename t2 t1' &
+    timeout 10 bash -c 'trap wait TERM; thread_select t1' &
+    timeout 10 bash -c 'trap wait TERM; thread_select t2' &
+    timeout 10 bash -c 'trap wait TERM; thread_insert t1 5' &
+    timeout 10 bash -c 'trap wait TERM; thread_insert t2 10' &
+    timeout 10 bash -c 'trap wait TERM; thread_insert_select t1 t2' &
+    timeout 10 bash -c 'trap wait TERM; thread_insert_select t2 t1' &
 
     wait
     echo "Done $1"

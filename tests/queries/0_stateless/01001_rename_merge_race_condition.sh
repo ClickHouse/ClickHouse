@@ -26,14 +26,11 @@ function thread2()
     done
 }
 
-# https://stackoverflow.com/questions/9954794/execute-a-shell-function-with-timeout
-export -f thread1;
-export -f thread2;
 
 TIMEOUT=10
 
-timeout $TIMEOUT bash -c thread1 2> /dev/null &
-timeout $TIMEOUT bash -c thread2 2> /dev/null &
+spawn_with_timeout $TIMEOUT thread1 2> /dev/null
+spawn_with_timeout $TIMEOUT thread2 2> /dev/null
 
 wait
 

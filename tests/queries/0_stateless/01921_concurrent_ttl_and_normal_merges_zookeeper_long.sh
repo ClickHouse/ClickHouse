@@ -47,21 +47,19 @@ function insert_thread
 }
 
 
-export -f insert_thread;
-export -f optimize_thread;
 
 TIMEOUT=30
 
-timeout $TIMEOUT bash -c insert_thread 2> /dev/null &
-timeout $TIMEOUT bash -c insert_thread 2> /dev/null &
-timeout $TIMEOUT bash -c insert_thread 2> /dev/null &
-timeout $TIMEOUT bash -c insert_thread 2> /dev/null &
-timeout $TIMEOUT bash -c insert_thread 2> /dev/null &
-timeout $TIMEOUT bash -c optimize_thread 2> /dev/null &
-timeout $TIMEOUT bash -c optimize_thread 2> /dev/null &
-timeout $TIMEOUT bash -c optimize_thread 2> /dev/null &
-timeout $TIMEOUT bash -c optimize_thread 2> /dev/null &
-timeout $TIMEOUT bash -c optimize_thread 2> /dev/null &
+spawn_with_timeout $TIMEOUT insert_thread 2> /dev/null
+spawn_with_timeout $TIMEOUT insert_thread 2> /dev/null
+spawn_with_timeout $TIMEOUT insert_thread 2> /dev/null
+spawn_with_timeout $TIMEOUT insert_thread 2> /dev/null
+spawn_with_timeout $TIMEOUT insert_thread 2> /dev/null
+spawn_with_timeout $TIMEOUT optimize_thread 2> /dev/null
+spawn_with_timeout $TIMEOUT optimize_thread 2> /dev/null
+spawn_with_timeout $TIMEOUT optimize_thread 2> /dev/null
+spawn_with_timeout $TIMEOUT optimize_thread 2> /dev/null
+spawn_with_timeout $TIMEOUT optimize_thread 2> /dev/null
 
 wait
 for i in $(seq 1 $NUM_REPLICAS); do

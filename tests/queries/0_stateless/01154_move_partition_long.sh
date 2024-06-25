@@ -100,24 +100,18 @@ function drop_part_thread()
 }
 
 #export -f create_drop_thread;
-export -f insert_thread;
-export -f move_partition_src_dst_thread;
-export -f replace_partition_src_src_thread;
-export -f drop_partition_thread;
-export -f optimize_thread;
-export -f drop_part_thread;
 
 TIMEOUT=60
 
-#timeout $TIMEOUT bash -c "create_drop_thread ${engines[@]}" &
-timeout $TIMEOUT bash -c 'insert_thread src' &
-timeout $TIMEOUT bash -c 'insert_thread src' &
-timeout $TIMEOUT bash -c 'insert_thread dst' &
-timeout $TIMEOUT bash -c move_partition_src_dst_thread &
-timeout $TIMEOUT bash -c replace_partition_src_src_thread &
-timeout $TIMEOUT bash -c drop_partition_thread &
-timeout $TIMEOUT bash -c optimize_thread &
-timeout $TIMEOUT bash -c drop_part_thread &
+#timeout $TIMEOUT bash -c "trap wait TERM; create_drop_thread ${engines[@]}" &
+spawn_with_timeout $TIMEOUT 'insert_thread src'
+spawn_with_timeout $TIMEOUT 'insert_thread src'
+spawn_with_timeout $TIMEOUT 'insert_thread dst'
+spawn_with_timeout $TIMEOUT move_partition_src_dst_thread
+spawn_with_timeout $TIMEOUT replace_partition_src_src_thread
+spawn_with_timeout $TIMEOUT drop_partition_thread
+spawn_with_timeout $TIMEOUT optimize_thread
+spawn_with_timeout $TIMEOUT drop_part_thread
 wait
 
 check_replication_consistency "dst_" "count(), sum(p), sum(k), sum(v)"

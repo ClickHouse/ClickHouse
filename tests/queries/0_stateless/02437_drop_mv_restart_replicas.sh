@@ -47,15 +47,12 @@ function thread_restart()
     done
 }
 
-export -f thread_ddl;
-export -f thread_insert;
-export -f thread_restart;
 
 TIMEOUT=15
 
-timeout $TIMEOUT bash -c thread_ddl 2>&1| grep -Fa "Exception: " | grep -Fv -e "TABLE_IS_DROPPED" -e "UNKNOWN_TABLE" -e "DATABASE_NOT_EMPTY" &
-timeout $TIMEOUT bash -c thread_insert 2> /dev/null &
-timeout $TIMEOUT bash -c thread_restart 2>&1| grep -Fa "Exception: " | grep -Fv -e "is currently dropped or renamed" -e "is being dropped or detached" &
+spawn_with_timeout $TIMEOUT thread_ddl 2>&1| grep -Fa "Exception: " | grep -Fv -e "TABLE_IS_DROPPED" -e "UNKNOWN_TABLE" -e "DATABASE_NOT_EMPTY"
+spawn_with_timeout $TIMEOUT thread_insert 2> /dev/null
+spawn_with_timeout $TIMEOUT thread_restart 2>&1| grep -Fa "Exception: " | grep -Fv -e "is currently dropped or renamed" -e "is being dropped or detached"
 
 wait
 

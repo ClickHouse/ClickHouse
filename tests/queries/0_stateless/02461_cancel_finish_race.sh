@@ -20,40 +20,37 @@ function thread_cancel()
     done
 }
 
-# https://stackoverflow.com/questions/9954794/execute-a-shell-function-with-timeout
-export -f thread_query;
-export -f thread_cancel;
 
 TIMEOUT=30
 
-timeout $TIMEOUT bash -c thread_query 2> /dev/null &
-timeout $TIMEOUT bash -c thread_cancel 2> /dev/null &
+spawn_with_timeout $TIMEOUT thread_query 2> /dev/null
+spawn_with_timeout $TIMEOUT thread_cancel 2> /dev/null
 
-timeout $TIMEOUT bash -c thread_query 2> /dev/null &
-timeout $TIMEOUT bash -c thread_cancel 2> /dev/null &
+spawn_with_timeout $TIMEOUT thread_query 2> /dev/null
+spawn_with_timeout $TIMEOUT thread_cancel 2> /dev/null
 
-timeout $TIMEOUT bash -c thread_query 2> /dev/null &
-timeout $TIMEOUT bash -c thread_cancel 2> /dev/null &
+spawn_with_timeout $TIMEOUT thread_query 2> /dev/null
+spawn_with_timeout $TIMEOUT thread_cancel 2> /dev/null
 
-timeout $TIMEOUT bash -c thread_query 2> /dev/null &
-timeout $TIMEOUT bash -c thread_cancel 2> /dev/null &
+spawn_with_timeout $TIMEOUT thread_query 2> /dev/null
+spawn_with_timeout $TIMEOUT thread_cancel 2> /dev/null
 
-timeout $TIMEOUT bash -c thread_query 2> /dev/null &
-timeout $TIMEOUT bash -c thread_cancel 2> /dev/null &
+spawn_with_timeout $TIMEOUT thread_query 2> /dev/null
+spawn_with_timeout $TIMEOUT thread_cancel 2> /dev/null
 
-timeout $TIMEOUT bash -c thread_query 2> /dev/null &
-timeout $TIMEOUT bash -c thread_cancel 2> /dev/null &
+spawn_with_timeout $TIMEOUT thread_query 2> /dev/null
+spawn_with_timeout $TIMEOUT thread_cancel 2> /dev/null
 
-timeout $TIMEOUT bash -c thread_query 2> /dev/null &
-timeout $TIMEOUT bash -c thread_cancel 2> /dev/null &
+spawn_with_timeout $TIMEOUT thread_query 2> /dev/null
+spawn_with_timeout $TIMEOUT thread_cancel 2> /dev/null
 
-timeout $TIMEOUT bash -c thread_query 2> /dev/null &
-timeout $TIMEOUT bash -c thread_cancel 2> /dev/null &
+spawn_with_timeout $TIMEOUT thread_query 2> /dev/null
+spawn_with_timeout $TIMEOUT thread_cancel 2> /dev/null
 
-timeout $TIMEOUT bash -c thread_query 2> /dev/null &
-timeout $TIMEOUT bash -c thread_cancel 2> /dev/null &
+spawn_with_timeout $TIMEOUT thread_query 2> /dev/null
+spawn_with_timeout $TIMEOUT thread_cancel 2> /dev/null
 
-timeout $TIMEOUT bash -c thread_query 2> /dev/null &
-timeout $TIMEOUT bash -c thread_cancel 2> /dev/null &
+spawn_with_timeout $TIMEOUT thread_query 2> /dev/null
+spawn_with_timeout $TIMEOUT thread_cancel 2> /dev/null
 
 wait

@@ -23,22 +23,21 @@ function dict_get_thread()
     done
 }
 
-export -f dict_get_thread;
 
 TIMEOUT=10
 
-timeout $TIMEOUT bash -c dict_get_thread 2> /dev/null &
-timeout $TIMEOUT bash -c dict_get_thread 2> /dev/null &
-timeout $TIMEOUT bash -c dict_get_thread 2> /dev/null &
-timeout $TIMEOUT bash -c dict_get_thread 2> /dev/null &
-timeout $TIMEOUT bash -c dict_get_thread 2> /dev/null &
-timeout $TIMEOUT bash -c dict_get_thread 2> /dev/null &
-timeout $TIMEOUT bash -c dict_get_thread 2> /dev/null &
-timeout $TIMEOUT bash -c dict_get_thread 2> /dev/null &
-timeout $TIMEOUT bash -c dict_get_thread 2> /dev/null &
-timeout $TIMEOUT bash -c dict_get_thread 2> /dev/null &
-timeout $TIMEOUT bash -c dict_get_thread 2> /dev/null &
-timeout $TIMEOUT bash -c dict_get_thread 2> /dev/null &
+spawn_with_timeout $TIMEOUT dict_get_thread 2> /dev/null
+spawn_with_timeout $TIMEOUT dict_get_thread 2> /dev/null
+spawn_with_timeout $TIMEOUT dict_get_thread 2> /dev/null
+spawn_with_timeout $TIMEOUT dict_get_thread 2> /dev/null
+spawn_with_timeout $TIMEOUT dict_get_thread 2> /dev/null
+spawn_with_timeout $TIMEOUT dict_get_thread 2> /dev/null
+spawn_with_timeout $TIMEOUT dict_get_thread 2> /dev/null
+spawn_with_timeout $TIMEOUT dict_get_thread 2> /dev/null
+spawn_with_timeout $TIMEOUT dict_get_thread 2> /dev/null
+spawn_with_timeout $TIMEOUT dict_get_thread 2> /dev/null
+spawn_with_timeout $TIMEOUT dict_get_thread 2> /dev/null
+spawn_with_timeout $TIMEOUT dict_get_thread 2> /dev/null
 
 wait
 

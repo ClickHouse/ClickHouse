@@ -25,20 +25,19 @@ function select_thread()
     done
 }
 
-export -f select_thread;
 
 TIMEOUT=30
 
-timeout $TIMEOUT bash -c select_thread 2> /dev/null &
-timeout $TIMEOUT bash -c select_thread 2> /dev/null &
-timeout $TIMEOUT bash -c select_thread 2> /dev/null &
-timeout $TIMEOUT bash -c select_thread 2> /dev/null &
-timeout $TIMEOUT bash -c select_thread 2> /dev/null &
-timeout $TIMEOUT bash -c select_thread 2> /dev/null &
-timeout $TIMEOUT bash -c select_thread 2> /dev/null &
-timeout $TIMEOUT bash -c select_thread 2> /dev/null &
-timeout $TIMEOUT bash -c select_thread 2> /dev/null &
-timeout $TIMEOUT bash -c select_thread 2> /dev/null &
+spawn_with_timeout $TIMEOUT select_thread 2> /dev/null
+spawn_with_timeout $TIMEOUT select_thread 2> /dev/null
+spawn_with_timeout $TIMEOUT select_thread 2> /dev/null
+spawn_with_timeout $TIMEOUT select_thread 2> /dev/null
+spawn_with_timeout $TIMEOUT select_thread 2> /dev/null
+spawn_with_timeout $TIMEOUT select_thread 2> /dev/null
+spawn_with_timeout $TIMEOUT select_thread 2> /dev/null
+spawn_with_timeout $TIMEOUT select_thread 2> /dev/null
+spawn_with_timeout $TIMEOUT select_thread 2> /dev/null
+spawn_with_timeout $TIMEOUT select_thread 2> /dev/null
 
 wait
 

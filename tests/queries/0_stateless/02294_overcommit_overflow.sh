@@ -16,13 +16,11 @@ function query()
   done
 }
 
-export -f query
-
 TIMEOUT=10
 
 for _ in {1..10};
 do
-    timeout $TIMEOUT bash -c query &
+    spawn_with_timeout $TIMEOUT query &
 done
 
 wait

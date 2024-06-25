@@ -78,11 +78,6 @@ function test_func()
 }
 
 
-export -f recreate_lazy_func1;
-export -f recreate_lazy_func2;
-export -f recreate_lazy_func3;
-export -f recreate_lazy_func4;
-export -f test_func;
 
 
 ${CLICKHOUSE_CLIENT} -n -q "
@@ -93,11 +88,11 @@ ${CLICKHOUSE_CLIENT} -n -q "
 
 TIMEOUT=30
 
-timeout $TIMEOUT bash -c recreate_lazy_func1 2> /dev/null &
-timeout $TIMEOUT bash -c recreate_lazy_func2 2> /dev/null &
-timeout $TIMEOUT bash -c recreate_lazy_func3 2> /dev/null &
-timeout $TIMEOUT bash -c recreate_lazy_func4 2> /dev/null &
-timeout $TIMEOUT bash -c test_func 2> /dev/null &
+spawn_with_timeout $TIMEOUT recreate_lazy_func1 2> /dev/null
+spawn_with_timeout $TIMEOUT recreate_lazy_func2 2> /dev/null
+spawn_with_timeout $TIMEOUT recreate_lazy_func3 2> /dev/null
+spawn_with_timeout $TIMEOUT recreate_lazy_func4 2> /dev/null
+spawn_with_timeout $TIMEOUT test_func 2> /dev/null
 
 wait
 sleep 1

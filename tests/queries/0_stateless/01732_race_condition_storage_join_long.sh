@@ -40,16 +40,12 @@ function read_thread_select()
     done
 }
 
-# https://stackoverflow.com/questions/9954794/execute-a-shell-function-with-timeout
-export -f read_thread_big;
-export -f read_thread_small;
-export -f read_thread_select;
 
 TIMEOUT=20
 
-timeout $TIMEOUT bash -c read_thread_big 2> /dev/null &
-timeout $TIMEOUT bash -c read_thread_small 2> /dev/null &
-timeout $TIMEOUT bash -c read_thread_select 2> /dev/null &
+spawn_with_timeout $TIMEOUT read_thread_big 2> /dev/null
+spawn_with_timeout $TIMEOUT read_thread_small 2> /dev/null
+spawn_with_timeout $TIMEOUT read_thread_select 2> /dev/null
 
 # Run insert query with a sleep to make sure that it is executed all the time during the read queries.
 echo "

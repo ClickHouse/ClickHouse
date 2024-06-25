@@ -26,20 +26,18 @@ function create_drop_thread()
     done
 }
 
-export -f four_letter_thread;
-export -f create_drop_thread;
 
 TIMEOUT=15
 
-timeout $TIMEOUT bash -c four_letter_thread 2> /dev/null &
-timeout $TIMEOUT bash -c four_letter_thread 2> /dev/null &
-timeout $TIMEOUT bash -c four_letter_thread 2> /dev/null &
-timeout $TIMEOUT bash -c four_letter_thread 2> /dev/null &
+spawn_with_timeout $TIMEOUT four_letter_thread 2> /dev/null
+spawn_with_timeout $TIMEOUT four_letter_thread 2> /dev/null
+spawn_with_timeout $TIMEOUT four_letter_thread 2> /dev/null
+spawn_with_timeout $TIMEOUT four_letter_thread 2> /dev/null
 
-timeout $TIMEOUT bash -c create_drop_thread 2> /dev/null &
-timeout $TIMEOUT bash -c create_drop_thread 2> /dev/null &
-timeout $TIMEOUT bash -c create_drop_thread 2> /dev/null &
-timeout $TIMEOUT bash -c create_drop_thread 2> /dev/null &
+spawn_with_timeout $TIMEOUT create_drop_thread 2> /dev/null
+spawn_with_timeout $TIMEOUT create_drop_thread 2> /dev/null
+spawn_with_timeout $TIMEOUT create_drop_thread 2> /dev/null
+spawn_with_timeout $TIMEOUT create_drop_thread 2> /dev/null
 
 
 wait

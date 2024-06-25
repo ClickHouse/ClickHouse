@@ -51,20 +51,18 @@ function drop_create_table_thread()
     done
 }
 
-export -f dict_get_thread;
-export -f drop_create_table_thread;
 
 TIMEOUT=30
 
-timeout $TIMEOUT bash -c dict_get_thread 2> /dev/null &
-timeout $TIMEOUT bash -c dict_get_thread 2> /dev/null &
-timeout $TIMEOUT bash -c dict_get_thread 2> /dev/null &
-timeout $TIMEOUT bash -c dict_get_thread 2> /dev/null &
-timeout $TIMEOUT bash -c dict_get_thread 2> /dev/null &
-timeout $TIMEOUT bash -c dict_get_thread 2> /dev/null &
+spawn_with_timeout $TIMEOUT dict_get_thread 2> /dev/null
+spawn_with_timeout $TIMEOUT dict_get_thread 2> /dev/null
+spawn_with_timeout $TIMEOUT dict_get_thread 2> /dev/null
+spawn_with_timeout $TIMEOUT dict_get_thread 2> /dev/null
+spawn_with_timeout $TIMEOUT dict_get_thread 2> /dev/null
+spawn_with_timeout $TIMEOUT dict_get_thread 2> /dev/null
 
 
-timeout $TIMEOUT bash -c drop_create_table_thread 2> /dev/null &
+spawn_with_timeout $TIMEOUT drop_create_table_thread 2> /dev/null
 
 wait
 

@@ -41,8 +41,7 @@ function alter_thread()
     done
 }
 
-export -f alter_thread;
-timeout 10 bash -c alter_thread &
+spawn_with_timeout 10 alter_thread
 
 for _ in {1..100}; do
     # Retry (hopefully retriable (deadlock avoided)) errors.

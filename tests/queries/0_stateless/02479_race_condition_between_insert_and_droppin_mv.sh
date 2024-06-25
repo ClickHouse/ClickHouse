@@ -42,12 +42,12 @@ TIMEOUT=55
 
 for i in {1..4}
 do
-    timeout $TIMEOUT bash -c "drop_mv $i" &
+    timeout $TIMEOUT bash -c "trap wait TERM; drop_mv $i" &
 done
 
 for i in {1..4}
 do
-    timeout $TIMEOUT bash -c insert 20 &
+    timeout $TIMEOUT bash -c "trap wait TERM; insert 20" &
 done
 
 wait

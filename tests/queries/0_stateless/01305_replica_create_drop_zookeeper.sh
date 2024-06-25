@@ -16,13 +16,11 @@ function thread()
     done
 }
 
-# https://stackoverflow.com/questions/9954794/execute-a-shell-function-with-timeout
-export -f thread;
 
 TIMEOUT=10
 
-timeout $TIMEOUT bash -c 'thread 1' &
-timeout $TIMEOUT bash -c 'thread 2' &
+spawn_with_timeout $TIMEOUT 'thread 1'
+spawn_with_timeout $TIMEOUT 'thread 2'
 
 wait
 

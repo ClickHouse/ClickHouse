@@ -45,16 +45,13 @@ function set_role()
     done
 }
 
-export -f delete_user
-export -f create_and_login_user
-export -f set_role
 
 TIMEOUT=10
 
 
-timeout $TIMEOUT bash -c create_and_login_user 2> /dev/null &
-timeout $TIMEOUT bash -c delete_user 2> /dev/null &
-timeout $TIMEOUT bash -c set_role 2> /dev/null &
+spawn_with_timeout $TIMEOUT create_and_login_user 2> /dev/null
+spawn_with_timeout $TIMEOUT delete_user 2> /dev/null
+spawn_with_timeout $TIMEOUT set_role 2> /dev/null
 
 wait
 
