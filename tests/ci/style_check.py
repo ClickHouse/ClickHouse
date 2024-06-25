@@ -13,7 +13,7 @@ from typing import List, Tuple, Union
 import magic
 
 from docker_images_helper import get_docker_image, pull_image
-from env_helper import IS_CI, REPO_COPY, TEMP_PATH
+from env_helper import IS_CI, REPO_COPY, TEMP_PATH, GITHUB_EVENT_PATH
 from git_helper import GIT_PREFIX, git_runner
 from pr_info import PRInfo
 from report import ERROR, FAILURE, SUCCESS, JobReport, TestResults, read_test_results
@@ -216,7 +216,8 @@ def main():
         status=state,
         start_time=stopwatch.start_time_str,
         duration=stopwatch.duration_seconds,
-        additional_files=additional_files,
+        # add GITHUB_EVENT_PATH json file to have it in style check report. sometimes it's needed for debugging.
+        additional_files=additional_files + [Path(GITHUB_EVENT_PATH)],
     ).dump()
 
     if state in [ERROR, FAILURE]:
