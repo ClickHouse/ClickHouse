@@ -21,8 +21,6 @@
 #include <Parsers/Kusto/ParserKQLStatement.h>
 #include <Parsers/Kusto/parseKQLQuery.h>
 
-
-
 namespace DB
 {
 
