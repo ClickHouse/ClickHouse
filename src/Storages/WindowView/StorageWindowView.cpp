@@ -563,11 +563,11 @@ std::pair<BlocksPtr, Block> StorageWindowView::getNewBlocks(UInt32 watermark)
 
     auto syntax_result = TreeRewriter(getContext()).analyze(filter_function, builder.getHeader().getNamesAndTypesList());
     auto filter_expression = ExpressionAnalyzer(filter_function, syntax_result, getContext()).getActionsDAG(false);
+    auto filter_actions = std::make_shared<ExpressionActions>(std::move(filter_expression));
 
     builder.addSimpleTransform([&](const Block & header)
     {
-        return std::make_shared<FilterTransform>(
-            header, std::make_shared<ExpressionActions>(std::move(filter_expression)), filter_function->getColumnName(), true);
+        return std::make_shared<FilterTransform>(header, filter_actions, filter_function->getColumnName(), true);
     });
 
     /// Adding window column
