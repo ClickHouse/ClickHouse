@@ -261,8 +261,9 @@ public:
     void compileExpressions(size_t min_count_to_compile_expression, const std::unordered_set<const Node *> & lazy_executed_nodes = {});
 #endif
 
-    ActionsDAGPtr clone() const;
-    ActionsDAGPtr clone(std::unordered_map<const Node *, Node *> & old_to_new_nodes) const;
+    static ActionsDAGPtr clone(const ActionsDAGPtr & from) { return clone(from.get()); }
+    static ActionsDAGPtr clone(const ActionsDAG * from);
+    static ActionsDAGPtr clone(const ActionsDAG * from, std::unordered_map<const Node *, Node *> & old_to_new_nodes);
 
     static ActionsDAGPtr cloneSubDAG(const NodeRawConstPtrs & outputs, bool remove_aliases);
 

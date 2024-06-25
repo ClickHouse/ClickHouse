@@ -597,7 +597,7 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
 
             filter_node.step = std::make_unique<FilterStep>(
                 filter_node.children.front()->step->getOutputStream(),
-                filter->getExpression()->clone(),
+                ActionsDAG::clone(filter->getExpression()),
                 filter->getFilterColumnName(),
                 filter->removesFilterColumn());
         }
@@ -611,7 +611,7 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
 
     if (auto * read_from_merge = typeid_cast<ReadFromMerge *>(child.get()))
     {
-        FilterDAGInfo info{filter->getExpression()->clone(), filter->getFilterColumnName(), filter->removesFilterColumn()};
+        FilterDAGInfo info{ActionsDAG::clone(filter->getExpression()), filter->getFilterColumnName(), filter->removesFilterColumn()};
         read_from_merge->addFilter(std::move(info));
         std::swap(*parent_node, *child_node);
         return 1;

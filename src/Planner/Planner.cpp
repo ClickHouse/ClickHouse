@@ -333,12 +333,12 @@ void addExpressionStep(QueryPlan & query_plan,
     const std::string & step_description,
     std::vector<const ActionsDAG *> & result_actions_to_execute)
 {
-    auto actions = expression_actions->dag.clone();
+    auto actions = ActionsDAG::clone(&expression_actions->dag);
     if (expression_actions->project_input)
         actions->appendInputsForUnusedColumns(query_plan.getCurrentDataStream().header);
 
-    result_actions_to_execute.push_back(actions.get());
     auto expression_step = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), actions);
+    result_actions_to_execute.push_back(expression_step->getExpression().get());
     expression_step->setStepDescription(step_description);
     query_plan.addStep(std::move(expression_step));
 }
@@ -348,15 +348,15 @@ void addFilterStep(QueryPlan & query_plan,
     const std::string & step_description,
     std::vector<const ActionsDAG *> & result_actions_to_execute)
 {
-    auto actions = filter_analysis_result.filter_actions->dag.clone();
+    auto actions = ActionsDAG::clone(&filter_analysis_result.filter_actions->dag);
     if (filter_analysis_result.filter_actions->project_input)
         actions->appendInputsForUnusedColumns(query_plan.getCurrentDataStream().header);
 
-    result_actions_to_execute.push_back(actions.get());
     auto where_step = std::make_unique<FilterStep>(query_plan.getCurrentDataStream(),
         actions,
         filter_analysis_result.filter_column_name,
         filter_analysis_result.remove_filter_column);
+    result_actions_to_execute.push_back(where_step->getExpression().get());
     where_step->setStepDescription(step_description);
     query_plan.addStep(std::move(where_step));
 }
@@ -556,11 +556,9 @@ void addTotalsHavingStep(QueryPlan & query_plan,
     ActionsDAGPtr actions;
     if (having_analysis_result.filter_actions)
     {
-        actions = having_analysis_result.filter_actions->dag.clone();
+        actions = ActionsDAG::clone(&having_analysis_result.filter_actions->dag);
         if (having_analysis_result.filter_actions->project_input)
             actions->appendInputsForUnusedColumns(query_plan.getCurrentDataStream().header);
-
-        result_actions_to_execute.push_back(actions.get());
     }
 
     auto totals_having_step = std::make_unique<TotalsHavingStep>(
@@ -573,6 +571,10 @@ void addTotalsHavingStep(QueryPlan & query_plan,
         settings.totals_mode,
         settings.totals_auto_threshold,
         need_finalize);
+
+    if (having_analysis_result.filter_actions)
+        result_actions_to_execute.push_back(totals_having_step->getActions().get());
+
     query_plan.addStep(std::move(totals_having_step));
 }
 
@@ -1449,7 +1451,7 @@ void Planner::buildPlanForQueryNode()
             if (it != table_filters.end())
             {
                 const auto & filters = it->second;
-                table_expression_data.setFilterActions(filters.filter_actions->clone());
+                table_expression_data.setFilterActions(ActionsDAG::clone(filters.filter_actions));
                 table_expression_data.setPrewhereInfo(filters.prewhere_info);
             }
         }

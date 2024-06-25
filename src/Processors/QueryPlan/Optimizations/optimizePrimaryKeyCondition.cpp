@@ -18,15 +18,15 @@ void optimizePrimaryKeyCondition(const Stack & stack)
     const auto & storage_prewhere_info = source_step_with_filter->getPrewhereInfo();
     if (storage_prewhere_info)
     {
-        source_step_with_filter->addFilter(storage_prewhere_info->prewhere_actions->clone(), storage_prewhere_info->prewhere_column_name);
+        source_step_with_filter->addFilter(ActionsDAG::clone(storage_prewhere_info->prewhere_actions), storage_prewhere_info->prewhere_column_name);
         if (storage_prewhere_info->row_level_filter)
-            source_step_with_filter->addFilter(storage_prewhere_info->row_level_filter->clone(), storage_prewhere_info->row_level_column_name);
+            source_step_with_filter->addFilter(ActionsDAG::clone(storage_prewhere_info->row_level_filter), storage_prewhere_info->row_level_column_name);
     }
 
     for (auto iter = stack.rbegin() + 1; iter != stack.rend(); ++iter)
     {
         if (auto * filter_step = typeid_cast<FilterStep *>(iter->node->step.get()))
-            source_step_with_filter->addFilter(filter_step->getExpression()->clone(), filter_step->getFilterColumnName());
+            source_step_with_filter->addFilter(ActionsDAG::clone(filter_step->getExpression()), filter_step->getFilterColumnName());
 
         /// Note: actually, plan optimizations merge Filter and Expression steps.
         /// Ideally, chain should look like (Expression -> ...) -> (Filter -> ...) -> ReadFromStorage,

@@ -49,7 +49,7 @@ FilterStep::FilterStep(
     , filter_column_name(std::move(filter_column_name_))
     , remove_filter_column(remove_filter_column_)
 {
-    actions_dag = actions_dag->clone();
+    actions_dag = ActionsDAG::clone(actions_dag_);
     actions_dag->removeAliasesForFilter(filter_column_name);
 }
 
@@ -87,7 +87,7 @@ void FilterStep::describeActions(FormatSettings & settings) const
         settings.out << " (removed)";
     settings.out << '\n';
 
-    auto expression = std::make_shared<ExpressionActions>(actions_dag->clone());
+    auto expression = std::make_shared<ExpressionActions>(ActionsDAG::clone(actions_dag));
     expression->describeActions(settings.out, prefix);
 }
 
@@ -96,7 +96,7 @@ void FilterStep::describeActions(JSONBuilder::JSONMap & map) const
     map.add("Filter Column", filter_column_name);
     map.add("Removes Filter", remove_filter_column);
 
-    auto expression = std::make_shared<ExpressionActions>(actions_dag->clone());
+    auto expression = std::make_shared<ExpressionActions>(ActionsDAG::clone(actions_dag));
     map.add("Expression", expression->toTree());
 }
 

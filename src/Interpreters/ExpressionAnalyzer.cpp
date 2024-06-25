@@ -1944,7 +1944,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
                 Block before_prewhere_sample = source_header;
                 if (sanitizeBlock(before_prewhere_sample))
                 {
-                    auto dag = prewhere_dag_and_flags->dag.clone();
+                    auto dag = ActionsDAG::clone(&prewhere_dag_and_flags->dag);
                     ExpressionActions(
                         std::move(dag),
                         ExpressionActionsSettings::fromSettings(context->getSettingsRef())).execute(before_prewhere_sample);
@@ -1980,7 +1980,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
                 if (sanitizeBlock(before_where_sample))
                 {
                     ExpressionActions(
-                        before_where->dag.clone(),
+                        ActionsDAG::clone(&before_where->dag),
                         ExpressionActionsSettings::fromSettings(context->getSettingsRef())).execute(before_where_sample);
 
                     auto & column_elem

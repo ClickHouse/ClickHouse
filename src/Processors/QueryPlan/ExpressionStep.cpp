@@ -30,13 +30,13 @@ ExpressionStep::ExpressionStep(const DataStream & input_stream_, const ActionsDA
         input_stream_,
         ExpressionTransform::transformHeader(input_stream_.header, *actions_dag_),
         getTraits(actions_dag_, input_stream_.header, input_stream_.sort_description))
-    , actions_dag(actions_dag_->clone())
+    , actions_dag(ActionsDAG::clone(actions_dag_))
 {
 }
 
 void ExpressionStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
 {
-    auto expression = std::make_shared<ExpressionActions>(actions_dag->clone(), settings.getActionsSettings());
+    auto expression = std::make_shared<ExpressionActions>(ActionsDAG::clone(actions_dag), settings.getActionsSettings());
 
     pipeline.addSimpleTransform([&](const Block & header)
     {
@@ -61,13 +61,13 @@ void ExpressionStep::transformPipeline(QueryPipelineBuilder & pipeline, const Bu
 void ExpressionStep::describeActions(FormatSettings & settings) const
 {
     String prefix(settings.offset, settings.indent_char);
-    auto expression = std::make_shared<ExpressionActions>(actions_dag->clone());
+    auto expression = std::make_shared<ExpressionActions>(ActionsDAG::clone(actions_dag));
     expression->describeActions(settings.out, prefix);
 }
 
 void ExpressionStep::describeActions(JSONBuilder::JSONMap & map) const
 {
-    auto expression = std::make_shared<ExpressionActions>(actions_dag->clone());
+    auto expression = std::make_shared<ExpressionActions>(ActionsDAG::clone(actions_dag));
     map.add("Expression", expression->toTree());
 }
 

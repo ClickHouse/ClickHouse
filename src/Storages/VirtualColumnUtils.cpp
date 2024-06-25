@@ -80,7 +80,7 @@ void buildSetsForDAG(const ActionsDAGPtr & dag, const ContextPtr & context)
 void filterBlockWithDAG(const ActionsDAGPtr & dag, Block & block, ContextPtr context)
 {
     buildSetsForDAG(dag, context);
-    auto actions = std::make_shared<ExpressionActions>(dag->clone());
+    auto actions = std::make_shared<ExpressionActions>(ActionsDAG::clone(dag));
     Block block_with_filter = block;
     actions->execute(block_with_filter, /*dry_run=*/ false, /*allow_duplicates_in_input=*/ true);
 
@@ -318,7 +318,7 @@ static const ActionsDAG::Node * splitFilterNodeForAllowedInputs(
             {
                 if (const auto * index_hint = typeid_cast<const FunctionIndexHint *>(adaptor->getFunction().get()))
                 {
-                    auto index_hint_dag = index_hint->getActions()->clone();
+                    auto index_hint_dag = ActionsDAG::clone(index_hint->getActions());
                     ActionsDAG::NodeRawConstPtrs atoms;
                     for (const auto & output : index_hint_dag->getOutputs())
                         if (const auto * child_copy = splitFilterNodeForAllowedInputs(output, allowed_inputs, additional_nodes))

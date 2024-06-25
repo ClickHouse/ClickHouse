@@ -66,10 +66,10 @@ struct PrewhereInfo
         PrewhereInfoPtr prewhere_info = std::make_shared<PrewhereInfo>();
 
         if (row_level_filter)
-            prewhere_info->row_level_filter = row_level_filter->clone();
+            prewhere_info->row_level_filter = ActionsDAG::clone(row_level_filter);
 
         if (prewhere_actions)
-            prewhere_info->prewhere_actions = prewhere_actions->clone();
+            prewhere_info->prewhere_actions = ActionsDAG::clone(prewhere_actions);
 
         prewhere_info->row_level_column_name = row_level_column_name;
         prewhere_info->prewhere_column_name = prewhere_column_name;

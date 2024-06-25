@@ -15,11 +15,11 @@ static ActionsDAGPtr buildActionsForPlanPath(std::vector<const ActionsDAG *> & d
     if (dag_stack.empty())
         return nullptr;
 
-    ActionsDAGPtr path_actions = dag_stack.back()->clone();
+    ActionsDAGPtr path_actions = ActionsDAG::clone(dag_stack.back());
     dag_stack.pop_back();
     while (!dag_stack.empty())
     {
-        ActionsDAGPtr clone = dag_stack.back()->clone();
+        ActionsDAGPtr clone = ActionsDAG::clone(dag_stack.back());
         dag_stack.pop_back();
         path_actions->mergeInplace(std::move(*clone));
     }

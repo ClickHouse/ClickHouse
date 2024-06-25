@@ -265,7 +265,7 @@ MergeTreeIndexConditionSet::MergeTreeIndexConditionSet(
         if (!set->buildOrderedSetInplace(context))
             return;
 
-    auto filter_actions_dag = filter_dag->clone();
+    auto filter_actions_dag = ActionsDAG::clone(filter_dag);
     const auto * filter_actions_dag_node = filter_actions_dag->getOutputs().at(0);
 
     std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> node_to_result_node;
@@ -319,7 +319,7 @@ static const ActionsDAG::NodeRawConstPtrs & getArguments(const ActionsDAG::Node 
         return index_hint.getActions()->getOutputs();
 
     /// Import the DAG and map argument pointers.
-    ActionsDAGPtr actions_clone = index_hint.getActions()->clone();
+    ActionsDAGPtr actions_clone = ActionsDAG::clone(index_hint.getActions());
     chassert(storage);
     result_dag_or_null->mergeNodes(std::move(*actions_clone), storage);
     return *storage;

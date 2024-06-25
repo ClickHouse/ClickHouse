@@ -157,7 +157,9 @@ std::vector<size_t> sortWindowDescriptions(const std::vector<WindowDescription> 
     };
 
     std::vector<size_t> perm(window_descriptions.size());
-    std::iota(perm.begin(), perm.end(), 0U);
+    for (size_t i = 0; i < perm.size(); ++i)
+        perm[i] = i;
+
     ::sort(perm.begin(), perm.end(), comparator);
 
     return perm;

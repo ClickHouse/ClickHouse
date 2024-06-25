@@ -646,7 +646,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
 
         auto table_expression_query_info = select_query_info;
         table_expression_query_info.table_expression = table_expression;
-        table_expression_query_info.filter_actions_dag = table_expression_data.getFilterActions()->clone();
+        table_expression_query_info.filter_actions_dag = ActionsDAG::clone(table_expression_data.getFilterActions());
         table_expression_query_info.analyzer_can_use_parallel_replicas_on_follower = table_node == planner_context->getGlobalPlannerContext()->parallel_replicas_table;
 
         size_t max_streams = settings.max_threads;
@@ -776,7 +776,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 if (prewhere_actions)
                 {
                     prewhere_info = std::make_shared<PrewhereInfo>();
-                    prewhere_info->prewhere_actions = prewhere_actions->clone();
+                    prewhere_info->prewhere_actions = ActionsDAG::clone(prewhere_actions);
                     prewhere_info->prewhere_column_name = prewhere_actions->getOutputs().at(0)->result_name;
                     prewhere_info->remove_prewhere_column = true;
                     prewhere_info->need_filter = true;
@@ -831,7 +831,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 auto row_policy_filter_info
                     = buildRowPolicyFilterIfNeeded(storage, table_expression_query_info, planner_context, used_row_policies);
                 if (row_policy_filter_info.actions)
-                    table_expression_data.setRowLevelFilterActions(row_policy_filter_info.actions->clone());
+                    table_expression_data.setRowLevelFilterActions(ActionsDAG::clone(row_policy_filter_info.actions));
                 add_filter(row_policy_filter_info, "Row-level security filter");
 
                 if (query_context->getParallelReplicasMode() == Context::ParallelReplicasMode::CUSTOM_KEY)
@@ -1178,17 +1178,16 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
             join_table_expression,
             planner_context);
 
-        left_join_tree_query_plan.actions_dags.emplace_back(join_clauses_and_actions.left_join_expressions_actions.get());
-        left_join_tree_query_plan.actions_dags.emplace_back(join_clauses_and_actions.right_join_expressions_actions.get());
-
         join_clauses_and_actions.left_join_expressions_actions->appendInputsForUnusedColumns(left_plan.getCurrentDataStream().header);
         auto left_join_expressions_actions_step = std::make_unique<ExpressionStep>(left_plan.getCurrentDataStream(), join_clauses_and_actions.left_join_expressions_actions);
         left_join_expressions_actions_step->setStepDescription("JOIN actions");
+        left_join_tree_query_plan.actions_dags.emplace_back(left_join_expressions_actions_step->getExpression().get());
         left_plan.addStep(std::move(left_join_expressions_actions_step));
 
         join_clauses_and_actions.right_join_expressions_actions->appendInputsForUnusedColumns(right_plan.getCurrentDataStream().header);
         auto right_join_expressions_actions_step = std::make_unique<ExpressionStep>(right_plan.getCurrentDataStream(), join_clauses_and_actions.right_join_expressions_actions);
         right_join_expressions_actions_step->setStepDescription("JOIN actions");
+        right_join_tree_query_plan.actions_dags.emplace_back(right_join_expressions_actions_step->getExpression().get());
         right_plan.addStep(std::move(right_join_expressions_actions_step));
     }
 
@@ -1434,7 +1433,8 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
 
     auto result_plan = QueryPlan();
 
-    if (join_algorithm->isFilled())
+    bool is_filled_join = join_algorithm->isFilled();
+    if (is_filled_join)
     {
         auto filled_join_step = std::make_unique<FilledJoinStep>(
             left_plan.getCurrentDataStream(),
@@ -1586,8 +1586,9 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
         left_join_tree_query_plan.used_row_policies.insert(right_join_tree_query_plan_row_policy);
 
     /// Collect all required actions dags in `left_join_tree_query_plan.actions_dags`
-    for (const auto * action_dag : right_join_tree_query_plan.actions_dags)
-        left_join_tree_query_plan.actions_dags.emplace_back(action_dag);
+    if (!is_filled_join)
+        for (const auto * action_dag : right_join_tree_query_plan.actions_dags)
+            left_join_tree_query_plan.actions_dags.emplace_back(action_dag);
     // if (join_clauses_and_actions.left_join_expressions_actions)
     //     left_join_tree_query_plan.actions_dags.emplace_back(join_clauses_and_actions.left_join_expressions_actions.get());
     // if (join_clauses_and_actions.right_join_expressions_actions)
@@ -1646,10 +1647,9 @@ JoinTreeQueryPlan buildQueryPlanForArrayJoinNode(const QueryTreeNodePtr & array_
 
     array_join_action_dag->appendInputsForUnusedColumns(plan.getCurrentDataStream().header);
 
-    join_tree_query_plan.actions_dags.push_back(array_join_action_dag.get());
-
     auto array_join_actions = std::make_unique<ExpressionStep>(plan.getCurrentDataStream(), std::move(array_join_action_dag));
     array_join_actions->setStepDescription("ARRAY JOIN actions");
+    join_tree_query_plan.actions_dags.push_back(array_join_actions->getExpression().get());
     plan.addStep(std::move(array_join_actions));
 
     auto drop_unused_columns_before_array_join_actions_dag = std::make_unique<ActionsDAG>(plan.getCurrentDataStream().header.getColumnsWithTypeAndName());

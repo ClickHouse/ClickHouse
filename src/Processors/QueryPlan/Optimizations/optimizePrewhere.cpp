@@ -108,7 +108,7 @@ void optimizePrewhere(Stack & stack, QueryPlan::Nodes &)
     prewhere_info->need_filter = true;
     prewhere_info->remove_prewhere_column = optimize_result.fully_moved_to_prewhere && filter_step->removesFilterColumn();
 
-    auto filter_expression = filter_step->getExpression()->clone();
+    auto filter_expression = ActionsDAG::clone(filter_step->getExpression());
     const auto & filter_column_name = filter_step->getFilterColumnName();
 
     if (prewhere_info->remove_prewhere_column)
