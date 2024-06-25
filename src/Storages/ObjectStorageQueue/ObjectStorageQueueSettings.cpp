@@ -23,8 +23,12 @@ void ObjectStorageQueueSettings::loadFromQuery(ASTStorage & storage_def)
         {
             /// We support settings starting with s3_ for compatibility.
             for (auto & change : storage_def.settings->changes)
+            {
                 if (change.name.starts_with("s3queue_"))
                     change.name = change.name.substr(std::strlen("s3queue_"));
+                if (change.name == "enable_logging_to_s3queue_log")
+                    change.name = "enable_logging_to_queue_log";
+            }
 
             applyChanges(storage_def.settings->changes);
         }

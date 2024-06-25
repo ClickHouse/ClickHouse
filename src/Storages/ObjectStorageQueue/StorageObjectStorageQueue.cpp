@@ -60,7 +60,7 @@ namespace
         return zkutil::extractZooKeeperPath(result_zk_path, true);
     }
 
-    void checkAndAdjustSettings(ObjectStorageQueueSettings & queue_settings, const Settings & settings, bool is_attach)
+    void checkAndAdjustSettings(ObjectStorageQueueSettings & queue_settings, bool is_attach)
     {
         if (!is_attach && !queue_settings.mode.changed)
         {
@@ -73,16 +73,33 @@ namespace
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting `processing_threads_num` cannot be set to zero");
         }
 
-        if (!queue_settings.enable_logging_to_s3queue_log.changed)
-        {
-            queue_settings.enable_logging_to_s3queue_log = settings.s3queue_enable_logging_to_s3queue_log;
-        }
-
         if (queue_settings.cleanup_interval_min_ms > queue_settings.cleanup_interval_max_ms)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                             "Setting `cleanup_interval_min_ms` ({}) must be less or equal to `cleanup_interval_max_ms` ({})",
                             queue_settings.cleanup_interval_min_ms, queue_settings.cleanup_interval_max_ms);
+        }
+    }
+
+    std::shared_ptr<ObjectStorageQueueLog> getQueueLog(const ObjectStoragePtr & storage, const ContextPtr & context, const ObjectStorageQueueSettings & table_settings)
+    {
+        const auto & settings = context->getSettingsRef();
+        switch (storage->getType())
+        {
+            case DB::ObjectStorageType::S3:
+            {
+                if (table_settings.enable_logging_to_queue_log || settings.s3queue_enable_logging_to_s3queue_log)
+                    return context->getS3QueueLog();
+                return nullptr;
+            }
+            case DB::ObjectStorageType::Azure:
+            {
+                if (table_settings.enable_logging_to_queue_log)
+                    return context->getAzureQueueLog();
+                return nullptr;
+            }
+            default:
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected object storage type: {}", storage->getType());
         }
     }
 }
@@ -120,7 +137,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
         throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "ObjectStorageQueue url must either end with '/' or contain globs");
     }
 
-    checkAndAdjustSettings(*queue_settings, context_->getSettingsRef(), mode > LoadingStrictnessLevel::CREATE);
+    checkAndAdjustSettings(*queue_settings, mode > LoadingStrictnessLevel::CREATE);
 
     object_storage = configuration->createObjectStorage(context_, /* is_readonly */true);
     FormatFactory::instance().checkFormatName(configuration->format);
@@ -332,9 +349,6 @@ std::shared_ptr<ObjectStorageQueueSource> StorageObjectStorageQueue::createSourc
     {
         object_storage->removeObject(StoredObject(path));
     };
-    auto system_queue_log = queue_settings->enable_logging_to_s3queue_log
-        ? local_context->getS3QueueLog()
-        : queue_settings->enable_logging_to_azure_queue_log ? local_context->getAzureQueueLog() : nullptr;
 
     return std::make_shared<ObjectStorageQueueSource>(
         getName(),
@@ -348,7 +362,7 @@ std::shared_ptr<ObjectStorageQueueSource> StorageObjectStorageQueue::createSourc
         local_context,
         shutdown_called,
         table_is_being_dropped,
-        system_queue_log,
+        getQueueLog(object_storage, local_context, *queue_settings),
         getStorageID(),
         log);
 }
