@@ -147,7 +147,6 @@ class ServerType;
 template <class Queue>
 class MergeTreeBackgroundExecutor;
 class AsyncLoader;
-struct ScopeAliases;
 
 struct TemporaryTableHolder;
 using TemporaryTablesMapping = std::map<String, std::shared_ptr<TemporaryTableHolder>>;
