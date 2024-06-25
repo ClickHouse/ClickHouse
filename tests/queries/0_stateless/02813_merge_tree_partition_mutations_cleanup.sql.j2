@@ -1,0 +1,28 @@
+{% macro print_mutations(text, table) %}
+select '{{ text }} for table {{ table }}';
+select  mutation_id from system.mutations where database = currentDatabase() and table = '{{table}}' order by mutation_id;
+{% endmacro %}
+
+{% for keep in [0, 1] %}
+drop table if exists data_rmt;
+drop table if exists data_mt;
+select 'against finished_mutations_to_keep={{keep}}';
+create table data_rmt (key Int, p Int) engine=ReplicatedMergeTree('/tables/{database}/data', '{table}') order by tuple() partition by p settings finished_mutations_to_keep=0, merge_tree_clear_old_parts_interval_seconds=1;
+create table data_mt (key Int, p Int) engine=MergeTree() order by tuple() partition by p settings finished_mutations_to_keep={{keep}};
+
+{% for table in ['data_rmt', 'data_mt'] %}
+insert into {{table}} values (1, 2), (2, 3)
+alter table {{table}} update key=key+1 in partition 2 where 1 settings mutations_sync = 1;
+alter table {{table}} update key=key+2 in partition 2 where 1 settings mutations_sync = 1;
+{{ print_mutations('mutations after first ALTERs', table) }}
+select sleep(5) settings function_sleep_max_microseconds_per_block=10e12 format Null;
+{{ print_mutations('mutations after first cleanup', table) }}
+alter table {{table}} update key=key+1 in partition 2 where 1 settings mutations_sync = 1;
+alter table {{table}} update key=key+2 where 1 settings mutations_sync = 1;
+alter table {{table}} delete in partition 1 where 1 settings mutations_sync = 1;
+{{ print_mutations('mutations after second ALTERs', table) }}
+select sleep(5) settings function_sleep_max_microseconds_per_block=10e12 format Null;
+{{ print_mutations('mutations after second cleanup', table) }}
+drop table {{table}};
+{% endfor %}
+{% endfor %}

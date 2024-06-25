@@ -1541,30 +1541,18 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
     return scheduled;
 }
 
-// UInt64 StorageMergeTree::getCurrentMutationVersion(
-//     const DataPartPtr & part,
-//     std::unique_lock<std::mutex> & /*currently_processing_in_background_mutex_lock*/) const
-// {
-//     auto it = current_mutations_by_version.upper_bound(part->info.getDataVersion());
-//     if (it == current_mutations_by_version.begin())
-//         return 0;
-//     --it;
-//     return it->first;
-// }
-
 size_t StorageMergeTree::clearOldMutations(bool truncate)
 {
     size_t finished_mutations_to_keep = getSettings()->finished_mutations_to_keep;
     if (!truncate && !finished_mutations_to_keep)
         return 0;
 
-    std::map<std::string, MutationCommands> unfinished_mutations;
     {
         std::lock_guard lock(currently_processing_in_background_mutex);
         if (current_mutations_by_version.size() <= finished_mutations_to_keep)
             return 0;
-        unfinished_mutations = getUnfinishedMutationCommands();
     }
+    std::map<std::string, MutationCommands> unfinished_mutations = getUnfinishedMutationCommands();
 
     finished_mutations_to_keep = truncate ? 0 : finished_mutations_to_keep;
     std::vector<MergeTreeMutationEntry> mutations_to_delete;
