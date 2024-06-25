@@ -1157,6 +1157,35 @@ public:
         return ColumnWithTypeAndName(std::move(columns[i]), type_name[i].type, type_name[i].qualified_name);
     }
 
+    void insertFromBlockArray(const MutableColumnPtr & col, size_t col_index, std::array<const Block *, 32> & blocks, std::array<size_t, 32> & rows, uint8_t pos)
+    {
+        for (size_t j = 0; j < pos; ++j)
+        {
+            if (blocks[j])
+                col->insertFrom(*blocks[j]->getByPosition(right_indexes[col_index]).column, rows[j]);
+            else
+                type_name[col_index].type->insertDefaultInto(*col);
+        }
+    }
+
+    uint8_t appendFromBlock(const MutableColumnPtr & col, size_t col_index, std::array<const Block *, 32> & blocks, std::array<size_t, 32> & rows, uint8_t pos,
+        const Block * block, size_t row_num)
+    {
+        if (pos == blocks.size())
+        {
+            insertFromBlockArray(col, col_index, blocks, rows, pos);
+            blocks[0] = block;
+            rows[0] = row_num;
+            return 0;
+        }
+        else
+        {
+            blocks[pos] = block;
+            rows[pos] = row_num;
+            return pos;
+        }
+    }
+
     void appendFromBlock(const RowRef * row_ref, bool has_default);
 
     void appendDefaultRow();
@@ -1257,17 +1286,26 @@ template<> void AddedColumns<true>::buildOutputFromRowRef()
     for (size_t i = 0; i < this->size(); ++i)
     {
         auto & col = columns[i];
+        std::array<const Block *, 32> blocks;
+        std::array<size_t, 32> rows;
+        uint8_t next_pos = 0;
+
         for (auto row_ref_i : lazy_output.row_refs)
         {
-            if (!row_ref_i)
+            if (row_ref_i)
             {
-                type_name[i].type->insertDefaultInto(*col);
-                continue;
+                const RowRef * row_ref = reinterpret_cast<const RowRef *>(row_ref_i);
+                next_pos = appendFromBlock(col, i, blocks, rows, next_pos, row_ref->block, row_ref->row_num);
+                ++next_pos;
             }
-            const auto * row_ref = reinterpret_cast<const RowRef *>(row_ref_i);
-            const auto & column_from_block = row_ref->block->getByPosition(right_indexes[i]);
-            col->insertFrom(*column_from_block.column, row_ref->row_num);
+            else
+            {
+                next_pos = appendFromBlock(col, i, blocks, rows, next_pos, nullptr, 0);
+                ++next_pos;
+            }
         }
+        insertFromBlockArray(col, i, blocks, rows, next_pos);
+        next_pos = 0;
     }
 }
 
@@ -1276,20 +1314,29 @@ template<> void AddedColumns<true>::buildOutputFromRowRefList()
     for (size_t i = 0; i < this->size(); ++i)
     {
         auto & col = columns[i];
+        std::array<const Block *, 32> blocks;
+        std::array<size_t, 32> rows;
+        uint8_t next_pos = 0;
+
         for (auto row_ref_i : lazy_output.row_refs)
         {
-            if (!row_ref_i)
+            if (row_ref_i)
             {
-                type_name[i].type->insertDefaultInto(*col);
-                continue;
+                const RowRefList * row_ref_list = reinterpret_cast<const RowRefList *>(row_ref_i);
+                for (auto it = row_ref_list->begin(); it.ok(); ++it)
+                {
+                    next_pos = appendFromBlock(col, i, blocks, rows, next_pos, it->block, it->row_num);
+                    ++next_pos;
+                }
             }
-            const RowRefList * row_ref_list = reinterpret_cast<const RowRefList *>(row_ref_i);
-            for (auto it = row_ref_list->begin(); it.ok(); ++it)
+            else
             {
-                const auto & column_from_block = it->block->getByPosition(right_indexes[i]);
-                col->insertFrom(*column_from_block.column, it->row_num);
+                next_pos = appendFromBlock(col, i, blocks, rows, next_pos, nullptr, 0);
+                ++next_pos;
             }
         }
+        insertFromBlockArray(col, i, blocks, rows, next_pos);
+        next_pos = 0;
     }
 }
 
