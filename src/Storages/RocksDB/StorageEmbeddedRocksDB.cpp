@@ -36,6 +36,7 @@
 #include <base/sort.h>
 
 #include <rocksdb/advanced_options.h>
+#include <rocksdb/compression_type.h>
 #include <rocksdb/env.h>
 #include <rocksdb/options.h>
 #include <rocksdb/statistics.h>
@@ -429,6 +430,8 @@ void StorageEmbeddedRocksDB::initDB()
     rocksdb::Options base;
 
     base.create_if_missing = true;
+    base.compression = rocksdb::CompressionType::kZSTD;
+
     base.statistics = rocksdb::CreateDBStatistics();
     /// It is too verbose by default, and in fact we don't care about rocksdb logs at all.
     base.info_log_level = rocksdb::ERROR_LEVEL;

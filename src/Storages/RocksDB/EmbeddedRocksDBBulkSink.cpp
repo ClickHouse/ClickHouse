@@ -13,10 +13,12 @@
 #include <DataTypes/DataTypeString.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
+#include <rocksdb/compression_type.h>
 #include <rocksdb/options.h>
 #include <rocksdb/slice.h>
 #include <rocksdb/status.h>
 #include <rocksdb/system_clock.h>
+#include <rocksdb/table.h>
 #include <rocksdb/utilities/db_ttl.h>
 #include <Common/SipHash.h>
 #include <Common/getRandomASCIIString.h>
@@ -44,13 +46,13 @@ static const IColumn::Permutation & getAscendingPermutation(const IColumn & colu
 }
 
 /// Build SST file from key-value pairs
-static rocksdb::Status buildSSTFile(const String & path, const ColumnString & keys, const ColumnString & values, const std::optional<IColumn::Permutation> & perm_ = {})
+static rocksdb::Status buildSSTFile(const String & path, const rocksdb::Options & options, const ColumnString & keys, const ColumnString & values, const std::optional<IColumn::Permutation> & perm_ = {})
 {
     /// rocksdb::SstFileWriter requires keys to be sorted in ascending order
     IColumn::Permutation calculated_perm;
     const IColumn::Permutation & perm = perm_ ? *perm_ : getAscendingPermutation(keys, calculated_perm);
 
-    rocksdb::SstFileWriter sst_file_writer(rocksdb::EnvOptions{}, rocksdb::Options{});
+    rocksdb::SstFileWriter sst_file_writer(rocksdb::EnvOptions{options}, options);
     auto status = sst_file_writer.Open(path);
     if (!status.ok())
         return status;
@@ -231,6 +233,7 @@ void EmbeddedRocksDBBulkSink::consume(Chunk & chunk_)
         = storage.ttl > 0 ? serializeChunks<true>(std::move(chunks_to_write)) : serializeChunks<false>(std::move(chunks_to_write));
     auto sst_file_path = getTemporarySSTFilePath();
     LOG_DEBUG(getLogger("EmbeddedRocksDBBulkSink"), "Writing {} rows from {} chunks to SST file {}", serialized_key_column->size(), num_chunks, sst_file_path);
+    const auto & table_options = storage.rocksdb_ptr->GetOptions().table_options;
     if (auto status = buildSSTFile(sst_file_path, *serialized_key_column, *serialized_value_column); !status.ok())
         throw Exception(ErrorCodes::ROCKSDB_ERROR, "RocksDB write error: {}", status.ToString());
 
