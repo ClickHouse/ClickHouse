@@ -496,4 +496,7 @@ jobs:
       - name: Finish label
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
+          # update mergeable check
+          python3 merge_pr.py --set-ci-status --wf-status ${{ contains(needs.*.result, 'failure') && 'failure' || 'success' }}
+          # update overall ci report
           python3 finish_check.py --wf-status ${{ contains(needs.*.result, 'failure') && 'failure' || 'success' }}
