@@ -147,6 +147,8 @@ private:
     DataParts currently_merging_mutating_parts;
 
     std::map<UInt64, MergeTreeMutationEntry> current_mutations_by_version;
+    /// Unfinished mutations that is required AlterConversions (see getAlterMutationCommandsForPart())
+    std::atomic<ssize_t> alter_conversions_mutations = 0;
 
     std::atomic<bool> shutdown_called {false};
     std::atomic<bool> flush_called {false};
@@ -175,7 +177,7 @@ private:
             const Names & deduplicate_by_columns,
             bool cleanup,
             const MergeTreeTransactionPtr & txn,
-            String & out_disable_reason,
+            PreformattedMessage & out_disable_reason,
             bool optimize_skip_merged_partitions = false);
 
     void renameAndCommitEmptyParts(MutableDataPartsVector & new_parts, Transaction & transaction);
@@ -202,7 +204,7 @@ private:
         bool aggressive,
         const String & partition_id,
         bool final,
-        String & disable_reason,
+        PreformattedMessage & disable_reason,
         TableLockHolder & table_lock_holder,
         std::unique_lock<std::mutex> & lock,
         const MergeTreeTransactionPtr & txn,
@@ -211,7 +213,7 @@ private:
 
 
     MergeMutateSelectedEntryPtr selectPartsToMutate(
-        const StorageMetadataPtr & metadata_snapshot, String & disable_reason,
+        const StorageMetadataPtr & metadata_snapshot, PreformattedMessage & disable_reason,
         TableLockHolder & table_lock_holder, std::unique_lock<std::mutex> & currently_processing_in_background_mutex_lock);
 
     /// For current mutations queue, returns maximum version of mutation for a part,
@@ -260,6 +262,7 @@ private:
                                                                         std::set<String> * mutation_ids = nullptr, bool from_another_mutation = false) const;
 
     void fillNewPartName(MutableDataPartPtr & part, DataPartsLock & lock);
+    void fillNewPartNameAndResetLevel(MutableDataPartPtr & part, DataPartsLock & lock);
 
     void startBackgroundMovesIfNeeded() override;
 

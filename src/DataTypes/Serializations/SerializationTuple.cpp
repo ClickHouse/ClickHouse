@@ -7,6 +7,7 @@
 #include <Common/assert_cast.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
+#include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 
 
@@ -89,6 +90,10 @@ static ReturnType addElementSafe(size_t num_elems, IColumn & column, F && impl)
         {
             restore_elements();
             return ReturnType(false);
+        }
+        else
+        {
+            assert_cast<ColumnTuple &>(column).addSize(1);
         }
 
         // Check that all columns now have the same size.
@@ -382,8 +387,8 @@ ReturnType SerializationTuple::deserializeTextJSONImpl(IColumn & column, ReadBuf
                     if (settings.json.ignore_unknown_keys_in_named_tuple)
                     {
                         if constexpr (throw_exception)
-                            skipJSONField(istr, name);
-                        else if (!trySkipJSONField(istr, name))
+                            skipJSONField(istr, name, settings.json);
+                        else if (!trySkipJSONField(istr, name, settings.json))
                             return false;
 
                         skipWhitespaceIfAny(istr);
@@ -526,87 +531,97 @@ void SerializationTuple::serializeTextXML(const IColumn & column, size_t row_num
 
 void SerializationTuple::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    for (size_t i = 0; i < elems.size(); ++i)
+    if (settings.csv.serialize_tuple_into_separate_columns)
     {
-        if (i != 0)
-            writeChar(settings.csv.tuple_delimiter, ostr);
-        elems[i]->serializeTextCSV(extractElementColumn(column, i), row_num, ostr, settings);
+        for (size_t i = 0; i < elems.size(); ++i)
+        {
+            if (i != 0)
+                writeChar(settings.csv.tuple_delimiter, ostr);
+            elems[i]->serializeTextCSV(extractElementColumn(column, i), row_num, ostr, settings);
+        }
+    }
+    else
+    {
+        WriteBufferFromOwnString wb;
+        serializeText(column, row_num, wb, settings);
+        writeCSV(wb.str(), ostr);
     }
 }
 
 void SerializationTuple::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    addElementSafe<void>(elems.size(), column, [&]
+    if (settings.csv.deserialize_separate_columns_into_tuple)
     {
-        const size_t size = elems.size();
-        for (size_t i = 0; i < size; ++i)
+        addElementSafe<void>(elems.size(), column, [&]
         {
-            if (i != 0)
+            const size_t size = elems.size();
+            for (size_t i = 0; i < size; ++i)
             {
-                skipWhitespaceIfAny(istr);
-                assertChar(settings.csv.tuple_delimiter, istr);
-                skipWhitespaceIfAny(istr);
-            }
+                if (i != 0)
+                {
+                    skipWhitespaceIfAny(istr);
+                    assertChar(settings.csv.tuple_delimiter, istr);
+                    skipWhitespaceIfAny(istr);
+                }
 
-            auto & element_column = extractElementColumn(column, i);
-            if (settings.null_as_default && !isColumnNullableOrLowCardinalityNullable(element_column))
-                SerializationNullable::deserializeNullAsDefaultOrNestedTextCSV(element_column, istr, settings, elems[i]);
-            else
-                elems[i]->deserializeTextCSV(element_column, istr, settings);
-        }
-        return true;
-    });
+                auto & element_column = extractElementColumn(column, i);
+                if (settings.null_as_default && !isColumnNullableOrLowCardinalityNullable(element_column))
+                    SerializationNullable::deserializeNullAsDefaultOrNestedTextCSV(element_column, istr, settings, elems[i]);
+                else
+                    elems[i]->deserializeTextCSV(element_column, istr, settings);
+            }
+            return true;
+        });
+    }
+    else
+    {
+        String s;
+        readCSV(s, istr, settings.csv);
+        ReadBufferFromString rb(s);
+        deserializeText(column, rb, settings, true);
+    }
 }
 
 bool SerializationTuple::tryDeserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    return addElementSafe<bool>(elems.size(), column, [&]
+    if (settings.csv.deserialize_separate_columns_into_tuple)
     {
-        const size_t size = elems.size();
-        for (size_t i = 0; i < size; ++i)
+        return addElementSafe<bool>(elems.size(), column, [&]
         {
-            if (i != 0)
+            const size_t size = elems.size();
+            for (size_t i = 0; i < size; ++i)
             {
-               skipWhitespaceIfAny(istr);
-               if (!checkChar(settings.csv.tuple_delimiter, istr))
-                   return false;
-               skipWhitespaceIfAny(istr);
+                if (i != 0)
+                {
+                skipWhitespaceIfAny(istr);
+                if (!checkChar(settings.csv.tuple_delimiter, istr))
+                    return false;
+                skipWhitespaceIfAny(istr);
+                }
+
+                auto & element_column = extractElementColumn(column, i);
+                if (settings.null_as_default && !isColumnNullableOrLowCardinalityNullable(element_column))
+                {
+                if (!SerializationNullable::tryDeserializeNullAsDefaultOrNestedTextCSV(element_column, istr, settings, elems[i]))
+                    return false;
+                }
+                else
+                {
+                if (!elems[i]->tryDeserializeTextCSV(element_column, istr, settings))
+                    return false;
+                }
             }
 
-            auto & element_column = extractElementColumn(column, i);
-            if (settings.null_as_default && !isColumnNullableOrLowCardinalityNullable(element_column))
-            {
-               if (!SerializationNullable::tryDeserializeNullAsDefaultOrNestedTextCSV(element_column, istr, settings, elems[i]))
-                   return false;
-            }
-            else
-            {
-               if (!elems[i]->tryDeserializeTextCSV(element_column, istr, settings))
-                   return false;
-            }
-        }
-
-        return true;
-    });
-}
-
-void SerializationTuple::enumerateStreams(
-    EnumerateStreamsSettings & settings,
-    const StreamCallback & callback,
-    const SubstreamData & data) const
-{
-    const auto * type_tuple = data.type ? &assert_cast<const DataTypeTuple &>(*data.type) : nullptr;
-    const auto * column_tuple = data.column ? &assert_cast<const ColumnTuple &>(*data.column) : nullptr;
-    const auto * info_tuple = data.serialization_info ? &assert_cast<const SerializationInfoTuple &>(*data.serialization_info) : nullptr;
-
-    for (size_t i = 0; i < elems.size(); ++i)
+            return true;
+        });
+    }
+    else
     {
-        auto next_data = SubstreamData(elems[i])
-            .withType(type_tuple ? type_tuple->getElement(i) : nullptr)
-            .withColumn(column_tuple ? column_tuple->getColumnPtr(i) : nullptr)
-            .withSerializationInfo(info_tuple ? info_tuple->getElementInfo(i) : nullptr);
-
-        elems[i]->enumerateStreams(settings, callback, next_data);
+        String s;
+        if (!tryReadCSV(s, istr, settings.csv))
+            return false;
+        ReadBufferFromString rb(s);
+        return tryDeserializeText(column, rb, settings, true);
     }
 }
 
@@ -620,6 +635,33 @@ struct DeserializeBinaryBulkStateTuple : public ISerialization::DeserializeBinar
     std::vector<ISerialization::DeserializeBinaryBulkStatePtr> states;
 };
 
+void SerializationTuple::enumerateStreams(
+    EnumerateStreamsSettings & settings,
+    const StreamCallback & callback,
+    const SubstreamData & data) const
+{
+    if (elems.empty())
+    {
+        ISerialization::enumerateStreams(settings, callback, data);
+        return;
+    }
+
+    const auto * type_tuple = data.type ? &assert_cast<const DataTypeTuple &>(*data.type) : nullptr;
+    const auto * column_tuple = data.column ? &assert_cast<const ColumnTuple &>(*data.column) : nullptr;
+    const auto * info_tuple = data.serialization_info ? &assert_cast<const SerializationInfoTuple &>(*data.serialization_info) : nullptr;
+    const auto * tuple_deserialize_state = data.deserialize_state ? checkAndGetState<DeserializeBinaryBulkStateTuple>(data.deserialize_state) : nullptr;
+
+    for (size_t i = 0; i < elems.size(); ++i)
+    {
+        auto next_data = SubstreamData(elems[i])
+            .withType(type_tuple ? type_tuple->getElement(i) : nullptr)
+            .withColumn(column_tuple ? column_tuple->getColumnPtr(i) : nullptr)
+            .withSerializationInfo(info_tuple ? info_tuple->getElementInfo(i) : nullptr)
+            .withDeserializeState(tuple_deserialize_state ? tuple_deserialize_state->states[i] : nullptr);
+
+        elems[i]->enumerateStreams(settings, callback, next_data);
+    }
+}
 
 void SerializationTuple::serializeBinaryBulkStatePrefix(
     const IColumn & column,
@@ -647,13 +689,14 @@ void SerializationTuple::serializeBinaryBulkStateSuffix(
 
 void SerializationTuple::deserializeBinaryBulkStatePrefix(
         DeserializeBinaryBulkSettings & settings,
-        DeserializeBinaryBulkStatePtr & state) const
+        DeserializeBinaryBulkStatePtr & state,
+        SubstreamsDeserializeStatesCache * cache) const
 {
     auto tuple_state = std::make_shared<DeserializeBinaryBulkStateTuple>();
     tuple_state->states.resize(elems.size());
 
     for (size_t i = 0; i < elems.size(); ++i)
-        elems[i]->deserializeBinaryBulkStatePrefix(settings, tuple_state->states[i]);
+        elems[i]->deserializeBinaryBulkStatePrefix(settings, tuple_state->states[i], cache);
 
     state = std::move(tuple_state);
 }
@@ -665,6 +708,22 @@ void SerializationTuple::serializeBinaryBulkWithMultipleStreams(
     SerializeBinaryBulkSettings & settings,
     SerializeBinaryBulkStatePtr & state) const
 {
+    if (elems.empty())
+    {
+        if (WriteBuffer * stream = settings.getter(settings.path))
+        {
+            size_t size = column.size();
+
+            if (limit == 0 || offset + limit > size)
+                limit = size - offset;
+
+            for (size_t i = 0; i < limit; ++i)
+                stream->write('0');
+        }
+
+        return;
+    }
+
     auto * tuple_state = checkAndGetState<SerializeBinaryBulkStateTuple>(state);
 
     for (size_t i = 0; i < elems.size(); ++i)
@@ -681,6 +740,24 @@ void SerializationTuple::deserializeBinaryBulkWithMultipleStreams(
     DeserializeBinaryBulkStatePtr & state,
     SubstreamsCache * cache) const
 {
+    if (elems.empty())
+    {
+        auto cached_column = getFromSubstreamsCache(cache, settings.path);
+        if (cached_column)
+        {
+            column = cached_column;
+        }
+        else if (ReadBuffer * stream = settings.getter(settings.path))
+        {
+            auto mutable_column = column->assumeMutable();
+            typeid_cast<ColumnTuple &>(*mutable_column).addSize(stream->tryIgnore(limit));
+            column = std::move(mutable_column);
+            addToSubstreamsCache(cache, settings.path, column);
+        }
+
+        return;
+    }
+
     auto * tuple_state = checkAndGetState<DeserializeBinaryBulkStateTuple>(state);
 
     auto mutable_column = column->assumeMutable();
@@ -689,6 +766,8 @@ void SerializationTuple::deserializeBinaryBulkWithMultipleStreams(
     settings.avg_value_size_hint = 0;
     for (size_t i = 0; i < elems.size(); ++i)
         elems[i]->deserializeBinaryBulkWithMultipleStreams(column_tuple.getColumnPtr(i), limit, settings, tuple_state->states[i], cache);
+
+    typeid_cast<ColumnTuple &>(*mutable_column).addSize(column_tuple.getColumn(0).size());
 }
 
 size_t SerializationTuple::getPositionByName(const String & name) const

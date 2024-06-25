@@ -24,6 +24,7 @@ public:
     void describeActions(FormatSettings & settings) const override;
 
     const ActionsDAGPtr & getExpression() const { return actions_dag; }
+    ActionsDAGPtr & getExpression() { return actions_dag; }
     const String & getFilterColumnName() const { return filter_column_name; }
     bool removesFilterColumn() const { return remove_filter_column; }
 

@@ -109,6 +109,9 @@ public:
 
     using Base::Base;
 
+    FixedHashMap() = default;
+    FixedHashMap(size_t ) {} /// NOLINT
+
     template <typename Func, bool>
     void ALWAYS_INLINE mergeToViaEmplace(Self & that, Func && func)
     {

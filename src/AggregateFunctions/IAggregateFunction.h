@@ -1,17 +1,18 @@
 #pragma once
 
+#include <AggregateFunctions/IAggregateFunction_fwd.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/Block.h>
 #include <Core/ColumnNumbers.h>
 #include <Core/Field.h>
+#include <Core/IResolvedFunction.h>
 #include <Core/ValuesWithType.h>
 #include <Interpreters/Context_fwd.h>
 #include <base/types.h>
 #include <Common/Exception.h>
 #include <Common/ThreadPool_fwd.h>
-#include <Core/IResolvedFunction.h>
 
 #include "config.h"
 
@@ -45,13 +46,6 @@ class IWindowFunction;
 
 using DataTypePtr = std::shared_ptr<const IDataType>;
 using DataTypes = std::vector<DataTypePtr>;
-
-using AggregateDataPtr = char *;
-using AggregateDataPtrs = std::vector<AggregateDataPtr>;
-using ConstAggregateDataPtr = const char *;
-
-class IAggregateFunction;
-using AggregateFunctionPtr = std::shared_ptr<const IAggregateFunction>;
 
 struct AggregateFunctionProperties;
 
@@ -151,7 +145,7 @@ public:
 
     virtual bool isParallelizeMergePrepareNeeded() const { return false; }
 
-    virtual void parallelizeMergePrepare(AggregateDataPtrs & /*places*/, ThreadPool & /*thread_pool*/) const
+    virtual void parallelizeMergePrepare(AggregateDataPtrs & /*places*/, ThreadPool & /*thread_pool*/, std::atomic<bool> & /*is_cancelled*/) const
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "parallelizeMergePrepare() with thread pool parameter isn't implemented for {} ", getName());
     }
@@ -168,7 +162,7 @@ public:
 
     /// Should be used only if isAbleToParallelizeMerge() returned true.
     virtual void
-    merge(AggregateDataPtr __restrict /*place*/, ConstAggregateDataPtr /*rhs*/, ThreadPool & /*thread_pool*/, Arena * /*arena*/) const
+    merge(AggregateDataPtr __restrict /*place*/, ConstAggregateDataPtr /*rhs*/, ThreadPool & /*thread_pool*/, std::atomic<bool> & /*is_cancelled*/, Arena * /*arena*/) const
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "merge() with thread pool parameter isn't implemented for {} ", getName());
     }

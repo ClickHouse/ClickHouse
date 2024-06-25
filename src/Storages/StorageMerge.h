@@ -49,6 +49,7 @@ public:
     bool supportsSampling() const override { return true; }
     bool supportsFinal() const override { return true; }
     bool supportsSubcolumns() const override { return true; }
+    bool supportsDynamicSubcolumns() const override { return true; }
     bool supportsPrewhere() const override { return tableSupportsPrewhere(); }
     std::optional<NameSet> supportedPrewhereColumns() const override;
 
@@ -76,7 +77,7 @@ public:
     /// Evaluate database name or regexp for StorageMerge and TableFunction merge
     static std::tuple<bool /* is_regexp */, ASTPtr> evaluateDatabaseName(const ASTPtr & node, ContextPtr context);
 
-    bool supportsTrivialCountOptimization() const override;
+    bool supportsTrivialCountOptimization(const StorageSnapshotPtr &, ContextPtr) const override;
 
     std::optional<UInt64> totalRows(const Settings & settings) const override;
     std::optional<UInt64> totalBytes(const Settings & settings) const override;
@@ -164,7 +165,7 @@ public:
 
     QueryPlanRawPtrs getChildPlans() override;
 
-    void updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value) override;
+    void addFilter(FilterDAGInfo filter);
 
 private:
     const size_t required_max_block_size;
@@ -220,7 +221,7 @@ private:
 
         /// Create explicit filter transform to exclude
         /// rows that are not conform to row level policy
-        void addFilterTransform(QueryPipelineBuilder &) const;
+        void addFilterTransform(QueryPlan &) const;
 
     private:
         std::string filter_column_name; // complex filter, may contain logic operations
@@ -234,21 +235,21 @@ private:
     struct ChildPlan
     {
         QueryPlan plan;
-        Aliases table_aliases;
-        RowPolicyDataOpt row_policy_data_opt;
+        QueryProcessingStage::Enum stage;
     };
 
     /// Store read plan for each child table.
     /// It's needed to guarantee lifetime for child steps to be the same as for this step (mainly for EXPLAIN PIPELINE).
     std::optional<std::vector<ChildPlan>> child_plans;
 
+    /// Store filters pushed down from query plan optimization. Filters are added on top of child plans.
+    std::vector<FilterDAGInfo> pushed_down_filters;
+
     std::vector<ChildPlan> createChildrenPlans(SelectQueryInfo & query_info_) const;
 
     void filterTablesAndCreateChildrenPlans();
 
-    void applyFilters(const QueryPlan & plan, const ActionDAGNodes & added_filter_nodes) const;
-
-    QueryPlan createPlanForTable(
+    ChildPlan createPlanForTable(
         const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
         QueryProcessingStage::Enum processed_stage,
@@ -259,16 +260,15 @@ private:
         ContextMutablePtr modified_context,
         size_t streams_num) const;
 
-    QueryPipelineBuilderPtr createSources(
-        QueryPlan & plan,
-        const StorageSnapshotPtr & storage_snapshot,
+    void addVirtualColumns(
+        ChildPlan & child,
         SelectQueryInfo & modified_query_info,
         QueryProcessingStage::Enum processed_stage,
-        const Block & header,
-        const Aliases & aliases,
-        const RowPolicyDataOpt & row_policy_data_opt,
-        const StorageWithLockAndName & storage_with_lock,
-        bool concat_streams = false) const;
+        const StorageWithLockAndName & storage_with_lock) const;
+
+    QueryPipelineBuilderPtr buildPipeline(
+        ChildPlan & child,
+        QueryProcessingStage::Enum processed_stage) const;
 
     static void convertAndFilterSourceStream(
         const Block & header,
@@ -277,15 +277,12 @@ private:
         const Aliases & aliases,
         const RowPolicyDataOpt & row_policy_data_opt,
         ContextPtr context,
-        QueryPipelineBuilder & builder,
-        QueryProcessingStage::Enum processed_stage);
+        ChildPlan & child);
 
     StorageMerge::StorageListWithLocks getSelectedTables(
         ContextPtr query_context,
         bool filter_by_database_virtual_column,
         bool filter_by_table_virtual_column) const;
-
-    // static VirtualColumnsDescription createVirtuals(StoragePtr first_table);
 };
 
 }

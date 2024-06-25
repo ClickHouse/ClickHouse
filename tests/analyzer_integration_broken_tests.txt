@@ -1,2 +1,0 @@
-test_concurrent_backups_s3/test.py::test_concurrent_backups
-test_distributed_type_object/test.py::test_distributed_type_object

@@ -41,9 +41,8 @@ ReplacingSortedAlgorithm::ReplacingSortedAlgorithm(
     bool use_average_block_sizes,
     bool cleanup_,
     bool enable_vertical_final_)
-    : IMergingAlgorithmWithSharedChunks(header_, num_inputs, std::move(description_), out_row_sources_buf_, max_row_refs)
-    , merged_data(header_.cloneEmptyColumns(), use_average_block_sizes, max_block_size_rows, max_block_size_bytes), cleanup(cleanup_)
-    , enable_vertical_final(enable_vertical_final_)
+    : IMergingAlgorithmWithSharedChunks(header_, num_inputs, std::move(description_), out_row_sources_buf_, max_row_refs, std::make_unique<MergedData>(use_average_block_sizes, max_block_size_rows, max_block_size_bytes))
+    , cleanup(cleanup_), enable_vertical_final(enable_vertical_final_)
 {
     if (!is_deleted_column.empty())
         is_deleted_column_number = header_.getPositionByName(is_deleted_column);
@@ -75,7 +74,7 @@ void ReplacingSortedAlgorithm::insertRow()
             to_be_emitted.push(std::move(selected_row.owned_chunk));
     }
     else
-        merged_data.insertRow(*selected_row.all_columns, selected_row.row_num, selected_row.owned_chunk->getNumRows());
+        merged_data->insertRow(*selected_row.all_columns, selected_row.row_num, selected_row.owned_chunk->getNumRows());
 
     selected_row.clear();
 }
@@ -109,8 +108,8 @@ IMergingAlgorithm::Status ReplacingSortedAlgorithm::merge()
         if (key_differs)
         {
             /// If there are enough rows and the last one is calculated completely
-            if (merged_data.hasEnoughRows())
-                return Status(merged_data.pull());
+            if (merged_data->hasEnoughRows())
+                return Status(merged_data->pull());
 
             /// Write the data for the previous primary key.
             if (!selected_row.empty())
@@ -168,8 +167,8 @@ IMergingAlgorithm::Status ReplacingSortedAlgorithm::merge()
     }
 
     /// If have enough rows, return block, because it prohibited to overflow requested number of rows.
-    if (merged_data.hasEnoughRows())
-        return Status(merged_data.pull());
+    if (merged_data->hasEnoughRows())
+        return Status(merged_data->pull());
 
     /// We will write the data for the last primary key.
     if (!selected_row.empty())
@@ -193,7 +192,7 @@ IMergingAlgorithm::Status ReplacingSortedAlgorithm::merge()
         return emitChunk(chunk, to_be_emitted.empty());
     }
 
-    return Status(merged_data.pull(), true);
+    return Status(merged_data->pull(), true);
 }
 
 void ReplacingSortedAlgorithm::saveChunkForSkippingFinalFromSelectedRow()

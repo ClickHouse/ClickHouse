@@ -37,7 +37,7 @@ void RangeHashedDictionary<dictionary_key_type>::getItemsImpl(
     DictionaryKeysExtractor<dictionary_key_type> keys_extractor(key_columns_copy, arena_holder.getComplexKeyArena());
     const size_t keys_size = keys_extractor.getKeysSize();
 
-    callOnRangeType(
+    impl::callOnRangeType(
         dict_struct.range_min->type,
         [&](const auto & types)
         {

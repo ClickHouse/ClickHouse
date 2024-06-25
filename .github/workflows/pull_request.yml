@@ -14,6 +14,11 @@ on:  # yamllint disable-line rule:truthy
     branches:
       - master
 
+# Cancel the previous wf run in PRs.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   RunConfig:
     runs-on: [self-hosted, style-checker-aarch64]
@@ -21,13 +26,19 @@ jobs:
       data: ${{ steps.runconfig.outputs.CI_DATA }}
     steps:
       - name: DebugInfo
-        uses: hmarr/debug-action@a701ed95a46e6f2fb0df25e1a558c16356fae35a
+        uses: hmarr/debug-action@f7318c783045ac39ed9bb497e22ce835fdafbfe6
       - name: Check out repository code
         uses: ClickHouse/checkout@v1
         with:
           clear-repository: true # to ensure correct digests
-          fetch-depth: 0 # to get version
+          fetch-depth: 0 # to get a version
           filter: tree:0
+      - name: Cancel previous Sync PR workflow
+        run: |
+          python3 "$GITHUB_WORKSPACE/tests/ci/ci.py" --cancel-previous-run
+      - name: Set pending Sync status
+        run: |
+          python3 "$GITHUB_WORKSPACE/tests/ci/ci.py" --set-pending-status
       - name: Labels check
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
@@ -58,14 +69,6 @@ jobs:
       - name: Re-create GH statuses for skipped jobs if any
         run: |
             python3 "$GITHUB_WORKSPACE/tests/ci/ci.py" --infile ${{ runner.temp }}/ci_run_data.json --update-gh-statuses
-      - name: Style check early
-        # hack to run style check before the docker build job if possible (style-check image not changed)
-        if: contains(fromJson(steps.runconfig.outputs.CI_DATA).jobs_data.jobs_to_do, 'Style check early')
-        run: |
-          DOCKER_TAG=$(echo '${{ toJson(fromJson(steps.runconfig.outputs.CI_DATA).docker_data.images) }}' | tr -d '\n')
-          export DOCKER_TAG=$DOCKER_TAG
-          python3 ./tests/ci/style_check.py --no-push
-          python3 "$GITHUB_WORKSPACE/tests/ci/ci.py" --infile ${{ runner.temp }}/ci_run_data.json --post --job-name 'Style check'
   BuildDockers:
     needs: [RunConfig]
     if: ${{ !failure() && !cancelled() && toJson(fromJson(needs.RunConfig.outputs.data).docker_data.missing_multi) != '[]' }}
@@ -78,7 +81,7 @@ jobs:
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: Style check
-      runner_type: style-checker
+      runner_type: style-checker-aarch64
       run_command: |
           python3 style_check.py
       data: ${{ needs.RunConfig.outputs.data }}
@@ -88,7 +91,7 @@ jobs:
         ${{secrets.ROBOT_CLICKHOUSE_SSH_KEY}}
         RCSK
   FastTest:
-    needs: [RunConfig, StyleCheck]
+    needs: [RunConfig, BuildDockers, StyleCheck]
     if: ${{ !failure() && !cancelled() && contains(fromJson(needs.RunConfig.outputs.data).jobs_data.jobs_to_do, 'Fast test') }}
     uses: ./.github/workflows/reusable_test.yml
     with:
@@ -98,13 +101,13 @@ jobs:
       run_command: |
           python3 fast_test_check.py
 
-  ################################# Main statges #################################
+  ################################# Main stages #################################
   # for main CI chain
   #
   Builds_1:
-    needs: [RunConfig, FastTest]
+    needs: [RunConfig, StyleCheck, FastTest]
     if: ${{ !failure() && !cancelled() && contains(fromJson(needs.RunConfig.outputs.data).stages_data.stages_to_do, 'Builds_1') }}
-    # using callable wf (reusable_stage.yml) allows to group all nested jobs under a tab
+    # using callable wf (reusable_stage.yml) allows grouping all nested jobs under a tab
     uses: ./.github/workflows/reusable_build_stage.yml
     with:
       stage: Builds_1
@@ -112,7 +115,6 @@ jobs:
   Tests_1:
     needs: [RunConfig, Builds_1]
     if: ${{ !failure() && !cancelled() && contains(fromJson(needs.RunConfig.outputs.data).stages_data.stages_to_do, 'Tests_1') }}
-    # using callable wf (reusable_stage.yml) allows to group all nested jobs under a tab
     uses: ./.github/workflows/reusable_test_stage.yml
     with:
       stage: Tests_1
@@ -120,60 +122,68 @@ jobs:
   Builds_2:
     needs: [RunConfig, Builds_1]
     if: ${{ !failure() && !cancelled() && contains(fromJson(needs.RunConfig.outputs.data).stages_data.stages_to_do, 'Builds_2') }}
-    # using callable wf (reusable_stage.yml) allows to group all nested jobs under a tab
     uses: ./.github/workflows/reusable_build_stage.yml
     with:
       stage: Builds_2
       data: ${{ needs.RunConfig.outputs.data }}
+  # stage for running non-required checks without being blocked by required checks (Test_1) if corresponding settings is selected
   Tests_2:
-    needs: [RunConfig, Builds_2]
+    needs: [RunConfig, Builds_1]
     if: ${{ !failure() && !cancelled() && contains(fromJson(needs.RunConfig.outputs.data).stages_data.stages_to_do, 'Tests_2') }}
-    # using callable wf (reusable_stage.yml) allows to group all nested jobs under a tab
     uses: ./.github/workflows/reusable_test_stage.yml
     with:
       stage: Tests_2
       data: ${{ needs.RunConfig.outputs.data }}
+  Tests_3:
+    needs: [RunConfig, Builds_1, Tests_1]
+    if: ${{ !failure() && !cancelled() && contains(fromJson(needs.RunConfig.outputs.data).stages_data.stages_to_do, 'Tests_3') }}
+    uses: ./.github/workflows/reusable_test_stage.yml
+    with:
+      stage: Tests_3
+      data: ${{ needs.RunConfig.outputs.data }}
 
   ################################# Reports #################################
-  # Reports should by run even if Builds_1/2 fail, so put them separatly in wf (not in Tests_1/2)
-  Builds_1_Report:
+  # Reports should run even if Builds_1/2 fail - run them separately (not in Tests_1/2/3)
+  Builds_Report:
     # run report check for failed builds to indicate the CI error
-    if: ${{ !cancelled() && contains(fromJson(needs.RunConfig.outputs.data).jobs_data.jobs_to_do, 'ClickHouse build check') }}
-    needs:
-      - RunConfig
-      - Builds_1
+    if: ${{ !cancelled() && needs.RunConfig.result == 'success' && contains(fromJson(needs.RunConfig.outputs.data).jobs_data.jobs_to_do, 'ClickHouse build check') }}
+    needs: [RunConfig, StyleCheck, Builds_1, Builds_2]
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: ClickHouse build check
       runner_type: style-checker-aarch64
       data: ${{ needs.RunConfig.outputs.data }}
-  Builds_2_Report:
-    # run report check for failed builds to indicate the CI error
-    if: ${{ !cancelled() && contains(fromJson(needs.RunConfig.outputs.data).jobs_data.jobs_to_do, 'ClickHouse special build check') }}
-    needs:
-      - RunConfig
-      - Builds_2
-    uses: ./.github/workflows/reusable_test.yml
-    with:
-      test_name: ClickHouse special build check
-      runner_type: style-checker-aarch64
-      data: ${{ needs.RunConfig.outputs.data }}
+
+  CheckReadyForMerge:
+    if: ${{ !cancelled() && needs.StyleCheck.result == 'success' }}
+    # Test_2 or Test_3 must not have jobs required for Mergeable check
+    needs: [RunConfig, BuildDockers, StyleCheck, FastTest, Builds_1, Builds_2, Builds_Report, Tests_1]
+    runs-on: [self-hosted, style-checker-aarch64]
+    steps:
+      - name: Check out repository code
+        uses: ClickHouse/checkout@v1
+        with:
+          filter: tree:0
+      - name: Check and set merge status
+        run: |
+          cd "$GITHUB_WORKSPACE/tests/ci"
+          python3 merge_pr.py --set-ci-status --wf-status ${{ contains(needs.*.result, 'failure') && 'failure' || 'success' }}
 
   ################################# Stage Final #################################
   #
   FinishCheck:
-    if: ${{ !failure() && !cancelled() }}
-    needs: [Tests_1, Tests_2]
-    runs-on: [self-hosted, style-checker]
+    if: ${{ !cancelled() }}
+    needs: [RunConfig, BuildDockers, StyleCheck, FastTest, Builds_1, Builds_2, Builds_Report, Tests_1, Tests_2, Tests_3]
+    runs-on: [self-hosted, style-checker-aarch64]
     steps:
       - name: Check out repository code
         uses: ClickHouse/checkout@v1
+        with:
+          filter: tree:0
       - name: Finish label
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
-          python3 finish_check.py
-          python3 merge_pr.py --check-approved
-
+          python3 finish_check.py --wf-status ${{ contains(needs.*.result, 'failure') && 'failure' || 'success' }}
 
 #############################################################################################
 ###################################### JEPSEN TESTS #########################################
@@ -186,10 +196,9 @@ jobs:
     concurrency:
       group: jepsen
     if: ${{ !failure() && !cancelled() && contains(fromJson(needs.RunConfig.outputs.data).jobs_data.jobs_to_do, 'ClickHouse Keeper Jepsen') }}
-    # jepsen needs binary_release build which is in Builds_2
-    needs: [RunConfig, Builds_2]
+    needs: [RunConfig, Builds_1]
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: ClickHouse Keeper Jepsen
-      runner_type: style-checker
+      runner_type: style-checker-aarch64
       data: ${{ needs.RunConfig.outputs.data }}

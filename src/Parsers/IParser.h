@@ -1,6 +1,7 @@
 #pragma once
 
 #include <absl/container/inlined_vector.h>
+#include <set>
 #include <algorithm>
 #include <memory>
 
@@ -21,14 +22,43 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+enum class Highlight : uint8_t
+{
+    none = 0,
+    keyword,
+    identifier,
+    function,
+    alias,
+    substitution,
+    number,
+    string,
+};
+
+struct HighlightedRange
+{
+    const char * begin;
+    const char * end;
+    Highlight highlight;
+
+    auto operator<=>(const HighlightedRange & other) const
+    {
+        return begin <=> other.begin;
+    }
+};
+
 
 /** Collects variants, how parser could proceed further at rightmost position.
+  * Also collects a mapping of parsed ranges for highlighting,
+  * which is accumulated through the parsing.
   */
 struct Expected
 {
     absl::InlinedVector<const char *, 7> variants;
     const char * max_parsed_pos = nullptr;
     const char * max_greedy_pos = nullptr;
+
+    bool enable_highlighting = false;
+    std::set<HighlightedRange> highlights;
 
     /// 'description' should be statically allocated string.
     ALWAYS_INLINE void add(const char * current_pos, const char * description)
@@ -57,6 +87,8 @@ struct Expected
         if (!max_greedy_pos || max_greedy_pos < it->begin)
             max_greedy_pos = it->begin;
     }
+
+    void highlight(HighlightedRange range);
 };
 
 
@@ -165,6 +197,14 @@ public:
     {
         ASTPtr node;
         return parse(pos, node, expected);
+    }
+
+    /** If the parsed fragment should be highlighted in the query editor,
+      * which type of highlighting to use?
+      */
+    virtual Highlight highlight() const
+    {
+        return Highlight::none;
     }
 
     virtual ~IParser() = default;

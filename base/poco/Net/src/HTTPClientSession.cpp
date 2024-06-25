@@ -37,6 +37,7 @@ namespace Net {
 
 
 HTTPClientSession::ProxyConfig HTTPClientSession::_globalProxyConfig;
+const double HTTPClientSession::_defaultKeepAliveReliabilityLevel = 0.9;
 
 
 HTTPClientSession::HTTPClientSession():
@@ -220,7 +221,41 @@ void HTTPClientSession::setGlobalProxyConfig(const ProxyConfig& config)
 
 void HTTPClientSession::setKeepAliveTimeout(const Poco::Timespan& timeout)
 {
-	_keepAliveTimeout = timeout;
+    if (connected())
+    {
+        throw Poco::IllegalStateException("cannot change keep alive timeout on initiated connection, "
+                                          "That value is managed privately after connection is established.");
+    }
+    _keepAliveTimeout = timeout;
+}
+
+
+void HTTPClientSession::setKeepAliveMaxRequests(int max_requests)
+{
+    if (connected())
+    {
+        throw Poco::IllegalStateException("cannot change keep alive max requests on initiated connection, "
+                                          "That value is managed privately after connection is established.");
+    }
+    _keepAliveMaxRequests = max_requests;
+}
+
+
+void HTTPClientSession::setKeepAliveRequest(int request)
+{
+    _keepAliveCurrentRequest = request;
+}
+
+
+
+void HTTPClientSession::setLastRequest(Poco::Timestamp time)
+{
+    if (connected())
+    {
+        throw Poco::IllegalStateException("cannot change last request on initiated connection, "
+                                          "That value is managed privately after connection is established.");
+    }
+    _lastRequest = time;
 }
 
 
@@ -230,6 +265,8 @@ std::ostream& HTTPClientSession::sendRequest(HTTPRequest& request)
     _pResponseStream = 0;
 	clearException();
 	_responseReceived = false;
+
+    _keepAliveCurrentRequest += 1;
 
 	bool keepAlive = getKeepAlive();
 	if (((connected() && !keepAlive) || mustReconnect()) && !_host.empty())
@@ -241,8 +278,10 @@ std::ostream& HTTPClientSession::sendRequest(HTTPRequest& request)
 	{
 		if (!connected())
 			reconnect();
-		if (!keepAlive)
-			request.setKeepAlive(false);
+        if (!request.has(HTTPMessage::CONNECTION))
+            request.setKeepAlive(keepAlive);
+        if (keepAlive && !request.has(HTTPMessage::CONNECTION_KEEP_ALIVE) && _keepAliveTimeout.totalSeconds() > 0)
+            request.setKeepAliveTimeout(_keepAliveTimeout.totalSeconds(), _keepAliveMaxRequests);
 		if (!request.has(HTTPRequest::HOST) && !_host.empty())
 			request.setHost(_host, _port);
 		if (!_proxyConfig.host.empty() && !bypassProxy())
@@ -323,6 +362,17 @@ std::istream& HTTPClientSession::receiveResponse(HTTPResponse& response)
 	}
 
 	_mustReconnect = getKeepAlive() && !response.getKeepAlive();
+
+    if (!_mustReconnect)
+    {
+        /// when server sends its keep alive timeout, client has to follow that value
+        auto timeout = response.getKeepAliveTimeout();
+        if (timeout > 0)
+            _keepAliveTimeout = std::min(_keepAliveTimeout, Poco::Timespan(timeout, 0));
+        auto max_requests = response.getKeepAliveMaxRequests();
+        if (max_requests > 0)
+            _keepAliveMaxRequests = std::min(_keepAliveMaxRequests, max_requests);
+    }
 
 	if (!_expectResponseBody || response.getStatus() < 200 || response.getStatus() == HTTPResponse::HTTP_NO_CONTENT || response.getStatus() == HTTPResponse::HTTP_NOT_MODIFIED)
 		_pResponseStream = new HTTPFixedLengthInputStream(*this, 0);
@@ -430,15 +480,18 @@ std::string HTTPClientSession::proxyRequestPrefix() const
 	return result;
 }
 
+bool HTTPClientSession::isKeepAliveExpired(double reliability) const
+{
+    Poco::Timestamp now;
+    return Timespan(Timestamp::TimeDiff(reliability *_keepAliveTimeout.totalMicroseconds())) <= now - _lastRequest
+            || _keepAliveCurrentRequest > _keepAliveMaxRequests;
+}
 
 bool HTTPClientSession::mustReconnect() const
 {
 	if (!_mustReconnect)
-	{
-		Poco::Timestamp now;
-		return _keepAliveTimeout <= now - _lastRequest;
-	}
-	else return true;
+        return isKeepAliveExpired(_defaultKeepAliveReliabilityLevel);
+    return true;
 }
 
 
@@ -511,14 +564,21 @@ void HTTPClientSession::assign(Poco::Net::HTTPClientSession & session)
     if (buffered())
         throw Poco::LogicException("assign to a session with not empty buffered data");
 
-    attachSocket(session.detachSocket());
-    setLastRequest(session.getLastRequest());
+    poco_assert(!connected());
+
     setResolvedHost(session.getResolvedHost());
-    setKeepAlive(session.getKeepAlive());
+    setProxyConfig(session.getProxyConfig());
 
     setTimeout(session.getConnectionTimeout(), session.getSendTimeout(), session.getReceiveTimeout());
+    setKeepAlive(session.getKeepAlive());
+
+    setLastRequest(session.getLastRequest());
     setKeepAliveTimeout(session.getKeepAliveTimeout());
-    setProxyConfig(session.getProxyConfig());
+
+    _keepAliveMaxRequests = session._keepAliveMaxRequests;
+    _keepAliveCurrentRequest = session._keepAliveCurrentRequest;
+
+    attachSocket(session.detachSocket());
 
     session.reset();
 }

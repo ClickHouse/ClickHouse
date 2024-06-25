@@ -457,9 +457,9 @@ public:
         detail::Adder<T, Data>::add(this->data(place), columns, num_args, row_begin, row_end, flags, null_map);
     }
 
-    bool isParallelizeMergePrepareNeeded() const override { return is_parallelize_merge_prepare_needed;}
+    bool isParallelizeMergePrepareNeeded() const override { return is_parallelize_merge_prepare_needed; }
 
-    void parallelizeMergePrepare(AggregateDataPtrs & places, ThreadPool & thread_pool) const override
+    void parallelizeMergePrepare(AggregateDataPtrs & places, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled) const override
     {
         if constexpr (is_parallelize_merge_prepare_needed)
         {
@@ -469,7 +469,7 @@ public:
             for (size_t i = 0; i < data_vec.size(); ++i)
                 data_vec[i] = &this->data(places[i]).set;
 
-            DataSet::parallelizeMergePrepare(data_vec, thread_pool);
+            DataSet::parallelizeMergePrepare(data_vec, thread_pool, is_cancelled);
         }
         else
         {
@@ -485,10 +485,10 @@ public:
     bool isAbleToParallelizeMerge() const override { return is_able_to_parallelize_merge; }
     bool canOptimizeEqualKeysRanges() const override { return !is_able_to_parallelize_merge; }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, ThreadPool & thread_pool, Arena *) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled, Arena *) const override
     {
         if constexpr (is_able_to_parallelize_merge)
-            this->data(place).set.merge(this->data(rhs).set, &thread_pool);
+            this->data(place).set.merge(this->data(rhs).set, &thread_pool, &is_cancelled);
         else
             this->data(place).set.merge(this->data(rhs).set);
     }
@@ -579,10 +579,10 @@ public:
     bool isAbleToParallelizeMerge() const override { return is_able_to_parallelize_merge; }
     bool canOptimizeEqualKeysRanges() const override { return !is_able_to_parallelize_merge; }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, ThreadPool & thread_pool, Arena *) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled, Arena *) const override
     {
         if constexpr (is_able_to_parallelize_merge)
-            this->data(place).set.merge(this->data(rhs).set, &thread_pool);
+            this->data(place).set.merge(this->data(rhs).set, &thread_pool, &is_cancelled);
         else
             this->data(place).set.merge(this->data(rhs).set);
     }

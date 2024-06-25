@@ -23,7 +23,7 @@ protected:
     {
         if constexpr (allow_default)
         {
-            if (ParserKeyword("DEFAULT").ignore(pos, expected))
+            if (ParserKeyword(Keyword::DEFAULT).ignore(pos, expected))
             {
                 node = std::make_shared<ASTIdentifier>("DEFAULT");
                 return true;
@@ -49,11 +49,11 @@ protected:
         if (!p_identifier.parse(pos, node, expected))
             return false;
 
-        if (ParserKeyword("STORAGE").ignore(pos, expected))
+        if (ParserKeyword(Keyword::STORAGE).ignore(pos, expected))
         {
-            if (!ParserKeyword("DISK").ignore(pos, expected))
+            if (!ParserKeyword(Keyword::DISK).ignore(pos, expected))
             {
-                if (!ParserKeyword("MEMORY").ignore(pos, expected))
+                if (!ParserKeyword(Keyword::MEMORY).ignore(pos, expected))
                     return false;
             }
         }

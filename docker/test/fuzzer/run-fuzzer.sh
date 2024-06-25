@@ -17,7 +17,7 @@ stage=${stage:-}
 script_dir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 echo "$script_dir"
 repo_dir=ch
-BINARY_TO_DOWNLOAD=${BINARY_TO_DOWNLOAD:="clang-17_debug_none_unsplitted_disable_False_binary"}
+BINARY_TO_DOWNLOAD=${BINARY_TO_DOWNLOAD:="clang-18_debug_none_unsplitted_disable_False_binary"}
 BINARY_URL_TO_DOWNLOAD=${BINARY_URL_TO_DOWNLOAD:="https://clickhouse-builds.s3.amazonaws.com/$PR_TO_TEST/$SHA_TO_TEST/clickhouse_build_check/$BINARY_TO_DOWNLOAD/clickhouse"}
 
 function git_clone_with_retry
@@ -138,7 +138,7 @@ function filter_exists_and_template
             # but it doesn't allow to use regex
             echo "$path" | sed 's/\.sql\.j2$/.gen.sql/'
         else
-            echo "'$path' does not exists" >&2
+            echo "'$path' does not exist" >&2
         fi
     done
 }
@@ -173,9 +173,23 @@ function fuzz
 
     mkdir -p /var/run/clickhouse-server
 
-    # NOTE: we use process substitution here to preserve keep $! as a pid of clickhouse-server
-    clickhouse-server --config-file db/config.xml --pid-file /var/run/clickhouse-server/clickhouse-server.pid -- --path db > server.log 2>&1 &
-    server_pid=$!
+    # server.log -> All server logs, including sanitizer
+    # stderr.log -> Process logs (sanitizer) only
+    clickhouse-server \
+        --config-file db/config.xml \
+        --pid-file /var/run/clickhouse-server/clickhouse-server.pid \
+        --  --path db \
+            --logger.console=0 \
+            --logger.log=server.log 2>&1 | tee -a stderr.log >> server.log 2>&1 &
+    for _ in {1..30}
+    do
+        if clickhouse-client --query "select 1"
+        then
+            break
+        fi
+        sleep 1
+    done
+    server_pid=$(cat /var/run/clickhouse-server/clickhouse-server.pid)
 
     kill -0 $server_pid
 
@@ -194,6 +208,7 @@ handle SIGPIPE nostop noprint pass
 handle SIGTERM nostop noprint pass
 handle SIGUSR1 nostop noprint pass
 handle SIGUSR2 nostop noprint pass
+handle SIGSEGV nostop pass
 handle SIG$RTMIN nostop noprint pass
 info signals
 continue
@@ -427,6 +442,7 @@ p.links a { padding: 5px; margin: 3px; background: #FFF; line-height: 2; white-s
   <a href="run.log">run.log</a>
   <a href="fuzzer.log.zst">fuzzer.log.zst</a>
   <a href="server.log.zst">server.log.zst</a>
+  <a href="stderr.log">stderr.log</a>
   <a href="main.log">main.log</a>
   <a href="dmesg.log">dmesg.log</a>
   ${CORE_LINK}

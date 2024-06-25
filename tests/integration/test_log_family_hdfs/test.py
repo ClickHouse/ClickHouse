@@ -2,9 +2,12 @@ import logging
 import sys
 
 import pytest
-from helpers.cluster import ClickHouseCluster
+from helpers.cluster import ClickHouseCluster, is_arm
 
 from pyhdfs import HdfsClient
+
+if is_arm():
+    pytestmark = pytest.mark.skip
 
 
 @pytest.fixture(scope="module")

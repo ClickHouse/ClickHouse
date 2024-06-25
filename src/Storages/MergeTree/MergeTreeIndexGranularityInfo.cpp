@@ -86,6 +86,10 @@ std::string MarkType::getFileExtension() const
     }
 }
 
+std::string MarkType::describe() const
+{
+    return fmt::format("adaptive: {}, compressed: {}, part_type: {}", adaptive, compressed, part_type);
+}
 
 std::optional<MarkType> MergeTreeIndexGranularityInfo::getMarksTypeFromFilesystem(const IDataPartStorage & data_part_storage)
 {
@@ -128,10 +132,18 @@ size_t MergeTreeIndexGranularityInfo::getMarkSizeInBytes(size_t columns_num) con
         throw Exception(ErrorCodes::UNKNOWN_PART_TYPE, "Unknown part type");
 }
 
+std::string MergeTreeIndexGranularityInfo::describe() const
+{
+    return fmt::format(
+        "mark_type: [{}], index_granularity_bytes: {}, fixed_index_granularity: {}",
+        mark_type.describe(),
+        index_granularity_bytes,
+        fixed_index_granularity);
+}
+
 size_t getAdaptiveMrkSizeCompact(size_t columns_num)
 {
     /// Each mark contains number of rows in granule and two offsets for every column.
     return sizeof(UInt64) * (columns_num * 2 + 1);
 }
-
 }

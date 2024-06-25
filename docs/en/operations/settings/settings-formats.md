@@ -15,7 +15,7 @@ table functions, and dictionaries.
 User wishing to see secrets must also have
 [`display_secrets_in_show_and_select` server setting](../server-configuration-parameters/settings#display_secrets_in_show_and_select)
 turned on and a
-[`displaySecretsInShowAndSelect`](../../sql-reference/statements/grant#grant-display-secrets) privilege.
+[`displaySecretsInShowAndSelect`](../../sql-reference/statements/grant#display-secrets) privilege.
 
 Possible values:
 
@@ -651,6 +651,12 @@ This setting works only when setting `input_format_json_named_tuples_as_objects`
 
 Enabled by default.
 
+## input_format_json_throw_on_bad_escape_sequence {#input_format_json_throw_on_bad_escape_sequence}
+
+Throw an exception if JSON string contains bad escape sequence in JSON input formats. If disabled, bad escape sequences will remain as is in the data.
+
+Enabled by default.
+
 ## output_format_json_array_of_rows {#output_format_json_array_of_rows}
 
 Enables the ability to output all rows as a JSON array in the [JSONEachRow](../../interfaces/formats.md/#jsoneachrow) format.
@@ -825,7 +831,13 @@ Default value: `0`.
 
 ### output_format_tsv_crlf_end_of_line {#output_format_tsv_crlf_end_of_line}
 
-Use DOC/Windows-style line separator (CRLF) in TSV instead of Unix style (LF).
+Use DOS/Windows-style line separator (CRLF) in TSV instead of Unix style (LF).
+
+Disabled by default.
+
+### input_format_tsv_crlf_end_of_line {#input_format_tsv_crlf_end_of_line}
+
+Use DOS/Windows-style line separator (CRLF) for TSV input files instead of Unix style (LF).
 
 Disabled by default.
 
@@ -1367,7 +1379,7 @@ Default value: `1'000'000`.
 
 While importing data, when column is not found in schema default value will be used instead of error.
 
-Disabled by default.
+Enabled by default.
 
 ### input_format_parquet_skip_columns_with_unsupported_types_in_schema_inference {#input_format_parquet_skip_columns_with_unsupported_types_in_schema_inference}
 
@@ -1404,6 +1416,17 @@ Default value: `2.latest`.
 Compression method used in output Parquet format. Supported codecs: `snappy`, `lz4`, `brotli`, `zstd`, `gzip`, `none` (uncompressed)
 
 Default value: `lz4`.
+
+### input_format_parquet_max_block_size {#input_format_parquet_max_block_size}
+Max block row size for parquet reader. By controlling the number of rows in each block, you can control the memory usage, 
+and in some operators that cache blocks, you can improve the accuracy of the operator's memory control。
+
+Default value: `65409`.
+
+### input_format_parquet_prefer_block_bytes {#input_format_parquet_prefer_block_bytes}
+Average block bytes output by parquet reader. Lowering the configuration in the case of reading some high compression parquet relieves the memory pressure.
+
+Default value: `65409 * 256 = 16744704`
 
 ## Hive format settings {#hive-format-settings}
 
@@ -1636,7 +1659,7 @@ Possible values:
 - 0 — Output without row numbers.
 - 1 — Output with row numbers.
 
-Default value: `0`.
+Default value: `1`.
 
 **Example**
 
@@ -1682,6 +1705,43 @@ Result:
 │ 1000000000 │ -- 1.00 billion
 └────────────┘
 ```
+
+## output_format_pretty_display_footer_column_names
+
+Display column names in the footer if there are many table rows.
+
+Possible values:
+
+- 0 — No column names are displayed in the footer.
+- 1 — Column names are displayed in the footer if row count is greater than or equal to the threshold value set by [output_format_pretty_display_footer_column_names_min_rows](#output_format_pretty_display_footer_column_names_min_rows) (50 by default).
+
+Default value: `1`.
+
+**Example**
+
+Query:
+
+```sql
+SELECT *, toTypeName(*) FROM (SELECT * FROM system.numbers LIMIT 1000);
+```
+
+Result:
+
+```response
+      ┌─number─┬─toTypeName(number)─┐
+   1. │      0 │ UInt64             │
+   2. │      1 │ UInt64             │
+   3. │      2 │ UInt64             │
+   ...
+ 999. │    998 │ UInt64             │
+1000. │    999 │ UInt64             │
+      └─number─┴─toTypeName(number)─┘
+```
+## output_format_pretty_display_footer_column_names_min_rows
+
+Sets the minimum number of rows for which a footer with column names will be displayed if setting [output_format_pretty_display_footer_column_names](#output_format_pretty_display_footer_column_names) is enabled.
+
+Default value: `50`.
 
 ## Template format settings {#template-format-settings}
 

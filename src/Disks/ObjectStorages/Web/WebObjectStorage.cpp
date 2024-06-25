@@ -250,15 +250,17 @@ std::unique_ptr<ReadBufferFromFileBase> WebObjectStorage::readObject( /// NOLINT
     std::optional<size_t>,
     std::optional<size_t>) const
 {
+    size_t object_size = object.bytes_size;
     auto read_buffer_creator =
-         [this, read_settings]
-         (bool /* restricted_seek */, const std::string & path_) -> std::unique_ptr<ReadBufferFromFileBase>
+         [this, read_settings, object_size]
+         (bool /* restricted_seek */, const StoredObject & object_) -> std::unique_ptr<ReadBufferFromFileBase>
      {
-         return std::make_unique<ReadBufferFromWebServer>(
-             fs::path(url) / path_,
-             getContext(),
-             read_settings,
-             /* use_external_buffer */true);
+        return std::make_unique<ReadBufferFromWebServer>(
+            fs::path(url) / object_.remote_path,
+            getContext(),
+            object_size,
+            read_settings,
+            /* use_external_buffer */true);
      };
 
     auto global_context = Context::getGlobalContextInstance();
@@ -339,11 +341,6 @@ void WebObjectStorage::shutdown()
 }
 
 void WebObjectStorage::startup()
-{
-}
-
-void WebObjectStorage::applyNewSettings(
-    const Poco::Util::AbstractConfiguration & /* config */, const std::string & /* config_prefix */, ContextPtr /* context */)
 {
 }
 

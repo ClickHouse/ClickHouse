@@ -58,7 +58,7 @@ struct CustomWeekTransformImpl
     template <typename Transform>
     static ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/, Transform transform = {})
     {
-        const auto op = WeekTransformer<typename FromDataType::FieldType, typename ToDataType::FieldType, Transform, is_extended_result>{std::move(transform)};
+        const auto op = WeekTransformer<typename FromDataType::FieldType, typename ToDataType::FieldType, Transform, is_extended_result>{transform};
 
         static constexpr UInt8 default_week_mode = 0;
         UInt8 week_mode = default_week_mode;

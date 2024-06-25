@@ -1,10 +1,13 @@
 FROM ubuntu:20.04
 
 # see https://github.com/moby/moby/issues/4032#issuecomment-192327844
+# It could be removed after we move on a version 23:04+
 ARG DEBIAN_FRONTEND=noninteractive
 
 # ARG for quick switch to a given ubuntu mirror
 ARG apt_archive="http://archive.ubuntu.com"
+
+# We shouldn't use `apt upgrade` to not change the upstream image. It's updated biweekly
 
 # user/group precreated explicitly with fixed uid/gid on purpose.
 # It is especially important for rootless containers: in that case entrypoint
@@ -16,19 +19,20 @@ RUN sed -i "s|http://archive.ubuntu.com|${apt_archive}|g" /etc/apt/sources.list 
     && groupadd -r clickhouse --gid=101 \
     && useradd -r -g clickhouse --uid=101 --home-dir=/var/lib/clickhouse --shell=/bin/bash clickhouse \
     && apt-get update \
-    && apt-get upgrade -yq \
     && apt-get install --yes --no-install-recommends \
         ca-certificates \
         locales \
         tzdata \
         wget \
-    && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
 ARG REPO_CHANNEL="stable"
 ARG REPOSITORY="deb [signed-by=/usr/share/keyrings/clickhouse-keyring.gpg] https://packages.clickhouse.com/deb ${REPO_CHANNEL} main"
-ARG VERSION="24.2.2.71"
+ARG VERSION="24.5.3.5"
 ARG PACKAGES="clickhouse-client clickhouse-server clickhouse-common-static"
+
+#docker-official-library:off
+# The part between `docker-official-library` tags is related to our builds
 
 # set non-empty deb_location_url url to create a docker image
 # from debs created by CI build, for example:
@@ -80,19 +84,22 @@ RUN if [ -n "${single_binary_location_url}" ]; then \
         && rm -rf /tmp/* ; \
     fi
 
+# The rest is the same in the official docker and in our build system
+#docker-official-library:on
+
 # A fallback to installation from ClickHouse repository
 RUN if ! clickhouse local -q "SELECT ''" > /dev/null 2>&1; then \
         apt-get update \
         && apt-get install --yes --no-install-recommends \
             apt-transport-https \
-            ca-certificates \
             dirmngr \
             gnupg2 \
         && mkdir -p /etc/apt/sources.list.d \
         && GNUPGHOME=$(mktemp -d) \
-        && GNUPGHOME="$GNUPGHOME" gpg --no-default-keyring \
+        && GNUPGHOME="$GNUPGHOME" gpg --batch --no-default-keyring \
             --keyring /usr/share/keyrings/clickhouse-keyring.gpg \
-            --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys 8919F6BD2B48D754 \
+            --keyserver hkp://keyserver.ubuntu.com:80 \
+            --recv-keys 3a9ea1193a97b548be1457d48919f6bd2b48d754 \
         && rm -rf "$GNUPGHOME" \
         && chmod +r /usr/share/keyrings/clickhouse-keyring.gpg \
         && echo "${REPOSITORY}" > /etc/apt/sources.list.d/clickhouse.list \
@@ -127,7 +134,6 @@ RUN mkdir /docker-entrypoint-initdb.d
 
 COPY docker_related_config.xml /etc/clickhouse-server/config.d/
 COPY entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
 
 EXPOSE 9000 8123 9009
 VOLUME /var/lib/clickhouse

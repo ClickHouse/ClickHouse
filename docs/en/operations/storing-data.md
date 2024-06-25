@@ -7,28 +7,28 @@ title: "External Disks for Storing Data"
 
 Data, processed in ClickHouse, is usually stored in the local file system — on the same machine with the ClickHouse server. That requires large-capacity disks, which can be expensive enough. To avoid that you can store the data remotely. Various storages are supported:
 1. [Amazon S3](https://aws.amazon.com/s3/) object storage.
-2. The Hadoop Distributed File System ([HDFS](https://hadoop.apache.org/docs/current/hadoop-project-dist/hadoop-hdfs/HdfsDesign.html))
-3. [Azure Blob Storage](https://azure.microsoft.com/en-us/products/storage/blobs).
+2. [Azure Blob Storage](https://azure.microsoft.com/en-us/products/storage/blobs).
+3. Unsupported: The Hadoop Distributed File System ([HDFS](https://hadoop.apache.org/docs/current/hadoop-project-dist/hadoop-hdfs/HdfsDesign.html))
 
 :::note ClickHouse also has support for external table engines, which are different from external storage option described on this page as they allow to read data stored in some general file format (like Parquet), while on this page we are describing storage configuration for ClickHouse `MergeTree` family or `Log` family tables.
 1. to work with data stored on `Amazon S3` disks, use [S3](/docs/en/engines/table-engines/integrations/s3.md) table engine.
-2. to work with data in the Hadoop Distributed File System — [HDFS](/docs/en/engines/table-engines/integrations/hdfs.md) table engine.
-3. to work with data stored in Azure Blob Storage use [AzureBlobStorage](/docs/en/engines/table-engines/integrations/azureBlobStorage.md) table engine.
+2. to work with data stored in Azure Blob Storage use [AzureBlobStorage](/docs/en/engines/table-engines/integrations/azureBlobStorage.md) table engine.
+3. Unsupported: to work with data in the Hadoop Distributed File System — [HDFS](/docs/en/engines/table-engines/integrations/hdfs.md) table engine.
 :::
 
 ## Configuring external storage {#configuring-external-storage}
 
-[MergeTree](/docs/en/engines/table-engines/mergetree-family/mergetree.md) and [Log](/docs/en/engines/table-engines/log-family/log.md) family table engines can store data to `S3`, `AzureBlobStorage`, `HDFS` using a disk with types `s3`, `azure_blob_storage`, `hdfs` accordingly.
+[MergeTree](/docs/en/engines/table-engines/mergetree-family/mergetree.md) and [Log](/docs/en/engines/table-engines/log-family/log.md) family table engines can store data to `S3`, `AzureBlobStorage`, `HDFS` (unsupported) using a disk with types `s3`, `azure_blob_storage`, `hdfs` (unsupported) accordingly.
 
 Disk configuration requires:
-1. `type` section, equal to one of `s3`, `azure_blob_storage`, `hdfs`, `local_blob_storage`, `web`.
+1. `type` section, equal to one of `s3`, `azure_blob_storage`, `hdfs` (unsupported), `local_blob_storage`, `web`.
 2. Configuration of a specific external storage type.
 
 Starting from 24.1 clickhouse version, it is possible to use a new configuration option.
 It requires to specify:
 1. `type` equal to `object_storage`
-2. `object_storage_type`, equal to one of `s3`, `azure_blob_storage` (or just `azure` from `24.3`), `hdfs`, `local_blob_storage` (or just `local` from `24.3`), `web`.
-Optionally, `metadata_type` can be specified (it is equal to `local` by default), but it can also be set to `plain`, `web`.
+2. `object_storage_type`, equal to one of `s3`, `azure_blob_storage` (or just `azure` from `24.3`), `hdfs` (unsupported), `local_blob_storage` (or just `local` from `24.3`), `web`.
+Optionally, `metadata_type` can be specified (it is equal to `local` by default), but it can also be set to `plain`, `web` and, starting from `24.4`, `plain_rewritable`.
 Usage of `plain` metadata type is described in [plain storage section](/docs/en/operations/storing-data.md/#storing-data-on-webserver), `web` metadata type can be used only with `web` object storage type, `local` metadata type stores metadata files locally (each metadata files contains mapping to files in object storage and some additional meta information about them).
 
 E.g. configuration option
@@ -36,7 +36,7 @@ E.g. configuration option
 <s3>
     <type>s3</type>
     <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
-    <use_invironment_credentials>1</use_invironment_credentials>
+    <use_environment_credentials>1</use_environment_credentials>
 </s3>
 ```
 
@@ -47,7 +47,7 @@ is equal to configuration (from `24.1`):
     <object_storage_type>s3</object_storage_type>
     <metadata_type>local</metadata_type>
     <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
-    <use_invironment_credentials>1</use_invironment_credentials>
+    <use_environment_credentials>1</use_environment_credentials>
 </s3>
 ```
 
@@ -56,7 +56,7 @@ Configuration
 <s3_plain>
     <type>s3_plain</type>
     <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
-    <use_invironment_credentials>1</use_invironment_credentials>
+    <use_environment_credentials>1</use_environment_credentials>
 </s3_plain>
 ```
 
@@ -67,7 +67,7 @@ is equal to
     <object_storage_type>s3</object_storage_type>
     <metadata_type>plain</metadata_type>
     <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
-    <use_invironment_credentials>1</use_invironment_credentials>
+    <use_environment_credentials>1</use_environment_credentials>
 </s3_plain>
 ```
 
@@ -79,7 +79,7 @@ Example of full storage configuration will look like:
             <s3>
                 <type>s3</type>
                 <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
-                <use_invironment_credentials>1</use_invironment_credentials>
+                <use_environment_credentials>1</use_environment_credentials>
             </s3>
         </disks>
         <policies>
@@ -105,7 +105,7 @@ Starting with 24.1 clickhouse version, it can also look like:
                 <object_storage_type>s3</object_storage_type>
                 <metadata_type>local</metadata_type>
                 <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
-                <use_invironment_credentials>1</use_invironment_credentials>
+                <use_environment_credentials>1</use_environment_credentials>
             </s3>
         </disks>
         <policies>
@@ -324,11 +324,11 @@ Configuration:
 <s3_plain>
     <type>s3_plain</type>
     <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
-    <use_invironment_credentials>1</use_invironment_credentials>
+    <use_environment_credentials>1</use_environment_credentials>
 </s3_plain>
 ```
 
-Starting from `24.1` it is possible configure any object storage disk (`s3`, `azure`, `hdfs`, `local`) using `plain` metadata type.
+Starting from `24.1` it is possible configure any object storage disk (`s3`, `azure`, `hdfs` (unsupported), `local`) using `plain` metadata type.
 
 Configuration:
 ``` xml
@@ -337,9 +337,41 @@ Configuration:
     <object_storage_type>azure</object_storage_type>
     <metadata_type>plain</metadata_type>
     <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
-    <use_invironment_credentials>1</use_invironment_credentials>
+    <use_environment_credentials>1</use_environment_credentials>
 </s3_plain>
 ```
+
+### Using S3 Plain Rewritable Storage {#s3-plain-rewritable-storage}
+A new disk type `s3_plain_rewritable` was introduced in `24.4`.
+Similar to the `s3_plain` disk type, it does not require additional storage for metadata files; instead, metadata is stored in S3.
+Unlike `s3_plain` disk type, `s3_plain_rewritable` allows executing merges and supports INSERT operations.
+[Mutations](/docs/en/sql-reference/statements/alter#mutations) and replication of tables are not supported.
+
+A use case for this disk type are non-replicated `MergeTree` tables. Although the `s3` disk type is suitable for non-replicated
+MergeTree tables, you may opt for the `s3_plain_rewritable` disk type if you do not require local metadata for the table and are
+willing to accept a limited set of operations. This could be useful, for example, for system tables.
+
+Configuration:
+``` xml
+<s3_plain_rewritable>
+    <type>s3_plain_rewritable</type>
+    <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
+    <use_environment_credentials>1</use_environment_credentials>
+</s3_plain_rewritable>
+```
+
+is equal to
+``` xml
+<s3_plain_rewritable>
+    <type>object_storage</type>
+    <object_storage_type>s3</object_storage_type>
+    <metadata_type>plain_rewritable</metadata_type>
+    <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
+    <use_environment_credentials>1</use_environment_credentials>
+</s3_plain_rewritable>
+```
+
+Starting from `24.5` it is possible configure any object storage disk (`s3`, `azure`, `local`) using `plain_rewritable` metadata type.
 
 ### Using Azure Blob Storage {#azure-blob-storage}
 
@@ -389,6 +421,7 @@ Other parameters:
 * `skip_access_check` - If true, disk access checks will not be performed on disk start-up. Default value is `false`.
 * `read_resource` — Resource name to be used for [scheduling](/docs/en/operations/workload-scheduling.md) of read requests to this disk. Default value is empty string (IO scheduling is not enabled for this disk).
 * `write_resource` — Resource name to be used for [scheduling](/docs/en/operations/workload-scheduling.md) of write requests to this disk. Default value is empty string (IO scheduling is not enabled for this disk).
+* `metadata_keep_free_space_bytes` - the amount of free metadata disk space to be reserved.
 
 Examples of working configurations can be found in integration tests directory (see e.g. [test_merge_tree_azure_blob_storage](https://github.com/ClickHouse/ClickHouse/blob/master/tests/integration/test_merge_tree_azure_blob_storage/configs/config.d/storage_conf.xml) or [test_azure_blob_storage_zero_copy_replication](https://github.com/ClickHouse/ClickHouse/blob/master/tests/integration/test_azure_blob_storage_zero_copy_replication/configs/config.d/storage_conf.xml)).
 
@@ -396,11 +429,13 @@ Examples of working configurations can be found in integration tests directory (
 Zero-copy replication is disabled by default in ClickHouse version 22.8 and higher.  This feature is not recommended for production use.
 :::
 
-## Using HDFS storage {#hdfs-storage}
+## Using HDFS storage (Unsupported)
 
 In this sample configuration:
-- the disk is of type `hdfs`
+- the disk is of type `hdfs` (unsupported)
 - the data is hosted at `hdfs://hdfs1:9000/clickhouse/`
+
+By the way, HDFS is unsupported and therefore there might be issues when using it. Feel free to make a pull request with the fix if any issue arises.
 
 ```xml
 <clickhouse>
@@ -432,9 +467,11 @@ In this sample configuration:
 </clickhouse>
 ```
 
+Keep in mind that HDFS may not work in corner cases.
+
 ### Using Data Encryption {#encrypted-virtual-file-system}
 
-You can encrypt the data stored on [S3](/docs/en/engines/table-engines/mergetree-family/mergetree.md/#table_engine-mergetree-s3), or [HDFS](#configuring-hdfs) external disks, or on a local disk. To turn on the encryption mode, in the configuration file you must define a disk with the type `encrypted` and choose a disk on which the data will be saved. An `encrypted` disk ciphers all written files on the fly, and when you read files from an `encrypted` disk it deciphers them automatically. So you can work with an `encrypted` disk like with a normal one.
+You can encrypt the data stored on [S3](/docs/en/engines/table-engines/mergetree-family/mergetree.md/#table_engine-mergetree-s3), or [HDFS](#configuring-hdfs) (unsupported) external disks, or on a local disk. To turn on the encryption mode, in the configuration file you must define a disk with the type `encrypted` and choose a disk on which the data will be saved. An `encrypted` disk ciphers all written files on the fly, and when you read files from an `encrypted` disk it deciphers them automatically. So you can work with an `encrypted` disk like with a normal one.
 
 Example of disk configuration:
 
@@ -497,7 +534,7 @@ Example of disk configuration:
 
 It is possible to configure local cache over disks in storage configuration starting from version 22.3.
 For versions 22.3 - 22.7 cache is supported only for `s3` disk type. For versions >= 22.8 cache is supported for any disk type: S3, Azure, Local, Encrypted, etc.
-For versions >= 23.5 cache is supported only for remote disk types: S3, Azure, HDFS.
+For versions >= 23.5 cache is supported only for remote disk types: S3, Azure, HDFS (unsupported).
 Cache uses `LRU` cache policy.
 
 
@@ -520,13 +557,13 @@ Example of configuration for versions later or equal to 22.8:
             </cache>
         </disks>
         <policies>
-            <s3-cache>
+            <s3_cache>
                 <volumes>
                     <main>
                         <disk>cache</disk>
                     </main>
                 </volumes>
-            </s3-cache>
+            </s3_cache>
         <policies>
     </storage_configuration>
 ```
@@ -546,13 +583,13 @@ Example of configuration for versions earlier than 22.8:
             </s3>
         </disks>
         <policies>
-            <s3-cache>
+            <s3_cache>
                 <volumes>
                     <main>
                         <disk>s3</disk>
                     </main>
                 </volumes>
-            </s3-cache>
+            </s3_cache>
         <policies>
     </storage_configuration>
 ```
@@ -939,7 +976,7 @@ Use [http_max_single_read_retries](/docs/en/operations/settings/settings.md/#htt
 
 ### Zero-copy Replication (not ready for production) {#zero-copy}
 
-Zero-copy replication is possible, but not recommended, with  `S3` and `HDFS` disks. Zero-copy replication means that if the data is stored remotely on several machines and needs to be synchronized, then only the metadata is replicated (paths to the data parts), but not the data itself.
+Zero-copy replication is possible, but not recommended, with  `S3` and `HDFS` (unsupported) disks. Zero-copy replication means that if the data is stored remotely on several machines and needs to be synchronized, then only the metadata is replicated (paths to the data parts), but not the data itself.
 
 :::note Zero-copy replication is not ready for production
 Zero-copy replication is disabled by default in ClickHouse version 22.8 and higher.  This feature is not recommended for production use.

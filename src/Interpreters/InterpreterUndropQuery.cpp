@@ -1,4 +1,5 @@
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterUndropQuery.h>
@@ -17,14 +18,16 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
 }
 
-InterpreterUndropQuery::InterpreterUndropQuery(const ASTPtr & query_ptr_, ContextMutablePtr context_) : WithMutableContext(context_), query_ptr(query_ptr_)
+InterpreterUndropQuery::InterpreterUndropQuery(const ASTPtr & query_ptr_, ContextMutablePtr context_)
+    : WithMutableContext(context_)
+    , query_ptr(query_ptr_)
 {
 }
-
 
 BlockIO InterpreterUndropQuery::execute()
 {
     getContext()->checkAccess(AccessType::UNDROP_TABLE);
+
     auto & undrop = query_ptr->as<ASTUndropQuery &>();
     if (!undrop.cluster.empty() && !maybeRemoveOnCluster(query_ptr, getContext()))
     {

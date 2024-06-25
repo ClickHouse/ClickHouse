@@ -8,9 +8,6 @@ option (SANITIZE "Enable one of the code sanitizers" "")
 
 set (SAN_FLAGS "${SAN_FLAGS} -g -fno-omit-frame-pointer -DSANITIZER")
 
-# It's possible to pass an ignore list to sanitizers (-fsanitize-ignorelist). Intentionally not doing this because
-# 1. out-of-source suppressions are awkward 2. it seems ignore lists don't work after the Clang v16 upgrade (#49829)
-
 if (SANITIZE)
     if (SANITIZE STREQUAL "address")
         set (ASAN_FLAGS "-fsanitize=address -fsanitize-address-use-after-scope")
@@ -29,9 +26,7 @@ if (SANITIZE)
 
     elseif (SANITIZE STREQUAL "thread")
         set (TSAN_FLAGS "-fsanitize=thread")
-        if (COMPILER_CLANG)
-            set (TSAN_FLAGS "${TSAN_FLAGS} -fsanitize-blacklist=${PROJECT_SOURCE_DIR}/tests/tsan_suppressions.txt")
-        endif()
+        set (TSAN_FLAGS "${TSAN_FLAGS} -fsanitize-ignorelist=${PROJECT_SOURCE_DIR}/tests/tsan_ignorelist.txt")
 
         set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${SAN_FLAGS} ${TSAN_FLAGS}")
         set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${SAN_FLAGS} ${TSAN_FLAGS}")
@@ -47,9 +42,7 @@ if (SANITIZE)
             # that's why we often receive reports about UIO. The simplest way to avoid this is just  set this flag here.
             set(UBSAN_FLAGS "${UBSAN_FLAGS} -fno-sanitize=unsigned-integer-overflow")
         endif()
-        if (COMPILER_CLANG)
-            set (UBSAN_FLAGS "${UBSAN_FLAGS} -fsanitize-blacklist=${PROJECT_SOURCE_DIR}/tests/ubsan_suppressions.txt")
-        endif()
+        set (UBSAN_FLAGS "${UBSAN_FLAGS} -fsanitize-ignorelist=${PROJECT_SOURCE_DIR}/tests/ubsan_ignorelist.txt")
 
         set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${SAN_FLAGS} ${UBSAN_FLAGS}")
         set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${SAN_FLAGS} ${UBSAN_FLAGS}")

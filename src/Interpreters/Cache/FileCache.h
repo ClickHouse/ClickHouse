@@ -18,6 +18,7 @@
 #include <Interpreters/Cache/FileCache_fwd_internal.h>
 #include <Interpreters/Cache/FileCacheSettings.h>
 #include <Interpreters/Cache/UserInfo.h>
+#include <Core/BackgroundSchedulePool.h>
 #include <filesystem>
 
 
@@ -46,14 +47,14 @@ struct FileCacheReserveStat
         }
     };
 
-    Stat stat;
+    Stat total_stat;
     std::unordered_map<FileSegmentKind, Stat> stat_by_kind;
 
     void update(size_t size, FileSegmentKind kind, bool releasable);
 
     FileCacheReserveStat & operator +=(const FileCacheReserveStat & other)
     {
-        stat += other.stat;
+        total_stat += other.total_stat;
         for (const auto & [name, stat_] : other.stat_by_kind)
             stat_by_kind[name] += stat_;
         return *this;
@@ -78,6 +79,8 @@ public:
     ~FileCache();
 
     void initialize();
+
+    bool isInitialized() const;
 
     const String & getBasePath() const;
 
@@ -186,6 +189,8 @@ public:
 
     void applySettingsIfPossible(const FileCacheSettings & new_settings, FileCacheSettings & actual_settings);
 
+    void freeSpaceRatioKeepingThreadFunc();
+
 private:
     using KeyAndOffset = FileCacheKeyAndOffset;
 
@@ -195,6 +200,11 @@ private:
     size_t load_metadata_threads;
     const bool write_cache_per_user_directory;
 
+    BackgroundSchedulePool::TaskHolder keep_up_free_space_ratio_task;
+    const double keep_current_size_to_max_ratio;
+    const double keep_current_elements_to_max_ratio;
+    const size_t keep_up_free_space_remove_batch;
+
     LoggerPtr log;
 
     std::exception_ptr init_exception;
@@ -202,6 +212,7 @@ private:
     mutable std::mutex init_mutex;
     std::unique_ptr<StatusFile> status_file;
     std::atomic<bool> shutdown = false;
+    std::atomic<bool> cache_is_being_resized = false;
 
     std::mutex apply_settings_mutex;
 

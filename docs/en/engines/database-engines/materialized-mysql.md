@@ -51,6 +51,9 @@ ENGINE = MaterializedMySQL('host:port', ['database' | database], 'user', 'passwo
 ### allows_query_when_mysql_lost
 `allows_query_when_mysql_lost` — Allows to query a materialized table when MySQL is lost. Default: `0` (`false`).
 
+### allow_startup_database_without_connection_to_mysql
+`allow_startup_database_without_connection_to_mysql` — Allow to create and attach database without available connection to MySQL. Default: `0` (`false`).
+
 ### materialized_mysql_tables_list
 
 `materialized_mysql_tables_list` — a comma-separated list of mysql database tables, which will be replicated by MaterializedMySQL database engine. Default value: empty list — means whole tables will be replicated.

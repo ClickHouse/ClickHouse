@@ -1,18 +1,20 @@
 #!/usr/bin/env python3
-
+import argparse
+import json
 import logging
 import os
 import sys
 from pathlib import Path
 from typing import List
 
-from ci_config import CI_CONFIG, Build
 from env_helper import (
     GITHUB_JOB_URL,
     GITHUB_REPOSITORY,
     GITHUB_SERVER_URL,
     REPORT_PATH,
     TEMP_PATH,
+    CI_CONFIG_PATH,
+    IS_CI,
 )
 from pr_info import PRInfo
 from report import (
@@ -23,8 +25,10 @@ from report import (
     JobReport,
     create_build_html_report,
     get_worst_status,
+    FAILURE,
 )
 from stopwatch import Stopwatch
+from ci_config import CI
 
 # Old way to read the neads_data
 NEEDS_DATA_PATH = os.getenv("NEEDS_DATA_PATH", "")
@@ -44,15 +48,28 @@ def main():
         "\n ".join(p.as_posix() for p in reports_path.rglob("*.json")),
     )
 
-    build_check_name = sys.argv[1]
+    build_check_name = CI.JobNames.BUILD_CHECK
 
     pr_info = PRInfo()
 
-    builds_for_check = CI_CONFIG.get_builds_for_report(
-        build_check_name,
-        release=pr_info.is_release(),
-        backport=pr_info.head_ref.startswith("backport/"),
-    )
+    args = parse_args()
+
+    if (CI_CONFIG_PATH or IS_CI) and not args.reports:
+        # In CI only specific builds might be manually selected, or some wf does not build all builds.
+        #   Filtering @builds_for_check to verify only builds that are present in the current CI workflow
+        with open(CI_CONFIG_PATH, encoding="utf-8") as jfd:
+            ci_config = json.load(jfd)
+        all_ci_jobs = (
+            ci_config["jobs_data"]["jobs_to_skip"]
+            + ci_config["jobs_data"]["jobs_to_do"]
+        )
+        builds_for_check = [job for job in CI.BuildNames if job in all_ci_jobs]
+        print(f"NOTE: following build reports will be checked: [{builds_for_check}]")
+    else:
+        builds_for_check = parse_args().reports
+        for job in builds_for_check:
+            assert job in CI.BuildNames, "Builds must be known build job names"
+
     required_builds = len(builds_for_check)
     missing_builds = 0
 
@@ -63,8 +80,8 @@ def main():
             build_name, pr_info.number, pr_info.head_ref
         )
         if not build_result:
-            if build_name == Build.FUZZERS:
-                logging.info("Build [%s] is missing - skip", Build.FUZZERS)
+            if build_name == CI.BuildNames.FUZZERS:
+                logging.info("Build [%s] is missing - skip", CI.BuildNames.FUZZERS)
                 continue
             logging.warning("Build results for %s is missing", build_name)
             build_result = BuildResult.missing_result("missing")
@@ -118,17 +135,16 @@ def main():
     # Check if there are no builds at all, do not override bad status
     if summary_status == SUCCESS:
         if missing_builds:
-            summary_status = PENDING
+            summary_status = FAILURE
         elif ok_groups == 0:
             summary_status = ERROR
 
-    addition = ""
-    if missing_builds:
-        addition = (
-            f" ({required_builds - missing_builds} of {required_builds} builds are OK)"
-        )
+    description = ""
 
-    description = f"{ok_groups}/{total_groups} artifact groups are OK{addition}"
+    if missing_builds:
+        description = f"{missing_builds} of {required_builds} builds are missing."
+
+    description += f" {ok_groups}/{total_groups} artifact groups are OK"
 
     JobReport(
         description=description,
@@ -139,8 +155,20 @@ def main():
         additional_files=[report_path],
     ).dump()
 
-    if summary_status == ERROR:
+    # We should fail the report job to rerun it in the following attempts
+    if summary_status != SUCCESS:
         sys.exit(1)
+
+
+def parse_args():
+    parser = argparse.ArgumentParser("Generates overall build report")
+
+    parser.add_argument(
+        "--reports",
+        nargs="+",
+        help="List of build reports to check",
+    )
+    return parser.parse_args()
 
 
 if __name__ == "__main__":

@@ -74,7 +74,7 @@ public:
 
     double getLoadFactor() const override { return static_cast<double>(total_element_count) / bucket_count; }
 
-    std::shared_ptr<const IExternalLoadable> clone() const override
+    std::shared_ptr<IExternalLoadable> clone() const override
     {
         return std::make_shared<HashedArrayDictionary<dictionary_key_type, sharded>>(getDictionaryID(), dict_struct, source_ptr->clone(), configuration, update_field_loaded_block);
     }
@@ -228,7 +228,7 @@ private:
         DefaultValueExtractor & default_value_extractor) const;
 
     template <typename AttributeType, bool is_nullable, typename ValueSetter>
-    size_t getItemsShortCircuitImpl(
+    void getItemsShortCircuitImpl(
         const Attribute & attribute,
         DictionaryKeysExtractor<dictionary_key_type> & keys_extractor,
         ValueSetter && set_value,
@@ -244,7 +244,7 @@ private:
         DefaultValueExtractor & default_value_extractor) const;
 
     template <typename AttributeType, bool is_nullable, typename ValueSetter>
-    size_t getItemsShortCircuitImpl(
+    void getItemsShortCircuitImpl(
         const Attribute & attribute,
         const KeyIndexToElementIndex & key_index_to_element_index,
         ValueSetter && set_value,

@@ -118,7 +118,7 @@ LockedKeyPtr KeyMetadata::lockNoStateCheck()
     return std::make_unique<LockedKey>(shared_from_this());
 }
 
-bool KeyMetadata::createBaseDirectory()
+bool KeyMetadata::createBaseDirectory(bool throw_if_failed)
 {
     if (!created_base_directory.exchange(true))
     {
@@ -131,7 +131,7 @@ bool KeyMetadata::createBaseDirectory()
         {
             created_base_directory = false;
 
-            if (e.code() == std::errc::no_space_on_device)
+            if (!throw_if_failed && e.code() == std::errc::no_space_on_device)
             {
                 LOG_TRACE(cache_metadata->log, "Failed to create base directory for key {}, "
                           "because no space left on device", key);
@@ -615,7 +615,7 @@ void CacheMetadata::downloadThreadFunc(const bool & stop_flag)
                         continue;
 
                     auto file_segment_metadata = locked_key->tryGetByOffset(offset);
-                    if (!file_segment_metadata || file_segment_metadata->evicting())
+                    if (!file_segment_metadata || file_segment_metadata->isEvictingOrRemoved(*locked_key))
                         continue;
 
                     auto file_segment = file_segment_weak.lock();
@@ -846,7 +846,7 @@ LockedKey::~LockedKey()
     /// See comment near cleanupThreadFunc() for more details.
 
     key_metadata->key_state = KeyMetadata::KeyState::REMOVING;
-    LOG_DEBUG(key_metadata->logger(), "Submitting key {} for removal", getKey());
+    LOG_TRACE(key_metadata->logger(), "Submitting key {} for removal", getKey());
     key_metadata->addToCleanupQueue();
 }
 
@@ -881,7 +881,7 @@ bool LockedKey::removeAllFileSegments(bool if_releasable)
             removed_all = false;
             continue;
         }
-        else if (it->second->evicting())
+        else if (it->second->isEvictingOrRemoved(*this))
         {
             /// File segment is currently a removal candidate,
             /// we do not know if it will be removed or not yet,
@@ -899,32 +899,34 @@ bool LockedKey::removeAllFileSegments(bool if_releasable)
     return removed_all;
 }
 
-KeyMetadata::iterator LockedKey::removeFileSegment(size_t offset, bool can_be_broken)
+KeyMetadata::iterator LockedKey::removeFileSegment(size_t offset, bool can_be_broken, bool invalidate_queue_entry)
 {
     auto it = key_metadata->find(offset);
     if (it == key_metadata->end())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is no offset {}", offset);
 
     auto file_segment = it->second->file_segment;
-    return removeFileSegmentImpl(it, file_segment->lock(), can_be_broken);
+    return removeFileSegmentImpl(it, file_segment->lock(), can_be_broken, invalidate_queue_entry);
 }
 
 KeyMetadata::iterator LockedKey::removeFileSegment(
     size_t offset,
     const FileSegmentGuard::Lock & segment_lock,
-    bool can_be_broken)
+    bool can_be_broken,
+    bool invalidate_queue_entry)
 {
     auto it = key_metadata->find(offset);
     if (it == key_metadata->end())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is no offset {} in key {}", offset, getKey());
 
-    return removeFileSegmentImpl(it, segment_lock, can_be_broken);
+    return removeFileSegmentImpl(it, segment_lock, can_be_broken, invalidate_queue_entry);
 }
 
 KeyMetadata::iterator LockedKey::removeFileSegmentImpl(
     KeyMetadata::iterator it,
     const FileSegmentGuard::Lock & segment_lock,
-    bool can_be_broken)
+    bool can_be_broken,
+    bool invalidate_queue_entry)
 {
     auto file_segment = it->second->file_segment;
 
@@ -934,7 +936,7 @@ KeyMetadata::iterator LockedKey::removeFileSegmentImpl(
 
     chassert(can_be_broken || file_segment->assertCorrectnessUnlocked(segment_lock));
 
-    if (file_segment->queue_iterator)
+    if (file_segment->queue_iterator && invalidate_queue_entry)
         file_segment->queue_iterator->invalidate();
 
     file_segment->detach(segment_lock, *this);
@@ -1016,7 +1018,7 @@ void LockedKey::shrinkFileSegmentToDownloadedSize(
         file_segment->cache, key_metadata, file_segment->queue_iterator);
 
     if (diff)
-        metadata->getQueueIterator()->updateSize(-diff);
+        metadata->getQueueIterator()->decrementSize(diff);
 
     chassert(file_segment->assertCorrectnessUnlocked(segment_lock));
 }
@@ -1102,7 +1104,7 @@ std::vector<FileSegment::Info> LockedKey::sync()
     std::vector<FileSegment::Info> broken;
     for (auto it = key_metadata->begin(); it != key_metadata->end();)
     {
-        if (it->second->evicting() || !it->second->releasable())
+        if (it->second->isEvictingOrRemoved(*this) || !it->second->releasable())
         {
             ++it;
             continue;

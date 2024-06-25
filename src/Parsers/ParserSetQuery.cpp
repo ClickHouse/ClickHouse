@@ -210,12 +210,8 @@ bool ParserSetQuery::parseNameValuePair(SettingChange & change, IParser::Pos & p
     if (!s_eq.ignore(pos, expected))
         return false;
 
-    if (ParserKeyword("TRUE").ignore(pos, expected))
-        value = std::make_shared<ASTLiteral>(Field(static_cast<UInt64>(1)));
-    else if (ParserKeyword("FALSE").ignore(pos, expected))
-        value = std::make_shared<ASTLiteral>(Field(static_cast<UInt64>(0)));
     /// for SETTINGS disk=disk(type='s3', path='', ...)
-    else if (function_p.parse(pos, function_ast, expected) && function_ast->as<ASTFunction>()->name == "disk")
+    if (function_p.parse(pos, function_ast, expected) && function_ast->as<ASTFunction>()->name == "disk")
     {
         tryGetIdentifierNameInto(name, change.name);
         change.value = createFieldFromAST(function_ast);
@@ -269,18 +265,14 @@ bool ParserSetQuery::parseNameValuePairWithParameterOrDefault(
     }
 
     /// Default
-    if (ParserKeyword("DEFAULT").ignore(pos, expected))
+    if (ParserKeyword(Keyword::DEFAULT).ignore(pos, expected))
     {
         default_settings = name;
         return true;
     }
 
     /// Setting
-    if (ParserKeyword("TRUE").ignore(pos, expected))
-        node = std::make_shared<ASTLiteral>(Field(static_cast<UInt64>(1)));
-    else if (ParserKeyword("FALSE").ignore(pos, expected))
-        node = std::make_shared<ASTLiteral>(Field(static_cast<UInt64>(0)));
-    else if (function_p.parse(pos, function_ast, expected) && function_ast->as<ASTFunction>()->name == "disk")
+    if (function_p.parse(pos, function_ast, expected) && function_ast->as<ASTFunction>()->name == "disk")
     {
         change.name = name;
         change.value = createFieldFromAST(function_ast);
@@ -303,13 +295,13 @@ bool ParserSetQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     if (!parse_only_internals)
     {
-        ParserKeyword s_set("SET");
+        ParserKeyword s_set(Keyword::SET);
 
         if (!s_set.ignore(pos, expected))
             return false;
 
         /// Parse SET TRANSACTION ... queries using ParserTransactionControl
-        if (ParserKeyword{"TRANSACTION"}.check(pos, expected))
+        if (ParserKeyword{Keyword::TRANSACTION}.check(pos, expected))
             return false;
     }
 

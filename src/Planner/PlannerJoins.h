@@ -140,6 +140,21 @@ public:
         return right_filter_condition_nodes;
     }
 
+    ActionsDAG::NodeRawConstPtrs & getMixedFilterConditionNodes()
+    {
+        return mixed_filter_condition_nodes;
+    }
+
+    void addMixedCondition(const ActionsDAG::Node * condition_node)
+    {
+        mixed_filter_condition_nodes.push_back(condition_node);
+    }
+
+    const ActionsDAG::NodeRawConstPtrs & getMixedFilterConditionNodes() const
+    {
+        return mixed_filter_condition_nodes;
+    }
+
     /// Dump clause into buffer
     void dump(WriteBuffer & buffer) const;
 
@@ -154,6 +169,8 @@ private:
 
     ActionsDAG::NodeRawConstPtrs left_filter_condition_nodes;
     ActionsDAG::NodeRawConstPtrs right_filter_condition_nodes;
+    /// conditions which involve both left and right tables
+    ActionsDAG::NodeRawConstPtrs mixed_filter_condition_nodes;
 
     std::unordered_set<size_t> nullsafe_compare_key_indexes;
 };
@@ -171,6 +188,9 @@ struct JoinClausesAndActions
     ActionsDAGPtr left_join_expressions_actions;
     /// Right join expressions actions
     ActionsDAGPtr right_join_expressions_actions;
+    /// Originally used for inequal join. it's the total join expression.
+    /// If there is no inequal join conditions, it's null.
+    ActionsDAGPtr mixed_join_expressions_actions;
 };
 
 /** Calculate join clauses and actions for JOIN ON section.

@@ -25,6 +25,9 @@ void filterBlockWithPredicate(const ActionsDAG::Node * predicate, Block & block,
 /// Just filters block. Block should contain all the required columns.
 void filterBlockWithDAG(ActionsDAGPtr dag, Block & block, ContextPtr context);
 
+/// Builds sets used by ActionsDAG inplace.
+void buildSetsForDAG(const ActionsDAGPtr & dag, const ContextPtr & context);
+
 /// Recursively checks if all functions used in DAG are deterministic in scope of query.
 bool isDeterministicInScopeOfQuery(const ActionsDAG::Node * node);
 
@@ -65,8 +68,18 @@ void filterByPathOrFile(std::vector<T> & sources, const std::vector<String> & pa
     sources = std::move(filtered_sources);
 }
 
-void addRequestedPathFileAndSizeVirtualsToChunk(
-    Chunk & chunk, const NamesAndTypesList & requested_virtual_columns, const String & path, std::optional<size_t> size, const String * filename = nullptr);
+struct VirtualsForFileLikeStorage
+{
+    const String & path;
+    std::optional<size_t> size { std::nullopt };
+    const String * filename { nullptr };
+    std::optional<Poco::Timestamp> last_modified { std::nullopt };
+
+};
+
+void addRequestedFileLikeStorageVirtualsToChunk(
+    Chunk & chunk, const NamesAndTypesList & requested_virtual_columns,
+    VirtualsForFileLikeStorage virtual_values);
 }
 
 }

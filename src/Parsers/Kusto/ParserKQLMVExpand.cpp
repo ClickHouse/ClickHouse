@@ -39,8 +39,8 @@ bool ParserKQLMVExpand::parseColumnArrayExprs(ColumnArrayExprs & column_array_ex
     ParserToken close_bracket(TokenType::ClosingRoundBracket);
     ParserToken comma(TokenType::Comma);
 
-    ParserKeyword s_to("to");
-    ParserKeyword s_type("typeof");
+    ParserKeyword s_to(Keyword::TO);
+    ParserKeyword s_type(Keyword::TYPEOF);
     uint16_t bracket_count = 0;
     Pos expr_begin_pos = pos;
     Pos expr_end_pos = pos;
@@ -144,10 +144,10 @@ bool ParserKQLMVExpand::parseColumnArrayExprs(ColumnArrayExprs & column_array_ex
 
 bool ParserKQLMVExpand::parserMVExpand(KQLMVExpand & kql_mv_expand, Pos & pos, Expected & expected)
 {
-    ParserKeyword s_bagexpansion("bagexpansion");
-    ParserKeyword s_kind("kind");
-    ParserKeyword s_with_itemindex("with_itemindex");
-    ParserKeyword s_limit("limit");
+    ParserKeyword s_bagexpansion(Keyword::BAGEXPANSION);
+    ParserKeyword s_kind(Keyword::KIND);
+    ParserKeyword s_with_itemindex(Keyword::WITH_ITEMINDEX);
+    ParserKeyword s_limit(Keyword::LIMIT);
 
     ParserToken equals(TokenType::Equals);
     ParserToken comma(TokenType::Comma);
@@ -298,7 +298,7 @@ bool ParserKQLMVExpand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         return false;
 
     const String setting_str = "enable_unaligned_array_join = 1";
-    Tokens token_settings(setting_str.c_str(), setting_str.c_str() + setting_str.size());
+    Tokens token_settings(setting_str.data(), setting_str.data() + setting_str.size(), 0, true);
     IParser::Pos pos_settings(token_settings, pos.max_depth, pos.max_backtracks);
 
     if (!ParserSetQuery(true).parse(pos_settings, setting, expected))

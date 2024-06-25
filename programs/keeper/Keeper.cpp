@@ -10,6 +10,7 @@
 #include <IO/UseSSL.h>
 #include <Core/ServerUUID.h>
 #include <Common/logger_useful.h>
+#include <Common/CgroupsMemoryUsageObserver.h>
 #include <Common/ErrorHandlers.h>
 #include <Common/assertProcessUserMatchesDataOwner.h>
 #include <Common/makeSocketAddress.h>
@@ -181,6 +182,11 @@ std::string Keeper::getDefaultConfigFileName() const
     return "keeper_config.xml";
 }
 
+bool Keeper::allowTextLog() const
+{
+    return false;
+}
+
 void Keeper::handleCustomArguments(const std::string & arg, [[maybe_unused]] const std::string & value) // NOLINT
 {
     if (arg == "force-recovery")
@@ -246,11 +252,6 @@ struct KeeperHTTPContext : public IHTTPContext
     uint64_t getMaxFieldValueSize() const override
     {
         return context->getConfigRef().getUInt64("keeper_server.http_max_field_value_size", 128 * 1024);
-    }
-
-    uint64_t getMaxChunkSize() const override
-    {
-        return context->getConfigRef().getUInt64("keeper_server.http_max_chunk_size", 100_GiB);
     }
 
     Poco::Timespan getReceiveTimeout() const override
@@ -360,9 +361,10 @@ try
     }
 
     GlobalThreadPool::initialize(
-        config().getUInt("max_thread_pool_size", 100),
-        config().getUInt("max_thread_pool_free_size", 1000),
-        config().getUInt("thread_pool_queue_size", 10000)
+        /// We need to have sufficient amount of threads for connections + nuraft workers + keeper workers, 1000 is an estimation
+        std::min(1000U, config().getUInt("max_thread_pool_size", 1000)),
+        config().getUInt("max_thread_pool_free_size", 100),
+        config().getUInt("thread_pool_queue_size", 1000)
     );
     /// Wait for all threads to avoid possible use-after-free (for example logging objects can be already destroyed).
     SCOPE_EXIT({
@@ -575,8 +577,7 @@ try
 #if USE_SSL
             CertificateReloader::instance().tryLoad(*config);
 #endif
-        },
-        /* already_loaded = */ false);  /// Reload it right now (initial loading)
+        });
 
     SCOPE_EXIT({
         LOG_INFO(log, "Shutting down.");
@@ -622,6 +623,25 @@ try
 
     buildLoggers(config(), logger());
     main_config_reloader->start();
+
+    std::optional<CgroupsMemoryUsageObserver> cgroups_memory_usage_observer;
+    try
+    {
+        auto wait_time = config().getUInt64("keeper_server.cgroups_memory_observer_wait_time", 15);
+        if (wait_time != 0)
+        {
+            cgroups_memory_usage_observer.emplace(std::chrono::seconds(wait_time));
+            /// Not calling cgroups_memory_usage_observer->setLimits() here (as for the normal ClickHouse server) because Keeper controls
+            /// its memory usage by other means (via setting 'max_memory_usage_soft_limit').
+            cgroups_memory_usage_observer->setOnMemoryAmountAvailableChangedFn([&]() { main_config_reloader->reload(); });
+            cgroups_memory_usage_observer->startThread();
+        }
+    }
+    catch (Exception &)
+    {
+        tryLogCurrentException(log, "Disabling cgroup memory observer because of an error during initialization");
+    }
+
 
     LOG_INFO(log, "Ready for connections.");
 
