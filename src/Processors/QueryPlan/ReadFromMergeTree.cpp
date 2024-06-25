@@ -337,11 +337,12 @@ ReadFromMergeTree::ReadFromMergeTree(
 }
 
 std::unique_ptr<ReadFromMergeTree> ReadFromMergeTree::createLocalParallelReplicasReadingStep(
-    const ReadFromMergeTree * analyzed_merge_tree,
+    AnalysisResultPtr analyzed_result_ptr_,
     std::optional<MergeTreeAllRangesCallback> all_ranges_callback_,
     std::optional<MergeTreeReadTaskCallback> read_task_callback_)
 {
     const auto number_of_local_replica = 0;
+    const bool enable_parallel_reading = true;
     return std::make_unique<ReadFromMergeTree>(
         prepared_parts,
         alter_conversions_for_parts,
@@ -354,8 +355,8 @@ std::unique_ptr<ReadFromMergeTree> ReadFromMergeTree::createLocalParallelReplica
         requested_num_streams,
         max_block_numbers_to_read,
         log,
-        (analyzed_merge_tree ? analyzed_merge_tree->analyzed_result_ptr : nullptr),
-        true,
+        analyzed_result_ptr_,
+        enable_parallel_reading,
         all_ranges_callback_,
         read_task_callback_,
         number_of_local_replica);

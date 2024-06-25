@@ -69,9 +69,13 @@ std::unique_ptr<QueryPlan> createLocalPlanForParallelReplicas(
 
     chassert(reading);
 
-    ReadFromMergeTree * analyzed_merge_tree = nullptr;
+    ReadFromMergeTree::AnalysisResultPtr analyzed_result_ptr;
     if (analyzed_read_from_merge_tree.get())
-        analyzed_merge_tree = typeid_cast<ReadFromMergeTree *>(analyzed_read_from_merge_tree.get());
+    {
+        auto * analyzed_merge_tree = typeid_cast<ReadFromMergeTree *>(analyzed_read_from_merge_tree.get());
+        if (analyzed_merge_tree)
+            analyzed_result_ptr = analyzed_merge_tree->getAnalyzedResult();
+    }
 
     MergeTreeAllRangesCallback all_ranges_cb
         = [coordinator](InitialAllRangesAnnouncement announcement) { coordinator->handleInitialAllRangesAnnouncement(announcement); };
@@ -80,7 +84,7 @@ std::unique_ptr<QueryPlan> createLocalPlanForParallelReplicas(
     { return coordinator->handleRequest(std::move(req)); };
 
     auto read_from_merge_tree_parallel_replicas
-        = reading->createLocalParallelReplicasReadingStep(analyzed_merge_tree, all_ranges_cb, read_task_cb);
+        = reading->createLocalParallelReplicasReadingStep(analyzed_result_ptr, all_ranges_cb, read_task_cb);
     node->step = std::move(read_from_merge_tree_parallel_replicas);
 
     addConvertingActions(*query_plan, header, /*has_missing_objects=*/false);
