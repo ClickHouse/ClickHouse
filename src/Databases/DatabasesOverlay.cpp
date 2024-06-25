@@ -27,6 +27,14 @@ DatabasesOverlay & DatabasesOverlay::registerNextDatabase(DatabasePtr database)
     return *this;
 }
 
+bool DatabasesOverlay::supportsDetachingTables() const
+{
+    return std::all_of(databases.begin(), databases.end(), [](const auto & database)
+    {
+        return database->supportsDetachingTables();
+    });
+}
+
 bool DatabasesOverlay::isTableExist(const String & table_name, ContextPtr context_) const
 {
     for (const auto & db : databases)

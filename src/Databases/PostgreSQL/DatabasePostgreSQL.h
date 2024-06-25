@@ -54,6 +54,8 @@ public:
     void createTable(ContextPtr, const String & table_name, const StoragePtr & storage, const ASTPtr & create_query) override;
     void dropTable(ContextPtr, const String & table_name, bool sync) override;
 
+    bool supportsDetachingTables() const override { return true; }
+
     void attachTable(ContextPtr context, const String & table_name, const StoragePtr & storage, const String & relative_table_path) override;
     StoragePtr detachTable(ContextPtr context, const String & table_name) override;
 

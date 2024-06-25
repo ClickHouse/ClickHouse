@@ -1,3 +1,6 @@
+-- Tags: no-random-detach
+-- no-random-detach: one more thread is used
+
 DROP TABLE IF EXISTS data_01283;
 
 set allow_asynchronous_read_from_io_pool_for_merge_tree = 0;

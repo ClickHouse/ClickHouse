@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel
+# Tags: no-parallel, no-random-detach
 # Tag no-parallel: create user
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

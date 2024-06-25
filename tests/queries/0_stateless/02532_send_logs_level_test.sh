@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-s3-storage, no-debug
+# Tags: no-s3-storage, no-debug, no-random-detach
 # - no-s3-storage - S3 has additional logging
 # - no-debug - debug builds also has additional logging
 

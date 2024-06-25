@@ -32,7 +32,3 @@ SELECT COUNT() FROM (
 );
 
 DROP TABLE bug_14144;
-
-
-
-

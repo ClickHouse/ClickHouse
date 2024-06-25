@@ -46,6 +46,7 @@ public:
 
     // Contains only temporary tables
     bool shouldBeEmptyOnDetach() const override { return false; }
+    bool supportsDetachingTables() const override { return true; }
 
     bool empty() const override;
 

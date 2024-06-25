@@ -1,4 +1,7 @@
--- Tags: zookeeper
+-- Tags: zookeeper, no-random-detach
+-- Tag no-random-detach: "The local set of parts of table
+-- doesn't look like the set of parts in ZooKeeper"
+-- after DROP PARTITION and restart https://github.com/ClickHouse/ClickHouse/issues/37664
 
 SET insert_keeper_fault_injection_probability=0; -- disable fault injection; part ids are non-deterministic in case of insert retries
 

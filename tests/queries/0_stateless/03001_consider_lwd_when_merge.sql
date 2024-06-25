@@ -16,6 +16,7 @@ OPTIMIZE TABLE lwd_merge;
 SELECT count() FROM system.parts WHERE database = currentDatabase() AND table = 'lwd_merge' AND active = 1;
 
 ALTER TABLE lwd_merge MODIFY SETTING exclude_deleted_rows_for_part_size_in_merge = 1;
+ALTER TABLE lwd_merge MODIFY SETTING load_existing_rows_count_for_old_parts = 1;
 
 -- delete again because deleted rows will be counted in mutation
 DELETE FROM lwd_merge WHERE id % 100 == 0;
