@@ -1,11 +1,11 @@
 #pragma once
 
-#include <Common/COW.h>
-#include <Common/PODArray_fwd.h>
-#include <Common/Exception.h>
-#include <Common/typeid_cast.h>
-#include <base/StringRef.h>
 #include <Core/TypeId.h>
+#include <base/StringRef.h>
+#include <Common/COW.h>
+#include <Common/Exception.h>
+#include <Common/PODArray_fwd.h>
+#include <Common/typeid_cast.h>
 
 #include "config.h"
 
@@ -180,14 +180,26 @@ public:
 
     /// Appends n-th element from other column with the same type.
     /// Is used in merge-sort and merges. It could be implemented in inherited classes more optimally than default implementation.
-    void insertFrom(const IColumn & src, size_t n) { doInsertFrom(src, n); }
+    void insertFrom(const IColumn & src, size_t n)
+    {
+        assertTypeEquality(src);
+        doInsertFrom(src, n);
+    }
 
     /// Appends range of elements from other column with the same type.
     /// Could be used to concatenate columns.
-    void insertRangeFrom(const IColumn & src, size_t start, size_t length) { doInsertRangeFrom(src, start, length); }
+    void insertRangeFrom(const IColumn & src, size_t start, size_t length)
+    {
+        assertTypeEquality(src);
+        doInsertRangeFrom(src, start, length);
+    }
 
     /// Appends one element from other column with the same type multiple times.
-    void insertManyFrom(const IColumn & src, size_t position, size_t length) { doInsertManyFrom(src, position, length); }
+    void insertManyFrom(const IColumn & src, size_t position, size_t length)
+    {
+        assertTypeEquality(src);
+        doInsertManyFrom(src, position, length);
+    }
 
     /// Appends one field multiple times. Can be optimized in inherited classes.
     virtual void insertMany(const Field & field, size_t length)
@@ -320,6 +332,7 @@ public:
       */
     [[nodiscard]] int compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const
     {
+        assertTypeEquality(rhs);
         return doCompareAt(n, m, rhs, nan_direction_hint);
     }
 
@@ -644,6 +657,9 @@ protected:
     }
 
     virtual int doCompareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const = 0;
+
+private:
+    void assertTypeEquality(const IColumn & rhs) const { chassert(typeid(*this) == typeid(rhs)); }
 };
 
 using ColumnPtr = IColumn::Ptr;
