@@ -60,7 +60,7 @@ public:
         /// In fact, they could be released in destructors of BucketHolder,
         /// but we anyway try to release them explicitly,
         /// because we want to be able to rethrow exceptions if they might happen.
-        void releaseHoldBuckets();
+        void releaseFinishedBuckets();
 
     private:
         using Bucket = S3QueueMetadata::Bucket;

@@ -126,14 +126,26 @@ void StorageS3QueueSource::FileIterator::returnForRetry(Source::ObjectInfoPtr ob
     }
 }
 
-void StorageS3QueueSource::FileIterator::releaseHoldBuckets()
+void StorageS3QueueSource::FileIterator::releaseFinishedBuckets()
 {
     for (const auto & [processor, holders] : bucket_holders)
     {
         LOG_TEST(log, "Releasing {} bucket holders for processor {}", holders.size(), processor);
 
-        for (const auto & bucket_holder : holders)
-            bucket_holder->release();
+        for (auto it = holders.begin(); it != holders.end(); ++it)
+        {
+            const auto & holder = *it;
+            if (!holder->isFinished())
+            {
+                /// Only the last holder in the list of holders can be non-finished.
+                chassert(std::next(it) == holders.end());
+
+                /// Do not release non-finished bucket holder. We will continue processing it.
+                LOG_TEST(log, "Bucket {} is not finished yet, will not release it", holder->getBucketInfo()->bucket);
+                break;
+            }
+            holder->release();
+        }
     }
 }
 
