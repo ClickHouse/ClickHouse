@@ -250,15 +250,8 @@ def create_mv(
     )
 
 
-@pytest.mark.parametrize(
-    "mode, engine_name",
-    [
-        pytest.param("unordered", "S3Queue"),
-        pytest.param("unordered", "AzureQueue"),
-        pytest.param("ordered", "S3Queue"),
-        pytest.param("ordered", "AzureQueue"),
-    ],
-)
+@pytest.mark.parametrize("mode", ["unordered", "ordered"])
+@pytest.mark.parametrize("engine_name", ["S3Queue", "AzureQueue"])
 def test_delete_after_processing(started_cluster, mode, engine_name):
     node = started_cluster.instances["instance"]
     table_name = f"test.delete_after_processing_{mode}_{engine_name}"
@@ -315,15 +308,8 @@ def test_delete_after_processing(started_cluster, mode, engine_name):
             assert False
 
 
-@pytest.mark.parametrize(
-    "mode, engine_name",
-    [
-        pytest.param("unordered", "S3Queue"),
-        pytest.param("unordered", "AzureQueue"),
-        pytest.param("ordered", "S3Queue"),
-        pytest.param("ordered", "AzureQueue"),
-    ],
-)
+@pytest.mark.parametrize("mode", ["unordered", "ordered"])
+@pytest.mark.parametrize("engine_name", ["S3Queue", "AzureQueue"])
 def test_failed_retry(started_cluster, mode, engine_name):
     node = started_cluster.instances["instance"]
     table_name = f"test.failed_retry_{mode}_{engine_name}"
