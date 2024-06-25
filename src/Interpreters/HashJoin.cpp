@@ -1157,7 +1157,7 @@ public:
         return ColumnWithTypeAndName(std::move(columns[i]), type_name[i].type, type_name[i].qualified_name);
     }
 
-    void insertFromBlockArray(const MutableColumnPtr & col, size_t col_index, std::array<const Block *, 32> & blocks, std::array<size_t, 32> & rows, uint8_t pos)
+    void insertFromBlockArray(const MutableColumnPtr & col, size_t col_index, const std::array<const Block *, 32> & blocks, const std::array<size_t, 32> & rows, uint8_t pos)
     {
         for (size_t j = 0; j < pos; ++j)
         {
