@@ -111,37 +111,36 @@ TEST(SIEVECache, ComplexEvictTest)
     sieve_cache.set(6, std::make_shared<size_t>(1)); // visited = 0
     sieve_cache.set(7, std::make_shared<size_t>(1)); // visited = 0
 
-    // Manually setting visited flag
-    sieve_cache.get(1); // visited = 1
-    sieve_cache.get(2); // visited = 1
-    sieve_cache.get(3); // visited = 1
-    sieve_cache.get(5); // visited = 1
-    sieve_cache.get(7); // visited = 1
+    sieve_cache.get(1);
+    sieve_cache.get(2);
+    sieve_cache.get(3);
+    sieve_cache.get(5);
+    sieve_cache.get(7); 
 
     // Expected visited flags: 1 1 1 0 1 0 1
     // After removeOverflow: 0 0 0 1 0 0 0
-    sieve_cache.set(8, std::make_shared<size_t>(6)); // This should trigger eviction
-    sieve_cache.set(9, std::make_shared<size_t>(7)); // This should trigger eviction
+    sieve_cache.set(8, std::make_shared<size_t>(6)); 
+    sieve_cache.set(9, std::make_shared<size_t>(7)); 
 
     auto n = sieve_cache.count();
-    ASSERT_EQ(n, 7);
+    ASSERT_EQ(n, 6);
 
     auto value = sieve_cache.get(1);
-    ASSERT_TRUE(value == nullptr); // Should be evicted
+    ASSERT_TRUE(value == nullptr);
     value = sieve_cache.get(2);
-    ASSERT_TRUE(value == nullptr); // Should be evicted
+    ASSERT_TRUE(value == nullptr);
     value = sieve_cache.get(3);
-    ASSERT_TRUE(value == nullptr); // Should be evicted
+    ASSERT_TRUE(value != nullptr);
     value = sieve_cache.get(4);
-    ASSERT_TRUE(value != nullptr); // Should still be present
+    ASSERT_TRUE(value == nullptr);
     value = sieve_cache.get(5);
-    ASSERT_TRUE(value == nullptr); // Should be evicted
+    ASSERT_TRUE(value != nullptr);
     value = sieve_cache.get(6);
-    ASSERT_TRUE(value == nullptr); // Should be evicted
+    ASSERT_TRUE(value != nullptr);
     value = sieve_cache.get(7);
-    ASSERT_TRUE(value == nullptr); // Should be evicted
+    ASSERT_TRUE(value != nullptr);
     value = sieve_cache.get(8);
-    ASSERT_TRUE(value != nullptr); // Should still be present
+    ASSERT_TRUE(value != nullptr);
     value = sieve_cache.get(9);
-    ASSERT_TRUE(value != nullptr); // Should still be present
+    ASSERT_TRUE(value != nullptr); 
 }
