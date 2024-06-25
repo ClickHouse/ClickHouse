@@ -1,3 +1,5 @@
+#include <Common/FieldVisitorToString.h>
+
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -4524,7 +4526,7 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
                     resolveExpressionNode(nodes[1], scope, /* allow_lambda_expression */false, /* allow_table_function */false);
                     if (auto * constant = nodes[1]->as<ConstantNode>())
                     {
-                        view_params[identifier_node->getIdentifier().getFullName()] = constant->getValueStringRepresentation();
+                        view_params[identifier_node->getIdentifier().getFullName()] = convertFieldToString(constant->getValue());
                     }
                 }
             }
