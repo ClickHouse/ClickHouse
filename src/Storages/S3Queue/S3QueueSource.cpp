@@ -135,16 +135,24 @@ void StorageS3QueueSource::FileIterator::releaseFinishedBuckets()
         for (auto it = holders.begin(); it != holders.end(); ++it)
         {
             const auto & holder = *it;
+            const auto bucket = holder->getBucketInfo()->bucket;
             if (!holder->isFinished())
             {
                 /// Only the last holder in the list of holders can be non-finished.
                 chassert(std::next(it) == holders.end());
 
                 /// Do not release non-finished bucket holder. We will continue processing it.
-                LOG_TEST(log, "Bucket {} is not finished yet, will not release it", holder->getBucketInfo()->bucket);
+                LOG_TEST(log, "Bucket {} is not finished yet, will not release it", bucket);
                 break;
             }
+
+            /// Release bucket lock.
             holder->release();
+
+            /// Reset bucket processor in cached state.
+            auto cached_info = listed_keys_cache.find(bucket);
+            if (cached_info != listed_keys_cache.end())
+                cached_info->second.processor.reset();
         }
     }
 }
