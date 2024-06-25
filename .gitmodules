@@ -229,7 +229,7 @@
 	url = https://github.com/ClickHouse/azure-sdk-for-cpp
 [submodule "contrib/minizip-ng"]
 	path = contrib/minizip-ng
-	url = https://github.com/zlib-ng/minizip-ng
+	url = https://github.com/ClickHouse/minizip-ng
 [submodule "contrib/annoy"]
 	path = contrib/annoy
 	url = https://github.com/ClickHouse/annoy
