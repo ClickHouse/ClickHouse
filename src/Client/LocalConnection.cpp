@@ -295,7 +295,14 @@ void LocalConnection::sendCancel()
 bool LocalConnection::pullBlock(Block & block)
 {
     if (state->executor)
-        return state->executor->pull(block, query_context->getSettingsRef().interactive_delay / 1000);
+        while (!block)
+        {
+            bool pull_result = state->executor->pull(block, query_context->getSettingsRef().interactive_delay / 1000);
+
+            /// Pipeline is finished.
+            if (!pull_result)
+                return false;
+        }
 
     return false;
 }
@@ -477,25 +484,13 @@ Packet LocalConnection::receivePacket()
         return packet;
     }
 
-    bool ret = false;
     if (!next_packet_type)
-        ret = poll(0);
+        poll(0);
 
     if (!next_packet_type)
     {
-        if (state && !ret)
-        {
-            /// We should retry.
-            /// Let's send a dummy packet and hope for the best.
-            /// TODO proper fix
-            packet.type = Protocol::Server::Progress;
-            return packet;
-        }
-        else
-        {
-            packet.type = Protocol::Server::EndOfStream;
-            return packet;
-        }
+        packet.type = Protocol::Server::EndOfStream;
+        return packet;
     }
 
     packet.type = next_packet_type.value();
