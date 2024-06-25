@@ -20,7 +20,6 @@ namespace ErrorCodes
 }
 
 
-
 /** A simple abstract class for buffered data writing (char sequences) somewhere.
   * Unlike std::ostream, it provides access to the internal buffer,
   *  and also allows you to manually manage the position inside the buffer.
@@ -93,7 +92,6 @@ public:
         if (!hasPendingData())
             next();
     }
-
 
     void write(const char * from, size_t n)
     {
