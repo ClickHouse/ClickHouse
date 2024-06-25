@@ -10,8 +10,12 @@ ReadSettings getReadSettings()
     auto query_context = CurrentThread::getQueryContext();
     if (query_context)
         return query_context->getReadSettings();
-    else
-        return Context::getGlobalContextInstance()->getReadSettings();
+
+    auto global_context = Context::getGlobalContextInstance();
+    if (global_context)
+        return global_context->getReadSettings();
+
+    return {};
 }
 
 }
