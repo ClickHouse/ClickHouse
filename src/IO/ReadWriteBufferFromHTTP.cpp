@@ -713,8 +713,16 @@ ReadWriteBufferFromHTTP::HTTPFileInfo ReadWriteBufferFromHTTP::getFileInfo()
         /// fall back to slow whole-file reads when HEAD is actually supported; that sounds
         /// like a nightmare to debug.)
         if (e.getHTTPStatus() >= 400 && e.getHTTPStatus() <= 499 &&
-            e.getHTTPStatus() != Poco::Net::HTTPResponse::HTTP_TOO_MANY_REQUESTS)
+            e.getHTTPStatus() != Poco::Net::HTTPResponse::HTTP_TOO_MANY_REQUESTS &&
+            e.getHTTPStatus() != Poco::Net::HTTPResponse::HTTP_REQUEST_TIMEOUT &&
+            e.getHTTPStatus() != Poco::Net::HTTPResponse::HTTP_MISDIRECTED_REQUEST)
+        {
+            LOG_DEBUG(log,
+                      "HEAD request to '{}'{} failed with HTTP status {}",
+                      initial_uri.toString(), current_uri == initial_uri ? String() : fmt::format(" redirect to '{}'", current_uri.toString()),
+                      e.getHTTPStatus());
             return HTTPFileInfo{};
+        }
 
         throw;
     }
