@@ -97,50 +97,56 @@ TEST(SIEVECache, getOrSet)
     ASSERT_TRUE(value != nullptr);
     ASSERT_TRUE(*value == 10);
 }
+
 TEST(SIEVECache, ComplexEvictTest)
 {
     using SimpleCacheBase = DB::CacheBase<int, size_t, std::hash<int>, ValueWeight>;
     auto sieve_cache = SimpleCacheBase("SIEVE", /*max_size_in_bytes*/ 20, /*max_count*/ 7, /*size_ratio*/ 0.5);
 
     // Adding elements to the cache
-    sieve_cache.set(1, std::make_shared<size_t>(2)); // visited = 0
-    sieve_cache.set(2, std::make_shared<size_t>(3)); // visited = 0
-    sieve_cache.set(3, std::make_shared<size_t>(4)); // visited = 0
-    sieve_cache.set(4, std::make_shared<size_t>(5)); // visited = 0
-    sieve_cache.set(5, std::make_shared<size_t>(1)); // visited = 0
-    sieve_cache.set(6, std::make_shared<size_t>(1)); // visited = 0
-    sieve_cache.set(7, std::make_shared<size_t>(1)); // visited = 0
+    sieve_cache.set(1, std::make_shared<size_t>(2)); // hand = 0
+    sieve_cache.set(2, std::make_shared<size_t>(3)); // hand = 0
+    sieve_cache.set(3, std::make_shared<size_t>(4)); // hand = 0
+    sieve_cache.set(4, std::make_shared<size_t>(5)); // hand = 0
+    sieve_cache.set(5, std::make_shared<size_t>(1)); // hand = 0
+    sieve_cache.set(6, std::make_shared<size_t>(1)); // hand = 0
+    sieve_cache.set(7, std::make_shared<size_t>(1)); // hand = 0
 
-    sieve_cache.get(1);
-    sieve_cache.get(2);
-    sieve_cache.get(3);
-    sieve_cache.get(5);
-    sieve_cache.get(7); 
+    // Manually setting hand flag
+    sieve_cache.get(1); // hand = 1
+    sieve_cache.get(2); // hand = 1
+    sieve_cache.get(3); // hand = 1
+    sieve_cache.get(5); // hand = 1
+    sieve_cache.get(7); // hand = 1
 
-    // Expected visited flags: 1 1 1 0 1 0 1
-    // After removeOverflow: 0 0 0 1 0 0 0
-    sieve_cache.set(8, std::make_shared<size_t>(6)); 
-    sieve_cache.set(9, std::make_shared<size_t>(7)); 
-
+    // Expected hand flags: 1 1 1 0 1 0 1
+    // After removeOverflow: 0 0 0 1 1 0 1
+    sieve_cache.set(8, std::make_shared<size_t>(6)); // This should trigger eviction
+    
     auto n = sieve_cache.count();
     ASSERT_EQ(n, 6);
 
     auto value = sieve_cache.get(1);
-    ASSERT_TRUE(value == nullptr);
+    ASSERT_TRUE(value != nullptr);
+    ASSERT_TRUE(value->hand == 0); 
     value = sieve_cache.get(2);
-    ASSERT_TRUE(value == nullptr);
+    ASSERT_TRUE(value != nullptr);
+    ASSERT_TRUE(value->hand == 0);
     value = sieve_cache.get(3);
     ASSERT_TRUE(value != nullptr);
+    ASSERT_TRUE(value->hand == 0);
     value = sieve_cache.get(4);
     ASSERT_TRUE(value == nullptr);
     value = sieve_cache.get(5);
     ASSERT_TRUE(value != nullptr);
+    ASSERT_TRUE(value->hand == 1);
     value = sieve_cache.get(6);
     ASSERT_TRUE(value != nullptr);
+    ASSERT_TRUE(value->hand == 0);
     value = sieve_cache.get(7);
     ASSERT_TRUE(value != nullptr);
+    ASSERT_TRUE(value->hand == 1);
     value = sieve_cache.get(8);
     ASSERT_TRUE(value != nullptr);
-    value = sieve_cache.get(9);
-    ASSERT_TRUE(value != nullptr); 
+    ASSERT_TRUE(value->hand == 1);
 }
