@@ -16,7 +16,7 @@ public:
     {
         command_name = "write";
         description = "Write a file from `FROM_PATH` to `TO_PATH`";
-        options_description.add_options()("path-from", po::value<String>(), "file from which we are reading, defaults to `stdin`")(
+        options_description.add_options()("path-from", po::value<String>(), "file from which we are reading, defaults to `stdin` (input from `stdin` is finished by Ctrl+D)")(
             "path-to", po::value<String>(), "file to which we are writing (mandatory, positional)");
         positional_options_description.add("path-to", 1);
     }

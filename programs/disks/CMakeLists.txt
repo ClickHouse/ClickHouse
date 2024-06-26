@@ -14,6 +14,7 @@ set (CLICKHOUSE_DISKS_SOURCES
     CommandSwitchDisk.cpp
     CommandWrite.cpp
     CommandHelp.cpp
+    CommandTouch.cpp
     CommandGetCurrentDiskAndPath.cpp)
 
 if (CLICKHOUSE_CLOUD)

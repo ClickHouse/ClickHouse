@@ -56,4 +56,4 @@ In these documentation file all mandatory positional arguments are referred as `
 * `switch-disk [--path path] <disk>`
   Switch to disk `disk` on path `path` (if `path` is not specified default value is a previous path on disk `disk`). 
 * `write (w) [--path-from path] <path-to>`.
-  Write a file from `path` (`stdin` if not supplied) to `path-to`.
+  Write a file from `path` (`stdin` if `path` is not supplied, input must finish by Ctrl+D) to `path-to`.

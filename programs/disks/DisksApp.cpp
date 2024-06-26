@@ -89,6 +89,7 @@ std::vector<String> DisksApp::getCommandsToComplete(const String & command_prefi
     }
     if (!answer.empty())
     {
+        std::sort(answer.begin(), answer.end());
         return answer;
     }
     for (const auto & [word, _] : aliases)
@@ -100,6 +101,7 @@ std::vector<String> DisksApp::getCommandsToComplete(const String & command_prefi
     }
     if (!answer.empty())
     {
+        std::sort(answer.begin(), answer.end());
         return answer;
     }
     return {command_prefix};
@@ -179,6 +181,7 @@ std::vector<String> DisksApp::getCompletions(const String & prefix) const
         }
         if (!answer.empty())
         {
+            std::sort(answer.begin(), answer.end());
             return answer;
         }
         else
@@ -292,6 +295,7 @@ void DisksApp::addOptions()
     command_descriptions.emplace("mkdir", makeCommandMkDir());
     command_descriptions.emplace("switch-disk", makeCommandSwitchDisk());
     command_descriptions.emplace("current_disk_with_path", makeCommandGetCurrentDiskAndPath());
+    command_descriptions.emplace("touch", makeCommandTouch());
     command_descriptions.emplace("help", makeCommandHelp(*this));
 #ifdef CLICKHOUSE_CLOUD
     command_descriptions.emplace("packed-io", makeCommandPackedIO());
