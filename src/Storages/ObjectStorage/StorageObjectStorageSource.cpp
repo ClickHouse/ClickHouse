@@ -202,7 +202,7 @@ Chunk StorageObjectStorageSource::generate()
                     .size = object_info->metadata->size_bytes,
                     .filename = &filename,
                     .last_modified = object_info->metadata->last_modified,
-                    .etag = &(object_info.metadata->etag)
+                    .etag = &(object_info->metadata->etag)
                 });
             return chunk;
         }
