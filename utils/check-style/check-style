@@ -65,6 +65,7 @@ EXTERN_TYPES_EXCLUDES=(
     ProfileEvents::increment
     ProfileEvents::incrementForLogMessage
     ProfileEvents::getName
+    ProfileEvents::Timer
     ProfileEvents::Type
     ProfileEvents::TypeEnum
     ProfileEvents::dumpToMapColumn
@@ -92,6 +93,7 @@ EXTERN_TYPES_EXCLUDES=(
     ErrorCodes::values
     ErrorCodes::values[i]
     ErrorCodes::getErrorCodeByName
+    ErrorCodes::Value
 )
 for extern_type in ${!EXTERN_TYPES[@]}; do
     type_of_extern=${EXTERN_TYPES[$extern_type]}
@@ -242,7 +244,7 @@ done
 
 # All submodules should be from https://github.com/
 git config --file "$ROOT_PATH/.gitmodules" --get-regexp 'submodule\..+\.url' | \
-while read -r line; do 
+while read -r line; do
     name=${line#submodule.}; name=${name%.url*}
     url=${line#* }
     [[ "$url" != 'https://github.com/'* ]] && echo "All submodules should be from https://github.com/, submodule '$name' has '$url'"

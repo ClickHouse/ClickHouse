@@ -7061,7 +7061,7 @@ ActionDAGNodes MergeTreeData::getFiltersForPrimaryKeyAnalysis(const InterpreterS
         filter_nodes.nodes.push_back(&additional_filter_info->actions->findInOutputs(additional_filter_info->column_name));
 
     if (before_where)
-        filter_nodes.nodes.push_back(&before_where->findInOutputs(where_column_name));
+        filter_nodes.nodes.push_back(&before_where->dag.findInOutputs(where_column_name));
 
     return filter_nodes;
 }
@@ -8082,6 +8082,13 @@ void MergeTreeData::checkDropCommandDoesntAffectInProgressMutations(const AlterC
                     if (identifiers.contains(command.column_name))
                         throw_exception(mutation_name, "column", command.column_name);
                 }
+            }
+            else if (command.type == AlterCommand::DROP_STATISTICS)
+            {
+                for (const auto & stats_col1 : command.statistics_columns)
+                    for (const auto & stats_col2 : mutation_command.statistics_columns)
+                        if (stats_col1 == stats_col2)
+                            throw_exception(mutation_name, "statistics", stats_col1);
             }
         }
     }
