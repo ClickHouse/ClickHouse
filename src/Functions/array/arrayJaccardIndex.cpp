@@ -97,8 +97,8 @@ public:
         {
             if (const ColumnConst * col_const = typeid_cast<const ColumnConst *>(col.column.get()))
             {
-                const ColumnArray * col_const_array = checkAndGetColumn<ColumnArray>(col_const->getDataColumnPtr().get());
-                return {col_const_array, true};
+                const ColumnArray & col_const_array = checkAndGetColumn<ColumnArray>(*col_const->getDataColumnPtr());
+                return {&col_const_array, true};
             }
             else if (const ColumnArray * col_non_const_array = checkAndGetColumn<ColumnArray>(col.column.get()))
                 return {col_non_const_array, false};
@@ -128,8 +128,8 @@ public:
         vectorWithEmptyIntersect<left_is_const, right_is_const>(left_array->getOffsets(), right_array->getOffsets(), vec_res); \
     else \
     { \
-        const ColumnArray * intersect_column_array = checkAndGetColumn<ColumnArray>(intersect_column.column.get()); \
-        vector<left_is_const, right_is_const>(intersect_column_array->getOffsets(), left_array->getOffsets(), right_array->getOffsets(), vec_res); \
+        const ColumnArray & intersect_column_array = checkAndGetColumn<ColumnArray>(*intersect_column.column); \
+        vector<left_is_const, right_is_const>(intersect_column_array.getOffsets(), left_array->getOffsets(), right_array->getOffsets(), vec_res); \
     }
 
         if (!left_is_const && !right_is_const)

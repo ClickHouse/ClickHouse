@@ -10,11 +10,15 @@ QUERY id: 0
   JOIN TREE
     TABLE id: 3, alias: __table1, table_name: default.t_logical_expressions_optimizer_low_cardinality
   WHERE
-    FUNCTION id: 4, function_name: in, function_type: ordinary, result_type: UInt8
+    FUNCTION id: 4, function_name: or, function_type: ordinary, result_type: UInt8
       ARGUMENTS
         LIST id: 5, nodes: 2
-          COLUMN id: 2, column_name: a, result_type: LowCardinality(String), source_id: 3
-          CONSTANT id: 6, constant_value: Tuple_(\'x\', \'y\'), constant_value_type: Tuple(String, String)
+          FUNCTION id: 6, function_name: in, function_type: ordinary, result_type: LowCardinality(UInt8)
+            ARGUMENTS
+              LIST id: 7, nodes: 2
+                COLUMN id: 2, column_name: a, result_type: LowCardinality(String), source_id: 3
+                CONSTANT id: 8, constant_value: Tuple_(\'x\', \'y\'), constant_value_type: Tuple(String, String)
+          CONSTANT id: 9, constant_value: UInt64_0, constant_value_type: UInt8
   SETTINGS allow_experimental_analyzer=1
 SELECT a
 FROM t_logical_expressions_optimizer_low_cardinality
@@ -28,11 +32,15 @@ QUERY id: 0
   JOIN TREE
     TABLE id: 3, alias: __table1, table_name: default.t_logical_expressions_optimizer_low_cardinality
   WHERE
-    FUNCTION id: 4, function_name: in, function_type: ordinary, result_type: UInt8
+    FUNCTION id: 4, function_name: or, function_type: ordinary, result_type: UInt8
       ARGUMENTS
         LIST id: 5, nodes: 2
-          COLUMN id: 2, column_name: a, result_type: LowCardinality(String), source_id: 3
-          CONSTANT id: 6, constant_value: Tuple_(\'x\', \'y\'), constant_value_type: Tuple(String, String)
+          FUNCTION id: 6, function_name: in, function_type: ordinary, result_type: LowCardinality(UInt8)
+            ARGUMENTS
+              LIST id: 7, nodes: 2
+                COLUMN id: 2, column_name: a, result_type: LowCardinality(String), source_id: 3
+                CONSTANT id: 8, constant_value: Tuple_(\'x\', \'y\'), constant_value_type: Tuple(String, String)
+          CONSTANT id: 9, constant_value: UInt64_0, constant_value_type: UInt8
   SETTINGS allow_experimental_analyzer=1
 SELECT a
 FROM t_logical_expressions_optimizer_low_cardinality
@@ -46,11 +54,15 @@ QUERY id: 0
   JOIN TREE
     TABLE id: 3, alias: __table1, table_name: default.t_logical_expressions_optimizer_low_cardinality
   WHERE
-    FUNCTION id: 4, function_name: notIn, function_type: ordinary, result_type: UInt8
+    FUNCTION id: 4, function_name: _CAST, function_type: ordinary, result_type: UInt8
       ARGUMENTS
         LIST id: 5, nodes: 2
-          COLUMN id: 2, column_name: a, result_type: LowCardinality(String), source_id: 3
-          CONSTANT id: 6, constant_value: Tuple_(\'x\', \'y\'), constant_value_type: Tuple(String, String)
+          FUNCTION id: 6, function_name: notIn, function_type: ordinary, result_type: LowCardinality(UInt8)
+            ARGUMENTS
+              LIST id: 7, nodes: 2
+                COLUMN id: 2, column_name: a, result_type: LowCardinality(String), source_id: 3
+                CONSTANT id: 8, constant_value: Tuple_(\'x\', \'y\'), constant_value_type: Tuple(String, String)
+          CONSTANT id: 9, constant_value: \'UInt8\', constant_value_type: String
   SETTINGS allow_experimental_analyzer=1
 SELECT a
 FROM t_logical_expressions_optimizer_low_cardinality
@@ -64,11 +76,15 @@ QUERY id: 0
   JOIN TREE
     TABLE id: 3, alias: __table1, table_name: default.t_logical_expressions_optimizer_low_cardinality
   WHERE
-    FUNCTION id: 4, function_name: notIn, function_type: ordinary, result_type: UInt8
+    FUNCTION id: 4, function_name: _CAST, function_type: ordinary, result_type: UInt8
       ARGUMENTS
         LIST id: 5, nodes: 2
-          COLUMN id: 2, column_name: a, result_type: LowCardinality(String), source_id: 3
-          CONSTANT id: 6, constant_value: Tuple_(\'x\', \'y\'), constant_value_type: Tuple(String, String)
+          FUNCTION id: 6, function_name: notIn, function_type: ordinary, result_type: LowCardinality(UInt8)
+            ARGUMENTS
+              LIST id: 7, nodes: 2
+                COLUMN id: 2, column_name: a, result_type: LowCardinality(String), source_id: 3
+                CONSTANT id: 8, constant_value: Tuple_(\'x\', \'y\'), constant_value_type: Tuple(String, String)
+          CONSTANT id: 9, constant_value: \'UInt8\', constant_value_type: String
   SETTINGS allow_experimental_analyzer=1
 SELECT a
 FROM t_logical_expressions_optimizer_low_cardinality

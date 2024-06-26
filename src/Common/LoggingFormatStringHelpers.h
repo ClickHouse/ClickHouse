@@ -74,7 +74,7 @@ PreformattedMessage FormatStringHelperImpl<Args...>::format(Args && ...args) con
 {
     std::vector<std::string> out_format_string_args;
     std::string msg_text = tryGetArgsAndFormat(out_format_string_args, fmt_str, std::forward<Args>(args)...);
-    return PreformattedMessage{msg_text, message_format_string, out_format_string_args};
+    return PreformattedMessage{.text = msg_text, .format_string = message_format_string, .format_string_args = out_format_string_args};
 }
 
 template <typename... Args>

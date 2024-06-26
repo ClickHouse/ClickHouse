@@ -72,8 +72,7 @@ bool ParserRenameQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     else
         return false;
 
-    const auto ignore_delim = [&] { return exchange ? s_and.ignore(pos) : s_to.ignore(pos); };
-
+    const auto ignore_delim = [&] { return exchange ? s_and.ignore(pos, expected) : s_to.ignore(pos, expected); };
 
     ASTRenameQuery::Elements elements;
 

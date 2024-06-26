@@ -118,7 +118,7 @@ LockedKeyPtr KeyMetadata::lockNoStateCheck()
     return std::make_unique<LockedKey>(shared_from_this());
 }
 
-bool KeyMetadata::createBaseDirectory()
+bool KeyMetadata::createBaseDirectory(bool throw_if_failed)
 {
     if (!created_base_directory.exchange(true))
     {
@@ -131,7 +131,7 @@ bool KeyMetadata::createBaseDirectory()
         {
             created_base_directory = false;
 
-            if (e.code() == std::errc::no_space_on_device)
+            if (!throw_if_failed && e.code() == std::errc::no_space_on_device)
             {
                 LOG_TRACE(cache_metadata->log, "Failed to create base directory for key {}, "
                           "because no space left on device", key);
@@ -846,7 +846,7 @@ LockedKey::~LockedKey()
     /// See comment near cleanupThreadFunc() for more details.
 
     key_metadata->key_state = KeyMetadata::KeyState::REMOVING;
-    LOG_DEBUG(key_metadata->logger(), "Submitting key {} for removal", getKey());
+    LOG_TRACE(key_metadata->logger(), "Submitting key {} for removal", getKey());
     key_metadata->addToCleanupQueue();
 }
 

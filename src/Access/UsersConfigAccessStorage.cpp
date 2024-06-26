@@ -10,7 +10,7 @@
 #include <Dictionaries/IDictionary.h>
 #include <Common/Config/ConfigReloader.h>
 #include <Common/SSHWrapper.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/quoteString.h>
 #include <Common/transformEndianness.h>
 #include <Core/Settings.h>
@@ -880,8 +880,7 @@ void UsersConfigAccessStorage::load(
             Settings::checkNoSettingNamesAtTopLevel(*new_config, users_config_path);
             parseFromConfig(*new_config);
             access_control.getChangesNotifier().sendNotifications();
-        },
-        /* already_loaded = */ false);
+        });
 }
 
 void UsersConfigAccessStorage::startPeriodicReloading()

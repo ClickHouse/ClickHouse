@@ -12,8 +12,8 @@
 #include <fmt/format.h>
 #include <Common/iota.h>
 #include <Common/typeid_cast.h>
-#include "Core/Types.h"
-#include "base/types.h"
+#include <Core/Types.h>
+
 
 namespace DB
 {
@@ -393,7 +393,7 @@ ReadFromSystemNumbersStep::ReadFromSystemNumbersStep(
     , num_streams{num_streams_}
     , limit_length_and_offset(InterpreterSelectQuery::getLimitLengthAndOffset(query_info.query->as<ASTSelectQuery &>(), context))
     , should_pushdown_limit(shouldPushdownLimit(query_info, limit_length_and_offset.first))
-    , limit(query_info.limit)
+    , query_info_limit(query_info.limit)
     , storage_limits(query_info.storage_limits)
 {
     storage_snapshot->check(column_names);
@@ -442,7 +442,6 @@ Pipe ReadFromSystemNumbersStep::makePipe()
 
     /// Build rpn of query filters
     KeyCondition condition(filter_actions_dag, context, column_names, key_expression);
-
 
     if (condition.extractPlainRanges(ranges))
     {
@@ -505,7 +504,6 @@ Pipe ReadFromSystemNumbersStep::makePipe()
             }
         }
 
-
         /// ranges is blank, return a source who has no data
         if (intersected_ranges.empty())
         {
@@ -565,7 +563,7 @@ Pipe ReadFromSystemNumbersStep::makePipe()
         {
             auto rows_appr = (*numbers_storage.limit - 1) / numbers_storage.step + 1;
             if (limit > 0 && limit < rows_appr)
-                rows_appr = limit;
+                rows_appr = query_info_limit;
             source->addTotalRowsApprox(rows_appr);
         }
 

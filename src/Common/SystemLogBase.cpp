@@ -1,5 +1,6 @@
 #include <Interpreters/AsynchronousMetricLog.h>
 #include <Interpreters/CrashLog.h>
+#include <Interpreters/ErrorLog.h>
 #include <Interpreters/MetricLog.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/PartLog.h>
@@ -86,8 +87,7 @@ void SystemLogQueue<LogElement>::push(LogElement&& element)
             // It is enough to only wake the flushing thread once, after the message
             // count increases past half available size.
             const uint64_t queue_end = queue_front_index + queue.size();
-            if (requested_flush_up_to < queue_end)
-                requested_flush_up_to = queue_end;
+            requested_flush_up_to = std::max(requested_flush_up_to, queue_end);
 
             flush_event.notify_all();
         }

@@ -245,12 +245,12 @@ private:
         ValueSetter && set_value,
         DefaultValueExtractor & default_value_extractor) const;
 
-    template <typename AttributeType, bool is_nullable, typename ValueSetter, typename NullSetter>
-    size_t getItemsShortCircuitImpl(
+    template <typename AttributeType, bool is_nullable, typename ValueSetter, typename NullAndDefaultSetter>
+    void getItemsShortCircuitImpl(
         const Attribute & attribute,
         DictionaryKeysExtractor<dictionary_key_type> & keys_extractor,
         ValueSetter && set_value,
-        NullSetter && set_null,
+        NullAndDefaultSetter && set_null_and_default,
         IColumn::Filter & default_mask) const;
 
     template <typename GetContainersFunc>
@@ -428,17 +428,16 @@ ColumnPtr HashedDictionary<dictionary_key_type, sparse, sharded>::getColumn(
         if (is_short_circuit)
         {
             IColumn::Filter & default_mask = std::get<RefFilter>(default_or_filter).get();
-            size_t keys_found = 0;
 
             if constexpr (std::is_same_v<ValueType, Array>)
             {
                 auto * out = column.get();
 
-                keys_found = getItemsShortCircuitImpl<ValueType, false>(
+                getItemsShortCircuitImpl<ValueType, false>(
                     attribute,
                     extractor,
                     [&](const size_t, const Array & value) { out->insert(value); },
-                    [&](size_t) {},
+                    [&](size_t) { out->insertDefault(); },
                     default_mask);
             }
             else if constexpr (std::is_same_v<ValueType, StringRef>)
@@ -447,7 +446,7 @@ ColumnPtr HashedDictionary<dictionary_key_type, sparse, sharded>::getColumn(
 
                 if (is_attribute_nullable)
                 {
-                    keys_found = getItemsShortCircuitImpl<ValueType, true>(
+                    getItemsShortCircuitImpl<ValueType, true>(
                         attribute,
                         extractor,
                         [&](size_t row, StringRef value)
@@ -463,11 +462,11 @@ ColumnPtr HashedDictionary<dictionary_key_type, sparse, sharded>::getColumn(
                         default_mask);
                 }
                 else
-                    keys_found = getItemsShortCircuitImpl<ValueType, false>(
+                    getItemsShortCircuitImpl<ValueType, false>(
                         attribute,
                         extractor,
                         [&](size_t, StringRef value) { out->insertData(value.data, value.size); },
-                        [&](size_t) {},
+                        [&](size_t) { out->insertDefault(); },
                         default_mask);
             }
             else
@@ -475,7 +474,7 @@ ColumnPtr HashedDictionary<dictionary_key_type, sparse, sharded>::getColumn(
                 auto & out = column->getData();
 
                 if (is_attribute_nullable)
-                    keys_found = getItemsShortCircuitImpl<ValueType, true>(
+                    getItemsShortCircuitImpl<ValueType, true>(
                         attribute,
                         extractor,
                         [&](size_t row, const auto value)
@@ -486,18 +485,9 @@ ColumnPtr HashedDictionary<dictionary_key_type, sparse, sharded>::getColumn(
                         [&](size_t row) { (*vec_null_map_to)[row] = true; },
                         default_mask);
                 else
-                    keys_found = getItemsShortCircuitImpl<ValueType, false>(
-                        attribute,
-                        extractor,
-                        [&](size_t row, const auto value) { out[row] = value; },
-                        [&](size_t) {},
-                        default_mask);
-
-                out.resize(keys_found);
+                    getItemsShortCircuitImpl<ValueType, false>(
+                        attribute, extractor, [&](size_t row, const auto value) { out[row] = value; }, [&](size_t) {}, default_mask);
             }
-
-            if (is_attribute_nullable)
-                vec_null_map_to->resize(keys_found);
         }
         else
         {
@@ -1112,12 +1102,12 @@ void HashedDictionary<dictionary_key_type, sparse, sharded>::getItemsImpl(
 }
 
 template <DictionaryKeyType dictionary_key_type, bool sparse, bool sharded>
-template <typename AttributeType, bool is_nullable, typename ValueSetter, typename NullSetter>
-size_t HashedDictionary<dictionary_key_type, sparse, sharded>::getItemsShortCircuitImpl(
+template <typename AttributeType, bool is_nullable, typename ValueSetter, typename NullAndDefaultSetter>
+void HashedDictionary<dictionary_key_type, sparse, sharded>::getItemsShortCircuitImpl(
     const Attribute & attribute,
     DictionaryKeysExtractor<dictionary_key_type> & keys_extractor,
     ValueSetter && set_value,
-    NullSetter && set_null,
+    NullAndDefaultSetter && set_null_and_default,
     IColumn::Filter & default_mask) const
 {
     const auto & attribute_containers = std::get<CollectionsHolder<AttributeType>>(attribute.containers);
@@ -1143,20 +1133,22 @@ size_t HashedDictionary<dictionary_key_type, sparse, sharded>::getItemsShortCirc
         // Need to consider items in is_nullable_sets as well, see blockToAttributes()
         else if (is_nullable && (*attribute.is_nullable_sets)[shard].find(key) != nullptr)
         {
-            set_null(key_index);
+            set_null_and_default(key_index);
             default_mask[key_index] = 0;
 
             ++keys_found;
         }
         else
+        {
+            set_null_and_default(key_index);
             default_mask[key_index] = 1;
+        }
 
         keys_extractor.rollbackCurrentKey();
     }
 
     query_count.fetch_add(keys_size, std::memory_order_relaxed);
     found_count.fetch_add(keys_found, std::memory_order_relaxed);
-    return keys_found;
 }
 
 template <DictionaryKeyType dictionary_key_type, bool sparse, bool sharded>

@@ -31,6 +31,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int AUTHENTICATION_FAILED;
     extern const int SUPPORT_IS_DISABLED;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
@@ -90,8 +91,10 @@ bool AuthenticationData::Util::checkPasswordBcrypt(std::string_view password [[m
 {
 #if USE_BCRYPT
     int ret = bcrypt_checkpw(password.data(), reinterpret_cast<const char *>(password_bcrypt.data()));
+    /// Before 24.6 we didn't validate hashes on creation, so it could be that the stored hash is invalid
+    /// and it could not be decoded by the library
     if (ret == -1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "BCrypt library failed: bcrypt_checkpw returned {}", ret);
+        throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Internal failure decoding Bcrypt hash");
     return (ret == 0);
 #else
     throw Exception(
@@ -118,13 +121,16 @@ void AuthenticationData::setPassword(const String & password_)
     switch (type)
     {
         case AuthenticationType::PLAINTEXT_PASSWORD:
-            return setPasswordHashBinary(Util::stringToDigest(password_));
+            setPasswordHashBinary(Util::stringToDigest(password_));
+            return;
 
         case AuthenticationType::SHA256_PASSWORD:
-            return setPasswordHashBinary(Util::encodeSHA256(password_));
+            setPasswordHashBinary(Util::encodeSHA256(password_));
+            return;
 
         case AuthenticationType::DOUBLE_SHA1_PASSWORD:
-            return setPasswordHashBinary(Util::encodeDoubleSHA1(password_));
+            setPasswordHashBinary(Util::encodeDoubleSHA1(password_));
+            return;
 
         case AuthenticationType::BCRYPT_PASSWORD:
         case AuthenticationType::NO_PASSWORD:
@@ -146,7 +152,7 @@ void AuthenticationData::setPasswordBcrypt(const String & password_, int workfac
     if (type != AuthenticationType::BCRYPT_PASSWORD)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot specify bcrypt password for authentication type {}", toString(type));
 
-    return setPasswordHashBinary(Util::encodeBcrypt(password_, workfactor_));
+    setPasswordHashBinary(Util::encodeBcrypt(password_, workfactor_));
 }
 
 String AuthenticationData::getPassword() const
@@ -227,6 +233,17 @@ void AuthenticationData::setPasswordHashBinary(const Digest & hash)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                                 "Password hash for the 'BCRYPT_PASSWORD' authentication type has length {} "
                                 "but must be 59 or 60 bytes.", hash.size());
+
+            auto resized = hash;
+            resized.resize(64);
+
+#if USE_BCRYPT
+            /// Verify that it is a valid hash
+            int ret = bcrypt_checkpw("", reinterpret_cast<const char *>(resized.data()));
+            if (ret == -1)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Could not decode the provided hash with 'bcrypt_hash'");
+#endif
+
             password_hash = hash;
             password_hash.resize(64);
             return;

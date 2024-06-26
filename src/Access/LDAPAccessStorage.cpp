@@ -76,7 +76,7 @@ void LDAPAccessStorage::setConfiguration(const Poco::Util::AbstractConfiguration
         config.keys(prefix, all_keys);
         for (const auto & key : all_keys)
         {
-            if (key == "role_mapping" || key.find("role_mapping[") == 0)
+            if (key == "role_mapping" || key.starts_with("role_mapping["))
                 parseLDAPRoleSearchParams(role_search_params_cfg.emplace_back(), config, prefix_str + key);
         }
     }
@@ -94,7 +94,7 @@ void LDAPAccessStorage::setConfiguration(const Poco::Util::AbstractConfiguration
     role_change_subscription = access_control.subscribeForChanges<Role>(
         [this] (const UUID & id, const AccessEntityPtr & entity)
         {
-            return this->processRoleChange(id, entity);
+            this->processRoleChange(id, entity);
         }
     );
 }
@@ -200,7 +200,7 @@ void LDAPAccessStorage::applyRoleChangeNoLock(bool grant, const UUID & role_id, 
 void LDAPAccessStorage::assignRolesNoLock(User & user, const LDAPClient::SearchResultsList & external_roles) const
 {
     const auto external_roles_hash = boost::hash<LDAPClient::SearchResultsList>{}(external_roles);
-    return assignRolesNoLock(user, external_roles, external_roles_hash);
+    assignRolesNoLock(user, external_roles, external_roles_hash);
 }
 
 
