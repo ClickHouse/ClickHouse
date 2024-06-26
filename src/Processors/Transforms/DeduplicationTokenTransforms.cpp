@@ -28,8 +28,8 @@ namespace DeduplicationToken
 
 String TokenInfo::getToken() const
 {
-    if (stage != VIEW_ID)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "token is in wrong stage {}, token {}", stage, debugToken());
+    if (!isDefined())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "token is not defined, stage {}, token {}", stage, debugToken());
 
     return getTokenImpl();
 }
@@ -54,59 +54,70 @@ String TokenInfo::debugToken() const
     return getTokenImpl();
 }
 
-
-void TokenInfo::addPieceToInitialToken(String part)
+void TokenInfo::addChunkHash(String part)
 {
-    if (stage != INITIAL)
+    if (stage == UNDEFINED)
+        stage = DEFINE_SOURCE_WITH_HASHES;
+
+    if (stage != DEFINE_SOURCE_WITH_HASHES)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "token is in wrong stage {}, token {}", stage, debugToken());
+
     addTokenPart(std::move(part));
 }
 
-void TokenInfo::closeInitialToken()
+void TokenInfo::defineSourceWithChunkHashes()
 {
-    chassert(stage == INITIAL);
-    stage = VIEW_ID;
+    if (stage != DEFINE_SOURCE_WITH_HASHES)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "token is in wrong stage {}, token {}", stage, debugToken());
+
+    stage = DEFINED;
 }
 
 void TokenInfo::setUserToken(const String & token)
 {
-    if (stage != INITIAL)
+    if (stage == UNDEFINED)
+        stage = DEFINE_SOURCE_USER_TOKEN;
+
+    if (stage != DEFINE_SOURCE_USER_TOKEN)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "token is in wrong stage {}, token {}", stage, debugToken());
 
     addTokenPart(fmt::format("user-token-{}", token));
-    stage = SOURCE_BLOCK_NUMBER;
 }
 
-void TokenInfo::setSourceBlockNumber(size_t block_number)
+void TokenInfo::defineSourceWithUserToken(size_t block_number)
 {
-    if (stage != SOURCE_BLOCK_NUMBER)
+    if (stage != DEFINE_SOURCE_USER_TOKEN)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "token is in wrong stage {}, token {}", stage, debugToken());
 
     addTokenPart(fmt::format("source-number-{}", block_number));
-    stage = VIEW_ID;
+
+    stage = DEFINED;
 }
 
 void TokenInfo::setViewID(const String & id)
 {
-    if (stage != VIEW_ID)
+    if (stage == DEFINED)
+        stage = DEFINE_VIEW;
+
+    if (stage != DEFINE_VIEW)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "token is in wrong stage {}, token {}", stage, debugToken());
 
     addTokenPart(fmt::format("view-id-{}", id));
-    stage = VIEW_BLOCK_NUMBER;
 }
 
-void TokenInfo::setViewBlockNumber(size_t block_number)
+void TokenInfo::defineViewID(size_t block_number)
 {
-    if (stage != VIEW_BLOCK_NUMBER)
+    if (stage != DEFINE_VIEW)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "token is in wrong stage {}, token {}", stage, debugToken());
 
     addTokenPart(fmt::format("view-block-{}", block_number));
-    stage = VIEW_ID;
+
+    stage = DEFINED;
 }
 
 void TokenInfo::reset()
 {
-    stage = INITIAL;
+    stage = UNDEFINED;
     parts.clear();
 }
 
@@ -145,7 +156,7 @@ void CheckTokenTransform::transform(Chunk & chunk)
 }
 #endif
 
-String SetInitialTokenTransform::getInitialToken(const Chunk & chunk)
+String SetInitialTokenTransform::getChunkHash(const Chunk & chunk)
 {
     SipHash hash;
     for (const auto & colunm : chunk.getColumns())
@@ -165,11 +176,11 @@ void SetInitialTokenTransform::transform(Chunk & chunk)
             ErrorCodes::LOGICAL_ERROR,
             "TokenInfo is expected for consumed chunk in SetInitialTokenTransform");
 
-    if (token_info->tokenInitialized())
+    if (token_info->isDefined())
         return;
 
-    token_info->addPieceToInitialToken(getInitialToken(chunk));
-    token_info->closeInitialToken();
+    token_info->addChunkHash(getChunkHash(chunk));
+    token_info->defineSourceWithChunkHashes();
 }
 
 void SetUserTokenTransform::transform(Chunk & chunk)
@@ -189,7 +200,7 @@ void SetSourceBlockNumberTransform::transform(Chunk & chunk)
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "TokenInfo is expected for consumed chunk in SetSourceBlockNumberTransform");
-    token_info->setSourceBlockNumber(block_number++);
+    token_info->defineSourceWithUserToken(block_number++);
 }
 
 void SetViewIDTransform::transform(Chunk & chunk)
@@ -209,7 +220,7 @@ void SetViewBlockNumberTransform::transform(Chunk & chunk)
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "TokenInfo is expected for consumed chunk in SetViewBlockNumberTransform");
-    token_info->setViewBlockNumber(block_number++);
+    token_info->defineViewID(block_number++);
 }
 
 void ResetTokenTransform::transform(Chunk & chunk)

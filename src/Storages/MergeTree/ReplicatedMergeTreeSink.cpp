@@ -304,7 +304,7 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::consume(Chunk & chunk)
                 "TokenInfo is expected for consumed chunk in ReplicatedMergeTreeSink for table: {}",
                 storage.getStorageID().getNameForLogs());
 
-        if (token_info->tokenInitialized())
+        if (token_info->isDefined())
             block_dedup_token = token_info->getToken();
     }
 
@@ -371,10 +371,10 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::consume(Chunk & chunk)
                 LOG_DEBUG(log, "Wrote block with {} rows{}", current_block.block.rows(), quorumLogMessage(replicas_num));
             }
 
-            if (!token_info->tokenInitialized())
+            if (!token_info->isDefined())
             {
                 chassert(temp_part.part);
-                token_info->addPieceToInitialToken(temp_part.part->getPartBlockIDHash());
+                token_info->addChunkHash(temp_part.part->getPartBlockIDHash());
             }
         }
 
@@ -421,9 +421,9 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::consume(Chunk & chunk)
         ));
     }
 
-    if (!token_info->tokenInitialized())
+    if (!token_info->isDefined())
     {
-        token_info->closeInitialToken();
+        token_info->defineSourceWithChunkHashes();
     }
 
     finishDelayedChunk(zookeeper);

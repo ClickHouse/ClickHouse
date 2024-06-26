@@ -92,7 +92,7 @@ void MergeTreeSink::consume(Chunk & chunk)
             storage.getStorageID().getNameForLogs());
 
     String block_dedup_token;
-    if (token_info->tokenInitialized())
+    if (token_info->isDefined())
         block_dedup_token = token_info->getToken();
 
     for (auto & current_block : part_blocks)
@@ -119,10 +119,10 @@ void MergeTreeSink::consume(Chunk & chunk)
         if (!temp_part.part)
             continue;
 
-        if (!token_info->tokenInitialized())
+        if (!token_info->isDefined())
         {
             chassert(temp_part.part);
-            token_info->addPieceToInitialToken(temp_part.part->getPartBlockIDHash());
+            token_info->addChunkHash(temp_part.part->getPartBlockIDHash());
         }
 
         if (!support_parallel_write && temp_part.part->getDataPartStorage().supportParallelWrite())
@@ -161,9 +161,9 @@ void MergeTreeSink::consume(Chunk & chunk)
         });
     }
 
-    if (!token_info->tokenInitialized())
+    if (!token_info->isDefined())
     {
-        token_info->closeInitialToken();
+        token_info->defineSourceWithChunkHashes();
     }
 
     finishDelayedChunk();
