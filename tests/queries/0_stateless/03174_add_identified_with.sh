@@ -82,19 +82,29 @@ echo "Should work"
 test_login_pwd ${user} '6'
 
 echo "Multiple identified with, not allowed"
-${CLICKHOUSE_CLIENT} --query "ALTER USER ${user} IDENTIFIED WITH plaintext_password '7' IDENTIFIED WITH plaintext_password '8'" 2>&1 | grep -m1 -o "SYNTAX_ERROR"
+${CLICKHOUSE_CLIENT} --query "ALTER USER ${user} IDENTIFIED WITH plaintext_password by '7' IDENTIFIED WITH plaintext_password by '8'" 2>&1 | grep -m1 -o "BAD_ARGUMENTS"
 echo "Multiple identified with, not allowed, even if mixed"
-${CLICKHOUSE_CLIENT} --query "ALTER USER ${user} IDENTIFIED WITH plaintext_password '7' ADD IDENTIFIED WITH plaintext_password '8' IDENTIFIED WITH plaintext_password '9'" 2>&1 | grep -m1 -o "SYNTAX_ERROR"
+${CLICKHOUSE_CLIENT} --query "ALTER USER ${user} IDENTIFIED WITH plaintext_password by '7' ADD IDENTIFIED WITH plaintext_password by '8' IDENTIFIED WITH plaintext_password by '9'" 2>&1 | grep -m1 -o "BAD_ARGUMENTS"
 echo "Identified with must precede all add identified with, not allowed"
-${CLICKHOUSE_CLIENT} --query "ALTER USER ${user} ADD IDENTIFIED WITH plaintext_password '7' IDENTIFIED WITH plaintext_password '8'" 2>&1 | grep -m1 -o "SYNTAX_ERROR"
+${CLICKHOUSE_CLIENT} --query "ALTER USER ${user} ADD IDENTIFIED WITH plaintext_password by '7' IDENTIFIED WITH plaintext_password by '8'" 2>&1 | grep -m1 -o "BAD_ARGUMENTS"
 
 ${CLICKHOUSE_CLIENT} --query "DROP USER ${user}"
 
 echo "CREATE Multiple identified with, not allowed"
-${CLICKHOUSE_CLIENT} --query "CREATE USER ${user} IDENTIFIED WITH plaintext_password '7' IDENTIFIED WITH plaintext_password '8'" 2>&1 | grep -m1 -o "SYNTAX_ERROR"
+${CLICKHOUSE_CLIENT} --query "CREATE USER ${user} IDENTIFIED WITH plaintext_password by '7' IDENTIFIED WITH plaintext_password by '8'" 2>&1 | grep -m1 -o "BAD_ARGUMENTS"
 echo "CREATE Multiple identified with, not allowed, even if mixed"
-${CLICKHOUSE_CLIENT} --query "CREATE USER ${user} IDENTIFIED WITH plaintext_password '7' ADD IDENTIFIED WITH plaintext_password '8' IDENTIFIED WITH plaintext_password '9'" 2>&1 | grep -m1 -o "SYNTAX_ERROR"
+${CLICKHOUSE_CLIENT} --query "CREATE USER ${user} IDENTIFIED WITH plaintext_password by '7' ADD IDENTIFIED WITH plaintext_password by '8' IDENTIFIED WITH plaintext_password by '9'" 2>&1 | grep -m1 -o "BAD_ARGUMENTS"
 echo "CREATE Identified with must precede all add identified with, not allowed"
-${CLICKHOUSE_CLIENT} --query "CREATE USER ${user} ADD IDENTIFIED WITH plaintext_password '7' IDENTIFIED WITH plaintext_password '8'" 2>&1 | grep -m1 -o "SYNTAX_ERROR"
+${CLICKHOUSE_CLIENT} --query "CREATE USER ${user} ADD IDENTIFIED WITH plaintext_password by '7' IDENTIFIED WITH plaintext_password by '8'" 2>&1 | grep -m1 -o "BAD_ARGUMENTS"
+
+${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS ${user}"
+
+echo "Create user with no identification"
+${CLICKHOUSE_CLIENT} --query "CREATE USER ${user}"
+
+echo "Add identified with"
+${CLICKHOUSE_CLIENT} --query "ALTER USER ${user} ADD IDENTIFIED WITH plaintext_password by '7'"
+
+${CLICKHOUSE_CLIENT} --query "SHOW CREATE USER ${user}"
 
 ${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS ${user}"
