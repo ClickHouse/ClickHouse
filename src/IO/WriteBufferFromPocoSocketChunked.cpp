@@ -17,6 +17,17 @@ void setValue(T * typed_ptr, std::type_identity_t<T> val)
 namespace DB
 {
 
+WriteBufferFromPocoSocketChunked::WriteBufferFromPocoSocketChunked(Poco::Net::Socket & socket_, size_t buf_size)
+    : WriteBufferFromPocoSocketChunked(socket_, ProfileEvents::end(), buf_size)
+{}
+
+WriteBufferFromPocoSocketChunked::WriteBufferFromPocoSocketChunked(Poco::Net::Socket & socket_, const ProfileEvents::Event & write_event_, size_t buf_size)
+    : WriteBufferFromPocoSocket(
+        socket_, write_event_,
+        std::clamp(buf_size, sizeof(*chunk_size_ptr) + 1, static_cast<size_t>(std::numeric_limits<std::remove_reference_t<decltype(*chunk_size_ptr)>>::max()))),
+        log(getLogger("Protocol"))
+{}
+
 void WriteBufferFromPocoSocketChunked::enableChunked()
 {
     chunked = true;

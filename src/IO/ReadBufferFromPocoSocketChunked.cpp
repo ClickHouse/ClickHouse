@@ -16,11 +16,11 @@ ReadBufferFromPocoSocketChunked::ReadBufferFromPocoSocketChunked(Poco::Net::Sock
 {}
 
 ReadBufferFromPocoSocketChunked::ReadBufferFromPocoSocketChunked(Poco::Net::Socket & socket_, const ProfileEvents::Event & read_event_, size_t buf_size)
-    : ReadBufferFromPocoSocketBase(socket_, read_event_, buf_size), our_address(socket_.address()), log(getLogger("Protocol"))
-
-{
-    chassert(buf_size <= std::numeric_limits<decltype(chunk_left)>::max());
-}
+    : ReadBufferFromPocoSocketBase(
+        socket_, read_event_,
+        std::min(buf_size, static_cast<size_t>(std::numeric_limits<decltype(chunk_left)>::max()))),
+        our_address(socket_.address()), log(getLogger("Protocol"))
+{}
 
 void ReadBufferFromPocoSocketChunked::enableChunked()
 {
