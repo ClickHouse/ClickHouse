@@ -125,7 +125,7 @@ public:
 
     void updateAggregationState();
     void writeOutCurrentRow();
-    void updateMiniRequiredRow();
+    void updateFirstRequiredRow();
 
     Columns & inputAt(const RowNumber & x)
     {
@@ -337,8 +337,8 @@ public:
     RowNumber prev_frame_start;
     RowNumber prev_frame_end;
 
-    /// Used to release blocks safely.
-    RowNumber mini_required_row;
+    /// Rows before this can be dropped safely.
+    RowNumber first_required_row;
 
     // Comparison function for RANGE OFFSET frames. We choose the appropriate
     // overload once, based on the type of the ORDER BY column. Choosing it for
