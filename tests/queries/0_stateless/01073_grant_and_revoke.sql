@@ -1,3 +1,5 @@
+-- Tags: no-parallel
+
 DROP USER IF EXISTS test_user_01073;
 DROP ROLE IF EXISTS test_role_01073;
 
