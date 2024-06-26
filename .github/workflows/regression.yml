@@ -205,7 +205,8 @@ jobs:
         run: |
           cat >> "$GITHUB_ENV" << 'EOF'
           REPORTS_PATH=${{ runner.temp }}/reports_dir
-          SUITE=alter-${{ matrix.ONLY }}_partition
+          SUITE=alter
+          STORAGE=/${{ matrix.ONLY }}_partition
           EOF
       - name: Download json reports
         uses: actions/download-artifact@v4
@@ -235,7 +236,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: ${{ env.SUITE }}-${{ inputs.arch }}-artifacts
+          name: alter-${{ matrix.ONLY }}-${{ inputs.arch }}-artifacts
           path: ${{ env.artifact_paths}}
 
   Benchmark:

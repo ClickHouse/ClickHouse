@@ -519,7 +519,7 @@ jobs:
     secrets: inherit
     with:
       runner_type: altinity-on-demand, altinity-type-cpx51, altinity-image-x86-app-docker-ce, altinity-setup-regression
-      commit: f1d3a6169b73f86828da3fbe85c99263054f82fb
+      commit: 86900811b0e15feef31a05c4da4966603b2f833e
       arch: release 
       build_sha: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
   RegressionTestsAarch64:
@@ -529,7 +529,7 @@ jobs:
     secrets: inherit
     with:
       runner_type: altinity-on-demand, altinity-type-cax41, altinity-image-arm-app-docker-ce, altinity-setup-regression
-      commit: f1d3a6169b73f86828da3fbe85c99263054f82fb
+      commit: 86900811b0e15feef31a05c4da4966603b2f833e
       arch: aarch64
       build_sha: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
   SignRelease:
@@ -547,6 +547,9 @@ jobs:
       - name: Clear repository
         run: |
           sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
+      - name: Pre run
+        run: |
+          python3 "$GITHUB_WORKSPACE/tests/ci/ci.py" --infile ${{ toJson(inputs.data) }} --pre
       - name: Check out repository code
         uses: actions/checkout@v4
       - name: Download json reports
