@@ -18,7 +18,6 @@ public:
     Float64 estimateEqual(Float64 val) const;
 
     void serialize(WriteBuffer & buf) override;
-
     void deserialize(ReadBuffer & buf) override;
 
     void update(const ColumnPtr & column) override;

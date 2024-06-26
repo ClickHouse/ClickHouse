@@ -17,7 +17,6 @@ public:
     UInt64 getCardinality();
 
     void serialize(WriteBuffer & buf) override;
-
     void deserialize(ReadBuffer & buf) override;
 
     void update(const ColumnPtr & column) override;

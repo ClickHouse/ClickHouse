@@ -30,7 +30,6 @@ public:
     virtual ~IStatistics() = default;
 
     virtual void serialize(WriteBuffer & buf) = 0;
-
     virtual void deserialize(ReadBuffer & buf) = 0;
 
     virtual void update(const ColumnPtr & column) = 0;

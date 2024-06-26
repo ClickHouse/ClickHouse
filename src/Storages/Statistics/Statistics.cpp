@@ -12,6 +12,8 @@
 #include <Storages/StatisticsDescription.h>
 #include <Common/Exception.h>
 
+#include "config.h" /// USE_DATASKETCHES
+
 namespace DB
 {
 

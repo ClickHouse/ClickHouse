@@ -1,24 +1,24 @@
 #pragma once
 
+#include <Storages/Statistics/Statistics.h>
+
+#include "config.h"
+
 #if USE_DATASKETCHES
 
-#include <Storages/Statistics/Statistics.h>
 #include <count_min.hpp>
-#include <Common/Allocator.h>
 
 namespace DB
 {
 
-/// CountMinSketchStatistics is used to estimate expression like col = 'value' or col in ('v1', 'v2').
 class CountMinSketchStatistics : public IStatistics
 {
 public:
-    explicit CountMinSketchStatistics(const SingleStatisticsDescription & stat_, DataTypePtr data_type_);
+    CountMinSketchStatistics(const SingleStatisticsDescription & stat_, DataTypePtr data_type_);
 
     Float64 estimateEqual(const Field & value) const;
 
     void serialize(WriteBuffer & buf) override;
-
     void deserialize(ReadBuffer & buf) override;
 
     void update(const ColumnPtr & column) override;
@@ -26,10 +26,10 @@ public:
     bool checkType(const Field & f);
 
 private:
-    static constexpr size_t HASH_COUNT = 8;
-    static constexpr size_t BUCKET_COUNT = 2048;
+    static constexpr auto HASH_COUNT = 8uz;
+    static constexpr auto BUCKET_COUNT = 2048uz;
 
-    datasketches::count_min_sketch<Float64> data;
+    datasketches::count_min_sketch<Float64> sketch;
     DataTypePtr data_type;
 };
 
