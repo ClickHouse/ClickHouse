@@ -779,6 +779,25 @@ void MutationsInterpreter::prepare(bool dry_run)
 
             stages.back().column_to_updated.emplace(column.name, materialized_column);
         }
+        else if (command.type == MutationCommand::MATERIALIZE_COLUMNS)
+        {
+            mutation_kind.set(MutationKind::MUTATE_OTHER);
+            if (stages.empty() || !stages.back().column_to_updated.empty())
+                stages.emplace_back(context);
+            if (stages.size() == 1) /// First stage only supports filtering and can't update columns.
+                stages.emplace_back(context);
+
+            for (const auto & column : columns_desc)
+            {
+                if (!column.default_desc.expression)
+                    continue;
+
+                auto materialized_column = makeASTFunction(
+                    "_CAST", column.default_desc.expression->clone(), std::make_shared<ASTLiteral>(column.type->getName()));
+
+                stages.back().column_to_updated.emplace(column.name, materialized_column);
+            }
+        }
         else if (command.type == MutationCommand::MATERIALIZE_INDEX)
         {
             mutation_kind.set(MutationKind::MUTATE_INDEX_STATISTICS_PROJECTION);
@@ -801,6 +820,23 @@ void MutationsInterpreter::prepare(bool dry_run)
                 materialized_indices.emplace(command.index_name);
             }
         }
+        else if (command.type == MutationCommand::MATERIALIZE_INDEXES)
+        {
+            mutation_kind.set(MutationKind::MUTATE_INDEX_STATISTICS_PROJECTION);
+            for (const auto & idx_desc : indices_desc)
+            {
+                if (!source.hasSecondaryIndex(idx_desc.name))
+                {
+                    auto query = idx_desc.expression_list_ast->clone();
+                    auto syntax_result = TreeRewriter(context).analyze(query, all_columns);
+                    const auto required_columns = syntax_result->requiredSourceColumns();
+                    for (const auto & column : required_columns)
+                        dependencies.emplace(column, ColumnDependency::SKIP_INDEX);
+                    materialized_indices.emplace(idx_desc.name);
+                    LOG_DEBUG(logger, "Will METERIALIZE INDEX={}", idx_desc.name);
+                }
+            }
+        }
         else if (command.type == MutationCommand::MATERIALIZE_STATISTICS)
         {
             mutation_kind.set(MutationKind::MUTATE_INDEX_STATISTICS_PROJECTION);
@@ -821,6 +857,19 @@ void MutationsInterpreter::prepare(bool dry_run)
                 for (const auto & column : projection.required_columns)
                     dependencies.emplace(column, ColumnDependency::PROJECTION);
                 materialized_projections.emplace(command.projection_name);
+            }
+        }
+        else if (command.type == MutationCommand::MATERIALIZE_PROJECTIONS)
+        {
+            mutation_kind.set(MutationKind::MUTATE_INDEX_STATISTICS_PROJECTION);
+            for (const auto & projection : projections_desc)
+            {
+                if (!source.hasProjection(projection.name) || source.hasBrokenProjection(projection.name))
+                {
+                    for (const auto & column : projection.required_columns)
+                        dependencies.emplace(column, ColumnDependency::PROJECTION);
+                    materialized_projections.emplace(projection.name);
+                }
             }
         }
         else if (command.type == MutationCommand::DROP_INDEX)

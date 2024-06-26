@@ -29,7 +29,9 @@ struct MutationCommand
         DELETE,
         UPDATE,
         MATERIALIZE_INDEX,
+        MATERIALIZE_INDEXES,
         MATERIALIZE_PROJECTION,
+        MATERIALIZE_PROJECTIONS,
         MATERIALIZE_STATISTICS,
         READ_COLUMN, /// Read column and apply conversions (MODIFY COLUMN alter query).
         DROP_COLUMN,
@@ -39,6 +41,7 @@ struct MutationCommand
         MATERIALIZE_TTL,
         RENAME_COLUMN,
         MATERIALIZE_COLUMN,
+        MATERIALIZE_COLUMNS,
         APPLY_DELETED_MASK,
         ALTER_WITHOUT_MUTATION, /// pure metadata command, currently unusned
     };
