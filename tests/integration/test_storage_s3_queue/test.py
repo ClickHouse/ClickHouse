@@ -1784,7 +1784,7 @@ def test_commit_on_limit(started_cluster):
 
     assert 1 == int(
         node.query(
-            "SELECT value FROM system.events WHERE name = 'S3QueueFailedFiles' SETTINGS system_events_show_zero_values=1"
+            "SELECT value FROM system.events WHERE name = 'ObjectStorageQueueFailedFiles' SETTINGS system_events_show_zero_values=1"
         )
     )
 
