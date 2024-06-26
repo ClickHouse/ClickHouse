@@ -79,7 +79,7 @@ SeekableReadBufferPtr ReadBufferFromRemoteFSGather::createImplementationBuffer(c
     std::unique_ptr<ReadBufferFromFileBase> buf;
 
 #ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD
-    if (with_file_cache)
+    if (with_file_cache && settings.remote_fs_cache->isFullyLoaded())
     {
         auto cache_key = settings.remote_fs_cache->createKeyForPath(object_path);
         buf = std::make_unique<CachedOnDiskReadBufferFromFile>(

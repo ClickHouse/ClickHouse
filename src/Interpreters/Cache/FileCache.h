@@ -82,6 +82,8 @@ public:
 
     bool isInitialized() const;
 
+    bool isFullyLoaded() const;
+
     const String & getBasePath() const;
 
     static Key createKeyForPath(const String & path);
@@ -209,6 +211,7 @@ private:
 
     std::exception_ptr init_exception;
     std::atomic<bool> is_initialized = false;
+    std::atomic<bool> is_fully_loaded = false;
     mutable std::mutex init_mutex;
     std::unique_ptr<StatusFile> status_file;
     std::atomic<bool> shutdown = false;

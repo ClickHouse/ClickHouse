@@ -138,6 +138,11 @@ bool FileCache::isInitialized() const
     return is_initialized.load(std::memory_order_seq_cst);
 }
 
+bool FileCache::isFullyLoaded() const
+{
+    return is_fully_loaded.load(std::memory_order_seq_cst);
+}
+
 const String & FileCache::getBasePath() const
 {
     return metadata.getBaseDirectory();
@@ -1136,7 +1141,8 @@ void FileCache::loadMetadata()
             "Please, check log for error messages");
     }
 
-    loadMetadataImpl();
+    ThreadFromGlobalPool load_metadata_main_thread([this] { loadMetadataImpl(); });
+    load_metadata_main_thread.detach();
 
     /// Shuffle file_segment_metadatas to have random order in LRUQueue
     /// as at startup all file_segment_metadatas have the same priority.
@@ -1224,6 +1230,8 @@ void FileCache::loadMetadataImpl()
 
     if (first_exception)
         std::rethrow_exception(first_exception);
+
+    is_fully_loaded = true;
 
 #ifdef ABORT_ON_LOGICAL_ERROR
     assertCacheCorrectness();
