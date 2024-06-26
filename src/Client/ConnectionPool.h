@@ -129,7 +129,7 @@ protected:
             host, port,
             default_database, user, password,
             proto_send_chunked, proto_recv_chunked,
-            SSHKey(), quota_key,
+            SSHKey(), /*jwt*/ "", quota_key,
             cluster, cluster_secret,
             client_name, compression, secure);
     }
