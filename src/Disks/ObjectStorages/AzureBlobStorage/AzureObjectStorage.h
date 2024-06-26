@@ -1,5 +1,4 @@
 #pragma once
-#include "Disks/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h"
 #include "config.h"
 
 #if USE_AZURE_BLOB_STORAGE
@@ -9,6 +8,7 @@
 #include <Common/MultiVersion.h>
 #include <azure/storage/blobs.hpp>
 #include <azure/core/http/curl_transport.hpp>
+#include <Disks/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
 
 namespace Poco
 {
