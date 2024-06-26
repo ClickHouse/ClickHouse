@@ -147,7 +147,10 @@ def test_drop():
     instance.query("DROP SETTINGS PROFILE s1")
 
     def check():
-        assert instance.query("SHOW CREATE USER u1") == "CREATE USER u1 IDENTIFIED WITH no_password\n"
+        assert (
+            instance.query("SHOW CREATE USER u1")
+            == "CREATE USER u1 IDENTIFIED WITH no_password\n"
+        )
         assert (
             instance.query("SHOW CREATE SETTINGS PROFILE s2")
             == "CREATE SETTINGS PROFILE `s2`\n"
