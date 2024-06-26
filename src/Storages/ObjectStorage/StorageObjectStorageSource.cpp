@@ -193,21 +193,21 @@ Chunk StorageObjectStorageSource::generate()
             progress(num_rows, chunk_size ? chunk_size : chunk.bytes());
 
             const auto & object_info = reader.getObjectInfo();
-            const auto & filename = object_info.getFileName();
-            chassert(object_info.metadata);
+            const auto & filename = object_info->getFileName();
+            chassert(object_info->metadata);
             VirtualColumnUtils::addRequestedFileLikeStorageVirtualsToChunk(
                 chunk, read_from_format_info.requested_virtual_columns,
                 {
-                    .path = getUniqueStoragePathIdentifier(*configuration, reader.getObjectInfo(), false),
-                    .size = object_info.metadata->size_bytes,
+                    .path = getUniqueStoragePathIdentifier(*configuration, *object_info, false),
+                    .size = object_info->metadata->size_bytes,
                     .filename = &filename,
-                    .last_modified = object_info.metadata->last_modified
+                    .last_modified = object_info->metadata->last_modified
                 });
             return chunk;
         }
 
         if (reader.getInputFormat() && getContext()->getSettingsRef().use_cache_for_count_from_files)
-            addNumRowsToCache(reader.getObjectInfo(), total_rows_in_file);
+            addNumRowsToCache(*reader.getObjectInfo(), total_rows_in_file);
 
         total_rows_in_file = 0;
 
