@@ -310,8 +310,8 @@ void TCPHandler::runImpl()
                 return chunked_srv;
             };
 
-            bool out_chunked = is_chunked(server.config().getString("proto_caps.send", "chunked"), proto_recv_chunked_cl, "send");
-            bool in_chunked = is_chunked(server.config().getString("proto_caps.recv", "chunked"), proto_send_chunked_cl, "recv");
+            bool out_chunked = is_chunked(server.config().getString("proto_caps.send", "chunked_optional"), proto_recv_chunked_cl, "send");
+            bool in_chunked = is_chunked(server.config().getString("proto_caps.recv", "chunked_optional"), proto_send_chunked_cl, "recv");
 
             if (out_chunked)
                 out->enableChunked();
