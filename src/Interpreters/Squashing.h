@@ -38,36 +38,39 @@ public:
 class Squashing
 {
 public:
-    explicit Squashing(size_t min_block_size_rows_, size_t min_block_size_bytes_);
+    explicit Squashing(Block header_, size_t min_block_size_rows_, size_t min_block_size_bytes_);
     Squashing(Squashing && other) = default;
 
     Chunk add(Chunk && input_chunk);
     static Chunk squash(Chunk && input_chunk);
     Chunk flush();
 
-    bool isDataLeft()
-    {
-        return !chunks_to_merge_vec.empty();
-    }
-
 private:
-    struct CurrentSize
+    class CurrentSize
     {
+        std::vector<Chunk> chunks = {};
         size_t rows = 0;
         size_t bytes = 0;
+
+    public:
+        explicit operator bool () const { return !chunks.empty(); }
+        size_t getRows() const { return rows; }
+        size_t getBytes() const { return bytes; }
+        void add(Chunk && chunk);
+        std::vector<Chunk> extract();
     };
 
-    std::vector<Chunk> chunks_to_merge_vec = {};
-    size_t min_block_size_rows;
-    size_t min_block_size_bytes;
+    const size_t min_block_size_rows;
+    const size_t min_block_size_bytes;
+    const Block header;
 
-    CurrentSize accumulated_size;
+    CurrentSize accumulated;
 
     static Chunk squash(std::vector<Chunk> && input_chunks, Chunk::ChunkInfoCollection && infos);
 
-    void expandCurrentSize(size_t rows, size_t bytes);
-    void changeCurrentSize(size_t rows, size_t bytes);
+    bool isEnoughSize() const;
     bool isEnoughSize(size_t rows, size_t bytes) const;
+    bool isEnoughSize(const Chunk & chunk) const;
 
     Chunk convertToChunk(std::vector<Chunk> && chunks) const;
 };

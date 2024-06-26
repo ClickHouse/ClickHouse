@@ -884,7 +884,7 @@ AsynchronousInsertQueue::PushResult TCPHandler::processAsyncInsertQuery(Asynchro
     using PushResult = AsynchronousInsertQueue::PushResult;
 
     startInsertQuery();
-    Squashing squashing(0, query_context->getSettingsRef().async_insert_max_data_size);
+    Squashing squashing(state.input_header, 0, query_context->getSettingsRef().async_insert_max_data_size);
 
     Block header = state.input_header;
 

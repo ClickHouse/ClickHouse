@@ -26,7 +26,6 @@ protected:
 private:
     Squashing squashing;
     Chunk cur_chunk;
-    Chunk::ChunkInfoCollection cur_chunkinfos;
     Chunk finish_chunk;
 };
 

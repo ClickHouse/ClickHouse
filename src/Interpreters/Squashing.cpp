@@ -10,22 +10,24 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-Squashing::Squashing(size_t min_block_size_rows_, size_t min_block_size_bytes_)
+Squashing::Squashing(Block header_, size_t min_block_size_rows_, size_t min_block_size_bytes_)
     : min_block_size_rows(min_block_size_rows_)
     , min_block_size_bytes(min_block_size_bytes_)
+    , header(header_)
 {
 }
 
 Chunk Squashing::flush()
 {
-    decltype(chunks_to_merge_vec) to_convert;
-    to_convert.swap(chunks_to_merge_vec);
-    return convertToChunk(std::move(to_convert));
+    if (!accumulated)
+        return {};
+
+    return convertToChunk(accumulated.extract());
 }
 
 Chunk Squashing::squash(Chunk && input_chunk)
 {
-    if (input_chunk.getChunkInfos().empty())
+    if (!input_chunk)
         return Chunk();
 
     auto squash_info = input_chunk.getChunkInfos().extract<ChunksToSquash>();
@@ -42,48 +44,39 @@ Chunk Squashing::add(Chunk && input_chunk)
         return {};
 
     /// Just read block is already enough.
-    if (isEnoughSize(input_chunk.getNumRows(), input_chunk.bytes()))
+    if (isEnoughSize(input_chunk))
     {
         /// If no accumulated data, return just read block.
-        if (chunks_to_merge_vec.empty())
+        if (!accumulated)
         {
-            chunks_to_merge_vec.push_back(std::move(input_chunk));
-            Chunk res_chunk = convertToChunk(std::move(chunks_to_merge_vec));
-            chunks_to_merge_vec.clear();
-            return res_chunk;
+            accumulated.add(std::move(input_chunk));
+            return convertToChunk(accumulated.extract());
         }
 
         /// Return accumulated data (maybe it has small size) and place new block to accumulated data.
-        Chunk res_chunk = convertToChunk(std::move(chunks_to_merge_vec));
-        chunks_to_merge_vec.clear();
-        changeCurrentSize(input_chunk.getNumRows(), input_chunk.bytes());
-        chunks_to_merge_vec.push_back(std::move(input_chunk));
+        Chunk res_chunk = convertToChunk(accumulated.extract());
+        accumulated.add(std::move(input_chunk));
         return res_chunk;
     }
 
     /// Accumulated block is already enough.
-    if (isEnoughSize(accumulated_size.rows, accumulated_size.bytes))
+    if (isEnoughSize())
     {
         /// Return accumulated data and place new block to accumulated data.
-        Chunk res_chunk = convertToChunk(std::move(chunks_to_merge_vec));
-        chunks_to_merge_vec.clear();
-        changeCurrentSize(input_chunk.getNumRows(), input_chunk.bytes());
-        chunks_to_merge_vec.push_back(std::move(input_chunk));
+        Chunk res_chunk = convertToChunk(accumulated.extract());
+        accumulated.add(std::move(input_chunk));
         return res_chunk;
     }
 
     /// Pushing data into accumulating vector
-    expandCurrentSize(input_chunk.getNumRows(), input_chunk.bytes());
-    chunks_to_merge_vec.push_back(std::move(input_chunk));
+    accumulated.add(std::move(input_chunk));
 
     /// If accumulated data is big enough, we send it
-    if (isEnoughSize(accumulated_size.rows, accumulated_size.bytes))
+    if (isEnoughSize())
     {
-        Chunk res_chunk = convertToChunk(std::move(chunks_to_merge_vec));
-        changeCurrentSize(0, 0);
-        chunks_to_merge_vec.clear();
-        return res_chunk;
+        return convertToChunk(accumulated.extract());
     }
+
     return {};
 }
 
@@ -95,7 +88,8 @@ Chunk Squashing::convertToChunk(std::vector<Chunk> && chunks) const
     auto info = std::make_shared<ChunksToSquash>();
     info->chunks = std::move(chunks);
 
-    auto aggr_chunk = Chunk();
+    // It is imortant that chunk is not empty, it has to have colums even if they are emty
+    auto aggr_chunk = Chunk(header.getColumns(), 0);
     aggr_chunk.getChunkInfos().add(std::move(info));
 
     return aggr_chunk;
@@ -136,22 +130,34 @@ Chunk Squashing::squash(std::vector<Chunk> && input_chunks, Chunk::ChunkInfoColl
     return accumulated_chunk;
 }
 
-void Squashing::expandCurrentSize(size_t rows, size_t bytes)
-{
-    accumulated_size.rows += rows;
-    accumulated_size.bytes += bytes;
-}
-
-void Squashing::changeCurrentSize(size_t rows, size_t bytes)
-{
-    accumulated_size.rows = rows;
-    accumulated_size.bytes = bytes;
-}
-
 bool Squashing::isEnoughSize(size_t rows, size_t bytes) const
 {
     return (!min_block_size_rows && !min_block_size_bytes)
         || (min_block_size_rows && rows >= min_block_size_rows)
         || (min_block_size_bytes && bytes >= min_block_size_bytes);
+}
+
+bool Squashing::isEnoughSize() const
+{
+    return isEnoughSize(accumulated.getRows(), accumulated.getBytes());
+};
+
+bool Squashing::isEnoughSize(const Chunk & chunk) const
+{
+    return isEnoughSize(chunk.getNumRows(), chunk.bytes());
+}
+
+void Squashing::CurrentSize::add(Chunk && chunk)
+{
+    rows += chunk.getNumRows();
+    bytes += chunk.bytes();
+    chunks.push_back(std::move(chunk));
+}
+
+std::vector<Chunk> Squashing::CurrentSize::extract()
+{
+    auto result = std::move(chunks);
+    *this = {};
+    return result;
 }
 }

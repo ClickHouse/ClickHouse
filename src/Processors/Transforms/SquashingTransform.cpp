@@ -12,15 +12,13 @@ extern const int LOGICAL_ERROR;
 SquashingTransform::SquashingTransform(
     const Block & header, size_t min_block_size_rows, size_t min_block_size_bytes)
     : ExceptionKeepingTransform(header, header, false)
-    , squashing(min_block_size_rows, min_block_size_bytes)
+    , squashing(header, min_block_size_rows, min_block_size_bytes)
 {
 }
 
 void SquashingTransform::onConsume(Chunk chunk)
 {
-    Chunk planned_chunk = squashing.add(std::move(chunk));
-    if (!planned_chunk.getChunkInfos().empty())
-        cur_chunk = DB::Squashing::squash(std::move(planned_chunk));
+    cur_chunk = DB::Squashing::squash(squashing.add(std::move(chunk)));
 }
 
 SquashingTransform::GenerateResult SquashingTransform::onGenerate()
@@ -33,10 +31,7 @@ SquashingTransform::GenerateResult SquashingTransform::onGenerate()
 
 void SquashingTransform::onFinish()
 {
-    Chunk chunk = squashing.flush();
-    if (!chunk.getChunkInfos().empty())
-        chunk = DB::Squashing::squash(std::move(chunk));
-    finish_chunk.setColumns(chunk.getColumns(), chunk.getNumRows());
+    finish_chunk = DB::Squashing::squash(squashing.flush());
 }
 
 void SquashingTransform::work()
@@ -49,6 +44,7 @@ void SquashingTransform::work()
     }
 
     ExceptionKeepingTransform::work();
+
     if (finish_chunk)
     {
         data.chunk = std::move(finish_chunk);
@@ -59,7 +55,7 @@ void SquashingTransform::work()
 SimpleSquashingTransform::SimpleSquashingTransform(
     const Block & header, size_t min_block_size_rows, size_t min_block_size_bytes)
     : ISimpleTransform(header, header, false)
-    , squashing(min_block_size_rows, min_block_size_bytes)
+    , squashing(header, min_block_size_rows, min_block_size_bytes)
 {
 }
 
@@ -67,18 +63,14 @@ void SimpleSquashingTransform::transform(Chunk & chunk)
 {
     if (!finished)
     {
-        Chunk planned_chunk = squashing.add(std::move(chunk));
-        if (!planned_chunk.getChunkInfos().empty())
-            chunk = DB::Squashing::squash(std::move(planned_chunk));
+        chunk = DB::Squashing::squash(squashing.add(std::move(chunk)));
     }
     else
     {
         if (chunk.hasRows())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Chunk expected to be empty, otherwise it will be lost");
 
-        chunk = squashing.flush();
-        if (!chunk.getChunkInfos().empty())
-            chunk = DB::Squashing::squash(std::move(chunk));
+        chunk = DB::Squashing::squash(squashing.flush());
     }
 }
 
