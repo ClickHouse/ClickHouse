@@ -35,6 +35,9 @@ public:
 
     virtual void update(const ColumnPtr & column) = 0;
 
+    static std::optional<Float64> getFloat64(const Field & f);
+    static std::optional<String> getString(const Field & f);
+
 protected:
     SingleStatisticsDescription stat;
 };
@@ -100,9 +103,5 @@ private:
     Creators creators;
     Validators validators;
 };
-
-std::optional<Float64> getFloat64(const Field & f);
-std::optional<String> getString(const Field & f);
-bool checkType(const Field & f);
 
 }

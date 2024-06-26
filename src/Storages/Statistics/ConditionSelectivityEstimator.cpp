@@ -37,7 +37,7 @@ Float64 ConditionSelectivityEstimator::ColumnSelectivityEstimator::estimateGreat
 
 Float64 ConditionSelectivityEstimator::ColumnSelectivityEstimator::estimateEqual(Field val, Float64 rows) const
 {
-    auto float_val = getFloat64(val);
+    auto float_val = IStatistics::getFloat64(val);
     if (part_statistics.empty())
     {
         if (!float_val)
@@ -148,7 +148,7 @@ Float64 ConditionSelectivityEstimator::estimateRowCount(const RPNBuilderTreeNode
     else
         dummy = true;
     auto [op, val] = extractBinaryOp(node, col);
-    auto float_val = getFloat64(val);
+    auto float_val = IStatistics::getFloat64(val);
     if (op == "equals")
     {
         if (dummy)

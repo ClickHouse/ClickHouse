@@ -27,7 +27,7 @@ enum StatisticsFileVersion : UInt16
     V0 = 0,
 };
 
-std::optional<Float64> getFloat64(const Field & f)
+std::optional<Float64> IStatistics::getFloat64(const Field & f)
 {
     const auto type = f.getType();
     Float64 value;
@@ -42,25 +42,11 @@ std::optional<Float64> getFloat64(const Field & f)
     return value;
 }
 
-std::optional<String> getString(const Field & f)
+std::optional<String> IStatistics::getString(const Field & f)
 {
     if (f.getType() == Field::Types::String)
         return f.get<String>();
     return {};
-}
-
-bool checkType(const Field & f)
-{
-    switch (f.getType())
-    {
-        case Field::Types::Int64:
-        case Field::Types::UInt64:
-        case Field::Types::Float64:
-        case Field::Types::String:
-            return true;
-        default:
-            return false;
-    }
 }
 
 IStatistics::IStatistics(const SingleStatisticsDescription & stat_) : stat(stat_) {}
@@ -93,7 +79,7 @@ Float64 ColumnStatistics::estimateGreater(Float64 val) const
 
 Float64 ColumnStatistics::estimateEqual(Field val) const
 {
-    auto float_val = getFloat64(val);
+    auto float_val = IStatistics::getFloat64(val);
     if (float_val && stats.contains(StatisticsType::Uniq) && stats.contains(StatisticsType::TDigest))
     {
         auto uniq_static = std::static_pointer_cast<UniqStatistics>(stats.at(StatisticsType::Uniq));
@@ -108,10 +94,11 @@ Float64 ColumnStatistics::estimateEqual(Field val) const
 #if USE_DATASKETCHES
     if (stats.contains(StatisticsType::CountMinSketch))
     {
-        if (!checkType(val))
-            return rows * ConditionSelectivityEstimator::default_normal_cond_factor;
         auto count_min_sketch_static = std::static_pointer_cast<CountMinSketchStatistics>(stats.at(StatisticsType::CountMinSketch));
-        return count_min_sketch_static->estimateEqual(val);
+        if (!count_min_sketch_static->checkType(val))
+            return rows * ConditionSelectivityEstimator::default_normal_cond_factor;
+        else
+            return count_min_sketch_static->estimateEqual(val);
     }
 #endif
     if (val < - ConditionSelectivityEstimator::threshold || val > ConditionSelectivityEstimator::threshold)

@@ -23,6 +23,8 @@ public:
 
     void update(const ColumnPtr & column) override;
 
+    bool checkType(const Field & f);
+
 private:
     static constexpr size_t HASH_COUNT = 8;
     static constexpr size_t BUCKET_COUNT = 2048;
