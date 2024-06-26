@@ -19,6 +19,7 @@ public:
             None
         };
 
+        void setProcessingEndTime();
         void onProcessing();
         void onProcessed();
         void onFailed(const std::string & exception);
@@ -54,13 +55,15 @@ public:
 
     bool setProcessing();
     void setProcessed();
-    void setFailed(const std::string & exception);
+    void setFailed(const std::string & exception_message, bool reduce_retry_count, bool overwrite_status);
 
     virtual void setProcessedAtStartRequests(
         Coordination::Requests & requests,
         const zkutil::ZooKeeperPtr & zk_client) = 0;
 
     FileStatusPtr getFileStatus() { return file_status; }
+    const std::string & getPath() const { return path; }
+    size_t getMaxTries() const { return max_loading_retries; }
 
     struct NodeMetadata
     {

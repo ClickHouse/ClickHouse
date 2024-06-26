@@ -87,7 +87,8 @@ private:
         const ReadFromFormatInfo & info,
         std::shared_ptr<StorageObjectStorageQueue::FileIterator> file_iterator,
         size_t max_block_size,
-        ContextPtr local_context);
+        ContextPtr local_context,
+        bool commit_once_processed);
 
     bool hasDependencies(const StorageID & table_id);
     bool streamToViews();

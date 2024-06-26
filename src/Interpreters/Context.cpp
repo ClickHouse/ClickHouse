@@ -91,6 +91,7 @@
 #include <Common/StackTrace.h>
 #include <Common/Config/ConfigHelper.h>
 #include <Common/Config/ConfigProcessor.h>
+#include <Common/Config/ConfigReloader.h>
 #include <Common/Config/AbstractConfigurationComparison.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ShellCommand.h>
@@ -367,6 +368,9 @@ struct ContextSharedPart : boost::noncopyable
     std::atomic_size_t max_view_num_to_warn = 10000lu;
     std::atomic_size_t max_dictionary_num_to_warn = 1000lu;
     std::atomic_size_t max_part_num_to_warn = 100000lu;
+    /// Only for system.server_settings, actually value stored in reloader itself
+    std::atomic_size_t config_reload_interval_ms = ConfigReloader::DEFAULT_RELOAD_INTERVAL.count();
+
     String format_schema_path;                              /// Path to a directory that contains schema files used by input formats.
     String google_protos_path; /// Path to a directory that contains the proto files for the well-known Protobuf types.
     mutable OnceFlag action_locks_manager_initialized;
@@ -679,6 +683,9 @@ struct ContextSharedPart : boost::noncopyable
             }
         }
 
+        LOG_TRACE(log, "Shutting down AccessControl");
+        access_control->shutdown();
+
         {
             std::lock_guard lock(mutex);
 
@@ -835,6 +842,7 @@ ContextMutablePtr Context::createGlobal(ContextSharedPart * shared_part)
     auto res = std::shared_ptr<Context>(new Context);
     res->shared = shared_part;
     res->query_access_info = std::make_shared<QueryAccessInfo>();
+    res->query_privileges_info = std::make_shared<QueryPrivilegesInfo>();
     return res;
 }
 
@@ -1427,7 +1435,7 @@ void Context::checkAccess(const AccessFlags & flags, const StorageID & table_id,
 void Context::checkAccess(const AccessRightsElement & element) const { checkAccessImpl(element); }
 void Context::checkAccess(const AccessRightsElements & elements) const { checkAccessImpl(elements); }
 
-std::shared_ptr<const ContextAccess> Context::getAccess() const
+std::shared_ptr<const ContextAccessWrapper> Context::getAccess() const
 {
     /// A helper function to collect parameters for calculating access rights, called with Context::getLocalSharedLock() acquired.
     auto get_params = [this]()
@@ -1444,14 +1452,14 @@ std::shared_ptr<const ContextAccess> Context::getAccess() const
     {
         SharedLockGuard lock(mutex);
         if (access && !need_recalculate_access)
-            return access; /// No need to recalculate access rights.
+            return std::make_shared<const ContextAccessWrapper>(access, shared_from_this()); /// No need to recalculate access rights.
 
         params.emplace(get_params());
 
         if (access && (access->getParams() == *params))
         {
             need_recalculate_access = false;
-            return access; /// No need to recalculate access rights.
+            return std::make_shared<const ContextAccessWrapper>(access, shared_from_this()); /// No need to recalculate access rights.
         }
     }
 
@@ -1471,7 +1479,7 @@ std::shared_ptr<const ContextAccess> Context::getAccess() const
         }
     }
 
-    return res;
+    return std::make_shared<const ContextAccessWrapper>(res, shared_from_this());
 }
 
 RowPolicyFilterPtr Context::getRowPolicyFilter(const String & database, const String & table_name, RowPolicyFilterType filter_type) const
@@ -1855,6 +1863,15 @@ void Context::addQueryFactoriesInfo(QueryLogFactories factory_type, const String
         case QueryLogFactories::TableFunction:
             query_factories_info.table_functions.emplace(created_object);
     }
+}
+
+void Context::addQueryPrivilegesInfo(const String & privilege, bool granted) const
+{
+    std::lock_guard lock(query_privileges_info->mutex);
+    if (granted)
+        query_privileges_info->used_privileges.emplace(privilege);
+    else
+        query_privileges_info->missing_privileges.emplace(privilege);
 }
 
 static bool findIdentifier(const ASTFunction * function)
@@ -2538,6 +2555,7 @@ void Context::makeQueryContext()
     local_read_query_throttler.reset();
     local_write_query_throttler.reset();
     backups_query_throttler.reset();
+    query_privileges_info = std::make_shared<QueryPrivilegesInfo>(*query_privileges_info);
 }
 
 void Context::makeQueryContextForMerge(const MergeTreeSettings & merge_tree_settings)
@@ -4496,6 +4514,16 @@ void Context::checkPartitionCanBeDropped(const String & database, const String &
 void Context::checkPartitionCanBeDropped(const String & database, const String & table, const size_t & partition_size, const size_t & max_partition_size_to_drop) const
 {
     checkCanBeDropped(database, table, partition_size, max_partition_size_to_drop);
+}
+
+void Context::setConfigReloaderInterval(size_t value_ms)
+{
+    shared->config_reload_interval_ms.store(value_ms, std::memory_order_relaxed);
+}
+
+size_t Context::getConfigReloaderInterval() const
+{
+    return shared->config_reload_interval_ms.load(std::memory_order_relaxed);
 }
 
 InputFormatPtr Context::getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size, const std::optional<FormatSettings> & format_settings, std::optional<size_t> max_parsing_threads) const

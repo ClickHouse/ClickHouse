@@ -127,6 +127,9 @@ ObjectStorageQueueMetadata::ObjectStorageQueueMetadata(const fs::path & zookeepe
             generateRescheduleInterval(
                 settings.cleanup_interval_min_ms, settings.cleanup_interval_max_ms));
     }
+    LOG_TRACE(log, "Mode: {}, buckets: {}, processing threads: {}, result buckets num: {}",
+              settings.mode.toString(), settings.buckets, settings.processing_threads_num, buckets_num);
+
 }
 
 ObjectStorageQueueMetadata::~ObjectStorageQueueMetadata()
@@ -213,7 +216,7 @@ ObjectStorageQueueMetadata::Bucket ObjectStorageQueueMetadata::getBucketForPath(
 ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr
 ObjectStorageQueueMetadata::tryAcquireBucket(const Bucket & bucket, const Processor & processor)
 {
-    return ObjectStorageQueueOrderedFileMetadata::tryAcquireBucket(zookeeper_path, bucket, processor);
+    return ObjectStorageQueueOrderedFileMetadata::tryAcquireBucket(zookeeper_path, bucket, processor, log);
 }
 
 void ObjectStorageQueueMetadata::initialize(

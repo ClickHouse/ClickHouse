@@ -22,6 +22,7 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/prepareReadingFromFormat.h>
 #include <Storages/ObjectStorage/Utils.h>
+#include <Common/getNumberOfPhysicalCPUCores.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 #include <filesystem>
@@ -60,7 +61,11 @@ namespace
         return zkutil::extractZooKeeperPath(result_zk_path, true);
     }
 
-    void checkAndAdjustSettings(ObjectStorageQueueSettings & queue_settings, bool is_attach)
+    void checkAndAdjustSettings(
+        ObjectStorageQueueSettings & queue_settings,
+        ASTStorage * engine_args,
+        bool is_attach,
+        const LoggerPtr & log)
     {
         if (!is_attach && !queue_settings.mode.changed)
         {
@@ -78,6 +83,16 @@ namespace
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                             "Setting `cleanup_interval_min_ms` ({}) must be less or equal to `cleanup_interval_max_ms` ({})",
                             queue_settings.cleanup_interval_min_ms, queue_settings.cleanup_interval_max_ms);
+        }
+
+        if (!is_attach && !queue_settings.processing_threads_num.changed)
+        {
+            queue_settings.processing_threads_num = std::max<uint32_t>(getNumberOfPhysicalCPUCores(), 16);
+            engine_args->settings->as<ASTSetQuery>()->changes.insertSetting(
+                "processing_threads_num",
+                queue_settings.processing_threads_num.value);
+
+            LOG_TRACE(log, "Set `processing_threads_num` to {}", queue_settings.processing_threads_num);
         }
     }
 
@@ -101,6 +116,7 @@ namespace
             default:
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected object storage type: {}", storage->getType());
         }
+
     }
 }
 
@@ -113,7 +129,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     const String & comment,
     ContextPtr context_,
     std::optional<FormatSettings> format_settings_,
-    ASTStorage * /* engine_args */,
+    ASTStorage * engine_args,
     LoadingStrictnessLevel mode)
     : IStorage(table_id_)
     , WithContext(context_)
@@ -137,7 +153,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
         throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "ObjectStorageQueue url must either end with '/' or contain globs");
     }
 
-    checkAndAdjustSettings(*queue_settings, mode > LoadingStrictnessLevel::CREATE);
+    checkAndAdjustSettings(*queue_settings, engine_args, mode > LoadingStrictnessLevel::CREATE, log);
 
     object_storage = configuration->createObjectStorage(context_, /* is_readonly */true);
     FormatFactory::instance().checkFormatName(configuration->format);
@@ -311,10 +327,12 @@ void ReadFromObjectStorageQueue::initializePipeline(QueryPipelineBuilder & pipel
     createIterator(nullptr);
     for (size_t i = 0; i < adjusted_num_streams; ++i)
         pipes.emplace_back(storage->createSource(
-                               i,
+                               i/* processor_id */,
                                info,
                                iterator,
-                               max_block_size, context));
+                               max_block_size,
+                               context,
+                               true/* commit_once_processed */));
 
     auto pipe = Pipe::unitePipes(std::move(pipes));
     if (pipe.empty())
@@ -331,7 +349,8 @@ std::shared_ptr<ObjectStorageQueueSource> StorageObjectStorageQueue::createSourc
     const ReadFromFormatInfo & info,
     std::shared_ptr<StorageObjectStorageQueue::FileIterator> file_iterator,
     size_t max_block_size,
-    ContextPtr local_context)
+    ContextPtr local_context,
+    bool commit_once_processed)
 {
     auto internal_source = std::make_unique<StorageObjectStorageSource>(
         getName(),
@@ -364,7 +383,12 @@ std::shared_ptr<ObjectStorageQueueSource> StorageObjectStorageQueue::createSourc
         table_is_being_dropped,
         getQueueLog(object_storage, local_context, *queue_settings),
         getStorageID(),
-        log);
+        log,
+        queue_settings->max_processed_files_before_commit,
+        queue_settings->max_processed_rows_before_commit,
+        queue_settings->max_processed_bytes_before_commit,
+        queue_settings->max_processing_time_sec_before_commit,
+        commit_once_processed);
 }
 
 bool StorageObjectStorageQueue::hasDependencies(const StorageID & table_id)
@@ -439,48 +463,83 @@ void StorageObjectStorageQueue::threadFunc()
 
 bool StorageObjectStorageQueue::streamToViews()
 {
+    // Create a stream for each consumer and join them in a union stream
+    // Only insert into dependent views and expect that input blocks contain virtual columns
+
     auto table_id = getStorageID();
     auto table = DatabaseCatalog::instance().getTable(table_id, getContext());
     if (!table)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Engine table {} doesn't exist.", table_id.getNameForLogs());
 
-    auto storage_snapshot = getStorageSnapshot(getInMemoryMetadataPtr(), getContext());
-
-    // Create an INSERT query for streaming data
     auto insert = std::make_shared<ASTInsertQuery>();
     insert->table_id = table_id;
 
-    auto context = Context::createCopy(getContext());
-    context->makeQueryContext();
+    auto storage_snapshot = getStorageSnapshot(getInMemoryMetadataPtr(), getContext());
+    auto queue_context = Context::createCopy(getContext());
+    queue_context->makeQueryContext();
 
-    // Create a stream for each consumer and join them in a union stream
-    // Only insert into dependent views and expect that input blocks contain virtual columns
-    InterpreterInsertQuery interpreter(insert, context, false, true, true);
-    auto block_io = interpreter.execute();
-    auto file_iterator = createFileIterator(context, nullptr);
+    auto file_iterator = createFileIterator(queue_context, nullptr);
+    size_t total_rows = 0;
 
-    auto read_from_format_info = prepareReadingFromFormat(block_io.pipeline.getHeader().getNames(), storage_snapshot, supportsSubsetOfColumns(context));
-
-    Pipes pipes;
-    pipes.reserve(queue_settings->processing_threads_num);
-    for (size_t i = 0; i < queue_settings->processing_threads_num; ++i)
+    while (!shutdown_called && !file_iterator->isFinished())
     {
-        auto source = createSource(i, read_from_format_info, file_iterator, DBMS_DEFAULT_BUFFER_SIZE, context);
-        pipes.emplace_back(std::move(source));
+        InterpreterInsertQuery interpreter(insert, queue_context, false, true, true);
+        auto block_io = interpreter.execute();
+        auto read_from_format_info = prepareReadingFromFormat(
+            block_io.pipeline.getHeader().getNames(),
+            storage_snapshot,
+            supportsSubsetOfColumns(queue_context));
+
+        Pipes pipes;
+        std::vector<std::shared_ptr<ObjectStorageQueueSource>> sources;
+
+        pipes.reserve(queue_settings->processing_threads_num);
+        sources.reserve(queue_settings->processing_threads_num);
+
+        for (size_t i = 0; i < queue_settings->processing_threads_num; ++i)
+        {
+            auto source = createSource(
+                i/* processor_id */,
+                read_from_format_info,
+                file_iterator,
+                DBMS_DEFAULT_BUFFER_SIZE,
+                queue_context,
+                false/* commit_once_processed */);
+
+            pipes.emplace_back(source);
+            sources.emplace_back(source);
+        }
+        auto pipe = Pipe::unitePipes(std::move(pipes));
+
+        block_io.pipeline.complete(std::move(pipe));
+        block_io.pipeline.setNumThreads(queue_settings->processing_threads_num);
+        block_io.pipeline.setConcurrencyControl(queue_context->getSettingsRef().use_concurrency_control);
+
+        std::atomic_size_t rows = 0;
+        block_io.pipeline.setProgressCallback([&](const Progress & progress) { rows += progress.read_rows.load(); });
+
+        try
+        {
+            CompletedPipelineExecutor executor(block_io.pipeline);
+            executor.execute();
+        }
+        catch (...)
+        {
+            for (auto & source : sources)
+                source->commit(/* success */false, getCurrentExceptionMessage(true));
+
+            file_iterator->releaseFinishedBuckets();
+            throw;
+        }
+
+        for (auto & source : sources)
+            source->commit(/* success */true);
+
+        file_iterator->releaseFinishedBuckets();
+        total_rows += rows;
     }
-    auto pipe = Pipe::unitePipes(std::move(pipes));
 
-    block_io.pipeline.complete(std::move(pipe));
-    block_io.pipeline.setNumThreads(queue_settings->processing_threads_num);
-    block_io.pipeline.setConcurrencyControl(context->getSettingsRef().use_concurrency_control);
-
-    std::atomic_size_t rows = 0;
-    block_io.pipeline.setProgressCallback([&](const Progress & progress) { rows += progress.read_rows.load(); });
-
-    CompletedPipelineExecutor executor(block_io.pipeline);
-    executor.execute();
-
-    return rows > 0;
+    return total_rows > 0;
 }
 
 zkutil::ZooKeeperPtr StorageObjectStorageQueue::getZooKeeper() const
