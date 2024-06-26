@@ -4519,7 +4519,7 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
 
                 auto nodes = arg_func->getArguments().getNodes();
                 if (nodes.size() != 2)
-                    return;
+                    continue;
 
                 if (auto * identifier_node = nodes[0]->as<IdentifierNode>())
                 {
