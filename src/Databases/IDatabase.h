@@ -118,7 +118,7 @@ struct SnapshotDetachedTable final
     String table;
     UUID uuid = UUIDHelpers::Nil;
     String metadata_path;
-    bool is_permanently{false};
+    bool is_permanently{};
 };
 
 class DatabaseDetachedTablesSnapshotIterator
@@ -286,7 +286,7 @@ public:
     virtual DatabaseDetachedTablesSnapshotIteratorPtr getDetachedTablesIterator(
         ContextPtr /*context*/, const FilterByNameFunction & /*filter_by_table_name = {}*/, bool /*skip_not_loaded = false*/) const
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "There is no get detached tables for Database {}", getEngineName());
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get detached tables for Database{}", getEngineName());
     }
 
     /// Returns list of table names.

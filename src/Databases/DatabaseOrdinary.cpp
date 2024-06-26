@@ -227,31 +227,18 @@ void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTables
                     permanently_detached_tables.push_back(table_name);
                     LOG_DEBUG(log, "Skipping permanently detached table {}.", backQuote(table_name));
 
-                    auto parsed_table_metadata = ParsedTableMetadata{full_path.string(), ast};
-                    const auto & query = parsed_table_metadata.ast->as<const ASTCreateQuery &>();
-
                     std::lock_guard lock(mutex);
 
-                    auto [detached_table_name, table] = createTableFromAST(
-                        query,
-                        database_name,
-                        getTableDataPath(query),
-                        std::const_pointer_cast<Context>(local_context),
-                        LoadingStrictnessLevel::CREATE);
+                    const auto detached_table_name = create_query->getTable();
 
-                    const auto storage_id = table->getStorageID();
-
-                    SnapshotDetachedTable snapshot_detached_table;
-                    snapshot_detached_table.database = storage_id.getDatabaseName();
-                    snapshot_detached_table.table = detached_table_name;
-                    if (storage_id.hasUUID())
-                    {
-                        snapshot_detached_table.uuid = storage_id.uuid;
-                    }
-                    snapshot_detached_table.is_permanently = true;
-                    snapshot_detached_table.metadata_path = getObjectMetadataPath(snapshot_detached_table.table);
-
-                    snapshot_detached_tables.emplace(detached_table_name, std::move(snapshot_detached_table));
+                    snapshot_detached_tables.emplace(
+                        detached_table_name,
+                        SnapshotDetachedTable{
+                            .database = create_query->getDatabase(),
+                            .table = detached_table_name,
+                            .uuid = create_query->uuid,
+                            .metadata_path = getObjectMetadataPath(detached_table_name),
+                            .is_permanently = true});
 
                     LOG_TRACE(log, "Add permanently detached table {} to system.detached_tables", detached_table_name);
                     return;

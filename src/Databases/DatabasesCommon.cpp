@@ -2,6 +2,10 @@
 
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/RestorerFromBackup.h>
+#include <Common/CurrentMetrics.h>
+#include <Common/escapeForFileName.h>
+#include <Common/logger_useful.h>
+#include <Common/typeid_cast.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterCreateQuery.h>
@@ -13,10 +17,6 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/Utils.h>
 #include <TableFunctions/TableFunctionFactory.h>
-#include <Common/CurrentMetrics.h>
-#include <Common/escapeForFileName.h>
-#include <Common/logger_useful.h>
-#include <Common/typeid_cast.h>
 
 
 namespace DB
@@ -245,26 +245,15 @@ DatabaseDetachedTablesSnapshotIteratorPtr DatabaseWithOwnTablesBase::getDetached
     if (!filter_by_table_name)
         return std::make_unique<DatabaseDetachedTablesSnapshotIterator>(snapshot_detached_tables);
 
-    SnapshotDetachedTables filtered_tables;
-    for (const auto & [table_name, storage] : tables)
-        if (filter_by_table_name(table_name))
+    SnapshotDetachedTables filtered_detached_tables;
+    for (const auto & [detached_table_name, snapshot] : snapshot_detached_tables)
+        if (filter_by_table_name(detached_table_name))
         {
-            SnapshotDetachedTable snapshot_detached_table;
-            snapshot_detached_table.database = storage->getStorageID().getDatabaseName();
-            snapshot_detached_table.table = table_name;
-            if (storage->getStorageID().hasUUID())
-            {
-                snapshot_detached_table.uuid = storage->getStorageID().uuid;
-            }
-
-            snapshot_detached_table.is_permanently = false;
-            snapshot_detached_table.metadata_path = getObjectMetadataPath(snapshot_detached_table.table);
-
-            filtered_tables.emplace(table_name, std::move(snapshot_detached_table));
+            filtered_detached_tables.emplace(detached_table_name, snapshot);
         }
 
 
-    return std::make_unique<DatabaseDetachedTablesSnapshotIterator>(std::move(filtered_tables));
+    return std::make_unique<DatabaseDetachedTablesSnapshotIterator>(std::move(filtered_detached_tables));
 }
 
 bool DatabaseWithOwnTablesBase::empty() const
@@ -289,17 +278,14 @@ StoragePtr DatabaseWithOwnTablesBase::detachTableUnlocked(const String & table_n
                         backQuote(database_name), backQuote(table_name));
     res = it->second;
 
-    SnapshotDetachedTable snapshot_detached_table;
-    snapshot_detached_table.database = it->second->getStorageID().getDatabaseName();
-    snapshot_detached_table.table = it->first;
-    if (it->second->getStorageID().hasUUID())
-    {
-        snapshot_detached_table.uuid = it->second->getStorageID().uuid;
-    }
-    snapshot_detached_table.is_permanently = false;
-    snapshot_detached_table.metadata_path = getObjectMetadataPath(snapshot_detached_table.table);
-
-    snapshot_detached_tables.emplace(it->first, std::move(snapshot_detached_table));
+    snapshot_detached_tables.emplace(
+        it->first,
+        SnapshotDetachedTable{
+            .database = it->second->getStorageID().getDatabaseName(),
+            .table = it->first,
+            .uuid = it->second->getStorageID().uuid,
+            .metadata_path = getObjectMetadataPath(it->first),
+            .is_permanently = false});
 
     tables.erase(it);
     res->is_detached = true;
