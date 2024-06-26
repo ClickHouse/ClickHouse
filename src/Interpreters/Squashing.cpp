@@ -88,7 +88,7 @@ Chunk Squashing::convertToChunk(std::vector<Chunk> && chunks) const
     auto info = std::make_shared<ChunksToSquash>();
     info->chunks = std::move(chunks);
 
-    // It is imortant that chunk is not empty, it has to have colums even if they are emty
+    // It is imortant that chunk is not empty, it has to have columns even if they are empty
     auto aggr_chunk = Chunk(header.getColumns(), 0);
     aggr_chunk.getChunkInfos().add(std::move(info));
 
