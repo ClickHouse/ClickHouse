@@ -180,7 +180,8 @@ class JobNames(metaclass=WithIter):
     DOCS_CHECK = "Docs check"
     BUGFIX_VALIDATE = "Bugfix validation"
 
-    SIGN_RELEASE = "Sign release (actions)"
+    SIGN_RELEASE = "Sign release"
+    SIGN_AARCH64 = "Sign aarch64"
 
 
 # dynamically update JobName with Build jobs
@@ -1346,6 +1347,9 @@ CI_CONFIG = CIConfig(
         ),  # type: ignore
         JobNames.SIGN_RELEASE: TestConfig(
             Build.PACKAGE_RELEASE
+        ),
+        JobNames.SIGN_AARCH64: TestConfig(
+            Build.PACKAGE_AARCH64
         ),
     },
 )

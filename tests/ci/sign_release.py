@@ -12,7 +12,7 @@ from pathlib import Path
 GPG_BINARY_SIGNING_KEY = os.getenv("GPG_BINARY_SIGNING_KEY")
 GPG_BINARY_SIGNING_PASSPHRASE = os.getenv("GPG_BINARY_SIGNING_PASSPHRASE")
 
-CHECK_NAME = "Sign release (actions)"
+CHECK_NAME = os.getenv("CHECK_NAME", "Sign release")
 
 def hash_file(file_path):
     BLOCK_SIZE = 65536 # The size of each read from the file

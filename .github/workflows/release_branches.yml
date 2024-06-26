@@ -543,6 +543,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/signed
           REPORTS_PATH=${{runner.temp}}/reports_dir
+          CHECK_NAME="Sign release"
           EOF
       - name: Clear repository
         run: |
@@ -551,7 +552,47 @@ jobs:
         uses: actions/checkout@v4
       - name: Download json reports
         run: |
-          python3 "$GITHUB_WORKSPACE/tests/ci/ci.py" --infile ${{ toJson(inputs.data) }} --pre
+          python3 "$GITHUB_WORKSPACE/tests/ci/ci.py" --infile ${{ toJson(inputs.data) }} --pre --job-name 'Sign release'
+      - name: Sign release
+        env:
+          GPG_BINARY_SIGNING_KEY: ${{ secrets.GPG_BINARY_SIGNING_KEY }}
+          GPG_BINARY_SIGNING_PASSPHRASE: ${{ secrets.GPG_BINARY_SIGNING_PASSPHRASE }}
+          REPORTS_PATH: ${{ env.REPORTS_PATH }}
+        run: |
+          cd "$GITHUB_WORKSPACE/tests/ci"
+          python3 sign_release.py
+      - name: Upload signed hashes
+        uses: actions/upload-artifact@v4
+        with:
+          name: signed-hashes
+          path: ${{ env.TEMP_PATH }}/*.gpg
+      - name: Cleanup
+        if: always()
+        run: |
+          docker ps --quiet | xargs --no-run-if-empty docker kill ||:
+          docker ps --all --quiet | xargs --no-run-if-empty docker rm -f ||:
+          sudo rm -fr "$TEMP_PATH"
+  SignAarch64:
+    needs: [BuilderDebAarch64]
+    if: ${{ !failure() && !cancelled() }}
+    runs-on: [self-hosted, altinity-on-demand, altinity-type-cpx41, altinity-in-ash, altinity-image-x86-system-ubuntu-22.04]
+    timeout-minutes: 180
+    steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/signed
+          REPORTS_PATH=${{runner.temp}}/reports_dir
+          CHECK_NAME="Sign aarch64"
+          EOF
+      - name: Clear repository
+        run: |
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
+      - name: Check out repository code
+        uses: actions/checkout@v4
+      - name: Download json reports
+        run: |
+          python3 "$GITHUB_WORKSPACE/tests/ci/ci.py" --infile ${{ toJson(inputs.data) }} --pre --job-name 'Sign aarch64'
       - name: Sign release
         env:
           GPG_BINARY_SIGNING_KEY: ${{ secrets.GPG_BINARY_SIGNING_KEY }}
