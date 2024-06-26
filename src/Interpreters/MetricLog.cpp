@@ -7,7 +7,6 @@
 #include <Interpreters/MetricLog.h>
 #include <base/getFQDNOrHostName.h>
 #include <Common/DateLUTImpl.h>
-#include <Common/ThreadPool.h>
 
 
 namespace DB

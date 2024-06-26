@@ -93,6 +93,7 @@ class Clusters;
 class QueryCache;
 class ISystemLog;
 class QueryLog;
+class QueryLogMetric;
 class QueryThreadLog;
 class QueryViewsLog;
 class PartLog;
@@ -1151,6 +1152,7 @@ public:
     std::shared_ptr<AsynchronousInsertLog> getAsynchronousInsertLog() const;
     std::shared_ptr<BackupLog> getBackupLog() const;
     std::shared_ptr<BlobStorageLog> getBlobStorageLog() const;
+    std::shared_ptr<QueryLogMetric> getQueryLogMetric() const;
 
     std::vector<ISystemLog *> getSystemLogs() const;
 

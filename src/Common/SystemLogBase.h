@@ -31,7 +31,8 @@
     M(AsynchronousInsertLogElement) \
     M(BackupLogElement) \
     M(BlobStorageLogElement) \
-    M(ErrorLogElement)
+    M(ErrorLogElement) \
+    M(QueryLogMetricElement)
 
 namespace Poco
 {

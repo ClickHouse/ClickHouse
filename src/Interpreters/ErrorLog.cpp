@@ -7,7 +7,6 @@
 #include <Interpreters/ErrorLog.h>
 #include <base/getFQDNOrHostName.h>
 #include <Common/DateLUTImpl.h>
-#include <Common/ThreadPool.h>
 #include <Common/ErrorCodes.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/parseQuery.h>

@@ -1,0 +1,78 @@
+#include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <Interpreters/QueryLogMetric.h>
+#include <base/getFQDNOrHostName.h>
+#include <Common/DateLUTImpl.h>
+#include <Parsers/ExpressionElementParsers.h>
+#include <Parsers/parseQuery.h>
+
+
+namespace DB
+{
+
+ColumnsDescription QueryLogMetricElement::getColumnsDescription()
+{
+    ColumnsDescription result;
+    ParserCodec codec_parser;
+
+    result.add({"hostname",
+                std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
+                parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
+                "Hostname of the server executing the query."});
+    result.add({"event_date",
+                std::make_shared<DataTypeDate>(),
+                parseQuery(codec_parser, "(Delta(2), ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
+                "Event date."});
+    result.add({"event_time",
+                std::make_shared<DataTypeDateTime>(),
+                parseQuery(codec_parser, "(Delta(4), ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
+                "Event time."});
+    result.add({"query_id",
+                std::make_shared<DataTypeString>(),
+                parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
+                "Query ID."});
+    result.add({"time_window_microseconds",
+                std::make_shared<DataTypeUInt64>(),
+                parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
+                "Time window in microseconds."});
+
+    for (size_t i = 0, end = ProfileEvents::end(); i < end; ++i)
+    {
+        auto name = fmt::format("ProfileEvent_{}", ProfileEvents::getName(ProfileEvents::Event(i)));
+        const auto * comment = ProfileEvents::getDocumentation(ProfileEvents::Event(i));
+        result.add({std::move(name), std::make_shared<DataTypeUInt64>(), comment});
+    }
+
+    for (size_t i = 0, end = CurrentMetrics::end(); i < end; ++i)
+    {
+        auto name = fmt::format("CurrentMetric_{}", CurrentMetrics::getName(CurrentMetrics::Metric(i)));
+        const auto * comment = CurrentMetrics::getDocumentation(CurrentMetrics::Metric(i));
+        result.add({std::move(name), std::make_shared<DataTypeInt64>(), comment});
+    }
+
+    return result;
+}
+
+void QueryLogMetricElement::appendToBlock(MutableColumns & columns) const
+{
+    size_t column_idx = 0;
+
+    columns[column_idx++]->insert(getFQDNOrHostName());
+    columns[column_idx++]->insert(DateLUT::instance().toDayNum(event_time).toUnderType());
+    columns[column_idx++]->insert(event_time);
+    columns[column_idx++]->insert(event_time_microseconds);
+    columns[column_idx++]->insert(query_id);
+    columns[column_idx++]->insert(time_window_microseconds);
+
+    for (size_t i = 0, end = ProfileEvents::end(); i < end; ++i)
+        columns[column_idx++]->insert(profile_events[i]);
+
+    for (size_t i = 0, end = CurrentMetrics::end(); i < end; ++i)
+        columns[column_idx++]->insert(current_metrics[i].toUnderType());
+}
+
+}
