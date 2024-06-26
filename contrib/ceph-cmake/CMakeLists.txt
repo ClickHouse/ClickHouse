@@ -325,7 +325,7 @@ set(SRCS
 )
 
 add_library(_librados ${SRCS})
-add_library(ch_contrib::librados ALIAS _librados)
+add_library(ch_contrib::ceph ALIAS _librados)
 
 ### ceph origin
 target_include_directories(_librados PRIVATE "${Ceph_LIBRARY_DIR}/src/" "${Ceph_INCLUDE_DIR}")
@@ -374,4 +374,4 @@ target_link_libraries(_librados
 ### compile a test program
 add_executable(hello_world_rados "${Ceph_LIBRARY_DIR}/examples/librados/hello_world.cc")
 target_include_directories(hello_world_rados PRIVATE "${Ceph_LIBRARY_DIR}/src/include")
-target_link_libraries(hello_world_rados PUBLIC ch_contrib::librados)
+target_link_libraries(hello_world_rados PUBLIC ch_contrib::ceph)
