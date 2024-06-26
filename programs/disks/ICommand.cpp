@@ -14,7 +14,7 @@ CommandLineOptions ICommand::processCommandLineArguments(const Strings & command
 {
     CommandLineOptions options;
     auto parser = po::command_line_parser(commands);
-    parser.options(options_description).positional(positional_options_description).allow_unregistered();
+    parser.options(options_description).positional(positional_options_description);
 
     po::parsed_options parsed = parser.run();
     po::store(parsed, options);
