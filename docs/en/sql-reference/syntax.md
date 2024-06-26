@@ -154,6 +154,10 @@ There are two way to define a query parameter:
 - use the `SET param_<name>=<value>` command
 - use `--param_<name>='<value>'` as an argument to `clickhouse-client` on the command line. `<name>` is the name of the query parameter and `<value>` is its value
 
+:::note
+If you are using [string literals](#string) as value, you still have to escape characters  
+:::
+
 A query parameter can be referenced in a query using `{<name>: <datatype>}`, where `<name>` is the query parameter name and `<datatype>` is the datatype it is converted to.
 
 For example, the following SQL defines parameters named `a`, `b`, `c` and `d` - each with a different data type:
