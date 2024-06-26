@@ -455,6 +455,85 @@ void DiskOverlay::listFiles(const String & path, std::vector<String> & file_name
     }
 }
 
+
+/**
+ * This read buffer wraps around two read buffers, transparently concatenating them.
+ */
+class ReadBufferFromOverlayDisk : public ReadBufferFromFileBase
+{
+public:
+    ReadBufferFromOverlayDisk(
+        size_t buffer_size_,
+        std::unique_ptr<ReadBufferFromFileBase> base_,
+        std::unique_ptr<ReadBufferFromFileBase> diff_) : ReadBufferFromFileBase(buffer_size_, nullptr, 0),
+                    base(std::move(base_)), diff(std::move(diff_)), base_size(base->getFileSize()), diff_size(diff->getFileSize())
+    {
+        working_buffer = base->buffer();
+        pos = base->position();
+    }
+
+    off_t seek([[maybe_unused]] off_t off, [[maybe_unused]] int whence) override
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "seek hasn't been implemented yet");
+    }
+
+    off_t getPosition() override
+    {
+        size_t current_pos = done ? base_size + diff_size : (done_base ? base_size : 0);
+        if (!done)
+        {
+            current_pos += done_base ? diff->getPosition() : base->getPosition();
+        }
+        return current_pos;
+    }
+
+    std::string getFileName() const override { return diff->getFileName(); }
+
+    size_t getFileSize() override { return base->getFileSize() + diff->getFileSize(); }
+
+private:
+    bool nextImpl() override
+    {
+        if (!done)
+        {
+            if (!done_base)
+            {
+                base->position() = pos;
+            } else
+            {
+                diff->position() = pos;
+            }
+
+            if (!done_base && base->eof())
+            {
+                done_base = true;
+                diff->seek(0, SEEK_SET);
+            }
+
+            if (done_base && !done && diff->eof())
+            {
+                done = true;
+            }
+        }
+
+        if (done)
+        {
+            set(nullptr, 0);
+            return false;
+        }
+
+        working_buffer = done_base ? diff->buffer() : base->buffer();
+        pos = done_base ? diff->position() : base->position();
+        return true;
+    }
+
+    std::unique_ptr<ReadBufferFromFileBase> base, diff;
+    bool done_base = false, done = false;
+    size_t base_size, diff_size;
+
+};
+
+
 std::unique_ptr<ReadBufferFromFileBase> DiskOverlay::readFile(
         const String & path,
         const ReadSettings & settings,
@@ -690,67 +769,6 @@ bool DiskOverlay::isRemote() const
 {
     return disk_diff->isRemote() || disk_base->isRemote();
 }
-
-ReadBufferFromOverlayDisk::ReadBufferFromOverlayDisk(
-        size_t buffer_size_,
-        std::unique_ptr<ReadBufferFromFileBase> base_,
-        std::unique_ptr<ReadBufferFromFileBase> diff_) : ReadBufferFromFileBase(buffer_size_, nullptr, 0),
-                    base(std::move(base_)), diff(std::move(diff_)), base_size(base->getFileSize()), diff_size(diff->getFileSize())
-{
-    working_buffer = base->buffer();
-    pos = base->position();
-}
-
-off_t ReadBufferFromOverlayDisk::getPosition()
-{
-    size_t current_pos = done ? base_size + diff_size : (done_base ? base_size : 0);
-    if (!done)
-    {
-        current_pos += done_base ? diff->getPosition() : base->getPosition();
-    }
-    return current_pos;
-}
-
-off_t ReadBufferFromOverlayDisk::seek([[maybe_unused]] off_t off, [[maybe_unused]] int whence)
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "seek hasn't been implemented yet");
-}
-
-bool ReadBufferFromOverlayDisk::nextImpl()
-{
-    if (!done)
-    {
-        if (!done_base)
-        {
-            base->position() = pos;
-        } else
-        {
-            diff->position() = pos;
-        }
-
-        if (!done_base && base->eof())
-        {
-            done_base = true;
-            diff->seek(0, SEEK_SET);
-        }
-
-        if (done_base && !done && diff->eof())
-        {
-            done = true;
-        }
-    }
-
-    if (done)
-    {
-        set(nullptr, 0);
-        return false;
-    }
-
-    working_buffer = done_base ? diff->buffer() : base->buffer();
-    pos = done_base ? diff->position() : base->position();
-    return true;
-}
-
 
 void registerDiskOverlay(DiskFactory & factory, bool global_skip_access_check)
 {

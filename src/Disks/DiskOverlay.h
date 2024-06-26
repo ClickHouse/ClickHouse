@@ -8,6 +8,10 @@
 namespace DB
 {
 
+/**
+    Overlay disk adds writing capabilities to a read-only disk, using another (initially empty) read-write disk and two metadata storages.
+    It does not copy any data already stored on the read-only disk (base), instead manipulating metadata in the storages.
+ **/
 class DiskOverlay : public IDisk
 {
 public:
@@ -49,12 +53,12 @@ public:
     void replaceFile(const String & from_path, const String & to_path) override;
 
     void copyFile( /// NOLINT
-    const String & from_file_path,
-    IDisk & to_disk,
-    const String & to_file_path,
-    const ReadSettings & read_settings = {},
-    const WriteSettings & write_settings = {},
-    const std::function<void()> & cancellation_hook = {}) override;
+        const String & from_file_path,
+        IDisk & to_disk,
+        const String & to_file_path,
+        const ReadSettings & read_settings = {},
+        const WriteSettings & write_settings = {},
+        const std::function<void()> & cancellation_hook = {}) override;
 
     void listFiles(const String & path, std::vector<String> & file_names) const override;
 
@@ -119,34 +123,6 @@ private:
 
     // Get path to file in base disk
     std::optional<String> basePath(const String& path) const;
-};
-
-/**
- * This read buffer wraps around two read buffers, transparently concatenating them.
- */
-class ReadBufferFromOverlayDisk : public ReadBufferFromFileBase
-{
-public:
-    ReadBufferFromOverlayDisk(
-        size_t buffer_size_,
-        std::unique_ptr<ReadBufferFromFileBase> base_,
-        std::unique_ptr<ReadBufferFromFileBase> diff_);
-
-    off_t seek(off_t off, int whence) override;
-
-    off_t getPosition() override;
-
-    std::string getFileName() const override { return diff->getFileName(); }
-
-    size_t getFileSize() override { return base->getFileSize() + diff->getFileSize(); }
-
-private:
-    bool nextImpl() override;
-
-    std::unique_ptr<ReadBufferFromFileBase> base, diff;
-    bool done_base = false, done = false;
-    size_t base_size, diff_size;
-
 };
 
 };
