@@ -2034,8 +2034,8 @@ TEST_P(CoordinationTest, TestPreprocessWhenCloseSessionIsPrecommitted)
     auto state_machine = std::make_shared<KeeperStateMachine>(queue, snapshots_queue, keeper_context, nullptr);
     state_machine->init();
 
-    auto & storage = state_machine->getStorageUnsafe();    
-    const auto & uncommitted_state = storage.uncommitted_state;    
+    auto & storage = state_machine->getStorageUnsafe();
+    const auto & uncommitted_state = storage.uncommitted_state;
 
     // Create first node for the session
     String node_path_1 = "/node_1";
@@ -2043,7 +2043,7 @@ TEST_P(CoordinationTest, TestPreprocessWhenCloseSessionIsPrecommitted)
     create_req_1->path = node_path_1;
     auto create_entry_1 = getLogEntryFromZKRequest(term, session_id, state_machine->getNextZxid(), create_req_1);
 
-    state_machine->pre_commit(1, create_entry_1->get_buf());    
+    state_machine->pre_commit(1, create_entry_1->get_buf());
     EXPECT_TRUE(uncommitted_state.nodes.contains(node_path_1));
 
     state_machine->commit(1, create_entry_1->get_buf());
@@ -2060,7 +2060,7 @@ TEST_P(CoordinationTest, TestPreprocessWhenCloseSessionIsPrecommitted)
     std::shared_ptr<ZooKeeperCreateRequest> create_req_2 = std::make_shared<ZooKeeperCreateRequest>();
     create_req_2->path = node_path_2;
     auto create_entry_2 = getLogEntryFromZKRequest(term, session_id, state_machine->getNextZxid(), create_req_2);
-    
+
     // Pre-commit creating second node
     state_machine->pre_commit(3, create_entry_2->get_buf());
     // Second node wasn't created
@@ -2078,6 +2078,25 @@ TEST_P(CoordinationTest, TestPreprocessWhenCloseSessionIsPrecommitted)
     state_machine->commit(2, create_entry_2->get_buf());
     EXPECT_TRUE(storage.container.contains(node_path_1));
     EXPECT_TRUE(storage.container.contains(node_path_2));
+
+    close_entry = getLogEntryFromZKRequest(term, session_id, state_machine->getNextZxid(), close_req);
+    // Pre-commit close session
+    state_machine->pre_commit(3, close_entry->get_buf());
+
+    auto heartbeat_entry
+        = getLogEntryFromZKRequest(term, session_id, state_machine->getNextZxid(), std::make_shared<ZooKeeperHeartbeatRequest>());
+    state_machine->pre_commit(4, heartbeat_entry->get_buf());
+
+    state_machine->commit(3, close_entry->get_buf());
+    state_machine->commit(4, heartbeat_entry->get_buf());
+
+    auto create_req_3 = std::make_shared<ZooKeeperCreateRequest>();
+    create_req_3->path = "/node_3";
+    auto create_entry_3 = getLogEntryFromZKRequest(term, session_id, state_machine->getNextZxid(), create_req_3);
+    state_machine->pre_commit(5, create_entry_3->get_buf());
+    state_machine->commit(5, create_entry_3->get_buf());
+
+    EXPECT_TRUE(storage.container.contains("/node_3"));
 }
 
 TEST_P(CoordinationTest, TestSetACLWithAuthSchemeForAclWhenAuthIsPrecommitted)
