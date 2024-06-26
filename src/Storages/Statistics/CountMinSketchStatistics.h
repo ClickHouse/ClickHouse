@@ -29,12 +29,14 @@ private:
     static constexpr auto HASH_COUNT = 8uz;
     static constexpr auto BUCKET_COUNT = 2048uz;
 
-    datasketches::count_min_sketch<Float64> sketch;
+    using Sketch = datasketches::count_min_sketch<Float64>;
+    Sketch sketch;
+
     DataTypePtr data_type;
 };
 
-StatisticsPtr CountMinSketchCreator(const SingleStatisticsDescription & stat, DataTypePtr);
 void CountMinSketchValidator(const SingleStatisticsDescription &, DataTypePtr data_type);
+StatisticsPtr CountMinSketchCreator(const SingleStatisticsDescription & stat, DataTypePtr);
 
 }
 

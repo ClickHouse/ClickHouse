@@ -29,7 +29,7 @@ private:
 
 };
 
-StatisticsPtr UniqCreator(const SingleStatisticsDescription & stat, DataTypePtr data_type);
 void UniqValidator(const SingleStatisticsDescription &, DataTypePtr data_type);
+StatisticsPtr UniqCreator(const SingleStatisticsDescription & stat, DataTypePtr data_type);
 
 }

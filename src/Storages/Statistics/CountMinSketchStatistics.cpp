@@ -47,7 +47,7 @@ bool CountMinSketchStatistics::checkType(const Field & f)
 
 void CountMinSketchStatistics::serialize(WriteBuffer & buf)
 {
-    auto bytes = sketch.serialize();
+    Sketch::vector_bytes bytes = sketch.serialize();
     writeIntBinary(static_cast<UInt64>(bytes.size()), buf);
     buf.write(reinterpret_cast<const char *>(bytes.data()), bytes.size());
 }
@@ -56,11 +56,12 @@ void CountMinSketchStatistics::deserialize(ReadBuffer & buf)
 {
     UInt64 size;
     readIntBinary(size, buf);
-    String s;
-    s.reserve(size);
-    buf.readStrict(s.data(), size); /// Extra copy can be avoided by implementing count_min_sketch<Float64>::deserialize with ReadBuffer
-    auto read_sketch = datasketches::count_min_sketch<Float64>::deserialize(s.data(), size, datasketches::DEFAULT_SEED);
-    sketch.merge(read_sketch);
+
+    Sketch::vector_bytes bytes;
+    bytes.reserve(size);
+    buf.readStrict(reinterpret_cast<char *>(bytes.data()), size);
+
+    sketch = datasketches::count_min_sketch<Float64>::deserialize(bytes.data(), size, datasketches::DEFAULT_SEED);
 }
 
 void CountMinSketchStatistics::update(const ColumnPtr & column)

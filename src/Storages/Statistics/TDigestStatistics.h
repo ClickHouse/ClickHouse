@@ -25,7 +25,7 @@ private:
     QuantileTDigest<Float64> data;
 };
 
-StatisticsPtr TDigestCreator(const SingleStatisticsDescription & stat, DataTypePtr);
 void TDigestValidator(const SingleStatisticsDescription &, DataTypePtr data_type);
+StatisticsPtr TDigestCreator(const SingleStatisticsDescription & stat, DataTypePtr);
 
 }
