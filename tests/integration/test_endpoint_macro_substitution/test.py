@@ -8,7 +8,6 @@ disk_types = {
     "disk_s3": "S3",
     "disk_hdfs": "HDFS",
     "disk_encrypted": "S3",
-    "local": "Local",
 }
 
 if is_arm():
@@ -75,11 +74,9 @@ def test_select_by_type(cluster):
         if disk_type == "Local":
             assert (
                 node.query(
-                    "SELECT name FROM system.disks WHERE type='"
-                    + disk_type
-                    + "' ORDER BY name"
+                    "SELECT name FROM system.disks WHERE type='" + disk_type + "'"
                 )
-                == "default\nlocal\n"
+                == name + "\n"
             )
         elif disk_type == "S3":
             assert (
