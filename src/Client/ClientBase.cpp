@@ -2862,7 +2862,10 @@ private:
 
 }
 
-
+/// Enable optimizations even in debug builds because otherwise options parsing becomes extremely slow affecting .sh tests
+#if defined(__clang__)
+#pragma clang optimize on
+#endif
 void ClientBase::parseAndCheckOptions(OptionsDescription & options_description, po::variables_map & options, Arguments & arguments)
 {
     if (allow_repeated_settings)
