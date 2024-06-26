@@ -13,7 +13,6 @@ set(DBMS_FUNCTIONS
     multiIf.cpp
     multiMatchAny.cpp
     checkHyperscanRegexp.cpp
-    array/has.cpp
     CastOverloadResolver.cpp
     # Provides dependency for cast - createFunctionBaseCast()
     FunctionsConversion.cpp
