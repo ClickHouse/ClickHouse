@@ -190,19 +190,22 @@ private:
             findSecretNamedArgument("account_key", 1);
             return;
         }
+        else if (is_cluster_function && isNamedCollectionName(1))
+        {
+            /// azureBlobStorageCluster(cluster, named_collection, ..., account_key = 'account_key', ...)
+            findSecretNamedArgument("account_key", 2);
+            return;
+        }
 
         /// We should check other arguments first because we don't need to do any replacement in case storage_account_url is not used
         /// azureBlobStorage(connection_string|storage_account_url, container_name, blobpath, account_name, account_key, format, compression, structure)
         /// azureBlobStorageCluster(cluster, connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression, structure])
-        size_t count = excludeS3OrURLNestedMaps();
+        size_t count = arguments->size();
         if ((url_arg_idx + 4 <= count) && (count <= url_arg_idx + 7))
         {
             String second_arg;
             if (tryGetStringFromArgument(url_arg_idx + 3, &second_arg))
             {
-                if (boost::iequals(second_arg, "NOSIGN"))
-                    return; /// The argument after 'url' is "NOSIGN".
-
                 if (second_arg == "auto" || KnownFormatNames::instance().exists(second_arg))
                     return; /// The argument after 'url' is a format: s3('url', 'format', ...)
             }
