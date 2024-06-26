@@ -1338,7 +1338,6 @@ void Client::readArguments(
                     arg = argv[arg_num];
                     addMultiquery(arg, common_arguments);
                 }
-                // else, discard this option
             }
             else if (arg == "--password" && ((arg_num + 1) >= argc || std::string_view(argv[arg_num + 1]).starts_with('-')))
             {

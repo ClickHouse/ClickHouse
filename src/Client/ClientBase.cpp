@@ -2147,28 +2147,28 @@ MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
     {
         if (insert_ast->format == "Values")
         {
-            // try to find the end of INSERT INTO ... VALUES query
+            // Try to find the end of INSERT INTO ... VALUES query
             ReadBufferFromMemory data_in(insert_ast->data, all_queries_end - insert_ast->data);
             skipBOMIfExists(data_in);
-            for (;;)
+            do
             {
                 skipWhitespaceIfAny(data_in);
                 if (data_in.eof() || *data_in.position() == ';')
                     break;
-                ValuesBlockInputFormat::skipToNextRow(&data_in, 1, 0);
             }
+            while (ValuesBlockInputFormat::skipToNextRow(&data_in, 1, 0));
             // Handle the case when comments followed by semicolon
             // insert into xx values xx; -- {serverError xx}
             // So if we use this error hint, the next query should not be placed
             // on the same line
             this_query_end = insert_ast->data + data_in.count();
-            const auto * newline = find_first_symbols<'\n'>(this_query_end, all_queries_end);
-            if (newline != this_query_end)
+            const auto * pos_newline = find_first_symbols<'\n'>(this_query_end, all_queries_end);
+            if (pos_newline != this_query_end)
             {
-                TestHint hint(String(this_query_end, newline - this_query_end));
+                TestHint hint(String(this_query_end, pos_newline - this_query_end));
                 if (hint.hasClientErrors() || hint.hasServerErrors())
                 {
-                    this_query_end = newline;
+                    this_query_end = pos_newline;
                 }
             }
         }

@@ -887,7 +887,6 @@ void LocalServer::readArguments(int argc, char ** argv, Arguments & common_argum
                 arg = argv[arg_num];
                 addMultiquery(arg, common_arguments);
             }
-            // else, discard this option
         }
         else
         {
