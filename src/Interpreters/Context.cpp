@@ -91,6 +91,7 @@
 #include <Common/StackTrace.h>
 #include <Common/Config/ConfigHelper.h>
 #include <Common/Config/ConfigProcessor.h>
+#include <Common/Config/ConfigReloader.h>
 #include <Common/Config/AbstractConfigurationComparison.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ShellCommand.h>
@@ -367,6 +368,9 @@ struct ContextSharedPart : boost::noncopyable
     std::atomic_size_t max_view_num_to_warn = 10000lu;
     std::atomic_size_t max_dictionary_num_to_warn = 1000lu;
     std::atomic_size_t max_part_num_to_warn = 100000lu;
+    /// Only for system.server_settings, actually value stored in reloader itself
+    std::atomic_size_t config_reload_interval_ms = ConfigReloader::DEFAULT_RELOAD_INTERVAL.count();
+
     String format_schema_path;                              /// Path to a directory that contains schema files used by input formats.
     String google_protos_path; /// Path to a directory that contains the proto files for the well-known Protobuf types.
     mutable OnceFlag action_locks_manager_initialized;
@@ -678,6 +682,9 @@ struct ContextSharedPart : boost::noncopyable
                     disk->shutdown();
             }
         }
+
+        LOG_TRACE(log, "Shutting down AccessControl");
+        access_control->shutdown();
 
         {
             std::lock_guard lock(mutex);
@@ -4498,6 +4505,16 @@ void Context::checkPartitionCanBeDropped(const String & database, const String &
 void Context::checkPartitionCanBeDropped(const String & database, const String & table, const size_t & partition_size, const size_t & max_partition_size_to_drop) const
 {
     checkCanBeDropped(database, table, partition_size, max_partition_size_to_drop);
+}
+
+void Context::setConfigReloaderInterval(size_t value_ms)
+{
+    shared->config_reload_interval_ms.store(value_ms, std::memory_order_relaxed);
+}
+
+size_t Context::getConfigReloaderInterval() const
+{
+    return shared->config_reload_interval_ms.load(std::memory_order_relaxed);
 }
 
 InputFormatPtr Context::getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size, const std::optional<FormatSettings> & format_settings, std::optional<size_t> max_parsing_threads) const

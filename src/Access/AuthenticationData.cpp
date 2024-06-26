@@ -135,6 +135,7 @@ void AuthenticationData::setPassword(const String & password_)
         case AuthenticationType::BCRYPT_PASSWORD:
         case AuthenticationType::NO_PASSWORD:
         case AuthenticationType::LDAP:
+        case AuthenticationType::JWT:
         case AuthenticationType::KERBEROS:
         case AuthenticationType::SSL_CERTIFICATE:
         case AuthenticationType::SSH_KEY:
@@ -251,6 +252,7 @@ void AuthenticationData::setPasswordHashBinary(const Digest & hash)
 
         case AuthenticationType::NO_PASSWORD:
         case AuthenticationType::LDAP:
+        case AuthenticationType::JWT:
         case AuthenticationType::KERBEROS:
         case AuthenticationType::SSL_CERTIFICATE:
         case AuthenticationType::SSH_KEY:
@@ -321,6 +323,10 @@ std::shared_ptr<ASTAuthenticationData> AuthenticationData::toAST() const
         {
             node->children.push_back(std::make_shared<ASTLiteral>(getLDAPServerName()));
             break;
+        }
+        case AuthenticationType::JWT:
+        {
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "JWT is available only in ClickHouse Cloud");
         }
         case AuthenticationType::KERBEROS:
         {

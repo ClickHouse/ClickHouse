@@ -311,7 +311,6 @@ bool Authentication::areCredentialsValid(
     if ([[maybe_unused]] const auto * always_allow_credentials = typeid_cast<const AlwaysAllowCredentials *>(&credentials))
         return true;
 
-
     throwInvalidCredentialsException(authentication_methods);
 }
 
