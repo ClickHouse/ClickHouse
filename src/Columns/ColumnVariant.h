@@ -185,6 +185,7 @@ public:
     void doInsertManyFrom(const IColumn & src_, size_t position, size_t length) override;
 
     using IColumn::insertFrom;
+    using IColumn::insertManyFrom;
     using IColumn::insertRangeFrom;
 
     /// Methods for insertion from another Variant but with known mapping between global discriminators.
