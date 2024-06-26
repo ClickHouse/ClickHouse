@@ -2348,25 +2348,29 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
 
         if (is_compare && (left_argument.type->isNullable() || right_argument.type->isNullable()))
         {
-            auto checkAndGetNullMap = [&](const ColumnWithTypeAndName & arg) -> const NullMap *
+            auto checkAndGetNullMap = [&](const ColumnWithTypeAndName & arg) -> std::pair<const NullMap *, bool>
             {
                 if (arg.type->isNullable())
                 {
                     bool is_const = checkColumnConst<ColumnNullable>(arg.column.get());
                     const ColumnNullable * col = is_const ? checkAndGetColumnConstData<ColumnNullable>(arg.column.get()) : checkAndGetColumn<ColumnNullable>(arg.column.get());
-                    return &(col->getNullMapData());
+                    return std::pair<const NullMap *, bool>(&(col->getNullMapData()), is_const);
                 }
-                return nullptr;
+                return std::pair<const NullMap *, bool>(nullptr, false);
             };
-            const NullMap * left_nullmap_col = checkAndGetNullMap(left_argument);
-            const NullMap * right_nullmap_col = checkAndGetNullMap(right_argument);
-            auto res = executeImpl2(createBlockWithNestedColumns(arguments), removeNullable(result_type), input_rows_count, left_nullmap_col, right_nullmap_col);
+            std::pair<const NullMap *, bool> left_nullmap_pair = checkAndGetNullMap(left_argument);
+            std::pair<const NullMap *, bool> right_nullmap_pair = checkAndGetNullMap(right_argument);
+            auto res = executeImpl2(createBlockWithNestedColumns(arguments), removeNullable(result_type), input_rows_count, left_nullmap_pair.first, right_nullmap_pair.first);
             auto result_nullmap_col = ColumnUInt8::create(res->size(), 0);
             PaddedPODArray<UInt8> & result_nullmap_data = result_nullmap_col->getData();
             if (left_argument.type->isNullable() && right_argument.type->isNullable())
             {
                 for (size_t i = 0; i < res->size(); ++i)
-                    result_nullmap_data[i] = (*left_nullmap_col)[i] && (*right_nullmap_col)[i];
+                {
+                    bool left_null = left_nullmap_pair.second ? (*left_nullmap_pair.first)[0] : (*left_nullmap_pair.first)[i];
+                    bool right_null = right_nullmap_pair.second ? (*right_nullmap_pair.first)[0] : (*right_nullmap_pair.first)[i];
+                    result_nullmap_data[i] = left_null && right_null;
+                }
             }
             return ColumnNullable::create(std::move(res), std::move(result_nullmap_col));
         }
