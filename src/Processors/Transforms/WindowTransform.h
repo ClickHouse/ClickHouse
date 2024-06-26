@@ -307,7 +307,7 @@ public:
     RowNumber prev_frame_end;
 
     /// Used to release blocks safely.
-    RowNumber mini_required_row; 
+    RowNumber mini_required_row;
 
     // Comparison function for RANGE OFFSET frames. We choose the appropriate
     // overload once, based on the type of the ORDER BY column. Choosing it for
