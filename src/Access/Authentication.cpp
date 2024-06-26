@@ -249,27 +249,6 @@ namespace
         return false;
     }
 #endif
-
-    [[noreturn]] void throwInvalidCredentialsException(const std::vector<AuthenticationData> & authentication_methods)
-    {
-        std::string possible_authentication_types;
-        bool first = true;
-
-        for (const auto & authentication_method : authentication_methods)
-        {
-            if (!first)
-            {
-                possible_authentication_types += ", ";
-            }
-            possible_authentication_types += toString(authentication_method.getType());
-            first = false;
-        }
-
-        throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED,
-            "areCredentialsValid(): Invalid credentials provided, available authentication methods are {}",
-            possible_authentication_types);
-    }
 }
 
 bool Authentication::areCredentialsValid(
@@ -311,7 +290,7 @@ bool Authentication::areCredentialsValid(
     if ([[maybe_unused]] const auto * always_allow_credentials = typeid_cast<const AlwaysAllowCredentials *>(&credentials))
         return true;
 
-    throwInvalidCredentialsException(authentication_methods);
+    return false;
 }
 
 }

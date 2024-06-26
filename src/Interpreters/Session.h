@@ -113,6 +113,7 @@ private:
 
     mutable UserPtr user;
     std::optional<UUID> user_id;
+    std::optional<AuthenticationData> user_authenticated_with;
 
     ContextMutablePtr session_context;
     mutable bool query_context_created = false;

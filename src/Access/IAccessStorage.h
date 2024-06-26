@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Access/IAccessEntity.h>
+#include <Access/AuthenticationData.h>
 #include <Core/Types.h>
 #include <Core/UUID.h>
 #include <Parsers/IParser.h>
@@ -34,6 +35,7 @@ struct AuthResult
     UUID user_id;
     /// Session settings received from authentication server (if any)
     SettingsChanges settings{};
+    std::optional<AuthenticationData> authentication_data;
 };
 
 /// Contains entities, i.e. instances of classes derived from IAccessEntity.
@@ -227,7 +229,9 @@ protected:
         bool allow_no_password,
         bool allow_plaintext_password) const;
     virtual bool areCredentialsValid(
-        const User & user,
+        const std::string user_name,
+        time_t valid_until,
+        const AuthenticationData & authentication_method,
         const Credentials & credentials,
         const ExternalAuthenticators & external_authenticators,
         SettingsChanges & settings) const;
