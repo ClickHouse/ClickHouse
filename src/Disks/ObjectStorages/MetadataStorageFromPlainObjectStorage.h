@@ -6,6 +6,8 @@
 #include <Disks/ObjectStorages/MetadataStorageTransactionState.h>
 
 #include <map>
+#include <string>
+#include <unordered_set>
 
 namespace DB
 {
@@ -78,10 +80,20 @@ public:
     bool supportsStat() const override { return false; }
 
 protected:
+    /// Get the object storage prefix for storing metadata files. If stored behind a separate endpoint,
+    /// the metadata keys reflect the layout of the regular files.
+    virtual std::string getMetadataKeyPrefix() const { return object_storage->getCommonKeyPrefix(); }
+
+    /// Returns a map of local paths to paths in object storage.
     virtual std::shared_ptr<PathMap> getPathMap() const { throwNotImplemented(); }
 
-    virtual std::vector<std::string> getDirectChildrenOnDisk(
-        const std::string & storage_key, const RelativePathsWithMetadata & remote_paths, const std::string & local_path) const;
+    /// Retrieves the immediate files and directories within a given directory on a disk.
+    virtual void getDirectChildrenOnDisk(
+        const std::string & storage_key,
+        const std::string & storage_key_perfix,
+        const RelativePathsWithMetadata & remote_paths,
+        const std::string & local_path,
+        std::unordered_set<std::string> & result) const;
 };
 
 class MetadataStorageFromPlainObjectStorageTransaction final : public IMetadataTransaction, private MetadataOperationsHolder
