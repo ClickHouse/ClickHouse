@@ -7,6 +7,7 @@
 
 #include <filesystem>
 #include <tuple>
+#include <unordered_set>
 
 namespace DB
 {
@@ -79,14 +80,16 @@ std::vector<std::string> MetadataStorageFromPlainObjectStorage::listDirectory(co
 
     object_storage->listObjects(abs_key, files, 0);
 
-    return getDirectChildrenOnDisk(abs_key, files, path);
+    std::unordered_set<std::string> directories;
+    getDirectChildrenOnDisk(abs_key, object_storage->getCommonKeyPrefix(), files, path, directories);
+    return std::vector<std::string>(std::make_move_iterator(directories.begin()), std::make_move_iterator(directories.end()));
 }
 
 DirectoryIteratorPtr MetadataStorageFromPlainObjectStorage::iterateDirectory(const std::string & path) const
 {
     /// Required for MergeTree
     auto paths = listDirectory(path);
-    // Prepend path, since iterateDirectory() includes path, unlike listDirectory()
+    /// Prepend path, since iterateDirectory() includes path, unlike listDirectory()
     std::for_each(paths.begin(), paths.end(), [&](auto & child) { child = fs::path(path) / child; });
     std::vector<std::filesystem::path> fs_paths(paths.begin(), paths.end());
     return std::make_unique<StaticDirectoryIterator>(std::move(fs_paths));
@@ -99,10 +102,13 @@ StoredObjects MetadataStorageFromPlainObjectStorage::getStorageObjects(const std
     return {StoredObject(object_key.serialize(), path, object_size)};
 }
 
-std::vector<std::string> MetadataStorageFromPlainObjectStorage::getDirectChildrenOnDisk(
-    const std::string & storage_key, const RelativePathsWithMetadata & remote_paths, const std::string & /* local_path */) const
+void MetadataStorageFromPlainObjectStorage::getDirectChildrenOnDisk(
+    const std::string & storage_key,
+    const std::string & /* storage_key_perfix */,
+    const RelativePathsWithMetadata & remote_paths,
+    const std::string & /* local_path */,
+    std::unordered_set<std::string> & result) const
 {
-    std::unordered_set<std::string> duplicates_filter;
     for (const auto & elem : remote_paths)
     {
         const auto & path = elem->relative_path;
@@ -111,11 +117,10 @@ std::vector<std::string> MetadataStorageFromPlainObjectStorage::getDirectChildre
         /// string::npos is ok.
         const auto slash_pos = path.find('/', child_pos);
         if (slash_pos == std::string::npos)
-            duplicates_filter.emplace(path.substr(child_pos));
+            result.emplace(path.substr(child_pos));
         else
-            duplicates_filter.emplace(path.substr(child_pos, slash_pos - child_pos));
+            result.emplace(path.substr(child_pos, slash_pos - child_pos));
     }
-    return std::vector<std::string>(std::make_move_iterator(duplicates_filter.begin()), std::make_move_iterator(duplicates_filter.end()));
 }
 
 const IMetadataStorage & MetadataStorageFromPlainObjectStorageTransaction::getStorageForNonTransactionalReads() const
@@ -140,7 +145,7 @@ void MetadataStorageFromPlainObjectStorageTransaction::removeDirectory(const std
     else
     {
         addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation>(
-            normalizeDirectoryPath(path), *metadata_storage.getPathMap(), object_storage));
+            normalizeDirectoryPath(path), *metadata_storage.getPathMap(), object_storage, metadata_storage.getMetadataKeyPrefix()));
     }
 }
 
@@ -151,8 +156,13 @@ void MetadataStorageFromPlainObjectStorageTransaction::createDirectory(const std
 
     auto normalized_path = normalizeDirectoryPath(path);
     auto key_prefix = object_storage->generateObjectKeyPrefixForDirectoryPath(normalized_path).serialize();
+    chassert(key_prefix.starts_with(object_storage->getCommonKeyPrefix()));
     auto op = std::make_unique<MetadataStorageFromPlainObjectStorageCreateDirectoryOperation>(
-        std::move(normalized_path), std::move(key_prefix), *metadata_storage.getPathMap(), object_storage);
+        std::move(normalized_path),
+        key_prefix.substr(object_storage->getCommonKeyPrefix().size()),
+        *metadata_storage.getPathMap(),
+        object_storage,
+        metadata_storage.getMetadataKeyPrefix());
     addOperation(std::move(op));
 }
 
@@ -167,7 +177,11 @@ void MetadataStorageFromPlainObjectStorageTransaction::moveDirectory(const std::
         throwNotImplemented();
 
     addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageMoveDirectoryOperation>(
-        normalizeDirectoryPath(path_from), normalizeDirectoryPath(path_to), *metadata_storage.getPathMap(), object_storage));
+        normalizeDirectoryPath(path_from),
+        normalizeDirectoryPath(path_to),
+        *metadata_storage.getPathMap(),
+        object_storage,
+        metadata_storage.getMetadataKeyPrefix()));
 }
 
 void MetadataStorageFromPlainObjectStorageTransaction::addBlobToMetadata(

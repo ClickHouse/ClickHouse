@@ -19,11 +19,11 @@ ObjectStorageKey CommonPathPrefixKeyGenerator::generate(const String & path, boo
 {
     const auto & [object_key_prefix, suffix_parts] = getLongestObjectKeyPrefix(path);
 
-    auto key = std::filesystem::path(object_key_prefix.empty() ? storage_key_prefix : object_key_prefix);
+    auto key = std::filesystem::path(object_key_prefix.empty() ? std::string() : object_key_prefix);
 
     /// The longest prefix is the same as path, meaning that the  path is already mapped.
     if (suffix_parts.empty())
-        return ObjectStorageKey::createAsRelative(std::move(key));
+        return ObjectStorageKey::createAsRelative(storage_key_prefix, std::move(key));
 
     /// File and top-level directory paths are mapped as is.
     if (!is_directory || object_key_prefix.empty())
@@ -39,7 +39,7 @@ ObjectStorageKey CommonPathPrefixKeyGenerator::generate(const String & path, boo
         key /= getRandomASCIIString(part_size);
     }
 
-    return ObjectStorageKey::createAsRelative(key);
+    return ObjectStorageKey::createAsRelative(storage_key_prefix, key);
 }
 
 std::tuple<std::string, std::vector<std::string>> CommonPathPrefixKeyGenerator::getLongestObjectKeyPrefix(const std::string & path) const
