@@ -81,6 +81,8 @@ struct QueryLogElement
     std::unordered_set<String> used_storages;
     std::unordered_set<String> used_table_functions;
     std::set<String> used_row_policies;
+    std::unordered_set<String> used_privileges;
+    std::unordered_set<String> missing_privileges;
 
     Int32 exception_code{}; // because ErrorCodes are int
     String exception;
