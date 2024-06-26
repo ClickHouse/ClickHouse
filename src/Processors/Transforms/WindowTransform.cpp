@@ -1081,9 +1081,9 @@ void WindowTransform::writeOutCurrentRow()
     }
 }
 
-void WindowTransform::updateMiniRequiredRow()
+void WindowTransform::updateFirstRequiredRow()
 {
-    mini_required_row = current_row;
+    first_required_row = current_row;
     for (size_t wi = 0; wi < workspaces.size(); ++wi)
     {
         RowNumber row;
@@ -1092,13 +1092,16 @@ void WindowTransform::updateMiniRequiredRow()
             row = ws.window_function_impl->firstRequiredRowInFrame(this);
         else
         {
+            /// For aggregate functions, if the start bound is preceding unbounded, blocks before
+            /// the current row are no longer in use, just only need to add the current row to the
+            /// same aggregation state.
             if (window_description.frame.begin_type == WindowFrame::BoundaryType::Unbounded)
                 row = current_row;
             else
                 row = prev_frame_start;
         }
-        if (row < mini_required_row)
-            mini_required_row = row;
+        if (row < first_required_row)
+            first_required_row = row;
     }
 }
 
@@ -1265,8 +1268,6 @@ void WindowTransform::appendChunk(Chunk & chunk)
 
             // Write out the aggregation results.
             writeOutCurrentRow();
-
-            updateMiniRequiredRow();
 
             if (isCancelled())
             {
@@ -1508,9 +1509,10 @@ void WindowTransform::work()
     // than the current frame start, so we don't have to check the latter. Note
     // that the frame start can be further than current row for some frame specs
     // (e.g. EXCLUDE CURRENT ROW), so we have to check both.
+    updateFirstRequiredRow();
     assert(prev_frame_start <= frame_start);
     const auto first_used_block = std::min(next_output_block_number,
-        std::min(mini_required_row.block, current_row.block));
+        std::min(first_required_row.block, current_row.block));
     if (first_block_number < first_used_block)
     {
         blocks.erase(blocks.begin(),
