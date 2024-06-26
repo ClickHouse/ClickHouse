@@ -28,7 +28,8 @@
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/Transforms/DeduplicationTokenTransforms.h>
-#include <Processors/Transforms/SquashingChunksTransform.h>
+#include <Processors/Transforms/SquashingTransform.h>
+#include <Processors/Transforms/PlanSquashingTransform.h>
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -563,14 +564,12 @@ QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(ASTInsertQuery &
 
     if (shouldAddSquashingFroStorage(table))
     {
-        bool table_prefers_large_blocks = table->prefersLargeBlocks();
-
         pipeline.addSimpleTransform([&](const Block & in_header) -> ProcessorPtr
         {
-            return std::make_shared<SimpleSquashingChunksTransform>(
+            return std::make_shared<PlanSquashingTransform>(
                 in_header,
-                table_prefers_large_blocks ? settings.min_insert_block_size_rows : settings.max_block_size,
-                table_prefers_large_blocks ? settings.min_insert_block_size_bytes : 0ULL);
+                table->prefersLargeBlocks() ? settings.min_insert_block_size_rows : settings.max_block_size,
+                table->prefersLargeBlocks() ? settings.min_insert_block_size_bytes : 0ULL);
         });
     }
 
@@ -618,6 +617,17 @@ QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(ASTInsertQuery &
         table, metadata_snapshot, query_sample_block);
 
     pipeline.resize(presink_chains.size());
+
+    if (shouldAddSquashingFroStorage(table))
+    {
+        pipeline.addSimpleTransform([&](const Block & in_header) -> ProcessorPtr
+        {
+            return std::make_shared<ApplySquashingTransform>(
+                in_header,
+                table->prefersLargeBlocks() ? settings.min_insert_block_size_rows : settings.max_block_size,
+                table->prefersLargeBlocks() ? settings.min_insert_block_size_bytes : 0ULL);
+        });
+    }
 
     for (auto & chain : presink_chains)
         pipeline.addResources(chain.detachResources());
@@ -671,18 +681,6 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
         chain.appendChain(std::move(sink_chains.front()));
     }
 
-    if (shouldAddSquashingFroStorage(table))
-    {
-        bool table_prefers_large_blocks = table->prefersLargeBlocks();
-
-        auto squashing = std::make_shared<SimpleSquashingChunksTransform>(
-            chain.getInputHeader(),
-            table_prefers_large_blocks ? settings.min_insert_block_size_rows : settings.max_block_size,
-            table_prefers_large_blocks ? settings.min_insert_block_size_bytes : 0ULL);
-
-        chain.addSource(std::move(squashing));
-    }
-
     if (!settings.insert_deduplication_token.value.empty())
     {
         chain.addSource(std::make_shared<DeduplicationToken::SetSourceBlockNumberTransform>(chain.getInputHeader()));
@@ -690,6 +688,25 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
     }
 
     chain.addSource(std::make_shared<DeduplicationToken::AddTokenInfoTransform>(chain.getInputHeader()));
+
+    if (shouldAddSquashingFroStorage(table))
+    {
+        bool table_prefers_large_blocks = table->prefersLargeBlocks();
+
+        auto squashing = std::make_shared<ApplySquashingTransform>(
+                    chain.getInputHeader(),
+                    table_prefers_large_blocks ? settings.min_insert_block_size_rows : settings.max_block_size,
+                    table_prefers_large_blocks ? settings.min_insert_block_size_bytes : 0ULL);
+
+        chain.addSource(std::move(squashing));
+
+        auto balancing = std::make_shared<PlanSquashingTransform>(
+                    chain.getInputHeader(),
+                    table_prefers_large_blocks ? settings.min_insert_block_size_rows : settings.max_block_size,
+                    table_prefers_large_blocks ? settings.min_insert_block_size_bytes : 0ULL);
+
+        chain.addSource(std::move(balancing));
+    }
 
     auto context_ptr = getContext();
     auto counting = std::make_shared<CountingTransform>(chain.getInputHeader(), nullptr, context_ptr->getQuota());
