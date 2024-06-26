@@ -87,6 +87,7 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
     , bypass_cache_threshold(settings.enable_bypass_cache_with_threshold ? settings.bypass_cache_threshold : 0)
     , boundary_alignment(settings.boundary_alignment)
     , load_metadata_threads(settings.load_metadata_threads)
+    , load_metadata_asynchronously(settings.load_metadata_asynchronously)
     , write_cache_per_user_directory(settings.write_cache_per_user_id_directory)
     , keep_current_size_to_max_ratio(1 - settings.keep_free_space_size_ratio)
     , keep_current_elements_to_max_ratio(1 - settings.keep_free_space_elements_ratio)
@@ -1141,8 +1142,15 @@ void FileCache::loadMetadata()
             "Please, check log for error messages");
     }
 
-    ThreadFromGlobalPool load_metadata_main_thread([this] { loadMetadataImpl(); });
-    load_metadata_main_thread.detach();
+    if (load_metadata_asynchronously)
+    {
+        ThreadFromGlobalPool load_metadata_main_thread([this] { loadMetadataImpl(); });
+        load_metadata_main_thread.detach();
+    }
+    else
+    {
+        loadMetadataImpl();
+    }
 
     /// Shuffle file_segment_metadatas to have random order in LRUQueue
     /// as at startup all file_segment_metadatas have the same priority.
