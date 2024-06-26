@@ -9,24 +9,27 @@
 namespace DB
 {
 
-String dataPath(String path)
+namespace
 {
-    if (!path.empty() && path.back() == '/')
+    String dataPath(String path)
     {
-        path.pop_back();
-    }
-    path += ".data";
-    for (char & i : path)
-    {
-        if (i == '/')
+        if (!path.empty() && path.back() == '/')
         {
-            i = '_';
+            path.pop_back();
         }
+        path += ".data";
+        for (char & i : path)
+        {
+            if (i == '/')
+            {
+                i = '_';
+            }
+        }
+        return path;
     }
-    return path;
 }
 
-String mergePath(String parent, const String& child)
+String mergePath(String parent, const String & child)
 {
     if (!parent.empty() && parent.back() != '/')
     {
@@ -44,8 +47,17 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-DiskOverlay::DiskOverlay(const String & name_, DiskPtr disk_base_, DiskPtr disk_diff_, MetadataStoragePtr metadata_, MetadataStoragePtr tracked_metadata_) : IDisk(name_),
-disk_base(disk_base_), disk_diff(disk_diff_), forward_metadata(metadata_), tracked_metadata(tracked_metadata_)
+DiskOverlay::DiskOverlay(
+    const String & name_,
+    DiskPtr disk_base_,
+    DiskPtr disk_diff_,
+    MetadataStoragePtr metadata_,
+    MetadataStoragePtr tracked_metadata_)
+    : IDisk(name_)
+    , disk_base(disk_base_)
+    , disk_diff(disk_diff_)
+    , forward_metadata(metadata_)
+    , tracked_metadata(tracked_metadata_)
 {
 }
 
@@ -68,7 +80,7 @@ DiskOverlay::DiskOverlay(const String & name_, const Poco::Util::AbstractConfigu
     tracked_metadata = MetadataStorageFactory::instance().create(tracked_metadata_name, config_, config_prefix_, nullptr, "");
 }
 
-const String& DiskOverlay::getPath() const
+const String & DiskOverlay::getPath() const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Overlay doesn't have its own path");
 }
@@ -98,12 +110,12 @@ std::optional<UInt64> DiskOverlay::getUnreservedSpace() const
     return disk_diff->getUnreservedSpace();
 }
 
-bool DiskOverlay::isTracked(const String& path) const
+bool DiskOverlay::isTracked(const String & path) const
 {
     return tracked_metadata->exists(dataPath(path));
 }
 
-void DiskOverlay::setTracked(const String& path)
+void DiskOverlay::setTracked(const String & path)
 {
     auto trans = tracked_metadata->createTransaction();
     trans->writeInlineDataToFile(dataPath(path), "");
@@ -144,7 +156,7 @@ size_t DiskOverlay::getFileSize(const String & path) const
     throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File doesn't exist in getFileSize");
 }
 
-void DiskOverlay::ensureHaveDirectories(const String& path)
+void DiskOverlay::ensureHaveDirectories(const String & path)
 {
     if (!disk_diff->exists(path))
     {
@@ -157,7 +169,7 @@ void DiskOverlay::ensureHaveDirectories(const String& path)
     }
 }
 
-void DiskOverlay::ensureHaveFile(const String& path)
+void DiskOverlay::ensureHaveFile(const String & path)
 {
     if (!disk_diff->exists(path))
     {
@@ -203,7 +215,7 @@ void DiskOverlay::clearDirectory(const String & path)
     }
     std::vector<String> files;
     listFiles(path, files);
-    for (const String& file : files)
+    for (const String & file : files)
     {
         if (isFile(file))
         {
@@ -213,7 +225,7 @@ void DiskOverlay::clearDirectory(const String & path)
 }
 
 // Find the file in the base disk if it exists
-std::optional<String> DiskOverlay::basePath(const String& path) const
+std::optional<String> DiskOverlay::basePath(const String & path) const
 {
     if (!forward_metadata->exists(dataPath(path)))
     {
@@ -246,13 +258,14 @@ void DiskOverlay::moveDirectory(const String & from_path, const String & to_path
     std::vector<String> paths;
     listFiles(from_path, paths);
 
-    for (const String& path : paths)
+    for (const String & path : paths)
     {
         String fullfrompath = mergePath(from_path, path), fulltopath = mergePath(to_path, path);
         if (isFile(fullfrompath))
         {
             moveFile(fullfrompath, fulltopath);
-        } else
+        }
+        else
         {
             moveDirectory(fullfrompath, fulltopath);
         }
@@ -276,7 +289,8 @@ public:
         if (!done_diff)
         {
             diff_iter->next();
-        } else
+        }
+        else
         {
             base_iter->next();
         }
@@ -370,7 +384,8 @@ void DiskOverlay::moveFile(const String & from_path, const String & to_path)
         }
 
         transaction->commit();
-    } else
+    }
+    else
     {
         // In this case from_path exists on base disk. We want to create an empty file on diff, set metadata
         // to show that it should be appended to from_path on base disk, and set that from_path is now tracked
@@ -420,7 +435,8 @@ const std::function<void()> & cancellation_hook)
             trans->writeInlineDataToFile(dataPath(to_file_path), forward_metadata->readInlineDataToString(dataPath(from_file_path)));
             trans->commit();
         }
-    } else
+    }
+    else
     {
         IDisk::copyFile(from_file_path, to_disk, to_file_path, read_settings, write_settings, cancellation_hook);
     }
@@ -439,7 +455,7 @@ void DiskOverlay::listFiles(const String & path, std::vector<String> & file_name
     if (disk_base->exists(path) && disk_base->isDirectory(path))
     {
         disk_base->listFiles(path, files);
-        for (const String& file : files)
+        for (const String & file : files)
         {
             if (!isTracked(mergePath(path, file)))
             {
@@ -499,7 +515,8 @@ private:
             if (!done_base)
             {
                 base->position() = pos;
-            } else
+            }
+            else
             {
                 diff->position() = pos;
             }
@@ -554,7 +571,8 @@ std::unique_ptr<ReadBufferFromFileBase> DiskOverlay::readFile(
                                 disk_base->readFile(*base_path, settings, read_hint, file_size),
                                 disk_diff->readFile(path, settings, read_hint, file_size)
                     );
-        } else
+        }
+        else
         {
             return disk_diff->readFile(path, settings, read_hint, file_size);
         }
@@ -582,14 +600,16 @@ std::unique_ptr<WriteBufferFromFileBase> DiskOverlay::writeFile(
         if (forward_metadata->exists(dataPath(path)))
         {
             transaction->unlinkFile(dataPath(path));
-        } else
+        }
+        else
         {
             if (disk_base->exists(path))
             {
                 setTracked(path);
             }
         }
-    } else
+    }
+    else
     {
         if (!disk_diff->exists(path))
         {
@@ -629,7 +649,8 @@ void DiskOverlay::removeFileIfExists(const String & path)
     if (forward_metadata->exists(dataPath(path)))
     {
         transaction->unlinkFile(dataPath(path));
-    } else
+    }
+    else
     {
         if (disk_base->exists(path))
         {
@@ -665,13 +686,14 @@ void DiskOverlay::removeRecursive(const String & dirpath)
     std::vector<String> paths;
     listFiles(dirpath, paths);
 
-    for (const String& path : paths)
+    for (const String & path : paths)
     {
         String full_path = mergePath(dirpath, path);
         if (isFile(full_path))
         {
             removeFile(full_path);
-        } else
+        }
+        else
         {
             removeRecursive(full_path);
         }
@@ -688,7 +710,8 @@ void DiskOverlay::setLastModified(const String & path, const Poco::Timestamp & t
     if (isFile(path))
     {
         ensureHaveFile(path);
-    } else
+    }
+    else
     {
         ensureHaveDirectories(path);
     }
@@ -731,7 +754,8 @@ void DiskOverlay::setReadOnly(const String & path)
     if (isFile(path))
     {
         ensureHaveFile(path);
-    } else
+    }
+    else
     {
         ensureHaveDirectories(path);
     }
