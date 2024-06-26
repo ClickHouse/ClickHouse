@@ -7,10 +7,9 @@ namespace
 {
 
 template <typename T>
-const T & setValue(T * typed_ptr, std::type_identity_t<T> val)
+void setValue(T * typed_ptr, std::type_identity_t<T> val)
 {
-    memcpy(typed_ptr, &val, sizeof(T));
-    return *typed_ptr;
+    memcpy(static_cast<void*>(typed_ptr), &val, sizeof(T));
 }
 
 }
@@ -84,6 +83,7 @@ void WriteBufferFromPocoSocketChunked::finishChunk()
         finishing = available();
         pos += available();
         chunk_size_ptr = reinterpret_cast<decltype(chunk_size_ptr)>(pos);
+        last_finish_chunk = chunk_size_ptr;
         return;
     }
 
