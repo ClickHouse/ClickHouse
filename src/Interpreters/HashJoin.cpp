@@ -1157,7 +1157,7 @@ public:
         return ColumnWithTypeAndName(std::move(columns[i]), type_name[i].type, type_name[i].qualified_name);
     }
 
-    void insertFromBlockArray(const MutableColumnPtr & col, size_t col_index, const std::array<const Block *, 32> & blocks, const std::array<size_t, 32> & rows, uint8_t pos)
+    void insertFromBlockArray(const MutableColumnPtr & col, size_t col_index, const std::array<const Block *, 255> & blocks, const std::array<size_t, 255> & rows, uint8_t pos)
     {
         for (size_t j = 0; j < pos; ++j)
         {
@@ -1168,7 +1168,7 @@ public:
         }
     }
 
-    uint8_t appendFromBlock(const MutableColumnPtr & col, size_t col_index, std::array<const Block *, 32> & blocks, std::array<size_t, 32> & rows, uint8_t pos,
+    uint8_t appendFromBlock(const MutableColumnPtr & col, size_t col_index, std::array<const Block *, 255> & blocks, std::array<size_t, 255> & rows, uint8_t pos,
         const Block * block, size_t row_num)
     {
         if (pos == blocks.size())
@@ -1286,8 +1286,8 @@ template<> void AddedColumns<true>::buildOutputFromRowRef()
     for (size_t i = 0; i < this->size(); ++i)
     {
         auto & col = columns[i];
-        std::array<const Block *, 32> blocks;
-        std::array<size_t, 32> rows;
+        std::array<const Block *, 255> blocks;
+        std::array<size_t, 255> rows;
         uint8_t next_pos = 0;
 
         for (auto row_ref_i : lazy_output.row_refs)
@@ -1313,8 +1313,8 @@ template<> void AddedColumns<true>::buildOutputFromRowRefList()
     for (size_t i = 0; i < this->size(); ++i)
     {
         auto & col = columns[i];
-        std::array<const Block *, 32> blocks;
-        std::array<size_t, 32> rows;
+        std::array<const Block *, 255> blocks;
+        std::array<size_t, 255> rows;
         uint8_t next_pos = 0;
 
         for (auto row_ref_i : lazy_output.row_refs)
