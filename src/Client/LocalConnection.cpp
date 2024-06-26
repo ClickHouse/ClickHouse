@@ -295,14 +295,7 @@ void LocalConnection::sendCancel()
 bool LocalConnection::pullBlock(Block & block)
 {
     if (state->executor)
-        while (!block)
-        {
-            bool pull_result = state->executor->pull(block, query_context->getSettingsRef().interactive_delay / 1000);
-
-            /// Pipeline is finished.
-            if (!pull_result)
-                return false;
-        }
+        return state->executor->pull(block, query_context->getSettingsRef().interactive_delay / 1000);
 
     return false;
 }
@@ -485,7 +478,7 @@ Packet LocalConnection::receivePacket()
     }
 
     if (!next_packet_type)
-        poll(0);
+        while (state && !poll(0));
 
     if (!next_packet_type)
     {
