@@ -30,7 +30,6 @@ def test_system_logs_recreate():
         "part_log",
         "trace_log",
         "metric_log",
-        "error_log",
     ]
 
     node.query("SYSTEM FLUSH LOGS")

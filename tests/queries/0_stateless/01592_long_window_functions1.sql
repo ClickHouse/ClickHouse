@@ -1,8 +1,5 @@
 -- Tags: long
 
--- test became more than an order of magnitude slower with max_bytes_before_external_sort=1
-set max_bytes_before_external_sort = 0;
-
 drop table if exists stack;
 
 set max_insert_threads = 4;

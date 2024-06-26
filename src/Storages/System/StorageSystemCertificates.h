@@ -13,17 +13,17 @@ class Cluster;
   *  that allows to obtain information about available certificates
   *  and their sources.
   */
-class StorageSystemCertificates final : public IStorageSystemOneBlock
+class StorageSystemCertificates final : public IStorageSystemOneBlock<StorageSystemCertificates>
 {
 public:
     std::string getName() const override { return "SystemCertificates"; }
 
-    static ColumnsDescription getColumnsDescription();
+    static NamesAndTypesList getNamesAndTypes();
 
 protected:
     using IStorageSystemOneBlock::IStorageSystemOneBlock;
 
-    void fillData(MutableColumns & res_columns, ContextPtr, const ActionsDAG::Node *, std::vector<UInt8>) const override;
+    void fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo & query_info) const override;
 };
 
 }

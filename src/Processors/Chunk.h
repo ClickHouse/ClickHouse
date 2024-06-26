@@ -59,7 +59,7 @@ public:
 
     Chunk clone() const;
 
-    void swap(Chunk & other) noexcept
+    void swap(Chunk & other)
     {
         columns.swap(other.columns);
         chunk_info.swap(other.chunk_info);

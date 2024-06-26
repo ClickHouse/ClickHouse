@@ -18,7 +18,6 @@
 #ifndef POCO_UTIL_NO_XMLCONFIGURATION
 
 
-#include "Poco/String.h"
 #include "Poco/SAX/InputSource.h"
 #include "Poco/DOM/DOMParser.h"
 #include "Poco/DOM/Element.h"
@@ -29,8 +28,6 @@
 #include "Poco/NumberParser.h"
 #include "Poco/NumberFormatter.h"
 #include <unordered_map>
-#include <algorithm>
-#include <iterator>
 
 
 namespace Poco {
@@ -278,9 +275,8 @@ void XMLConfiguration::enumerate(const std::string& key, Keys& range) const
 		{
 			if (pChild->nodeType() == Poco::XML::Node::ELEMENT_NODE)
 			{
-				std::string nodeName = pChild->nodeName();
+				const std::string& nodeName = pChild->nodeName();
 				size_t& count = keys[nodeName];
-				replaceInPlace(nodeName, ".", "\\.");
 				if (count)
 					range.push_back(nodeName + "[" + NumberFormatter::format(count) + "]");
 				else
@@ -383,21 +379,7 @@ Poco::XML::Node* XMLConfiguration::findNode(std::string::const_iterator& it, con
 		{
 			while (it != end && *it == _delim) ++it;
 			std::string key;
-			while (it != end)
-			{
-				if (*it == '\\' && std::distance(it, end) > 1)
-				{
-					// Skip backslash, copy only the char after it
-					std::advance(it, 1);
-					key += *it++;
-					continue;
-				}
-				if (*it == _delim)
-					break;
-				if (*it == '[')
-					break;
-				key += *it++;
-			}
+			while (it != end && *it != _delim && *it != '[') key += *it++;
 			return findNode(it, end, findElement(key, pNode, create), create);
 		}
 	}

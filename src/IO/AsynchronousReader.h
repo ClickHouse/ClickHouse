@@ -54,9 +54,6 @@ public:
 
     struct Result
     {
-        /// The read data is at [buf + offset, buf + size), where `buf` is from Request struct.
-        /// (Notice that `offset` is included in `size`.)
-
         /// size
         /// Less than requested amount of data can be returned.
         /// If size is zero - the file has ended.
@@ -69,7 +66,7 @@ public:
 
         std::unique_ptr<Stopwatch> execution_watch = {};
 
-        explicit operator std::tuple<size_t &, size_t &>() { return {size, offset}; }
+        operator std::tuple<size_t &, size_t &>() { return {size, offset}; }
     };
 
     /// Submit request and obtain a handle. This method don't perform any waits.
@@ -77,7 +74,6 @@ public:
     /// or destroy the whole reader before destroying the buffer for request.
     /// The method can be called concurrently from multiple threads.
     virtual std::future<Result> submit(Request request) = 0;
-    virtual Result execute(Request request) = 0;
 
     virtual void wait() = 0;
 

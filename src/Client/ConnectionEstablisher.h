@@ -1,8 +1,11 @@
 #pragma once
 
+#include <variant>
+
 #include <Common/AsyncTaskExecutor.h>
 #include <Common/Epoll.h>
 #include <Common/Fiber.h>
+#include <Common/FiberStack.h>
 #include <Common/TimerDescriptor.h>
 #include <Common/PoolWithFailoverBase.h>
 #include <Client/ConnectionPool.h>
@@ -17,10 +20,10 @@ class ConnectionEstablisher
 public:
     using TryResult = PoolWithFailoverBase<IConnectionPool>::TryResult;
 
-    ConnectionEstablisher(ConnectionPoolPtr pool_,
+    ConnectionEstablisher(IConnectionPool * pool_,
                           const ConnectionTimeouts * timeouts_,
-                          const Settings & settings_,
-                          LoggerPtr log,
+                          const Settings * settings_,
+                          Poco::Logger * log,
                           const QualifiedTableName * table_to_check = nullptr);
 
     /// Establish connection and save it in result, write possible exception message in fail_message.
@@ -29,14 +32,18 @@ public:
     /// Set async callback that will be called when reading from socket blocks.
     void setAsyncCallback(AsyncCallback async_callback_) { async_callback = std::move(async_callback_); }
 
+    bool isFinished() const { return is_finished; }
+
 private:
-    ConnectionPoolPtr pool;
+    IConnectionPool * pool;
     const ConnectionTimeouts * timeouts;
-    const Settings & settings;
-    LoggerPtr log;
+    const Settings * settings;
+    Poco::Logger * log;
     const QualifiedTableName * table_to_check;
 
+    bool is_finished;
     AsyncCallback async_callback = {};
+
 };
 
 #if defined(OS_LINUX)
@@ -52,10 +59,10 @@ class ConnectionEstablisherAsync : public AsyncTaskExecutor
 public:
     using TryResult = PoolWithFailoverBase<IConnectionPool>::TryResult;
 
-    ConnectionEstablisherAsync(ConnectionPoolPtr pool_,
+    ConnectionEstablisherAsync(IConnectionPool * pool_,
                                const ConnectionTimeouts * timeouts_,
-                               const Settings & settings_,
-                               LoggerPtr log_,
+                               const Settings * settings_,
+                               Poco::Logger * log_,
                                const QualifiedTableName * table_to_check_ = nullptr);
 
     /// Get file descriptor that can be added in epoll and be polled,
@@ -65,7 +72,7 @@ public:
     /// Check if the process of connection establishing was finished.
     /// The process is considered finished if connection is ready,
     /// some exception occurred or timeout exceeded.
-    bool isFinished() const { return is_finished; }
+    bool isFinished() { return is_finished; }
     TryResult getResult() const { return result; }
 
     const std::string & getFailMessage() const { return fail_message; }
@@ -80,10 +87,7 @@ private:
 
     struct Task : public AsyncTask
     {
-        explicit Task(ConnectionEstablisherAsync & connection_establisher_async_)
-            : connection_establisher_async(connection_establisher_async_)
-        {
-        }
+        Task(ConnectionEstablisherAsync & connection_establisher_async_) : connection_establisher_async(connection_establisher_async_) {}
 
         ConnectionEstablisherAsync & connection_establisher_async;
 

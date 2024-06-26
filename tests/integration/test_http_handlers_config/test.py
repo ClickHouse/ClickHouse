@@ -88,11 +88,6 @@ def test_dynamic_query_handler():
             "application/whatever; charset=cp1337"
             == res_custom_ct.headers["content-type"]
         )
-        assert "it works" == res_custom_ct.headers["X-Test-Http-Response-Headers-Works"]
-        assert (
-            "also works"
-            == res_custom_ct.headers["X-Test-Http-Response-Headers-Even-Multiple"]
-        )
 
 
 def test_predefined_query_handler():
@@ -151,10 +146,6 @@ def test_predefined_query_handler():
         )
         assert b"max_final_threads\t1\nmax_threads\t1\n" == res2.content
         assert "application/generic+one" == res2.headers["content-type"]
-        assert "it works" == res2.headers["X-Test-Http-Response-Headers-Works"]
-        assert (
-            "also works" == res2.headers["X-Test-Http-Response-Headers-Even-Multiple"]
-        )
 
         cluster.instance.query(
             "CREATE TABLE test_table (id UInt32, data String) Engine=TinyLog"
@@ -167,13 +158,6 @@ def test_predefined_query_handler():
         assert res3.status_code == 200
         assert cluster.instance.query("SELECT * FROM test_table") == "100\tTEST\n"
         cluster.instance.query("DROP TABLE test_table")
-
-        res4 = cluster.instance.http_request(
-            "test_predefined_handler_get?max_threads=1&param_setting_name=max_threads",
-            method="GET",
-            headers={"XXX": "xxx"},
-        )
-        assert b"max_threads\t1\n" == res1.content
 
 
 def test_fixed_static_handler():
@@ -220,18 +204,6 @@ def test_fixed_static_handler():
             == cluster.instance.http_request(
                 "test_get_fixed_static_handler", method="GET", headers={"XXX": "xxx"}
             ).content
-        )
-        assert (
-            "it works"
-            == cluster.instance.http_request(
-                "test_get_fixed_static_handler", method="GET", headers={"XXX": "xxx"}
-            ).headers["X-Test-Http-Response-Headers-Works"]
-        )
-        assert (
-            "also works"
-            == cluster.instance.http_request(
-                "test_get_fixed_static_handler", method="GET", headers={"XXX": "xxx"}
-            ).headers["X-Test-Http-Response-Headers-Even-Multiple"]
         )
 
 
@@ -468,55 +440,6 @@ def test_defaults_http_handlers():
             b"1\n"
             == cluster.instance.http_request("?query=SELECT+1", method="GET").content
         )
-
-        assert (
-            404
-            == cluster.instance.http_request(
-                "/nonexistent?query=SELECT+1", method="GET"
-            ).status_code
-        )
-
-
-def test_defaults_http_handlers_config_order():
-    def check_predefined_query_handler():
-        assert (
-            200
-            == cluster.instance.http_request(
-                "?query=SELECT+1", method="GET"
-            ).status_code
-        )
-        assert (
-            b"1\n"
-            == cluster.instance.http_request("?query=SELECT+1", method="GET").content
-        )
-        response = cluster.instance.http_request(
-            "test_predefined_handler_get?max_threads=1&setting_name=max_threads",
-            method="GET",
-            headers={"XXX": "xxx"},
-        )
-        assert b"max_threads\t1\n" == response.content
-        assert (
-            "text/tab-separated-values; charset=UTF-8"
-            == response.headers["content-type"]
-        )
-
-    with contextlib.closing(
-        SimpleCluster(
-            ClickHouseCluster(__file__),
-            "defaults_handlers_config_order_first",
-            "test_defaults_handlers_config_order/defaults_first",
-        )
-    ) as cluster:
-        check_predefined_query_handler()
-
-    with contextlib.closing(
-        SimpleCluster(
-            ClickHouseCluster(__file__),
-            "defaults_handlers_config_order_first",
-            "test_defaults_handlers_config_order/defaults_last",
-        )
-    ) as cluster:
-        check_predefined_query_handler()
 
 
 def test_prometheus_handler():

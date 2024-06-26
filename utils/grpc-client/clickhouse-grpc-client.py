@@ -10,6 +10,10 @@
 # Most of the command line options are the same, for more information type
 # ./clickhouse_grpc_client.py --help
 
+import grpc  # pip3 install grpcio
+import grpc_tools  # pip3 install grpcio-tools
+import argparse, cmd, os, signal, subprocess, sys, threading, time, uuid
+
 DEFAULT_HOST = "localhost"
 DEFAULT_PORT = 9100
 DEFAULT_USER_NAME = "default"
@@ -18,16 +22,6 @@ HISTORY_FILENAME = "~/.clickhouse_grpc_history"
 HISTORY_SIZE = 1000
 STDIN_BUFFER_SIZE = 1048576
 DEFAULT_ENCODING = "utf-8"
-
-
-import grpc  # pip3 install grpcio
-import argparse, cmd, os, signal, sys, threading, time, uuid
-
-script_dir = os.path.dirname(os.path.realpath(__file__))
-pb2_dir = os.path.join(script_dir, "pb2")
-if pb2_dir not in sys.path:
-    sys.path.append(pb2_dir)
-import clickhouse_grpc_pb2, clickhouse_grpc_pb2_grpc  # Execute pb2/generate.py to generate these modules.
 
 
 class ClickHouseGRPCError(Exception):
@@ -86,6 +80,8 @@ class ClickHouseGRPCClient(cmd.Cmd):
         self.session_id = None
 
     def __enter__(self):
+        ClickHouseGRPCClient.__generate_pb2()
+        ClickHouseGRPCClient.__import_pb2()
         self.__connect()
         return self
 
@@ -232,6 +228,40 @@ class ClickHouseGRPCClient(cmd.Cmd):
     def __check_no_errors(result):
         if result.HasField("exception"):
             raise ClickHouseGRPCError(result.exception.display_text)
+
+    # Use grpcio-tools to generate *pb2.py files from *.proto.
+    @staticmethod
+    def __generate_pb2():
+        script_dir = os.path.dirname(os.path.realpath(__file__))
+        proto_dir = os.path.join(script_dir, "./protos")
+        gen_dir = os.path.join(script_dir, "./_gen")
+        if os.path.exists(os.path.join(gen_dir, "clickhouse_grpc_pb2_grpc.py")):
+            return
+        os.makedirs(gen_dir, exist_ok=True)
+        cmd = [
+            "python3",
+            "-m",
+            "grpc_tools.protoc",
+            "-I" + proto_dir,
+            "--python_out=" + gen_dir,
+            "--grpc_python_out=" + gen_dir,
+            proto_dir + "/clickhouse_grpc.proto",
+        ]
+        p = subprocess.Popen(cmd, stderr=subprocess.PIPE)
+        # We don't want to show grpc_tools warnings.
+        errors = p.stderr.read().decode().strip("\n").split("\n")
+        only_warnings = all(("Warning" in error) for error in errors)
+        if not only_warnings:
+            error_print("\n".join(errors))
+
+    # Import the generated *pb2.py files.
+    @staticmethod
+    def __import_pb2():
+        script_dir = os.path.dirname(os.path.realpath(__file__))
+        gen_dir = os.path.join(script_dir, "./_gen")
+        sys.path.append(gen_dir)
+        global clickhouse_grpc_pb2, clickhouse_grpc_pb2_grpc
+        import clickhouse_grpc_pb2, clickhouse_grpc_pb2_grpc
 
     # Prints only if interactive mode is activated.
     def verbatim_print(self, *args, **kwargs):

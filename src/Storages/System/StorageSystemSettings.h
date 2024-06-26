@@ -11,17 +11,17 @@ class Context;
 
 /** implements system table "settings", which allows to get information about the current settings.
   */
-class StorageSystemSettings final : public IStorageSystemOneBlock
+class StorageSystemSettings final : public IStorageSystemOneBlock<StorageSystemSettings>
 {
 public:
     std::string getName() const override { return "SystemSettings"; }
 
-    static ColumnsDescription getColumnsDescription();
+    static NamesAndTypesList getNamesAndTypes();
 
 protected:
     using IStorageSystemOneBlock::IStorageSystemOneBlock;
 
-    void fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const override;
+    void fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo & query_info) const override;
 };
 
 }

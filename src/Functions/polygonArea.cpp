@@ -3,9 +3,16 @@
 
 #include <boost/geometry.hpp>
 #include <boost/geometry/geometries/point_xy.hpp>
+#include <boost/geometry/geometries/polygon.hpp>
 
+#include <Common/logger_useful.h>
+
+#include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeCustomGeo.h>
 #include <DataTypes/DataTypesNumber.h>
 
 #include <memory>
@@ -18,9 +25,6 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
-
-namespace
-{
 
 template <typename Point>
 class FunctionPolygonArea : public IFunction
@@ -95,7 +99,6 @@ const char * FunctionPolygonArea<CartesianPoint>::name = "polygonAreaCartesian";
 template <>
 const char * FunctionPolygonArea<SphericalPoint>::name = "polygonAreaSpherical";
 
-}
 
 REGISTER_FUNCTION(PolygonArea)
 {

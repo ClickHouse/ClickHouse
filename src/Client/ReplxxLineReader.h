@@ -41,7 +41,6 @@ private:
     bool bracketed_paste_enabled = false;
 
     std::string editor;
-    bool overwrite_mode = false;
 };
 
 }

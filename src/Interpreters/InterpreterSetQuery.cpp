@@ -1,5 +1,4 @@
 #include <Interpreters/Context.h>
-#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSetQuery.h>
@@ -19,7 +18,7 @@ BlockIO InterpreterSetQuery::execute()
     getContext()->checkSettingsConstraints(ast.changes, SettingSource::QUERY);
     auto session_context = getContext()->getSessionContext();
     session_context->applySettingsChanges(ast.changes);
-    session_context->addQueryParameters(NameToNameMap{ast.query_parameters.begin(), ast.query_parameters.end()});
+    session_context->addQueryParameters(ast.query_parameters);
     session_context->resetSettingsToDefaultValue(ast.default_settings);
     return {};
 }
@@ -92,12 +91,4 @@ void InterpreterSetQuery::applySettingsFromQuery(const ASTPtr & ast, ContextMuta
     }
 }
 
-void registerInterpreterSetQuery(InterpreterFactory & factory)
-{
-    auto create_fn = [] (const InterpreterFactory::Arguments & args)
-    {
-        return std::make_unique<InterpreterSetQuery>(args.query, args.context);
-    };
-    factory.registerInterpreter("InterpreterSetQuery", create_fn);
-}
 }

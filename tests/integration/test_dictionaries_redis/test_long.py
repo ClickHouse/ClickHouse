@@ -6,8 +6,6 @@ cluster = ClickHouseCluster(__file__)
 
 node = cluster.add_instance("node", with_redis=True)
 
-POOL_SIZE = 16
-
 
 @pytest.fixture(scope="module")
 def start_cluster():
@@ -31,10 +29,10 @@ def start_cluster():
                 value UInt64
             )
             PRIMARY KEY date, id
-            SOURCE(REDIS(HOST '{}' PORT 6379 STORAGE_TYPE 'hash_map' DB_INDEX 0 PASSWORD 'clickhouse' POOL_SIZE '{}'))
+            SOURCE(REDIS(HOST '{}' PORT 6379 STORAGE_TYPE 'hash_map' DB_INDEX 0 PASSWORD 'clickhouse'))
             LAYOUT(COMPLEX_KEY_DIRECT())
             """.format(
-                cluster.redis_host, POOL_SIZE
+                cluster.redis_host
             )
         )
 
@@ -60,14 +58,12 @@ def start_cluster():
 
 def test_redis_dict_long(start_cluster):
     assert (
-        node.query(
-            f"SELECT count(), uniqExact(date), uniqExact(id) FROM redis_dict SETTINGS max_threads={POOL_SIZE}"
-        )
+        node.query("SELECT count(), uniqExact(date), uniqExact(id) FROM redis_dict")
         == "1000\t1\t1000\n"
     )
     assert (
         node.query(
-            f"SELECT count(DISTINCT dictGet('redis_dict', 'value', tuple(date, id % 1000))) FROM redis_dictionary_test SETTINGS max_threads={POOL_SIZE}"
+            "SELECT count(DISTINCT dictGet('redis_dict', 'value', tuple(date, id % 1000))) FROM redis_dictionary_test"
         )
         == "1000\n"
     )

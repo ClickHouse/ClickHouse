@@ -21,7 +21,6 @@ public:
 
     DiskLocal(const String & name_, const String & path_, UInt64 keep_free_space_bytes_,
               const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
-
     DiskLocal(
         const String & name_,
         const String & path_,
@@ -66,13 +65,7 @@ public:
 
     void replaceFile(const String & from_path, const String & to_path) override;
 
-    void copyDirectoryContent(
-        const String & from_dir,
-        const std::shared_ptr<IDisk> & to_disk,
-        const String & to_dir,
-        const ReadSettings & read_settings,
-        const WriteSettings & write_settings,
-        const std::function<void()> & cancellation_hook) override;
+    void copyDirectoryContent(const String & from_dir, const std::shared_ptr<IDisk> & to_disk, const String & to_dir) override;
 
     void listFiles(const String & path, std::vector<String> & file_names) const override;
 
@@ -154,7 +147,7 @@ private:
     const String disk_path;
     const String disk_checker_path = ".disk_checker_file";
     std::atomic<UInt64> keep_free_space_bytes;
-    LoggerPtr logger;
+    Poco::Logger * logger;
     DataSourceDescription data_source_description;
 
     UInt64 reserved_bytes = 0;

@@ -8,7 +8,8 @@
 #include <Core/Block.h>
 #include <Storages/ColumnsDescription.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Functions/FunctionFactory.h>
+#include <Functions/IFunctionAdaptors.h>
+#include <Functions/materialize.h>
 
 
 namespace DB

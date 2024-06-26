@@ -37,9 +37,9 @@ class WriteHelper
             column.resize(rows);
         else
         {
-            column.getOffsets().reserve_exact(rows);
+            column.getOffsets().reserve(rows);
             /// Using coefficient 2 for initial size is arbitrary.
-            column.getChars().reserve_exact(rows * 2);
+            column.getChars().resize(rows * 2);
         }
         return column;
     }
@@ -62,7 +62,7 @@ public:
         return buffer;
     }
 
-    void rowWritten()
+    inline void rowWritten()
     {
         if constexpr (std::is_same_v<ColumnType, ColumnFixedString>)
         {

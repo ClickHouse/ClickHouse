@@ -1,167 +1,127 @@
 #pragma once
 #include "config.h"
 
-#include <Common/ZooKeeper/ZooKeeper.h>
-#include <Processors/ISource.h>
-#include <Storages/S3Queue/S3QueueMetadata.h>
-#include <Storages/ObjectStorage/StorageObjectStorage.h>
-#include <Storages/ObjectStorage/StorageObjectStorageSource.h>
-#include <Interpreters/S3QueueLog.h>
+#if USE_AWS_S3
 
+#    include <Core/Types.h>
 
-namespace Poco { class Logger; }
+#    include <Compression/CompressionInfo.h>
+
+#    include <Storages/IStorage.h>
+#    include <Storages/S3Queue/S3QueueFilesMetadata.h>
+#    include <Storages/StorageS3.h>
+#    include <Storages/StorageS3Settings.h>
+#    include <Storages/prepareReadingFromFormat.h>
+
+#    include <IO/CompressionMethod.h>
+#    include <IO/S3/getObjectInfo.h>
+#    include <Interpreters/Context.h>
+#    include <Interpreters/threadPoolCallbackRunner.h>
+#    include <Processors/Executors/PullingPipelineExecutor.h>
+#    include <Processors/ISource.h>
+#    include <Storages/Cache/SchemaCache.h>
+#    include <Storages/StorageConfiguration.h>
+#    include <Poco/URI.h>
+#    include <Common/ZooKeeper/ZooKeeper.h>
+#    include <Common/logger_useful.h>
+
 
 namespace DB
 {
 
-struct ObjectMetadata;
 
 class StorageS3QueueSource : public ISource, WithContext
 {
 public:
-    using Storage = StorageObjectStorage;
-    using Source = StorageObjectStorageSource;
-    using RemoveFileFunc = std::function<void(std::string)>;
-    using BucketHolderPtr = S3QueueOrderedFileMetadata::BucketHolderPtr;
-    using BucketHolder = S3QueueOrderedFileMetadata::BucketHolder;
-
-    struct S3QueueObjectInfo : public Source::ObjectInfo
-    {
-        S3QueueObjectInfo(
-            const Source::ObjectInfo & object_info,
-            S3QueueMetadata::FileMetadataPtr file_metadata_);
-
-        S3QueueMetadata::FileMetadataPtr file_metadata;
-    };
-
-    class FileIterator : public StorageObjectStorageSource::IIterator
+    using IIterator = StorageS3Source::IIterator;
+    using DisclosedGlobIterator = StorageS3Source::DisclosedGlobIterator;
+    using KeysWithInfo = StorageS3Source::KeysWithInfo;
+    using KeyWithInfo = StorageS3Source::KeyWithInfo;
+    class QueueGlobIterator : public IIterator
     {
     public:
-        FileIterator(
-            std::shared_ptr<S3QueueMetadata> metadata_,
-            std::unique_ptr<Source::GlobIterator> glob_iterator_,
-            std::atomic<bool> & shutdown_called_,
-            LoggerPtr logger_);
+        QueueGlobIterator(
+            const S3::Client & client_,
+            const S3::URI & globbed_uri_,
+            ASTPtr query,
+            const NamesAndTypesList & virtual_columns,
+            ContextPtr context,
+            UInt64 & max_poll_size_,
+            const S3Settings::RequestSettings & request_settings_ = {});
 
-        bool isFinished() const;
+        KeyWithInfo next() override;
 
-        /// Note:
-        /// List results in s3 are always returned in UTF-8 binary order.
-        /// (https://docs.aws.amazon.com/AmazonS3/latest/userguide/ListingKeysUsingAPIs.html)
-        Source::ObjectInfoPtr nextImpl(size_t processor) override;
+        Strings
+        filterProcessingFiles(const S3QueueMode & engine_mode, std::unordered_set<String> & exclude_keys, const String & max_file = "");
 
         size_t estimatedKeysCount() override;
 
-        /// If the key was taken from iterator via next() call,
-        /// we might later want to return it back for retrying.
-        void returnForRetry(Source::ObjectInfoPtr object_info);
-
-        /// Release hold buckets.
-        /// In fact, they could be released in destructors of BucketHolder,
-        /// but we anyway try to release them explicitly,
-        /// because we want to be able to rethrow exceptions if they might happen.
-        void releaseFinishedBuckets();
-
     private:
-        using Bucket = S3QueueMetadata::Bucket;
-        using Processor = S3QueueMetadata::Processor;
+        UInt64 max_poll_size;
+        KeysWithInfo keys_buf;
+        KeysWithInfo processing_keys;
+        mutable std::mutex mutex;
+        std::unique_ptr<DisclosedGlobIterator> glob_iterator;
+        std::vector<KeyWithInfo>::iterator processing_iterator;
 
-        const std::shared_ptr<S3QueueMetadata> metadata;
-        const std::unique_ptr<Source::GlobIterator> glob_iterator;
-
-        std::atomic<bool> & shutdown_called;
-        std::mutex mutex;
-        LoggerPtr log;
-
-        struct ListedKeys
-        {
-            std::deque<Source::ObjectInfoPtr> keys;
-            std::optional<Processor> processor;
-        };
-        /// A cache of keys which were iterated via glob_iterator, but not taken for processing.
-        std::unordered_map<Bucket, ListedKeys> listed_keys_cache;
-
-        /// We store a vector of holders, because we cannot release them until processed files are committed.
-        std::unordered_map<size_t, std::vector<BucketHolderPtr>> bucket_holders;
-
-        /// Is glob_iterator finished?
-        std::atomic_bool iterator_finished = false;
-
-        /// Only for processing without buckets.
-        std::deque<Source::ObjectInfoPtr> objects_to_retry;
-
-        std::pair<Source::ObjectInfoPtr, S3QueueOrderedFileMetadata::BucketInfoPtr> getNextKeyFromAcquiredBucket(size_t processor);
-        bool hasKeysForProcessor(const Processor & processor) const;
+        Poco::Logger * log = &Poco::Logger::get("StorageS3QueueSourceIterator");
     };
 
-    StorageS3QueueSource(
-        String name_,
-        size_t processor_id_,
-        const Block & header_,
-        std::unique_ptr<StorageObjectStorageSource> internal_source_,
-        std::shared_ptr<S3QueueMetadata> files_metadata_,
-        const S3QueueAction & action_,
-        RemoveFileFunc remove_file_func_,
-        const NamesAndTypesList & requested_virtual_columns_,
-        ContextPtr context_,
-        const std::atomic<bool> & shutdown_called_,
-        const std::atomic<bool> & table_is_being_dropped_,
-        std::shared_ptr<S3QueueLog> s3_queue_log_,
-        const StorageID & storage_id_,
-        LoggerPtr log_,
-        size_t max_processed_files_before_commit_,
-        size_t max_processed_rows_before_commit_,
-        size_t max_processed_bytes_before_commit_,
-        size_t max_processing_time_sec_before_commit_,
-        bool commit_once_processed_);
-
     static Block getHeader(Block sample_block, const std::vector<NameAndTypePair> & requested_virtual_columns);
+
+    StorageS3QueueSource(
+        const ReadFromFormatInfo & info,
+        const String & format,
+        String name_,
+        ContextPtr context_,
+        std::optional<FormatSettings> format_settings_,
+        UInt64 max_block_size_,
+        const S3Settings::RequestSettings & request_settings_,
+        String compression_hint_,
+        const std::shared_ptr<const S3::Client> & client_,
+        const String & bucket,
+        const String & version_id,
+        const String & url_host_and_port,
+        std::shared_ptr<IIterator> file_iterator_,
+        std::shared_ptr<S3QueueFilesMetadata> files_metadata_,
+        const S3QueueAction & action_,
+        size_t download_thread_num);
+
+    ~StorageS3QueueSource() override;
 
     String getName() const override;
 
     Chunk generate() override;
 
-    /// Commit files after insertion into storage finished.
-    /// `success` defines whether insertion was successful or not.
-    void commit(bool success, const std::string & exception_message = {});
 
 private:
-    const String name;
-    const size_t processor_id;
+    String name;
+    String bucket;
+    String version_id;
+    String format;
+    ColumnsDescription columns_desc;
+    S3Settings::RequestSettings request_settings;
+    std::shared_ptr<const S3::Client> client;
+
+    std::shared_ptr<S3QueueFilesMetadata> files_metadata;
+    using ReaderHolder = StorageS3Source::ReaderHolder;
+    ReaderHolder reader;
+
+    NamesAndTypesList requested_virtual_columns;
+    NamesAndTypesList requested_columns;
+    std::shared_ptr<IIterator> file_iterator;
     const S3QueueAction action;
-    const std::shared_ptr<S3QueueMetadata> files_metadata;
-    const std::shared_ptr<StorageObjectStorageSource> internal_source;
-    const NamesAndTypesList requested_virtual_columns;
-    const std::atomic<bool> & shutdown_called;
-    const std::atomic<bool> & table_is_being_dropped;
-    const std::shared_ptr<S3QueueLog> s3_queue_log;
-    const StorageID storage_id;
-    const size_t max_processed_files_before_commit;
-    const size_t max_processed_rows_before_commit;
-    const size_t max_processed_bytes_before_commit;
-    const size_t max_processing_time_sec_before_commit;
-    const bool commit_once_processed;
 
-    RemoveFileFunc remove_file_func;
-    LoggerPtr log;
+    Poco::Logger * log = &Poco::Logger::get("StorageS3QueueSource");
 
-    std::vector<S3QueueMetadata::FileMetadataPtr> processed_files;
-    std::vector<S3QueueMetadata::FileMetadataPtr> failed_during_read_files;
+    std::future<ReaderHolder> reader_future;
 
-    Source::ReaderHolder reader;
-    std::future<Source::ReaderHolder> reader_future;
-    std::atomic<bool> initialized{false};
+    mutable std::mutex mutex;
 
-    size_t processed_rows_from_file = 0;
-    size_t total_processed_rows = 0;
-    size_t total_processed_bytes = 0;
-
-    Stopwatch total_stopwatch {CLOCK_MONOTONIC_COARSE};
-
-    Chunk generateImpl();
-    void applyActionAfterProcessing(const String & path);
-    void appendLogElement(const std::string & filename, S3QueueMetadata::FileStatus & file_status_, size_t processed_rows, bool processed);
-    void lazyInitialize(size_t processor);
+    std::shared_ptr<StorageS3Source> internal_source;
+    void deleteProcessedObject(const String & file_path);
+    void applyActionAfterProcessing(const String & file_path);
 };
 
 }
+#endif
