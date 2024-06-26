@@ -411,113 +411,27 @@ def test_hostname_levenshtein_distance(started_cluster):
 def test_round_robin(started_cluster):
     pm = PartitionManager()
     try:
-        pm._add_rule(
-            {
-                "source": node1.ip_address,
-                "destination": cluster.get_instance_ip("zoo1"),
-                "action": "REJECT --reject-with tcp-reset",
-            }
-        )
-        pm._add_rule(
-            {
-                "source": node2.ip_address,
-                "destination": cluster.get_instance_ip("zoo1"),
-                "action": "REJECT --reject-with tcp-reset",
-            }
-        )
-        pm._add_rule(
-            {
-                "source": node3.ip_address,
-                "destination": cluster.get_instance_ip("zoo1"),
-                "action": "REJECT --reject-with tcp-reset",
-            }
-        )
         change_balancing("random", "round_robin")
-
-        print(
-            str(
-                node1.exec_in_container(
-                    [
-                        "bash",
-                        "-c",
-                        "lsof -a -i4 -i6 -itcp -w | grep ':2181' | grep ESTABLISHED",
-                    ],
-                    privileged=True,
-                    user="root",
-                )
+        for node in [node1, node2, node3]:
+            idx = int(
+                node.query("select index from system.zookeeper_connection").strip()
             )
-        )
-        assert (
-            "1"
-            == str(
-                node1.exec_in_container(
-                    [
-                        "bash",
-                        "-c",
-                        "lsof -a -i4 -i6 -itcp -w | grep 'testzookeeperconfigloadbalancing_zoo2_1.*testzookeeperconfigloadbalancing_default:2181' | grep ESTABLISHED | wc -l",
-                    ],
-                    privileged=True,
-                    user="root",
-                )
-            ).strip()
-        )
+            new_idx = (idx + 1) % 3
 
-        print(
-            str(
-                node2.exec_in_container(
-                    [
-                        "bash",
-                        "-c",
-                        "lsof -a -i4 -i6 -itcp -w | grep ':2181' | grep ESTABLISHED",
-                    ],
-                    privileged=True,
-                    user="root",
-                )
+            pm._add_rule(
+                {
+                    "source": node.ip_address,
+                    "destination": cluster.get_instance_ip("zoo" + str(idx + 1)),
+                    "action": "REJECT --reject-with tcp-reset",
+                }
             )
-        )
-        assert (
-            "1"
-            == str(
-                node2.exec_in_container(
-                    [
-                        "bash",
-                        "-c",
-                        "lsof -a -i4 -i6 -itcp -w | grep 'testzookeeperconfigloadbalancing_zoo2_1.*testzookeeperconfigloadbalancing_default:2181' | grep ESTABLISHED | wc -l",
-                    ],
-                    privileged=True,
-                    user="root",
-                )
-            ).strip()
-        )
 
-        print(
-            str(
-                node3.exec_in_container(
-                    [
-                        "bash",
-                        "-c",
-                        "lsof -a -i4 -i6 -itcp -w | grep ':2181' | grep ESTABLISHED",
-                    ],
-                    privileged=True,
-                    user="root",
-                )
+            assert_eq_with_retry(
+                node,
+                "select index from system.zookeeper_connection",
+                str(new_idx) + "\n",
             )
-        )
-        assert (
-            "1"
-            == str(
-                node3.exec_in_container(
-                    [
-                        "bash",
-                        "-c",
-                        "lsof -a -i4 -i6 -itcp -w | grep 'testzookeeperconfigloadbalancing_zoo2_1.*testzookeeperconfigloadbalancing_default:2181' | grep ESTABLISHED | wc -l",
-                    ],
-                    privileged=True,
-                    user="root",
-                )
-            ).strip()
-        )
-
+            pm.heal_all()
     finally:
         pm.heal_all()
         change_balancing("round_robin", "random", reload=False)

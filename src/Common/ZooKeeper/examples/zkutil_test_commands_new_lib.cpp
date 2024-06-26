@@ -26,17 +26,21 @@ try
     Poco::Logger::root().setLevel("trace");
 
     zkutil::ZooKeeperArgs args{argv[1]};
-    ZooKeeper::Nodes nodes;
+    zkutil::ShuffleHosts nodes;
     nodes.reserve(args.hosts.size());
     for (size_t i = 0; i < args.hosts.size(); ++i)
     {
+        zkutil::ShuffleHost node;
         std::string host_string = args.hosts[i];
-        bool secure = startsWith(host_string, "secure://");
+        node.secure = startsWith(host_string, "secure://");
 
-        if (secure)
+        if (node.secure)
             host_string.erase(0, strlen("secure://"));
 
-        nodes.emplace_back(ZooKeeper::Node{Poco::Net::SocketAddress{host_string}, static_cast<UInt8>(i) , secure});
+        node.host = host_string;
+        node.original_index = i;
+
+        nodes.emplace_back(node);
     }
 
     ZooKeeper zk(nodes, args, nullptr);
