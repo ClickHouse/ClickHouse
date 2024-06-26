@@ -180,7 +180,7 @@ class JobNames(metaclass=WithIter):
     DOCS_CHECK = "Docs check"
     BUGFIX_VALIDATE = "Bugfix validation"
 
-    SIGN_RELEASE = "Sign release (actions)"
+    # SIGN_RELEASE = "Sign release (actions)"
 
 
 # dynamically update JobName with Build jobs
@@ -1343,9 +1343,10 @@ CI_CONFIG = CIConfig(
                 run_command='libfuzzer_test_check.py "$CHECK_NAME" 10800',
             ),
         ),  # type: ignore
-        JobNames.SIGN_RELEASE: TestConfig(
-            Build.PACKAGE_RELEASE
-        ),
+        # NOTE (vnemkov): temporary disabled to be able to execute tests, otherwise CI/CD job fails
+        # JobNames.SIGN_RELEASE: TestConfig(
+        #     Build.PACKAGE_RELEASE
+        # ),
     },
 )
 CI_CONFIG.validate()
