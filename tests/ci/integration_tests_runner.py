@@ -21,8 +21,8 @@ from typing import Any, Dict
 from env_helper import CI
 from integration_test_images import IMAGES
 
-MAX_RETRY = 1
-NUM_WORKERS = 5
+MAX_RETRY = 3
+NUM_WORKERS = 10
 SLEEP_BETWEEN_RETRIES = 5
 PARALLEL_GROUP_SIZE = 100
 CLICKHOUSE_BINARY_PATH = "usr/bin/clickhouse"
@@ -627,7 +627,8 @@ class ClickhouseIntegrationTestsRunner:
             info_path = os.path.join(repo_path, "tests/integration", info_basename)
 
             test_cmd = " ".join([shlex.quote(test) for test in sorted(test_names)])
-            parallel_cmd = f" --parallel {num_workers} " if num_workers > 0 else ""
+            # run in parallel only the first time, re-runs are sequential to give chance to flappy tests to pass.
+            parallel_cmd = f" --parallel {num_workers} " if num_workers > 0 and i == 0 else ""
             # -r -- show extra test summary:
             # -f -- (f)ailed
             # -E -- (E)rror
