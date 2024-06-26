@@ -85,24 +85,15 @@ void MergeTreeSink::consume(Chunk & chunk)
     size_t streams = 0;
     bool support_parallel_write = false;
 
-    String block_dedup_token;
     auto token_info = chunk.getChunkInfos().get<DeduplicationToken::TokenInfo>();
-    if (storage.getDeduplicationLog())
-    {
-        if (!token_info)
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "TokenInfo is expected for consumed chunk in MergeTreeSink for table: {}",
-                storage.getStorageID().getNameForLogs());
+    if (!token_info)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "TokenInfo is expected for consumed chunk in MergeTreeSink for table: {}",
+            storage.getStorageID().getNameForLogs());
 
-        if (!token_info->tokenInitialized() && !context->getSettingsRef().insert_deduplication_token.value.empty())
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "TokenInfo has to be initialized with user token for table: {}, user dedup token {}",
-                storage.getStorageID().getNameForLogs(),
-                context->getSettingsRef().insert_deduplication_token.value);
-
-        if (token_info->tokenInitialized())
-            block_dedup_token = token_info->getToken();
-    }
+    String block_dedup_token;
+    if (token_info->tokenInitialized())
+        block_dedup_token = token_info->getToken();
 
     for (auto & current_block : part_blocks)
     {
@@ -161,7 +152,6 @@ void MergeTreeSink::consume(Chunk & chunk)
             partitions = DelayedPartitions{};
         }
 
-        /// TODO block_dedup_token
         partitions.emplace_back(MergeTreeSink::DelayedChunk::Partition
         {
             .temp_part = std::move(temp_part),

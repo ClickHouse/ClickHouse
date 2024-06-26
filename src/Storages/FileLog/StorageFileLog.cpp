@@ -743,10 +743,11 @@ bool StorageFileLog::streamToViews()
     InterpreterInsertQuery interpreter(
         insert,
         new_context,
-        false,
-        true,
-        true,
-        false);
+        /* allow_materialized */ false,
+        /* no_squash */ true,
+        /* no_destination */ true,
+        /* async_isnert */ false);
+
     auto block_io = interpreter.execute();
 
     /// Each stream responsible for closing it's files and store meta

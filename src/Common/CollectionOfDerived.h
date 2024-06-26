@@ -2,6 +2,8 @@
 
 #include <base/defines.h>
 
+#include <Common/Exception.h>
+
 #include <algorithm>
 #include <memory>
 #include <typeindex>
@@ -11,6 +13,16 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
+/* This is a collections of objects derived from ItemBase.
+*  Collection contains no more than one instance for each derived type.
+*  The derived type is used to access the instance.
+*/
 
 template<class ItemBase>
 class CollectionOfDerivedItems
@@ -67,15 +79,16 @@ public:
     {
         Self result;
         result.records.reserve(records.size());
-        for (const auto & rec: records)
+        for (const auto & rec : records)
             result.records.emplace_back(rec.type_idx, rec.ptr->clone());
         return result;
     }
 
     void append(Self && other)
     {
+        auto middle_idx = records.size();
         std::move(other.records.begin(), other.records.end(), std::back_inserter(records));
-        std::sort(records.begin(), records.end());
+        std::inplace_merge(records.begin(), records.begin() + middle_idx, records.end());
         chassert(isUniqTypes());
     }
 
@@ -143,7 +156,9 @@ private:
             return;
         }
 
-        chassert(it->type_idx != type_idx);
+        if (it->type_idx == type_idx)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "inserted items must be unique by their type, type {} is inserted twice", type_idx.name());
+
 
         records.emplace(it, type_idx, item);
 

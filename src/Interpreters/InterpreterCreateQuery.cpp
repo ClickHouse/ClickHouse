@@ -1750,9 +1750,9 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create)
             insert,
             getContext(),
             getContext()->getSettingsRef().insert_allow_materialized_columns,
-            false,
-            false,
-            false).execute();
+            /* no_squash */ false,
+            /* no_destination */ false,
+            /* async_isnert */ false).execute();
     }
 
     return {};

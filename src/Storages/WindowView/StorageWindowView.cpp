@@ -690,7 +690,13 @@ inline void StorageWindowView::fire(UInt32 watermark)
         StoragePtr target_table = getTargetTable();
         auto insert = std::make_shared<ASTInsertQuery>();
         insert->table_id = target_table->getStorageID();
-        InterpreterInsertQuery interpreter(insert, getContext(), false, false, false, false);
+        InterpreterInsertQuery interpreter(
+            insert,
+            getContext(),
+            /* allow_materialized */ false,
+            /* no_squash */ false,
+            /* no_destination */ false,
+            /* async_isnert */ false);
         auto block_io = interpreter.execute();
 
         auto pipe = Pipe(std::make_shared<BlocksSource>(blocks, header));
@@ -1548,11 +1554,12 @@ void StorageWindowView::writeIntoWindowView(
         return std::make_shared<DeduplicationToken::SetViewBlockNumberTransform>(stream_header);
     });
 
+#ifdef ABORT_ON_LOGICAL_ERROR
     builder.addSimpleTransform([&](const Block & stream_header)
     {
-        return std::make_shared<DeduplicationToken::CheckTokenTransform>("StorageWindowView: Afrer tmp table before squasing", true, stream_header);
+        return std::make_shared<DeduplicationToken::CheckTokenTransform>("StorageWindowView: Afrer tmp table before squashing", true, stream_header);
     });
-
+#endif
 
     builder.addSimpleTransform([&](const Block & current_header)
     {
@@ -1593,10 +1600,12 @@ void StorageWindowView::writeIntoWindowView(
             lateness_upper_bound);
     });
 
+#ifdef ABORT_ON_LOGICAL_ERROR
     builder.addSimpleTransform([&](const Block & stream_header)
     {
         return std::make_shared<DeduplicationToken::CheckTokenTransform>("StorageWindowView: Afrer WatermarkTransform", true, stream_header);
     });
+#endif
 
     auto inner_table = window_view.getInnerTable();
     auto lock = inner_table->lockForShare(
@@ -1617,10 +1626,12 @@ void StorageWindowView::writeIntoWindowView(
         builder.addSimpleTransform([&](const Block & header_) { return std::make_shared<ExpressionTransform>(header_, convert_actions); });
     }
 
+#ifdef ABORT_ON_LOGICAL_ERROR
     builder.addSimpleTransform([&](const Block & stream_header)
     {
         return std::make_shared<DeduplicationToken::CheckTokenTransform>("StorageWindowView: Before out", true, stream_header);
     });
+#endif
 
     builder.addChain(Chain(std::move(output)));
     builder.setSinks([&](const Block & cur_header, Pipe::StreamType)

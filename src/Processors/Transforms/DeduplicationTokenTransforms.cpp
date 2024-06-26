@@ -26,10 +26,16 @@ void RestoreChunkInfosTransform::transform(Chunk & chunk)
 namespace DeduplicationToken
 {
 
-String DB::DeduplicationToken::TokenInfo::getToken(bool enable_assert) const
+String TokenInfo::getToken() const
 {
-    chassert(stage == VIEW_ID || !enable_assert);
+    if (stage != VIEW_ID)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "token is in wrong stage {}, token {}", stage, debugToken());
 
+    return getTokenImpl();
+}
+
+String TokenInfo::getTokenImpl() const
+{
     String result;
     result.reserve(getTotalSize());
 
@@ -43,13 +49,20 @@ String DB::DeduplicationToken::TokenInfo::getToken(bool enable_assert) const
     return result;
 }
 
-void DB::DeduplicationToken::TokenInfo::addPieceToInitialToken(String part)
+String TokenInfo::debugToken() const
 {
-    chassert(stage == INITIAL);
+    return getTokenImpl();
+}
+
+
+void TokenInfo::addPieceToInitialToken(String part)
+{
+    if (stage != INITIAL)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "token is in wrong stage {}, token {}", stage, debugToken());
     addTokenPart(std::move(part));
 }
 
-void DB::DeduplicationToken::TokenInfo::closeInitialToken()
+void TokenInfo::closeInitialToken()
 {
     chassert(stage == INITIAL);
     stage = VIEW_ID;
@@ -57,29 +70,37 @@ void DB::DeduplicationToken::TokenInfo::closeInitialToken()
 
 void TokenInfo::setUserToken(const String & token)
 {
-    chassert(stage == INITIAL);
+    if (stage != INITIAL)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "token is in wrong stage {}, token {}", stage, debugToken());
+
     addTokenPart(fmt::format("user-token-{}", token));
     stage = SOURCE_BLOCK_NUMBER;
 }
 
-void TokenInfo::setSourceBlockNumber(size_t sbn)
+void TokenInfo::setSourceBlockNumber(size_t block_number)
 {
-    chassert(stage == SOURCE_BLOCK_NUMBER);
-    addTokenPart(fmt::format("source-number-{}", sbn));
+    if (stage != SOURCE_BLOCK_NUMBER)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "token is in wrong stage {}, token {}", stage, debugToken());
+
+    addTokenPart(fmt::format("source-number-{}", block_number));
     stage = VIEW_ID;
 }
 
 void TokenInfo::setViewID(const String & id)
 {
-    chassert(stage == VIEW_ID);
+    if (stage != VIEW_ID)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "token is in wrong stage {}, token {}", stage, debugToken());
+
     addTokenPart(fmt::format("view-id-{}", id));
     stage = VIEW_BLOCK_NUMBER;
 }
 
-void TokenInfo::setViewBlockNumber(size_t mvbn)
+void TokenInfo::setViewBlockNumber(size_t block_number)
 {
-    chassert(stage == VIEW_BLOCK_NUMBER);
-    addTokenPart(fmt::format("view-block-{}", mvbn));
+    if (stage != VIEW_BLOCK_NUMBER)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "token is in wrong stage {}, token {}", stage, debugToken());
+
+    addTokenPart(fmt::format("view-block-{}", block_number));
     stage = VIEW_ID;
 }
 
@@ -91,8 +112,7 @@ void TokenInfo::reset()
 
 void TokenInfo::addTokenPart(String part)
 {
-    if (!part.empty())
-        parts.push_back(std::move(part));
+    parts.push_back(std::move(part));
 }
 
 size_t TokenInfo::getTotalSize() const
@@ -107,6 +127,7 @@ size_t TokenInfo::getTotalSize() const
     return size + parts.size() - 1;
 }
 
+#ifdef ABORT_ON_LOGICAL_ERROR
 void CheckTokenTransform::transform(Chunk & chunk)
 {
     auto token_info = chunk.getChunkInfos().get<TokenInfo>();
@@ -116,12 +137,13 @@ void CheckTokenTransform::transform(Chunk & chunk)
 
     if (!must_be_present)
     {
-        LOG_DEBUG(getLogger("CheckInsertDeduplicationTokenTransform"), "{}, no token required, token {}", debug, token_info->getToken(false));
+        LOG_DEBUG(log, "{}, no token required, token {}", debug, token_info->debugToken());
         return;
     }
 
-    LOG_DEBUG(getLogger("CheckInsertDeduplicationTokenTransform"), "{}, token: {}", debug, token_info->getToken(false));
+    LOG_DEBUG(log, "{}, token: {}", debug, token_info->debugToken());
 }
+#endif
 
 String SetInitialTokenTransform::getInitialToken(const Chunk & chunk)
 {

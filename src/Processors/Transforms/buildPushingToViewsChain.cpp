@@ -27,6 +27,7 @@
 #include <Common/ThreadStatus.h>
 #include <Common/checkStackSize.h>
 #include <Common/logger_useful.h>
+#include "base/defines.h"
 #include <Core/Field.h>
 
 #include <atomic>
@@ -225,7 +226,6 @@ std::optional<Chain> generateViewChain(
     if (disable_deduplication_for_children)
     {
         insert_context->setSetting("insert_deduplicate", Field{false});
-        insert_context->setSetting("insert_deduplication_token", Field{""});
     }
 
     // Processing of blocks for MVs is done block by block, and there will
@@ -333,7 +333,13 @@ std::optional<Chain> generateViewChain(
                 insert_columns.emplace_back(column.name);
         }
 
-        InterpreterInsertQuery interpreter(nullptr, insert_context, false, false, false, false);
+        InterpreterInsertQuery interpreter(
+            nullptr,
+            insert_context,
+            /* allow_materialized */ false,
+            /* no_squash */ false,
+            /* no_destination */ false,
+            /* async_isnert */ false);
 
         /// TODO: remove sql_security_type check after we turn `ignore_empty_sql_security_in_create_view_query=false`
         bool check_access = !materialized_view->hasInnerTable() && materialized_view->getInMemoryMetadataPtr()->sql_security_type;
@@ -350,7 +356,9 @@ std::optional<Chain> generateViewChain(
                 table_prefers_large_blocks ? settings.min_insert_block_size_bytes : 0ULL));
         }
 
+#ifdef ABORT_ON_LOGICAL_ERROR
         out.addSource(std::make_shared<DeduplicationToken::CheckTokenTransform>("Before squashing", !disable_deduplication_for_children, out.getInputHeader()));
+#endif
 
         auto counting = std::make_shared<CountingTransform>(out.getInputHeader(), current_thread, insert_context->getQuota());
         counting->setProcessListElement(insert_context->getProcessListElement());
@@ -394,7 +402,9 @@ std::optional<Chain> generateViewChain(
 
     if (type == QueryViewsLogElement::ViewType::MATERIALIZED)
     {
+#ifdef ABORT_ON_LOGICAL_ERROR
         out.addSource(std::make_shared<DeduplicationToken::CheckTokenTransform>("Right after Inner query", !disable_deduplication_for_children, out.getInputHeader()));
+#endif
 
         auto executing_inner_query = std::make_shared<ExecutingInnerQueryFromViewTransform>(
             storage_header, views_data->views.back(), views_data, disable_deduplication_for_children);
@@ -402,7 +412,9 @@ std::optional<Chain> generateViewChain(
 
         out.addSource(std::move(executing_inner_query));
 
+#ifdef ABORT_ON_LOGICAL_ERROR
         out.addSource(std::make_shared<DeduplicationToken::CheckTokenTransform>("Right before Inner query", !disable_deduplication_for_children, out.getInputHeader()));
+#endif
     }
 
     return out;
@@ -459,8 +471,6 @@ Chain buildPushingToViewsChain(
 
     for (const auto & view_id : views)
     {
-        LOG_DEBUG(&Poco::Logger::get("PushingToViews"), "dependent view: {}.{}", view_id.database_name, view_id.table_name);
-
         try
         {
             auto out = generateViewChain(
@@ -569,7 +579,7 @@ Chain buildPushingToViewsChain(
     }
     else
     {
-            result_chain.addSource(std::make_shared<DeduplicationToken::SetInitialTokenTransform>(storage_header));
+        result_chain.addSource(std::make_shared<DeduplicationToken::SetInitialTokenTransform>(storage_header));
     }
 
     if (result_chain.empty())
@@ -586,7 +596,7 @@ Chain buildPushingToViewsChain(
     return result_chain;
 }
 
-static QueryPipeline process(Block block, ViewRuntimeData & view, const ViewsData & views_data, Chunk::ChunkInfoCollection chunk_infos, bool disable_deduplication_for_children)
+static QueryPipeline process(Block block, ViewRuntimeData & view, const ViewsData & views_data, Chunk::ChunkInfoCollection && chunk_infos, bool disable_deduplication_for_children)
 {
     const auto & context = view.context;
 

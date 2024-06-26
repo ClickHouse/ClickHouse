@@ -301,7 +301,13 @@ void AsynchronousInsertQueue::preprocessInsertQuery(const ASTPtr & query, const 
     auto & insert_query = query->as<ASTInsertQuery &>();
     insert_query.async_insert_flush = true;
 
-    InterpreterInsertQuery interpreter(query, query_context, query_context->getSettingsRef().insert_allow_materialized_columns, false, false, false);
+    InterpreterInsertQuery interpreter(
+        query,
+        query_context,
+        query_context->getSettingsRef().insert_allow_materialized_columns,
+        /* no_squash */ false,
+        /* no_destination */ false,
+        /* async_insert */ false);
     auto table = interpreter.getTable(insert_query);
     auto sample_block = InterpreterInsertQuery::getSampleBlock(insert_query, table, table->getInMemoryMetadataPtr(), query_context);
 
