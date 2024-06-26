@@ -28,6 +28,7 @@ void ReadBufferFromPocoSocketChunked::enableChunked()
         return;
     chunked = 1;
     data_end = buffer().end();
+    /// Resize working buffer so any next read will call nextImpl
     working_buffer.resize(offset());
     chunk_left = 0;
     next_chunk = 0;
@@ -51,7 +52,7 @@ bool ReadBufferFromPocoSocketChunked::poll(size_t timeout_microseconds) const
 }
 
 
-bool ReadBufferFromPocoSocketChunked::load_next_chunk(Position c_pos, bool cont)
+bool ReadBufferFromPocoSocketChunked::loadNextChunk(Position c_pos, bool cont)
 {
     auto buffered = std::min(static_cast<size_t>(data_end - c_pos), sizeof(next_chunk));
 
@@ -73,7 +74,7 @@ bool ReadBufferFromPocoSocketChunked::load_next_chunk(Position c_pos, bool cont)
     return true;
 }
 
-bool ReadBufferFromPocoSocketChunked::process_chunk_left(Position c_pos)
+bool ReadBufferFromPocoSocketChunked::processChunkLeft(Position c_pos)
 {
     if (data_end - c_pos < chunk_left)
     {
@@ -88,7 +89,7 @@ bool ReadBufferFromPocoSocketChunked::process_chunk_left(Position c_pos)
 
     c_pos += chunk_left;
 
-    if (!load_next_chunk(c_pos, true))
+    if (!loadNextChunk(c_pos, true))
         return false;
 
     chunk_left = 0;
@@ -115,7 +116,7 @@ bool ReadBufferFromPocoSocketChunked::nextImpl()
             if (c_pos > data_end)
                 c_pos = data_end;
 
-            if (!load_next_chunk(c_pos))
+            if (!loadNextChunk(c_pos))
                 return false;
 
             chunk_left = next_chunk;
@@ -159,7 +160,7 @@ bool ReadBufferFromPocoSocketChunked::nextImpl()
         c_pos = buffer().begin();
     }
 
-    return process_chunk_left(c_pos);
+    return processChunkLeft(c_pos);
 }
 
 }

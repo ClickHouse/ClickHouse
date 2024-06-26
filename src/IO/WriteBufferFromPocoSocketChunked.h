@@ -10,8 +10,14 @@ namespace DB
 class WriteBufferFromPocoSocketChunked: public WriteBufferFromPocoSocket
 {
 public:
-    explicit WriteBufferFromPocoSocketChunked(Poco::Net::Socket & socket_, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE) : WriteBufferFromPocoSocket(socket_, buf_size), log(getLogger("Protocol")) {}
-    explicit WriteBufferFromPocoSocketChunked(Poco::Net::Socket & socket_, const ProfileEvents::Event & write_event_, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE) : WriteBufferFromPocoSocket(socket_, write_event_, buf_size), log(getLogger("Protocol")) {}
+    explicit WriteBufferFromPocoSocketChunked(Poco::Net::Socket & socket_, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE) : WriteBufferFromPocoSocket(socket_, buf_size), log(getLogger("Protocol"))
+    {
+        chassert(buf_size <= std::numeric_limits<std::remove_reference_t<decltype(*chunk_size_ptr)>>::max() && buf_size > sizeof(*chunk_size_ptr));
+    }
+    explicit WriteBufferFromPocoSocketChunked(Poco::Net::Socket & socket_, const ProfileEvents::Event & write_event_, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE) : WriteBufferFromPocoSocket(socket_, write_event_, buf_size), log(getLogger("Protocol"))
+    {
+        chassert(buf_size <= std::numeric_limits<std::remove_reference_t<decltype(*chunk_size_ptr)>>::max() && buf_size > sizeof(*chunk_size_ptr));
+    }
 
     void enableChunked();
     void finishChunk();

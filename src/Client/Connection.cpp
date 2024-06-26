@@ -208,11 +208,20 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
         sendHello();
         receiveHello(timeouts.handshake_timeout);
 
-        bool out_chunked = false;
-        bool in_chunked = false;
-
         if (server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_CHUNKED_PACKETS)
         {
+            /// Client side of chunked protocol negotiation.
+            /// Server advertises its protocol capabilities (separate for send and recieve channels) by sending
+            /// in its 'Hello' response one of four types - chunked, notchunked, chunked_optional, notchunked_optional.
+            /// Not optional types are strict meaning that server only supports this type, optional means that
+            /// server prefer this type but capable to work in opposite.
+            /// Client selects which type it is going to communicate based on the settings from config or arguments,
+            /// and sends either "chunked" or "notchunked" protocol request in addendum section of handshake.
+            /// Client can detect if server's protocol capabilities are not compatible with client's settings (for example
+            /// server strictly requires chunked protocol but client's settings only allowes notchunked protocol) - in such case
+            /// client should interrup this connection. However if client continues with incompatible protocol type request, server
+            /// will send appropriate exception and disconnect client.
+            
             auto is_chunked = [](const String & chunked_srv_str, const String & chunked_cl_str, const String & direction)
             {
                 bool chunked_srv = chunked_srv_str.starts_with("chunked");
@@ -235,20 +244,24 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
                 return chunked_srv;
             };
 
-            out_chunked = is_chunked(proto_recv_chunked_srv, proto_send_chunked, "send");
-            in_chunked = is_chunked(proto_send_chunked_srv, proto_recv_chunked, "recv");
+            proto_send_chunked = is_chunked(proto_recv_chunked_srv, proto_send_chunked, "send") ? "chunked" : "notchunked";
+            proto_recv_chunked = is_chunked(proto_send_chunked_srv, proto_recv_chunked, "recv") ? "chunked" : "notchunked";
+        }
+        else
+        {
+            if (proto_send_chunked == "chunked" || proto_recv_chunked == "chunked")
+                throw NetException(
+                        ErrorCodes::NETWORK_ERROR,
+                        "Incompatible protocol: server's version is too old and doesn't support chunked protocol while client settings require it.");
         }
 
         if (server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_ADDENDUM)
             sendAddendum();
 
-        if (server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_CHUNKED_PACKETS)
-        {
-            if (out_chunked)
-                out->enableChunked();
-            if (in_chunked)
-                in->enableChunked();
-        }
+        if (proto_send_chunked == "chunked")
+            out->enableChunked();
+        if (proto_recv_chunked == "chunked")
+            in->enableChunked();
 
         LOG_TRACE(log_wrapper.get(), "Connected to {} server version {}.{}.{}.",
             server_name, server_version_major, server_version_minor, server_version_patch);

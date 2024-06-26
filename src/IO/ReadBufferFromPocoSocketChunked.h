@@ -92,8 +92,8 @@ public:
     Poco::Net::SocketAddress ourAddress() { return our_address; }
 
 protected:
-    bool load_next_chunk(Position c_pos, bool cont = false);
-    bool process_chunk_left(Position c_pos);
+    bool loadNextChunk(Position c_pos, bool cont = false);
+    bool processChunkLeft(Position c_pos);
     bool nextImpl() override;
 
     Poco::Net::SocketAddress our_address;
