@@ -37,3 +37,13 @@ FULL OUTER JOIN
 WHERE empty(arr);
 
 DROP TABLE t_func_to_subcolumns_join;
+
+DROP TABLE IF EXISTS t_func_to_subcolumns_use_nulls;
+
+CREATE TABLE t_func_to_subcolumns_use_nulls (arr Array(UInt64), v UInt64) ENGINE = MergeTree ORDER BY tuple();
+
+INSERT INTO t_func_to_subcolumns_use_nulls SELECT range(number % 10), number FROM numbers(100);
+
+SELECT length(arr) AS n, sum(v) FROM t_func_to_subcolumns_use_nulls GROUP BY n WITH ROLLUP HAVING n <= 4 OR isNull(n) ORDER BY n SETTINGS group_by_use_nulls = 1;
+
+DROP TABLE t_func_to_subcolumns_use_nulls;

@@ -273,18 +273,26 @@ public:
 
         if (const auto * join_node = node->as<JoinNode>())
         {
-            has_join_use_nulls |= getContext()->getSettingsRef().join_use_nulls;
+            can_wrap_result_columns_with_nullable |= getContext()->getSettingsRef().join_use_nulls;
+            return;
+        }
+
+        if (const auto * query_node = node->as<QueryNode>())
+        {
+            if (query_node->isGroupByWithCube() || query_node->isGroupByWithRollup() || query_node->isGroupByWithGroupingSets())
+                can_wrap_result_columns_with_nullable |= getContext()->getSettingsRef().group_by_use_nulls;
             return;
         }
     }
 
     std::unordered_set<Identifier> getIdentifiersToOptimize() const
     {
-        if (has_join_use_nulls)
+        if (can_wrap_result_columns_with_nullable)
         {
             /// Do not optimize if we have JOIN with setting join_use_null.
+            /// Do not optimize if we have GROUP BY WITH ROLLUP/CUBE/GROUPING SETS with setting group_by_use_nulls.
             /// It may change the behaviour if subcolumn can be converted
-            /// to nullable while the original column cannot.
+            /// to Nullable while the original column cannot (e.g. for Array type).
             return {};
         }
 
@@ -323,7 +331,7 @@ private:
     std::unordered_map<Identifier, UInt64> optimized_identifiers_count;
 
     NameSet processed_tables;
-    bool has_join_use_nulls = false;
+    bool can_wrap_result_columns_with_nullable = false;
 
     void enterImpl(const TableNode & table_node)
     {
@@ -342,9 +350,9 @@ private:
 
         const auto & metadata_snapshot = table_node.getStorageSnapshot()->metadata;
         const auto & primary_key_columns = metadata_snapshot->getColumnsRequiredForPrimaryKey();
-        add_key_columns(primary_key_columns);
-
         const auto & partition_key_columns = metadata_snapshot->getColumnsRequiredForPartitionKey();
+
+        add_key_columns(primary_key_columns);
         add_key_columns(partition_key_columns);
 
         for (const auto & index : metadata_snapshot->getSecondaryIndices())
