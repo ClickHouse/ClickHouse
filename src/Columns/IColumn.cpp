@@ -104,6 +104,14 @@ void IColumn::forEachSubcolumnRecursively(RecursiveColumnCallback callback) cons
     });
 }
 
+void IColumn::assertTypeEquality(const IColumn & rhs) const
+{
+    if (typeid(*this) != typeid(rhs))
+        LOG_DEBUG(&Poco::Logger::get("IColumn"), "typeid(*this) = {}, typeid(rhs) = {}", typeid(*this).name(), typeid(rhs).name());
+
+    chassert(isSparse() || typeid(*this) == typeid(rhs));
+}
+
 bool isColumnNullable(const IColumn & column)
 {
     return checkColumn<ColumnNullable>(column);

@@ -9,6 +9,9 @@
 
 #include "config.h"
 
+#include <Poco/Logger.h>
+#include <Common/logger_useful.h>
+
 
 class SipHash;
 class Collator;
@@ -659,7 +662,7 @@ protected:
     virtual int doCompareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const = 0;
 
 private:
-    void assertTypeEquality(const IColumn & rhs) const { chassert(typeid(*this) == typeid(rhs)); }
+    void assertTypeEquality(const IColumn & rhs) const;
 };
 
 using ColumnPtr = IColumn::Ptr;
