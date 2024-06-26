@@ -65,6 +65,10 @@ void registerStorageRedis(StorageFactory & factory);
 void registerStorageKafka(StorageFactory & factory);
 #endif
 
+#if USE_PULSAR
+void registerStoragePulsar(StorageFactory & factory);
+#endif
+
 #if USE_AMQPCPP
 void registerStorageRabbitMQ(StorageFactory & factory);
 #endif
@@ -159,6 +163,11 @@ void registerStorages()
     #if USE_RDKAFKA
     registerStorageKafka(factory);
     #endif
+
+    #if USE_PULSAR
+    registerStoragePulsar(factory);
+    #endif
+
 
     #if USE_FILELOG
     registerStorageFileLog(factory);
