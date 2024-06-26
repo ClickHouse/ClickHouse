@@ -8,6 +8,7 @@
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperArgs.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
 #include <Coordination/KeeperConstants.h>
 #include <Coordination/KeeperFeatureFlags.h>
 
@@ -102,21 +103,12 @@ using namespace DB;
 class ZooKeeper final : public IKeeper
 {
 public:
-    struct Node
-    {
-        Poco::Net::SocketAddress address;
-        UInt8 original_index;
-        bool secure;
-    };
-
-    using Nodes = std::vector<Node>;
-
     /** Connection to nodes is performed in order. If you want, shuffle them manually.
       * Operation timeout couldn't be greater than session timeout.
       * Operation timeout applies independently for network read, network write, waiting for events and synchronization.
       */
     ZooKeeper(
-        const Nodes & nodes,
+        const zkutil::ShuffleHosts & nodes,
         const zkutil::ZooKeeperArgs & args_,
         std::shared_ptr<ZooKeeperLog> zk_log_);
 
@@ -313,7 +305,7 @@ private:
     LoggerPtr log;
 
     void connect(
-        const Nodes & node,
+        const zkutil::ShuffleHosts & node,
         Poco::Timespan connection_timeout);
 
     void sendHandshake();

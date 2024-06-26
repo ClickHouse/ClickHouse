@@ -5,6 +5,8 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/isLocalAddress.h>
 #include <Common/StringUtils.h>
+#include <Common/thread_local_rng.h>
+#include <Server/CloudPlacementInfo.h>
 #include <IO/S3/Credentials.h>
 #include <Poco/String.h>
 
@@ -134,8 +136,9 @@ void ZooKeeperArgs::initFromKeeperServerSection(const Poco::Util::AbstractConfig
     }
 
     availability_zone_autodetect = config.getBool(std::string{config_name} + ".availability_zone_autodetect", false);
-    if (availability_zone_autodetect)
-        client_availability_zone = DB::S3::tryGetRunningAvailabilityZone();
+    prefer_local_availability_zone = config.getBool(std::string{config_name} + ".prefer_local_availability_zone", false);
+    if (prefer_local_availability_zone)
+        client_availability_zone = DB::PlacementInfo::PlacementInfo::instance().getAvailabilityZone();
 }
 
 void ZooKeeperArgs::initFromKeeperSection(const Poco::Util::AbstractConfiguration & config, const std::string & config_name)
@@ -210,9 +213,9 @@ void ZooKeeperArgs::initFromKeeperSection(const Poco::Util::AbstractConfiguratio
         {
             sessions_path = config.getString(config_name + "." + key);
         }
-        else if (key == "client_availability_zone")
+        else if (key == "prefer_local_availability_zone")
         {
-            client_availability_zone = config.getString(config_name + "." + key);
+            prefer_local_availability_zone = config.getBool(config_name + "." + key);
         }
         else if (key == "implementation")
         {
@@ -249,8 +252,8 @@ void ZooKeeperArgs::initFromKeeperSection(const Poco::Util::AbstractConfiguratio
     if (load_balancing)
         get_priority_load_balancing = DB::GetPriorityForLoadBalancing(*load_balancing, thread_local_rng() % hosts.size());
 
-    if (availability_zone_autodetect)
-        client_availability_zone = DB::S3::tryGetRunningAvailabilityZone();
+    if (prefer_local_availability_zone)
+        client_availability_zone = DB::PlacementInfo::PlacementInfo::instance().getAvailabilityZone();
 }
 
 }

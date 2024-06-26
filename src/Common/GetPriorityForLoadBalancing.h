@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Core/SettingsEnums.h>
-#include <Common/thread_local_rng.h>
 
 namespace DB
 {

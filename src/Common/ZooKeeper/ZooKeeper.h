@@ -63,6 +63,9 @@ struct ShuffleHost
     Priority priority;
     UInt64 random = 0;
 
+    /// We should resolve it each time without caching
+    mutable std::optional<Poco::Net::SocketAddress> address;
+
     void randomize()
     {
         random = thread_local_rng();
@@ -74,6 +77,8 @@ struct ShuffleHost
                < std::forward_as_tuple(lhs.az_info, rhs.priority, rhs.random);
     }
 };
+
+using ShuffleHosts = std::vector<ShuffleHost>;
 
 struct RemoveException
 {
@@ -243,7 +248,7 @@ public:
 
     ~ZooKeeper();
 
-    std::vector<ShuffleHost> shuffleHosts() const;
+    ShuffleHosts shuffleHosts() const;
 
     static Ptr create(const Poco::Util::AbstractConfiguration & config,
                       const std::string & config_name,

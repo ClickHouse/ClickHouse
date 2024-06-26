@@ -23,6 +23,9 @@
 #include <Common/setThreadName.h>
 #include <Common/thread_local_rng.h>
 
+#include <Poco/Net/NetException.h>
+#include <Poco/Net/DNS.h>
+
 #include "Coordination/KeeperConstants.h"
 #include "config.h"
 
@@ -338,7 +341,7 @@ ZooKeeper::~ZooKeeper()
 
 
 ZooKeeper::ZooKeeper(
-    const Nodes & nodes,
+    const zkutil::ShuffleHosts & nodes,
     const zkutil::ZooKeeperArgs & args_,
     std::shared_ptr<ZooKeeperLog> zk_log_)
     : args(args_)
@@ -426,7 +429,7 @@ ZooKeeper::ZooKeeper(
 
 
 void ZooKeeper::connect(
-    const Nodes & nodes,
+    const zkutil::ShuffleHosts & nodes,
     Poco::Timespan connection_timeout)
 {
     if (nodes.empty())
@@ -434,6 +437,40 @@ void ZooKeeper::connect(
 
     static constexpr size_t num_tries = 3;
     bool connected = false;
+    bool dns_error = false;
+
+    size_t resolved_count = 0;
+    for (const auto & node : nodes)
+    {
+        try
+        {
+            const Poco::Net::SocketAddress host_socket_addr{node.host};
+            LOG_TRACE(log, "Adding ZooKeeper host {} ({}), az: {}, priority: {}", node.host, host_socket_addr.toString(), node.az_info, node.priority);
+            node.address = host_socket_addr;
+            ++resolved_count;
+        }
+        catch (const Poco::Net::HostNotFoundException & e)
+        {
+            /// Most likely it's misconfiguration and wrong hostname was specified
+            LOG_ERROR(log, "Cannot use ZooKeeper host {}, reason: {}", node.host, e.displayText());
+        }
+        catch (const Poco::Net::DNSException & e)
+        {
+            /// Most likely DNS is not available now
+            dns_error = true;
+            LOG_ERROR(log, "Cannot use ZooKeeper host {} due to DNS error: {}", node.host, e.displayText());
+        }
+    }
+
+    if (resolved_count == 0)
+    {
+        /// For DNS errors we throw exception with ZCONNECTIONLOSS code, so it will be considered as hardware error, not user error
+        if (dns_error)
+            throw zkutil::KeeperException::fromMessage(
+                Coordination::Error::ZCONNECTIONLOSS, "Cannot resolve any of provided ZooKeeper hosts due to DNS error");
+        else
+            throw zkutil::KeeperException::fromMessage(Coordination::Error::ZCONNECTIONLOSS, "Cannot use any of provided ZooKeeper nodes");
+    }
 
     WriteBufferFromOwnString fail_reasons;
     for (size_t try_no = 0; try_no < num_tries; ++try_no)
@@ -442,6 +479,9 @@ void ZooKeeper::connect(
         {
             try
             {
+                if (!node.address)
+                    continue;
+
                 /// Reset the state of previous attempt.
                 if (node.secure)
                 {
@@ -457,7 +497,7 @@ void ZooKeeper::connect(
                     socket = Poco::Net::StreamSocket();
                 }
 
-                socket.connect(node.address, connection_timeout);
+                socket.connect(*node.address, connection_timeout);
                 socket_address = socket.peerAddress();
 
                 socket.setReceiveTimeout(args.operation_timeout_ms * 1000);
@@ -501,7 +541,7 @@ void ZooKeeper::connect(
             }
             catch (...)
             {
-                fail_reasons << "\n" << getCurrentExceptionMessage(false) << ", " << node.address.toString();
+                fail_reasons << "\n" << getCurrentExceptionMessage(false) << ", " << node.address->toString();
             }
         }
 
@@ -515,6 +555,9 @@ void ZooKeeper::connect(
         bool first = true;
         for (const auto & node : nodes)
         {
+            if (!node.address)
+                continue;
+
             if (first)
                 first = false;
             else
@@ -523,7 +566,7 @@ void ZooKeeper::connect(
             if (node.secure)
                 message << "secure://";
 
-            message << node.address.toString();
+            message << node.address->toString();
         }
 
         message << fail_reasons.str() << "\n";
