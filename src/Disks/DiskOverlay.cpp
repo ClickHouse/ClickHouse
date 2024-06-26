@@ -27,16 +27,16 @@ namespace
         }
         return path;
     }
-}
 
-String mergePath(String parent, const String & child)
-{
-    if (!parent.empty() && parent.back() != '/')
+    String mergePath(String parent, const String & child)
     {
-        parent += '/';
+        if (!parent.empty() && parent.back() != '/')
+        {
+            parent += '/';
+        }
+        parent += child;
+        return parent;
     }
-    parent += child;
-    return parent;
 }
 
 namespace ErrorCodes
