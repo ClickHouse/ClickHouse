@@ -2352,7 +2352,7 @@ bool ParserTTLElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
         std::vector<String> identifiers_used_by_group_by;
 
-        for (auto & key : ttl_element->group_by_key )
+        for (auto & key : ttl_element->group_by_key)
         {
             if (key->as<ASTIdentifier>())
             {
@@ -2372,7 +2372,7 @@ bool ParserTTLElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             }
         }
 
-        for (auto & assignment : ttl_element->group_by_assignments )
+        for (auto & assignment : ttl_element->group_by_assignments)
         {
             if (assignment->as<ASTAssignment>())
             {
