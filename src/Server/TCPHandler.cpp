@@ -279,15 +279,15 @@ void TCPHandler::runImpl()
 
         {
             /// Server side of chunked protocol negotiation.
-            /// Server advertises its protocol capabilities (separate for send and recieve channels) by sending
+            /// Server advertises its protocol capabilities (separate for send and receive channels) by sending
             /// in its 'Hello' response one of four types - chunked, notchunked, chunked_optional, notchunked_optional.
             /// Not optional types are strict meaning that server only supports this type, optional means that
             /// server prefer this type but capable to work in opposite.
             /// Client selects which type it is going to communicate based on the settings from config or arguments,
             /// and sends either "chunked" or "notchunked" protocol request in addendum section of handshake.
             /// Client can detect if server's protocol capabilities are not compatible with client's settings (for example
-            /// server strictly requires chunked protocol but client's settings only allowes notchunked protocol) - in such case
-            /// client should interrup this connection. However if client continues with incompatible protocol type request, server
+            /// server strictly requires chunked protocol but client's settings only allows notchunked protocol) - in such case
+            /// client should interrupt this connection. However if client continues with incompatible protocol type request, server
             /// will send appropriate exception and disconnect client.
 
             auto is_chunked = [](const String & chunked_srv_str, const String & chunked_cl_str, const String & direction)
