@@ -83,7 +83,7 @@ Result:
 ```
 ## makeDate32
 
-Like [makeDate](#makeDate) but produces a [Date32](../data-types/date32.md).
+Like [makeDate](#makedate) but produces a [Date32](../data-types/date32.md).
 
 ## makeDateTime
 
@@ -214,7 +214,7 @@ Result:
 
 **See also**
 
-- [serverTimeZone](#serverTimeZone)
+- [serverTimeZone](#servertimezone)
 
 ## serverTimeZone
 
@@ -249,7 +249,7 @@ Result:
 
 **See also**
 
-- [timeZone](#timeZone)
+- [timeZone](#timezone)
 
 ## toTimeZone
 
@@ -305,7 +305,7 @@ int32samoa: 1546300800
 
 **See Also**
 
-- [formatDateTime](#formatDateTime) - supports non-constant timezone.
+- [formatDateTime](#formatdatetime) - supports non-constant timezone.
 - [toString](type-conversion-functions.md#tostring) - supports non-constant timezone.
 
 ## timeZoneOf
@@ -1006,7 +1006,7 @@ toStartOfWeek(t[, mode[, timezone]])
 **Arguments**
 
 - `t` - a [Date](../data-types/date.md), [Date32](../data-types/date32.md), [DateTime](../data-types/datetime.md) or [DateTime64](../data-types/datetime64.md)
-- `mode` - determines the first day of the week as described in the [toWeek()](date-time-functions#toweek) function
+- `mode` - determines the first day of the week as described in the [toWeek()](#toweek) function
 - `timezone` - Optional parameter, it behaves like any other conversion function
 
 **Returned value**
@@ -1049,7 +1049,7 @@ toLastDayOfWeek(t[, mode[, timezone]])
 **Arguments**
 
 - `t` - a [Date](../data-types/date.md), [Date32](../data-types/date32.md), [DateTime](../data-types/datetime.md) or [DateTime64](../data-types/datetime64.md)
-- `mode` - determines the last day of the week as described in the [toWeek()](date-time-functions#toweek) function
+- `mode` - determines the last day of the week as described in the [toWeek](#toweek) function
 - `timezone` - Optional parameter, it behaves like any other conversion function
 
 **Returned value**
@@ -1229,6 +1229,168 @@ Result:
 ┌─toStartOfSecond(dt64, 'Asia/Istanbul')─┐
 │                2020-01-01 13:20:30.000 │
 └────────────────────────────────────────┘
+```
+
+**See also**
+
+- [Timezone](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) server configuration parameter.
+
+## toStartOfMillisecond
+
+Rounds down a date with time to the start of the milliseconds.
+
+**Syntax**
+
+``` sql
+toStartOfMillisecond(value, [timezone])
+```
+
+**Arguments**
+
+- `value` — Date and time. [DateTime64](../../sql-reference/data-types/datetime64.md).
+- `timezone` — [Timezone](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) for the returned value (optional). If not specified, the function uses the timezone of the `value` parameter. [String](../../sql-reference/data-types/string.md).
+
+**Returned value**
+
+- Input value with sub-milliseconds. [DateTime64](../../sql-reference/data-types/datetime64.md).
+
+**Examples**
+
+Query without timezone:
+
+``` sql
+WITH toDateTime64('2020-01-01 10:20:30.999999999', 9) AS dt64
+SELECT toStartOfMillisecond(dt64);
+```
+
+Result:
+
+``` text
+┌────toStartOfMillisecond(dt64)─┐
+│ 2020-01-01 10:20:30.999000000 │
+└───────────────────────────────┘
+```
+
+Query with timezone:
+
+``` sql
+┌─toStartOfMillisecond(dt64, 'Asia/Istanbul')─┐
+│               2020-01-01 12:20:30.999000000 │
+└─────────────────────────────────────────────┘
+```
+
+Result:
+
+``` text
+┌─toStartOfMillisecond(dt64, 'Asia/Istanbul')─┐
+│                     2020-01-01 12:20:30.999 │
+└─────────────────────────────────────────────┘
+```
+
+## toStartOfMicrosecond
+
+Rounds down a date with time to the start of the microseconds.
+
+**Syntax**
+
+``` sql
+toStartOfMicrosecond(value, [timezone])
+```
+
+**Arguments**
+
+- `value` — Date and time. [DateTime64](../../sql-reference/data-types/datetime64.md).
+- `timezone` — [Timezone](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) for the returned value (optional). If not specified, the function uses the timezone of the `value` parameter. [String](../../sql-reference/data-types/string.md).
+
+**Returned value**
+
+- Input value with sub-microseconds. [DateTime64](../../sql-reference/data-types/datetime64.md).
+
+**Examples**
+
+Query without timezone:
+
+``` sql
+WITH toDateTime64('2020-01-01 10:20:30.999999999', 9) AS dt64
+SELECT toStartOfMicrosecond(dt64);
+```
+
+Result:
+
+``` text
+┌────toStartOfMicrosecond(dt64)─┐
+│ 2020-01-01 10:20:30.999999000 │
+└───────────────────────────────┘
+```
+
+Query with timezone:
+
+``` sql
+WITH toDateTime64('2020-01-01 10:20:30.999999999', 9) AS dt64
+SELECT toStartOfMicrosecond(dt64, 'Asia/Istanbul');
+```
+
+Result:
+
+``` text
+┌─toStartOfMicrosecond(dt64, 'Asia/Istanbul')─┐
+│               2020-01-01 12:20:30.999999000 │
+└─────────────────────────────────────────────┘
+```
+
+**See also**
+
+- [Timezone](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) server configuration parameter.
+
+## toStartOfNanosecond
+
+Rounds down a date with time to the start of the nanoseconds.
+
+**Syntax**
+
+``` sql
+toStartOfNanosecond(value, [timezone])
+```
+
+**Arguments**
+
+- `value` — Date and time. [DateTime64](../../sql-reference/data-types/datetime64.md).
+- `timezone` — [Timezone](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) for the returned value (optional). If not specified, the function uses the timezone of the `value` parameter. [String](../../sql-reference/data-types/string.md).
+
+**Returned value**
+
+- Input value with nanoseconds. [DateTime64](../../sql-reference/data-types/datetime64.md).
+
+**Examples**
+
+Query without timezone:
+
+``` sql
+WITH toDateTime64('2020-01-01 10:20:30.999999999', 9) AS dt64
+SELECT toStartOfNanosecond(dt64);
+```
+
+Result:
+
+``` text
+┌─────toStartOfNanosecond(dt64)─┐
+│ 2020-01-01 10:20:30.999999999 │
+└───────────────────────────────┘
+```
+
+Query with timezone:
+
+``` sql
+WITH toDateTime64('2020-01-01 10:20:30.999999999', 9) AS dt64
+SELECT toStartOfNanosecond(dt64, 'Asia/Istanbul');
+```
+
+Result:
+
+``` text
+┌─toStartOfNanosecond(dt64, 'Asia/Istanbul')─┐
+│              2020-01-01 12:20:30.999999999 │
+└────────────────────────────────────────────┘
 ```
 
 **See also**
@@ -1557,7 +1719,7 @@ Result:
 
 **See Also**
 
-- [fromDaysSinceYearZero](#fromDaysSinceYearZero)
+- [fromDaysSinceYearZero](#fromdayssinceyearzero)
 
 ## fromDaysSinceYearZero
 
@@ -1597,11 +1759,11 @@ Result:
 
 **See Also**
 
-- [toDaysSinceYearZero](#toDaysSinceYearZero)
+- [toDaysSinceYearZero](#todayssinceyearzero)
 
 ## fromDaysSinceYearZero32
 
-Like [fromDaysSinceYearZero](#fromDaysSinceYearZero) but returns a [Date32](../data-types/date32.md).
+Like [fromDaysSinceYearZero](#fromdayssinceyearzero) but returns a [Date32](../data-types/date32.md).
 
 ## age
 
@@ -1820,7 +1982,7 @@ Result:
 
 **See Also**
 
-- [toStartOfInterval](#tostartofintervaldate_or_date_with_time-interval-x-unit--time_zone)
+- [toStartOfInterval](#tostartofinterval)
 
 ## date\_add
 
@@ -1893,7 +2055,7 @@ Result:
 
 **See Also**
 
-- [addDate](#addDate)
+- [addDate](#adddate)
 
 ## date\_sub
 
@@ -1967,7 +2129,7 @@ Result:
 
 **See Also**
 
-- [subDate](#subDate)
+- [subDate](#subdate)
 
 ## timestamp\_add
 
@@ -2148,7 +2310,7 @@ Alias: `SUBDATE`
 
 - [date_sub](#date_sub)
 
-## now {#now}
+## now
 
 Returns the current date and time at the moment of query analysis. The function is a constant expression.
 
@@ -3447,7 +3609,7 @@ SELECT timeSlots(toDateTime64('1980-12-12 21:01:02.1234', 4, 'UTC'), toDecimal64
 └───────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## formatDateTime {#formatDateTime}
+## formatDateTime
 
 Formats a Time according to the given Format string. Format is a constant expression, so you cannot have multiple formats for a single result column.
 
@@ -3572,10 +3734,9 @@ LIMIT 10
 
 **See Also**
 
-- [formatDateTimeInJodaSyntax](##formatDateTimeInJodaSyntax)
+- [formatDateTimeInJodaSyntax](#formatdatetimeinjodasyntax)
 
-
-## formatDateTimeInJodaSyntax {#formatDateTimeInJodaSyntax}
+## formatDateTimeInJodaSyntax
 
 Similar to formatDateTime, except that it formats datetime in Joda style instead of MySQL style. Refer to https://joda-time.sourceforge.net/apidocs/org/joda/time/format/DateTimeFormat.html.
 
@@ -3740,11 +3901,11 @@ Result:
 
 **See Also**
 
-- [fromUnixTimestampInJodaSyntax](##fromUnixTimestampInJodaSyntax)
+- [fromUnixTimestampInJodaSyntax](#fromunixtimestampinjodasyntax)
 
 ## fromUnixTimestampInJodaSyntax
 
-Same as [fromUnixTimestamp](#fromUnixTimestamp) but when called in the second way (two or three arguments), the formatting is performed using [Joda style](https://joda-time.sourceforge.net/apidocs/org/joda/time/format/DateTimeFormat.html) instead of MySQL style.
+Same as [fromUnixTimestamp](#fromunixtimestamp) but when called in the second way (two or three arguments), the formatting is performed using [Joda style](https://joda-time.sourceforge.net/apidocs/org/joda/time/format/DateTimeFormat.html) instead of MySQL style.
 
 **Example:**
 
@@ -3953,6 +4114,43 @@ Result:
 │                                                 2023-03-16 18:00:00.000 │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
+
+## UTCTimestamp
+
+Returns the current date and time at the moment of query analysis. The function is a constant expression.
+
+:::note
+This function gives the same result that `now('UTC')` would. It was added only for MySQL support and [`now`](#now) is the preferred usage.
+:::
+
+**Syntax**
+
+```sql
+UTCTimestamp()
+```
+
+Alias: `UTC_timestamp`.
+
+**Returned value**
+
+- Returns the current date and time at the moment of query analysis. [DateTime](../data-types/datetime.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT UTCTimestamp();
+```
+
+Result:
+
+```response
+┌──────UTCTimestamp()─┐
+│ 2024-05-28 08:32:09 │
+└─────────────────────┘
+```
+
 ## timeDiff
 
 Returns the difference between two dates or dates with time values. The difference is calculated in units of seconds. It is same as `dateDiff` and was added only for MySQL support. `dateDiff` is preferred.

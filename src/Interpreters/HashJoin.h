@@ -322,8 +322,6 @@ public:
                 APPLY_FOR_JOIN_VARIANTS(M)
             #undef M
             }
-
-            UNREACHABLE();
         }
 
         size_t getTotalByteCountImpl(Type which) const
@@ -338,8 +336,6 @@ public:
                 APPLY_FOR_JOIN_VARIANTS(M)
             #undef M
             }
-
-            UNREACHABLE();
         }
 
         size_t getBufferSizeInCells(Type which) const
@@ -354,8 +350,6 @@ public:
                 APPLY_FOR_JOIN_VARIANTS(M)
             #undef M
             }
-
-            UNREACHABLE();
         }
 /// NOLINTEND(bugprone-macro-parentheses)
     };
@@ -440,7 +434,10 @@ private:
     /// Changes in hash table broke correspondence,
     /// so we must guarantee constantness of hash table during HashJoin lifetime (using method setLock)
     mutable JoinStuff::JoinUsedFlags used_flags;
+
     RightTableDataPtr data;
+    bool have_compressed = false;
+
     std::vector<Sizes> key_sizes;
 
     /// Needed to do external cross join

@@ -45,8 +45,7 @@ public:
         ContextPtr context,
         const Names & key_column_names,
         const ExpressionActionsPtr & key_expr,
-        bool single_point_ = false,
-        bool strict_ = false);
+        bool single_point_ = false);
 
     /// Whether the condition and its negation are feasible in the direct product of single column ranges specified by `hyperrectangle`.
     BoolMask checkInHyperrectangle(
@@ -217,6 +216,8 @@ public:
     const RPN & getRPN() const { return rpn; }
     const ColumnIndices & getKeyColumns() const { return key_columns; }
 
+    bool isRelaxed() const { return relaxed; }
+
 private:
     BoolMask checkInRange(
         size_t used_key_size,
@@ -228,20 +229,22 @@ private:
 
     bool extractAtomFromTree(const RPNBuilderTreeNode & node, RPNElement & out);
 
-    /** Is node the key column, or an argument of a space-filling curve that is a key column,
-      *  or expression in which that column is wrapped by a chain of functions,
-      *  that can be monotonic on certain ranges?
-      * If these conditions are true, then returns number of column in key,
-      *  optionally the argument position of a space-filling curve,
-      *  type of resulting expression
-      *  and fills chain of possibly-monotonic functions.
-      */
+    /// Is node the key column, or an argument of a space-filling curve that is a key column,
+    ///  or expression in which that column is wrapped by a chain of functions,
+    ///  that can be monotonic on certain ranges?
+    /// If these conditions are true, then returns number of column in key,
+    ///  optionally the argument position of a space-filling curve,
+    ///  type of resulting expression
+    ///  and fills chain of possibly-monotonic functions.
+    /// If @assume_function_monotonicity = true, assume all deterministic
+    /// functions as monotonic, which is useful for partition pruning.
     bool isKeyPossiblyWrappedByMonotonicFunctions(
         const RPNBuilderTreeNode & node,
         size_t & out_key_column_num,
         std::optional<size_t> & out_argument_num_of_space_filling_curve,
         DataTypePtr & out_key_res_column_type,
-        MonotonicFunctionsChain & out_functions_chain);
+        MonotonicFunctionsChain & out_functions_chain,
+        bool assume_function_monotonicity = false);
 
     bool isKeyPossiblyWrappedByMonotonicFunctionsImpl(
         const RPNBuilderTreeNode & node,
@@ -325,11 +328,20 @@ private:
     const NameSet key_subexpr_names;
 
     /// Space-filling curves in the key
+    enum class SpaceFillingCurveType
+    {
+        Unknown = 0,
+        Morton,
+        Hilbert
+    };
+    static const std::unordered_map<String, SpaceFillingCurveType> space_filling_curve_name_to_type;
+
     struct SpaceFillingCurveDescription
     {
         size_t key_column_pos;
         String function_name;
         std::vector<String> arguments;
+        SpaceFillingCurveType type;
     };
     using SpaceFillingCurveDescriptions = std::vector<SpaceFillingCurveDescription>;
     SpaceFillingCurveDescriptions key_space_filling_curves;
@@ -338,11 +350,63 @@ private:
     /// Array joined column names
     NameSet array_joined_column_names;
 
-    // If true, always allow key_expr to be wrapped by function
+    /// If true, this key condition is used only to validate single value
+    /// ranges. It permits key_expr and constant of FunctionEquals to be
+    /// transformed by any deterministic functions. It is used by
+    /// PartitionPruner.
     bool single_point;
 
-    // If true, do not use always_monotonic information to transform constants
-    bool strict;
+    /// If true, this key condition is relaxed. When a key condition is relaxed, it
+    /// is considered weakened. This is because keys may not always align perfectly
+    /// with the condition specified in the query, and the aim is to enhance the
+    /// usefulness of different types of key expressions across various scenarios.
+    ///
+    /// For instance, in a scenario with one granule of key column toDate(a), where
+    /// the hyperrectangle is toDate(a) ∊ [x, y], the result of a ∊ [u, v] can be
+    /// deduced as toDate(a) ∊ [toDate(u), toDate(v)] due to the monotonic
+    /// non-decreasing nature of the toDate function. Similarly, for a ∊ (u, v), the
+    /// transformed outcome remains toDate(a) ∊ [toDate(u), toDate(v)] as toDate
+    /// does not strictly follow a monotonically increasing transformation. This is
+    /// one of the main use case about key condition relaxation.
+    ///
+    /// During the KeyCondition::checkInRange process, relaxing the key condition
+    /// can lead to a loosened result. For example, when transitioning from (u, v)
+    /// to [u, v], if a key is within the range [u, u], BoolMask::can_be_true will
+    /// be true instead of false, causing us to not skip this granule. This behavior
+    /// is acceptable as we can still filter it later on. Conversely, if the key is
+    /// within the range [u, v], BoolMask::can_be_false will be false instead of
+    /// true, indicating a stricter condition where all elements of the granule
+    /// satisfy the key condition. Hence, when the key condition is relaxed, we
+    /// cannot rely on BoolMask::can_be_false. One significant use case of
+    /// BoolMask::can_be_false is in trivial count optimization.
+    ///
+    /// Now let's review all the cases of key condition relaxation across different
+    /// atom types.
+    ///
+    /// 1. Not applicable: ALWAYS_FALSE, ALWAYS_TRUE, FUNCTION_NOT,
+    /// FUNCTION_AND, FUNCTION_OR.
+    ///
+    /// These atoms are either never relaxed or are relaxed by their children.
+    ///
+    /// 2. Constant transformed: FUNCTION_IN_RANGE, FUNCTION_NOT_IN_RANGE,
+    /// FUNCTION_IS_NULL. FUNCTION_IS_NOT_NULL, FUNCTION_IN_SET (1 element),
+    /// FUNCTION_NOT_IN_SET (1 element)
+    ///
+    /// These atoms are relaxed only when the associated constants undergo
+    /// transformation by monotonic functions, as illustrated in the example
+    /// mentioned earlier.
+    ///
+    /// 3. Always relaxed: FUNCTION_UNKNOWN, FUNCTION_IN_SET (>1 elements),
+    /// FUNCTION_NOT_IN_SET (>1 elements), FUNCTION_ARGS_IN_HYPERRECTANGLE
+    ///
+    /// These atoms are always considered relaxed for the sake of implementation
+    /// simplicity, as there may be "gaps" within the atom's hyperrectangle that the
+    /// granule's hyperrectangle may or may not intersect.
+    ///
+    /// NOTE: we also need to examine special functions that generate atoms. For
+    /// example, the `match` function can produce a FUNCTION_IN_RANGE atom based
+    /// on a given regular expression, which is relaxed for simplicity.
+    bool relaxed = false;
 };
 
 String extractFixedPrefixFromLikePattern(std::string_view like_pattern, bool requires_perfect_prefix);

@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 
-#include <Storages/Statistics/Statistics.h>
+#include <Storages/Statistics/TDigestStatistics.h>
 
 TEST(Statistics, TDigestLessThan)
 {
