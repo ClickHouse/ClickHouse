@@ -13,14 +13,16 @@ TDigestStatistics::TDigestStatistics(const SingleStatisticsDescription & stat_)
 {
 }
 
-Float64 TDigestStatistics::estimateLess(Float64 val) const
+void TDigestStatistics::update(const ColumnPtr & column)
 {
-    return t_digest.getCountLessThan(val);
-}
+    size_t rows = column->size();
 
-Float64 TDigestStatistics::estimateEqual(Float64 val) const
-{
-    return t_digest.getCountEqual(val);
+    for (size_t row = 0; row < rows; ++row)
+    {
+        /// TODO: support more types.
+        Float64 value = column->getFloat64(row);
+        t_digest.add(value, 1);
+    }
 }
 
 void TDigestStatistics::serialize(WriteBuffer & buf)
@@ -33,16 +35,14 @@ void TDigestStatistics::deserialize(ReadBuffer & buf)
     t_digest.deserialize(buf);
 }
 
-void TDigestStatistics::update(const ColumnPtr & column)
+Float64 TDigestStatistics::estimateLess(Float64 val) const
 {
-    size_t rows = column->size();
+    return t_digest.getCountLessThan(val);
+}
 
-    for (size_t row = 0; row < rows; ++row)
-    {
-        /// TODO: support more types.
-        Float64 value = column->getFloat64(row);
-        t_digest.add(value, 1);
-    }
+Float64 TDigestStatistics::estimateEqual(Float64 val) const
+{
+    return t_digest.getCountEqual(val);
 }
 
 void TDigestValidator(const SingleStatisticsDescription &, DataTypePtr data_type)

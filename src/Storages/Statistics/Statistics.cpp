@@ -24,7 +24,10 @@ enum StatisticsFileVersion : UInt16
     V0 = 0,
 };
 
-IStatistics::IStatistics(const SingleStatisticsDescription & stat_) : stat(stat_) {}
+IStatistics::IStatistics(const SingleStatisticsDescription & stat_)
+    : stat(stat_)
+{
+}
 
 ColumnStatistics::ColumnStatistics(const ColumnStatisticsDescription & stats_desc_)
     : stats_desc(stats_desc_)

@@ -11,13 +11,14 @@ class TDigestStatistics : public IStatistics
 public:
     explicit TDigestStatistics(const SingleStatisticsDescription & stat_);
 
-    Float64 estimateLess(Float64 val) const;
-    Float64 estimateEqual(Float64 val) const;
+    void update(const ColumnPtr & column) override;
 
     void serialize(WriteBuffer & buf) override;
     void deserialize(ReadBuffer & buf) override;
 
-    void update(const ColumnPtr & column) override;
+    Float64 estimateLess(Float64 val) const;
+    Float64 estimateEqual(Float64 val) const;
+
 private:
     QuantileTDigest<Float64> t_digest;
 };
