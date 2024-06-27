@@ -563,7 +563,7 @@ Pipe ReadFromMergeTree::readInOrder(
     /// Actually it means that parallel reading from replicas enabled
     /// and we have to collaborate with initiator.
     /// In this case we won't set approximate rows, because it will be accounted multiple times.
-    const auto in_order_limit = query_info.input_order_info->limit;
+    const auto in_order_limit = query_info.input_order_info ? query_info.input_order_info->limit : 0;
     const bool set_total_rows_approx = !is_parallel_reading_from_replicas;
 
     Pipes pipes;
