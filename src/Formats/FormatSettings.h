@@ -275,6 +275,7 @@ struct FormatSettings
         bool output_compliant_nested_types = true;
         size_t data_page_size = 1024 * 1024;
         size_t write_batch_size = 1024;
+        bool write_page_index = false;
         size_t local_read_min_bytes_for_seek = 8192;
     } parquet{};
 
