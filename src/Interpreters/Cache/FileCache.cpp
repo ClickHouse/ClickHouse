@@ -1414,8 +1414,11 @@ FileCache::~FileCache()
 void FileCache::deactivateBackgroundOperations()
 {
     shutdown.store(true);
+
     stop_loading_metadata = true;
-    load_metadata_main_thread.join();
+    if (load_metadata_main_thread.joinable())
+        load_metadata_main_thread.join();
+
     metadata.shutdown();
     if (keep_up_free_space_ratio_task)
         keep_up_free_space_ratio_task->deactivate();
