@@ -521,7 +521,7 @@ std::optional<AuthResult> IAccessStorage::authenticateImpl(
     {
         if (auto user = tryRead<User>(*id))
         {
-            AuthResult auth_result { .user_id = *id, .authentication_data = std::nullopt };
+            AuthResult auth_result { .user_id = *id };
             if (!isAddressAllowed(*user, address))
                 throwAddressNotAllowed(address);
 
