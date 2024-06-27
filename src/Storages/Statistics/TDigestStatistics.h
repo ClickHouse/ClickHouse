@@ -11,6 +11,8 @@ class TDigestStatistics : public IStatistics
 public:
     explicit TDigestStatistics(const SingleStatisticsDescription & stat_);
 
+    StatisticsType getType() const override;
+
     void update(const ColumnPtr & column) override;
 
     void serialize(WriteBuffer & buf) override;

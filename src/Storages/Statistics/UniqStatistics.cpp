@@ -20,6 +20,11 @@ UniqStatistics::UniqStatistics(const SingleStatisticsDescription & stat_, const 
     collector->create(data);
 }
 
+StatisticsType UniqStatistics::getType() const
+{
+    return StatisticsType::Uniq;
+}
+
 UniqStatistics::~UniqStatistics()
 {
     collector->destroy(data);

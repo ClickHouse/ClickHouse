@@ -13,6 +13,8 @@ public:
     UniqStatistics(const SingleStatisticsDescription & stat_, const DataTypePtr & data_type);
     ~UniqStatistics() override;
 
+    StatisticsType getType() const override;
+
     void update(const ColumnPtr & column) override;
 
     void serialize(WriteBuffer & buf) override;

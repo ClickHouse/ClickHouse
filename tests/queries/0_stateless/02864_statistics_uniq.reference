@@ -16,7 +16,7 @@ After merge
 After modify TDigest
         Prewhere info
           Prewhere filter
-          Prewhere filter column: and(less(a, 10), equals(c, 11), less(b, 10)) (removed)
+          Prewhere filter column: and(equals(c, 11), less(a, 10), less(b, 10)) (removed)
         Prewhere info
           Prewhere filter
           Prewhere filter column: and(less(a, 10), equals(c, 0), less(b, 10)) (removed)

@@ -24,6 +24,8 @@ public:
     explicit IStatistics(const SingleStatisticsDescription & stat_);
     virtual ~IStatistics() = default;
 
+    virtual StatisticsType getType() const = 0;
+
     virtual void update(const ColumnPtr & column) = 0;
 
     virtual void serialize(WriteBuffer & buf) = 0;
@@ -66,7 +68,7 @@ public:
 private:
     friend class MergeTreeStatisticsFactory;
     ColumnStatisticsDescription stats_desc;
-    std::map<StatisticsType, StatisticsPtr> stats;
+    std::set<StatisticsPtr> statistics;
     UInt64 rows = 0; /// the number of rows in the column
 };
 

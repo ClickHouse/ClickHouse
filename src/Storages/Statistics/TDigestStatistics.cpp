@@ -13,6 +13,11 @@ TDigestStatistics::TDigestStatistics(const SingleStatisticsDescription & stat_)
 {
 }
 
+StatisticsType TDigestStatistics::getType() const
+{
+    return StatisticsType::TDigest;
+}
+
 void TDigestStatistics::update(const ColumnPtr & column)
 {
     size_t rows = column->size();
