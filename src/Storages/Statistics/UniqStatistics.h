@@ -11,18 +11,16 @@ class UniqStatistics : public IStatistics
 {
 public:
     UniqStatistics(const SingleStatisticsDescription & stat_, const DataTypePtr & data_type);
-
     ~UniqStatistics() override;
 
-    UInt64 getCardinality();
+    void update(const ColumnPtr & column) override;
 
     void serialize(WriteBuffer & buf) override;
     void deserialize(ReadBuffer & buf) override;
 
-    void update(const ColumnPtr & column) override;
+    UInt64 getCardinality();
 
 private:
-
     std::unique_ptr<Arena> arena;
     AggregateFunctionPtr collector;
     AggregateDataPtr data;

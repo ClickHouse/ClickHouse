@@ -25,11 +25,13 @@ UniqStatistics::~UniqStatistics()
     collector->destroy(data);
 }
 
-UInt64 UniqStatistics::getCardinality()
+void UniqStatistics::update(const ColumnPtr & column)
 {
-    auto column = DataTypeUInt64().createColumn();
-    collector->insertResultInto(data, *column, nullptr);
-    return column->getUInt(0);
+    /// TODO(hanfei): For low cardinality, it's very slow to convert to full column. We can read the dictionary directly.
+    /// Here we intend to avoid crash in CI.
+    auto col_ptr = column->convertToFullColumnIfLowCardinality();
+    const IColumn * raw_ptr = col_ptr.get();
+    collector->addBatchSinglePlace(0, column->size(), data, &(raw_ptr), nullptr);
 }
 
 void UniqStatistics::serialize(WriteBuffer & buf)
@@ -42,13 +44,11 @@ void UniqStatistics::deserialize(ReadBuffer & buf)
     collector->deserialize(data, buf);
 }
 
-void UniqStatistics::update(const ColumnPtr & column)
+UInt64 UniqStatistics::getCardinality()
 {
-    /// TODO(hanfei): For low cardinality, it's very slow to convert to full column. We can read the dictionary directly.
-    /// Here we intend to avoid crash in CI.
-    auto col_ptr = column->convertToFullColumnIfLowCardinality();
-    const IColumn * raw_ptr = col_ptr.get();
-    collector->addBatchSinglePlace(0, column->size(), data, &(raw_ptr), nullptr);
+    auto column = DataTypeUInt64().createColumn();
+    collector->insertResultInto(data, *column, nullptr);
+    return column->getUInt(0);
 }
 
 void UniqValidator(const SingleStatisticsDescription &, DataTypePtr data_type)
