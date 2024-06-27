@@ -201,6 +201,7 @@ private:
     const size_t boundary_alignment;
     size_t load_metadata_threads;
     const bool load_metadata_asynchronously;
+    std::atomic<bool> stop_loading_metadata = false;
     const bool write_cache_per_user_directory;
 
     BackgroundSchedulePool::TaskHolder keep_up_free_space_ratio_task;

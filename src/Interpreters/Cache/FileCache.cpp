@@ -1187,7 +1187,6 @@ void FileCache::loadMetadataImpl()
     std::vector<ThreadFromGlobalPool> loading_threads;
     std::exception_ptr first_exception;
     std::mutex set_exception_mutex;
-    std::atomic<bool> stop_loading = false;
 
     LOG_INFO(log, "Loading filesystem cache with {} threads from {}", load_metadata_threads, metadata.getBaseDirectory());
 
@@ -1197,7 +1196,7 @@ void FileCache::loadMetadataImpl()
         {
             loading_threads.emplace_back([&]
             {
-                while (!stop_loading)
+                while (!stop_loading_metadata)
                 {
                     try
                     {
@@ -1214,7 +1213,7 @@ void FileCache::loadMetadataImpl()
                             if (!first_exception)
                                 first_exception = std::current_exception();
                         }
-                        stop_loading = true;
+                        stop_loading_metadata = true;
                         return;
                     }
                 }
@@ -1227,7 +1226,7 @@ void FileCache::loadMetadataImpl()
                 if (!first_exception)
                     first_exception = std::current_exception();
             }
-            stop_loading = true;
+            stop_loading_metadata = true;
             break;
         }
     }
@@ -1416,6 +1415,7 @@ FileCache::~FileCache()
 void FileCache::deactivateBackgroundOperations()
 {
     shutdown.store(true);
+    stop_loading_metadata = true;
     metadata.shutdown();
     if (keep_up_free_space_ratio_task)
         keep_up_free_space_ratio_task->deactivate();
