@@ -270,37 +270,36 @@ StoragePtr DatabaseWithOwnTablesBase::detachTable(ContextPtr /* context_ */, con
 
 StoragePtr DatabaseWithOwnTablesBase::detachTableUnlocked(const String & table_name)
 {
-    StoragePtr res;
-
     auto it = tables.find(table_name);
     if (it == tables.end())
         throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {}.{} doesn't exist",
                         backQuote(database_name), backQuote(table_name));
-    res = it->second;
+
+    auto table_storage = it->second;
 
     snapshot_detached_tables.emplace(
-        it->first,
+        table_name,
         SnapshotDetachedTable{
             .database = it->second->getStorageID().getDatabaseName(),
-            .table = it->first,
+            .table = table_name,
             .uuid = it->second->getStorageID().uuid,
-            .metadata_path = getObjectMetadataPath(it->first),
+            .metadata_path = getObjectMetadataPath(table_name),
             .is_permanently = false});
 
     tables.erase(it);
-    res->is_detached = true;
+    table_storage->is_detached = true;
 
-    if (res->isSystemStorage() == false)
-        CurrentMetrics::sub(getAttachedCounterForStorage(res), 1);
+    if (table_storage->isSystemStorage() == false)
+        CurrentMetrics::sub(getAttachedCounterForStorage(table_storage), 1);
 
-    auto table_id = res->getStorageID();
+    auto table_id = table_storage->getStorageID();
     if (table_id.hasUUID())
     {
         assert(database_name == DatabaseCatalog::TEMPORARY_DATABASE || getUUID() != UUIDHelpers::Nil);
         DatabaseCatalog::instance().removeUUIDMapping(table_id.uuid);
     }
 
-    return res;
+    return table_storage;
 }
 
 void DatabaseWithOwnTablesBase::attachTable(ContextPtr /* context_ */, const String & table_name, const StoragePtr & table, const String &)
