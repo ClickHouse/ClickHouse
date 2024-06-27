@@ -50,8 +50,10 @@ class ColumnStatistics
 {
 public:
     explicit ColumnStatistics(const ColumnStatisticsDescription & stats_);
+
     void serialize(WriteBuffer & buf);
     void deserialize(ReadBuffer & buf);
+
     String getFileName() const;
 
     const String & columnName() const;
@@ -61,9 +63,7 @@ public:
     void update(const ColumnPtr & column);
 
     Float64 estimateLess(Float64 val) const;
-
     Float64 estimateGreater(Float64 val) const;
-
     Float64 estimateEqual(Field val) const;
 
 private:
@@ -86,11 +86,9 @@ public:
     void validate(const ColumnStatisticsDescription & stats, DataTypePtr data_type) const;
 
     using Creator = std::function<StatisticsPtr(const SingleStatisticsDescription & stats, DataTypePtr data_type)>;
-
     using Validator = std::function<void(const SingleStatisticsDescription & stats, DataTypePtr data_type)>;
 
     ColumnStatisticsPtr get(const ColumnStatisticsDescription & stats) const;
-
     ColumnsStatistics getMany(const ColumnsDescription & columns) const;
 
     void registerCreator(StatisticsType type, Creator creator);

@@ -1,18 +1,19 @@
-#include <optional>
-#include <numeric>
+#include <Storages/Statistics/Statistics.h>
 
+#include <Common/Exception.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <Storages/Statistics/CountMinSketchStatistics.h>
-#include <Storages/Statistics/Statistics.h>
 #include <Storages/Statistics/TDigestStatistics.h>
 #include <Storages/Statistics/UniqStatistics.h>
 #include <Storages/StatisticsDescription.h>
-#include <Common/Exception.h>
 
 #include "config.h" /// USE_DATASKETCHES
+
+#include <optional>
+#include <numeric>
 
 namespace DB
 {
@@ -76,7 +77,8 @@ std::optional<String> IStatistics::getString(const Field & f)
 IStatistics::IStatistics(const SingleStatisticsDescription & stat_) : stat(stat_) {}
 
 ColumnStatistics::ColumnStatistics(const ColumnStatisticsDescription & stats_desc_)
-    : stats_desc(stats_desc_), rows(0)
+    : stats_desc(stats_desc_)
+    , rows(0)
 {
 }
 
@@ -84,9 +86,7 @@ void ColumnStatistics::update(const ColumnPtr & column)
 {
     rows += column->size();
     for (const auto & iter : stats)
-    {
         iter.second->update(column);
-    }
 }
 
 Float64 ColumnStatistics::estimateLess(Float64 val) const
@@ -132,12 +132,12 @@ void ColumnStatistics::serialize(WriteBuffer & buf)
 {
     writeIntBinary(V0, buf);
     UInt64 stat_types_mask = 0;
-    for (const auto & [type, _]: stats)
+    for (const auto & [type, _] : stats)
         stat_types_mask |= 1 << UInt8(type);
     writeIntBinary(stat_types_mask, buf);
-    /// We write some basic statistics
+    /// the row count is so useful that we always store it
     writeIntBinary(rows, buf);
-    /// We write complex statistics
+    /// next, store the actual statistics objects
     for (const auto & [type, stat_ptr]: stats)
         stat_ptr->serialize(buf);
 }

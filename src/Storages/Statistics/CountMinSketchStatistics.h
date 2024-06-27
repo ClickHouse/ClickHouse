@@ -24,9 +24,6 @@ public:
     void update(const ColumnPtr & column) override;
 
 private:
-    static constexpr auto num_hashes = 8uz;
-    static constexpr auto num_buckets = 2048uz;
-
     using Sketch = datasketches::count_min_sketch<UInt64>;
     Sketch sketch;
 

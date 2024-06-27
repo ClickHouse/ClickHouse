@@ -14,6 +14,8 @@ namespace ErrorCodes
 extern const int ILLEGAL_STATISTICS;
 }
 
+static constexpr auto num_hashes = 8uz;
+static constexpr auto num_buckets = 2048uz;
 
 CountMinSketchStatistics::CountMinSketchStatistics(const SingleStatisticsDescription & stat_, DataTypePtr data_type_)
     : IStatistics(stat_)
@@ -47,7 +49,7 @@ void CountMinSketchStatistics::deserialize(ReadBuffer & buf)
     bytes.reserve(size);
     buf.readStrict(reinterpret_cast<char *>(bytes.data()), size);
 
-    sketch = datasketches::count_min_sketch<UInt64>::deserialize(bytes.data(), size);
+    sketch = Sketch::deserialize(bytes.data(), size);
 }
 
 void CountMinSketchStatistics::update(const ColumnPtr & column)
