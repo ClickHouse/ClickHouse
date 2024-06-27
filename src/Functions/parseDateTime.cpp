@@ -1015,8 +1015,7 @@ namespace
             [[nodiscard]]
             static PosOrError mysqlISO8601Date(Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
             {
-                if (auto status = checkSpace(cur, end, 10, "mysqlISO8601Date requires size >= 10", fragment))
-                    return tl::unexpected(status.error());
+                RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 10, "mysqlISO8601Date requires size >= 10", fragment))
 
                 Int32 year;
                 Int32 month;
