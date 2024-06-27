@@ -2,10 +2,6 @@
 
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/RestorerFromBackup.h>
-#include <Common/CurrentMetrics.h>
-#include <Common/escapeForFileName.h>
-#include <Common/logger_useful.h>
-#include <Common/typeid_cast.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterCreateQuery.h>
@@ -17,6 +13,10 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/Utils.h>
 #include <TableFunctions/TableFunctionFactory.h>
+#include <Common/CurrentMetrics.h>
+#include <Common/escapeForFileName.h>
+#include <Common/logger_useful.h>
+#include <Common/typeid_cast.h>
 
 
 namespace DB

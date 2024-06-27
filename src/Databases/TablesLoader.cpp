@@ -1,14 +1,14 @@
-#include <Databases/TablesLoader.h>
-#include <Databases/IDatabase.h>
+#include <numeric>
 #include <Databases/DDLDependencyVisitor.h>
 #include <Databases/DDLLoadingDependencyVisitor.h>
-#include <Interpreters/DatabaseCatalog.h>
+#include <Databases/IDatabase.h>
+#include <Databases/TablesLoader.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Poco/Util/AbstractConfiguration.h>
-#include <Common/logger_useful.h>
 #include <Common/CurrentMetrics.h>
-#include <numeric>
+#include <Common/logger_useful.h>
 
 
 namespace DB
