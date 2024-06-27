@@ -202,11 +202,11 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
-/// STATISTIC(tdigest(200))
-class ParserStatisticType : public IParserBase
+/// STATISTICS(tdigest(200))
+class ParserStatisticsType : public IParserBase
 {
 protected:
-    const char * getName() const override { return "statistic"; }
+    const char * getName() const override { return "statistics"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 

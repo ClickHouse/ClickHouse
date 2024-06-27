@@ -5,10 +5,10 @@ sidebar_label: JSON
 ---
 
 There are two sets of functions to parse JSON:
-   - [`simpleJSON*` (`visitParam*`)](#simplejson--visitparam-functions) which is made for parsing a limited subset of JSON extremely fast.
+   - [`simpleJSON*` (`visitParam*`)](#simplejson-visitparam-functions) which is made for parsing a limited subset of JSON extremely fast.
    - [`JSONExtract*`](#jsonextract-functions) which is made for parsing ordinary JSON.
 
-## simpleJSON / visitParam functions
+## simpleJSON (visitParam) functions
 
 ClickHouse has special functions for working with simplified JSON. All these JSON functions are based on strong assumptions about what the JSON can be. They try to do as little as possible to get the job done as quickly as possible.
 

@@ -1,5 +1,3 @@
-SET allow_experimental_map_type = 1;
-
 DROP TABLE IF EXISTS table_map_with_key_integer;
 
 CREATE TABLE table_map_with_key_integer (d DATE, m Map(Int8, Int8))

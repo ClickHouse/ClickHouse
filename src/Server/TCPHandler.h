@@ -7,7 +7,6 @@
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Stopwatch.h>
-#include <Common/ThreadStatus.h>
 #include <Core/Protocol.h>
 #include <Core/QueryProcessingStage.h>
 #include <IO/Progress.h>
@@ -20,6 +19,7 @@
 #include <Formats/NativeReader.h>
 #include <Formats/NativeWriter.h>
 
+#include "Core/Types.h"
 #include "IServer.h"
 #include "Interpreters/AsynchronousInsertQueue.h"
 #include "Server/TCPProtocolStackData.h"

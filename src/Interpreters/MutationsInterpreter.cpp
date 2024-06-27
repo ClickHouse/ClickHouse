@@ -55,7 +55,7 @@ namespace ErrorCodes
     extern const int CANNOT_UPDATE_COLUMN;
     extern const int UNEXPECTED_EXPRESSION;
     extern const int THERE_IS_NO_COLUMN;
-    extern const int ILLEGAL_STATISTIC;
+    extern const int ILLEGAL_STATISTICS;
 }
 
 
@@ -781,7 +781,7 @@ void MutationsInterpreter::prepare(bool dry_run)
         }
         else if (command.type == MutationCommand::MATERIALIZE_INDEX)
         {
-            mutation_kind.set(MutationKind::MUTATE_INDEX_STATISTIC_PROJECTION);
+            mutation_kind.set(MutationKind::MUTATE_INDEX_STATISTICS_PROJECTION);
             auto it = std::find_if(
                     std::cbegin(indices_desc), std::end(indices_desc),
                     [&](const IndexDescription & index)
@@ -801,20 +801,20 @@ void MutationsInterpreter::prepare(bool dry_run)
                 materialized_indices.emplace(command.index_name);
             }
         }
-        else if (command.type == MutationCommand::MATERIALIZE_STATISTIC)
+        else if (command.type == MutationCommand::MATERIALIZE_STATISTICS)
         {
-            mutation_kind.set(MutationKind::MUTATE_INDEX_STATISTIC_PROJECTION);
-            for (const auto & stat_column_name: command.statistic_columns)
+            mutation_kind.set(MutationKind::MUTATE_INDEX_STATISTICS_PROJECTION);
+            for (const auto & stat_column_name: command.statistics_columns)
             {
-                if (!columns_desc.has(stat_column_name) || !columns_desc.get(stat_column_name).stat)
-                    throw Exception(ErrorCodes::ILLEGAL_STATISTIC, "Unknown statistic column: {}", stat_column_name);
-                dependencies.emplace(stat_column_name, ColumnDependency::STATISTIC);
+                if (!columns_desc.has(stat_column_name) || columns_desc.get(stat_column_name).statistics.empty())
+                    throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "Unknown statistics column: {}", stat_column_name);
+                dependencies.emplace(stat_column_name, ColumnDependency::STATISTICS);
                 materialized_statistics.emplace(stat_column_name);
             }
         }
         else if (command.type == MutationCommand::MATERIALIZE_PROJECTION)
         {
-            mutation_kind.set(MutationKind::MUTATE_INDEX_STATISTIC_PROJECTION);
+            mutation_kind.set(MutationKind::MUTATE_INDEX_STATISTICS_PROJECTION);
             const auto & projection = projections_desc.get(command.projection_name);
             if (!source.hasProjection(projection.name) || source.hasBrokenProjection(projection.name))
             {
@@ -825,18 +825,18 @@ void MutationsInterpreter::prepare(bool dry_run)
         }
         else if (command.type == MutationCommand::DROP_INDEX)
         {
-            mutation_kind.set(MutationKind::MUTATE_INDEX_STATISTIC_PROJECTION);
+            mutation_kind.set(MutationKind::MUTATE_INDEX_STATISTICS_PROJECTION);
             materialized_indices.erase(command.index_name);
         }
-        else if (command.type == MutationCommand::DROP_STATISTIC)
+        else if (command.type == MutationCommand::DROP_STATISTICS)
         {
-            mutation_kind.set(MutationKind::MUTATE_INDEX_STATISTIC_PROJECTION);
-            for (const auto & stat_column_name: command.statistic_columns)
+            mutation_kind.set(MutationKind::MUTATE_INDEX_STATISTICS_PROJECTION);
+            for (const auto & stat_column_name: command.statistics_columns)
                 materialized_statistics.erase(stat_column_name);
         }
         else if (command.type == MutationCommand::DROP_PROJECTION)
         {
-            mutation_kind.set(MutationKind::MUTATE_INDEX_STATISTIC_PROJECTION);
+            mutation_kind.set(MutationKind::MUTATE_INDEX_STATISTICS_PROJECTION);
             materialized_projections.erase(command.projection_name);
         }
         else if (command.type == MutationCommand::MATERIALIZE_TTL)
@@ -888,7 +888,7 @@ void MutationsInterpreter::prepare(bool dry_run)
                 {
                     if (dependency.kind == ColumnDependency::SKIP_INDEX
                         || dependency.kind == ColumnDependency::PROJECTION
-                        || dependency.kind == ColumnDependency::STATISTIC)
+                        || dependency.kind == ColumnDependency::STATISTICS)
                         dependencies.insert(dependency);
                 }
             }
@@ -1137,9 +1137,9 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
             for (const auto & kv : stage.column_to_updated)
             {
                 auto column_name = kv.second->getColumnName();
-                const auto & dag_node = actions->findInOutputs(column_name);
-                const auto & alias = actions->addAlias(dag_node, kv.first);
-                actions->addOrReplaceInOutputs(alias);
+                const auto & dag_node = actions->dag.findInOutputs(column_name);
+                const auto & alias = actions->dag.addAlias(dag_node, kv.first);
+                actions->dag.addOrReplaceInOutputs(alias);
             }
         }
 
@@ -1202,7 +1202,7 @@ void MutationsInterpreter::Source::read(
         {
             ActionsDAG::NodeRawConstPtrs nodes(num_filters);
             for (size_t i = 0; i < num_filters; ++i)
-                nodes[i] = &steps[i]->actions()->findInOutputs(names[i]);
+                nodes[i] = &steps[i]->actions()->dag.findInOutputs(names[i]);
 
             filter = ActionsDAG::buildFilterActionsDAG(nodes);
         }
@@ -1273,18 +1273,24 @@ QueryPipelineBuilder MutationsInterpreter::addStreamsForLaterStages(const std::v
         for (size_t i = 0; i < stage.expressions_chain.steps.size(); ++i)
         {
             const auto & step = stage.expressions_chain.steps[i];
-            if (step->actions()->hasArrayJoin())
+            if (step->actions()->dag.hasArrayJoin())
                 throw Exception(ErrorCodes::UNEXPECTED_EXPRESSION, "arrayJoin is not allowed in mutations");
 
             if (i < stage.filter_column_names.size())
             {
+                auto dag = step->actions()->dag.clone();
+                if (step->actions()->project_input)
+                    dag->appendInputsForUnusedColumns(plan.getCurrentDataStream().header);
                 /// Execute DELETEs.
-                plan.addStep(std::make_unique<FilterStep>(plan.getCurrentDataStream(), step->actions(), stage.filter_column_names[i], false));
+                plan.addStep(std::make_unique<FilterStep>(plan.getCurrentDataStream(), dag, stage.filter_column_names[i], false));
             }
             else
             {
+                auto dag = step->actions()->dag.clone();
+                if (step->actions()->project_input)
+                    dag->appendInputsForUnusedColumns(plan.getCurrentDataStream().header);
                 /// Execute UPDATE or final projection.
-                plan.addStep(std::make_unique<ExpressionStep>(plan.getCurrentDataStream(), step->actions()));
+                plan.addStep(std::make_unique<ExpressionStep>(plan.getCurrentDataStream(), dag));
             }
         }
 
@@ -1360,7 +1366,7 @@ QueryPipelineBuilder MutationsInterpreter::execute()
 Block MutationsInterpreter::getUpdatedHeader() const
 {
     // If it's an index/projection materialization, we don't write any data columns, thus empty header is used
-    return mutation_kind.mutation_kind == MutationKind::MUTATE_INDEX_STATISTIC_PROJECTION ? Block{} : *updated_header;
+    return mutation_kind.mutation_kind == MutationKind::MUTATE_INDEX_STATISTICS_PROJECTION ? Block{} : *updated_header;
 }
 
 const ColumnDependencies & MutationsInterpreter::getColumnDependencies() const
