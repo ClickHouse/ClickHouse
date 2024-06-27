@@ -2206,10 +2206,130 @@ Block sliceBlock(Block & block, size_t num_rows)
 
 template <JoinKind KIND, JoinStrictness STRICTNESS, typename Maps>
 Block HashJoin::joinBlockImpl(
-    Block & block,
-    const Block & block_with_columns_to_add,
-    const std::vector<const Maps *> & maps_,
-    bool is_join_get) const
+    ScatteredBlock & block, const Block & block_with_columns_to_add, const std::vector<const Maps *> & maps_, bool is_join_get) const
+{
+    constexpr JoinFeatures<KIND, STRICTNESS> join_features;
+
+    std::vector<JoinOnKeyColumns> join_on_keys;
+    const auto & onexprs = table_join->getClauses();
+    for (size_t i = 0; i < onexprs.size(); ++i)
+    {
+        const auto & key_names = !is_join_get ? onexprs[i].key_names_left : onexprs[i].key_names_right;
+        join_on_keys.emplace_back(*block.block, key_names, onexprs[i].condColumnNames().first, key_sizes[i]);
+    }
+    size_t existing_columns = block.block->columns();
+
+    /** If you use FULL or RIGHT JOIN, then the columns from the "left" table must be materialized.
+      * Because if they are constants, then in the "not joined" rows, they may have different values
+      *  - default values, which can differ from the values of these constants.
+      */
+    if constexpr (join_features.right || join_features.full)
+    {
+        /// TODO: lock block
+        // materializeBlockInplace(block);
+    }
+
+    /** For LEFT/INNER JOIN, the saved blocks do not contain keys.
+      * For FULL/RIGHT JOIN, the saved blocks contain keys;
+      *  but they will not be used at this stage of joining (and will be in `AdderNonJoined`), and they need to be skipped.
+      * For ASOF, the last column is used as the ASOF column
+      */
+    AddedColumns<!join_features.is_any_join> added_columns(
+        *block.block, /// TODO: makes it compilable but proper support for the new block type should be implemented
+        block_with_columns_to_add,
+        savedBlockSample(),
+        *this,
+        std::move(join_on_keys),
+        table_join->getMixedJoinExpression(),
+        join_features.is_asof_join,
+        is_join_get);
+
+    bool has_required_right_keys = (required_right_keys.columns() != 0);
+    added_columns.need_filter = join_features.need_filter || has_required_right_keys;
+    added_columns.max_joined_block_rows = max_joined_block_rows;
+    if (!added_columns.max_joined_block_rows)
+        added_columns.max_joined_block_rows = std::numeric_limits<size_t>::max();
+    else
+        added_columns.reserve(join_features.need_replication);
+
+    [[maybe_unused]] size_t num_joined = switchJoinRightColumns<KIND, STRICTNESS>(maps_, added_columns, data->type, used_flags);
+    /// Do not hold memory for join_on_keys anymore
+    added_columns.join_on_keys.clear();
+    Block remaining_block = {}; // sliceBlock(block, num_joined);
+
+    added_columns.buildOutput();
+    for (size_t i = 0; i < added_columns.size(); ++i)
+        /// TODO: make sure old and new columns have the same number of rows
+        block.block->insert(added_columns.moveColumn(i));
+
+    std::vector<size_t> right_keys_to_replicate [[maybe_unused]];
+
+    if constexpr (join_features.need_filter)
+    {
+        /// If ANY INNER | RIGHT JOIN - filter all the columns except the new ones.
+        for (size_t i = 0; i < existing_columns; ++i)
+            // block.safeGetByPosition(i).column = block.safeGetByPosition(i).column->filter(added_columns.filter, -1);
+            block.filter(added_columns.filter);
+
+        /// Add join key columns from right block if needed using value from left table because of equality
+        for (size_t i = 0; i < required_right_keys.columns(); ++i)
+        {
+            const auto & right_key = required_right_keys.getByPosition(i);
+            /// asof column is already in block.
+            if (join_features.is_asof_join && right_key.name == table_join->getOnlyClause().key_names_right.back())
+                continue;
+
+            const auto & left_column = block.getByName(required_right_keys_sources[i]);
+            const auto & right_col_name = getTableJoin().renamedRightColumnName(right_key.name);
+            auto right_col = copyLeftKeyColumnToRight(right_key.type, right_col_name, left_column);
+            // block.insert(std::move(right_col));
+            block.block->insert(std::move(right_col));
+        }
+    }
+    else if (has_required_right_keys)
+    {
+        /// Add join key columns from right block if needed.
+        for (size_t i = 0; i < required_right_keys.columns(); ++i)
+        {
+            const auto & right_key = required_right_keys.getByPosition(i);
+            auto right_col_name = getTableJoin().renamedRightColumnName(right_key.name);
+            /// asof column is already in block.
+            if (join_features.is_asof_join && right_key.name == table_join->getOnlyClause().key_names_right.back())
+                continue;
+
+            const auto & left_column = block.getByName(required_right_keys_sources[i]);
+            auto right_col = copyLeftKeyColumnToRight(right_key.type, right_col_name, left_column, &added_columns.filter);
+            // block.insert(std::move(right_col));
+            block.block->insert(std::move(right_col));
+
+            // if constexpr (join_features.need_replication)
+            //     right_keys_to_replicate.push_back(block.getPositionByName(right_col_name));
+        }
+    }
+
+    // if constexpr (join_features.need_replication)
+    // {
+    //     std::unique_ptr<IColumn::Offsets> & offsets_to_replicate = added_columns.offsets_to_replicate;
+    //
+    //     /// If ALL ... JOIN - we replicate all the columns except the new ones.
+    //     for (size_t i = 0; i < existing_columns; ++i)
+    //     {
+    //         block.safeGetByPosition(i).column = block.safeGetByPosition(i).column->replicate(*offsets_to_replicate);
+    //     }
+    //
+    //     /// Replicate additional right keys
+    //     for (size_t pos : right_keys_to_replicate)
+    //     {
+    //         block.safeGetByPosition(pos).column = block.safeGetByPosition(pos).column->replicate(*offsets_to_replicate);
+    //     }
+    // }
+
+    return remaining_block;
+}
+
+template <JoinKind KIND, JoinStrictness STRICTNESS, typename Maps>
+Block HashJoin::joinBlockImpl(
+    Block & block, const Block & block_with_columns_to_add, const std::vector<const Maps *> & maps_, bool is_join_get) const
 {
     constexpr JoinFeatures<KIND, STRICTNESS> join_features;
 
@@ -2508,7 +2628,11 @@ void HashJoin::checkTypesOfKeys(const Block & block) const
     }
 }
 
-void HashJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
+void HashJoin::joinBlock(Block &, ExtraBlockPtr &)
+{
+}
+
+void HashJoin::joinBlock(ScatteredBlock & block, ExtraBlockPtr & not_processed)
 {
     if (!data)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot join after data has been released");
@@ -2517,19 +2641,24 @@ void HashJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
     {
         auto cond_column_name = onexpr.condColumnNames();
         JoinCommon::checkTypesOfKeys(
-            block, onexpr.key_names_left, cond_column_name.first,
-            right_sample_block, onexpr.key_names_right, cond_column_name.second);
+            *block.block,
+            onexpr.key_names_left,
+            cond_column_name.first,
+            right_sample_block,
+            onexpr.key_names_right,
+            cond_column_name.second);
     }
 
     if (kind == JoinKind::Cross)
     {
-        joinBlockImplCross(block, not_processed);
+        joinBlockImplCross(*block.block, not_processed);
         return;
     }
 
     if (kind == JoinKind::Right || kind == JoinKind::Full)
     {
-        materializeBlockInplace(block);
+        /// TODO: lock block
+        // materializeBlockInplace(*block.block);
     }
 
     {

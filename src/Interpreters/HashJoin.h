@@ -185,13 +185,13 @@ public:
 
         operator bool() const { return block != nullptr; }
 
-        size_t rows() const
+        size_t rows() const { return selector.size(); }
+
+        const ColumnWithTypeAndName & getByName(const std::string & name) const
         {
             chassert(block);
-            return selector.size();
+            return block->getByName(name);
         }
-
-        const ColumnWithTypeAndName & getByName(const std::string & name) const { return block->getByName(name); }
 
         void filter(const IColumn::Filter & null_map)
         {
@@ -214,11 +214,7 @@ public:
       */
     void joinBlock(Block & block, ExtraBlockPtr & not_processed) override;
 
-    void joinBlock([[maybe_unused]] ScatteredBlock & block, [[maybe_unused]] ExtraBlockPtr & not_processed)
-    {
-        if (rand())
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method addBlockToJoin is not implemented for {}", getName());
-    }
+    void joinBlock(ScatteredBlock & block, ExtraBlockPtr & not_processed);
 
     /// Check joinGet arguments and infer the return type.
     DataTypePtr joinGetCheckAndGetReturnType(const DataTypes & data_types, const String & column_name, bool or_null) const;
@@ -517,6 +513,13 @@ private:
     template <JoinKind KIND, JoinStrictness STRICTNESS, typename Maps>
     Block joinBlockImpl(
         Block & block,
+        const Block & block_with_columns_to_add,
+        const std::vector<const Maps *> & maps_,
+        bool is_join_get = false) const;
+
+    template <JoinKind KIND, JoinStrictness STRICTNESS, typename Maps>
+    Block joinBlockImpl(
+        ScatteredBlock & block,
         const Block & block_with_columns_to_add,
         const std::vector<const Maps *> & maps_,
         bool is_join_get = false) const;
