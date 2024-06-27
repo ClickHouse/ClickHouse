@@ -102,7 +102,7 @@ void checkArguments(const DataTypes & arguments)
     {
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "The input arguments of the lambda expression should be equal to the number of elements in the tuple of arugment 2 and the number of elements in the tuple of argument 3 for function '{}', but got: number of lambda input arguments = {}, number of elements in the tuple of argument 2 = {}, number of elements in the tuple of argument 3 = {}",
+            "The input arguments of the lambda expression should be equal to the number of elements in the tuple of argument 2 and the number of elements in the tuple of argument 3 for function '{}', but got: number of lambda input arguments = {}, number of elements in the tuple of argument 2 = {}, number of elements in the tuple of argument 3 = {}",
             function_name,
             lambda_args.size(),
             offsets_size,
