@@ -20,10 +20,10 @@ def started_cluster():
 def test_enabling_access_management():
     instance.query("CREATE USER Alex", user="default")
     assert (
-        instance.query("SHOW CREATE USER Alex", user="default") == "CREATE USER Alex\n"
+        instance.query("SHOW CREATE USER Alex", user="default") == "CREATE USER Alex IDENTIFIED WITH no_password\n"
     )
     assert (
-        instance.query("SHOW CREATE USER Alex", user="readonly") == "CREATE USER Alex\n"
+        instance.query("SHOW CREATE USER Alex", user="readonly") == "CREATE USER Alex IDENTIFIED WITH no_password\n"
     )
     assert "Not enough privileges" in instance.query_and_get_error(
         "SHOW CREATE USER Alex", user="xyz"
