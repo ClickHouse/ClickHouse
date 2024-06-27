@@ -1,4 +1,4 @@
-SET uniform_snowflake_conversion_functions = 0;
+SET allow_deprecated_snowflake_conversion_functions = 1;
 
 SELECT addMonths(toDateTime('2017-11-05 08:07:47', 'Asia/Istanbul'), 1, 'Asia/Kolkata');
 SELECT addMonths(toDateTime('2017-11-05 10:37:47', 'Asia/Kolkata'), 1);
