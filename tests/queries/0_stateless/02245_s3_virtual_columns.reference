@@ -12,4 +12,4 @@ insert into test_02245_2 select 1, 2 settings s3_truncate_on_insert=1;
 select * from test_02245_2;
 1	2
 select _path, isNotNull(_etag) from test_02245_2;
-2 1
+2	1
