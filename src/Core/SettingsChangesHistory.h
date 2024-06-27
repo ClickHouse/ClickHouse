@@ -84,7 +84,8 @@ namespace SettingsChangesHistory
 /// For newly added setting choose the most appropriate previous_value (for example, if new setting
 /// controls new feature and it's 'true' by default, use 'false' as previous_value).
 /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
-static const std::multimap<ClickHouseVersion, SettingsChangesHistory::SettingsChanges> settings_changes_history =
+/// Note: please check if the key already exists to prevent duplicate entries.
+static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory::SettingsChanges>> settings_changes_history_init =
 {
     {"24.6", {{"materialize_skip_indexes_on_insert", true, true, "Added new setting to allow to disable materialization of skip indexes on insert"},
               {"materialize_statistics_on_insert", true, true, "Added new setting to allow to disable materialization of statistics on insert"},
@@ -321,5 +322,25 @@ static const std::multimap<ClickHouseVersion, SettingsChangesHistory::SettingsCh
     {"19.5", {{"max_partitions_per_insert_block", 0, 100, "Add a limit for the number of partitions in one block"}}},
     {"18.12.17", {{"enable_optimize_predicate_expression", 0, 1, "Optimize predicates to subqueries by default"}}},
 };
+
+static std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges>& getSettingsChangesHistory()
+{
+    static std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges> settings_changes_history;
+    static bool initialized = false;
+
+    if (!initialized)
+    {
+        for (auto it = settings_changes_history_init.begin(); it != settings_changes_history_init.end(); ++it)
+        {
+            if (settings_changes_history.contains(it->first))
+                throw Exception{ErrorCodes::BAD_ARGUMENTS, "ClickHouse version {} already exists, please check for duplicates and merge them", it->first.toString()};
+
+            settings_changes_history[it->first] = it->second;
+        }
+        initialized = true;
+    }
+
+    return settings_changes_history;
+}
 
 }
