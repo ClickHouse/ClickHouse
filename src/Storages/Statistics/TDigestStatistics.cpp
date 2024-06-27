@@ -35,14 +35,14 @@ void TDigestStatistics::deserialize(ReadBuffer & buf)
     t_digest.deserialize(buf);
 }
 
-Float64 TDigestStatistics::estimateLess(Float64 val) const
-{
-    return t_digest.getCountLessThan(val);
-}
-
-Float64 TDigestStatistics::estimateEqual(Float64 val) const
+std::optional<Float64> TDigestStatistics::estimateEqual(Float64 val) const
 {
     return t_digest.getCountEqual(val);
+}
+
+std::optional<Float64> TDigestStatistics::estimateLess(Float64 val) const
+{
+    return t_digest.getCountLessThan(val);
 }
 
 void TDigestValidator(const SingleStatisticsDescription &, DataTypePtr data_type)

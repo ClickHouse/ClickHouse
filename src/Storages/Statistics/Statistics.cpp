@@ -29,6 +29,21 @@ IStatistics::IStatistics(const SingleStatisticsDescription & stat_)
 {
 }
 
+std::optional<UInt64> IStatistics::estimateCardinality() const
+{
+    return {};
+}
+
+std::optional<Float64> IStatistics::estimateEqual(Float64 /*val*/) const
+{
+    return {};
+}
+
+std::optional<Float64> IStatistics::estimateLess(Float64 /*val*/) const
+{
+    return {};
+}
+
 ColumnStatistics::ColumnStatistics(const ColumnStatisticsDescription & stats_desc_)
     : stats_desc(stats_desc_)
 {
@@ -44,7 +59,7 @@ void ColumnStatistics::update(const ColumnPtr & column)
 Float64 ColumnStatistics::estimateLess(Float64 val) const
 {
     if (stats.contains(StatisticsType::TDigest))
-        return std::static_pointer_cast<TDigestStatistics>(stats.at(StatisticsType::TDigest))->estimateLess(val);
+        return *stats.at(StatisticsType::TDigest)->estimateLess(val);
     return rows * ConditionSelectivityEstimator::default_normal_cond_factor;
 }
 
@@ -57,15 +72,12 @@ Float64 ColumnStatistics::estimateEqual(Float64 val) const
 {
     if (stats.contains(StatisticsType::Uniq) && stats.contains(StatisticsType::TDigest))
     {
-        auto uniq_static = std::static_pointer_cast<UniqStatistics>(stats.at(StatisticsType::Uniq));
         /// 2048 is the default number of buckets in TDigest. In this case, TDigest stores exactly one value (with many rows)
         /// for every bucket.
-        if (uniq_static->getCardinality() < 2048)
-        {
-            auto tdigest_static = std::static_pointer_cast<TDigestStatistics>(stats.at(StatisticsType::TDigest));
-            return tdigest_static->estimateEqual(val);
-        }
+        if (*stats.at(StatisticsType::Uniq)->estimateCardinality() < 2048)
+            return *stats.at(StatisticsType::TDigest)->estimateEqual(val);
     }
+
     if (val < - ConditionSelectivityEstimator::threshold || val > ConditionSelectivityEstimator::threshold)
         return rows * ConditionSelectivityEstimator::default_normal_cond_factor;
     else

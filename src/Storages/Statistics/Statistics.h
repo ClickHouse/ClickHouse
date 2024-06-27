@@ -6,6 +6,7 @@
 #include <Storages/StatisticsDescription.h>
 
 #include <boost/core/noncopyable.hpp>
+#include <optional>
 
 namespace DB
 {
@@ -27,6 +28,15 @@ public:
 
     virtual void serialize(WriteBuffer & buf) = 0;
     virtual void deserialize(ReadBuffer & buf) = 0;
+
+    /// Estimate the cardinality of the column.
+    /// Returns {} if the statistics object is not able to do a meaningful estimation.
+    virtual std::optional<UInt64> estimateCardinality() const;
+
+    /// Per-value estimations.
+    /// Returns {} if the statistics object is not able to do a meaningful estimation.
+    virtual std::optional<Float64> estimateEqual(Float64 val) const; /// cardinality of val in the column
+    virtual std::optional<Float64> estimateLess(Float64 val) const;  /// summarized cardinality of values < val in the column
 
 protected:
     SingleStatisticsDescription stat;

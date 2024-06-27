@@ -18,7 +18,7 @@ public:
     void serialize(WriteBuffer & buf) override;
     void deserialize(ReadBuffer & buf) override;
 
-    UInt64 getCardinality();
+    std::optional<UInt64> estimateCardinality() const override;
 
 private:
     std::unique_ptr<Arena> arena;
