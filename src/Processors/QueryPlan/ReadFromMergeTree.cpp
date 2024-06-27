@@ -565,7 +565,7 @@ Pipe ReadFromMergeTree::readInOrder(
     /// In this case we won't set approximate rows, because it will be accounted multiple times.
     /// Also do not count amount of read rows if we read in order of sorting key,
     /// because we don't know actual amount of read rows in case when limit is set.
-    bool set_rows_approx = !is_parallel_reading_from_replicas && !query_info.limit;
+    const bool set_total_rows_approx = !is_parallel_reading_from_replicas && !query_info.limit;
 
     Pipes pipes;
     for (size_t i = 0; i < parts_with_ranges.size(); ++i)
@@ -595,7 +595,7 @@ Pipe ReadFromMergeTree::readInOrder(
         processor->addPartLevelToChunk(isQueryWithFinal());
 
         auto source = std::make_shared<MergeTreeSource>(std::move(processor));
-        if (set_rows_approx)
+        if (set_total_rows_approx)
             source->addTotalRowsApprox(total_rows);
 
         pipes.emplace_back(std::move(source));
