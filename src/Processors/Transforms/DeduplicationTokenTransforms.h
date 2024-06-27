@@ -72,7 +72,7 @@ namespace DeduplicationToken
         * UNDEFINED -> DEFINE_SOURCE_USER_TOKEN // setUserToken
         * DEFINE_SOURCE_USER_TOKEN -> DEFINED // defineSourceWithUserToken
         *
-        * After token is define it could be extended with view id and view block number. Actually it has to be expanded with view details if there is one or several views.
+        * After token is defined, it could be extended with view id and view block number. Actually it has to be expanded with view details if there is one or several views.
         *
         * transition // method
         * DEFINED -> DEFINE_VIEW // setViewID
