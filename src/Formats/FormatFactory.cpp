@@ -171,6 +171,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.parquet.parallel_encoding = settings.output_format_parquet_parallel_encoding;
     format_settings.parquet.data_page_size = settings.output_format_parquet_data_page_size;
     format_settings.parquet.write_batch_size = settings.output_format_parquet_batch_size;
+    format_settings.parquet.write_page_index = settings.output_format_parquet_write_page_index;
     format_settings.parquet.local_read_min_bytes_for_seek = settings.input_format_parquet_local_file_min_bytes_for_seek;
     format_settings.pretty.charset = settings.output_format_pretty_grid_charset.toString() == "ASCII" ? FormatSettings::Pretty::Charset::ASCII : FormatSettings::Pretty::Charset::UTF8;
     format_settings.pretty.color = settings.output_format_pretty_color;
