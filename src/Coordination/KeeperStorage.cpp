@@ -534,6 +534,10 @@ bool KeeperStorage::UncommittedState::hasACL(int64_t session_id, bool is_local, 
     if (is_local)
         return check_auth(storage.session_and_auth[session_id]);
 
+    /// we want to close the session and with that we will remove all the auth related to the session
+    if (closed_sessions.contains(session_id))
+        return false;
+
     if (check_auth(storage.session_and_auth[session_id]))
         return true;
 
@@ -2389,8 +2393,7 @@ void KeeperStorage::preprocessRequest(
         return;
     }
 
-    if ((check_acl && !request_processor->checkAuth(*this, session_id, false)) ||
-        uncommitted_state.closed_sessions.contains(session_id))  // Is session closed but not committed yet
+    if (check_acl && !request_processor->checkAuth(*this, session_id, false))
     {
         uncommitted_state.deltas.emplace_back(new_last_zxid, Coordination::Error::ZNOAUTH);
         return;
