@@ -45,6 +45,9 @@ public:
     static Chunk squash(Chunk && input_chunk);
     Chunk flush();
 
+    void setHeader(Block header_) { header = std::move(header_); }
+    const Block & getHeader() const { return header; }
+
 private:
     class CurrentSize
     {
@@ -62,7 +65,7 @@ private:
 
     const size_t min_block_size_rows;
     const size_t min_block_size_bytes;
-    const Block header;
+    Block header;
 
     CurrentSize accumulated;
 

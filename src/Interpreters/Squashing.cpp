@@ -1,6 +1,7 @@
 #include <vector>
 #include <Interpreters/Squashing.h>
 #include <Common/CurrentThread.h>
+#include "base/defines.h"
 
 
 namespace DB
@@ -22,7 +23,9 @@ Chunk Squashing::flush()
     if (!accumulated)
         return {};
 
-    return convertToChunk(accumulated.extract());
+    auto result = convertToChunk(accumulated.extract());
+    chassert(result);
+    return result;
 }
 
 Chunk Squashing::squash(Chunk && input_chunk)
@@ -73,9 +76,7 @@ Chunk Squashing::add(Chunk && input_chunk)
 
     /// If accumulated data is big enough, we send it
     if (isEnoughSize())
-    {
         return convertToChunk(accumulated.extract());
-    }
 
     return {};
 }
@@ -91,7 +92,7 @@ Chunk Squashing::convertToChunk(std::vector<Chunk> && chunks) const
     // It is imortant that chunk is not empty, it has to have columns even if they are empty
     auto aggr_chunk = Chunk(header.getColumns(), 0);
     aggr_chunk.getChunkInfos().add(std::move(info));
-
+    chassert(aggr_chunk);
     return aggr_chunk;
 }
 
@@ -118,16 +119,17 @@ Chunk Squashing::squash(std::vector<Chunk> && input_chunks, Chunk::ChunkInfoColl
         for (size_t j = 0, size = mutable_columns.size(); j < size; ++j)
         {
             const auto source_column = columns[j];
-
             mutable_columns[j]->insertRangeFrom(*source_column, 0, source_column->size());
         }
     }
 
-    Chunk accumulated_chunk;
-    accumulated_chunk.setColumns(std::move(mutable_columns), rows);
-    accumulated_chunk.setChunkInfos(infos);
-    accumulated_chunk.getChunkInfos().append(std::move(input_chunks.back().getChunkInfos()));
-    return accumulated_chunk;
+    Chunk result;
+    result.setColumns(std::move(mutable_columns), rows);
+    result.setChunkInfos(infos);
+    result.getChunkInfos().append(std::move(input_chunks.back().getChunkInfos()));
+
+    chassert(result);
+    return result;
 }
 
 bool Squashing::isEnoughSize(size_t rows, size_t bytes) const

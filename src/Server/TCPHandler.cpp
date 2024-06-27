@@ -886,16 +886,13 @@ AsynchronousInsertQueue::PushResult TCPHandler::processAsyncInsertQuery(Asynchro
     startInsertQuery();
     Squashing squashing(state.input_header, 0, query_context->getSettingsRef().async_insert_max_data_size);
 
-    Block header = state.input_header;
-
     while (readDataNext())
     {
-        header = state.block_for_insert.cloneEmpty();
-        auto planned_chunk = squashing.add({state.block_for_insert.getColumns(), state.block_for_insert.rows()});
-        if (!planned_chunk.getChunkInfos().empty())
+        squashing.setHeader(state.block_for_insert.cloneEmpty());
+        auto result_chunk = DB::Squashing::squash(squashing.add({state.block_for_insert.getColumns(), state.block_for_insert.rows()}));
+        if (result_chunk)
         {
-            Chunk result_chunk = DB::Squashing::squash(std::move(planned_chunk));
-            auto result = header.cloneWithColumns(result_chunk.detachColumns());
+            auto result = squashing.getHeader().cloneWithColumns(result_chunk.detachColumns());
             return PushResult
             {
                 .status = PushResult::TOO_MUCH_DATA,
@@ -904,16 +901,13 @@ AsynchronousInsertQueue::PushResult TCPHandler::processAsyncInsertQuery(Asynchro
         }
     }
 
-    auto planned_chunk = squashing.flush();
-    if (planned_chunk.getChunkInfos().empty())
+    Chunk result_chunk = DB::Squashing::squash(squashing.flush());
+    if (!result_chunk)
     {
-        return insert_queue.pushQueryWithBlock(state.parsed_query, std::move(header), query_context);
+        return insert_queue.pushQueryWithBlock(state.parsed_query, squashing.getHeader(), query_context);
     }
 
-    Chunk result_chunk;
-    result_chunk = DB::Squashing::squash(std::move(planned_chunk));
-
-    auto result = header.cloneWithColumns(result_chunk.detachColumns());
+    auto result = squashing.getHeader().cloneWithColumns(result_chunk.detachColumns());
     return insert_queue.pushQueryWithBlock(state.parsed_query, std::move(result), query_context);
 }
 
