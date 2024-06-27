@@ -202,6 +202,7 @@ private:
     size_t load_metadata_threads;
     const bool load_metadata_asynchronously;
     std::atomic<bool> stop_loading_metadata = false;
+    ThreadFromGlobalPool load_metadata_main_thread;
     const bool write_cache_per_user_directory;
 
     BackgroundSchedulePool::TaskHolder keep_up_free_space_ratio_task;

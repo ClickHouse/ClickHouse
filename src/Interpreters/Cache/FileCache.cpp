@@ -1144,8 +1144,7 @@ void FileCache::loadMetadata()
 
     if (load_metadata_asynchronously)
     {
-        ThreadFromGlobalPool load_metadata_main_thread([this] { loadMetadataImpl(); });
-        load_metadata_main_thread.detach();
+        load_metadata_main_thread = ThreadFromGlobalPool([this] { loadMetadataImpl(); });
     }
     else
     {
@@ -1416,6 +1415,7 @@ void FileCache::deactivateBackgroundOperations()
 {
     shutdown.store(true);
     stop_loading_metadata = true;
+    load_metadata_main_thread.join();
     metadata.shutdown();
     if (keep_up_free_space_ratio_task)
         keep_up_free_space_ratio_task->deactivate();
