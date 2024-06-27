@@ -390,18 +390,16 @@ def test_introspection():
     instance.query("GRANT CREATE ON *.* TO B WITH GRANT OPTION")
 
     assert instance.query("SHOW USERS") == TSV(["A", "B", "default"])
-    assert (
-        instance.query("SHOW CREATE USERS A")
-        == TSV(["CREATE USER A IDENTIFIED WITH no_password"])
+    assert instance.query("SHOW CREATE USERS A") == TSV(
+        ["CREATE USER A IDENTIFIED WITH no_password"]
     )
-    assert (
-        instance.query("SHOW CREATE USERS B")
-        == TSV(["CREATE USER B IDENTIFIED WITH no_password"])
+    assert instance.query("SHOW CREATE USERS B") == TSV(
+        ["CREATE USER B IDENTIFIED WITH no_password"]
     )
     assert instance.query("SHOW CREATE USERS A,B") == TSV(
         [
             "CREATE USER A IDENTIFIED WITH no_password",
-            "CREATE USER B IDENTIFIED WITH no_password"
+            "CREATE USER B IDENTIFIED WITH no_password",
         ]
     )
     assert instance.query("SHOW CREATE USERS") == TSV(
