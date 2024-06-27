@@ -51,11 +51,6 @@ const int CreateMode::Ephemeral = 1;
 const int CreateMode::PersistentSequential = 2;
 const int CreateMode::EphemeralSequential = 3;
 
-bool ShuffleHost::compare(const ShuffleHost & lhs, const ShuffleHost & rhs)
-{
-    return std::forward_as_tuple(lhs.az_info, lhs.priority, lhs.random)
-        < std::forward_as_tuple(lhs.az_info, rhs.priority, rhs.random);
-}
 
 static void check(Coordination::Error code, const std::string & path)
 {

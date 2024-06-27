@@ -71,7 +71,11 @@ struct ShuffleHost
         random = thread_local_rng();
     }
 
-    static bool compare(const ShuffleHost & lhs, const ShuffleHost & rhs);
+    static bool compare(const ShuffleHost & lhs, const ShuffleHost & rhs)
+    {
+        return std::forward_as_tuple(lhs.az_info, lhs.priority, lhs.random)
+            < std::forward_as_tuple(rhs.az_info, rhs.priority, rhs.random);
+    }
 };
 
 using ShuffleHosts = std::vector<ShuffleHost>;
