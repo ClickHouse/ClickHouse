@@ -144,7 +144,8 @@ def test_allowed_grantees():
 
     instance.query("ALTER USER A GRANTEES ANY EXCEPT B")
     assert (
-        instance.query("SHOW CREATE USER A") == "CREATE USER A IDENTIFIED WITH no_password GRANTEES ANY EXCEPT B\n"
+        instance.query("SHOW CREATE USER A")
+        == "CREATE USER A IDENTIFIED WITH no_password GRANTEES ANY EXCEPT B\n"
     )
     expected_error = "user `B` is not allowed as grantee"
     assert expected_error in instance.query_and_get_error(
@@ -157,7 +158,10 @@ def test_allowed_grantees():
     instance.query("REVOKE SELECT ON test.table FROM B", user="A")
 
     instance.query("ALTER USER A GRANTEES ANY")
-    assert instance.query("SHOW CREATE USER A") == "CREATE USER A IDENTIFIED WITH no_password\n"
+    assert (
+        instance.query("SHOW CREATE USER A")
+        == "CREATE USER A IDENTIFIED WITH no_password\n"
+    )
     instance.query("GRANT SELECT ON test.table TO B", user="A")
     assert instance.query("SELECT * FROM test.table", user="B") == "1\t5\n2\t10\n"
 
@@ -169,7 +173,8 @@ def test_allowed_grantees():
 
     instance.query("CREATE USER C GRANTEES ANY EXCEPT C")
     assert (
-        instance.query("SHOW CREATE USER C") == "CREATE USER C IDENTIFIED WITH no_password GRANTEES ANY EXCEPT C\n"
+        instance.query("SHOW CREATE USER C")
+        == "CREATE USER C IDENTIFIED WITH no_password GRANTEES ANY EXCEPT C\n"
     )
     instance.query("GRANT SELECT ON test.table TO C WITH GRANT OPTION")
     assert instance.query("SELECT * FROM test.table", user="C") == "1\t5\n2\t10\n"
