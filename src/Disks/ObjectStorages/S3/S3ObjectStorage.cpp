@@ -634,6 +634,10 @@ std::shared_ptr<const S3::Client> S3ObjectStorage::getS3StorageClient()
     return client.get();
 }
 
+std::shared_ptr<const S3::Client> S3ObjectStorage::tryGetS3StorageClient()
+{
+    return client.get();
+}
 }
 
 #endif
