@@ -29,6 +29,7 @@ class CiSettings:
     no_ci_cache: bool = False
     upload_all: bool = False
     no_merge_commit: bool = False
+    woolen_wolfdog: bool = False
 
     def as_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -108,6 +109,9 @@ class CiSettings:
             elif match == CI.Tags.NO_MERGE_COMMIT:
                 res.no_merge_commit = True
                 print("NOTE: Merge Commit will be disabled")
+            elif match == CI.Tags.WOOLEN_WOLFDOG_LABEL:
+                res.woolen_wolfdog = True
+                print("NOTE: Woolen Wolfdog mode enabled")
             elif match.startswith("batch_"):
                 batches = []
                 try:

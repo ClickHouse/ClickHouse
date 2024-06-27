@@ -46,6 +46,7 @@ class Tags(metaclass=WithIter):
     """
 
     DO_NOT_TEST_LABEL = "do_not_test"
+    WOOLEN_WOLFDOG_LABEL = "woolen_wolfdog"
     NO_MERGE_COMMIT = "no_merge_commit"
     NO_CI_CACHE = "no_ci_cache"
     # to upload all binaries from build jobs
@@ -184,8 +185,7 @@ class JobNames(metaclass=WithIter):
 
     LIBFUZZER_TEST = "libFuzzer tests"
 
-    BUILD_CHECK = "ClickHouse build check"
-    # BUILD_CHECK_SPECIAL = "ClickHouse special build check"
+    BUILD_CHECK = "Builds"
 
     DOCS_CHECK = "Docs check"
     BUGFIX_VALIDATE = "Bugfix validation"
@@ -207,14 +207,18 @@ class StatusNames(metaclass=WithIter):
     # mergeable status
     MERGEABLE = "Mergeable Check"
     # status of a sync pr
-    SYNC = "A Sync"
+    SYNC = "Cloud fork sync (only for ClickHouse Inc. employees)"
     # PR formatting check status
     PR_CHECK = "PR Check"
 
 
 class SyncState(metaclass=WithIter):
-    PENDING = "awaiting merge"
-    MERGE_FAILED = "merge failed"
+    PENDING = "awaiting sync"
+    # temporary state if GH does not know mergeable state
+    MERGE_UNKNOWN = "unknown state (might be auto recoverable)"
+    # changes cannot be pushed/merged to a sync branch
+    PUSH_FAILED = "push failed"
+    MERGE_CONFLICTS = "merge conflicts"
     TESTING = "awaiting test results"
     TESTS_FAILED = "tests failed"
     COMPLETED = "completed"
@@ -330,7 +334,7 @@ class CommonJobConfigs:
     """
 
     BUILD_REPORT = JobConfig(
-        job_name_keyword="build_check",
+        job_name_keyword="builds",
         run_command="build_report_check.py",
         digest=DigestConfig(
             include_paths=[
@@ -637,7 +641,7 @@ CHECK_DESCRIPTIONS = [
         lambda x: x == "CI running",
     ),
     CheckDescription(
-        "ClickHouse build check",
+        "Builds",
         "Builds ClickHouse in various configurations for use in further steps. "
         "You have to fix the builds that fail. Build logs often has enough "
         "information to fix the error, but you might have to reproduce the failure "
