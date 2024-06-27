@@ -7,6 +7,7 @@
 #include <Common/logger_useful.h>
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
+#include <Core/Field.h>
 #include <Storages/StatisticsDescription.h>
 
 
@@ -29,10 +30,12 @@ public:
     virtual ~IStatistics() = default;
 
     virtual void serialize(WriteBuffer & buf) = 0;
-
     virtual void deserialize(ReadBuffer & buf) = 0;
 
     virtual void update(const ColumnPtr & column) = 0;
+
+    static std::optional<Float64> getFloat64(const Field & f);
+    static std::optional<String> getString(const Field & f);
 
 protected:
     SingleStatisticsDescription stat;
@@ -58,7 +61,7 @@ public:
 
     Float64 estimateGreater(Float64 val) const;
 
-    Float64 estimateEqual(Float64 val) const;
+    Float64 estimateEqual(Field val) const;
 
 private:
 

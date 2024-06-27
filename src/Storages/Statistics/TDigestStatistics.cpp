@@ -45,16 +45,16 @@ void TDigestStatistics::update(const ColumnPtr & column)
     }
 }
 
-StatisticsPtr TDigestCreator(const SingleStatisticsDescription & stat, DataTypePtr)
-{
-    return std::make_shared<TDigestStatistics>(stat);
-}
-
 void TDigestValidator(const SingleStatisticsDescription &, DataTypePtr data_type)
 {
     data_type = removeNullable(data_type);
     if (!data_type->isValueRepresentedByNumber())
         throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "Statistics of type 'tdigest' does not support type {}", data_type->getName());
+}
+
+StatisticsPtr TDigestCreator(const SingleStatisticsDescription & stat, DataTypePtr)
+{
+    return std::make_shared<TDigestStatistics>(stat);
 }
 
 }

@@ -18,7 +18,6 @@ public:
     Float64 estimateEqual(Float64 val) const;
 
     void serialize(WriteBuffer & buf) override;
-
     void deserialize(ReadBuffer & buf) override;
 
     void update(const ColumnPtr & column) override;
@@ -26,7 +25,7 @@ private:
     QuantileTDigest<Float64> data;
 };
 
-StatisticsPtr TDigestCreator(const SingleStatisticsDescription & stat, DataTypePtr);
 void TDigestValidator(const SingleStatisticsDescription &, DataTypePtr data_type);
+StatisticsPtr TDigestCreator(const SingleStatisticsDescription & stat, DataTypePtr);
 
 }
