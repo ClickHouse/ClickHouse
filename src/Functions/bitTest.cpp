@@ -8,6 +8,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
+    extern const int PARAMETER_OUT_OF_BOUND;
 }
 
 namespace
@@ -21,12 +22,21 @@ struct BitTestImpl
     static const constexpr bool allow_string_integer = false;
 
     template <typename Result = ResultType>
-    NO_SANITIZE_UNDEFINED static Result apply(A a [[maybe_unused]], B b [[maybe_unused]])
+    static Result apply(A a [[maybe_unused]], B b [[maybe_unused]])
     {
         if constexpr (is_big_int_v<A> || is_big_int_v<B>)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "bitTest is not implemented for big integers as second argument");
         else
-            return (typename NumberTraits::ToInteger<A>::Type(a) >> typename NumberTraits::ToInteger<B>::Type(b)) & 1;
+        {
+            const auto max_position = decltype(b)((8 * sizeof(a)) - 1);
+            if (b > max_position || b < 0)
+            {
+                throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND,
+                                "The bit position argument needs to a positive value and less or equal to {} for integer {}",
+                                static_cast<Int16>(max_position), static_cast<Int64>(a));
+            }
+            return (a >> b) & 1;
+        }
     }
 
 #if USE_EMBEDDED_COMPILER
