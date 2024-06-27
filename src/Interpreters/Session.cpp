@@ -707,7 +707,7 @@ void Session::recordLoginSuccess(ContextPtr login_context) const
                                      access->getAccess(),
                                      getClientInfo(),
                                      user,
-                                     *user_authenticated_with);
+                                     user_authenticated_with);
     }
 
     notified_session_log_about_login = true;
