@@ -175,12 +175,33 @@ public:
       */
     bool addBlockToJoin(const Block & source_block_, bool check_limits) override;
 
+    struct ScatteredBlock
+    {
+        BlockPtr block;
+        IColumn::Selector selector;
+
+        operator bool() const { return block != nullptr; }
+    };
+
+    using ScatteredBlocks = std::vector<ScatteredBlock>;
+
+    bool addBlockToJoin([[maybe_unused]] const ScatteredBlock & source_block_, [[maybe_unused]] bool check_limits)
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method addBlockToJoin is not implemented for {}", getName());
+    }
+
     void checkTypesOfKeys(const Block & block) const override;
 
     /** Join data from the map (that was previously built by calls to addBlockToJoin) to the block with data from "left" table.
       * Could be called from different threads in parallel.
       */
     void joinBlock(Block & block, ExtraBlockPtr & not_processed) override;
+
+    void joinBlock([[maybe_unused]] ScatteredBlock & block, [[maybe_unused]] ExtraBlockPtr & not_processed)
+    {
+        if (rand())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method addBlockToJoin is not implemented for {}", getName());
+    }
 
     /// Check joinGet arguments and infer the return type.
     DataTypePtr joinGetCheckAndGetReturnType(const DataTypes & data_types, const String & column_name, bool or_null) const;

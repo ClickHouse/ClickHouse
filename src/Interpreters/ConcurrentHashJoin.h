@@ -74,7 +74,7 @@ private:
     Block totals;
 
     IColumn::Selector selectDispatchBlock(const Strings & key_columns_names, const Block & from_block);
-    Blocks dispatchBlock(const Strings & key_columns_names, const Block & from_block);
+    HashJoin::ScatteredBlocks dispatchBlock(const Strings & key_columns_names, const Block & from_block);
 };
 
 }
