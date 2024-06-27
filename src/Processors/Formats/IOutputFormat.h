@@ -41,6 +41,12 @@ public:
     /// Counter to calculate rows_before_limit_at_least in processors pipeline.
     void setRowsBeforeLimitCounter(RowsBeforeLimitCounterPtr counter) override { rows_before_limit_counter.swap(counter); }
 
+    /// Value for rows_before_group_by_at_least field.
+    virtual void setRowsBeforeGroupBy(size_t /*rows_before_limit*/) { }
+
+    /// Counter to calculate rows_before_group_by_at_least in processors pipeline.
+    void setRowsBeforeGroupByCounter(RowsBeforeLimitCounterPtr counter) override { rows_before_group_by_counter.swap(counter); }
+
     /// Notify about progress. Method could be called from different threads.
     /// Passed value are delta, that must be summarized.
     virtual void onProgress(const Progress & /*progress*/) {}
@@ -151,6 +157,7 @@ protected:
         Progress progress;
         bool applied_limit = false;
         size_t rows_before_limit = 0;
+        size_t rows_before_group_by = 0;
         Chunk totals;
         Chunk extremes;
     };
@@ -185,6 +192,7 @@ protected:
     bool need_write_suffix = true;
 
     RowsBeforeLimitCounterPtr rows_before_limit_counter;
+    RowsBeforeGroupByCounterPtr rows_before_group_by_counter;
     Statistics statistics;
 
 private:

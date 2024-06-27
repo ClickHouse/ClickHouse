@@ -26,6 +26,7 @@ public:
     String getName() const override { return "Remote"; }
 
     void setRowsBeforeLimitCounter(RowsBeforeLimitCounterPtr counter) override { rows_before_limit.swap(counter); }
+    void setRowsBeforeGroupByCounter(RowsBeforeLimitCounterPtr counter) override { rows_before_group_by.swap(counter); }
 
     /// Stop reading from stream if output port is finished.
     void onUpdatePorts() override;
@@ -45,6 +46,7 @@ private:
     bool add_aggregation_info = false;
     RemoteQueryExecutorPtr query_executor;
     RowsBeforeLimitCounterPtr rows_before_limit;
+    RowsBeforeLimitCounterPtr rows_before_group_by;
 
     const bool async_read;
     const bool async_query_sending;
@@ -52,6 +54,7 @@ private:
     int fd = -1;
     size_t rows = 0;
     bool manually_add_rows_before_limit_counter = false;
+    bool manually_add_rows_before_group_by_counter = false;
 };
 
 /// Totals source from RemoteQueryExecutor.

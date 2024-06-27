@@ -31,12 +31,14 @@ public:
     OutputPort * getExtremesPort() { return extremes; }
 
     void setRowsBeforeLimitCounter(RowsBeforeLimitCounterPtr counter) override { rows_before_limit.swap(counter); }
+    void setRowsBeforeGroupByCounter(RowsBeforeLimitCounterPtr counter) override { rows_before_group_by.swap(counter); }
 
 private:
     QueryPlanResourceHolder resources;
     Creator creator;
     Processors processors;
     RowsBeforeLimitCounterPtr rows_before_limit;
+    RowsBeforeLimitCounterPtr rows_before_group_by;
 
     /// Outputs for DelayedSource.
     OutputPort * main = nullptr;

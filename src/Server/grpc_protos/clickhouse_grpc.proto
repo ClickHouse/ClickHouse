@@ -179,6 +179,8 @@ message Stats {
    uint64 allocated_bytes = 3;
    bool applied_limit = 4;
    uint64 rows_before_limit = 5;
+   bool applied_group_by = 6;
+   uint64 rows_before_group_by = 7;
 }
 
 message Exception {

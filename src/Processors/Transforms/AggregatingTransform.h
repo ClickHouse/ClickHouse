@@ -3,11 +3,13 @@
 #include <IO/ReadBufferFromFile.h>
 #include <Interpreters/Aggregator.h>
 #include <Processors/IAccumulatingTransform.h>
-#include <Common/Stopwatch.h>
-#include <Common/setThreadName.h>
-#include <Common/scope_guard_safe.h>
+#include <Processors/RowsBeforeLimitCounter.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
+#include <Common/Stopwatch.h>
+#include <Common/scope_guard_safe.h>
+#include <Common/setThreadName.h>
+
 
 namespace CurrentMetrics
 {
@@ -167,6 +169,7 @@ public:
     Status prepare() override;
     void work() override;
     Processors expandPipeline() override;
+    void setRowsBeforeGroupByCounter(RowsBeforeGroupByCounterPtr counter) override { rows_before_group_by_at_least.swap(counter); }
 
 protected:
     void consume(Chunk chunk);
@@ -209,6 +212,8 @@ private:
     bool read_current_chunk = false;
 
     bool is_consume_started = false;
+
+    RowsBeforeGroupByCounterPtr rows_before_group_by_at_least;
 
     void initGenerate();
 };

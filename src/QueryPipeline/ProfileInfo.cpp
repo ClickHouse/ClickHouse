@@ -16,6 +16,8 @@ void ProfileInfo::read(ReadBuffer & in)
     readBinary(applied_limit, in);
     readVarUInt(rows_before_limit, in);
     readBinary(calculated_rows_before_limit, in);
+    readBinary(applied_group_by, in);
+    readVarUInt(rows_before_group_by, in);
 }
 
 
@@ -27,6 +29,8 @@ void ProfileInfo::write(WriteBuffer & out) const
     writeBinary(hasAppliedLimit(), out);
     writeVarUInt(getRowsBeforeLimit(), out);
     writeBinary(calculated_rows_before_limit, out);
+    writeBinary(hasAppliedGroupBy(), out);
+    writeVarUInt(getRowsBeforeGroupBy(), out);
 }
 
 
@@ -41,6 +45,8 @@ void ProfileInfo::setFrom(const ProfileInfo & rhs, bool skip_block_size_info)
     applied_limit = rhs.applied_limit;
     rows_before_limit = rhs.rows_before_limit;
     calculated_rows_before_limit = rhs.calculated_rows_before_limit;
+    applied_group_by = rhs.applied_group_by;
+    rows_before_group_by = rhs.rows_before_group_by;
 }
 
 
@@ -55,6 +61,17 @@ bool ProfileInfo::hasAppliedLimit() const
 {
     calculated_rows_before_limit = true;
     return applied_limit;
+}
+
+size_t ProfileInfo::getRowsBeforeGroupBy() const
+{
+    return rows_before_group_by;
+}
+
+
+bool ProfileInfo::hasAppliedGroupBy() const
+{
+    return applied_group_by;
 }
 
 

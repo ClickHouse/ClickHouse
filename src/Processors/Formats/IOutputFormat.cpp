@@ -71,7 +71,8 @@ void IOutputFormat::work()
     {
         if (rows_before_limit_counter && rows_before_limit_counter->hasAppliedLimit())
             setRowsBeforeLimit(rows_before_limit_counter->get());
-
+        if (rows_before_group_by_counter && rows_before_group_by_counter->hasAppliedLimit())
+            setRowsBeforeGroupBy(rows_before_group_by_counter->get());
         finalize();
         if (auto_flush)
             flush();

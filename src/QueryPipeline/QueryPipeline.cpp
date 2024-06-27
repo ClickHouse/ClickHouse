@@ -1,15 +1,13 @@
 #include <QueryPipeline/QueryPipeline.h>
 
 #include <queue>
-#include <QueryPipeline/Chain.h>
-#include <Processors/Formats/IOutputFormat.h>
-#include <Processors/IProcessor.h>
-#include <Processors/LimitTransform.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ExpressionActions.h>
-#include <QueryPipeline/ReadProgressCallback.h>
-#include <QueryPipeline/Pipe.h>
-#include <QueryPipeline/printPipeline.h>
+#include <Processors/Formats/IOutputFormat.h>
+#include <Processors/IProcessor.h>
+#include <Processors/ISource.h>
+#include <Processors/LimitTransform.h>
+#include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/Sinks/EmptySink.h>
 #include <Processors/Sinks/NullSink.h>
 #include <Processors/Sinks/SinkToStorage.h>
@@ -17,15 +15,18 @@
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Sources/RemoteSource.h>
 #include <Processors/Sources/SourceFromChunks.h>
-#include <Processors/ISource.h>
+#include <Processors/Transforms/AggregatingTransform.h>
 #include <Processors/Transforms/CountingTransform.h>
+#include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/LimitsCheckingTransform.h>
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/Transforms/PartialSortingTransform.h>
 #include <Processors/Transforms/StreamInQueryCacheTransform.h>
-#include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/TotalsHavingTransform.h>
-#include <Processors/QueryPlan/ReadFromPreparedSource.h>
+#include <QueryPipeline/Chain.h>
+#include <QueryPipeline/Pipe.h>
+#include <QueryPipeline/ReadProgressCallback.h>
+#include <QueryPipeline/printPipeline.h>
 
 
 namespace DB
@@ -273,7 +274,20 @@ static void initRowsBeforeLimit(IOutputFormat * output_format)
         output_format->setRowsBeforeLimitCounter(rows_before_limit_at_least);
     }
 }
-
+static void initRowsBeforeGroupBy(std::shared_ptr<Processors> processors, IOutputFormat * output_format)
+{
+    if (!processors->empty())
+    {
+        RowsBeforeGroupByCounterPtr rows_before_group_by_at_least = std::make_shared<RowsBeforeLimitCounter>();
+        for (auto & processor : *processors)
+        {
+            if (auto transform = std::dynamic_pointer_cast<AggregatingTransform>(processor))
+                transform->setRowsBeforeGroupByCounter(rows_before_group_by_at_least);
+        }
+        rows_before_group_by_at_least->add(0);
+        output_format->setRowsBeforeLimitCounter(rows_before_group_by_at_least);
+    }
+}
 
 QueryPipeline::QueryPipeline(
     QueryPlanResourceHolder resources_,
@@ -521,6 +535,7 @@ void QueryPipeline::complete(std::shared_ptr<IOutputFormat> format)
     extremes = nullptr;
 
     initRowsBeforeLimit(format.get());
+    initRowsBeforeGroupBy(processors, format.get());
     output_format = format.get();
 
     processors->emplace_back(std::move(format));

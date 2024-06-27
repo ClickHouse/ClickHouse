@@ -24,6 +24,8 @@ using StorageLimitsList = std::list<StorageLimits>;
 class RowsBeforeLimitCounter;
 using RowsBeforeLimitCounterPtr = std::shared_ptr<RowsBeforeLimitCounter>;
 
+using RowsBeforeGroupByCounterPtr = std::shared_ptr<RowsBeforeLimitCounter>;
+
 class IProcessor;
 using ProcessorPtr = std::shared_ptr<IProcessor>;
 using Processors = std::vector<ProcessorPtr>;
@@ -365,6 +367,10 @@ public:
     /// Set rows_before_limit counter for current processor.
     /// This counter is used to calculate the number of rows right before any filtration of LimitTransform.
     virtual void setRowsBeforeLimitCounter(RowsBeforeLimitCounterPtr /* counter */) {}
+
+    /// Set rows_before_group_by counter for current processor.
+    /// This counter is used to calculate the number of rows right before AggregatingTransform.
+    virtual void setRowsBeforeGroupByCounter(RowsBeforeGroupByCounterPtr /* counter */) { }
 
 protected:
     virtual void onCancel() {}
