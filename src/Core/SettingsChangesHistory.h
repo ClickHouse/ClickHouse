@@ -89,7 +89,8 @@ static const std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges
     {"24.7", {{"output_format_binary_encode_types_in_binary_format", false, false, "Added new setting to allow to write type names in binary format in RowBinaryWithNamesAndTypes output format"},
               {"input_format_binary_decode_types_in_binary_format", false, false, "Added new setting to allow to read type names in binary format in RowBinaryWithNamesAndTypes input format"},
               {"output_format_native_encode_types_in_binary_format", false, false, "Added new setting to allow to write type names in binary format in Native output format"},
-              {"input_format_native_decode_types_in_binary_format", false, false, "Added new setting to allow to read type names in binary format in Native output format"}
+              {"input_format_native_decode_types_in_binary_format", false, false, "Added new setting to allow to read type names in binary format in Native output format"},
+              {"output_format_parquet_write_page_index", false, true, "Add a possibility to write page index into parquet files."},
               }},
     {"24.6", {{"materialize_skip_indexes_on_insert", true, true, "Added new setting to allow to disable materialization of skip indexes on insert"},
               {"materialize_statistics_on_insert", true, true, "Added new setting to allow to disable materialization of statistics on insert"},
@@ -107,7 +108,7 @@ static const std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges
               {"input_format_parquet_max_block_size", 8192, DEFAULT_BLOCK_SIZE, "Increase block size for parquet reader."},
               {"input_format_parquet_prefer_block_bytes", 0, DEFAULT_BLOCK_SIZE * 256, "Average block bytes output by parquet reader."},
               {"enable_blob_storage_log", true, true, "Write information about blob storage operations to system.blob_storage_log table"},
-              {"uniform_snowflake_conversion_functions", false, true, "Enable functions snowflakeIDToDateTime[64] and dateTime[64]ToSnowflakeID."},
+              {"allow_deprecated_snowflake_conversion_functions", true, false, "Disabled deprecated functions snowflakeToDateTime[64] and dateTime[64]ToSnowflake."},
               {"allow_statistic_optimize", false, false, "Old setting which popped up here being renamed."},
               {"allow_experimental_statistic", false, false, "Old setting which popped up here being renamed."},
               {"allow_statistics_optimize", false, false, "The setting was renamed. The previous name is `allow_statistic_optimize`."},
