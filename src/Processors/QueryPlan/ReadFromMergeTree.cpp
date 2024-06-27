@@ -586,12 +586,14 @@ Pipe ReadFromMergeTree::readInOrder(
             context);
     }
 
-    /// Actually it means that parallel reading from replicas enabled
-    /// and we have to collaborate with initiator.
+    /// Actually it means that parallel reading from replicas enabled and read snapshot is not local -
+    /// we can't rely on local snapshot
     /// In this case we won't set approximate rows, because it will be accounted multiple times.
     /// Also do not count amount of read rows if we read in order of sorting key,
     /// because we don't know actual amount of read rows in case when limit is set.
-    bool set_rows_approx = !is_parallel_reading_from_replicas && !reader_settings.read_in_order;
+    const UInt64 in_order_limit = query_info.input_order_info ? query_info.input_order_info->limit : 0;
+    const bool set_total_rows_approx
+        = !(is_parallel_reading_from_replicas && context->canUseParallelReplicasOnFollower()) && !in_order_limit;
 
     Pipes pipes;
     for (size_t i = 0; i < parts_with_ranges.size(); ++i)
@@ -621,7 +623,7 @@ Pipe ReadFromMergeTree::readInOrder(
         processor->addPartLevelToChunk(isQueryWithFinal());
 
         auto source = std::make_shared<MergeTreeSource>(std::move(processor));
-        if (set_rows_approx)
+        if (set_total_rows_approx)
             source->addTotalRowsApprox(total_rows);
 
         pipes.emplace_back(std::move(source));
