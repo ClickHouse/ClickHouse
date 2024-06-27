@@ -31,8 +31,6 @@ This function uses a numerically unstable algorithm. If you need numerical stabi
 
 **Example**
 
-Query:
-
 ```sql
 DROP TABLE IF EXISTS test_data;
 CREATE TABLE test_data
@@ -48,8 +46,6 @@ SELECT
     covarPop(x, y) AS covar_pop
 FROM test_data;
 ```
-
-Result:
 
 ```response
 3
@@ -97,8 +93,6 @@ SELECT
     covarPopStable(x, y) AS covar_pop_stable
 FROM test_data;
 ```
-
-Result:
 
 ```response
 0.5999999999999999

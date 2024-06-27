@@ -26,6 +26,7 @@ ObjectInfo getObjectInfo(
     const String & version_id = {},
     const S3Settings::RequestSettings & request_settings = {},
     bool with_metadata = false,
+    bool for_disk_s3 = false,
     bool throw_on_error = true);
 
 size_t getObjectSize(
@@ -34,6 +35,7 @@ size_t getObjectSize(
     const String & key,
     const String & version_id = {},
     const S3Settings::RequestSettings & request_settings = {},
+    bool for_disk_s3 = false,
     bool throw_on_error = true);
 
 bool objectExists(
@@ -41,7 +43,8 @@ bool objectExists(
     const String & bucket,
     const String & key,
     const String & version_id = {},
-    const S3Settings::RequestSettings & request_settings = {});
+    const S3Settings::RequestSettings & request_settings = {},
+    bool for_disk_s3 = false);
 
 /// Throws an exception if a specified object doesn't exist. `description` is used as a part of the error message.
 void checkObjectExists(
@@ -50,6 +53,7 @@ void checkObjectExists(
     const String & key,
     const String & version_id = {},
     const S3Settings::RequestSettings & request_settings = {},
+    bool for_disk_s3 = false,
     std::string_view description = {});
 
 bool isNotFoundError(Aws::S3::S3Errors error);

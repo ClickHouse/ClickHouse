@@ -1,8 +1,7 @@
-#include <AggregateFunctions/IAggregateFunction.h>
+#include <Storages/System/StorageSystemGraphite.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
-#include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/System/StorageSystemGraphite.h>
 
 
 namespace DB

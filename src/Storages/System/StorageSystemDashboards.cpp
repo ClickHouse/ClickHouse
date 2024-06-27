@@ -1,6 +1,6 @@
 #include <string_view>
 #include <Storages/System/StorageSystemDashboards.h>
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 
 namespace DB
 {

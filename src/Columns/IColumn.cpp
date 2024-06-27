@@ -16,7 +16,6 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnVariant.h>
-#include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnVector.h>
 #include <Core/Field.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
@@ -462,7 +461,6 @@ template class IColumnHelper<ColumnAggregateFunction, IColumn>;
 template class IColumnHelper<ColumnFunction, IColumn>;
 template class IColumnHelper<ColumnCompressed, IColumn>;
 template class IColumnHelper<ColumnVariant, IColumn>;
-template class IColumnHelper<ColumnDynamic, IColumn>;
 
 template class IColumnHelper<IColumnDummy, IColumn>;
 

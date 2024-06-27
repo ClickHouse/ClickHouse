@@ -1,12 +1,14 @@
 #include <Analyzer/ArrayJoinNode.h>
-#include <Analyzer/ColumnNode.h>
-#include <Analyzer/Utils.h>
-#include <IO/Operators.h>
+
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
-#include <Parsers/ASTExpressionList.h>
+#include <IO/Operators.h>
+
 #include <Parsers/ASTTablesInSelectQuery.h>
-#include <Common/assert_cast.h>
+#include <Parsers/ASTExpressionList.h>
+
+#include <Analyzer/Utils.h>
+#include <Analyzer/ColumnNode.h>
 
 namespace DB
 {
@@ -23,9 +25,6 @@ void ArrayJoinNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_stat
 {
     buffer << std::string(indent, ' ') << "ARRAY_JOIN id: " << format_state.getNodeId(this);
     buffer << ", is_left: " << is_left;
-
-    if (hasAlias())
-        buffer << ", alias: " << getAlias();
 
     buffer << '\n' << std::string(indent + 2, ' ') << "TABLE EXPRESSION\n";
     getTableExpression()->dumpTreeImpl(buffer, format_state, indent + 4);

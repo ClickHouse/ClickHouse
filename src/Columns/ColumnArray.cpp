@@ -1283,20 +1283,10 @@ ColumnPtr ColumnArray::replicateTuple(const Offsets & replicate_offsets) const
 
 size_t ColumnArray::getNumberOfDimensions() const
 {
-    const auto * nested_array = checkAndGetColumn<ColumnArray>(&*data);
+    const auto * nested_array = checkAndGetColumn<ColumnArray>(*data);
     if (!nested_array)
         return 1;
     return 1 + nested_array->getNumberOfDimensions();   /// Every modern C++ compiler optimizes tail recursion.
-}
-
-void ColumnArray::takeDynamicStructureFromSourceColumns(const Columns & source_columns)
-{
-    Columns nested_source_columns;
-    nested_source_columns.reserve(source_columns.size());
-    for (const auto & source_column : source_columns)
-        nested_source_columns.push_back(assert_cast<const ColumnArray &>(*source_column).getDataPtr());
-
-    data->takeDynamicStructureFromSourceColumns(nested_source_columns);
 }
 
 }

@@ -11,7 +11,6 @@ RUN apt-get update && env DEBIAN_FRONTEND=noninteractive apt-get install --yes \
         aspell \
         curl \
         git \
-        gh \
         file \
         libxml2-utils \
         moreutils \

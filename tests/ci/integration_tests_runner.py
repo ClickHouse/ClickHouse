@@ -265,9 +265,7 @@ class ClickhouseIntegrationTestsRunner:
         self.start_time = time.time()
         self.soft_deadline_time = self.start_time + (TASK_TIMEOUT - MAX_TIME_IN_SANDBOX)
 
-        self.use_old_analyzer = (
-            os.environ.get("CLICKHOUSE_USE_OLD_ANALYZER") is not None
-        )
+        self.use_analyzer = os.environ.get("CLICKHOUSE_USE_OLD_ANALYZER") is not None
 
         if "run_by_hash_total" in self.params:
             self.run_by_hash_total = self.params["run_by_hash_total"]
@@ -344,8 +342,6 @@ class ClickhouseIntegrationTestsRunner:
             "clickhouse-common-static_",
             "clickhouse-server_",
             "clickhouse-client",
-            "clickhouse-odbc-bridge_",
-            "clickhouse-library-bridge_",
             "clickhouse-common-static-dbg_",
         ):  # order matters
             logging.info("Installing package %s", package)
@@ -416,8 +412,8 @@ class ClickhouseIntegrationTestsRunner:
             result.append("--tmpfs")
         if self.disable_net_host:
             result.append("--disable-net-host")
-        if self.use_old_analyzer:
-            result.append("--old-analyzer")
+        if self.use_analyzer:
+            result.append("--analyzer")
 
         return " ".join(result)
 

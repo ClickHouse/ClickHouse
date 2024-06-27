@@ -1,6 +1,5 @@
 #include <Storages/MergeTree/MutateTask.h>
 
-#include <IO/HashingWriteBuffer.h>
 #include <Common/logger_useful.h>
 #include <Common/escapeForFileName.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
@@ -23,7 +22,7 @@
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
-#include <Storages/MergeTree/MergeTreeIndexFullText.h>
+#include <Storages/MergeTree/MergeTreeIndexInverted.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeVariant.h>
@@ -61,21 +60,6 @@ static bool checkOperationIsNotCanceled(ActionBlocker & merges_blocker, MergeLis
     return true;
 }
 
-static bool haveMutationsOfDynamicColumns(const MergeTreeData::DataPartPtr & data_part, const MutationCommands & commands)
-{
-    for (const auto & command : commands)
-    {
-        if (!command.column_name.empty())
-        {
-            auto column = data_part->tryGetColumn(command.column_name);
-            if (column && column->type->hasDynamicSubcolumns())
-                return true;
-        }
-    }
-
-    return false;
-}
-
 static UInt64 getExistingRowsCount(const Block & block)
 {
     auto column = block.getByName(RowExistsColumn::name).column;
@@ -111,7 +95,7 @@ static void splitAndModifyMutationCommands(
     auto part_columns = part->getColumnsDescription();
     const auto & table_columns = metadata_snapshot->getColumns();
 
-    if (haveMutationsOfDynamicColumns(part, commands) || !isWidePart(part) || !isFullPartStorage(part->getDataPartStorage()))
+    if (!isWidePart(part) || !isFullPartStorage(part->getDataPartStorage()))
     {
         NameSet mutated_columns;
         NameSet dropped_columns;
@@ -358,23 +342,21 @@ getColumnsForNewDataPart(
         }
     }
 
-    auto persistent_virtuals = source_part->storage.getVirtualsPtr()->getNamesAndTypesList(VirtualsKind::Persistent);
-
-    for (const auto & [name, type] : persistent_virtuals)
+    if (!storage_columns_set.contains(RowExistsColumn::name))
     {
-        if (storage_columns_set.contains(name))
-            continue;
-
-        bool need_column = false;
-        if (name == RowExistsColumn::name)
-            need_column = deleted_mask_updated || (part_columns.has(name) && !has_delete_command);
-        else
-            need_column = part_columns.has(name);
-
-        if (need_column)
+        if (deleted_mask_updated || (part_columns.has(RowExistsColumn::name) && !has_delete_command))
         {
-            storage_columns.emplace_back(name, type);
-            storage_columns_set.insert(name);
+            storage_columns.emplace_back(RowExistsColumn::name, RowExistsColumn::type);
+            storage_columns_set.insert(RowExistsColumn::name);
+        }
+    }
+
+    if (!storage_columns_set.contains(BlockNumberColumn::name))
+    {
+        if (source_part->tryGetSerialization(BlockNumberColumn::name) != nullptr)
+        {
+            storage_columns.push_back({BlockNumberColumn::name, BlockNumberColumn::type});
+            storage_columns_set.insert(BlockNumberColumn::name);
         }
     }
 
@@ -668,8 +650,8 @@ static NameSet collectFilesToSkip(
         files_to_skip.insert(index->getFileName() + index->getSerializedFileExtension());
         files_to_skip.insert(index->getFileName() + mrk_extension);
 
-        // Skip all full-text index files, for they will be rebuilt
-        if (dynamic_cast<const MergeTreeIndexFullText *>(index.get()))
+        // Skip all inverted index files, for they will be rebuilt
+        if (dynamic_cast<const MergeTreeIndexInverted *>(index.get()))
         {
             auto index_filename = index->getFileName();
             files_to_skip.insert(index_filename + ".gin_dict");
@@ -747,7 +729,7 @@ static NameToNameVector collectFilesForRenames(
         if (command.type == MutationCommand::Type::DROP_INDEX)
         {
             static const std::array<String, 2> suffixes = {".idx2", ".idx"};
-            static const std::array<String, 4> gin_suffixes = {".gin_dict", ".gin_post", ".gin_seg", ".gin_sid"}; /// .gin_* means generalized inverted index (aka. full-text-index)
+            static const std::array<String, 4> gin_suffixes = {".gin_dict", ".gin_post", ".gin_seg", ".gin_sid"}; /// .gin_* is inverted index
 
             for (const auto & suffix : suffixes)
             {
@@ -951,7 +933,7 @@ void finalizeMutatedPart(
 
     new_data_part->rows_count = source_part->rows_count;
     new_data_part->index_granularity = source_part->index_granularity;
-    new_data_part->setIndex(*source_part->getIndex());
+    new_data_part->setIndex(source_part->getIndex());
     new_data_part->minmax_idx = source_part->minmax_idx;
     new_data_part->modification_time = time(nullptr);
 
@@ -996,13 +978,13 @@ struct MutationContext
 
     QueryPipelineBuilder mutating_pipeline_builder;
     QueryPipeline mutating_pipeline; // in
-    std::unique_ptr<PullingPipelineExecutor> mutating_executor;
+    std::unique_ptr<PullingPipelineExecutor> mutating_executor{nullptr};
     ProgressCallback progress_callback;
     Block updated_header;
 
     std::unique_ptr<MutationsInterpreter> interpreter;
-    UInt64 watch_prev_elapsed = 0;
-    std::unique_ptr<MergeStageProgress> stage_progress;
+    UInt64 watch_prev_elapsed{0};
+    std::unique_ptr<MergeStageProgress> stage_progress{nullptr};
 
     MutationCommands commands_for_part;
     MutationCommands for_interpreter;
@@ -1014,12 +996,12 @@ struct MutationContext
     NameSet materialized_statistics;
 
     MergeTreeData::MutableDataPartPtr new_data_part;
-    IMergedBlockOutputStreamPtr out;
+    IMergedBlockOutputStreamPtr out{nullptr};
 
     String mrk_extension;
 
     std::vector<ProjectionDescriptionRawPtr> projections_to_build;
-    IMergeTreeDataPart::MinMaxIndexPtr minmax_idx;
+    IMergeTreeDataPart::MinMaxIndexPtr minmax_idx{nullptr};
 
     std::set<MergeTreeIndexPtr> indices_to_recalc;
     std::set<StatisticPtr> stats_to_recalc;
@@ -1249,7 +1231,7 @@ private:
     void constructTaskForProjectionPartsMerge();
     void finalize();
 
-    enum class State : uint8_t
+    enum class State
     {
         NEED_PREPARE,
         NEED_MUTATE_ORIGINAL_PART,
@@ -1299,7 +1281,7 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
     if (MutationHelpers::checkOperationIsNotCanceled(*ctx->merges_blocker, ctx->mutate_entry) && ctx->mutating_executor->pull(cur_block))
     {
         if (ctx->minmax_idx)
-            ctx->minmax_idx->update(cur_block, MergeTreeData::getMinMaxColumnsNames(ctx->metadata_snapshot->getPartitionKey()));
+            ctx->minmax_idx->update(cur_block, ctx->data->getMinMaxColumnsNames(ctx->metadata_snapshot->getPartitionKey()));
 
         ctx->out->write(cur_block);
 
@@ -1676,7 +1658,7 @@ private:
             skip_indices,
             stats_to_rewrite,
             ctx->compression_codec,
-            ctx->txn ? ctx->txn->tid : Tx::PrehistoricTID,
+            ctx->txn,
             /*reset_columns=*/ true,
             /*blocks_are_granules_size=*/ false,
             ctx->context->getWriteSettings(),
@@ -1705,7 +1687,7 @@ private:
         ctx->out.reset();
     }
 
-    enum class State : uint8_t
+    enum class State
     {
         NEED_PREPARE,
         NEED_EXECUTE,
@@ -1954,7 +1936,8 @@ private:
         MutationHelpers::finalizeMutatedPart(ctx->source_part, ctx->new_data_part, ctx->execute_ttl_type, ctx->compression_codec, ctx->context, ctx->metadata_snapshot, ctx->need_sync);
     }
 
-    enum class State : uint8_t
+
+    enum class State
     {
         NEED_PREPARE,
         NEED_EXECUTE,
@@ -2265,9 +2248,7 @@ bool MutateTask::prepare()
 
     /// All columns from part are changed and may be some more that were missing before in part
     /// TODO We can materialize compact part without copying data
-    /// Also currently mutations of types with dynamic subcolumns in Wide part are possible only by
-    /// rewriting the whole part.
-    if (MutationHelpers::haveMutationsOfDynamicColumns(ctx->source_part, ctx->commands_for_part) || !isWidePart(ctx->source_part) || !isFullPartStorage(ctx->source_part->getDataPartStorage())
+    if (!isWidePart(ctx->source_part) || !isFullPartStorage(ctx->source_part->getDataPartStorage())
         || (ctx->interpreter && ctx->interpreter->isAffectingAllColumns()))
     {
         /// In case of replicated merge tree with zero copy replication

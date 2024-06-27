@@ -92,11 +92,8 @@ struct ColumnDescription
     std::optional<StatisticDescription> stat;
 
     ColumnDescription() = default;
-    ColumnDescription(const ColumnDescription & other) { *this = other; }
-    ColumnDescription & operator=(const ColumnDescription & other);
-    ColumnDescription(ColumnDescription && other) noexcept { *this = std::move(other); }
-    ColumnDescription & operator=(ColumnDescription && other) noexcept;
-
+    ColumnDescription(ColumnDescription &&) = default;
+    ColumnDescription(const ColumnDescription &) = default;
     ColumnDescription(String name_, DataTypePtr type_);
     ColumnDescription(String name_, DataTypePtr type_, String comment_);
     ColumnDescription(String name_, DataTypePtr type_, ASTPtr codec_, String comment_);

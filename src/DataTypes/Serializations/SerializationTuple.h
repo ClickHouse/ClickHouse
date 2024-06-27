@@ -53,8 +53,7 @@ public:
 
     void deserializeBinaryBulkStatePrefix(
             DeserializeBinaryBulkSettings & settings,
-            DeserializeBinaryBulkStatePtr & state,
-            SubstreamsDeserializeStatesCache * cache) const override;
+            DeserializeBinaryBulkStatePtr & state) const override;
 
     void serializeBinaryBulkWithMultipleStreams(
             const IColumn & column,

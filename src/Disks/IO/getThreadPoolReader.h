@@ -7,7 +7,7 @@ namespace DB
 
 class IAsynchronousReader;
 
-enum class FilesystemReaderType : uint8_t
+enum class FilesystemReaderType
 {
     SYNCHRONOUS_LOCAL_FS_READER,
     ASYNCHRONOUS_LOCAL_FS_READER,

@@ -8,7 +8,7 @@
 #include <QueryPipeline/ProfileInfo.h>
 #include <Disks/IDisk.h>
 #include <Common/formatReadable.h>
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Interpreters/Context.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <Common/logger_useful.h>

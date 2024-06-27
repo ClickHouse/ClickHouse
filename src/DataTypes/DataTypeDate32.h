@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/Field.h>
+#include <Common/DateLUT.h>
 #include <DataTypes/DataTypeNumberBase.h>
 
 namespace DB
@@ -14,7 +15,10 @@ public:
     TypeIndex getColumnType() const override { return TypeIndex::Int32; }
     const char * getFamilyName() const override { return family_name; }
 
-    Field getDefault() const override;
+    Field getDefault() const override
+    {
+        return -static_cast<Int64>(DateLUT::instance().getDayNumOffsetEpoch());
+    }
 
     bool canBeUsedAsVersion() const override { return true; }
     bool canBeInsideNullable() const override { return true; }

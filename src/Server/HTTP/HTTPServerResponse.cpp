@@ -62,7 +62,6 @@ std::shared_ptr<WriteBufferFromPocoSocket> HTTPServerResponse::send()
         stream = std::make_shared<WriteBufferFromPocoSocket>(session.socket(), write_event);
     }
 
-    send_started = true;
     return stream;
 }
 
@@ -97,14 +96,7 @@ std::pair<std::shared_ptr<WriteBufferFromPocoSocket>, std::shared_ptr<WriteBuffe
     else
         stream = std::make_shared<WriteBufferFromPocoSocket>(session.socket(), write_event);
 
-    send_started = true;
     return std::make_pair(header_stream, stream);
-}
-
-void HTTPServerResponse::beginWrite(std::ostream & ostr) const
-{
-    HTTPResponse::beginWrite(ostr);
-    send_started = true;
 }
 
 void HTTPServerResponse::sendBuffer(const void * buffer, std::size_t length)

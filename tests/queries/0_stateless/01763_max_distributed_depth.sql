@@ -19,17 +19,17 @@ DROP TABLE IF EXISTS tt7;
 
 CREATE TABLE tt7 as tt6 ENGINE = Distributed('test_shard_localhost', '', 'tt6', rand());
 
-INSERT INTO tt6 VALUES (1, 1, 1, 1, 'ok'); -- { serverError TOO_LARGE_DISTRIBUTED_DEPTH }
+INSERT INTO tt6 VALUES (1, 1, 1, 1, 'ok'); -- { serverError 581 }
 
-SELECT * FROM tt6; -- { serverError TOO_LARGE_DISTRIBUTED_DEPTH }
+SELECT * FROM tt6; -- { serverError 581 }
 
 SET max_distributed_depth = 0;
 
 -- stack overflow
-INSERT INTO tt6 VALUES (1, 1, 1, 1, 'ok'); -- { serverError TOO_DEEP_RECURSION}
+INSERT INTO tt6 VALUES (1, 1, 1, 1, 'ok'); -- { serverError 306}
 
 -- stack overflow
-SELECT * FROM tt6; -- { serverError TOO_DEEP_RECURSION }
+SELECT * FROM tt6; -- { serverError 306 }
 
 DROP TABLE tt6;
 DROP TABLE tt7;

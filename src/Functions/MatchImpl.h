@@ -81,19 +81,19 @@ inline bool likePatternIsSubstring(std::string_view pattern, String & res)
 // For more readable instantiations of MatchImpl<>
 struct MatchTraits
 {
-enum class Syntax : uint8_t
+enum class Syntax
 {
     Like,
     Re2
 };
 
-enum class Case : uint8_t
+enum class Case
 {
     Sensitive,
     Insensitive
 };
 
-enum class Result : uint8_t
+enum class Result
 {
     DontNegate,
     Negate

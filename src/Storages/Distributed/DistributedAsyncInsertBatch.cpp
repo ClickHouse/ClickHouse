@@ -173,7 +173,7 @@ bool DistributedAsyncInsertBatch::valid()
     {
         if (!fs::exists(file))
         {
-            LOG_WARNING(parent.log, "File {} does not exist, likely due abnormal shutdown", file);
+            LOG_WARNING(parent.log, "File {} does not exists, likely due abnormal shutdown", file);
             res = false;
         }
     }
@@ -203,9 +203,10 @@ void DistributedAsyncInsertBatch::readText(ReadBuffer & in)
 
 void DistributedAsyncInsertBatch::sendBatch(const SettingsChanges & settings_changes)
 {
-    IConnectionPool::Entry connection;
     std::unique_ptr<RemoteInserter> remote;
     bool compression_expected = false;
+
+    IConnectionPool::Entry connection;
 
     /// Since the batch is sent as a whole (in case of failure, the whole batch
     /// will be repeated), we need to mark the whole batch as failed in case of
