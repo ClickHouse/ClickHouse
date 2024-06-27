@@ -33,9 +33,10 @@
 
 #include <Core/ColumnNumbers.h>
 #include <Common/Exception.h>
-#include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 #include <Common/formatReadable.h>
+#include <Common/typeid_cast.h>
+#include "Columns/IColumn.h"
 #include "Core/Joins.h"
 #include "Interpreters/TemporaryDataOnDisk.h"
 
@@ -644,8 +645,17 @@ namespace
 
     template <JoinStrictness STRICTNESS, typename KeyGetter, typename Map>
     size_t NO_INLINE insertFromBlockImplTypeCase(
-        HashJoin & join, Map & map, size_t rows, const ColumnRawPtrs & key_columns,
-        const Sizes & key_sizes, Block * stored_block, ConstNullMapPtr null_map, UInt8ColumnDataPtr join_mask, Arena & pool, bool & is_inserted)
+        HashJoin & join,
+        Map & map,
+        size_t rows,
+        const ColumnRawPtrs & key_columns,
+        const Sizes & key_sizes,
+        Block * stored_block,
+        const IColumn::Selector * selector,
+        ConstNullMapPtr null_map,
+        UInt8ColumnDataPtr join_mask,
+        Arena & pool,
+        bool & is_inserted)
     {
         [[maybe_unused]] constexpr bool mapped_one = std::is_same_v<typename Map::mapped_type, RowRef>;
         constexpr bool is_asof_join = STRICTNESS == JoinStrictness::Asof;
@@ -661,6 +671,9 @@ namespace
 
         for (size_t i = 0; i < rows; ++i)
         {
+            if (selector && std::find(selector->begin(), selector->end(), i) == selector->end())
+                continue;
+
             if (null_map && (*null_map)[i])
             {
                 /// nulls are not inserted into hash table,
@@ -685,8 +698,18 @@ namespace
 
     template <JoinStrictness STRICTNESS, typename Maps>
     size_t insertFromBlockImpl(
-        HashJoin & join, HashJoin::Type type, Maps & maps, size_t rows, const ColumnRawPtrs & key_columns,
-        const Sizes & key_sizes, Block * stored_block, ConstNullMapPtr null_map, UInt8ColumnDataPtr join_mask, Arena & pool, bool & is_inserted)
+        HashJoin & join,
+        HashJoin::Type type,
+        Maps & maps,
+        size_t rows,
+        const ColumnRawPtrs & key_columns,
+        const Sizes & key_sizes,
+        Block * stored_block,
+        const IColumn::Selector * selector,
+        ConstNullMapPtr null_map,
+        UInt8ColumnDataPtr join_mask,
+        Arena & pool,
+        bool & is_inserted)
     {
         switch (type)
         {
@@ -697,14 +720,16 @@ namespace
                 is_inserted = true;
                 return 0;
 
-        #define M(TYPE) \
-            case HashJoin::Type::TYPE: \
-                return insertFromBlockImplTypeCase<STRICTNESS, typename KeyGetterForType<HashJoin::Type::TYPE, std::remove_reference_t<decltype(*maps.TYPE)>>::Type>(\
-                    join, *maps.TYPE, rows, key_columns, key_sizes, stored_block, null_map, join_mask, pool, is_inserted); \
-                    break;
+#define M(TYPE) \
+    case HashJoin::Type::TYPE: \
+        return insertFromBlockImplTypeCase< \
+            STRICTNESS, \
+            typename KeyGetterForType<HashJoin::Type::TYPE, std::remove_reference_t<decltype(*maps.TYPE)>>::Type>( \
+            join, *maps.TYPE, rows, key_columns, key_sizes, stored_block, selector, null_map, join_mask, pool, is_inserted); \
+        break;
 
-            APPLY_FOR_JOIN_VARIANTS(M)
-        #undef M
+                APPLY_FOR_JOIN_VARIANTS(M)
+#undef M
         }
     }
 }
@@ -879,11 +904,11 @@ bool HashJoin::addBlockToJoin(ScatteredBlock & source_block, bool check_limits)
 
         assertBlocksHaveEqualStructure(data->sample_block, *source_block.block, "joined block");
 
-        size_t min_bytes_to_compress = table_join->crossJoinMinBytesToCompress();
-        size_t min_rows_to_compress = table_join->crossJoinMinRowsToCompress();
-
         if constexpr (!std::is_same_v<decltype(source_block), ScatteredBlock>)
         {
+            // size_t min_bytes_to_compress = table_join->crossJoinMinBytesToCompress();
+            // size_t min_rows_to_compress = table_join->crossJoinMinRowsToCompress();
+
             /// TODO: impl
             // if (kind == JoinKind::Cross
             //     && ((min_bytes_to_compress && getTotalByteCount() >= min_bytes_to_compress)
@@ -922,8 +947,8 @@ bool HashJoin::addBlockToJoin(ScatteredBlock & source_block, bool check_limits)
                     save_nullmap |= (*null_map)[i];
             }
 
-            LOG_DEBUG(getLogger("debug"), "condition column names: {}", onexprs[onexpr_idx].condColumnNames().second);
-            auto join_mask_col = JoinCommon::getColumnAsMask(source_block, onexprs[onexpr_idx].condColumnNames().second);
+            auto join_mask_col = JoinCommon::getColumnAsMask(*source_block.block, onexprs[onexpr_idx].condColumnNames().second);
+
             /// Save blocks that do not hold conditions in ON section
             ColumnUInt8::MutablePtr not_joined_map = nullptr;
             if (!flag_per_row && isRightOrFull(kind) && join_mask_col.hasData())
@@ -945,23 +970,40 @@ bool HashJoin::addBlockToJoin(ScatteredBlock & source_block, bool check_limits)
                 }
             }
 
+            const IColumn::Selector * selector = nullptr;
+            if constexpr (std::is_same_v<decltype(source_block), ScatteredBlock>)
+                selector = &source_block.selector;
+
             bool is_inserted = false;
             if (kind != JoinKind::Cross)
             {
-                joinDispatch(kind, strictness, data->maps[onexpr_idx], [&](auto kind_, auto strictness_, auto & map)
-                {
-                    size_t size = insertFromBlockImpl<strictness_>(
-                        *this, data->type, map, rows, key_columns, key_sizes[onexpr_idx], stored_block, null_map,
-                        /// If mask is false constant, rows are added to hashmap anyway. It's not a happy-flow, so this case is not optimized
-                        join_mask_col.getData(),
-                        data->pool, is_inserted);
+                joinDispatch(
+                    kind,
+                    strictness,
+                    data->maps[onexpr_idx],
+                    [&](auto kind_, auto strictness_, auto & map)
+                    {
+                        size_t size = insertFromBlockImpl<strictness_>(
+                            *this,
+                            data->type,
+                            map,
+                            rows,
+                            key_columns,
+                            key_sizes[onexpr_idx],
+                            stored_block,
+                            selector,
+                            null_map,
+                            /// If mask is false constant, rows are added to hashmap anyway. It's not a happy-flow, so this case is not optimized
+                            join_mask_col.getData(),
+                            data->pool,
+                            is_inserted);
 
-                    if (flag_per_row)
-                        used_flags.reinit<kind_, strictness_>(stored_block);
-                    else if (is_inserted)
-                        /// Number of buckets + 1 value from zero storage
-                        used_flags.reinit<kind_, strictness_>(size + 1);
-                });
+                        if (flag_per_row)
+                            used_flags.reinit<kind_, strictness_>(stored_block);
+                        else if (is_inserted)
+                            /// Number of buckets + 1 value from zero storage
+                            used_flags.reinit<kind_, strictness_>(size + 1);
+                    });
             }
 
             if (!flag_per_row && save_nullmap && is_inserted)

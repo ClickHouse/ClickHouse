@@ -188,7 +188,7 @@ public:
         size_t rows() const
         {
             chassert(block);
-            return block->rows();
+            return selector.size();
         }
 
         const ColumnWithTypeAndName & getByName(const std::string & name) const { return block->getByName(name); }
