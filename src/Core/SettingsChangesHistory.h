@@ -87,6 +87,7 @@ namespace SettingsChangesHistory
 static const std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges> settings_changes_history =
 {
     {"24.7", {{"output_format_parquet_write_page_index", false, true, "Add a possibility to write page index into parquet files."},
+              {"database_replicated_allow_heavy_create", true, false, "Allow long-running DDL queries (CREATE AS SELECT and POPULATE) in Replicated database engine."},
               }},
     {"24.6", {{"materialize_skip_indexes_on_insert", true, true, "Added new setting to allow to disable materialization of skip indexes on insert"},
               {"materialize_statistics_on_insert", true, true, "Added new setting to allow to disable materialization of statistics on insert"},

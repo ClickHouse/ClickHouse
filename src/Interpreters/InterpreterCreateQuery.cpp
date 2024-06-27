@@ -1305,7 +1305,8 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     if (need_add_to_database)
         database = DatabaseCatalog::instance().tryGetDatabase(database_name);
 
-    if (database && database->getEngineName() == "Replicated" && (create.select || create.is_populate))
+    bool allow_heavy_create = getContext()->getSettingsRef().database_replicated_allow_heavy_create;
+    if (!allow_heavy_create && database && database->getEngineName() == "Replicated" && (create.select || create.is_populate))
     {
         bool is_storage_replicated = false;
         if (create.storage && create.storage->engine)
@@ -1319,7 +1320,8 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         if (!allow_create_select_for_replicated)
             throw Exception(
                 ErrorCodes::SUPPORT_IS_DISABLED,
-                "CREATE AS SELECT and POPULATE is not supported with Replicated databases. Use separate CREATE and INSERT queries");
+                "CREATE AS SELECT and POPULATE is not supported with Replicated databases. Consider using separate CREATE and INSERT queries. "
+                "Alternatively, you can enable 'database_replicated_allow_heavy_create' setting to allow this operation, use with caution");
     }
 
     if (database && database->shouldReplicateQuery(getContext(), query_ptr))
