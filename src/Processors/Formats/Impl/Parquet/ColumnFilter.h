@@ -19,6 +19,7 @@ enum ColumnFilterKind
 
 class ColumnFilter
 {
+public:
     bool testNull();
     bool testNotNull();
     bool testInt64(Int64 value);
