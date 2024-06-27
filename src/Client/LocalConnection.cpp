@@ -356,7 +356,7 @@ bool LocalConnection::poll(size_t)
 
         try
         {
-            pollImpl();
+            while (pollImpl());
         }
         catch (const Exception & e)
         {
@@ -456,7 +456,11 @@ bool LocalConnection::pollImpl()
     Block block;
     auto next_read = pullBlock(block);
 
-    if (block && !state->io.null_format)
+    if (!block && next_read)
+    {
+        return true;
+    }
+    else if (block && !state->io.null_format)
     {
         state->block.emplace(block);
     }
@@ -465,7 +469,7 @@ bool LocalConnection::pollImpl()
         state->is_finished = true;
     }
 
-    return true;
+    return false;
 }
 
 Packet LocalConnection::receivePacket()
@@ -478,7 +482,7 @@ Packet LocalConnection::receivePacket()
     }
 
     if (!next_packet_type)
-        while (state && !poll(0));
+        poll(0);
 
     if (!next_packet_type)
     {
