@@ -1,6 +1,3 @@
-#include <optional>
-#include <numeric>
-
 #include <Storages/Statistics/Statistics.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <Storages/Statistics/TDigestStatistics.h>
@@ -10,6 +7,8 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Common/Exception.h>
+#include <Common/logger_useful.h>
+
 
 namespace DB
 {
@@ -20,7 +19,6 @@ namespace ErrorCodes
     extern const int INCORRECT_QUERY;
 }
 
-/// Version / bitmask of statistics / data of statistics /
 enum StatisticsFileVersion : UInt16
 {
     V0 = 0,
@@ -29,17 +27,15 @@ enum StatisticsFileVersion : UInt16
 IStatistics::IStatistics(const SingleStatisticsDescription & stat_) : stat(stat_) {}
 
 ColumnStatistics::ColumnStatistics(const ColumnStatisticsDescription & stats_desc_)
-    : stats_desc(stats_desc_), rows(0)
+    : stats_desc(stats_desc_)
 {
 }
 
 void ColumnStatistics::update(const ColumnPtr & column)
 {
     rows += column->size();
-    for (const auto & iter : stats)
-    {
-        iter.second->update(column);
-    }
+    for (const auto & stat : stats)
+        stat.second->update(column);
 }
 
 Float64 ColumnStatistics::estimateLess(Float64 val) const
@@ -76,14 +72,17 @@ Float64 ColumnStatistics::estimateEqual(Float64 val) const
 void ColumnStatistics::serialize(WriteBuffer & buf)
 {
     writeIntBinary(V0, buf);
+
     UInt64 stat_types_mask = 0;
     for (const auto & [type, _]: stats)
         stat_types_mask |= 1 << UInt8(type);
     writeIntBinary(stat_types_mask, buf);
-    /// We write some basic statistics
+
+    /// store the column row count as it is always useful
     writeIntBinary(rows, buf);
-    /// We write complex statistics
-    for (const auto & [type, stat_ptr]: stats)
+
+    /// write the actual statistics object
+    for (const auto & [type, stat_ptr] : stats)
         stat_ptr->serialize(buf);
 }
 
@@ -96,7 +95,9 @@ void ColumnStatistics::deserialize(ReadBuffer &buf)
 
     UInt64 stat_types_mask = 0;
     readIntBinary(stat_types_mask, buf);
+
     readIntBinary(rows, buf);
+
     for (auto it = stats.begin(); it != stats.end();)
     {
         if (!(stat_types_mask & 1 << UInt8(it->first)))
@@ -136,15 +137,15 @@ void MergeTreeStatisticsFactory::registerValidator(StatisticsType stats_type, Va
 {
     if (!validators.emplace(stats_type, std::move(validator)).second)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "MergeTreeStatisticsFactory: the statistics validator type {} is not unique", stats_type);
-
 }
 
 MergeTreeStatisticsFactory::MergeTreeStatisticsFactory()
 {
-    registerCreator(StatisticsType::TDigest, TDigestCreator);
-    registerCreator(StatisticsType::Uniq, UniqCreator);
     registerValidator(StatisticsType::TDigest, TDigestValidator);
+    registerCreator(StatisticsType::TDigest, TDigestCreator);
+
     registerValidator(StatisticsType::Uniq, UniqValidator);
+    registerCreator(StatisticsType::Uniq, UniqCreator);
 }
 
 MergeTreeStatisticsFactory & MergeTreeStatisticsFactory::instance()
@@ -159,9 +160,7 @@ void MergeTreeStatisticsFactory::validate(const ColumnStatisticsDescription & st
     {
         auto it = validators.find(type);
         if (it == validators.end())
-        {
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown Statistic type '{}'", type);
-        }
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown statistic type '{}'", type);
         it->second(desc, data_type);
     }
 }
@@ -173,10 +172,7 @@ ColumnStatisticsPtr MergeTreeStatisticsFactory::get(const ColumnStatisticsDescri
     {
         auto it = creators.find(type);
         if (it == creators.end())
-        {
-            throw Exception(ErrorCodes::INCORRECT_QUERY,
-                    "Unknown Statistic type '{}'. Available types: tdigest, uniq", type);
-        }
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Unknown statistic type '{}'. Available types: 'tdigest' 'uniq'", type);
         auto stat_ptr = (it->second)(desc, stats.data_type);
         column_stat->stats[type] = stat_ptr;
     }

@@ -17,7 +17,6 @@ public:
     UInt64 getCardinality();
 
     void serialize(WriteBuffer & buf) override;
-
     void deserialize(ReadBuffer & buf) override;
 
     void update(const ColumnPtr & column) override;
@@ -30,7 +29,7 @@ private:
 
 };
 
-StatisticsPtr UniqCreator(const SingleStatisticsDescription & stat, DataTypePtr data_type);
 void UniqValidator(const SingleStatisticsDescription &, DataTypePtr data_type);
+StatisticsPtr UniqCreator(const SingleStatisticsDescription & stat, DataTypePtr data_type);
 
 }
