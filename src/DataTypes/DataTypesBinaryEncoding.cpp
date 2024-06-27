@@ -9,7 +9,6 @@
 #include <DataTypes/DataTypeFunction.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
-#include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeUUID.h>
@@ -87,15 +86,14 @@ enum class BinaryTypeIndex : uint8_t
     AggregateFunction = 0x25,
     LowCardinality = 0x26,
     Map = 0x27,
-    Object = 0x28,
-    IPv4 = 0x29,
-    IPv6 = 0x2A,
-    Variant = 0x2B,
-    Dynamic = 0x2C,
-    Custom = 0x2D,
-    Bool = 0x2E,
-    SimpleAggregateFunction = 0x2F,
-    Nested = 0x30,
+    IPv4 = 0x28,
+    IPv6 = 0x29,
+    Variant = 0x2A,
+    Dynamic = 0x2B,
+    Custom = 0x2C,
+    Bool = 0x2D,
+    SimpleAggregateFunction = 0x2E,
+    Nested = 0x2F,
 };
 
 BinaryTypeIndex getBinaryTypeIndex(const DataTypePtr & type)
@@ -205,7 +203,8 @@ BinaryTypeIndex getBinaryTypeIndex(const DataTypePtr & type)
         case TypeIndex::Map:
             return BinaryTypeIndex::Map;
         case TypeIndex::Object:
-            return BinaryTypeIndex::Object;
+            /// Object type will be deprecated and replaced by new implementation. No need to support it here.
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Binary encoding of type Object is not supported");
         case TypeIndex::IPv4:
             return BinaryTypeIndex::IPv4;
         case TypeIndex::IPv6:
@@ -433,13 +432,6 @@ void encodeDataType(const DataTypePtr & type, WriteBuffer & buf)
             encodeDataType(map_type.getValueType(), buf);
             break;
         }
-        case BinaryTypeIndex::Object:
-        {
-            const auto & object_deprecated_type = assert_cast<const DataTypeObject &>(*type);
-            writeBinary(object_deprecated_type.hasNullableSubcolumns(), buf);
-            writeStringBinary(object_deprecated_type.getSchemaFormat(), buf);
-            break;
-        }
         case BinaryTypeIndex::Variant:
         {
             const auto & variant_type = assert_cast<const DataTypeVariant &>(*type);
@@ -643,14 +635,6 @@ DataTypePtr decodeDataType(ReadBuffer & buf)
             auto key_type = decodeDataType(buf);
             auto value_type = decodeDataType(buf);
             return std::make_shared<DataTypeMap>(key_type, value_type);
-        }
-        case BinaryTypeIndex::Object:
-        {
-            bool has_nullable_subcolumns;
-            readBinary(has_nullable_subcolumns, buf);
-            String schema_format;
-            readStringBinary(schema_format, buf);
-            return std::make_shared<DataTypeObject>(schema_format, has_nullable_subcolumns);
         }
         case BinaryTypeIndex::IPv4:
             return std::make_shared<DataTypeIPv4>();

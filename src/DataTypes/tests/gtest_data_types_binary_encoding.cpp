@@ -6,7 +6,6 @@
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeFunction.h>
-#include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeSet.h>
