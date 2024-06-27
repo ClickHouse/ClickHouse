@@ -1,5 +1,7 @@
-SELECT number, bitTestAny(toUInt8(1 + 4 + 16 + 64), number) FROM numbers(100);
-SELECT number, bitTestAll(toUInt8(1 + 4 + 16 + 64), number) FROM numbers(100);
+SELECT number, bitTestAny(toUInt8(1 + 4 + 16 + 64), number) FROM numbers(8);
+SELECT number, bitTestAny(toUInt8(1 + 4 + 16 + 64), number) FROM numbers(8, 16); -- { serverError PARAMETER_OUT_OF_BOUND }
+SELECT number, bitTestAll(toUInt8(1 + 4 + 16 + 64), number) FROM numbers(8);
+SELECT number, bitTestAll(toUInt8(1 + 4 + 16 + 64), number) FROM numbers(8, 16); -- { serverError PARAMETER_OUT_OF_BOUND }
 
 SELECT number, bitTest(toUInt8(1 + 4 + 16 + 64), number) FROM numbers(8);
 SELECT number, bitTest(toUInt8(1 + 4 + 16 + 64), number) FROM numbers(8, 16); -- { serverError PARAMETER_OUT_OF_BOUND }
