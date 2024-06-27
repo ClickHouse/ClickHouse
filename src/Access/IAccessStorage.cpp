@@ -574,7 +574,7 @@ bool IAccessStorage::areCredentialsValid(
             return false;
     }
 
-    return Authentication::areCredentialsValid(credentials, {authentication_method}, external_authenticators, settings);
+    return Authentication::areCredentialsValid(credentials, authentication_method, external_authenticators, settings);
 }
 
 bool IAccessStorage::isAddressAllowed(const User & user, const Poco::Net::IPAddress & address) const
