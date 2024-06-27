@@ -1,0 +1,125 @@
+#include "RadosIO.h"
+
+#if USE_CEPH
+
+#include <cstring>
+#include <buffer_fwd.h>
+#include <fmt/format.h>
+#include "Common/safe_cast.h"
+#include <Common/Exception.h>
+
+namespace DB
+{
+
+namespace ErrorCodes
+{
+    extern const int CEPH_ERROR;
+    extern const int LOGICAL_ERROR;
+}
+
+namespace Ceph
+{
+
+RadosIO::RadosIO(std::shared_ptr<librados::Rados> rados_, const String & pool_, const String & ns_, bool connect_)
+    : rados(std::move(rados_)), pool(pool_), ns(ns_)
+{
+    if (connect_)
+        connect();
+}
+
+RadosIO::RadosIO(librados::IoCtx io_ctx_)
+    : io_ctx(std::move(io_ctx_))
+{
+    if (!io_ctx_.is_valid())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "RadosIO: io_ctx is not valid");
+    connected = true;
+}
+
+void RadosIO::connect()
+{
+    if (connected)
+        return;
+
+    if (!rados)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "RadosIO: rados is nullptr");
+
+    if (auto ec = rados->connect(); ec != 0 && ec != -EISCONN)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "RadosIO: rados cluster is not connected yet");
+
+    if (auto ec = rados->ioctx_create(pool.c_str(), io_ctx); ec < 0)
+        throw Exception(ErrorCodes::CEPH_ERROR, "Cannot create io_ctx for pool `{}`. Error: {}", pool, strerror(-ec));
+
+    if (!ns.empty())
+        io_ctx.set_namespace(ns);
+
+    connected = true;
+}
+
+void RadosIO::assertConnected()
+{
+    if (!connected)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "RadosRadosIO is not connected");
+}
+
+size_t RadosIO::read(const String & oid, char * data, size_t length, uint64_t offset)
+{
+    assertConnected();
+    ceph::bufferlist bl;
+    bl.append(data, safe_cast<int>(length));
+    auto bytes_read = io_ctx.read(oid, bl, length, offset);
+    if (bytes_read < 0)
+        throw Exception(ErrorCodes::CEPH_ERROR, "Cannot read from object `{}:{}`. Error: {}", pool, oid, strerror(-bytes_read));
+    return bytes_read;
+}
+
+size_t RadosIO::write_full(const String & oid, const char * data, size_t length)
+{
+    assertConnected();
+    ceph::bufferlist bl;
+    bl.append(data, safe_cast<int>(length));
+    auto bytes_written = io_ctx.write_full(oid, bl);
+    if (bytes_written < 0)
+        throw Exception(ErrorCodes::CEPH_ERROR, "Cannot write to object `{}:{}`. Error: {}", pool, oid, strerror(-bytes_written));
+    return bytes_written;
+}
+
+size_t RadosIO::write(const String & oid, const char * data, size_t length, uint64_t offset)
+{
+    assertConnected();
+    ceph::bufferlist bl;
+    bl.append(data, safe_cast<int>(length));
+    auto bytes_written = io_ctx.write(oid, bl, length, offset);
+    if (bytes_written < 0)
+        throw Exception(ErrorCodes::CEPH_ERROR, "Cannot write to object `{}:{}`. Error: {}", pool, oid, strerror(-bytes_written));
+    return bytes_written;
+}
+
+size_t RadosIO::append(const String & oid, const char * data, size_t length)
+{
+    assertConnected();
+    ceph::bufferlist bl;
+    bl.append(data, safe_cast<int>(length));
+    auto bytes_written = io_ctx.append(oid, bl, length);
+    if (bytes_written < 0)
+        throw Exception(ErrorCodes::CEPH_ERROR, "Cannot append to object `{}:{}`. Error: {}", pool, oid, strerror(-bytes_written));
+    return bytes_written;
+}
+
+void RadosIO::stat(const String & oid, uint64_t * size, struct timespec * mtime)
+{
+    assertConnected();
+    if (auto ec = io_ctx.stat2(oid, size, mtime); ec < 0)
+        throw Exception(ErrorCodes::CEPH_ERROR, "Cannot get object `{}:{}` stats. Error: {}", pool, oid, strerror(-ec));
+}
+
+bool RadosIO::exists(const String & oid)
+{
+    assertConnected();
+    return io_ctx.stat2(oid, nullptr, nullptr) == 0;
+}
+
+}
+
+}
+
+#endif

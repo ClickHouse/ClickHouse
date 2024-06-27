@@ -3,11 +3,12 @@
 #include "config.h"
 
 #if USE_CEPH
+
+#include <IO/Ceph/RadosIO.h>
 #include <IO/ReadBuffer.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <string>
 #include <memory>
-#include <rados/librados.h>
 #include <rados/librados.hpp>
 #include <base/types.h>
 #include <Interpreters/Context.h>
@@ -21,10 +22,8 @@ class ReadBufferFromCeph : public ReadBufferFromFileBase
 {
 public:
     ReadBufferFromCeph(
-        const String & mon_uri_, /// ceph-monitor uri, e.g. "mon1:1234,mon2:1234,mon3:1234"
-        const String & user_,
-        const String & secret_,
-        const String & pool_,
+        std::shared_ptr<librados::Rados> rados_,
+        const String & pool,
         const String & object_id_,
         const ReadSettings & read_settings_,
         bool use_external_buffer_ = false,
@@ -32,7 +31,16 @@ public:
         size_t read_until_position_ = 0,
         std::optional<size_t> file_size_ = std::nullopt);
 
-    ~ReadBufferFromCeph() override;
+    ReadBufferFromCeph(
+        std::unique_ptr<Ceph::RadosIO> impl_,
+        const String & object_id_,
+        const ReadSettings & read_settings_,
+        bool use_external_buffer_ = false,
+        bool restricted_seek_ = false,
+        size_t read_until_position_ = 0,
+        std::optional<size_t> file_size_ = std::nullopt);
+
+    ~ReadBufferFromCeph() override = default;
 
     off_t seek(off_t off, int whence) override;
 
@@ -59,16 +67,10 @@ private:
 
     void initialize();
     size_t readImpl(char * to, size_t len, off_t begin) const;
-    String mon_uri;
-    String pool;
-    String object_id;
 
-    std::unique_ptr<librados::Rados> rados;
-    std::unique_ptr<librados::IoCtx> io_ctx;
-    /// All R/W operations are done using this C-style. librados::IoCtx requires R/W operations
-    /// using librados::bufferlist, which is not convenient for us.
-    rados_t rados_c;
-    rados_ioctx_t io_ctx_c;
+    std::unique_ptr<Ceph::RadosIO> impl;
+
+    String object_id;
 
     ReadSettings read_settings;
     std::vector<char> tmp_buffer;

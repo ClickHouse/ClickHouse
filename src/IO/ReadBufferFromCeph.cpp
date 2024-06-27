@@ -1,10 +1,11 @@
 #include "ReadBufferFromCeph.h"
 #include <memory>
-#include <rados/librados.hpp>
+#include "IO/Ceph/RadosIO.h"
 
 #if USE_CEPH
-#include "Common/ElapsedTimeProfileEventIncrement.h"
-#include "Common/Scheduler/ResourceGuard.h"
+#include <rados/librados.hpp>
+#include <Common/ElapsedTimeProfileEventIncrement.h>
+#include <Common/Scheduler/ResourceGuard.h>
 #include <Common/Throttler.h>
 #include <Common/safe_cast.h>
 #include <Common/Exception.h>
@@ -31,17 +32,9 @@ namespace ErrorCodes
     extern const int SEEK_POSITION_OUT_OF_BOUND;
 }
 
-static void setCephConfig(librados::Rados & rados, const String & name, const String & value)
-{
-    if (rados.conf_set(name.c_str(), value.c_str()) < 0)
-        throw Exception(ErrorCodes::CEPH_ERROR, "Cannot set ceph config {}:{}", name, value);
-}
-
 ReadBufferFromCeph::ReadBufferFromCeph(
-    const String & mon_uri_, /// ceph-monitor uri, e.g. "mon1:1234"
-    const String & user_,
-    const String & secret_,
-    const String & pool_,
+    std::shared_ptr<librados::Rados> rados_,
+    const String & pool,
     const String & object_id_,
     const ReadSettings & read_settings_,
     bool use_external_buffer_,
@@ -49,8 +42,7 @@ ReadBufferFromCeph::ReadBufferFromCeph(
     size_t read_until_position_,
     std::optional<size_t> file_size_)
     : ReadBufferFromFileBase(use_external_buffer_ ? 0 : read_settings_.remote_fs_buffer_size, nullptr, 0, file_size_)
-    , mon_uri(mon_uri_)
-    , pool(pool_)
+    , impl(std::make_unique<Ceph::RadosIO>(std::move(rados_), pool))
     , object_id(object_id_)
     , read_settings(read_settings_)
     , tmp_buffer_size(read_settings.remote_fs_buffer_size)
@@ -64,14 +56,31 @@ ReadBufferFromCeph::ReadBufferFromCeph(
         data_ptr = tmp_buffer.data();
         data_capacity = tmp_buffer_size;
     }
+}
 
-    /// Create rados cluster
-    if (rados_create(&rados_c, user_.c_str()) < 0)
-        throw Exception(ErrorCodes::CEPH_ERROR, "Cannot create rados object");
-    rados = std::make_unique<librados::Rados>();
-    librados::Rados::from_rados_t(rados_c, *rados);
-    setCephConfig(*rados, "mon_host", mon_uri);
-    setCephConfig(*rados, "key", secret_);
+ReadBufferFromCeph::ReadBufferFromCeph(
+    std::unique_ptr<Ceph::RadosIO> impl_,
+    const String & object_id_,
+    const ReadSettings & read_settings_,
+    bool use_external_buffer_,
+    bool restricted_seek_,
+    size_t read_until_position_,
+    std::optional<size_t> file_size_)
+    : ReadBufferFromFileBase(use_external_buffer_ ? 0 : read_settings_.remote_fs_buffer_size, nullptr, 0, file_size_)
+    , impl(std::move(impl_))
+    , object_id(object_id_)
+    , read_settings(read_settings_)
+    , tmp_buffer_size(read_settings.remote_fs_buffer_size)
+    , use_external_buffer(use_external_buffer_)
+    , restricted_seek(restricted_seek_)
+    , read_until_position(read_until_position_)
+{
+    if (!use_external_buffer)
+    {
+        tmp_buffer.resize(tmp_buffer_size);
+        data_ptr = tmp_buffer.data();
+        data_capacity = tmp_buffer_size;
+    }
 }
 
 void ReadBufferFromCeph::initialize()
@@ -79,16 +88,11 @@ void ReadBufferFromCeph::initialize()
     if (initialized)
         return;
 
+    if (!impl)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "RadosClient is not initialized");
+
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ReadBufferFromCephInitMicroseconds);
-
-    /// Connect to rados cluster
-    if (rados->connect() < 0)
-        throw Exception(ErrorCodes::CEPH_ERROR, "Cannot connect to ceph rados {}", mon_uri);
-
-    /// Initialize io_ctx to target pool
-    io_ctx = std::make_unique<librados::IoCtx>();
-    if (rados->ioctx_create(pool.c_str(), *io_ctx) < 0)
-        throw Exception(ErrorCodes::CEPH_ERROR, "Cannot create io_ctx for pool {}/{}", mon_uri, pool);
+    impl->connect();
 
     initialized = true;
 }
@@ -120,7 +124,7 @@ size_t ReadBufferFromCeph::readImpl(char * to, size_t len, off_t begin) const
     try
     {
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ReadBufferFromCephMicroseconds);
-        bytes_read = rados_read(io_ctx_c, object_id.c_str(), to, safe_cast<int>(len), begin);
+        impl->read(object_id, to, len, begin);
         if (read_settings.remote_throttler)
             read_settings.remote_throttler->add(bytes_read, ProfileEvents::RemoteReadThrottlerBytes, ProfileEvents::RemoteReadThrottlerSleepMicroseconds);
     }
@@ -128,12 +132,6 @@ size_t ReadBufferFromCeph::readImpl(char * to, size_t len, off_t begin) const
     {
         read_settings.resource_link.accumulate(len); // We assume no resource was used in case of failure
         throw;
-    }
-
-    if (bytes_read < 0)
-    {
-        read_settings.resource_link.accumulate(len); // We assume no resource was used in case of failure
-        throw Exception(ErrorCodes::NETWORK_ERROR, "Fail to read from Ceph: mon_uri: {}, pool: {}, object: {}. Error: {}", mon_uri, pool, object_id, strerror(-bytes_read));
     }
 
     read_settings.resource_link.adjust(len, bytes_read);
@@ -231,8 +229,7 @@ size_t ReadBufferFromCeph::getFileSize()
     if (file_size)
         return *file_size;
     size_t psize;
-    if (io_ctx->stat2(object_id, &psize, nullptr) < 0)
-        throw Exception(ErrorCodes::CEPH_ERROR, "Cannot get size, mon_uri: {}, pool {} object {}", mon_uri, pool, object_id);
+    impl->stat(object_id, &psize, nullptr);
     file_size = psize;
     return psize;
 }
