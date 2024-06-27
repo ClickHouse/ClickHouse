@@ -565,7 +565,7 @@ Pipe ReadFromMergeTree::readInOrder(
     /// In this case we won't set approximate rows, because it will be accounted multiple times.
     /// Also do not count amount of read rows if we read in order of sorting key,
     /// because we don't know actual amount of read rows in case when limit is set.
-    bool set_rows_approx = !is_parallel_reading_from_replicas && !reader_settings.read_in_order;
+    bool set_rows_approx = !is_parallel_reading_from_replicas && !query_info.limit;
 
     Pipes pipes;
     for (size_t i = 0; i < parts_with_ranges.size(); ++i)
