@@ -167,6 +167,9 @@ jobs:
     steps:
       - name: Check out repository code
         uses: ClickHouse/checkout@v1
+      - name: Download reports
+        run: |
+          python3 "$GITHUB_WORKSPACE/tests/ci/ci.py" --infile ${{ toJson(needs.RunConfig.outputs.data) }} --pre --job-name Builds
       - name: Builds report
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
