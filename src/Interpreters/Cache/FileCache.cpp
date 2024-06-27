@@ -136,11 +136,6 @@ const FileCache::UserInfo & FileCache::getInternalUser()
 
 bool FileCache::isInitialized() const
 {
-    return is_initialized.load(std::memory_order_seq_cst);
-}
-
-bool FileCache::isFullyLoaded() const
-{
     return is_fully_loaded.load(std::memory_order_seq_cst);
 }
 

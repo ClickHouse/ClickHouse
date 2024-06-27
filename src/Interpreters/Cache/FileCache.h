@@ -82,8 +82,6 @@ public:
 
     bool isInitialized() const;
 
-    bool isFullyLoaded() const;
-
     const String & getBasePath() const;
 
     static Key createKeyForPath(const String & path);
