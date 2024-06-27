@@ -59,7 +59,7 @@ namespace DeduplicationToken
         size_t getTotalSize() const;
 
         /* Token has to be prepared in a particular order.
-        * BuildingStage ensures that token is expanded according the foloving order.
+        * BuildingStage ensures that token is expanded according the following order.
         * Firstly token is expanded with information about the source.
         * It could be done with two ways: add several hash sums from the source chunks or provide user defined deduplication token and its sequentional block number.
         *
