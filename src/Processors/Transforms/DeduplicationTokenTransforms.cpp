@@ -67,6 +67,9 @@ void TokenInfo::addChunkHash(String part)
 
 void TokenInfo::defineSourceWithChunkHashes()
 {
+    if (stage == UNDEFINED && empty())
+        stage = DEFINE_SOURCE_WITH_HASHES;
+
     if (stage != DEFINE_SOURCE_WITH_HASHES)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "token is in wrong stage {}, token {}", stage, debugToken());
 
