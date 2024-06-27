@@ -19,14 +19,16 @@ gh auth login
 
 import argparse
 import json
-import logging
+import os
 import subprocess
 from contextlib import contextmanager
+from pathlib import Path
 from typing import Any, Final, Iterator, List, Optional, Tuple
 
-from git_helper import Git, commit, release_branch
+from git_helper import Git, commit, release_branch, GIT_PREFIX
 from lambda_shared_package.lambda_shared.pr import Labels
 from report import SUCCESS
+from ssh import SSHKey
 from version_helper import (
     FILE_WITH_VERSION_PATH,
     GENERATED_CONTRIBUTORS,
@@ -104,20 +106,20 @@ class Release:
         if cwd:
             cwd_text = f" (CWD='{cwd}')"
         if dry_run:
-            logging.info("Would run command%s:\n    %s", cwd_text, cmd)
+            print(f"Would run command{cwd_text}:\n{cmd}")
             return ""
         if not self.with_stderr:
             kwargs["stderr"] = subprocess.DEVNULL
 
-        logging.info("Running command%s:\n    %s", cwd_text, cmd)
+        print(f"Running command{cwd_text}:\n[{cmd}]")
         return self._git.run(cmd, cwd, **kwargs)
 
     def set_release_info(self):
         # Fetch release commit and tags in case they don't exist locally
         self.run(
-            f"git fetch {self.repo.url} {self.release_commit} --no-recurse-submodules"
+            f"{GIT_PREFIX} fetch {self.repo.url} {self.release_commit} --no-recurse-submodules"
         )
-        self.run(f"git fetch {self.repo.url} --tags --no-recurse-submodules")
+        self.run(f"{GIT_PREFIX} fetch {self.repo.url} --tags --no-recurse-submodules")
 
         # Get the actual version for the commit before check
         with self._checkout(self.release_commit, True):
@@ -173,13 +175,9 @@ class Release:
         """
         try:
             self.run("gh auth status")
-        except subprocess.SubprocessError:
-            logging.error(
-                "The github-cli either not installed or not setup, please follow "
-                "the instructions on https://github.com/cli/cli#installation and "
-                "https://cli.github.com/manual/"
-            )
-            raise
+        except subprocess.SubprocessError as ex:
+            print(f"ERROR: gh cli exception: {ex}")
+            raise ex
 
         if self.release_type == self.PATCH:
             self.check_commit_release_ready()
@@ -187,14 +185,14 @@ class Release:
     def do(
         self, check_dirty: bool, check_run_from_master: bool, check_branch: bool
     ) -> None:
-        self.check_prerequisites()
+        # self.check_prerequisites()
 
         if check_dirty:
-            logging.info("Checking if repo is clean")
+            print("Checking if repo is clean")
             try:
-                self.run("git diff HEAD --exit-code")
+                self.run(f"{GIT_PREFIX} diff HEAD --exit-code")
             except subprocess.CalledProcessError:
-                logging.fatal("Repo contains uncommitted changes")
+                print("ERROR: Repo contains uncommitted changes")
                 raise
 
         if check_run_from_master and self._git.branch != "master":
@@ -205,28 +203,33 @@ class Release:
         if check_branch:
             self.check_branch()
 
+        # clean env
+        os.environ["GITHUB_TAG"] = ""
+        Path("./tag.tmp").unlink(missing_ok=True)
+
         if self.release_type == self.NEW:
             with self._checkout(self.release_commit, True):
                 # Checkout to the commit, it will provide the correct current version
                 with self.new_release():
                     with self.create_release_branch():
-                        logging.info(
-                            "Publishing release %s from commit %s is done",
-                            self.release_version.describe,
-                            self.release_commit,
+                        print(
+                            f"Publishing release [{self.release_version.describe}] from commit [{self.release_commit}] is done"
                         )
 
         elif self.release_type == self.PATCH:
-            with self._checkout(self.release_commit, True):
+            print("Create patch release!")
+            with self._checkout(self.release_commit, False):
                 with self.patch_release():
-                    logging.info(
-                        "Publishing release %s from commit %s is done",
-                        self.release_version.describe,
-                        self.release_commit,
+                    print(
+                        f"Publishing release {self.release_version.describe} from commit {self.release_commit} is done"
                     )
+            print("Create patch release - done!")
+            assert os.environ["GITHUB_TAG"], "Release tag must be set in the env"
+            with open("./tag.tmp", "w") as text_file:
+                text_file.write(os.environ["GITHUB_TAG"])
 
         if self.dry_run:
-            logging.info("Dry running, clean out possible changes")
+            print("Dry running, clean out possible changes")
             rollback = self._rollback_stack.copy()
             rollback.reverse()
             for cmd in rollback:
@@ -237,7 +240,9 @@ class Release:
         self.log_rollback()
 
     def check_no_tags_after(self):
-        tags_after_commit = self.run(f"git tag --contains={self.release_commit}")
+        tags_after_commit = self.run(
+            f"{GIT_PREFIX} tag --contains={self.release_commit}"
+        )
         if tags_after_commit:
             raise RuntimeError(
                 f"Commit {self.release_commit} belongs to following tags:\n"
@@ -256,12 +261,14 @@ class Release:
 
         # Prefetch the branch to have it updated
         if self._git.branch == branch:
-            self.run("git pull --no-recurse-submodules")
+            self.run(f"{GIT_PREFIX} pull --no-recurse-submodules")
         else:
             self.run(
-                f"git fetch {self.repo.url} {branch}:{branch} --no-recurse-submodules"
+                f"{GIT_PREFIX} fetch {self.repo.url} {branch}:{branch} --no-recurse-submodules"
             )
-        output = self.run(f"git branch --contains={self.release_commit} {branch}")
+        output = self.run(
+            f"{GIT_PREFIX} branch --contains={self.release_commit} {branch}"
+        )
         if branch not in output:
             raise RuntimeError(
                 f"commit {self.release_commit} must belong to {branch} "
@@ -278,11 +285,15 @@ class Release:
         update_cmake_version(version)
         update_contributors(raise_error=True)
         if self.dry_run:
-            logging.info(
-                "Dry running, resetting the following changes in the repo:\n%s",
-                self.run(f"git diff '{self.CMAKE_PATH}' '{self.CONTRIBUTORS_PATH}'"),
+            print("Dry running, resetting the following changes in the repo:")
+            print(
+                self.run(
+                    f"{GIT_PREFIX} diff '{self.CMAKE_PATH}' '{self.CONTRIBUTORS_PATH}'"
+                )
             )
-            self.run(f"git checkout '{self.CMAKE_PATH}' '{self.CONTRIBUTORS_PATH}'")
+            self.run(
+                f"{GIT_PREFIX} checkout '{self.CMAKE_PATH}' '{self.CONTRIBUTORS_PATH}'"
+            )
 
     def _commit_cmake_contributors(
         self, version: ClickHouseVersion, reset_tweak: bool = True
@@ -290,7 +301,7 @@ class Release:
         if reset_tweak:
             version = version.reset_tweak()
         self.run(
-            f"git commit '{self.CMAKE_PATH}' '{self.CONTRIBUTORS_PATH}' "
+            f"{GIT_PREFIX} commit '{self.CMAKE_PATH}' '{self.CONTRIBUTORS_PATH}' "
             f"-m 'Update autogenerated version to {version.string} and contributors'",
             dry_run=self.dry_run,
         )
@@ -311,18 +322,16 @@ class Release:
         if self.has_rollback:
             rollback = self._rollback_stack.copy()
             rollback.reverse()
-            logging.info(
-                "To rollback the action run the following commands:\n  %s",
-                "\n  ".join(rollback),
-            )
+            print("To rollback the action run the following commands:")
+            print("\n  ".join(rollback))
 
     def log_post_workflows(self):
-        logging.info(
-            "To verify all actions are running good visit the following links:\n  %s",
+        print("To verify all actions are running good visit the following links:")
+        print(
             "\n  ".join(
                 f"https://github.com/{self.repo}/actions/workflows/{action}.yml"
                 for action in ("release", "tags_stable")
-            ),
+            )
         )
 
     @contextmanager
@@ -354,7 +363,7 @@ class Release:
             # Checking out the commit of the branch and not the branch itself,
             # then we are able to skip rollback
             with self._checkout(f"{self.release_branch}^0", False):
-                current_commit = self.run("git rev-parse HEAD")
+                current_commit = self.run(f"{GIT_PREFIX} rev-parse HEAD")
                 self._commit_cmake_contributors(self.version)
                 with self._push(
                     "HEAD", with_rollback_on_fail=False, remote_ref=self.release_branch
@@ -475,7 +484,7 @@ class Release:
         orig_ref = self._git.branch or self._git.sha
         rollback_cmd = ""
         if ref not in (self._git.branch, self._git.sha):
-            self.run(f"git checkout {ref}")
+            self.run(f"{GIT_PREFIX} checkout {ref}")
             # checkout is not put into rollback_stack intentionally
             rollback_cmd = f"git checkout {orig_ref}"
             # always update version and git after checked out ref
@@ -483,8 +492,8 @@ class Release:
         try:
             yield
         except (Exception, KeyboardInterrupt):
-            logging.warning("Rolling back checked out %s for %s", ref, orig_ref)
-            self.run(f"git reset --hard; git checkout -f {orig_ref}")
+            print(f"Rolling back checked out {ref} for {orig_ref}")
+            self.run(f"{GIT_PREFIX} reset --hard; {GIT_PREFIX} checkout -f {orig_ref}")
             raise
         # Normal flow when we need to checkout back
         if with_checkout_back and rollback_cmd:
@@ -492,14 +501,14 @@ class Release:
 
     @contextmanager
     def _create_branch(self, name: str, start_point: str = "") -> Iterator[None]:
-        self.run(f"git branch {name} {start_point}")
+        self.run(f"{GIT_PREFIX} branch {name} {start_point}")
 
         rollback_cmd = f"git branch -D {name}"
         self._rollback_stack.append(rollback_cmd)
         try:
             yield
         except (Exception, KeyboardInterrupt):
-            logging.warning("Rolling back created branch %s", name)
+            print(f"Rolling back created branch [{name}]")
             self.run(rollback_cmd)
             raise
 
@@ -517,7 +526,7 @@ class Release:
         try:
             yield
         except (Exception, KeyboardInterrupt):
-            logging.warning("Rolling back label %s", label)
+            print("Rolling back label [{label}]")
             self.run(rollback_cmd)
             raise
 
@@ -542,7 +551,7 @@ class Release:
             try:
                 yield
             except (Exception, KeyboardInterrupt):
-                logging.warning("Rolling back release publishing")
+                print("Rolling back release publishing")
                 self.run(rollback_cmd)
                 raise
 
@@ -552,14 +561,15 @@ class Release:
     ) -> Iterator[None]:
         tag_message = tag_message or f"Release {tag}"
         # Create tag even in dry-run
-        self.run(f"git tag -a -m '{tag_message}' '{tag}' {commit}")
+        self.run(f"{GIT_PREFIX} tag -a -m '{tag_message}' '{tag}' {commit}")
         rollback_cmd = f"git tag -d '{tag}'"
         self._rollback_stack.append(rollback_cmd)
         try:
             with self._push(tag):
                 yield
+            os.environ["GITHUB_TAG"] = tag
         except (Exception, KeyboardInterrupt):
-            logging.warning("Rolling back tag %s", tag)
+            print(f"Rolling back tag [{tag}]")
             self.run(rollback_cmd)
             raise
 
@@ -570,7 +580,10 @@ class Release:
         if remote_ref == "":
             remote_ref = ref
 
-        self.run(f"git push {self.repo.url} {ref}:{remote_ref}", dry_run=self.dry_run)
+        self.run(
+            f"{GIT_PREFIX} push {self.repo.url} {ref}:{remote_ref}",
+            dry_run=self.dry_run,
+        )
         if with_rollback_on_fail:
             rollback_cmd = (
                 f"{self.dry_run_prefix}git push -d {self.repo.url} {remote_ref}"
@@ -581,7 +594,7 @@ class Release:
             yield
         except (Exception, KeyboardInterrupt):
             if with_rollback_on_fail:
-                logging.warning("Rolling back pushed ref %s", ref)
+                print(f"Rolling back pushed ref [{ref}]")
                 self.run(rollback_cmd)
 
             raise
@@ -665,7 +678,6 @@ def parse_args() -> argparse.Namespace:
 
 
 def main():
-    logging.basicConfig(level=logging.INFO)
     args = parse_args()
     repo = Repo(args.repo, args.remote_protocol)
     release = Release(
@@ -676,10 +688,10 @@ def main():
         release.do(args.check_dirty, args.check_run_from_master, args.check_branch)
     except:
         if release.has_rollback:
-            logging.error(
+            print(
                 "!!The release process finished with error, read the output carefully!!"
             )
-            logging.error(
+            print(
                 "Probably, rollback finished with error. "
                 "If you don't see any of the following commands in the output, "
                 "execute them manually:"
@@ -689,4 +701,9 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    if os.getenv("ROBOT_CLICKHOUSE_SSH_KEY", ""):
+        with SSHKey("ROBOT_CLICKHOUSE_SSH_KEY"):
+            main()
+    else:
+        if __name__ == "__main__":
+            main()
