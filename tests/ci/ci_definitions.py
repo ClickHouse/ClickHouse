@@ -185,8 +185,7 @@ class JobNames(metaclass=WithIter):
 
     LIBFUZZER_TEST = "libFuzzer tests"
 
-    BUILD_CHECK = "ClickHouse build check"
-    # BUILD_CHECK_SPECIAL = "ClickHouse special build check"
+    BUILD_CHECK = "Builds"
 
     DOCS_CHECK = "Docs check"
     BUGFIX_VALIDATE = "Bugfix validation"
@@ -331,7 +330,7 @@ class CommonJobConfigs:
     """
 
     BUILD_REPORT = JobConfig(
-        job_name_keyword="build_check",
+        job_name_keyword="builds",
         run_command="build_report_check.py",
         digest=DigestConfig(
             include_paths=[
@@ -638,7 +637,7 @@ CHECK_DESCRIPTIONS = [
         lambda x: x == "CI running",
     ),
     CheckDescription(
-        "ClickHouse build check",
+        "Builds",
         "Builds ClickHouse in various configurations for use in further steps. "
         "You have to fix the builds that fail. Build logs often has enough "
         "information to fix the error, but you might have to reproduce the failure "
