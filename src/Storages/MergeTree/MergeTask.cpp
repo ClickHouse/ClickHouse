@@ -818,11 +818,6 @@ bool MergeTask::MergeProjectionsStage::mergeMinMaxIndexAndPrepareProjections() c
         // projection_future_part->path = global_ctx->future_part->path + "/" + projection.name + ".proj/";
         projection_future_part->part_info = {"all", 0, 0, 0};
 
-        Names deduplicate_by_columns;
-        for (const auto & column : global_ctx->deduplicate_by_columns)
-            if (projection.metadata->getColumns().has(column))
-                deduplicate_by_columns.emplace_back(column);
-
         MergeTreeData::MergingParams projection_merging_params;
         projection_merging_params.mode = MergeTreeData::MergingParams::Ordinary;
         if (projection.type == ProjectionDescription::Type::Aggregate)
@@ -837,7 +832,7 @@ bool MergeTask::MergeProjectionsStage::mergeMinMaxIndexAndPrepareProjections() c
             global_ctx->context,
             global_ctx->space_reservation,
             global_ctx->deduplicate,
-            deduplicate_by_columns,
+            global_ctx->deduplicate_by_columns,
             global_ctx->cleanup,
             projection_merging_params,
             global_ctx->need_prefix,
