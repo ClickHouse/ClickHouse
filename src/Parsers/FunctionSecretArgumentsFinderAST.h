@@ -82,6 +82,16 @@ private:
             /// s3Cluster('cluster_name', 'url', 'aws_access_key_id', 'aws_secret_access_key', ...)
             findS3FunctionSecretArguments(/* is_cluster_function= */ true);
         }
+        else if (function.name == "azureBlobStorage")
+        {
+            /// azureBlobStorage(connection_string|storage_account_url, container_name, blobpath, account_name, account_key, format, compression, structure)
+            findAzureBlobStorageFunctionSecretArguments(/* is_cluster_function= */ false);
+        }
+        else if (function.name == "azureBlobStorageCluster")
+        {
+            /// azureBlobStorageCluster(cluster, connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression, structure])
+            findAzureBlobStorageFunctionSecretArguments(/* is_cluster_function= */ true);
+        }
         else if ((function.name == "remote") || (function.name == "remoteSecure"))
         {
             /// remote('addresses_expr', 'db', 'table', 'user', 'password', ...)
@@ -167,6 +177,43 @@ private:
         /// s3Cluster('cluster_name', 'url', 'aws_access_key_id', 'aws_secret_access_key', 'format', 'compression')
         if (url_arg_idx + 2 < count)
             markSecretArgument(url_arg_idx + 2);
+    }
+
+    void findAzureBlobStorageFunctionSecretArguments(bool is_cluster_function)
+    {
+        /// azureBlobStorage('cluster_name', 'conn_string/storage_account_url', ...) has 'conn_string/storage_account_url' as its second argument.
+        size_t url_arg_idx = is_cluster_function ? 1 : 0;
+
+        if (!is_cluster_function && isNamedCollectionName(0))
+        {
+            /// azureBlobStorage(named_collection, ..., account_key = 'account_key', ...)
+            findSecretNamedArgument("account_key", 1);
+            return;
+        }
+        else if (is_cluster_function && isNamedCollectionName(1))
+        {
+            /// azureBlobStorageCluster(cluster, named_collection, ..., account_key = 'account_key', ...)
+            findSecretNamedArgument("account_key", 2);
+            return;
+        }
+
+        /// We should check other arguments first because we don't need to do any replacement in case storage_account_url is not used
+        /// azureBlobStorage(connection_string|storage_account_url, container_name, blobpath, account_name, account_key, format, compression, structure)
+        /// azureBlobStorageCluster(cluster, connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression, structure])
+        size_t count = arguments->size();
+        if ((url_arg_idx + 4 <= count) && (count <= url_arg_idx + 7))
+        {
+            String second_arg;
+            if (tryGetStringFromArgument(url_arg_idx + 3, &second_arg))
+            {
+                if (second_arg == "auto" || KnownFormatNames::instance().exists(second_arg))
+                    return; /// The argument after 'url' is a format: s3('url', 'format', ...)
+            }
+        }
+
+        /// We're going to replace 'account_key' with '[HIDDEN]' if account_key is used in the signature
+        if (url_arg_idx + 4 < count)
+            markSecretArgument(url_arg_idx + 4);
     }
 
     void findURLSecretArguments()
