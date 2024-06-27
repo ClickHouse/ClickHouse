@@ -3820,3 +3820,43 @@ Result:
 10. │ df │                       │
     └────┴───────────────────────┘
 ```
+
+## displayName
+
+Returns the value of `display_name` from [config](../../operations/configuration-files.md/#configuration-files) or server Fully Qualified Domain Name (FQDN) if not set.
+
+**Syntax**
+
+```sql
+displayName()
+```
+
+**Returned value**
+
+- Value of `display_name` from config or server FQDN if not set. [String](../data-types/string.md).
+
+**Example**
+
+The `display_name` can be set in `config.xml`. Taking for example a server with `display_name` configured to 'production': 
+
+```xml
+<!-- It is the name that will be shown in the clickhouse-client.
+     By default, anything with "production" will be highlighted in red in query prompt.
+-->
+<display_name>production</display_name>
+```
+
+Query:
+
+```sql
+SELECT displayName();
+```
+
+Result:
+
+```response
+┌─displayName()─┐
+│ production    │
+└───────────────┘
+```
+

@@ -611,7 +611,7 @@ SELECT generateSnowflakeID(1), generateSnowflakeID(2);
 ## snowflakeToDateTime
 
 :::warning
-This function is deprecated and can only be used if setting [uniform_snowflake_conversion_functions](../../operations/settings/settings.md#uniform_snowflake_conversion_functions) is disabled.
+This function is deprecated and can only be used if setting [allow_deprecated_snowflake_conversion_functions](../../operations/settings/settings.md#allow_deprecated_snowflake_conversion_functions) is enabled.
 The function will be removed at some point in future.
 :::
 
@@ -652,7 +652,7 @@ Result:
 ## snowflakeToDateTime64
 
 :::warning
-This function is deprecated and can only be used if setting [uniform_snowflake_conversion_functions](../../operations/settings/settings.md#uniform_snowflake_conversion_functions) is disabled.
+This function is deprecated and can only be used if setting [allow_deprecated_snowflake_conversion_functions](../../operations/settings/settings.md#allow_deprecated_snowflake_conversion_functions) is enabled.
 The function will be removed at some point in future.
 :::
 
@@ -693,7 +693,7 @@ Result:
 ## dateTimeToSnowflake
 
 :::warning
-This function is deprecated and can only be used if setting [uniform_snowflake_conversion_functions](../../operations/settings/settings.md#uniform_snowflake_conversion_functions) is disabled.
+This function is deprecated and can only be used if setting [allow_deprecated_snowflake_conversion_functions](../../operations/settings/settings.md#allow_deprecated_snowflake_conversion_functions) is enabled.
 The function will be removed at some point in future.
 :::
 
@@ -732,7 +732,7 @@ Result:
 ## dateTime64ToSnowflake
 
 :::warning
-This function is deprecated and can only be used if setting [uniform_snowflake_conversion_functions](../../operations/settings/settings.md#uniform_snowflake_conversion_functions) is disabled.
+This function is deprecated and can only be used if setting [allow_deprecated_snowflake_conversion_functions](../../operations/settings/settings.md#allow_deprecated_snowflake_conversion_functions) is enabled.
 The function will be removed at some point in future.
 :::
 
