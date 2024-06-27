@@ -47,6 +47,9 @@ bool allArgumentsAreConstants(const ColumnsWithTypeAndName & args)
     return true;
 }
 
+/// Replaces single low cardinality column in a function call by its dictionary
+/// This can only happen after the arguments have been adapted in IFunctionOverloadResolver::getReturnType
+/// as it's only possible if there is one low cardinality column and, optionally, const columns
 ColumnPtr replaceLowCardinalityColumnsByNestedAndGetDictionaryIndexes(
     ColumnsWithTypeAndName & args, bool can_be_executed_on_default_arguments, size_t input_rows_count)
 {
@@ -77,21 +80,8 @@ ColumnPtr replaceLowCardinalityColumnsByNestedAndGetDictionaryIndexes(
 
     if (number_full_columns > 0 || number_low_cardinality_columns > 1)
     {
-        /// If there is a single full column, we can't replace the LC column with its dictionary, as it won't match
-        /// the size or order of the full columns. Same if there are 2 or more low cardinality columns
-        for (auto & arg : args)
-        {
-            if (const auto * column_lc = checkAndGetColumn<ColumnLowCardinality>(arg.column.get()))
-            {
-                arg.column = recursiveRemoveLowCardinality(arg.column);
-                chassert(arg.column->size() == input_rows_count);
-
-                const auto * low_cardinality_type = checkAndGetDataType<DataTypeLowCardinality>(arg.type.get());
-                if (!low_cardinality_type)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Incompatible type for LowCardinality column: {}", arg.type->getName());
-                arg.type = recursiveRemoveLowCardinality(arg.type);
-            }
-        }
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected low cardinality types found. Low cardinality: {}. Full {}. Const {}",
+                number_low_cardinality_columns, number_full_columns, number_const_columns);
     }
     else if (number_low_cardinality_columns == 1)
     {
@@ -124,7 +114,7 @@ ColumnPtr replaceLowCardinalityColumnsByNestedAndGetDictionaryIndexes(
         lc_arg.type = low_cardinality_type->getDictionaryType();
     }
 
-    /// Change size of constants.
+    /// Change size of constants
     for (auto & column : args)
     {
         if (const auto * column_const = checkAndGetColumn<ColumnConst>(column.column.get()))
@@ -305,6 +295,8 @@ ColumnPtr IExecutableFunction::executeWithoutSparseColumns(const ColumnsWithType
             bool can_be_executed_on_default_arguments = canBeExecutedOnDefaultArguments();
 
             const auto & dictionary_type = res_low_cardinality_type->getDictionaryType();
+            /// The arguments should have been adapted in IFunctionOverloadResolver::getReturnType
+            /// So there is only one low cardinality column (and optionally some const columns) and no full column
             ColumnPtr indexes = replaceLowCardinalityColumnsByNestedAndGetDictionaryIndexes(
                     columns_without_low_cardinality, can_be_executed_on_default_arguments, input_rows_count);
 
