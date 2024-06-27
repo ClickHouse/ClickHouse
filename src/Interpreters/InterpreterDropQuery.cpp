@@ -12,7 +12,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-#include "Common/Exception.h"
+#include <Common/Exception.h>
 #include <Common/escapeForFileName.h>
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
@@ -149,12 +149,20 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
         auto database = DatabaseCatalog::instance().getDatabase(table_id.getDatabaseName());
         const auto table_name = table_id.getTableName();
 
-        if (isTableDetached(context_, database, table_name))
+        if (database->isTableExist(table_name, context_))
         {
-            database->dropDetachedTable(context_, table_id.getTableName(), query.sync);
-            return {};
+            throw Exception(
+                ErrorCodes::UNKNOWN_TABLE, "Table {} should be detached for using DROP DETACHED TABLE", table_id.getNameForLogs());
         }
-        throw Exception(ErrorCodes::UNKNOWN_TABLE, "Failed to drop detached table {} that was attached previously", table_name);
+
+        if (!fs::exists(database->getObjectMetadataPath(table_name)))
+        {
+            throw Exception(
+                ErrorCodes::UNKNOWN_TABLE, "Metadata for table {} does not exist. Table was dropped early", table_id.getNameForLogs());
+        }
+
+        database->dropDetachedTable(context_, table_id.getTableName(), query.sync);
+        return {};
     }
 
     /// If table was already dropped by anyone, an exception will be thrown
@@ -366,11 +374,6 @@ BlockIO InterpreterDropQuery::executeToTemporaryTable(const String & table_name,
     }
 
     return {};
-}
-
-bool InterpreterDropQuery::isTableDetached(const ContextPtr & context_, const DatabasePtr & database, const String & table_name) const
-{
-    return !database->isTableExist(table_name, context_) && fs::exists(database->getObjectMetadataPath(table_name));
 }
 
 BlockIO InterpreterDropQuery::executeToDatabase(const ASTDropQuery & query)

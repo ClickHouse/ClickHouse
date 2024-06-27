@@ -1,4 +1,3 @@
-#include <cmath>
 #include <Parsers/ASTDropQuery.h>
 
 #include <Parsers/CommonParsers.h>
