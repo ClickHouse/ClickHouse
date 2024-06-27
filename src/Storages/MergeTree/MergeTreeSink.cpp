@@ -67,6 +67,10 @@ void MergeTreeSink::onFinish()
     finishDelayedChunk();
 }
 
+void MergeTreeSink::onCancel()
+{
+}
+
 void MergeTreeSink::consume(Chunk & chunk)
 {
     if (num_blocks_processed > 0)
