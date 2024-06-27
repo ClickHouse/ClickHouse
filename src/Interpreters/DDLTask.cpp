@@ -74,6 +74,10 @@ void DDLLogEntry::setSettingsIfRequired(ContextPtr context)
         throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION, "Unknown distributed_ddl_entry_format_version: {}."
                                                             "Maximum supported version is {}.", version, DDL_ENTRY_FORMAT_MAX_VERSION);
 
+    parent_table_uuid = context->getParentTable();
+    if (parent_table_uuid.has_value())
+        version = std::max(version, PARENT_TABLE_UUID_VERSION);
+
     /// NORMALIZE_CREATE_ON_INITIATOR_VERSION does not affect entry format in ZooKeeper
     if (version == NORMALIZE_CREATE_ON_INITIATOR_VERSION)
         version = SETTINGS_IN_ZK_VERSION;
@@ -121,6 +125,16 @@ String DDLLogEntry::toString() const
 
     if (version >= BACKUP_RESTORE_FLAG_IN_ZK_VERSION)
         wb << "is_backup_restore: " << is_backup_restore << "\n";
+
+    if (version >= PARENT_TABLE_UUID_VERSION)
+    {
+        wb << "parent: ";
+        if (parent_table_uuid.has_value())
+            wb << parent_table_uuid.value();
+        else
+            wb << "-";
+        wb << "\n";
+    }
 
     return wb.str();
 }
@@ -179,6 +193,18 @@ void DDLLogEntry::parse(const String & data)
         checkString("is_backup_restore: ", rb);
         readBoolText(is_backup_restore, rb);
         checkChar('\n', rb);
+    }
+
+    if (version >= PARENT_TABLE_UUID_VERSION)
+    {
+        rb >> "parent: ";
+        if (!checkChar('-', rb))
+        {
+            UUID uuid;
+            rb >> uuid;
+            parent_table_uuid = uuid;
+        }
+        rb >> "\n";
     }
 
     assertEOF(rb);
