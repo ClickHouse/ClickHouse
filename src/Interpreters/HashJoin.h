@@ -1,8 +1,9 @@
 #pragma once
 
-#include <variant>
-#include <optional>
 #include <deque>
+#include <mutex>
+#include <optional>
+#include <variant>
 #include <vector>
 
 #include <Parsers/ASTTablesInSelectQuery.h>
@@ -11,11 +12,13 @@
 #include <Interpreters/AggregationCommon.h>
 #include <Interpreters/RowRefs.h>
 
+#include <Storages/TableLockHolder.h>
 #include <Common/Arena.h>
 #include <Common/ColumnsHashing.h>
-#include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/FixedHashMap.h>
-#include <Storages/TableLockHolder.h>
+#include <Common/HashTable/HashMap.h>
+#include "Core/ColumnsWithTypeAndName.h"
+#include "base/defines.h"
 
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
@@ -181,14 +184,28 @@ public:
         IColumn::Selector selector;
 
         operator bool() const { return block != nullptr; }
+
+        size_t rows() const
+        {
+            chassert(block);
+            return block->rows();
+        }
+
+        const ColumnWithTypeAndName & getByName(const std::string & name) const { return block->getByName(name); }
+
+        void filter(const IColumn::Filter & null_map)
+        {
+            IColumn::Selector filtered(selector.size());
+            for (const auto ind : selector)
+                if (null_map[ind])
+                    filtered.push_back(ind);
+            selector.swap(filtered);
+        }
     };
 
     using ScatteredBlocks = std::vector<ScatteredBlock>;
 
-    bool addBlockToJoin([[maybe_unused]] const ScatteredBlock & source_block_, [[maybe_unused]] bool check_limits)
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method addBlockToJoin is not implemented for {}", getName());
-    }
+    bool addBlockToJoin(ScatteredBlock & source_block_, bool check_limits);
 
     void checkTypesOfKeys(const Block & block) const override;
 

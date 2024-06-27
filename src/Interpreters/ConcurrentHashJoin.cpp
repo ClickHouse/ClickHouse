@@ -182,6 +182,7 @@ void ConcurrentHashJoin::joinBlock([[maybe_unused]] Block & block, std::shared_p
             throw Exception(ErrorCodes::LOGICAL_ERROR, "not_processed should be empty");
     }
 
+    // TODO: implement
     // block = concatenateBlocks(dispatched_blocks);
 }
 
