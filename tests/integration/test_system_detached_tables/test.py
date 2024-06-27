@@ -20,17 +20,17 @@ def test_system_detached_tables():
 
     test_table_uuid = node.query(
         "SELECT uuid FROM system.tables WHERE table='test_table'"
-    ).rstrip('\n')
+    ).rstrip("\n")
     test_table_metadata_path = node.query(
         "SELECT metadata_path FROM system.tables WHERE table='test_table'"
-    ).rstrip('\n')
+    ).rstrip("\n")
 
     test_table_perm_uuid = node.query(
         "SELECT uuid FROM system.tables WHERE table='test_table_perm'"
-    ).rstrip('\n')
+    ).rstrip("\n")
     test_table_perm_metadata_path = node.query(
         "SELECT metadata_path FROM system.tables WHERE table='test_table_perm'"
-    ).rstrip('\n')
+    ).rstrip("\n")
 
     assert "" == node.query("SELECT * FROM system.detached_tables")
 
@@ -40,7 +40,7 @@ def test_system_detached_tables():
     querry = "SELECT database, table, is_permanently, uuid, metadata_path FROM system.detached_tables FORMAT Values"
     result = node.query(querry)
     assert (
-        result 
+        result
         == f"('default','test_table',0,'{test_table_uuid}','{test_table_metadata_path}'),('default','test_table_perm',1,'{test_table_perm_uuid}','{test_table_perm_metadata_path}')"
     )
     node.restart_clickhouse()
@@ -54,4 +54,7 @@ def test_system_detached_tables():
     node.restart_clickhouse()
 
     result = node.query(querry)
-    assert result == f"('default','test_table_perm',1,'{test_table_perm_uuid}','{test_table_perm_metadata_path}')"
+    assert (
+        result
+        == f"('default','test_table_perm',1,'{test_table_perm_uuid}','{test_table_perm_metadata_path}')"
+    )
