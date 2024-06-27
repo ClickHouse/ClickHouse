@@ -2848,6 +2848,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         if (function_in_arguments_nodes.size() != 2)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function '{}' expects 2 arguments", function_name);
 
+        auto & in_first_argument = function_in_arguments_nodes[0];
         auto & in_second_argument = function_in_arguments_nodes[1];
         auto * table_node = in_second_argument->as<TableNode>();
         auto * table_function_node = in_second_argument->as<TableFunctionNode>();
@@ -2911,15 +2912,29 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
             resolveExpressionNode(in_second_argument, scope, false /*allow_lambda_expression*/, true /*allow_table_expression*/);
 
+            /// Rewrite X in EXPR, where EXPR is a non-const expression, to has(EXPR, X).
             if (auto * non_const_set_candidate = in_second_argument->as<FunctionNode>())
             {
                 const auto & candidate_name =  non_const_set_candidate->getFunctionName();
-                if (candidate_name == "array")
+                if (candidate_name == "array" && !isNullableOrLowCardinalityNullable(in_first_argument->getResultType()))
                 {
-                    function_name = "has";
-                    is_special_function_in = false;
-                    auto & function_arguments = function_node.getArguments().getNodes();
-                    std::swap(function_arguments[0], function_arguments[1]);
+                    bool contains_nullable = false;
+                    for (const auto & array_elem : non_const_set_candidate->getArguments())
+                    {
+                        if (isNullableOrLowCardinalityNullable(array_elem->getResultType()))
+                        {
+                            contains_nullable = true;
+                            break;
+                        }
+                    }
+
+                    if (!contains_nullable)
+                    {
+                        function_name = "has";
+                        is_special_function_in = false;
+                        auto & function_arguments = function_node.getArguments().getNodes();
+                        std::swap(function_arguments[0], function_arguments[1]);
+                    }
                 }
             }
         }
