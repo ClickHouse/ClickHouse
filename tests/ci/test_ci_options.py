@@ -4,7 +4,7 @@
 
 import unittest
 from ci_settings import CiSettings
-from ci_config import JobConfig
+from ci_config import CI
 
 _TEST_BODY_1 = """
 #### Run only:
@@ -19,6 +19,7 @@ _TEST_BODY_1 = """
 
 #### CI options:
 - [ ] <!---do_not_test--> do not test (only style check)
+- [x] <!---woolen_wolfdog--> Woolen Wolfdog CI
 - [x] <!---no_merge_commit--> disable merge-commit (no merge from master before tests)
 - [ ] <!---no_ci_cache--> disable CI cache (job reuse)
 
@@ -64,8 +65,8 @@ _TEST_JOB_LIST = [
     "fuzzers",
     "Docker server image",
     "Docker keeper image",
-    "Install packages (amd64)",
-    "Install packages (arm64)",
+    "Install packages (release)",
+    "Install packages (aarch64)",
     "Stateless tests (debug)",
     "Stateless tests (release)",
     "Stateless tests (coverage)",
@@ -120,19 +121,18 @@ _TEST_JOB_LIST = [
     "AST fuzzer (ubsan)",
     "ClickHouse Keeper Jepsen",
     "ClickHouse Server Jepsen",
-    "Performance Comparison",
-    "Performance Comparison Aarch64",
+    "Performance Comparison (release)",
+    "Performance Comparison (aarch64)",
     "Sqllogic test (release)",
     "SQLancer (release)",
     "SQLancer (debug)",
     "SQLTest",
-    "Compatibility check (amd64)",
+    "Compatibility check (release)",
     "Compatibility check (aarch64)",
-    "ClickBench (amd64)",
+    "ClickBench (release)",
     "ClickBench (aarch64)",
     "libFuzzer tests",
-    "ClickHouse build check",
-    "ClickHouse special build check",
+    "Builds",
     "Docs check",
     "Bugfix validation",
 ]
@@ -148,6 +148,7 @@ class TestCIOptions(unittest.TestCase):
         self.assertFalse(ci_options.do_not_test)
         self.assertFalse(ci_options.no_ci_cache)
         self.assertTrue(ci_options.no_merge_commit)
+        self.assertTrue(ci_options.woolen_wolfdog)
         self.assertEqual(ci_options.ci_sets, ["ci_set_non_required"])
         self.assertCountEqual(ci_options.include_keywords, ["foo", "foo_bar"])
         self.assertCountEqual(ci_options.exclude_keywords, ["foo", "foo_bar"])
@@ -157,6 +158,7 @@ class TestCIOptions(unittest.TestCase):
         ci_options = CiSettings.create_from_pr_message(
             _TEST_BODY_2, update_from_api=False
         )
+        self.assertFalse(ci_options.woolen_wolfdog)
         self.assertCountEqual(
             ci_options.include_keywords,
             ["integration", "foo_bar", "stateless", "azure"],
@@ -166,7 +168,10 @@ class TestCIOptions(unittest.TestCase):
             ["tsan", "foobar", "aarch64", "analyzer", "s3_storage", "coverage"],
         )
 
-        jobs_configs = {job: JobConfig() for job in _TEST_JOB_LIST}
+        jobs_configs = {
+            job: CI.JobConfig(runner_type=CI.Runners.STYLE_CHECKER)
+            for job in _TEST_JOB_LIST
+        }
         jobs_configs[
             "fuzzers"
         ].run_by_label = (
@@ -210,7 +215,10 @@ class TestCIOptions(unittest.TestCase):
         )
 
     def test_options_applied_2(self):
-        jobs_configs = {job: JobConfig() for job in _TEST_JOB_LIST_2}
+        jobs_configs = {
+            job: CI.JobConfig(runner_type=CI.Runners.STYLE_CHECKER)
+            for job in _TEST_JOB_LIST_2
+        }
         jobs_configs["Style check"].release_only = True
         jobs_configs["Fast test"].pr_only = True
         jobs_configs["fuzzers"].run_by_label = "TEST_LABEL"
@@ -252,7 +260,10 @@ class TestCIOptions(unittest.TestCase):
     def test_options_applied_3(self):
         ci_settings = CiSettings()
         ci_settings.include_keywords = ["Style"]
-        jobs_configs = {job: JobConfig() for job in _TEST_JOB_LIST_2}
+        jobs_configs = {
+            job: CI.JobConfig(runner_type=CI.Runners.STYLE_CHECKER)
+            for job in _TEST_JOB_LIST_2
+        }
         jobs_configs["Style check"].release_only = True
         jobs_configs["Fast test"].pr_only = True
         # no settings are set
@@ -296,7 +307,10 @@ class TestCIOptions(unittest.TestCase):
         )
         self.assertCountEqual(ci_options.include_keywords, ["analyzer"])
         self.assertIsNone(ci_options.exclude_keywords)
-        jobs_configs = {job: JobConfig() for job in _TEST_JOB_LIST}
+        jobs_configs = {
+            job: CI.JobConfig(runner_type=CI.Runners.STYLE_CHECKER)
+            for job in _TEST_JOB_LIST
+        }
         jobs_configs[
             "fuzzers"
         ].run_by_label = "TEST_LABEL"  # check "fuzzers" does not appears in the result

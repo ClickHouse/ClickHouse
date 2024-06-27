@@ -112,12 +112,12 @@ class GitHub(github.Github):
     # pylint: enable=signature-differs
     def get_pulls_from_search(self, *args: Any, **kwargs: Any) -> PullRequests:
         """The search api returns actually issues, so we need to fetch PullRequests"""
-        issues = self.search_issues(*args, **kwargs)
-        repos = {}
-        prs = []  # type: PullRequests
         progress_func = kwargs.pop(
             "progress_func", lambda x: x
         )  # type: Callable[[Issues], Issues]
+        issues = self.search_issues(*args, **kwargs)
+        repos = {}
+        prs = []  # type: PullRequests
         for issue in progress_func(issues):
             # See https://github.com/PyGithub/PyGithub/issues/2202,
             # obj._rawData doesn't spend additional API requests
