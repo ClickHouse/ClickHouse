@@ -64,7 +64,7 @@ TEST_P(ParserKQLTest, parseKQLQuery)
                 if (input_text.starts_with("ATTACH"))
                 {
                     // todo arthur check
-                    auto salt = (dynamic_cast<const ASTCreateUserQuery *>(ast.get())->auth_data.back())->getSalt().value_or("");
+                    auto salt = (dynamic_cast<const ASTCreateUserQuery *>(ast.get())->authentication_methods.back())->getSalt().value_or("");
                     EXPECT_TRUE(re2::RE2::FullMatch(salt, expected_ast));
                 }
                 else

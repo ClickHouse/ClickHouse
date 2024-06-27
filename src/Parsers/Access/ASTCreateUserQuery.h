@@ -49,7 +49,7 @@ public:
     std::optional<String> new_name;
     String storage_name;
 
-    std::vector<std::shared_ptr<ASTAuthenticationData>> auth_data;
+    std::vector<std::shared_ptr<ASTAuthenticationData>> authentication_methods;
 
     std::optional<AllowedClientHosts> hosts;
     std::optional<AllowedClientHosts> add_hosts;

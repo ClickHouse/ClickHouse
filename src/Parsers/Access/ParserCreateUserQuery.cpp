@@ -609,7 +609,7 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     query->cluster = std::move(cluster);
     query->names = std::move(names);
     query->new_name = std::move(new_name);
-    query->auth_data = std::move(auth_data);
+    query->authentication_methods = std::move(auth_data);
     query->hosts = std::move(hosts);
     query->add_hosts = std::move(add_hosts);
     query->remove_hosts = std::move(remove_hosts);
@@ -622,7 +622,7 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     query->reset_authentication_methods_to_new = reset_authentication_methods_to_new.value_or(false);
     query->replace_authentication_methods = parsed_identified_with;
 
-    for (const auto & authentication_method : query->auth_data)
+    for (const auto & authentication_method : query->authentication_methods)
     {
         query->children.push_back(authentication_method);
     }

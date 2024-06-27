@@ -1912,9 +1912,9 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
 
     if (const auto * create_user_query = parsed_query->as<ASTCreateUserQuery>())
     {
-        if (!create_user_query->attach && !create_user_query->auth_data.empty())
+        if (!create_user_query->attach && !create_user_query->authentication_methods.empty())
         {
-            for (const auto & authentication_method : create_user_query->auth_data)
+            for (const auto & authentication_method : create_user_query->authentication_methods)
             {
                 auto password = authentication_method->getPassword();
 

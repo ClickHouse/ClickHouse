@@ -33,7 +33,7 @@ namespace
     void updateUserFromQueryImpl(
         User & user,
         const ASTCreateUserQuery & query,
-        const std::vector<AuthenticationData> auth_data,
+        const std::vector<AuthenticationData> authentication_methods,
         const std::shared_ptr<ASTUserNameWithHost> & override_name,
         const std::optional<RolesOrUsersSet> & override_default_roles,
         const std::optional<SettingsProfileElements> & override_settings,
@@ -52,13 +52,13 @@ namespace
         else if (query.names->size() == 1)
             user.setName(query.names->front()->toString());
 
-        if (!query.attach && !query.alter && auth_data.empty() && !allow_implicit_no_password)
+        if (!query.attach && !query.alter && authentication_methods.empty() && !allow_implicit_no_password)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                             "Authentication type NO_PASSWORD must "
                             "be explicitly specified, check the setting allow_implicit_no_password "
                             "in the server configuration");
 
-        if (user.authentication_methods.empty() && auth_data.empty())
+        if (user.authentication_methods.empty() && authentication_methods.empty())
         {
             user.authentication_methods.emplace_back();
         }
@@ -68,7 +68,7 @@ namespace
             user.authentication_methods.clear();
         }
 
-        for (const auto & authentication_method : auth_data)
+        for (const auto & authentication_method : authentication_methods)
         {
             user.authentication_methods.emplace_back(authentication_method);
         }
@@ -152,12 +152,12 @@ BlockIO InterpreterCreateUserQuery::execute()
     bool no_password_allowed = access_control.isNoPasswordAllowed();
     bool plaintext_password_allowed = access_control.isPlaintextPasswordAllowed();
 
-    std::vector<AuthenticationData> auth_data;
-    if (!query.auth_data.empty())
+    std::vector<AuthenticationData> authentication_methods;
+    if (!query.authentication_methods.empty())
     {
-        for (const auto & authentication_method_ast : query.auth_data)
+        for (const auto & authentication_method_ast : query.authentication_methods)
         {
-            auth_data.push_back(AuthenticationData::fromAST(*authentication_method_ast, getContext(), !query.attach));
+            authentication_methods.push_back(AuthenticationData::fromAST(*authentication_method_ast, getContext(), !query.attach));
         }
     }
 
@@ -224,7 +224,7 @@ BlockIO InterpreterCreateUserQuery::execute()
         {
             auto updated_user = typeid_cast<std::shared_ptr<User>>(entity->clone());
             updateUserFromQueryImpl(
-                *updated_user, query, auth_data, {}, default_roles_from_query, settings_from_query, grantees_from_query,
+                *updated_user, query, authentication_methods, {}, default_roles_from_query, settings_from_query, grantees_from_query,
                 valid_until, query.reset_authentication_methods_to_new, query.replace_authentication_methods,
                 implicit_no_password_allowed, no_password_allowed, plaintext_password_allowed);
             return updated_user;
@@ -245,7 +245,7 @@ BlockIO InterpreterCreateUserQuery::execute()
         {
             auto new_user = std::make_shared<User>();
             updateUserFromQueryImpl(
-                *new_user, query, auth_data, name, default_roles_from_query, settings_from_query, RolesOrUsersSet::AllTag{},
+                *new_user, query, authentication_methods, name, default_roles_from_query, settings_from_query, RolesOrUsersSet::AllTag{},
                 valid_until, query.reset_authentication_methods_to_new, query.replace_authentication_methods,
                 implicit_no_password_allowed, no_password_allowed, plaintext_password_allowed);
             new_users.emplace_back(std::move(new_user));
@@ -286,18 +286,18 @@ BlockIO InterpreterCreateUserQuery::execute()
 
 void InterpreterCreateUserQuery::updateUserFromQuery(User & user, const ASTCreateUserQuery & query, bool allow_no_password, bool allow_plaintext_password)
 {
-    std::vector<AuthenticationData> auth_data;
-    if (!query.auth_data.empty())
+    std::vector<AuthenticationData> authentication_methods;
+    if (!query.authentication_methods.empty())
     {
-        for (const auto & authentication_method_ast : query.auth_data)
+        for (const auto & authentication_method_ast : query.authentication_methods)
         {
-            auth_data.emplace_back(AuthenticationData::fromAST(*authentication_method_ast, {}, !query.attach));
+            authentication_methods.emplace_back(AuthenticationData::fromAST(*authentication_method_ast, {}, !query.attach));
         }
     }
 
     updateUserFromQueryImpl(user,
                             query,
-                            auth_data,
+                            authentication_methods,
                             {},
                             {},
                             {},

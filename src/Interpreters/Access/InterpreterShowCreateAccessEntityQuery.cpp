@@ -66,7 +66,7 @@ namespace
 
         for (const auto & authentication_method : user.authentication_methods)
         {
-            query->auth_data.push_back(authentication_method.toAST());
+            query->authentication_methods.push_back(authentication_method.toAST());
         }
 
         if (user.valid_until)

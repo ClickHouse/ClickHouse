@@ -112,6 +112,7 @@ void StorageSystemUsers::fillData(MutableColumns & res_columns, ContextPtr conte
     auto & column_grantees_except_offsets = assert_cast<ColumnArray &>(*res_columns[column_index++]).getOffsets();
     auto & column_default_database = assert_cast<ColumnString &>(*res_columns[column_index++]);
 
+    // todo arthur check this
     auto add_row = [&](const String & name,
                        const UUID & id,
                        const String & storage_name,

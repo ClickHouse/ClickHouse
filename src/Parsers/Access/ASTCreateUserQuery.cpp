@@ -18,16 +18,16 @@ namespace
                       << quoteString(new_name);
     }
 
-    void formatAuthenticationData(const std::vector<std::shared_ptr<ASTAuthenticationData>> & auth_data, const IAST::FormatSettings & settings)
+    void formatAuthenticationData(const std::vector<std::shared_ptr<ASTAuthenticationData>> & authentication_methods, const IAST::FormatSettings & settings)
     {
-        auth_data[0]->format(settings);
+        authentication_methods[0]->format(settings);
 
         auto settings_with_additional_authentication_method = settings;
         settings_with_additional_authentication_method.additional_authentication_method = true;
 
-        for (auto i = 1u; i < auth_data.size(); i++)
+        for (auto i = 1u; i < authentication_methods.size(); i++)
         {
-            auth_data[i]->format(settings_with_additional_authentication_method);
+            authentication_methods[i]->format(settings_with_additional_authentication_method);
         }
     }
 
@@ -172,7 +172,7 @@ ASTPtr ASTCreateUserQuery::clone() const
 {
     auto res = std::make_shared<ASTCreateUserQuery>(*this);
     res->children.clear();
-    res->auth_data.clear();
+    res->authentication_methods.clear();
 
     if (names)
         res->names = std::static_pointer_cast<ASTUserNamesWithHost>(names->clone());
@@ -189,20 +189,20 @@ ASTPtr ASTCreateUserQuery::clone() const
     if (settings)
         res->settings = std::static_pointer_cast<ASTSettingsProfileElements>(settings->clone());
 
-    if (auth_data.empty())
+    if (authentication_methods.empty())
     {
         auto ast = std::make_shared<ASTAuthenticationData>();
         ast->type = AuthenticationType::NO_PASSWORD;
 
-        res->auth_data.push_back(ast);
+        res->authentication_methods.push_back(ast);
         res->children.push_back(ast);
     }
     else
     {
-        for (const auto & authentication_method : auth_data)
+        for (const auto & authentication_method : authentication_methods)
         {
             auto ast_clone = std::static_pointer_cast<ASTAuthenticationData>(authentication_method->clone());
-            res->auth_data.push_back(ast_clone);
+            res->authentication_methods.push_back(ast_clone);
             res->children.push_back(ast_clone);
         }
     }
@@ -243,8 +243,8 @@ void ASTCreateUserQuery::formatImpl(const FormatSettings & format, FormatState &
     if (new_name)
         formatRenameTo(*new_name, format);
 
-    if (!auth_data.empty())
-        formatAuthenticationData(auth_data, format);
+    if (!authentication_methods.empty())
+        formatAuthenticationData(authentication_methods, format);
 
     if (valid_until)
         formatValidUntil(*valid_until, format);
