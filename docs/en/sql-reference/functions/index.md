@@ -11,7 +11,7 @@ There are at least\* two types of functions - regular functions (they are just c
 In this section we discuss regular functions. For aggregate functions, see the section “Aggregate functions”.
 
 :::note 
-There is a third type of function that the [‘arrayJoin’ function](/docs/en/sql-reference/functions/array-join.md) belongs to. And [table functions](/docs/en/sql-reference/table-functions/index.md) can also be mentioned separately.
+There is a third type of function that the [‘arrayJoin’ function](../functions/array-join.md) belongs to. And [table functions](../table-functions/index.md) can also be mentioned separately.
 :::
 
 ## Strong Typing
@@ -63,4 +63,4 @@ For some functions the first argument (the lambda function) can be omitted. In t
 
 ## User Defined Functions (UDFs)
 
-ClickHouse supports user-defined functions. See [UDFs](/docs/en/sql-reference/functions/udf.md).
+ClickHouse supports user-defined functions. See [UDFs](../functions/udf.md).

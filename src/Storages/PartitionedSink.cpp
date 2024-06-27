@@ -1,3 +1,5 @@
+// NOLINTBEGIN(clang-analyzer-optin.core.EnumCastOutOfRange)
+
 #include "PartitionedSink.h"
 
 #include <Common/ArenaUtils.h>
@@ -145,3 +147,5 @@ String PartitionedSink::replaceWildcards(const String & haystack, const String &
 }
 
 }
+
+// NOLINTEND(clang-analyzer-optin.core.EnumCastOutOfRange)

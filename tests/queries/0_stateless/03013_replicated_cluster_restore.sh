@@ -29,9 +29,9 @@ $CLICKHOUSE_CLIENT -nm -q "
 
 # break the replica
 $CLICKHOUSE_CLIENT -q "system drop cluster replica data_r1"
-$CLICKHOUSE_KEEPER_CLIENT -q "rmr /tables/$CLICKHOUSE_DATABASE/data/replicas/1"
+$CLICKHOUSE_KEEPER_CLIENT -q "rmr '/tables/$CLICKHOUSE_DATABASE/data/replicas/1'"
 # FIXME: should this node ("removed") moved into the replica_path?
-$CLICKHOUSE_KEEPER_CLIENT -q "rmr /tables/$CLICKHOUSE_DATABASE/data/cluster/replicas/1"
+$CLICKHOUSE_KEEPER_CLIENT -q "rmr '/tables/$CLICKHOUSE_DATABASE/data/cluster/replicas/1'"
 
 # TODO:
 # - system stop replicated cluster;

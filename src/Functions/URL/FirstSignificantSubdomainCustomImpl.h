@@ -69,7 +69,7 @@ public:
         const ColumnConst * column_tld_list_name = checkAndGetColumnConstStringOrFixedString(arguments[1].column.get());
         FirstSignificantSubdomainCustomLookup tld_lookup(column_tld_list_name->getValue<String>());
 
-        if (const ColumnString * col = checkAndGetColumn<ColumnString>(*arguments[0].column))
+        if (const ColumnString * col = checkAndGetColumn<ColumnString>(&*arguments[0].column))
         {
             auto col_res = ColumnString::create();
             vector(tld_lookup, col->getChars(), col->getOffsets(), col_res->getChars(), col_res->getOffsets());

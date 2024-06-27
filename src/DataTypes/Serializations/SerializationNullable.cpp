@@ -95,10 +95,11 @@ void SerializationNullable::serializeBinaryBulkStateSuffix(
 
 void SerializationNullable::deserializeBinaryBulkStatePrefix(
     DeserializeBinaryBulkSettings & settings,
-    DeserializeBinaryBulkStatePtr & state) const
+    DeserializeBinaryBulkStatePtr & state,
+    SubstreamsDeserializeStatesCache * cache) const
 {
     settings.path.push_back(Substream::NullableElements);
-    nested->deserializeBinaryBulkStatePrefix(settings, state);
+    nested->deserializeBinaryBulkStatePrefix(settings, state, cache);
     settings.path.pop_back();
 }
 
@@ -286,7 +287,7 @@ bool SerializationNullable::tryDeserializeNullRaw(DB::ReadBuffer & istr, const D
 }
 
 template<typename ReturnType, bool escaped>
-ReturnType deserializeTextEscapedAndRawImpl(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, const SerializationPtr & nested_serialization, bool & is_null)
+ReturnType  deserializeTextEscapedAndRawImpl(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, const SerializationPtr & nested_serialization, bool & is_null)
 {
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
@@ -319,10 +320,10 @@ ReturnType deserializeTextEscapedAndRawImpl(IColumn & column, ReadBuffer & istr,
     /// Check if we have enough data in buffer to check if it's a null.
     if (istr.available() > null_representation.size())
     {
-        auto check_for_null = [&null_representation](ReadBuffer & buf)
+        auto check_for_null = [&null_representation, &settings](ReadBuffer & buf)
         {
             auto * pos = buf.position();
-            if (checkString(null_representation, buf) && (*buf.position() == '\t' || *buf.position() == '\n'))
+            if (checkString(null_representation, buf) && (*buf.position() == '\t' || *buf.position() == '\n' || (settings.tsv.crlf_end_of_line_input && *buf.position() == '\r')))
                 return true;
             buf.position() = pos;
             return false;
@@ -334,14 +335,14 @@ ReturnType deserializeTextEscapedAndRawImpl(IColumn & column, ReadBuffer & istr,
     /// Use PeekableReadBuffer to make a checkpoint before checking null
     /// representation and rollback if check was failed.
     PeekableReadBuffer peekable_buf(istr, true);
-    auto check_for_null = [&null_representation](ReadBuffer & buf_)
+    auto check_for_null = [&null_representation, &settings](ReadBuffer & buf_)
     {
         auto & buf = assert_cast<PeekableReadBuffer &>(buf_);
         buf.setCheckpoint();
         SCOPE_EXIT(buf.dropCheckpoint());
-        if (checkString(null_representation, buf) && (buf.eof() || *buf.position() == '\t' || *buf.position() == '\n'))
-            return true;
 
+        if (checkString(null_representation, buf) && (buf.eof() || *buf.position() == '\t' || *buf.position() == '\n' || (settings.tsv.crlf_end_of_line_input && *buf.position() == '\r')))
+            return true;
         buf.rollbackToCheckpoint();
         return false;
     };
@@ -371,7 +372,10 @@ ReturnType deserializeTextEscapedAndRawImpl(IColumn & column, ReadBuffer & istr,
 
         if (null_representation.find('\t') != std::string::npos || null_representation.find('\n') != std::string::npos)
             throw DB::Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "TSV custom null representation "
-                                       "containing '\\t' or '\\n' may not work correctly for large input.");
+                "containing '\\t' or '\\n' may not work correctly for large input.");
+        if (settings.tsv.crlf_end_of_line_input && null_representation.find('\r') != std::string::npos)
+            throw DB::Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "TSV custom null representation "
+                "containing '\\r' may not work correctly for large input.");
 
         WriteBufferFromOwnString parsed_value;
         if constexpr (escaped)

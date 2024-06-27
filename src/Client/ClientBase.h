@@ -129,6 +129,7 @@ protected:
                                 const std::vector<Arguments> & hosts_and_ports_arguments) = 0;
     virtual void processConfig() = 0;
 
+    /// Returns true if query processing was successful.
     bool processQueryText(const String & text);
 
     virtual void readArguments(
@@ -190,7 +191,7 @@ protected:
     /// Adjust some settings after command line options and config had been processed.
     void adjustSettings();
 
-    void setDefaultFormatsFromConfiguration();
+    void setDefaultFormatsAndCompressionFromConfiguration();
 
     void initTTYBuffer(ProgressOption progress);
 
@@ -224,6 +225,7 @@ protected:
     String pager;
 
     String default_output_format; /// Query results output format.
+    CompressionMethod default_output_compression_method = CompressionMethod::None;
     String default_input_format; /// Tables' format for clickhouse-local.
 
     bool select_into_file = false; /// If writing result INTO OUTFILE. It affects progress rendering.
@@ -328,6 +330,7 @@ protected:
     bool allow_merge_tree_settings = false;
 
     bool cancelled = false;
+    bool cancelled_printed = false;
 
     /// Does log_comment has specified by user?
     bool has_log_comment = false;

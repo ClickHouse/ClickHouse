@@ -1,0 +1,6 @@
+
+<clickhouse>
+    <query_log>
+        <engine>Engine = MergeTree PARTITION BY event_date ORDER BY event_time TTL event_date + INTERVAL 30 day SETTINGS storage_policy='s3_plain_rewritable', ttl_only_drop_parts=1</engine>
+    </query_log>
+</clickhouse>

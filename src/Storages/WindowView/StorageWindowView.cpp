@@ -35,7 +35,7 @@
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/FilterTransform.h>
 #include <Processors/Transforms/WatermarkTransform.h>
-#include <Processors/Transforms/SquashingChunksTransform.h>
+#include <Processors/Transforms/SquashingTransform.h>
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
@@ -297,7 +297,6 @@ namespace
             CASE_WINDOW_KIND(Year)
 #undef CASE_WINDOW_KIND
         }
-        UNREACHABLE();
     }
 
     class AddingAggregatedChunkInfoTransform : public ISimpleTransform
@@ -634,7 +633,7 @@ std::pair<BlocksPtr, Block> StorageWindowView::getNewBlocks(UInt32 watermark)
     });
     builder.addSimpleTransform([&](const Block & current_header)
     {
-        return std::make_shared<SquashingChunksTransform>(
+        return std::make_shared<SquashingTransform>(
             current_header,
             getContext()->getSettingsRef().min_insert_block_size_rows,
             getContext()->getSettingsRef().min_insert_block_size_bytes);
@@ -920,7 +919,6 @@ UInt32 StorageWindowView::getWindowLowerBound(UInt32 time_sec)
         CASE_WINDOW_KIND(Year)
 #undef CASE_WINDOW_KIND
     }
-    UNREACHABLE();
 }
 
 UInt32 StorageWindowView::getWindowUpperBound(UInt32 time_sec)
@@ -948,7 +946,6 @@ UInt32 StorageWindowView::getWindowUpperBound(UInt32 time_sec)
         CASE_WINDOW_KIND(Year)
 #undef CASE_WINDOW_KIND
     }
-    UNREACHABLE();
 }
 
 void StorageWindowView::addFireSignal(std::set<UInt32> & signals)
@@ -963,8 +960,7 @@ void StorageWindowView::addFireSignal(std::set<UInt32> & signals)
 void StorageWindowView::updateMaxTimestamp(UInt32 timestamp)
 {
     std::lock_guard lock(fire_signal_mutex);
-    if (timestamp > max_timestamp)
-        max_timestamp = timestamp;
+    max_timestamp = std::max(timestamp, max_timestamp);
 }
 
 void StorageWindowView::updateMaxWatermark(UInt32 watermark)
@@ -1072,9 +1068,10 @@ void StorageWindowView::threadFuncFireProc()
     if (max_watermark >= timestamp_now)
         clean_cache_task->schedule();
 
+    UInt64 next_fire_ms = static_cast<UInt64>(next_fire_signal) * 1000;
     UInt64 timestamp_ms = static_cast<UInt64>(Poco::Timestamp().epochMicroseconds()) / 1000;
     if (!shutdown_called)
-        fire_task->scheduleAfter(std::max(UInt64(0), static_cast<UInt64>(next_fire_signal) * 1000 - timestamp_ms));
+        fire_task->scheduleAfter(next_fire_ms - std::min(next_fire_ms, timestamp_ms));
 }
 
 void StorageWindowView::threadFuncFireEvent()
@@ -1454,8 +1451,7 @@ void StorageWindowView::writeIntoWindowView(
             UInt32 watermark_lower_bound
                 = addTime(t_max_watermark, window_view.slide_kind, -window_view.slide_num_units, *window_view.time_zone);
 
-            if (watermark_lower_bound < lateness_bound)
-                lateness_bound = watermark_lower_bound;
+            lateness_bound = std::min(watermark_lower_bound, lateness_bound);
         }
     }
     else if (!window_view.is_time_column_func_now)
@@ -1537,7 +1533,7 @@ void StorageWindowView::writeIntoWindowView(
     builder = select_block.buildQueryPipeline();
     builder.addSimpleTransform([&](const Block & current_header)
     {
-        return std::make_shared<SquashingChunksTransform>(
+        return std::make_shared<SquashingTransform>(
             current_header,
             local_context->getSettingsRef().min_insert_block_size_rows,
             local_context->getSettingsRef().min_insert_block_size_bytes);
@@ -1551,10 +1547,7 @@ void StorageWindowView::writeIntoWindowView(
             const auto & timestamp_column = *block.getByName(window_view.timestamp_column_name).column;
             const auto & timestamp_data = typeid_cast<const ColumnUInt32 &>(timestamp_column).getData();
             for (const auto & timestamp : timestamp_data)
-            {
-                if (timestamp > block_max_timestamp)
-                    block_max_timestamp = timestamp;
-            }
+                block_max_timestamp = std::max(timestamp, block_max_timestamp);
         }
 
         if (block_max_timestamp)

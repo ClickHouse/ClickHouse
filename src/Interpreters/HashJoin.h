@@ -26,11 +26,13 @@
 
 #include <Storages/IStorage_fwd.h>
 #include <Interpreters/IKeyValueEntity.h>
+#include <Interpreters/TemporaryDataOnDisk.h>
 
 namespace DB
 {
 
 class TableJoin;
+class ExpressionActions;
 
 namespace JoinStuff
 {
@@ -60,16 +62,16 @@ public:
     bool getUsedSafe(size_t i) const;
     bool getUsedSafe(const Block * block_ptr, size_t row_idx) const;
 
-    template <bool use_flags, bool multiple_disjuncts, typename T>
+    template <bool use_flags, bool flag_per_row, typename T>
     void setUsed(const T & f);
 
-    template <bool use_flags, bool multiple_disjunct>
+    template <bool use_flags, bool flag_per_row>
     void setUsed(const Block * block, size_t row_num, size_t offset);
 
-    template <bool use_flags, bool multiple_disjuncts, typename T>
+    template <bool use_flags, bool flag_per_row, typename T>
     bool getUsed(const T & f);
 
-    template <bool use_flags, bool multiple_disjuncts, typename T>
+    template <bool use_flags, bool flag_per_row, typename T>
     bool setUsedOnce(const T & f);
 };
 
@@ -148,12 +150,25 @@ class HashJoin : public IJoin
 public:
     HashJoin(
         std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block,
-        bool any_take_last_row_ = false, size_t reserve_num = 0, const String & instance_id_ = "");
+        bool any_take_last_row_ = false, size_t reserve_num_ = 0, const String & instance_id_ = "");
 
     ~HashJoin() override;
 
     std::string getName() const override { return "HashJoin"; }
+
     const TableJoin & getTableJoin() const override { return *table_join; }
+
+    bool isCloneSupported() const override
+    {
+        return true;
+    }
+
+    std::shared_ptr<IJoin> clone(const std::shared_ptr<TableJoin> & table_join_,
+        const Block &,
+        const Block & right_sample_block_) const override
+    {
+        return std::make_shared<HashJoin>(table_join_, right_sample_block_, any_take_last_row, reserve_num, instance_id);
+    }
 
     /** Add block of data from right hand of JOIN to the map.
       * Returns false, if some limit was exceeded and you should not insert more data.
@@ -239,7 +254,7 @@ public:
         M(key_string)                          \
         M(key_fixed_string)
 
-    enum class Type
+    enum class Type : uint8_t
     {
         EMPTY,
         CROSS,
@@ -307,8 +322,6 @@ public:
                 APPLY_FOR_JOIN_VARIANTS(M)
             #undef M
             }
-
-            UNREACHABLE();
         }
 
         size_t getTotalByteCountImpl(Type which) const
@@ -323,8 +336,6 @@ public:
                 APPLY_FOR_JOIN_VARIANTS(M)
             #undef M
             }
-
-            UNREACHABLE();
         }
 
         size_t getBufferSizeInCells(Type which) const
@@ -339,8 +350,6 @@ public:
                 APPLY_FOR_JOIN_VARIANTS(M)
             #undef M
             }
-
-            UNREACHABLE();
         }
 /// NOLINTEND(bugprone-macro-parentheses)
     };
@@ -412,7 +421,9 @@ private:
     /// This join was created from StorageJoin and it is already filled.
     bool from_storage_join = false;
 
-    bool any_take_last_row; /// Overwrite existing values when encountering the same key again
+    const bool any_take_last_row; /// Overwrite existing values when encountering the same key again
+    const size_t reserve_num;
+    const String instance_id;
     std::optional<TypeIndex> asof_type;
     const ASOFJoinInequality asof_inequality;
 
@@ -423,8 +434,15 @@ private:
     /// Changes in hash table broke correspondence,
     /// so we must guarantee constantness of hash table during HashJoin lifetime (using method setLock)
     mutable JoinStuff::JoinUsedFlags used_flags;
+
     RightTableDataPtr data;
+    bool have_compressed = false;
+
     std::vector<Sizes> key_sizes;
+
+    /// Needed to do external cross join
+    TemporaryDataOnDiskPtr tmp_data;
+    TemporaryFileStream* tmp_stream{nullptr};
 
     /// Block with columns from the right-side table.
     Block right_sample_block;
@@ -454,7 +472,7 @@ private:
     /// If set HashJoin instance is not available for modification (addBlockToJoin)
     TableLockHolder storage_join_lock = nullptr;
 
-    void dataMapInit(MapsVariant &, size_t);
+    void dataMapInit(MapsVariant & map);
 
     void initRightBlockStructure(Block & saved_block_sample);
 
@@ -470,6 +488,9 @@ private:
     static Type chooseMethod(JoinKind kind, const ColumnRawPtrs & key_columns, Sizes & key_sizes);
 
     bool empty() const;
+
+    void validateAdditionalFilterExpression(std::shared_ptr<ExpressionActions> additional_filter_expression);
+    bool needUsedFlagsForPerRightTableRow(std::shared_ptr<TableJoin> table_join_) const;
 };
 
 }

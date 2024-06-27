@@ -238,7 +238,7 @@ public:
 
 private:
     int saved_errno;
-    std::optional<std::string> path{};
+    std::optional<std::string> path;
 
     const char * name() const noexcept override { return "DB::ErrnoException"; }
     const char * className() const noexcept override { return "DB::ErrnoException"; }

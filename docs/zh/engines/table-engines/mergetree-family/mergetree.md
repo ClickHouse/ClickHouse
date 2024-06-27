@@ -702,7 +702,7 @@ SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
 - 插入（`INSERT`查询）
 - 后台合并和[数据变异](../../../sql-reference/statements/alter.md#alter-mutations)
 - 从另一个副本下载
-- [ALTER TABLE … FREEZE PARTITION](../../../sql-reference/statements/alter.md#alter_freeze-partition) 冻结分区
+- [ALTER TABLE ... FREEZE PARTITION](../../../sql-reference/statements/alter.md#alter_freeze-partition) 冻结分区
 
 除了数据变异和冻结分区以外的情况下，数据按照以下逻辑存储到卷或磁盘上：
 
@@ -713,7 +713,7 @@ SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
 
 在后台，数据片段基于剩余空间（`move_factor`参数）根据卷在配置文件中定义的顺序进行转移。数据永远不会从最后一个移出也不会从第一个移入。可以通过系统表 [system.part_log](../../../operations/system-tables/part_log.md#system_tables-part-log) (字段 `type = MOVE_PART`) 和 [system.parts](../../../operations/system-tables/parts.md#system_tables-parts) (字段 `path` 和 `disk`) 来监控后台的移动情况。具体细节可以通过服务器日志查看。
 
-用户可以通过 [ALTER TABLE … MOVE PART\|PARTITION … TO VOLUME\|DISK …](../../../sql-reference/statements/alter.md#alter_move-partition) 强制移动一个数据片段或分区到另外一个卷，所有后台移动的限制都会被考虑在内。这个查询会自行启动，无需等待后台操作完成。如果没有足够的可用空间或任何必须条件没有被满足，用户会收到报错信息。
+用户可以通过 [ALTER TABLE ... MOVE PART\|PARTITION ... TO VOLUME\|DISK ...](../../../sql-reference/statements/alter.md#alter_move-partition) 强制移动一个数据片段或分区到另外一个卷，所有后台移动的限制都会被考虑在内。这个查询会自行启动，无需等待后台操作完成。如果没有足够的可用空间或任何必须条件没有被满足，用户会收到报错信息。
 
 数据移动不会妨碍到数据复制。也就是说，同一张表的不同副本可以指定不同的存储策略。
 

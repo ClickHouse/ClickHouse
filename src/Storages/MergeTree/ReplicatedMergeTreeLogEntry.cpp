@@ -29,7 +29,7 @@ enum FormatVersion : UInt8
     FORMAT_WITH_LOG_ENTRY_ID = 7,
     FORMAT_CLUSTER = 8,
 
-    FORMAT_LAST
+    FORMAT_LAST = 9,
 };
 
 

@@ -1,4 +1,4 @@
--- Tags: no-replicated-database, no-fasttest
+-- Tags: no-replicated-database, no-fasttest, no-parallel, no-random-settings, no-random-merge-tree-settings
 
 DROP TABLE IF EXISTS 03000_traverse_shadow_system_data_path_table;
 
