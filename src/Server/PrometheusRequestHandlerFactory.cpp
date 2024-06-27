@@ -18,7 +18,8 @@ namespace
         const AsynchronousMetrics & asynchronous_metrics,
         bool use_default_filter_by_endpoint_and_http_method = true)
     {
-        auto parsed_config = std::make_shared<PrometheusRequestHandlerConfig>(config, config_prefix);
+        auto parsed_config = std::make_shared<PrometheusRequestHandlerConfig>(
+            config, config_prefix, /* detect_handler_by_endpoint=*/ use_default_filter_by_endpoint_and_http_method);
 
         auto creator = [&server, parsed_config, &asynchronous_metrics]() -> std::unique_ptr<RequestHandlerType>
         {

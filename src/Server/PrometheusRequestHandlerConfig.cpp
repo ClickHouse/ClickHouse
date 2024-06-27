@@ -8,8 +8,19 @@
 namespace DB
 {
 
-PrometheusRequestHandlerConfig::PrometheusRequestHandlerConfig(const Poco::Util::AbstractConfiguration & config_, const String & config_prefix)
+namespace ErrorCodes
 {
+    extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
+}
+
+
+PrometheusRequestHandlerConfig::PrometheusRequestHandlerConfig(const Poco::Util::AbstractConfiguration & config_, const String & config_prefix, bool detect_handler_by_endpoint_)
+{
+    detect_handler_by_endpoint = detect_handler_by_endpoint_;
+
+    if (!detect_handler_by_endpoint && config_.has(config_prefix + ".endpoint"))
+        throw Exception(ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG, "URL path at {}.endpoint can't be used and must not be specified", config_prefix);
+
     metrics.emplace();
     metrics->endpoint = config_.getString(config_prefix + ".endpoint", "/metrics");
     metrics->send_metrics = config_.getBool(config_prefix + ".metrics", true);
@@ -25,7 +36,7 @@ bool PrometheusRequestHandlerConfig::filterRequest(const HTTPServerRequest & req
     const auto & path = request.getURI();
     const auto & method = request.getMethod();
 
-    if (metrics && (path == metrics->endpoint))
+    if (metrics && (!detect_handler_by_endpoint || (path == metrics->endpoint)))
         return (method == Poco::Net::HTTPRequest::HTTP_GET) || (method == Poco::Net::HTTPRequest::HTTP_HEAD);
 
     return false;

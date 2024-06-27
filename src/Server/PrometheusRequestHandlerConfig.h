@@ -34,7 +34,10 @@ struct PrometheusRequestHandlerConfig
 
     size_t keep_alive_timeout;
 
-    PrometheusRequestHandlerConfig(const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
+    /// Use endpoints in the config to find out which handler should be used.
+    bool detect_handler_by_endpoint = true;
+
+    PrometheusRequestHandlerConfig(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, bool detect_handler_by_endpoint_);
     bool filterRequest(const HTTPServerRequest & request) const;
 };
 
