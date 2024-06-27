@@ -152,7 +152,10 @@ def test_smoke():
     ]
 
     instance.query("ALTER USER robin SETTINGS NONE")
-    assert instance.query("SHOW CREATE USER robin") == "CREATE USER robin IDENTIFIED WITH no_password\n"
+    assert (
+        instance.query("SHOW CREATE USER robin")
+        == "CREATE USER robin IDENTIFIED WITH no_password\n"
+    )
     assert (
         instance.query(
             "SELECT value FROM system.settings WHERE name = 'max_memory_usage'",
