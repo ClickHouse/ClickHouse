@@ -136,7 +136,7 @@ const FileCache::UserInfo & FileCache::getInternalUser()
 
 bool FileCache::isInitialized() const
 {
-    return is_fully_loaded.load(std::memory_order_seq_cst);
+    return is_initialized.load(std::memory_order_seq_cst);
 }
 
 const String & FileCache::getBasePath() const
@@ -203,8 +203,6 @@ void FileCache::initialize()
         keep_up_free_space_ratio_task = Context::getGlobalContextInstance()->getSchedulePool().createTask(log->name(), [this] { freeSpaceRatioKeepingThreadFunc(); });
         keep_up_free_space_ratio_task->schedule();
     }
-
-    is_initialized = true;
 }
 
 CachePriorityGuard::Lock FileCache::lockCache() const
@@ -1232,7 +1230,7 @@ void FileCache::loadMetadataImpl()
     if (first_exception)
         std::rethrow_exception(first_exception);
 
-    is_fully_loaded = true;
+    is_initialized = true;
 
 #ifdef ABORT_ON_LOGICAL_ERROR
     assertCacheCorrectness();
