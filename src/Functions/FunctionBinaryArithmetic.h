@@ -256,18 +256,9 @@ struct BinaryOperation
     template <OpCase op_case>
     static void NO_INLINE process(const A * __restrict a, const B * __restrict b, ResultType * __restrict c, size_t size, const NullMap * left_nullmap = nullptr, const NullMap * right_nullmap = nullptr, NullMap * result_nullmap = nullptr)
     {
-        if constexpr (is_compare)
+        if constexpr (!is_compare)
         {
-            if (left_nullmap || right_nullmap)
-                for (size_t i = 0; i < size; ++i)
-                    apply<op_case>(a, b, c, left_nullmap, right_nullmap, result_nullmap, i);
-            else
-                for (size_t i = 0; i < size; ++i)
-                    apply<op_case>(a, b, c, i);
-        }
-        else
-        {
-            if constexpr (op_case == OpCase::RightConstant)
+           if constexpr (op_case == OpCase::RightConstant)
             {
                 if (right_nullmap && (*right_nullmap)[0])
                     return;
@@ -289,6 +280,15 @@ struct BinaryOperation
                     for (size_t i = 0; i < size; ++i)
                         apply<op_case>(a, b, c, i);
             }
+        }
+        else
+        {
+            if (left_nullmap || right_nullmap)
+                for (size_t i = 0; i < size; ++i)
+                    apply<op_case>(a, b, c, left_nullmap, right_nullmap, result_nullmap, i);
+            else
+                for (size_t i = 0; i < size; ++i)
+                    apply<op_case>(a, b, c, i);
         }
     }
 
@@ -602,22 +602,11 @@ public:
 
         if constexpr (is_plus_minus_compare)
         {
-            auto checkAndSetNulls = [&](size_t i) -> std::pair<bool, bool>
-            {
-                if constexpr (is_compare)
-                {
-                    bool left_null = left_nullmap && (*left_nullmap)[i];
-                    bool right_null = right_nullmap && (*right_nullmap)[i];
-                    (*result_nullmap)[i] = left_null & right_null;
-                    return std::pair<bool, bool>(left_null, right_null);
-                }
-                return std::pair<bool, bool>(false, false);
-            };
             if (scale_a != 1)
             {
                 for (size_t i = 0; i < size; ++i)
                 {
-                    auto left_right_null = checkAndSetNulls(i);
+                    auto left_right_null = checkAndGetLeftRightNulls<op_case>(left_nullmap, right_nullmap, result_nullmap, i);
                     c[i] = applyScaled<true>(
                         static_cast<NativeResultType>(unwrap<op_case, OpCase::LeftConstant>(a, i)),
                         static_cast<NativeResultType>(unwrap<op_case, OpCase::RightConstant>(b, i)),
@@ -629,7 +618,7 @@ public:
             {
                 for (size_t i = 0; i < size; ++i)
                 {
-                    auto left_right_null = checkAndSetNulls(i);
+                    auto left_right_null = checkAndGetLeftRightNulls<op_case>(left_nullmap, right_nullmap, result_nullmap, i);
                     c[i] = applyScaled<false>(
                         static_cast<NativeResultType>(unwrap<op_case, OpCase::LeftConstant>(a, i)),
                         static_cast<NativeResultType>(unwrap<op_case, OpCase::RightConstant>(b, i)),
@@ -700,6 +689,26 @@ public:
     }
 
 private:
+    template <OpCase op_case>
+    static std::pair<bool, bool> checkAndGetLeftRightNulls(const NullMap * left_nullmap, const NullMap * right_nullmap, NullMap * result_nullmap, size_t i)
+    {
+        if constexpr (is_compare)
+        {
+            bool left_null = false, right_null = false;
+            if constexpr (op_case == OpCase::LeftConstant)
+                left_null = left_nullmap && (*left_nullmap)[0];
+            else
+                left_null = left_nullmap && (*left_nullmap)[i];
+            if constexpr (op_case == OpCase::RightConstant)
+                right_null = right_nullmap && (*right_nullmap)[0];
+            else
+                right_null = right_nullmap && (*right_nullmap)[i];
+            (*result_nullmap)[i] = left_null & right_null;
+            return std::pair<bool, bool>(left_null, right_null);
+        }
+        return std::pair<bool, bool>(false, false);
+    }
+
     template <OpCase op_case, typename ApplyFunc>
     static void processWithNullmapImpl(const auto & a, const auto & b, ResultContainerType & c, size_t size, const NullMap * left_nullmap, const NullMap * right_nullmap, NullMap * result_nullmap, ApplyFunc apply_func)
     {
@@ -707,10 +716,8 @@ private:
         {
             for (size_t i = 0; i < size; ++i)
             {
-                bool left_null = left_nullmap && (*left_nullmap)[i];
-                bool right_null = right_nullmap && (*right_nullmap)[i];
-                c[i] = apply_func(unwrap<op_case, OpCase::LeftConstant>(a, i), unwrap<op_case, OpCase::RightConstant>(b, i), left_null, right_null);
-                (*result_nullmap)[i] = left_null & right_null;
+                std::pair<bool, bool> left_right_null = checkAndGetLeftRightNulls<op_case>(left_nullmap, right_nullmap, result_nullmap, i);
+                c[i] = apply_func(unwrap<op_case, OpCase::LeftConstant>(a, i), unwrap<op_case, OpCase::RightConstant>(b, i), left_right_null.first, left_right_null.second);
             }
             return;
         }
