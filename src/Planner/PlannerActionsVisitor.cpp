@@ -485,16 +485,28 @@ public:
         return node;
     }
 
-    const ActionsDAG::Node * addConstantIfNecessary(const std::string & node_name, const ColumnWithTypeAndName & column)
+    [[nodiscard]] String addConstantIfNecessary(const std::string & node_name, const ColumnWithTypeAndName & column)
     {
         auto it = node_name_to_node.find(node_name);
+        if (it != node_name_to_node.end() && it->second->column)
+            return {node_name};
+
         if (it != node_name_to_node.end())
-            return it->second;
+        {
+            /// There is a node with this name, but it doesn't have a column
+            /// This likely happens because we executed the query until WithMergeableState with a const node in the
+            /// WHERE clause. As the results of headers are materialized, the column was removed
+            /// Let's add a new column and keep this
+            String dupped_name{node_name + "_dupped"};
+            const auto * node = &actions_dag.addColumn(column);
+            node_name_to_node[dupped_name] = node;
+            return dupped_name;
+        }
 
         const auto * node = &actions_dag.addColumn(column);
         node_name_to_node[node->result_name] = node;
 
-        return node;
+        return {node_name};
     }
 
     template <typename FunctionOrOverloadResolver>
@@ -723,7 +735,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     column.type = constant_type;
     column.column = column.type->createColumnConst(1, constant_literal);
 
-    actions_stack[0].addConstantIfNecessary(constant_node_name, column);
+    String final_name = actions_stack[0].addConstantIfNecessary(constant_node_name, column);
 
     size_t actions_stack_size = actions_stack.size();
     for (size_t i = 1; i < actions_stack_size; ++i)
@@ -732,8 +744,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
         actions_stack_node.addInputConstantColumnIfNecessary(constant_node_name, column);
     }
 
-    return {constant_node_name, Levels(0)};
-
+    return {final_name, Levels(0)};
 }
 
 PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::visitLambda(const QueryTreeNodePtr & node)
@@ -862,7 +873,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::ma
     else
         column.column = std::move(column_set);
 
-    actions_stack[0].addConstantIfNecessary(column.name, column);
+    String final_name = actions_stack[0].addConstantIfNecessary(column.name, column);
 
     size_t actions_stack_size = actions_stack.size();
     for (size_t i = 1; i < actions_stack_size; ++i)
@@ -871,7 +882,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::ma
         actions_stack_node.addInputConstantColumnIfNecessary(column.name, column);
     }
 
-    return {column.name, Levels(0)};
+    return {final_name, Levels(0)};
 }
 
 PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::visitIndexHintFunction(const QueryTreeNodePtr & node)
