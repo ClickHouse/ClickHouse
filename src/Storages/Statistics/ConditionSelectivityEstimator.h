@@ -46,6 +46,7 @@ public:
     Float64 estimateRowCount(const RPNBuilderTreeNode & node) const;
 
     void merge(String part_name, UInt64 part_rows, ColumnStatisticsPtr column_stat);
+    void addRows(UInt64 part_rows) { total_rows += part_rows; }
 };
 
 }

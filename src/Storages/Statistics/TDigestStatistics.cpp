@@ -1,5 +1,6 @@
 #include <Storages/Statistics/TDigestStatistics.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 
 namespace DB
 {
@@ -36,18 +37,23 @@ void TDigestStatistics::deserialize(ReadBuffer & buf)
 void TDigestStatistics::update(const ColumnPtr & column)
 {
     size_t size = column->size();
-
     for (size_t i = 0; i < size; ++i)
     {
-        /// TODO: support more types.
-        Float64 value = column->getFloat64(i);
-        data.add(value, 1);
+        Field f;
+        column->get(i, f);
+
+        if (f.isNull())
+            continue;
+
+        if (auto float_val = IStatistics::getFloat64(f))
+            data.add(*float_val, 1);
     }
 }
 
 void TDigestValidator(const SingleStatisticsDescription &, DataTypePtr data_type)
 {
     data_type = removeNullable(data_type);
+    data_type = removeLowCardinalityAndNullable(data_type);
     if (!data_type->isValueRepresentedByNumber())
         throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "Statistics of type 'tdigest' does not support type {}", data_type->getName());
 }

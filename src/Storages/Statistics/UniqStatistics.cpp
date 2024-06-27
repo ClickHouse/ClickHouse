@@ -1,6 +1,7 @@
 #include <Storages/Statistics/UniqStatistics.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 
 namespace DB
 {
@@ -54,6 +55,7 @@ void UniqStatistics::update(const ColumnPtr & column)
 void UniqValidator(const SingleStatisticsDescription &, DataTypePtr data_type)
 {
     data_type = removeNullable(data_type);
+    data_type = removeLowCardinalityAndNullable(data_type);
     if (!data_type->isValueRepresentedByNumber())
         throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "Statistics of type 'uniq' does not support type {}", data_type->getName());
 }

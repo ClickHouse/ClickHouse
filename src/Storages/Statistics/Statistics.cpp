@@ -31,17 +31,39 @@ enum StatisticsFileVersion : UInt16
 
 std::optional<Float64> IStatistics::getFloat64(const Field & f)
 {
-    const auto type = f.getType();
-    Float64 value;
-    if (type == Field::Types::Int64)
-        value = f.get<Int64>();
-    else if (type == Field::Types::UInt64)
-        value = f.get<UInt64>();
-    else if (type == Field::Types::Float64)
-        value = f.get<Float64>();
-    else
-        return {};
-    return value;
+    switch (f.getType())
+    {
+        case Field::Types::Bool:
+            return f.get<bool>();
+        case Field::Types::Int64:
+            return f.get<Int64>();
+        case Field::Types::UInt64:
+            return f.get<UInt64>();
+        case Field::Types::Float64:
+            return f.get<Float64>();
+        case Field::Types::Int128:
+            return f.get<Int128>();
+        case Field::Types::UInt128:
+            return f.get<UInt128>();
+        case Field::Types::Int256:
+            return f.get<Int256>();
+        case Field::Types::UInt256:
+            return f.get<UInt256>();
+        case Field::Types::Decimal32:
+            return f.get<Decimal32>().getValue().value;
+        case Field::Types::Decimal64:
+            return f.get<Decimal64>().getValue().value;
+        case Field::Types::Decimal128:
+            return f.get<Decimal128>().getValue().value;
+        case Field::Types::Decimal256:
+            return f.get<Decimal256>().getValue().value;
+        case Field::Types::IPv4:
+            return f.get<IPv4>().toUnderType();
+        case Field::Types::IPv6:
+            return f.get<IPv6>().toUnderType();
+        default:
+            return {};
+    }
 }
 
 std::optional<String> IStatistics::getString(const Field & f)
@@ -97,10 +119,7 @@ Float64 ColumnStatistics::estimateEqual(Field val) const
     if (stats.contains(StatisticsType::CountMinSketch))
     {
         auto count_min_sketch_static = std::static_pointer_cast<CountMinSketchStatistics>(stats.at(StatisticsType::CountMinSketch));
-        if (!count_min_sketch_static->checkType(val))
-            return rows * ConditionSelectivityEstimator::default_normal_cond_factor;
-        else
-            return count_min_sketch_static->estimateEqual(val);
+        return count_min_sketch_static->estimateEqual(val);
     }
 #endif
     if (val < - ConditionSelectivityEstimator::threshold || val > ConditionSelectivityEstimator::threshold)

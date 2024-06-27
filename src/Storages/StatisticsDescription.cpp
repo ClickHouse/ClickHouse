@@ -103,10 +103,9 @@ void ColumnStatisticsDescription::merge(const ColumnStatisticsDescription & othe
     chassert(merging_column_type);
 
     if (column_name.empty())
-    {
         column_name = merging_column_name;
-        data_type = merging_column_type;
-    }
+
+    data_type = merging_column_type;
 
     for (const auto & [stats_type, stats_desc]: other.types_to_desc)
     {
@@ -125,6 +124,7 @@ void ColumnStatisticsDescription::assign(const ColumnStatisticsDescription & oth
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot assign statistics from column {} to {}", column_name, other.column_name);
 
     types_to_desc = other.types_to_desc;
+    data_type = other.data_type;
 }
 
 void ColumnStatisticsDescription::clear()
@@ -163,6 +163,7 @@ std::vector<ColumnStatisticsDescription> ColumnStatisticsDescription::fromAST(co
 
         const auto & column = columns.getPhysical(physical_column_name);
         stats.column_name = column.name;
+        stats.data_type = column.type;
         stats.types_to_desc = statistics_types;
         result.push_back(stats);
     }

@@ -34,6 +34,9 @@ public:
 
     virtual void update(const ColumnPtr & column) = 0;
 
+    /// Convert filed to Float64, used when estimating the number of rows.
+    /// Return a Float64 value if f can be represented by number, otherwise return null.
+    /// See IDataType::isValueRepresentedByNumber
     static std::optional<Float64> getFloat64(const Field & f);
     static std::optional<String> getString(const Field & f);
 

@@ -23,13 +23,11 @@ public:
 
     void update(const ColumnPtr & column) override;
 
-    bool checkType(const Field & f);
-
 private:
-    static constexpr auto HASH_COUNT = 8uz;
-    static constexpr auto BUCKET_COUNT = 2048uz;
+    static constexpr auto num_hashes = 8uz;
+    static constexpr auto num_buckets = 2048uz;
 
-    using Sketch = datasketches::count_min_sketch<Float64>;
+    using Sketch = datasketches::count_min_sketch<UInt64>;
     Sketch sketch;
 
     DataTypePtr data_type;
