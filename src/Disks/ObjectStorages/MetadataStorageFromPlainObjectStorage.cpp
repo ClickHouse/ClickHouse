@@ -42,7 +42,7 @@ bool MetadataStorageFromPlainObjectStorage::exists(const std::string & path) con
 {
     /// NOTE: exists() cannot be used here since it works only for existing
     /// key, and does not work for some intermediate path.
-    auto object_key = object_storage->generateObjectKeyForPath(path);
+    auto object_key = object_storage->generateObjectKeyForPath(path, std::nullopt /* key_prefix */);
     return object_storage->existsOrHasAnyChild(object_key.serialize());
 }
 
@@ -54,7 +54,7 @@ bool MetadataStorageFromPlainObjectStorage::isFile(const std::string & path) con
 
 bool MetadataStorageFromPlainObjectStorage::isDirectory(const std::string & path) const
 {
-    auto key_prefix = object_storage->generateObjectKeyForPath(path).serialize();
+    auto key_prefix = object_storage->generateObjectKeyForPath(path, std::nullopt /* key_prefix */).serialize();
     auto directory = std::filesystem::path(std::move(key_prefix)) / "";
 
     return object_storage->existsOrHasAnyChild(directory);
@@ -62,7 +62,7 @@ bool MetadataStorageFromPlainObjectStorage::isDirectory(const std::string & path
 
 uint64_t MetadataStorageFromPlainObjectStorage::getFileSize(const String & path) const
 {
-    auto object_key = object_storage->generateObjectKeyForPath(path);
+    auto object_key = object_storage->generateObjectKeyForPath(path, std::nullopt /* key_prefix */);
     auto metadata = object_storage->tryGetObjectMetadata(object_key.serialize());
     if (metadata)
         return metadata->size_bytes;
@@ -71,7 +71,7 @@ uint64_t MetadataStorageFromPlainObjectStorage::getFileSize(const String & path)
 
 std::vector<std::string> MetadataStorageFromPlainObjectStorage::listDirectory(const std::string & path) const
 {
-    auto key_prefix = object_storage->generateObjectKeyForPath(path).serialize();
+    auto key_prefix = object_storage->generateObjectKeyForPath(path, std::nullopt /* key_prefix */).serialize();
 
     RelativePathsWithMetadata files;
     std::string abs_key = key_prefix;
@@ -98,7 +98,7 @@ DirectoryIteratorPtr MetadataStorageFromPlainObjectStorage::iterateDirectory(con
 StoredObjects MetadataStorageFromPlainObjectStorage::getStorageObjects(const std::string & path) const
 {
     size_t object_size = getFileSize(path);
-    auto object_key = object_storage->generateObjectKeyForPath(path);
+    auto object_key = object_storage->generateObjectKeyForPath(path, std::nullopt /* key_prefix */);
     return {StoredObject(object_key.serialize(), path, object_size)};
 }
 
@@ -130,7 +130,7 @@ const IMetadataStorage & MetadataStorageFromPlainObjectStorageTransaction::getSt
 
 void MetadataStorageFromPlainObjectStorageTransaction::unlinkFile(const std::string & path)
 {
-    auto object_key = metadata_storage.object_storage->generateObjectKeyForPath(path);
+    auto object_key = metadata_storage.object_storage->generateObjectKeyForPath(path, std::nullopt /* key_prefix */);
     auto object = StoredObject(object_key.serialize());
     metadata_storage.object_storage->removeObject(object);
 }
@@ -155,7 +155,7 @@ void MetadataStorageFromPlainObjectStorageTransaction::createDirectory(const std
         return;
 
     auto normalized_path = normalizeDirectoryPath(path);
-    auto key_prefix = object_storage->generateObjectKeyPrefixForDirectoryPath(normalized_path).serialize();
+    auto key_prefix = object_storage->generateObjectKeyPrefixForDirectoryPath(normalized_path, std::nullopt /* key_prefix */).serialize();
     chassert(key_prefix.starts_with(object_storage->getCommonKeyPrefix()));
     auto op = std::make_unique<MetadataStorageFromPlainObjectStorageCreateDirectoryOperation>(
         std::move(normalized_path),

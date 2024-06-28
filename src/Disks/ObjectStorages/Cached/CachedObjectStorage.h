@@ -98,9 +98,10 @@ public:
 
     const std::string & getCacheName() const override { return cache_config_name; }
 
-    ObjectStorageKey generateObjectKeyForPath(const std::string & path) const override;
+    ObjectStorageKey generateObjectKeyForPath(const std::string & path, const std::optional<std::string> & key_prefix) const override;
 
-    ObjectStorageKey generateObjectKeyPrefixForDirectoryPath(const std::string & path) const override;
+    ObjectStorageKey
+    generateObjectKeyPrefixForDirectoryPath(const std::string & path, const std::optional<std::string> & key_prefix) const override;
 
     void setKeysGenerator(ObjectStorageKeysGeneratorPtr gen) override { object_storage->setKeysGenerator(gen); }
 

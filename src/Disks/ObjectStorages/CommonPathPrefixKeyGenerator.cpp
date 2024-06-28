@@ -15,7 +15,8 @@ CommonPathPrefixKeyGenerator::CommonPathPrefixKeyGenerator(
 {
 }
 
-ObjectStorageKey CommonPathPrefixKeyGenerator::generate(const String & path, bool is_directory) const
+ObjectStorageKey
+CommonPathPrefixKeyGenerator::generate(const String & path, bool is_directory, const std::optional<String> & /* key_prefix */) const
 {
     const auto & [object_key_prefix, suffix_parts] = getLongestObjectKeyPrefix(path);
 
