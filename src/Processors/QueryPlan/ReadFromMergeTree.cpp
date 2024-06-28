@@ -592,8 +592,10 @@ Pipe ReadFromMergeTree::readInOrder(
     /// Also do not count amount of read rows if we read in order of sorting key,
     /// because we don't know actual amount of read rows in case when limit is set.
     const UInt64 in_order_limit = query_info.input_order_info ? query_info.input_order_info->limit : 0;
-    const bool set_total_rows_approx
-        = !(is_parallel_reading_from_replicas && context->canUseParallelReplicasOnFollower()) && !in_order_limit;
+    const bool parallel_replicas_remote_plan_for_initiator = is_parallel_reading_from_replicas
+        && !context->getSettingsRef().parallel_replicas_local_plan && context->canUseParallelReplicasOnInitiator();
+    const bool parallel_replicas_follower = is_parallel_reading_from_replicas && context->canUseParallelReplicasOnFollower();
+    const bool set_total_rows_approx = !parallel_replicas_follower && !parallel_replicas_remote_plan_for_initiator && !in_order_limit;
 
     Pipes pipes;
     for (size_t i = 0; i < parts_with_ranges.size(); ++i)
@@ -1968,8 +1970,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
                 mode = CoordinationMode::ReverseOrder;
                 break;
             case ReadFromMergeTree::ReadType::ParallelReplicas:
-                chassert(false);
-                UNREACHABLE();
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Read type can't be ParallelReplicas on initiator");
         }
 
         chassert(number_of_current_replica.has_value());
