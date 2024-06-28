@@ -83,21 +83,26 @@ bool isOnlyConjunctionOfFunctions(
     const QueryTreeNodePtrWithHashSet & allowed_arguments)
 {
     if (isNodeBooleanConstant(node, true))
+    {
         return true;
+    }
 
     const auto * node_function = node->as<FunctionNode>();
-    if (node_function
-        && node_function->getFunctionName() == "isNotNull"
+    if (!node_function)
+        return false;
+
+    if (node_function->getFunctionName() == func_name
         && allowed_arguments.contains(node_function->getArgumentsNode()))
         return true;
 
-    if (node_function && node_function->getFunctionName() == "and")
+    if (node_function->getFunctionName() == "and")
     {
         for (const auto & and_argument : node_function->getArguments().getNodes())
         {
             if (!isOnlyConjunctionOfFunctions(and_argument, func_name, allowed_arguments))
                 return false;
         }
+        return true;
     }
     return false;
 }
