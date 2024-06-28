@@ -145,11 +145,10 @@ void MetadataStorageFromPlainObjectStorageTransaction::createDirectory(const std
         return;
 
     auto normalized_path = normalizeDirectoryPath(path);
-    auto key_prefix = object_storage->generateObjectKeyPrefixForDirectoryPath(normalized_path, std::nullopt /* key_prefix */).serialize();
-    chassert(key_prefix.starts_with(object_storage->getCommonKeyPrefix()));
+    auto key_prefix = object_storage->generateObjectKeyPrefixForDirectoryPath(normalized_path, "" /* key_prefix */).serialize();
     auto op = std::make_unique<MetadataStorageFromPlainObjectStorageCreateDirectoryOperation>(
         std::move(normalized_path),
-        key_prefix.substr(object_storage->getCommonKeyPrefix().size()),
+        std::move(key_prefix),
         *metadata_storage.getPathMap(),
         object_storage,
         metadata_storage.getMetadataKeyPrefix());
