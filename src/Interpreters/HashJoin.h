@@ -183,6 +183,9 @@ public:
         BlockPtr block;
         IColumn::Selector selector;
 
+        ScatteredBlock() = default;
+        ScatteredBlock(const Block & block_) : block(std::make_shared<Block>(block_)), selector(block->rows(), 0) { }
+
         operator bool() const { return block != nullptr; }
 
         size_t rows() const { return selector.size(); }

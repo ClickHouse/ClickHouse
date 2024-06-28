@@ -39,6 +39,7 @@
 #include "Columns/IColumn.h"
 #include "Core/Joins.h"
 #include "Interpreters/TemporaryDataOnDisk.h"
+#include "Processors/Sources/SourceFromChunks.h"
 
 #include <Functions/FunctionHelpers.h>
 #include <Interpreters/castColumn.h>
@@ -647,11 +648,10 @@ namespace
     size_t NO_INLINE insertFromBlockImplTypeCase(
         HashJoin & join,
         Map & map,
-        size_t rows,
+        size_t,
         const ColumnRawPtrs & key_columns,
         const Sizes & key_sizes,
-        Block * stored_block,
-        const IColumn::Selector * selector,
+        const HashJoin::ScatteredBlock & stored_block,
         ConstNullMapPtr null_map,
         UInt8ColumnDataPtr join_mask,
         Arena & pool,
@@ -669,12 +669,9 @@ namespace
         /// For ALL and ASOF join always insert values
         is_inserted = !mapped_one || is_asof_join;
 
-        for (size_t i = 0; i < rows; ++i)
+        for (size_t ind : stored_block.selector)
         {
-            if (selector && std::find(selector->begin(), selector->end(), i) == selector->end())
-                continue;
-
-            if (null_map && (*null_map)[i])
+            if (null_map && (*null_map)[ind])
             {
                 /// nulls are not inserted into hash table,
                 /// keep them for RIGHT and FULL joins
@@ -683,15 +680,15 @@ namespace
             }
 
             /// Check condition for right table from ON section
-            if (join_mask && !(*join_mask)[i])
+            if (join_mask && !(*join_mask)[ind])
                 continue;
 
             if constexpr (is_asof_join)
-                Inserter<Map, KeyGetter>::insertAsof(join, map, key_getter, stored_block, i, pool, *asof_column);
+                Inserter<Map, KeyGetter>::insertAsof(join, map, key_getter, stored_block.block.get(), ind, pool, *asof_column);
             else if constexpr (mapped_one)
-                is_inserted |= Inserter<Map, KeyGetter>::insertOne(join, map, key_getter, stored_block, i, pool);
+                is_inserted |= Inserter<Map, KeyGetter>::insertOne(join, map, key_getter, stored_block.block.get(), ind, pool);
             else
-                Inserter<Map, KeyGetter>::insertAll(join, map, key_getter, stored_block, i, pool);
+                Inserter<Map, KeyGetter>::insertAll(join, map, key_getter, stored_block.block.get(), ind, pool);
         }
         return map.getBufferSizeInCells();
     }
@@ -704,8 +701,7 @@ namespace
         size_t rows,
         const ColumnRawPtrs & key_columns,
         const Sizes & key_sizes,
-        Block * stored_block,
-        const IColumn::Selector * selector,
+        const HashJoin::ScatteredBlock & stored_block,
         ConstNullMapPtr null_map,
         UInt8ColumnDataPtr join_mask,
         Arena & pool,
@@ -725,7 +721,7 @@ namespace
         return insertFromBlockImplTypeCase< \
             STRICTNESS, \
             typename KeyGetterForType<HashJoin::Type::TYPE, std::remove_reference_t<decltype(*maps.TYPE)>>::Type>( \
-            join, *maps.TYPE, rows, key_columns, key_sizes, stored_block, selector, null_map, join_mask, pool, is_inserted); \
+            join, *maps.TYPE, rows, key_columns, key_sizes, stored_block, null_map, join_mask, pool, is_inserted); \
         break;
 
                 APPLY_FOR_JOIN_VARIANTS(M)
@@ -800,9 +796,10 @@ Block HashJoin::prepareRightBlock(const Block & block) const
     return prepareRightBlock(block, savedBlockSample());
 }
 
-bool HashJoin::addBlockToJoin(const Block &, bool)
+bool HashJoin::addBlockToJoin(const Block & source_block, bool check_limits)
 {
-    return true;
+    auto scattered_block = ScatteredBlock{source_block};
+    return addBlockToJoin(scattered_block, check_limits);
 }
 
 bool HashJoin::addBlockToJoin(ScatteredBlock & source_block, bool check_limits)
@@ -970,10 +967,6 @@ bool HashJoin::addBlockToJoin(ScatteredBlock & source_block, bool check_limits)
                 }
             }
 
-            const IColumn::Selector * selector = nullptr;
-            if constexpr (std::is_same_v<decltype(source_block), ScatteredBlock>)
-                selector = &source_block.selector;
-
             bool is_inserted = false;
             if (kind != JoinKind::Cross)
             {
@@ -990,8 +983,7 @@ bool HashJoin::addBlockToJoin(ScatteredBlock & source_block, bool check_limits)
                             rows,
                             key_columns,
                             key_sizes[onexpr_idx],
-                            stored_block,
-                            selector,
+                            source_block,
                             null_map,
                             /// If mask is false constant, rows are added to hashmap anyway. It's not a happy-flow, so this case is not optimized
                             join_mask_col.getData(),

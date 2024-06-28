@@ -124,7 +124,7 @@ ConcurrentHashJoin::~ConcurrentHashJoin()
     }
 }
 
-bool ConcurrentHashJoin::addBlockToJoin([[maybe_unused]] const Block & right_block, bool check_limits)
+bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block, bool check_limits)
 {
     auto dispatched_blocks = dispatchBlockNew(table_join->getOnlyClause().key_names_right, right_block);
 
@@ -168,9 +168,9 @@ bool ConcurrentHashJoin::addBlockToJoin([[maybe_unused]] const Block & right_blo
     return true;
 }
 
-void ConcurrentHashJoin::joinBlock([[maybe_unused]] Block & block, std::shared_ptr<ExtraBlock> & /*not_processed*/)
+void ConcurrentHashJoin::joinBlock(Block & block, std::shared_ptr<ExtraBlock> & /*not_processed*/)
 {
-    auto dispatched_blocks = dispatchBlock(table_join->getOnlyClause().key_names_left, block);
+    Blocks dispatched_blocks = dispatchBlock(table_join->getOnlyClause().key_names_left, block);
     block = {};
     for (size_t i = 0; i < dispatched_blocks.size(); ++i)
     {
@@ -182,7 +182,6 @@ void ConcurrentHashJoin::joinBlock([[maybe_unused]] Block & block, std::shared_p
             throw Exception(ErrorCodes::LOGICAL_ERROR, "not_processed should be empty");
     }
 
-    // TODO: implement
     block = concatenateBlocks(dispatched_blocks);
 }
 
