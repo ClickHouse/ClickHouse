@@ -356,7 +356,23 @@ bool LocalConnection::poll(size_t)
 
         try
         {
-            while (pollImpl());
+            while (pollImpl())
+            {
+                LOG_DEBUG(&Poco::Logger::get("LocalConnection"), "Executor timeout encountered");
+
+                if (send_progress && (state->after_send_progress.elapsedMicroseconds() >= query_context->getSettingsRef().interactive_delay))
+                {
+                    state->after_send_progress.restart();
+                    next_packet_type = Protocol::Server::Progress;
+                    return true;
+                }
+
+                if (send_profile_events && (state->after_send_profile_events.elapsedMicroseconds() >= query_context->getSettingsRef().interactive_delay))
+                {
+                    sendProfileEvents();
+                    return true;
+                }
+            }
         }
         catch (const Exception & e)
         {
