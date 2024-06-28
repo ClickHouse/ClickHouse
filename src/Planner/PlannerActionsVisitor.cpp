@@ -535,7 +535,7 @@ public:
     }
 
 private:
-    std::unordered_map<std::string_view, const ActionsDAG::Node *> node_name_to_node;
+    std::unordered_map<String, const ActionsDAG::Node *> node_name_to_node;
     ActionsDAG & actions_dag;
     QueryTreeNodePtr scope_node;
 };
@@ -741,7 +741,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     for (size_t i = 1; i < actions_stack_size; ++i)
     {
         auto & actions_stack_node = actions_stack[i];
-        actions_stack_node.addInputConstantColumnIfNecessary(constant_node_name, column);
+        actions_stack_node.addInputConstantColumnIfNecessary(final_name, column);
     }
 
     return {final_name, Levels(0)};
@@ -879,7 +879,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::ma
     for (size_t i = 1; i < actions_stack_size; ++i)
     {
         auto & actions_stack_node = actions_stack[i];
-        actions_stack_node.addInputConstantColumnIfNecessary(column.name, column);
+        actions_stack_node.addInputConstantColumnIfNecessary(final_name, column);
     }
 
     return {final_name, Levels(0)};
