@@ -292,6 +292,10 @@ StorageMySQL::Configuration StorageMySQL::processNamedCollectionResult(
     configuration.replace_query = named_collection.getOrDefault<UInt64>("replace_query", false);
     configuration.on_duplicate_clause = named_collection.getOrDefault<String>("on_duplicate_clause", "");
 
+    configuration.ssl_ca = named_collection.getOrDefault<String>("ssl_ca", "");
+    configuration.ssl_cert = named_collection.getOrDefault<String>("ssl_cert", "");
+    configuration.ssl_key = named_collection.getOrDefault<String>("ssl_key", "");
+
     for (const auto & setting : mysql_settings)
     {
         const auto & setting_name = setting.getName();
