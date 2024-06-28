@@ -903,7 +903,8 @@ bool HashJoin::addBlockToJoin(ScatteredBlock & source_block, bool check_limits)
             have_compressed = true;
         }
 
-        // data->blocks_allocated_size += block_to_save.allocatedBytes();
+        /// TODO: fix me
+        data->blocks_allocated_size += block_to_save.allocatedBytes();
         data->blocks.emplace_back(std::move(block_to_save));
         Block * stored_block = &data->blocks.back();
 
