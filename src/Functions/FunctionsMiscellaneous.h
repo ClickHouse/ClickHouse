@@ -6,6 +6,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <Columns/ColumnFunction.h>
+#include <Columns/ColumnConst.h>
 #include <DataTypes/DataTypesNumber.h>
 
 
@@ -122,11 +123,18 @@ public:
     String getName() const override { return "FunctionCapture"; }
 
     bool useDefaultImplementationForNulls() const override { return false; }
+
     /// It's possible if expression_actions contains function that don't use
     /// default implementation for Nothing and one of captured columns can be Nothing
     /// Example: SELECT arrayMap(x -> [x, arrayElement(y, 0)], []), [] as y
     bool useDefaultImplementationForNothing() const override { return false; }
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+
+    /// If all the captured arguments are constant, let's also return ColumnConst (with ColumnFunction inside it).
+    /// Consequently, it allows to treat higher order functions with constant arrays and constant captured columns
+    /// as constant expressions.
+    /// Consequently, it allows its usage in contexts requiring constants, such as the right hand side of IN.
+    bool useDefaultImplementationForConstants() const override { return true; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
@@ -148,7 +156,11 @@ public:
         auto function = std::make_unique<FunctionExpression>(expression_actions, types, names,
                                                              capture->return_type, capture->return_name);
 
-        return ColumnFunction::create(input_rows_count, std::move(function), arguments);
+        /// If there are no captured columns, the result is constant.
+        if (arguments.empty())
+            return ColumnConst::create(ColumnFunction::create(1, std::move(function), arguments), input_rows_count);
+        else
+            return ColumnFunction::create(input_rows_count, std::move(function), arguments);
     }
 
 private:
