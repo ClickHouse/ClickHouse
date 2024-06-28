@@ -121,7 +121,7 @@ private:
                 prev_tp = curr_tp;
                 prev_score = sorted_labels[i].score;
             }
-            
+
             if (sorted_labels[i].label)
                 curr_tp += 1; /// The curve moves one step up.
             else
