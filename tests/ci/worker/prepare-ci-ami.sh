@@ -213,9 +213,9 @@ chmod +x /usr/local/share/scripts/init-network.sh
 touch /var/tmp/clickhouse-ci-ami.success
 # END OF THE SCRIPT
 
-# TOE description
+# TOE (Task Orchestrator and Executor) description
 # name: CIInfrastructurePrepare
-# description: instals the infrastructure for ClickHouse CI runners
+# description: installs the infrastructure for ClickHouse CI runners
 # schemaVersion: 1.0
 #
 # phases:
