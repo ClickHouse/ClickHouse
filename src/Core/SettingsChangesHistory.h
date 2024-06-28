@@ -13,7 +13,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
 }
 
 class ClickHouseVersion
@@ -85,7 +85,7 @@ namespace SettingsChangesHistory
 /// controls new feature and it's 'true' by default, use 'false' as previous_value).
 /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
 /// Note: please check if the key already exists to prevent duplicate entries.
-static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory::SettingsChanges>> settings_changes_history_init =
+static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory::SettingsChanges>> settings_changes_history_initializer =
 {
     {"24.6", {{"materialize_skip_indexes_on_insert", true, true, "Added new setting to allow to disable materialization of skip indexes on insert"},
               {"materialize_statistics_on_insert", true, true, "Added new setting to allow to disable materialization of statistics on insert"},
@@ -323,22 +323,27 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
     {"18.12.17", {{"enable_optimize_predicate_expression", 0, 1, "Optimize predicates to subqueries by default"}}},
 };
 
-static std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges>& getSettingsChangesHistory()
+static
+const std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges> & getSettingsChangesHistory()
 {
     static std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges> settings_changes_history;
-    static bool initialized = false;
 
-    if (!initialized)
+    static std::once_flag initialized_flag;
+    std::call_once(initialized_flag, []()
     {
-        for (auto it = settings_changes_history_init.begin(); it != settings_changes_history_init.end(); ++it)
+        for (const auto & setting_change : settings_changes_history_initializer)
         {
-            if (settings_changes_history.contains(it->first))
-                throw Exception{ErrorCodes::BAD_ARGUMENTS, "ClickHouse version {} already exists, please check for duplicates and merge them", it->first.toString()};
+            /// Disallow duplicate keys in the settings changes history. Example:
+            ///     {"21.2", {{"some_setting_1", false, true, "[...]"}}},
+            ///     [...]
+            ///     {"21.2", {{"some_setting_2", false, true, "[...]"}}},
+            /// As std::set has unique keys, one of the entries would be overwritten.
+            if (settings_changes_history.contains(setting_change.first))
+                throw Exception{ErrorCodes::LOGICAL_ERROR, "Detected duplicates version '{}'", setting_change.first.toString()};
 
-            settings_changes_history[it->first] = it->second;
+            settings_changes_history[setting_change.first] = setting_change.second;
         }
-        initialized = true;
-    }
+    });
 
     return settings_changes_history;
 }
