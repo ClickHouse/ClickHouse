@@ -118,6 +118,7 @@ StorageObjectStorage::QuerySettings StorageAzureConfiguration::getQuerySettings(
         .skip_empty_files = settings.azure_skip_empty_files,
         .list_object_keys_size = settings.azure_list_object_keys_size,
         .throw_on_zero_files_match = settings.azure_throw_on_zero_files_match,
+        .throw_on_zero_files_match_setting_name = "azure_throw_on_zero_files_match",
         .ignore_non_existent_file = settings.azure_ignore_file_doesnt_exist,
     };
 }
