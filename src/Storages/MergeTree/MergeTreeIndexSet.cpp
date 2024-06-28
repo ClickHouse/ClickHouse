@@ -361,7 +361,7 @@ bool MergeTreeIndexConditionSet::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx
         if (!column->isNullAt(i) && (column->get64(i) & 1))
             return true;
 
-    return condition.checkInHyperrectangle(granule.set_hyperrectangle, index_data_types).can_be_true;
+    return false;
 }
 
 
