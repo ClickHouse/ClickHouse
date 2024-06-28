@@ -1065,6 +1065,8 @@ def main() -> int:
             )
 
             # rerun helper check
+            # FIXME: Find a way to identify if job restarted manually (by developer) or by automatic workflow restart (died spot-instance)
+            #  disable rerun check for the former
             if check_name not in (
                 CI.JobNames.BUILD_CHECK,
             ):  # we might want to rerun build report job
@@ -1076,8 +1078,7 @@ def main() -> int:
                     print("::group::Commit Status")
                     print(status)
                     print("::endgroup::")
-                    # FIXME: try rerun, even if status is present. To enable manual restart via GH interface
-                    # previous_status = status.state
+                    previous_status = status.state
 
             # ci cache check
             if not previous_status and not ci_settings.no_ci_cache:
