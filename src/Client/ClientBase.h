@@ -129,6 +129,7 @@ protected:
                                 const std::vector<Arguments> & hosts_and_ports_arguments) = 0;
     virtual void processConfig() = 0;
 
+    /// Returns true if query processing was successful.
     bool processQueryText(const String & text);
 
     virtual void readArguments(
@@ -329,6 +330,7 @@ protected:
     bool allow_merge_tree_settings = false;
 
     bool cancelled = false;
+    bool cancelled_printed = false;
 
     /// Does log_comment has specified by user?
     bool has_log_comment = false;

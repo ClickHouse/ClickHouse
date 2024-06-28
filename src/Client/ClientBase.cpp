@@ -44,13 +44,12 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/Kusto/ParserKQLStatement.h>
 #include <Parsers/PRQL/ParserPRQLQuery.h>
+#include <Parsers/Kusto/ParserKQLStatement.h>
 #include <Parsers/Kusto/parseKQLQuery.h>
 
 #include <Processors/Formats/Impl/NullFormat.h>
 #include <Processors/Formats/IInputFormat.h>
-#include <Processors/Formats/IOutputFormat.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -110,6 +109,7 @@ namespace ErrorCodes
     extern const int USER_SESSION_LIMIT_EXCEEDED;
     extern const int NOT_IMPLEMENTED;
     extern const int CANNOT_READ_FROM_FILE_DESCRIPTOR;
+    extern const int USER_EXPIRED;
 }
 
 }
@@ -1188,7 +1188,10 @@ void ClientBase::receiveResult(ASTPtr parsed_query, Int32 signals_before_stop, b
         std::rethrow_exception(local_format_error);
 
     if (cancelled && is_interactive)
+    {
         std::cout << "Query was cancelled." << std::endl;
+        cancelled_printed = true;
+    }
 }
 
 
@@ -1302,8 +1305,13 @@ void ClientBase::onEndOfStream()
 
     resetOutput();
 
-    if (is_interactive && !written_first_block)
-        std::cout << "Ok." << std::endl;
+    if (is_interactive)
+    {
+        if (cancelled && !cancelled_printed)
+            std::cout << "Query was cancelled." << std::endl;
+        else if (!written_first_block)
+            std::cout << "Ok." << std::endl;
+    }
 }
 
 
@@ -1866,6 +1874,7 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
     resetOutput();
     have_error = false;
     cancelled = false;
+    cancelled_printed = false;
     client_exception.reset();
     server_exception.reset();
 
@@ -2262,7 +2271,7 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                 catch (...)
                 {
                     // Surprisingly, this is a client error. A server error would
-                    // have been reported without throwing (see onReceiveSeverException()).
+                    // have been reported without throwing (see onReceiveExceptionFromServer()).
                     client_exception = std::make_unique<Exception>(getCurrentExceptionMessageAndPattern(print_stack_trace), getCurrentExceptionCode());
                     have_error = true;
                 }
@@ -2635,6 +2644,9 @@ void ClientBase::runInteractive()
         }
         catch (const Exception & e)
         {
+            if (e.code() == ErrorCodes::USER_EXPIRED)
+                break;
+
             /// We don't need to handle the test hints in the interactive mode.
             std::cerr << "Exception on client:" << std::endl << getExceptionMessage(e, print_stack_trace, true) << std::endl << std::endl;
             client_exception.reset(e.clone());

@@ -48,6 +48,7 @@ AutoML
 Autocompletion
 AvroConfluent
 BIGINT
+bigrams
 BIGSERIAL
 BORO
 BSON
@@ -222,6 +223,7 @@ DatabaseOrdinaryThreadsActive
 DateTime
 DateTimes
 DbCL
+deallocated
 Decrypted
 Deduplicate
 Deduplication
@@ -293,6 +295,7 @@ FilesystemMainPathUsedBytes
 FilesystemMainPathUsedINodes
 FixedString
 FlameGraph
+flameGraph
 Flink
 ForEach
 FreeBSD
@@ -446,6 +449,7 @@ KafkaLibrdkafkaThreads
 KafkaProducers
 KafkaWrites
 Kahan
+Kaser
 KeeperAliveConnections
 KeeperMap
 KeeperOutstandingRequets
@@ -466,11 +470,13 @@ LOCALTIME
 LOCALTIMESTAMP
 LONGLONG
 LOONGARCH
+Lemir
 Levenshtein
 Liao
 LibFuzzer
 LightHouse
 LineAsString
+LineString
 Linf
 LinfDistance
 LinfNorm
@@ -958,6 +964,7 @@ ToGeoBoundary
 ToIPv
 ToParent
 ToSnowflake
+ToSnowflakeID
 ToString
 ToUnicode
 Toolset
@@ -989,6 +996,7 @@ URLHash
 URLHierarchy
 URLPathHierarchy
 USearch
+UTCTimestamp
 UUIDNumToString
 UUIDStringToNum
 UUIDToNum
@@ -1001,10 +1009,13 @@ UncompressedCacheBytes
 UncompressedCacheCells
 UnidirectionalEdgeIsValid
 UniqThetaSketch
+unigrams
 Updatable
 Uppercased
 Uptime
 Uptrace
+URLDecode
+URLEncode
 UserID
 Util
 VARCHAR
@@ -1366,6 +1377,10 @@ const
 contrib
 convertCharset
 coroutines
+corrMatrix
+corrStable
+corrmatrix
+corrstable
 cosineDistance
 countDigits
 countEqual
@@ -1375,10 +1390,19 @@ countSubstrings
 countSubstringsCaseInsensitive
 countSubstringsCaseInsensitiveUTF
 covarPop
+covarPopMatrix
+covarPopStable
 covarSamp
+covarSampMatrix
+covarSampStable
+covarStable
 covariates
 covarpop
+covarpopmatrix
+covarpopstable
 covarsamp
+covarsampmatrix
+covarsampstable
 covid
 cpp
 cppkafka
@@ -1437,6 +1461,7 @@ datatypes
 dateName
 dateTime
 dateTimeToSnowflake
+dateTimeToSnowflakeID
 datetime
 datetimes
 dayofyear
@@ -1484,9 +1509,11 @@ deserializing
 destructor
 destructors
 detectCharset
+detectTonality
 detectLanguage
 detectLanguageMixed
 detectLanguageUnknown
+detectProgrammingLanguage
 determinator
 deterministically
 dictGet
@@ -1503,6 +1530,7 @@ disableProtocols
 disjunction
 disjunctions
 displaySecretsInShowAndSelect
+displayName
 distro
 divideDecimal
 dmesg
@@ -1520,6 +1548,7 @@ dumpColumnStructure
 durations
 ecto
 editDistance
+editDistanceUTF
 embeddings
 emptyArray
 emptyArrayDate
@@ -1552,6 +1581,10 @@ exFAT
 expiryMsec
 exponentialMovingAverage
 exponentialmovingaverage
+exponentialTimeDecayedAvg
+exponentialTimeDecayedCount
+exponentialTimeDecayedMax
+exponentialTimeDecayedSum
 expr
 exprN
 extendedVerification
@@ -1609,6 +1642,7 @@ formated
 formatschema
 formatter
 formatters
+frac
 freezed
 fromDaysSinceYearZero
 fromModifiedJulianDay
@@ -1735,8 +1769,8 @@ hdfs
 hdfsCluster
 heredoc
 heredocs
-hilbertEncode
 hilbertDecode
+hilbertEncode
 hiveHash
 holistics
 homebrew
@@ -1769,6 +1803,7 @@ incrementing
 indexHint
 indexOf
 infi
+infty
 inflight
 initcap
 initcapUTF
@@ -1876,6 +1911,7 @@ lessOrEquals
 lessorequals
 levenshtein
 levenshteinDistance
+levenshteinDistanceUTF
 lexicographically
 lgamma
 libFuzzer
@@ -1917,6 +1953,8 @@ london
 lookups
 loongarch
 lowcardinality
+lowCardinalityIndices
+lowCardinalityKeys
 lowerUTF
 lowercased
 lttb
@@ -1983,6 +2021,8 @@ minmax
 mins
 misconfiguration
 mispredictions
+mlock
+mlockall
 mmap
 mmapped
 modularization
@@ -2135,6 +2175,9 @@ parseDateTimeInJodaSyntaxOrNull
 parseDateTimeInJodaSyntaxOrZero
 parseDateTimeOrNull
 parseDateTimeOrZero
+parseReadableSize
+parseReadableSizeOrNull
+parseReadableSizeOrZero
 parseTimeDelta
 parseable
 parsers
@@ -2219,6 +2262,7 @@ proleptic
 prometheus
 proportionsZTest
 proto
+protocol
 protobuf
 protobufsingle
 proxied
@@ -2288,6 +2332,7 @@ randomStringUTF
 rankCorr
 rapidjson
 rawblob
+readWKTLineString
 readWKTMultiPolygon
 readWKTPoint
 readWKTPolygon
@@ -2446,6 +2491,7 @@ skewpop
 skewsamp
 skippingerrors
 sleepEachRow
+snowflakeIDToDateTime
 snowflakeToDateTime
 socketcache
 soundex
@@ -2666,16 +2712,16 @@ toStartOfFiveMinutes
 toStartOfHour
 toStartOfISOYear
 toStartOfInterval
+toStartOfMicrosecond
+toStartOfMillisecond
 toStartOfMinute
 toStartOfMonth
+toStartOfNanosecond
 toStartOfQuarter
 toStartOfSecond
 toStartOfTenMinutes
 toStartOfWeek
 toStartOfYear
-toStartOfMicrosecond
-toStartOfMillisecond
-toStartOfNanosecond
 toString
 toStringCutToZero
 toTime
@@ -2805,7 +2851,6 @@ urls
 usearch
 userspace
 userver
-UTCTimestamp
 utils
 uuid
 uuidv
@@ -2818,7 +2863,9 @@ variantElement
 variantType
 varint
 varpop
+varpopstable
 varsamp
+varsampstable
 vectorized
 vectorscan
 vendoring
