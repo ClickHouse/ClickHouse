@@ -168,14 +168,20 @@ struct DeltaLakeMetadata::Impl
      *             \"nullCount\":{\"col-6c990940-59bb-4709-8f2e-17083a82c01a\":0,\"col-763cd7e2-7627-4d8e-9fb7-9e85d0c8845b\":0}}"}}
      * "
      */
+
+    /// Read metadata file and fill `file_schema`, `file_parition_columns`, `result`.
+    /// `result` is a list of data files.
+    /// `file_schema` is a common schema for all files.
+    /// Schema evolution is not supported, so we check that all files have the same schema.
+    /// `file_partiion_columns` is information about parition columns of data files.
     void processMetadataFile(
-        const String & key,
+        const String & metadata_file_path,
         NamesAndTypesList & file_schema,
         DataLakePartitionColumns & file_partition_columns,
         std::set<String> & result)
     {
         auto read_settings = context->getReadSettings();
-        auto buf = object_storage->readObject(StoredObject(key), read_settings);
+        auto buf = object_storage->readObject(StoredObject(metadata_file_path), read_settings);
 
         char c;
         while (!buf->eof())
@@ -197,9 +203,9 @@ struct DeltaLakeMetadata::Impl
             Poco::Dynamic::Var json = parser.parse(json_str);
             Poco::JSON::Object::Ptr object = json.extract<Poco::JSON::Object::Ptr>();
 
-            std::ostringstream oss;     // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-            object->stringify(oss);
-            LOG_TEST(log, "Metadata: {}", oss.str());
+            // std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+            // object->stringify(oss);
+            // LOG_TEST(log, "Metadata: {}", oss.str());
 
             if (object->has("add"))
             {
@@ -211,21 +217,24 @@ struct DeltaLakeMetadata::Impl
                 auto it = file_partition_columns.find(filename);
                 if (it == file_partition_columns.end())
                 {
-                    auto partition_values = add_object->get("partitionValues").extract<Poco::JSON::Object::Ptr>();
-                    if (partition_values->size())
+                    if (add_object->has("partitionValues"))
                     {
-                        auto & current_partition_columns = file_partition_columns[filename];
-                        for (const auto & partition_name : partition_values->getNames())
+                        auto partition_values = add_object->get("partitionValues").extract<Poco::JSON::Object::Ptr>();
+                        if (partition_values->size())
                         {
-                            const auto value = partition_values->getValue<String>(partition_name);
-                            auto name_and_type = file_schema.tryGetByName(partition_name);
-                            if (!name_and_type)
-                                throw Exception(ErrorCodes::LOGICAL_ERROR, "No such column in schema: {}", partition_name);
+                            auto & current_partition_columns = file_partition_columns[filename];
+                            for (const auto & partition_name : partition_values->getNames())
+                            {
+                                const auto value = partition_values->getValue<String>(partition_name);
+                                auto name_and_type = file_schema.tryGetByName(partition_name);
+                                if (!name_and_type)
+                                    throw Exception(ErrorCodes::LOGICAL_ERROR, "No such column in schema: {}", partition_name);
 
-                            auto field = getFieldValue(value, name_and_type->type);
-                            current_partition_columns.emplace_back(*name_and_type, field);
+                                auto field = getFieldValue(value, name_and_type->type);
+                                current_partition_columns.emplace_back(*name_and_type, field);
 
-                            LOG_TEST(log, "Partition {} value is {} (for {})", partition_name, value, filename);
+                                LOG_TEST(log, "Partition {} value is {} (for {})", partition_name, value, filename);
+                            }
                         }
                     }
                 }

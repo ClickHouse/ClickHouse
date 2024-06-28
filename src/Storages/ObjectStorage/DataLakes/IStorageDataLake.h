@@ -99,13 +99,15 @@ public:
         Storage::updateConfiguration(local_context);
 
         auto new_metadata = DataLakeMetadata::create(Storage::object_storage, base_configuration, local_context);
-        auto partition_columns = new_metadata->getPartitionColumns();
-
-        if (partition_columns != Storage::partition_columns)
-            Storage::partition_columns = partition_columns;
-
         if (current_metadata && *current_metadata == *new_metadata)
             return;
+
+        if (!current_metadata)
+        {
+            auto partition_columns = new_metadata->getPartitionColumns();
+            if (partition_columns != Storage::partition_columns)
+                Storage::partition_columns = partition_columns;
+        }
 
         current_metadata = std::move(new_metadata);
         auto updated_configuration = base_configuration->clone();
@@ -126,6 +128,13 @@ public:
         if (base_configuration->format == "auto")
         {
             base_configuration->format = Storage::configuration->format;
+        }
+
+        if (current_metadata)
+        {
+            auto partition_columns = current_metadata->getPartitionColumns();
+            if (partition_columns != Storage::partition_columns)
+                Storage::partition_columns = partition_columns;
         }
     }
 

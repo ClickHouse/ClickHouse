@@ -229,7 +229,6 @@ Chunk StorageObjectStorageSource::generate()
                 }
             }
 
-
             return chunk;
         }
 
