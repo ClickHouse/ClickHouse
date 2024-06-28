@@ -46,11 +46,6 @@ String IColumn::dumpStructure() const
     return res.str();
 }
 
-void IColumn::insertFrom(const IColumn & src, size_t n)
-{
-    insert(src[n]);
-}
-
 ColumnPtr IColumn::createWithOffsets(const Offsets & offsets, const ColumnConst & column_with_default_value, size_t total_rows, size_t shift) const
 {
     if (offsets.size() + shift != size())

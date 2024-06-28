@@ -1,11 +1,12 @@
 #pragma once
 
-#include <Common/COW.h>
-#include <Common/PODArray_fwd.h>
-#include <Common/Exception.h>
-#include <Common/typeid_cast.h>
-#include <base/StringRef.h>
+#include <Core/Field.h>
 #include <Core/TypeId.h>
+#include <base/StringRef.h>
+#include <Common/COW.h>
+#include <Common/Exception.h>
+#include <Common/PODArray_fwd.h>
+#include <Common/typeid_cast.h>
 
 #include "config.h"
 
@@ -180,7 +181,7 @@ public:
 
     /// Appends n-th element from other column with the same type.
     /// Is used in merge-sort and merges. It could be implemented in inherited classes more optimally than default implementation.
-    virtual void insertFrom(const IColumn & src, size_t n);
+    virtual void insertFrom(const IColumn & src, size_t n) { insert(src[n]); }
 
     /// Appends range of elements from other column with the same type.
     /// Could be used to concatenate columns.
