@@ -23,7 +23,6 @@ protected:
 private:
     Squashing squashing;
     Chunk squashed_chunk;
-    Chunk finish_chunk;
 };
 }
 

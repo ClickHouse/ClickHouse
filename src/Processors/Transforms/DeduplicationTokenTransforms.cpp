@@ -155,7 +155,7 @@ void CheckTokenTransform::transform(Chunk & chunk)
         return;
     }
 
-    LOG_DEBUG(log, "{}, token: {}", debug, token_info->debugToken());
+    LOG_DEBUG(log, "debug: {}, token: {}", debug, token_info->debugToken());
 }
 #endif
 

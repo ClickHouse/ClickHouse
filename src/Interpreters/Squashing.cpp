@@ -1,7 +1,7 @@
 #include <vector>
 #include <Interpreters/Squashing.h>
 #include <Common/CurrentThread.h>
-#include "base/defines.h"
+#include <base/defines.h>
 
 
 namespace DB

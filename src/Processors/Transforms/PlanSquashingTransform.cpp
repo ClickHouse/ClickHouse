@@ -1,6 +1,4 @@
 #include <Processors/Transforms/PlanSquashingTransform.h>
-#include "Common/Logger.h"
-#include "Common/logger_useful.h"
 #include <Common/Exception.h>
 
 namespace DB
@@ -20,8 +18,6 @@ PlanSquashingTransform::PlanSquashingTransform(
 
 void PlanSquashingTransform::consume(Chunk chunk)
 {
-    LOG_DEBUG(getLogger("PlanSquashingTransform"), "consume {}", chunk.getNumRows());
-
     squashed_chunk = squashing.add(std::move(chunk));
 }
 
