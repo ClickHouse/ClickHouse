@@ -30,8 +30,8 @@ namespace
     {
         friend void tryVisitNestedSelect(const String & query, DDLDependencyVisitorData & data);
     public:
-        DDLDependencyVisitorData(const ContextPtr & context_, const QualifiedTableName & table_name_, const ASTPtr & ast_)
-            : create_query(ast_), table_name(table_name_), current_database(context_->getCurrentDatabase()), context(context_)
+        DDLDependencyVisitorData(const ContextPtr & global_context_, const QualifiedTableName & table_name_, const ASTPtr & ast_, const String & current_database_)
+            : create_query(ast_), table_name(table_name_), default_database(global_context_->getCurrentDatabase()), current_database(current_database_), global_context(global_context_)
         {
         }
 
@@ -71,8 +71,9 @@ namespace
         ASTPtr create_query;
         std::unordered_set<const IAST *> skip_asts;
         QualifiedTableName table_name;
+        String default_database;
         String current_database;
-        ContextPtr context;
+        ContextPtr global_context;
         TableNamesSet dependencies;
 
         /// CREATE TABLE or CREATE DICTIONARY or CREATE VIEW or CREATE TEMPORARY TABLE or CREATE DATABASE query.
@@ -95,6 +96,11 @@ namespace
                     as_table.database = current_database;
                 dependencies.emplace(as_table);
             }
+
+            /// Visit nested select query only for views, for other cases it's not
+            /// an actual dependency as it will be executed only once to fill the table.
+            if (create.select && !create.isView())
+                skip_asts.insert(create.select);
         }
 
         /// The definition of a dictionary: SOURCE(CLICKHOUSE(...)) LAYOUT(...) LIFETIME(...)
@@ -103,8 +109,8 @@ namespace
             if (!dictionary.source || dictionary.source->name != "clickhouse" || !dictionary.source->elements)
                 return;
 
-            auto config = getDictionaryConfigurationFromAST(create_query->as<ASTCreateQuery &>(), context);
-            auto info = getInfoIfClickHouseDictionarySource(config, context);
+            auto config = getDictionaryConfigurationFromAST(create_query->as<ASTCreateQuery &>(), global_context);
+            auto info = getInfoIfClickHouseDictionarySource(config, global_context);
 
             /// We consider only dependencies on local tables.
             if (!info || !info->is_local)
@@ -112,14 +118,21 @@ namespace
 
             if (!info->table_name.table.empty())
             {
+                /// If database is not specified in dictionary source, use database of the dictionary itself, not the current/default database.
                 if (info->table_name.database.empty())
-                    info->table_name.database = current_database;
+                    info->table_name.database = table_name.database;
                 dependencies.emplace(std::move(info->table_name));
             }
             else
             {
-                /// We don't have a table name, we have a select query instead
+                /// We don't have a table name, we have a select query instead.
+                /// All tables from select query in dictionary definition won't
+                /// use current database, as this query is executed with global context.
+                /// Use default database from global context while visiting select query.
+                String current_database_ = current_database;
+                current_database = default_database;
                 tryVisitNestedSelect(info->query, *this);
+                current_database = current_database_;
             }
         }
 
@@ -176,7 +189,7 @@ namespace
 
             if (auto cluster_name = tryGetClusterNameFromArgument(table_engine, 0))
             {
-                auto cluster = context->tryGetCluster(*cluster_name);
+                auto cluster = global_context->tryGetCluster(*cluster_name);
                 if (cluster && cluster->getLocalShardCount())
                     has_local_replicas = true;
             }
@@ -231,7 +244,7 @@ namespace
             {
                 if (auto cluster_name = tryGetClusterNameFromArgument(function, 0))
                 {
-                    if (auto cluster = context->tryGetCluster(*cluster_name))
+                    if (auto cluster = global_context->tryGetCluster(*cluster_name))
                     {
                         if (cluster->getLocalShardCount())
                             has_local_replicas = true;
@@ -303,7 +316,10 @@ namespace
                 try
                 {
                     /// We're just searching for dependencies here, it's not safe to execute subqueries now.
-                    auto evaluated = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context);
+                    /// Use copy of the global_context and set current database, because expressions can contain currentDatabase() function.
+                    ContextMutablePtr global_context_copy = Context::createCopy(global_context);
+                    global_context_copy->setCurrentDatabase(current_database);
+                    auto evaluated = evaluateConstantExpressionOrIdentifierAsLiteral(arg, global_context_copy);
                     const auto * literal = evaluated->as<ASTLiteral>();
                     if (!literal || (literal->value.getType() != Field::Types::String))
                         return {};
@@ -444,7 +460,7 @@ namespace
             ParserSelectWithUnionQuery parser;
             String description = fmt::format("Query for ClickHouse dictionary {}", data.table_name);
             String fixed_query = removeWhereConditionPlaceholder(query);
-            const Settings & settings = data.context->getSettingsRef();
+            const Settings & settings = data.global_context->getSettingsRef();
             ASTPtr select = parseQuery(parser, fixed_query, description,
                 settings.max_query_size, settings.max_parser_depth, settings.max_parser_backtracks);
 
@@ -459,11 +475,18 @@ namespace
 }
 
 
-TableNamesSet getDependenciesFromCreateQuery(const ContextPtr & context, const QualifiedTableName & table_name, const ASTPtr & ast)
+TableNamesSet getDependenciesFromCreateQuery(const ContextPtr & global_global_context, const QualifiedTableName & table_name, const ASTPtr & ast, const String & current_database)
 {
-    DDLDependencyVisitor::Data data{context, table_name, ast};
+    DDLDependencyVisitor::Data data{global_global_context, table_name, ast, current_database};
     DDLDependencyVisitor::Visitor visitor{data};
     visitor.visit(ast);
+    return std::move(data).getDependencies();
+}
+
+TableNamesSet getDependenciesFromDictionaryNestedSelectQuery(const ContextPtr & global_context, const QualifiedTableName & table_name, const ASTPtr & ast, const String & select_query, const String & current_database)
+{
+    DDLDependencyVisitor::Data data{global_context, table_name, ast, current_database};
+    tryVisitNestedSelect(select_query, data);
     return std::move(data).getDependencies();
 }
 
