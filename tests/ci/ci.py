@@ -6,6 +6,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -1196,6 +1197,12 @@ def main() -> int:
                     pr_info,
                     dump_to_file=True,
                 )
+
+                # FIXME: REMOVE, DO NOT MERGE
+                for test_result in job_report.test_results:
+                    if test_result.time and test_result.time > 599:
+                        print("SLEEP 2 hour")
+                        time.sleep(7200)
 
             print(f"Job report url: [{check_url}]")
             prepared_events = prepare_tests_results_for_clickhouse(

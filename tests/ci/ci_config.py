@@ -522,7 +522,7 @@ class CI:
                 exclude_files=[".md"],
                 docker=["clickhouse/fasttest"],
             ),
-            timeout=2400,
+            timeout=7200,
             runner_type=Runners.BUILDER,
         ),
         JobNames.STYLE_CHECK: JobConfig(
