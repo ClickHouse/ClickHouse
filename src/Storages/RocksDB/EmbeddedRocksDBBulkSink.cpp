@@ -1,11 +1,8 @@
-#include <atomic>
 #include <cstddef>
 #include <cstdlib>
 #include <filesystem>
 #include <memory>
 #include <optional>
-#include <random>
-#include <stdatomic.h>
 #include <IO/WriteBufferFromString.h>
 #include <Storages/RocksDB/EmbeddedRocksDBBulkSink.h>
 #include <Storages/RocksDB/StorageEmbeddedRocksDB.h>
@@ -18,6 +15,7 @@
 #include <rocksdb/options.h>
 #include <rocksdb/slice.h>
 #include <rocksdb/status.h>
+#include <rocksdb/system_clock.h>
 #include <rocksdb/utilities/db_ttl.h>
 #include <Common/SipHash.h>
 #include <Common/getRandomASCIIString.h>
@@ -155,7 +153,8 @@ std::vector<Chunk> EmbeddedRocksDBBulkSink::squash(Chunk chunk)
     return {};
 }
 
-std::pair<ColumnString::Ptr, ColumnString::Ptr> EmbeddedRocksDBBulkSink::serializeChunks(std::vector<Chunk> && input_chunks) const
+template<bool with_timestamp>
+std::pair<ColumnString::Ptr, ColumnString::Ptr> EmbeddedRocksDBBulkSink::serializeChunks(const std::vector<Chunk> & input_chunks) const
 {
     auto serialized_key_column = ColumnString::create();
     auto serialized_value_column = ColumnString::create();
@@ -168,14 +167,48 @@ std::pair<ColumnString::Ptr, ColumnString::Ptr> EmbeddedRocksDBBulkSink::seriali
         WriteBufferFromVector<ColumnString::Chars> writer_key(serialized_key_data);
         WriteBufferFromVector<ColumnString::Chars> writer_value(serialized_value_data);
 
-        for (auto && chunk : input_chunks)
+        /// TTL handling
+        [[maybe_unused]] auto encode_fixed_32 = [](char * dst, int32_t value)
         {
+            if constexpr (std::endian::native == std::endian::little)
+            {
+                memcpy(dst, &value, sizeof(value));
+            }
+            else
+            {
+                dst[0] = value & 0xff;
+                dst[1] = (value >> 8) & 0xff;
+                dst[2] = (value >> 16) & 0xff;
+                dst[3] = (value >> 24) & 0xff;
+            }
+        };
+        [[maybe_unused]] auto get_rocksdb_ts = [this, &encode_fixed_32](char * ts_string)
+        {
+            int64_t curtime = -1;
+            auto * system_clock = storage.rocksdb_ptr->GetEnv()->GetSystemClock().get();
+            rocksdb::Status st = system_clock->GetCurrentTime(&curtime);
+            if (!st.ok())
+                throw Exception(ErrorCodes::ROCKSDB_ERROR, "RocksDB error: {}", st.ToString());
+            encode_fixed_32(ts_string, static_cast<int32_t>(curtime));
+        };
+
+        for (const auto & chunk : input_chunks)
+        {
+            [[maybe_unused]] char ts_string[4];
+            if constexpr (with_timestamp)
+                get_rocksdb_ts(ts_string);
+
             const auto & columns = chunk.getColumns();
             auto rows = chunk.getNumRows();
             for (size_t i = 0; i < rows; ++i)
             {
                 for (size_t idx = 0; idx < columns.size(); ++idx)
                     serializations[idx]->serializeBinary(*columns[idx], i, idx == primary_key_pos ? writer_key : writer_value, {});
+
+                /// Append timestamp to end of value, see DBWithTTLImpl::AppendTS::AppendTS
+                if constexpr (with_timestamp)
+                    writeString(ts_string, 4, writer_value);
+
                 /// String in ColumnString must be null-terminated
                 writeChar('\0', writer_key);
                 writeChar('\0', writer_value);
@@ -198,7 +231,8 @@ void EmbeddedRocksDBBulkSink::consume(Chunk chunk_)
     if (chunks_to_write.empty())
         return;
 
-    auto [serialized_key_column, serialized_value_column] = serializeChunks(std::move(chunks_to_write));
+    auto [serialized_key_column, serialized_value_column]
+        = storage.ttl > 0 ? serializeChunks<true>(std::move(chunks_to_write)) : serializeChunks<false>(std::move(chunks_to_write));
     auto sst_file_path = getTemporarySSTFilePath();
     LOG_DEBUG(getLogger("EmbeddedRocksDBBulkSink"), "Writing {} rows to SST file {}", serialized_key_column->size(), sst_file_path);
     if (auto status = buildSSTFile(sst_file_path, *serialized_key_column, *serialized_value_column); !status.ok())
