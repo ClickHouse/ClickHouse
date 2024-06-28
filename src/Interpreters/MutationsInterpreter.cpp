@@ -145,6 +145,7 @@ ColumnDependencies getAllColumnDependencies(
 bool isStorageTouchedByMutations(
     MergeTreeData & storage,
     MergeTreeData::DataPartPtr source_part,
+    MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
     const StorageMetadataPtr & metadata_snapshot,
     const std::vector<MutationCommand> & commands,
     ContextPtr context)
@@ -181,7 +182,7 @@ bool isStorageTouchedByMutations(
     if (all_commands_can_be_skipped)
         return false;
 
-    auto storage_from_part = std::make_shared<StorageFromMergeTreeDataPart>(source_part);
+    auto storage_from_part = std::make_shared<StorageFromMergeTreeDataPart>(source_part, mutations_snapshot);
 
     std::optional<InterpreterSelectQuery> interpreter_select_query;
     BlockIO io;
@@ -283,8 +284,13 @@ MutationsInterpreter::Source::Source(StoragePtr storage_) : storage(std::move(st
 {
 }
 
-MutationsInterpreter::Source::Source(MergeTreeData & storage_, MergeTreeData::DataPartPtr source_part_)
-    : data(&storage_), part(std::move(source_part_))
+MutationsInterpreter::Source::Source(
+    MergeTreeData & storage_,
+    MergeTreeData::DataPartPtr source_part_,
+    AlterConversionsPtr alter_conversions_)
+    : data(&storage_)
+    , part(std::move(source_part_))
+    , alter_conversions(std::move(alter_conversions_))
 {
 }
 
@@ -384,13 +390,14 @@ MutationsInterpreter::MutationsInterpreter(
 MutationsInterpreter::MutationsInterpreter(
     MergeTreeData & storage_,
     MergeTreeData::DataPartPtr source_part_,
+    AlterConversionsPtr alter_conversions_,
     StorageMetadataPtr metadata_snapshot_,
     MutationCommands commands_,
     Names available_columns_,
     ContextPtr context_,
     Settings settings_)
     : MutationsInterpreter(
-        Source(storage_, std::move(source_part_)),
+        Source(storage_, std::move(source_part_), std::move(alter_conversions_)),
         std::move(metadata_snapshot_), std::move(commands_),
         std::move(available_columns_), std::move(context_), std::move(settings_))
 {
@@ -1210,7 +1217,7 @@ void MutationsInterpreter::Source::read(
         createReadFromPartStep(
             MergeTreeSequentialSourceType::Mutation,
             plan, *data, storage_snapshot,
-            part, required_columns,
+            part, alter_conversions, required_columns,
             apply_deleted_mask_, filter, context_,
             getLogger("MutationsInterpreter"));
     }

@@ -11,6 +11,7 @@ public:
         bool has_limit_below_one_block_,
         MergeTreeReadType read_type_,
         RangesInDataParts parts_,
+        MutationsSnapshotPtr mutations_snapshot_,
         VirtualFields shared_virtual_fields_,
         const StorageSnapshotPtr & storage_snapshot_,
         const PrewhereInfoPtr & prewhere_info_,

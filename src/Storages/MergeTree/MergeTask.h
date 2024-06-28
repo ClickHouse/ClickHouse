@@ -4,6 +4,7 @@
 #include <memory>
 
 #include <Common/filesystemHelpers.h>
+#include "Storages/MergeTree/AlterConversions.h"
 
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedReadBufferFromFile.h>
@@ -154,6 +155,7 @@ private:
         StorageSnapshotPtr storage_snapshot{nullptr};
         StorageMetadataPtr metadata_snapshot{nullptr};
         FutureMergedMutatedPartPtr future_part{nullptr};
+        std::vector<AlterConversionsPtr> alter_conversions;
         /// This will be either nullptr or new_data_part, so raw pointer is ok.
         IMergeTreeDataPart * parent_part{nullptr};
         ContextPtr context{nullptr};

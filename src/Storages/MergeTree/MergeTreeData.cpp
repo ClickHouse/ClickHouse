@@ -8115,11 +8115,13 @@ bool MergeTreeData::canUsePolymorphicParts(const MergeTreeSettings & settings, S
     return true;
 }
 
-AlterConversionsPtr MergeTreeData::getAlterConversionsForPart(MergeTreeDataPartPtr part) const
+AlterConversionsPtr MergeTreeData::getAlterConversionsForPart(
+    const MergeTreeDataPartPtr & part,
+    const MutationsSnapshotPtr & snapshot)
 {
-    auto commands = getAlterMutationCommandsForPart(part);
-
+    auto commands = snapshot->getAlterMutationCommandsForPart(part);
     auto result = std::make_shared<AlterConversions>();
+
     for (const auto & command : commands | std::views::reverse)
         result->addMutationCommand(command);
 
@@ -8427,9 +8429,9 @@ StorageSnapshotPtr MergeTreeData::getStorageSnapshot(const StorageMetadataPtr & 
         object_columns_copy = object_columns;
     }
 
-    snapshot_data->alter_conversions.reserve(snapshot_data->parts.size());
-    for (const auto & part : snapshot_data->parts)
-        snapshot_data->alter_conversions.push_back(getAlterConversionsForPart(part));
+    snapshot_data->mutations_snapshot = getMutationsSnapshot(
+        metadata_snapshot->getMetadataVersion(),
+        query_context->getSettingsRef().apply_mutations_on_fly);
 
     return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, std::move(object_columns_copy), std::move(snapshot_data));
 }
@@ -8616,28 +8618,59 @@ void MergeTreeData::verifySortingKey(const KeyDescription & sorting_key)
     }
 }
 
-bool updateAlterConversionsMutations(const MutationCommands & commands, std::atomic<ssize_t> & alter_conversions_mutations, bool remove)
+static void updateMutationsCounters(
+    Int64 & data_mutations_to_apply,
+    Int64 & metadata_mutations_to_apply,
+    const MutationCommands & commands,
+    Int64 increment)
 {
+    if (data_mutations_to_apply < 0)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "On-fly data mutations counter is negative ({})", data_mutations_to_apply);
+
+    if (metadata_mutations_to_apply < 0)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "On-fly metadata mutations counter is negative ({})", metadata_mutations_to_apply);
+
+    bool has_data_mutation = false;
+    bool has_metadata_mutation = false;
+
     for (const auto & command : commands)
     {
-        if (AlterConversions::supportsMutationCommandType(command.type))
+        if (!has_data_mutation && AlterConversions::isSupportedDataMutation(command.type))
         {
-            if (remove)
-            {
-                --alter_conversions_mutations;
-                if (alter_conversions_mutations < 0)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "On-fly mutations counter is negative ({})", alter_conversions_mutations);
-            }
-            else
-            {
-                if (alter_conversions_mutations < 0)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "On-fly mutations counter is negative ({})", alter_conversions_mutations);
-                ++alter_conversions_mutations;
-            }
-            return true;
+            data_mutations_to_apply += increment;
+            has_data_mutation = true;
+
+            if (data_mutations_to_apply < 0)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "On-fly data mutations counter is negative ({})", data_mutations_to_apply);
+        }
+
+        if (!has_metadata_mutation && AlterConversions::isSupportedMetadataMutation(command.type))
+        {
+            metadata_mutations_to_apply += increment;
+            has_metadata_mutation = true;
+
+            if (metadata_mutations_to_apply < 0)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "On-fly metadata mutations counter is negative ({})", metadata_mutations_to_apply);
         }
     }
-    return false;
+}
+
+void incrementMutationsCounters(
+    Int64 & data_mutations_to_apply,
+    Int64 & metadata_mutations_to_apply,
+    const MutationCommands & commands,
+    std::lock_guard<std::mutex> & /*lock*/)
+{
+    return updateMutationsCounters(data_mutations_to_apply, metadata_mutations_to_apply, commands, 1);
+}
+
+void decrementMutationsCounters(
+    Int64 & data_mutations_to_apply,
+    Int64 & metadata_mutations_to_apply,
+    const MutationCommands & commands,
+    std::lock_guard<std::mutex> & /*lock*/)
+{
+    return updateMutationsCounters(data_mutations_to_apply, metadata_mutations_to_apply, commands, -1);
 }
 
 }

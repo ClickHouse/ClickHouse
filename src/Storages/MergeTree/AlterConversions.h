@@ -35,7 +35,8 @@ public:
     /// Get column old name before rename (lookup by key in rename_map)
     std::string getColumnOldName(const std::string & new_name) const;
 
-    static bool supportsMutationCommandType(MutationCommand::Type);
+    static bool isSupportedDataMutation(MutationCommand::Type type);
+    static bool isSupportedMetadataMutation(MutationCommand::Type type);
 
 private:
     /// Rename map new_name -> old_name.

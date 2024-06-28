@@ -35,6 +35,7 @@
 #include <Interpreters/PartLog.h>
 #include <Poco/Timestamp.h>
 #include <Common/threadPoolCallbackRunner.h>
+#include "Storages/ProjectionsDescription.h"
 
 #include <boost/multi_index_container.hpp>
 #include <boost/multi_index/ordered_index.hpp>
@@ -445,12 +446,27 @@ public:
 
     bool supportsTrivialCountOptimization(const StorageSnapshotPtr &, ContextPtr) const override;
 
+    struct IMutationsSnapshot
+    {
+        /// Return pending mutations that weren't applied to `part` yet and should be applied on the fly
+        /// (i.e. when reading from the part). Mutations not supported by AlterConversions
+        /// (supportsMutationCommandType()) can be omitted.
+        ///
+        /// @return list of mutations, in *reverse* order (newest to oldest)
+        virtual MutationCommands getAlterMutationCommandsForPart(const DataPartPtr & part) const = 0;
+        virtual std::shared_ptr<IMutationsSnapshot> cloneEmpty() const = 0;
+
+        virtual ~IMutationsSnapshot() = default;
+    };
+
+    using MutationsSnapshotPtr = std::shared_ptr<const IMutationsSnapshot>;
+
     /// Snapshot for MergeTree contains the current set of data parts
-    /// at the moment of the start of query.
+    /// and mutations required to be applied at the moment of the start of query.
     struct SnapshotData : public StorageSnapshot::Data
     {
         DataPartsVector parts;
-        std::vector<AlterConversionsPtr> alter_conversions;
+        MutationsSnapshotPtr mutations_snapshot;
     };
 
     StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const override;
@@ -934,8 +950,13 @@ public:
 
     Disks getDisks() const { return getStoragePolicy()->getDisks(); }
 
+    /// TODO: comment
+    virtual MutationsSnapshotPtr getMutationsSnapshot(Int64 metadata_version, bool need_data_mutations) const = 0;
+
     /// Return alter conversions for part which must be applied on fly.
-    AlterConversionsPtr getAlterConversionsForPart(MergeTreeDataPartPtr part) const;
+    static AlterConversionsPtr getAlterConversionsForPart(
+        const MergeTreeDataPartPtr & part,
+        const MutationsSnapshotPtr & snapshot);
 
     /// Returns destination disk or volume for the TTL rule according to current storage policy.
     SpacePtr getDestinationForMoveTTL(const TTLDescription & move_ttl) const;
@@ -1448,13 +1469,6 @@ protected:
     /// mechanisms for parts locking
     virtual bool partIsAssignedToBackgroundOperation(const DataPartPtr & part) const = 0;
 
-    /// Return pending mutations that weren't applied to `part` yet and should be applied on the fly
-    /// (i.e. when reading from the part). Mutations not supported by AlterConversions
-    /// (supportsMutationCommandType()) can be omitted.
-    ///
-    /// @return list of mutations, in *reverse* order (newest to oldest)
-    virtual MutationCommands getAlterMutationCommandsForPart(const DataPartPtr & part) const = 0;
-
     struct PartBackupEntries
     {
         String part_name;
@@ -1738,6 +1752,16 @@ struct CurrentlySubmergingEmergingTagger
 
 /// Look at MutationCommands if it contains mutations for AlterConversions, update the counter.
 /// Return true if the counter had been updated
-bool updateAlterConversionsMutations(const MutationCommands & commands, std::atomic<ssize_t> & alter_conversions_mutations, bool remove);
+void incrementMutationsCounters(
+    Int64 & data_mutations_to_apply,
+    Int64 & metadata_mutations_to_apply,
+    const MutationCommands & commands,
+    std::lock_guard<std::mutex> & lock);
+
+void decrementMutationsCounters(
+    Int64 & data_mutations_to_apply,
+    Int64 & metadata_mutations_to_apply,
+    const MutationCommands & commands,
+    std::lock_guard<std::mutex> & lock);
 
 }

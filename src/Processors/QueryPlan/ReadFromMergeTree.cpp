@@ -262,7 +262,7 @@ void ReadFromMergeTree::AnalysisResult::checkLimits(const Settings & settings, c
 
 ReadFromMergeTree::ReadFromMergeTree(
     MergeTreeData::DataPartsVector parts_,
-    std::vector<AlterConversionsPtr> alter_conversions_,
+    MergeTreeData::MutationsSnapshotPtr mutations_,
     Names all_column_names_,
     const MergeTreeData & data_,
     const SelectQueryInfo & query_info_,
@@ -279,7 +279,7 @@ ReadFromMergeTree::ReadFromMergeTree(
         query_info_.prewhere_info)}, all_column_names_, query_info_, storage_snapshot_, context_)
     , reader_settings(getMergeTreeReaderSettings(context_, query_info_))
     , prepared_parts(std::move(parts_))
-    , alter_conversions_for_parts(std::move(alter_conversions_))
+    , mutations_snapshot(std::move(mutations_))
     , all_column_names(std::move(all_column_names_))
     , data(data_)
     , actions_settings(ExpressionActionsSettings::fromContext(context_))
@@ -361,6 +361,7 @@ Pipe ReadFromMergeTree::readFromPoolParallelReplicas(
     auto pool = std::make_shared<MergeTreeReadPoolParallelReplicas>(
         std::move(extension),
         std::move(parts_with_range),
+        mutations_snapshot,
         shared_virtual_fields,
         storage_snapshot,
         prewhere_info,
@@ -442,6 +443,7 @@ Pipe ReadFromMergeTree::readFromPool(
     {
         pool = std::make_shared<MergeTreePrefetchedReadPool>(
             std::move(parts_with_range),
+            mutations_snapshot,
             shared_virtual_fields,
             storage_snapshot,
             prewhere_info,
@@ -455,6 +457,7 @@ Pipe ReadFromMergeTree::readFromPool(
     {
         pool = std::make_shared<MergeTreeReadPool>(
             std::move(parts_with_range),
+            mutations_snapshot,
             shared_virtual_fields,
             storage_snapshot,
             prewhere_info,
@@ -535,6 +538,7 @@ Pipe ReadFromMergeTree::readInOrder(
             std::move(extension),
             mode,
             parts_with_ranges,
+            mutations_snapshot,
             shared_virtual_fields,
             storage_snapshot,
             prewhere_info,
@@ -550,6 +554,7 @@ Pipe ReadFromMergeTree::readInOrder(
             has_limit_below_one_block,
             read_type,
             parts_with_ranges,
+            mutations_snapshot,
             shared_virtual_fields,
             storage_snapshot,
             prewhere_info,
@@ -1016,7 +1021,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
                 }
 
                 ranges_to_get_from_part = split_ranges(ranges_to_get_from_part, input_order_info->direction);
-                new_parts.emplace_back(part.data_part, part.alter_conversions, part.part_index_in_query, std::move(ranges_to_get_from_part));
+                new_parts.emplace_back(part.data_part, part.part_index_in_query, std::move(ranges_to_get_from_part));
             }
 
             splitted_parts_and_ranges.emplace_back(std::move(new_parts));
@@ -1243,7 +1248,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
             RangesInDataParts new_parts;
 
             for (auto part_it = parts_to_merge_ranges[range_index]; part_it != parts_to_merge_ranges[range_index + 1]; ++part_it)
-                new_parts.emplace_back(part_it->data_part, part_it->alter_conversions, part_it->part_index_in_query, part_it->ranges);
+                new_parts.emplace_back(part_it->data_part, part_it->part_index_in_query, part_it->ranges);
 
             if (new_parts.empty())
                 continue;
@@ -1356,15 +1361,13 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
 
 ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(bool find_exact_ranges) const
 {
-    return selectRangesToRead(prepared_parts, alter_conversions_for_parts, find_exact_ranges);
+    return selectRangesToRead(prepared_parts, find_exact_ranges);
 }
 
-ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
-    MergeTreeData::DataPartsVector parts, std::vector<AlterConversionsPtr> alter_conversions, bool find_exact_ranges) const
+ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(MergeTreeData::DataPartsVector parts, bool find_exact_ranges) const
 {
     return selectRangesToRead(
         std::move(parts),
-        std::move(alter_conversions),
         metadata_for_reading,
         query_info,
         context,
@@ -1534,7 +1537,6 @@ void ReadFromMergeTree::applyFilters(ActionDAGNodes added_filter_nodes)
 
 ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     MergeTreeData::DataPartsVector parts,
-    std::vector<AlterConversionsPtr> alter_conversions,
     const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & query_info_,
     ContextPtr context_,
@@ -1596,10 +1598,9 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
 
     {
         MergeTreeDataSelectExecutor::filterPartsByPartition(
+            parts,
             indexes->partition_pruner,
             indexes->minmax_idx_condition,
-            parts,
-            alter_conversions,
             indexes->part_values,
             metadata_snapshot,
             data,
@@ -1628,7 +1629,6 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         auto reader_settings = getMergeTreeReaderSettings(context_, query_info_);
         result.parts_with_ranges = MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipIndexes(
             std::move(parts),
-            std::move(alter_conversions),
             metadata_snapshot,
             context_,
             indexes->key_condition,

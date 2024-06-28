@@ -13,6 +13,8 @@
 #include <base/defines.h>
 #include <Parsers/formatAST.h>
 #include <base/sort.h>
+#include <algorithm>
+#include <mutex>
 #include <ranges>
 #include <Poco/Timestamp.h>
 
@@ -949,7 +951,7 @@ int32_t ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper
                 {
                     const auto commands = entry.commands;
                     it = mutations_by_znode.erase(it);
-                    updateAlterConversionsMutations(commands, alter_conversions_mutations, /* remove= */ true);
+                    decrementMutationsCounters(data_mutations_to_apply, metadata_mutations_to_apply, commands, lock);
                 }
                 else
                     it = mutations_by_znode.erase(it);
@@ -1001,7 +1003,7 @@ int32_t ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper
                 auto & mutation = mutations_by_znode.emplace(entry->znode_name, MutationStatus(entry, format_version))
                     .first->second;
 
-                updateAlterConversionsMutations(entry->commands, alter_conversions_mutations, /* remove= */ false);
+                incrementMutationsCounters(data_mutations_to_apply, metadata_mutations_to_apply, entry->commands, lock);
                 NOEXCEPT_SCOPE({
                     for (const auto & pair : entry->block_numbers)
                     {
@@ -1075,7 +1077,7 @@ ReplicatedMergeTreeMutationEntryPtr ReplicatedMergeTreeQueue::removeMutation(
         }
 
         mutations_by_znode.erase(it);
-        /// updateAlterConversionsMutations() will be called in updateMutations()
+        /// decrementMutationsCounters() will be called in updateMutations()
 
         LOG_DEBUG(log, "Removed mutation {} from local state.", entry->znode_name);
     }
@@ -1899,25 +1901,15 @@ ReplicatedMergeTreeMergePredicate ReplicatedMergeTreeQueue::getMergePredicate(zk
     return ReplicatedMergeTreeMergePredicate(*this, zookeeper, std::move(partition_ids_hint));
 }
 
-
-MutationCommands ReplicatedMergeTreeQueue::getAlterMutationCommandsForPart(const MergeTreeData::DataPartPtr & part) const
+MutationCommands ReplicatedMergeTreeQueue::MutationsSnapshot::getAlterMutationCommandsForPart(const MergeTreeData::DataPartPtr & part) const
 {
-    int32_t part_metadata_version = part->getMetadataVersion();
-    int32_t metadata_version = storage.getInMemoryMetadataPtr()->getMetadataVersion();
-
-    chassert(alter_conversions_mutations >= 0);
-    /// NOTE: that just checking part_metadata_version is not enough, since we
-    /// need to check for non-metadata mutations as well.
-    if (alter_conversions_mutations == 0 && metadata_version == part_metadata_version)
-        return {};
-
-    std::unique_lock lock(state_mutex);
-
     auto in_partition = mutations_by_partition.find(part->info.partition_id);
     if (in_partition == mutations_by_partition.end())
         return {};
 
     Int64 part_data_version = part->info.getDataVersion();
+    int32_t part_metadata_version = part->getMetadataVersion();
+
     MutationCommands result;
 
     bool seen_all_data_mutations = false;
@@ -1926,19 +1918,21 @@ MutationCommands ReplicatedMergeTreeQueue::getAlterMutationCommandsForPart(const
     auto add_to_result = [&](const ReplicatedMergeTreeMutationEntryPtr & entry)
     {
         for (const auto & command : entry->commands | std::views::reverse)
-            if (AlterConversions::supportsMutationCommandType(command.type))
-                result.emplace_back(command);
+        {
+            if (need_data_mutations && AlterConversions::isSupportedDataMutation(command.type))
+                result.push_back(command);
+            else if (AlterConversions::isSupportedMetadataMutation(command.type))
+                result.push_back(command);
+        }
     };
 
     /// Here we return mutation commands for part which has bigger alter version than part metadata version.
     /// Please note, we don't use getDataVersion(). It's because these alter commands are used for in-fly conversions
     /// of part's metadata.
-    for (const auto & [mutation_version, mutation_status] : in_partition->second | std::views::reverse)
+    for (const auto & [mutation_version, entry] : in_partition->second | std::views::reverse)
     {
         if (seen_all_data_mutations && seen_all_metadata_mutations)
             break;
-
-        auto & entry = mutation_status->entry;
 
         auto alter_version = entry->alter_version;
         if (alter_version != -1)
@@ -1962,6 +1956,48 @@ MutationCommands ReplicatedMergeTreeQueue::getAlterMutationCommandsForPart(const
     }
 
     return result;
+}
+
+MergeTreeData::MutationsSnapshotPtr ReplicatedMergeTreeQueue::getMutationsSnapshot(Int64 metadata_version, bool need_data_mutations) const
+{
+    auto res = std::make_shared<MutationsSnapshot>();
+    res->metadata_version = metadata_version;
+    res->need_data_mutations = need_data_mutations;
+
+    std::lock_guard lock(state_mutex);
+
+    bool have_data_mutations = res->need_data_mutations && data_mutations_to_apply > 0;
+    bool have_metadata_mutations = metadata_mutations_to_apply > 0;
+
+    if (!have_data_mutations && !have_metadata_mutations)
+        return res;
+
+    for (const auto & [partition_id, mutations] : mutations_by_partition)
+    {
+        auto & in_partition = res->mutations_by_partition[partition_id];
+
+        for (const auto & [version, status] : mutations | std::views::reverse)
+        {
+            if (status->is_done)
+                break;
+
+            bool has_required_command = std::ranges::any_of(status->entry->commands, [&](const auto & command)
+            {
+                if (have_data_mutations && AlterConversions::isSupportedDataMutation(command.type))
+                    return true;
+
+                if (have_metadata_mutations && AlterConversions::isSupportedMetadataMutation(command.type))
+                    return true;
+
+                return false;
+            });
+
+            if (has_required_command)
+                in_partition.emplace(version, status->entry);
+        }
+    }
+
+    return res;
 }
 
 MutationCommands ReplicatedMergeTreeQueue::getMutationCommands(
@@ -2044,7 +2080,7 @@ bool ReplicatedMergeTreeQueue::tryFinalizeMutations(zkutil::ZooKeeperPtr zookeep
                     mutation.parts_to_do.clear();
                 }
 
-                updateAlterConversionsMutations(mutation.entry->commands, alter_conversions_mutations, /* remove= */ true);
+                decrementMutationsCounters(data_mutations_to_apply, metadata_mutations_to_apply, mutation.entry->commands, lock);
             }
             else if (mutation.parts_to_do.size() == 0)
             {
@@ -2101,7 +2137,7 @@ bool ReplicatedMergeTreeQueue::tryFinalizeMutations(zkutil::ZooKeeperPtr zookeep
                     LOG_TRACE(log, "Finishing data alter with version {} for entry {}", entry->alter_version, entry->znode_name);
                     alter_sequence.finishDataAlter(entry->alter_version, lock);
                 }
-                updateAlterConversionsMutations(entry->commands, alter_conversions_mutations, /* remove= */ true);
+                decrementMutationsCounters(data_mutations_to_apply, metadata_mutations_to_apply, entry->commands, lock);
             }
         }
     }
