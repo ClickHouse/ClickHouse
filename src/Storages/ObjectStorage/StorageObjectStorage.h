@@ -136,7 +136,6 @@ protected:
     const std::optional<FormatSettings> format_settings;
     const ASTPtr partition_by;
     const bool distributed_processing;
-    mutable DataLakePartitionColumns partition_columns;
 
     LoggerPtr log;
 };
@@ -196,6 +195,9 @@ public:
     virtual ConfigurationPtr clone() = 0;
     virtual bool isStaticConfiguration() const { return true; }
 
+    void setPartitionColumns(const DataLakePartitionColumns & columns) { partition_columns = columns; }
+    const DataLakePartitionColumns & getPartitionColumns() const { return partition_columns; }
+
     String format = "auto";
     String compression_method = "auto";
     String structure = "auto";
@@ -207,6 +209,7 @@ protected:
     void assertInitialized() const;
 
     bool initialized = false;
+    DataLakePartitionColumns partition_columns;
 };
 
 }

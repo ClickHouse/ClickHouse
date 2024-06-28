@@ -49,8 +49,7 @@ StorageObjectStorageSource::StorageObjectStorageSource(
     UInt64 max_block_size_,
     std::shared_ptr<IIterator> file_iterator_,
     size_t max_parsing_threads_,
-    bool need_only_count_,
-    const DataLakePartitionColumns & partition_columns_)
+    bool need_only_count_)
     : SourceWithKeyCondition(info.source_header, false)
     , WithContext(context_)
     , name(std::move(name_))
@@ -69,7 +68,6 @@ StorageObjectStorageSource::StorageObjectStorageSource(
     , columns_desc(info.columns_description)
     , file_iterator(file_iterator_)
     , schema_cache(StorageObjectStorage::getSchemaCache(context_, configuration->getTypeName()))
-    , partition_columns(partition_columns_)
     , create_reader_scheduler(threadPoolCallbackRunnerUnsafe<ReaderHolder>(*create_reader_pool, "Reader"))
 {
 }
@@ -206,6 +204,7 @@ Chunk StorageObjectStorageSource::generate()
                     .last_modified = object_info->metadata->last_modified
                 });
 
+            const auto & partition_columns = configuration->getPartitionColumns();
             if (!partition_columns.empty() && chunk_size && chunk.hasColumns())
             {
                 auto partition_values = partition_columns.find(filename);

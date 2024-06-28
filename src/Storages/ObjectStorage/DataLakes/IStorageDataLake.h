@@ -102,16 +102,10 @@ public:
         if (current_metadata && *current_metadata == *new_metadata)
             return;
 
-        if (!current_metadata)
-        {
-            auto partition_columns = new_metadata->getPartitionColumns();
-            if (partition_columns != Storage::partition_columns)
-                Storage::partition_columns = partition_columns;
-        }
-
         current_metadata = std::move(new_metadata);
         auto updated_configuration = base_configuration->clone();
         updated_configuration->setPaths(current_metadata->getDataFiles());
+        updated_configuration->setPartitionColumns(current_metadata->getPartitionColumns());
 
         Storage::configuration = updated_configuration;
     }
@@ -132,9 +126,9 @@ public:
 
         if (current_metadata)
         {
-            auto partition_columns = current_metadata->getPartitionColumns();
-            if (partition_columns != Storage::partition_columns)
-                Storage::partition_columns = partition_columns;
+            const auto & columns = current_metadata->getPartitionColumns();
+            base_configuration->setPartitionColumns(columns);
+            Storage::configuration->setPartitionColumns(columns);
         }
     }
 

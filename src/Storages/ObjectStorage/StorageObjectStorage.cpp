@@ -111,8 +111,7 @@ public:
         const bool need_only_count_,
         ContextPtr context_,
         size_t max_block_size_,
-        size_t num_streams_,
-        const DataLakePartitionColumns & partition_columns_)
+        size_t num_streams_)
         : SourceStepWithFilter(DataStream{.header = info_.source_header}, columns_to_read, query_info_, storage_snapshot_, context_)
         , object_storage(object_storage_)
         , configuration(configuration_)
@@ -124,7 +123,6 @@ public:
         , max_block_size(max_block_size_)
         , num_streams(num_streams_)
         , distributed_processing(distributed_processing_)
-        , partition_columns(partition_columns_)
     {
     }
 
@@ -163,7 +161,7 @@ public:
         {
             auto source = std::make_shared<StorageObjectStorageSource>(
                 getName(), object_storage, configuration, info, format_settings,
-                context, max_block_size, iterator_wrapper, max_parsing_threads, need_only_count, partition_columns);
+                context, max_block_size, iterator_wrapper, max_parsing_threads, need_only_count);
 
             source->setKeyCondition(filter_actions_dag, context);
             pipes.emplace_back(std::move(source));
@@ -192,7 +190,6 @@ private:
     const size_t max_block_size;
     size_t num_streams;
     const bool distributed_processing;
-    DataLakePartitionColumns partition_columns;
 
     void createIterator(const ActionsDAG::Node * predicate)
     {
@@ -252,8 +249,7 @@ void StorageObjectStorage::read(
         need_only_count,
         local_context,
         max_block_size,
-        num_streams,
-        partition_columns);
+        num_streams);
 
     query_plan.addStep(std::move(read_step));
 }
@@ -464,6 +460,7 @@ StorageObjectStorage::Configuration::Configuration(const Configuration & other)
     format = other.format;
     compression_method = other.compression_method;
     structure = other.structure;
+    partition_columns = other.partition_columns;
 }
 
 bool StorageObjectStorage::Configuration::withPartitionWildcard() const
