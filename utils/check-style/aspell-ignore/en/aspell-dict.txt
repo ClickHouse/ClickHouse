@@ -48,6 +48,7 @@ AutoML
 Autocompletion
 AvroConfluent
 BIGINT
+bigrams
 BIGSERIAL
 BORO
 BSON
@@ -1008,12 +1009,13 @@ UncompressedCacheBytes
 UncompressedCacheCells
 UnidirectionalEdgeIsValid
 UniqThetaSketch
+unigrams
 Updatable
 Uppercased
 Uptime
 Uptrace
-UrlDecode
-UrlEncode
+URLDecode
+URLEncode
 UserID
 Util
 VARCHAR
@@ -1507,9 +1509,11 @@ deserializing
 destructor
 destructors
 detectCharset
+detectTonality
 detectLanguage
 detectLanguageMixed
 detectLanguageUnknown
+detectProgrammingLanguage
 determinator
 deterministically
 dictGet
@@ -1526,6 +1530,7 @@ disableProtocols
 disjunction
 disjunctions
 displaySecretsInShowAndSelect
+displayName
 distro
 divideDecimal
 dmesg
@@ -1576,6 +1581,10 @@ exFAT
 expiryMsec
 exponentialMovingAverage
 exponentialmovingaverage
+exponentialTimeDecayedAvg
+exponentialTimeDecayedCount
+exponentialTimeDecayedMax
+exponentialTimeDecayedSum
 expr
 exprN
 extendedVerification
@@ -1794,6 +1803,7 @@ incrementing
 indexHint
 indexOf
 infi
+infty
 inflight
 initcap
 initcapUTF
@@ -2252,6 +2262,7 @@ proleptic
 prometheus
 proportionsZTest
 proto
+protocol
 protobuf
 protobufsingle
 proxied
