@@ -86,6 +86,8 @@ namespace SettingsChangesHistory
 /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
 static const std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges> settings_changes_history =
 {
+    {"24.7", {{"output_format_parquet_write_page_index", false, true, "Add a possibility to write page index into parquet files."},
+              }},
     {"24.6", {{"materialize_skip_indexes_on_insert", true, true, "Added new setting to allow to disable materialization of skip indexes on insert"},
               {"materialize_statistics_on_insert", true, true, "Added new setting to allow to disable materialization of statistics on insert"},
               {"input_format_parquet_use_native_reader", false, false, "When reading Parquet files, to use native reader instead of arrow reader."},
@@ -102,7 +104,7 @@ static const std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges
               {"input_format_parquet_max_block_size", 8192, DEFAULT_BLOCK_SIZE, "Increase block size for parquet reader."},
               {"input_format_parquet_prefer_block_bytes", 0, DEFAULT_BLOCK_SIZE * 256, "Average block bytes output by parquet reader."},
               {"enable_blob_storage_log", true, true, "Write information about blob storage operations to system.blob_storage_log table"},
-              {"uniform_snowflake_conversion_functions", false, true, "Enable functions snowflakeIDToDateTime[64] and dateTime[64]ToSnowflakeID."},
+              {"allow_deprecated_snowflake_conversion_functions", true, false, "Disabled deprecated functions snowflakeToDateTime[64] and dateTime[64]ToSnowflake."},
               {"allow_statistic_optimize", false, false, "Old setting which popped up here being renamed."},
               {"allow_experimental_statistic", false, false, "Old setting which popped up here being renamed."},
               {"allow_statistics_optimize", false, false, "The setting was renamed. The previous name is `allow_statistic_optimize`."},
@@ -115,6 +117,7 @@ static const std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges
               {"output_format_csv_serialize_tuple_into_separate_columns", true, true, "A new way of how interpret tuples in CSV format was added."},
               {"input_format_csv_deserialize_separate_columns_into_tuple", true, true, "A new way of how interpret tuples in CSV format was added."},
               {"input_format_csv_try_infer_strings_from_quoted_tuples", true, true, "A new way of how interpret tuples in CSV format was added."},
+              {"input_format_json_ignore_key_case", false, false, "Ignore json key case while read json field from string."},
               {"azure_check_objects_after_upload", false, false, "Check each uploaded object to azure blob storage with head request to be sure that upload was successful"},
               }},
     {"24.5", {{"allow_deprecated_error_prone_window_functions", true, false, "Allow usage of deprecated error prone window functions (neighbor, runningAccumulate, runningDifferenceStartingWithFirstValue, runningDifference)"},
