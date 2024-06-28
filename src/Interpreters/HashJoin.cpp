@@ -859,8 +859,8 @@ bool HashJoin::addBlockToJoin(ScatteredBlock & source_block, bool check_limits)
     for (const auto & column_name : right_key_names)
     {
         const auto & column = source_block.getByName(column_name).column;
-        all_key_columns[column_name]
-            = column; // recursiveRemoveSparse(column->convertToFullColumnIfConst())->convertToFullColumnIfLowCardinality();
+        /// TODO: fix me
+        all_key_columns[column_name] = recursiveRemoveSparse(column->convertToFullColumnIfConst())->convertToFullColumnIfLowCardinality();
     }
 
     Block block_to_save = prepareRightBlock(*source_block.block);
