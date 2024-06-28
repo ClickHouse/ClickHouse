@@ -25,6 +25,13 @@ public:
 
     String getName() const override { return "JSONCompactEachRowRowOutputFormat"; }
 
+    String getContentType() const override
+    {
+        if (!settings.json.content_type.empty())
+            return settings.json.content_type;
+        return RowOutputFormatWithExceptionHandlerAdaptor<RowOutputFormatWithUTF8ValidationAdaptor, bool>::getContentType();
+    }
+
 private:
     void writePrefix() override;
 
