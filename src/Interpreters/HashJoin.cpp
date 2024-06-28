@@ -852,8 +852,6 @@ bool HashJoin::addBlockToJoin(ScatteredBlock & source_block, bool check_limits)
 
     size_t rows = source_block.rows();
 
-    // TODO:: prepare source block before calling this function
-    //
     const auto & right_key_names = table_join->getAllNames(JoinTableSide::Right);
     ColumnPtrMap all_key_columns(right_key_names.size());
     for (const auto & column_name : right_key_names)
@@ -870,17 +868,16 @@ bool HashJoin::addBlockToJoin(ScatteredBlock & source_block, bool check_limits)
     size_t max_bytes_in_join = table_join->sizeLimits().max_bytes;
     size_t max_rows_in_join = table_join->sizeLimits().max_rows;
 
-    /// TODO: use block_to_save back
     if (kind == JoinKind::Cross && tmp_data
-        && (tmp_stream || (max_bytes_in_join && getTotalByteCount() + source_block.block->allocatedBytes() >= max_bytes_in_join)
-            || (max_rows_in_join && getTotalRowCount() + source_block.block->rows() >= max_rows_in_join)))
+        && (tmp_stream || (max_bytes_in_join && getTotalByteCount() + block_to_save.allocatedBytes() >= max_bytes_in_join)
+            || (max_rows_in_join && getTotalRowCount() + block_to_save.rows() >= max_rows_in_join)))
     {
         chassert(!source_block.wasScattered()); /// We don't run parallel_hash for cross join
         if (tmp_stream == nullptr)
         {
             tmp_stream = &tmp_data->createStream(right_sample_block);
         }
-        tmp_stream->write(*source_block.block);
+        tmp_stream->write(block_to_save);
         return true;
     }
 
@@ -900,7 +897,7 @@ bool HashJoin::addBlockToJoin(ScatteredBlock & source_block, bool check_limits)
                 || (min_rows_to_compress && getTotalRowCount() >= min_rows_to_compress)))
         {
             chassert(!source_block.wasScattered()); /// We don't run parallel_hash for cross join
-            *source_block.block = source_block.block->compress();
+            block_to_save = block_to_save.compress();
             have_compressed = true;
         }
 
