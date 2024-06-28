@@ -87,6 +87,7 @@ namespace SettingsChangesHistory
 static const std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges> settings_changes_history =
 {
     {"24.7", {{"output_format_parquet_write_page_index", false, true, "Add a possibility to write page index into parquet files."},
+              {"optimize_functions_to_subcolumns", false, true, "Enable optimization by default"},
               }},
     {"24.6", {{"materialize_skip_indexes_on_insert", true, true, "Added new setting to allow to disable materialization of skip indexes on insert"},
               {"materialize_statistics_on_insert", true, true, "Added new setting to allow to disable materialization of statistics on insert"},
@@ -153,7 +154,6 @@ static const std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges
               {"page_cache_inject_eviction", false, false, "Added userspace page cache"},
               {"default_table_engine", "None", "MergeTree", "Set default table engine to MergeTree for better usability"},
               {"input_format_json_use_string_type_for_ambiguous_paths_in_named_tuples_inference_from_objects", false, false, "Allow to use String type for ambiguous paths during named tuple inference from JSON objects"},
-              {"optimize_functions_to_subcolumns", false, true, "Enable optimization by default"},
               {"traverse_shadow_remote_data_paths", false, false, "Traverse shadow directory when query system.remote_data_paths."},
               {"throw_if_deduplication_in_dependent_materialized_views_enabled_with_async_insert", false, true, "Deduplication is dependent materialized view cannot work together with async inserts."},
               {"parallel_replicas_allow_in_with_subquery", false, true, "If true, subquery for IN will be executed on every follower replica"},
