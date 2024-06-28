@@ -173,7 +173,7 @@ struct DeltaLakeMetadata::Impl
     /// `result` is a list of data files.
     /// `file_schema` is a common schema for all files.
     /// Schema evolution is not supported, so we check that all files have the same schema.
-    /// `file_partiion_columns` is information about parition columns of data files.
+    /// `file_partiion_columns` is information about partition columns of data files.
     void processMetadataFile(
         const String & metadata_file_path,
         NamesAndTypesList & file_schema,
