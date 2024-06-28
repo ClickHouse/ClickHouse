@@ -3860,3 +3860,45 @@ Result:
 └───────────────┘
 ```
 
+## transactionID
+
+Returns the ID of a [transaction](https://clickhouse.com/docs/en/guides/developer/transactional#transactions-commit-and-rollback).
+
+:::note
+This function is part of an experimental feature set. Enable experimental transaction support by adding this setting in `config.d/transactions.xml`:
+
+```
+<clickhouse>
+  <allow_experimental_transactions>1</allow_experimental_transactions>
+</clickhouse>
+```
+
+For more information see the page [Transactional (ACID) support](https://clickhouse.com/docs/en/guides/developer/transactional#transactions-commit-and-rollback).
+:::
+
+**Syntax**
+
+```sql
+transactionID()
+```
+
+**Returned value**
+
+- TransactionID. [String](../data-types/string.md). [Tuple](../data-types/tuple.md)([UInt64](../data-types/int-uint.md), [UInt64](../data-types/int-uint.md), [UUID](../data-types/uuid.md)).
+
+**Example**
+
+Query:
+
+```sql
+SELECT transactionID();
+```
+
+Result:
+
+```response
+┌─transactionID()──────────────────────────────┐
+│ (0,0,'00000000-0000-0000-0000-000000000000') │
+└──────────────────────────────────────────────┘
+```
+
