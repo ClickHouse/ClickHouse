@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/aggregate-functions/reference/maxmap
-sidebar_position: 143
+sidebar_position: 165
 ---
 
 # maxMap

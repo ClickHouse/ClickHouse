@@ -8083,6 +8083,13 @@ void MergeTreeData::checkDropCommandDoesntAffectInProgressMutations(const AlterC
                         throw_exception(mutation_name, "column", command.column_name);
                 }
             }
+            else if (command.type == AlterCommand::DROP_STATISTICS)
+            {
+                for (const auto & stats_col1 : command.statistics_columns)
+                    for (const auto & stats_col2 : mutation_command.statistics_columns)
+                        if (stats_col1 == stats_col2)
+                            throw_exception(mutation_name, "statistics", stats_col1);
+            }
         }
     }
 }

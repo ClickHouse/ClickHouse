@@ -1380,8 +1380,8 @@ try
     global_context->setQueryCache(query_cache_max_size_in_bytes, query_cache_max_entries, query_cache_query_cache_max_entry_size_in_bytes, query_cache_max_entry_size_in_rows);
 
 #if USE_EMBEDDED_COMPILER
-    size_t compiled_expression_cache_max_size_in_bytes = config().getUInt64("compiled_expression_cache_size", DEFAULT_COMPILED_EXPRESSION_CACHE_MAX_SIZE);
-    size_t compiled_expression_cache_max_elements = config().getUInt64("compiled_expression_cache_elements_size", DEFAULT_COMPILED_EXPRESSION_CACHE_MAX_ENTRIES);
+    size_t compiled_expression_cache_max_size_in_bytes = server_settings.compiled_expression_cache_size;
+    size_t compiled_expression_cache_max_elements = server_settings.compiled_expression_cache_elements_size;
     CompiledExpressionCacheFactory::instance().init(compiled_expression_cache_max_size_in_bytes, compiled_expression_cache_max_elements);
 #endif
 
@@ -1407,14 +1407,26 @@ try
         tryLogCurrentException(log, "Disabling cgroup memory observer because of an error during initialization");
     }
 
-    const std::string cert_path = config().getString("openSSL.server.certificateFile", "");
-    const std::string key_path = config().getString("openSSL.server.privateKeyFile", "");
+    std::string cert_path = config().getString("openSSL.server.certificateFile", "");
+    std::string key_path = config().getString("openSSL.server.privateKeyFile", "");
 
     std::vector<std::string> extra_paths = {include_from_path};
     if (!cert_path.empty())
         extra_paths.emplace_back(cert_path);
     if (!key_path.empty())
         extra_paths.emplace_back(key_path);
+
+    Poco::Util::AbstractConfiguration::Keys protocols;
+    config().keys("protocols", protocols);
+    for (const auto & protocol : protocols)
+    {
+        cert_path = config().getString("protocols." + protocol + ".certificateFile", "");
+        key_path = config().getString("protocols." + protocol + ".privateKeyFile", "");
+        if (!cert_path.empty())
+            extra_paths.emplace_back(cert_path);
+        if (!key_path.empty())
+            extra_paths.emplace_back(key_path);
+    }
 
     auto main_config_reloader = std::make_unique<ConfigReloader>(
         config_path,
@@ -1528,6 +1540,8 @@ try
             global_context->setMaxDictionaryNumToWarn(new_server_settings.max_dictionary_num_to_warn);
             global_context->setMaxDatabaseNumToWarn(new_server_settings.max_database_num_to_warn);
             global_context->setMaxPartNumToWarn(new_server_settings.max_part_num_to_warn);
+            /// Only for system.server_settings
+            global_context->setConfigReloaderInterval(new_server_settings.config_reload_interval_ms);
 
             SlotCount concurrent_threads_soft_limit = UnlimitedSlots;
             if (new_server_settings.concurrent_threads_soft_limit_num > 0 && new_server_settings.concurrent_threads_soft_limit_num < concurrent_threads_soft_limit)
@@ -1656,7 +1670,7 @@ try
 
             CompressionCodecEncrypted::Configuration::instance().tryLoad(*config, "encryption_codecs");
 #if USE_SSL
-            CertificateReloader::instance().tryLoad(*config);
+            CertificateReloader::instance().tryReloadAll(*config);
 #endif
             NamedCollectionFactory::instance().reloadFromConfig(*config);
 
@@ -1690,8 +1704,7 @@ try
 
             /// Must be the last.
             latest_config = config;
-        },
-        /* already_loaded = */ false);  /// Reload it right now (initial loading)
+        });
 
     const auto listen_hosts = getListenHosts(config());
     const auto interserver_listen_hosts = getInterserverListenHosts(config());

@@ -25,10 +25,10 @@ namespace ErrorCodes
 enum class Base64Variant : uint8_t
 {
     Normal,
-    Url
+    URL
 };
 
-inline std::string preprocessBase64Url(std::string_view src)
+inline std::string preprocessBase64URL(std::string_view src)
 {
     std::string padded_src;
     padded_src.reserve(src.size() + 3);
@@ -70,7 +70,7 @@ inline std::string preprocessBase64Url(std::string_view src)
     return padded_src;
 }
 
-inline size_t postprocessBase64Url(UInt8 * dst, size_t out_len)
+inline size_t postprocessBase64URL(UInt8 * dst, size_t out_len)
 {
     // Do symbol substitution as described in https://datatracker.ietf.org/doc/html/rfc4648#section-5
     for (size_t i = 0; i < out_len; ++i)
@@ -95,7 +95,7 @@ inline size_t postprocessBase64Url(UInt8 * dst, size_t out_len)
 template <Base64Variant variant>
 struct Base64Encode
 {
-    static constexpr auto name = (variant == Base64Variant::Normal) ? "base64Encode" : "base64UrlEncode";
+    static constexpr auto name = (variant == Base64Variant::Normal) ? "base64Encode" : "base64URLEncode";
 
     static size_t getBufferSize(size_t string_length, size_t string_count)
     {
@@ -111,8 +111,8 @@ struct Base64Encode
         /// Memory sanitizer doesn't understand if there was uninitialized memory in SIMD register but it was not used in the result of shuffle.
         __msan_unpoison(dst, outlen);
 
-        if constexpr (variant == Base64Variant::Url)
-            outlen = postprocessBase64Url(dst, outlen);
+        if constexpr (variant == Base64Variant::URL)
+            outlen = postprocessBase64URL(dst, outlen);
 
         return outlen;
     }
@@ -121,7 +121,7 @@ struct Base64Encode
 template <Base64Variant variant>
 struct Base64Decode
 {
-    static constexpr auto name = (variant == Base64Variant::Normal) ? "base64Decode" : "base64UrlDecode";
+    static constexpr auto name = (variant == Base64Variant::Normal) ? "base64Decode" : "base64URLDecode";
 
     static size_t getBufferSize(size_t string_length, size_t string_count)
     {
@@ -132,9 +132,9 @@ struct Base64Decode
     {
         int rc;
         size_t outlen = 0;
-        if constexpr (variant == Base64Variant::Url)
+        if constexpr (variant == Base64Variant::URL)
         {
-            std::string src_padded = preprocessBase64Url(src);
+            std::string src_padded = preprocessBase64URL(src);
             rc = base64_decode(src_padded.data(), src_padded.size(), reinterpret_cast<char *>(dst), &outlen, 0);
         }
         else
@@ -156,7 +156,7 @@ struct Base64Decode
 template <Base64Variant variant>
 struct TryBase64Decode
 {
-    static constexpr auto name = (variant == Base64Variant::Normal) ? "tryBase64Decode" : "tryBase64UrlDecode";
+    static constexpr auto name = (variant == Base64Variant::Normal) ? "tryBase64Decode" : "tryBase64URLDecode";
 
     static size_t getBufferSize(size_t string_length, size_t string_count)
     {
@@ -167,9 +167,9 @@ struct TryBase64Decode
     {
         int rc;
         size_t outlen = 0;
-        if constexpr (variant == Base64Variant::Url)
+        if constexpr (variant == Base64Variant::URL)
         {
-            std::string src_padded = preprocessBase64Url(src);
+            std::string src_padded = preprocessBase64URL(src);
             rc = base64_decode(src_padded.data(), src_padded.size(), reinterpret_cast<char *>(dst), &outlen, 0);
         }
         else

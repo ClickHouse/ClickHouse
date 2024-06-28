@@ -13,7 +13,7 @@
 
 /// ------------------------------------------------------------------------------------------------------------------------------
 /// The functions in this file are deprecated and should be removed in favor of functions 'snowflakeIDToDateTime[64]' and
-/// 'dateTime[64]ToSnowflakeID' by summer 2025. Please also mark setting `uniform_snowflake_conversion_functions` as obsolete then.
+/// 'dateTime[64]ToSnowflakeID' by summer 2025. Please also mark setting `allow_deprecated_snowflake_conversion_functions` as obsolete then.
 /// ------------------------------------------------------------------------------------------------------------------------------
 
 namespace DB
@@ -40,7 +40,7 @@ constexpr int time_shift = 22;
 class FunctionDateTimeToSnowflake : public IFunction
 {
 private:
-    const bool uniform_snowflake_conversion_functions;
+    const bool allow_deprecated_snowflake_conversion_functions;
 
 public:
     static constexpr auto name = "dateTimeToSnowflake";
@@ -51,7 +51,7 @@ public:
     }
 
     explicit FunctionDateTimeToSnowflake(ContextPtr context)
-        : uniform_snowflake_conversion_functions(context->getSettingsRef().uniform_snowflake_conversion_functions)
+        : allow_deprecated_snowflake_conversion_functions(context->getSettingsRef().allow_deprecated_snowflake_conversion_functions)
     {}
 
     String getName() const override { return name; }
@@ -71,8 +71,8 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        if (uniform_snowflake_conversion_functions)
-            throw Exception(ErrorCodes::DEPRECATED_FUNCTION, "Function {} is deprecated, to enable it disable setting 'uniform_snowflake_conversion_functions'", getName());
+        if (!allow_deprecated_snowflake_conversion_functions)
+            throw Exception(ErrorCodes::DEPRECATED_FUNCTION, "Function {} is deprecated, to enable it set setting 'allow_deprecated_snowflake_conversion_functions' to 'true'", getName());
 
         const auto & src = arguments[0];
         const auto & src_column = *src.column;
@@ -92,7 +92,7 @@ class FunctionSnowflakeToDateTime : public IFunction
 {
 private:
     const bool allow_nonconst_timezone_arguments;
-    const bool uniform_snowflake_conversion_functions;
+    const bool allow_deprecated_snowflake_conversion_functions;
 
 public:
     static constexpr auto name = "snowflakeToDateTime";
@@ -104,7 +104,7 @@ public:
 
     explicit FunctionSnowflakeToDateTime(ContextPtr context)
         : allow_nonconst_timezone_arguments(context->getSettingsRef().allow_nonconst_timezone_arguments)
-        , uniform_snowflake_conversion_functions(context->getSettingsRef().uniform_snowflake_conversion_functions)
+        , allow_deprecated_snowflake_conversion_functions(context->getSettingsRef().allow_deprecated_snowflake_conversion_functions)
     {}
 
     String getName() const override { return name; }
@@ -132,8 +132,8 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        if (uniform_snowflake_conversion_functions)
-            throw Exception(ErrorCodes::DEPRECATED_FUNCTION, "Function {} is deprecated, to enable it disable setting 'uniform_snowflake_conversion_functions'", getName());
+        if (!allow_deprecated_snowflake_conversion_functions)
+            throw Exception(ErrorCodes::DEPRECATED_FUNCTION, "Function {} is deprecated, to enable it set setting 'allow_deprecated_snowflake_conversion_functions' to 'true'", getName());
 
         const auto & src = arguments[0];
         const auto & src_column = *src.column;
@@ -166,7 +166,7 @@ public:
 class FunctionDateTime64ToSnowflake : public IFunction
 {
 private:
-    const bool uniform_snowflake_conversion_functions;
+    const bool allow_deprecated_snowflake_conversion_functions;
 
 public:
     static constexpr auto name = "dateTime64ToSnowflake";
@@ -177,7 +177,7 @@ public:
     }
 
     explicit FunctionDateTime64ToSnowflake(ContextPtr context)
-        : uniform_snowflake_conversion_functions(context->getSettingsRef().uniform_snowflake_conversion_functions)
+        : allow_deprecated_snowflake_conversion_functions(context->getSettingsRef().allow_deprecated_snowflake_conversion_functions)
     {}
 
     String getName() const override { return name; }
@@ -197,8 +197,8 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        if (uniform_snowflake_conversion_functions)
-            throw Exception(ErrorCodes::DEPRECATED_FUNCTION, "Function {} is deprecated, to enable it disable setting 'uniform_snowflake_conversion_functions'", getName());
+        if (!allow_deprecated_snowflake_conversion_functions)
+            throw Exception(ErrorCodes::DEPRECATED_FUNCTION, "Function {} is deprecated, to enable it set setting 'allow_deprecated_snowflake_conversion_functions' to true", getName());
 
         const auto & src = arguments[0];
 
@@ -226,7 +226,7 @@ class FunctionSnowflakeToDateTime64 : public IFunction
 {
 private:
     const bool allow_nonconst_timezone_arguments;
-    const bool uniform_snowflake_conversion_functions;
+    const bool allow_deprecated_snowflake_conversion_functions;
 
 public:
     static constexpr auto name = "snowflakeToDateTime64";
@@ -238,7 +238,7 @@ public:
 
     explicit FunctionSnowflakeToDateTime64(ContextPtr context)
         : allow_nonconst_timezone_arguments(context->getSettingsRef().allow_nonconst_timezone_arguments)
-        , uniform_snowflake_conversion_functions(context->getSettingsRef().uniform_snowflake_conversion_functions)
+        , allow_deprecated_snowflake_conversion_functions(context->getSettingsRef().allow_deprecated_snowflake_conversion_functions)
     {}
 
     String getName() const override { return name; }
@@ -266,8 +266,8 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        if (uniform_snowflake_conversion_functions)
-            throw Exception(ErrorCodes::DEPRECATED_FUNCTION, "Function {} is deprecated, to enable it disable setting 'uniform_snowflake_conversion_functions'", getName());
+        if (!allow_deprecated_snowflake_conversion_functions)
+            throw Exception(ErrorCodes::DEPRECATED_FUNCTION, "Function {} is deprecated, to enable it set setting 'allow_deprecated_snowflake_conversion_functions' to true", getName());
 
         const auto & src = arguments[0];
         const auto & src_column = *src.column;

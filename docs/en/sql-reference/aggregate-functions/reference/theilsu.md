@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/aggregate-functions/reference/theilsu
-sidebar_position: 353
+sidebar_position: 201
 ---
 
 # theilsU

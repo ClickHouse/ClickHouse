@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/aggregate-functions/reference/argmax
-sidebar_position: 106
+sidebar_position: 109
 ---
 
 # argMax

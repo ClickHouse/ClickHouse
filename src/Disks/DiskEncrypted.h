@@ -355,6 +355,8 @@ public:
     {
         return delegate->getS3StorageClient();
     }
+
+    std::shared_ptr<const S3::Client> tryGetS3StorageClient() const override { return delegate->tryGetS3StorageClient(); }
 #endif
 
 private:

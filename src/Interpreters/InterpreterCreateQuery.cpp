@@ -898,6 +898,8 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     assert(as_database_saved.empty() && as_table_saved.empty());
     std::swap(create.as_database, as_database_saved);
     std::swap(create.as_table, as_table_saved);
+    if (!as_table_saved.empty())
+        create.is_create_empty = false;
 
     return properties;
 }

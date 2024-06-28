@@ -90,6 +90,7 @@ message QueryInfo {
    string user_name = 9;
    string password = 10;
    string quota = 11;
+   string jwt = 25;
 
    // Works exactly like sessions in the HTTP protocol.
    string session_id = 12;

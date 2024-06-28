@@ -11,4 +11,4 @@ $CLICKHOUSE_CLIENT --query_id $query_id --log_query_threads 1 --query="select nu
 
 $CLICKHOUSE_CLIENT -q "system flush logs;"
 
-$CLICKHOUSE_CLIENT -q "select count() > 1 from system.query_thread_log where query_id = '$query_id' and current_database = currentDatabase() and thread_name = 'AggregDestruct';"
+$CLICKHOUSE_CLIENT -q "select count() > 0, (countIf(thread_name = 'AggregDestruct') as aggs) > 0, aggs > 1 from system.query_thread_log where query_id = '$query_id' and current_database = currentDatabase();"
