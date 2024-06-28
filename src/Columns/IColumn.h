@@ -9,10 +9,6 @@
 
 #include "config.h"
 
-#include <Poco/Logger.h>
-#include <Common/logger_useful.h>
-
-
 class SipHash;
 class Collator;
 
@@ -625,6 +621,8 @@ public:
 
     [[nodiscard]] virtual bool isSparse() const { return false; }
 
+    [[nodiscard]] virtual bool isConst() const { return false; }
+
     [[nodiscard]] virtual bool isCollationSupported() const { return false; }
 
     virtual ~IColumn() = default;
@@ -662,7 +660,13 @@ protected:
     virtual int doCompareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const = 0;
 
 private:
-    void assertTypeEquality(const IColumn & rhs) const;
+    void assertTypeEquality(const IColumn & rhs) const
+    {
+        /// For Sparse and Const columns, we can compare only internal types. It is considered normal to e.g. insert from normal vector column to a sparse vector column.
+        /// This case is specifically handled in ColumnSparse implementation. Similar situation with Const column.
+        /// For the rest of column types we can compare the types directly.
+        chassert((isConst() || isSparse()) ? getDataType() == rhs.getDataType() : typeid(*this) == typeid(rhs));
+    }
 };
 
 using ColumnPtr = IColumn::Ptr;

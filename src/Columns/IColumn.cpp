@@ -104,11 +104,6 @@ void IColumn::forEachSubcolumnRecursively(RecursiveColumnCallback callback) cons
     });
 }
 
-void IColumn::assertTypeEquality(const IColumn & rhs) const
-{
-    chassert(((isColumnConst(*this) || isSparse()) && getDataType() == rhs.getDataType()) || typeid(*this) == typeid(rhs));
-}
-
 bool isColumnNullable(const IColumn & column)
 {
     return checkColumn<ColumnNullable>(column);

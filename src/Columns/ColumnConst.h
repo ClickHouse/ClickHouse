@@ -32,6 +32,8 @@ private:
     ColumnConst(const ColumnConst & src) = default;
 
 public:
+    bool isConst() const override { return true; }
+
     ColumnPtr convertToFullColumn() const;
 
     ColumnPtr convertToFullColumnIfConst() const override
