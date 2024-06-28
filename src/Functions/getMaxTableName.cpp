@@ -24,7 +24,7 @@ class FunctionGetMaxTableName: public IFunction, WithContext
     const String db_name;
 
 public:
-    static constexpr auto name = "getMaxTableName";
+    static constexpr auto name = "getMaxTableNameForDatabase";
     static FunctionPtr create(ContextPtr context_)
     {
         return std::make_shared<FunctionGetMaxTableName>(context_);
@@ -81,7 +81,7 @@ public:
         //File name to drop is escaped_db_name.escaped_table_name.uuid.sql
         //File name to create is table_name.sql
         auto max_to_create = static_cast<size_t>(max_create_length)  - suffix.length();
-        const IColumn * col = arguments[0].column.get();
+        IColumn * col = arguments[0].column.get();
 
         if (!isColumnConst(*col))
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "The argument of function {} must be constant.", getName());
