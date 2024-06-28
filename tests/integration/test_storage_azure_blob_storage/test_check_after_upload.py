@@ -114,8 +114,9 @@ def create_table(node, table_name, **additional_settings):
     azure_query(node, f"DROP TABLE IF EXISTS {table_name}")
     azure_query(node, create_table_statement)
     assert (
-            azure_query(node, f"SELECT COUNT(*) FROM {table_name} FORMAT Values") == "(0)"
+        azure_query(node, f"SELECT COUNT(*) FROM {table_name} FORMAT Values") == "(0)"
     )
+
 
 def test_simple(cluster):
     node = cluster.instances[NODE_NAME]
@@ -124,6 +125,6 @@ def test_simple(cluster):
     values = "('2021-11-13',3,'hello')"
     azure_query(node, f"INSERT INTO {TABLE_NAME} VALUES {values}")
     assert (
-            azure_query(node, f"SELECT dt, id, data FROM {TABLE_NAME} FORMAT Values")
-            == values
+        azure_query(node, f"SELECT dt, id, data FROM {TABLE_NAME} FORMAT Values")
+        == values
     )
