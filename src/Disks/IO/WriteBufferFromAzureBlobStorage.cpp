@@ -172,29 +172,21 @@ void WriteBufferFromAzureBlobStorage::finalizeImpl()
 
     if (check_objects_after_upload)
     {
-        Azure::Storage::Blobs::ListBlobsOptions options;
-        options.Prefix = blob_path;
-        options.PageSizeHint = 1;
-
-        auto blobs_list_response = blob_container_client->ListBlobs(options);
-        auto blobs_list = blobs_list_response.Blobs;
-
-        bool found = false;
-
-        for (const auto & blob : blobs_list)
+        try
         {
-            if (blob_path == blob.Name)
-            {
-                found = true;
-                break;
-            }
+            auto blob_client = blob_container_client->GetBlobClient(blob_path);
+            blob_client.GetProperties();
+            return;
         }
-
-        if (!found)
-            throw Exception(
-                    ErrorCodes::AZURE_BLOB_STORAGE_ERROR,
-                    "Object {} not uploaded to azure blob storage, it's a bug in Azure Blob Storage or its API.",
-                    blob_path);
+        catch (const Azure::Storage::StorageException & e)
+        {
+            if (e.StatusCode == Azure::Core::Http::HttpStatusCode::NotFound)
+                throw Exception(
+                        ErrorCodes::AZURE_BLOB_STORAGE_ERROR,
+                        "Object {} not uploaded to azure blob storage, it's a bug in Azure Blob Storage or its API.",
+                        blob_path);
+            throw;
+        }
     }
 }
 
