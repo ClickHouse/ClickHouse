@@ -261,10 +261,9 @@ static ALWAYS_INLINE IColumn::Selector hashToSelector(const WeakHash32 & hash, s
     return selector;
 }
 
-IColumn::Selector ConcurrentHashJoin::selectDispatchBlock(const Strings & key_columns_names, const Block & from_block)
+IColumn::Selector selectDispatchBlock(size_t num_shards, const Strings & key_columns_names, const Block & from_block)
 {
     size_t num_rows = from_block.rows();
-    size_t num_shards = hash_joins.size();
 
     WeakHash32 hash(num_rows);
     for (const auto & key_name : key_columns_names)
@@ -282,7 +281,7 @@ Blocks ConcurrentHashJoin::dispatchBlock(const Strings & key_columns_names, cons
     size_t num_shards = hash_joins.size();
     size_t num_cols = from_block.columns();
 
-    IColumn::Selector selector = selectDispatchBlock(key_columns_names, from_block);
+    IColumn::Selector selector = selectDispatchBlock(num_shards, key_columns_names, from_block);
 
     Blocks result(num_shards);
     for (size_t i = 0; i < num_shards; ++i)
@@ -303,11 +302,11 @@ Blocks ConcurrentHashJoin::dispatchBlock(const Strings & key_columns_names, cons
 HashJoin::ScatteredBlocks ConcurrentHashJoin::dispatchBlockNew(const Strings & key_columns_names, const Block & from_block)
 {
     size_t num_shards = hash_joins.size();
-    IColumn::Selector selector = selectDispatchBlock(key_columns_names, from_block);
+    IColumn::Selector selector = selectDispatchBlock(num_shards, key_columns_names, from_block);
     HashJoin::ScatteredBlocks result(num_shards);
     for (size_t i = 0; i < selector.size(); ++i)
     {
-        size_t shard = selector[i];
+        const size_t shard = selector[i];
         if (!result[shard].block)
             result[shard].block = std::make_shared<Block>(from_block);
         result[shard].selector.push_back(i);

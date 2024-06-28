@@ -73,7 +73,6 @@ private:
     std::mutex totals_mutex;
     Block totals;
 
-    IColumn::Selector selectDispatchBlock(const Strings & key_columns_names, const Block & from_block);
     HashJoin::ScatteredBlocks dispatchBlockNew(const Strings & key_columns_names, const Block & from_block);
     Blocks dispatchBlock(const Strings & key_columns_names, const Block & from_block);
 };

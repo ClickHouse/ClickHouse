@@ -2621,10 +2621,6 @@ void HashJoin::checkTypesOfKeys(const Block & block) const
 }
 
 void HashJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
-// {
-// }
-//
-// void HashJoin::joinBlock(ScatteredBlock & block, ExtraBlockPtr & not_processed)
 {
     if (!data)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot join after data has been released");
@@ -2644,7 +2640,6 @@ void HashJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
 
     if (kind == JoinKind::Right || kind == JoinKind::Full)
     {
-        /// TODO: lock block
         materializeBlockInplace(block);
     }
 
