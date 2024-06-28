@@ -116,10 +116,12 @@ private:
         {
             // Only change the current ROC point when the score changes
             if (sorted_labels[i].score != prev_score)
+            {
                 area += (curr_fp - prev_fp) * (curr_tp + prev_tp) / 2.0; // Trapezoidal area under curve (might degenerate to zero or to a rectangle)
                 prev_fp = curr_fp;
                 prev_tp = curr_tp;
                 prev_score = sorted_labels[i].score;
+            }
 
             if (sorted_labels[i].label)
                 curr_tp += 1; /// The curve moves one step up.
