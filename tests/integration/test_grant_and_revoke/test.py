@@ -464,8 +464,8 @@ def test_introspection():
     assert expected_error in instance.query_and_get_error("SHOW GRANTS FOR B", user="A")
 
     expected_access1 = (
-        "CREATE USER A\n"
-        "CREATE USER B\n"
+        "CREATE USER A IDENTIFIED WITH no_password\n"
+        "CREATE USER B IDENTIFIED WITH no_password\n"
         "CREATE USER default IDENTIFIED WITH plaintext_password SETTINGS PROFILE `default`"
     )
     expected_access2 = (
