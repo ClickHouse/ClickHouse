@@ -182,13 +182,20 @@ public:
     {
         BlockPtr block;
         IColumn::Selector selector;
+        bool was_scattered = true;
 
         ScatteredBlock() = default;
-        ScatteredBlock(const Block & block_) : block(std::make_shared<Block>(block_)), selector(block->rows(), 0) { }
+        ScatteredBlock(const Block & block_) : block(std::make_shared<Block>(block_)), selector(block->rows()), was_scattered(false)
+        {
+            for (size_t i = 0; i < block->rows(); ++i)
+                selector[i] = i;
+        }
 
         operator bool() const { return block != nullptr; }
 
         size_t rows() const { return selector.size(); }
+
+        bool wasScattered() const { return was_scattered; }
 
         const ColumnWithTypeAndName & getByName(const std::string & name) const
         {
@@ -196,12 +203,15 @@ public:
             return block->getByName(name);
         }
 
-        void filter(const IColumn::Filter & null_map)
+        void filter(const IColumn::Filter & filt)
         {
-            IColumn::Selector filtered(selector.size());
+            chassert(block && block->rows() == filt.size());
+            IColumn::Selector filtered;
+            filtered.reserve(selector.size());
             for (const auto ind : selector)
-                if (null_map[ind])
+                if (filt[ind])
                     filtered.push_back(ind);
+            filtered.shrink_to_fit(); /// selector never grows in size
             selector.swap(filtered);
         }
     };

@@ -845,52 +845,43 @@ bool HashJoin::addBlockToJoin(ScatteredBlock & source_block, bool check_limits)
                 for (size_t i = 0; i < asof_column_nullable.size(); ++i)
                     negative_null_map[i] = !asof_column_nullable[i];
 
-                if constexpr (std::is_same_v<decltype(source_block), ScatteredBlock>)
-                {
-                    source_block.filter(negative_null_map);
-                }
-                else
-                {
-                    // TODO: impl
-                    // for (auto & column : source_block)
-                    //     column.column = column.column->filter(negative_null_map, -1);
-                }
+                source_block.filter(negative_null_map);
             }
         }
     }
 
     size_t rows = source_block.rows();
 
+    // TODO:: prepare source block before calling this function
+    //
     const auto & right_key_names = table_join->getAllNames(JoinTableSide::Right);
     ColumnPtrMap all_key_columns(right_key_names.size());
     for (const auto & column_name : right_key_names)
     {
         const auto & column = source_block.getByName(column_name).column;
-        all_key_columns[column_name] = recursiveRemoveSparse(column->convertToFullColumnIfConst())->convertToFullColumnIfLowCardinality();
+        all_key_columns[column_name]
+            = column; // recursiveRemoveSparse(column->convertToFullColumnIfConst())->convertToFullColumnIfLowCardinality();
     }
 
-    // TODO:: prepare source block before calling this function
-    // Block block_to_save = prepareRightBlock(*source_block.block);
-    // if (shrink_blocks)
-    //     block_to_save = block_to_save.shrinkToFit();
+    Block block_to_save = prepareRightBlock(*source_block.block);
+    if (shrink_blocks)
+        block_to_save = block_to_save.shrinkToFit();
 
-    if constexpr (!std::is_same_v<decltype(source_block), ScatteredBlock>)
+    size_t max_bytes_in_join = table_join->sizeLimits().max_bytes;
+    size_t max_rows_in_join = table_join->sizeLimits().max_rows;
+
+    /// TODO: use block_to_save back
+    if (kind == JoinKind::Cross && tmp_data
+        && (tmp_stream || (max_bytes_in_join && getTotalByteCount() + source_block.block->allocatedBytes() >= max_bytes_in_join)
+            || (max_rows_in_join && getTotalRowCount() + source_block.block->rows() >= max_rows_in_join)))
     {
-        // TODO: impl
-        // size_t max_bytes_in_join = table_join->sizeLimits().max_bytes;
-        // size_t max_rows_in_join = table_join->sizeLimits().max_rows;
-        //
-        // if (kind == JoinKind::Cross && tmp_data
-        //     && (tmp_stream || (max_bytes_in_join && getTotalByteCount() + block_to_save.allocatedBytes() >= max_bytes_in_join)
-        //         || (max_rows_in_join && getTotalRowCount() + block_to_save.rows() >= max_rows_in_join)))
-        // {
-        //     if (tmp_stream == nullptr)
-        //     {
-        //         tmp_stream = &tmp_data->createStream(right_sample_block);
-        //     }
-        //     tmp_stream->write(block_to_save);
-        //     return true;
-        // }
+        chassert(!source_block.wasScattered()); /// We don't run parallel_hash for cross join
+        if (tmp_stream == nullptr)
+        {
+            tmp_stream = &tmp_data->createStream(right_sample_block);
+        }
+        tmp_stream->write(*source_block.block);
+        return true;
     }
 
     size_t total_rows = 0;
@@ -899,25 +890,22 @@ bool HashJoin::addBlockToJoin(ScatteredBlock & source_block, bool check_limits)
         if (storage_join_lock)
             throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "addBlockToJoin called when HashJoin locked to prevent updates");
 
-        assertBlocksHaveEqualStructure(data->sample_block, *source_block.block, "joined block");
+        assertBlocksHaveEqualStructure(data->sample_block, block_to_save, "joined block");
 
-        if constexpr (!std::is_same_v<decltype(source_block), ScatteredBlock>)
+        size_t min_bytes_to_compress = table_join->crossJoinMinBytesToCompress();
+        size_t min_rows_to_compress = table_join->crossJoinMinRowsToCompress();
+
+        if (kind == JoinKind::Cross
+            && ((min_bytes_to_compress && getTotalByteCount() >= min_bytes_to_compress)
+                || (min_rows_to_compress && getTotalRowCount() >= min_rows_to_compress)))
         {
-            // size_t min_bytes_to_compress = table_join->crossJoinMinBytesToCompress();
-            // size_t min_rows_to_compress = table_join->crossJoinMinRowsToCompress();
-
-            /// TODO: impl
-            // if (kind == JoinKind::Cross
-            //     && ((min_bytes_to_compress && getTotalByteCount() >= min_bytes_to_compress)
-            //         || (min_rows_to_compress && getTotalRowCount() >= min_rows_to_compress)))
-            // {
-            //     block_to_save = block_to_save.compress();
-            //     have_compressed = true;
-            // }
+            chassert(!source_block.wasScattered()); /// We don't run parallel_hash for cross join
+            *source_block.block = source_block.block->compress();
+            have_compressed = true;
         }
 
         // data->blocks_allocated_size += block_to_save.allocatedBytes();
-        data->blocks.emplace_back(std::move(*source_block.block));
+        data->blocks.emplace_back(std::move(block_to_save));
         Block * stored_block = &data->blocks.back();
 
         if (rows)
@@ -2668,10 +2656,10 @@ HashJoin::~HashJoin()
 {
     if (!data)
     {
-        LOG_TEST(log, "{}Join data has been already released", instance_log_id);
+        LOG_DEBUG(log, "{}Join data has been already released", instance_log_id);
         return;
     }
-    LOG_TEST(
+    LOG_DEBUG(
         log,
         "{}Join data is being destroyed, {} bytes and {} rows in hash table",
         instance_log_id,
