@@ -4,6 +4,7 @@
 #include <Interpreters/Context.h>
 #include <IO/SwapHelper.h>
 #include <IO/ReadBufferFromFile.h>
+#include <IO/EmptyReadBuffer.h>
 
 #include <base/scope_guard.h>
 
@@ -130,7 +131,10 @@ std::unique_ptr<ReadBuffer> WriteBufferToFileSegment::getReadBufferImpl()
       * because in case destructor called without `getReadBufferImpl` called, data won't be read.
       */
     finalize();
-    return std::make_unique<ReadBufferFromFile>(file_segment->getPath());
+    if (file_segment->getDownloadedSize() > 0)
+        return std::make_unique<ReadBufferFromFile>(file_segment->getPath());
+    else
+        return std::make_unique<EmptyReadBuffer>();
 }
 
 }
