@@ -24,6 +24,8 @@ struct BitShiftLeftImpl
     {
         if constexpr (is_big_int_v<B>)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "BitShiftLeft is not implemented for big integers as second argument");
+        else if (b < 0)
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The number of shift positions needs to be a positive value");
         else if constexpr (is_big_int_v<A>)
             return static_cast<Result>(a) << static_cast<UInt32>(b);
         else
@@ -35,6 +37,8 @@ struct BitShiftLeftImpl
     {
         if constexpr (is_big_int_v<B>)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "BitShiftLeft is not implemented for big integers as second argument");
+        else if (b < 0)
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The number of shift positions needs to be a positive value");
         else
         {
             UInt8 word_size = 8;
@@ -100,6 +104,8 @@ struct BitShiftLeftImpl
     {
         if constexpr (is_big_int_v<B>)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "BitShiftLeft is not implemented for big integers as second argument");
+        else if (b < 0)
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The number of shift positions needs to be a positive value");
         else
         {
             UInt8 word_size = 8;
