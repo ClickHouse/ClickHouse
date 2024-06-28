@@ -651,7 +651,8 @@ namespace
         size_t,
         const ColumnRawPtrs & key_columns,
         const Sizes & key_sizes,
-        const HashJoin::ScatteredBlock & stored_block,
+        Block * stored_block,
+        const IColumn::Selector & selector,
         ConstNullMapPtr null_map,
         UInt8ColumnDataPtr join_mask,
         Arena & pool,
@@ -669,7 +670,7 @@ namespace
         /// For ALL and ASOF join always insert values
         is_inserted = !mapped_one || is_asof_join;
 
-        for (size_t ind : stored_block.selector)
+        for (size_t ind : selector)
         {
             if (null_map && (*null_map)[ind])
             {
@@ -684,11 +685,11 @@ namespace
                 continue;
 
             if constexpr (is_asof_join)
-                Inserter<Map, KeyGetter>::insertAsof(join, map, key_getter, stored_block.block.get(), ind, pool, *asof_column);
+                Inserter<Map, KeyGetter>::insertAsof(join, map, key_getter, stored_block, ind, pool, *asof_column);
             else if constexpr (mapped_one)
-                is_inserted |= Inserter<Map, KeyGetter>::insertOne(join, map, key_getter, stored_block.block.get(), ind, pool);
+                is_inserted |= Inserter<Map, KeyGetter>::insertOne(join, map, key_getter, stored_block, ind, pool);
             else
-                Inserter<Map, KeyGetter>::insertAll(join, map, key_getter, stored_block.block.get(), ind, pool);
+                Inserter<Map, KeyGetter>::insertAll(join, map, key_getter, stored_block, ind, pool);
         }
         return map.getBufferSizeInCells();
     }
@@ -701,7 +702,8 @@ namespace
         size_t rows,
         const ColumnRawPtrs & key_columns,
         const Sizes & key_sizes,
-        const HashJoin::ScatteredBlock & stored_block,
+        Block * stored_block,
+        const IColumn::Selector & selector,
         ConstNullMapPtr null_map,
         UInt8ColumnDataPtr join_mask,
         Arena & pool,
@@ -721,7 +723,7 @@ namespace
         return insertFromBlockImplTypeCase< \
             STRICTNESS, \
             typename KeyGetterForType<HashJoin::Type::TYPE, std::remove_reference_t<decltype(*maps.TYPE)>>::Type>( \
-            join, *maps.TYPE, rows, key_columns, key_sizes, stored_block, null_map, join_mask, pool, is_inserted); \
+            join, *maps.TYPE, rows, key_columns, key_sizes, stored_block, selector, null_map, join_mask, pool, is_inserted); \
         break;
 
                 APPLY_FOR_JOIN_VARIANTS(M)
@@ -968,7 +970,8 @@ bool HashJoin::addBlockToJoin(ScatteredBlock & source_block, bool check_limits)
                             rows,
                             key_columns,
                             key_sizes[onexpr_idx],
-                            source_block,
+                            stored_block,
+                            source_block.selector,
                             null_map,
                             /// If mask is false constant, rows are added to hashmap anyway. It's not a happy-flow, so this case is not optimized
                             join_mask_col.getData(),
