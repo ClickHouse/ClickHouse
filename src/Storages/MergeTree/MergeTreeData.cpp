@@ -5611,7 +5611,7 @@ void MergeTreeData::restorePartsFromBackup(RestorerFromBackup & restorer, const 
                             String{data_path_in_backup_fs / part_name});
         }
 
-        if (partition_ids.contains(part_info->partition_id))
+        if (!partition_ids.empty() && !partition_ids.contains(part_info->partition_id))
             continue;
 
         restorer.addDataRestoreTask(
