@@ -13,6 +13,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ProjectionsDescription.h>
 #include <Storages/StorageInMemoryMetadata.h>
+#include <Storages/System/StorageSystemTables.h>
 #include <Storages/System/getQueriedColumnsMaskAndHeader.h>
 #include <Storages/VirtualColumnUtils.h>
 
@@ -24,69 +25,6 @@ namespace DB
 
 namespace
 {
-
-ColumnPtr getFilteredDatabases(const ActionsDAG::Node * predicate, ContextPtr context)
-{
-    MutableColumnPtr column = ColumnString::create();
-
-    const auto databases = DatabaseCatalog::instance().getDatabases();
-    for (const auto & database_name : databases | boost::adaptors::map_keys)
-    {
-        if (database_name == DatabaseCatalog::TEMPORARY_DATABASE)
-            continue; /// We don't want to show the internal database for temporary tables in system.tables
-
-        column->insert(database_name);
-    }
-
-    Block block{ColumnWithTypeAndName(std::move(column), std::make_shared<DataTypeString>(), "database")};
-    VirtualColumnUtils::filterBlockWithPredicate(predicate, block, context);
-    return block.getByPosition(0).column;
-}
-
-ColumnPtr getFilteredTables(const ActionsDAG::Node * predicate, const ColumnPtr & filtered_databases_column, ContextPtr context)
-{
-    Block sample{
-        ColumnWithTypeAndName(nullptr, std::make_shared<DataTypeString>(), "name"),
-        ColumnWithTypeAndName(nullptr, std::make_shared<DataTypeString>(), "engine")};
-
-    MutableColumnPtr database_column = ColumnString::create();
-    MutableColumnPtr engine_column;
-
-    auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(predicate, &sample);
-    if (dag)
-    {
-        bool filter_by_engine = false;
-        for (const auto * input : dag->getInputs())
-            if (input->result_name == "engine")
-                filter_by_engine = true;
-
-        if (filter_by_engine)
-            engine_column = ColumnString::create();
-    }
-
-    for (size_t database_idx = 0; database_idx < filtered_databases_column->size(); ++database_idx)
-    {
-        const auto & database_name = filtered_databases_column->getDataAt(database_idx).toString();
-        DatabasePtr database = DatabaseCatalog::instance().tryGetDatabase(database_name);
-        if (!database)
-            continue;
-
-        auto table_it = database->getDetachedTablesIterator(context, {}, false);
-        for (; table_it->isValid(); table_it->next())
-        {
-            database_column->insert(table_it->table());
-        }
-    }
-
-    Block block{ColumnWithTypeAndName(std::move(database_column), std::make_shared<DataTypeString>(), "name")};
-    if (engine_column)
-        block.insert(ColumnWithTypeAndName(std::move(engine_column), std::make_shared<DataTypeString>(), "engine"));
-
-    if (dag)
-        VirtualColumnUtils::filterBlockWithDAG(dag, block, context);
-
-    return block.getByPosition(0).column;
-}
 
 class DetachedTablesBlockSource : public ISource
 {
@@ -280,8 +218,8 @@ void ReadFromSystemDetachedTables::applyFilters(ActionDAGNodes added_filter_node
     if (filter_actions_dag)
         predicate = filter_actions_dag->getOutputs().at(0);
 
-    filtered_databases_column = getFilteredDatabases(predicate, context);
-    filtered_tables_column = getFilteredTables(predicate, filtered_databases_column, context);
+    filtered_databases_column = detail::getFilteredDatabases(predicate, context);
+    filtered_tables_column = detail::getFilteredTables(predicate, filtered_databases_column, context, true);
 }
 
 void ReadFromSystemDetachedTables::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
