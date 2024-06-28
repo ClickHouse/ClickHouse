@@ -39,11 +39,36 @@ public:
     const SeekableReadBuffer & getReadBuffer() const { return input; }
     SeekableReadBuffer & getReadBuffer() { return input; }
 
-private:
+    // A subrange of the input, read by one thread.
+    struct ReadWorker
+    {
+        ReadWorker(SeekableReadBuffer & input_, size_t offset, size_t size) : input(input_), start_offset(offset), segment(size)
+        {
+            chassert(size);
+            chassert(segment.size() == size);
+        }
+
+        bool hasBytesToConsume() const { return bytes_produced > bytes_consumed; }
+        bool hasBytesToProduce() const { return bytes_produced < segment.size(); }
+
+        SeekableReadBuffer & input;
+        const size_t start_offset; // start of the segment
+
+        Memory<> segment;
+        /// Reader thread produces data, nextImpl() consumes it.
+        /// segment[bytes_consumed..bytes_produced-1] is data waiting to be picked up by nextImpl()
+        /// segment[bytes_produced..] needs to be read from the input ReadBuffer
+        size_t bytes_produced = 0;
+        size_t bytes_consumed = 0;
+
+        std::atomic_bool cancel{false};
+        std::mutex worker_mutex;
+    };
+
     /// Reader in progress with a buffer for the segment
-    struct ReadWorker;
     using ReadWorkerPtr = std::shared_ptr<ReadWorker>;
 
+private:
     /// First worker in deque have new data or processed all available amount
     bool currentWorkerReady() const;
     /// First worker in deque processed and flushed all data

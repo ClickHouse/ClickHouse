@@ -22,6 +22,7 @@ public:
         CurrentMetrics::Metric threads_scheduled_metric_);
 
     ThreadPool & get();
+    ThreadPool * tryGet();
 
     void initialize(size_t max_threads, size_t max_free_threads, size_t queue_size);
     void reloadConfiguration(size_t max_threads, size_t max_free_threads, size_t queue_size);

@@ -15,6 +15,7 @@ public:
     bool supportsRightBoundedReads() const override { return true; }
 
     void setReadUntilPosition(size_t position) override;
+    std::optional<size_t> getReadUntilPosition() const { return read_until_position; }
 
     void setReadUntilEnd() override;
 

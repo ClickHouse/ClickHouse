@@ -78,4 +78,12 @@ if (TARGET ch_contrib::hdfs)
     target_link_libraries (read_buffer_from_hdfs PRIVATE dbms ch_contrib::hdfs)
 endif ()
 
+if (TARGET ch_contrib::bzip2)
+    clickhouse_add_executable (read_buffer_bzip2 read_buffer_bzip2.cpp)
+    target_link_libraries (read_buffer_bzip2 PRIVATE dbms ch_contrib::bzip2)
+
+    clickhouse_add_executable (read_buffer_splittable_bzip2 read_buffer_splittable_bzip2.cpp)
+    target_link_libraries (read_buffer_splittable_bzip2 PRIVATE dbms ch_contrib::bzip2)
+endif ()
+
 
