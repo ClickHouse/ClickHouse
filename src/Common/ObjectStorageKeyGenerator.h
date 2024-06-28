@@ -11,7 +11,8 @@ class IObjectStorageKeysGenerator
 public:
     virtual ~IObjectStorageKeysGenerator() = default;
 
-    virtual ObjectStorageKey generate(const String & path, bool is_directory) const = 0;
+    /// Generates an object storage key based on a path in the virtual filesystem.
+    virtual ObjectStorageKey generate(const String & path, bool is_directory, const std::optional<String> & key_prefix) const = 0;
 };
 
 using ObjectStorageKeysGeneratorPtr = std::shared_ptr<IObjectStorageKeysGenerator>;
