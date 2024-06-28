@@ -48,9 +48,7 @@ private:
     bool isEnoughSize(const Chunk & chunk) const;
     /// Serialize chunks to rocksdb key-value pairs
     template<bool with_timestamp>
-    std::pair<ColumnString::Ptr, ColumnString::Ptr> serializeChunks(const std::vector<Chunk> & input_chunks) const;
-    /// Generate SST file path
-    String getTemporarySSTFilePath(size_t seq_id);
+    std::pair<ColumnString::Ptr, ColumnString::Ptr> serializeChunks(std::vector<Chunk> && input_chunks) const;
 
     StorageEmbeddedRocksDB & storage;
     StorageMetadataPtr metadata_snapshot;

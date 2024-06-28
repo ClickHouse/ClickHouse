@@ -155,7 +155,7 @@ std::vector<Chunk> EmbeddedRocksDBBulkSink::squash(Chunk chunk)
 }
 
 template<bool with_timestamp>
-std::pair<ColumnString::Ptr, ColumnString::Ptr> EmbeddedRocksDBBulkSink::serializeChunks(const std::vector<Chunk> & input_chunks) const
+std::pair<ColumnString::Ptr, ColumnString::Ptr> EmbeddedRocksDBBulkSink::serializeChunks(std::vector<Chunk> && input_chunks) const
 {
     auto serialized_key_column = ColumnString::create();
     auto serialized_value_column = ColumnString::create();
@@ -167,9 +167,9 @@ std::pair<ColumnString::Ptr, ColumnString::Ptr> EmbeddedRocksDBBulkSink::seriali
         auto & serialized_value_offsets = serialized_value_column->getOffsets();
         WriteBufferFromVector<ColumnString::Chars> writer_key(serialized_key_data);
         WriteBufferFromVector<ColumnString::Chars> writer_value(serialized_value_data);
+        FormatSettings format_settings; /// Format settings is 1.5KB, so it's not wise to create it for each row
 
         /// TTL handling
-        FormatSettings format_settings; /// Format settings is 1.5KB, so it's not wise to create it for each row
         [[maybe_unused]] auto encode_fixed_32 = [](char * dst, int32_t value)
         {
             if constexpr (std::endian::native == std::endian::little)
@@ -194,7 +194,7 @@ std::pair<ColumnString::Ptr, ColumnString::Ptr> EmbeddedRocksDBBulkSink::seriali
             encode_fixed_32(ts_string, static_cast<int32_t>(curtime));
         };
 
-        for (const auto & chunk : input_chunks)
+        for (auto && chunk : input_chunks)
         {
             [[maybe_unused]] char ts_string[4];
             if constexpr (with_timestamp)
@@ -207,7 +207,7 @@ std::pair<ColumnString::Ptr, ColumnString::Ptr> EmbeddedRocksDBBulkSink::seriali
                 for (size_t idx = 0; idx < columns.size(); ++idx)
                     serializations[idx]->serializeBinary(*columns[idx], i, idx == primary_key_pos ? writer_key : writer_value, format_settings);
 
-                /// Append timestamp to end of value, see DBWithTTLImpl::AppendTS::AppendTS
+                /// Append timestamp to end of value, see rocksdb::DBWithTTLImpl::AppendTS
                 if constexpr (with_timestamp)
                     writeString(ts_string, 4, writer_value);
 
