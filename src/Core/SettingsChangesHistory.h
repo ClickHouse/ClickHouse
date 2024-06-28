@@ -11,11 +11,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
 class ClickHouseVersion
 {
 public:
@@ -339,7 +334,7 @@ const std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges> & get
             ///     {"21.2", {{"some_setting_2", false, true, "[...]"}}},
             /// As std::set has unique keys, one of the entries would be overwritten.
             if (settings_changes_history.contains(setting_change.first))
-                throw Exception{ErrorCodes::LOGICAL_ERROR, "Detected duplicates version '{}'", setting_change.first.toString()};
+                throw Exception{ErrorCodes::LOGICAL_ERROR, "Detected duplicate version '{}'", setting_change.first.toString()};
 
             settings_changes_history[setting_change.first] = setting_change.second;
         }
