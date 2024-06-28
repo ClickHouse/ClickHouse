@@ -80,9 +80,20 @@ std::vector<std::string> MetadataStorageFromPlainObjectStorage::listDirectory(co
 
     object_storage->listObjects(abs_key, files, 0);
 
-    std::unordered_set<std::string> directories;
-    getDirectChildrenOnDisk(abs_key, object_storage->getCommonKeyPrefix(), files, path, directories);
-    return std::vector<std::string>(std::make_move_iterator(directories.begin()), std::make_move_iterator(directories.end()));
+    std::unordered_set<std::string> result;
+    for (const auto & elem : files)
+    {
+        const auto & p = elem->relative_path;
+        chassert(p.find(abs_key) == 0);
+        const auto child_pos = abs_key.size();
+        /// string::npos is ok.
+        const auto slash_pos = p.find('/', child_pos);
+        if (slash_pos == std::string::npos)
+            result.emplace(p.substr(child_pos));
+        else
+            result.emplace(p.substr(child_pos, slash_pos - child_pos));
+    }
+    return std::vector<std::string>(std::make_move_iterator(result.begin()), std::make_move_iterator(result.end()));
 }
 
 DirectoryIteratorPtr MetadataStorageFromPlainObjectStorage::iterateDirectory(const std::string & path) const
@@ -100,27 +111,6 @@ StoredObjects MetadataStorageFromPlainObjectStorage::getStorageObjects(const std
     size_t object_size = getFileSize(path);
     auto object_key = object_storage->generateObjectKeyForPath(path, std::nullopt /* key_prefix */);
     return {StoredObject(object_key.serialize(), path, object_size)};
-}
-
-void MetadataStorageFromPlainObjectStorage::getDirectChildrenOnDisk(
-    const std::string & storage_key,
-    const std::string & /* storage_key_perfix */,
-    const RelativePathsWithMetadata & remote_paths,
-    const std::string & /* local_path */,
-    std::unordered_set<std::string> & result) const
-{
-    for (const auto & elem : remote_paths)
-    {
-        const auto & path = elem->relative_path;
-        chassert(path.find(storage_key) == 0);
-        const auto child_pos = storage_key.size();
-        /// string::npos is ok.
-        const auto slash_pos = path.find('/', child_pos);
-        if (slash_pos == std::string::npos)
-            result.emplace(path.substr(child_pos));
-        else
-            result.emplace(path.substr(child_pos, slash_pos - child_pos));
-    }
 }
 
 const IMetadataStorage & MetadataStorageFromPlainObjectStorageTransaction::getStorageForNonTransactionalReads() const

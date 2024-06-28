@@ -121,7 +121,7 @@ MetadataStorageFromPlainObjectStorage::PathMap loadPathPrefixMap(const std::stri
     return result;
 }
 
-void getDirectChildrenOnRewritableDisk(
+void getDirectChildrenOnDiskImpl(
     const std::string & storage_key,
     const std::string & storage_key_perfix,
     const RelativePathsWithMetadata & remote_paths,
@@ -215,10 +215,8 @@ bool MetadataStorageFromPlainRewritableObjectStorage::exists(const std::string &
 
     if (getMetadataKeyPrefix() != object_storage->getCommonKeyPrefix())
     {
-        auto key_prefix = object_storage->generateObjectKeyForPath(path, std::nullopt /* key_prefix */).serialize();
-        chassert(key_prefix.starts_with(object_storage->getCommonKeyPrefix()));
-        auto metadata_key = std::filesystem::path(getMetadataKeyPrefix()) / key_prefix.substr(object_storage->getCommonKeyPrefix().size());
-        return object_storage->existsOrHasAnyChild(metadata_key);
+        auto key_prefix = object_storage->generateObjectKeyForPath(path, getMetadataKeyPrefix()).serialize();
+        return object_storage->existsOrHasAnyChild(key_prefix);
     }
 
     return false;
@@ -228,11 +226,8 @@ bool MetadataStorageFromPlainRewritableObjectStorage::isDirectory(const std::str
 {
     if (getMetadataKeyPrefix() != object_storage->getCommonKeyPrefix())
     {
-        auto directory = std::filesystem::path(object_storage->generateObjectKeyForPath(path, std::nullopt /* key_prefix */).serialize()) / "";
-        chassert(directory.string().starts_with(object_storage->getCommonKeyPrefix()));
-        auto metadata_key
-            = std::filesystem::path(getMetadataKeyPrefix()) / directory.string().substr(object_storage->getCommonKeyPrefix().size());
-        return object_storage->existsOrHasAnyChild(metadata_key);
+        auto directory = std::filesystem::path(object_storage->generateObjectKeyForPath(path, getMetadataKeyPrefix()).serialize()) / "";
+        return object_storage->existsOrHasAnyChild(directory);
     }
     else
         return MetadataStorageFromPlainObjectStorage::isDirectory(path);
@@ -240,12 +235,10 @@ bool MetadataStorageFromPlainRewritableObjectStorage::isDirectory(const std::str
 
 std::vector<std::string> MetadataStorageFromPlainRewritableObjectStorage::listDirectory(const std::string & path) const
 {
-    auto key_prefix = object_storage->generateObjectKeyForPath(path, std::nullopt /* key_prefix */).serialize();
+    auto key_prefix = object_storage->generateObjectKeyForPath(path, "" /* key_prefix */).serialize();
 
     RelativePathsWithMetadata files;
-    std::string abs_key = key_prefix;
-    if (!abs_key.ends_with('/'))
-        abs_key += '/';
+    auto abs_key = std::filesystem::path(object_storage->getCommonKeyPrefix()) / key_prefix / "";
 
     object_storage->listObjects(abs_key, files, 0);
 
@@ -255,8 +248,7 @@ std::vector<std::string> MetadataStorageFromPlainRewritableObjectStorage::listDi
     /// metadata along with regular files.
     if (object_storage->getCommonKeyPrefix() != getMetadataKeyPrefix())
     {
-        chassert(abs_key.starts_with(object_storage->getCommonKeyPrefix()));
-        auto metadata_key = std::filesystem::path(getMetadataKeyPrefix()) / abs_key.substr(object_storage->getCommonKeyPrefix().size());
+        auto metadata_key = std::filesystem::path(getMetadataKeyPrefix()) / key_prefix / "";
         RelativePathsWithMetadata metadata_files;
         object_storage->listObjects(metadata_key, metadata_files, 0);
         getDirectChildrenOnDisk(metadata_key, getMetadataKeyPrefix(), metadata_files, path, directories);
@@ -272,7 +264,7 @@ void MetadataStorageFromPlainRewritableObjectStorage::getDirectChildrenOnDisk(
     const std::string & local_path,
     std::unordered_set<std::string> & result) const
 {
-    getDirectChildrenOnRewritableDisk(storage_key, storage_key_perfix, remote_paths, local_path, *getPathMap(), metadata_mutex, result);
+    getDirectChildrenOnDiskImpl(storage_key, storage_key_perfix, remote_paths, local_path, *getPathMap(), metadata_mutex, result);
 }
 
 }

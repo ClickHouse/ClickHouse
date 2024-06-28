@@ -33,7 +33,7 @@ protected:
         const std::string & storage_key_perfix,
         const RelativePathsWithMetadata & remote_paths,
         const std::string & local_path,
-        std::unordered_set<std::string> & result) const override;
+        std::unordered_set<std::string> & result) const;
 };
 
 }
