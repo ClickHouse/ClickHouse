@@ -152,7 +152,7 @@ public:
             if (!isFinite(value))
             {
                 /// Cannot decide what unit it is (years, month), just simply write inf or nan.
-                writeFloatText(value, buf_to);
+                writeFloatText(value, buf_to, false);
             }
             else
             {
