@@ -2628,11 +2628,11 @@ void HashJoin::checkTypesOfKeys(const Block & block) const
     }
 }
 
-void HashJoin::joinBlock(Block &, ExtraBlockPtr &)
-{
-}
-
-void HashJoin::joinBlock(ScatteredBlock & block, ExtraBlockPtr & not_processed)
+void HashJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
+// {
+// }
+//
+// void HashJoin::joinBlock(ScatteredBlock & block, ExtraBlockPtr & not_processed)
 {
     if (!data)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot join after data has been released");
@@ -2641,24 +2641,19 @@ void HashJoin::joinBlock(ScatteredBlock & block, ExtraBlockPtr & not_processed)
     {
         auto cond_column_name = onexpr.condColumnNames();
         JoinCommon::checkTypesOfKeys(
-            *block.block,
-            onexpr.key_names_left,
-            cond_column_name.first,
-            right_sample_block,
-            onexpr.key_names_right,
-            cond_column_name.second);
+            block, onexpr.key_names_left, cond_column_name.first, right_sample_block, onexpr.key_names_right, cond_column_name.second);
     }
 
     if (kind == JoinKind::Cross)
     {
-        joinBlockImplCross(*block.block, not_processed);
+        joinBlockImplCross(block, not_processed);
         return;
     }
 
     if (kind == JoinKind::Right || kind == JoinKind::Full)
     {
         /// TODO: lock block
-        // materializeBlockInplace(*block.block);
+        materializeBlockInplace(block);
     }
 
     {
