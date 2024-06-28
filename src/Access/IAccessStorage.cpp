@@ -553,7 +553,7 @@ std::optional<AuthResult> IAccessStorage::authenticateImpl(
 }
 
 bool IAccessStorage::areCredentialsValid(
-    const std::string user_name,
+    const std::string & user_name,
     time_t valid_until,
     const AuthenticationData & authentication_method,
     const Credentials & credentials,
