@@ -10,7 +10,7 @@
 [submodule "contrib/librdkafka"]
 	path = contrib/librdkafka
 	url = https://github.com/ilejn/librdkafka
-	branch = v2.4.0
+	branch = branch_2.4.0
 [submodule "contrib/cctz"]
 	path = contrib/cctz
 	url = https://github.com/ClickHouse/cctz
