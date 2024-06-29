@@ -1,20 +1,21 @@
+#include <Access/Common/AccessRightsElement.h>
+#include <Databases/DatabaseReplicated.h>
 #include <Databases/IDatabase.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/executeDDLQueryOnCluster.h>
-#include <Interpreters/InterpreterFactory.h>
-#include <Interpreters/InterpreterDropQuery.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
+#include <Interpreters/InterpreterDropQuery.h>
+#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/QueryLog.h>
-#include <Access/Common/AccessRightsElement.h>
+#include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Common/Exception.h>
 #include <Common/escapeForFileName.h>
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
-#include <Databases/DatabaseReplicated.h>
 
 #include "config.h"
 
@@ -38,6 +39,7 @@ namespace ErrorCodes
     extern const int INCORRECT_QUERY;
     extern const int TABLE_IS_READ_ONLY;
     extern const int TABLE_NOT_EMPTY;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace ActionLocks
@@ -136,6 +138,32 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
     }
 
     auto ddl_guard = (!query.no_ddl_lock ? DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name) : nullptr);
+
+    if (query.detached)
+    {
+        if (!context_->getSettingsRef().allow_experimental_drop_detached_table)
+            throw Exception(
+                ErrorCodes::SUPPORT_IS_DISABLED,
+                "Experimental drop detached table feature is not enabled (the setting 'allow_experimental_drop_detached_table')");
+
+        auto database = DatabaseCatalog::instance().getDatabase(table_id.getDatabaseName());
+        const auto table_name = table_id.getTableName();
+
+        if (database->isTableExist(table_name, context_))
+        {
+            throw Exception(
+                ErrorCodes::UNKNOWN_TABLE, "Table {} should be detached for using DROP DETACHED TABLE", table_id.getNameForLogs());
+        }
+
+        if (!fs::exists(database->getObjectMetadataPath(table_name)))
+        {
+            throw Exception(
+                ErrorCodes::UNKNOWN_TABLE, "Metadata for table {} does not exist. Table was dropped early", table_id.getNameForLogs());
+        }
+
+        database->dropDetachedTable(context_, table_id.getTableName(), query.sync);
+        return {};
+    }
 
     /// If table was already dropped by anyone, an exception will be thrown
     auto [database, table] = query.if_exists ? DatabaseCatalog::instance().tryGetDatabaseAndTable(table_id, context_)
@@ -347,7 +375,6 @@ BlockIO InterpreterDropQuery::executeToTemporaryTable(const String & table_name,
 
     return {};
 }
-
 
 BlockIO InterpreterDropQuery::executeToDatabase(const ASTDropQuery & query)
 {
