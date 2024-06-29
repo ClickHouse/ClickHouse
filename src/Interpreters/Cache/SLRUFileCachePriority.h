@@ -19,7 +19,8 @@ public:
         size_t max_elements_,
         double size_ratio_,
         LRUFileCachePriority::StatePtr probationary_state_ = nullptr,
-        LRUFileCachePriority::StatePtr protected_state_ = nullptr);
+        LRUFileCachePriority::StatePtr protected_state_ = nullptr,
+        const std::string & description_ = "none");
 
     size_t getSize(const CachePriorityGuard::Lock & lock) const override;
 
@@ -57,6 +58,14 @@ public:
         const UserID & user_id,
         const CachePriorityGuard::Lock &) override;
 
+    bool collectCandidatesForEviction(
+        size_t desired_size,
+        size_t desired_elements_count,
+        size_t max_candidates_to_evict,
+        FileCacheReserveStat & stat,
+        EvictionCandidates & res,
+        const CachePriorityGuard::Lock &) override;
+
     void shuffle(const CachePriorityGuard::Lock &) override;
 
     PriorityDumpPtr dump(const CachePriorityGuard::Lock &) override;
@@ -67,7 +76,7 @@ private:
     double size_ratio;
     LRUFileCachePriority protected_queue;
     LRUFileCachePriority probationary_queue;
-    LoggerPtr log = getLogger("SLRUFileCachePriority");
+    LoggerPtr log;
 
     void increasePriority(SLRUIterator & iterator, const CachePriorityGuard::Lock & lock);
 
@@ -116,7 +125,10 @@ private:
 
     SLRUFileCachePriority * cache_priority;
     LRUFileCachePriority::LRUIterator lru_iterator;
-    const EntryPtr entry;
+    /// Entry itself is stored by lru_iterator.entry.
+    /// We have it as a separate field to use entry without requiring any lock
+    /// (which will be required if we wanted to get entry from lru_iterator.getEntry()).
+    const std::weak_ptr<Entry> entry;
     /// Atomic,
     /// but needed only in order to do FileSegment::getInfo() without any lock,
     /// which is done for system tables and logging.

@@ -77,7 +77,7 @@ void CgroupsMemoryUsageObserver::setMemoryUsageLimits(uint64_t hard_limit_, uint
     {
         if (up)
         {
-            LOG_WARNING(log, "Exceeded sort memory limit ({})", ReadableSize(soft_limit_));
+            LOG_WARNING(log, "Exceeded soft memory limit ({})", ReadableSize(soft_limit_));
 
 #if USE_JEMALLOC
             LOG_INFO(log, "Purging jemalloc arenas");

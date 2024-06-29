@@ -1,6 +1,7 @@
-#include <Interpreters/Cache/QueryLimit.h>
-#include <Interpreters/Cache/Metadata.h>
 #include <Interpreters/Cache/FileCache.h>
+#include <Interpreters/Cache/Metadata.h>
+#include <Interpreters/Cache/QueryLimit.h>
+#include <Common/CurrentThread.h>
 
 namespace DB
 {

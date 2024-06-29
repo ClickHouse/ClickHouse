@@ -52,7 +52,6 @@ export ZOOKEEPER_FAULT_INJECTION=1
 # available for dump via clickhouse-local
 configure
 
-azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --debug /azurite_log &
 ./setup_minio.sh stateless # to have a proper environment
 
 config_logs_export_cluster /etc/clickhouse-server/config.d/system_logs_export.yaml
@@ -72,7 +71,7 @@ mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/c
 
 # Randomize cache policies.
 cache_policy=""
-if [ $(($RANDOM%2)) -eq 1 ]; then
+if [ $((RANDOM % 2)) -eq 1 ]; then
     cache_policy="SLRU"
 else
     cache_policy="LRU"
@@ -215,6 +214,7 @@ stop_server
 export USE_S3_STORAGE_FOR_MERGE_TREE=1
 export RANDOMIZE_OBJECT_KEY_TYPE=1
 export ZOOKEEPER_FAULT_INJECTION=1
+export THREAD_POOL_FAULT_INJECTION=1
 configure
 
 # But we still need default disk because some tables loaded only into it

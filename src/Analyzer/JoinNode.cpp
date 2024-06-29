@@ -1,16 +1,14 @@
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/ListNode.h>
-
+#include <Analyzer/Utils.h>
+#include <IO/Operators.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
-#include <IO/Operators.h>
-
-#include <Parsers/ASTSubquery.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
-
-#include <Analyzer/Utils.h>
+#include <Common/assert_cast.h>
 
 namespace DB
 {
@@ -81,13 +79,13 @@ void JoinNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, si
     }
 }
 
-bool JoinNode::isEqualImpl(const IQueryTreeNode & rhs) const
+bool JoinNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
 {
     const auto & rhs_typed = assert_cast<const JoinNode &>(rhs);
     return locality == rhs_typed.locality && strictness == rhs_typed.strictness && kind == rhs_typed.kind;
 }
 
-void JoinNode::updateTreeHashImpl(HashState & state) const
+void JoinNode::updateTreeHashImpl(HashState & state, CompareOptions) const
 {
     state.update(locality);
     state.update(strictness);

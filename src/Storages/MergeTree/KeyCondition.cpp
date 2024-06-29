@@ -18,6 +18,7 @@
 #include <Functions/CastOverloadResolver.h>
 #include <Functions/IFunction.h>
 #include <Common/FieldVisitorToString.h>
+#include <Common/HilbertUtils.h>
 #include <Common/MortonUtils.h>
 #include <Common/typeid_cast.h>
 #include <Columns/ColumnSet.h>
@@ -411,7 +412,9 @@ const KeyCondition::AtomMap KeyCondition::atom_map
                 return false;
 
             const String & expression = value.get<const String &>();
-            // This optimization can't process alternation - this would require a comprehensive parsing of regular expression.
+
+            /// This optimization can't process alternation - this would require
+            /// a comprehensive parsing of regular expression.
             if (expression.contains('|'))
                 return false;
 
@@ -453,6 +456,18 @@ const KeyCondition::AtomMap KeyCondition::atom_map
     }
 };
 
+static const std::set<std::string_view> always_relaxed_atom_functions = {"match"};
+static const std::set<KeyCondition::RPNElement::Function> always_relaxed_atom_elements
+    = {KeyCondition::RPNElement::FUNCTION_UNKNOWN, KeyCondition::RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE};
+
+/// Functions with range inversion cannot be relaxed. It will become stricter instead.
+/// For example:
+/// create table test(d Date, k Int64, s String) Engine=MergeTree order by toYYYYMM(d);
+/// insert into test values ('2020-01-01', 1, '');
+/// insert into test values ('2020-01-02', 1, '');
+/// select * from test where d != '2020-01-01'; -- If relaxed, no record will return
+static const std::set<std::string_view> no_relaxed_atom_functions
+    = {"notLike", "notIn", "globalNotIn", "notNullIn", "globalNotNullIn", "notEquals", "notEmpty"};
 
 static const std::map<std::string, std::string> inverse_relations =
 {
@@ -675,6 +690,11 @@ static const ActionsDAG::Node & cloneASTWithInversionPushDown(
     return *res;
 }
 
+const std::unordered_map<String, KeyCondition::SpaceFillingCurveType> KeyCondition::space_filling_curve_name_to_type {
+    {"mortonEncode", SpaceFillingCurveType::Morton},
+    {"hilbertEncode", SpaceFillingCurveType::Hilbert}
+};
+
 ActionsDAGPtr KeyCondition::cloneASTWithInversionPushDown(ActionsDAG::NodeRawConstPtrs nodes, const ContextPtr & context)
 {
     auto res = std::make_shared<ActionsDAG>();
@@ -730,16 +750,17 @@ static NameSet getAllSubexpressionNames(const ExpressionActions & key_expr)
 
 void KeyCondition::getAllSpaceFillingCurves()
 {
-    /// So far the only supported function is mortonEncode (Morton curve).
+    /// So far the only supported function is mortonEncode and hilbertEncode (Morton and Hilbert curves).
 
     for (const auto & action : key_expr->getActions())
     {
         if (action.node->type == ActionsDAG::ActionType::FUNCTION
             && action.node->children.size() >= 2
-            && action.node->function_base->getName() == "mortonEncode")
+            && space_filling_curve_name_to_type.contains(action.node->function_base->getName()))
         {
             SpaceFillingCurveDescription curve;
             curve.function_name = action.node->function_base->getName();
+            curve.type = space_filling_curve_name_to_type.at(curve.function_name);
             curve.key_column_pos = key_columns.at(action.node->result_name);
             for (const auto & child : action.node->children)
             {
@@ -767,12 +788,10 @@ KeyCondition::KeyCondition(
     ContextPtr context,
     const Names & key_column_names,
     const ExpressionActionsPtr & key_expr_,
-    bool single_point_,
-    bool strict_)
+    bool single_point_)
     : key_expr(key_expr_)
     , key_subexpr_names(getAllSubexpressionNames(*key_expr))
     , single_point(single_point_)
-    , strict(strict_)
 {
     size_t key_index = 0;
     for (const auto & name : key_column_names)
@@ -791,6 +810,7 @@ KeyCondition::KeyCondition(
     if (!filter_dag)
     {
         has_filter = false;
+        relaxed = true;
         rpn.emplace_back(RPNElement::FUNCTION_UNKNOWN);
         return;
     }
@@ -817,6 +837,9 @@ KeyCondition::KeyCondition(
     rpn = std::move(builder).extractRPN();
 
     findHyperrectanglesForArgumentsOfSpaceFillingCurves();
+
+    if (std::any_of(rpn.begin(), rpn.end(), [&](const auto & elem) { return always_relaxed_atom_elements.contains(elem.function); }))
+        relaxed = true;
 }
 
 bool KeyCondition::addCondition(const String & column, const Range & range)
@@ -1180,13 +1203,13 @@ bool KeyCondition::tryPrepareSetIndex(
         index_mapping.tuple_index = tuple_index;
         DataTypePtr data_type;
         std::optional<size_t> key_space_filling_curve_argument_pos;
-        if (isKeyPossiblyWrappedByMonotonicFunctions(node, index_mapping.key_index, key_space_filling_curve_argument_pos, data_type, index_mapping.functions)
+        if (isKeyPossiblyWrappedByMonotonicFunctions(
+                node, index_mapping.key_index, key_space_filling_curve_argument_pos, data_type, index_mapping.functions)
             && !key_space_filling_curve_argument_pos) /// We don't support the analysis of space-filling curves and IN set.
         {
             indexes_mapping.push_back(index_mapping);
             data_types.push_back(data_type);
-            if (out_key_column_num < index_mapping.key_index)
-                out_key_column_num = index_mapping.key_index;
+            out_key_column_num = std::max(out_key_column_num, index_mapping.key_index);
         }
     };
 
@@ -1224,10 +1247,6 @@ bool KeyCondition::tryPrepareSetIndex(
     const auto set_types = future_set->getTypes();
     size_t set_types_size = set_types.size();
     size_t indexes_mapping_size = indexes_mapping.size();
-
-    /// When doing strict matches, we have to check all elements in set.
-    if (strict && indexes_mapping_size < set_types_size)
-        return false;
 
     for (auto & index_mapping : indexes_mapping)
         if (index_mapping.tuple_index >= set_types_size)
@@ -1307,6 +1326,13 @@ bool KeyCondition::tryPrepareSetIndex(
     }
 
     out.set_index = std::make_shared<MergeTreeSetIndex>(set_columns, std::move(indexes_mapping));
+
+    /// When not all key columns are used or when there are multiple elements in
+    /// the set, the atom's hyperrectangle is expanded to encompass the missing
+    /// dimensions and any "gaps".
+    if (indexes_mapping_size < set_types_size || out.set_index->size() > 1)
+        relaxed = true;
+
     return true;
 }
 
@@ -1391,7 +1417,8 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctions(
     size_t & out_key_column_num,
     std::optional<size_t> & out_argument_num_of_space_filling_curve,
     DataTypePtr & out_key_res_column_type,
-    MonotonicFunctionsChain & out_functions_chain)
+    MonotonicFunctionsChain & out_functions_chain,
+    bool assume_function_monotonicity)
 {
     std::vector<RPNBuilderFunctionTreeNode> chain_not_tested_for_monotonicity;
     DataTypePtr key_column_type;
@@ -1434,8 +1461,7 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctions(
             arguments.push_back({ nullptr, key_column_type, "" });
         auto func = func_builder->build(arguments);
 
-        /// If we know the given range only contains one value, then we treat all functions as positive monotonic.
-        if (!func || (!single_point && !func->hasInformationAboutMonotonicity()))
+        if (!func || !func->isDeterministicInScopeOfQuery() || (!assume_function_monotonicity && !func->hasInformationAboutMonotonicity()))
             return false;
 
         key_column_type = func->getResultType();
@@ -1602,6 +1628,10 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNEleme
         if (atom_map.find(func_name) == std::end(atom_map))
             return false;
 
+        if (always_relaxed_atom_functions.contains(func_name))
+            relaxed = true;
+
+        bool allow_constant_transformation = !no_relaxed_atom_functions.contains(func_name);
         if (num_args == 1)
         {
             if (!(isKeyPossiblyWrappedByMonotonicFunctions(
@@ -1616,23 +1646,6 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNEleme
             size_t key_arg_pos;           /// Position of argument with key column (non-const argument)
             bool is_set_const = false;
             bool is_constant_transformed = false;
-
-            /// We don't look for inverted key transformations when strict is true, which is required for trivial count().
-            /// Consider the following test case:
-            ///
-            /// create table test1(p DateTime, k int) engine MergeTree partition by toDate(p) order by k;
-            /// insert into test1 values ('2020-09-01 00:01:02', 1), ('2020-09-01 20:01:03', 2), ('2020-09-02 00:01:03', 3);
-            /// select count() from test1 where p > toDateTime('2020-09-01 10:00:00');
-            ///
-            /// toDate(DateTime) is always monotonic, but we cannot relax the predicates to be
-            /// >= toDate(toDateTime('2020-09-01 10:00:00')), which returns 3 instead of the right count: 2.
-            bool strict_condition = strict;
-
-            /// If we use this key condition to prune partitions by single value, we cannot relax conditions for NOT.
-            if (single_point
-                && (func_name == "notLike" || func_name == "notIn" || func_name == "globalNotIn" || func_name == "notNullIn"
-                    || func_name == "globalNotNullIn" || func_name == "notEquals" || func_name == "notEmpty"))
-                strict_condition = true;
 
             if (functionIsInOrGlobalInOperator(func_name))
             {
@@ -1654,19 +1667,25 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNEleme
                 }
 
                 if (isKeyPossiblyWrappedByMonotonicFunctions(
-                    func.getArgumentAt(0), key_column_num, argument_num_of_space_filling_curve, key_expr_type, chain))
+                        func.getArgumentAt(0),
+                        key_column_num,
+                        argument_num_of_space_filling_curve,
+                        key_expr_type,
+                        chain,
+                        single_point && func_name == "equals"))
                 {
                     key_arg_pos = 0;
                 }
                 else if (
-                    !strict_condition
-                    && canConstantBeWrappedByMonotonicFunctions(func.getArgumentAt(0), key_column_num, key_expr_type, const_value, const_type))
+                    allow_constant_transformation
+                    && canConstantBeWrappedByMonotonicFunctions(
+                        func.getArgumentAt(0), key_column_num, key_expr_type, const_value, const_type))
                 {
                     key_arg_pos = 0;
                     is_constant_transformed = true;
                 }
                 else if (
-                    single_point && func_name == "equals" && !strict_condition
+                    single_point && func_name == "equals"
                     && canConstantBeWrappedByFunctions(func.getArgumentAt(0), key_column_num, key_expr_type, const_value, const_type))
                 {
                     key_arg_pos = 0;
@@ -1685,19 +1704,25 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNEleme
                 }
 
                 if (isKeyPossiblyWrappedByMonotonicFunctions(
-                    func.getArgumentAt(1), key_column_num, argument_num_of_space_filling_curve, key_expr_type, chain))
+                        func.getArgumentAt(1),
+                        key_column_num,
+                        argument_num_of_space_filling_curve,
+                        key_expr_type,
+                        chain,
+                        single_point && func_name == "equals"))
                 {
                     key_arg_pos = 1;
                 }
                 else if (
-                    !strict_condition
-                    && canConstantBeWrappedByMonotonicFunctions(func.getArgumentAt(1), key_column_num, key_expr_type, const_value, const_type))
+                    allow_constant_transformation
+                    && canConstantBeWrappedByMonotonicFunctions(
+                        func.getArgumentAt(1), key_column_num, key_expr_type, const_value, const_type))
                 {
                     key_arg_pos = 1;
                     is_constant_transformed = true;
                 }
                 else if (
-                    single_point && func_name == "equals" && !strict_condition
+                    single_point && func_name == "equals"
                     && canConstantBeWrappedByFunctions(func.getArgumentAt(1), key_column_num, key_expr_type, const_value, const_type))
                 {
                     key_arg_pos = 0;
@@ -1797,6 +1822,8 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNEleme
                     func_name = "lessOrEquals";
                 else if (func_name == "greater")
                     func_name = "greaterOrEquals";
+
+                relaxed = true;
             }
 
         }
@@ -1945,7 +1972,7 @@ KeyCondition::Description KeyCondition::getDescription() const
     /// Build and optimize it simultaneously.
     struct Node
     {
-        enum class Type
+        enum class Type : uint8_t
         {
             /// Leaf, which is RPNElement.
             Leaf,
@@ -2207,7 +2234,7 @@ KeyCondition::Description KeyCondition::getDescription() const
   */
 
 /** For the range between tuples, determined by left_keys, left_bounded, right_keys, right_bounded,
-  * invoke the callback on every parallelogram composing this range (see the description above),
+  * invoke the callback on every hyperrectangle composing this range (see the description above),
   * and returns the OR of the callback results (meaning if callback returned true on any part of the range).
   */
 template <typename F>
@@ -2250,9 +2277,11 @@ static BoolMask forAnyHyperrectangle(
         if (left_bounded && right_bounded)
             hyperrectangle[prefix_size] = Range(left_keys[prefix_size], true, right_keys[prefix_size], true);
         else if (left_bounded)
-            hyperrectangle[prefix_size] = Range::createLeftBounded(left_keys[prefix_size], true, data_types[prefix_size]->isNullable());
+            hyperrectangle[prefix_size]
+                = Range::createLeftBounded(left_keys[prefix_size], true, isNullableOrLowCardinalityNullable(data_types[prefix_size]));
         else if (right_bounded)
-            hyperrectangle[prefix_size] = Range::createRightBounded(right_keys[prefix_size], true, data_types[prefix_size]->isNullable());
+            hyperrectangle[prefix_size]
+                = Range::createRightBounded(right_keys[prefix_size], true, isNullableOrLowCardinalityNullable(data_types[prefix_size]));
 
         return callback(hyperrectangle);
     }
@@ -2262,25 +2291,24 @@ static BoolMask forAnyHyperrectangle(
     if (left_bounded && right_bounded)
         hyperrectangle[prefix_size] = Range(left_keys[prefix_size], false, right_keys[prefix_size], false);
     else if (left_bounded)
-        hyperrectangle[prefix_size] = Range::createLeftBounded(left_keys[prefix_size], false, data_types[prefix_size]->isNullable());
+        hyperrectangle[prefix_size]
+            = Range::createLeftBounded(left_keys[prefix_size], false, isNullableOrLowCardinalityNullable(data_types[prefix_size]));
     else if (right_bounded)
-        hyperrectangle[prefix_size] = Range::createRightBounded(right_keys[prefix_size], false, data_types[prefix_size]->isNullable());
+        hyperrectangle[prefix_size]
+            = Range::createRightBounded(right_keys[prefix_size], false, isNullableOrLowCardinalityNullable(data_types[prefix_size]));
 
     for (size_t i = prefix_size + 1; i < key_size; ++i)
     {
-        if (data_types[i]->isNullable())
+        if (isNullableOrLowCardinalityNullable(data_types[i]))
             hyperrectangle[i] = Range::createWholeUniverse();
         else
             hyperrectangle[i] = Range::createWholeUniverseWithoutNull();
     }
 
-    BoolMask result = initial_mask;
-    result = result | callback(hyperrectangle);
+    auto result = BoolMask::combine(initial_mask, callback(hyperrectangle));
 
     /// There are several early-exit conditions (like the one below) hereinafter.
-    /// They are important; in particular, if initial_mask == BoolMask::consider_only_can_be_true
-    /// (which happens when this routine is called from KeyCondition::mayBeTrueXXX),
-    /// they provide significant speedup, which may be observed on merge_tree_huge_pk performance test.
+    /// They provide significant speedup, which may be observed on merge_tree_huge_pk performance test.
     if (result.isComplete())
         return result;
 
@@ -2289,9 +2317,11 @@ static BoolMask forAnyHyperrectangle(
     if (left_bounded)
     {
         hyperrectangle[prefix_size] = Range(left_keys[prefix_size]);
-        result = result
-            | forAnyHyperrectangle(
-                key_size, left_keys, right_keys, true, false, hyperrectangle, data_types, prefix_size + 1, initial_mask, callback);
+        result = BoolMask::combine(
+            result,
+            forAnyHyperrectangle(
+                key_size, left_keys, right_keys, true, false, hyperrectangle, data_types, prefix_size + 1, initial_mask, callback));
+
         if (result.isComplete())
             return result;
     }
@@ -2301,11 +2331,10 @@ static BoolMask forAnyHyperrectangle(
     if (right_bounded)
     {
         hyperrectangle[prefix_size] = Range(right_keys[prefix_size]);
-        result = result
-            | forAnyHyperrectangle(
-                key_size, left_keys, right_keys, false, true, hyperrectangle, data_types, prefix_size + 1, initial_mask, callback);
-        if (result.isComplete())
-            return result;
+        result = BoolMask::combine(
+            result,
+            forAnyHyperrectangle(
+                key_size, left_keys, right_keys, false, true, hyperrectangle, data_types, prefix_size + 1, initial_mask, callback));
     }
 
     return result;
@@ -2324,20 +2353,20 @@ BoolMask KeyCondition::checkInRange(
     key_ranges.reserve(used_key_size);
     for (size_t i = 0; i < used_key_size; ++i)
     {
-        if (data_types[i]->isNullable())
+        if (isNullableOrLowCardinalityNullable(data_types[i]))
             key_ranges.push_back(Range::createWholeUniverse());
         else
             key_ranges.push_back(Range::createWholeUniverseWithoutNull());
     }
 
-/*    std::cerr << "Checking for: [";
-    for (size_t i = 0; i != used_key_size; ++i)
-        std::cerr << (i != 0 ? ", " : "") << applyVisitor(FieldVisitorToString(), left_keys[i]);
-    std::cerr << " ... ";
+    // std::cerr << "Checking for: [";
+    // for (size_t i = 0; i != used_key_size; ++i)
+    //     std::cerr << (i != 0 ? ", " : "") << applyVisitor(FieldVisitorToString(), left_keys[i]);
+    // std::cerr << " ... ";
 
-    for (size_t i = 0; i != used_key_size; ++i)
-        std::cerr << (i != 0 ? ", " : "") << applyVisitor(FieldVisitorToString(), right_keys[i]);
-    std::cerr << "]\n";*/
+    // for (size_t i = 0; i != used_key_size; ++i)
+    //     std::cerr << (i != 0 ? ", " : "") << applyVisitor(FieldVisitorToString(), right_keys[i]);
+    // std::cerr << "]" << ": " << initial_mask.can_be_true << " : " << initial_mask.can_be_false << "\n";
 
     return forAnyHyperrectangle(used_key_size, left_keys, right_keys, true, true, key_ranges, data_types, 0, initial_mask,
         [&] (const Hyperrectangle & key_ranges_hyperrectangle)
@@ -2347,7 +2376,7 @@ BoolMask KeyCondition::checkInRange(
         // std::cerr << "Hyperrectangle: ";
         // for (size_t i = 0, size = key_ranges.size(); i != size; ++i)
         //     std::cerr << (i != 0 ? " × " : "") << key_ranges[i].toString();
-        // std::cerr << ": " << res.can_be_true << "\n";
+        // std::cerr << ": " << res.can_be_true << " : " << res.can_be_false << "\n";
 
         return res;
     });
@@ -2476,7 +2505,7 @@ bool KeyCondition::matchesExactContinuousRange() const
 
 bool KeyCondition::extractPlainRanges(Ranges & ranges) const
 {
-    if (key_indices.empty() || key_indices.size() > 1)
+    if (key_indices.size() != 1)
         return false;
 
     if (hasMonotonicFunctionsChain())
@@ -2634,10 +2663,7 @@ bool KeyCondition::extractPlainRanges(Ranges & ranges) const
     if (rpn_stack.size() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected stack size in KeyCondition::extractPlainRanges");
 
-    for (auto & r : rpn_stack.top().ranges)
-    {
-        ranges.push_back(std::move(r));
-    }
+    ranges = std::move(rpn_stack.top().ranges);
     return true;
 }
 
@@ -2646,6 +2672,15 @@ BoolMask KeyCondition::checkInHyperrectangle(
     const DataTypes & data_types) const
 {
     std::vector<BoolMask> rpn_stack;
+
+    auto curve_type = [&](size_t key_column_pos)
+    {
+        for (const auto & curve : key_space_filling_curves)
+            if (curve.key_column_pos == key_column_pos)
+                return curve.type;
+        return SpaceFillingCurveType::Unknown;
+    };
+
     for (const auto & element : rpn)
     {
         if (element.argument_num_of_space_filling_curve.has_value())
@@ -2661,6 +2696,13 @@ BoolMask KeyCondition::checkInHyperrectangle(
         else if (element.function == RPNElement::FUNCTION_IN_RANGE
             || element.function == RPNElement::FUNCTION_NOT_IN_RANGE)
         {
+            if (element.key_column >= hyperrectangle.size())
+            {
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                                "Hyperrectangle size is {}, but requested element at posittion {} ({})",
+                                hyperrectangle.size(), element.key_column, element.toString());
+            }
+
             const Range * key_range = &hyperrectangle[element.key_column];
 
             /// The case when the column is wrapped in a chain of possibly monotonic functions.
@@ -2738,26 +2780,43 @@ BoolMask KeyCondition::checkInHyperrectangle(
                     UInt64 right = key_range.right.get<UInt64>();
 
                     BoolMask mask(false, true);
-                    mortonIntervalToHyperrectangles<2>(left, right,
-                        [&](std::array<std::pair<UInt64, UInt64>, 2> morton_hyperrectangle)
+                    auto hyperrectangle_intersection_callback = [&](std::array<std::pair<UInt64, UInt64>, 2> curve_hyperrectangle)
+                    {
+                        BoolMask current_intersection(true, false);
+                        for (size_t dim = 0; dim < num_dimensions; ++dim)
                         {
-                            BoolMask current_intersection(true, false);
-                            for (size_t dim = 0; dim < num_dimensions; ++dim)
-                            {
-                                const Range & condition_arg_range = element.space_filling_curve_args_hyperrectangle[dim];
+                            const Range & condition_arg_range = element.space_filling_curve_args_hyperrectangle[dim];
 
-                                const Range morton_arg_range(
-                                    morton_hyperrectangle[dim].first, true,
-                                    morton_hyperrectangle[dim].second, true);
+                            const Range curve_arg_range(
+                                curve_hyperrectangle[dim].first, true,
+                                curve_hyperrectangle[dim].second, true);
 
-                                bool intersects = condition_arg_range.intersectsRange(morton_arg_range);
-                                bool contains = condition_arg_range.containsRange(morton_arg_range);
+                            bool intersects = condition_arg_range.intersectsRange(curve_arg_range);
+                            bool contains = condition_arg_range.containsRange(curve_arg_range);
 
-                                current_intersection = current_intersection & BoolMask(intersects, !contains);
-                            }
+                            current_intersection = current_intersection & BoolMask(intersects, !contains);
+                        }
 
-                            mask = mask | current_intersection;
-                        });
+                        mask = mask | current_intersection;
+                    };
+
+                    switch (curve_type(element.key_column))
+                    {
+                        case SpaceFillingCurveType::Hilbert:
+                        {
+                            hilbertIntervalToHyperrectangles2D(left, right, hyperrectangle_intersection_callback);
+                            break;
+                        }
+                        case SpaceFillingCurveType::Morton:
+                        {
+                            mortonIntervalToHyperrectangles<2>(left, right, hyperrectangle_intersection_callback);
+                            break;
+                        }
+                        case SpaceFillingCurveType::Unknown:
+                        {
+                            throw Exception(ErrorCodes::LOGICAL_ERROR, "curve_type is `Unknown`. It is a bug.");
+                        }
+                    }
 
                     rpn_stack.emplace_back(mask);
                 }
@@ -2860,9 +2919,9 @@ bool KeyCondition::mayBeTrueInRange(
 String KeyCondition::RPNElement::toString() const
 {
     if (argument_num_of_space_filling_curve)
-        return toString(fmt::format("argument {} of column {}", *argument_num_of_space_filling_curve, key_column), false);
+        return toString(fmt::format("argument {} of column {}", *argument_num_of_space_filling_curve, key_column), true);
     else
-        return toString(fmt::format("column {}", key_column), false);
+        return toString(fmt::format("column {}", key_column), true);
 }
 
 String KeyCondition::RPNElement::toString(std::string_view column_name, bool print_constants) const
@@ -2954,8 +3013,6 @@ String KeyCondition::RPNElement::toString(std::string_view column_name, bool pri
         case ALWAYS_TRUE:
             return "true";
     }
-
-    UNREACHABLE();
 }
 
 

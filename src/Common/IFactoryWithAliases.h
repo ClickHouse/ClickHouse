@@ -53,7 +53,7 @@ public:
         const auto & creator_map = getMap();
         const auto & case_insensitive_creator_map = getCaseInsensitiveMap();
 
-        auto real_name_lowercase = Poco::toLower(real_name);
+        String real_name_lowercase = Poco::toLower(real_name);
         if (!creator_map.contains(real_name) && !case_insensitive_creator_map.contains(real_name_lowercase))
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
@@ -69,7 +69,6 @@ public:
     void registerAliasUnchecked(const String & alias_name, const String & real_name, CaseSensitiveness case_sensitiveness = CaseSensitive)
     {
         String alias_name_lowercase = Poco::toLower(alias_name);
-        String real_name_lowercase = Poco::toLower(real_name);
         const String factory_name = getFactoryName();
 
         if (case_sensitiveness == CaseInsensitive)

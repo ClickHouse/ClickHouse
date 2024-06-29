@@ -61,10 +61,10 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         ColumnPtr col = arguments[0].column;
-        const ColumnArray * col_arr = checkAndGetColumn<ColumnArray>(col.get());
+        const ColumnArray & col_arr = checkAndGetColumn<ColumnArray>(*col);
 
-        const IColumn & arr_data = col_arr->getData();
-        const ColumnArray::Offsets & arr_offsets = col_arr->getOffsets();
+        const IColumn & arr_data = col_arr.getData();
+        const ColumnArray::Offsets & arr_offsets = col_arr.getOffsets();
 
         ColumnPtr col_res;
         if (input_rows_count == 0)

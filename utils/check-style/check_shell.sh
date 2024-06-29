@@ -5,7 +5,7 @@ cd /ClickHouse/utils/check-style || echo -e "failure\tRepo not found" > /test_ou
 start_total=$(date +%s)
 
 start=$(date +%s)
-./shellcheck-run.sh |& tee /test_output/shellcheck.txt
+./shellcheck-run.sh |& tee /test_output/shellcheck_output.txt
 runtime=$(($(date +%s)-start))
 echo "Check shellcheck. Done. $runtime seconds."
 

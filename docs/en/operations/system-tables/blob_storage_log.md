@@ -7,6 +7,7 @@ Contains logging entries with information about various blob storage operations 
 
 Columns:
 
+- `hostname` ([LowCardinality(String)](../../sql-reference/data-types/string.md)) — Hostname of the server executing the query.
 - `event_date` ([Date](../../sql-reference/data-types/date.md)) — Date of the event.
 - `event_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — Time of the event.
 - `event_time_microseconds` ([DateTime64](../../sql-reference/data-types/datetime64.md)) — Time of the event with microseconds precision.
@@ -38,6 +39,7 @@ SELECT * FROM system.blob_storage_log WHERE query_id = '7afe0450-504d-4e4b-9a80-
 ```text
 Row 1:
 ──────
+hostname:                clickhouse.eu-central1.internal
 event_date:              2023-10-31
 event_time:              2023-10-31 16:03:40
 event_time_microseconds: 2023-10-31 16:03:40.481437

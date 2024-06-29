@@ -13,6 +13,7 @@
 namespace DB
 {
 
+class Block;
 struct JSONInferenceInfo;
 
 namespace JSONUtils

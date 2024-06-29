@@ -1,5 +1,6 @@
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Core/Field.h>
+#include <Parsers/ASTFunction.h>
 
 namespace DB
 {
@@ -12,8 +13,14 @@ namespace ErrorCodes
 template <typename T>
 T checkAndGetLiteralArgument(const ASTPtr & arg, const String & arg_name)
 {
-    if (arg && arg->as<ASTLiteral>())
-        return checkAndGetLiteralArgument<T>(*arg->as<ASTLiteral>(), arg_name);
+    if (arg)
+    {
+        if (const auto * func = arg->as<const ASTFunction>(); func && func->name == "_CAST")
+            return checkAndGetLiteralArgument<T>(func->arguments->children.at(0), arg_name);
+
+        if (arg->as<ASTLiteral>())
+            return checkAndGetLiteralArgument<T>(*arg->as<ASTLiteral>(), arg_name);
+    }
 
     throw Exception(
         ErrorCodes::BAD_ARGUMENTS,

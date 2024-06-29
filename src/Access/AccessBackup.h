@@ -8,7 +8,7 @@
 namespace DB
 {
 class AccessControl;
-enum class AccessEntityType;
+enum class AccessEntityType : uint8_t;
 struct IAccessEntity;
 using AccessEntityPtr = std::shared_ptr<const IAccessEntity>;
 class AccessRightsElements;

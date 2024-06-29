@@ -110,17 +110,17 @@ public:
 
     /// Returns the result of loading the object.
     /// The function doesn't load anything, it just returns the current load result as is.
-    template <typename ReturnType = LoadResult, typename = std::enable_if_t<is_scalar_load_result_type<ReturnType>, void>>
+    template <typename ReturnType = LoadResult, typename = std::enable_if_t<is_scalar_load_result_type<ReturnType>, void>> // NOLINT
     ReturnType getLoadResult(const String & name) const;
 
     using FilterByNameFunction = std::function<bool(const String &)>;
 
     /// Returns all the load results as a map.
     /// The function doesn't load anything, it just returns the current load results as is.
-    template <typename ReturnType = LoadResults, typename = std::enable_if_t<is_vector_load_result_type<ReturnType>, void>>
+    template <typename ReturnType = LoadResults, typename = std::enable_if_t<is_vector_load_result_type<ReturnType>, void>> // NOLINT
     ReturnType getLoadResults() const { return getLoadResults<ReturnType>(FilterByNameFunction{}); }
 
-    template <typename ReturnType = LoadResults, typename = std::enable_if_t<is_vector_load_result_type<ReturnType>, void>>
+    template <typename ReturnType = LoadResults, typename = std::enable_if_t<is_vector_load_result_type<ReturnType>, void>> // NOLINT
     ReturnType getLoadResults(const FilterByNameFunction & filter) const;
 
     /// Returns all loaded objects as a map.
@@ -144,59 +144,59 @@ public:
     /// Loads a specified object.
     /// The function does nothing if it's already loaded.
     /// The function doesn't throw an exception if it's failed to load.
-    template <typename ReturnType = LoadablePtr, typename = std::enable_if_t<is_scalar_load_result_type<ReturnType>, void>>
+    template <typename ReturnType = LoadablePtr, typename = std::enable_if_t<is_scalar_load_result_type<ReturnType>, void>> // NOLINT
     ReturnType tryLoad(const String & name, Duration timeout = WAIT) const;
 
     /// Loads objects by filter.
     /// The function does nothing for already loaded objects, it just returns them.
     /// The function doesn't throw an exception if it's failed to load something.
-    template <typename ReturnType = Loadables, typename = std::enable_if_t<is_vector_load_result_type<ReturnType>, void>>
+    template <typename ReturnType = Loadables, typename = std::enable_if_t<is_vector_load_result_type<ReturnType>, void>> // NOLINT
     ReturnType tryLoad(const FilterByNameFunction & filter, Duration timeout = WAIT) const;
 
     /// Loads all objects.
     /// The function does nothing for already loaded objects, it just returns them.
     /// The function doesn't throw an exception if it's failed to load something.
-    template <typename ReturnType = Loadables, typename = std::enable_if_t<is_vector_load_result_type<ReturnType>, void>>
+    template <typename ReturnType = Loadables, typename = std::enable_if_t<is_vector_load_result_type<ReturnType>, void>> // NOLINT
     ReturnType tryLoadAll(Duration timeout = WAIT) const { return tryLoad<ReturnType>(FilterByNameFunction{}, timeout); }
 
     /// Loads a specified object.
     /// The function does nothing if it's already loaded.
     /// The function throws an exception if it's failed to load.
-    template <typename ReturnType = LoadablePtr, typename = std::enable_if_t<is_scalar_load_result_type<ReturnType>, void>>
+    template <typename ReturnType = LoadablePtr, typename = std::enable_if_t<is_scalar_load_result_type<ReturnType>, void>> // NOLINT
     ReturnType load(const String & name) const;
 
     /// Loads objects by filter.
     /// The function does nothing for already loaded objects, it just returns them.
     /// The function throws an exception if it's failed to load something.
-    template <typename ReturnType = Loadables, typename = std::enable_if_t<is_vector_load_result_type<ReturnType>, void>>
+    template <typename ReturnType = Loadables, typename = std::enable_if_t<is_vector_load_result_type<ReturnType>, void>> // NOLINT
     ReturnType load(const FilterByNameFunction & filter) const;
 
     /// Loads all objects. Not recommended to use.
     /// The function does nothing for already loaded objects, it just returns them.
     /// The function throws an exception if it's failed to load something.
-    template <typename ReturnType = Loadables, typename = std::enable_if_t<is_vector_load_result_type<ReturnType>, void>>
+    template <typename ReturnType = Loadables, typename = std::enable_if_t<is_vector_load_result_type<ReturnType>, void>> // NOLINT
     ReturnType loadAll() const { return load<ReturnType>(FilterByNameFunction{}); }
 
     /// Loads or reloads a specified object.
     /// The function reloads the object if it's already loaded.
     /// The function throws an exception if it's failed to load or reload.
-    template <typename ReturnType = LoadablePtr, typename = std::enable_if_t<is_scalar_load_result_type<ReturnType>, void>>
+    template <typename ReturnType = LoadablePtr, typename = std::enable_if_t<is_scalar_load_result_type<ReturnType>, void>> // NOLINT
     ReturnType loadOrReload(const String & name) const;
 
     /// Loads or reloads objects by filter.
     /// The function reloads the objects which are already loaded.
     /// The function throws an exception if it's failed to load or reload something.
-    template <typename ReturnType = Loadables, typename = std::enable_if_t<is_vector_load_result_type<ReturnType>, void>>
+    template <typename ReturnType = Loadables, typename = std::enable_if_t<is_vector_load_result_type<ReturnType>, void>> // NOLINT
     ReturnType loadOrReload(const FilterByNameFunction & filter) const;
 
     /// Load or reloads all objects. Not recommended to use.
     /// The function throws an exception if it's failed to load or reload something.
-    template <typename ReturnType = Loadables, typename = std::enable_if_t<is_vector_load_result_type<ReturnType>, void>>
+    template <typename ReturnType = Loadables, typename = std::enable_if_t<is_vector_load_result_type<ReturnType>, void>> // NOLINT
     ReturnType loadOrReloadAll() const { return loadOrReload<ReturnType>(FilterByNameFunction{}); }
 
     /// Reloads objects by filter which were tried to load before (successfully or not).
     /// The function throws an exception if it's failed to load or reload something.
-    template <typename ReturnType = Loadables, typename = std::enable_if_t<is_vector_load_result_type<ReturnType>, void>>
+    template <typename ReturnType = Loadables, typename = std::enable_if_t<is_vector_load_result_type<ReturnType>, void>> // NOLINT
     ReturnType reloadAllTriedToLoad() const;
 
     /// Check if object with name exists in configuration

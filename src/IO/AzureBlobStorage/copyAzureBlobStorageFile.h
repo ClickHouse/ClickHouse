@@ -4,8 +4,7 @@
 
 #if USE_AZURE_BLOB_STORAGE
 
-#include <Storages/StorageAzureBlobCluster.h>
-#include <Storages/StorageAzureBlob.h>
+#include <Disks/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <base/types.h>
 #include <functional>
@@ -31,8 +30,7 @@ void copyAzureBlobStorageFile(
     const String & dest_blob,
     std::shared_ptr<const AzureObjectStorageSettings> settings,
     const ReadSettings & read_settings,
-    ThreadPoolCallbackRunner<void> schedule_ = {},
-    bool for_disk_azure_blob_storage = false);
+    ThreadPoolCallbackRunnerUnsafe<void> schedule_ = {});
 
 
 /// Copies data from any seekable source to AzureBlobStorage.
@@ -48,8 +46,7 @@ void copyDataToAzureBlobStorageFile(
     const String & dest_container_for_logging,
     const String & dest_blob,
     std::shared_ptr<const AzureObjectStorageSettings> settings,
-    ThreadPoolCallbackRunner<void> schedule_ = {},
-    bool for_disk_azure_blob_storage = false);
+    ThreadPoolCallbackRunnerUnsafe<void> schedule_ = {});
 
 }
 

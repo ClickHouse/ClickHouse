@@ -15,6 +15,7 @@
 #include <Functions/logical.h>
 
 #include <Common/logger_useful.h>
+#include <Analyzer/Utils.h>
 
 
 namespace DB
@@ -61,47 +62,7 @@ const QueryTreeNodePtr & getEquiArgument(const QueryTreeNodePtr & cond, size_t i
     return func->getArguments().getNodes()[index];
 }
 
-
-/// Check that node has only one source and return it.
-/// {_, false} - multiple sources
-/// {nullptr, true} - no sources
-/// {source, true} - single source
-std::pair<const IQueryTreeNode *, bool> getExpressionSource(const QueryTreeNodePtr & node)
-{
-    if (const auto * column = node->as<ColumnNode>())
-    {
-        auto source = column->getColumnSourceOrNull();
-        if (!source)
-            return {nullptr, false};
-        return {source.get(), true};
-    }
-
-    if (const auto * func = node->as<FunctionNode>())
-    {
-        const IQueryTreeNode * source = nullptr;
-        const auto & args = func->getArguments().getNodes();
-        for (const auto & arg : args)
-        {
-            auto [arg_source, is_ok] = getExpressionSource(arg);
-            if (!is_ok)
-                return {nullptr, false};
-
-            if (!source)
-                source = arg_source;
-            else if (arg_source && !source->isEqual(*arg_source))
-                return {nullptr, false};
-        }
-        return {source, true};
-
-    }
-
-    if (node->as<ConstantNode>())
-        return {nullptr, true};
-
-    return {nullptr, false};
-}
-
-bool findInTableExpression(const IQueryTreeNode * source, const QueryTreeNodePtr & table_expression)
+bool findInTableExpression(const QueryTreeNodePtr & source, const QueryTreeNodePtr & table_expression)
 {
     if (!source)
         return true;
@@ -114,7 +75,6 @@ bool findInTableExpression(const IQueryTreeNode * source, const QueryTreeNodePtr
         return findInTableExpression(source, join_node->getLeftTableExpression())
             || findInTableExpression(source, join_node->getRightTableExpression());
     }
-
 
     return false;
 }
@@ -169,10 +129,10 @@ public:
                 auto left_src = getExpressionSource(lhs_equi_argument);
                 auto right_src = getExpressionSource(rhs_equi_argument);
 
-                if (left_src.second && right_src.second && left_src.first && right_src.first)
+                if (left_src && right_src)
                 {
-                    if ((findInTableExpression(left_src.first, left_table) && findInTableExpression(right_src.first, right_table)) ||
-                        (findInTableExpression(left_src.first, right_table) && findInTableExpression(right_src.first, left_table)))
+                    if ((findInTableExpression(left_src, left_table) && findInTableExpression(right_src, right_table)) ||
+                        (findInTableExpression(left_src, right_table) && findInTableExpression(right_src, left_table)))
                     {
                         can_convert_cross_to_inner = true;
                         continue;

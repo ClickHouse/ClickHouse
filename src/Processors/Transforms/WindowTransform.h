@@ -21,6 +21,8 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
 class Arena;
 
+class IWindowFunction;
+
 // Runtime data for computing one window function.
 struct WindowFunctionWorkspace
 {

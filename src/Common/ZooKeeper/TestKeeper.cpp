@@ -1,7 +1,7 @@
 #include "Common/ZooKeeper/IKeeper.h"
 #include <Common/ZooKeeper/TestKeeper.h>
 #include <Common/setThreadName.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <base/types.h>
 #include <functional>
 
@@ -637,6 +637,9 @@ void TestKeeper::finalize(const String &)
         expired = true;
     }
 
+    /// Signal request_queue to wake up processing thread without waiting for timeout
+    requests_queue.finish();
+
     processing_thread.join();
 
     try
@@ -888,7 +891,7 @@ void TestKeeper::multi(
         const Requests & requests,
         MultiCallback callback)
 {
-    return multi(std::span(requests), std::move(callback));
+    multi(std::span(requests), std::move(callback));
 }
 
 void TestKeeper::multi(

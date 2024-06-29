@@ -6,7 +6,7 @@
 namespace DB
 {
 class Exception;
-enum class UserDefinedSQLObjectType;
+enum class UserDefinedSQLObjectType : uint8_t;
 class ASTCreateQuery;
 
 /// Replicas use this class to coordinate what they're reading from a backup while executing RESTORE ON CLUSTER.
