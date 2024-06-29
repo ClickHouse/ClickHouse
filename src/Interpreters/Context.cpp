@@ -950,6 +950,25 @@ String Context::getFilesystemCacheUser() const
     return shared->filesystem_cache_user;
 }
 
+DatabaseAndTable Context::getOrCacheStorage(const StorageID & id, std::function<DatabaseAndTable()> storage_getter, std::optional<Exception> * exception) const
+{
+    std::lock_guard lock(storage_cache.mutex);
+
+    if (auto storage_id = storage_cache.cache.find(id); storage_id != storage_cache.cache.end())
+    {
+        DatabaseAndTable storage = DatabaseCatalog::instance().tryGetByUUID(storage_id->uuid);
+        if (exception && !storage.second)
+            exception->emplace(Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} does not exist anymore - maybe it was dropped", id.getNameForLogs()));
+        return storage;
+    }
+
+    auto storage = storage_getter();
+    if (storage.second)
+        if (const auto & new_id = storage.second->getStorageID(); new_id.hasUUID())
+            storage_cache.cache.insert(new_id);
+    return storage;
+}
+
 Strings Context::getWarnings() const
 {
     Strings common_warnings;
