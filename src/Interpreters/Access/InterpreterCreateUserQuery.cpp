@@ -58,11 +58,14 @@ namespace
                             "be explicitly specified, check the setting allow_implicit_no_password "
                             "in the server configuration");
 
+        // if user does not have an authentication method and it has not been specified in the query,
+        // add a default one
         if (user.authentication_methods.empty() && authentication_methods.empty())
         {
             user.authentication_methods.emplace_back();
         }
 
+        // a leading IDENTIFIED WITH will drop existing authentication methods in favor of new ones
         if (replace_authentication_methods)
         {
             user.authentication_methods.clear();
@@ -73,6 +76,7 @@ namespace
             user.authentication_methods.emplace_back(authentication_method);
         }
 
+        // drop existing ones and keep the most recent
         if (reset_authentication_methods)
         {
             auto backup_authentication_method = user.authentication_methods.back();
