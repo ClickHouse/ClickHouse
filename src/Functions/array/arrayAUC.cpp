@@ -136,7 +136,7 @@ private:
         if (curr_tp == 0 || curr_tp == size)
             return std::numeric_limits<Float64>::quiet_NaN();
 
-        return static_cast<Float64>(area) / curr_tp / (size - curr_tp);
+        return area / curr_tp / (size - curr_tp);
     }
 
     static void vector(
