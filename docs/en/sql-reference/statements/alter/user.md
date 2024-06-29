@@ -12,7 +12,7 @@ Syntax:
 ``` sql
 ALTER USER [IF EXISTS] name1 [ON CLUSTER cluster_name1] [RENAME TO new_name1]
         [, name2 [ON CLUSTER cluster_name2] [RENAME TO new_name2] ...]
-    [NOT IDENTIFIED | IDENTIFIED {[WITH {no_password | plaintext_password | sha256_password | sha256_hash | double_sha1_password | double_sha1_hash}] BY {'password' | 'hash'}} | {WITH ldap SERVER 'server_name'} | {WITH kerberos [REALM 'realm']} | {WITH ssl_certificate CN 'common_name'}]
+    [NOT IDENTIFIED | IDENTIFIED | ADD IDENTIFIED {[WITH {no_password | plaintext_password | sha256_password | sha256_hash | double_sha1_password | double_sha1_hash}] BY {'password' | 'hash'}} | {WITH ldap SERVER 'server_name'} | {WITH kerberos [REALM 'realm']} | {WITH ssl_certificate CN 'common_name'}]
     [[ADD | DROP] HOST {LOCAL | NAME 'name' | REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
     [VALID UNTIL datetime]
     [DEFAULT ROLE role [,...] | ALL | ALL EXCEPT role [,...] ]
@@ -61,4 +61,21 @@ Allows the user with `john` account to grant his privileges to the user with `ja
 
 ``` sql
 ALTER USER john GRANTEES jack;
+```
+
+Adds new authentication methods to the user while keeping the existing ones
+
+``` sql
+ALTER USER user ADD IDENTIFIED WITH plaintext_password by '1' ADD IDENTIFIED WITH bcrypt_password by '2' ADD IDENTIFIED WITH plaintext_password by '3'
+```
+
+Reset authentication methods and adds the ones specified in the query (effect of leading IDENTIFIED without the ADD keyword)
+
+``` sql
+ALTER USER user IDENTIFIED WITH plaintext_password by '1' ADD IDENTIFIED WITH bcrypt_password by '2' ADD IDENTIFIED WITH plaintext_password by '3'
+```
+
+Reset authentication methods and keep the most recent added one
+``` sql
+ALTER USER user RESET AUTHENTICATION METHODS TO NEW
 ```
