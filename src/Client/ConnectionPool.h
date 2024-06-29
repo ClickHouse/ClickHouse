@@ -123,7 +123,7 @@ protected:
     {
         return std::make_shared<Connection>(
             host, port,
-            default_database, user, password, SSHKey(), quota_key,
+            default_database, user, password, SSHKey(), /*jwt*/ "", quota_key,
             cluster, cluster_secret,
             client_name, compression, secure);
     }
