@@ -10,14 +10,15 @@ RUN sed -i "s|http://archive.ubuntu.com|$apt_archive|g" /etc/apt/sources.list
 RUN apt-get update && env DEBIAN_FRONTEND=noninteractive apt-get install --yes \
         aspell \
         curl \
-        git \
-        gh \
         file \
+        gh \
+        git \
         libxml2-utils \
+        locales \
         moreutils \
         python3-pip \
         yamllint \
-        locales \
+        zstd \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
@@ -36,6 +37,7 @@ RUN pip3 install \
         tqdm==4.66.4 \
         types-requests \
         unidiff \
+        jwt \
     && rm -rf /root/.cache/pip
 
 RUN echo "en_US.UTF-8 UTF-8" > /etc/locale.gen && locale-gen en_US.UTF-8
