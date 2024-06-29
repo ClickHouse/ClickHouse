@@ -622,7 +622,7 @@ bool ContextAccess::checkAccessImplHelper(AccessFlags flags, const Args &... arg
         /// since SOURCES is not granted actually. In order to solve this, turn the prompt logic back to Sources.
         if (flags & AccessType::TABLE_ENGINE && !access_control->doesTableEnginesRequireGrant())
         {
-            AccessFlags newFlags;
+            AccessFlags new_flags;
 
             String table_engine_name{getTableEngine(args...)};
             for (const auto & source_and_table_engine : source_and_table_engines)
@@ -631,11 +631,11 @@ bool ContextAccess::checkAccessImplHelper(AccessFlags flags, const Args &... arg
                 if (table_engine != table_engine_name) continue;
                 const auto & source = std::get<0>(source_and_table_engine);
                 /// Set the flags from Table Engine to SOURCES so that prompts can be meaningful.
-                newFlags = source;
+                new_flags = source;
                 break;
             }
 
-            if (newFlags.isEmpty())
+            if (new_flags.isEmpty())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Didn't find the target Source from the Table Engine");
 
             if (grant_option && acs->isGranted(flags, args...))
@@ -644,12 +644,12 @@ bool ContextAccess::checkAccessImplHelper(AccessFlags flags, const Args &... arg
                     "{}: Not enough privileges. "
                     "The required privileges have been granted, but without grant option. "
                     "To execute this query, it's necessary to have the grant {} WITH GRANT OPTION",
-                    AccessRightsElement{newFlags}.toStringWithoutONClause());
+                    AccessRightsElement{new_flags}.toStringForAccessTypeSource());
             }
 
             return access_denied(ErrorCodes::ACCESS_DENIED,
                 "{}: Not enough privileges. To execute this query, it's necessary to have the grant {}",
-                AccessRightsElement{newFlags}.toStringWithoutONClause() + (grant_option ? " WITH GRANT OPTION" : ""));
+                AccessRightsElement{new_flags}.toStringForAccessTypeSource() + (grant_option ? " WITH GRANT OPTION" : ""));
         }
 
         if (grant_option && acs->isGranted(flags, args...))
