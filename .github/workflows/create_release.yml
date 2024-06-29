@@ -1,0 +1,29 @@
+name: CreateRelease
+
+concurrency:
+  group: release
+
+'on':
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: 'The SHA hash of the commit from which to create the release'
+        required: true
+        type: string
+      type:
+        description: 'The type of release: "new" for a new release or "patch" for a patch release'
+        required: true
+        type: choice
+        options:
+          - new
+          - patch
+
+jobs:
+  Release:
+    runs-on: [self-hosted, style-checker-aarch64]
+    steps:
+      - name: Check out repository code
+        uses: ClickHouse/checkout@v1
+      - name: Print greeting
+        run: |
+          python3 ./tests/ci/release.py --commit ${{ inputs.sha }} --type ${{ inputs.type }} --dry-run
