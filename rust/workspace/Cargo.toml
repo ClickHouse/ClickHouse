@@ -3,6 +3,7 @@
 members = [
     "skim",
     "prql",
+    "pco"
 ]
 resolver = "2"
 
