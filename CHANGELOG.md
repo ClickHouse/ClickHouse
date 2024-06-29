@@ -29,17 +29,17 @@
 * Added `merge_workload` and `mutation_workload` settings to regulate how resources are utilized and shared between merges, mutations and other workloads. [#64061](https://github.com/ClickHouse/ClickHouse/pull/64061) ([Sergei Trifonov](https://github.com/serxa)).
 * Add support for comparing IPv4 and IPv6 types using the `=` operator. [#64292](https://github.com/ClickHouse/ClickHouse/pull/64292) ([Francisco J. Jurado Moreno](https://github.com/Beetelbrox)).
 * Allow to store named collections in zookeeper. [#64574](https://github.com/ClickHouse/ClickHouse/pull/64574) ([Kseniia Sumarokova](https://github.com/kssenii)).
-* Support decimal arguments in binary math functions (pow(), atan2(), max2, min2(), hypot(). [#64582](https://github.com/ClickHouse/ClickHouse/pull/64582) ([Mikhail Gorshkov](https://github.com/mgorshkov)).
+* Support decimal arguments in binary math functions (pow, atan2, max2, min2, hypot). [#64582](https://github.com/ClickHouse/ClickHouse/pull/64582) ([Mikhail Gorshkov](https://github.com/mgorshkov)).
 * Add support for index analysis over `hilbertEncode`. [#64662](https://github.com/ClickHouse/ClickHouse/pull/64662) ([Artem Mustafin](https://github.com/Artemmm91)).
 * Added SQL functions `parseReadableSize` (along with `OrNull` and `OrZero` variants). [#64742](https://github.com/ClickHouse/ClickHouse/pull/64742) ([Francisco J. Jurado Moreno](https://github.com/Beetelbrox)).
 * Add server settings `max_table_num_to_throw` and `max_database_num_to_throw` to limit the number of databases or tables on `CREATE` queries. [#64781](https://github.com/ClickHouse/ClickHouse/pull/64781) ([Xu Jia](https://github.com/XuJia0210)).
 * Add _time virtual column to file alike storages (s3/file/hdfs/url/azureBlobStorage). [#64947](https://github.com/ClickHouse/ClickHouse/pull/64947) ([Ilya Golshtein](https://github.com/ilejn)).
-* Introduced new functions `base64UrlEncode`, `base64UrlDecode` and `tryBase64UrlDecode`. [#64991](https://github.com/ClickHouse/ClickHouse/pull/64991) ([Mikhail Gorshkov](https://github.com/mgorshkov)).
+* Introduced new functions `base64URLEncode`, `base64URLDecode` and `tryBase64URLDecode`. [#64991](https://github.com/ClickHouse/ClickHouse/pull/64991) ([Mikhail Gorshkov](https://github.com/mgorshkov)).
 * Add new function `editDistanceUTF8`, which calculates the [edit distance](https://en.wikipedia.org/wiki/Edit_distance) between two UTF8 strings. [#65269](https://github.com/ClickHouse/ClickHouse/pull/65269) ([LiuNeng](https://github.com/liuneng1994)).
 
 #### Performance Improvement
 * Add a native parquet reader, which can read parquet binary to ClickHouse Columns directly. It's controlled by the setting `input_format_parquet_use_native_reader` (disabled by default). [#60361](https://github.com/ClickHouse/ClickHouse/pull/60361) ([ZhiHong Zhang](https://github.com/copperybean)).
-* Reduce the number of virtual function calls in ColumnNullable::size(). [#60556](https://github.com/ClickHouse/ClickHouse/pull/60556) ([HappenLee](https://github.com/HappenLee)).
+* Reduce the number of virtual function calls in ColumnNullable::size. [#60556](https://github.com/ClickHouse/ClickHouse/pull/60556) ([HappenLee](https://github.com/HappenLee)).
 * Speedup `splitByRegexp` when the regular expression argument is a single-character. [#62696](https://github.com/ClickHouse/ClickHouse/pull/62696) ([Robert Schulze](https://github.com/rschu1ze)).
 * Speed up FixedHashTable by keeping track of the min and max keys used. This allows to reduce the number of cells that need to be verified. [#62746](https://github.com/ClickHouse/ClickHouse/pull/62746) ([Jiebin Sun](https://github.com/jiebinn)).
 * Optimize the resolution of in(LowCardinality, ConstantSet). [#64060](https://github.com/ClickHouse/ClickHouse/pull/64060) ([Zhiguo Zhou](https://github.com/ZhiguoZh)).
@@ -51,7 +51,7 @@
 * Improve function least/greatest for nullable numberic type arguments. [#64668](https://github.com/ClickHouse/ClickHouse/pull/64668) ([KevinyhZou](https://github.com/KevinyhZou)).
 * Allow merging two consequent `FilterSteps` of a query plan. This improves filter-push-down optimization if the filter condition can be pushed down from the parent step. [#64760](https://github.com/ClickHouse/ClickHouse/pull/64760) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
 * Remove bad optimization in vertical final implementation and re-enable vertical final algorithm by default. [#64783](https://github.com/ClickHouse/ClickHouse/pull/64783) ([Duc Canh Le](https://github.com/canhld94)).
-* Remove ALIAS nodes from the filter expression. This slightly improves performance for queries with `PREWHERE` (with new analyzer). [#64793](https://github.com/ClickHouse/ClickHouse/pull/64793) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
+* Remove ALIAS nodes from the filter expression. This slightly improves performance for queries with `PREWHERE` (with the new analyzer). [#64793](https://github.com/ClickHouse/ClickHouse/pull/64793) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
 * Fix performance regression in cross join introduced in [#60459](https://github.com/ClickHouse/ClickHouse/issues/60459) (24.5). [#65243](https://github.com/ClickHouse/ClickHouse/pull/65243) ([Nikita Taranov](https://github.com/nickitat)).
 
 #### Improvement
@@ -63,7 +63,7 @@
 * Reduce the memory usage when using Azure object storage by using fixed memory allocation, avoiding the allocation of an extra buffer. [#63160](https://github.com/ClickHouse/ClickHouse/pull/63160) ([SmitaRKulkarni](https://github.com/SmitaRKulkarni)).
 * Several minor corner case fixes to proxy support & tunneling. [#63427](https://github.com/ClickHouse/ClickHouse/pull/63427) ([Arthur Passos](https://github.com/arthurpassos)).
 * Add `http_response_headers` setting to support custom response headers in custom HTTP handlers. [#63562](https://github.com/ClickHouse/ClickHouse/pull/63562) ([Grigorii](https://github.com/GSokol)).
-* Improve io_uring resubmits visibility. Rename profile event `IOUringSQEsResubmits` -> `IOUringSQEsResubmitsAsync` and add a new one `IOUringSQEsResubmitsSync`. [#63699](https://github.com/ClickHouse/ClickHouse/pull/63699) ([Tomer Shafir](https://github.com/tomershafir)).
+* Improve io_uring resubmit visibility. Rename profile event `IOUringSQEsResubmits` -> `IOUringSQEsResubmitsAsync` and add a new one `IOUringSQEsResubmitsSync`. [#63699](https://github.com/ClickHouse/ClickHouse/pull/63699) ([Tomer Shafir](https://github.com/tomershafir)).
 * Introduce assertions to verify all functions are called with columns of the right size. [#63723](https://github.com/ClickHouse/ClickHouse/pull/63723) ([Raúl Marín](https://github.com/Algunenano)).
 * `SHOW CREATE TABLE` executed on top of system tables will now show the super handy comment unique for each table which will explain why this table is needed. [#63788](https://github.com/ClickHouse/ClickHouse/pull/63788) ([Nikita Mikhaylov](https://github.com/nikitamikhaylov)).
 * Added setting `metadata_storage_type` to keep free space on metadata storage disk. [#64128](https://github.com/ClickHouse/ClickHouse/pull/64128) ([MikhailBurdukov](https://github.com/MikhailBurdukov)).
