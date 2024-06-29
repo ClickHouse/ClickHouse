@@ -8606,6 +8606,31 @@ void MergeTreeData::unloadPrimaryKeys()
     }
 }
 
+size_t MergeTreeData::unloadPrimaryKeysOfOutdatedParts()
+{
+    size_t total_unloaded = 0;
+
+    /// If the method is already called from another thread, then we don't need to do anything.
+    std::unique_lock lock(unload_primary_key_mutex, std::defer_lock);
+    if (!lock.try_lock())
+        return total_unloaded;
+
+    auto parts_lock = lockParts();
+    auto parts_range = getDataPartsStateRange(DataPartState::Outdated);
+
+    for (const auto & part : parts_range)
+    {
+        /// Outdated part may be hold by SELECT query and still needs the index.
+        if (part.unique())
+        {
+            ++total_unloaded;
+            const_cast<IMergeTreeDataPart &>(*part).unloadIndex();
+            LOG_TEST(log, "Unloaded primary key for outdated part {}", part->name);
+        }
+    }
+    return total_unloaded;
+}
+
 void MergeTreeData::verifySortingKey(const KeyDescription & sorting_key)
 {
     /// Aggregate functions already forbidden, but SimpleAggregateFunction are not

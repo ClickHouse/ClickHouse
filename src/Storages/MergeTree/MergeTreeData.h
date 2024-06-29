@@ -1096,7 +1096,12 @@ public:
 
     static VirtualColumnsDescription createVirtuals(const StorageInMemoryMetadata & metadata);
 
+    /// Unloads primary keys of all parts.
     void unloadPrimaryKeys();
+
+    /// Unloads primary keys of outdated parts that are not used by any query.
+    /// Returns the number of parts for which index was unloaded.
+    size_t unloadPrimaryKeysOfOutdatedParts();
 
 protected:
     friend class IMergeTreeDataPart;
@@ -1260,6 +1265,8 @@ protected:
     std::mutex grab_old_parts_mutex;
     /// The same for clearOldTemporaryDirectories.
     std::mutex clear_old_temporary_directories_mutex;
+    /// The same for unloadPrimaryKeysOfOutdatedParts.
+    std::mutex unload_primary_key_mutex;
 
     void checkProperties(
         const StorageInMemoryMetadata & new_metadata,
