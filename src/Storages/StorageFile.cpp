@@ -1397,6 +1397,14 @@ Chunk StorageFileSource::generate()
                 storage->format_name, *read_buf, block_for_format, getContext(), max_block_size, storage->format_settings,
                 max_parsing_threads, std::nullopt, /*is_remote_fs*/ false, CompressionMethod::None, need_only_count);
 
+
+            input_format->setContext(getContext());
+
+            if (filter_dag)
+            {
+                input_format->setActionsDag(filter_dag);
+            }
+
             if (key_condition)
                 input_format->setKeyCondition(key_condition);
 

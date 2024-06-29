@@ -1,0 +1,298 @@
+3000
+{
+  "data": [
+    {
+      "f32": -64.12787,
+      "fixed_str": "BYYC",
+      "str": "LYLDL"
+    },
+    {
+      "f32": -15.910733,
+      "fixed_str": "DCXV",
+      "str": "KCGEY"
+    }
+  ],
+  "rows": 2,
+  "statistics": {
+    "rows_read": 3000,
+    "bytes_read": 99010
+  }
+}
+{
+  "data": [
+    {
+      "f32": -64.12787,
+      "fixed_str": "BYYC",
+      "str": "LYLDL"
+    },
+    {
+      "f32": -15.910733,
+      "fixed_str": "DCXV",
+      "str": "KCGEY"
+    }
+  ],
+  "rows": 2,
+  "statistics": {
+    "rows_read": 1342,
+    "bytes_read": 44044
+  }
+}
+{
+  "data": [
+    {
+      "f32": -95.748695
+    },
+    {
+      "f32": -64.12787
+    }
+  ],
+  "rows": 2,
+  "statistics": {
+    "rows_read": 1658,
+    "bytes_read": 55026
+  }
+}
+{
+  "data": [
+    {
+      "f32": -95.748695
+    },
+    {
+      "f32": -64.12787
+    },
+    {
+      "f32": -42.54674
+    }
+  ],
+  "rows": 3,
+  "statistics": {
+    "rows_read": 3000,
+    "bytes_read": 99010
+  }
+}
+{
+  "data": [
+    {
+      "f32": -15.910733,
+      "fixed_str": "DCXV"
+    }
+  ],
+  "rows": 1,
+  "statistics": {
+    "rows_read": 1342,
+    "bytes_read": 44044
+  }
+}
+{
+  "data": [
+    {
+      "f64": 22.89182051713945
+    },
+    {
+      "f64": 68.62704389505595
+    }
+  ],
+  "rows": 2,
+  "statistics": {
+    "rows_read": 1342,
+    "bytes_read": 43984
+  }
+}
+{
+  "data": [
+    {
+      "array": [
+        69778,
+        58440,
+        2913,
+        64975,
+        92300
+      ]
+    }
+  ],
+  "rows": 1,
+  "statistics": {
+    "rows_read": 3000,
+    "bytes_read": 99010
+  }
+}
+{
+  "data": [
+    {
+      "array": [
+        69778,
+        58440,
+        2913,
+        64975,
+        92300
+      ]
+    }
+  ],
+  "rows": 1,
+  "statistics": {
+    "rows_read": 1342,
+    "bytes_read": 43984
+  }
+}
+{
+  "data": [
+    {
+      "array": [
+        69778,
+        58440,
+        2913,
+        64975,
+        92300
+      ]
+    }
+  ],
+  "rows": 1,
+  "statistics": {
+    "rows_read": 3000,
+    "bytes_read": 99010
+  }
+}
+{
+  "data": [
+    {
+      "array": [
+        69778,
+        58440,
+        2913,
+        64975,
+        92300
+      ]
+    }
+  ],
+  "rows": 1,
+  "statistics": {
+    "rows_read": 1342,
+    "bytes_read": 43984
+  }
+}
+{
+  "data": [
+    {
+      "array": [
+        51429,
+        6905,
+        92300,
+        689,
+        36084
+      ]
+    },
+    {
+      "array": [
+        69778,
+        58440,
+        2913,
+        64975,
+        92300
+      ]
+    }
+  ],
+  "rows": 2,
+  "statistics": {
+    "rows_read": 3000,
+    "bytes_read": 99010
+  }
+}
+{
+  "data": [
+    {
+      "array": [
+        51429,
+        6905,
+        92300,
+        689,
+        36084
+      ]
+    },
+    {
+      "array": [
+        69778,
+        58440,
+        2913,
+        64975,
+        92300
+      ]
+    }
+  ],
+  "rows": 2,
+  "statistics": {
+    "rows_read": 2684,
+    "bytes_read": 88028
+  }
+}
+{
+  "data": [
+    {
+      "array": [
+        69778,
+        58440,
+        2913,
+        64975,
+        92300
+      ]
+    }
+  ],
+  "rows": 1,
+  "statistics": {
+    "rows_read": 3000,
+    "bytes_read": 99010
+  }
+}
+{
+  "data": [
+    {
+      "array": [
+        69778,
+        58440,
+        2913,
+        64975,
+        92300
+      ]
+    }
+  ],
+  "rows": 1,
+  "statistics": {
+    "rows_read": 1342,
+    "bytes_read": 43984
+  }
+}
+{
+  "data": [
+    {
+      "array": [
+        69778,
+        58440,
+        2913,
+        64975,
+        92300
+      ]
+    }
+  ],
+  "rows": 1,
+  "statistics": {
+    "rows_read": 3000,
+    "bytes_read": 99010
+  }
+}
+{
+  "data": [
+    {
+      "array": [
+        69778,
+        58440,
+        2913,
+        64975,
+        92300
+      ]
+    }
+  ],
+  "rows": 1,
+  "statistics": {
+    "rows_read": 1342,
+    "bytes_read": 43984
+  }
+}

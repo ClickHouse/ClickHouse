@@ -1,5 +1,6 @@
 #include "ParquetBlockInputFormat.h"
 #include <boost/algorithm/string/case_conv.hpp>
+#include "ParquetBloomFilterCondition.h"
 
 #if USE_PARQUET
 
@@ -14,6 +15,8 @@
 #include <arrow/status.h>
 #include <parquet/arrow/reader.h>
 #include <parquet/arrow/schema.h>
+#include <parquet/bloom_filter.h>
+#include <parquet/bloom_filter_reader.h>
 #include <parquet/file_reader.h>
 #include <parquet/statistics.h>
 #include "ArrowBufferedStreams.h"
@@ -238,6 +241,50 @@ static std::optional<Field> decodePlainParquetValueSlow(const std::string & data
     return field;
 }
 
+static std::size_t getHeaderIndexByColumnName(const std::string & column_name, const Block & header)
+{
+    for (std::size_t i = 0; i < header.columns(); ++i)
+    {
+        if (header.getByPosition(i).name == column_name)
+        {
+            return i;
+        }
+    }
+
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Column {} not found in Parquet file", column_name);
+}
+
+static ParquetBloomFilterCondition::IndexToColumnBF buildColumnIndexToBF(
+    parquet::BloomFilterReader & bf_reader,
+    int row_group,
+    const Block & header,
+    const std::vector<std::pair<std::string, int>> & column_name_to_index
+)
+{
+    auto rg_bf = bf_reader.RowGroup(row_group);
+
+    if (!rg_bf)
+    {
+        return {};
+    }
+
+    ParquetBloomFilterCondition::IndexToColumnBF index_to_column_bf;
+
+    for (const auto & [column_name, index] : column_name_to_index)
+    {
+        auto bf = rg_bf->GetColumnBloomFilter(index);
+
+        if (!bf)
+        {
+            continue;
+        }
+
+        index_to_column_bf[getHeaderIndexByColumnName(column_name, header)] = std::move(bf);
+    }
+
+    return index_to_column_bf;
+}
+
 /// Range of values for each column, based on statistics in the Parquet metadata.
 /// This is lower/upper bounds, not necessarily exact min and max, e.g. the min/max can be just
 /// missing in the metadata.
@@ -394,6 +441,25 @@ ParquetBlockInputFormat::~ParquetBlockInputFormat()
         pool->wait();
 }
 
+auto make_bloom_filter_condition(
+    parquet::BloomFilterReader & bf_reader,
+    const Block & header,
+    const std::vector<std::pair<std::string, int>> & column_name_to_index,
+    const ActionsDAGPtr & filter_dag,
+    ContextPtr ctx)
+{
+    /*
+     * ParquetBloomFilterCondition needs a mapping from column index to bloom filter to hash the where predicates.
+     * In order to build the mapping, a row group is necessary, but it can be any since it is only used for hashing.
+     *
+     * Later on, the mapping is recreated for each specific row group.
+     * */
+    auto row_group = 0u;
+    auto column_index_to_bf = buildColumnIndexToBF(bf_reader, row_group, header, column_name_to_index);
+
+    return std::make_unique<ParquetBloomFilterCondition>(BloomFilterRPNBuilder::build(filter_dag, column_index_to_bf, ctx, header));
+}
+
 void ParquetBlockInputFormat::initializeIfNeeded()
 {
     if (std::exchange(is_initialized, true))
@@ -415,9 +481,31 @@ void ParquetBlockInputFormat::initializeIfNeeded()
     ArrowFieldIndexUtil field_util(
         format_settings.parquet.case_insensitive_column_matching,
         format_settings.parquet.allow_missing_columns);
-    column_indices = field_util.findRequiredIndices(getPort().getHeader(), *schema);
+
+    auto column_name_to_index = field_util.findRequiredIndices(getPort().getHeader(), *schema);
+
+    for (auto & [column_name, index] : column_name_to_index)
+    {
+        column_indices.push_back(index);
+    }
 
     int num_row_groups = metadata->num_row_groups();
+
+    if (num_row_groups == 0)
+    {
+        return;
+    }
+
+    auto parquet_reader = parquet::ParquetFileReader::Open(
+        arrow_file,
+        parquet::default_reader_properties(),
+        metadata);
+
+    auto & bf_reader = parquet_reader->GetBloomFilterReader();
+    auto bloom_filter_condition = format_settings.parquet.bloom_filter_push_down
+        ? make_bloom_filter_condition(bf_reader, getPort().getHeader(), column_name_to_index, filter_dag, ctx)
+        : nullptr;
+
     row_group_batches.reserve(num_row_groups);
 
     auto adative_chunk_size = [&](int row_group_idx) -> size_t
@@ -442,6 +530,16 @@ void ParquetBlockInputFormat::initializeIfNeeded()
     {
         if (skip_row_groups.contains(row_group))
             continue;
+
+        if (bloom_filter_condition)
+        {
+            const auto column_index_to_bf = buildColumnIndexToBF(bf_reader, row_group, getPort().getHeader(), column_name_to_index);
+
+            if (!bloom_filter_condition->mayBeTrueOnRowGroup(column_index_to_bf))
+            {
+                continue;
+            }
+        }
 
         if (format_settings.parquet.filter_push_down && key_condition
             && !key_condition
