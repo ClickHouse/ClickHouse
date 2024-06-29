@@ -170,33 +170,20 @@ std::pair<ColumnString::Ptr, ColumnString::Ptr> EmbeddedRocksDBBulkSink::seriali
         FormatSettings format_settings; /// Format settings is 1.5KB, so it's not wise to create it for each row
 
         /// TTL handling
-        [[maybe_unused]] auto encode_fixed_32 = [](char * dst, int32_t value)
+        [[maybe_unused]] auto get_rocksdb_ts = [this](String & ts_string)
         {
-            if constexpr (std::endian::native == std::endian::little)
-            {
-                memcpy(dst, &value, sizeof(value));
-            }
-            else
-            {
-                dst[0] = value & 0xff;
-                dst[1] = (value >> 8) & 0xff;
-                dst[2] = (value >> 16) & 0xff;
-                dst[3] = (value >> 24) & 0xff;
-            }
-        };
-        [[maybe_unused]] auto get_rocksdb_ts = [this, &encode_fixed_32](char * ts_string)
-        {
-            int64_t curtime = -1;
+            Int64 curtime = -1;
             auto * system_clock = storage.rocksdb_ptr->GetEnv()->GetSystemClock().get();
             rocksdb::Status st = system_clock->GetCurrentTime(&curtime);
             if (!st.ok())
                 throw Exception(ErrorCodes::ROCKSDB_ERROR, "RocksDB error: {}", st.ToString());
-            encode_fixed_32(ts_string, static_cast<int32_t>(curtime));
+            WriteBufferFromString buf(ts_string);
+            writeBinaryLittleEndian(static_cast<Int32>(curtime), buf);
         };
 
         for (auto && chunk : input_chunks)
         {
-            [[maybe_unused]] char ts_string[4];
+            [[maybe_unused]] String ts_string;
             if constexpr (with_timestamp)
                 get_rocksdb_ts(ts_string);
 
@@ -209,7 +196,11 @@ std::pair<ColumnString::Ptr, ColumnString::Ptr> EmbeddedRocksDBBulkSink::seriali
 
                 /// Append timestamp to end of value, see rocksdb::DBWithTTLImpl::AppendTS
                 if constexpr (with_timestamp)
-                    writeString(ts_string, 4, writer_value);
+                {
+                    if (ts_string.size() != sizeof(Int32))
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid timestamp size: expect 4, got {}", ts_string.size());
+                    writeString(ts_string, writer_value);
+                }
 
                 /// String in ColumnString must be null-terminated
                 writeChar('\0', writer_key);
