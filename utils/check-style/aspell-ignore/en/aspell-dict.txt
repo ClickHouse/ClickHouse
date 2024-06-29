@@ -1014,8 +1014,8 @@ Updatable
 Uppercased
 Uptime
 Uptrace
-UrlDecode
-UrlEncode
+URLDecode
+URLEncode
 UserID
 Util
 VARCHAR
@@ -2262,6 +2262,7 @@ proleptic
 prometheus
 proportionsZTest
 proto
+protocol
 protobuf
 protobufsingle
 proxied

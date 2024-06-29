@@ -2116,7 +2116,7 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
 }
 
 
-StoragePtr Context::buildParametrizedViewStorage(const ASTPtr & table_expression, const String & database_name, const String & table_name)
+StoragePtr Context::buildParametrizedViewStorage(const String & database_name, const String & table_name, const NameToNameMap & param_values)
 {
     if (table_name.empty())
         return nullptr;
@@ -2129,8 +2129,7 @@ StoragePtr Context::buildParametrizedViewStorage(const ASTPtr & table_expression
         return nullptr;
 
     auto query = original_view->getInMemoryMetadataPtr()->getSelectQuery().inner_query->clone();
-    NameToNameMap parameterized_view_values = analyzeFunctionParamValues(table_expression, getQueryContext());
-    StorageView::replaceQueryParametersIfParametrizedView(query, parameterized_view_values);
+    StorageView::replaceQueryParametersIfParametrizedView(query, param_values);
 
     ASTCreateQuery create;
     create.select = query->as<ASTSelectWithUnionQuery>();
@@ -3403,8 +3402,6 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
     const auto & config = shared->zookeeper_config ? *shared->zookeeper_config : getConfigRef();
     if (!shared->zookeeper)
         shared->zookeeper = zkutil::ZooKeeper::create(config, zkutil::getZooKeeperConfigName(config), getZooKeeperLog());
-    else if (shared->zookeeper->hasReachedDeadline())
-        shared->zookeeper->finalize("ZooKeeper session has reached its deadline");
 
     if (shared->zookeeper->expired())
     {
@@ -4136,13 +4133,22 @@ std::shared_ptr<FilesystemCacheLog> Context::getFilesystemCacheLog() const
     return shared->system_logs->filesystem_cache_log;
 }
 
-std::shared_ptr<S3QueueLog> Context::getS3QueueLog() const
+std::shared_ptr<ObjectStorageQueueLog> Context::getS3QueueLog() const
 {
     SharedLockGuard lock(shared->mutex);
     if (!shared->system_logs)
         return {};
 
     return shared->system_logs->s3_queue_log;
+}
+
+std::shared_ptr<ObjectStorageQueueLog> Context::getAzureQueueLog() const
+{
+    SharedLockGuard lock(shared->mutex);
+    if (!shared->system_logs)
+        return {};
+
+    return shared->system_logs->azure_queue_log;
 }
 
 std::shared_ptr<FilesystemReadPrefetchesLog> Context::getFilesystemReadPrefetchesLog() const
