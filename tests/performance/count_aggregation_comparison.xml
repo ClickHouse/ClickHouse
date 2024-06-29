@@ -14,7 +14,7 @@
         </substitution>
     </substitutions>
 
-    <!-- Using new combinators -->
+    <!-- Using BY and TOTALS -->
     <query>SELECT count(), count(BY UserID % {group_scale}), count(TOTALS) FROM test.hits GROUP BY CounterID % 13, UserID % {group_scale} FORMAT Null</query>
 
     <!-- Using window functions -->

@@ -14,11 +14,11 @@
         </substitution>
     </substitutions>
 
-    <!-- Using new combinators -->
+    <!-- Using BY and TOTALS -->
     <query>SELECT uniqExact(Title), uniqExact(Title BY UserID % {group_scale}), uniqExact(Title TOTALS) FROM  test.hits GROUP BY CounterID % 13, UserID % {group_scale} FORMAT Null</query>
 
     <!-- Using window functions -->
-    <query>SELECT uniqExact(Title) OVER (PARTITION BY CounterID % 13, UserID % {group_scale}), uniqExact(Title) OVER (PARTITION BY UserID % {group_scale}), uniqExact(Title) OVER () FROM  test.hits FORMAT Null</query>
+    <query>SELECT DISTINCT uniqExact(Title) OVER (PARTITION BY CounterID % 13, UserID % {group_scale}), uniqExact(Title) OVER (PARTITION BY UserID % {group_scale}), uniqExact(Title) OVER () FROM  test.hits FORMAT Null</query>
 
     <!-- Using grouping sets -->
     <query>SELECT uniqExact(Title) FROM  test.hits GROUP BY GROUPING SETS((CounterID % 13, UserID % {group_scale}), (CounterID % 13),()) FORMAT Null</query>
