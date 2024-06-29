@@ -24,6 +24,7 @@
 #include <Storages/MutationCommands.h>
 #include <Storages/PartitionCommands.h>
 #include <Storages/StorageKeeperMap.h>
+#include <Storages/StorageDistributed.h>
 #include <Common/typeid_cast.h>
 
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
@@ -97,10 +98,29 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
         table = DatabaseCatalog::instance().tryGetTable(table_id, getContext());
     }
 
+    bool do_rewrite_to_oncluster = false;
+    const StorageDistributed * maybe_distributed = nullptr;
+    if (table)
+    {
+        maybe_distributed = table->as<const StorageDistributed>();
+        if (maybe_distributed
+            && maybe_distributed->supportsAlterRewriteToOncluster()
+            //support DROP/DETACHED partition only
+            && alter.isDropPartitionAlter())
+        {
+            do_rewrite_to_oncluster = true;
+        }
+    }
+
     if (!alter.cluster.empty() && !maybeRemoveOnCluster(query_ptr, getContext()))
     {
         if (table && table->as<StorageKeeperMap>())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Mutations with ON CLUSTER are not allowed for KeeperMap tables");
+
+        // prevent from executing recursively
+        if (do_rewrite_to_oncluster)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "ALTER ON CLUSTER is not allowed for "
+                "distributed table when enable_ddl_alter_rewrite_to_oncluster turned on");
 
         DDLQueryOnClusterParams params;
         params.access_to_check = getRequiredAccess();
@@ -122,6 +142,21 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
 
     if (!table)
         throw Exception(ErrorCodes::UNKNOWN_TABLE, "Could not find table: {}", table_id.table_name);
+
+    // Rewrite optimizing to corresponding local table with on cluster
+    if (do_rewrite_to_oncluster)
+    {
+        auto query_clone = query_ptr->clone();
+        auto * alter_ast_ptr = query_clone->as<ASTAlterQuery>();
+        //change distributed table to remote table
+        alter_ast_ptr->setDatabase(maybe_distributed->getRemoteDatabaseName());
+        alter_ast_ptr->setTable(maybe_distributed->getRemoteTableName());
+        //add on cluster
+        alter_ast_ptr->cluster = maybe_distributed->getCluster()->getName();
+        DDLQueryOnClusterParams params;
+        params.access_to_check = getRequiredAccess();
+        return executeDDLQueryOnCluster(query_clone, getContext(), params);
+    }
 
     checkStorageSupportsTransactionsIfNeeded(table, getContext());
     if (table->isStaticStorage())

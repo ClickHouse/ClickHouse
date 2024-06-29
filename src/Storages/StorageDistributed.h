@@ -87,6 +87,8 @@ public:
     bool supportsSubcolumns() const override { return true; }
     bool supportsDynamicSubcolumnsDeprecated() const override { return true; }
     bool supportsDynamicSubcolumns() const override { return true; }
+    bool supportsOptimizeRewriteToOncluster() const { return distributed_settings.enable_ddl_optimize_rewrite_to_oncluster; }
+    bool supportsAlterRewriteToOncluster() const { return distributed_settings.enable_ddl_alter_rewrite_to_oncluster; }
     StoragePolicyPtr getStoragePolicy() const override;
 
     /// Do not apply moving to PREWHERE optimization for distributed tables,

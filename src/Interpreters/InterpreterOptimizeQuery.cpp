@@ -9,6 +9,7 @@
 #include <Common/typeid_cast.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/StorageDistributed.h>
 
 #include <Interpreters/processColumnTransformers.h>
 
@@ -20,15 +21,33 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int THERE_IS_NO_COLUMN;
+    extern const int BAD_ARGUMENTS;
 }
 
 
 BlockIO InterpreterOptimizeQuery::execute()
 {
     const auto & ast = query_ptr->as<ASTOptimizeQuery &>();
+    auto table_id = getContext()->resolveStorageID(ast);
+    StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
+    bool do_rewrite_to_oncluster = false;
+    const StorageDistributed * maybe_distributed = nullptr;
+    if (table)
+    {
+        maybe_distributed = table->as<const StorageDistributed>();
+        if (maybe_distributed && maybe_distributed->supportsOptimizeRewriteToOncluster())
+        {
+            do_rewrite_to_oncluster = true;
+        }
+    }
 
     if (!ast.cluster.empty())
     {
+        // prevent from executing recursively
+        if (do_rewrite_to_oncluster)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "OPTIMIZE ON CLUSTER is not allowed for "
+                "distributed table when enable_ddl_optimize_rewrite_to_oncluster turned on");
+
         DDLQueryOnClusterParams params;
         params.access_to_check = getRequiredAccess();
         return executeDDLQueryOnCluster(query_ptr, getContext(), params);
@@ -36,8 +55,21 @@ BlockIO InterpreterOptimizeQuery::execute()
 
     getContext()->checkAccess(getRequiredAccess());
 
-    auto table_id = getContext()->resolveStorageID(ast);
-    StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
+    // Rewrite optimizing to corresponding local table with on cluster
+    if (do_rewrite_to_oncluster)
+    {
+        auto query_clone = query_ptr->clone();
+        auto * optimize_ast_ptr = query_clone->as<ASTOptimizeQuery>();
+        //change distributed table to remote table
+        optimize_ast_ptr->setDatabase(maybe_distributed->getRemoteDatabaseName());
+        optimize_ast_ptr->setTable(maybe_distributed->getRemoteTableName());
+        //add on cluster
+        optimize_ast_ptr->cluster = maybe_distributed->getCluster()->getName();
+        DDLQueryOnClusterParams params;
+        params.access_to_check = getRequiredAccess();
+        return executeDDLQueryOnCluster(query_clone, getContext(), params);
+    }
+
     checkStorageSupportsTransactionsIfNeeded(table, getContext());
     auto metadata_snapshot = table->getInMemoryMetadataPtr();
     auto storage_snapshot = table->getStorageSnapshot(metadata_snapshot, getContext());
