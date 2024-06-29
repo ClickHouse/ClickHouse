@@ -8608,27 +8608,32 @@ void MergeTreeData::unloadPrimaryKeys()
 
 size_t MergeTreeData::unloadPrimaryKeysOfOutdatedParts()
 {
-    size_t total_unloaded = 0;
-
     /// If the method is already called from another thread, then we don't need to do anything.
     std::unique_lock lock(unload_primary_key_mutex, std::defer_lock);
     if (!lock.try_lock())
-        return total_unloaded;
+        return 0;
 
-    auto parts_lock = lockParts();
-    auto parts_range = getDataPartsStateRange(DataPartState::Outdated);
+    DataPartsVector parts_to_unload_index;
 
-    for (const auto & part : parts_range)
     {
-        /// Outdated part may be hold by SELECT query and still needs the index.
-        if (part.unique())
+        auto parts_lock = lockParts();
+        auto parts_range = getDataPartsStateRange(DataPartState::Outdated);
+
+        for (const auto & part : parts_range)
         {
-            ++total_unloaded;
-            const_cast<IMergeTreeDataPart &>(*part).unloadIndex();
-            LOG_TEST(log, "Unloaded primary key for outdated part {}", part->name);
+            /// Outdated part may be hold by SELECT query and still needs the index.
+            if (part.unique())
+                parts_to_unload_index.push_back(part);
         }
     }
-    return total_unloaded;
+
+    for (const auto & part : parts_to_unload_index)
+    {
+        const_cast<IMergeTreeDataPart &>(*part).unloadIndex();
+        LOG_TEST(log, "Unloaded primary key for outdated part {}", part->name);
+    }
+
+    return parts_to_unload_index.size();
 }
 
 void MergeTreeData::verifySortingKey(const KeyDescription & sorting_key)
