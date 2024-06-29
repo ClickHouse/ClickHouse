@@ -88,6 +88,7 @@ SELECT sum(n) from rich_syntax;
 SYSTEM DROP DNS CACHE;
 
 DROP TABLE file;
+DROP DICTIONARY dict;
 DROP TABLE url;
 DROP TABLE view;
 DROP TABLE buffer;
@@ -96,4 +97,3 @@ DROP TABLE merge_tf;
 DROP TABLE distributed;
 DROP TABLE distributed_tf;
 DROP TABLE rich_syntax;
-DROP DICTIONARY dict;
