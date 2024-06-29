@@ -24,6 +24,11 @@ public:
     explicit Chain(ProcessorPtr processor);
     explicit Chain(std::list<ProcessorPtr> processors);
 
+    void setProcessors(std::list<ProcessorPtr> processors_value)
+    {
+        processors = std::move(processors_value);
+    }
+
     bool empty() const { return processors.empty(); }
 
     size_t getNumThreads() const { return num_threads; }
@@ -51,12 +56,8 @@ public:
     void addTableLock(TableLockHolder lock) { holder.table_locks.emplace_back(std::move(lock)); }
     void addStorageHolder(StoragePtr storage) { holder.storage_holders.emplace_back(std::move(storage)); }
     void addInterpreterContext(ContextPtr context) { holder.interpreter_context.emplace_back(std::move(context)); }
+    void addResources(QueryPlanResourceHolder holder_) { holder.add(std::move(holder_)); }
 
-    void attachResources(QueryPlanResourceHolder holder_)
-    {
-        /// This operator "=" actually merges holder_ into holder, doesn't replace.
-        holder = std::move(holder_);
-    }
     QueryPlanResourceHolder detachResources() { return std::move(holder); }
 
     void reset();

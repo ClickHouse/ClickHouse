@@ -98,7 +98,7 @@ void QueryPlan::unitePlans(QueryPlanStepPtr step, std::vector<std::unique_ptr<Qu
     for (auto & plan : plans)
     {
         max_threads = std::max(max_threads, plan->max_threads);
-        resources = std::move(plan->resources);
+        resources.add(std::move(plan->resources));
     }
 }
 

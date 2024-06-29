@@ -318,9 +318,6 @@ Chain InterpreterInsertQuery::buildSink(
 
     Chain out;
 
-    /// Keep a reference to the context to make sure it stays alive until the chain is executed and destroyed
-    out.addInterpreterContext(context_ptr);
-
     /// NOTE: we explicitly ignore bound materialized views when inserting into Kafka Storage.
     ///       Otherwise we'll get duplicates when MV reads same rows again from Kafka.
     if (table->noPushingToViews() && !no_destination)
@@ -335,6 +332,9 @@ Chain InterpreterInsertQuery::buildSink(
             query_ptr, no_destination,
             thread_status_holder, running_group, elapsed_counter_ms, async_insert);
     }
+
+    /// Keep a reference to the context to make sure it stays alive until the chain is executed and destroyed
+    out.addInterpreterContext(context_ptr);
 
     return out;
 }
@@ -649,9 +649,9 @@ BlockIO InterpreterInsertQuery::execute()
         size_t num_select_threads = pipeline.getNumThreads();
 
         for (auto & chain : presink_chains)
-            resources = chain.detachResources();
+            resources.add(chain.detachResources());
         for (auto & chain : sink_chains)
-            resources = chain.detachResources();
+            resources.add(chain.detachResources());
 
         pipeline.addChains(std::move(presink_chains));
         pipeline.resize(sink_chains.size());

@@ -120,7 +120,7 @@ public:
     void addStorageHolder(StoragePtr storage);
 
     /// Existing resources are not released here, see move ctor for QueryPlanResourceHolder.
-    void addResources(QueryPlanResourceHolder holder) { resources = std::move(holder); }
+    void addResources(QueryPlanResourceHolder holder) { resources.add(std::move(holder)); }
 
     /// Skip updating profile events.
     /// For merges in mutations it may need special logic, it's done inside ProgressCallback.
