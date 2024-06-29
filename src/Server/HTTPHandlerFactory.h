@@ -126,14 +126,10 @@ HTTPRequestHandlerFactoryPtr createReplicasStatusHandlerFactory(IServer & server
     const Poco::Util::AbstractConfiguration & config,
     const std::string & config_prefix);
 
-HTTPRequestHandlerFactoryPtr
-createPrometheusHandlerFactory(IServer & server,
-    const Poco::Util::AbstractConfiguration & config,
-    AsynchronousMetrics & async_metrics,
-    const std::string & config_prefix);
+HTTPRequestHandlerFactoryPtr createPrometheusHandlerFactory(
+    const Poco::Util::AbstractConfiguration & config, AsynchronousMetrics & async_metrics, const std::string & config_prefix);
 
 HTTPRequestHandlerFactoryPtr createPrometheusMainHandlerFactory(
-    IServer & server,
     const Poco::Util::AbstractConfiguration & config,
     PrometheusMetricsWriterPtr metrics_writer,
     const std::string & name);
