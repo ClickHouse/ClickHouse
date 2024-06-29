@@ -344,6 +344,91 @@ TEST(AccessRights, Intersection)
     rhs.grantWithGrantOption(AccessType::SELECT, "db1", "tb1", "col1");
     lhs.makeIntersection(rhs);
     ASSERT_EQ(lhs.toString(), "GRANT SELECT(col1) ON db1.tb1 WITH GRANT OPTION, GRANT SELECT(col2) ON db1.tb1");
+
+    lhs = {};
+    rhs = {};
+    lhs.grant(AccessType::SELECT, "team");
+    lhs.grant(AccessType::SELECT, "test");
+    lhs.grant(AccessType::SELECT, "toast");
+    lhs.grant(AccessType::SELECT, "toaster");
+    rhs.grant(AccessType::SELECT, "test");
+    rhs.grant(AccessType::SELECT, "tear");
+    rhs.grant(AccessType::SELECT, "team");
+    rhs.grant(AccessType::SELECT, "tea");
+    lhs.makeIntersection(rhs);
+    ASSERT_EQ(lhs.toString(), "GRANT SELECT ON team.*, GRANT SELECT ON test.*");
+
+    lhs = {};
+    rhs = {};
+    lhs.grant(AccessType::SELECT, "team");
+    lhs.grant(AccessType::SELECT, "test");
+    lhs.grantWildcard(AccessType::SELECT, "toast");
+    rhs.grant(AccessType::SELECT, "test");
+    rhs.grant(AccessType::SELECT, "tear");
+    rhs.grant(AccessType::SELECT, "team");
+    rhs.grant(AccessType::SELECT, "tea");
+    rhs.grant(AccessType::SELECT, "toaster");
+    lhs.makeIntersection(rhs);
+    ASSERT_EQ(lhs.toString(), "GRANT SELECT ON team.*, GRANT SELECT ON test.*, GRANT SELECT ON toaster.*");
+
+    lhs = {};
+    rhs = {};
+    lhs.grant(AccessType::SELECT, "team");
+    lhs.grantWildcard(AccessType::SELECT, "toast");
+    rhs.grantWildcard(AccessType::SELECT, "tea");
+    rhs.grant(AccessType::SELECT, "toaster", "foo");
+    lhs.makeIntersection(rhs);
+    ASSERT_EQ(lhs.toString(), "GRANT SELECT ON team.*, GRANT SELECT ON toaster.foo");
+
+    lhs = {};
+    rhs = {};
+    rhs.grantWildcard(AccessType::SELECT, "toaster");
+    lhs.grantWildcard(AccessType::SELECT, "toast");
+    lhs.makeIntersection(rhs);
+    ASSERT_EQ(lhs.toString(), "GRANT SELECT ON toaster*.*");
+
+    lhs = {};
+    rhs = {};
+    lhs.grantWildcard(AccessType::SELECT, "toast");
+    rhs.grant(AccessType::SELECT, "toaster");
+    lhs.makeIntersection(rhs);
+    ASSERT_EQ(lhs.toString(), "GRANT SELECT ON toaster.*");
+}
+
+TEST(AccessRights, Contains)
+{
+    AccessRights lhs, rhs;
+    lhs.grant(AccessType::SELECT, "db1");
+    rhs.grant(AccessType::SELECT, "db1", "tb1");
+    ASSERT_EQ(lhs.contains(rhs), true);
+
+    lhs = {};
+    rhs = {};
+    lhs.grant(AccessType::SELECT, "db1");
+    lhs.grant(AccessType::SELECT, "db2");
+    rhs.grant(AccessType::SELECT, "db23", "tb1");
+    rhs.grant(AccessType::SELECT, "db24", "tb1");
+    ASSERT_EQ(lhs.contains(rhs), false);
+
+    lhs = {};
+    rhs = {};
+    lhs.grant(AccessType::SELECT, "db1");
+    lhs.grant(AccessType::SELECT, "db2");
+    rhs.grant(AccessType::SELECT, "db2", "tb1");
+    ASSERT_EQ(lhs.contains(rhs), true);
+
+    lhs = {};
+    rhs = {};
+    lhs.grant(AccessType::ALL, "db1");
+    rhs.grant(AccessType::SELECT, "db1", "tb1");
+    rhs.grant(AccessType::SELECT, "db1", "tb2", "col1");
+    ASSERT_EQ(lhs.contains(rhs), true);
+
+    lhs = {};
+    rhs = {};
+    lhs.grantWildcard(AccessType::SELECT, "db");
+    rhs.grant(AccessType::SELECT, "db1");
+    ASSERT_EQ(lhs.contains(rhs), true);
 }
 
 TEST(AccessRights, Iterator)

@@ -500,62 +500,9 @@ public:
 
     bool contains(const Node & other) const
     {
-        if (min_flags_with_children.contains(other.max_flags_with_children))
-            return true;
-
-        if (!flags.contains(other.flags))
-            return false;
-
-        /// Let's assume that the current node has the following rights:
-        ///
-        /// SELECT ON *.* TO user1;
-        /// REVOKE SELECT ON system.* FROM user1;
-        /// REVOKE SELECT ON mydb.* FROM user1;
-        ///
-        /// And the other node has the rights:
-        ///
-        /// SELECT ON *.* TO user2;
-        /// REVOKE SELECT ON system.* FROM user2;
-        ///
-        /// First, we check that each child from the other node is present in the current node:
-        ///
-        /// SELECT ON *.* TO user1;  -- checked
-        /// REVOKE SELECT ON system.* FROM user1; -- checked
-        if (other.children)
-        {
-            for (auto it = other.begin(); it != other.end(); ++it)
-            {
-                const auto & [child, found] = tryGetLeafOrPrefix(it.getPath(), it->wildcard_grant);
-                if (!found)
-                {
-                    if (!flags.contains(it->flags))
-                        return false;
-                }
-                else
-                {
-                    if (!child.contains(*it))
-                        return false;
-                }
-            }
-        }
-
-        if (!children)
-            return true;
-
-        /// Then we check that each of our children has no other rights revoked.
-        ///
-        /// REVOKE SELECT ON mydb.* FROM user1; -- check failed, returning false
-        for (auto it = other.begin(); it != other.end(); ++it)
-        {
-            const auto & [child, found] = other.tryGetLeafOrPrefix(it.getPath(), it->wildcard_grant);
-            if (found)
-                continue;
-
-            if (!it->flags.contains(other.flags))
-                return false;
-        }
-
-        return true;
+        Node tmp_node = *this;
+        tmp_node.makeIntersection(other);
+        return tmp_node == other;
     }
 
     void makeUnion(const Node & other)
@@ -566,7 +513,11 @@ public:
 
     void makeIntersection(const Node & other)
     {
-        makeIntersectionRec(other);
+        Node result;
+        Node rhs = other;
+        makeIntersectionRec(result, rhs);
+        children = std::move(result.children);
+        flags &= other.flags;
         optimizeTree();
     }
 
@@ -698,17 +649,17 @@ private:
         return {*this, false};
     }
 
-    /// Similar to `getLeaf`, but returns nullptr if no leaf is found.
-    const Node * tryGetLeaf(std::string_view path) const
+    /// Similar to `getLeaf`, but returns nullptr if no leaf was found.
+    const Node * tryGetLeaf(std::string_view path, bool return_parent_node = false) const
     {
-        const auto & [node, final] = tryGetLeafOrPrefix(path);
+        const auto & [node, final] = tryGetLeafOrPrefix(path, return_parent_node);
         if (!final)
             return nullptr;
 
         return &node;
     }
 
-    /// Returns a child node with the given name. If no child is found, creates a new one with specified *level_*.
+    /// Returns a child node with the given name. If no child was found, creates a new one with specified *level_*.
     Node & getChildNode(std::string_view name, Level level_ = Level::GLOBAL_LEVEL)
     {
         auto * child = tryGetChildNode(name);
@@ -726,7 +677,7 @@ private:
         return new_child;
     }
 
-    /// Similar to `getChildNode`, but returns nullptr if no child node is found.
+    /// Similar to `getChildNode`, but returns nullptr if no child node was found.
     Node * tryGetChildNode(std::string_view name) const
     {
         if (!children)
@@ -852,9 +803,11 @@ private:
         }
     }
 
-    /// Optimizes and compresses radix tree.
     void optimizeChildren()
     {
+        if (!children)
+            return;
+
         for (auto it = children->begin(); it != children->end();)
         {
             /// If a child has a wildcard grant, but it's fully covered by parent grants.
@@ -864,7 +817,10 @@ private:
             ///                        | -> GRANT SELECT ON db.*
             /// GRANT SELECT ON db.*   |
             if (it->wildcard_grant && canMergeChild(*it))
+            {
                 it->wildcard_grant = false;
+                it->optimizeChildren();
+            }
 
             if (canEraseChild(*it))
                 it = children->erase(it);
@@ -889,10 +845,11 @@ private:
             }
         }
 
-        if (children && children->size() == 0)
+        if (children && children->empty())
             children = nullptr;
     }
 
+    /// Optimizes and compresses radix tree.
     void optimizeTree()
     {
         if (children)
@@ -976,24 +933,30 @@ private:
             addGrantsRec(flags);
     }
 
-    void makeIntersectionRec(const Node & rhs)
+    void makeIntersectionRec(Node & result, Node & rhs)
     {
         if (rhs.children)
         {
-            for (const auto & rhs_child : *rhs.children)
-                getLeaf(rhs_child.node_name, rhs_child.level, !rhs_child.isLeaf()).makeIntersectionRec(rhs_child);
+            for (auto & rhs_child : *rhs.children)
+            {
+                auto & result_child = result.getLeaf(rhs_child.node_name, rhs_child.level, !rhs_child.isLeaf());
+                auto & lhs_child = getLeaf(rhs_child.node_name, rhs_child.level, !rhs_child.isLeaf());
+                lhs_child.makeIntersectionRec(result_child, rhs_child);
+            }
         }
-        flags &= rhs.flags;
-        wildcard_grant &= rhs.wildcard_grant;
 
         if (children)
         {
             for (auto & lhs_child : *children)
             {
-                if (!rhs.tryGetChildNode(lhs_child.node_name))
-                    lhs_child.removeGrantsRec(~rhs.flags);
+                auto & result_child = result.getLeaf(lhs_child.node_name, lhs_child.level, !lhs_child.isLeaf());
+                auto & rhs_child = rhs.getLeaf(lhs_child.node_name, lhs_child.level, !lhs_child.isLeaf());
+                rhs_child.makeIntersectionRec(result_child, lhs_child);
             }
         }
+
+        result.flags = flags & rhs.flags;
+        result.wildcard_grant = wildcard_grant || rhs.wildcard_grant;
     }
 
     void modifyFlagsRec(const ModifyFlagsFunction & function, bool grant_option, bool & flags_added, bool & flags_removed)
