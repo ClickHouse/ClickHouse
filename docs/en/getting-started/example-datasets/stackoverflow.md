@@ -7,19 +7,19 @@ description: Analyzing Stack Overflow data with ClickHouse
 
 # Analyzing Stack Overflow data with ClickHouse
 
-This dataset contains every Post, User, Vote, Comment, Badge, PostHistory, and PostLink that has occurred on Stack Overflow.
+This dataset contains every `Post`, `User`, `Vote`, `Comment`, `Badge, `PostHistory`, and `PostLink` that has occurred on Stack Overflow.
 
 Users can either download pre-prepared Parquet versions of the data, containing every post up to April 2024, or download the latest data in XML format and load this. Stack Overflow provide updates to this data periodically - historically every 3 months.
 
 The following diagram shows the schema for the available tables assuming Parquet format.
 
-![Stackoverflow schema](./images/stackoverflow.png)
+![Stack Overflow schema](./images/stackoverflow.png)
 
 A description of the schema of this data can be found [here](https://meta.stackexchange.com/questions/2677/database-schema-documentation-for-the-public-data-dump-and-sede).
 
 ## Pre-prepared data
 
-We provide a copy of this data in Parquet format, upto date as of April 2024. While small for ClickHouse with respect to the number of rows (60 million posts), this dataset contains significant volumes of text and large String columns.
+We provide a copy of this data in Parquet format, up to date as of April 2024. While small for ClickHouse with respect to the number of rows (60 million posts), this dataset contains significant volumes of text and large String columns.
 
 ```sql
 CREATE DATABASE stackoverflow
@@ -159,7 +159,7 @@ INSERT INTO stackoverflow.badges SELECT * FROM s3('https://datasets-documentatio
 0 rows in set. Elapsed: 6.635 sec. Processed 51.29 million rows, 797.05 MB (7.73 million rows/s., 120.13 MB/s.)
 ```
 
-### Postlinks
+### `PostLinks`
 
 ```sql
 CREATE TABLE stackoverflow.postlinks
@@ -178,7 +178,7 @@ INSERT INTO stackoverflow.postlinks SELECT * FROM s3('https://datasets-documenta
 0 rows in set. Elapsed: 1.534 sec. Processed 6.55 million rows, 129.70 MB (4.27 million rows/s., 84.57 MB/s.)
 ```
 
-### PostHistory
+### `PostHistory`
 
 ```sql
 CREATE TABLE stackoverflow.posthistory
@@ -218,11 +218,11 @@ wget https://archive.org/download/stackexchange/stackoverflow.com-Users.7z
 wget https://archive.org/download/stackexchange/stackoverflow.com-Votes.7z
 ```
 
-These files are upto 35GB and can take around 30 mins to download depending on internet connection - the download server throttles at around 20MB/sec.
+These files are up to 35GB and can take around 30 mins to download depending on internet connection - the download server throttles at around 20MB/sec.
 
 ### Convert to JSON
 
-At the time of writing, ClickHouse does not have native support for XML as an input format. To load the data into ClickHouse we first convert to NdJSON.
+At the time of writing, ClickHouse does not have native support for XML as an input format. To load the data into ClickHouse we first convert to NDJSON.
 
 To convert XML to JSON we recommend the [`xq`](https://github.com/kislyuk/yq) linux tool, a simple `jq` wrapper for XML documents.
 
@@ -301,7 +301,7 @@ Peak memory usage: 224.03 MiB.
 
 ### User with the most answers (active accounts)
 
-Account requires a UserId.
+Account requires a `UserId`.
 
 ```sql
 SELECT
