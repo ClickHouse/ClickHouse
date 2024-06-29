@@ -50,6 +50,8 @@ protected:
         const IColumn & column, const ISerialization & serialization, size_t row_num,
         size_t value_width, size_t pad_to_width, size_t cut_to_width, bool align_right, bool is_number);
 
+    bool writeVerticalRowIfPossible(const Chunk & chunk, PortKind port_kind);
+
     void resetFormatterImpl() override
     {
         total_rows = 0;
