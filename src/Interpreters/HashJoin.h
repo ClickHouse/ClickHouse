@@ -190,15 +190,7 @@ public:
 
     bool isFilled() const override { return from_storage_join; }
 
-    JoinPipelineType pipelineType() const override
-    {
-        /// No need to process anything in the right stream if hash table was already filled
-        if (from_storage_join)
-            return JoinPipelineType::FilledRight;
-
-        /// Default pipeline processes right stream at first and then left.
-        return JoinPipelineType::FillRightFirst;
-    }
+    JoinPipelineType pipelineType() const override;
 
     /** For RIGHT and FULL JOINs.
       * A stream that will contain default values from left table, joined with rows from right table, that was not joined before.

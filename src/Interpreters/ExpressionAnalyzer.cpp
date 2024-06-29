@@ -57,6 +57,7 @@
 #include <Core/NamesAndTypes.h>
 #include <Common/logger_useful.h>
 #include <Interpreters/PasteJoin.h>
+#include <Interpreters/CrossJoin.h>
 #include <QueryPipeline/SizeLimits.h>
 
 

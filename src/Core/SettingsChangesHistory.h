@@ -128,6 +128,8 @@ static const std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges
               {"http_max_chunk_size", 0, 0, "Internal limitation"},
               {"prefer_external_sort_block_bytes", 0, DEFAULT_BLOCK_SIZE * 256, "Prefer maximum block bytes for external sort, reduce the memory usage during merging."},
               {"input_format_force_null_for_omitted_fields", false, false, "Disable type-defaults for omitted fields when needed"},
+              {"cross_join_max_bytes_to_swap_order", 125_MiB, 125_MiB, "Maximum bytes to read from two table to decide if one table is small."},
+              {"allow_experimental_cross_join_swap_order", false, false, "Allows to use new CROSS JOIN pipeline with swap order optimization"},
               {"cast_string_to_dynamic_use_inference", false, false, "Add setting to allow converting String to Dynamic through parsing"},
               {"allow_experimental_dynamic_type", false, false, "Add new experimental Dynamic type"},
               {"azure_max_blocks_in_multipart_upload", 50000, 50000, "Maximum number of blocks in multipart upload for Azure."},

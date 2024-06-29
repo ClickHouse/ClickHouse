@@ -1,3 +1,4 @@
+#include <memory>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 #include <Core/SortDescription.h>
@@ -26,11 +27,13 @@
 #include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
 #include <Processors/Transforms/PartialSortingTransform.h>
 #include <Processors/Transforms/PasteJoinTransform.h>
+#include <Processors/Transforms/CrossJoinTransform.h>
 #include <Processors/Transforms/TotalsHavingTransform.h>
 #include <QueryPipeline/narrowPipe.h>
 #include <Common/CurrentThread.h>
 #include <Common/iota.h>
 #include <Common/typeid_cast.h>
+#include "Core/Joins.h"
 
 namespace DB
 {
@@ -355,7 +358,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesYShaped
 
     left->pipe.dropExtremes();
     right->pipe.dropExtremes();
-    if ((left->getNumStreams() != 1 || right->getNumStreams() != 1) && join->getTableJoin().kind() == JoinKind::Paste)
+    if ((left->getNumStreams() != 1 || right->getNumStreams() != 1) && (join->getTableJoin().kind() == JoinKind::Paste || isCrossOrComma(join->getTableJoin().kind())))
     {
         left->pipe.resize(1, true);
         right->pipe.resize(1, true);
@@ -371,6 +374,11 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesYShaped
     if (join->getTableJoin().kind() == JoinKind::Paste)
     {
         auto joining = std::make_shared<PasteJoinTransform>(join, inputs, out_header, max_block_size);
+        return mergePipelines(std::move(left), std::move(right), std::move(joining), collected_processors);
+    }
+    else if (isCrossOrComma(join->getTableJoin().kind()))
+    {
+        auto joining = std::make_shared<CrossJoinTransform>(join, inputs, out_header);
         return mergePipelines(std::move(left), std::move(right), std::move(joining), collected_processors);
     }
     else
