@@ -60,7 +60,6 @@ public:
             "ListObjectAzure")
         , client(client_)
     {
-
         options.Prefix = path_prefix;
         options.PageSizeHint = static_cast<int>(max_list_size);
     }
