@@ -68,7 +68,8 @@ protected:
         const auto & part_name_column = StorageMergeTreeIndex::part_name_column;
         const auto & mark_number_column = StorageMergeTreeIndex::mark_number_column;
         const auto & rows_in_granule_column = StorageMergeTreeIndex::rows_in_granule_column;
-        const auto & index = part->getIndex();
+        // const auto index = part->getIndex();
+        const auto index_columns = part->getIndex()->getRawColumns();
 
         Columns result_columns(num_columns);
         for (size_t pos = 0; pos < num_columns; ++pos)
@@ -82,9 +83,9 @@ protected:
 
                 /// Some of the columns from suffix of primary index may be not loaded
                 /// according to setting 'primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns'.
-                if (index_position < index->size())
+                if (index_position < index_columns.size())
                 {
-                    result_columns[pos] = index->at(index_position);
+                    result_columns[pos] = index_columns.at(index_position);
                 }
                 else
                 {

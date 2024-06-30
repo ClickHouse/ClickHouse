@@ -91,6 +91,7 @@ struct MergeTreeWriterSettings
 
     bool can_use_adaptive_granularity;
     bool rewrite_primary_key;
+    bool load_primary_key_in_memory = true;
     bool blocks_are_granules_size;
     WriteSettings query_write_settings;
 

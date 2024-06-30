@@ -137,17 +137,17 @@ public:
             indices.push_back(part.data_part->getIndex());
 
         for (const auto & index : indices)
-            loaded_columns = std::min(loaded_columns, index->size());
+            loaded_columns = std::min(loaded_columns, index->getNumColumns());
     }
 
     Values getValue(size_t part_idx, size_t mark) const
     {
         const auto & index = indices[part_idx];
-        chassert(index->size() >= loaded_columns);
+        chassert(index->getNumColumns() >= loaded_columns);
         Values values(loaded_columns);
         for (size_t i = 0; i < loaded_columns; ++i)
         {
-            index->at(i)->get(mark, values[i]);
+            index->get(i, mark, values[i]);
             if (values[i].isNull())
                 values[i] = POSITIVE_INFINITY;
         }
@@ -212,7 +212,7 @@ public:
     }
 private:
     const RangesInDataParts & parts;
-    std::vector<IMergeTreeDataPart::Index> indices;
+    std::vector<IMergeTreeDataPart::IndexPtr> indices;
     size_t loaded_columns = std::numeric_limits<size_t>::max();
 };
 

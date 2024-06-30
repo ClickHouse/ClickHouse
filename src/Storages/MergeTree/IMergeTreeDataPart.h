@@ -25,6 +25,7 @@
 #include <Interpreters/TransactionVersionMetadata.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
 #include <Storages/MergeTree/IPartMetadataManager.h>
+#include <Storages/MergeTree/MergeTreePrimaryIndex.h>
 
 
 namespace zkutil
@@ -77,7 +78,7 @@ public:
     using ColumnSizeByName = std::unordered_map<std::string, ColumnSize>;
     using NameToNumber = std::unordered_map<std::string, size_t>;
 
-    using Index = std::shared_ptr<const Columns>;
+    using IndexPtr = PrimaryIndexPtr;
     using IndexSizeByName = std::unordered_map<std::string, ColumnSize>;
 
     using Type = MergeTreeDataPartType;
@@ -365,7 +366,7 @@ public:
     /// Version of part metadata (columns, pk and so on). Managed properly only for replicated merge tree.
     int32_t metadata_version;
 
-    Index getIndex() const;
+    IndexPtr getIndex() const;
     void setIndex(const Columns & cols_);
     void setIndex(Columns && cols_);
     void unloadIndex();
@@ -589,8 +590,11 @@ protected:
     /// Lazily loaded in RAM. Contains each index_granularity-th value of primary key tuple.
     /// Note that marks (also correspond to primary key) are not always in RAM, but cached. See MarkCache.h.
     mutable std::mutex index_mutex;
-    mutable Index index TSA_GUARDED_BY(index_mutex);
+    mutable IndexPtr index TSA_GUARDED_BY(index_mutex);
     mutable bool index_loaded TSA_GUARDED_BY(index_mutex) = false;
+
+    /// Settings to create primary index.
+    PrimaryIndex::Settings primary_index_settings;
 
     /// Total size of all columns, calculated once in calcuateColumnSizesOnDisk
     ColumnSize total_columns_size;

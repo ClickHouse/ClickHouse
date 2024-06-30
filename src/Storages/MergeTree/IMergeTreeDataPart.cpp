@@ -37,6 +37,7 @@
 #include <Common/StringUtils.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
+#include "Storages/MergeTree/MergeTreePrimaryIndex.h"
 
 #include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
 
@@ -326,11 +327,20 @@ IMergeTreeDataPart::IMergeTreeDataPart(
     incrementStateMetric(state);
     incrementTypeMetric(part_type);
 
-    index = std::make_shared<Columns>();
+    index = std::make_shared<PrimaryIndex>();
     minmax_idx = std::make_shared<MinMaxIndex>();
 
     initializeIndexGranularityInfo();
     initializePartMetadataManager();
+
+    auto storage_settings = storage.getSettings();
+
+    primary_index_settings =
+    {
+        .compress = storage_settings->primary_key_compress_in_memory,
+        .block_size = storage_settings->primary_key_compressed_block_size_in_memory,
+        .max_ratio_to_compress = storage_settings->primary_key_max_ratio_to_compress_in_memory,
+    };
 }
 
 IMergeTreeDataPart::~IMergeTreeDataPart()
@@ -340,7 +350,7 @@ IMergeTreeDataPart::~IMergeTreeDataPart()
 }
 
 
-IMergeTreeDataPart::Index IMergeTreeDataPart::getIndex() const
+IMergeTreeDataPart::IndexPtr IMergeTreeDataPart::getIndex() const
 {
     std::scoped_lock lock(index_mutex);
     if (!index_loaded)
@@ -355,7 +365,7 @@ void IMergeTreeDataPart::setIndex(const Columns & cols_)
     std::scoped_lock lock(index_mutex);
     if (!index->empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The index of data part can be set only once");
-    index = std::make_shared<const Columns>(cols_);
+    index = std::make_shared<PrimaryIndex>(cols_, primary_index_settings);
     index_loaded = true;
 }
 
@@ -364,14 +374,14 @@ void IMergeTreeDataPart::setIndex(Columns && cols_)
     std::scoped_lock lock(index_mutex);
     if (!index->empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The index of data part can be set only once");
-    index = std::make_shared<const Columns>(std::move(cols_));
+    index = std::make_shared<PrimaryIndex>(std::move(cols_), primary_index_settings);
     index_loaded = true;
 }
 
 void IMergeTreeDataPart::unloadIndex()
 {
     std::scoped_lock lock(index_mutex);
-    index = std::make_shared<Columns>();
+    index = std::make_shared<PrimaryIndex>();
     index_loaded = false;
 }
 
@@ -582,19 +592,13 @@ void IMergeTreeDataPart::removeIfNeeded()
 UInt64 IMergeTreeDataPart::getIndexSizeInBytes() const
 {
     std::scoped_lock lock(index_mutex);
-    UInt64 res = 0;
-    for (const ColumnPtr & column : *index)
-        res += column->byteSize();
-    return res;
+    return index->bytes();
 }
 
 UInt64 IMergeTreeDataPart::getIndexSizeInAllocatedBytes() const
 {
     std::scoped_lock lock(index_mutex);
-    UInt64 res = 0;
-    for (const ColumnPtr & column : *index)
-        res += column->allocatedBytes();
-    return res;
+    return index->allocatedBytes();
 }
 
 void IMergeTreeDataPart::assertState(const std::initializer_list<MergeTreeDataPartState> & affordable_states) const
@@ -926,7 +930,8 @@ void IMergeTreeDataPart::loadIndex() const
         if (!index_file->eof())
             throw Exception(ErrorCodes::EXPECTED_END_OF_FILE, "Index file {} is unexpectedly long", index_path);
 
-        index = std::make_shared<Columns>(std::make_move_iterator(loaded_index.begin()), std::make_move_iterator(loaded_index.end()));
+        Columns index_columns(std::make_move_iterator(loaded_index.begin()), std::make_move_iterator(loaded_index.end()));
+        index = std::make_shared<PrimaryIndex>(std::move(index_columns), primary_index_settings);
     }
 }
 

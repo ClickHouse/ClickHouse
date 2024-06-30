@@ -5,27 +5,6 @@
 namespace DB
 {
 
-// Write a range of bits in a bit-packed array.
-// The array must be overallocated by one element.
-// The bit range must be pre-filled with zeros.
-void writeBits(UInt64 * dest, size_t bit_offset, UInt64 value)
-{
-    size_t mod = bit_offset % 64;
-    dest[bit_offset / 64] |= value << mod;
-    if (mod)
-        dest[bit_offset / 64 + 1] |= value >> (64 - mod);
-}
-
-// The array must be overallocated by one element.
-UInt64 readBits(const UInt64 * src, size_t bit_offset, size_t num_bits)
-{
-    size_t mod = bit_offset % 64;
-    UInt64 value = src[bit_offset / 64] >> mod;
-    if (mod)
-        value |= src[bit_offset / 64 + 1] << (64 - mod);
-    return value & maskLowBits<UInt64>(num_bits);
-}
-
 MarksInCompressedFile::MarksInCompressedFile(const PlainArray & marks)
     : num_marks(marks.size()), blocks((marks.size() + MARKS_PER_BLOCK - 1) / MARKS_PER_BLOCK, BlockInfo{})
 {
@@ -71,8 +50,8 @@ MarksInCompressedFile::MarksInCompressedFile(const PlainArray & marks)
     {
         const auto & mark = marks[idx];
         auto [block, offset] = lookUpMark(idx);
-        writeBits(packed.data(), offset, mark.offset_in_compressed_file - block->min_x);
-        writeBits(
+        writeBitsPacked(packed.data(), offset, mark.offset_in_compressed_file - block->min_x);
+        writeBitsPacked(
             packed.data(),
             offset + block->bits_for_x,
             (mark.offset_in_decompressed_block - block->min_y) >> block->trailing_zero_bits_in_y);
@@ -82,8 +61,8 @@ MarksInCompressedFile::MarksInCompressedFile(const PlainArray & marks)
 MarkInCompressedFile MarksInCompressedFile::get(size_t idx) const
 {
     auto [block, offset] = lookUpMark(idx);
-    size_t x = block->min_x + readBits(packed.data(), offset, block->bits_for_x);
-    size_t y = block->min_y + (readBits(packed.data(), offset + block->bits_for_x, block->bits_for_y) << block->trailing_zero_bits_in_y);
+    size_t x = block->min_x + readBitsPacked(packed.data(), offset, block->bits_for_x);
+    size_t y = block->min_y + (readBitsPacked(packed.data(), offset + block->bits_for_x, block->bits_for_y) << block->trailing_zero_bits_in_y);
     return MarkInCompressedFile{.offset_in_compressed_file = x, .offset_in_decompressed_block = y};
 }
 
