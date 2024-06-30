@@ -19,6 +19,13 @@ DELETE FROM users WHERE uid = 8888 SETTINGS lightweight_mutation_projection_mode
 
 DELETE FROM users WHERE uid = 6666 SETTINGS lightweight_mutation_projection_mode = 'drop';
 
+-- expecting no projection
+SELECT
+    name,
+    `table`
+FROM system.projection_parts
+WHERE (database = currentDatabase()) AND (`table` = 'users');
+
 SELECT * FROM users;
 
 DROP TABLE users;

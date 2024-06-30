@@ -116,15 +116,15 @@ BlockIO InterpreterDeleteQuery::execute()
         if (table->hasProjection())
         {
             auto context = Context::createCopy(getContext());
-            auto mode = Field(context->getSettingsRef().lightweight_mutation_projection_mode);
-            if (mode == "throw")
+            auto mode = context->getSettingsRef().lightweight_mutation_projection_mode;
+            if (mode == LightweightMutationProjectionMode::THROW)
             {
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                     "DELETE query is not supported for table {} as it has projections. "
                     "User should drop all the projections manually before running the query",
                     table->getStorageID().getFullTableName());
             }
-            else if (mode == "drop")
+            else if (mode == LightweightMutationProjectionMode::DROP)
             {
                 std::vector<String> all_projections = metadata_snapshot->projections.getAllRegisteredNames();
 
