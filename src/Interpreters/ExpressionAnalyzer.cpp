@@ -594,7 +594,7 @@ void ExpressionAnalyzer::makeAggregateDescriptions(ActionsDAG & actions, Aggrega
             for (size_t i = 0; i < by_columns.size(); ++i)
             {
                 const std::string & name = by_columns[i]->getColumnName();
-                const auto * dag_node = actions->tryFindInOutputs(name);
+                const auto * dag_node = actions.tryFindInOutputs(name);
                 if (!dag_node)
                 {
                     throw Exception(

@@ -248,13 +248,13 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(const QueryTreeNodeP
             for (const auto & aggregate_function_by_clause_argument :
                  aggregate_function_node_typed.getByColumnsNode()->as<ListNode &>().getNodes())
             {
-                auto expression_dag_nodes = actions_visitor.visit(before_aggregation_actions, aggregate_function_by_clause_argument);
+                auto expression_dag_nodes = actions_visitor.visit(before_aggregation_actions->dag, aggregate_function_by_clause_argument);
                 for (auto & expression_dag_node : expression_dag_nodes)
                 {
                     if (before_aggregation_actions_output_node_names.contains(expression_dag_node->result_name))
                         continue;
 
-                    before_aggregation_actions->getOutputs().push_back(expression_dag_node);
+                    before_aggregation_actions->dag.getOutputs().push_back(expression_dag_node);
                     before_aggregation_actions_output_node_names.insert(expression_dag_node->result_name);
                 }
             }
