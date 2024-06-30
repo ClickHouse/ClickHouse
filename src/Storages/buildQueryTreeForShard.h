@@ -1,6 +1,11 @@
 #pragma once
 
+#include <map>
 #include <memory>
+
+#include <base/types.h>
+
+#include <Core/SettingsEnums.h>
 
 namespace DB
 {
@@ -16,8 +21,19 @@ using PlannerContextPtr = std::shared_ptr<PlannerContext>;
 class Context;
 using ContextPtr = std::shared_ptr<const Context>;
 
-QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_context, QueryTreeNodePtr query_tree_to_modify);
+struct ShardCursorChanges
+{
+    std::map<String, String> stream_name_restore_map;
+    std::map<String, std::optional<String>> keeper_restore_map;
+};
+
+QueryTreeNodePtr buildQueryTreeForShard(
+    const PlannerContextPtr & planner_context, QueryTreeNodePtr query_tree_to_modify, ShardCursorChanges * changes = nullptr);
 
 void rewriteJoinToGlobalJoin(QueryTreeNodePtr query_tree_to_modify, ContextPtr context);
+
+/// narrows each given cursor to shard subtree value.
+/// returns true if some table expressions were changed.
+bool narrowShardCursors(QueryTreeNodePtr query_tree_to_modify, size_t shard_num);
 
 }

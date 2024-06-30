@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Transforms/JoiningTransform.h>
@@ -103,6 +104,7 @@ void JoinStep::updateOutputStream()
     output_stream = DataStream
     {
         .header = JoiningTransform::transformHeader(input_streams[0].header, join),
+        .is_infinite = std::any_of(input_streams.begin(), input_streams.end(), [](auto stream) { return stream.is_infinite; }),
     };
 }
 

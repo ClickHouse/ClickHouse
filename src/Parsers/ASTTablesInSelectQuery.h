@@ -50,6 +50,7 @@ struct ASTTableExpression : public IAST
 
     /// Modifiers
     bool final = false;
+    ASTPtr stream_settings;
     ASTPtr sample_size;
     ASTPtr sample_offset;
 

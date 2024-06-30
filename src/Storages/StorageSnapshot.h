@@ -1,4 +1,5 @@
 #pragma once
+
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/VirtualColumnsDescription.h>
 

@@ -94,6 +94,8 @@ namespace ErrorCodes
     extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
     extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
     extern const int ILLEGAL_FINAL;
+    extern const int ILLEGAL_STREAM;
+    extern const int SUPPORT_IS_DISABLED;
     extern const int SAMPLING_NOT_SUPPORTED;
     extern const int NO_COMMON_TYPE;
     extern const int NOT_IMPLEMENTED;
@@ -833,6 +835,22 @@ void QueryAnalyzer::validateTableExpressionModifiers(const QueryTreeNodePtr & ta
                 throw Exception(ErrorCodes::SAMPLING_NOT_SUPPORTED,
                     "Storage {} doesn't support sampling",
                     storage->getStorageID().getFullNameNotQuoted());
+
+            if (table_expression_modifiers->hasStream())
+            {
+                if (scope.context && !scope.context->getSettingsRef().allow_experimental_streaming)
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Streaming Mode support is disabled");
+
+                if (storage->isSystemStorage())
+                    throw Exception(ErrorCodes::ILLEGAL_STREAM, "Streaming Mode is not supported for system tables");
+
+                if (!storage->supportsStreaming())
+                    throw Exception(ErrorCodes::ILLEGAL_STREAM, "Streaming Mode is not supported for storage: {}", storage->getName());
+
+                if (table_expression_modifiers->hasFinal() || table_expression_modifiers->hasSampleSizeRatio() || table_expression_modifiers->hasSampleOffsetRatio())
+                    throw Exception(ErrorCodes::SYNTAX_ERROR,
+                        "Streaming query is not compatible with other table expression modifiers (sampling or FINAL)");
+            }
         }
     }
 }

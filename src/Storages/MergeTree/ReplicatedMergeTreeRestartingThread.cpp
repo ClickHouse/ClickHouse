@@ -152,6 +152,9 @@ bool ReplicatedMergeTreeRestartingThread::runImpl()
     storage.async_block_ids_cache.start();
     storage.part_check_thread.start();
 
+    if (storage.getSettings()->queue_mode)
+        storage.background_streaming_assignee->start();
+
     LOG_DEBUG(log, "Table started successfully");
     return true;
 }

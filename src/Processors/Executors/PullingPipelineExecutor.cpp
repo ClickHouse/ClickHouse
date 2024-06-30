@@ -1,6 +1,7 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/Formats/PullingOutputFormat.h>
+#include <Processors/CursorInfo.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <QueryPipeline/ReadProgressCallback.h>
 #include <Processors/Transforms/AggregatingTransform.h>
@@ -73,6 +74,7 @@ bool PullingPipelineExecutor::pull(Block & block)
     }
 
     block = pulling_format->getPort(IOutputFormat::PortKind::Main).getHeader().cloneWithColumns(chunk.detachColumns());
+
     if (auto chunk_info = chunk.getChunkInfo())
     {
         if (const auto * agg_info = typeid_cast<const AggregatedChunkInfo *>(chunk_info.get()))
@@ -81,6 +83,10 @@ bool PullingPipelineExecutor::pull(Block & block)
             block.info.is_overflows = agg_info->is_overflows;
         }
     }
+
+    if (auto chunk_info = chunk.getChunkInfo(CursorInfo::INFO_SLOT))
+        if (const auto * cursor_info = typeid_cast<const CursorInfo *>(chunk_info.get()))
+            block.info.cursors = std::move(cursor_info->cursors);
 
     return true;
 }

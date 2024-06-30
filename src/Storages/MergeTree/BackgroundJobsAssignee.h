@@ -58,7 +58,8 @@ public:
     enum class Type : uint8_t
     {
         DataProcessing,
-        Moving
+        Moving,
+        Streaming,
     };
     Type type{Type::DataProcessing};
 

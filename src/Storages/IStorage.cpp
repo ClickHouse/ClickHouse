@@ -9,10 +9,17 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
 #include <QueryPipeline/Pipe.h>
+#include <QueryPipeline/Chain.h>
+#include <Processors/QueryPlan/ReadFromSubscriptionStep.h>
+#include <Processors/QueryPlan/StreamingAdapterStep.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/Sources/NullSource.h>
+#include <Processors/Sinks/SinkToStorage.h>
+#include <Processors/Sinks/SinkToSubscribers.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
+#include <Storages/Streaming/QueueStreamSubscription.h>
 #include <Backups/RestorerFromBackup.h>
 #include <Backups/IBackup.h>
 
@@ -119,6 +126,11 @@ TableExclusiveLockHolder IStorage::lockExclusively(const String & query_id, cons
     return result;
 }
 
+void IStorage::registerSubscription(StreamSubscriptionPtr subscription) const
+{
+    subscription_manager.registerSubscription(subscription);
+}
+
 Pipe IStorage::watch(
     const Names & /*column_names*/,
     const SelectQueryInfo & /*query_info*/,
@@ -182,6 +194,74 @@ void IStorage::readFromPipe(
         auto read_step = std::make_unique<ReadFromStorageStep>(std::move(pipe), storage_name, context, query_info);
         query_plan.addStep(std::move(read_step));
     }
+}
+
+void IStorage::streamingRead(
+    QueryPlan & query_plan,
+    const Names & column_names,
+    const StorageSnapshotPtr & storage_snapshot,
+    SelectQueryInfo & query_info,
+    ContextPtr context,
+    QueryProcessingStage::Enum processed_stage,
+    size_t max_block_size,
+    size_t num_streams)
+{
+    const StreamReadingStage reading_stage = query_info.table_expression_modifiers->getStreamSettings()->stage;
+    QueryPlanPtr storage_query_plan;
+
+    /// prepare read from storage plan, if need all data
+    if (reading_stage == StreamReadingStage::AllData)
+    {
+        storage_query_plan = std::make_unique<QueryPlan>();
+        read(*storage_query_plan, column_names, storage_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
+
+        if (!storage_query_plan->isInitialized())
+        {
+            auto source_header = storage_snapshot->getSampleBlockForColumns(column_names);
+            Pipe pipe(std::make_shared<NullSource>(source_header));
+            auto read_from_pipe = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
+            read_from_pipe->setStepDescription("Read from NullSource");
+            storage_query_plan->addStep(std::move(read_from_pipe));
+        }
+    }
+
+    /// make generic subscription
+    StreamSubscriptionPtr subscription = std::make_shared<QueueStreamSubscription<Block>>();
+    registerSubscription(subscription);
+
+    /// prepare read from subscription plan
+    QueryPlanPtr subscription_query_plan = std::make_unique<QueryPlan>();
+    auto subscription_source = std::make_unique<ReadFromSubscriptionStep>(
+        getInMemoryMetadata().getSampleBlock(),
+        storage_snapshot->getSampleBlockForColumns(column_names),
+        std::move(subscription));
+    subscription_query_plan->addStep(std::move(subscription_source));
+
+    if (reading_stage == StreamReadingStage::AllData)
+    {
+        /// unite plans with streaming adapter
+        auto streaming_adapter_step = std::make_unique<StreamingAdapterStep>(
+            storage_query_plan->getCurrentDataStream(), subscription_query_plan->getCurrentDataStream());
+
+        std::vector<QueryPlanPtr> plans;
+        plans.reserve(2);
+
+        plans.push_back(std::move(storage_query_plan));
+        plans.push_back(std::move(subscription_query_plan));
+
+        query_plan.unitePlans(std::move(streaming_adapter_step), std::move(plans));
+    }
+    else
+    {
+        query_plan = std::move(*subscription_query_plan);
+        makeStreamInfinite(query_plan);
+    }
+}
+
+Chain IStorage::toSubscribersWrite(const StorageMetadataPtr & metadata_snapshot, ContextPtr /* context */)
+{
+    auto sink_to_subscribers = std::make_shared<SinkToSubscribers>(metadata_snapshot->getSampleBlock(), subscription_manager);
+    return Chain(std::move(sink_to_subscribers));
 }
 
 std::optional<QueryPipeline> IStorage::distributedWrite(

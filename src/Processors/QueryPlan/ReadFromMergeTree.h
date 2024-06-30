@@ -1,12 +1,15 @@
 #pragma once
+
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
+
+#include <Storages/SelectQueryInfo.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/RequestResponse.h>
-#include <Storages/SelectQueryInfo.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeReadPool.h>
 #include <Storages/MergeTree/AlterConversions.h>
 #include <Storages/MergeTree/PartitionPruner.h>
+#include <Storages/MergeTree/Streaming/CursorUtils.h>
 
 namespace DB
 {
@@ -121,7 +124,9 @@ public:
         std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read_,
         LoggerPtr log_,
         AnalysisResultPtr analyzed_result_ptr_,
-        bool enable_parallel_reading);
+        bool enable_parallel_reading,
+        MergeTreeCursor cursor_,
+        std::map<String, MergeTreeCursorPromoter> promoters_);
 
     static constexpr auto name = "ReadFromMergeTree";
     String getName() const override { return name; }
@@ -246,6 +251,7 @@ private:
     Pipe spreadMarkRanges(RangesInDataParts && parts_with_ranges, size_t num_streams, AnalysisResult & result, ActionsDAGPtr & result_projection);
 
     Pipe groupStreamsByPartition(AnalysisResult & result, ActionsDAGPtr & result_projection);
+    Pipe groupPartitionsByStreams(AnalysisResult & result);
 
     Pipe spreadMarkRangesAmongStreams(RangesInDataParts && parts_with_ranges, size_t num_streams, const Names & column_names);
 
@@ -265,6 +271,8 @@ private:
 
     mutable AnalysisResultPtr analyzed_result_ptr;
     VirtualFields shared_virtual_fields;
+    MergeTreeCursor cursor;
+    std::map<String, MergeTreeCursorPromoter> promoters;
 
     bool is_parallel_reading_from_replicas;
     std::optional<MergeTreeAllRangesCallback> all_ranges_callback;

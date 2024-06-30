@@ -1,7 +1,9 @@
 #pragma once
 
 #include <vector>
+
 #include <Core/Block.h>
+
 #include <Processors/Chunk.h>
 
 
@@ -22,6 +24,8 @@ struct ChunksToSquash : public ChunkInfo
   *  because such storages as Memory, StripeLog, Log, TinyLog...
   *  store or compress data in blocks exactly as passed to it,
   *  and blocks of small size are not efficient.
+  *
+  * Also keeps track of cursors and fills it into chunk info after squash.
   *
   * Order of data is kept.
   */
