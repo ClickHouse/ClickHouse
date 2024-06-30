@@ -929,7 +929,11 @@ ParallelReadResponse InOrderCoordinator<mode>::handleRequest(ParallelReadRequest
             continue;
 
         if (global_part_it->replicas.empty())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} requested by replica {} is not registered in working set", part.info.getPartNameV1(), request.replica_num);
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Part {} requested by replica {} is not registered for any replica",
+                part.info.getPartNameV1(),
+                request.replica_num);
 
         if (!global_part_it->replicas.contains(request.replica_num))
             continue;
