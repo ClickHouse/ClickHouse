@@ -105,6 +105,7 @@ struct RLEBlock
     {
         auto it = std::upper_bound(offsets.begin(), offsets.end(), n);
         chassert(it != offsets.begin());
+
         n = it - offsets.begin() - 1;
         column->get(n, field);
     }
@@ -139,7 +140,7 @@ class IndexColumnInt : public IIndexColumn
 {
 public:
     using T = std::conditional_t<is_signed, Int64, UInt64>;
-    using Block = std::variant<RawBlock, ConstBlock<T>, DeltaBlock<T>, RLEBlock<UInt8>>;
+    using Block = std::variant<RawBlock, ConstBlock<T>, DeltaBlock<T>, RLEBlock<UInt8>, RLEBlock<UInt16>>;
 
     IndexColumnInt(ColumnPtr column, const PrimaryIndex::Settings & settings);
 

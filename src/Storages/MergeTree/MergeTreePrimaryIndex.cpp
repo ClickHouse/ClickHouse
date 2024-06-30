@@ -30,6 +30,15 @@ constexpr size_t getNumberOfElementsForBits(size_t num_bits)
     return divRoundUp(num_bits, 64) + 1;
 }
 
+constexpr size_t getNumBytesForRLEOffset(size_t block_size)
+{
+    if (block_size <= std::numeric_limits<UInt8>::max())
+        return sizeof(UInt8);
+
+    chassert(block_size <= std::numeric_limits<UInt16>::max());
+    return sizeof(UInt16);
+}
+
 template <typename Column>
 void buildDelta(PaddedPODArray<UInt64> & delta, UInt8 bit_size, const Column & column, size_t from, size_t to)
 {
@@ -49,6 +58,31 @@ void buildDelta(PaddedPODArray<UInt64> & delta, UInt8 bit_size, const Column & c
         writeBitsPacked(delta.begin(), bit_offset, delta_elem);
         bit_offset += bit_size;
     }
+}
+
+template <typename Offset, typename Column>
+RLEBlock<Offset> buildRLEBlock(const Column & column, size_t from, size_t to)
+{
+    RLEBlock<Offset> block;
+    auto block_column = column.cloneEmpty();
+
+    const auto & data = column.getData();
+    auto & res_data = assert_cast<Column &>(*block_column).getData();
+
+    res_data.push_back(data[from]);
+    block.offsets.push_back(0);
+
+    for (size_t j = from + 1; j < to; ++j)
+    {
+        if (data[j] != data[j - 1])
+        {
+            res_data.push_back(data[j]);
+            block.offsets.push_back(j - from);
+        }
+    }
+
+    block.column = std::move(block_column);
+    return block;
 }
 
 template <typename Block, typename T, typename Column>
@@ -75,6 +109,7 @@ std::vector<Block> buildBlocks(const Column & column, size_t block_size, double 
 
     size_t total_compressed_bytes = 0;
     size_t total_bytes = column.byteSize();
+    size_t bytes_for_rle_offset = getNumBytesForRLEOffset(block_size);
 
     for (size_t i = 0; i < column_size; i += block_size)
     {
@@ -96,8 +131,8 @@ std::vector<Block> buildBlocks(const Column & column, size_t block_size, double 
         UInt64 diff = max_value - min_value;
         size_t delta_bit_size = diff == 0 ? 0 : bitScanReverse(diff) + 1;
 
+        size_t rle_encoding_bytes = (sizeof(U) + bytes_for_rle_offset) * num_groups;
         size_t delta_enconding_bytes = sizeof(T) + sizeof(UInt8) + getNumberOfElementsForBits(delta_bit_size * len) * 8;
-        size_t rle_encoding_bytes = (sizeof(U) + sizeof(UInt8)) * num_groups;
 
         Compression compression = Compression::None;
 
@@ -119,8 +154,6 @@ std::vector<Block> buildBlocks(const Column & column, size_t block_size, double 
             compression = Compression::Delta;
             compressed_bytes = delta_enconding_bytes;
         }
-
-        LOG_DEBUG(getLogger("KEK"), "len: {}, delta_enconding_bytes: {}, rle_encoding_bytes: {}, delta_bit_size: {}, num_groups: {}, uncompressed_bytes: {}, byte size: {}", len, delta_enconding_bytes, rle_encoding_bytes, delta_bit_size, num_groups, uncompressed_bytes, sizeof(U));
 
         if (!needCompress(compressed_bytes, uncompressed_bytes, max_ratio_to_compress))
         {
@@ -149,17 +182,12 @@ std::vector<Block> buildBlocks(const Column & column, size_t block_size, double 
         size_t from = i * block_size;
         size_t to = std::min(column_size, from + block_size);
 
-
         if (compressions[i] == Compression::Const)
         {
-            LOG_DEBUG(getLogger("KEK"), "create Const, byte size: {}", sizeof(U));
-
             blocks.push_back(ConstBlock<T>{static_cast<T>(data[from])});
         }
         else if (compressions[i] == Compression::Delta)
         {
-            LOG_DEBUG(getLogger("KEK"), "create Delta, byte size: {}", sizeof(U));
-
             DeltaBlock<T> block;
 
             block.base = static_cast<T>(data[from]);
@@ -170,30 +198,13 @@ std::vector<Block> buildBlocks(const Column & column, size_t block_size, double 
         }
         else if (compressions[i] == Compression::RLE)
         {
-            LOG_DEBUG(getLogger("KEK"), "create RLE, byte size: {}", sizeof(U));
-
-            RLEBlock<UInt8> block;
-            auto block_column = column.cloneEmpty();
-
-            block_column->insertFrom(column, from);
-            block.offsets.push_back(0);
-
-            for (size_t j = from + 1; j < to; ++j)
-            {
-                if (data[j] != data[j - 1])
-                {
-                    block_column->insertFrom(column, j);
-                    block.offsets.push_back(j - from);
-                }
-            }
-
-            block.column = std::move(block_column);
-            blocks.push_back(std::move(block));
+            if (bytes_for_rle_offset == sizeof(UInt8))
+                blocks.push_back(buildRLEBlock<UInt8>(column, from, to));
+            else
+                blocks.push_back(buildRLEBlock<UInt16>(column, from, to));
         }
-        else if (compressions[i] == Compression::None)
+        else
         {
-            LOG_DEBUG(getLogger("KEK"), "create Raw, byte size: {}", sizeof(U));
-
             auto block_column = column.cloneEmpty();
             block_column->insertRangeFrom(column, from, to - from);
             blocks.push_back(RawBlock{std::move(block_column)});
