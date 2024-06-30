@@ -68,7 +68,7 @@ private:
                                 node.getColumnName(), String(data.assert_no_aggregates));
 
             String column_name = node.getColumnName();
-            if (data.uniq_names.count(column_name))
+            if (data.uniq_names.contains(column_name))
                 return;
 
             data.uniq_names.insert(column_name);
@@ -81,7 +81,7 @@ private:
                                 node.getColumnName(), String(data.assert_no_windows));
 
             String column_name = node.getColumnName();
-            if (data.uniq_names.count(column_name))
+            if (data.uniq_names.contains(column_name))
                 return;
 
             data.uniq_names.insert(column_name);

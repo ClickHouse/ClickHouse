@@ -6,7 +6,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 
-USER_FILES_PATH=$(clickhouse-client --query "select _path,_file from file('nonexist.txt', 'CSV', 'val1 char')" 2>&1 | grep Exception | awk '{gsub("/nonexist.txt","",$9); print $9}')
+USER_FILES_PATH=$($CLICKHOUSE_CLIENT_BINARY --query "select _path,_file from file('nonexist.txt', 'CSV', 'val1 char')" 2>&1 | grep Exception | awk '{gsub("/nonexist.txt","",$9); print $9}')
 mkdir $USER_FILES_PATH/test_02149
 FILE_NAME=test_02149/data.Parquet
 DATA_FILE=$USER_FILES_PATH/$FILE_NAME
@@ -37,4 +37,3 @@ $CLICKHOUSE_CLIENT -q "select * from test_buffer"
 $CLICKHOUSE_CLIENT -q "drop table test_buffer"
 
 rm -rf ${USER_FILES_PATH:?}/test_02149
-

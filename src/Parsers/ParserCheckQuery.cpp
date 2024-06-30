@@ -12,9 +12,22 @@ namespace DB
 
 bool ParserCheckQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    ParserKeyword s_check_table("CHECK TABLE");
-    ParserKeyword s_partition("PARTITION");
-    ParserKeyword s_part("PART");
+    ParserKeyword s_check_table(Keyword::CHECK_ALL_TABLES);
+    if (s_check_table.ignore(pos, expected))
+    {
+        auto query = std::make_shared<ASTCheckAllTablesQuery>();
+        node = query;
+        return true;
+    }
+
+    return parseCheckTable(pos, node, expected);
+}
+
+bool ParserCheckQuery::parseCheckTable(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ParserKeyword s_check_table(Keyword::CHECK_TABLE);
+    ParserKeyword s_partition(Keyword::PARTITION);
+    ParserKeyword s_part(Keyword::PART);
     ParserToken s_dot(TokenType::Dot);
 
     ParserPartition partition_parser;
@@ -23,7 +36,7 @@ bool ParserCheckQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (!s_check_table.ignore(pos, expected))
         return false;
 
-    auto query = std::make_shared<ASTCheckQuery>();
+    auto query = std::make_shared<ASTCheckTableQuery>();
 
     if (!parseDatabaseAndTableAsAST(pos, expected, query->database, query->table))
         return false;

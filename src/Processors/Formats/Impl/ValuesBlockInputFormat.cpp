@@ -98,7 +98,7 @@ bool ValuesBlockInputFormat::skipToNextRow(ReadBuffer * buf, size_t min_chunk_by
     return true;
 }
 
-Chunk ValuesBlockInputFormat::generate()
+Chunk ValuesBlockInputFormat::read()
 {
     if (total_rows == 0)
         readPrefix();
@@ -194,7 +194,7 @@ void ValuesBlockInputFormat::readUntilTheEndOfRowAndReTokenize(size_t current_co
     auto * row_end = buf->position();
     buf->rollbackToCheckpoint();
     tokens.emplace(buf->position(), row_end);
-    token_iterator.emplace(*tokens, static_cast<unsigned>(context->getSettingsRef().max_parser_depth));
+    token_iterator.emplace(*tokens, static_cast<unsigned>(context->getSettingsRef().max_parser_depth), static_cast<unsigned>(context->getSettingsRef().max_parser_backtracks));
     auto const & first = (*token_iterator).get();
     if (first.isError() || first.isEnd())
     {
@@ -293,7 +293,7 @@ bool ValuesBlockInputFormat::tryReadValue(IColumn & column, size_t column_idx)
             const auto & type = types[column_idx];
             const auto & serialization = serializations[column_idx];
             if (format_settings.null_as_default && !isNullableOrLowCardinalityNullable(type))
-                read = SerializationNullable::deserializeTextQuotedImpl(column, *buf, format_settings, serialization);
+                read = SerializationNullable::deserializeNullAsDefaultOrNestedTextQuoted(column, *buf, format_settings, serialization);
             else
                 serialization->deserializeTextQuoted(column, *buf, format_settings);
         }
@@ -418,7 +418,7 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
     {
         Expected expected;
         /// Keep a copy to the start of the column tokens to use if later if necessary
-        ti_start = IParser::Pos(*token_iterator, static_cast<unsigned>(settings.max_parser_depth));
+        ti_start = IParser::Pos(*token_iterator, static_cast<unsigned>(settings.max_parser_depth), static_cast<unsigned>(settings.max_parser_backtracks));
 
         parsed = parser.parse(*token_iterator, ast, expected);
 
@@ -492,7 +492,7 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
                 &found_in_cache,
                 delimiter);
 
-            LOG_TEST(&Poco::Logger::get("ValuesBlockInputFormat"), "Will use an expression template to parse column {}: {}",
+            LOG_TEST(getLogger("ValuesBlockInputFormat"), "Will use an expression template to parse column {}: {}",
                      column_idx, structure->dumpTemplate());
 
             templates[column_idx].emplace(structure);
@@ -572,9 +572,16 @@ bool ValuesBlockInputFormat::checkDelimiterAfterValue(size_t column_idx)
     skipWhitespaceIfAny(*buf);
 
     if (likely(column_idx + 1 != num_columns))
+    {
         return checkChar(',', *buf);
+    }
     else
+    {
+        /// Optional trailing comma.
+        if (checkChar(',', *buf))
+            skipWhitespaceIfAny(*buf);
         return checkChar(')', *buf);
+    }
 }
 
 bool ValuesBlockInputFormat::shouldDeduceNewTemplate(size_t column_idx)
@@ -642,13 +649,19 @@ void ValuesBlockInputFormat::resetParser()
     IInputFormat::resetParser();
     // I'm not resetting parser modes here.
     // There is a good chance that all messages have the same format.
-    buf->reset();
     total_rows = 0;
 }
 
 void ValuesBlockInputFormat::setReadBuffer(ReadBuffer & in_)
 {
-    buf->setSubBuffer(in_);
+    buf = std::make_unique<PeekableReadBuffer>(in_);
+    IInputFormat::setReadBuffer(*buf);
+}
+
+void ValuesBlockInputFormat::resetReadBuffer()
+{
+    buf.reset();
+    IInputFormat::resetReadBuffer();
 }
 
 ValuesSchemaReader::ValuesSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_)
@@ -699,6 +712,11 @@ std::optional<DataTypes> ValuesSchemaReader::readRowAndGetDataTypes()
     }
 
     return data_types;
+}
+
+void ValuesSchemaReader::transformTypesIfNeeded(DB::DataTypePtr & type, DB::DataTypePtr & new_type)
+{
+    transformInferredTypesIfNeeded(type, new_type, format_settings);
 }
 
 void registerInputFormatValues(FormatFactory & factory)

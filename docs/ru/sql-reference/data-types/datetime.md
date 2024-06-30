@@ -33,7 +33,7 @@ ClickHouse отображает значения в зависимости от 
 
 ## Примеры {#primery}
 
-**1.** Создание таблицы с столбцом типа `DateTime` и вставка данных в неё:
+**1.** Создание таблицы со столбцом типа `DateTime` и вставка данных в неё:
 
 ``` sql
 CREATE TABLE dt
@@ -120,7 +120,7 @@ FROM dt
 -   [Функции для работы с датой и временем](../../sql-reference/functions/date-time-functions.md)
 -   [Функции для работы с массивами](../../sql-reference/functions/array-functions.md)
 -   [Настройка `date_time_input_format`](../../operations/settings/index.md#settings-date_time_input_format)
--   [Настройка `date_time_output_format`](../../operations/settings/index.md)
+-   [Настройка `date_time_output_format`](../../operations/settings/index.md#settings-date_time_output_format)
 -   [Конфигурационный параметр сервера `timezone`](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone)
 -   [Параметр `session_timezone`](../../operations/settings/settings.md#session_timezone)
 -   [Операторы для работы с датой и временем](../../sql-reference/operators/index.md#operators-datetime)

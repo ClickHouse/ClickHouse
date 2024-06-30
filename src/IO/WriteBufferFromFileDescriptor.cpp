@@ -69,8 +69,8 @@ void WriteBufferFromFileDescriptor::nextImpl()
             String error_file_name = file_name;
             if (error_file_name.empty())
                 error_file_name = "(fd = " + toString(fd) + ")";
-            throwFromErrnoWithPath("Cannot write to file " + error_file_name, error_file_name,
-                                   ErrorCodes::CANNOT_WRITE_TO_FILE_DESCRIPTOR);
+            ErrnoException::throwFromPath(
+                ErrorCodes::CANNOT_WRITE_TO_FILE_DESCRIPTOR, error_file_name, "Cannot write to file {}", error_file_name);
         }
 
         if (res > 0)
@@ -105,7 +105,15 @@ WriteBufferFromFileDescriptor::WriteBufferFromFileDescriptor(
 
 WriteBufferFromFileDescriptor::~WriteBufferFromFileDescriptor()
 {
-    finalize();
+    try
+    {
+        if (!canceled)
+            finalize();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
 }
 
 void WriteBufferFromFileDescriptor::finalizeImpl()
@@ -137,7 +145,7 @@ void WriteBufferFromFileDescriptor::sync()
     ProfileEvents::increment(ProfileEvents::FileSyncElapsedMicroseconds, watch.elapsedMicroseconds());
 
     if (-1 == res)
-        throwFromErrnoWithPath("Cannot fsync " + getFileName(), getFileName(), ErrorCodes::CANNOT_FSYNC);
+        ErrnoException::throwFromPath(ErrorCodes::CANNOT_FSYNC, getFileName(), "Cannot fsync {}", getFileName());
 }
 
 
@@ -145,8 +153,7 @@ off_t WriteBufferFromFileDescriptor::seek(off_t offset, int whence) // NOLINT
 {
     off_t res = lseek(fd, offset, whence);
     if (-1 == res)
-        throwFromErrnoWithPath("Cannot seek through file " + getFileName(), getFileName(),
-                               ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
+        ErrnoException::throwFromPath(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, getFileName(), "Cannot seek through {}", getFileName());
     return res;
 }
 
@@ -154,7 +161,7 @@ void WriteBufferFromFileDescriptor::truncate(off_t length) // NOLINT
 {
     int res = ftruncate(fd, length);
     if (-1 == res)
-        throwFromErrnoWithPath("Cannot truncate file " + getFileName(), getFileName(), ErrorCodes::CANNOT_TRUNCATE_FILE);
+        ErrnoException::throwFromPath(ErrorCodes::CANNOT_TRUNCATE_FILE, getFileName(), "Cannot truncate file {}", getFileName());
 }
 
 
@@ -163,7 +170,7 @@ off_t WriteBufferFromFileDescriptor::size() const
     struct stat buf;
     int res = fstat(fd, &buf);
     if (-1 == res)
-        throwFromErrnoWithPath("Cannot execute fstat " + getFileName(), getFileName(), ErrorCodes::CANNOT_FSTAT);
+        ErrnoException::throwFromPath(ErrorCodes::CANNOT_FSTAT, getFileName(), "Cannot execute fstat {}", getFileName());
     return buf.st_size;
 }
 

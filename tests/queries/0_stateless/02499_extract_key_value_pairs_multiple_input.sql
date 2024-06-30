@@ -415,7 +415,7 @@ SELECT
     x; -- {serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH}
 
 -- Should fail allowed because it exceeds the max number of pairs
-SET extract_kvp_max_pairs_per_row = 1;
+SET extract_key_value_pairs_max_pairs_per_row = 1;
 WITH
     extractKeyValuePairs('key1:value1,key2:value2') AS s_map,
     CAST(
@@ -429,7 +429,7 @@ SELECT
 
 -- { echoOn }
 
-SET extract_kvp_max_pairs_per_row = 2;
+SET extract_key_value_pairs_max_pairs_per_row = 2;
 -- Should be allowed because it no longer exceeds the max number of pairs
 -- expected output: {'key1':'value1','key2':'value2'}
 WITH
@@ -443,7 +443,7 @@ WITH
 SELECT
     x;
 
-SET extract_kvp_max_pairs_per_row = 0;
+SET extract_key_value_pairs_max_pairs_per_row = 0;
 -- Should be allowed because max pairs per row is set to 0 (unlimited)
 -- expected output: {'key1':'value1','key2':'value2'}
 WITH
@@ -478,6 +478,18 @@ WITH
                 ),
             'Map(String,String)'
         ) AS x
+SELECT
+    x;
+
+-- https://github.com/ClickHouse/ClickHouse/issues/56357
+WITH
+    extractKeyValuePairs('{"a":"1", "b":"2"}') as s_map,
+    CAST(
+        arrayMap(
+            (x) -> (x, s_map[x]), arraySort(mapKeys(s_map))
+        ),
+        'Map(String,String)'
+    ) AS x
 SELECT
     x;
 

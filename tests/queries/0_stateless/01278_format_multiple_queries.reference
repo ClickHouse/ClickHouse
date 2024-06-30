@@ -1,7 +1,7 @@
 SELECT
     a,
     b AS x
-FROM table AS t
+FROM `table` AS t
 INNER JOIN table2 AS t2 ON t.id = t2.t_id
 WHERE 1 = 1
 ;

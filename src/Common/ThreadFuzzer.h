@@ -1,6 +1,7 @@
 #pragma once
 #include <cstdint>
 #include <atomic>
+#include <base/defines.h>
 
 namespace DB
 {
@@ -15,7 +16,7 @@ namespace DB
   * THREAD_FUZZER_YIELD_PROBABILITY   - probability to do 'sched_yield'.
   * THREAD_FUZZER_MIGRATE_PROBABILITY - probability to set CPU affinity to random CPU core.
   * THREAD_FUZZER_SLEEP_PROBABILITY   - probability to sleep.
-  * THREAD_FUZZER_SLEEP_TIME_US       - amount of time to sleep in microseconds.
+  * THREAD_FUZZER_SLEEP_TIME_US_MAX   - max amount of time to sleep in microseconds, actual sleep time is randomized.
   *
   * ThreadFuzzer will do nothing if environment variables are not set accordingly.
   *
@@ -32,16 +33,14 @@ namespace DB
   *
   * Notes:
   * - it can be also implemented with instrumentation (example: LLVM Xray) instead of signals.
-  * - we should also make the sleep time random.
-  * - sleep and migration obviously helps, but the effect of yield is unclear.
   *
   * In addition, we allow to inject glitches around thread synchronization functions.
   * Example:
   *
   * THREAD_FUZZER_pthread_mutex_lock_BEFORE_SLEEP_PROBABILITY=0.001
-  * THREAD_FUZZER_pthread_mutex_lock_BEFORE_SLEEP_TIME_US=10000
+  * THREAD_FUZZER_pthread_mutex_lock_BEFORE_SLEEP_TIME_US_MAX=10000
   * THREAD_FUZZER_pthread_mutex_lock_AFTER_SLEEP_PROBABILITY=0.001
-  * THREAD_FUZZER_pthread_mutex_lock_AFTER_SLEEP_TIME_US=10000
+  * THREAD_FUZZER_pthread_mutex_lock_AFTER_SLEEP_TIME_US_MAX=10000
   */
 class ThreadFuzzer
 {
@@ -53,10 +52,11 @@ public:
     }
 
     bool isEffective() const;
+    bool needsSetup() const;
 
     static void stop();
     static void start();
-    static bool isStarted();
+    static bool ALWAYS_INLINE isStarted();
 
     static void maybeInjectSleep();
     static void maybeInjectMemoryLimitException();
@@ -66,7 +66,8 @@ private:
     double yield_probability = 0;
     double migrate_probability = 0;
     double sleep_probability = 0;
-    double sleep_time_us = 0;
+    double sleep_time_us_max = 0;
+
     double explicit_sleep_probability = 0;
     double explicit_memory_exception_probability = 0;
 

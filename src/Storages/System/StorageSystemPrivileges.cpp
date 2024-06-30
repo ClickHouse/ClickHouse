@@ -29,6 +29,8 @@ namespace
         VIEW,
         COLUMN,
         NAMED_COLLECTION,
+        USER_NAME,
+        TABLE_ENGINE,
     };
 
     DataTypeEnum8::Values getLevelEnumValues()
@@ -41,6 +43,8 @@ namespace
         enum_values.emplace_back("VIEW", static_cast<Int8>(VIEW));
         enum_values.emplace_back("COLUMN", static_cast<Int8>(COLUMN));
         enum_values.emplace_back("NAMED_COLLECTION", static_cast<Int8>(NAMED_COLLECTION));
+        enum_values.emplace_back("USER_NAME", static_cast<Int8>(USER_NAME));
+        enum_values.emplace_back("TABLE_ENGINE", static_cast<Int8>(TABLE_ENGINE));
         return enum_values;
     }
 }
@@ -64,19 +68,28 @@ const std::vector<std::pair<String, Int16>> & StorageSystemPrivileges::getAccess
 }
 
 
-NamesAndTypesList StorageSystemPrivileges::getNamesAndTypes()
+ColumnsDescription StorageSystemPrivileges::getColumnsDescription()
 {
-    NamesAndTypesList names_and_types{
-        {"privilege", std::make_shared<DataTypeEnum16>(getAccessTypeEnumValues())},
-        {"aliases", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
-        {"level", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeEnum8>(getLevelEnumValues()))},
-        {"parent_group", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeEnum16>(getAccessTypeEnumValues()))},
+    return ColumnsDescription{
+        {"privilege",
+         std::make_shared<DataTypeEnum16>(getAccessTypeEnumValues()),
+         "Name of a privilege which can be used in the GRANT command."},
+        {"aliases",
+         std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()),
+         "List of aliases which can be used instead of the name of the privilege."},
+        {"level",
+         std::make_shared<DataTypeNullable>(std::make_shared<DataTypeEnum8>(getLevelEnumValues())),
+         "Level of the privilege. GLOBAL privileges can be granted only globally (ON *.*), DATABASE privileges can be granted "
+         "on a specific database (ON <database>.*) or globally (ON *.*), TABLE privileges can be granted either on a specific table or "
+         "on a specific database or globally, and COLUMN privileges can be granted like TABLE privileges but also allow to specify columns."},
+        {"parent_group", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeEnum16>(getAccessTypeEnumValues())),
+         "Parent privilege - if the parent privilege is granted then all its children privileges are considered as granted too."
+        },
     };
-    return names_and_types;
 }
 
 
-void StorageSystemPrivileges::fillData(MutableColumns & res_columns, ContextPtr, const SelectQueryInfo &) const
+void StorageSystemPrivileges::fillData(MutableColumns & res_columns, ContextPtr, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
     size_t column_index = 0;
     auto & column_access_type = assert_cast<ColumnInt16 &>(*res_columns[column_index++]).getData();

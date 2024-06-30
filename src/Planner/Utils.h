@@ -34,11 +34,11 @@ Block buildCommonHeaderForUnion(const Blocks & queries_headers, SelectUnionMode 
 /// Convert query node to ASTSelectQuery
 ASTPtr queryNodeToSelectQuery(const QueryTreeNodePtr & query_node);
 
+/// Convert query node to ASTSelectQuery for distributed processing
+ASTPtr queryNodeToDistributedSelectQuery(const QueryTreeNodePtr & query_node);
+
 /// Build context for subquery execution
 ContextPtr buildSubqueryContext(const ContextPtr & context);
-
-/// Update mutable context for subquery execution
-void updateContextForSubqueryExecution(ContextMutablePtr & mutable_context);
 
 /// Build limits for storage
 StorageLimits buildStorageLimits(const Context & context, const SelectQueryOptions & options);
@@ -47,7 +47,7 @@ StorageLimits buildStorageLimits(const Context & context, const SelectQueryOptio
   * Inputs are not used for actions dag outputs.
   * Only root query tree expression node is used as actions dag output.
   */
-ActionsDAGPtr buildActionsDAGFromExpressionNode(const QueryTreeNodePtr & expression_node,
+ActionsDAG buildActionsDAGFromExpressionNode(const QueryTreeNodePtr & expression_node,
     const ColumnsWithTypeAndName & input_columns,
     const PlannerContextPtr & planner_context);
 
@@ -67,19 +67,21 @@ QueryTreeNodePtr mergeConditionNodes(const QueryTreeNodes & condition_nodes, con
 
 /// Replace table expressions from query JOIN TREE with dummy tables
 using ResultReplacementMap = std::unordered_map<QueryTreeNodePtr, QueryTreeNodePtr>;
-QueryTreeNodePtr replaceTableExpressionsWithDummyTables(const QueryTreeNodePtr & query_node,
+QueryTreeNodePtr replaceTableExpressionsWithDummyTables(
+    const QueryTreeNodePtr & query_node,
+    const QueryTreeNodes & table_nodes,
     const ContextPtr & context,
     ResultReplacementMap * result_replacement_map = nullptr);
-
-/// Build subquery to read specified columns from table expression
-QueryTreeNodePtr buildSubqueryToReadColumnsFromTableExpression(const NamesAndTypes & columns,
-    const QueryTreeNodePtr & table_expression,
-    const ContextPtr & context);
 
 SelectQueryInfo buildSelectQueryInfo(const QueryTreeNodePtr & query_tree, const PlannerContextPtr & planner_context);
 
 /// Build filter for specific table_expression
 FilterDAGInfo buildFilterInfo(ASTPtr filter_expression,
+        const QueryTreeNodePtr & table_expression,
+        PlannerContextPtr & planner_context,
+        NameSet table_expression_required_names_without_filter = {});
+
+FilterDAGInfo buildFilterInfo(QueryTreeNodePtr filter_query_tree,
         const QueryTreeNodePtr & table_expression,
         PlannerContextPtr & planner_context,
         NameSet table_expression_required_names_without_filter = {});

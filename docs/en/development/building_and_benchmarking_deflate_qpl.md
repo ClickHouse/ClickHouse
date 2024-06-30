@@ -95,7 +95,7 @@ Complete below three steps mentioned in [Star Schema Benchmark](https://clickhou
 - Inserting data. Here should use `./benchmark_sample/rawdata_dir/ssb-dbgen/*.tbl` as input data.
 - Converting “star schema” to de-normalized “flat schema”
 
-Set up database with with IAA Deflate codec
+Set up database with IAA Deflate codec
 
 ``` bash
 $ cd ./database_dir/deflate
@@ -104,7 +104,7 @@ $ [CLICKHOUSE_EXE] client
 ```
 Complete three steps same as lz4 above
 
-Set up database with with ZSTD codec
+Set up database with ZSTD codec
 
 ``` bash
 $ cd ./database_dir/zstd

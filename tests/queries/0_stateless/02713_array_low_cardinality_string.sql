@@ -18,6 +18,6 @@ WHERE database = currentDatabase() AND table = 'tab';
 
 SELECT '---';
 
-EXPLAIN indexes = 1 SELECT * FROM tab WHERE has(foo, 'b');
+EXPLAIN indexes = 1, description = 0 SELECT * FROM tab WHERE has(foo, 'b');
 
 DROP TABLE tab;

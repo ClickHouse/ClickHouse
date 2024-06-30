@@ -69,6 +69,9 @@
     <merge_tree>
         <min_bytes_for_wide_part>1024</min_bytes_for_wide_part>
         <old_parts_lifetime>1</old_parts_lifetime>
+        <disable_freeze_partition_for_zero_copy_replication>0</disable_freeze_partition_for_zero_copy_replication>
+        <disable_detach_partition_for_zero_copy_replication>0</disable_detach_partition_for_zero_copy_replication>
+        <disable_fetch_partition_for_zero_copy_replication>0</disable_fetch_partition_for_zero_copy_replication>
         <allow_remote_fs_zero_copy_replication>true</allow_remote_fs_zero_copy_replication>
         <ratio_of_defaults_for_sparse_serialization>1.0</ratio_of_defaults_for_sparse_serialization>
     </merge_tree>

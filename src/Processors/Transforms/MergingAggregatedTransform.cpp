@@ -39,11 +39,10 @@ void MergingAggregatedTransform::consume(Chunk chunk)
     if (const auto * agg_info = typeid_cast<const AggregatedChunkInfo *>(info.get()))
     {
         /** If the remote servers used a two-level aggregation method,
-        *  then blocks will contain information about the number of the bucket.
-        * Then the calculations can be parallelized by buckets.
-        * We decompose the blocks to the bucket numbers indicated in them.
-        */
-
+          * then blocks will contain information about the number of the bucket.
+          * Then the calculations can be parallelized by buckets.
+          * We decompose the blocks to the bucket numbers indicated in them.
+          */
         auto block = getInputPort().getHeader().cloneWithColumns(chunk.getColumns());
         block.info.is_overflows = agg_info->is_overflows;
         block.info.bucket_num = agg_info->bucket_num;
@@ -73,7 +72,7 @@ Chunk MergingAggregatedTransform::generate()
         next_block = blocks.begin();
 
         /// TODO: this operation can be made async. Add async for IAccumulatingTransform.
-        params->aggregator.mergeBlocks(std::move(bucket_to_blocks), data_variants, max_threads);
+        params->aggregator.mergeBlocks(std::move(bucket_to_blocks), data_variants, max_threads, is_cancelled);
         blocks = params->aggregator.convertToBlocks(data_variants, params->final, max_threads);
         next_block = blocks.begin();
     }

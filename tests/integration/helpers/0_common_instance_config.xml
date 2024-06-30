@@ -27,4 +27,9 @@
         <settings_constraints_replace_previous>true</settings_constraints_replace_previous>
         <role_cache_expiration_time_seconds>2</role_cache_expiration_time_seconds>
     </access_control_improvements>
+
+    <custom_cached_disks_base_directory replace="replace">/</custom_cached_disks_base_directory>
+
+    <!-- Remove the default remote server to avoid people depending on its hardcoded config -->
+    <remote_servers remove="remove"></remote_servers>
 </clickhouse>

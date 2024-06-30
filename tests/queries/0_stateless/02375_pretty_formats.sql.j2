@@ -3,6 +3,6 @@
                   'PrettySpaceNoEscapesMonoBlock'] -%}
 
 select '{{ format }}';
-select number as x, number + 1 as y from numbers(4) settings max_block_size=2 format {{ format }};
+select number as x, number + 1 as y from numbers(4) settings max_block_size=2, output_format_pretty_color=1, output_format_pretty_display_footer_column_names=0 format {{ format }};
 
 {% endfor -%}

@@ -49,7 +49,7 @@ public:
         {
             const auto & pos_arg = arguments[i];
 
-            if (!isUnsignedInteger(pos_arg))
+            if (!isUInt(pos_arg))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of {} argument of function {}", pos_arg->getName(), i, getName());
         }
 

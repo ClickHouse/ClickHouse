@@ -1,5 +1,8 @@
-#include <Common/ZooKeeper/ZooKeeperImpl.h>
+#include <Common/ZooKeeper/ZooKeeperConstants.h>
 
+#include <Compression/CompressedReadBuffer.h>
+#include <Compression/CompressedWriteBuffer.h>
+#include <Compression/CompressionFactory.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
@@ -8,14 +11,20 @@
 #include <Interpreters/Context.h>
 #include <base/getThreadId.h>
 #include <base/sleep.h>
+#include <Common/CurrentThread.h>
 #include <Common/EventNotifier.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
+#include <Common/ZooKeeper/ZooKeeperImpl.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
+#include <Common/thread_local_rng.h>
+
+#include <Poco/Net/NetException.h>
+#include <Poco/Net/DNS.h>
 
 #include "Coordination/KeeperConstants.h"
 #include "config.h"
@@ -274,13 +283,34 @@ using namespace DB;
 template <typename T>
 void ZooKeeper::write(const T & x)
 {
-    Coordination::write(x, *out);
+    Coordination::write(x, getWriteBuffer());
 }
 
 template <typename T>
 void ZooKeeper::read(T & x)
 {
-    Coordination::read(x, *in);
+    Coordination::read(x, getReadBuffer());
+}
+
+WriteBuffer & ZooKeeper::getWriteBuffer()
+{
+    if (compressed_out)
+        return *compressed_out;
+    return *out;
+}
+
+void ZooKeeper::flushWriteBuffer()
+{
+    if (compressed_out)
+         compressed_out->next();
+    out->next();
+}
+
+ReadBuffer & ZooKeeper::getReadBuffer()
+{
+    if (compressed_in)
+        return *compressed_in;
+    return *in;
 }
 
 static void removeRootPath(String & path, const String & chroot)
@@ -311,12 +341,12 @@ ZooKeeper::~ZooKeeper()
 
 
 ZooKeeper::ZooKeeper(
-    const Nodes & nodes,
+    const zkutil::ShuffleHosts & nodes,
     const zkutil::ZooKeeperArgs & args_,
     std::shared_ptr<ZooKeeperLog> zk_log_)
     : args(args_)
 {
-    log = &Poco::Logger::get("ZooKeeperClient");
+    log = getLogger("ZooKeeperClient");
     std::atomic_store(&zk_log, std::move(zk_log_));
 
     if (!args.chroot.empty())
@@ -345,7 +375,23 @@ ZooKeeper::ZooKeeper(
     if (args.enable_fault_injections_during_startup)
         setupFaultDistributions();
 
-    connect(nodes, args.connection_timeout_ms * 1000);
+    try
+    {
+        use_compression = args.use_compression;
+        connect(nodes, args.connection_timeout_ms * 1000);
+    }
+    catch (...)
+    {
+        /// If we get exception & compression is enabled, then its possible that keeper does not support compression,
+        /// try without compression
+        if (use_compression)
+        {
+            use_compression = false;
+            connect(nodes, args.connection_timeout_ms * 1000);
+        }
+        else
+            throw;
+    }
 
     if (!args.auth_scheme.empty())
         sendAuth(args.auth_scheme, args.identity);
@@ -383,7 +429,7 @@ ZooKeeper::ZooKeeper(
 
 
 void ZooKeeper::connect(
-    const Nodes & nodes,
+    const zkutil::ShuffleHosts & nodes,
     Poco::Timespan connection_timeout)
 {
     if (nodes.empty())
@@ -391,15 +437,51 @@ void ZooKeeper::connect(
 
     static constexpr size_t num_tries = 3;
     bool connected = false;
+    bool dns_error = false;
+
+    size_t resolved_count = 0;
+    for (const auto & node : nodes)
+    {
+        try
+        {
+            const Poco::Net::SocketAddress host_socket_addr{node.host};
+            LOG_TRACE(log, "Adding ZooKeeper host {} ({}), az: {}, priority: {}", node.host, host_socket_addr.toString(), node.az_info, node.priority);
+            node.address = host_socket_addr;
+            ++resolved_count;
+        }
+        catch (const Poco::Net::HostNotFoundException & e)
+        {
+            /// Most likely it's misconfiguration and wrong hostname was specified
+            LOG_ERROR(log, "Cannot use ZooKeeper host {}, reason: {}", node.host, e.displayText());
+        }
+        catch (const Poco::Net::DNSException & e)
+        {
+            /// Most likely DNS is not available now
+            dns_error = true;
+            LOG_ERROR(log, "Cannot use ZooKeeper host {} due to DNS error: {}", node.host, e.displayText());
+        }
+    }
+
+    if (resolved_count == 0)
+    {
+        /// For DNS errors we throw exception with ZCONNECTIONLOSS code, so it will be considered as hardware error, not user error
+        if (dns_error)
+            throw zkutil::KeeperException::fromMessage(
+                Coordination::Error::ZCONNECTIONLOSS, "Cannot resolve any of provided ZooKeeper hosts due to DNS error");
+        else
+            throw zkutil::KeeperException::fromMessage(Coordination::Error::ZCONNECTIONLOSS, "Cannot use any of provided ZooKeeper nodes");
+    }
 
     WriteBufferFromOwnString fail_reasons;
     for (size_t try_no = 0; try_no < num_tries; ++try_no)
     {
-        for (size_t i = 0; i < nodes.size(); ++i)
+        for (const auto & node : nodes)
         {
-            const auto & node = nodes[i];
             try
             {
+                if (!node.address)
+                    continue;
+
                 /// Reset the state of previous attempt.
                 if (node.secure)
                 {
@@ -415,7 +497,7 @@ void ZooKeeper::connect(
                     socket = Poco::Net::StreamSocket();
                 }
 
-                socket.connect(node.address, connection_timeout);
+                socket.connect(*node.address, connection_timeout);
                 socket_address = socket.peerAddress();
 
                 socket.setReceiveTimeout(args.operation_timeout_ms * 1000);
@@ -424,6 +506,8 @@ void ZooKeeper::connect(
 
                 in.emplace(socket);
                 out.emplace(socket);
+                compressed_in.reset();
+                compressed_out.reset();
 
                 try
                 {
@@ -444,29 +528,20 @@ void ZooKeeper::connect(
                     e.addMessage("while receiving handshake from ZooKeeper");
                     throw;
                 }
+
                 connected = true;
-                original_index = static_cast<Int8>(node.original_index);
-
-                if (i != 0)
+                if (use_compression)
                 {
-                    std::uniform_int_distribution<UInt32> fallback_session_lifetime_distribution
-                    {
-                        args.fallback_session_lifetime.min_sec,
-                        args.fallback_session_lifetime.max_sec,
-                    };
-                    UInt32 session_lifetime_seconds = fallback_session_lifetime_distribution(thread_local_rng);
-                    client_session_deadline = clock::now() + std::chrono::seconds(session_lifetime_seconds);
-
-                    LOG_DEBUG(log, "Connected to a suboptimal ZooKeeper host ({}, index {})."
-                    " To preserve balance in ZooKeeper usage, this ZooKeeper session will expire in {} seconds",
-                    node.address.toString(), i, session_lifetime_seconds);
+                    compressed_in.emplace(*in);
+                    compressed_out.emplace(*out, CompressionCodecFactory::instance().get("LZ4", {}));
                 }
 
+                original_index = static_cast<Int8>(node.original_index);
                 break;
             }
             catch (...)
             {
-                fail_reasons << "\n" << getCurrentExceptionMessage(false) << ", " << node.address.toString();
+                fail_reasons << "\n" << getCurrentExceptionMessage(false) << ", " << node.address->toString();
             }
         }
 
@@ -480,6 +555,9 @@ void ZooKeeper::connect(
         bool first = true;
         for (const auto & node : nodes)
         {
+            if (!node.address)
+                continue;
+
             if (first)
                 first = false;
             else
@@ -488,7 +566,7 @@ void ZooKeeper::connect(
             if (node.secure)
                 message << "secure://";
 
-            message << node.address.toString();
+            message << node.address->toString();
         }
 
         message << fail_reasons.str() << "\n";
@@ -503,23 +581,26 @@ void ZooKeeper::connect(
 
 void ZooKeeper::sendHandshake()
 {
-    int32_t handshake_length = 44;
+    int32_t handshake_length = 45;
     int64_t last_zxid_seen = 0;
     int32_t timeout = args.session_timeout_ms;
     int64_t previous_session_id = 0;    /// We don't support session restore. So previous session_id is always zero.
     constexpr int32_t passwd_len = 16;
     std::array<char, passwd_len> passwd {};
+    bool read_only = true;
 
     write(handshake_length);
-    write(ZOOKEEPER_PROTOCOL_VERSION);
+    if (use_compression)
+        write(ZOOKEEPER_PROTOCOL_VERSION_WITH_COMPRESSION);
+    else
+        write(ZOOKEEPER_PROTOCOL_VERSION);
     write(last_zxid_seen);
     write(timeout);
     write(previous_session_id);
     write(passwd);
-
-    out->next();
+    write(read_only);
+    flushWriteBuffer();
 }
-
 
 void ZooKeeper::receiveHandshake()
 {
@@ -527,24 +608,29 @@ void ZooKeeper::receiveHandshake()
     int32_t protocol_version_read;
     int32_t timeout;
     std::array<char, PASSWORD_LENGTH> passwd;
+    bool read_only;
 
     read(handshake_length);
-    if (handshake_length != SERVER_HANDSHAKE_LENGTH)
+    if (handshake_length != SERVER_HANDSHAKE_LENGTH && handshake_length != SERVER_HANDSHAKE_LENGTH_WITH_READONLY)
         throw Exception(Error::ZMARSHALLINGERROR, "Unexpected handshake length received: {}", handshake_length);
 
     read(protocol_version_read);
-    if (protocol_version_read != ZOOKEEPER_PROTOCOL_VERSION)
+
+    /// Special way to tell a client that server is not ready to serve it.
+    /// It's better for faster failover than just connection drop.
+    /// Implemented in clickhouse-keeper.
+    if (protocol_version_read == KEEPER_PROTOCOL_VERSION_CONNECTION_REJECT)
+        throw Exception::fromMessage(Error::ZCONNECTIONLOSS,
+                                     "Keeper server rejected the connection during the handshake. "
+                                     "Possibly it's overloaded, doesn't see leader or stale");
+
+    if (use_compression)
     {
-        /// Special way to tell a client that server is not ready to serve it.
-        /// It's better for faster failover than just connection drop.
-        /// Implemented in clickhouse-keeper.
-        if (protocol_version_read == KEEPER_PROTOCOL_VERSION_CONNECTION_REJECT)
-            throw Exception::fromMessage(Error::ZCONNECTIONLOSS,
-                            "Keeper server rejected the connection during the handshake. "
-                            "Possibly it's overloaded, doesn't see leader or stale");
-        else
-            throw Exception(Error::ZMARSHALLINGERROR, "Unexpected protocol version: {}", protocol_version_read);
+        if (protocol_version_read != ZOOKEEPER_PROTOCOL_VERSION_WITH_COMPRESSION)
+            throw Exception(Error::ZMARSHALLINGERROR,"Unexpected protocol version with compression: {}", protocol_version_read);
     }
+    else if (protocol_version_read != ZOOKEEPER_PROTOCOL_VERSION)
+        throw Exception(Error::ZMARSHALLINGERROR, "Unexpected protocol version: {}", protocol_version_read);
 
     read(timeout);
     if (timeout != args.session_timeout_ms)
@@ -553,6 +639,8 @@ void ZooKeeper::receiveHandshake()
 
     read(session_id);
     read(passwd);
+    if (handshake_length == SERVER_HANDSHAKE_LENGTH_WITH_READONLY)
+        read(read_only);
 }
 
 
@@ -562,7 +650,8 @@ void ZooKeeper::sendAuth(const String & scheme, const String & data)
     request.scheme = scheme;
     request.data = data;
     request.xid = AUTH_XID;
-    request.write(*out);
+    request.write(getWriteBuffer());
+    flushWriteBuffer();
 
     int32_t length;
     XID read_xid;
@@ -578,9 +667,13 @@ void ZooKeeper::sendAuth(const String & scheme, const String & data)
     if (read_xid != AUTH_XID)
         throw Exception(Error::ZMARSHALLINGERROR, "Unexpected event received in reply to auth request: {}", read_xid);
 
-    int32_t actual_length = static_cast<int32_t>(in->count() - count_before_event);
-    if (length != actual_length)
+    if (!use_compression)
+    {
+        int32_t actual_length = static_cast<int32_t>(in->count() - count_before_event);
+        if (length != actual_length)
         throw Exception(Error::ZMARSHALLINGERROR, "Response length doesn't match. Expected: {}, actual: {}", length, actual_length);
+
+    }
 
     if (err != Error::ZOK)
         throw Exception(Error::ZMARSHALLINGERROR, "Error received in reply to auth request. Code: {}. Message: {}",
@@ -637,7 +730,8 @@ void ZooKeeper::sendThread()
                     info.request->addRootPath(args.chroot);
 
                     info.request->probably_sent = true;
-                    info.request->write(*out);
+                    info.request->write(getWriteBuffer());
+                    flushWriteBuffer();
 
                     logOperationIfNeeded(info.request);
 
@@ -653,7 +747,8 @@ void ZooKeeper::sendThread()
 
                 ZooKeeperHeartbeatRequest request;
                 request.xid = PING_XID;
-                request.write(*out);
+                request.write(getWriteBuffer());
+                flushWriteBuffer();
             }
 
             ProfileEvents::increment(ProfileEvents::ZooKeeperBytesSent, out->count() - prev_bytes_sent);
@@ -744,7 +839,7 @@ void ZooKeeper::receiveEvent()
 
     RequestInfo request_info;
     ZooKeeperResponsePtr response;
-    UInt64 elapsed_ms = 0;
+    UInt64 elapsed_microseconds = 0;
 
     maybeInjectRecvFault();
 
@@ -807,8 +902,8 @@ void ZooKeeper::receiveEvent()
             CurrentMetrics::sub(CurrentMetrics::ZooKeeperRequest);
         }
 
-        elapsed_ms = std::chrono::duration_cast<std::chrono::microseconds>(clock::now() - request_info.time).count();
-        ProfileEvents::increment(ProfileEvents::ZooKeeperWaitMicroseconds, elapsed_ms);
+        elapsed_microseconds = std::chrono::duration_cast<std::chrono::microseconds>(clock::now() - request_info.time).count();
+        ProfileEvents::increment(ProfileEvents::ZooKeeperWaitMicroseconds, elapsed_microseconds);
     }
 
     try
@@ -825,7 +920,7 @@ void ZooKeeper::receiveEvent()
         }
         else
         {
-            response->readImpl(*in);
+            response->readImpl(getReadBuffer());
             response->removeRootPath(args.chroot);
         }
         /// Instead of setting the watch in sendEvent, set it in receiveEvent because need to check the response.
@@ -858,11 +953,16 @@ void ZooKeeper::receiveEvent()
             }
         }
 
-        int32_t actual_length = static_cast<int32_t>(in->count() - count_before_event);
-        if (length != actual_length)
-            throw Exception(Error::ZMARSHALLINGERROR, "Response length doesn't match. Expected: {}, actual: {}", length, actual_length);
+        if (!use_compression)
+        {
+            int32_t actual_length = static_cast<int32_t>(in->count() - count_before_event);
 
-        logOperationIfNeeded(request_info.request, response, /* finalize= */ false, elapsed_ms);
+            if (length != actual_length)
+                throw Exception(Error::ZMARSHALLINGERROR, "Response length doesn't match. Expected: {}, actual: {}",
+                                length, actual_length);
+        }
+
+        logOperationIfNeeded(request_info.request, response, /* finalize= */ false, elapsed_microseconds);
     }
     catch (...)
     {
@@ -881,7 +981,7 @@ void ZooKeeper::receiveEvent()
             if (request_info.callback)
                 request_info.callback(*response);
 
-            logOperationIfNeeded(request_info.request, response, /* finalize= */ false, elapsed_ms);
+            logOperationIfNeeded(request_info.request, response, /* finalize= */ false, elapsed_microseconds);
         }
         catch (...)
         {
@@ -975,14 +1075,14 @@ void ZooKeeper::finalize(bool error_send, bool error_receive, const String & rea
                     ? Error::ZCONNECTIONLOSS
                     : Error::ZSESSIONEXPIRED;
                 response->xid = request_info.request->xid;
-                UInt64 elapsed_ms = std::chrono::duration_cast<std::chrono::microseconds>(clock::now() - request_info.time).count();
+                UInt64 elapsed_microseconds = std::chrono::duration_cast<std::chrono::microseconds>(clock::now() - request_info.time).count();
 
                 if (request_info.callback)
                 {
                     try
                     {
                         request_info.callback(*response);
-                        logOperationIfNeeded(request_info.request, response, true, elapsed_ms);
+                        logOperationIfNeeded(request_info.request, response, true, elapsed_microseconds);
                     }
                     catch (...)
                     {
@@ -1042,8 +1142,8 @@ void ZooKeeper::finalize(bool error_send, bool error_receive, const String & rea
                     try
                     {
                         info.callback(*response);
-                        UInt64 elapsed_ms = std::chrono::duration_cast<std::chrono::microseconds>(clock::now() - info.time).count();
-                        logOperationIfNeeded(info.request, response, true, elapsed_ms);
+                        UInt64 elapsed_microseconds = std::chrono::duration_cast<std::chrono::microseconds>(clock::now() - info.time).count();
+                        logOperationIfNeeded(info.request, response, true, elapsed_microseconds);
                     }
                     catch (...)
                     {
@@ -1079,9 +1179,9 @@ void ZooKeeper::pushRequest(RequestInfo && info)
 {
     try
     {
-        checkSessionDeadline();
         info.time = clock::now();
-        if (zk_log)
+        auto maybe_zk_log = std::atomic_load(&zk_log);
+        if (maybe_zk_log)
         {
             info.request->thread_id = getThreadId();
             info.request->query_id = String(CurrentThread::getQueryId());
@@ -1126,44 +1226,44 @@ bool ZooKeeper::isFeatureEnabled(KeeperFeatureFlag feature_flag) const
     return keeper_feature_flags.isEnabled(feature_flag);
 }
 
-void ZooKeeper::initFeatureFlags()
+std::optional<String> ZooKeeper::tryGetSystemZnode(const std::string & path, const std::string & description)
 {
-    const auto try_get = [&](const std::string & path, const std::string & description) -> std::optional<std::string>
+    auto promise = std::make_shared<std::promise<Coordination::GetResponse>>();
+    auto future = promise->get_future();
+
+    auto callback = [promise](const Coordination::GetResponse & response) mutable
     {
-        auto promise = std::make_shared<std::promise<Coordination::GetResponse>>();
-        auto future = promise->get_future();
-
-        auto callback = [promise](const Coordination::GetResponse & response) mutable
-        {
-            promise->set_value(response);
-        };
-
-        get(path, std::move(callback), {});
-        if (future.wait_for(std::chrono::milliseconds(args.operation_timeout_ms)) != std::future_status::ready)
-            throw Exception(Error::ZOPERATIONTIMEOUT, "Failed to get {}: timeout", description);
-
-        auto response = future.get();
-
-        if (response.error == Coordination::Error::ZNONODE)
-        {
-            LOG_TRACE(log, "Failed to get {}", description);
-            return std::nullopt;
-        }
-        else if (response.error != Coordination::Error::ZOK)
-        {
-            throw Exception(response.error, "Failed to get {}", description);
-        }
-
-        return std::move(response.data);
+        promise->set_value(response);
     };
 
-    if (auto feature_flags = try_get(keeper_api_feature_flags_path, "feature flags"); feature_flags.has_value())
+    get(path, std::move(callback), {});
+    if (future.wait_for(std::chrono::milliseconds(args.operation_timeout_ms)) != std::future_status::ready)
+        throw Exception(Error::ZOPERATIONTIMEOUT, "Failed to get {}: timeout", description);
+
+    auto response = future.get();
+
+    if (response.error == Coordination::Error::ZNONODE)
+    {
+        LOG_TRACE(log, "Failed to get {}", description);
+        return std::nullopt;
+    }
+    else if (response.error != Coordination::Error::ZOK)
+    {
+        throw Exception(response.error, "Failed to get {}", description);
+    }
+
+    return std::move(response.data);
+}
+
+void ZooKeeper::initFeatureFlags()
+{
+    if (auto feature_flags = tryGetSystemZnode(keeper_api_feature_flags_path, "feature flags"); feature_flags.has_value())
     {
         keeper_feature_flags.setFeatureFlags(std::move(*feature_flags));
         return;
     }
 
-    auto keeper_api_version_string = try_get(keeper_api_version_path, "API version");
+    auto keeper_api_version_string = tryGetSystemZnode(keeper_api_version_path, "API version");
 
     DB::KeeperApiVersion keeper_api_version{DB::KeeperApiVersion::ZOOKEEPER_COMPATIBLE};
 
@@ -1181,14 +1281,27 @@ void ZooKeeper::initFeatureFlags()
     keeper_feature_flags.fromApiVersion(keeper_api_version);
 }
 
+String ZooKeeper::tryGetAvailabilityZone()
+{
+    auto res = tryGetSystemZnode(keeper_availability_zone_path, "availability zone");
+    if (res)
+    {
+        LOG_TRACE(log, "Availability zone for ZooKeeper at {}: {}", getConnectedHostPort(), *res);
+        return *res;
+    }
+    return "";
+}
+
 
 void ZooKeeper::executeGenericRequest(
     const ZooKeeperRequestPtr & request,
-    ResponseCallback callback)
+    ResponseCallback callback,
+    WatchCallbackPtr watch)
 {
     RequestInfo request_info;
     request_info.request = request;
     request_info.callback = callback;
+    request_info.watch = watch;
 
     pushRequest(std::move(request_info));
 }
@@ -1381,6 +1494,13 @@ void ZooKeeper::multi(
     const Requests & requests,
     MultiCallback callback)
 {
+    multi(std::span(requests), std::move(callback));
+}
+
+void ZooKeeper::multi(
+    std::span<const RequestPtr> requests,
+    MultiCallback callback)
+{
     ZooKeeperMultiRequest request(requests, default_acls);
 
     if (request.getOpNum() == OpNum::MultiRead && !isFeatureEnabled(KeeperFeatureFlag::MULTI_READ))
@@ -1417,7 +1537,7 @@ void ZooKeeper::setZooKeeperLog(std::shared_ptr<DB::ZooKeeperLog> zk_log_)
 }
 
 #ifdef ZOOKEEPER_LOG
-void ZooKeeper::logOperationIfNeeded(const ZooKeeperRequestPtr & request, const ZooKeeperResponsePtr & response, bool finalize, UInt64 elapsed_ms)
+void ZooKeeper::logOperationIfNeeded(const ZooKeeperRequestPtr & request, const ZooKeeperResponsePtr & response, bool finalize, UInt64 elapsed_microseconds)
 {
     auto maybe_zk_log = std::atomic_load(&zk_log);
     if (!maybe_zk_log)
@@ -1455,7 +1575,7 @@ void ZooKeeper::logOperationIfNeeded(const ZooKeeperRequestPtr & request, const 
         elem.event_time = event_time;
         elem.address = socket_address;
         elem.session_id = session_id;
-        elem.duration_ms = elapsed_ms;
+        elem.duration_microseconds = elapsed_microseconds;
         if (request)
         {
             elem.thread_id = request->thread_id;
@@ -1501,17 +1621,6 @@ void ZooKeeper::setupFaultDistributions()
         recv_inject_sleep.emplace(args.recv_sleep_probability);
     }
     inject_setup.test_and_set();
-}
-
-void ZooKeeper::checkSessionDeadline() const
-{
-    if (unlikely(hasReachedDeadline()))
-        throw Exception::fromMessage(Error::ZSESSIONEXPIRED, "Session expired (force expiry client-side)");
-}
-
-bool ZooKeeper::hasReachedDeadline() const
-{
-    return client_session_deadline.has_value() && clock::now() >= client_session_deadline.value();
 }
 
 void ZooKeeper::maybeInjectSendFault()

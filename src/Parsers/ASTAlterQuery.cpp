@@ -1,6 +1,7 @@
-#include <iomanip>
-#include <IO/Operators.h>
 #include <Parsers/ASTAlterQuery.h>
+
+#include <Core/ServerSettings.h>
+#include <IO/Operators.h>
 #include <Common/quoteString.h>
 
 
@@ -22,66 +23,56 @@ ASTPtr ASTAlterCommand::clone() const
     res->children.clear();
 
     if (col_decl)
-    {
-        res->col_decl = col_decl->clone();
-        res->children.push_back(res->col_decl);
-    }
+        res->col_decl = res->children.emplace_back(col_decl->clone()).get();
     if (column)
-    {
-        res->column = column->clone();
-        res->children.push_back(res->column);
-    }
+        res->column = res->children.emplace_back(column->clone()).get();
     if (order_by)
-    {
-        res->order_by = order_by->clone();
-        res->children.push_back(res->order_by);
-    }
+        res->order_by = res->children.emplace_back(order_by->clone()).get();
+    if (sample_by)
+        res->sample_by = res->children.emplace_back(sample_by->clone()).get();
+    if (index_decl)
+        res->index_decl = res->children.emplace_back(index_decl->clone()).get();
+    if (index)
+        res->index = res->children.emplace_back(index->clone()).get();
+    if (constraint_decl)
+        res->constraint_decl = res->children.emplace_back(constraint_decl->clone()).get();
+    if (constraint)
+        res->constraint = res->children.emplace_back(constraint->clone()).get();
+    if (projection_decl)
+        res->projection_decl = res->children.emplace_back(projection_decl->clone()).get();
+    if (projection)
+        res->projection = res->children.emplace_back(projection->clone()).get();
+    if (statistics_decl)
+        res->statistics_decl = res->children.emplace_back(statistics_decl->clone()).get();
     if (partition)
-    {
-        res->partition = partition->clone();
-        res->children.push_back(res->partition);
-    }
+        res->partition = res->children.emplace_back(partition->clone()).get();
     if (predicate)
-    {
-        res->predicate = predicate->clone();
-        res->children.push_back(res->predicate);
-    }
-    if (ttl)
-    {
-        res->ttl = ttl->clone();
-        res->children.push_back(res->ttl);
-    }
-    if (settings_changes)
-    {
-        res->settings_changes = settings_changes->clone();
-        res->children.push_back(res->settings_changes);
-    }
-    if (settings_resets)
-    {
-        res->settings_resets = settings_resets->clone();
-        res->children.push_back(res->settings_resets);
-    }
-    if (values)
-    {
-        res->values = values->clone();
-        res->children.push_back(res->values);
-    }
-    if (rename_to)
-    {
-        res->rename_to = rename_to->clone();
-        res->children.push_back(res->rename_to);
-    }
+        res->predicate = res->children.emplace_back(predicate->clone()).get();
+    if (update_assignments)
+        res->update_assignments = res->children.emplace_back(update_assignments->clone()).get();
     if (comment)
-    {
-        res->comment = comment->clone();
-        res->children.push_back(res->comment);
-    }
+        res->comment = res->children.emplace_back(comment->clone()).get();
+    if (ttl)
+        res->ttl = res->children.emplace_back(ttl->clone()).get();
+    if (settings_changes)
+        res->settings_changes = res->children.emplace_back(settings_changes->clone()).get();
+    if (settings_resets)
+        res->settings_resets = res->children.emplace_back(settings_resets->clone()).get();
+    if (select)
+        res->select = res->children.emplace_back(select->clone()).get();
+    if (sql_security)
+        res->sql_security = res->children.emplace_back(sql_security->clone()).get();
+    if (rename_to)
+        res->rename_to = res->children.emplace_back(rename_to->clone()).get();
 
     return res;
 }
 
 void ASTAlterCommand::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
+    if (format_alter_commands_with_parentheses)
+        settings.ostr << "(";
+
     if (type == ASTAlterCommand::ADD_COLUMN)
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << "ADD COLUMN " << (if_not_exists ? "IF NOT EXISTS " : "")
@@ -116,6 +107,16 @@ void ASTAlterCommand::formatImpl(const FormatSettings & settings, FormatState & 
         if (!remove_property.empty())
         {
             settings.ostr << (settings.hilite ? hilite_keyword : "") << " REMOVE " << remove_property;
+        }
+        else if (settings_changes)
+        {
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << " MODIFY SETTING " << (settings.hilite ? hilite_none : "");
+            settings_changes->formatImpl(settings, state, frame);
+        }
+        else if (settings_resets)
+        {
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << " RESET SETTING " << (settings.hilite ? hilite_none : "");
+            settings_resets->formatImpl(settings, state, frame);
         }
         else
         {
@@ -201,6 +202,39 @@ void ASTAlterCommand::formatImpl(const FormatSettings & settings, FormatState & 
             partition->formatImpl(settings, state, frame);
         }
     }
+    else if (type == ASTAlterCommand::ADD_STATISTICS)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << "ADD STATISTICS " << (if_not_exists ? "IF NOT EXISTS " : "")
+                      << (settings.hilite ? hilite_none : "");
+        statistics_decl->formatImpl(settings, state, frame);
+    }
+    else if (type == ASTAlterCommand::MODIFY_STATISTICS)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << "MODIFY STATISTICS "
+                      << (settings.hilite ? hilite_none : "");
+        statistics_decl->formatImpl(settings, state, frame);
+    }
+    else if (type == ASTAlterCommand::DROP_STATISTICS)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << (clear_statistics ? "CLEAR " : "DROP ") << "STATISTICS "
+                      << (if_exists ? "IF EXISTS " : "") << (settings.hilite ? hilite_none : "");
+        statistics_decl->formatImpl(settings, state, frame);
+        if (partition)
+        {
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << " IN PARTITION " << (settings.hilite ? hilite_none : "");
+            partition->formatImpl(settings, state, frame);
+        }
+    }
+    else if (type == ASTAlterCommand::MATERIALIZE_STATISTICS)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << "MATERIALIZE STATISTICS " << (settings.hilite ? hilite_none : "");
+        statistics_decl->formatImpl(settings, state, frame);
+        if (partition)
+        {
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << " IN PARTITION " << (settings.hilite ? hilite_none : "");
+            partition->formatImpl(settings, state, frame);
+        }
+    }
     else if (type == ASTAlterCommand::ADD_CONSTRAINT)
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << "ADD CONSTRAINT " << (if_not_exists ? "IF NOT EXISTS " : "")
@@ -257,6 +291,12 @@ void ASTAlterCommand::formatImpl(const FormatSettings & settings, FormatState & 
     else if (type == ASTAlterCommand::DROP_DETACHED_PARTITION)
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << "DROP DETACHED" << (part ? " PART " : " PARTITION ")
+                      << (settings.hilite ? hilite_none : "");
+        partition->formatImpl(settings, state, frame);
+    }
+    else if (type == ASTAlterCommand::FORGET_PARTITION)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << "FORGET PARTITION "
                       << (settings.hilite ? hilite_none : "");
         partition->formatImpl(settings, state, frame);
     }
@@ -422,13 +462,15 @@ void ASTAlterCommand::formatImpl(const FormatSettings & settings, FormatState & 
     }
     else if (type == ASTAlterCommand::MODIFY_QUERY)
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << "MODIFY QUERY " << settings.nl_or_ws
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << "MODIFY QUERY" << settings.nl_or_ws
                       << (settings.hilite ? hilite_none : "");
         select->formatImpl(settings, state, frame);
     }
-    else if (type == ASTAlterCommand::LIVE_VIEW_REFRESH)
+    else if (type == ASTAlterCommand::MODIFY_REFRESH)
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << "REFRESH " << (settings.hilite ? hilite_none : "");
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << "MODIFY" << settings.nl_or_ws
+                      << (settings.hilite ? hilite_none : "");
+        refresh->formatImpl(settings, state, frame);
     }
     else if (type == ASTAlterCommand::RENAME_COLUMN)
     {
@@ -439,9 +481,53 @@ void ASTAlterCommand::formatImpl(const FormatSettings & settings, FormatState & 
         settings.ostr << (settings.hilite ? hilite_keyword : "") << " TO ";
         rename_to->formatImpl(settings, state, frame);
     }
+    else if (type == ASTAlterCommand::MODIFY_SQL_SECURITY)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << "MODIFY " << (settings.hilite ? hilite_none : "");
+        sql_security->formatImpl(settings, state, frame);
+    }
+    else if (type == ASTAlterCommand::APPLY_DELETED_MASK)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << "APPLY DELETED MASK" << (settings.hilite ? hilite_none : "");
+
+        if (partition)
+        {
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << " IN PARTITION " << (settings.hilite ? hilite_none : "");
+            partition->formatImpl(settings, state, frame);
+        }
+    }
     else
         throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Unexpected type of ALTER");
+
+    if (format_alter_commands_with_parentheses)
+        settings.ostr << ")";
 }
+
+void ASTAlterCommand::forEachPointerToChild(std::function<void(void**)> f)
+{
+    f(reinterpret_cast<void **>(&col_decl));
+    f(reinterpret_cast<void **>(&column));
+    f(reinterpret_cast<void **>(&order_by));
+    f(reinterpret_cast<void **>(&sample_by));
+    f(reinterpret_cast<void **>(&index_decl));
+    f(reinterpret_cast<void **>(&index));
+    f(reinterpret_cast<void **>(&constraint_decl));
+    f(reinterpret_cast<void **>(&constraint));
+    f(reinterpret_cast<void **>(&projection_decl));
+    f(reinterpret_cast<void **>(&projection));
+    f(reinterpret_cast<void **>(&statistics_decl));
+    f(reinterpret_cast<void **>(&partition));
+    f(reinterpret_cast<void **>(&predicate));
+    f(reinterpret_cast<void **>(&update_assignments));
+    f(reinterpret_cast<void **>(&comment));
+    f(reinterpret_cast<void **>(&ttl));
+    f(reinterpret_cast<void **>(&settings_changes));
+    f(reinterpret_cast<void **>(&settings_resets));
+    f(reinterpret_cast<void **>(&select));
+    f(reinterpret_cast<void **>(&sql_security));
+    f(reinterpret_cast<void **>(&rename_to));
+}
+
 
 bool ASTAlterQuery::isOneCommandTypeOnly(const ASTAlterCommand::Type & type) const
 {
@@ -484,6 +570,11 @@ bool ASTAlterQuery::isFetchAlter() const
 bool ASTAlterQuery::isDropPartitionAlter() const
 {
     return isOneCommandTypeOnly(ASTAlterCommand::DROP_PARTITION) || isOneCommandTypeOnly(ASTAlterCommand::DROP_DETACHED_PARTITION);
+}
+
+bool ASTAlterQuery::isCommentAlter() const
+{
+    return isOneCommandTypeOnly(ASTAlterCommand::COMMENT_COLUMN) || isOneCommandTypeOnly(ASTAlterCommand::MODIFY_COMMENT);
 }
 
 bool ASTAlterQuery::isMovePartitionToDiskOrVolumeAlter() const
@@ -537,9 +628,6 @@ void ASTAlterQuery::formatQueryImpl(const FormatSettings & settings, FormatState
         case AlterObjectType::DATABASE:
             settings.ostr << "ALTER DATABASE ";
             break;
-        case AlterObjectType::LIVE_VIEW:
-            settings.ostr << "ALTER LIVE VIEW ";
-            break;
         default:
             break;
     }
@@ -548,16 +636,20 @@ void ASTAlterQuery::formatQueryImpl(const FormatSettings & settings, FormatState
 
     if (table)
     {
+        settings.ostr << indent_str;
         if (database)
         {
-            settings.ostr << indent_str << backQuoteIfNeed(getDatabase());
-            settings.ostr << ".";
+            database->formatImpl(settings, state, frame);
+            settings.ostr << '.';
         }
-        settings.ostr << indent_str << backQuoteIfNeed(getTable());
+
+        chassert(table);
+        table->formatImpl(settings, state, frame);
     }
     else if (alter_object == AlterObjectType::DATABASE && database)
     {
-        settings.ostr << indent_str << backQuoteIfNeed(getDatabase());
+        settings.ostr << indent_str;
+        database->formatImpl(settings, state, frame);
     }
 
     formatOnCluster(settings);
@@ -574,6 +666,13 @@ void ASTAlterQuery::formatQueryImpl(const FormatSettings & settings, FormatState
         frame_nested.expression_list_always_start_on_new_line = true;
         command_list->as<ASTExpressionList &>().formatImplMultiline(settings, state, frame_nested);
     }
+}
+
+void ASTAlterQuery::forEachPointerToChild(std::function<void(void**)> f)
+{
+    for (const auto & child : command_list->children)
+        child->as<ASTAlterCommand &>().forEachPointerToChild(f);
+    f(reinterpret_cast<void **>(&command_list));
 }
 
 }

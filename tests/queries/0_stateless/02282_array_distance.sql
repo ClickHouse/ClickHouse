@@ -12,10 +12,10 @@ SELECT cosineDistance([1, 2, 3], [0, 0, 0]);
 -- Overflows
 WITH CAST([-547274980, 1790553898, 1981517754, 1908431500, 1352428565, -573412550, -552499284, 2096941042], 'Array(Int32)') AS a
 SELECT
-    L1Distance(a,a),
-    L2Distance(a,a),
-    L2SquaredDistance(a,a),
-    LinfDistance(a,a),
+    L1Distance(a, a),
+    L2Distance(a, a),
+    L2SquaredDistance(a, a),
+    LinfDistance(a, a),
     cosineDistance(a, a);
 
 DROP TABLE IF EXISTS vec1;
@@ -88,15 +88,33 @@ SELECT
 FROM vec2f v1, vec2d v2
 WHERE length(v1.v) == length(v2.v);
 
-SELECT L1Distance([0, 0], [1]); -- { serverError 190 }
-SELECT L2Distance([1, 2], (3,4)); -- { serverError 43 }
-SELECT L2SquaredDistance([1, 2], (3,4)); -- { serverError 43 }
-SELECT LpDistance([1, 2], [3,4]); -- { serverError 42 }
-SELECT LpDistance([1, 2], [3,4], -1.); -- { serverError 69 }
-SELECT LpDistance([1, 2], [3,4], 'aaa'); -- { serverError 43 }
-SELECT LpDistance([1, 2], [3,4], materialize(2.7)); -- { serverError 44 }
+SELECT L1Distance([0, 0], [1]); -- { serverError SIZES_OF_ARRAYS_DONT_MATCH }
+SELECT L2Distance([1, 2], (3,4)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT L2SquaredDistance([1, 2], (3,4)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT LpDistance([1, 2], [3,4]); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+SELECT LpDistance([1, 2], [3,4], -1.); -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT LpDistance([1, 2], [3,4], 'aaa'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT LpDistance([1, 2], [3,4], materialize(2.7)); -- { serverError ILLEGAL_COLUMN }
 
 DROP TABLE vec1;
 DROP TABLE vec2;
 DROP TABLE vec2f;
 DROP TABLE vec2d;
+
+-- Queries which trigger manually vectorized implementation
+
+SELECT L2Distance(
+    [toFloat32(0.0), toFloat32(1.0), toFloat32(2.0), toFloat32(3.0), toFloat32(4.0), toFloat32(5.0), toFloat32(6.0), toFloat32(7.0), toFloat32(8.0), toFloat32(9.0), toFloat32(10.0), toFloat32(11.0), toFloat32(12.0), toFloat32(13.0), toFloat32(14.0), toFloat32(15.0), toFloat32(16.0), toFloat32(17.0), toFloat32(18.0), toFloat32(19.0), toFloat32(20.0), toFloat32(21.0), toFloat32(22.0), toFloat32(23.0), toFloat32(24.0), toFloat32(25.0), toFloat32(26.0), toFloat32(27.0), toFloat32(28.0), toFloat32(29.0), toFloat32(30.0), toFloat32(31.0), toFloat32(32.0), toFloat32(33.0)],
+    materialize([toFloat32(1.0), toFloat32(2.0), toFloat32(3.0), toFloat32(4.0), toFloat32(5.0), toFloat32(6.0), toFloat32(7.0), toFloat32(8.0), toFloat32(9.0), toFloat32(10.0), toFloat32(11.0), toFloat32(12.0), toFloat32(13.0), toFloat32(14.0), toFloat32(15.0), toFloat32(16.0), toFloat32(17.0), toFloat32(18.0), toFloat32(19.0), toFloat32(20.0), toFloat32(21.0), toFloat32(22.0), toFloat32(23.0), toFloat32(24.0), toFloat32(25.0), toFloat32(26.0), toFloat32(27.0), toFloat32(28.0), toFloat32(29.0), toFloat32(30.0), toFloat32(31.0), toFloat32(32.0), toFloat32(33.0), toFloat32(34.0)]));
+
+SELECT cosineDistance(
+    [toFloat32(0.0), toFloat32(1.0), toFloat32(2.0), toFloat32(3.0), toFloat32(4.0), toFloat32(5.0), toFloat32(6.0), toFloat32(7.0), toFloat32(8.0), toFloat32(9.0), toFloat32(10.0), toFloat32(11.0), toFloat32(12.0), toFloat32(13.0), toFloat32(14.0), toFloat32(15.0), toFloat32(16.0), toFloat32(17.0), toFloat32(18.0), toFloat32(19.0), toFloat32(20.0), toFloat32(21.0), toFloat32(22.0), toFloat32(23.0), toFloat32(24.0), toFloat32(25.0), toFloat32(26.0), toFloat32(27.0), toFloat32(28.0), toFloat32(29.0), toFloat32(30.0), toFloat32(31.0), toFloat32(32.0), toFloat32(33.0)],
+    materialize([toFloat32(1.0), toFloat32(2.0), toFloat32(3.0), toFloat32(4.0), toFloat32(5.0), toFloat32(6.0), toFloat32(7.0), toFloat32(8.0), toFloat32(9.0), toFloat32(10.0), toFloat32(11.0), toFloat32(12.0), toFloat32(13.0), toFloat32(14.0), toFloat32(15.0), toFloat32(16.0), toFloat32(17.0), toFloat32(18.0), toFloat32(19.0), toFloat32(20.0), toFloat32(21.0), toFloat32(22.0), toFloat32(23.0), toFloat32(24.0), toFloat32(25.0), toFloat32(26.0), toFloat32(27.0), toFloat32(28.0), toFloat32(29.0), toFloat32(30.0), toFloat32(31.0), toFloat32(32.0), toFloat32(33.0), toFloat32(34.0)]));
+
+SELECT L2Distance(
+    [toFloat64(0.0), toFloat64(1.0), toFloat64(2.0), toFloat64(3.0), toFloat64(4.0), toFloat64(5.0), toFloat64(6.0), toFloat64(7.0), toFloat64(8.0), toFloat64(9.0), toFloat64(10.0), toFloat64(11.0), toFloat64(12.0), toFloat64(13.0), toFloat64(14.0), toFloat64(15.0), toFloat64(16.0), toFloat64(17.0), toFloat64(18.0), toFloat64(19.0), toFloat64(20.0), toFloat64(21.0), toFloat64(22.0), toFloat64(23.0), toFloat64(24.0), toFloat64(25.0), toFloat64(26.0), toFloat64(27.0), toFloat64(28.0), toFloat64(29.0), toFloat64(30.0), toFloat64(31.0), toFloat64(32.0), toFloat64(33.0)],
+    materialize([toFloat64(1.0), toFloat64(2.0), toFloat64(3.0), toFloat64(4.0), toFloat64(5.0), toFloat64(6.0), toFloat64(7.0), toFloat64(8.0), toFloat64(9.0), toFloat64(10.0), toFloat64(11.0), toFloat64(12.0), toFloat64(13.0), toFloat64(14.0), toFloat64(15.0), toFloat64(16.0), toFloat64(17.0), toFloat64(18.0), toFloat64(19.0), toFloat64(20.0), toFloat64(21.0), toFloat64(22.0), toFloat64(23.0), toFloat64(24.0), toFloat64(25.0), toFloat64(26.0), toFloat64(27.0), toFloat64(28.0), toFloat64(29.0), toFloat64(30.0), toFloat64(31.0), toFloat64(32.0), toFloat64(33.0), toFloat64(34.0)]));
+
+SELECT cosineDistance(
+    [toFloat64(0.0), toFloat64(1.0), toFloat64(2.0), toFloat64(3.0), toFloat64(4.0), toFloat64(5.0), toFloat64(6.0), toFloat64(7.0), toFloat64(8.0), toFloat64(9.0), toFloat64(10.0), toFloat64(11.0), toFloat64(12.0), toFloat64(13.0), toFloat64(14.0), toFloat64(15.0), toFloat64(16.0), toFloat64(17.0), toFloat64(18.0), toFloat64(19.0), toFloat64(20.0), toFloat64(21.0), toFloat64(22.0), toFloat64(23.0), toFloat64(24.0), toFloat64(25.0), toFloat64(26.0), toFloat64(27.0), toFloat64(28.0), toFloat64(29.0), toFloat64(30.0), toFloat64(31.0), toFloat64(32.0), toFloat64(33.0)],
+    materialize([toFloat64(1.0), toFloat64(2.0), toFloat64(3.0), toFloat64(4.0), toFloat64(5.0), toFloat64(6.0), toFloat64(7.0), toFloat64(8.0), toFloat64(9.0), toFloat64(10.0), toFloat64(11.0), toFloat64(12.0), toFloat64(13.0), toFloat64(14.0), toFloat64(15.0), toFloat64(16.0), toFloat64(17.0), toFloat64(18.0), toFloat64(19.0), toFloat64(20.0), toFloat64(21.0), toFloat64(22.0), toFloat64(23.0), toFloat64(24.0), toFloat64(25.0), toFloat64(26.0), toFloat64(27.0), toFloat64(28.0), toFloat64(29.0), toFloat64(30.0), toFloat64(31.0), toFloat64(32.0), toFloat64(33.0), toFloat64(34.0)]));

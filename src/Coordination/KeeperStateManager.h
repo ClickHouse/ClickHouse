@@ -23,7 +23,6 @@ public:
         const std::string & config_prefix_,
         const std::string & server_state_file_name_,
         const Poco::Util::AbstractConfiguration & config,
-        const CoordinationSettingsPtr & coordination_settings,
         KeeperContextPtr keeper_context_);
 
     /// Constructor for tests
@@ -121,13 +120,14 @@ private:
     mutable std::mutex configuration_wrapper_mutex;
     KeeperConfigurationWrapper configuration_wrapper TSA_GUARDED_BY(configuration_wrapper_mutex);
 
+    bool log_store_initialized = false;
     nuraft::ptr<KeeperLogStore> log_store;
 
     const String server_state_file_name;
 
     KeeperContextPtr keeper_context;
 
-    Poco::Logger * logger;
+    LoggerPtr logger;
 
 public:
     /// Parse configuration from xml config.

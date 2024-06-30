@@ -8,17 +8,18 @@ extern const char * library_licenses[];
 
 namespace DB
 {
-NamesAndTypesList StorageSystemLicenses::getNamesAndTypes()
+ColumnsDescription StorageSystemLicenses::getColumnsDescription()
 {
-    return {
-        {"library_name", std::make_shared<DataTypeString>()},
-        {"license_type", std::make_shared<DataTypeString>()},
-        {"license_path", std::make_shared<DataTypeString>()},
-        {"license_text", std::make_shared<DataTypeString>()},
+    return ColumnsDescription
+    {
+        {"library_name", std::make_shared<DataTypeString>(), "Name of the library."},
+        {"license_type", std::make_shared<DataTypeString>(), "License type — e.g. Apache, MIT."},
+        {"license_path", std::make_shared<DataTypeString>(), "Path to the file with the license text."},
+        {"license_text", std::make_shared<DataTypeString>(), "License text."},
     };
 }
 
-void StorageSystemLicenses::fillData(MutableColumns & res_columns, ContextPtr, const SelectQueryInfo &) const
+void StorageSystemLicenses::fillData(MutableColumns & res_columns, ContextPtr, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
     for (const auto * it = library_licenses; *it; it += 4)
     {

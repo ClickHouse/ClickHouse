@@ -37,7 +37,7 @@ struct ReplicatedCheckResult
 
     bool exists_in_zookeeper;
     MergeTreeDataPartPtr part;
-    time_t recheck_after = 0;
+    time_t recheck_after_seconds = 0;
 };
 
 /** Checks the integrity of the parts requested for validation.
@@ -65,9 +65,9 @@ public:
     size_t size() const;
 
     /// Check part by name
-    CheckResult checkPartAndFix(const String & part_name, std::optional<time_t> * recheck_after = nullptr);
+    CheckResult checkPartAndFix(const String & part_name, std::optional<time_t> * recheck_after = nullptr, bool throw_on_broken_projection = true);
 
-    ReplicatedCheckResult checkPartImpl(const String & part_name);
+    ReplicatedCheckResult checkPartImpl(const String & part_name, bool throw_on_broken_projection);
 
     std::unique_lock<std::mutex> pausePartsCheck();
 
@@ -87,10 +87,15 @@ private:
 
     StorageReplicatedMergeTree & storage;
     String log_name;
-    Poco::Logger * log;
+    LoggerPtr log;
 
     using StringSet = std::set<String>;
-    using PartToCheck = std::pair<String, time_t>;    /// The name of the part and the minimum time to check (or zero, if not important).
+    struct PartToCheck
+    {
+        using TimePoint = std::chrono::steady_clock::time_point;
+        String name;
+        TimePoint time;
+    };
     using PartsToCheckQueue = std::list<PartToCheck>;
 
     /** Parts for which you want to check one of two:

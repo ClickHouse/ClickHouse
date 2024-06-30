@@ -20,7 +20,7 @@ public:
 
     String getDescription() override { return "Replaces several calls of aggregate functions of the same family into one call"; }
 
-    void run(QueryTreeNodePtr query_tree_node, ContextPtr context) override;
+    void run(QueryTreeNodePtr & query_tree_node, ContextPtr context) override;
 };
 
 }

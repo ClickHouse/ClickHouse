@@ -32,7 +32,7 @@ ConstantFilterDescription::ConstantFilterDescription(const IColumn & column)
 
         if (!typeid_cast<const ColumnUInt8 *>(column_nested.get()))
         {
-            const ColumnNullable * column_nested_nullable = checkAndGetColumn<ColumnNullable>(*column_nested);
+            const ColumnNullable * column_nested_nullable = checkAndGetColumn<ColumnNullable>(&*column_nested);
             if (!column_nested_nullable || !typeid_cast<const ColumnUInt8 *>(&column_nested_nullable->getNestedColumn()))
             {
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
@@ -66,7 +66,7 @@ FilterDescription::FilterDescription(const IColumn & column_)
         return;
     }
 
-    if (const auto * nullable_column = checkAndGetColumn<ColumnNullable>(column))
+    if (const auto * nullable_column = checkAndGetColumn<ColumnNullable>(&column))
     {
         ColumnPtr nested_column = nullable_column->getNestedColumnPtr();
         MutableColumnPtr mutable_holder = IColumn::mutate(std::move(nested_column));
@@ -106,7 +106,7 @@ SparseFilterDescription::SparseFilterDescription(const IColumn & column)
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
             "Illegal type {} of column for sparse filter. Must be Sparse(UInt8)", column.getName());
 
-    filter_indices = &column_sparse->getOffsetsColumn();
+    filter_indices = &assert_cast<const ColumnUInt64 &>(column_sparse->getOffsetsColumn());
 }
 
 }

@@ -8,37 +8,22 @@ endif()
 set(AZURE_DIR "${ClickHouse_SOURCE_DIR}/contrib/azure")
 set(AZURE_SDK_LIBRARY_DIR "${AZURE_DIR}/sdk")
 
-file(GLOB AZURE_SDK_CORE_SRC
+file(GLOB AZURE_SDK_SRC
     "${AZURE_SDK_LIBRARY_DIR}/core/azure-core/src/*.cpp"
+    "${AZURE_SDK_LIBRARY_DIR}/core/azure-core/src/credentials/*.cpp"
     "${AZURE_SDK_LIBRARY_DIR}/core/azure-core/src/cryptography/*.cpp"
     "${AZURE_SDK_LIBRARY_DIR}/core/azure-core/src/http/*.cpp"
-    "${AZURE_SDK_LIBRARY_DIR}/core/azure-core/src/http/curl/*.hpp"
     "${AZURE_SDK_LIBRARY_DIR}/core/azure-core/src/http/curl/*.cpp"
-    "${AZURE_SDK_LIBRARY_DIR}/core/azure-core/src/winhttp/*.cpp"
     "${AZURE_SDK_LIBRARY_DIR}/core/azure-core/src/io/*.cpp"
-    "${AZURE_SDK_LIBRARY_DIR}/core/azure-core/src/private/*.hpp"
-)
-
-file(GLOB AZURE_SDK_IDENTITY_SRC
+    "${AZURE_SDK_LIBRARY_DIR}/core/azure-core/src/tracing/*.cpp"
     "${AZURE_SDK_LIBRARY_DIR}/identity/azure-identity/src/*.cpp"
-    "${AZURE_SDK_LIBRARY_DIR}/identity/azure-identity/src/private/*.hpp"
-)
-
-file(GLOB AZURE_SDK_STORAGE_COMMON_SRC
-    "${AZURE_SDK_LIBRARY_DIR}/storage/azure-storage-common/src/*.cpp"
-    "${AZURE_SDK_LIBRARY_DIR}/storage/azure-storage-common/src/private/*.cpp"
-)
-
-file(GLOB AZURE_SDK_STORAGE_BLOBS_SRC
     "${AZURE_SDK_LIBRARY_DIR}/storage/azure-storage-blobs/src/*.cpp"
-    "${AZURE_SDK_LIBRARY_DIR}/storage/azure-storage-blobs/src/private/*.hpp"
+    "${AZURE_SDK_LIBRARY_DIR}/storage/azure-storage-blobs/src/private/*.cpp"
+    "${AZURE_SDK_LIBRARY_DIR}/storage/azure-storage-common/src/*.cpp"
 )
 
 file(GLOB AZURE_SDK_UNIFIED_SRC
-    ${AZURE_SDK_CORE_SRC}
-    ${AZURE_SDK_IDENTITY_SRC}
-    ${AZURE_SDK_STORAGE_COMMON_SRC}
-    ${AZURE_SDK_STORAGE_BLOBS_SRC}
+    ${AZURE_SDK_SRC}
 )
 
 set(AZURE_SDK_INCLUDES
@@ -48,9 +33,8 @@ set(AZURE_SDK_INCLUDES
     "${AZURE_SDK_LIBRARY_DIR}/storage/azure-storage-blobs/inc/"
 )
 
-include("${AZURE_DIR}/cmake-modules/AzureTransportAdapters.cmake")
-
 add_library(_azure_sdk ${AZURE_SDK_UNIFIED_SRC})
+target_compile_definitions(_azure_sdk PRIVATE BUILD_CURL_HTTP_TRANSPORT_ADAPTER)
 
 # Originally, on Windows azure-core is built with bcrypt and crypt32 by default
 if (TARGET OpenSSL::SSL)

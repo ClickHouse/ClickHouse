@@ -17,12 +17,12 @@ namespace DB
  *      MODIFY COLUMN col_name type,
  *      DROP PARTITION partition,
  *      COMMENT_COLUMN col_name 'comment',
- *  ALTER LIVE VIEW [db.]name_type
- *      REFRESH
  */
 
 class ASTAlterCommand : public IAST
 {
+    friend class ASTAlterQuery;
+
 public:
     enum Type
     {
@@ -40,6 +40,7 @@ public:
         MODIFY_SETTING,
         RESET_SETTING,
         MODIFY_QUERY,
+        MODIFY_REFRESH,
         REMOVE_TTL,
         REMOVE_SAMPLE_BY,
 
@@ -54,8 +55,14 @@ public:
         DROP_PROJECTION,
         MATERIALIZE_PROJECTION,
 
+        ADD_STATISTICS,
+        DROP_STATISTICS,
+        MODIFY_STATISTICS,
+        MATERIALIZE_STATISTICS,
+
         DROP_PARTITION,
         DROP_DETACHED_PARTITION,
+        FORGET_PARTITION,
         ATTACH_PARTITION,
         MOVE_PARTITION,
         REPLACE_PARTITION,
@@ -67,14 +74,14 @@ public:
 
         DELETE,
         UPDATE,
+        APPLY_DELETED_MASK,
 
         NO_TYPE,
-
-        LIVE_VIEW_REFRESH,
 
         MODIFY_DATABASE_SETTING,
 
         MODIFY_COMMENT,
+        MODIFY_SQL_SECURITY,
     };
 
     Type type = NO_TYPE;
@@ -83,81 +90,88 @@ public:
      *  This field is not used in the DROP query
      *  In MODIFY query, the column name and the new type are stored here
      */
-    ASTPtr col_decl;
+    IAST * col_decl = nullptr;
 
     /** The ADD COLUMN and MODIFY COLUMN query here optionally stores the name of the column following AFTER
      * The DROP query stores the column name for deletion here
      * Also used for RENAME COLUMN.
      */
-    ASTPtr column;
+    IAST * column = nullptr;
 
     /** For MODIFY ORDER BY
      */
-    ASTPtr order_by;
+    IAST * order_by = nullptr;
 
     /** For MODIFY SAMPLE BY
      */
-    ASTPtr sample_by;
+    IAST * sample_by = nullptr;
 
     /** The ADD INDEX query stores the IndexDeclaration there.
      */
-    ASTPtr index_decl;
+    IAST * index_decl = nullptr;
 
     /** The ADD INDEX query stores the name of the index following AFTER.
      *  The DROP INDEX query stores the name for deletion.
      *  The MATERIALIZE INDEX query stores the name of the index to materialize.
      *  The CLEAR INDEX query stores the name of the index to clear.
      */
-    ASTPtr index;
+    IAST * index = nullptr;
 
     /** The ADD CONSTRAINT query stores the ConstraintDeclaration there.
     */
-    ASTPtr constraint_decl;
+    IAST * constraint_decl = nullptr;
 
     /** The DROP CONSTRAINT query stores the name for deletion.
     */
-    ASTPtr constraint;
+    IAST * constraint = nullptr;
 
     /** The ADD PROJECTION query stores the ProjectionDeclaration there.
      */
-    ASTPtr projection_decl;
+    IAST * projection_decl = nullptr;
 
     /** The ADD PROJECTION query stores the name of the projection following AFTER.
      *  The DROP PROJECTION query stores the name for deletion.
      *  The MATERIALIZE PROJECTION query stores the name of the projection to materialize.
      *  The CLEAR PROJECTION query stores the name of the projection to clear.
      */
-    ASTPtr projection;
+    IAST * projection = nullptr;
 
-    /** Used in DROP PARTITION, ATTACH PARTITION FROM, UPDATE, DELETE queries.
+    IAST * statistics_decl = nullptr;
+
+    /** Used in DROP PARTITION, ATTACH PARTITION FROM, FORGET PARTITION, UPDATE, DELETE queries.
      *  The value or ID of the partition is stored here.
      */
-    ASTPtr partition;
+    IAST * partition = nullptr;
 
     /// For DELETE/UPDATE WHERE: the predicate that filters the rows to delete/update.
-    ASTPtr predicate;
+    IAST * predicate = nullptr;
 
     /// A list of expressions of the form `column = expr` for the UPDATE command.
-    ASTPtr update_assignments;
+    IAST * update_assignments = nullptr;
 
     /// A column comment
-    ASTPtr comment;
+    IAST * comment = nullptr;
 
     /// For MODIFY TTL query
-    ASTPtr ttl;
+    IAST * ttl = nullptr;
 
     /// FOR MODIFY_SETTING
-    ASTPtr settings_changes;
+    IAST * settings_changes = nullptr;
 
     /// FOR RESET_SETTING
-    ASTPtr settings_resets;
+    IAST * settings_resets = nullptr;
 
     /// For MODIFY_QUERY
-    ASTPtr select;
+    IAST * select = nullptr;
 
-    /** In ALTER CHANNEL, ADD, DROP, SUSPEND, RESUME, REFRESH, MODIFY queries, the list of live views is stored here
-     */
-    ASTPtr values;
+    /// For MODIFY_SQL_SECURITY
+    IAST * sql_security = nullptr;
+
+    /// Target column name
+    IAST * rename_to = nullptr;
+
+    /// For MODIFY REFRESH
+    ASTPtr refresh;
 
     bool detach = false;        /// true for DETACH PARTITION
 
@@ -166,6 +180,8 @@ public:
     bool clear_column = false;  /// for CLEAR COLUMN (do not drop column from metadata)
 
     bool clear_index = false;   /// for CLEAR INDEX (do not drop index from metadata)
+
+    bool clear_statistics = false;   /// for CLEAR STATISTICS (do not drop statistics from metadata)
 
     bool clear_projection = false;   /// for CLEAR PROJECTION (do not drop projection from metadata)
 
@@ -198,9 +214,6 @@ public:
     String to_database;
     String to_table;
 
-    /// Target column name
-    ASTPtr rename_to;
-
     /// Which property user want to remove
     String remove_property;
 
@@ -208,18 +221,25 @@ public:
 
     ASTPtr clone() const override;
 
+    // This function is only meant to be called during application startup
+    // For reasons see https://github.com/ClickHouse/ClickHouse/pull/59532
+    static void setFormatAlterCommandsWithParentheses(bool value) { format_alter_commands_with_parentheses = value; }
+
 protected:
     void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+
+    void forEachPointerToChild(std::function<void(void**)> f) override;
+
+    static inline bool format_alter_commands_with_parentheses = false;
 };
 
 class ASTAlterQuery : public ASTQueryWithTableAndOutput, public ASTQueryWithOnCluster
 {
 public:
-    enum class AlterObjectType
+    enum class AlterObjectType : uint8_t
     {
         TABLE,
         DATABASE,
-        LIVE_VIEW,
         UNKNOWN,
     };
 
@@ -239,6 +259,8 @@ public:
 
     bool isMovePartitionToDiskOrVolumeAlter() const;
 
+    bool isCommentAlter() const;
+
     String getID(char) const override;
 
     ASTPtr clone() const override;
@@ -255,10 +277,7 @@ protected:
 
     bool isOneCommandTypeOnly(const ASTAlterCommand::Type & type) const;
 
-    void forEachPointerToChild(std::function<void(void**)> f) override
-    {
-        f(reinterpret_cast<void **>(&command_list));
-    }
+    void forEachPointerToChild(std::function<void(void**)> f) override;
 };
 
 }

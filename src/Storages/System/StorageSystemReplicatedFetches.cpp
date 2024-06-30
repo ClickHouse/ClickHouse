@@ -8,29 +8,33 @@
 namespace DB
 {
 
-NamesAndTypesList StorageSystemReplicatedFetches::getNamesAndTypes()
+ColumnsDescription StorageSystemReplicatedFetches::getColumnsDescription()
 {
-    return {
-        {"database", std::make_shared<DataTypeString>()},
-        {"table", std::make_shared<DataTypeString>()},
-        {"elapsed", std::make_shared<DataTypeFloat64>()},
-        {"progress", std::make_shared<DataTypeFloat64>()},
-        {"result_part_name", std::make_shared<DataTypeString>()},
-        {"result_part_path", std::make_shared<DataTypeString>()},
-        {"partition_id", std::make_shared<DataTypeString>()},
-        {"total_size_bytes_compressed", std::make_shared<DataTypeUInt64>()},
-        {"bytes_read_compressed", std::make_shared<DataTypeUInt64>()},
-        {"source_replica_path", std::make_shared<DataTypeString>()},
-        {"source_replica_hostname", std::make_shared<DataTypeString>()},
-        {"source_replica_port", std::make_shared<DataTypeUInt16>()},
-        {"interserver_scheme", std::make_shared<DataTypeString>()},
-        {"URI", std::make_shared<DataTypeString>()},
-        {"to_detached", std::make_shared<DataTypeUInt8>()},
-        {"thread_id", std::make_shared<DataTypeUInt64>()},
+    return ColumnsDescription
+    {
+        {"database", std::make_shared<DataTypeString>(), "Name of the database."},
+        {"table", std::make_shared<DataTypeString>(), "Name of the table."},
+        {"elapsed", std::make_shared<DataTypeFloat64>(), "The time elapsed (in seconds) since showing currently running background fetches started."},
+        {"progress", std::make_shared<DataTypeFloat64>(), "The percentage of completed work from 0 to 1."},
+        {"result_part_name", std::make_shared<DataTypeString>(),
+            "The name of the part that will be formed as the result of showing currently running background fetches."},
+        {"result_part_path", std::make_shared<DataTypeString>(),
+            "Absolute path to the part that will be formed as the result of showing currently running background fetches."},
+        {"partition_id", std::make_shared<DataTypeString>(), "ID of the partition."},
+        {"total_size_bytes_compressed", std::make_shared<DataTypeUInt64>(), "The total size (in bytes) of the compressed data in the result part."},
+        {"bytes_read_compressed", std::make_shared<DataTypeUInt64>(), "The number of compressed bytes read from the result part."},
+        {"source_replica_path", std::make_shared<DataTypeString>(), "Absolute path to the source replica."},
+        {"source_replica_hostname", std::make_shared<DataTypeString>(), "Hostname of the source replica."},
+        {"source_replica_port", std::make_shared<DataTypeUInt16>(), "Port number of the source replica."},
+        {"interserver_scheme", std::make_shared<DataTypeString>(), "Name of the interserver scheme."},
+        {"URI", std::make_shared<DataTypeString>(), "Uniform resource identifier."},
+        {"to_detached", std::make_shared<DataTypeUInt8>(),
+            "The flag indicates whether the currently running background fetch is being performed using the TO DETACHED expression."},
+        {"thread_id", std::make_shared<DataTypeUInt64>(), "Thread identifier."},
     };
 }
 
-void StorageSystemReplicatedFetches::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
+void StorageSystemReplicatedFetches::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
     const auto access = context->getAccess();
     const bool check_access_for_tables = !access->isGranted(AccessType::SHOW_TABLES);

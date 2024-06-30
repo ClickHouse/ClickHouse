@@ -52,7 +52,7 @@ TEST(DiskTestHDFS, WriteReadHDFS)
     }
 
     {
-        DB::String result;
+        String result;
         auto in = disk.readFile(file_name, {}, 1024, 1024);
         readString(result, *in);
         EXPECT_EQ("Test write to file", result);

@@ -13,7 +13,7 @@ ${CLICKHOUSE_CLIENT} -n --query="CREATE TABLE sample_table (
 )
 ENGINE ReplicatedMergeTree('/clickhouse/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/02221_system_zookeeper_unrestricted_like', '1')
 ORDER BY tuple();
-DROP TABLE IF EXISTS sample_table;"
+DROP TABLE IF EXISTS sample_table SYNC;"
 
 
 ${CLICKHOUSE_CLIENT} -n --query "CREATE TABLE sample_table_2 (

@@ -15,6 +15,8 @@ StorageSystemOne::StorageSystemOne(const StorageID & table_id_)
     : IStorage(table_id_)
 {
     StorageInMemoryMetadata storage_metadata;
+    /// This column doesn't have a comment, because otherwise it will be added to all tables created via:
+    /// CREATE TABLE test (dummy UInt8) ENGINE = Distributed(`default`, `system.one`)
     storage_metadata.setColumns(ColumnsDescription({{"dummy", std::make_shared<DataTypeUInt8>()}}));
     setInMemoryMetadata(storage_metadata);
 }

@@ -13,6 +13,7 @@ private:
 
     static inline const std::unordered_map<LogsLevel, Poco::Message::Priority> LEVELS =
     {
+        {LogsLevel::test, Poco::Message::Priority::PRIO_TEST},
         {LogsLevel::trace, Poco::Message::Priority::PRIO_TRACE},
         {LogsLevel::debug, Poco::Message::Priority::PRIO_DEBUG},
         {LogsLevel::information, Poco::Message::PRIO_INFORMATION},
@@ -25,7 +26,7 @@ private:
 
 public:
     LoggerWrapper(const std::string & name, LogsLevel level_)
-        : log(&Poco::Logger::get(name))
+        : log(getLogger(name))
         , level(level_)
     {
         log->setLevel(static_cast<int>(LEVELS.at(level)));
@@ -56,7 +57,7 @@ public:
     }
 
 private:
-    Poco::Logger * log;
+    LoggerPtr log;
     std::atomic<LogsLevel> level;
 };
 

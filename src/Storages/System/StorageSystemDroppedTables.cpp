@@ -14,22 +14,22 @@
 namespace DB
 {
 
-NamesAndTypesList StorageSystemDroppedTables::getNamesAndTypes()
+ColumnsDescription StorageSystemDroppedTables::getColumnsDescription()
 {
-    NamesAndTypesList names_and_types{
-        {"index", std::make_shared<DataTypeUInt32>()},
-        {"database", std::make_shared<DataTypeString>()},
-        {"table", std::make_shared<DataTypeString>()},
-        {"uuid", std::make_shared<DataTypeUUID>()},
-        {"engine", std::make_shared<DataTypeString>()},
-        {"metadata_dropped_path", std::make_shared<DataTypeString>()},
-        {"table_dropped_time", std::make_shared<DataTypeDateTime>()},
+    return ColumnsDescription
+    {
+        {"index", std::make_shared<DataTypeUInt32>(), "Index in marked_dropped_tables queue."},
+        {"database", std::make_shared<DataTypeString>(), "Database name."},
+        {"table", std::make_shared<DataTypeString>(), "Table name."},
+        {"uuid", std::make_shared<DataTypeUUID>(), "Table UUID."},
+        {"engine", std::make_shared<DataTypeString>(), "Table engine name."},
+        {"metadata_dropped_path", std::make_shared<DataTypeString>(), "Path of table's metadata file in metadata_dropped directory."},
+        {"table_dropped_time", std::make_shared<DataTypeDateTime>(), "The time when the next attempt to remove table's data is scheduled on. Usually it's the table when the table was dropped plus `database_atomic_delay_before_drop_table_sec`."},
     };
-    return names_and_types;
 }
 
 
-void StorageSystemDroppedTables::fillData(MutableColumns & res_columns, ContextPtr, const SelectQueryInfo &) const
+void StorageSystemDroppedTables::fillData(MutableColumns & res_columns, ContextPtr, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
     auto tables_mark_dropped = DatabaseCatalog::instance().getTablesMarkedDropped();
 

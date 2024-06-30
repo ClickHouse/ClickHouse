@@ -52,33 +52,66 @@ public:
         std::optional<IConnections::ReplicaInfo> replica_info = {};
     };
 
+    /// Takes a connection pool for a node (not cluster)
+    RemoteQueryExecutor(
+        ConnectionPoolPtr pool,
+        const String & query_,
+        const Block & header_,
+        ContextPtr context_,
+        ThrottlerPtr throttler = nullptr,
+        const Scalars & scalars_ = Scalars(),
+        const Tables & external_tables_ = Tables(),
+        QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete,
+        std::optional<Extension> extension_ = std::nullopt);
+
     /// Takes already set connection.
     RemoteQueryExecutor(
         Connection & connection,
-        const String & query_, const Block & header_, ContextPtr context_,
-        ThrottlerPtr throttler_ = nullptr, const Scalars & scalars_ = Scalars(), const Tables & external_tables_ = Tables(),
-        QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete, std::optional<Extension> extension_ = std::nullopt);
+        const String & query_,
+        const Block & header_,
+        ContextPtr context_,
+        ThrottlerPtr throttler_ = nullptr,
+        const Scalars & scalars_ = Scalars(),
+        const Tables & external_tables_ = Tables(),
+        QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete,
+        std::optional<Extension> extension_ = std::nullopt);
 
     /// Takes already set connection.
     RemoteQueryExecutor(
         std::shared_ptr<Connection> connection,
-        const String & query_, const Block & header_, ContextPtr context_,
-        ThrottlerPtr throttler_ = nullptr, const Scalars & scalars_ = Scalars(), const Tables & external_tables_ = Tables(),
-        QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete, std::optional<Extension> extension_ = std::nullopt);
+        const String & query_,
+        const Block & header_,
+        ContextPtr context_,
+        ThrottlerPtr throttler_ = nullptr,
+        const Scalars & scalars_ = Scalars(),
+        const Tables & external_tables_ = Tables(),
+        QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete,
+        std::optional<Extension> extension_ = std::nullopt);
 
     /// Accepts several connections already taken from pool.
     RemoteQueryExecutor(
         std::vector<IConnectionPool::Entry> && connections_,
-        const String & query_, const Block & header_, ContextPtr context_,
-        const ThrottlerPtr & throttler = nullptr, const Scalars & scalars_ = Scalars(), const Tables & external_tables_ = Tables(),
-        QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete, std::optional<Extension> extension_ = std::nullopt);
+        const String & query_,
+        const Block & header_,
+        ContextPtr context_,
+        const ThrottlerPtr & throttler = nullptr,
+        const Scalars & scalars_ = Scalars(),
+        const Tables & external_tables_ = Tables(),
+        QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete,
+        std::optional<Extension> extension_ = std::nullopt);
 
     /// Takes a pool and gets one or several connections from it.
     RemoteQueryExecutor(
         const ConnectionPoolWithFailoverPtr & pool,
-        const String & query_, const Block & header_, ContextPtr context_,
-        const ThrottlerPtr & throttler = nullptr, const Scalars & scalars_ = Scalars(), const Tables & external_tables_ = Tables(),
-        QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete, std::optional<Extension> extension_ = std::nullopt);
+        const String & query_,
+        const Block & header_,
+        ContextPtr context_,
+        const ThrottlerPtr & throttler = nullptr,
+        const Scalars & scalars_ = Scalars(),
+        const Tables & external_tables_ = Tables(),
+        QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete,
+        std::optional<Extension> extension_ = std::nullopt,
+        GetPriorityForLoadBalancing::Func priority_func = {});
 
     ~RemoteQueryExecutor();
 
@@ -165,10 +198,10 @@ public:
     Block getExtremes() { return std::move(extremes); }
 
     /// Set callback for progress. It will be called on Progress packet.
-    void setProgressCallback(ProgressCallback callback) { progress_callback = std::move(callback); }
+    void setProgressCallback(ProgressCallback callback);
 
     /// Set callback for profile info. It will be called on ProfileInfo packet.
-    void setProfileInfoCallback(ProfileInfoCallback callback) { profile_info_callback = std::move(callback); }
+    void setProfileInfoCallback(ProfileInfoCallback callback);
 
     /// Set the query_id. For now, used by performance test to later find the query
     /// in the server query_log. Must be called before sending the query to the server.
@@ -179,7 +212,7 @@ public:
 
     void setMainTable(StorageID main_table_) { main_table = std::move(main_table_); }
 
-    void setLogger(Poco::Logger * logger) { log = logger; }
+    void setLogger(LoggerPtr logger) { log = logger; }
 
     const Block & getHeader() const { return header; }
 
@@ -191,9 +224,14 @@ public:
 
 private:
     RemoteQueryExecutor(
-        const String & query_, const Block & header_, ContextPtr context_,
-        const Scalars & scalars_, const Tables & external_tables_,
-        QueryProcessingStage::Enum stage_, std::optional<Extension> extension_);
+        const String & query_,
+        const Block & header_,
+        ContextPtr context_,
+        const Scalars & scalars_,
+        const Tables & external_tables_,
+        QueryProcessingStage::Enum stage_,
+        std::optional<Extension> extension_,
+        GetPriorityForLoadBalancing::Func priority_func = {});
 
     Block header;
     Block totals;
@@ -271,7 +309,9 @@ private:
     PoolMode pool_mode = PoolMode::GET_MANY;
     StorageID main_table = StorageID::createEmpty();
 
-    Poco::Logger * log = nullptr;
+    LoggerPtr log = nullptr;
+
+    GetPriorityForLoadBalancing::Func priority_func;
 
     /// Send all scalars to remote servers
     void sendScalars();

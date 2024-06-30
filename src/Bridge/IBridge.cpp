@@ -4,8 +4,9 @@
 #include <Poco/Net/NetException.h>
 #include <Poco/Util/HelpFormatter.h>
 
+#include <Common/ErrorHandlers.h>
 #include <Common/SensitiveDataMasker.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/logger_useful.h>
 #include <Formats/registerFormats.h>
 #include <IO/ReadHelpers.h>
@@ -208,6 +209,9 @@ int IBridge::main(const std::vector<std::string> & /*args*/)
 {
     if (is_help)
         return Application::EXIT_OK;
+
+    static ServerErrorHandler error_handler;
+    Poco::ErrorHandler::set(&error_handler);
 
     registerFormats();
     LOG_INFO(log, "Starting up {} on host: {}, port: {}", bridgeName(), hostname, port);

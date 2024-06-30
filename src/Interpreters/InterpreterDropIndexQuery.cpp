@@ -1,7 +1,9 @@
 #include <Access/ContextAccess.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterDropIndexQuery.h>
+#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Parsers/ASTDropIndexQuery.h>
 #include <Parsers/ASTIdentifier.h>
@@ -66,6 +68,15 @@ BlockIO InterpreterDropIndexQuery::execute()
     table->alter(alter_commands, current_context, alter_lock);
 
     return {};
+}
+
+void registerInterpreterDropIndexQuery(InterpreterFactory & factory)
+{
+    auto create_fn = [] (const InterpreterFactory::Arguments & args)
+    {
+        return std::make_unique<InterpreterDropIndexQuery>(args.query, args.context);
+    };
+    factory.registerInterpreter("InterpreterDropIndexQuery", create_fn);
 }
 
 }

@@ -4,6 +4,8 @@
 #include <fmt/core.h>
 #include <libnuraft/srv_config.hxx>
 
+#include <optional>
+
 namespace DB
 {
 // default- and copy-constructible version of nuraft::srv_config
@@ -55,7 +57,7 @@ using ClusterUpdateActions = std::vector<ClusterUpdateAction>;
 template <>
 struct fmt::formatter<DB::RaftServerConfig> : fmt::formatter<string_view>
 {
-    constexpr auto format(const DB::RaftServerConfig & server, format_context & ctx)
+    constexpr auto format(const DB::RaftServerConfig & server, format_context & ctx) const
     {
         return fmt::format_to(
             ctx.out(), "server.{}={};{};{}", server.id, server.endpoint, server.learner ? "learner" : "participant", server.priority);
@@ -65,7 +67,7 @@ struct fmt::formatter<DB::RaftServerConfig> : fmt::formatter<string_view>
 template <>
 struct fmt::formatter<DB::ClusterUpdateAction> : fmt::formatter<string_view>
 {
-    constexpr auto format(const DB::ClusterUpdateAction & action, format_context & ctx)
+    constexpr auto format(const DB::ClusterUpdateAction & action, format_context & ctx) const
     {
         if (const auto * add = std::get_if<DB::AddRaftServer>(&action))
             return fmt::format_to(ctx.out(), "(Add server {})", add->id);

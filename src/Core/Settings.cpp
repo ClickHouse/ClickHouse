@@ -15,6 +15,7 @@ namespace ErrorCodes
     extern const int THERE_IS_NO_PROFILE;
     extern const int NO_ELEMENTS_IN_CONFIG;
     extern const int UNKNOWN_ELEMENT_IN_CONFIG;
+    extern const int BAD_ARGUMENTS;
 }
 
 IMPLEMENT_SETTINGS_TRAITS(SettingsTraits, LIST_OF_SETTINGS)
@@ -90,7 +91,8 @@ void Settings::checkNoSettingNamesAtTopLevel(const Poco::Util::AbstractConfigura
     for (const auto & setting : settings.all())
     {
         const auto & name = setting.getName();
-        if (config.has(name) && !setting.isObsolete())
+        bool should_skip_check = name == "max_table_size_to_drop" || name == "max_partition_size_to_drop";
+        if (config.has(name) && !setting.isObsolete() && !should_skip_check)
         {
             throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "A setting '{}' appeared at top level in config {}."
                 " But it is user-level setting that should be located in users.xml inside <profiles> section for specific profile."
@@ -106,16 +108,18 @@ std::vector<String> Settings::getAllRegisteredNames() const
 {
     std::vector<String> all_settings;
     for (const auto & setting_field : all())
-    {
         all_settings.push_back(setting_field.getName());
-    }
     return all_settings;
 }
 
 void Settings::set(std::string_view name, const Field & value)
 {
     if (name == "compatibility")
+    {
+        if (value.getType() != Field::Types::Which::String)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected type of value for setting 'compatibility'. Expected String, got {}", value.getTypeName());
         applyCompatibilitySetting(value.get<String>());
+    }
     /// If we change setting that was changed by compatibility setting before
     /// we should remove it from settings_changed_by_compatibility_setting,
     /// otherwise the next time we will change compatibility setting

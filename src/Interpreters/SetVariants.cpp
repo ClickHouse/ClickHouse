@@ -41,8 +41,6 @@ size_t SetVariantsTemplate<Variant>::getTotalRowCount() const
         APPLY_FOR_SET_VARIANTS(M)
     #undef M
     }
-
-    UNREACHABLE();
 }
 
 template <typename Variant>
@@ -57,8 +55,6 @@ size_t SetVariantsTemplate<Variant>::getTotalByteCount() const
         APPLY_FOR_SET_VARIANTS(M)
     #undef M
     }
-
-    UNREACHABLE();
 }
 
 template <typename Variant>
@@ -74,7 +70,7 @@ typename SetVariantsTemplate<Variant>::Type SetVariantsTemplate<Variant>::choose
 
     for (const auto & col : key_columns)
     {
-        if (const auto * nullable = checkAndGetColumn<ColumnNullable>(*col))
+        if (const auto * nullable = checkAndGetColumn<ColumnNullable>(&*col))
         {
             nested_key_columns.push_back(&nullable->getNestedColumn());
             has_nullable_key = true;
@@ -146,7 +142,7 @@ typename SetVariantsTemplate<Variant>::Type SetVariantsTemplate<Variant>::choose
             return Type::keys128;
         if (size_of_field == 32)
             return Type::keys256;
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: numeric column has sizeOfField not in 1, 2, 4, 8, 16, 32.");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Numeric column has sizeOfField not in 1, 2, 4, 8, 16, 32.");
     }
 
     /// If the keys fit in N bits, we will use a hash table for N-bit-packed keys

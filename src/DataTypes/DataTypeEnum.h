@@ -54,6 +54,7 @@ public:
     const char * getFamilyName() const override;
 
     TypeIndex getTypeId() const override { return type_id; }
+    TypeIndex getColumnType() const override { return sizeof(FieldType) == 1 ? TypeIndex::Int8 : TypeIndex::Int16; }
 
     FieldType readValue(ReadBuffer & istr) const
     {

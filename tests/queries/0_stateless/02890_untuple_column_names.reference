@@ -5,12 +5,12 @@ tupleElement(CAST(tuple(1), 'Tuple(a Int)'), 1):      1
 tupleElement(CAST(tuple('s'), 'Tuple(a String)'), 1): s
 Row 1:
 ──────
-tupleElement(CAST(tuple(1), 'Tuple(a Int)'), 'a'):      1
-tupleElement(CAST(tuple('s'), 'Tuple(a String)'), 'a'): s
+tupleElement(CAST((1), 'Tuple(a Int)'), 'a'):      1
+tupleElement(CAST(('s'), 'Tuple(a String)'), 'a'): s
 Row 1:
 ──────
-tupleElement(CAST(tuple(1), 'Tuple(a Int)'), 'a'): 1
-tupleElement(CAST(tuple(1), 'Tuple(a Int)'), 'a'): 1
+tupleElement(CAST((1), 'Tuple(a Int)'), 'a'): 1
+tupleElement(CAST((1), 'Tuple(a Int)'), 'a'): 1
 -- tuple element alias + untuple() alias
 Row 1:
 ──────
@@ -44,12 +44,12 @@ tupleElement(CAST(tuple(1), 'Tuple(Int)'), 1):      1
 tupleElement(CAST(tuple('s'), 'Tuple(String)'), 1): s
 Row 1:
 ──────
-tupleElement(CAST(tuple(1), 'Tuple(Int)'), '1'):      1
-tupleElement(CAST(tuple('s'), 'Tuple(String)'), '1'): s
+tupleElement(CAST((1), 'Tuple(Int)'), '1'):      1
+tupleElement(CAST(('s'), 'Tuple(String)'), '1'): s
 Row 1:
 ──────
-tupleElement(CAST(tuple(1), 'Tuple(Int)'), '1'): 1
-tupleElement(CAST(tuple(1), 'Tuple(Int)'), '1'): 1
+tupleElement(CAST((1), 'Tuple(Int)'), '1'): 1
+tupleElement(CAST((1), 'Tuple(Int)'), '1'): 1
 -- tuple() loses the column names (would be good to fix, see #36773)
 Row 1:
 ──────

@@ -1,4 +1,3 @@
-#include <TableFunctions/TableFunctionExecutable.h>
 
 #include <Common/Exception.h>
 #include <TableFunctions/TableFunctionFactory.h>
@@ -12,9 +11,7 @@
 #include <Parsers/parseQuery.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/StorageExecutable.h>
-#include <DataTypes/DataTypeFactory.h>
 #include <Interpreters/evaluateConstantExpression.h>
-#include <Interpreters/interpretSubquery.h>
 #include <boost/algorithm/string.hpp>
 #include "registerTableFunctions.h"
 
@@ -30,18 +27,56 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
+namespace
+{
+
+/* executable(script_name_optional_arguments, format, structure, input_query) - creates a temporary storage from executable file
+ *
+ *
+ * The file must be in the clickhouse data directory.
+ * The relative path begins with the clickhouse data directory.
+ */
+class TableFunctionExecutable : public ITableFunction
+{
+public:
+    static constexpr auto name = "executable";
+
+    std::string getName() const override { return name; }
+
+    bool hasStaticStructure() const override { return true; }
+
+private:
+    StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const override;
+
+    const char * getStorageTypeName() const override { return "Executable"; }
+
+    ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
+
+    std::vector<size_t> skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr context) const override;
+
+    void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
+
+    String script_name;
+    std::vector<String> arguments;
+    String format;
+    String structure;
+    std::vector<ASTPtr> input_queries;
+    ASTPtr settings_query = nullptr;
+};
+
+
 std::vector<size_t> TableFunctionExecutable::skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr) const
 {
     const auto & table_function_node = query_node_table_function->as<TableFunctionNode &>();
     const auto & table_function_node_arguments = table_function_node.getArguments().getNodes();
     size_t table_function_node_arguments_size = table_function_node_arguments.size();
 
-    if (table_function_node_arguments_size <= 3)
+    if (table_function_node_arguments_size <= 2)
         return {};
 
     std::vector<size_t> result_indexes;
-    result_indexes.reserve(table_function_node_arguments_size - 3);
-    for (size_t i = 3; i < table_function_node_arguments_size; ++i)
+    result_indexes.reserve(table_function_node_arguments_size - 2);
+    for (size_t i = 2; i < table_function_node_arguments_size; ++i)
         result_indexes.push_back(i);
 
     return result_indexes;
@@ -138,6 +173,8 @@ StoragePtr TableFunctionExecutable::executeImpl(const ASTPtr & /*ast_function*/,
     auto storage = std::make_shared<StorageExecutable>(storage_id, format, settings, input_queries, getActualTableStructure(context, is_insert_query), ConstraintsDescription{});
     storage->startup();
     return storage;
+}
+
 }
 
 void registerTableFunctionExecutable(TableFunctionFactory & factory)

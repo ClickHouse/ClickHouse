@@ -1,0 +1,11 @@
+<test>
+    <create_query>CREATE TABLE index_test (z UInt32, INDEX i_x (mortonDecode(2, z).1) TYPE minmax, INDEX i_y (mortonDecode(2, z).2) TYPE minmax) ENGINE = MergeTree ORDER BY z</create_query>
+
+    <fill_query>INSERT INTO index_test SELECT number * 10 FROM numbers_mt(toUInt64(0x100000000 / 10)) SETTINGS max_insert_threads=8</fill_query>
+
+    <query><![CDATA[
+    SELECT count() FROM index_test WHERE mortonDecode(2, z).1 >= 20000 AND mortonDecode(2, z).1 <= 20100 AND mortonDecode(2, z).2 >= 10000 AND mortonDecode(2, z).2 <= 10100
+    ]]></query>
+
+    <drop_query>DROP TABLE IF EXISTS index_test</drop_query>
+</test>

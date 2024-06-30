@@ -283,7 +283,7 @@ struct StringComparisonImpl
         size_t size = a_data.size();
 
         for (size_t i = 0, j = 0; i < size; i += 16, ++j)
-            c[j] = Op::apply(memcmp16(&a_data[i], &b_data[0]), 0);
+            c[j] = Op::apply(memcmp16(&a_data[i], &b_data[0]), 0); /// NOLINT(readability-container-data-pointer)
     }
 
     static void NO_INLINE fixed_string_vector_fixed_string_vector( /// NOLINT
@@ -643,13 +643,12 @@ class FunctionComparison : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionComparison>(context); }
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionComparison>(decimalCheckComparisonOverflow(context)); }
 
-    explicit FunctionComparison(ContextPtr context_)
-        : context(context_), check_decimal_overflow(decimalCheckComparisonOverflow(context)) {}
+    explicit FunctionComparison(bool check_decimal_overflow_)
+        : check_decimal_overflow(check_decimal_overflow_) {}
 
 private:
-    ContextPtr context;
     bool check_decimal_overflow = true;
 
     template <typename T0, typename T1>
@@ -812,7 +811,7 @@ private:
                 c0_const_size = c0_const_fixed_string->getN();
             }
             else
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Logical error: ColumnConst contains not String nor FixedString column");
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "ColumnConst contains not String nor FixedString column");
         }
 
         if (c1_const)
@@ -831,7 +830,7 @@ private:
                 c1_const_size = c1_const_fixed_string->getN();
             }
             else
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Logical error: ColumnConst contains not String nor FixedString column");
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "ColumnConst contains not String nor FixedString column");
         }
 
         using StringImpl = StringComparisonImpl<Op<int, int>>;
@@ -1115,7 +1114,7 @@ private:
         /// This is a paranoid check to protect from a broken query analysis.
         if (c0->isNullable() != c1->isNullable())
             throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Logical error: columns are assumed to be of identical types, but they are different in Nullable");
+                "Columns are assumed to be of identical types, but they are different in Nullable");
 
         if (c0_const && c1_const)
         {
@@ -1177,8 +1176,7 @@ public:
             /// You can compare the date, datetime, or datatime64 and an enumeration with a constant string.
             || ((left.isDate() || left.isDate32() || left.isDateTime() || left.isDateTime64()) && (right.isDate() || right.isDate32() || right.isDateTime() || right.isDateTime64()) && left.idx == right.idx) /// only date vs date, or datetime vs datetime
             || (left.isUUID() && right.isUUID())
-            || (left.isIPv4() && right.isIPv4())
-            || (left.isIPv6() && right.isIPv6())
+            || ((left.isIPv4() || left.isIPv6()) && (right.isIPv4() || right.isIPv6()))
             || (left.isEnum() && right.isEnum() && arguments[0]->getName() == arguments[1]->getName()) /// only equivalent enum type values can be compared against
             || (left_tuple && right_tuple && left_tuple->getElements().size() == right_tuple->getElements().size())
             || (arguments[0]->equals(*arguments[1]))))
@@ -1190,7 +1188,7 @@ public:
 
         if (left_tuple && right_tuple)
         {
-            auto func = FunctionToOverloadResolverAdaptor(FunctionComparison<Op, Name>::create(context));
+            auto func = FunctionToOverloadResolverAdaptor(std::make_shared<FunctionComparison<Op, Name>>(check_decimal_overflow));
 
             bool has_nullable = false;
             bool has_null = false;
@@ -1267,6 +1265,8 @@ public:
         const bool left_is_float = which_left.isFloat();
         const bool right_is_float = which_right.isFloat();
 
+        const bool left_is_ipv4 = which_left.isIPv4();
+        const bool right_is_ipv4 = which_right.isIPv4();
         const bool left_is_ipv6 = which_left.isIPv6();
         const bool right_is_ipv6 = which_right.isIPv6();
         const bool left_is_fixed_string = which_left.isFixedString();
@@ -1324,10 +1324,13 @@ public:
         {
             return res;
         }
-        else if (((left_is_ipv6 && right_is_fixed_string) || (right_is_ipv6 && left_is_fixed_string)) && fixed_string_size == IPV6_BINARY_LENGTH)
+        else if (
+            (((left_is_ipv6 && right_is_fixed_string) || (right_is_ipv6 && left_is_fixed_string)) && fixed_string_size == IPV6_BINARY_LENGTH)
+            || ((left_is_ipv4 || left_is_ipv6) && (right_is_ipv4 || right_is_ipv6))
+        )
         {
-            /// Special treatment for FixedString(16) as a binary representation of IPv6 -
-            /// CAST is customized for this case
+            /// Special treatment for FixedString(16) as a binary representation of IPv6 & for comparing IPv4 & IPv6 values -
+            /// CAST is customized for this cases
             ColumnPtr left_column = left_is_ipv6 ?
                 col_with_type_and_name_left.column : castColumn(col_with_type_and_name_left, right_type);
             ColumnPtr right_column = right_is_ipv6 ?

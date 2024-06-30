@@ -74,6 +74,7 @@ ClickHouse Inc does **not** maintain the libraries listed below and hasn’t don
 ### Elixir
  - [clickhousex](https://github.com/appodeal/clickhousex/)
  - [pillar](https://github.com/sofakingworld/pillar)
+ - [ecto_ch](https://github.com/plausible/ecto_ch)
 ### Nim
  - [nim-clickhouse](https://github.com/leonardoce/nim-clickhouse)
 ### Haskell

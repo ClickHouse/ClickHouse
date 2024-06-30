@@ -280,9 +280,6 @@ GRANT INSERT(x,y) ON db.table TO john
         -   `ALTER MOVE PARTITION`. 级别: `TABLE`. 别名: `ALTER MOVE PART`, `MOVE PARTITION`, `MOVE PART`
         -   `ALTER FETCH PARTITION`. 级别: `TABLE`. 别名: `FETCH PARTITION`
         -   `ALTER FREEZE PARTITION`. 级别: `TABLE`. 别名: `FREEZE PARTITION`
-    -   `ALTER VIEW` 级别: `GROUP`
-        -   `ALTER VIEW REFRESH`. 级别: `VIEW`. 别名: `ALTER LIVE VIEW REFRESH`, `REFRESH VIEW`
-        -   `ALTER VIEW MODIFY QUERY`. 级别: `VIEW`. 别名: `ALTER TABLE MODIFY QUERY`
 
 如何对待该层级的示例：
 -   `ALTER` 权限包含所有其它 `ALTER *` 的权限

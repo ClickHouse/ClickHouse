@@ -12,10 +12,15 @@ from typing import Literal
 import docker
 import pymysql.connections
 import pytest
-from helpers.cluster import ClickHouseCluster, get_docker_compose_path, run_and_check
+from helpers.cluster import (
+    ClickHouseCluster,
+    get_docker_compose_path,
+    run_and_check,
+)
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 DOCKER_COMPOSE_PATH = get_docker_compose_path()
+
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
@@ -799,7 +804,7 @@ def test_java_client_text(started_cluster, java_container):
         demux=True,
     )
 
-    with open(os.path.join(SCRIPT_DIR, "java_client_text.reference")) as fp:
+    with open(os.path.join(SCRIPT_DIR, "java_client.reference")) as fp:
         reference = fp.read()
 
     assert stdout.decode() == reference
@@ -813,7 +818,7 @@ def test_java_client_binary(started_cluster, java_container):
         demux=True,
     )
 
-    with open(os.path.join(SCRIPT_DIR, "java_client_binary.reference")) as fp:
+    with open(os.path.join(SCRIPT_DIR, "java_client.reference")) as fp:
         reference = fp.read()
 
     assert stdout.decode() == reference

@@ -1,8 +1,13 @@
 #include <Functions/FunctionFactory.h>
-#include <Functions/FunctionsStringArray.h>
+#include <Functions/FunctionTokens.h>
 
 namespace DB
 {
+
+namespace
+{
+
+using Pos = const char *;
 
 class URLHierarchyImpl
 {
@@ -13,15 +18,16 @@ private:
 
 public:
     static constexpr auto name = "URLHierarchy";
-    static String getName() { return name; }
 
     static bool isVariadic() { return false; }
     static size_t getNumberOfArguments() { return 1; }
 
+    static ColumnNumbers getArgumentsThatAreAlwaysConstant() { return {}; }
+
     static void checkArguments(const IFunction & func, const ColumnsWithTypeAndName & arguments)
     {
         FunctionArgumentDescriptors mandatory_args{
-            {"URL", &isString<IDataType>, nullptr, "String"},
+            {"URL", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"},
         };
 
         validateFunctionArgumentTypes(func, arguments, mandatory_args);
@@ -57,13 +63,15 @@ public:
              * (http, file - fit, mailto, magnet - do not fit), and after two slashes still at least something is there
              * For the rest, simply return the full URL as the only element of the hierarchy.
              */
-            if (pos == begin || pos == end || !(*pos++ == ':' && pos < end && *pos++ == '/' && pos < end && *pos++ == '/' && pos < end))
+            if (pos == begin || pos == end || !(pos + 3 < end && pos[0] == ':' && pos[1] == '/' && pos[2] == '/'))
             {
                 pos = end;
                 token_begin = begin;
                 token_end = end;
                 return true;
             }
+            else
+                pos += 3;
 
             /// The domain for simplicity is everything that after the protocol and two slashes, until the next slash or `?` or `#`
             while (pos < end && !(*pos == '/' || *pos == '?' || *pos == '#'))
@@ -97,8 +105,9 @@ public:
 };
 
 
-struct NameURLHierarchy { static constexpr auto name = "URLHierarchy"; };
 using FunctionURLHierarchy = FunctionTokens<URLHierarchyImpl>;
+
+}
 
 REGISTER_FUNCTION(URLHierarchy)
 {

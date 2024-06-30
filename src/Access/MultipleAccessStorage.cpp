@@ -34,11 +34,23 @@ MultipleAccessStorage::MultipleAccessStorage(const String & storage_name_)
 
 MultipleAccessStorage::~MultipleAccessStorage()
 {
-    /// It's better to remove the storages in the reverse order because they could depend on each other somehow.
+    try
+    {
+        MultipleAccessStorage::shutdown();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+}
+
+void MultipleAccessStorage::shutdown()
+{
+    /// It's better to shutdown the storages in the reverse order because they could depend on each other somehow.
     const auto storages = getStoragesPtr();
     for (const auto & storage : *storages | boost::adaptors::reversed)
     {
-        removeStorage(storage);
+        storage->shutdown();
     }
 }
 
@@ -70,6 +82,16 @@ void MultipleAccessStorage::removeStorage(const StoragePtr & storage_to_remove)
     new_storages->erase(new_storages->begin() + index);
     nested_storages = new_storages;
     ids_cache.clear();
+}
+
+void MultipleAccessStorage::removeAllStorages()
+{
+    /// It's better to remove the storages in the reverse order because they could depend on each other somehow.
+    const auto storages = getStoragesPtr();
+    for (const auto & storage : *storages | boost::adaptors::reversed)
+    {
+        removeStorage(storage);
+    }
 }
 
 std::vector<StoragePtr> MultipleAccessStorage::getStorages()
@@ -179,7 +201,7 @@ ConstStoragePtr MultipleAccessStorage::getStorage(const UUID & id) const
     return const_cast<MultipleAccessStorage *>(this)->getStorage(id);
 }
 
-StoragePtr MultipleAccessStorage::findStorageByName(const DB::String & storage_name)
+StoragePtr MultipleAccessStorage::findStorageByName(const String & storage_name)
 {
     auto storages = getStoragesInternal();
     for (const auto & storage : *storages)
@@ -192,13 +214,13 @@ StoragePtr MultipleAccessStorage::findStorageByName(const DB::String & storage_n
 }
 
 
-ConstStoragePtr MultipleAccessStorage::findStorageByName(const DB::String & storage_name) const
+ConstStoragePtr MultipleAccessStorage::findStorageByName(const String & storage_name) const
 {
     return const_cast<MultipleAccessStorage *>(this)->findStorageByName(storage_name);
 }
 
 
-StoragePtr MultipleAccessStorage::getStorageByName(const DB::String & storage_name)
+StoragePtr MultipleAccessStorage::getStorageByName(const String & storage_name)
 {
     auto storage = findStorageByName(storage_name);
     if (storage)
@@ -208,12 +230,12 @@ StoragePtr MultipleAccessStorage::getStorageByName(const DB::String & storage_na
 }
 
 
-ConstStoragePtr MultipleAccessStorage::getStorageByName(const DB::String & storage_name) const
+ConstStoragePtr MultipleAccessStorage::getStorageByName(const String & storage_name) const
 {
     return const_cast<MultipleAccessStorage *>(this)->getStorageByName(storage_name);
 }
 
-StoragePtr MultipleAccessStorage::findExcludingStorage(AccessEntityType type, const DB::String & name, DB::MultipleAccessStorage::StoragePtr exclude) const
+StoragePtr MultipleAccessStorage::findExcludingStorage(AccessEntityType type, const String & name, DB::MultipleAccessStorage::StoragePtr exclude) const
 {
     auto storages = getStoragesInternal();
     for (const auto & storage : *storages)
@@ -238,7 +260,7 @@ void MultipleAccessStorage::moveAccessEntities(const std::vector<UUID> & ids, co
 
     try
     {
-        source_storage->remove(ids);
+        source_storage->remove(ids); // NOLINT
         need_rollback = true;
         destination_storage->insert(to_move, ids);
     }

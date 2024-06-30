@@ -723,7 +723,7 @@ SOURCE(REDIS(
         <password>qwerty123</password>
         <keyspase>database_name</keyspase>
         <column_family>table_name</column_family>
-        <allow_filering>1</allow_filering>
+        <allow_filtering>1</allow_filtering>
         <partition_key_prefix>1</partition_key_prefix>
         <consistency>One</consistency>
         <where>"SomeColumn" = 42</where>
@@ -741,7 +741,7 @@ SOURCE(REDIS(
 -   `password` – пароль для соединения с Cassandra.
 -   `keyspace` – имя keyspace (база данных).
 -   `column_family` – имя семейства столбцов (таблица).
--   `allow_filering` – флаг, разрешающий или не разрешающий потенциально дорогостоящие условия на кластеризации ключевых столбцов. Значение по умолчанию: 1.
+-   `allow_filtering` – флаг, разрешающий или не разрешающий потенциально дорогостоящие условия на кластеризации ключевых столбцов. Значение по умолчанию: 1.
 -   `partition_key_prefix` – количество партиций ключевых столбцов в первичном ключе таблицы Cassandra.
 Необходимо для составления ключей словаря. Порядок ключевых столбцов в определении словаря должен быть таким же, как в Cassandra.
 Значение по умолчанию: 1 (первый ключевой столбец - это ключ партицирования, остальные ключевые столбцы - ключи кластеризации).

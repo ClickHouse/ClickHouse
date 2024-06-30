@@ -56,7 +56,7 @@ uint8_t CompressionCodecDelta::getMethodByte() const
 
 void CompressionCodecDelta::updateHash(SipHash & hash) const
 {
-    getCodecDesc()->updateTreeHash(hash);
+    getCodecDesc()->updateTreeHash(hash, /*ignore_aliases=*/ true);
 }
 
 namespace
@@ -66,7 +66,7 @@ template <typename T>
 void compressDataForType(const char * source, UInt32 source_size, char * dest)
 {
     if (source_size % sizeof(T) != 0)
-        throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot delta compress, data size {} is not aligned to {}", source_size, sizeof(T));
+        throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot compress with Delta codec, data size {} is not aligned to {}", source_size, sizeof(T));
 
     T prev_src = 0;
     const char * const source_end = source + source_size;
@@ -87,7 +87,7 @@ void decompressDataForType(const char * source, UInt32 source_size, char * dest,
     const char * const output_end = dest + output_size;
 
     if (source_size % sizeof(T) != 0)
-        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot delta decompress, data size {} is not aligned to {}", source_size, sizeof(T));
+        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress Delta-encoded data, data size {} is not aligned to {}", source_size, sizeof(T));
 
     T accumulator{};
     const char * const source_end = source + source_size;
@@ -95,7 +95,7 @@ void decompressDataForType(const char * source, UInt32 source_size, char * dest,
     {
         accumulator += unalignedLoadLittleEndian<T>(source);
         if (dest + sizeof(accumulator) > output_end) [[unlikely]]
-            throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress the data");
+            throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress delta-encoded data");
         unalignedStoreLittleEndian<T>(dest, accumulator);
 
         source += sizeof(T);
@@ -133,7 +133,7 @@ UInt32 CompressionCodecDelta::doCompressData(const char * source, UInt32 source_
 void CompressionCodecDelta::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const
 {
     if (source_size < 2)
-        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress. File has wrong header");
+        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress delta-encoded data. File has wrong header");
 
     if (uncompressed_size == 0)
         return;
@@ -141,13 +141,13 @@ void CompressionCodecDelta::doDecompressData(const char * source, UInt32 source_
     UInt8 bytes_size = source[0];
 
     if (!(bytes_size == 1 || bytes_size == 2 || bytes_size == 4 || bytes_size == 8))
-        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress. File has wrong header");
+        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress delta-encoded data. File has wrong header");
 
     UInt8 bytes_to_skip = uncompressed_size % bytes_size;
     UInt32 output_size = uncompressed_size - bytes_to_skip;
 
     if (static_cast<UInt32>(2 + bytes_to_skip) > source_size)
-        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress. File has wrong header");
+        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress delta-encoded data. File has wrong header");
 
     memcpy(dest, &source[2], bytes_to_skip);
     UInt32 source_size_no_header = source_size - bytes_to_skip - 2;

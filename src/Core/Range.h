@@ -39,6 +39,13 @@ struct FieldRef : public Field
 };
 
 /** Range with open or closed ends; possibly unbounded.
+ */
+struct Range;
+/** A serious of range who can overlap or non-overlap.
+ */
+using Ranges = std::vector<Range>;
+
+/** Range with open or closed ends; possibly unbounded.
   */
 struct Range
 {
@@ -59,8 +66,8 @@ public:
     static Range createRightBounded(const FieldRef & right_point, bool right_included, bool with_null = false);
     static Range createLeftBounded(const FieldRef & left_point, bool left_included, bool with_null = false);
 
-    static ALWAYS_INLINE bool equals(const Field & lhs, const Field & rhs);
-    static ALWAYS_INLINE bool less(const Field & lhs, const Field & rhs);
+    static bool equals(const Field & lhs, const Field & rhs);
+    static bool less(const Field & lhs, const Field & rhs);
 
     /** Optimize the range. If it has an open boundary and the Field type is "loose"
       * - then convert it to closed, narrowing by one.
@@ -79,17 +86,47 @@ public:
     /// x is to the right
     bool leftThan(const FieldRef & x) const;
 
+    /// completely right than x
+    bool rightThan(const Range & x) const;
+    /// completely left than x
+    bool leftThan(const Range & x) const;
+
+    /// range like [1, 2]
+    bool fullBounded() const;
+    /// (-inf, +inf)
+    bool isInfinite() const;
+
+    bool isBlank() const;
+
     bool intersectsRange(const Range & r) const;
 
     bool containsRange(const Range & r) const;
 
+    /// Invert left and right
     void invert();
+
+    /// Invert the range.
+    /// Example:
+    ///     [1, 3] -> (-inf, 1), (3, +inf)
+    Ranges invertRange() const;
+
+    std::optional<Range> intersectWith(const Range & r) const;
+    std::optional<Range> unionWith(const Range & r) const;
+
+    /// If near by r, they can be combined to a continuous range.
+    /// TODO If field is integer, case like [2, 3], [4, 5] is excluded.
+    bool nearByWith(const Range & r) const;
 
     String toString() const;
 };
 
+Range intersect(const Range & a, const Range & b);
+
 /** Hyperrectangle is a product of ranges: each range across each coordinate.
   */
 using Hyperrectangle = std::vector<Range>;
+
+Hyperrectangle intersect(const Hyperrectangle & a, const Hyperrectangle & b);
+String toString(const Hyperrectangle & x);
 
 }

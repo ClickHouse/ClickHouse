@@ -1,8 +1,13 @@
 #include <Functions/FunctionFactory.h>
-#include <Functions/FunctionsStringArray.h>
+#include <Functions/FunctionTokens.h>
 
 namespace DB
 {
+
+namespace
+{
+
+using Pos = const char *;
 
 class ExtractURLParameterNamesImpl
 {
@@ -13,15 +18,16 @@ private:
 
 public:
     static constexpr auto name = "extractURLParameterNames";
-    static String getName() { return name; }
 
     static bool isVariadic() { return false; }
     static size_t getNumberOfArguments() { return 1; }
 
+    static ColumnNumbers getArgumentsThatAreAlwaysConstant() { return {}; }
+
     static void checkArguments(const IFunction & func, const ColumnsWithTypeAndName & arguments)
     {
         FunctionArgumentDescriptors mandatory_args{
-            {"URL", &isString<IDataType>, nullptr, "String"},
+            {"URL", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"},
         };
 
         validateFunctionArgumentTypes(func, arguments, mandatory_args);
@@ -80,8 +86,9 @@ public:
     }
 };
 
-struct NameExtractURLParameterNames { static constexpr auto name = "extractURLParameterNames"; };
 using FunctionExtractURLParameterNames = FunctionTokens<ExtractURLParameterNamesImpl>;
+
+}
 
 REGISTER_FUNCTION(ExtractURLParameterNames)
 {

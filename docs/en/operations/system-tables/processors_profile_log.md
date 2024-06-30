@@ -4,6 +4,7 @@ This table contains profiling on processors level (that you can find in [`EXPLAI
 
 Columns:
 
+- `hostname` ([LowCardinality(String)](../../sql-reference/data-types/string.md)) — Hostname of the server executing the query.
 - `event_date` ([Date](../../sql-reference/data-types/date.md)) — The date when the event happened.
 - `event_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — The date and time when the event happened.
 - `event_time_microseconds` ([DateTime64](../../sql-reference/data-types/datetime64.md)) — The date and time with microseconds precision when the event happened.

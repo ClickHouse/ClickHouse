@@ -1,9 +1,14 @@
 import pytest
-from helpers.cluster import ClickHouseCluster
+from helpers.cluster import ClickHouseCluster, is_arm
 
 from helpers.network import PartitionManager
 import threading
 import time
+
+# skip all tests in the module on ARM due to HDFS
+if is_arm():
+    pytestmark = pytest.mark.skip
+
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
@@ -150,7 +155,7 @@ def test_url_reconnect(started_cluster):
         def select():
             global result
             result = node1.query(
-                "select sum(cityHash64(id)) from url('http://hdfs1:50075/webhdfs/v1/storage_big?op=OPEN&namenoderpcaddress=hdfs1:9000&offset=0', 'TSV', 'id Int32') settings http_max_tries = 10, http_retry_max_backoff_ms=1000"
+                "select sum(cityHash64(id)) from url('http://hdfs1:50075/webhdfs/v1/storage_big?op=OPEN&namenoderpcaddress=hdfs1:9000&offset=0', 'TSV', 'id Int32') settings http_max_tries=10, http_retry_max_backoff_ms=1000, http_make_head_request=false"
             )
             assert int(result) == 6581218782194912115
 

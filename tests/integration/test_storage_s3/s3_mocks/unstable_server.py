@@ -4,6 +4,7 @@ import re
 import socket
 import struct
 import sys
+import time
 
 
 def gen_n_digit_number(n):
@@ -39,14 +40,14 @@ random.seed("Unstable server/1.0")
 
 # Generating some "random" data and append a line which contains sum of numbers in column 4.
 lines = (
-    b"".join((gen_line() for _ in range(500000)))
+    b"".join([gen_line() for _ in range(500000)])
     + f"0,0,0,{-sum_in_4_column}\n".encode()
 )
 
 
 class RequestHandler(http.server.BaseHTTPRequestHandler):
     def do_HEAD(self):
-        if self.path == "/root/test.csv":
+        if self.path == "/root/test.csv" or self.path == "/root/slow_send_test.csv":
             self.from_bytes = 0
             self.end_bytes = len(lines)
             self.size = self.end_bytes
@@ -101,9 +102,21 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
                     print("Dropping connection")
                     break
 
+        if self.path == "/root/slow_send_test.csv":
+            self.send_block_size = 81920
+
+            for c, i in enumerate(
+                range(self.from_bytes, self.end_bytes, self.send_block_size)
+            ):
+                self.wfile.write(
+                    lines[i : min(i + self.send_block_size, self.end_bytes)]
+                )
+                self.wfile.flush()
+                time.sleep(1)
+
         elif self.path == "/":
             self.wfile.write(b"OK")
 
 
-httpd = http.server.HTTPServer(("0.0.0.0", int(sys.argv[1])), RequestHandler)
+httpd = http.server.ThreadingHTTPServer(("0.0.0.0", int(sys.argv[1])), RequestHandler)
 httpd.serve_forever()

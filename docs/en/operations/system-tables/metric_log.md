@@ -6,6 +6,7 @@ slug: /en/operations/system-tables/metric_log
 Contains history of metrics values from tables `system.metrics` and `system.events`, periodically flushed to disk.
 
 Columns:
+- `hostname` ([LowCardinality(String)](../../sql-reference/data-types/string.md)) — Hostname of the server executing the query.
 - `event_date` ([Date](../../sql-reference/data-types/date.md)) — Event date.
 - `event_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — Event time.
 - `event_time_microseconds` ([DateTime64](../../sql-reference/data-types/datetime64.md)) — Event time with microseconds resolution.
@@ -19,6 +20,7 @@ SELECT * FROM system.metric_log LIMIT 1 FORMAT Vertical;
 ``` text
 Row 1:
 ──────
+hostname:                                                        clickhouse.eu-central1.internal
 event_date:                                                      2020-09-05
 event_time:                                                      2020-09-05 16:22:33
 event_time_microseconds:                                         2020-09-05 16:22:33.196807

@@ -1,28 +1,23 @@
 #!/usr/bin/env python3
 
+import json
+import time
 from base64 import b64decode
 from collections import namedtuple
-from typing import Any, Dict, List, Optional, Tuple
-from threading import Thread
 from queue import Queue
-import json
-import re
-import time
+from threading import Thread
+from typing import Any, Dict, List, Optional
 
-import requests  # type: ignore
-
-from lambda_shared.pr import CATEGORY_TO_LABEL, check_pr_description
+import requests
+from lambda_shared.pr import Labels
 from lambda_shared.token import get_cached_access_token
-
-
-NEED_RERUN_ON_EDITED = {
-    "PullRequestCI",
-    "DocsCheck",
-}
 
 NEED_RERUN_OR_CANCELL_WORKFLOWS = {
     "BackportPR",
-}.union(NEED_RERUN_ON_EDITED)
+    "DocsCheck",
+    "MasterCI",
+    "PullRequestCI",
+}
 
 MAX_RETRY = 5
 
@@ -52,16 +47,18 @@ class Worker(Thread):
 
 def _exec_get_with_retry(url: str, token: str) -> dict:
     headers = {"Authorization": f"token {token}"}
+    e = Exception()
     for i in range(MAX_RETRY):
         try:
-            response = requests.get(url, headers=headers)
+            response = requests.get(url, headers=headers, timeout=30)
             response.raise_for_status()
             return response.json()  # type: ignore
         except Exception as ex:
             print("Got exception executing request", ex)
+            e = ex
             time.sleep(i + 1)
 
-    raise Exception("Cannot execute GET request with retries")
+    raise requests.HTTPError("Cannot execute GET request with retries") from e
 
 
 WorkflowDescription = namedtuple(
@@ -219,16 +216,18 @@ def get_workflow_description(workflow_url: str, token: str) -> WorkflowDescripti
 
 def _exec_post_with_retry(url: str, token: str, json: Optional[Any] = None) -> Any:
     headers = {"Authorization": f"token {token}"}
+    e = Exception()
     for i in range(MAX_RETRY):
         try:
-            response = requests.post(url, headers=headers, json=json)
+            response = requests.post(url, headers=headers, json=json, timeout=30)
             response.raise_for_status()
             return response.json()
         except Exception as ex:
             print("Got exception executing request", ex)
+            e = ex
             time.sleep(i + 1)
 
-    raise Exception("Cannot execute POST request with retry")
+    raise requests.HTTPError("Cannot execute POST request with retry") from e
 
 
 def exec_workflow_url(urls_to_post, token):
@@ -262,7 +261,7 @@ def main(event):
         print("Freshly opened PR, nothing to do")
         return
 
-    if action == "closed" or label == "do not test":
+    if action == "closed" or label == Labels.DO_NOT_TEST:
         print("PR merged/closed or manually labeled 'do not test', will kill workflows")
         workflow_descriptions = get_workflows_description_for_pull_request(
             pull_request, token
@@ -282,7 +281,7 @@ def main(event):
         exec_workflow_url(urls_to_cancel, token)
         return
 
-    if label == "can be tested":
+    if label == Labels.CAN_BE_TESTED:
         print("PR marked with can be tested label, rerun workflow")
         workflow_descriptions = get_workflows_description_for_pull_request(
             pull_request, token
@@ -322,21 +321,21 @@ def main(event):
         return
 
     if action == "edited":
-        print("PR is edited, check if the body is correct")
-        error, _ = check_pr_description(
-            pull_request["body"], pull_request["base"]["repo"]["full_name"]
-        )
-        if error:
-            print(
-                f"The PR's body is wrong, is going to comment it. The error is: {error}"
-            )
-            post_json = {
-                "body": "This is an automatic comment. The PR descriptions does not "
-                f"match the [template]({pull_request['base']['repo']['html_url']}/"
-                "blob/master/.github/PULL_REQUEST_TEMPLATE.md?plain=1).\n\n"
-                f"Please, edit it accordingly.\n\nThe error is: {error}"
-            }
-            _exec_post_with_retry(pull_request["comments_url"], token, json=post_json)
+        print("PR is edited - do nothing")
+        # error, _ = check_pr_description(
+        #     pull_request["body"], pull_request["base"]["repo"]["full_name"]
+        # )
+        # if error:
+        #     print(
+        #         f"The PR's body is wrong, is going to comment it. The error is: {error}"
+        #     )
+        #     post_json = {
+        #         "body": "This is an automatic comment. The PR descriptions does not "
+        #         f"match the [template]({pull_request['base']['repo']['html_url']}/"
+        #         "blob/master/.github/PULL_REQUEST_TEMPLATE.md?plain=1).\n\n"
+        #         f"Please, edit it accordingly.\n\nThe error is: {error}"
+        #     }
+        #     _exec_post_with_retry(pull_request["comments_url"], token, json=post_json)
         return
 
     if action == "synchronize":

@@ -6,13 +6,13 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 
-USER_FILES_PATH=$(clickhouse-client --query "select _path,_file from file('nonexist.txt', 'CSV', 'val1 char')" 2>&1 | grep Exception | awk '{gsub("/nonexist.txt","",$9); print $9}')
+USER_FILES_PATH=$($CLICKHOUSE_CLIENT_BINARY --query "select _path,_file from file('nonexist.txt', 'CSV', 'val1 char')" 2>&1 | grep Exception | awk '{gsub("/nonexist.txt","",$9); print $9}')
 FILE_NAME=test_$CLICKHOUSE_TEST_UNIQUE_NAME.data
 DATA_FILE=${USER_FILES_PATH:?}/$FILE_NAME
 
 touch $DATA_FILE
 
-SCHEMADIR=$(clickhouse-client --query "select * from file('$FILE_NAME', 'Template', 'val1 char') settings format_template_row='nonexist'" 2>&1 | grep Exception | grep -oP "file \K.*(?=/nonexist)")
+SCHEMADIR=$($CLICKHOUSE_CLIENT_BINARY --query "select * from file('$FILE_NAME', 'Template', 'val1 char') settings format_template_row='nonexist'" 2>&1 | grep Exception | grep -oP "file \K.*(?=/nonexist)")
 
 echo "TSV"
 
@@ -248,4 +248,3 @@ $CLICKHOUSE_CLIENT -q "select * from file('$FILE_NAME', 'MsgPack') settings inpu
 
 rm $SCHEMADIR/resultset_format_02149 $SCHEMADIR/row_format_02149
 rm $DATA_FILE
-

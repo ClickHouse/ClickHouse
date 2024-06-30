@@ -1,13 +1,16 @@
 #include <Interpreters/castColumn.h>
-
-#include <Functions/FunctionsConversion.h>
 #include <Functions/CastOverloadResolver.h>
+#include <Functions/IFunction.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <Core/ColumnsWithTypeAndName.h>
+#include <Core/Field.h>
+
 
 namespace DB
 {
 
-template <CastType cast_type = CastType::nonAccurate>
-static ColumnPtr castColumn(const ColumnWithTypeAndName & arg, const DataTypePtr & type, InternalCastFunctionCache * cache = nullptr)
+static ColumnPtr castColumn(CastType cast_type, const ColumnWithTypeAndName & arg, const DataTypePtr & type, InternalCastFunctionCache * cache = nullptr)
 {
     if (arg.type->equals(*type) && cast_type != CastType::accurateOrNull)
         return arg.column;
@@ -23,37 +26,34 @@ static ColumnPtr castColumn(const ColumnWithTypeAndName & arg, const DataTypePtr
             ""
         }
     };
-    auto get_cast_func = [&arguments]
+    auto get_cast_func = [cast_type, &arguments]
     {
-        FunctionOverloadResolverPtr func_builder_cast = CastInternalOverloadResolver<cast_type>::createImpl();
+
+        FunctionOverloadResolverPtr func_builder_cast = createInternalCastOverloadResolver(cast_type, {});
         return func_builder_cast->build(arguments);
     };
 
     FunctionBasePtr func_cast = cache ? cache->getOrSet(cast_type, from_name, to_name, std::move(get_cast_func)) : get_cast_func();
 
-    if constexpr (cast_type == CastType::accurateOrNull)
-    {
+    if (cast_type == CastType::accurateOrNull)
         return func_cast->execute(arguments, makeNullable(type), arg.column->size());
-    }
     else
-    {
         return func_cast->execute(arguments, type, arg.column->size());
-    }
 }
 
 ColumnPtr castColumn(const ColumnWithTypeAndName & arg, const DataTypePtr & type, InternalCastFunctionCache * cache)
 {
-    return castColumn<CastType::nonAccurate>(arg, type, cache);
+    return castColumn(CastType::nonAccurate, arg, type, cache);
 }
 
 ColumnPtr castColumnAccurate(const ColumnWithTypeAndName & arg, const DataTypePtr & type, InternalCastFunctionCache * cache)
 {
-    return castColumn<CastType::accurate>(arg, type, cache);
+    return castColumn(CastType::accurate, arg, type, cache);
 }
 
 ColumnPtr castColumnAccurateOrNull(const ColumnWithTypeAndName & arg, const DataTypePtr & type, InternalCastFunctionCache * cache)
 {
-    return castColumn<CastType::accurateOrNull>(arg, type, cache);
+    return castColumn(CastType::accurateOrNull, arg, type, cache);
 }
 
 }

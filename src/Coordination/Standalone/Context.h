@@ -11,14 +11,22 @@
 #include <Disks/IO/getThreadPoolReader.h>
 
 #include <Core/Settings.h>
+#include <Core/ServerSettings.h>
 #include <Core/BackgroundSchedulePool.h>
 
 #include <IO/AsyncReadCounters.h>
-#include <IO/IResourceManager.h>
+#include <Common/Scheduler/IResourceManager.h>
 
 #include <Poco/Util/Application.h>
 
 #include <memory>
+
+#include "config.h"
+namespace zkutil
+{
+    class ZooKeeper;
+    using ZooKeeperPtr = std::shared_ptr<ZooKeeper>;
+}
 
 namespace DB
 {
@@ -27,6 +35,9 @@ struct ContextSharedPart;
 class Macros;
 class FilesystemCacheLog;
 class FilesystemReadPrefetchesLog;
+class BlobStorageLog;
+class IOUringReader;
+class S3SettingsByEndpoint;
 
 /// A small class which owns ContextShared.
 /// We don't use something like unique_ptr directly to allow ContextShared type to be incomplete.
@@ -115,16 +126,21 @@ public:
 
     std::shared_ptr<FilesystemCacheLog> getFilesystemCacheLog() const;
     std::shared_ptr<FilesystemReadPrefetchesLog> getFilesystemReadPrefetchesLog() const;
+    std::shared_ptr<BlobStorageLog> getBlobStorageLog() const;
 
-    enum class ApplicationType
+    enum class ApplicationType : uint8_t
     {
-        KEEPER
+        KEEPER,
+        SERVER,
     };
 
     void setApplicationType(ApplicationType) {}
     ApplicationType getApplicationType() const { return ApplicationType::KEEPER; }
 
     IAsynchronousReader & getThreadPoolReader(FilesystemReaderType type) const;
+#if USE_LIBURING
+    IOUringReader & getIOUringReader() const;
+#endif
     std::shared_ptr<AsyncReadCounters> getAsyncReadCounters() const;
     ThreadPool & getThreadPoolWriter() const;
 
@@ -145,6 +161,18 @@ public:
     void initializeKeeperDispatcher(bool start_async) const;
     void shutdownKeeperDispatcher() const;
     void updateKeeperConfiguration(const Poco::Util::AbstractConfiguration & config);
+
+    zkutil::ZooKeeperPtr getZooKeeper() const;
+
+    const S3SettingsByEndpoint & getStorageS3Settings() const;
+
+    const String & getUserName() const { static std::string user; return user; }
+
+    const ServerSettings & getServerSettings() const;
+
+    bool hasTraceCollector() const;
+
+    bool isBackgroundOperationContext() const;
 };
 
 }

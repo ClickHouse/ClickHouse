@@ -34,7 +34,7 @@ struct TheilsUData : CrossTabData
         for (const auto & [key, value] : count_ab)
         {
             Float64 value_ab = value;
-            Float64 value_b = count_b.at(key.items[1]);
+            Float64 value_b = count_b.at(key.items[UInt128::_impl::little(1)]);
 
             dep += (value_ab / count) * log(value_ab / value_b);
         }

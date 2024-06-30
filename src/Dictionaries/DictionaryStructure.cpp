@@ -7,7 +7,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 
 #include <Formats/FormatSettings.h>
 #include <Columns/IColumn.h>
@@ -37,7 +37,7 @@ DictionaryTypedSpecialAttribute makeDictionaryTypedSpecialAttribute(
     auto expression = config.getString(config_prefix + ".expression", "");
 
     if (name.empty() && !expression.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Element {}.name is empty");
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Element {}.name is empty", config_prefix);
 
     const auto type_name = config.getString(config_prefix + ".type", default_type);
     return DictionaryTypedSpecialAttribute{std::move(name), std::move(expression), DataTypeFactory::instance().get(type_name)};

@@ -10,11 +10,13 @@
 namespace DB
 {
 
-void ASTLiteral::updateTreeHashImpl(SipHash & hash_state) const
+void ASTLiteral::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
     const char * prefix = "Literal_";
     hash_state.update(prefix, strlen(prefix));
     applyVisitor(FieldVisitorHash(hash_state), value);
+    if (!ignore_aliases)
+        ASTWithAlias::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
 ASTPtr ASTLiteral::clone() const
