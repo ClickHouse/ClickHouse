@@ -43,7 +43,8 @@ AggregateDescriptions extractAggregateDescriptions(const QueryTreeNodes & aggreg
             aggregate_description.argument_names.emplace_back(std::move(argument_node_name));
         }
 
-        if (aggregate_function_node_typed.hasByClause()) {
+        if (aggregate_function_node_typed.hasByClause())
+        {
             const auto & by_columns_nodes = aggregate_function_node_typed.getByColumnsNode()->as<ListNode &>().getNodes();
             aggregate_description.by_columns = Names();
             aggregate_description.by_columns->reserve(by_columns_nodes.size());

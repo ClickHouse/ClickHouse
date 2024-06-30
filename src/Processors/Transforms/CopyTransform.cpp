@@ -7,11 +7,10 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
+extern const int LOGICAL_ERROR;
 }
 
-CopyTransform::CopyTransform(const Block & header, size_t num_outputs)
-    : IProcessor(InputPorts(1, header), OutputPorts(num_outputs, header))
+CopyTransform::CopyTransform(const Block & header, size_t num_outputs) : IProcessor(InputPorts(1, header), OutputPorts(num_outputs, header))
 {
     if (num_outputs <= 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "CopyTransform expects more than 1 outputs, got {}", num_outputs);
@@ -23,8 +22,7 @@ IProcessor::Status CopyTransform::prepare()
 
     while (status == Status::Ready)
     {
-        status = !has_data ? prepareConsume()
-                           : prepareGenerate();
+        status = !has_data ? prepareConsume() : prepareGenerate();
     }
 
     return status;
@@ -121,8 +119,7 @@ IProcessor::Status CopyAccumulatingTransform::prepare()
 
     while (status == Status::Ready)
     {
-        status = !has_data ? prepareConsume()
-                           : prepareGenerate();
+        status = !has_data ? prepareConsume() : prepareGenerate();
     }
 
     return status;
@@ -153,7 +150,8 @@ IProcessor::Status CopyAccumulatingTransform::prepareConsume()
 
     if (input.isFinished())
     {
-        if (!chunks.empty()) {
+        if (!chunks.empty())
+        {
             has_data = true;
 
             return Status::Ready;
@@ -181,9 +179,11 @@ IProcessor::Status CopyAccumulatingTransform::prepareGenerate()
     bool all_finished = true;
 
     int chunk_number = -1;
-    for (auto & output : outputs) {
+    for (auto & output : outputs)
+    {
         chunk_number++;
-        if (outputs_chunk_index[chunk_number] >= chunks.size()) {
+        if (outputs_chunk_index[chunk_number] >= chunks.size())
+        {
             output.finish();
             continue;
         }
@@ -213,7 +213,8 @@ IProcessor::Status CopyAccumulatingTransform::prepareGenerate()
         for (size_t i = 0; i < cur_min; ++i)
             chunks.pop_front();
 
-        if (cur_min != 0) {
+        if (cur_min != 0)
+        {
             for (auto & e : outputs_chunk_index)
                 e -= cur_min;
         }

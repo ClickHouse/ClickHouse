@@ -243,8 +243,10 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(const QueryTreeNodeP
                 before_aggregation_actions_output_node_names.insert(expression_dag_node->result_name);
             }
         }
-        if (aggregate_function_node_typed.hasByClause()) {
-            for (const auto & aggregate_function_by_clause_argument : aggregate_function_node_typed.getByColumnsNode()->as<ListNode &>().getNodes())
+        if (aggregate_function_node_typed.hasByClause())
+        {
+            for (const auto & aggregate_function_by_clause_argument :
+                 aggregate_function_node_typed.getByColumnsNode()->as<ListNode &>().getNodes())
             {
                 auto expression_dag_nodes = actions_visitor.visit(before_aggregation_actions, aggregate_function_by_clause_argument);
                 for (auto & expression_dag_node : expression_dag_nodes)

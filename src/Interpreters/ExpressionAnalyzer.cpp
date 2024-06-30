@@ -558,7 +558,8 @@ void ExpressionAnalyzer::makeAggregateDescriptions(ActionsDAG & actions, Aggrega
         if (node.arguments)
             getRootActionsNoMakeSet(node.arguments, actions);
 
-        if (node.by_columns) {
+        if (node.by_columns)
+        {
             getRootActionsNoMakeSet(node.by_columns, actions);
         }
 
@@ -574,16 +575,19 @@ void ExpressionAnalyzer::makeAggregateDescriptions(ActionsDAG & actions, Aggrega
             const auto * dag_node = actions.tryFindInOutputs(name);
             if (!dag_node)
             {
-                throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
+                throw Exception(
+                    ErrorCodes::UNKNOWN_IDENTIFIER,
                     "Unknown identifier '{}' in aggregate function '{}'",
-                    name, node.formatForErrorMessage());
+                    name,
+                    node.formatForErrorMessage());
             }
 
             types[i] = dag_node->result_type;
             aggregate.argument_names[i] = name;
         }
 
-        if (node.by_or_totals) {
+        if (node.by_or_totals)
+        {
             const ASTs & by_columns = node.by_columns ? node.by_columns->children : ASTs();
             aggregate.by_columns = Names(by_columns.size());
 
@@ -593,9 +597,11 @@ void ExpressionAnalyzer::makeAggregateDescriptions(ActionsDAG & actions, Aggrega
                 const auto * dag_node = actions->tryFindInOutputs(name);
                 if (!dag_node)
                 {
-                    throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
+                    throw Exception(
+                        ErrorCodes::UNKNOWN_IDENTIFIER,
                         "Unknown identifier '{}' in aggregate function '{}'",
-                        name, node.formatForErrorMessage());
+                        name,
+                        node.formatForErrorMessage());
                 }
 
                 types[i] = dag_node->result_type;

@@ -232,13 +232,17 @@ public:
 
                 if (function_node.hasByClause())
                 {
-                    if (function_arguments_nodes_size > 0) {
+                    if (function_arguments_nodes_size > 0)
+                    {
                         buffer << ' ';
                     }
                     auto & by_columns_nodes = function_node.getByColumnsNode()->as<ListNode &>().getNodes();
-                    if (by_columns_nodes.empty()) {
+                    if (by_columns_nodes.empty())
+                    {
                         buffer << "TOTALS";
-                    } else {
+                    }
+                    else
+                    {
                         buffer << "BY ";
                         size_t by_columns_nodes_size = by_columns_nodes.size();
                         for (size_t i = 0; i < by_columns_nodes_size; ++i)
