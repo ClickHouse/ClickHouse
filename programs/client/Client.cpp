@@ -1345,16 +1345,6 @@ void Client::readArguments(
                 allow_repeated_settings = true;
             else if (arg == "--allow_merge_tree_settings")
                 allow_merge_tree_settings = true;
-            else if (arg == "--multiquery" || arg == "-n")
-            {
-                /// Transform the obsolete 'multiquery' option into 'query', compatible with '--multiquery <SQL>'
-                if ((arg_num + 1) < argc && !std::string_view(argv[arg_num + 1]).starts_with('-'))
-                {
-                    ++arg_num;
-                    arg = argv[arg_num];
-                    addMultiquery(arg, common_arguments);
-                }
-            }
             else if (arg == "--password" && ((arg_num + 1) >= argc || std::string_view(argv[arg_num + 1]).starts_with('-')))
             {
                 common_arguments.emplace_back(arg);

@@ -29,7 +29,7 @@ INSERT INTO type_json_src VALUES (5, '{"arr": "not array"}');
 INSERT INTO type_json_dst SELECT * FROM type_json_src WHERE id = 5; -- { serverError INCOMPATIBLE_COLUMNS }
 
 TRUNCATE TABLE type_json_src;
-INSERT INTO type_json_src VALUES (5, '{"arr": [{"k22": "str1"}]}')
+INSERT INTO type_json_src VALUES (5, '{"arr": [{"k22": "str1"}]}');
 
 INSERT INTO type_json_dst SELECT * FROM type_json_src WHERE id = 5;
 

@@ -879,16 +879,6 @@ void LocalServer::readArguments(int argc, char ** argv, Arguments & common_argum
                 query_parameters.emplace(param_continuation.substr(0, equal_pos), param_continuation.substr(equal_pos + 1));
             }
         }
-        else if (arg == "--multiquery" || arg == "-n")
-        {
-            /// Transform the obsolete 'multiquery' option into 'query', compatible with '--multiquery <SQL>'
-            if ((arg_num + 1) < argc && !std::string_view(argv[arg_num + 1]).starts_with('-'))
-            {
-                ++arg_num;
-                arg = argv[arg_num];
-                addMultiquery(arg, common_arguments);
-            }
-        }
         else
         {
             common_arguments.emplace_back(arg);

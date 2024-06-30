@@ -152,8 +152,6 @@ protected:
 
     void setInsertionTable(const ASTInsertQuery & insert_query);
 
-    void addMultiquery(std::string_view query, Arguments & common_arguments) const;
-
 private:
     void receiveResult(ASTPtr parsed_query, Int32 signals_before_stop, bool partial_result_on_first_cancel);
     bool receiveAndProcessPacket(ASTPtr parsed_query, bool cancelled_);

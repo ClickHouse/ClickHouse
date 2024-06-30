@@ -1503,12 +1503,6 @@ void ClientBase::setInsertionTable(const ASTInsertQuery & insert_query)
 }
 
 
-void ClientBase::addMultiquery(std::string_view query, Arguments & common_arguments) const
-{
-    common_arguments.emplace_back("-q");
-    common_arguments.emplace_back(query);
-}
-
 namespace
 {
 bool isStdinNotEmptyAndValid(ReadBufferFromFileDescriptor & std_in)
