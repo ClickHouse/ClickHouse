@@ -1,7 +1,7 @@
 #include <Storages/Statistics/Statistics.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
-#include <Storages/Statistics/TDigestStatistics.h>
-#include <Storages/Statistics/UniqStatistics.h>
+#include <Storages/Statistics/StatisticsTDigest.h>
+#include <Storages/Statistics/StatisticsUniq.h>
 #include <Storages/StatisticsDescription.h>
 #include <Storages/ColumnsDescription.h>
 #include <IO/ReadHelpers.h>
