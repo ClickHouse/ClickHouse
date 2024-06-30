@@ -14,7 +14,6 @@
 #include <Common/AsyncLoader.h>
 
 
-
 namespace Poco
 {
     class Logger; // NOLINT(cppcoreguidelines-virtual-class-destructor)
