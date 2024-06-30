@@ -208,11 +208,6 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
         }
     }
 
-    if (default_aggregates.empty())
-    {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "At least one aggregate function should not have by_columns");
-    }
-
     if (!by_column_sets_aggregates.empty())
     {
         if (!grouping_sets_params.empty())

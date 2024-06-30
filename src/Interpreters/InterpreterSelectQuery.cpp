@@ -1458,6 +1458,14 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
         !query.group_by_with_totals && !query.group_by_with_rollup && !query.group_by_with_cube;
 
     bool use_grouping_set_key = expressions.use_grouping_set_key;
+    bool use_by_or_totals = std::ranges::any_of(query_analyzer->aggregates(), [](const AggregateDescription & desc) { return desc.by_columns.has_value(); });
+
+    if (use_by_or_totals &&
+        (query.group_by_with_grouping_sets || query.group_by_with_constant_keys ||
+         query.group_by_with_cube || query.group_by_with_rollup || query.group_by_with_totals))
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "WITH ROLLUP, CUBE, GROUPING SETS, GROUP BY WITH TOTALS are not supported together with BY and TOTALS combinators");
+    }
 
     if (query.group_by_with_grouping_sets && query.group_by_with_totals)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "WITH TOTALS and GROUPING SETS are not supported together");

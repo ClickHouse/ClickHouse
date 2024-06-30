@@ -3,6 +3,9 @@
 
 namespace DB
 {
+// This transformation expects only one row in the right input.
+// The value of each column in that row is added to each row in the left input.
+
 class JoinRowTransform : public IProcessor
 {
 public:
