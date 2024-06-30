@@ -1428,6 +1428,13 @@ Average block bytes output by parquet reader. Lowering the configuration in the 
 
 Default value: `65409 * 256 = 16744704`
 
+### output_format_parquet_write_page_index {#input_format_parquet_max_block_size}
+
+Could add page index into parquet files. To enable this, need set `output_format_parquet_use_custom_encoder`=`false` and
+`output_format_parquet_write_page_index`=`true`.
+
+Enable by default.
+
 ## Hive format settings {#hive-format-settings}
 
 ### input_format_hive_text_fields_delimiter {#input_format_hive_text_fields_delimiter}

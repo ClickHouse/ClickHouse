@@ -193,21 +193,21 @@ Chunk StorageObjectStorageSource::generate()
             progress(num_rows, chunk_size ? chunk_size : chunk.bytes());
 
             const auto & object_info = reader.getObjectInfo();
-            const auto & filename = object_info.getFileName();
-            chassert(object_info.metadata);
+            const auto & filename = object_info->getFileName();
+            chassert(object_info->metadata);
             VirtualColumnUtils::addRequestedFileLikeStorageVirtualsToChunk(
                 chunk, read_from_format_info.requested_virtual_columns,
                 {
-                    .path = getUniqueStoragePathIdentifier(*configuration, reader.getObjectInfo(), false),
-                    .size = object_info.metadata->size_bytes,
+                    .path = getUniqueStoragePathIdentifier(*configuration, *object_info, false),
+                    .size = object_info->metadata->size_bytes,
                     .filename = &filename,
-                    .last_modified = object_info.metadata->last_modified
+                    .last_modified = object_info->metadata->last_modified
                 });
             return chunk;
         }
 
         if (reader.getInputFormat() && getContext()->getSettingsRef().use_cache_for_count_from_files)
-            addNumRowsToCache(reader.getObjectInfo(), total_rows_in_file);
+            addNumRowsToCache(*reader.getObjectInfo(), total_rows_in_file);
 
         total_rows_in_file = 0;
 
@@ -517,23 +517,21 @@ StorageObjectStorage::ObjectInfoPtr StorageObjectStorageSource::GlobIterator::ne
                 else
                     ++it;
             }
+
+            if (filter_dag)
+            {
+                std::vector<String> paths;
+                paths.reserve(new_batch.size());
+                for (const auto & object_info : new_batch)
+                    paths.push_back(getUniqueStoragePathIdentifier(*configuration, *object_info, false));
+
+                VirtualColumnUtils::filterByPathOrFile(new_batch, paths, filter_dag, virtual_columns, getContext());
+
+                LOG_TEST(logger, "Filtered files: {} -> {}", paths.size(), new_batch.size());
+            }
         }
 
         index = 0;
-
-        if (filter_dag)
-        {
-            std::vector<String> paths;
-            paths.reserve(new_batch.size());
-            for (const auto & object_info : new_batch)
-            {
-                chassert(object_info);
-                paths.push_back(getUniqueStoragePathIdentifier(*configuration, *object_info, false));
-            }
-
-            VirtualColumnUtils::filterByPathOrFile(new_batch, paths, filter_dag, virtual_columns, getContext());
-            LOG_TEST(logger, "Filtered files: {} -> {}", paths.size(), new_batch.size());
-        }
 
         if (read_keys)
             read_keys->insert(read_keys->end(), new_batch.begin(), new_batch.end());
@@ -551,7 +549,12 @@ StorageObjectStorage::ObjectInfoPtr StorageObjectStorageSource::GlobIterator::ne
     }
 
     if (index >= object_infos.size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Index out of bound for blob metadata");
+    {
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Index out of bound for blob metadata. Index: {}, size: {}",
+            index, object_infos.size());
+    }
 
     return object_infos[index++];
 }

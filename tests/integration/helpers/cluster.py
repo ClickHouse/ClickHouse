@@ -2640,7 +2640,9 @@ class ClickHouseCluster:
                     [
                         "bash",
                         "-c",
-                        f"/opt/bitnami/openldap/bin/ldapsearch -x -H ldap://{self.ldap_host}:{self.ldap_port} -D cn=admin,dc=example,dc=org -w clickhouse -b dc=example,dc=org",
+                        f"/opt/bitnami/openldap/bin/ldapsearch -x -H ldap://{self.ldap_host}:{self.ldap_port} -D cn=admin,dc=example,dc=org -w clickhouse -b dc=example,dc=org"
+                        f'| grep -c -E "member: cn=j(ohn|ane)doe"'
+                        f"| grep 2 >> /dev/null",
                     ],
                     user="root",
                 )

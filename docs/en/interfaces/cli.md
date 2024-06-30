@@ -193,6 +193,7 @@ You can pass parameters to `clickhouse-client` (all parameters have a default va
 - `--hardware-utilization` — Print hardware utilization information in progress bar.
 - `--print-profile-events` – Print `ProfileEvents` packets.
 - `--profile-events-delay-ms` – Delay between printing `ProfileEvents` packets (-1 - print only totals, 0 - print every single packet).
+- `--jwt` – If specified, enables authorization via JSON Web Token. Server JWT authorization is available only in ClickHouse Cloud.
 
 Instead of `--host`, `--port`, `--user` and `--password` options, ClickHouse client also supports connection strings (see next section).
 

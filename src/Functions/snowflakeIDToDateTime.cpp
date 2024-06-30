@@ -18,21 +18,19 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int UNKNOWN_FUNCTION;
 }
 
 namespace
 {
 
 /// See generateSnowflakeID.cpp
-constexpr int time_shift = 22;
+constexpr size_t time_shift = 22;
 
 }
 
 class FunctionSnowflakeIDToDateTime : public IFunction
 {
 private:
-    const bool uniform_snowflake_conversion_functions;
     const bool allow_nonconst_timezone_arguments;
 
 public:
@@ -40,8 +38,7 @@ public:
 
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionSnowflakeIDToDateTime>(context); }
     explicit FunctionSnowflakeIDToDateTime(ContextPtr context)
-        : uniform_snowflake_conversion_functions(context->getSettingsRef().uniform_snowflake_conversion_functions)
-        , allow_nonconst_timezone_arguments(context->getSettings().allow_nonconst_timezone_arguments)
+        : allow_nonconst_timezone_arguments(context->getSettings().allow_nonconst_timezone_arguments)
     {}
 
     String getName() const override { return name; }
@@ -56,7 +53,7 @@ public:
             {"value", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt64), nullptr, "UInt64"}
         };
         FunctionArgumentDescriptors optional_args{
-            {"epoch", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeUInt), isColumnConst, "UInt*"},
+            {"epoch", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeUInt), isColumnConst, "const UInt*"},
             {"time_zone", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"}
         };
         validateFunctionArgumentTypes(*this, arguments, args, optional_args);
@@ -70,12 +67,9 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        if (!uniform_snowflake_conversion_functions)
-            throw Exception(ErrorCodes::UNKNOWN_FUNCTION, "To use function {}, setting 'uniform_snowflake_conversion_functions' must be enabled", getName());
-
         const auto & col_src = *arguments[0].column;
 
-        size_t epoch = 0;
+        UInt64 epoch = 0;
         if (arguments.size() >= 2 && input_rows_count != 0)
         {
             const auto & col_epoch = *arguments[1].column;
@@ -108,7 +102,6 @@ public:
 class FunctionSnowflakeIDToDateTime64 : public IFunction
 {
 private:
-    const bool uniform_snowflake_conversion_functions;
     const bool allow_nonconst_timezone_arguments;
 
 public:
@@ -116,8 +109,7 @@ public:
 
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionSnowflakeIDToDateTime64>(context); }
     explicit FunctionSnowflakeIDToDateTime64(ContextPtr context)
-        : uniform_snowflake_conversion_functions(context->getSettingsRef().uniform_snowflake_conversion_functions)
-        , allow_nonconst_timezone_arguments(context->getSettings().allow_nonconst_timezone_arguments)
+        : allow_nonconst_timezone_arguments(context->getSettings().allow_nonconst_timezone_arguments)
     {}
 
     String getName() const override { return name; }
@@ -132,7 +124,7 @@ public:
             {"value", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt64), nullptr, "UInt64"}
         };
         FunctionArgumentDescriptors optional_args{
-            {"epoch", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeUInt), isColumnConst, "UInt*"},
+            {"epoch", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeUInt), isColumnConst, "const UInt*"},
             {"time_zone", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"}
         };
         validateFunctionArgumentTypes(*this, arguments, args, optional_args);
@@ -146,12 +138,9 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        if (!uniform_snowflake_conversion_functions)
-            throw Exception(ErrorCodes::UNKNOWN_FUNCTION, "To use function {}, setting 'uniform_snowflake_conversion_functions' must be enabled", getName());
-
         const auto & col_src = *arguments[0].column;
 
-        size_t epoch = 0;
+        UInt64 epoch = 0;
         if (arguments.size() >= 2 && input_rows_count != 0)
         {
             const auto & col_epoch = *arguments[1].column;

@@ -1,21 +1,57 @@
 #include <iostream>
 #include <Processors/IProcessor.h>
 
+#include <Common/logger_useful.h>
+#include <IO/WriteHelpers.h>
+#include <IO/WriteBufferFromString.h>
+
 
 namespace DB
 {
 
+void IProcessor::cancel()
+{
+
+    bool already_cancelled = is_cancelled.exchange(true, std::memory_order_acq_rel);
+    if (already_cancelled)
+        return;
+
+    onCancel();
+}
+
+String IProcessor::debug() const
+{
+    WriteBufferFromOwnString buf;
+    writeString(getName(), buf);
+    buf.write('\n');
+
+    writeString("inputs (hasData, isFinished):\n", buf);
+    for (const auto & port : inputs)
+    {
+        buf.write('\t');
+        writeBoolText(port.hasData(), buf);
+        buf.write(' ');
+        writeBoolText(port.isFinished(), buf);
+        buf.write('\n');
+    }
+
+    writeString("outputs (hasData, isNeeded):\n", buf);
+    for (const auto & port : outputs)
+    {
+        buf.write('\t');
+        writeBoolText(port.hasData(), buf);
+        buf.write(' ');
+        writeBoolText(port.isNeeded(), buf);
+        buf.write('\n');
+    }
+
+    buf.finalize();
+    return buf.str();
+}
+
 void IProcessor::dump() const
 {
-    std::cerr << getName() << "\n";
-
-    std::cerr << "inputs:\n";
-    for (const auto & port : inputs)
-        std::cerr << "\t" << port.hasData() << " " << port.isFinished() << "\n";
-
-    std::cerr << "outputs:\n";
-    for (const auto & port : outputs)
-        std::cerr << "\t" << port.hasData() << " " << port.isNeeded() << "\n";
+    std::cerr << debug();
 }
 
 
@@ -39,4 +75,3 @@ std::string IProcessor::statusToName(Status status)
 }
 
 }
-

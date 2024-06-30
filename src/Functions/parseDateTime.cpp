@@ -978,8 +978,7 @@ namespace
             [[nodiscard]]
             static PosOrError mysqlAmericanDate(Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
             {
-                if (auto status = checkSpace(cur, end, 8, "mysqlAmericanDate requires size >= 8", fragment))
-                    return tl::unexpected(status.error());
+                RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 8, "mysqlAmericanDate requires size >= 8", fragment))
 
                 Int32 month;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, month)))
@@ -993,7 +992,7 @@ namespace
 
                 Int32 year;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, year)))
-                RETURN_ERROR_IF_FAILED(date.setYear(year))
+                RETURN_ERROR_IF_FAILED(date.setYear(year + 2000))
                 return cur;
             }
 
@@ -1015,8 +1014,7 @@ namespace
             [[nodiscard]]
             static PosOrError mysqlISO8601Date(Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
             {
-                if (auto status = checkSpace(cur, end, 10, "mysqlISO8601Date requires size >= 10", fragment))
-                    return tl::unexpected(status.error());
+                RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 10, "mysqlISO8601Date requires size >= 10", fragment))
 
                 Int32 year;
                 Int32 month;
@@ -1462,8 +1460,7 @@ namespace
             [[nodiscard]]
             static PosOrError jodaDayOfWeekText(size_t /*min_represent_digits*/, Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
             {
-                if (auto result= checkSpace(cur, end, 3, "jodaDayOfWeekText requires size >= 3", fragment); !result.has_value())
-                    return tl::unexpected(result.error());
+                RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 3, "jodaDayOfWeekText requires size >= 3", fragment))
 
                 String text1(cur, 3);
                 boost::to_lower(text1);
@@ -1556,8 +1553,8 @@ namespace
                 Int32 day_of_month;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumberWithVariableLength(
                     cur, end, false, false, false, repetitions, std::max(repetitions, 2uz), fragment, day_of_month)))
-                if (auto res = date.setDayOfMonth(day_of_month); !res.has_value())
-                    return tl::unexpected(res.error());
+                RETURN_ERROR_IF_FAILED(date.setDayOfMonth(day_of_month))
+
                 return cur;
             }
 

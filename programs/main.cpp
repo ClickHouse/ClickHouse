@@ -13,6 +13,7 @@
 
 #include <fmt/format.h>
 
+#include "config.h"
 #include "config_tools.h"
 
 #include <Common/StringUtils.h>
@@ -437,6 +438,14 @@ extern "C"
         return "ClickHouse does not allow dynamic library loading";
     }
 }
+#endif
+
+/// Prevent messages from JeMalloc in the release build.
+/// Some of these messages are non-actionable for the users, such as:
+/// <jemalloc>: Number of CPUs detected is not deterministic. Per-CPU arena disabled.
+#if USE_JEMALLOC && defined(NDEBUG) && !defined(SANITIZER)
+extern "C" void (*malloc_message)(void *, const char *s);
+__attribute__((constructor(0))) void init_je_malloc_message() { malloc_message = [](void *, const char *){}; }
 #endif
 
 /// This allows to implement assert to forbid initialization of a class in static constructors.

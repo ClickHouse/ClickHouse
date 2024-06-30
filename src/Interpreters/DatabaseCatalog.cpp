@@ -63,6 +63,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int HAVE_DEPENDENT_OBJECTS;
     extern const int UNFINISHED;
+    extern const int INFINITE_LOOP;
 }
 
 class DatabaseNameHints : public IHints<>
@@ -1471,6 +1472,114 @@ void DatabaseCatalog::checkTableCanBeRemovedOrRenamedUnlocked(
     if (!from_other_databases.empty())
         throw Exception(ErrorCodes::HAVE_DEPENDENT_OBJECTS, "Cannot drop or rename {}, because some tables depend on it: {}",
                         removing_table, fmt::join(from_other_databases, ", "));
+}
+
+void DatabaseCatalog::checkTableCanBeAddedWithNoCyclicDependencies(
+    const QualifiedTableName & table_name,
+    const TableNamesSet & new_referential_dependencies,
+    const TableNamesSet & new_loading_dependencies)
+{
+    std::lock_guard lock{databases_mutex};
+
+    StorageID table_id = StorageID{table_name};
+
+    auto check = [&](TablesDependencyGraph & dependencies, const TableNamesSet & new_dependencies)
+    {
+        auto old_dependencies = dependencies.removeDependencies(table_id);
+        dependencies.addDependencies(table_name, new_dependencies);
+        auto restore_dependencies = [&]()
+        {
+            dependencies.removeDependencies(table_id);
+            if (!old_dependencies.empty())
+                dependencies.addDependencies(table_id, old_dependencies);
+        };
+
+        if (dependencies.hasCyclicDependencies())
+        {
+            auto cyclic_dependencies_description = dependencies.describeCyclicDependencies();
+            restore_dependencies();
+            throw Exception(
+                ErrorCodes::INFINITE_LOOP,
+                "Cannot add dependencies for '{}', because it will lead to cyclic dependencies: {}",
+                table_name.getFullName(),
+                cyclic_dependencies_description);
+        }
+
+        restore_dependencies();
+    };
+
+    check(referential_dependencies, new_referential_dependencies);
+    check(loading_dependencies, new_loading_dependencies);
+}
+
+void DatabaseCatalog::checkTableCanBeRenamedWithNoCyclicDependencies(const StorageID & from_table_id, const StorageID & to_table_id)
+{
+    std::lock_guard lock{databases_mutex};
+
+    auto check = [&](TablesDependencyGraph & dependencies)
+    {
+        auto old_dependencies = dependencies.removeDependencies(from_table_id);
+        dependencies.addDependencies(to_table_id, old_dependencies);
+        auto restore_dependencies = [&]()
+        {
+            dependencies.removeDependencies(to_table_id);
+            dependencies.addDependencies(from_table_id, old_dependencies);
+        };
+
+        if (dependencies.hasCyclicDependencies())
+        {
+            auto cyclic_dependencies_description = dependencies.describeCyclicDependencies();
+            restore_dependencies();
+            throw Exception(
+                ErrorCodes::INFINITE_LOOP,
+                "Cannot rename '{}' to '{}', because it will lead to cyclic dependencies: {}",
+                from_table_id.getFullTableName(),
+                to_table_id.getFullTableName(),
+                cyclic_dependencies_description);
+        }
+
+        restore_dependencies();
+    };
+
+    check(referential_dependencies);
+    check(loading_dependencies);
+}
+
+void DatabaseCatalog::checkTablesCanBeExchangedWithNoCyclicDependencies(const StorageID & table_id_1, const StorageID & table_id_2)
+{
+    std::lock_guard lock{databases_mutex};
+
+    auto check = [&](TablesDependencyGraph & dependencies)
+    {
+        auto old_dependencies_1 = dependencies.removeDependencies(table_id_1);
+        auto old_dependencies_2 = dependencies.removeDependencies(table_id_2);
+        dependencies.addDependencies(table_id_1, old_dependencies_2);
+        dependencies.addDependencies(table_id_2, old_dependencies_1);
+        auto restore_dependencies = [&]()
+        {
+            dependencies.removeDependencies(table_id_1);
+            dependencies.removeDependencies(table_id_2);
+            dependencies.addDependencies(table_id_1, old_dependencies_1);
+            dependencies.addDependencies(table_id_2, old_dependencies_2);
+        };
+
+        if (dependencies.hasCyclicDependencies())
+        {
+            auto cyclic_dependencies_description = dependencies.describeCyclicDependencies();
+            restore_dependencies();
+            throw Exception(
+                ErrorCodes::INFINITE_LOOP,
+                "Cannot exchange '{}' and '{}', because it will lead to cyclic dependencies: {}",
+                table_id_1.getFullTableName(),
+                table_id_2.getFullTableName(),
+                cyclic_dependencies_description);
+        }
+
+        restore_dependencies();
+    };
+
+    check(referential_dependencies);
+    check(loading_dependencies);
 }
 
 void DatabaseCatalog::cleanupStoreDirectoryTask()

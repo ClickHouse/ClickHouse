@@ -478,6 +478,8 @@ public:
             "Method getS3StorageClient() is not implemented for disk type: {}",
             getDataSourceDescription().toString());
     }
+
+    virtual std::shared_ptr<const S3::Client> tryGetS3StorageClient() const { return nullptr; }
 #endif
 
 

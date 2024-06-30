@@ -3,6 +3,7 @@
 #include <Common/TraceSender.h>
 
 
+// clang-format off
 /// Available events. Add something here as you wish.
 /// If the event is generic (i.e. not server specific)
 /// it should be also added to src/Coordination/KeeperConstant.cpp
@@ -14,6 +15,7 @@
     M(QueriesWithSubqueries, "Count queries with all subqueries") \
     M(SelectQueriesWithSubqueries, "Count SELECT queries with all subqueries") \
     M(InsertQueriesWithSubqueries, "Count INSERT queries with all subqueries") \
+    M(SelectQueriesWithPrimaryKeyUsage, "Count SELECT queries which use the primary key to evaluate the WHERE condition") \
     M(AsyncInsertQuery, "Same as InsertQuery, but only for asynchronous INSERT queries.") \
     M(AsyncInsertBytes, "Data size in bytes of asynchronous INSERT queries.") \
     M(AsyncInsertRows, "Number of rows inserted by asynchronous INSERT queries.") \
@@ -635,11 +637,11 @@ The server successfully detected this situation and will download merged part fr
     M(S3QueueSetFileProcessingMicroseconds, "Time spent to set file as processing")\
     M(S3QueueSetFileProcessedMicroseconds, "Time spent to set file as processed")\
     M(S3QueueSetFileFailedMicroseconds, "Time spent to set file as failed")\
-    M(S3QueueFailedFiles, "Number of files which failed to be processed")\
-    M(S3QueueProcessedFiles, "Number of files which were processed")\
-    M(S3QueueCleanupMaxSetSizeOrTTLMicroseconds, "Time spent to set file as failed")\
-    M(S3QueuePullMicroseconds, "Time spent to read file data")\
-    M(S3QueueLockLocalFileStatusesMicroseconds, "Time spent to lock local file statuses")\
+    M(ObjectStorageQueueFailedFiles, "Number of files which failed to be processed")\
+    M(ObjectStorageQueueProcessedFiles, "Number of files which were processed")\
+    M(ObjectStorageQueueCleanupMaxSetSizeOrTTLMicroseconds, "Time spent to set file as failed")\
+    M(ObjectStorageQueuePullMicroseconds, "Time spent to read file data")\
+    M(ObjectStorageQueueLockLocalFileStatusesMicroseconds, "Time spent to lock local file statuses")\
     \
     M(ServerStartupMilliseconds, "Time elapsed from starting server to listening to sockets in milliseconds")\
     M(IOUringSQEsSubmitted, "Total number of io_uring SQEs submitted") \

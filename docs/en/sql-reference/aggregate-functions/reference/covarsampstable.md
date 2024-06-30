@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/aggregate-functions/reference/covarsampstable
-sidebar_position: 37
+sidebar_position: 126
 ---
 
 # covarSampStable

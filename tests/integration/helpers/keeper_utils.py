@@ -124,27 +124,27 @@ class KeeperClient(object):
         return data
 
     def cd(self, path: str, timeout: float = 60.0):
-        self.execute_query(f"cd {path}", timeout)
+        self.execute_query(f"cd '{path}'", timeout)
 
     def ls(self, path: str, timeout: float = 60.0) -> list[str]:
-        return self.execute_query(f"ls {path}", timeout).split(" ")
+        return self.execute_query(f"ls '{path}'", timeout).split(" ")
 
     def create(self, path: str, value: str, timeout: float = 60.0):
-        self.execute_query(f"create {path} {value}", timeout)
+        self.execute_query(f"create '{path}' '{value}'", timeout)
 
     def get(self, path: str, timeout: float = 60.0) -> str:
-        return self.execute_query(f"get {path}", timeout)
+        return self.execute_query(f"get '{path}'", timeout)
 
     def set(self, path: str, value: str, version: tp.Optional[int] = None) -> None:
         self.execute_query(
-            f"set {path} {value} {version if version is not None else ''}"
+            f"set '{path}' '{value}' {version if version is not None else ''}"
         )
 
     def rm(self, path: str, version: tp.Optional[int] = None) -> None:
-        self.execute_query(f"rm {path} {version if version is not None else ''}")
+        self.execute_query(f"rm '{path}' {version if version is not None else ''}")
 
     def exists(self, path: str, timeout: float = 60.0) -> bool:
-        return bool(int(self.execute_query(f"exists {path}", timeout)))
+        return bool(int(self.execute_query(f"exists '{path}'", timeout)))
 
     def stop(self):
         if not self.stopped:
@@ -152,22 +152,22 @@ class KeeperClient(object):
             self.proc.communicate(b"exit\n", timeout=10.0)
 
     def sync(self, path: str, timeout: float = 60.0):
-        self.execute_query(f"sync {path}", timeout)
+        self.execute_query(f"sync '{path}'", timeout)
 
     def touch(self, path: str, timeout: float = 60.0):
-        self.execute_query(f"touch {path}", timeout)
+        self.execute_query(f"touch '{path}'", timeout)
 
     def find_big_family(self, path: str, n: int = 10, timeout: float = 60.0) -> str:
-        return self.execute_query(f"find_big_family {path} {n}", timeout)
+        return self.execute_query(f"find_big_family '{path}' {n}", timeout)
 
     def find_super_nodes(self, threshold: int, timeout: float = 60.0) -> str:
         return self.execute_query(f"find_super_nodes {threshold}", timeout)
 
     def get_direct_children_number(self, path: str, timeout: float = 60.0) -> str:
-        return self.execute_query(f"get_direct_children_number {path}", timeout)
+        return self.execute_query(f"get_direct_children_number '{path}'", timeout)
 
     def get_all_children_number(self, path: str, timeout: float = 60.0) -> str:
-        return self.execute_query(f"get_all_children_number {path}", timeout)
+        return self.execute_query(f"get_all_children_number '{path}'", timeout)
 
     def delete_stale_backups(self, timeout: float = 60.0) -> str:
         return self.execute_query("delete_stale_backups", timeout)
@@ -196,7 +196,7 @@ class KeeperClient(object):
             )
 
         return self.execute_query(
-            f"reconfig {operation} {joining or leaving or new_members}", timeout
+            f"reconfig {operation} '{joining or leaving or new_members}'", timeout
         )
 
     @classmethod

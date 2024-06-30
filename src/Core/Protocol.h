@@ -63,6 +63,9 @@ const char USER_INTERSERVER_MARKER[] = " INTERSERVER SECRET ";
 /// Marker for SSH-keys-based authentication (passed as the user name)
 const char SSH_KEY_AUTHENTICAION_MARKER[] = " SSH KEY AUTHENTICATION ";
 
+/// Market for JSON Web Token authentication
+const char JWT_AUTHENTICAION_MARKER[] = " JWT AUTHENTICATION ";
+
 };
 
 namespace Protocol

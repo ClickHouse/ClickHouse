@@ -127,8 +127,10 @@ public:
     /// /, /a, /a/b, /a/b/c, /a/b/c/d while exists will return true only for /a/b/c/d
     virtual bool existsOrHasAnyChild(const std::string & path) const;
 
+    /// List objects recursively by certain prefix.
     virtual void listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const;
 
+    /// List objects recursively by certain prefix. Use it instead of listObjects, if you want to list objects lazily.
     virtual ObjectStorageIteratorPtr iterate(const std::string & path_prefix, size_t max_keys) const;
 
     /// Get object metadata if supported. It should be possible to receive
@@ -269,6 +271,7 @@ public:
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "This function is only implemented for S3ObjectStorage");
     }
+    virtual std::shared_ptr<const S3::Client> tryGetS3StorageClient() { return nullptr; }
 #endif
 
 

@@ -194,15 +194,24 @@ DiskAccessStorage::DiskAccessStorage(const String & storage_name_, const String 
 
 DiskAccessStorage::~DiskAccessStorage()
 {
-    stopListsWritingThread();
-
     try
     {
-        writeLists();
+        DiskAccessStorage::shutdown();
     }
     catch (...)
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+}
+
+
+void DiskAccessStorage::shutdown()
+{
+    stopListsWritingThread();
+
+    {
+        std::lock_guard lock{mutex};
+        writeLists();
     }
 }
 

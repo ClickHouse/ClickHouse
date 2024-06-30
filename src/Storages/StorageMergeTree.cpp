@@ -1269,6 +1269,7 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
                 if (command.type != MutationCommand::Type::DROP_COLUMN
                     && command.type != MutationCommand::Type::DROP_INDEX
                     && command.type != MutationCommand::Type::DROP_PROJECTION
+                    && command.type != MutationCommand::Type::DROP_STATISTICS
                     && command.type != MutationCommand::Type::RENAME_COLUMN)
                 {
                     commands_for_size_validation.push_back(command);

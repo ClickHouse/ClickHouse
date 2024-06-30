@@ -355,10 +355,7 @@ try
 
     std::string include_from_path = config().getString("include_from", "/etc/metrika.xml");
 
-    if (config().has(DB::PlacementInfo::PLACEMENT_CONFIG_PREFIX))
-    {
-        PlacementInfo::PlacementInfo::instance().initialize(config());
-    }
+    PlacementInfo::PlacementInfo::instance().initialize(config());
 
     GlobalThreadPool::initialize(
         /// We need to have sufficient amount of threads for connections + nuraft workers + keeper workers, 1000 is an estimation
@@ -577,8 +574,7 @@ try
 #if USE_SSL
             CertificateReloader::instance().tryLoad(*config);
 #endif
-        },
-        /* already_loaded = */ false);  /// Reload it right now (initial loading)
+        });
 
     SCOPE_EXIT({
         LOG_INFO(log, "Shutting down.");
