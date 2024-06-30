@@ -3402,8 +3402,6 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
     const auto & config = shared->zookeeper_config ? *shared->zookeeper_config : getConfigRef();
     if (!shared->zookeeper)
         shared->zookeeper = zkutil::ZooKeeper::create(config, zkutil::getZooKeeperConfigName(config), getZooKeeperLog());
-    else if (shared->zookeeper->hasReachedDeadline())
-        shared->zookeeper->finalize("ZooKeeper session has reached its deadline");
 
     if (shared->zookeeper->expired())
     {

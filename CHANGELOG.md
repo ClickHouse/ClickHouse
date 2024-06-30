@@ -9,7 +9,7 @@
 
 # 2024 Changelog
 
-### <a id="246"></a> ClickHouse release 24.6, 2024-06-27
+### <a id="246"></a> ClickHouse release 24.6, 2024-06-30
 
 #### Backward Incompatible Change
 * Enable asynchronous load of databases and tables by default. See the `async_load_databases` in config.xml. While this change is fully compatible, it can introduce a difference in behavior. When `async_load_databases` is false, as in the previous versions, the server will not accept connections until all tables are loaded. When `async_load_databases` is true, as in the new version, the server can accept connections before all the tables are loaded. If a query is made to a table that is not yet loaded, it will wait for the table's loading, which can take considerable time. It can change the behavior of the server if it is part of a large distributed system under a load balancer. In the first case, the load balancer can get a connection refusal and quickly failover to another server. In the second case, the load balancer can connect to a server that is still loading the tables, and the query will have a higher latency. Moreover, if many queries accumulate in the waiting state, it can lead to a "thundering herd" problem when they start processing simultaneously. This can make a difference only for highly loaded distributed backends. You can set the value of `async_load_databases` to false to avoid this problem. [#57695](https://github.com/ClickHouse/ClickHouse/pull/57695) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
