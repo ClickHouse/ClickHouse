@@ -59,11 +59,19 @@ void IObjectStorageIteratorAsync::nextBatch()
         current_batch = std::move(result.batch);
         current_batch_iterator = current_batch.begin();
 
-        accumulated_size.fetch_add(current_batch.size(), std::memory_order_relaxed);
+        if (current_batch.empty())
+        {
+            is_finished = true;
+            has_next_batch = false;
+        }
+        else
+        {
+            accumulated_size.fetch_add(current_batch.size(), std::memory_order_relaxed);
 
-        has_next_batch = result.has_next;
-        if (has_next_batch)
-            outcome_future = scheduleBatch();
+            has_next_batch = result.has_next;
+            if (has_next_batch)
+                outcome_future = scheduleBatch();
+        }
     }
     catch (...)
     {
