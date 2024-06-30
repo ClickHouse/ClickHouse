@@ -64,7 +64,7 @@ public:
     time_t getObjectMetadataModificationTime(const String & object_name) const override;
 
     String getDataPath() const override { return data_path; }
-    String getTableDataPath(const String & table_name) const override { return data_path + escapeForFileName(table_name) + "/"; }
+    String getTableDataPath(const String & table_name) const override { return std::filesystem::path(data_path) / escapeForFileName(table_name) / ""; }
     String getTableDataPath(const ASTCreateQuery & query) const override { return getTableDataPath(query.getTable()); }
     String getMetadataPath() const override { return metadata_path; }
 
@@ -98,6 +98,8 @@ protected:
 
     virtual void removeDetachedPermanentlyFlag(ContextPtr context, const String & table_name, const String & table_metadata_path, bool attach);
     virtual void setDetachedTableNotInUseForce(const UUID & /*uuid*/) {}
+
+    void createDirectories();
 
     const String metadata_path;
     const String data_path;
