@@ -24,14 +24,14 @@ $CLICKHOUSE_LOCAL -n "SELECT 302;"
 $CLICKHOUSE_LOCAL -n "SELECT 304;SELECT 305;"
 # --multiquery or -n is obselete, so we will remove multiquery and -n option except --multiquery <SQL>
 # we don't limit the number of times "--multiquery <SQL>" can be used, but we don't recommend it!
-# $CLICKHOUSE_LOCAL --multiquery --multiquery
-# $CLICKHOUSE_LOCAL -n --multiquery
-# $CLICKHOUSE_LOCAL --multiquery -n
-$CLICKHOUSE_LOCAL --multiquery --multiquery "SELECT 306; SELECT 307;"
-$CLICKHOUSE_LOCAL -n --multiquery "SELECT 307; SELECT 308;"
-$CLICKHOUSE_LOCAL --multiquery "SELECT 309; SELECT 310;" --multiquery
-$CLICKHOUSE_LOCAL --multiquery "SELECT 311;" --multiquery "SELECT 312;"
-$CLICKHOUSE_LOCAL --multiquery "SELECT 313;" -n "SELECT 314;"
+$CLICKHOUSE_LOCAL --multiquery --multiquery 2>&1 | grep -o 'Bad arguments'
+$CLICKHOUSE_LOCAL -n --multiquery 2>&1 | grep -o 'Bad arguments'
+$CLICKHOUSE_LOCAL --multiquery -n 2>&1 | grep -o 'Bad arguments'
+$CLICKHOUSE_LOCAL --multiquery --multiquery "SELECT 306; SELECT 307;" 2>&1 | grep -o 'Bad arguments'
+$CLICKHOUSE_LOCAL -n --multiquery "SELECT 307; SELECT 308;" 2>&1 | grep -o 'Bad arguments'
+$CLICKHOUSE_LOCAL --multiquery "SELECT 309; SELECT 310;" --multiquery 2>&1 | grep -o 'Bad arguments'
+$CLICKHOUSE_LOCAL --multiquery "SELECT 311;" --multiquery "SELECT 312;" 2>&1 | grep -o 'Bad arguments'
+$CLICKHOUSE_LOCAL --multiquery "SELECT 313;" -n "SELECT 314;" 2>&1 | grep -o 'Bad arguments'
 $CLICKHOUSE_LOCAL -n "SELECT 320" --query "SELECT 317;"
 # --query should be followed by SQL
 $CLICKHOUSE_LOCAL --query -n "SELECT 400;" 2>&1 | grep -o 'Bad arguments'
