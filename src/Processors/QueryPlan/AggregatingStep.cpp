@@ -27,8 +27,8 @@
 #include "Interpreters/PasteJoin.h"
 #include "Processors/DelayedPortsProcessor.h"
 #include "Processors/ForkProcessor.h"
+#include "Processors/Transforms/JoinRowTransform.h"
 #include "Processors/Transforms/JoiningTransform.h"
-#include "Processors/Transforms/JoinOneValueTransform.h"
 #include "Processors/Transforms/MergeJoinTransform.h"
 #include "Processors/Transforms/PasteJoinTransform.h"
 
@@ -355,7 +355,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                     if (columns.empty())
                     {
                         Blocks headers = {new_port->getHeader(), header};
-                        auto addColumnTransform = std::make_shared<JoinOneValueTransform>(std::move(headers), output_h);
+                        auto addColumnTransform = std::make_shared<JoinRowTransform>(std::move(headers), output_h);
                         connect(*new_port, addColumnTransform->getInputs().front());
                         connect(*ports[set_counter], addColumnTransform->getInputs().back());
                         new_port = &addColumnTransform->getOutputs().front();

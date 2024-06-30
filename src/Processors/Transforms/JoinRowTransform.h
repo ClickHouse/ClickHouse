@@ -3,12 +3,12 @@
 
 namespace DB
 {
-class JoinOneValueTransform : public IProcessor
+class JoinRowTransform : public IProcessor
 {
 public:
-    JoinOneValueTransform(const Blocks & headers, const Block & output_header);
+    JoinRowTransform(const Blocks & headers, const Block & output_header);
 
-    String getName() const override { return "JoinOneValue"; }
+    String getName() const override { return "JoinRowValue"; }
     Status prepare() override;
 
 private:
@@ -16,7 +16,7 @@ private:
     Chunk right_chunk;
     bool has_data = false;
     bool has_right_data = false;
-    size_t right_idx;
+    std::vector<std::pair<size_t, bool>> output_to_inputs_index_map; // if bool == true then column is from right_chunk
 
     Status prepareGenerate();
     Status prepareConsume();
