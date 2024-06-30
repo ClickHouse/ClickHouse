@@ -28,6 +28,8 @@
 #include <Analyzer/Passes/MultiIfToIfPass.h>
 #include <Analyzer/Passes/IfConstantConditionPass.h>
 #include <Analyzer/Passes/IfChainToMultiIfPass.h>
+#include <Analyzer/Passes/IfLowCardinalityPass.h>
+#include <Analyzer/Passes/OptimizeL2DistancePass.h>
 #include <Analyzer/Passes/OrderByTupleEliminationPass.h>
 #include <Analyzer/Passes/NormalizeCountVariantsPass.h>
 #include <Analyzer/Passes/AggregateFunctionsArithmericOperationsPass.h>

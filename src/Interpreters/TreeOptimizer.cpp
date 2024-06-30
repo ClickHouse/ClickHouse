@@ -578,6 +578,7 @@ void optimizeOrLikeChain(ASTPtr & query)
 
 }
 
+
 void TreeOptimizer::optimizeIf(ASTPtr & query, Aliases & aliases, bool if_chain_to_multiif, bool multiif_to_if)
 {
     if (multiif_to_if)

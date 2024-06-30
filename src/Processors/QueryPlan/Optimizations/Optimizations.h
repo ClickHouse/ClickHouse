@@ -18,7 +18,7 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
 /// After that it add CreateSetsStep for the subqueries that has not be used in the filters.
 void optimizeTreeThirdPass(QueryPlan & plan, QueryPlan::Node & root, QueryPlan::Nodes & nodes);
 
-/// Optimization (first pass) is a function applied to QueryPlan::Node.
+/// Optimization (first pass) is a functi on applied to QueryPlan::Node.
 /// It can read and update subtree of specified node.
 /// It return the number of updated layers of subtree if some change happened.
 /// It must guarantee that the structure of tree is correct.
@@ -57,6 +57,10 @@ size_t tryConvertOuterJoinToInnerJoin(QueryPlan::Node * parent_node, QueryPlan::
 /// May split ExpressionStep and lift up only a part of it.
 size_t tryExecuteFunctionsAfterSorting(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes);
 
+size_t tryReplaceGroupByWithDistinct(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes);
+
+size_t tryReplaceL2DistanceWithL2Squared(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes);
+
 /// Utilize storage sorting when sorting for window functions.
 /// Update information about prefix sort description in SortingStep.
 size_t tryReuseStorageOrderingForWindowFunctions(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes);
@@ -89,6 +93,8 @@ inline const auto & getOptimizations()
         {tryPushDownFilter, "pushDownFilter", &QueryPlanOptimizationSettings::filter_push_down},
         {tryConvertOuterJoinToInnerJoin, "convertOuterJoinToInnerJoin", &QueryPlanOptimizationSettings::convert_outer_join_to_inner_join},
         {tryExecuteFunctionsAfterSorting, "liftUpFunctions", &QueryPlanOptimizationSettings::execute_functions_after_sorting},
+        {tryReplaceGroupByWithDistinct, "GroupByDistinct", &QueryPlanOptimizationSettings::execute_group_by_distinct},
+        //{tryReplaceL2DistanceWithL2Squared, "ReplaceL2DistanceWithL2Squared", &QueryPlanOptimizationSettings::replace_L2Distance_to_L2Squared},
         {tryReuseStorageOrderingForWindowFunctions, "reuseStorageOrderingForWindowFunctions", &QueryPlanOptimizationSettings::reuse_storage_ordering_for_window_functions},
         {tryLiftUpUnion, "liftUpUnion", &QueryPlanOptimizationSettings::lift_up_union},
         {tryAggregatePartitionsIndependently, "aggregatePartitionsIndependently", &QueryPlanOptimizationSettings::aggregate_partitions_independently},
