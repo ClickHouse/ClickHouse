@@ -64,6 +64,14 @@ RELOAD FUNCTIONS [ON CLUSTER cluster_name]
 RELOAD FUNCTION [ON CLUSTER cluster_name] function_name
 ```
 
+## RELOAD ASYNCHRONOUS METRICS
+
+Re-calculates all [asynchronous metrics](../../operations/system-tables/asynchronous_metrics.md). Since asynchronous metrics are periodically updated based on setting [asynchronous_metrics_update_period_s](../../operations/server-configuration-parameters/settings.md), updating them manually using this statement is typically not necessary.
+
+```sql
+RELOAD ASYNCHRONOUS METRICS [ON CLUSTER cluster_name]
+```
+
 ## DROP DNS CACHE
 
 Clears ClickHouse’s internal DNS cache. Sometimes (for old ClickHouse versions) it is necessary to use this command when changing the infrastructure (changing the IP address of another ClickHouse server or the server used by dictionaries).
@@ -166,7 +174,7 @@ Aborts ClickHouse process (like `kill -9 {$ pid_clickhouse-server}`)
 
 ## Managing Distributed Tables
 
-ClickHouse can manage [distributed](../../engines/table-engines/special/distributed.md) tables. When a user inserts data into these tables, ClickHouse first creates a queue of the data that should be sent to cluster nodes, then asynchronously sends it. You can manage queue processing with the [STOP DISTRIBUTED SENDS](#query_language-system-stop-distributed-sends), [FLUSH DISTRIBUTED](#query_language-system-flush-distributed), and [START DISTRIBUTED SENDS](#query_language-system-start-distributed-sends) queries. You can also synchronously insert distributed data with the [distributed_foreground_insert](../../operations/settings/settings.md#distributed_foreground_insert) setting.
+ClickHouse can manage [distributed](../../engines/table-engines/special/distributed.md) tables. When a user inserts data into these tables, ClickHouse first creates a queue of the data that should be sent to cluster nodes, then asynchronously sends it. You can manage queue processing with the [STOP DISTRIBUTED SENDS](#stop-distributed-sends), [FLUSH DISTRIBUTED](#flush-distributed), and [START DISTRIBUTED SENDS](#start-distributed-sends) queries. You can also synchronously insert distributed data with the [distributed_foreground_insert](../../operations/settings/settings.md#distributed_foreground_insert) setting.
 
 ### STOP DISTRIBUTED SENDS
 
@@ -180,9 +188,15 @@ SYSTEM STOP DISTRIBUTED SENDS [db.]<distributed_table_name> [ON CLUSTER cluster_
 
 Forces ClickHouse to send data to cluster nodes synchronously. If any nodes are unavailable, ClickHouse throws an exception and stops query execution. You can retry the query until it succeeds, which will happen when all nodes are back online.
 
+You can also override some settings via `SETTINGS` clause, this can be useful to avoid some temporary limitations, like `max_concurrent_queries_for_all_users` or `max_memory_usage`.
+
 ``` sql
-SYSTEM FLUSH DISTRIBUTED [db.]<distributed_table_name> [ON CLUSTER cluster_name]
+SYSTEM FLUSH DISTRIBUTED [db.]<distributed_table_name> [ON CLUSTER cluster_name] [SETTINGS ...]
 ```
+
+:::note
+Each pending block is stored in disk with settings from the initial INSERT query, so that is why sometimes you may want to override settings.
+:::
 
 ### START DISTRIBUTED SENDS
 
@@ -191,6 +205,32 @@ Enables background data distribution when inserting data into distributed tables
 ``` sql
 SYSTEM START DISTRIBUTED SENDS [db.]<distributed_table_name> [ON CLUSTER cluster_name]
 ```
+
+### STOP LISTEN
+
+Closes the socket and gracefully terminates the existing connections to the server on the specified port with the specified protocol.
+
+However, if the corresponding protocol settings were not specified in the clickhouse-server configuration, this command will have no effect.
+
+```sql
+SYSTEM STOP LISTEN [ON CLUSTER cluster_name] [QUERIES ALL | QUERIES DEFAULT | QUERIES CUSTOM | TCP | TCP WITH PROXY | TCP SECURE | HTTP | HTTPS | MYSQL | GRPC | POSTGRESQL | PROMETHEUS | CUSTOM 'protocol']
+```
+
+- If `CUSTOM 'protocol'` modifier is specified, the custom protocol with the specified name defined in the protocols section of the server configuration will be stopped.
+- If `QUERIES ALL [EXCEPT .. [,..]]` modifier is specified, all protocols are stopped, unless specified with `EXCEPT` clause.
+- If `QUERIES DEFAULT [EXCEPT .. [,..]]` modifier is specified, all default protocols are stopped, unless specified with `EXCEPT` clause.
+- If `QUERIES CUSTOM [EXCEPT .. [,..]]` modifier is specified, all custom protocols are stopped, unless specified with `EXCEPT` clause.
+
+### START LISTEN
+
+Allows new connections to be established on the specified protocols.
+
+However, if the server on the specified port and protocol was not stopped using the SYSTEM STOP LISTEN command, this command will have no effect.
+
+```sql
+SYSTEM START LISTEN [ON CLUSTER cluster_name] [QUERIES ALL | QUERIES DEFAULT | QUERIES CUSTOM | TCP | TCP WITH PROXY | TCP SECURE | HTTP | HTTPS | MYSQL | GRPC | POSTGRESQL | PROMETHEUS | CUSTOM 'protocol']
+```
+
 
 ## Managing MergeTree Tables
 
@@ -449,30 +489,16 @@ Will do sync syscall.
 SYSTEM SYNC FILE CACHE [ON CLUSTER cluster_name]
 ```
 
+### UNLOAD PRIMARY KEY
 
-## SYSTEM STOP LISTEN
-
-Closes the socket and gracefully terminates the existing connections to the server on the specified port with the specified protocol.
-
-However, if the corresponding protocol settings were not specified in the clickhouse-server configuration, this command will have no effect.
+Unload the primary keys for the given table or for all tables.
 
 ```sql
-SYSTEM STOP LISTEN [ON CLUSTER cluster_name] [QUERIES ALL | QUERIES DEFAULT | QUERIES CUSTOM | TCP | TCP WITH PROXY | TCP SECURE | HTTP | HTTPS | MYSQL | GRPC | POSTGRESQL | PROMETHEUS | CUSTOM 'protocol']
+SYSTEM UNLOAD PRIMARY KEY [db.]name
 ```
 
-- If `CUSTOM 'protocol'` modifier is specified, the custom protocol with the specified name defined in the protocols section of the server configuration will be stopped.
-- If `QUERIES ALL [EXCEPT .. [,..]]` modifier is specified, all protocols are stopped, unless specified with `EXCEPT` clause.
-- If `QUERIES DEFAULT [EXCEPT .. [,..]]` modifier is specified, all default protocols are stopped, unless specified with `EXCEPT` clause.
-- If `QUERIES CUSTOM [EXCEPT .. [,..]]` modifier is specified, all custom protocols are stopped, unless specified with `EXCEPT` clause.
-
-## SYSTEM START LISTEN
-
-Allows new connections to be established on the specified protocols.
-
-However, if the server on the specified port and protocol was not stopped using the SYSTEM STOP LISTEN command, this command will have no effect.
-
 ```sql
-SYSTEM START LISTEN [ON CLUSTER cluster_name] [QUERIES ALL | QUERIES DEFAULT | QUERIES CUSTOM | TCP | TCP WITH PROXY | TCP SECURE | HTTP | HTTPS | MYSQL | GRPC | POSTGRESQL | PROMETHEUS | CUSTOM 'protocol']
+SYSTEM UNLOAD PRIMARY KEY
 ```
 
 ## Managing Refreshable Materialized Views {#refreshable-materialized-views}
@@ -481,7 +507,7 @@ Commands to control background tasks performed by [Refreshable Materialized View
 
 Keep an eye on [`system.view_refreshes`](../../operations/system-tables/view_refreshes.md) while using them.
 
-### SYSTEM REFRESH VIEW
+### REFRESH VIEW
 
 Trigger an immediate out-of-schedule refresh of a given view.
 
@@ -489,7 +515,7 @@ Trigger an immediate out-of-schedule refresh of a given view.
 SYSTEM REFRESH VIEW [db.]name
 ```
 
-### SYSTEM STOP VIEW, SYSTEM STOP VIEWS
+### STOP VIEW, STOP VIEWS
 
 Disable periodic refreshing of the given view or all refreshable views. If a refresh is in progress, cancel it too.
 
@@ -500,7 +526,7 @@ SYSTEM STOP VIEW [db.]name
 SYSTEM STOP VIEWS
 ```
 
-### SYSTEM START VIEW, SYSTEM START VIEWS
+### START VIEW, START VIEWS
 
 Enable periodic refreshing for the given view or all refreshable views. No immediate refresh is triggered.
 
@@ -511,7 +537,7 @@ SYSTEM START VIEW [db.]name
 SYSTEM START VIEWS
 ```
 
-### SYSTEM CANCEL VIEW
+### CANCEL VIEW
 
 If there's a refresh in progress for the given view, interrupt and cancel it. Otherwise do nothing.
 

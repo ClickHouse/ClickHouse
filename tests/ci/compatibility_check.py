@@ -8,10 +8,7 @@ import sys
 from pathlib import Path
 from typing import List, Tuple
 
-# isort: off
 from pip._vendor.packaging.version import Version
-
-# isort: on
 
 from build_download_helper import download_builds_filter
 from docker_images_helper import DockerImage, get_docker_image, pull_image
@@ -199,7 +196,7 @@ def main():
 
     # See https://sourceware.org/glibc/wiki/Glibc%20Timeline
     max_glibc_version = ""
-    if "amd64" in check_name:
+    if "amd64" in check_name or "release" in check_name:
         max_glibc_version = "2.4"
     elif "aarch64" in check_name:
         max_glibc_version = "2.18"  # because of build with newer sysroot?

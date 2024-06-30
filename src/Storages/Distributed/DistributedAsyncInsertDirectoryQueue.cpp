@@ -13,7 +13,7 @@
 #include <Compression/CompressedReadBuffer.h>
 #include <Disks/IDisk.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/SipHash.h>
 #include <Common/quoteString.h>
 #include <Common/ProfileEvents.h>
@@ -101,7 +101,7 @@ DistributedAsyncInsertDirectoryQueue::DistributedAsyncInsertDirectoryQueue(
     StorageDistributed & storage_,
     const DiskPtr & disk_,
     const std::string & relative_path_,
-    ConnectionPoolPtr pool_,
+    ConnectionPoolWithFailoverPtr pool_,
     ActionBlocker & monitor_blocker_,
     BackgroundSchedulePool & bg_pool)
     : storage(storage_)
@@ -146,7 +146,7 @@ DistributedAsyncInsertDirectoryQueue::~DistributedAsyncInsertDirectoryQueue()
     }
 }
 
-void DistributedAsyncInsertDirectoryQueue::flushAllData()
+void DistributedAsyncInsertDirectoryQueue::flushAllData(const SettingsChanges & settings_changes)
 {
     if (pending_files.isFinished())
         return;
@@ -154,7 +154,7 @@ void DistributedAsyncInsertDirectoryQueue::flushAllData()
     std::lock_guard lock{mutex};
     if (!hasPendingFiles())
         return;
-    processFiles();
+    processFiles(settings_changes);
 }
 
 void DistributedAsyncInsertDirectoryQueue::shutdownAndDropAllData()
@@ -237,7 +237,7 @@ void DistributedAsyncInsertDirectoryQueue::run()
 }
 
 
-ConnectionPoolPtr DistributedAsyncInsertDirectoryQueue::createPool(const Cluster::Addresses & addresses, const StorageDistributed & storage)
+ConnectionPoolWithFailoverPtr DistributedAsyncInsertDirectoryQueue::createPool(const Cluster::Addresses & addresses, const StorageDistributed & storage)
 {
     const auto pool_factory = [&storage] (const Cluster::Address & address) -> ConnectionPoolPtr
     {
@@ -284,7 +284,7 @@ ConnectionPoolPtr DistributedAsyncInsertDirectoryQueue::createPool(const Cluster
     auto pools = createPoolsForAddresses(addresses, pool_factory, storage.log);
 
     const auto settings = storage.getContext()->getSettings();
-    return pools.size() == 1 ? pools.front() : std::make_shared<ConnectionPoolWithFailover>(pools,
+    return std::make_shared<ConnectionPoolWithFailover>(std::move(pools),
         settings.load_balancing,
         settings.distributed_replica_error_half_life.totalSeconds(),
         settings.distributed_replica_error_cap);
@@ -362,19 +362,19 @@ void DistributedAsyncInsertDirectoryQueue::initializeFilesFromDisk()
         status.broken_bytes_count = broken_bytes_count;
     }
 }
-void DistributedAsyncInsertDirectoryQueue::processFiles()
+void DistributedAsyncInsertDirectoryQueue::processFiles(const SettingsChanges & settings_changes)
 try
 {
     if (should_batch_inserts)
-        processFilesWithBatching();
+        processFilesWithBatching(settings_changes);
     else
     {
         /// Process unprocessed file.
         if (!current_file.empty())
-            processFile(current_file);
+            processFile(current_file, settings_changes);
 
         while (!pending_files.isFinished() && pending_files.tryPop(current_file))
-            processFile(current_file);
+            processFile(current_file, settings_changes);
     }
 
     std::lock_guard status_lock(status_mutex);
@@ -393,7 +393,7 @@ catch (...)
     throw;
 }
 
-void DistributedAsyncInsertDirectoryQueue::processFile(std::string & file_path)
+void DistributedAsyncInsertDirectoryQueue::processFile(std::string & file_path, const SettingsChanges & settings_changes)
 {
     OpenTelemetry::TracingContextHolderPtr thread_trace_context;
 
@@ -408,8 +408,13 @@ void DistributedAsyncInsertDirectoryQueue::processFile(std::string & file_path)
             __PRETTY_FUNCTION__,
             storage.getContext()->getOpenTelemetrySpanLog());
 
-        auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(distributed_header.insert_settings);
-        auto connection = pool->get(timeouts, distributed_header.insert_settings);
+        Settings insert_settings = distributed_header.insert_settings;
+        insert_settings.applyChanges(settings_changes);
+
+        auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(insert_settings);
+        auto result = pool->getManyCheckedForInsert(timeouts, insert_settings, PoolMode::GET_ONE, storage.remote_storage.getQualifiedName());
+        auto connection = std::move(result.front().entry);
+
         LOG_DEBUG(log, "Sending `{}` to {} ({} rows, {} bytes)",
             file_path,
             connection->getDescription(),
@@ -418,7 +423,7 @@ void DistributedAsyncInsertDirectoryQueue::processFile(std::string & file_path)
 
         RemoteInserter remote{*connection, timeouts,
             distributed_header.insert_query,
-            distributed_header.insert_settings,
+            insert_settings,
             distributed_header.client_info};
         bool compression_expected = connection->getCompression() == Protocol::Compression::Enable;
         writeRemoteConvert(distributed_header, remote, compression_expected, in, log);
@@ -515,7 +520,7 @@ DistributedAsyncInsertDirectoryQueue::Status DistributedAsyncInsertDirectoryQueu
     return current_status;
 }
 
-void DistributedAsyncInsertDirectoryQueue::processFilesWithBatching()
+void DistributedAsyncInsertDirectoryQueue::processFilesWithBatching(const SettingsChanges & settings_changes)
 {
     /// Possibly, we failed to send a batch on the previous iteration. Try to send exactly the same batch.
     if (fs::exists(current_batch_file_path))
@@ -533,7 +538,7 @@ void DistributedAsyncInsertDirectoryQueue::processFilesWithBatching()
         /// file was missing, then the batch is not complete and there is no
         /// point in trying to pretend that it will not break deduplication.
         if (batch.valid())
-            batch.send();
+            batch.send(settings_changes);
 
         auto dir_sync_guard = getDirectorySyncGuard(relative_path);
         fs::remove(current_batch_file_path);
@@ -549,7 +554,7 @@ void DistributedAsyncInsertDirectoryQueue::processFilesWithBatching()
         {
             if (!fs::exists(file_path))
             {
-                LOG_WARNING(log, "File {} does not exists, likely due to current_batch.txt processing", file_path);
+                LOG_WARNING(log, "File {} does not exist, likely due to current_batch.txt processing", file_path);
                 continue;
             }
 
@@ -615,14 +620,14 @@ void DistributedAsyncInsertDirectoryQueue::processFilesWithBatching()
 
             if (batch.isEnoughSize())
             {
-                batch.send();
+                batch.send(settings_changes);
             }
         }
 
         for (auto & kv : header_to_batch)
         {
             DistributedAsyncInsertBatch & batch = kv.second;
-            batch.send();
+            batch.send(settings_changes);
         }
     }
     catch (...)

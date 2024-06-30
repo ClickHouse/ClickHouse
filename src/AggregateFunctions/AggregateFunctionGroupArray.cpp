@@ -43,7 +43,7 @@ namespace ErrorCodes
 namespace
 {
 
-enum class Sampler
+enum class Sampler : uint8_t
 {
     NONE,
     RNG,
@@ -60,14 +60,13 @@ struct GroupArrayTrait
 template <typename Trait>
 constexpr const char * getNameByTrait()
 {
-    if (Trait::last)
+    if constexpr (Trait::last)
         return "groupArrayLast";
-    if (Trait::sampler == Sampler::NONE)
-        return "groupArray";
-    else if (Trait::sampler == Sampler::RNG)
-        return "groupArraySample";
-
-    UNREACHABLE();
+    switch (Trait::sampler)
+    {
+        case Sampler::NONE: return "groupArray";
+        case Sampler::RNG: return "groupArraySample";
+    }
 }
 
 template <typename T>
@@ -89,10 +88,10 @@ struct GroupArraySamplerData
         chassert(lim != 0);
 
         /// With a large number of values, we will generate random numbers several times slower.
-        if (lim <= static_cast<UInt64>(rng.max()))
+        if (lim <= static_cast<UInt64>(pcg32_fast::max()))
             return rng() % lim;
         else
-            return (static_cast<UInt64>(rng()) * (static_cast<UInt64>(rng.max()) + 1ULL) + static_cast<UInt64>(rng())) % lim;
+            return (static_cast<UInt64>(rng()) * (static_cast<UInt64>(pcg32::max()) + 1ULL) + static_cast<UInt64>(rng())) % lim;
     }
 
     void randomShuffle()
@@ -735,14 +734,14 @@ IAggregateFunction * createWithNumericOrTimeType(const IDataType & argument_type
 template <typename Trait, typename ... TArgs>
 inline AggregateFunctionPtr createAggregateFunctionGroupArrayImpl(const DataTypePtr & argument_type, const Array & parameters, TArgs ... args)
 {
-    if (auto res = createWithNumericOrTimeType<GroupArrayNumericImpl, Trait>(*argument_type, argument_type, parameters, std::forward<TArgs>(args)...))
+    if (auto res = createWithNumericOrTimeType<GroupArrayNumericImpl, Trait>(*argument_type, argument_type, parameters, args...))
         return AggregateFunctionPtr(res);
 
     WhichDataType which(argument_type);
     if (which.idx == TypeIndex::String)
-        return std::make_shared<GroupArrayGeneralImpl<GroupArrayNodeString, Trait>>(argument_type, parameters, std::forward<TArgs>(args)...);
+        return std::make_shared<GroupArrayGeneralImpl<GroupArrayNodeString, Trait>>(argument_type, parameters, args...);
 
-    return std::make_shared<GroupArrayGeneralImpl<GroupArrayNodeGeneral, Trait>>(argument_type, parameters, std::forward<TArgs>(args)...);
+    return std::make_shared<GroupArrayGeneralImpl<GroupArrayNodeGeneral, Trait>>(argument_type, parameters, args...);
 }
 
 size_t getMaxArraySize()
@@ -753,13 +752,22 @@ size_t getMaxArraySize()
     return 0xFFFFFF;
 }
 
+bool discardOnLimitReached()
+{
+    if (auto context = Context::getGlobalContextInstance())
+        return context->getServerSettings().aggregate_function_group_array_action_when_limit_is_reached
+            == GroupArrayActionWhenLimitReached::DISCARD;
+
+    return false;
+}
+
 template <bool Tlast>
 AggregateFunctionPtr createAggregateFunctionGroupArray(
     const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
 {
     assertUnary(name, argument_types);
 
-    bool limit_size = false;
+    bool has_limit = discardOnLimitReached();
     UInt64 max_elems = getMaxArraySize();
 
     if (parameters.empty())
@@ -776,14 +784,14 @@ AggregateFunctionPtr createAggregateFunctionGroupArray(
             (type == Field::Types::UInt64 && parameters[0].get<UInt64>() == 0))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter for aggregate function {} should be positive number", name);
 
-        limit_size = true;
+        has_limit = true;
         max_elems = parameters[0].get<UInt64>();
     }
     else
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
             "Incorrect number of parameters for aggregate function {}, should be 0 or 1", name);
 
-    if (!limit_size)
+    if (!has_limit)
     {
         if (Tlast)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "groupArrayLast make sense only with max_elems (groupArrayLast(max_elems)())");

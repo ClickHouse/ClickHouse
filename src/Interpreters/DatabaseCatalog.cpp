@@ -2,6 +2,7 @@
 #include <mutex>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/TableNameHints.h>
 #include <Interpreters/loadMetadata.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/InterpreterCreateQuery.h>
@@ -26,7 +27,8 @@
 #include <Common/noexcept_scope.h>
 #include <Common/checkStackSize.h>
 
-#include "Interpreters/Context_fwd.h"
+#include <boost/range/adaptor/map.hpp>
+
 #include "config.h"
 
 #if USE_MYSQL
@@ -61,6 +63,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int HAVE_DEPENDENT_OBJECTS;
     extern const int UNFINISHED;
+    extern const int INFINITE_LOOP;
 }
 
 class DatabaseNameHints : public IHints<>
@@ -986,7 +989,7 @@ void DatabaseCatalog::loadMarkedAsDroppedTables()
     /// we should load them and enqueue cleanup to remove data from store/ and metadata from ZooKeeper
 
     std::map<String, StorageID> dropped_metadata;
-    String path = getContext()->getPath() + "metadata_dropped/";
+    String path = std::filesystem::path(getContext()->getPath()) / "metadata_dropped" / "";
 
     if (!std::filesystem::exists(path))
     {
@@ -1041,10 +1044,11 @@ void DatabaseCatalog::loadMarkedAsDroppedTables()
 
 String DatabaseCatalog::getPathForDroppedMetadata(const StorageID & table_id) const
 {
-    return getContext()->getPath() + "metadata_dropped/" +
-           escapeForFileName(table_id.getDatabaseName()) + "." +
-           escapeForFileName(table_id.getTableName()) + "." +
-           toString(table_id.uuid) + ".sql";
+    return std::filesystem::path(getContext()->getPath()) / "metadata_dropped" /
+        fmt::format("{}.{}.{}.sql",
+            escapeForFileName(table_id.getDatabaseName()),
+            escapeForFileName(table_id.getTableName()),
+            toString(table_id.uuid));
 }
 
 String DatabaseCatalog::getPathForMetadata(const StorageID & table_id) const
@@ -1143,7 +1147,7 @@ void DatabaseCatalog::dequeueDroppedTableCleanup(StorageID table_id)
     TableMarkedAsDropped dropped_table;
     {
         std::lock_guard lock(tables_marked_dropped_mutex);
-        time_t latest_drop_time = std::numeric_limits<time_t>::min();
+        auto latest_drop_time = std::numeric_limits<time_t>::min();
         auto it_dropped_table = tables_marked_dropped.end();
         for (auto it = tables_marked_dropped.begin(); it != tables_marked_dropped.end(); ++it)
         {
@@ -1168,7 +1172,7 @@ void DatabaseCatalog::dequeueDroppedTableCleanup(StorageID table_id)
         }
         if (it_dropped_table == tables_marked_dropped.end())
             throw Exception(ErrorCodes::UNKNOWN_TABLE,
-                "The drop task of table {} is in progress, has been dropped or the database engine doesn't support it",
+                "Table {} is being dropped, has been dropped, or the database engine does not support UNDROP",
                 table_id.getNameForLogs());
         latest_metadata_dropped_path = it_dropped_table->metadata_path;
         String table_metadata_path = getPathForMetadata(it_dropped_table->table_id);
@@ -1435,7 +1439,7 @@ void DatabaseCatalog::checkTableCanBeRemovedOrRenamed(
     if (!check_referential_dependencies && !check_loading_dependencies)
         return;
     std::lock_guard lock{databases_mutex};
-    return checkTableCanBeRemovedOrRenamedUnlocked(table_id, check_referential_dependencies, check_loading_dependencies, is_drop_database);
+    checkTableCanBeRemovedOrRenamedUnlocked(table_id, check_referential_dependencies, check_loading_dependencies, is_drop_database);
 }
 
 void DatabaseCatalog::checkTableCanBeRemovedOrRenamedUnlocked(
@@ -1468,6 +1472,114 @@ void DatabaseCatalog::checkTableCanBeRemovedOrRenamedUnlocked(
     if (!from_other_databases.empty())
         throw Exception(ErrorCodes::HAVE_DEPENDENT_OBJECTS, "Cannot drop or rename {}, because some tables depend on it: {}",
                         removing_table, fmt::join(from_other_databases, ", "));
+}
+
+void DatabaseCatalog::checkTableCanBeAddedWithNoCyclicDependencies(
+    const QualifiedTableName & table_name,
+    const TableNamesSet & new_referential_dependencies,
+    const TableNamesSet & new_loading_dependencies)
+{
+    std::lock_guard lock{databases_mutex};
+
+    StorageID table_id = StorageID{table_name};
+
+    auto check = [&](TablesDependencyGraph & dependencies, const TableNamesSet & new_dependencies)
+    {
+        auto old_dependencies = dependencies.removeDependencies(table_id);
+        dependencies.addDependencies(table_name, new_dependencies);
+        auto restore_dependencies = [&]()
+        {
+            dependencies.removeDependencies(table_id);
+            if (!old_dependencies.empty())
+                dependencies.addDependencies(table_id, old_dependencies);
+        };
+
+        if (dependencies.hasCyclicDependencies())
+        {
+            auto cyclic_dependencies_description = dependencies.describeCyclicDependencies();
+            restore_dependencies();
+            throw Exception(
+                ErrorCodes::INFINITE_LOOP,
+                "Cannot add dependencies for '{}', because it will lead to cyclic dependencies: {}",
+                table_name.getFullName(),
+                cyclic_dependencies_description);
+        }
+
+        restore_dependencies();
+    };
+
+    check(referential_dependencies, new_referential_dependencies);
+    check(loading_dependencies, new_loading_dependencies);
+}
+
+void DatabaseCatalog::checkTableCanBeRenamedWithNoCyclicDependencies(const StorageID & from_table_id, const StorageID & to_table_id)
+{
+    std::lock_guard lock{databases_mutex};
+
+    auto check = [&](TablesDependencyGraph & dependencies)
+    {
+        auto old_dependencies = dependencies.removeDependencies(from_table_id);
+        dependencies.addDependencies(to_table_id, old_dependencies);
+        auto restore_dependencies = [&]()
+        {
+            dependencies.removeDependencies(to_table_id);
+            dependencies.addDependencies(from_table_id, old_dependencies);
+        };
+
+        if (dependencies.hasCyclicDependencies())
+        {
+            auto cyclic_dependencies_description = dependencies.describeCyclicDependencies();
+            restore_dependencies();
+            throw Exception(
+                ErrorCodes::INFINITE_LOOP,
+                "Cannot rename '{}' to '{}', because it will lead to cyclic dependencies: {}",
+                from_table_id.getFullTableName(),
+                to_table_id.getFullTableName(),
+                cyclic_dependencies_description);
+        }
+
+        restore_dependencies();
+    };
+
+    check(referential_dependencies);
+    check(loading_dependencies);
+}
+
+void DatabaseCatalog::checkTablesCanBeExchangedWithNoCyclicDependencies(const StorageID & table_id_1, const StorageID & table_id_2)
+{
+    std::lock_guard lock{databases_mutex};
+
+    auto check = [&](TablesDependencyGraph & dependencies)
+    {
+        auto old_dependencies_1 = dependencies.removeDependencies(table_id_1);
+        auto old_dependencies_2 = dependencies.removeDependencies(table_id_2);
+        dependencies.addDependencies(table_id_1, old_dependencies_2);
+        dependencies.addDependencies(table_id_2, old_dependencies_1);
+        auto restore_dependencies = [&]()
+        {
+            dependencies.removeDependencies(table_id_1);
+            dependencies.removeDependencies(table_id_2);
+            dependencies.addDependencies(table_id_1, old_dependencies_1);
+            dependencies.addDependencies(table_id_2, old_dependencies_2);
+        };
+
+        if (dependencies.hasCyclicDependencies())
+        {
+            auto cyclic_dependencies_description = dependencies.describeCyclicDependencies();
+            restore_dependencies();
+            throw Exception(
+                ErrorCodes::INFINITE_LOOP,
+                "Cannot exchange '{}' and '{}', because it will lead to cyclic dependencies: {}",
+                table_id_1.getFullTableName(),
+                table_id_2.getFullTableName(),
+                cyclic_dependencies_description);
+        }
+
+        restore_dependencies();
+    };
+
+    check(referential_dependencies);
+    check(loading_dependencies);
 }
 
 void DatabaseCatalog::cleanupStoreDirectoryTask()
@@ -1602,6 +1714,9 @@ void DatabaseCatalog::reloadDisksTask()
 
     for (auto & database : getDatabases())
     {
+        // WARNING: In case of `async_load_databases = true` getTablesIterator() call wait for all table in the database to be loaded.
+        // WARNING: It means that no database will be able to update configuration until all databases are fully loaded.
+        // TODO: We can split this task by table or by database to make loaded table operate as usual.
         auto it = database.second->getTablesIterator(getContext());
         while (it->isValid())
         {
@@ -1704,6 +1819,44 @@ DDLGuard::~DDLGuard()
     if (!is_database_guard)
         db_mutex.unlock_shared();
     releaseTableLock();
+}
+
+std::pair<String, String> TableNameHints::getHintForTable(const String & table_name) const
+{
+    auto results = this->getHints(table_name, getAllRegisteredNames());
+    if (results.empty())
+        return getExtendedHintForTable(table_name);
+    return std::make_pair(database->getDatabaseName(), results[0]);
+}
+
+std::pair<String, String> TableNameHints::getExtendedHintForTable(const String & table_name) const
+{
+    /// load all available databases from the DatabaseCatalog instance
+    auto & database_catalog = DatabaseCatalog::instance();
+    auto all_databases = database_catalog.getDatabases();
+
+    for (const auto & [db_name, db] : all_databases)
+    {
+        /// this case should be covered already by getHintForTable
+        if (db_name == database->getDatabaseName())
+            continue;
+
+        TableNameHints hints(db, context);
+        auto results = hints.getHints(table_name);
+
+        /// if the results are not empty, return the first instance of the table_name
+        /// and the corresponding database_name that was found.
+        if (!results.empty())
+            return std::make_pair(db_name, results[0]);
+    }
+    return {};
+}
+
+Names TableNameHints::getAllRegisteredNames() const
+{
+    if (database)
+        return database->getAllTableNames(context);
+    return {};
 }
 
 }

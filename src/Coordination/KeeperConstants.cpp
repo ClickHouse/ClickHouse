@@ -111,7 +111,6 @@
     M(PerfLocalMemoryReferences) \
     M(PerfLocalMemoryMisses) \
 \
-    M(CreatedHTTPConnections) \
     M(CannotWriteToWriteBufferDiscard) \
 \
     M(S3ReadMicroseconds) \
@@ -180,8 +179,6 @@
     M(ReadBufferFromS3RequestsErrors) \
     M(ReadBufferFromS3ResetSessions) \
     M(ReadBufferFromS3PreservedSessions) \
-\
-    M(ReadWriteBufferFromHTTPPreservedSessions) \
 \
     M(WriteBufferFromS3Microseconds) \
     M(WriteBufferFromS3Bytes) \
@@ -261,7 +258,8 @@
     M(KeeperExistsRequest) \
 \
     M(IOUringSQEsSubmitted) \
-    M(IOUringSQEsResubmits) \
+    M(IOUringSQEsResubmitsAsync) \
+    M(IOUringSQEsResubmitsSync) \
     M(IOUringCQEsCompleted) \
     M(IOUringCQEsFailed) \
 \

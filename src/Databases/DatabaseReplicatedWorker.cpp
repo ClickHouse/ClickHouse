@@ -18,6 +18,8 @@ namespace ErrorCodes
     extern const int UNFINISHED;
 }
 
+static constexpr const char * FORCE_AUTO_RECOVERY_DIGEST = "42";
+
 DatabaseReplicatedDDLWorker::DatabaseReplicatedDDLWorker(DatabaseReplicated * db, ContextPtr context_)
     : DDLWorker(/* pool_size */ 1, db->zookeeper_path + "/log", context_, nullptr, {}, fmt::format("DDLWorker({})", db->getDatabaseName()))
     , database(db)
@@ -44,6 +46,26 @@ bool DatabaseReplicatedDDLWorker::initializeMainThread()
                 /// NOTE It will not stop cleanup thread until DDLWorker::shutdown() call (cleanup thread will just do nothing)
                 break;
             }
+
+            if (database->db_settings.max_retries_before_automatic_recovery &&
+                database->db_settings.max_retries_before_automatic_recovery <= subsequent_errors_count)
+            {
+                String current_task_name;
+                {
+                    std::unique_lock lock{mutex};
+                    current_task_name = current_task;
+                }
+                LOG_WARNING(log, "Database got stuck at processing task {}: it failed {} times in a row with the same error. "
+                                 "Will reset digest to mark our replica as lost, and trigger recovery from the most up-to-date metadata "
+                                 "from ZooKeeper. See max_retries_before_automatic_recovery setting. The error: {}",
+                            current_task, subsequent_errors_count, last_unexpected_error);
+
+                String digest_str;
+                zookeeper->tryGet(database->replica_path + "/digest", digest_str);
+                LOG_WARNING(log, "Resetting digest from {} to {}", digest_str, FORCE_AUTO_RECOVERY_DIGEST);
+                zookeeper->trySet(database->replica_path + "/digest", FORCE_AUTO_RECOVERY_DIGEST);
+            }
+
             initializeReplication();
             initialized = true;
             return true;
@@ -75,10 +97,9 @@ void DatabaseReplicatedDDLWorker::initializeReplication()
     String active_path = fs::path(database->replica_path) / "active";
     String active_id = toString(ServerUUID::get());
     zookeeper->deleteEphemeralNodeIfContentMatches(active_path, active_id);
-    zookeeper->create(active_path, active_id, zkutil::CreateMode::Ephemeral);
+    if (active_node_holder)
+        active_node_holder->setAlreadyRemoved();
     active_node_holder.reset();
-    active_node_holder_zookeeper = zookeeper;
-    active_node_holder = zkutil::EphemeralNodeHolder::existing(active_path, *active_node_holder_zookeeper);
 
     String log_ptr_str = zookeeper->get(database->replica_path + "/log_ptr");
     UInt32 our_log_ptr = parse<UInt32>(log_ptr_str);
@@ -127,9 +148,15 @@ void DatabaseReplicatedDDLWorker::initializeReplication()
         initializeLogPointer(log_entry_name);
     }
 
-    std::lock_guard lock{database->metadata_mutex};
-    if (!database->checkDigestValid(context, false))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Inconsistent database metadata after reconnection to ZooKeeper");
+    {
+        std::lock_guard lock{database->metadata_mutex};
+        if (!database->checkDigestValid(context, false))
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Inconsistent database metadata after reconnection to ZooKeeper");
+    }
+
+    zookeeper->create(active_path, active_id, zkutil::CreateMode::Ephemeral);
+    active_node_holder_zookeeper = zookeeper;
+    active_node_holder = zkutil::EphemeralNodeHolder::existing(active_path, *active_node_holder_zookeeper);
 }
 
 String DatabaseReplicatedDDLWorker::enqueueQuery(DDLLogEntry & entry)
@@ -394,6 +421,8 @@ DDLTaskPtr DatabaseReplicatedDDLWorker::initAndCheckTask(const String & entry_na
     {
         /// Some replica is added or removed, let's update cached cluster
         database->setCluster(database->getClusterImpl());
+        if (!database->replica_group_name.empty())
+            database->setCluster(database->getClusterImpl(/*all_groups*/ true), /*all_groups*/ true);
         out_reason = fmt::format("Entry {} is a dummy task", entry_name);
         return {};
     }

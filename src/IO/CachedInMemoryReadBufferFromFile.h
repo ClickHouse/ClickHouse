@@ -1,7 +1,8 @@
 #pragma once
 
-#include <Common/PageCache.h>
 #include <IO/ReadBufferFromFileBase.h>
+#include <IO/ReadSettings.h>
+#include <Common/PageCache.h>
 
 namespace DB
 {

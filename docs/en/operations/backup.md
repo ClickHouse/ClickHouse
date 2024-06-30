@@ -22,7 +22,7 @@ description: In order to effectively mitigate possible human errors, you should 
   TEMPORARY TABLE table_name [AS table_name_in_backup] |
   VIEW view_name [AS view_name_in_backup]
   ALL TEMPORARY TABLES [EXCEPT ...] |
-  ALL DATABASES [EXCEPT ...] } [,...]
+  ALL [EXCEPT ...] } [,...]
   [ON CLUSTER 'cluster_name']
   TO|FROM File('<path>/<filename>') | Disk('<disk_name>', '<path>/') | S3('<S3 endpoint>/<path>', '<Access key ID>', '<Secret access key>')
   [SETTINGS base_backup = File('<path>/<filename>') | Disk(...) | S3('<S3 endpoint>/<path>', '<Access key ID>', '<Secret access key>')]
@@ -87,6 +87,7 @@ The BACKUP and RESTORE statements take a list of DATABASE and TABLE names, a des
     - `structure_only`: if enabled, allows to only backup or restore the CREATE statements without the data of tables
     - `storage_policy`: storage policy for the tables being restored. See [Using Multiple Block Devices for Data Storage](../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes). This setting is only applicable to the `RESTORE` command. The specified storage policy applies only to tables with an engine from the `MergeTree` family.
     - `s3_storage_class`: the storage class used for S3 backup. For example, `STANDARD`
+    - `azure_attempt_to_create_container`: when using Azure Blob Storage, whether the specified container will try to be created if it doesn't exist. Default: true.
 
 ### Usage examples
 

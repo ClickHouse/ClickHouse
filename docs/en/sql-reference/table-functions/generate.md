@@ -53,7 +53,7 @@ SELECT * FROM random;
 └──────────────────────────────┴──────────────┴────────────────────────────────────────────────────────────────────┘
 ```
 
-In combination with [generateRandomStructure](../../sql-reference/functions/other-functions.md#generateRandomStructure):
+In combination with [generateRandomStructure](../../sql-reference/functions/other-functions.md#generaterandomstructure):
 
 ```sql
 SELECT * FROM generateRandom(generateRandomStructure(4, 101), 101) LIMIT 3;

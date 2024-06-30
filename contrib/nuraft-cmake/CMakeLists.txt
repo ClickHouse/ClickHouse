@@ -32,6 +32,7 @@ set(SRCS
     "${LIBRARY_DIR}/src/handle_custom_notification.cxx"
     "${LIBRARY_DIR}/src/handle_vote.cxx"
     "${LIBRARY_DIR}/src/launcher.cxx"
+    "${LIBRARY_DIR}/src/log_entry.cxx"
     "${LIBRARY_DIR}/src/srv_config.cxx"
     "${LIBRARY_DIR}/src/snapshot_sync_req.cxx"
     "${LIBRARY_DIR}/src/snapshot_sync_ctx.cxx"
@@ -49,6 +50,12 @@ if(NOT TARGET OpenSSL::Crypto)
 else()
     target_compile_definitions(_nuraft PRIVATE USE_BOOST_ASIO=1 BOOST_ASIO_STANDALONE=1)
 endif()
+
+target_link_libraries (_nuraft PRIVATE clickhouse_common_io)
+# We must have it PUBLIC here because some headers which depend on it directly
+# included in clickhouse
+target_compile_definitions(_nuraft PUBLIC USE_CLICKHOUSE_THREADS=1)
+MESSAGE(STATUS "Will use clickhouse threads for NuRaft")
 
 target_include_directories (_nuraft SYSTEM PRIVATE "${LIBRARY_DIR}/include/libnuraft")
 # for some reason include "asio.h" directly without "boost/" prefix.

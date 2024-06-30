@@ -206,7 +206,7 @@ void RemoteCacheController::close()
     // delete directory
     LOG_TRACE(log, "Removing the local cache. local path: {}", local_path.string());
     if (fs::exists(local_path))
-        fs::remove_all(local_path);
+        (void)fs::remove_all(local_path);
 }
 
 std::unique_ptr<ReadBufferFromFileBase> RemoteCacheController::allocFile()

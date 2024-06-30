@@ -6,6 +6,7 @@ from helpers.cluster import (
     ClickHouseCluster,
     ClickHouseInstance,
     get_docker_compose_path,
+    is_arm,
 )
 import logging
 
@@ -13,13 +14,17 @@ from . import materialized_with_ddl
 
 DOCKER_COMPOSE_PATH = get_docker_compose_path()
 
+# skip all test on arm due to no arm support in mysql57
+if is_arm():
+    pytestmark = pytest.mark.skip
+
 cluster = ClickHouseCluster(__file__)
 mysql_node = None
 mysql8_node = None
 
 node_db = cluster.add_instance(
     "node1",
-    main_configs=["configs/timezone_config.xml"],
+    main_configs=["configs/timezone_config.xml", "configs/no_async_load.xml"],
     user_configs=["configs/users.xml"],
     with_mysql57=True,
     with_mysql8=True,
@@ -27,7 +32,7 @@ node_db = cluster.add_instance(
 )
 node_disable_bytes_settings = cluster.add_instance(
     "node2",
-    main_configs=["configs/timezone_config.xml"],
+    main_configs=["configs/timezone_config.xml", "configs/no_async_load.xml"],
     user_configs=["configs/users_disable_bytes_settings.xml"],
     with_mysql57=False,
     with_mysql8=False,
@@ -35,7 +40,7 @@ node_disable_bytes_settings = cluster.add_instance(
 )
 node_disable_rows_settings = cluster.add_instance(
     "node3",
-    main_configs=["configs/timezone_config.xml"],
+    main_configs=["configs/timezone_config.xml", "configs/no_async_load.xml"],
     user_configs=["configs/users_disable_rows_settings.xml"],
     with_mysql57=False,
     with_mysql8=False,
@@ -715,4 +720,12 @@ def test_binlog_client(started_cluster, started_mysql_8_0, replication):
     replication.drop_dbs()
     materialized_with_ddl.gtid_after_attach_test(
         node_db, started_mysql_8_0, replication
+    )
+
+
+def test_create_database_without_mysql_connection(
+    started_cluster, started_mysql_8_0, clickhouse_node: ClickHouseInstance
+):
+    materialized_with_ddl.mysql_create_database_without_connection(
+        clickhouse_node, started_mysql_8_0, "mysql80"
     )

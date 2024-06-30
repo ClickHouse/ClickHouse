@@ -67,6 +67,7 @@ public:
     void updateWeakHash32(WeakHash32 & hash) const override;
     void updateHashFast(SipHash & hash) const override;
     void insertFrom(const IColumn & src_, size_t n) override;
+    void insertManyFrom(const IColumn & src, size_t position, size_t length) override;
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
     void expand(const Filter & mask, bool inverted) override;
@@ -103,6 +104,9 @@ public:
     ColumnTuple & getNestedData() { return assert_cast<ColumnTuple &>(getNestedColumn().getData()); }
 
     ColumnPtr compress() const override;
+
+    bool hasDynamicStructure() const override { return nested->hasDynamicStructure(); }
+    void takeDynamicStructureFromSourceColumns(const Columns & source_columns) override;
 };
 
 }

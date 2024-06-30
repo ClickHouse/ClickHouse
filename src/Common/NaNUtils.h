@@ -25,6 +25,18 @@ inline bool isFinite(T x)
         return true;
 }
 
+template <typename T>
+bool canConvertTo(Float64 x)
+{
+    if constexpr (std::is_floating_point_v<T>)
+        return true;
+    if (!isFinite(x))
+        return false;
+    if (x > Float64(std::numeric_limits<T>::max()) || x < Float64(std::numeric_limits<T>::lowest()))
+        return false;
+
+    return true;
+}
 
 template <typename T>
 T NaNOrZero()

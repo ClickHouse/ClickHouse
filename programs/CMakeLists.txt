@@ -162,7 +162,7 @@ if (ARCH_AMD64 AND OS_LINUX AND NOT OS_ANDROID)
     set (HARMFUL_LIB harmful)
 endif ()
 
-target_link_libraries (clickhouse PRIVATE clickhouse_common_io string_utils ${HARMFUL_LIB})
+target_link_libraries (clickhouse PRIVATE clickhouse_common_io ${HARMFUL_LIB})
 target_include_directories (clickhouse PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
 
 if (ENABLE_CLICKHOUSE_KEEPER)
@@ -267,10 +267,6 @@ if (ENABLE_TESTS)
     add_custom_target (clickhouse-tests ALL DEPENDS ${CLICKHOUSE_UNIT_TESTS_TARGETS})
     add_dependencies(clickhouse-bundle clickhouse-tests)
 endif()
-
-if (ENABLE_FUZZING)
-    add_compile_definitions(FUZZING_MODE=1)
-endif ()
 
 if (TARGET ch_contrib::protobuf)
     get_property(google_proto_files TARGET ch_contrib::protobuf PROPERTY google_proto_files)

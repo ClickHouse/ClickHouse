@@ -121,5 +121,8 @@ void MergeTreeIndexGranularity::resizeWithFixedGranularity(size_t size, size_t f
     }
 }
 
-
+std::string MergeTreeIndexGranularity::describe() const
+{
+    return fmt::format("initialized: {}, marks_rows_partial_sums: [{}]", initialized, fmt::join(marks_rows_partial_sums, ", "));
+}
 }

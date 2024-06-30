@@ -69,7 +69,7 @@ select count(), * from dist_01247 group by number limit 1 offset 1;
 select 'OFFSET distributed_push_down_limit=0';
 select count(), * from dist_01247 group by number offset 1 settings distributed_push_down_limit=0;
 select 'OFFSET distributed_push_down_limit=1';
-select count(), * from dist_01247 group by number offset 1 settings distributed_push_down_limit=1;
+select count(), * from dist_01247 group by number order by count(), number offset 1 settings distributed_push_down_limit=1;
 -- this will emulate different data on for different shards
 select 'WHERE LIMIT OFFSET';
 select count(), * from dist_01247 where number = _shard_num-1 group by number order by number limit 1 offset 1;

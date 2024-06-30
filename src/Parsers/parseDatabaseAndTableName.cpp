@@ -60,21 +60,6 @@ bool parseDatabaseAndTableAsAST(IParser::Pos & pos, Expected & expected, ASTPtr 
 }
 
 
-bool parseDatabase(IParser::Pos & pos, Expected & expected, String & database_str)
-{
-    ParserToken s_dot(TokenType::Dot);
-    ParserIdentifier identifier_parser;
-
-    ASTPtr database;
-    database_str = "";
-
-    if (!identifier_parser.parse(pos, database, expected))
-        return false;
-
-    tryGetIdentifierNameInto(database, database_str);
-    return true;
-}
-
 bool parseDatabaseAsAST(IParser::Pos & pos, Expected & expected, ASTPtr & database)
 {
     ParserIdentifier identifier_parser(/* allow_query_parameter */true);

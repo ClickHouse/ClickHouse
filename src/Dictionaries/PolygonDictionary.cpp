@@ -1,6 +1,5 @@
 #include "PolygonDictionary.h"
 
-#include <numeric>
 #include <cmath>
 
 #include <base/sort.h>
@@ -15,7 +14,7 @@
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Dictionaries/DictionaryFactory.h>
 #include <Dictionaries/DictionarySource.h>
-#include <Dictionaries/DictionarySourceHelpers.h>
+#include <Dictionaries/DictionaryPipelineExecutor.h>
 
 
 namespace DB
@@ -476,7 +475,11 @@ void IPolygonDictionary::getItemsShortCircuitImpl(
             default_mask[requested_key_index] = 0;
         }
         else
+        {
+            auto value = AttributeType{};
+            set_value(value);
             default_mask[requested_key_index] = 1;
+        }
     }
 
     query_count.fetch_add(requested_key_size, std::memory_order_relaxed);

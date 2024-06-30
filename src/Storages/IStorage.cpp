@@ -1,6 +1,6 @@
 #include <Storages/IStorage.h>
 
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
@@ -12,7 +12,7 @@
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Storages/AlterCommands.h>
-#include <Storages/Statistics/Estimator.h>
+#include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <Backups/RestorerFromBackup.h>
 #include <Backups/IBackup.h>
 
@@ -27,11 +27,14 @@ namespace ErrorCodes
     extern const int CANNOT_RESTORE_TABLE;
 }
 
-IStorage::IStorage(StorageID storage_id_)
+IStorage::IStorage(StorageID storage_id_, std::unique_ptr<StorageInMemoryMetadata> metadata_)
     : storage_id(std::move(storage_id_))
-    , metadata(std::make_unique<StorageInMemoryMetadata>())
     , virtuals(std::make_unique<VirtualColumnsDescription>())
 {
+    if (metadata_)
+        metadata.set(std::move(metadata_));
+    else
+        metadata.set(std::make_unique<StorageInMemoryMetadata>());
 }
 
 bool IStorage::isVirtualColumn(const String & column_name, const StorageMetadataPtr & metadata_snapshot) const
@@ -233,7 +236,7 @@ StorageID IStorage::getStorageID() const
     return storage_id;
 }
 
-ConditionEstimator IStorage::getConditionEstimatorByPredicate(const SelectQueryInfo &, const StorageSnapshotPtr &, ContextPtr) const
+ConditionSelectivityEstimator IStorage::getConditionSelectivityEstimatorByPredicate(const StorageSnapshotPtr &, const ActionsDAGPtr &, ContextPtr) const
 {
     return {};
 }
@@ -305,7 +308,7 @@ void IStorage::backupData(BackupEntriesCollector &, const String &, const std::o
 void IStorage::restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> &)
 {
     /// If an inherited class doesn't override restoreDataFromBackup() that means it doesn't backup any data.
-    auto filenames = restorer.getBackup()->listFiles(data_path_in_backup);
+    auto filenames = restorer.getBackup()->listFiles(data_path_in_backup, /*recursive*/ false);
     if (!filenames.empty())
         throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "Cannot restore table {}: Folder {} in backup must be empty",
                         getStorageID().getFullTableName(), data_path_in_backup);

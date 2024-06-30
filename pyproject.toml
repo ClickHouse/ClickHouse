@@ -7,6 +7,10 @@ max-branches=50
 max-nested-blocks=10
 max-statements=200
 
+[tool.isort]
+profile = "black"
+src_paths = ["src", "tests/ci", "tests/sqllogic"]
+
 [tool.pylint.FORMAT]
 #ignore-long-lines = (# )?<?https?://\S+>?$
 

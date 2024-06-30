@@ -34,7 +34,7 @@ public:
     {}
 
     HTTPException * clone() const override { return new HTTPException(*this); }
-    void rethrow() const override { throw *this; }
+    void rethrow() const override { throw *this; } /// NOLINT(cert-err60-cpp)
 
     Poco::Net::HTTPResponse::HTTPStatus getHTTPStatus() const { return http_status; }
 
@@ -61,7 +61,7 @@ HTTPSessionPtr makeHTTPSession(
     HTTPConnectionGroupType group,
     const Poco::URI & uri,
     const ConnectionTimeouts & timeouts,
-    ProxyConfiguration proxy_config = {}
+    const ProxyConfiguration & proxy_config = {}
 );
 
 bool isRedirect(Poco::Net::HTTPResponse::HTTPStatus status);

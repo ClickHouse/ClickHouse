@@ -2,6 +2,7 @@
 
 #if USE_JEMALLOC
 
+#include <Common/Exception.h>
 #include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
 #include <jemalloc/jemalloc.h>
@@ -66,7 +67,7 @@ std::string flushJemallocProfile(const std::string & file_prefix)
     checkJemallocProfilingEnabled();
     char * prefix_buffer;
     size_t prefix_size = sizeof(prefix_buffer);
-    int n = mallctl("opt.prof_prefix", &prefix_buffer, &prefix_size, nullptr, 0);
+    int n = mallctl("opt.prof_prefix", &prefix_buffer, &prefix_size, nullptr, 0); // NOLINT
     if (!n && std::string_view(prefix_buffer) != "jeprof")
     {
         LOG_TRACE(getLogger("SystemJemalloc"), "Flushing memory profile with prefix {}", prefix_buffer);
@@ -79,7 +80,7 @@ std::string flushJemallocProfile(const std::string & file_prefix)
     const auto * profile_dump_path_str = profile_dump_path.c_str();
 
     LOG_TRACE(getLogger("SystemJemalloc"), "Flushing memory profile to {}", profile_dump_path_str);
-    mallctl("prof.dump", nullptr, nullptr, &profile_dump_path_str, sizeof(profile_dump_path_str));
+    mallctl("prof.dump", nullptr, nullptr, &profile_dump_path_str, sizeof(profile_dump_path_str)); // NOLINT
     return profile_dump_path;
 }
 

@@ -70,7 +70,7 @@ public:
 
     void initOnce(ContextPtr context, const String & root_dir_, size_t limit_size_, size_t bytes_read_before_flush_);
 
-    inline bool isInitialized() const { return initialized; }
+    bool isInitialized() const { return initialized; }
 
     std::pair<std::unique_ptr<LocalFileHolder>, std::unique_ptr<ReadBuffer>>
     createReader(ContextPtr context, IRemoteFileMetadataPtr remote_file_metadata, std::unique_ptr<ReadBuffer> & read_buffer, bool is_random_accessed);

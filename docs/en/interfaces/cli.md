@@ -178,7 +178,7 @@ You can pass parameters to `clickhouse-client` (all parameters have a default va
 - `--password` – The password. Default value: empty string.
 - `--ask-password` - Prompt the user to enter a password.
 - `--query, -q` – The query to process when using non-interactive mode. `--query` can be specified multiple times, e.g. `--query "SELECT 1" --query "SELECT 2"`. Cannot be used simultaneously with `--queries-file`.
-- `--queries-file` – file path with queries to execute. `--queries-file` can be specified multiple times, e.g. `--query queries1.sql --query queries2.sql`. Cannot be used simultaneously with `--query`.
+- `--queries-file` – file path with queries to execute. `--queries-file` can be specified multiple times, e.g. `--queries-file  queries1.sql --queries-file  queries2.sql`. Cannot be used simultaneously with `--query`.
 - `--multiquery, -n` – If specified, multiple queries separated by semicolons can be listed after the `--query` option. For convenience, it is also possible to omit `--query` and pass the queries directly after `--multiquery`.
 - `--multiline, -m` – If specified, allow multiline queries (do not send the query on Enter).
 - `--database, -d` – Select the current default database. Default value: the current database from the server settings (‘default’ by default).
@@ -193,6 +193,7 @@ You can pass parameters to `clickhouse-client` (all parameters have a default va
 - `--hardware-utilization` — Print hardware utilization information in progress bar.
 - `--print-profile-events` – Print `ProfileEvents` packets.
 - `--profile-events-delay-ms` – Delay between printing `ProfileEvents` packets (-1 - print only totals, 0 - print every single packet).
+- `--jwt` – If specified, enables authorization via JSON Web Token. Server JWT authorization is available only in ClickHouse Cloud.
 
 Instead of `--host`, `--port`, `--user` and `--password` options, ClickHouse client also supports connection strings (see next section).
 

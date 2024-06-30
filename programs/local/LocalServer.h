@@ -30,13 +30,16 @@ public:
     int main(const std::vector<String> & /*args*/) override;
 
 protected:
+
+    Poco::Util::LayeredConfiguration & getClientConfiguration() override;
+
     void connect() override;
 
     void processError(const String & query) const override;
 
     String getName() const override { return "local"; }
 
-    void printHelpMessage(const OptionsDescription & options_description) override;
+    void printHelpMessage(const OptionsDescription & options_description, bool verbose) override;
 
     void addOptions(OptionsDescription & options_description) override;
 
@@ -65,6 +68,8 @@ private:
 
     std::optional<StatusFile> status;
     std::optional<std::filesystem::path> temporary_directory_to_delete;
+
+    std::unique_ptr<ReadBufferFromFile> input;
 };
 
 }

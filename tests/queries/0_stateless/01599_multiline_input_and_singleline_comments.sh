@@ -2,7 +2,6 @@
 
 log_user 0
 
-# In some places `-timeout 1` is used to avoid expect to always wait for the whole timeout
 set timeout 60
 
 match_max 100000
@@ -14,15 +13,23 @@ expect ":) "
 
 # Make a query
 send -- "SELECT 1\r"
-expect -timeout 1 ":-] "
 send -- "-- xxx\r"
-expect -timeout 1 ":-] "
 send -- ", 2\r"
-expect -timeout 1 ":-] "
-send -- ";\r"
+send -- ";"
 
-expect "│ 1 │ 2 │"
+# For some reason this sleep is required for this test to work properly
+sleep 1
+send -- "\r"
+
+expect {
+    "│ 1 │ 2 │" { }
+    timeout { exit 1 }
+}
+
 expect ":) "
 
-send -- "\4"
-expect eof
+send -- ""
+expect {
+    eof { exit 0 }
+    timeout { exit 1 }
+}

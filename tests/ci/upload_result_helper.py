@@ -92,13 +92,21 @@ def upload_results(
     else:
         raw_log_url = GITHUB_JOB_URL()
 
+    try:
+        job_url = GITHUB_JOB_URL()
+    except Exception:
+        print(
+            "ERROR: Failed to get job URL from GH API, job report will use run URL instead."
+        )
+        job_url = GITHUB_RUN_URL
+
     if test_results or not ready_report_url:
         html_report = create_test_html_report(
             check_name,
             test_results,
             raw_log_url,
             GITHUB_RUN_URL,
-            GITHUB_JOB_URL(),
+            job_url,
             branch_url,
             branch_name,
             commit_url,
