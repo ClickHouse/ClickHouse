@@ -750,8 +750,13 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
                     throw Exception(ErrorCodes::ILLEGAL_INDEX, "Duplicated index name {} is not allowed. Please use different index names.", backQuoteIfNeed(index_desc.name));
 
                 const auto & settings = getContext()->getSettingsRef();
-                if (index_desc.type == FULL_TEXT_INDEX_NAME && !settings.allow_experimental_inverted_index)
-                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Experimental full-text index feature is not enabled (the setting 'allow_experimental_inverted_index')");
+                if (index_desc.type == FULL_TEXT_INDEX_NAME && !settings.allow_experimental_full_text_index)
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Experimental full-text index feature is not enabled (the setting 'allow_experimental_full_text_index')");
+                /// ----
+                /// Temporary check during a transition period. Please remove at the end of 2024.
+                if (index_desc.type == INVERTED_INDEX_NAME && settings.allow_experimental_inverted_index) /// The funny condition is not a mistake, see 02346_fulltext_index_old_name.sql
+                    throw Exception(ErrorCodes::ILLEGAL_INDEX, "Please use index type 'full_text' instead of 'inverted'");
+                /// ----
                 if (index_desc.type == "annoy" && !settings.allow_experimental_annoy_index)
                     throw Exception(ErrorCodes::INCORRECT_QUERY, "Annoy index is disabled. Turn on allow_experimental_annoy_index");
                 if (index_desc.type == "usearch" && !settings.allow_experimental_usearch_index)
@@ -1082,11 +1087,14 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     String current_database = getContext()->getCurrentDatabase();
     auto database_name = create.database ? create.getDatabase() : current_database;
 
+    bool is_secondary_query = getContext()->getZooKeeperMetadataTransaction() && !getContext()->getZooKeeperMetadataTransaction()->isInitialQuery();
+    auto mode = getLoadingStrictnessLevel(create.attach, /*force_attach*/ false, /*has_force_restore_data_flag*/ false, is_secondary_query || is_restore_from_backup);
+
     if (!create.sql_security && create.supportSQLSecurity() && !getContext()->getServerSettings().ignore_empty_sql_security_in_create_view_query)
         create.sql_security = std::make_shared<ASTSQLSecurity>();
 
     if (create.sql_security)
-        processSQLSecurityOption(getContext(), create.sql_security->as<ASTSQLSecurity &>(), create.attach, create.is_materialized_view);
+        processSQLSecurityOption(getContext(), create.sql_security->as<ASTSQLSecurity &>(), create.is_materialized_view, /* skip_check_permissions= */ mode >= LoadingStrictnessLevel::SECONDARY_CREATE);
 
     DDLGuardPtr ddl_guard;
 
@@ -1212,9 +1220,6 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     // substitute possible UDFs with their definitions
     if (!UserDefinedSQLFunctionFactory::instance().empty())
         UserDefinedSQLFunctionVisitor::visit(query_ptr);
-
-    bool is_secondary_query = getContext()->getZooKeeperMetadataTransaction() && !getContext()->getZooKeeperMetadataTransaction()->isInitialQuery();
-    auto mode = getLoadingStrictnessLevel(create.attach, /*force_attach*/ false, /*has_force_restore_data_flag*/ false, is_secondary_query || is_restore_from_backup);
 
     /// Set and retrieve list of columns, indices and constraints. Set table engine if needed. Rewrite query in canonical way.
     TableProperties properties = getTablePropertiesAndNormalizeCreateQuery(create, mode);
@@ -1880,7 +1885,7 @@ void InterpreterCreateQuery::addColumnsDescriptionToCreateQueryIfNecessary(ASTCr
     }
 }
 
-void InterpreterCreateQuery::processSQLSecurityOption(ContextPtr context_, ASTSQLSecurity & sql_security, bool is_attach, bool is_materialized_view)
+void InterpreterCreateQuery::processSQLSecurityOption(ContextPtr context_, ASTSQLSecurity & sql_security, bool is_materialized_view, bool skip_check_permissions)
 {
     /// If no SQL security is specified, apply default from default_*_view_sql_security setting.
     if (!sql_security.type)
@@ -1921,7 +1926,7 @@ void InterpreterCreateQuery::processSQLSecurityOption(ContextPtr context_, ASTSQ
     }
 
     /// Checks the permissions for the specified definer user.
-    if (sql_security.definer && !sql_security.is_definer_current_user && !is_attach)
+    if (sql_security.definer && !sql_security.is_definer_current_user && !skip_check_permissions)
     {
         const auto definer_name = sql_security.definer->toString();
 
@@ -1931,7 +1936,7 @@ void InterpreterCreateQuery::processSQLSecurityOption(ContextPtr context_, ASTSQ
             context_->checkAccess(AccessType::SET_DEFINER, definer_name);
     }
 
-    if (sql_security.type == SQLSecurityType::NONE && !is_attach)
+    if (sql_security.type == SQLSecurityType::NONE && !skip_check_permissions)
         context_->checkAccess(AccessType::ALLOW_SQL_SECURITY_NONE);
 }
 

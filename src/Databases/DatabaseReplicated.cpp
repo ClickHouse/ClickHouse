@@ -921,6 +921,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         /// We will execute some CREATE queries for recovery (not ATTACH queries),
         /// so we need to allow experimental features that can be used in a CREATE query
         query_context->setSetting("allow_experimental_inverted_index", 1);
+        query_context->setSetting("allow_experimental_full_text_index", 1);
         query_context->setSetting("allow_experimental_codecs", 1);
         query_context->setSetting("allow_experimental_live_view", 1);
         query_context->setSetting("allow_experimental_window_view", 1);
