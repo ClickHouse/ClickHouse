@@ -1,7 +1,7 @@
 #include <Core/Defines.h>
 #include <base/hex.h>
 #include <Common/PODArray.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/memcpySmall.h>
 #include <Formats/FormatSettings.h>
 #include <IO/WriteBufferFromString.h>
@@ -243,6 +243,18 @@ void readStringUntilWhitespace(String & s, ReadBuffer & buf)
     readStringUntilWhitespaceInto(s, buf);
 }
 
+void readStringUntilAmpersand(String & s, ReadBuffer & buf)
+{
+    s.clear();
+    readStringUntilCharsInto<'&'>(s, buf);
+}
+
+void readStringUntilEquals(String & s, ReadBuffer & buf)
+{
+    s.clear();
+    readStringUntilCharsInto<'='>(s, buf);
+}
+
 template void readNullTerminated<PODArray<char>>(PODArray<char> & s, ReadBuffer & buf);
 template void readNullTerminated<String>(String & s, ReadBuffer & buf);
 
@@ -340,7 +352,6 @@ static ReturnType parseComplexEscapeSequence(Vector & s, ReadBuffer & buf)
         {
             return error("Cannot parse escape sequence", ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE);
         }
-
         s.push_back(unhex2(hex_code));
     }
     else if (char_after_backslash == 'N')
@@ -380,7 +391,7 @@ bool parseComplexEscapeSequence(String & s, ReadBuffer & buf)
 }
 
 template <typename Vector, typename ReturnType>
-static ReturnType parseJSONEscapeSequence(Vector & s, ReadBuffer & buf)
+static ReturnType parseJSONEscapeSequence(Vector & s, ReadBuffer & buf, bool keep_bad_sequences)
 {
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
@@ -394,7 +405,11 @@ static ReturnType parseJSONEscapeSequence(Vector & s, ReadBuffer & buf)
     ++buf.position();
 
     if (buf.eof())
-        return error("Cannot parse escape sequence", ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE);
+    {
+        if (keep_bad_sequences)
+            return ReturnType(true);
+        return error("Cannot parse escape sequence: unexpected eof", ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE);
+    }
 
     assert(buf.hasPendingData());
 
@@ -429,8 +444,32 @@ static ReturnType parseJSONEscapeSequence(Vector & s, ReadBuffer & buf)
             ++buf.position();
 
             char hex_code[4];
-            if (4 != buf.read(hex_code, 4))
-                return error("Cannot parse escape sequence: less than four bytes after \\u", ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE);
+            if (keep_bad_sequences)
+            {
+                for (size_t i = 0; i != 4; ++i)
+                {
+                    if (buf.eof() || *buf.position() == '"')
+                    {
+                        /// Save initial data without parsing of escape sequence.
+                        s.push_back('\\');
+                        s.push_back('u');
+                        for (size_t j = 0; j != i; ++j)
+                            s.push_back(hex_code[j]);
+                        return ReturnType(true);
+                    }
+
+                    hex_code[i] = *buf.position();
+                    ++buf.position();
+                }
+            }
+            else
+            {
+                if (4 != buf.read(hex_code, 4))
+                    return error(
+                        "Cannot parse escape sequence: less than four bytes after \\u. In JSON input formats you can disable setting "
+                        "input_format_json_throw_on_bad_escape_sequence to save bad escape sequences as is",
+                        ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE);
+            }
 
             /// \u0000 - special case
             if (0 == memcmp(hex_code, "0000", 4))
@@ -455,13 +494,70 @@ static ReturnType parseJSONEscapeSequence(Vector & s, ReadBuffer & buf)
                 /// Surrogate pair.
                 if (code_point >= 0xD800 && code_point <= 0xDBFF)
                 {
-                    if (!checkString("\\u", buf))
-                        return error("Cannot parse escape sequence: missing second part of surrogate pair", ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE);
+                    auto restore_first_unicode = [&]()
+                    {
+                        s.push_back('\\');
+                        s.push_back('u');
+                        for (char & c : hex_code)
+                            s.push_back(c);
+                    };
+
+                    if (keep_bad_sequences)
+                    {
+                        if (buf.eof() || *buf.position() != '\\')
+                        {
+                            restore_first_unicode();
+                            return ReturnType(true);
+                        }
+
+                        ++buf.position();
+                        if (buf.eof() || *buf.position() != 'u')
+                        {
+                            restore_first_unicode();
+                            s.push_back('\\');
+                            return ReturnType(true);
+                        }
+
+                        ++buf.position();
+                    }
+                    else
+                    {
+                        if (!checkString("\\u", buf))
+                            return error(
+                                "Cannot parse escape sequence: missing second part of surrogate pair. In JSON input formats you can "
+                                "disable setting input_format_json_throw_on_bad_escape_sequence to save bad escape sequences as is",
+                                ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE);
+                    }
 
                     char second_hex_code[4];
-                    if (4 != buf.read(second_hex_code, 4))
-                        return error("Cannot parse escape sequence: less than four bytes after \\u of second part of surrogate pair",
-                            ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE);
+                    if (keep_bad_sequences)
+                    {
+                        for (size_t i = 0; i != 4; ++i)
+                        {
+                            if (buf.eof() || *buf.position() == '"')
+                            {
+                                /// Save initial data without parsing of escape sequence.
+                                restore_first_unicode();
+                                s.push_back('\\');
+                                s.push_back('u');
+                                for (size_t j = 0; j != i; ++j)
+                                    s.push_back(second_hex_code[j]);
+                                return ReturnType(true);
+                            }
+
+                            second_hex_code[i] = *buf.position();
+                            ++buf.position();
+                        }
+                    }
+                    else
+                    {
+                        if (4 != buf.read(second_hex_code, 4))
+                            return error(
+                                "Cannot parse escape sequence: less than four bytes after \\u of second part of surrogate pair. In JSON "
+                                "input formats you can disable setting input_format_json_throw_on_bad_escape_sequence to save bad escape "
+                                "sequences as is",
+                                ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE);
+                    }
 
                     UInt16 second_code_point = unhex4(second_hex_code);
 
@@ -475,7 +571,21 @@ static ReturnType parseJSONEscapeSequence(Vector & s, ReadBuffer & buf)
                         s.push_back((full_code_point & 0x3F) | 0x80);
                     }
                     else
-                        return error("Incorrect surrogate pair of unicode escape sequences in JSON", ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE);
+                    {
+                        if (!keep_bad_sequences)
+                            return error(
+                                "Incorrect surrogate pair of unicode escape sequences in JSON. In JSON input formats you can disable "
+                                "setting input_format_json_throw_on_bad_escape_sequence to save bad escape sequences as is",
+                                ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE);
+
+                        /// Save initial data without parsing of escape sequence.
+                        restore_first_unicode();
+                        s.push_back('\\');
+                        s.push_back('u');
+                        for (char & c : second_hex_code)
+                            s.push_back(c);
+                        return ReturnType(true);
+                    }
                 }
                 else
                 {
@@ -497,13 +607,20 @@ static ReturnType parseJSONEscapeSequence(Vector & s, ReadBuffer & buf)
 }
 
 
-template <typename Vector, bool parse_complex_escape_sequence>
+template <typename Vector, bool parse_complex_escape_sequence, bool support_crlf>
 void readEscapedStringIntoImpl(Vector & s, ReadBuffer & buf)
 {
     while (!buf.eof())
     {
-        char * next_pos = find_first_symbols<'\t', '\n', '\\'>(buf.position(), buf.buffer().end());
-
+        char * next_pos;
+        if constexpr (support_crlf)
+        {
+            next_pos = find_first_symbols<'\t', '\n', '\\','\r'>(buf.position(), buf.buffer().end());
+        }
+        else
+        {
+            next_pos = find_first_symbols<'\t', '\n', '\\'>(buf.position(), buf.buffer().end());
+        }
         appendToStringOrVector(s, buf, next_pos);
         buf.position() = next_pos;
 
@@ -530,25 +647,46 @@ void readEscapedStringIntoImpl(Vector & s, ReadBuffer & buf)
                 }
             }
         }
+
+        if constexpr (support_crlf)
+        {
+            if (*buf.position() == '\r')
+            {
+                ++buf.position();
+                if (!buf.eof() && *buf.position() != '\n')
+                {
+                    s.push_back('\r');
+                    continue;
+                }
+                return;
+            }
+        }
     }
 }
 
-template <typename Vector>
+template <typename Vector, bool support_crlf>
 void readEscapedStringInto(Vector & s, ReadBuffer & buf)
 {
-    readEscapedStringIntoImpl<Vector, true>(s, buf);
+    readEscapedStringIntoImpl<Vector, true, support_crlf>(s, buf);
 }
 
 
 void readEscapedString(String & s, ReadBuffer & buf)
 {
     s.clear();
-    readEscapedStringInto(s, buf);
+    readEscapedStringInto<String,false>(s, buf);
 }
 
-template void readEscapedStringInto<PaddedPODArray<UInt8>>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
-template void readEscapedStringInto<NullOutput>(NullOutput & s, ReadBuffer & buf);
+void readEscapedStringCRLF(String & s, ReadBuffer & buf)
+{
+    s.clear();
+    readEscapedStringInto<String,true>(s, buf);
+}
 
+template void readEscapedStringInto<PaddedPODArray<UInt8>,false>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
+template void readEscapedStringInto<NullOutput,false>(NullOutput & s, ReadBuffer & buf);
+template void readEscapedStringInto<PaddedPODArray<UInt8>,true>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
+template void readEscapedStringInto<NullOutput,true>(NullOutput & s, ReadBuffer & buf);
 
 /** If enable_sql_style_quoting == true,
   *  strings like 'abc''def' will be parsed as abc'def.
@@ -1000,7 +1138,7 @@ template void readCSVStringInto<PaddedPODArray<UInt8>, false, false>(PaddedPODAr
 
 
 template <typename Vector, typename ReturnType>
-ReturnType readJSONStringInto(Vector & s, ReadBuffer & buf)
+ReturnType readJSONStringInto(Vector & s, ReadBuffer & buf, const FormatSettings::JSON & settings)
 {
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
@@ -1032,23 +1170,23 @@ ReturnType readJSONStringInto(Vector & s, ReadBuffer & buf)
         }
 
         if (*buf.position() == '\\')
-            parseJSONEscapeSequence<Vector, ReturnType>(s, buf);
+            parseJSONEscapeSequence<Vector, ReturnType>(s, buf, !settings.throw_on_bad_escape_sequence);
     }
 
     return error("Cannot parse JSON string: expected closing quote", ErrorCodes::CANNOT_PARSE_QUOTED_STRING);
 }
 
-void readJSONString(String & s, ReadBuffer & buf)
+void readJSONString(String & s, ReadBuffer & buf, const FormatSettings::JSON & settings)
 {
     s.clear();
-    readJSONStringInto(s, buf);
+    readJSONStringInto(s, buf, settings);
 }
 
-template void readJSONStringInto<PaddedPODArray<UInt8>, void>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
-template bool readJSONStringInto<PaddedPODArray<UInt8>, bool>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
-template void readJSONStringInto<NullOutput>(NullOutput & s, ReadBuffer & buf);
-template void readJSONStringInto<String>(String & s, ReadBuffer & buf);
-template bool readJSONStringInto<String, bool>(String & s, ReadBuffer & buf);
+template void readJSONStringInto<PaddedPODArray<UInt8>, void>(PaddedPODArray<UInt8> & s, ReadBuffer & buf, const FormatSettings::JSON & settings);
+template bool readJSONStringInto<PaddedPODArray<UInt8>, bool>(PaddedPODArray<UInt8> & s, ReadBuffer & buf, const FormatSettings::JSON & settings);
+template void readJSONStringInto<NullOutput>(NullOutput & s, ReadBuffer & buf, const FormatSettings::JSON & settings);
+template void readJSONStringInto<String>(String & s, ReadBuffer & buf, const FormatSettings::JSON & settings);
+template bool readJSONStringInto<String, bool>(String & s, ReadBuffer & buf, const FormatSettings::JSON & settings);
 
 template <typename Vector, typename ReturnType, char opening_bracket, char closing_bracket>
 ReturnType readJSONObjectOrArrayPossiblyInvalid(Vector & s, ReadBuffer & buf)
@@ -1356,7 +1494,7 @@ template bool readDateTimeTextFallback<bool, true>(time_t &, ReadBuffer &, const
 
 
 template <typename ReturnType>
-ReturnType skipJSONFieldImpl(ReadBuffer & buf, StringRef name_of_field)
+ReturnType skipJSONFieldImpl(ReadBuffer & buf, StringRef name_of_field, const FormatSettings::JSON & settings)
 {
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
@@ -1370,8 +1508,8 @@ ReturnType skipJSONFieldImpl(ReadBuffer & buf, StringRef name_of_field)
     {
         NullOutput sink;
         if constexpr (throw_exception)
-            readJSONStringInto(sink, buf);
-        else if (!tryReadJSONStringInto(sink, buf))
+            readJSONStringInto(sink, buf, settings);
+        else if (!tryReadJSONStringInto(sink, buf, settings))
             return ReturnType(false);
     }
     else if (isNumericASCII(*buf.position()) || *buf.position() == '-' || *buf.position() == '+' || *buf.position() == '.') /// skip number
@@ -1422,8 +1560,8 @@ ReturnType skipJSONFieldImpl(ReadBuffer & buf, StringRef name_of_field)
         while (true)
         {
             if constexpr (throw_exception)
-                skipJSONFieldImpl<ReturnType>(buf, name_of_field);
-            else if (!skipJSONFieldImpl<ReturnType>(buf, name_of_field))
+                skipJSONFieldImpl<ReturnType>(buf, name_of_field, settings);
+            else if (!skipJSONFieldImpl<ReturnType>(buf, name_of_field, settings))
                 return ReturnType(false);
 
             skipWhitespaceIfAny(buf);
@@ -1458,8 +1596,8 @@ ReturnType skipJSONFieldImpl(ReadBuffer & buf, StringRef name_of_field)
             {
                 NullOutput sink;
                 if constexpr (throw_exception)
-                    readJSONStringInto(sink, buf);
-                else if (!tryReadJSONStringInto(sink, buf))
+                    readJSONStringInto(sink, buf, settings);
+                else if (!tryReadJSONStringInto(sink, buf, settings))
                     return ReturnType(false);
             }
             else
@@ -1481,8 +1619,8 @@ ReturnType skipJSONFieldImpl(ReadBuffer & buf, StringRef name_of_field)
             skipWhitespaceIfAny(buf);
 
             if constexpr (throw_exception)
-                skipJSONFieldImpl<ReturnType>(buf, name_of_field);
-            else if (!skipJSONFieldImpl<ReturnType>(buf, name_of_field))
+                skipJSONFieldImpl<ReturnType>(buf, name_of_field, settings);
+            else if (!skipJSONFieldImpl<ReturnType>(buf, name_of_field, settings))
                 return ReturnType(false);
 
             skipWhitespaceIfAny(buf);
@@ -1519,14 +1657,14 @@ ReturnType skipJSONFieldImpl(ReadBuffer & buf, StringRef name_of_field)
     return ReturnType(true);
 }
 
-void skipJSONField(ReadBuffer & buf, StringRef name_of_field)
+void skipJSONField(ReadBuffer & buf, StringRef name_of_field, const FormatSettings::JSON & settings)
 {
-    skipJSONFieldImpl<void>(buf, name_of_field);
+    skipJSONFieldImpl<void>(buf, name_of_field, settings);
 }
 
-bool trySkipJSONField(ReadBuffer & buf, StringRef name_of_field)
+bool trySkipJSONField(ReadBuffer & buf, StringRef name_of_field, const FormatSettings::JSON & settings)
 {
-    return skipJSONFieldImpl<bool>(buf, name_of_field);
+    return skipJSONFieldImpl<bool>(buf, name_of_field, settings);
 }
 
 
@@ -1941,24 +2079,31 @@ bool tryReadQuotedField(String & s, ReadBuffer & buf)
     return readQuotedFieldInto<bool>(s, buf);
 }
 
-void readJSONField(String & s, ReadBuffer & buf)
+void readJSONField(String & s, ReadBuffer & buf, const FormatSettings::JSON & settings)
 {
     s.clear();
-    auto parse_func = [](ReadBuffer & in) { skipJSONField(in, ""); };
+    auto parse_func = [&settings](ReadBuffer & in) { skipJSONField(in, "", settings); };
     readParsedValueInto<void>(s, buf, parse_func);
 }
 
-bool tryReadJSONField(String & s, ReadBuffer & buf)
+bool tryReadJSONField(String & s, ReadBuffer & buf, const FormatSettings::JSON & settings)
 {
     s.clear();
-    auto parse_func = [](ReadBuffer & in) { return trySkipJSONField(in, ""); };
+    auto parse_func = [&settings](ReadBuffer & in) { return trySkipJSONField(in, "", settings); };
     return readParsedValueInto<bool>(s, buf, parse_func);
 }
 
 void readTSVField(String & s, ReadBuffer & buf)
 {
     s.clear();
-    readEscapedStringIntoImpl<String, false>(s, buf);
+    readEscapedStringIntoImpl<String, false, false>(s, buf);
 }
+
+void readTSVFieldCRLF(String & s, ReadBuffer & buf)
+{
+    s.clear();
+    readEscapedStringIntoImpl<String, false, true>(s, buf);
+}
+
 
 }

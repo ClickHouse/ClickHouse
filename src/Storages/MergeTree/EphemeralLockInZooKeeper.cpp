@@ -17,7 +17,7 @@ EphemeralLockInZooKeeper::EphemeralLockInZooKeeper(const String & path_prefix_, 
     : zookeeper(zookeeper_), path_prefix(path_prefix_), path(path_), conflict_path(conflict_path_)
 {
     if (conflict_path.empty() && path.size() <= path_prefix.size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: name of the main node is shorter than prefix.");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Name of the main node is shorter than prefix.");
 }
 
 template <typename T>
@@ -179,7 +179,7 @@ EphemeralLocksInAllPartitions::EphemeralLocksInAllPartitions(
             size_t prefix_size = block_numbers_path.size() + 1 + partitions[i].size() + 1 + path_prefix.size();
             const String & path = dynamic_cast<const Coordination::CreateResponse &>(*lock_responses[i]).path_created;
             if (path.size() <= prefix_size)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: name of the sequential node is shorter than prefix.");
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Name of the sequential node is shorter than prefix.");
 
             UInt64 number = parse<UInt64>(path.c_str() + prefix_size, path.size() - prefix_size);
             locks.push_back(LockInfo{path, partitions[i], number});

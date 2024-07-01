@@ -1,4 +1,5 @@
 -- Tags: long, no-s3-storage, no-random-merge-tree-settings
+SET output_format_pretty_row_numbers = 0;
 
 DROP TABLE IF EXISTS check_system_tables;
 

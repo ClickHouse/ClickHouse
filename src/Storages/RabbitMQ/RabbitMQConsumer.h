@@ -39,6 +39,7 @@ public:
     {
         UInt64 delivery_tag = 0;
         String channel_id;
+        std::vector<UInt64> failed_delivery_tags;
     };
 
     struct MessageData
@@ -50,7 +51,9 @@ public:
         UInt64 delivery_tag = 0;
         String channel_id;
     };
+
     const MessageData & currentMessage() { return current; }
+    const String & getChannelID() const { return channel_id; }
 
     /// Return read buffer containing next available message
     /// or nullptr if there are no messages to process.
@@ -63,6 +66,7 @@ public:
     bool isConsumerStopped() const { return stopped.load(); }
 
     bool ackMessages(const CommitInfo & commit_info);
+    bool nackMessages(const CommitInfo & commit_info);
 
     bool hasPendingMessages() { return !received.empty(); }
 
@@ -94,7 +98,7 @@ private:
     String channel_id;
     UInt64 channel_id_counter = 0;
 
-    enum class State
+    enum class State : uint8_t
     {
         NONE,
         INITIALIZING,
@@ -107,7 +111,7 @@ private:
     ConcurrentBoundedQueue<MessageData> received;
     MessageData current;
 
-    UInt64 last_commited_delivery_tag;
+    UInt64 last_commited_delivery_tag = 0;
 
     std::condition_variable cv;
     std::mutex mutex;

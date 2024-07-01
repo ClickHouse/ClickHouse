@@ -126,6 +126,10 @@ void MultiplexedConnections::sendQuery(
 
     Settings modified_settings = settings;
 
+    /// Queries in foreign languages are transformed to ClickHouse-SQL. Ensure the setting before sending.
+    modified_settings.dialect = Dialect::clickhouse;
+    modified_settings.dialect.changed = false;
+
     for (auto & replica : replica_states)
     {
         if (!replica.connection)
@@ -320,7 +324,7 @@ Packet MultiplexedConnections::receivePacketUnlocked(AsyncCallback async_callbac
     ReplicaState & state = getReplicaForReading();
     current_connection = state.connection;
     if (current_connection == nullptr)
-        throw Exception(ErrorCodes::NO_AVAILABLE_REPLICA, "Logical error: no available replica");
+        throw Exception(ErrorCodes::NO_AVAILABLE_REPLICA, "No available replica");
 
     Packet packet;
     try

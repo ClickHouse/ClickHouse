@@ -53,6 +53,7 @@ struct PrewhereInfo
     String prewhere_column_name;
     bool remove_prewhere_column = false;
     bool need_filter = false;
+    bool generated_by_optimizer = false;
 
     PrewhereInfo() = default;
     explicit PrewhereInfo(ActionsDAGPtr prewhere_actions_, String prewhere_column_name_)
@@ -74,6 +75,7 @@ struct PrewhereInfo
         prewhere_info->prewhere_column_name = prewhere_column_name;
         prewhere_info->remove_prewhere_column = remove_prewhere_column;
         prewhere_info->need_filter = need_filter;
+        prewhere_info->generated_by_optimizer = generated_by_optimizer;
 
         return prewhere_info;
     }
@@ -138,6 +140,9 @@ class IMergeTreeDataPart;
 
 using ManyExpressionActions = std::vector<ExpressionActionsPtr>;
 
+struct StorageSnapshot;
+using StorageSnapshotPtr = std::shared_ptr<StorageSnapshot>;
+
 /** Query along with some additional data,
   *  that can be used during query processing
   *  inside storage engines.
@@ -170,6 +175,13 @@ struct SelectQueryInfo
 
     /// Local storage limits
     StorageLimits local_storage_limits;
+
+    /// This is a leak of abstraction.
+    /// StorageMerge replaces storage into query_tree. However, column types may be changed for inner table.
+    /// So, resolved query tree might have incompatible types.
+    /// StorageDistributed uses this query tree to calculate a header, throws if we use storage snapshot.
+    /// To avoid this, we use initial merge_storage_snapshot.
+    StorageSnapshotPtr merge_storage_snapshot;
 
     /// Cluster for the query.
     ClusterPtr cluster;
@@ -209,12 +221,6 @@ struct SelectQueryInfo
     /// If query has aggregate functions
     bool has_aggregates = false;
 
-    /// If query has any filter and no arrayJoin before filter. Used by skipping FINAL
-    /// Skipping FINAL algorithm will output the original chunk and a column indices of
-    /// selected rows. If query has filter and doesn't have array join before any filter,
-    /// we can merge the indices with the first filter in FilterTransform later.
-    bool has_filters_and_no_array_join_before_filter = false;
-
     ClusterPtr getCluster() const { return !optimized_cluster ? cluster : optimized_cluster; }
 
     bool settings_limit_offset_done = false;
@@ -223,12 +229,21 @@ struct SelectQueryInfo
     bool is_parameterized_view = false;
     bool optimize_trivial_count = false;
 
-    // If limit is not 0, that means it's a trivial limit query.
-    UInt64 limit = 0;
+    // If not 0, that means it's a trivial limit query.
+    UInt64 trivial_limit = 0;
 
     /// For IStorageSystemOneBlock
     std::vector<UInt8> columns_mask;
 
+    /// During read from MergeTree parts will be removed from snapshot after they are not needed
+    bool merge_tree_enable_remove_parts_from_snapshot_optimization = true;
+
     bool isFinal() const;
+
+    /// Analyzer generates unique ColumnIdentifiers like __table1.__partition_id in filter nodes,
+    /// while key analysis still requires unqualified column names.
+    /// This function generates a map that maps the unique names to table column names,
+    /// for the current table (`table_expression`).
+    std::unordered_map<std::string, ColumnWithTypeAndName> buildNodeNameToInputNodeColumn() const;
 };
 }

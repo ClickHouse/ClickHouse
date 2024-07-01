@@ -21,7 +21,7 @@ Columns:
 - `hostname` ([LowCardinality(String)](../../sql-reference/data-types/string.md)) — Hostname of the server executing the query.
 - `event_date` ([Date](../../sql-reference/data-types/date.md)) — The date when the thread has finished execution of the query.
 - `event_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — The date and time when the thread has finished execution of the query.
-- `event_time_microsecinds` ([DateTime](../../sql-reference/data-types/datetime.md)) — The date and time when the thread has finished execution of the query with microseconds precision.
+- `event_time_microseconds` ([DateTime](../../sql-reference/data-types/datetime.md)) — The date and time when the thread has finished execution of the query with microseconds precision.
 - `query_start_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — Start time of query execution.
 - `query_start_time_microseconds` ([DateTime64](../../sql-reference/data-types/datetime64.md)) — Start time of query execution with microsecond precision.
 - `query_duration_ms` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Duration of query execution.
@@ -32,8 +32,7 @@ Columns:
 - `memory_usage` ([Int64](../../sql-reference/data-types/int-uint.md)) — The difference between the amount of allocated and freed memory in context of this thread.
 - `peak_memory_usage` ([Int64](../../sql-reference/data-types/int-uint.md)) — The maximum difference between the amount of allocated and freed memory in context of this thread.
 - `thread_name` ([String](../../sql-reference/data-types/string.md)) — Name of the thread.
-- `thread_number` ([UInt32](../../sql-reference/data-types/int-uint.md)) — Internal thread ID.
-- `thread_id` ([Int32](../../sql-reference/data-types/int-uint.md)) — thread ID.
+- `thread_id` ([UInt64](../../sql-reference/data-types/int-uint.md)) — OS thread ID.
 - `master_thread_id` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — OS initial ID of initial thread.
 - `query` ([String](../../sql-reference/data-types/string.md)) — Query string.
 - `is_initial_query` ([UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Query type. Possible values:

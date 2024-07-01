@@ -9,10 +9,10 @@
 namespace DB
 {
 
-static std::pair<Block, Block> getHeaders(StorageNATS & storage, const StorageSnapshotPtr & storage_snapshot)
+static std::pair<Block, Block> getHeaders(const StorageSnapshotPtr & storage_snapshot)
 {
     auto non_virtual_header = storage_snapshot->metadata->getSampleBlockNonMaterialized();
-    auto virtual_header = storage_snapshot->getSampleBlockForColumns(storage.getVirtuals().getNames());
+    auto virtual_header = storage_snapshot->virtual_columns->getSampleBlock();
 
     return {non_virtual_header, virtual_header};
 }
@@ -33,7 +33,7 @@ NATSSource::NATSSource(
     const Names & columns,
     size_t max_block_size_,
     StreamingHandleErrorMode handle_error_mode_)
-    : NATSSource(storage_, storage_snapshot_, getHeaders(storage_, storage_snapshot_), context_, columns, max_block_size_, handle_error_mode_)
+    : NATSSource(storage_, storage_snapshot_, getHeaders(storage_snapshot_), context_, columns, max_block_size_, handle_error_mode_)
 {
 }
 

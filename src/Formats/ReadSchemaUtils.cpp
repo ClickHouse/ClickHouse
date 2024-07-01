@@ -1,9 +1,12 @@
 #include <Formats/ReadSchemaUtils.h>
-#include <Interpreters/Context.h>
-#include <Processors/Formats/ISchemaReader.h>
-#include <Common/assert_cast.h>
-#include <IO/WithFileSize.h>
 #include <IO/EmptyReadBuffer.h>
+#include <IO/PeekableReadBuffer.h>
+#include <IO/WithFileSize.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
+#include <Processors/Formats/ISchemaReader.h>
+#include <Storages/IStorage.h>
+#include <Common/assert_cast.h>
 
 namespace DB
 {
@@ -14,7 +17,9 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int ONLY_NULLS_WHILE_READING_SCHEMA;
     extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
+    extern const int CANNOT_DETECT_FORMAT;
     extern const int TYPE_MISMATCH;
+    extern const int LOGICAL_ERROR;
 }
 
 static std::optional<NamesAndTypesList> getOrderedColumnsList(const NamesAndTypesList & columns_list, const Names & columns_order_hint)
@@ -43,50 +48,87 @@ bool isRetryableSchemaInferenceError(int code)
     return code == ErrorCodes::EMPTY_DATA_PASSED || code == ErrorCodes::ONLY_NULLS_WHILE_READING_SCHEMA;
 }
 
-ColumnsDescription readSchemaFromFormat(
-    const String & format_name,
+/// Order of formats to try in automatic format detection.
+/// If we can successfully detect some format, we won't try next ones.
+static const std::vector<String> & getFormatsOrderForDetection()
+{
+    static const std::vector<String> formats_order =
+    {
+        "Parquet",
+        "ORC",
+        "Arrow",
+        "ArrowStream",
+        "Avro",
+        "AvroConfluent",
+        "Npy",
+        "Native",
+        "BSONEachRow",
+        "JSONCompact",
+        "Values",
+        "TSKV",
+        "JSONObjectEachRow",
+        "JSONColumns",
+        "JSONCompactColumns",
+        "JSONCompact",
+        "JSON",
+    };
+
+    return formats_order;
+}
+
+/// The set of similar formats to try in automatic format detection.
+/// We will try all formats from this set and then choose the best one
+/// according to inferred schema.
+static const std::vector<String> & getSimilarFormatsSetForDetection()
+{
+    static const std::vector<String> formats_order =
+    {
+        "TSV",
+        "CSV",
+    };
+
+    return formats_order;
+}
+
+std::pair<ColumnsDescription, String> readSchemaFromFormatImpl(
+    std::optional<String> format_name,
     const std::optional<FormatSettings> & format_settings,
     IReadBufferIterator & read_buffer_iterator,
-    bool retry,
-    ContextPtr & context,
-    std::unique_ptr<ReadBuffer> & buf)
+    const ContextPtr & context)
 try
 {
     NamesAndTypesList names_and_types;
     SchemaInferenceMode mode = context->getSettingsRef().schema_inference_mode;
-    if (mode == SchemaInferenceMode::UNION && !FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(format_name, context, format_settings))
+    if (format_name && mode == SchemaInferenceMode::UNION && !FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(*format_name, context, format_settings))
     {
         String additional_message;
         /// Better exception message for WithNames(AndTypes) formats.
-        if (format_name.ends_with("WithNames") || format_name.ends_with("WithNamesAndTypes"))
+        if (format_name->ends_with("WithNames") || format_name->ends_with("WithNamesAndTypes"))
             additional_message = " (formats -WithNames(AndTypes) support reading subset of columns only when setting input_format_with_names_use_header is enabled)";
 
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "UNION schema inference mode is not supported for format {}, because it doesn't support reading subset of columns{}", format_name, additional_message);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "UNION schema inference mode is not supported for format {}, because it doesn't support reading subset of columns{}", *format_name, additional_message);
     }
 
-    if (FormatFactory::instance().checkIfFormatHasExternalSchemaReader(format_name))
+    if (format_name && FormatFactory::instance().checkIfFormatHasExternalSchemaReader(*format_name))
     {
-        auto external_schema_reader = FormatFactory::instance().getExternalSchemaReader(format_name, context, format_settings);
+        auto external_schema_reader = FormatFactory::instance().getExternalSchemaReader(*format_name, context, format_settings);
         try
         {
-            names_and_types = external_schema_reader->readSchema();
+            return {ColumnsDescription(external_schema_reader->readSchema()), *format_name};
         }
         catch (Exception & e)
         {
             e.addMessage(
-                fmt::format("Cannot extract table structure from {} format file. You can specify the structure manually", format_name));
+                fmt::format("The table structure cannot be extracted from a {} format file. You can specify the structure manually", *format_name));
             throw;
         }
     }
-    else if (FormatFactory::instance().checkIfFormatHasSchemaReader(format_name))
-    {
-        if (mode == SchemaInferenceMode::UNION)
-            retry = false;
 
+    if (!format_name || FormatFactory::instance().checkIfFormatHasSchemaReader(*format_name))
+    {
+        IReadBufferIterator::Data iterator_data;
         std::vector<std::pair<NamesAndTypesList, String>> schemas_for_union_mode;
-        std::optional<ColumnsDescription> cached_columns;
         std::string exception_messages;
-        SchemaReaderPtr schema_reader;
         size_t max_rows_to_read = format_settings ? format_settings->max_rows_to_read_for_schema_inference
                                                   : context->getSettingsRef().input_format_max_rows_to_read_for_schema_inference;
         size_t max_bytes_to_read = format_settings ? format_settings->max_bytes_to_read_for_schema_inference
@@ -94,45 +136,71 @@ try
         size_t iterations = 0;
         while (true)
         {
+            /// When we finish working with current buffer we should put it back to iterator.
+            SCOPE_EXIT(if (iterator_data.buf) read_buffer_iterator.setPreviousReadBuffer(std::move(iterator_data.buf)));
             bool is_eof = false;
             try
             {
-                read_buffer_iterator.setPreviousReadBuffer(std::move(buf));
-                std::tie(buf, cached_columns) = read_buffer_iterator.next();
-                if (cached_columns)
+                iterator_data = read_buffer_iterator.next();
+
+                /// Read buffer iterator can determine the data format if it's unknown.
+                /// For example by scanning schema cache or by finding new file with format extension.
+                if (!format_name && iterator_data.format_name)
                 {
+                    format_name = *iterator_data.format_name;
+                    read_buffer_iterator.setFormatName(*iterator_data.format_name);
+                }
+
+                if (iterator_data.cached_columns)
+                {
+                    /// If we have schema in cache, we must also know the format.
+                    if (!format_name)
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Schema from cache was returned, but format name is unknown");
+
                     if (mode == SchemaInferenceMode::DEFAULT)
-                        return *cached_columns;
-                    schemas_for_union_mode.emplace_back(cached_columns->getAll(), read_buffer_iterator.getLastFileName());
+                    {
+                        read_buffer_iterator.setResultingSchema(*iterator_data.cached_columns);
+                        return {*iterator_data.cached_columns, *format_name};
+                    }
+
+                    schemas_for_union_mode.emplace_back(iterator_data.cached_columns->getAll(), read_buffer_iterator.getLastFileName());
                     continue;
                 }
 
-                if (!buf)
+                if (!iterator_data.buf)
                     break;
 
                 /// We just want to check for eof, but eof() can be pretty expensive.
                 /// So we use getFileSize() when available, which has better worst case.
                 /// (For remote files, typically eof() would read 1 MB from S3, which may be much
                 ///  more than what the schema reader and even data reader will read).
-                auto size = tryGetFileSizeFromReadBuffer(*buf);
+                auto size = tryGetFileSizeFromReadBuffer(*iterator_data.buf);
                 if (size.has_value())
                     is_eof = *size == 0;
                 else
-                    is_eof = buf->eof();
+                    is_eof = iterator_data.buf->eof();
             }
             catch (Exception & e)
             {
-                e.addMessage(
-                    fmt::format("Cannot extract table structure from {} format file. You can specify the structure manually", format_name));
+                if (format_name)
+                    e.addMessage(fmt::format("The table structure cannot be extracted from a {} format file. You can specify the structure manually", *format_name));
+                else
+                    e.addMessage("The data format cannot be detected by the contents of the files. You can specify the format manually");
                 throw;
             }
             catch (...)
             {
                 auto exception_message = getCurrentExceptionMessage(false);
+                if (format_name)
+                    throw Exception(
+                        ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
+                        "The table structure cannot be extracted from a {} format file:\n{}.\nYou can specify the structure manually",
+                        *format_name,
+                        exception_message);
+
                 throw Exception(
-                    ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
-                    "Cannot extract table structure from {} format file:\n{}\nYou can specify the structure manually",
-                    format_name,
+                    ErrorCodes::CANNOT_DETECT_FORMAT,
+                    "The data format cannot be detected by the contents of the files:\n{}.\nYou can specify the format manually",
                     exception_message);
             }
 
@@ -140,91 +208,224 @@ try
 
             if (is_eof)
             {
-                auto exception_message = fmt::format("Cannot extract table structure from {} format file, file is empty", format_name);
+                String exception_message;
+                if (format_name)
+                    exception_message = fmt::format("The table structure cannot be extracted from a {} format file: the file is empty", *format_name);
+                else
+                    exception_message = fmt::format("The data format cannot be detected by the contents of the files: the file is empty");
 
-                if (!retry)
-                    throw Exception(
-                        ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE, "{}. You can specify the structure manually", exception_message);
+                if (mode == SchemaInferenceMode::UNION)
+                {
+                    if (!format_name)
+                        throw Exception(ErrorCodes::CANNOT_DETECT_FORMAT, "The data format cannot be detected by the contents of the files: the file is empty. You can specify the format manually");
 
-                exception_messages += "\n" + exception_message;
+                    throw Exception(ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE, "{}. You can specify the structure manually", exception_message);
+                }
+
+                if (!exception_messages.empty())
+                    exception_messages += "\n";
+                exception_messages += exception_message;
                 continue;
             }
 
-            try
-            {
-                schema_reader = FormatFactory::instance().getSchemaReader(format_name, *buf, context, format_settings);
-                schema_reader->setMaxRowsAndBytesToRead(max_rows_to_read, max_bytes_to_read);
-                names_and_types = schema_reader->readSchema();
-                auto num_rows = schema_reader->readNumberOrRows();
-                if (num_rows)
-                    read_buffer_iterator.setNumRowsToLastFile(*num_rows);
+            std::unique_ptr<PeekableReadBuffer> peekable_buf; /// Can be used in format detection. Should be destroyed after schema reader.
 
-                /// In default mode, we finish when schema is inferred successfully from any file.
-                if (mode == SchemaInferenceMode::DEFAULT)
-                    break;
-
-                if (!names_and_types.empty())
-                    read_buffer_iterator.setSchemaToLastFile(ColumnsDescription(names_and_types));
-                schemas_for_union_mode.emplace_back(names_and_types, read_buffer_iterator.getLastFileName());
-            }
-            catch (...)
+            if (format_name)
             {
-                auto exception_message = getCurrentExceptionMessage(false);
-                if (schema_reader && mode == SchemaInferenceMode::DEFAULT)
+                SchemaReaderPtr schema_reader;
+
+                try
                 {
-                    size_t rows_read = schema_reader->getNumRowsRead();
-                    assert(rows_read <= max_rows_to_read);
-                    max_rows_to_read -= schema_reader->getNumRowsRead();
-                    size_t bytes_read = buf->count();
-                    /// We could exceed max_bytes_to_read a bit to complete row parsing.
-                    max_bytes_to_read -= std::min(bytes_read, max_bytes_to_read);
-                    if (rows_read != 0 && (max_rows_to_read == 0 || max_bytes_to_read == 0))
-                    {
-                        exception_message += "\nTo increase the maximum number of rows/bytes to read for structure determination, use setting "
-                                             "input_format_max_rows_to_read_for_schema_inference/input_format_max_bytes_to_read_for_schema_inference";
+                    schema_reader = FormatFactory::instance().getSchemaReader(*format_name, *iterator_data.buf, context, format_settings);
+                    schema_reader->setMaxRowsAndBytesToRead(max_rows_to_read, max_bytes_to_read);
+                    names_and_types = schema_reader->readSchema();
+                    auto num_rows = schema_reader->readNumberOrRows();
+                    if (num_rows)
+                        read_buffer_iterator.setNumRowsToLastFile(*num_rows);
 
-                        if (iterations > 1)
+                    /// In default mode, we finish when schema is inferred successfully from any file.
+                    if (mode == SchemaInferenceMode::DEFAULT)
+                        break;
+
+                    if (!names_and_types.empty())
+                        read_buffer_iterator.setSchemaToLastFile(ColumnsDescription(names_and_types));
+                    schemas_for_union_mode.emplace_back(names_and_types, read_buffer_iterator.getLastFileName());
+                }
+                catch (...)
+                {
+                    auto exception_message = getCurrentExceptionMessage(false);
+                    if (schema_reader && mode == SchemaInferenceMode::DEFAULT)
+                    {
+                        size_t rows_read = schema_reader->getNumRowsRead();
+                        assert(rows_read <= max_rows_to_read);
+                        max_rows_to_read -= schema_reader->getNumRowsRead();
+                        size_t bytes_read = iterator_data.buf->count();
+                        /// We could exceed max_bytes_to_read a bit to complete row parsing.
+                        max_bytes_to_read -= std::min(bytes_read, max_bytes_to_read);
+                        if (rows_read != 0 && (max_rows_to_read == 0 || max_bytes_to_read == 0))
                         {
-                            exception_messages += "\n" + exception_message;
+                            exception_message
+                                += "\nTo increase the maximum number of rows/bytes to read for structure determination, use setting "
+                                   "input_format_max_rows_to_read_for_schema_inference/input_format_max_bytes_to_read_for_schema_inference";
+                            if (!exception_messages.empty())
+                                exception_messages += "\n";
+                            exception_messages += exception_message;
                             break;
                         }
-                        retry = false;
                     }
-                }
 
-                if (!retry || !isRetryableSchemaInferenceError(getCurrentExceptionCode()))
-                {
-                    try
-                    {
-                        throw;
-                    }
-                    catch (Exception & e)
-                    {
-                        e.addMessage(fmt::format(
-                            "Cannot extract table structure from {} format file. You can specify the structure manually", format_name));
-                        throw;
-                    }
-                    catch (...)
+                    if (mode == SchemaInferenceMode::UNION || !isRetryableSchemaInferenceError(getCurrentExceptionCode()))
                     {
                         throw Exception(
                             ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
-                            "Cannot extract table structure from {} format file. "
-                            "Error: {}. You can specify the structure manually",
-                            format_name,
+                            "The table structure cannot be extracted from a {} format file. "
+                            "Error:\n{}.\nYou can specify the structure manually",
+                            *format_name,
                             exception_message);
+                    }
+
+                    if (!exception_messages.empty())
+                        exception_messages += "\n";
+                    exception_messages += exception_message;
+                }
+            }
+            else
+            {
+                /// If the format is unknown we try some formats in order and try to apply their schema readers.
+                /// If we can successfully infer the schema in some format, most likely we can use this format to read this data.
+
+                /// If read_buffer_iterator supports recreation of last buffer, we will recreate it for
+                /// each format. Otherwise we will use PeekableReadBuffer and will rollback to the
+                /// beginning of the file before each format. Using PeekableReadBuffer can lead
+                /// to high memory usage as it will save all the read data from the beginning of the file,
+                /// especially it will be noticeable for formats like Parquet/ORC/Arrow that do seeks to the
+                /// end of file.
+                bool support_buf_recreation = read_buffer_iterator.supportsLastReadBufferRecreation();
+                if (!support_buf_recreation)
+                {
+                    peekable_buf = std::make_unique<PeekableReadBuffer>(*iterator_data.buf);
+                    peekable_buf->setCheckpoint();
+                }
+
+                /// First, try some formats in order. If we successfully inferred the schema for any format,
+                /// we will use this format.
+                for (const auto & format_to_detect : getFormatsOrderForDetection())
+                {
+                    try
+                    {
+                        SchemaReaderPtr schema_reader = FormatFactory::instance().getSchemaReader(format_to_detect, support_buf_recreation ? *iterator_data.buf : *peekable_buf, context, format_settings);
+                        schema_reader->setMaxRowsAndBytesToRead(max_rows_to_read, max_bytes_to_read);
+                        names_and_types = schema_reader->readSchema();
+                        if (names_and_types.empty())
+                            continue;
+
+                        /// We successfully inferred schema from this file using current format.
+                        format_name = format_to_detect;
+                        read_buffer_iterator.setFormatName(format_to_detect);
+
+                        auto num_rows = schema_reader->readNumberOrRows();
+                        if (num_rows)
+                            read_buffer_iterator.setNumRowsToLastFile(*num_rows);
+
+                        break;
+                    }
+                    catch (...)
+                    {
+                        /// We failed to infer the schema for this format.
+                        /// Recreate read buffer or rollback to the beginning of the data
+                        /// before trying next format.
+                        if (support_buf_recreation)
+                        {
+                            read_buffer_iterator.setPreviousReadBuffer(std::move(iterator_data.buf));
+                            iterator_data.buf = read_buffer_iterator.recreateLastReadBuffer();
+                        }
+                        else
+                        {
+                            peekable_buf->rollbackToCheckpoint();
+                        }
                     }
                 }
 
-                exception_messages += "\n" + exception_message;
+                /// If no format was detected from first set of formats, we try second set.
+                /// In this set formats are similar and it can happen that data matches some of them.
+                /// We try to infer schema for all of the formats from this set and then choose the best
+                /// one according to the inferred schema.
+                if (!format_name)
+                {
+                    std::unordered_map<String, NamesAndTypesList> format_to_schema;
+                    const auto & formats_set_to_detect = getSimilarFormatsSetForDetection();
+                    for (size_t i = 0; i != formats_set_to_detect.size(); ++i)
+                    {
+                        try
+                        {
+                            SchemaReaderPtr schema_reader = FormatFactory::instance().getSchemaReader(
+                                formats_set_to_detect[i], support_buf_recreation ? *iterator_data.buf : *peekable_buf, context, format_settings);
+                            schema_reader->setMaxRowsAndBytesToRead(max_rows_to_read, max_bytes_to_read);
+                            auto tmp_names_and_types = schema_reader->readSchema();
+                            /// If schema was inferred successfully for this format, remember it and try next format.
+                            if (!tmp_names_and_types.empty())
+                                format_to_schema[formats_set_to_detect[i]] = tmp_names_and_types;
+                        }
+                        catch (...) // NOLINT(bugprone-empty-catch)
+                        {
+                            /// Try next format.
+                        }
+
+                        if (i != formats_set_to_detect.size() - 1)
+                        {
+                            if (support_buf_recreation)
+                            {
+                                read_buffer_iterator.setPreviousReadBuffer(std::move(iterator_data.buf));
+                                iterator_data.buf = read_buffer_iterator.recreateLastReadBuffer();
+                            }
+                            else
+                            {
+                                peekable_buf->rollbackToCheckpoint();
+                            }
+                        }
+                    }
+
+                    /// We choose the format with larger number of columns in inferred schema.
+                    size_t max_number_of_columns = 0;
+                    for (const auto & [format_to_detect, schema] : format_to_schema)
+                    {
+                        if (schema.size() > max_number_of_columns)
+                        {
+                            names_and_types = schema;
+                            format_name = format_to_detect;
+                            max_number_of_columns = schema.size();
+                        }
+                    }
+
+                    if (format_name)
+                        read_buffer_iterator.setFormatName(*format_name);
+                }
+
+                if (mode == SchemaInferenceMode::UNION)
+                {
+                    /// For UNION mode we need to know the schema of each file,
+                    /// if we failed to detect the format, we failed to detect the schema of this file
+                    /// in any format. It doesn't make sense to continue.
+                    if (!format_name)
+                        throw Exception(ErrorCodes::CANNOT_DETECT_FORMAT, "The data format cannot be detected by the contents of the files. You can specify the format manually");
+
+                    read_buffer_iterator.setSchemaToLastFile(ColumnsDescription(names_and_types));
+                    schemas_for_union_mode.emplace_back(names_and_types, read_buffer_iterator.getLastFileName());
+                }
+
+                if (format_name && mode == SchemaInferenceMode::DEFAULT)
+                    break;
             }
         }
 
-        /// If we got all schemas from cache, schema_reader can be uninitialized.
-        /// But we still need some stateless methods of ISchemaReader,
-        /// let's initialize it with empty buffer.
+        if (!format_name)
+            throw Exception(ErrorCodes::CANNOT_DETECT_FORMAT, "The data format cannot be detected by the contents of the files. You can specify the format manually");
+
+        /// We need some stateless methods of ISchemaReader, but during reading schema we
+        /// could not even create a schema reader (for example when we got schema from cache).
+        /// Let's create stateless schema reader from empty read buffer.
         EmptyReadBuffer empty;
-        if (!schema_reader)
-            schema_reader = FormatFactory::instance().getSchemaReader(format_name, empty, context, format_settings);
+        SchemaReaderPtr stateless_schema_reader = FormatFactory::instance().getSchemaReader(*format_name, empty, context, format_settings);
 
         if (mode == SchemaInferenceMode::UNION)
         {
@@ -251,7 +452,7 @@ try
                             /// If types are not the same, try to transform them according
                             /// to the format to find common type.
                             auto new_type_copy = type;
-                            schema_reader->transformTypesFromDifferentFilesIfNeeded(it->second, new_type_copy);
+                            stateless_schema_reader->transformTypesFromDifferentFilesIfNeeded(it->second, new_type_copy);
 
                             /// If types are not the same after transform, we cannot do anything, throw an exception.
                             if (!it->second->equals(*new_type_copy))
@@ -273,11 +474,23 @@ try
         }
 
         if (names_and_types.empty())
+        {
+            if (iterations <= 1)
+            {
+                throw Exception(
+                    ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
+                    "The table structure cannot be extracted from a {} format file. "
+                    "Error:\n{}.\nYou can specify the structure manually",
+                    *format_name,
+                    exception_messages);
+            }
+
             throw Exception(
                 ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
                 "All attempts to extract table structure from files failed. "
-                "Errors:{}\nYou can specify the structure manually",
+                "Errors:\n{}\nYou can specify the structure manually",
                 exception_messages);
+        }
 
         /// If we have "INSERT SELECT" query then try to order
         /// columns as they are ordered in table schema for formats
@@ -285,7 +498,7 @@ try
         /// It will allow to execute simple data loading with query
         /// "INSERT INTO table SELECT * FROM ..."
         const auto & insertion_table = context->getInsertionTable();
-        if (schema_reader && !schema_reader->hasStrictOrderOfColumns() && !insertion_table.empty())
+        if (!stateless_schema_reader->hasStrictOrderOfColumns() && !insertion_table.empty())
         {
             auto storage = DatabaseCatalog::instance().getTable(insertion_table, context);
             auto metadata = storage->getInMemoryMetadataPtr();
@@ -294,22 +507,22 @@ try
             if (ordered_list)
                 names_and_types = *ordered_list;
         }
+
+        /// Some formats like CSVWithNames can contain empty column names. We don't support empty column names and further processing can fail with an exception. Let's just remove columns with empty names from the structure.
+        names_and_types.erase(
+            std::remove_if(names_and_types.begin(), names_and_types.end(), [](const NameAndTypePair & pair) { return pair.name.empty(); }),
+            names_and_types.end());
+
+        auto columns = ColumnsDescription(names_and_types);
+        if (mode == SchemaInferenceMode::DEFAULT)
+            read_buffer_iterator.setResultingSchema(columns);
+        return {columns, *format_name};
     }
-    else
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "{} file format doesn't support schema inference. You must specify the structure manually",
-            format_name);
 
-    /// Some formats like CSVWithNames can contain empty column names. We don't support empty column names and further processing can fail with an exception. Let's just remove columns with empty names from the structure.
-    names_and_types.erase(
-        std::remove_if(names_and_types.begin(), names_and_types.end(), [](const NameAndTypePair & pair) { return pair.name.empty(); }),
-        names_and_types.end());
-
-    auto columns = ColumnsDescription(names_and_types);
-    if (mode == SchemaInferenceMode::DEFAULT)
-        read_buffer_iterator.setResultingSchema(columns);
-    return columns;
+    throw Exception(
+        ErrorCodes::BAD_ARGUMENTS,
+        "{} file format doesn't support schema inference. You must specify the structure manually",
+        *format_name);
 }
 catch (Exception & e)
 {
@@ -319,16 +532,21 @@ catch (Exception & e)
     throw;
 }
 
-
 ColumnsDescription readSchemaFromFormat(
     const String & format_name,
     const std::optional<FormatSettings> & format_settings,
     IReadBufferIterator & read_buffer_iterator,
-    bool retry,
-    ContextPtr & context)
+    const ContextPtr & context)
 {
-    std::unique_ptr<ReadBuffer> buf_out;
-    return readSchemaFromFormat(format_name, format_settings, read_buffer_iterator, retry, context, buf_out);
+    return readSchemaFromFormatImpl(format_name, format_settings, read_buffer_iterator, context).first;
+}
+
+std::pair<ColumnsDescription, String> detectFormatAndReadSchema(
+    const std::optional<FormatSettings> & format_settings,
+    IReadBufferIterator & read_buffer_iterator,
+    const ContextPtr & context)
+{
+    return readSchemaFromFormatImpl(std::nullopt, format_settings, read_buffer_iterator, context);
 }
 
 SchemaCache::Key getKeyForSchemaCache(

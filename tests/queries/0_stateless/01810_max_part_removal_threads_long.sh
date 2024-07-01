@@ -7,6 +7,9 @@
 # and we can do it compatible with parallel run only in .sh
 # (via $CLICKHOUSE_DATABASE)
 
+# Creation of a database with Ordinary engine emits a warning.
+CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=fatal
+
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh

@@ -17,6 +17,7 @@
 #include "Poco/NumberFormatter.h"
 #include "Poco/NumberParser.h"
 #include "Poco/String.h"
+#include <format>
 
 
 using Poco::NumberFormatter;
@@ -178,5 +179,52 @@ bool HTTPMessage::getKeepAlive() const
 		return getVersion() == HTTP_1_1;
 }
 
+
+void HTTPMessage::setKeepAliveTimeout(int timeout, int max_requests)
+{
+    add(HTTPMessage::CONNECTION_KEEP_ALIVE, std::format("timeout={}, max={}", timeout, max_requests));
+}
+
+
+int parseFromHeaderValues(const std::string_view header_value, const std::string_view param_name)
+{
+    auto param_value_pos = header_value.find(param_name);
+    if (param_value_pos == std::string::npos)
+        param_value_pos = header_value.size();
+    if (param_value_pos != header_value.size())
+        param_value_pos += param_name.size();
+
+    auto param_value_end = header_value.find(',', param_value_pos);
+    if (param_value_end == std::string::npos)
+        param_value_end = header_value.size();
+
+    auto timeout_value_substr = header_value.substr(param_value_pos, param_value_end - param_value_pos);
+    if (timeout_value_substr.empty())
+        return -1;
+
+    int value = 0;
+    auto [ptr, ec] = std::from_chars(timeout_value_substr.begin(), timeout_value_substr.end(), value);
+
+    if (ec == std::errc())
+        return value;
+
+    return -1;
+}
+
+
+int HTTPMessage::getKeepAliveTimeout() const
+{
+    const std::string& ka_header = get(HTTPMessage::CONNECTION_KEEP_ALIVE, HTTPMessage::EMPTY);
+    static const std::string_view timeout_param = "timeout=";
+    return parseFromHeaderValues(ka_header, timeout_param);
+}
+
+
+int HTTPMessage::getKeepAliveMaxRequests() const
+{
+    const std::string& ka_header = get(HTTPMessage::CONNECTION_KEEP_ALIVE, HTTPMessage::EMPTY);
+    static const std::string_view timeout_param = "max=";
+    return parseFromHeaderValues(ka_header, timeout_param);
+}
 
 } } // namespace Poco::Net

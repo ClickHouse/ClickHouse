@@ -6,4 +6,4 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 
 $CLICKHOUSE_LOCAL --query="SELECT n SETTINGS allow_experimental_analyzer = 1" 2>&1 | grep -q "Code: 47. DB::Exception:" && echo 'OK' || echo 'FAIL' ||:
-$CLICKHOUSE_LOCAL --query="SELECT n -- { serverError 47 }" 2>&1 | grep -o 'Missing columns'
+$CLICKHOUSE_LOCAL --query="SELECT n SETTINGS allow_experimental_analyzer = 0 -- { serverError 47 }" 2>&1 | grep -o 'Missing columns'

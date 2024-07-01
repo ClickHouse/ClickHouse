@@ -337,7 +337,7 @@ static ASTPtr getPartitionPolicy(const NamesAndTypesList & primary_keys)
         WhichDataType which(type);
 
         if (which.isNullable())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "LOGICAL ERROR: MySQL primary key must be not null, it is a bug.");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "MySQL's primary key must be not null, it is a bug.");
 
         if (which.isDate() || which.isDate32() || which.isDateTime() || which.isDateTime64())
         {
@@ -498,14 +498,12 @@ ASTs InterpreterCreateImpl::getRewrittenQueries(
     columns->columns->children.emplace_back(create_materialized_column_declaration(version_column_name, "UInt64", UInt64(1)));
 
     /// Add minmax skipping index for _version column.
-    auto version_index = std::make_shared<ASTIndexDeclaration>();
-    version_index->name = version_column_name;
     auto index_expr = std::make_shared<ASTIdentifier>(version_column_name);
     auto index_type = makeASTFunction("minmax");
     index_type->no_empty_args = true;
-    version_index->set(version_index->expr, index_expr);
-    version_index->set(version_index->type, index_type);
+    auto version_index = std::make_shared<ASTIndexDeclaration>(index_expr, index_type, version_column_name);
     version_index->granularity = 1;
+
     ASTPtr indices = std::make_shared<ASTExpressionList>();
     indices->children.push_back(version_index);
     columns->set(columns->indices, indices);
@@ -579,7 +577,7 @@ ASTs InterpreterRenameImpl::getRewrittenQueries(
     const InterpreterRenameImpl::TQuery & rename_query, ContextPtr context, const String & mapped_to_database, const String & mysql_database)
 {
     ASTRenameQuery::Elements elements;
-    for (const auto & rename_element : rename_query.elements)
+    for (const auto & rename_element : rename_query.getElements())
     {
         const auto & to_database = resolveDatabase(rename_element.to.getDatabase(), mysql_database, mapped_to_database, context);
         const auto & from_database = resolveDatabase(rename_element.from.getDatabase(), mysql_database, mapped_to_database, context);
@@ -600,8 +598,7 @@ ASTs InterpreterRenameImpl::getRewrittenQueries(
     if (elements.empty())
         return ASTs{};
 
-    auto rewritten_query = std::make_shared<ASTRenameQuery>();
-    rewritten_query->elements = elements;
+    auto rewritten_query = std::make_shared<ASTRenameQuery>(std::move(elements));
     return ASTs{rewritten_query};
 }
 
@@ -616,7 +613,8 @@ ASTs InterpreterAlterImpl::getRewrittenQueries(
         return {};
 
     auto rewritten_alter_query = std::make_shared<ASTAlterQuery>();
-    auto rewritten_rename_query = std::make_shared<ASTRenameQuery>();
+    ASTRenameQuery::Elements rename_elements;
+
     rewritten_alter_query->setDatabase(mapped_to_database);
     rewritten_alter_query->setTable(alter_query.table);
     rewritten_alter_query->alter_object = ASTAlterQuery::AlterObjectType::TABLE;
@@ -749,13 +747,13 @@ ASTs InterpreterAlterImpl::getRewrittenQueries(
 
             /// For ALTER TABLE table_name RENAME TO new_table_name_1, RENAME TO new_table_name_2;
             /// We just need to generate RENAME TABLE table_name TO new_table_name_2;
-            if (rewritten_rename_query->elements.empty())
-                rewritten_rename_query->elements.push_back(ASTRenameQuery::Element());
+            if (rename_elements.empty())
+                rename_elements.push_back(ASTRenameQuery::Element());
 
-            rewritten_rename_query->elements.back().from.database = std::make_shared<ASTIdentifier>(mapped_to_database);
-            rewritten_rename_query->elements.back().from.table = std::make_shared<ASTIdentifier>(alter_query.table);
-            rewritten_rename_query->elements.back().to.database = std::make_shared<ASTIdentifier>(mapped_to_database);
-            rewritten_rename_query->elements.back().to.table = std::make_shared<ASTIdentifier>(alter_command->new_table_name);
+            rename_elements.back().from.database = std::make_shared<ASTIdentifier>(mapped_to_database);
+            rename_elements.back().from.table = std::make_shared<ASTIdentifier>(alter_query.table);
+            rename_elements.back().to.database = std::make_shared<ASTIdentifier>(mapped_to_database);
+            rename_elements.back().to.table = std::make_shared<ASTIdentifier>(alter_command->new_table_name);
         }
     }
 
@@ -765,8 +763,11 @@ ASTs InterpreterAlterImpl::getRewrittenQueries(
     if (!rewritten_alter_query->command_list->children.empty())
         rewritten_queries.push_back(rewritten_alter_query);
 
-    if (!rewritten_rename_query->elements.empty())
+    if (!rename_elements.empty())
+    {
+        auto rewritten_rename_query = std::make_shared<ASTRenameQuery>(std::move(rename_elements));
         rewritten_queries.push_back(rewritten_rename_query);
+    }
 
     return rewritten_queries;
 }

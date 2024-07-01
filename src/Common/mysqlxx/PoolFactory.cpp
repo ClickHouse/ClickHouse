@@ -37,7 +37,6 @@ static std::string getPoolEntryName(const Poco::Util::AbstractConfiguration & co
     std::string port = config.getString(config_name + ".port", "");
     std::string user = config.getString(config_name + ".user", "");
     std::string db = config.getString(config_name + ".db", "");
-    std::string table = config.getString(config_name + ".table", "");
 
     Poco::Util::AbstractConfiguration::Keys keys;
     config.keys(config_name, keys);

@@ -52,7 +52,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        FunctionArgumentDescriptors args{{"days", &isNativeInteger<IDataType>, nullptr, "Integer"}};
+        FunctionArgumentDescriptors args{{"days", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeInteger), nullptr, "Integer"}};
 
         validateFunctionArgumentTypes(*this, arguments, args);
 

@@ -157,12 +157,12 @@ public:
         /// if last argument is not nullable, result should be also not nullable
         if (!multi_if_args.back().column->isNullable() && res->isNullable())
         {
-            if (const auto * column_lc = checkAndGetColumn<ColumnLowCardinality>(*res))
-                res = checkAndGetColumn<ColumnNullable>(*column_lc->convertToFullColumn())->getNestedColumnPtr();
-            else if (const auto * column_const = checkAndGetColumn<ColumnConst>(*res))
-                res = checkAndGetColumn<ColumnNullable>(column_const->getDataColumn())->getNestedColumnPtr();
+            if (const auto * column_lc = checkAndGetColumn<ColumnLowCardinality>(&*res))
+                res = checkAndGetColumn<ColumnNullable>(*column_lc->convertToFullColumn()).getNestedColumnPtr();
+            else if (const auto * column_const = checkAndGetColumn<ColumnConst>(&*res))
+                res = checkAndGetColumn<ColumnNullable>(column_const->getDataColumn()).getNestedColumnPtr();
             else
-                res = checkAndGetColumn<ColumnNullable>(*res)->getNestedColumnPtr();
+                res = checkAndGetColumn<ColumnNullable>(&*res)->getNestedColumnPtr();
         }
 
         return res;

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/NamesAndTypes.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/SchemaInferenceUtils.h>
 #include <Processors/Formats/IInputFormat.h>
@@ -16,7 +17,7 @@ class ReadBuffer;
 class JSONColumnsReaderBase
 {
 public:
-    JSONColumnsReaderBase(ReadBuffer & in_);
+    explicit JSONColumnsReaderBase(ReadBuffer & in_);
 
     virtual ~JSONColumnsReaderBase() = default;
 
@@ -84,7 +85,7 @@ public:
     void transformTypesFromDifferentFilesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) override;
 
     bool needContext() const override { return !hints_str.empty(); }
-    void setContext(ContextPtr & ctx) override;
+    void setContext(const ContextPtr & ctx) override;
 
     void setMaxRowsAndBytesToRead(size_t max_rows, size_t max_bytes) override
     {

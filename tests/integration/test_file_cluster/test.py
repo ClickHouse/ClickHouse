@@ -123,3 +123,91 @@ def test_no_such_files(started_cluster):
     distributed = node.query(get_query("*", True, "3,4"))
 
     assert TSV(local) == TSV(distributed)
+
+
+def test_schema_inference(started_cluster):
+    node = started_cluster.instances["s0_0_0"]
+
+    expected_result = node.query(
+        "select * from file('file*.csv', 'CSV', 's String, i UInt32') ORDER BY (i, s)"
+    )
+    result = node.query(
+        "select * from fileCluster('my_cluster', 'file*.csv') ORDER BY (c1, c2)"
+    )
+    assert result == expected_result
+
+    result = node.query(
+        "select * from fileCluster('my_cluster', 'file*.csv', auto) ORDER BY (c1, c2)"
+    )
+    assert result == expected_result
+
+    result = node.query(
+        "select * from fileCluster('my_cluster', 'file*.csv', CSV) ORDER BY (c1, c2)"
+    )
+    assert result == expected_result
+
+    result = node.query(
+        "select * from fileCluster('my_cluster', 'file*.csv', auto, auto) ORDER BY (c1, c2)"
+    )
+    assert result == expected_result
+
+    result = node.query(
+        "select * from fileCluster('my_cluster', 'file*.csv', CSV, auto) ORDER BY (c1, c2)"
+    )
+    assert result == expected_result
+
+    result = node.query(
+        "select * from fileCluster('my_cluster', 'file*.csv', auto, auto, auto) ORDER BY (c1, c2)"
+    )
+    assert result == expected_result
+
+    result = node.query(
+        "select * from fileCluster('my_cluster', 'file*.csv', CSV, auto, auto) ORDER BY (c1, c2)"
+    )
+    assert result == expected_result
+
+
+def test_format_detection(started_cluster):
+    for node_name in ("s0_0_0", "s0_0_1", "s0_1_0"):
+        for i in range(1, 3):
+            started_cluster.instances[node_name].query(
+                f"""
+                INSERT INTO TABLE FUNCTION file(
+                    'file_for_format_detection_{i}', 'CSV', 's String, i UInt32') VALUES ('file{i}',{i})
+                    """
+            )
+
+    node = started_cluster.instances["s0_0_0"]
+    expected_result = node.query(
+        "select * from file('file_for_format_detection*', 'CSV', 's String, i UInt32') ORDER BY (i, s)"
+    )
+
+    result = node.query(
+        "select * from fileCluster('my_cluster', 'file_for_format_detection*') ORDER BY (c1, c2)"
+    )
+    assert result == expected_result
+
+    result = node.query(
+        "select * from fileCluster('my_cluster', 'file_for_format_detection*', auto) ORDER BY (c1, c2)"
+    )
+    assert result == expected_result
+
+    result = node.query(
+        "select * from fileCluster('my_cluster', 'file_for_format_detection*', auto, auto) ORDER BY (c1, c2)"
+    )
+    assert result == expected_result
+
+    result = node.query(
+        "select * from fileCluster('my_cluster', 'file_for_format_detection*', auto, 's String, i UInt32') ORDER BY (i, s)"
+    )
+    assert result == expected_result
+
+    result = node.query(
+        "select * from fileCluster('my_cluster', 'file_for_format_detection*', auto, auto, auto) ORDER BY (c1, c2)"
+    )
+    assert result == expected_result
+
+    result = node.query(
+        "select * from fileCluster('my_cluster', 'file_for_format_detection*', auto, 's String, i UInt32', auto) ORDER BY (i, s)"
+    )
+    assert result == expected_result

@@ -1,24 +1,21 @@
 #!/usr/bin/env python3
 
 import argparse
-
 import logging
-import sys
 import subprocess
+import sys
 from pathlib import Path
 from shutil import copy2
 from typing import Dict
 
-
 from build_download_helper import download_builds_filter
-
 from compress_files import compress_fast
-from docker_images_helper import DockerImage, pull_image, get_docker_image
-from env_helper import REPORT_PATH, TEMP_PATH as TEMP
-from report import JobReport, TestResults, TestResult, FAILURE, FAIL, OK, SUCCESS
+from docker_images_helper import DockerImage, get_docker_image, pull_image
+from env_helper import REPORT_PATH
+from env_helper import TEMP_PATH as TEMP
+from report import FAIL, FAILURE, OK, SUCCESS, JobReport, TestResult, TestResults
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
-
 
 RPM_IMAGE = "clickhouse/install-rpm-test"
 DEB_IMAGE = "clickhouse/install-deb-test"
@@ -32,7 +29,7 @@ set -e
 trap "bash -ex /packages/preserve_logs.sh" ERR
 test_env='TEST_THE_DEFAULT_PARAMETER=15'
 echo "$test_env" >> /etc/default/clickhouse
-systemctl start clickhouse-server
+systemctl restart clickhouse-server
 clickhouse-client -q 'SELECT version()'
 grep "$test_env" /proc/$(cat /var/run/clickhouse-server/clickhouse-server.pid)/environ"""
     initd_test = r"""#!/bin/bash

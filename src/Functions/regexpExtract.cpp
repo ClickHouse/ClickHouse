@@ -47,12 +47,12 @@ public:
                 arguments.size());
 
         FunctionArgumentDescriptors args{
-            {"haystack", &isString<IDataType>, nullptr, "String"},
-            {"pattern", &isString<IDataType>, isColumnConst, "const String"},
+            {"haystack", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"},
+            {"pattern", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), isColumnConst, "const String"},
         };
 
         if (arguments.size() == 3)
-            args.emplace_back(FunctionArgumentDescriptor{"index", &isInteger<IDataType>, nullptr, "Integer"});
+            args.emplace_back(FunctionArgumentDescriptor{"index", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isInteger), nullptr, "Integer"});
 
         validateFunctionArgumentTypes(*this, arguments, args);
 

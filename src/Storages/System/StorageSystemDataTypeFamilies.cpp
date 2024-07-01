@@ -17,7 +17,7 @@ ColumnsDescription StorageSystemDataTypeFamilies::getColumnsDescription()
     };
 }
 
-void StorageSystemDataTypeFamilies::fillData(MutableColumns & res_columns, ContextPtr, const SelectQueryInfo &) const
+void StorageSystemDataTypeFamilies::fillData(MutableColumns & res_columns, ContextPtr, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
     const auto & factory = DataTypeFactory::instance();
     auto names = factory.getAllRegisteredNames();

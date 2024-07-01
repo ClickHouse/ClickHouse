@@ -49,30 +49,30 @@ static inline bool parsePartitionExpression(IParser::Pos & pos, std::string & ty
 {
     ASTPtr expression;
     ParserExpression p_expression;
-    if (!subpartition && ParserKeyword("LIST").ignore(pos, expected))
+    if (!subpartition && ParserKeyword(Keyword::LIST).ignore(pos, expected))
     {
         type = "list";
-        ParserKeyword("COLUMNS").ignore(pos, expected);
+        ParserKeyword(Keyword::COLUMNS).ignore(pos, expected);
         if (!p_expression.parse(pos, expression, expected))
             return false;
     }
-    else if (!subpartition && ParserKeyword("RANGE").ignore(pos, expected))
+    else if (!subpartition && ParserKeyword(Keyword::RANGE).ignore(pos, expected))
     {
         type = "range";
-        ParserKeyword("COLUMNS").ignore(pos, expected);
+        ParserKeyword(Keyword::COLUMNS).ignore(pos, expected);
         if (!p_expression.parse(pos, expression, expected))
             return false;
     }
     else
     {
-        if (ParserKeyword("LINEAR").ignore(pos, expected))
+        if (ParserKeyword(Keyword::LINEAR).ignore(pos, expected))
             type = "linear_";
 
-        if (ParserKeyword("KEY").ignore(pos, expected))
+        if (ParserKeyword(Keyword::KEY).ignore(pos, expected))
         {
             type += "key";
 
-            if (ParserKeyword("ALGORITHM").ignore(pos, expected))
+            if (ParserKeyword(Keyword::ALGORITHM).ignore(pos, expected))
             {
                 if (!ParserToken(TokenType::Equals).ignore(pos, expected))
                     return false;
@@ -93,7 +93,7 @@ static inline bool parsePartitionExpression(IParser::Pos & pos, std::string & ty
             if (!p_expression.parse(pos, expression, expected))
                 return false;
         }
-        else if (ParserKeyword("HASH").ignore(pos, expected))
+        else if (ParserKeyword(Keyword::HASH).ignore(pos, expected))
         {
             type += "hash";
             if (!p_expression.parse(pos, expression, expected))
@@ -117,25 +117,25 @@ bool ParserDeclarePartitionOptions::parseImpl(Pos & pos, ASTPtr & node, Expected
     ASTPtr subpartition_expression;
     ASTPtr declare_partitions;
 
-    if (!ParserKeyword("PARTITION BY").ignore(pos, expected))
+    if (!ParserKeyword(Keyword::PARTITION_BY).ignore(pos, expected))
         return false;
 
     if (!parsePartitionExpression(pos, partition_type, partition_expression, expected))
         return false;
 
-    if (ParserKeyword("PARTITIONS").ignore(pos, expected))
+    if (ParserKeyword(Keyword::PARTITIONS).ignore(pos, expected))
     {
         ParserLiteral p_literal;
         if (!p_literal.parse(pos, partition_numbers, expected))
             return false;
     }
 
-    if (ParserKeyword("SUBPARTITION BY").ignore(pos, expected))
+    if (ParserKeyword(Keyword::SUBPARTITION_BY).ignore(pos, expected))
     {
         if (!parsePartitionExpression(pos, subpartition_type, subpartition_expression, expected, true))
             return false;
 
-        if (ParserKeyword("SUBPARTITIONS").ignore(pos, expected))
+        if (ParserKeyword(Keyword::SUBPARTITIONS).ignore(pos, expected))
         {
             ParserLiteral p_literal;
             if (!p_literal.parse(pos, subpartition_numbers, expected))

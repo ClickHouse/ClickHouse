@@ -16,7 +16,6 @@
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/convertFieldToType.h>
-#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/castColumn.h>
 #include <IO/ReadHelpers.h>
 #include <Parsers/ASTExpressionList.h>
@@ -28,7 +27,6 @@
 #include <Processors/Formats/Impl/ConstantExpressionTemplate.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <boost/functional/hash.hpp>
-#include <base/sort.h>
 
 
 namespace DB
@@ -539,7 +537,7 @@ bool ConstantExpressionTemplate::parseLiteralAndAssertType(
         ParserArrayOfLiterals parser_array;
         ParserTupleOfLiterals parser_tuple;
 
-        IParser::Pos iterator(token_iterator, static_cast<unsigned>(settings.max_parser_depth));
+        IParser::Pos iterator(token_iterator, static_cast<unsigned>(settings.max_parser_depth), static_cast<unsigned>(settings.max_parser_backtracks));
         while (iterator->begin < istr.position())
             ++iterator;
         Expected expected;

@@ -85,7 +85,7 @@
     M(OSReadChars) \
     M(OSWriteChars) \
 \
-    M(PerfCpuCycles) \
+    M(PerfCPUCycles) \
     M(PerfInstructions) \
     M(PerfCacheReferences) \
     M(PerfCacheMisses) \
@@ -94,12 +94,12 @@
     M(PerfBusCycles) \
     M(PerfStalledCyclesFrontend) \
     M(PerfStalledCyclesBackend) \
-    M(PerfRefCpuCycles) \
+    M(PerfRefCPUCycles) \
 \
-    M(PerfCpuClock) \
+    M(PerfCPUClock) \
     M(PerfTaskClock) \
     M(PerfContextSwitches) \
-    M(PerfCpuMigrations) \
+    M(PerfCPUMigrations) \
     M(PerfAlignmentFaults) \
     M(PerfEmulationFaults) \
     M(PerfMinEnabledTime) \
@@ -111,7 +111,6 @@
     M(PerfLocalMemoryReferences) \
     M(PerfLocalMemoryMisses) \
 \
-    M(CreatedHTTPConnections) \
     M(CannotWriteToWriteBufferDiscard) \
 \
     M(S3ReadMicroseconds) \
@@ -180,8 +179,6 @@
     M(ReadBufferFromS3RequestsErrors) \
     M(ReadBufferFromS3ResetSessions) \
     M(ReadBufferFromS3PreservedSessions) \
-\
-    M(ReadWriteBufferFromHTTPPreservedSessions) \
 \
     M(WriteBufferFromS3Microseconds) \
     M(WriteBufferFromS3Bytes) \
@@ -261,7 +258,8 @@
     M(KeeperExistsRequest) \
 \
     M(IOUringSQEsSubmitted) \
-    M(IOUringSQEsResubmits) \
+    M(IOUringSQEsResubmitsAsync) \
+    M(IOUringSQEsResubmitsSync) \
     M(IOUringCQEsCompleted) \
     M(IOUringCQEsFailed) \
 \
@@ -284,7 +282,12 @@
     M(InterfaceMySQLSendBytes) \
     M(InterfaceMySQLReceiveBytes) \
     M(InterfacePostgreSQLSendBytes) \
-    M(InterfacePostgreSQLReceiveBytes)
+    M(InterfacePostgreSQLReceiveBytes) \
+\
+    M(KeeperLogsEntryReadFromLatestCache) \
+    M(KeeperLogsEntryReadFromCommitCache) \
+    M(KeeperLogsEntryReadFromFile) \
+    M(KeeperLogsPrefetchedEntries) \
 
 namespace ProfileEvents
 {

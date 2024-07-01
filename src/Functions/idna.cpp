@@ -6,16 +6,12 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionStringToString.h>
 
-#ifdef __clang__
-#    pragma clang diagnostic push
-#    pragma clang diagnostic ignored "-Wnewline-eof"
-#endif
-#    include <ada/idna/to_ascii.h>
-#    include <ada/idna/to_unicode.h>
-#    include <ada/idna/unicode_transcoding.h>
-#ifdef __clang__
-#    pragma clang diagnostic pop
-#endif
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wnewline-eof"
+#include <ada/idna/to_ascii.h>
+#include <ada/idna/to_unicode.h>
+#include <ada/idna/unicode_transcoding.h>
+#pragma clang diagnostic pop
 
 namespace DB
 {
@@ -30,7 +26,7 @@ namespace ErrorCodes
 /// - idnaEncode(), tryIdnaEncode() and idnaDecode(), see https://en.wikipedia.org/wiki/Internationalized_domain_name#ToASCII_and_ToUnicode
 ///   and [3] https://www.unicode.org/reports/tr46/#ToUnicode
 
-enum class ErrorHandling
+enum class ErrorHandling : uint8_t
 {
     Throw,  /// Throw exception
     Empty   /// Return empty string
@@ -199,4 +195,3 @@ Computes the Unicode representation of ASCII-encoded Internationalized Domain Na
 }
 
 #endif
-

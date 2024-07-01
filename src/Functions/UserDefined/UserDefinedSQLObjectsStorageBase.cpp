@@ -23,7 +23,7 @@ ASTPtr normalizeCreateFunctionQuery(const IAST & create_function_query)
     auto & res = typeid_cast<ASTCreateFunctionQuery &>(*ptr);
     res.if_not_exists = false;
     res.or_replace = false;
-    FunctionNameNormalizer().visit(res.function_core.get());
+    FunctionNameNormalizer::visit(res.function_core.get());
     return ptr;
 }
 

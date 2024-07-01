@@ -1,18 +1,14 @@
-#ifdef __clang__
-#  pragma clang diagnostic push
-#  pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
-#  pragma clang diagnostic ignored "-Wgnu-anonymous-struct"
-#  pragma clang diagnostic ignored "-Wnested-anon-types"
-#  pragma clang diagnostic ignored "-Wunused-parameter"
-#  pragma clang diagnostic ignored "-Wshadow-field-in-constructor"
-#  pragma clang diagnostic ignored "-Wdtor-name"
-#endif
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
+#pragma clang diagnostic ignored "-Wgnu-anonymous-struct"
+#pragma clang diagnostic ignored "-Wnested-anon-types"
+#pragma clang diagnostic ignored "-Wunused-parameter"
+#pragma clang diagnostic ignored "-Wshadow-field-in-constructor"
+#pragma clang diagnostic ignored "-Wdtor-name"
 #include <re2/re2.h>
 #include <re2/regexp.h>
 #include <re2/walker-inl.h>
-#ifdef __clang__
-#  pragma clang diagnostic pop
-#endif
+#pragma clang diagnostic pop
 
 #ifdef LOG_INFO
 #undef LOG_INFO

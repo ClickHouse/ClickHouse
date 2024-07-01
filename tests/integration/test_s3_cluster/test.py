@@ -35,7 +35,9 @@ def create_buckets_s3(cluster):
 
             # Make all files a bit different
             for number in range(100 + file_number):
-                data.append([str(number + file_number) * 10, number + file_number])
+                data.append(
+                    ["str_" + str(number + file_number) * 10, number + file_number]
+                )
 
             writer = csv.writer(f)
             writer.writerows(data)
@@ -427,3 +429,33 @@ def test_cluster_with_named_collection(started_cluster):
     )
 
     assert TSV(pure_s3) == TSV(s3_cluster)
+
+
+def test_cluster_format_detection(started_cluster):
+    node = started_cluster.instances["s0_0_0"]
+
+    expected_desc_result = node.query(
+        "desc s3('http://minio1:9001/root/data/generated/*', 'minio', 'minio123', 'CSV')"
+    )
+
+    desc_result = node.query(
+        "desc s3('http://minio1:9001/root/data/generated/*', 'minio', 'minio123')"
+    )
+
+    assert expected_desc_result == desc_result
+
+    expected_result = node.query(
+        "SELECT * FROM s3('http://minio1:9001/root/data/generated/*', 'minio', 'minio123', 'CSV', 'a String, b UInt64') order by a, b"
+    )
+
+    result = node.query(
+        "SELECT * FROM s3Cluster(cluster_simple, 'http://minio1:9001/root/data/generated/*', 'minio', 'minio123') order by c1, c2"
+    )
+
+    assert result == expected_result
+
+    result = node.query(
+        "SELECT * FROM s3Cluster(cluster_simple, 'http://minio1:9001/root/data/generated/*', 'minio', 'minio123', auto, 'a String, b UInt64') order by a, b"
+    )
+
+    assert result == expected_result

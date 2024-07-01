@@ -38,8 +38,8 @@ ColumnsDescription StorageSystemRowPolicies::getColumnsDescription()
 
     for (auto filter_type : collections::range(RowPolicyFilterType::MAX))
     {
-        const String & column_name = RowPolicyFilterTypeInfo::get(filter_type).name;
-        description.add({column_name, std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())});
+        const auto & filter_type_info = RowPolicyFilterTypeInfo::get(filter_type);
+        description.add({filter_type_info.name, std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), filter_type_info.description});
     }
 
     description.add({"is_restrictive", std::make_shared<DataTypeUInt8>(),
@@ -61,7 +61,7 @@ ColumnsDescription StorageSystemRowPolicies::getColumnsDescription()
 }
 
 
-void StorageSystemRowPolicies::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
+void StorageSystemRowPolicies::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
     /// If "select_from_system_db_requires_grant" is enabled the access rights were already checked in InterpreterSelectQuery.
     const auto & access_control = context->getAccessControl();

@@ -274,6 +274,11 @@ bool CachedOnDiskReadBufferFromFile::canStartFromCache(size_t current_offset, co
     return current_write_offset > current_offset;
 }
 
+String CachedOnDiskReadBufferFromFile::toString(ReadType type)
+{
+    return String(magic_enum::enum_name(type));
+}
+
 CachedOnDiskReadBufferFromFile::ImplementationBufferPtr
 CachedOnDiskReadBufferFromFile::getReadBufferForFileSegment(FileSegment & file_segment)
 {
@@ -346,7 +351,7 @@ CachedOnDiskReadBufferFromFile::getReadBufferForFileSegment(FileSegment & file_s
                 }
 
                 auto downloader_id = file_segment.getOrSetDownloader();
-                if (downloader_id == file_segment.getCallerId())
+                if (downloader_id == FileSegment::getCallerId())
                 {
                     if (canStartFromCache(file_offset_of_buffer_end, file_segment))
                     {
@@ -637,7 +642,8 @@ void CachedOnDiskReadBufferFromFile::predownload(FileSegment & file_segment)
 
             ProfileEvents::increment(ProfileEvents::CachedReadBufferReadFromSourceBytes, current_impl_buffer_size);
 
-            bool continue_predownload = file_segment.reserve(current_predownload_size);
+            bool continue_predownload = file_segment.reserve(
+                current_predownload_size, settings.filesystem_cache_reserve_space_wait_lock_timeout_milliseconds);
             if (continue_predownload)
             {
                 LOG_TEST(log, "Left to predownload: {}, buffer size: {}", bytes_to_predownload, current_impl_buffer_size);
@@ -992,7 +998,7 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
         {
             chassert(file_offset_of_buffer_end + size - 1 <= file_segment.range().right);
 
-            bool success = file_segment.reserve(size);
+            bool success = file_segment.reserve(size, settings.filesystem_cache_reserve_space_wait_lock_timeout_milliseconds);
             if (success)
             {
                 chassert(file_segment.getCurrentWriteOffset() == static_cast<size_t>(implementation_buffer->getPosition()));
@@ -1215,7 +1221,7 @@ size_t CachedOnDiskReadBufferFromFile::getRemainingSizeToRead()
 
 void CachedOnDiskReadBufferFromFile::setReadUntilPosition(size_t position)
 {
-    if (!allow_seeks_after_first_read)
+    if (initialized && !allow_seeks_after_first_read)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Method `setReadUntilPosition()` not allowed");
 
     if (read_until_position == position)

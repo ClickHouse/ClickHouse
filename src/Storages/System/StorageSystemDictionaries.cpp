@@ -16,7 +16,6 @@
 #include <Core/Names.h>
 
 #include <base/map.h>
-#include <mutex>
 
 namespace DB
 {
@@ -52,6 +51,14 @@ catch (const DB::Exception &)
 
 }
 
+StorageSystemDictionaries::StorageSystemDictionaries(const StorageID & storage_id_, ColumnsDescription columns_description_)
+    : IStorageSystemOneBlock(storage_id_, std::move(columns_description_))
+{
+    VirtualColumnsDescription virtuals;
+    virtuals.addEphemeral("key", std::make_shared<DataTypeString>(), "");
+    setVirtuals(std::move(virtuals));
+}
+
 ColumnsDescription StorageSystemDictionaries::getColumnsDescription()
 {
     return ColumnsDescription
@@ -59,7 +66,7 @@ ColumnsDescription StorageSystemDictionaries::getColumnsDescription()
         {"database", std::make_shared<DataTypeString>(), "Name of the database containing the dictionary created by DDL query. Empty string for other dictionaries."},
         {"name", std::make_shared<DataTypeString>(), "Dictionary name."},
         {"uuid", std::make_shared<DataTypeUUID>(), "Dictionary UUID."},
-        {"status", std::make_shared<DataTypeEnum8>(getStatusEnumAllPossibleValues()),
+        {"status", std::make_shared<DataTypeEnum8>(getExternalLoaderStatusEnumAllPossibleValues()),
             "Dictionary status. Possible values: "
             "NOT_LOADED — Dictionary was not loaded because it was not used, "
             "LOADED — Dictionary loaded successfully, "
@@ -75,7 +82,7 @@ ColumnsDescription StorageSystemDictionaries::getColumnsDescription()
         {"attribute.names", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Array of attribute names provided by the dictionary."},
         {"attribute.types", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Corresponding array of attribute types provided by the dictionary."},
         {"bytes_allocated", std::make_shared<DataTypeUInt64>(), "Amount of RAM allocated for the dictionary."},
-        {"hierarchical_index_bytes_allocated", std::make_shared<DataTypeUInt64>(), ""},
+        {"hierarchical_index_bytes_allocated", std::make_shared<DataTypeUInt64>(), "Amount of RAM allocated for hierarchical index."},
         {"query_count", std::make_shared<DataTypeUInt64>(), "Number of queries since the dictionary was loaded or since the last successful reboot."},
         {"hit_rate", std::make_shared<DataTypeFloat64>(), "For cache dictionaries, the percentage of uses for which the value was in the cache."},
         {"found_rate", std::make_shared<DataTypeFloat64>(), "The percentage of uses for which the value was found."},
@@ -92,14 +99,7 @@ ColumnsDescription StorageSystemDictionaries::getColumnsDescription()
     };
 }
 
-NamesAndTypesList StorageSystemDictionaries::getVirtuals() const
-{
-    return {
-        {"key", std::make_shared<DataTypeString>()}
-    };
-}
-
-void StorageSystemDictionaries::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo & /*query_info*/) const
+void StorageSystemDictionaries::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
     const auto access = context->getAccess();
     const bool check_access_for_dictionaries = access->isGranted(AccessType::SHOW_DICTIONARIES);

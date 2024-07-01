@@ -74,6 +74,10 @@ Specifying the `sharding_key` is necessary for the following:
 
 `fsync_directories` - do the `fsync` for directories. Guarantees that the OS refreshed directory metadata after operations related to background inserts on Distributed table (after insert, after sending the data to shard, etc.).
 
+#### skip_unavailable_shards
+
+`skip_unavailable_shards` - If true, ClickHouse silently skips unavailable shards. Shard is marked as unavailable when: 1) The shard cannot be reached due to a connection failure. 2) Shard is unresolvable through DNS. 3) Table does not exist on the shard. Default false.
+
 #### bytes_to_throw_insert
 
 `bytes_to_throw_insert` - if more than this number of compressed bytes will be pending for background INSERT, an exception will be thrown. 0 - do not throw. Default 0.
@@ -101,6 +105,10 @@ Specifying the `sharding_key` is necessary for the following:
 #### background_insert_max_sleep_time_ms
 
 `background_insert_max_sleep_time_ms` - same as [distributed_background_insert_max_sleep_time_ms](../../../operations/settings/settings.md#distributed_background_insert_max_sleep_time_ms)
+
+#### flush_on_detach
+
+`flush_on_detach` - Flush data to remote nodes on DETACH/DROP/server shutdown. Default true.
 
 :::note
 **Durability settings** (`fsync_...`):

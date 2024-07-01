@@ -1,7 +1,7 @@
-from contextlib import contextmanager
 import os
-from typing import Any, List, Union, Iterator
+from contextlib import contextmanager
 from pathlib import Path
+from typing import Any, Iterator, List, Union
 
 
 class WithIter(type):
@@ -28,16 +28,10 @@ def is_hex(s):
 
 
 def normalize_string(string: str) -> str:
-    lowercase_string = string.lower()
-    normalized_string = (
-        lowercase_string.replace(" ", "_")
-        .replace("-", "_")
-        .replace("/", "_")
-        .replace("(", "")
-        .replace(")", "")
-        .replace(",", "")
-    )
-    return normalized_string
+    res = string.lower()
+    for r in ((" ", "_"), ("(", "_"), (")", "_"), (",", "_"), ("/", "_"), ("-", "_")):
+        res = res.replace(*r)
+    return res
 
 
 class GHActions:

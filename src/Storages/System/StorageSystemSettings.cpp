@@ -34,7 +34,7 @@ ColumnsDescription StorageSystemSettings::getColumnsDescription()
     };
 }
 
-void StorageSystemSettings::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
+void StorageSystemSettings::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
     const Settings & settings = context->getSettingsRef();
     auto constraints_and_current_profiles = context->getSettingsConstraintsAndCurrentProfiles();

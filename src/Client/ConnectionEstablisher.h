@@ -3,7 +3,6 @@
 #include <Common/AsyncTaskExecutor.h>
 #include <Common/Epoll.h>
 #include <Common/Fiber.h>
-#include <Common/FiberStack.h>
 #include <Common/TimerDescriptor.h>
 #include <Common/PoolWithFailoverBase.h>
 #include <Client/ConnectionPool.h>

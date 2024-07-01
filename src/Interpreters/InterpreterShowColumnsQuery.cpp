@@ -107,7 +107,7 @@ SELECT
     '' AS extra )";
 
     // TODO Interpret query.extended. It is supposed to show internal/virtual columns. Need to fetch virtual column names, see
-    // IStorage::getVirtuals(). We can't easily do that via SQL.
+    // IStorage::getVirtualsList(). We can't easily do that via SQL.
 
     if (query.full)
     {

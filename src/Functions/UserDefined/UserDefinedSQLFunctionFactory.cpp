@@ -86,7 +86,7 @@ namespace
         auto & res = typeid_cast<ASTCreateFunctionQuery &>(*ptr);
         res.if_not_exists = false;
         res.or_replace = false;
-        FunctionNameNormalizer().visit(res.function_core.get());
+        FunctionNameNormalizer::visit(res.function_core.get());
         return ptr;
     }
 }
@@ -106,7 +106,7 @@ void UserDefinedSQLFunctionFactory::checkCanBeRegistered(const ContextPtr & cont
     if (AggregateFunctionFactory::instance().hasNameOrAlias(function_name))
         throw Exception(ErrorCodes::FUNCTION_ALREADY_EXISTS, "The aggregate function '{}' already exists", function_name);
 
-    if (UserDefinedExecutableFunctionFactory::instance().has(function_name, context))
+    if (UserDefinedExecutableFunctionFactory::instance().has(function_name, context)) /// NOLINT(readability-static-accessed-through-instance)
         throw Exception(ErrorCodes::FUNCTION_ALREADY_EXISTS, "User defined executable function '{}' already exists", function_name);
 
     validateFunction(assert_cast<const ASTCreateFunctionQuery &>(create_function_query).function_core, function_name);
@@ -118,7 +118,7 @@ void UserDefinedSQLFunctionFactory::checkCanBeUnregistered(const ContextPtr & co
         AggregateFunctionFactory::instance().hasNameOrAlias(function_name))
         throw Exception(ErrorCodes::CANNOT_DROP_FUNCTION, "Cannot drop system function '{}'", function_name);
 
-    if (UserDefinedExecutableFunctionFactory::instance().has(function_name, context))
+    if (UserDefinedExecutableFunctionFactory::instance().has(function_name, context)) /// NOLINT(readability-static-accessed-through-instance)
         throw Exception(ErrorCodes::CANNOT_DROP_FUNCTION, "Cannot drop user defined executable function '{}'", function_name);
 }
 

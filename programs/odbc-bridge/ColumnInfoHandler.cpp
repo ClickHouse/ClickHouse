@@ -8,13 +8,12 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/ParserQueryWithOutput.h>
-#include <Parsers/parseQuery.h>
 #include <Server/HTTP/HTMLForm.h>
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>
 #include <Poco/NumberParser.h>
+#include <Interpreters/Context.h>
 #include <Common/logger_useful.h>
-#include <base/scope_guard.h>
 #include <Common/BridgeProtocolVersion.h>
 #include <Common/quoteString.h>
 #include "getIdentifierQuote.h"

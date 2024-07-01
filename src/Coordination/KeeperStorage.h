@@ -52,8 +52,10 @@ public:
         Node() = default;
 
         Node & operator=(const Node & other);
-
         Node(const Node & other);
+
+        Node & operator=(Node && other) noexcept;
+        Node(Node && other) noexcept;
 
         bool empty() const;
 
@@ -146,6 +148,7 @@ public:
         void removeChild(StringRef child_path);
 
         const auto & getChildren() const noexcept { return children; }
+        auto & getChildren() { return children; }
 
         // Invalidate the calculated digest so it's recalculated again on the next
         // getDigest call
@@ -311,8 +314,13 @@ public:
         AuthID auth_id;
     };
 
+    struct CloseSessionDelta
+    {
+        int64_t session_id;
+    };
+
     using Operation = std::
-        variant<CreateNodeDelta, RemoveNodeDelta, UpdateNodeDelta, SetACLDelta, AddAuthDelta, ErrorDelta, SubDeltaEnd, FailedMultiDelta>;
+        variant<CreateNodeDelta, RemoveNodeDelta, UpdateNodeDelta, SetACLDelta, AddAuthDelta, ErrorDelta, SubDeltaEnd, FailedMultiDelta, CloseSessionDelta>;
 
     struct Delta
     {
@@ -348,6 +356,7 @@ public:
         std::shared_ptr<Node> tryGetNodeFromStorage(StringRef path) const;
 
         std::unordered_map<int64_t, std::list<const AuthID *>> session_and_auth;
+        std::unordered_set<int64_t> closed_sessions;
 
         struct UncommittedNode
         {

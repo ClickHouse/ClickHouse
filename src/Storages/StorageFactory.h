@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/NamePrompter.h>
+#include <Databases/LoadingStrictnessLevel.h>
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Storages/ColumnsDescription.h>
@@ -43,8 +44,7 @@ public:
         ContextWeakMutablePtr context;
         const ColumnsDescription & columns;
         const ConstraintsDescription & constraints;
-        bool attach;
-        bool has_force_restore_data_flag;
+        LoadingStrictnessLevel mode;
         const String & comment;
 
         ContextMutablePtr getContext() const;
@@ -87,7 +87,7 @@ public:
         ContextMutablePtr context,
         const ColumnsDescription & columns,
         const ConstraintsDescription & constraints,
-        bool has_force_restore_data_flag) const;
+        LoadingStrictnessLevel mode) const;
 
     /// Register a table engine by its name.
     /// No locking, you must register all engines before usage of get.
@@ -129,12 +129,8 @@ public:
 
     AccessType getSourceAccessType(const String & table_engine) const;
 
-    bool checkIfStorageSupportsSchemaInterface(const String & storage_name)
-    {
-        if (storages.contains(storage_name))
-            return storages[storage_name].features.supports_schema_inference;
-        return false;
-    }
+    const StorageFeatures & getStorageFeatures(const String & storage_name) const;
+
 private:
     Storages storages;
 };

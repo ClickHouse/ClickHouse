@@ -1,19 +1,27 @@
 #pragma once
+
 #include <base/extended_types.h>
 #include <base/Decimal_fwd.h>
+#include <base/types.h>
+#include <base/defines.h>
 
-#if !defined(NO_SANITIZE_UNDEFINED)
-#if defined(__clang__)
-    #define NO_SANITIZE_UNDEFINED __attribute__((__no_sanitize__("undefined")))
-#else
-    #define NO_SANITIZE_UNDEFINED
-#endif
-#endif
 
 namespace DB
 {
 template <class> struct Decimal;
 class DateTime64;
+
+#define FOR_EACH_UNDERLYING_DECIMAL_TYPE(M) \
+    M(Int32) \
+    M(Int64) \
+    M(Int128) \
+    M(Int256)
+
+#define FOR_EACH_UNDERLYING_DECIMAL_TYPE_PASS(M, X) \
+    M(Int32,  X) \
+    M(Int64,  X) \
+    M(Int128, X) \
+    M(Int256, X)
 
 using Decimal32 = Decimal<Int32>;
 using Decimal64 = Decimal<Int64>;
@@ -55,36 +63,73 @@ struct Decimal
             return static_cast<U>(value);
     }
 
-    const Decimal<T> & operator += (const T & x) { value += x; return *this; }
-    const Decimal<T> & operator -= (const T & x) { value -= x; return *this; }
-    const Decimal<T> & operator *= (const T & x) { value *= x; return *this; }
-    const Decimal<T> & operator /= (const T & x) { value /= x; return *this; }
-    const Decimal<T> & operator %= (const T & x) { value %= x; return *this; }
+    const Decimal<T> & operator += (const T & x);
+    const Decimal<T> & operator -= (const T & x);
+    const Decimal<T> & operator *= (const T & x);
+    const Decimal<T> & operator /= (const T & x);
+    const Decimal<T> & operator %= (const T & x);
 
-    template <typename U> const Decimal<T> & operator += (const Decimal<U> & x) { value += x.value; return *this; }
-    template <typename U> const Decimal<T> & operator -= (const Decimal<U> & x) { value -= x.value; return *this; }
-    template <typename U> const Decimal<T> & operator *= (const Decimal<U> & x) { value *= x.value; return *this; }
-    template <typename U> const Decimal<T> & operator /= (const Decimal<U> & x) { value /= x.value; return *this; }
-    template <typename U> const Decimal<T> & operator %= (const Decimal<U> & x) { value %= x.value; return *this; }
+    template <typename U> const Decimal<T> & operator += (const Decimal<U> & x);
+    template <typename U> const Decimal<T> & operator -= (const Decimal<U> & x);
+    template <typename U> const Decimal<T> & operator *= (const Decimal<U> & x);
+    template <typename U> const Decimal<T> & operator /= (const Decimal<U> & x);
+    template <typename U> const Decimal<T> & operator %= (const Decimal<U> & x);
 
     /// This is to avoid UB for sumWithOverflow()
-    void NO_SANITIZE_UNDEFINED addOverflow(const T & x) { value += x; }
+    void NO_SANITIZE_UNDEFINED addOverflow(const T & x);
 
     T value;
 };
 
-template <typename T> inline bool operator< (const Decimal<T> & x, const Decimal<T> & y) { return x.value < y.value; }
-template <typename T> inline bool operator> (const Decimal<T> & x, const Decimal<T> & y) { return x.value > y.value; }
-template <typename T> inline bool operator<= (const Decimal<T> & x, const Decimal<T> & y) { return x.value <= y.value; }
-template <typename T> inline bool operator>= (const Decimal<T> & x, const Decimal<T> & y) { return x.value >= y.value; }
-template <typename T> inline bool operator== (const Decimal<T> & x, const Decimal<T> & y) { return x.value == y.value; }
-template <typename T> inline bool operator!= (const Decimal<T> & x, const Decimal<T> & y) { return x.value != y.value; }
+#define DISPATCH(TYPE) extern template struct Decimal<TYPE>;
+FOR_EACH_UNDERLYING_DECIMAL_TYPE(DISPATCH)
+#undef DISPATCH
 
-template <typename T> inline Decimal<T> operator+ (const Decimal<T> & x, const Decimal<T> & y) { return x.value + y.value; }
-template <typename T> inline Decimal<T> operator- (const Decimal<T> & x, const Decimal<T> & y) { return x.value - y.value; }
-template <typename T> inline Decimal<T> operator* (const Decimal<T> & x, const Decimal<T> & y) { return x.value * y.value; }
-template <typename T> inline Decimal<T> operator/ (const Decimal<T> & x, const Decimal<T> & y) { return x.value / y.value; }
-template <typename T> inline Decimal<T> operator- (const Decimal<T> & x) { return -x.value; }
+#define DISPATCH(TYPE_T, TYPE_U) \
+    extern template const Decimal<TYPE_T> & Decimal<TYPE_T>::operator += (const Decimal<TYPE_U> & x); \
+    extern template const Decimal<TYPE_T> & Decimal<TYPE_T>::operator -= (const Decimal<TYPE_U> & x); \
+    extern template const Decimal<TYPE_T> & Decimal<TYPE_T>::operator *= (const Decimal<TYPE_U> & x); \
+    extern template const Decimal<TYPE_T> & Decimal<TYPE_T>::operator /= (const Decimal<TYPE_U> & x); \
+    extern template const Decimal<TYPE_T> & Decimal<TYPE_T>::operator %= (const Decimal<TYPE_U> & x);
+#define INVOKE(X) FOR_EACH_UNDERLYING_DECIMAL_TYPE_PASS(DISPATCH, X)
+FOR_EACH_UNDERLYING_DECIMAL_TYPE(INVOKE);
+#undef INVOKE
+#undef DISPATCH
+
+template <typename T> bool operator< (const Decimal<T> & x, const Decimal<T> & y);
+template <typename T> bool operator> (const Decimal<T> & x, const Decimal<T> & y);
+template <typename T> bool operator<= (const Decimal<T> & x, const Decimal<T> & y);
+template <typename T> bool operator>= (const Decimal<T> & x, const Decimal<T> & y);
+template <typename T> bool operator== (const Decimal<T> & x, const Decimal<T> & y);
+template <typename T> bool operator!= (const Decimal<T> & x, const Decimal<T> & y);
+
+#define DISPATCH(TYPE) \
+extern template bool operator< (const Decimal<TYPE> & x, const Decimal<TYPE> & y); \
+extern template bool operator> (const Decimal<TYPE> & x, const Decimal<TYPE> & y); \
+extern template bool operator<= (const Decimal<TYPE> & x, const Decimal<TYPE> & y); \
+extern template bool operator>= (const Decimal<TYPE> & x, const Decimal<TYPE> & y); \
+extern template bool operator== (const Decimal<TYPE> & x, const Decimal<TYPE> & y); \
+extern template bool operator!= (const Decimal<TYPE> & x, const Decimal<TYPE> & y);
+FOR_EACH_UNDERLYING_DECIMAL_TYPE(DISPATCH)
+#undef DISPATCH
+
+template <typename T> Decimal<T> operator+ (const Decimal<T> & x, const Decimal<T> & y);
+template <typename T> Decimal<T> operator- (const Decimal<T> & x, const Decimal<T> & y);
+template <typename T> Decimal<T> operator* (const Decimal<T> & x, const Decimal<T> & y);
+template <typename T> Decimal<T> operator/ (const Decimal<T> & x, const Decimal<T> & y);
+template <typename T> Decimal<T> operator- (const Decimal<T> & x);
+
+#define DISPATCH(TYPE) \
+extern template Decimal<TYPE> operator+ (const Decimal<TYPE> & x, const Decimal<TYPE> & y); \
+extern template Decimal<TYPE> operator- (const Decimal<TYPE> & x, const Decimal<TYPE> & y); \
+extern template Decimal<TYPE> operator* (const Decimal<TYPE> & x, const Decimal<TYPE> & y); \
+extern template Decimal<TYPE> operator/ (const Decimal<TYPE> & x, const Decimal<TYPE> & y); \
+extern template Decimal<TYPE> operator- (const Decimal<TYPE> & x);
+FOR_EACH_UNDERLYING_DECIMAL_TYPE(DISPATCH)
+#undef DISPATCH
+
+#undef FOR_EACH_UNDERLYING_DECIMAL_TYPE_PASS
+#undef FOR_EACH_UNDERLYING_DECIMAL_TYPE
 
 /// Distinguishable type to allow function resolution/deduction based on value type,
 /// but also relatively easy to convert to/from Decimal64.

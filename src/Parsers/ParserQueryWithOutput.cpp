@@ -105,44 +105,46 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     /// FIXME: try to prettify this cast using `as<>()`
     auto & query_with_output = dynamic_cast<ASTQueryWithOutput &>(*query);
 
-    ParserKeyword s_into_outfile("INTO OUTFILE");
+    ParserKeyword s_into_outfile(Keyword::INTO_OUTFILE);
     if (s_into_outfile.ignore(pos, expected))
     {
         ParserStringLiteral out_file_p;
         if (!out_file_p.parse(pos, query_with_output.out_file, expected))
             return false;
 
-        ParserKeyword s_append("APPEND");
+        ParserKeyword s_append(Keyword::APPEND);
         if (s_append.ignore(pos, expected))
         {
             query_with_output.is_outfile_append = true;
         }
 
-        ParserKeyword s_truncate("TRUNCATE");
+        ParserKeyword s_truncate(Keyword::TRUNCATE);
         if (s_truncate.ignore(pos, expected))
         {
             query_with_output.is_outfile_truncate = true;
         }
 
-        ParserKeyword s_stdout("AND STDOUT");
+        ParserKeyword s_stdout(Keyword::AND_STDOUT);
         if (s_stdout.ignore(pos, expected))
         {
             query_with_output.is_into_outfile_with_stdout = true;
         }
 
-        ParserKeyword s_compression_method("COMPRESSION");
+        ParserKeyword s_compression_method(Keyword::COMPRESSION);
         if (s_compression_method.ignore(pos, expected))
         {
             ParserStringLiteral compression;
             if (!compression.parse(pos, query_with_output.compression, expected))
                 return false;
+            query_with_output.children.push_back(query_with_output.compression);
 
-            ParserKeyword s_compression_level("LEVEL");
+            ParserKeyword s_compression_level(Keyword::LEVEL);
             if (s_compression_level.ignore(pos, expected))
             {
                 ParserNumber compression_level;
                 if (!compression_level.parse(pos, query_with_output.compression_level, expected))
                     return false;
+                query_with_output.children.push_back(query_with_output.compression_level);
             }
         }
 
@@ -150,7 +152,7 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
     }
 
-    ParserKeyword s_format("FORMAT");
+    ParserKeyword s_format(Keyword::FORMAT);
 
     if (s_format.ignore(pos, expected))
     {
@@ -164,7 +166,7 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     }
 
     // SETTINGS key1 = value1, key2 = value2, ...
-    ParserKeyword s_settings("SETTINGS");
+    ParserKeyword s_settings(Keyword::SETTINGS);
     if (!query_with_output.settings_ast && s_settings.ignore(pos, expected))
     {
         ParserSetQuery parser_settings(true);

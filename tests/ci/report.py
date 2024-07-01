@@ -21,9 +21,9 @@ from typing import (
 )
 
 from build_download_helper import get_gh_api
-from ci_config import CI_CONFIG, BuildConfig
-from env_helper import REPORT_PATH, TEMP_PATH
+from ci_config import CI
 from ci_utils import normalize_string
+from env_helper import REPORT_PATH, TEMP_PATH
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +34,7 @@ SUCCESS: Final = "success"
 
 OK: Final = "OK"
 FAIL: Final = "FAIL"
+SKIPPED: Final = "SKIPPED"
 
 StatusType = Literal["error", "failure", "pending", "success"]
 STATUSES = [ERROR, FAILURE, PENDING, SUCCESS]  # type: List[StatusType]
@@ -46,6 +47,15 @@ def _state_rank(status: str) -> int:
         return STATUSES.index(status)  # type: ignore
     except ValueError:
         return 3
+
+
+def get_status(status: str) -> StatusType:
+    "function to get the StatusType for a status or ERROR"
+    try:
+        ind = STATUSES.index(status)  # type: ignore
+        return STATUSES[ind]
+    except ValueError:
+        return ERROR
 
 
 def get_worst_status(statuses: Iterable[str]) -> StatusType:
@@ -278,7 +288,7 @@ class JobReport:
     start_time: str
     duration: float
     additional_files: Union[Sequence[str], Sequence[Path]]
-    # clcikhouse version, build job only
+    # clickhouse version, build job only
     version: str = ""
     # checkname to set in commit status, set if differs from jjob name
     check_name: str = ""
@@ -287,14 +297,18 @@ class JobReport:
     # if False no GH commit status will be created by CI
     need_commit_status: bool = True
 
+    def __post_init__(self):
+        assert self.status in (SUCCESS, ERROR, FAILURE, PENDING)
+
     @classmethod
     def exist(cls) -> bool:
         return JOB_REPORT_FILE.is_file()
 
     @classmethod
-    def load(cls):  # type: ignore
+    def load(cls, from_file=None):  # type: ignore
         res = {}
-        with open(JOB_REPORT_FILE, "r") as json_file:
+        from_file = from_file or JOB_REPORT_FILE
+        with open(from_file, "r", encoding="utf-8") as json_file:
             res = json.load(json_file)
             # Deserialize the nested lists of TestResult
             test_results_data = res.get("test_results", [])
@@ -307,13 +321,14 @@ class JobReport:
         if JOB_REPORT_FILE.exists():
             JOB_REPORT_FILE.unlink()
 
-    def dump(self):
+    def dump(self, to_file=None):
         def path_converter(obj):
             if isinstance(obj, Path):
                 return str(obj)
             raise TypeError("Type not serializable")
 
-        with open(JOB_REPORT_FILE, "w") as json_file:
+        to_file = to_file or JOB_REPORT_FILE
+        with open(to_file, "w", encoding="utf-8") as json_file:
             json.dump(asdict(self), json_file, default=path_converter, indent=2)
 
 
@@ -386,36 +401,47 @@ class BuildResult:
     @classmethod
     def load_any(cls, build_name: str, pr_number: int, head_ref: str):  # type: ignore
         """
-        loads report from suitable report file with the following priority:
-            1. report from PR with the same @pr_number
-            2. report from branch with the same @head_ref
-            3. report from the master
-            4. any other report
+        loads build report from one of all available report files (matching the job digest)
+        with the following priority:
+            1. report for the current PR @pr_number (might happen in PR' wf with or without job reuse)
+            2. report for the current branch @head_ref (might happen in release/master' wf with or without job reuse)
+            3. report for master branch (might happen in any workflow in case of job reuse)
+            4. any other report (job reuse from another PR, if master report is not available yet)
         """
-        reports = []
+        pr_report = None
+        ref_report = None
+        master_report = None
+        any_report = None
+        Path(REPORT_PATH).mkdir(parents=True, exist_ok=True)
         for file in Path(REPORT_PATH).iterdir():
             if f"{build_name}.json" in file.name:
-                reports.append(file)
-        if not reports:
+                any_report = file
+                if "_master_" in file.name:
+                    master_report = file
+                elif f"_{head_ref}_" in file.name:
+                    ref_report = file
+                elif pr_number and f"_{pr_number}_" in file.name:
+                    pr_report = file
+
+        if not any_report:
             return None
-        file_path = None
-        for file in reports:
-            if pr_number and f"_{pr_number}_" in file.name:
-                file_path = file
-                break
-            if f"_{head_ref}_" in file.name:
-                file_path = file
-                break
-            if "_master_" in file.name:
-                file_path = file
-                break
-        return cls.load_from_file(file_path or reports[-1])
+
+        if pr_report:
+            file_path = pr_report
+        elif ref_report:
+            file_path = ref_report
+        elif master_report:
+            file_path = master_report
+        else:
+            file_path = any_report
+
+        return cls.load_from_file(file_path)
 
     @classmethod
     def load_from_file(cls, file: Union[Path, str]):  # type: ignore
         if not Path(file).exists():
             return None
-        with open(file, "r") as json_file:
+        with open(file, "r", encoding="utf-8") as json_file:
             res = json.load(json_file)
         return BuildResult(**res)
 
@@ -423,8 +449,10 @@ class BuildResult:
         return json.dumps(asdict(self), indent=2)
 
     @property
-    def build_config(self) -> Optional[BuildConfig]:
-        return CI_CONFIG.build_config.get(self.build_name, None)
+    def build_config(self) -> Optional[CI.BuildConfig]:
+        if self.build_name not in CI.JOB_CONFIGS:
+            return None
+        return CI.JOB_CONFIGS[self.build_name].build_config
 
     @property
     def comment(self) -> str:
@@ -594,7 +622,6 @@ class ReportColorTheme:
         blue = "#00B4FF"
 
     default = (ReportColor.green, ReportColor.red, ReportColor.yellow)
-    bugfixcheck = (ReportColor.yellow, ReportColor.blue, ReportColor.blue)
 
 
 ColorTheme = Tuple[str, str, str]

@@ -13,7 +13,7 @@ can control it.
 
 Schema inference is used when ClickHouse needs to read the data in a specific data format and the structure is unknown.
 
-## Table functions [file](../sql-reference/table-functions/file.md), [s3](../sql-reference/table-functions/s3.md), [url](../sql-reference/table-functions/url.md), [hdfs](../sql-reference/table-functions/hdfs.md).
+## Table functions [file](../sql-reference/table-functions/file.md), [s3](../sql-reference/table-functions/s3.md), [url](../sql-reference/table-functions/url.md), [hdfs](../sql-reference/table-functions/hdfs.md), [azureBlobStorage](../sql-reference/table-functions/azureBlobStorage.md).
 
 These table functions have the optional argument `structure` with the structure of input data. If this argument is not specified or set to `auto`, the structure will be inferred from the data.
 
@@ -55,7 +55,7 @@ DESCRIBE file('hobbies.jsonl')
 └─────────┴─────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
 
-## Table engines [File](../engines/table-engines/special/file.md), [S3](../engines/table-engines/integrations/s3.md), [URL](../engines/table-engines/special/url.md), [HDFS](../engines/table-engines/integrations/hdfs.md)
+## Table engines [File](../engines/table-engines/special/file.md), [S3](../engines/table-engines/integrations/s3.md), [URL](../engines/table-engines/special/url.md), [HDFS](../engines/table-engines/integrations/hdfs.md), [azureBlobStorage](../engines/table-engines/integrations/azureBlobStorage.md)
 
 If the list of columns is not specified in `CREATE TABLE` query, the structure of the table will be inferred automatically from the data.
 
@@ -547,6 +547,48 @@ Result:
 ┌─name──┬─type────────────────────────────────────────────────────────────────────────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ array │ Array(Tuple(a Nullable(Int64), b Nullable(String), c Array(Nullable(Int64)), d Nullable(Date))) │              │                    │         │                  │                │
 └───────┴─────────────────────────────────────────────────────────────────────────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+##### input_format_json_use_string_type_for_ambiguous_paths_in_named_tuples_inference_from_objects
+
+Enabling this setting allows to use String type for ambiguous paths during named tuples inference from JSON objects (when `input_format_json_try_infer_named_tuples_from_objects` is enabled) instead of an exception.
+It allows to read JSON objects as named Tuples even if there are ambiguous paths.
+
+Disabled by default.
+
+**Examples**
+
+With disabled setting:
+```sql
+SET input_format_json_try_infer_named_tuples_from_objects = 1;
+SET input_format_json_use_string_type_for_ambiguous_paths_in_named_tuples_inference_from_objects = 0;
+DESC format(JSONEachRow, '{"obj" : {"a" : 42}}, {"obj" : {"a" : {"b" : "Hello"}}}');
+```
+Result:
+
+```text
+Code: 636. DB::Exception: The table structure cannot be extracted from a JSONEachRow format file. Error:
+Code: 117. DB::Exception: JSON objects have ambiguous data: in some objects path 'a' has type 'Int64' and in some - 'Tuple(b String)'. You can enable setting input_format_json_use_string_type_for_ambiguous_paths_in_named_tuples_inference_from_objects to use String type for path 'a'. (INCORRECT_DATA) (version 24.3.1.1).
+You can specify the structure manually. (CANNOT_EXTRACT_TABLE_STRUCTURE)
+```
+
+With enabled setting:
+```sql
+SET input_format_json_try_infer_named_tuples_from_objects = 1;
+SET input_format_json_use_string_type_for_ambiguous_paths_in_named_tuples_inference_from_objects = 1;
+DESC format(JSONEachRow, '{"obj" : "a" : 42}, {"obj" : {"a" : {"b" : "Hello"}}}');
+SELECT * FROM format(JSONEachRow, '{"obj" : {"a" : 42}}, {"obj" : {"a" : {"b" : "Hello"}}}');
+```
+
+Result:
+```text
+┌─name─┬─type──────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ obj  │ Tuple(a Nullable(String))     │              │                    │         │                  │                │
+└──────┴───────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+┌─obj─────────────────┐
+│ ('42')              │
+│ ('{"b" : "Hello"}') │
+└─────────────────────┘
 ```
 
 ##### input_format_json_read_objects_as_strings
@@ -1061,7 +1103,7 @@ $$)
 └──────────────┴───────────────┘
 ```
 
-## Values {#values}
+### Values {#values}
 
 In Values format ClickHouse extracts column value from the row and then parses it using
 the recursive parser similar to how literals are parsed.
@@ -1554,6 +1596,28 @@ DESC format(JSONEachRow, $$
 └──────┴──────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
 
+#### input_format_try_infer_exponent_floats
+
+If enabled, ClickHouse will try to infer floats in exponential form for text formats (except JSON where numbers in exponential form are always inferred).
+
+Disabled by default.
+
+**Example**
+
+```sql
+SET input_format_try_infer_exponent_floats = 1;
+DESC format(CSV,
+$$1.1E10
+2.3e-12
+42E00
+$$)
+```
+```response
+┌─name─┬─type──────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ c1   │ Nullable(Float64) │              │                    │         │                  │                │
+└──────┴───────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
 ## Self describing formats {#self-describing-formats}
 
 Self-describing formats contain information about the structure of the data in the data itself,
@@ -1986,3 +2050,46 @@ Note:
 - As some of the files may not contain some columns from the resulting schema, union mode is supported only for formats that support reading subset of columns (like JSONEachRow, Parquet, TSVWithNames, etc) and won't work for other formats (like CSV, TSV, JSONCompactEachRow, etc).
 - If ClickHouse cannot infer the schema from one of the files, the exception will be thrown.
 - If you have a lot of files, reading schema from all of them can take a lot of time.
+
+
+## Automatic format detection {#automatic-format-detection}
+
+If data format is not specified and cannot be determined by the file extension, ClickHouse will try to detect the file format by its content.
+
+**Examples:**
+
+Let's say we have `data` with the following content:
+```
+"a","b"
+1,"Data1"
+2,"Data2"
+3,"Data3"
+```
+
+We can inspect and query this file without specifying format or structure:
+```sql
+:) desc file(data);
+```
+
+```text
+┌─name─┬─type─────────────┐
+│ a    │ Nullable(Int64)  │
+│ b    │ Nullable(String) │
+└──────┴──────────────────┘
+```
+
+```sql
+:) select * from file(data);
+```
+
+```text
+┌─a─┬─b─────┐
+│ 1 │ Data1 │
+│ 2 │ Data2 │
+│ 3 │ Data3 │
+└───┴───────┘
+```
+
+:::note
+ClickHouse can detect only some subset of formats and this detection takes some time, it's always better to specify the format explicitly.
+:::

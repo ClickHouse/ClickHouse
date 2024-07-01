@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-from pathlib import Path
-from typing import Dict, List, Optional
 import fileinput
 import json
 import logging
 import time
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
-import requests  # type: ignore
+import requests
 
 from get_robot_token import get_parameter_from_ssm
 from pr_info import PRInfo
@@ -41,6 +41,7 @@ class ClickHouseHelper:
         query: str,
         file: Path,
         additional_options: Optional[Dict[str, str]] = None,
+        **kwargs: Any,
     ) -> None:
         params = {
             "query": query,
@@ -53,7 +54,7 @@ class ClickHouseHelper:
 
         with open(file, "rb") as data_fd:
             ClickHouseHelper._insert_post(
-                url, params=params, data=data_fd, headers=auth
+                url, params=params, data=data_fd, headers=auth, **kwargs
             )
 
     @staticmethod
@@ -72,11 +73,11 @@ class ClickHouseHelper:
         if args:
             url = args[0]
         url = kwargs.get("url", url)
-        kwargs["timeout"] = kwargs.get("timeout", 100)
+        timeout = kwargs.pop("timeout", 100)
 
         for i in range(5):
             try:
-                response = requests.post(*args, **kwargs)
+                response = requests.post(*args, timeout=timeout, **kwargs)
             except Exception as e:
                 error = f"Received exception while sending data to {url} on {i} attempt: {e}"
                 logging.warning(error)
@@ -148,7 +149,9 @@ class ClickHouseHelper:
         for i in range(5):
             response = None
             try:
-                response = requests.get(self.url, params=params, headers=self.auth)
+                response = requests.get(
+                    self.url, params=params, headers=self.auth, timeout=100
+                )
                 response.raise_for_status()
                 return response.text
             except Exception as ex:
@@ -215,24 +218,24 @@ def prepare_tests_results_for_clickhouse(
         head_ref = pr_info.head_ref
         head_repo = pr_info.head_name
 
-    common_properties = dict(
-        pull_request_number=pr_info.number,
-        commit_sha=pr_info.sha,
-        commit_url=pr_info.commit_html_url,
-        check_name=check_name,
-        check_status=check_status,
-        check_duration_ms=int(float(check_duration) * 1000),
-        check_start_time=check_start_time,
-        report_url=report_url,
-        pull_request_url=pull_request_url,
-        base_ref=base_ref,
-        base_repo=base_repo,
-        head_ref=head_ref,
-        head_repo=head_repo,
-        task_url=pr_info.task_url,
-        instance_type=get_instance_type(),
-        instance_id=get_instance_id(),
-    )
+    common_properties = {
+        "pull_request_number": pr_info.number,
+        "commit_sha": pr_info.sha,
+        "commit_url": pr_info.commit_html_url,
+        "check_name": check_name,
+        "check_status": check_status,
+        "check_duration_ms": int(float(check_duration) * 1000),
+        "check_start_time": check_start_time,
+        "report_url": report_url,
+        "pull_request_url": pull_request_url,
+        "base_ref": base_ref,
+        "base_repo": base_repo,
+        "head_ref": head_ref,
+        "head_repo": head_repo,
+        "task_url": pr_info.task_url,
+        "instance_type": get_instance_type(),
+        "instance_id": get_instance_id(),
+    }
 
     # Always publish a total record for all checks. For checks with individual
     # tests, also publish a record per test.

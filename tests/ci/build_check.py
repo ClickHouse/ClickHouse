@@ -1,39 +1,33 @@
 #!/usr/bin/env python3
 
 import argparse
-from pathlib import Path
-from typing import Tuple
-import subprocess
 import logging
+import subprocess
 import sys
 import time
+from pathlib import Path
+from typing import Tuple
 
-from ci_config import CI_CONFIG, BuildConfig
-from cache_utils import CargoCache
-
-from env_helper import (
-    REPO_COPY,
-    S3_BUILDS_BUCKET,
-    TEMP_PATH,
-)
-from git_helper import Git
-from pr_info import PRInfo
-from report import FAILURE, JobReport, StatusType, SUCCESS
-from s3_helper import S3Helper
-from tee_popen import TeePopen
 import docker_images_helper
+from ci_config import CI
+from env_helper import REPO_COPY, S3_BUILDS_BUCKET, TEMP_PATH
+from git_helper import Git
+from lambda_shared_package.lambda_shared.pr import Labels
+from pr_info import PRInfo
+from report import FAILURE, SUCCESS, JobReport, StatusType
+from stopwatch import Stopwatch
+from tee_popen import TeePopen
 from version_helper import (
     ClickHouseVersion,
     get_version_from_repo,
     update_version_local,
 )
-from stopwatch import Stopwatch
 
 IMAGE_NAME = "clickhouse/binary-builder"
 BUILD_LOG_NAME = "build_log.log"
 
 
-def _can_export_binaries(build_config: BuildConfig) -> bool:
+def _can_export_binaries(build_config: CI.BuildConfig) -> bool:
     if build_config.package_type != "deb":
         return False
     if build_config.sanitizer != "":
@@ -44,10 +38,9 @@ def _can_export_binaries(build_config: BuildConfig) -> bool:
 
 
 def get_packager_cmd(
-    build_config: BuildConfig,
+    build_config: CI.BuildConfig,
     packager_path: Path,
     output_path: Path,
-    cargo_cache_dir: Path,
     build_version: str,
     image_version: str,
     official: bool,
@@ -72,7 +65,6 @@ def get_packager_cmd(
     cmd += " --cache=sccache"
     cmd += " --s3-rw-access"
     cmd += f" --s3-bucket={S3_BUILDS_BUCKET}"
-    cmd += f" --cargo-cache-dir={cargo_cache_dir}"
 
     if build_config.additional_pkgs:
         cmd += " --additional-pkgs"
@@ -115,6 +107,10 @@ def build_clickhouse(
     return build_log_path, SUCCESS if success else FAILURE
 
 
+def is_release_pr(pr_info: PRInfo) -> bool:
+    return Labels.RELEASE in pr_info.labels or Labels.RELEASE_LTS in pr_info.labels
+
+
 def get_release_or_pr(pr_info: PRInfo, version: ClickHouseVersion) -> Tuple[str, str]:
     "Return prefixes for S3 artifacts paths"
     # FIXME performance
@@ -123,7 +119,7 @@ def get_release_or_pr(pr_info: PRInfo, version: ClickHouseVersion) -> Tuple[str,
     # It should be fixed in performance-comparison image eventually
     # For performance tests we always set PRs prefix
     performance_pr = "PRs/0"
-    if "release" in pr_info.labels or "release-lts" in pr_info.labels:
+    if is_release_pr(pr_info):
         # for release pull requests we use branch names prefixes, not pr numbers
         return pr_info.head_ref, performance_pr
     if pr_info.number == 0:
@@ -151,7 +147,8 @@ def main():
     stopwatch = Stopwatch()
     build_name = args.build_name
 
-    build_config = CI_CONFIG.build_config[build_name]
+    build_config = CI.JOB_CONFIGS[build_name].build_config
+    assert build_config
 
     temp_path = Path(TEMP_PATH)
     temp_path.mkdir(parents=True, exist_ok=True)
@@ -161,15 +158,13 @@ def main():
 
     logging.info("Repo copy path %s", repo_path)
 
-    s3_helper = S3Helper()
-
     version = get_version_from_repo(git=Git(True))
     logging.info("Got version from repo %s", version.string)
 
     official_flag = pr_info.number == 0
 
     version_type = "testing"
-    if "release" in pr_info.labels or "release-lts" in pr_info.labels:
+    if is_release_pr(pr_info):
         version_type = "stable"
         official_flag = True
 
@@ -181,10 +176,6 @@ def main():
 
     build_output_path = temp_path / build_name
     build_output_path.mkdir(parents=True, exist_ok=True)
-    cargo_cache = CargoCache(
-        temp_path / "cargo_cache" / "registry", temp_path, s3_helper
-    )
-    cargo_cache.download()
 
     docker_image = docker_images_helper.pull_image(
         docker_images_helper.get_docker_image(IMAGE_NAME)
@@ -194,7 +185,6 @@ def main():
         build_config,
         repo_path / "docker" / "packager",
         build_output_path,
-        cargo_cache.directory,
         version.string,
         docker_image.version,
         official_flag,
@@ -214,9 +204,7 @@ def main():
         f"sudo chown -R ubuntu:ubuntu {build_output_path}", shell=True
     )
     logging.info("Build finished as %s, log path %s", build_status, log_path)
-    if build_status == SUCCESS:
-        cargo_cache.upload()
-    else:
+    if build_status != SUCCESS:
         # We check if docker works, because if it's down, it's infrastructure
         try:
             subprocess.check_call("docker info", shell=True)
