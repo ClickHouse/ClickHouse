@@ -45,10 +45,7 @@ public:
     }
 
 private:
-    struct Impl;
-    const std::shared_ptr<Impl> impl;
     mutable Strings data_files;
-
     NamesAndTypesList schema;
     std::unordered_map<String, String> column_name_to_physical_name;
     DataLakePartitionColumns partition_columns;

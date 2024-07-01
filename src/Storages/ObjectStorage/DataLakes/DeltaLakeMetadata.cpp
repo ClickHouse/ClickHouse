@@ -51,8 +51,10 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-struct DeltaLakeMetadata::Impl
+struct DeltaLakeMetadataImpl
 {
+    using ConfigurationPtr = DeltaLakeMetadata::ConfigurationPtr;
+
     ObjectStoragePtr object_storage;
     ConfigurationPtr configuration;
     ContextPtr context;
@@ -61,7 +63,7 @@ struct DeltaLakeMetadata::Impl
      * Useful links:
      *  - https://github.com/delta-io/delta/blob/master/PROTOCOL.md#data-files
      */
-     Impl(ObjectStoragePtr object_storage_,
+     DeltaLakeMetadataImpl(ObjectStoragePtr object_storage_,
           ConfigurationPtr configuration_,
           ContextPtr context_)
         : object_storage(object_storage_)
@@ -586,14 +588,14 @@ DeltaLakeMetadata::DeltaLakeMetadata(
     ObjectStoragePtr object_storage_,
     ConfigurationPtr configuration_,
     ContextPtr context_)
-    : impl(std::make_unique<Impl>(object_storage_, configuration_, context_))
 {
-    auto result = impl->processMetadataFiles();
+    auto impl = DeltaLakeMetadataImpl(object_storage_, configuration_, context_);
+    auto result = impl.processMetadataFiles();
     data_files = result.data_files;
     schema = result.schema;
     partition_columns = result.partition_columns;
 
-    LOG_TRACE(impl->log, "Found {} data files, {} partition files, schema: {}",
+    LOG_TRACE(impl.log, "Found {} data files, {} partition files, schema: {}",
              data_files.size(), partition_columns.size(), schema.toString());
 }
 
