@@ -70,14 +70,14 @@ protected:
 
     static String getChecksum(const BackupEntryPtr & backup_entry)
     {
-        return getHexUIntUppercase(backup_entry->getChecksum({}));
+        return getHexUIntUppercase(backup_entry->getChecksum(getReadSettings()));
     }
 
     static const constexpr std::string_view NO_CHECKSUM = "no checksum";
 
     static String getPartialChecksum(const BackupEntryPtr & backup_entry, size_t prefix_length)
     {
-        auto partial_checksum = backup_entry->getPartialChecksum(prefix_length, {});
+        auto partial_checksum = backup_entry->getPartialChecksum(prefix_length, getReadSettings());
         if (!partial_checksum)
             return String{NO_CHECKSUM};
         return getHexUIntUppercase(*partial_checksum);
@@ -85,7 +85,7 @@ protected:
 
     static String readAll(const BackupEntryPtr & backup_entry)
     {
-        auto in = backup_entry->getReadBuffer({});
+        auto in = backup_entry->getReadBuffer(getReadSettings());
         String str;
         readStringUntilEOF(str, *in);
         return str;

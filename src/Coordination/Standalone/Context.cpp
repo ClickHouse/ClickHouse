@@ -387,7 +387,7 @@ ThrottlerPtr Context::getLocalWriteThrottler() const
 
 ReadSettings Context::getReadSettings() const
 {
-    return ReadSettings{};
+    return ReadSettings(*this);
 }
 
 ResourceManagerPtr Context::getResourceManager() const
