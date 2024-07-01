@@ -14,44 +14,45 @@ yml_config=$CLICKHOUSE_TMP/config_$CLICKHOUSE_DATABASE.yml
 yaml_config=$CLICKHOUSE_TMP/config_$CLICKHOUSE_DATABASE.yaml
 ini_config=$CLICKHOUSE_TMP/config_$CLICKHOUSE_DATABASE.ini
 
-function cleanup() {
-	rm "${config:?}"
-	rm "${xml_config:?}"
-	rm "${XML_config:?}"
-	rm "${conf_config:?}"
-	rm "${yml_config:?}"
-	rm "${yaml_config:?}"
-	rm "${ini_config:?}"
+function cleanup()
+{
+    rm "${config:?}"
+    rm "${xml_config:?}"
+    rm "${XML_config:?}"
+    rm "${conf_config:?}"
+    rm "${yml_config:?}"
+    rm "${yaml_config:?}"
+    rm "${ini_config:?}"
 }
 trap cleanup EXIT
 
-cat >"$config" <<EOL
+cat > "$config" <<EOL
 <config>
     <max_threads>2</max_threads>
 </config>
 EOL
-cat >"$conf_config" <<EOL
+cat > "$conf_config" <<EOL
 <config>
     <max_threads>2</max_threads>
 </config>
 EOL
-cat >"$xml_config" <<EOL
+cat > "$xml_config" <<EOL
 <config>
     <max_threads>2</max_threads>
 </config>
 EOL
-cat >"$XML_config" <<EOL
+cat > "$XML_config" <<EOL
 <config>
     <max_threads>2</max_threads>
 </config>
 EOL
-cat >"$yml_config" <<EOL
+cat > "$yml_config" <<EOL
 max_threads: 2
 EOL
-cat >"$yaml_config" <<EOL
+cat > "$yaml_config" <<EOL
 max_threads: 2
 EOL
-cat >"$ini_config" <<EOL
+cat > "$ini_config" <<EOL
 [config]
 max_threads=2
 EOL

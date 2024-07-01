@@ -14,7 +14,7 @@ CLICKHOUSE_PORT_TCP=""
 . "$CUR_DIR"/../shell_config.sh
 
 CONFIG=$CLICKHOUSE_TMP/client.xml
-cat >$CONFIG <<EOL
+cat > $CONFIG <<EOL
 <clickhouse>
     <host>$TEST_HOST</host>
     <port>$TEST_PORT</port>
@@ -66,21 +66,12 @@ cat >$CONFIG <<EOL
             <hostname>$TEST_HOST</hostname>
             <history_file>/no/such/dir/.history</history_file>
         </connection>
-
-        <connection>
-          <name> test_accept_invalid_certificate </name>
-          <hostname> $TEST_HOST </hostname>
-          <database>$CLICKHOUSE_DATABASE</database>
-          <invalidCertificateHandler>
-              <name>RejectCertificateHandler</name>
-          </invalidCertificateHandler>
-        </connection>
     </connections_credentials>
 </clickhouse>
 EOL
 
 CONFIG_ROOT_OVERRIDES=$CLICKHOUSE_TMP/client_user_pass.xml
-cat >$CONFIG_ROOT_OVERRIDES <<EOL
+cat > $CONFIG_ROOT_OVERRIDES <<EOL
 <clickhouse>
     <host>$TEST_HOST</host>
     <port>$TEST_PORT</port>

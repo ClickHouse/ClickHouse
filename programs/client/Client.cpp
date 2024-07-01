@@ -178,9 +178,8 @@ void Client::parseConnectionsCredentials(Poco::Util::AbstractConfiguration & con
                 history_file = home_path + "/" + history_file.substr(1);
             config.setString("history_file", history_file);
         }
-        if (config.has(prefix + "accept-invalid-certificate")) {
-            config.setString("accept-invalid-certificate", prefix + "accept-invalid-certificate");
-        }
+        if (config.has(prefix + ".accept-invalid-certificate"))
+            config.setBool("accept-invalid-certificate", config.getBool(prefix + ".accept-invalid-certificate"));
     }
 
     if (!connection_name.empty() && !connection_found)
@@ -267,6 +266,12 @@ void Client::initialize(Poco::Util::Application & self)
     }
     else if (config().has("connection"))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "--connection was specified, but config does not exist");
+
+    if (config().has("accept-invalid-certificate"))
+    {
+        config().setString("openSSL.client.invalidCertificateHandler.name", "AcceptCertificateHandler");
+        config().setString("openSSL.client.verificationMode", "none");
+    }
 
     /** getenv is thread-safe in Linux glibc and in all sane libc implementations.
       * But the standard does not guarantee that subsequent calls will not rewrite the value by returned pointer.
@@ -1105,7 +1110,7 @@ void Client::processOptions(const OptionsDescription & options_description,
         config().setBool("no-warnings", true);
     if (options.count("fake-drop"))
         config().setString("ignore_drop_queries_probability", "1");
-    if (options.count("accept-invalid-certificate") || config().has("accept-invalid-certificate"))
+    if (options.count("accept-invalid-certificate"))
     {
         config().setString("openSSL.client.invalidCertificateHandler.name", "AcceptCertificateHandler");
         config().setString("openSSL.client.verificationMode", "none");
