@@ -48,7 +48,6 @@ AutoML
 Autocompletion
 AvroConfluent
 BIGINT
-bigrams
 BIGSERIAL
 BORO
 BSON
@@ -223,7 +222,6 @@ DatabaseOrdinaryThreadsActive
 DateTime
 DateTimes
 DbCL
-deallocated
 Decrypted
 Deduplicate
 Deduplication
@@ -295,7 +293,6 @@ FilesystemMainPathUsedBytes
 FilesystemMainPathUsedINodes
 FixedString
 FlameGraph
-flameGraph
 Flink
 ForEach
 FreeBSD
@@ -1009,7 +1006,6 @@ UncompressedCacheBytes
 UncompressedCacheCells
 UnidirectionalEdgeIsValid
 UniqThetaSketch
-unigrams
 Updatable
 Uppercased
 Uptime
@@ -1221,6 +1217,7 @@ basename
 bcrypt
 benchmarking
 bfloat
+bigrams
 binlog
 bitAnd
 bitCount
@@ -1470,6 +1467,7 @@ dbeaver
 dbgen
 dbms
 ddl
+deallocated
 deallocation
 deallocations
 debian
@@ -1509,11 +1507,11 @@ deserializing
 destructor
 destructors
 detectCharset
-detectTonality
 detectLanguage
 detectLanguageMixed
 detectLanguageUnknown
 detectProgrammingLanguage
+detectTonality
 determinator
 deterministically
 dictGet
@@ -1529,8 +1527,8 @@ dictIsIn
 disableProtocols
 disjunction
 disjunctions
-displaySecretsInShowAndSelect
 displayName
+displaySecretsInShowAndSelect
 distro
 divideDecimal
 dmesg
@@ -1580,11 +1578,11 @@ evalMLMethod
 exFAT
 expiryMsec
 exponentialMovingAverage
-exponentialmovingaverage
 exponentialTimeDecayedAvg
 exponentialTimeDecayedCount
 exponentialTimeDecayedMax
 exponentialTimeDecayedSum
+exponentialmovingaverage
 expr
 exprN
 extendedVerification
@@ -1621,6 +1619,7 @@ firstSignificantSubdomainCustom
 firstSignificantSubdomainCustomRFC
 firstSignificantSubdomainRFC
 fixedstring
+flameGraph
 flamegraph
 flatbuffers
 flattenTuple
@@ -1803,8 +1802,8 @@ incrementing
 indexHint
 indexOf
 infi
-infty
 inflight
+infty
 initcap
 initcapUTF
 initialQueryID
@@ -1952,9 +1951,9 @@ loghouse
 london
 lookups
 loongarch
-lowcardinality
 lowCardinalityIndices
 lowCardinalityKeys
+lowcardinality
 lowerUTF
 lowercased
 lttb
@@ -2262,9 +2261,9 @@ proleptic
 prometheus
 proportionsZTest
 proto
-protocol
 protobuf
 protobufsingle
+protocol
 proxied
 pseudorandom
 pseudorandomize
@@ -2516,6 +2515,7 @@ sqlite
 sqrt
 src
 srcReplicas
+sshkey
 stacktrace
 stacktraces
 startsWith
@@ -2808,6 +2808,7 @@ unescaping
 unhex
 unicode
 unidimensional
+unigrams
 unintuitive
 uniq
 uniqCombined
