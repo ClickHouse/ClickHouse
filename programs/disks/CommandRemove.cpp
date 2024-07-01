@@ -13,7 +13,7 @@ public:
         command_name = "remove";
         description = "Remove file or directory. Throws exception if file doesn't exists";
         options_description.add_options()("path", po::value<String>(), "path from which we copy (mandatory, positional)")(
-            "recursive", "recursively removes the directory (required to remove a directory)");
+            "recursive,r", "recursively removes the directory (required to remove a directory)");
         positional_options_description.add("path", 1);
     }
 

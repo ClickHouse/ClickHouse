@@ -55,7 +55,11 @@ public:
         }
         else if (!disk.getDisk()->exists(path_from))
         {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "cannot stat '{}': No such file or directory", path_from);
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "cannot stat '{}' on disk: '{}': No such file or directory",
+                path_from,
+                disk.getDisk()->getName());
         }
     }
 };

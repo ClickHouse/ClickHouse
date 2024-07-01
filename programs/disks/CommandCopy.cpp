@@ -19,7 +19,7 @@ public:
             "disk-to", po::value<String>(), "disk to which copy is executed (default value is a current disk)")(
             "path-from", po::value<String>(), "path from which copy is executed (mandatory, positional)")(
             "path-to", po::value<String>(), "path to which copy is executed (mandatory, positional)")(
-            "recursive", "recursively copy the directory");
+            "recursive,r", "recursively copy the directory");
         positional_options_description.add("path-from", 1);
         positional_options_description.add("path-to", 1);
     }
@@ -34,7 +34,11 @@ public:
 
         if (!disk_from.getDisk()->exists(path_from))
         {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "cannot stat '{}': No such file or directory", path_from);
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "cannot stat '{}' on disk '{}': No such file or directory",
+                path_from,
+                disk_from.getDisk()->getName());
         }
         else if (disk_from.getDisk()->isFile(path_from))
         {

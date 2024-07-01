@@ -146,18 +146,22 @@ class DisksClient(object):
         path_to,
         disk_from: Optional[str] = None,
         disk_to: Optional[str] = None,
+        recursive: bool = False,
     ):
         disk_from_option = f"--disk-from {disk_from} " if disk_from is not None else ""
         disk_to_option = f"--disk-to {disk_to} " if disk_to is not None else ""
+        recursive_tag = "--recursive" if recursive else ""
+
         self.execute_query(
-            f"copy {path_from} {path_to} {disk_from_option} {disk_to_option}"
+            f"copy {recursive_tag} {path_from} {path_to} {disk_from_option} {disk_to_option}"
         )
 
     def move(self, path_from: str, path_to: str):
         self.execute_query(f"move {path_from} {path_to}")
 
-    def rm(self, path: str):
-        self.execute_query(f"rm {path}")
+    def rm(self, path: str, recursive: bool = False):
+        recursive_tag = "--recursive" if recursive else ""
+        self.execute_query(f"rm {recursive_tag} {path}")
 
     def mkdir(self, path: str, recursive: bool = False):
         recursive_adding = "--recursive " if recursive else ""
@@ -260,7 +264,7 @@ def test_disks_app_interactive_list_directories_default():
         "./.dir3/dir31": [],
         "./.dir3/.dir32": [],
     }
-    client.rm("dir2")
+    client.rm("dir2", recursive=True)
     traversed_dir = client.ls(".", recursive=True, show_hidden=True)
     assert traversed_dir == {
         ".": [".dir3", "dir1"],
@@ -279,8 +283,8 @@ def test_disks_app_interactive_list_directories_default():
         "./dir1/dir11": [],
         "./dir1/dir13": [],
     }
-    client.rm("dir1")
-    client.rm(".dir3")
+    client.rm("dir1", recursive=True)
+    client.rm(".dir3", recursive=True)
     assert client.ls(".", recursive=True, show_hidden=False) == {".": []}
 
 
@@ -304,7 +308,7 @@ def test_disks_app_interactive_cp_and_read():
         assert read_text == initial_text
     os.remove("a.txt")
     client.rm("a.txt")
-    client.rm("/dir1")
+    client.rm("/dir1", recursive=True)
 
 
 def test_disks_app_interactive_test_move_and_write():
