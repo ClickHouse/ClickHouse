@@ -22,6 +22,7 @@
 #include <memory>
 
 #include "config.h"
+
 namespace zkutil
 {
     class ZooKeeper;
@@ -38,6 +39,8 @@ class FilesystemReadPrefetchesLog;
 class BlobStorageLog;
 class IOUringReader;
 class S3SettingsByEndpoint;
+class PageCache;
+class MMappedFileCache;
 
 /// A small class which owns ContextShared.
 /// We don't use something like unique_ptr directly to allow ContextShared type to be incomplete.
@@ -173,6 +176,10 @@ public:
     bool hasTraceCollector() const;
 
     bool isBackgroundOperationContext() const;
+
+    std::shared_ptr<PageCache> getPageCache() const;
+
+    std::shared_ptr<MMappedFileCache> getMMappedFileCache() const;
 };
 
 }
