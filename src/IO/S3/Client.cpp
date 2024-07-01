@@ -30,10 +30,6 @@
 #include <base/sleep.h>
 
 
-#ifdef ADDRESS_SANITIZER
-#include <sanitizer/lsan_interface.h>
-#endif
-
 namespace ProfileEvents
 {
     extern const Event S3WriteRequestsErrors;
@@ -880,14 +876,7 @@ void ClientCacheRegistry::clearCacheForAll()
 ClientFactory::ClientFactory()
 {
     aws_options = Aws::SDKOptions{};
-    {
-#ifdef ADDRESS_SANITIZER
-        /// Leak sanitizer (part of address sanitizer) thinks that memory in OpenSSL (called by AWS SDK) is allocated but not
-        /// released. Actually, the memory is released at the end of the program (ClientFactory is a singleton, see the dtor).
-        __lsan::ScopedDisabler lsan_disabler;
-#endif
-        Aws::InitAPI(aws_options);
-    }
+    Aws::InitAPI(aws_options);
     Aws::Utils::Logging::InitializeAWSLogging(std::make_shared<AWSLogger>(false));
     Aws::Http::SetHttpClientFactory(std::make_shared<PocoHTTPClientFactory>());
 }
@@ -972,10 +961,10 @@ PocoHTTPClientConfiguration ClientFactory::createClientConfiguration( // NOLINT
 {
     auto context = Context::getGlobalContextInstance();
     chassert(context);
-    auto proxy_configuration_resolver = ProxyConfigurationResolverProvider::get(ProxyConfiguration::protocolFromString(protocol), context->getConfigRef());
+    auto proxy_configuration_resolver = DB::ProxyConfigurationResolverProvider::get(DB::ProxyConfiguration::protocolFromString(protocol), context->getConfigRef());
 
-    auto per_request_configuration = [=]{ return proxy_configuration_resolver->resolve(); };
-    auto error_report = [=](const ProxyConfiguration & req) { proxy_configuration_resolver->errorReport(req); };
+    auto per_request_configuration = [=] () { return proxy_configuration_resolver->resolve(); };
+    auto error_report = [=] (const DB::ProxyConfiguration & req) { proxy_configuration_resolver->errorReport(req); };
 
     auto config = PocoHTTPClientConfiguration(
         per_request_configuration,
