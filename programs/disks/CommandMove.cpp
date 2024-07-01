@@ -72,7 +72,7 @@ public:
 
 CommandPtr makeCommandMove()
 {
-    return std::make_unique<DB::CommandMove>();
+    return std::make_shared<DB::CommandMove>();
 }
 
 }

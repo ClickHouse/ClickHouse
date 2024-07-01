@@ -52,7 +52,7 @@ public:
 
 CommandPtr makeCommandRemove()
 {
-    return std::make_unique<DB::CommandRemove>();
+    return std::make_shared<DB::CommandRemove>();
 }
 
 }

@@ -30,6 +30,6 @@ public:
 
 CommandPtr makeCommandSwitchDisk()
 {
-    return std::make_unique<DB::CommandSwitchDisk>();
+    return std::make_shared<DB::CommandSwitchDisk>();
 }
 }

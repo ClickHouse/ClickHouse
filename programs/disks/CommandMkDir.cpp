@@ -34,7 +34,7 @@ public:
 
 CommandPtr makeCommandMkDir()
 {
-    return std::make_unique<DB::CommandMkDir>();
+    return std::make_shared<DB::CommandMkDir>();
 }
 
 }

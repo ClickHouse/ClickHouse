@@ -46,7 +46,7 @@ public:
 
 CommandPtr makeCommandRead()
 {
-    return std::make_unique<DB::CommandRead>();
+    return std::make_shared<DB::CommandRead>();
 }
 
 }

@@ -29,7 +29,7 @@ public:
 
 CommandPtr makeCommandChangeDirectory()
 {
-    return std::make_unique<DB::CommandChangeDirectory>();
+    return std::make_shared<DB::CommandChangeDirectory>();
 }
 
 }

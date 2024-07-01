@@ -31,7 +31,7 @@ public:
 
 CommandPtr makeCommandLink()
 {
-    return std::make_unique<DB::CommandLink>();
+    return std::make_shared<DB::CommandLink>();
 }
 
 }
