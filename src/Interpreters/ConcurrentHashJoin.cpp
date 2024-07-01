@@ -126,7 +126,7 @@ ConcurrentHashJoin::~ConcurrentHashJoin()
 
 bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block, bool check_limits)
 {
-    auto dispatched_blocks = dispatchBlock(table_join->getOnlyClause().key_names_right, right_block);
+    auto dispatched_blocks = dispatchBlockNew(table_join->getOnlyClause().key_names_right, right_block);
 
     size_t blocks_left = 0;
     for (const auto & block : dispatched_blocks)
