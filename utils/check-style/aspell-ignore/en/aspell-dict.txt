@@ -575,6 +575,7 @@ MySQLDump
 MySQLThreads
 NATS
 NCHAR
+NDJSON
 NEKUDOTAYIM
 NEWDATE
 NEWDECIMAL
@@ -717,6 +718,8 @@ PlantUML
 PointDistKm
 PointDistM
 PointDistRads
+PostHistory
+PostLink
 PostgreSQLConnection
 PostgreSQLThreads
 Postgres
@@ -2517,6 +2520,7 @@ sqlite
 sqrt
 src
 srcReplicas
+stackoverflow
 stacktrace
 stacktraces
 startsWith
@@ -2855,6 +2859,7 @@ userver
 utils
 uuid
 uuidv
+vCPU
 varPop
 varPopStable
 varSamp
