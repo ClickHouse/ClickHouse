@@ -1,6 +1,10 @@
 #pragma once
 
 #include <base/types.h>
+#include "config.h"
+#if USE_SSL
+    #include <Access/SSH/SSHPublicKey.h>
+#endif
 #include <memory>
 
 #include "config.h"
@@ -120,5 +124,6 @@ private:
     String original;
 };
 #endif
+
 
 }

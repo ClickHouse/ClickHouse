@@ -1,0 +1,12 @@
+<clickhouse>
+    <users>
+        <lucy>
+            <ssh_keys>
+                <ssh_key>
+                     <type>ssh-ed25519</type>
+                     <base64_key>AAAAC3NzaC1lZDI1NTE5AAAAIG3Z13jD8dd0Z8CTU8sV4DU/Dr+z0dvR2wnXyBznI90F</base64_key>
+                 </ssh_key>
+            </ssh_keys>
+        </lucy>
+    </users>
+</clickhouse>

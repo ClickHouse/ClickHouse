@@ -420,7 +420,11 @@ void LocalServer::setupUsers()
 
 void LocalServer::connect()
 {
-    connection_parameters = ConnectionParameters(getClientConfiguration(), "localhost");
+    connection_parameters = ConnectionParameters(
+        config(),
+        ConnectionParameters::Host{"localhost"},
+        ConnectionParameters::Database{default_database}
+    );
 
     ReadBuffer * in;
     auto table_file = getClientConfiguration().getString("table-file", "-");
@@ -433,6 +437,7 @@ void LocalServer::connect()
         input = std::make_unique<ReadBufferFromFile>(table_file);
         in = input.get();
     }
+
     connection = LocalConnection::createConnection(
         connection_parameters, global_context, in, need_render_progress, need_render_profile_events, server_display_name);
 }

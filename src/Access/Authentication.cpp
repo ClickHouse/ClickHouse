@@ -252,6 +252,7 @@ bool Authentication::areCredentialsValid(
         }
     }
 
+
 #if USE_SSH
     if (const auto * ssh_credentials = typeid_cast<const SshCredentials *>(&credentials))
     {

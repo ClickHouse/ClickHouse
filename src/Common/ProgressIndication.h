@@ -1,8 +1,8 @@
 #pragma once
 
 #include <unordered_map>
-#include <unordered_set>
 #include <mutex>
+#include <unistd.h>
 #include <IO/Progress.h>
 #include <Interpreters/Context.h>
 #include <base/types.h>

@@ -28,6 +28,11 @@
 #include <filesystem>
 #include <base/FnTraits.h>
 
+#include "config.h"
+#if USE_SSL
+    #include <Access/SSH/SSHPublicKey.h>
+#endif
+
 
 namespace DB
 {
