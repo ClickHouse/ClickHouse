@@ -62,7 +62,7 @@ struct Base58Encode
     }
 };
 
-enum class Base58DecodeErrorHandling
+enum class Base58DecodeErrorHandling : uint8_t
 {
     ThrowException,
     ReturnEmptyString

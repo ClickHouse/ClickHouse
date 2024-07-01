@@ -108,7 +108,7 @@ namespace
 
 class GraceHashJoin::FileBucket : boost::noncopyable
 {
-    enum class State : int
+    enum class State : uint8_t
     {
         WRITING_BLOCKS,
         JOINING_BLOCKS,
@@ -415,7 +415,7 @@ void GraceHashJoin::addBuckets(const size_t bucket_count)
 void GraceHashJoin::checkTypesOfKeys(const Block & block) const
 {
     chassert(hash_join);
-    return hash_join->checkTypesOfKeys(block);
+    hash_join->checkTypesOfKeys(block);
 }
 
 void GraceHashJoin::initialize(const Block & sample_block)

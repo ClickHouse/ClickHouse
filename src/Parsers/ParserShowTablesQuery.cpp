@@ -161,7 +161,7 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     }
     else
     {
-        if (s_temporary.ignore(pos))
+        if (s_temporary.ignore(pos, expected))
             query->temporary = true;
 
         if (!s_tables.ignore(pos, expected))

@@ -244,12 +244,12 @@ public:
     /// Yield leadership and become follower.
     void yieldLeadership()
     {
-        return server->yieldLeadership();
+        server->yieldLeadership();
     }
 
     void recalculateStorageStats()
     {
-        return server->recalculateStorageStats();
+        server->recalculateStorageStats();
     }
 
     static void cleanResources();

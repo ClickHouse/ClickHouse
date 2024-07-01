@@ -1,9 +1,7 @@
 #pragma once
 
-#include <atomic>
 #include <condition_variable>
 #include <memory>
-#include <thread>
 #include <vector>
 #include <base/types.h>
 
@@ -27,12 +25,13 @@
     M(ZooKeeperLogElement) \
     M(ProcessorProfileLogElement) \
     M(TextLogElement) \
-    M(S3QueueLogElement) \
+    M(ObjectStorageQueueLogElement) \
     M(FilesystemCacheLogElement) \
     M(FilesystemReadPrefetchesLogElement) \
     M(AsynchronousInsertLogElement) \
     M(BackupLogElement) \
-    M(BlobStorageLogElement)
+    M(BlobStorageLogElement) \
+    M(ErrorLogElement)
 
 namespace Poco
 {

@@ -85,7 +85,7 @@ If your listing of files contains number ranges with leading zeros, use the cons
 
 **Example**
 
-Query the data from files named `file000`, `file001`, … , `file999`:
+Query the data from files named `file000`, `file001`, ... , `file999`:
 
 ``` sql
 SELECT count(*)
@@ -97,6 +97,7 @@ FROM hdfs('hdfs://hdfs1:9000/big_dir/file{0..9}{0..9}{0..9}', 'CSV', 'name Strin
 - `_path` — Path to the file. Type: `LowCardinalty(String)`.
 - `_file` — Name of the file. Type: `LowCardinalty(String)`.
 - `_size` — Size of the file in bytes. Type: `Nullable(UInt64)`. If the size is unknown, the value is `NULL`.
+- `_time` — Last modified time of the file. Type: `Nullable(DateTime)`. If the time is unknown, the value is `NULL`.
 
 ## Storage Settings {#storage-settings}
 

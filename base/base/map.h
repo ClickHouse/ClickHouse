@@ -19,8 +19,8 @@ auto map(const Collection<Params...> & collection, Mapper && mapper)
     using value_type = unqualified_t<decltype(mapper(*std::begin(collection)))>;
 
     return Collection<value_type>(
-        boost::make_transform_iterator(std::begin(collection), std::forward<Mapper>(mapper)),
-        boost::make_transform_iterator(std::end(collection), std::forward<Mapper>(mapper)));
+        boost::make_transform_iterator(std::begin(collection), mapper),
+        boost::make_transform_iterator(std::end(collection), mapper));
 }
 
 /** \brief Returns collection of specified container-type,
@@ -33,8 +33,8 @@ auto map(const Collection & collection, Mapper && mapper)
     using value_type = unqualified_t<decltype(mapper(*std::begin(collection)))>;
 
     return ResultCollection<value_type>(
-        boost::make_transform_iterator(std::begin(collection), std::forward<Mapper>(mapper)),
-        boost::make_transform_iterator(std::end(collection), std::forward<Mapper>(mapper)));
+        boost::make_transform_iterator(std::begin(collection), mapper),
+        boost::make_transform_iterator(std::end(collection), mapper));
 }
 
 /** \brief Returns collection of specified type,
@@ -45,8 +45,8 @@ template <typename ResultCollection, typename Collection, typename Mapper>
 auto map(const Collection & collection, Mapper && mapper)
 {
     return ResultCollection(
-        boost::make_transform_iterator(std::begin(collection), std::forward<Mapper>(mapper)),
-        boost::make_transform_iterator(std::end(collection), std::forward<Mapper>(mapper)));
+        boost::make_transform_iterator(std::begin(collection), mapper),
+        boost::make_transform_iterator(std::end(collection), mapper));
 }
 
 }

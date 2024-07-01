@@ -603,6 +603,24 @@ Block Block::shrinkToFit() const
     return cloneWithColumns(new_columns);
 }
 
+Block Block::compress() const
+{
+    size_t num_columns = data.size();
+    Columns new_columns(num_columns);
+    for (size_t i = 0; i < num_columns; ++i)
+        new_columns[i] = data[i].column->compress();
+    return cloneWithColumns(new_columns);
+}
+
+Block Block::decompress() const
+{
+    size_t num_columns = data.size();
+    Columns new_columns(num_columns);
+    for (size_t i = 0; i < num_columns; ++i)
+        new_columns[i] = data[i].column->decompress();
+    return cloneWithColumns(new_columns);
+}
+
 
 const ColumnsWithTypeAndName & Block::getColumnsWithTypeAndName() const
 {

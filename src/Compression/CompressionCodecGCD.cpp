@@ -24,6 +24,7 @@ public:
     void updateHash(SipHash & hash) const override;
 
 protected:
+    /// 1 byte (`gcd_bytes_size` value) + 1 byte (`bytes_to_skip` value) + `bytes_to_skip` bytes (trash) + `gcd_bytes_size` bytes (gcd value) + (`source_size` - `bytes_to_skip`) bytes (data)
     UInt32 doCompressData(const char * source, UInt32 source_size, char * dest) const override;
     void doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const override;
     UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const override;
@@ -54,7 +55,7 @@ UInt32 CompressionCodecGCD::getMaxCompressedDataSize(UInt32 uncompressed_size) c
 {
     return uncompressed_size
            + gcd_bytes_size // To store gcd
-           + 2; // Local header
+           + 2; // Values of `gcd_bytes_size` and `bytes_to_skip`
 }
 
 uint8_t CompressionCodecGCD::getMethodByte() const
@@ -147,7 +148,7 @@ void decompressDataForType(const char * source, UInt32 source_size, char * dest,
         if (source_size - sizeof(T) != output_size)
             throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress GCD-encoded data");
 
-        memcpy(dest, source, source_size);
+        memcpy(dest, source, source_size - sizeof(T));
         return;
     }
 
@@ -160,6 +161,7 @@ void decompressDataForType(const char * source, UInt32 source_size, char * dest,
         source += sizeof(T);
         dest += sizeof(T);
     }
+    chassert(source == source_end);
 }
 
 }
@@ -209,6 +211,8 @@ void CompressionCodecGCD::doDecompressData(const char * source, UInt32 source_si
         throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress GCD-encoded data. File has wrong header");
 
     UInt8 bytes_to_skip = uncompressed_size % bytes_size;
+    chassert(bytes_to_skip == static_cast<UInt8>(source[1]));
+
     UInt32 output_size = uncompressed_size - bytes_to_skip;
 
     if (static_cast<UInt32>(2 + bytes_to_skip) > source_size)

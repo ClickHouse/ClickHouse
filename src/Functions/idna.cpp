@@ -26,7 +26,7 @@ namespace ErrorCodes
 /// - idnaEncode(), tryIdnaEncode() and idnaDecode(), see https://en.wikipedia.org/wiki/Internationalized_domain_name#ToASCII_and_ToUnicode
 ///   and [3] https://www.unicode.org/reports/tr46/#ToUnicode
 
-enum class ErrorHandling
+enum class ErrorHandling : uint8_t
 {
     Throw,  /// Throw exception
     Empty   /// Return empty string

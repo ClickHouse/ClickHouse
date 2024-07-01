@@ -25,7 +25,7 @@ namespace ErrorCodes
 class WriteBuffer;
 
 /// Query tree node type
-enum class QueryTreeNodeType
+enum class QueryTreeNodeType : uint8_t
 {
     IDENTIFIER,
     MATCHER,

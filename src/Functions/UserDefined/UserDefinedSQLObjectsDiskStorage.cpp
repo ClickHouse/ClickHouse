@@ -3,7 +3,7 @@
 #include "Functions/UserDefined/UserDefinedSQLFunctionFactory.h"
 #include "Functions/UserDefined/UserDefinedSQLObjectType.h"
 
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/atomicRename.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>

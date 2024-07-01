@@ -9,7 +9,7 @@ from threading import Thread
 from typing import Any, Dict, List, Optional
 
 import requests
-from lambda_shared.pr import check_pr_description
+from lambda_shared.pr import Labels
 from lambda_shared.token import get_cached_access_token
 
 NEED_RERUN_OR_CANCELL_WORKFLOWS = {
@@ -261,7 +261,7 @@ def main(event):
         print("Freshly opened PR, nothing to do")
         return
 
-    if action == "closed" or label == "do not test":
+    if action == "closed" or label == Labels.DO_NOT_TEST:
         print("PR merged/closed or manually labeled 'do not test', will kill workflows")
         workflow_descriptions = get_workflows_description_for_pull_request(
             pull_request, token
@@ -281,7 +281,7 @@ def main(event):
         exec_workflow_url(urls_to_cancel, token)
         return
 
-    if label == "can be tested":
+    if label == Labels.CAN_BE_TESTED:
         print("PR marked with can be tested label, rerun workflow")
         workflow_descriptions = get_workflows_description_for_pull_request(
             pull_request, token
@@ -321,21 +321,21 @@ def main(event):
         return
 
     if action == "edited":
-        print("PR is edited, check if the body is correct")
-        error, _ = check_pr_description(
-            pull_request["body"], pull_request["base"]["repo"]["full_name"]
-        )
-        if error:
-            print(
-                f"The PR's body is wrong, is going to comment it. The error is: {error}"
-            )
-            post_json = {
-                "body": "This is an automatic comment. The PR descriptions does not "
-                f"match the [template]({pull_request['base']['repo']['html_url']}/"
-                "blob/master/.github/PULL_REQUEST_TEMPLATE.md?plain=1).\n\n"
-                f"Please, edit it accordingly.\n\nThe error is: {error}"
-            }
-            _exec_post_with_retry(pull_request["comments_url"], token, json=post_json)
+        print("PR is edited - do nothing")
+        # error, _ = check_pr_description(
+        #     pull_request["body"], pull_request["base"]["repo"]["full_name"]
+        # )
+        # if error:
+        #     print(
+        #         f"The PR's body is wrong, is going to comment it. The error is: {error}"
+        #     )
+        #     post_json = {
+        #         "body": "This is an automatic comment. The PR descriptions does not "
+        #         f"match the [template]({pull_request['base']['repo']['html_url']}/"
+        #         "blob/master/.github/PULL_REQUEST_TEMPLATE.md?plain=1).\n\n"
+        #         f"Please, edit it accordingly.\n\nThe error is: {error}"
+        #     }
+        #     _exec_post_with_retry(pull_request["comments_url"], token, json=post_json)
         return
 
     if action == "synchronize":

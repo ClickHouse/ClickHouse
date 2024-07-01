@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Storages/StorageS3Settings.h>
+#include <IO/S3Settings.h>
 #include "config.h"
 
 #if USE_AWS_S3
@@ -28,7 +28,7 @@ private:
     String bucket;
     String key;
     String version_id;
-    const S3Settings::RequestSettings request_settings;
+    const S3::RequestSettings request_settings;
 
     /// These variables are atomic because they can be used for `logging only`
     /// (where it is not important to get consistent result)
@@ -47,7 +47,7 @@ public:
         const String & bucket_,
         const String & key_,
         const String & version_id_,
-        const S3Settings::RequestSettings & request_settings_,
+        const S3::RequestSettings & request_settings_,
         const ReadSettings & settings_,
         bool use_external_buffer = false,
         size_t offset_ = 0,

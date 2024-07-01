@@ -450,7 +450,10 @@ MutableColumns CacheDictionary<dictionary_key_type>::aggregateColumnsInOrderOfKe
             if (default_mask)
             {
                 if (state.isDefault())
+                {
                     (*default_mask)[key_index] = 1;
+                    aggregated_column->insertDefault();
+                }
                 else
                 {
                     (*default_mask)[key_index] = 0;
@@ -508,7 +511,10 @@ MutableColumns CacheDictionary<dictionary_key_type>::aggregateColumns(
                 if (default_mask)
                 {
                     if (key_state_from_storage.isDefault())
+                    {
                         (*default_mask)[key_index] = 1;
+                        aggregated_column->insertDefault();
+                    }
                     else
                     {
                         (*default_mask)[key_index] = 0;
@@ -536,7 +542,10 @@ MutableColumns CacheDictionary<dictionary_key_type>::aggregateColumns(
             }
 
             if (default_mask)
+            {
+                aggregated_column->insertDefault(); /// Any default is ok
                 (*default_mask)[key_index] = 1;
+            }
             else
             {
                 /// Insert default value

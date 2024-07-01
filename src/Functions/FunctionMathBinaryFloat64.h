@@ -8,6 +8,7 @@
 #include <Columns/ColumnConst.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
+#include <Interpreters/castColumn.h>
 
 #include "config.h"
 
@@ -41,7 +42,7 @@ private:
     {
         const auto check_argument_type = [this] (const IDataType * arg)
         {
-            if (!isNativeNumber(arg))
+            if (!isNativeNumber(arg) && !isDecimal(arg))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
                     arg->getName(), getName());
         };
@@ -53,7 +54,7 @@ private:
     }
 
     template <typename LeftType, typename RightType>
-    ColumnPtr executeTyped(const ColumnConst * left_arg, const IColumn * right_arg) const
+    static ColumnPtr executeTyped(const ColumnConst * left_arg, const IColumn * right_arg)
     {
         if (const auto right_arg_typed = checkAndGetColumn<ColumnVector<RightType>>(right_arg))
         {
@@ -91,7 +92,7 @@ private:
     }
 
     template <typename LeftType, typename RightType>
-    ColumnPtr executeTyped(const ColumnVector<LeftType> * left_arg, const IColumn * right_arg) const
+    static ColumnPtr executeTyped(const ColumnVector<LeftType> * left_arg, const IColumn * right_arg)
     {
         if (const auto right_arg_typed = checkAndGetColumn<ColumnVector<RightType>>(right_arg))
         {
@@ -168,6 +169,25 @@ private:
     {
         const ColumnWithTypeAndName & col_left = arguments[0];
         const ColumnWithTypeAndName & col_right = arguments[1];
+
+        ColumnPtr col_ptr_left = col_left.column;
+        ColumnPtr col_ptr_right = col_right.column;
+
+        TypeIndex left_index = col_left.type->getTypeId();
+        TypeIndex right_index = col_right.type->getTypeId();
+
+        if (WhichDataType(col_left.type).isDecimal())
+        {
+            col_ptr_left = castColumn(col_left, std::make_shared<DataTypeFloat64>());
+            left_index = TypeIndex::Float64;
+        }
+
+        if (WhichDataType(col_right.type).isDecimal())
+        {
+            col_ptr_right = castColumn(col_right, std::make_shared<DataTypeFloat64>());
+            right_index = TypeIndex::Float64;
+        }
+
         ColumnPtr res;
 
         auto call = [&](const auto & types) -> bool
@@ -177,8 +197,8 @@ private:
             using RightType = typename Types::RightType;
             using ColVecLeft = ColumnVector<LeftType>;
 
-            const IColumn * left_arg = col_left.column.get();
-            const IColumn * right_arg = col_right.column.get();
+            const IColumn * left_arg = col_ptr_left.get();
+            const IColumn * right_arg = col_ptr_right.get();
 
             if (const auto left_arg_typed = checkAndGetColumn<ColVecLeft>(left_arg))
             {
@@ -200,9 +220,6 @@ private:
             return false;
         };
 
-        TypeIndex left_index = col_left.type->getTypeId();
-        TypeIndex right_index = col_right.type->getTypeId();
-
         if (!callOnBasicTypes<true, true, false, false>(left_index, right_index, call))
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
                 col_left.column->getName(), getName());
@@ -221,7 +238,7 @@ struct BinaryFunctionVectorized
     template <typename T1, typename T2>
     static void execute(const T1 * src_left, const T2 * src_right, Float64 * dst)
     {
-        dst[0] = static_cast<Float64>(Function(static_cast<Float64>(src_left[0]), static_cast<Float64>(src_right[0])));
+        dst[0] = Function(static_cast<Float64>(src_left[0]), static_cast<Float64>(src_right[0]));
     }
 };
 

@@ -1,12 +1,8 @@
 #pragma once
 
-#include <cstddef>
 #include <memory>
-#include <optional>
-
 #include <boost/core/noncopyable.hpp>
 
-#include <AggregateFunctions/QuantileTDigest.h>
 #include <Core/Block.h>
 #include <Common/logger_useful.h>
 #include <IO/ReadBuffer.h>
@@ -14,38 +10,23 @@
 #include <Storages/StatisticsDescription.h>
 
 
-/// this is for user-defined statistic.
-constexpr auto STAT_FILE_PREFIX = "statistic_";
-constexpr auto STAT_FILE_SUFFIX = ".stat";
-
 namespace DB
 {
 
-class IStatistic;
-using StatisticPtr = std::shared_ptr<IStatistic>;
-using Statistics = std::vector<StatisticPtr>;
+/// this is for user-defined statistic.
+constexpr auto STATS_FILE_PREFIX = "statistics_";
+constexpr auto STATS_FILE_SUFFIX = ".stats";
 
-/// Statistic contains the distribution of values in a column.
-/// right now we support
-/// - tdigest
-class IStatistic
+/// Statistics describe properties of the values in the column,
+/// e.g. how many unique values exist,
+/// what are the N most frequent values,
+/// how frequent is a value V, etc.
+class IStatistics
 {
 public:
-    explicit IStatistic(const StatisticDescription & stat_)
-        : stat(stat_)
-    {
-    }
-    virtual ~IStatistic() = default;
+    explicit IStatistics(const SingleStatisticsDescription & stat_);
 
-    String getFileName() const
-    {
-        return STAT_FILE_PREFIX + columnName();
-    }
-
-    const String & columnName() const
-    {
-        return stat.column_name;
-    }
+    virtual ~IStatistics() = default;
 
     virtual void serialize(WriteBuffer & buf) = 0;
 
@@ -53,40 +34,68 @@ public:
 
     virtual void update(const ColumnPtr & column) = 0;
 
-    virtual UInt64 count() = 0;
-
 protected:
+    SingleStatisticsDescription stat;
+};
 
-    StatisticDescription stat;
+using StatisticsPtr = std::shared_ptr<IStatistics>;
 
+class ColumnStatistics
+{
+public:
+    explicit ColumnStatistics(const ColumnStatisticsDescription & stats_);
+    void serialize(WriteBuffer & buf);
+    void deserialize(ReadBuffer & buf);
+    String getFileName() const;
+
+    const String & columnName() const;
+
+    UInt64 rowCount() const;
+
+    void update(const ColumnPtr & column);
+
+    Float64 estimateLess(Float64 val) const;
+
+    Float64 estimateGreater(Float64 val) const;
+
+    Float64 estimateEqual(Float64 val) const;
+
+private:
+
+    friend class MergeTreeStatisticsFactory;
+    ColumnStatisticsDescription stats_desc;
+    std::map<StatisticsType, StatisticsPtr> stats;
+    UInt64 rows; /// the number of rows of the column
 };
 
 class ColumnsDescription;
+using ColumnStatisticsPtr = std::shared_ptr<ColumnStatistics>;
+using ColumnsStatistics = std::vector<ColumnStatisticsPtr>;
 
 class MergeTreeStatisticsFactory : private boost::noncopyable
 {
 public:
     static MergeTreeStatisticsFactory & instance();
 
-    void validate(const StatisticDescription & stat, DataTypePtr data_type) const;
+    void validate(const ColumnStatisticsDescription & stats, DataTypePtr data_type) const;
 
-    using Creator = std::function<StatisticPtr(const StatisticDescription & stat)>;
+    using Creator = std::function<StatisticsPtr(const SingleStatisticsDescription & stats, DataTypePtr data_type)>;
 
-    using Validator = std::function<void(const StatisticDescription & stat, DataTypePtr data_type)>;
+    using Validator = std::function<void(const SingleStatisticsDescription & stats, DataTypePtr data_type)>;
 
-    StatisticPtr get(const StatisticDescription & stat) const;
+    ColumnStatisticsPtr get(const ColumnStatisticsDescription & stats) const;
 
-    Statistics getMany(const ColumnsDescription & columns) const;
+    ColumnsStatistics getMany(const ColumnsDescription & columns) const;
 
-    void registerCreator(StatisticType type, Creator creator);
-    void registerValidator(StatisticType type, Validator validator);
+    void registerCreator(StatisticsType type, Creator creator);
+    void registerValidator(StatisticsType type, Validator validator);
 
 protected:
     MergeTreeStatisticsFactory();
 
 private:
-    using Creators = std::unordered_map<StatisticType, Creator>;
-    using Validators = std::unordered_map<StatisticType, Validator>;
+    using Creators = std::unordered_map<StatisticsType, Creator>;
+    using Validators = std::unordered_map<StatisticsType, Validator>;
     Creators creators;
     Validators validators;
 };

@@ -1,5 +1,6 @@
 SET allow_experimental_analyzer = 1;
 SET optimize_move_to_prewhere = 0;
+SET query_plan_convert_outer_join_to_inner_join = 0;
 
 DROP TABLE IF EXISTS test_table_1;
 CREATE TABLE test_table_1

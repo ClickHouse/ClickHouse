@@ -1,5 +1,5 @@
 #include <base/hex.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/escapeForFileName.h>
 
 namespace DB

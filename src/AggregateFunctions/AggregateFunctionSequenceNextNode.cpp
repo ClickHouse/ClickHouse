@@ -41,13 +41,13 @@ namespace ErrorCodes
 namespace
 {
 
-enum class SequenceDirection
+enum class SequenceDirection : uint8_t
 {
     Forward,
     Backward,
 };
 
-enum SequenceBase
+enum SequenceBase : uint8_t
 {
     Head,
     Tail,
@@ -341,7 +341,7 @@ public:
             value[i] = Node::read(buf, arena);
     }
 
-    inline std::optional<size_t> getBaseIndex(Data & data) const
+    std::optional<size_t> getBaseIndex(Data & data) const
     {
         if (data.value.size() == 0)
             return {};
@@ -414,7 +414,6 @@ public:
                         break;
                 return (i == events_size) ? base - i : unmatched_idx;
         }
-        UNREACHABLE();
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override

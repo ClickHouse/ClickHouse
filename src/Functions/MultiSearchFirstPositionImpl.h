@@ -10,7 +10,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
 }
 
 template <typename Name, typename Impl>
@@ -37,7 +37,7 @@ struct MultiSearchFirstPositionImpl
     {
         // For performance of Volnitsky search, it is crucial to save only one byte for pattern number.
         if (needles_arr.size() > std::numeric_limits<UInt8>::max())
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+            throw Exception(ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION,
                 "Number of arguments for function {} doesn't match: passed {}, should be at most {}",
                 name, std::to_string(needles_arr.size()), std::to_string(std::numeric_limits<UInt8>::max()));
 
@@ -97,7 +97,7 @@ struct MultiSearchFirstPositionImpl
         size_t prev_haystack_offset = 0;
         size_t prev_needles_offset = 0;
 
-        const ColumnString * needles_data_string = checkAndGetColumn<ColumnString>(&needles_data);
+        const ColumnString & needles_data_string = checkAndGetColumn<ColumnString>(needles_data);
 
         std::vector<std::string_view> needles;
 
@@ -112,7 +112,7 @@ struct MultiSearchFirstPositionImpl
 
             for (size_t j = prev_needles_offset; j < needles_offsets[i]; ++j)
             {
-                needles.emplace_back(needles_data_string->getDataAt(j).toView());
+                needles.emplace_back(needles_data_string.getDataAt(j).toView());
             }
 
             auto searcher = Impl::createMultiSearcherInBigHaystack(needles); // sub-optimal

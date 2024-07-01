@@ -6,6 +6,7 @@
 #include <Common/logger_useful.h>
 #include "Interpreters/Cache/Guards.h"
 
+
 namespace DB
 {
 
@@ -80,7 +81,7 @@ public:
     };
     PriorityDumpPtr dump(const CachePriorityGuard::Lock &) override;
 
-    void pop(const CachePriorityGuard::Lock & lock) { remove(queue.begin(), lock); }
+    void pop(const CachePriorityGuard::Lock & lock) { remove(queue.begin(), lock); } // NOLINT
 
     bool modifySizeLimits(size_t max_size_, size_t max_elements_, double size_ratio_, const CachePriorityGuard::Lock &) override;
 
@@ -108,7 +109,7 @@ private:
 
     LRUQueue::iterator remove(LRUQueue::iterator it, const CachePriorityGuard::Lock &);
 
-    enum class IterationResult
+    enum class IterationResult : uint8_t
     {
         BREAK,
         CONTINUE,

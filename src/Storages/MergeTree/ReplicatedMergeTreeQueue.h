@@ -151,6 +151,8 @@ private:
 
     /// Mapping from znode path to Mutations Status
     std::map<String, MutationStatus> mutations_by_znode;
+    /// Unfinished mutations that is required AlterConversions (see getAlterMutationCommandsForPart())
+    std::atomic<ssize_t> alter_conversions_mutations = 0;
     /// Partition -> (block_number -> MutationStatus)
     std::unordered_map<String, std::map<Int64, MutationStatus *>> mutations_by_partition;
     /// Znode ID of the latest mutation that is done.

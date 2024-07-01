@@ -109,7 +109,7 @@ RestorerFromBackup::~RestorerFromBackup()
     if (getNumFutures() > 0)
     {
         LOG_INFO(log, "Waiting for {} tasks to finish", getNumFutures());
-        waitFutures();
+        waitFutures(/* throw_if_error= */ false);
     }
 }
 
@@ -161,7 +161,7 @@ void RestorerFromBackup::run(Mode mode)
     setStage(Stage::COMPLETED);
 }
 
-void RestorerFromBackup::waitFutures()
+void RestorerFromBackup::waitFutures(bool throw_if_error)
 {
     std::exception_ptr error;
 
@@ -176,11 +176,7 @@ void RestorerFromBackup::waitFutures()
         if (futures_to_wait.empty())
             break;
 
-        /// Wait for all tasks.
-        for (auto & future : futures_to_wait)
-            future.wait();
-
-        /// Check if there is an exception.
+        /// Wait for all tasks to finish.
         for (auto & future : futures_to_wait)
         {
             try
@@ -197,7 +193,12 @@ void RestorerFromBackup::waitFutures()
     }
 
     if (error)
-        std::rethrow_exception(error);
+    {
+        if (throw_if_error)
+            std::rethrow_exception(error);
+        else
+            tryLogException(error, log);
+    }
 }
 
 size_t RestorerFromBackup::getNumFutures() const
@@ -437,7 +438,7 @@ void RestorerFromBackup::findTableInBackupImpl(const QualifiedTableName & table_
     String create_table_query_str = serializeAST(*create_table_query);
 
     bool is_predefined_table = DatabaseCatalog::instance().isPredefinedTable(StorageID{table_name.database, table_name.table});
-    auto table_dependencies = getDependenciesFromCreateQuery(context, table_name, create_table_query);
+    auto table_dependencies = getDependenciesFromCreateQuery(context, table_name, create_table_query, context->getCurrentDatabase());
     bool table_has_data = backup->hasFiles(data_path_in_backup);
 
     std::lock_guard lock{mutex};
@@ -797,7 +798,7 @@ void RestorerFromBackup::applyCustomStoragePolicy(ASTPtr query_ptr)
         {
             if (restore_settings.storage_policy.value().empty())
                 /// it has been set to "" deliberately, so the source storage policy is erased
-                storage->settings->changes.removeSetting(setting_name);
+                storage->settings->changes.removeSetting(setting_name); // NOLINT
             else
                 /// it has been set to a custom value, so it either overwrites the existing value or is added as a new one
                 storage->settings->changes.setSetting(setting_name, restore_settings.storage_policy.value());
@@ -837,7 +838,7 @@ void RestorerFromBackup::removeUnresolvedDependencies()
         return true; /// Exclude this dependency.
     };
 
-    tables_dependencies.removeTablesIf(need_exclude_dependency);
+    tables_dependencies.removeTablesIf(need_exclude_dependency); // NOLINT
 
     if (tables_dependencies.getNumberOfTables() != table_infos.size())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Number of tables to be restored is not as expected. It's a bug");

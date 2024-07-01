@@ -130,7 +130,7 @@ private:
 
     /// Waits until all tasks are processed (including the tasks scheduled while we're waiting).
     /// Throws an exception if any of the tasks throws an exception.
-    void waitFutures();
+    void waitFutures(bool throw_if_error = true);
 
     /// Throws an exception if the RESTORE query was cancelled.
     void checkIsQueryCancelled() const;

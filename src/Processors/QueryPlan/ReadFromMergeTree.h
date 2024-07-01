@@ -60,8 +60,7 @@ struct UsefulSkipIndexes
 class ReadFromMergeTree final : public SourceStepWithFilter
 {
 public:
-
-    enum class IndexType
+    enum class IndexType : uint8_t
     {
         None,
         MinMax,
@@ -101,7 +100,9 @@ public:
         UInt64 selected_marks_pk = 0;
         UInt64 total_marks_pk = 0;
         UInt64 selected_rows = 0;
+        bool has_exact_ranges = false;
 
+        bool readFromProjection() const { return !parts_with_ranges.empty() && parts_with_ranges.front().data_part->isProjectionPart(); }
         void checkLimits(const Settings & settings, const SelectQueryInfo & query_info_) const;
     };
 
@@ -162,11 +163,13 @@ public:
         const MergeTreeData & data,
         const Names & all_column_names,
         LoggerPtr log,
-        std::optional<Indexes> & indexes);
+        std::optional<Indexes> & indexes,
+        bool find_exact_ranges);
 
     AnalysisResultPtr selectRangesToRead(
-        MergeTreeData::DataPartsVector parts,
-        std::vector<AlterConversionsPtr> alter_conversions) const;
+        MergeTreeData::DataPartsVector parts, std::vector<AlterConversionsPtr> alter_conversions, bool find_exact_ranges = false) const;
+
+    AnalysisResultPtr selectRangesToRead(bool find_exact_ranges = false) const;
 
     StorageMetadataPtr getStorageMetadata() const { return metadata_for_reading; }
 
@@ -181,7 +184,7 @@ public:
     bool requestOutputEachPartitionThroughSeparatePort();
     bool willOutputEachPartitionThroughSeparatePort() const { return output_each_partition_through_separate_port; }
 
-    bool hasAnalyzedResult() const { return analyzed_result_ptr != nullptr; }
+    AnalysisResultPtr getAnalyzedResult() const { return analyzed_result_ptr; }
     void setAnalyzedResult(AnalysisResultPtr analyzed_result_ptr_) { analyzed_result_ptr = std::move(analyzed_result_ptr_); }
 
     const MergeTreeData::DataPartsVector & getParts() const { return prepared_parts; }
@@ -195,19 +198,6 @@ public:
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
 
 private:
-    static AnalysisResultPtr selectRangesToReadImpl(
-        MergeTreeData::DataPartsVector parts,
-        std::vector<AlterConversionsPtr> alter_conversions,
-        const StorageMetadataPtr & metadata_snapshot,
-        const SelectQueryInfo & query_info,
-        ContextPtr context,
-        size_t num_streams,
-        std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read,
-        const MergeTreeData & data,
-        const Names & all_column_names,
-        LoggerPtr log,
-        std::optional<Indexes> & indexes);
-
     int getSortDirection() const
     {
         if (query_info.input_order_info)
@@ -273,13 +263,14 @@ private:
 
     ReadFromMergeTree::AnalysisResult getAnalysisResult() const;
 
-    AnalysisResultPtr analyzed_result_ptr;
+    mutable AnalysisResultPtr analyzed_result_ptr;
     VirtualFields shared_virtual_fields;
 
     bool is_parallel_reading_from_replicas;
     std::optional<MergeTreeAllRangesCallback> all_ranges_callback;
     std::optional<MergeTreeReadTaskCallback> read_task_callback;
     bool enable_vertical_final = false;
+    bool enable_remove_parts_from_snapshot_optimization = true;
 };
 
 }

@@ -4,7 +4,7 @@
 namespace DB
 {
 
-enum class DataDestinationType
+enum class DataDestinationType : uint8_t
 {
     DISK,
     VOLUME,

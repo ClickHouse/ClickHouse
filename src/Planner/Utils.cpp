@@ -160,26 +160,6 @@ ASTPtr queryNodeToDistributedSelectQuery(const QueryTreeNodePtr & query_node)
     return ast;
 }
 
-/** There are no limits on the maximum size of the result for the subquery.
-  * Since the result of the query is not the result of the entire query.
-  */
-void updateContextForSubqueryExecution(ContextMutablePtr & mutable_context)
-{
-    /** The subquery in the IN / JOIN section does not have any restrictions on the maximum size of the result.
-      * Because the result of this query is not the result of the entire query.
-      * Constraints work instead
-      *  max_rows_in_set, max_bytes_in_set, set_overflow_mode,
-      *  max_rows_in_join, max_bytes_in_join, join_overflow_mode,
-      *  which are checked separately (in the Set, Join objects).
-      */
-    Settings subquery_settings = mutable_context->getSettings();
-    subquery_settings.max_result_rows = 0;
-    subquery_settings.max_result_bytes = 0;
-    /// The calculation of extremes does not make sense and is not necessary (if you do it, then the extremes of the subquery can be taken for whole query).
-    subquery_settings.extremes = false;
-    mutable_context->setSettings(subquery_settings);
-}
-
 namespace
 {
 
@@ -233,14 +213,14 @@ StorageLimits buildStorageLimits(const Context & context, const SelectQueryOptio
     return {limits, leaf_limits};
 }
 
-ActionsDAGPtr buildActionsDAGFromExpressionNode(const QueryTreeNodePtr & expression_node,
+ActionsDAG buildActionsDAGFromExpressionNode(const QueryTreeNodePtr & expression_node,
     const ColumnsWithTypeAndName & input_columns,
     const PlannerContextPtr & planner_context)
 {
-    ActionsDAGPtr action_dag = std::make_shared<ActionsDAG>(input_columns);
+    ActionsDAG action_dag(input_columns);
     PlannerActionsVisitor actions_visitor(planner_context);
     auto expression_dag_index_nodes = actions_visitor.visit(action_dag, expression_node);
-    action_dag->getOutputs() = std::move(expression_dag_index_nodes);
+    action_dag.getOutputs() = std::move(expression_dag_index_nodes);
 
     return action_dag;
 }
@@ -422,38 +402,6 @@ QueryTreeNodePtr replaceTableExpressionsWithDummyTables(
     return query_node->cloneAndReplace(replacement_map);
 }
 
-QueryTreeNodePtr buildSubqueryToReadColumnsFromTableExpression(const NamesAndTypes & columns,
-    const QueryTreeNodePtr & table_expression,
-    const ContextPtr & context)
-{
-    auto projection_columns = columns;
-
-    QueryTreeNodes subquery_projection_nodes;
-    subquery_projection_nodes.reserve(projection_columns.size());
-
-    for (const auto & column : projection_columns)
-        subquery_projection_nodes.push_back(std::make_shared<ColumnNode>(column, table_expression));
-
-    if (subquery_projection_nodes.empty())
-    {
-        auto constant_data_type = std::make_shared<DataTypeUInt64>();
-        subquery_projection_nodes.push_back(std::make_shared<ConstantNode>(1UL, constant_data_type));
-        projection_columns.push_back({"1", std::move(constant_data_type)});
-    }
-
-    auto context_copy = Context::createCopy(context);
-    updateContextForSubqueryExecution(context_copy);
-
-    auto query_node = std::make_shared<QueryNode>(std::move(context_copy));
-
-    query_node->getProjection().getNodes() = std::move(subquery_projection_nodes);
-    query_node->resolveProjectionColumns(projection_columns);
-    query_node->getJoinTree() = table_expression;
-    query_node->setIsSubquery(true);
-
-    return query_node;
-}
-
 SelectQueryInfo buildSelectQueryInfo(const QueryTreeNodePtr & query_tree, const PlannerContextPtr & planner_context)
 {
     SelectQueryInfo select_query_info;
@@ -495,7 +443,7 @@ FilterDAGInfo buildFilterInfo(QueryTreeNodePtr filter_query_tree,
     auto filter_actions_dag = std::make_shared<ActionsDAG>();
 
     PlannerActionsVisitor actions_visitor(planner_context, false /*use_column_identifier_as_action_node_name*/);
-    auto expression_nodes = actions_visitor.visit(filter_actions_dag, filter_query_tree);
+    auto expression_nodes = actions_visitor.visit(*filter_actions_dag, filter_query_tree);
     if (expression_nodes.size() != 1)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Filter actions must return single output node. Actual {}",

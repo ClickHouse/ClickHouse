@@ -794,7 +794,7 @@ std::vector<CodecTestSequence> generatePyramidOfSequences(const size_t sequences
     for (size_t i = 1; i < sequences_count; ++i)
     {
         std::string name = generator_name + std::string(" from 0 to ") + std::to_string(i);
-        sequences.push_back(generateSeq<T>(std::forward<decltype(generator)>(generator), name.c_str(), 0, i));
+        sequences.push_back(generateSeq<T>(generator, name.c_str(), 0, i));
     }
 
     return sequences;

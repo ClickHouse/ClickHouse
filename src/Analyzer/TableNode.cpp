@@ -33,6 +33,14 @@ TableNode::TableNode(StoragePtr storage_, const ContextPtr & context)
 {
 }
 
+void TableNode::updateStorage(StoragePtr storage_value, const ContextPtr & context)
+{
+    storage = std::move(storage_value);
+    storage_id = storage->getStorageID();
+    storage_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef().lock_acquire_timeout);
+    storage_snapshot = storage->getStorageSnapshot(storage->getInMemoryMetadataPtr(), context);
+}
+
 void TableNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const
 {
     buffer << std::string(indent, ' ') << "TABLE id: " << format_state.getNodeId(this);

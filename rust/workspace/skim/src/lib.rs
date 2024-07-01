@@ -47,6 +47,11 @@ fn skim_impl(prefix: &CxxString, words: &CxxVector<CxxString>) -> Result<String,
         .height(Some("30%"))
         .query(Some(prefix.to_str().unwrap()))
         .tac(true)
+        // Do not clear on start and clear on exit will clear skim output from the terminal.
+        //
+        // Refs: https://github.com/lotabout/skim/issues/494#issuecomment-1776565846
+        .no_clear_start(true)
+        .no_clear(false)
         .tiebreak(Some("-score".to_string()))
         // Exact mode performs better for SQL.
         //

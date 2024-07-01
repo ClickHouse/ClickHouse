@@ -137,7 +137,6 @@ bool DatatypeInt::convertImpl(String & out, IParser::Pos & pos)
     const String fn_name = getKQLFunctionName(pos);
     if (fn_name.empty())
         return false;
-    String guid_str;
 
     ++pos;
     if (pos->type == TokenType::QuotedIdentifier || pos->type == TokenType::StringLiteral)

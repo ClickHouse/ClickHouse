@@ -1,5 +1,4 @@
 import pytest
-import asyncio
 import glob
 import re
 import random
@@ -166,6 +165,32 @@ def test_restore_table(engine):
 
     instance.query(f"RESTORE TABLE test.table FROM {backup_name}")
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
+
+
+def test_restore_materialized_view_with_definer():
+    instance.query("CREATE DATABASE test")
+    instance.query(
+        "CREATE TABLE test.test_table (s String) ENGINE = MergeTree ORDER BY s"
+    )
+    instance.query("CREATE USER u1")
+    instance.query("GRANT SELECT ON *.* TO u1")
+    instance.query("GRANT INSERT ON *.* TO u1")
+
+    instance.query(
+        """
+        CREATE MATERIALIZED VIEW test.test_mv_1 (s String)
+        ENGINE = MergeTree ORDER BY s
+        DEFINER = u1 SQL SECURITY DEFINER
+        AS SELECT * FROM test.test_table
+        """
+    )
+
+    backup_name = new_backup_name()
+    instance.query(f"BACKUP DATABASE test TO {backup_name}")
+    instance.query("DROP DATABASE test")
+    instance.query("DROP USER u1")
+
+    instance.query(f"RESTORE DATABASE test FROM {backup_name}")
 
 
 @pytest.mark.parametrize(
@@ -1460,6 +1485,7 @@ def test_backup_all(exclude_system_log_tables):
             "processors_profile_log",
             "asynchronous_insert_log",
             "backup_log",
+            "error_log",
         ]
         exclude_from_backup += ["system." + table_name for table_name in log_tables]
 
@@ -1474,7 +1500,7 @@ def test_backup_all(exclude_system_log_tables):
     restore_settings = []
     if not exclude_system_log_tables:
         restore_settings.append("allow_non_empty_tables=true")
-    restore_command = f"RESTORE ALL FROM {backup_name} {'SETTINGS '+ ', '.join(restore_settings) if restore_settings else ''}"
+    restore_command = f"RESTORE ALL FROM {backup_name} {'SETTINGS ' + ', '.join(restore_settings) if restore_settings else ''}"
 
     session_id = new_session_id()
     instance.http_query(

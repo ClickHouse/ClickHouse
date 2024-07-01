@@ -230,6 +230,6 @@ SELECT '(backward, first_match, 1, B)', id, sequenceNextNode('backward', 'first_
 SELECT '(backward, first_match, 1, B->C)', id, sequenceNextNode('backward', 'first_match')(dt, action, referrer = '2', action = 'B', action = 'A') AS next_node FROM test_base_condition GROUP BY id ORDER BY id;
 
 SET allow_experimental_funnel_functions = 0;
-SELECT '(backward, first_match, 1, B->C)', id, sequenceNextNode('backward', 'first_match')(dt, action, referrer = '2', action = 'B', action = 'A') AS next_node FROM test_base_condition GROUP BY id ORDER BY id; -- { serverError 63 }
+SELECT '(backward, first_match, 1, B->C)', id, sequenceNextNode('backward', 'first_match')(dt, action, referrer = '2', action = 'B', action = 'A') AS next_node FROM test_base_condition GROUP BY id ORDER BY id; -- { serverError UNKNOWN_AGGREGATE_FUNCTION }
 
 DROP TABLE IF EXISTS test_base_condition;

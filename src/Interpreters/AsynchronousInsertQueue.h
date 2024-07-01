@@ -48,7 +48,7 @@ public:
         Block insert_block{};
     };
 
-    enum class DataKind
+    enum class DataKind : uint8_t
     {
         Parsed = 0,
         Preprocessed = 1,

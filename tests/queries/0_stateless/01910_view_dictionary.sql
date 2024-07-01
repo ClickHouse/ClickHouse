@@ -45,5 +45,5 @@ FROM numbers(3);
 
 DROP TABLE dictionary_source_en;
 DROP TABLE dictionary_source_ru;
-DROP TABLE dictionary_source_view;
 DROP DICTIONARY flat_dictionary;
+DROP TABLE dictionary_source_view;

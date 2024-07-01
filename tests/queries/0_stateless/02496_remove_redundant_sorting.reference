@@ -332,13 +332,12 @@ SETTINGS optimize_aggregators_of_group_by_keys=0 -- avoid removing any() as it d
 Expression (Projection)
   Sorting (Sorting for ORDER BY)
     Expression (Before ORDER BY)
-      Filter ((WHERE + (Projection + Before ORDER BY)))
-        Filter (HAVING)
-          Aggregating
-            Expression ((Before GROUP BY + Projection))
-              Sorting (Sorting for ORDER BY)
-                Expression ((Before ORDER BY + (Projection + Before ORDER BY)))
-                  ReadFromSystemNumbers
+      Filter (((WHERE + (Projection + Before ORDER BY)) + HAVING))
+        Aggregating
+          Expression ((Before GROUP BY + Projection))
+            Sorting (Sorting for ORDER BY)
+              Expression ((Before ORDER BY + (Projection + Before ORDER BY)))
+                ReadFromSystemNumbers
 -- execute
 1
 2
@@ -478,6 +477,7 @@ FROM
     ORDER BY number DESC
 )
 ORDER BY number ASC
+SETTINGS allow_deprecated_error_prone_window_functions = 1
 -- explain
 Expression (Projection)
   Sorting (Sorting for ORDER BY)

@@ -8,6 +8,7 @@
 #include <numeric>
 #include <thread>
 
+#include <Core/ServerUUID.h>
 #include <Common/iota.h>
 #include <Common/randomSeed.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -333,6 +334,7 @@ public:
 
 TEST_F(FileCacheTest, LRUPolicy)
 {
+    ServerUUID::setRandomForUnitTests();
     DB::ThreadStatus thread_status;
 
     /// To work with cache need query_id and query context.
@@ -807,6 +809,7 @@ TEST_F(FileCacheTest, LRUPolicy)
 
 TEST_F(FileCacheTest, writeBuffer)
 {
+    ServerUUID::setRandomForUnitTests();
     FileCacheSettings settings;
     settings.max_size = 100;
     settings.max_elements = 5;
@@ -938,6 +941,7 @@ static size_t readAllTemporaryData(TemporaryFileStream & stream)
 
 TEST_F(FileCacheTest, temporaryData)
 {
+    ServerUUID::setRandomForUnitTests();
     DB::FileCacheSettings settings;
     settings.max_size = 10_KiB;
     settings.max_file_segment_size = 1_KiB;
@@ -1044,6 +1048,7 @@ TEST_F(FileCacheTest, temporaryData)
 
 TEST_F(FileCacheTest, CachedReadBuffer)
 {
+    ServerUUID::setRandomForUnitTests();
     DB::ThreadStatus thread_status;
 
     /// To work with cache need query_id and query context.
@@ -1120,6 +1125,7 @@ TEST_F(FileCacheTest, CachedReadBuffer)
 
 TEST_F(FileCacheTest, TemporaryDataReadBufferSize)
 {
+    ServerUUID::setRandomForUnitTests();
     /// Temporary data stored in cache
     {
         DB::FileCacheSettings settings;
@@ -1167,6 +1173,7 @@ TEST_F(FileCacheTest, TemporaryDataReadBufferSize)
 
 TEST_F(FileCacheTest, SLRUPolicy)
 {
+    ServerUUID::setRandomForUnitTests();
     DB::ThreadStatus thread_status;
     std::string query_id = "query_id"; /// To work with cache need query_id and query context.
 

@@ -152,7 +152,7 @@ SELECT range(5), range(1, 5), range(1, 5, 2), range(-1, 5, 2);
 └─────────────┴─────────────┴────────────────┴─────────────────┘
 ```
 
-## array(x1, …), operator \[x1, …\] {#arrayx1-operator-x1}
+## array(x1, ...), operator \[x1, ...\] {#arrayx1-operator-x1}
 
 使用函数的参数作为数组元素创建一个数组。
 参数必须是常量，并且具有最小公共类型的类型。必须至少传递一个参数，否则将不清楚要创建哪种类型的数组。也就是说，你不能使用这个函数来创建一个空数组（为此，使用上面描述的’emptyArray  \*’函数）。
@@ -337,7 +337,7 @@ SELECT indexOf([1, 3, NULL, NULL], NULL)
 
 设置为«NULL»的元素将作为普通的元素值处理。
 
-## arrayCount(\[func,\] arr1, …) {#array-count}
+## arrayCount(\[func,\] arr1, ...) {#array-count}
 
 `func`将arr数组作为参数，其返回结果为非零值的数量。如果未指定“func”，则返回数组中非零元素的数量。
 
@@ -363,7 +363,7 @@ SELECT countEqual([1, 2, NULL, NULL], NULL)
 
 ## arrayEnumerate(arr) {#array_functions-arrayenumerate}
 
-返回 Array \[1, 2, 3, …, length (arr) \]
+返回 Array \[1, 2, 3, ..., length (arr) \]
 
 此功能通常与ARRAY JOIN一起使用。它允许在应用ARRAY JOIN后为每个数组计算一次。例如：
 
@@ -403,7 +403,7 @@ WHERE (CounterID = 160656) AND notEmpty(GoalsReached)
 
 此功能也可用于高阶函数。例如，您可以使用它来获取与条件匹配的元素的数组索引。
 
-## arrayEnumerateUniq(arr, …) {#arrayenumerateuniqarr}
+## arrayEnumerateUniq(arr, ...) {#arrayenumerateuniqarr}
 
 返回与源数组大小相同的数组，其中每个元素表示与其下标对应的源数组元素在源数组中出现的次数。
 例如：arrayEnumerateUniq（ \[10,20,10,30 \]）=  \[1,1,2,1 \]。
@@ -621,7 +621,7 @@ SELECT arraySlice([1, 2, NULL, 4, 5], 2, 3) AS res
 
 设置为«NULL»的数组元素作为普通的数组元素值处理。
 
-## arraySort(\[func,\] arr, …) {#array_functions-reverse-sort}
+## arraySort(\[func,\] arr, ...) {#array_functions-reverse-sort}
 
 以升序对`arr`数组的元素进行排序。如果指定了`func`函数，则排序顺序由`func`函数的调用结果决定。如果`func`接受多个参数，那么`arraySort`函数也将解析与`func`函数参数相同数量的数组参数。更详细的示例在`arraySort`的末尾。
 
@@ -721,7 +721,7 @@ SELECT arraySort((x, y) -> -y, [0, 1, 2], [1, 2, 3]) as res;
 !!! 注意 "注意"
     为了提高排序效率， 使用了[施瓦茨变换](https://en.wikipedia.org/wiki/Schwartzian_transform)。
 
-## arrayReverseSort(\[func,\] arr, …) {#array_functions-reverse-sort}
+## arrayReverseSort(\[func,\] arr, ...) {#array_functions-reverse-sort}
 
 以降序对`arr`数组的元素进行排序。如果指定了`func`函数，则排序顺序由`func`函数的调用结果决定。如果`func`接受多个参数，那么`arrayReverseSort`函数也将解析与`func`函数参数相同数量的数组作为参数。更详细的示例在`arrayReverseSort`的末尾。
 
@@ -822,7 +822,7 @@ SELECT arrayReverseSort((x, y) -> -y, [4, 3, 5], [1, 2, 3]) AS res;
 └─────────┘
 ```
 
-## arrayUniq(arr, …) {#arrayuniqarr}
+## arrayUniq(arr, ...) {#arrayuniqarr}
 
 如果传递一个参数，则计算数组中不同元素的数量。
 如果传递了多个参数，则它计算多个数组中相应位置的不同元素元组的数量。
@@ -1221,7 +1221,7 @@ select arrayAUC([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1]);
 └───────────────────────────────────────────────┘
 ```
 
-## arrayMap(func, arr1, …) {#array-map}
+## arrayMap(func, arr1, ...) {#array-map}
 
 将从 `func` 函数的原始应用中获得的数组返回给 `arr` 数组中的每个元素。
 
@@ -1251,7 +1251,7 @@ SELECT arrayMap((x, y) -> (x, y), [1, 2, 3], [4, 5, 6]) AS res
 
 请注意，`arrayMap` 是一个[高阶函数](../../sql-reference/functions/index.md#higher-order-functions)。 您必须将 lambda 函数作为第一个参数传递给它，并且不能省略。
 
-## arrayFilter(func, arr1, …) {#array-filter}
+## arrayFilter(func, arr1, ...) {#array-filter}
 
 返回一个仅包含 `arr1` 中的元素的数组，其中 `func` 返回的值不是 0。
 
@@ -1284,7 +1284,7 @@ SELECT
 
 请注意，`arrayFilter`是一个[高阶函数](../../sql-reference/functions/index.md#higher-order-functions)。 您必须将 lambda 函数作为第一个参数传递给它，并且不能省略。
 
-## arrayFill(func, arr1, …) {#array-fill}
+## arrayFill(func, arr1, ...) {#array-fill}
 
 从第一个元素到最后一个元素扫描`arr1`，如果`func`返回0，则用`arr1[i - 1]`替换`arr1[i]`。`arr1`的第一个元素不会被替换。
 
@@ -1302,7 +1302,7 @@ SELECT arrayFill(x -> not isNull(x), [1, null, 3, 11, 12, null, null, 5, 6, 14, 
 
 请注意，`arrayFill` 是一个[高阶函数](../../sql-reference/functions/index.md#higher-order-functions)。 您必须将 lambda 函数作为第一个参数传递给它，并且不能省略。
 
-## arrayReverseFill(func, arr1, …) {#array-reverse-fill}
+## arrayReverseFill(func, arr1, ...) {#array-reverse-fill}
 
 从最后一个元素到第一个元素扫描`arr1`，如果`func`返回0，则用`arr1[i + 1]`替换`arr1[i]`。`arr1`的最后一个元素不会被替换。
 
@@ -1320,7 +1320,7 @@ SELECT arrayReverseFill(x -> not isNull(x), [1, null, 3, 11, 12, null, null, 5, 
 
 请注意，`arrayReverseFill`是一个[高阶函数](../../sql-reference/functions/index.md#higher-order-functions)。 您必须将 lambda 函数作为第一个参数传递给它，并且不能省略。
 
-## arraySplit(func, arr1, …) {#array-split}
+## arraySplit(func, arr1, ...) {#array-split}
 
 将 `arr1` 拆分为多个数组。当 `func` 返回 0 以外的值时，数组将在元素的左侧拆分。数组不会在第一个元素之前被拆分。
 
@@ -1338,7 +1338,7 @@ SELECT arraySplit((x, y) -> y, [1, 2, 3, 4, 5], [1, 0, 0, 1, 0]) AS res
 
 请注意，`arraySplit`是一个[高阶函数](../../sql-reference/functions/index.md#higher-order-functions)。 您必须将 lambda 函数作为第一个参数传递给它，并且不能省略。
 
-## arrayReverseSplit(func, arr1, …) {#array-reverse-split}
+## arrayReverseSplit(func, arr1, ...) {#array-reverse-split}
 
 将 `arr1` 拆分为多个数组。当 `func` 返回 0 以外的值时，数组将在元素的右侧拆分。数组不会在最后一个元素之后被拆分。
 
@@ -1356,37 +1356,37 @@ SELECT arrayReverseSplit((x, y) -> y, [1, 2, 3, 4, 5], [1, 0, 0, 1, 0]) AS res
 
 请注意，`arrayReverseSplit`是一个[高阶函数](../../sql-reference/functions/index.md#higher-order-functions)。 您必须将 lambda 函数作为第一个参数传递给它，并且不能省略。
 
-## arrayExists(\[func,\] arr1, …) {#arrayexistsfunc-arr1}
+## arrayExists(\[func,\] arr1, ...) {#arrayexistsfunc-arr1}
 
 如果 `arr` 中至少有一个元素 `func` 返回 0 以外的值，则返回 1。否则，它返回 0。
 
 请注意，`arrayExists`是一个[高阶函数](../../sql-reference/functions/index.md#higher-order-functions)。您可以将 lambda 函数作为第一个参数传递给它，并且不能省略。
 
-## arrayAll(\[func,\] arr1, …) {#arrayallfunc-arr1}
+## arrayAll(\[func,\] arr1, ...) {#arrayallfunc-arr1}
 
 如果 `func` 为 `arr` 中的所有元素返回 0 以外的值，则返回 1。否则，它返回 0。
 
 请注意，`arrayAll`是一个[高阶函数](../../sql-reference/functions/index.md#higher-order-functions)。您可以将 lambda 函数作为第一个参数传递给它，并且不能省略。
 
-## arrayFirst(func, arr1, …) {#array-first}
+## arrayFirst(func, arr1, ...) {#array-first}
 
 返回 `arr1` 数组中 `func` 返回非 0 的值的第一个元素。
 
 请注意，`arrayFirst`是一个[高阶函数](../../sql-reference/functions/index.md#higher-order-functions)。您必须将 lambda 函数作为第一个参数传递给它，并且不能省略。
 
-## arrayLast(func, arr1, …) {#array-last}
+## arrayLast(func, arr1, ...) {#array-last}
 
 返回 `arr1` 数组中的最后一个元素，其中 `func` 返回的值不是 0。
 
 请注意，`arrayLast`是一个[高阶函数](../../sql-reference/functions/index.md#higher-order-functions)。您必须将 lambda 函数作为第一个参数传递给它，并且不能省略。
 
-## arrayFirstIndex(func, arr1, …) {#array-first-index}
+## arrayFirstIndex(func, arr1, ...) {#array-first-index}
 
 返回 `arr1` 数组中第一个元素的索引，其中 `func` 返回的值不是 0。
 
 请注意，`arrayFirstIndex`是一个[高阶函数](../../sql-reference/functions/index.md#higher-order-functions)。您必须将 lambda 函数作为第一个参数传递给它，并且不能省略。
 
-## arrayLastIndex(func, arr1, …) {#array-last-index}
+## arrayLastIndex(func, arr1, ...) {#array-last-index}
 
 返回 `arr1` 数组中最后一个元素的索引，其中 `func` 返回的值不是 0。
 
@@ -1612,7 +1612,7 @@ SELECT arrayAvg(x -> (x * x), [2, 4]) AS res;
 └─────┘
 ```
 
-## arrayCumSum(\[func,\] arr1, …) {#arraycumsumfunc-arr1}
+## arrayCumSum(\[func,\] arr1, ...) {#arraycumsumfunc-arr1}
 
 返回源数组中元素的部分和的数组（运行总和）。如果指定了 func 函数，则数组元素的值在求和之前由该函数转换。
 

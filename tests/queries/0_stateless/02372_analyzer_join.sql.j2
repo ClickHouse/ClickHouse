@@ -62,9 +62,9 @@ SELECT '--';
 SELECT t1.value, t2.value
 FROM test_table_join_1 AS t1 {{ join_type }} JOIN test_table_join_2 AS t2 ON t1.id = t2.id;
 
-SELECT id FROM test_table_join_1 {{ join_type }} JOIN test_table_join_2 ON test_table_join_1.id = test_table_join_2.id; -- { serverError 207 }
+SELECT id FROM test_table_join_1 {{ join_type }} JOIN test_table_join_2 ON test_table_join_1.id = test_table_join_2.id; -- { serverError AMBIGUOUS_IDENTIFIER }
 
-SELECT value FROM test_table_join_1 {{ join_type }} JOIN test_table_join_2 ON test_table_join_1.id = test_table_join_2.id; -- { serverError 207 }
+SELECT value FROM test_table_join_1 {{ join_type }} JOIN test_table_join_2 ON test_table_join_1.id = test_table_join_2.id; -- { serverError AMBIGUOUS_IDENTIFIER }
 
 SELECT 'JOIN ON with conditions';
 

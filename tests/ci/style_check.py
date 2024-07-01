@@ -11,8 +11,9 @@ from pathlib import Path
 from typing import List, Tuple, Union
 
 import magic
+
 from docker_images_helper import get_docker_image, pull_image
-from env_helper import CI, REPO_COPY, TEMP_PATH
+from env_helper import IS_CI, REPO_COPY, TEMP_PATH, GITHUB_EVENT_PATH
 from git_helper import GIT_PREFIX, git_runner
 from pr_info import PRInfo
 from report import ERROR, FAILURE, SUCCESS, JobReport, TestResults, read_test_results
@@ -121,12 +122,12 @@ def _check_mime(file: Union[Path, str], mime: str) -> bool:
 
 def is_python(file: Union[Path, str]) -> bool:
     """returns if the changed file in the repository is python script"""
-    return _check_mime(file, "text/x-script.python")
+    return _check_mime(file, "text/x-script.python") or str(file).endswith(".py")
 
 
 def is_shell(file: Union[Path, str]) -> bool:
     """returns if the changed file in the repository is shell script"""
-    return _check_mime(file, "text/x-shellscript")
+    return _check_mime(file, "text/x-shellscript") or str(file).endswith(".sh")
 
 
 def main():
@@ -151,7 +152,7 @@ def main():
     run_cpp_check = True
     run_shell_check = True
     run_python_check = True
-    if CI and pr_info.number > 0:
+    if IS_CI and pr_info.number > 0:
         pr_info.fetch_changed_files()
         run_cpp_check = any(
             not (is_python(file) or is_shell(file)) for file in pr_info.changed_files
@@ -215,7 +216,8 @@ def main():
         status=state,
         start_time=stopwatch.start_time_str,
         duration=stopwatch.duration_seconds,
-        additional_files=additional_files,
+        # add GITHUB_EVENT_PATH json file to have it in style check report. sometimes it's needed for debugging.
+        additional_files=additional_files + [Path(GITHUB_EVENT_PATH)],
     ).dump()
 
     if state in [ERROR, FAILURE]:

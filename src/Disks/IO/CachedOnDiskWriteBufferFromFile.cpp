@@ -41,7 +41,7 @@ FileSegmentRangeWriter::FileSegmentRangeWriter(
 {
 }
 
-bool FileSegmentRangeWriter::write(const char * data, size_t size, size_t offset, FileSegmentKind segment_kind)
+bool FileSegmentRangeWriter::write(char * data, size_t size, size_t offset, FileSegmentKind segment_kind)
 {
     if (finalized)
         return false;

@@ -219,7 +219,7 @@ namespace
 
     void throwIfNotGrantable(AccessRightsElements & elements)
     {
-        boost::range::remove_erase_if(elements, [](AccessRightsElement & element)
+        std::erase_if(elements, [](AccessRightsElement & element)
         {
             if (element.empty())
                 return true;

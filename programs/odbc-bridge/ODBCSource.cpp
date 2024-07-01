@@ -119,8 +119,7 @@ void ODBCSource::insertValue(
             time_t time = 0;
             const DataTypeDateTime & datetime_type = assert_cast<const DataTypeDateTime &>(*data_type);
             readDateTimeText(time, in, datetime_type.getTimeZone());
-            if (time < 0)
-                time = 0;
+            time = std::max<time_t>(time, 0);
             column.insert(static_cast<UInt32>(time));
             break;
         }

@@ -18,7 +18,7 @@ from collections import defaultdict
 from itertools import chain
 from typing import Any, Dict
 
-from env_helper import CI
+from env_helper import IS_CI
 from integration_test_images import IMAGES
 
 MAX_RETRY = 1
@@ -265,7 +265,9 @@ class ClickhouseIntegrationTestsRunner:
         self.start_time = time.time()
         self.soft_deadline_time = self.start_time + (TASK_TIMEOUT - MAX_TIME_IN_SANDBOX)
 
-        self.use_analyzer = os.environ.get("CLICKHOUSE_USE_OLD_ANALYZER") is not None
+        self.use_old_analyzer = (
+            os.environ.get("CLICKHOUSE_USE_OLD_ANALYZER") is not None
+        )
 
         if "run_by_hash_total" in self.params:
             self.run_by_hash_total = self.params["run_by_hash_total"]
@@ -414,8 +416,8 @@ class ClickhouseIntegrationTestsRunner:
             result.append("--tmpfs")
         if self.disable_net_host:
             result.append("--disable-net-host")
-        if self.use_analyzer:
-            result.append("--analyzer")
+        if self.use_old_analyzer:
+            result.append("--old-analyzer")
 
         return " ".join(result)
 
@@ -1002,7 +1004,7 @@ def run():
 
     logging.info("Running tests")
 
-    if CI:
+    if IS_CI:
         # Avoid overlaps with previous runs
         logging.info("Clearing dmesg before run")
         subprocess.check_call("sudo -E dmesg --clear", shell=True)
@@ -1010,7 +1012,7 @@ def run():
     state, description, test_results, _ = runner.run_impl(repo_path, build_path)
     logging.info("Tests finished")
 
-    if CI:
+    if IS_CI:
         # Dump dmesg (to capture possible OOMs)
         logging.info("Dumping dmesg")
         subprocess.check_call("sudo -E dmesg -T", shell=True)

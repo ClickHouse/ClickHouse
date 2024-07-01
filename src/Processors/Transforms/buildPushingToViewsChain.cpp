@@ -6,7 +6,8 @@
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Processors/Transforms/CountingTransform.h>
-#include <Processors/Transforms/SquashingChunksTransform.h>
+#include <Processors/Transforms/PlanSquashingTransform.h>
+#include <Processors/Transforms/SquashingTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Storages/LiveView/StorageLiveView.h>
@@ -361,14 +362,17 @@ std::optional<Chain> generateViewChain(
         }
 
         InterpreterInsertQuery interpreter(nullptr, insert_context, false, false, false);
-        out = interpreter.buildChain(inner_table, inner_metadata_snapshot, insert_columns, thread_status_holder, view_counter_ms, !materialized_view->hasInnerTable());
+
+        /// TODO: remove sql_security_type check after we turn `ignore_empty_sql_security_in_create_view_query=false`
+        bool check_access = !materialized_view->hasInnerTable() && materialized_view->getInMemoryMetadataPtr()->sql_security_type;
+        out = interpreter.buildChain(inner_table, inner_metadata_snapshot, insert_columns, thread_status_holder, view_counter_ms, check_access);
 
         if (interpreter.shouldAddSquashingFroStorage(inner_table))
         {
             bool table_prefers_large_blocks = inner_table->prefersLargeBlocks();
             const auto & settings = insert_context->getSettingsRef();
 
-            out.addSource(std::make_shared<SquashingChunksTransform>(
+            out.addSource(std::make_shared<SquashingTransform>(
                 out.getInputHeader(),
                 table_prefers_large_blocks ? settings.min_insert_block_size_rows : settings.max_block_size,
                 table_prefers_large_blocks ? settings.min_insert_block_size_bytes : 0ULL));
@@ -411,7 +415,8 @@ std::optional<Chain> generateViewChain(
         out.getInputHeader(),
         view_id,
         nullptr,
-        std::move(runtime_stats)});
+        std::move(runtime_stats),
+        insert_context});
 
     if (type == QueryViewsLogElement::ViewType::MATERIALIZED)
     {
@@ -587,7 +592,7 @@ Chain buildPushingToViewsChain(
 
 static QueryPipeline process(Block block, ViewRuntimeData & view, const ViewsData & views_data)
 {
-    const auto & context = views_data.context;
+    const auto & context = view.context;
 
     /// We create a table with the same name as original table and the same alias columns,
     ///  but it will contain single block (that is INSERT-ed into main table).
@@ -618,7 +623,7 @@ static QueryPipeline process(Block block, ViewRuntimeData & view, const ViewsDat
     /// Squashing is needed here because the materialized view query can generate a lot of blocks
     /// even when only one block is inserted into the parent table (e.g. if the query is a GROUP BY
     /// and two-level aggregation is triggered).
-    pipeline.addTransform(std::make_shared<SquashingChunksTransform>(
+    pipeline.addTransform(std::make_shared<SquashingTransform>(
         pipeline.getHeader(),
         context->getSettingsRef().min_insert_block_size_rows,
         context->getSettingsRef().min_insert_block_size_bytes));
@@ -894,8 +899,6 @@ static std::exception_ptr addStorageToException(std::exception_ptr ptr, const St
     {
         return std::current_exception();
     }
-
-    UNREACHABLE();
 }
 
 void FinalizingViewsTransform::work()

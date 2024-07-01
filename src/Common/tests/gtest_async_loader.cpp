@@ -35,6 +35,7 @@ namespace DB::ErrorCodes
     extern const int ASYNC_LOAD_CYCLE;
     extern const int ASYNC_LOAD_FAILED;
     extern const int ASYNC_LOAD_CANCELED;
+    extern const int ASYNC_LOAD_WAIT_FAILED;
 }
 
 struct Initializer {
@@ -262,7 +263,8 @@ TEST(AsyncLoader, CancelPendingJob)
     }
     catch (Exception & e)
     {
-        ASSERT_EQ(e.code(), ErrorCodes::ASYNC_LOAD_CANCELED);
+        ASSERT_EQ(e.code(), ErrorCodes::ASYNC_LOAD_WAIT_FAILED);
+        ASSERT_TRUE(e.message().contains("ASYNC_LOAD_CANCELED"));
     }
 }
 
@@ -288,7 +290,8 @@ TEST(AsyncLoader, CancelPendingTask)
     }
     catch (Exception & e)
     {
-        ASSERT_TRUE(e.code() == ErrorCodes::ASYNC_LOAD_CANCELED);
+        ASSERT_EQ(e.code(), ErrorCodes::ASYNC_LOAD_WAIT_FAILED);
+        ASSERT_TRUE(e.message().contains("ASYNC_LOAD_CANCELED"));
     }
 
     try
@@ -298,7 +301,8 @@ TEST(AsyncLoader, CancelPendingTask)
     }
     catch (Exception & e)
     {
-        ASSERT_TRUE(e.code() == ErrorCodes::ASYNC_LOAD_CANCELED);
+        ASSERT_EQ(e.code(), ErrorCodes::ASYNC_LOAD_WAIT_FAILED);
+        ASSERT_TRUE(e.message().contains("ASYNC_LOAD_CANCELED"));
     }
 }
 
@@ -325,7 +329,8 @@ TEST(AsyncLoader, CancelPendingDependency)
     }
     catch (Exception & e)
     {
-        ASSERT_TRUE(e.code() == ErrorCodes::ASYNC_LOAD_CANCELED);
+        ASSERT_EQ(e.code(), ErrorCodes::ASYNC_LOAD_WAIT_FAILED);
+        ASSERT_TRUE(e.message().contains("ASYNC_LOAD_CANCELED"));
     }
 
     try
@@ -335,7 +340,8 @@ TEST(AsyncLoader, CancelPendingDependency)
     }
     catch (Exception & e)
     {
-        ASSERT_TRUE(e.code() == ErrorCodes::ASYNC_LOAD_CANCELED);
+        ASSERT_EQ(e.code(), ErrorCodes::ASYNC_LOAD_WAIT_FAILED);
+        ASSERT_TRUE(e.message().contains("ASYNC_LOAD_CANCELED"));
     }
 }
 
@@ -451,8 +457,9 @@ TEST(AsyncLoader, JobFailure)
     }
     catch (Exception & e)
     {
-        ASSERT_EQ(e.code(), ErrorCodes::ASYNC_LOAD_FAILED);
-        ASSERT_TRUE(e.message().find(error_message) != String::npos);
+        ASSERT_EQ(e.code(), ErrorCodes::ASYNC_LOAD_WAIT_FAILED);
+        ASSERT_TRUE(e.message().contains(error_message));
+        ASSERT_TRUE(e.message().contains("ASYNC_LOAD_FAILED"));
     }
 }
 
@@ -489,8 +496,9 @@ TEST(AsyncLoader, ScheduleJobWithFailedDependencies)
     }
     catch (Exception & e)
     {
-        ASSERT_EQ(e.code(), ErrorCodes::ASYNC_LOAD_CANCELED);
-        ASSERT_TRUE(e.message().find(error_message) != String::npos);
+        ASSERT_EQ(e.code(), ErrorCodes::ASYNC_LOAD_WAIT_FAILED);
+        ASSERT_TRUE(e.message().contains("ASYNC_LOAD_CANCELED"));
+        ASSERT_TRUE(e.message().contains(error_message));
     }
     try
     {
@@ -499,8 +507,9 @@ TEST(AsyncLoader, ScheduleJobWithFailedDependencies)
     }
     catch (Exception & e)
     {
-        ASSERT_EQ(e.code(), ErrorCodes::ASYNC_LOAD_CANCELED);
-        ASSERT_TRUE(e.message().find(error_message) != String::npos);
+        ASSERT_EQ(e.code(), ErrorCodes::ASYNC_LOAD_WAIT_FAILED);
+        ASSERT_TRUE(e.message().contains("ASYNC_LOAD_CANCELED"));
+        ASSERT_TRUE(e.message().contains(error_message));
     }
 }
 
@@ -531,7 +540,8 @@ TEST(AsyncLoader, ScheduleJobWithCanceledDependencies)
     }
     catch (Exception & e)
     {
-        ASSERT_EQ(e.code(), ErrorCodes::ASYNC_LOAD_CANCELED);
+        ASSERT_EQ(e.code(), ErrorCodes::ASYNC_LOAD_WAIT_FAILED);
+        ASSERT_TRUE(e.message().contains("ASYNC_LOAD_CANCELED"));
     }
     try
     {
@@ -540,7 +550,8 @@ TEST(AsyncLoader, ScheduleJobWithCanceledDependencies)
     }
     catch (Exception & e)
     {
-        ASSERT_EQ(e.code(), ErrorCodes::ASYNC_LOAD_CANCELED);
+        ASSERT_EQ(e.code(), ErrorCodes::ASYNC_LOAD_WAIT_FAILED);
+        ASSERT_TRUE(e.message().contains("ASYNC_LOAD_CANCELED"));
     }
 }
 

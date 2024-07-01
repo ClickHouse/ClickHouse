@@ -18,7 +18,7 @@ namespace ErrorCodes
 }
 
 
-enum class LeastGreatest
+enum class LeastGreatest : uint8_t
 {
     Least,
     Greatest
@@ -111,7 +111,7 @@ public:
             argument_types.push_back(argument.type);
 
         /// More efficient specialization for two numeric arguments.
-        if (arguments.size() == 2 && isNumber(arguments[0].type) && isNumber(arguments[1].type))
+        if (arguments.size() == 2 && isNumber(removeNullable(arguments[0].type)) && isNumber(removeNullable(arguments[1].type)))
             return std::make_unique<FunctionToFunctionBaseAdaptor>(SpecializedFunction::create(context), argument_types, return_type);
 
         return std::make_unique<FunctionToFunctionBaseAdaptor>(
@@ -123,7 +123,7 @@ public:
         if (types.empty())
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} cannot be called without arguments", getName());
 
-        if (types.size() == 2 && isNumber(types[0]) && isNumber(types[1]))
+        if (types.size() == 2 && isNumber(removeNullable(types[0])) && isNumber(removeNullable(types[1])))
             return SpecializedFunction::create(context)->getReturnTypeImpl(types);
 
         return getLeastSupertype(types);
@@ -134,5 +134,3 @@ private:
 };
 
 }
-
-

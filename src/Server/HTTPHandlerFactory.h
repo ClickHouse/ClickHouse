@@ -5,7 +5,7 @@
 #include <Server/HTTP/HTTPRequestHandlerFactory.h>
 #include <Server/HTTPHandlerRequestFilter.h>
 #include <Server/HTTPRequestHandlerFactoryMain.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Server/PrometheusMetricsWriter.h>
 
 #include <Poco/Util/AbstractConfiguration.h>

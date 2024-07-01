@@ -15,7 +15,7 @@ namespace DB
   * Deleting -> Outdated:         if an ZooKeeper error occurred during the deletion, we will retry deletion
   * Active -> DeleteOnDestroy:    if part was moved to another disk
   */
-enum class MergeTreeDataPartState
+enum class MergeTreeDataPartState : uint8_t
 {
     Temporary,       /// the part is generating now, it is not in data_parts list
     PreActive,       /// the part is in data_parts, but not used for SELECTs

@@ -1,12 +1,14 @@
 #pragma once
 
 #include <boost/circular_buffer.hpp>
+#include <fmt/ostream.h>
 
 #include <Core/Names.h>
 #include <base/types.h>
 #include <IO/ReadBuffer.h>
 
 #include <cppkafka/cppkafka.h>
+#include <cppkafka/topic_partition.h>
 #include <Common/CurrentMetrics.h>
 
 namespace CurrentMetrics
@@ -82,17 +84,17 @@ public:
 
     auto pollTimeout() const { return poll_timeout; }
 
-    inline bool hasMorePolledMessages() const
+    bool hasMorePolledMessages() const
     {
         return (stalled_status == NOT_STALLED) && (current != messages.end());
     }
 
-    inline bool polledDataUnusable() const
+    bool polledDataUnusable() const
     {
         return  (stalled_status != NOT_STALLED) && (stalled_status != NO_MESSAGES_RETURNED);
     }
 
-    inline bool isStalled() const { return stalled_status != NOT_STALLED; }
+    bool isStalled() const { return stalled_status != NOT_STALLED; }
 
     void storeLastReadMessageOffset();
     void resetToLastCommitted(const char * msg);
@@ -197,3 +199,6 @@ private:
 };
 
 }
+
+template <> struct fmt::formatter<cppkafka::TopicPartition> : fmt::ostream_formatter {};
+template <> struct fmt::formatter<cppkafka::Error> : fmt::ostream_formatter {};

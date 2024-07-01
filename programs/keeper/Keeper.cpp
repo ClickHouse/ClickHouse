@@ -182,6 +182,11 @@ std::string Keeper::getDefaultConfigFileName() const
     return "keeper_config.xml";
 }
 
+bool Keeper::allowTextLog() const
+{
+    return false;
+}
+
 void Keeper::handleCustomArguments(const std::string & arg, [[maybe_unused]] const std::string & value) // NOLINT
 {
     if (arg == "force-recovery")
@@ -247,11 +252,6 @@ struct KeeperHTTPContext : public IHTTPContext
     uint64_t getMaxFieldValueSize() const override
     {
         return context->getConfigRef().getUInt64("keeper_server.http_max_field_value_size", 128 * 1024);
-    }
-
-    uint64_t getMaxChunkSize() const override
-    {
-        return context->getConfigRef().getUInt64("keeper_server.http_max_chunk_size", 100_GiB);
     }
 
     Poco::Timespan getReceiveTimeout() const override
@@ -355,15 +355,13 @@ try
 
     std::string include_from_path = config().getString("include_from", "/etc/metrika.xml");
 
-    if (config().has(DB::PlacementInfo::PLACEMENT_CONFIG_PREFIX))
-    {
-        PlacementInfo::PlacementInfo::instance().initialize(config());
-    }
+    PlacementInfo::PlacementInfo::instance().initialize(config());
 
     GlobalThreadPool::initialize(
-        config().getUInt("max_thread_pool_size", 100),
-        config().getUInt("max_thread_pool_free_size", 1000),
-        config().getUInt("thread_pool_queue_size", 10000)
+        /// We need to have sufficient amount of threads for connections + nuraft workers + keeper workers, 1000 is an estimation
+        std::min(1000U, config().getUInt("max_thread_pool_size", 1000)),
+        config().getUInt("max_thread_pool_free_size", 100),
+        config().getUInt("thread_pool_queue_size", 1000)
     );
     /// Wait for all threads to avoid possible use-after-free (for example logging objects can be already destroyed).
     SCOPE_EXIT({
@@ -576,8 +574,7 @@ try
 #if USE_SSL
             CertificateReloader::instance().tryLoad(*config);
 #endif
-        },
-        /* already_loaded = */ false);  /// Reload it right now (initial loading)
+        });
 
     SCOPE_EXIT({
         LOG_INFO(log, "Shutting down.");

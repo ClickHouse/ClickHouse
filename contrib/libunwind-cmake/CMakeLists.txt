@@ -31,7 +31,9 @@ add_library(unwind ${LIBUNWIND_SOURCES})
 set_target_properties(unwind PROPERTIES FOLDER "contrib/libunwind-cmake")
 
 target_include_directories(unwind SYSTEM BEFORE PUBLIC $<BUILD_INTERFACE:${LIBUNWIND_SOURCE_DIR}/include>)
-target_compile_definitions(unwind PRIVATE -D_LIBUNWIND_NO_HEAP=1 -D_DEBUG -D_LIBUNWIND_IS_NATIVE_ONLY)
+target_compile_definitions(unwind PRIVATE -D_LIBUNWIND_NO_HEAP=1)
+# NOTE: from this macros sizeof(unw_context_t)/sizeof(unw_cursor_t) is depends, so it should be set always
+target_compile_definitions(unwind PUBLIC -D_LIBUNWIND_IS_NATIVE_ONLY)
 
 # We should enable optimizations (otherwise it will be too slow in debug)
 # and disable sanitizers (otherwise infinite loop may happen)

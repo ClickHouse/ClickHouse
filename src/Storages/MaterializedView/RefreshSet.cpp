@@ -116,7 +116,7 @@ RefreshSet::InfoContainer RefreshSet::getInfo() const
     lock.unlock();
 
     InfoContainer res;
-    for (auto [id, task] : tasks_copy)
+    for (const auto & [id, task] : tasks_copy)
         res.push_back(task->getInfo());
     return res;
 }

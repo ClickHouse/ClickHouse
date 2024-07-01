@@ -88,6 +88,7 @@ public:
         , total_tables(tables->size()), access(context->getAccess())
         , query_id(context->getCurrentQueryId()), lock_acquire_timeout(context->getSettingsRef().lock_acquire_timeout)
     {
+        need_to_check_access_for_tables = !access->isGranted(AccessType::SHOW_COLUMNS);
     }
 
     String getName() const override { return "Columns"; }
@@ -100,8 +101,6 @@ protected:
 
         MutableColumns res_columns = getPort().getHeader().cloneEmptyColumns();
         size_t rows_count = 0;
-
-        const bool check_access_for_tables = !access->isGranted(AccessType::SHOW_COLUMNS);
 
         while (rows_count < max_block_size && db_table_num < total_tables)
         {
@@ -138,13 +137,17 @@ protected:
                 column_sizes = storage->getColumnSizes();
             }
 
-            bool check_access_for_columns = check_access_for_tables && !access->isGranted(AccessType::SHOW_COLUMNS, database_name, table_name);
+            /// A shortcut: if we don't allow to list this table in SHOW TABLES, also exclude it from system.columns.
+            if (need_to_check_access_for_tables && !access->isGranted(AccessType::SHOW_TABLES, database_name, table_name))
+                continue;
+
+            bool need_to_check_access_for_columns = need_to_check_access_for_tables && !access->isGranted(AccessType::SHOW_COLUMNS, database_name, table_name);
 
             size_t position = 0;
             for (const auto & column : columns)
             {
                 ++position;
-                if (check_access_for_columns && !access->isGranted(AccessType::SHOW_COLUMNS, database_name, table_name, column.name))
+                if (need_to_check_access_for_columns && !access->isGranted(AccessType::SHOW_COLUMNS, database_name, table_name, column.name))
                     continue;
 
                 size_t src_index = 0;
@@ -295,7 +298,8 @@ private:
     ClientInfo::Interface client_info_interface;
     size_t db_table_num = 0;
     size_t total_tables;
-    std::shared_ptr<const ContextAccess> access;
+    std::shared_ptr<const ContextAccessWrapper> access;
+    bool need_to_check_access_for_tables;
     String query_id;
     std::chrono::milliseconds lock_acquire_timeout;
 };
@@ -338,7 +342,8 @@ private:
 
 void ReadFromSystemColumns::applyFilters(ActionDAGNodes added_filter_nodes)
 {
-    filter_actions_dag = ActionsDAG::buildFilterActionsDAG(added_filter_nodes.nodes);
+    SourceStepWithFilter::applyFilters(std::move(added_filter_nodes));
+
     if (filter_actions_dag)
         predicate = filter_actions_dag->getOutputs().at(0);
 }
@@ -357,7 +362,6 @@ void StorageSystemColumns::read(
     Block sample_block = storage_snapshot->metadata->getSampleBlock();
 
     auto [columns_mask, header] = getQueriedColumnsMaskAndHeader(sample_block, column_names);
-
 
     auto this_ptr = std::static_pointer_cast<StorageSystemColumns>(shared_from_this());
 
@@ -416,9 +420,10 @@ void ReadFromSystemColumns::initializePipeline(QueryPipelineBuilder & pipeline, 
 
         /// Add `table` column.
         MutableColumnPtr table_column_mut = ColumnString::create();
-        IColumn::Offsets offsets(database_column->size());
+        const auto num_databases = database_column->size();
+        IColumn::Offsets offsets(num_databases);
 
-        for (size_t i = 0; i < database_column->size(); ++i)
+        for (size_t i = 0; i < num_databases; ++i)
         {
             const std::string database_name = (*database_column)[i].get<std::string>();
             if (database_name.empty())

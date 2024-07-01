@@ -1,0 +1,12 @@
+<clickhouse>
+  <named_collections_storage>
+    <type>zookeeper</type>
+    <path>/named_collections_path/</path>
+    <update_timeout_ms>5000</update_timeout_ms>
+  </named_collections_storage>
+  <named_collections>
+    <collection1>
+      <key1>value1</key1>
+    </collection1>
+  </named_collections>
+</clickhouse>

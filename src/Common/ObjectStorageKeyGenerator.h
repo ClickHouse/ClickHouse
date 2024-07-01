@@ -1,7 +1,7 @@
 #pragma once
 
-#include "ObjectStorageKey.h"
 #include <memory>
+#include "ObjectStorageKey.h"
 
 namespace DB
 {
@@ -9,8 +9,9 @@ namespace DB
 class IObjectStorageKeysGenerator
 {
 public:
-    virtual ObjectStorageKey generate(const String & path) const = 0;
     virtual ~IObjectStorageKeysGenerator() = default;
+
+    virtual ObjectStorageKey generate(const String & path, bool is_directory) const = 0;
 };
 
 using ObjectStorageKeysGeneratorPtr = std::shared_ptr<IObjectStorageKeysGenerator>;

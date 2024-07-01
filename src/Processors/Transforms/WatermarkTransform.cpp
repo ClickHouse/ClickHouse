@@ -38,8 +38,7 @@ void WatermarkTransform::transform(Chunk & chunk)
     const ColumnUInt32::Container & window_end_data = static_cast<const ColumnUInt32 &>(*window_column).getData();
     for (const auto & ts : window_end_data)
     {
-        if (ts > max_watermark)
-            max_watermark = ts;
+        max_watermark = std::max(ts, max_watermark);
         if (lateness_upper_bound && ts <= lateness_upper_bound)
             late_signals.insert(ts);
     }

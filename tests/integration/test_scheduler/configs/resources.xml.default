@@ -1,0 +1,76 @@
+<clickhouse>
+    <resources>
+        <network_read>
+            <node path="/">                         <type>inflight_limit</type><max_cost>1000000</max_cost></node>
+            <node path="/prio">                     <type>priority</type></node>
+            <node path="/prio/admin">               <type>fifo</type><priority>0</priority></node>
+            <node path="/prio/fair">                <type>fair</type><priority>1</priority></node>
+            <node path="/prio/fair/prod">           <type>fifo</type><weight>9</weight></node>
+            <node path="/prio/fair/dev">            <type>fifo</type><weight>1</weight></node>
+            <node path="/prio/fair/sys">            <type>fair</type><weight>90</weight></node>
+            <node path="/prio/fair/sys/merges">     <type>fifo</type></node>
+            <node path="/prio/fair/sys/mutations">  <type>fifo</type></node>
+            <node path="/prio/fair/prod_merges">    <type>fifo</type><weight>9</weight></node>
+            <node path="/prio/fair/prod_mutations"> <type>fifo</type><weight>9</weight></node>
+            <node path="/prio/fair/dev_merges">     <type>fifo</type><weight>9</weight></node>
+            <node path="/prio/fair/dev_mutations">  <type>fifo</type><weight>9</weight></node>
+        </network_read>
+        <network_write>
+            <node path="/">                         <type>inflight_limit</type><max_cost>1000000</max_cost></node>
+            <node path="/prio">                     <type>priority</type></node>
+            <node path="/prio/admin">               <type>fifo</type><priority>0</priority></node>
+            <node path="/prio/fair">                <type>fair</type><priority>1</priority></node>
+            <node path="/prio/fair/prod">           <type>fifo</type><weight>9</weight></node>
+            <node path="/prio/fair/dev">            <type>fifo</type><weight>1</weight></node>
+            <node path="/prio/fair/sys">            <type>fair</type><weight>90</weight></node>
+            <node path="/prio/fair/sys/merges">     <type>fifo</type></node>
+            <node path="/prio/fair/sys/mutations">  <type>fifo</type></node>
+            <node path="/prio/fair/prod_merges">    <type>fifo</type><weight>9</weight></node>
+            <node path="/prio/fair/prod_mutations"> <type>fifo</type><weight>9</weight></node>
+            <node path="/prio/fair/dev_merges">     <type>fifo</type><weight>9</weight></node>
+            <node path="/prio/fair/dev_mutations">  <type>fifo</type><weight>9</weight></node>
+        </network_write>
+    </resources>
+    <workload_classifiers>
+        <admin>
+            <network_read>/prio/admin</network_read>
+            <network_write>/prio/admin</network_write>
+        </admin>
+        <production>
+            <network_read>/prio/fair/prod</network_read>
+            <network_write>/prio/fair/prod</network_write>
+        </production>
+        <development>
+            <network_read>/prio/fair/dev</network_read>
+            <network_write>/prio/fair/dev</network_write>
+        </development>
+        <default>
+            <network_read>/prio/fair/dev</network_read>
+            <network_write>/prio/fair/dev</network_write>
+        </default>
+        <sys_merges>
+            <network_read>/prio/fair/sys/merges</network_read>
+            <network_write>/prio/fair/sys/merges</network_write>
+        </sys_merges>
+        <sys_mutations>
+            <network_read>/prio/fair/sys/mutations</network_read>
+            <network_write>/prio/fair/sys/mutations</network_write>
+        </sys_mutations>
+        <prod_merges>
+            <network_read>/prio/fair/prod_merges</network_read>
+            <network_write>/prio/fair/prod_merges</network_write>
+        </prod_merges>
+        <prod_mutations>
+            <network_read>/prio/fair/prod_mutations</network_read>
+            <network_write>/prio/fair/prod_mutations</network_write>
+        </prod_mutations>
+        <dev_merges>
+            <network_read>/prio/fair/dev_merges</network_read>
+            <network_write>/prio/fair/dev_merges</network_write>
+        </dev_merges>
+        <dev_mutations>
+            <network_read>/prio/fair/dev_mutations</network_read>
+            <network_write>/prio/fair/dev_mutations</network_write>
+        </dev_mutations>
+    </workload_classifiers>
+</clickhouse>
