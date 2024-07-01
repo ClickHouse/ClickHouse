@@ -260,6 +260,10 @@ public:
             if (is_local)
                 return check_auth(storage.session_and_auth[session_id]);
 
+            /// we want to close the session and with that we will remove all the auth related to the session
+            if (closed_sessions.contains(session_id))
+                return false;
+
             if (check_auth(storage.session_and_auth[session_id]))
                 return true;
 
