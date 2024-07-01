@@ -180,7 +180,7 @@ AzureClientPtr StorageAzureConfiguration::createClient(bool is_read_only, bool a
         }
 
         std::unique_ptr<BlobServiceClient> blob_service_client;
-        size_t pos = configuration.connection_url.find('?');
+        size_t pos = connection_url.find('?');
         std::shared_ptr<Azure::Identity::ManagedIdentityCredential> managed_identity_credential;
         if (storage_shared_key_credential)
         {
@@ -192,12 +192,12 @@ AzureClientPtr StorageAzureConfiguration::createClient(bool is_read_only, bool a
             if (pos == std::string::npos)
             {
                 auto workload_identity_credential = std::make_shared<Azure::Identity::WorkloadIdentityCredential>();
-                blob_service_client = std::make_unique<BlobServiceClient>(configuration.connection_url, workload_identity_credential);
+                blob_service_client = std::make_unique<BlobServiceClient>(connection_url, workload_identity_credential);
             }
             else
             {
                 managed_identity_credential = std::make_shared<Azure::Identity::ManagedIdentityCredential>();
-                blob_service_client = std::make_unique<BlobServiceClient>(configuration.connection_url, managed_identity_credential);
+                blob_service_client = std::make_unique<BlobServiceClient>(connection_url, managed_identity_credential);
             }
         }
 
