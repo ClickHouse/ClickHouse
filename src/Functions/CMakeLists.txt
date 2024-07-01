@@ -34,9 +34,7 @@ list (APPEND PRIVATE_LIBS
 )
 
 if (TARGET ch_rust::blake3)
-    list (APPEND PUBLIC_LIBS
-        ch_rust::blake3
-    )
+    list (APPEND PUBLIC_LIBS ch_rust::blake3)
 endif()
 
 if (TARGET OpenSSL::Crypto)
@@ -91,6 +89,10 @@ if (TARGET ch_contrib::pocketfft)
     list (APPEND PRIVATE_LIBS ch_contrib::pocketfft)
 endif()
 
+if (TARGET ch_contrib::ggml)
+    list (APPEND PRIVATE_LIBS ch_contrib::ggml)
+endif()
+
 if (TARGET ch_contrib::crc32-vpmsum)
     list (APPEND PUBLIC_LIBS ch_contrib::crc32-vpmsum)
 endif()
@@ -114,6 +116,11 @@ endif()
 
 add_subdirectory(JSONPath)
 list (APPEND PRIVATE_LIBS clickhouse_functions_jsonpath)
+
+if (TARGET ch_contrib::ggml)
+    add_subdirectory(ggmlEvaluate)
+    list (APPEND OBJECT_LIBS $<TARGET_OBJECTS:clickhouse_functions_ggmlEvaluate>)
+endif()
 
 add_subdirectory(keyvaluepair)
 list (APPEND OBJECT_LIBS $<TARGET_OBJECTS:clickhouse_functions_extractkeyvaluepairs>)

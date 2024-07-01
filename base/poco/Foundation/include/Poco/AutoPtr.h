@@ -19,6 +19,7 @@
 
 
 #include <algorithm>
+#include <type_traits>
 #include "Poco/Exception.h"
 #include "Poco/Foundation.h"
 
@@ -256,39 +257,51 @@ public:
 
     bool operator==(const AutoPtr & ptr) const { return _ptr == ptr._ptr; }
 
-    bool operator==(const C * ptr) const { return _ptr == ptr; }
+    template <typename U>
+    std::enable_if_t<std::is_same_v<std::remove_const_t<U>, C *>,
+    bool> operator==(U ptr) const { return _ptr == ptr; }
 
-    bool operator==(C * ptr) const { return _ptr == ptr; }
+    // bool operator==(C * ptr) const { return _ptr == ptr; }
 
     bool operator!=(const AutoPtr & ptr) const { return _ptr != ptr._ptr; }
 
-    bool operator!=(const C * ptr) const { return _ptr != ptr; }
+    template <typename U>
+    std::enable_if_t<std::is_same_v<std::remove_const_t<U>, C *>,
+    bool> operator!=(U ptr) const { return _ptr != ptr; }
 
-    bool operator!=(C * ptr) const { return _ptr != ptr; }
+    // bool operator!=(C * ptr) const { return _ptr != ptr; }
 
     bool operator<(const AutoPtr & ptr) const { return _ptr < ptr._ptr; }
 
-    bool operator<(const C * ptr) const { return _ptr < ptr; }
+    template <typename U>
+    std::enable_if_t<std::is_same_v<std::remove_const_t<U>, C *>,
+    bool> operator<(U ptr) const { return _ptr < ptr; }
 
-    bool operator<(C * ptr) const { return _ptr < ptr; }
+    // bool operator<(C * ptr) const { return _ptr < ptr; }
 
     bool operator<=(const AutoPtr & ptr) const { return _ptr <= ptr._ptr; }
 
-    bool operator<=(const C * ptr) const { return _ptr <= ptr; }
+    template <typename U>
+    std::enable_if_t<std::is_same_v<std::remove_const_t<U>, C *>,
+    bool> operator<=(U ptr) const { return _ptr <= ptr; }
 
-    bool operator<=(C * ptr) const { return _ptr <= ptr; }
+    // bool operator<=(C * ptr) const { return _ptr <= ptr; }
 
     bool operator>(const AutoPtr & ptr) const { return _ptr > ptr._ptr; }
 
-    bool operator>(const C * ptr) const { return _ptr > ptr; }
+    template <typename U>
+    std::enable_if_t<std::is_same_v<std::remove_const_t<U>, C *>,
+    bool> operator>(U ptr) const { return _ptr > ptr; }
 
-    bool operator>(C * ptr) const { return _ptr > ptr; }
+    // bool operator>(C * ptr) const { return _ptr > ptr; }
 
     bool operator>=(const AutoPtr & ptr) const { return _ptr >= ptr._ptr; }
 
-    bool operator>=(const C * ptr) const { return _ptr >= ptr; }
+    template <typename U>
+    std::enable_if_t<std::is_same_v<std::remove_const_t<U>, C *>,
+    bool> operator>=(U ptr) const { return _ptr >= ptr; }
 
-    bool operator>=(C * ptr) const { return _ptr >= ptr; }
+    // bool operator>=(C * ptr) const { return _ptr >= ptr; }
 
 private:
     C * _ptr;
