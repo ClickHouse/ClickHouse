@@ -1,4 +1,5 @@
 #pragma once
+
 #include <DataTypes/Serializations/SerializationWrapper.h>
 
 namespace DB
@@ -13,10 +14,14 @@ class SerializationNamed final : public SerializationWrapper
 {
 private:
     String name;
-    SubstreamType substream_type;
+    bool escape_delimiter;
 
 public:
-    SerializationNamed(const SerializationPtr & nested_, const String & name_, SubstreamType substream_type_);
+    SerializationNamed(const SerializationPtr & nested_, const String & name_, bool escape_delimiter_ = true)
+        : SerializationWrapper(nested_)
+        , name(name_), escape_delimiter(escape_delimiter_)
+    {
+    }
 
     const String & getElementName() const { return name; }
 
@@ -36,8 +41,7 @@ public:
 
     void deserializeBinaryBulkStatePrefix(
         DeserializeBinaryBulkSettings & settings,
-        DeserializeBinaryBulkStatePtr & state,
-        SubstreamsDeserializeStatesCache * cache) const override;
+        DeserializeBinaryBulkStatePtr & state) const override;
 
     void serializeBinaryBulkWithMultipleStreams(
         const IColumn & column,
@@ -57,18 +61,16 @@ private:
     struct SubcolumnCreator : public ISubcolumnCreator
     {
         const String name;
-        SubstreamType substream_type;
+        const bool escape_delimiter;
 
-        SubcolumnCreator(const String & name_, SubstreamType substream_type_)
-            : name(name_), substream_type(substream_type_)
-        {
-        }
+        SubcolumnCreator(const String & name_, bool escape_delimiter_)
+            : name(name_), escape_delimiter(escape_delimiter_) {}
 
         DataTypePtr create(const DataTypePtr & prev) const override { return prev; }
         ColumnPtr create(const ColumnPtr & prev) const override { return prev; }
         SerializationPtr create(const SerializationPtr & prev) const override
         {
-            return std::make_shared<SerializationNamed>(prev, name, substream_type);
+            return std::make_shared<SerializationNamed>(prev, name, escape_delimiter);
         }
     };
 

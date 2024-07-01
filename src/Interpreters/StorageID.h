@@ -1,6 +1,7 @@
 #pragma once
 #include <base/types.h>
 #include <Core/UUID.h>
+#include <tuple>
 #include <Parsers/IAST_fwd.h>
 #include <Core/QualifiedTableName.h>
 #include <Common/Exception.h>
@@ -135,7 +136,7 @@ namespace fmt
         }
 
         template <typename FormatContext>
-        auto format(const DB::StorageID & storage_id, FormatContext & ctx) const
+        auto format(const DB::StorageID & storage_id, FormatContext & ctx)
         {
             return fmt::format_to(ctx.out(), "{}", storage_id.getNameForLogs());
         }

@@ -1,9 +1,9 @@
 ---
 tab	idx	bloom_filter
 ---
-Expression
-  Filter
-    ReadFromMergeTree
+Expression ((Projection + Before ORDER BY))
+  Filter (WHERE)
+    ReadFromMergeTree (default.tab)
     Indexes:
       Skip
         Name: idx

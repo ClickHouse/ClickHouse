@@ -23,7 +23,6 @@ namespace DB
 class Block;
 struct Settings;
 struct FormatFactorySettings;
-struct ReadSettings;
 
 class ReadBuffer;
 class WriteBuffer;
@@ -49,10 +48,10 @@ using RowOutputFormatPtr = std::shared_ptr<IRowOutputFormat>;
 template <typename Allocator>
 struct Memory;
 
-FormatSettings getFormatSettings(const ContextPtr & context);
+FormatSettings getFormatSettings(ContextPtr context);
 
 template <typename T>
-FormatSettings getFormatSettings(const ContextPtr & context, const T & settings);
+FormatSettings getFormatSettings(ContextPtr context, const T & settings);
 
 /** Allows to create an IInputFormat or IOutputFormat by the name of the format.
   * Note: format and compression are independent things.
@@ -71,9 +70,6 @@ public:
         DB::Memory<Allocator<false>> & memory,
         size_t min_bytes,
         size_t max_rows)>;
-
-    using FileSegmentationEngineCreator = std::function<FileSegmentationEngine(
-        const FormatSettings & settings)>;
 
 private:
     // On the input side, there are two kinds of formats:
@@ -133,11 +129,10 @@ private:
 
     struct Creators
     {
-        String name;
         InputCreator input_creator;
         RandomAccessInputCreator random_access_input_creator;
         OutputCreator output_creator;
-        FileSegmentationEngineCreator file_segmentation_engine_creator;
+        FileSegmentationEngine file_segmentation_engine;
         SchemaReaderCreator schema_reader_creator;
         ExternalSchemaReaderCreator external_schema_reader_creator;
         bool supports_parallel_formatting{false};
@@ -163,7 +158,7 @@ public:
         const String & name,
         ReadBuffer & buf,
         const Block & sample,
-        const ContextPtr & context,
+        ContextPtr context,
         UInt64 max_block_size,
         const std::optional<FormatSettings> & format_settings = std::nullopt,
         std::optional<size_t> max_parsing_threads = std::nullopt,
@@ -172,43 +167,40 @@ public:
         bool is_remote_fs = false,
         // allows to do: buf -> parallel read -> decompression,
         // because parallel read after decompression is not possible
-        CompressionMethod compression = CompressionMethod::None,
-        bool need_only_count = false) const;
+        CompressionMethod compression = CompressionMethod::None) const;
 
     /// Checks all preconditions. Returns ordinary format if parallel formatting cannot be done.
     OutputFormatPtr getOutputFormatParallelIfPossible(
         const String & name,
         WriteBuffer & buf,
         const Block & sample,
-        const ContextPtr & context,
+        ContextPtr context,
         const std::optional<FormatSettings> & format_settings = std::nullopt) const;
 
     OutputFormatPtr getOutputFormat(
         const String & name,
         WriteBuffer & buf,
         const Block & sample,
-        const ContextPtr & context,
+        ContextPtr context,
         const std::optional<FormatSettings> & _format_settings = std::nullopt) const;
 
     String getContentType(
         const String & name,
-        const ContextPtr & context,
+        ContextPtr context,
         const std::optional<FormatSettings> & format_settings = std::nullopt) const;
 
     SchemaReaderPtr getSchemaReader(
         const String & name,
         ReadBuffer & buf,
-        const ContextPtr & context,
+        ContextPtr & context,
         const std::optional<FormatSettings> & format_settings = std::nullopt) const;
 
     ExternalSchemaReaderPtr getExternalSchemaReader(
         const String & name,
-        const ContextPtr & context,
+        ContextPtr & context,
         const std::optional<FormatSettings> & format_settings = std::nullopt) const;
 
     void registerFileSegmentationEngine(const String & name, FileSegmentationEngine file_segmentation_engine);
-
-    void registerFileSegmentationEngineCreator(const String & name, FileSegmentationEngineCreator file_segmentation_engine_creator);
 
     void registerNonTrivialPrefixAndSuffixChecker(const String & name, NonTrivialPrefixAndSuffixChecker non_trivial_prefix_and_suffix_checker);
 
@@ -218,7 +210,7 @@ public:
     /// registerAppendSupportChecker with append_support_checker that always returns true.
     void markFormatHasNoAppendSupport(const String & name);
 
-    bool checkIfFormatSupportAppend(const String & name, const ContextPtr & context, const std::optional<FormatSettings> & format_settings_ = std::nullopt);
+    bool checkIfFormatSupportAppend(const String & name, ContextPtr context, const std::optional<FormatSettings> & format_settings_ = std::nullopt);
 
     /// Register format by its name.
     void registerInputFormat(const String & name, InputCreator input_creator);
@@ -227,10 +219,8 @@ public:
 
     /// Register file extension for format
     void registerFileExtension(const String & extension, const String & format_name);
-    String getFormatFromFileName(String file_name);
-    std::optional<String> tryGetFormatFromFileName(String file_name);
+    String getFormatFromFileName(String file_name, bool throw_if_not_found = false);
     String getFormatFromFileDescriptor(int fd);
-    std::optional<String> tryGetFormatFromFileDescriptor(int fd);
 
     /// Register schema readers for format its name.
     void registerSchemaReader(const String & name, SchemaReaderCreator schema_reader_creator);
@@ -248,31 +238,27 @@ public:
     bool checkIfFormatHasAnySchemaReader(const String & name) const;
     bool checkIfOutputFormatPrefersLargeBlocks(const String & name) const;
 
-    bool checkParallelizeOutputAfterReading(const String & name, const ContextPtr & context) const;
+    bool checkParallelizeOutputAfterReading(const String & name, ContextPtr context) const;
 
     void registerAdditionalInfoForSchemaCacheGetter(const String & name, AdditionalInfoForSchemaCacheGetter additional_info_for_schema_cache_getter);
-    String getAdditionalInfoForSchemaCache(const String & name, const ContextPtr & context, const std::optional<FormatSettings> & format_settings_ = std::nullopt);
+    String getAdditionalInfoForSchemaCache(const String & name, ContextPtr context, const std::optional<FormatSettings> & format_settings_ = std::nullopt);
 
     const FormatsDictionary & getAllFormats() const
     {
         return dict;
     }
 
-    std::vector<String> getAllInputFormats() const;
-
     bool isInputFormat(const String & name) const;
     bool isOutputFormat(const String & name) const;
 
     /// Check that format with specified name exists and throw an exception otherwise.
     void checkFormatName(const String & name) const;
-    bool exists(const String & name) const;
 
 private:
     FormatsDictionary dict;
     FileExtensionFormats file_extension_formats;
 
     const Creators & getCreators(const String & name) const;
-    Creators & getOrCreateCreators(const String & name);
 
     // Creates a ReadBuffer to give to an input format. Returns nullptr if we should use `buf` directly.
     std::unique_ptr<ReadBuffer> wrapReadBufferIfNeeded(

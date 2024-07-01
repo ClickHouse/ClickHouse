@@ -8,7 +8,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnAggregateFunction.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <AggregateFunctions/Combinators/AggregateFunctionState.h>
+#include <AggregateFunctions/AggregateFunctionState.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/parseAggregateFunctionParameters.h>
 #include <Common/Arena.h>
@@ -120,9 +120,7 @@ DataTypePtr FunctionArrayReduceInRanges::getReturnTypeImpl(const ColumnsWithType
                                                    aggregate_function_name, params_row, "function " + getName(), getContext());
 
         AggregateFunctionProperties properties;
-        auto action = NullsAction::EMPTY;
-        aggregate_function
-            = AggregateFunctionFactory::instance().get(aggregate_function_name, action, argument_types, params_row, properties);
+        aggregate_function = AggregateFunctionFactory::instance().get(aggregate_function_name, argument_types, params_row, properties);
     }
 
     return std::make_shared<DataTypeArray>(aggregate_function->getResultType());

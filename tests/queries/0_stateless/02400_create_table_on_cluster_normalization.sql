@@ -21,6 +21,7 @@ select * from t_l5ydey order by c_qv5rv;
 show create t_l5ydey;
 
 -- Correct error code if creating database with the same path as table has
+set allow_experimental_database_replicated=1;
 create database local_t_l5ydey engine=Replicated('/clickhouse/tables/test_' || currentDatabase() || '/{shard}/local_t_l5ydey', '1', '1'); -- { serverError BAD_ARGUMENTS }
 
 drop table local_t_l5ydey;

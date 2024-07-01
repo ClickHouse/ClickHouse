@@ -20,7 +20,7 @@ namespace DB
 {
 
 class StorageReplicatedMergeTree;
-class ReadWriteBufferFromHTTP;
+class PooledReadWriteBufferFromHTTP;
 
 namespace DataPartsExchange
 {
@@ -40,6 +40,10 @@ public:
 
 private:
     MergeTreeData::DataPartPtr findPart(const String & name);
+    void sendPartFromMemory(
+        const MergeTreeData::DataPartPtr & part,
+        WriteBuffer & out,
+        bool send_projections);
 
     MergeTreeData::DataPart::Checksums sendPartFromDisk(
         const MergeTreeData::DataPartPtr & part,
@@ -51,7 +55,7 @@ private:
     /// StorageReplicatedMergeTree::shutdown() waits for all parts exchange handlers to finish,
     /// so Service will never access dangling reference to storage
     StorageReplicatedMergeTree & data;
-    LoggerPtr log;
+    Poco::Logger * log;
 };
 
 /** Client for getting the parts from the table *MergeTree.
@@ -90,7 +94,7 @@ private:
     void downloadBaseOrProjectionPartToDisk(
         const String & replica_path,
         const MutableDataPartStoragePtr & data_part_storage,
-        ReadWriteBufferFromHTTP & in,
+        PooledReadWriteBufferFromHTTP & in,
         OutputBufferGetter output_buffer_getter,
         MergeTreeData::DataPart::Checksums & checksums,
         ThrottlerPtr throttler,
@@ -103,11 +107,23 @@ private:
         const String & tmp_prefix_,
         DiskPtr disk,
         bool to_remote_disk,
-        ReadWriteBufferFromHTTP & in,
+        PooledReadWriteBufferFromHTTP & in,
         OutputBufferGetter output_buffer_getter,
         size_t projections,
         ThrottlerPtr throttler,
         bool sync);
+
+    MergeTreeData::MutableDataPartPtr downloadPartToMemory(
+       MutableDataPartStoragePtr data_part_storage,
+       const String & part_name,
+       const MergeTreePartInfo & part_info,
+       const UUID & part_uuid,
+       const StorageMetadataPtr & metadata_snapshot,
+       ContextPtr context,
+       PooledReadWriteBufferFromHTTP & in,
+       size_t projections,
+       bool is_projection,
+       ThrottlerPtr throttler);
 
     MergeTreeData::MutableDataPartPtr downloadPartToDiskRemoteMeta(
        const String & part_name,
@@ -115,13 +131,13 @@ private:
        bool to_detached,
        const String & tmp_prefix_,
        DiskPtr disk,
-       ReadWriteBufferFromHTTP & in,
+       PooledReadWriteBufferFromHTTP & in,
        size_t projections,
        MergeTreeData::DataPart::Checksums & checksums,
        ThrottlerPtr throttler);
 
     StorageReplicatedMergeTree & data;
-    LoggerPtr log;
+    Poco::Logger * log;
 };
 
 }

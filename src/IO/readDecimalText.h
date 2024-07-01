@@ -38,7 +38,7 @@ inline bool readDigits(ReadBuffer & buf, T & x, uint32_t & digits, int32_t & exp
         return false;
     }
 
-    switch (*buf.position()) /// NOLINT(bugprone-switch-missing-default-case)
+    switch (*buf.position())
     {
         case '-':
             sign = -1;
@@ -121,7 +121,7 @@ inline bool readDigits(ReadBuffer & buf, T & x, uint32_t & digits, int32_t & exp
                 if (!tryReadIntText(addition_exp, buf))
                 {
                     if constexpr (_throw_on_error)
-                        throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER, "Cannot parse exponent while reading decimal");
+                        throw ParsingException(ErrorCodes::CANNOT_PARSE_NUMBER, "Cannot parse exponent while reading decimal");
                     else
                         return false;
                 }
@@ -134,7 +134,7 @@ inline bool readDigits(ReadBuffer & buf, T & x, uint32_t & digits, int32_t & exp
                 if (digits_only)
                 {
                     if constexpr (_throw_on_error)
-                        throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER, "Unexpected symbol while reading decimal");
+                        throw ParsingException(ErrorCodes::CANNOT_PARSE_NUMBER, "Unexpected symbol while reading decimal");
                     return false;
                 }
                 stop = true;
@@ -222,26 +222,6 @@ inline void readCSVDecimalText(ReadBuffer & buf, T & x, uint32_t precision, uint
 
     if (maybe_quote == '\'' || maybe_quote == '\"')
         assertChar(maybe_quote, buf);
-}
-
-template <typename T>
-inline bool tryReadCSVDecimalText(ReadBuffer & buf, T & x, uint32_t precision, uint32_t & scale)
-{
-    if (buf.eof())
-        return false;
-
-    char maybe_quote = *buf.position();
-
-    if (maybe_quote == '\'' || maybe_quote == '\"')
-        ++buf.position();
-
-    if (!tryReadDecimalText(buf, x, precision, scale))
-        return false;
-
-    if ((maybe_quote == '\'' || maybe_quote == '\"') && !checkChar(maybe_quote, buf))
-        return false;
-
-    return true;
 }
 
 }

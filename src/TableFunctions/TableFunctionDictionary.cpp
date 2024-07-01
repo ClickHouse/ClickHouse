@@ -2,21 +2,18 @@
 
 #include <Parsers/ASTLiteral.h>
 
-#include <Access/Common/AccessFlags.h>
-
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 
+#include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/evaluateConstantExpression.h>
-#include <Interpreters/Context.h>
 
 #include <Storages/StorageDictionary.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 
 #include <TableFunctions/TableFunctionFactory.h>
-
 
 namespace DB
 {
@@ -75,12 +72,12 @@ ColumnsDescription TableFunctionDictionary::getActualTableStructure(ContextPtr c
     /// otherwise, we get table structure by dictionary structure.
     auto dictionary_structure = external_loader.getDictionaryStructure(dictionary_name, context);
     return ColumnsDescription(StorageDictionary::getNamesAndTypes(dictionary_structure));
+
 }
 
 StoragePtr TableFunctionDictionary::executeImpl(
     const ASTPtr &, ContextPtr context, const std::string & table_name, ColumnsDescription, bool is_insert_query) const
 {
-    context->checkAccess(AccessType::dictGet, getDatabaseName(), table_name);
     StorageID dict_id(getDatabaseName(), table_name);
     auto dictionary_table_structure = getActualTableStructure(context, is_insert_query);
 
@@ -89,7 +86,6 @@ StoragePtr TableFunctionDictionary::executeImpl(
 
     return result;
 }
-
 
 void registerTableFunctionDictionary(TableFunctionFactory & factory)
 {

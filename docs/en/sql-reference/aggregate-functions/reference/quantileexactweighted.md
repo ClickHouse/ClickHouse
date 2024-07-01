@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/aggregate-functions/reference/quantileexactweighted
-sidebar_position: 174
+sidebar_position: 203
 ---
 
 # quantileExactWeighted

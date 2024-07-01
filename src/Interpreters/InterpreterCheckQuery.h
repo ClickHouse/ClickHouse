@@ -18,8 +18,6 @@ public:
 
 private:
     ASTPtr query_ptr;
-
-    LoggerPtr log = getLogger("InterpreterCheckQuery");
 };
 
 }

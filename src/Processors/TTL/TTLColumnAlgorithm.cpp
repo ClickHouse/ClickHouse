@@ -4,7 +4,6 @@ namespace DB
 {
 
 TTLColumnAlgorithm::TTLColumnAlgorithm(
-    const TTLExpressions & ttl_expressions_,
     const TTLDescription & description_,
     const TTLInfo & old_ttl_info_,
     time_t current_time_,
@@ -13,7 +12,7 @@ TTLColumnAlgorithm::TTLColumnAlgorithm(
     const ExpressionActionsPtr & default_expression_,
     const String & default_column_name_,
     bool is_compact_part_)
-    : ITTLAlgorithm(ttl_expressions_, description_, old_ttl_info_, current_time_, force_)
+    : ITTLAlgorithm(description_, old_ttl_info_, current_time_, force_)
     , column_name(column_name_)
     , default_expression(default_expression_)
     , default_column_name(default_column_name_)
@@ -50,7 +49,7 @@ void TTLColumnAlgorithm::execute(Block & block)
     if (default_column)
         default_column = default_column->convertToFullColumnIfConst();
 
-    auto ttl_column = executeExpressionAndGetColumn(ttl_expressions.expression, block, description.result_column);
+    auto ttl_column = executeExpressionAndGetColumn(description.expression, block, description.result_column);
 
     auto & column_with_type = block.getByName(column_name);
     const IColumn * values_column = column_with_type.column.get();

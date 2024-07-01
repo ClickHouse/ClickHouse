@@ -25,7 +25,7 @@ namespace ErrorCodes
 PollingQueue::PollingQueue()
 {
     if (-1 == pipe2(pipe_fd, O_NONBLOCK))
-        throw ErrnoException(ErrorCodes::CANNOT_OPEN_FILE, "Cannot create pipe");
+        throwFromErrno("Cannot create pipe", ErrorCodes::CANNOT_OPEN_FILE);
 
     epoll.add(pipe_fd[0], pipe_fd);
 }
@@ -65,7 +65,7 @@ static std::string dumpTasks(const std::unordered_map<std::uintptr_t, PollingQue
     return res.str();
 }
 
-PollingQueue::TaskData PollingQueue::getTask(std::unique_lock<std::mutex> & lock, int timeout)
+PollingQueue::TaskData PollingQueue::wait(std::unique_lock<std::mutex> & lock)
 {
     if (is_finished)
         return {};
@@ -74,12 +74,9 @@ PollingQueue::TaskData PollingQueue::getTask(std::unique_lock<std::mutex> & lock
 
     epoll_event event;
     event.data.ptr = nullptr;
-    size_t num_events = epoll.getManyReady(1, &event, timeout);
+    epoll.getManyReady(1, &event, -1);
 
     lock.lock();
-
-    if (num_events == 0)
-        return {};
 
     if (event.data.ptr == pipe_fd)
         return {};
@@ -111,7 +108,7 @@ void PollingQueue::finish()
             break;
 
         if (errno != EINTR)
-            throw ErrnoException(ErrorCodes::CANNOT_READ_FROM_SOCKET, "Cannot write to pipe");
+            throwFromErrno("Cannot write to pipe", ErrorCodes::CANNOT_READ_FROM_SOCKET);
     }
 }
 

@@ -98,6 +98,8 @@ if (ARCH_S390X)
     add_compile_definitions(WORDS_BIGENDIAN)
 endif ()
 
+find_package(Threads REQUIRED)
+
 
 add_library(_liblzma
     ${SRC_DIR}/src/common/mythread.h

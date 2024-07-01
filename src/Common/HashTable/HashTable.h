@@ -92,8 +92,7 @@ inline bool bitEquals(T && a, T && b)
     using RealT = std::decay_t<T>;
 
     if constexpr (std::is_floating_point_v<RealT>)
-        /// Note that memcmp with constant size is compiler builtin.
-        return 0 == memcmp(&a, &b, sizeof(RealT)); /// NOLINT
+        return 0 == memcmp(&a, &b, sizeof(RealT));  /// Note that memcmp with constant size is compiler builtin.
     else
         return a == b;
 }
@@ -645,7 +644,7 @@ protected:
 
         /// Copy to a new location and zero the old one.
         x.setHash(hash_value);
-        memcpy(static_cast<void*>(&buf[place_value]), &x, sizeof(x)); /// NOLINT(bugprone-undefined-memory-manipulation)
+        memcpy(static_cast<void*>(&buf[place_value]), &x, sizeof(x));
         x.setZero();
 
         /// Then the elements that previously were in collision with this can move to the old place.
@@ -844,7 +843,7 @@ public:
             return true;
         }
 
-        const value_type & get() const
+        inline const value_type & get() const
         {
             if (!is_initialized || is_eof)
                 throw DB::Exception(DB::ErrorCodes::NO_AVAILABLE_DATA, "No available data");
@@ -854,7 +853,7 @@ public:
 
     private:
         DB::ReadBuffer & in;
-        Cell cell{};
+        Cell cell;
         size_t read_count = 0;
         size_t size = 0;
         bool is_eof = false;
@@ -998,7 +997,6 @@ protected:
                 --m_size;
                 buf[place_value].setZero();
                 inserted = false;
-                keyHolderDiscardKey(key_holder);
                 throw;
             }
 
@@ -1275,10 +1273,6 @@ public:
         return !buf[place_value].isZero(*this);
     }
 
-    bool ALWAYS_INLINE contains(const Key & x) const
-    {
-        return has(x);
-    }
 
     void write(DB::WriteBuffer & wb) const
     {

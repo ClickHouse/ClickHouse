@@ -40,12 +40,10 @@ public:
 
     String getMetadataPath() const override { return metadata_path; }
 
-    LoadTaskPtr startupDatabaseAsync(AsyncLoader & async_loader, LoadJobSet startup_after, LoadingStrictnessLevel mode) override;
-    void waitDatabaseStarted() const override;
-    void stopLoading() override;
+    void startupTables(ThreadPool & thread_pool, LoadingStrictnessLevel mode) override;
 
     DatabaseTablesIteratorPtr
-    getTablesIterator(ContextPtr context, const DatabaseOnDisk::FilterByNameFunction & filter_by_table_name, bool skip_not_loaded) const override;
+    getTablesIterator(ContextPtr context, const DatabaseOnDisk::FilterByNameFunction & filter_by_table_name) const override;
 
     StoragePtr tryGetTable(const String & name, ContextPtr context) const override;
 
@@ -75,7 +73,6 @@ protected:
     ASTPtr getCreateTableQueryImpl(const String & table_name, ContextPtr local_context, bool throw_on_error) const override;
 
 private:
-    void tryStartSynchronization();
     void startSynchronization();
 
     ASTPtr createAlterSettingsQuery(const SettingChange & new_setting);
@@ -94,8 +91,6 @@ private:
 
     BackgroundSchedulePool::TaskHolder startup_task;
     bool shutdown_called = false;
-
-    LoadTaskPtr startup_postgresql_database_task TSA_GUARDED_BY(mutex);
 };
 
 }

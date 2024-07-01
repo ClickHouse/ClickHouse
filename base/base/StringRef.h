@@ -12,8 +12,6 @@
 #include <base/types.h>
 #include <base/unaligned.h>
 #include <base/simd.h>
-#include <fmt/core.h>
-#include <fmt/ostream.h>
 
 #include <city.h>
 
@@ -37,10 +35,6 @@
     #pragma clang diagnostic ignored "-Wreserved-identifier"
 #endif
 
-#if defined(__s390x__)
-    #include <base/crc32c_s390x.h>
-    #define CRC_INT s390x_crc32c
-#endif
 
 /**
  * The std::string_view-like container to avoid creating strings to find substrings in the hash table.
@@ -183,12 +177,11 @@ inline bool memequalWide(const char * p1, const char * p2, size_t size)
             return false;
     }
 
-    switch (size / 16) // NOLINT(bugprone-switch-missing-default-case)
+    switch (size / 16)
     {
         case 3: if (!compare8(p1 + 32, p2 + 32)) return false; [[fallthrough]];
         case 2: if (!compare8(p1 + 16, p2 + 16)) return false; [[fallthrough]];
-        case 1: if (!compare8(p1, p2)) return false; [[fallthrough]];
-        default: ;
+        case 1: if (!compare8(p1, p2)) return false;
     }
 
     return compare8(p1 + size - 16, p2 + size - 16);
@@ -271,8 +264,8 @@ inline size_t hashLessThan8(const char * data, size_t size)
 
     if (size >= 4)
     {
-        UInt64 a = unalignedLoadLittleEndian<uint32_t>(data);
-        return hashLen16(size + (a << 3), unalignedLoadLittleEndian<uint32_t>(data + size - 4));
+        UInt64 a = unalignedLoad<uint32_t>(data);
+        return hashLen16(size + (a << 3), unalignedLoad<uint32_t>(data + size - 4));
     }
 
     if (size > 0)
@@ -292,8 +285,8 @@ inline size_t hashLessThan16(const char * data, size_t size)
 {
     if (size > 8)
     {
-        UInt64 a = unalignedLoadLittleEndian<UInt64>(data);
-        UInt64 b = unalignedLoadLittleEndian<UInt64>(data + size - 8);
+        UInt64 a = unalignedLoad<UInt64>(data);
+        UInt64 b = unalignedLoad<UInt64>(data + size - 8);
         return hashLen16(a, rotateByAtLeast1(b + size, static_cast<UInt8>(size))) ^ b;
     }
 
@@ -322,13 +315,13 @@ struct CRC32Hash
 
         do
         {
-            UInt64 word = unalignedLoadLittleEndian<UInt64>(pos);
+            UInt64 word = unalignedLoad<UInt64>(pos);
             res = static_cast<unsigned>(CRC_INT(res, word));
 
             pos += 8;
         } while (pos + 8 < end);
 
-        UInt64 word = unalignedLoadLittleEndian<UInt64>(end - 8);    /// I'm not sure if this is normal.
+        UInt64 word = unalignedLoad<UInt64>(end - 8);    /// I'm not sure if this is normal.
         res = static_cast<unsigned>(CRC_INT(res, word));
 
         return res;
@@ -378,5 +371,3 @@ namespace PackedZeroTraits
 
 
 std::ostream & operator<<(std::ostream & os, const StringRef & str);
-
-template<> struct fmt::formatter<StringRef> : fmt::ostream_formatter {};

@@ -1,6 +1,4 @@
--- Tags: long, no-replicated-database
--- Tag no-replicated-database: Unsupported type of ALTER query
-SET output_format_pretty_row_numbers = 0;
+-- Tags: long
 
 DROP TABLE IF EXISTS check_query_comment_column;
 

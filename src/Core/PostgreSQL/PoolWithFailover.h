@@ -14,7 +14,7 @@
 
 static constexpr inline auto POSTGRESQL_POOL_DEFAULT_SIZE = 16;
 static constexpr inline auto POSTGRESQL_POOL_WAIT_TIMEOUT = 5000;
-static constexpr inline auto POSTGRESQL_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES = 2;
+static constexpr inline auto POSTGRESQL_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES = 5;
 
 namespace postgres
 {
@@ -62,7 +62,7 @@ private:
     size_t max_tries;
     bool auto_close_connection;
     std::mutex mutex;
-    LoggerPtr log = getLogger("PostgreSQLConnectionPool");
+    Poco::Logger * log = &Poco::Logger::get("PostgreSQLConnectionPool");
 };
 
 using PoolWithFailoverPtr = std::shared_ptr<PoolWithFailover>;
