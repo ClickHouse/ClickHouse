@@ -8,19 +8,19 @@
 #include <DataTypes/DataTypeMap.h>
 #include <Interpreters/ProfileEventsExt.h>
 #include <DataTypes/DataTypeEnum.h>
-#include <Interpreters/S3QueueLog.h>
+#include <Interpreters/ObjectStorageQueueLog.h>
 
 
 namespace DB
 {
 
-ColumnsDescription S3QueueLogElement::getColumnsDescription()
+ColumnsDescription ObjectStorageQueueLogElement::getColumnsDescription()
 {
     auto status_datatype = std::make_shared<DataTypeEnum8>(
         DataTypeEnum8::Values
         {
-            {"Processed", static_cast<Int8>(S3QueueLogElement::S3QueueStatus::Processed)},
-            {"Failed", static_cast<Int8>(S3QueueLogElement::S3QueueStatus::Failed)},
+            {"Processed", static_cast<Int8>(ObjectStorageQueueLogElement::ObjectStorageQueueStatus::Processed)},
+            {"Failed", static_cast<Int8>(ObjectStorageQueueLogElement::ObjectStorageQueueStatus::Failed)},
         });
 
     return ColumnsDescription
@@ -41,7 +41,7 @@ ColumnsDescription S3QueueLogElement::getColumnsDescription()
     };
 }
 
-void S3QueueLogElement::appendToBlock(MutableColumns & columns) const
+void ObjectStorageQueueLogElement::appendToBlock(MutableColumns & columns) const
 {
     size_t i = 0;
     columns[i++]->insert(getFQDNOrHostName());

@@ -28,6 +28,8 @@ CREATE TABLE s3_queue_engine_table (name String, value UInt32)
     [s3queue_cleanup_interval_max_ms = 30000,]
 ```
 
+Starting with `24.7` settings without `s3queue_` prefix are also supported.
+
 **Engine parameters**
 
 - `path` — Bucket url with path to file. Supports following wildcards in readonly mode: `*`, `**`, `?`, `{abc,def}` and `{N..M}` where `N`, `M` — numbers, `'abc'`, `'def'` — strings. For more information see [below](#wildcards-in-path).

@@ -1,17 +1,17 @@
 #pragma once
-#include <Storages/S3Queue/S3QueueIFileMetadata.h>
+#include <Storages/ObjectStorageQueue/ObjectStorageQueueIFileMetadata.h>
 #include <filesystem>
 #include <Common/logger_useful.h>
 
 namespace DB
 {
 
-class S3QueueUnorderedFileMetadata : public S3QueueIFileMetadata
+class ObjectStorageQueueUnorderedFileMetadata : public ObjectStorageQueueIFileMetadata
 {
 public:
     using Bucket = size_t;
 
-    explicit S3QueueUnorderedFileMetadata(
+    explicit ObjectStorageQueueUnorderedFileMetadata(
         const std::filesystem::path & zk_path,
         const std::string & path_,
         FileStatusPtr file_status_,
