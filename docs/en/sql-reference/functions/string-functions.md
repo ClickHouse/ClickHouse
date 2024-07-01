@@ -734,13 +734,13 @@ concat(s1, s2, ...)
 
 **Arguments**
 
-At least one value of arbitrary type.
+Values of arbitrary type. Empty argument is also allowed.
 
 Arguments which are not of types [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md) are converted to strings using their default serialization. As this decreases performance, it is not recommended to use non-String/FixedString arguments.
 
 **Returned values**
 
-The String created by concatenating the arguments.
+The String created by concatenating the arguments. If there are no arguments, the function returns empty string.
 
 If any of arguments is `NULL`, the function returns `NULL`.
 
