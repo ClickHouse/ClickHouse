@@ -18,8 +18,6 @@
 #include <IO/Progress.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
-#include <IO/ReadBufferFromPocoSocket.h>
-#include <IO/WriteBufferFromPocoSocket.h>
 #include <IO/LimitReadBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -101,6 +99,7 @@ namespace DB::ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int UNSUPPORTED_METHOD;
     extern const int USER_EXPIRED;
+    extern const int NETWORK_ERROR;
 }
 
 namespace
@@ -252,8 +251,8 @@ void TCPHandler::runImpl()
     socket().setSendTimeout(send_timeout);
     socket().setNoDelay(true);
 
-    in = std::make_shared<ReadBufferFromPocoSocket>(socket(), read_event);
-    out = std::make_shared<WriteBufferFromPocoSocket>(socket(), write_event);
+    in = std::make_shared<ReadBufferFromPocoSocketChunked>(socket(), read_event);
+    out = std::make_shared<WriteBufferFromPocoSocketChunked>(socket(), write_event);
 
     /// Support for PROXY protocol
     if (parse_proxy_protocol && !receiveProxyHeader())
@@ -277,6 +276,48 @@ void TCPHandler::runImpl()
         sendHello();
         if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_ADDENDUM)
             receiveAddendum();
+
+        {
+            /// Server side of chunked protocol negotiation.
+            /// Server advertises its protocol capabilities (separate for send and receive channels) by sending
+            /// in its 'Hello' response one of four types - chunked, notchunked, chunked_optional, notchunked_optional.
+            /// Not optional types are strict meaning that server only supports this type, optional means that
+            /// server prefer this type but capable to work in opposite.
+            /// Client selects which type it is going to communicate based on the settings from config or arguments,
+            /// and sends either "chunked" or "notchunked" protocol request in addendum section of handshake.
+            /// Client can detect if server's protocol capabilities are not compatible with client's settings (for example
+            /// server strictly requires chunked protocol but client's settings only allows notchunked protocol) - in such case
+            /// client should interrupt this connection. However if client continues with incompatible protocol type request, server
+            /// will send appropriate exception and disconnect client.
+
+            auto is_chunked = [](const String & chunked_srv_str, const String & chunked_cl_str, const String & direction)
+            {
+                bool chunked_srv = chunked_srv_str.starts_with("chunked");
+                bool optional_srv = chunked_srv_str.ends_with("_optional");
+                bool chunked_cl = chunked_cl_str.starts_with("chunked");
+
+                if (optional_srv)
+                    return chunked_cl;
+
+                if (chunked_cl != chunked_srv)
+                    throw NetException(
+                        ErrorCodes::NETWORK_ERROR,
+                        "Incompatible protocol: {} is {}, client requested {}",
+                        direction,
+                        chunked_srv ? "chunked" : "notchunked",
+                        chunked_cl ? "chunked" : "notchunked");
+
+                return chunked_srv;
+            };
+
+            bool out_chunked = is_chunked(server.config().getString("proto_caps.send", "chunked_optional"), proto_recv_chunked_cl, "send");
+            bool in_chunked = is_chunked(server.config().getString("proto_caps.recv", "chunked_optional"), proto_send_chunked_cl, "recv");
+
+            if (out_chunked)
+                out->enableChunked();
+            if (in_chunked)
+                in->enableChunked();
+        }
 
         if (!is_interserver_mode)
         {
@@ -319,7 +360,7 @@ void TCPHandler::runImpl()
         {
             Stopwatch idle_time;
             UInt64 timeout_ms = std::min(poll_interval, idle_connection_timeout) * 1000000;
-            while (tcp_server.isOpen() && !server.isCancelled() && !static_cast<ReadBufferFromPocoSocket &>(*in).poll(timeout_ms))
+            while (tcp_server.isOpen() && !server.isCancelled() && !in->poll(timeout_ms))
             {
                 if (idle_time.elapsedSeconds() > idle_connection_timeout)
                 {
@@ -787,7 +828,7 @@ bool TCPHandler::readDataNext()
     /// We are waiting for a packet from the client. Thus, every `POLL_INTERVAL` seconds check whether we need to shut down.
     while (true)
     {
-        if (static_cast<ReadBufferFromPocoSocket &>(*in).poll(timeout_us))
+        if (in->poll(timeout_us))
         {
             /// If client disconnected.
             if (in->eof())
@@ -1166,6 +1207,8 @@ void TCPHandler::processTablesStatusRequest()
     }
 
     response.write(*out, client_tcp_protocol_version);
+
+    out->finishChunk();
 }
 
 void TCPHandler::receiveUnexpectedTablesStatusRequest()
@@ -1186,6 +1229,8 @@ void TCPHandler::sendPartUUIDs()
 
         writeVarUInt(Protocol::Server::PartUUIDs, *out);
         writeVectorBinary(uuids, *out);
+
+        out->finishChunk();
         out->next();
     }
 }
@@ -1194,6 +1239,8 @@ void TCPHandler::sendPartUUIDs()
 void TCPHandler::sendReadTaskRequestAssumeLocked()
 {
     writeVarUInt(Protocol::Server::ReadTaskRequest, *out);
+
+    out->finishChunk();
     out->next();
 }
 
@@ -1202,6 +1249,8 @@ void TCPHandler::sendMergeTreeAllRangesAnnouncementAssumeLocked(InitialAllRanges
 {
     writeVarUInt(Protocol::Server::MergeTreeAllRangesAnnouncement, *out);
     announcement.serialize(*out);
+
+    out->finishChunk();
     out->next();
 }
 
@@ -1210,6 +1259,8 @@ void TCPHandler::sendMergeTreeReadTaskRequestAssumeLocked(ParallelReadRequest re
 {
     writeVarUInt(Protocol::Server::MergeTreeReadTaskRequest, *out);
     request.serialize(*out);
+
+    out->finishChunk();
     out->next();
 }
 
@@ -1218,6 +1269,8 @@ void TCPHandler::sendProfileInfo(const ProfileInfo & info)
 {
     writeVarUInt(Protocol::Server::ProfileInfo, *out);
     info.write(*out);
+
+    out->finishChunk();
     out->next();
 }
 
@@ -1233,6 +1286,8 @@ void TCPHandler::sendTotals(const Block & totals)
 
         state.block_out->write(totals);
         state.maybe_compressed_out->next();
+
+        out->finishChunk();
         out->next();
     }
 }
@@ -1249,6 +1304,8 @@ void TCPHandler::sendExtremes(const Block & extremes)
 
         state.block_out->write(extremes);
         state.maybe_compressed_out->next();
+
+        out->finishChunk();
         out->next();
     }
 }
@@ -1266,6 +1323,8 @@ void TCPHandler::sendProfileEvents()
         writeStringBinary("", *out);
 
         state.profile_events_block_out->write(block);
+
+        out->finishChunk();
         out->next();
 
         auto elapsed_milliseconds = stopwatch.elapsedMilliseconds();
@@ -1303,6 +1362,8 @@ void TCPHandler::sendTimezone()
     LOG_DEBUG(log, "TCPHandler::sendTimezone(): {}", tz);
     writeVarUInt(Protocol::Server::TimezoneUpdate, *out);
     writeStringBinary(tz, *out);
+
+    out->finishChunk();
     out->next();
 }
 
@@ -1563,6 +1624,12 @@ void TCPHandler::receiveAddendum()
 
     if (!is_interserver_mode)
         session->setQuotaClientKey(quota_key);
+
+    if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_CHUNKED_PACKETS)
+    {
+        readStringBinary(proto_send_chunked_cl, *in);
+        readStringBinary(proto_recv_chunked_cl, *in);
+    }
 }
 
 
@@ -1596,6 +1663,11 @@ void TCPHandler::sendHello()
         writeStringBinary(server_display_name, *out);
     if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_VERSION_PATCH)
         writeVarUInt(VERSION_PATCH, *out);
+    if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_CHUNKED_PACKETS)
+    {
+        writeStringBinary(server.config().getString("proto_caps.send", "chunked"), *out);
+        writeStringBinary(server.config().getString("proto_caps.recv", "chunked"), *out);
+    }
     if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_PASSWORD_COMPLEXITY_RULES)
     {
         auto rules = server.context()->getAccessControl().getPasswordComplexityRules();
@@ -1648,6 +1720,7 @@ bool TCPHandler::receivePacket()
 
         case Protocol::Client::Ping:
             writeVarUInt(Protocol::Server::Pong, *out);
+            out->finishChunk();
             out->next();
             return false;
 
@@ -2164,7 +2237,7 @@ QueryState::CancellationStatus TCPHandler::getQueryCancellationStatus()
     after_check_cancelled.restart();
 
     /// During request execution the only packet that can come from the client is stopping the query.
-    if (static_cast<ReadBufferFromPocoSocket &>(*in).poll(0))
+    if (in->poll(0))
     {
         if (in->eof())
         {
@@ -2215,19 +2288,33 @@ void TCPHandler::sendData(const Block & block)
         }
 
         writeVarUInt(Protocol::Server::Data, *out);
-        /// Send external table name (empty name is the main table)
-        writeStringBinary("", *out);
 
         /// For testing hedged requests
         if (block.rows() > 0 && query_context->getSettingsRef().sleep_in_send_data_ms.totalMilliseconds())
         {
+            /// This strange sequence is needed in case of chunked protocol is enabled, in order for client not to
+            /// hang on receiving of at least packet type - chunk will not be processed unless either chunk footer
+            /// or chunk continuation header is received - first 'next' is sending starting chunk containing packet type
+            /// and second 'next' is sending chunk continuation header.
+            out->next();
+            /// Send external table name (empty name is the main table)
+            writeStringBinary("", *out);
             out->next();
             std::chrono::milliseconds ms(query_context->getSettingsRef().sleep_in_send_data_ms.totalMilliseconds());
             std::this_thread::sleep_for(ms);
         }
+        else
+        {
+            /// Send external table name (empty name is the main table)
+            writeStringBinary("", *out);
+        }
 
         state.block_out->write(block);
-        state.maybe_compressed_out->next();
+
+        if (state.maybe_compressed_out != out)
+            state.maybe_compressed_out->next();
+
+        out->finishChunk();
         out->next();
     }
     catch (...)
@@ -2263,6 +2350,8 @@ void TCPHandler::sendLogData(const Block & block)
     writeStringBinary("", *out);
 
     state.logs_block_out->write(block);
+
+    out->finishChunk();
     out->next();
 }
 
@@ -2274,6 +2363,7 @@ void TCPHandler::sendTableColumns(const ColumnsDescription & columns)
     writeStringBinary("", *out);
     writeStringBinary(columns.toString(), *out);
 
+    out->finishChunk();
     out->next();
 }
 
@@ -2283,6 +2373,8 @@ void TCPHandler::sendException(const Exception & e, bool with_stack_trace)
 
     writeVarUInt(Protocol::Server::Exception, *out);
     writeException(e, *out, with_stack_trace);
+
+    out->finishChunk();
     out->next();
 }
 
@@ -2293,6 +2385,8 @@ void TCPHandler::sendEndOfStream()
     state.io.setAllDataSent();
 
     writeVarUInt(Protocol::Server::EndOfStream, *out);
+
+    out->finishChunk();
     out->next();
 }
 
@@ -2311,6 +2405,8 @@ void TCPHandler::sendProgress()
     increment.elapsed_ns = current_elapsed_ns - state.prev_elapsed_ns;
     state.prev_elapsed_ns = current_elapsed_ns;
     increment.write(*out, client_tcp_protocol_version);
+
+    out->finishChunk();
     out->next();
 }
 
