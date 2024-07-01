@@ -36,12 +36,8 @@ public:
     static Chunk squash(Chunk && input_chunk);
     Chunk flush();
 
-    bool isDataLeft()
-    {
-        return !chunks_to_merge_vec.empty();
-    }
-
     Block header;
+
 private:
     struct CurrentSize
     {
@@ -54,10 +50,6 @@ private:
     size_t min_block_size_bytes;
 
     CurrentSize accumulated_size;
-
-    static const ChunksToSquash * getInfoFromChunk(const Chunk & chunk);
-
-    static Chunk squash(std::vector<Chunk> & input_chunks);
 
     void expandCurrentSize(size_t rows, size_t bytes);
     void changeCurrentSize(size_t rows, size_t bytes);
