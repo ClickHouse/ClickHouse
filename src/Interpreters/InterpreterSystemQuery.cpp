@@ -1,5 +1,6 @@
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterSystemQuery.h>
+#include "Common/Exception.h"
 #include <Common/DNSResolver.h>
 #include <Common/ActionLock.h>
 #include <Common/typeid_cast.h>
@@ -66,6 +67,8 @@
 #include <base/coverage.h>
 #include <csignal>
 #include <algorithm>
+#include <exception>
+#include <format>
 #include <unistd.h>
 
 #if USE_PROTOBUF
@@ -399,8 +402,15 @@ BlockIO InterpreterSystemQuery::execute()
                 auto caches = FileCacheFactory::instance().getAll();
                 for (const auto & [_, cache_data] : caches)
                 {
-                    if (!cache_data->cache->isInitialized())
-                        continue;
+                    try
+                    {
+                        if (!cache_data->cache->isInitialized())
+                            continue;
+                    }
+                    catch (...)
+                    {
+                        tryLogCurrentException(log, std::format("Cache {} is broken during initialization: ", cache_data->getSettings().toString()));
+                    }
 
                     cache_data->cache->removeAllReleasable(user_id);
                 }

@@ -136,7 +136,19 @@ const FileCache::UserInfo & FileCache::getInternalUser()
 
 bool FileCache::isInitialized() const
 {
-    return is_initialized.load(std::memory_order_seq_cst);
+    if (load_metadata_asynchronously)
+    {
+        /// Exception during initialization, 
+        /// make user aware that the cache is broken.
+        if (init_exception)
+            std::rethrow_exception(init_exception);
+        return is_initialized;
+    }
+    else 
+    {
+        assertInitialized();
+        return true;
+    }
 }
 
 const String & FileCache::getBasePath() const
