@@ -8622,7 +8622,9 @@ size_t MergeTreeData::unloadPrimaryKeysOfOutdatedParts()
         for (const auto & part : parts_range)
         {
             /// Outdated part may be hold by SELECT query and still needs the index.
-            if (part.unique())
+            /// This check requires lock of index_mutex but if outdated part is unique then there is no
+            /// contention on it, so it's relatively cheap and it's ok to check under a global parts lock.
+            if (part.unique() && part->isIndexLoaded())
                 parts_to_unload_index.push_back(part);
         }
     }
