@@ -114,7 +114,7 @@ private:
         size_t curr_fp = 0, curr_tp = 0;
         for (size_t i = 0; i < size; ++i)
         {
-            // Only change the current ROC point when the score changes
+            // Only increment the area when the score changes
             if (sorted_labels[i].score != prev_score)
             {
                 area += (curr_fp - prev_fp) * (curr_tp + prev_tp) / 2.0; // Trapezoidal area under curve (might degenerate to zero or to a rectangle)
