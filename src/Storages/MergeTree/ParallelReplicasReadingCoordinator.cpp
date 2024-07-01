@@ -112,7 +112,7 @@ struct fmt::formatter<DB::Part>
     static constexpr auto parse(format_parse_context & ctx) { return ctx.begin(); }
 
     template <typename FormatContext>
-    auto format(const DB::Part & part, FormatContext & ctx)
+    auto format(const DB::Part & part, FormatContext & ctx) const
     {
         return fmt::format_to(ctx.out(), "{} in replicas [{}]", part.description.describe(), fmt::join(part.replicas, ", "));
     }
@@ -125,6 +125,7 @@ namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
 extern const int LOGICAL_ERROR;
+extern const int ALL_CONNECTION_TRIES_FAILED;
 }
 
 class ParallelReplicasReadingCoordinator::ImplInterface
@@ -1025,7 +1026,11 @@ void ParallelReplicasReadingCoordinator::markReplicaAsUnavailable(size_t replica
     std::lock_guard lock(mutex);
 
     if (!pimpl)
+    {
         unavailable_nodes_registered_before_initialization.push_back(replica_number);
+        if (unavailable_nodes_registered_before_initialization.size() == replicas_count)
+            throw Exception(ErrorCodes::ALL_CONNECTION_TRIES_FAILED, "Can't connect to any replica chosen for query execution");
+    }
     else
         pimpl->markReplicaAsUnavailable(replica_number);
 }

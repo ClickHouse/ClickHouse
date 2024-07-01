@@ -48,6 +48,7 @@ AutoML
 Autocompletion
 AvroConfluent
 BIGINT
+bigrams
 BIGSERIAL
 BORO
 BSON
@@ -574,6 +575,7 @@ MySQLDump
 MySQLThreads
 NATS
 NCHAR
+NDJSON
 NEKUDOTAYIM
 NEWDATE
 NEWDECIMAL
@@ -716,6 +718,8 @@ PlantUML
 PointDistKm
 PointDistM
 PointDistRads
+PostHistory
+PostLink
 PostgreSQLConnection
 PostgreSQLThreads
 Postgres
@@ -963,6 +967,7 @@ ToGeoBoundary
 ToIPv
 ToParent
 ToSnowflake
+ToSnowflakeID
 ToString
 ToUnicode
 Toolset
@@ -1007,10 +1012,13 @@ UncompressedCacheBytes
 UncompressedCacheCells
 UnidirectionalEdgeIsValid
 UniqThetaSketch
+unigrams
 Updatable
 Uppercased
 Uptime
 Uptrace
+URLDecode
+URLEncode
 UserID
 Util
 VARCHAR
@@ -1456,6 +1464,7 @@ datatypes
 dateName
 dateTime
 dateTimeToSnowflake
+dateTimeToSnowflakeID
 datetime
 datetimes
 dayofyear
@@ -1503,9 +1512,11 @@ deserializing
 destructor
 destructors
 detectCharset
+detectTonality
 detectLanguage
 detectLanguageMixed
 detectLanguageUnknown
+detectProgrammingLanguage
 determinator
 deterministically
 dictGet
@@ -1522,6 +1533,7 @@ disableProtocols
 disjunction
 disjunctions
 displaySecretsInShowAndSelect
+displayName
 distro
 divideDecimal
 dmesg
@@ -1539,6 +1551,7 @@ dumpColumnStructure
 durations
 ecto
 editDistance
+editDistanceUTF
 embeddings
 emptyArray
 emptyArrayDate
@@ -1571,6 +1584,10 @@ exFAT
 expiryMsec
 exponentialMovingAverage
 exponentialmovingaverage
+exponentialTimeDecayedAvg
+exponentialTimeDecayedCount
+exponentialTimeDecayedMax
+exponentialTimeDecayedSum
 expr
 exprN
 extendedVerification
@@ -1789,6 +1806,7 @@ incrementing
 indexHint
 indexOf
 infi
+infty
 inflight
 initcap
 initcapUTF
@@ -1896,6 +1914,7 @@ lessOrEquals
 lessorequals
 levenshtein
 levenshteinDistance
+levenshteinDistanceUTF
 lexicographically
 lgamma
 libFuzzer
@@ -2246,6 +2265,7 @@ proleptic
 prometheus
 proportionsZTest
 proto
+protocol
 protobuf
 protobufsingle
 proxied
@@ -2474,6 +2494,7 @@ skewpop
 skewsamp
 skippingerrors
 sleepEachRow
+snowflakeIDToDateTime
 snowflakeToDateTime
 socketcache
 soundex
@@ -2498,6 +2519,7 @@ sqlite
 sqrt
 src
 srcReplicas
+stackoverflow
 stacktrace
 stacktraces
 startsWith
@@ -2836,6 +2858,7 @@ userver
 utils
 uuid
 uuidv
+vCPU
 varPop
 varPopStable
 varSamp
@@ -2845,7 +2868,9 @@ variantElement
 variantType
 varint
 varpop
+varpopstable
 varsamp
+varsampstable
 vectorized
 vectorscan
 vendoring

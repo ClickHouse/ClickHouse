@@ -13,7 +13,7 @@ This engine provides integration with [Amazon S3](https://aws.amazon.com/s3/) ec
 CREATE TABLE s3_queue_engine_table (name String, value UInt32)
     ENGINE = S3Queue(path, [NOSIGN, | aws_access_key_id, aws_secret_access_key,] format, [compression])
     [SETTINGS]
-    [mode = 'unordered',]
+    [mode = '',]
     [after_processing = 'keep',]
     [keeper_path = '',]
     [s3queue_loading_retries = 0,]
@@ -27,6 +27,8 @@ CREATE TABLE s3_queue_engine_table (name String, value UInt32)
     [s3queue_cleanup_interval_min_ms = 10000,]
     [s3queue_cleanup_interval_max_ms = 30000,]
 ```
+
+Starting with `24.7` settings without `s3queue_` prefix are also supported.
 
 **Engine parameters**
 
@@ -75,7 +77,7 @@ Possible values:
 - unordered — With unordered mode, the set of all already processed files is tracked with persistent nodes in ZooKeeper.
 - ordered — With ordered mode, only the max name of the successfully consumed file, and the names of files that will be retried after unsuccessful loading attempt are being stored in ZooKeeper.
 
-Default value: `unordered`.
+Default value: `ordered` in versions before 24.6. Starting with 24.6 there is no default value, the setting becomes required to be specified manually. For tables created on earlier versions the default value will remain `Ordered` for compatibility.
 
 ### after_processing {#after_processing}
 
@@ -180,6 +182,10 @@ Default value: `10000`.
 For 'Ordered' mode. Defines a maximum boundary for reschedule interval for a background task, which is responsible for maintaining tracked file TTL and maximum tracked files set.
 
 Default value: `30000`.
+
+### s3queue_buckets {#buckets}
+
+For 'Ordered' mode. Available since `24.6`. If there are several replicas of S3Queue table, each working with the same metadata directory in keeper, the value of `s3queue_buckets` needs to be equal to at least the number of replicas. If `s3queue_processing_threads` setting is used as well, it makes sense to increase the value of `s3queue_buckets` setting even further, as it defines the actual parallelism of `S3Queue` processing.
 
 ## S3-related Settings {#s3-settings}
 

@@ -337,8 +337,12 @@ def test_alter_attach(started_cluster, attachable_part, engine):
         main_node.query(f"SELECT CounterID FROM {database}.alter_attach_test")
         == "123\n"
     )
+
     # On the other node, data is replicated only if using a Replicated table engine
     if engine == "ReplicatedMergeTree":
+        dummy_node.query(
+            f"SYSTEM SYNC REPLICA {database}.alter_attach_test LIGHTWEIGHT"
+        )
         assert (
             dummy_node.query(f"SELECT CounterID FROM {database}.alter_attach_test")
             == "123\n"
@@ -404,6 +408,8 @@ def test_alter_detach_part(started_cluster, engine):
     main_node.query(f"INSERT INTO {database}.alter_detach VALUES (123)")
     if engine == "MergeTree":
         dummy_node.query(f"INSERT INTO {database}.alter_detach VALUES (456)")
+    else:
+        main_node.query(f"SYSTEM SYNC REPLICA {database}.alter_detach PULL")
     main_node.query(f"ALTER TABLE {database}.alter_detach DETACH PART '{part_name}'")
     detached_parts_query = f"SELECT name FROM system.detached_parts WHERE database='{database}' AND table='alter_detach'"
     assert main_node.query(detached_parts_query) == f"{part_name}\n"

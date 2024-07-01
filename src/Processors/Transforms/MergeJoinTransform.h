@@ -185,7 +185,7 @@ public:
 class FullMergeJoinCursor : boost::noncopyable
 {
 public:
-    FullMergeJoinCursor(const Block & sample_block_, const SortDescription & description_, bool is_asof = false);
+    explicit FullMergeJoinCursor(const Block & sample_block_, const SortDescription & description_, bool is_asof = false);
 
     bool fullyCompleted() const;
     void setChunk(Chunk && chunk);
