@@ -189,6 +189,7 @@ void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_
     if (exchange && !supportsAtomicRename())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "RENAME EXCHANGE is not supported");
 
+    createDirectories();
     waitDatabaseStarted();
 
     auto & other_db = dynamic_cast<DatabaseAtomic &>(to_database);

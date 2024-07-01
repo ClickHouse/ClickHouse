@@ -416,6 +416,7 @@ void DatabaseOnDisk::renameTable(
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Moving tables between databases of different engines is not supported");
     }
 
+    createDirectories();
     waitDatabaseStarted();
 
     auto table_data_relative_path = getTableDataPath(table_name);
