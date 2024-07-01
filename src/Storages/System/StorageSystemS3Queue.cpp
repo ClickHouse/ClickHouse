@@ -11,9 +11,9 @@
 #include <Interpreters/Cache/FileCacheFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ProfileEventsExt.h>
-#include <Storages/S3Queue/S3QueueMetadata.h>
-#include <Storages/S3Queue/S3QueueMetadataFactory.h>
-#include <Storages/S3Queue/StorageS3Queue.h>
+#include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadata.h>
+#include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadataFactory.h>
+#include <Storages/ObjectStorageQueue/StorageObjectStorageQueue.h>
 #include <Disks/IDisk.h>
 
 
@@ -44,7 +44,7 @@ StorageSystemS3Queue::StorageSystemS3Queue(const StorageID & table_id_)
 
 void StorageSystemS3Queue::fillData(MutableColumns & res_columns, ContextPtr, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
-    for (const auto & [zookeeper_path, metadata] : S3QueueMetadataFactory::instance().getAll())
+    for (const auto & [zookeeper_path, metadata] : ObjectStorageQueueMetadataFactory::instance().getAll())
     {
         for (const auto & [file_path, file_status] : metadata->getFileStatuses())
         {
