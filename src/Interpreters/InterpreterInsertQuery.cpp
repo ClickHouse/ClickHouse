@@ -709,7 +709,6 @@ BlockIO InterpreterInsertQuery::execute()
 
             chain.addSource(std::move(balancing));
         }
-
         auto context_ptr = getContext();
         auto counting = std::make_shared<CountingTransform>(chain.getInputHeader(), nullptr, context_ptr->getQuota());
         counting->setProcessListElement(context_ptr->getProcessListElement());
