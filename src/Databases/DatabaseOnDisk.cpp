@@ -611,6 +611,10 @@ time_t DatabaseOnDisk::getObjectMetadataModificationTime(const String & object_n
 
 void DatabaseOnDisk::iterateMetadataFiles(ContextPtr local_context, const IteratingFunction & process_metadata_file) const
 {
+    fs::path metadata_path = getMetadataPath();
+    if (!fs::exists(metadata_path))
+        return;
+
     auto process_tmp_drop_metadata_file = [&](const String & file_name)
     {
         assert(getUUID() == UUIDHelpers::Nil);
@@ -634,7 +638,7 @@ void DatabaseOnDisk::iterateMetadataFiles(ContextPtr local_context, const Iterat
     std::vector<std::pair<String, bool>> metadata_files;
 
     fs::directory_iterator dir_end;
-    for (fs::directory_iterator dir_it(getMetadataPath()); dir_it != dir_end; ++dir_it)
+    for (fs::directory_iterator dir_it(metadata_path); dir_it != dir_end; ++dir_it)
     {
         String file_name = dir_it->path().filename();
         /// For '.svn', '.gitignore' directory and similar.
