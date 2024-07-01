@@ -131,6 +131,8 @@ public:
     void reconfigure(const KeeperStorage::RequestForSession& request_for_session);
 
 private:
+    std::unique_lock<std::mutex> getStorageLock() const;
+
     CommitCallback commit_callback;
     /// In our state machine we always have a single snapshot which is stored
     /// in memory in compressed (serialized) format.
@@ -139,7 +141,7 @@ private:
     nuraft::ptr<nuraft::buffer> latest_snapshot_buf = nullptr;
 
     /// Main state machine logic
-    KeeperStoragePtr storage TSA_PT_GUARDED_BY(storage_and_responses_lock);
+    KeeperStoragePtr storage;
 
     /// Save/Load and Serialize/Deserialize logic for snapshots.
     KeeperSnapshotManager snapshot_manager;
@@ -183,7 +185,6 @@ private:
     KeeperSnapshotManagerS3 * snapshot_manager_s3;
 
     KeeperStorage::ResponseForSession processReconfiguration(
-        const KeeperStorage::RequestForSession& request_for_session)
-        TSA_REQUIRES(storage_and_responses_lock);
+        const KeeperStorage::RequestForSession& request_for_session);
 };
 }

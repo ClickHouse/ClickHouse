@@ -611,6 +611,13 @@ The server successfully detected this situation and will download merged part fr
     M(KeeperPacketsReceived, "Packets received by keeper server") \
     M(KeeperRequestTotal, "Total requests number on keeper server") \
     M(KeeperLatency, "Keeper latency") \
+    M(KeeperTotalElapsedMicroseconds, "Keeper total latency for a single request") \
+    M(KeeperProcessElapsedMicroseconds, "Keeper commit latency for a single request") \
+    M(KeeperPreprocessElapsedMicroseconds, "Keeper preprocessing latency for a single reuquest") \
+    M(KeeperStorageLockWaitMicroseconds, "Time spent waiting for acquiring Keeper storage lock") \
+    M(KeeperCommitWaitElapsedMicroseconds, "Time spent waiting for certain log to be committed") \
+    M(KeeperBatchMaxCount, "Number of times the size of batch was limited by the amount") \
+    M(KeeperBatchMaxTotalSize, "Number of times the size of batch was limited by the total bytes size") \
     M(KeeperCommits, "Number of successful commits") \
     M(KeeperCommitsFailed, "Number of failed commits") \
     M(KeeperSnapshotCreations, "Number of snapshots creations")\
