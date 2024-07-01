@@ -22,6 +22,7 @@ namespace DB
 class MultiplexedConnections;
 class RemoteQueryExecutor;
 
+/// NOTE: This async executor is not restartable (due to pipe notifications that may overlaps)
 class RemoteQueryExecutorReadContext : public AsyncTaskExecutor
 {
 public:

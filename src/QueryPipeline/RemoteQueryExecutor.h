@@ -123,11 +123,12 @@ public:
     void sendQuery(ClientInfo::QueryKind query_kind = ClientInfo::QueryKind::SECONDARY_QUERY, AsyncCallback async_callback = {});
     void sendQueryUnlocked(ClientInfo::QueryKind query_kind = ClientInfo::QueryKind::SECONDARY_QUERY, AsyncCallback async_callback = {});
 
+    /// Asynchronous query sending (async_query_sending_for_remote)
+    /// Returns file descriptor which may be used for polling or -1.
     int sendQueryAsync();
 
     /// Query is resent to a replica, the query itself can be modified.
     bool resent_query { false };
-    bool recreate_read_context { false };
 
     struct ReadResult
     {
@@ -180,7 +181,8 @@ public:
 
     ReadResult read();
 
-    /// Async variant of read. Returns ready block or file descriptor which may be used for polling.
+    /// Async variant of read (async_socket_for_remote).
+    /// Returns ready block or file descriptor which may be used for polling.
     ReadResult readAsync();
 
     /// Receive all remain packets and finish query.
