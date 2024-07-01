@@ -249,6 +249,8 @@ private:
      */
     FileCacheQueryLimitPtr query_limit;
 
+    void initializeImpl();
+
     void assertInitialized() const;
     void assertCacheCorrectness();
 

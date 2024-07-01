@@ -171,6 +171,20 @@ void FileCache::assertInitialized() const
 
 void FileCache::initialize()
 {
+    status_file = make_unique<StatusFile>(fs::path(getBasePath()) / "status", StatusFile::write_full_info);
+
+    if (load_metadata_asynchronously)
+    {
+        load_metadata_main_thread = ThreadFromGlobalPool([this] { initializeImpl(); });
+    }
+    else
+    {
+        initializeImpl();
+    }
+}
+
+void FileCache::initializeImpl()
+{
     std::lock_guard lock(init_mutex);
 
     if (is_initialized)
@@ -186,8 +200,6 @@ void FileCache::initialize()
         {
             fs::create_directories(getBasePath());
         }
-
-        status_file = make_unique<StatusFile>(fs::path(getBasePath()) / "status", StatusFile::write_full_info);
     }
     catch (...)
     {
@@ -1135,14 +1147,7 @@ void FileCache::loadMetadata()
             "Please, check log for error messages");
     }
 
-    if (load_metadata_asynchronously)
-    {
-        load_metadata_main_thread = ThreadFromGlobalPool([this] { loadMetadataImpl(); });
-    }
-    else
-    {
-        loadMetadataImpl();
-    }
+    loadMetadataImpl();
 
     /// Shuffle file_segment_metadatas to have random order in LRUQueue
     /// as at startup all file_segment_metadatas have the same priority.
