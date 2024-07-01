@@ -28,7 +28,7 @@ def make_instance(name, *args, **kwargs):
 
 
 # DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_V2 added in 23.3, ensure that CLICKHOUSE_CI_MIN_TESTED_VERSION fits
-assert CLICKHOUSE_CI_MIN_TESTED_VERSION < "23.3"
+assert CLICKHOUSE_CI_MIN_TESTED_VERSION <= "23.3"
 
 # _n1/_n2 contains cluster with different <secret> -- should fail
 # only n1 contains new_user
