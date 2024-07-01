@@ -84,6 +84,14 @@ class Runner:
         )
         return output
 
+    def check_command(self, cmd: str) -> bool:
+        try:
+            self.run(cmd)
+        except subprocess.CalledProcessError:
+            return False
+        return True
+
+
     @property
     def cwd(self) -> str:
         if self._set_cwd_to_git_root:

@@ -28,13 +28,9 @@ jobs:
         # https://docs.github.com/en/actions/learn-github-actions/workflow-commands-for-github-actions#multiline-strings
         run: |
           cat >> "$GITHUB_ENV" << 'EOF'
-          TEMP_PATH=${{runner.temp}}/cherry_pick
           ROBOT_CLICKHOUSE_SSH_KEY<<RCSK
           ${{secrets.ROBOT_CLICKHOUSE_SSH_KEY}}
           RCSK
-          REPO_OWNER=ClickHouse
-          REPO_NAME=ClickHouse
-          REPO_TEAM=core
           EOF
       - name: Check out repository code
         uses: ClickHouse/checkout@v1
@@ -42,14 +38,12 @@ jobs:
           clear-repository: true
           token: ${{secrets.ROBOT_CLICKHOUSE_COMMIT_TOKEN}}
           fetch-depth: 0
-      - name: TagAndRelease
+      - name: Create Release Tag
         env:
           GH_TOKEN: ${{ secrets.ROBOT_CLICKHOUSE_COMMIT_TOKEN }}
         run: |
-          echo "token=$GH_TOKEN"
-          echo "ROBOT_CLICKHOUSE_SSH_KEY=$ROBOT_CLICKHOUSE_SSH_KEY"
           cd ./tests/ci
-          python3 ./release.py --commit ${{ inputs.sha }} --type ${{ inputs.type }} --dry-run --with-stderr --no-check-dirty --no-run-from-master
+          python3 ./create_release.py --ref ${{ inputs.sha }} --type ${{ inputs.type }} --dry-run
           GITHUB_TAG=$(cat ./tag.tmp)
           echo "GITHUB_TAG=$GITHUB_TAG" >> "$GITHUB_ENV"
           echo "GITHUB_TAG=$GITHUB_TAG" >> "$GITHUB_OUTPUT"
@@ -63,22 +57,25 @@ jobs:
                 [ -n "$GITHUB_TAG" ] && echo "ERROR: Release tag must not be set in env for new release" && exit 1
             fi
             echo "Alles goed - continue"
-#      - name: Update versions, docker version, changelog, security
-#        env:
-#          GITHUB_TOKEN: ${{ secrets.ROBOT_CLICKHOUSE_COMMIT_TOKEN }}
-#        run: |
-#          ./utils/list-versions/list-versions.sh > ./utils/list-versions/version_date.tsv
-#          ./utils/list-versions/update-docker-version.sh
-#          GID=$(id -g "${UID}")
-#          # --network=host and CI=1 are required for the S3 access from a container
-#          docker run -u "${UID}:${GID}" -e PYTHONUNBUFFERED=1 -e CI=1 --network=host \
-#              --volume="${GITHUB_WORKSPACE}:/ClickHouse" clickhouse/style-test \
-#                  /ClickHouse/tests/ci/changelog.py -v --debug-helpers \
-#                  --gh-user-or-token="$GITHUB_TOKEN" --jobs=5 \
-#                  --output="/ClickHouse/docs/changelogs/${GITHUB_TAG}.md" "${GITHUB_TAG}"
-#          git add "./docs/changelogs/${GITHUB_TAG}.md"
-#          python3 ./utils/security-generator/generate_security.py > SECURITY.md
-#          git diff HEAD
+      - name: Docker version, Changelog, Security
+        if: $ {{ inputs.type == 'patch' }}
+        run: |
+          echo "Git status:"
+          git status
+          echo "List versions"
+          ./utils/list-versions/list-versions.sh > ./utils/list-versions/version_date.tsv
+          echo "Update docker version"
+          ./utils/list-versions/update-docker-version.sh
+          echo "Generate ChangeLog"
+          GID=$(id -g "${UID}")
+          export CI=1
+          python3 ./tests/ci/changelog.py -v --debug-helpers \
+                  --gh-user-or-token="$GH_TOKEN" --jobs=5 \
+                  --output="docs/changelogs/${GITHUB_TAG}.md" "${GITHUB_TAG}"
+          # git add "./docs/changelogs/${GITHUB_TAG}.md"
+          echo "Generate Security"
+          python3 ./utils/security-generator/generate_security.py > SECURITY.md
+          git diff HEAD
 #      - name: Create Pull Request
 #        uses: peter-evans/create-pull-request@v6
 #        with:
