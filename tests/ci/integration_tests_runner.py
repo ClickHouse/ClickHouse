@@ -438,9 +438,9 @@ class ClickhouseIntegrationTestsRunner:
                 subprocess.check_call(cmd, shell=True, stdout=ofd, stderr=ofd)
             except subprocess.CalledProcessError as ex:
                 print("ERROR: Setting test plan failed. Output:")
-                with open(out_file_full, 'r') as file:
+                with open(out_file_full, "r") as file:
                     for line in file:
-                        print("    " + line, end='')
+                        print("    " + line, end="")
                 raise ex
 
         all_tests = set()
