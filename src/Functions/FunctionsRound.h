@@ -511,7 +511,7 @@ template <typename T, RoundingMode rounding_mode, TieBreakingMode tie_breaking_m
 struct Dispatcher
 {
     template <ScaleMode scale_mode>
-    using FunctionRoundingImpl = std::conditional_t<std::is_floating_point_v<T>,
+    using FunctionRoundingImpl = std::conditional_t<is_floating_point<T>,
         FloatRoundingImpl<T, rounding_mode, scale_mode>,
         IntegerRoundingImpl<T, rounding_mode, scale_mode, tie_breaking_mode>>;
 
@@ -662,29 +662,35 @@ public:
             using Types = std::decay_t<decltype(types)>;
             using DataType = typename Types::RightType;
 
-            if (arguments.size() > 1)
+            if constexpr ((IsDataTypeNumber<DataType> || IsDataTypeDecimal<DataType>)
+                && !std::is_same_v<DataType, DataTypeBFloat16>)
             {
-                const ColumnWithTypeAndName & scale_column = arguments[1];
-
-                auto call_scale = [&](const auto & scaleTypes) -> bool
+                if (arguments.size() > 1)
                 {
-                    using ScaleTypes = std::decay_t<decltype(scaleTypes)>;
-                    using ScaleType = typename ScaleTypes::RightType;
+                    const ColumnWithTypeAndName & scale_column = arguments[1];
 
-                    if (isColumnConst(*value_arg.column) && !isColumnConst(*scale_column.column))
-                        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Scale column must be const for const data column");
+                    auto call_scale = [&](const auto & scaleTypes) -> bool
+                    {
+                        using ScaleTypes = std::decay_t<decltype(scaleTypes)>;
+                        using ScaleType = typename ScaleTypes::RightType;
 
-                    res = Dispatcher<DataType, rounding_mode, tie_breaking_mode>::template apply<ScaleType>(value_arg.column.get(), scale_column.column.get());
+                        if (isColumnConst(*value_arg.column) && !isColumnConst(*scale_column.column))
+                            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Scale column must be const for const data column");
+
+                        res = Dispatcher<DataType, rounding_mode, tie_breaking_mode>::template apply<ScaleType>(value_arg.column.get(), scale_column.column.get());
+                        return true;
+                    };
+
+                    TypeIndex right_index = scale_column.type->getTypeId();
+                    if (!callOnBasicType<void, true, false, false, false>(right_index, call_scale))
+                        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Scale argument for rounding functions must have integer type");
                     return true;
-                };
-
-                TypeIndex right_index = scale_column.type->getTypeId();
-                if (!callOnBasicType<void, true, false, false, false>(right_index, call_scale))
-                    throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Scale argument for rounding functions must have integer type");
+                }
+                res = Dispatcher<DataType, rounding_mode, tie_breaking_mode>::template apply<int>(value_arg.column.get());
                 return true;
             }
-            res = Dispatcher<DataType, rounding_mode, tie_breaking_mode>::template apply<int>(value_arg.column.get());
-            return true;
+            else
+                return false;
         };
 
 #if !defined(__SSE4_1__)

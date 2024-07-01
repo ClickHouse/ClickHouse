@@ -54,6 +54,13 @@ bool canBeSafelyCasted(const DataTypePtr & from_type, const DataTypePtr & to_typ
 
             return false;
         }
+        case TypeIndex::BFloat16:
+        {
+            if (to_which_type.isFloat32() || to_which_type.isFloat64() || to_which_type.isString())
+                return true;
+
+            return false;
+        }
         case TypeIndex::Float32:
         {
             if (to_which_type.isFloat64() || to_which_type.isString())

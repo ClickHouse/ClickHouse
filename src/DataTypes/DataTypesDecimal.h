@@ -3,6 +3,7 @@
 #include <base/arithmeticOverflow.h>
 #include <base/extended_types.h>
 #include <Common/typeid_cast.h>
+#include <Common/NaNUtils.h>
 #include <base/Decimal.h>
 #include <base/Decimal_fwd.h>
 #include <DataTypes/IDataType.h>
@@ -204,7 +205,6 @@ ReturnType convertToDecimalImpl(const typename FromDataType::FieldType & value, 
 FOR_EACH_DECIMAL_TYPE(INVOKE);
 #undef INVOKE
 #undef DISPATCH
-
 
 template <typename FromDataType, typename ToDataType>
 requires (is_arithmetic_v<typename FromDataType::FieldType> && IsDataTypeDecimal<ToDataType>)

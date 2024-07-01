@@ -183,7 +183,7 @@ private:
         if (sorted.load(std::memory_order_relaxed))
             return;
 
-        if constexpr (std::is_arithmetic_v<TKey> && !std::is_floating_point_v<TKey>)
+        if constexpr (std::is_arithmetic_v<TKey> && !is_floating_point<TKey>)
         {
             if (likely(entries.size() > 256))
             {
