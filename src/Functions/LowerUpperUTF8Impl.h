@@ -1,12 +1,14 @@
 #pragma once
 
 #include "config.h"
+
 #if USE_ICU
-#    include <Columns/ColumnString.h>
-#    include <Functions/LowerUpperImpl.h>
-#    include <base/find_symbols.h>
-#    include <unicode/unistr.h>
-#    include <Common/StringUtils.h>
+
+#include <Columns/ColumnString.h>
+#include <Functions/LowerUpperImpl.h>
+#include <base/find_symbols.h>
+#include <unicode/unistr.h>
+#include <Common/StringUtils.h>
 
 namespace DB
 {
@@ -54,6 +56,9 @@ struct LowerUpperUTF8Impl
             output.clear();
             input.toUTF8String(output);
 
+            /// For valid UTF-8 input strings, ICU sometimes produces output with extra '\0's at the end. Only the data before the first
+            /// '\0' is valid. It the input is not valid UTF-8, then the behavior of lower/upperUTF8 is undefined by definition. In this
+            /// case, the behavior is also reasonable.
             const char * res_end = find_first_symbols<'\0'>(output.data(), output.data() + output.size());
             size_t valid_size = res_end - output.data();
 
@@ -73,4 +78,5 @@ struct LowerUpperUTF8Impl
 };
 
 }
+
 #endif

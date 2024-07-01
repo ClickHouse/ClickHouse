@@ -1,4 +1,5 @@
--- Tags: no-fasttest, use-icu
+-- Tags: no-fasttest
+-- no-fasttest: upper/lowerUTF8 use ICU
 
 select lower('aaaaaaaaaaaaaaa012345789,.!aaaa' as str) = str;
 select lowerUTF8('aaaaaaaaaaaaaaa012345789,.!aaaa' as str) = str;
@@ -33,3 +34,7 @@ select sum(upperUTF8(materialize('aaaaАБВГAAAAaaAA')) = materialize('AAAAА�
 -- Turkish language
 select upperUTF8('ır') = 'IR';
 select lowerUTF8('ır') = 'ır';
+
+-- German language
+select upper('öäüß') = 'öäüß';
+select lower('ÖÄÜẞ') = 'ÖÄÜẞ';
