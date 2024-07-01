@@ -566,8 +566,8 @@ MergeJoin::MergeJoin(std::shared_ptr<TableJoin> table_join_, const Block & right
             lowcard_right_keys.push_back(right_key);
     }
 
-    JoinCommon::convertToFullColumnsInplace(right_table_keys);
-    JoinCommon::convertToFullColumnsInplace(right_sample_block, key_names_right);
+    JoinCommon::materializeColumnsInplace(right_table_keys, key_names_right);
+    JoinCommon::materializeColumnsInplace(right_sample_block, key_names_right);
 
     for (const auto & column : right_table_keys)
         if (required_right_keys.contains(column.name))
