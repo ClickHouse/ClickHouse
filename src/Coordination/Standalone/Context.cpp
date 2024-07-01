@@ -483,4 +483,13 @@ bool Context::isBackgroundOperationContext() const
     return false;
 }
 
+std::shared_ptr<PageCache> Context::getPageCache() const
+{
+    return nullptr;
+}
+
+std::shared_ptr<MMappedFileCache> Context::getMMappedFileCache() const
+{
+    return nullptr;
+}
 }
