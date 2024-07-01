@@ -1,18 +1,32 @@
 #!/usr/bin/env python3
 
 import logging
-import os
 import subprocess
+import os
 import sys
 from pathlib import Path
+from typing import Dict
 
-from build_download_helper import read_build_urls
-from docker_images_helper import get_docker_image, pull_image
-from env_helper import REPORT_PATH, TEMP_PATH
+from github import Github
+
+from build_download_helper import get_build_name_for_check, read_build_urls
+from clickhouse_helper import ClickHouseHelper, prepare_tests_results_for_clickhouse
+from commit_status_helper import (
+    RerunHelper,
+    get_commit,
+    post_commit_status,
+)
+from docker_pull_helper import get_image_with_version
+from env_helper import (
+    GITHUB_RUN_URL,
+    REPORTS_PATH,
+    TEMP_PATH,
+)
+from get_robot_token import get_best_robot_token
 from pr_info import PRInfo
-from report import SUCCESS, JobReport, TestResult
+from report import TestResult
+from s3_helper import S3Helper
 from stopwatch import Stopwatch
-from ci_config import CI
 
 IMAGE_NAME = "clickhouse/sqltest"
 
@@ -36,32 +50,36 @@ def main():
     stopwatch = Stopwatch()
 
     temp_path = Path(TEMP_PATH)
-    reports_path = Path(REPORT_PATH)
-    temp_path.mkdir(parents=True, exist_ok=True)
+    reports_path = Path(REPORTS_PATH)
 
-    check_name = sys.argv[1] if len(sys.argv) > 1 else os.getenv("CHECK_NAME")
-    assert (
-        check_name
-    ), "Check name must be provided as an input arg or in CHECK_NAME env"
+    check_name = sys.argv[1]
 
     temp_path.mkdir(parents=True, exist_ok=True)
 
     pr_info = PRInfo()
 
-    docker_image = pull_image(get_docker_image(IMAGE_NAME))
+    gh = Github(get_best_robot_token(), per_page=100)
+    commit = get_commit(gh, pr_info.sha)
 
-    build_name = CI.get_required_build_name(check_name)
+    rerun_helper = RerunHelper(commit, check_name)
+    if rerun_helper.is_already_finished_by_status():
+        logging.info("Check is already finished according to github status, exiting")
+        sys.exit(0)
+
+    docker_image = get_image_with_version(reports_path, IMAGE_NAME)
+
+    build_name = get_build_name_for_check(check_name)
     print(build_name)
     urls = read_build_urls(build_name, reports_path)
     if not urls:
-        raise ValueError("No build URLs found")
+        raise Exception("No build URLs found")
 
     for url in urls:
         if url.endswith("/clickhouse"):
             build_url = url
             break
     else:
-        raise ValueError("Cannot find the clickhouse binary among build results")
+        raise Exception("Cannot find the clickhouse binary among build results")
 
     logging.info("Got build url %s", build_url)
 
@@ -87,6 +105,10 @@ def main():
 
     subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {temp_path}", shell=True)
 
+    check_name_lower = (
+        check_name.lower().replace("(", "").replace(")", "").replace(" ", "")
+    )
+    s3_prefix = f"{pr_info.number}/{pr_info.sha}/sqltest_{check_name_lower}/"
     paths = {
         "run.log": run_log_path,
         "server.log.zst": workspace_path / "server.log.zst",
@@ -94,18 +116,41 @@ def main():
         "report.html": workspace_path / "report.html",
         "test.log": workspace_path / "test.log",
     }
-    status = SUCCESS
-    description = "See the report"
-    test_results = [TestResult(description, "OK")]
+    path_urls = {}  # type: Dict[str, str]
 
-    JobReport(
-        description=description,
-        test_results=test_results,
-        status=status,
-        start_time=stopwatch.start_time_str,
-        duration=stopwatch.duration_seconds,
-        additional_files=[v for _, v in paths.items()],
-    ).dump()
+    s3_helper = S3Helper()
+    for f in paths:
+        try:
+            path_urls[f] = s3_helper.upload_test_report_to_s3(paths[f], s3_prefix + f)
+        except Exception as ex:
+            logging.info("Exception uploading file %s text %s", f, ex)
+            path_urls[f] = ""
+
+    report_url = GITHUB_RUN_URL
+    if path_urls["report.html"]:
+        report_url = path_urls["report.html"]
+
+    status = "success"
+    description = "See the report"
+    test_result = TestResult(description, "OK")
+
+    ch_helper = ClickHouseHelper()
+
+    prepared_events = prepare_tests_results_for_clickhouse(
+        pr_info,
+        [test_result],
+        status,
+        stopwatch.duration_seconds,
+        stopwatch.start_time_str,
+        report_url,
+        check_name,
+    )
+
+    ch_helper.insert_events_into(db="default", table="checks", events=prepared_events)
+
+    logging.info("Result: '%s', '%s', '%s'", status, description, report_url)
+    print(f"::notice ::Report url: {report_url}")
+    post_commit_status(commit, status, report_url, description, check_name, pr_info)
 
 
 if __name__ == "__main__":

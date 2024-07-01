@@ -3,7 +3,6 @@
 #include <Analyzer/TableNode.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
-#include <Interpreters/Context.h>
 
 namespace DB
 {
@@ -21,20 +20,14 @@ const ColumnIdentifier & GlobalPlannerContext::createColumnIdentifier(const Quer
     return createColumnIdentifier(column_node_typed.getColumn(), column_source_node);
 }
 
-const ColumnIdentifier & GlobalPlannerContext::createColumnIdentifier(const NameAndTypePair & column, const QueryTreeNodePtr & column_source_node)
+const ColumnIdentifier & GlobalPlannerContext::createColumnIdentifier(const NameAndTypePair & column, const QueryTreeNodePtr & /*column_source_node*/)
 {
     std::string column_identifier;
 
-    const auto & source_alias = column_source_node->getAlias();
-    if (!source_alias.empty())
-        column_identifier = source_alias + "." + column.name;
-    else
-        column_identifier = column.name;
+    column_identifier += column.name;
+    column_identifier += '_' + std::to_string(column_identifiers.size());
 
     auto [it, inserted] = column_identifiers.emplace(column_identifier);
-    if (!inserted)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Column identifier {} is already registered", column_identifier);
-
     assert(inserted);
 
     return *it;
@@ -45,16 +38,9 @@ bool GlobalPlannerContext::hasColumnIdentifier(const ColumnIdentifier & column_i
     return column_identifiers.contains(column_identifier);
 }
 
-PlannerContext::PlannerContext(ContextMutablePtr query_context_, GlobalPlannerContextPtr global_planner_context_, const SelectQueryOptions & select_query_options_)
+PlannerContext::PlannerContext(ContextMutablePtr query_context_, GlobalPlannerContextPtr global_planner_context_)
     : query_context(std::move(query_context_))
     , global_planner_context(std::move(global_planner_context_))
-    , is_ast_level_optimization_allowed(!(query_context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY || select_query_options_.ignore_ast_optimizations))
-{}
-
-PlannerContext::PlannerContext(ContextMutablePtr query_context_, PlannerContextPtr planner_context_)
-    : query_context(std::move(query_context_))
-    , global_planner_context(planner_context_->global_planner_context)
-    , is_ast_level_optimization_allowed(planner_context_->is_ast_level_optimization_allowed)
 {}
 
 TableExpressionData & PlannerContext::getOrCreateTableExpressionData(const QueryTreeNodePtr & table_expression_node)

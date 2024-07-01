@@ -37,7 +37,7 @@ public:
     void resetReadBuffer() override;
 
     /// TODO: remove context somehow.
-    void setContext(const ContextPtr & context_) { context = Context::createCopy(context_); }
+    void setContext(ContextPtr & context_) { context = Context::createCopy(context_); }
 
     const BlockMissingValues & getMissingValues() const override { return block_missing_values; }
 
@@ -49,7 +49,7 @@ private:
     ValuesBlockInputFormat(std::unique_ptr<PeekableReadBuffer> buf_, const Block & header_, const RowInputFormatParams & params_,
                            const FormatSettings & format_settings_);
 
-    enum class ParserType : uint8_t
+    enum class ParserType
     {
         Streaming,
         BatchTemplate,
@@ -58,7 +58,7 @@ private:
 
     using ConstantExpressionTemplates = std::vector<std::optional<ConstantExpressionTemplate>>;
 
-    Chunk read() override;
+    Chunk generate() override;
 
     void readRow(MutableColumns & columns, size_t row_num);
     void readUntilTheEndOfRowAndReTokenize(size_t current_column_idx);
@@ -112,7 +112,6 @@ public:
 
 private:
     std::optional<DataTypes> readRowAndGetDataTypes() override;
-    void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) override;
 
     PeekableReadBuffer buf;
     ParserExpression parser;

@@ -9,10 +9,10 @@ class Context;
 
 /** System table "contributors" with list of clickhouse contributors
   */
-class StorageSystemContributors final : public IStorageSystemOneBlock
+class StorageSystemContributors final : public IStorageSystemOneBlock<StorageSystemContributors>
 {
 protected:
-    void fillData(MutableColumns & res_columns, ContextPtr, const ActionsDAG::Node *, std::vector<UInt8>) const override;
+    void fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo & query_info) const override;
 
     using IStorageSystemOneBlock::IStorageSystemOneBlock;
 
@@ -22,6 +22,6 @@ public:
         return "SystemContributors";
     }
 
-    static ColumnsDescription getColumnsDescription();
+    static NamesAndTypesList getNamesAndTypes();
 };
 }

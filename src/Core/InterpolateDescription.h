@@ -2,17 +2,19 @@
 
 #include <unordered_map>
 #include <memory>
+#include <cstddef>
 #include <string>
-#include <Core/NamesAndTypes.h>
-#include <Parsers/IAST_fwd.h>
+#include <Core/Field.h>
+#include <Core/SettingsEnums.h>
+#include <Common/IntervalKind.h>
+#include <Parsers/ASTOrderByElement.h>
+#include <Parsers/ASTInterpolateElement.h>
+#include <Functions/FunctionsMiscellaneous.h>
+#include <Interpreters/Aliases.h>
 
 
 namespace DB
 {
-
-class ActionsDAG;
-using ActionsDAGPtr = std::shared_ptr<ActionsDAG>;
-using Aliases = std::unordered_map<String, ASTPtr>;
 
 /// Interpolate description
 struct InterpolateDescription

@@ -6,10 +6,10 @@
 namespace DB
 {
 
-class StorageSystemTableEngines final : public IStorageSystemOneBlock
+class StorageSystemTableEngines final : public IStorageSystemOneBlock<StorageSystemTableEngines>
 {
 protected:
-    void fillData(MutableColumns & res_columns, ContextPtr, const ActionsDAG::Node *, std::vector<UInt8>) const override;
+    void fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo & query_info) const override;
 
     using IStorageSystemOneBlock::IStorageSystemOneBlock;
 
@@ -19,7 +19,7 @@ public:
         return "SystemTableEngines";
     }
 
-    static ColumnsDescription getColumnsDescription();
+    static NamesAndTypesList getNamesAndTypes();
 };
 
 }

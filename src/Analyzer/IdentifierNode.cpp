@@ -38,13 +38,13 @@ void IdentifierNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_sta
     }
 }
 
-bool IdentifierNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
+bool IdentifierNode::isEqualImpl(const IQueryTreeNode & rhs) const
 {
     const auto & rhs_typed = assert_cast<const IdentifierNode &>(rhs);
     return identifier == rhs_typed.identifier && table_expression_modifiers == rhs_typed.table_expression_modifiers;
 }
 
-void IdentifierNode::updateTreeHashImpl(HashState & state, CompareOptions) const
+void IdentifierNode::updateTreeHashImpl(HashState & state) const
 {
     const auto & identifier_name = identifier.getFullName();
     state.update(identifier_name.size());
@@ -56,9 +56,7 @@ void IdentifierNode::updateTreeHashImpl(HashState & state, CompareOptions) const
 
 QueryTreeNodePtr IdentifierNode::cloneImpl() const
 {
-    auto clone_identifier_node = std::make_shared<IdentifierNode>(identifier);
-    clone_identifier_node->table_expression_modifiers = table_expression_modifiers;
-    return clone_identifier_node;
+    return std::make_shared<IdentifierNode>(identifier);
 }
 
 ASTPtr IdentifierNode::toASTImpl(const ConvertToASTOptions & /* options */) const

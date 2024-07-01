@@ -108,7 +108,7 @@ struct BloomFilterHash
         {
             const auto * array_col = typeid_cast<const ColumnArray *>(column.get());
 
-            if (checkAndGetColumn<ColumnNullable>(&array_col->getData()))
+            if (checkAndGetColumn<ColumnNullable>(array_col->getData()))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected type {} of bloom filter index.", data_type->getName());
 
             const auto & offsets = array_col->getOffsets();
@@ -247,16 +247,6 @@ struct BloomFilterHash
     {
         static const size_t MAX_BITS_PER_ROW = 20;
         static const size_t MAX_HASH_FUNCTION_COUNT = 15;
-
-        static const size_t MIN_BITS_PER_ROW = 2;
-        static const size_t MIN_HASH_FUNCTION_COUNT = 2;
-
-        /// Return the smaller possible parameters for false positive rates higher or equal than 0.283
-        /// Otherwise, for those rates the loop won't find any possible values in the lookup table
-        /// returning bits_per_row = 19 & size_of_hash_functions = 13. Which are the most restrictive values
-        /// to be used with the smallest false positive rates.
-        if (max_conflict_probability >= 0.283)
-            return std::pair<size_t, size_t>(MIN_BITS_PER_ROW, MIN_HASH_FUNCTION_COUNT);
 
         /// For the smallest index per level in probability_lookup_table
         static const size_t min_probability_index_each_bits[] = {0, 0, 1, 2, 3, 3, 4, 5, 6, 6, 7, 8, 8, 9, 10, 10, 11, 12, 12, 13, 14};

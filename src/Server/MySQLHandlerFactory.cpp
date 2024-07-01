@@ -21,11 +21,9 @@ namespace ErrorCodes
     extern const int OPENSSL_ERROR;
 }
 
-MySQLHandlerFactory::MySQLHandlerFactory(IServer & server_, const ProfileEvents::Event & read_event_, const ProfileEvents::Event & write_event_)
+MySQLHandlerFactory::MySQLHandlerFactory(IServer & server_)
     : server(server_)
-    , log(getLogger("MySQLHandlerFactory"))
-    , read_event(read_event_)
-    , write_event(write_event_)
+    , log(&Poco::Logger::get("MySQLHandlerFactory"))
 {
 #if USE_SSL
     try
@@ -69,8 +67,10 @@ void MySQLHandlerFactory::readRSAKeys()
         FILE * fp = fopen(certificate_file.data(), "r");
         if (fp == nullptr)
             throw Exception(ErrorCodes::CANNOT_OPEN_FILE, "Cannot open certificate file: {}.", certificate_file);
-        SCOPE_EXIT(if (0 != fclose(fp)) throw ErrnoException(
-                       ErrorCodes::CANNOT_CLOSE_FILE, "Cannot close file with the certificate in MySQLHandlerFactory"););
+        SCOPE_EXIT(
+            if (0 != fclose(fp))
+                throwFromErrno("Cannot close file with the certificate in MySQLHandlerFactory", ErrorCodes::CANNOT_CLOSE_FILE);
+        );
 
         X509 * x509 = PEM_read_X509(fp, nullptr, nullptr, nullptr);
         SCOPE_EXIT(X509_free(x509));
@@ -93,8 +93,10 @@ void MySQLHandlerFactory::readRSAKeys()
         FILE * fp = fopen(private_key_file.data(), "r");
         if (fp == nullptr)
             throw Exception(ErrorCodes::CANNOT_OPEN_FILE, "Cannot open private key file {}.", private_key_file);
-        SCOPE_EXIT(if (0 != fclose(fp)) throw ErrnoException(
-                       ErrorCodes::CANNOT_CLOSE_FILE, "Cannot close file with the certificate in MySQLHandlerFactory"););
+        SCOPE_EXIT(
+            if (0 != fclose(fp))
+                throwFromErrno("Cannot close file with the certificate in MySQLHandlerFactory", ErrorCodes::CANNOT_CLOSE_FILE);
+        );
 
         private_key.reset(PEM_read_RSAPrivateKey(fp, nullptr, nullptr, nullptr));
         if (!private_key)

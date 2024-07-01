@@ -831,7 +831,7 @@ public:
         [[maybe_unused]] Messaging::MessageTransport & mt,
         const Poco::Net::SocketAddress & address) override
     {
-        setPassword(user_name, "", session, address);
+        return setPassword(user_name, "", session, address);
     }
 
     AuthenticationType getType() const override
@@ -855,7 +855,7 @@ public:
         if (type == Messaging::FrontMessageType::PASSWORD_MESSAGE)
         {
             std::unique_ptr<Messaging::PasswordMessage> password = mt.receive<Messaging::PasswordMessage>();
-            setPassword(user_name, password->password, session, address);
+            return setPassword(user_name, password->password, session, address);
         }
         else
             throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT,
@@ -872,7 +872,7 @@ public:
 class AuthenticationManager
 {
 private:
-    LoggerPtr log = getLogger("AuthenticationManager");
+    Poco::Logger * log = &Poco::Logger::get("AuthenticationManager");
     std::unordered_map<AuthenticationType, std::shared_ptr<AuthenticationMethod>> type_to_method = {};
 
 public:

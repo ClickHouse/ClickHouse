@@ -65,9 +65,9 @@ SOFTWARE.
  */
 
 #ifndef __SSE4_1__
-    static UInt8 isValidUTF8(const UInt8 * data, UInt64 len) { return DB::UTF8::isValidUTF8(data, len); }
+    static inline UInt8 isValidUTF8(const UInt8 * data, UInt64 len) { return DB::UTF8::isValidUTF8(data, len); }
 #else
-    static UInt8 isValidUTF8(const UInt8 * data, UInt64 len)
+    static inline UInt8 isValidUTF8(const UInt8 * data, UInt64 len)
     {
         /*
         * Map high nibble of "First Byte" to legal character length minus 1

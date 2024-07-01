@@ -11,11 +11,10 @@ std::pair<std::vector<UInt8>, Block> getQueriedColumnsMaskAndHeader(const Block 
     NameSet names_set(column_names.begin(), column_names.end());
     for (size_t i = 0; i < columns_mask.size(); ++i)
     {
-        const auto & column_with_type_and_name = sample_block.getByPosition(i);
-        if (names_set.contains(column_with_type_and_name.name))
+        if (names_set.contains(sample_block.getByPosition(i).name))
         {
             columns_mask[i] = 1;
-            header.insert(column_with_type_and_name);
+            header.insert(sample_block.getByPosition(i));
         }
     }
 

@@ -8,7 +8,7 @@
 namespace DB
 {
 class AccessControl;
-enum class AccessEntityType : uint8_t;
+enum class AccessEntityType;
 struct IAccessEntity;
 using AccessEntityPtr = std::shared_ptr<const IAccessEntity>;
 class AccessRightsElements;
@@ -21,7 +21,7 @@ struct RestoreSettings;
 
 /// Makes a backup of access entities of a specified type.
 std::pair<String, BackupEntryPtr> makeBackupEntryForAccess(
-    const std::vector<std::pair<UUID, AccessEntityPtr>> & access_entities,
+    const std::vector<std::pair<UUID, AccessEntityPtr>> access_entities,
     const String & data_path_in_backup,
     size_t counter,
     const AccessControl & access_control);

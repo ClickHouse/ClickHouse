@@ -41,13 +41,14 @@ BaseSettingsHelpers::Flags BaseSettingsHelpers::readFlags(ReadBuffer & in)
 
 void BaseSettingsHelpers::throwSettingNotFound(std::string_view name)
 {
-    throw Exception(ErrorCodes::UNKNOWN_SETTING, "Unknown setting '{}'", String{name});
+    throw Exception(ErrorCodes::UNKNOWN_SETTING, "Unknown setting {}", String{name});
 }
 
 
 void BaseSettingsHelpers::warningSettingNotFound(std::string_view name)
 {
-    LOG_WARNING(getLogger("Settings"), "Unknown setting '{}', skipping", name);
+    static auto * log = &Poco::Logger::get("Settings");
+    LOG_WARNING(log, "Unknown setting {}, skipping", name);
 }
 
 }

@@ -15,7 +15,7 @@
 class GraphiteWriter
 {
 public:
-    explicit GraphiteWriter(const std::string & config_name, const std::string & sub_path = "");
+    GraphiteWriter(const std::string & config_name, const std::string & sub_path = "");
 
     template <typename T> using KeyValuePair = std::pair<std::string, T>;
     template <typename T> using KeyValueVector = std::vector<KeyValuePair<T>>;

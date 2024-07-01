@@ -11,17 +11,19 @@ class Context;
 
 /** Implements `processes` system table, which allows you to get information about the queries that are currently executing.
   */
-class StorageSystemUserProcesses final : public IStorageSystemOneBlock
+class StorageSystemUserProcesses final : public IStorageSystemOneBlock<StorageSystemUserProcesses>
 {
 public:
     std::string getName() const override { return "SystemUserProcesses"; }
 
-    static ColumnsDescription getColumnsDescription();
+    static NamesAndTypesList getNamesAndTypes();
+
+    static NamesAndAliases getNamesAndAliases();
 
 protected:
     using IStorageSystemOneBlock::IStorageSystemOneBlock;
 
-    void fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const override;
+    void fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo & query_info) const override;
 };
 
 }

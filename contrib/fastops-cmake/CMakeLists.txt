@@ -13,10 +13,12 @@ set(LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/fastops")
 
 set(SRCS "")
 
-if(ARCH_AMD64)
+if(HAVE_AVX)
     set (SRCS ${SRCS} "${LIBRARY_DIR}/fastops/avx/ops_avx.cpp")
     set_source_files_properties("${LIBRARY_DIR}/fastops/avx/ops_avx.cpp" PROPERTIES COMPILE_FLAGS "-mavx -DNO_AVX2")
+endif()
 
+if(HAVE_AVX2)
     set (SRCS ${SRCS} "${LIBRARY_DIR}/fastops/avx2/ops_avx2.cpp")
     set_source_files_properties("${LIBRARY_DIR}/fastops/avx2/ops_avx2.cpp" PROPERTIES COMPILE_FLAGS "-mavx2 -mfma")
 endif()

@@ -5,13 +5,9 @@ sidebar_label: "Named collections"
 title: "Named collections"
 ---
 
-import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
-
-<CloudNotSupportedBadge />
-
-Named collections provide a way to store collections of key-value pairs to be
+Named collections provide a way to store collections of key-value pairs to be 
 used to configure integrations with external sources. You can use named collections with
-dictionaries, tables, table functions, and object storage.
+dictionaries, tables, table functions, and object storage. 
 
 Named collections can be configured with DDL or in configuration files and are applied
 when ClickHouse starts. They simplify the creation of objects and the hiding of credentials
@@ -22,15 +18,7 @@ function, table engine, database, etc. In the examples below the parameter list 
 linked to for each type.
 
 Parameters set in a named collection can be overridden in SQL, this is shown in the examples
-below. This ability can be limited using `[NOT] OVERRIDABLE` keywords and XML attributes
-and/or the configuration option `allow_named_collection_override_by_default`.
-
-:::warning
-If override is allowed, it may be possible for users without administrative access to
-figure out the credentials that you are trying to hide.
-If you are using named collections with that purpose, you should disable
-`allow_named_collection_override_by_default` (which is enabled by default).
-:::
+below.
 
 ## Storing named collections in the system database
 
@@ -38,16 +26,10 @@ If you are using named collections with that purpose, you should disable
 
 ```sql
 CREATE NAMED COLLECTION name AS
-key_1 = 'value' OVERRIDABLE,
-key_2 = 'value2' NOT OVERRIDABLE,
+key_1 = 'value',
+key_2 = 'value2',
 url = 'https://connection.url/'
 ```
-
-In the above example:
-
- * `key_1` can always be overridden.
- * `key_2` can never be overridden.
- * `url` can be overridden or not depending on the value of `allow_named_collection_override_by_default`.
 
 ### Permissions to create named collections with DDL
 
@@ -68,25 +50,8 @@ To manage named collections with DDL a user must have the `named_control_collect
 ```
 
 :::tip
-In the above example the `password_sha256_hex` value is the hexadecimal representation of the SHA256 hash of the password.  This configuration for the user `default` has the attribute `replace=true` as in the default configuration has a plain text `password` set, and it is not possible to have both plain text and sha256 hex passwords set for a user.
+In the above example the `password_sha256_hex` value is the hexadecimal representation of the SHA256 hash of the password.  This configuration for the user `default` has the attribute `replace=true` as in the default configuration has a plain text `password` set, and it is not possible to have both plain text and sha256 hex passwords set for a user. 
 :::
-
-### Storage for named collections
-
-Named collections can either be stored on local disk or in zookeeper/keeper. By default local storage is used.
-
-To configure named collections storage in keeper and a `type` (equal to either `keeper` or `zookeeper`) and `path` (path in keeper, where named collections will be stored) to `named_collections_storage` section in configuration file:
-```
-<clickhouse>
-  <named_collections_storage>
-    <type>zookeeper</type>
-    <path>/named_collections_path/</path>
-    <update_timeout_ms>1000</update_timeout_ms>
-  </named_collections_storage>
-</clickhouse>
-```
-
-An optional configuration parameter `update_timeout_ms` by default is equal to `5000`.
 
 ## Storing named collections in configuration files
 
@@ -96,19 +61,13 @@ An optional configuration parameter `update_timeout_ms` by default is equal to `
 <clickhouse>
      <named_collections>
         <name>
-            <key_1 overridable="true">value</key_1>
-            <key_2 overridable="false">value_2</key_2>
+            <key_1>value</key_1>
+            <key_2>value_2</key_2>
             <url>https://connection.url/</url>
         </name>
      </named_collections>
 </clickhouse>
 ```
-
-In the above example:
-
- * `key_1` can always be overridden.
- * `key_2` can never be overridden.
- * `url` can be overridden or not depending on the value of `allow_named_collection_override_by_default`.
 
 ## Modifying named collections
 
@@ -116,15 +75,9 @@ Named collections that are created with DDL queries can be altered or dropped wi
 
 ### Alter a DDL named collection
 
-Change or add the keys `key1` and `key3` of the collection `collection2`
-(this will not change the value of the `overridable` flag for those keys):
+Change or add the keys `key1` and `key3` of the collection `collection2`:
 ```sql
 ALTER NAMED COLLECTION collection2 SET key1=4, key3='value3'
-```
-
-Change or add the key `key1` and allow it to be always overridden:
-```sql
-ALTER NAMED COLLECTION collection2 SET key1=4 OVERRIDABLE
 ```
 
 Remove the key `key2` from `collection2`:
@@ -135,13 +88,6 @@ ALTER NAMED COLLECTION collection2 DELETE key2
 Change or add the key `key1` and delete the key `key3` of the collection `collection2`:
 ```sql
 ALTER NAMED COLLECTION collection2 SET key1=4, DELETE key3
-```
-
-To force a key to use the default settings for the `overridable` flag, you have to
-remove and re-add the key.
-```sql
-ALTER NAMED COLLECTION collection2 DELETE key1;
-ALTER NAMED COLLECTION collection2 SET key1=4;
 ```
 
 ### Drop the DDL named collection `collection2`:
@@ -317,6 +263,7 @@ host = '127.0.0.1',
 port = 5432,
 database = 'test',
 schema = 'test_schema',
+connection_pool_size = 8
 ```
 
 Example of configuration:
@@ -330,6 +277,7 @@ Example of configuration:
             <port>5432</port>
             <database>test</database>
             <schema>test_schema</schema>
+            <connection_pool_size>8</connection_pool_size>
         </mypg>
     </named_collections>
 </clickhouse>
@@ -465,58 +413,3 @@ SELECT dictGet('dict', 'b', 1);
 └─────────────────────────┘
 ```
 
-## Named collections for accessing Kafka
-
-The description of parameters see [Kafka](../engines/table-engines/integrations/kafka.md).
-
-### DDL example
-
-```sql
-CREATE NAMED COLLECTION my_kafka_cluster AS
-kafka_broker_list = 'localhost:9092',
-kafka_topic_list = 'kafka_topic',
-kafka_group_name = 'consumer_group',
-kafka_format = 'JSONEachRow',
-kafka_max_block_size = '1048576';
-       
-```
-### XML example
-
-```xml
-<clickhouse>
-    <named_collections>
-        <my_kafka_cluster>
-            <kafka_broker_list>localhost:9092</kafka_broker_list>
-            <kafka_topic_list>kafka_topic</kafka_topic_list>
-            <kafka_group_name>consumer_group</kafka_group_name>
-            <kafka_format>JSONEachRow</kafka_format>
-            <kafka_max_block_size>1048576</kafka_max_block_size>
-        </my_kafka_cluster>
-    </named_collections>
-</clickhouse>
-```
-
-### Example of using named collections with a Kafka table
-
-Both of the following examples use the same named collection `my_kafka_cluster`:
-
-
-```sql
-CREATE TABLE queue
-(
-    timestamp UInt64,
-    level String,
-    message String
-)
-ENGINE = Kafka(my_kafka_cluster)
-
-CREATE TABLE queue
-(
-    timestamp UInt64,
-    level String,
-    message String
-)
-ENGINE = Kafka(my_kafka_cluster)
-SETTINGS kafka_num_consumers = 4,
-         kafka_thread_per_consumer = 1;
-```

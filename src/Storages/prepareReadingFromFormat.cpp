@@ -4,7 +4,7 @@
 namespace DB
 {
 
-ReadFromFormatInfo prepareReadingFromFormat(const Strings & requested_columns, const StorageSnapshotPtr & storage_snapshot, bool supports_subset_of_columns)
+ReadFromFormatInfo prepareReadingFromFormat(const Strings & requested_columns, const StorageSnapshotPtr & storage_snapshot, bool supports_subset_of_columns, const NamesAndTypesList & virtuals)
 {
     ReadFromFormatInfo info;
     /// Collect requested virtual columns and remove them from requested columns.
@@ -12,11 +12,11 @@ ReadFromFormatInfo prepareReadingFromFormat(const Strings & requested_columns, c
     for (const auto & column_name : requested_columns)
     {
         bool is_virtual = false;
-        for (const auto & virtual_column : *storage_snapshot->virtual_columns)
+        for (const auto & virtual_column : virtuals)
         {
             if (column_name == virtual_column.name)
             {
-                info.requested_virtual_columns.emplace_back(virtual_column.name, virtual_column.type);
+                info.requested_virtual_columns.push_back(virtual_column);
                 is_virtual = true;
                 break;
             }

@@ -14,7 +14,7 @@ namespace ErrorCodes
 class NullDictionarySource final : public IDictionarySource
 {
 public:
-    explicit NullDictionarySource(Block & sample_block_);
+    NullDictionarySource(Block & sample_block_);
 
     NullDictionarySource(const NullDictionarySource & other);
 

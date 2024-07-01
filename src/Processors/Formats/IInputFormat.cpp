@@ -1,30 +1,14 @@
 #include <Processors/Formats/IInputFormat.h>
 #include <IO/ReadBuffer.h>
-#include <IO/WithFileName.h>
-#include <Common/Exception.h>
+
 
 namespace DB
 {
 
 IInputFormat::IInputFormat(Block header, ReadBuffer * in_)
-    : SourceWithKeyCondition(std::move(header)), in(in_)
+    : ISource(std::move(header)), in(in_)
 {
     column_mapping = std::make_shared<ColumnMapping>();
-}
-
-Chunk IInputFormat::generate()
-{
-    try
-    {
-        return read();
-    }
-    catch (Exception & e)
-    {
-        auto file_name = getFileNameFromReadBuffer(getReadBuffer());
-        if (!file_name.empty())
-            e.addMessage(fmt::format("(in file/uri {})", file_name));
-        throw;
-    }
 }
 
 void IInputFormat::resetParser()

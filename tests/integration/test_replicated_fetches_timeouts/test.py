@@ -10,24 +10,12 @@ from helpers.network import PartitionManager
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
-    "node1",
-    with_zookeeper=True,
-    main_configs=["configs/server.xml", "configs/timeouts_for_fetches.xml"],
+    "node1", with_zookeeper=True, main_configs=["configs/server.xml"]
 )
 
 node2 = cluster.add_instance(
-    "node2",
-    with_zookeeper=True,
-    stay_alive=True,
-    main_configs=["configs/server.xml", "configs/timeouts_for_fetches.xml"],
+    "node2", with_zookeeper=True, main_configs=["configs/server.xml"]
 )
-
-config = """
-<clickhouse>
-    <replicated_fetches_http_connection_timeout>30</replicated_fetches_http_connection_timeout>
-    <replicated_fetches_http_receive_timeout>1</replicated_fetches_http_receive_timeout>
-</clickhouse>
-"""
 
 
 @pytest.fixture(scope="module")
@@ -61,10 +49,14 @@ def test_no_stall(started_cluster):
     node2.query("SYSTEM STOP FETCHES t")
 
     node1.query(
-        f"INSERT INTO t SELECT 1, '{get_random_string(104857)}' FROM numbers(500)"
+        "INSERT INTO t SELECT 1, '{}' FROM numbers(500)".format(
+            get_random_string(104857)
+        )
     )
     node1.query(
-        f"INSERT INTO t SELECT 2, '{get_random_string(104857)}' FROM numbers(500)"
+        "INSERT INTO t SELECT 2, '{}' FROM numbers(500)".format(
+            get_random_string(104857)
+        )
     )
 
     with PartitionManager() as pm:
@@ -90,11 +82,13 @@ def test_no_stall(started_cluster):
 
         print("Connection timeouts tested!")
 
-        node2.replace_config(
-            "/etc/clickhouse-server/config.d/timeouts_for_fetches.xml", config
+        # Increase connection timeout and wait for receive timeouts.
+        node2.query(
+            """
+            ALTER TABLE t
+                MODIFY SETTING replicated_fetches_http_connection_timeout = 30,
+                    replicated_fetches_http_receive_timeout = 1"""
         )
-
-        node2.restart_clickhouse()
 
         while True:
             timeout_exceptions = int(

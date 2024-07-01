@@ -29,8 +29,7 @@ public:
         const Block & header_,
         const Params & params_,
         const ProtobufSchemaInfo & schema_info_,
-        bool flatten_google_wrappers_,
-        const String & google_protos_path);
+        bool flatten_google_wrappers_);
 
     String getName() const override { return "ProtobufListInputFormat"; }
 
@@ -56,8 +55,7 @@ public:
 
 private:
     const FormatSchemaInfo schema_info;
-    bool skip_unsupported_fields;
-    const String google_protos_path;
+    bool skip_unsopported_fields;
 };
 
 }

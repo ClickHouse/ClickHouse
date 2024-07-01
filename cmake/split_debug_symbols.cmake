@@ -1,5 +1,3 @@
-# Generates a separate file with debug symbols while stripping it from the main binary.
-# This is needed for Debian packages.
 macro(clickhouse_split_debug_symbols)
    set(oneValueArgs TARGET DESTINATION_DIR BINARY_PATH)
 
