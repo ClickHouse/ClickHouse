@@ -15,7 +15,7 @@ CREATE TABLE t1
 (
     a Int64,
     b Int64
-) Engine = Join(SEMI, OUTER, a); -- { serverError BAD_ARGUMENTS }
+) Engine = Join(SEMI, FULL, a); -- { serverError BAD_ARGUMENTS }
 
 CREATE TABLE t1
 (
@@ -33,10 +33,10 @@ CREATE TABLE t1
 (
     a Int64,
     b Int64
-) Engine = Join(ANTI, OUTER, a); -- { serverError BAD_ARGUMENTS }
+) Engine = Join(ANTI, FULL, a); -- { serverError BAD_ARGUMENTS }
 
 CREATE TABLE t1
 (
     a Int64,
     b Int64
-) Engine = Join(ANY, OUTER, a); -- { serverError BAD_ARGUMENTS }
+) Engine = Join(ANY, FULL, a); -- { serverError NOT_IMPLEMENTED }
