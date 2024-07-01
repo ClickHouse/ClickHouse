@@ -517,23 +517,21 @@ StorageObjectStorage::ObjectInfoPtr StorageObjectStorageSource::GlobIterator::ne
                 else
                     ++it;
             }
+
+            if (filter_dag)
+            {
+                std::vector<String> paths;
+                paths.reserve(new_batch.size());
+                for (const auto & object_info : new_batch)
+                    paths.push_back(getUniqueStoragePathIdentifier(*configuration, *object_info, false));
+
+                VirtualColumnUtils::filterByPathOrFile(new_batch, paths, filter_dag, virtual_columns, getContext());
+
+                LOG_TEST(logger, "Filtered files: {} -> {}", paths.size(), new_batch.size());
+            }
         }
 
         index = 0;
-
-        if (filter_dag)
-        {
-            std::vector<String> paths;
-            paths.reserve(new_batch.size());
-            for (const auto & object_info : new_batch)
-            {
-                chassert(object_info);
-                paths.push_back(getUniqueStoragePathIdentifier(*configuration, *object_info, false));
-            }
-
-            VirtualColumnUtils::filterByPathOrFile(new_batch, paths, filter_dag, virtual_columns, getContext());
-            LOG_TEST(logger, "Filtered files: {} -> {}", paths.size(), new_batch.size());
-        }
 
         if (read_keys)
             read_keys->insert(read_keys->end(), new_batch.begin(), new_batch.end());
@@ -551,7 +549,12 @@ StorageObjectStorage::ObjectInfoPtr StorageObjectStorageSource::GlobIterator::ne
     }
 
     if (index >= object_infos.size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Index out of bound for blob metadata");
+    {
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Index out of bound for blob metadata. Index: {}, size: {}",
+            index, object_infos.size());
+    }
 
     return object_infos[index++];
 }
