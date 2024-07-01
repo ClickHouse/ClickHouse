@@ -1,8 +1,10 @@
 #include "CephObjectStorage.h"
+#include <ctime>
 #include <fcntl.h>
+#include <rados/librados.hpp>
 
 #include "Common/ObjectStorageKey.h"
-#include "IO/Ceph/Client.h"
+#include <IO/Ceph/RadosIO.h>
 
 #if USE_CEPH
 
@@ -189,9 +191,8 @@ std::unique_ptr<ReadBufferFromFileBase> CephObjectStorage::readObject( /// NOLIN
     auto settings_ptr = ceph_settings.get();
     return std::make_unique<ReadBufferFromCeph>(
         std::make_unique<Ceph::RadosIO>(rados, endpoint.pool),
-        object_.remote_path,
+        object.remote_path,
         read_settings);
-    };
 }
 
 std::unique_ptr<WriteBufferFromFileBase> CephObjectStorage::writeObject( /// NOLINT
@@ -203,13 +204,12 @@ std::unique_ptr<WriteBufferFromFileBase> CephObjectStorage::writeObject( /// NOL
 {
     WriteSettings disk_write_settings = IObjectStorage::patchSettings(write_settings);
 
-    int flag = mode == WriteMode::Rewrite ? O_TRUNC | O_CREAT | O_WRONLY : O_CREAT | O_APPEND;
-
     return std::make_unique<WriteBufferFromCeph>(
         std::make_unique<Ceph::RadosIO>(rados, endpoint.pool),
         object.remote_path,
         write_settings,
-        buf_size);
+        buf_size,
+        mode);
 }
 
 
@@ -222,16 +222,11 @@ ObjectStorageIteratorPtr CephObjectStorage::iterate(const std::string & path_pre
 void CephObjectStorage::listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const
 {
     auto settings_ptr = ceph_settings.get();
-
-    S3::ListObjectsV2Request request;
-    request.SetBucket(uri.bucket);
-    request.SetPrefix(path);
     if (max_keys)
         request.SetMaxKeys(static_cast<int>(max_keys));
     else
         request.SetMaxKeys(settings_ptr->list_object_keys_size);
 
-    Aws::S3::Model::ListObjectsV2Outcome outcome;
     do
     {
         ProfileEvents::increment(ProfileEvents::S3ListObjects);
@@ -268,81 +263,13 @@ void CephObjectStorage::listObjects(const std::string & path, RelativePathsWithM
 
 void CephObjectStorage::removeObjectImpl(const StoredObject & object, bool if_exists)
 {
-    ProfileEvents::increment(ProfileEvents::S3DeleteObjects);
-    ProfileEvents::increment(ProfileEvents::DiskS3DeleteObjects);
-
-    S3::DeleteObjectRequest request;
-    request.SetBucket(uri.bucket);
-    request.SetKey(object.remote_path);
-    auto outcome = client.get()->DeleteObject(request);
-    if (auto blob_storage_log = BlobStorageLogWriter::create(disk_name))
-        blob_storage_log->addEvent(BlobStorageLogElement::EventType::Delete,
-                                   uri.bucket, object.remote_path, object.local_path, object.bytes_size,
-                                   outcome.IsSuccess() ? nullptr : &outcome.GetError());
-
-    throwIfUnexpectedError(outcome, if_exists);
-
-    LOG_DEBUG(log, "Object with path {} was removed from S3", object.remote_path);
+    base_io->remove(object.remote_path, if_exists);
 }
 
 void CephObjectStorage::removeObjectsImpl(const StoredObjects & objects, bool if_exists)
 {
-    if (objects.empty())
-        return;
-
-    if (!s3_capabilities.support_batch_delete)
-    {
-        for (const auto & object : objects)
-            removeObjectImpl(object, if_exists);
-    }
-    else
-    {
-        auto settings_ptr = ceph_settings.get();
-
-        size_t chunk_size_limit = settings_ptr->objects_chunk_size_to_delete;
-        size_t current_position = 0;
-
-        auto blob_storage_log = BlobStorageLogWriter::create(disk_name);
-        while (current_position < objects.size())
-        {
-            std::vector<Aws::S3::Model::ObjectIdentifier> current_chunk;
-            String keys;
-            size_t first_position = current_position;
-            for (; current_position < objects.size() && current_chunk.size() < chunk_size_limit; ++current_position)
-            {
-                Aws::S3::Model::ObjectIdentifier obj;
-                obj.SetKey(objects[current_position].remote_path);
-                current_chunk.push_back(obj);
-
-                if (!keys.empty())
-                    keys += ", ";
-                keys += objects[current_position].remote_path;
-            }
-
-            Aws::S3::Model::Delete delkeys;
-            delkeys.SetObjects(current_chunk);
-
-            ProfileEvents::increment(ProfileEvents::S3DeleteObjects);
-            ProfileEvents::increment(ProfileEvents::DiskS3DeleteObjects);
-            S3::DeleteObjectsRequest request;
-            request.SetBucket(uri.bucket);
-            request.SetDelete(delkeys);
-            auto outcome = client.get()->DeleteObjects(request);
-
-            if (blob_storage_log)
-            {
-                const auto * outcome_error = outcome.IsSuccess() ? nullptr : &outcome.GetError();
-                auto time_now = std::chrono::system_clock::now();
-                for (size_t i = first_position; i < current_position; ++i)
-                    blob_storage_log->addEvent(BlobStorageLogElement::EventType::Delete,
-                                               uri.bucket, objects[i].remote_path, objects[i].local_path, objects[i].bytes_size,
-                                               outcome_error, time_now);
-            }
-
-            LOG_DEBUG(log, "Objects with paths [{}] were removed from S3", keys);
-            throwIfUnexpectedError(outcome, if_exists);
-        }
-    }
+    for (const auto & object : objects)
+        removeObjectImpl(object, if_exists);
 }
 
 void CephObjectStorage::removeObject(const StoredObject & object)
@@ -385,21 +312,15 @@ std::optional<ObjectMetadata> CephObjectStorage::tryGetObjectMetadata(const std:
 ObjectMetadata CephObjectStorage::getObjectMetadata(const std::string & path) const
 {
     auto settings_ptr = ceph_settings.get();
-    S3::ObjectInfo object_info;
-    try
-    {
-        object_info = S3::getObjectInfo(*client.get(), uri.bucket, path, {}, /* with_metadata= */ true);
-    }
-    catch (DB::Exception & e)
-    {
-        e.addMessage("while reading " + path);
-        throw;
-    }
+    size_t sz;
+    struct timespec mtime;
+    std::map<String, String> attrs;
+    base_io->getMetadata(path, &sz, &mtime, attrs);
 
     ObjectMetadata result;
-    result.size_bytes = object_info.size;
-    result.last_modified = Poco::Timestamp::fromEpochTime(object_info.last_modification_time);
-    result.attributes = object_info.metadata;
+    result.size_bytes = sz;
+    result.last_modified = Poco::Timestamp::fromEpochTime(mtime.tv_sec);
+    result.attributes = std::move(metadata);
 
     return result;
 }
@@ -412,43 +333,6 @@ void CephObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT
     IObjectStorage & object_storage_to,
     std::optional<ObjectAttributes> object_to_attributes)
 {
-    /// Shortcut for S3
-    if (auto * dest_s3 = dynamic_cast<CephObjectStorage * >(&object_storage_to); dest_s3 != nullptr)
-    {
-        auto current_client = dest_s3->client.get();
-        auto settings_ptr = ceph_settings.get();
-        auto size = S3::getObjectSize(*current_client, uri.bucket, object_from.remote_path, {});
-        auto scheduler = threadPoolCallbackRunnerUnsafe<void>(getThreadPoolWriter(), "S3ObjStor_copy");
-
-        try
-        {
-            copyS3File(
-                /*src_s3_client=*/current_client,
-                /*src_bucket=*/uri.bucket,
-                /*src_key=*/object_from.remote_path,
-                /*src_offset=*/0,
-                /*src_size=*/size,
-                /*dest_s3_client=*/current_client,
-                /*dest_bucket=*/dest_s3->uri.bucket,
-                /*dest_key=*/object_to.remote_path,
-                settings_ptr->request_settings,
-                patchSettings(read_settings),
-                BlobStorageLogWriter::create(disk_name),
-                object_to_attributes,
-                scheduler);
-            return;
-        }
-        catch (S3Exception & exc)
-        {
-            /// If authentication/permissions error occurs then fallthrough to copy with buffer.
-            if (exc.getS3ErrorCode() != Aws::S3::S3Errors::ACCESS_DENIED)
-                throw;
-            LOG_WARNING(getLogger("CephObjectStorage"),
-                "S3-server-side copy object from the disk {} to the disk {} can not be performed: {}\n",
-                getName(), dest_s3->getName(), exc.what());
-        }
-    }
-
     IObjectStorage::copyObjectToAnotherObjectStorage(object_from, object_to, read_settings, write_settings, object_storage_to, object_to_attributes);
 }
 
@@ -456,28 +340,12 @@ void CephObjectStorage::copyObject( // NOLINT
     const StoredObject & object_from,
     const StoredObject & object_to,
     const ReadSettings & read_settings,
-    const WriteSettings &,
+    const WriteSettings & write_settings,
     std::optional<ObjectAttributes> object_to_attributes)
 {
-    auto current_client = client.get();
-    auto settings_ptr = ceph_settings.get();
-    auto size = S3::getObjectSize(*current_client, uri.bucket, object_from.remote_path, {});
-    auto scheduler = threadPoolCallbackRunnerUnsafe<void>(getThreadPoolWriter(), "S3ObjStor_copy");
-
-    copyS3File(
-        /*src_s3_client=*/current_client,
-        /*src_bucket=*/uri.bucket,
-        /*src_key=*/object_from.remote_path,
-        /*src_offset=*/0,
-        /*src_size=*/size,
-        /*dest_s3_client=*/current_client,
-        /*dest_bucket=*/uri.bucket,
-        /*dest_key=*/object_to.remote_path,
-        settings_ptr->request_settings,
-        patchSettings(read_settings),
-        BlobStorageLogWriter::create(disk_name),
-        object_to_attributes,
-        scheduler);
+    ReadBufferFromCeph from(rados, endpoint.pool, object_from.remote_path, read_settings);
+    WriteBufferFromCeph to(rados, endpoint.pool, object_to.remote_path, write_settings);
+    copyData(from, to);
 }
 
 void CephObjectStorage::setNewSettings(std::unique_ptr<CephObjectStorageSettings> && ceph_settings_)
@@ -550,11 +418,6 @@ ObjectStorageKey CephObjectStorage::generateObjectKeyForPath(const std::string &
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Key generator is not set");
 
     return key_generator->generate(path, /* is_directory */ false);
-}
-
-std::shared_ptr<const S3::Client> CephObjectStorage::getS3StorageClient()
-{
-    return client.get();
 }
 
 }

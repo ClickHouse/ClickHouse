@@ -35,13 +35,13 @@ WriteBufferFromCeph::WriteBufferFromCeph(
     const String & object_id_,
     const WriteSettings & write_settings_,
     size_t buf_size_,
-    int flags_)
+    WriteMode mode_)
     : WriteBufferFromFileBase(buf_size_, nullptr, 0)
     , object_id(object_id_)
     , write_settings(write_settings_)
-    , flags(flags_)
+    , mode(mode_)
 {
-    impl = std::make_unique<Ceph::RadosIO>(std::move(rados_), pool, false);
+    impl = std::make_unique<Ceph::RadosIO>(std::move(rados_), pool, "", false);
 }
 
 
@@ -50,12 +50,12 @@ WriteBufferFromCeph::WriteBufferFromCeph(
     const String & object_id_,
     const WriteSettings & write_settings_,
     size_t buf_size_,
-    int flags_)
+    WriteMode mode_)
     : WriteBufferFromFileBase(buf_size_, nullptr, 0)
     , impl(std::move(impl_))
     , object_id(object_id_)
     , write_settings(write_settings_)
-    , flags(flags_) {}
+    , mode(mode_) {}
 
 void WriteBufferFromCeph::initialize()
 {
@@ -80,7 +80,7 @@ size_t WriteBufferFromCeph::writeImpl(const char * begin, size_t len)
         if (first_write)
         {
             /// O_CREATE | O_TRUNC
-            bytes_written = impl->write_full(object_id, begin, len);
+            bytes_written = impl->writeFull(object_id, begin, len);
             first_write = false;
         }
         else

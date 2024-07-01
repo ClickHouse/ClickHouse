@@ -1,4 +1,6 @@
 #include "RadosIO.h"
+#include <rados/librados.hpp>
+#include "IO/ReadBufferFromCeph.h"
 
 #if USE_CEPH
 
@@ -72,7 +74,7 @@ size_t RadosIO::read(const String & oid, char * data, size_t length, uint64_t of
     return bytes_read;
 }
 
-size_t RadosIO::write_full(const String & oid, const char * data, size_t length)
+size_t RadosIO::writeFull(const String & oid, const char * data, size_t length)
 {
     assertConnected();
     ceph::bufferlist bl;
@@ -118,6 +120,46 @@ bool RadosIO::exists(const String & oid)
     return io_ctx.stat2(oid, nullptr, nullptr) == 0;
 }
 
+void RadosIO::remove(const String & oid, bool if_exists)
+{
+    assertConnected();
+    if (auto ec = io_ctx.remove(oid); ec < 0 && (!if_exists || ec != -ENOENT))
+        throw Exception(ErrorCodes::CEPH_ERROR, "Cannot remove object `{}:{}`. Error: {}", pool, oid, strerror(-ec));
+}
+
+String RadosIO::getAttribute(const String & oid, const String & attr)
+{
+    assertConnected();
+    ceph::bufferlist bl;
+    if (auto ec = io_ctx.getxattr(oid, attr.c_str(), bl); ec < 0)
+        throw Exception(ErrorCodes::CEPH_ERROR, "Cannot get attribute `{}` for object `{}:{}`. Error: {}", attr, pool, oid, strerror(-ec));
+    String res(bl.c_str(), bl.length());
+    return res;
+}
+
+void RadosIO::getAttributes(const String & oid, std::map<String, String> & attrs)
+{
+    assertConnected();
+    std::map<std::string, ceph::bufferlist> xattrs;
+    if (auto ec = io_ctx.getxattrs(oid, xattrs); ec < 0)
+        throw Exception(ErrorCodes::CEPH_ERROR, "Cannot get attributes for object `{}:{}`. Error: {}", pool, oid, strerror(-ec));
+    for (auto && [key, value] : xattrs)
+        attrs.emplace(key, value.c_str(), value.length());
+}
+
+void RadosIO::getMetadata(const String & oid, uint64_t * size, struct timespec * mtime, std::map<String, String> & attrs)
+{
+    assertConnected();
+    std::map<std::string, ceph::bufferlist> xattrs;
+    librados::ObjectReadOperation ops;
+    int rv1, rv2;
+    ops.stat2(size, mtime, &rv1);
+    ops.getxattrs(&xattrs, &rv2);
+    if (auto ec = io_ctx.operate(oid, &ops, nullptr); ec < 0)
+        throw Exception(ErrorCodes::CEPH_ERROR, "Cannot get metadata for object `{}:{}`. Error: {}", pool, oid, strerror(-ec));
+    for (auto && [key, value] : xattrs)
+        attrs.emplace(key, value.c_str(), value.length());
+}
 }
 
 }

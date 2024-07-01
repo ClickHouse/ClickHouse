@@ -1,11 +1,11 @@
 #pragma once
 
-#include "Disks/WriteMode.h"
 #include "config.h"
 
 #if USE_CEPH
 
-#include "IO/Ceph/RadosIO.h"
+#include <Disks/WriteMode.h>
+#include <IO/Ceph/RadosIO.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteSettings.h>
 #include <IO/WriteBufferFromFileBase.h>
@@ -41,7 +41,7 @@ public:
 
 private:
     void initialize();
-    size_t writeImpl(const char * begin, size_t size);
+    size_t writeImpl(const char * begin, size_t len);
 
     std::unique_ptr<Ceph::RadosIO> impl;
 

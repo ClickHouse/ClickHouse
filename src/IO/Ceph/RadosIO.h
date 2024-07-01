@@ -1,6 +1,10 @@
 #pragma once
+#include <cstdint>
+#include <optional>
 #include <fcntl.h>
-#include "config.h"
+#include <Disks/ObjectStorages/IObjectStorage.h>
+#include <IO/ReadSettings.h>
+#include <config.h>
 
 #if USE_CEPH
 
@@ -31,7 +35,7 @@ public:
 
     size_t read(const String & oid, char * data, size_t length, uint64_t offset = 0);
 
-    size_t write_full(const String & oid, const char * data, size_t length);
+    size_t writeFull(const String & oid, const char * data, size_t length);
 
     size_t write(const String & oid, const char * data, size_t length, uint64_t offset = 0);
 
@@ -39,7 +43,21 @@ public:
 
     void stat(const String & oid, uint64_t * size, struct timespec * mtime);
 
+    String getAttribute(const String & oid, const String & attr);
+
+    void getAttributes(const String & oid, std::map<String, String> & attrs);
+
+    std::optional<ObjectMetadata> tryGetMetadata(const String & oid, std::optional<Exception> * exception);
+
+    ObjectMetadata getMetadata(const String & oid, uint64_t * size, struct timespec * mtime, std::map<String, String> & attrs);
+
     bool exists(const String & oid);
+
+    void remove(const String & oid, bool if_exists = false);
+
+    void list(size_t max_objects, std::vector<String> & oids);
+
+    void listWithPrefix(const String & prefix, size_t max_objects, std::vector<String> & oids);
 
     void sync() {}
 

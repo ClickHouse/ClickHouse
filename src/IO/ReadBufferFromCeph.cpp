@@ -1,6 +1,5 @@
 #include "ReadBufferFromCeph.h"
 #include <memory>
-#include "IO/Ceph/RadosIO.h"
 
 #if USE_CEPH
 #include <rados/librados.hpp>
@@ -9,6 +8,7 @@
 #include <Common/Throttler.h>
 #include <Common/safe_cast.h>
 #include <Common/Exception.h>
+#include <IO/Ceph/RadosIO.h>
 
 namespace ProfileEvents
 {
