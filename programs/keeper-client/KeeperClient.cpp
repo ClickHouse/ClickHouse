@@ -383,6 +383,9 @@ int KeeperClient::main(const std::vector<String> & /* args */)
 
         for (const auto & key : keys)
         {
+            if (key != "node")
+                continue;
+
             String prefix = "zookeeper." + key;
             String host = clickhouse_config.configuration->getString(prefix + ".host");
             String port = clickhouse_config.configuration->getString(prefix + ".port");
@@ -401,6 +404,7 @@ int KeeperClient::main(const std::vector<String> & /* args */)
         zk_args.hosts.push_back(host + ":" + port);
     }
 
+    zk_args.availability_zones.resize(zk_args.hosts.size());
     zk_args.connection_timeout_ms = config().getInt("connection-timeout", 10) * 1000;
     zk_args.session_timeout_ms = config().getInt("session-timeout", 10) * 1000;
     zk_args.operation_timeout_ms = config().getInt("operation-timeout", 10) * 1000;
