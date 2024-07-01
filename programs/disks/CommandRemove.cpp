@@ -5,6 +5,12 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
+
 class CommandRemove final : public ICommand
 {
 public:
