@@ -80,6 +80,15 @@ public:
 private:
     friend SerializationVariant;
 
+    struct DeserializeBinaryBulkStateVariantElement;
+
+    size_t deserializeCompactDiscriminators(
+        ColumnPtr & discriminators_column,
+        size_t limit,
+        ReadBuffer * stream,
+        bool continuous_reading,
+        DeserializeBinaryBulkStateVariantElement & variant_element_state) const;
+
     void addVariantToPath(SubstreamPath & path) const;
     void removeVariantFromPath(SubstreamPath & path) const;
 };

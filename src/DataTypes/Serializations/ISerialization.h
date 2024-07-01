@@ -256,6 +256,8 @@ public:
 
         bool position_independent_encoding = true;
 
+        bool use_compact_variant_discriminators_serialization = false;
+
         enum class DynamicStatisticsMode
         {
             NONE,   /// Don't write statistics.
