@@ -7,7 +7,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-for STORAGE_POLICY in 's3_cache' 'local_cache'; do
+for STORAGE_POLICY in 's3_cache' 'local_cache' 'azure_cache'; do
     echo "Using storage policy: $STORAGE_POLICY"
 
     $CLICKHOUSE_CLIENT --echo --query "DROP TABLE IF EXISTS test_02241"

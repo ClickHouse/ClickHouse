@@ -1168,14 +1168,14 @@ Result:
 └────────────────────────────┘
 ```
 
-## base64UrlEncode
+## base64URLEncode
 
 Encodes an URL (String or FixedString) as base64 with URL-specific modifications, according to [RFC 4648](https://datatracker.ietf.org/doc/html/rfc4648#section-5).
 
 **Syntax**
 
 ```sql
-base64UrlEncode(url)
+base64URLEncode(url)
 ```
 
 **Arguments**
@@ -1189,13 +1189,13 @@ base64UrlEncode(url)
 **Example**
 
 ``` sql
-SELECT base64UrlEncode('https://clickhouse.com');
+SELECT base64URLEncode('https://clickhouse.com');
 ```
 
 Result:
 
 ```result
-┌─base64UrlEncode('https://clickhouse.com')─┐
+┌─base64URLEncode('https://clickhouse.com')─┐
 │ aHR0cDovL2NsaWNraG91c2UuY29t              │
 └───────────────────────────────────────────┘
 ```
@@ -1234,19 +1234,19 @@ Result:
 └──────────────────────────────────┘
 ```
 
-## base64UrlDecode
+## base64URLDecode
 
 Accepts a base64-encoded URL and decodes it from base64 with URL-specific modifications, according to [RFC 4648](https://datatracker.ietf.org/doc/html/rfc4648#section-5). Throws an exception in case of an error.
 
 **Syntax**
 
 ```sql
-base64UrlDecode(encodedUrl)
+base64URLDecode(encodedUrl)
 ```
 
 **Arguments**
 
-- `encodedUrl` — [String](../data-types/string.md) column or constant. If the string is not a valid Base64-encoded value with URL-specific modifications, an exception is thrown.
+- `encodedURL` — [String](../data-types/string.md) column or constant. If the string is not a valid Base64-encoded value with URL-specific modifications, an exception is thrown.
 
 **Returned value**
 
@@ -1255,13 +1255,13 @@ base64UrlDecode(encodedUrl)
 **Example**
 
 ``` sql
-SELECT base64UrlDecode('aHR0cDovL2NsaWNraG91c2UuY29t');
+SELECT base64URLDecode('aHR0cDovL2NsaWNraG91c2UuY29t');
 ```
 
 Result:
 
 ```result
-┌─base64UrlDecode('aHR0cDovL2NsaWNraG91c2UuY29t')─┐
+┌─base64URLDecode('aHR0cDovL2NsaWNraG91c2UuY29t')─┐
 │ https://clickhouse.com                          │
 └─────────────────────────────────────────────────┘
 ```
@@ -1298,19 +1298,19 @@ SELECT tryBase64Decode('RW5jb2RlZA==') as res, tryBase64Decode('invalid') as res
 └────────────┴─────────────┘
 ```
 
-## tryBase64UrlDecode
+## tryBase64URLDecode
 
-Like `base64UrlDecode` but returns an empty string in case of error.
+Like `base64URLDecode` but returns an empty string in case of error.
 
 **Syntax**
 
 ```sql
-tryBase64UrlDecode(encodedUrl)
+tryBase64URLDecode(encodedUrl)
 ```
 
 **Parameters**
 
-- `encodedUrl`: [String](../data-types/string.md) column or constant. If the string is not a valid Base64-encoded value with URL-specific modifications, returns an empty string.
+- `encodedURL`: [String](../data-types/string.md) column or constant. If the string is not a valid Base64-encoded value with URL-specific modifications, returns an empty string.
 
 **Returned value**
 
@@ -1321,7 +1321,7 @@ tryBase64UrlDecode(encodedUrl)
 Query:
 
 ```sql
-SELECT tryBase64UrlDecode('aHR0cDovL2NsaWNraG91c2UuY29t') as res, tryBase64Decode('aHR0cHM6Ly9jbGlja') as res_invalid;
+SELECT tryBase64URLDecode('aHR0cDovL2NsaWNraG91c2UuY29t') as res, tryBase64Decode('aHR0cHM6Ly9jbGlja') as res_invalid;
 ```
 
 ```response

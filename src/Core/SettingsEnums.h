@@ -341,21 +341,21 @@ DECLARE_SETTING_ENUM(ParallelReplicasCustomKeyFilterType)
 
 DECLARE_SETTING_ENUM(LocalFSReadMethod)
 
-enum class S3QueueMode : uint8_t
+enum class ObjectStorageQueueMode : uint8_t
 {
     ORDERED,
     UNORDERED,
 };
 
-DECLARE_SETTING_ENUM(S3QueueMode)
+DECLARE_SETTING_ENUM(ObjectStorageQueueMode)
 
-enum class S3QueueAction : uint8_t
+enum class ObjectStorageQueueAction : uint8_t
 {
     KEEP,
     DELETE,
 };
 
-DECLARE_SETTING_ENUM(S3QueueAction)
+DECLARE_SETTING_ENUM(ObjectStorageQueueAction)
 
 DECLARE_SETTING_ENUM(ExternalCommandStderrReaction)
 

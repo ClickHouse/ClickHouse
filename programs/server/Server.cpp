@@ -1003,6 +1003,8 @@ try
 
     ServerUUID::load(path / "uuid", log);
 
+    PlacementInfo::PlacementInfo::instance().initialize(config());
+
     zkutil::validateZooKeeperConfig(config());
     bool has_zookeeper = zkutil::hasZooKeeperConfig(config());
 
@@ -1815,11 +1817,6 @@ try
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "ClickHouse server built without NuRaft library. Cannot use internal coordination.");
 #endif
 
-    }
-
-    if (config().has(DB::PlacementInfo::PLACEMENT_CONFIG_PREFIX))
-    {
-        PlacementInfo::PlacementInfo::instance().initialize(config());
     }
 
     {
