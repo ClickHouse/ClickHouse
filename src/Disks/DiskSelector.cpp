@@ -66,9 +66,11 @@ void DiskSelector::initialize(
             default_disk_name, std::make_shared<DiskLocal>(default_disk_name, context->getPath(), 0, context, config, config_prefix));
     }
 
-    if (!has_local_disk && create_local)
+    if (!has_local_disk && (context->getApplicationType() == Context::ApplicationType::DISKS))
+    {
+        throw_away_local_on_update = true;
         disks.emplace(local_disk_name, std::make_shared<DiskLocal>(local_disk_name, "/", 0, context, config, config_prefix));
-
+    }
     is_initialized = true;
 }
 
@@ -115,7 +117,7 @@ DiskSelectorPtr DiskSelector::updateFromConfig(
     }
 
     old_disks_minus_new_disks.erase(default_disk_name);
-    if (create_local)
+    if (throw_away_local_on_update)
     {
         old_disks_minus_new_disks.erase(local_disk_name);
     }
