@@ -451,6 +451,9 @@ void DatabaseAtomic::beforeLoadingMetadata(ContextMutablePtr /*context*/, Loadin
     if (mode < LoadingStrictnessLevel::FORCE_RESTORE)
         return;
 
+    if (!fs::exists(path_to_table_symlinks))
+        return;
+
     /// Recreate symlinks to table data dirs in case of force restore, because some of them may be broken
     for (const auto & table_path : fs::directory_iterator(path_to_table_symlinks))
     {
