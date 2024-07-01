@@ -48,10 +48,11 @@ TEST_F(AsynchronousBoundedReadBufferTest, setReadUntilPosition)
 {
     String file_path = makeTempFile(getAlphabetWithDigits());
     ThreadPoolRemoteFSReader remote_fs_reader(4, 0);
+    auto read_settings = getReadSettings();
 
     for (bool with_prefetch : {false, true})
     {
-        AsynchronousBoundedReadBuffer read_buffer(createReadBufferFromFileBase(file_path, {}), remote_fs_reader, {});
+        AsynchronousBoundedReadBuffer read_buffer(createReadBufferFromFileBase(file_path, read_settings), remote_fs_reader, read_settings);
         read_buffer.setReadUntilPosition(20);
 
         auto try_read = [&](size_t count)

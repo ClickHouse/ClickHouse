@@ -32,7 +32,7 @@ MetadataStorageFromPlainObjectStorage::PathMap loadPathPrefixMap(const std::stri
 
         StoredObject object{file->relative_path};
 
-        auto read_buf = object_storage->readObject(object, ReadSettings{});
+        auto read_buf = object_storage->readObject(object, getReadSettings());
         String local_path;
         readStringUntilEOF(local_path, *read_buf);
 
