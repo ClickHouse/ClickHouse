@@ -323,8 +323,13 @@ IProcessor::Status StrictResizeProcessor::prepare(const PortNumbers & updated_in
             {
                 input.status = InputStatus::Finished;
                 ++num_finished_inputs;
-
-                waiting_outputs.push(input.waiting_output);
+                /// Avoid pushing data to outputs which are either already hasDate or finished.
+                auto & output = output_ports[input.waiting_output];
+                if (!output.port->isFinished() && output.port->canPush())
+                {
+                    output.status = OutputStatus::NeedData;
+                    waiting_outputs.push(input.waiting_output);
+                }
             }
             continue;
         }
@@ -350,10 +355,8 @@ IProcessor::Status StrictResizeProcessor::prepare(const PortNumbers & updated_in
 
         auto & waiting_output = output_ports[input_with_data.waiting_output];
 
-        if (waiting_output.status == OutputStatus::NotActive)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid status NotActive for associated output");
-
-        if (waiting_output.status != OutputStatus::Finished)
+        /// Output status could be NotActive when abandoned_chunks are pushed to it.
+        if (waiting_output.status == OutputStatus::NeedData)
         {
             waiting_output.port->pushData(input_with_data.port->pullData(/* set_not_needed = */ true));
             waiting_output.status = OutputStatus::NotActive;
@@ -370,7 +373,8 @@ IProcessor::Status StrictResizeProcessor::prepare(const PortNumbers & updated_in
             disabled_input_ports.push(input_number);
     }
 
-    if (num_finished_inputs == inputs.size())
+    /// Losing abandoned chunks if we don't judge empty.
+    if (num_finished_inputs == inputs.size() && abandoned_chunks.empty())
     {
         for (auto & output : outputs)
             output.finish();
