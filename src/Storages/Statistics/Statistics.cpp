@@ -78,6 +78,23 @@ Float64 ColumnStatistics::estimateGreater(Float64 val) const
 
 Float64 ColumnStatistics::estimateEqual(Float64 val) const
 {
+    /// Special case for the unlikely case that the user created 'uniq' and 'tdigest' statistics.
+    for (const auto & stat : statistics)
+    {
+        auto statistics_uniq = std::dynamic_pointer_cast<StatisticsUniq>(stat);
+        if (statistics_uniq && statistics_uniq->estimateCardinality() < 2024)
+        {
+            /// 2048 is the default number of buckets in TDigest. In this case, TDigest stores exactly one value (with many rows)
+            /// for every bucket.
+            for (const auto & stat2 : statistics)
+            {
+                auto statistics_tdigest = std::dynamic_pointer_cast<StatisticsTDigest>(stat2);
+                if (statistics_tdigest)
+                    return *(statistics_tdigest->estimateEqual(val));
+            }
+        }
+    }
+
     for (const auto & stat : statistics)
     {
         /// Return the estimation of the first statistics object which provides an estimation.

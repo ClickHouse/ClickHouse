@@ -18,8 +18,11 @@ public:
     void serialize(WriteBuffer & buf) override;
     void deserialize(ReadBuffer & buf) override;
 
-    std::optional<Float64> estimateEqual(Float64 val) const override;
+    std::optional<Float64> estimateEqual(Float64 val) const override; /// (*)
     std::optional<Float64> estimateLess(Float64 val) const override;
+
+    /// (*) TDigests are supposed to estimate quantiles. Equality estimations are also available but they are implemented in a
+    ///     surprising way. They return an estimation only if the provided value matches a centroid's mean exactly. Use with care!
 
 private:
     QuantileTDigest<Float64> t_digest;
