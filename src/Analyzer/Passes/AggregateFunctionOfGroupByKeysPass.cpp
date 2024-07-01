@@ -3,12 +3,9 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 
 #include <Analyzer/ArrayJoinNode.h>
-#include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/QueryNode.h>
-#include <Analyzer/TableNode.h>
-#include <Analyzer/UnionNode.h>
 
 namespace DB
 {
@@ -119,6 +116,11 @@ private:
                 || function->getFunctionName() == "any"
                 || function->getFunctionName() == "anyLast"))
             return false;
+
+        if (function->hasByClause())
+        {
+            return false;
+        }
 
         std::vector<NodeWithInfo> candidates;
         auto & function_arguments = function->getArguments().getNodes();

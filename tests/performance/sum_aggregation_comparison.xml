@@ -1,0 +1,25 @@
+<test>
+    <name>sum_aggregation_comparison</name>
+    <substitutions>
+        <substitution>
+            <name>group_scale</name>
+            <values>
+                <value>1000000</value>
+                <value>100000</value>
+                <value>10000</value>
+                <value>1000</value>
+                <value>100</value>
+                <value>10</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <!-- Using BY and TOTALS -->
+    <query>SELECT sum(RedirectCount), sum(RedirectCount BY UserID % {group_scale}), sum(RedirectCount TOTALS) FROM test.hits GROUP BY CounterID % 13, UserID % {group_scale} FORMAT Null</query>
+
+    <!-- Using window functions -->
+    <query>SELECT DISTINCT sum(RedirectCount) OVER (PARTITION BY CounterID % 13, UserID % {group_scale}), sum(RedirectCount) OVER (PARTITION BY UserID), sum(RedirectCount) OVER () FROM test.hits FORMAT Null</query>
+
+    <!-- Using grouping sets -->
+    <query>SELECT sum(RedirectCount) FROM test.hits GROUP BY GROUPING SETS((CounterID % 13, UserID % {group_scale}), (CounterID % 13),()) FORMAT Null</query>
+</test>
