@@ -1,465 +1,489 @@
+#include "config.h"
+
+#if USE_MONGODB
 #include "MongoDBSource.h"
 
 #include <string>
 #include <vector>
 
-#include <Poco/MongoDB/Array.h>
-#include <Poco/MongoDB/Database.h>
-#include <Poco/MongoDB/Connection.h>
-#include <Poco/MongoDB/Cursor.h>
-#include <Poco/MongoDB/OpMsgCursor.h>
-#include <Poco/MongoDB/ObjectId.h>
-
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnString.h>
-#include <Columns/ColumnsNumber.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeArray.h>
 #include <IO/ReadHelpers.h>
 #include <Common/assert_cast.h>
 #include <Common/quoteString.h>
+#include <Common/Exception.h>
+#include <Common/Base64.h>
 #include <base/range.h>
-#include <Poco/URI.h>
 
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeNullable.h>
-
-// only after poco
-// naming conflict:
-// Poco/MongoDB/BSONWriter.h:54: void writeCString(const std::string & value);
-// src/IO/WriteHelpers.h:146 #define writeCString(s, buf)
-#include <IO/WriteHelpers.h>
+#include <bsoncxx/document/element.hpp>
+#include <bsoncxx/json.hpp>
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
-    extern const int TYPE_MISMATCH;
-    extern const int UNKNOWN_TYPE;
-    extern const int MONGODB_ERROR;
-    extern const int BAD_ARGUMENTS;
+extern const int TYPE_MISMATCH;
+extern const int NOT_IMPLEMENTED;
 }
 
-namespace
+std::string escapeJSONString(const std::string & input)
 {
-    using ValueType = ExternalResultDescription::ValueType;
-    using ObjectId = Poco::MongoDB::ObjectId;
-    using MongoArray = Poco::MongoDB::Array;
+    std::string escaped;
+    escaped.reserve(input.length());
 
-
-    template <typename T>
-    Field getNumber(const Poco::MongoDB::Element & value, const std::string & name)
+    for (size_t i = 0; i < input.length(); ++i)
     {
-        switch (value.type())
+        switch (input[i])
         {
-            case Poco::MongoDB::ElementTraits<Int32>::TypeId:
-                return static_cast<T>(static_cast<const Poco::MongoDB::ConcreteElement<Int32> &>(value).value());
-            case Poco::MongoDB::ElementTraits<Poco::Int64>::TypeId:
-                return static_cast<T>(static_cast<const Poco::MongoDB::ConcreteElement<Poco::Int64> &>(value).value());
-            case Poco::MongoDB::ElementTraits<Float64>::TypeId:
-                return static_cast<T>(static_cast<const Poco::MongoDB::ConcreteElement<Float64> &>(value).value());
-            case Poco::MongoDB::ElementTraits<bool>::TypeId:
-                return static_cast<T>(static_cast<const Poco::MongoDB::ConcreteElement<bool> &>(value).value());
-            case Poco::MongoDB::ElementTraits<Poco::MongoDB::NullValue>::TypeId:
-                return Field();
-            case Poco::MongoDB::ElementTraits<String>::TypeId:
-                return parse<T>(static_cast<const Poco::MongoDB::ConcreteElement<String> &>(value).value());
-            default:
-                throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected a number, got type id = {} for column {}",
-                    toString(value.type()), name);
-        }
-    }
-
-    void prepareMongoDBArrayInfo(
-        std::unordered_map<size_t, MongoDBArrayInfo> & array_info, size_t column_idx, const DataTypePtr data_type)
-    {
-        const auto * array_type = assert_cast<const DataTypeArray *>(data_type.get());
-        auto nested = array_type->getNestedType();
-
-        size_t count_dimensions = 1;
-        while (isArray(nested))
-        {
-            ++count_dimensions;
-            nested = assert_cast<const DataTypeArray *>(nested.get())->getNestedType();
-        }
-
-        Field default_value = nested->getDefault();
-        if (nested->isNullable())
-            nested = assert_cast<const DataTypeNullable *>(nested.get())->getNestedType();
-
-        WhichDataType which(nested);
-        std::function<Field(const Poco::MongoDB::Element & value, const std::string & name)> parser;
-
-        if (which.isUInt8())
-            parser = [](const Poco::MongoDB::Element & value, const std::string & name) -> Field { return getNumber<UInt8>(value, name); };
-        else if (which.isUInt16())
-            parser = [](const Poco::MongoDB::Element & value, const std::string & name) -> Field { return getNumber<UInt16>(value, name); };
-        else if (which.isUInt32())
-            parser = [](const Poco::MongoDB::Element & value, const std::string & name) -> Field { return getNumber<UInt32>(value, name); };
-        else if (which.isUInt64())
-            parser = [](const Poco::MongoDB::Element & value, const std::string & name) -> Field { return getNumber<UInt64>(value, name); };
-        else if (which.isInt8())
-            parser = [](const Poco::MongoDB::Element & value, const std::string & name) -> Field { return getNumber<Int8>(value, name); };
-        else if (which.isInt16())
-            parser = [](const Poco::MongoDB::Element & value, const std::string & name) -> Field { return getNumber<Int16>(value, name); };
-        else if (which.isInt32())
-            parser = [](const Poco::MongoDB::Element & value, const std::string & name) -> Field { return getNumber<Int32>(value, name); };
-        else if (which.isInt64())
-            parser = [](const Poco::MongoDB::Element & value, const std::string & name) -> Field { return getNumber<Int64>(value, name); };
-        else if (which.isFloat32())
-            parser = [](const Poco::MongoDB::Element & value, const std::string & name) -> Field { return getNumber<Float32>(value, name); };
-        else if (which.isFloat64())
-            parser = [](const Poco::MongoDB::Element & value, const std::string & name) -> Field { return getNumber<Float64>(value, name); };
-        else if (which.isString() || which.isFixedString())
-            parser = [](const Poco::MongoDB::Element & value, const std::string & name) -> Field
-            {
-                if (value.type() == Poco::MongoDB::ElementTraits<ObjectId::Ptr>::TypeId)
-                {
-                    String string_id = value.toString();
-                    return Field(string_id.data(), string_id.size());
-                }
-                else if (value.type() == Poco::MongoDB::ElementTraits<String>::TypeId)
-                {
-                    String string = static_cast<const Poco::MongoDB::ConcreteElement<String> &>(value).value();
-                    return Field(string.data(), string.size());
-                }
-
-                throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected String, got type id = {} for column {}",
-                                toString(value.type()), name);
-            };
-        else if (which.isDate())
-            parser = [](const Poco::MongoDB::Element & value, const std::string & name) -> Field
-            {
-                if (value.type() != Poco::MongoDB::ElementTraits<Poco::Timestamp>::TypeId)
-                    throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected Timestamp, got type id = {} for column {}",
-                                    toString(value.type()), name);
-
-                return static_cast<UInt16>(DateLUT::instance().toDayNum(
-                    static_cast<const Poco::MongoDB::ConcreteElement<Poco::Timestamp> &>(value).value().epochTime()));
-            };
-        else if (which.isDateTime())
-            parser = [](const Poco::MongoDB::Element & value, const std::string & name) -> Field
-            {
-                if (value.type() != Poco::MongoDB::ElementTraits<Poco::Timestamp>::TypeId)
-                    throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected Timestamp, got type id = {} for column {}",
-                                    toString(value.type()), name);
-
-                return static_cast<UInt32>(static_cast<const Poco::MongoDB::ConcreteElement<Poco::Timestamp> &>(value).value().epochTime());
-            };
-        else if (which.isUUID())
-            parser = [](const Poco::MongoDB::Element & value, const std::string & name) -> Field
-            {
-                if (value.type() != Poco::MongoDB::ElementTraits<String>::TypeId)
-                    throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected String (UUID), got type id = {} for column {}",
-                                        toString(value.type()), name);
-
-                String string = static_cast<const Poco::MongoDB::ConcreteElement<String> &>(value).value();
-                return parse<UUID>(string);
-            };
-        else
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Type conversion to {} is not supported", nested->getName());
-
-        array_info[column_idx] = {count_dimensions, default_value, parser};
-    }
-
-    template <typename T>
-    void insertNumber(IColumn & column, const Poco::MongoDB::Element & value, const std::string & name)
-    {
-        switch (value.type())
-        {
-            case Poco::MongoDB::ElementTraits<Int32>::TypeId:
-                assert_cast<ColumnVector<T> &>(column).getData().push_back(
-                    static_cast<const Poco::MongoDB::ConcreteElement<Int32> &>(value).value());
+            case '"':
+                escaped += "\\\"";
                 break;
-            case Poco::MongoDB::ElementTraits<Poco::Int64>::TypeId:
-                assert_cast<ColumnVector<T> &>(column).getData().push_back(
-                    static_cast<T>(static_cast<const Poco::MongoDB::ConcreteElement<Poco::Int64> &>(value).value()));
+            case '/':
+                escaped += "\\/";
                 break;
-            case Poco::MongoDB::ElementTraits<Float64>::TypeId:
-                assert_cast<ColumnVector<T> &>(column).getData().push_back(static_cast<T>(
-                    static_cast<const Poco::MongoDB::ConcreteElement<Float64> &>(value).value()));
+            case '\\':
+                escaped += "\\\\";
                 break;
-            case Poco::MongoDB::ElementTraits<bool>::TypeId:
-                assert_cast<ColumnVector<T> &>(column).getData().push_back(
-                    static_cast<const Poco::MongoDB::ConcreteElement<bool> &>(value).value());
+            case '\f':
+                escaped += "\\f";
                 break;
-            case Poco::MongoDB::ElementTraits<Poco::MongoDB::NullValue>::TypeId:
-                assert_cast<ColumnVector<T> &>(column).getData().emplace_back();
+            case '\n':
+                escaped += "\\n";
                 break;
-            case Poco::MongoDB::ElementTraits<String>::TypeId:
-                assert_cast<ColumnVector<T> &>(column).getData().push_back(
-                    parse<T>(static_cast<const Poco::MongoDB::ConcreteElement<String> &>(value).value()));
+            case '\r':
+                escaped += "\\r";
+                break;
+            case '\t':
+                escaped += "\\t";
+                break;
+            case '\b':
+                escaped += "\\b";
                 break;
             default:
-                throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected a number, got type id = {} for column {}",
-                    toString(value.type()), name);
+                escaped += input[i];
+                break;
         }
     }
 
-    void insertValue(
-        IColumn & column,
-        const ValueType type,
-        const Poco::MongoDB::Element & value,
-        const std::string & name,
-        std::unordered_map<size_t, MongoDBArrayInfo> & array_info,
-        size_t idx)
-    {
-        switch (type)
-        {
-            case ValueType::vtUInt8:
-                insertNumber<UInt8>(column, value, name);
-                break;
-            case ValueType::vtUInt16:
-                insertNumber<UInt16>(column, value, name);
-                break;
-            case ValueType::vtUInt32:
-                insertNumber<UInt32>(column, value, name);
-                break;
-            case ValueType::vtUInt64:
-                insertNumber<UInt64>(column, value, name);
-                break;
-            case ValueType::vtInt8:
-                insertNumber<Int8>(column, value, name);
-                break;
-            case ValueType::vtInt16:
-                insertNumber<Int16>(column, value, name);
-                break;
-            case ValueType::vtInt32:
-                insertNumber<Int32>(column, value, name);
-                break;
-            case ValueType::vtInt64:
-                insertNumber<Int64>(column, value, name);
-                break;
-            case ValueType::vtFloat32:
-                insertNumber<Float32>(column, value, name);
-                break;
-            case ValueType::vtFloat64:
-                insertNumber<Float64>(column, value, name);
-                break;
-
-            case ValueType::vtEnum8:
-            case ValueType::vtEnum16:
-            case ValueType::vtString:
-            {
-                if (value.type() == Poco::MongoDB::ElementTraits<ObjectId::Ptr>::TypeId)
-                {
-                    std::string string_id = value.toString();
-                    assert_cast<ColumnString &>(column).insertData(string_id.data(), string_id.size());
-                    break;
-                }
-                else if (value.type() == Poco::MongoDB::ElementTraits<String>::TypeId)
-                {
-                    String string = static_cast<const Poco::MongoDB::ConcreteElement<String> &>(value).value();
-                    assert_cast<ColumnString &>(column).insertData(string.data(), string.size());
-                    break;
-                }
-
-                throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected String, got type id = {} for column {}",
-                                toString(value.type()), name);
-            }
-
-            case ValueType::vtDate:
-            {
-                if (value.type() != Poco::MongoDB::ElementTraits<Poco::Timestamp>::TypeId)
-                    throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected Timestamp, got type id = {} for column {}",
-                                    toString(value.type()), name);
-
-                assert_cast<ColumnUInt16 &>(column).getData().push_back(static_cast<UInt16>(DateLUT::instance().toDayNum(
-                    static_cast<const Poco::MongoDB::ConcreteElement<Poco::Timestamp> &>(value).value().epochTime())));
-                break;
-            }
-
-            case ValueType::vtDateTime:
-            {
-                if (value.type() != Poco::MongoDB::ElementTraits<Poco::Timestamp>::TypeId)
-                    throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected Timestamp, got type id = {} for column {}",
-                                    toString(value.type()), name);
-
-                assert_cast<ColumnUInt32 &>(column).getData().push_back(
-                    static_cast<UInt32>(static_cast<const Poco::MongoDB::ConcreteElement<Poco::Timestamp> &>(value).value().epochTime()));
-                break;
-            }
-            case ValueType::vtUUID:
-            {
-                if (value.type() == Poco::MongoDB::ElementTraits<String>::TypeId)
-                {
-                    String string = static_cast<const Poco::MongoDB::ConcreteElement<String> &>(value).value();
-                    assert_cast<ColumnUUID &>(column).getData().push_back(parse<UUID>(string));
-                }
-                else
-                    throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected String (UUID), got type id = {} for column {}",
-                                        toString(value.type()), name);
-                break;
-            }
-            case ValueType::vtArray:
-            {
-                if (value.type() != Poco::MongoDB::ElementTraits<MongoArray::Ptr>::TypeId)
-                    throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected Array, got type id = {} for column {}",
-                                    toString(value.type()), name);
-
-                size_t expected_dimensions = array_info[idx].num_dimensions;
-                const auto parse_value = array_info[idx].parser;
-                std::vector<Row> dimensions(expected_dimensions + 1);
-
-                auto array = static_cast<const Poco::MongoDB::ConcreteElement<MongoArray::Ptr> &>(value).value();
-
-                std::vector<std::pair<const Poco::MongoDB::Element *, size_t>> arrays;
-                arrays.emplace_back(&value, 0);
-
-                while (!arrays.empty())
-                {
-                    size_t dimension_idx = arrays.size() - 1;
-
-                    if (dimension_idx + 1 > expected_dimensions)
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Got more dimensions than expected");
-
-                    auto [parent_ptr, child_idx] = arrays.back();
-                    auto parent = static_cast<const Poco::MongoDB::ConcreteElement<MongoArray::Ptr> &>(*parent_ptr).value();
-
-                    if (child_idx >= parent->size())
-                    {
-                        arrays.pop_back();
-
-                        if (dimension_idx == 0)
-                            break;
-
-                        dimensions[dimension_idx].emplace_back(Array(dimensions[dimension_idx + 1].begin(), dimensions[dimension_idx + 1].end()));
-                        dimensions[dimension_idx + 1].clear();
-
-                        continue;
-                    }
-
-                    Poco::MongoDB::Element::Ptr child = parent->get(static_cast<int>(child_idx));
-                    arrays.back().second += 1;
-
-                    if (child->type() == Poco::MongoDB::ElementTraits<MongoArray::Ptr>::TypeId)
-                    {
-                        arrays.emplace_back(child.get(), 0);
-                    }
-                    else if (child->type() == Poco::MongoDB::ElementTraits<Poco::MongoDB::NullValue>::TypeId)
-                    {
-                        if (dimension_idx + 1 == expected_dimensions)
-                            dimensions[dimension_idx + 1].emplace_back(array_info[idx].default_value);
-                        else
-                            dimensions[dimension_idx + 1].emplace_back(Array());
-                    }
-                    else if (dimension_idx + 1 == expected_dimensions)
-                    {
-                        dimensions[dimension_idx + 1].emplace_back(parse_value(*child, name));
-                    }
-                    else
-                    {
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "Got less dimensions than expected. ({} instead of {})", dimension_idx + 1, expected_dimensions);
-                    }
-                }
-
-                assert_cast<ColumnArray &>(column).insert(Array(dimensions[1].begin(), dimensions[1].end()));
-                break;
-
-            }
-            default:
-                throw Exception(ErrorCodes::UNKNOWN_TYPE, "Value of unsupported type: {}", column.getName());
-        }
-    }
-
-    void insertDefaultValue(IColumn & column, const IColumn & sample_column) { column.insertFrom(sample_column, 0); }
+    return escaped;
 }
 
-
-bool isMongoDBWireProtocolOld(Poco::MongoDB::Connection & connection_, const std::string & database_name_)
+template <typename T>
+std::string BSONElementAsString(const T & value)
 {
-    Poco::MongoDB::Database db(database_name_);
-    Poco::MongoDB::Document::Ptr doc = db.queryServerHello(connection_, false);
-
-    if (doc->exists("maxWireVersion"))
+    switch (value.type())
     {
-        auto wire_version = doc->getInteger("maxWireVersion");
-        return wire_version < Poco::MongoDB::Database::WireVersion::VER_36;
-    }
+        case bsoncxx::type::k_double:
+            return std::to_string(value.get_double().value);
+        case bsoncxx::type::k_string:
+            return static_cast<std::string>(value.get_string().value);
+        // MongoDB's documents and arrays may not have strict types or be nested, so the most optimal solution is store their JSON representations.
+        // bsoncxx::to_json function will return something like "'number': {'$numberInt': '321'}", this why we need own realization.
+        case bsoncxx::type::k_document:
+        {
+            String json = "{";
+            auto first = true;
 
-    doc = db.queryServerHello(connection_, true);
-    if (doc->exists("maxWireVersion"))
-    {
-        auto wire_version = doc->getInteger("maxWireVersion");
-        return wire_version < Poco::MongoDB::Database::WireVersion::VER_36;
-    }
+            for (const auto & elem : value.get_document().view())
+            {
+                if (!first)
+                    json += ',';
+                json += '"' + escapeJSONString(std::string(elem.key())) + "\":";
+                switch (elem.type())
+                {
+                    // types which need to be quoted
+                    case bsoncxx::type::k_binary:
+                    case bsoncxx::type::k_date:
+                    case bsoncxx::type::k_timestamp:
+                    case bsoncxx::type::k_oid:
+                    case bsoncxx::type::k_symbol:
+                    case bsoncxx::type::k_maxkey:
+                    case bsoncxx::type::k_minkey:
+                    case bsoncxx::type::k_undefined:
+                        json += "\"" + BSONElementAsString<bsoncxx::document::element>(elem) + "\"";
+                        break;
+                    // types which need to be escaped
+                    case bsoncxx::type::k_string:
+                    case bsoncxx::type::k_code:
+                        json += "\"" + escapeJSONString(BSONElementAsString<bsoncxx::document::element>(elem)) + "\"";
+                        break;
+                    default:
+                            json += BSONElementAsString<bsoncxx::document::element>(elem);
+                }
+                first = false;
+            }
 
-    return true;
+            json += '}';
+            return json;
+        }
+        case bsoncxx::type::k_array:
+        {
+            String json = "[";
+            auto first = true;
+
+            for (const auto & elem : value.get_array().value)
+            {
+                if (!first)
+                    json += ',';
+                switch (elem.type())
+                {
+                    // types which need to be quoted
+                    case bsoncxx::type::k_binary:
+                    case bsoncxx::type::k_date:
+                    case bsoncxx::type::k_timestamp:
+                    case bsoncxx::type::k_oid:
+                    case bsoncxx::type::k_symbol:
+                    case bsoncxx::type::k_maxkey:
+                    case bsoncxx::type::k_minkey:
+                    case bsoncxx::type::k_undefined:
+                        json += "\"" + BSONElementAsString<bsoncxx::array::element>(elem) + "\"";
+                        break;
+                    // types which need to be escaped
+                    case bsoncxx::type::k_string:
+                    case bsoncxx::type::k_code:
+                        json += "\"" + escapeJSONString(BSONElementAsString<bsoncxx::array::element>(elem)) + "\"";
+                        break;
+                    default:
+                        json += BSONElementAsString<bsoncxx::array::element>(elem);
+                }
+                first = false;
+            }
+
+            json += ']';
+            return json;
+        }
+        case bsoncxx::type::k_binary:
+            return base64Encode(std::string(reinterpret_cast<const char*>(value.get_binary().bytes), value.get_binary().size));
+        case bsoncxx::type::k_undefined:
+            return "undefined";
+        case bsoncxx::type::k_oid:
+            return value.get_oid().value.to_string();
+        case bsoncxx::type::k_bool:
+            return value.get_bool().value ? "true" : "false";
+        case bsoncxx::type::k_date:
+            return DateLUT::instance().timeToString(value.get_date().to_int64() / 1000);
+        case bsoncxx::type::k_null:
+            return "null";
+        case bsoncxx::type::k_regex:
+            return R"({"regex": ")" + escapeJSONString(std::string(value.get_regex().regex)) + R"(","options":")" + escapeJSONString(std::string(value.get_regex().regex)) + "\"}";
+        case bsoncxx::type::k_dbpointer:
+            return "{\"" + escapeJSONString(value.get_dbpointer().value.to_string()) + "\":\"" + escapeJSONString(std::string(value.get_dbpointer().collection)) + "\"}";
+        case bsoncxx::type::k_symbol:
+            return {1, value.get_symbol().symbol.at(0)};
+        case bsoncxx::type::k_int32:
+            return std::to_string(static_cast<Int64>(value.get_int32().value));
+        case bsoncxx::type::k_timestamp:
+            return DateLUT::instance().timeToString(value.get_timestamp().timestamp);
+        case bsoncxx::type::k_int64:
+            return std::to_string(value.get_int64().value);
+        case bsoncxx::type::k_decimal128:
+            return value.get_decimal128().value.to_string();
+        default:
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "BSON type {} is unserializable", to_string(value.type()));
+    }
 }
 
-
-MongoDBCursor::MongoDBCursor(
-    const std::string & database,
-    const std::string & collection,
-    const Block & sample_block_to_select,
-    const Poco::MongoDB::Document & query,
-    Poco::MongoDB::Connection & connection)
-    : is_wire_protocol_old(isMongoDBWireProtocolOld(connection, database))
+template <typename T, typename T2>
+T BSONElementAsNumber(const T2 & value, const std::string & name)
 {
-    Poco::MongoDB::Document projection;
-
-    /// Looks like selecting _id column is implicit by default.
-    if (!sample_block_to_select.has("_id"))
-        projection.add("_id", 0);
-
-    for (const auto & column : sample_block_to_select)
-        projection.add(column.name, 1);
-
-    if (is_wire_protocol_old)
+    switch (value.type())
     {
-        old_cursor = std::make_unique<Poco::MongoDB::Cursor>(database, collection);
-        old_cursor->query().selector() = query;
-        old_cursor->query().returnFieldSelector() = projection;
+        case bsoncxx::type::k_int64:
+            return static_cast<T>(value.get_int64());
+        case bsoncxx::type::k_int32:
+            return static_cast<T>(value.get_int32());
+        case bsoncxx::type::k_double:
+            return static_cast<T>(value.get_double());
+        case bsoncxx::type::k_bool:
+            return static_cast<T>(value.get_bool());
+        default:
+            throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, {} cannot be converted to number for column {}",
+                            bsoncxx::to_string(value.type()), name);
+    }
+}
+
+Array BSONArrayAsArray(size_t dimensions, const bsoncxx::types::b_array & array, const DataTypePtr & type, const Field & default_value, const std::string & name)
+{
+    auto arr = Array();
+    if (dimensions > 0)
+    {
+        --dimensions;
+        for (auto const & elem : array.value)
+        {
+            if (elem.type() != bsoncxx::type::k_array)
+                throw Exception(ErrorCodes::TYPE_MISMATCH, "Array {} have less dimensions then defined in the schema", name);
+
+            arr.emplace_back(BSONArrayAsArray(dimensions, elem.get_array(), type, default_value, name));
+        }
     }
     else
     {
-        new_cursor = std::make_unique<Poco::MongoDB::OpMsgCursor>(database, collection);
-        new_cursor->query().setCommandName(Poco::MongoDB::OpMsgMessage::CMD_FIND);
-        new_cursor->query().body().addNewDocument("filter") = query;
-        new_cursor->query().body().addNewDocument("projection") = projection;
+        for (auto const & value : array.value)
+        {
+            if (value.type() == bsoncxx::type::k_null)
+                arr.emplace_back(default_value);
+            else
+            {
+                switch (type->getTypeId())
+                {
+                    case TypeIndex::Int8:
+                        arr.emplace_back(BSONElementAsNumber<Int8, bsoncxx::array::element>(value, name));
+                        break;
+                    case TypeIndex::UInt8:
+                        arr.emplace_back(BSONElementAsNumber<UInt8, bsoncxx::array::element>(value, name));
+                        break;
+                    case TypeIndex::Int16:
+                        arr.emplace_back(BSONElementAsNumber<Int16, bsoncxx::array::element>(value, name));
+                        break;
+                    case TypeIndex::UInt16:
+                        arr.emplace_back(BSONElementAsNumber<UInt16, bsoncxx::array::element>(value, name));
+                        break;
+                    case TypeIndex::Int32:
+                        arr.emplace_back(BSONElementAsNumber<Int32, bsoncxx::array::element>(value, name));
+                        break;
+                    case TypeIndex::UInt32:
+                        arr.emplace_back(BSONElementAsNumber<UInt32, bsoncxx::array::element>(value, name));
+                        break;
+                    case TypeIndex::Int64:
+                        arr.emplace_back(BSONElementAsNumber<Int64, bsoncxx::array::element>(value, name));
+                        break;
+                    case TypeIndex::UInt64:
+                        arr.emplace_back(BSONElementAsNumber<UInt64, bsoncxx::array::element>(value, name));
+                        break;
+                    case TypeIndex::Int128:
+                        arr.emplace_back(BSONElementAsNumber<Int128, bsoncxx::array::element>(value, name));
+                        break;
+                    case TypeIndex::UInt128:
+                        arr.emplace_back(BSONElementAsNumber<UInt128, bsoncxx::array::element>(value, name));
+                        break;
+                    case TypeIndex::Int256:
+                        arr.emplace_back(BSONElementAsNumber<Int256, bsoncxx::array::element>(value, name));
+                        break;
+                    case TypeIndex::UInt256:
+                        arr.emplace_back(BSONElementAsNumber<UInt256, bsoncxx::array::element>(value, name));
+                        break;
+                    case TypeIndex::Float32:
+                        arr.emplace_back(BSONElementAsNumber<Float32, bsoncxx::array::element>(value, name));
+                        break;
+                    case TypeIndex::Float64:
+                        arr.emplace_back(BSONElementAsNumber<Float64, bsoncxx::array::element>(value, name));
+                        break;
+                    case TypeIndex::Date:
+                    {
+                        if (value.type() != bsoncxx::type::k_date)
+                            throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected date, got {} for column {}",
+                                            bsoncxx::to_string(value.type()), name);
+
+                        arr.emplace_back(DateLUT::instance().toDayNum(value.get_date().to_int64() / 1000).toUnderType());
+                        break;
+                    }
+                    case TypeIndex::Date32:
+                    {
+                        if (value.type() != bsoncxx::type::k_date)
+                            throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected date, got {} for column {}",
+                                            bsoncxx::to_string(value.type()), name);
+
+                        arr.emplace_back(static_cast<Int32>(DateLUT::instance().toDayNum(value.get_date().to_int64() / 1000).toUnderType()));
+                        break;
+                    }
+                    case TypeIndex::DateTime:
+                    {
+                        if (value.type() != bsoncxx::type::k_date)
+                            throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected date, got {} for column {}",
+                                            bsoncxx::to_string(value.type()), name);
+
+                        arr.emplace_back(static_cast<UInt32>(value.get_date().to_int64() / 1000));
+                        break;
+                    }
+                    case TypeIndex::DateTime64:
+                    {
+                        if (value.type() != bsoncxx::type::k_date)
+                            throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected date, got {} for column {}",
+                                            bsoncxx::to_string(value.type()), name);
+
+                        arr.emplace_back(static_cast<Decimal64>(value.get_date().to_int64()));
+                        break;
+                    }
+                    case TypeIndex::UUID:
+                    {
+                        if (value.type() != bsoncxx::type::k_string)
+                            throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected string (UUID), got {} for column {}",
+                                            bsoncxx::to_string(value.type()), name);
+
+                        arr.emplace_back(parse<UUID>(value.get_string().value.data()));
+                        break;
+                    }
+                    case TypeIndex::String:
+                        arr.emplace_back(BSONElementAsString(value));
+                        break;
+                    default:
+                        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Array {} has unsupported nested type {}", name, type->getName());
+                }
+            }
+        }
     }
+    return arr;
 }
 
-Poco::MongoDB::Document::Vector MongoDBCursor::nextDocuments(Poco::MongoDB::Connection & connection)
-{
-    if (is_wire_protocol_old)
-    {
-        auto response = old_cursor->next(connection);
-        cursor_id = response.cursorID();
-        return std::move(response.documents());
-    }
-    else
-    {
-        auto response = new_cursor->next(connection);
-        cursor_id = new_cursor->cursorID();
-        return std::move(response.documents());
-    }
-}
+void MongoDBSource::insertDefaultValue(IColumn & column, const IColumn & sample_column) { column.insertFrom(sample_column, 0); }
 
-Int64 MongoDBCursor::cursorID() const
+void MongoDBSource::insertValue(IColumn & column, const size_t & idx, const DataTypePtr & type, const std::string & name, const bsoncxx::document::element & value)
 {
-    return cursor_id;
+    switch (type->getTypeId())
+    {
+        case TypeIndex::Int8:
+            assert_cast<ColumnInt8 &>(column).insertValue(BSONElementAsNumber<Int8, bsoncxx::document::element>(value, name));
+            break;
+        case TypeIndex::UInt8:
+            assert_cast<ColumnUInt8 &>(column).insertValue(BSONElementAsNumber<UInt8, bsoncxx::document::element>(value, name));
+            break;
+        case TypeIndex::Int16:
+            assert_cast<ColumnInt16 &>(column).insertValue(BSONElementAsNumber<Int16, bsoncxx::document::element>(value, name));
+            break;
+        case TypeIndex::UInt16:
+            assert_cast<ColumnUInt16 &>(column).insertValue(BSONElementAsNumber<UInt16, bsoncxx::document::element>(value, name));
+            break;
+        case TypeIndex::Int32:
+            assert_cast<ColumnInt32 &>(column).insertValue(BSONElementAsNumber<Int32, bsoncxx::document::element>(value, name));
+            break;
+        case TypeIndex::UInt32:
+            assert_cast<ColumnUInt32 &>(column).insertValue(BSONElementAsNumber<UInt32, bsoncxx::document::element>(value, name));
+            break;
+        case TypeIndex::Int64:
+            assert_cast<ColumnInt64 &>(column).insertValue(BSONElementAsNumber<Int64, bsoncxx::document::element>(value, name));
+            break;
+        case TypeIndex::UInt64:
+            assert_cast<ColumnUInt64 &>(column).insertValue(BSONElementAsNumber<UInt64, bsoncxx::document::element>(value, name));
+            break;
+        case TypeIndex::Int128:
+            assert_cast<ColumnInt128 &>(column).insertValue(BSONElementAsNumber<Int128, bsoncxx::document::element>(value, name));
+            break;
+        case TypeIndex::UInt128:
+            assert_cast<ColumnUInt128 &>(column).insertValue(BSONElementAsNumber<UInt128, bsoncxx::document::element>(value, name));
+            break;
+        case TypeIndex::Int256:
+            assert_cast<ColumnInt256 &>(column).insertValue(BSONElementAsNumber<Int256, bsoncxx::document::element>(value, name));
+            break;
+        case TypeIndex::UInt256:
+            assert_cast<ColumnUInt256 &>(column).insertValue(BSONElementAsNumber<UInt256, bsoncxx::document::element>(value, name));
+            break;
+        case TypeIndex::Float32:
+            assert_cast<ColumnFloat32 &>(column).insertValue(BSONElementAsNumber<Float32, bsoncxx::document::element>(value, name));
+            break;
+        case TypeIndex::Float64:
+            assert_cast<ColumnFloat64 &>(column).insertValue(BSONElementAsNumber<Float64, bsoncxx::document::element>(value, name));
+            break;
+        case TypeIndex::Date:
+        {
+            if (value.type() != bsoncxx::type::k_date)
+                throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected date, got {} for column {}",
+                                bsoncxx::to_string(value.type()), name);
+
+            assert_cast<ColumnUInt16 &>(column).insertValue(DateLUT::instance().toDayNum(value.get_date().to_int64() / 1000).toUnderType());
+            break;
+        }
+        case TypeIndex::Date32:
+        {
+            if (value.type() != bsoncxx::type::k_date)
+                throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected date, got {} for column {}",
+                                bsoncxx::to_string(value.type()), name);
+
+            assert_cast<ColumnInt32 &>(column).insertValue(static_cast<Int32>(DateLUT::instance().toDayNum(value.get_date().to_int64() / 1000).toUnderType()));
+            break;
+        }
+        case TypeIndex::DateTime:
+        {
+            if (value.type() != bsoncxx::type::k_date)
+                throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected date, got {} for column {}",
+                                bsoncxx::to_string(value.type()), name);
+
+            assert_cast<ColumnUInt32 &>(column).insertValue(static_cast<UInt32>(value.get_date().to_int64() / 1000));
+            break;
+        }
+        case TypeIndex::DateTime64:
+        {
+            if (value.type() != bsoncxx::type::k_date)
+                throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected date, got {} for column {}",
+                                bsoncxx::to_string(value.type()), name);
+
+            assert_cast<DB::ColumnDecimal<DB::DateTime64> &>(column).insertValue(static_cast<Decimal64>(value.get_date().to_int64()));
+            break;
+        }
+        case TypeIndex::UUID:
+        {
+            if (value.type() != bsoncxx::type::k_string)
+                throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected string (UUID), got {} for column {}",
+                                bsoncxx::to_string(value.type()), name);
+
+            assert_cast<ColumnUUID &>(column).insertValue(parse<UUID>(value.get_string().value.data()));
+            break;
+        }
+        case TypeIndex::String:
+        {
+            assert_cast<ColumnString &>(column).insert(BSONElementAsString(value));
+            break;
+        }
+        case TypeIndex::Array:
+        {
+            if (value.type() != bsoncxx::type::k_array)
+                throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected array, got {} for column {}",
+                                bsoncxx::to_string(value.type()), name);
+
+            assert_cast<ColumnArray &>(column).insert(BSONArrayAsArray(arrays_info[idx].first, value.get_array(), arrays_info[idx].second.first, arrays_info[idx].second.second, name));
+            break;
+        }
+        default:
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Column {} has unsupported type {}", name, type->getName());
+    }
 }
 
 
 MongoDBSource::MongoDBSource(
-    std::shared_ptr<Poco::MongoDB::Connection> & connection_,
-    const String & database_name_,
-    const String & collection_name_,
-    const Poco::MongoDB::Document & query_,
-    const Block & sample_block,
-    UInt64 max_block_size_)
-    : ISource(sample_block.cloneEmpty())
-    , connection(connection_)
-    , cursor(database_name_, collection_name_, sample_block, query_, *connection_)
+    const mongocxx::uri & uri,
+    const std::string & collection_name,
+    const bsoncxx::document::view_or_value & query,
+    const mongocxx::options::find & options,
+    const Block & sample_block_,
+    const UInt64 & max_block_size_)
+    : ISource{sample_block_}
+    , client{uri}
+    , database{client.database(uri.database())}
+    , collection{database.collection(collection_name)}
+    , cursor{collection.find(query, options)}
+    , sample_block{sample_block_}
     , max_block_size{max_block_size_}
 {
-    description.init(sample_block);
+    for (const auto & idx : collections::range(0, sample_block.columns()))
+    {
+        auto & sample_column = sample_block.getByPosition(idx);
 
-    for (const auto idx : collections::range(0, description.sample_block.columns()))
-        if (description.types[idx].first == ExternalResultDescription::ValueType::vtArray)
-            prepareMongoDBArrayInfo(array_info, idx, description.sample_block.getByPosition(idx).type);
+        /// If default value for column was not provided, use default from data type.
+        if (sample_column.column->empty())
+            sample_column.column = sample_column.type->createColumnConstWithDefaultValue(1)->convertToFullColumnIfConst();
+
+        if (sample_column.type->getTypeId() == TypeIndex::Array)
+        {
+            auto type = assert_cast<const DataTypeArray &>(*sample_column.type).getNestedType();
+            size_t dimensions = 0;
+            while (type->getTypeId() == TypeIndex::Array)
+            {
+                type = assert_cast<const DataTypeArray &>(*type).getNestedType();
+                ++dimensions;
+            }
+            if (type->isNullable())
+            {
+                type = assert_cast<const DataTypeNullable &>(*type).getNestedType();
+                arrays_info[idx] = {std::move(dimensions), {std::move(type), Null()}};
+            }
+            else
+                arrays_info[idx] = {std::move(dimensions), {std::move(type), type->getDefault()}};
+        }
+    }
 }
 
 
@@ -470,72 +494,50 @@ Chunk MongoDBSource::generate()
     if (all_read)
         return {};
 
-    MutableColumns columns(description.sample_block.columns());
-    const size_t size = columns.size();
-
-    for (const auto i : collections::range(0, size))
-        columns[i] = description.sample_block.getByPosition(i).column->cloneEmpty();
+    auto columns = sample_block.cloneEmptyColumns();
+    size_t size = columns.size();
 
     size_t num_rows = 0;
-    while (num_rows < max_block_size)
+    for (const auto & doc : cursor)
     {
-        auto documents = cursor.nextDocuments(*connection);
-
-        for (auto & document : documents)
+        for (auto idx : collections::range(0, size))
         {
-            if (document->exists("ok") && document->exists("$err")
-                && document->exists("code") && document->getInteger("ok") == 0)
+            auto & sample_column = sample_block.getByPosition(idx);
+            auto value = doc[sample_column.name];
+
+            if (!value || value.type() == bsoncxx::type::k_null)
             {
-                auto code = document->getInteger("code");
-                const Poco::MongoDB::Element::Ptr value = document->get("$err");
-                auto message = static_cast<const Poco::MongoDB::ConcreteElement<String> &>(*value).value();
-                throw Exception(ErrorCodes::MONGODB_ERROR, "Got error from MongoDB: {}, code: {}", message, code);
+                insertDefaultValue(*columns[idx], *sample_column.column);
+
+                if (sample_column.type->isNullable())
+                    assert_cast<ColumnNullable &>(*columns[idx]).getNullMapData().back() = true;
             }
-            ++num_rows;
-
-            for (const auto idx : collections::range(0, size))
+            else
             {
-                const auto & name = description.sample_block.getByPosition(idx).name;
-
-                bool exists_in_current_document = document->exists(name);
-                if (!exists_in_current_document)
+                if (sample_column.type->isNullable())
                 {
-                    insertDefaultValue(*columns[idx], *description.sample_block.getByPosition(idx).column);
-                    continue;
-                }
+                    auto & column_nullable = assert_cast<ColumnNullable &>(*columns[idx]);
+                    const auto & type_nullable = assert_cast<const DataTypeNullable &>(*sample_column.type);
 
-                const Poco::MongoDB::Element::Ptr value = document->get(name);
-
-                if (value.isNull() || value->type() == Poco::MongoDB::ElementTraits<Poco::MongoDB::NullValue>::TypeId)
-                {
-                    insertDefaultValue(*columns[idx], *description.sample_block.getByPosition(idx).column);
+                    insertValue(column_nullable.getNestedColumn(), idx, type_nullable.getNestedType(), sample_column.name, value);
+                    column_nullable.getNullMapData().emplace_back(false);
                 }
                 else
-                {
-                    bool is_nullable = description.types[idx].second;
-                    if (is_nullable)
-                    {
-                        ColumnNullable & column_nullable = assert_cast<ColumnNullable &>(*columns[idx]);
-                        insertValue(column_nullable.getNestedColumn(), description.types[idx].first, *value, name, array_info, idx);
-                        column_nullable.getNullMapData().emplace_back(0);
-                    }
-                    else
-                        insertValue(*columns[idx], description.types[idx].first, *value, name, array_info, idx);
-                }
+                    insertValue(*columns[idx], idx, sample_column.type, sample_column.name, value);
             }
         }
 
-        if (cursor.cursorID() == 0)
-        {
-            all_read = true;
+        if (++num_rows == max_block_size)
             break;
-        }
     }
+    if (num_rows < max_block_size)
+        all_read = true;
 
     if (num_rows == 0)
         return {};
 
-    return Chunk(std::move(columns), num_rows);
+    return Chunk(std::move(columns), std::move(num_rows));
 }
 
 }
+#endif

@@ -1680,7 +1680,7 @@ Setting fields:
 The `table` or `where` fields cannot be used together with the `query` field. And either one of the `table` or `query` fields must be declared.
 :::
 
-#### Mongodb
+#### MongoDB
 
 Example of settings:
 
@@ -1694,6 +1694,17 @@ Example of settings:
         <db>test</db>
         <collection>dictionary_source</collection>
         <options>ssl=true</options>
+    </mongodb>
+</source>
+```
+
+or
+
+``` xml
+<source>
+    <mongodb>
+        <uri>mongodb://localhost:27017/test?ssl=true</uri>
+        <collection>dictionary_source</collection>
     </mongodb>
 </source>
 ```
@@ -1721,6 +1732,22 @@ Setting fields:
 - `db` – Name of the database.
 - `collection` – Name of the collection.
 - `options` -  MongoDB connection string options (optional parameter).
+
+or
+
+``` sql
+SOURCE(MONGODB(
+    uri 'mongodb://localhost:27017/clickhouse'
+    collection 'dictionary_source'
+))
+```
+
+Setting fields:
+
+- 'uri' - URI for establish the connection.
+- `collection` – Name of the collection.
+
+[More information about the engine](../../engines/table-engines/integrations/mongodb.md)
 
 
 #### Redis

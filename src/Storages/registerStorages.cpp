@@ -1,5 +1,5 @@
-#include <Storages/registerStorages.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/registerStorages.h>
 
 #include "config.h"
 
@@ -58,7 +58,11 @@ void registerStorageJDBC(StorageFactory & factory);
 void registerStorageMySQL(StorageFactory & factory);
 #endif
 
+#if USE_MONGODB
 void registerStorageMongoDB(StorageFactory & factory);
+void registerStorageMongoDBPocoLegacy(StorageFactory & factory);
+#endif
+
 void registerStorageRedis(StorageFactory & factory);
 
 
@@ -99,7 +103,7 @@ void registerStorageKeeperMap(StorageFactory & factory);
 
 void registerStorageObjectStorage(StorageFactory & factory);
 
-void registerStorages()
+void registerStorages(bool use_legacy_mongodb_integration [[maybe_unused]])
 {
     auto & factory = StorageFactory::instance();
 
@@ -158,7 +162,13 @@ void registerStorages()
     registerStorageMySQL(factory);
     #endif
 
-    registerStorageMongoDB(factory);
+    #if USE_MONGODB
+    if (use_legacy_mongodb_integration)
+        registerStorageMongoDBPocoLegacy(factory);
+    else
+        registerStorageMongoDB(factory);
+    #endif
+
     registerStorageRedis(factory);
 
     #if USE_RDKAFKA

@@ -481,10 +481,10 @@ try
     /// Don't initialize DateLUT
     registerFunctions();
     registerAggregateFunctions();
-    registerTableFunctions();
+    registerTableFunctions(global_context->getGlobalContextInstance()->getServerSettings().use_legacy_mongodb_integration);
     registerDatabases();
-    registerStorages();
-    registerDictionaries();
+    registerStorages(global_context->getGlobalContextInstance()->getServerSettings().use_legacy_mongodb_integration);
+    registerDictionaries(global_context->getGlobalContextInstance()->getServerSettings().use_legacy_mongodb_integration);
     registerDisks(/* global_skip_access_check= */ true);
     registerFormats();
 

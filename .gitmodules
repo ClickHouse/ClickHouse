@@ -372,3 +372,9 @@
 [submodule "contrib/double-conversion"]
 	path = contrib/double-conversion
 	url = https://github.com/ClickHouse/double-conversion.git
+[submodule "contrib/mongo-c-driver"]
+	path = contrib/mongo-c-driver
+	url = https://github.com/mongodb/mongo-c-driver.git
+[submodule "contrib/mongo-cxx-driver"]
+	path = contrib/mongo-cxx-driver
+	url = https://github.com/mongodb/mongo-cxx-driver.git

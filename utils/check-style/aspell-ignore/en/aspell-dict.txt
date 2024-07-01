@@ -561,6 +561,8 @@ MinHash
 MinIO
 MinMax
 MindsDB
+mongoc
+mongocxx
 Mongodb
 Monotonicity
 MsgPack
