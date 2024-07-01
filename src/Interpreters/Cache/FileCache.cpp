@@ -11,6 +11,7 @@
 #include <Interpreters/Cache/EvictionCandidates.h>
 #include <Interpreters/Context.h>
 #include <base/hex.h>
+#include "Common/Exception.h"
 #include <Common/ThreadPool.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Core/ServerUUID.h>
@@ -88,6 +89,7 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
     , boundary_alignment(settings.boundary_alignment)
     , load_metadata_threads(settings.load_metadata_threads)
     , load_metadata_asynchronously(settings.load_metadata_asynchronously)
+    , throw_on_cache_initialization_error(settings.throw_on_cache_initialization_error)
     , write_cache_per_user_directory(settings.write_cache_per_user_id_directory)
     , keep_current_size_to_max_ratio(1 - settings.keep_free_space_size_ratio)
     , keep_current_elements_to_max_ratio(1 - settings.keep_free_space_elements_ratio)
@@ -141,7 +143,16 @@ bool FileCache::isInitialized() const
         /// Exception during initialization,
         /// make user aware that the cache is broken.
         if (init_exception)
-            std::rethrow_exception(init_exception);
+        {
+            if (throw_on_cache_initialization_error)
+            {
+                std::rethrow_exception(init_exception);
+            }
+            else
+            {
+                tryLogCurrentException(log, "Cache failed to initialize: ");
+            }
+        }
         return is_initialized;
     }
     else

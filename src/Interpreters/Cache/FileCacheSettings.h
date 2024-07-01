@@ -33,6 +33,7 @@ struct FileCacheSettings
 
     size_t load_metadata_threads = FILECACHE_DEFAULT_LOAD_METADATA_THREADS;
     bool load_metadata_asynchronously = false;
+    bool throw_on_cache_initialization_error = true;
 
     bool write_cache_per_user_id_directory = false;
 

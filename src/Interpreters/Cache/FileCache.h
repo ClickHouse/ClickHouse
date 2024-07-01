@@ -199,6 +199,7 @@ private:
     const size_t boundary_alignment;
     size_t load_metadata_threads;
     const bool load_metadata_asynchronously;
+    const bool throw_on_cache_initialization_error;
     std::atomic<bool> stop_loading_metadata = false;
     ThreadFromGlobalPool load_metadata_main_thread;
     const bool write_cache_per_user_directory;
