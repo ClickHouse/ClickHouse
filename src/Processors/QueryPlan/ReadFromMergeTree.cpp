@@ -1954,7 +1954,8 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
 {
     auto result = getAnalysisResult();
 
-    if (is_parallel_reading_from_replicas && context->canUseParallelReplicasOnInitiator())
+    if (is_parallel_reading_from_replicas && context->canUseParallelReplicasOnInitiator()
+        && context->getSettingsRef().parallel_replicas_local_plan)
     {
         CoordinationMode mode = CoordinationMode::Default;
         switch (result.read_type)
