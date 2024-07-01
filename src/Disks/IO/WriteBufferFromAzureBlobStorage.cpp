@@ -176,7 +176,6 @@ void WriteBufferFromAzureBlobStorage::finalizeImpl()
         {
             auto blob_client = blob_container_client->GetBlobClient(blob_path);
             blob_client.GetProperties();
-            return;
         }
         catch (const Azure::Storage::StorageException & e)
         {
