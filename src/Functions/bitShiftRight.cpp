@@ -8,7 +8,7 @@ namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
 namespace
@@ -26,8 +26,8 @@ struct BitShiftRightImpl
     {
         if constexpr (is_big_int_v<B>)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "BitShiftRight is not implemented for big integers as second argument");
-        else if (b < 0)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The number of shift positions needs to be a positive value");
+        else if (b < 0 || b > B(8 * sizeof(A)))
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "The number of shift positions needs to be a positive value and not greater than the bit width of the value to shift");
         else if constexpr (is_big_int_v<A>)
             return static_cast<Result>(a) >> static_cast<UInt32>(b);
         else
@@ -54,13 +54,14 @@ struct BitShiftRightImpl
     {
         if constexpr (is_big_int_v<B>)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "BitShiftRight is not implemented for big integers as second argument");
-        else if (b < 0)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The number of shift positions needs to be a positive value");
         else
         {
             UInt8 word_size = 8;
+            size_t n = end - pos;
+            if (b < 0 || b > B(word_size * n))
+                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "The number of shift positions needs to be a positive value and not greater than the bit width of the value to shift");
             /// To prevent overflow
-            if (static_cast<double>(b) >= (static_cast<double>(end - pos) * word_size) || b < 0)
+            if (static_cast<double>(b) >= (static_cast<double>(n) * word_size))
             {
                 /// insert default value
                 out_vec.push_back(0);
@@ -93,14 +94,14 @@ struct BitShiftRightImpl
     {
         if constexpr (is_big_int_v<B>)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "BitShiftRight is not implemented for big integers as second argument");
-        else if (b < 0)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The number of shift positions needs to be a positive value");
         else
         {
             UInt8 word_size = 8;
             size_t n = end - pos;
+            if (b < 0 || b > B(word_size * n))
+                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "The number of shift positions needs to be a positive value and not greater than the bit width of the value to shift");
             /// To prevent overflow
-            if (static_cast<double>(b) >= (static_cast<double>(n) * word_size) || b < 0)
+            if (static_cast<double>(b) >= (static_cast<double>(n) * word_size))
             {
                 // insert default value
                 out_vec.resize_fill(out_vec.size() + n);
