@@ -100,6 +100,22 @@ protected:
 
     DiskWithPath & getDiskWithPath(DisksClient & client, const CommandLineOptions & options, const String & name);
 
+    String getTargetLocation(const String & path_from, DiskWithPath & disk_to, const String & path_to)
+    {
+        if (!disk_to.getDisk()->isDirectory(path_to))
+        {
+            return path_to;
+        }
+        String copied_path_from = path_from;
+        if (copied_path_from.ends_with('/'))
+        {
+            copied_path_from.pop_back();
+        }
+        String plain_filename = fs::path(copied_path_from).filename();
+
+        return fs::path{path_to} / plain_filename;
+    }
+
 
 public:
     String command_name;

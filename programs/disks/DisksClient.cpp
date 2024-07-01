@@ -20,7 +20,7 @@ DiskWithPath::DiskWithPath(DiskPtr disk_, std::optional<String> path_) : disk(di
     {
         if (!fs::path{path_.value()}.is_absolute())
         {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Initializing path {} is not absolute", path_.value());
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Initializing path {} is not absolute", path_.value());
         }
         path = path_.value();
     }

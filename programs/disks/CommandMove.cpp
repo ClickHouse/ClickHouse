@@ -25,9 +25,38 @@ public:
         String path_to = disk.getRelativeFromRoot(getValueFromCommandLineOptionsThrow<String>(options, "path-to"));
 
         if (disk.getDisk()->isFile(path_from))
+        {
             disk.getDisk()->moveFile(path_from, path_to);
-        else
-            disk.getDisk()->moveDirectory(path_from, path_to);
+        }
+        else if (disk.getDisk()->isDirectory(path_from))
+        {
+            auto target_location = getTargetLocation(path_from, disk, path_to);
+            if (!disk.getDisk()->exists(target_location))
+            {
+                disk.getDisk()->createDirectory(target_location);
+                disk.getDisk()->moveDirectory(path_from, target_location);
+            }
+            else
+            {
+                if (disk.getDisk()->isFile(target_location))
+                {
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS, "cannot overwrite non-directory '{}' with directory '{}'", target_location, path_from);
+                }
+                if (!disk.getDisk()->isDirectoryEmpty(target_location))
+                {
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "cannot move '{}' to '{}': Directory not empty", path_from, target_location);
+                }
+                else
+                {
+                    disk.getDisk()->moveDirectory(path_from, target_location);
+                }
+            }
+        }
+        else if (!disk.getDisk()->exists(path_from))
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "cannot stat '{}': No such file or directory", path_from);
+        }
     }
 };
 

@@ -13,14 +13,14 @@ public:
     {
         command_name = "mkdir";
         description = "Creates a directory";
-        options_description.add_options()("recursive", "recursively create directories")(
-            "path", po::value<String>(), "the path of listing (mandatory, positional)");
+        options_description.add_options()("parents", "recursively create directories")(
+            "path", po::value<String>(), "the path on which directory should be created (mandatory, positional)");
         positional_options_description.add("path", 1);
     }
 
     void executeImpl(const CommandLineOptions & options, DisksClient & client) override
     {
-        bool recursive = options.count("recursive");
+        bool recursive = options.count("parents");
         auto disk = client.getCurrentDiskWithPath();
 
         String path = disk.getRelativeFromRoot(getValueFromCommandLineOptionsThrow<String>(options, "path"));
