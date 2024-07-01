@@ -26,7 +26,7 @@ struct BitShiftRightImpl
     {
         if constexpr (is_big_int_v<B>)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "BitShiftRight is not implemented for big integers as second argument");
-        else if (b < 0 || b > B(8 * sizeof(A)))
+        else if (b < 0 || static_cast<UInt256>(b) > 8 * sizeof(A))
             throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "The number of shift positions needs to be a positive value and not greater than the bit width of the value to shift");
         else if constexpr (is_big_int_v<A>)
             return static_cast<Result>(a) >> static_cast<UInt32>(b);

@@ -94,7 +94,6 @@ EXTERN_TYPES_EXCLUDES=(
     ErrorCodes::values[i]
     ErrorCodes::getErrorCodeByName
     ErrorCodes::Value
-    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
 )
 for extern_type in ${!EXTERN_TYPES[@]}; do
     type_of_extern=${EXTERN_TYPES[$extern_type]}
