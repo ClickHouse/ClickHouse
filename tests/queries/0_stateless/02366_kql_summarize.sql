@@ -40,7 +40,7 @@ create table Dates
     EventTime DateTime,
 ) ENGINE = Memory;
 
-Insert into Dates VALUES ('2015-10-12') , ('2016-10-12')
+Insert into Dates VALUES ('2015-10-12') , ('2016-10-12');
 Select '-- test summarize --' ;
 set dialect='kusto';
 Customers | summarize count(), min(Age), max(Age), avg(Age), sum(Age);

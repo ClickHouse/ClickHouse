@@ -152,8 +152,6 @@ protected:
 
     void setInsertionTable(const ASTInsertQuery & insert_query);
 
-    void addMultiquery(std::string_view query, Arguments & common_arguments) const;
-
 private:
     void receiveResult(ASTPtr parsed_query, Int32 signals_before_stop, bool partial_result_on_first_cancel);
     bool receiveAndProcessPacket(ASTPtr parsed_query, bool cancelled_);
@@ -212,7 +210,6 @@ protected:
     ContextMutablePtr global_context;
 
     bool is_interactive = false; /// Use either interactive line editing interface or batch mode.
-    bool is_multiquery = false;
     bool delayed_interactive = false;
 
     bool echo_queries = false; /// Print queries before execution in batch mode.
