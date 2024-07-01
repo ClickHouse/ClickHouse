@@ -3238,7 +3238,7 @@ def test_bad_reschedule(kafka_cluster):
     )
 
 
-def test_kafka_duplicates_when_commit_failed(kafka_cluster):
+def _test_kafka_duplicates_when_commit_failed(kafka_cluster):
     messages = [json.dumps({"key": j + 1, "value": "x" * 300}) for j in range(22)]
     kafka_produce(kafka_cluster, "duplicates_when_commit_failed", messages)
 

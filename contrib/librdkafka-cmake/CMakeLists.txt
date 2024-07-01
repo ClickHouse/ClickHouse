@@ -85,6 +85,8 @@ set(SRCS
   "${RDKAFKA_SOURCE_DIR}/snappy.c"
   "${RDKAFKA_SOURCE_DIR}/tinycthread.c"
   "${RDKAFKA_SOURCE_DIR}/tinycthread_extra.c"
+  "${RDKAFKA_SOURCE_DIR}/rdkafka_fetcher.c"
+  "${RDKAFKA_SOURCE_DIR}/rdbase64.c"
 )
 
 if(TARGET ch_contrib::sasl2)
