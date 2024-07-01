@@ -47,7 +47,7 @@ def sign_file(file_path):
     return out_file_path
 
 def main():
-    reports_path = REPORT_PATH
+    reports_path = Path(REPORT_PATH)
 
     if not os.path.exists(TEMP_PATH):
         os.makedirs(TEMP_PATH)
