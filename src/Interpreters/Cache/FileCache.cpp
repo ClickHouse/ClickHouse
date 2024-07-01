@@ -138,13 +138,13 @@ bool FileCache::isInitialized() const
 {
     if (load_metadata_asynchronously)
     {
-        /// Exception during initialization, 
+        /// Exception during initialization,
         /// make user aware that the cache is broken.
         if (init_exception)
             std::rethrow_exception(init_exception);
         return is_initialized;
     }
-    else 
+    else
     {
         assertInitialized();
         return true;
