@@ -90,6 +90,7 @@ ColumnsDescription getStructureOfRemoteTableInShard(
 
     ParserExpression expr_parser;
 
+    executor.sendQuery();
     while (Block current = executor.readBlock())
     {
         ColumnPtr name = current.getByName("name").column;
