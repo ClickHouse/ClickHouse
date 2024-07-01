@@ -13,6 +13,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/convertFieldToType.h>
+#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
@@ -21,7 +22,9 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSubquery.h>
+#include <Parsers/ASTSelectQuery.h>
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <unordered_map>
@@ -69,53 +72,82 @@ std::optional<EvaluateConstantExpressionResult> evaluateConstantExpressionImpl(c
     ReplaceQueryParameterVisitor param_visitor(context->getQueryParameters());
     param_visitor.visit(ast);
 
-    /// Notice: function name normalization is disabled when it's a secondary query, because queries are either
-    /// already normalized on initiator node, or not normalized and should remain unnormalized for
-    /// compatibility.
-    if (context->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY && context->getSettingsRef().normalize_function_names)
-        FunctionNameNormalizer::visit(ast.get());
-
-    auto syntax_result = TreeRewriter(context, no_throw).analyze(ast, source_columns);
-    if (!syntax_result)
-        return {};
-
-    /// AST potentially could be transformed to literal during TreeRewriter analyze.
-    /// For example if we have SQL user defined function that return literal AS subquery.
-    if (ASTLiteral * literal = ast->as<ASTLiteral>())
-        return getFieldAndDataTypeFromLiteral(literal);
-
-    auto actions = ExpressionAnalyzer(ast, syntax_result, context).getConstActionsDAG();
-
-    ColumnPtr result_column;
-    DataTypePtr result_type;
-    String result_name = ast->getColumnName();
-    for (const auto & action_node : actions->getOutputs())
+    if (context->getSettingsRef().allow_experimental_analyzer)
     {
-        if ((action_node->result_name == result_name) && action_node->column)
-        {
-            result_column = action_node->column;
-            result_type = action_node->result_type;
-            break;
-        }
+        ASTPtr new_ast = std::make_shared<ASTSelectQuery>();
+        auto *ast_as_select = new_ast->as<ASTSelectQuery>();
+
+        auto expr_list = std::make_shared<ASTExpressionList>();
+        expr_list->children.push_back(ast->clone());
+
+        ast_as_select->setExpression(ASTSelectQuery::Expression::SELECT, expr_list);
+
+        InterpreterSelectQueryAnalyzer interpreter(ast_as_select->clone(), context, SelectQueryOptions());
+        auto io = interpreter.execute();
+
+        PullingPipelineExecutor executor(io.pipeline);
+        Block block;
+
+        executor.pull(block);
+
+        ColumnPtr result_column;
+        DataTypePtr result_type;
+
+        auto & column = block.safeGetByPosition(0);
+        auto type = column.type;
+
+        return std::make_pair((*column.column)[0], type);
     }
+    else
+    {
+        /// Notice: function name normalization is disabled when it's a secondary query, because queries are either
+        /// already normalized on initiator node, or not normalized and should remain unnormalized for
+        /// compatibility.
+        if (context->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY && context->getSettingsRef().normalize_function_names)
+            FunctionNameNormalizer::visit(ast.get());
 
-    if (!result_column)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Element of set in IN, VALUES, or LIMIT, or aggregate function parameter, or a table function argument "
-                        "is not a constant expression (result column not found): {}", result_name);
+        auto syntax_result = TreeRewriter(context, no_throw).analyze(ast, source_columns);
+        if (!syntax_result)
+            return {};
 
-    if (result_column->empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "Empty result column after evaluation "
-                        "of constant expression for IN, VALUES, or LIMIT, or aggregate function parameter, or a table function argument");
+        /// AST potentially could be transformed to literal during TreeRewriter analyze.
+        /// For example if we have SQL user defined function that return literal AS subquery.
+        if (ASTLiteral * literal = ast->as<ASTLiteral>())
+            return getFieldAndDataTypeFromLiteral(literal);
 
-    /// Expressions like rand() or now() are not constant
-    if (!isColumnConst(*result_column))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Element of set in IN, VALUES, or LIMIT, or aggregate function parameter, or a table function argument "
-                        "is not a constant expression (result column is not const): {}", result_name);
+        auto actions = ExpressionAnalyzer(ast, syntax_result, context).getConstActionsDAG();
 
-    return std::make_pair((*result_column)[0], result_type);
+        ColumnPtr result_column;
+        DataTypePtr result_type;
+        String result_name = ast->getColumnName();
+        for (const auto & action_node : actions->getOutputs())
+        {
+            if ((action_node->result_name == result_name) && action_node->column)
+            {
+                result_column = action_node->column;
+                result_type = action_node->result_type;
+                break;
+            }
+        }
+
+        if (!result_column)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Element of set in IN, VALUES, or LIMIT, or aggregate function parameter, or a table function argument "
+                            "is not a constant expression (result column not found): {}", result_name);
+
+        if (result_column->empty())
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                            "Empty result column after evaluation "
+                            "of constant expression for IN, VALUES, or LIMIT, or aggregate function parameter, or a table function argument");
+
+        /// Expressions like rand() or now() are not constant
+        if (!isColumnConst(*result_column))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Element of set in IN, VALUES, or LIMIT, or aggregate function parameter, or a table function argument "
+                            "is not a constant expression (result column is not const): {}", result_name);
+
+        return std::make_pair((*result_column)[0], result_type);
+    }
 }
 
 std::optional<EvaluateConstantExpressionResult> tryEvaluateConstantExpression(const ASTPtr & node, const ContextPtr & context)
