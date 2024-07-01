@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-ordinary-database, use-rocksdb
+# Tags: no-ordinary-database, use-rocksdb, no-random-settings
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -45,4 +45,3 @@ ${CLICKHOUSE_CLIENT} --query "INSERT INTO rocksdb_worm SELECT number, number+1 F
 ${CLICKHOUSE_CLIENT} --query "INSERT INTO rocksdb_worm SELECT number, number+1 FROM numbers_mt(1000000)" &
 wait
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM rocksdb_worm;"
-
