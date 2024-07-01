@@ -46,7 +46,7 @@ def test_cgroup_cpu_limit():
             "clickhouse local -q \"select value from system.settings where name='max_threads'\"",
             num_cpus,
         )
-        expect_output = (r"\'auto({})\'".format(math.ceil(num_cpus))).encode()
+        expect_output = (r"auto({})".format(math.ceil(num_cpus))).encode()
         assert (
             result.strip() == expect_output
         ), f"fail for cpu limit={num_cpus}, result={result.strip()}, expect={expect_output}"
