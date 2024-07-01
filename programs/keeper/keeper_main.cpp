@@ -339,7 +339,13 @@ bool isClickhouseApp(std::string_view app_suffix, std::vector<char *> & argv)
         }
     }
 
-    return false;
+    /// keeper suffix is default which will be used if no other app is detected
+    if (app_suffix == "keeper")
+        return false;
+
+    /// Use app if clickhouse binary is run through symbolic link with name clickhouse-app
+    std::string app_name = "clickhouse-" + std::string(app_suffix);
+    return !argv.empty() && (app_name == argv[0] || endsWith(argv[0], "/" + app_name));
 }
 
 /// Don't allow dlopen in the main ClickHouse binary, because it is harmful and insecure.
