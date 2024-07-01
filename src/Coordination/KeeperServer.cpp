@@ -6,12 +6,14 @@
 #include <chrono>
 #include <filesystem>
 #include <string>
+#include <Coordination/KeeperLogStore.h>
+#include <Coordination/KeeperSnapshotManagerS3.h>
 #include <Coordination/KeeperStateMachine.h>
 #include <Coordination/KeeperStateManager.h>
-#include <Coordination/KeeperSnapshotManagerS3.h>
 #include <Coordination/LoggerWrapper.h>
 #include <Coordination/ReadBufferFromNuraftBuffer.h>
 #include <Coordination/WriteBufferFromNuraftBuffer.h>
+#include <Disks/DiskLocal.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <boost/algorithm/string.hpp>
@@ -26,7 +28,9 @@
 #include <Common/ZooKeeper/ZooKeeperIO.h>
 #include <Common/Stopwatch.h>
 #include <Common/getMultipleKeysFromConfig.h>
-#include <Disks/DiskLocal.h>
+#include <Common/getNumberOfPhysicalCPUCores.h>
+
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
 #include <fmt/chrono.h>
 
 namespace DB
@@ -314,6 +318,9 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
     params.return_method_ = nuraft::raft_params::async_handler;
 
     nuraft::asio_service::options asio_opts{};
+
+    asio_opts.thread_pool_size_ = getNumberOfPhysicalCPUCores();
+
     if (state_manager->isSecure())
     {
 #if USE_SSL
