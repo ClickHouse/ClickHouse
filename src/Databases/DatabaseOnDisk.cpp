@@ -611,7 +611,6 @@ time_t DatabaseOnDisk::getObjectMetadataModificationTime(const String & object_n
 
 void DatabaseOnDisk::iterateMetadataFiles(ContextPtr local_context, const IteratingFunction & process_metadata_file) const
 {
-    fs::path metadata_path = getMetadataPath();
     if (!fs::exists(metadata_path))
         return;
 
