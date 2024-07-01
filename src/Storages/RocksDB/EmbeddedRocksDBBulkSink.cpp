@@ -33,6 +33,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ROCKSDB_ERROR;
+    extern const int LOGICAL_ERROR;
 }
 
 static const IColumn::Permutation & getAscendingPermutation(const IColumn & column, IColumn::Permutation & perm)
