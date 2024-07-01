@@ -19,6 +19,7 @@ instance = cluster.add_instance(
     ],
 )
 
+
 @pytest.fixture(scope="module", autouse=True)
 def started_cluster():
     try:
@@ -27,6 +28,7 @@ def started_cluster():
 
     finally:
         cluster.shutdown()
+
 
 config_default = """<clickhouse>
 </clickhouse>"""
@@ -71,23 +73,20 @@ def execute_query_native(node, query, config):
 
 def test_default():
     with pytest.raises(Exception) as err:
-        execute_query_native(
-            instance, "SELECT 1", config_default
-        )
+        execute_query_native(instance, "SELECT 1", config_default)
     assert "certificate verify failed" in str(err.value)
 
+
 def test_accept():
-    assert (
-        execute_query_native(
-            instance, "SELECT 1", config_accept
-        )
-        == "1\n"
-    )
+    assert execute_query_native(instance, "SELECT 1", config_accept) == "1\n"
+
 
 def test_connection_accept():
     assert (
         execute_query_native(
-            instance, "SELECT 1", config_connection_accept.format(ip_address=f"{instance.ip_address}")
+            instance,
+            "SELECT 1",
+            config_connection_accept.format(ip_address=f"{instance.ip_address}"),
         )
         == "1\n"
     )
