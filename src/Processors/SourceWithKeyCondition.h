@@ -16,13 +16,13 @@ protected:
     /// Represents pushed down filters in source
     std::shared_ptr<const KeyCondition> key_condition;
 
-    void setKeyConditionImpl(const ActionsDAGPtr & filter_actions_dag, ContextPtr context, const Block & keys)
+    void setKeyConditionImpl(const ActionsDAG * filter_actions_dag, ContextPtr context, const Block & keys)
     {
         key_condition = std::make_shared<const KeyCondition>(
             filter_actions_dag,
             context,
             keys.getNames(),
-            std::make_shared<ExpressionActions>(std::make_shared<ActionsDAG>(keys.getColumnsWithTypeAndName())));
+            std::make_shared<ExpressionActions>(std::make_unique<ActionsDAG>(keys.getColumnsWithTypeAndName())));
     }
 
 public:

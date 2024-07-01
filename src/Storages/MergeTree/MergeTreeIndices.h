@@ -167,7 +167,7 @@ struct IMergeTreeIndex
     }
 
     virtual MergeTreeIndexConditionPtr createIndexCondition(
-        const ActionsDAGPtr & filter_actions_dag, ContextPtr context) const = 0;
+        const ActionsDAG * filter_actions_dag, ContextPtr context) const = 0;
 
     virtual bool isVectorSearch() const { return false; }
 

@@ -163,7 +163,7 @@ ActionsDAGPtr createExpressions(
 
     auto syntax_result = TreeRewriter(context).analyze(expr_list, header.getNamesAndTypesList());
     auto expression_analyzer = ExpressionAnalyzer{expr_list, syntax_result, context};
-    auto dag = std::make_shared<ActionsDAG>(header.getNamesAndTypesList());
+    auto dag = std::make_unique<ActionsDAG>(header.getNamesAndTypesList());
     auto actions = expression_analyzer.getActionsDAG(true, !save_unneeded_columns);
     dag = ActionsDAG::merge(std::move(*dag), std::move(*actions));
 

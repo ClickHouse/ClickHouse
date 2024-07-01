@@ -84,12 +84,12 @@ size_t tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Nodes &)
         if (child_actions->hasArrayJoin())
             return 0;
 
-        auto actions = child_actions->clone();
+        auto actions = ActionsDAG::clone(child_actions);
         const auto & child_filter_node = actions->findInOutputs(child_filter->getFilterColumnName());
         if (child_filter->removesFilterColumn())
             removeFromOutputs(*actions, child_filter_node);
 
-        actions->mergeInplace(std::move(*parent_actions->clone()));
+        actions->mergeInplace(std::move(*ActionsDAG::clone(parent_actions)));
 
         const auto & parent_filter_node = actions->findInOutputs(parent_filter->getFilterColumnName());
         if (parent_filter->removesFilterColumn())

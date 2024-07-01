@@ -53,7 +53,7 @@ ExpressionActions::ExpressionActions(ActionsDAGPtr actions_dag_, const Expressio
     : project_inputs(project_inputs_)
     , settings(settings_)
 {
-    actions_dag = actions_dag_->clone();
+    actions_dag = ActionsDAG::clone(actions_dag_);
 
     /// It's important to determine lazy executed nodes before compiling expressions.
     std::unordered_set<const ActionsDAG::Node *> lazy_executed_nodes = processShortCircuitFunctions(*actions_dag, settings.short_circuit_function_evaluation);
@@ -73,7 +73,27 @@ ExpressionActions::ExpressionActions(ActionsDAGPtr actions_dag_, const Expressio
 
 ExpressionActionsPtr ExpressionActions::clone() const
 {
-    return std::make_shared<ExpressionActions>(*this);
+    auto copy = std::make_shared<ExpressionActions>(ExpressionActions());
+
+    std::unordered_map<const Node *, Node *> copy_map;
+    copy->actions_dag = ActionsDAG::clone(actions_dag.get(), copy_map);
+    copy->actions = actions;
+    for (auto & action : copy->actions)
+        action.node = copy_map[action.node];
+
+    for (const auto * input : copy->actions_dag->getInputs())
+        copy->input_positions.emplace(input->result_name, input_positions.at(input->result_name));
+
+    copy->num_columns = num_columns;
+
+    copy->required_columns = required_columns;
+    copy->result_positions = result_positions;
+    copy->sample_block = sample_block;
+
+    copy->project_inputs = project_inputs;
+    copy->settings = settings;
+
+    return copy;
 }
 
 namespace

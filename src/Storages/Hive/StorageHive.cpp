@@ -516,7 +516,7 @@ void StorageHive::initMinMaxIndexExpression()
         partition_names = partition_name_types.getNames();
         partition_types = partition_name_types.getTypes();
         partition_minmax_idx_expr = std::make_shared<ExpressionActions>(
-            std::make_shared<ActionsDAG>(partition_name_types), ExpressionActionsSettings::fromContext(getContext()));
+            std::make_unique<ActionsDAG>(partition_name_types), ExpressionActionsSettings::fromContext(getContext()));
     }
 
     NamesAndTypesList all_name_types = metadata_snapshot->getColumns().getAllPhysical();
@@ -526,7 +526,7 @@ void StorageHive::initMinMaxIndexExpression()
             hivefile_name_types.push_back(column);
     }
     hivefile_minmax_idx_expr = std::make_shared<ExpressionActions>(
-        std::make_shared<ActionsDAG>(hivefile_name_types), ExpressionActionsSettings::fromContext(getContext()));
+        std::make_unique<ActionsDAG>(hivefile_name_types), ExpressionActionsSettings::fromContext(getContext()));
 }
 
 ASTPtr StorageHive::extractKeyExpressionList(const ASTPtr & node)
@@ -647,7 +647,7 @@ HiveFiles StorageHive::collectHiveFilesFromPartition(
         for (size_t i = 0; i < partition_names.size(); ++i)
             ranges.emplace_back(fields[i]);
 
-        const KeyCondition partition_key_condition(filter_actions_dag, getContext(), partition_names, partition_minmax_idx_expr);
+        const KeyCondition partition_key_condition(filter_actions_dag.get(), getContext(), partition_names, partition_minmax_idx_expr);
         if (!partition_key_condition.checkInHyperrectangle(ranges, partition_types).can_be_true)
             return {};
     }
@@ -715,7 +715,7 @@ HiveFilePtr StorageHive::getHiveFileIfNeeded(
 
     if (prune_level >= PruneLevel::File)
     {
-        const KeyCondition hivefile_key_condition(filter_actions_dag, getContext(), hivefile_name_types.getNames(), hivefile_minmax_idx_expr);
+        const KeyCondition hivefile_key_condition(filter_actions_dag.get(), getContext(), hivefile_name_types.getNames(), hivefile_minmax_idx_expr);
         if (hive_file->useFileMinMaxIndex())
         {
             /// Load file level minmax index and apply

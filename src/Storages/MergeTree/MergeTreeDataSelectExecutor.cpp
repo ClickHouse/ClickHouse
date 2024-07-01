@@ -442,7 +442,7 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
 }
 
 void MergeTreeDataSelectExecutor::buildKeyConditionFromPartOffset(
-    std::optional<KeyCondition> & part_offset_condition, const ActionsDAGPtr & filter_dag, ContextPtr context)
+    std::optional<KeyCondition> & part_offset_condition, const ActionsDAG * filter_dag, ContextPtr context)
 {
     if (!filter_dag)
         return;
@@ -463,10 +463,10 @@ void MergeTreeDataSelectExecutor::buildKeyConditionFromPartOffset(
         return;
 
     part_offset_condition.emplace(KeyCondition{
-        dag,
+        dag.get(),
         context,
         sample.getNames(),
-        std::make_shared<ExpressionActions>(std::make_shared<ActionsDAG>(sample.getColumnsWithTypeAndName()), ExpressionActionsSettings{}),
+        std::make_shared<ExpressionActions>(std::make_unique<ActionsDAG>(sample.getColumnsWithTypeAndName()), ExpressionActionsSettings{}),
         {}});
 }
 
@@ -474,7 +474,7 @@ std::optional<std::unordered_set<String>> MergeTreeDataSelectExecutor::filterPar
     const StorageMetadataPtr & metadata_snapshot,
     const MergeTreeData & data,
     const MergeTreeData::DataPartsVector & parts,
-    const ActionsDAGPtr & filter_dag,
+    const ActionsDAG * filter_dag,
     ContextPtr context)
 {
     if (!filter_dag)

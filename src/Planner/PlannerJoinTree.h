@@ -16,7 +16,7 @@ struct JoinTreeQueryPlan
     QueryPlan query_plan;
     QueryProcessingStage::Enum from_stage;
     std::set<std::string> used_row_policies{};
-    std::vector<ActionsDAGPtr> actions_dags{};
+    std::vector<const ActionsDAG *> actions_dags{};
     std::unordered_map<const QueryNode *, const QueryPlan::Node *> query_node_to_plan_step_mapping{};
 };
 

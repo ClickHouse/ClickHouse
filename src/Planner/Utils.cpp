@@ -440,7 +440,7 @@ FilterDAGInfo buildFilterInfo(QueryTreeNodePtr filter_query_tree,
     collectSourceColumns(filter_query_tree, planner_context, false /*keep_alias_columns*/);
     collectSets(filter_query_tree, *planner_context);
 
-    auto filter_actions_dag = std::make_shared<ActionsDAG>();
+    auto filter_actions_dag = std::make_unique<ActionsDAG>();
 
     PlannerActionsVisitor actions_visitor(planner_context, false /*use_column_identifier_as_action_node_name*/);
     auto expression_nodes = actions_visitor.visit(*filter_actions_dag, filter_query_tree);

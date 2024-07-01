@@ -84,10 +84,9 @@ private:
     ExpressionActionsSettings settings;
 
 public:
-    ExpressionActions() = delete;
     explicit ExpressionActions(ActionsDAGPtr actions_dag_, const ExpressionActionsSettings & settings_ = {}, bool project_inputs_ = false);
-    ExpressionActions(const ExpressionActions &) = default;
-    ExpressionActions & operator=(const ExpressionActions &) = default;
+    ExpressionActions(ExpressionActions &&) = default;
+    ExpressionActions & operator=(ExpressionActions &&) = default;
 
     const Actions & getActions() const { return actions; }
     const std::list<Node> & getNodes() const { return actions_dag->getNodes(); }
@@ -131,6 +130,7 @@ public:
     ExpressionActionsPtr clone() const;
 
 private:
+    ExpressionActions() = default;
     void checkLimits(const ColumnsWithTypeAndName & columns) const;
 
     void linearizeActions(const std::unordered_set<const Node *> & lazy_executed_nodes);

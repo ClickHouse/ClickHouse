@@ -697,7 +697,7 @@ const std::unordered_map<String, KeyCondition::SpaceFillingCurveType> KeyConditi
 
 ActionsDAGPtr KeyCondition::cloneASTWithInversionPushDown(ActionsDAG::NodeRawConstPtrs nodes, const ContextPtr & context)
 {
-    auto res = std::make_shared<ActionsDAG>();
+    auto res = std::make_unique<ActionsDAG>();
 
     std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> to_inverted;
 
@@ -784,7 +784,7 @@ void KeyCondition::getAllSpaceFillingCurves()
 }
 
 KeyCondition::KeyCondition(
-    ActionsDAGPtr filter_dag,
+    const ActionsDAG * filter_dag,
     ContextPtr context,
     const Names & key_column_names,
     const ExpressionActionsPtr & key_expr_,

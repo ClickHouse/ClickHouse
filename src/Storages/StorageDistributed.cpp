@@ -1120,7 +1120,7 @@ static ActionsDAGPtr getFilterFromQuery(const ASTPtr & ast, ContextPtr context)
     if (!source)
         return nullptr;
 
-    return source->getFilterActionsDAG();
+    return source->detachFilterActionsDAG();
 }
 
 

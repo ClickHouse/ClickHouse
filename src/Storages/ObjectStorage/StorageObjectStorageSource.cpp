@@ -79,7 +79,7 @@ StorageObjectStorageSource::~StorageObjectStorageSource()
 
 void StorageObjectStorageSource::setKeyCondition(const ActionsDAGPtr & filter_actions_dag, ContextPtr context_)
 {
-    setKeyConditionImpl(filter_actions_dag, context_, read_from_format_info.format_header);
+    setKeyConditionImpl(filter_actions_dag.get(), context_, read_from_format_info.format_header);
 }
 
 std::string StorageObjectStorageSource::getUniqueStoragePathIdentifier(

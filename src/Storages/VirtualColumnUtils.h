@@ -23,7 +23,7 @@ namespace VirtualColumnUtils
 void filterBlockWithPredicate(const ActionsDAG::Node * predicate, Block & block, ContextPtr context);
 
 /// Just filters block. Block should contain all the required columns.
-void filterBlockWithDAG(ActionsDAGPtr dag, Block & block, ContextPtr context);
+void filterBlockWithDAG(const ActionsDAGPtr & dag, Block & block, ContextPtr context);
 
 /// Builds sets used by ActionsDAG inplace.
 void buildSetsForDAG(const ActionsDAGPtr & dag, const ContextPtr & context);

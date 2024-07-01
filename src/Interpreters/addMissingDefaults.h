@@ -15,7 +15,7 @@ class NamesAndTypesList;
 class ColumnsDescription;
 
 class ActionsDAG;
-using ActionsDAGPtr = std::shared_ptr<ActionsDAG>;
+using ActionsDAGPtr = std::unique_ptr<ActionsDAG>;
 
 /** Adds three types of columns into block
   * 1. Columns, that are missed inside request, but present in table without defaults (missed columns)

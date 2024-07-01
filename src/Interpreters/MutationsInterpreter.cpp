@@ -1211,7 +1211,7 @@ void MutationsInterpreter::Source::read(
             MergeTreeSequentialSourceType::Mutation,
             plan, *data, storage_snapshot,
             part, required_columns,
-            apply_deleted_mask_, filter, context_,
+            apply_deleted_mask_, std::move(filter), context_,
             getLogger("MutationsInterpreter"));
     }
     else
@@ -1278,7 +1278,7 @@ QueryPipelineBuilder MutationsInterpreter::addStreamsForLaterStages(const std::v
 
             if (i < stage.filter_column_names.size())
             {
-                auto dag = step->actions()->dag.clone();
+                auto dag = ActionsDAG::clone(&step->actions()->dag);
                 if (step->actions()->project_input)
                     dag->appendInputsForUnusedColumns(plan.getCurrentDataStream().header);
                 /// Execute DELETEs.
@@ -1286,7 +1286,7 @@ QueryPipelineBuilder MutationsInterpreter::addStreamsForLaterStages(const std::v
             }
             else
             {
-                auto dag = step->actions()->dag.clone();
+                auto dag = ActionsDAG::clone(&step->actions()->dag);
                 if (step->actions()->project_input)
                     dag->appendInputsForUnusedColumns(plan.getCurrentDataStream().header);
                 /// Execute UPDATE or final projection.
