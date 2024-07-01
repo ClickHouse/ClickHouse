@@ -75,23 +75,19 @@ std::optional<EvaluateConstantExpressionResult> evaluateConstantExpressionImpl(c
     if (context->getSettingsRef().allow_experimental_analyzer)
     {
         ASTPtr new_ast = std::make_shared<ASTSelectQuery>();
-        auto *ast_as_select = new_ast->as<ASTSelectQuery>();
-
         auto expr_list = std::make_shared<ASTExpressionList>();
+
         expr_list->children.push_back(ast->clone());
 
+        auto *ast_as_select = new_ast->as<ASTSelectQuery>();
         ast_as_select->setExpression(ASTSelectQuery::Expression::SELECT, expr_list);
 
-        InterpreterSelectQueryAnalyzer interpreter(ast_as_select->clone(), context, SelectQueryOptions());
+        InterpreterSelectQueryAnalyzer interpreter(new_ast, context, SelectQueryOptions());
         auto io = interpreter.execute();
 
-        PullingPipelineExecutor executor(io.pipeline);
         Block block;
-
+        PullingPipelineExecutor executor(io.pipeline);
         executor.pull(block);
-
-        ColumnPtr result_column;
-        DataTypePtr result_type;
 
         auto & column = block.safeGetByPosition(0);
         auto type = column.type;
