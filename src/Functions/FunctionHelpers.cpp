@@ -156,18 +156,17 @@ void validateFunctionArgumentTypes(const IFunction & func,
 {
     if (arguments.size() < mandatory_args.size() || arguments.size() > mandatory_args.size() + optional_args.size())
     {
-        auto singular_or_plural_arguments = [](const auto & args){ return fmt::format("argument{}", args.size() != 1 ? "s" : ""); };
+        auto argument_singular_or_plural = [](const auto & args){ return fmt::format("argument{}", args.size() != 1 ? "s" : ""); };
 
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-            "Incorrect number of arguments for function '{}'. Provided {}, expected {}",
+            "Incorrect number of arguments for function '{}'. Provided {} but expected {}",
             func.getName(),
             fmt::format("{} argument{}", arguments.size(), arguments.size() != 1 ? "s" : ""),
             (optional_args.empty()
-                ? fmt::format("{} {}", mandatory_args.size(), singular_or_plural_arguments(mandatory_args))
+                ? fmt::format("{} {}", mandatory_args.size(), argument_singular_or_plural(mandatory_args))
                 : (mandatory_args.empty())
-                    ? fmt::format("{} optional {}", optional_args.size(), singular_or_plural_arguments(optional_args))
-                    : fmt::format("{} mandatory {}", mandatory_args.size(), singular_or_plural_arguments(mandatory_args))
-                          + " and " + fmt::format("{} optional {}", optional_args.size(), singular_or_plural_arguments(optional_args))));
+                    ? fmt::format("{} optional {}", optional_args.size(), argument_singular_or_plural(optional_args))
+                    : fmt::format("{} mandatory {} and {} optional {}", mandatory_args.size(), argument_singular_or_plural(mandatory_args), optional_args.size(), argument_singular_or_plural(optional_args))));
     }
 
     validateArgumentsImpl(func, arguments, 0, mandatory_args);
