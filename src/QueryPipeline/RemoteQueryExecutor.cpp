@@ -596,10 +596,11 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
             break;
 
         case Protocol::Server::EndOfStream:
-            if (read_context)
-                read_context->cancel();
             if (!connections->hasActiveConnections())
             {
+                if (read_context)
+                    read_context->cancel();
+
                 finished = true;
                 /// TODO: Replace with Type::Finished
                 return ReadResult(Block{});
