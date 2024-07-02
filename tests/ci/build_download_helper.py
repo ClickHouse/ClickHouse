@@ -203,6 +203,7 @@ def download_builds_filter(
 ) -> None:
     build_name = get_build_name_for_check(check_name)
     urls = read_build_urls(build_name, reports_path)
+    print(type(reports_path))
     logging.info("The build report for %s contains the next URLs: %s", build_name, urls)
 
     if not urls:

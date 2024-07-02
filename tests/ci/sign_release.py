@@ -63,7 +63,7 @@ def main():
     ).replace("(", "_").replace(")", "_").replace(",", "_"))
 
     # downloads `package_release` artifacts generated
-    download_builds_filter(CHECK_NAME, reports_path, TEMP_PATH)
+    download_builds_filter(CHECK_NAME, reports_path, Path(TEMP_PATH))
 
     for f in os.listdir(TEMP_PATH):
         full_path = os.path.join(TEMP_PATH, f)
