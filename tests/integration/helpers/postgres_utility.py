@@ -197,7 +197,19 @@ class PostgresManager:
 
     def drop_postgres_db(self, database_name=""):
         database_name = self.database_or_default(database_name)
-        self.cursor.execute(f'DROP DATABASE IF EXISTS "{database_name}" WITH (FORCE)')
+        self.cursor.execute(
+            f"""
+          DO $$
+          DECLARE
+            r RECORD;
+          BEGIN
+            FOR r IN (SELECT pid FROM pg_stat_activity WHERE datname = '{database_name}' AND pid <> pg_backend_pid()) LOOP
+              EXECUTE 'SELECT pg_terminate_backend(' || r.pid || ');';
+            END LOOP;
+          END $$;
+        """
+        )
+        self.cursor.execute(f'DROP DATABASE IF EXISTS "{database_name}"')
         if database_name in self.created_postgres_db_list:
             self.created_postgres_db_list.remove(database_name)
 
