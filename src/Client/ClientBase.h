@@ -338,8 +338,8 @@ protected:
     bool allow_repeated_settings = false;
     bool allow_merge_tree_settings = false;
 
-    bool cancelled = false;
-    bool cancelled_printed = false;
+    std::atomic_bool cancelled = false;
+    std::atomic_bool cancelled_printed = false;
 
     /// Unpacked descriptors and streams for the ease of use.
     int in_fd = STDIN_FILENO;
