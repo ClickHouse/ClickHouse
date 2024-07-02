@@ -22,6 +22,7 @@ backward = cluster.add_instance(
     with_installed_binary=True,
 )
 
+
 @pytest.fixture(scope="module")
 def start_cluster():
     try:
@@ -39,41 +40,61 @@ def test_two_new_versions(start_cluster):
     backward.query("SYSTEM FLUSH LOGS")
 
     query_id = str(uuid.uuid4())
-    current.query("SELECT * FROM clusterAllReplicas('test_cluster_mixed', system.tables);", query_id=query_id)
+    current.query(
+        "SELECT * FROM clusterAllReplicas('test_cluster_mixed', system.tables);",
+        query_id=query_id,
+    )
 
     current.query("SYSTEM FLUSH LOGS")
     backward.query("SYSTEM FLUSH LOGS")
 
-    assert current.query("""
+    assert (
+        current.query(
+            """
 SELECT hostname() AS h, getSetting('allow_experimental_analyzer')
 FROM clusterAllReplicas('test_cluster_mixed', system.one)
-ORDER BY h;""") == TSV([["backward", "true"], ["current", "true"]])
+ORDER BY h;"""
+        )
+        == TSV([["backward", "true"], ["current", "true"]])
+    )
 
     # Should be enabled everywhere
-    analyzer_enabled = current.query(f"""
+    analyzer_enabled = current.query(
+        f"""
 SELECT
 DISTINCT Settings['allow_experimental_analyzer']
 FROM clusterAllReplicas('test_cluster_mixed', system.query_log)
-WHERE initial_query_id = '{query_id}';""")
+WHERE initial_query_id = '{query_id}';"""
+    )
 
     assert TSV(analyzer_enabled) == TSV("1")
 
     query_id = str(uuid.uuid4())
-    backward.query("SELECT * FROM clusterAllReplicas('test_cluster_mixed', system.tables)", query_id=query_id)
+    backward.query(
+        "SELECT * FROM clusterAllReplicas('test_cluster_mixed', system.tables)",
+        query_id=query_id,
+    )
 
     current.query("SYSTEM FLUSH LOGS")
     backward.query("SYSTEM FLUSH LOGS")
 
-    assert backward.query("""
+    assert (
+        backward.query(
+            """
 SELECT hostname() AS h, getSetting('allow_experimental_analyzer')
 FROM clusterAllReplicas('test_cluster_mixed', system.one)
-ORDER BY h;""") == TSV([["backward", "false"], ["current", "false"]])
+ORDER BY h;"""
+        )
+        == TSV([["backward", "false"], ["current", "false"]])
+    )
 
     # Should be disabled everywhere
-    analyzer_enabled = backward.query(f"""
+    analyzer_enabled = backward.query(
+        f"""
 SELECT
 DISTINCT Settings['allow_experimental_analyzer']
 FROM clusterAllReplicas('test_cluster_mixed', system.query_log)
-WHERE initial_query_id = '{query_id}';""")
+WHERE initial_query_id = '{query_id}';"""
+    )
 
     assert TSV(analyzer_enabled) == TSV("0")
