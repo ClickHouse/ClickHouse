@@ -400,4 +400,15 @@ void DetachedPartInfo::addParsedPartInfo(const MergeTreePartInfo & part)
     static_cast<MergeTreePartInfo &>(*this) = part;
 }
 
+void compactPartitionIds(PartitionIds & partition_ids)
+{
+    if (partition_ids.size() > 1)
+    {
+        std::sort(partition_ids.begin(), partition_ids.end());
+        auto last = std::unique(partition_ids.begin(), partition_ids.end());
+        partition_ids.erase(last, partition_ids.end());
+    }
+    partition_ids.shrink_to_fit();
+}
+
 }

@@ -68,7 +68,7 @@ public:
     };
     using PartitionsInfo = std::unordered_map<std::string, PartitionInfo>;
 
-    using PartitionIdsHint = std::unordered_set<String>;
+    using PartitionIdsHint = PartitionIds;
 
     /// The first step of selecting parts to merge: returns a list of all active/visible parts
     MergeTreeData::DataPartsVector getDataPartsToSelectMergeFrom(const MergeTreeTransactionPtr & txn) const;
