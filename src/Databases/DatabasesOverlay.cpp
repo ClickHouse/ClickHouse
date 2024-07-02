@@ -178,6 +178,18 @@ String DatabasesOverlay::getTableDataPath(const ASTCreateQuery & query) const
     return result;
 }
 
+UUID DatabasesOverlay::getUUID() const
+{
+    UUID result = UUIDHelpers::Nil;
+    for (const auto & db : databases)
+    {
+        result = db->getUUID();
+        if (result != UUIDHelpers::Nil)
+            break;
+    }
+    return result;
+}
+
 UUID DatabasesOverlay::tryGetTableUUID(const String & table_name) const
 {
     UUID result = UUIDHelpers::Nil;

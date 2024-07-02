@@ -170,7 +170,12 @@ DatabaseOnDisk::DatabaseOnDisk(
     , metadata_path(metadata_path_)
     , data_path(data_path_)
 {
-    fs::create_directories(local_context->getPath() + data_path);
+}
+
+
+void DatabaseOnDisk::createDirectories()
+{
+    fs::create_directories(std::filesystem::path(getContext()->getPath()) / data_path);
     fs::create_directories(metadata_path);
 }
 
@@ -188,6 +193,8 @@ void DatabaseOnDisk::createTable(
     const StoragePtr & table,
     const ASTPtr & query)
 {
+    createDirectories();
+
     const auto & settings = local_context->getSettingsRef();
     const auto & create = query->as<ASTCreateQuery &>();
     assert(table_name == create.getTable());
@@ -255,7 +262,6 @@ void DatabaseOnDisk::createTable(
     }
 
     commitCreateTable(create, table, table_metadata_tmp_path, table_metadata_path, local_context);
-
     removeDetachedPermanentlyFlag(local_context, table_name, table_metadata_path, false);
 }
 
@@ -283,6 +289,8 @@ void DatabaseOnDisk::commitCreateTable(const ASTCreateQuery & query, const Stora
 {
     try
     {
+        createDirectories();
+
         /// Add a table to the map of known tables.
         attachTable(query_context, query.getTable(), table, getTableDataPath(query));
 
@@ -408,6 +416,7 @@ void DatabaseOnDisk::renameTable(
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Moving tables between databases of different engines is not supported");
     }
 
+    createDirectories();
     waitDatabaseStarted();
 
     auto table_data_relative_path = getTableDataPath(table_name);
@@ -603,6 +612,9 @@ time_t DatabaseOnDisk::getObjectMetadataModificationTime(const String & object_n
 
 void DatabaseOnDisk::iterateMetadataFiles(ContextPtr local_context, const IteratingFunction & process_metadata_file) const
 {
+    if (!fs::exists(metadata_path))
+        return;
+
     auto process_tmp_drop_metadata_file = [&](const String & file_name)
     {
         assert(getUUID() == UUIDHelpers::Nil);
@@ -626,7 +638,7 @@ void DatabaseOnDisk::iterateMetadataFiles(ContextPtr local_context, const Iterat
     std::vector<std::pair<String, bool>> metadata_files;
 
     fs::directory_iterator dir_end;
-    for (fs::directory_iterator dir_it(getMetadataPath()); dir_it != dir_end; ++dir_it)
+    for (fs::directory_iterator dir_it(metadata_path); dir_it != dir_end; ++dir_it)
     {
         String file_name = dir_it->path().filename();
         /// For '.svn', '.gitignore' directory and similar.

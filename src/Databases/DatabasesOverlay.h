@@ -41,6 +41,7 @@ public:
     String getTableDataPath(const String & table_name) const override;
     String getTableDataPath(const ASTCreateQuery & query) const override;
 
+    UUID getUUID() const override;
     UUID tryGetTableUUID(const String & table_name) const override;
 
     void drop(ContextPtr context) override;

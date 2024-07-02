@@ -75,6 +75,7 @@ protected:
     using DetachedTables = std::unordered_map<UUID, StoragePtr>;
     [[nodiscard]] DetachedTables cleanupDetachedTables() TSA_REQUIRES(mutex);
 
+    void createDirectories();
     void tryCreateMetadataSymlink();
 
     virtual bool allowMoveTableToOtherDatabaseEngine(IDatabase & /*to_database*/) const { return false; }
