@@ -150,7 +150,7 @@ void DatabaseReplicatedDDLWorker::initializeReplication()
 
     {
         std::lock_guard lock{database->metadata_mutex};
-        if (!database->checkDigestValid(context, false))
+        if (!database->checkDigestValid(context, /* debug_check */ false))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Inconsistent database metadata after reconnection to ZooKeeper");
     }
 
@@ -329,6 +329,14 @@ String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(DDLLogEntry & entr
 
 DDLTaskPtr DatabaseReplicatedDDLWorker::initAndCheckTask(const String & entry_name, String & out_reason, const ZooKeeperPtr & zookeeper)
 {
+    /// Check digests periodically
+    if (thread_local_rng() % 32 == 0)
+    {
+        std::lock_guard lock{database->metadata_mutex};
+        if (!database->checkDigestValid(context, /* debug_check */ false))
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Inconsistent database metadata");
+    }
+
     {
         std::lock_guard lock{mutex};
         if (current_task < entry_name)
