@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-fastest, no-debug
 # shellcheck disable=SC2155
 
 set -e
