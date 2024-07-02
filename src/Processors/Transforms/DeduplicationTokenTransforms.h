@@ -42,13 +42,13 @@ namespace DeduplicationToken
         bool isDefined() const { return stage == DEFINED; }
 
         void addChunkHash(String part);
-        void defineSourceWithChunkHashes();
+        void finishChunkHashes();
 
         void setUserToken(const String & token);
-        void defineSourceWithUserToken(size_t block_number);
+        void setSourceWithUserToken(size_t block_number);
 
         void setViewID(const String & id);
-        void defineViewID(size_t block_number);
+        void setViewBlockNumber(size_t block_number);
 
         void reset();
 
@@ -98,10 +98,9 @@ namespace DeduplicationToken
     class CheckTokenTransform : public ISimpleTransform
     {
     public:
-        CheckTokenTransform(String debug_, bool must_be_present_, const Block & header_)
+        CheckTokenTransform(String debug_, const Block & header_)
             : ISimpleTransform(header_, header_, true)
             , debug(std::move(debug_))
-            , must_be_present(must_be_present_)
         {
         }
 
@@ -112,7 +111,6 @@ namespace DeduplicationToken
     private:
         String debug;
         LoggerPtr log = getLogger("CheckInsertDeduplicationTokenTransform");
-        bool must_be_present = false;
     };
 #endif
 
@@ -134,16 +132,19 @@ namespace DeduplicationToken
     };
 
 
-    class SetInitialTokenTransform : public ISimpleTransform
+    class DefineSourceWithChunkHashesTransform : public ISimpleTransform
     {
     public:
-        explicit SetInitialTokenTransform(const Block & header_)
+        explicit DefineSourceWithChunkHashesTransform(const Block & header_)
             : ISimpleTransform(header_, header_, true)
         {
         }
 
-        String getName() const override { return "DeduplicationToken::SetInitialTokenTransform"; }
+        String getName() const override { return "DeduplicationToken::DefineSourceWithChunkHashesTransform"; }
 
+        // Usually MergeTreeSink/ReplicatedMergeTreeSink calls addChunkHash for the deduplication token with heshes from the parts.
+        // But if there is some table with different engine, we still need to define the source of the data in deduplication token
+        // We use that transform to define the source as a hash of entire block in deduplication token
         void transform(Chunk & chunk) override;
 
         static String getChunkHash(const Chunk & chunk);

@@ -56,7 +56,7 @@ String TokenInfo::debugToken() const
 
 void TokenInfo::addChunkHash(String part)
 {
-    if (stage == UNDEFINED)
+    if (stage == UNDEFINED && empty())
         stage = DEFINE_SOURCE_WITH_HASHES;
 
     if (stage != DEFINE_SOURCE_WITH_HASHES)
@@ -65,7 +65,7 @@ void TokenInfo::addChunkHash(String part)
     addTokenPart(std::move(part));
 }
 
-void TokenInfo::defineSourceWithChunkHashes()
+void TokenInfo::finishChunkHashes()
 {
     if (stage == UNDEFINED && empty())
         stage = DEFINE_SOURCE_WITH_HASHES;
@@ -78,7 +78,7 @@ void TokenInfo::defineSourceWithChunkHashes()
 
 void TokenInfo::setUserToken(const String & token)
 {
-    if (stage == UNDEFINED)
+    if (stage == UNDEFINED && empty())
         stage = DEFINE_SOURCE_USER_TOKEN;
 
     if (stage != DEFINE_SOURCE_USER_TOKEN)
@@ -87,7 +87,7 @@ void TokenInfo::setUserToken(const String & token)
     addTokenPart(fmt::format("user-token-{}", token));
 }
 
-void TokenInfo::defineSourceWithUserToken(size_t block_number)
+void TokenInfo::setSourceWithUserToken(size_t block_number)
 {
     if (stage != DEFINE_SOURCE_USER_TOKEN)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "token is in wrong stage {}, token {}", stage, debugToken());
@@ -108,7 +108,7 @@ void TokenInfo::setViewID(const String & id)
     addTokenPart(fmt::format("view-id-{}", id));
 }
 
-void TokenInfo::defineViewID(size_t block_number)
+void TokenInfo::setViewBlockNumber(size_t block_number)
 {
     if (stage != DEFINE_VIEW)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "token is in wrong stage {}, token {}", stage, debugToken());
@@ -138,6 +138,7 @@ size_t TokenInfo::getTotalSize() const
     for (const auto & part : parts)
         size += part.size();
 
+    // we reserve more size here to be able to add delimenter between parts.
     return size + parts.size() - 1;
 }
 
@@ -149,17 +150,11 @@ void CheckTokenTransform::transform(Chunk & chunk)
     if (!token_info)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Chunk has to have DedupTokenInfo as ChunkInfo, {}", debug);
 
-    if (!must_be_present)
-    {
-        LOG_DEBUG(log, "{}, no token required, token {}", debug, token_info->debugToken());
-        return;
-    }
-
     LOG_DEBUG(log, "debug: {}, token: {}", debug, token_info->debugToken());
 }
 #endif
 
-String SetInitialTokenTransform::getChunkHash(const Chunk & chunk)
+String DefineSourceWithChunkHashesTransform::getChunkHash(const Chunk & chunk)
 {
     SipHash hash;
     for (const auto & colunm : chunk.getColumns())
@@ -170,20 +165,20 @@ String SetInitialTokenTransform::getChunkHash(const Chunk & chunk)
 }
 
 
-void SetInitialTokenTransform::transform(Chunk & chunk)
+void DefineSourceWithChunkHashesTransform::transform(Chunk & chunk)
 {
     auto token_info = chunk.getChunkInfos().get<TokenInfo>();
 
     if (!token_info)
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
-            "TokenInfo is expected for consumed chunk in SetInitialTokenTransform");
+            "TokenInfo is expected for consumed chunk in DefineSourceWithChunkHashesTransform");
 
     if (token_info->isDefined())
         return;
 
     token_info->addChunkHash(getChunkHash(chunk));
-    token_info->defineSourceWithChunkHashes();
+    token_info->finishChunkHashes();
 }
 
 void SetUserTokenTransform::transform(Chunk & chunk)
@@ -203,7 +198,7 @@ void SetSourceBlockNumberTransform::transform(Chunk & chunk)
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "TokenInfo is expected for consumed chunk in SetSourceBlockNumberTransform");
-    token_info->defineSourceWithUserToken(block_number++);
+    token_info->setSourceWithUserToken(block_number++);
 }
 
 void SetViewIDTransform::transform(Chunk & chunk)
@@ -223,7 +218,7 @@ void SetViewBlockNumberTransform::transform(Chunk & chunk)
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "TokenInfo is expected for consumed chunk in SetViewBlockNumberTransform");
-    token_info->defineViewID(block_number++);
+    token_info->setViewBlockNumber(block_number++);
 }
 
 void ResetTokenTransform::transform(Chunk & chunk)

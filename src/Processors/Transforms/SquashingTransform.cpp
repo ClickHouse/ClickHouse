@@ -18,7 +18,7 @@ SquashingTransform::SquashingTransform(
 
 void SquashingTransform::onConsume(Chunk chunk)
 {
-    cur_chunk = DB::Squashing::squash(squashing.add(std::move(chunk)));
+    cur_chunk = Squashing::squash(squashing.add(std::move(chunk)));
 }
 
 SquashingTransform::GenerateResult SquashingTransform::onGenerate()
@@ -31,7 +31,7 @@ SquashingTransform::GenerateResult SquashingTransform::onGenerate()
 
 void SquashingTransform::onFinish()
 {
-    finish_chunk = DB::Squashing::squash(squashing.flush());
+    finish_chunk = Squashing::squash(squashing.flush());
 }
 
 void SquashingTransform::work()
@@ -63,14 +63,14 @@ void SimpleSquashingTransform::transform(Chunk & chunk)
 {
     if (!finished)
     {
-        chunk = DB::Squashing::squash(squashing.add(std::move(chunk)));
+        chunk = Squashing::squash(squashing.add(std::move(chunk)));
     }
     else
     {
         if (chunk.hasRows())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Chunk expected to be empty, otherwise it will be lost");
 
-        chunk = DB::Squashing::squash(squashing.flush());
+        chunk = Squashing::squash(squashing.flush());
     }
 }
 

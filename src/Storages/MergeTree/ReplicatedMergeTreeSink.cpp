@@ -374,7 +374,8 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::consume(Chunk & chunk)
             if (!token_info->isDefined())
             {
                 chassert(temp_part.part);
-                token_info->addChunkHash(temp_part.part->getPartBlockIDHash());
+                const auto hash_value = temp_part.part->getPartBlockIDHash();
+                token_info->addChunkHash(toString(hash_value.items[0]) + "_" + toString(hash_value.items[1]));
             }
         }
 
@@ -423,7 +424,7 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::consume(Chunk & chunk)
 
     if (!token_info->isDefined())
     {
-        token_info->defineSourceWithChunkHashes();
+        token_info->finishChunkHashes();
     }
 
     finishDelayedChunk(zookeeper);

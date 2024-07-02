@@ -357,7 +357,7 @@ std::optional<Chain> generateViewChain(
         }
 
 #ifdef ABORT_ON_LOGICAL_ERROR
-        out.addSource(std::make_shared<DeduplicationToken::CheckTokenTransform>("Before squashing", !disable_deduplication_for_children, out.getInputHeader()));
+        out.addSource(std::make_shared<DeduplicationToken::CheckTokenTransform>("Before squashing", out.getInputHeader()));
 #endif
 
         auto counting = std::make_shared<CountingTransform>(out.getInputHeader(), current_thread, insert_context->getQuota());
@@ -403,7 +403,7 @@ std::optional<Chain> generateViewChain(
     if (type == QueryViewsLogElement::ViewType::MATERIALIZED)
     {
 #ifdef ABORT_ON_LOGICAL_ERROR
-        out.addSource(std::make_shared<DeduplicationToken::CheckTokenTransform>("Right after Inner query", !disable_deduplication_for_children, out.getInputHeader()));
+        out.addSource(std::make_shared<DeduplicationToken::CheckTokenTransform>("Right after Inner query", out.getInputHeader()));
 #endif
 
         auto executing_inner_query = std::make_shared<ExecutingInnerQueryFromViewTransform>(
@@ -413,7 +413,7 @@ std::optional<Chain> generateViewChain(
         out.addSource(std::move(executing_inner_query));
 
 #ifdef ABORT_ON_LOGICAL_ERROR
-        out.addSource(std::make_shared<DeduplicationToken::CheckTokenTransform>("Right before Inner query", !disable_deduplication_for_children, out.getInputHeader()));
+        out.addSource(std::make_shared<DeduplicationToken::CheckTokenTransform>("Right before Inner query", out.getInputHeader()));
 #endif
     }
 
@@ -547,7 +547,7 @@ Chain buildPushingToViewsChain(
         sink->setRuntimeData(thread_status, elapsed_counter_ms);
         result_chain.addSource(std::move(sink));
 
-        result_chain.addSource(std::make_shared<DeduplicationToken::SetInitialTokenTransform>(result_chain.getInputHeader()));
+        result_chain.addSource(std::make_shared<DeduplicationToken::DefineSourceWithChunkHashesTransform>(result_chain.getInputHeader()));
     }
     else if (auto * window_view = dynamic_cast<StorageWindowView *>(storage.get()))
     {
@@ -555,7 +555,7 @@ Chain buildPushingToViewsChain(
         sink->setRuntimeData(thread_status, elapsed_counter_ms);
         result_chain.addSource(std::move(sink));
 
-        result_chain.addSource(std::make_shared<DeduplicationToken::SetInitialTokenTransform>(result_chain.getInputHeader()));
+        result_chain.addSource(std::make_shared<DeduplicationToken::DefineSourceWithChunkHashesTransform>(result_chain.getInputHeader()));
     }
     else if (dynamic_cast<StorageMaterializedView *>(storage.get()))
     {
@@ -564,7 +564,7 @@ Chain buildPushingToViewsChain(
         sink->setRuntimeData(thread_status, elapsed_counter_ms);
         result_chain.addSource(std::move(sink));
 
-        result_chain.addSource(std::make_shared<DeduplicationToken::SetInitialTokenTransform>(result_chain.getInputHeader()));
+        result_chain.addSource(std::make_shared<DeduplicationToken::DefineSourceWithChunkHashesTransform>(result_chain.getInputHeader()));
     }
     /// Do not push to destination table if the flag is set
     else if (!no_destination)
@@ -573,13 +573,13 @@ Chain buildPushingToViewsChain(
         metadata_snapshot->check(sink->getHeader().getColumnsWithTypeAndName());
         sink->setRuntimeData(thread_status, elapsed_counter_ms);
 
-        result_chain.addSource(std::make_shared<DeduplicationToken::SetInitialTokenTransform>(sink->getHeader()));
+        result_chain.addSource(std::make_shared<DeduplicationToken::DefineSourceWithChunkHashesTransform>(sink->getHeader()));
 
         result_chain.addSource(std::move(sink));
     }
     else
     {
-        result_chain.addSource(std::make_shared<DeduplicationToken::SetInitialTokenTransform>(storage_header));
+        result_chain.addSource(std::make_shared<DeduplicationToken::DefineSourceWithChunkHashesTransform>(storage_header));
     }
 
     if (result_chain.empty())

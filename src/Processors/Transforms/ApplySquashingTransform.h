@@ -32,7 +32,7 @@ public:
 protected:
     void onConsume(Chunk chunk) override
     {
-        cur_chunk = DB::Squashing::squash(std::move(chunk));
+        cur_chunk = Squashing::squash(std::move(chunk));
     }
 
     GenerateResult onGenerate() override

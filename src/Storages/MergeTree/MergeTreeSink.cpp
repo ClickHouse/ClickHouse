@@ -126,7 +126,8 @@ void MergeTreeSink::consume(Chunk & chunk)
         if (!token_info->isDefined())
         {
             chassert(temp_part.part);
-            token_info->addChunkHash(temp_part.part->getPartBlockIDHash());
+            const auto hash_value = temp_part.part->getPartBlockIDHash();
+            token_info->addChunkHash(toString(hash_value.items[0]) + "_" + toString(hash_value.items[1]));
         }
 
         if (!support_parallel_write && temp_part.part->getDataPartStorage().supportParallelWrite())
@@ -167,7 +168,7 @@ void MergeTreeSink::consume(Chunk & chunk)
 
     if (!token_info->isDefined())
     {
-        token_info->defineSourceWithChunkHashes();
+        token_info->finishChunkHashes();
     }
 
     finishDelayedChunk();
@@ -206,7 +207,6 @@ void MergeTreeSink::finishDelayedChunk()
             if (settings.insert_deduplicate && deduplication_log)
             {
                 const String block_id = part->getZeroLevelPartBlockID(partition.block_dedup_token);
-
                 auto res = deduplication_log->addPart(block_id, part->info);
                 if (!res.second)
                 {

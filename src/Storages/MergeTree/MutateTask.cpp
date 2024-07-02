@@ -1317,7 +1317,7 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
             Block block_to_squash = projection.calculate(cur_block, ctx->context);
             projection_squashes[i].setHeader(block_to_squash.cloneEmpty());
 
-            Chunk squashed_chunk = DB::Squashing::squash(projection_squashes[i].add({block_to_squash.getColumns(), block_to_squash.rows()}));
+            Chunk squashed_chunk = Squashing::squash(projection_squashes[i].add({block_to_squash.getColumns(), block_to_squash.rows()}));
             if (squashed_chunk)
             {
                 auto result = projection_squashes[i].getHeader().cloneWithColumns(squashed_chunk.detachColumns());
@@ -1341,7 +1341,7 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
     {
         const auto & projection = *ctx->projections_to_build[i];
         auto & projection_squash_plan = projection_squashes[i];
-        auto squashed_chunk = DB::Squashing::squash(projection_squash_plan.flush());
+        auto squashed_chunk = Squashing::squash(projection_squash_plan.flush());
         if (squashed_chunk)
         {
             auto result = projection_squash_plan.getHeader().cloneWithColumns(squashed_chunk.detachColumns());
