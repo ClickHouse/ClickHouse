@@ -2,7 +2,6 @@
 # pylint: disable=unused-argument
 # pylint: disable=redefined-outer-name
 
-import time
 import pytest
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry
@@ -22,6 +21,7 @@ system_logs = [
     ("system.part_log", 1),
     ("system.trace_log", 1),
     ("system.metric_log", 1),
+    ("system.error_log", 1),
 ]
 
 

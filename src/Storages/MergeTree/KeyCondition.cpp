@@ -18,6 +18,7 @@
 #include <Functions/CastOverloadResolver.h>
 #include <Functions/IFunction.h>
 #include <Common/FieldVisitorToString.h>
+#include <Common/HilbertUtils.h>
 #include <Common/MortonUtils.h>
 #include <Common/typeid_cast.h>
 #include <Columns/ColumnSet.h>
@@ -689,6 +690,11 @@ static const ActionsDAG::Node & cloneASTWithInversionPushDown(
     return *res;
 }
 
+const std::unordered_map<String, KeyCondition::SpaceFillingCurveType> KeyCondition::space_filling_curve_name_to_type {
+    {"mortonEncode", SpaceFillingCurveType::Morton},
+    {"hilbertEncode", SpaceFillingCurveType::Hilbert}
+};
+
 ActionsDAGPtr KeyCondition::cloneASTWithInversionPushDown(ActionsDAG::NodeRawConstPtrs nodes, const ContextPtr & context)
 {
     auto res = std::make_shared<ActionsDAG>();
@@ -744,16 +750,17 @@ static NameSet getAllSubexpressionNames(const ExpressionActions & key_expr)
 
 void KeyCondition::getAllSpaceFillingCurves()
 {
-    /// So far the only supported function is mortonEncode (Morton curve).
+    /// So far the only supported function is mortonEncode and hilbertEncode (Morton and Hilbert curves).
 
     for (const auto & action : key_expr->getActions())
     {
         if (action.node->type == ActionsDAG::ActionType::FUNCTION
             && action.node->children.size() >= 2
-            && action.node->function_base->getName() == "mortonEncode")
+            && space_filling_curve_name_to_type.contains(action.node->function_base->getName()))
         {
             SpaceFillingCurveDescription curve;
             curve.function_name = action.node->function_base->getName();
+            curve.type = space_filling_curve_name_to_type.at(curve.function_name);
             curve.key_column_pos = key_columns.at(action.node->result_name);
             for (const auto & child : action.node->children)
             {
@@ -2665,6 +2672,15 @@ BoolMask KeyCondition::checkInHyperrectangle(
     const DataTypes & data_types) const
 {
     std::vector<BoolMask> rpn_stack;
+
+    auto curve_type = [&](size_t key_column_pos)
+    {
+        for (const auto & curve : key_space_filling_curves)
+            if (curve.key_column_pos == key_column_pos)
+                return curve.type;
+        return SpaceFillingCurveType::Unknown;
+    };
+
     for (const auto & element : rpn)
     {
         if (element.argument_num_of_space_filling_curve.has_value())
@@ -2764,26 +2780,43 @@ BoolMask KeyCondition::checkInHyperrectangle(
                     UInt64 right = key_range.right.get<UInt64>();
 
                     BoolMask mask(false, true);
-                    mortonIntervalToHyperrectangles<2>(left, right,
-                        [&](std::array<std::pair<UInt64, UInt64>, 2> morton_hyperrectangle)
+                    auto hyperrectangle_intersection_callback = [&](std::array<std::pair<UInt64, UInt64>, 2> curve_hyperrectangle)
+                    {
+                        BoolMask current_intersection(true, false);
+                        for (size_t dim = 0; dim < num_dimensions; ++dim)
                         {
-                            BoolMask current_intersection(true, false);
-                            for (size_t dim = 0; dim < num_dimensions; ++dim)
-                            {
-                                const Range & condition_arg_range = element.space_filling_curve_args_hyperrectangle[dim];
+                            const Range & condition_arg_range = element.space_filling_curve_args_hyperrectangle[dim];
 
-                                const Range morton_arg_range(
-                                    morton_hyperrectangle[dim].first, true,
-                                    morton_hyperrectangle[dim].second, true);
+                            const Range curve_arg_range(
+                                curve_hyperrectangle[dim].first, true,
+                                curve_hyperrectangle[dim].second, true);
 
-                                bool intersects = condition_arg_range.intersectsRange(morton_arg_range);
-                                bool contains = condition_arg_range.containsRange(morton_arg_range);
+                            bool intersects = condition_arg_range.intersectsRange(curve_arg_range);
+                            bool contains = condition_arg_range.containsRange(curve_arg_range);
 
-                                current_intersection = current_intersection & BoolMask(intersects, !contains);
-                            }
+                            current_intersection = current_intersection & BoolMask(intersects, !contains);
+                        }
 
-                            mask = mask | current_intersection;
-                        });
+                        mask = mask | current_intersection;
+                    };
+
+                    switch (curve_type(element.key_column))
+                    {
+                        case SpaceFillingCurveType::Hilbert:
+                        {
+                            hilbertIntervalToHyperrectangles2D(left, right, hyperrectangle_intersection_callback);
+                            break;
+                        }
+                        case SpaceFillingCurveType::Morton:
+                        {
+                            mortonIntervalToHyperrectangles<2>(left, right, hyperrectangle_intersection_callback);
+                            break;
+                        }
+                        case SpaceFillingCurveType::Unknown:
+                        {
+                            throw Exception(ErrorCodes::LOGICAL_ERROR, "curve_type is `Unknown`. It is a bug.");
+                        }
+                    }
 
                     rpn_stack.emplace_back(mask);
                 }

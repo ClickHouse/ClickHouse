@@ -518,6 +518,13 @@ bool KeeperStorage::UncommittedState::hasACL(int64_t session_id, bool is_local, 
         return check_auth(storage.session_and_auth[session_id]);
     }
 
+    /// we want to close the session and with that we will remove all the auth related to the session
+    if (closed_sessions.contains(session_id))
+        return false;
+
+    if (check_auth(storage.session_and_auth[session_id]))
+        return true;
+
     // check if there are uncommitted
     const auto auth_it = session_and_auth.find(session_id);
     if (auth_it == session_and_auth.end())
@@ -587,6 +594,10 @@ void KeeperStorage::UncommittedState::applyDeltas(const std::list<Delta> & new_d
         {
             auto & uncommitted_auth = session_and_auth[auth_delta->session_id];
             uncommitted_auth.push_back(std::pair{delta.zxid, auth_delta->auth_id});
+        }
+        else if (const auto * close_session_delta = std::get_if<CloseSessionDelta>(&delta.operation))
+        {
+            closed_sessions.insert(close_session_delta->session_id);
         }
     }
 }
@@ -687,6 +698,10 @@ void KeeperStorage::UncommittedState::rollback(std::list<Delta> rollback_deltas)
                 if (uncommitted_auth.empty())
                     session_and_auth.erase(add_auth->session_id);
             }
+        }
+        else if (auto * close_session = std::get_if<CloseSessionDelta>(&delta.operation))
+        {
+           closed_sessions.erase(close_session->session_id);
         }
     }
 }
@@ -894,6 +909,10 @@ Coordination::Error KeeperStorage::commit(std::list<Delta> deltas)
                     session_and_auth[operation.session_id].emplace_back(std::move(*operation.auth_id));
                     return Coordination::Error::ZOK;
                 }
+                else if constexpr (std::same_as<DeltaType, KeeperStorage::CloseSessionDelta>)
+                {
+                    return Coordination::Error::ZOK;
+                }
                 else
                 {
                     // shouldn't be called in any process functions
@@ -1015,9 +1034,11 @@ struct KeeperStorageHeartbeatRequestProcessor final : public KeeperStorageReques
 {
     using KeeperStorageRequestProcessor::KeeperStorageRequestProcessor;
     Coordination::ZooKeeperResponsePtr
-    process(KeeperStorage & /* storage */, std::list<KeeperStorage::Delta> /* deltas */) const override
+    process(KeeperStorage & storage, std::list<KeeperStorage::Delta> deltas) const override
     {
-        return zk_request->makeResponse();
+        Coordination::ZooKeeperResponsePtr response_ptr = zk_request->makeResponse();
+        response_ptr->error = storage.commit(std::move(deltas));
+        return response_ptr;
     }
 };
 
@@ -2433,6 +2454,7 @@ void KeeperStorage::preprocessRequest(
             }
         }
 
+        new_deltas.emplace_back(transaction->zxid, CloseSessionDelta{session_id});
         new_digest = calculateNodesDigest(new_digest, new_deltas);
         return;
     }

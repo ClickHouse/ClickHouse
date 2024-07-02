@@ -1027,14 +1027,7 @@ catch (...)
 {
     tryLogCurrentException(log, "Cannot send exception to client");
 
-    try
-    {
-        used_output.finalize();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(log, "Cannot flush data to client (after sending exception)");
-    }
+    used_output.cancel();
 }
 
 void HTTPHandler::formatExceptionForClient(int exception_code, HTTPServerRequest & request, HTTPServerResponse & response, Output & used_output)
@@ -1046,12 +1039,21 @@ void HTTPHandler::formatExceptionForClient(int exception_code, HTTPServerRequest
 
     /// FIXME: make sure that no one else is reading from the same stream at the moment.
 
-    /// If HTTP method is POST and Keep-Alive is turned on, we should read the whole request body
+    /// If HTTP method is POST and Keep-Alive is turned on, we should try to read the whole request body
     /// to avoid reading part of the current request body in the next request.
     if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST && response.getKeepAlive()
-        && exception_code != ErrorCodes::HTTP_LENGTH_REQUIRED && !request.getStream().eof())
+        && exception_code != ErrorCodes::HTTP_LENGTH_REQUIRED)
     {
-        request.getStream().ignoreAll();
+        try
+        {
+            if (!request.getStream().eof())
+                request.getStream().ignoreAll();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Cannot read remaining request body during exception handling");
+            response.setKeepAlive(false);
+        }
     }
 
     if (exception_code == ErrorCodes::REQUIRED_PASSWORD)
@@ -1163,7 +1165,7 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
         /// Check if exception was thrown in used_output.finalize().
         /// In this case used_output can be in invalid state and we
         /// cannot write in it anymore. So, just log this exception.
-        if (used_output.isFinalized())
+        if (used_output.isFinalized() || used_output.isCanceled())
         {
             if (thread_trace_context)
                 thread_trace_context->root_span.addAttribute("clickhouse.exception", "Cannot flush data to client");
@@ -1182,6 +1184,8 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
 
         if (thread_trace_context)
             thread_trace_context->root_span.addAttribute(status);
+
+        return;
     }
 
     used_output.finalize();
