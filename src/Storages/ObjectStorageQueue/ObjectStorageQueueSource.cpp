@@ -469,8 +469,6 @@ Chunk ObjectStorageQueueSource::generateImpl()
                     LOG_ERROR(log, "Failed to set file {} as failed: {}",
                              object_info->relative_path, getCurrentExceptionMessage(true));
                 }
-
-                appendLogElement(reader.getObjectInfo()->getPath(), *file_status, processed_rows_from_file, false);
             }
 
             LOG_TEST(log, "Query is cancelled");
@@ -502,8 +500,6 @@ Chunk ObjectStorageQueueSource::generateImpl()
                               object_info->relative_path, getCurrentExceptionMessage(true));
                 }
 
-                appendLogElement(path, *file_status, processed_rows_from_file, false);
-
                 /// Leave the file half processed. Table is being dropped, so we do not care.
                 break;
             }
@@ -512,10 +508,6 @@ Chunk ObjectStorageQueueSource::generateImpl()
                      "Will process the file fully and then shutdown",
                      path, processed_rows_from_file);
         }
-
-        auto * prev_scope = CurrentThread::get().attachProfileCountersScope(&file_status->profile_counters);
-        SCOPE_EXIT({ CurrentThread::get().attachProfileCountersScope(prev_scope); });
-        /// FIXME:  if files are compressed, profile counters update does not work fully (object storage related counters are not saved). Why?
 
         try
         {
@@ -548,7 +540,6 @@ Chunk ObjectStorageQueueSource::generateImpl()
 
             failed_during_read_files.push_back(file_metadata);
             file_status->onFailed(getCurrentExceptionMessage(true));
-            appendLogElement(path, *file_status, processed_rows_from_file, false);
 
             if (processed_rows_from_file == 0)
             {
@@ -566,8 +557,6 @@ Chunk ObjectStorageQueueSource::generateImpl()
 
             throw;
         }
-
-        appendLogElement(path, *file_status, processed_rows_from_file, true);
 
         file_status->setProcessingEndTime();
         file_status.reset();
@@ -663,10 +652,14 @@ void ObjectStorageQueueSource::commit(bool success, const std::string & exceptio
             applyActionAfterProcessing(file_metadata->getPath());
         }
         else
+        {
             file_metadata->setFailed(
                 exception_message,
                 /* reduce_retry_count */false,
                 /* overwrite_status */true);
+
+        }
+        appendLogElement(file_metadata->getPath(), *file_metadata->getFileStatus(), processed_rows_from_file, /* processed */success);
     }
 
     for (const auto & file_metadata : failed_during_read_files)
@@ -677,6 +670,8 @@ void ObjectStorageQueueSource::commit(bool success, const std::string & exceptio
             file_metadata->getFileStatus()->getException(),
             /* reduce_retry_count */true,
             /* overwrite_status */false);
+
+        appendLogElement(file_metadata->getPath(), *file_metadata->getFileStatus(), processed_rows_from_file, /* processed */false);
     }
 }
 
@@ -715,7 +710,6 @@ void ObjectStorageQueueSource::appendLogElement(
             .file_name = filename,
             .rows_processed = processed_rows,
             .status = processed ? ObjectStorageQueueLogElement::ObjectStorageQueueStatus::Processed : ObjectStorageQueueLogElement::ObjectStorageQueueStatus::Failed,
-            .counters_snapshot = file_status_.profile_counters.getPartiallyAtomicSnapshot(),
             .processing_start_time = file_status_.processing_start_time,
             .processing_end_time = file_status_.processing_end_time,
             .exception = file_status_.getException(),

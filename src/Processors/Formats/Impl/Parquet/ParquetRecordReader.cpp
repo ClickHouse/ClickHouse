@@ -113,7 +113,7 @@ private:
     {
         throw Exception(
             ErrorCodes::PARQUET_EXCEPTION,
-            "Unsupported logical type: {} and physical type: {} for field =={}=={}",
+            "Unsupported logical type: {} and physical type: {} for field `{}`{}",
             col_descriptor.logical_type()->ToString(), col_descriptor.physical_type(), col_descriptor.name(), msg);
     }
 };
