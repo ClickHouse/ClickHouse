@@ -2755,10 +2755,7 @@ topLevelDomainRFC
 topk
 topkweighted
 transactionID
-transactionID
 transactionLatestSnapshot
-transactionLatestSnapshot
-transactionOldestSnapshot
 transactionOldestSnapshot
 transactional
 transactionally
