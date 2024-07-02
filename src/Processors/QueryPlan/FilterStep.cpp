@@ -50,6 +50,8 @@ FilterStep::FilterStep(
     , filter_column_name(std::move(filter_column_name_))
     , remove_filter_column(remove_filter_column_)
 {
+    actions_dag = actions_dag->clone();
+    actions_dag->removeAliasesForFilter(filter_column_name);
 }
 
 void FilterStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)

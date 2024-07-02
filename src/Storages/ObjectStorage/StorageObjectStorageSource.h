@@ -15,7 +15,7 @@ class SchemaCache;
 
 class StorageObjectStorageSource : public SourceWithKeyCondition, WithContext
 {
-    friend class StorageS3QueueSource;
+    friend class ObjectStorageQueueSource;
 public:
     using Configuration = StorageObjectStorage::Configuration;
     using ConfigurationPtr = StorageObjectStorage::ConfigurationPtr;
@@ -100,7 +100,7 @@ protected:
         PullingPipelineExecutor * operator->() { return reader.get(); }
         const PullingPipelineExecutor * operator->() const { return reader.get(); }
 
-        const ObjectInfo & getObjectInfo() const { return *object_info; }
+        ObjectInfoPtr getObjectInfo() const { return object_info; }
         const IInputFormat * getInputFormat() const { return dynamic_cast<const IInputFormat *>(source.get()); }
 
     private:

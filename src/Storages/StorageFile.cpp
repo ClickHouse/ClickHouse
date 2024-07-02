@@ -1341,6 +1341,7 @@ Chunk StorageFileSource::generate()
                         chassert(file_enumerator);
                         current_path = fmt::format("{}::{}", archive_reader->getPath(), *filename_override);
                         current_file_size = file_enumerator->getFileInfo().uncompressed_size;
+                        current_file_last_modified = file_enumerator->getFileInfo().last_modified;
                         if (need_only_count && tryGetCountFromCache(current_archive_stat))
                             continue;
 
@@ -1370,6 +1371,7 @@ Chunk StorageFileSource::generate()
                 struct stat file_stat;
                 file_stat = getFileStat(current_path, storage->use_table_fd, storage->table_fd, storage->getName());
                 current_file_size = file_stat.st_size;
+                current_file_last_modified = Poco::Timestamp::fromEpochTime(file_stat.st_mtime);
 
                 if (getContext()->getSettingsRef().engine_file_skip_empty_files && file_stat.st_size == 0)
                     continue;
@@ -1444,8 +1446,15 @@ Chunk StorageFileSource::generate()
             progress(num_rows, chunk_size ? chunk_size : chunk.bytes());
 
             /// Enrich with virtual columns.
-            VirtualColumnUtils::addRequestedPathFileAndSizeVirtualsToChunk(
-                chunk, requested_virtual_columns, current_path, current_file_size, filename_override.has_value() ? &filename_override.value() : nullptr);
+            VirtualColumnUtils::addRequestedFileLikeStorageVirtualsToChunk(
+                chunk, requested_virtual_columns,
+                {
+                    .path = current_path,
+                    .size = current_file_size,
+                    .filename = (filename_override.has_value() ? &filename_override.value() : nullptr),
+                    .last_modified = current_file_last_modified
+                });
+
             return chunk;
         }
 
@@ -1788,7 +1797,8 @@ public:
     void onCancel() override
     {
         std::lock_guard cancel_lock(cancel_mutex);
-        finalize();
+        cancelBuffers();
+        releaseBuffers();
         cancelled = true;
     }
 
@@ -1802,18 +1812,18 @@ public:
         catch (...)
         {
             /// An exception context is needed to proper delete write buffers without finalization
-            release();
+            releaseBuffers();
         }
     }
 
     void onFinish() override
     {
         std::lock_guard cancel_lock(cancel_mutex);
-        finalize();
+        finalizeBuffers();
     }
 
 private:
-    void finalize()
+    void finalizeBuffers()
     {
         if (!writer)
             return;
@@ -1822,20 +1832,29 @@ private:
         {
             writer->finalize();
             writer->flush();
-            write_buf->finalize();
         }
         catch (...)
         {
             /// Stop ParallelFormattingOutputFormat correctly.
-            release();
+            releaseBuffers();
             throw;
         }
+
+        write_buf->finalize();
     }
 
-    void release()
+    void releaseBuffers()
     {
         writer.reset();
-        write_buf->finalize();
+        write_buf.reset();
+    }
+
+    void cancelBuffers()
+    {
+        if (writer)
+            writer->cancel();
+        if (write_buf)
+            write_buf->cancel();
     }
 
     StorageMetadataPtr metadata_snapshot;
