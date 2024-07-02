@@ -1246,8 +1246,10 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
     if (!create.temporary && !create.database)
         create.setDatabase(current_database);
+    if (!create.to_table_id && create.to_table)
+        create.to_table_id = StorageID(database_name, create.to_table->as<ASTIdentifier>()->shortName());
     if (create.to_table_id && create.to_table_id.database_name.empty())
-        create.to_table_id.database_name = current_database;
+        create.to_table_id.database_name = database_name;
 
     if (create.select && create.isView())
     {
