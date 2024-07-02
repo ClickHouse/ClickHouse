@@ -71,6 +71,13 @@ public:
         size_t function_index) const = 0;
 
     virtual std::optional<WindowFrame> getDefaultFrame() const { return {}; }
+
+    /// In most cases, the result should be current_row or prev_frame_start.
+    /// prev_frame_start is the default value.
+    virtual RowNumber firstRequiredRowInFrame(const WindowTransform * transform) const
+    {
+        return transform->prev_frame_start;
+    }
 };
 
 // Compares ORDER BY column values at given rows to find the boundaries of frame:
@@ -1074,6 +1081,29 @@ void WindowTransform::writeOutCurrentRow()
     }
 }
 
+void WindowTransform::updateFirstRequiredRow()
+{
+    first_required_row = current_row;
+    for (auto & ws : workspaces)
+    {
+        RowNumber row;
+        if (ws.window_function_impl)
+            row = ws.window_function_impl->firstRequiredRowInFrame(this);
+        else
+        {
+            /// For aggregate functions, if the start bound is preceding unbounded, blocks before
+            /// the current row are no longer in use, just only need to add the current row to the
+            /// same aggregation state.
+            if (window_description.frame.begin_type == WindowFrame::BoundaryType::Unbounded)
+                row = current_row;
+            else
+                row = prev_frame_start;
+        }
+        if (row < first_required_row)
+            first_required_row = row;
+    }
+}
+
 static void assertSameColumns(const Columns & left_all,
     const Columns & right_all)
 {
@@ -1476,9 +1506,10 @@ void WindowTransform::work()
     // than the current frame start, so we don't have to check the latter. Note
     // that the frame start can be further than current row for some frame specs
     // (e.g. EXCLUDE CURRENT ROW), so we have to check both.
+    updateFirstRequiredRow();
     assert(prev_frame_start <= frame_start);
     const auto first_used_block = std::min(next_output_block_number,
-        std::min(prev_frame_start.block, current_row.block));
+        std::min(first_required_row.block, current_row.block));
     if (first_block_number < first_used_block)
     {
         blocks.erase(blocks.begin(),
@@ -1545,6 +1576,12 @@ struct WindowFunctionRank final : public WindowFunction
         assert_cast<ColumnUInt64 &>(to).getData().push_back(
             transform->peer_group_start_row_number);
     }
+
+    RowNumber firstRequiredRowInFrame(const WindowTransform * transform) const override
+    {
+        /// Current block is the only one required to be kept in memory.
+        return transform->current_row;
+    }
 };
 
 struct WindowFunctionDenseRank final : public WindowFunction
@@ -1563,6 +1600,12 @@ struct WindowFunctionDenseRank final : public WindowFunction
             .output_columns[function_index];
         assert_cast<ColumnUInt64 &>(to).getData().push_back(
             transform->peer_group_number);
+    }
+
+    RowNumber firstRequiredRowInFrame(const WindowTransform * transform) const override
+    {
+        /// Current block is the only one required to be kept in memory.
+        return transform->current_row;
     }
 };
 
@@ -2042,6 +2085,12 @@ struct WindowFunctionRowNumber final : public WindowFunction
             .output_columns[function_index];
         assert_cast<ColumnUInt64 &>(to).getData().push_back(
             transform->current_row_number);
+    }
+
+    RowNumber firstRequiredRowInFrame(const WindowTransform * transform) const override
+    {
+        /// Current block is the only one required to be kept in memory.
+        return transform->current_row;
     }
 };
 
