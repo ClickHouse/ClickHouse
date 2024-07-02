@@ -259,7 +259,8 @@ public:
         ObjectInfoInArchive(
             ObjectInfoPtr archive_object_,
             const std::string & path_in_archive_,
-            std::shared_ptr<IArchiveReader> archive_reader_);
+            std::shared_ptr<IArchiveReader> archive_reader_,
+            IArchiveReader::FileInfo && file_info_);
 
         std::string getFileName() const override
         {
@@ -278,9 +279,12 @@ public:
 
         bool isArchive() const override { return true; }
 
+        size_t fileSizeInArchive() const override { return file_info.uncompressed_size; }
+
         const ObjectInfoPtr archive_object;
         const std::string path_in_archive;
         const std::shared_ptr<IArchiveReader> archive_reader;
+        const IArchiveReader::FileInfo file_info;
     };
 
 private:
