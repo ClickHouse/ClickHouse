@@ -6,6 +6,7 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Storages/ObjectStorage/DataLakes/PartitionColumns.h>
 
 
 namespace DB

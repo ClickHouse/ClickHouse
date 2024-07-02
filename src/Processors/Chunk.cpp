@@ -125,7 +125,7 @@ void Chunk::addColumn(size_t position, ColumnPtr column)
     if (position >= columns.size())
         throw Exception(ErrorCodes::POSITION_OUT_OF_BOUND,
                         "Position {} out of bound in Chunk::addColumn(), max position = {}",
-                        position, columns.size() - 1);
+                        position, !columns.empty() ? columns.size() - 1 : 0);
     if (empty())
         num_rows = column->size();
     else if (column->size() != num_rows)
@@ -143,7 +143,7 @@ void Chunk::erase(size_t position)
 
     if (position >= columns.size())
         throw Exception(ErrorCodes::POSITION_OUT_OF_BOUND, "Position {} out of bound in Chunk::erase(), max position = {}",
-                        toString(position), toString(columns.size() - 1));
+                        toString(position), toString(!columns.empty() ? columns.size() - 1 : 0));
 
     columns.erase(columns.begin() + position);
 }
