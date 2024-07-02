@@ -28,10 +28,10 @@ struct BitTestImpl
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "bitTest is not implemented for big integers as second argument");
         else
         {
-            typename NumberTraits::ToInteger<A>::Type a_int(a);
-            typename NumberTraits::ToInteger<B>::Type b_int(b);
-            const auto max_position = decltype(b)((8 * sizeof(a)) - 1);
-            if (b > max_position || b < 0)
+            typename NumberTraits::ToInteger<A>::Type a_int = a;
+            typename NumberTraits::ToInteger<B>::Type b_int = b;
+            const auto max_position = static_cast<decltype(b)>((8 * sizeof(a)) - 1);
+            if (b_int > max_position || b_int < 0)
                 throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND,
                                 "The bit position argument needs to a positive value and less or equal to {} for integer {}",
                                 std::to_string(max_position), std::to_string(a_int));
