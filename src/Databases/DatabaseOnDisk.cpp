@@ -11,6 +11,7 @@
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
+#include <Interpreters/executeQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterCreateQuery.h>
@@ -57,6 +58,7 @@ namespace ErrorCodes
     extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
     extern const int DATABASE_NOT_EMPTY;
     extern const int INCORRECT_QUERY;
+    extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
 
@@ -368,7 +370,16 @@ void DatabaseOnDisk::checkMetadataFilenameAvailability(const String & to_table_n
 
 void DatabaseOnDisk::checkMetadataFilenameAvailabilityUnlocked(const String & to_table_name) const
 {
+    String query = fmt::format("SELECT getMaxTableName('{}')", database_name);
+    auto mutable_context = std::const_pointer_cast<Context>(getContext());
+    const auto & res = executeQuery(query, mutable_context, QueryFlags{ .internal = true }).second;
+    const auto & res_col = res.pipeline.getHeader().getColumnsWithTypeAndName()[0].column;
+    const auto allowed_max_length = res_col->getUInt(1);
     String table_metadata_path = getObjectMetadataPath(to_table_name);
+
+    if (escapeForFileName(to_table_name).length() > allowed_max_length)
+        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "The max length of table name for database {} is {}, current length is {}",
+                            database_name, allowed_max_length, to_table_name.length());
 
     if (fs::exists(table_metadata_path))
     {
