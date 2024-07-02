@@ -358,22 +358,18 @@ bool LocalConnection::poll(size_t)
 
     if (!state->is_finished)
     {
-        if (send_progress && (state->after_send_progress.elapsedMicroseconds() >= query_context->getSettingsRef().interactive_delay))
-        {
-            state->after_send_progress.restart();
-            next_packet_type = Protocol::Server::Progress;
+        if (needSendProgressOrMetrics())
             return true;
-        }
-
-        if (send_profile_events && (state->after_send_profile_events.elapsedMicroseconds() >= query_context->getSettingsRef().interactive_delay))
-        {
-            sendProfileEvents();
-            return true;
-        }
 
         try
         {
-            pollImpl();
+            while (pollImpl())
+            {
+                LOG_DEBUG(&Poco::Logger::get("LocalConnection"), "Executor timeout encountered, will retry");
+
+                if (needSendProgressOrMetrics())
+                    return true;
+            }
         }
         catch (const Exception & e)
         {
@@ -468,12 +464,34 @@ bool LocalConnection::poll(size_t)
     return false;
 }
 
+bool LocalConnection::needSendProgressOrMetrics()
+{
+    if (send_progress && (state->after_send_progress.elapsedMicroseconds() >= query_context->getSettingsRef().interactive_delay))
+    {
+        state->after_send_progress.restart();
+        next_packet_type = Protocol::Server::Progress;
+        return true;
+    }
+
+    if (send_profile_events && (state->after_send_profile_events.elapsedMicroseconds() >= query_context->getSettingsRef().interactive_delay))
+    {
+        sendProfileEvents();
+        return true;
+    }
+
+    return false;
+}
+
 bool LocalConnection::pollImpl()
 {
     Block block;
     auto next_read = pullBlock(block);
 
-    if (block && !state->io.null_format)
+    if (!block && next_read)
+    {
+        return true;
+    }
+    else if (block && !state->io.null_format)
     {
         state->block.emplace(block);
     }
@@ -482,7 +500,7 @@ bool LocalConnection::pollImpl()
         state->is_finished = true;
     }
 
-    return true;
+    return false;
 }
 
 Packet LocalConnection::receivePacket()

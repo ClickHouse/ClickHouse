@@ -24,6 +24,7 @@ enable_vertical_merge_algorithm = 0;
 SET max_block_size=900;
 
 -- There are about 900 marks for our settings.
+SET optimize_trivial_insert_select = 1;
 INSERT INTO adaptive_table SELECT number, if(number > 700, randomPrintableASCII(102400), randomPrintableASCII(1)) FROM numbers(10000);
 
 OPTIMIZE TABLE adaptive_table FINAL;
