@@ -113,6 +113,56 @@ std::string_view CurrentThread::getQueryId()
     return current_thread->getQueryId();
 }
 
+void CurrentThread::attachReadResource(ResourceLink link)
+{
+    if (unlikely(!current_thread))
+        return;
+    if (current_thread->read_resource_link)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Thread #{} has been already attached to read resource", std::to_string(getThreadId()));
+    current_thread->read_resource_link = link;
+}
+
+void CurrentThread::detachReadResource()
+{
+    if (unlikely(!current_thread))
+        return;
+    if (!current_thread->read_resource_link)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Thread #{} has not been attached to read resource", std::to_string(getThreadId()));
+    current_thread->read_resource_link.reset();
+}
+
+ResourceLink CurrentThread::getReadResourceLink()
+{
+    if (unlikely(!current_thread))
+        return {};
+    return current_thread->read_resource_link;
+}
+
+void CurrentThread::attachWriteResource(ResourceLink link)
+{
+    if (unlikely(!current_thread))
+        return;
+    if (current_thread->write_resource_link)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Thread #{} has been already attached to write resource", std::to_string(getThreadId()));
+    current_thread->write_resource_link = link;
+}
+
+void CurrentThread::detachWriteResource()
+{
+    if (unlikely(!current_thread))
+        return;
+    if (!current_thread->write_resource_link)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Thread #{} has not been attached to write resource", std::to_string(getThreadId()));
+    current_thread->write_resource_link.reset();
+}
+
+ResourceLink CurrentThread::getWriteResourceLink()
+{
+    if (unlikely(!current_thread))
+        return {};
+    return current_thread->write_resource_link;
+}
+
 MemoryTracker * CurrentThread::getUserMemoryTracker()
 {
     if (unlikely(!current_thread))
