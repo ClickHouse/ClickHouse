@@ -12,14 +12,21 @@ from helpers.cluster import ClickHouseCluster, ClickHouseInstance
 if is_arm():
     pytestmark = pytest.mark.skip
 
+
 @pytest.fixture(scope="module")
 def cluster():
     try:
         cluster = ClickHouseCluster(__file__)
         cluster.add_instance(
             "node",
-            main_configs=["configs/named_collections_azure.xml", "configs/schema_cache_azure.xml"],
-            user_configs=["configs/disable_profilers_azure.xml", "configs/users_azure.xml"],
+            main_configs=[
+                "configs/named_collections_azure.xml",
+                "configs/schema_cache_azure.xml",
+            ],
+            user_configs=[
+                "configs/disable_profilers_azure.xml",
+                "configs/users_azure.xml",
+            ],
             with_azurite=True,
         )
         cluster.start()
@@ -121,7 +128,9 @@ def test_azure_partitioning_with_one_parameter(cluster):
         f"storage_account_url = '{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}', container='cont', "
         f"blob_path='{path}', format='CSV', structure='{table_format}')"
     )
-    assert azure_query(node, query, settings={"azure_blob_storage_hive_partitioning": 1}).splitlines() == [
+    assert azure_query(
+        node, query, settings={"azure_blob_storage_hive_partitioning": 1}
+    ).splitlines() == [
         "Elizabeth\tGordon\tsample.csv\t{bucket}/{max_path}\tElizabeth".format(
             bucket="cont", max_path=path
         )
@@ -132,9 +141,10 @@ def test_azure_partitioning_with_one_parameter(cluster):
         f"storage_account_url = '{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}', container='cont', "
         f"blob_path='{path}', format='CSV', structure='{table_format}') WHERE column1=_column1;"
     )
-    assert azure_query(node, query, settings={"azure_blob_storage_hive_partitioning": 1}).splitlines() == [
-        "Gordon"
-    ]
+    assert azure_query(
+        node, query, settings={"azure_blob_storage_hive_partitioning": 1}
+    ).splitlines() == ["Gordon"]
+
 
 def test_azure_partitioning_with_two_parameters(cluster):
     # type: (ClickHouseCluster) -> None
@@ -155,7 +165,9 @@ def test_azure_partitioning_with_two_parameters(cluster):
         f"storage_account_url = '{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}', container='cont', "
         f"blob_path='{path}', format='CSV', structure='{table_format}') WHERE column1=_column1;"
     )
-    assert azure_query(node, query, settings={"azure_blob_storage_hive_partitioning": 1}).splitlines() == [
+    assert azure_query(
+        node, query, settings={"azure_blob_storage_hive_partitioning": 1}
+    ).splitlines() == [
         "Elizabeth\tGordon\tsample.csv\t{bucket}/{max_path}\tElizabeth\tGordon".format(
             bucket="cont", max_path=path
         )
@@ -166,18 +178,19 @@ def test_azure_partitioning_with_two_parameters(cluster):
         f"storage_account_url = '{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}', container='cont', "
         f"blob_path='{path}', format='CSV', structure='{table_format}') WHERE column2=_column2;"
     )
-    assert azure_query(node, query, settings={"azure_blob_storage_hive_partitioning": 1}).splitlines() == [
-        "Elizabeth"
-    ]
+    assert azure_query(
+        node, query, settings={"azure_blob_storage_hive_partitioning": 1}
+    ).splitlines() == ["Elizabeth"]
 
     query = (
         f"SELECT column1 FROM azureBlobStorage(azure_conf2, "
         f"storage_account_url = '{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}', container='cont', "
         f"blob_path='{path}', format='CSV', structure='{table_format}') WHERE column2=_column2 AND column1=_column1;"
     )
-    assert azure_query(node, query, settings={"azure_blob_storage_hive_partitioning": 1}).splitlines() == [
-        "Elizabeth"
-    ]
+    assert azure_query(
+        node, query, settings={"azure_blob_storage_hive_partitioning": 1}
+    ).splitlines() == ["Elizabeth"]
+
 
 def test_azure_partitioning_without_setting(cluster):
     # type: (ClickHouseCluster) -> None
@@ -198,7 +211,9 @@ def test_azure_partitioning_without_setting(cluster):
         f"storage_account_url = '{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}', container='cont', "
         f"blob_path='{path}', format='CSV', structure='{table_format}') WHERE column1=_column1;"
     )
-    pattern = re.compile(r"DB::Exception: Unknown expression identifier '.*' in scope.*", re.DOTALL)
+    pattern = re.compile(
+        r"DB::Exception: Unknown expression identifier '.*' in scope.*", re.DOTALL
+    )
 
     with pytest.raises(Exception, match=pattern):
         azure_query(node, query, settings={"azure_blob_storage_hive_partitioning": 0})

@@ -86,7 +86,7 @@ StorageObjectStorage::StorageObjectStorage(
     );
 
     Strings paths;
-    
+
     if (checkIfHiveSettingEnabled(context, configuration->getTypeName()))
         if (auto file = file_iterator->next(0))
             paths = {file->getPath()};
