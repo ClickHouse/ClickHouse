@@ -30,7 +30,8 @@ SELECT *, _column0 FROM file('$CURDIR/data_hive/partitioning/column0=Elizabeth/c
 SELECT *, _non_existing_column FROM file('$CURDIR/data_hive/partitioning/non_existing_column=Elizabeth/sample.parquet') LIMIT 10;
 SELECT *, _column0 FROM file('$CURDIR/data_hive/partitioning/column0=*/sample.parquet') WHERE column0 = _column0;"""
 
-$CLICKHOUSE_LOCAL -n -q """set file_hive_partitioning = 0;
+$CLICKHOUSE_LOCAL -n -q """
+set file_hive_partitioning = 0;
 
 SELECT *, _column0 FROM file('$CURDIR/data_hive/partitioning/column0=Elizabeth/sample.parquet') LIMIT 10;
 """ 2>&1 | grep -c "UNKNOWN_IDENTIFIER"
@@ -61,7 +62,8 @@ SELECT *, _column0 FROM url('http://localhost:11111/test/partitioning/column0=El
 SELECT *, _non_existing_column FROM url('http://localhost:11111/test/partitioning/non_existing_column=Elizabeth/sample.parquet') LIMIT 10;
 SELECT *, _column0 FROM url('http://localhost:11111/test/partitioning/column0=*/sample.parquet') WHERE column0 = _column0;"""
 
-$CLICKHOUSE_LOCAL -n -q """set url_hive_partitioning = 0;
+$CLICKHOUSE_LOCAL -n -q """
+set url_hive_partitioning = 0;
 
 SELECT *, _column0 FROM url('http://localhost:11111/test/partitioning/column0=Elizabeth/sample.parquet') LIMIT 10;
 """ 2>&1 | grep -c "UNKNOWN_IDENTIFIER"
@@ -98,4 +100,3 @@ set s3_hive_partitioning = 0;
 
 SELECT *, _column0 FROM s3('http://localhost:11111/test/partitioning/column0=Elizabeth/sample.parquet') LIMIT 10;
 """ 2>&1 | grep -c "UNKNOWN_IDENTIFIER"
-
