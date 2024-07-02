@@ -1,4 +1,4 @@
-#include <Storages/S3Queue/S3QueueMetadataFactory.h>
+#include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadataFactory.h>
 #include <Interpreters/Context.h>
 
 namespace DB
@@ -8,20 +8,20 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-S3QueueMetadataFactory & S3QueueMetadataFactory::instance()
+ObjectStorageQueueMetadataFactory & ObjectStorageQueueMetadataFactory::instance()
 {
-    static S3QueueMetadataFactory ret;
+    static ObjectStorageQueueMetadataFactory ret;
     return ret;
 }
 
-S3QueueMetadataFactory::FilesMetadataPtr
-S3QueueMetadataFactory::getOrCreate(const std::string & zookeeper_path, const S3QueueSettings & settings)
+ObjectStorageQueueMetadataFactory::FilesMetadataPtr
+ObjectStorageQueueMetadataFactory::getOrCreate(const std::string & zookeeper_path, const ObjectStorageQueueSettings & settings)
 {
     std::lock_guard lock(mutex);
     auto it = metadata_by_path.find(zookeeper_path);
     if (it == metadata_by_path.end())
     {
-        auto files_metadata = std::make_shared<S3QueueMetadata>(zookeeper_path, settings);
+        auto files_metadata = std::make_shared<ObjectStorageQueueMetadata>(zookeeper_path, settings);
         it = metadata_by_path.emplace(zookeeper_path, std::move(files_metadata)).first;
     }
     else
@@ -32,7 +32,7 @@ S3QueueMetadataFactory::getOrCreate(const std::string & zookeeper_path, const S3
     return it->second.metadata;
 }
 
-void S3QueueMetadataFactory::remove(const std::string & zookeeper_path)
+void ObjectStorageQueueMetadataFactory::remove(const std::string & zookeeper_path)
 {
     std::lock_guard lock(mutex);
     auto it = metadata_by_path.find(zookeeper_path);
@@ -57,9 +57,9 @@ void S3QueueMetadataFactory::remove(const std::string & zookeeper_path)
     }
 }
 
-std::unordered_map<std::string, S3QueueMetadataFactory::FilesMetadataPtr> S3QueueMetadataFactory::getAll()
+std::unordered_map<std::string, ObjectStorageQueueMetadataFactory::FilesMetadataPtr> ObjectStorageQueueMetadataFactory::getAll()
 {
-    std::unordered_map<std::string, S3QueueMetadataFactory::FilesMetadataPtr> result;
+    std::unordered_map<std::string, ObjectStorageQueueMetadataFactory::FilesMetadataPtr> result;
     for (const auto & [zk_path, metadata_and_ref_count] : metadata_by_path)
         result.emplace(zk_path, metadata_and_ref_count.metadata);
     return result;

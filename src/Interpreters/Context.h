@@ -107,7 +107,7 @@ class TransactionsInfoLog;
 class ProcessorsProfileLog;
 class FilesystemCacheLog;
 class FilesystemReadPrefetchesLog;
-class S3QueueLog;
+class ObjectStorageQueueLog;
 class AsynchronousInsertLog;
 class BackupLog;
 class BlobStorageLog;
@@ -1133,7 +1133,8 @@ public:
     std::shared_ptr<TransactionsInfoLog> getTransactionsInfoLog() const;
     std::shared_ptr<ProcessorsProfileLog> getProcessorsProfileLog() const;
     std::shared_ptr<FilesystemCacheLog> getFilesystemCacheLog() const;
-    std::shared_ptr<S3QueueLog> getS3QueueLog() const;
+    std::shared_ptr<ObjectStorageQueueLog> getS3QueueLog() const;
+    std::shared_ptr<ObjectStorageQueueLog> getAzureQueueLog() const;
     std::shared_ptr<FilesystemReadPrefetchesLog> getFilesystemReadPrefetchesLog() const;
     std::shared_ptr<AsynchronousInsertLog> getAsynchronousInsertLog() const;
     std::shared_ptr<BackupLog> getBackupLog() const;

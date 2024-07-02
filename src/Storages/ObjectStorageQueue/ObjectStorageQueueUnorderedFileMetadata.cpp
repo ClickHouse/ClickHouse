@@ -1,4 +1,4 @@
-#include <Storages/S3Queue/S3QueueUnorderedFileMetadata.h>
+#include <Storages/ObjectStorageQueue/ObjectStorageQueueUnorderedFileMetadata.h>
 #include <Common/getRandomASCIIString.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Interpreters/Context.h>
@@ -18,13 +18,13 @@ namespace
     }
 }
 
-S3QueueUnorderedFileMetadata::S3QueueUnorderedFileMetadata(
+ObjectStorageQueueUnorderedFileMetadata::ObjectStorageQueueUnorderedFileMetadata(
     const std::filesystem::path & zk_path,
     const std::string & path_,
     FileStatusPtr file_status_,
     size_t max_loading_retries_,
     LoggerPtr log_)
-    : S3QueueIFileMetadata(
+    : ObjectStorageQueueIFileMetadata(
         path_,
         /* processing_node_path */zk_path / "processing" / getNodeName(path_),
         /* processed_node_path */zk_path / "processed" / getNodeName(path_),
@@ -35,7 +35,7 @@ S3QueueUnorderedFileMetadata::S3QueueUnorderedFileMetadata(
 {
 }
 
-std::pair<bool, S3QueueIFileMetadata::FileStatus::State> S3QueueUnorderedFileMetadata::setProcessingImpl()
+std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorageQueueUnorderedFileMetadata::setProcessingImpl()
 {
     /// In one zookeeper transaction do the following:
     enum RequestType
@@ -89,7 +89,7 @@ std::pair<bool, S3QueueIFileMetadata::FileStatus::State> S3QueueUnorderedFileMet
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected state of zookeeper transaction: {}", magic_enum::enum_name(code));
 }
 
-void S3QueueUnorderedFileMetadata::setProcessedAtStartRequests(
+void ObjectStorageQueueUnorderedFileMetadata::setProcessedAtStartRequests(
     Coordination::Requests & requests,
     const zkutil::ZooKeeperPtr &)
 {
@@ -98,7 +98,7 @@ void S3QueueUnorderedFileMetadata::setProcessedAtStartRequests(
             processed_node_path, node_metadata.toString(), zkutil::CreateMode::Persistent));
 }
 
-void S3QueueUnorderedFileMetadata::setProcessedImpl()
+void ObjectStorageQueueUnorderedFileMetadata::setProcessedImpl()
 {
     /// In one zookeeper transaction do the following:
     enum RequestType

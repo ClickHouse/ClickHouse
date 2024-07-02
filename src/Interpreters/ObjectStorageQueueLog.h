@@ -9,7 +9,7 @@
 namespace DB
 {
 
-struct S3QueueLogElement
+struct ObjectStorageQueueLogElement
 {
     time_t event_time{};
 
@@ -20,18 +20,18 @@ struct S3QueueLogElement
     std::string file_name;
     size_t rows_processed = 0;
 
-    enum class S3QueueStatus : uint8_t
+    enum class ObjectStorageQueueStatus : uint8_t
     {
         Processed,
         Failed,
     };
-    S3QueueStatus status;
+    ObjectStorageQueueStatus status;
     ProfileEvents::Counters::Snapshot counters_snapshot;
     time_t processing_start_time;
     time_t processing_end_time;
     std::string exception;
 
-    static std::string name() { return "S3QueueLog"; }
+    static std::string name() { return "ObjectStorageQueueLog"; }
 
     static ColumnsDescription getColumnsDescription();
     static NamesAndAliases getNamesAndAliases() { return {}; }
@@ -39,9 +39,9 @@ struct S3QueueLogElement
     void appendToBlock(MutableColumns & columns) const;
 };
 
-class S3QueueLog : public SystemLog<S3QueueLogElement>
+class ObjectStorageQueueLog : public SystemLog<ObjectStorageQueueLogElement>
 {
-    using SystemLog<S3QueueLogElement>::SystemLog;
+    using SystemLog<ObjectStorageQueueLogElement>::SystemLog;
 };
 
 }

@@ -5,20 +5,14 @@
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/logger_useful.h>
 #include <Common/getRandomASCIIString.h>
-#include <Storages/S3Queue/S3QueueSource.h>
+#include <Storages/ObjectStorageQueue/ObjectStorageQueueSource.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 
 
-namespace CurrentMetrics
-{
-    extern const Metric StorageS3Threads;
-    extern const Metric StorageS3ThreadsActive;
-}
-
 namespace ProfileEvents
 {
-    extern const Event S3QueuePullMicroseconds;
+    extern const Event ObjectStorageQueuePullMicroseconds;
 }
 
 namespace DB
@@ -26,25 +20,24 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int S3_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
 }
 
-StorageS3QueueSource::S3QueueObjectInfo::S3QueueObjectInfo(
+ObjectStorageQueueSource::ObjectStorageQueueObjectInfo::ObjectStorageQueueObjectInfo(
         const Source::ObjectInfo & object_info,
-        S3QueueMetadata::FileMetadataPtr file_metadata_)
+        ObjectStorageQueueMetadata::FileMetadataPtr file_metadata_)
     : Source::ObjectInfo(object_info.relative_path, object_info.metadata)
     , file_metadata(file_metadata_)
 {
 }
 
-StorageS3QueueSource::FileIterator::FileIterator(
-    std::shared_ptr<S3QueueMetadata> metadata_,
+ObjectStorageQueueSource::FileIterator::FileIterator(
+    std::shared_ptr<ObjectStorageQueueMetadata> metadata_,
     std::unique_ptr<Source::GlobIterator> glob_iterator_,
     std::atomic<bool> & shutdown_called_,
     LoggerPtr logger_)
-    : StorageObjectStorageSource::IIterator("S3QueueIterator")
+    : StorageObjectStorageSource::IIterator("ObjectStorageQueueIterator")
     , metadata(metadata_)
     , glob_iterator(std::move(glob_iterator_))
     , shutdown_called(shutdown_called_)
@@ -52,7 +45,7 @@ StorageS3QueueSource::FileIterator::FileIterator(
 {
 }
 
-bool StorageS3QueueSource::FileIterator::isFinished() const
+bool ObjectStorageQueueSource::FileIterator::isFinished() const
 {
      LOG_TEST(log, "Iterator finished: {}, objects to retry: {}", iterator_finished, objects_to_retry.size());
      return iterator_finished
@@ -60,15 +53,15 @@ bool StorageS3QueueSource::FileIterator::isFinished() const
          && objects_to_retry.empty();
 }
 
-size_t StorageS3QueueSource::FileIterator::estimatedKeysCount()
+size_t ObjectStorageQueueSource::FileIterator::estimatedKeysCount()
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method estimateKeysCount is not implemented");
 }
 
-StorageS3QueueSource::Source::ObjectInfoPtr StorageS3QueueSource::FileIterator::nextImpl(size_t processor)
+ObjectStorageQueueSource::Source::ObjectInfoPtr ObjectStorageQueueSource::FileIterator::nextImpl(size_t processor)
 {
     Source::ObjectInfoPtr object_info;
-    S3QueueOrderedFileMetadata::BucketInfoPtr bucket_info;
+    ObjectStorageQueueOrderedFileMetadata::BucketInfoPtr bucket_info;
 
     while (!shutdown_called)
     {
@@ -107,12 +100,12 @@ StorageS3QueueSource::Source::ObjectInfoPtr StorageS3QueueSource::FileIterator::
 
         auto file_metadata = metadata->getFileMetadata(object_info->relative_path, bucket_info);
         if (file_metadata->setProcessing())
-            return std::make_shared<S3QueueObjectInfo>(*object_info, file_metadata);
+            return std::make_shared<ObjectStorageQueueObjectInfo>(*object_info, file_metadata);
     }
     return {};
 }
 
-void StorageS3QueueSource::FileIterator::returnForRetry(Source::ObjectInfoPtr object_info)
+void ObjectStorageQueueSource::FileIterator::returnForRetry(Source::ObjectInfoPtr object_info)
 {
     chassert(object_info);
     if (metadata->useBucketsForProcessing())
@@ -126,7 +119,7 @@ void StorageS3QueueSource::FileIterator::returnForRetry(Source::ObjectInfoPtr ob
     }
 }
 
-void StorageS3QueueSource::FileIterator::releaseFinishedBuckets()
+void ObjectStorageQueueSource::FileIterator::releaseFinishedBuckets()
 {
     for (const auto & [processor, holders] : bucket_holders)
     {
@@ -157,8 +150,8 @@ void StorageS3QueueSource::FileIterator::releaseFinishedBuckets()
     }
 }
 
-std::pair<StorageS3QueueSource::Source::ObjectInfoPtr, S3QueueOrderedFileMetadata::BucketInfoPtr>
-StorageS3QueueSource::FileIterator::getNextKeyFromAcquiredBucket(size_t processor)
+std::pair<ObjectStorageQueueSource::Source::ObjectInfoPtr, ObjectStorageQueueOrderedFileMetadata::BucketInfoPtr>
+ObjectStorageQueueSource::FileIterator::getNextKeyFromAcquiredBucket(size_t processor)
 {
     auto bucket_holder_it = bucket_holders.emplace(processor, std::vector<BucketHolderPtr>{}).first;
     BucketHolder * current_bucket_holder = bucket_holder_it->second.empty() || bucket_holder_it->second.back()->isFinished()
@@ -234,7 +227,7 @@ StorageS3QueueSource::FileIterator::getNextKeyFromAcquiredBucket(size_t processo
             }
         }
         /// If processing thread has already acquired some bucket
-        /// and while listing s3 directory gets a key which is in a different bucket,
+        /// and while listing object storage directory gets a key which is in a different bucket,
         /// it puts the key into listed_keys_cache to allow others to process it,
         /// because one processing thread can acquire only one bucket at a time.
         /// Once a thread is finished with its acquired bucket, it checks listed_keys_cache
@@ -361,19 +354,19 @@ StorageS3QueueSource::FileIterator::getNextKeyFromAcquiredBucket(size_t processo
     }
 }
 
-StorageS3QueueSource::StorageS3QueueSource(
+ObjectStorageQueueSource::ObjectStorageQueueSource(
     String name_,
     size_t processor_id_,
     const Block & header_,
     std::unique_ptr<StorageObjectStorageSource> internal_source_,
-    std::shared_ptr<S3QueueMetadata> files_metadata_,
-    const S3QueueAction & action_,
+    std::shared_ptr<ObjectStorageQueueMetadata> files_metadata_,
+    const ObjectStorageQueueAction & action_,
     RemoveFileFunc remove_file_func_,
     const NamesAndTypesList & requested_virtual_columns_,
     ContextPtr context_,
     const std::atomic<bool> & shutdown_called_,
     const std::atomic<bool> & table_is_being_dropped_,
-    std::shared_ptr<S3QueueLog> s3_queue_log_,
+    std::shared_ptr<ObjectStorageQueueLog> system_queue_log_,
     const StorageID & storage_id_,
     LoggerPtr log_,
     size_t max_processed_files_before_commit_,
@@ -391,7 +384,7 @@ StorageS3QueueSource::StorageS3QueueSource(
     , requested_virtual_columns(requested_virtual_columns_)
     , shutdown_called(shutdown_called_)
     , table_is_being_dropped(table_is_being_dropped_)
-    , s3_queue_log(s3_queue_log_)
+    , system_queue_log(system_queue_log_)
     , storage_id(storage_id_)
     , max_processed_files_before_commit(max_processed_files_before_commit_)
     , max_processed_rows_before_commit(max_processed_rows_before_commit_)
@@ -403,12 +396,12 @@ StorageS3QueueSource::StorageS3QueueSource(
 {
 }
 
-String StorageS3QueueSource::getName() const
+String ObjectStorageQueueSource::getName() const
 {
     return name;
 }
 
-void StorageS3QueueSource::lazyInitialize(size_t processor)
+void ObjectStorageQueueSource::lazyInitialize(size_t processor)
 {
     if (initialized)
         return;
@@ -423,7 +416,7 @@ void StorageS3QueueSource::lazyInitialize(size_t processor)
     initialized = true;
 }
 
-Chunk StorageS3QueueSource::generate()
+Chunk ObjectStorageQueueSource::generate()
 {
     Chunk chunk;
     try
@@ -445,7 +438,7 @@ Chunk StorageS3QueueSource::generate()
     return chunk;
 }
 
-Chunk StorageS3QueueSource::generateImpl()
+Chunk ObjectStorageQueueSource::generateImpl()
 {
     lazyInitialize(processor_id);
 
@@ -457,7 +450,7 @@ Chunk StorageS3QueueSource::generateImpl()
             break;
         }
 
-        const auto * object_info = dynamic_cast<const S3QueueObjectInfo *>(reader.getObjectInfo().get());
+        const auto * object_info = dynamic_cast<const ObjectStorageQueueObjectInfo *>(reader.getObjectInfo().get());
         auto file_metadata = object_info->file_metadata;
         auto file_status = file_metadata->getFileStatus();
 
@@ -522,11 +515,11 @@ Chunk StorageS3QueueSource::generateImpl()
 
         auto * prev_scope = CurrentThread::get().attachProfileCountersScope(&file_status->profile_counters);
         SCOPE_EXIT({ CurrentThread::get().attachProfileCountersScope(prev_scope); });
-        /// FIXME:  if files are compressed, profile counters update does not work fully (s3 related counters are not saved). Why?
+        /// FIXME:  if files are compressed, profile counters update does not work fully (object storage related counters are not saved). Why?
 
         try
         {
-            auto timer = DB::CurrentThread::getProfileEvents().timer(ProfileEvents::S3QueuePullMicroseconds);
+            auto timer = DB::CurrentThread::getProfileEvents().timer(ProfileEvents::ObjectStorageQueuePullMicroseconds);
 
             Chunk chunk;
             if (reader->pull(chunk))
@@ -657,7 +650,7 @@ Chunk StorageS3QueueSource::generateImpl()
     return {};
 }
 
-void StorageS3QueueSource::commit(bool success, const std::string & exception_message)
+void ObjectStorageQueueSource::commit(bool success, const std::string & exception_message)
 {
     LOG_TEST(log, "Having {} files to set as {}, failed files: {}",
              processed_files.size(), success ? "Processed" : "Failed", failed_during_read_files.size());
@@ -687,33 +680,33 @@ void StorageS3QueueSource::commit(bool success, const std::string & exception_me
     }
 }
 
-void StorageS3QueueSource::applyActionAfterProcessing(const String & path)
+void ObjectStorageQueueSource::applyActionAfterProcessing(const String & path)
 {
     switch (action)
     {
-        case S3QueueAction::DELETE:
+        case ObjectStorageQueueAction::DELETE:
         {
             assert(remove_file_func);
             remove_file_func(path);
             break;
         }
-        case S3QueueAction::KEEP:
+        case ObjectStorageQueueAction::KEEP:
             break;
     }
 }
 
-void StorageS3QueueSource::appendLogElement(
+void ObjectStorageQueueSource::appendLogElement(
     const std::string & filename,
-    S3QueueMetadata::FileStatus & file_status_,
+    ObjectStorageQueueMetadata::FileStatus & file_status_,
     size_t processed_rows,
     bool processed)
 {
-    if (!s3_queue_log)
+    if (!system_queue_log)
         return;
 
-    S3QueueLogElement elem{};
+    ObjectStorageQueueLogElement elem{};
     {
-        elem = S3QueueLogElement
+        elem = ObjectStorageQueueLogElement
         {
             .event_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()),
             .database = storage_id.database_name,
@@ -721,14 +714,14 @@ void StorageS3QueueSource::appendLogElement(
             .uuid = toString(storage_id.uuid),
             .file_name = filename,
             .rows_processed = processed_rows,
-            .status = processed ? S3QueueLogElement::S3QueueStatus::Processed : S3QueueLogElement::S3QueueStatus::Failed,
+            .status = processed ? ObjectStorageQueueLogElement::ObjectStorageQueueStatus::Processed : ObjectStorageQueueLogElement::ObjectStorageQueueStatus::Failed,
             .counters_snapshot = file_status_.profile_counters.getPartiallyAtomicSnapshot(),
             .processing_start_time = file_status_.processing_start_time,
             .processing_end_time = file_status_.processing_end_time,
             .exception = file_status_.getException(),
         };
     }
-    s3_queue_log->add(std::move(elem));
+    system_queue_log->add(std::move(elem));
 }
 
 }

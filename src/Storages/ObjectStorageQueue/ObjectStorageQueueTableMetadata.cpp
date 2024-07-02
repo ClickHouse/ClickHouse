@@ -3,9 +3,9 @@
 #include <Poco/JSON/JSON.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
-#include <Storages/S3Queue/S3QueueSettings.h>
-#include <Storages/S3Queue/S3QueueTableMetadata.h>
-#include <Storages/S3Queue/S3QueueMetadata.h>
+#include <Storages/ObjectStorageQueue/ObjectStorageQueueSettings.h>
+#include <Storages/ObjectStorageQueue/ObjectStorageQueueTableMetadata.h>
+#include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadata.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 
 
@@ -20,33 +20,33 @@ namespace ErrorCodes
 
 namespace
 {
-    S3QueueMode modeFromString(const std::string & mode)
+    ObjectStorageQueueMode modeFromString(const std::string & mode)
     {
         if (mode == "ordered")
-            return S3QueueMode::ORDERED;
+            return ObjectStorageQueueMode::ORDERED;
         if (mode == "unordered")
-            return S3QueueMode::UNORDERED;
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected S3Queue mode: {}", mode);
+            return ObjectStorageQueueMode::UNORDERED;
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected ObjectStorageQueue mode: {}", mode);
     }
 }
 
 
-S3QueueTableMetadata::S3QueueTableMetadata(
+ObjectStorageQueueTableMetadata::ObjectStorageQueueTableMetadata(
     const StorageObjectStorage::Configuration & configuration,
-    const S3QueueSettings & engine_settings,
+    const ObjectStorageQueueSettings & engine_settings,
     const StorageInMemoryMetadata & storage_metadata)
 {
     format_name = configuration.format;
     after_processing = engine_settings.after_processing.toString();
     mode = engine_settings.mode.toString();
-    tracked_files_limit = engine_settings.s3queue_tracked_files_limit;
-    tracked_file_ttl_sec = engine_settings.s3queue_tracked_file_ttl_sec;
-    buckets = engine_settings.s3queue_buckets;
-    processing_threads_num = engine_settings.s3queue_processing_threads_num;
+    tracked_files_limit = engine_settings.tracked_files_limit;
+    tracked_file_ttl_sec = engine_settings.tracked_file_ttl_sec;
+    buckets = engine_settings.buckets;
+    processing_threads_num = engine_settings.processing_threads_num;
     columns = storage_metadata.getColumns().toString();
 }
 
-String S3QueueTableMetadata::toString() const
+String ObjectStorageQueueTableMetadata::toString() const
 {
     Poco::JSON::Object json;
     json.set("after_processing", after_processing);
@@ -65,7 +65,7 @@ String S3QueueTableMetadata::toString() const
     return oss.str();
 }
 
-void S3QueueTableMetadata::read(const String & metadata_str)
+void ObjectStorageQueueTableMetadata::read(const String & metadata_str)
 {
     Poco::JSON::Parser parser;
     auto json = parser.parse(metadata_str).extract<Poco::JSON::Object::Ptr>();
@@ -102,19 +102,19 @@ void S3QueueTableMetadata::read(const String & metadata_str)
         buckets = json->getValue<UInt64>("buckets");
 }
 
-S3QueueTableMetadata S3QueueTableMetadata::parse(const String & metadata_str)
+ObjectStorageQueueTableMetadata ObjectStorageQueueTableMetadata::parse(const String & metadata_str)
 {
-    S3QueueTableMetadata metadata;
+    ObjectStorageQueueTableMetadata metadata;
     metadata.read(metadata_str);
     return metadata;
 }
 
-void S3QueueTableMetadata::checkEquals(const S3QueueTableMetadata & from_zk) const
+void ObjectStorageQueueTableMetadata::checkEquals(const ObjectStorageQueueTableMetadata & from_zk) const
 {
     checkImmutableFieldsEquals(from_zk);
 }
 
-void S3QueueTableMetadata::checkImmutableFieldsEquals(const S3QueueTableMetadata & from_zk) const
+void ObjectStorageQueueTableMetadata::checkImmutableFieldsEquals(const ObjectStorageQueueTableMetadata & from_zk) const
 {
     if (after_processing != from_zk.after_processing)
         throw Exception(
@@ -164,29 +164,29 @@ void S3QueueTableMetadata::checkImmutableFieldsEquals(const S3QueueTableMetadata
             from_zk.last_processed_path,
             last_processed_path);
 
-    if (modeFromString(mode) == S3QueueMode::ORDERED)
+    if (modeFromString(mode) == ObjectStorageQueueMode::ORDERED)
     {
         if (buckets != from_zk.buckets)
         {
             throw Exception(
                 ErrorCodes::METADATA_MISMATCH,
-                "Existing table metadata in ZooKeeper differs in s3queue_buckets setting. "
+                "Existing table metadata in ZooKeeper differs in buckets setting. "
                 "Stored in ZooKeeper: {}, local: {}",
                 from_zk.buckets, buckets);
         }
 
-        if (S3QueueMetadata::getBucketsNum(*this) != S3QueueMetadata::getBucketsNum(from_zk))
+        if (ObjectStorageQueueMetadata::getBucketsNum(*this) != ObjectStorageQueueMetadata::getBucketsNum(from_zk))
         {
             throw Exception(
                 ErrorCodes::METADATA_MISMATCH,
                 "Existing table metadata in ZooKeeper differs in processing buckets. "
                 "Stored in ZooKeeper: {}, local: {}",
-                S3QueueMetadata::getBucketsNum(*this), S3QueueMetadata::getBucketsNum(from_zk));
+                ObjectStorageQueueMetadata::getBucketsNum(*this), ObjectStorageQueueMetadata::getBucketsNum(from_zk));
         }
     }
 }
 
-void S3QueueTableMetadata::checkEquals(const S3QueueSettings & current, const S3QueueSettings & expected)
+void ObjectStorageQueueTableMetadata::checkEquals(const ObjectStorageQueueSettings & current, const ObjectStorageQueueSettings & expected)
 {
     if (current.after_processing != expected.after_processing)
         throw Exception(
@@ -204,48 +204,48 @@ void S3QueueTableMetadata::checkEquals(const S3QueueSettings & current, const S3
             expected.mode.toString(),
             current.mode.toString());
 
-    if (current.s3queue_tracked_files_limit != expected.s3queue_tracked_files_limit)
+    if (current.tracked_files_limit != expected.tracked_files_limit)
         throw Exception(
             ErrorCodes::METADATA_MISMATCH,
             "Existing table metadata in ZooKeeper differs in max set size. "
             "Stored in ZooKeeper: {}, local: {}",
-            expected.s3queue_tracked_files_limit,
-            current.s3queue_tracked_files_limit);
+            expected.tracked_files_limit,
+            current.tracked_files_limit);
 
-    if (current.s3queue_tracked_file_ttl_sec != expected.s3queue_tracked_file_ttl_sec)
+    if (current.tracked_file_ttl_sec != expected.tracked_file_ttl_sec)
         throw Exception(
             ErrorCodes::METADATA_MISMATCH,
             "Existing table metadata in ZooKeeper differs in max set age. "
             "Stored in ZooKeeper: {}, local: {}",
-            expected.s3queue_tracked_file_ttl_sec,
-            current.s3queue_tracked_file_ttl_sec);
+            expected.tracked_file_ttl_sec,
+            current.tracked_file_ttl_sec);
 
-    if (current.s3queue_last_processed_path.value != expected.s3queue_last_processed_path.value)
+    if (current.last_processed_path.value != expected.last_processed_path.value)
         throw Exception(
             ErrorCodes::METADATA_MISMATCH,
             "Existing table metadata in ZooKeeper differs in last_processed_path. "
             "Stored in ZooKeeper: {}, local: {}",
-            expected.s3queue_last_processed_path.value,
-            current.s3queue_last_processed_path.value);
+            expected.last_processed_path.value,
+            current.last_processed_path.value);
 
-    if (current.mode == S3QueueMode::ORDERED)
+    if (current.mode == ObjectStorageQueueMode::ORDERED)
     {
-        if (current.s3queue_buckets != expected.s3queue_buckets)
+        if (current.buckets != expected.buckets)
         {
             throw Exception(
                 ErrorCodes::METADATA_MISMATCH,
-                "Existing table metadata in ZooKeeper differs in s3queue_buckets setting. "
+                "Existing table metadata in ZooKeeper differs in buckets setting. "
                 "Stored in ZooKeeper: {}, local: {}",
-                expected.s3queue_buckets, current.s3queue_buckets);
+                expected.buckets, current.buckets);
         }
 
-        if (S3QueueMetadata::getBucketsNum(current) != S3QueueMetadata::getBucketsNum(expected))
+        if (ObjectStorageQueueMetadata::getBucketsNum(current) != ObjectStorageQueueMetadata::getBucketsNum(expected))
         {
             throw Exception(
                 ErrorCodes::METADATA_MISMATCH,
                 "Existing table metadata in ZooKeeper differs in processing buckets. "
                 "Stored in ZooKeeper: {}, local: {}",
-                S3QueueMetadata::getBucketsNum(current), S3QueueMetadata::getBucketsNum(expected));
+                ObjectStorageQueueMetadata::getBucketsNum(current), ObjectStorageQueueMetadata::getBucketsNum(expected));
         }
     }
 }

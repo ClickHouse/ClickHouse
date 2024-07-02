@@ -15,7 +15,7 @@ class SchemaCache;
 
 class StorageObjectStorageSource : public SourceWithKeyCondition, WithContext
 {
-    friend class StorageS3QueueSource;
+    friend class ObjectStorageQueueSource;
 public:
     using Configuration = StorageObjectStorage::Configuration;
     using ConfigurationPtr = StorageObjectStorage::ConfigurationPtr;
