@@ -25,6 +25,7 @@
 #include <Storages/buildQueryTreeForShard.h>
 #include <Planner/Utils.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Processors/QueryPlan/ParallelReplicasLocalPlan.h>
 
 namespace DB
 {
@@ -403,7 +404,8 @@ void executeQueryWithParallelReplicas(
     QueryProcessingStage::Enum processed_stage,
     const ASTPtr & query_ast,
     ContextPtr context,
-    std::shared_ptr<const StorageLimitsList> storage_limits)
+    std::shared_ptr<const StorageLimitsList> storage_limits,
+    QueryPlanStepPtr analyzed_read_from_merge_tree)
 {
     auto logger = getLogger("executeQueryWithParallelReplicas");
     LOG_DEBUG(logger, "Executing read from {}, header {}, query ({}), stage {} with parallel replicas",
@@ -487,24 +489,74 @@ void executeQueryWithParallelReplicas(
                 "`cluster_for_parallel_replicas` setting refers to cluster with several shards. Expected a cluster with one shard");
     }
 
-    auto coordinator = std::make_shared<ParallelReplicasReadingCoordinator>(
-        new_cluster->getShardsInfo().begin()->getAllNodeCount(), settings.parallel_replicas_mark_segment_size);
-    auto external_tables = new_context->getExternalTables();
-    auto read_from_remote = std::make_unique<ReadFromParallelRemoteReplicasStep>(
-        query_ast,
-        new_cluster,
-        storage_id,
-        std::move(coordinator),
-        header,
-        processed_stage,
-        new_context,
-        getThrottler(new_context),
-        std::move(scalars),
-        std::move(external_tables),
-        getLogger("ReadFromParallelRemoteReplicasStep"),
-        std::move(storage_limits));
+    auto replica_count = new_cluster->getShardsInfo().begin()->getAllNodeCount();
+    if (settings.max_parallel_replicas < replica_count)
+        replica_count = settings.max_parallel_replicas;
 
-    query_plan.addStep(std::move(read_from_remote));
+    auto coordinator = std::make_shared<ParallelReplicasReadingCoordinator>(replica_count, settings.parallel_replicas_mark_segment_size);
+
+    auto external_tables = new_context->getExternalTables();
+
+    /// do not build local plan for distributed queries for now (address it later)
+    if (settings.allow_experimental_analyzer && settings.parallel_replicas_local_plan && !shard_num)
+    {
+        auto local_plan = createLocalPlanForParallelReplicas(
+            query_ast,
+            header,
+            new_context,
+            processed_stage,
+            coordinator,
+            std::move(analyzed_read_from_merge_tree));
+
+        auto read_from_remote = std::make_unique<ReadFromParallelRemoteReplicasStep>(
+            query_ast,
+            new_cluster,
+            storage_id,
+            coordinator,
+            header,
+            processed_stage,
+            new_context,
+            getThrottler(new_context),
+            std::move(scalars),
+            std::move(external_tables),
+            getLogger("ReadFromParallelRemoteReplicasStep"),
+            std::move(storage_limits),
+            /*exclude_local_replica*/ true);
+
+        auto remote_plan = std::make_unique<QueryPlan>();
+        remote_plan->addStep(std::move(read_from_remote));
+
+        DataStreams input_streams;
+        input_streams.reserve(2);
+        input_streams.emplace_back(local_plan->getCurrentDataStream());
+        input_streams.emplace_back(remote_plan->getCurrentDataStream());
+
+        std::vector<QueryPlanPtr> plans;
+        plans.emplace_back(std::move(local_plan));
+        plans.emplace_back(std::move(remote_plan));
+
+        auto union_step = std::make_unique<UnionStep>(std::move(input_streams));
+        query_plan.unitePlans(std::move(union_step), std::move(plans));
+    }
+    else
+    {
+        auto read_from_remote = std::make_unique<ReadFromParallelRemoteReplicasStep>(
+            query_ast,
+            new_cluster,
+            storage_id,
+            std::move(coordinator),
+            header,
+            processed_stage,
+            new_context,
+            getThrottler(new_context),
+            std::move(scalars),
+            std::move(external_tables),
+            getLogger("ReadFromParallelRemoteReplicasStep"),
+            std::move(storage_limits),
+            /*exclude_local_replica*/ false);
+
+        query_plan.addStep(std::move(read_from_remote));
+    }
 }
 
 void executeQueryWithParallelReplicas(
@@ -514,7 +566,8 @@ void executeQueryWithParallelReplicas(
     const QueryTreeNodePtr & query_tree,
     const PlannerContextPtr & planner_context,
     ContextPtr context,
-    std::shared_ptr<const StorageLimitsList> storage_limits)
+    std::shared_ptr<const StorageLimitsList> storage_limits,
+    QueryPlanStepPtr analyzed_read_from_merge_tree)
 {
     QueryTreeNodePtr modified_query_tree = query_tree->clone();
     rewriteJoinToGlobalJoin(modified_query_tree, context);
@@ -524,7 +577,8 @@ void executeQueryWithParallelReplicas(
         = InterpreterSelectQueryAnalyzer::getSampleBlock(modified_query_tree, context, SelectQueryOptions(processed_stage).analyze());
     auto modified_query_ast = queryNodeToDistributedSelectQuery(modified_query_tree);
 
-    executeQueryWithParallelReplicas(query_plan, storage_id, header, processed_stage, modified_query_ast, context, storage_limits);
+    executeQueryWithParallelReplicas(
+        query_plan, storage_id, header, processed_stage, modified_query_ast, context, storage_limits, std::move(analyzed_read_from_merge_tree));
 }
 
 void executeQueryWithParallelReplicas(

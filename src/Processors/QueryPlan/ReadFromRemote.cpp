@@ -369,7 +369,8 @@ ReadFromParallelRemoteReplicasStep::ReadFromParallelRemoteReplicasStep(
     Scalars scalars_,
     Tables external_tables_,
     LoggerPtr log_,
-    std::shared_ptr<const StorageLimitsList> storage_limits_)
+    std::shared_ptr<const StorageLimitsList> storage_limits_,
+    bool exclude_local_replica_)
     : ISourceStep(DataStream{.header = std::move(header_)})
     , cluster(cluster_)
     , query_ast(query_ast_)
@@ -382,16 +383,33 @@ ReadFromParallelRemoteReplicasStep::ReadFromParallelRemoteReplicasStep(
     , external_tables{external_tables_}
     , storage_limits(std::move(storage_limits_))
     , log(log_)
+    , exclude_local_replica(exclude_local_replica_)
 {
     chassert(cluster->getShardCount() == 1);
 
-    std::vector<String> description;
-    description.push_back(fmt::format("query: {}", formattedAST(query_ast)));
+    std::vector<String> replicas;
+    replicas.reserve(cluster->getShardsAddresses().front().size());
 
-    for (const auto & pool : cluster->getShardsInfo().front().per_replica_pools)
-        description.push_back(fmt::format("Replica: {}", pool->getHost()));
+    bool first_local = false;
+    for (const auto & addr : cluster->getShardsAddresses().front())
+    {
+        /// skip first local
+        if (exclude_local_replica && addr.is_local && !first_local)
+        {
+            first_local = true;
+            continue;
+        }
 
-    setStepDescription(boost::algorithm::join(description, ", "));
+        /// replace hostname with replica name if the hostname started with replica namespace,
+        /// it makes description shorter and more readable
+        if (!addr.database_replica_name.empty() && addr.host_name.starts_with(addr.database_replica_name))
+            replicas.push_back(fmt::format("{}", addr.database_replica_name));
+        else
+            replicas.push_back(fmt::format("{}", addr.host_name));
+    }
+
+    auto description = fmt::format("Query: {} Replicas: ", formattedAST(query_ast)) + boost::algorithm::join(replicas, ", ");
+    setStepDescription(std::move(description));
 }
 
 void ReadFromParallelRemoteReplicasStep::enforceSorting(SortDescription output_sort_description)
@@ -427,7 +445,6 @@ void ReadFromParallelRemoteReplicasStep::initializePipeline(QueryPipelineBuilder
     if (all_replicas_count < shard.getAllNodeCount())
     {
         shuffled_pool = shard.pool->getShuffledPools(current_settings);
-        shuffled_pool.resize(all_replicas_count);
     }
     else
     {
@@ -437,16 +454,64 @@ void ReadFromParallelRemoteReplicasStep::initializePipeline(QueryPipelineBuilder
         shuffled_pool = shard.pool->getShuffledPools(current_settings, priority_func);
     }
 
-    for (size_t i=0; i < all_replicas_count; ++i)
+    std::vector<ConnectionPoolPtr> pools_to_use;
+    pools_to_use.reserve(shuffled_pool.size());
+    if (exclude_local_replica)
     {
-        IConnections::ReplicaInfo replica_info
+        std::vector<size_t> local_addr_possitions;
+        for (auto & pool : shuffled_pool)
         {
+            const auto & hostname = pool.pool->getHost();
+            auto it = std::find_if(
+                begin(shard.local_addresses),
+                end(shard.local_addresses),
+                [&hostname](const Cluster::Address & local_addr) { return hostname == local_addr.host_name; });
+            if (it != shard.local_addresses.end())
+            {
+                pool.pool.reset();
+            }
+        }
+    }
+    for (const auto & pool : shuffled_pool)
+    {
+        if (pool.pool)
+            pools_to_use.push_back(pool.pool);
+    }
+
+    LOG_DEBUG(
+        getLogger("ReadFromParallelRemoteReplicasStep"),
+        "Number of pools to use is {}. Originally {}",
+        pools_to_use.size(),
+        shuffled_pool.size());
+
+    if (pools_to_use.size() > all_replicas_count)
+        pools_to_use.resize(all_replicas_count);
+
+    if (exclude_local_replica && !pools_to_use.empty())
+        pools_to_use.resize(all_replicas_count - 1);
+
+    if (pools_to_use.empty())
+        return;
+
+    {
+        String pool_addresses;
+        for (const auto & pool : pools_to_use)
+            pool_addresses += pool->getAddress() + ";";
+
+        LOG_DEBUG(getLogger("ReadFromParallelRemoteReplicasStep"), "Addresses to use: {}", pool_addresses);
+    }
+
+    /// local replicas has number 0
+    size_t offset = (exclude_local_replica ? 1 : 0);
+    for (size_t i = 0 + offset; i < all_replicas_count; ++i)
+    {
+        IConnections::ReplicaInfo replica_info{
             .all_replicas_count = all_replicas_count,
             /// we should use this number specifically because efficiency of data distribution by consistent hash depends on it.
             .number_of_current_replica = i,
         };
 
-        addPipeForSingeReplica(pipes, shuffled_pool[i].pool, replica_info);
+        addPipeForSingeReplica(pipes, pools_to_use[i - offset], replica_info);
     }
 
     auto pipe = Pipe::unitePipes(std::move(pipes));

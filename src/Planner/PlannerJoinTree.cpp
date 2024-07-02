@@ -911,8 +911,10 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     if (settings.parallel_replicas_min_number_of_rows_per_replica > 0)
                     {
                         auto result_ptr = reading->selectRangesToRead();
-
                         UInt64 rows_to_read = result_ptr->selected_rows;
+
+                        reading->setAnalyzedResult(std::move(result_ptr));
+
                         if (table_expression_query_info.trivial_limit > 0 && table_expression_query_info.trivial_limit < rows_to_read)
                             rows_to_read = table_expression_query_info.trivial_limit;
 
@@ -945,6 +947,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     {
                         from_stage = QueryProcessingStage::WithMergeableState;
                         QueryPlan query_plan_parallel_replicas;
+                        QueryPlanStepPtr reading_step = std::move(node->step);
                         ClusterProxy::executeQueryWithParallelReplicas(
                             query_plan_parallel_replicas,
                             storage->getStorageID(),
@@ -952,8 +955,35 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                             table_expression_query_info.query_tree,
                             table_expression_query_info.planner_context,
                             query_context,
-                            table_expression_query_info.storage_limits);
+                            table_expression_query_info.storage_limits,
+                            std::move(reading_step));
                         query_plan = std::move(query_plan_parallel_replicas);
+
+                        if (settings.parallel_replicas_local_plan)
+                        {
+                            const auto old_max_threads = query_plan.getMaxThreads();
+                            query_plan.setMaxThreads(old_max_threads * 2);
+
+                            LOG_TRACE(
+                                getLogger("Planner"),
+                                "Increase max threads from {} to {} to have similar number of threads to remote plan",
+                                old_max_threads,
+                                query_plan.getMaxThreads());
+                        }
+                    }
+                    else
+                    {
+                        QueryPlan query_plan_no_parallel_replicas;
+                        storage->read(
+                            query_plan_no_parallel_replicas,
+                            columns_names,
+                            storage_snapshot,
+                            table_expression_query_info,
+                            query_context,
+                            from_stage,
+                            max_block_size,
+                            max_streams);
+                        query_plan = std::move(query_plan_no_parallel_replicas);
                     }
                 }
 

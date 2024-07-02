@@ -30,6 +30,9 @@ using QueryTreeNodePtr = std::shared_ptr<IQueryTreeNode>;
 class PlannerContext;
 using PlannerContextPtr = std::shared_ptr<PlannerContext>;
 
+class IQueryPlanStep;
+using QueryPlanStepPtr = std::unique_ptr<IQueryPlanStep>;
+
 namespace ClusterProxy
 {
 
@@ -73,7 +76,8 @@ void executeQueryWithParallelReplicas(
     QueryProcessingStage::Enum processed_stage,
     const ASTPtr & query_ast,
     ContextPtr context,
-    std::shared_ptr<const StorageLimitsList> storage_limits);
+    std::shared_ptr<const StorageLimitsList> storage_limits,
+    QueryPlanStepPtr read_from_merge_tree = nullptr);
 
 void executeQueryWithParallelReplicas(
     QueryPlan & query_plan,
@@ -90,7 +94,8 @@ void executeQueryWithParallelReplicas(
     const QueryTreeNodePtr & query_tree,
     const PlannerContextPtr & planner_context,
     ContextPtr context,
-    std::shared_ptr<const StorageLimitsList> storage_limits);
+    std::shared_ptr<const StorageLimitsList> storage_limits,
+    QueryPlanStepPtr read_from_merge_tree);
 }
 
 }
