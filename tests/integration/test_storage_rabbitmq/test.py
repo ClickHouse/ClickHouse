@@ -702,7 +702,7 @@ def test_rabbitmq_sharding_between_queues_publish(rabbitmq_cluster):
 
     assert (
         int(result1) == messages_num * threads_num
-    ), "ClickHouse lost some messages: {}".format(result)
+    ), "ClickHouse lost some messages: {}".format(result1)
     assert int(result2) == 10
 
 
@@ -1516,7 +1516,7 @@ def test_rabbitmq_hash_exchange(rabbitmq_cluster):
 
     assert (
         int(result1) == messages_num * threads_num
-    ), "ClickHouse lost some messages: {}".format(result)
+    ), "ClickHouse lost some messages: {}".format(result1)
     assert int(result2) == 4 * num_tables
 
 
@@ -1966,7 +1966,7 @@ def test_rabbitmq_many_consumers_to_each_queue(rabbitmq_cluster):
 
     assert (
         int(result1) == messages_num * threads_num
-    ), "ClickHouse lost some messages: {}".format(result)
+    ), "ClickHouse lost some messages: {}".format(result1)
     # 4 tables, 2 consumers for each table => 8 consumer tags
     assert int(result2) == 8
 
@@ -2427,9 +2427,7 @@ def test_rabbitmq_drop_table_properly(rabbitmq_cluster):
     time.sleep(30)
 
     try:
-        exists = channel.queue_declare(
-            callback, queue="rabbit_queue_drop", passive=True
-        )
+        exists = channel.queue_declare(queue="rabbit_queue_drop", passive=True)
     except Exception as e:
         exists = False
 
@@ -3364,7 +3362,7 @@ def test_rabbitmq_flush_by_block_size(rabbitmq_cluster):
                     routing_key="",
                     body=json.dumps({"key": 0, "value": 0}),
                 )
-            except e:
+            except Exception as e:
                 logging.debug(f"Got error: {str(e)}")
 
     produce_thread = threading.Thread(target=produce)
@@ -3442,7 +3440,7 @@ def test_rabbitmq_flush_by_time(rabbitmq_cluster):
                 )
                 logging.debug("Produced a message")
                 time.sleep(0.8)
-            except e:
+            except Exception as e:
                 logging.debug(f"Got error: {str(e)}")
 
     produce_thread = threading.Thread(target=produce)

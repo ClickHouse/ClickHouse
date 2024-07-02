@@ -1759,11 +1759,14 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
 
     ThreadPoolCallbackRunnerLocal<void> runner(getActivePartsLoadingThreadPool().get(), "ActiveParts");
 
+    bool all_disks_are_readonly = true;
     for (size_t i = 0; i < disks.size(); ++i)
     {
         const auto & disk_ptr = disks[i];
         if (disk_ptr->isBroken())
             continue;
+        if (!disk_ptr->isReadOnly())
+            all_disks_are_readonly = false;
 
         auto & disk_parts = parts_to_load_by_disk[i];
         auto & unexpected_disk_parts = unexpected_parts_to_load_by_disk[i];
@@ -1916,7 +1919,6 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
     if (suspicious_broken_unexpected_parts != 0)
         LOG_WARNING(log, "Found suspicious broken unexpected parts {} with total rows count {}", suspicious_broken_unexpected_parts, suspicious_broken_unexpected_parts_bytes);
 
-
     if (!is_static_storage)
         for (auto & part : broken_parts_to_detach)
             part->renameToDetached("broken-on-start"); /// detached parts must not have '_' in prefixes
@@ -1961,7 +1963,8 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
             unloaded_parts.push_back(node);
     });
 
-    if (!unloaded_parts.empty())
+    /// By the way, if all disks are readonly, it does not make sense to load outdated parts (we will not own them).
+    if (!unloaded_parts.empty() && !all_disks_are_readonly)
     {
         LOG_DEBUG(log, "Found {} outdated data parts. They will be loaded asynchronously", unloaded_parts.size());
 
@@ -1981,6 +1984,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
 }
 
 void MergeTreeData::loadUnexpectedDataParts()
+try
 {
     {
         std::lock_guard lock(unexpected_data_parts_mutex);
@@ -1996,6 +2000,9 @@ void MergeTreeData::loadUnexpectedDataParts()
     }
 
     ThreadFuzzer::maybeInjectSleep();
+
+    auto blocker = CannotAllocateThreadFaultInjector::blockFaultInjections();
+
     ThreadPoolCallbackRunnerLocal<void> runner(getUnexpectedPartsLoadingThreadPool().get(), "UnexpectedParts");
 
     for (auto & load_state : unexpected_data_parts)
@@ -2026,6 +2033,13 @@ void MergeTreeData::loadUnexpectedDataParts()
         unexpected_data_parts_loading_finished = true;
         unexpected_data_parts_cv.notify_all();
     }
+}
+catch (...)
+{
+    LOG_ERROR(log, "Loading of unexpected parts failed. "
+        "Will terminate to avoid undefined behaviour due to inconsistent set of parts. "
+        "Exception: {}", getCurrentExceptionMessage(true));
+    std::terminate();
 }
 
 void MergeTreeData::loadOutdatedDataParts(bool is_async)
@@ -7050,7 +7064,7 @@ ActionDAGNodes MergeTreeData::getFiltersForPrimaryKeyAnalysis(const InterpreterS
         filter_nodes.nodes.push_back(&additional_filter_info->actions->findInOutputs(additional_filter_info->column_name));
 
     if (before_where)
-        filter_nodes.nodes.push_back(&before_where->findInOutputs(where_column_name));
+        filter_nodes.nodes.push_back(&before_where->dag.findInOutputs(where_column_name));
 
     return filter_nodes;
 }
@@ -7061,19 +7075,23 @@ QueryProcessingStage::Enum MergeTreeData::getQueryProcessingStage(
     const StorageSnapshotPtr &,
     SelectQueryInfo &) const
 {
-    if (query_context->getClientInfo().collaborate_with_initiator)
-        return QueryProcessingStage::Enum::FetchColumns;
-
-    /// Parallel replicas
-    if (query_context->canUseParallelReplicasOnInitiator() && to_stage >= QueryProcessingStage::WithMergeableState)
+    /// with new analyzer, Planner make decision regarding parallel replicas usage, and so about processing stage on reading
+    if (!query_context->getSettingsRef().allow_experimental_analyzer)
     {
-        /// ReplicatedMergeTree
-        if (supportsReplication())
-            return QueryProcessingStage::Enum::WithMergeableState;
+        if (query_context->getClientInfo().collaborate_with_initiator)
+            return QueryProcessingStage::Enum::FetchColumns;
 
-        /// For non-replicated MergeTree we allow them only if parallel_replicas_for_non_replicated_merge_tree is enabled
-        if (query_context->getSettingsRef().parallel_replicas_for_non_replicated_merge_tree)
-            return QueryProcessingStage::Enum::WithMergeableState;
+        /// Parallel replicas
+        if (query_context->canUseParallelReplicasOnInitiator() && to_stage >= QueryProcessingStage::WithMergeableState)
+        {
+            /// ReplicatedMergeTree
+            if (supportsReplication())
+                return QueryProcessingStage::Enum::WithMergeableState;
+
+            /// For non-replicated MergeTree we allow them only if parallel_replicas_for_non_replicated_merge_tree is enabled
+            if (query_context->getSettingsRef().parallel_replicas_for_non_replicated_merge_tree)
+                return QueryProcessingStage::Enum::WithMergeableState;
+        }
     }
 
     return QueryProcessingStage::Enum::FetchColumns;
@@ -7096,8 +7114,8 @@ UInt64 MergeTreeData::estimateNumberOfRowsToRead(
         query_context->getSettingsRef().max_threads);
 
     UInt64 total_rows = result_ptr->selected_rows;
-    if (query_info.limit > 0 && query_info.limit < total_rows)
-        total_rows = query_info.limit;
+    if (query_info.trivial_limit > 0 && query_info.trivial_limit < total_rows)
+        total_rows = query_info.trivial_limit;
     return total_rows;
 }
 
@@ -8067,6 +8085,13 @@ void MergeTreeData::checkDropCommandDoesntAffectInProgressMutations(const AlterC
                     if (identifiers.contains(command.column_name))
                         throw_exception(mutation_name, "column", command.column_name);
                 }
+            }
+            else if (command.type == AlterCommand::DROP_STATISTICS)
+            {
+                for (const auto & stats_col1 : command.statistics_columns)
+                    for (const auto & stats_col2 : mutation_command.statistics_columns)
+                        if (stats_col1 == stats_col2)
+                            throw_exception(mutation_name, "statistics", stats_col1);
             }
         }
     }
