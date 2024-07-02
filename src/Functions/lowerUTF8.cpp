@@ -1,9 +1,10 @@
-#include <DataTypes/DataTypeString.h>
+#include "config.h"
+
+#if USE_ICU
+
+#include <Functions/FunctionFactory.h>
 #include <Functions/FunctionStringToString.h>
 #include <Functions/LowerUpperUTF8Impl.h>
-#include <Functions/FunctionFactory.h>
-#include <Poco/Unicode.h>
-
 
 namespace DB
 {
@@ -15,7 +16,7 @@ struct NameLowerUTF8
     static constexpr auto name = "lowerUTF8";
 };
 
-using FunctionLowerUTF8 = FunctionStringToString<LowerUpperUTF8Impl<'A', 'Z', Poco::Unicode::toLower, UTF8CyrillicToCase<true>>, NameLowerUTF8>;
+using FunctionLowerUTF8 = FunctionStringToString<LowerUpperUTF8Impl<'A', 'Z', false>, NameLowerUTF8>;
 
 }
 
@@ -25,3 +26,5 @@ REGISTER_FUNCTION(LowerUTF8)
 }
 
 }
+
+#endif
