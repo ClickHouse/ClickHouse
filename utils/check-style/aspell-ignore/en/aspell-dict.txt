@@ -48,6 +48,7 @@ AutoML
 Autocompletion
 AvroConfluent
 BIGINT
+bigrams
 BIGSERIAL
 BORO
 BSON
@@ -574,6 +575,7 @@ MySQLDump
 MySQLThreads
 NATS
 NCHAR
+NDJSON
 NEKUDOTAYIM
 NEWDATE
 NEWDECIMAL
@@ -716,6 +718,8 @@ PlantUML
 PointDistKm
 PointDistM
 PointDistRads
+PostHistory
+PostLink
 PostgreSQLConnection
 PostgreSQLThreads
 Postgres
@@ -1008,12 +1012,13 @@ UncompressedCacheBytes
 UncompressedCacheCells
 UnidirectionalEdgeIsValid
 UniqThetaSketch
+unigrams
 Updatable
 Uppercased
 Uptime
 Uptrace
-UrlDecode
-UrlEncode
+URLDecode
+URLEncode
 UserID
 Util
 VARCHAR
@@ -1507,9 +1512,11 @@ deserializing
 destructor
 destructors
 detectCharset
+detectTonality
 detectLanguage
 detectLanguageMixed
 detectLanguageUnknown
+detectProgrammingLanguage
 determinator
 deterministically
 dictGet
@@ -1526,6 +1533,7 @@ disableProtocols
 disjunction
 disjunctions
 displaySecretsInShowAndSelect
+displayName
 distro
 divideDecimal
 dmesg
@@ -2257,6 +2265,7 @@ proleptic
 prometheus
 proportionsZTest
 proto
+protocol
 protobuf
 protobufsingle
 proxied
@@ -2510,6 +2519,7 @@ sqlite
 sqrt
 src
 srcReplicas
+stackoverflow
 stacktrace
 stacktraces
 startsWith
@@ -2848,6 +2858,7 @@ userver
 utils
 uuid
 uuidv
+vCPU
 varPop
 varPopStable
 varSamp

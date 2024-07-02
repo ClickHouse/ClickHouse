@@ -1003,6 +1003,8 @@ try
 
     ServerUUID::load(path / "uuid", log);
 
+    PlacementInfo::PlacementInfo::instance().initialize(config());
+
     zkutil::validateZooKeeperConfig(config());
     bool has_zookeeper = zkutil::hasZooKeeperConfig(config());
 
@@ -1540,6 +1542,8 @@ try
             global_context->setMaxDictionaryNumToWarn(new_server_settings.max_dictionary_num_to_warn);
             global_context->setMaxDatabaseNumToWarn(new_server_settings.max_database_num_to_warn);
             global_context->setMaxPartNumToWarn(new_server_settings.max_part_num_to_warn);
+            /// Only for system.server_settings
+            global_context->setConfigReloaderInterval(new_server_settings.config_reload_interval_ms);
 
             SlotCount concurrent_threads_soft_limit = UnlimitedSlots;
             if (new_server_settings.concurrent_threads_soft_limit_num > 0 && new_server_settings.concurrent_threads_soft_limit_num < concurrent_threads_soft_limit)
@@ -1702,8 +1706,7 @@ try
 
             /// Must be the last.
             latest_config = config;
-        },
-        /* already_loaded = */ false);  /// Reload it right now (initial loading)
+        });
 
     const auto listen_hosts = getListenHosts(config());
     const auto interserver_listen_hosts = getInterserverListenHosts(config());
@@ -1814,11 +1817,6 @@ try
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "ClickHouse server built without NuRaft library. Cannot use internal coordination.");
 #endif
 
-    }
-
-    if (config().has(DB::PlacementInfo::PLACEMENT_CONFIG_PREFIX))
-    {
-        PlacementInfo::PlacementInfo::instance().initialize(config());
     }
 
     {
