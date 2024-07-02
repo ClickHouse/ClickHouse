@@ -569,6 +569,8 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
             break;  /// If the block is empty - we will receive other packets before EndOfStream.
 
         case Protocol::Server::Exception:
+            if (read_context)
+                read_context->cancel();
             got_exception_from_replica = true;
             packet.exception->rethrow();
             break;
@@ -630,6 +632,8 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
             break;
 
         default:
+            if (read_context)
+                read_context->cancel();
             got_unknown_packet_from_replica = true;
             throw Exception(
                 ErrorCodes::UNKNOWN_PACKET_FROM_SERVER,
