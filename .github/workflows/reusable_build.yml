@@ -4,6 +4,10 @@
 env:
   # Force the stdout and stderr streams to be unbuffered
   PYTHONUNBUFFERED: 1
+  CLICKHOUSE_STABLE_VERSION_SUFFIX: altinitystable
+  AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+  AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION }}
+  AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
 
 name: Build ClickHouse
 'on':
@@ -33,6 +37,16 @@ name: Build ClickHouse
       additional_envs:
         description: additional ENV variables to setup the job
         type: string
+    secrets:
+      secret_envs:
+        description: if given, it's passed to the environments
+        required: false
+      AWS_SECRET_ACCESS_KEY:
+        description: the access key to the aws param store.
+        required: true
+      AWS_ACCESS_KEY_ID:
+        description: the access key id to the aws param store.
+        required: true
 
 jobs:
   Build:
@@ -40,10 +54,10 @@ jobs:
     if: ${{ contains(fromJson(inputs.data).jobs_data.jobs_to_do, inputs.build_name) || inputs.force }}
     env:
       GITHUB_JOB_OVERRIDDEN: Build-${{inputs.build_name}}
-    runs-on: [self-hosted, '${{inputs.runner_type}}']
+    runs-on: [self-hosted, altinity-setup-builder, altinity-type-ccx53, altinity-on-demand, altinity-in-ash, altinity-image-x86-system-ubuntu-22.04]
     steps:
       - name: Check out repository code
-        uses: ClickHouse/checkout@v1
+        uses: Altinity/checkout@19599efdf36c4f3f30eb55d5bb388896faea69f6
         with:
           clear-repository: true
           ref: ${{ fromJson(inputs.data).git_ref }}
@@ -93,6 +107,11 @@ jobs:
         if: ${{ !cancelled() }}
         run: |
           python3 "$GITHUB_WORKSPACE/tests/ci/ci.py" --infile ${{ toJson(inputs.data) }} --mark-success --job-name '${{inputs.build_name}}'
+      - name: Upload json report
+        uses: actions/upload-artifact@v4
+        with:
+          path: ${{ env.TEMP_PATH }}/build_report_*.json
+          name: build_report_${{inputs.build_name}}
       - name: Clean
         if: always()
         uses: ./.github/actions/clean

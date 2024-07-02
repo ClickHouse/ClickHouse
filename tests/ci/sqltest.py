@@ -13,7 +13,7 @@ from pr_info import PRInfo
 from report import SUCCESS, JobReport, TestResult
 from stopwatch import Stopwatch
 
-IMAGE_NAME = "clickhouse/sqltest"
+IMAGE_NAME = "altinityinfra/sqltest"
 
 
 def get_run_command(pr_number, sha, download_url, workspace_path, image):

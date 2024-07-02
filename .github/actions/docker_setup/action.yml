@@ -1,0 +1,29 @@
+name: Docker setup
+description: Setup docker
+inputs:
+  nested_job:
+    description: the fuse for unintended use inside of the reusable callable jobs
+    default: true
+    type: boolean
+runs:
+  using: "composite"
+  steps:
+    - name: Docker IPv6 configuration
+      shell: bash
+      run: |
+        # make sure docker uses proper IPv6 config
+        sudo touch /etc/docker/daemon.json
+        sudo chown ubuntu:ubuntu /etc/docker/daemon.json
+        sudo cat <<EOT > /etc/docker/daemon.json
+        {
+          "ipv6": true,
+          "fixed-cidr-v6": "2001:3984:3989::/64"
+        }
+        EOT
+        sudo chown root:root /etc/docker/daemon.json
+        sudo systemctl restart docker
+        sudo systemctl status docker
+    - name: Docker info
+      shell: bash
+      run: |
+        docker info

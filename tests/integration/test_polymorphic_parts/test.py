@@ -365,7 +365,7 @@ node7 = cluster.add_instance(
     "node7",
     user_configs=["configs_old/users.d/not_optimize_count.xml"],
     with_zookeeper=True,
-    image="clickhouse/clickhouse-server",
+    image="altinity/clickhouse-server",
     tag=CLICKHOUSE_CI_MIN_TESTED_VERSION,
     stay_alive=True,
     with_installed_binary=True,
