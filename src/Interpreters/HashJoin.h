@@ -214,6 +214,18 @@ public:
             filtered.shrink_to_fit(); /// selector never grows in size
             selector.swap(filtered);
         }
+
+        void filterBySelector()
+        {
+            for (auto & col : block->getColumns())
+            {
+                auto c = col->cloneEmpty();
+                c->reserve(selector.size());
+                for (const auto idx : selector)
+                    c->insertFrom(*col, idx);
+                col = std::move(c);
+            }
+        }
     };
 
     using ScatteredBlocks = std::vector<ScatteredBlock>;
