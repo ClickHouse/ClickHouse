@@ -19,11 +19,13 @@ concurrency:
           - patch
 
 jobs:
-  PushTagAndCreateGhRelease:
+  CreateRelease:
     outputs:
       GITHUB_TAG: ${{ steps.TagAndRelease.outputs.GITHUB_TAG }}
     runs-on: [self-hosted, style-checker-aarch64]
     steps:
+      - name: DebugInfo
+        uses: hmarr/debug-action@f7318c783045ac39ed9bb497e22ce835fdafbfe6
       - name: Set envs
         # https://docs.github.com/en/actions/learn-github-actions/workflow-commands-for-github-actions#multiline-strings
         run: |
@@ -58,7 +60,9 @@ jobs:
             fi
             echo "Alles goed - continue"
       - name: Docker version, Changelog, Security
-        if: $ {{ inputs.type == 'patch' }}
+        if: ${{ inputs.type == 'patch' }}
+        env:
+          GH_TOKEN: ${{ secrets.ROBOT_CLICKHOUSE_COMMIT_TOKEN }}
         run: |
           echo "Git status:"
           git status
@@ -69,27 +73,29 @@ jobs:
           echo "Generate ChangeLog"
           GID=$(id -g "${UID}")
           export CI=1
-          python3 ./tests/ci/changelog.py -v --debug-helpers \
-                  --gh-user-or-token="$GH_TOKEN" --jobs=5 \
-                  --output="docs/changelogs/${GITHUB_TAG}.md" "${GITHUB_TAG}"
+          docker run -u "${UID}:${GID}" -e PYTHONUNBUFFERED=1 -e CI=1 --network=host \
+            --volume=".:/ClickHouse" clickhouse/style-test \
+            /ClickHouse/tests/ci/changelog.py -v --debug-helpers \
+            --gh-user-or-token="$GH_TOKEN" --jobs=5 \
+            --output="/ClickHouse/docs/changelogs/${GITHUB_TAG}.md" "${GITHUB_TAG}"
           # git add "./docs/changelogs/${GITHUB_TAG}.md"
           echo "Generate Security"
           python3 ./utils/security-generator/generate_security.py > SECURITY.md
           git diff HEAD
-#      - name: Create Pull Request
-#        uses: peter-evans/create-pull-request@v6
-#        with:
-#          author: "robot-clickhouse <robot-clickhouse@users.noreply.github.com>"
-#          token: ${{ secrets.ROBOT_CLICKHOUSE_COMMIT_TOKEN }}
-#          committer: "robot-clickhouse <robot-clickhouse@users.noreply.github.com>"
-#          commit-message: Update version_date.tsv and changelogs after ${{ env.GITHUB_TAG }}
-#          branch: auto/${{ env.GITHUB_TAG }}
-#          assignees: ${{ github.event.sender.login }}  # assign the PR to the tag pusher
-#          delete-branch: true
-#          title: Update version_date.tsv and changelogs after ${{ env.GITHUB_TAG }}
-#          labels: do not test
-#          body: |
-#            Update version_date.tsv and changelogs after ${{ env.GITHUB_TAG }}
-#
-#            ### Changelog category (leave one):
-#            - Not for changelog (changelog entry is not required)
+      - name: Create Pull Request
+        if: ${{ inputs.type == 'patch' }}
+        uses: peter-evans/create-pull-request@v6
+        with:
+          author: "robot-clickhouse <robot-clickhouse@users.noreply.github.com>"
+          token: ${{ secrets.ROBOT_CLICKHOUSE_COMMIT_TOKEN }}
+          committer: "robot-clickhouse <robot-clickhouse@users.noreply.github.com>"
+          commit-message: Update version_date.tsv and changelogs after ${{ env.GITHUB_TAG }}
+          branch: auto/${{ env.GITHUB_TAG }}
+          assignees: ${{ github.event.sender.login }}  # assign the PR to the tag pusher
+          delete-branch: true
+          title: Update version_date.tsv and changelogs after ${{ env.GITHUB_TAG }}
+          labels: do not test
+          body: |
+            Update version_date.tsv and changelogs after ${{ env.GITHUB_TAG }}
+            ### Changelog category (leave one):
+            - Not for changelog (changelog entry is not required)

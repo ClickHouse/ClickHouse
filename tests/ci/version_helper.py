@@ -148,6 +148,11 @@ class ClickHouseVersion:
         """our X.3 and X.8 are LTS"""
         return self.minor % 5 == 3
 
+    def get_stable_release_type(self) -> str:
+        if self.is_lts:
+            return VersionType.LTS
+        return VersionType.STABLE
+
     def as_dict(self) -> VERSIONS:
         return {
             "revision": self.revision,
@@ -168,6 +173,7 @@ class ClickHouseVersion:
             raise ValueError(f"version type {version_type} not in {VersionType.VALID}")
         self._description = version_type
         self._describe = f"v{self.string}-{version_type}"
+        return self
 
     def copy(self) -> "ClickHouseVersion":
         copy = ClickHouseVersion(
