@@ -80,7 +80,6 @@ ColumnsDescription TableFunctionDictionary::getActualTableStructure(ContextPtr c
 StoragePtr TableFunctionDictionary::executeImpl(
     const ASTPtr &, ContextPtr context, const std::string & table_name, ColumnsDescription, bool is_insert_query) const
 {
-    context->checkAccess(AccessType::dictGet, getDatabaseName(), table_name);
     StorageID dict_id(getDatabaseName(), table_name);
     auto dictionary_table_structure = getActualTableStructure(context, is_insert_query);
 
