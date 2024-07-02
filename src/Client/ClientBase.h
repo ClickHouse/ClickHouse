@@ -210,6 +210,7 @@ protected:
     /// since other members can use them.
     SharedContextHolder shared_context;
     ContextMutablePtr global_context;
+    ContextMutablePtr query_context;
 
     bool is_interactive = false; /// Use either interactive line editing interface or batch mode.
     bool is_multiquery = false;
@@ -253,9 +254,6 @@ protected:
     /// Settings specified via command line args
     Settings cmd_settings;
     MergeTreeSettings cmd_merge_tree_settings;
-
-    /// thread status should be destructed before shared context because it relies on process list.
-    std::optional<ThreadStatus> thread_status;
 
     ServerConnectionPtr connection;
     ConnectionParameters connection_parameters;
