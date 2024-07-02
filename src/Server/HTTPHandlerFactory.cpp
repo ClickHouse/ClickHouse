@@ -122,7 +122,7 @@ static inline auto createHandlersFactoryFromConfig(
             }
             else if (handler_type == "prometheus")
             {
-                main_handler_factory->addHandler(createPrometheusHandlerFactoryForRule(server, config, prefix + "." + key, async_metrics));
+                main_handler_factory->addHandler(createPrometheusHandlerFactoryForHTTPRule(server, config, prefix + "." + key, async_metrics));
             }
             else if (handler_type == "replicas_status")
             {
@@ -199,7 +199,7 @@ HTTPRequestHandlerFactoryPtr createHandlerFactory(IServer & server, const Poco::
     else if (name == "InterserverIOHTTPHandler-factory" || name == "InterserverIOHTTPSHandler-factory")
         return createInterserverHTTPHandlerFactory(server, name);
     else if (name == "PrometheusHandler-factory")
-        return createPrometheusHandlerFactoryMain(server, config, name, async_metrics);
+        return createPrometheusHandlerFactory(server, config, async_metrics, name);
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown HTTP handler factory name.");
 }
@@ -286,12 +286,9 @@ void addDefaultHandlersFactory(
     );
     factory.addHandler(query_handler);
 
-    /// We check that prometheus handler will be served on current (default) port.
-    /// Otherwise it will be created separately, see createHandlerFactory(...).
-    if (config.has("prometheus") && config.getInt("prometheus.port", 0) == 0)
-    {
-        factory.addHandler(createPrometheusHandlerFactoryDefault(server, config, async_metrics));
-    }
+    /// createPrometheusHandlerFactoryForHTTPRuleDefaults() can return nullptr if prometheus protocols must not be served on http port.
+    if (auto prometheus_handler = createPrometheusHandlerFactoryForHTTPRuleDefaults(server, config, async_metrics))
+        factory.addHandler(prometheus_handler);
 }
 
 }

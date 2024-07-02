@@ -3,6 +3,8 @@
 #include <base/types.h>
 #include <memory>
 
+#include "config.h"
+
 
 namespace Poco::Util { class AbstractConfiguration; }
 
@@ -14,7 +16,9 @@ class HTTPRequestHandlerFactory;
 using HTTPRequestHandlerFactoryPtr = std::shared_ptr<HTTPRequestHandlerFactory>;
 class AsynchronousMetrics;
 
-/// Makes a HTTP Handler factory to handle Prometheus requests, expects a config like this:
+/// Makes a handler factory to handle prometheus protocols.
+/// Expects a configuration like this:
+///
 /// <prometheus>
 ///     <port>1234</port>
 ///     <endpoint>/metric</endpoint>
@@ -24,26 +28,81 @@ class AsynchronousMetrics;
 ///     <errors>true</errors>
 /// </prometheus>
 ///
-/// Instead of tags <endpoint>, <metrics>, <asynchronous_metrics>, <events>, <error> in this case and for other createPrometheusHandlerFactory*() functions
-/// here can be section <expose>:
+/// More prometheus protocols can be supported with using a different configuration <prometheus.handlers>
+/// (which is similar to the <http_handlers> section):
+///
 /// <prometheus>
 ///     <port>1234</port>
-///     <expose>
-///         <endpoint>/metric</endpoint>
-///         <metrics>true</metrics>
-///         <asynchronous_metrics>true</asynchronous_metrics>
-///         <events>true</events>
-///         <errors>true</errors>
-///     </expose>
+///     <handlers>
+///         <my_rule1>
+///             <url>/metrics</url>
+///             <handler>
+///                 <type>expose_metrics</type>
+///                 <metrics>true</metrics>
+///                 <asynchronous_metrics>true</asynchronous_metrics>
+///                 <events>true</events>
+///                 <errors>true</errors>
+///             </handler>
+///         </my_rule1>
+///         <my_rule2>
+///             <url>/write</url>
+///             <handler>
+///                 <type>remote_write</type>
+///                 <table>db.time_series_table_name</table>
+///             </handler>
+///         </my_rule2>
+///         <my_rule3>
+///             <url>/read</url>
+///             <handler>
+///                 <type>remote_read</type>
+///                 <table>db.time_series_table_name</table>
+///             </handler>
+///         </my_rule3>
+///    </handlers>
 /// </prometheus>
-HTTPRequestHandlerFactoryPtr createPrometheusHandlerFactoryMain(
+///
+/// An alternative port to serve prometheus protocols can be specified in the <protocols> section:
+///
+/// <protocols>
+///     <my_protocol_1>
+///         <port>4321</port>
+///         <type>prometheus</type>
+///     </my_protocol_1>
+/// </protocols>
+HTTPRequestHandlerFactoryPtr createPrometheusHandlerFactory(
     IServer & server,
     const Poco::Util::AbstractConfiguration & config,
-    const String & name,
+    const AsynchronousMetrics & asynchronous_metrics,
+    const String & name);
+
+#ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD
+
+/// Makes a HTTP handler factory to handle requests for prometheus metrics for a HTTP rule in the <http_handlers> section.
+/// Expects a configuration like this:
+///
+/// <http_port>8123</http_port>
+/// <http_handlers>
+///     <my_rule_1>
+///         <url>/metrics</url>
+///         <handler>
+///             <type>prometheus</type>
+///             <metrics>true</metrics>
+///             <asynchronous_metrics>true</asynchronous_metrics>
+///             <events>true</events>
+///             <errors>true</errors>
+///         </handler>
+///     </my_rule_1>
+/// </http_handlers>
+HTTPRequestHandlerFactoryPtr createPrometheusHandlerFactoryForHTTPRule(
+    IServer & server,
+    const Poco::Util::AbstractConfiguration & config,
+    const String & config_prefix, /// path to "http_handlers.my_handler_1"
     const AsynchronousMetrics & asynchronous_metrics);
 
-/// Makes a HTTP Handler factory to handle Prometheus requests, expects a config like this:
-/// <http_port>1234</http_port>
+/// Makes a HTTP Handler factory to handle requests for prometheus metrics as a part of the default HTTP rule in the <http_handlers> section.
+/// Expects a configuration like this:
+///
+/// <http_port>8123</http_port>
 /// <http_handlers>
 ///     <defaults/>
 /// </http_handlers>
@@ -54,39 +113,16 @@ HTTPRequestHandlerFactoryPtr createPrometheusHandlerFactoryMain(
 ///     <events>true</events>
 ///     <errors>true</errors>
 /// </prometheus>
-HTTPRequestHandlerFactoryPtr createPrometheusHandlerFactoryDefault(
+///
+/// The "defaults" HTTP handler should serve the prometheus exposing metrics protocol on the http port
+/// only if it isn't already served on its own port <prometheus.port>,
+/// and also if there is no <prometheus.handlers> section in the configuration
+/// (because if that section exists then it must be in charge of how prometheus protocols are handled).
+HTTPRequestHandlerFactoryPtr createPrometheusHandlerFactoryForHTTPRuleDefaults(
     IServer & server,
     const Poco::Util::AbstractConfiguration & config,
     const AsynchronousMetrics & asynchronous_metrics);
 
-/// Makes a HTTP Handler factory to handle Prometheus requests, expects a config like this:
-/// <http_port>1234</http_port>
-/// <http_handlers>
-///     <rule_my_handler>
-///         <handler>
-///             <type>prometheus</type>
-///             <endpoint>/metrics</endpoint>
-///             <metrics>true</metrics>
-///             <asynchronous_metrics>true</asynchronous_metrics>
-///             <events>true</events>
-///             <errors>true</errors>
-///         </handler>
-///         <methods>HEAD,GET</methods>
-///         <url>regex:.*/metrics</url>
-///     </rule_my_handler>
-/// </http_handlers>
-HTTPRequestHandlerFactoryPtr createPrometheusHandlerFactoryForRule(
-    IServer & server,
-    const Poco::Util::AbstractConfiguration & config,
-    const String & config_prefix, /// path to "http_handlers.rule_my_handler"
-    const AsynchronousMetrics & asynchronous_metrics);
-
-/// Makes a HTTP Handler factory to handle Prometheus requests for standalone clickhouse-keeper,
-/// expects the same config as createPrometheusHandlerFactoryMain().
-HTTPRequestHandlerFactoryPtr createPrometheusHandlerFactoryForKeeper(
-    IServer & server,
-    const Poco::Util::AbstractConfiguration & config,
-    const String & name,
-    const AsynchronousMetrics & asynchronous_metrics);
+#endif
 
 }

@@ -3,62 +3,37 @@
 #include <Core/QualifiedTableName.h>
 
 
-namespace Poco::Util { class AbstractConfiguration; }
-
 namespace DB
 {
-class HTTPServerRequest;
 
-/// Configuration of Prometheus protocol handlers after they're parsed from a configuration file.
+/// Configuration of a Prometheus protocol handler.
 struct PrometheusRequestHandlerConfig
 {
-    /// Handler for exposing ClickHouse metrics:
-    /// <prometheus>
-    ///     <port>9363</port>  <!-- port is not parsed in PrometheusRequestHandlerConfig -->
-    ///     <endpoint>/metrics</endpoint>
-    ///     <metrics>true</metrics>
-    ///     <events>true</events>
-    ///     <asynchronous_metrics>true</asynchronous_metrics>
-    ///     <errors>true</errors>
-    /// </prometheus>
-    struct Metrics
+    enum class Type
     {
-        String endpoint;
-        bool send_metrics = false;
-        bool send_asynchronous_metrics = false;
-        bool send_events = false;
-        bool send_errors = false;
+        /// Exposes ClickHouse metrics for scraping by Prometheus.
+        ExposeMetrics,
+
+        /// Handles Prometheus remote-write protocol.
+        RemoteWrite,
+
+        /// Handles Prometheus remote-read protocol.
+        RemoteRead,
     };
 
-    std::optional<Metrics> metrics;
+    Type type = Type::ExposeMetrics;
 
-    struct EndpointAndTableName
-    {
-        String endpoint;
-        QualifiedTableName table_name;
-    };
+    /// Settings for type ExposeMetrics:
+    bool expose_metrics = false;
+    bool expose_asynchronous_metrics = false;
+    bool expose_events = false;
+    bool expose_errors = false;
 
-    /// Handler for Prometheus remote-write protocol:
-    /// <prometheus>
-    ///     <port>9363</port>  <!-- port is not parsed in PrometheusRequestHandlerConfig -->
-    ///     <remote_write>
-    ///         <endpoint>/write</endpoint>
-    ///         <table>mydb.prometheus</table>
-    ///     </remote_write>
-    /// </prometheus>
-    std::optional<EndpointAndTableName> remote_write;
-    std::optional<EndpointAndTableName> remote_read;
+    /// Settings for types RemoteWrite, RemoteRead:
+    QualifiedTableName time_series_table_name;
 
-    size_t keep_alive_timeout;
+    size_t keep_alive_timeout = 0;
     bool is_stacktrace_enabled = true;
-
-    /// Use endpoints in the config to find out which handler should be used.
-    bool detect_handler_by_endpoint = true;
-
-    PrometheusRequestHandlerConfig(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, bool detect_handler_by_endpoint_);
-    bool filterRequest(const HTTPServerRequest & request) const;
 };
-
-using PrometheusRequestHandlerConfigPtr = std::shared_ptr<const PrometheusRequestHandlerConfig>;
 
 }

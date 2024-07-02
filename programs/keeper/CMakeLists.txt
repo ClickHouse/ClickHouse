@@ -77,10 +77,8 @@ if (BUILD_STANDALONE_KEEPER)
         ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Server/HTTP/exceptionCodeToHTTPStatus.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Server/HTTP/sendExceptionToHTTPClient.cpp
 
-        ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Server/PrometheusBaseRequestHandler.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Server/PrometheusMetricsOnlyRequestHandler.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Server/PrometheusMetricsWriter.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Server/PrometheusRequestHandlerConfig.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Server/PrometheusRequestHandler.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Server/PrometheusRequestHandlerFactory.cpp
 
         ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Compression/CachedCompressedReadBuffer.cpp

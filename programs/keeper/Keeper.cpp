@@ -504,7 +504,7 @@ try
                     "Prometheus: http://" + address.toString(),
                     std::make_unique<HTTPServer>(
                         std::move(my_http_context),
-                        createPrometheusHandlerFactoryForKeeper(*this, config_getter(), "PrometheusHandler-factory", async_metrics),
+                        createPrometheusHandlerFactory(*this, config_getter(), async_metrics, "PrometheusHandler-factory"),
                         server_pool,
                         socket,
                         http_params));

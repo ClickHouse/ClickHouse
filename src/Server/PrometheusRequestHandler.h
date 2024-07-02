@@ -1,52 +1,53 @@
 #pragma once
 
-#include <Core/Settings.h>
-#include <Interpreters/Context_fwd.h>
-#include <Server/PrometheusMetricsOnlyRequestHandler.h>
-#include "config.h"
+#include <Server/HTTP/HTTPRequestHandler.h>
+#include <Server/PrometheusRequestHandlerConfig.h>
 
 
 namespace DB
 {
-class HTMLForm;
-class Session;
-class Credentials;
+class AsynchronousMetrics;
+class IServer;
+class WriteBufferFromHTTPServerResponse;
 
-/// Handles requests from Prometheus including both metrics ("/metrics") and API protocols (remote write, remote read, query).
-class PrometheusRequestHandler : public PrometheusMetricsOnlyRequestHandler
+/// Handles requests for prometheus protocols (expose_metrics, remote_write, remote_read).
+class PrometheusRequestHandler : public HTTPRequestHandler
 {
 public:
-    PrometheusRequestHandler(IServer & server_, const PrometheusRequestHandlerConfigPtr & config_, const AsynchronousMetrics & async_metrics_);
+    PrometheusRequestHandler(IServer & server_, const PrometheusRequestHandlerConfig & config_, const AsynchronousMetrics & async_metrics_);
     ~PrometheusRequestHandler() override;
 
-protected:
-    void handleMetrics(HTTPServerRequest & request, HTTPServerResponse & response) override;
-    void handleRemoteWrite(HTTPServerRequest & request, HTTPServerResponse & response) override;
-    void handleRemoteRead(HTTPServerRequest & request, HTTPServerResponse & response) override;
-    void onException() override;
+    void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event_) override;
 
 private:
-    bool authenticateUserAndMakeContext(HTTPServerRequest & request, HTTPServerResponse & response);
-    bool authenticateUser(HTTPServerRequest & request, HTTPServerResponse & response);
-    void makeContext(HTTPServerRequest & request);
+    /// Creates an internal implementation based on which PrometheusRequestHandlerConfig::Type is used.
+    void createImpl();
 
-    void wrapHandler(HTTPServerRequest & request, HTTPServerResponse & response, bool authenticate, std::function<void()> && func);
+    /// Returns the write buffer used for the current HTTP response.
+    WriteBuffer & getOutputStream(HTTPServerResponse & response);
 
-#if !USE_PROMETHEUS_PROTOBUFS
-    [[noreturn]]
-#endif
-    void handleRemoteWriteImpl(HTTPServerRequest & request, HTTPServerResponse & response);
+    /// Writes the current exception to the response.
+    void trySendExceptionToClient(const String & exception_message, int exception_code, HTTPServerRequest & request, HTTPServerResponse & response);
 
-#if !USE_PROMETHEUS_PROTOBUFS
-    [[noreturn]]
-#endif
-    void handleRemoteReadImpl(HTTPServerRequest & request, HTTPServerResponse & response);
+    /// Calls onException() in a try-catch block.
+    void tryCallOnException();
 
-    const Settings & default_settings;
-    std::unique_ptr<HTMLForm> params;
-    std::unique_ptr<Session> session;
-    std::unique_ptr<Credentials> request_credentials;
-    ContextMutablePtr context;
+    IServer & server;
+    const PrometheusRequestHandlerConfig config;
+    const AsynchronousMetrics & async_metrics;
+    const LoggerPtr log;
+
+    class Impl;
+    class ImplWithContext;
+    class ExposeMetricsImpl;
+    class RemoteWriteImpl;
+    class RemoteReadImpl;
+    std::unique_ptr<Impl> impl;
+
+    String http_method;
+    bool send_stacktrace = false;
+    std::unique_ptr<WriteBufferFromHTTPServerResponse> write_buffer_from_response;
+    ProfileEvents::Event write_event;
 };
 
 }
