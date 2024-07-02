@@ -14,3 +14,5 @@ select variantElement(number % 2 ? NULL : range(number + 1), 'Array(UInt64)') fr
 
 select variantElement([[(number % 2 ? NULL : number)::Variant(String, UInt64)]], 'UInt64') from numbers(4);
 
+select variantElement( (number % 2 ? number : map('a', toString(number), 'b', 'str_' || toString(number) ) )::Variant(UInt64, Map(String, String)), 'Map(String, String)') from numbers(4);
+select variantElement( (number % 2 ? number : map('a', toString(number), 'b', number % 2 ) )::Variant(UInt64, Map(String, Variant(UInt8, String))), 'Map(String, Variant(UInt8, String))') from numbers(4);
