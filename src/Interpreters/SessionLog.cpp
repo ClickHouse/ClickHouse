@@ -213,7 +213,8 @@ void SessionLog::addLoginSuccess(const UUID & auth_id,
                                  const Settings & settings,
                                  const ContextAccessPtr & access,
                                  const ClientInfo & client_info,
-                                 const UserPtr & login_user)
+                                 const UserPtr & login_user,
+                                 const AuthenticationData & user_authenticated_with)
 {
     SessionLogElement log_entry(auth_id, SESSION_LOGIN_SUCCESS);
     log_entry.client_info = client_info;
@@ -221,9 +222,11 @@ void SessionLog::addLoginSuccess(const UUID & auth_id,
     if (login_user)
     {
         log_entry.user = login_user->getName();
-        log_entry.user_identified_with = login_user->auth_data.getType();
+        log_entry.user_identified_with = user_authenticated_with.getType();
     }
-    log_entry.external_auth_server = login_user ? login_user->auth_data.getLDAPServerName() : "";
+
+    log_entry.external_auth_server = user_authenticated_with.getLDAPServerName();
+
 
     log_entry.session_id = session_id;
 
@@ -261,9 +264,9 @@ void SessionLog::addLogOut(const UUID & auth_id, const UserPtr & login_user, con
     if (login_user)
     {
         log_entry.user = login_user->getName();
-        log_entry.user_identified_with = login_user->auth_data.getType();
+        log_entry.user_identified_with = login_user->authentication_methods.back().getType();
     }
-    log_entry.external_auth_server = login_user ? login_user->auth_data.getLDAPServerName() : "";
+    log_entry.external_auth_server = login_user ? login_user->authentication_methods.back().getLDAPServerName() : "";
     log_entry.client_info = client_info;
 
     add(std::move(log_entry));

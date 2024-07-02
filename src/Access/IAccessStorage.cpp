@@ -525,15 +525,24 @@ std::optional<AuthResult> IAccessStorage::authenticateImpl(
             if (!isAddressAllowed(*user, address))
                 throwAddressNotAllowed(address);
 
-            auto auth_type = user->auth_data.getType();
-            if (((auth_type == AuthenticationType::NO_PASSWORD) && !allow_no_password) ||
-                ((auth_type == AuthenticationType::PLAINTEXT_PASSWORD) && !allow_plaintext_password))
-                throwAuthenticationTypeNotAllowed(auth_type);
+            // for now, just throw exception in case a user exists with invalid auth method
+            // back in the day, it would also throw an exception. There might be a smarter alternative
+            // like a user scan during startup.
+            for (const auto & auth_method : user->authentication_methods)
+            {
+                auto auth_type = auth_method.getType();
+                if (((auth_type == AuthenticationType::NO_PASSWORD) && !allow_no_password) ||
+                    ((auth_type == AuthenticationType::PLAINTEXT_PASSWORD) && !allow_plaintext_password))
+                    throwAuthenticationTypeNotAllowed(auth_type);
 
-            if (!areCredentialsValid(*user, credentials, external_authenticators, auth_result.settings))
-                throwInvalidCredentials();
+                if (areCredentialsValid(user->getName(), user->valid_until, auth_method, credentials, external_authenticators, auth_result.settings))
+                {
+                    auth_result.authentication_data = auth_method;
+                    return auth_result;
+                }
+            }
 
-            return auth_result;
+            throwInvalidCredentials();
         }
     }
 
@@ -543,9 +552,10 @@ std::optional<AuthResult> IAccessStorage::authenticateImpl(
         return std::nullopt;
 }
 
-
 bool IAccessStorage::areCredentialsValid(
-    const User & user,
+    const std::string & user_name,
+    time_t valid_until,
+    const AuthenticationData & authentication_method,
     const Credentials & credentials,
     const ExternalAuthenticators & external_authenticators,
     SettingsChanges & settings) const
@@ -553,20 +563,19 @@ bool IAccessStorage::areCredentialsValid(
     if (!credentials.isReady())
         return false;
 
-    if (credentials.getUserName() != user.getName())
+    if (credentials.getUserName() != user_name)
         return false;
 
-    if (user.valid_until)
+    if (valid_until)
     {
         const time_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
 
-        if (now > user.valid_until)
+        if (now > valid_until)
             return false;
     }
 
-    return Authentication::areCredentialsValid(credentials, user.auth_data, external_authenticators, settings);
+    return Authentication::areCredentialsValid(credentials, authentication_method, external_authenticators, settings);
 }
-
 
 bool IAccessStorage::isAddressAllowed(const User & user, const Poco::Net::IPAddress & address) const
 {

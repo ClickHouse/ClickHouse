@@ -1,0 +1,40 @@
+Basic authentication after user creation
+1
+Changed password, old password should not work
+AUTHENTICATION_FAILED
+New password should work
+1
+Two new passwords were added, should both work
+1
+1
+Authenticating with ssh key
+1
+Altering credentials and keeping only bcrypt_password
+Asserting SSH does not work anymore
+AUTHENTICATION_FAILED
+Asserting bcrypt_password works
+1
+Adding new bcrypt_password
+Both current authentication methods should work
+1
+1
+Reset authentication methods to new
+Only the latest should work, below should fail
+AUTHENTICATION_FAILED
+Should work
+1
+Multiple identified with, not allowed
+BAD_ARGUMENTS
+Multiple identified with, not allowed, even if mixed
+BAD_ARGUMENTS
+Identified with must precede all add identified with, not allowed
+BAD_ARGUMENTS
+CREATE Multiple identified with, not allowed
+BAD_ARGUMENTS
+CREATE Multiple identified with, not allowed, even if mixed
+BAD_ARGUMENTS
+CREATE Identified with must precede all add identified with, not allowed
+BAD_ARGUMENTS
+Create user with no identification
+Add identified with
+CREATE USER u01_03174 IDENTIFIED WITH no_password ADD IDENTIFIED WITH plaintext_password

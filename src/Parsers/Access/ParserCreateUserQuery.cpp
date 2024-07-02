@@ -25,6 +25,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 namespace
 {
     bool parseRenameTo(IParserBase::Pos & pos, Expected & expected, std::optional<String> & new_name)
@@ -411,6 +416,27 @@ namespace
             return until_p.parse(pos, valid_until, expected);
         });
     }
+
+    bool parseAddNewAuthenticationMethod(IParserBase::Pos & pos, Expected & expected, std::shared_ptr<ASTAuthenticationData> & auth_data)
+    {
+        return IParserBase::wrapParseImpl(pos, [&]
+        {
+            if (!ParserKeyword{Keyword::ADD}.ignore(pos, expected))
+            {
+                return false;
+            }
+
+            return parseAuthenticationData(pos, expected, auth_data);
+        });
+    }
+
+    bool parseResetAuthenticationMethods(IParserBase::Pos & pos, Expected & expected)
+    {
+        return IParserBase::wrapParseImpl(pos, [&]
+        {
+            return ParserKeyword{Keyword::RESET_AUTHENTICATION_METHODS_TO_NEW}.ignore(pos, expected);
+        });
+    }
 }
 
 
@@ -456,7 +482,7 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     std::optional<AllowedClientHosts> hosts;
     std::optional<AllowedClientHosts> add_hosts;
     std::optional<AllowedClientHosts> remove_hosts;
-    std::shared_ptr<ASTAuthenticationData> auth_data;
+    std::vector<std::shared_ptr<ASTAuthenticationData>> auth_data;
     std::shared_ptr<ASTRolesOrUsersSet> default_roles;
     std::shared_ptr<ASTSettingsProfileElements> settings;
     std::shared_ptr<ASTRolesOrUsersSet> grantees;
@@ -464,17 +490,46 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     ASTPtr valid_until;
     String cluster;
     String storage_name;
+    std::optional<bool> reset_authentication_methods_to_new;
+
+    bool parsed_identified_with = false;
+    bool parsed_add_new_method = false;
 
     while (true)
     {
-        if (!auth_data)
+        std::shared_ptr<ASTAuthenticationData> identified_with_auth_data;
+        bool parse_auth_data = parseAuthenticationData(pos, expected, identified_with_auth_data);
+
+        bool found_multiple_identified_with = parsed_identified_with && parse_auth_data;
+
+        if (found_multiple_identified_with)
         {
-            std::shared_ptr<ASTAuthenticationData> new_auth_data;
-            if (parseAuthenticationData(pos, expected, new_auth_data))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Only one identified with is permitted");
+        }
+
+        if (parse_auth_data)
+        {
+            if (parsed_add_new_method)
             {
-                auth_data = std::move(new_auth_data);
-                continue;
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Identified with must precede add new auth");
             }
+            auth_data.push_back(identified_with_auth_data);
+            parsed_identified_with = true;
+            continue;
+        }
+
+        std::shared_ptr<ASTAuthenticationData> add_new_auth_method;
+        parsed_add_new_method = parseAddNewAuthenticationMethod(pos, expected, add_new_auth_method);
+
+        if (parsed_add_new_method)
+        {
+            auth_data.push_back(add_new_auth_method);
+            continue;
+        }
+
+        if (!reset_authentication_methods_to_new.has_value())
+        {
+            reset_authentication_methods_to_new = parseResetAuthenticationMethods(pos, expected);
         }
 
         if (!valid_until)
@@ -564,7 +619,7 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     query->cluster = std::move(cluster);
     query->names = std::move(names);
     query->new_name = std::move(new_name);
-    query->auth_data = std::move(auth_data);
+    query->authentication_methods = std::move(auth_data);
     query->hosts = std::move(hosts);
     query->add_hosts = std::move(add_hosts);
     query->remove_hosts = std::move(remove_hosts);
@@ -574,9 +629,13 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     query->default_database = std::move(default_database);
     query->valid_until = std::move(valid_until);
     query->storage_name = std::move(storage_name);
+    query->reset_authentication_methods_to_new = reset_authentication_methods_to_new.value_or(false);
+    query->replace_authentication_methods = parsed_identified_with;
 
-    if (query->auth_data)
-        query->children.push_back(query->auth_data);
+    for (const auto & authentication_method : query->authentication_methods)
+    {
+        query->children.push_back(authentication_method);
+    }
 
     if (query->valid_until)
         query->children.push_back(query->valid_until);
