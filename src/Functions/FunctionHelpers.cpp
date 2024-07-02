@@ -95,20 +95,6 @@ ColumnsWithTypeAndName createBlockWithNestedColumns(const ColumnsWithTypeAndName
     return res;
 }
 
-void validateArgumentType(const IFunction & func, const DataTypes & arguments,
-                          size_t argument_index, bool (* validator_func)(const IDataType &),
-                          const char * type_name)
-{
-    if (arguments.size() <= argument_index)
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Incorrect number of arguments of function {}",
-                        func.getName());
-
-    const auto & argument = arguments[argument_index];
-    if (!validator_func(*argument))
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of {} argument of function {}, expected {}",
-                        argument->getName(), argument_index, func.getName(), type_name);
-}
-
 namespace
 {
 void validateArgumentsImpl(const IFunction & func,

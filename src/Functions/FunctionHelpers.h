@@ -115,12 +115,6 @@ ColumnWithTypeAndName columnGetNested(const ColumnWithTypeAndName & col);
 /// column if it is nullable.
 ColumnsWithTypeAndName createBlockWithNestedColumns(const ColumnsWithTypeAndName & columns);
 
-/// Checks argument type at specified index with predicate.
-/// throws if there is no argument at specified index or if predicate returns false.
-void validateArgumentType(const IFunction & func, const DataTypes & arguments,
-        size_t argument_index, bool (* validator_func)(const IDataType &),
-        const char * type_name);
-
 /// Expected arguments for a function. Can be used in conjunction with validateFunctionArguments() to check that the user-provided
 /// arguments match the expected arguments.
 struct FunctionArgumentDescriptor
