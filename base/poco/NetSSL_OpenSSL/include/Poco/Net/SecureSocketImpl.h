@@ -18,6 +18,8 @@
 #define NetSSL_SecureSocketImpl_INCLUDED
 
 
+// #include <wolfssl/options.h>
+// #include <openssl/opensslv.h>
 #include <openssl/bio.h>
 #include <openssl/ssl.h>
 #include "Poco/Net/Context.h"

@@ -17,6 +17,7 @@
 #ifndef NetSSL_Session_INCLUDED
 #define NetSSL_Session_INCLUDED
 
+// #include <wolfssl/options.h>
 
 #include <openssl/ssl.h>
 #include "Poco/AutoPtr.h"

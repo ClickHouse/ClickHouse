@@ -17,7 +17,7 @@
 #ifndef Crypto_OpenSSLInitializer_INCLUDED
 #define Crypto_OpenSSLInitializer_INCLUDED
 
-
+// #include <wolfssl/options.h>
 #include <openssl/crypto.h>
 #include "Poco/AtomicCounter.h"
 #include "Poco/Crypto/Crypto.h"

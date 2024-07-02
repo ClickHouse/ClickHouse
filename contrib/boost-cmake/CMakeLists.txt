@@ -35,6 +35,8 @@ target_compile_definitions (_boost_headers_only INTERFACE
   BOOST_ASIO_STANDALONE=1
   BOOST_ASIO_HAS_STD_INVOKE_RESULT=1 # Avoid using of deprecated in c++ > 17 std::result_of
   BOOST_TIMER_ENABLE_DEPRECATED=1 # wordnet-blast (enabled via USE_NLP) uses Boost legacy timer classes
+  BOOST_ASIO_USE_WOLFSSL=1
+  # OPENSSL_EXTRA=1
 )
 
 # iostreams
@@ -170,6 +172,7 @@ endif()
 add_library (_boost_context ${SRCS_CONTEXT})
 add_library (boost::context ALIAS _boost_context)
 target_include_directories (_boost_context PRIVATE ${LIBRARY_DIR})
+
 
 if (SANITIZE OR BOOST_USE_UCONTEXT)
     target_compile_definitions(_boost_context PUBLIC BOOST_USE_UCONTEXT)

@@ -19,6 +19,7 @@
 
 #include <unordered_map>
 
+#include <wolfssl/options.h>
 #include <openssl/ssl.h>
 #include "Poco/BasicEvent.h"
 #include "Poco/Mutex.h"

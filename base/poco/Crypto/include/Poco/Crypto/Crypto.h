@@ -23,7 +23,7 @@
 #define POCO_EXTERNAL_OPENSSL_DEFAULT 1
 #define POCO_EXTERNAL_OPENSSL_SLPRO 2
 
-
+// #include <wolfssl/options.h>
 #include <openssl/opensslv.h>
 #include "Poco/Foundation.h"
 

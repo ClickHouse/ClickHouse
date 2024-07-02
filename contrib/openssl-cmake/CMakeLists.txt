@@ -1444,41 +1444,41 @@ set(SSL_SRC
     ${OPENSSL_SOURCE_DIR}/ssl/statem/statem_srvr.c
 )
 
-if(ENABLE_OPENSSL_DYNAMIC)
-    add_library(crypto SHARED ${CRYPTO_SRC})
-    set_target_properties(crypto PROPERTIES VERSION "${LIB_VERSION}" SOVERSION "${LIB_SOVERSION}")
-    set_target_properties(crypto PROPERTIES LIBRARY_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}/programs)
+# if(ENABLE_OPENSSL_DYNAMIC)
+#     add_library(crypto SHARED ${CRYPTO_SRC})
+#     set_target_properties(crypto PROPERTIES VERSION "${LIB_VERSION}" SOVERSION "${LIB_SOVERSION}")
+#     set_target_properties(crypto PROPERTIES LIBRARY_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}/programs)
+#
+#     add_library(ssl SHARED ${SSL_SRC})
+#     set_target_properties(ssl PROPERTIES VERSION "${LIB_VERSION}" SOVERSION "${LIB_SOVERSION}")
+#     set_target_properties(ssl PROPERTIES LIBRARY_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}/programs)
+# else()
+#     add_library(crypto ${CRYPTO_SRC})
+#     add_library(ssl ${SSL_SRC})
+# endif()
 
-    add_library(ssl SHARED ${SSL_SRC})
-    set_target_properties(ssl PROPERTIES VERSION "${LIB_VERSION}" SOVERSION "${LIB_SOVERSION}")
-    set_target_properties(ssl PROPERTIES LIBRARY_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}/programs)
-else()
-    add_library(crypto ${CRYPTO_SRC})
-    add_library(ssl ${SSL_SRC})
-endif()
+# target_include_directories(crypto
+#     SYSTEM PUBLIC "${PLATFORM_DIRECTORY}/include"
+#     PRIVATE "${PLATFORM_DIRECTORY}/include_private")
+#
+# target_include_directories(crypto
+#     SYSTEM PUBLIC ${OPENSSL_SOURCE_DIR}/include
+#     PRIVATE ${OPENSSL_SOURCE_DIR}/providers/common/include
+#     PRIVATE ${OPENSSL_SOURCE_DIR}/providers/implementations/include
+#     PRIVATE ${OPENSSL_SOURCE_DIR}/crypto
+#     PRIVATE ${OPENSSL_SOURCE_DIR}/crypto/include
+#     PRIVATE ${OPENSSL_SOURCE_DIR}/crypto/ec/curve448
+#     PRIVATE ${OPENSSL_SOURCE_DIR}/crypto/ec/curve448/arch_32
+#     PRIVATE ${OPENSSL_SOURCE_DIR}/crypto/ec/curve448/arch_64
+#     PRIVATE ${OPENSSL_SOURCE_DIR})
+#
+# target_include_directories(ssl
+#     PRIVATE ${OPENSSL_SOURCE_DIR})
 
-target_include_directories(crypto
-    SYSTEM PUBLIC "${PLATFORM_DIRECTORY}/include"
-    PRIVATE "${PLATFORM_DIRECTORY}/include_private")
+# target_link_libraries(ssl crypto)
 
-target_include_directories(crypto
-    SYSTEM PUBLIC ${OPENSSL_SOURCE_DIR}/include
-    PRIVATE ${OPENSSL_SOURCE_DIR}/providers/common/include
-    PRIVATE ${OPENSSL_SOURCE_DIR}/providers/implementations/include
-    PRIVATE ${OPENSSL_SOURCE_DIR}/crypto
-    PRIVATE ${OPENSSL_SOURCE_DIR}/crypto/include
-    PRIVATE ${OPENSSL_SOURCE_DIR}/crypto/ec/curve448
-    PRIVATE ${OPENSSL_SOURCE_DIR}/crypto/ec/curve448/arch_32
-    PRIVATE ${OPENSSL_SOURCE_DIR}/crypto/ec/curve448/arch_64
-    PRIVATE ${OPENSSL_SOURCE_DIR})
-
-target_include_directories(ssl
-    PRIVATE ${OPENSSL_SOURCE_DIR})
-
-target_link_libraries(ssl crypto)
-
-add_library(OpenSSL::Crypto ALIAS crypto)
-add_library(OpenSSL::SSL ALIAS ssl)
+# add_library(OpenSSL::Crypto ALIAS crypto)
+# add_library(OpenSSL::SSL ALIAS ssl)
 
 if(OPENSSL_AUX_BUILD_FOR_CROSS_COMPILATION)
     install(DIRECTORY "${PLATFORM_DIRECTORY}/include" DESTINATION "${CMAKE_BINARY_DIR}")

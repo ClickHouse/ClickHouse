@@ -17,6 +17,7 @@
 #include "Poco/NumberFormatter.h"
 #include <typeinfo>
 #include <openssl/err.h>
+#include <openssl/ssl.h>
 
 
 namespace Poco {
