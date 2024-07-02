@@ -67,6 +67,8 @@ def main():
 
     for f in os.listdir(TEMP_PATH):
         full_path = os.path.join(TEMP_PATH, f)
+        if os.path.isdir(full_path):
+            continue
         hashed_file_path = hash_file(full_path)
         signed_file_path = sign_file(hashed_file_path)
         s3_path = s3_path_prefix / os.path.basename(signed_file_path)
