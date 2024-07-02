@@ -3,10 +3,17 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
 #include <Common/typeid_cast.h>
+#include "Analyzer/IQueryTreeNode.h"
 #include "Analyzer/Passes/QueryAnalysisPass.h"
+#include "Analyzer/QueryNode.h"
 #include "Analyzer/QueryTreeBuilder.h"
+#include "Analyzer/TableNode.h"
 #include "Interpreters/SelectQueryOptions.h"
 #include "Planner/PlannerActionsVisitor.h"
+#include "Planner/PlannerContext.h"
+#include "Planner/findQueryForParallelReplicas.h"
+#include "Storages/ColumnsDescription.h"
+#include "Storages/StorageDummy.h"
 #include <Core/Block.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/FieldToDataType.h>
@@ -97,16 +104,27 @@ std::optional<EvaluateConstantExpressionResult> evaluateConstantExpressionImpl(c
         auto test = buildQueryTree(ast, context);
         SelectQueryOptions options = {};
 
-        options.only_analyze = true;
+        // options.only_analyze = true;
+        //
+        // Planner p = Planner(test, options);
 
-        Planner p = Planner(test, options);
+        ColumnsDescription fake_column_descriptions(source_columns);
+        auto storage = std::make_shared<StorageDummy>(StorageID{"dummy", "dummy"}, fake_column_descriptions);
+        QueryTreeNodePtr fake_table_expression = std::make_shared<TableNode>(storage, context);
 
-        QueryAnalysisPass query_analysis_pass;
+        const auto *a = findQueryForParallelReplicas(test, options);
+        const auto *b = findTableForParallelReplicas(test, options);
+        FiltersForTableExpressionMap c = {};
+
+        GlobalPlannerContextPtr global_planner_context = std::make_shared<GlobalPlannerContext>(a, b, c);
+        auto planner_context = std::make_shared<PlannerContext>(context->getGlobalContext(), global_planner_context, options);
+
+        QueryAnalysisPass query_analysis_pass(fake_table_expression);
         query_analysis_pass.run(test, context);
 
         auto actions_dag = std::make_shared<ActionsDAG>();
 
-        PlannerActionsVisitor actions_visitor(p.getPlannerContext(), false);
+        PlannerActionsVisitor actions_visitor(planner_context, false);
         auto expr_nodes = actions_visitor.visit(*actions_dag, test);
 
         // auto & column = block.safeGetByPosition(0);
