@@ -2,7 +2,7 @@
 
 SELECT 'database atomic tests';
 DROP DATABASE IF EXISTS test03172_system_detached_tables;
-CREATE DATABASE IF NOT EXISTS test03172_system_detached_tables;
+CREATE DATABASE IF NOT EXISTS test03172_system_detached_tables ENGINE=Atomic;
 
 CREATE TABLE test03172_system_detached_tables.test_table (n Int64) ENGINE=MergeTree ORDER BY n;
 SELECT * FROM system.detached_tables WHERE database='test03172_system_detached_tables';

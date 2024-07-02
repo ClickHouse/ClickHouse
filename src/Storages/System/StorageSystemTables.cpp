@@ -50,18 +50,6 @@ bool needTable(const DatabasePtr & database, const Block & header)
     }
     return false;
 }
-
-template <typename T>
-void fillColumns(T table_it, MutableColumnPtr & database_column, MutableColumnPtr & engine_column)
-{
-    for (; table_it->isValid(); table_it->next())
-    {
-        database_column->insert(table_it->name());
-        if (engine_column)
-            engine_column->insert(table_it->table()->getName());
-    }
-}
-
 }
 
 namespace detail

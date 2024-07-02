@@ -22,8 +22,8 @@
 #include <Storages/IStorage.h>
 #include <Storages/StorageFactory.h>
 #include <TableFunctions/TableFunctionFactory.h>
-#include "Common/Exception.h"
 #include <Common/CurrentMetrics.h>
+#include <Common/Exception.h>
 #include <Common/assert_cast.h>
 #include <Common/escapeForFileName.h>
 #include <Common/filesystemHelpers.h>
@@ -310,11 +310,14 @@ void DatabaseOnDisk::detachTablePermanently(ContextPtr query_context, const Stri
         FS::createFile(detached_permanently_flag);
 
         std::lock_guard lock(mutex);
-        if (!snapshot_detached_tables.contains(table_name))
+        if (const auto it = snapshot_detached_tables.find(table_name); it == snapshot_detached_tables.end())
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Snapshot doesn't contain info about detached table={}", table_name);
         }
-        snapshot_detached_tables[table_name].is_permanently = true;
+        else
+        {
+            it->second.is_permanently = true;
+        }
     }
     catch (Exception & e)
     {

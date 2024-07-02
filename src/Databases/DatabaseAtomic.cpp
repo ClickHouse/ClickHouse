@@ -437,12 +437,6 @@ DatabaseAtomic::getTablesIterator(ContextPtr local_context, const IDatabase::Fil
     return std::make_unique<AtomicDatabaseTablesSnapshotIterator>(std::move(typeid_cast<DatabaseTablesSnapshotIterator &>(*base_iter)));
 }
 
-DatabaseDetachedTablesSnapshotIteratorPtr DatabaseAtomic::getDetachedTablesIterator(
-    ContextPtr local_context, const IDatabase::FilterByNameFunction & filter_by_table_name, const bool skip_not_loaded) const
-{
-    return DatabaseOrdinary::getDetachedTablesIterator(local_context, filter_by_table_name, skip_not_loaded);
-}
-
 UUID DatabaseAtomic::tryGetTableUUID(const String & table_name) const
 {
     if (auto table = tryGetTable(table_name, getContext()))
