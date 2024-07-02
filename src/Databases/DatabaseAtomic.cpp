@@ -195,6 +195,9 @@ void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_
     auto & other_db = dynamic_cast<DatabaseAtomic &>(to_database);
     bool inside_database = this == &other_db;
 
+    if (!inside_database)
+        other_db.createDirectories();
+
     String old_metadata_path = getObjectMetadataPath(table_name);
     String new_metadata_path = to_database.getObjectMetadataPath(to_table_name);
 
