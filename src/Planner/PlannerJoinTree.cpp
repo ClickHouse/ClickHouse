@@ -958,6 +958,18 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                             table_expression_query_info.storage_limits,
                             std::move(reading_step));
                         query_plan = std::move(query_plan_parallel_replicas);
+
+                        if (settings.parallel_replicas_local_plan)
+                        {
+                            const auto old_max_threads = query_plan.getMaxThreads();
+                            query_plan.setMaxThreads(old_max_threads * 2);
+
+                            LOG_TRACE(
+                                getLogger("Planner"),
+                                "Increase max threads from {} to {} to have similar number of threads to remote plan",
+                                old_max_threads,
+                                query_plan.getMaxThreads());
+                        }
                     }
                     else
                     {
