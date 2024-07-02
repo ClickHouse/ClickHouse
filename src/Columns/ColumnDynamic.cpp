@@ -4,7 +4,9 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/FieldToDataType.h>
+#include <DataTypes/DataTypesBinaryEncoding.h>
 #include <Common/Arena.h>
 #include <Common/SipHash.h>
 #include <Processors/Transforms/ColumnGathererTransform.h>
@@ -481,7 +483,7 @@ StringRef ColumnDynamic::serializeValueIntoArena(size_t n, DB::Arena & arena, co
     /// We cannot use Variant serialization here as it serializes discriminator + value,
     /// but Dynamic doesn't have fixed mapping discriminator <-> variant type
     /// as different Dynamic column can have different Variants.
-    /// Instead, we serialize null bit + variant type name (size + bytes) + value.
+    /// Instead, we serialize null bit + variant type in binary format (size + bytes) + value.
     const auto & variant_col = assert_cast<const ColumnVariant &>(*variant_column);
     auto discr = variant_col.globalDiscriminatorAt(n);
     StringRef res;
@@ -495,14 +497,15 @@ StringRef ColumnDynamic::serializeValueIntoArena(size_t n, DB::Arena & arena, co
         return res;
     }
 
-    const auto & variant_name = variant_info.variant_names[discr];
-    size_t variant_name_size = variant_name.size();
-    char * pos = arena.allocContinue(sizeof(UInt8) + sizeof(size_t) + variant_name.size(), begin);
+    const auto & variant_type = assert_cast<const DataTypeVariant &>(*variant_info.variant_type).getVariant(discr);
+    String variant_type_binary_data = encodeDataType(variant_type);
+    size_t variant_type_binary_data_size = variant_type_binary_data.size();
+    char * pos = arena.allocContinue(sizeof(UInt8) + sizeof(size_t) + variant_type_binary_data.size(), begin);
     memcpy(pos, &null_bit, sizeof(UInt8));
-    memcpy(pos + sizeof(UInt8), &variant_name_size, sizeof(size_t));
-    memcpy(pos + sizeof(UInt8) + sizeof(size_t), variant_name.data(), variant_name.size());
+    memcpy(pos + sizeof(UInt8), &variant_type_binary_data_size, sizeof(size_t));
+    memcpy(pos + sizeof(UInt8) + sizeof(size_t), variant_type_binary_data.data(), variant_type_binary_data.size());
     res.data = pos;
-    res.size = sizeof(UInt8) + sizeof(size_t) + variant_name.size();
+    res.size = sizeof(UInt8) + sizeof(size_t) + variant_type_binary_data.size();
 
     auto value_ref = variant_col.getVariantByGlobalDiscriminator(discr).serializeValueIntoArena(variant_col.offsetAt(n), arena, begin);
     res.data = value_ref.data - res.size;
@@ -521,13 +524,15 @@ const char * ColumnDynamic::deserializeAndInsertFromArena(const char * pos)
         return pos;
     }
 
-    /// Read variant type name.
-    const size_t variant_name_size = unalignedLoad<size_t>(pos);
-    pos += sizeof(variant_name_size);
-    String variant_name;
-    variant_name.resize(variant_name_size);
-    memcpy(variant_name.data(), pos, variant_name_size);
-    pos += variant_name_size;
+    /// Read variant type in binary format.
+    const size_t variant_type_binary_data_size = unalignedLoad<size_t>(pos);
+    pos += sizeof(variant_type_binary_data_size);
+    String variant_type_binary_data;
+    variant_type_binary_data.resize(variant_type_binary_data_size);
+    memcpy(variant_type_binary_data.data(), pos, variant_type_binary_data_size);
+    pos += variant_type_binary_data_size;
+    auto variant_type = decodeDataType(variant_type_binary_data);
+    auto variant_name = variant_type->getName();
     /// If we already have such variant, just deserialize it into corresponding variant column.
     auto it = variant_info.variant_name_to_discriminator.find(variant_name);
     if (it != variant_info.variant_name_to_discriminator.end())
@@ -537,7 +542,6 @@ const char * ColumnDynamic::deserializeAndInsertFromArena(const char * pos)
     }
 
     /// If we don't have such variant, add it.
-    auto variant_type = DataTypeFactory::instance().get(variant_name);
     if (likely(addNewVariant(variant_type)))
     {
         auto discr = variant_info.variant_name_to_discriminator[variant_name];
@@ -563,13 +567,13 @@ const char * ColumnDynamic::skipSerializedInArena(const char * pos) const
     if (null_bit)
         return pos;
 
-    const size_t variant_name_size = unalignedLoad<size_t>(pos);
-    pos += sizeof(variant_name_size);
-    String variant_name;
-    variant_name.resize(variant_name_size);
-    memcpy(variant_name.data(), pos, variant_name_size);
-    pos += variant_name_size;
-    auto tmp_variant_column = DataTypeFactory::instance().get(variant_name)->createColumn();
+    const size_t variant_type_binary_data_size = unalignedLoad<size_t>(pos);
+    pos += sizeof(variant_type_binary_data_size);
+    String variant_type_binary_data;
+    variant_type_binary_data.resize(variant_type_binary_data_size);
+    memcpy(variant_type_binary_data.data(), pos, variant_type_binary_data_size);
+    pos += variant_type_binary_data_size;
+    auto tmp_variant_column = decodeDataType(variant_type_binary_data)->createColumn();
     return tmp_variant_column->skipSerializedInArena(pos);
 }
 
