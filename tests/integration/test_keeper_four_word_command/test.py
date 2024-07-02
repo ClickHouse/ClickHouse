@@ -301,7 +301,7 @@ def test_cmd_conf(started_cluster):
         assert result["disk_move_retries_during_init"] == "100"
 
         assert result["log_slow_total_threshold_ms"] == "5000"
-        assert result["log_slow_cpu_threshold_ms"] == "5000"
+        assert result["log_slow_cpu_threshold_ms"] == "100"
         assert result["log_slow_connection_operation_threshold_ms"] == "1000"
     finally:
         close_keeper_socket(client)
