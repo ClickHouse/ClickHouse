@@ -977,6 +977,9 @@ TotalRowsOfMergeTreeTables
 TotalTemporaryFiles
 Tradeoff
 Transactional
+transactionID
+transactionLatestSnapshot
+transactionOldestSnapshot
 Tsai
 Tukey
 TwoColumnList
