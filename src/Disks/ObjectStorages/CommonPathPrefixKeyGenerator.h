@@ -5,6 +5,7 @@
 
 #include <filesystem>
 #include <map>
+#include <optional>
 
 namespace DB
 {
@@ -26,7 +27,7 @@ public:
 
     explicit CommonPathPrefixKeyGenerator(String key_prefix_, SharedMutex & shared_mutex_, std::weak_ptr<PathMap> path_map_);
 
-    ObjectStorageKey generate(const String & path, bool is_directory) const override;
+    ObjectStorageKey generate(const String & path, bool is_directory, const std::optional<String> & key_prefix) const override;
 
 private:
     /// Longest key prefix and unresolved parts of the source path.

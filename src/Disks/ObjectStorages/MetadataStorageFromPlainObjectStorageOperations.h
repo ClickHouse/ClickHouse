@@ -16,6 +16,7 @@ private:
     std::string key_prefix;
     MetadataStorageFromPlainObjectStorage::PathMap & path_map;
     ObjectStoragePtr object_storage;
+    const std::string metadata_key_prefix;
 
     bool write_created = false;
     bool write_finalized = false;
@@ -26,7 +27,8 @@ public:
         std::filesystem::path && path_,
         std::string && key_prefix_,
         MetadataStorageFromPlainObjectStorage::PathMap & path_map_,
-        ObjectStoragePtr object_storage_);
+        ObjectStoragePtr object_storage_,
+        const std::string & metadata_key_prefix_);
 
     void execute(std::unique_lock<SharedMutex> & metadata_lock) override;
     void undo(std::unique_lock<SharedMutex> & metadata_lock) override;
@@ -39,6 +41,7 @@ private:
     std::filesystem::path path_to;
     MetadataStorageFromPlainObjectStorage::PathMap & path_map;
     ObjectStoragePtr object_storage;
+    const std::string metadata_key_prefix;
 
     bool write_created = false;
     bool write_finalized = false;
@@ -51,7 +54,8 @@ public:
         std::filesystem::path && path_from_,
         std::filesystem::path && path_to_,
         MetadataStorageFromPlainObjectStorage::PathMap & path_map_,
-        ObjectStoragePtr object_storage_);
+        ObjectStoragePtr object_storage_,
+        const std::string & metadata_key_prefix_);
 
     void execute(std::unique_lock<SharedMutex> & metadata_lock) override;
 
@@ -65,13 +69,17 @@ private:
 
     MetadataStorageFromPlainObjectStorage::PathMap & path_map;
     ObjectStoragePtr object_storage;
+    const std::string metadata_key_prefix;
 
     std::string key_prefix;
     bool removed = false;
 
 public:
     MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation(
-        std::filesystem::path && path_, MetadataStorageFromPlainObjectStorage::PathMap & path_map_, ObjectStoragePtr object_storage_);
+        std::filesystem::path && path_,
+        MetadataStorageFromPlainObjectStorage::PathMap & path_map_,
+        ObjectStoragePtr object_storage_,
+        const std::string & metadata_key_prefix_);
 
     void execute(std::unique_lock<SharedMutex> & metadata_lock) override;
     void undo(std::unique_lock<SharedMutex> & metadata_lock) override;
