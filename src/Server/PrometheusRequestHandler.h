@@ -1,28 +1,53 @@
 #pragma once
 
 #include <Server/HTTP/HTTPRequestHandler.h>
+#include <Server/PrometheusRequestHandlerConfig.h>
 
-#include "PrometheusMetricsWriter.h"
 
 namespace DB
 {
-
+class AsynchronousMetrics;
 class IServer;
+class WriteBufferFromHTTPServerResponse;
 
+/// Handles requests for prometheus protocols (expose_metrics, remote_write, remote_read).
 class PrometheusRequestHandler : public HTTPRequestHandler
 {
-private:
-    IServer & server;
-    PrometheusMetricsWriterPtr metrics_writer;
-
 public:
-    PrometheusRequestHandler(IServer & server_, PrometheusMetricsWriterPtr metrics_writer_)
-        : server(server_)
-        , metrics_writer(std::move(metrics_writer_))
-    {
-    }
+    PrometheusRequestHandler(IServer & server_, const PrometheusRequestHandlerConfig & config_, const AsynchronousMetrics & async_metrics_);
+    ~PrometheusRequestHandler() override;
 
-    void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
+    void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event_) override;
+
+private:
+    /// Creates an internal implementation based on which PrometheusRequestHandlerConfig::Type is used.
+    void createImpl();
+
+    /// Returns the write buffer used for the current HTTP response.
+    WriteBuffer & getOutputStream(HTTPServerResponse & response);
+
+    /// Writes the current exception to the response.
+    void trySendExceptionToClient(const String & exception_message, int exception_code, HTTPServerRequest & request, HTTPServerResponse & response);
+
+    /// Calls onException() in a try-catch block.
+    void tryCallOnException();
+
+    IServer & server;
+    const PrometheusRequestHandlerConfig config;
+    const AsynchronousMetrics & async_metrics;
+    const LoggerPtr log;
+
+    class Impl;
+    class ImplWithContext;
+    class ExposeMetricsImpl;
+    class RemoteWriteImpl;
+    class RemoteReadImpl;
+    std::unique_ptr<Impl> impl;
+
+    String http_method;
+    bool send_stacktrace = false;
+    std::unique_ptr<WriteBufferFromHTTPServerResponse> write_buffer_from_response;
+    ProfileEvents::Event write_event;
 };
 
 }

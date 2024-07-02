@@ -5591,3 +5591,14 @@ Default value: `10000000`.
 Minimal size of block to compress in CROSS JOIN. Zero value means - disable this threshold. This block is compressed when any of the two thresholds (by rows or by bytes) are reached.
 
 Default value: `1GiB`.
+
+## allow_experimental_time_series_table {#allow-experimental-time-series-table}
+
+Allows creation of tables with the [TimeSeries](../../engines/table-engines/integrations/time-series.md) table engine.
+
+Possible values:
+
+- 0 — the [TimeSeries](../../engines/table-engines/integrations/time-series.md) table engine is disabled.
+- 1 — the [TimeSeries](../../engines/table-engines/integrations/time-series.md) table engine is enabled.
+
+Default value: `0`.

@@ -160,16 +160,28 @@ function(protobuf_generate)
     get_filename_component(_abs_file ${_proto} ABSOLUTE)
     get_filename_component(_abs_dir ${_abs_file} DIRECTORY)
     get_filename_component(_basename ${_proto} NAME_WE)
-    file(RELATIVE_PATH _rel_dir ${CMAKE_CURRENT_SOURCE_DIR} ${_abs_dir})
 
-    set(_possible_rel_dir)
-    if (NOT protobuf_generate_APPEND_PATH)
-        set(_possible_rel_dir ${_rel_dir}/)
+    # The protobuf compiler doesn't return paths to the files it generates so we have to calculate those paths here.
+
+    # _rel_dir is a relative path which is relative to the first include directory containing ${_proto}.
+    set(_rel_dir)
+    foreach(_include_dir ${_protobuf_include_path})
+        cmake_path(IS_PREFIX _include_dir "${_abs_dir}" _include_dir_found)
+        if(_include_dir_found)
+            file(RELATIVE_PATH _rel_dir "${_include_dir}" "${_abs_dir}")
+            if(NOT _rel_dir STREQUAL "")
+                set(_rel_dir "${_rel_dir}/")
+            endif()
+            break()
+        endif()
+    endforeach()
+    if (NOT _include_dir_found)
+        message(WARNING "Not found an include directory containing ${_proto} in ${_protobuf_include_path}")
     endif()
 
     set(_generated_srcs)
     foreach(_ext ${protobuf_generate_GENERATE_EXTENSIONS})
-      list(APPEND _generated_srcs "${protobuf_generate_PROTOC_OUT_DIR}/${_possible_rel_dir}${_basename}${_ext}")
+      list(APPEND _generated_srcs "${protobuf_generate_PROTOC_OUT_DIR}/${_rel_dir}${_basename}${_ext}")
     endforeach()
 
     if(protobuf_generate_DESCRIPTORS AND protobuf_generate_LANGUAGE STREQUAL cpp)
