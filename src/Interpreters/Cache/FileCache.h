@@ -198,6 +198,10 @@ private:
     const size_t bypass_cache_threshold;
     const size_t boundary_alignment;
     size_t load_metadata_threads;
+    const bool load_metadata_asynchronously;
+    const bool throw_on_cache_initialization_error;
+    std::atomic<bool> stop_loading_metadata = false;
+    ThreadFromGlobalPool load_metadata_main_thread;
     const bool write_cache_per_user_directory;
 
     BackgroundSchedulePool::TaskHolder keep_up_free_space_ratio_task;
@@ -245,6 +249,8 @@ private:
      * then allowed loaded cache size is std::min(n - k, max_query_cache_size).
      */
     FileCacheQueryLimitPtr query_limit;
+
+    void initializeImpl();
 
     void assertInitialized() const;
     void assertCacheCorrectness();

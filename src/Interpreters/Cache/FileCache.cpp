@@ -11,6 +11,7 @@
 #include <Interpreters/Cache/EvictionCandidates.h>
 #include <Interpreters/Context.h>
 #include <base/hex.h>
+#include "Common/Exception.h"
 #include <Common/ThreadPool.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Core/ServerUUID.h>
@@ -87,6 +88,8 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
     , bypass_cache_threshold(settings.enable_bypass_cache_with_threshold ? settings.bypass_cache_threshold : 0)
     , boundary_alignment(settings.boundary_alignment)
     , load_metadata_threads(settings.load_metadata_threads)
+    , load_metadata_asynchronously(settings.load_metadata_asynchronously)
+    , throw_on_cache_initialization_error(settings.throw_on_cache_initialization_error)
     , write_cache_per_user_directory(settings.write_cache_per_user_id_directory)
     , keep_current_size_to_max_ratio(1 - settings.keep_free_space_size_ratio)
     , keep_current_elements_to_max_ratio(1 - settings.keep_free_space_elements_ratio)
@@ -135,7 +138,28 @@ const FileCache::UserInfo & FileCache::getInternalUser()
 
 bool FileCache::isInitialized() const
 {
-    return is_initialized.load(std::memory_order_seq_cst);
+    if (load_metadata_asynchronously)
+    {
+        /// Exception during initialization,
+        /// make user aware that the cache is broken.
+        if (init_exception)
+        {
+            if (throw_on_cache_initialization_error)
+            {
+                std::rethrow_exception(init_exception);
+            }
+            else
+            {
+                tryLogCurrentException(log, "Cache failed to initialize: ");
+            }
+        }
+        return is_initialized;
+    }
+    else
+    {
+        assertInitialized();
+        return true;
+    }
 }
 
 const String & FileCache::getBasePath() const
@@ -170,6 +194,20 @@ void FileCache::assertInitialized() const
 
 void FileCache::initialize()
 {
+    status_file = make_unique<StatusFile>(fs::path(getBasePath()) / "status", StatusFile::write_full_info);
+
+    if (load_metadata_asynchronously)
+    {
+        load_metadata_main_thread = ThreadFromGlobalPool([this] { initializeImpl(); });
+    }
+    else
+    {
+        initializeImpl();
+    }
+}
+
+void FileCache::initializeImpl()
+{
     std::lock_guard lock(init_mutex);
 
     if (is_initialized)
@@ -185,8 +223,6 @@ void FileCache::initialize()
         {
             fs::create_directories(getBasePath());
         }
-
-        status_file = make_unique<StatusFile>(fs::path(getBasePath()) / "status", StatusFile::write_full_info);
     }
     catch (...)
     {
@@ -202,8 +238,6 @@ void FileCache::initialize()
         keep_up_free_space_ratio_task = Context::getGlobalContextInstance()->getSchedulePool().createTask(log->name(), [this] { freeSpaceRatioKeepingThreadFunc(); });
         keep_up_free_space_ratio_task->schedule();
     }
-
-    is_initialized = true;
 }
 
 CachePriorityGuard::Lock FileCache::lockCache() const
@@ -1173,7 +1207,6 @@ void FileCache::loadMetadataImpl()
     std::vector<ThreadFromGlobalPool> loading_threads;
     std::exception_ptr first_exception;
     std::mutex set_exception_mutex;
-    std::atomic<bool> stop_loading = false;
 
     LOG_INFO(log, "Loading filesystem cache with {} threads from {}", load_metadata_threads, metadata.getBaseDirectory());
 
@@ -1183,7 +1216,7 @@ void FileCache::loadMetadataImpl()
         {
             loading_threads.emplace_back([&]
             {
-                while (!stop_loading)
+                while (!stop_loading_metadata)
                 {
                     try
                     {
@@ -1200,7 +1233,7 @@ void FileCache::loadMetadataImpl()
                             if (!first_exception)
                                 first_exception = std::current_exception();
                         }
-                        stop_loading = true;
+                        stop_loading_metadata = true;
                         return;
                     }
                 }
@@ -1213,7 +1246,7 @@ void FileCache::loadMetadataImpl()
                 if (!first_exception)
                     first_exception = std::current_exception();
             }
-            stop_loading = true;
+            stop_loading_metadata = true;
             break;
         }
     }
@@ -1224,6 +1257,8 @@ void FileCache::loadMetadataImpl()
 
     if (first_exception)
         std::rethrow_exception(first_exception);
+
+    is_initialized = true;
 
 #ifdef ABORT_ON_LOGICAL_ERROR
     assertCacheCorrectness();
@@ -1400,6 +1435,11 @@ FileCache::~FileCache()
 void FileCache::deactivateBackgroundOperations()
 {
     shutdown.store(true);
+
+    stop_loading_metadata = true;
+    if (load_metadata_main_thread.joinable())
+        load_metadata_main_thread.join();
+
     metadata.shutdown();
     if (keep_up_free_space_ratio_task)
         keep_up_free_space_ratio_task->deactivate();
