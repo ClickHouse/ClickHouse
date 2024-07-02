@@ -719,7 +719,7 @@ ActionsDAGPtr KeyCondition::cloneASTWithInversionPushDown(ActionsDAG::NodeRawCon
   * For index to work when something like "WHERE Date = toDate(now())" is written.
   */
 Block KeyCondition::getBlockWithConstants(
-    const ASTPtr & query, const TreeRewriterResultPtr & syntax_analyzer_result, ContextPtr context)
+    const ASTPtr & query, const TreeRewriterResultPtr & syntax_analyzer_result, ContextPtr context_)
 {
     Block result
     {
@@ -728,7 +728,7 @@ Block KeyCondition::getBlockWithConstants(
 
     if (syntax_analyzer_result)
     {
-        auto actions = ExpressionAnalyzer(query, syntax_analyzer_result, context).getConstActionsDAG();
+        auto actions = ExpressionAnalyzer(query, syntax_analyzer_result, context_).getConstActionsDAG();
         for (const auto & action_node : actions->getOutputs())
         {
             if (action_node->column)
@@ -784,12 +784,14 @@ void KeyCondition::getAllSpaceFillingCurves()
 }
 
 KeyCondition::KeyCondition(
-    ActionsDAGPtr filter_dag,
-    ContextPtr context,
+    ActionsDAGPtr filter_dag_,
+    ContextPtr context_,
     const Names & key_column_names,
     const ExpressionActionsPtr & key_expr_,
     bool single_point_)
-    : key_expr(key_expr_)
+    : filter_dag(filter_dag_)
+    , context(context_)
+    , key_expr(key_expr_)
     , key_subexpr_names(getAllSubexpressionNames(*key_expr))
     , single_point(single_point_)
 {
@@ -971,7 +973,7 @@ static std::set<std::string_view> date_time_parsing_functions = {
   * which while not strictly monotonic, are monotonic everywhere on the input range.
   */
 bool KeyCondition::transformConstantWithValidFunctions(
-    ContextPtr context,
+    ContextPtr context_,
     const String & expr_name,
     size_t & out_key_column_num,
     DataTypePtr & out_key_column_type,
@@ -1048,7 +1050,7 @@ bool KeyCondition::transformConstantWithValidFunctions(
                     const auto & arg_types = func_base->getArgumentTypes();
                     if (date_time_parsing_functions.contains(func_name) && !arg_types.empty() && isStringOrFixedString(arg_types[0]))
                     {
-                        auto func_or_null = FunctionFactory::instance().get(func_name + "OrNull", context);
+                        auto func_or_null = FunctionFactory::instance().get(func_name + "OrNull", context_);
                         ColumnsWithTypeAndName arguments;
                         int i = 0;
                         for (const auto & type : func->function_base->getArgumentTypes())
@@ -1071,7 +1073,7 @@ bool KeyCondition::transformConstantWithValidFunctions(
                             auto left_arg_type = left->result_type;
                             auto left_arg_value = (*left->column)[0];
                             std::tie(const_value, const_type) = applyBinaryFunctionForFieldOfUnknownType(
-                                FunctionFactory::instance().get(func_base->getName(), context),
+                                FunctionFactory::instance().get(func_base->getName(), context_),
                                 left_arg_type, left_arg_value, const_type, const_value);
                         }
                         else
@@ -1079,7 +1081,7 @@ bool KeyCondition::transformConstantWithValidFunctions(
                             auto right_arg_type = right->result_type;
                             auto right_arg_value = (*right->column)[0];
                             std::tie(const_value, const_type) = applyBinaryFunctionForFieldOfUnknownType(
-                                FunctionFactory::instance().get(func_base->getName(), context),
+                                FunctionFactory::instance().get(func_base->getName(), context_),
                                 const_type, const_value, right_arg_type, right_arg_value);
                         }
                     }

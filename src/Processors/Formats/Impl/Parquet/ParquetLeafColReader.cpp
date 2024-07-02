@@ -225,30 +225,82 @@ ParquetLeafColReader<TColumn>::ParquetLeafColReader(
 }
 
 template <typename TColumn>
-ColumnWithTypeAndName ParquetLeafColReader<TColumn>::readBatch(UInt64 rows_num, const String & name)
+UInt64 ParquetLeafColReader<TColumn>::skipRecords(UInt64 num_records)
 {
-    reading_rows_num = rows_num;
+    assert(read_state);
+    UInt64 remained_num_records = num_records;
+    while (remained_num_records)
+    {
+        if (cur_page_values < remained_num_records)
+        {
+            /// Skip total current page
+            remained_num_records -= cur_page_values;
+            cur_page_values = 0;
+        }
+        else
+        {
+            /// Read current page partially, but not use them
+            auto tmp_col = base_data_type->createColumn();
+            tmp_col->reserve(remained_num_records);
+            auto tmp_null_map = std::make_unique<LazyNullMap>(remained_num_records);
+            data_values_reader->readBatch(tmp_col, *tmp_null_map, static_cast<UInt32>(remained_num_records));
+            cur_page_values -= remained_num_records;
+            remained_num_records = 0;
+        }
+    }
+
+    read_state->skip(static_cast<UInt32>(num_records - remained_num_records));
+    return num_records - remained_num_records;
+}
+
+template <typename TColumn>
+ColumnWithTypeAndName ParquetLeafColReader<TColumn>::readBatch(UInt64 max_read_rows, const String & name)
+{
+    assert(read_state);
+    reading_rows_num = max_read_rows;
+
     auto readPageIfEmpty = [&]()
     {
-        while (!cur_page_values) readPage();
+        while (!cur_page_values)
+        {
+            if (!readPage())
+            {
+                return false;
+            }
+        }
+        return true;
     };
 
     // make sure the dict page has been read, and the status is updated
     readPageIfEmpty();
-    resetColumn(rows_num);
+    resetColumn(max_read_rows);
+    UInt32 current_read_rows = 0;
 
-    while (rows_num)
+    auto remained_rows_to_read = max_read_rows;
+    while (remained_rows_to_read)
     {
         // if dictionary page encountered, another page should be read
-        readPageIfEmpty();
+        if (!readPageIfEmpty())
+            break;
+        if (!read_state->hasMoreToRead())
+            break;
 
-        auto read_values = static_cast<UInt32>(std::min(rows_num, static_cast<UInt64>(cur_page_values)));
-        data_values_reader->readBatch(column, *null_map, read_values);
-
-        cur_page_values -= read_values;
-        rows_num -= read_values;
+        auto rows_to_read = read_state->nextRowsToRead();
+        UInt32 read_values = 0;
+        if (rows_to_read < 0)
+        {
+            skipRecords(-rows_to_read);
+        }
+        else
+        {
+            read_values = std::min(static_cast<UInt32>(max_read_rows) - current_read_rows, std::min(static_cast<UInt32>(rows_to_read), cur_page_values));
+            data_values_reader->readBatch(column, *null_map, read_values);
+            read_state->read(static_cast<Int32>(read_values));
+            current_read_rows += read_values;
+            remained_rows_to_read -= read_values;
+            cur_page_values -= read_values;
+        }
     }
-
     return releaseColumn(name);
 }
 
@@ -367,10 +419,13 @@ ColumnWithTypeAndName ParquetLeafColReader<TColumn>::releaseColumn(const String 
 }
 
 template <typename TColumn>
-void ParquetLeafColReader<TColumn>::readPage()
+bool ParquetLeafColReader<TColumn>::readPage()
 {
     // refer to: ColumnReaderImplBase::ReadNewPage in column_reader.cc
-    auto cur_page = parquet_page_reader->NextPage();
+    //auto cur_page = parquet_page_reader->NextPage();
+    cur_page = parquet_page_reader->NextPage();
+    if (!cur_page)
+        return false;
     switch (cur_page->type())
     {
         case parquet::PageType::DATA_PAGE:
@@ -406,6 +461,7 @@ void ParquetLeafColReader<TColumn>::readPage()
         default:
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported page type: {}", cur_page->type());
     }
+    return true;
 }
 
 template <typename TColumn>

@@ -41,8 +41,8 @@ class KeyCondition
 public:
     /// Construct key condition from ActionsDAG nodes
     KeyCondition(
-        ActionsDAGPtr filter_dag,
-        ContextPtr context,
+        ActionsDAGPtr filter_dag_,
+        ContextPtr context_,
         const Names & key_column_names,
         const ExpressionActionsPtr & key_expr,
         bool single_point_ = false);
@@ -216,6 +216,9 @@ public:
     const RPN & getRPN() const { return rpn; }
     const ColumnIndices & getKeyColumns() const { return key_columns; }
 
+    ActionsDAGPtr getFilterActionsDAG() const { return filter_dag; }
+    ContextPtr getContext() const { return context; }
+
     bool isRelaxed() const { return relaxed; }
 
 private:
@@ -254,7 +257,7 @@ private:
         std::vector<RPNBuilderFunctionTreeNode> & out_functions_chain);
 
     bool transformConstantWithValidFunctions(
-        ContextPtr context,
+        ContextPtr context_,
         const String & expr_name,
         size_t & out_key_column_num,
         DataTypePtr & out_key_column_type,
@@ -322,6 +325,8 @@ private:
     ColumnIndices key_columns;
     std::vector<size_t> key_indices;
 
+    ActionsDAGPtr filter_dag;
+    ContextPtr context;
     /// Expression which is used for key condition.
     const ExpressionActionsPtr key_expr;
     /// All intermediate columns are used to calculate key_expr.

@@ -10,6 +10,7 @@ namespace parquet
 {
 
 class ColumnDescriptor;
+class Page;
 
 }
 
@@ -27,7 +28,7 @@ public:
         std::unique_ptr<parquet::ColumnChunkMetaData> meta_,
         std::unique_ptr<parquet::PageReader> reader_);
 
-    ColumnWithTypeAndName readBatch(UInt64 rows_num, const String & name) override;
+    ColumnWithTypeAndName readBatch(UInt64 max_read_rows, const String & name) override;
 
 private:
     const parquet::ColumnDescriptor & col_descriptor;
@@ -42,16 +43,18 @@ private:
     ColumnPtr dictionary;
 
     UInt64 reading_rows_num = 0;
+    std::shared_ptr<parquet::Page> cur_page;
     UInt32 cur_page_values = 0;
     bool reading_low_cardinality = false;
 
     Poco::Logger * log;
 
+    UInt64 skipRecords(UInt64 num_records) override;
     void resetColumn(UInt64 rows_num);
     void degradeDictionary();
     ColumnWithTypeAndName releaseColumn(const String & name);
 
-    void readPage();
+    bool readPage();
     void readPageV1(const parquet::DataPageV1 & page);
     void readPageV2(const parquet::DataPageV2 & page);
 

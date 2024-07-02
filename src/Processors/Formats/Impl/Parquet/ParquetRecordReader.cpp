@@ -19,8 +19,11 @@
 #include <parquet/arrow/reader.h>
 #include <parquet/column_reader.h>
 #include <parquet/properties.h>
+#include <memory>
+#include <numeric>
 
 #include "ParquetLeafColReader.h"
+#include <arrow/io/memory.h>
 
 namespace DB
 {
@@ -302,16 +305,24 @@ ParquetRecordReader::ParquetRecordReader(
     Block header_,
     parquet::ArrowReaderProperties arrow_properties_,
     parquet::ReaderProperties reader_properties_,
-    std::shared_ptr<::arrow::io::RandomAccessFile> arrow_file,
+    std::shared_ptr<::arrow::io::RandomAccessFile> arrow_file_,
     const FormatSettings & format_settings,
     std::vector<int> row_groups_indices_,
+    const std::vector<int> & column_indices_,
+    std::shared_ptr<const KeyCondition> key_condition_,
     std::shared_ptr<parquet::FileMetaData> metadata)
-    : file_reader(createFileReader(std::move(arrow_file), reader_properties_, std::move(metadata)))
+    : arrow_file(std::move(arrow_file_))
+    , file_reader(createFileReader(arrow_file, reader_properties_, std::move(metadata)))
     , arrow_properties(arrow_properties_)
     , header(std::move(header_))
     , max_block_size(format_settings.parquet.max_block_size)
     , row_groups_indices(std::move(row_groups_indices_))
-    , left_rows(getTotalRows(*file_reader->metadata()))
+    , column_index_filter(std::make_unique<ParquetFileColumnIndexFilter>(
+          *file_reader,
+          *arrow_file->GetSize(),
+          column_indices_,
+          format_settings.parquet.case_insensitive_column_matching,
+          key_condition_))
 {
     log = &Poco::Logger::get("ParquetRecordReader");
 
@@ -348,51 +359,73 @@ ParquetRecordReader::ParquetRecordReader(
 
 Chunk ParquetRecordReader::readChunk()
 {
-    if (!left_rows)
+    if (next_row_group_idx >= row_groups_indices.size() && current_row_group_finished)
     {
         return Chunk{};
     }
-    if (!cur_row_group_left_rows)
+    if (current_row_group_finished)
     {
         loadNextRowGroup();
     }
 
     Columns columns(header.columns());
-    auto num_rows_read = std::min(max_block_size, cur_row_group_left_rows);
+    //auto num_rows_read = std::min(max_block_size, cur_row_group_left_rows);
+    auto num_rows_read = max_block_size;
+    bool has_any_col_finished = false;
+    bool has_any_col_unfinished = false;
     for (size_t i = 0; i < header.columns(); i++)
     {
         columns[i] = castColumn(
             column_readers[i]->readBatch(num_rows_read, header.getByPosition(i).name),
             header.getByPosition(i).type);
+        has_any_col_finished |= !column_readers[i]->hasMoreToRead();
+        has_any_col_unfinished |= column_readers[i]->hasMoreToRead();
     }
-    left_rows -= num_rows_read;
-    cur_row_group_left_rows -= num_rows_read;
+    if (has_any_col_finished == has_any_col_unfinished)
+    {
+        throw Exception(ErrorCodes::PARQUET_EXCEPTION, "Some columns are finished, but some are not");
+    }
+    current_row_group_finished = !has_any_col_unfinished;
+    // Each column should read the same number rows.
+    auto read_rows = columns[0]->size();
+    return Chunk{std::move(columns), read_rows};
 
-    return Chunk{std::move(columns), num_rows_read};
 }
 
 void ParquetRecordReader::loadNextRowGroup()
 {
     Stopwatch watch(CLOCK_MONOTONIC);
-    cur_row_group_reader = file_reader->RowGroup(row_groups_indices[next_row_group_idx]);
+    auto row_group_index = row_groups_indices[next_row_group_idx];
+    cur_row_group_reader = file_reader->RowGroup(row_group_index);
+    auto row_group_metadata = file_reader->metadata()->RowGroup(row_group_index);
+
+    // Prior to Arrow 3.0.0, is_compressed was always set to false in column headers,
+    // even if compression was used. See ARROW-17100.
+    const bool always_compressed
+        = file_reader->metadata()->writer_version().VersionLt(parquet::ApplicationVersion::PARQUET_CPP_10353_FIXED_VERSION());
 
     column_readers.clear();
     for (size_t i = 0; i < parquet_col_indice.size(); i++)
     {
+        const auto & col_desc = *file_reader->metadata()->schema()->Column(parquet_col_indice[i]);
+        auto [file_read_range, row_read_sequence] = column_index_filter->calculateReadSequence(row_group_index, col_desc.name());
+        auto page_reader = buildPageReader(
+            *arrow_file, file_read_range, *cur_row_group_reader->metadata()->ColumnChunk(parquet_col_indice[i]), always_compressed);
         ColReaderFactory factory(
             arrow_properties,
-            *file_reader->metadata()->schema()->Column(parquet_col_indice[i]),
+            col_desc,
             header.getByPosition(i).type,
             cur_row_group_reader->metadata()->ColumnChunk(parquet_col_indice[i]),
-            cur_row_group_reader->GetColumnPageReader(parquet_col_indice[i]));
+            std::move(page_reader));
         column_readers.emplace_back(factory.makeReader());
+        column_readers.back()->setupReadState(row_read_sequence);
     }
 
     auto duration = watch.elapsedNanoseconds() / 1e6;
-    LOG_DEBUG(log, "begin to read row group {} consumed {} ms", row_groups_indices[next_row_group_idx], duration);
+    LOG_DEBUG(log, "begin to read row group {} consumed {} ms", row_group_index, duration);
 
     ++next_row_group_idx;
-    cur_row_group_left_rows = cur_row_group_reader->metadata()->num_rows();
+    current_row_group_finished = true;
 }
 
 Int64 ParquetRecordReader::getTotalRows(const parquet::FileMetaData & meta_data)
@@ -405,4 +438,53 @@ Int64 ParquetRecordReader::getTotalRows(const parquet::FileMetaData & meta_data)
     return res;
 }
 
+
+static std::shared_ptr<parquet::ArrowInputStream> getStream(arrow::io::RandomAccessFile & reader, const std::vector<arrow::io::ReadRange> & ranges)
+{
+    const Int64 nbytes = std::accumulate(
+        ranges.begin(), ranges.end(), 0, [](const int64_t total, const arrow::io::ReadRange & range) { return total + range.length; });
+    auto allocate_result = arrow::AllocateResizableBuffer(nbytes);
+    std::shared_ptr<arrow::Buffer> buffer;
+    if (allocate_result.ok())
+        buffer.reset(allocate_result.ValueUnsafe().release());
+    else
+        throw Exception(ErrorCodes::PARQUET_EXCEPTION, "Allocate buffer failed");
+
+    Int64 readPos = 0;
+    std::ranges::for_each(
+        ranges,
+        [&](const arrow::io::ReadRange & range)
+        {
+            const Int64 offset = range.offset;
+            const Int64 length = range.length;
+            auto result = reader.ReadAt(offset, length, buffer->mutable_data() + readPos);
+            Int64 bytes_read = 0;
+            if (result.ok())
+                bytes_read = *result;
+            else
+                throw Exception(ErrorCodes::PARQUET_EXCEPTION, "read at offset {} failed", offset);
+            assert(bytes_read == length);
+            readPos += bytes_read;
+        });
+    assert(nbytes == readPos);
+
+    return std::make_shared<::arrow::io::BufferReader>(buffer);
+}
+
+std::unique_ptr<parquet::PageReader> ParquetRecordReader::buildPageReader(
+    arrow::io::RandomAccessFile & reader,
+    const std::vector<arrow::io::ReadRange> & ranges,
+    parquet::ColumnChunkMetaData & column_metadata,
+    bool always_compressed)
+{
+
+    std::shared_ptr<parquet::ArrowInputStream> input_stream = getStream(reader, ranges);
+    const parquet::ReaderProperties properties;
+    return parquet::PageReader::Open(
+        input_stream,
+        column_metadata.num_values(),
+        column_metadata.compression(),
+        properties,
+        always_compressed);
+}
 }
