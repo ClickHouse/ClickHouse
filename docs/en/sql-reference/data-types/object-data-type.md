@@ -1,23 +1,18 @@
 ---
-slug: /en/sql-reference/data-types/json
+slug: /en/sql-reference/data-types/object-data-type
 sidebar_position: 26
-sidebar_label: JSON
+sidebar_label: Object Data Type
 ---
 
-# JSON
+# Object Data Type
 
 :::note
-This feature is experimental and is not production-ready. If you need to work with JSON documents, consider using [this guide](/docs/en/integrations/data-ingestion/data-formats/json.md) instead.
+This feature is not production-ready and is now deprecated. If you need to work with JSON documents, consider using [this guide](/docs/en/integrations/data-ingestion/data-formats/json.md) instead. A new implementation to support JSON object is in progress and can be tracked [here](https://github.com/ClickHouse/ClickHouse/issues/54864)
 :::
 
 Stores JavaScript Object Notation (JSON) documents in a single column.
 
 `JSON` is an alias for `Object('json')`.
-
-:::note
-The JSON data type is an obsolete feature. Do not use it.
-If you want to use it, set `allow_experimental_object_type = 1`.
-:::
 
 ## Example
 
