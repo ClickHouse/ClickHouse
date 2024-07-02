@@ -237,6 +237,9 @@ public:
 
     /// Check if commands have any full-text index
     static bool hasFullTextIndex(const StorageInMemoryMetadata & metadata);
+
+    /// Try to optimize MODIFY TTL, and return the delta of the modified TTL.
+    time_t tryOptimizeModifyTLL(const StorageInMemoryMetadata & metadata, ContextPtr context, const AlterCommand & alter_cmd) const;
 };
 
 }
