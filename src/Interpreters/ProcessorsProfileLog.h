@@ -17,12 +17,14 @@ struct ProcessorProfileLogElement
     UInt64 id{};
     std::vector<UInt64> parent_ids;
 
-    UInt64 plan_step{};
+    UInt64 plan_step;
     UInt64 plan_group{};
 
     String initial_query_id;
     String query_id;
     String processor_name;
+    String processor_uniq_id;
+    String step_uniq_id;
 
     /// Milliseconds spend in IProcessor::work()
     UInt32 elapsed_us{};
