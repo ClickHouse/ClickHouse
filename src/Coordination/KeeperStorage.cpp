@@ -2322,7 +2322,7 @@ void KeeperStorage::preprocessRequest(
                 elapsed_ms,
                 zk_request->toString(/*short_format=*/true));
         }
-        ProfileEvents::increment(ProfileEvents::KeeperPreprocessElapsedMicroseconds, watch.elapsedMicroseconds());
+        ProfileEvents::increment(ProfileEvents::KeeperPreprocessElapsedMicroseconds, elapsed);
     });
 
     if (!initialized)
@@ -2436,7 +2436,7 @@ KeeperStorage::ResponsesForSessions KeeperStorage::processRequest(
                 elapsed_ms,
                 zk_request->toString(/*short_format=*/true));
         }
-        ProfileEvents::increment(ProfileEvents::KeeperProcessElapsedMicroseconds, watch.elapsedMicroseconds());
+        ProfileEvents::increment(ProfileEvents::KeeperProcessElapsedMicroseconds, elapsed);
     });
 
     if (!initialized)
