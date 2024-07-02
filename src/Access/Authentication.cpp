@@ -8,6 +8,7 @@
 #include <Common/Exception.h>
 #include <Common/SSHWrapper.h>
 #include <Common/typeid_cast.h>
+#include <Access/Common/SSLCertificateSubjects.h>
 
 #include "config.h"
 
@@ -162,8 +163,21 @@ namespace
         const SSLCertificateCredentials * ssl_certificate_credentials,
         const AuthenticationData & authentication_method)
     {
-        return AuthenticationType::SSL_CERTIFICATE == authentication_method.getType()
-            && authentication_method.getSSLCertificateCommonNames().contains(ssl_certificate_credentials->getCommonName());
+        if (AuthenticationType::SSL_CERTIFICATE != authentication_method.getType())
+        {
+            return false;
+        }
+
+        for (SSLCertificateSubjects::Type type : {SSLCertificateSubjects::Type::CN, SSLCertificateSubjects::Type::SAN})
+        {
+            for (const auto & subject : authentication_method.getSSLCertificateSubjects().at(type))
+            {
+                if (ssl_certificate_credentials->getSSLCertificateSubjects().at(type).contains(subject))
+                    return true;
+            }
+        }
+
+        return false;
     }
 
 #if USE_SSH

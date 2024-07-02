@@ -575,6 +575,7 @@ MySQLDump
 MySQLThreads
 NATS
 NCHAR
+NDJSON
 NEKUDOTAYIM
 NEWDATE
 NEWDECIMAL
@@ -717,6 +718,8 @@ PlantUML
 PointDistKm
 PointDistM
 PointDistRads
+PostHistory
+PostLink
 PostgreSQLConnection
 PostgreSQLThreads
 Postgres
@@ -1014,8 +1017,8 @@ Updatable
 Uppercased
 Uptime
 Uptrace
-UrlDecode
-UrlEncode
+URLDecode
+URLEncode
 UserID
 Util
 VARCHAR
@@ -2262,6 +2265,7 @@ proleptic
 prometheus
 proportionsZTest
 proto
+protocol
 protobuf
 protobufsingle
 proxied
@@ -2515,6 +2519,7 @@ sqlite
 sqrt
 src
 srcReplicas
+stackoverflow
 stacktrace
 stacktraces
 startsWith
@@ -2853,6 +2858,7 @@ userver
 utils
 uuid
 uuidv
+vCPU
 varPop
 varPopStable
 varSamp
