@@ -19,19 +19,27 @@ namespace DB
 namespace Ceph
 {
 
+using RadosIterator = librados::NObjectIterator;
+
 /// Implement detail of Ceph rados IO. Do not print any sensitive information in logs
 /// TODO: add connection pool
 class RadosIO
 {
 public:
-    RadosIO(std::shared_ptr<librados::Rados> rados_, const String & pool_, const String & ns_ = "", bool connect_ = false);
+    RadosIO(std::shared_ptr<librados::Rados> rados_, const String & pool_, const String & ns_ = "", bool connect_ = true);
     explicit RadosIO(librados::IoCtx io_ctx_);
     RadosIO(const RadosIO &) = delete;
     RadosIO(RadosIO &&) = default;
 
     void connect();
 
-    void assertConnected();
+    void close();
+
+    void assertConnected() const;
+
+    RadosIterator begin() { return io_ctx.nobjects_begin(); }
+
+    const RadosIterator & end() const { return io_ctx.nobjects_end(); }
 
     size_t read(const String & oid, char * data, size_t length, uint64_t offset = 0);
 
@@ -45,19 +53,19 @@ public:
 
     String getAttribute(const String & oid, const String & attr);
 
+    void setAttribute(const String & oid, const String & attr, const String & value);
+
     void getAttributes(const String & oid, std::map<String, String> & attrs);
 
-    std::optional<ObjectMetadata> tryGetMetadata(const String & oid, std::optional<Exception> * exception);
+    void setAttributes(const String & oid, const std::map<String, String> & attrs);
 
-    ObjectMetadata getMetadata(const String & oid, uint64_t * size, struct timespec * mtime, std::map<String, String> & attrs);
+    std::optional<ObjectMetadata> tryGetMetadata(const String & oid, std::optional<Exception> * exception = nullptr);
+
+    ObjectMetadata getMetadata(const String & oid);
 
     bool exists(const String & oid);
 
     void remove(const String & oid, bool if_exists = false);
-
-    void list(size_t max_objects, std::vector<String> & oids);
-
-    void listWithPrefix(const String & prefix, size_t max_objects, std::vector<String> & oids);
 
     void sync() {}
 

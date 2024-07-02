@@ -1,9 +1,11 @@
 #include "CephObjectStorage.h"
 #include <ctime>
+#include <memory>
 #include <fcntl.h>
 #include <rados/librados.hpp>
 
 #include "Common/ObjectStorageKey.h"
+#include "Disks/ObjectStorages/Ceph/CephUtils.h"
 #include <IO/Ceph/RadosIO.h>
 
 #if USE_CEPH
@@ -54,68 +56,45 @@ namespace ErrorCodes
 namespace
 {
 
-// class S3IteratorAsync final : public IObjectStorageIteratorAsync
-// {
-// public:
-//     S3IteratorAsync(
-//         const std::string & bucket_,
-//         const std::string & path_prefix,
-//         std::shared_ptr<const S3::Client> client_,
-//         size_t max_list_size)
-//         : IObjectStorageIteratorAsync(
-//             CurrentMetrics::ObjectStorageS3Threads,
-//             CurrentMetrics::ObjectStorageS3ThreadsActive,
-//             CurrentMetrics::ObjectStorageS3ThreadsScheduled,
-//             "ListObjectS3")
-//         , client(client_)
-//         , request(std::make_unique<S3::ListObjectsV2Request>())
-//     {
-//         request->SetBucket(bucket_);
-//         request->SetPrefix(path_prefix);
-//         request->SetMaxKeys(static_cast<int>(max_list_size));
-//     }
+class CephIteratorAsync final : public IObjectStorageIteratorAsync
+{
+public:
+    CephIteratorAsync(
+        std::unique_ptr<Ceph::RadosIO> io_impl_,
+        Ceph::RadosIterator begin_,
+        Ceph::RadosIterator end_,
+        size_t max_list_size_)
+        : IObjectStorageIteratorAsync(
+            CurrentMetrics::ObjectStorageS3Threads,
+            CurrentMetrics::ObjectStorageS3ThreadsActive,
+            CurrentMetrics::ObjectStorageS3ThreadsScheduled,
+            "ListObjectS3")
+        , io_impl(std::move(io_impl_))
+        , current(begin_)
+        , end(end_)
+        , max_list_size(max_list_size_) {}
 
-//     ~S3IteratorAsync() override
-//     {
-//         /// Deactivate background threads before resetting the request to avoid data race.
-//         deactivate();
-//         request.reset();
-//         client.reset();
-//     }
+    ~CephIteratorAsync() override = default;
 
-// private:
-//     bool getBatchAndCheckNext(RelativePathsWithMetadata & batch) override
-//     {
-//         ProfileEvents::increment(ProfileEvents::S3ListObjects);
-//         ProfileEvents::increment(ProfileEvents::DiskS3ListObjects);
+private:
+    bool getBatchAndCheckNext(RelativePathsWithMetadata & batch) override
+    {
+        size_t count = 0;
+        while (current != end && count < max_list_size)
+        {
+            auto object_id = current->get_oid();
+            batch.emplace_back(std::make_shared<RelativePathWithMetadata>(object_id, io_impl->getMetadata(object_id)));
+            ++current;
+            ++count;
+        }
+        return true;
+    }
 
-//         auto outcome = client->ListObjectsV2(*request);
-
-//         /// Outcome failure will be handled on the caller side.
-//         if (outcome.IsSuccess())
-//         {
-//             request->SetContinuationToken(outcome.GetResult().GetNextContinuationToken());
-
-//             auto objects = outcome.GetResult().GetContents();
-//             for (const auto & object : objects)
-//             {
-//                 ObjectMetadata metadata{static_cast<uint64_t>(object.GetSize()), Poco::Timestamp::fromEpochTime(object.GetLastModified().Seconds()), {}};
-//                 batch.emplace_back(std::make_shared<RelativePathWithMetadata>(object.GetKey(), std::move(metadata)));
-//             }
-
-//             /// It returns false when all objects were returned
-//             return outcome.GetResult().GetIsTruncated();
-//         }
-
-//         throw S3Exception(outcome.GetError().GetErrorType(),
-//                           "Could not list objects in bucket {} with prefix {}, S3 exception: {}, message: {}",
-//                           quoteString(request->GetBucket()), quoteString(request->GetPrefix()),
-//                           backQuote(outcome.GetError().GetExceptionName()), quoteString(outcome.GetError().GetMessage()));
-//     }
-
-//     std::shared_ptr<const S3::Client> client;
-//     std::unique_ptr<S3::ListObjectsV2Request> request;
-// };
+    std::unique_ptr<Ceph::RadosIO> io_impl;
+    librados::NObjectIterator current;
+    const librados::NObjectIterator end;
+    size_t max_list_size;
+};
 
 }
 
@@ -140,7 +119,6 @@ std::unique_ptr<ReadBufferFromFileBase> CephObjectStorage::readObjects( /// NOLI
         [this, settings_ptr, disk_read_settings]
         (bool restricted_seek, const StoredObject & object_) -> std::unique_ptr<ReadBufferFromFileBase>
     {
-        Ceph::RadosIO io_impl(rados, endpoint.pool);
         return std::make_unique<ReadBufferFromCeph>(
             std::make_unique<Ceph::RadosIO>(rados, endpoint.pool),
             object_.remote_path,
@@ -198,7 +176,7 @@ std::unique_ptr<ReadBufferFromFileBase> CephObjectStorage::readObject( /// NOLIN
 std::unique_ptr<WriteBufferFromFileBase> CephObjectStorage::writeObject( /// NOLINT
     const StoredObject & object,
     WriteMode mode,
-    std::optional<ObjectAttributes> /*attributes*/,
+    std::optional<ObjectAttributes> attributes,
     size_t buf_size,
     const WriteSettings & write_settings)
 {
@@ -208,57 +186,27 @@ std::unique_ptr<WriteBufferFromFileBase> CephObjectStorage::writeObject( /// NOL
         std::make_unique<Ceph::RadosIO>(rados, endpoint.pool),
         object.remote_path,
         write_settings,
+        attributes,
         buf_size,
         mode);
 }
 
-
 ObjectStorageIteratorPtr CephObjectStorage::iterate(const std::string & path_prefix, size_t max_keys) const
 {
-    auto settings_ptr = ceph_settings.get();
-    return std::make_shared<S3IteratorAsync>(uri.bucket, path_prefix, client.get(), max_keys);
+    auto io_impl = std::make_unique<Ceph::RadosIO>(rados, endpoint.pool, /*ns*/path_prefix);
+    return std::make_shared<CephIteratorAsync>(std::move(io_impl), io_impl->begin(), io_impl->end(), max_keys);
 }
 
 void CephObjectStorage::listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const
 {
-    auto settings_ptr = ceph_settings.get();
-    if (max_keys)
-        request.SetMaxKeys(static_cast<int>(max_keys));
-    else
-        request.SetMaxKeys(settings_ptr->list_object_keys_size);
-
-    do
+    auto io_impl = std::make_unique<Ceph::RadosIO>(rados, endpoint.pool, /*ns*/path);
+    size_t count = 0;
+    for (auto it = io_impl->begin(); it != io_impl->end() && count < max_keys; ++it)
     {
-        ProfileEvents::increment(ProfileEvents::S3ListObjects);
-        ProfileEvents::increment(ProfileEvents::DiskS3ListObjects);
-
-        outcome = client.get()->ListObjectsV2(request);
-        throwIfError(outcome);
-
-        auto result = outcome.GetResult();
-        auto objects = result.GetContents();
-
-        if (objects.empty())
-            break;
-
-        for (const auto & object : objects)
-            children.emplace_back(std::make_shared<RelativePathWithMetadata>(
-                object.GetKey(),
-                ObjectMetadata{
-                    static_cast<uint64_t>(object.GetSize()),
-                    Poco::Timestamp::fromEpochTime(object.GetLastModified().Seconds()),
-                    {}}));
-
-        if (max_keys)
-        {
-            size_t keys_left = max_keys - children.size();
-            if (keys_left <= 0)
-                break;
-            request.SetMaxKeys(static_cast<int>(keys_left));
-        }
-
-        request.SetContinuationToken(outcome.GetResult().GetNextContinuationToken());
-    } while (outcome.GetResult().GetIsTruncated());
+        auto object_id = it->get_oid();
+        children.emplace_back(std::make_shared<RelativePathWithMetadata>(object_id, io_impl->getMetadata(object_id)));
+        ++count;
+    }
 }
 
 void CephObjectStorage::removeObjectImpl(const StoredObject & object, bool if_exists)
@@ -294,35 +242,12 @@ void CephObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
 
 std::optional<ObjectMetadata> CephObjectStorage::tryGetObjectMetadata(const std::string & path) const
 {
-    auto settings_ptr = ceph_settings.get();
-    auto object_info = S3::getObjectInfo(
-        *client.get(), uri.bucket, path, {}, /* with_metadata= */ true, /* throw_on_error= */ false);
-
-    if (object_info.size == 0 && object_info.last_modification_time == 0 && object_info.metadata.empty())
-        return {};
-
-    ObjectMetadata result;
-    result.size_bytes = object_info.size;
-    result.last_modified = Poco::Timestamp::fromEpochTime(object_info.last_modification_time);
-    result.attributes = object_info.metadata;
-
-    return result;
+    return base_io->tryGetMetadata(path);
 }
 
 ObjectMetadata CephObjectStorage::getObjectMetadata(const std::string & path) const
 {
-    auto settings_ptr = ceph_settings.get();
-    size_t sz;
-    struct timespec mtime;
-    std::map<String, String> attrs;
-    base_io->getMetadata(path, &sz, &mtime, attrs);
-
-    ObjectMetadata result;
-    result.size_bytes = sz;
-    result.last_modified = Poco::Timestamp::fromEpochTime(mtime.tv_sec);
-    result.attributes = std::move(metadata);
-
-    return result;
+    return base_io->getMetadata(path);
 }
 
 void CephObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT
@@ -344,7 +269,7 @@ void CephObjectStorage::copyObject( // NOLINT
     std::optional<ObjectAttributes> object_to_attributes)
 {
     ReadBufferFromCeph from(rados, endpoint.pool, object_from.remote_path, read_settings);
-    WriteBufferFromCeph to(rados, endpoint.pool, object_to.remote_path, write_settings);
+    WriteBufferFromCeph to(rados, endpoint.pool, object_to.remote_path, write_settings, object_to_attributes);
     copyData(from, to);
 }
 
@@ -355,61 +280,56 @@ void CephObjectStorage::setNewSettings(std::unique_ptr<CephObjectStorageSettings
 
 void CephObjectStorage::shutdown()
 {
-    /// This call stops any next retry attempts for ongoing S3 requests.
-    /// If S3 request is failed and the method below is executed S3 client immediately returns the last failed S3 request outcome.
-    /// If S3 is healthy nothing wrong will be happened and S3 requests will be processed in a regular way without errors.
-    /// This should significantly speed up shutdown process if S3 is unhealthy.
-    const_cast<S3::Client &>(*client.get()).DisableRequestProcessing();
+    base_io->close();
+    rados->shutdown();
 }
 
 void CephObjectStorage::startup()
 {
-    /// Need to be enabled if it was disabled during shutdown() call.
-    const_cast<S3::Client &>(*client.get()).EnableRequestProcessing();
+    rados->connect();
+    base_io->connect();
 }
 
-void CephObjectStorage::applyNewSettings(
-    const Poco::Util::AbstractConfiguration & config,
-    const std::string & config_prefix,
-    ContextPtr context,
-    const ApplyNewSettingsOptions & options)
-{
-    auto settings_from_config = getSettings(config, config_prefix, context, uri.uri_str, context->getSettingsRef().s3_validate_request_settings);
-    auto modified_settings = std::make_unique<CephObjectStorageSettings>(*ceph_settings.get());
-    modified_settings->auth_settings.updateIfChanged(settings_from_config->auth_settings);
-    modified_settings->request_settings.updateIfChanged(settings_from_config->request_settings);
+// void CephObjectStorage::applyNewSettings(
+//     const Poco::Util::AbstractConfiguration & config,
+//     const std::string & config_prefix,
+//     ContextPtr context,
+//     const ApplyNewSettingsOptions & options)
+// {
+//     auto settings_from_config = getSettings(config, config_prefix, context, uri.uri_str, context->getSettingsRef().s3_validate_request_settings);
+//     auto modified_settings = std::make_unique<CephObjectStorageSettings>(*ceph_settings.get());
+//     modified_settings->auth_settings.updateIfChanged(settings_from_config->auth_settings);
+//     modified_settings->request_settings.updateIfChanged(settings_from_config->request_settings);
 
-    if (auto endpoint_settings = context->getStorageS3Settings().getSettings(uri.uri.toString(), context->getUserName()))
-    {
-        modified_settings->auth_settings.updateIfChanged(endpoint_settings->auth_settings);
-        modified_settings->request_settings.updateIfChanged(endpoint_settings->request_settings);
-    }
+//     if (auto endpoint_settings = context->getStorageS3Settings().getSettings(uri.uri.toString(), context->getUserName()))
+//     {
+//         modified_settings->auth_settings.updateIfChanged(endpoint_settings->auth_settings);
+//         modified_settings->request_settings.updateIfChanged(endpoint_settings->request_settings);
+//     }
 
-    auto current_settings = ceph_settings.get();
-    if (options.allow_client_change
-        && (current_settings->auth_settings.hasUpdates(modified_settings->auth_settings) || for_disk_s3))
-    {
-        auto new_client = getClient(uri, *modified_settings, context, for_disk_s3);
-        client.set(std::move(new_client));
-    }
-    ceph_settings.set(std::move(modified_settings));
-}
+//     auto current_settings = ceph_settings.get();
+//     if (options.allow_client_change
+//         && (current_settings->auth_settings.hasUpdates(modified_settings->auth_settings) || for_disk_s3))
+//     {
+//         auto new_client = getClient(uri, *modified_settings, context, for_disk_s3);
+//         client.set(std::move(new_client));
+//     }
+//     ceph_settings.set(std::move(modified_settings));
+// }
 
 std::unique_ptr<IObjectStorage> CephObjectStorage::cloneObjectStorage(
     const std::string & new_namespace,
-    const Poco::Util::AbstractConfiguration & config,
-    const std::string & config_prefix,
-    ContextPtr context)
+    const Poco::Util::AbstractConfiguration & /*config*/,
+    const std::string & /*config_prefix*/,
+    ContextPtr /*context*/)
 {
-    const auto & settings = context->getSettingsRef();
-    auto new_ceph_settings = getSettings(config, config_prefix, context, uri.uri_str, settings.s3_validate_request_settings);
-    auto new_client = getClient(uri, *new_ceph_settings, context, for_disk_s3);
-
-    auto new_uri{uri};
-    new_uri.bucket = new_namespace;
+    auto new_ceph_settings = std::make_unique<CephObjectStorageSettings>(*ceph_settings.get());
+    CephEndpoint new_endpoint;
+    new_endpoint.mon_hosts = endpoint.mon_hosts;
+    new_endpoint.pool = new_namespace;
 
     return std::make_unique<CephObjectStorage>(
-        std::move(new_client), std::move(new_ceph_settings), new_uri, s3_capabilities, key_generator, disk_name);
+        rados, std::move(new_ceph_settings), new_endpoint, key_generator, disk_name, for_disk_ceph);
 }
 
 ObjectStorageKey CephObjectStorage::generateObjectKeyForPath(const std::string & path) const

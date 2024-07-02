@@ -89,8 +89,6 @@ private:
     size_t data_capacity;
 
     LoggerPtr log = getLogger("ReadBufferFromCeph");
-
-    off_t file_offset = 0;
 };
 
 }

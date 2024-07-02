@@ -1,5 +1,6 @@
 #include "WriteBufferFromCeph.h"
 #include "IO/Ceph/RadosIO.h"
+#include "IO/WriteBufferFromFileBase.h"
 
 #if USE_CEPH
 
@@ -34,11 +35,13 @@ WriteBufferFromCeph::WriteBufferFromCeph(
     const String & pool,
     const String & object_id_,
     const WriteSettings & write_settings_,
+    std::optional<std::map<String, String>> object_attributes_,
     size_t buf_size_,
     WriteMode mode_)
     : WriteBufferFromFileBase(buf_size_, nullptr, 0)
     , object_id(object_id_)
     , write_settings(write_settings_)
+    , object_attributes(std::move(object_attributes_))
     , mode(mode_)
 {
     impl = std::make_unique<Ceph::RadosIO>(std::move(rados_), pool, "", false);
@@ -49,12 +52,14 @@ WriteBufferFromCeph::WriteBufferFromCeph(
     std::unique_ptr<Ceph::RadosIO> impl_,
     const String & object_id_,
     const WriteSettings & write_settings_,
+    std::optional<std::map<String, String>> object_attributes_,
     size_t buf_size_,
     WriteMode mode_)
     : WriteBufferFromFileBase(buf_size_, nullptr, 0)
     , impl(std::move(impl_))
     , object_id(object_id_)
     , write_settings(write_settings_)
+    , object_attributes(std::move(object_attributes_))
     , mode(mode_) {}
 
 void WriteBufferFromCeph::initialize()
@@ -68,6 +73,20 @@ void WriteBufferFromCeph::initialize()
     impl->connect();
 
     initialized = true;
+}
+
+void WriteBufferFromCeph::finalizeImpl()
+{
+    if (!initialized)
+        return;
+    WriteBufferFromFileBase::finalizeImpl();
+    setObjectAttributes();
+}
+
+void WriteBufferFromCeph::setObjectAttributes()
+{
+    if (object_attributes)
+        impl->setAttributes(object_id, *object_attributes);
 }
 
 size_t WriteBufferFromCeph::writeImpl(const char * begin, size_t len)

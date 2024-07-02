@@ -21,6 +21,7 @@ public:
         const String & pool,
         const String & object_id_,
         const WriteSettings & write_settings_,
+        std::optional<std::map<String, String>> object_attributes_ = {},
         size_t buf_size_ = DBMS_DEFAULT_BUFFER_SIZE,
         WriteMode mode_ = WriteMode::Rewrite);
 
@@ -28,12 +29,11 @@ public:
         std::unique_ptr<Ceph::RadosIO> impl_,
         const String & object_id_,
         const WriteSettings & write_settings_,
+        std::optional<std::map<String, String>> object_attributes_ = {},
         size_t buf_size_ = DBMS_DEFAULT_BUFFER_SIZE,
         WriteMode mode_ = WriteMode::Rewrite);
 
     ~WriteBufferFromCeph() override;
-
-    void nextImpl() override;
 
     void sync() override {} /// No need to sync, because ceph api is sync
 
@@ -42,11 +42,16 @@ public:
 private:
     void initialize();
     size_t writeImpl(const char * begin, size_t len);
+    void setObjectAttributes();
+
+    void nextImpl() override;
+    void finalizeImpl() override;
 
     std::unique_ptr<Ceph::RadosIO> impl;
 
     String object_id;
     WriteSettings write_settings;
+    std::optional<std::map<String, String>> object_attributes;
     WriteMode mode;
     bool initialized = false;
     bool first_write = true;

@@ -47,20 +47,18 @@ class CephObjectStorage : public IObjectStorage
 private:
     CephObjectStorage(
         const char * logger_name,
-        std::shared_ptr<librados::Rados> && rados_,
-        std::unique_ptr<CephObjectStorageSettings> && ceph_settings_,
+        std::shared_ptr<librados::Rados> rados_,
+        std::unique_ptr<CephObjectStorageSettings> ceph_settings_,
         CephEndpoint endpoint_,
-        // const CephCapabilities & s3_capabilities_,
-        // ObjectStorageKeysGeneratorPtr key_generator_,
+        ObjectStorageKeysGeneratorPtr key_generator_,
         const String & disk_name_,
         bool for_disk_ceph_ = true)
         : endpoint(endpoint_)
         , disk_name(disk_name_)
         , rados(std::move(rados_))
         , ceph_settings(std::move(ceph_settings_))
-        , base_io(rados, endpoint.pool)
-        // , s3_capabilities(s3_capabilities_)
-        // , key_generator(std::move(key_generator_))
+        , base_io(std::make_unique<Ceph::RadosIO>(rados, endpoint.pool, LIBRADOS_ALL_NSPACES))
+        , key_generator(std::move(key_generator_))
         , log(getLogger(logger_name))
         , for_disk_ceph(for_disk_ceph_)
     {
@@ -68,10 +66,15 @@ private:
 
 public:
     template <class ...Args>
-    explicit CephObjectStorage(std::shared_ptr<librados::Rados> && rados_, Args && ...args)
+    explicit CephObjectStorage(std::shared_ptr<librados::Rados> rados_, Args && ...args)
         : CephObjectStorage("CephObjectStorage", std::move(rados_), std::forward<Args>(args)...)
     {
     }
+
+    String getCommonKeyPrefix() const override { return ""; }
+
+    String getDescription() const override { return endpoint.mon_hosts + "/" + endpoint.pool; }
+
 
     std::string getName() const override { return "CephObjectStorage"; }
 
@@ -103,18 +106,12 @@ public:
 
     ObjectStorageIteratorPtr iterate(const std::string & path_prefix, size_t max_keys) const override;
 
-    /// Uses `DeleteObjectRequest`.
     void removeObject(const StoredObject & object) override;
 
-    /// Uses `DeleteObjectsRequest` if it is allowed by `s3_capabilities`, otherwise `DeleteObjectRequest`.
-    /// `DeleteObjectsRequest` is not supported on GCS, see https://issuetracker.google.com/issues/162653700 .
     void removeObjects(const StoredObjects & objects) override;
 
-    /// Uses `DeleteObjectRequest`.
     void removeObjectIfExists(const StoredObject & object) override;
 
-    /// Uses `DeleteObjectsRequest` if it is allowed by `s3_capabilities`, otherwise `DeleteObjectRequest`.
-    /// `DeleteObjectsRequest` does not exist on GCS, see https://issuetracker.google.com/issues/162653700 .
     void removeObjectsIfExist(const StoredObjects & objects) override;
 
     ObjectMetadata getObjectMetadata(const std::string & path) const override;
@@ -140,20 +137,18 @@ public:
 
     void startup() override;
 
-    void applyNewSettings(
-        const Poco::Util::AbstractConfiguration & config,
-        const std::string & config_prefix,
-        ContextPtr context,
-        const ApplyNewSettingsOptions & options) override;
+    // void applyNewSettings(
+    //     const Poco::Util::AbstractConfiguration & config,
+    //     const std::string & config_prefix,
+    //     ContextPtr context,
+    //     const ApplyNewSettingsOptions & options) override;
 
     std::string getObjectsNamespace() const override { return endpoint.pool; }
 
     bool isRemote() const override { return true; }
 
-    // void setCapabilitiesSupportBatchDelete(bool value) { s3_capabilities.support_batch_delete = value; }
-
     std::unique_ptr<IObjectStorage> cloneObjectStorage(
-        const std::string & new_namespace,
+        const std::string & new_namespace, ///!!! Not rados namespace, this is a new pool name (equivalent to bucket in S3)
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
         ContextPtr context) override;
@@ -177,9 +172,8 @@ private:
     std::shared_ptr<librados::Rados> rados;
     MultiVersion<CephObjectStorageSettings> ceph_settings;
     std::unique_ptr<Ceph::RadosIO> base_io;
-    // CephCapabilities s3_capabilities;
 
-    // ObjectStorageKeysGeneratorPtr key_generator;
+    ObjectStorageKeysGeneratorPtr key_generator;
 
     LoggerPtr log;
 
