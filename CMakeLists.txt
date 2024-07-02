@@ -360,6 +360,9 @@ endif()
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fstrict-vtable-pointers")
 
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -mllvm -inlinehint-threshold=1234")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mllvm -inlinehint-threshold=1234")
+
 # We cannot afford to use LTO when compiling unit tests, and it's not enough
 # to only supply -fno-lto at the final linking stage. So we disable it
 # completely.
