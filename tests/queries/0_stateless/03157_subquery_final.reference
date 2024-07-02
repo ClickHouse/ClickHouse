@@ -1,0 +1,54 @@
+-- { echoOn }
+
+SELECT * FROM (SELECT * FROM test_table_ordinary ORDER BY id) FINAL;
+0	Value_0
+0	Value_0
+1	Value_1
+2	Value_2
+SELECT '--';
+--
+SELECT * FROM (SELECT * FROM (SELECT * FROM test_table_ordinary ORDER BY id)) FINAL;
+0	Value_0
+0	Value_0
+1	Value_1
+2	Value_2
+SELECT '--';
+--
+SELECT * FROM (SELECT * FROM test_table_ordinary WHERE id = 0) FINAL;
+0	Value_0
+0	Value_0
+SELECT '--';
+--
+SELECT * FROM (SELECT * FROM (SELECT * FROM test_table_ordinary WHERE id = 0)) FINAL;
+0	Value_0
+0	Value_0
+SELECT '--';
+--
+SELECT * FROM test_table_replacing FINAL ORDER BY id;
+0	Value_0
+1	Value_1
+2	Value_2
+SELECT '--';
+--
+SELECT * FROM (SELECT * FROM test_table_replacing ORDER BY id) FINAL;
+0	Value_0
+1	Value_1
+2	Value_2
+SELECT '--';
+--
+SELECT * FROM (SELECT * FROM (SELECT * FROM test_table_replacing ORDER BY id)) FINAL;
+0	Value_0
+1	Value_1
+2	Value_2
+SELECT '--';
+--
+SELECT * FROM test_table_replacing FINAL WHERE id = 0;
+0	Value_0
+SELECT '--';
+--
+SELECT * FROM (SELECT * FROM test_table_replacing WHERE id = 0) FINAL;
+0	Value_0
+SELECT '--';
+--
+SELECT * FROM (SELECT * FROM (SELECT * FROM test_table_replacing WHERE id = 0)) FINAL;
+0	Value_0

@@ -39,6 +39,7 @@
 #include <Analyzer/ArrayJoinNode.h>
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/UnionNode.h>
+#include <Analyzer/Utils.h>
 
 #include <Databases/IDatabase.h>
 
@@ -836,12 +837,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(const ASTPtr & tables_in_select
                 node->setOriginalAST(select_with_union_query);
 
                 if (table_expression_modifiers)
-                {
-                    throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                        "Table expression modifiers {} are not supported for subquery {}",
-                        table_expression_modifiers->formatForErrorMessage(),
-                        node->formatASTForErrorMessage());
-                }
+                    addTableExpressionModifiersToTablesInsideSubquery(node, *table_expression_modifiers);
 
                 table_expressions.push_back(std::move(node));
             }

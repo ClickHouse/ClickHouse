@@ -97,6 +97,15 @@ public:
         table_expression_modifiers = std::move(table_expression_modifiers_value);
     }
 
+    /// Set or merge table expression modifiers
+    void setOrMergeTableExpressionModifiers(TableExpressionModifiers table_expression_modifiers_value)
+    {
+        if (table_expression_modifiers)
+            table_expression_modifiers->merge(table_expression_modifiers_value);
+        else
+            table_expression_modifiers = std::move(table_expression_modifiers_value);
+    }
+
     QueryTreeNodeType getNodeType() const override
     {
         return QueryTreeNodeType::TABLE;

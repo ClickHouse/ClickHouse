@@ -359,7 +359,28 @@ void addTableExpressionOrJoinIntoTablesInSelectQuery(ASTPtr & tables_in_select_q
     }
 }
 
-QueryTreeNodes extractAllTableReferences(const QueryTreeNodePtr & tree)
+void addTableExpressionModifiersToTablesInsideSubquery(const QueryTreeNodePtr & query_or_union_node, TableExpressionModifiers table_expression_modifiers)
+{
+    table_expression_modifiers.setIsFromParentSubquery(true);
+
+    auto table_or_table_function_nodes = extractAllTableReferences(query_or_union_node,
+        true /*extract_table_function_nodes*/,
+        true /*extract_identifier_nodes*/);
+
+    for (auto & table_or_table_function_node : table_or_table_function_nodes)
+    {
+        if (auto * identifier_node = table_or_table_function_node->as<IdentifierNode>())
+            identifier_node->setOrMergeTableExpressionModifiers(table_expression_modifiers);
+        else if (auto * table_node = table_or_table_function_node->as<TableNode>())
+            table_node->setOrMergeTableExpressionModifiers(table_expression_modifiers);
+        else if (auto * table_function_node = table_or_table_function_node->as<TableFunctionNode>())
+            table_function_node->setOrMergeTableExpressionModifiers(table_expression_modifiers);
+        else
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected table, table function or identifier node");
+    }
+}
+
+QueryTreeNodes extractAllTableReferences(const QueryTreeNodePtr & tree, bool extract_table_function_nodes, bool extract_identifier_nodes)
 {
     QueryTreeNodes result;
 
@@ -393,7 +414,9 @@ QueryTreeNodes extractAllTableReferences(const QueryTreeNodePtr & tree)
             }
             case QueryTreeNodeType::TABLE_FUNCTION:
             {
-                // Arguments of table function can't contain TableNodes.
+                if (extract_table_function_nodes)
+                    result.push_back(std::move(node_to_process));
+
                 break;
             }
             case QueryTreeNodeType::ARRAY_JOIN:
@@ -407,6 +430,16 @@ QueryTreeNodes extractAllTableReferences(const QueryTreeNodePtr & tree)
                 nodes_to_process.push_back(join_node.getRightTableExpression());
                 nodes_to_process.push_back(join_node.getLeftTableExpression());
                 break;
+            }
+            case QueryTreeNodeType::IDENTIFIER:
+            {
+                if (extract_identifier_nodes)
+                {
+                    result.push_back(std::move(node_to_process));
+                    continue;
+                }
+
+                [[fallthrough]];
             }
             default:
             {

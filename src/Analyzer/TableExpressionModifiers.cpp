@@ -12,6 +12,9 @@ namespace DB
 
 void TableExpressionModifiers::dump(WriteBuffer & buffer) const
 {
+    if (is_from_parent_subquery)
+        buffer << "is_from_parent_subquery: " << is_from_parent_subquery << ", ";
+
     buffer << "final: " << has_final;
 
     if (sample_size_ratio)
@@ -23,6 +26,7 @@ void TableExpressionModifiers::dump(WriteBuffer & buffer) const
 
 void TableExpressionModifiers::updateTreeHash(SipHash & hash_state) const
 {
+    hash_state.update(is_from_parent_subquery);
     hash_state.update(has_final);
     hash_state.update(sample_size_ratio.has_value());
     hash_state.update(sample_offset_ratio.has_value());
