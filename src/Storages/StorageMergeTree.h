@@ -17,6 +17,7 @@
 
 #include <Disks/StoragePolicy.h>
 #include <Common/SimpleIncrement.h>
+#include "Storages/MutationCommands.h"
 
 
 namespace DB
@@ -147,8 +148,10 @@ private:
     DataParts currently_merging_mutating_parts;
 
     std::map<UInt64, MergeTreeMutationEntry> current_mutations_by_version;
-    /// Unfinished mutations that is required AlterConversions (see getAlterMutationCommandsForPart())
-    std::atomic<ssize_t> alter_conversions_mutations = 0;
+
+    /// Unfinished mutations that are required for AlterConversions.
+    Int64 data_mutations_to_apply = 0;
+    Int64 metadata_mutations_to_apply = 0;
 
     std::atomic<bool> shutdown_called {false};
     std::atomic<bool> flush_called {false};
@@ -309,8 +312,21 @@ private:
         ContextPtr context;
     };
 
-protected:
-    MutationCommands getAlterMutationCommandsForPart(const DataPartPtr & part) const override;
+    struct MutationsSnapshot : public IMutationsSnapshot
+    {
+        MutationsSnapshot() = default;
+
+        Int64 metadata_version = -1;
+        bool need_data_mutations = false;
+
+        using MutationsByVersion = std::map<UInt64, std::shared_ptr<const MutationCommands>>;
+        MutationsByVersion mutations_by_version;
+
+        MutationCommands getAlterMutationCommandsForPart(const MergeTreeData::DataPartPtr & part) const override;
+        std::shared_ptr<MergeTreeData::IMutationsSnapshot> cloneEmpty() const override { return std::make_shared<MutationsSnapshot>(); }
+    };
+
+    MutationsSnapshotPtr getMutationsSnapshot(Int64 metadata_version, bool need_data_mutations) const override;
 };
 
 }

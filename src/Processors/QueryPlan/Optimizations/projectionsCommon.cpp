@@ -217,20 +217,15 @@ bool analyzeProjectionCandidate(
 {
     MergeTreeData::DataPartsVector projection_parts;
     MergeTreeData::DataPartsVector normal_parts;
-    std::vector<AlterConversionsPtr> alter_conversions;
+
     for (const auto & part_with_ranges : parts_with_ranges)
     {
         const auto & created_projections = part_with_ranges.data_part->getProjectionParts();
         auto it = created_projections.find(candidate.projection->name);
         if (it != created_projections.end() && !it->second->is_broken)
-        {
             projection_parts.push_back(it->second);
-        }
         else
-        {
             normal_parts.push_back(part_with_ranges.data_part);
-            alter_conversions.push_back(part_with_ranges.alter_conversions);
-        }
     }
 
     if (projection_parts.empty())
@@ -255,7 +250,7 @@ bool analyzeProjectionCandidate(
     if (!normal_parts.empty())
     {
         /// TODO: We can reuse existing analysis_result by filtering out projection parts
-        auto normal_result_ptr = reading.selectRangesToRead(std::move(normal_parts), std::move(alter_conversions));
+        auto normal_result_ptr = reading.selectRangesToRead(std::move(normal_parts));
 
         if (normal_result_ptr->selected_marks != 0)
         {

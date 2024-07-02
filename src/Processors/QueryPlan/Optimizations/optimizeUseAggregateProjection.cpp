@@ -764,7 +764,7 @@ std::optional<String> optimizeUseAggregateProjections(QueryPlan::Node & node, Qu
 
         projection_reading = reader.readFromParts(
             /* parts = */ {},
-            /* alter_conversions = */ {},
+            reading->getMutationsSnapshot()->cloneEmpty(),
             best_candidate->dag->getRequiredColumnsNames(),
             proj_snapshot,
             projection_query_info,
