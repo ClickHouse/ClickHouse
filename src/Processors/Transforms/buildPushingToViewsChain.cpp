@@ -547,7 +547,7 @@ Chain buildPushingToViewsChain(
         sink->setRuntimeData(thread_status, elapsed_counter_ms);
         result_chain.addSource(std::move(sink));
 
-        result_chain.addSource(std::make_shared<DeduplicationToken::DefineSourceWithChunkHashesTransform>(result_chain.getInputHeader()));
+        result_chain.addSource(std::make_shared<DeduplicationToken::DefineSourceWithChunkHashTransform>(result_chain.getInputHeader()));
     }
     else if (auto * window_view = dynamic_cast<StorageWindowView *>(storage.get()))
     {
@@ -555,7 +555,7 @@ Chain buildPushingToViewsChain(
         sink->setRuntimeData(thread_status, elapsed_counter_ms);
         result_chain.addSource(std::move(sink));
 
-        result_chain.addSource(std::make_shared<DeduplicationToken::DefineSourceWithChunkHashesTransform>(result_chain.getInputHeader()));
+        result_chain.addSource(std::make_shared<DeduplicationToken::DefineSourceWithChunkHashTransform>(result_chain.getInputHeader()));
     }
     else if (dynamic_cast<StorageMaterializedView *>(storage.get()))
     {
@@ -564,7 +564,7 @@ Chain buildPushingToViewsChain(
         sink->setRuntimeData(thread_status, elapsed_counter_ms);
         result_chain.addSource(std::move(sink));
 
-        result_chain.addSource(std::make_shared<DeduplicationToken::DefineSourceWithChunkHashesTransform>(result_chain.getInputHeader()));
+        result_chain.addSource(std::make_shared<DeduplicationToken::DefineSourceWithChunkHashTransform>(result_chain.getInputHeader()));
     }
     /// Do not push to destination table if the flag is set
     else if (!no_destination)
@@ -573,13 +573,13 @@ Chain buildPushingToViewsChain(
         metadata_snapshot->check(sink->getHeader().getColumnsWithTypeAndName());
         sink->setRuntimeData(thread_status, elapsed_counter_ms);
 
-        result_chain.addSource(std::make_shared<DeduplicationToken::DefineSourceWithChunkHashesTransform>(sink->getHeader()));
+        result_chain.addSource(std::make_shared<DeduplicationToken::DefineSourceWithChunkHashTransform>(sink->getHeader()));
 
         result_chain.addSource(std::move(sink));
     }
     else
     {
-        result_chain.addSource(std::make_shared<DeduplicationToken::DefineSourceWithChunkHashesTransform>(storage_header));
+        result_chain.addSource(std::make_shared<DeduplicationToken::DefineSourceWithChunkHashTransform>(storage_header));
     }
 
     if (result_chain.empty())

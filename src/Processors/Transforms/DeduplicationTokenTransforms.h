@@ -132,10 +132,10 @@ namespace DeduplicationToken
     };
 
 
-    class DefineSourceWithChunkHashesTransform : public ISimpleTransform
+    class DefineSourceWithChunkHashTransform : public ISimpleTransform
     {
     public:
-        explicit DefineSourceWithChunkHashesTransform(const Block & header_)
+        explicit DefineSourceWithChunkHashTransform(const Block & header_)
             : ISimpleTransform(header_, header_, true)
         {
         }

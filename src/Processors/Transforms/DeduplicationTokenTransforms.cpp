@@ -154,7 +154,7 @@ void CheckTokenTransform::transform(Chunk & chunk)
 }
 #endif
 
-String DefineSourceWithChunkHashesTransform::getChunkHash(const Chunk & chunk)
+String DefineSourceWithChunkHashTransform::getChunkHash(const Chunk & chunk)
 {
     SipHash hash;
     for (const auto & colunm : chunk.getColumns())
@@ -165,7 +165,7 @@ String DefineSourceWithChunkHashesTransform::getChunkHash(const Chunk & chunk)
 }
 
 
-void DefineSourceWithChunkHashesTransform::transform(Chunk & chunk)
+void DefineSourceWithChunkHashTransform::transform(Chunk & chunk)
 {
     auto token_info = chunk.getChunkInfos().get<TokenInfo>();
 
