@@ -60,4 +60,26 @@ GetPriorityForLoadBalancing::getPriorityFunc(LoadBalancing load_balance, size_t 
     return get_priority;
 }
 
+/// Some load balancing strategies (such as "nearest hostname") have preferred nodes to connect to.
+/// Usually it's a node in the same data center/availability zone.
+/// For other strategies there's no difference between nodes.
+bool GetPriorityForLoadBalancing::hasOptimalNode() const
+{
+    switch (load_balancing)
+    {
+        case LoadBalancing::NEAREST_HOSTNAME:
+            return true;
+        case LoadBalancing::HOSTNAME_LEVENSHTEIN_DISTANCE:
+            return true;
+        case LoadBalancing::IN_ORDER:
+            return false;
+        case LoadBalancing::RANDOM:
+            return false;
+        case LoadBalancing::FIRST_OR_RANDOM:
+            return true;
+        case LoadBalancing::ROUND_ROBIN:
+            return false;
+    }
+}
+
 }
