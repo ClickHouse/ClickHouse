@@ -5,9 +5,58 @@
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+}
+
+namespace
+{
+
+Chunk squashImpl(std::vector<Chunk> & input_chunks)
+{
+    Chunk accumulated_chunk;
+    std::vector<IColumn::MutablePtr> mutable_columns = {};
+    size_t rows = 0;
+    for (const Chunk & chunk : input_chunks)
+        rows += chunk.getNumRows();
+
+    {
+        auto & first_chunk = input_chunks[0];
+        Columns columns = first_chunk.detachColumns();
+        for (auto & column : columns)
+        {
+            mutable_columns.push_back(IColumn::mutate(std::move(column)));
+            mutable_columns.back()->reserve(rows);
+        }
+    }
+
+    for (size_t i = 1; i < input_chunks.size(); ++i) // We've already processed the first chunk above
+    {
+        Columns columns = input_chunks[i].detachColumns();
+        for (size_t j = 0, size = mutable_columns.size(); j < size; ++j)
+        {
+            const auto source_column = columns[j];
+
+            mutable_columns[j]->insertRangeFrom(*source_column, 0, source_column->size());
+        }
+    }
+    accumulated_chunk.setColumns(std::move(mutable_columns), rows);
+    return accumulated_chunk;
+}
+
+const ChunksToSquash * getInfoFromChunk(const Chunk & chunk)
+{
+    const auto & info = chunk.getChunkInfo();
+    const auto * agg_info = typeid_cast<const ChunksToSquash *>(info.get());
+
+    if (!agg_info)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "There is no ChunksToSquash in ChunkInfoPtr");
+
+    return agg_info;
+}
+
 }
 
 Squashing::Squashing(Block header_, size_t min_block_size_rows_, size_t min_block_size_bytes_)
@@ -27,8 +76,8 @@ Chunk Squashing::squash(Chunk && input_chunk)
     if (!input_chunk.hasChunkInfo())
         return Chunk();
 
-    const auto *info = getInfoFromChunk(input_chunk);
-    return squash(info->chunks);
+    const auto * info = getInfoFromChunk(input_chunk);
+    return squashImpl(info->chunks);
 }
 
 Chunk Squashing::add(Chunk && input_chunk)
@@ -93,49 +142,6 @@ Chunk Squashing::convertToChunk(std::vector<Chunk> && chunks) const
     chunks.clear();
 
     return Chunk(header.cloneEmptyColumns(), 0, info);
-}
-
-Chunk Squashing::squash(std::vector<Chunk> & input_chunks)
-{
-    Chunk accumulated_chunk;
-    std::vector<IColumn::MutablePtr> mutable_columns = {};
-    size_t rows = 0;
-    for (const Chunk & chunk : input_chunks)
-        rows += chunk.getNumRows();
-
-    {
-        auto & first_chunk = input_chunks[0];
-        Columns columns = first_chunk.detachColumns();
-        for (auto & column : columns)
-        {
-            mutable_columns.push_back(IColumn::mutate(std::move(column)));
-            mutable_columns.back()->reserve(rows);
-        }
-    }
-
-    for (size_t i = 1; i < input_chunks.size(); ++i) // We've already processed the first chunk above
-    {
-        Columns columns = input_chunks[i].detachColumns();
-        for (size_t j = 0, size = mutable_columns.size(); j < size; ++j)
-        {
-            const auto source_column = columns[j];
-
-            mutable_columns[j]->insertRangeFrom(*source_column, 0, source_column->size());
-        }
-    }
-    accumulated_chunk.setColumns(std::move(mutable_columns), rows);
-    return accumulated_chunk;
-}
-
-const ChunksToSquash* Squashing::getInfoFromChunk(const Chunk & chunk)
-{
-    const auto& info = chunk.getChunkInfo();
-    const auto * agg_info = typeid_cast<const ChunksToSquash *>(info.get());
-
-    if (!agg_info)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "There is no ChunksToSquash in ChunkInfoPtr");
-
-    return agg_info;
 }
 
 void Squashing::expandCurrentSize(size_t rows, size_t bytes)
