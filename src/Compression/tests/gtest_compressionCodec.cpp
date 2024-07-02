@@ -10,6 +10,7 @@
 #include <base/types.h>
 #include <Common/PODArray.h>
 #include <Common/Stopwatch.h>
+#include "base/defines.h"
 
 #include <Compression/LZ4_decompress_faster.h>
 #include <IO/BufferWithOwnMemory.h>
@@ -1302,5 +1303,42 @@ TEST(LZ4Test, DecompressMalformedInput)
     auto codec = CompressionCodecFactory::instance().get("LZ4", {});
     ASSERT_THROW(codec->decompress(source, source_size, memory.data()), Exception);
 }
+
+TEST(FSSTTest, CompressDecompress)
+{
+    std::vector<std::string> strs = {
+        "a",
+        "aa",
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "Hello, ",
+        "World!",
+        "TEK1219A<>>sd19k~<KO)(*_@!_)\"\'\""
+    };
+
+    char in_str[2281337];
+    char* iter = in_str;
+    for (auto u: strs) {
+        iter = writeVarUInt(u.size(), iter);
+        std::memcpy(iter, u.data(), u.size());
+        iter += u.size();
+    }
+
+    char out_str[2281337];
+    auto string_length = iter - in_str;
+
+    auto fsst_codec = CompressionCodecFactory::instance().get("FSST", {});
+    auto compressed_size = fsst_codec->compress(in_str, static_cast<UInt32>(string_length), out_str);
+
+    memset(in_str, '\0', string_length);
+
+    fsst_codec->decompress(out_str, compressed_size, in_str);
+    
+    size_t out_iter = 0;
+    for (auto str: strs) {
+        EXPECT_EQ(std::memcmp(in_str + (++out_iter), str.data(), str.size()), 0);
+        out_iter += str.size();
+    }
+}
+
 
 }

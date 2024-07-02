@@ -193,6 +193,9 @@ void registerCodecGorilla(CompressionCodecFactory & factory);
 void registerCodecEncrypted(CompressionCodecFactory & factory);
 void registerCodecFPC(CompressionCodecFactory & factory);
 void registerCodecGCD(CompressionCodecFactory & factory);
+#  ifdef ENABLE_FSST
+void registerCodecFSST(CompressionCodecFactory & factory);
+#  endif
 #endif
 
 CompressionCodecFactory::CompressionCodecFactory()
@@ -212,10 +215,13 @@ CompressionCodecFactory::CompressionCodecFactory()
     registerCodecGorilla(*this);
     registerCodecEncrypted(*this);
     registerCodecFPC(*this);
-#ifdef ENABLE_QPL_COMPRESSION
+#  ifdef ENABLE_QPL_COMPRESSION
     registerCodecDeflateQpl(*this);
-#endif
+#  endif
     registerCodecGCD(*this);
+#  ifdef ENABLE_FSST
+    registerCodecFSST(*this);
+#  endif
 #endif
 
     default_codec = get("LZ4", {});

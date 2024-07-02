@@ -410,6 +410,11 @@ dbms_target_link_libraries (
         Poco::Redis
 )
 
+if (TARGET ch_contrib::fsst)
+    dbms_target_link_libraries(PRIVATE ch_contrib::fsst)
+    target_link_libraries(clickhouse_compression PRIVATE ch_contrib::fsst)
+endif()
+
 if (TARGET ch::mysqlxx)
     dbms_target_link_libraries (PUBLIC ch::mysqlxx)
 endif()
@@ -550,6 +555,10 @@ if (TARGET ch_contrib::datasketches)
 endif ()
 
 target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::lz4)
+
+if (TARGET ch_contrib::fsst)
+target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::fsst)
+endif()
 
 if (TARGET ch_contrib::qpl)
     dbms_target_link_libraries(PUBLIC ch_contrib::qpl)

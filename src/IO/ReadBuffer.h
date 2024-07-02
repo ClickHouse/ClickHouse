@@ -248,6 +248,9 @@ public:
 
     virtual void setReadUntilEnd() {}
 
+    /* For FSST test needs */
+    virtual bool readAllDataIfCompressed() { return false; }
+
 protected:
     /// The number of bytes to ignore from the initial position of `working_buffer`
     /// buffer. Apparently this is an additional out-parameter for nextImpl(),

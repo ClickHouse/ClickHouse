@@ -63,6 +63,8 @@ public:
     void setReadUntilPosition(size_t position) override { file_in.setReadUntilPosition(position); }
 
     void setReadUntilEnd() override { file_in.setReadUntilEnd(); }
+
+    bool readAllDataIfCompressed() override { return fsst_compression_used; }
 };
 
 }

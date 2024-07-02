@@ -6,6 +6,7 @@
 #include <city.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Exception.h>
+#include "base/types.h"
 #include <base/hex.h>
 #include <Compression/ICompressionCodec.h>
 #include <Compression/CompressionFactory.h>
@@ -115,13 +116,17 @@ static void readHeaderAndGetCodecAndSize(
     size_t & size_decompressed,
     size_t & size_compressed_without_checksum,
     bool allow_different_codecs,
-    bool external_data)
+    bool external_data,
+    bool& fsst_compression_used)
 {
     uint8_t method = ICompressionCodec::readMethod(compressed_buffer);
 
     if (!codec)
     {
         codec = CompressionCodecFactory::instance().get(method);
+        if (method == static_cast<UInt8>(CompressionMethodByte::FSST)) {
+            fsst_compression_used = true;
+        }
     }
     else if (method != codec->getMethodByte())
     {
@@ -175,7 +180,8 @@ size_t CompressedReadBufferBase::readCompressedData(size_t & size_decompressed, 
         size_decompressed,
         size_compressed_without_checksum,
         allow_different_codecs,
-        external_data);
+        external_data,
+        fsst_compression_used);
 
     auto additional_size_at_the_end_of_buffer = codec->getAdditionalSizeAtTheEndOfBuffer();
 
@@ -227,7 +233,8 @@ size_t CompressedReadBufferBase::readCompressedDataBlockForAsynchronous(size_t &
         size_decompressed,
         size_compressed_without_checksum,
         allow_different_codecs,
-        external_data);
+        external_data,
+        fsst_compression_used);
 
     auto additional_size_at_the_end_of_buffer = codec->getAdditionalSizeAtTheEndOfBuffer();
 

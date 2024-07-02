@@ -1,4 +1,5 @@
 #include <cassert>
+#include <cstring>
 
 #include "CompressedReadBufferFromFile.h"
 
@@ -27,6 +28,13 @@ bool CompressedReadBufferFromFile::nextImpl()
 
     /// This is for clang static analyzer.
     assert(size_decompressed + additional_size_at_the_end_of_buffer > 0);
+
+    if (readAllDataIfCompressed()) {
+        memory.resize(size_compressed_without_checksum + additional_size_at_the_end_of_buffer);
+        working_buffer = Buffer(memory.data(), &memory[size_compressed_without_checksum]);
+        std::memcpy(working_buffer.begin(), compressed_buffer, size_compressed_without_checksum);
+        return true;
+    }
 
     memory.resize(size_decompressed + additional_size_at_the_end_of_buffer);
     working_buffer = Buffer(memory.data(), &memory[size_decompressed]);
