@@ -23,12 +23,6 @@ def start_cluster():
         cluster.shutdown()
 
 
-def create_tables(cluster):
-    n1 = nodes[0]
-    n1.query("DROP TABLE IF EXISTS dist_table SYNC")
-    n1.query(f"DROP TABLE IF EXISTS test_table ON CLUSTER {cluster} SYNC")
-
-
 def insert_data(table_name, row_num, all_nodes=False):
     query = (
         f"INSERT INTO {table_name} SELECT number % 4, number FROM numbers({row_num})"

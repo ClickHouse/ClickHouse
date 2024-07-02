@@ -839,7 +839,9 @@ void StorageDistributed::read(
 
     SelectQueryInfo modified_query_info = query_info;
 
-    if (local_context->getSettingsRef().allow_experimental_analyzer)
+    const auto & settings = local_context->getSettingsRef();
+
+    if (settings.allow_experimental_analyzer)
     {
         StorageID remote_storage_id = StorageID::createEmpty();
         if (!remote_table_function_ptr)
@@ -864,7 +866,6 @@ void StorageDistributed::read(
         header = InterpreterSelectQuery(modified_query_info.query, local_context, SelectQueryOptions(processed_stage).analyze()).getSampleBlock();
     }
 
-    const auto & settings = local_context->getSettingsRef();
     if (!settings.allow_experimental_analyzer)
     {
         modified_query_info.query = ClusterProxy::rewriteSelectQuery(
@@ -894,6 +895,9 @@ void StorageDistributed::read(
             storage_snapshot,
             processed_stage);
 
+    auto shard_filter_generator = ClusterProxy::getShardFilterGeneratorForCustomKey(
+        *modified_query_info.getCluster(), local_context, getInMemoryMetadataPtr()->columns);
+
     ClusterProxy::executeQuery(
         query_plan,
         header,
@@ -904,10 +908,10 @@ void StorageDistributed::read(
         log,
         local_context,
         modified_query_info,
-        getInMemoryMetadataPtr()->columns,
         sharding_key_expr,
         sharding_key_column_name,
         distributed_settings,
+        shard_filter_generator,
         /* is_remote_function= */ static_cast<bool>(owned_cluster));
 
     /// This is a bug, it is possible only when there is no shards to query, and this is handled earlier.

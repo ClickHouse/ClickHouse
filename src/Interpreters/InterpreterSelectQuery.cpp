@@ -592,6 +592,10 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                     "or it's invalid (settings `parallel_replicas_custom_key`)");
             }
         }
+        /// We disable prefer_localhost_replica because if one of the replicas is local it will create a single local plan
+        /// instead of executing the query with multiple replicas
+        /// We can enable this setting again for custom key parallel replicas when we can generate a plan that will use both a
+        /// local plan and remote replicas
         else if (auto * distributed = dynamic_cast<StorageDistributed *>(storage.get());
                  distributed && context->canUseParallelReplicasCustomKeyForCluster(*distributed->getCluster()))
         {

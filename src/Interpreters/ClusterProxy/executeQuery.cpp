@@ -228,6 +228,35 @@ static ThrottlerPtr getThrottler(const ContextPtr & context)
     return throttler;
 }
 
+AdditionalShardFilterGenerator
+getShardFilterGeneratorForCustomKey(const Cluster & cluster, ContextPtr context, const ColumnsDescription & columns)
+{
+    if (!context->canUseParallelReplicasCustomKeyForCluster(cluster))
+        return {};
+
+    const auto & settings = context->getSettingsRef();
+    auto custom_key_ast = parseCustomKeyForTable(settings.parallel_replicas_custom_key, *context);
+    if (custom_key_ast == nullptr)
+        return {};
+
+    return [my_custom_key_ast = std::move(custom_key_ast),
+            column_description = columns,
+            custom_key_type = settings.parallel_replicas_custom_key_filter_type.value,
+            custom_key_range_lower = settings.parallel_replicas_custom_key_range_lower.value,
+            custom_key_range_upper = settings.parallel_replicas_custom_key_range_upper.value,
+            query_context = context,
+            replica_count = cluster.getShardsInfo().front().per_replica_pools.size()](uint64_t replica_num) -> ASTPtr
+    {
+        return getCustomKeyFilterForParallelReplica(
+            replica_count,
+            replica_num - 1,
+            my_custom_key_ast,
+            {custom_key_type, custom_key_range_lower, custom_key_range_upper},
+            column_description,
+            query_context);
+    };
+}
+
 
 void executeQuery(
     QueryPlan & query_plan,
@@ -239,42 +268,16 @@ void executeQuery(
     LoggerPtr log,
     ContextPtr context,
     const SelectQueryInfo & query_info,
-    const ColumnsDescription & columns,
     const ExpressionActionsPtr & sharding_key_expr,
     const std::string & sharding_key_column_name,
     const DistributedSettings & distributed_settings,
+    AdditionalShardFilterGenerator shard_filter_generator,
     bool is_remote_function)
 {
     const Settings & settings = context->getSettingsRef();
 
-
     if (settings.max_distributed_depth && context->getClientInfo().distributed_depth >= settings.max_distributed_depth)
         throw Exception(ErrorCodes::TOO_LARGE_DISTRIBUTED_DEPTH, "Maximum distributed depth exceeded");
-
-    ClusterProxy::AdditionalShardFilterGenerator shard_filter_generator;
-    if (context->canUseParallelReplicasCustomKeyForCluster(*query_info.getCluster()))
-    {
-        if (auto custom_key_ast = parseCustomKeyForTable(settings.parallel_replicas_custom_key, *context))
-        {
-            shard_filter_generator =
-                [my_custom_key_ast = std::move(custom_key_ast),
-                 column_description = columns,
-                 custom_key_type = settings.parallel_replicas_custom_key_filter_type.value,
-                 custom_key_range_lower = settings.parallel_replicas_custom_key_range_lower.value,
-                 custom_key_range_upper = settings.parallel_replicas_custom_key_range_upper.value,
-                 query_context = context,
-                 replica_count = query_info.getCluster()->getShardsInfo().front().per_replica_pools.size()](uint64_t replica_num) -> ASTPtr
-            {
-                return getCustomKeyFilterForParallelReplica(
-                    replica_count,
-                    replica_num - 1,
-                    my_custom_key_ast,
-                    {custom_key_type, custom_key_range_lower, custom_key_range_upper},
-                    column_description,
-                    query_context);
-            };
-        }
-    }
 
     const ClusterPtr & not_optimized_cluster = query_info.cluster;
 
@@ -599,6 +602,8 @@ void executeQueryWithParallelReplicasCustomKey(
     ClusterProxy::SelectStreamFactory select_stream_factory
         = ClusterProxy::SelectStreamFactory(header, columns_object, snapshot, processed_stage);
 
+    auto shard_filter_generator = getShardFilterGeneratorForCustomKey(*query_info.getCluster(), context, columns);
+
     ClusterProxy::executeQuery(
         query_plan,
         header,
@@ -609,11 +614,11 @@ void executeQueryWithParallelReplicasCustomKey(
         getLogger("executeQueryWithParallelReplicasCustomKey"),
         context,
         query_info,
-        columns,
         /*sharding_key_expr=*/nullptr,
         /*sharding_key_column_name=*/{},
         /*distributed_settings=*/{},
-        /*is_remote_function= */ false);
+        shard_filter_generator,
+        /*is_remote_function=*/false);
 }
 
 void executeQueryWithParallelReplicasCustomKey(

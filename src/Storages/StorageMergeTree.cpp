@@ -242,6 +242,12 @@ void StorageMergeTree::read(
                 local_context);
             return;
         }
+        else
+            LOG_WARNING(
+                log,
+                "Parallel replicas with custom key will not be used because cluster defined by 'cluster_for_parallel_replicas' ('{}') has "
+                "multiple shards",
+                cluster->getName());
     }
 
     const bool enable_parallel_reading = local_context->canUseParallelReplicasOnFollower()

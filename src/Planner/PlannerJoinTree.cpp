@@ -846,6 +846,10 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                              distributed && query_context->canUseParallelReplicasCustomKeyForCluster(*distributed->getCluster()))
                     {
                         planner_context->getMutableQueryContext()->setSetting("distributed_group_by_no_merge", 2);
+                        /// We disable prefer_localhost_replica because if one of the replicas is local it will create a single local plan
+                        /// instead of executing the query with multiple replicas
+                        /// We can enable this setting again for custom key parallel replicas when we can generate a plan that will use both a
+                        /// local plan and remote replicas
                         planner_context->getMutableQueryContext()->setSetting("prefer_localhost_replica", Field{0});
                     }
                 }
