@@ -157,7 +157,7 @@ jobs:
       - name: Upload signed hashes
         uses: actions/upload-artifact@v4
         with:
-          name: signed-hashes
+          name: ${{inputs.test_name}} signed-hashes
           path: ${{ env.TEMP_PATH }}/*.gpg
       - name: Clean
         if: always()
