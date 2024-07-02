@@ -264,6 +264,7 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState & s
             break;
         }
         case Type::DROP_REPLICA:
+        case Type::DROP_CLUSTER_REPLICA:
         case Type::DROP_DATABASE_REPLICA:
         {
             print_drop_replica();

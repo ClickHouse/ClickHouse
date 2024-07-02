@@ -214,6 +214,10 @@ struct Settings;
     M(Float, primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns, 0.9f, "If the value of a column of the primary key in data part changes at least in this ratio of times, skip loading next columns in memory. This allows to save memory usage by not loading useless columns of the primary key.", 0) \
     /** Projection settings. */ \
     M(UInt64, max_projections, 25, "The maximum number of merge tree projections.", 0) \
+    \
+    /** Replicated cluster. */ \
+    M(Bool, cluster, false, "Enable cluster replication (see also cluster_* settings)", 0) \
+    M(UInt64, cluster_replication_factor, 1, "Replication factor in cluster", 0) \
 
 #define MAKE_OBSOLETE_MERGE_TREE_SETTING(M, TYPE, NAME, DEFAULT) \
     M(TYPE, NAME, DEFAULT, "Obsolete setting, does nothing.", BaseSettingsHelpers::Flags::OBSOLETE)
@@ -270,8 +274,12 @@ struct MergeTreeSettings : public BaseSettings<MergeTreeSettingsTraits>, public 
     /// We check settings after storage creation
     static bool isReadonlySetting(const String & name)
     {
-        return name == "index_granularity" || name == "index_granularity_bytes"
-            || name == "enable_mixed_granularity_parts";
+        return name == "index_granularity"
+            || name == "index_granularity_bytes"
+            || name == "enable_mixed_granularity_parts"
+            /// NOTE(cluster): we can support at least some trivial cases
+            || name == "cluster"
+        ;
     }
 
     static bool isPartFormatSetting(const String & name)

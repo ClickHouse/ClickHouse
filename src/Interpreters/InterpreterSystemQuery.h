@@ -69,6 +69,7 @@ private:
     void restoreReplica();
 
     void dropReplica(ASTSystemQuery & query);
+    void dropClusterReplica(ASTSystemQuery & query);
     bool dropReplicaImpl(ASTSystemQuery & query, const StoragePtr & table);
     void dropDatabaseReplica(ASTSystemQuery & query);
     void flushDistributed(ASTSystemQuery & query);

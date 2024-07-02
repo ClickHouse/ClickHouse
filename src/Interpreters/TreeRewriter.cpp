@@ -1060,8 +1060,26 @@ bool TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
                 required.insert(column_name_type.name);
     }
 
+    NameSet virtual_columns{
+        "_part",
+        "_partition_id",
+        "_part_uuid",
+        "_partition_value",
+    };
+
+    /// Do not take into account virtual columns
+    /// (see also getSmallestColumn() in ReadFromMergeTree)
+    if (!required.empty())
+    {
+        NameSet required_without_virtual = required;
+        for (const auto & virtual_column : virtual_columns)
+            required_without_virtual.erase(virtual_column);
+        has_explicit_columns = !required_without_virtual.empty();
+    }
+    else
+        has_explicit_columns = false;
+
     /// Figure out if we're able to use the trivial count optimization.
-    has_explicit_columns = !required.empty();
     if (is_select && !has_explicit_columns)
     {
         optimize_trivial_count = !columns_context.has_array_join;

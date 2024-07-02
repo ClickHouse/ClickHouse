@@ -23,6 +23,7 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeMergeStrategyPicker.h>
 #include <Storages/MergeTree/ReplicatedMergeTreePartCheckThread.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQueue.h>
+#include <Storages/MergeTree/ReplicatedMergeTreeCluster.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeRestartingThread.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeTableMetadata.h>
 #include <Storages/MergeTree/ReplicatedTableStatus.h>
@@ -147,6 +148,7 @@ public:
     bool supportsParallelInsert() const override { return true; }
     bool supportsReplication() const override { return true; }
     bool supportsDeduplication() const override { return true; }
+    bool supportsTrivialCountOptimization(const StorageSnapshotPtr &, ContextPtr) const override;
 
     void read(
         QueryPlan & query_plan,
@@ -244,9 +246,11 @@ public:
      * returns true if there are no replicas left
      */
     static bool dropReplica(zkutil::ZooKeeperPtr zookeeper, const String & zookeeper_path, const String & replica,
-                            LoggerPtr logger, MergeTreeSettingsPtr table_settings = nullptr, std::optional<bool> * has_metadata_out = nullptr);
+                            LoggerPtr logger, MergeTreeSettingsPtr table_settings = nullptr, std::optional<bool> * has_metadata_out = nullptr, ReplicatedMergeTreeCluster * cluster = nullptr);
 
     bool dropReplica(const String & drop_zookeeper_path, const String & drop_replica, LoggerPtr logger);
+
+    void dropClusterReplica(ContextPtr local_context);
 
     /// Removes table from ZooKeeper after the last replica was dropped
     static bool removeTableNodesFromZooKeeper(zkutil::ZooKeeperPtr zookeeper, const String & zookeeper_path,
@@ -346,6 +350,8 @@ public:
     static bool removeSharedDetachedPart(DiskPtr disk, const String & path, const String & part_name, const String & table_uuid,
         const String & replica_name, const String & zookeeper_path, const ContextPtr & local_context, const zkutil::ZooKeeperPtr & zookeeper);
 
+    ReplicatedMergeTreeClusterPartitions getClusterPartitions() const;
+
     bool canUseZeroCopyReplication() const;
 
     bool isTableReadOnly () { return is_readonly || isStaticStorage(); }
@@ -381,6 +387,12 @@ private:
     friend struct ReplicatedMergeTreeLogEntry;
     friend class ScopedPartitionMergeLock;
     friend class ReplicatedMergeTreeQueue;
+    friend class ReplicatedMergeTreeCluster;
+    friend struct ReplicatedMergeTreeClusterReplica;
+    friend class ReplicatedMergeTreeClusterSink;
+    friend class ReplicatedMergeTreeClusterBalancer;
+    friend class ReplicatedMergeTreeClusterPartitionSelector;
+    friend class ReplicatedMergeTreeMergePredicate;
     friend class PartMovesBetweenShardsOrchestrator;
     friend class MergeTreeData;
     friend class MergeFromLogEntryTask;
@@ -452,6 +464,9 @@ private:
     mutable std::mutex last_queue_update_exception_lock;
     String last_queue_update_exception;
     String getLastQueueUpdateException() const;
+
+    /// NOTE: marked as mutable for now (to avoid more conflicts in the code)
+    mutable std::optional<ReplicatedMergeTreeCluster> cluster;
 
     DataPartsExchange::Fetcher fetcher;
 
@@ -569,6 +584,16 @@ private:
         SelectQueryInfo & query_info,
         ContextPtr local_context,
         QueryProcessingStage::Enum processed_stage);
+
+    void readClusterImpl(
+        QueryPlan & query_plan,
+        const Names & column_names,
+        const StorageSnapshotPtr & storage_snapshot,
+        SelectQueryInfo & query_info,
+        ContextPtr local_context,
+        QueryProcessingStage::Enum processed_stage,
+        size_t max_block_size,
+        size_t num_streams);
 
     template <class Func>
     void foreachActiveParts(Func && func, bool select_sequential_consistency) const;
@@ -694,7 +719,40 @@ private:
     void cloneReplica(const String & source_replica, Coordination::Stat source_is_lost_stat, zkutil::ZooKeeperPtr & zookeeper);
 
     /// Repairs metadata of staled replica. Called from cloneReplica(...)
-    void cloneMetadataIfNeeded(const String & source_replica, const String & source_path, zkutil::ZooKeeperPtr & zookeeper);
+    void cloneMetadataIfNeeded(const String & source_replica, const String & source_path, const zkutil::ZooKeeperPtr & zookeeper);
+
+    Strings getSourceQueueEntries(const String & source_replica, Coordination::Stat source_is_lost_stat, const zkutil::ZooKeeperPtr & zookeeper, bool update_source_replica_log_pointer);
+
+    /// String representation of the queue entry along with parsed entry
+    /// Used during clone.
+    struct QueueEntryInfo
+    {
+        String data = {};
+        Coordination::Stat stat = {};
+        LogEntryPtr parsed_entry = {};
+    };
+
+    /** If necessary, restore a part, replica itself adds a record for its receipt.
+      * What time should I put for this entry in the queue? Time is taken into account when calculating lag of replica.
+      * For these purposes, it makes sense to use creation time of missing part
+      *  (that is, in calculating lag, it will be taken into account how old is the part we need to recover).
+      */
+    static time_t tryGetPartCreateTime(const zkutil::ZooKeeperPtr & zookeeper, const String & replica_path, const String & part_name);
+
+    /// @param is_new - is replica new (then it will be cloned, not restored)
+    /// @param is_lost_version - version of is_lost znode
+    /// @param create_is_lost - create is_lost node (compatibility with old versions)
+    /// @return true if replica is lost, and this means that it should be either restored or cloned from another.
+    static bool isReplicaLost(zkutil::ZooKeeperPtr zookeeper, const String & replica_path, bool & is_new, int & is_lost_version, bool create_is_lost = false);
+
+    /// Get the most recent replica, looks at:
+    /// - /is_lost
+    /// - /queue
+    /// - /log_pointer
+    ///
+    /// @param source_is_lost_stat - required to ensure that the replica will not became lost during clone
+    /// @return replica to clone from
+    String getReplicaToCloneFrom(zkutil::ZooKeeperPtr zookeeper, Coordination::Stat & source_is_lost_stat) const;
 
     /// Clone replica if it is lost.
     void cloneReplicaIfNeeded(zkutil::ZooKeeperPtr zookeeper);

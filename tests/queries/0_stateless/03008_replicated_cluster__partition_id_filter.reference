@@ -1,0 +1,9 @@
+-- { echoOn }
+select count() from data_r1 prewhere _partition_id = '0';
+10
+select count() from data_r2 prewhere _partition_id = '0';
+10
+select count(ignore(*)) from data_r1 prewhere _partition_id = '0';
+10
+select count(ignore(*)) from data_r2 prewhere _partition_id = '0';
+10

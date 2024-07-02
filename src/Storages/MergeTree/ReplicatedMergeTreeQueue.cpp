@@ -701,13 +701,28 @@ std::pair<int32_t, int32_t> ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::Zo
             for (size_t i = 0; i < get_num; ++i)
             {
                 auto res = get_results[i];
+                auto entry_ptr = LogEntry::parse(res.data, res.stat, format_version);
+                const auto & entry = *entry_ptr;
 
-                copied_entries.emplace_back(LogEntry::parse(res.data, res.stat, format_version));
+                /// - there SHOULD BE replicas in the log entry if the cluster mode is enabled,
+                ///   but not for ALTER_METADATA case, since ALTER should be applied on the whole cluster
+                /// - but if cluster mode is disabled, log entry CANNOT have any replicas
+                if ((storage.cluster.has_value() && entry.replicas.empty() && entry.type != LogEntry::ALTER_METADATA) ||
+                    (!storage.cluster.has_value() && !entry.replicas.empty()))
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Corrupted cluster log entry: {}", entry.toString());
+
+                if (!entry.replicas.empty())
+                {
+                    if (std::find(entry.replicas.begin(), entry.replicas.end(), storage.replica_name) == entry.replicas.end())
+                    {
+                        LOG_DEBUG(log, "This replica was not assigned to {}", entry.getDescriptionForLogs(format_version));
+                        continue;
+                    }
+                }
 
                 ops.emplace_back(zkutil::makeCreateRequest(
                     fs::path(replica_path) / "queue/queue-", res.data, zkutil::CreateMode::PersistentSequential));
 
-                const auto & entry = *copied_entries.back();
                 if (entry.type == LogEntry::GET_PART || entry.type == LogEntry::ATTACH_PART)
                 {
                     std::lock_guard state_lock(state_mutex);
@@ -717,6 +732,8 @@ std::pair<int32_t, int32_t> ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::Zo
                         min_unprocessed_insert_time_changed = min_unprocessed_insert_time;
                     }
                 }
+
+                copied_entries.emplace_back(std::move(entry_ptr));
             }
 
             ops.emplace_back(zkutil::makeSetRequest(
@@ -832,6 +849,7 @@ QueueRepresentation getQueueRepresentation(const std::list<ReplicatedMergeTreeLo
             case LogEntryType::CLEAR_COLUMN:
             case LogEntryType::SYNC_PINNED_PART_UUIDS:
             case LogEntryType::CLONE_PART_FROM_SHARD:
+            case LogEntryType::CLUSTER_SYNC:
             {
                 break;
             }
@@ -2344,6 +2362,11 @@ ReplicatedMergeTreeMergePredicate::ReplicatedMergeTreeMergePredicate(
     committing_blocks = std::make_shared<CommittingBlocks>(getCommittingBlocks(zookeeper, queue.zookeeper_path, queue.log));
 
     std::tie(merges_version, std::ignore) = queue_.pullLogsToQueue(zookeeper, {}, ReplicatedMergeTreeQueue::MERGE_PREDICATE);
+
+    /// We need to update the clusters partitions map to get recent changes in it.
+    /// In case it will be changed again, the version of the "log" (merges_version) will not match.
+    if (queue.storage.cluster.has_value())
+        queue.storage.cluster->loadFromCoordinator(zookeeper);
 
     {
         /// We avoid returning here a version to be used in a lightweight transaction.

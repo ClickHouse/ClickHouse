@@ -46,6 +46,9 @@ struct ReplicatedMergeTreeLogEntryData
         SYNC_PINNED_PART_UUIDS, /// Synchronization point for ensuring that all replicas have up to date in-memory state.
         CLONE_PART_FROM_SHARD,  /// Clone part from another shard.
         DROP_PART,      /// NOTE: Virtual (has the same (de)serialization format as DROP_RANGE). Deletes the specified part.
+
+        /// Replicated Cluster Support
+        CLUSTER_SYNC,
     };
 
     static String typeToString(Type type)
@@ -64,6 +67,7 @@ struct ReplicatedMergeTreeLogEntryData
             case ReplicatedMergeTreeLogEntryData::SYNC_PINNED_PART_UUIDS: return "SYNC_PINNED_PART_UUIDS";
             case ReplicatedMergeTreeLogEntryData::CLONE_PART_FROM_SHARD:  return "CLONE_PART_FROM_SHARD";
             case ReplicatedMergeTreeLogEntryData::DROP_PART:  return "DROP_PART";
+            case ReplicatedMergeTreeLogEntryData::CLUSTER_SYNC: return "CLUSTER_SYNC";
             default:
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown log entry type: {}", DB::toString<int>(type));
         }
@@ -84,6 +88,9 @@ struct ReplicatedMergeTreeLogEntryData
     Type type = EMPTY;
     String source_replica; /// Empty string means that this entry was added to the queue immediately, and not copied from the log.
     String source_shard;
+
+    /// Cluster
+    Strings replicas;
 
     String part_checksum; /// Part checksum for ATTACH_PART, empty otherwise.
 

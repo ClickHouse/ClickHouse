@@ -285,6 +285,8 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             {
                 if (ParserKeyword{Keyword::STRICT}.ignore(pos, expected))
                     res->sync_replica_mode = SyncReplicaMode::STRICT;
+                else if (ParserKeyword{Keyword::CLUSTER}.ignore(pos, expected))
+                    res->sync_replica_mode = SyncReplicaMode::CLUSTER;
                 else if (ParserKeyword{Keyword::LIGHTWEIGHT}.ignore(pos, expected))
                 {
                     res->sync_replica_mode = SyncReplicaMode::LIGHTWEIGHT;
@@ -346,6 +348,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             break;
         }
 
+        case Type::DROP_CLUSTER_REPLICA:
         case Type::RESTORE_REPLICA:
         {
             if (!parseQueryWithOnClusterAndMaybeTable(res, pos, expected, /* require table = */ true, /* allow_string_literal = */ false))

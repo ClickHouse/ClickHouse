@@ -1,0 +1,19 @@
+-- { echoOn }
+optimize table data_r1 final;
+select count() from data_r1;
+10
+select count() from data_r2;
+10
+select count() from data_r3;
+10
+select count() from data_r4;
+10
+optimize table data_r2 final;
+select count() from data_r1;
+10
+select count() from data_r2;
+10
+select count() from data_r3;
+10
+select count() from data_r4;
+10

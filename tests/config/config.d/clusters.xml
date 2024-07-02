@@ -2,7 +2,8 @@
     <remote_servers>
         <!-- Remove the default remote server to avoid people depending on its hardcoded config
              Use test_shard_localhost instead -->
-        <default remove="remove"></default>
+        <!-- FIXME: default is required for replicated-cluster -->
+        <!-- <default remove="remove"></default> -->
         <test_shard_localhost>
             <shard>
                 <replica>
