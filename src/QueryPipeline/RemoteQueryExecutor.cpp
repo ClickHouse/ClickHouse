@@ -443,7 +443,12 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::read()
     {
         std::lock_guard lock(was_cancelled_mutex);
         if (was_cancelled)
+        {
+            /// Preliminary cancelling is possible from sendQuery(), need to cancel the context
+            if (read_context)
+                read_context->cancel();
             return ReadResult(Block());
+        }
 
         auto packet = connections->receivePacket();
         auto anything = processPacket(std::move(packet));
@@ -478,7 +483,12 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAsync()
     {
         std::lock_guard lock(was_cancelled_mutex);
         if (was_cancelled)
+        {
+            /// Preliminary cancelling is possible from sendQuery(), need to cancel the context
+            if (read_context)
+                read_context->cancel();
             return ReadResult(Block());
+        }
 
         if (has_postponed_packet)
         {
@@ -503,6 +513,9 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAsync()
                 chassert(extension->parallel_reading_coordinator);
                 extension->parallel_reading_coordinator->markReplicaAsUnavailable(extension->replica_info->number_of_current_replica);
             }
+
+            if (read_context)
+                read_context->cancel();
 
             return ReadResult(Block());
         }
