@@ -132,6 +132,7 @@ public:
     {
         KEEPER,
         SERVER,
+        DISKS
     };
 
     void setApplicationType(ApplicationType) {}
