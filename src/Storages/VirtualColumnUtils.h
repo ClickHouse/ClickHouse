@@ -76,7 +76,7 @@ struct VirtualsForFileLikeStorage
     std::optional<size_t> size { std::nullopt };
     const String * filename { nullptr };
     std::optional<Poco::Timestamp> last_modified { std::nullopt };
-    std::map<std::string, std::string> hive_partitioning_map;
+    std::map<std::string, std::string> hive_partitioning_map {};
 
 };
 
