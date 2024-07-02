@@ -376,6 +376,7 @@ void LocalServer::setupUsers()
         "            </networks>"
         "            <profile>default</profile>"
         "            <quota>default</quota>"
+        "            <named_collection_control>1</named_collection_control>
         "        </default>"
         "    </users>"
         "    <quotas>"
