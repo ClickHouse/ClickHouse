@@ -30,7 +30,6 @@
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
 #include <Common/typeid_cast.h>
-#include <Common/re2.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Formats/FormatFactory.h>
@@ -38,12 +37,15 @@
 #include <base/getFQDNOrHostName.h>
 #include <base/scope_guard.h>
 #include <Server/HTTP/HTTPResponse.h>
+#include <boost/container/flat_set.hpp>
 
+#include <Access/Common/SSLCertificateSubjects.h>
 #include "config.h"
 
 #include <Poco/Base64Decoder.h>
 #include <Poco/Base64Encoder.h>
 #include <Poco/Net/HTTPBasicCredentials.h>
+#include <Poco/Net/HTTPMessage.h>
 #include <Poco/Net/HTTPStream.h>
 #include <Poco/MemoryStream.h>
 #include <Poco/StreamCopier.h>
@@ -53,7 +55,10 @@
 #include <algorithm>
 #include <chrono>
 #include <memory>
+#include <optional>
 #include <sstream>
+#include <unordered_map>
+#include <utility>
 
 #if USE_SSL
 #include <Poco/Net/X509Certificate.h>
@@ -338,11 +343,11 @@ void HTTPHandler::pushDelayedResults(Output & used_output)
 }
 
 
-HTTPHandler::HTTPHandler(IServer & server_, const std::string & name, const std::optional<String> & content_type_override_)
+HTTPHandler::HTTPHandler(IServer & server_, const std::string & name, const HTTPResponseHeaderSetup & http_response_headers_override_)
     : server(server_)
     , log(getLogger(name))
     , default_settings(server.context()->getSettingsRef())
-    , content_type_override(content_type_override_)
+    , http_response_headers_override(http_response_headers_override_)
 {
     server_display_name = server.config().getString("display_name", getFQDNOrHostName());
 }
@@ -377,7 +382,7 @@ bool HTTPHandler::authenticateUser(
     bool has_credentials_in_query_params = params.has("user") || params.has("password");
 
     std::string spnego_challenge;
-    std::string certificate_common_name;
+    SSLCertificateSubjects certificate_subjects;
 
     if (has_auth_headers)
     {
@@ -400,11 +405,11 @@ bool HTTPHandler::authenticateUser(
                                 "to use SSL certificate authentication and authentication via password simultaneously");
 
             if (request.havePeerCertificate())
-                certificate_common_name = request.peerCertificate().commonName();
+                certificate_subjects = extractSSLCertificateSubjects(request.peerCertificate());
 
-            if (certificate_common_name.empty())
+            if (certificate_subjects.empty())
                 throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
-                                "Invalid authentication: SSL certificate authentication requires nonempty certificate's Common Name");
+                                "Invalid authentication: SSL certificate authentication requires nonempty certificate's Common Name or Subject Alternative Name");
 #else
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                             "SSL certificate authentication disabled because ClickHouse was built without SSL library");
@@ -448,10 +453,10 @@ bool HTTPHandler::authenticateUser(
         password = params.get("password", "");
     }
 
-    if (!certificate_common_name.empty())
+    if (!certificate_subjects.empty())
     {
         if (!request_credentials)
-            request_credentials = std::make_unique<SSLCertificateCredentials>(user, certificate_common_name);
+            request_credentials = std::make_unique<SSLCertificateCredentials>(user, std::move(certificate_subjects));
 
         auto * certificate_credentials = dynamic_cast<SSLCertificateCredentials *>(request_credentials.get());
         if (!certificate_credentials)
@@ -670,8 +675,7 @@ void HTTPHandler::processQuery(
         {
             auto tmp_data = std::make_shared<TemporaryDataOnDisk>(server.context()->getTempDataOnDisk());
 
-            auto create_tmp_disk_buffer = [tmp_data] (const WriteBufferPtr &) -> WriteBufferPtr
-            {
+            auto create_tmp_disk_buffer = [tmp_data] (const WriteBufferPtr &) -> WriteBufferPtr {
                 return tmp_data->createRawStream();
             };
 
@@ -893,13 +897,14 @@ void HTTPHandler::processQuery(
     customizeContext(request, context, *in_post_maybe_compressed);
     in = has_external_data ? std::move(in_param) : std::make_unique<ConcatReadBuffer>(*in_param, *in_post_maybe_compressed);
 
+    applyHTTPResponseHeaders(response, http_response_headers_override);
+
     auto set_query_result = [&response, this] (const QueryResultDetails & details)
     {
         response.add("X-ClickHouse-Query-Id", details.query_id);
 
-        if (content_type_override)
-            response.setContentType(*content_type_override);
-        else if (details.content_type)
+        if (!(http_response_headers_override && http_response_headers_override->contains(Poco::Net::HTTPMessage::CONTENT_TYPE))
+            && details.content_type)
             response.setContentType(*details.content_type);
 
         if (details.format)
@@ -1024,14 +1029,7 @@ catch (...)
 {
     tryLogCurrentException(log, "Cannot send exception to client");
 
-    try
-    {
-        used_output.finalize();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(log, "Cannot flush data to client (after sending exception)");
-    }
+    used_output.cancel();
 }
 
 void HTTPHandler::formatExceptionForClient(int exception_code, HTTPServerRequest & request, HTTPServerResponse & response, Output & used_output)
@@ -1043,12 +1041,21 @@ void HTTPHandler::formatExceptionForClient(int exception_code, HTTPServerRequest
 
     /// FIXME: make sure that no one else is reading from the same stream at the moment.
 
-    /// If HTTP method is POST and Keep-Alive is turned on, we should read the whole request body
+    /// If HTTP method is POST and Keep-Alive is turned on, we should try to read the whole request body
     /// to avoid reading part of the current request body in the next request.
     if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST && response.getKeepAlive()
-        && exception_code != ErrorCodes::HTTP_LENGTH_REQUIRED && !request.getStream().eof())
+        && exception_code != ErrorCodes::HTTP_LENGTH_REQUIRED)
     {
-        request.getStream().ignoreAll();
+        try
+        {
+            if (!request.getStream().eof())
+                request.getStream().ignoreAll();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Cannot read remaining request body during exception handling");
+            response.setKeepAlive(false);
+        }
     }
 
     if (exception_code == ErrorCodes::REQUIRED_PASSWORD)
@@ -1060,7 +1067,6 @@ void HTTPHandler::formatExceptionForClient(int exception_code, HTTPServerRequest
 void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event)
 {
     setThreadName("HTTPHandler");
-    ThreadStatus thread_status;
 
     session = std::make_unique<Session>(server.context(), ClientInfo::Interface::HTTP, request.isSecure());
     SCOPE_EXIT({ session.reset(); });
@@ -1161,7 +1167,7 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
         /// Check if exception was thrown in used_output.finalize().
         /// In this case used_output can be in invalid state and we
         /// cannot write in it anymore. So, just log this exception.
-        if (used_output.isFinalized())
+        if (used_output.isFinalized() || used_output.isCanceled())
         {
             if (thread_trace_context)
                 thread_trace_context->root_span.addAttribute("clickhouse.exception", "Cannot flush data to client");
@@ -1180,13 +1186,16 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
 
         if (thread_trace_context)
             thread_trace_context->root_span.addAttribute(status);
+
+        return;
     }
 
     used_output.finalize();
 }
 
-DynamicQueryHandler::DynamicQueryHandler(IServer & server_, const std::string & param_name_, const std::optional<String>& content_type_override_)
-    : HTTPHandler(server_, "DynamicQueryHandler", content_type_override_), param_name(param_name_)
+DynamicQueryHandler::DynamicQueryHandler(
+    IServer & server_, const std::string & param_name_, const HTTPResponseHeaderSetup & http_response_headers_override_)
+    : HTTPHandler(server_, "DynamicQueryHandler", http_response_headers_override_), param_name(param_name_)
 {
 }
 
@@ -1247,8 +1256,8 @@ PredefinedQueryHandler::PredefinedQueryHandler(
     const std::string & predefined_query_,
     const CompiledRegexPtr & url_regex_,
     const std::unordered_map<String, CompiledRegexPtr> & header_name_with_regex_,
-    const std::optional<String> & content_type_override_)
-    : HTTPHandler(server_, "PredefinedQueryHandler", content_type_override_)
+    const HTTPResponseHeaderSetup & http_response_headers_override_)
+    : HTTPHandler(server_, "PredefinedQueryHandler", http_response_headers_override_)
     , receive_params(receive_params_)
     , predefined_query(predefined_query_)
     , url_regex(url_regex_)
@@ -1340,14 +1349,10 @@ HTTPRequestHandlerFactoryPtr createDynamicHandlerFactory(IServer & server,
 {
     auto query_param_name = config.getString(config_prefix + ".handler.query_param_name", "query");
 
-    std::optional<String> content_type_override;
-    if (config.has(config_prefix + ".handler.content_type"))
-        content_type_override = config.getString(config_prefix + ".handler.content_type");
+    HTTPResponseHeaderSetup http_response_headers_override = parseHTTPResponseHeaders(config, config_prefix);
 
-    auto creator = [&server, query_param_name, content_type_override] () -> std::unique_ptr<DynamicQueryHandler>
-    {
-        return std::make_unique<DynamicQueryHandler>(server, query_param_name, content_type_override);
-    };
+    auto creator = [&server, query_param_name, http_response_headers_override]() -> std::unique_ptr<DynamicQueryHandler>
+    { return std::make_unique<DynamicQueryHandler>(server, query_param_name, http_response_headers_override); };
 
     auto factory = std::make_shared<HandlingRuleHTTPHandlerFactory<DynamicQueryHandler>>(std::move(creator));
     factory->addFiltersFromConfig(config, config_prefix);
@@ -1402,9 +1407,7 @@ HTTPRequestHandlerFactoryPtr createPredefinedHandlerFactory(IServer & server,
             headers_name_with_regex.emplace(std::make_pair(header_name, regex));
     }
 
-    std::optional<String> content_type_override;
-    if (config.has(config_prefix + ".handler.content_type"))
-        content_type_override = config.getString(config_prefix + ".handler.content_type");
+    HTTPResponseHeaderSetup http_response_headers_override = parseHTTPResponseHeaders(config, config_prefix);
 
     std::shared_ptr<HandlingRuleHTTPHandlerFactory<PredefinedQueryHandler>> factory;
 
@@ -1424,12 +1427,12 @@ HTTPRequestHandlerFactoryPtr createPredefinedHandlerFactory(IServer & server,
                 predefined_query,
                 regex,
                 headers_name_with_regex,
-                content_type_override]
+                http_response_headers_override]
                 -> std::unique_ptr<PredefinedQueryHandler>
             {
                 return std::make_unique<PredefinedQueryHandler>(
                     server, analyze_receive_params, predefined_query, regex,
-                    headers_name_with_regex, content_type_override);
+                    headers_name_with_regex, http_response_headers_override);
             };
             factory = std::make_shared<HandlingRuleHTTPHandlerFactory<PredefinedQueryHandler>>(std::move(creator));
             factory->addFiltersFromConfig(config, config_prefix);
@@ -1442,12 +1445,12 @@ HTTPRequestHandlerFactoryPtr createPredefinedHandlerFactory(IServer & server,
         analyze_receive_params,
         predefined_query,
         headers_name_with_regex,
-        content_type_override]
+        http_response_headers_override]
         -> std::unique_ptr<PredefinedQueryHandler>
     {
         return std::make_unique<PredefinedQueryHandler>(
             server, analyze_receive_params, predefined_query, CompiledRegexPtr{},
-            headers_name_with_regex, content_type_override);
+            headers_name_with_regex, http_response_headers_override);
     };
 
     factory = std::make_shared<HandlingRuleHTTPHandlerFactory<PredefinedQueryHandler>>(std::move(creator));
