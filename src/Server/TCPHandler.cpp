@@ -1890,6 +1890,13 @@ void TCPHandler::receiveQuery()
     ///
     /// Settings
     ///
+
+    /// FIXME: Remove when allow_experimental_analyzer will become obsolete.
+    /// Even if allow_experimental_analyzer setting wasn't explicitly changed on the initiator server, it might be disabled there
+    /// So we just force ourselves to act in the same way.
+    if (query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
+        passed_settings.set("allow_experimental_analyzer", static_cast<bool>(passed_settings.allow_experimental_analyzer));
+
     auto settings_changes = passed_settings.changes();
     query_kind = query_context->getClientInfo().query_kind;
     if (query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
