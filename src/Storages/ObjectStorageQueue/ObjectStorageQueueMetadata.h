@@ -7,23 +7,23 @@
 #include <Core/BackgroundSchedulePool.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
-#include <Storages/S3Queue/S3QueueIFileMetadata.h>
-#include <Storages/S3Queue/S3QueueOrderedFileMetadata.h>
-#include <Storages/S3Queue/S3QueueSettings.h>
+#include <Storages/ObjectStorageQueue/ObjectStorageQueueIFileMetadata.h>
+#include <Storages/ObjectStorageQueue/ObjectStorageQueueOrderedFileMetadata.h>
+#include <Storages/ObjectStorageQueue/ObjectStorageQueueSettings.h>
 
 namespace fs = std::filesystem;
 namespace Poco { class Logger; }
 
 namespace DB
 {
-struct S3QueueSettings;
-class StorageS3Queue;
-struct S3QueueTableMetadata;
+struct ObjectStorageQueueSettings;
+class StorageObjectStorageQueue;
+struct ObjectStorageQueueTableMetadata;
 struct StorageInMemoryMetadata;
 using ConfigurationPtr = StorageObjectStorage::ConfigurationPtr;
 
 /**
- * A class for managing S3Queue metadata in zookeeper, e.g.
+ * A class for managing ObjectStorageQueue metadata in zookeeper, e.g.
  * the following folders:
  * - <path_to_metadata>/processed
  * - <path_to_metadata>/processing
@@ -35,7 +35,7 @@ using ConfigurationPtr = StorageObjectStorage::ConfigurationPtr;
  * - <path_to_metadata>/processing
  * - <path_to_metadata>/failed
  *
- * Depending on S3Queue processing mode (ordered or unordered)
+ * Depending on ObjectStorageQueue processing mode (ordered or unordered)
  * we can differently store metadata in /processed node.
  *
  * Implements caching of zookeeper metadata for faster responses.
@@ -44,24 +44,24 @@ using ConfigurationPtr = StorageObjectStorage::ConfigurationPtr;
  * In case of Unordered mode - if files TTL is enabled or maximum tracked files limit is set
  * starts a background cleanup thread which is responsible for maintaining them.
  */
-class S3QueueMetadata
+class ObjectStorageQueueMetadata
 {
 public:
-    using FileStatus = S3QueueIFileMetadata::FileStatus;
-    using FileMetadataPtr = std::shared_ptr<S3QueueIFileMetadata>;
+    using FileStatus = ObjectStorageQueueIFileMetadata::FileStatus;
+    using FileMetadataPtr = std::shared_ptr<ObjectStorageQueueIFileMetadata>;
     using FileStatusPtr = std::shared_ptr<FileStatus>;
     using FileStatuses = std::unordered_map<std::string, FileStatusPtr>;
     using Bucket = size_t;
     using Processor = std::string;
 
-    S3QueueMetadata(const fs::path & zookeeper_path_, const S3QueueSettings & settings_);
-    ~S3QueueMetadata();
+    ObjectStorageQueueMetadata(const fs::path & zookeeper_path_, const ObjectStorageQueueSettings & settings_);
+    ~ObjectStorageQueueMetadata();
 
     void initialize(const ConfigurationPtr & configuration, const StorageInMemoryMetadata & storage_metadata);
-    void checkSettings(const S3QueueSettings & settings) const;
+    void checkSettings(const ObjectStorageQueueSettings & settings) const;
     void shutdown();
 
-    FileMetadataPtr getFileMetadata(const std::string & path, S3QueueOrderedFileMetadata::BucketInfoPtr bucket_info = {});
+    FileMetadataPtr getFileMetadata(const std::string & path, ObjectStorageQueueOrderedFileMetadata::BucketInfoPtr bucket_info = {});
 
     FileStatusPtr getFileStatus(const std::string & path);
     FileStatuses getFileStatuses() const;
@@ -69,16 +69,16 @@ public:
     /// Method of Ordered mode parallel processing.
     bool useBucketsForProcessing() const;
     Bucket getBucketForPath(const std::string & path) const;
-    S3QueueOrderedFileMetadata::BucketHolderPtr tryAcquireBucket(const Bucket & bucket, const Processor & processor);
+    ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr tryAcquireBucket(const Bucket & bucket, const Processor & processor);
 
-    static size_t getBucketsNum(const S3QueueSettings & settings);
-    static size_t getBucketsNum(const S3QueueTableMetadata & settings);
+    static size_t getBucketsNum(const ObjectStorageQueueSettings & settings);
+    static size_t getBucketsNum(const ObjectStorageQueueTableMetadata & settings);
 
 private:
     void cleanupThreadFunc();
     void cleanupThreadFuncImpl();
 
-    const S3QueueSettings settings;
+    const ObjectStorageQueueSettings settings;
     const fs::path zookeeper_path;
     const size_t buckets_num;
 
