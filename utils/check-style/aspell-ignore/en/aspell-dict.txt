@@ -249,6 +249,7 @@ DoubleDelta
 Doxygen
 Durre
 ECMA
+ETag
 Ecto
 EdgeAngle
 EdgeLengthKm
@@ -1579,6 +1580,7 @@ enum's
 enums
 erfc
 errorCodeToName
+etag
 evalMLMethod
 exFAT
 expiryMsec
