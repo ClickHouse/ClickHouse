@@ -1084,10 +1084,9 @@ void WindowTransform::writeOutCurrentRow()
 void WindowTransform::updateFirstRequiredRow()
 {
     first_required_row = current_row;
-    for (size_t wi = 0; wi < workspaces.size(); ++wi)
+    for (auto & ws : workspaces)
     {
         RowNumber row;
-        auto & ws = workspaces[wi];
         if (ws.window_function_impl)
             row = ws.window_function_impl->firstRequiredRowInFrame(this);
         else
@@ -1547,7 +1546,8 @@ struct WindowFunctionRank final : public StatelessWindowFunction
     RowNumber firstRequiredRowInFrame(const WindowTransform * transform) const override
     {
         /// Current block is the only one required to be kept in memory.
-        return transform->current_row;
+        auto [row, _] = transform->moveRowNumber(transform->current_row, -1);
+        return row;
     }
 };
 
@@ -1571,7 +1571,8 @@ struct WindowFunctionDenseRank final : public StatelessWindowFunction
     RowNumber firstRequiredRowInFrame(const WindowTransform * transform) const override
     {
         /// Current block is the only one required to be kept in memory.
-        return transform->current_row;
+        auto [row, _] = transform->moveRowNumber(transform->current_row, -1);
+        return row;
     }
 };
 
@@ -2052,7 +2053,8 @@ struct WindowFunctionRowNumber final : public StatelessWindowFunction
     RowNumber firstRequiredRowInFrame(const WindowTransform * transform) const override
     {
         /// Current block is the only one required to be kept in memory.
-        return transform->current_row;
+        auto [row, _] = transform->moveRowNumber(transform->current_row, -1);
+        return row;
     }
 };
 
