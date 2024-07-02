@@ -14,6 +14,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
 void SerializationAggregateFunction::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings &) const
 {
     const AggregateFunctionStateData & state = field.get<const AggregateFunctionStateData &>();
@@ -207,6 +212,11 @@ void SerializationAggregateFunction::deserializeTextCSV(IColumn & column, ReadBu
     String s;
     readCSV(s, istr, settings.csv);
     deserializeFromString(function, column, s, version);
+}
+
+void SerializationAggregateFunction::serializeTextHive(const IColumn & /*column*/, size_t /*row_num*/, WriteBuffer & /*ostr*/, const FormatSettings & /*settings*/) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method serializeTextHive is not implemented for type AggregateFunction");
 }
 
 }
