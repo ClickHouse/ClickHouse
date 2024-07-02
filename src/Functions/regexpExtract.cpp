@@ -109,7 +109,7 @@ private:
         ColumnString::Offsets & res_offsets,
         size_t & res_offset)
     {
-        if (match_index < matches.size() && matches[match_index].offset != std::string::npos)
+        if (match_index < matches.size() && matches[match_index].length)
         {
             const auto & match = matches[match_index];
             res_data.resize(res_offset + match.length + 1);

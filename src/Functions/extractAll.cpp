@@ -94,7 +94,7 @@ public:
         if (!re->match(pos, end - pos, matches) || !matches[0].length)
             return false;
 
-        if (matches[capture].offset == std::string::npos)
+        if (!matches[capture].length)
         {
             /// Empty match.
             token_begin = pos;
