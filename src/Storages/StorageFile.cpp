@@ -52,6 +52,7 @@
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <Common/re2.h>
+#include <Formats/SchemaInferenceUtils.h>
 
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -1095,7 +1096,11 @@ void StorageFile::setStorageMetadata(CommonArguments args)
     storage_metadata.setConstraints(args.constraints);
     storage_metadata.setComment(args.comment);
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.getColumns()));
+
+    Strings paths_for_virtuals;
+    if (args.getContext()->getSettingsRef().file_hive_partitioning)
+        paths_for_virtuals = paths;
+    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.getColumns(), paths_for_virtuals));
 }
 
 
@@ -1437,6 +1442,15 @@ Chunk StorageFileSource::generate()
                 chunk_size = input_format->getApproxBytesReadForChunk();
             progress(num_rows, chunk_size ? chunk_size : chunk.bytes());
 
+            std::map<std::string, std::string> hive_map;
+            if (getContext()->getSettingsRef().file_hive_partitioning)
+            {
+                hive_map = VirtualColumnUtils::parsePartitionMapFromPath(current_path);
+
+                for (const auto& item : hive_map)
+                    requested_virtual_columns.push_back(NameAndTypePair(item.first, std::make_shared<DataTypeString>()));
+            }
+
             /// Enrich with virtual columns.
             VirtualColumnUtils::addRequestedFileLikeStorageVirtualsToChunk(
                 chunk, requested_virtual_columns,
@@ -1444,7 +1458,8 @@ Chunk StorageFileSource::generate()
                     .path = current_path,
                     .size = current_file_size,
                     .filename = (filename_override.has_value() ? &filename_override.value() : nullptr),
-                    .last_modified = current_file_last_modified
+                    .last_modified = current_file_last_modified,
+                    .hive_partitioning_map = hive_map
                 });
 
             return chunk;
@@ -1621,6 +1636,16 @@ void ReadFromFile::createIterator(const ActionsDAG::Node * predicate)
         storage->distributed_processing);
 }
 
+void addPartitionColumnsToInfoHeader(Strings paths, ReadFromFormatInfo & info)
+{
+    for (const auto& path : paths)
+    {
+        auto map = VirtualColumnUtils::parsePartitionMapFromPath(path);
+        for (const auto& item : map)
+            info.source_header.insertUnique(ColumnWithTypeAndName(std::make_shared<DataTypeString>(), item.first));
+    }
+}
+
 void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     createIterator(nullptr);
@@ -1628,10 +1653,20 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
     size_t num_streams = max_num_streams;
 
     size_t files_to_read = 0;
+    Strings paths;
     if (storage->archive_info)
+    {
         files_to_read = storage->archive_info->paths_to_archives.size();
+        paths = storage->archive_info->paths_to_archives;
+    }
     else
+    {
         files_to_read = storage->paths.size();
+        paths = storage->paths;
+    }
+
+    if (getContext()->getSettingsRef().file_hive_partitioning)
+        addPartitionColumnsToInfoHeader(paths, info);
 
     if (max_num_streams > files_to_read)
         num_streams = files_to_read;

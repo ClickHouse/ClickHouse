@@ -1106,6 +1106,11 @@ class IColumn;
     M(Bool, input_format_tsv_skip_trailing_empty_lines, false, "Skip trailing empty lines in TSV format", 0) \
     M(Bool, input_format_custom_skip_trailing_empty_lines, false, "Skip trailing empty lines in CustomSeparated format", 0) \
     M(Bool, input_format_tsv_crlf_end_of_line, false, "If it is set true, file function will read TSV format with \\r\\n instead of \\n.", 0) \
+    M(Bool, file_hive_partitioning, false, "Allows to use hive partitioning for file format", 0)\
+    M(Bool, url_hive_partitioning, false, "Allows to use hive partitioning for url format", 0)\
+    M(Bool, s3_hive_partitioning, false, "Allows to use hive partitioning for s3 format", 0)\
+    M(Bool, azure_blob_storage_hive_partitioning, false, "Allows to use hive partitioning for AzureBlobStorage format", 0)\
+    M(Bool, hdfs_hive_partitioning, false, "Allows to use hive partitioning for hdfs format", 0)\
     \
     M(Bool, input_format_native_allow_types_conversion, true, "Allow data types conversion in Native input format", 0) \
     \
