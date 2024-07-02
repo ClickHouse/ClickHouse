@@ -15,6 +15,7 @@ class SourceWithKeyCondition : public ISource
 protected:
     /// Represents pushed down filters in source
     std::shared_ptr<const KeyCondition> key_condition;
+    PrewhereInfoPtr prewhere_info;
 
     void setKeyConditionImpl(const ActionsDAGPtr & filter_actions_dag, ContextPtr context, const Block & keys)
     {
@@ -34,5 +35,7 @@ public:
 
     /// Set key_condition created by filter_actions_dag and context.
     virtual void setKeyCondition(const ActionsDAGPtr & /*filter_actions_dag*/, ContextPtr /*context*/) { }
+
+    void setPrewhereInfo(const PrewhereInfoPtr & prewhere_) { prewhere_info = prewhere_; }
 };
 }

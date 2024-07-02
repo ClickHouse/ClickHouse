@@ -37,6 +37,7 @@
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <Processors/Transforms/ExtractColumnsTransform.h>
+#include <Processors/Transforms/FilterTransform.h>
 #include <Processors/SourceWithKeyCondition.h>
 #include <Processors/Formats/ISchemaReader.h>
 #include <Processors/Sources/NullSource.h>
@@ -1403,6 +1404,7 @@ Chunk StorageFileSource::generate()
             if (need_only_count)
                 input_format->needOnlyCount();
 
+            input_format->setPrewhereInfo(prewhere_info);
             QueryPipelineBuilder builder;
             builder.init(Pipe(input_format));
 
@@ -1412,6 +1414,34 @@ Chunk StorageFileSource::generate()
                 {
                     return std::make_shared<AddingDefaultsTransform>(header, columns_description, *input_format, getContext());
                 });
+            }
+
+            if (prewhere_info && !input_format->supportsPrewhere())
+            {
+                auto actions_settings = ExpressionActionsSettings::fromContext(getContext());
+
+                if (prewhere_info->row_level_filter)
+                {
+                    builder.addSimpleTransform(
+                        [&](const Block & header)
+                        {
+                            return std::make_shared<FilterTransform>(
+                                header,
+                                std::make_shared<ExpressionActions>(prewhere_info->row_level_filter, actions_settings),
+                                prewhere_info->row_level_column_name,
+                                false);
+                        });
+                }
+
+                builder.addSimpleTransform(
+                    [&](const Block & header)
+                    {
+                        return std::make_shared<FilterTransform>(
+                            header,
+                            std::make_shared<ExpressionActions>(prewhere_info->prewhere_actions, actions_settings),
+                            prewhere_info->prewhere_column_name,
+                            prewhere_info->remove_prewhere_column);
+                    });
             }
 
             /// Add ExtractColumnsTransform to extract requested columns/subcolumns
@@ -1667,6 +1697,7 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
             need_only_count);
 
         source->setKeyCondition(filter_actions_dag, ctx);
+        source->setPrewhereInfo(query_info.prewhere_info);
         pipes.emplace_back(std::move(source));
     }
 

@@ -27,7 +27,8 @@ public:
         std::unique_ptr<parquet::ColumnChunkMetaData> meta_,
         std::unique_ptr<parquet::PageReader> reader_);
 
-    ColumnWithTypeAndName readBatch(UInt64 rows_num, const String & name) override;
+    ColumnWithTypeAndName readBatch(UInt64 rows_num, const String & name, const IColumn::Filter * filter) override;
+    void skip(size_t num_values) override;
 
 private:
     const parquet::ColumnDescriptor & col_descriptor;
@@ -41,19 +42,25 @@ private:
 
     ColumnPtr dictionary;
 
-    UInt64 reading_rows_num = 0;
-    UInt32 cur_page_values = 0;
+    /// Total number of values to read in one batch
+    size_t batch_value_count = 0;
+    size_t cur_value_num = 0;
+    size_t num_values_remaining_in_page = 0;
     bool reading_low_cardinality = false;
 
     Poco::Logger * log;
 
     void resetColumn(UInt64 rows_num);
+    void resetColumn();
+
     void degradeDictionary();
     ColumnWithTypeAndName releaseColumn(const String & name);
 
-    void readPage();
+    void nextDataPage();
+    void readPage(const parquet::Page & page);
     void readPageV1(const parquet::DataPageV1 & page);
     void readPageV2(const parquet::DataPageV2 & page);
+    void readPageDict(const parquet::DictionaryPage & page);
 
     std::unique_ptr<ParquetDataValuesReader> createDictReader(
         std::unique_ptr<RleValuesReader> def_level_reader, std::unique_ptr<RleValuesReader> rle_data_reader);

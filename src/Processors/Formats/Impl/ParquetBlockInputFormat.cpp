@@ -522,7 +522,9 @@ void ParquetBlockInputFormat::initializeRowGroupBatchReader(size_t row_group_bat
             reader_properties,
             arrow_file,
             format_settings,
-            row_group_batch.row_groups_idxs);
+            row_group_batch.row_groups_idxs,
+            nullptr,
+            prewhere_info);
     }
     else
     {

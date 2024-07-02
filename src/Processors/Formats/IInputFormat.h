@@ -66,6 +66,8 @@ public:
 
     void needOnlyCount() { need_only_count = true; }
 
+    virtual bool supportsPrewhere() const { return false; }
+
 protected:
     ReadBuffer & getReadBuffer() const { chassert(in); return *in; }
 

@@ -78,6 +78,17 @@ void RleValuesReader::visitValues(
     }
 }
 
+void RleValuesReader::skipValues(size_t num_values)
+{
+    while (num_values)
+    {
+        nextGroupIfNecessary();
+        auto cur_count = std::min(static_cast<UInt32>(num_values), curGroupLeft());
+        cur_group_cursor += cur_count;
+        num_values -= cur_count;
+    }
+}
+
 template <typename IndividualVisitor, typename RepeatedVisitor>
 void RleValuesReader::visitNullableValues(
     size_t cursor,
@@ -124,10 +135,56 @@ void RleValuesReader::visitNullableValues(
     }
 }
 
+void RleValuesReader::visitNullableValues(
+    size_t cursor,
+    size_t num_values,
+    Int32 max_def_level,
+    std::function<void(size_t)> individual_visitor,
+    std::function<void(size_t)> individual_null_visitor,
+    std::function<void(size_t, size_t)> repeated_visitor,
+    std::function<void(size_t, size_t)> repeated_null_visitor)
+{
+    while (num_values)
+    {
+        nextGroupIfNecessary();
+        auto cur_count = std::min(static_cast<UInt32>(num_values), curGroupLeft());
+
+        if (cur_group_is_packed)
+        {
+            for (auto i = cur_group_cursor; i < cur_group_cursor + cur_count; i++)
+            {
+                if (cur_packed_bit_values[i] == max_def_level)
+                {
+                    individual_visitor(cursor);
+                }
+                else
+                {
+                    individual_null_visitor(cursor);
+                }
+                cursor++;
+            }
+        }
+        else
+        {
+            if (cur_value == max_def_level)
+            {
+                repeated_visitor(cursor, cur_count);
+            }
+            else
+            {
+                repeated_null_visitor(cursor, cur_count);
+            }
+            cursor += cur_count;
+        }
+        cur_group_cursor += cur_count;
+        num_values -= cur_count;
+    }
+}
+
 template <typename IndividualNullVisitor, typename SteppedValidVisitor, typename RepeatedVisitor>
 void RleValuesReader::visitNullableBySteps(
     size_t cursor,
-    UInt32 num_values,
+    size_t num_values,
     Int32 max_def_level,
     IndividualNullVisitor && individual_null_visitor,
     SteppedValidVisitor && stepped_valid_visitor,
@@ -139,7 +196,7 @@ void RleValuesReader::visitNullableBySteps(
     while (num_values > 0)
     {
         nextGroupIfNecessary();
-        auto cur_count = std::min(num_values, curGroupLeft());
+        auto cur_count = std::min(num_values, static_cast<size_t>(curGroupLeft()));
 
         if (cur_group_is_packed)
         {
@@ -170,7 +227,7 @@ void RleValuesReader::visitNullableBySteps(
         }
         else
         {
-            repeated_visitor(cur_value == max_def_level, cursor, cur_count);
+            repeated_visitor(cur_value == max_def_level, cursor, static_cast<UInt32>(cur_count));
         }
 
         cursor += cur_count;
@@ -296,6 +353,28 @@ void ParquetPlainValuesReader<ColumnString>::readBatch(
     );
 }
 
+template <>
+void ParquetPlainValuesReader<ColumnString>::skip(size_t num_values)
+{
+    def_level_reader->visitNullableValues(
+        /*cursor*/ 0,
+        num_values,
+        max_def_level,
+        /* individual_visitor */ [&](size_t)
+        {
+            plain_data_buffer.skipString();
+        },
+        /* individual_null_visitor */ [] (size_t) {},
+        /* repeated_visitor */ [&](size_t, UInt32 count)
+        {
+            for (size_t i = 0; i < count; i++)
+            {
+                plain_data_buffer.skipString();
+            }
+        },
+        /* repeated_null_visitor */ [] (size_t, size_t) {}
+    );
+}
 
 template <>
 void ParquetPlainValuesReader<ColumnDecimal<DateTime64>, ParquetReaderTypes::TimestampInt96>::readBatch(
@@ -325,6 +404,30 @@ void ParquetPlainValuesReader<ColumnDecimal<DateTime64>, ParquetReaderTypes::Tim
     );
 }
 
+template <>
+void ParquetPlainValuesReader<ColumnDecimal<DateTime64>, ParquetReaderTypes::TimestampInt96>::skip(size_t num_values)
+{
+    DateTime64 data;
+    def_level_reader->visitNullableValues(
+        0,
+        num_values,
+        max_def_level,
+        /* individual_visitor */ [&](size_t)
+        {
+            plain_data_buffer.readDateTime64FromInt96(data);
+        },
+        /* individual_null_visitor */ [] (size_t) {},
+        /* repeated_visitor */ [&](size_t, UInt32 count)
+        {
+            for (UInt32 i = 0; i < count; i++)
+            {
+                plain_data_buffer.readDateTime64FromInt96(data);
+            }
+        },
+        /* repeated_null_visitor */ [] (size_t, size_t) {}
+    );
+}
+
 template <typename TColumn, ParquetReaderTypes reader_type>
 void ParquetPlainValuesReader<TColumn, reader_type>::readBatch(
     MutableColumnPtr & col_ptr, LazyNullMap & null_map, UInt32 num_values)
@@ -349,6 +452,26 @@ void ParquetPlainValuesReader<TColumn, reader_type>::readBatch(
     );
 }
 
+template <typename TColumn, ParquetReaderTypes reader_type>
+void ParquetPlainValuesReader<TColumn, reader_type>::skip(size_t num_values)
+{
+    using TValue = typename TColumn::ValueType;
+    def_level_reader->visitNullableValues(
+        /*cursor*/ 0,
+        num_values,
+        max_def_level,
+        /* individual_visitor */ [&](size_t /*nest_cursor*/)
+        {
+            plain_data_buffer.skipBytes(sizeof(TValue));
+        },
+        /* individual_null_visitor */ [] (size_t) {},
+        /* repeated_visitor */ [&](size_t /*nest_cursor*/, UInt32 count)
+        {
+            plain_data_buffer.skipBytes(count * sizeof(TValue));
+        },
+        /* repeated_null_visitor */ [] (size_t, size_t) {}
+    );
+}
 
 template <typename TColumn>
 void ParquetFixedLenPlainReader<TColumn>::readBatch(
@@ -362,6 +485,26 @@ void ParquetFixedLenPlainReader<TColumn>::readBatch(
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "unsupported type");
     }
+}
+
+template <typename TColumn>
+void ParquetFixedLenPlainReader<TColumn>::skip(size_t num_values)
+{
+    def_level_reader->visitNullableValues(
+        0,
+        num_values,
+        max_def_level,
+        /* individual_visitor */ [&](size_t)
+        {
+            plain_data_buffer.skipBytes(elem_bytes_num);
+        },
+        /* individual_null_visitor */ [] (size_t) {},
+        /* repeated_visitor */ [&](size_t, UInt32 count)
+        {
+            plain_data_buffer.skipBytes(count * elem_bytes_num);
+        },
+        /* repeated_null_visitor */ [] (size_t, size_t) {}
+    );
 }
 
 template <typename TColumnOverBigDecimal>
@@ -437,6 +580,28 @@ void ParquetRleLCReader<TColumnVector>::readBatch(
     {
         null_map.setNull(0);
     }
+}
+
+template <typename TColumnVector>
+void ParquetRleLCReader<TColumnVector>::skip(size_t num_values)
+{
+    def_level_reader->visitNullableBySteps(
+        0,
+        num_values,
+        max_def_level,
+        /* individual_null_visitor */ [&](size_t /*nest_cursor*/) {},
+        /* stepped_valid_visitor */ [&](size_t  /*nest_cursor*/, const std::vector<UInt8> & valid_index_steps)
+        {
+            rle_data_reader->skipValueBySteps(valid_index_steps);
+        },
+        /* repeated_visitor */ [&](bool is_valid, size_t  /*nest_cursor*/, UInt32 count)
+        {
+            if (is_valid)
+            {
+                rle_data_reader->skipValues(count);
+            }
+        }
+    );
 }
 
 template <>
@@ -515,6 +680,28 @@ void ParquetRleDictReader<ColumnString>::readBatch(
     );
 }
 
+template <>
+void ParquetRleDictReader<ColumnString>::skip(size_t num_values)
+{
+    def_level_reader->visitNullableBySteps(
+        0,
+        num_values,
+        max_def_level,
+        /* individual_null_visitor */ [&](size_t) {},
+        /* stepped_valid_visitor */ [&](size_t, const std::vector<UInt8> & valid_index_steps)
+        {
+            rle_data_reader->skipValueBySteps(valid_index_steps);
+        },
+        /* repeated_visitor */ [&](bool is_valid, size_t, UInt32 count)
+        {
+            if (is_valid)
+            {
+                rle_data_reader->skipValues(count);
+            }
+        }
+    );
+}
+
 template <typename TColumnVector>
 void ParquetRleDictReader<TColumnVector>::readBatch(
     MutableColumnPtr & col_ptr, LazyNullMap & null_map, UInt32 num_values)
@@ -550,6 +737,27 @@ void ParquetRleDictReader<TColumnVector>::readBatch(
     );
 }
 
+template <typename TColumnVector>
+void ParquetRleDictReader<TColumnVector>::skip(size_t num_values)
+{
+    def_level_reader->visitNullableBySteps(
+        0,
+        num_values,
+        max_def_level,
+        /* individual_null_visitor */ [&](size_t) {},
+        /* stepped_valid_visitor */ [&](size_t, const std::vector<UInt8> & valid_index_steps)
+        {
+            rle_data_reader->skipValueBySteps(valid_index_steps);
+        },
+        /* repeated_visitor */ [&](bool is_valid, size_t, UInt32 count)
+        {
+            if (is_valid)
+            {
+                rle_data_reader->skipValues(count);
+            }
+        }
+    );
+}
 
 template class ParquetPlainValuesReader<ColumnInt32>;
 template class ParquetPlainValuesReader<ColumnUInt32>;

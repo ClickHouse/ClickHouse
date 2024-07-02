@@ -44,6 +44,8 @@ public:
     template <typename IndividualVisitor, typename RepeatedVisitor>
     void visitValues(UInt32 num_values, IndividualVisitor && individual_visitor, RepeatedVisitor && repeated_visitor);
 
+    void skipValues(size_t num_values);
+
     /**
      * @brief Visit num_values elements by parsed nullability.
      * If the parsed value is same as max_def_level, then it is processed as null value.
@@ -61,6 +63,15 @@ public:
         LazyNullMap & null_map,
         IndividualVisitor && individual_visitor,
         RepeatedVisitor && repeated_visitor);
+
+    void visitNullableValues(
+        size_t cursor,
+        size_t num_values,
+        Int32 max_def_level,
+        std::function<void(size_t)> individual_visitor,
+        std::function<void(size_t)> individual_null_visitor,
+        std::function<void(size_t, size_t)> repeated_visitor,
+        std::function<void(size_t, size_t)> repeated_null_visitor);
 
     /**
      * @brief Visit num_values elements by parsed nullability.
@@ -87,7 +98,7 @@ public:
     template <typename IndividualNullVisitor, typename SteppedValidVisitor, typename RepeatedVisitor>
     void visitNullableBySteps(
         size_t cursor,
-        UInt32 num_values,
+        size_t num_values,
         Int32 max_def_level,
         IndividualNullVisitor && null_visitor,
         SteppedValidVisitor && stepped_valid_visitor,
@@ -113,6 +124,11 @@ public:
         const std::vector<UInt8> & col_data_steps,
         ValueGetter && val_getter);
 
+    void skipValueBySteps(const std::vector<UInt8> & col_data_steps)
+    {
+        skipValues(col_data_steps.size() - 1);
+    }
+
 private:
     std::unique_ptr<arrow::bit_util::BitReader> bit_reader;
 
@@ -134,6 +150,7 @@ class ParquetDataValuesReader
 {
 public:
     virtual void readBatch(MutableColumnPtr & column, LazyNullMap & null_map, UInt32 num_values) = 0;
+    virtual void skip(size_t num_values) = 0;
 
     virtual ~ParquetDataValuesReader() = default;
 };
@@ -165,6 +182,7 @@ public:
     {}
 
     void readBatch(MutableColumnPtr & col_ptr, LazyNullMap & null_map, UInt32 num_values) override;
+    void skip(size_t num_values) override;
 
 private:
     Int32 max_def_level;
@@ -195,6 +213,7 @@ public:
     void readOverBigDecimal(MutableColumnPtr & col_ptr, LazyNullMap & null_map, UInt32 num_values);
 
     void readBatch(MutableColumnPtr & col_ptr, LazyNullMap & null_map, UInt32 num_values) override;
+    void skip(size_t num_values) override;
 
 private:
     Int32 max_def_level;
@@ -224,6 +243,7 @@ public:
     {}
 
     void readBatch(MutableColumnPtr & index_col, LazyNullMap & null_map, UInt32 num_values) override;
+    void skip(size_t num_values) override;
 
 private:
     Int32 max_def_level;
@@ -254,6 +274,7 @@ public:
     {}
 
     void readBatch(MutableColumnPtr & col_ptr, LazyNullMap & null_map, UInt32 num_values) override;
+    void skip(size_t num_values) override;
 
 private:
     Int32 max_def_level;

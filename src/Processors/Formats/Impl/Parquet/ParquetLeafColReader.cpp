@@ -3,6 +3,7 @@
 #include <utility>
 
 #include <Columns/ColumnLowCardinality.h>
+#include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnUnique.h>
@@ -225,31 +226,78 @@ ParquetLeafColReader<TColumn>::ParquetLeafColReader(
 }
 
 template <typename TColumn>
-ColumnWithTypeAndName ParquetLeafColReader<TColumn>::readBatch(UInt64 rows_num, const String & name)
+ColumnWithTypeAndName ParquetLeafColReader<TColumn>::readBatch(UInt64 rows_num, const String & name, const IColumn::Filter * filter)
 {
-    reading_rows_num = rows_num;
-    auto readPageIfEmpty = [&]()
-    {
-        while (!cur_page_values) readPage();
-    };
+    batch_value_count = rows_num;
+    cur_value_num = 0;
+    resetColumn();
 
-    // make sure the dict page has been read, and the status is updated
-    readPageIfEmpty();
-    resetColumn(rows_num);
+    parquet_page_reader->set_data_page_filter([this, &filter](const parquet::DataPageStats & stats) -> bool {
+        size_t values_in_page = stats.num_values;
+        if (filter && cur_value_num + values_in_page <= batch_value_count
+            && DB::memoryIsZero(filter->data(), cur_value_num, values_in_page))
+        {
+            if (!column)
+                resetColumn(batch_value_count);
 
-    while (rows_num)
+            column->insertManyDefaults(values_in_page);
+            cur_value_num += values_in_page;
+            return true;
+        }
+        return false;
+    });
+
+    while (cur_value_num < batch_value_count)
     {
         // if dictionary page encountered, another page should be read
-        readPageIfEmpty();
+        nextDataPage();
 
-        auto read_values = static_cast<UInt32>(std::min(rows_num, static_cast<UInt64>(cur_page_values)));
-        data_values_reader->readBatch(column, *null_map, read_values);
+        Stopwatch watch;
+        size_t read_values = std::min(batch_value_count - cur_value_num, num_values_remaining_in_page);
 
-        cur_page_values -= read_values;
-        rows_num -= read_values;
+        if (read_values)
+        {
+            if (!column)
+                resetColumn(batch_value_count);
+            data_values_reader->readBatch(column, *null_map, static_cast<UInt32>(read_values));
+        }
+
+        num_values_remaining_in_page -= read_values;
+        cur_value_num += read_values;
     }
-
     return releaseColumn(name);
+}
+
+template <typename TColumn>
+void ParquetLeafColReader<TColumn>::skip(size_t num_values)
+{
+    batch_value_count = num_values;
+    cur_value_num = 0;
+    resetColumn();
+
+    parquet_page_reader->set_data_page_filter([this](const parquet::DataPageStats & stats) -> bool {
+        size_t values_in_page = stats.num_values;
+        if (cur_value_num + values_in_page <= batch_value_count)
+        {
+            /// We can skip the entire data page
+            cur_value_num += values_in_page;
+            return true;
+        }
+        return false;
+    });
+
+    while (cur_value_num < batch_value_count)
+    {
+        nextDataPage();
+
+        /// skip from current page
+        auto skip_values = std::min(batch_value_count - cur_value_num, num_values_remaining_in_page);
+        if (skip_values)
+            data_values_reader->skip(skip_values);
+
+        num_values_remaining_in_page -= skip_values;
+        cur_value_num += skip_values;
+    }
 }
 
 template <>
@@ -286,6 +334,13 @@ void ParquetLeafColReader<TColumn>::resetColumn(UInt64 rows_num)
 }
 
 template <typename TColumn>
+void ParquetLeafColReader<TColumn>::resetColumn()
+{
+    column = nullptr;
+    null_map = nullptr;
+}
+
+template <typename TColumn>
 void ParquetLeafColReader<TColumn>::degradeDictionary()
 {
     // if last batch read all dictionary indices, then degrade is not needed this time
@@ -296,10 +351,10 @@ void ParquetLeafColReader<TColumn>::degradeDictionary()
     }
     assert(dictionary && !column->empty());
 
-    null_map = std::make_unique<LazyNullMap>(reading_rows_num);
+    null_map = std::make_unique<LazyNullMap>(batch_value_count);
     auto col_existing = std::move(column);
     column = ColumnString::create();
-    reserveColumnStrRows(column, reading_rows_num);
+    reserveColumnStrRows(column, batch_value_count);
 
     ColumnString & col_dest = *static_cast<ColumnString *>(column.get());
     const ColumnString & col_dict_str = *static_cast<const ColumnString *>(dictionary.get());
@@ -367,44 +422,38 @@ ColumnWithTypeAndName ParquetLeafColReader<TColumn>::releaseColumn(const String 
 }
 
 template <typename TColumn>
-void ParquetLeafColReader<TColumn>::readPage()
+void ParquetLeafColReader<TColumn>::nextDataPage()
+{
+    while (!num_values_remaining_in_page)
+    {
+        auto page = parquet_page_reader->NextPage();
+
+        if (page)
+            readPage(*page);
+        else
+            break;
+    }
+}
+
+template <typename TColumn>
+void ParquetLeafColReader<TColumn>::readPage(const parquet::Page & cur_page)
 {
     // refer to: ColumnReaderImplBase::ReadNewPage in column_reader.cc
-    auto cur_page = parquet_page_reader->NextPage();
-    switch (cur_page->type())
+    switch (cur_page.type())
     {
         case parquet::PageType::DATA_PAGE:
-            readPageV1(*std::static_pointer_cast<parquet::DataPageV1>(cur_page));
+            readPageV1(static_cast<const parquet::DataPageV1 &>(cur_page));
             break;
         case parquet::PageType::DATA_PAGE_V2:
-            readPageV2(*std::static_pointer_cast<parquet::DataPageV2>(cur_page));
+            readPageV2(static_cast<const parquet::DataPageV2 &>(cur_page));
             break;
         case parquet::PageType::DICTIONARY_PAGE:
         {
-            const parquet::DictionaryPage & dict_page = *std::static_pointer_cast<parquet::DictionaryPage>(cur_page);
-            if (unlikely(
-                dict_page.encoding() != parquet::Encoding::PLAIN_DICTIONARY
-                && dict_page.encoding() != parquet::Encoding::PLAIN))
-            {
-                throw Exception(
-                    ErrorCodes::NOT_IMPLEMENTED, "Unsupported dictionary page encoding {}", dict_page.encoding());
-            }
-            LOG_DEBUG(log, "{} values in dictionary page of column {}", dict_page.num_values(), col_descriptor.name());
-
-            dictionary = readDictPage<TColumn>(dict_page, col_descriptor, base_data_type);
-            if (unlikely(dictionary->size() < 2))
-            {
-                // must not small than ColumnUnique<ColumnString>::numSpecialValues()
-                dictionary->assumeMutable()->insertManyDefaults(2);
-            }
-            if (std::is_same_v<TColumn, ColumnString>)
-            {
-                reading_low_cardinality = true;
-            }
+            readPageDict(static_cast<const parquet::DictionaryPage &>(cur_page));
             break;
         }
         default:
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported page type: {}", cur_page->type());
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported page type: {}", cur_page.type());
     }
 }
 
@@ -413,7 +462,7 @@ void ParquetLeafColReader<TColumn>::readPageV1(const parquet::DataPageV1 & page)
 {
     static parquet::LevelDecoder repetition_level_decoder;
 
-    cur_page_values = page.num_values();
+    num_values_remaining_in_page = page.num_values();
 
     // refer to: VectorizedColumnReader::readPageV1 in Spark and LevelDecoder::SetData in column_reader.cc
     if (page.definition_level_encoding() != parquet::Encoding::RLE && col_descriptor.max_definition_level() != 0)
@@ -500,6 +549,27 @@ template <typename TColumn>
 void ParquetLeafColReader<TColumn>::readPageV2(const parquet::DataPageV2 & /*page*/)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "read page V2 is not implemented yet");
+}
+
+template <typename TColumn>
+void ParquetLeafColReader<TColumn>::readPageDict(const parquet::DictionaryPage & dict_page)
+{
+    num_values_remaining_in_page = 0;
+
+    if (unlikely(
+        dict_page.encoding() != parquet::Encoding::PLAIN_DICTIONARY
+        && dict_page.encoding() != parquet::Encoding::PLAIN))
+    {
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED, "Unsupported dictionary page encoding {}", dict_page.encoding());
+    }
+    // LOG_DEBUG(log, "{} values in dictionary page of column {}", dict_page.num_values(), col_descriptor.name());
+
+    dictionary = readDictPage<TColumn>(dict_page, col_descriptor, base_data_type);
+    if (std::is_same_v<TColumn, ColumnString>)
+    {
+        reading_low_cardinality = true;
+    }
 }
 
 template <typename TColumn>

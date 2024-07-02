@@ -13,6 +13,8 @@
 
 namespace DB
 {
+struct PrewhereInfo;
+struct PrewhereExprInfo;
 
 class ParquetRecordReader
 {
@@ -24,7 +26,10 @@ public:
         std::shared_ptr<::arrow::io::RandomAccessFile> arrow_file,
         const FormatSettings & format_settings,
         std::vector<int> row_groups_indices_,
-        std::shared_ptr<parquet::FileMetaData> metadata = nullptr);
+        std::shared_ptr<parquet::FileMetaData> metadata = nullptr,
+        std::shared_ptr<PrewhereInfo> prewhere_info_ = nullptr);
+
+    ~ParquetRecordReader();
 
     Chunk readChunk();
 
@@ -35,19 +40,32 @@ private:
     Block header;
 
     std::shared_ptr<parquet::RowGroupReader> cur_row_group_reader;
-    ParquetColReaders column_readers;
 
     UInt64 max_block_size;
 
-    std::vector<int> parquet_col_indice;
     std::vector<int> row_groups_indices;
-    UInt64 left_rows;
     UInt64 cur_row_group_left_rows = 0;
     int next_row_group_idx = 0;
 
     Poco::Logger * log;
 
-    void loadNextRowGroup();
+    struct ChunkReader
+    {
+        Block sample_block;
+        std::vector<int> col_indice;
+        ParquetColReaders column_readers;
+
+        void init(ParquetRecordReader &record_reader);
+        Columns readBatch(size_t num_rows, const IColumn::Filter * filter);
+        void skip(size_t num_rows);
+    };
+
+    ChunkReader active_chunk_reader;
+    ChunkReader lazy_chunk_reader;
+    std::shared_ptr<PrewhereInfo> prewhere_info;
+    std::shared_ptr<PrewhereExprInfo> prewhere_actions;
+
+    bool loadNextRowGroup();
     Int64 getTotalRows(const parquet::FileMetaData & meta_data);
 };
 
