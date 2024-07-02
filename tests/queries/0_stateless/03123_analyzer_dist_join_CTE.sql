@@ -20,7 +20,7 @@ WITH
          SELECT toInt64(number) AS a
          FROM numbers(10)
     )
-SELECT a.a, b, b.a, c.a
+SELECT *
 FROM dist_t0 AS a
 LEFT JOIN b AS b ON a.a = b.a
 LEFT JOIN c AS c ON a.a = c.a
