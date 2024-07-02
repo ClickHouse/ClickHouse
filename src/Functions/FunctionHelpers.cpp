@@ -97,7 +97,7 @@ ColumnsWithTypeAndName createBlockWithNestedColumns(const ColumnsWithTypeAndName
 
 void validateArgumentType(const IFunction & func, const DataTypes & arguments,
                           size_t argument_index, bool (* validator_func)(const IDataType &),
-                          const char * expected_type_description)
+                          const char * type_name)
 {
     if (arguments.size() <= argument_index)
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Incorrect number of arguments of function {}",
@@ -106,7 +106,7 @@ void validateArgumentType(const IFunction & func, const DataTypes & arguments,
     const auto & argument = arguments[argument_index];
     if (!validator_func(*argument))
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of {} argument of function {}, expected {}",
-                        argument->getName(), std::to_string(argument_index), func.getName(), expected_type_description);
+                        argument->getName(), argument_index, func.getName(), type_name);
 }
 
 namespace
@@ -120,9 +120,7 @@ void validateArgumentsImpl(const IFunction & func,
     {
         const auto argument_index = i + argument_offset;
         if (argument_index >= arguments.size())
-        {
             break;
-        }
 
         const auto & arg = arguments[i + argument_offset];
         const auto & descriptor = descriptors[i];
@@ -130,10 +128,10 @@ void validateArgumentsImpl(const IFunction & func,
             throw Exception(error_code,
                             "Illegal type of argument #{}{} of function {}{}{}",
                             argument_offset + i + 1,    // +1 is for human-friendly 1-based indexing
-                            (descriptor.argument_name ? " '" + std::string(descriptor.argument_name) + "'" : String{}),
+                            " '" + String(descriptor.name) + "'",
                             func.getName(),
-                            (descriptor.expected_type_description ? String(", expected ") + descriptor.expected_type_description : String{}),
-                            (arg.type ? ", got " + arg.type->getName() : String{}));
+                            String(", expected ") + String(descriptor.type_name),
+                            arg.type ? ", got " + arg.type->getName() : String{});
     }
 }
 
@@ -141,19 +139,22 @@ void validateArgumentsImpl(const IFunction & func,
 
 int FunctionArgumentDescriptor::isValid(const DataTypePtr & data_type, const ColumnPtr & column) const
 {
-    if (type_validator_func && (data_type == nullptr || !type_validator_func(*data_type)))
+    if (name.empty() || type_name.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "name or type_name are not set");
+
+    if (type_validator && (data_type == nullptr || !type_validator(*data_type)))
         return ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT;
 
-    if (column_validator_func && (column == nullptr || !column_validator_func(*column)))
+    if (column_validator && (column == nullptr || !column_validator(*column)))
         return ErrorCodes::ILLEGAL_COLUMN;
 
     return 0;
 }
 
-void validateFunctionArgumentTypes(const IFunction & func,
-                                   const ColumnsWithTypeAndName & arguments,
-                                   const FunctionArgumentDescriptors & mandatory_args,
-                                   const FunctionArgumentDescriptors & optional_args)
+void validateFunctionArguments(const IFunction & func,
+                               const ColumnsWithTypeAndName & arguments,
+                               const FunctionArgumentDescriptors & mandatory_args,
+                               const FunctionArgumentDescriptors & optional_args)
 {
     if (arguments.size() < mandatory_args.size() || arguments.size() > mandatory_args.size() + optional_args.size())
     {
@@ -165,10 +166,8 @@ void validateFunctionArgumentTypes(const IFunction & func,
                 using A = std::decay_t<decltype(a)>;
                 if constexpr (std::is_same_v<A, FunctionArgumentDescriptor>)
                 {
-                    if (a.argument_name)
-                        result += "'" + std::string(a.argument_name) + "' : ";
-                    if (a.expected_type_description)
-                        result += a.expected_type_description;
+                    result += "'" + String(a.name) + "' : ";
+                    result += a.type_name;
                 }
                 else if constexpr (std::is_same_v<A, ColumnWithTypeAndName>)
                     result += a.type->getName();
