@@ -97,6 +97,19 @@ ColumnsWithTypeAndName createBlockWithNestedColumns(const ColumnsWithTypeAndName
 
 namespace
 {
+
+String withOrdinalEnding(size_t i)
+{
+    switch (i)
+    {
+        case 0: return "1st";
+        case 1: return "2nd";
+        case 2: return "3rd";
+        default: return std::to_string(i) + "th";
+    }
+
+}
+
 void validateArgumentsImpl(const IFunction & func,
                            const ColumnsWithTypeAndName & arguments,
                            size_t argument_offset,
@@ -112,12 +125,12 @@ void validateArgumentsImpl(const IFunction & func,
         const auto & descriptor = descriptors[i];
         if (int error_code = descriptor.isValid(arg.type, arg.column); error_code != 0)
             throw Exception(error_code,
-                            "Illegal type of argument #{}{} of function {}{}{}",
-                            argument_offset + i + 1,    // +1 is for human-friendly 1-based indexing
-                            " '" + String(descriptor.name) + "'",
+                            "A value of illegal type was provided as {} argument '{}' to function '{}'. Expected: {}, got: {}",
+                            withOrdinalEnding(argument_offset + i),
+                            descriptor.name,
                             func.getName(),
-                            String(", expected ") + String(descriptor.type_name),
-                            arg.type ? ", got " + arg.type->getName() : String{});
+                            descriptor.type_name,
+                            arg.type ? arg.type->getName() : "<?>");
     }
 }
 
@@ -144,34 +157,19 @@ void validateFunctionArguments(const IFunction & func,
 {
     if (arguments.size() < mandatory_args.size() || arguments.size() > mandatory_args.size() + optional_args.size())
     {
-        auto join_argument_types = [](const auto & args, const String sep = ", ")
-        {
-            String result;
-            for (const auto & a : args)
-            {
-                using A = std::decay_t<decltype(a)>;
-                if constexpr (std::is_same_v<A, FunctionArgumentDescriptor>)
-                {
-                    result += "'" + String(a.name) + "' : ";
-                    result += a.type_name;
-                }
-                else if constexpr (std::is_same_v<A, ColumnWithTypeAndName>)
-                    result += a.type->getName();
-
-                result += sep;
-            }
-
-            if (!args.empty())
-                result.erase(result.end() - sep.length(), result.end());
-
-            return result;
-        };
+        auto argument_singular_or_plural = [](const auto & args){ return fmt::format("argument{}", args.size() != 1 ? "s" : ""); };
 
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-            "Incorrect number of arguments for function {} provided {}{}, expected {}{} ({}{})",
-            func.getName(), arguments.size(), (!arguments.empty() ? " (" + join_argument_types(arguments) + ")" : String{}),
-            mandatory_args.size(), (!optional_args.empty() ? " to " + std::to_string(mandatory_args.size() + optional_args.size()) : ""),
-            join_argument_types(mandatory_args), (!optional_args.empty() ? ", [" + join_argument_types(optional_args) + "]" : ""));
+            "An incorrect number of arguments was specified for function '{}'. Expected {}, got {}",
+            func.getName(),
+            (!mandatory_args.empty() && !optional_args.empty())
+                ? fmt::format("{} mandatory {} and {} optional {}", mandatory_args.size(), argument_singular_or_plural(mandatory_args), optional_args.size(), argument_singular_or_plural(optional_args))
+                : (!mandatory_args.empty() && optional_args.empty())
+                    ? fmt::format("{} {}", mandatory_args.size(), argument_singular_or_plural(mandatory_args)) /// intentionally not "_mandatory_ arguments"
+                    : (mandatory_args.empty() && !optional_args.empty())
+                        ? fmt::format("{} optional {}", optional_args.size(), argument_singular_or_plural(optional_args))
+                        : "0 arguments",
+            fmt::format("{} {}", arguments.size(), argument_singular_or_plural(arguments)));
     }
 
     validateArgumentsImpl(func, arguments, 0, mandatory_args);
