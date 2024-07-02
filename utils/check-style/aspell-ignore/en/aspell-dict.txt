@@ -759,6 +759,7 @@ PromQL
 Promql
 Promtail
 Protobuf
+ProtobufList
 ProtobufSingle
 ProxySQL
 Punycode
@@ -2201,6 +2202,7 @@ proleptic
 prometheus
 proto
 protobuf
+protobuflist
 protobufsingle
 proxied
 pseudorandom
