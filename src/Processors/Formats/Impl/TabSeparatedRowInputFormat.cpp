@@ -440,9 +440,10 @@ void registerTSVSchemaReader(FormatFactory & factory)
                         settings, is_raw ? FormatSettings::EscapingRule::Raw : FormatSettings::EscapingRule::Escaped);
                     if (!with_names)
                         result += fmt::format(
-                            ", column_names_for_schema_inference={}, try_detect_header={}",
+                            ", column_names_for_schema_inference={}, try_detect_header={}, skip_first_lines={}",
                             settings.column_names_for_schema_inference,
-                            settings.tsv.try_detect_header);
+                            settings.tsv.try_detect_header,
+                            settings.tsv.skip_first_lines);
                     return result;
                 });
             }
