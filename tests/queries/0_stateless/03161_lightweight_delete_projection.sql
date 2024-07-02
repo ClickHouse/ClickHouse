@@ -26,6 +26,6 @@ SELECT
 FROM system.projection_parts
 WHERE (database = currentDatabase()) AND (`table` = 'users');
 
-SELECT * FROM users;
+SELECT * FROM users ORDER BY uid;
 
 DROP TABLE users;
