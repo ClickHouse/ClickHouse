@@ -2238,6 +2238,12 @@ void Context::setSetting(std::string_view name, const Field & value)
     contextSanityClampSettingsWithLock(*this, settings, lock);
 }
 
+void Context::setServerSetting(std::string_view name, const Field & value)
+{
+    std::lock_guard lock(mutex);
+    shared->server_settings.set(name, value);
+}
+
 void Context::applySettingChange(const SettingChange & change)
 {
     try
