@@ -748,6 +748,7 @@ PromQL
 Promql
 Promtail
 Protobuf
+ProtobufList
 ProtobufSingle
 ProxySQL
 Punycode
@@ -2267,6 +2268,7 @@ proportionsZTest
 proto
 protocol
 protobuf
+protobuflist
 protobufsingle
 proxied
 pseudorandom
