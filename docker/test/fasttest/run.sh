@@ -269,6 +269,11 @@ function run_tests
       NPROC=1
     fi
 
+    export CLICKHOUSE_CONFIG_DIR=$FASTTEST_DATA
+    export CLICKHOUSE_CONFIG="$FASTTEST_DATA/config.xml"
+    export CLICKHOUSE_USER_FILES="$FASTTEST_DATA/user_files"
+    export CLICKHOUSE_SCHEMA_FILES="$FASTTEST_DATA/format_schemas"
+
     local test_opts=(
         --hung-check
         --fast-tests-only

@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-parallel
 
 # shellcheck disable=SC2028
 
@@ -47,4 +46,3 @@ for line in resp.iter_lines():
     print(line)
 " | python3 | grep -o "Max query size exceeded"
 echo -
-
