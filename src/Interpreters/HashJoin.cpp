@@ -1082,8 +1082,7 @@ public:
 
     struct LazyOutput
     {
-        PaddedPODArray<UInt64> blocks;
-        PaddedPODArray<UInt32> row_nums;
+        PaddedPODArray<UInt64> row_refs;
     };
 
     AddedColumns(
@@ -1108,8 +1107,7 @@ public:
         if constexpr (lazy)
         {
             has_columns_to_add = num_columns_to_add > 0;
-            lazy_output.blocks.reserve(rows_to_add);
-            lazy_output.row_nums.reserve(rows_to_add);
+            lazy_output.row_refs.reserve(rows_to_add);
         }
 
         columns.reserve(num_columns_to_add);
@@ -1151,20 +1149,53 @@ public:
 
     size_t size() const { return columns.size(); }
 
-    void buildOutput();
+    void buildOutputFromRowRef();
+    void buildOutputFromRowRefList();
+    void buildJoinGetOutput();
 
     ColumnWithTypeAndName moveColumn(size_t i)
     {
         return ColumnWithTypeAndName(std::move(columns[i]), type_name[i].type, type_name[i].qualified_name);
     }
 
-    void appendFromBlock(const Block & block, size_t row_num, bool has_default);
+    void insertFromBlockArray(const MutableColumnPtr & col, size_t col_index, const std::array<const Block *, 255> & blocks, const std::array<size_t, 255> & rows, uint8_t pos)
+    {
+        for (size_t j = 0; j < pos; ++j)
+        {
+            if (blocks[j])
+                col->insertFrom(*blocks[j]->getByPosition(right_indexes[col_index]).column, rows[j]);
+            else
+                type_name[col_index].type->insertDefaultInto(*col);
+        }
+    }
+
+    uint8_t appendFromBlock(const MutableColumnPtr & col, size_t col_index, std::array<const Block *, 255> & blocks, std::array<size_t, 255> & rows, uint8_t pos,
+        const Block * block, size_t row_num)
+    {
+        if (pos == blocks.size())
+        {
+            insertFromBlockArray(col, col_index, blocks, rows, pos);
+            blocks[0] = block;
+            rows[0] = row_num;
+            return 0;
+        }
+        else
+        {
+            blocks[pos] = block;
+            rows[pos] = row_num;
+            return pos;
+        }
+    }
+
+    void appendFromBlock(const RowRef * row_ref, bool has_default);
 
     void appendDefaultRow();
 
     void applyLazyDefaults();
 
     const IColumn & leftAsofKey() const { return *left_asof_key; }
+
+    static constexpr bool isLazy() { return lazy; }
 
     Block left_block;
     std::vector<JoinOnKeyColumns> join_on_keys;
@@ -1174,6 +1205,7 @@ public:
     size_t rows_to_add;
     std::unique_ptr<IColumn::Offsets> offsets_to_replicate;
     bool need_filter = false;
+    bool output_by_row_list = false;
     IColumn::Filter filter;
 
     void reserve(bool need_replicate)
@@ -1245,48 +1277,87 @@ private:
         type_name.emplace_back(src_column.type, src_column.name, qualified_name);
     }
 };
-template<> void AddedColumns<false>::buildOutput()
-{
-}
 
-template<>
-void AddedColumns<true>::buildOutput()
+template<> void AddedColumns<false>::buildOutputFromRowRef() {}
+template<> void AddedColumns<false>::buildOutputFromRowRefList() {}
+template<> void AddedColumns<false>::buildJoinGetOutput() {}
+
+template<> void AddedColumns<true>::buildOutputFromRowRef()
 {
     for (size_t i = 0; i < this->size(); ++i)
     {
-        auto& col = columns[i];
-        size_t default_count = 0;
-        auto apply_default = [&]()
-        {
-            if (default_count > 0)
-            {
-                JoinCommon::addDefaultValues(*col, type_name[i].type, default_count);
-                default_count = 0;
-            }
-        };
+        auto & col = columns[i];
+        std::array<const Block *, 255> blocks;
+        std::array<size_t, 255> rows;
+        uint8_t next_pos = 0;
 
-        for (size_t j = 0; j < lazy_output.blocks.size(); ++j)
+        for (auto row_ref_i : lazy_output.row_refs)
         {
-            if (!lazy_output.blocks[j])
+            if (row_ref_i)
             {
-                default_count++;
-                continue;
+                const RowRef * row_ref = reinterpret_cast<const RowRef *>(row_ref_i);
+                next_pos = appendFromBlock(col, i, blocks, rows, next_pos, row_ref->block, row_ref->row_num);
+                ++next_pos;
             }
-            apply_default();
-            const auto & column_from_block = reinterpret_cast<const Block *>(lazy_output.blocks[j])->getByPosition(right_indexes[i]);
-            /// If it's joinGetOrNull, we need to wrap not-nullable columns in StorageJoin.
-            if (is_join_get)
+            else
             {
-                if (auto * nullable_col = typeid_cast<ColumnNullable *>(col.get());
-                    nullable_col && !column_from_block.column->isNullable())
+                next_pos = appendFromBlock(col, i, blocks, rows, next_pos, nullptr, 0);
+                ++next_pos;
+            }
+        }
+        insertFromBlockArray(col, i, blocks, rows, next_pos);
+    }
+}
+
+template<> void AddedColumns<true>::buildOutputFromRowRefList()
+{
+    for (size_t i = 0; i < this->size(); ++i)
+    {
+        auto & col = columns[i];
+        std::array<const Block *, 255> blocks;
+        std::array<size_t, 255> rows;
+        uint8_t next_pos = 0;
+
+        for (auto row_ref_i : lazy_output.row_refs)
+        {
+            if (row_ref_i)
+            {
+                const RowRefList * row_ref_list = reinterpret_cast<const RowRefList *>(row_ref_i);
+                for (auto it = row_ref_list->begin(); it.ok(); ++it)
                 {
-                    nullable_col->insertFromNotNullable(*column_from_block.column, lazy_output.row_nums[j]);
-                    continue;
+                    next_pos = appendFromBlock(col, i, blocks, rows, next_pos, it->block, it->row_num);
+                    ++next_pos;
                 }
             }
-            col->insertFrom(*column_from_block.column, lazy_output.row_nums[j]);
+            else
+            {
+                next_pos = appendFromBlock(col, i, blocks, rows, next_pos, nullptr, 0);
+                ++next_pos;
+            }
         }
-        apply_default();
+        insertFromBlockArray(col, i, blocks, rows, next_pos);
+    }
+}
+
+template<> void AddedColumns<true>::buildJoinGetOutput()
+{
+    for (size_t i = 0; i < this->size(); ++i)
+    {
+        auto & col = columns[i];
+        for (auto row_ref_i : lazy_output.row_refs)
+        {
+            if (!row_ref_i)
+            {
+                type_name[i].type->insertDefaultInto(*col);
+                continue;
+            }
+            const auto * row_ref = reinterpret_cast<const RowRef *>(row_ref_i);
+            const auto & column_from_block = row_ref->block->getByPosition(right_indexes[i]);
+            if (auto * nullable_col = typeid_cast<ColumnNullable *>(col.get()); nullable_col && !column_from_block.column->isNullable())
+                nullable_col->insertFromNotNullable(*column_from_block.column, row_ref->row_num);
+            else
+                col->insertFrom(*column_from_block.column, row_ref->row_num);
+        }
     }
 }
 
@@ -1302,29 +1373,27 @@ void AddedColumns<false>::applyLazyDefaults()
 }
 
 template<>
-void AddedColumns<true>::applyLazyDefaults()
-{
-}
+void AddedColumns<true>::applyLazyDefaults() {}
 
 template <>
-void AddedColumns<false>::appendFromBlock(const Block & block, size_t row_num,const bool has_defaults)
+void AddedColumns<false>::appendFromBlock(const RowRef * row_ref, const bool has_defaults)
 {
     if (has_defaults)
         applyLazyDefaults();
 
 #ifndef NDEBUG
-    checkBlock(block);
+    checkBlock(*row_ref->block);
 #endif
     if (is_join_get)
     {
         size_t right_indexes_size = right_indexes.size();
         for (size_t j = 0; j < right_indexes_size; ++j)
         {
-            const auto & column_from_block = block.getByPosition(right_indexes[j]);
+            const auto & column_from_block = row_ref->block->getByPosition(right_indexes[j]);
             if (auto * nullable_col = nullable_column_ptrs[j])
-                nullable_col->insertFromNotNullable(*column_from_block.column, row_num);
+                nullable_col->insertFromNotNullable(*column_from_block.column, row_ref->row_num);
             else
-                columns[j]->insertFrom(*column_from_block.column, row_num);
+                columns[j]->insertFrom(*column_from_block.column, row_ref->row_num);
         }
     }
     else
@@ -1332,22 +1401,21 @@ void AddedColumns<false>::appendFromBlock(const Block & block, size_t row_num,co
         size_t right_indexes_size = right_indexes.size();
         for (size_t j = 0; j < right_indexes_size; ++j)
         {
-            const auto & column_from_block = block.getByPosition(right_indexes[j]);
-            columns[j]->insertFrom(*column_from_block.column, row_num);
+            const auto & column_from_block = row_ref->block->getByPosition(right_indexes[j]);
+            columns[j]->insertFrom(*column_from_block.column, row_ref->row_num);
         }
     }
 }
 
 template <>
-void AddedColumns<true>::appendFromBlock(const Block & block, size_t row_num, bool)
+void AddedColumns<true>::appendFromBlock(const RowRef * row_ref, bool)
 {
 #ifndef NDEBUG
-    checkBlock(block);
+    checkBlock(*row_ref->block);
 #endif
     if (has_columns_to_add)
     {
-        lazy_output.blocks.emplace_back(reinterpret_cast<UInt64>(&block));
-        lazy_output.row_nums.emplace_back(static_cast<uint32_t>(row_num));
+        lazy_output.row_refs.emplace_back(reinterpret_cast<UInt64>(row_ref));
     }
 }
 template<>
@@ -1361,8 +1429,7 @@ void AddedColumns<true>::appendDefaultRow()
 {
     if (has_columns_to_add)
     {
-        lazy_output.blocks.emplace_back(0);
-        lazy_output.row_nums.emplace_back(0);
+        lazy_output.row_refs.emplace_back(0);
     }
 }
 
@@ -1482,7 +1549,7 @@ void addFoundRowAll(
         {
             if (!known_rows.isKnown(std::make_pair(it->block, it->row_num)))
             {
-                added.appendFromBlock(*it->block, it->row_num, false);
+                added.appendFromBlock(*it, false);
                 ++current_offset;
                 if (!new_known_rows_ptr)
                 {
@@ -1502,11 +1569,16 @@ void addFoundRowAll(
             known_rows.add(std::cbegin(*new_known_rows_ptr), std::cend(*new_known_rows_ptr));
         }
     }
+    else if constexpr (AddedColumns::isLazy())
+    {
+        added.appendFromBlock(&mapped, false);
+        current_offset += mapped.rows;
+    }
     else
     {
         for (auto it = mapped.begin(); it.ok(); ++it)
         {
-            added.appendFromBlock(*it->block, it->row_num, false);
+            added.appendFromBlock(*it, false);
             ++current_offset;
         }
     }
@@ -1533,7 +1605,7 @@ void setUsed(IColumn::Filter & filter [[maybe_unused]], size_t pos [[maybe_unuse
 template<typename AddedColumns>
 ColumnPtr buildAdditionalFilter(
     size_t left_start_row,
-    const std::vector<RowRef> & selected_rows,
+    const std::vector<const RowRef *> & selected_rows,
     const std::vector<size_t> & row_replicate_offset,
     AddedColumns & added_columns)
 {
@@ -1545,7 +1617,7 @@ ColumnPtr buildAdditionalFilter(
             result_column = ColumnUInt8::create();
             break;
         }
-        const Block & sample_right_block = *selected_rows.begin()->block;
+        const Block & sample_right_block = *(*selected_rows.begin())->block;
         if (!sample_right_block || !added_columns.additional_filter_expression)
         {
             auto filter = ColumnUInt8::create();
@@ -1575,8 +1647,8 @@ ColumnPtr buildAdditionalFilter(
                 auto new_col = col.column->cloneEmpty();
                 for (const auto & selected_row : selected_rows)
                 {
-                    const auto & src_col = selected_row.block->getByPosition(right_col_pos);
-                    new_col->insertFrom(*src_col.column, selected_row.row_num);
+                    const auto & src_col = selected_row->block->getByPosition(right_col_pos);
+                    new_col->insertFrom(*src_col.column, selected_row->row_num);
                 }
                 executed_block.insert({std::move(new_col), col.type, col.name});
             }
@@ -1653,10 +1725,11 @@ ColumnPtr buildAdditionalFilter(
 /// Adapter class to pass into addFoundRowAll
 /// In joinRightColumnsWithAdditionalFilter we don't want to add rows directly into AddedColumns,
 /// because they need to be filtered by additional_filter_expression.
-class PreSelectedRows : public std::vector<RowRef>
+class PreSelectedRows : public std::vector<const RowRef *>
 {
 public:
-    void appendFromBlock(const Block & block, size_t row_num, bool /* has_default */) { this->emplace_back(&block, row_num); }
+    void appendFromBlock(const RowRef * row_ref, bool /* has_default */) { this->emplace_back(row_ref); }
+    static constexpr bool isLazy() { return false; }
 };
 
 /// First to collect all matched rows refs by join keys, then filter out rows which are not true in additional filter expression.
@@ -1760,10 +1833,10 @@ NO_INLINE size_t joinRightColumnsWithAddtitionalFilter(
                     if (filter_flags[replicated_row])
                     {
                         any_matched = true;
-                        added_columns.appendFromBlock(*selected_right_row_it->block, selected_right_row_it->row_num, add_missing);
+                        added_columns.appendFromBlock(*selected_right_row_it, add_missing);
                         total_added_rows += 1;
                         if (need_flags)
-                            used_flags.template setUsed<true, true>(selected_right_row_it->block, selected_right_row_it->row_num, 0);
+                            used_flags.template setUsed<true, true>((*selected_right_row_it)->block, (*selected_right_row_it)->row_num, 0);
                     }
                     ++selected_right_row_it;
                 }
@@ -1775,7 +1848,7 @@ NO_INLINE size_t joinRightColumnsWithAddtitionalFilter(
                     if (filter_flags[replicated_row])
                     {
                         any_matched = true;
-                        added_columns.appendFromBlock(*selected_right_row_it->block, selected_right_row_it->row_num, add_missing);
+                        added_columns.appendFromBlock(*selected_right_row_it, add_missing);
                         total_added_rows += 1;
                     }
                     ++selected_right_row_it;
@@ -1855,13 +1928,13 @@ NO_INLINE size_t joinRightColumns(
     JoinStuff::JoinUsedFlags & used_flags [[maybe_unused]])
 {
     constexpr JoinFeatures<KIND, STRICTNESS> join_features;
-
     size_t rows = added_columns.rows_to_add;
     if constexpr (need_filter)
         added_columns.filter = IColumn::Filter(rows, 0);
+    if constexpr (!flag_per_row && (STRICTNESS == JoinStrictness::All || (STRICTNESS == JoinStrictness::Semi && KIND == JoinKind::Right)))
+        added_columns.output_by_row_list = true;
 
     Arena pool;
-
     if constexpr (join_features.need_replication)
         added_columns.offsets_to_replicate = std::make_unique<IColumn::Offsets>(rows);
 
@@ -1901,16 +1974,16 @@ NO_INLINE size_t joinRightColumns(
                 {
                     const IColumn & left_asof_key = added_columns.leftAsofKey();
 
-                    auto row_ref = mapped->findAsof(left_asof_key, i);
-                    if (row_ref.block)
+                    auto * row_ref = mapped->findAsof(left_asof_key, i);
+                    if (row_ref && row_ref->block)
                     {
                         setUsed<need_filter>(added_columns.filter, i);
                         if constexpr (flag_per_row)
-                            used_flags.template setUsed<join_features.need_flags, flag_per_row>(row_ref.block, row_ref.row_num, 0);
+                            used_flags.template setUsed<join_features.need_flags, flag_per_row>(row_ref->block, row_ref->row_num, 0);
                         else
                             used_flags.template setUsed<join_features.need_flags, flag_per_row>(find_result);
 
-                        added_columns.appendFromBlock(*row_ref.block, row_ref.row_num, join_features.add_missing);
+                        added_columns.appendFromBlock(row_ref, join_features.add_missing);
                     }
                     else
                         addNotFoundRow<join_features.add_missing, join_features.need_replication>(added_columns, current_offset);
@@ -1941,7 +2014,7 @@ NO_INLINE size_t joinRightColumns(
                     if (used_once)
                     {
                         setUsed<need_filter>(added_columns.filter, i);
-                        added_columns.appendFromBlock(*mapped.block, mapped.row_num, join_features.add_missing);
+                        added_columns.appendFromBlock(&mapped, join_features.add_missing);
                     }
 
                     break;
@@ -1959,7 +2032,7 @@ NO_INLINE size_t joinRightColumns(
                 {
                     setUsed<need_filter>(added_columns.filter, i);
                     used_flags.template setUsed<join_features.need_flags, flag_per_row>(find_result);
-                    added_columns.appendFromBlock(*mapped.block, mapped.row_num, join_features.add_missing);
+                    added_columns.appendFromBlock(&mapped, join_features.add_missing);
 
                     if (join_features.is_any_or_semi_join)
                     {
@@ -2194,7 +2267,13 @@ Block HashJoin::joinBlockImpl(
     added_columns.join_on_keys.clear();
     Block remaining_block = sliceBlock(block, num_joined);
 
-    added_columns.buildOutput();
+    if (is_join_get)
+        added_columns.buildJoinGetOutput();
+    else if (added_columns.output_by_row_list)
+        added_columns.buildOutputFromRowRefList();
+    else
+        added_columns.buildOutputFromRowRef();
+
     for (size_t i = 0; i < added_columns.size(); ++i)
         block.insert(added_columns.moveColumn(i));
 
