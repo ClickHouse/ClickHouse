@@ -46,7 +46,7 @@ String IColumn::dumpStructure() const
     return res.str();
 }
 
-void IColumn::insertFrom(const IColumn & src, size_t n)
+void IColumn::doInsertFrom(const IColumn & src, size_t n)
 {
     insert(src[n]);
 }

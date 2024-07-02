@@ -64,12 +64,12 @@ public:
         return data.size();
     }
 
-    void insertFrom(const IColumn & src, size_t n) override
+    void doInsertFrom(const IColumn & src, size_t n) override
     {
         data.push_back(assert_cast<const Self &>(src).getData()[n]);
     }
 
-    void insertManyFrom(const IColumn & src, size_t position, size_t length) override
+    void doInsertManyFrom(const IColumn & src, size_t position, size_t length) override
     {
         ValueType v = assert_cast<const Self &>(src).getData()[position];
         data.resize_fill(data.size() + length, v);
@@ -142,7 +142,7 @@ public:
     }
 
     /// This method implemented in header because it could be possibly devirtualized.
-    int compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const override
+    int doCompareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const override
     {
         return CompareHelper<T>::compare(data[n], assert_cast<const Self &>(rhs_).data[m], nan_direction_hint);
     }
@@ -228,7 +228,7 @@ public:
 
     bool tryInsert(const DB::Field & x) override;
 
-    void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
+    void doInsertRangeFrom(const IColumn & src, size_t start, size_t length) override;
 
     ColumnPtr filter(const IColumn::Filter & filt, ssize_t result_size_hint) const override;
 

@@ -52,7 +52,7 @@ static ColumnPtr mockColumn(const DataTypePtr & type, size_t rows)
 }
 
 
-static NO_INLINE void insertManyFrom(IColumn & dst, const IColumn & src)
+static NO_INLINE void doInsertManyFrom(IColumn & dst, const IColumn & src)
 {
     size_t size = src.size();
     dst.insertManyFrom(src, size / 2, size);

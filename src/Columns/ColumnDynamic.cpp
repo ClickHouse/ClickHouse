@@ -213,7 +213,7 @@ bool ColumnDynamic::tryInsert(const DB::Field & x)
 }
 
 
-void ColumnDynamic::insertFrom(const DB::IColumn & src_, size_t n)
+void ColumnDynamic::doInsertFrom(const DB::IColumn & src_, size_t n)
 {
     const auto & dynamic_src = assert_cast<const ColumnDynamic &>(src_);
 
@@ -263,7 +263,7 @@ void ColumnDynamic::insertFrom(const DB::IColumn & src_, size_t n)
     variant_col.insertIntoVariantFrom(string_variant_discr, *tmp_string_column, 0);
 }
 
-void ColumnDynamic::insertRangeFrom(const DB::IColumn & src_, size_t start, size_t length)
+void ColumnDynamic::doInsertRangeFrom(const DB::IColumn & src_, size_t start, size_t length)
 {
     if (start + length > src_.size())
         throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND, "Parameter out of bound in ColumnDynamic::insertRangeFrom method. "
@@ -429,7 +429,7 @@ void ColumnDynamic::insertRangeFrom(const DB::IColumn & src_, size_t start, size
     }
 }
 
-void ColumnDynamic::insertManyFrom(const DB::IColumn & src_, size_t position, size_t length)
+void ColumnDynamic::doInsertManyFrom(const DB::IColumn & src_, size_t position, size_t length)
 {
     const auto & dynamic_src = assert_cast<const ColumnDynamic &>(src_);
 
@@ -587,7 +587,7 @@ void ColumnDynamic::updateHashWithValue(size_t n, SipHash & hash) const
     variant_col.getVariantByGlobalDiscriminator(discr).updateHashWithValue(variant_col.offsetAt(n), hash);
 }
 
-int ColumnDynamic::compareAt(size_t n, size_t m, const DB::IColumn & rhs, int nan_direction_hint) const
+int ColumnDynamic::doCompareAt(size_t n, size_t m, const DB::IColumn & rhs, int nan_direction_hint) const
 {
     const auto & left_variant = assert_cast<const ColumnVariant &>(*variant_column);
     const auto & right_dynamic = assert_cast<const ColumnDynamic &>(rhs);

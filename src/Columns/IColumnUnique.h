@@ -85,7 +85,7 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method tryInsert is not supported for ColumnUnique.");
     }
 
-    void insertRangeFrom(const IColumn &, size_t, size_t) override
+    void doInsertRangeFrom(const IColumn &, size_t, size_t) override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method insertRangeFrom is not supported for ColumnUnique.");
     }

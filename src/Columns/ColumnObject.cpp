@@ -763,12 +763,12 @@ void ColumnObject::get(size_t n, Field & res) const
     }
 }
 
-void ColumnObject::insertFrom(const IColumn & src, size_t n)
+void ColumnObject::doInsertFrom(const IColumn & src, size_t n)
 {
     insert(src[n]);
 }
 
-void ColumnObject::insertRangeFrom(const IColumn & src, size_t start, size_t length)
+void ColumnObject::doInsertRangeFrom(const IColumn & src, size_t start, size_t length)
 {
     const auto & src_object = assert_cast<const ColumnObject &>(src);
 

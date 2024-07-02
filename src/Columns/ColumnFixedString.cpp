@@ -74,7 +74,7 @@ bool ColumnFixedString::tryInsert(const Field & x)
     return true;
 }
 
-void ColumnFixedString::insertFrom(const IColumn & src_, size_t index)
+void ColumnFixedString::doInsertFrom(const IColumn & src_, size_t index)
 {
     const ColumnFixedString & src = assert_cast<const ColumnFixedString &>(src_);
 
@@ -86,7 +86,7 @@ void ColumnFixedString::insertFrom(const IColumn & src_, size_t index)
     memcpySmallAllowReadWriteOverflow15(chars.data() + old_size, &src.chars[n * index], n);
 }
 
-void ColumnFixedString::insertManyFrom(const IColumn & src, size_t position, size_t length)
+void ColumnFixedString::doInsertManyFrom(const IColumn & src, size_t position, size_t length)
 {
     const ColumnFixedString & src_concrete = assert_cast<const ColumnFixedString &>(src);
     if (n != src_concrete.getN())
@@ -219,7 +219,7 @@ size_t ColumnFixedString::estimateCardinalityInPermutedRange(const Permutation &
     return elements.size();
 }
 
-void ColumnFixedString::insertRangeFrom(const IColumn & src, size_t start, size_t length)
+void ColumnFixedString::doInsertRangeFrom(const IColumn & src, size_t start, size_t length)
 {
     const ColumnFixedString & src_concrete = assert_cast<const ColumnFixedString &>(src);
     chassert(this->n == src_concrete.n);

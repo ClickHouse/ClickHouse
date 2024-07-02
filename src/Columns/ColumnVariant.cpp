@@ -595,17 +595,17 @@ void ColumnVariant::insertManyFromImpl(const DB::IColumn & src_, size_t position
     }
 }
 
-void ColumnVariant::insertFrom(const IColumn & src_, size_t n)
+void ColumnVariant::doInsertFrom(const IColumn & src_, size_t n)
 {
     insertFromImpl(src_, n, nullptr);
 }
 
-void ColumnVariant::insertRangeFrom(const IColumn & src_, size_t start, size_t length)
+void ColumnVariant::doInsertRangeFrom(const IColumn & src_, size_t start, size_t length)
 {
     insertRangeFromImpl(src_, start, length, nullptr);
 }
 
-void ColumnVariant::insertManyFrom(const DB::IColumn & src_, size_t position, size_t length)
+void ColumnVariant::doInsertManyFrom(const DB::IColumn & src_, size_t position, size_t length)
 {
     insertManyFromImpl(src_, position, length, nullptr);
 }
@@ -1174,7 +1174,7 @@ bool ColumnVariant::hasEqualValues() const
     return local_discriminators->hasEqualValues() && variants[localDiscriminatorAt(0)]->hasEqualValues();
 }
 
-int ColumnVariant::compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const
+int ColumnVariant::doCompareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const
 {
     const auto & rhs_variant = assert_cast<const ColumnVariant &>(rhs);
     Discriminator left_discr = globalDiscriminatorAt(n);

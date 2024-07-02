@@ -81,10 +81,10 @@ public:
     char * serializeValueIntoMemory(size_t n, char * memory) const override;
     const char * deserializeAndInsertFromArena(const char * pos) override;
     const char * skipSerializedInArena(const char *) const override;
-    void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
+    void doInsertRangeFrom(const IColumn & src, size_t start, size_t length) override;
     void insert(const Field & x) override;
     bool tryInsert(const Field & x) override;
-    void insertFrom(const IColumn & src, size_t n) override;
+    void doInsertFrom(const IColumn & src, size_t n) override;
     void insertDefault() override;
     void insertManyDefaults(size_t length) override;
 
@@ -98,7 +98,7 @@ public:
     template <typename Type>
     ColumnPtr indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const;
 
-    int compareAt(size_t n, size_t m, const IColumn & rhs_, int null_direction_hint) const override;
+    int doCompareAt(size_t n, size_t m, const IColumn & rhs_, int null_direction_hint) const override;
     void compareColumn(const IColumn & rhs, size_t rhs_row_num,
                        PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
                        int direction, int nan_direction_hint) const override;

@@ -39,7 +39,7 @@ ColumnString::ColumnString(const ColumnString & src)
             last_offset, chars.size());
 }
 
-void ColumnString::insertManyFrom(const IColumn & src, size_t position, size_t length)
+void ColumnString::doInsertManyFrom(const IColumn & src, size_t position, size_t length)
 {
     const ColumnString & src_concrete = assert_cast<const ColumnString &>(src);
     const UInt8 * src_buf = &src_concrete.chars[src_concrete.offsets[position - 1]];
@@ -129,7 +129,7 @@ void ColumnString::updateWeakHash32(WeakHash32 & hash) const
 }
 
 
-void ColumnString::insertRangeFrom(const IColumn & src, size_t start, size_t length)
+void ColumnString::doInsertRangeFrom(const IColumn & src, size_t start, size_t length)
 {
     if (length == 0)
         return;

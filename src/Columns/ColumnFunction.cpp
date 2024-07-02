@@ -72,7 +72,7 @@ ColumnPtr ColumnFunction::cut(size_t start, size_t length) const
     return ColumnFunction::create(length, function, capture, is_short_circuit_argument, is_function_compiled);
 }
 
-void ColumnFunction::insertFrom(const IColumn & src, size_t n)
+void ColumnFunction::doInsertFrom(const IColumn & src, size_t n)
 {
     const ColumnFunction & src_func = assert_cast<const ColumnFunction &>(src);
 
@@ -89,7 +89,7 @@ void ColumnFunction::insertFrom(const IColumn & src, size_t n)
     ++elements_size;
 }
 
-void ColumnFunction::insertRangeFrom(const IColumn & src, size_t start, size_t length)
+void ColumnFunction::doInsertRangeFrom(const IColumn & src, size_t start, size_t length)
 {
     const ColumnFunction & src_func = assert_cast<const ColumnFunction &>(src);
 
