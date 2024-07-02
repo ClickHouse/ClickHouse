@@ -1383,11 +1383,11 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
 
         if (join_clauses_and_actions.mixed_join_expressions_actions)
         {
-            left_join_tree_query_plan.actions_dags.push_back(join_clauses_and_actions.mixed_join_expressions_actions.get());
             ExpressionActionsPtr & mixed_join_expression = table_join->getMixedJoinExpression();
             mixed_join_expression = std::make_shared<ExpressionActions>(
                 std::move(join_clauses_and_actions.mixed_join_expressions_actions),
                 ExpressionActionsSettings::fromContext(planner_context->getQueryContext()));
+            left_join_tree_query_plan.actions_dags.push_back(&mixed_join_expression->getActionsDAG());
         }
     }
     else if (join_node.isUsingJoinExpression())
