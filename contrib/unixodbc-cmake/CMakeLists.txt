@@ -1,5 +1,5 @@
 option (ENABLE_ODBC "Enable ODBC library" ${ENABLE_LIBRARIES})
-if (NOT OS_LINUX OR USE_MUSL)
+if (NOT (OS_LINUX OR OS_DARWIN) OR USE_MUSL)
     if (ENABLE_ODBC)
         message(STATUS "ODBC is only supported on Linux with dynamic linking")
     endif()
