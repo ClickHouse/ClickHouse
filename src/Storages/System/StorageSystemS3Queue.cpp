@@ -32,7 +32,6 @@ ColumnsDescription StorageSystemS3Queue::getColumnsDescription()
         {"status", std::make_shared<DataTypeString>(), "Status of processing: Processed, Processing, Failed"},
         {"processing_start_time", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>()), "Time at which processing of the file started"},
         {"processing_end_time", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>()), "Time at which processing of the file ended"},
-        {"ProfileEvents", std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeUInt64>()), "Profile events collected during processing of the file"},
         {"exception", std::make_shared<DataTypeString>(), "Exception which happened during processing"},
     };
 }
@@ -64,8 +63,6 @@ void StorageSystemS3Queue::fillData(MutableColumns & res_columns, ContextPtr, co
                 res_columns[i++]->insert(file_status->processing_end_time.load());
             else
                 res_columns[i++]->insertDefault();
-
-            ProfileEvents::dumpToMapColumn(file_status->profile_counters.getPartiallyAtomicSnapshot(), res_columns[i++].get(), true);
 
             res_columns[i++]->insert(file_status->getException());
         }
