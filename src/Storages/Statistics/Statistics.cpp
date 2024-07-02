@@ -1,15 +1,14 @@
-#include <optional>
-#include <numeric>
-
 #include <Storages/Statistics/Statistics.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
-#include <Storages/Statistics/TDigestStatistics.h>
-#include <Storages/Statistics/UniqStatistics.h>
+#include <Storages/Statistics/StatisticsTDigest.h>
+#include <Storages/Statistics/StatisticsUniq.h>
 #include <Storages/StatisticsDescription.h>
 #include <Storages/ColumnsDescription.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Common/Exception.h>
+#include <Common/logger_useful.h>
+
 
 namespace DB
 {
@@ -20,32 +19,55 @@ namespace ErrorCodes
     extern const int INCORRECT_QUERY;
 }
 
-/// Version / bitmask of statistics / data of statistics /
 enum StatisticsFileVersion : UInt16
 {
     V0 = 0,
+    V1 = 1, /// current format
 };
 
-IStatistics::IStatistics(const SingleStatisticsDescription & stat_) : stat(stat_) {}
+IStatistics::IStatistics(const SingleStatisticsDescription & stat_)
+    : stat(stat_)
+{
+}
+
+std::optional<UInt64> IStatistics::estimateCardinality() const
+{
+    return {};
+}
+
+std::optional<Float64> IStatistics::estimateEqual(Float64 /*val*/) const
+{
+    return {};
+}
+
+std::optional<Float64> IStatistics::estimateLess(Float64 /*val*/) const
+{
+    return {};
+}
 
 ColumnStatistics::ColumnStatistics(const ColumnStatisticsDescription & stats_desc_)
-    : stats_desc(stats_desc_), rows(0)
+    : stats_desc(stats_desc_)
 {
 }
 
 void ColumnStatistics::update(const ColumnPtr & column)
 {
     rows += column->size();
-    for (const auto & iter : stats)
-    {
-        iter.second->update(column);
-    }
+    for (const auto & stat : statistics)
+        stat->update(column);
 }
 
 Float64 ColumnStatistics::estimateLess(Float64 val) const
 {
-    if (stats.contains(StatisticsType::TDigest))
-        return std::static_pointer_cast<TDigestStatistics>(stats.at(StatisticsType::TDigest))->estimateLess(val);
+    for (const auto & stat : statistics)
+    {
+        /// Return the estimation of the first statistics object which provides an estimation.
+        /// TODO: In the (unlikely) case multiple statistics objects provide an estimation, we need some heuristics which
+        ///       returns the most accurate estimation (this necessitates some notion of "estimation quality").
+        auto estimation = stat->estimateLess(val);
+        if (estimation)
+            return *estimation;
+    }
     return rows * ConditionSelectivityEstimator::default_normal_cond_factor;
 }
 
@@ -56,58 +78,77 @@ Float64 ColumnStatistics::estimateGreater(Float64 val) const
 
 Float64 ColumnStatistics::estimateEqual(Float64 val) const
 {
-    if (stats.contains(StatisticsType::Uniq) && stats.contains(StatisticsType::TDigest))
+    /// Special case for the unlikely case that the user created 'uniq' and 'tdigest' statistics.
+    for (const auto & stat : statistics)
     {
-        auto uniq_static = std::static_pointer_cast<UniqStatistics>(stats.at(StatisticsType::Uniq));
-        /// 2048 is the default number of buckets in TDigest. In this case, TDigest stores exactly one value (with many rows)
-        /// for every bucket.
-        if (uniq_static->getCardinality() < 2048)
+        auto statistics_uniq = std::dynamic_pointer_cast<StatisticsUniq>(stat);
+        if (statistics_uniq && statistics_uniq->estimateCardinality() < 2024)
         {
-            auto tdigest_static = std::static_pointer_cast<TDigestStatistics>(stats.at(StatisticsType::TDigest));
-            return tdigest_static->estimateEqual(val);
+            /// 2048 is the default number of buckets in TDigest. In this case, TDigest stores exactly one value (with many rows)
+            /// for every bucket.
+            for (const auto & stat2 : statistics)
+            {
+                auto statistics_tdigest = std::dynamic_pointer_cast<StatisticsTDigest>(stat2);
+                if (statistics_tdigest)
+                    return *(statistics_tdigest->estimateEqual(val));
+            }
         }
     }
+
+    for (const auto & stat : statistics)
+    {
+        /// Return the estimation of the first statistics object which provides an estimation.
+        /// TODO: In the (unlikely) case multiple statistics objects provide an estimation, we need some heuristics which
+        ///       returns the most accurate estimation (this necessitates some notion of "estimation quality").
+        auto estimation = stat->estimateEqual(val);
+        if (estimation)
+            return *estimation;
+    }
+
     if (val < - ConditionSelectivityEstimator::threshold || val > ConditionSelectivityEstimator::threshold)
         return rows * ConditionSelectivityEstimator::default_normal_cond_factor;
     else
         return rows * ConditionSelectivityEstimator::default_good_cond_factor;
+
+
 }
 
 void ColumnStatistics::serialize(WriteBuffer & buf)
 {
-    writeIntBinary(V0, buf);
-    UInt64 stat_types_mask = 0;
-    for (const auto & [type, _]: stats)
-        stat_types_mask |= 1 << UInt8(type);
-    writeIntBinary(stat_types_mask, buf);
-    /// We write some basic statistics
+    writeIntBinary(V1, buf);
+
+    /// as the column row count is always useful, save it in any case
     writeIntBinary(rows, buf);
-    /// We write complex statistics
-    for (const auto & [type, stat_ptr]: stats)
-        stat_ptr->serialize(buf);
+
+    writeIntBinary(statistics.size(), buf);
+    for (const auto & stat : statistics)
+    {
+        writeIntBinary(static_cast<UInt8>(stat->getType()), buf);
+        stat->serialize(buf);
+    }
 }
 
-void ColumnStatistics::deserialize(ReadBuffer &buf)
+void ColumnStatistics::deserialize(ReadBuffer & buf)
 {
     UInt16 version;
     readIntBinary(version, buf);
-    if (version != V0)
+    if (version != V1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown file format version: {}", version);
 
-    UInt64 stat_types_mask = 0;
-    readIntBinary(stat_types_mask, buf);
     readIntBinary(rows, buf);
-    for (auto it = stats.begin(); it != stats.end();)
+
+    size_t stats_count;
+    readIntBinary(stats_count, buf);
+
+    for (size_t i = 0; i < stats_count; ++i)
     {
-        if (!(stat_types_mask & 1 << UInt8(it->first)))
-        {
-            stats.erase(it++);
-        }
-        else
-        {
-            it->second->deserialize(buf);
-            ++it;
-        }
+        UInt8 type_read;
+        readIntBinary(type_read, buf);
+        StatisticsType type = static_cast<StatisticsType>(type_read);
+
+        auto it = std::find_if(statistics.begin(), statistics.end(), [type](const auto & stat) {return type == stat->getType() ;});
+        if (it != std::end(statistics))
+            (*it)->deserialize(buf);
     }
 }
 
@@ -136,15 +177,15 @@ void MergeTreeStatisticsFactory::registerValidator(StatisticsType stats_type, Va
 {
     if (!validators.emplace(stats_type, std::move(validator)).second)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "MergeTreeStatisticsFactory: the statistics validator type {} is not unique", stats_type);
-
 }
 
 MergeTreeStatisticsFactory::MergeTreeStatisticsFactory()
 {
-    registerCreator(StatisticsType::TDigest, TDigestCreator);
-    registerCreator(StatisticsType::Uniq, UniqCreator);
     registerValidator(StatisticsType::TDigest, TDigestValidator);
+    registerCreator(StatisticsType::TDigest, TDigestCreator);
+
     registerValidator(StatisticsType::Uniq, UniqValidator);
+    registerCreator(StatisticsType::Uniq, UniqCreator);
 }
 
 MergeTreeStatisticsFactory & MergeTreeStatisticsFactory::instance()
@@ -159,9 +200,7 @@ void MergeTreeStatisticsFactory::validate(const ColumnStatisticsDescription & st
     {
         auto it = validators.find(type);
         if (it == validators.end())
-        {
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown Statistic type '{}'", type);
-        }
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown statistic type '{}'", type);
         it->second(desc, data_type);
     }
 }
@@ -173,12 +212,9 @@ ColumnStatisticsPtr MergeTreeStatisticsFactory::get(const ColumnStatisticsDescri
     {
         auto it = creators.find(type);
         if (it == creators.end())
-        {
-            throw Exception(ErrorCodes::INCORRECT_QUERY,
-                    "Unknown Statistic type '{}'. Available types: tdigest, uniq", type);
-        }
-        auto stat_ptr = (it->second)(desc, stats.data_type);
-        column_stat->stats[type] = stat_ptr;
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Unknown statistic type '{}'. Available types: 'tdigest' 'uniq'", type);
+        auto stat_ptr = it->second(desc, stats.data_type);
+        column_stat->statistics.insert(stat_ptr);
     }
     return column_stat;
 }
