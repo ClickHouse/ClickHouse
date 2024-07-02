@@ -211,7 +211,6 @@ clickhouse-client --query "SYSTEM STOP THREAD FUZZER"
 stop_server
 
 # Let's enable S3 storage by default
-export USE_S3_STORAGE_FOR_MERGE_TREE=1
 export RANDOMIZE_OBJECT_KEY_TYPE=1
 export ZOOKEEPER_FAULT_INJECTION=1
 export THREAD_POOL_FAULT_INJECTION=1
