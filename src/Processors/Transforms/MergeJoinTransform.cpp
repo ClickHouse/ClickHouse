@@ -19,6 +19,8 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Processors/Chunk.h>
 #include <Processors/Transforms/MergeJoinTransform.h>
+#include <Poco/Logger.h>
+#include <Common/logger_useful.h>
 
 
 namespace DB
