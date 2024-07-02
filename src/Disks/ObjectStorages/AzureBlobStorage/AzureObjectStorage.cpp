@@ -60,7 +60,6 @@ public:
             "ListObjectAzure")
         , client(client_)
     {
-
         options.Prefix = path_prefix;
         options.PageSizeHint = static_cast<int>(max_list_size);
     }
@@ -150,7 +149,7 @@ ObjectStorageIteratorPtr AzureObjectStorage::iterate(const std::string & path_pr
     auto settings_ptr = settings.get();
     auto client_ptr = client.get();
 
-    return std::make_shared<AzureIteratorAsync>(path_prefix, client_ptr, max_keys);
+    return std::make_shared<AzureIteratorAsync>(path_prefix, client_ptr, max_keys ? max_keys : settings_ptr->list_object_keys_size);
 }
 
 void AzureObjectStorage::listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const
