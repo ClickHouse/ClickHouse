@@ -1084,10 +1084,9 @@ void WindowTransform::writeOutCurrentRow()
 void WindowTransform::updateFirstRequiredRow()
 {
     first_required_row = current_row;
-    for (size_t wi = 0; wi < workspaces.size(); ++wi)
+    for (auto & ws : workspaces)
     {
         RowNumber row;
-        auto & ws = workspaces[wi];
         if (ws.window_function_impl)
             row = ws.window_function_impl->firstRequiredRowInFrame(this);
         else
