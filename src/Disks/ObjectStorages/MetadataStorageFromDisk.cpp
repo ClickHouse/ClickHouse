@@ -66,7 +66,7 @@ DirectoryIteratorPtr MetadataStorageFromDisk::iterateDirectory(const std::string
 
 std::string MetadataStorageFromDisk::readFileToString(const std::string & path) const
 {
-    auto buf = disk->readFile(path);
+    auto buf = disk->readFile(path, getReadSettings());
     std::string result;
     readStringUntilEOF(result, *buf);
     return result;

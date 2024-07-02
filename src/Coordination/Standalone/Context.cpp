@@ -387,7 +387,7 @@ ThrottlerPtr Context::getLocalWriteThrottler() const
 
 ReadSettings Context::getReadSettings() const
 {
-    return ReadSettings{};
+    return ReadSettings(*this);
 }
 
 ResourceManagerPtr Context::getResourceManager() const
@@ -483,4 +483,13 @@ bool Context::isBackgroundOperationContext() const
     return false;
 }
 
+std::shared_ptr<PageCache> Context::getPageCache() const
+{
+    return nullptr;
+}
+
+std::shared_ptr<MMappedFileCache> Context::getMMappedFileCache() const
+{
+    return nullptr;
+}
 }
