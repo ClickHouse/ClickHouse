@@ -569,7 +569,7 @@ void KeeperStateMachine::create_snapshot(nuraft::snapshot & s, nuraft::async_res
     snapshot_task.create_snapshot = [this, when_done](KeeperStorageSnapshotPtr && snapshot, bool execute_only_cleanup)
     {
         nuraft::ptr<std::exception> exception(nullptr);
-        bool ret = true;
+        bool ret = false;
         if (!execute_only_cleanup)
         {
             try
@@ -599,7 +599,8 @@ void KeeperStateMachine::create_snapshot(nuraft::snapshot & s, nuraft::async_res
                         else
                         {
                             auto snapshot_buf = snapshot_manager.serializeSnapshotToBuffer(*snapshot);
-                            auto snapshot_info = snapshot_manager.serializeSnapshotBufferToDisk(*snapshot_buf, snapshot->snapshot_meta->get_last_log_idx());
+                            auto snapshot_info = snapshot_manager.serializeSnapshotBufferToDisk(
+                                *snapshot_buf, snapshot->snapshot_meta->get_last_log_idx());
                             latest_snapshot_info = std::move(snapshot_info);
                             latest_snapshot_buf = std::move(snapshot_buf);
                         }
@@ -612,13 +613,14 @@ void KeeperStateMachine::create_snapshot(nuraft::snapshot & s, nuraft::async_res
                             latest_snapshot_info->path);
                     }
                 }
+
+                ret = true;
             }
             catch (...)
             {
                 ProfileEvents::increment(ProfileEvents::KeeperSnapshotCreationsFailed);
                 LOG_TRACE(log, "Exception happened during snapshot");
                 tryLogCurrentException(log);
-                ret = false;
             }
         }
         {
