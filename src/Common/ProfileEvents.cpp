@@ -447,14 +447,18 @@ The server successfully detected this situation and will download merged part fr
     M(QueryMemoryLimitExceeded, "Number of times when memory limit exceeded for query.") \
     \
     M(AzureGetObject, "Number of Azure API GetObject calls.") \
-    M(AzureUploadPart, "Number of Azure blob storage API UploadPart calls") \
+    M(AzureUpload, "Number of Azure blob storage API Upload calls") \
+    M(AzureStageBlock, "Number of Azure blob storage API StageBlock calls") \
+    M(AzureCommitBlockList, "Number of Azure blob storage API CommitBlockList calls") \
     M(AzureCopyObject, "Number of Azure blob storage API CopyObject calls") \
     M(AzureDeleteObjects, "Number of Azure blob storage API DeleteObject(s) calls.") \
     M(AzureListObjects, "Number of Azure blob storage API ListObjects calls.") \
     M(AzureGetProperties, "Number of Azure blob storage API GetProperties calls.") \
     \
     M(DiskAzureGetObject, "Number of Disk Azure API GetObject calls.") \
-    M(DiskAzureUploadPart, "Number of Disk Azure blob storage API UploadPart calls") \
+    M(DiskAzureUpload, "Number of Disk Azure blob storage API Upload calls") \
+    M(DiskAzureStageBlock, "Number of Disk Azure blob storage API StageBlock calls") \
+    M(DiskAzureCommitBlockList, "Number of Disk Azure blob storage API CommitBlockList calls") \
     M(DiskAzureCopyObject, "Number of Disk Azure blob storage API CopyObject calls") \
     M(DiskAzureListObjects, "Number of Disk Azure blob storage API ListObjects calls.") \
     M(DiskAzureDeleteObjects, "Number of Azure blob storage API DeleteObject(s) calls.") \
