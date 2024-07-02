@@ -1,4 +1,3 @@
-#include <algorithm>
 #include <memory>
 #include <stack>
 #include <Core/NamesAndTypes.h>
@@ -37,6 +36,7 @@
 
 #include <Storages/VirtualColumnUtils.h>
 #include <IO/WriteHelpers.h>
+#include <Common/re2.h>
 #include <Common/typeid_cast.h>
 #include "Functions/FunctionsLogical.h"
 #include "Functions/IFunction.h"
@@ -115,7 +115,22 @@ NameSet getVirtualNamesForFileLikeStorage()
     return {"_path", "_file", "_size", "_time"};
 }
 
-VirtualColumnsDescription getVirtualsForFileLikeStorage(const ColumnsDescription & storage_columns)
+Strings parseVirtualColumnNameFromPath(const std::string & path)
+{
+    std::string pattern = "/([^/]+)=([^/]+)";
+    // Map to store the key-value pairs
+    std::map<std::string, std::string> key_values;
+
+    re2::StringPiece input_piece(path);
+    std::string key;
+    Strings result;
+    while (RE2::FindAndConsume(&input_piece, pattern, &key))
+        result.push_back(key);
+
+    return result;
+}
+
+VirtualColumnsDescription getVirtualsForFileLikeStorage(const ColumnsDescription & storage_columns, Strings paths)
 {
     VirtualColumnsDescription desc;
 
@@ -131,6 +146,13 @@ VirtualColumnsDescription getVirtualsForFileLikeStorage(const ColumnsDescription
     add_virtual("_file", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()));
     add_virtual("_size", makeNullable(std::make_shared<DataTypeUInt64>()));
     add_virtual("_time", makeNullable(std::make_shared<DataTypeDateTime>()));
+
+    for (const auto& path : paths)
+    {
+        auto names = parseVirtualColumnNameFromPath(path);
+        for (const auto& name : names)
+            add_virtual("_" + name, std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()));
+    }
 
     return desc;
 }
@@ -178,6 +200,8 @@ ColumnPtr getFilterByPathAndFileIndexes(const std::vector<String> & paths, const
     {
         if (column.name == "_file" || column.name == "_path")
             block.insert({column.type->createColumn(), column.type, column.name});
+        if (!getVirtualNamesForFileLikeStorage().contains(column.name))
+            block.insert({column.type->createColumn(), column.type, column.name});
     }
     block.insert({ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "_idx"});
 
@@ -187,6 +211,21 @@ ColumnPtr getFilterByPathAndFileIndexes(const std::vector<String> & paths, const
     filterBlockWithDAG(dag, block, context);
 
     return block.getByName("_idx").column;
+}
+
+std::map<std::string, std::string> parsePartitionMapFromPath(const std::string & path)
+{
+    std::string pattern = "/([^/]+)=([^/]+)";  // Regex to capture key=value pairs
+    // Map to store the key-value pairs
+    std::map<std::string, std::string> key_values;
+
+    re2::StringPiece input_piece(path);
+    std::string key;
+    std::string value;
+    while (RE2::FindAndConsume(&input_piece, pattern, &key, &value))
+        key_values["_" + key] = value;
+
+    return key_values;
 }
 
 void addRequestedFileLikeStorageVirtualsToChunk(
@@ -225,6 +264,15 @@ void addRequestedFileLikeStorageVirtualsToChunk(
                 chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), virtual_values.last_modified->epochTime())->convertToFullColumnIfConst());
             else
                 chunk.addColumn(virtual_column.type->createColumnConstWithDefaultValue(chunk.getNumRows())->convertToFullColumnIfConst());
+        }
+        else
+        {
+            auto it = virtual_values.hive_partitioning_map.find(virtual_column.getNameInStorage());
+            if (it != virtual_values.hive_partitioning_map.end())
+            {
+                chunk.addColumn(virtual_column.getTypeInStorage()->createColumnConst(chunk.getNumRows(), it->second)->convertToFullColumnIfConst());
+                virtual_values.hive_partitioning_map.erase(it);
+            }
         }
     }
 }

@@ -13,6 +13,7 @@
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/Cache/SchemaCache.h>
 #include <Common/parseGlobs.h>
+#include <DataTypes/DataTypeString.h>
 
 namespace fs = std::filesystem;
 
@@ -195,13 +196,24 @@ Chunk StorageObjectStorageSource::generate()
             const auto & object_info = reader.getObjectInfo();
             const auto & filename = object_info->getFileName();
             chassert(object_info->metadata);
+
+            auto hive_map = VirtualColumnUtils::parsePartitionMapFromPath(object_info->getPath());
+            bool contains_virtual_column = std::any_of(hive_map.begin(), hive_map.end(), 
+                [&](const auto& pair) {
+                    return read_from_format_info.requested_virtual_columns.contains(pair.first);
+                });
+
+            if (!contains_virtual_column)
+                hive_map.clear(); // If we cannot find any virual column in requested, we don't add any of them to chunk
+
             VirtualColumnUtils::addRequestedFileLikeStorageVirtualsToChunk(
                 chunk, read_from_format_info.requested_virtual_columns,
                 {
                     .path = getUniqueStoragePathIdentifier(*configuration, *object_info, false),
                     .size = object_info->metadata->size_bytes,
                     .filename = &filename,
-                    .last_modified = object_info->metadata->last_modified
+                    .last_modified = object_info->metadata->last_modified,
+                    .hive_partitioning_map = hive_map
                 });
             return chunk;
         }

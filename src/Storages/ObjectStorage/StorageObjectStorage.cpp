@@ -1,4 +1,5 @@
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Core/ColumnWithTypeAndName.h>
 
 #include <Formats/FormatFactory.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -32,6 +33,19 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+
+bool checkIfHiveSettingEnabled(const ContextPtr & context, const std::string & storage_type_name)
+{
+    if (storage_type_name == "s3")
+        return context->getSettings().s3_hive_partitioning;
+    else if (storage_type_name == "hdfs")
+        return context->getSettings().hdfs_hive_partitioning;
+    else if (storage_type_name == "azure")
+        return context->getSettings().azure_blob_storage_hive_partitioning;
+    else
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported storage type: {}", storage_type_name);
+}
+
 StorageObjectStorage::StorageObjectStorage(
     ConfigurationPtr configuration_,
     ObjectStoragePtr object_storage_,
@@ -60,7 +74,23 @@ StorageObjectStorage::StorageObjectStorage(
     metadata.setConstraints(constraints_);
     metadata.setComment(comment);
 
-    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(metadata.getColumns()));
+    auto file_iterator = StorageObjectStorageSource::createFileIterator(
+        configuration,
+        object_storage,
+        distributed_processing_,
+        context,
+        {}, // predicate
+        metadata.getColumns().getAll(), // virtual_columns
+        nullptr, // read_keys
+        {} // file_progress_callback
+    );
+
+    Strings paths;
+    
+    if (checkIfHiveSettingEnabled(context, configuration->getTypeName()))
+        if (auto file = file_iterator->next(0))
+            paths = {file->getPath()};
+    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(metadata.getColumns(), paths));
     setInMemoryMetadata(metadata);
 }
 

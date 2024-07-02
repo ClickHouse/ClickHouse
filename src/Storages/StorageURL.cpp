@@ -36,6 +36,7 @@
 #include <Common/thread_local_rng.h>
 #include <Common/logger_useful.h>
 #include <Common/re2.h>
+#include <Formats/SchemaInferenceUtils.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/HTTPHeaderEntries.h>
 
@@ -151,7 +152,11 @@ IStorageURLBase::IStorageURLBase(
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.getColumns()));
+
+    Strings uri_for_partitioning;
+    if (context_->getSettingsRef().url_hive_partitioning)
+        uri_for_partitioning = {uri};
+    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.getColumns(), uri_for_partitioning));
 }
 
 
@@ -410,12 +415,17 @@ Chunk StorageURLSource::generate()
             size_t chunk_size = 0;
             if (input_format)
                 chunk_size = input_format->getApproxBytesReadForChunk();
+            std::map<std::string, std::string> hive_map;
+            if (getContext()->getSettingsRef().url_hive_partitioning)
+                hive_map = VirtualColumnUtils::parsePartitionMapFromPath(curr_uri.getPath());
+
             progress(num_rows, chunk_size ? chunk_size : chunk.bytes());
             VirtualColumnUtils::addRequestedFileLikeStorageVirtualsToChunk(
                 chunk, requested_virtual_columns,
                 {
                     .path = curr_uri.getPath(),
-                    .size = current_file_size
+                    .size = current_file_size,
+                    .hive_partitioning_map = hive_map
                 });
             return chunk;
         }
@@ -1170,6 +1180,7 @@ void ReadFromURL::createIterator(const ActionsDAG::Node * predicate)
 void ReadFromURL::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     createIterator(nullptr);
+    const auto & settings = context->getSettingsRef();
 
     if (is_empty_glob)
     {
@@ -1180,7 +1191,6 @@ void ReadFromURL::initializePipeline(QueryPipelineBuilder & pipeline, const Buil
     Pipes pipes;
     pipes.reserve(num_streams);
 
-    const auto & settings = context->getSettingsRef();
     const size_t max_parsing_threads = num_streams >= settings.max_parsing_threads ? 1 : (settings.max_parsing_threads  / num_streams);
 
     for (size_t i = 0; i < num_streams; ++i)
