@@ -276,10 +276,7 @@ def parse_env_variables(
         if is_release_build(debug_build, package_type, sanitizer, coverage):
             cmake_flags.append("-DSPLIT_DEBUG_SYMBOLS=ON")
             result.append("WITH_PERFORMANCE=1")
-            if is_cross_arm:
-                cmake_flags.append("-DBUILD_STANDALONE_KEEPER=1")
-            else:
-                result.append("BUILD_MUSL_KEEPER=1")
+            cmake_flags.append("-DBUILD_STANDALONE_KEEPER=1")
     elif package_type == "fuzzers":
         cmake_flags.append("-DENABLE_FUZZING=1")
         cmake_flags.append("-DENABLE_PROTOBUF=1")
