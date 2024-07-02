@@ -1230,7 +1230,11 @@ class TestCase:
             return FailureReason.S3_STORAGE
         elif tags and ("no-azure-blob-storage" in tags) and args.azure_blob_storage:
             return FailureReason.AZURE_BLOB_STORAGE
-        elif tags and ("no-object-storage" in tags) and (args.azure_blob_storage or args.s3_storage):
+        elif (
+            tags
+            and ("no-object-storage" in tags)
+            and (args.azure_blob_storage or args.s3_storage)
+        ):
             return FailureReason.OBJECT_STORAGE
         elif (
             tags
