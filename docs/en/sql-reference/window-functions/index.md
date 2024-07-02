@@ -80,8 +80,8 @@ These functions can be used only as a window function.
 - `nth_value(x, offset)` - Return the first non-NULL value evaluated against the nth row (offset) in its ordered frame.
 - `rank()` - Rank the current row within its partition with gaps.
 - `dense_rank()` - Rank the current row within its partition without gaps.
-- `lagInFrame(x[, offset[, default]])` - Return a value from the column x evaluated at the row that is a specified physical offset ahead of the current row within the ordered frame. The offset parameter, if not specified, defaults to 1, meaning it will fetch the value from the next row. If the calculated row exceeds the boundaries of the window frame, the default value is returned if specified; otherwise, a default value based on the column’s data type is used.
-- `leadInFrame(x[, offset[, default]])` - Return a value from the column x evaluated at the row that is a specified number of offset rows ahead of the current row within the ordered frame. If offset is not provided, it defaults to 1. If the offset leads to a position outside the window frame, the default value is used if specified; otherwise, the function returns a default value based on the column’s data type.
+- `lagInFrame(x[, offset[, default]])` - Return a value evaluated at the row that is at a specified physical offset row before the current row within the ordered frame. The offset parameter, if not specified, defaults to 1, meaning it will fetch the value from the next row. If the calculated row exceeds the boundaries of the window frame, the specified default value is returned.
+- `leadInFrame(x[, offset[, default]])` - Return a value evaluated at the row that is offset rows after the current row within the ordered frame. If offset is not provided, it defaults to 1. If the offset leads to a position outside the window frame, the specified default value is used.
 
 ## Examples
 
