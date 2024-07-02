@@ -61,6 +61,8 @@ RemoteQueryExecutor::RemoteQueryExecutor(
     , external_tables(external_tables_)
     , stage(stage_)
     , extension(extension_)
+    /// Can be overwritten by setLogger()
+    , log(getLogger("RemoteQueryExecutor"))
     , priority_func(priority_func_)
 {
 }
@@ -279,7 +281,7 @@ RemoteQueryExecutor::~RemoteQueryExecutor()
         }
         catch (...)
         {
-            tryLogCurrentException(log ? log : getLogger("RemoteQueryExecutor"));
+            tryLogCurrentException(log);
         }
     }
 }
@@ -539,8 +541,7 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::restartQueryWithoutDuplicat
         if (resent_query)
             throw Exception(ErrorCodes::DUPLICATED_PART_UUIDS, "Found duplicate uuids while processing query");
 
-        if (log)
-            LOG_DEBUG(log, "Found duplicate UUIDs, will retry query without those parts");
+        LOG_DEBUG(log, "Found duplicate UUIDs, will retry query without those parts");
 
         resent_query = true;
         sent_query = false;
@@ -887,8 +888,7 @@ void RemoteQueryExecutor::tryCancel(const char * reason)
     if (connections && sent_query && !finished)
     {
         connections->sendCancel();
-        if (log)
-            LOG_TRACE(log, "({}) {}", connections->dumpAddresses(), reason);
+        LOG_TRACE(log, "({}) {}", connections->dumpAddresses(), reason);
     }
 }
 
