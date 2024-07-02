@@ -1780,6 +1780,7 @@ def test_commit_on_limit(started_cluster):
         if "test_999999.csv" in get_processed_files():
             break
         time.sleep(1)
+
     assert "test_999999.csv" in get_processed_files()
 
     assert 1 == int(
