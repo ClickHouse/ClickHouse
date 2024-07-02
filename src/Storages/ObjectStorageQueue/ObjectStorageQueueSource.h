@@ -160,7 +160,12 @@ private:
 
     Chunk generateImpl();
     void applyActionAfterProcessing(const String & path);
-    void appendLogElement(const std::string & filename, ObjectStorageQueueMetadata::FileStatus & file_status_, size_t processed_rows, bool processed);
+    void appendLogElement(
+        const std::string & filename,
+        ObjectStorageQueueMetadata::FileStatus & file_status_,
+        size_t processed_rows,
+        bool processed);
+
     void lazyInitialize(size_t processor);
 };
 
