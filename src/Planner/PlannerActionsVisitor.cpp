@@ -485,12 +485,12 @@ public:
         return node;
     }
 
-    [[nodiscard]] String
-    addConstantIfNecessary(const std::string & node_name, const ColumnWithTypeAndName & column, bool prefer_const_column_to_input)
+    [[nodiscard]] String addConstantIfNecessary(
+        const std::string & node_name, const ColumnWithTypeAndName & column, bool always_use_const_column_for_constant_nodes)
     {
         chassert(column.column != nullptr);
         auto it = node_name_to_node.find(node_name);
-        if (it != node_name_to_node.end() && (!prefer_const_column_to_input || it->second->column))
+        if (it != node_name_to_node.end() && (!always_use_const_column_for_constant_nodes || it->second->column))
             return {node_name};
 
         if (it != node_name_to_node.end())
@@ -552,7 +552,7 @@ public:
         ActionsDAG & actions_dag,
         const PlannerContextPtr & planner_context_,
         bool use_column_identifier_as_action_node_name_,
-        bool prefer_const_column_to_input_);
+        bool always_use_const_column_for_constant_nodes_);
 
     ActionsDAG::NodeRawConstPtrs visit(QueryTreeNodePtr expression_node);
 
@@ -612,18 +612,18 @@ private:
     const PlannerContextPtr planner_context;
     ActionNodeNameHelper action_node_name_helper;
     bool use_column_identifier_as_action_node_name;
-    bool prefer_const_column_to_input;
+    bool always_use_const_column_for_constant_nodes;
 };
 
 PlannerActionsVisitorImpl::PlannerActionsVisitorImpl(
     ActionsDAG & actions_dag,
     const PlannerContextPtr & planner_context_,
     bool use_column_identifier_as_action_node_name_,
-    bool prefer_const_column_to_input_)
+    bool always_use_const_column_for_constant_nodes_)
     : planner_context(planner_context_)
     , action_node_name_helper(node_to_node_name, *planner_context, use_column_identifier_as_action_node_name_)
     , use_column_identifier_as_action_node_name(use_column_identifier_as_action_node_name_)
-    , prefer_const_column_to_input(prefer_const_column_to_input_)
+    , always_use_const_column_for_constant_nodes(always_use_const_column_for_constant_nodes_)
 {
     actions_stack.emplace_back(actions_dag, nullptr);
 }
@@ -746,7 +746,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     column.type = constant_type;
     column.column = column.type->createColumnConst(1, constant_literal);
 
-    String final_name = actions_stack[0].addConstantIfNecessary(constant_node_name, column, prefer_const_column_to_input);
+    String final_name = actions_stack[0].addConstantIfNecessary(constant_node_name, column, always_use_const_column_for_constant_nodes);
 
     size_t actions_stack_size = actions_stack.size();
     for (size_t i = 1; i < actions_stack_size; ++i)
@@ -884,7 +884,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::ma
     else
         column.column = std::move(column_set);
 
-    String final_name = actions_stack[0].addConstantIfNecessary(column.name, column, prefer_const_column_to_input);
+    String final_name = actions_stack[0].addConstantIfNecessary(column.name, column, always_use_const_column_for_constant_nodes);
 
     size_t actions_stack_size = actions_stack.size();
     for (size_t i = 1; i < actions_stack_size; ++i)
@@ -1031,16 +1031,18 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
 }
 
 PlannerActionsVisitor::PlannerActionsVisitor(
-    const PlannerContextPtr & planner_context_, bool use_column_identifier_as_action_node_name_, bool prefer_const_column_to_input_)
+    const PlannerContextPtr & planner_context_,
+    bool use_column_identifier_as_action_node_name_,
+    bool always_use_const_column_for_constant_nodes_)
     : planner_context(planner_context_)
     , use_column_identifier_as_action_node_name(use_column_identifier_as_action_node_name_)
-    , prefer_const_column_to_input(prefer_const_column_to_input_)
+    , always_use_const_column_for_constant_nodes(always_use_const_column_for_constant_nodes_)
 {}
 
 ActionsDAG::NodeRawConstPtrs PlannerActionsVisitor::visit(ActionsDAG & actions_dag, QueryTreeNodePtr expression_node)
 {
     PlannerActionsVisitorImpl actions_visitor_impl(
-        actions_dag, planner_context, use_column_identifier_as_action_node_name, prefer_const_column_to_input);
+        actions_dag, planner_context, use_column_identifier_as_action_node_name, always_use_const_column_for_constant_nodes);
     return actions_visitor_impl.visit(expression_node);
 }
 

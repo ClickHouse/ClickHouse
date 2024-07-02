@@ -37,7 +37,7 @@ public:
     explicit PlannerActionsVisitor(
         const PlannerContextPtr & planner_context_,
         bool use_column_identifier_as_action_node_name_ = true,
-        bool prefer_const_column_to_input_ = true);
+        bool always_use_const_column_for_constant_nodes_ = true);
 
     /** Add actions necessary to calculate expression node into expression dag.
       * Necessary actions are not added in actions dag output.
@@ -48,7 +48,7 @@ public:
 private:
     const PlannerContextPtr planner_context;
     bool use_column_identifier_as_action_node_name = true;
-    bool prefer_const_column_to_input = true;
+    bool always_use_const_column_for_constant_nodes = true;
 };
 
 /** Calculate query tree expression node action dag name and add them into node to name map.

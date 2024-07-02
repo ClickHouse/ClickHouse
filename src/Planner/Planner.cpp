@@ -746,7 +746,7 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
                     planner_context,
                     /* use_column_identifier_as_action_node_name_, (default value)*/ true,
                     /// Prefer the INPUT to CONSTANT nodes (actions must be non constant)
-                    /* prefer_const_column_to_input */ false);
+                    /* always_use_const_column_for_constant_nodes */ false);
 
                 auto expression_to_interpolate_expression_nodes = planner_actions_visitor.visit(*interpolate_actions_dag,
                     interpolate_node_typed.getExpression());
