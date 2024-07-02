@@ -26,6 +26,7 @@ def make_instance(name, *args, **kwargs):
         **kwargs,
     )
 
+
 # _n1/_n2 contains cluster with different <secret> -- should fail
 # only n1 contains new_user
 n1 = make_instance(
