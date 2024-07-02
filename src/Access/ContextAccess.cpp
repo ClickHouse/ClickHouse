@@ -618,6 +618,22 @@ bool ContextAccess::checkAccessImplHelper(AccessFlags flags, const Args &... arg
 
     if (!granted)
     {
+        auto access_denied_no_grant = [&]<typename... FmtArgs>(AccessFlags access_flags, FmtArgs && ...fmt_args)
+        {
+            if (grant_option && acs->isGranted(access_flags, fmt_args...))
+            {
+                return access_denied(ErrorCodes::ACCESS_DENIED,
+                    "{}: Not enough privileges. "
+                    "The required privileges have been granted, but without grant option. "
+                    "To execute this query, it's necessary to have the grant {} WITH GRANT OPTION",
+                    AccessRightsElement{access_flags, fmt_args...}.toStringWithoutOptions());
+            }
+
+            return access_denied(ErrorCodes::ACCESS_DENIED,
+                "{}: Not enough privileges. To execute this query, it's necessary to have the grant {}",
+                AccessRightsElement{access_flags, fmt_args...}.toStringWithoutOptions() + (grant_option ? " WITH GRANT OPTION" : ""));
+        };
+
         /// As we check the SOURCES from the Table Engine logic, direct prompt about Table Engine would be misleading
         /// since SOURCES is not granted actually. In order to solve this, turn the prompt logic back to Sources.
         if (flags & AccessType::TABLE_ENGINE && !access_control->doesTableEnginesRequireGrant())
@@ -635,8 +651,9 @@ bool ContextAccess::checkAccessImplHelper(AccessFlags flags, const Args &... arg
                 break;
             }
 
+            /// Might happen in the case of grant Table Engine on A (but not source), then revoke A.
             if (new_flags.isEmpty())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Didn't find the target Source from the Table Engine");
+                return access_denied_no_grant(flags, args...);
 
             if (grant_option && acs->isGranted(flags, args...))
             {
@@ -652,18 +669,7 @@ bool ContextAccess::checkAccessImplHelper(AccessFlags flags, const Args &... arg
                 AccessRightsElement{new_flags}.toStringForAccessTypeSource() + (grant_option ? " WITH GRANT OPTION" : ""));
         }
 
-        if (grant_option && acs->isGranted(flags, args...))
-        {
-            return access_denied(ErrorCodes::ACCESS_DENIED,
-                "{}: Not enough privileges. "
-                "The required privileges have been granted, but without grant option. "
-                "To execute this query, it's necessary to have the grant {} WITH GRANT OPTION",
-                AccessRightsElement{flags, args...}.toStringWithoutOptions());
-        }
-
-        return access_denied(ErrorCodes::ACCESS_DENIED,
-            "{}: Not enough privileges. To execute this query, it's necessary to have the grant {}",
-            AccessRightsElement{flags, args...}.toStringWithoutOptions() + (grant_option ? " WITH GRANT OPTION" : ""));
+        return access_denied_no_grant(flags, args...);
     }
 
     struct PrecalculatedFlags
