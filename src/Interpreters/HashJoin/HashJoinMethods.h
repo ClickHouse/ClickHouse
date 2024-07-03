@@ -112,7 +112,7 @@ public:
         const MapsTemplateVector & maps_,
         bool is_join_get = false)
     {
-        constexpr JoinFeatures<KIND, STRICTNESS> join_features;
+        constexpr JoinFeatures<KIND, STRICTNESS, MapsTemplate> join_features;
 
         std::vector<JoinOnKeyColumns> join_on_keys;
         const auto & onexprs = join.table_join->getClauses();
@@ -358,22 +358,20 @@ private:
         AddedColumns & added_columns,
         JoinStuff::JoinUsedFlags & used_flags)
     {
-        constexpr JoinFeatures<KIND, STRICTNESS> join_features;
-        if constexpr (join_features.is_all_join)
+        constexpr JoinFeatures<KIND, STRICTNESS, MapsTemplate> join_features;
+        if constexpr (join_features.is_maps_all)
         {
-        if (added_columns.additional_filter_expression)
-        {
-            bool mark_per_row_used = join_features.right || join_features.full || mapv.size() > 1;
-            return joinRightColumnsWithAddtitionalFilter<KeyGetter, Map, join_features.need_replication>(
-                std::forward<std::vector<KeyGetter>>(key_getter_vector),
-                mapv,
-                added_columns,
-                used_flags,
-                need_filter,
-                join_features.need_flags,
-                join_features.add_missing,
-                mark_per_row_used);
-        }
+            if (added_columns.additional_filter_expression)
+            {
+                bool mark_per_row_used = join_features.right || join_features.full || mapv.size() > 1;
+                return joinRightColumnsWithAddtitionalFilter<KeyGetter, Map>(
+                    std::forward<std::vector<KeyGetter>>(key_getter_vector),
+                    mapv,
+                    added_columns,
+                    used_flags,
+                    need_filter,
+                    mark_per_row_used);
+            }
         }
 
         if (added_columns.additional_filter_expression)
@@ -394,7 +392,7 @@ private:
         AddedColumns & added_columns,
         JoinStuff::JoinUsedFlags & used_flags)
     {
-        constexpr JoinFeatures<KIND, STRICTNESS> join_features;
+        constexpr JoinFeatures<KIND, STRICTNESS, MapsTemplate> join_features;
 
         size_t rows = added_columns.rows_to_add;
         if constexpr (need_filter)
@@ -474,7 +472,7 @@ private:
                                 mapped, added_columns, current_offset, known_rows, used_flags_opt);
                         }
                     }
-                    else if constexpr (join_features.is_any_join && KIND == JoinKind::Inner)
+                    else if constexpr (join_features.is_any_join && join_features.inner)
                     {
                         bool used_once = used_flags.template setUsedOnce<join_features.need_flags, flag_per_row>(find_result);
 
@@ -655,24 +653,23 @@ private:
     }
 
     /// First to collect all matched rows refs by join keys, then filter out rows which are not true in additional filter expression.
-    template <typename KeyGetter, typename Map, bool need_replication, typename AddedColumns>
+    template <typename KeyGetter, typename Map, typename AddedColumns>
     static size_t joinRightColumnsWithAddtitionalFilter(
         std::vector<KeyGetter> && key_getter_vector,
         const std::vector<const Map *> & mapv,
         AddedColumns & added_columns,
         JoinStuff::JoinUsedFlags & used_flags [[maybe_unused]],
         bool need_filter [[maybe_unused]],
-        bool need_flags [[maybe_unused]],
-        bool add_missing [[maybe_unused]],
         bool flag_per_row [[maybe_unused]])
     {
+        constexpr JoinFeatures<KIND, STRICTNESS, MapsTemplate> join_features;
         size_t left_block_rows = added_columns.rows_to_add;
         if (need_filter)
             added_columns.filter = IColumn::Filter(left_block_rows, 0);
 
         std::unique_ptr<Arena> pool;
 
-        if constexpr (need_replication)
+        if constexpr (join_features.need_replication)
             added_columns.offsets_to_replicate = std::make_unique<IColumn::Offsets>(left_block_rows);
 
         std::vector<size_t> row_replicate_offset;
@@ -699,7 +696,7 @@ private:
             selected_rows.clear();
             for (; left_row_iter < left_block_rows; ++left_row_iter)
             {
-                if constexpr (need_replication)
+                if constexpr (join_features.need_replication)
                 {
                     if (unlikely(total_added_rows + current_added_rows >= max_joined_block_rows))
                     {
@@ -743,7 +740,7 @@ private:
             for (size_t i = 1, n = row_replicate_offset.size(); i < n; ++i)
             {
                 bool any_matched = false;
-                /// For all right join, flag_per_row is true, we need mark used flags for each row.
+                /// For right join, flag_per_row is true, we need mark used flags for each row.
                 if (flag_per_row)
                 {
                     for (size_t replicated_row = prev_replicated_row; replicated_row < row_replicate_offset[i]; ++replicated_row)
@@ -751,10 +748,26 @@ private:
                         if (filter_flags[replicated_row])
                         {
                             any_matched = true;
-                            added_columns.appendFromBlock(*selected_right_row_it->block, selected_right_row_it->row_num, add_missing);
-                            total_added_rows += 1;
-                            if (need_flags)
-                                used_flags.template setUsed<true, true>(selected_right_row_it->block, selected_right_row_it->row_num, 0);
+                            if constexpr (join_features.is_semi_join || join_features.is_any_join)
+                            {
+                                auto used_once = used_flags.template setUsedOnce<true, true>(selected_right_row_it->block, selected_right_row_it->row_num, 0);
+                                if (used_once)
+                                {
+                                    total_added_rows += 1;
+                                    added_columns.appendFromBlock(*selected_right_row_it->block, selected_right_row_it->row_num, join_features.add_missing);
+                                }
+                            }
+                            else if constexpr (join_features.is_anti_join)
+                            {
+                                if constexpr (join_features.right && join_features.need_flags)
+                                    used_flags.template setUsed<true, true>(selected_right_row_it->block, selected_right_row_it->row_num, 0);
+                            }
+                            else
+                            {
+                                total_added_rows += 1;
+                                added_columns.appendFromBlock(*selected_right_row_it->block, selected_right_row_it->row_num, join_features.add_missing);
+                                used_flags.template setUsed<join_features.need_flags, true>(selected_right_row_it->block, selected_right_row_it->row_num, 0);
+                            }
                         }
                         ++selected_right_row_it;
                     }
@@ -763,34 +776,66 @@ private:
                 {
                     for (size_t replicated_row = prev_replicated_row; replicated_row < row_replicate_offset[i]; ++replicated_row)
                     {
-                        if (filter_flags[replicated_row])
+                        if constexpr (join_features.is_anti_join)
                         {
-                            any_matched = true;
-                            added_columns.appendFromBlock(*selected_right_row_it->block, selected_right_row_it->row_num, add_missing);
-                            total_added_rows += 1;
+                            any_matched |= filter_flags[replicated_row];
                         }
-                        ++selected_right_row_it;
+                        else if constexpr (join_features.need_replication)
+                        {
+                            if (filter_flags[replicated_row])
+                            {
+                                any_matched = true;
+                                added_columns.appendFromBlock(*selected_right_row_it->block, selected_right_row_it->row_num, join_features.add_missing);
+                                total_added_rows += 1;
+                            }
+                            ++selected_right_row_it;
+                        }
+                        else
+                        {
+                            if (filter_flags[replicated_row])
+                            {
+                                any_matched = true;
+                                added_columns.appendFromBlock(*selected_right_row_it->block, selected_right_row_it->row_num, join_features.add_missing);
+                                total_added_rows += 1;
+                                selected_right_row_it = selected_right_row_it + row_replicate_offset[i] - replicated_row;
+                                break;
+                            }
+                            else
+                                ++selected_right_row_it;
+                        }
                     }
                 }
-                if (!any_matched)
+
+
+                if constexpr (join_features.is_anti_join)
                 {
-                    if (add_missing)
-                        addNotFoundRow<true, need_replication>(added_columns, total_added_rows);
-                    else
-                        addNotFoundRow<false, need_replication>(added_columns, total_added_rows);
+                    if (!any_matched)
+                    {
+                        if constexpr (join_features.left)
+                            if (need_filter)
+                                setUsed<true>(added_columns.filter, left_start_row + i - 1);
+                        addNotFoundRow<join_features.add_missing, join_features.need_replication>(added_columns, total_added_rows);
+                    }
                 }
                 else
                 {
-                    if (!flag_per_row && need_flags)
-                        used_flags.template setUsed<true, false>(find_results[find_result_index]);
-                    if (need_filter)
-                        setUsed<true>(added_columns.filter, left_start_row + i - 1);
-                    if (add_missing)
-                        added_columns.applyLazyDefaults();
+                    if (!any_matched)
+                    {
+                        addNotFoundRow<join_features.add_missing, join_features.need_replication>(added_columns, total_added_rows);
+                    }
+                    else
+                    {
+                        if (!flag_per_row)
+                            used_flags.template setUsed<join_features.need_flags, false>(find_results[find_result_index]);
+                        if (need_filter)
+                            setUsed<true>(added_columns.filter, left_start_row + i - 1);
+                        if constexpr (join_features.add_missing)
+                            added_columns.applyLazyDefaults();
+                    }
                 }
                 find_result_index += (prev_replicated_row != row_replicate_offset[i]);
 
-                if constexpr (need_replication)
+                if constexpr (join_features.need_replication)
                 {
                     (*added_columns.offsets_to_replicate)[left_start_row + i - 1] = total_added_rows;
                 }
@@ -817,7 +862,7 @@ private:
             auto filter_col = buildAdditionalFilter(left_start_row, selected_rows, row_replicate_offset, added_columns);
             copy_final_matched_rows(left_start_row, filter_col);
 
-            if constexpr (need_replication)
+            if constexpr (join_features.need_replication)
             {
                 // Add a check for current_added_rows to avoid run the filter expression on too small size batch.
                 if (total_added_rows >= max_joined_block_rows || current_added_rows < 1024)
@@ -825,7 +870,7 @@ private:
             }
         }
 
-        if constexpr (need_replication)
+        if constexpr (join_features.need_replication)
         {
             added_columns.offsets_to_replicate->resize_assume_reserved(left_row_iter);
             added_columns.filter.resize_assume_reserved(left_row_iter);
