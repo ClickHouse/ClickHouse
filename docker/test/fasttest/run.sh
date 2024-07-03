@@ -305,6 +305,8 @@ function run_tests
     clickhouse stop --pid-path "$FASTTEST_DATA"
 }
 
+export -f run_tests
+
 case "$stage" in
 "")
     ls -la
