@@ -59,7 +59,7 @@ void optimizePrewhere(Stack & stack, QueryPlan::Nodes &)
 
     /// TODO: We can also check for UnionStep, such as StorageBuffer and local distributed plans.
     QueryPlan::Node * filter_node = (stack.rbegin() + 1)->node;
-    const auto * filter_step = typeid_cast<FilterStep *>(filter_node->step.get());
+    auto * filter_step = typeid_cast<FilterStep *>(filter_node->step.get());
     if (!filter_step)
         return;
 
@@ -108,7 +108,7 @@ void optimizePrewhere(Stack & stack, QueryPlan::Nodes &)
     prewhere_info->need_filter = true;
     prewhere_info->remove_prewhere_column = optimize_result.fully_moved_to_prewhere && filter_step->removesFilterColumn();
 
-    auto filter_expression = ActionsDAG::clone(filter_step->getExpression());
+    auto filter_expression = std::move(filter_step->getExpression());
     const auto & filter_column_name = filter_step->getFilterColumnName();
 
     if (prewhere_info->remove_prewhere_column)
@@ -121,7 +121,7 @@ void optimizePrewhere(Stack & stack, QueryPlan::Nodes &)
         outputs.resize(size);
     }
 
-    auto split_result = filter_step->getExpression()->split(optimize_result.prewhere_nodes, true, true);
+    auto split_result = filter_expression->split(optimize_result.prewhere_nodes, true, true);
 
     /// This is the leak of abstraction.
     /// Splited actions may have inputs which are needed only for PREWHERE.
