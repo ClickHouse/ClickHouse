@@ -1490,7 +1490,7 @@ void TCPHandler::receiveHello()
             try
             {
                 session->authenticate(
-                    SSLCertificateCredentials{user, secure_socket.peerCertificate().commonName()},
+                    SSLCertificateCredentials{user, extractSSLCertificateSubjects(secure_socket.peerCertificate())},
                     getClientAddress(client_info));
                 return;
             }
