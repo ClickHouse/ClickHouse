@@ -422,8 +422,14 @@ Chunk ObjectStorageQueueSource::generate()
 
 Chunk ObjectStorageQueueSource::generateImpl()
 {
-    while (!shutdown_called)
+    while (true)
     {
+        if (shutdown_called)
+        {
+            LOG_TRACE(log, "Shutdown was called, stopping sync");
+            break;
+        }
+
         if (!reader)
         {
             const auto context = getContext();
