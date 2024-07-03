@@ -586,62 +586,8 @@ struct Dispatcher
         const auto * value_col_typed_const = checkAndGetColumnConst<ColumnVector<T>>(value_col);
         if (value_col_typed_const)
         {
-            const auto & value_data = value_col_typed_const->template getValue<T>();
-            // Const scale argument:
-            auto col_res = ColumnVector<T>::create();
-            typename ColumnVector<T>::Container & vec_res = col_res->getData();
-            if (scale_col == nullptr || isColumnConst(*scale_col))
-            {
-                vec_res.resize(1);
-                auto scale_arg = (scale_col == nullptr) ? 0 : getScaleArg(checkAndGetColumnConst<ColumnVector<ScaleType>>(scale_col));
-                if (scale_arg == 0)
-                {
-                    size_t scale = 1;
-                    FunctionRoundingImpl<ScaleMode::Zero>::applyOne(value_data, scale, vec_res[0]);
-                }
-                else if (scale_arg > 0)
-                {
-                    size_t scale = intExp10(scale_arg);
-                    FunctionRoundingImpl<ScaleMode::Positive>::applyOne(value_data, scale, vec_res[0]);
-                }
-                else
-                {
-                    size_t scale = intExp10(-scale_arg);
-                    FunctionRoundingImpl<ScaleMode::Negative>::applyOne(value_data, scale, vec_res[0]);
-                }
-            }
-            /// Non-const scale argument:
-            else if (const auto * scale_col_typed = checkAndGetColumn<ColumnVector<ScaleType>>(scale_col))
-            {
-                const auto & scale_data = scale_col_typed->getData();
-                const size_t rows = scale_data.size();
-
-                vec_res.resize(rows);
-
-                for (size_t i = 0; i < rows; ++i)
-                {
-                    Int64 scale64 = scale_data[i];
-                    validateScale(scale64);
-                    Scale raw_scale = scale64;
-
-                    if (raw_scale == 0)
-                    {
-                        size_t scale = 1;
-                        FunctionRoundingImpl<ScaleMode::Zero>::applyOne(value_data, scale, vec_res[i]);
-                    }
-                    else if (raw_scale > 0)
-                    {
-                        size_t scale = intExp10(raw_scale);
-                        FunctionRoundingImpl<ScaleMode::Positive>::applyOne(value_data, scale, vec_res[i]);
-                    }
-                    else
-                    {
-                        size_t scale = intExp10(-raw_scale);
-                        FunctionRoundingImpl<ScaleMode::Negative>::applyOne(value_data, scale, vec_res[i]);
-                    }
-                }
-            }
-            return col_res;
+            auto value_col_full = value_col_typed_const->convertToFullColumn();
+            return apply<ScaleType>(value_col_full.get(), scale_col);
         }
         return nullptr;
     }
@@ -697,34 +643,8 @@ public:
         const auto * value_col_typed_const = checkAndGetColumnConst<ColumnDecimal<T>>(value_col);
         if (value_col_typed_const)
         {
-            auto col = assert_cast<const ColumnDecimal<T>*>(value_col_typed_const->getDataColumnPtr().get());
-            const auto & value_data = value_col_typed_const->template getValue<T>();
-            // Const scale argument:
-            if (scale_col == nullptr || isColumnConst(*scale_col))
-            {
-                auto col_res = ColumnDecimal<T>::create(1, col->getScale());
-                auto scale_arg = scale_col == nullptr ? 0 : getScaleArg(checkAndGetColumnConst<ColumnVector<ScaleType>>(scale_col));
-                DecimalRoundingImpl<T, rounding_mode, tie_breaking_mode>::applyOne(value_data, col->getScale(), reinterpret_cast<ColumnDecimal<T>::NativeT&>(col_res->getElement(0)), scale_arg);
-                return col_res;
-            }
-            /// Non-const scale argument:
-            if (const auto * scale_col_typed = checkAndGetColumn<ColumnVector<ScaleType>>(scale_col))
-            {
-                const auto & scale = scale_col_typed->getData();
-                const size_t rows = scale.size();
-                auto col_res = ColumnDecimal<T>::create(rows, col->getScale());
-
-                for (size_t i = 0; i < rows; ++i)
-                {
-                    Int64 scale64 = scale[i];
-                    validateScale(scale64);
-                    Scale raw_scale = scale64;
-
-                    DecimalRoundingImpl<T, rounding_mode, tie_breaking_mode>::applyOne(value_data, col->getScale(),
-                        reinterpret_cast<ColumnDecimal<T>::NativeT&>(col_res->getElement(i)), raw_scale);
-                }
-                return col_res;
-            }
+            auto value_col_full = value_col_typed_const->convertToFullColumn();
+            return apply<ScaleType>(value_col_full.get(), scale_col);
         }
         return nullptr;
     }
