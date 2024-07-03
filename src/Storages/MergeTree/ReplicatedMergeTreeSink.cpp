@@ -302,6 +302,8 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::consume(Chunk & chunk)
             "TokenInfo is expected for consumed chunk in ReplicatedMergeTreeSink for table: {}",
             storage.getStorageID().getNameForLogs());
 
+    const bool need_to_define_dedup_token = !token_info->isDefined();
+
     if (token_info->isDefined())
         block_dedup_token = token_info->getToken();
 
@@ -368,7 +370,7 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::consume(Chunk & chunk)
                 LOG_DEBUG(log, "Wrote block with {} rows{}", current_block.block.rows(), quorumLogMessage(replicas_num));
             }
 
-            if (!token_info->isDefined())
+            if (need_to_define_dedup_token)
             {
                 chassert(temp_part.part);
                 const auto hash_value = temp_part.part->getPartBlockIDHash();
@@ -419,7 +421,7 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::consume(Chunk & chunk)
         ));
     }
 
-    if (!token_info->isDefined())
+    if (need_to_define_dedup_token)
     {
         token_info->finishChunkHashes();
     }

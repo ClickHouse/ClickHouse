@@ -674,7 +674,7 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
 
     {
         auto [presink_chains, sink_chains] = buildPreAndSinkChains(
-            1, 1,
+            /* presink_streams */1, /* sink_streams */1,
             table, metadata_snapshot, query_sample_block);
 
         chain = std::move(presink_chains.front());

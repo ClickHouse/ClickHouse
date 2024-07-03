@@ -95,6 +95,8 @@ void MergeTreeSink::consume(Chunk & chunk)
             "TokenInfo is expected for consumed chunk in MergeTreeSink for table: {}",
             storage.getStorageID().getNameForLogs());
 
+    const bool need_to_define_dedup_token = !token_info->isDefined();
+
     String block_dedup_token;
     if (token_info->isDefined())
         block_dedup_token = token_info->getToken();
@@ -123,7 +125,7 @@ void MergeTreeSink::consume(Chunk & chunk)
         if (!temp_part.part)
             continue;
 
-        if (!token_info->isDefined())
+        if (need_to_define_dedup_token)
         {
             chassert(temp_part.part);
             const auto hash_value = temp_part.part->getPartBlockIDHash();
@@ -166,7 +168,7 @@ void MergeTreeSink::consume(Chunk & chunk)
         });
     }
 
-    if (!token_info->isDefined())
+    if (need_to_define_dedup_token)
     {
         token_info->finishChunkHashes();
     }
