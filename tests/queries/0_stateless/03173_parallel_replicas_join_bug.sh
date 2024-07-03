@@ -30,6 +30,8 @@ INNER JOIN view(
 WHERE status IN ['CREATED', 'CREATING']
 ORDER BY event_time DESC;
 
+SELECT '---------------------------';
+
 with
 results1 as (
     SELECT id
@@ -45,6 +47,8 @@ results2 as (
 )
 select * from results1 union all select * from results2;
 
+SELECT '---------------------------';
+
 with
 results1 as (
     SELECT id
@@ -59,6 +63,8 @@ results2 as (
     on t1.id = t2.id
 )
 select * from results1 t1 inner join results2 t2 using (id);
+
+SELECT '---------------------------';
 
 with
 results1 as (
