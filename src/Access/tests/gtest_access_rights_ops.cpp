@@ -260,7 +260,7 @@ TEST(AccessRights, Union)
     rhs.grantWildcardWithGrantOption(AccessType::SELECT, "db1", "tb1");
     rhs.revokeWildcardGrantOption(AccessType::SELECT, "db1", "tb1", "col");
     lhs.makeUnion(rhs);
-    ASSERT_EQ(lhs.toString(), "GRANT SELECT ON db1.tb1*, GRANT SELECT ON db1.tb1* WITH GRANT OPTION, REVOKE GRANT OPTION SELECT(col*) ON db1.tb1");
+    ASSERT_EQ(lhs.toString(), "GRANT SELECT ON db1.tb1* WITH GRANT OPTION, REVOKE GRANT OPTION SELECT(col*) ON db1.tb1");
 
     lhs = {};
     rhs = {};

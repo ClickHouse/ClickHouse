@@ -5,6 +5,8 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
+set -e
+
 user1="user03141_1_${CLICKHOUSE_DATABASE}_$RANDOM"
 user2="user03141_2_${CLICKHOUSE_DATABASE}_$RANDOM"
 user3="user03141_3_${CLICKHOUSE_DATABASE}_$RANDOM"
@@ -20,7 +22,6 @@ CREATE TABLE $db.test_table_another_prefix (s String) ENGINE = MergeTree ORDER B
 
 DROP USER IF EXISTS $user1, $user2, $user3;
 CREATE USER $user1, $user2, $user3;
-GRANT SELECT ON $db.* TO $user1;
 EOF
 
 ${CLICKHOUSE_CLIENT} --multiquery <<EOF

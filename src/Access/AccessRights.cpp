@@ -429,7 +429,7 @@ public:
     template <bool wildcard = false>
     bool isGranted(const AccessFlags & flags_) const
     {
-        return min_flags_with_children.contains(flags_);
+        return wildcard_grant ? flags.contains(flags_) : min_flags_with_children.contains(flags_);
     }
 
     template <bool wildcard = false, typename... Args>
@@ -444,11 +444,8 @@ public:
         const auto & [node, final] = tryGetLeafOrPrefix(name);
         if (final)
             return node.isGranted<wildcard>(flags_to_check, subnames...);
-        else if (node.isLeaf())
-            return node.flags.contains(flags_to_check);
-        else
-            return node.min_flags_with_children.contains(flags_to_check);
 
+        return node.flags.contains(flags_to_check);
     }
 
     template <bool wildcard = false, typename StringT>
@@ -531,7 +528,9 @@ public:
     static ProtoElements getElements(const Node & node, const Node & node_with_grant_option)
     {
         ProtoElements res;
-        getElementsRec(res, node, node_with_grant_option);
+        Node tmp_node = node;
+        Node tmp_node_go = node_with_grant_option;
+        getElementsRec(res, {}, &tmp_node, {}, &tmp_node_go, {}, "");
         return res;
     }
 
@@ -772,36 +771,99 @@ private:
     /// Dumps GRANT/REVOKE elements from the tree with grant options.
     static void getElementsRec(
         ProtoElements & res,
-        const Node & node,
-        const Node & node_go)
+        boost::container::small_vector<String, 3> full_name,
+        Node * node,
+        const AccessFlags & parent_flags,
+        Node * node_go,
+        const AccessFlags & parent_flags_go,
+        String path)
     {
-        auto go_grants = node_go.getElements();
-        for (auto & grant : go_grants)
-        {
-            grant.grant_option = true;
-            res.push_back(grant);
-        }
+        auto grantable_flags = ::DB::getAllGrantableFlags(static_cast<Level>(full_name.size()));
+        auto parent_fl = parent_flags & grantable_flags;
+        auto parent_fl_go = parent_flags_go & grantable_flags;
+        auto flags = node ? node->flags : parent_fl;
+        auto flags_go = node_go ? node_go->flags : parent_fl_go;
+        auto revokes = parent_fl - flags;
+        auto revokes_go = parent_fl_go - flags_go - revokes;
+        auto grants_go = flags_go - parent_fl_go;
+        auto grants = flags - parent_fl - grants_go;
 
-        auto grants = node.getElements();
-        for (auto & grant : grants)
+        Node * target_node = node;
+        if (!target_node)
+            target_node = node_go;
+
+        /// Inserts into result only meaningful nodes (e.g. wildcards or leafs).
+        if (target_node && (target_node->isLeaf() || target_node->wildcard_grant))
         {
-            /// Checks if the grant is already covered by `WITH GRANT OPTION` grants.
-            /// This is highly unoptimized, but much easier to implement instead of previous implementation with double tree traversal.
-            if (!grant.is_partial_revoke)
+            boost::container::small_vector<String, 3> new_full_name = full_name;
+
+            if (target_node->level != Level::GLOBAL_LEVEL)
             {
-                if (grant.full_name.size() == 0 && node_go.isGranted(grant.access_flags))
-                    continue;
-                if (grant.full_name.size() == 1 && node_go.isGranted(grant.access_flags, grant.full_name[0]))
-                    continue;
-                if (grant.full_name.size() == 2 && node_go.isGranted(grant.access_flags, grant.full_name[0], grant.full_name[1]))
-                    continue;
-                if (grant.full_name.size() == 3 && node_go.isGranted(grant.access_flags, grant.full_name[0], grant.full_name[1], grant.full_name[2]))
-                    continue;
+                new_full_name.push_back(path);
+
+                /// If in leaf, flushes the current path into `full_name`.
+                if (target_node->isLeaf())
+                {
+                    full_name.push_back(path);
+                    path.clear();
+                }
             }
 
-            res.push_back(grant);
+            if (revokes)
+                res.push_back(ProtoElement{revokes, new_full_name, false, true, node->wildcard_grant});
+
+            if (revokes_go)
+                res.push_back(ProtoElement{revokes_go, new_full_name, true, true, node_go->wildcard_grant});
+
+            if (grants)
+                res.push_back(ProtoElement{grants, new_full_name, false, false, node->wildcard_grant});
+
+            if (grants_go)
+                res.push_back(ProtoElement{grants_go, new_full_name, true, false, node_go->wildcard_grant});
+        }
+
+        if (node && node->children)
+        {
+            for (auto & child : *node->children)
+            {
+                String new_path = path;
+                new_path.append(child.node_name);
+
+                Node * child_node = &child;
+                Node * child_node_go = nullptr;
+                if (node_go)
+                    child_node_go = &node_go->getLeaf(child.node_name, child.level, !child.isLeaf());
+                getElementsRec(res, full_name, child_node, flags, child_node_go, flags_go, new_path);
+            }
+
+        }
+        if (node_go && node_go->children)
+        {
+            for (auto & child : *node_go->children)
+            {
+                if (node && node->children)
+                {
+                    auto starts_with = [&child](const Node & n)
+                    {
+                        if (child.isLeaf())
+                            return n.isLeaf();
+
+                        return !n.isLeaf() && child.node_name[0] == n.node_name[0];
+                    };
+
+                    if (auto it = std::find_if(node->children->begin(), node->children->end(), starts_with); it != node->children->end())
+                        continue; /// already processed
+                }
+
+                String new_path = path;
+                new_path.append(child.node_name);
+                Node * child_node = nullptr;
+                Node * child_node_go = &child;
+                getElementsRec(res, full_name, child_node, flags, child_node_go, flags_go, new_path);
+            }
         }
     }
+
 
     void optimizeChildren()
     {

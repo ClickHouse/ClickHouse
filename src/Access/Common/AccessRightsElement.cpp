@@ -62,10 +62,9 @@ namespace
         formatAccessFlagsWithColumns(element, result);
         result += " ";
 
-        {
-            WriteBufferFromString buffer(result);
-            element.formatONClause(buffer);
-        }
+        WriteBufferFromOwnString buffer;
+        element.formatONClause(buffer);
+        result += buffer.str();
 
         if (with_options)
             formatOptions(element.grant_option, element.is_partial_revoke, result);
@@ -101,12 +100,9 @@ namespace
             if (!next_element_uses_same_table_and_options)
             {
                 part += " ";
-                String on_clause;
-                {
-                    WriteBufferFromString buffer(on_clause);
-                    element.formatONClause(buffer);
-                }
-                part.append(std::move(on_clause));
+                WriteBufferFromOwnString buffer;
+                element.formatONClause(buffer);
+                part += buffer.str();
 
                 if (with_options)
                     formatOptions(element.grant_option, element.is_partial_revoke, part);
