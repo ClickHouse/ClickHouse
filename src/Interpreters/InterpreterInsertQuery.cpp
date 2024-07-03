@@ -585,7 +585,7 @@ QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(ASTInsertQuery &
             return std::make_shared<DeduplicationToken::SetUserTokenTransform>(settings.insert_deduplication_token.value, in_header);
         });
 
-        pipeline.addSimpleTransform([&](const Block &in_header) -> ProcessorPtr
+        pipeline.addSimpleTransform([&](const Block & in_header) -> ProcessorPtr
         {
             return std::make_shared<DeduplicationToken::SetSourceBlockNumberTransform>(in_header);
         });
