@@ -198,6 +198,7 @@ ColumnsDescriptionByShardNum getExtendedObjectsOfRemoteTables(
 
         executor.setPoolMode(PoolMode::GET_ONE);
         executor.setMainTable(remote_table_id);
+        executor.sendQuery();
 
         ColumnsDescription res;
         while (auto block = executor.readBlock())
