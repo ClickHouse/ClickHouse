@@ -67,7 +67,7 @@ bool parseDatabaseAsAST(IParser::Pos & pos, Expected & expected, ASTPtr & databa
 }
 
 
-bool parseDatabaseAndTableNameOrAsterisks(IParser::Pos & pos, Expected & expected, String & database, String & table, bool & wildcard)
+bool parseDatabaseAndTableNameOrAsterisks(IParser::Pos & pos, Expected & expected, String & database, String & table, bool & wildcard, bool & default_database)
 {
     return IParserBase::wrapParseImpl(pos, [&]
     {
@@ -87,6 +87,7 @@ bool parseDatabaseAndTableNameOrAsterisks(IParser::Pos & pos, Expected & expecte
             pos = pos_before_dot;
             database.clear();
             table.clear();
+            default_database = true;
             return true;
         }
 
@@ -122,6 +123,7 @@ bool parseDatabaseAndTableNameOrAsterisks(IParser::Pos & pos, Expected & expecte
             pos = pos_before_dot;
             database.clear();
             table = std::move(first_identifier);
+            default_database = true;
 
             if (ParserToken{TokenType::Asterisk}.ignore(pos, expected))
                 wildcard = true;

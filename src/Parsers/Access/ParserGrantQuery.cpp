@@ -135,7 +135,7 @@ namespace
                     return false;
 
                 bool wildcard = false;
-
+                bool default_database = false;
                 if (is_global_with_parameter && is_global_with_parameter == access_and_columns.size())
                 {
                     ASTPtr parameter_ast;
@@ -150,7 +150,7 @@ namespace
                     if (ParserToken{TokenType::Asterisk}.ignore(pos, expected))
                         wildcard = true;
                 }
-                else if (!parseDatabaseAndTableNameOrAsterisks(pos, expected, database_name, table_name, wildcard))
+                else if (!parseDatabaseAndTableNameOrAsterisks(pos, expected, database_name, table_name, wildcard, default_database))
                     return false;
 
                 for (auto & [access_flags, columns] : access_and_columns)
@@ -162,6 +162,7 @@ namespace
                     element.table = table_name;
                     element.parameter = parameter;
                     element.wildcard = wildcard;
+                    element.default_database = default_database;
                     res_elements.emplace_back(std::move(element));
                 }
 
@@ -196,12 +197,14 @@ namespace
             String database_name;
             String table_name;
             bool wildcard = false;
-            if (!parseDatabaseAndTableNameOrAsterisks(pos, expected, database_name, table_name, wildcard))
+            bool default_database = false;
+            if (!parseDatabaseAndTableNameOrAsterisks(pos, expected, database_name, table_name, wildcard, default_database))
                 return false;
 
             default_element.database = database_name;
             default_element.table = table_name;
             default_element.wildcard = wildcard;
+            default_element.default_database = default_database;
             elements.push_back(std::move(default_element));
         }
 

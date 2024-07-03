@@ -28,7 +28,8 @@ namespace
             String res_database, res_table_name;
 
             bool wildcard = false;
-            if (!parseDatabaseAndTableNameOrAsterisks(pos, expected, res_database, res_table_name, wildcard) || (res_database.empty() && res_table_name.empty()))
+            bool default_database = false;
+            if (!parseDatabaseAndTableNameOrAsterisks(pos, expected, res_database, res_table_name, wildcard, default_database) || (res_database.empty() && res_table_name.empty() && !default_database))
             {
                 return false;
             }

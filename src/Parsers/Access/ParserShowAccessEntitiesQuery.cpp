@@ -25,12 +25,12 @@ namespace
         return false;
     }
 
-    bool parseOnDBAndTableName(IParserBase::Pos & pos, Expected & expected, String & database, String & table, bool & wildcard)
+    bool parseOnDBAndTableName(IParserBase::Pos & pos, Expected & expected, String & database, String & table, bool & wildcard, bool & default_database)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
             return ParserKeyword{Keyword::ON}.ignore(pos, expected)
-                && parseDatabaseAndTableNameOrAsterisks(pos, expected, database, table, wildcard);
+                && parseDatabaseAndTableNameOrAsterisks(pos, expected, database, table, wildcard, default_database);
         });
     }
 }
@@ -75,9 +75,10 @@ bool ParserShowAccessEntitiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected
     {
         String database, table_name;
         bool wildcard = false;
-        if (parseOnDBAndTableName(pos, expected, database, table_name, wildcard))
+        bool default_database = false;
+        if (parseOnDBAndTableName(pos, expected, database, table_name, wildcard, default_database))
         {
-            if (database.empty())
+            if (database.empty() && !default_database)
                 all = true;
             else
                 database_and_table_name.emplace(database, table_name);
