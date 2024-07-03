@@ -84,6 +84,8 @@ function start_server
     echo "ClickHouse server pid '$server_pid' started and responded"
 }
 
+export -f start_server
+
 function clone_root
 {
     [ "$UID" -eq 0 ] && git config --global --add safe.directory "$FASTTEST_SOURCE"
