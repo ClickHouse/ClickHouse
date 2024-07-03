@@ -24,6 +24,10 @@
 namespace ProfileEvents
 {
 extern const Event RegexpCreated;
+extern const Event RegexpGlobalCacheHit;
+extern const Event RegexpGlobalCacheMiss;
+extern const Event RegexpLocalCacheHit;
+extern const Event RegexpLocalCacheMiss;
 }
 
 
@@ -72,18 +76,28 @@ public:
         Bucket & bucket = known_regexps[hasher(pattern) % CACHE_SIZE];
 
         if (bucket.regexp == nullptr) [[unlikely]]
+        {
             /// insert new entry
+            ProfileEvents::increment(ProfileEvents::RegexpLocalCacheMiss);
             bucket = {pattern, std::make_shared<OptimizedRegularExpression>(createRegexp<like, no_capture, case_insensitive>(pattern))};
+        }
         else
+        {
             if (pattern != bucket.pattern)
+            {
+                ProfileEvents::increment(ProfileEvents::RegexpLocalCacheMiss);
                 /// replace existing entry
                 bucket = {pattern, std::make_shared<OptimizedRegularExpression>(createRegexp<like, no_capture, case_insensitive>(pattern))};
+            }
+            else
+                ProfileEvents::increment(ProfileEvents::RegexpLocalCacheHit);
+        }
 
         return bucket.regexp;
     }
 
 private:
-    constexpr static size_t CACHE_SIZE = 100; /// collision probability
+    constexpr static size_t CACHE_SIZE = 1000; /// collision probability
 
     std::hash<String> hasher;
     struct Bucket
@@ -322,9 +336,11 @@ inline DeferredConstructedRegexpsPtr getOrSet(const std::vector<std::string_view
                 {
                     return constructRegexps<save_indices, with_edit_distance>(str_patterns, edit_distance);
                 });
+        ProfileEvents::increment(ProfileEvents::RegexpGlobalCacheMiss);
         bucket = {std::move(str_patterns), edit_distance, deferred_constructed_regexps};
     }
     else
+    {
         if (bucket.patterns != str_patterns || bucket.edit_distance != edit_distance)
         {
             /// replace existing entry
@@ -333,8 +349,12 @@ inline DeferredConstructedRegexpsPtr getOrSet(const std::vector<std::string_view
                     {
                         return constructRegexps<save_indices, with_edit_distance>(str_patterns, edit_distance);
                     });
+            ProfileEvents::increment(ProfileEvents::RegexpGlobalCacheMiss);
             bucket = {std::move(str_patterns), edit_distance, deferred_constructed_regexps};
         }
+        else
+            ProfileEvents::increment(ProfileEvents::RegexpGlobalCacheHit);
+    }
 
     return bucket.regexps;
 }
