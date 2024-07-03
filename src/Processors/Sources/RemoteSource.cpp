@@ -101,6 +101,14 @@ void RemoteSource::work()
     ISource::work();
 }
 
+bool RemoteSource::canBeExecutedImmediately()
+{
+    chassert(async_read);
+    const auto probe = true;
+    auto res = query_executor->readAsync(probe);
+    return res.type == RemoteQueryExecutor::ReadResult::Type::ParallelReplicasToken;
+}
+
 std::optional<Chunk> RemoteSource::tryGenerate()
 {
     /// onCancel() will do the cancel if the query was sent.

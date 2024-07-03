@@ -183,7 +183,7 @@ public:
     ReadResult read();
 
     /// Async variant of read. Returns ready block or file descriptor which may be used for polling.
-    ReadResult readAsync();
+    ReadResult readAsync(bool probe = false);
 
     /// Receive all remain packets and finish query.
     /// It should be cancelled after read returned empty block.

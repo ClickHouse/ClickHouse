@@ -460,7 +460,7 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::read()
     return restartQueryWithoutDuplicatedUUIDs();
 }
 
-RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAsync()
+RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAsync(bool probe)
 {
 #if defined(OS_LINUX)
     if (!read_context || (resent_query && recreate_read_context))
@@ -499,10 +499,18 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAsync()
         if (read_context->isInProgress())
             return ReadResult(read_context->getFileDescriptor());
 
-        auto anything = processPacket(read_context->getPacket());
+        if (probe)
+        {
+            const auto packet_type = read_context->getPacketType();
+            if (packet_type == Protocol::Server::MergeTreeReadTaskRequest
+                || packet_type == Protocol::Server::MergeTreeAllRangesAnnouncement)
+                return ReadResult(ReadResult::Type::ParallelReplicasToken);
+        }
 
-        if (anything.getType() == ReadResult::Type::Data || anything.getType() == ReadResult::Type::ParallelReplicasToken)
-            return anything;
+        auto read_result = processPacket(read_context->getPacket());
+
+        if (read_result.getType() == ReadResult::Type::Data || read_result.getType() == ReadResult::Type::ParallelReplicasToken)
+            return read_result;
 
         if (got_duplicated_part_uuids)
             break;
