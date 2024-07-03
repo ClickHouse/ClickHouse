@@ -29,6 +29,7 @@
 #include <Storages/Kafka/KafkaSource.h>
 #include <Storages/MessageQueueSink.h>
 #include <Storages/NamedCollectionsHelpers.h>
+#include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMaterializedView.h>
 #include <base/getFQDNOrHostName.h>
@@ -915,11 +916,22 @@ void StorageKafka::updateGlobalConfiguration(cppkafka::Configuration & kafka_con
 #endif // USE_KRB5
 
     // No need to add any prefix, messages can be distinguished
-    kafka_config.set_log_callback([this](cppkafka::KafkaHandleBase &, int level, const std::string & facility, const std::string & message)
-    {
-        auto [poco_level, client_logs_level] = parseSyslogLevel(level);
-        LOG_IMPL(log, client_logs_level, poco_level, "[rdk:{}] {}", facility, message);
-    });
+    kafka_config.set_log_callback(
+        [this](cppkafka::KafkaHandleBase & handle, int level, const std::string & facility, const std::string & message)
+        {
+            auto [poco_level, client_logs_level] = parseSyslogLevel(level);
+            const auto & kafka_object_config = handle.get_configuration();
+            const std::string client_id_key{"client.id"};
+            chassert(kafka_object_config.has_property(client_id_key) && "Kafka configuration doesn't have expected client.id set");
+            LOG_IMPL(
+                log,
+                client_logs_level,
+                poco_level,
+                "[client.id:{}] [rdk:{}] {}",
+                kafka_object_config.get(client_id_key),
+                facility,
+                message);
+        });
 
     /// NOTE: statistics should be consumed, otherwise it creates too much
     /// entries in the queue, that leads to memory leak and slow shutdown.

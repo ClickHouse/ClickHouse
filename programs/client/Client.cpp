@@ -64,6 +64,7 @@ namespace ErrorCodes
     extern const int NETWORK_ERROR;
     extern const int AUTHENTICATION_FAILED;
     extern const int NO_ELEMENTS_IN_CONFIG;
+    extern const int USER_EXPIRED;
 }
 
 
@@ -74,6 +75,12 @@ void Client::processError(const String & query) const
         fmt::print(stderr, "Received exception from server (version {}):\n{}\n",
                 server_version,
                 getExceptionMessage(*server_exception, print_stack_trace, true));
+
+        if (server_exception->code() == ErrorCodes::USER_EXPIRED)
+        {
+            server_exception->rethrow();
+        }
+
         if (is_interactive)
         {
             fmt::print(stderr, "\n");
@@ -241,6 +248,10 @@ std::vector<String> Client::loadWarningMessages()
     }
 }
 
+Poco::Util::LayeredConfiguration & Client::getClientConfiguration()
+{
+    return config();
+}
 
 void Client::initialize(Poco::Util::Application & self)
 {
@@ -263,7 +274,7 @@ void Client::initialize(Poco::Util::Application & self)
         config().add(loaded_config.configuration);
     }
     else if (config().has("connection"))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "--connection was specified, but config does not exists");
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "--connection was specified, but config does not exist");
 
     /** getenv is thread-safe in Linux glibc and in all sane libc implementations.
       * But the standard does not guarantee that subsequent calls will not rewrite the value by returned pointer.
@@ -690,9 +701,7 @@ bool Client::processWithFuzzing(const String & full_query)
         const char * begin = full_query.data();
         orig_ast = parseQuery(begin, begin + full_query.size(),
             global_context->getSettingsRef(),
-            /*allow_multi_statements=*/ true,
-            /*is_interactive=*/ is_interactive,
-            /*ignore_error=*/ ignore_error);
+            /*allow_multi_statements=*/ true);
     }
     catch (const Exception & e)
     {
@@ -918,11 +927,13 @@ bool Client::processWithFuzzing(const String & full_query)
 }
 
 
-void Client::printHelpMessage(const OptionsDescription & options_description)
+void Client::printHelpMessage(const OptionsDescription & options_description, bool verbose)
 {
     std::cout << options_description.main_description.value() << "\n";
     std::cout << options_description.external_description.value() << "\n";
     std::cout << options_description.hosts_and_ports_description.value() << "\n";
+    if (verbose)
+        std::cout << "All settings are documented at https://clickhouse.com/docs/en/operations/settings/settings.\n\n";
     std::cout << "In addition, --param_name=value can be specified for substitution of parameters for parametrized queries.\n";
     std::cout << "\nSee also: https://clickhouse.com/docs/en/integrations/sql-clients/cli\n";
 }
@@ -942,6 +953,7 @@ void Client::addOptions(OptionsDescription & options_description)
         ("ssh-key-file", po::value<std::string>(), "File containing the SSH private key for authenticate with the server.")
         ("ssh-key-passphrase", po::value<std::string>(), "Passphrase for the SSH private key specified by --ssh-key-file.")
         ("quota_key", po::value<std::string>(), "A string to differentiate quotas when the user have keyed quotas configured on server")
+        ("jwt", po::value<std::string>(), "Use JWT for authentication")
 
         ("max_client_network_bandwidth", po::value<int>(), "the maximum speed of data exchange over the network for the client in bytes per second.")
         ("compression", po::value<bool>(), "enable or disable compression (enabled by default for remote communication and disabled for localhost communication).")
@@ -1100,6 +1112,12 @@ void Client::processOptions(const OptionsDescription & options_description,
         config().setBool("no-warnings", true);
     if (options.count("fake-drop"))
         config().setString("ignore_drop_queries_probability", "1");
+    if (options.count("jwt"))
+    {
+        if (!options["user"].defaulted())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "User and JWT flags can't be specified together");
+        config().setString("jwt", options["jwt"].as<std::string>());
+    }
     if (options.count("accept-invalid-certificate"))
     {
         config().setString("openSSL.client.invalidCertificateHandler.name", "AcceptCertificateHandler");
@@ -1176,7 +1194,7 @@ void Client::processConfig()
 
     pager = config().getString("pager", "");
 
-    setDefaultFormatsFromConfiguration();
+    setDefaultFormatsAndCompressionFromConfiguration();
 
     global_context->setClientName(std::string(DEFAULT_CLIENT_NAME));
     global_context->setQueryKindInitial();

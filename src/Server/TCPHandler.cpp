@@ -1,9 +1,8 @@
-#include "Interpreters/AsynchronousInsertQueue.h"
-#include "Interpreters/SquashingTransform.h"
-#include "Parsers/ASTInsertQuery.h"
+#include <Interpreters/AsynchronousInsertQueue.h>
+#include <Interpreters/Squashing.h>
+#include <Parsers/ASTInsertQuery.h>
 #include <algorithm>
 #include <exception>
-#include <iterator>
 #include <memory>
 #include <mutex>
 #include <vector>
@@ -34,6 +33,7 @@
 #include <Server/TCPServer.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
+#include <Storages/ObjectStorage/StorageObjectStorageCluster.h>
 #include <Core/ExternalTable.h>
 #include <Core/ServerSettings.h>
 #include <Access/AccessControl.h>
@@ -100,6 +100,7 @@ namespace DB::ErrorCodes
     extern const int TIMEOUT_EXCEEDED;
     extern const int SUPPORT_IS_DISABLED;
     extern const int UNSUPPORTED_METHOD;
+    extern const int USER_EXPIRED;
 }
 
 namespace
@@ -244,7 +245,6 @@ TCPHandler::~TCPHandler()
 void TCPHandler::runImpl()
 {
     setThreadName("TCPHandler");
-    ThreadStatus thread_status;
 
     extractConnectionSettingsFromContext(server.context());
 
@@ -347,6 +347,7 @@ void TCPHandler::runImpl()
          */
         std::unique_ptr<DB::Exception> exception;
         bool network_error = false;
+        bool user_expired = false;
         bool query_duration_already_logged = false;
         auto log_query_duration = [this, &query_duration_already_logged]()
         {
@@ -382,11 +383,11 @@ void TCPHandler::runImpl()
                 query_context->getClientInfo().client_trace_context,
                 query_context->getSettingsRef(),
                 query_context->getOpenTelemetrySpanLog());
-            thread_trace_context->root_span.kind = OpenTelemetry::SERVER;
+            thread_trace_context->root_span.kind = OpenTelemetry::SpanKind::SERVER;
 
             query_scope.emplace(query_context, /* fatal_error_callback */ [this]
             {
-                std::lock_guard lock(fatal_error_mutex);
+                std::lock_guard lock(out_mutex);
                 sendLogs();
             });
 
@@ -412,6 +413,9 @@ void TCPHandler::runImpl()
                 state.profile_queue = std::make_shared<InternalProfileEventsQueue>(std::numeric_limits<int>::max());
                 CurrentThread::attachInternalProfileEventsQueue(state.profile_queue);
             }
+
+            if (!is_interserver_mode)
+                session->checkIfUserIsStillValid();
 
             query_context->setExternalTablesInitializer([this] (ContextPtr context)
             {
@@ -471,7 +475,7 @@ void TCPHandler::runImpl()
                 Stopwatch watch;
                 CurrentMetrics::Increment callback_metric_increment(CurrentMetrics::ReadTaskRequestsSent);
 
-                std::lock_guard lock(task_callback_mutex);
+                std::scoped_lock lock(out_mutex, task_callback_mutex);
 
                 if (state.cancellation_status == CancellationStatus::FULLY_CANCELLED)
                     return {};
@@ -487,7 +491,7 @@ void TCPHandler::runImpl()
             {
                 Stopwatch watch;
                 CurrentMetrics::Increment callback_metric_increment(CurrentMetrics::MergeTreeAllRangesAnnouncementsSent);
-                std::lock_guard lock(task_callback_mutex);
+                std::scoped_lock lock(out_mutex, task_callback_mutex);
 
                 if (state.cancellation_status == CancellationStatus::FULLY_CANCELLED)
                     return;
@@ -501,7 +505,7 @@ void TCPHandler::runImpl()
             {
                 Stopwatch watch;
                 CurrentMetrics::Increment callback_metric_increment(CurrentMetrics::MergeTreeReadTaskRequestsSent);
-                std::lock_guard lock(task_callback_mutex);
+                std::scoped_lock lock(out_mutex, task_callback_mutex);
 
                 if (state.cancellation_status == CancellationStatus::FULLY_CANCELLED)
                     return std::nullopt;
@@ -549,7 +553,7 @@ void TCPHandler::runImpl()
                     {
                         auto callback = [this]()
                         {
-                            std::scoped_lock lock(task_callback_mutex, fatal_error_mutex);
+                            std::scoped_lock lock(out_mutex, task_callback_mutex);
 
                             if (getQueryCancellationStatus() == CancellationStatus::FULLY_CANCELLED)
                                 return true;
@@ -568,7 +572,7 @@ void TCPHandler::runImpl()
 
                 finish_or_cancel();
 
-                std::lock_guard lock(task_callback_mutex);
+                std::lock_guard lock(out_mutex);
 
                 /// Send final progress after calling onFinish(), since it will update the progress.
                 ///
@@ -591,7 +595,7 @@ void TCPHandler::runImpl()
                 break;
 
             {
-                std::lock_guard lock(task_callback_mutex);
+                std::lock_guard lock(out_mutex);
                 sendLogs();
                 sendEndOfStream();
             }
@@ -637,7 +641,10 @@ void TCPHandler::runImpl()
             if (e.code() == ErrorCodes::SOCKET_TIMEOUT)
                 network_error = true;
 
-            if (network_error)
+            if (e.code() == ErrorCodes::USER_EXPIRED)
+                user_expired = true;
+
+            if (network_error || user_expired)
                 LOG_TEST(log, "Going to close connection due to exception: {}", e.message());
         }
         catch (const Poco::Net::NetException & e)
@@ -747,7 +754,7 @@ void TCPHandler::runImpl()
             session.reset();
         }
 
-        if (network_error)
+        if (network_error || user_expired)
             break;
     }
 }
@@ -793,6 +800,8 @@ bool TCPHandler::readDataNext()
 
             /// We accept and process data.
             read_ok = receivePacket();
+            /// Reset the timeout on Ping packet (NOTE: there is no Ping for INSERT queries yet).
+            watch.restart();
             break;
         }
 
@@ -875,13 +884,16 @@ AsynchronousInsertQueue::PushResult TCPHandler::processAsyncInsertQuery(Asynchro
     using PushResult = AsynchronousInsertQueue::PushResult;
 
     startInsertQuery();
-    SquashingTransform squashing(0, query_context->getSettingsRef().async_insert_max_data_size);
+    Squashing squashing(state.input_header, 0, query_context->getSettingsRef().async_insert_max_data_size);
 
     while (readDataNext())
     {
-        auto result = squashing.add(std::move(state.block_for_insert));
-        if (result)
+        squashing.header = state.block_for_insert;
+        auto planned_chunk = squashing.add({state.block_for_insert.getColumns(), state.block_for_insert.rows()});
+        if (planned_chunk.hasChunkInfo())
         {
+            Chunk result_chunk = DB::Squashing::squash(std::move(planned_chunk));
+            auto result = state.block_for_insert.cloneWithColumns(result_chunk.getColumns());
             return PushResult
             {
                 .status = PushResult::TOO_MUCH_DATA,
@@ -890,7 +902,12 @@ AsynchronousInsertQueue::PushResult TCPHandler::processAsyncInsertQuery(Asynchro
         }
     }
 
-    auto result = squashing.add({});
+    auto planned_chunk = squashing.flush();
+    Chunk result_chunk;
+    if (planned_chunk.hasChunkInfo())
+        result_chunk = DB::Squashing::squash(std::move(planned_chunk));
+
+    auto result = squashing.header.cloneWithColumns(result_chunk.getColumns());
     return insert_queue.pushQueryWithBlock(state.parsed_query, std::move(result), query_context);
 }
 
@@ -997,7 +1014,7 @@ void TCPHandler::processOrdinaryQuery()
 
     if (query_context->getSettingsRef().allow_experimental_query_deduplication)
     {
-        std::lock_guard lock(task_callback_mutex);
+        std::lock_guard lock(out_mutex);
         sendPartUUIDs();
     }
 
@@ -1007,13 +1024,13 @@ void TCPHandler::processOrdinaryQuery()
 
         if (header)
         {
-            std::lock_guard lock(task_callback_mutex);
+            std::lock_guard lock(out_mutex);
             sendData(header);
         }
     }
 
     /// Defer locking to cover a part of the scope below and everything after it
-    std::unique_lock progress_lock(task_callback_mutex, std::defer_lock);
+    std::unique_lock out_lock(out_mutex, std::defer_lock);
 
     {
         PullingAsyncPipelineExecutor executor(pipeline);
@@ -1039,6 +1056,9 @@ void TCPHandler::processOrdinaryQuery()
                 executor.cancelReading();
             }
 
+            lock.unlock();
+            out_lock.lock();
+
             if (after_send_progress.elapsed() / 1000 >= interactive_delay)
             {
                 /// Some time passed and there is a progress.
@@ -1054,12 +1074,14 @@ void TCPHandler::processOrdinaryQuery()
                 if (!state.io.null_format)
                     sendData(block);
             }
+
+            out_lock.unlock();
         }
 
         /// This lock wasn't acquired before and we make .lock() call here
         /// so everything under this line is covered even together
         /// with sendProgress() out of the scope
-        progress_lock.lock();
+        out_lock.lock();
 
         /** If data has run out, we will send the profiling data and total values to
           * the last zero block to be able to use
@@ -1097,7 +1119,7 @@ void TCPHandler::processTablesStatusRequest()
     ContextPtr context_to_resolve_table_names;
     if (is_interserver_mode)
     {
-        /// In interserver mode session context does not exists, because authentication is done for each query.
+        /// In the interserver mode session context does not exist, because authentication is done for each query.
         /// We also cannot create query context earlier, because it cannot be created before authentication,
         /// but query is not received yet. So we have to do this trick.
         ContextMutablePtr fake_interserver_context = Context::createCopy(server.context());
@@ -1233,6 +1255,7 @@ void TCPHandler::sendExtremes(const Block & extremes)
 
 void TCPHandler::sendProfileEvents()
 {
+    Stopwatch stopwatch;
     Block block;
     ProfileEvents::getProfileEvents(host_name, state.profile_queue, block, last_sent_snapshots);
     if (block.rows() != 0)
@@ -1244,6 +1267,11 @@ void TCPHandler::sendProfileEvents()
 
         state.profile_events_block_out->write(block);
         out->next();
+
+        auto elapsed_milliseconds = stopwatch.elapsedMilliseconds();
+        if (elapsed_milliseconds > 100)
+            LOG_DEBUG(log, "Sending profile events block with {} rows, {} bytes took {} milliseconds",
+                block.rows(), block.bytes(), elapsed_milliseconds);
     }
 }
 
@@ -1462,7 +1490,7 @@ void TCPHandler::receiveHello()
             try
             {
                 session->authenticate(
-                    SSLCertificateCredentials{user, secure_socket.peerCertificate().commonName()},
+                    SSLCertificateCredentials{user, extractSSLCertificateSubjects(secure_socket.peerCertificate())},
                     getClientAddress(client_info));
                 return;
             }
@@ -1856,7 +1884,7 @@ void TCPHandler::receiveQuery()
     if (state.part_uuids_to_ignore)
         query_context->getIgnoredPartUUIDs()->add(*state.part_uuids_to_ignore);
 
-    query_context->setProgressCallback([this] (const Progress & value) { return this->updateProgress(value); });
+    query_context->setProgressCallback([this] (const Progress & value) { this->updateProgress(value); });
     query_context->setFileProgressCallback([this](const FileProgress & value) { this->updateProgress(Progress(value)); });
 
     ///

@@ -36,11 +36,19 @@ class Field;
 class WeakHash32;
 class ColumnConst;
 
-/*
- * Represents a set of equal ranges in previous column to perform sorting in current column.
- * Used in sorting by tuples.
- * */
-using EqualRanges = std::vector<std::pair<size_t, size_t> >;
+/// A range of column values between row indexes `from` and `to`. The name "equal range" is due to table sorting as its main use case: With
+/// a PRIMARY KEY (c_pk1, c_pk2, ...), the first PK column is fully sorted. The second PK column is sorted within equal-value runs of the
+/// first PK column, and so on. The number of runs (ranges) per column increases from one primary key column to the next. An "equal range"
+/// is a run in a previous column, within the values of the current column can be sorted.
+struct EqualRange
+{
+    size_t from;   /// inclusive
+    size_t to;     /// exclusive
+    EqualRange(size_t from_, size_t to_) : from(from_), to(to_) { chassert(from <= to); }
+    size_t size() const { return to - from; }
+};
+
+using EqualRanges = std::vector<EqualRange>;
 
 /// Declares interface to store columns in memory.
 class IColumn : public COW<IColumn>
@@ -399,6 +407,9 @@ public:
                         "or for Array or Tuple, containing them.");
     }
 
+    /// Estimate the cardinality (number of unique values) of the values in 'equal_range' after permutation, formally: |{ column[permutation[r]] : r in equal_range }|.
+    virtual size_t estimateCardinalityInPermutedRange(const Permutation & permutation, const EqualRange & equal_range) const;
+
     /** Copies each element according offsets parameter.
       * (i-th element should be copied offsets[i] - offsets[i - 1] times.)
       * It is necessary in ARRAY JOIN operation.
@@ -534,6 +545,11 @@ public:
         return res;
     }
 
+    /// Checks if column has dynamic subcolumns.
+    virtual bool hasDynamicStructure() const { return false; }
+    /// For columns with dynamic subcolumns this method takes dynamic structure from source columns
+    /// and creates proper resulting dynamic structure in advance for merge of these source columns.
+    virtual void takeDynamicStructureFromSourceColumns(const std::vector<Ptr> & /*source_columns*/) {}
 
     /** Some columns can contain another columns inside.
       * So, we have a tree of columns. But not all combinations are possible.
@@ -640,12 +656,16 @@ template <>
 struct IsMutableColumns<> { static const bool value = true; };
 
 
+/// Throws LOGICAL_ERROR if the type doesn't match.
 template <typename Type>
-const Type * checkAndGetColumn(const IColumn & column)
+const Type & checkAndGetColumn(const IColumn & column)
 {
-    return typeid_cast<const Type *>(&column);
+    return typeid_cast<const Type &>(column);
 }
 
+/// Returns nullptr if the type doesn't match.
+/// If you're going to dereference the returned pointer without checking for null, use the
+/// `const IColumn &` overload above instead.
 template <typename Type>
 const Type * checkAndGetColumn(const IColumn * column)
 {

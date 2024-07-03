@@ -13,9 +13,10 @@
 
 #include <fmt/format.h>
 
+#include "config.h"
 #include "config_tools.h"
 
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/getHashOfLoadedBinary.h>
 #include <Common/IO.h>
 
@@ -119,7 +120,7 @@ std::pair<std::string_view, std::string_view> clickhouse_short_names[] =
 };
 
 
-enum class InstructionFail
+enum class InstructionFail : uint8_t
 {
     NONE = 0,
     SSE3 = 1,
@@ -155,8 +156,8 @@ auto instructionFailToString(InstructionFail fail)
             ret("AVX2");
         case InstructionFail::AVX512:
             ret("AVX512");
+#undef ret
     }
-    UNREACHABLE();
 }
 
 
@@ -439,6 +440,14 @@ extern "C"
 }
 #endif
 
+/// Prevent messages from JeMalloc in the release build.
+/// Some of these messages are non-actionable for the users, such as:
+/// <jemalloc>: Number of CPUs detected is not deterministic. Per-CPU arena disabled.
+#if USE_JEMALLOC && defined(NDEBUG) && !defined(SANITIZER)
+extern "C" void (*malloc_message)(void *, const char *s);
+__attribute__((constructor(0))) void init_je_malloc_message() { malloc_message = [](void *, const char *){}; }
+#endif
+
 /// This allows to implement assert to forbid initialization of a class in static constructors.
 /// Usage:
 ///
@@ -491,9 +500,13 @@ int main(int argc_, char ** argv_)
     ///     clickhouse -q 'select 1' # use local
     ///     clickhouse # spawn local
     ///     clickhouse local # spawn local
+    ///     clickhouse "select ..." # spawn local
     ///
-    if (main_func == printHelp && !argv.empty() && (argv.size() == 1 || argv[1][0] == '-'))
+    if (main_func == printHelp && !argv.empty() && (argv.size() == 1 || argv[1][0] == '-'
+        || std::string_view(argv[1]).contains(' ')))
+    {
         main_func = mainEntryClickHouseLocal;
+    }
 
     int exit_code = main_func(static_cast<int>(argv.size()), argv.data());
 
