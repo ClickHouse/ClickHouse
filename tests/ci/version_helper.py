@@ -238,7 +238,9 @@ class VersionType:
     PRESTABLE = "prestable"
     STABLE = "altinitystable"
     TESTING = "testing"
-    VALID = (NEW, TESTING, PRESTABLE, STABLE, LTS)
+    VALID = (NEW, TESTING, PRESTABLE, STABLE, LTS,
+             "stable" # NOTE (vnemkov): we don't use that directly, but it is used in unit-tests
+            )
 
 
 def validate_version(version: str) -> None:
