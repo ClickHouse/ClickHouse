@@ -1181,13 +1181,13 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
         join_clauses_and_actions.left_join_expressions_actions->appendInputsForUnusedColumns(left_plan.getCurrentDataStream().header);
         auto left_join_expressions_actions_step = std::make_unique<ExpressionStep>(left_plan.getCurrentDataStream(), join_clauses_and_actions.left_join_expressions_actions);
         left_join_expressions_actions_step->setStepDescription("JOIN actions");
-        left_join_tree_query_plan.actions_dags.emplace_back(left_join_expressions_actions_step->getExpression().get());
+        appendSetsFromActionsDAG(*left_join_expressions_actions_step->getExpression(), left_join_tree_query_plan.useful_sets);
         left_plan.addStep(std::move(left_join_expressions_actions_step));
 
         join_clauses_and_actions.right_join_expressions_actions->appendInputsForUnusedColumns(right_plan.getCurrentDataStream().header);
         auto right_join_expressions_actions_step = std::make_unique<ExpressionStep>(right_plan.getCurrentDataStream(), join_clauses_and_actions.right_join_expressions_actions);
         right_join_expressions_actions_step->setStepDescription("JOIN actions");
-        right_join_tree_query_plan.actions_dags.emplace_back(right_join_expressions_actions_step->getExpression().get());
+        appendSetsFromActionsDAG(*right_join_expressions_actions_step->getExpression(), right_join_tree_query_plan.useful_sets);
         right_plan.addStep(std::move(right_join_expressions_actions_step));
     }
 
@@ -1387,7 +1387,8 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
             mixed_join_expression = std::make_shared<ExpressionActions>(
                 std::move(join_clauses_and_actions.mixed_join_expressions_actions),
                 ExpressionActionsSettings::fromContext(planner_context->getQueryContext()));
-            left_join_tree_query_plan.actions_dags.push_back(&mixed_join_expression->getActionsDAG());
+
+            appendSetsFromActionsDAG(mixed_join_expression->getActionsDAG(), left_join_tree_query_plan.useful_sets);
         }
     }
     else if (join_node.isUsingJoinExpression())
@@ -1585,16 +1586,10 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
     for (const auto & right_join_tree_query_plan_row_policy : right_join_tree_query_plan.used_row_policies)
         left_join_tree_query_plan.used_row_policies.insert(right_join_tree_query_plan_row_policy);
 
-    /// Collect all required actions dags in `left_join_tree_query_plan.actions_dags`
+    /// Collect all required actions sets in `left_join_tree_query_plan.useful_sets`
     if (!is_filled_join)
-        for (const auto * action_dag : right_join_tree_query_plan.actions_dags)
-            left_join_tree_query_plan.actions_dags.emplace_back(action_dag);
-    // if (join_clauses_and_actions.left_join_expressions_actions)
-    //     left_join_tree_query_plan.actions_dags.emplace_back(join_clauses_and_actions.left_join_expressions_actions.get());
-    // if (join_clauses_and_actions.right_join_expressions_actions)
-    //     left_join_tree_query_plan.actions_dags.emplace_back(join_clauses_and_actions.right_join_expressions_actions.get());
-    // if (join_clauses_and_actions.mixed_join_expressions_actions)
-    //     left_join_tree_query_plan.actions_dags.push_back(join_clauses_and_actions.mixed_join_expressions_actions.get());
+        for (const auto & useful_set : right_join_tree_query_plan.useful_sets)
+            left_join_tree_query_plan.useful_sets.insert(useful_set);
 
     auto mapping = std::move(left_join_tree_query_plan.query_node_to_plan_step_mapping);
     auto & r_mapping = right_join_tree_query_plan.query_node_to_plan_step_mapping;
@@ -1604,7 +1599,7 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
         .query_plan = std::move(result_plan),
         .from_stage = QueryProcessingStage::FetchColumns,
         .used_row_policies = std::move(left_join_tree_query_plan.used_row_policies),
-        .actions_dags = std::move(left_join_tree_query_plan.actions_dags),
+        .useful_sets = std::move(left_join_tree_query_plan.useful_sets),
         .query_node_to_plan_step_mapping = std::move(mapping),
     };
 }
@@ -1649,7 +1644,7 @@ JoinTreeQueryPlan buildQueryPlanForArrayJoinNode(const QueryTreeNodePtr & array_
 
     auto array_join_actions = std::make_unique<ExpressionStep>(plan.getCurrentDataStream(), std::move(array_join_action_dag));
     array_join_actions->setStepDescription("ARRAY JOIN actions");
-    join_tree_query_plan.actions_dags.push_back(array_join_actions->getExpression().get());
+    appendSetsFromActionsDAG(*array_join_actions->getExpression(), join_tree_query_plan.useful_sets);
     plan.addStep(std::move(array_join_actions));
 
     auto drop_unused_columns_before_array_join_actions_dag = std::make_unique<ActionsDAG>(plan.getCurrentDataStream().header.getColumnsWithTypeAndName());
@@ -1690,7 +1685,7 @@ JoinTreeQueryPlan buildQueryPlanForArrayJoinNode(const QueryTreeNodePtr & array_
         .query_plan = std::move(plan),
         .from_stage = QueryProcessingStage::FetchColumns,
         .used_row_policies = std::move(join_tree_query_plan.used_row_policies),
-        .actions_dags = std::move(join_tree_query_plan.actions_dags),
+        .useful_sets = std::move(join_tree_query_plan.useful_sets),
         .query_node_to_plan_step_mapping = std::move(join_tree_query_plan.query_node_to_plan_step_mapping),
     };
 }

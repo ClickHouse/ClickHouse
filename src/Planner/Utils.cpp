@@ -11,10 +11,12 @@
 #include <DataTypes/DataTypeNullable.h>
 
 #include <Columns/getLeastSuperColumn.h>
+#include <Columns/ColumnSet.h>
 
 #include <IO/WriteBufferFromString.h>
 
 #include <Functions/FunctionFactory.h>
+#include <Functions/indexHint.h>
 
 #include <Storages/StorageDummy.h>
 
@@ -473,6 +475,34 @@ ASTPtr parseAdditionalResultFilter(const Settings & settings)
                 parser, additional_result_filter.data(), additional_result_filter.data() + additional_result_filter.size(),
                 "additional result filter", settings.max_query_size, settings.max_parser_depth, settings.max_parser_backtracks);
     return additional_result_filter_ast;
+}
+
+void appendSetsFromActionsDAG(const ActionsDAG & dag, UsefulSets & useful_sets)
+{
+    for (const auto & node : dag.getNodes())
+    {
+        if (node.column)
+        {
+            const IColumn * column = node.column.get();
+            if (const auto * column_const = typeid_cast<const ColumnConst *>(column))
+                column = &column_const->getDataColumn();
+
+            if (const auto * column_set = typeid_cast<const ColumnSet *>(column))
+                useful_sets.insert(column_set->getData());
+        }
+
+        if (node.type == ActionsDAG::ActionType::FUNCTION && node.function_base->getName() == "indexHint")
+        {
+            ActionsDAG::NodeRawConstPtrs children;
+            if (const auto * adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor *>(node.function_base.get()))
+            {
+                if (const auto * index_hint = typeid_cast<const FunctionIndexHint *>(adaptor->getFunction().get()))
+                {
+                    appendSetsFromActionsDAG(*index_hint->getActions(), useful_sets);
+                }
+            }
+        }
+    }
 }
 
 }
