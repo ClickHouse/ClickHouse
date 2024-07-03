@@ -8,7 +8,7 @@ keywords: [object, data type]
 # Object Data Type
 
 :::note
-This feature is not production-ready and is now deprecated. If you need to work with JSON documents, consider using [this guide](/docs/en/integrations/data-ingestion/data-formats/json.md) instead. A new implementation to support JSON object is in progress and can be tracked [here](https://github.com/ClickHouse/ClickHouse/issues/54864)
+This feature is not production-ready and is now deprecated. If you need to work with JSON documents, consider using [this guide](/docs/en/integrations/data-ingestion/data-formats/json) instead. A new implementation to support JSON object is in progress and can be tracked [here](https://github.com/ClickHouse/ClickHouse/issues/54864)
 :::
 
 Stores JavaScript Object Notation (JSON) documents in a single column.
