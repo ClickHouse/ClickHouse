@@ -146,8 +146,82 @@ Result:
 └─────────────┘
 ```
 
+# EXCEPT Column(s)
 
-**See Also**
+`EXCEPT` can also be used to remove unwanted columns, especially used with a sub query (e.g. `row_number()`).
+
+## Example
+
+The example starts with a table with 2 columns:
+
+```sql
+CREATE TABLE test1  (
+    name String,
+    created_at Datetime
+) ENGINE=MergeTree ORDER BY (name);
+```
+
+Prepare some data:
+
+```sql
+INSERT INTO test1 VALUES ('Felix', NOW()), ('Bob', NOW());
+```
+
+To show the basic usage, you can select all fields except `created_at`:
+
+```sql
+SELECT * EXCEPT(created_at) FROM test1
+```
+
+Which is not displaying the `created_at` column:
+
+```text
+┌─name──┐
+│ Bob   │
+│ Felix │
+└───────┘
+```
+
+Cases happen that we have duplicated entries:
+
+```sql
+INSERT INTO test1 VALUES ('Felix', NOW()), ('Bob', NOW());
+```
+
+A simple `select` query would show all versions:
+```text
+┌─name──┬──────────created_at─┐
+│ Bob   │ 2024-07-03 15:06:38 │
+│ Felix │ 2024-07-03 15:06:38 │
+└───────┴─────────────────────┘
+┌─name──┬──────────created_at─┐
+│ Bob   │ 2024-07-03 15:02:05 │
+│ Felix │ 2024-07-03 15:02:05 │
+└───────┴─────────────────────┘
+```
+
+But we only need the latest ones, which can be done by:
+
+```sql
+SELECT * EXCEPT(rn)
+  FROM (
+    SELECT *,
+           row_number() OVER (PARTITION BY name ORDER BY created_at DESC) AS rn
+      FROM test1
+  ) WHERE rn = 1
+```
+
+Here's what we get:
+
+```text
+┌─name──┬──────────created_at─┐
+│ Bob   │ 2024-07-03 15:06:38 │
+│ Felix │ 2024-07-03 15:06:38 │
+└───────┴─────────────────────┘
+```
+
+
+# **See Also**
 
 - [UNION](union.md#union-clause)
 - [INTERSECT](intersect.md#intersect-clause)
