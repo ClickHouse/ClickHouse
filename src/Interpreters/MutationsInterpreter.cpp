@@ -787,6 +787,7 @@ void MutationsInterpreter::prepare(bool dry_run)
             if (stages.size() == 1) /// First stage only supports filtering and can't update columns.
                 stages.emplace_back(context);
 
+            auto column_to_update_size = stages.back().column_to_updated.size();
             for (const auto & column : columns_desc)
             {
                 if (!column.default_desc.expression)
@@ -797,6 +798,12 @@ void MutationsInterpreter::prepare(bool dry_run)
 
                 stages.back().column_to_updated.emplace(column.name, materialized_column);
             }
+
+            /// No column has default expression
+            if (column_to_update_size == stages.back().column_to_updated.size())
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Cannot find column which has default expression");
         }
         else if (command.type == MutationCommand::MATERIALIZE_INDEX)
         {
@@ -1190,6 +1197,7 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
                 actions->dag.addOrReplaceInOutputs(alias);
             }
         }
+
 
         if (i == 0 && actions_chain.steps.empty())
             actions_chain.lastStep(syntax_result->required_source_columns);
