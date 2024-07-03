@@ -283,13 +283,12 @@ void MergeTreeData::initializeDirectoriesAndFormatVersion(const std::string & re
         }
     }
 
-
-    // When data path or file not exists, ignore the format_version check
+    /// When data path or file not exists, ignore the format_version check
     if (!attach || !read_format_version)
     {
         format_version = min_format_version;
 
-        // try to write to first non-readonly disk
+        /// Try to write to first non-readonly disk
         for (const auto & disk : getStoragePolicy()->getDisks())
         {
             if (disk->isBroken())
@@ -1759,11 +1758,14 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
 
     ThreadPoolCallbackRunnerLocal<void> runner(getActivePartsLoadingThreadPool().get(), "ActiveParts");
 
+    bool all_disks_are_readonly = true;
     for (size_t i = 0; i < disks.size(); ++i)
     {
         const auto & disk_ptr = disks[i];
         if (disk_ptr->isBroken())
             continue;
+        if (!disk_ptr->isReadOnly())
+            all_disks_are_readonly = false;
 
         auto & disk_parts = parts_to_load_by_disk[i];
         auto & unexpected_disk_parts = unexpected_parts_to_load_by_disk[i];
@@ -1916,7 +1918,6 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
     if (suspicious_broken_unexpected_parts != 0)
         LOG_WARNING(log, "Found suspicious broken unexpected parts {} with total rows count {}", suspicious_broken_unexpected_parts, suspicious_broken_unexpected_parts_bytes);
 
-
     if (!is_static_storage)
         for (auto & part : broken_parts_to_detach)
             part->renameToDetached("broken-on-start"); /// detached parts must not have '_' in prefixes
@@ -1961,7 +1962,8 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
             unloaded_parts.push_back(node);
     });
 
-    if (!unloaded_parts.empty())
+    /// By the way, if all disks are readonly, it does not make sense to load outdated parts (we will not own them).
+    if (!unloaded_parts.empty() && !all_disks_are_readonly)
     {
         LOG_DEBUG(log, "Found {} outdated data parts. They will be loaded asynchronously", unloaded_parts.size());
 
@@ -7111,8 +7113,8 @@ UInt64 MergeTreeData::estimateNumberOfRowsToRead(
         query_context->getSettingsRef().max_threads);
 
     UInt64 total_rows = result_ptr->selected_rows;
-    if (query_info.limit > 0 && query_info.limit < total_rows)
-        total_rows = query_info.limit;
+    if (query_info.trivial_limit > 0 && query_info.trivial_limit < total_rows)
+        total_rows = query_info.trivial_limit;
     return total_rows;
 }
 
@@ -8604,6 +8606,38 @@ void MergeTreeData::unloadPrimaryKeys()
     {
         const_cast<IMergeTreeDataPart &>(*part).unloadIndex();
     }
+}
+
+size_t MergeTreeData::unloadPrimaryKeysOfOutdatedParts()
+{
+    /// If the method is already called from another thread, then we don't need to do anything.
+    std::unique_lock lock(unload_primary_key_mutex, std::defer_lock);
+    if (!lock.try_lock())
+        return 0;
+
+    DataPartsVector parts_to_unload_index;
+
+    {
+        auto parts_lock = lockParts();
+        auto parts_range = getDataPartsStateRange(DataPartState::Outdated);
+
+        for (const auto & part : parts_range)
+        {
+            /// Outdated part may be hold by SELECT query and still needs the index.
+            /// This check requires lock of index_mutex but if outdated part is unique then there is no
+            /// contention on it, so it's relatively cheap and it's ok to check under a global parts lock.
+            if (part.unique() && part->isIndexLoaded())
+                parts_to_unload_index.push_back(part);
+        }
+    }
+
+    for (const auto & part : parts_to_unload_index)
+    {
+        const_cast<IMergeTreeDataPart &>(*part).unloadIndex();
+        LOG_TEST(log, "Unloaded primary key for outdated part {}", part->name);
+    }
+
+    return parts_to_unload_index.size();
 }
 
 void MergeTreeData::verifySortingKey(const KeyDescription & sorting_key)
