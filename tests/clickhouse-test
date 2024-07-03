@@ -358,6 +358,14 @@ def clickhouse_execute_json(
     return rows
 
 
+def stop_tests():
+    # send signal to all processes in group to avoid hung check triggering
+    # (to avoid terminating clickhouse-test itself, the signal should be ignored)
+    signal.signal(signal.SIGTERM, signal.SIG_IGN)
+    os.killpg(os.getpgid(os.getpid()), signal.SIGTERM)
+    signal.signal(signal.SIGTERM, signal.SIG_DFL)
+
+
 def get_db_engine(args, database_name):
     if args.replicated_database:
         return f" ON CLUSTER test_cluster_database_replicated \
@@ -2098,10 +2106,12 @@ def run_tests_array(all_tests_with_params: Tuple[List[str], int, TestSuite]):
             break
 
         if server_died.is_set():
+            stop_tests()
             raise ServerDied("Server died")
 
         if stop_time and time() > stop_time:
             print("\nStop tests run because global time limit is exceeded.\n")
+            stop_tests()
             raise GlobalTimeout("Stop tests run because global time limit is exceeded")
 
         test_case = TestCase(test_suite, case, args, is_concurrent)
@@ -2150,9 +2160,11 @@ def run_tests_array(all_tests_with_params: Tuple[List[str], int, TestSuite]):
 
         except KeyboardInterrupt as e:
             print(colored("Break tests execution", args, "red"))
+            stop_tests()
             raise e
 
         if failures_chain >= args.max_failures_chain:
+            stop_tests()
             raise ServerDied("Max failures chain")
 
     if failures_total > 0:

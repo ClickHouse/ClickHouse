@@ -265,7 +265,9 @@ function run_tests()
 
 export -f run_tests
 
-TIMEOUT=$((${MAX_RUN_TIME} - 200))
+
+# This should be enough to setup job and collect artifacts
+TIMEOUT=$((MAX_RUN_TIME - 300))
 if [ "$NUM_TRIES" -gt "1" ]; then
     # We don't run tests with Ordinary database in PRs, only in master.
     # So run new/changed tests with Ordinary at least once in flaky check.
