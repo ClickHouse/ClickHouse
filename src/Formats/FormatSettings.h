@@ -228,6 +228,7 @@ struct FormatSettings
         bool infer_incomplete_types_as_strings = true;
         bool throw_on_bad_escape_sequence = true;
         bool ignore_unnecessary_fields = true;
+        bool ignore_key_case = false;
     } json{};
 
     struct
@@ -275,6 +276,7 @@ struct FormatSettings
         bool output_compliant_nested_types = true;
         size_t data_page_size = 1024 * 1024;
         size_t write_batch_size = 1024;
+        bool write_page_index = false;
         size_t local_read_min_bytes_for_seek = 8192;
     } parquet{};
 
@@ -289,6 +291,8 @@ struct FormatSettings
 
         bool output_format_pretty_row_numbers = false;
         UInt64 output_format_pretty_single_large_number_tip_threshold = 1'000'000;
+        UInt64 output_format_pretty_display_footer_column_names = 1;
+        UInt64 output_format_pretty_display_footer_column_names_min_rows = 50;
 
         enum class Charset : uint8_t
         {
