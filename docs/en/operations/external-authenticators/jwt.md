@@ -17,7 +17,7 @@ For this approach, JWKS must be configured in the system and must be enabled in 
 
 ## Enabling JWKS in ClickHouse {#enabling-jwks-in-clickhouse}
 
-To enable JWKS, one should include `jwks` section in `config.xml`. This section may contain several JWKS servers, minumum is 1.
+To enable JWKS, one should include `jwks` section in `config.xml`. This section may contain several JWKS servers, minimum is 1.
 
 ## JWKS server definition {#jwks-server-definition}
 
