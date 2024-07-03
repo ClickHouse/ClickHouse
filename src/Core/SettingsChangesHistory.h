@@ -96,7 +96,6 @@ static const std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges
               {"azure_skip_empty_files", false, false, "Allow to skip empty files in azure table engine"},
               {"hdfs_ignore_file_doesnt_exist", false, false, "Allow to return 0 rows when the requested files don't exist instead of throwing an exception in HDFS table engine"},
               {"azure_ignore_file_doesnt_exist", false, false, "Allow to return 0 rows when the requested files don't exist instead of throwing an exception in AzureBlobStorage table engine"},
-              {"allow_experimental_drop_detached_table", true, false, "Enable drop detach table."},
               {"s3_ignore_file_doesnt_exist", false, false, "Allow to return 0 rows when the requested files don't exist instead of throwing an exception in S3 table engine"},
               {"s3_max_part_number", 10000, 10000, "Maximum part number number for s3 upload part"},
               {"s3_max_single_operation_copy_size", 32 * 1024 * 1024, 32 * 1024 * 1024, "Maximum size for a single copy operation in s3"},
