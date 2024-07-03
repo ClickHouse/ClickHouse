@@ -3,13 +3,13 @@ Test case 0: insert_method=InsertSelect engine=MergeTree use_insert_token=True s
 table_a_b
 count	5
 table_when_b_even_and_joined
-count	47
+count	9
 0
 0
 table_a_b
 count	5
 table_when_b_even_and_joined
-count	47
+count	9
 0
 0
 OK
@@ -18,13 +18,13 @@ Test case 1: insert_method=InsertSelect engine=MergeTree use_insert_token=True s
 table_a_b
 count	5
 table_when_b_even_and_joined
-count	45
+count	10
 0
 0
 table_a_b
 count	5
 table_when_b_even_and_joined
-count	45
+count	10
 0
 0
 OK
@@ -33,13 +33,13 @@ Test case 2: insert_method=InsertSelect engine=MergeTree use_insert_token=True s
 table_a_b
 count	5
 table_when_b_even_and_joined
-count	47
+count	9
 0
 0
 table_a_b
 count	5
 table_when_b_even_and_joined
-count	94
+count	18
 0
 0
 OK
@@ -48,13 +48,13 @@ Test case 3: insert_method=InsertSelect engine=MergeTree use_insert_token=True s
 table_a_b
 count	5
 table_when_b_even_and_joined
-count	45
+count	10
 0
 0
 table_a_b
 count	5
 table_when_b_even_and_joined
-count	90
+count	20
 0
 0
 OK
@@ -63,13 +63,13 @@ Test case 4: insert_method=InsertSelect engine=MergeTree use_insert_token=True s
 table_a_b
 count	5
 table_when_b_even_and_joined
-count	47
+count	9
 0
 0
 table_a_b
 count	10
 table_when_b_even_and_joined
-count	47
+count	9
 0
 0
 OK
@@ -78,13 +78,13 @@ Test case 5: insert_method=InsertSelect engine=MergeTree use_insert_token=True s
 table_a_b
 count	5
 table_when_b_even_and_joined
-count	45
+count	10
 0
 0
 table_a_b
 count	10
 table_when_b_even_and_joined
-count	45
+count	10
 0
 0
 OK
@@ -93,13 +93,13 @@ Test case 6: insert_method=InsertSelect engine=MergeTree use_insert_token=True s
 table_a_b
 count	5
 table_when_b_even_and_joined
-count	47
+count	9
 0
 0
 table_a_b
 count	10
 table_when_b_even_and_joined
-count	94
+count	18
 0
 0
 OK
@@ -108,13 +108,13 @@ Test case 7: insert_method=InsertSelect engine=MergeTree use_insert_token=True s
 table_a_b
 count	5
 table_when_b_even_and_joined
-count	45
+count	10
 0
 0
 table_a_b
 count	10
 table_when_b_even_and_joined
-count	90
+count	20
 0
 0
 OK
@@ -123,13 +123,13 @@ Test case 8: insert_method=InsertSelect engine=MergeTree use_insert_token=True s
 table_a_b
 count	5
 table_when_b_even_and_joined
-count	47
+count	9
 0
 0
 table_a_b
 count	5
 table_when_b_even_and_joined
-count	47
+count	9
 0
 0
 OK
@@ -138,13 +138,13 @@ Test case 9: insert_method=InsertSelect engine=MergeTree use_insert_token=True s
 table_a_b
 count	5
 table_when_b_even_and_joined
-count	45
+count	10
 0
 0
 table_a_b
 count	5
 table_when_b_even_and_joined
-count	45
+count	10
 0
 0
 OK
@@ -153,13 +153,13 @@ Test case 10: insert_method=InsertSelect engine=MergeTree use_insert_token=True 
 table_a_b
 count	5
 table_when_b_even_and_joined
-count	47
+count	9
 0
 0
 table_a_b
 count	5
 table_when_b_even_and_joined
-count	94
+count	18
 0
 0
 OK
@@ -168,13 +168,13 @@ Test case 11: insert_method=InsertSelect engine=MergeTree use_insert_token=True 
 table_a_b
 count	5
 table_when_b_even_and_joined
-count	45
+count	10
 0
 0
 table_a_b
 count	5
 table_when_b_even_and_joined
-count	90
+count	20
 0
 0
 OK
@@ -183,13 +183,13 @@ Test case 12: insert_method=InsertSelect engine=MergeTree use_insert_token=True 
 table_a_b
 count	5
 table_when_b_even_and_joined
-count	47
+count	9
 0
 0
 table_a_b
 count	10
 table_when_b_even_and_joined
-count	47
+count	9
 0
 0
 OK
@@ -198,13 +198,13 @@ Test case 13: insert_method=InsertSelect engine=MergeTree use_insert_token=True 
 table_a_b
 count	5
 table_when_b_even_and_joined
-count	45
+count	10
 0
 0
 table_a_b
 count	10
 table_when_b_even_and_joined
-count	45
+count	10
 0
 0
 OK
@@ -213,13 +213,13 @@ Test case 14: insert_method=InsertSelect engine=MergeTree use_insert_token=True 
 table_a_b
 count	5
 table_when_b_even_and_joined
-count	47
+count	9
 0
 0
 table_a_b
 count	10
 table_when_b_even_and_joined
-count	94
+count	18
 0
 0
 OK
@@ -228,13 +228,13 @@ Test case 15: insert_method=InsertSelect engine=MergeTree use_insert_token=True 
 table_a_b
 count	5
 table_when_b_even_and_joined
-count	45
+count	10
 0
 0
 table_a_b
 count	10
 table_when_b_even_and_joined
-count	90
+count	20
 0
 0
 OK
@@ -243,13 +243,13 @@ Test case 16: insert_method=InsertSelect engine=MergeTree use_insert_token=False
 table_a_b
 count	5
 table_when_b_even_and_joined
-count	47
+count	9
 0
 0
 table_a_b
 count	5
 table_when_b_even_and_joined
-count	47
+count	9
 0
 0
 OK
@@ -258,13 +258,13 @@ Test case 17: insert_method=InsertSelect engine=MergeTree use_insert_token=False
 table_a_b
 count	1
 table_when_b_even_and_joined
-count	9
+count	2
 0
 0
 table_a_b
 count	1
 table_when_b_even_and_joined
-count	9
+count	2
 0
 0
 OK
@@ -273,13 +273,13 @@ Test case 18: insert_method=InsertSelect engine=MergeTree use_insert_token=False
 table_a_b
 count	5
 table_when_b_even_and_joined
-count	47
+count	9
 0
 0
 table_a_b
 count	5
 table_when_b_even_and_joined
-count	94
+count	18
 0
 0
 OK
@@ -288,13 +288,13 @@ Test case 19: insert_method=InsertSelect engine=MergeTree use_insert_token=False
 table_a_b
 count	1
 table_when_b_even_and_joined
-count	45
+count	10
 0
 0
 table_a_b
 count	1
 table_when_b_even_and_joined
-count	90
+count	20
 0
 0
 OK
@@ -303,13 +303,13 @@ Test case 20: insert_method=InsertSelect engine=MergeTree use_insert_token=False
 table_a_b
 count	5
 table_when_b_even_and_joined
-count	47
+count	9
 0
 0
 table_a_b
 count	10
 table_when_b_even_and_joined
-count	47
+count	9
 0
 0
 OK
@@ -318,13 +318,13 @@ Test case 21: insert_method=InsertSelect engine=MergeTree use_insert_token=False
 table_a_b
 count	5
 table_when_b_even_and_joined
-count	9
+count	2
 0
 0
 table_a_b
 count	10
 table_when_b_even_and_joined
-count	9
+count	2
 0
 0
 OK
@@ -333,13 +333,13 @@ Test case 22: insert_method=InsertSelect engine=MergeTree use_insert_token=False
 table_a_b
 count	5
 table_when_b_even_and_joined
-count	47
+count	9
 0
 0
 table_a_b
 count	10
 table_when_b_even_and_joined
-count	94
+count	18
 0
 0
 OK
@@ -348,13 +348,13 @@ Test case 23: insert_method=InsertSelect engine=MergeTree use_insert_token=False
 table_a_b
 count	5
 table_when_b_even_and_joined
-count	45
+count	10
 0
 0
 table_a_b
 count	10
 table_when_b_even_and_joined
-count	90
+count	20
 0
 0
 OK
@@ -363,13 +363,13 @@ Test case 24: insert_method=InsertSelect engine=MergeTree use_insert_token=False
 table_a_b
 count	5
 table_when_b_even_and_joined
-count	47
+count	9
 0
 0
 table_a_b
 count	5
 table_when_b_even_and_joined
-count	47
+count	9
 0
 0
 OK
@@ -378,13 +378,13 @@ Test case 25: insert_method=InsertSelect engine=MergeTree use_insert_token=False
 table_a_b
 count	1
 table_when_b_even_and_joined
-count	9
+count	2
 0
 0
 table_a_b
 count	1
 table_when_b_even_and_joined
-count	9
+count	2
 0
 0
 OK
@@ -393,13 +393,13 @@ Test case 26: insert_method=InsertSelect engine=MergeTree use_insert_token=False
 table_a_b
 count	5
 table_when_b_even_and_joined
-count	47
+count	9
 0
 0
 table_a_b
 count	5
 table_when_b_even_and_joined
-count	94
+count	18
 0
 0
 OK
@@ -408,13 +408,13 @@ Test case 27: insert_method=InsertSelect engine=MergeTree use_insert_token=False
 table_a_b
 count	1
 table_when_b_even_and_joined
-count	45
+count	10
 0
 0
 table_a_b
 count	1
 table_when_b_even_and_joined
-count	90
+count	20
 0
 0
 OK
@@ -423,13 +423,13 @@ Test case 28: insert_method=InsertSelect engine=MergeTree use_insert_token=False
 table_a_b
 count	5
 table_when_b_even_and_joined
-count	47
+count	9
 0
 0
 table_a_b
 count	10
 table_when_b_even_and_joined
-count	47
+count	9
 0
 0
 OK
@@ -438,13 +438,13 @@ Test case 29: insert_method=InsertSelect engine=MergeTree use_insert_token=False
 table_a_b
 count	5
 table_when_b_even_and_joined
-count	9
+count	2
 0
 0
 table_a_b
 count	10
 table_when_b_even_and_joined
-count	9
+count	2
 0
 0
 OK
@@ -453,13 +453,13 @@ Test case 30: insert_method=InsertSelect engine=MergeTree use_insert_token=False
 table_a_b
 count	5
 table_when_b_even_and_joined
-count	47
+count	9
 0
 0
 table_a_b
 count	10
 table_when_b_even_and_joined
-count	94
+count	18
 0
 0
 OK
@@ -468,13 +468,13 @@ Test case 31: insert_method=InsertSelect engine=MergeTree use_insert_token=False
 table_a_b
 count	5
 table_when_b_even_and_joined
-count	45
+count	10
 0
 0
 table_a_b
 count	10
 table_when_b_even_and_joined
-count	90
+count	20
 0
 0
 OK
@@ -483,13 +483,13 @@ Test case 32: insert_method=InsertValues engine=MergeTree use_insert_token=True 
 table_a_b
 count	5
 table_when_b_even_and_joined
-count	47
+count	9
 0
 0
 table_a_b
 count	5
 table_when_b_even_and_joined
-count	47
+count	9
 0
 0
 OK
@@ -498,13 +498,13 @@ Test case 33: insert_method=InsertValues engine=MergeTree use_insert_token=True 
 table_a_b
 count	5
 table_when_b_even_and_joined
-count	45
+count	10
 0
 0
 table_a_b
 count	5
 table_when_b_even_and_joined
-count	45
+count	10
 0
 0
 OK
@@ -513,13 +513,13 @@ Test case 34: insert_method=InsertValues engine=MergeTree use_insert_token=True 
 table_a_b
 count	5
 table_when_b_even_and_joined
-count	47
+count	9
 0
 0
 table_a_b
 count	5
 table_when_b_even_and_joined
-count	94
+count	18
 0
 0
 OK
@@ -528,13 +528,13 @@ Test case 35: insert_method=InsertValues engine=MergeTree use_insert_token=True 
 table_a_b
 count	5
 table_when_b_even_and_joined
-count	45
+count	10
 0
 0
 table_a_b
 count	5
 table_when_b_even_and_joined
-count	90
+count	20
 0
 0
 OK
@@ -543,13 +543,13 @@ Test case 36: insert_method=InsertValues engine=MergeTree use_insert_token=True 
 table_a_b
 count	5
 table_when_b_even_and_joined
-count	47
+count	9
 0
 0
 table_a_b
 count	10
 table_when_b_even_and_joined
-count	47
+count	9
 0
 0
 OK
@@ -558,13 +558,13 @@ Test case 37: insert_method=InsertValues engine=MergeTree use_insert_token=True 
 table_a_b
 count	5
 table_when_b_even_and_joined
-count	45
+count	10
 0
 0
 table_a_b
 count	10
 table_when_b_even_and_joined
-count	45
+count	10
 0
 0
 OK
@@ -573,13 +573,13 @@ Test case 38: insert_method=InsertValues engine=MergeTree use_insert_token=True 
 table_a_b
 count	5
 table_when_b_even_and_joined
-count	47
+count	9
 0
 0
 table_a_b
 count	10
 table_when_b_even_and_joined
-count	94
+count	18
 0
 0
 OK
@@ -588,13 +588,13 @@ Test case 39: insert_method=InsertValues engine=MergeTree use_insert_token=True 
 table_a_b
 count	5
 table_when_b_even_and_joined
-count	45
+count	10
 0
 0
 table_a_b
 count	10
 table_when_b_even_and_joined
-count	90
+count	20
 0
 0
 OK
@@ -603,13 +603,13 @@ Test case 40: insert_method=InsertValues engine=MergeTree use_insert_token=True 
 table_a_b
 count	5
 table_when_b_even_and_joined
-count	47
+count	9
 0
 0
 table_a_b
 count	5
 table_when_b_even_and_joined
-count	47
+count	9
 0
 0
 OK
@@ -618,13 +618,13 @@ Test case 41: insert_method=InsertValues engine=MergeTree use_insert_token=True 
 table_a_b
 count	5
 table_when_b_even_and_joined
-count	45
+count	10
 0
 0
 table_a_b
 count	5
 table_when_b_even_and_joined
-count	45
+count	10
 0
 0
 OK
@@ -633,13 +633,13 @@ Test case 42: insert_method=InsertValues engine=MergeTree use_insert_token=True 
 table_a_b
 count	5
 table_when_b_even_and_joined
-count	47
+count	9
 0
 0
 table_a_b
 count	5
 table_when_b_even_and_joined
-count	94
+count	18
 0
 0
 OK
@@ -648,13 +648,13 @@ Test case 43: insert_method=InsertValues engine=MergeTree use_insert_token=True 
 table_a_b
 count	5
 table_when_b_even_and_joined
-count	45
+count	10
 0
 0
 table_a_b
 count	5
 table_when_b_even_and_joined
-count	90
+count	20
 0
 0
 OK
@@ -663,13 +663,13 @@ Test case 44: insert_method=InsertValues engine=MergeTree use_insert_token=True 
 table_a_b
 count	5
 table_when_b_even_and_joined
-count	47
+count	9
 0
 0
 table_a_b
 count	10
 table_when_b_even_and_joined
-count	47
+count	9
 0
 0
 OK
@@ -678,13 +678,13 @@ Test case 45: insert_method=InsertValues engine=MergeTree use_insert_token=True 
 table_a_b
 count	5
 table_when_b_even_and_joined
-count	45
+count	10
 0
 0
 table_a_b
 count	10
 table_when_b_even_and_joined
-count	45
+count	10
 0
 0
 OK
@@ -693,13 +693,13 @@ Test case 46: insert_method=InsertValues engine=MergeTree use_insert_token=True 
 table_a_b
 count	5
 table_when_b_even_and_joined
-count	47
+count	9
 0
 0
 table_a_b
 count	10
 table_when_b_even_and_joined
-count	94
+count	18
 0
 0
 OK
@@ -708,13 +708,13 @@ Test case 47: insert_method=InsertValues engine=MergeTree use_insert_token=True 
 table_a_b
 count	5
 table_when_b_even_and_joined
-count	45
+count	10
 0
 0
 table_a_b
 count	10
 table_when_b_even_and_joined
-count	90
+count	20
 0
 0
 OK
@@ -723,13 +723,13 @@ Test case 48: insert_method=InsertValues engine=MergeTree use_insert_token=False
 table_a_b
 count	5
 table_when_b_even_and_joined
-count	47
+count	9
 0
 0
 table_a_b
 count	5
 table_when_b_even_and_joined
-count	47
+count	9
 0
 0
 OK
@@ -738,13 +738,13 @@ Test case 49: insert_method=InsertValues engine=MergeTree use_insert_token=False
 table_a_b
 count	1
 table_when_b_even_and_joined
-count	9
+count	2
 0
 0
 table_a_b
 count	1
 table_when_b_even_and_joined
-count	9
+count	2
 0
 0
 OK
@@ -753,13 +753,13 @@ Test case 50: insert_method=InsertValues engine=MergeTree use_insert_token=False
 table_a_b
 count	5
 table_when_b_even_and_joined
-count	47
+count	9
 0
 0
 table_a_b
 count	5
 table_when_b_even_and_joined
-count	94
+count	18
 0
 0
 OK
@@ -768,13 +768,13 @@ Test case 51: insert_method=InsertValues engine=MergeTree use_insert_token=False
 table_a_b
 count	1
 table_when_b_even_and_joined
-count	45
+count	10
 0
 0
 table_a_b
 count	1
 table_when_b_even_and_joined
-count	90
+count	20
 0
 0
 OK
@@ -783,13 +783,13 @@ Test case 52: insert_method=InsertValues engine=MergeTree use_insert_token=False
 table_a_b
 count	5
 table_when_b_even_and_joined
-count	47
+count	9
 0
 0
 table_a_b
 count	10
 table_when_b_even_and_joined
-count	47
+count	9
 0
 0
 OK
@@ -798,13 +798,13 @@ Test case 53: insert_method=InsertValues engine=MergeTree use_insert_token=False
 table_a_b
 count	5
 table_when_b_even_and_joined
-count	9
+count	2
 0
 0
 table_a_b
 count	10
 table_when_b_even_and_joined
-count	9
+count	2
 0
 0
 OK
@@ -813,13 +813,13 @@ Test case 54: insert_method=InsertValues engine=MergeTree use_insert_token=False
 table_a_b
 count	5
 table_when_b_even_and_joined
-count	47
+count	9
 0
 0
 table_a_b
 count	10
 table_when_b_even_and_joined
-count	94
+count	18
 0
 0
 OK
@@ -828,13 +828,13 @@ Test case 55: insert_method=InsertValues engine=MergeTree use_insert_token=False
 table_a_b
 count	5
 table_when_b_even_and_joined
-count	45
+count	10
 0
 0
 table_a_b
 count	10
 table_when_b_even_and_joined
-count	90
+count	20
 0
 0
 OK
@@ -843,13 +843,13 @@ Test case 56: insert_method=InsertValues engine=MergeTree use_insert_token=False
 table_a_b
 count	5
 table_when_b_even_and_joined
-count	47
+count	9
 0
 0
 table_a_b
 count	5
 table_when_b_even_and_joined
-count	47
+count	9
 0
 0
 OK
@@ -858,13 +858,13 @@ Test case 57: insert_method=InsertValues engine=MergeTree use_insert_token=False
 table_a_b
 count	1
 table_when_b_even_and_joined
-count	9
+count	2
 0
 0
 table_a_b
 count	1
 table_when_b_even_and_joined
-count	9
+count	2
 0
 0
 OK
@@ -873,13 +873,13 @@ Test case 58: insert_method=InsertValues engine=MergeTree use_insert_token=False
 table_a_b
 count	5
 table_when_b_even_and_joined
-count	47
+count	9
 0
 0
 table_a_b
 count	5
 table_when_b_even_and_joined
-count	94
+count	18
 0
 0
 OK
@@ -888,13 +888,13 @@ Test case 59: insert_method=InsertValues engine=MergeTree use_insert_token=False
 table_a_b
 count	1
 table_when_b_even_and_joined
-count	45
+count	10
 0
 0
 table_a_b
 count	1
 table_when_b_even_and_joined
-count	90
+count	20
 0
 0
 OK
@@ -903,13 +903,13 @@ Test case 60: insert_method=InsertValues engine=MergeTree use_insert_token=False
 table_a_b
 count	5
 table_when_b_even_and_joined
-count	47
+count	9
 0
 0
 table_a_b
 count	10
 table_when_b_even_and_joined
-count	47
+count	9
 0
 0
 OK
@@ -918,13 +918,13 @@ Test case 61: insert_method=InsertValues engine=MergeTree use_insert_token=False
 table_a_b
 count	5
 table_when_b_even_and_joined
-count	9
+count	2
 0
 0
 table_a_b
 count	10
 table_when_b_even_and_joined
-count	9
+count	2
 0
 0
 OK
@@ -933,13 +933,13 @@ Test case 62: insert_method=InsertValues engine=MergeTree use_insert_token=False
 table_a_b
 count	5
 table_when_b_even_and_joined
-count	47
+count	9
 0
 0
 table_a_b
 count	10
 table_when_b_even_and_joined
-count	94
+count	18
 0
 0
 OK
@@ -948,13 +948,13 @@ Test case 63: insert_method=InsertValues engine=MergeTree use_insert_token=False
 table_a_b
 count	5
 table_when_b_even_and_joined
-count	45
+count	10
 0
 0
 table_a_b
 count	10
 table_when_b_even_and_joined
-count	90
+count	20
 0
 0
 OK

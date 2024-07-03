@@ -390,14 +390,14 @@ def test_mv_generates_several_blocks(parser):
                 SELECT throwIf( count() != 5 )
                     FROM table_a_b;
 
-                SELECT throwIf( count() != 47 )
+                SELECT throwIf( count() != 9 )
                     FROM table_when_b_even_and_joined;
                 """
             assert_second_insert_statements = f"""
                 SELECT throwIf( count() != {5 if args.deduplicate_src_table else 10} )
                     FROM table_a_b;
 
-                SELECT throwIf( count() != {47 if args.deduplicate_dst_table else 94} )
+                SELECT throwIf( count() != {9 if args.deduplicate_dst_table else 18} )
                     FROM table_when_b_even_and_joined;
                 """
         else:
@@ -406,14 +406,14 @@ def test_mv_generates_several_blocks(parser):
                     SELECT throwIf( count() != {5 if args.deduplicate_src_table else 5} )
                         FROM table_a_b;
 
-                    SELECT throwIf( count() != {45 if args.deduplicate_dst_table else 45} )
+                    SELECT throwIf( count() != {10 if args.deduplicate_dst_table else 10} )
                         FROM table_when_b_even_and_joined;
                     """
                 assert_second_insert_statements = f"""
                     SELECT throwIf( count() != {5 if args.deduplicate_src_table else 10} )
                         FROM table_a_b;
 
-                    SELECT throwIf( count() != {45 if args.deduplicate_dst_table else 90} )
+                    SELECT throwIf( count() != {10 if args.deduplicate_dst_table else 20} )
                         FROM table_when_b_even_and_joined;
                     """
             else:
@@ -421,14 +421,14 @@ def test_mv_generates_several_blocks(parser):
                     SELECT throwIf( count() != {1 if args.deduplicate_src_table else 5} )
                        FROM table_a_b;
 
-                    SELECT throwIf( count() != {9 if args.deduplicate_dst_table else 45} )
+                    SELECT throwIf( count() != {2 if args.deduplicate_dst_table else 10} )
                        FROM table_when_b_even_and_joined;
                     """
                 assert_second_insert_statements = f"""
                     SELECT throwIf( count() != {1 if args.deduplicate_src_table else 10} )
                         FROM table_a_b;
 
-                    SELECT throwIf( count() != {9 if args.deduplicate_dst_table else 90} )
+                    SELECT throwIf( count() != {2 if args.deduplicate_dst_table else 20} )
                         FROM table_when_b_even_and_joined;
                     """
 
@@ -451,7 +451,7 @@ def test_mv_generates_several_blocks(parser):
                 ORDER BY (a_join, b);
             INSERT INTO table_for_join_with
                 SELECT 'joined_' || toString(number), number
-                FROM numbers(9);
+                FROM numbers(1);
             {details_print_for_table_for_join_with}
 
             {create_table_a_b_statement}
