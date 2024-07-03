@@ -23,11 +23,11 @@
 
 namespace ProfileEvents
 {
-extern const Event RegexpCreated;
-extern const Event RegexpGlobalCacheHit;
-extern const Event RegexpGlobalCacheMiss;
-extern const Event RegexpLocalCacheHit;
-extern const Event RegexpLocalCacheMiss;
+    extern const Event RegexpWithMultipleNeedlesCreated;
+    extern const Event RegexpWithMultipleNeedlesGlobalCacheHit;
+    extern const Event RegexpWithMultipleNeedlesGlobalCacheMiss;
+    extern const Event RegexpLocalCacheHit;
+    extern const Event RegexpLocalCacheMiss;
 }
 
 
@@ -85,8 +85,8 @@ public:
         {
             if (pattern != bucket.pattern)
             {
-                ProfileEvents::increment(ProfileEvents::RegexpLocalCacheMiss);
                 /// replace existing entry
+                ProfileEvents::increment(ProfileEvents::RegexpLocalCacheMiss);
                 bucket = {pattern, std::make_shared<OptimizedRegularExpression>(createRegexp<like, no_capture, case_insensitive>(pattern))};
             }
             else
@@ -97,7 +97,7 @@ public:
     }
 
 private:
-    constexpr static size_t CACHE_SIZE = 1000; /// collision probability
+    constexpr static size_t CACHE_SIZE = 1'000; /// collision probability
 
     std::hash<String> hasher;
     struct Bucket
@@ -258,7 +258,7 @@ inline Regexps constructRegexps(const std::vector<String> & str_patterns, [[mayb
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Pattern '{}' failed with error '{}'", str_patterns[error->expression], String(error->message));
     }
 
-    ProfileEvents::increment(ProfileEvents::RegexpCreated);
+    ProfileEvents::increment(ProfileEvents::RegexpWithMultipleNeedlesCreated);
 
     /// We allocate the scratch space only once, then copy it across multiple threads with hs_clone_scratch
     /// function which is faster than allocating scratch space each time in each thread.
@@ -336,7 +336,7 @@ inline DeferredConstructedRegexpsPtr getOrSet(const std::vector<std::string_view
                 {
                     return constructRegexps<save_indices, with_edit_distance>(str_patterns, edit_distance);
                 });
-        ProfileEvents::increment(ProfileEvents::RegexpGlobalCacheMiss);
+        ProfileEvents::increment(ProfileEvents::RegexpWithMultipleNeedlesGlobalCacheMiss);
         bucket = {std::move(str_patterns), edit_distance, deferred_constructed_regexps};
     }
     else
@@ -349,11 +349,11 @@ inline DeferredConstructedRegexpsPtr getOrSet(const std::vector<std::string_view
                     {
                         return constructRegexps<save_indices, with_edit_distance>(str_patterns, edit_distance);
                     });
-            ProfileEvents::increment(ProfileEvents::RegexpGlobalCacheMiss);
+            ProfileEvents::increment(ProfileEvents::RegexpWithMultipleNeedlesGlobalCacheMiss);
             bucket = {std::move(str_patterns), edit_distance, deferred_constructed_regexps};
         }
         else
-            ProfileEvents::increment(ProfileEvents::RegexpGlobalCacheHit);
+            ProfileEvents::increment(ProfileEvents::RegexpWithMultipleNeedlesGlobalCacheHit);
     }
 
     return bucket.regexps;
