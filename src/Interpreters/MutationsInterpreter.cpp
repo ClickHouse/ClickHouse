@@ -833,7 +833,6 @@ void MutationsInterpreter::prepare(bool dry_run)
                     for (const auto & column : required_columns)
                         dependencies.emplace(column, ColumnDependency::SKIP_INDEX);
                     materialized_indices.emplace(idx_desc.name);
-                    LOG_DEBUG(logger, "Will METERIALIZE INDEX={}", idx_desc.name);
                 }
             }
         }
