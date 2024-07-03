@@ -4458,10 +4458,8 @@ void QueryAnalyzer::initializeTableExpressionData(const QueryTreeNodePtr & table
     if (auto * scope_query_node = scope.scope_node->as<QueryNode>())
     {
         auto left_table_expression = extractLeftTableExpression(scope_query_node->getJoinTree());
-        bool is_cte = (query_node && query_node->isCTE()) || (union_node && union_node->isCTE());
         if (table_expression_node.get() == left_table_expression.get() &&
-            scope.joins_count &&
-            (scope.context->getSettingsRef().single_join_prefer_left_table || is_cte))
+            scope.joins_count && scope.context->getSettingsRef().single_join_prefer_left_table)
                 table_expression_data.should_qualify_columns = false;
     }
 
