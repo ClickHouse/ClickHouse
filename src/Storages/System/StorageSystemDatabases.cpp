@@ -73,6 +73,14 @@ static String getEngineFull(const ContextPtr & ctx, const DatabasePtr & database
     return engine_full;
 }
 
+Block StorageSystemDatabases::getFilterSampleBlock() const
+{
+    return {
+        { {}, std::make_shared<DataTypeString>(), "engine" },
+        { {}, std::make_shared<DataTypeUUID>(), "uuid" },
+    };
+}
+
 static ColumnPtr getFilteredDatabases(const Databases & databases, const ActionsDAG::Node * predicate, ContextPtr context)
 {
     MutableColumnPtr name_column = ColumnString::create();

@@ -90,9 +90,18 @@ private:
 
 using FutureSetFromTuplePtr = std::shared_ptr<FutureSetFromTuple>;
 
-/// Set from subquery can be built inplace for PK or in CreatingSet step.
-/// If use_index_for_in_with_subqueries_max_values is reached, set for PK won't be created,
-/// but ordinary set would be created instead.
+/// Set from subquery can be filled (by running the subquery) in one of two ways:
+///  1. During query analysis. Specifically, inside `SourceStepWithFilter::applyFilters()`.
+///     Useful if the query plan depends on the set contents, e.g. to determine which files to read.
+///  2. During query execution. This is the preferred way.
+///     Sets are created by CreatingSetStep, which runs before other steps.
+/// Be careful: to build the set during query analysis, the `buildSetInplace()` call must happen
+/// inside `SourceStepWithFilter::applyFilters()`. Calling it later, e.g. from `initializePipeline()`
+/// will result in LOGICAL_ERROR "Not-ready Set is passed" (because a CreatingSetStep was already
+/// added to pipeline but hasn't executed yet).
+///
+/// If use_index_for_in_with_subqueries_max_values is reached, the built set won't be suitable for
+/// key analysis, but will work with function IN (the set will contain only hashes of elements).
 class FutureSetFromSubquery final : public FutureSet
 {
 public:
