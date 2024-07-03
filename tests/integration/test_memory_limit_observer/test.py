@@ -76,4 +76,4 @@ def test_memory_usage_doesnt_include_page_cache_size(started_cluster):
        WHERE logger_name = 'CgroupsMemoryUsageObserver' AND message LIKE 'Read current memory usage%bytes%'
         """
     ).strip()
-    assert int(max_mem_usage_from_cgroup) < 2 * 2 ** 30
+    assert int(max_mem_usage_from_cgroup) < 2 * 2**30
