@@ -96,6 +96,18 @@ namespace DB
  *
  * SELECT * FROM t1 JOIN t2 ON a <=> b
  * -------------------------------
+ *
+ * 7. Remove redundant equality checks on boolean functions.
+ *  - these requndant checks cause the primary index to not be used when if the query involves any primary key columns
+ * -------------------------------
+ * SELECT * FROM t1 WHERE a IN (n) = 1
+ * SELECT * FROM t1 WHERE a IN (n) = 0
+ *
+ * will be transformed into
+ *
+ * SELECT * FROM t1 WHERE a IN (n)
+ * SELECT * FROM t1 WHERE NOT a IN (n)
+ * -------------------------------
  */
 
 class LogicalExpressionOptimizerPass final : public IQueryTreePass
@@ -109,7 +121,7 @@ public:
             "replace chains of equality functions inside an OR with a single IN operator";
     }
 
-    void run(QueryTreeNodePtr query_tree_node, ContextPtr context) override;
+    void run(QueryTreeNodePtr & query_tree_node, ContextPtr context) override;
 };
 
 }

@@ -2,6 +2,7 @@
 #include <Formats/JSONUtils.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/EscapingRuleUtils.h>
+#include <IO/PeekableReadBuffer.h>
 #include <IO/ReadHelpers.h>
 
 namespace DB
@@ -26,9 +27,9 @@ void JSONRowInputFormat::readPrefix()
 
     /// Try to parse metadata, if failed, try to parse data as JSONEachRow format.
     if (JSONUtils::checkAndSkipObjectStart(*peekable_buf)
-        && JSONUtils::tryReadMetadata(*peekable_buf, names_and_types_from_metadata)
+        && JSONUtils::tryReadMetadata(*peekable_buf, names_and_types_from_metadata, format_settings.json)
         && JSONUtils::checkAndSkipComma(*peekable_buf)
-        && JSONUtils::skipUntilFieldInObject(*peekable_buf, "data")
+        && JSONUtils::skipUntilFieldInObject(*peekable_buf, "data", format_settings.json)
         && JSONUtils::checkAndSkipArrayStart(*peekable_buf))
     {
         data_in_square_brackets = true;
@@ -54,7 +55,7 @@ void JSONRowInputFormat::readSuffix()
     else
     {
         JSONUtils::skipArrayEnd(*peekable_buf);
-        JSONUtils::skipTheRestOfObject(*peekable_buf);
+        JSONUtils::skipTheRestOfObject(*peekable_buf, format_settings.json);
     }
 }
 
@@ -70,27 +71,36 @@ void JSONRowInputFormat::resetReadBuffer()
     JSONEachRowRowInputFormat::resetReadBuffer();
 }
 
-JSONRowSchemaReader::JSONRowSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_)
-    : JSONRowSchemaReader(std::make_unique<PeekableReadBuffer>(in_), format_settings_)
+JSONRowSchemaReader::JSONRowSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_, bool fallback_to_json_each_row_)
+    : JSONRowSchemaReader(std::make_unique<PeekableReadBuffer>(in_), format_settings_, fallback_to_json_each_row_)
 {
 }
 
-JSONRowSchemaReader::JSONRowSchemaReader(std::unique_ptr<PeekableReadBuffer> buf, const DB::FormatSettings & format_settings_)
-    : JSONEachRowSchemaReader(*buf, format_settings_), peekable_buf(std::move(buf))
+JSONRowSchemaReader::JSONRowSchemaReader(std::unique_ptr<PeekableReadBuffer> buf, const DB::FormatSettings & format_settings_, bool fallback_to_json_each_row_)
+    : JSONEachRowSchemaReader(*buf, format_settings_), peekable_buf(std::move(buf)), fallback_to_json_each_row(fallback_to_json_each_row_)
 {
 }
 
 NamesAndTypesList JSONRowSchemaReader::readSchema()
 {
     skipBOMIfExists(*peekable_buf);
-    PeekableReadBufferCheckpoint checkpoint(*peekable_buf);
-    /// Try to parse metadata, if failed, try to parse data as JSONEachRow format
-    NamesAndTypesList names_and_types;
-    if (JSONUtils::checkAndSkipObjectStart(*peekable_buf) && JSONUtils::tryReadMetadata(*peekable_buf, names_and_types))
-        return names_and_types;
 
-    peekable_buf->rollbackToCheckpoint(true);
-    return JSONEachRowSchemaReader::readSchema();
+    if (fallback_to_json_each_row)
+    {
+        PeekableReadBufferCheckpoint checkpoint(*peekable_buf);
+        /// Try to parse metadata, if failed, try to parse data as JSONEachRow format
+        NamesAndTypesList names_and_types;
+        if (JSONUtils::checkAndSkipObjectStart(*peekable_buf) && JSONUtils::tryReadMetadata(*peekable_buf, names_and_types, format_settings.json))
+            return names_and_types;
+
+        peekable_buf->rollbackToCheckpoint(true);
+        return JSONEachRowSchemaReader::readSchema();
+    }
+    else
+    {
+        JSONUtils::skipObjectStart(*peekable_buf);
+        return JSONUtils::readMetadata(*peekable_buf, format_settings.json);
+    }
 }
 
 void registerInputFormatJSON(FormatFactory & factory)
@@ -109,19 +119,19 @@ void registerInputFormatJSON(FormatFactory & factory)
 
 void registerJSONSchemaReader(FormatFactory & factory)
 {
-    auto register_schema_reader = [&](const String & format)
+    auto register_schema_reader = [&](const String & format, bool fallback_to_json_each_row)
     {
         factory.registerSchemaReader(
-            format, [](ReadBuffer & buf, const FormatSettings & format_settings) { return std::make_unique<JSONRowSchemaReader>(buf, format_settings); });
+            format, [fallback_to_json_each_row](ReadBuffer & buf, const FormatSettings & format_settings) { return std::make_unique<JSONRowSchemaReader>(buf, format_settings, fallback_to_json_each_row); });
 
         factory.registerAdditionalInfoForSchemaCacheGetter(format, [](const FormatSettings & settings)
         {
             return getAdditionalFormatInfoByEscapingRule(settings, FormatSettings::EscapingRule::JSON);
         });
     };
-    register_schema_reader("JSON");
+    register_schema_reader("JSON", true);
     /// JSONCompact has the same suffix with metadata.
-    register_schema_reader("JSONCompact");
+    register_schema_reader("JSONCompact", false);
 }
 
 }

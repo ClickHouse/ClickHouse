@@ -24,7 +24,7 @@ namespace ErrorCodes
 BackupCoordinationStageSync::BackupCoordinationStageSync(
     const String & root_zookeeper_path_,
     WithRetries & with_retries_,
-    Poco::Logger * log_)
+    LoggerPtr log_)
     : zookeeper_path(root_zookeeper_path_ + "/stage")
     , with_retries(with_retries_)
     , log(log_)

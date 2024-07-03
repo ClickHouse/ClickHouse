@@ -1,12 +1,7 @@
 #pragma once
-#include <filesystem>
-#include <system_error>
 #include <Coordination/KeeperStorage.h>
-#include <IO/ReadBuffer.h>
-#include <IO/WriteBuffer.h>
+#include <Common/CopyableAtomic.h>
 #include <libnuraft/nuraft.hxx>
-#include <Coordination/KeeperContext.h>
-#include <Disks/IDisk.h>
 
 namespace DB
 {
@@ -15,6 +10,15 @@ using SnapshotMetadata = nuraft::snapshot;
 using SnapshotMetadataPtr = std::shared_ptr<SnapshotMetadata>;
 using ClusterConfig = nuraft::cluster_config;
 using ClusterConfigPtr = nuraft::ptr<ClusterConfig>;
+
+class WriteBuffer;
+class ReadBuffer;
+
+class KeeperContext;
+using KeeperContextPtr = std::shared_ptr<KeeperContext>;
+
+class IDisk;
+using DiskPtr = std::shared_ptr<IDisk>;
 
 enum SnapshotVersion : uint8_t
 {
@@ -90,13 +94,20 @@ public:
 
 struct SnapshotFileInfo
 {
+    SnapshotFileInfo(std::string path_, DiskPtr disk_)
+        : path(std::move(path_))
+        , disk(std::move(disk_))
+    {}
+
     std::string path;
     DiskPtr disk;
+    mutable std::atomic<size_t> size{0};
 };
 
-using KeeperStorageSnapshotPtr = std::shared_ptr<KeeperStorageSnapshot>;
-using CreateSnapshotCallback = std::function<SnapshotFileInfo(KeeperStorageSnapshotPtr &&)>;
+using SnapshotFileInfoPtr = std::shared_ptr<SnapshotFileInfo>;
 
+using KeeperStorageSnapshotPtr = std::shared_ptr<KeeperStorageSnapshot>;
+using CreateSnapshotCallback = std::function<std::shared_ptr<SnapshotFileInfo>(KeeperStorageSnapshotPtr &&, bool)>;
 
 using SnapshotMetaAndStorage = std::pair<SnapshotMetadataPtr, KeeperStoragePtr>;
 
@@ -119,10 +130,10 @@ public:
     nuraft::ptr<nuraft::buffer> serializeSnapshotToBuffer(const KeeperStorageSnapshot & snapshot) const;
 
     /// Serialize already compressed snapshot to disk (return path)
-    SnapshotFileInfo serializeSnapshotBufferToDisk(nuraft::buffer & buffer, uint64_t up_to_log_idx);
+    SnapshotFileInfoPtr serializeSnapshotBufferToDisk(nuraft::buffer & buffer, uint64_t up_to_log_idx);
 
     /// Serialize snapshot directly to disk
-    SnapshotFileInfo serializeSnapshotToDisk(const KeeperStorageSnapshot & snapshot);
+    SnapshotFileInfoPtr serializeSnapshotToDisk(const KeeperStorageSnapshot & snapshot);
 
     SnapshotDeserializationResult deserializeSnapshotFromBuffer(nuraft::ptr<nuraft::buffer> buffer) const;
 
@@ -139,30 +150,9 @@ public:
     size_t totalSnapshots() const { return existing_snapshots.size(); }
 
     /// The most fresh snapshot log index we have
-    size_t getLatestSnapshotIndex() const
-    {
-        if (!existing_snapshots.empty())
-            return existing_snapshots.rbegin()->first;
-        return 0;
-    }
+    size_t getLatestSnapshotIndex() const;
 
-    SnapshotFileInfo getLatestSnapshotInfo() const
-    {
-        if (!existing_snapshots.empty())
-        {
-            const auto & [path, disk] = existing_snapshots.at(getLatestSnapshotIndex());
-
-            try
-            {
-                if (disk->exists(path))
-                    return {path, disk};
-            }
-            catch (...)
-            {
-            }
-        }
-        return {"", nullptr};
-    }
+    SnapshotFileInfoPtr getLatestSnapshotInfo() const;
 
 private:
     void removeOutdatedSnapshotsIfNeeded();
@@ -178,7 +168,7 @@ private:
     /// How many snapshots to keep before remove
     const size_t snapshots_to_keep;
     /// All existing snapshots in our path (log_index -> path)
-    std::map<uint64_t, SnapshotFileInfo> existing_snapshots;
+    std::map<uint64_t, SnapshotFileInfoPtr> existing_snapshots;
     /// Compress snapshots in common ZSTD format instead of custom ClickHouse block LZ4 format
     const bool compress_snapshots_zstd;
     /// Superdigest for deserialization of storage
@@ -188,7 +178,7 @@ private:
 
     KeeperContextPtr keeper_context;
 
-    Poco::Logger * log = &Poco::Logger::get("KeeperSnapshotManager");
+    LoggerPtr log = getLogger("KeeperSnapshotManager");
 };
 
 /// Keeper create snapshots in background thread. KeeperStateMachine just create

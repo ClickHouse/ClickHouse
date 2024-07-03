@@ -83,7 +83,6 @@ void ExpressionStep::updateOutputStream()
     const auto & input_sort_description = getInputStreams().front().sort_description;
     for (size_t i = 0, s = input_sort_description.size(); i < s; ++i)
     {
-        String alias;
         const auto & original_column = input_sort_description[i].column_name;
         const auto * alias_node = alias_finder.find(original_column);
         if (alias_node)

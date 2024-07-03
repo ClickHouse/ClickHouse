@@ -71,16 +71,12 @@ struct AggregatingTransformParams
 struct ManyAggregatedData
 {
     ManyAggregatedDataVariants variants;
-    std::vector<std::unique_ptr<std::mutex>> mutexes;
     std::atomic<UInt32> num_finished = 0;
 
-    explicit ManyAggregatedData(size_t num_threads = 0) : variants(num_threads), mutexes(num_threads)
+    explicit ManyAggregatedData(size_t num_threads = 0) : variants(num_threads)
     {
         for (auto & elem : variants)
             elem = std::make_shared<AggregatedDataVariants>();
-
-        for (auto & mut : mutexes)
-            mut = std::make_unique<std::mutex>();
     }
 
     ~ManyAggregatedData()
@@ -180,7 +176,7 @@ private:
     Processors processors;
 
     AggregatingTransformParamsPtr params;
-    Poco::Logger * log = &Poco::Logger::get("AggregatingTransform");
+    LoggerPtr log = getLogger("AggregatingTransform");
 
     ColumnRawPtrs key_columns;
     Aggregator::AggregateColumns aggregate_columns;

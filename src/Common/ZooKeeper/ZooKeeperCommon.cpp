@@ -156,6 +156,12 @@ std::string ZooKeeperAuthRequest::toStringImpl() const
 
 void ZooKeeperCreateRequest::writeImpl(WriteBuffer & out) const
 {
+    /// See https://github.com/ClickHouse/clickhouse-private/issues/3029
+    if (path.starts_with("/clickhouse/tables/") && path.find("/parts/") != std::string::npos)
+    {
+        LOG_TRACE(getLogger(__PRETTY_FUNCTION__), "Creating part at path {}", path);
+    }
+
     Coordination::write(path, out);
     Coordination::write(data, out);
     Coordination::write(acls, out);
@@ -397,7 +403,7 @@ void ZooKeeperSetACLRequest::readImpl(ReadBuffer & in)
 
 std::string ZooKeeperSetACLRequest::toStringImpl() const
 {
-    return fmt::format("path = {}\n", "version = {}", path, version);
+    return fmt::format("path = {}\nversion = {}", path, version);
 }
 
 void ZooKeeperSetACLResponse::writeImpl(WriteBuffer & out) const
@@ -451,7 +457,7 @@ void ZooKeeperCheckRequest::readImpl(ReadBuffer & in)
 
 std::string ZooKeeperCheckRequest::toStringImpl() const
 {
-    return fmt::format("path = {}\n", "version = {}", path, version);
+    return fmt::format("path = {}\nversion = {}", path, version);
 }
 
 void ZooKeeperErrorResponse::readImpl(ReadBuffer & in)
@@ -480,6 +486,10 @@ OpNum ZooKeeperMultiRequest::getOpNum() const
 }
 
 ZooKeeperMultiRequest::ZooKeeperMultiRequest(const Requests & generic_requests, const ACLs & default_acls)
+    : ZooKeeperMultiRequest(std::span{generic_requests}, default_acls)
+{}
+
+ZooKeeperMultiRequest::ZooKeeperMultiRequest(std::span<const Coordination::RequestPtr> generic_requests, const ACLs & default_acls)
 {
     /// Convert nested Requests to ZooKeeperRequests.
     /// Note that deep copy is required to avoid modifying path in presence of chroot prefix.
@@ -929,7 +939,7 @@ ZooKeeperRequest::~ZooKeeperRequest()
     constexpr UInt64 max_request_time_ns = 1000000000ULL; /// 1 sec
     if (max_request_time_ns < elapsed_ns)
     {
-        LOG_TEST(&Poco::Logger::get(__PRETTY_FUNCTION__), "Processing of request xid={} took {} ms", xid, elapsed_ns / 1000000UL);
+        LOG_TEST(getLogger(__PRETTY_FUNCTION__), "Processing of request xid={} took {} ms", xid, elapsed_ns / 1000000UL);
     }
 }
 
@@ -950,7 +960,7 @@ ZooKeeperResponse::~ZooKeeperResponse()
     constexpr UInt64 max_request_time_ns = 1000000000ULL; /// 1 sec
     if (max_request_time_ns < elapsed_ns)
     {
-        LOG_TEST(&Poco::Logger::get(__PRETTY_FUNCTION__), "Processing of response xid={} took {} ms", xid, elapsed_ns / 1000000UL);
+        LOG_TEST(getLogger(__PRETTY_FUNCTION__), "Processing of response xid={} took {} ms", xid, elapsed_ns / 1000000UL);
     }
 }
 

@@ -12,10 +12,8 @@ namespace DB
 
 /// It's a bug in clang with three-way comparison operator
 /// https://github.com/llvm/llvm-project/issues/55919
-#ifdef __clang__
-    #pragma clang diagnostic push
-    #pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
-#endif
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
 
 /** Mark is the position in the compressed file. The compressed file consists of adjacent compressed blocks.
   * Mark is a tuple - the offset in the file to the start of the compressed block, the offset in the decompressed block to the start of the data.
@@ -41,9 +39,7 @@ struct MarkInCompressedFile
     }
 };
 
-#ifdef __clang__
-    #pragma clang diagnostic pop
-#endif
+#pragma clang diagnostic pop
 
 /**
  * In-memory representation of an array of marks.
@@ -63,7 +59,7 @@ class MarksInCompressedFile
 public:
     using PlainArray = PODArray<MarkInCompressedFile>;
 
-    MarksInCompressedFile(const PlainArray & marks);
+    explicit MarksInCompressedFile(const PlainArray & marks);
 
     MarkInCompressedFile get(size_t idx) const;
 

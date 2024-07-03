@@ -102,4 +102,21 @@ void registerDataTypeNumbers(DataTypeFactory & factory)
     factory.registerAlias("DOUBLE PRECISION", "Float64", DataTypeFactory::CaseInsensitive);
 }
 
+/// Explicit template instantiations.
+template class DataTypeNumber<UInt8>;
+template class DataTypeNumber<UInt16>;
+template class DataTypeNumber<UInt32>;
+template class DataTypeNumber<UInt64>;
+template class DataTypeNumber<Int8>;
+template class DataTypeNumber<Int16>;
+template class DataTypeNumber<Int32>;
+template class DataTypeNumber<Int64>;
+template class DataTypeNumber<Float32>;
+template class DataTypeNumber<Float64>;
+
+template class DataTypeNumber<UInt128>;
+template class DataTypeNumber<Int128>;
+template class DataTypeNumber<UInt256>;
+template class DataTypeNumber<Int256>;
+
 }

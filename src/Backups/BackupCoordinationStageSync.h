@@ -12,7 +12,7 @@ public:
     BackupCoordinationStageSync(
         const String & root_zookeeper_path_,
         WithRetries & with_retries_,
-        Poco::Logger * log_);
+        LoggerPtr log_);
 
     /// Sets the stage of the current host and signal other hosts if there were other hosts waiting for that.
     void set(const String & current_host, const String & new_stage, const String & message, const bool & all_hosts = false);
@@ -36,7 +36,7 @@ private:
     String zookeeper_path;
     /// A reference to the field of parent object - BackupCoordinationRemote or RestoreCoordinationRemote
     WithRetries & with_retries;
-    Poco::Logger * log;
+    LoggerPtr log;
 };
 
 }

@@ -9,6 +9,11 @@
 #include <Common/OpenSSLHelpers.h>
 
 #include <base/scope_guard.h>
+#include <base/defines.h>
+#include <string_view>
+
+
+using namespace std::literals;
 
 namespace DB
 {
@@ -102,7 +107,7 @@ void Native41::authenticate(
 
 #if USE_SSL
 
-Sha256Password::Sha256Password(RSA & public_key_, RSA & private_key_, Poco::Logger * log_)
+Sha256Password::Sha256Password(RSA & public_key_, RSA & private_key_, LoggerPtr log_)
     : public_key(public_key_), private_key(private_key_), log(log_)
 {
     /** Native authentication sent 20 bytes + '\0' character = 21 bytes.
@@ -179,11 +184,7 @@ void Sha256Password::authenticate(
         const auto * ciphertext = reinterpret_cast<const unsigned char *>(unpack_auth_response.data());
 
         unsigned char plaintext[RSA_size(&private_key)];
-#if USE_BORINGSSL
-        int plaintext_size = RSA_private_decrypt(unpack_auth_response.size(), ciphertext, plaintext, &private_key, RSA_PKCS1_OAEP_PADDING);
-#else
         int plaintext_size = RSA_private_decrypt(static_cast<int>(unpack_auth_response.size()), ciphertext, plaintext, &private_key, RSA_PKCS1_OAEP_PADDING);
-#endif
         if (plaintext_size == -1)
         {
             if (!sent_public_key)

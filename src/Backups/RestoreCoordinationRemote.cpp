@@ -32,7 +32,7 @@ RestoreCoordinationRemote::RestoreCoordinationRemote(
     , current_host(current_host_)
     , current_host_index(BackupCoordinationRemote::findCurrentHostIndex(all_hosts, current_host))
     , is_internal(is_internal_)
-    , log(&Poco::Logger::get("RestoreCoordinationRemote"))
+    , log(getLogger("RestoreCoordinationRemote"))
     , with_retries(
         log,
         get_zookeeper_,

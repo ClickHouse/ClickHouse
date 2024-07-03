@@ -198,7 +198,7 @@ void DWARFBlockInputFormat::initializeIfNeeded()
     if (elf.has_value())
         return;
 
-    LOG_DEBUG(&Poco::Logger::get("DWARF"), "Opening ELF");
+    LOG_DEBUG(getLogger("DWARF"), "Opening ELF");
     initELF();
     if (is_stopped)
         return;
@@ -209,7 +209,7 @@ void DWARFBlockInputFormat::initializeIfNeeded()
     auto abbrev_section = elf->findSectionByName(".debug_abbrev");
     if (!abbrev_section.has_value())
         throw Exception(ErrorCodes::CANNOT_PARSE_ELF, "No .debug_abbrev section");
-    LOG_DEBUG(&Poco::Logger::get("DWARF"), ".debug_abbrev is {:.3f} MiB, .debug_info is {:.3f} MiB", abbrev_section->size() * 1. / (1 << 20), info_section->size() * 1. / (1 << 20));
+    LOG_DEBUG(getLogger("DWARF"), ".debug_abbrev is {:.3f} MiB, .debug_info is {:.3f} MiB", abbrev_section->size() * 1. / (1 << 20), info_section->size() * 1. / (1 << 20));
 
     /// (The StringRef points into Elf's mmap of the whole file, or into file_contents.)
     extractor.emplace(llvm::StringRef(info_section->begin(), info_section->size()), /*IsLittleEndian*/ true, /*AddressSize*/ 8);
@@ -237,7 +237,7 @@ void DWARFBlockInputFormat::initializeIfNeeded()
     for (std::unique_ptr<llvm::DWARFUnit> & unit : dwarf_context->info_section_units())
         units_queue.emplace_back(unit.get());
 
-    LOG_DEBUG(&Poco::Logger::get("DWARF"), "{} units, reading in {} threads", units_queue.size(), num_threads);
+    LOG_DEBUG(getLogger("DWARF"), "{} units, reading in {} threads", units_queue.size(), num_threads);
 
     pool.emplace(CurrentMetrics::DWARFReaderThreads, CurrentMetrics::DWARFReaderThreadsActive, CurrentMetrics::DWARFReaderThreadsScheduled, num_threads);
     for (size_t i = 0; i < num_threads; ++i)
@@ -325,11 +325,21 @@ void DWARFBlockInputFormat::skipAttribute(
     const llvm::DWARFAbbreviationDeclaration::AttributeSpec & attr, uint64_t * offset,
     const UnitState & unit) const
 {
-    if (!llvm::DWARFFormValue::skipValue(
-        attr.Form, *extractor, offset, unit.dwarf_unit->getFormParams()))
-            throw Exception(ErrorCodes::CANNOT_PARSE_DWARF,
-                "Failed to skip attribute {} of form {} at offset {}",
-                llvm::dwarf::AttributeString(attr.Attr), attr.Form, *offset);
+    if (attr.Form == llvm::dwarf::DW_FORM_strx3)
+    {
+        /// DWARFFormValue::skipValue() fails on DW_FORM_strx3 because the `switch` statement is
+        /// missing this form for some reason. Maybe it's a bug in llvm.
+        /// Use extractValue() to work around.
+        parseAttribute(attr, offset, unit);
+    }
+    else
+    {
+        if (!llvm::DWARFFormValue::skipValue(
+            attr.Form, *extractor, offset, unit.dwarf_unit->getFormParams()))
+                throw Exception(ErrorCodes::CANNOT_PARSE_DWARF,
+                    "Failed to skip attribute {} of form {} at offset {}",
+                    llvm::dwarf::AttributeString(attr.Attr), attr.Form, *offset);
+    }
 }
 
 uint64_t DWARFBlockInputFormat::parseAddress(llvm::dwarf::Attribute attr, const llvm::DWARFFormValue & val, const UnitState & unit)
@@ -782,7 +792,7 @@ void DWARFBlockInputFormat::parseFilenameTable(UnitState & unit, uint64_t offset
     auto error = prologue.parse(*debug_line_extractor, &offset, /*RecoverableErrorHandler*/ [&](auto e)
         {
             if (++seen_debug_line_warnings < 10)
-                LOG_INFO(&Poco::Logger::get("DWARF"), "Parsing error: {}", llvm::toString(std::move(e)));
+                LOG_INFO(getLogger("DWARF"), "Parsing error: {}", llvm::toString(std::move(e)));
         }, *dwarf_context, unit.dwarf_unit);
 
     if (error)

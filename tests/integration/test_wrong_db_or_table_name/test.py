@@ -92,26 +92,31 @@ def test_wrong_table_name(start):
         INSERT INTO test.table_test SELECT 1;
         """
     )
-    with pytest.raises(
-        QueryRuntimeException,
-        match="DB::Exception: Table test.table_test1 does not exist. Maybe you meant test.table_test?.",
-    ):
-        node.query(
-            """
+
+    error_message = node.query_and_get_error(
+        """
             SELECT * FROM test.table_test1 LIMIT 1;
             """
-        )
+    )
+    assert (
+        "DB::Exception: Table test.table_test1 does not exist. Maybe you meant test.table_test?"
+        in error_message
+        or "DB::Exception: Unknown table expression identifier 'test.table_test1' in scope SELECT * FROM test.table_test1 LIMIT 1."
+        in error_message
+    )
     assert int(node.query("SELECT count() FROM test.table_test;")) == 1
 
-    with pytest.raises(
-        QueryRuntimeException,
-        match="DB::Exception: Table test2.table_test1 does not exist. Maybe you meant test.table_test?.",
-    ):
-        node.query(
-            """
+    error_message = node.query_and_get_error(
+        """
             SELECT * FROM test2.table_test1 LIMIT 1;
             """
-        )
+    )
+    assert (
+        "DB::Exception: Table test2.table_test1 does not exist. Maybe you meant test.table_test?."
+        in error_message
+        or "DB::Exception: Unknown table expression identifier 'test2.table_test1' in scope SELECT * FROM test2.table_test1 LIMIT 1."
+        in error_message
+    )
 
     node.query(
         """

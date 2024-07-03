@@ -34,7 +34,7 @@ class Context;
 /**
  * ORDER-PRESERVING parallel parsing of data formats.
  * It splits original data into chunks. Then each chunk is parsed by different thread.
- * The number of chunks equals to the number or parser threads.
+ * The number of chunks equals to the number of parser threads.
  * The size of chunk is equal to min_chunk_bytes_for_parallel_parsing setting.
  *
  *                    Parsers
@@ -111,7 +111,7 @@ public:
         // bump into reader thread on wraparound.
         processing_units.resize(params.max_threads + 2);
 
-        LOG_TRACE(&Poco::Logger::get("ParallelParsingInputFormat"), "Parallel parsing is used");
+        LOG_TRACE(getLogger("ParallelParsingInputFormat"), "Parallel parsing is used");
     }
 
     ~ParallelParsingInputFormat() override
@@ -119,25 +119,25 @@ public:
         finishAndWait();
     }
 
-    void resetParser() override final
+    void resetParser() final
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "resetParser() is not allowed for {}", getName());
     }
 
-    const BlockMissingValues & getMissingValues() const override final
+    const BlockMissingValues & getMissingValues() const final
     {
         return last_block_missing_values;
     }
 
     size_t getApproxBytesReadForChunk() const override { return last_approx_bytes_read_for_chunk; }
 
-    String getName() const override final { return "ParallelParsingBlockInputFormat"; }
+    String getName() const final { return "ParallelParsingBlockInputFormat"; }
 
 private:
 
-    Chunk read() override final;
+    Chunk read() final;
 
-    void onCancel() override final
+    void onCancel() final
     {
         /*
          * The format parsers themselves are not being cancelled here, so we'll

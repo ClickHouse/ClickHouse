@@ -3,24 +3,10 @@ add_subdirectory(divide)
 include("${ClickHouse_SOURCE_DIR}/cmake/dbms_glob_sources.cmake")
 add_headers_and_sources(clickhouse_functions .)
 
-extract_into_parent_list(clickhouse_functions_sources dbms_sources
-    IFunction.cpp
-    FunctionFactory.cpp
-    FunctionHelpers.cpp
-    extractTimeZoneFromFunctionArguments.cpp
-    FunctionsLogical.cpp
-    CastOverloadResolver.cpp
-)
-extract_into_parent_list(clickhouse_functions_headers dbms_headers
-    IFunction.h
-    FunctionFactory.h
-    FunctionHelpers.h
-    extractTimeZoneFromFunctionArguments.h
-    FunctionsLogical.h
-    CastOverloadResolver.h
-)
-
 add_library(clickhouse_functions_obj OBJECT ${clickhouse_functions_headers} ${clickhouse_functions_sources})
+if (OMIT_HEAVY_DEBUG_SYMBOLS)
+    target_compile_options(clickhouse_functions_obj PRIVATE "-g0")
+endif()
 
 list (APPEND OBJECT_LIBS $<TARGET_OBJECTS:clickhouse_functions_obj>)
 
@@ -32,6 +18,7 @@ list (APPEND PUBLIC_LIBS
         clickhouse_dictionaries_embedded
         clickhouse_parsers
         ch_contrib::consistent_hashing
+        common
         dbms
         ch_contrib::metrohash
         ch_contrib::murmurhash
@@ -40,6 +27,7 @@ list (APPEND PUBLIC_LIBS
 
 list (APPEND PRIVATE_LIBS
         ch_contrib::zlib
+        ch_contrib::expected
         boost::filesystem
         divide_impl
         ch_contrib::xxHash
@@ -53,10 +41,6 @@ endif()
 
 if (TARGET OpenSSL::Crypto)
     list (APPEND PUBLIC_LIBS OpenSSL::Crypto)
-endif()
-
-if (OMIT_HEAVY_DEBUG_SYMBOLS)
-    target_compile_options(clickhouse_functions_obj PRIVATE "-g0")
 endif()
 
 if (TARGET ch_contrib::icu)
@@ -136,10 +120,6 @@ list (APPEND OBJECT_LIBS $<TARGET_OBJECTS:clickhouse_functions_extractkeyvaluepa
 
 # Signed integer overflow on user-provided data inside boost::geometry - ignore.
 set_source_files_properties("pointInPolygon.cpp" PROPERTIES COMPILE_FLAGS -fno-sanitize=signed-integer-overflow)
-
-if (ENABLE_FUZZING)
-    add_compile_definitions(FUZZING_MODE=1)
-endif ()
 
 if (USE_GPERF)
     # Only for regenerating

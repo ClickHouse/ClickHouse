@@ -98,12 +98,8 @@ FutureSetFromSubquery::FutureSetFromSubquery(
     std::unique_ptr<QueryPlan> source_,
     StoragePtr external_table_,
     std::shared_ptr<FutureSetFromSubquery> external_table_set_,
-    const Settings & settings,
-    bool in_subquery_)
-    : external_table(std::move(external_table_))
-    , external_table_set(std::move(external_table_set_))
-    , source(std::move(source_))
-    , in_subquery(in_subquery_)
+    const Settings & settings)
+    : external_table(std::move(external_table_)), external_table_set(std::move(external_table_set_)), source(std::move(source_))
 {
     set_and_key = std::make_shared<SetAndKey>();
     set_and_key->key = std::move(key);
@@ -125,6 +121,8 @@ FutureSetFromSubquery::FutureSetFromSubquery(
     auto size_limits = getSizeLimitsForSet(settings);
     set_and_key->set = std::make_shared<Set>(size_limits, settings.use_index_for_in_with_subqueries_max_values, settings.transform_null_in);
 }
+
+FutureSetFromSubquery::~FutureSetFromSubquery() = default;
 
 SetPtr FutureSetFromSubquery::get() const
 {
@@ -281,16 +279,10 @@ FutureSetFromSubqueryPtr PreparedSets::addFromSubquery(
     std::unique_ptr<QueryPlan> source,
     StoragePtr external_table,
     FutureSetFromSubqueryPtr external_table_set,
-    const Settings & settings,
-    bool in_subquery)
+    const Settings & settings)
 {
     auto from_subquery = std::make_shared<FutureSetFromSubquery>(
-        toString(key, {}),
-        std::move(source),
-        std::move(external_table),
-        std::move(external_table_set),
-        settings,
-        in_subquery);
+        toString(key, {}), std::move(source), std::move(external_table), std::move(external_table_set), settings);
 
     auto [it, inserted] = sets_from_subqueries.emplace(key, from_subquery);
 
@@ -338,15 +330,6 @@ std::shared_ptr<FutureSetFromSubquery> PreparedSets::findSubquery(const Hash & k
         return nullptr;
 
     return it->second;
-}
-
-void PreparedSets::markAsINSubquery(const Hash & key)
-{
-    auto it = sets_from_subqueries.find(key);
-    if (it == sets_from_subqueries.end())
-        return;
-
-    it->second->markAsINSubquery();
 }
 
 std::shared_ptr<FutureSetFromStorage> PreparedSets::findStorage(const Hash & key) const

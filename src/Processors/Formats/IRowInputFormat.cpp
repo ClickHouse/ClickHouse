@@ -29,6 +29,7 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_IPV4;
     extern const int CANNOT_PARSE_IPV6;
     extern const int UNKNOWN_ELEMENT_OF_ENUM;
+    extern const int CANNOT_PARSE_ESCAPE_SEQUENCE;
 }
 
 
@@ -50,7 +51,8 @@ bool isParseError(int code)
         || code == ErrorCodes::CANNOT_PARSE_DOMAIN_VALUE_FROM_STRING
         || code == ErrorCodes::CANNOT_PARSE_IPV4
         || code == ErrorCodes::CANNOT_PARSE_IPV6
-        || code == ErrorCodes::UNKNOWN_ELEMENT_OF_ENUM;
+        || code == ErrorCodes::UNKNOWN_ELEMENT_OF_ENUM
+        || code == ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE;
 }
 
 IRowInputFormat::IRowInputFormat(Block header, ReadBuffer & in_, Params params_)
@@ -230,7 +232,7 @@ Chunk IRowInputFormat::read()
     {
         if (num_errors && (params.allow_errors_num > 0 || params.allow_errors_ratio > 0))
         {
-            Poco::Logger * log = &Poco::Logger::get("IRowInputFormat");
+            LoggerPtr log = getLogger("IRowInputFormat");
             LOG_DEBUG(log, "Skipped {} rows with errors while reading the input stream", num_errors);
         }
 

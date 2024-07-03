@@ -22,8 +22,6 @@ class KeeperServer
 private:
     const int server_id;
 
-    CoordinationSettingsPtr coordination_settings;
-
     nuraft::ptr<KeeperStateMachine> state_machine;
 
     nuraft::ptr<KeeperStateManager> state_manager;
@@ -48,7 +46,7 @@ private:
 
     nuraft::ptr<nuraft::cluster_config> last_local_config;
 
-    Poco::Logger * log;
+    LoggerPtr log;
 
     /// Callback func which is called by NuRaft on all internal events.
     /// Used to determine the moment when raft is ready to server new requests
@@ -130,7 +128,13 @@ public:
 
     int getServerID() const { return server_id; }
 
-    enum class ConfigUpdateState { Accepted, Declined, WaitBeforeChangingLeader };
+    enum class ConfigUpdateState : uint8_t
+    {
+        Accepted,
+        Declined,
+        WaitBeforeChangingLeader
+    };
+
     ConfigUpdateState applyConfigUpdate(
         const ClusterUpdateAction& action,
         bool last_command_was_leader_change = false);

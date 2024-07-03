@@ -57,7 +57,7 @@ DatabasePostgreSQL::DatabasePostgreSQL(
     , configuration(configuration_)
     , pool(std::move(pool_))
     , cache_tables(cache_tables_)
-    , log(&Poco::Logger::get("DatabasePostgreSQL(" + dbname_ + ")"))
+    , log(getLogger("DatabasePostgreSQL(" + dbname_ + ")"))
 {
     fs::create_directories(metadata_path);
     cleaner_task = getContext()->getSchedulePool().createTask("PostgreSQLCleanerTask", [this]{ removeOutdatedTables(); });
@@ -97,7 +97,7 @@ bool DatabasePostgreSQL::empty() const
 }
 
 
-DatabaseTablesIteratorPtr DatabasePostgreSQL::getTablesIterator(ContextPtr local_context, const FilterByNameFunction & /* filter_by_table_name */) const
+DatabaseTablesIteratorPtr DatabasePostgreSQL::getTablesIterator(ContextPtr local_context, const FilterByNameFunction & /* filter_by_table_name */, bool /* skip_not_loaded */) const
 {
     std::lock_guard lock(mutex);
     Tables tables;
@@ -241,7 +241,7 @@ void DatabasePostgreSQL::attachTable(ContextPtr /* context_ */, const String & t
 
     fs::path table_marked_as_removed = fs::path(getMetadataPath()) / (escapeForFileName(table_name) + suffix);
     if (fs::exists(table_marked_as_removed))
-        fs::remove(table_marked_as_removed);
+        (void)fs::remove(table_marked_as_removed);
 }
 
 
@@ -298,7 +298,7 @@ void DatabasePostgreSQL::dropTable(ContextPtr, const String & table_name, bool /
 
 void DatabasePostgreSQL::drop(ContextPtr /*context*/)
 {
-    fs::remove_all(getMetadataPath());
+    (void)fs::remove_all(getMetadataPath());
 }
 
 
@@ -368,7 +368,7 @@ void DatabasePostgreSQL::removeOutdatedTables()
             iter = detached_or_dropped.erase(iter);
             fs::path table_marked_as_removed = fs::path(getMetadataPath()) / (escapeForFileName(table_name) + suffix);
             if (fs::exists(table_marked_as_removed))
-                fs::remove(table_marked_as_removed);
+                (void)fs::remove(table_marked_as_removed);
         }
         else
             ++iter;
@@ -531,7 +531,7 @@ void registerDatabasePostgreSQL(DatabaseFactory & factory)
                 else
                 {
                     use_table_cache = safeGetLiteralValue<UInt8>(engine_args[4], engine_name);
-                    LOG_WARNING(&Poco::Logger::get("DatabaseFactory"), "A deprecated syntax of PostgreSQL database engine is used");
+                    LOG_WARNING(getLogger("DatabaseFactory"), "A deprecated syntax of PostgreSQL database engine is used");
                     is_deprecated_syntax = true;
                 }
             }

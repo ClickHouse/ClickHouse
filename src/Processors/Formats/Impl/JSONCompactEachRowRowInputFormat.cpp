@@ -75,7 +75,7 @@ void JSONCompactEachRowFormatReader::skipRowBetweenDelimiter()
 void JSONCompactEachRowFormatReader::skipField()
 {
     skipWhitespaceIfAny(*in);
-    skipJSONField(*in, "skipped_field");
+    skipJSONField(*in, "skipped_field", format_settings.json);
 }
 
 void JSONCompactEachRowFormatReader::skipHeaderRow()
@@ -114,7 +114,7 @@ std::vector<String> JSONCompactEachRowFormatReader::readHeaderRow()
     do
     {
         skipWhitespaceIfAny(*in);
-        readJSONString(field, *in);
+        readJSONString(field, *in, format_settings.json);
         fields.push_back(field);
         skipWhitespaceIfAny(*in);
     }

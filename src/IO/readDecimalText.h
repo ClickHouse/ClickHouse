@@ -38,7 +38,7 @@ inline bool readDigits(ReadBuffer & buf, T & x, uint32_t & digits, int32_t & exp
         return false;
     }
 
-    switch (*buf.position())
+    switch (*buf.position()) /// NOLINT(bugprone-switch-missing-default-case)
     {
         case '-':
             sign = -1;
@@ -222,6 +222,26 @@ inline void readCSVDecimalText(ReadBuffer & buf, T & x, uint32_t precision, uint
 
     if (maybe_quote == '\'' || maybe_quote == '\"')
         assertChar(maybe_quote, buf);
+}
+
+template <typename T>
+inline bool tryReadCSVDecimalText(ReadBuffer & buf, T & x, uint32_t precision, uint32_t & scale)
+{
+    if (buf.eof())
+        return false;
+
+    char maybe_quote = *buf.position();
+
+    if (maybe_quote == '\'' || maybe_quote == '\"')
+        ++buf.position();
+
+    if (!tryReadDecimalText(buf, x, precision, scale))
+        return false;
+
+    if ((maybe_quote == '\'' || maybe_quote == '\"') && !checkChar(maybe_quote, buf))
+        return false;
+
+    return true;
 }
 
 }

@@ -1,5 +1,7 @@
 #include <Analyzer/FunctionNode.h>
 
+#include <Columns/ColumnConst.h>
+
 #include <Common/SipHash.h>
 #include <Common/FieldVisitorToString.h>
 
@@ -58,12 +60,20 @@ ColumnsWithTypeAndName FunctionNode::getArgumentColumns() const
 
         ColumnWithTypeAndName argument_column;
 
+        auto * constant = argument->as<ConstantNode>();
         if (isNameOfInFunction(function_name) && i == 1)
+        {
             argument_column.type = std::make_shared<DataTypeSet>();
+            if (constant)
+            {
+                /// Created but not filled for the analysis during function resolution.
+                FutureSetPtr empty_set;
+                argument_column.column = ColumnConst::create(ColumnSet::create(1, empty_set), 1);
+            }
+        }
         else
             argument_column.type = argument->getResultType();
 
-        auto * constant = argument->as<ConstantNode>();
         if (constant && !isNotCreatable(argument_column.type))
             argument_column.column = argument_column.type->createColumnConst(1, constant->getValue());
 
@@ -142,13 +152,16 @@ void FunctionNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state
     }
 }
 
-bool FunctionNode::isEqualImpl(const IQueryTreeNode & rhs) const
+bool FunctionNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions compare_options) const
 {
     const auto & rhs_typed = assert_cast<const FunctionNode &>(rhs);
     if (function_name != rhs_typed.function_name || isAggregateFunction() != rhs_typed.isAggregateFunction()
         || isOrdinaryFunction() != rhs_typed.isOrdinaryFunction() || isWindowFunction() != rhs_typed.isWindowFunction()
         || nulls_action != rhs_typed.nulls_action)
         return false;
+
+    if (!compare_options.compare_types)
+        return true;
 
     if (isResolved() != rhs_typed.isResolved())
         return false;
@@ -168,7 +181,7 @@ bool FunctionNode::isEqualImpl(const IQueryTreeNode & rhs) const
     return true;
 }
 
-void FunctionNode::updateTreeHashImpl(HashState & hash_state) const
+void FunctionNode::updateTreeHashImpl(HashState & hash_state, CompareOptions compare_options) const
 {
     hash_state.update(function_name.size());
     hash_state.update(function_name);
@@ -176,6 +189,9 @@ void FunctionNode::updateTreeHashImpl(HashState & hash_state) const
     hash_state.update(isAggregateFunction());
     hash_state.update(isWindowFunction());
     hash_state.update(nulls_action);
+
+    if (!compare_options.compare_types)
+        return;
 
     if (!isResolved())
         return;
@@ -209,18 +225,6 @@ ASTPtr FunctionNode::toASTImpl(const ConvertToASTOptions & options) const
 
     function_ast->name = function_name;
     function_ast->nulls_action = nulls_action;
-
-    if (function_name == "nothing")
-    {
-        /** Inside AggregateFunctionCombinatorNull we may replace functions with `NULL` in arguments with `nothing`.
-          * Result type of `nothing` depends on `returns_default_when_only_null` property of nested function.
-          * If we convert `nothing` to AST, we will lose this information, so we use original function name instead.
-          */
-        const auto & original_ast = getOriginalAST();
-        const auto & original_function_ast = original_ast ? original_ast->as<ASTFunction>() : nullptr;
-        if (original_function_ast)
-            function_ast->name = original_function_ast->name;
-    }
 
     if (isWindowFunction())
     {

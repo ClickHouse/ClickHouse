@@ -22,19 +22,17 @@ namespace ErrorCodes
 }
 
 ConnectionEstablisher::ConnectionEstablisher(
-    IConnectionPool * pool_,
+    ConnectionPoolPtr pool_,
     const ConnectionTimeouts * timeouts_,
     const Settings & settings_,
-    Poco::Logger * log_,
+    LoggerPtr log_,
     const QualifiedTableName * table_to_check_)
-    : pool(pool_), timeouts(timeouts_), settings(settings_), log(log_), table_to_check(table_to_check_), is_finished(false)
+    : pool(std::move(pool_)), timeouts(timeouts_), settings(settings_), log(log_), table_to_check(table_to_check_)
 {
 }
 
 void ConnectionEstablisher::run(ConnectionEstablisher::TryResult & result, std::string & fail_message)
 {
-    is_finished = false;
-    SCOPE_EXIT(is_finished = true);
     try
     {
         ProfileEvents::increment(ProfileEvents::DistributedConnectionTries);
@@ -72,6 +70,12 @@ void ConnectionEstablisher::run(ConnectionEstablisher::TryResult & result, std::
         ProfileEvents::increment(ProfileEvents::DistributedConnectionUsable);
         result.is_usable = true;
 
+        if (table_status_it->second.is_readonly)
+        {
+            result.is_readonly = true;
+            LOG_TRACE(log, "Table {}.{} is readonly on server {}", table_to_check->database, table_to_check->table, result.entry->getDescription());
+        }
+
         const UInt64 max_allowed_delay = settings.max_replica_delay_for_distributed_queries;
         if (!max_allowed_delay)
         {
@@ -79,14 +83,13 @@ void ConnectionEstablisher::run(ConnectionEstablisher::TryResult & result, std::
             return;
         }
 
-        UInt32 delay = table_status_it->second.absolute_delay;
-
+        const UInt32 delay = table_status_it->second.absolute_delay;
         if (delay < max_allowed_delay)
             result.is_up_to_date = true;
         else
         {
             result.is_up_to_date = false;
-            result.staleness = delay;
+            result.delay = delay;
 
             LOG_TRACE(log, "Server {} has unacceptable replica delay for table {}.{}: {}", result.entry->getDescription(), table_to_check->database, table_to_check->table, delay);
             ProfileEvents::increment(ProfileEvents::DistributedConnectionStaleReplica);
@@ -111,12 +114,13 @@ void ConnectionEstablisher::run(ConnectionEstablisher::TryResult & result, std::
 #if defined(OS_LINUX)
 
 ConnectionEstablisherAsync::ConnectionEstablisherAsync(
-    IConnectionPool * pool_,
+    ConnectionPoolPtr pool_,
     const ConnectionTimeouts * timeouts_,
     const Settings & settings_,
-    Poco::Logger * log_,
+    LoggerPtr log_,
     const QualifiedTableName * table_to_check_)
-    : AsyncTaskExecutor(std::make_unique<Task>(*this)), connection_establisher(pool_, timeouts_, settings_, log_, table_to_check_)
+    : AsyncTaskExecutor(std::make_unique<Task>(*this))
+    , connection_establisher(std::move(pool_), timeouts_, settings_, log_, table_to_check_)
 {
     epoll.add(timeout_descriptor.getDescriptor());
 }

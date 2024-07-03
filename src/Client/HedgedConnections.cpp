@@ -67,7 +67,6 @@ HedgedConnections::HedgedConnections(
     }
 
     active_connection_count = connections.size();
-    offsets_with_disabled_changing_replica = 0;
     pipeline_for_new_replicas.add([throttler_](ReplicaState & replica_) { replica_.connection->setThrottler(throttler_); });
 }
 
@@ -177,6 +176,10 @@ void HedgedConnections::sendQuery(
     {
         Settings modified_settings = settings;
 
+        /// Queries in foreign languages are transformed to ClickHouse-SQL. Ensure the setting before sending.
+        modified_settings.dialect = Dialect::clickhouse;
+        modified_settings.dialect.changed = false;
+
         if (disable_two_level_aggregation)
         {
             /// Disable two-level aggregation due to version incompatibility.
@@ -251,6 +254,17 @@ void HedgedConnections::sendCancel()
 
     if (!sent_query || cancelled)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot cancel. Either no query sent or already cancelled.");
+
+    /// All hedged connections should be stopped, since otherwise before the
+    /// HedgedConnectionsFactory will be destroyed (that will happen from
+    /// QueryPipeline dtor) they could still do some work.
+    /// And not only this does not make sense, but it also could lead to
+    /// use-after-free of the current_thread, since the thread from which they
+    /// had been created differs from the thread where the dtor of
+    /// QueryPipeline will be called and the initial thread could be already
+    /// destroyed (especially when the system is under pressure).
+    if (hedged_connections_factory.hasEventsInProcess())
+        hedged_connections_factory.stopChoosingReplicas();
 
     cancelled = true;
 

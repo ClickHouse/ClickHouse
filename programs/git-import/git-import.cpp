@@ -14,7 +14,7 @@
 #include <Common/TerminalSize.h>
 #include <Common/Exception.h>
 #include <Common/SipHash.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/ShellCommand.h>
 #include <Common/re2.h>
 #include <base/find_symbols.h>
@@ -172,6 +172,7 @@ clickhouse-client --query "INSERT INTO git.commits FORMAT TSV" < commits.tsv
 clickhouse-client --query "INSERT INTO git.file_changes FORMAT TSV" < file_changes.tsv
 clickhouse-client --query "INSERT INTO git.line_changes FORMAT TSV" < line_changes.tsv
 
+Check out this presentation: https://presentations.clickhouse.com/matemarketing_2020/
 )";
 
 namespace po = boost::program_options;
@@ -232,7 +233,7 @@ struct Commit
 };
 
 
-enum class FileChangeType
+enum class FileChangeType : uint8_t
 {
     Add,
     Delete,
@@ -290,7 +291,7 @@ struct FileChange
 };
 
 
-enum class LineType
+enum class LineType : uint8_t
 {
     Empty,
     Comment,

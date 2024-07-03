@@ -7,6 +7,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/PeekableReadBuffer.h>
 #include <Formats/EscapingRuleUtils.h>
 
 
@@ -17,6 +18,7 @@ namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
+    extern const int TYPE_MISMATCH;
 }
 
 namespace
@@ -123,6 +125,17 @@ void RowInputFormatWithNamesAndTypes::readPrefix()
             }
         }
     }
+
+    if (format_settings.force_null_for_omitted_fields)
+    {
+        for (auto index : column_mapping->not_presented_columns)
+            if (!isNullableOrLowCardinalityNullable(data_types[index]))
+                throw Exception(
+                    ErrorCodes::TYPE_MISMATCH,
+                    "Cannot insert NULL value into a column type '{}' at index {}",
+                    data_types[index]->getName(),
+                    index);
+    }
 }
 
 void RowInputFormatWithNamesAndTypes::tryDetectHeader(std::vector<String> & column_names_out, std::vector<String> & type_names_out)
@@ -216,7 +229,15 @@ bool RowInputFormatWithNamesAndTypes::readRow(MutableColumns & columns, RowReadE
             {
                 const auto & rem_column_index = column_mapping->column_indexes_for_input_fields[file_column];
                 if (rem_column_index)
+                {
+                    if (format_settings.force_null_for_omitted_fields && !isNullableOrLowCardinalityNullable(data_types[*rem_column_index]))
+                        throw Exception(
+                            ErrorCodes::TYPE_MISMATCH,
+                            "Cannot insert NULL value into a column type '{}' at index {}",
+                            data_types[*rem_column_index]->getName(),
+                            *rem_column_index);
                     columns[*rem_column_index]->insertDefault();
+                }
                 ++file_column;
             }
             break;

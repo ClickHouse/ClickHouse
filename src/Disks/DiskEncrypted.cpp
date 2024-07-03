@@ -4,9 +4,9 @@
 #include <Disks/DiskFactory.h>
 #include <IO/FileEncryptionCommon.h>
 #include <IO/ReadBufferFromEncryptedFile.h>
+#include <IO/ReadBufferFromFileDecorator.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromEncryptedFile.h>
-#include <IO/ReadBufferFromEmptyFile.h>
 #include <boost/algorithm/hex.hpp>
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
@@ -374,7 +374,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskEncrypted::readFile(
     {
         /// File is empty, that's a normal case, see DiskEncrypted::truncateFile().
         /// There is no header so we just return `ReadBufferFromString("")`.
-        return std::make_unique<ReadBufferFromEmptyFile>(wrapped_path);
+        return std::make_unique<ReadBufferFromFileDecorator>(std::make_unique<ReadBufferFromString>(std::string_view{}), wrapped_path);
     }
     auto encryption_settings = current_settings.get();
     FileEncryption::Header header = readHeader(*buffer);

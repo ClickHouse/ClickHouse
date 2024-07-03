@@ -11,7 +11,7 @@ class Context;
 
 /** Implements the `rocksdb` system table, which expose various rocksdb metrics.
   */
-class StorageSystemRocksDB final : public IStorageSystemOneBlock<StorageSystemRocksDB>
+class StorageSystemRocksDB final : public IStorageSystemOneBlock
 {
 public:
     std::string getName() const override { return "SystemRocksDB"; }
@@ -21,7 +21,7 @@ public:
 protected:
     using IStorageSystemOneBlock::IStorageSystemOneBlock;
 
-    void fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo & query_info) const override;
+    void fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node * predicate, std::vector<UInt8>) const override;
 };
 
 }

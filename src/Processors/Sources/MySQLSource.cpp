@@ -58,7 +58,7 @@ MySQLSource::MySQLSource(
     const Block & sample_block,
     const StreamSettings & settings_)
     : ISource(sample_block.cloneEmpty())
-    , log(&Poco::Logger::get("MySQLSource"))
+    , log(getLogger("MySQLSource"))
     , connection{std::make_unique<Connection>(entry, query_str)}
     , settings{std::make_unique<StreamSettings>(settings_)}
 {
@@ -69,7 +69,7 @@ MySQLSource::MySQLSource(
 /// For descendant MySQLWithFailoverSource
 MySQLSource::MySQLSource(const Block &sample_block_, const StreamSettings & settings_)
     : ISource(sample_block_.cloneEmpty())
-    , log(&Poco::Logger::get("MySQLSource"))
+    , log(getLogger("MySQLSource"))
     , settings(std::make_unique<StreamSettings>(settings_))
 {
     description.init(sample_block_);
@@ -241,8 +241,7 @@ namespace
                 ReadBufferFromString in(value);
                 time_t time = 0;
                 readDateTimeText(time, in, assert_cast<const DataTypeDateTime &>(data_type).getTimeZone());
-                if (time < 0)
-                    time = 0;
+                time = std::max<time_t>(time, 0);
                 assert_cast<ColumnUInt32 &>(column).insertValue(static_cast<UInt32>(time));
                 read_bytes_size += 4;
                 break;
@@ -275,7 +274,6 @@ namespace
                 /// 8 bytes for double-precision X coordinate
                 /// 8 bytes for double-precision Y coordinate
                 ReadBufferFromMemory payload(value.data(), value.size());
-                String val;
                 payload.ignore(4);
 
                 UInt8 endian;

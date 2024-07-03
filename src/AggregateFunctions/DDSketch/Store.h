@@ -38,7 +38,7 @@ public:
         offset = other->offset;
     }
 
-    int length()
+    int length() const
     {
         return static_cast<int>(bins.size());
     }
@@ -86,6 +86,8 @@ public:
 
         count += other->count;
     }
+
+    /// NOLINTBEGIN(readability-static-accessed-through-instance)
 
     void serialize(WriteBuffer& buf) const
     {
@@ -178,6 +180,8 @@ public:
             }
         }
     }
+
+    /// NOLINTEND(readability-static-accessed-through-instance)
 
 private:
     UInt32 chunk_size;

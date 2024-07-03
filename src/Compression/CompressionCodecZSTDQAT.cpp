@@ -34,7 +34,7 @@ protected:
 
 private:
     const int level;
-    Poco::Logger * log;
+    LoggerPtr log;
     static std::atomic<int> qat_state; /// Global initialization status of QAT device, we fall back back to software compression if uninitialized
 };
 
@@ -103,7 +103,7 @@ void registerCodecZSTDQAT(CompressionCodecFactory & factory)
 CompressionCodecZSTDQAT::CompressionCodecZSTDQAT(int level_)
     : CompressionCodecZSTD(level_)
     , level(level_)
-    , log(&Poco::Logger::get("CompressionCodecZSTDQAT"))
+    , log(getLogger("CompressionCodecZSTDQAT"))
 {
     setCodecDescription("ZSTD_QAT", {std::make_shared<ASTLiteral>(static_cast<UInt64>(level))});
 }

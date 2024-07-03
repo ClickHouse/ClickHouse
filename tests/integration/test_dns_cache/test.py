@@ -46,6 +46,7 @@ def cluster_without_dns_cache_update():
 
     except Exception as ex:
         print(ex)
+        raise
 
     finally:
         cluster.shutdown()
@@ -61,6 +62,7 @@ def test_ip_change_drop_dns_cache(cluster_without_dns_cache_update):
     node2.set_hosts([("2001:3984:3989::1:1111", "node1")])
     # drop DNS cache
     node2.query("SYSTEM DROP DNS CACHE")
+    node2.query("SYSTEM DROP CONNECTIONS CACHE")
 
     # First we check, that normal replication works
     node1.query(
@@ -86,6 +88,7 @@ def test_ip_change_drop_dns_cache(cluster_without_dns_cache_update):
 
     # drop DNS cache
     node2.query("SYSTEM DROP DNS CACHE")
+    node2.query("SYSTEM DROP CONNECTIONS CACHE")
     # Data is downloaded
     assert_eq_with_retry(node2, "SELECT count(*) from test_table_drop", "6")
 
@@ -124,6 +127,7 @@ def cluster_with_dns_cache_update():
 
     except Exception as ex:
         print(ex)
+        raise
 
     finally:
         cluster.shutdown()
@@ -267,6 +271,11 @@ def test_user_access_ip_change(cluster_with_dns_cache_update, node):
             privileged=True,
             user="root",
         )
+        node.exec_in_container(
+            ["bash", "-c", 'clickhouse client -q "SYSTEM DROP CONNECTIONS CACHE"'],
+            privileged=True,
+            user="root",
+        )
         retry_count = 1
 
     assert_eq_with_retry(
@@ -296,7 +305,8 @@ def test_host_is_drop_from_cache_after_consecutive_failures(
     # Note that the list of hosts in variable since lost_host will be there too (and it's dropped and added back)
     # dns_update_short -> dns_max_consecutive_failures set to 6
     assert node4.wait_for_log_line(
-        "Code: 198. DB::Exception: Not found address of host: InvalidHostThatDoesNotExist."
+        regexp="Code: 198. DB::NetException: Not found address of host: InvalidHostThatDoesNotExist.",
+        look_behind_lines=300,
     )
     assert node4.wait_for_log_line(
         "Cached hosts not found:.*InvalidHostThatDoesNotExist**",

@@ -128,7 +128,7 @@ MutableColumns ColumnConst::scatter(ColumnIndex num_columns, const Selector & se
 void ColumnConst::getPermutation(PermutationSortDirection /*direction*/, PermutationSortStability /*stability*/,
                                 size_t /*limit*/, int /*nan_direction_hint*/, Permutation & res) const
 {
-    res.resize(s);
+    res.resize_exact(s);
     iota(res.data(), s, IColumn::Permutation::value_type(0));
 }
 
@@ -158,5 +158,27 @@ void ColumnConst::compareColumn(
     Int8 res = compareAt(1, 1, rhs, nan_direction_hint);
     std::fill(compare_results.begin(), compare_results.end(), res);
 }
+
+ColumnConst::Ptr createColumnConst(const ColumnPtr & column, Field value)
+{
+    auto data = column->cloneEmpty();
+    data->insert(value);
+    return ColumnConst::create(std::move(data), 1);
+}
+
+ColumnConst::Ptr createColumnConst(const ColumnPtr & column, size_t const_value_index)
+{
+    auto data = column->cloneEmpty();
+    data->insertFrom(*column, const_value_index);
+    return ColumnConst::create(std::move(data), 1);
+}
+
+ColumnConst::Ptr createColumnConstWithDefaultValue(const ColumnPtr & column)
+{
+    auto data = column->cloneEmpty();
+    data->insertDefault();
+    return ColumnConst::create(std::move(data), 1);
+}
+
 
 }

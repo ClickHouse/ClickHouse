@@ -1,12 +1,14 @@
 #pragma once
 
 #include <boost/circular_buffer.hpp>
+#include <fmt/ostream.h>
 
 #include <Core/Names.h>
 #include <base/types.h>
 #include <IO/ReadBuffer.h>
 
 #include <cppkafka/cppkafka.h>
+#include <cppkafka/topic_partition.h>
 #include <Common/CurrentMetrics.h>
 
 namespace CurrentMetrics
@@ -62,7 +64,7 @@ public:
     };
 
     KafkaConsumer(
-        Poco::Logger * log_,
+        LoggerPtr log_,
         size_t max_batch_size,
         size_t poll_timeout_,
         bool intermediate_commit_,
@@ -82,17 +84,17 @@ public:
 
     auto pollTimeout() const { return poll_timeout; }
 
-    inline bool hasMorePolledMessages() const
+    bool hasMorePolledMessages() const
     {
         return (stalled_status == NOT_STALLED) && (current != messages.end());
     }
 
-    inline bool polledDataUnusable() const
+    bool polledDataUnusable() const
     {
         return  (stalled_status != NOT_STALLED) && (stalled_status != NO_MESSAGES_RETURNED);
     }
 
-    inline bool isStalled() const { return stalled_status != NOT_STALLED; }
+    bool isStalled() const { return stalled_status != NOT_STALLED; }
 
     void storeLastReadMessageOffset();
     void resetToLastCommitted(const char * msg);
@@ -150,7 +152,7 @@ private:
     std::string rdkafka_stat;
 
     ConsumerPtr consumer;
-    Poco::Logger * log;
+    LoggerPtr log;
     const size_t batch_size = 1;
     const size_t poll_timeout = 0;
     size_t offsets_stored = 0;
@@ -184,7 +186,7 @@ private:
     std::atomic<UInt64> last_rebalance_timestamp_usec = 0;
     std::atomic<UInt64> num_rebalance_assignments = 0;
     std::atomic<UInt64> num_rebalance_revocations = 0;
-    std::atomic<bool> in_use = 0;
+    std::atomic<bool> in_use = false;
     /// Last used time (for TTL)
     std::atomic<UInt64> last_used_usec = 0;
 
@@ -197,3 +199,6 @@ private:
 };
 
 }
+
+template <> struct fmt::formatter<cppkafka::TopicPartition> : fmt::ostream_formatter {};
+template <> struct fmt::formatter<cppkafka::Error> : fmt::ostream_formatter {};

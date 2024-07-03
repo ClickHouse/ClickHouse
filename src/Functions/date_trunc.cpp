@@ -1,9 +1,10 @@
 #include <Columns/ColumnConst.h>
-#include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeInterval.h>
+#include <Formats/FormatSettings.h>
 #include <Functions/DateTimeTransforms.h>
 #include <Functions/FunctionFactory.h>
 
@@ -39,7 +40,14 @@ public:
     {
         /// The first argument is a constant string with the name of datepart.
 
-        auto result_type_is_date = false;
+        enum ResultType
+        {
+            Date,
+            DateTime,
+            DateTime64,
+        };
+        ResultType result_type;
+
         String datepart_param;
         auto check_first_argument = [&] {
             const ColumnConst * datepart_column = checkAndGetColumnConst<ColumnString>(arguments[0].column.get());
@@ -55,9 +63,14 @@ public:
             if (!IntervalKind::tryParseString(datepart_param, datepart_kind))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} doesn't look like datepart name in {}", datepart_param, getName());
 
-            result_type_is_date = (datepart_kind == IntervalKind::Year)
-                || (datepart_kind == IntervalKind::Quarter) || (datepart_kind == IntervalKind::Month)
-                || (datepart_kind == IntervalKind::Week);
+            if ((datepart_kind == IntervalKind::Kind::Year) || (datepart_kind == IntervalKind::Kind::Quarter)
+                || (datepart_kind == IntervalKind::Kind::Month) || (datepart_kind == IntervalKind::Kind::Week))
+                result_type = ResultType::Date;
+            else if ((datepart_kind == IntervalKind::Kind::Day) || (datepart_kind == IntervalKind::Kind::Hour)
+                    || (datepart_kind == IntervalKind::Kind::Minute) || (datepart_kind == IntervalKind::Kind::Second))
+                result_type = ResultType::DateTime;
+            else
+                result_type = ResultType::DateTime64;
         };
 
         bool second_argument_is_date = false;
@@ -68,8 +81,8 @@ public:
 
             second_argument_is_date = isDate(arguments[1].type);
 
-            if (second_argument_is_date && ((datepart_kind == IntervalKind::Hour)
-                || (datepart_kind == IntervalKind::Minute) || (datepart_kind == IntervalKind::Second)))
+            if (second_argument_is_date && ((datepart_kind == IntervalKind::Kind::Hour)
+                || (datepart_kind == IntervalKind::Kind::Minute) || (datepart_kind == IntervalKind::Kind::Second)))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type Date of argument for function {}", getName());
         };
 
@@ -79,7 +92,7 @@ public:
                     "This argument is optional and must be a constant string with timezone name",
                     arguments[2].type->getName(), getName());
 
-            if (second_argument_is_date && result_type_is_date)
+            if (second_argument_is_date && result_type == ResultType::Date)
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                                 "The timezone argument of function {} with datepart '{}' "
                                 "is allowed only when the 2nd argument has the type DateTime",
@@ -104,10 +117,21 @@ public:
                 getName(), arguments.size());
         }
 
-        if (result_type_is_date)
+        if (result_type == ResultType::Date)
             return std::make_shared<DataTypeDate>();
-        else
+        else if (result_type == ResultType::DateTime)
             return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 2, 1, false));
+        else
+        {
+            size_t scale;
+            if (datepart_kind == IntervalKind::Kind::Millisecond)
+                scale = 3;
+            else if (datepart_kind == IntervalKind::Kind::Microsecond)
+                scale = 6;
+            else if (datepart_kind == IntervalKind::Kind::Nanosecond)
+                scale = 9;
+            return std::make_shared<DataTypeDateTime64>(scale, extractTimeZoneNameFromFunctionArguments(arguments, 2, 1, false));
+        }
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }

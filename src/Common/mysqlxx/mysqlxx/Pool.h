@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Common/Logger.h>
+
 #include <list>
 #include <memory>
 #include <mutex>
@@ -202,7 +204,7 @@ public:
     void removeConnection(Connection * connection);
 
 protected:
-    Poco::Logger * log = &Poco::Logger::get("mysqlxx::Pool");
+    LoggerPtr log = getLogger("mysqlxx::Pool");
 
     /// Number of MySQL connections which are created at launch.
     unsigned default_connections;

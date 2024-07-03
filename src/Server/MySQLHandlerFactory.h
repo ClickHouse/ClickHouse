@@ -20,7 +20,7 @@ class MySQLHandlerFactory : public TCPServerConnectionFactory
 {
 private:
     IServer & server;
-    Poco::Logger * log;
+    LoggerPtr log;
 
 #if USE_SSL
     struct RSADeleter

@@ -47,7 +47,7 @@ function main()
 {
     # retries, since there is no guarantee that every time query will take ~0.4 second.
     local retries=20 i=0
-    while [ "$(test_query_duration_ms | xargs)" != '1 1' ] && [[ $i < $retries ]]; do
+    while [ "$(test_query_duration_ms | xargs)" != '1 1' ] && (( i < retries )); do
         ((++i))
     done
 }

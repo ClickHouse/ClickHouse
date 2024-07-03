@@ -73,7 +73,7 @@ private:
     TablesDependencyGraph referential_dependencies;
     TablesDependencyGraph loading_dependencies;
     TablesDependencyGraph all_loading_dependencies;
-    Poco::Logger * log;
+    LoggerPtr log;
     std::atomic<size_t> tables_processed{0};
     AtomicStopwatch stopwatch;
 

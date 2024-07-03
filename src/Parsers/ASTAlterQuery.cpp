@@ -1,6 +1,7 @@
-#include <iomanip>
-#include <IO/Operators.h>
 #include <Parsers/ASTAlterQuery.h>
+
+#include <Core/ServerSettings.h>
+#include <IO/Operators.h>
 #include <Common/quoteString.h>
 
 
@@ -41,8 +42,8 @@ ASTPtr ASTAlterCommand::clone() const
         res->projection_decl = res->children.emplace_back(projection_decl->clone()).get();
     if (projection)
         res->projection = res->children.emplace_back(projection->clone()).get();
-    if (statistic_decl)
-        res->statistic_decl = res->children.emplace_back(statistic_decl->clone()).get();
+    if (statistics_decl)
+        res->statistics_decl = res->children.emplace_back(statistics_decl->clone()).get();
     if (partition)
         res->partition = res->children.emplace_back(partition->clone()).get();
     if (predicate)
@@ -59,8 +60,8 @@ ASTPtr ASTAlterCommand::clone() const
         res->settings_resets = res->children.emplace_back(settings_resets->clone()).get();
     if (select)
         res->select = res->children.emplace_back(select->clone()).get();
-    if (values)
-        res->values = res->children.emplace_back(values->clone()).get();
+    if (sql_security)
+        res->sql_security = res->children.emplace_back(sql_security->clone()).get();
     if (rename_to)
         res->rename_to = res->children.emplace_back(rename_to->clone()).get();
 
@@ -69,6 +70,9 @@ ASTPtr ASTAlterCommand::clone() const
 
 void ASTAlterCommand::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
+    if (format_alter_commands_with_parentheses)
+        settings.ostr << "(";
+
     if (type == ASTAlterCommand::ADD_COLUMN)
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << "ADD COLUMN " << (if_not_exists ? "IF NOT EXISTS " : "")
@@ -103,6 +107,16 @@ void ASTAlterCommand::formatImpl(const FormatSettings & settings, FormatState & 
         if (!remove_property.empty())
         {
             settings.ostr << (settings.hilite ? hilite_keyword : "") << " REMOVE " << remove_property;
+        }
+        else if (settings_changes)
+        {
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << " MODIFY SETTING " << (settings.hilite ? hilite_none : "");
+            settings_changes->formatImpl(settings, state, frame);
+        }
+        else if (settings_resets)
+        {
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << " RESET SETTING " << (settings.hilite ? hilite_none : "");
+            settings_resets->formatImpl(settings, state, frame);
         }
         else
         {
@@ -188,27 +202,33 @@ void ASTAlterCommand::formatImpl(const FormatSettings & settings, FormatState & 
             partition->formatImpl(settings, state, frame);
         }
     }
-    else if (type == ASTAlterCommand::ADD_STATISTIC)
+    else if (type == ASTAlterCommand::ADD_STATISTICS)
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << "ADD STATISTIC " << (if_not_exists ? "IF NOT EXISTS " : "")
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << "ADD STATISTICS " << (if_not_exists ? "IF NOT EXISTS " : "")
                       << (settings.hilite ? hilite_none : "");
-        statistic_decl->formatImpl(settings, state, frame);
+        statistics_decl->formatImpl(settings, state, frame);
     }
-    else if (type == ASTAlterCommand::DROP_STATISTIC)
+    else if (type == ASTAlterCommand::MODIFY_STATISTICS)
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << (clear_statistic ? "CLEAR " : "DROP ") << "STATISTIC "
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << "MODIFY STATISTICS "
+                      << (settings.hilite ? hilite_none : "");
+        statistics_decl->formatImpl(settings, state, frame);
+    }
+    else if (type == ASTAlterCommand::DROP_STATISTICS)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << (clear_statistics ? "CLEAR " : "DROP ") << "STATISTICS "
                       << (if_exists ? "IF EXISTS " : "") << (settings.hilite ? hilite_none : "");
-        statistic_decl->formatImpl(settings, state, frame);
+        statistics_decl->formatImpl(settings, state, frame);
         if (partition)
         {
             settings.ostr << (settings.hilite ? hilite_keyword : "") << " IN PARTITION " << (settings.hilite ? hilite_none : "");
             partition->formatImpl(settings, state, frame);
         }
     }
-    else if (type == ASTAlterCommand::MATERIALIZE_STATISTIC)
+    else if (type == ASTAlterCommand::MATERIALIZE_STATISTICS)
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << "MATERIALIZE STATISTIC " << (settings.hilite ? hilite_none : "");
-        statistic_decl->formatImpl(settings, state, frame);
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << "MATERIALIZE STATISTICS " << (settings.hilite ? hilite_none : "");
+        statistics_decl->formatImpl(settings, state, frame);
         if (partition)
         {
             settings.ostr << (settings.hilite ? hilite_keyword : "") << " IN PARTITION " << (settings.hilite ? hilite_none : "");
@@ -271,6 +291,12 @@ void ASTAlterCommand::formatImpl(const FormatSettings & settings, FormatState & 
     else if (type == ASTAlterCommand::DROP_DETACHED_PARTITION)
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << "DROP DETACHED" << (part ? " PART " : " PARTITION ")
+                      << (settings.hilite ? hilite_none : "");
+        partition->formatImpl(settings, state, frame);
+    }
+    else if (type == ASTAlterCommand::FORGET_PARTITION)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << "FORGET PARTITION "
                       << (settings.hilite ? hilite_none : "");
         partition->formatImpl(settings, state, frame);
     }
@@ -436,19 +462,15 @@ void ASTAlterCommand::formatImpl(const FormatSettings & settings, FormatState & 
     }
     else if (type == ASTAlterCommand::MODIFY_QUERY)
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << "MODIFY QUERY " << settings.nl_or_ws
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << "MODIFY QUERY" << settings.nl_or_ws
                       << (settings.hilite ? hilite_none : "");
         select->formatImpl(settings, state, frame);
     }
     else if (type == ASTAlterCommand::MODIFY_REFRESH)
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << "MODIFY REFRESH " << settings.nl_or_ws
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << "MODIFY" << settings.nl_or_ws
                       << (settings.hilite ? hilite_none : "");
         refresh->formatImpl(settings, state, frame);
-    }
-    else if (type == ASTAlterCommand::LIVE_VIEW_REFRESH)
-    {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << "REFRESH " << (settings.hilite ? hilite_none : "");
     }
     else if (type == ASTAlterCommand::RENAME_COLUMN)
     {
@@ -458,6 +480,11 @@ void ASTAlterCommand::formatImpl(const FormatSettings & settings, FormatState & 
 
         settings.ostr << (settings.hilite ? hilite_keyword : "") << " TO ";
         rename_to->formatImpl(settings, state, frame);
+    }
+    else if (type == ASTAlterCommand::MODIFY_SQL_SECURITY)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << "MODIFY " << (settings.hilite ? hilite_none : "");
+        sql_security->formatImpl(settings, state, frame);
     }
     else if (type == ASTAlterCommand::APPLY_DELETED_MASK)
     {
@@ -471,6 +498,9 @@ void ASTAlterCommand::formatImpl(const FormatSettings & settings, FormatState & 
     }
     else
         throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Unexpected type of ALTER");
+
+    if (format_alter_commands_with_parentheses)
+        settings.ostr << ")";
 }
 
 void ASTAlterCommand::forEachPointerToChild(std::function<void(void**)> f)
@@ -485,7 +515,7 @@ void ASTAlterCommand::forEachPointerToChild(std::function<void(void**)> f)
     f(reinterpret_cast<void **>(&constraint));
     f(reinterpret_cast<void **>(&projection_decl));
     f(reinterpret_cast<void **>(&projection));
-    f(reinterpret_cast<void **>(&statistic_decl));
+    f(reinterpret_cast<void **>(&statistics_decl));
     f(reinterpret_cast<void **>(&partition));
     f(reinterpret_cast<void **>(&predicate));
     f(reinterpret_cast<void **>(&update_assignments));
@@ -494,7 +524,7 @@ void ASTAlterCommand::forEachPointerToChild(std::function<void(void**)> f)
     f(reinterpret_cast<void **>(&settings_changes));
     f(reinterpret_cast<void **>(&settings_resets));
     f(reinterpret_cast<void **>(&select));
-    f(reinterpret_cast<void **>(&values));
+    f(reinterpret_cast<void **>(&sql_security));
     f(reinterpret_cast<void **>(&rename_to));
 }
 
@@ -598,9 +628,6 @@ void ASTAlterQuery::formatQueryImpl(const FormatSettings & settings, FormatState
         case AlterObjectType::DATABASE:
             settings.ostr << "ALTER DATABASE ";
             break;
-        case AlterObjectType::LIVE_VIEW:
-            settings.ostr << "ALTER LIVE VIEW ";
-            break;
         default:
             break;
     }
@@ -609,16 +636,20 @@ void ASTAlterQuery::formatQueryImpl(const FormatSettings & settings, FormatState
 
     if (table)
     {
+        settings.ostr << indent_str;
         if (database)
         {
-            settings.ostr << indent_str << backQuoteIfNeed(getDatabase());
-            settings.ostr << ".";
+            database->formatImpl(settings, state, frame);
+            settings.ostr << '.';
         }
-        settings.ostr << indent_str << backQuoteIfNeed(getTable());
+
+        chassert(table);
+        table->formatImpl(settings, state, frame);
     }
     else if (alter_object == AlterObjectType::DATABASE && database)
     {
-        settings.ostr << indent_str << backQuoteIfNeed(getDatabase());
+        settings.ostr << indent_str;
+        database->formatImpl(settings, state, frame);
     }
 
     formatOnCluster(settings);

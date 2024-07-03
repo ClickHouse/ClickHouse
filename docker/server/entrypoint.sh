@@ -118,13 +118,19 @@ if [ -n "$CLICKHOUSE_USER" ] && [ "$CLICKHOUSE_USER" != "default" ] || [ -n "$CL
 EOT
 fi
 
+CLICKHOUSE_ALWAYS_RUN_INITDB_SCRIPTS="${CLICKHOUSE_ALWAYS_RUN_INITDB_SCRIPTS:-}"
+
 # checking $DATA_DIR for initialization
 if [ -d "${DATA_DIR%/}/data" ]; then
     DATABASE_ALREADY_EXISTS='true'
 fi
 
-# only run initialization on an empty data directory
-if [ -z "${DATABASE_ALREADY_EXISTS}" ]; then
+# run initialization if flag CLICKHOUSE_ALWAYS_RUN_INITDB_SCRIPTS is not empty or data directory is empty
+if [[ -n "${CLICKHOUSE_ALWAYS_RUN_INITDB_SCRIPTS}" || -z "${DATABASE_ALREADY_EXISTS}" ]]; then
+  RUN_INITDB_SCRIPTS='true'
+fi
+
+if [ -n "${RUN_INITDB_SCRIPTS}" ]; then
     if [ -n "$(ls /docker-entrypoint-initdb.d/)" ] || [ -n "$CLICKHOUSE_DB" ]; then
         # port is needed to check if clickhouse-server is ready for connections
         HTTP_PORT="$(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key=http_port --try)"

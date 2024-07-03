@@ -3,6 +3,8 @@
 #include "config.h"
 
 #include <Disks/ObjectStorages/IObjectStorage.h>
+
+#include <filesystem>
 #include <shared_mutex>
 
 namespace Poco
@@ -72,11 +74,6 @@ public:
 
     void startup() override;
 
-    void applyNewSettings(
-        const Poco::Util::AbstractConfiguration & config,
-        const std::string & config_prefix,
-        ContextPtr context) override;
-
     String getObjectsNamespace() const override { return ""; }
 
     std::unique_ptr<IObjectStorage> cloneObjectStorage(
@@ -98,7 +95,7 @@ protected:
     [[noreturn]] static void throwNotAllowed();
     bool exists(const std::string & path) const;
 
-    enum class FileType
+    enum class FileType : uint8_t
     {
         File,
         Directory
@@ -158,7 +155,7 @@ private:
     loadFiles(const String & path, const std::unique_lock<std::shared_mutex> &) const;
 
     const String url;
-    Poco::Logger * log;
+    LoggerPtr log;
     size_t min_bytes_for_seek;
 };
 

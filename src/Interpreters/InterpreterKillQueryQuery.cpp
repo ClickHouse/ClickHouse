@@ -3,6 +3,7 @@
 #include <Parsers/ASTKillQueryQuery.h>
 #include <Parsers/queryToString.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/executeQuery.h>
@@ -161,7 +162,7 @@ public:
                 if (curr_process.processed)
                     continue;
 
-                LOG_DEBUG(&Poco::Logger::get("KillQuery"), "Will kill query {} (synchronously)", curr_process.query_id);
+                LOG_DEBUG(getLogger("KillQuery"), "Will kill query {} (synchronously)", curr_process.query_id);
 
                 auto code = process_list.sendCancelToQuery(curr_process.query_id, curr_process.user, true);
 
@@ -229,7 +230,7 @@ BlockIO InterpreterKillQueryQuery::execute()
             for (const auto & query_desc : queries_to_stop)
             {
                 if (!query.test)
-                    LOG_DEBUG(&Poco::Logger::get("KillQuery"), "Will kill query {} (asynchronously)", query_desc.query_id);
+                    LOG_DEBUG(getLogger("KillQuery"), "Will kill query {} (asynchronously)", query_desc.query_id);
                 auto code = (query.test) ? CancellationCode::Unknown : process_list.sendCancelToQuery(query_desc.query_id, query_desc.user, true);
                 insertResultRow(query_desc.source_num, code, processes_block, header, res_columns);
             }
@@ -277,9 +278,11 @@ BlockIO InterpreterKillQueryQuery::execute()
                     code = CancellationCode::NotFound;
                 else
                 {
-                    ParserAlterCommand parser;
+                    const auto alter_command = command_col.getDataAt(i).toString();
+                    const auto with_round_bracket = alter_command.front() == '(';
+                    ParserAlterCommand parser{with_round_bracket};
                     auto command_ast
-                        = parseQuery(parser, command_col.getDataAt(i).toString(), 0, getContext()->getSettingsRef().max_parser_depth);
+                        = parseQuery(parser, alter_command, 0, getContext()->getSettingsRef().max_parser_depth, getContext()->getSettingsRef().max_parser_backtracks);
                     required_access_rights = InterpreterAlterQuery::getRequiredAccessForCommand(
                         command_ast->as<const ASTAlterCommand &>(), table_id.database_name, table_id.table_name);
                     if (!access->isGranted(required_access_rights))

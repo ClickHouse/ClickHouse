@@ -4,7 +4,7 @@
 #include <Backups/BackupIO.h>
 #include <Backups/IBackupEntry.h>
 #include <Common/ProfileEvents.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <base/hex.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
@@ -23,8 +23,6 @@
 #include <IO/copyData.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <Poco/DOM/DOMParser.h>
-
-#include <ranges>
 
 
 namespace ProfileEvents
@@ -93,6 +91,7 @@ BackupImpl::BackupImpl(
     const std::optional<BackupInfo> & base_backup_info_,
     std::shared_ptr<IBackupReader> reader_,
     const ContextPtr & context_,
+    bool is_internal_backup_,
     bool use_same_s3_credentials_for_base_backup_)
     : backup_info(backup_info_)
     , backup_name_for_logging(backup_info.toStringForLogging())
@@ -101,11 +100,11 @@ BackupImpl::BackupImpl(
     , open_mode(OpenMode::READ)
     , reader(std::move(reader_))
     , context(context_)
-    , is_internal_backup(false)
+    , is_internal_backup(is_internal_backup_)
     , version(INITIAL_BACKUP_VERSION)
     , base_backup_info(base_backup_info_)
     , use_same_s3_credentials_for_base_backup(use_same_s3_credentials_for_base_backup_)
-    , log(&Poco::Logger::get("BackupImpl"))
+    , log(getLogger("BackupImpl"))
 {
     open();
 }
@@ -136,7 +135,7 @@ BackupImpl::BackupImpl(
     , base_backup_info(base_backup_info_)
     , deduplicate_files(deduplicate_files_)
     , use_same_s3_credentials_for_base_backup(use_same_s3_credentials_for_base_backup_)
-    , log(&Poco::Logger::get("BackupImpl"))
+    , log(getLogger("BackupImpl"))
 {
     open();
 }
@@ -144,6 +143,13 @@ BackupImpl::BackupImpl(
 
 BackupImpl::~BackupImpl()
 {
+    if ((open_mode == OpenMode::WRITE) && !is_internal_backup && !writing_finalized && !std::uncaught_exceptions() && !std::current_exception())
+    {
+        /// It is suspicious to destroy BackupImpl without finalization while writing a backup when there is no exception.
+        LOG_ERROR(log, "BackupImpl is not finalized when destructor is called. Stack trace: {}", StackTrace().toString());
+        chassert(false && "BackupImpl is not finalized when destructor is called.");
+    }
+
     try
     {
         close();
@@ -195,10 +201,6 @@ void BackupImpl::close()
 {
     std::lock_guard lock{mutex};
     closeArchive(/* finalize= */ false);
-
-    if (!is_internal_backup && writer && !writing_finalized)
-        removeAllFilesAfterFailure();
-
     writer.reset();
     reader.reset();
     coordination.reset();
@@ -253,6 +255,7 @@ std::shared_ptr<const IBackup> BackupImpl::getBaseBackupUnlocked() const
         params.backup_info = *base_backup_info;
         params.open_mode = OpenMode::READ;
         params.context = context;
+        params.is_internal_backup = is_internal_backup;
         /// use_same_s3_credentials_for_base_backup should be inherited for base backups
         params.use_same_s3_credentials_for_base_backup = use_same_s3_credentials_for_base_backup;
 
@@ -924,7 +927,7 @@ void BackupImpl::writeFile(const BackupFileInfo & info, BackupEntryPtr entry)
 
     const auto write_info_to_archive = [&](const auto & file_name)
     {
-        auto out = archive_writer->writeFile(file_name);
+        auto out = archive_writer->writeFile(file_name, info.size);
         auto read_buffer = entry->getReadBuffer(writer->getReadSettings());
         if (info.base_size != 0)
             read_buffer->seek(info.base_size, SEEK_SET);
@@ -939,12 +942,12 @@ void BackupImpl::writeFile(const BackupFileInfo & info, BackupEntryPtr entry)
     }
     else if (src_disk && from_immutable_file)
     {
-        LOG_TRACE(log, "Writing backup for file {} from {} (disk {}): data file #{}", info.data_file_name, src_file_desc, src_disk->getName(), info.data_file_index);
+        LOG_INFO(log, "Writing backup for file {} from {} (disk {}): data file #{}", info.data_file_name, src_file_desc, src_disk->getName(), info.data_file_index);
         writer->copyFileFromDisk(info.data_file_name, src_disk, src_file_path, info.encrypted_by_disk, info.base_size, info.size - info.base_size);
     }
     else
     {
-        LOG_TRACE(log, "Writing backup for file {} from {}: data file #{}", info.data_file_name, src_file_desc, info.data_file_index);
+        LOG_INFO(log, "Writing backup for file {} from {}: data file #{}", info.data_file_name, src_file_desc, info.data_file_index);
         auto create_read_buffer = [entry, read_settings = writer->getReadSettings()] { return entry->getReadBuffer(read_settings); };
         writer->copyDataToFile(info.data_file_name, create_read_buffer, info.base_size, info.size - info.base_size);
     }
@@ -1005,14 +1008,18 @@ void BackupImpl::setCompressedSize()
 }
 
 
-void BackupImpl::removeAllFilesAfterFailure()
+void BackupImpl::tryRemoveAllFiles()
 {
+    if (open_mode != OpenMode::WRITE)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Backup is not opened for writing");
+
     if (is_internal_backup)
-        return; /// Let the initiator remove unnecessary files.
+        return;
 
     try
     {
-        LOG_INFO(log, "Removing all files of backup {} after failure", backup_name_for_logging);
+        LOG_INFO(log, "Removing all files of backup {}", backup_name_for_logging);
+        closeArchive(/* finalize= */ false);
 
         Strings files_to_remove;
         if (use_archive)

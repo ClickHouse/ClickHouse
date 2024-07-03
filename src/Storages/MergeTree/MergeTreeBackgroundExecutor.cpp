@@ -144,7 +144,7 @@ bool MergeTreeBackgroundExecutor<Queue>::trySchedule(ExecutableTaskPtr task)
     return true;
 }
 
-void printExceptionWithRespectToAbort(Poco::Logger * log, const String & query_id)
+void printExceptionWithRespectToAbort(LoggerPtr log, const String & query_id)
 {
     std::exception_ptr ex = std::current_exception();
 

@@ -27,11 +27,11 @@ RabbitMQProducer::RabbitMQProducer(
     const RabbitMQConfiguration & configuration_,
     const Names & routing_keys_,
     const String & exchange_name_,
-    const AMQP::ExchangeType exchange_type_,
-    const size_t channel_id_base_,
-    const bool persistent_,
+    AMQP::ExchangeType exchange_type_,
+    size_t channel_id_base_,
+    bool persistent_,
     std::atomic<bool> & shutdown_called_,
-    Poco::Logger * log_)
+    LoggerPtr log_)
     : AsynchronousMessageProducer(log_)
     , connection(configuration_, log_)
     , routing_keys(routing_keys_)

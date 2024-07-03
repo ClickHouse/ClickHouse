@@ -11,8 +11,14 @@ script_dir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 
 # upstream/master
 LEFT_SERVER_PORT=9001
+LEFT_SERVER_KEEPER_PORT=9181
+LEFT_SERVER_KEEPER_RAFT_PORT=9234
+LEFT_SERVER_INTERSERVER_PORT=9009
 # patched version
-RIGHT_SERVER_PORT=9002
+RIGHT_SERVER_PORT=19001
+RIGHT_SERVER_KEEPER_PORT=19181
+RIGHT_SERVER_KEEPER_RAFT_PORT=19234
+RIGHT_SERVER_INTERSERVER_PORT=19009
 
 # abort_conf   -- abort if some options is not recognized
 # abort        -- abort if something is not right in the env (i.e. per-cpu arenas does not work)
@@ -81,6 +87,7 @@ function configure
         --path db0
         --user_files_path db0/user_files
         --top_level_domains_path "$(left_or_right right top_level_domains)"
+        --keeper_server.storage_path coordination0
         --tcp_port $LEFT_SERVER_PORT
     )
     left/clickhouse-server "${setup_left_server_opts[@]}" &> setup-server-log.log &
@@ -107,8 +114,12 @@ function configure
     rm -r db0/preprocessed_configs ||:
     rm -r db0/{data,metadata}/system ||:
     rm db0/status ||:
+
     cp -al db0/ left/db/
+    cp -R coordination0 left/coordination
+
     cp -al db0/ right/db/
+    cp -R coordination0 right/coordination
 }
 
 function restart
@@ -127,6 +138,11 @@ function restart
         --user_files_path left/db/user_files
         --top_level_domains_path "$(left_or_right left top_level_domains)"
         --tcp_port $LEFT_SERVER_PORT
+        --keeper_server.tcp_port $LEFT_SERVER_KEEPER_PORT
+        --keeper_server.raft_configuration.server.port $LEFT_SERVER_KEEPER_RAFT_PORT
+        --keeper_server.storage_path left/coordination
+        --zookeeper.node.port $LEFT_SERVER_KEEPER_PORT
+        --interserver_http_port $LEFT_SERVER_INTERSERVER_PORT
     )
     left/clickhouse-server "${left_server_opts[@]}" &>> left-server-log.log &
     left_pid=$!
@@ -142,6 +158,11 @@ function restart
         --user_files_path right/db/user_files
         --top_level_domains_path "$(left_or_right right top_level_domains)"
         --tcp_port $RIGHT_SERVER_PORT
+        --keeper_server.tcp_port $RIGHT_SERVER_KEEPER_PORT
+        --keeper_server.raft_configuration.server.port $RIGHT_SERVER_KEEPER_RAFT_PORT
+        --keeper_server.storage_path right/coordination
+        --zookeeper.node.port $RIGHT_SERVER_KEEPER_PORT
+        --interserver_http_port $RIGHT_SERVER_INTERSERVER_PORT
     )
     right/clickhouse-server "${right_server_opts[@]}" &>> right-server-log.log &
     right_pid=$!
@@ -444,10 +465,10 @@ create view query_logs as
 create table query_run_metric_arrays engine File(TSV, 'analyze/query-run-metric-arrays.tsv')
     as
     with (
-        -- sumMapState with the list of all keys with '-0.' values. Negative zero is because
-        -- sumMap removes keys with positive zeros.
+        -- sumMapState with the list of all keys with nullable '0' values because sumMap removes keys with default values
+        -- and 0::Nullable != NULL
         with (select groupUniqArrayArray(mapKeys(ProfileEvents)) from query_logs) as all_names
-            select arrayReduce('sumMapState', [(all_names, arrayMap(x->-0., all_names))])
+            select arrayReduce('sumMapState', [(all_names, arrayMap(x->0::Nullable(Float64), all_names))])
         ) as all_metrics
     select test, query_index, version, query_id,
         (finalizeAggregation(
@@ -456,17 +477,15 @@ create table query_run_metric_arrays engine File(TSV, 'analyze/query-run-metric-
                     all_metrics,
                     arrayReduce('sumMapState',
                         [(mapKeys(ProfileEvents),
-                            arrayMap(x->toFloat64(x), mapValues(ProfileEvents)))]
+                            arrayMap(x->toNullable(toFloat64(x)), mapValues(ProfileEvents)))]
                     ),
                     arrayReduce('sumMapState', [(
                         ['client_time', 'server_time', 'memory_usage'],
-                        arrayMap(x->if(x != 0., x, -0.), [
-                            toFloat64(query_runs.time),
-                            toFloat64(query_duration_ms / 1000.),
-                            toFloat64(memory_usage)]))])
+                        [toNullable(toFloat64(query_runs.time)), toNullable(toFloat64(query_duration_ms / 1000.)), toNullable(toFloat64(memory_usage))]
+                      )])
                 ]
             )) as metrics_tuple).1 metric_names,
-        metrics_tuple.2 metric_values
+        arrayMap(x->if(isNaN(x),0,x), metrics_tuple.2) metric_values
     from query_logs
     right join query_runs
         on query_logs.query_id = query_runs.query_id

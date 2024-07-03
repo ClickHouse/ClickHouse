@@ -21,7 +21,7 @@ WithRetries::KeeperSettings WithRetries::KeeperSettings::fromContext(ContextPtr 
 }
 
 WithRetries::WithRetries(
-    Poco::Logger * log_, zkutil::GetZooKeeper get_zookeeper_, const KeeperSettings & settings_, QueryStatusPtr process_list_element_, RenewerCallback callback_)
+    LoggerPtr log_, zkutil::GetZooKeeper get_zookeeper_, const KeeperSettings & settings_, QueryStatusPtr process_list_element_, RenewerCallback callback_)
     : log(log_)
     , get_zookeeper(get_zookeeper_)
     , settings(settings_)

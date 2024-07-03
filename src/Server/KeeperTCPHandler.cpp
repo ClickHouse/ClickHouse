@@ -220,7 +220,7 @@ KeeperTCPHandler::KeeperTCPHandler(
     Poco::Timespan send_timeout_,
     const Poco::Net::StreamSocket & socket_)
     : Poco::Net::TCPServerConnection(socket_)
-    , log(&Poco::Logger::get("KeeperTCPHandler"))
+    , log(getLogger("KeeperTCPHandler"))
     , keeper_dispatcher(keeper_dispatcher_)
     , operation_timeout(
           0,
@@ -309,7 +309,6 @@ Poco::Timespan KeeperTCPHandler::receiveHandshake(int32_t handshake_length, bool
 void KeeperTCPHandler::runImpl()
 {
     setThreadName("KeeperHandler");
-    ThreadStatus thread_status;
 
     socket().setReceiveTimeout(receive_timeout);
     socket().setSendTimeout(send_timeout);

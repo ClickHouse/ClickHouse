@@ -36,6 +36,13 @@ std::optional<PartitionCommand> PartitionCommand::parse(const ASTAlterCommand * 
         res.part = command_ast->part;
         return res;
     }
+    else if (command_ast->type == ASTAlterCommand::FORGET_PARTITION)
+    {
+        PartitionCommand res;
+        res.type = FORGET_PARTITION;
+        res.partition = command_ast->partition->clone();
+        return res;
+    }
     else if (command_ast->type == ASTAlterCommand::ATTACH_PARTITION)
     {
         PartitionCommand res;
@@ -147,6 +154,8 @@ std::string PartitionCommand::typeToString() const
             return "DROP DETACHED PART";
         else
             return "DROP DETACHED PARTITION";
+    case PartitionCommand::Type::FORGET_PARTITION:
+        return "FORGET PARTITION";
     case PartitionCommand::Type::FETCH_PARTITION:
         if (part)
             return "FETCH PART";

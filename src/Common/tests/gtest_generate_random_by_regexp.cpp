@@ -64,38 +64,3 @@ TEST(GenerateRandomString, FullRange)
             std::cerr << " +1 ";
     std::cerr << "all possible letters, ok" << std::endl;
 }
-
-UInt64 elapsed(DB::ObjectStorageKeysGeneratorPtr generator)
-{
-    String path = "some_path";
-
-    Stopwatch watch;
-
-    for (int i = 0; i < 100000; ++i)
-    {
-        [[ maybe_unused ]] auto result = generator->generate(path).serialize();
-    }
-
-    return watch.elapsedMicroseconds();
-}
-
-TEST(ObjectStorageKey, Performance)
-{
-    auto elapsed_old = elapsed(DB::createObjectStorageKeysGeneratorByPrefix(
-            "xx-xx-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx/mergetree/"));
-    std::cerr << "old: " << elapsed_old << std::endl;
-
-    auto elapsed_new = elapsed(DB::createObjectStorageKeysGeneratorByTemplate(
-            "xx-xx-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx/mergetree/[a-z]{3}/[a-z]{29}"));
-    std::cerr << "new: " << elapsed_new << std::endl;
-
-    if (elapsed_new > elapsed_old)
-    {
-        if (elapsed_new > elapsed_old)
-            std::cerr << "slow ratio: +" << float(elapsed_new) / elapsed_old << std::endl;
-        else
-            std::cerr << "fast ratio: " << float(elapsed_old) / elapsed_new << std::endl;
-        ASSERT_LT(elapsed_new, 1.5 * elapsed_old);
-    }
-
-}

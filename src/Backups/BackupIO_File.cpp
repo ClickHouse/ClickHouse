@@ -17,7 +17,7 @@ namespace ErrorCodes
 }
 
 BackupReaderFile::BackupReaderFile(const String & root_path_, const ReadSettings & read_settings_, const WriteSettings & write_settings_)
-    : BackupReaderDefault(read_settings_, write_settings_, &Poco::Logger::get("BackupReaderFile"))
+    : BackupReaderDefault(read_settings_, write_settings_, getLogger("BackupReaderFile"))
     , root_path(root_path_)
     , data_source_description(DiskLocal::getLocalDataSourceDescription(root_path))
 {
@@ -75,7 +75,7 @@ void BackupReaderFile::copyFileToDisk(const String & path_in_backup, size_t file
 
 
 BackupWriterFile::BackupWriterFile(const String & root_path_, const ReadSettings & read_settings_, const WriteSettings & write_settings_)
-    : BackupWriterDefault(read_settings_, write_settings_, &Poco::Logger::get("BackupWriterFile"))
+    : BackupWriterDefault(read_settings_, write_settings_, getLogger("BackupWriterFile"))
     , root_path(root_path_)
     , data_source_description(DiskLocal::getLocalDataSourceDescription(root_path))
 {
@@ -105,17 +105,17 @@ std::unique_ptr<WriteBuffer> BackupWriterFile::writeFile(const String & file_nam
 
 void BackupWriterFile::removeFile(const String & file_name)
 {
-    fs::remove(root_path / file_name);
+    (void)fs::remove(root_path / file_name);
     if (fs::is_directory(root_path) && fs::is_empty(root_path))
-        fs::remove(root_path);
+        (void)fs::remove(root_path);
 }
 
 void BackupWriterFile::removeFiles(const Strings & file_names)
 {
     for (const auto & file_name : file_names)
-        fs::remove(root_path / file_name);
+        (void)fs::remove(root_path / file_name);
     if (fs::is_directory(root_path) && fs::is_empty(root_path))
-        fs::remove(root_path);
+        (void)fs::remove(root_path);
 }
 
 void BackupWriterFile::copyFileFromDisk(const String & path_in_backup, DiskPtr src_disk, const String & src_path,

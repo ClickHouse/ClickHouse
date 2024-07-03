@@ -20,17 +20,17 @@ clickhouse-client --allow_experimental_analyzer=1 --query_kind initial_query -q 
 Expression ((Project names + Projection))
 Header: dummy String
   Aggregating
-  Header: toString(__table1.dummy) String
+  Header: __table1.dummy UInt8
     Expression ((Before GROUP BY + Change column names to column identifiers))
-    Header: toString(__table1.dummy) String
+    Header: __table1.dummy UInt8
       ReadFromStorage (SystemOne)
       Header: dummy UInt8
 clickhouse-local --allow_experimental_analyzer=1 --query_kind initial_query -q explain plan header=1 select toString(dummy) as dummy from system.one group by dummy
 Expression ((Project names + Projection))
 Header: dummy String
   Aggregating
-  Header: toString(__table1.dummy) String
+  Header: __table1.dummy UInt8
     Expression ((Before GROUP BY + Change column names to column identifiers))
-    Header: toString(__table1.dummy) String
+    Header: __table1.dummy UInt8
       ReadFromStorage (SystemOne)
       Header: dummy UInt8

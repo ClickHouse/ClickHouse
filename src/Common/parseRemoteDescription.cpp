@@ -179,7 +179,7 @@ std::vector<std::pair<String, uint16_t>> parseRemoteDescriptionForExternalDataba
         size_t colon = address.find(':');
         if (colon == String::npos)
         {
-            LOG_WARNING(&Poco::Logger::get("ParseRemoteDescription"), "Port is not found for host: {}. Using default port {}", address, default_port);
+            LOG_WARNING(getLogger("ParseRemoteDescription"), "Port is not found for host: {}. Using default port {}", address, default_port);
             result.emplace_back(std::make_pair(address, default_port));
         }
         else

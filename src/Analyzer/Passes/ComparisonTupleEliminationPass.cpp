@@ -184,7 +184,7 @@ private:
         return result_function;
     }
 
-    inline QueryTreeNodePtr makeEqualsFunction(QueryTreeNodePtr lhs_argument, QueryTreeNodePtr rhs_argument) const
+    QueryTreeNodePtr makeEqualsFunction(QueryTreeNodePtr lhs_argument, QueryTreeNodePtr rhs_argument) const
     {
         return makeComparisonFunction(std::move(lhs_argument), std::move(rhs_argument), "equals");
     }
@@ -213,7 +213,7 @@ private:
 
 }
 
-void ComparisonTupleEliminationPass::run(QueryTreeNodePtr query_tree_node, ContextPtr context)
+void ComparisonTupleEliminationPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
 {
     ComparisonTupleEliminationPassVisitor visitor(std::move(context));
     visitor.visit(query_tree_node);

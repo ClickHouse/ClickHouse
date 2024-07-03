@@ -12,8 +12,8 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
 }
 
-JSONColumnsWithMetadataReader::JSONColumnsWithMetadataReader(ReadBuffer & in_, const Block & header_, const FormatSettings & settings)
-    : JSONColumnsReader(in_), header(header_), validate_types_from_metadata(settings.json.validate_types_from_metadata)
+JSONColumnsWithMetadataReader::JSONColumnsWithMetadataReader(ReadBuffer & in_, const Block & header_, const FormatSettings & format_settings_)
+    : JSONColumnsReader(in_, format_settings_), header(header_)
 {
 }
 
@@ -21,13 +21,13 @@ void JSONColumnsWithMetadataReader::readChunkStart()
 {
     skipBOMIfExists(*in);
     JSONUtils::skipObjectStart(*in);
-    if (validate_types_from_metadata)
-        JSONUtils::readMetadataAndValidateHeader(*in, header);
+    if (format_settings.json.validate_types_from_metadata)
+        JSONUtils::readMetadataAndValidateHeader(*in, header, format_settings.json);
     else
-        JSONUtils::readMetadata(*in);
+        JSONUtils::readMetadata(*in, format_settings.json);
 
     JSONUtils::skipComma(*in);
-    if (!JSONUtils::skipUntilFieldInObject(*in, "data"))
+    if (!JSONUtils::skipUntilFieldInObject(*in, "data", format_settings.json))
         throw Exception(ErrorCodes::INCORRECT_DATA, "Expected field \"data\" with table content");
 
     JSONUtils::skipObjectStart(*in);
@@ -39,12 +39,12 @@ bool JSONColumnsWithMetadataReader::checkChunkEnd()
     if (!JSONUtils::checkAndSkipObjectEnd(*in))
         return false;
 
-    JSONUtils::skipTheRestOfObject(*in);
+    JSONUtils::skipTheRestOfObject(*in, format_settings.json);
     assertEOF(*in);
     return true;
 }
 
-JSONColumnsWithMetadataSchemaReader::JSONColumnsWithMetadataSchemaReader(ReadBuffer & in_) : ISchemaReader(in_)
+JSONColumnsWithMetadataSchemaReader::JSONColumnsWithMetadataSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_) : ISchemaReader(in_), format_settings(format_settings_)
 {
 }
 
@@ -52,7 +52,7 @@ NamesAndTypesList JSONColumnsWithMetadataSchemaReader::readSchema()
 {
     skipBOMIfExists(in);
     JSONUtils::skipObjectStart(in);
-    return JSONUtils::readMetadata(in);
+    return JSONUtils::readMetadata(in, format_settings.json);
 }
 
 void registerInputFormatJSONColumnsWithMetadata(FormatFactory & factory)
@@ -60,7 +60,7 @@ void registerInputFormatJSONColumnsWithMetadata(FormatFactory & factory)
     factory.registerInputFormat(
         "JSONColumnsWithMetadata",
         [](ReadBuffer & buf,
-           const Block &sample,
+           const Block & sample,
            const RowInputFormatParams &,
            const FormatSettings & settings)
         {
@@ -74,9 +74,9 @@ void registerJSONColumnsWithMetadataSchemaReader(FormatFactory & factory)
 {
     factory.registerSchemaReader(
         "JSONColumnsWithMetadata",
-        [](ReadBuffer & buf, const FormatSettings &)
+        [](ReadBuffer & buf, const FormatSettings & format_settings)
         {
-            return std::make_shared<JSONColumnsWithMetadataSchemaReader>(buf);
+            return std::make_shared<JSONColumnsWithMetadataSchemaReader>(buf, format_settings);
         }
     );
 }

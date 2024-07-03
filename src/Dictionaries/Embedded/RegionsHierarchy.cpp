@@ -23,7 +23,7 @@ RegionsHierarchy::RegionsHierarchy(IRegionsHierarchyDataSourcePtr data_source_) 
 
 void RegionsHierarchy::reload()
 {
-    Poco::Logger * log = &Poco::Logger::get("RegionsHierarchy");
+    LoggerPtr log = getLogger("RegionsHierarchy");
 
     if (!data_source->isModified())
         return;

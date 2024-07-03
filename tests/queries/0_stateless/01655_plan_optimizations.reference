@@ -44,12 +44,12 @@ Filter
 9	10	1
 > one condition of filter should be pushed down after aggregating, other condition is aliased
 Filter column
-ALIAS notEquals(s, 4) :: 1 -> and(notEquals(y, 0), notEquals(s, 4))
+ALIAS notEquals(s, 4) :: 4 -> and(notEquals(y, 0), notEquals(s, 4)) UInt8 : 2
 Aggregating
 Filter column: notEquals(y, 0)
 > (analyzer) one condition of filter should be pushed down after aggregating, other condition is aliased
 Filter column
-ALIAS notEquals(__table1.s, 4_UInt8) :: 0 -> and(notEquals(__table1.y, 0_UInt8), notEquals(__table1.s, 4_UInt8))
+ALIAS notEquals(__table1.s, 4_UInt8) :: 1 -> and(notEquals(__table1.y, 0_UInt8), notEquals(__table1.s, 4_UInt8))
 Aggregating
 Filter column: notEquals(__table1.y, 0_UInt8)
 0	1
@@ -63,12 +63,12 @@ Filter column: notEquals(__table1.y, 0_UInt8)
 9	10
 > one condition of filter should be pushed down after aggregating, other condition is casted
 Filter column
-FUNCTION and(minus(s, 4) :: 1, 1 :: 3) -> and(notEquals(y, 0), minus(s, 4)) UInt8 : 2
+FUNCTION and(minus(s, 4) :: 5, 1 :: 3) -> and(notEquals(y, 0), minus(s, 4))
 Aggregating
 Filter column: notEquals(y, 0)
 > (analyzer) one condition of filter should be pushed down after aggregating, other condition is casted
 Filter column
-FUNCTION and(minus(__table1.s, 4_UInt8) :: 0, 1 :: 3) -> and(notEquals(__table1.y, 0_UInt8), minus(__table1.s, 4_UInt8)) UInt8 : 2
+FUNCTION and(minus(__table1.s, 4_UInt8) :: 1, 1 :: 3) -> and(notEquals(__table1.y, 0_UInt8), minus(__table1.s, 4_UInt8))
 Aggregating
 Filter column: notEquals(__table1.y, 0_UInt8)
 0	1
@@ -82,12 +82,12 @@ Filter column: notEquals(__table1.y, 0_UInt8)
 9	10
 > one condition of filter should be pushed down after aggregating, other two conditions are ANDed
 Filter column
-FUNCTION and(minus(s, 8) :: 1, minus(s, 4) :: 2) -> and(notEquals(y, 0), minus(s, 8), minus(s, 4))
+FUNCTION and(minus(s, 8) :: 5, minus(s, 4) :: 2) -> and(notEquals(y, 0), minus(s, 8), minus(s, 4))
 Aggregating
 Filter column: notEquals(y, 0)
 > (analyzer) one condition of filter should be pushed down after aggregating, other two conditions are ANDed
 Filter column
-FUNCTION and(minus(__table1.s, 8_UInt8) :: 0, minus(__table1.s, 4_UInt8) :: 2) -> and(notEquals(__table1.y, 0_UInt8), minus(__table1.s, 8_UInt8), minus(__table1.s, 4_UInt8))
+FUNCTION and(minus(__table1.s, 8_UInt8) :: 1, minus(__table1.s, 4_UInt8) :: 2) -> and(notEquals(__table1.y, 0_UInt8), minus(__table1.s, 8_UInt8), minus(__table1.s, 4_UInt8))
 Aggregating
 Filter column: notEquals(__table1.y, 0_UInt8)
 0	1
@@ -100,12 +100,12 @@ Filter column: notEquals(__table1.y, 0_UInt8)
 9	10
 > two conditions of filter should be pushed down after aggregating and ANDed, one condition is aliased
 Filter column
-ALIAS notEquals(s, 8) :: 1 -> and(notEquals(y, 0), notEquals(s, 8), minus(y, 4))
+ALIAS notEquals(s, 8) :: 4 -> and(notEquals(y, 0), notEquals(s, 8), minus(y, 4))
 Aggregating
 Filter column: and(notEquals(y, 0), minus(y, 4))
 > (analyzer) two conditions of filter should be pushed down after aggregating and ANDed, one condition is aliased
 Filter column
-ALIAS notEquals(__table1.s, 8_UInt8) :: 0 -> and(notEquals(__table1.y, 0_UInt8), notEquals(__table1.s, 8_UInt8), minus(__table1.y, 4_UInt8))
+ALIAS notEquals(__table1.s, 8_UInt8) :: 1 -> and(notEquals(__table1.y, 0_UInt8), notEquals(__table1.s, 8_UInt8), minus(__table1.y, 4_UInt8))
 Aggregating
 Filter column: and(notEquals(__table1.y, 0_UInt8), minus(__table1.y, 4_UInt8))
 0	1
@@ -163,7 +163,6 @@ Filter column: notEquals(__table1.y, 2_UInt8)
 > filter is pushed down before CreatingSets
 CreatingSets
 Filter
-Filter
 1
 3
 > one condition of filter is pushed down before LEFT JOIN
@@ -180,12 +179,14 @@ Filter column: notEquals(__table1.number, 1_UInt8)
 > one condition of filter is pushed down before INNER JOIN
 Join
 Join
-Filter column: notEquals(number, 1)
+Filter column: and(notEquals(number, 1), notEquals(number, 2))
 Join
+Filter column: and(notEquals(b, 2), notEquals(b, 1))
 > (analyzer) one condition of filter is pushed down before INNER JOIN
 Join
 Join
-Filter column: notEquals(__table1.number, 1_UInt8)
+Filter column: and(notEquals(__table1.number, 1_UInt8), notEquals(__table1.number, 2_UInt8))
+Filter column: and(notEquals(__table2.b, 2_UInt8), notEquals(__table2.b, 1_UInt8))
 3	3
 > filter is pushed down before UNION
 Union

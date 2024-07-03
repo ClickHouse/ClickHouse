@@ -1,6 +1,7 @@
 #include <csignal>
 #include <csetjmp>
 #include <unistd.h>
+#include <fcntl.h>
 
 #include <new>
 #include <iostream>
@@ -12,71 +13,30 @@
 
 #include <fmt/format.h>
 
+#include "config.h"
 #include "config_tools.h"
 
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/getHashOfLoadedBinary.h>
 #include <Common/IO.h>
 
 #include <base/phdr_cache.h>
+#include <base/coverage.h>
 
 
 /// Universal executable for various clickhouse applications
-#if ENABLE_CLICKHOUSE_SERVER
 int mainEntryClickHouseServer(int argc, char ** argv);
-#endif
-#if ENABLE_CLICKHOUSE_CLIENT
 int mainEntryClickHouseClient(int argc, char ** argv);
-#endif
-#if ENABLE_CLICKHOUSE_LOCAL
 int mainEntryClickHouseLocal(int argc, char ** argv);
-#endif
-#if ENABLE_CLICKHOUSE_BENCHMARK
 int mainEntryClickHouseBenchmark(int argc, char ** argv);
-#endif
-#if ENABLE_CLICKHOUSE_EXTRACT_FROM_CONFIG
 int mainEntryClickHouseExtractFromConfig(int argc, char ** argv);
-#endif
-#if ENABLE_CLICKHOUSE_COMPRESSOR
 int mainEntryClickHouseCompressor(int argc, char ** argv);
-#endif
-#if ENABLE_CLICKHOUSE_FORMAT
 int mainEntryClickHouseFormat(int argc, char ** argv);
-#endif
-#if ENABLE_CLICKHOUSE_COPIER
-int mainEntryClickHouseClusterCopier(int argc, char ** argv);
-#endif
-#if ENABLE_CLICKHOUSE_OBFUSCATOR
 int mainEntryClickHouseObfuscator(int argc, char ** argv);
-#endif
-#if ENABLE_CLICKHOUSE_GIT_IMPORT
 int mainEntryClickHouseGitImport(int argc, char ** argv);
-#endif
-#if ENABLE_CLICKHOUSE_KEEPER
-int mainEntryClickHouseKeeper(int argc, char ** argv);
-#endif
-#if ENABLE_CLICKHOUSE_KEEPER_CONVERTER
-int mainEntryClickHouseKeeperConverter(int argc, char ** argv);
-#endif
-#if ENABLE_CLICKHOUSE_KEEPER_CLIENT
-int mainEntryClickHouseKeeperClient(int argc, char ** argv);
-#endif
-#if ENABLE_CLICKHOUSE_STATIC_FILES_DISK_UPLOADER
 int mainEntryClickHouseStaticFilesDiskUploader(int argc, char ** argv);
-#endif
-#if ENABLE_CLICKHOUSE_SU
 int mainEntryClickHouseSU(int argc, char ** argv);
-#endif
-#if ENABLE_CLICKHOUSE_INSTALL
-int mainEntryClickHouseInstall(int argc, char ** argv);
-int mainEntryClickHouseStart(int argc, char ** argv);
-int mainEntryClickHouseStop(int argc, char ** argv);
-int mainEntryClickHouseStatus(int argc, char ** argv);
-int mainEntryClickHouseRestart(int argc, char ** argv);
-#endif
-#if ENABLE_CLICKHOUSE_DISKS
 int mainEntryClickHouseDisks(int argc, char ** argv);
-#endif
 
 int mainEntryClickHouseHashBinary(int, char **)
 {
@@ -86,46 +46,46 @@ int mainEntryClickHouseHashBinary(int, char **)
     return 0;
 }
 
+#if ENABLE_CLICKHOUSE_KEEPER
+int mainEntryClickHouseKeeper(int argc, char ** argv);
+#endif
+#if ENABLE_CLICKHOUSE_KEEPER_CONVERTER
+int mainEntryClickHouseKeeperConverter(int argc, char ** argv);
+#endif
+#if ENABLE_CLICKHOUSE_KEEPER_CLIENT
+int mainEntryClickHouseKeeperClient(int argc, char ** argv);
+#endif
+
+// install
+int mainEntryClickHouseInstall(int argc, char ** argv);
+int mainEntryClickHouseStart(int argc, char ** argv);
+int mainEntryClickHouseStop(int argc, char ** argv);
+int mainEntryClickHouseStatus(int argc, char ** argv);
+int mainEntryClickHouseRestart(int argc, char ** argv);
+
 namespace
 {
 
 using MainFunc = int (*)(int, char**);
 
-#if !defined(FUZZING_MODE)
-
 /// Add an item here to register new application
 std::pair<std::string_view, MainFunc> clickhouse_applications[] =
 {
-#if ENABLE_CLICKHOUSE_LOCAL
     {"local", mainEntryClickHouseLocal},
-#endif
-#if ENABLE_CLICKHOUSE_CLIENT
     {"client", mainEntryClickHouseClient},
-#endif
-#if ENABLE_CLICKHOUSE_BENCHMARK
     {"benchmark", mainEntryClickHouseBenchmark},
-#endif
-#if ENABLE_CLICKHOUSE_SERVER
     {"server", mainEntryClickHouseServer},
-#endif
-#if ENABLE_CLICKHOUSE_EXTRACT_FROM_CONFIG
     {"extract-from-config", mainEntryClickHouseExtractFromConfig},
-#endif
-#if ENABLE_CLICKHOUSE_COMPRESSOR
     {"compressor", mainEntryClickHouseCompressor},
-#endif
-#if ENABLE_CLICKHOUSE_FORMAT
     {"format", mainEntryClickHouseFormat},
-#endif
-#if ENABLE_CLICKHOUSE_COPIER
-    {"copier", mainEntryClickHouseClusterCopier},
-#endif
-#if ENABLE_CLICKHOUSE_OBFUSCATOR
     {"obfuscator", mainEntryClickHouseObfuscator},
-#endif
-#if ENABLE_CLICKHOUSE_GIT_IMPORT
     {"git-import", mainEntryClickHouseGitImport},
-#endif
+    {"static-files-disk-uploader", mainEntryClickHouseStaticFilesDiskUploader},
+    {"su", mainEntryClickHouseSU},
+    {"hash-binary", mainEntryClickHouseHashBinary},
+    {"disks", mainEntryClickHouseDisks},
+
+    // keeper
 #if ENABLE_CLICKHOUSE_KEEPER
     {"keeper", mainEntryClickHouseKeeper},
 #endif
@@ -135,34 +95,13 @@ std::pair<std::string_view, MainFunc> clickhouse_applications[] =
 #if ENABLE_CLICKHOUSE_KEEPER_CLIENT
     {"keeper-client", mainEntryClickHouseKeeperClient},
 #endif
-#if ENABLE_CLICKHOUSE_INSTALL
+
+    // install
     {"install", mainEntryClickHouseInstall},
     {"start", mainEntryClickHouseStart},
     {"stop", mainEntryClickHouseStop},
     {"status", mainEntryClickHouseStatus},
     {"restart", mainEntryClickHouseRestart},
-#endif
-#if ENABLE_CLICKHOUSE_STATIC_FILES_DISK_UPLOADER
-    {"static-files-disk-uploader", mainEntryClickHouseStaticFilesDiskUploader},
-#endif
-#if ENABLE_CLICKHOUSE_SU
-    {"su", mainEntryClickHouseSU},
-#endif
-    {"hash-binary", mainEntryClickHouseHashBinary},
-#if ENABLE_CLICKHOUSE_DISKS
-    {"disks", mainEntryClickHouseDisks},
-#endif
-};
-
-/// Add an item here to register a new short name
-std::pair<std::string_view, std::string_view> clickhouse_short_names[] =
-{
-#if ENABLE_CLICKHOUSE_LOCAL
-    {"chl", "local"},
-#endif
-#if ENABLE_CLICKHOUSE_CLIENT
-    {"chc", "client"},
-#endif
 };
 
 int printHelp(int, char **)
@@ -172,10 +111,16 @@ int printHelp(int, char **)
         std::cerr << "clickhouse " << application.first << " [args] " << std::endl;
     return -1;
 }
-#endif
+
+/// Add an item here to register a new short name
+std::pair<std::string_view, std::string_view> clickhouse_short_names[] =
+{
+    {"chl", "local"},
+    {"chc", "client"},
+};
 
 
-enum class InstructionFail
+enum class InstructionFail : uint8_t
 {
     NONE = 0,
     SSE3 = 1,
@@ -211,8 +156,8 @@ auto instructionFailToString(InstructionFail fail)
             ret("AVX2");
         case InstructionFail::AVX512:
             ret("AVX512");
+#undef ret
     }
-    UNREACHABLE();
 }
 
 
@@ -338,7 +283,7 @@ struct Checker
 ;
 
 
-#if !defined(FUZZING_MODE) && !defined(USE_MUSL)
+#if !defined(USE_MUSL)
 /// NOTE: We will migrate to full static linking or our own dynamic loader to make this code obsolete.
 void checkHarmfulEnvironmentVariables(char ** argv)
 {
@@ -388,6 +333,50 @@ void checkHarmfulEnvironmentVariables(char ** argv)
         /// let's not pollute the code base with special cases.
         int error = execvp(argv[0], argv);
         _exit(error);
+    }
+}
+#endif
+
+
+#if defined(SANITIZE_COVERAGE)
+__attribute__((no_sanitize("coverage")))
+void dumpCoverage()
+{
+    /// A user can request to dump the coverage information into files at exit.
+    /// This is useful for non-server applications such as clickhouse-format or clickhouse-client,
+    /// that cannot introspect it with SQL functions at runtime.
+
+    /// The CLICKHOUSE_WRITE_COVERAGE environment variable defines a prefix for a filename 'prefix.pid'
+    /// containing the list of addresses of covered .
+
+    /// The format is even simpler than Clang's "sancov": an array of 64-bit addresses, native byte order, no header.
+
+    if (const char * coverage_filename_prefix = getenv("CLICKHOUSE_WRITE_COVERAGE")) // NOLINT(concurrency-mt-unsafe)
+    {
+        auto dump = [](const std::string & name, auto span)
+        {
+            /// Write only non-zeros.
+            std::vector<uintptr_t> data;
+            data.reserve(span.size());
+            for (auto addr : span)
+                if (addr)
+                    data.push_back(addr);
+
+            int fd = ::open(name.c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0400);
+            if (-1 == fd)
+            {
+                writeError("Cannot open a file to write the coverage data\n");
+            }
+            else
+            {
+                if (!writeRetry(fd, reinterpret_cast<const char *>(data.data()), data.size() * sizeof(data[0])))
+                    writeError("Cannot write the coverage data to a file\n");
+                if (0 != ::close(fd))
+                    writeError("Cannot close the file with coverage data\n");
+            }
+        };
+
+        dump(fmt::format("{}.{}", coverage_filename_prefix, getpid()), getCumulativeCoverage());
     }
 }
 #endif
@@ -451,18 +440,21 @@ extern "C"
 }
 #endif
 
+/// Prevent messages from JeMalloc in the release build.
+/// Some of these messages are non-actionable for the users, such as:
+/// <jemalloc>: Number of CPUs detected is not deterministic. Per-CPU arena disabled.
+#if USE_JEMALLOC && defined(NDEBUG) && !defined(SANITIZER)
+extern "C" void (*malloc_message)(void *, const char *s);
+__attribute__((constructor(0))) void init_je_malloc_message() { malloc_message = [](void *, const char *){}; }
+#endif
+
 /// This allows to implement assert to forbid initialization of a class in static constructors.
 /// Usage:
 ///
 /// extern bool inside_main;
 /// class C { C() { assert(inside_main); } };
-#ifndef FUZZING_MODE
 bool inside_main = false;
-#else
-bool inside_main = true;
-#endif
 
-#if !defined(FUZZING_MODE)
 int main(int argc_, char ** argv_)
 {
     inside_main = true;
@@ -504,14 +496,23 @@ int main(int argc_, char ** argv_)
     /// Interpret binary without argument or with arguments starts with dash
     /// ('-') as clickhouse-local for better usability:
     ///
-    ///     clickhouse # dumps help
+    ///     clickhouse help # dumps help
     ///     clickhouse -q 'select 1' # use local
     ///     clickhouse # spawn local
     ///     clickhouse local # spawn local
+    ///     clickhouse "select ..." # spawn local
     ///
-    if (main_func == printHelp && !argv.empty() && (argv.size() == 1 || argv[1][0] == '-'))
+    if (main_func == printHelp && !argv.empty() && (argv.size() == 1 || argv[1][0] == '-'
+        || std::string_view(argv[1]).contains(' ')))
+    {
         main_func = mainEntryClickHouseLocal;
+    }
 
-    return main_func(static_cast<int>(argv.size()), argv.data());
-}
+    int exit_code = main_func(static_cast<int>(argv.size()), argv.data());
+
+#if defined(SANITIZE_COVERAGE)
+    dumpCoverage();
 #endif
+
+    return exit_code;
+}

@@ -10,7 +10,7 @@
 namespace DB
 {
 
-enum class FilesystemPrefetchState
+enum class FilesystemPrefetchState : uint8_t
 {
     USED,
     CANCELLED_WITH_SEEK,
@@ -38,7 +38,6 @@ struct FilesystemReadPrefetchesLogElement
     static NamesAndAliases getNamesAndAliases() { return {}; }
 
     void appendToBlock(MutableColumns & columns) const;
-    static const char * getCustomColumnList() { return nullptr; }
 };
 
 class FilesystemReadPrefetchesLog : public SystemLog<FilesystemReadPrefetchesLogElement>

@@ -73,7 +73,7 @@ private:
     using Base = AggregateFunctionNullBase<result_is_nullable, serialize_flag,
         AggregateFunctionIfNullUnary<result_is_nullable, serialize_flag>>;
 
-    inline bool singleFilter(const IColumn ** columns, size_t row_num) const
+    bool singleFilter(const IColumn ** columns, size_t row_num) const
     {
         const IColumn * filter_column = columns[num_arguments - 1];
 
@@ -249,7 +249,7 @@ public:
         : Base(std::move(nested_function_), arguments, params), number_of_arguments(arguments.size())
     {
         if (number_of_arguments == 1)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: single argument is passed to AggregateFunctionIfNullVariadic");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Single argument is passed to AggregateFunctionIfNullVariadic");
 
         if (number_of_arguments > MAX_ARGS)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
@@ -261,7 +261,7 @@ public:
         filter_is_only_null = arguments.back()->onlyNull();
     }
 
-    static inline bool singleFilter(const IColumn ** columns, size_t row_num, size_t num_arguments)
+    static bool singleFilter(const IColumn ** columns, size_t row_num, size_t num_arguments)
     {
         return assert_cast<const ColumnUInt8 &>(*columns[num_arguments - 1]).getData()[row_num];
     }

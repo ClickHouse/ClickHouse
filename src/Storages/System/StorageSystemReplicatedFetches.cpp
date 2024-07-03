@@ -34,7 +34,7 @@ ColumnsDescription StorageSystemReplicatedFetches::getColumnsDescription()
     };
 }
 
-void StorageSystemReplicatedFetches::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
+void StorageSystemReplicatedFetches::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
     const auto access = context->getAccess();
     const bool check_access_for_tables = !access->isGranted(AccessType::SHOW_TABLES);

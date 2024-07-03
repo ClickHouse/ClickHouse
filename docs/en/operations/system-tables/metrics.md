@@ -287,7 +287,7 @@ Number of threads in the HashedDictionary thread pool running a task.
 
 ### IOPrefetchThreads
 
-Number of threads in the IO prefertch thread pool.
+Number of threads in the IO prefetch thread pool.
 
 ### IOPrefetchThreadsActive
 
@@ -512,10 +512,6 @@ Part was moved to another disk and should be deleted in own destructor.
 ### PartsDeleting
 
 Not active data part with identity refcounter, it is deleting right now by a cleaner.
-
-### PartsInMemory
-
-In-memory parts.
 
 ### PartsOutdated
 

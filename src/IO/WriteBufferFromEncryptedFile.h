@@ -40,7 +40,7 @@ private:
 
     FileEncryption::Encryptor encryptor;
 
-    Poco::Logger * log = &Poco::Logger::get("WriteBufferFromEncryptedFile");
+    LoggerPtr log = getLogger("WriteBufferFromEncryptedFile");
 };
 
 }

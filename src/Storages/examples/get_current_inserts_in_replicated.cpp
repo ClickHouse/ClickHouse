@@ -29,7 +29,7 @@ try
     auto config = processor.loadConfig().configuration;
     String zookeeper_path = argv[2];
 
-    auto zookeeper = std::make_shared<zkutil::ZooKeeper>(*config, zkutil::getZooKeeperConfigName(*config), nullptr);
+    auto zookeeper = zkutil::ZooKeeper::createWithoutKillingPreviousSessions(*config, zkutil::getZooKeeperConfigName(*config), nullptr);
 
     std::unordered_map<String, std::set<Int64>> current_inserts;
 

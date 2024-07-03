@@ -105,7 +105,7 @@ private:
 
     void buildVolumeIndices();
 
-    Poco::Logger * log;
+    LoggerPtr log;
 };
 
 

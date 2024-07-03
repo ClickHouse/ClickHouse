@@ -155,14 +155,14 @@ void MemoryTracker::logPeakMemoryUsage()
     auto peak_bytes = peak.load(std::memory_order::relaxed);
     if (peak_bytes < 128 * 1024)
         return;
-    LOG_DEBUG(&Poco::Logger::get("MemoryTracker"),
+    LOG_DEBUG(getLogger("MemoryTracker"),
         "Peak memory usage{}: {}.", (description ? " " + std::string(description) : ""), ReadableSize(peak_bytes));
 }
 
 void MemoryTracker::logMemoryUsage(Int64 current) const
 {
     const auto * description = description_ptr.load(std::memory_order_relaxed);
-    LOG_DEBUG(&Poco::Logger::get("MemoryTracker"),
+    LOG_DEBUG(getLogger("MemoryTracker"),
         "Current memory usage{}: {}.", (description ? " " + std::string(description) : ""), ReadableSize(current));
 }
 
@@ -170,7 +170,7 @@ void MemoryTracker::injectFault() const
 {
     if (!memoryTrackerCanThrow(level, true))
     {
-        LOG_WARNING(&Poco::Logger::get("MemoryTracker"),
+        LOG_WARNING(getLogger("MemoryTracker"),
                     "Cannot inject fault at specific point. Uncaught exceptions: {}, stack trace:\n{}",
                     std::uncaught_exceptions(), StackTrace().toString());
         return;
@@ -201,7 +201,7 @@ void MemoryTracker::debugLogBigAllocationWithoutCheck(Int64 size [[maybe_unused]
         return;
 
     MemoryTrackerBlockerInThread blocker(VariableContext::Global);
-    LOG_TEST(&Poco::Logger::get("MemoryTracker"), "Too big allocation ({} bytes) without checking memory limits, "
+    LOG_TEST(getLogger("MemoryTracker"), "Too big allocation ({} bytes) without checking memory limits, "
                                                    "it may lead to OOM. Stack trace: {}", size, StackTrace().toString());
 #else
     return;     /// Avoid trash logging in release builds

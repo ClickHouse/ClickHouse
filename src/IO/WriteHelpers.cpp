@@ -91,7 +91,8 @@ static inline void writeProbablyQuotedStringImpl(StringRef s, WriteBuffer & buf,
     if (isValidIdentifier(s.toView())
         /// This are valid identifiers but are problematic if present unquoted in SQL query.
         && !(s.size == strlen("distinct") && 0 == strncasecmp(s.data, "distinct", strlen("distinct")))
-        && !(s.size == strlen("all") && 0 == strncasecmp(s.data, "all", strlen("all"))))
+        && !(s.size == strlen("all") && 0 == strncasecmp(s.data, "all", strlen("all")))
+        && !(s.size == strlen("table") && 0 == strncasecmp(s.data, "table", strlen("table"))))
     {
         writeString(s, buf);
     }
@@ -101,17 +102,17 @@ static inline void writeProbablyQuotedStringImpl(StringRef s, WriteBuffer & buf,
 
 void writeProbablyBackQuotedString(StringRef s, WriteBuffer & buf)
 {
-    writeProbablyQuotedStringImpl(s, buf, [](StringRef s_, WriteBuffer & buf_) { return writeBackQuotedString(s_, buf_); });
+    writeProbablyQuotedStringImpl(s, buf, [](StringRef s_, WriteBuffer & buf_) { writeBackQuotedString(s_, buf_); });
 }
 
 void writeProbablyDoubleQuotedString(StringRef s, WriteBuffer & buf)
 {
-    writeProbablyQuotedStringImpl(s, buf, [](StringRef s_, WriteBuffer & buf_) { return writeDoubleQuotedString(s_, buf_); });
+    writeProbablyQuotedStringImpl(s, buf, [](StringRef s_, WriteBuffer & buf_) { writeDoubleQuotedString(s_, buf_); });
 }
 
 void writeProbablyBackQuotedStringMySQL(StringRef s, WriteBuffer & buf)
 {
-    writeProbablyQuotedStringImpl(s, buf, [](StringRef s_, WriteBuffer & buf_) { return writeBackQuotedStringMySQL(s_, buf_); });
+    writeProbablyQuotedStringImpl(s, buf, [](StringRef s_, WriteBuffer & buf_) { writeBackQuotedStringMySQL(s_, buf_); });
 }
 
 void writePointerHex(const void * ptr, WriteBuffer & buf)

@@ -48,13 +48,14 @@ protected:
 
     std::atomic_bool started_up{false};
 
-    LoadTaskPtr startup_mysql_database_task;
+    LoadTaskPtr startup_mysql_database_task TSA_GUARDED_BY(mutex);
 
 public:
     String getEngineName() const override { return "MaterializedMySQL"; }
 
     LoadTaskPtr startupDatabaseAsync(AsyncLoader & async_loader, LoadJobSet startup_after, LoadingStrictnessLevel mode) override;
-    void waitDatabaseStarted(bool no_throw) const override;
+    void waitDatabaseStarted() const override;
+    void stopLoading() override;
 
     void createTable(ContextPtr context_, const String & name, const StoragePtr & table, const ASTPtr & query) override;
 
@@ -72,7 +73,7 @@ public:
 
     StoragePtr tryGetTable(const String & name, ContextPtr context_) const override;
 
-    DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context_, const DatabaseOnDisk::FilterByNameFunction & filter_by_table_name) const override;
+    DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context_, const DatabaseOnDisk::FilterByNameFunction & filter_by_table_name, bool skip_not_loaded) const override;
 
     void checkIsInternalQuery(ContextPtr context_, const char * method) const;
 

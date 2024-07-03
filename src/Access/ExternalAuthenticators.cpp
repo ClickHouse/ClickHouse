@@ -279,7 +279,7 @@ void ExternalAuthenticators::reset()
     resetImpl();
 }
 
-void ExternalAuthenticators::setConfiguration(const Poco::Util::AbstractConfiguration & config, Poco::Logger * log)
+void ExternalAuthenticators::setConfiguration(const Poco::Util::AbstractConfiguration & config, LoggerPtr log)
 {
     std::lock_guard lock(mutex);
     resetImpl();

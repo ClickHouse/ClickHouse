@@ -39,13 +39,13 @@ desc file('$CLICKHOUSE_TEST_UNIQUE_NAME/archive.tar :: data{1,2,3}.jsonl');
 "
 
 echo 'Error' > $CLICKHOUSE_TEST_UNIQUE_NAME/data4.jsonl
-$CLICKHOUSE_LOCAL -q "desc file('$CLICKHOUSE_TEST_UNIQUE_NAME/data{1,2,3,4}.jsonl') settings schema_inference_mode='union'" 2>&1 | grep -c -F "Cannot extract table structure"
+$CLICKHOUSE_LOCAL -q "desc file('$CLICKHOUSE_TEST_UNIQUE_NAME/data{1,2,3,4}.jsonl') settings schema_inference_mode='union'" 2>&1 | grep -c -F "CANNOT_EXTRACT_TABLE_STRUCTURE"
 
 $CLICKHOUSE_LOCAL -nm -q "
 set schema_inference_mode = 'union';
 desc file('$CLICKHOUSE_TEST_UNIQUE_NAME/data{2,3}.jsonl');
 desc file('$CLICKHOUSE_TEST_UNIQUE_NAME/data{1,2,3,4}.jsonl');
-" 2>&1 | grep -c -F "Cannot extract table structure"
+" 2>&1 | grep -c -F "CANNOT_EXTRACT_TABLE_STRUCTURE"
 
 echo 42 > $CLICKHOUSE_TEST_UNIQUE_NAME/data1.csv
 echo 42, 43 > $CLICKHOUSE_TEST_UNIQUE_NAME/data2.csv

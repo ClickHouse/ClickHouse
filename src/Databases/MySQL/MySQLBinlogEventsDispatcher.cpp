@@ -19,7 +19,7 @@ public:
         , mysql_database_names(mysql_database_names_)
         , max_bytes(max_bytes_)
         , max_waiting_ms(max_waiting_ms_)
-        , logger(&Poco::Logger::get("BinlogFromDispatcher(" + name + ")"))
+        , logger(getLogger("BinlogFromDispatcher(" + name + ")"))
     {
     }
 
@@ -65,7 +65,7 @@ private:
 
     std::condition_variable cv;
     bool is_cancelled = false;
-    Poco::Logger * logger = nullptr;
+    LoggerPtr logger = nullptr;
     std::exception_ptr exception;
 };
 
@@ -84,7 +84,7 @@ BinlogEventsDispatcher::BinlogEventsDispatcher(const String & logger_name_, size
     : logger_name(logger_name_)
     , max_bytes_in_buffer(max_bytes_in_buffer_)
     , max_flush_ms(max_flush_ms_)
-    , logger(&Poco::Logger::get("BinlogEventsDispatcher(" + logger_name + ")"))
+    , logger(getLogger("BinlogEventsDispatcher(" + logger_name + ")"))
     , dispatching_thread(std::make_unique<ThreadFromGlobalPool>([this]() { dispatchEvents(); }))
 {
 }

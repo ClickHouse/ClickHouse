@@ -5,7 +5,6 @@
 #if USE_ODBC
 
 #include <Interpreters/Context_fwd.h>
-#include <Interpreters/Context.h>
 #include <Server/HTTP/HTTPRequestHandler.h>
 #include <Poco/Logger.h>
 
@@ -18,7 +17,7 @@ class ODBCColumnsInfoHandler : public HTTPRequestHandler, WithContext
 public:
     ODBCColumnsInfoHandler(size_t keep_alive_timeout_, ContextPtr context_)
         : WithContext(context_)
-        , log(&Poco::Logger::get("ODBCColumnsInfoHandler"))
+        , log(getLogger("ODBCColumnsInfoHandler"))
         , keep_alive_timeout(keep_alive_timeout_)
     {
     }
@@ -26,7 +25,7 @@ public:
     void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
 
 private:
-    Poco::Logger * log;
+    LoggerPtr log;
     size_t keep_alive_timeout;
 };
 

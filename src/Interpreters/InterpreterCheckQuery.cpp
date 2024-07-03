@@ -16,6 +16,7 @@
 #include <DataTypes/DataTypeString.h>
 
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ProcessList.h>
 
 #include <Parsers/ASTCheckQuery.h>
@@ -149,7 +150,7 @@ private:
 class TableCheckSource : public ISource
 {
 public:
-    TableCheckSource(Strings databases_, ContextPtr context_, Poco::Logger * log_)
+    TableCheckSource(Strings databases_, ContextPtr context_, LoggerPtr log_)
         : ISource(getSingleValueBlock(0))
         , databases(databases_)
         , context(context_)
@@ -157,7 +158,7 @@ public:
     {
     }
 
-    TableCheckSource(std::shared_ptr<TableCheckTask> table_check_task_, Poco::Logger * log_)
+    TableCheckSource(std::shared_ptr<TableCheckTask> table_check_task_, LoggerPtr log_)
         : ISource(getSingleValueBlock(0))
         , table_check_task(table_check_task_)
         , log(log_)
@@ -260,14 +261,14 @@ private:
 
     ContextPtr context;
 
-    Poco::Logger * log;
+    LoggerPtr log;
 };
 
 /// Receives TableCheckTask and returns CheckResult converted to sinle-row chunk
 class TableCheckWorkerProcessor : public ISimpleTransform
 {
 public:
-    TableCheckWorkerProcessor(bool with_table_name_, Poco::Logger * log_)
+    TableCheckWorkerProcessor(bool with_table_name_, LoggerPtr log_)
         : ISimpleTransform(getSingleValueBlock(0), getHeaderForCheckResult(with_table_name_), true)
         , with_table_name(with_table_name_)
         , log(log_)
@@ -308,7 +309,7 @@ private:
     /// If true, then output will contain columns with database and table names
     bool with_table_name;
 
-    Poco::Logger * log;
+    LoggerPtr log;
 };
 
 /// Accumulates all results and returns single value
@@ -333,10 +334,10 @@ public:
         if ((columns.size() != 3 && columns.size() != 5) || column_position_to_check >= columns.size())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong number of columns: {}, position {}", columns.size(), column_position_to_check);
 
-        const auto * col = checkAndGetColumn<ColumnUInt8>(columns[column_position_to_check].get());
-        for (size_t i = 0; i < col->size(); ++i)
+        const auto & col = checkAndGetColumn<ColumnUInt8>(*columns[column_position_to_check]);
+        for (size_t i = 0; i < col.size(); ++i)
         {
-            if (col->getElement(i) == 0)
+            if (col.getElement(i) == 0)
             {
                 result_value = 0;
                 return;

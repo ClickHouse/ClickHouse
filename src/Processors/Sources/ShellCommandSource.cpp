@@ -158,7 +158,7 @@ public:
                         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Executable generates stderr: {}", str);
                     else if (stderr_reaction == ExternalCommandStderrReaction::LOG)
                         LOG_WARNING(
-                            &::Poco::Logger::get("TimeoutReadBufferFromFileDescriptor"), "Executable generates stderr: {}", str);
+                            getLogger("TimeoutReadBufferFromFileDescriptor"), "Executable generates stderr: {}", str);
                     else if (stderr_reaction == ExternalCommandStderrReaction::LOG_FIRST)
                     {
                         res = std::min(ssize_t(stderr_result_buf.reserve()), res);
@@ -217,7 +217,7 @@ public:
             stderr_result.reserve(stderr_result_buf.size());
             stderr_result.append(stderr_result_buf.begin(), stderr_result_buf.end());
             LOG_WARNING(
-                &::Poco::Logger::get("ShellCommandSource"),
+                getLogger("ShellCommandSource"),
                 "Executable generates stderr at the {}: {}",
                 stderr_reaction == ExternalCommandStderrReaction::LOG_FIRST ? "beginning" : "end",
                 stderr_result);

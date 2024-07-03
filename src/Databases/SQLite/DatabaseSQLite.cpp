@@ -33,7 +33,7 @@ DatabaseSQLite::DatabaseSQLite(
     , WithContext(context_->getGlobalContext())
     , database_engine_define(database_engine_define_->clone())
     , database_path(database_path_)
-    , log(&Poco::Logger::get("DatabaseSQLite"))
+    , log(getLogger("DatabaseSQLite"))
 {
     sqlite_db = openSQLiteDB(database_path_, context_, !is_attach_);
 }
@@ -46,7 +46,7 @@ bool DatabaseSQLite::empty() const
 }
 
 
-DatabaseTablesIteratorPtr DatabaseSQLite::getTablesIterator(ContextPtr local_context, const IDatabase::FilterByNameFunction &) const
+DatabaseTablesIteratorPtr DatabaseSQLite::getTablesIterator(ContextPtr local_context, const IDatabase::FilterByNameFunction &, bool) const
 {
     std::lock_guard lock(mutex);
 
@@ -194,10 +194,10 @@ ASTPtr DatabaseSQLite::getCreateTableQueryImpl(const String & table_name, Contex
     /// Add table_name to engine arguments
     storage_engine_arguments->children.insert(storage_engine_arguments->children.begin() + 1, std::make_shared<ASTLiteral>(table_id.table_name));
 
-    unsigned max_parser_depth = static_cast<unsigned>(getContext()->getSettingsRef().max_parser_depth);
+    const Settings & settings = getContext()->getSettingsRef();
+
     auto create_table_query = DB::getCreateQueryFromStorage(storage, table_storage_define, true,
-                                                            max_parser_depth,
-                                                            throw_on_error);
+        static_cast<uint32_t>(settings.max_parser_depth), static_cast<uint32_t>(settings.max_parser_backtracks), throw_on_error);
 
     return create_table_query;
 }

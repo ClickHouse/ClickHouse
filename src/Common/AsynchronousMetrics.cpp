@@ -9,6 +9,7 @@
 #include <IO/MMappedFileCache.h>
 #include <IO/ReadHelpers.h>
 #include <base/errnoToString.h>
+#include <base/find_symbols.h>
 #include <base/getPageSize.h>
 #include <sys/resource.h>
 #include <chrono>
@@ -55,10 +56,10 @@ static std::unique_ptr<ReadBufferFromFilePRead> openFileIfExists(const std::stri
 
 
 AsynchronousMetrics::AsynchronousMetrics(
-    int update_period_seconds,
+    unsigned update_period_seconds,
     const ProtocolServerMetricsFunc & protocol_server_metrics_func_)
     : update_period(update_period_seconds)
-    , log(&Poco::Logger::get("AsynchronousMetrics"))
+    , log(getLogger("AsynchronousMetrics"))
     , protocol_server_metrics_func(protocol_server_metrics_func_)
 {
 #if defined(OS_LINUX)
@@ -89,6 +90,9 @@ AsynchronousMetrics::AsynchronousMetrics(
         openFileIfExists("/sys/fs/cgroup/cpu/cpu.cfs_period_us", cgroupcpu_cfs_period);
         openFileIfExists("/sys/fs/cgroup/cpu/cpu.cfs_quota_us", cgroupcpu_cfs_quota);
     }
+
+    openFileIfExists("/proc/sys/vm/max_map_count", vm_max_map_count);
+    openFileIfExists("/proc/self/maps", vm_maps);
 
     openSensors();
     openBlockDevices();
@@ -125,7 +129,7 @@ void AsynchronousMetrics::openSensors() TSA_REQUIRES(data_mutex)
         catch (const ErrnoException & e)
         {
             LOG_WARNING(
-                &Poco::Logger::get("AsynchronousMetrics"),
+                getLogger("AsynchronousMetrics"),
                 "Thermal monitor '{}' exists but could not be read: {}.",
                 thermal_device_index,
                 errnoToString(e.getErrno()));
@@ -254,7 +258,7 @@ void AsynchronousMetrics::openSensorsChips() TSA_REQUIRES(data_mutex)
             catch (const ErrnoException & e)
             {
                 LOG_WARNING(
-                    &Poco::Logger::get("AsynchronousMetrics"),
+                    getLogger("AsynchronousMetrics"),
                     "Hardware monitor '{}', sensor '{}' exists but could not be read: {}.",
                     hwmon_name,
                     sensor_index,
@@ -409,6 +413,15 @@ Value saveAllArenasMetric(AsynchronousMetricValues & values,
     return saveJemallocMetricImpl<Value>(values,
         fmt::format("stats.arenas.{}.{}", MALLCTL_ARENAS_ALL, metric_name),
         fmt::format("jemalloc.arenas.all.{}", metric_name));
+}
+
+template<typename Value>
+Value saveJemallocProf(AsynchronousMetricValues & values,
+    const std::string & metric_name)
+{
+    return saveJemallocMetricImpl<Value>(values,
+        fmt::format("prof.{}", metric_name),
+        fmt::format("jemalloc.prof.{}", metric_name));
 }
 
 }
@@ -603,6 +616,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
     saveJemallocMetric<size_t>(new_values, "background_thread.num_threads");
     saveJemallocMetric<uint64_t>(new_values, "background_thread.num_runs");
     saveJemallocMetric<uint64_t>(new_values, "background_thread.run_intervals");
+    saveJemallocProf<size_t>(new_values, "active");
     saveAllArenasMetric<size_t>(new_values, "pactive");
     [[maybe_unused]] size_t je_malloc_pdirty = saveAllArenasMetric<size_t>(new_values, "pdirty");
     [[maybe_unused]] size_t je_malloc_pmuzzy = saveAllArenasMetric<size_t>(new_values, "pmuzzy");
@@ -667,7 +681,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
                     ReadableSize(rss),
                     ReadableSize(difference));
 
-            total_memory_tracker.setRSS(rss, free_memory_in_allocator_arenas);
+            MemoryTracker::setRSS(rss, free_memory_in_allocator_arenas);
         }
     }
 
@@ -1155,7 +1169,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
 
                     core_id = std::stoi(s.substr(core_id_start));
                 }
-                else if (s.rfind("cpu MHz", 0) == 0)
+                else if (s.starts_with("cpu MHz"))
                 {
                     if (auto colon = s.find_first_of(':'))
                     {
@@ -1420,6 +1434,55 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         {
             tryLogCurrentException(__PRETTY_FUNCTION__);
             openFileIfExists("/proc/net/dev", net_dev);
+        }
+    }
+
+    if (vm_max_map_count)
+    {
+        try
+        {
+            vm_max_map_count->rewind();
+
+            uint64_t max_map_count = 0;
+            readText(max_map_count, *vm_max_map_count);
+            new_values["VMMaxMapCount"] = { max_map_count, "The maximum number of memory mappings a process may have (/proc/sys/vm/max_map_count)."};
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+            openFileIfExists("/proc/sys/vm/max_map_count", vm_max_map_count);
+        }
+    }
+
+    if (vm_maps)
+    {
+        try
+        {
+            vm_maps->rewind();
+
+            uint64_t num_maps = 0;
+            while (!vm_maps->eof())
+            {
+                char * next_pos = find_first_symbols<'\n'>(vm_maps->position(), vm_maps->buffer().end());
+                vm_maps->position() = next_pos;
+
+                if (!vm_maps->hasPendingData())
+                    continue;
+
+                if (*vm_maps->position() == '\n')
+                {
+                    ++num_maps;
+                    ++vm_maps->position();
+                }
+            }
+            new_values["VMNumMaps"] = { num_maps,
+                "The current number of memory mappings of the process (/proc/self/maps)."
+                " If it is close to the maximum (VMMaxMapCount), you should increase the limit for vm.max_map_count in /etc/sysctl.conf"};
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+            openFileIfExists("/proc/self/maps", vm_maps);
         }
     }
 

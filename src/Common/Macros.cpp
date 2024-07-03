@@ -38,6 +38,10 @@ Macros::Macros(const Poco::Util::AbstractConfiguration & config, const String & 
     }
 }
 
+Macros::Macros(const Poco::Util::AbstractConfiguration & config, const String & root_key, LoggerPtr log)
+    : Macros(config, root_key, log.get())
+{}
+
 Macros::Macros(std::map<String, String> map)
 {
     macros = std::move(map);
@@ -168,15 +172,6 @@ String Macros::getValue(const String & key) const
 String Macros::expand(const String & s) const
 {
     MacroExpansionInfo info;
-    return expand(s, info);
-}
-
-String Macros::expand(const String & s, const StorageID & table_id, bool allow_uuid) const
-{
-    MacroExpansionInfo info;
-    info.table_id = table_id;
-    if (!allow_uuid)
-        info.table_id.uuid = UUIDHelpers::Nil;
     return expand(s, info);
 }
 

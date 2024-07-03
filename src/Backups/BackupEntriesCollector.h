@@ -6,7 +6,7 @@
 #include <Parsers/ASTBackupQuery.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/TableLockHolder.h>
-#include <Storages/MergeTree/ZooKeeperRetries.h>
+#include <Common/ZooKeeper/ZooKeeperRetries.h>
 #include <filesystem>
 #include <queue>
 
@@ -21,7 +21,7 @@ class IBackupCoordination;
 class IDatabase;
 using DatabasePtr = std::shared_ptr<IDatabase>;
 struct StorageID;
-enum class AccessEntityType;
+enum class AccessEntityType : uint8_t;
 class QueryStatus;
 using QueryStatusPtr = std::shared_ptr<QueryStatus>;
 
@@ -129,7 +129,7 @@ private:
     /// Whether we should collect the metadata after a successful attempt one more time and check that nothing has changed.
     const bool compare_collected_metadata;
 
-    Poco::Logger * log;
+    LoggerPtr log;
     /// Unfortunately we can use ZooKeeper for collecting information for backup
     /// and we need to retry...
     ZooKeeperRetriesInfo global_zookeeper_retries_info;
@@ -164,7 +164,7 @@ private:
         ASTPtr create_table_query;
         String metadata_path_in_backup;
         std::filesystem::path data_path_in_backup;
-        std::optional<String> replicated_table_shared_id;
+        std::optional<String> replicated_table_zk_path;
         std::optional<ASTs> partitions;
     };
 

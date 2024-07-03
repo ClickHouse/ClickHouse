@@ -62,7 +62,7 @@ private:
     size_t max_tries;
     bool auto_close_connection;
     std::mutex mutex;
-    Poco::Logger * log = &Poco::Logger::get("PostgreSQLConnectionPool");
+    LoggerPtr log = getLogger("PostgreSQLConnectionPool");
 };
 
 using PoolWithFailoverPtr = std::shared_ptr<PoolWithFailover>;

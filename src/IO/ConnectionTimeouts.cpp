@@ -20,7 +20,7 @@ ConnectionTimeouts ConnectionTimeouts::getTCPTimeoutsWithoutFailover(const Setti
         .withConnectionTimeout(settings.connect_timeout)
         .withSendTimeout(settings.send_timeout)
         .withReceiveTimeout(settings.receive_timeout)
-        .withTcpKeepAliveTimeout(settings.tcp_keep_alive_timeout)
+        .withTCPKeepAliveTimeout(settings.tcp_keep_alive_timeout)
         .withHandshakeTimeout(settings.handshake_timeout_ms)
         .withHedgedConnectionTimeout(settings.hedged_connection_timeout_ms)
         .withReceiveDataTimeout(settings.receive_data_timeout_ms);
@@ -40,8 +40,8 @@ ConnectionTimeouts ConnectionTimeouts::getHTTPTimeouts(const Settings & settings
         .withConnectionTimeout(settings.http_connection_timeout)
         .withSendTimeout(settings.http_send_timeout)
         .withReceiveTimeout(settings.http_receive_timeout)
-        .withHttpKeepAliveTimeout(http_keep_alive_timeout)
-        .withTcpKeepAliveTimeout(settings.tcp_keep_alive_timeout)
+        .withHTTPKeepAliveTimeout(http_keep_alive_timeout)
+        .withTCPKeepAliveTimeout(settings.tcp_keep_alive_timeout)
         .withHandshakeTimeout(settings.handshake_timeout_ms);
 }
 
@@ -139,6 +139,26 @@ ConnectionTimeouts ConnectionTimeouts::getAdaptiveTimeouts(const String & method
     return ConnectionTimeouts(*this)
         .withSendTimeout(saturate(send, send_timeout))
         .withReceiveTimeout(saturate(recv, receive_timeout));
+}
+
+void setTimeouts(Poco::Net::HTTPClientSession & session, const ConnectionTimeouts & timeouts)
+{
+    session.setTimeout(timeouts.connection_timeout, timeouts.send_timeout, timeouts.receive_timeout);
+    /// we can not change keep alive timeout for already initiated connections
+    if (!session.connected())
+    {
+        session.setKeepAliveTimeout(timeouts.http_keep_alive_timeout);
+        session.setKeepAliveMaxRequests(int(timeouts.http_keep_alive_max_requests));
+    }
+}
+
+ConnectionTimeouts getTimeouts(const Poco::Net::HTTPClientSession & session)
+{
+    return ConnectionTimeouts()
+            .withConnectionTimeout(session.getConnectionTimeout())
+            .withSendTimeout(session.getSendTimeout())
+            .withReceiveTimeout(session.getReceiveTimeout())
+            .withHTTPKeepAliveTimeout(session.getKeepAliveTimeout());
 }
 
 }

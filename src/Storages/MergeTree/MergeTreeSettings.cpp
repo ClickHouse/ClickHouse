@@ -65,7 +65,7 @@ void MergeTreeSettings::loadFromQuery(ASTStorage & storage_def, ContextPtr conte
                         if (ast && isDiskFunction(ast))
                         {
                             auto disk_name = getOrCreateDiskFromDiskAST(ast, context, is_attach);
-                            LOG_TRACE(&Poco::Logger::get("MergeTreeSettings"), "Created custom disk {}", disk_name);
+                            LOG_TRACE(getLogger("MergeTreeSettings"), "Created custom disk {}", disk_name);
                             value = disk_name;
                         }
                     }
@@ -230,7 +230,7 @@ void MergeTreeColumnSettings::validate(const SettingsChanges & changes)
                 "Setting {} is unknown or not supported at column level, supported settings: {}",
                 change.name,
                 fmt::join(allowed_column_level_settings, ", "));
-        merge_tree_settings.checkCanSet(change.name, change.value);
+        MergeTreeSettings::checkCanSet(change.name, change.value);
     }
 }
 

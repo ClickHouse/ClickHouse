@@ -15,6 +15,7 @@ class TTLCalcTransform : public IAccumulatingTransform
 {
 public:
     TTLCalcTransform(
+        const ContextPtr & context,
         const Block & header_,
         const MergeTreeData & storage_,
         const StorageMetadataPtr & metadata_snapshot_,
@@ -22,6 +23,8 @@ public:
         time_t current_time,
         bool force_
     );
+
+    PreparedSets::Subqueries getSubqueries() { return std::move(subqueries_for_sets); }
 
     String getName() const override { return "TTL_CALC"; }
     Status prepare() override;
@@ -35,10 +38,11 @@ protected:
 
 private:
     std::vector<TTLAlgorithmPtr> algorithms;
+    PreparedSets::Subqueries subqueries_for_sets;
 
     /// ttl_infos and empty_columns are updating while reading
     const MergeTreeData::MutableDataPartPtr & data_part;
-    Poco::Logger * log;
+    LoggerPtr log;
 };
 
 }

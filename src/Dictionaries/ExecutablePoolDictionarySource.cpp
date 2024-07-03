@@ -40,7 +40,7 @@ ExecutablePoolDictionarySource::ExecutablePoolDictionarySource(
     , sample_block(sample_block_)
     , coordinator(std::move(coordinator_))
     , context(context_)
-    , log(&Poco::Logger::get("ExecutablePoolDictionarySource"))
+    , log(getLogger("ExecutablePoolDictionarySource"))
 {
     /// Remove keys from sample_block for implicit_key dictionary because
     /// these columns will not be returned from source
@@ -64,7 +64,7 @@ ExecutablePoolDictionarySource::ExecutablePoolDictionarySource(const ExecutableP
     , sample_block(other.sample_block)
     , coordinator(other.coordinator)
     , context(Context::createCopy(other.context))
-    , log(&Poco::Logger::get("ExecutablePoolDictionarySource"))
+    , log(getLogger("ExecutablePoolDictionarySource"))
 {
 }
 

@@ -128,7 +128,7 @@ PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
     const MaterializedPostgreSQLSettings & replication_settings,
     bool is_materialized_postgresql_database_)
     : WithContext(context_->getGlobalContext())
-    , log(&Poco::Logger::get("PostgreSQLReplicationHandler"))
+    , log(getLogger("PostgreSQLReplicationHandler"))
     , is_attach(is_attach_)
     , postgres_database(postgres_database_)
     , postgres_schema(replication_settings.materialized_postgresql_schema)

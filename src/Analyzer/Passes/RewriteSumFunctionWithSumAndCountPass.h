@@ -20,7 +20,7 @@ public:
 
     String getDescription() override { return "Rewrite sum(column +/- literal) into sum(column) and literal * count(column)"; }
 
-    void run(QueryTreeNodePtr query_tree_node, ContextPtr context) override;
+    void run(QueryTreeNodePtr & query_tree_node, ContextPtr context) override;
 
 };
 

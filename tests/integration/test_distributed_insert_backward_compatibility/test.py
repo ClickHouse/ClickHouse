@@ -1,6 +1,6 @@
 import pytest
 
-from helpers.cluster import ClickHouseCluster
+from helpers.cluster import ClickHouseCluster, CLICKHOUSE_CI_MIN_TESTED_VERSION
 from helpers.client import QueryRuntimeException
 
 cluster = ClickHouseCluster(__file__)
@@ -10,11 +10,10 @@ node_shard = cluster.add_instance("node1", main_configs=["configs/remote_servers
 node_dist = cluster.add_instance(
     "node2",
     main_configs=["configs/remote_servers.xml"],
-    image="yandex/clickhouse-server",
-    tag="21.6",
+    image="clickhouse/clickhouse-server",
+    tag=CLICKHOUSE_CI_MIN_TESTED_VERSION,
     stay_alive=True,
     with_installed_binary=True,
-    allow_analyzer=False,
 )
 
 

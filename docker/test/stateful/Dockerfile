@@ -9,7 +9,8 @@ RUN apt-get update -y \
         python3-requests \
         nodejs \
         npm \
-    && apt-get clean
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
 COPY create.sql /
 COPY run.sh /

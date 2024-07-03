@@ -670,8 +670,7 @@ struct ArrayElementStringImpl
         ColumnArray::Offset current_offset = 0;
         /// get the total result bytes at first, and reduce the cost of result_data.resize.
         size_t total_result_bytes = 0;
-        ColumnString::Chars zero_buf(1);
-        zero_buf.push_back(0);
+        ColumnString::Chars zero_buf(16, '\0'); /// Needs 15 extra bytes for memcpySmallAllowReadWriteOverflow15
         std::vector<std::pair<const ColumnString::Char *, UInt64>> selected_bufs;
         selected_bufs.reserve(size);
         for (size_t i = 0; i < size; ++i)
@@ -737,8 +736,7 @@ struct ArrayElementStringImpl
         size_t size = offsets.size();
         result_offsets.resize(size);
 
-        ColumnString::Chars zero_buf(1);
-        zero_buf.push_back(0);
+        ColumnString::Chars zero_buf(16, '\0'); /// Needs 15 extra bytes for memcpySmallAllowReadWriteOverflow15
         ColumnArray::Offset current_offset = 0;
         /// get the total result bytes at first, and reduce the cost of result_data.resize.
         size_t total_result_bytes = 0;
@@ -1540,9 +1538,9 @@ ColumnPtr FunctionArrayElement::executeMap2(const ColumnsWithTypeAndName & argum
         return nullptr;
 
     const ColumnArray * col_map_nested = &col_map->getNestedColumn();
-    const ColumnTuple * col_map_kv = checkAndGetColumn<ColumnTuple>(col_map_nested->getDataPtr().get());
-    ColumnPtr col_map_keys = col_map_kv->getColumnPtr(0);
-    ColumnPtr col_map_values = col_map_kv->getColumnPtr(1);
+    const ColumnTuple & col_map_kv = checkAndGetColumn<ColumnTuple>(*col_map_nested->getDataPtr());
+    ColumnPtr col_map_keys = col_map_kv.getColumnPtr(0);
+    ColumnPtr col_map_values = col_map_kv.getColumnPtr(1);
 
     const DataTypeMap & map_type
         = typeid_cast<const DataTypeMap &>(*typeid_cast<const DataTypeArray &>(*arguments[0].type).getNestedType());

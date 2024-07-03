@@ -1,8 +1,12 @@
 #include "PrometheusMetricsWriter.h"
 
 #include <IO/WriteHelpers.h>
+#include <Common/ErrorCodes.h>
 #include <Common/re2.h>
+
 #include <algorithm>
+
+#include "config.h"
 
 namespace
 {
@@ -38,7 +42,82 @@ void convertHelpToSingleLine(std::string & help)
     std::replace(help.begin(), help.end(), '\n', ' ');
 }
 
+constexpr auto profile_events_prefix = "ClickHouseProfileEvents_";
+constexpr auto current_metrics_prefix = "ClickHouseMetrics_";
+constexpr auto asynchronous_metrics_prefix = "ClickHouseAsyncMetrics_";
+constexpr auto error_metrics_prefix = "ClickHouseErrorMetric_";
+
+void writeEvent(DB::WriteBuffer & wb, ProfileEvents::Event event)
+{
+    const auto counter = ProfileEvents::global_counters[event].load(std::memory_order_relaxed);
+
+    std::string metric_name{ProfileEvents::getName(static_cast<ProfileEvents::Event>(event))};
+    std::string metric_doc{ProfileEvents::getDocumentation(static_cast<ProfileEvents::Event>(event))};
+
+    convertHelpToSingleLine(metric_doc);
+
+    if (!replaceInvalidChars(metric_name))
+        return;
+
+    std::string key{profile_events_prefix + metric_name};
+
+    writeOutLine(wb, "# HELP", key, metric_doc);
+    writeOutLine(wb, "# TYPE", key, "counter");
+    writeOutLine(wb, key, counter);
 }
+
+void writeMetric(DB::WriteBuffer & wb, size_t metric)
+{
+    const auto value = CurrentMetrics::values[metric].load(std::memory_order_relaxed);
+
+    std::string metric_name{CurrentMetrics::getName(static_cast<CurrentMetrics::Metric>(metric))};
+    std::string metric_doc{CurrentMetrics::getDocumentation(static_cast<CurrentMetrics::Metric>(metric))};
+
+    convertHelpToSingleLine(metric_doc);
+
+    if (!replaceInvalidChars(metric_name))
+        return;
+
+    std::string key{current_metrics_prefix + metric_name};
+
+    writeOutLine(wb, "# HELP", key, metric_doc);
+    writeOutLine(wb, "# TYPE", key, "gauge");
+    writeOutLine(wb, key, value);
+}
+
+void writeAsyncMetrics(DB::WriteBuffer & wb, const DB::AsynchronousMetricValues & values)
+{
+    for (const auto & name_value : values)
+    {
+        std::string key{asynchronous_metrics_prefix + name_value.first};
+
+        if (!replaceInvalidChars(key))
+            continue;
+
+        auto value = name_value.second;
+
+        std::string metric_doc{value.documentation};
+        convertHelpToSingleLine(metric_doc);
+
+        writeOutLine(wb, "# HELP", key, metric_doc);
+        writeOutLine(wb, "# TYPE", key, "gauge");
+        writeOutLine(wb, key, value.value);
+    }
+}
+
+}
+
+#if USE_NURAFT
+namespace ProfileEvents
+{
+    extern const std::vector<Event> keeper_profile_events;
+}
+
+namespace CurrentMetrics
+{
+    extern const std::vector<Metric> keeper_metrics;
+}
+#endif
 
 
 namespace DB
@@ -60,65 +139,17 @@ void PrometheusMetricsWriter::write(WriteBuffer & wb) const
     if (send_events)
     {
         for (ProfileEvents::Event i = ProfileEvents::Event(0), end = ProfileEvents::end(); i < end; ++i)
-        {
-            const auto counter = ProfileEvents::global_counters[i].load(std::memory_order_relaxed);
-
-            std::string metric_name{ProfileEvents::getName(static_cast<ProfileEvents::Event>(i))};
-            std::string metric_doc{ProfileEvents::getDocumentation(static_cast<ProfileEvents::Event>(i))};
-
-            convertHelpToSingleLine(metric_doc);
-
-            if (!replaceInvalidChars(metric_name))
-                continue;
-            std::string key{profile_events_prefix + metric_name};
-
-            writeOutLine(wb, "# HELP", key, metric_doc);
-            writeOutLine(wb, "# TYPE", key, "counter");
-            writeOutLine(wb, key, counter);
-        }
+            writeEvent(wb, i);
     }
 
     if (send_metrics)
     {
         for (size_t i = 0, end = CurrentMetrics::end(); i < end; ++i)
-        {
-            const auto value = CurrentMetrics::values[i].load(std::memory_order_relaxed);
-
-            std::string metric_name{CurrentMetrics::getName(static_cast<CurrentMetrics::Metric>(i))};
-            std::string metric_doc{CurrentMetrics::getDocumentation(static_cast<CurrentMetrics::Metric>(i))};
-
-            convertHelpToSingleLine(metric_doc);
-
-            if (!replaceInvalidChars(metric_name))
-                continue;
-            std::string key{current_metrics_prefix + metric_name};
-
-            writeOutLine(wb, "# HELP", key, metric_doc);
-            writeOutLine(wb, "# TYPE", key, "gauge");
-            writeOutLine(wb, key, value);
-        }
+            writeMetric(wb, i);
     }
 
     if (send_asynchronous_metrics)
-    {
-        auto async_metrics_values = async_metrics.getValues();
-        for (const auto & name_value : async_metrics_values)
-        {
-            std::string key{asynchronous_metrics_prefix + name_value.first};
-
-            if (!replaceInvalidChars(key))
-                continue;
-
-            auto value = name_value.second;
-
-            std::string metric_doc{value.documentation};
-            convertHelpToSingleLine(metric_doc);
-
-            writeOutLine(wb, "# HELP", key, metric_doc);
-            writeOutLine(wb, "# TYPE", key, "gauge");
-            writeOutLine(wb, key, value.value);
-        }
-    }
+        writeAsyncMetrics(wb, async_metrics.getValues());
 
     if (send_errors)
     {
@@ -150,6 +181,26 @@ void PrometheusMetricsWriter::write(WriteBuffer & wb) const
         writeOutLine(wb, key, total_count);
     }
 
+}
+
+void KeeperPrometheusMetricsWriter::write([[maybe_unused]] WriteBuffer & wb) const
+{
+#if USE_NURAFT
+    if (send_events)
+    {
+        for (auto event : ProfileEvents::keeper_profile_events)
+            writeEvent(wb, event);
+    }
+
+    if (send_metrics)
+    {
+        for (auto metric : CurrentMetrics::keeper_metrics)
+            writeMetric(wb, metric);
+    }
+
+    if (send_asynchronous_metrics)
+        writeAsyncMetrics(wb, async_metrics.getValues());
+#endif
 }
 
 }

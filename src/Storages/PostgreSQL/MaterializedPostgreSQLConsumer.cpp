@@ -51,7 +51,7 @@ MaterializedPostgreSQLConsumer::MaterializedPostgreSQLConsumer(
     bool schema_as_a_part_of_table_name_,
     StorageInfos storages_info_,
     const String & name_for_logger)
-    : log(&Poco::Logger::get("PostgreSQLReplicaConsumer(" + name_for_logger + ")"))
+    : log(getLogger("PostgreSQLReplicaConsumer(" + name_for_logger + ")"))
     , context(context_)
     , replication_slot_name(replication_slot_name_)
     , publication_name(publication_name_)
@@ -76,7 +76,7 @@ MaterializedPostgreSQLConsumer::MaterializedPostgreSQLConsumer(
 }
 
 
-MaterializedPostgreSQLConsumer::StorageData::StorageData(const StorageInfo & storage_info, Poco::Logger * log_)
+MaterializedPostgreSQLConsumer::StorageData::StorageData(const StorageInfo & storage_info, LoggerPtr log_)
     : storage(storage_info.storage)
     , table_description(storage_info.storage->getInMemoryMetadataPtr()->getSampleBlock())
     , columns_attributes(storage_info.attributes)
@@ -313,7 +313,7 @@ void MaterializedPostgreSQLConsumer::readTupleData(
                 Int32 col_len = readInt32(message, pos, size);
                 String value;
                 for (Int32 i = 0; i < col_len; ++i)
-                    value += readInt8(message, pos, size);
+                    value += static_cast<char>(readInt8(message, pos, size));
 
                 insertValue(storage_data, value, column_idx);
                 break;

@@ -4,7 +4,7 @@
 #include <Common/logger_useful.h>
 #include <Common/assert_cast.h>
 #include <Common/filesystemHelpers.h>
-#include <Common/NamedCollections/NamedCollections.h>
+#include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Disks/DiskFactory.h>
 #include <Disks/ObjectStorages/DiskObjectStorage.h>
 
@@ -114,7 +114,7 @@ void registerDiskCache(DiskFactory & factory, bool /* global_skip_access_check *
         disk_object_storage->wrapWithCache(cache, file_cache_settings, name);
 
         LOG_INFO(
-            &Poco::Logger::get("DiskCache"),
+            getLogger("DiskCache"),
             "Registered cached disk (`{}`) with structure: {}",
             name, assert_cast<DiskObjectStorage *>(disk_object_storage.get())->getStructure());
 

@@ -9,11 +9,13 @@
         <errorlog>/var/log/clickhouse-keeper/clickhouse-keeper.err.log</errorlog>
     </logger>
 
+    <placement>
+        <use_imds>0</use_imds>
+        <availability_zone>az-zoo1</availability_zone>
+    </placement>
+
     <keeper_server>
         <tcp_port>2181</tcp_port>
-        <availability_zone>
-            <value>az-zoo1</value>
-        </availability_zone>
         <server_id>1</server_id>
 
         <coordination_settings>

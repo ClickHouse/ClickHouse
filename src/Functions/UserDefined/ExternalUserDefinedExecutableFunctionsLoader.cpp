@@ -1,7 +1,7 @@
 #include "ExternalUserDefinedExecutableFunctionsLoader.h"
 
 #include <boost/algorithm/string/split.hpp>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 
 #include <DataTypes/DataTypeFactory.h>
 
@@ -95,7 +95,7 @@ namespace
 }
 
 ExternalUserDefinedExecutableFunctionsLoader::ExternalUserDefinedExecutableFunctionsLoader(ContextPtr global_context_)
-    : ExternalLoader("external user defined function", &Poco::Logger::get("ExternalUserDefinedExecutableFunctionsLoader"))
+    : ExternalLoader("external user defined function", getLogger("ExternalUserDefinedExecutableFunctionsLoader"))
     , WithContext(global_context_)
 {
     setConfigSettings({"function", "name", "database", "uuid"});
@@ -120,7 +120,7 @@ void ExternalUserDefinedExecutableFunctionsLoader::reloadFunction(const std::str
     loadOrReload(user_defined_function_name);
 }
 
-ExternalLoader::LoadablePtr ExternalUserDefinedExecutableFunctionsLoader::create(const std::string & name,
+ExternalLoader::LoadableMutablePtr ExternalUserDefinedExecutableFunctionsLoader::createObject(const std::string & name,
     const Poco::Util::AbstractConfiguration & config,
     const std::string & key_in_config,
     const std::string &) const

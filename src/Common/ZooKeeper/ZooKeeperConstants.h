@@ -2,6 +2,7 @@
 
 #include <string>
 #include <cstdint>
+#include <magic_enum.hpp>
 
 
 namespace Coordination
@@ -64,3 +65,12 @@ static constexpr int32_t DEFAULT_OPERATION_TIMEOUT_MS = 10000;
 static constexpr int32_t DEFAULT_CONNECTION_TIMEOUT_MS = 1000;
 
 }
+
+/// This is used by fmt::format to print OpNum as strings.
+/// All OpNum values should be in range [min, max] to be printed.
+template <>
+struct magic_enum::customize::enum_range<Coordination::OpNum>
+{
+    static constexpr int min = -100;
+    static constexpr int max = 1000;
+};

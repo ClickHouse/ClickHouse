@@ -73,7 +73,7 @@ private:
     const String current_host;
     const size_t current_host_index;
     const bool is_internal;
-    Poco::Logger * const log;
+    LoggerPtr const log;
 
     mutable WithRetries with_retries;
     std::optional<BackupCoordinationStageSync> stage_sync;
