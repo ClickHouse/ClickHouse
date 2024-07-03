@@ -71,7 +71,7 @@ private:
     String zookeeper_path;
     String replica_path;
     String logger_name;
-    LoggerPtr log = nullptr;
+    Poco::Logger * log = nullptr;
 
     /// Protects the queue, future_parts and other queue state variables.
     mutable std::mutex state_mutex;
@@ -151,8 +151,6 @@ private:
 
     /// Mapping from znode path to Mutations Status
     std::map<String, MutationStatus> mutations_by_znode;
-    /// Unfinished mutations that is required AlterConversions (see getAlterMutationCommandsForPart())
-    std::atomic<ssize_t> alter_conversions_mutations = 0;
     /// Partition -> (block_number -> MutationStatus)
     std::unordered_map<String, std::map<Int64, MutationStatus *>> mutations_by_partition;
     /// Znode ID of the latest mutation that is done.
@@ -244,7 +242,7 @@ private:
     /// by first argument. If remove_part == true, than also remove part itself.
     /// Both negative flags will throw exception.
     ///
-    /// Part removed from mutations which satisfy conditions:
+    /// Part removed from mutations which satisfy contitions:
     /// block_number > part.getDataVersion()
     /// or block_number == part.getDataVersion()
     ///    ^ (this may happen if we downloaded mutated part from other replica)
@@ -339,11 +337,11 @@ public:
       * Additionally loads mutations (so that the set of mutations is always more recent than the queue).
       * Return the version of "logs" node (that is updated for every merge/mutation/... added to the log)
       */
-    std::pair<int32_t, int32_t> pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, Coordination::WatchCallback watch_callback = {}, PullLogsReason reason = OTHER);
+    int32_t pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, Coordination::WatchCallback watch_callback = {}, PullLogsReason reason = OTHER);
 
     /// Load new mutation entries. If something new is loaded, schedule storage.merge_selecting_task.
     /// If watch_callback is not empty, will call it when new mutations appear in ZK.
-    int32_t updateMutations(zkutil::ZooKeeperPtr zookeeper, Coordination::WatchCallbackPtr watch_callback = {});
+    void updateMutations(zkutil::ZooKeeperPtr zookeeper, Coordination::WatchCallbackPtr watch_callback = {});
 
     /// Remove a mutation from ZooKeeper and from the local set. Returns the removed entry or nullptr
     /// if it could not be found. Called during KILL MUTATION query execution.
@@ -399,12 +397,12 @@ public:
 
     /// Count the total number of active mutations that are finished (is_done = true).
     size_t countFinishedMutations() const;
-
-    std::map<std::string, MutationCommands> getUnfinishedMutations() const;
+    /// Count the total number of active mutations that are not finished (is_done = false).
+    size_t countUnfinishedMutations() const;
 
     /// Returns functor which used by MergeTreeMergerMutator to select parts for merge
-    ReplicatedMergeTreeMergePredicate
-    getMergePredicate(zkutil::ZooKeeperPtr & zookeeper, std::optional<PartitionIdsHint> && partition_ids_hint);
+    ReplicatedMergeTreeMergePredicate getMergePredicate(zkutil::ZooKeeperPtr & zookeeper,
+                                                        std::optional<PartitionIdsHint> && partition_ids_hint);
 
     MutationCommands getMutationCommands(const MergeTreeData::DataPartPtr & part, Int64 desired_mutation_version,
                                          Strings & mutation_ids) const;
@@ -412,7 +410,7 @@ public:
     /// Return mutation commands for part which could be not applied to
     /// it according to part mutation version. Used when we apply alter commands on fly,
     /// without actual data modification on disk.
-    MutationCommands getAlterMutationCommandsForPart(const MergeTreeData::DataPartPtr & part) const;
+    std::map<int64_t, MutationCommands> getAlterMutationCommandsForPart(const MergeTreeData::DataPartPtr & part) const;
 
     /// Mark finished mutations as done. If the function needs to be called again at some later time
     /// (because some mutations are probably done but we are not sure yet), returns true.
@@ -441,7 +439,7 @@ public:
     ActionBlocker pull_log_blocker;
 
     /// Adds a subscriber
-    SubscriberHandler addSubscriber(SubscriberCallBack && callback, std::unordered_set<String> & out_entry_names, SyncReplicaMode sync_mode, std::unordered_set<String> src_replicas);
+    SubscriberHandler addSubscriber(SubscriberCallBack && callback, std::unordered_set<String> & out_entry_names, SyncReplicaMode sync_mode);
 
     void notifySubscribersOnPartialShutdown();
 
@@ -516,27 +514,27 @@ class BaseMergePredicate
 {
 public:
     BaseMergePredicate() = default;
-    explicit BaseMergePredicate(std::optional<PartitionIdsHint> && partition_ids_hint_) : partition_ids_hint(std::move(partition_ids_hint_)) {}
+    BaseMergePredicate(std::optional<PartitionIdsHint> && partition_ids_hint_) : partition_ids_hint(std::move(partition_ids_hint_)) {}
 
     /// Depending on the existence of left part checks a merge predicate for two parts or for single part.
     bool operator()(const MergeTreeData::DataPartPtr & left,
                     const MergeTreeData::DataPartPtr & right,
                     const MergeTreeTransaction * txn,
-                    PreformattedMessage & out_reason) const;
+                    String & out_reason) const;
 
     /// Can we assign a merge with these two parts?
     /// (assuming that no merge was assigned after the predicate was constructed)
     /// If we can't and out_reason is not nullptr, set it to the reason why we can't merge.
     bool canMergeTwoParts(const MergeTreeData::DataPartPtr & left,
                           const MergeTreeData::DataPartPtr & right,
-                          PreformattedMessage & out_reason) const;
+                          String & out_reason) const;
 
     /// Can we assign a merge this part and some other part?
     /// For example a merge of a part and itself is needed for TTL.
     /// This predicate is checked for the first part of each range.
-    bool canMergeSinglePart(const MergeTreeData::DataPartPtr & part, PreformattedMessage & out_reason) const;
+    bool canMergeSinglePart(const MergeTreeData::DataPartPtr & part, String & out_reason) const;
 
-    CommittingBlocks getCommittingBlocks(zkutil::ZooKeeperPtr & zookeeper, const std::string & zookeeper_path, LoggerPtr log_);
+    CommittingBlocks getCommittingBlocks(zkutil::ZooKeeperPtr & zookeeper, const std::string & zookeeper_path, Poco::Logger * log_);
 
 protected:
     /// A list of partitions that can be used in the merge predicate
@@ -567,7 +565,7 @@ protected:
 class LocalMergePredicate : public BaseMergePredicate<ActiveDataPartSet, ReplicatedMergeTreeQueue>
 {
 public:
-    explicit LocalMergePredicate(ReplicatedMergeTreeQueue & queue_);
+    LocalMergePredicate(ReplicatedMergeTreeQueue & queue_);
 };
 
 class ReplicatedMergeTreeMergePredicate : public BaseMergePredicate<ActiveDataPartSet, ReplicatedMergeTreeQueue>
@@ -578,7 +576,7 @@ public:
 
     /// Returns true if part is needed for some REPLACE_RANGE entry.
     /// We should not drop part in this case, because replication queue may stuck without that part.
-    bool partParticipatesInReplaceRange(const MergeTreeData::DataPartPtr & part, PreformattedMessage & out_reason) const;
+    bool partParticipatesInReplaceRange(const MergeTreeData::DataPartPtr & part, String & out_reason) const;
 
     /// Return nonempty optional of desired mutation version and alter version.
     /// If we have no alter (modify/drop) mutations in mutations queue, than we return biggest possible

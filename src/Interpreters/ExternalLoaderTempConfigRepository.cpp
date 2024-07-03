@@ -28,6 +28,14 @@ bool ExternalLoaderTempConfigRepository::exists(const String & path_)
 }
 
 
+Poco::Timestamp ExternalLoaderTempConfigRepository::getUpdateTime(const String & path_)
+{
+    if (!exists(path_))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Loadable {} not found", path_);
+    return creation_time;
+}
+
+
 LoadablesConfigurationPtr ExternalLoaderTempConfigRepository::load(const String & path_)
 {
     if (!exists(path_))

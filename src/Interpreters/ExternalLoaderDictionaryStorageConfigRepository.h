@@ -19,6 +19,8 @@ public:
 
     bool exists(const std::string & loadable_definition_name) override;
 
+    Poco::Timestamp getUpdateTime(const std::string & loadable_definition_name) override;
+
     LoadablesConfigurationPtr load(const std::string & loadable_definition_name) override;
 
 private:

@@ -69,7 +69,7 @@ private:
 
     static constexpr auto reload_interval = std::chrono::seconds(2);
 
-    LoggerPtr log = getLogger("ConfigReloader");
+    Poco::Logger * log = &Poco::Logger::get("ConfigReloader");
 
     std::string config_path;
     std::vector<std::string> extra_paths;

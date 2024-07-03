@@ -27,8 +27,7 @@ ProtobufRowOutputFormat::ProtobufRowOutputFormat(
     , serializer(ProtobufSerializer::create(
           header_.getNames(),
           header_.getDataTypes(),
-          *ProtobufSchemas::instance().getMessageTypeForFormatSchema(
-              schema_info_.getSchemaInfo(), ProtobufSchemas::WithEnvelope::No, settings_.protobuf.google_protos_path),
+          *ProtobufSchemas::instance().getMessageTypeForFormatSchema(schema_info_.getSchemaInfo(), ProtobufSchemas::WithEnvelope::No),
           with_length_delimiter_,
           /* with_envelope = */ false,
           settings_.protobuf.output_nullables_with_google_wrappers,

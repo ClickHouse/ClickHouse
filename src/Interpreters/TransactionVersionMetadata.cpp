@@ -23,7 +23,7 @@ namespace ErrorCodes
 VersionMetadata::VersionMetadata()
 {
     /// It would be better to make it static, but static loggers do not work for some reason (initialization order?)
-    log = getLogger("VersionMetadata");
+    log = &Poco::Logger::get("VersionMetadata");
 }
 
 /// It can be used for introspection purposes only

@@ -1,16 +1,15 @@
 #pragma once
 
-#include <Common/Priority.h>
-#include <Common/Stopwatch.h>
 #include <Core/NamesAndAliases.h>
 #include <Core/NamesAndTypes.h>
 #include <Interpreters/SystemLog.h>
-#include <Storages/ColumnsDescription.h>
+#include <Common/Stopwatch.h>
+#include <Common/Priority.h>
 
 namespace DB
 {
 
-enum class FilesystemPrefetchState : uint8_t
+enum class FilesystemPrefetchState
 {
     USED,
     CANCELLED_WITH_SEEK,
@@ -34,10 +33,11 @@ struct FilesystemReadPrefetchesLogElement
 
     static std::string name() { return "FilesystemReadPrefetchesLog"; }
 
-    static ColumnsDescription getColumnsDescription();
+    static NamesAndTypesList getNamesAndTypes();
     static NamesAndAliases getNamesAndAliases() { return {}; }
 
     void appendToBlock(MutableColumns & columns) const;
+    static const char * getCustomColumnList() { return nullptr; }
 };
 
 class FilesystemReadPrefetchesLog : public SystemLog<FilesystemReadPrefetchesLogElement>

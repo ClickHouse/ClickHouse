@@ -34,14 +34,9 @@ public:
     void set(Position ptr, size_t size) { BufferBase::set(ptr, size, 0); }
 
     /** write the data in the buffer (from the beginning of the buffer to the current position);
-      * set the position to the beginning; throw an exception, if something is wrong.
-      *
-      * Next call doesn't guarantee that buffer capacity is regained after.
-      * Some buffers (i.g WriteBufferFromS3) flush its data only after certain amount of consumed data.
-      * If direct write is performed into [position(), buffer().end()) and its length is not enough,
-      * you need to fill it first (i.g with write call), after it the capacity is regained.
+      * set the position to the beginning; throw an exception, if something is wrong
       */
-    void next()
+    inline void next()
     {
         if (!offset())
             return;
@@ -69,7 +64,7 @@ public:
     /// Calling finalize() in the destructor of derived classes is a bad practice.
     virtual ~WriteBuffer();
 
-    void nextIfAtEnd()
+    inline void nextIfAtEnd()
     {
         if (!hasPendingData())
             next();
@@ -96,7 +91,7 @@ public:
         }
     }
 
-    void write(char x)
+    inline void write(char x)
     {
         if (finalized)
             throw Exception{ErrorCodes::LOGICAL_ERROR, "Cannot write to finalized buffer"};
@@ -172,12 +167,12 @@ public:
     WriteBufferFromPointer(Position ptr, size_t size) : WriteBuffer(ptr, size) {}
 
 private:
-    void finalizeImpl() override
+    virtual void finalizeImpl() override
     {
         /// no op
     }
 
-    void sync() override
+    virtual void sync() override
     {
         /// no on
     }

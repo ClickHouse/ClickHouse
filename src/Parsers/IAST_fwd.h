@@ -18,7 +18,7 @@ using ASTs = absl::InlinedVector<ASTPtr, 7>;
 namespace std
 {
 
-inline typename DB::ASTs::size_type erase(DB::ASTs & asts, const DB::ASTPtr & element) /// NOLINT(cert-dcl58-cpp)
+inline typename DB::ASTs::size_type erase(DB::ASTs & asts, const DB::ASTPtr & element)
 {
     auto old_size = asts.size();
     asts.erase(std::remove(asts.begin(), asts.end(), element), asts.end());
@@ -26,7 +26,7 @@ inline typename DB::ASTs::size_type erase(DB::ASTs & asts, const DB::ASTPtr & el
 }
 
 template <class Predicate>
-inline typename DB::ASTs::size_type erase_if(DB::ASTs & asts, Predicate pred) /// NOLINT(cert-dcl58-cpp)
+inline typename DB::ASTs::size_type erase_if(DB::ASTs & asts, Predicate pred)
 {
     auto old_size = asts.size();
     asts.erase(std::remove_if(asts.begin(), asts.end(), pred), asts.end());

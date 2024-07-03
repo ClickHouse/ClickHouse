@@ -993,16 +993,7 @@
     function renderError(response)
     {
         clear();
-
-        let message = response;
-        try {
-            let json = JSON.parse(response);
-            if (json.exception) {
-                message = json.exception;
-            }
-        } catch (e) {}
-
-        document.getElementById('error').innerText = message ? message : "No response.";
+        document.getElementById('error').innerText = response ? response : "No response.";
         document.getElementById('error').style.display = 'block';
         document.getElementById('logo-container').style.display = 'none';
     }

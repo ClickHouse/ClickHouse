@@ -1,4 +1,5 @@
 #include <IO/LimitReadBuffer.h>
+
 #include <Common/Exception.h>
 
 
@@ -14,7 +15,7 @@ namespace ErrorCodes
 
 bool LimitReadBuffer::nextImpl()
 {
-    chassert(position() >= in->position());
+    assert(position() >= in->position());
 
     /// Let underlying buffer calculate read bytes in `next()` call.
     in->position() = position();
@@ -38,18 +39,20 @@ bool LimitReadBuffer::nextImpl()
         if (exact_limit && bytes != *exact_limit)
             throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Unexpected EOF, got {} of {} bytes", bytes, *exact_limit);
         /// Clearing the buffer with existing data.
-        BufferBase::set(in->position(), 0, 0);
-
+        set(in->position(), 0);
         return false;
     }
 
-    BufferBase::set(in->position(), std::min(in->available(), limit - bytes), 0);
+    working_buffer = in->buffer();
+
+    if (limit - bytes < working_buffer.size())
+        working_buffer.resize(limit - bytes);
 
     return true;
 }
 
 
-LimitReadBuffer::LimitReadBuffer(ReadBuffer * in_, bool owns, size_t limit_, bool throw_exception_,
+LimitReadBuffer::LimitReadBuffer(ReadBuffer * in_, bool owns, UInt64 limit_, bool throw_exception_,
                                  std::optional<size_t> exact_limit_, std::string exception_message_)
     : ReadBuffer(in_ ? in_->position() : nullptr, 0)
     , in(in_)
@@ -59,20 +62,24 @@ LimitReadBuffer::LimitReadBuffer(ReadBuffer * in_, bool owns, size_t limit_, boo
     , exact_limit(exact_limit_)
     , exception_message(std::move(exception_message_))
 {
-    chassert(in);
+    assert(in);
 
-    BufferBase::set(in->position(), std::min(in->available(), limit), 0);
+    size_t remaining_bytes_in_buffer = in->buffer().end() - in->position();
+    if (remaining_bytes_in_buffer > limit)
+        remaining_bytes_in_buffer = limit;
+
+    working_buffer = Buffer(in->position(), in->position() + remaining_bytes_in_buffer);
 }
 
 
-LimitReadBuffer::LimitReadBuffer(ReadBuffer & in_, size_t limit_, bool throw_exception_,
+LimitReadBuffer::LimitReadBuffer(ReadBuffer & in_, UInt64 limit_, bool throw_exception_,
                                  std::optional<size_t> exact_limit_, std::string exception_message_)
     : LimitReadBuffer(&in_, false, limit_, throw_exception_, exact_limit_, exception_message_)
 {
 }
 
 
-LimitReadBuffer::LimitReadBuffer(std::unique_ptr<ReadBuffer> in_, size_t limit_, bool throw_exception_,
+LimitReadBuffer::LimitReadBuffer(std::unique_ptr<ReadBuffer> in_, UInt64 limit_, bool throw_exception_,
                                  std::optional<size_t> exact_limit_, std::string exception_message_)
     : LimitReadBuffer(in_.release(), true, limit_, throw_exception_, exact_limit_, exception_message_)
 {

@@ -13,7 +13,6 @@ ClickHouse does not delete data from the table automatically. See [Introduction]
 
 Columns:
 
-- `hostname` ([LowCardinality(String)](../../sql-reference/data-types/string.md)) — Hostname of the server executing the query.
 - `event_date` ([Date](../../sql-reference/data-types/date.md)) — The date when the async insert happened.
 - `event_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — The date and time when the async insert finished execution.
 - `event_time_microseconds` ([DateTime64](../../sql-reference/data-types/datetime64.md)) — The date and time when the async insert finished execution with microseconds precision.
@@ -43,7 +42,6 @@ SELECT * FROM system.asynchronous_insert_log LIMIT 1 \G;
 Result:
 
 ``` text
-hostname:                clickhouse.eu-central1.internal
 event_date:              2023-06-08
 event_time:              2023-06-08 10:08:53
 event_time_microseconds: 2023-06-08 10:08:53.199516

@@ -1,6 +1,5 @@
 #pragma once
 
-#include <atomic>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/ReadSettings.h>
@@ -20,7 +19,6 @@ public:
     explicit ReadBufferFromWebServer(
         const String & url_,
         ContextPtr context_,
-        size_t file_size_,
         const ReadSettings & settings_ = {},
         bool use_external_buffer_ = false,
         size_t read_until_position = 0);
@@ -35,20 +33,20 @@ public:
 
     void setReadUntilPosition(size_t position) override;
 
-    size_t getFileOffsetOfBufferEnd() const override { return offset.load(std::memory_order_relaxed); }
+    size_t getFileOffsetOfBufferEnd() const override { return offset; }
 
     bool supportsRightBoundedReads() const override { return true; }
 
 private:
-    std::unique_ptr<SeekableReadBuffer> initialize();
+    std::unique_ptr<ReadBuffer> initialize();
 
-    LoggerPtr log;
+    Poco::Logger * log;
     ContextPtr context;
 
     const String url;
     size_t buf_size;
 
-    std::unique_ptr<SeekableReadBuffer> impl;
+    std::unique_ptr<ReadBuffer> impl;
 
     ReadSettings read_settings;
 
@@ -56,10 +54,7 @@ private:
 
     bool use_external_buffer;
 
-    /// atomic is required for CachedOnDiskReadBufferFromFile, which can access
-    /// to this variable via getFileOffsetOfBufferEnd()/seek() from multiple
-    /// threads.
-    std::atomic<off_t> offset = 0;
+    off_t offset = 0;
     off_t read_until_position = 0;
 };
 

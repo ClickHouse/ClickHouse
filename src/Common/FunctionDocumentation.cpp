@@ -1,7 +1,5 @@
 #include <Common/FunctionDocumentation.h>
 
-#include <boost/algorithm/string.hpp>
-
 namespace DB
 {
 
@@ -33,7 +31,14 @@ std::string FunctionDocumentation::examplesAsString() const
 
 std::string FunctionDocumentation::categoriesAsString() const
 {
-    return boost::algorithm::join(categories, ", ");
+    if (categories.empty())
+        return "";
+
+    auto it = categories.begin();
+    std::string res = *it;
+    for (; it != categories.end(); ++it)
+        res += ", " + *it;
+    return res;
 }
 
 }

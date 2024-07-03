@@ -6,7 +6,6 @@
 #include <aws/core/utils/logging/LogSystemInterface.h>
 #include <base/types.h>
 #include <unordered_map>
-#include <Common/Logger.h>
 
 namespace Poco { class Logger; }
 
@@ -30,9 +29,9 @@ public:
     void Flush() final {}
 
 private:
-    LoggerPtr default_logger;
+    Poco::Logger * default_logger;
     bool enable_s3_requests_logging;
-    std::unordered_map<String, LoggerPtr> tag_loggers;
+    std::unordered_map<String, Poco::Logger *> tag_loggers;
 };
 
 }

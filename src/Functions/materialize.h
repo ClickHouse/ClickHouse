@@ -36,8 +36,6 @@ public:
 
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
-    bool isSuitableForConstantFolding() const override { return false; }
-
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     size_t getNumberOfArguments() const override
@@ -53,15 +51,6 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
         return arguments[0].column->convertToFullColumnIfConst();
-    }
-
-    bool hasInformationAboutMonotonicity() const override { return true; }
-
-    Monotonicity getMonotonicityForRange(const IDataType &, const Field &, const Field &) const override
-    {
-        /// Depending on the argument the function materialize() is either a constant or works as identity().
-        /// In both cases this function is monotonic and non-decreasing.
-        return {.is_monotonic = true, .is_always_monotonic = true};
     }
 };
 

@@ -1,7 +1,6 @@
 #include <Backups/BackupCoordinationRemote.h>
 
 #include <base/hex.h>
-#include <boost/algorithm/string/split.hpp>
 
 #include <Access/Common/AccessEntityType.h>
 #include <Backups/BackupCoordinationReplicatedAccess.h>
@@ -14,8 +13,6 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
-
-#include <boost/algorithm/string.hpp>
 
 
 namespace DB
@@ -119,7 +116,6 @@ namespace
                 writeBinary(info.base_size, out);
                 writeBinary(info.base_checksum, out);
                 writeBinary(info.encrypted_by_disk, out);
-                writeBinary(info.reference_target, out);
                 /// We don't store `info.data_file_name` and `info.data_file_index` because they're determined automalically
                 /// after reading file infos for all the hosts (see the class BackupCoordinationFileInfos).
             }
@@ -142,7 +138,6 @@ namespace
                 readBinary(info.base_size, in);
                 readBinary(info.base_checksum, in);
                 readBinary(info.encrypted_by_disk, in);
-                readBinary(info.reference_target, in);
             }
             return res;
         }
@@ -165,8 +160,7 @@ BackupCoordinationRemote::BackupCoordinationRemote(
     const Strings & all_hosts_,
     const String & current_host_,
     bool plain_backup_,
-    bool is_internal_,
-    QueryStatusPtr process_list_element_)
+    bool is_internal_)
     : root_zookeeper_path(root_zookeeper_path_)
     , zookeeper_path(root_zookeeper_path_ + "/backup-" + backup_uuid_)
     , keeper_settings(keeper_settings_)
@@ -176,12 +170,11 @@ BackupCoordinationRemote::BackupCoordinationRemote(
     , current_host_index(findCurrentHostIndex(all_hosts, current_host))
     , plain_backup(plain_backup_)
     , is_internal(is_internal_)
-    , log(getLogger("BackupCoordinationRemote"))
+    , log(&Poco::Logger::get("BackupCoordinationRemote"))
     , with_retries(
         log,
         get_zookeeper_,
         keeper_settings,
-        process_list_element_,
         [my_zookeeper_path = zookeeper_path, my_current_host = current_host, my_is_internal = is_internal]
         (WithRetries::FaultyKeeper & zk)
         {
@@ -189,12 +182,12 @@ BackupCoordinationRemote::BackupCoordinationRemote(
             if (my_is_internal)
             {
                 String alive_node_path = my_zookeeper_path + "/stage/alive|" + my_current_host;
+                auto code = zk->tryCreate(alive_node_path, "", zkutil::CreateMode::Ephemeral);
 
-                /// Delete the ephemeral node from the previous connection so we don't have to wait for keeper to do it automatically.
-                zk->tryRemove(alive_node_path);
-
-                zk->createAncestors(alive_node_path);
-                zk->create(alive_node_path, "", zkutil::CreateMode::Ephemeral);
+                if (code == Coordination::Error::ZNODEEXISTS)
+                    zk->handleEphemeralNodeExistenceNoFailureInjection(alive_node_path, "");
+                else if (code != Coordination::Error::ZOK)
+                    throw zkutil::KeeperException::fromPath(code, alive_node_path);
             }
         })
 {
@@ -237,7 +230,6 @@ void BackupCoordinationRemote::createRootNodes()
         ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/repl_data_paths", "", zkutil::CreateMode::Persistent));
         ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/repl_access", "", zkutil::CreateMode::Persistent));
         ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/repl_sql_objects", "", zkutil::CreateMode::Persistent));
-        ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/keeper_map_tables", "", zkutil::CreateMode::Persistent));
         ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/file_infos", "", zkutil::CreateMode::Persistent));
         ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/writing_files", "", zkutil::CreateMode::Persistent));
         zk->tryMulti(ops, responses);
@@ -358,7 +350,7 @@ String BackupCoordinationRemote::deserializeFromMultipleZooKeeperNodes(const Str
 
 
 void BackupCoordinationRemote::addReplicatedPartNames(
-    const String & table_zk_path,
+    const String & table_shared_id,
     const String & table_name_for_logs,
     const String & replica_name,
     const std::vector<PartNameAndChecksum> & part_names_and_checksums)
@@ -374,22 +366,22 @@ void BackupCoordinationRemote::addReplicatedPartNames(
     [&, &zk = holder.faulty_zookeeper]()
     {
         with_retries.renewZooKeeper(zk);
-        String path = zookeeper_path + "/repl_part_names/" + escapeForFileName(table_zk_path);
+        String path = zookeeper_path + "/repl_part_names/" + escapeForFileName(table_shared_id);
         zk->createIfNotExists(path, "");
         path += "/" + escapeForFileName(replica_name);
         zk->createIfNotExists(path, ReplicatedPartNames::serialize(part_names_and_checksums, table_name_for_logs));
     });
 }
 
-Strings BackupCoordinationRemote::getReplicatedPartNames(const String & table_zk_path, const String & replica_name) const
+Strings BackupCoordinationRemote::getReplicatedPartNames(const String & table_shared_id, const String & replica_name) const
 {
     std::lock_guard lock{replicated_tables_mutex};
     prepareReplicatedTables();
-    return replicated_tables->getPartNames(table_zk_path, replica_name);
+    return replicated_tables->getPartNames(table_shared_id, replica_name);
 }
 
 void BackupCoordinationRemote::addReplicatedMutations(
-    const String & table_zk_path,
+    const String & table_shared_id,
     const String & table_name_for_logs,
     const String & replica_name,
     const std::vector<MutationInfo> & mutations)
@@ -405,23 +397,23 @@ void BackupCoordinationRemote::addReplicatedMutations(
         [&, &zk = holder.faulty_zookeeper]()
         {
             with_retries.renewZooKeeper(zk);
-            String path = zookeeper_path + "/repl_mutations/" + escapeForFileName(table_zk_path);
+            String path = zookeeper_path + "/repl_mutations/" + escapeForFileName(table_shared_id);
             zk->createIfNotExists(path, "");
             path += "/" + escapeForFileName(replica_name);
             zk->createIfNotExists(path, ReplicatedMutations::serialize(mutations, table_name_for_logs));
         });
 }
 
-std::vector<IBackupCoordination::MutationInfo> BackupCoordinationRemote::getReplicatedMutations(const String & table_zk_path, const String & replica_name) const
+std::vector<IBackupCoordination::MutationInfo> BackupCoordinationRemote::getReplicatedMutations(const String & table_shared_id, const String & replica_name) const
 {
     std::lock_guard lock{replicated_tables_mutex};
     prepareReplicatedTables();
-    return replicated_tables->getMutations(table_zk_path, replica_name);
+    return replicated_tables->getMutations(table_shared_id, replica_name);
 }
 
 
 void BackupCoordinationRemote::addReplicatedDataPath(
-    const String & table_zk_path, const String & data_path)
+    const String & table_shared_id, const String & data_path)
 {
     {
         std::lock_guard lock{replicated_tables_mutex};
@@ -434,18 +426,18 @@ void BackupCoordinationRemote::addReplicatedDataPath(
     [&, &zk = holder.faulty_zookeeper]()
     {
         with_retries.renewZooKeeper(zk);
-        String path = zookeeper_path + "/repl_data_paths/" + escapeForFileName(table_zk_path);
+        String path = zookeeper_path + "/repl_data_paths/" + escapeForFileName(table_shared_id);
         zk->createIfNotExists(path, "");
         path += "/" + escapeForFileName(data_path);
         zk->createIfNotExists(path, "");
     });
 }
 
-Strings BackupCoordinationRemote::getReplicatedDataPaths(const String & table_zk_path) const
+Strings BackupCoordinationRemote::getReplicatedDataPaths(const String & table_shared_id) const
 {
     std::lock_guard lock{replicated_tables_mutex};
     prepareReplicatedTables();
-    return replicated_tables->getDataPaths(table_zk_path);
+    return replicated_tables->getDataPaths(table_shared_id);
 }
 
 
@@ -464,16 +456,16 @@ void BackupCoordinationRemote::prepareReplicatedTables() const
             with_retries.renewZooKeeper(zk);
 
             String path = zookeeper_path + "/repl_part_names";
-            for (const String & escaped_table_zk_path : zk->getChildren(path))
+            for (const String & escaped_table_shared_id : zk->getChildren(path))
             {
-                String table_zk_path = unescapeForFileName(escaped_table_zk_path);
-                String path2 = path + "/" + escaped_table_zk_path;
+                String table_shared_id = unescapeForFileName(escaped_table_shared_id);
+                String path2 = path + "/" + escaped_table_shared_id;
                 for (const String & escaped_replica_name : zk->getChildren(path2))
                 {
                     String replica_name = unescapeForFileName(escaped_replica_name);
                     auto part_names = ReplicatedPartNames::deserialize(zk->get(path2 + "/" + escaped_replica_name));
                     part_names_for_replicated_tables.push_back(
-                        {table_zk_path, part_names.table_name_for_logs, replica_name, part_names.part_names_and_checksums});
+                        {table_shared_id, part_names.table_name_for_logs, replica_name, part_names.part_names_and_checksums});
                 }
             }
         });
@@ -489,16 +481,16 @@ void BackupCoordinationRemote::prepareReplicatedTables() const
             with_retries.renewZooKeeper(zk);
 
             String path = zookeeper_path + "/repl_mutations";
-            for (const String & escaped_table_zk_path : zk->getChildren(path))
+            for (const String & escaped_table_shared_id : zk->getChildren(path))
             {
-                String table_zk_path = unescapeForFileName(escaped_table_zk_path);
-                String path2 = path + "/" + escaped_table_zk_path;
+                String table_shared_id = unescapeForFileName(escaped_table_shared_id);
+                String path2 = path + "/" + escaped_table_shared_id;
                 for (const String & escaped_replica_name : zk->getChildren(path2))
                 {
                     String replica_name = unescapeForFileName(escaped_replica_name);
                     auto mutations = ReplicatedMutations::deserialize(zk->get(path2 + "/" + escaped_replica_name));
                     mutations_for_replicated_tables.push_back(
-                        {table_zk_path, mutations.table_name_for_logs, replica_name, mutations.mutations});
+                        {table_shared_id, mutations.table_name_for_logs, replica_name, mutations.mutations});
                 }
             }
         });
@@ -514,14 +506,14 @@ void BackupCoordinationRemote::prepareReplicatedTables() const
             with_retries.renewZooKeeper(zk);
 
             String path = zookeeper_path + "/repl_data_paths";
-            for (const String & escaped_table_zk_path : zk->getChildren(path))
+            for (const String & escaped_table_shared_id : zk->getChildren(path))
             {
-                String table_zk_path = unescapeForFileName(escaped_table_zk_path);
-                String path2 = path + "/" + escaped_table_zk_path;
+                String table_shared_id = unescapeForFileName(escaped_table_shared_id);
+                String path2 = path + "/" + escaped_table_shared_id;
                 for (const String & escaped_data_path : zk->getChildren(path2))
                 {
                     String data_path = unescapeForFileName(escaped_data_path);
-                    data_paths_for_replicated_tables.push_back({table_zk_path, data_path});
+                    data_paths_for_replicated_tables.push_back({table_shared_id, data_path});
                 }
             }
         });
@@ -673,80 +665,6 @@ void BackupCoordinationRemote::prepareReplicatedSQLObjects() const
     for (auto & directory : directories_for_sql_objects)
         replicated_sql_objects->addDirectory(std::move(directory));
 }
-
-void BackupCoordinationRemote::addKeeperMapTable(const String & table_zookeeper_root_path, const String & table_id, const String & data_path_in_backup)
-{
-    {
-        std::lock_guard lock{keeper_map_tables_mutex};
-        if (keeper_map_tables)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "addKeeperMapTable() must not be called after preparing");
-    }
-
-    auto holder = with_retries.createRetriesControlHolder("addKeeperMapTable");
-    holder.retries_ctl.retryLoop(
-    [&, &zk = holder.faulty_zookeeper]()
-    {
-        with_retries.renewZooKeeper(zk);
-        String path = zookeeper_path + "/keeper_map_tables/" + escapeForFileName(table_id);
-        if (auto res
-            = zk->tryCreate(path, fmt::format("{}\n{}", table_zookeeper_root_path, data_path_in_backup), zkutil::CreateMode::Persistent);
-            res != Coordination::Error::ZOK && res != Coordination::Error::ZNODEEXISTS)
-            throw zkutil::KeeperException(res);
-    });
-}
-
-void BackupCoordinationRemote::prepareKeeperMapTables() const
-{
-    if (keeper_map_tables)
-        return;
-
-    std::vector<std::pair<std::string, BackupCoordinationKeeperMapTables::KeeperMapTableInfo>> keeper_map_table_infos;
-    auto holder = with_retries.createRetriesControlHolder("prepareKeeperMapTables");
-    holder.retries_ctl.retryLoop(
-        [&, &zk = holder.faulty_zookeeper]()
-    {
-        keeper_map_table_infos.clear();
-
-        with_retries.renewZooKeeper(zk);
-
-        fs::path tables_path = fs::path(zookeeper_path) / "keeper_map_tables";
-
-        auto tables = zk->getChildren(tables_path);
-        keeper_map_table_infos.reserve(tables.size());
-
-        for (auto & table : tables)
-            table = tables_path / table;
-
-        auto tables_info = zk->get(tables);
-        for (size_t i = 0; i < tables_info.size(); ++i)
-        {
-            const auto & table_info = tables_info[i];
-
-            if (table_info.error != Coordination::Error::ZOK)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Path in Keeper {} is unexpectedly missing", tables[i]);
-
-            std::vector<std::string> data;
-            boost::split(data, table_info.data, [](char c) { return c == '\n'; });
-            keeper_map_table_infos.emplace_back(
-                std::move(data[0]),
-                BackupCoordinationKeeperMapTables::KeeperMapTableInfo{
-                    .table_id = fs::path(tables[i]).filename(), .data_path_in_backup = std::move(data[1])});
-        }
-    });
-
-    keeper_map_tables.emplace();
-    for (const auto & [zk_root_path, table_info] : keeper_map_table_infos)
-        keeper_map_tables->addTable(zk_root_path, table_info.table_id, table_info.data_path_in_backup);
-
-}
-
-String BackupCoordinationRemote::getKeeperMapDataPath(const String & table_zookeeper_root_path) const
-{
-    std::lock_guard lock(keeper_map_tables_mutex);
-    prepareKeeperMapTables();
-    return keeper_map_tables->getDataPath(table_zookeeper_root_path);
-}
-
 
 void BackupCoordinationRemote::addFileInfos(BackupFileInfos && file_infos_)
 {
