@@ -1129,7 +1129,7 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromJoin(const Identifi
                 resolved_identifier = left_resolved_identifier;
             }
         }
-        else if (scope.joins_count == 1 && scope.context->getSettingsRef().single_join_prefer_left_table)
+        else if (scope.joins_count && scope.context->getSettingsRef().single_join_prefer_left_table)
         {
             resolved_side = JoinTableSide::Left;
             resolved_identifier = left_resolved_identifier;
