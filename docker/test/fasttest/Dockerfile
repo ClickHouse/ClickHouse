@@ -19,10 +19,7 @@ RUN apt-get update \
         odbcinst \
         psmisc \
         python3 \
-        python3-lxml \
         python3-pip \
-        python3-requests \
-        python3-termcolor \
         unixodbc \
         pv \
         jq \
@@ -31,7 +28,8 @@ RUN apt-get update \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
-RUN pip3 install numpy==1.26.3 scipy==1.12.0 pandas==1.5.3 Jinja2==3.1.3
+COPY requirements.txt /
+RUN pip3 install --no-cache-dir -r /requirements.txt
 
 # This symlink is required by gcc to find the lld linker
 RUN ln -s /usr/bin/lld-${LLVM_VERSION} /usr/bin/ld.lld
