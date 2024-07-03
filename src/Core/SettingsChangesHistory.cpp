@@ -59,6 +59,8 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
 {
     {"24.7", {{"output_format_parquet_write_page_index", false, true, "Add a possibility to write page index into parquet files."},
               {"optimize_trivial_insert_select", true, false, "The optimization does not make sense in many cases."},
+              {"collect_hash_table_stats_during_joins", false, true, "New setting."},
+              {"max_size_to_preallocate_for_joins", 0, 100'000'000, "New setting."},
               }},
     {"24.6", {{"materialize_skip_indexes_on_insert", true, true, "Added new setting to allow to disable materialization of skip indexes on insert"},
               {"materialize_statistics_on_insert", true, true, "Added new setting to allow to disable materialization of statistics on insert"},
