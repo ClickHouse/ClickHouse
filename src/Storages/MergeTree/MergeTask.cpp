@@ -555,18 +555,18 @@ bool MergeTask::VerticalMergeStage::prepareVerticalMergeForAllColumns() const
     if (!reread_buf)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot read temporary file {}", ctx->rows_sources_uncompressed_write_buf->getFileName());
 
-    auto * reread_buffer_raw = dynamic_cast<ReadBufferFromFile *>(reread_buf.get());
+    auto * reread_buffer_raw = dynamic_cast<ReadBufferFromFileBase *>(reread_buf.get());
     if (!reread_buffer_raw)
     {
         const auto & reread_buf_ref = *reread_buf;
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected ReadBufferFromFile, but got {}", demangle(typeid(reread_buf_ref).name()));
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected ReadBufferFromFileBase, but got {}", demangle(typeid(reread_buf_ref).name()));
     }
     /// Move ownership from std::unique_ptr<ReadBuffer> to std::unique_ptr<ReadBufferFromFile> for CompressedReadBufferFromFile.
     /// First, release ownership from unique_ptr to base type.
     reread_buf.release(); /// NOLINT(bugprone-unused-return-value,hicpp-ignored-remove-result): we already have the pointer value in `reread_buffer_raw`
 
     /// Then, move ownership to unique_ptr to concrete type.
-    std::unique_ptr<ReadBufferFromFile> reread_buffer_from_file(reread_buffer_raw);
+    std::unique_ptr<ReadBufferFromFileBase> reread_buffer_from_file(reread_buffer_raw);
 
     /// CompressedReadBufferFromFile expects std::unique_ptr<ReadBufferFromFile> as argument.
     ctx->rows_sources_read_buf = std::make_unique<CompressedReadBufferFromFile>(std::move(reread_buffer_from_file));
