@@ -1,6 +1,10 @@
+#include <memory>
 #include <utility>
 #include <Disks/ObjectStorages/ObjectStorageFactory.h>
+#include <rados/librados.hpp>
 #include "Disks/DiskType.h"
+#include "Disks/ObjectStorages/Ceph/CephObjectStorage.h"
+#include "Disks/ObjectStorages/Ceph/CephUtils.h"
 #include "config.h"
 #if USE_AWS_S3
 #include <Disks/ObjectStorages/S3/DiskS3Utils.h>
@@ -322,6 +326,35 @@ void registerAzureObjectStorage(ObjectStorageFactory & factory)
 }
 #endif
 
+#if USE_CEPH && !defined(CLICKHOUSE_KEEPER_STANDALONE_BUILD)
+void registerCephObjectStorage(ObjectStorageFactory & factory)
+{
+    auto creator = [](
+        const String & name,
+        const Poco::Util::AbstractConfiguration & config,
+        const String & config_prefix,
+        const ContextPtr & /*context*/,
+        bool /* skip_access_check */) -> ObjectStoragePtr
+    {
+        auto settings = std::make_unique<CephObjectStorageSettings>();
+        settings->loadFromConfig(config, config_prefix);
+        auto rados = std::make_shared<librados::Rados>();
+        rados->init(settings->global_options.user.c_str());
+        for (const auto & [key, value] : settings->global_options)
+        {
+            if (auto ec = rados->conf_set(key.c_str(), value.c_str()); ec < 0)
+                throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Failed to set Ceph option: {}. Error: {}", key, strerror(-ec));
+        }
+        CephEndpoint endpoint;
+        endpoint.mon_hosts = settings->global_options["mon_host"]; /// Redundant
+        endpoint.pool = config.getString(config_prefix + ".pool");
+        return createObjectStorage<CephObjectStorage>(ObjectStorageType::Ceph, config, config_prefix, std::move(rados), std::move(settings), endpoint, name);
+    };
+    factory.registerObjectStorageType("ceph", creator);
+    factory.registerObjectStorageType("rados", creator);
+}
+#endif
+
 #ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD
 void registerWebObjectStorage(ObjectStorageFactory & factory)
 {
@@ -388,6 +421,10 @@ void registerObjectStorages()
 
 #if USE_AZURE_BLOB_STORAGE && !defined(CLICKHOUSE_KEEPER_STANDALONE_BUILD)
     registerAzureObjectStorage(factory);
+#endif
+
+#if USE_CEPH && !defined(CLICKHOUSE_KEEPER_STANDALONE_BUILD)
+    registerCephObjectStorage(factory);
 #endif
 
 #ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD

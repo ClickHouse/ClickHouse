@@ -1,5 +1,6 @@
 #pragma once
 
+#include <rados/rados_types.h>
 #include "config.h"
 
 #if USE_CEPH
@@ -22,19 +23,31 @@ struct CephObjectStorageSettings
     CephObjectStorageSettings() = default;
 
     CephObjectStorageSettings(
-        const CephOptions & request_settings_,
+        const CephOptions & global_options_,
         uint64_t min_bytes_for_seek_,
         int32_t list_object_keys_size_,
         int32_t objects_chunk_size_to_delete_,
         bool read_only_)
-        : request_settings(request_settings_)
+        : global_options(global_options_)
         , min_bytes_for_seek(min_bytes_for_seek_)
         , list_object_keys_size(list_object_keys_size_)
         , objects_chunk_size_to_delete(objects_chunk_size_to_delete_)
         , read_only(read_only_)
     {}
 
-    CephOptions request_settings;
+    CephOptions global_options;
+
+    void loadFromConfig(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix)
+    {
+        global_options.user = config.getString(config_prefix + ".user", "");
+        if (config.has(config_prefix + ".options"))
+            global_options.loadFromConfig(config, config_prefix + ".options");
+        global_options.validate();
+        min_bytes_for_seek = config.getUInt64(config_prefix + ".min_bytes_for_seek", min_bytes_for_seek);
+        list_object_keys_size = config.getInt(config_prefix + ".list_object_keys_size", list_object_keys_size);
+        objects_chunk_size_to_delete = config.getInt(config_prefix + ".objects_chunk_size_to_delete", objects_chunk_size_to_delete);
+        read_only = config.getBool(config_prefix + ".read_only", read_only);
+    }
 
     uint64_t min_bytes_for_seek;
     int32_t list_object_keys_size;
@@ -42,6 +55,10 @@ struct CephObjectStorageSettings
     bool read_only;
 };
 
+/// Rados cluster include many pool (equivalent to S3 bucket). In each pool, we can have many namespace.
+/// CephObjectStorage associated with a pool and a namespace. The object name will have namespace as prefix.
+/// listObject and iterate with prefix implementation is sub-par, so we cannot use CephObjectStorage with plain
+/// metadata type.
 class CephObjectStorage : public IObjectStorage
 {
 private:
@@ -50,18 +67,19 @@ private:
         std::shared_ptr<librados::Rados> rados_,
         std::unique_ptr<CephObjectStorageSettings> ceph_settings_,
         CephEndpoint endpoint_,
-        ObjectStorageKeysGeneratorPtr key_generator_,
         const String & disk_name_,
         bool for_disk_ceph_ = true)
         : endpoint(endpoint_)
         , disk_name(disk_name_)
         , rados(std::move(rados_))
         , ceph_settings(std::move(ceph_settings_))
-        , base_io(std::make_unique<Ceph::RadosIO>(rados, endpoint.pool, LIBRADOS_ALL_NSPACES))
-        , key_generator(std::move(key_generator_))
         , log(getLogger(logger_name))
         , for_disk_ceph(for_disk_ceph_)
     {
+        /// Not allow using empty namespace if this is for disk
+        if (for_disk_ceph && (endpoint.nspace.empty() || endpoint.nspace == LIBRADOS_ALL_NSPACES))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "CephObjectStorage: namespace cannot be empty if it's created for disk");
+        io_impl = std::make_unique<Ceph::RadosIO>(rados, endpoint.pool, endpoint.nspace);
     }
 
 public:
@@ -71,10 +89,11 @@ public:
     {
     }
 
-    String getCommonKeyPrefix() const override { return ""; }
+    ~CephObjectStorage() override = default;
+
+    String getCommonKeyPrefix() const override { return endpoint.nspace; }
 
     String getDescription() const override { return endpoint.mon_hosts + "/" + endpoint.pool; }
-
 
     std::string getName() const override { return "CephObjectStorage"; }
 
@@ -137,11 +156,11 @@ public:
 
     void startup() override;
 
-    // void applyNewSettings(
-    //     const Poco::Util::AbstractConfiguration & config,
-    //     const std::string & config_prefix,
-    //     ContextPtr context,
-    //     const ApplyNewSettingsOptions & options) override;
+    void applyNewSettings(
+        const Poco::Util::AbstractConfiguration & config,
+        const std::string & config_prefix,
+        ContextPtr context,
+        const ApplyNewSettingsOptions & options) override;
 
     std::string getObjectsNamespace() const override { return endpoint.pool; }
 
@@ -171,9 +190,7 @@ private:
 
     std::shared_ptr<librados::Rados> rados;
     MultiVersion<CephObjectStorageSettings> ceph_settings;
-    std::unique_ptr<Ceph::RadosIO> base_io;
-
-    ObjectStorageKeysGeneratorPtr key_generator;
+    std::shared_ptr<Ceph::RadosIO> io_impl;
 
     LoggerPtr log;
 

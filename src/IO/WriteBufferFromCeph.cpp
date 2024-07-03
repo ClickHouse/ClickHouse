@@ -96,7 +96,7 @@ size_t WriteBufferFromCeph::writeImpl(const char * begin, size_t len)
     try
     {
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::WriteBufferFromCephMicroseconds);
-        if (first_write)
+        if (mode == WriteMode::Rewrite && first_write)
         {
             /// O_CREATE | O_TRUNC
             bytes_written = impl->writeFull(object_id, begin, len);

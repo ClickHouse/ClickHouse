@@ -33,7 +33,7 @@ public:
         size_t buf_size_ = DBMS_DEFAULT_BUFFER_SIZE,
         WriteMode mode_ = WriteMode::Rewrite);
 
-    ~WriteBufferFromCeph() override;
+    ~WriteBufferFromCeph() override = default;
 
     void sync() override {} /// No need to sync, because ceph api is sync
 
