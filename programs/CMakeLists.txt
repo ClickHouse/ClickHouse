@@ -73,9 +73,9 @@ else()
 endif()
 
 if (ENABLE_CLICKHOUSE_KEEPER)
-    message(STATUS "ClickHouse keeper mode: ON")
+    message(STATUS "ClickHouse Keeper: ON")
 else()
-    message(STATUS "ClickHouse keeper mode: OFF")
+    message(STATUS "ClickHouse Keeper: OFF")
 endif()
 
 if (ENABLE_CLICKHOUSE_KEEPER_CLIENT)
