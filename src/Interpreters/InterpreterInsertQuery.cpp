@@ -791,12 +791,8 @@ BlockIO InterpreterInsertQuery::execute()
 
     res.pipeline.addStorageHolder(table);
 
-    StoragePtr inner_table;
     if (const auto * mv = dynamic_cast<const StorageMaterializedView *>(table.get()))
-        inner_table = mv->getTargetTable();
-
-    if (inner_table)
-        res.pipeline.addStorageHolder(inner_table);
+        res.pipeline.addStorageHolder(mv->getTargetTable());
 
     return res;
 }
