@@ -271,7 +271,7 @@ namespace
         {
             if (WhichDataType(type).isInt64())
             {
-                bool is_negative = json_info->negative_integers.contains(type.get());
+                bool is_negative = json_info && json_info->negative_integers.contains(type.get());
                 have_negative_integers |= is_negative;
                 if (!is_negative)
                     type = std::make_shared<DataTypeUInt64>();
