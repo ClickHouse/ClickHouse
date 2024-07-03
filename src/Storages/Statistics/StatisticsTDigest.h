@@ -6,10 +6,10 @@
 namespace DB
 {
 
-class TDigestStatistics : public IStatistics
+class StatisticsTDigest : public IStatistics
 {
 public:
-    explicit TDigestStatistics(const SingleStatisticsDescription & stat_);
+    explicit StatisticsTDigest(const SingleStatisticsDescription & stat_);
 
     void update(const ColumnPtr & column) override;
 

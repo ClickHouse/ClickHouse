@@ -1,7 +1,7 @@
 #include <Storages/Statistics/Statistics.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
-#include <Storages/Statistics/TDigestStatistics.h>
-#include <Storages/Statistics/UniqStatistics.h>
+#include <Storages/Statistics/StatisticsTDigest.h>
+#include <Storages/Statistics/StatisticsUniq.h>
 #include <Storages/StatisticsDescription.h>
 #include <Storages/ColumnsDescription.h>
 #include <IO/ReadHelpers.h>
@@ -44,7 +44,7 @@ void ColumnStatistics::update(const ColumnPtr & column)
 Float64 ColumnStatistics::estimateLess(Float64 val) const
 {
     if (stats.contains(StatisticsType::TDigest))
-        return std::static_pointer_cast<TDigestStatistics>(stats.at(StatisticsType::TDigest))->estimateLess(val);
+        return std::static_pointer_cast<StatisticsTDigest>(stats.at(StatisticsType::TDigest))->estimateLess(val);
     return rows * ConditionSelectivityEstimator::default_normal_cond_factor;
 }
 
@@ -57,12 +57,12 @@ Float64 ColumnStatistics::estimateEqual(Float64 val) const
 {
     if (stats.contains(StatisticsType::Uniq) && stats.contains(StatisticsType::TDigest))
     {
-        auto uniq_static = std::static_pointer_cast<UniqStatistics>(stats.at(StatisticsType::Uniq));
+        auto statistics_uniq = std::static_pointer_cast<StatisticsUniq>(stats.at(StatisticsType::Uniq));
         /// 2048 is the default number of buckets in TDigest. In this case, TDigest stores exactly one value (with many rows)
         /// for every bucket.
-        if (uniq_static->getCardinality() < 2048)
+        if (statistics_uniq->getCardinality() < 2048)
         {
-            auto tdigest_static = std::static_pointer_cast<TDigestStatistics>(stats.at(StatisticsType::TDigest));
+            auto tdigest_static = std::static_pointer_cast<StatisticsTDigest>(stats.at(StatisticsType::TDigest));
             return tdigest_static->estimateEqual(val);
         }
     }

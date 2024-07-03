@@ -1,4 +1,4 @@
-#include <Storages/Statistics/UniqStatistics.h>
+#include <Storages/Statistics/StatisticsUniq.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
 
@@ -10,7 +10,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_STATISTICS;
 }
 
-UniqStatistics::UniqStatistics(const SingleStatisticsDescription & stat_, const DataTypePtr & data_type)
+StatisticsUniq::StatisticsUniq(const SingleStatisticsDescription & stat_, const DataTypePtr & data_type)
     : IStatistics(stat_)
 {
     arena = std::make_unique<Arena>();
@@ -20,12 +20,12 @@ UniqStatistics::UniqStatistics(const SingleStatisticsDescription & stat_, const 
     collector->create(data);
 }
 
-UniqStatistics::~UniqStatistics()
+StatisticsUniq::~StatisticsUniq()
 {
     collector->destroy(data);
 }
 
-void UniqStatistics::update(const ColumnPtr & column)
+void StatisticsUniq::update(const ColumnPtr & column)
 {
     /// TODO(hanfei): For low cardinality, it's very slow to convert to full column. We can read the dictionary directly.
     /// Here we intend to avoid crash in CI.
@@ -34,17 +34,17 @@ void UniqStatistics::update(const ColumnPtr & column)
     collector->addBatchSinglePlace(0, column->size(), data, &(raw_ptr), nullptr);
 }
 
-void UniqStatistics::serialize(WriteBuffer & buf)
+void StatisticsUniq::serialize(WriteBuffer & buf)
 {
     collector->serialize(data, buf);
 }
 
-void UniqStatistics::deserialize(ReadBuffer & buf)
+void StatisticsUniq::deserialize(ReadBuffer & buf)
 {
     collector->deserialize(data, buf);
 }
 
-UInt64 UniqStatistics::getCardinality()
+UInt64 StatisticsUniq::getCardinality()
 {
     auto column = DataTypeUInt64().createColumn();
     collector->insertResultInto(data, *column, nullptr);
@@ -60,7 +60,7 @@ void UniqValidator(const SingleStatisticsDescription &, DataTypePtr data_type)
 
 StatisticsPtr UniqCreator(const SingleStatisticsDescription & stat, DataTypePtr data_type)
 {
-    return std::make_shared<UniqStatistics>(stat, data_type);
+    return std::make_shared<StatisticsUniq>(stat, data_type);
 }
 
 }

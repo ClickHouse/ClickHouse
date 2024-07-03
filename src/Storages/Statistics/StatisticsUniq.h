@@ -7,11 +7,11 @@
 namespace DB
 {
 
-class UniqStatistics : public IStatistics
+class StatisticsUniq : public IStatistics
 {
 public:
-    UniqStatistics(const SingleStatisticsDescription & stat_, const DataTypePtr & data_type);
-    ~UniqStatistics() override;
+    StatisticsUniq(const SingleStatisticsDescription & stat_, const DataTypePtr & data_type);
+    ~StatisticsUniq() override;
 
     void update(const ColumnPtr & column) override;
 
