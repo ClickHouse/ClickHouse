@@ -261,12 +261,14 @@ RemoteQueryExecutor::RemoteQueryExecutor(
 ///   (i.e. current_thread), iff thread had been destroyed in between.
 RemoteQueryExecutor::~RemoteQueryExecutor()
 {
+#if defined(OS_LINUX)
     /// FIXME: fix it for parallel replicas (and remove "!extension")
     if (!extension && read_context && !read_context->isCancelled())
     {
         LOG_FATAL(log, "Read context was not cancelled. This is a bug");
         abort();
     }
+#endif
 
     /** If interrupted in the middle of the loop of communication with replicas, then interrupt
       * all connections, then read and skip the remaining packets to make sure
