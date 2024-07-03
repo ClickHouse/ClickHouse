@@ -334,18 +334,12 @@ void KeeperDispatcher::snapshotThread()
 {
     setThreadName("KeeperSnpT");
     const auto & shutdown_called = keeper_context->isShutdownCalled();
-    while (!shutdown_called)
+    CreateSnapshotTask task;
+    while (snapshots_queue.pop(task))
     {
-        CreateSnapshotTask task;
-        if (!snapshots_queue.pop(task))
-            break;
-
         try
         {
             auto snapshot_file_info = task.create_snapshot(std::move(task.snapshot), /*execute_only_cleanup=*/shutdown_called);
-
-            if (shutdown_called)
-                break;
 
             if (!snapshot_file_info)
                 continue;
