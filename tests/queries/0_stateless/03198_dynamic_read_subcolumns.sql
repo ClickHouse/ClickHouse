@@ -1,9 +1,10 @@
--- Tags: no-random-settings
+-- Tags: no-random-settings, no-s3-storage
 
 SET allow_experimental_dynamic_type = 1;
 DROP TABLE IF EXISTS test_dynamic;
 CREATE TABLE test_dynamic (id UInt64, d Dynamic) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 0;
 INSERT INTO test_dynamic VALUES (1, 'foo'), (2, 1111), (3, [1, 2, 3]);
+EXPLAIN QUERY TREE SELECT d.String FROM test_dynamic SETTINGS allow_experimental_analyzer = 1;
 SYSTEM DROP MARK CACHE;
 SELECT d.String FROM test_dynamic SETTINGS allow_experimental_analyzer = 1;
 SYSTEM DROP MARK CACHE;
