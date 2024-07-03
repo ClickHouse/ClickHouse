@@ -2531,8 +2531,7 @@ void NO_INLINE Aggregator::mergeDataImpl(
             CurrentMetrics::AggregatorThreadsActive,
             CurrentMetrics::AggregatorThreadsScheduled,
             params.max_threads);
-        auto merge_bucket
-            = [&table_dst, &table_src, &arena, use_compiled_functions, prefetch, this](auto begin, auto end, ThreadGroupPtr thread_group)
+        auto merge_bucket = [&](auto begin, auto end, ThreadGroupPtr thread_group)
         {
             SCOPE_EXIT_SAFE(
                 if (thread_group)
@@ -2563,7 +2562,6 @@ void NO_INLINE Aggregator::mergeDataImpl(
                 table_src.template mergeToViaEmplaceInRange<decltype(merge), true>(begin, end, table_dst, std::move(merge));
             else
                 table_src.template mergeToViaEmplaceInRange<decltype(merge), false>(begin, end, table_dst, std::move(merge));
-            table_src.clearAndShrink();
 
 #if USE_EMBEDDED_COMPILER
             if (use_compiled_functions)
@@ -2596,6 +2594,8 @@ void NO_INLINE Aggregator::mergeDataImpl(
             thread_pool->scheduleOrThrowOnError(task);
         }
         thread_pool->wait();
+
+        table_src.clearAndShrink();
     }
     else
     {
