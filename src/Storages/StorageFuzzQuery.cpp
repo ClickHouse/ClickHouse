@@ -1,14 +1,12 @@
 #include <Storages/StorageFuzzQuery.h>
 
 #include <optional>
-#include <string_view>
 #include <unordered_set>
 #include <Columns/ColumnString.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/checkAndGetLiteralArgument.h>
-#include <Parsers/formatAST.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/parseQuery.h>
 
@@ -41,10 +39,8 @@ ColumnPtr FuzzQuerySource::createColumn()
         fuzzer.fuzzMain(new_query);
         auto fuzzed_text = new_query->formatForErrorMessage();
 
-        WriteBufferFromOwnString out;
-        formatAST(*new_query, out, false);
-        auto data = out.str();
-        size_t data_len = data.size();
+        if (base_before_fuzz == fuzzed_text)
+            continue;
 
         /// AST is too long, will start from the original query.
         if (config.max_query_length > 500)
@@ -53,12 +49,12 @@ ColumnPtr FuzzQuerySource::createColumn()
             continue;
         }
 
-        IColumn::Offset next_offset = offset + data_len + 1;
+        IColumn::Offset next_offset = offset + fuzzed_text.size() + 1;
         data_to.resize(next_offset);
 
-        std::copy(data.begin(), data.end(), &data_to[offset]);
+        std::copy(fuzzed_text.begin(), fuzzed_text.end(), &data_to[offset]);
 
-        data_to[offset + data_len] = 0;
+        data_to[offset + fuzzed_text.size()] = 0;
         offsets_to[row_num] = next_offset;
 
         offset = next_offset;
