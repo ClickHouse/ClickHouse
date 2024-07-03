@@ -112,11 +112,11 @@ std::optional<EvaluateConstantExpressionResult> evaluateConstantExpressionImpl(c
         auto storage = std::make_shared<StorageDummy>(StorageID{"dummy", "dummy"}, fake_column_descriptions);
         QueryTreeNodePtr fake_table_expression = std::make_shared<TableNode>(storage, context);
 
-        const auto *a = findQueryForParallelReplicas(test, options);
-        const auto *b = findTableForParallelReplicas(test, options);
+        // const auto *a = findQueryForParallelReplicas(test, options);
+        // const auto *b = findTableForParallelReplicas(test, options);
         FiltersForTableExpressionMap c = {};
 
-        GlobalPlannerContextPtr global_planner_context = std::make_shared<GlobalPlannerContext>(a, b, c);
+        GlobalPlannerContextPtr global_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, c);
         auto planner_context = std::make_shared<PlannerContext>(context->getGlobalContext(), global_planner_context, options);
 
         QueryAnalysisPass query_analysis_pass(fake_table_expression);
