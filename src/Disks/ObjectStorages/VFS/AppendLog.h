@@ -1,5 +1,4 @@
 #pragma once
-#include <Disks/IDisk.h>
 #include <IO/WriteBufferFromFile.h>
 
 #include <filesystem>
@@ -8,7 +7,7 @@
 
 namespace fs = std::filesystem;
 
-namespace DB
+namespace DB::WAL
 {
 
 enum class SyncMode
@@ -18,28 +17,21 @@ enum class SyncMode
     ALL_SYNC
 };
 
-struct ParsedSegmentName
-{
-    UInt64   start_index;
-    bool is_begin = false;
-    bool is_end = false;
-};
-
 struct Segment
 {
     fs::path path;
     UInt64 start_index;
-    bool is_first;
 };
 
-struct LogEntry
+struct Entry
 {
     UInt64 index;
     std::vector<char> data;
-    UInt64 checksum;
+    UInt32 checksum;
 
-    bool operator==(const LogEntry &) const = default;
+    bool operator==(const Entry &) const = default;
 };
+using Entries = std::vector<Entry>;
 
 struct Settings
 {
@@ -50,35 +42,57 @@ struct Settings
 class AppendLog
 {
 public:
-
     AppendLog(const fs::path & log_dir, const Settings & settings_ = Settings{});
+    /// Append message at the end of the log and return index of the inserted entry
     UInt64 append(std::span<const char> message);
     /// Read count entries(maybe less) from the front of the log
-    std::vector<LogEntry> readFront(size_t count) const;
-    /// Drop up to count entries from the front of the log
+    Entries readFront(size_t count) const;
+    /// Drop all entries from the beginning of the log up to one with the specified index (excluding)
     size_t dropUpTo(UInt64 index);
+    /// Return the number of entries in the log
     size_t size() const;
+    /// Return the index of the next entry to append
     UInt64 getNextIndex() const;
+    /// Return the index of the first entry in the log
     UInt64 getStartIndex() const;
-private:
-    void load();
-    void reload();
-    size_t loadSegmentEntries(const Segment & segment, std::vector<LogEntry> & sink, size_t limit) const;
-    void copySegmentWithDrop(Segment & segment, WriteBuffer & out, size_t entries_to_drop);
+    /// Return the number of segments the log contains
+    size_t segmentsCount() const;
 
-    int findSegment(UInt64 index) const;
-    UInt64 findNextIndex(const Segment & segment) const;
-    UInt64 getStartIndexNoLock() const;
+private:
+    /// Load all segments from the log directory and clean outdated segments
+    void load() TSA_REQUIRES(mutex);
+    /// Reload segments from the log directory
+    void reload() TSA_REQUIRES(mutex);
+    /// Read no more than limit entries from the segment and return how much was read
+    size_t readEntries(const Segment & segment, Entries & entries, size_t limit) const TSA_REQUIRES(mutex);
+    /// Copy entries from the beginning of the segment to the output buffer skipping the first ones
+    void copyEntriesWithSkip(Segment & segment, WriteBuffer & out, size_t entries_to_skip) TSA_REQUIRES(mutex);
+    /// Create and append new empty segment to the log
+    void appendSegment(UInt64 start_index) TSA_REQUIRES(mutex);
+
+    /// Return the sequence number of the segment containing entry with the index
+    int findSegment(UInt64 index) const TSA_REQUIRES(mutex);
+    /// Return the index after the last entry of the segment
+    UInt64 findNextIndex(const Segment & segment) const TSA_REQUIRES(mutex);
+    void assertNotCorrupted() const TSA_REQUIRES(mutex);
+
+    UInt64 getStartIndexNoLock() const TSA_REQUIRES(mutex);
 
     mutable std::mutex mutex;
-    /// The current segment file to append
-    WriteBufferPtr log_file;
-    size_t log_file_size = 0;
+    /// The active segment file to append
+    std::unique_ptr<WriteBufferFromFile> log_file TSA_GUARDED_BY(mutex);
+    size_t active_segment_size TSA_GUARDED_BY(mutex) = 0;
 
-    UInt64 next_index = 0;
-    fs::path log_dir;
-    Settings settings;
-    std::vector<Segment> segments;
+    /// Index of the next entry to append
+    UInt64 next_index TSA_GUARDED_BY(mutex) = 0;
+    /// Log working directory
+    fs::path log_dir TSA_GUARDED_BY(mutex);
+    /// Settings
+    Settings settings TSA_GUARDED_BY(mutex);
+    /// Segments compriing the log
+    std::vector<Segment> segments TSA_GUARDED_BY(mutex);
+    /// Whether corrupted data has been detected
+    mutable bool is_corrupt TSA_GUARDED_BY(mutex) = false;
 };
 
 }

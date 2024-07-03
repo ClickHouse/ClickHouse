@@ -7,29 +7,107 @@
 #include <Poco/Checksum.h>
 #include <Common/re2.h>
 
+#include <ranges>
 #include <string>
 
-namespace DB
+namespace DB::ErrorCodes
 {
-
-namespace ErrorCodes
-{
-//extern const int BAD_ARGUMENTS;
+extern const int BAD_ARGUMENTS;
 //extern const int LOGICAL_ERROR;
 extern const int ARGUMENT_OUT_OF_BOUND;
+extern const int CORRUPTED_DATA;
+extern const int INVALID_STATE;
 }
+
+namespace DB::WAL
+{
 
 constexpr char first_ext[] = ".first";
 constexpr char tmp_ext[] = ".tmp";
 constexpr char prefix[] = "log_";
 
-namespace
-{
-UInt64 extract_start_index(const String & filename)
+static UInt64 extract_start_index(const String & filename)
 {
     return static_cast<UInt64>(std::stoull(filename.substr(strlen(prefix), filename.find("."))));
 }
+
+static String makeSegmentName(UInt64 start_index, std::string_view ext = "")
+{
+    return fmt::format("{}{:020}{}", prefix, start_index, ext);
 }
+
+static void verifyChecksum(const Entry & entry)
+{
+    Poco::Checksum crc(Poco::Checksum::Type::TYPE_CRC32);
+    crc.update(reinterpret_cast<const char *>(&entry.index), sizeof(entry.index));
+    crc.update(entry.data.data(), static_cast<unsigned int>(entry.data.size()));
+
+    if (crc.checksum() != entry.checksum)
+        throw DB::Exception(ErrorCodes::CORRUPTED_DATA, "Checksum for the entry {} does not match the computed one", entry.index);
+}
+
+struct EntryNonOwning
+{
+    EntryNonOwning(UInt64 index_, std::span<const char> data_) : index(index_), data(data_)
+    {
+        Poco::Checksum crc(Poco::Checksum::Type::TYPE_CRC32);
+        crc.update(reinterpret_cast<const char *>(&index), sizeof(index));
+        crc.update(data.data(), static_cast<unsigned int>(data.size()));
+        checksum = crc.checksum();
+    }
+
+    UInt64 index;
+    std::span<const char> data;
+    UInt32 checksum;
+};
+
+
+class EntrySerializer
+{
+public:
+    static void serialize(const EntryNonOwning & entry, WriteBuffer & out)
+    {
+        writeVarUInt(entry.index, out);
+        writeStringBinary(StringRef(entry.data.data(), entry.data.size()), out);
+        writeVarUInt(entry.checksum, out);
+    }
+
+    static Entry deserialize(ReadBuffer & in)
+    {
+        Entry entry;
+        try
+        {
+            readVarUInt(entry.index, in);
+            readBinary(entry.data, in);
+            readVarUInt(entry.checksum, in);
+        }
+        catch (const DB::Exception & e)
+        {
+            if (e.code() == DB::ErrorCodes::CANNOT_READ_ALL_DATA || e.code() == DB::ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF)
+            {
+                throw Exception(
+                    ErrorCodes::CORRUPTED_DATA, "Cannot read data. Source data is possibly corrupted");
+            }
+            else
+                throw;
+        }
+
+        verifyChecksum(entry);
+        return entry;
+    }
+
+    static size_t calculateSerializedSize(const EntryNonOwning & entry)
+    {
+        size_t res = 0;
+
+        res += getLengthOfVarUInt(entry.index);
+        res += getLengthOfVarUInt(entry.data.size_bytes());
+        res += entry.data.size_bytes();
+        res += getLengthOfVarUInt(entry.checksum);
+
+        return res;
+    }
+};
 
 
 AppendLog::AppendLog(const fs::path & log_dir_, const Settings & settings_) : log_dir(log_dir_), settings(settings_)
@@ -39,10 +117,6 @@ AppendLog::AppendLog(const fs::path & log_dir_, const Settings & settings_) : lo
     load();
 }
 
-String makeSegmentName(UInt64 start_index, std::string_view ext = "")
-{
-    return fmt::format("{}{:020}{}", prefix, start_index, ext);
-}
 
 void AppendLog::load()
 {
@@ -73,7 +147,8 @@ void AppendLog::load()
         const auto path = log_dir / makeSegmentName(next_index);
         segments.emplace_back(path, next_index);
 
-        log_file = std::make_unique<WriteBufferFromFile>(path, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_APPEND | O_CREAT);
+        log_file = std::make_unique<WriteBufferFromFile>(path, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_CREAT | O_TRUNC | O_APPEND);
+        active_segment_size = 0;
         return;
     }
 
@@ -95,17 +170,27 @@ void AppendLog::load()
     next_index = findNextIndex(last_segment);
     // Open the last segment for appending. File must exists
     log_file = std::make_unique<WriteBufferFromFile>(last_segment.path, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_APPEND);
+    active_segment_size = log_file->size();
 }
 
 UInt64 AppendLog::getNextIndex() const
 {
     std::lock_guard lock(mutex);
+    assertNotCorrupted();
     return next_index;
+}
+
+UInt64 AppendLog::segmentsCount() const
+{
+    std::lock_guard lock(mutex);
+    assertNotCorrupted();
+    return segments.size();
 }
 
 UInt64 AppendLog::getStartIndex() const
 {
     std::lock_guard lock(mutex);
+    assertNotCorrupted();
     return getStartIndexNoLock();
 }
 
@@ -124,6 +209,8 @@ void AppendLog::reload()
 size_t AppendLog::size() const
 {
     std::lock_guard lock(mutex);
+    assertNotCorrupted();
+
     if (segments.empty())
         return 0;
     return next_index - segments.front().start_index;
@@ -133,95 +220,106 @@ size_t AppendLog::size() const
 UInt64 AppendLog::findNextIndex(const Segment & segment) const
 {
     ReadBufferFromFile in(segment.path);
-    UInt64 seg_next_index = segment.start_index;
+    UInt64 res = segment.start_index;
 
+    // TODO: read and check version of segment
     while (!in.eof())
     {
-        LogEntry entry;
-
-        // TODO: read and check version of segment
-
-        // Possible exceptions CANNOT_READ_ALL_DATA, ATTEMPT_TO_READ_AFTER_EOF etc.
-        readVarUInt(entry.index, in);
-        readBinary(entry.data, in);
-        readVarUInt(entry.checksum, in);
-
-        Poco::Checksum crc(Poco::Checksum::Type::TYPE_CRC32);
-        crc.update(reinterpret_cast<const char *>(&entry.index), sizeof(entry.index));
-        crc.update(entry.data.data(), static_cast<unsigned int>(entry.data.size()));
-
-        if (crc.checksum() != entry.checksum)
-            throw Exception(); // TODO: Throw corruption error
-
-        seg_next_index = entry.index + 1;
+        try
+        {
+            Entry entry = EntrySerializer::deserialize(in);
+            res = entry.index + 1;
+        }
+        catch (const DB::Exception & e)
+        {
+            if (e.code() == ErrorCodes::CORRUPTED_DATA)
+                is_corrupt = true;
+            throw;
+        }
     }
+    return res;
+}
 
-    return seg_next_index;
+void AppendLog::appendSegment(UInt64 start_index)
+{
+    const auto path = log_dir / makeSegmentName(start_index);
+    segments.emplace_back(path, start_index);
+
+    if (log_file)
+        log_file->sync();
+
+    log_file = std::make_unique<WriteBufferFromFile>(path, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_APPEND | O_CREAT);
+    active_segment_size = 0;
 }
 
 UInt64 AppendLog::append(std::span<const char> message)
 {
-    // TODO: check correctness ??
-    // TODO: create new segment on overflow
-
     std::lock_guard lock(mutex);
-    UInt64 new_index = next_index;
+    assertNotCorrupted();
 
-    Poco::Checksum crc(Poco::Checksum::Type::TYPE_CRC32);
-    crc.update(reinterpret_cast<const char *>(&new_index), sizeof(new_index));
-    crc.update(message.data(), static_cast<unsigned int>(message.size()));
+    UInt64 index = next_index;
+    EntryNonOwning entry(index, message);
+    size_t entry_size = EntrySerializer::calculateSerializedSize(entry);
 
-    writeVarUInt(new_index, *log_file);
-    writeStringBinary(StringRef(message.data(), message.size()), *log_file);
-    writeVarUInt(crc.checksum(), *log_file);
+    if (entry_size > settings.max_segment_size)
+        throw DB::Exception(
+            DB::ErrorCodes::BAD_ARGUMENTS,
+            "Log entry size: {} is greater than max_segment_size: {}",
+            entry_size,
+            settings.max_segment_size);
+
+    if (active_segment_size + entry_size > settings.max_segment_size)
+        appendSegment(next_index);
+
+    size_t old_count = log_file->count();
+    EntrySerializer::serialize(entry, *log_file);
     log_file->sync();
     next_index++;
+    active_segment_size += log_file->count() - old_count;
 
-    return new_index;
+    return index;
 }
 
-std::vector<LogEntry> AppendLog::readFront(size_t count) const
+Entries AppendLog::readFront(size_t count) const
 {
     std::lock_guard lock(mutex);
+    assertNotCorrupted();
 
-    std::vector<LogEntry> res;
-    res.reserve(count);
-    size_t loaded = 0;
+    Entries entries;
+    entries.reserve(count);
+    size_t read = 0;
 
     for (const auto & segment : segments)
     {
-        loaded += loadSegmentEntries(segment, res, count - loaded);
-        if (loaded >= count)
+        read += readEntries(segment, entries, count - read);
+        if (read >= count)
             break;
     }
-    chassert(res.size() <= count);
+    chassert(entries.size() <= count);
 
-    return res;
+    return entries;
 }
 
-size_t AppendLog::loadSegmentEntries(const Segment & segment, std::vector<LogEntry> & sink, size_t limit) const
+size_t AppendLog::readEntries(const Segment & segment, Entries & entries, size_t limit) const
 {
+    // TODO: Make a segment cache(LRU) for keeping entries in memory
     ReadBufferFromFile in(segment.path);
     size_t loaded = 0;
 
+    // TODO: read and check version of segment
     while (!in.eof())
     {
-        LogEntry entry;
-        // TODO: read and check version of segment
-
-        // Possible exceptions CANNOT_READ_ALL_DATA, ATTEMPT_TO_READ_AFTER_EOF etc.
-        readVarUInt(entry.index, in);
-        readBinary(entry.data, in);
-        readVarUInt(entry.checksum, in);
-
-        Poco::Checksum crc(Poco::Checksum::Type::TYPE_CRC32);
-        crc.update(reinterpret_cast<const char *>(&entry.index), sizeof(entry.index));
-        crc.update(entry.data.data(), static_cast<unsigned int>(entry.data.size()));
-
-        if (crc.checksum() != entry.checksum)
-            throw Exception(); // TODO: Throw corruption error
-
-        sink.push_back(std::move(entry));
+        try
+        {
+            auto entry = EntrySerializer::deserialize(in);
+            entries.push_back(entry);
+        }
+        catch (const DB::Exception & e)
+        {
+            if (e.code() == ErrorCodes::CORRUPTED_DATA)
+                is_corrupt = true;
+            throw;
+        }
         loaded++;
 
         if (loaded >= limit)
@@ -230,19 +328,23 @@ size_t AppendLog::loadSegmentEntries(const Segment & segment, std::vector<LogEnt
     return loaded;
 }
 
-void AppendLog::copySegmentWithDrop(Segment & segment, WriteBuffer & out, size_t entries_to_drop)
+void AppendLog::copyEntriesWithSkip(Segment & segment, DB::WriteBuffer & out, size_t entries_to_skip)
 {
     ReadBufferFromFile in(segment.path);
 
-    for (size_t i = 0; i < entries_to_drop; i++)
+    // TODO: read and check version of segment
+    for (size_t i = 0; i < entries_to_skip; i++)
     {
-        LogEntry entry;
-        // TODO: read and check version of segment
-
-        // Possible exceptions CANNOT_READ_ALL_DATA, ATTEMPT_TO_READ_AFTER_EOF etc.
-        readVarUInt(entry.index, in);
-        readBinary(entry.data, in);
-        readVarUInt(entry.checksum, in);
+        try
+        {
+            EntrySerializer::deserialize(in);
+        }
+        catch (const DB::Exception & e)
+        {
+            if (e.code() == DB::ErrorCodes::CORRUPTED_DATA)
+                is_corrupt = true;
+            throw;
+        }
     }
     // Just copy the rest
     copyData(in, out);
@@ -254,7 +356,7 @@ int AppendLog::findSegment(UInt64 index) const
     for (size_t i = 0; i < segments.size(); i++)
     {
         UInt64 last_index{};
-        if (i == segments.size() - 1) // If it is the last segment
+        if (i == segments.size() - 1)
             last_index = next_index;
         else
             last_index = segments[i + 1].start_index;
@@ -269,6 +371,8 @@ int AppendLog::findSegment(UInt64 index) const
 size_t AppendLog::dropUpTo(UInt64 index)
 {
     std::lock_guard lock(mutex);
+
+    assertNotCorrupted();
     chassert(!segments.empty());
     size_t start_index = getStartIndexNoLock();
 
@@ -298,7 +402,7 @@ size_t AppendLog::dropUpTo(UInt64 index)
     auto tmp_file = WriteBufferFromFile(log_dir / tmp_name, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_CREAT);
 
     if (whole_segments_to_drop != segments.size())
-        copySegmentWithDrop(segments[whole_segments_to_drop], tmp_file, entries_to_drop);
+        copyEntriesWithSkip(segments[whole_segments_to_drop], tmp_file, entries_to_drop);
 
     fs::rename(log_dir / tmp_name, log_dir / new_first_segment_name);
     reload();
@@ -307,5 +411,10 @@ size_t AppendLog::dropUpTo(UInt64 index)
     return getStartIndexNoLock() - start_index;
 }
 
+void AppendLog::assertNotCorrupted() const
+{
+    if (is_corrupt)
+        throw Exception(ErrorCodes::INVALID_STATE, "WAL possibly contains corrupted data");
+}
 
 }
