@@ -466,6 +466,9 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::read()
 
 RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAsync()
 {
+    if (!sent_query)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Query had not been sent");
+
 #if defined(OS_LINUX)
     if (resent_query || !read_context)
     {
