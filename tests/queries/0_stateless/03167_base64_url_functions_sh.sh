@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Tags: no-fasttest
 # shellcheck disable=SC2155
 
 set -e
