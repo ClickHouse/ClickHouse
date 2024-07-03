@@ -31,12 +31,12 @@ class DetachedTablesBlockSource : public ISource
 public:
     DetachedTablesBlockSource(
         std::vector<UInt8> columns_mask_,
-        Block header,
+        Block header_,
         UInt64 max_block_size_,
         ColumnPtr databases_,
         ColumnPtr detached_tables_,
         ContextPtr context_)
-        : ISource(std::move(header))
+        : ISource(std::move(header_))
         , columns_mask(std::move(columns_mask_))
         , max_block_size(max_block_size_)
         , databases(std::move(databases_))
@@ -63,7 +63,9 @@ protected:
         const auto access = context->getAccess();
         const bool need_to_check_access_for_databases = !access->isGranted(AccessType::SHOW_TABLES);
 
-        for (size_t database_idx = 0, rows_count = 0; database_idx < databases->size() && rows_count < max_block_size; ++database_idx)
+        size_t database_idx = 0;
+        size_t rows_count = 0;
+        for (; database_idx < databases->size() && rows_count < max_block_size; ++database_idx)
         {
             database_name = databases->getDataAt(database_idx).toString();
             database = DatabaseCatalog::instance().tryGetDatabase(database_name);
@@ -92,8 +94,11 @@ protected:
             }
         }
 
+        if (databases->size() == database_idx && max_block_size != rows_count)
+        {
+            done = true;
+        }
         const UInt64 num_rows = result_columns.at(0)->size();
-        done = true;
         return Chunk(std::move(result_columns), num_rows);
     }
 

@@ -39,12 +39,12 @@ CREATE TABLE test03172_system_detached_tables_lazy.test_table_perm (number UInt6
 INSERT INTO test03172_system_detached_tables_lazy.test_table_perm SELECT * FROM numbers(100);
 DETACH table test03172_system_detached_tables_lazy.test_table_perm PERMANENTLY;
 
-SELECT database, table, is_permanently FROM system.detached_tables WHERE database='test03172_system_detached_tables_lazy';
+SELECT 'before attach', database, table, is_permanently FROM system.detached_tables WHERE database='test03172_system_detached_tables_lazy';
 
 ATTACH TABLE test03172_system_detached_tables_lazy.test_table;
 ATTACH TABLE test03172_system_detached_tables_lazy.test_table_perm;
 
-SELECT database, table, is_permanently FROM system.detached_tables WHERE database='test03172_system_detached_tables_lazy';
+SELECT 'after attach', database, table, is_permanently FROM system.detached_tables WHERE database='test03172_system_detached_tables_lazy';
 
 SELECT 'DROP TABLE';
 DROP TABLE  test03172_system_detached_tables_lazy.test_table SYNC;
