@@ -157,18 +157,22 @@ void validateFunctionArguments(const IFunction & func,
 {
     if (arguments.size() < mandatory_args.size() || arguments.size() > mandatory_args.size() + optional_args.size())
     {
-        auto argument_singular_or_plural = [](const auto & args){ return fmt::format("argument{}", args.size() != 1 ? "s" : ""); };
+        auto argument_singular_or_plural = [](const auto & args) -> std::string_view { return args.size() == 1 ? "argument" : "arguments"; };
+
+        String expected_args_string;
+        if (!mandatory_args.empty() && !optional_args.empty())
+            expected_args_string = fmt::format("{} mandatory {} and {} optional {}", mandatory_args.size(), argument_singular_or_plural(mandatory_args), optional_args.size(), argument_singular_or_plural(optional_args));
+        else if (!mandatory_args.empty() && optional_args.empty())
+            expected_args_string = fmt::format("{} {}", mandatory_args.size(), argument_singular_or_plural(mandatory_args)); /// intentionally not "_mandatory_ arguments"
+        else if (mandatory_args.empty() && !optional_args.empty())
+            expected_args_string = fmt::format("{} optional {}", optional_args.size(), argument_singular_or_plural(optional_args));
+        else
+            expected_args_string = "0 arguments";
 
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
             "An incorrect number of arguments was specified for function '{}'. Expected {}, got {}",
             func.getName(),
-            (!mandatory_args.empty() && !optional_args.empty())
-                ? fmt::format("{} mandatory {} and {} optional {}", mandatory_args.size(), argument_singular_or_plural(mandatory_args), optional_args.size(), argument_singular_or_plural(optional_args))
-                : (!mandatory_args.empty() && optional_args.empty())
-                    ? fmt::format("{} {}", mandatory_args.size(), argument_singular_or_plural(mandatory_args)) /// intentionally not "_mandatory_ arguments"
-                    : (mandatory_args.empty() && !optional_args.empty())
-                        ? fmt::format("{} optional {}", optional_args.size(), argument_singular_or_plural(optional_args))
-                        : "0 arguments",
+            expected_args_string,
             fmt::format("{} {}", arguments.size(), argument_singular_or_plural(arguments)));
     }
 
