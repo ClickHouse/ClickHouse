@@ -1875,7 +1875,7 @@ void TCPHandler::receiveQuery()
 #endif
     }
 
-    query_context = session->makeQueryContext(std::move(client_info));
+    query_context = session->makeQueryContext(client_info);
 
     /// Sets the default database if it wasn't set earlier for the session context.
     if (is_interserver_mode && !default_database.empty())
