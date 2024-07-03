@@ -39,6 +39,7 @@ node = cluster.add_instance(
         "TSAN_OPTIONS": "report_atomic_races=0 " + os.getenv("TSAN_OPTIONS", default="")
     },
     ipv6_address=IPV6_ADDRESS,
+    stay_alive=True,
 )
 main_channel = None
 
@@ -763,3 +764,9 @@ def test_opentelemetry_context_propagation():
         )
         == "SELECT 1\tsome custom state\n"
     )
+
+
+def test_restart():
+    assert query("SELECT 1") == "1\n"
+    node.restart_clickhouse()
+    assert query("SELECT 2") == "2\n"
