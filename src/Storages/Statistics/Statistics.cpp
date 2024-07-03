@@ -41,10 +41,35 @@ void ColumnStatistics::update(const ColumnPtr & column)
         stat.second->update(column);
 }
 
+UInt64 IStatistics::estimateCardinality() const
+{
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cardinality estimation is not implemented for this type of statistics");
+}
+
+Float64 IStatistics::estimateEqual(Float64 /*val*/) const
+{
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Equality estimation is not implemented for this type of statistics");
+}
+
+Float64 IStatistics::estimateLess(Float64 /*val*/) const
+{
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Less-than estimation is not implemented for this type of statistics");
+}
+
+/// -------------------------------------
+/// Implementation of the estimation:
+/// Note: Each statistics object supports certain types predicates natively, e.g.
+/// - TDigest: '< X' (less-than predicates)
+/// - Count-min sketches: '= X' (equal predicates)
+/// - Uniq (HyperLogLog): 'count distinct(*)' (column cardinality)
+/// If multiple statistics objects are available per column, it is sometimes also possible to combine them in a clever way.
+/// For that reason, all estimation are performed in a central place (here), and we don't simply pass the predicate to the first statistics
+/// object that supports it natively.
+
 Float64 ColumnStatistics::estimateLess(Float64 val) const
 {
     if (stats.contains(StatisticsType::TDigest))
-        return std::static_pointer_cast<StatisticsTDigest>(stats.at(StatisticsType::TDigest))->estimateLess(val);
+        return stats.at(StatisticsType::TDigest)->estimateLess(val);
     return rows * ConditionSelectivityEstimator::default_normal_cond_factor;
 }
 
@@ -57,20 +82,17 @@ Float64 ColumnStatistics::estimateEqual(Float64 val) const
 {
     if (stats.contains(StatisticsType::Uniq) && stats.contains(StatisticsType::TDigest))
     {
-        auto statistics_uniq = std::static_pointer_cast<StatisticsUniq>(stats.at(StatisticsType::Uniq));
-        /// 2048 is the default number of buckets in TDigest. In this case, TDigest stores exactly one value (with many rows)
-        /// for every bucket.
-        if (statistics_uniq->getCardinality() < 2048)
-        {
-            auto tdigest_static = std::static_pointer_cast<StatisticsTDigest>(stats.at(StatisticsType::TDigest));
-            return tdigest_static->estimateEqual(val);
-        }
+        /// 2048 is the default number of buckets in TDigest. In this case, TDigest stores exactly one value (with many rows) for every bucket.
+        if (stats.at(StatisticsType::Uniq)->estimateCardinality() < 2048)
+            return stats.at(StatisticsType::TDigest)->estimateEqual(val);
     }
     if (val < - ConditionSelectivityEstimator::threshold || val > ConditionSelectivityEstimator::threshold)
         return rows * ConditionSelectivityEstimator::default_normal_cond_factor;
     else
         return rows * ConditionSelectivityEstimator::default_good_cond_factor;
 }
+
+/// -------------------------------------
 
 void ColumnStatistics::serialize(WriteBuffer & buf)
 {
@@ -81,7 +103,7 @@ void ColumnStatistics::serialize(WriteBuffer & buf)
         stat_types_mask |= 1 << UInt8(type);
     writeIntBinary(stat_types_mask, buf);
 
-    /// store the column row count as it is always useful
+    /// as the column row count is always useful, save it in any case
     writeIntBinary(rows, buf);
 
     /// write the actual statistics object

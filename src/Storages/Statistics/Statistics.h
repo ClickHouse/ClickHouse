@@ -28,6 +28,15 @@ public:
     virtual void serialize(WriteBuffer & buf) = 0;
     virtual void deserialize(ReadBuffer & buf) = 0;
 
+    /// Estimate the cardinality of the column.
+    /// Throws if the statistics object is not able to do a meaningful estimation.
+    virtual UInt64 estimateCardinality() const;
+
+    /// Per-value estimations.
+    /// Throws if the statistics object is not able to do a meaningful estimation.
+    virtual Float64 estimateEqual(Float64 val) const; /// cardinality of val in the column
+    virtual Float64 estimateLess(Float64 val) const;  /// summarized cardinality of values < val in the column
+
 protected:
     SingleStatisticsDescription stat;
 };
