@@ -297,16 +297,13 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::consume(Chunk & chunk)
 
     String block_dedup_token;
     auto token_info = chunk.getChunkInfos().get<DeduplicationToken::TokenInfo>();
-    if constexpr (!async_insert)
-    {
-        if (!token_info)
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "TokenInfo is expected for consumed chunk in ReplicatedMergeTreeSink for table: {}",
-                storage.getStorageID().getNameForLogs());
+    if (!token_info)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "TokenInfo is expected for consumed chunk in ReplicatedMergeTreeSink for table: {}",
+            storage.getStorageID().getNameForLogs());
 
-        if (token_info->isDefined())
-            block_dedup_token = token_info->getToken();
-    }
+    if (token_info->isDefined())
+        block_dedup_token = token_info->getToken();
 
     auto part_blocks = MergeTreeDataWriter::splitBlockIntoParts(std::move(block), max_parts_per_block, metadata_snapshot, context, async_insert_info);
 
