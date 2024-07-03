@@ -170,6 +170,8 @@ ASTPtr ASTColumns::clone() const
         res->set(res->projections, projections->clone());
     if (primary_key)
         res->set(res->primary_key, primary_key->clone());
+    if (primary_key_from_columns)
+        res->set(res->primary_key_from_columns, primary_key_from_columns->clone());
 
     return res;
 }
@@ -402,8 +404,18 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
                       << quoteString(toString(to_inner_uuid));
     }
 
+    bool should_add_empty = is_create_empty;
+    auto add_empty_if_needed = [&]
+    {
+        if (!should_add_empty)
+            return;
+        should_add_empty = false;
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << " EMPTY" << (settings.hilite ? hilite_none : "");
+    };
+
     if (!as_table.empty())
     {
+        add_empty_if_needed();
         settings.ostr
             << (settings.hilite ? hilite_keyword : "") << " AS " << (settings.hilite ? hilite_none : "")
             << (!as_database.empty() ? backQuoteIfNeed(as_database) + "." : "") << backQuoteIfNeed(as_table);
@@ -421,6 +433,7 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
             frame.expression_list_always_start_on_new_line = false;
         }
 
+        add_empty_if_needed();
         settings.ostr << (settings.hilite ? hilite_keyword : "") << " AS " << (settings.hilite ? hilite_none : "");
         as_table_function->formatImpl(settings, state, frame);
     }
@@ -482,10 +495,10 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
 
     if (is_populate)
         settings.ostr << (settings.hilite ? hilite_keyword : "") << " POPULATE" << (settings.hilite ? hilite_none : "");
-    else if (is_create_empty)
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " EMPTY" << (settings.hilite ? hilite_none : "");
 
-    if (sql_security && sql_security->as<ASTSQLSecurity &>().type.has_value())
+    add_empty_if_needed();
+
+    if (sql_security && supportSQLSecurity() && sql_security->as<ASTSQLSecurity &>().type.has_value())
     {
         settings.ostr << settings.nl_or_ws;
         sql_security->formatImpl(settings, state, frame);

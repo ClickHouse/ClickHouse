@@ -107,7 +107,6 @@ private:
 
     CallResult  callImpl(
         Poco::Net::HTTPResponse & response,
-        const Poco::URI & uri_,
         const std::string & method_,
         const std::optional<HTTPRange> & range,
         bool allow_redirects) const;

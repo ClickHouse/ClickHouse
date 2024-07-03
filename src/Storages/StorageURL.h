@@ -127,7 +127,7 @@ protected:
 
     bool parallelizeOutputAfterReading(ContextPtr context) const override;
 
-    bool supportsTrivialCountOptimization() const override { return true; }
+    bool supportsTrivialCountOptimization(const StorageSnapshotPtr &, ContextPtr) const override { return true; }
 
 private:
     static std::pair<ColumnsDescription, String> getTableStructureAndFormatFromDataImpl(
@@ -257,8 +257,10 @@ public:
     void onFinish() override;
 
 private:
-    void finalize();
-    void release();
+    void finalizeBuffers();
+    void releaseBuffers();
+    void cancelBuffers();
+
     std::unique_ptr<WriteBuffer> write_buf;
     OutputFormatPtr writer;
     std::mutex cancel_mutex;
@@ -294,6 +296,8 @@ public:
     }
 
     bool supportsSubcolumns() const override { return true; }
+
+    bool supportsDynamicSubcolumns() const override { return true; }
 
     static FormatSettings getFormatSettingsFromArgs(const StorageFactory::Arguments & args);
 

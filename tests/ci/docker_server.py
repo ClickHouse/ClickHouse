@@ -362,7 +362,7 @@ def main():
     del args.image_repo
     del args.push
 
-    if pr_info.is_master():
+    if pr_info.is_master:
         push = True
 
     image = DockerImageData(image_path, image_repo, False)
@@ -374,9 +374,10 @@ def main():
 
     for arch, build_name in zip(ARCH, ("package_release", "package_aarch64")):
         if not args.bucket_prefix:
-            repo_urls[
-                arch
-            ] = f"{S3_DOWNLOAD}/{S3_BUILDS_BUCKET}/{release_or_pr}/{pr_info.sha}/{build_name}"
+            repo_urls[arch] = (
+                f"{S3_DOWNLOAD}/{S3_BUILDS_BUCKET}/"
+                f"{release_or_pr}/{pr_info.sha}/{build_name}"
+            )
         else:
             repo_urls[arch] = f"{args.bucket_prefix}/{build_name}"
         if args.allow_build_reuse:

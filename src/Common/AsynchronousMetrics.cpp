@@ -56,7 +56,7 @@ static std::unique_ptr<ReadBufferFromFilePRead> openFileIfExists(const std::stri
 
 
 AsynchronousMetrics::AsynchronousMetrics(
-    int update_period_seconds,
+    unsigned update_period_seconds,
     const ProtocolServerMetricsFunc & protocol_server_metrics_func_)
     : update_period(update_period_seconds)
     , log(getLogger("AsynchronousMetrics"))
@@ -415,6 +415,15 @@ Value saveAllArenasMetric(AsynchronousMetricValues & values,
         fmt::format("jemalloc.arenas.all.{}", metric_name));
 }
 
+template<typename Value>
+Value saveJemallocProf(AsynchronousMetricValues & values,
+    const std::string & metric_name)
+{
+    return saveJemallocMetricImpl<Value>(values,
+        fmt::format("prof.{}", metric_name),
+        fmt::format("jemalloc.prof.{}", metric_name));
+}
+
 }
 #endif
 
@@ -607,6 +616,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
     saveJemallocMetric<size_t>(new_values, "background_thread.num_threads");
     saveJemallocMetric<uint64_t>(new_values, "background_thread.num_runs");
     saveJemallocMetric<uint64_t>(new_values, "background_thread.run_intervals");
+    saveJemallocProf<size_t>(new_values, "active");
     saveAllArenasMetric<size_t>(new_values, "pactive");
     [[maybe_unused]] size_t je_malloc_pdirty = saveAllArenasMetric<size_t>(new_values, "pdirty");
     [[maybe_unused]] size_t je_malloc_pmuzzy = saveAllArenasMetric<size_t>(new_values, "pmuzzy");
@@ -671,7 +681,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
                     ReadableSize(rss),
                     ReadableSize(difference));
 
-            total_memory_tracker.setRSS(rss, free_memory_in_allocator_arenas);
+            MemoryTracker::setRSS(rss, free_memory_in_allocator_arenas);
         }
     }
 
@@ -1159,7 +1169,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
 
                     core_id = std::stoi(s.substr(core_id_start));
                 }
-                else if (s.rfind("cpu MHz", 0) == 0)
+                else if (s.starts_with("cpu MHz"))
                 {
                     if (auto colon = s.find_first_of(':'))
                     {

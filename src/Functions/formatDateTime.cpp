@@ -43,13 +43,13 @@ namespace
 {
 using Pos = const char *;
 
-enum class SupportInteger
+enum class SupportInteger : uint8_t
 {
     Yes,
     No
 };
 
-enum class FormatSyntax
+enum class FormatSyntax : uint8_t
 {
     MySQL,
     Joda
@@ -62,8 +62,8 @@ template <> struct InstructionValueTypeMap<DataTypeInt16>      { using Instructi
 template <> struct InstructionValueTypeMap<DataTypeUInt16>     { using InstructionValueType = UInt32; };
 template <> struct InstructionValueTypeMap<DataTypeInt32>      { using InstructionValueType = UInt32; };
 template <> struct InstructionValueTypeMap<DataTypeUInt32>     { using InstructionValueType = UInt32; };
-template <> struct InstructionValueTypeMap<DataTypeInt64>      { using InstructionValueType = UInt32; };
-template <> struct InstructionValueTypeMap<DataTypeUInt64>     { using InstructionValueType = UInt32; };
+template <> struct InstructionValueTypeMap<DataTypeInt64>      { using InstructionValueType = Int64; };
+template <> struct InstructionValueTypeMap<DataTypeUInt64>     { using InstructionValueType = UInt64; };
 template <> struct InstructionValueTypeMap<DataTypeDate>       { using InstructionValueType = UInt16; };
 template <> struct InstructionValueTypeMap<DataTypeDate32>     { using InstructionValueType = Int32; };
 template <> struct InstructionValueTypeMap<DataTypeDateTime>   { using InstructionValueType = UInt32; };
@@ -205,13 +205,13 @@ private:
             return 4;
         }
 
-        /// Cast content from integer to string, and append result string to buffer.
-        /// Make sure digits number in result string is no less than total_digits by padding leading '0'
+        /// Casts val from integer to string, then appends result string to buffer.
+        /// Makes sure digits number in result string is no less than min_digits by padding leading '0'.
         /// Notice: '-' is not counted as digit.
         /// For example:
-        /// val = -123, total_digits = 2 => dest = "-123"
-        /// val = -123, total_digits = 3 => dest = "-123"
-        /// val = -123, total_digits = 4 => dest = "-0123"
+        /// val = -123, min_digits = 2 => dest = "-123"
+        /// val = -123, min_digits = 3 => dest = "-123"
+        /// val = -123, min_digits = 4 => dest = "-0123"
         static size_t writeNumberWithPadding(char * dest, std::integral auto val, size_t min_digits)
         {
             using T = decltype(val);
@@ -226,9 +226,10 @@ private:
                 ++digits;
             }
 
-            /// Possible sign
             size_t pos = 0;
             n = val;
+
+            /// Possible sign
             if constexpr (is_signed_v<T>)
                 if (val < 0)
                 {
@@ -245,16 +246,17 @@ private:
             }
 
             /// Digits
+            size_t digits_written = 0;
             while (w >= 100)
             {
                 w /= 100;
 
                 writeNumber2(dest + pos, n / w);
                 pos += 2;
-
+                digits_written += 2;
                 n = n % w;
             }
-            if (n)
+            if (digits_written < digits)
             {
                 dest[pos] = '0' + n;
                 ++pos;
@@ -552,12 +554,12 @@ private:
 
         static size_t jodaEra(size_t min_represent_digits, char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
         {
-            auto year = static_cast<Int32>(ToYearImpl::execute(source, timezone));
+            Int32 year = static_cast<Int32>(ToYearImpl::execute(source, timezone));
             String res;
             if (min_represent_digits <= 3)
-                res = static_cast<Int32>(year) > 0 ? "AD" : "BC";
+                res = year > 0 ? "AD" : "BC";
             else
-                res = static_cast<Int32>(year) > 0 ? "Anno Domini" : "Before Christ";
+                res = year > 0 ? "Anno Domini" : "Before Christ";
 
             memcpy(dest, res.data(), res.size());
             return res.size();
@@ -689,8 +691,7 @@ private:
 
         static size_t jodaFractionOfSecond(size_t min_represent_digits, char * dest, Time /*source*/, UInt64 fractional_second, UInt32 scale, const DateLUTImpl & /*timezone*/)
         {
-            if (min_represent_digits > 9)
-                min_represent_digits = 9;
+            min_represent_digits = std::min<size_t>(min_represent_digits, 9);
             if (fractional_second == 0)
             {
                 for (UInt64 i = 0; i < min_represent_digits; ++i)
@@ -1017,7 +1018,7 @@ public:
             else
             {
                 for (auto & instruction : instructions)
-                    instruction.perform(pos, static_cast<UInt32>(vec[i]), 0, 0, *time_zone);
+                    instruction.perform(pos, static_cast<T>(vec[i]), 0, 0, *time_zone);
             }
             *pos++ = '\0';
 
@@ -1073,7 +1074,7 @@ public:
         {
             /// DateTime/DateTime64 --> insert instruction
             /// Other types cannot provide the requested data --> write out template
-            if constexpr (is_any_of<T, UInt32, Int64>)
+            if constexpr (is_any_of<T, UInt32, Int64, UInt64>)
             {
                 Instruction<T> instruction;
                 instruction.setMysqlFunc(std::move(func));
@@ -1539,7 +1540,7 @@ public:
         /// If the argument was DateTime, add instruction for printing. If it was date, just append default literal
         auto add_instruction = [&]([[maybe_unused]] typename Instruction<T>::FuncJoda && func, [[maybe_unused]] const String & default_literal)
         {
-            if constexpr (is_any_of<T, UInt32, Int64>)
+            if constexpr (is_any_of<T, UInt32, Int64, UInt64>)
             {
                 Instruction<T> instruction;
                 instruction.setJodaFunc(std::move(func));

@@ -33,6 +33,14 @@ TableNode::TableNode(StoragePtr storage_, const ContextPtr & context)
 {
 }
 
+void TableNode::updateStorage(StoragePtr storage_value, const ContextPtr & context)
+{
+    storage = std::move(storage_value);
+    storage_id = storage->getStorageID();
+    storage_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef().lock_acquire_timeout);
+    storage_snapshot = storage->getStorageSnapshot(storage->getInMemoryMetadataPtr(), context);
+}
+
 void TableNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const
 {
     buffer << std::string(indent, ' ') << "TABLE id: " << format_state.getNodeId(this);
@@ -52,14 +60,14 @@ void TableNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
     }
 }
 
-bool TableNode::isEqualImpl(const IQueryTreeNode & rhs) const
+bool TableNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
 {
     const auto & rhs_typed = assert_cast<const TableNode &>(rhs);
     return storage_id == rhs_typed.storage_id && table_expression_modifiers == rhs_typed.table_expression_modifiers &&
         temporary_table_name == rhs_typed.temporary_table_name;
 }
 
-void TableNode::updateTreeHashImpl(HashState & state) const
+void TableNode::updateTreeHashImpl(HashState & state, CompareOptions) const
 {
     if (!temporary_table_name.empty())
     {

@@ -25,6 +25,7 @@ void registerStorageLiveView(StorageFactory & factory);
 void registerStorageGenerateRandom(StorageFactory & factory);
 void registerStorageExecutable(StorageFactory & factory);
 void registerStorageWindowView(StorageFactory & factory);
+void registerStorageLoop(StorageFactory & factory);
 void registerStorageFuzzQuery(StorageFactory & factory);
 #if USE_RAPIDJSON || USE_SIMDJSON
 void registerStorageFuzzJSON(StorageFactory & factory);
@@ -32,10 +33,9 @@ void registerStorageFuzzJSON(StorageFactory & factory);
 
 #if USE_AWS_S3
 void registerStorageS3(StorageFactory & factory);
-void registerStorageCOS(StorageFactory & factory);
-void registerStorageOSS(StorageFactory & factory);
 void registerStorageHudi(StorageFactory & factory);
 void registerStorageS3Queue(StorageFactory & factory);
+void registerStorageAzureQueue(StorageFactory & factory);
 
 #if USE_PARQUET
 void registerStorageDeltaLake(StorageFactory & factory);
@@ -46,8 +46,6 @@ void registerStorageIceberg(StorageFactory & factory);
 #endif
 
 #if USE_HDFS
-void registerStorageHDFS(StorageFactory & factory);
-
 #if USE_HIVE
 void registerStorageHive(StorageFactory & factory);
 #endif
@@ -100,9 +98,7 @@ void registerStorageSQLite(StorageFactory & factory);
 
 void registerStorageKeeperMap(StorageFactory & factory);
 
-#if USE_AZURE_BLOB_STORAGE
-void registerStorageAzureBlob(StorageFactory & factory);
-#endif
+void registerStorageObjectStorage(StorageFactory & factory);
 
 void registerStorages()
 {
@@ -127,15 +123,17 @@ void registerStorages()
     registerStorageGenerateRandom(factory);
     registerStorageExecutable(factory);
     registerStorageWindowView(factory);
+    registerStorageLoop(factory);
     registerStorageFuzzQuery(factory);
 #if USE_RAPIDJSON || USE_SIMDJSON
     registerStorageFuzzJSON(factory);
 #endif
 
+#if USE_AZURE_BLOB_STORAGE
+    registerStorageAzureQueue(factory);
+#endif
+
 #if USE_AWS_S3
-    registerStorageS3(factory);
-    registerStorageCOS(factory);
-    registerStorageOSS(factory);
     registerStorageHudi(factory);
     registerStorageS3Queue(factory);
 
@@ -150,12 +148,9 @@ void registerStorages()
     #endif
 
     #if USE_HDFS
-    registerStorageHDFS(factory);
-
     #if USE_HIVE
     registerStorageHive(factory);
     #endif
-
     #endif
 
     registerStorageODBC(factory);
@@ -203,9 +198,7 @@ void registerStorages()
 
     registerStorageKeeperMap(factory);
 
-    #if USE_AZURE_BLOB_STORAGE
-    registerStorageAzureBlob(factory);
-    #endif
+    registerStorageObjectStorage(factory);
 }
 
 }

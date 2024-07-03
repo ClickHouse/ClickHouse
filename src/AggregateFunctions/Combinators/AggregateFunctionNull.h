@@ -491,7 +491,7 @@ public:
         std::vector<const UInt8 *> nullable_filters;
         const IColumn * nested_columns[number_of_arguments];
 
-        std::unique_ptr<UInt8[]> final_flags = nullptr;
+        std::unique_ptr<UInt8[]> final_flags;
         const UInt8 * final_flags_ptr = nullptr;
 
         if (if_argument_pos >= 0)

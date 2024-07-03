@@ -2,7 +2,6 @@
 
 #if defined(OS_LINUX)
 
-#include <mutex>
 #include <atomic>
 #include <Common/Fiber.h>
 #include <Common/TimerDescriptor.h>

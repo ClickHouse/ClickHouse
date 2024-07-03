@@ -101,7 +101,8 @@ public:
         IMergeTreeReader * merge_tree_reader_,
         MergeTreeRangeReader * prev_reader_,
         const PrewhereExprStep * prewhere_info_,
-        bool last_reader_in_chain_);
+        bool last_reader_in_chain_,
+        bool main_reader_);
 
     MergeTreeRangeReader() = default;
 
@@ -114,6 +115,9 @@ public:
 
     bool isCurrentRangeFinished() const;
     bool isInitialized() const { return is_initialized; }
+
+    /// Names of virtual columns that are filled in RangeReader.
+    static const NameSet virtuals_to_fill;
 
 private:
     /// Accumulates sequential read() requests to perform a large read instead of multiple small reads
@@ -308,6 +312,8 @@ private:
     ReadResult startReadingChain(size_t max_rows, MarkRanges & ranges);
     Columns continueReadingChain(const ReadResult & result, size_t & num_rows);
     void executePrewhereActionsAndFilterColumns(ReadResult & result) const;
+
+    void fillVirtualColumns(ReadResult & result, UInt64 leading_begin_part_offset, UInt64 leading_end_part_offset);
     ColumnPtr createPartOffsetColumn(ReadResult & result, UInt64 leading_begin_part_offset, UInt64 leading_end_part_offset);
 
     IMergeTreeReader * merge_tree_reader = nullptr;
@@ -321,6 +327,7 @@ private:
     Block result_sample_block;  /// Block with columns that are returned by this step.
 
     bool last_reader_in_chain = false;
+    bool main_reader = false; /// Whether it is the main reader or one of the readers for prewhere steps
     bool is_initialized = false;
 
     LoggerPtr log = getLogger("MergeTreeRangeReader");

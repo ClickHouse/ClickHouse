@@ -144,7 +144,12 @@ ConnectionTimeouts ConnectionTimeouts::getAdaptiveTimeouts(const String & method
 void setTimeouts(Poco::Net::HTTPClientSession & session, const ConnectionTimeouts & timeouts)
 {
     session.setTimeout(timeouts.connection_timeout, timeouts.send_timeout, timeouts.receive_timeout);
-    session.setKeepAliveTimeout(timeouts.http_keep_alive_timeout);
+    /// we can not change keep alive timeout for already initiated connections
+    if (!session.connected())
+    {
+        session.setKeepAliveTimeout(timeouts.http_keep_alive_timeout);
+        session.setKeepAliveMaxRequests(int(timeouts.http_keep_alive_max_requests));
+    }
 }
 
 ConnectionTimeouts getTimeouts(const Poco::Net::HTTPClientSession & session)
