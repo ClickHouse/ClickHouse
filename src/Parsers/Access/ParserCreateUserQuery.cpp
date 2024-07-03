@@ -67,6 +67,7 @@ namespace
             bool expect_ssl_cert_subjects = false;
             bool expect_public_ssh_key = false;
             bool expect_http_auth_server = false;
+            bool expect_claims = false;
 
             if (ParserKeyword{Keyword::WITH}.ignore(pos, expected))
             {
@@ -76,19 +77,30 @@ namespace
                     {
                         type = check_type;
 
-                        if (check_type == AuthenticationType::LDAP)
+                        switch (check_type)
+                        {
+                        case AuthenticationType::LDAP:
                             expect_ldap_server_name = true;
-                        else if (check_type == AuthenticationType::KERBEROS)
+                            break;
+                        case AuthenticationType::KERBEROS:
                             expect_kerberos_realm = true;
-                        else if (check_type == AuthenticationType::SSL_CERTIFICATE)
+                            break;
+                        case AuthenticationType::SSL_CERTIFICATE:
                             expect_ssl_cert_subjects = true;
-                        else if (check_type == AuthenticationType::SSH_KEY)
+                            break;
+                        case AuthenticationType::SSH_KEY:
                             expect_public_ssh_key = true;
-                        else if (check_type == AuthenticationType::HTTP)
+                            break;
+                        case AuthenticationType::HTTP:
                             expect_http_auth_server = true;
-                        else if (check_type != AuthenticationType::NO_PASSWORD)
-                            expect_password = true;
-
+                            break;
+                        case AuthenticationType::JWT:
+                            expect_claims = true;
+                            break;
+                        default:
+                            if (check_type != AuthenticationType::NO_PASSWORD)
+                                expect_password = true;
+                        }
                         break;
                     }
                 }
@@ -125,6 +137,7 @@ namespace
             ASTPtr http_auth_scheme;
             ASTPtr ssl_cert_subjects;
             std::optional<String> ssl_cert_subject_type;
+            ASTPtr jwt_claims;
 
             if (expect_password || expect_hash)
             {
@@ -189,6 +202,14 @@ namespace
                         return false;
                 }
             }
+            else if (expect_claims)
+            {
+                if (ParserKeyword{Keyword::CLAIMS}.ignore(pos, expected))
+                {
+                    if (!ParserStringAndSubstitution{}.parse(pos, jwt_claims, expected))
+                        return false;
+                }
+            }
 
             auth_data = std::make_shared<ASTAuthenticationData>();
 
@@ -213,6 +234,9 @@ namespace
 
             if (http_auth_scheme)
                 auth_data->children.push_back(std::move(http_auth_scheme));
+
+            if (jwt_claims)
+                auth_data->children.push_back(std::move(jwt_claims));
 
             return true;
         });

@@ -2,16 +2,24 @@
 #include <Access/LDAPClient.h>
 #include <Access/SettingsAuthResponseParser.h>
 #include <Access/resolveSetting.h>
+#include "Common/Logger.h"
+#include "Common/logger_useful.h"
 #include <Common/Exception.h>
 #include <Common/SettingsChanges.h>
 #include <Common/SipHash.h>
 #include <Common/quoteString.h>
+#include "Access/AccessControl.h"
+#include "Access/Credentials.h"
+#include "Access/JWKSClient.h"
 
 #include <boost/algorithm/string/case_conv.hpp>
 #include <Poco/Util/AbstractConfiguration.h>
 
+#include <map>
+#include <memory>
 #include <optional>
 #include <utility>
+#include <vector>
 
 namespace DB
 {
@@ -254,6 +262,29 @@ HTTPAuthClientParams parseHTTPAuthParams(const Poco::Util::AbstractConfiguration
     return http_auth_params;
 }
 
+JWKSAuthClientParams parseJWKSAuthParams(const Poco::Util::AbstractConfiguration & config, const String & prefix)
+{
+    JWKSAuthClientParams jwks_auth_params;
+
+    jwks_auth_params.uri = config.getString(prefix + ".uri");
+
+    size_t connection_timeout_ms = config.getInt(prefix + ".connection_timeout_ms", 1000);
+    size_t receive_timeout_ms = config.getInt(prefix + ".receive_timeout_ms", 1000);
+    size_t send_timeout_ms = config.getInt(prefix + ".send_timeout_ms", 1000);
+    jwks_auth_params.timeouts = ConnectionTimeouts()
+        .withConnectionTimeout(Poco::Timespan(connection_timeout_ms * 1000))
+        .withReceiveTimeout(Poco::Timespan(receive_timeout_ms * 1000))
+        .withSendTimeout(Poco::Timespan(send_timeout_ms * 1000));
+
+    jwks_auth_params.max_tries = config.getInt(prefix + ".max_tries", 3);
+    jwks_auth_params.retry_initial_backoff_ms = config.getInt(prefix + ".retry_initial_backoff_ms", 50);
+    jwks_auth_params.retry_max_backoff_ms = config.getInt(prefix + ".retry_max_backoff_ms", 1000);
+    jwks_auth_params.refresh_ms = config.getInt(prefix + ".refrest_ms", 300000);
+
+    return jwks_auth_params;
+}
+
+
 }
 
 void parseLDAPRoleSearchParams(LDAPClient::RoleSearchParams & params, const Poco::Util::AbstractConfiguration & config, const String & prefix)
@@ -271,6 +302,13 @@ void ExternalAuthenticators::resetImpl()
     ldap_client_params_blueprint.clear();
     ldap_caches.clear();
     kerberos_params.reset();
+    jwks_auth_servers.clear();
+}
+
+bool ExternalAuthenticators::isJWTAllowed() const
+{
+    std::lock_guard lock(mutex);
+    return !jwks_auth_servers.empty();
 }
 
 void ExternalAuthenticators::reset()
@@ -290,8 +328,10 @@ void ExternalAuthenticators::setConfiguration(const Poco::Util::AbstractConfigur
     std::size_t ldap_servers_key_count = 0;
     std::size_t kerberos_keys_count = 0;
     std::size_t http_auth_server_keys_count = 0;
+    std::size_t jwks_auth_server_keys_count = 0;
 
     const String http_auth_servers_config = "http_authentication_servers";
+    const String jwks_auth_servers_config = "jwks_authentication_servers";
 
     for (auto key : all_keys)
     {
@@ -304,6 +344,7 @@ void ExternalAuthenticators::setConfiguration(const Poco::Util::AbstractConfigur
         ldap_servers_key_count += (key == "ldap_servers");
         kerberos_keys_count += (key == "kerberos");
         http_auth_server_keys_count += (key == http_auth_servers_config);
+        jwks_auth_server_keys_count += (key == jwks_auth_servers_config);
     }
 
     if (ldap_servers_key_count > 1)
@@ -314,6 +355,9 @@ void ExternalAuthenticators::setConfiguration(const Poco::Util::AbstractConfigur
 
     if (http_auth_server_keys_count > 1)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Multiple http_authentication_servers sections are not allowed");
+
+    if (jwks_auth_server_keys_count > 1)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Multiple jwks_authentication_servers sections are not allowed");
 
     Poco::Util::AbstractConfiguration::Keys http_auth_server_names;
     config.keys(http_auth_servers_config, http_auth_server_names);
@@ -368,6 +412,22 @@ void ExternalAuthenticators::setConfiguration(const Poco::Util::AbstractConfigur
     catch (...)
     {
         tryLogCurrentException(log, "Could not parse Kerberos section");
+    }
+
+    Poco::Util::AbstractConfiguration::Keys jwks_auth_server_names;
+    config.keys(jwks_auth_servers_config, jwks_auth_server_names);
+    jwks_auth_servers.clear();
+    for (const auto & jwks_auth_server_name : jwks_auth_server_names)
+    {
+        String prefix = fmt::format("{}.{}", jwks_auth_servers_config, jwks_auth_server_name);
+        try
+        {
+            jwks_auth_servers[jwks_auth_server_name] = std::make_unique<JWKSClient>(parseJWKSAuthParams(config, prefix));
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Could not parse JWKS auth server" + backQuote(jwks_auth_server_name));
+        }
     }
 }
 
@@ -545,6 +605,22 @@ HTTPAuthClientParams ExternalAuthenticators::getHTTPAuthenticationParams(const S
     if (it == http_auth_servers.end())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "HTTP server '{}' is not configured", server);
     return it->second;
+}
+
+bool ExternalAuthenticators::checkAndResolveJWKSCredentials(const String &claims, const JWTCredentials & credentials, SettingsChanges &) const
+{
+    std::lock_guard lock{mutex};
+
+    const auto token = String(credentials.getToken());
+    for (const auto &it : jwks_auth_servers)
+    {
+        if (it.second->verify(claims, token))
+        {
+            LOG_DEBUG(getLogger("JWTAuth"), "success auth for {} by {}", credentials.getUserName(), it.first);
+            return true;
+        }
+    }
+    return false;
 }
 
 bool ExternalAuthenticators::checkHTTPBasicCredentials(

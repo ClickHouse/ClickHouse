@@ -156,6 +156,7 @@ function clone_submodules
             contrib/libfiu
             contrib/incbin
             contrib/yaml-cpp
+            contrib/jwt-cpp
         )
 
         git submodule sync
