@@ -437,7 +437,8 @@ Block RemoteQueryExecutor::readBlock()
 
 RemoteQueryExecutor::ReadResult RemoteQueryExecutor::read()
 {
-    chassert(sent_query);
+    if (!sent_query)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Query had not been sent");
 
     while (true)
     {
