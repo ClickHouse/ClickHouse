@@ -1,3 +1,5 @@
+#include <Common/FieldVisitorToString.h>
+
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -985,18 +987,18 @@ std::string QueryAnalyzer::rewriteAggregateFunctionNameIfNeeded(
     {
         result_aggregate_function_name = settings.count_distinct_implementation;
     }
-    else if (aggregate_function_name_lowercase == "countdistinctif" || aggregate_function_name_lowercase == "countifdistinct")
+    else if (aggregate_function_name_lowercase == "countifdistinct" ||
+        (settings.rewrite_count_distinct_if_with_count_distinct_implementation && aggregate_function_name_lowercase == "countdistinctif"))
     {
         result_aggregate_function_name = settings.count_distinct_implementation;
         result_aggregate_function_name += "If";
     }
-
-    /// Replace aggregateFunctionIfDistinct into aggregateFunctionDistinctIf to make execution more optimal
-    if (result_aggregate_function_name.ends_with("ifdistinct"))
+    else if (aggregate_function_name_lowercase.ends_with("ifdistinct"))
     {
+        /// Replace aggregateFunctionIfDistinct into aggregateFunctionDistinctIf to make execution more optimal
         size_t prefix_length = result_aggregate_function_name.size() - strlen("ifdistinct");
         result_aggregate_function_name = result_aggregate_function_name.substr(0, prefix_length) + "DistinctIf";
-   }
+    }
 
     bool need_add_or_null = settings.aggregate_functions_null_for_empty && !result_aggregate_function_name.ends_with("OrNull");
     if (need_add_or_null)
@@ -3499,7 +3501,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
   *
   * 4. If node has alias, update its value in scope alias map. Deregister alias from expression_aliases_in_resolve_process.
   */
-ProjectionNames QueryAnalyzer::resolveExpressionNode(QueryTreeNodePtr & node, IdentifierResolveScope & scope, bool allow_lambda_expression, bool allow_table_expression, bool ignore_alias)
+ProjectionNames QueryAnalyzer::resolveExpressionNode(
+    QueryTreeNodePtr & node, IdentifierResolveScope & scope, bool allow_lambda_expression, bool allow_table_expression, bool ignore_alias)
 {
     checkStackSize();
 
@@ -4510,7 +4513,36 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
             table_name = table_identifier[1];
         }
 
-        auto parametrized_view_storage = scope_context->getQueryContext()->buildParametrizedViewStorage(function_ast, database_name, table_name);
+        /// Collect parametrized view arguments
+        NameToNameMap view_params;
+        for (const auto & argument : table_function_node_typed.getArguments())
+        {
+            if (auto * arg_func = argument->as<FunctionNode>())
+            {
+                if (arg_func->getFunctionName() != "equals")
+                    continue;
+
+                auto nodes = arg_func->getArguments().getNodes();
+                if (nodes.size() != 2)
+                    continue;
+
+                if (auto * identifier_node = nodes[0]->as<IdentifierNode>())
+                {
+                    resolveExpressionNode(nodes[1], scope, /* allow_lambda_expression */false, /* allow_table_function */false);
+                    if (auto * constant = nodes[1]->as<ConstantNode>())
+                    {
+                        view_params[identifier_node->getIdentifier().getFullName()] = convertFieldToString(constant->getValue());
+                    }
+                }
+            }
+        }
+
+        auto context = scope_context->getQueryContext();
+        auto parametrized_view_storage = context->buildParametrizedViewStorage(
+            database_name,
+            table_name,
+            view_params);
+
         if (parametrized_view_storage)
         {
             auto fake_table_node = std::make_shared<TableNode>(parametrized_view_storage, scope_context);
