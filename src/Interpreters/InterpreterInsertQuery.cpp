@@ -580,7 +580,7 @@ QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(ASTInsertQuery &
 
     if (!settings.insert_deduplication_token.value.empty())
     {
-        pipeline.addSimpleTransform([&](const Block &in_header) -> ProcessorPtr
+        pipeline.addSimpleTransform([&](const Block & in_header) -> ProcessorPtr
         {
             return std::make_shared<DeduplicationToken::SetUserTokenTransform>(settings.insert_deduplication_token.value, in_header);
         });
