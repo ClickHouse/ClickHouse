@@ -1,5 +1,3 @@
-#include <cstdint>
-#include <memory>
 #include <Common/CgroupsMemoryUsageObserver.h>
 
 #if defined(OS_LINUX)
@@ -14,7 +12,9 @@
 #include <base/getMemoryAmount.h>
 #include <base/sleep.h>
 
+#include <cstdint>
 #include <filesystem>
+#include <memory>
 #include <optional>
 
 #include "config.h"
@@ -59,9 +59,9 @@ uint64_t readMetricFromStatFile(ReadBufferFromFile & buf, const std::string & ke
         }
 
         assertChar(' ', buf);
-        uint64_t mem_usage = 0;
-        readIntText(mem_usage, buf);
-        return mem_usage;
+        uint64_t value = 0;
+        readIntText(value, buf);
+        return value;
     }
 
     throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot find '{}' in '{}'", key, buf.getFileName());
@@ -96,10 +96,12 @@ struct CgroupsV2Reader : ICgroupsReader
         current_buf.rewind();
         stat_buf.rewind();
 
-        uint64_t mem_usage = 0;
+        int64_t mem_usage = 0;
         /// memory.current contains a single number
+        /// the reason why we subtract it described here: https://github.com/ClickHouse/ClickHouse/issues/64652#issuecomment-2149630667
         readIntText(mem_usage, current_buf);
         mem_usage -= readMetricFromStatFile(stat_buf, "inactive_file");
+        chassert(mem_usage >= 0, "Negative memory usage");
         return mem_usage;
     }
 
@@ -153,13 +155,13 @@ std::optional<std::string> getCgroupsV1Path()
 
 std::pair<std::string, CgroupsMemoryUsageObserver::CgroupsVersion> getCgroupsPath()
 {
-    auto v2_file_name = getCgroupsV2Path();
-    if (v2_file_name.has_value())
-        return {*v2_file_name, CgroupsMemoryUsageObserver::CgroupsVersion::V2};
+    auto v2_path = getCgroupsV2Path();
+    if (v2_path.has_value())
+        return {*v2_path, CgroupsMemoryUsageObserver::CgroupsVersion::V2};
 
-    auto v1_file_name = getCgroupsV1Path();
-    if (v1_file_name.has_value())
-        return {*v1_file_name, CgroupsMemoryUsageObserver::CgroupsVersion::V1};
+    auto v1_path = getCgroupsV1Path();
+    if (v1_path.has_value())
+        return {*v1_path, CgroupsMemoryUsageObserver::CgroupsVersion::V1};
 
     throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Cannot find cgroups v1 or v2 current memory file");
 }
