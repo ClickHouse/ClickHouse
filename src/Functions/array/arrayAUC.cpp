@@ -131,7 +131,7 @@ private:
 
         area += (curr_fp - prev_fp) * (curr_tp + prev_tp) / 2.0;
 
-        /// Then divide the area to the area of rectangle.
+        /// Then normalize it dividing by the area to the area of rectangle.
 
         if (curr_tp == 0 || curr_tp == size)
             return std::numeric_limits<Float64>::quiet_NaN();
