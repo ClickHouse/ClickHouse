@@ -2201,7 +2201,9 @@ Block HashJoin::joinBlockImpl(
     Block & block, const Block & block_with_columns_to_add, const std::vector<const Maps *> & maps_, bool is_join_get) const
 {
     ScatteredBlock scattered_block{block};
-    return joinBlockImpl<KIND, STRICTNESS>(scattered_block, block_with_columns_to_add, maps_, is_join_get);
+    auto ret = joinBlockImpl<KIND, STRICTNESS>(scattered_block, block_with_columns_to_add, maps_, is_join_get);
+    block = std::move(*scattered_block.block);
+    return ret;
 }
 
 template <JoinKind KIND, JoinStrictness STRICTNESS, typename Maps>
@@ -2253,7 +2255,8 @@ Block HashJoin::joinBlockImpl(
         added_columns.reserve(join_features.need_replication);
 
     size_t num_joined = switchJoinRightColumns<KIND, STRICTNESS>(maps_, added_columns, data->type, used_flags);
-    (void)num_joined;
+    if (num_joined != block.rows())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Number of joined rows {} is not equal to block rows {}", num_joined, block.rows());
     /// Do not hold memory for join_on_keys anymore
     added_columns.join_on_keys.clear();
     Block remaining_block; // TODO: = sliceBlock(block, num_joined);
@@ -2261,7 +2264,16 @@ Block HashJoin::joinBlockImpl(
     added_columns.buildOutput();
     block.filterBySelector();
     for (size_t i = 0; i < added_columns.size(); ++i)
+    {
         block.block->insert(added_columns.moveColumn(i));
+        if (block.block->getColumnsWithTypeAndName().back().column->size() != block.rows())
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Column {} has size {} while block has {} rows",
+                i,
+                block.block->getColumnsWithTypeAndName().back().column->size(),
+                block.rows());
+    }
 
     std::vector<size_t> right_keys_to_replicate [[maybe_unused]];
 
