@@ -167,10 +167,16 @@ jobs:
     steps:
       - name: Check out repository code
         uses: ClickHouse/checkout@v1
+      - name: Download reports
+        run: |
+          python3 "$GITHUB_WORKSPACE/tests/ci/ci.py" --infile ${{ toJson(needs.RunConfig.outputs.data) }} --pre --job-name Builds
       - name: Builds report
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
           python3 ./build_report_check.py --reports package_release package_aarch64 package_asan package_tsan package_debug binary_darwin binary_darwin_aarch64
+      - name: Set status
+        run: |
+          python3 "$GITHUB_WORKSPACE/tests/ci/ci.py" --infile ${{ toJson(needs.RunConfig.outputs.data) }} --post --job-name Builds
 ############################################################################################
 #################################### INSTALL PACKAGES ######################################
 ############################################################################################
