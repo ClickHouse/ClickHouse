@@ -333,14 +333,24 @@ private:
     std::shared_ptr<StorageSystemColumns> storage;
     std::vector<UInt8> columns_mask;
     const size_t max_block_size;
-    const ActionsDAG::Node * predicate = nullptr;
+    ActionsDAGPtr virtual_columns_filter;
 };
 
 void ReadFromSystemColumns::applyFilters(ActionDAGNodes added_filter_nodes)
 {
     filter_actions_dag = ActionsDAG::buildFilterActionsDAG(added_filter_nodes.nodes);
     if (filter_actions_dag)
-        predicate = filter_actions_dag->getOutputs().at(0);
+    {
+        Block block_to_filter;
+        block_to_filter.insert(ColumnWithTypeAndName(ColumnString::create(), std::make_shared<DataTypeString>(), "database"));
+        block_to_filter.insert(ColumnWithTypeAndName(ColumnString::create(), std::make_shared<DataTypeString>(), "table"));
+
+        virtual_columns_filter = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), &block_to_filter);
+
+        /// Must prepare sets here, initializePipeline() would be too late, see comment on FutureSetFromSubquery.
+        if (virtual_columns_filter)
+            VirtualColumnUtils::buildSetsForDAG(virtual_columns_filter, context);
+    }
 }
 
 void StorageSystemColumns::read(
@@ -403,7 +413,8 @@ void ReadFromSystemColumns::initializePipeline(QueryPipelineBuilder & pipeline, 
         block_to_filter.insert(ColumnWithTypeAndName(std::move(database_column_mut), std::make_shared<DataTypeString>(), "database"));
 
         /// Filter block with `database` column.
-        VirtualColumnUtils::filterBlockWithPredicate(predicate, block_to_filter, context);
+        if (virtual_columns_filter)
+            VirtualColumnUtils::filterBlockWithPredicate(virtual_columns_filter->getOutputs().at(0), block_to_filter, context);
 
         if (!block_to_filter.rows())
         {
@@ -450,7 +461,8 @@ void ReadFromSystemColumns::initializePipeline(QueryPipelineBuilder & pipeline, 
     }
 
     /// Filter block with `database` and `table` columns.
-    VirtualColumnUtils::filterBlockWithPredicate(predicate, block_to_filter, context);
+    if (virtual_columns_filter)
+        VirtualColumnUtils::filterBlockWithDAG(virtual_columns_filter, block_to_filter, context);
 
     if (!block_to_filter.rows())
     {
