@@ -397,7 +397,7 @@ Chain InterpreterInsertQuery::buildPreSinkChain(
     return out;
 }
 
-std::pair<std::vector<Chain>, std::vector<Chain>> InterpreterInsertQuery::buildPreAndSyncChains(size_t presink_streams, size_t sink_streams, StoragePtr table, const StorageMetadataPtr & metadata_snapshot, const Block & query_sample_block)
+std::pair<std::vector<Chain>, std::vector<Chain>> InterpreterInsertQuery::buildPreAndSinkChains(size_t presink_streams, size_t sink_streams, StoragePtr table, const StorageMetadataPtr & metadata_snapshot, const Block & query_sample_block)
 {
     chassert(presink_streams > 0);
     chassert(sink_streams > 0);
@@ -612,7 +612,7 @@ QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(ASTInsertQuery &
             sink_streams_size = 1;
     }
 
-    auto [presink_chains, sink_chains] = buildPreAndSyncChains(
+    auto [presink_chains, sink_chains] = buildPreAndSinkChains(
         presink_streams_size, sink_streams_size,
         table, metadata_snapshot, query_sample_block);
 
@@ -673,7 +673,7 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
     Chain chain;
 
     {
-        auto [presink_chains, sink_chains] = buildPreAndSyncChains(
+        auto [presink_chains, sink_chains] = buildPreAndSinkChains(
             1, 1,
             table, metadata_snapshot, query_sample_block);
 

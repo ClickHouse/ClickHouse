@@ -79,7 +79,7 @@ private:
 
     std::vector<std::unique_ptr<ReadBuffer>> owned_buffers;
 
-    std::pair<std::vector<Chain>, std::vector<Chain>> buildPreAndSyncChains(size_t presink_streams, size_t sink_streams, StoragePtr table, const StorageMetadataPtr & metadata_snapshot, const Block & query_sample_block);
+    std::pair<std::vector<Chain>, std::vector<Chain>> buildPreAndSinkChains(size_t presink_streams, size_t sink_streams, StoragePtr table, const StorageMetadataPtr & metadata_snapshot, const Block & query_sample_block);
 
     QueryPipeline buildInsertSelectPipeline(ASTInsertQuery & query, StoragePtr table);
     QueryPipeline buildInsertPipeline(ASTInsertQuery & query, StoragePtr table);
