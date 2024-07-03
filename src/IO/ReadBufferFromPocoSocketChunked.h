@@ -84,7 +84,7 @@ public:
 
     void enableChunked();
 
-    bool hasPendingData() const;
+    bool hasBufferedData() const;
 
     bool poll(size_t timeout_microseconds) const;
 

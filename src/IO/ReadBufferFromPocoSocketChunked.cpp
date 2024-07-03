@@ -34,12 +34,12 @@ void ReadBufferFromPocoSocketChunked::enableChunked()
     next_chunk = 0;
 }
 
-bool ReadBufferFromPocoSocketChunked::hasPendingData() const
+bool ReadBufferFromPocoSocketChunked::hasBufferedData() const
 {
-    if (chunked)
-        return available() || static_cast<size_t>(data_end - working_buffer.end()) > sizeof(next_chunk);
+    if (available())
+        return true;
 
-    return ReadBufferFromPocoSocketBase::hasPendingData();
+    return chunked && (static_cast<size_t>(data_end - working_buffer.end()) > sizeof(next_chunk));
 }
 
 bool ReadBufferFromPocoSocketChunked::poll(size_t timeout_microseconds) const
