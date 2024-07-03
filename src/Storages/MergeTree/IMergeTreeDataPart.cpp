@@ -375,6 +375,12 @@ void IMergeTreeDataPart::unloadIndex()
     index_loaded = false;
 }
 
+bool IMergeTreeDataPart::isIndexLoaded() const
+{
+    std::scoped_lock lock(index_mutex);
+    return index_loaded;
+}
+
 void IMergeTreeDataPart::setName(const String & new_name)
 {
     mutable_name = new_name;
@@ -737,10 +743,10 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
     {
         /// Don't scare people with broken part error
         if (!isRetryableException(std::current_exception()))
-            LOG_ERROR(storage.log, "Part {} is broken and need manual correction", getDataPartStorage().getFullPath());
+            LOG_ERROR(storage.log, "Part {} is broken and needs manual correction", getDataPartStorage().getFullPath());
 
         // There could be conditions that data part to be loaded is broken, but some of meta infos are already written
-        // into meta data before exception, need to clean them all.
+        // into metadata before exception, need to clean them all.
         metadata_manager->deleteAll(/*include_projection*/ true);
         metadata_manager->assertAllDeleted(/*include_projection*/ true);
         throw;
@@ -1577,7 +1583,7 @@ void IMergeTreeDataPart::loadColumns(bool require)
             if (getFileNameForColumn(column))
                 loaded_columns.push_back(column);
 
-        if (columns.empty())
+        if (loaded_columns.empty())
             throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART, "No columns in part {}", name);
 
         if (!is_readonly_storage)

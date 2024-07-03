@@ -1428,6 +1428,13 @@ Average block bytes output by parquet reader. Lowering the configuration in the 
 
 Default value: `65409 * 256 = 16744704`
 
+### output_format_parquet_write_page_index {#input_format_parquet_max_block_size}
+
+Could add page index into parquet files. To enable this, need set `output_format_parquet_use_custom_encoder`=`false` and
+`output_format_parquet_write_page_index`=`true`.
+
+Enable by default.
+
 ## Hive format settings {#hive-format-settings}
 
 ### input_format_hive_text_fields_delimiter {#input_format_hive_text_fields_delimiter}
@@ -1705,6 +1712,43 @@ Result:
 │ 1000000000 │ -- 1.00 billion
 └────────────┘
 ```
+
+## output_format_pretty_display_footer_column_names
+
+Display column names in the footer if there are many table rows.
+
+Possible values:
+
+- 0 — No column names are displayed in the footer.
+- 1 — Column names are displayed in the footer if row count is greater than or equal to the threshold value set by [output_format_pretty_display_footer_column_names_min_rows](#output_format_pretty_display_footer_column_names_min_rows) (50 by default).
+
+Default value: `1`.
+
+**Example**
+
+Query:
+
+```sql
+SELECT *, toTypeName(*) FROM (SELECT * FROM system.numbers LIMIT 1000);
+```
+
+Result:
+
+```response
+      ┌─number─┬─toTypeName(number)─┐
+   1. │      0 │ UInt64             │
+   2. │      1 │ UInt64             │
+   3. │      2 │ UInt64             │
+   ...
+ 999. │    998 │ UInt64             │
+1000. │    999 │ UInt64             │
+      └─number─┴─toTypeName(number)─┘
+```
+## output_format_pretty_display_footer_column_names_min_rows
+
+Sets the minimum number of rows for which a footer with column names will be displayed if setting [output_format_pretty_display_footer_column_names](#output_format_pretty_display_footer_column_names) is enabled.
+
+Default value: `50`.
 
 ## Template format settings {#template-format-settings}
 
