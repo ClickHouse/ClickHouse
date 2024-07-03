@@ -27,7 +27,7 @@ struct StatsCollectingParams
     void disable() { key = 0; }
 
     UInt64 key = 0;
-    const size_t max_entries_for_hash_table_stats = 0; /// TODO: move to server settings
+    const size_t max_entries_for_hash_table_stats = 0;
     const size_t max_size_to_preallocate = 0;
 };
 
