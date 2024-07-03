@@ -6,6 +6,9 @@ source /setup_export_logs.sh
 # fail on errors, verbose and export all env variables
 set -e -x -a
 
+MAX_RUN_TIME=${MAX_RUN_TIME:-10800}
+MAX_RUN_TIME=$((MAX_RUN_TIME == 0 ? 10800 : MAX_RUN_TIME))
+
 # Choose random timezone for this test run.
 #
 # NOTE: that clickhouse-test will randomize session_timezone by itself as well
@@ -262,14 +265,15 @@ function run_tests()
 
 export -f run_tests
 
+TIMEOUT=$((${MAX_RUN_TIME} - 200))
 if [ "$NUM_TRIES" -gt "1" ]; then
     # We don't run tests with Ordinary database in PRs, only in master.
     # So run new/changed tests with Ordinary at least once in flaky check.
-    timeout_with_logging "$MAX_RUN_TIME" bash -c 'NUM_TRIES=1; USE_DATABASE_ORDINARY=1; run_tests' \
+    timeout_with_logging "$TIMEOUT" bash -c 'NUM_TRIES=1; USE_DATABASE_ORDINARY=1; run_tests' \
       | sed 's/All tests have finished//' | sed 's/No tests were run//' ||:
 fi
 
-timeout_with_logging "$MAX_RUN_TIME" bash -c run_tests ||:
+timeout_with_logging "$TIMEOUT" bash -c run_tests ||:
 
 echo "Files in current directory"
 ls -la ./
