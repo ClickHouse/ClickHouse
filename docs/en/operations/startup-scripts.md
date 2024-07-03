@@ -1,6 +1,5 @@
 ---
-slug: /en/operations/startup-scripts.md
-sidebar_position: 70
+slug: /en/operations/startup-scripts
 sidebar_label: Startup Scripts
 ---
 
