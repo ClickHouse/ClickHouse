@@ -150,6 +150,49 @@ def test_drop_replicated_table(start_cluster):
     assert exists_replica == None
 
 
+
+def test_drop_table_in_replicated_db(start_cluster):
+    replica1.query(
+        f"CREATE DATABASE IF NOT EXISTS repl_db ON CLUSTER test_cluster ENGINE=Replicated('/clickhouse/tables/test_replicated_table', shard1, '{{replica}}');"
+    )
+
+    replica1.query_with_retry(
+        f"""
+        CREATE TABLE repl_db.test_replicated_table
+        (
+            number UInt64
+        ) 
+        ENGINE=ReplicatedMergeTree
+        ORDER BY number
+        """
+    )
+
+    replica1.query(
+        "INSERT INTO repl_db.test_replicated_table SELECT number FROM system.numbers LIMIT 6;"
+    )
+    replica1.query("SYSTEM SYNC REPLICA repl_db.test_replicated_table;", timeout=20)
+
+    replica1.query(
+        "DETACH TABLE repl_db.test_replicated_table PERMANENTLY;"
+    )
+
+    zk = cluster.get_kazoo_client("zoo1")
+
+    replica_path = "/clickhouse/tables/{table_name}/replicas/{shard}|{replica}".format(
+        table_name="test_replicated_table", shard="shard1", replica=replica1.name
+    )
+
+    exists_replica = check_exists(zk, replica_path)
+    assert exists_replica != None
+
+    replica1.query(
+        "SET allow_experimental_drop_detached_table=1; DROP DETACHED TABLE repl_db.test_replicated_table SYNC;"
+    )
+
+    exists_replica = check_exists(zk, replica_path)
+    assert exists_replica == None
+
+
 def test_drop_s3_table(start_cluster):
     objects_before = list_objects(cluster, "data/")
 
