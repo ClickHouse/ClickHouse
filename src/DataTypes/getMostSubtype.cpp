@@ -297,6 +297,8 @@ DataTypePtr getMostSubtype(const DataTypes & types, bool throw_if_result_is_noth
                 minimize(min_bits_of_signed_integer, 128);
             else if (typeid_cast<const DataTypeInt256 *>(type.get()))
                 minimize(min_bits_of_signed_integer, 256);
+            else if (typeid_cast<const DataTypeBFloat16 *>(type.get()))
+                minimize(min_mantissa_bits_of_floating, 8);
             else if (typeid_cast<const DataTypeFloat32 *>(type.get()))
                 minimize(min_mantissa_bits_of_floating, 24);
             else if (typeid_cast<const DataTypeFloat64 *>(type.get()))
@@ -313,7 +315,9 @@ DataTypePtr getMostSubtype(const DataTypes & types, bool throw_if_result_is_noth
             /// If the result must be floating.
             if (!min_bits_of_signed_integer && !min_bits_of_unsigned_integer)
             {
-                if (min_mantissa_bits_of_floating <= 24)
+                if (min_mantissa_bits_of_floating <= 8)
+                    return std::make_shared<DataTypeBFloat16>();
+                else if (min_mantissa_bits_of_floating <= 24)
                     return std::make_shared<DataTypeFloat32>();
                 else if (min_mantissa_bits_of_floating <= 53)
                     return std::make_shared<DataTypeFloat64>();

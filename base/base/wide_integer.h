@@ -118,6 +118,7 @@ public:
     constexpr operator long double() const noexcept;
     constexpr operator double() const noexcept;
     constexpr operator float() const noexcept;
+    constexpr operator __bf16() const noexcept;
 
     struct _impl;
 

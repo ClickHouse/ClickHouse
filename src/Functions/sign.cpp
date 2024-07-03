@@ -13,7 +13,7 @@ struct SignImpl
 
     static NO_SANITIZE_UNDEFINED ResultType apply(A a)
     {
-        if constexpr (is_decimal<A> || std::is_floating_point_v<A>)
+        if constexpr (is_decimal<A> || is_floating_point<A>)
             return a < A(0) ? -1 : a == A(0) ? 0 : 1;
         else if constexpr (is_signed_v<A>)
             return a < 0 ? -1 : a == 0 ? 0 : 1;

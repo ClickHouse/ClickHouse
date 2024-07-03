@@ -54,6 +54,7 @@ void registerDataTypeNumbers(DataTypeFactory & factory)
     factory.registerDataType("Int32", createNumericDataType<Int32>);
     factory.registerDataType("Int64", createNumericDataType<Int64>);
 
+    factory.registerDataType("BFloat16", createNumericDataType<BFloat16>);
     factory.registerDataType("Float32", createNumericDataType<Float32>);
     factory.registerDataType("Float64", createNumericDataType<Float64>);
 
