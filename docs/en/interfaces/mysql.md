@@ -6,7 +6,7 @@ sidebar_label: MySQL Interface
 
 # MySQL Interface
 
-ClickHouse supports the MySQL wire protocol. This allow tools that are MySQL-compatible to interact with ClickHouse seamlessly (e.g. [Looker Studio](../integrations/data-visualization/looker-studio-and-clickhouse.md)).
+ClickHouse supports the MySQL wire protocol. This allows tools that are MySQL-compatible to interact with ClickHouse seamlessly (e.g. [Looker Studio](../integrations/data-visualization/looker-studio-and-clickhouse.md)).
 
 ## Enabling the MySQL Interface On ClickHouse Cloud
 
