@@ -3,6 +3,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
 #include <Common/typeid_cast.h>
+#include "Analyzer/ConstantNode.h"
 #include "Analyzer/IQueryTreeNode.h"
 #include "Analyzer/Passes/QueryAnalysisPass.h"
 #include "Analyzer/QueryNode.h"
@@ -11,7 +12,6 @@
 #include "Interpreters/SelectQueryOptions.h"
 #include "Planner/PlannerActionsVisitor.h"
 #include "Planner/PlannerContext.h"
-#include "Planner/findQueryForParallelReplicas.h"
 #include "Storages/ColumnsDescription.h"
 #include "Storages/StorageDummy.h"
 #include <Core/Block.h>
@@ -122,6 +122,10 @@ std::optional<EvaluateConstantExpressionResult> evaluateConstantExpressionImpl(c
         QueryAnalysisPass query_analysis_pass(fake_table_expression);
         query_analysis_pass.run(test, context);
 
+        auto *test2 = typeid_cast<ConstantNode *>(test.get());
+        if (!test2)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected ConstantNode");
+
         auto actions_dag = std::make_shared<ActionsDAG>();
 
         PlannerActionsVisitor actions_visitor(planner_context, false);
@@ -134,34 +138,34 @@ std::optional<EvaluateConstantExpressionResult> evaluateConstantExpressionImpl(c
 
         ColumnPtr result_column;
         DataTypePtr result_type;
-        String result_name = ast->getColumnName();
-        for (const auto & action_node : actions_dag->getOutputs())
-        {
-            if ((action_node->result_name == result_name) && action_node->column)
-            {
-                result_column = action_node->column;
-                result_type = action_node->result_type;
-                break;
-            }
-        }
+        // String result_name = ast->getColumnName();
+        // for (const auto & action_node : actions_dag->getOutputs())
+        // {
+        //     if ((action_node->result_name == result_name) && action_node->column)
+        //     {
+        //         result_column = action_node->column;
+        //         result_type = action_node->result_type;
+        //         break;
+        //     }
+        // }
 
-        if (!result_column)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "Element of set in IN, VALUES, or LIMIT, or aggregate function parameter, or a table function argument "
-                            "is not a constant expression (result column not found): {}", result_name);
+        // if (!result_column)
+        //     throw Exception(ErrorCodes::BAD_ARGUMENTS,
+        //                     "Element of set in IN, VALUES, or LIMIT, or aggregate function parameter, or a table function argument "
+        //                     "is not a constant expression (result column not found): {}", "fixme");
+        //
+        // if (result_column->empty())
+        //     throw Exception(ErrorCodes::LOGICAL_ERROR,
+        //                     "Empty result column after evaluation "
+        //                     "of constant expression for IN, VALUES, or LIMIT, or aggregate function parameter, or a table function argument");
+        //
+        // /// Expressions like rand() or now() are not constant
+        // if (!isColumnConst(*result_column))
+        //     throw Exception(ErrorCodes::BAD_ARGUMENTS,
+        //                     "Element of set in IN, VALUES, or LIMIT, or aggregate function parameter, or a table function argument "
+        //                     "is not a constant expression (result column is not const): {}", "fixme");
 
-        if (result_column->empty())
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                            "Empty result column after evaluation "
-                            "of constant expression for IN, VALUES, or LIMIT, or aggregate function parameter, or a table function argument");
-
-        /// Expressions like rand() or now() are not constant
-        if (!isColumnConst(*result_column))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "Element of set in IN, VALUES, or LIMIT, or aggregate function parameter, or a table function argument "
-                            "is not a constant expression (result column is not const): {}", result_name);
-
-        return std::make_pair((*result_column)[0], result_type);
+        return std::make_pair(test2->getValue(), test2->getResultType());
     }
     else
     {
