@@ -1,6 +1,26 @@
 #include <Common/Coverage.h>
 
 #if defined(SANITIZE_COVERAGE)
+
+#include <fcntl.h>
+#include <unistd.h>
+
+#include <string>
+#include <vector>
+
+#include <Common/IO.h>
+#include <base/coverage.h>
+
+#include <fmt/format.h>
+
+/// Macros to avoid using strlen(), since it may fail if SSE is not supported.
+#define writeError(data) do \
+    { \
+        static_assert(__builtin_constant_p(data)); \
+        if (!writeRetry(STDERR_FILENO, data, sizeof(data) - 1)) \
+            _Exit(1); \
+    } while (false)
+
 __attribute__((no_sanitize("coverage")))
 void dumpCoverage()
 {
