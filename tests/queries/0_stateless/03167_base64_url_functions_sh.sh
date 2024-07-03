@@ -119,7 +119,7 @@ urls=(
 
 
 base64URLEncode() {
-    echo -n "$1" | openssl base64 -e -A | tr '+/' '-_' | tr -d '='
+    echo -n "$1" | base64 -w0 | tr '+/' '-_' | tr -d '='
 }
 
 base64URLDecode() {
@@ -128,7 +128,7 @@ base64URLDecode() {
     if [ $len -eq 2 ]; then result="$1"'=='
     elif [ $len -eq 3 ]; then result="$1"'='
     fi
-    echo "$result" | tr '_-' '/+' | openssl base64 -d -A
+    echo "$result" | tr '_-' '/+' | base64 -w0 -d
 }
 
 test_compare_to_gold_encode() {
@@ -158,12 +158,10 @@ test_compare_to_gold_decode() {
 
 test_compare_to_self() {
     local input="$1"
-    local encode=$(${CLICKHOUSE_CLIENT} --query="SELECT base64URLEncode('$input')")
-    local decode=$(${CLICKHOUSE_CLIENT} --query="SELECT base64URLDecode('$encode')")
+    local decode=$(${CLICKHOUSE_CLIENT} --query="SELECT base64URLDecode(base64URLEncode('$input'))")
 
     if [ "$decode" != "$input" ]; then
         echo "Input:    $input"
-        echo "Encode:   $encode"
         echo "Got:      $decode"
     fi
 }
@@ -181,10 +179,8 @@ for url in "${urls[@]}"; do
 done
 
 # special case for '
-encode=$(${CLICKHOUSE_CLIENT} --query="SELECT base64URLEncode('http://example.com/!$&\'()*+,;=:@/path')")
-decode=$(${CLICKHOUSE_CLIENT} --query="SELECT base64URLDecode('$encode')")
+decode=$(${CLICKHOUSE_CLIENT} --query="SELECT base64URLDecode(base64URLEncode('http://example.com/!$&\'()*+,;=:@/path'))")
 if [ "$decode" != "http://example.com/!$&\'()*+,;=:@/path" ]; then
     echo "Special case fail"
-    echo "Encode:   $encode"
     echo "Got:      $decode"
 fi
