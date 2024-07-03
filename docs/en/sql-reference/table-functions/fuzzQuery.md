@@ -9,12 +9,13 @@ sidebar_label: fuzzQuery
 Perturbs the given query string with random variations.
 
 ``` sql
-fuzzQuery(query[, random_seed])
+fuzzQuery(query[, max_query_length[, random_seed]])
 ```
 
 **Arguments**
 
 - `query` (String) - The source query to perform the fuzzing on.
+- `max_query_length` (UInt64) - A maximum length the query can get during the fuzzing process.
 - `random_seed` (UInt64) - A random seed for producing stable results.
 
 **Returned Value**

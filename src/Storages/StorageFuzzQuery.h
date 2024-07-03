@@ -18,6 +18,7 @@ public:
     struct Configuration : public StatelessTableEngineConfiguration
     {
         String query;
+        UInt64 max_query_length = 500;
         UInt64 random_seed = randomSeed();
     };
 

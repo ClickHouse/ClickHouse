@@ -47,7 +47,7 @@ ColumnPtr FuzzQuerySource::createColumn()
         size_t data_len = data.size();
 
         /// AST is too long, will start from the original query.
-        if (data_len > 500)
+        if (config.max_query_length > 500)
         {
             fuzz_base = query;
             continue;
@@ -120,10 +120,11 @@ StorageFuzzQuery::Configuration StorageFuzzQuery::getConfiguration(ASTs & engine
 
     // Supported signatures:
     //
-    // FuzzQuery('query')
-    // FuzzQuery('query', 'random_seed')
-    if (engine_args.empty() || engine_args.size() > 2)
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "FuzzQuery requires 1 to 2 arguments: query, random_seed");
+    // FuzzQuery(query)
+    // FuzzQuery(query, max_query_length)
+    // FuzzQuery(query, max_query_length, random_seed)
+    if (engine_args.empty() || engine_args.size() > 3)
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "FuzzQuery requires 1 to 3 arguments: query, max_query_length, random_seed");
 
     for (auto & engine_arg : engine_args)
         engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, local_context);
@@ -131,9 +132,16 @@ StorageFuzzQuery::Configuration StorageFuzzQuery::getConfiguration(ASTs & engine
     auto first_arg = checkAndGetLiteralArgument<String>(engine_args[0], "query");
     configuration.query = std::move(first_arg);
 
-    if (engine_args.size() == 2)
+    if (engine_args.size() >= 2)
     {
         const auto & literal = engine_args[1]->as<const ASTLiteral &>();
+        if (!literal.value.isNull())
+            configuration.max_query_length = checkAndGetLiteralArgument<UInt64>(literal, "max_query_length");
+    }
+
+    if (engine_args.size() == 3)
+    {
+        const auto & literal = engine_args[2]->as<const ASTLiteral &>();
         if (!literal.value.isNull())
             configuration.random_seed = checkAndGetLiteralArgument<UInt64>(literal, "random_seed");
     }

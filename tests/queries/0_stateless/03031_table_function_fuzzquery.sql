@@ -1,5 +1,5 @@
 
-SELECT * FROM fuzzQuery('SELECT 1', 8956) LIMIT 0 FORMAT TSVWithNamesAndTypes;
+SELECT * FROM fuzzQuery('SELECT 1', 500, 8956) LIMIT 0 FORMAT TSVWithNamesAndTypes;
 
 SELECT * FROM fuzzQuery('SELECT *
 FROM (
@@ -15,4 +15,4 @@ FROM (
 ) AS r
 ON l.item_id = r.item_id
 ORDER BY 1,2,3;
-', 8956) LIMIT 10 FORMAT NULL;
+', 500, 8956) LIMIT 10 FORMAT NULL;
