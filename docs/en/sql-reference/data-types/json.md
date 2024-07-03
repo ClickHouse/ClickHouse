@@ -5,6 +5,9 @@ sidebar_label: Object Data Type
 keywords: [object, data type]
 ---
 
+:::note
+**ClickHouse handles JSON documents in a variety of way, allowing you to bring structure to this data and query it quickly and efficiently. See [this guide](/docs/en/integrations/data-formats/json) for detailed guidance on working with JSON.**:::
+
 # Object Data Type
 
 :::note
