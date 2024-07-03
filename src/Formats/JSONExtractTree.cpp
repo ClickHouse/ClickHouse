@@ -50,6 +50,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+}
+
 template <typename JSONParser>
 void jsonElementToString(const typename JSONParser::Element & element, WriteBuffer & buf, const FormatSettings & format_settings)
 {
@@ -207,7 +212,7 @@ namespace
 {
 
 template <typename JSONParser>
-String jsonElementToString(const typename JSONParser::Element & element,  const FormatSettings & format_settings)
+String jsonElementToString(const typename JSONParser::Element & element, const FormatSettings & format_settings)
 {
     WriteBufferFromOwnString buf;
     jsonElementToString<JSONParser>(element, buf, format_settings);
@@ -1440,7 +1445,7 @@ std::unique_ptr<JSONExtractTreeNode<JSONParser>> buildJSONExtractTree(const Data
         case TypeIndex::Date:;
             return std::make_unique<DateNode<JSONParser, DayNum, UInt16>>();
         case TypeIndex::Date32:
-            return std::make_unique<DateNode<JSONParser, ExtendedDayNum , Int32>>();
+            return std::make_unique<DateNode<JSONParser, ExtendedDayNum, Int32>>();
         case TypeIndex::DateTime:
             return std::make_unique<DateTimeNode<JSONParser>>(assert_cast<const DataTypeDateTime &>(*type));
         case TypeIndex::DateTime64:
