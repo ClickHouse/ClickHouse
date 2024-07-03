@@ -238,6 +238,13 @@
     M(KeeperPacketsReceived) \
     M(KeeperRequestTotal) \
     M(KeeperLatency) \
+    M(KeeperTotalElapsedMicroseconds) \
+    M(KeeperProcessElapsedMicroseconds) \
+    M(KeeperPreprocessElapsedMicroseconds) \
+    M(KeeperStorageLockWaitMicroseconds) \
+    M(KeeperCommitWaitElapsedMicroseconds) \
+    M(KeeperBatchMaxCount) \
+    M(KeeperBatchMaxTotalSize) \
     M(KeeperCommits) \
     M(KeeperCommitsFailed) \
     M(KeeperSnapshotCreations) \
