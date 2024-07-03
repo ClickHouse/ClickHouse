@@ -2118,13 +2118,14 @@ bool MutateTask::prepare()
 
     ctx->num_mutations = std::make_unique<CurrentMetrics::Increment>(CurrentMetrics::PartMutation);
 
-    auto mutations_snapshot = ctx->data->getMutationsSnapshot(
-        ctx->metadata_snapshot->getMetadataVersion(),
-        /*need_data_mutations=*/ false);
+    MergeTreeData::IMutationsSnapshot::Params params
+    {
+        .metadata_version = ctx->metadata_snapshot->getMetadataVersion(),
+        .min_part_metadata_version = ctx->source_part->getMetadataVersion(),
+    };
 
-    auto alter_conversions = MergeTreeData::getAlterConversionsForPart(
-        ctx->source_part,
-        mutations_snapshot);
+    auto mutations_snapshot = ctx->data->getMutationsSnapshot(params);
+    auto alter_conversions = MergeTreeData::getAlterConversionsForPart(ctx->source_part, mutations_snapshot);
 
     auto context_for_reading = Context::createCopy(ctx->context);
 

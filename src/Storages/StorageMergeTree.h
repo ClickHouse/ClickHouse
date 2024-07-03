@@ -150,8 +150,7 @@ private:
     std::map<UInt64, MergeTreeMutationEntry> current_mutations_by_version;
 
     /// Unfinished mutations that are required for AlterConversions.
-    Int64 data_mutations_to_apply = 0;
-    Int64 metadata_mutations_to_apply = 0;
+    Int64 num_alter_conversions;
 
     std::atomic<bool> shutdown_called {false};
     std::atomic<bool> flush_called {false};
@@ -315,9 +314,7 @@ private:
     struct MutationsSnapshot : public IMutationsSnapshot
     {
         MutationsSnapshot() = default;
-
-        Int64 metadata_version = -1;
-        bool need_data_mutations = false;
+        explicit MutationsSnapshot(Params params_) : IMutationsSnapshot(std::move(params_)) {}
 
         using MutationsByVersion = std::map<UInt64, std::shared_ptr<const MutationCommands>>;
         MutationsByVersion mutations_by_version;
@@ -326,7 +323,7 @@ private:
         std::shared_ptr<MergeTreeData::IMutationsSnapshot> cloneEmpty() const override { return std::make_shared<MutationsSnapshot>(); }
     };
 
-    MutationsSnapshotPtr getMutationsSnapshot(Int64 metadata_version, bool need_data_mutations) const override;
+    MutationsSnapshotPtr getMutationsSnapshot(const IMutationsSnapshot::Params & params) const override;
 };
 
 }

@@ -9149,9 +9149,9 @@ bool StorageReplicatedMergeTree::canUseAdaptiveGranularity() const
             (!has_non_adaptive_index_granularity_parts && !other_replicas_fixed_granularity));
 }
 
-MergeTreeData::MutationsSnapshotPtr StorageReplicatedMergeTree::getMutationsSnapshot(Int64 metadata_version, bool need_data_mutations) const
+MergeTreeData::MutationsSnapshotPtr StorageReplicatedMergeTree::getMutationsSnapshot(const IMutationsSnapshot::Params & params) const
 {
-    return queue.getMutationsSnapshot(metadata_version, need_data_mutations);
+    return queue.getMutationsSnapshot(params);
 }
 
 void StorageReplicatedMergeTree::startBackgroundMovesIfNeeded()

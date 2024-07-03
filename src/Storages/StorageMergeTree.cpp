@@ -502,7 +502,7 @@ Int64 StorageMergeTree::startMutation(const MutationCommands & commands, Context
         if (!inserted)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Mutation {} already exists, it's a bug", version);
 
-        incrementMutationsCounters(data_mutations_to_apply, metadata_mutations_to_apply, *it->second.commands, lock);
+        incrementAlterConversionsCounter(num_alter_conversions, *it->second.commands, lock);
         LOG_INFO(log, "Added mutation: {}{}", mutation_id, additional_info);
     }
     background_operations_assignee.trigger();
@@ -538,7 +538,7 @@ void StorageMergeTree::updateMutationEntriesErrors(FutureMergedMutatedPartPtr re
                     if (static_cast<UInt64>(result_part->part_info.mutation) == it->first)
                         mutation_backoff_policy.removePartFromFailed(failed_part->name);
 
-                    decrementMutationsCounters(data_mutations_to_apply, metadata_mutations_to_apply, *entry.commands, lock);
+                    decrementAlterConversionsCounter(num_alter_conversions, *entry.commands, lock);
                 }
             }
             else
@@ -819,7 +819,7 @@ CancellationCode StorageMergeTree::killMutation(const String & mutation_id)
             {
                 bool mutation_finished = *min_version > static_cast<Int64>(mutation_version);
                 if (!mutation_finished)
-                    decrementMutationsCounters(data_mutations_to_apply, metadata_mutations_to_apply, *it->second.commands, lock);
+                    decrementAlterConversionsCounter(num_alter_conversions, *it->second.commands, lock);
             }
 
             to_kill.emplace(std::move(it->second));
@@ -904,7 +904,7 @@ void StorageMergeTree::loadMutations()
                 if (!inserted)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Mutation {} already exists, it's a bug", block_number);
 
-                incrementMutationsCounters(data_mutations_to_apply, metadata_mutations_to_apply, *entry_it->second.commands, lock);
+                incrementAlterConversionsCounter(num_alter_conversions, *entry_it->second.commands, lock);
             }
             else if (startsWith(it->name(), "tmp_mutation_"))
             {
@@ -2432,7 +2432,7 @@ MutationCommands StorageMergeTree::MutationsSnapshot::getAlterMutationCommandsFo
 
         for (const auto & command : *commands | std::views::reverse)
         {
-            if (need_data_mutations && AlterConversions::isSupportedDataMutation(command.type))
+            if (params.need_data_mutations && AlterConversions::isSupportedDataMutation(command.type))
                 result.push_back(command);
             else if (AlterConversions::isSupportedMetadataMutation(command.type))
                 result.push_back(command);
@@ -2442,28 +2442,26 @@ MutationCommands StorageMergeTree::MutationsSnapshot::getAlterMutationCommandsFo
     return result;
 }
 
-MergeTreeData::MutationsSnapshotPtr StorageMergeTree::getMutationsSnapshot(Int64 metadata_version, bool need_data_mutations) const
+MergeTreeData::MutationsSnapshotPtr StorageMergeTree::getMutationsSnapshot(const IMutationsSnapshot::Params & params) const
 {
-    auto res = std::make_shared<MutationsSnapshot>();
-    res->metadata_version = metadata_version;
-    res->need_data_mutations = need_data_mutations;
+    auto res = std::make_shared<MutationsSnapshot>(params);
 
     std::lock_guard lock(currently_processing_in_background_mutex);
 
-    bool have_data_mutations = res->need_data_mutations && data_mutations_to_apply > 0;
-    bool have_metadata_mutations = metadata_mutations_to_apply > 0;
+    bool need_data_mutations = res->params.need_data_mutations && num_alter_conversions > 0;
+    bool need_metatadata_mutations = res->params.needMetadataMutations();
 
-    if (!have_data_mutations && !have_metadata_mutations)
+    if (!need_data_mutations && !need_metatadata_mutations)
         return res;
 
     for (const auto & [version, entry] : current_mutations_by_version)
     {
         bool has_required_command = std::ranges::any_of(*entry.commands, [&](const auto & command)
         {
-            if (have_data_mutations && AlterConversions::isSupportedDataMutation(command.type))
+            if (need_data_mutations && AlterConversions::isSupportedDataMutation(command.type))
                 return true;
 
-            if (have_metadata_mutations && AlterConversions::isSupportedMetadataMutation(command.type))
+            if (need_metatadata_mutations && AlterConversions::isSupportedMetadataMutation(command.type))
                 return true;
 
             return false;

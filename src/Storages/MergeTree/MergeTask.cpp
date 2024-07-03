@@ -257,9 +257,13 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
     if (enabledBlockOffsetColumn(global_ctx))
         addGatheringColumn(global_ctx, BlockOffsetColumn::name, BlockOffsetColumn::type);
 
-    auto mutations_snapshot = global_ctx->data->getMutationsSnapshot(
-        global_ctx->metadata_snapshot->getMetadataVersion(),
-        /*need_data_mutations=*/ false);
+    MergeTreeData::IMutationsSnapshot::Params params
+    {
+        .metadata_version = global_ctx->metadata_snapshot->getMetadataVersion(),
+        .min_part_metadata_version = MergeTreeData::getMinMetadataVersion(global_ctx->future_part->parts),
+    };
+
+    auto mutations_snapshot = global_ctx->data->getMutationsSnapshot(params);
 
     SerializationInfo::Settings info_settings =
     {

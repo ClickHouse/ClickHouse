@@ -448,6 +448,21 @@ public:
 
     struct IMutationsSnapshot
     {
+        struct Params
+        {
+            Int64 metadata_version = -1;
+            Int64 min_part_metadata_version = -1;
+            bool need_data_mutations = false;
+
+            bool needAnyMutations() const { return need_data_mutations || needMetadataMutations(); }
+            bool needMetadataMutations() const { return min_part_metadata_version < metadata_version; }
+        };
+
+        Params params;
+
+        IMutationsSnapshot() = default;
+        explicit IMutationsSnapshot(Params params_) : params(std::move(params_)) {}
+
         /// Return pending mutations that weren't applied to `part` yet and should be applied on the fly
         /// (i.e. when reading from the part). Mutations not supported by AlterConversions
         /// (supportsMutationCommandType()) can be omitted.
@@ -455,7 +470,6 @@ public:
         /// @return list of mutations, in *reverse* order (newest to oldest)
         virtual MutationCommands getAlterMutationCommandsForPart(const DataPartPtr & part) const = 0;
         virtual std::shared_ptr<IMutationsSnapshot> cloneEmpty() const = 0;
-
         virtual ~IMutationsSnapshot() = default;
     };
 
@@ -951,7 +965,10 @@ public:
     Disks getDisks() const { return getStoragePolicy()->getDisks(); }
 
     /// TODO: comment
-    virtual MutationsSnapshotPtr getMutationsSnapshot(Int64 metadata_version, bool need_data_mutations) const = 0;
+    virtual MutationsSnapshotPtr getMutationsSnapshot(const IMutationsSnapshot::Params & params) const = 0;
+
+    /// TODO: comment
+    static Int64 getMinMetadataVersion(const DataPartsVector & parts);
 
     /// Return alter conversions for part which must be applied on fly.
     static AlterConversionsPtr getAlterConversionsForPart(
@@ -1752,16 +1769,7 @@ struct CurrentlySubmergingEmergingTagger
 
 /// Look at MutationCommands if it contains mutations for AlterConversions, update the counter.
 /// Return true if the counter had been updated
-void incrementMutationsCounters(
-    Int64 & data_mutations_to_apply,
-    Int64 & metadata_mutations_to_apply,
-    const MutationCommands & commands,
-    std::lock_guard<std::mutex> & lock);
-
-void decrementMutationsCounters(
-    Int64 & data_mutations_to_apply,
-    Int64 & metadata_mutations_to_apply,
-    const MutationCommands & commands,
-    std::lock_guard<std::mutex> & lock);
+void incrementAlterConversionsCounter(Int64 & num_alter_conversions, const MutationCommands & commands, std::lock_guard<std::mutex> & lock);
+void decrementAlterConversionsCounter(Int64 & num_alter_conversions, const MutationCommands & commands, std::lock_guard<std::mutex> & lock);
 
 }
