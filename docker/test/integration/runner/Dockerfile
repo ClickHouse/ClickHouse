@@ -103,7 +103,7 @@ RUN python3 -m pip install --no-cache-dir \
     bs4~=0.0.2 \
     lxml~=5.1.0 \
     urllib3~=2.1.0 \
-    jwcrypto~=1.5.6 \
+    jwcrypto~=1.5.6
 # bs4, lxml are for cloud tests, do not delete
 
 # Hudi supports only spark 3.3.*, not 3.4
