@@ -239,8 +239,8 @@
     M(CannotRemoveEphemeralNode, "Number of times an error happened while trying to remove ephemeral node. This is not an issue, because our implementation of ZooKeeper library guarantee that the session will expire and the node will be removed.") \
     \
     M(RegexpWithMultipleNeedlesCreated, "Regular expressions with multiple needles (VectorScan library) compiled.") \
-    M(RegexpWithMultipleNeedlesCacheHit, "Number of times we fetched compiled regular expression with multiple needles (VectorScan library) from the global cache.") \
-    M(RegexpWithMultipleNeedlesCacheMiss, "Number of times we failed to fetch compiled regular expression with multiple needles (VectorScan library) from the global cache.") \
+    M(RegexpWithMultipleNeedlesGlobalCacheHit, "Number of times we fetched compiled regular expression with multiple needles (VectorScan library) from the global cache.") \
+    M(RegexpWithMultipleNeedlesGlobalCacheMiss, "Number of times we failed to fetch compiled regular expression with multiple needles (VectorScan library) from the global cache.") \
     M(RegexpLocalCacheHit, "Number of times we fetched compiled regular expression from a local cache.") \
     M(RegexpLocalCacheMiss, "Number of times we failed to fetch compiled regular expression from a local cache.") \
     \
