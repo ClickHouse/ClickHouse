@@ -1465,7 +1465,7 @@ std::unique_ptr<JSONExtractTreeNode<JSONParser>> buildJSONExtractTree(const Data
         case TypeIndex::LowCardinality:
         {
             /// To optimize inserting into LowCardinality we have special nodes for LowCardinality of numeric and string types.
-            const auto & lc_type = assert_cast<const DataTypeLowCardinality &>(*type));
+            const auto & lc_type = assert_cast<const DataTypeLowCardinality &>(*type);
             auto dictionary_type = removeNullable(lc_type.getDictionaryType());
             bool is_nullable = lc_type.isLowCardinalityNullable();
 
