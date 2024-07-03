@@ -142,7 +142,7 @@ namespace DeduplicationToken
 
         String getName() const override { return "DeduplicationToken::DefineSourceWithChunkHashesTransform"; }
 
-        // Usually MergeTreeSink/ReplicatedMergeTreeSink calls addChunkHash for the deduplication token with heshes from the parts.
+        // Usually MergeTreeSink/ReplicatedMergeTreeSink calls addChunkHash for the deduplication token with hashes from the parts.
         // But if there is some table with different engine, we still need to define the source of the data in deduplication token
         // We use that transform to define the source as a hash of entire block in deduplication token
         void transform(Chunk & chunk) override;
