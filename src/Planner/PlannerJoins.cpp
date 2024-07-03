@@ -29,7 +29,7 @@
 
 #include <Dictionaries/IDictionary.h>
 #include <Interpreters/IKeyValueEntity.h>
-#include <Interpreters/HashJoin.h>
+#include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/MergeJoin.h>
 #include <Interpreters/FullSortingMergeJoin.h>
 #include <Interpreters/ConcurrentHashJoin.h>
@@ -802,9 +802,9 @@ static std::shared_ptr<IJoin> tryCreateJoin(JoinAlgorithm algorithm,
         algorithm == JoinAlgorithm::PARALLEL_HASH ||
         algorithm == JoinAlgorithm::DEFAULT)
     {
+        auto query_context = planner_context->getQueryContext();
         if (table_join->allowParallelHashJoin())
         {
-            auto query_context = planner_context->getQueryContext();
             const auto & settings = query_context->getSettingsRef();
             StatsCollectingParams params{
                 calculateCacheKey(table_join, right_table_expression),
@@ -815,7 +815,7 @@ static std::shared_ptr<IJoin> tryCreateJoin(JoinAlgorithm algorithm,
                 query_context, table_join, query_context->getSettings().max_threads, right_table_expression_header, params);
         }
 
-        return std::make_shared<HashJoin>(table_join, right_table_expression_header);
+        return std::make_shared<HashJoin>(table_join, right_table_expression_header, query_context->getSettingsRef().join_any_take_last_row);
     }
 
     if (algorithm == JoinAlgorithm::FULL_SORTING_MERGE)

@@ -534,6 +534,10 @@ bool KeeperStorage::UncommittedState::hasACL(int64_t session_id, bool is_local, 
     if (is_local)
         return check_auth(storage.session_and_auth[session_id]);
 
+    /// we want to close the session and with that we will remove all the auth related to the session
+    if (closed_sessions.contains(session_id))
+        return false;
+
     if (check_auth(storage.session_and_auth[session_id]))
         return true;
 
@@ -558,6 +562,10 @@ void KeeperStorage::UncommittedState::addDelta(Delta new_delta)
     {
         auto & uncommitted_auth = session_and_auth[auth_delta->session_id];
         uncommitted_auth.emplace_back(&auth_delta->auth_id);
+    }
+    else if (const auto * close_session_delta = std::get_if<CloseSessionDelta>(&added_delta.operation))
+    {
+        closed_sessions.insert(close_session_delta->session_id);
     }
 }
 
@@ -1013,9 +1021,11 @@ struct KeeperStorageHeartbeatRequestProcessor final : public KeeperStorageReques
 {
     using KeeperStorageRequestProcessor::KeeperStorageRequestProcessor;
     Coordination::ZooKeeperResponsePtr
-    process(KeeperStorage & /* storage */, int64_t /* zxid */) const override
+    process(KeeperStorage & storage, int64_t zxid) const override
     {
-        return zk_request->makeResponse();
+        Coordination::ZooKeeperResponsePtr response_ptr = zk_request->makeResponse();
+        response_ptr->error = storage.commit(zxid);
+        return response_ptr;
     }
 };
 
@@ -2377,15 +2387,13 @@ void KeeperStorage::preprocessRequest(
 
             ephemerals.erase(session_ephemerals);
         }
-        new_deltas.emplace_back(transaction.zxid, CloseSessionDelta{session_id});
-        uncommitted_state.closed_sessions.insert(session_id);
 
+        new_deltas.emplace_back(transaction.zxid, CloseSessionDelta{session_id});
         new_digest = calculateNodesDigest(new_digest, new_deltas);
         return;
     }
 
-    if ((check_acl && !request_processor->checkAuth(*this, session_id, false)) ||
-        uncommitted_state.closed_sessions.contains(session_id))  // Is session closed but not committed yet
+    if (check_acl && !request_processor->checkAuth(*this, session_id, false))
     {
         uncommitted_state.deltas.emplace_back(new_last_zxid, Coordination::Error::ZNOAUTH);
         return;
@@ -2442,8 +2450,6 @@ KeeperStorage::ResponsesForSessions KeeperStorage::processRequest(
             }
         }
 
-        uncommitted_state.commit(zxid);
-
         clearDeadWatches(session_id);
         auto auth_it = session_and_auth.find(session_id);
         if (auth_it != session_and_auth.end())
@@ -2488,7 +2494,6 @@ KeeperStorage::ResponsesForSessions KeeperStorage::processRequest(
         else
         {
             response = request_processor->process(*this, zxid);
-            uncommitted_state.commit(zxid);
         }
 
         /// Watches for this requests are added to the watches lists
@@ -2528,6 +2533,7 @@ KeeperStorage::ResponsesForSessions KeeperStorage::processRequest(
         results.push_back(ResponseForSession{session_id, response});
     }
 
+    uncommitted_state.commit(zxid);
     return results;
 }
 
