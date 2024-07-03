@@ -10,6 +10,7 @@ node = cluster.add_instance(
     stay_alive=True,
 )
 
+
 @pytest.fixture(scope="module", autouse=True)
 def start_cluster():
     try:
@@ -38,14 +39,16 @@ def start_cluster():
         ),
         pytest.param(
             "test_db_repl",
-            "Replicated('/clickhouse/tables/test_table','shard1', 'replica1')", 
-            "ReplicatedMergeTree", 
+            "Replicated('/clickhouse/tables/test_table','shard1', 'replica1')",
+            "ReplicatedMergeTree",
             "ORDER BY n",
             id="Replicated db with ReplicatedMergeTree table",
         ),
     ],
 )
-def test_system_detached_tables(start_cluster, db_name, db_engine, table_engine, table_engine_params):
+def test_system_detached_tables(
+    start_cluster, db_name, db_engine, table_engine, table_engine_params
+):
     node.query(f"CREATE DATABASE IF NOT EXISTS {db_name} ENGINE={db_engine};")
 
     node.query(
