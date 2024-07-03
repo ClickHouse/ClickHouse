@@ -1,3 +1,5 @@
+-- Tags: no-random-settings
+
 SET allow_experimental_dynamic_type = 1;
 DROP TABLE IF EXISTS test_dynamic;
 CREATE TABLE test_dynamic (id UInt64, d Dynamic) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 0;
