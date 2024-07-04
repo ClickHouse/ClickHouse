@@ -271,7 +271,7 @@ namespace
         else if (has_jwt)
         {
             if (!allow_jwt)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "JWT auth not allowed because JWKS servers not configured");
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "JWT auth not allowed because JWT not configured");
             user->auth_data = AuthenticationData{AuthenticationType::JWT};
         }
 

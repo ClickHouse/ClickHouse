@@ -10,23 +10,81 @@ Existing and properly configured ClickHouse users can be authenticated via JWT.
 
 Currently, JWT can only be used as an external authenticator for existing users, which are defined in `users.xml` or in local access control paths. 
 
-The username will be extracted from the JWT after validating the token against the signature received from the JWKS servers and the expiration date. Additionally, each user can be verified using a JWT payload. In this case, after running general checks, the occurrence of CLAIMS from the user settings in the JWT payload is checked.
+The username will be extracted from the JWT after validating the token expiration and against the signature. Signature can be validated by:
+- static public key
+- static JWKS
+- received from the JWKS servers
+Additionally, each user can be verified using a JWT payload. In this case, after running general checks, the occurrence of CLAIMS from the user settings in the JWT payload is checked.
 
-For this approach, JWKS must be configured in the system and must be enabled in ClickHouse config.
+For this approach, JWT validators must be configured in the system and must be enabled in ClickHouse config.
 
 
-## Enabling JWKS in ClickHouse {#enabling-jwks-in-clickhouse}
+## Enabling JWT validators in ClickHouse {#enabling-jwt-validators-in-clickhouse}
 
-To enable JWKS, one should include `jwks` section in `config.xml`. This section may contain several JWKS servers, minimum is 1.
+To enable JWT validators, one should include `jwt_verifiers` section in `config.xml`. This section may contain several JWT verifiers, minimum is 1.
 
-## JWKS server definition {#jwks-server-definition}
-
+### Verifying JWT signature using static key {$verifying-jwt-signature-using-static-key}
 
 **Example**
 ```xml
 <clickhouse>
     <!- ... -->
-    <jwks_authentication_servers>
+    <jwt_verifiers>
+        <basic_jwt_validator>
+          <algo>HS256</algo>
+          <single_key>c3VwZXIKa2V5</single_key>
+          <single_key_in_base64>true</single_key_in_base64>
+        </basic_jwt_validator>
+    </jwt_verifiers>
+</clickhouse>
+```
+
+#### Parameters:
+
+- `algo` - Algorithm for validate signature. Supported:
+
+  | HMSC  | RSA   | ECDSA  | PSS   | EdDSA   |
+  | ----- | ----- | ------ | ----- | ------- |
+  | HS256 | RS256 | ES256  | PS256 | Ed25519 |
+  | HS384 | RS384 | ES384  | PS384 | Ed448   |
+  | HS512 | RS512 | ES512  | PS512 |         |
+  |       |       | ES256K |       |         |
+  Also support None.
+- `single_key` - key for HS* algorithms. Required in these algorithms.
+- `single_key_in_base64` - a sign that the `single_key` key is encoded in base64
+- `public_key` - public key for validate in all algorithms except HS* family and None. Required in these algorithms.
+- `private_key` - private key for validate in all algorithms except HS* family and None. Optional in these algorithms.
+- `public_key_password` - public key password for verification in all algorithms except the HS* family and None. Optional in these algorithms.
+- `private_key_password` - private key password for verification in all algorithms except the HS* family and None. Optional in these algorithms.
+
+### Verifying JWT signature using static JWKS {$verifying-jwt-signature-using-static-jwks}
+
+**Example**
+```xml
+<clickhouse>
+    <!- ... -->
+    <jwt_verifiers>
+        <basic_jwt_validator>
+          <static_key>CONTENT_OF_JWKS</static_key>
+        </basic_jwt_validator>
+    </jwt_verifiers>
+</clickhouse>
+```
+
+#### Parameters:
+- `static_key` - content of JWKS in json
+
+:::note
+Supported only RS* family algorithms
+:::
+
+### Verifying JWT signature using JWKS servers {$verifying-jwt-signature-using-static-jwks}
+
+**Example**
+```xml
+<clickhouse>
+    <!- ... -->
+    <jwt_verifiers>
         <basic_auth_server>
           <uri>http://localhost:8000/jwks.json</uri>
           <connection_timeout_ms>1000</connection_timeout_ms>
@@ -37,11 +95,9 @@ To enable JWKS, one should include `jwks` section in `config.xml`. This section 
           <retry_max_backoff_ms>1000</retry_max_backoff_ms>
           <refresh_ms>300000</refresh_ms>
         </basic_auth_server>
-    </jwks_authentication_servers>
+    </jwt_verifiers>
 </clickhouse>
 ```
-
-Note, that you can define multiple HTTP servers inside the `jwks_authentication_servers` section using distinct names.
 
 #### Parameters:
 
@@ -58,6 +114,8 @@ Retry parameters:
 - `retry_initial_backoff_ms` - The backoff initial interval on retry. Default: 50 ms
 - `retry_max_backoff_ms` - The maximum backoff interval. Default: 1000 ms
 
+Note, that you can define multiple HTTP servers inside the `jwt_verifiers` section using distinct names.
+
 ### Enabling JWT authentication in `users.xml` {#enabling-jwt-auth-in-users-xml}
 
 In order to enable HTTP authentication for the user, specify `jwt` section instead of `password` or similar sections in the user definition.
@@ -71,9 +129,9 @@ Example (goes into `users.xml`):
     <!- ... -->
     <my_user>
         <!- ... -->
-        <jwks>
+        <jwt>
             <claims>{"resource_access":{"account": {"roles": ["view-profile"]}}}</claims>
-        </jwks>
+        </jwt>
     </my_user>
 </clickhouse>
 ```
@@ -134,3 +192,9 @@ The token can be obtained (by priority):
 - header Authorization
 - request parameter "token". In this case, the "Bearer" prefix should not exist.
 :::
+
+### Passing session settings {#passing-session-settings}
+
+If `settings_key` exists in the `jwt_verifiers` section or exists in the verifier section and the payload contains a sub-object of that `settings_key`, ClickHouse will attempt to parse its key:value pairs as string values ​​and set them as session settings for the currently authenticated user. If parsing fails, the JWT payload will be ignored.
+
+The `settings_key` in the verifier section takes precedence over the `settings_key` from the `jwt_verifiers` section. If `settings_key` in the verifier section does not exist, the `settings_key` from the `jwt_verifiers` section will be used.

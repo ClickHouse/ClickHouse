@@ -307,7 +307,7 @@ bool Authentication::areCredentialsValid(
                 throw Authentication::Require<BasicCredentials>("ClickHouse Basic Authentication");
 
             case AuthenticationType::JWT:
-                return external_authenticators.checkAndResolveJWKSCredentials(auth_data.getJWTClaims(), *jwt_credentials, settings);
+                return external_authenticators.checkJWTCredentials(auth_data.getJWTClaims(), *jwt_credentials, settings);
 
             case AuthenticationType::SSL_CERTIFICATE:
                 throw Authentication::Require<BasicCredentials>("ClickHouse X.509 Authentication");

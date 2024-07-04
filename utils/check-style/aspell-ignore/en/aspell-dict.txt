@@ -246,8 +246,10 @@ DockerHub
 DoubleDelta
 Doxygen
 Durre
+ECDSA
 ECMA
 Ecto
+EdDSA
 EdgeAngle
 EdgeLengthKm
 EdgeLengthM
@@ -333,6 +335,7 @@ Greenwald
 HDDs
 HHMM
 HMAC
+HMSC
 HNSW
 HSTS
 HTTPConnection
@@ -2864,6 +2867,7 @@ utils
 uuid
 uuidv
 vCPU
+validators
 varPop
 varPopStable
 varSamp
@@ -2871,6 +2875,8 @@ varSampStable
 variadic
 variantElement
 variantType
+verifier
+verifiers
 varint
 varpop
 varpopstable
