@@ -21,4 +21,10 @@ OPTIMIZE TABLE test_projection_deduplicate DEDUPLICATE; -- { serverError NOT_IMP
 
 SELECT * FROM test_projection_deduplicate;
 
+ALTER TABLE test_projection_deduplicate DROP PROJECTION test_projection;
+
+OPTIMIZE TABLE test_projection_deduplicate DEDUPLICATE;
+
+SELECT * FROM test_projection_deduplicate;
+
 DROP TABLE test_projection_deduplicate;
