@@ -63,7 +63,6 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
               {"optimize_trivial_insert_select", true, false, "The optimization does not make sense in many cases."},
               {"lightweight_mutation_projection_mode", "throw", "throw", "When lightweight delete happens on a table with projection(s), the possible operations include throw the exception as projection exists, or drop all projection related to this table then do lightweight delete."},
               {"database_replicated_allow_heavy_create", true, false, "Long-running DDL queries (CREATE AS SELECT and POPULATE) for Replicated database engine was forbidden"},
-              },
               {"s3_throw_on_zero_files_match", false, true, "Report error if S3 URL with wildcards didn't match any files. Useful in particular when trying to use pre-signed URL (which is not supported) with '?' character that is inadvertently interpreted as a wildcard."},
               {"hdfs_throw_on_zero_files_match", false, true, "Allow to throw an error when ListObjects request cannot match any files in HDFS engine instead of empty query result"},
               {"azure_throw_on_zero_files_match", false, true, "Allow to throw an error when ListObjects request cannot match any files in AzureBlobStorage engine instead of empty query result"},
