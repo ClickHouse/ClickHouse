@@ -522,8 +522,8 @@ void ClientBase::onProfileInfo(const ProfileInfo & profile_info)
 {
     if (profile_info.hasAppliedLimit() && output_format)
         output_format->setRowsBeforeLimit(profile_info.getRowsBeforeLimit());
-    if (profile_info.hasAppliedGroupBy() && output_format)
-        output_format->setRowsBeforeGroupBy(profile_info.getRowsBeforeGroupBy());
+    if (profile_info.hasAppliedAggregation() && output_format)
+        output_format->setRowsBeforeAggregation(profile_info.getRowsBeforeAggregation());
 }
 
 

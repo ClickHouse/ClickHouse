@@ -169,7 +169,10 @@ public:
     Status prepare() override;
     void work() override;
     Processors expandPipeline() override;
-    void setRowsBeforeGroupByCounter(RowsBeforeGroupByCounterPtr counter) override { rows_before_group_by_at_least.swap(counter); }
+    void setRowsBeforeAggregationCounter(RowsBeforeAggregationCounterPtr counter) override
+    {
+        rows_before_aggregation_at_least.swap(counter);
+    }
 
 protected:
     void consume(Chunk chunk);
@@ -213,7 +216,7 @@ private:
 
     bool is_consume_started = false;
 
-    RowsBeforeGroupByCounterPtr rows_before_group_by_at_least;
+    RowsBeforeAggregationCounterPtr rows_before_aggregation_at_least;
 
     void initGenerate();
 };

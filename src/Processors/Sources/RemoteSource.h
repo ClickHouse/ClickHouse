@@ -3,8 +3,8 @@
 #include <Processors/ISource.h>
 #include <Processors/RowsBeforeLimitCounter.h>
 #include <QueryPipeline/Pipe.h>
-#include <Core/UUID.h>
 
+#include <Core/UUID.h>
 namespace DB
 {
 
@@ -26,7 +26,7 @@ public:
     String getName() const override { return "Remote"; }
 
     void setRowsBeforeLimitCounter(RowsBeforeLimitCounterPtr counter) override { rows_before_limit.swap(counter); }
-    void setRowsBeforeGroupByCounter(RowsBeforeLimitCounterPtr counter) override { rows_before_group_by.swap(counter); }
+    void setRowsBeforeAggregationCounter(RowsBeforeLimitCounterPtr counter) override { rows_before_aggregation.swap(counter); }
 
     /// Stop reading from stream if output port is finished.
     void onUpdatePorts() override;
@@ -46,7 +46,7 @@ private:
     bool add_aggregation_info = false;
     RemoteQueryExecutorPtr query_executor;
     RowsBeforeLimitCounterPtr rows_before_limit;
-    RowsBeforeLimitCounterPtr rows_before_group_by;
+    RowsBeforeLimitCounterPtr rows_before_aggregation;
 
     const bool async_read;
     const bool async_query_sending;
@@ -54,7 +54,7 @@ private:
     int fd = -1;
     size_t rows = 0;
     bool manually_add_rows_before_limit_counter = false;
-    bool manually_add_rows_before_group_by_counter = false;
+    bool manually_add_rows_before_aggregation_counter = false;
 };
 
 /// Totals source from RemoteQueryExecutor.

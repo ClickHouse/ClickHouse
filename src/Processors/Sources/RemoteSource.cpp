@@ -46,12 +46,12 @@ RemoteSource::RemoteSource(RemoteQueryExecutorPtr executor, bool add_aggregation
                     manually_add_rows_before_limit_counter = true; /// Remote subquery doesn't contain a limit
             }
 
-            if (rows_before_group_by)
+            if (rows_before_aggregation)
             {
-                if (info.hasAppliedGroupBy())
-                    rows_before_group_by->add(info.getRowsBeforeGroupBy());
+                if (info.hasAppliedAggregation())
+                    rows_before_aggregation->add(info.getRowsBeforeAggregation());
                 else
-                    manually_add_rows_before_group_by_counter = true; /// Remote subquery doesn't contain a group by
+                    manually_add_rows_before_aggregation_counter = true; /// Remote subquery doesn't contain a group by
             }
         });
 }
@@ -171,8 +171,8 @@ std::optional<Chunk> RemoteSource::tryGenerate()
     {
         if (manually_add_rows_before_limit_counter)
             rows_before_limit->add(rows);
-        if (manually_add_rows_before_group_by_counter)
-            rows_before_group_by->add(rows);
+        if (manually_add_rows_before_aggregation_counter)
+            rows_before_aggregation->add(rows);
         query_executor->finish();
         return {};
     }

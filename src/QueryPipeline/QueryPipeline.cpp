@@ -274,18 +274,20 @@ static void initRowsBeforeLimit(IOutputFormat * output_format)
         output_format->setRowsBeforeLimitCounter(rows_before_limit_at_least);
     }
 }
-static void initRowsBeforeGroupBy(std::shared_ptr<Processors> processors, IOutputFormat * output_format)
+static void initRowsBeforeAggregation(std::shared_ptr<Processors> processors, IOutputFormat * output_format)
 {
     if (!processors->empty())
     {
-        RowsBeforeGroupByCounterPtr rows_before_group_by_at_least = std::make_shared<RowsBeforeLimitCounter>();
+        RowsBeforeAggregationCounterPtr rows_before_aggregation_at_least = std::make_shared<RowsBeforeLimitCounter>();
         for (auto & processor : *processors)
         {
             if (auto transform = std::dynamic_pointer_cast<AggregatingTransform>(processor))
-                transform->setRowsBeforeGroupByCounter(rows_before_group_by_at_least);
+                transform->setRowsBeforeAggregationCounter(rows_before_aggregation_at_least);
+            if (auto remote = std::dynamic_pointer_cast<RemoteSource>(processor))
+                remote->setRowsBeforeAggregationCounter(rows_before_aggregation_at_least);
         }
-        rows_before_group_by_at_least->add(0);
-        output_format->setRowsBeforeLimitCounter(rows_before_group_by_at_least);
+        rows_before_aggregation_at_least->add(0);
+        output_format->setRowsBeforeAggregationCounter(rows_before_aggregation_at_least);
     }
 }
 
@@ -535,7 +537,14 @@ void QueryPipeline::complete(std::shared_ptr<IOutputFormat> format)
     extremes = nullptr;
 
     initRowsBeforeLimit(format.get());
-    initRowsBeforeGroupBy(processors, format.get());
+    for (const auto context : resources.interpreter_context)
+    {
+        if (context->getSettingsRef().rows_before_aggregation)
+        {
+            initRowsBeforeAggregation(processors, format.get());
+            break;
+        }
+    }
     output_format = format.get();
 
     processors->emplace_back(std::move(format));

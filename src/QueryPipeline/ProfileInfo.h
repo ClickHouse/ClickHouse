@@ -32,8 +32,8 @@ struct ProfileInfo
     size_t getRowsBeforeLimit() const;
     bool hasAppliedLimit() const;
 
-    size_t getRowsBeforeGroupBy() const;
-    bool hasAppliedGroupBy() const;
+    size_t getRowsBeforeAggregation() const;
+    bool hasAppliedAggregation() const;
 
     void update(Block & block);
     void update(size_t num_rows, size_t num_bytes);
@@ -55,20 +55,20 @@ struct ProfileInfo
     }
 
     /// Only for Processors.
-    void setRowsBeforeGroupBy(size_t rows_before_group_by_)
+    void setRowsBeforeAggregation(size_t rows_before_aggregation_)
     {
-        applied_group_by = true;
-        rows_before_group_by = rows_before_group_by_;
+        applied_aggregation = true;
+        rows_before_aggregation = rows_before_aggregation_;
     }
 
 private:
     /// For these fields we make accessors, because they must be calculated beforehand.
     mutable bool applied_limit = false;                    /// Whether LIMIT was applied
     mutable size_t rows_before_limit = 0;
-    mutable bool calculated_rows_before_limit = false;    /// Whether the field rows_before_limit was calculated
+    mutable bool calculated_rows_before_limit = false; /// Whether the field rows was calculated
 
-    mutable bool applied_group_by = false; /// Whether GROUP BY was applied
-    mutable size_t rows_before_group_by = 0;
+    mutable bool applied_aggregation = false; /// Whether GROUP BY was applied
+    mutable size_t rows_before_aggregation = 0;
 };
 
 }

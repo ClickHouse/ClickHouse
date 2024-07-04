@@ -683,8 +683,8 @@ void AggregatingTransform::consume(Chunk chunk)
         LOG_TRACE(log, "Aggregating");
         is_consume_started = true;
     }
-    if (rows_before_group_by_at_least)
-        rows_before_group_by_at_least->add(num_rows);
+    if (rows_before_aggregation_at_least)
+        rows_before_aggregation_at_least->add(num_rows);
     src_rows += num_rows;
     src_bytes += chunk.bytes();
 

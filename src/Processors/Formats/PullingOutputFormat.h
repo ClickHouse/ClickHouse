@@ -22,7 +22,7 @@ public:
     ProfileInfo & getProfileInfo() { return info; }
 
     void setRowsBeforeLimit(size_t rows_before_limit) override;
-    void setRowsBeforeGroupBy(size_t rows_before_group_by) override;
+    void setRowsBeforeAggregation(size_t rows_before_aggregation) override;
 
     bool expectMaterializedColumns() const override { return false; }
 
