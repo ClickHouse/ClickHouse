@@ -3,6 +3,8 @@
 #include <Common/ObjectStorageKeyGenerator.h>
 #include <Common/SharedMutex.h>
 
+#include <Disks/ObjectStorages/PathComparator.h>
+
 #include <filesystem>
 #include <map>
 #include <optional>
@@ -23,7 +25,7 @@ class CommonPathPrefixKeyGenerator : public IObjectStorageKeysGenerator
 {
 public:
     /// Local to remote path map. Leverages filesystem::path comparator for paths.
-    using PathMap = std::map<std::filesystem::path, std::string>;
+    using PathMap = std::map<std::filesystem::path, std::string, PathComparator>;
 
     explicit CommonPathPrefixKeyGenerator(String key_prefix_, SharedMutex & shared_mutex_, std::weak_ptr<PathMap> path_map_);
 

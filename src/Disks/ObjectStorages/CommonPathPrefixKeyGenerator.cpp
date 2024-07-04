@@ -18,7 +18,8 @@ CommonPathPrefixKeyGenerator::CommonPathPrefixKeyGenerator(
 ObjectStorageKey
 CommonPathPrefixKeyGenerator::generate(const String & path, bool is_directory, const std::optional<String> & key_prefix) const
 {
-    const auto & [object_key_prefix, suffix_parts] = getLongestObjectKeyPrefix(path);
+    const auto & [object_key_prefix, suffix_parts]
+        = getLongestObjectKeyPrefix(is_directory ? std::filesystem::path(path).parent_path().string() : path);
 
     auto key = std::filesystem::path(object_key_prefix);
 
@@ -54,7 +55,7 @@ std::tuple<std::string, std::vector<std::string>> CommonPathPrefixKeyGenerator::
 
     while (p != p.root_path())
     {
-        auto it = ptr->find(p / "");
+        auto it = ptr->find(p);
         if (it != ptr->end())
         {
             std::vector<std::string> vec(std::make_move_iterator(dq.begin()), std::make_move_iterator(dq.end()));

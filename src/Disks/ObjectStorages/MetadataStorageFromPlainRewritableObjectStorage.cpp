@@ -97,7 +97,7 @@ MetadataStorageFromPlainObjectStorage::PathMap loadPathPrefixMap(const std::stri
             std::pair<MetadataStorageFromPlainObjectStorage::PathMap::iterator, bool> res;
             {
                 std::lock_guard lock(mutex);
-                res = result.emplace(local_path, remote_path.parent_path());
+                res = result.emplace(std::filesystem::path(local_path).parent_path(), remote_path.parent_path());
             }
 
             /// This can happen if table replication is enabled, then the same local path is written
@@ -145,11 +145,10 @@ void getDirectChildrenOnDiskImpl(
                 break;
 
             auto slash_num = count(k.begin() + local_path.size(), k.end(), '/');
-            if (slash_num != 1)
+            if (slash_num != 0)
                 continue;
 
-            chassert(k.back() == '/');
-            remote_to_local_subdir.emplace(v, std::string(k.begin() + local_path.size(), k.end() - 1));
+            remote_to_local_subdir.emplace(v, std::string(k.begin() + local_path.size(), k.end()) + "/");
         }
     }
 
@@ -243,7 +242,7 @@ std::vector<std::string> MetadataStorageFromPlainRewritableObjectStorage::listDi
     object_storage->listObjects(abs_key, files, 0);
 
     std::unordered_set<std::string> directories;
-    getDirectChildrenOnDisk(abs_key, object_storage->getCommonKeyPrefix(), files, path, directories);
+    getDirectChildrenOnDisk(abs_key, object_storage->getCommonKeyPrefix(), files, std::filesystem::path(path) / "", directories);
     /// List empty directories that are identified by the `prefix.path` metadata files. This is required to, e.g., remove
     /// metadata along with regular files.
     if (object_storage->getCommonKeyPrefix() != getMetadataKeyPrefix())
