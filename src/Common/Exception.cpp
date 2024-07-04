@@ -38,9 +38,12 @@ namespace ErrorCodes
     extern const int CANNOT_MREMAP;
 }
 
-void abortOnFailedAssertion(const String & description)
+void abortOnFailedAssertion(const String & description, const Exception::FramePointers * trace = nullptr)
 {
-    LOG_FATAL(&Poco::Logger::root(), "Logical error: '{}'.", description);
+    auto & logger = Poco::Logger::root();
+    LOG_FATAL(&logger, "Logical error: '{}'.", description);
+    if (trace)
+        LOG_FATAL(&logger, "Stack trace (when copying this message, always include the lines below):\n\n{}", StackTrace::toString(trace->data(), 0, trace->size()));
     abort();
 }
 
@@ -58,7 +61,7 @@ void handle_error_code(const std::string & msg, int code, bool remote, const Exc
 #ifdef ABORT_ON_LOGICAL_ERROR
     if (code == ErrorCodes::LOGICAL_ERROR)
     {
-        abortOnFailedAssertion(msg);
+        abortOnFailedAssertion(msg, &trace);
     }
 #endif
 
