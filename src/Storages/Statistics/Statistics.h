@@ -35,7 +35,7 @@ public:
 
     /// Per-value estimations.
     /// Throws if the statistics object is not able to do a meaningful estimation.
-    virtual Float64 estimateEqual(Float64 val) const; /// cardinality of val in the column
+    virtual Float64 estimateEqual(const Field & val) const; /// cardinality of val in the column
     virtual Float64 estimateLess(Float64 val) const;  /// summarized cardinality of values < val in the column
 
     /// Convert filed to Float64, used when estimating the number of rows.
@@ -67,8 +67,7 @@ public:
 
     Float64 estimateLess(Float64 val) const;
     Float64 estimateGreater(Float64 val) const;
-    Float64 estimateEqual(Float64 val) const;
-    Float64 estimateEqual(Field val) const;
+    Float64 estimateEqual(const Field & val) const;
 
 private:
     friend class MergeTreeStatisticsFactory;

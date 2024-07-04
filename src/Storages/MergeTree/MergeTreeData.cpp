@@ -496,11 +496,9 @@ ConditionSelectivityEstimator MergeTreeData::getConditionSelectivityEstimatorByP
         {
             auto stats = part->loadStatistics();
             /// TODO: We only have one stats file for every part.
-            if (stats.empty()) /// No statistics still need add rows count.
-                result.addRows(part->rows_count);
-            else
-                for (const auto & stat : stats)
-                    result.merge(part->info.getPartNameV1(), part->rows_count, stat);
+            result.addRows(part->rows_count);
+            for (const auto & stat : stats)
+                result.merge(part->info.getPartNameV1(), stat);
         }
         catch (...)
         {
@@ -515,11 +513,9 @@ ConditionSelectivityEstimator MergeTreeData::getConditionSelectivityEstimatorByP
             if (!partition_pruner.canBePruned(*part))
             {
                 auto stats = part->loadStatistics();
-                if (stats.empty())
-                    result.addRows(part->rows_count);
-                else
-                    for (const auto & stat : stats)
-                        result.merge(part->info.getPartNameV1(), part->rows_count, stat);
+                result.addRows(part->rows_count);
+                for (const auto & stat : stats)
+                    result.merge(part->info.getPartNameV1(), stat);
             }
         }
         catch (...)

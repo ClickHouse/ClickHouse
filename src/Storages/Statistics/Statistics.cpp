@@ -1,12 +1,12 @@
-#include <Storages/Statistics/Statistics.h>
-#include <Storages/Statistics/ConditionSelectivityEstimator.h>
-#include <Storages/Statistics/StatisticsTDigest.h>
-#include <Storages/Statistics/StatisticsUniq.h>
-#include <Storages/Statistics/CountMinSketchStatistics.h>
-#include <Storages/StatisticsDescription.h>
-#include <Storages/ColumnsDescription.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <Storages/ColumnsDescription.h>
+#include <Storages/Statistics/ConditionSelectivityEstimator.h>
+#include <Storages/Statistics/Statistics.h>
+#include <Storages/Statistics/StatisticsCountMinSketch.h>
+#include <Storages/Statistics/StatisticsTDigest.h>
+#include <Storages/Statistics/StatisticsUniq.h>
+#include <Storages/StatisticsDescription.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 
@@ -93,7 +93,7 @@ UInt64 IStatistics::estimateCardinality() const
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Cardinality estimation is not implemented for this type of statistics");
 }
 
-Float64 IStatistics::estimateEqual(Float64 /*val*/) const
+Float64 IStatistics::estimateEqual(const Field & /*val*/) const
 {
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Equality estimation is not implemented for this type of statistics");
 }
@@ -125,23 +125,20 @@ Float64 ColumnStatistics::estimateGreater(Float64 val) const
     return rows - estimateLess(val);
 }
 
-Float64 ColumnStatistics::estimateEqual(Field val) const
+Float64 ColumnStatistics::estimateEqual(const Field & val) const
 {
     auto float_val = IStatistics::getFloat64(val);
-    if (stats.contains(StatisticsType::Uniq) && stats.contains(StatisticsType::TDigest))
+    if (float_val.has_value() && stats.contains(StatisticsType::Uniq) && stats.contains(StatisticsType::TDigest))
     {
         /// 2048 is the default number of buckets in TDigest. In this case, TDigest stores exactly one value (with many rows) for every bucket.
         if (stats.at(StatisticsType::Uniq)->estimateCardinality() < 2048)
-            return stats.at(StatisticsType::TDigest)->estimateEqual(float_val);
+            return stats.at(StatisticsType::TDigest)->estimateEqual(val);
     }
 #if USE_DATASKETCHES
     if (stats.contains(StatisticsType::CountMinSketch))
-    {
-        auto count_min_sketch_static = std::static_pointer_cast<CountMinSketchStatistics>(stats.at(StatisticsType::CountMinSketch));
-        return count_min_sketch_static->estimateEqual(val);
-    }
+        return stats.at(StatisticsType::CountMinSketch)->estimateEqual(val);
 #endif
-    if (float_val < - ConditionSelectivityEstimator::threshold || float_val > ConditionSelectivityEstimator::threshold)
+    if (!float_val.has_value() && (float_val < - ConditionSelectivityEstimator::threshold || float_val > ConditionSelectivityEstimator::threshold))
         return rows * ConditionSelectivityEstimator::default_normal_cond_factor;
     else
         return rows * ConditionSelectivityEstimator::default_good_cond_factor;

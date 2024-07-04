@@ -27,6 +27,7 @@ ALTER TABLE t1 MATERIALIZE STATISTICS b, c;
 SELECT replaceRegexpAll(explain, '__table1.|_UInt8|_Int8|_String', '')
 FROM (EXPLAIN actions=1 SELECT count(*) FROM t1 WHERE b > 0/*9990*/ and c < -98/*100*/)
 WHERE explain LIKE '%Prewhere%' OR explain LIKE '%Filter column%';
+
 SELECT replaceRegexpAll(explain, '__table1.|_UInt8|_Int8|_String', '')
 FROM (EXPLAIN actions=1 SELECT count(*) FROM t1 WHERE b = 0/*1000*/ and c < -98/*100*/)
 WHERE explain LIKE '%Prewhere%' OR explain LIKE '%Filter column%';
@@ -69,6 +70,7 @@ ALTER TABLE t1 MATERIALIZE STATISTICS a, b, c;
 SELECT replaceRegexpAll(explain, '__table1.|_UInt8|_Int8|_String', '')
 FROM (EXPLAIN actions=1 SELECT count(*) FROM t1 WHERE c < -90/*900*/ and b > 900/*990*/ and a = '0'/*1*/)
 WHERE explain LIKE '%Prewhere%' OR explain LIKE '%Filter column%';
+
 SELECT replaceRegexpAll(explain, '__table1.|_UInt8|_Int8|_String', '')
 FROM (EXPLAIN actions=1 SELECT count(*) FROM t1 WHERE c < 0/*9900*/ and b = 0/*10*/ and a = '10000'/*0*/)
 WHERE explain LIKE '%Prewhere%' OR explain LIKE '%Filter column%';

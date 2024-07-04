@@ -1001,7 +1001,7 @@ They can be used for prewhere optimization only if we enable `set allow_statisti
 
 - `count_min`
 
-    [count min sketch](https://en.wikipedia.org/wiki/Count%E2%80%93min_sketch) sketches which provide an approximate count of the frequency of each value in a column.
+    [Count-min](https://en.wikipedia.org/wiki/Count%E2%80%93min_sketch) sketches which provide an approximate count of the frequency of each value in a column.
 
 ## Column-level Settings {#column-level-settings}
 

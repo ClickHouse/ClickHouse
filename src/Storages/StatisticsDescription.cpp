@@ -1,19 +1,14 @@
 #include <Storages/StatisticsDescription.h>
 
-#include <base/defines.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTStatisticsDeclaration.h>
-#include <Parsers/formatAST.h>
-#include <Parsers/parseQuery.h>
 #include <Parsers/queryToString.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Poco/Logger.h>
-#include <Storages/extractKeyExpressionList.h>
 #include <Storages/ColumnsDescription.h>
 
-#include <Common/logger_useful.h>
 
 namespace DB
 {

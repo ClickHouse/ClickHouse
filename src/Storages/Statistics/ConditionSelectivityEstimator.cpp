@@ -35,7 +35,7 @@ Float64 ConditionSelectivityEstimator::ColumnSelectivityEstimator::estimateGreat
     return rows - estimateLess(val, rows);
 }
 
-Float64 ConditionSelectivityEstimator::ColumnSelectivityEstimator::estimateEqual(Field val, Float64 rows) const
+Float64 ConditionSelectivityEstimator::ColumnSelectivityEstimator::estimateEqual(const Field & val, Float64 rows) const
 {
     auto float_val = IStatistics::getFloat64(val);
     if (part_statistics.empty())
@@ -141,7 +141,7 @@ Float64 ConditionSelectivityEstimator::estimateRowCount(const RPNBuilderTreeNode
 
     /// If there the estimator of the column is not found or there are no data at all,
     /// we use dummy estimation.
-    bool dummy = total_rows == 0;
+    bool dummy = false;
     ColumnSelectivityEstimator estimator;
     if (it != column_estimators.end())
         estimator = it->second;
@@ -176,13 +176,8 @@ Float64 ConditionSelectivityEstimator::estimateRowCount(const RPNBuilderTreeNode
         return default_unknown_cond_factor * total_rows;
 }
 
-void ConditionSelectivityEstimator::merge(String part_name, UInt64 part_rows, ColumnStatisticsPtr column_stat)
+void ConditionSelectivityEstimator::merge(String part_name, ColumnStatisticsPtr column_stat)
 {
-    if (!part_names.contains(part_name))
-    {
-        total_rows += part_rows;
-        part_names.insert(part_name);
-    }
     if (column_stat != nullptr)
         column_estimators[column_stat->columnName()].merge(part_name, column_stat);
 }

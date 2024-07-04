@@ -11,12 +11,12 @@
 namespace DB
 {
 
-class CountMinSketchStatistics : public IStatistics
+class StatisticsCountMinSketch : public IStatistics
 {
 public:
-    CountMinSketchStatistics(const SingleStatisticsDescription & stat_, DataTypePtr data_type_);
+    StatisticsCountMinSketch(const SingleStatisticsDescription & stat_, DataTypePtr data_type_);
 
-    Float64 estimateEqual(const Field & value) const;
+    Float64 estimateEqual(const Field & value) const override;
 
     void serialize(WriteBuffer & buf) override;
     void deserialize(ReadBuffer & buf) override;
@@ -24,9 +24,6 @@ public:
     void update(const ColumnPtr & column) override;
 
 private:
-    static constexpr auto num_hashes = 8uz;
-    static constexpr auto num_buckets = 2048uz;
-
     using Sketch = datasketches::count_min_sketch<UInt64>;
     Sketch sketch;
 

@@ -1,8 +1,8 @@
-#include <Storages/Statistics/CountMinSketchStatistics.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <Storages/Statistics/StatisticsCountMinSketch.h>
 
 #if USE_DATASKETCHES
 
@@ -14,15 +14,17 @@ namespace ErrorCodes
 extern const int ILLEGAL_STATISTICS;
 }
 
+static constexpr auto num_hashes = 8uz;
+static constexpr auto num_buckets = 2048uz;
 
-CountMinSketchStatistics::CountMinSketchStatistics(const SingleStatisticsDescription & stat_, DataTypePtr data_type_)
+StatisticsCountMinSketch::StatisticsCountMinSketch(const SingleStatisticsDescription & stat_, DataTypePtr data_type_)
     : IStatistics(stat_)
     , sketch(num_hashes, num_buckets)
     , data_type(data_type_)
 {
 }
 
-Float64 CountMinSketchStatistics::estimateEqual(const Field & value) const
+Float64 StatisticsCountMinSketch::estimateEqual(const Field & value) const
 {
     if (auto float_val = IStatistics::getFloat64(value))
         return sketch.get_estimate(&float_val.value(), 8);
@@ -31,14 +33,14 @@ Float64 CountMinSketchStatistics::estimateEqual(const Field & value) const
     UNREACHABLE();
 }
 
-void CountMinSketchStatistics::serialize(WriteBuffer & buf)
+void StatisticsCountMinSketch::serialize(WriteBuffer & buf)
 {
     Sketch::vector_bytes bytes = sketch.serialize();
     writeIntBinary(static_cast<UInt64>(bytes.size()), buf);
     buf.write(reinterpret_cast<const char *>(bytes.data()), bytes.size());
 }
 
-void CountMinSketchStatistics::deserialize(ReadBuffer & buf)
+void StatisticsCountMinSketch::deserialize(ReadBuffer & buf)
 {
     UInt64 size;
     readIntBinary(size, buf);
@@ -47,10 +49,10 @@ void CountMinSketchStatistics::deserialize(ReadBuffer & buf)
     bytes.reserve(size);
     buf.readStrict(reinterpret_cast<char *>(bytes.data()), size);
 
-    sketch = datasketches::count_min_sketch<UInt64>::deserialize(bytes.data(), size);
+    sketch = Sketch::deserialize(bytes.data(), size);
 }
 
-void CountMinSketchStatistics::update(const ColumnPtr & column)
+void StatisticsCountMinSketch::update(const ColumnPtr & column)
 {
     size_t size = column->size();
     for (size_t i = 0; i < size; ++i)
@@ -78,7 +80,7 @@ void CountMinSketchValidator(const SingleStatisticsDescription &, DataTypePtr da
 
 StatisticsPtr CountMinSketchCreator(const SingleStatisticsDescription & stat, DataTypePtr data_type)
 {
-    return std::make_shared<CountMinSketchStatistics>(stat, data_type);
+    return std::make_shared<StatisticsCountMinSketch>(stat, data_type);
 }
 
 }
