@@ -132,51 +132,30 @@ base64URLDecode() {
     echo "$result" | tr '_-' '/+' | base64 -w0 -d
 }
 
-test_compare_to_gold_encode() {
+test() {
     local input="$1"
-    local encode=$(${CLICKHOUSE_CLIENT} --query="SELECT base64URLEncode('$input')")
+    local encode_ch=$(${CLICKHOUSE_CLIENT} --query="SELECT base64URLEncode('$input')")
     local encode_gold=$(base64URLEncode $input)
 
-    if [ "$encode" != "$encode_gold" ]; then
-        echo "Input:    $input"
-        echo "Expected: $encode_gold"
-        echo "Got:      $encode"
-    fi
-}
-
-test_compare_to_gold_decode() {
-    local input="$1"
-    local encode_gold=$(base64URLEncode $input)
-    local decode=$(${CLICKHOUSE_CLIENT} --query="SELECT base64URLDecode('$encode_gold')")
+    local decode_ch=$(${CLICKHOUSE_CLIENT} --query="SELECT base64URLDecode('$encode_gold')")
     local decode_gold=$(base64URLDecode $encode_gold)
 
-    if [ "$decode" != "$decode_gold" ]; then
+    if [ "$encode_ch" != "$encode_gold" ]; then
         echo "Input:    $input"
-        echo "Expected: $decode_gold"
-        echo "Got:      $decode"
+        echo "Expected: $encode_gold"
+        echo "Got:      $encode_ch"
+    fi
+
+    if [ "$decode_ch" != "$input" ] || [ "$decode_ch" != "$decode_gold" ]; then
+        echo "Input:    $input"
+        echo "Decode gold: $decode_gold"
+        echo "Got:      $decode_ch"
     fi
 }
 
-test_compare_to_self() {
-    local input="$1"
-    local decode=$(${CLICKHOUSE_CLIENT} --query="SELECT base64URLDecode(base64URLEncode('$input'))")
-
-    if [ "$decode" != "$input" ]; then
-        echo "Input:    $input"
-        echo "Got:      $decode"
-    fi
-}
 
 for url in "${urls[@]}"; do
-    test_compare_to_gold_encode "$url"
-done
-
-for url in "${urls[@]}"; do
-    test_compare_to_gold_decode "$url"
-done
-
-for url in "${urls[@]}"; do
-    test_compare_to_self "$url"
+    test "$url"
 done
 
 # special case for '
