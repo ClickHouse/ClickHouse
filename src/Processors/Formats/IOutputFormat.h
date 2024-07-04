@@ -36,13 +36,13 @@ public:
     void setAutoFlush() { auto_flush = true; }
 
     /// Value for rows_before_limit_at_least field.
-    virtual void setRowsBeforeLimit(size_t /*rows*/) { }
+    virtual void setRowsBeforeLimit(size_t /*rows_before_limit*/) { }
 
     /// Counter to calculate rows_before_limit_at_least in processors pipeline.
     void setRowsBeforeLimitCounter(RowsBeforeLimitCounterPtr counter) override { rows_before_limit_counter.swap(counter); }
 
     /// Value for rows_before_aggregation_at_least field.
-    virtual void setRowsBeforeAggregation(size_t /*rows*/) { }
+    virtual void setRowsBeforeAggregation(size_t /*rows_before_limit*/) { }
 
     /// Counter to calculate rows_before_aggregation_at_least in processors pipeline.
     void setRowsBeforeAggregationCounter(RowsBeforeLimitCounterPtr counter) override { rows_before_aggregation_counter.swap(counter); }

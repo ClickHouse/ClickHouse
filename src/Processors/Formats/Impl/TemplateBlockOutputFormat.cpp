@@ -82,7 +82,7 @@ TemplateBlockOutputFormat::ResultsetPart TemplateBlockOutputFormat::stringToResu
         return ResultsetPart::ExtremesMax;
     else if (part == "rows")
         return ResultsetPart::Rows;
-    else if (part == "rows")
+    else if (part == "rows_before_limit")
         return ResultsetPart::RowsBeforeLimit;
     else if (part == "time")
         return ResultsetPart::TimeElapsed;
@@ -165,7 +165,7 @@ void TemplateBlockOutputFormat::finalizeImpl()
                 break;
             case ResultsetPart::RowsBeforeLimit:
                 if (!statistics.applied_limit)
-                    format.throwInvalidFormat("Cannot print rows for this request", i);
+                    format.throwInvalidFormat("Cannot print rows_before_limit for this request", i);
                 writeValue<size_t, DataTypeUInt64>(statistics.rows_before_limit, format.escaping_rules[i]);
                 break;
             case ResultsetPart::TimeElapsed:
