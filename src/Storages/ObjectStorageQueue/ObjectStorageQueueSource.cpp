@@ -111,10 +111,12 @@ void ObjectStorageQueueSource::FileIterator::returnForRetry(Source::ObjectInfoPt
     if (metadata->useBucketsForProcessing())
     {
         const auto bucket = metadata->getBucketForPath(object_info->relative_path);
+        std::lock_guard lock(mutex);
         listed_keys_cache[bucket].keys.emplace_front(object_info);
     }
     else
     {
+        std::lock_guard lock(mutex);
         objects_to_retry.push_back(object_info);
     }
 }
@@ -503,10 +505,6 @@ Chunk ObjectStorageQueueSource::generateImpl()
             break;
         }
 
-        auto * prev_scope = CurrentThread::get().attachProfileCountersScope(&file_status->profile_counters);
-        SCOPE_EXIT({ CurrentThread::get().attachProfileCountersScope(prev_scope); });
-        /// FIXME:  if files are compressed, profile counters update does not work fully (object storage related counters are not saved). Why?
-
         try
         {
             auto timer = DB::CurrentThread::getProfileEvents().timer(ProfileEvents::ObjectStorageQueuePullMicroseconds);
@@ -668,7 +666,6 @@ void ObjectStorageQueueSource::appendLogElement(
             .file_name = filename,
             .rows_processed = processed_rows,
             .status = processed ? ObjectStorageQueueLogElement::ObjectStorageQueueStatus::Processed : ObjectStorageQueueLogElement::ObjectStorageQueueStatus::Failed,
-            .counters_snapshot = file_status_.profile_counters.getPartiallyAtomicSnapshot(),
             .processing_start_time = file_status_.processing_start_time,
             .processing_end_time = file_status_.processing_end_time,
             .exception = file_status_.getException(),

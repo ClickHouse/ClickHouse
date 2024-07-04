@@ -34,7 +34,6 @@ public:
         std::atomic<time_t> processing_start_time = 0;
         std::atomic<time_t> processing_end_time = 0;
         std::atomic<size_t> retries = 0;
-        ProfileEvents::Counters profile_counters;
 
     private:
         mutable std::mutex last_exception_mutex;
