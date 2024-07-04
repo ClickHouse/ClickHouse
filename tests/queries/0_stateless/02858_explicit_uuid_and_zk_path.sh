@@ -6,7 +6,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 db=$CLICKHOUSE_DATABASE
 if [[ $($CLICKHOUSE_CLIENT -q "SELECT engine = 'Replicated' FROM system.databases WHERE name='$CLICKHOUSE_DATABASE'") != 1 ]]; then
-  $CLICKHOUSE_CLIENT -q "CREATE DATABASE rdb_$CLICKHOUSE_DATABASE ENGINE=Replicated('/test/$CLICKHOUSE_DATABASE/rdb', '1', '1')"
+  $CLICKHOUSE_CLIENT -q "CREATE DATABASE rdb_$CLICKHOUSE_DATABASE ENGINE=Replicated('/test/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/rdb', '1', '1')"
   db="rdb_$CLICKHOUSE_DATABASE"
 fi
 
@@ -21,13 +21,13 @@ UUID '02858000-1000-4000-8000-000000000002' (n int) ENGINE=Memory"
 
 
 $CLICKHOUSE_CLIENT --database_replicated_allow_replicated_engine_arguments=0 -q "CREATE TABLE $db.rmt0 (n int)
-ENGINE=ReplicatedMergeTree('/test/$CLICKHOUSE_DATABASE', '1') ORDER BY n" 2>&1| grep -Fac "database_replicated_allow_replicated_engine_arguments"
+ENGINE=ReplicatedMergeTree('/test/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX', '1') ORDER BY n" 2>&1| grep -Fac "database_replicated_allow_replicated_engine_arguments"
 
 $CLICKHOUSE_CLIENT --database_replicated_allow_replicated_engine_arguments=1 -q "CREATE TABLE $db.rmt1 (n int)
-ENGINE=ReplicatedMergeTree('/test/$CLICKHOUSE_DATABASE', '1') ORDER BY n"
+ENGINE=ReplicatedMergeTree('/test/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX', '1') ORDER BY n"
 
 $CLICKHOUSE_CLIENT --database_replicated_allow_replicated_engine_arguments=2 -q "CREATE TABLE $db.rmt2 (n int)
-ENGINE=ReplicatedMergeTree('/test/$CLICKHOUSE_DATABASE', '1') ORDER BY n"
+ENGINE=ReplicatedMergeTree('/test/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX', '1') ORDER BY n"
 
 
 $CLICKHOUSE_CLIENT -q "SELECT name FROM system.tables WHERE database='$db' ORDER BY name"
