@@ -452,6 +452,27 @@ Chunk ObjectStorageQueueSource::generateImpl()
         auto file_status = file_metadata->getFileStatus();
         const auto & path = reader.getObjectInfo()->getPath();
 
+        if (isCancelled())
+        {
+            reader->cancel();
+
+            if (processed_rows_from_file)
+            {
+                try
+                {
+                    file_metadata->setFailed("Cancelled", /* reduce_retry_count */true, /* overwrite_status */false);
+                }
+                catch (...)
+                {
+                    LOG_ERROR(log, "Failed to set file {} as failed: {}",
+                             object_info->relative_path, getCurrentExceptionMessage(true));
+                }
+            }
+
+            LOG_TEST(log, "Query is cancelled");
+            break;
+        }
+
         if (shutdown_called)
         {
             LOG_TEST(log, "Shutdown called");
@@ -482,27 +503,6 @@ Chunk ObjectStorageQueueSource::generateImpl()
             LOG_DEBUG(log, "Shutdown called, but file {} is partially processed ({} rows). "
                      "Will process the file fully and then shutdown",
                      path, processed_rows_from_file);
-        }
-
-        if (isCancelled())
-        {
-            reader->cancel();
-
-            if (processed_rows_from_file)
-            {
-                try
-                {
-                    file_metadata->setFailed("Cancelled", /* reduce_retry_count */true, /* overwrite_status */false);
-                }
-                catch (...)
-                {
-                    LOG_ERROR(log, "Failed to set file {} as failed: {}",
-                             object_info->relative_path, getCurrentExceptionMessage(true));
-                }
-            }
-
-            LOG_TEST(log, "Query is cancelled");
-            break;
         }
 
         try
