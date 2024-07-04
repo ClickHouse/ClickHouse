@@ -13,8 +13,8 @@ public:
     explicit CommandChangeDirectory() : ICommand()
     {
         command_name = "cd";
-        description = "Change directory";
-        options_description.add_options()("path", po::value<String>(), "the path we want to get to (mandatory, positional)")(
+        description = "Change directory (makes sense only in interactive mode)";
+        options_description.add_options()("path", po::value<String>(), "the path to which we want to change (mandatory, positional)")(
             "disk", po::value<String>(), "A disk where the path is changed (without disk switching)");
         positional_options_description.add("path", 1);
     }

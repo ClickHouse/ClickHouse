@@ -13,7 +13,7 @@ public:
     explicit CommandGetCurrentDiskAndPath() : ICommand()
     {
         command_name = "current_disk_with_path";
-        description = "Prints current disk and path (which coincide with prompt)";
+        description = "Prints current disk and path (which coincide with the prompt)";
     }
 
     void executeImpl(const CommandLineOptions &, DisksClient & client) override

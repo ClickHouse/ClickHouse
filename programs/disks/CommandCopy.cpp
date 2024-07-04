@@ -25,7 +25,7 @@ public:
             "disk-to", po::value<String>(), "disk to which copy is executed (default value is a current disk)")(
             "path-from", po::value<String>(), "path from which copy is executed (mandatory, positional)")(
             "path-to", po::value<String>(), "path to which copy is executed (mandatory, positional)")(
-            "recursive,r", "recursively copy the directory");
+            "recursive,r", "recursively copy the directory (required to remove a directory)");
         positional_options_description.add("path-from", 1);
         positional_options_description.add("path-to", 1);
     }

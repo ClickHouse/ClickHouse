@@ -14,9 +14,9 @@ public:
     CommandRead()
     {
         command_name = "read";
-        description = "Read a file from `FROM_PATH` to `TO_PATH`";
+        description = "Read a file from `path-from` to `path-to`";
         options_description.add_options()("path-from", po::value<String>(), "file from which we are reading (mandatory, positional)")(
-            "path-to", po::value<String>(), "file to which we are writing, , defaults to `stdout`");
+            "path-to", po::value<String>(), "file to which we are writing, defaults to `stdout`");
         positional_options_description.add("path-from", 1);
     }
 

@@ -579,7 +579,6 @@ If the length of the UTF-8 byte sequence is different for upper and lower case o
 
 Converts a string to uppercase, assuming that the string contains valid UTF-8 encoded text. If this assumption is violated, no exception is thrown and the result is undefined.
 
-Does not detect the language, e.g. for Turkish the result might not be exactly correct (i/İ vs. i/I).
 
 If the length of the UTF-8 byte sequence is different for upper and lower case of a code point, the result may be incorrect for this code point.
 
@@ -736,7 +735,7 @@ concat(s1, s2, ...)
 
 **Arguments**
 
-At least one value of arbitrary type.
+Values of arbitrary type.
 
 Arguments which are not of types [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md) are converted to strings using their default serialization. As this decreases performance, it is not recommended to use non-String/FixedString arguments.
 
