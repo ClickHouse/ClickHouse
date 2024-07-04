@@ -7,6 +7,11 @@ sidebar_label: Data types binary encoding specification.
 
 # Data types binary encoding specification
 
+This specification describes the binary format that can be used for binary encoding and decoding of ClickHouse data types. This format is used in `Dynamic` column [binary serialization](dynamic.md#binary-output-format) and can be used in input/output formats [RowBinaryWithNamesAndTypes](../../interfaces/formats.md#rowbinarywithnamesandtypes) and [Native](../../interfaces/formats.md#native) under corresponding settings.
+
+The table below describes how each data type is represented in bunary format. Each data type encoding consist of 1 byte that indicates the type and some optional additional information.
+`var_uint` in the binary encoding means that the size is encoded using Variable-Length Quantity compression.
+
 | ClickHouse data type                                                                 | Binary encoding                                                                                                                                                                                                                                                                                                        |
 |--------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `Nothing`                                                                            | `0x00`                                                                                                                                                                                                                                                                                                                 |
@@ -61,6 +66,8 @@ sidebar_label: Data types binary encoding specification.
 
 ### Interval kind binary encoding
 
+The table below describes how different interval kinds of `Interval` data type are endoced.
+
 | Interval kind | Binary encoding |
 |---------------|-----------------|
 | `Nanosecond`  | `0x00`          |
@@ -76,6 +83,9 @@ sidebar_label: Data types binary encoding specification.
 | `Year`        | `0x1A`          |
 
 ### Aggregate function parameter binary encoding
+
+The table below describes how parameters of `AggragateFunction` and `SimpleAggregateFunction` are encoded.
+The encoding of a parameter consists of 1 byte indicating the type of the parameter and the value itself.
 
 | Parameter type           | Binary encoding                                                                                                                |
 |--------------------------|--------------------------------------------------------------------------------------------------------------------------------|
