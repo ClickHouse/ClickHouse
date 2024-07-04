@@ -1,6 +1,7 @@
 <test>
     <settings>
         <allow_suspicious_codecs>1</allow_suspicious_codecs>
+        <allow_experimental_codecs>1</allow_experimental_codecs>
     </settings>
 
     <substitutions>
@@ -13,6 +14,7 @@
                 <value>Delta</value>
                 <value>T64</value>
                 <value>DoubleDelta</value>
+                <value>Pcodec</value>
             </values>
         </substitution>
         <substitution>
