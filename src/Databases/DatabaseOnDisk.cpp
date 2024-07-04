@@ -175,6 +175,8 @@ DatabaseOnDisk::DatabaseOnDisk(
 
 void DatabaseOnDisk::createDirectories()
 {
+    if (directories_created.test_and_set())
+        return;
     fs::create_directories(std::filesystem::path(getContext()->getPath()) / data_path);
     fs::create_directories(metadata_path);
 }

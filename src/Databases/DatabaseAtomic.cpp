@@ -58,6 +58,9 @@ DatabaseAtomic::DatabaseAtomic(String name_, String metadata_path_, UUID uuid, C
 
 void DatabaseAtomic::createDirectories()
 {
+    if (database_atomic_directories_created.test_and_set())
+        return;
+    DatabaseOnDisk::createDirectories();
     fs::create_directories(fs::path(getContext()->getPath()) / "metadata");
     fs::create_directories(path_to_table_symlinks);
     tryCreateMetadataSymlink();
