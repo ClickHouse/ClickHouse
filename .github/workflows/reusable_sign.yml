@@ -145,7 +145,7 @@ jobs:
             --job-name '${{inputs.test_name}}' \
             --run \
             --force \
-            --run-command '''${{inputs.run_command}}'''
+            --run-command '''python3 sign_release.py'''
       - name: Post run
         if: ${{ !cancelled() }}
         run: |
@@ -157,7 +157,7 @@ jobs:
       - name: Upload signed hashes
         uses: actions/upload-artifact@v4
         with:
-          name: signed-hashes
+          name: ${{inputs.test_name}} signed-hashes
           path: ${{ env.TEMP_PATH }}/*.gpg
       - name: Clean
         if: always()

@@ -50,7 +50,9 @@ static struct InitFiu
     REGULAR(check_table_query_delay_for_part) \
     REGULAR(dummy_failpoint) \
     REGULAR(prefetched_reader_pool_failpoint) \
-    PAUSEABLE_ONCE(dummy_pausable_failpoint_once) \
+    PAUSEABLE_ONCE(replicated_merge_tree_insert_retry_pause) \
+    PAUSEABLE_ONCE(finish_set_quorum_failed_parts) \
+    PAUSEABLE_ONCE(finish_clean_quorum_failed_parts) \
     PAUSEABLE(dummy_pausable_failpoint) \
     ONCE(execute_query_calling_empty_set_result_func_on_exception)
 

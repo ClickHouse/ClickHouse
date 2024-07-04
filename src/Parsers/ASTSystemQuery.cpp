@@ -364,6 +364,7 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState & s
         }
         case Type::ENABLE_FAILPOINT:
         case Type::DISABLE_FAILPOINT:
+        case Type::WAIT_FAILPOINT:
         {
             settings.ostr << ' ';
             print_identifier(fail_point_name);

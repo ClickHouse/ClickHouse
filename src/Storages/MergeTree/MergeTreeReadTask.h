@@ -56,6 +56,8 @@ struct MergeTreeReadTaskInfo
 {
     /// Data part which should be read while performing this task
     DataPartPtr data_part;
+    /// Parent part of the projection part
+    DataPartPtr parent_part;
     /// For `part_index` virtual column
     size_t part_index_in_query;
     /// Alter converversionss that should be applied on-fly for part.

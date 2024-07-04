@@ -1689,7 +1689,7 @@ void ActionsDAG::mergeNodes(ActionsDAG && second)
     }
 }
 
-ActionsDAG::SplitResult ActionsDAG::split(std::unordered_set<const Node *> split_nodes, bool create_split_nodes_mapping) const
+ActionsDAG::SplitResult ActionsDAG::split(std::unordered_set<const Node *> split_nodes, bool create_split_nodes_mapping, bool avoid_duplicate_inputs) const
 {
     /// Split DAG into two parts.
     /// (first_nodes, first_outputs) is a part which will have split_list in result.
@@ -1702,6 +1702,14 @@ ActionsDAG::SplitResult ActionsDAG::split(std::unordered_set<const Node *> split
 
     /// List of nodes from current actions which are not inputs, but will be in second part.
     NodeRawConstPtrs new_inputs;
+
+    /// Avoid new inputs to have the same name as existing inputs.
+    /// It's allowed for DAG but may break Block invariant 'columns with identical name must have identical structure'.
+    std::unordered_set<std::string_view> duplicate_inputs;
+    size_t duplicate_counter = 0;
+    if (avoid_duplicate_inputs)
+        for (const auto * input : inputs)
+            duplicate_inputs.insert(input->result_name);
 
     struct Frame
     {
@@ -1815,7 +1823,8 @@ ActionsDAG::SplitResult ActionsDAG::split(std::unordered_set<const Node *> split
                                 input_node.result_name = child->result_name;
                                 child_data.to_second = &second_nodes.emplace_back(std::move(input_node));
 
-                                new_inputs.push_back(child);
+                                if (child->type != ActionType::INPUT)
+                                    new_inputs.push_back(child);
                             }
                         }
 
@@ -1871,7 +1880,32 @@ ActionsDAG::SplitResult ActionsDAG::split(std::unordered_set<const Node *> split
 
     for (const auto * input : new_inputs)
     {
-        const auto & cur = data[input];
+        auto & cur = data[input];
+
+        if (avoid_duplicate_inputs)
+        {
+            bool is_name_updated = false;
+            while (!duplicate_inputs.insert(cur.to_first->result_name).second)
+            {
+                is_name_updated = true;
+                cur.to_first->result_name = fmt::format("{}_{}", input->result_name, duplicate_counter);
+                ++duplicate_counter;
+            }
+
+            if (is_name_updated)
+            {
+                Node input_node;
+                input_node.type = ActionType::INPUT;
+                input_node.result_type = cur.to_first->result_type;
+                input_node.result_name = cur.to_first->result_name;
+
+                auto * new_input = &second_nodes.emplace_back(std::move(input_node));
+                cur.to_second->type = ActionType::ALIAS;
+                cur.to_second->children = {new_input};
+                cur.to_second = new_input;
+            }
+        }
+
         second_inputs.push_back(cur.to_second);
         first_outputs.push_back(cur.to_first);
     }

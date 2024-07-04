@@ -64,6 +64,7 @@ namespace ExchangeType
     static const String HEADERS = "headers";
 }
 
+static const auto deadletter_exchange_setting = "x-dead-letter-exchange";
 
 StorageRabbitMQ::StorageRabbitMQ(
         const StorageID & table_id_,
@@ -84,15 +85,20 @@ StorageRabbitMQ::StorageRabbitMQ(
         , queue_base(getContext()->getMacros()->expand(rabbitmq_settings->rabbitmq_queue_base))
         , queue_settings_list(parseSettings(getContext()->getMacros()->expand(rabbitmq_settings->rabbitmq_queue_settings_list)))
         , max_rows_per_message(rabbitmq_settings->rabbitmq_max_rows_per_message)
+        , log(getLogger("StorageRabbitMQ (" + table_id_.table_name + ")"))
         , persistent(rabbitmq_settings->rabbitmq_persistent.value)
         , use_user_setup(rabbitmq_settings->rabbitmq_queue_consume.value)
         , hash_exchange(num_consumers > 1 || num_queues > 1)
-        , log(getLogger("StorageRabbitMQ (" + table_id_.table_name + ")"))
         , semaphore(0, static_cast<int>(num_consumers))
         , unique_strbase(getRandomName())
         , queue_size(std::max(QUEUE_SIZE, static_cast<uint32_t>(getMaxBlockSize())))
         , milliseconds_to_wait(rabbitmq_settings->rabbitmq_empty_queue_backoff_start_ms)
 {
+    reject_unhandled_messages = rabbitmq_settings->reject_unhandled_messages
+        || queue_settings_list.end() !=
+        std::find_if(queue_settings_list.begin(), queue_settings_list.end(),
+                     [](const String & name) { return name.starts_with(deadletter_exchange_setting); });
+
     const auto & config = getContext()->getConfigRef();
 
     std::pair<String, UInt16> parsed_address;
@@ -739,8 +745,9 @@ void StorageRabbitMQ::read(
     for (size_t i = 0; i < num_created_consumers; ++i)
     {
         auto rabbit_source = std::make_shared<RabbitMQSource>(
-            *this, storage_snapshot, modified_context, column_names, 1,
-            max_execution_time_ms, rabbitmq_settings->rabbitmq_handle_error_mode, rabbitmq_settings->rabbitmq_commit_on_select);
+            *this, storage_snapshot, modified_context, column_names, /* max_block_size */1,
+            max_execution_time_ms, rabbitmq_settings->rabbitmq_handle_error_mode, reject_unhandled_messages,
+            /* ack_in_suffix */rabbitmq_settings->rabbitmq_commit_on_select, log);
 
         auto converting_dag = ActionsDAG::makeConvertingActions(
             rabbit_source->getPort().getHeader().getColumnsWithTypeAndName(),
@@ -975,7 +982,7 @@ void StorageRabbitMQ::streamingToViewsFunc()
     }
     catch (...)
     {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
+        LOG_ERROR(log, "Error while streaming to views: {}", getCurrentExceptionMessage(true));
     }
 
     mv_attached.store(false);
@@ -1076,7 +1083,8 @@ bool StorageRabbitMQ::tryStreamToViews()
     {
         auto source = std::make_shared<RabbitMQSource>(
             *this, storage_snapshot, rabbitmq_context, Names{}, block_size,
-            max_execution_time_ms, rabbitmq_settings->rabbitmq_handle_error_mode);
+            max_execution_time_ms, rabbitmq_settings->rabbitmq_handle_error_mode,
+            reject_unhandled_messages, /* ack_in_suffix */false, log);
 
         sources.emplace_back(source);
         pipes.emplace_back(source);
@@ -1129,7 +1137,10 @@ bool StorageRabbitMQ::tryStreamToViews()
     if (!connection->isConnected())
     {
         if (shutdown_called)
+        {
+            LOG_DEBUG(log, "Shutdown called, quitting");
             return false;
+        }
 
         if (connection->reconnect())
         {
@@ -1145,6 +1156,8 @@ bool StorageRabbitMQ::tryStreamToViews()
     }
     else
     {
+        LOG_TEST(log, "Will {} messages for {} channels", write_failed ? "nack" : "ack", sources.size());
+
         /// Commit
         for (auto & source : sources)
         {
@@ -1152,36 +1165,41 @@ bool StorageRabbitMQ::tryStreamToViews()
                 ++queue_empty;
 
             if (source->needChannelUpdate())
-                source->updateChannel(*connection);
-
-            /* false is returned by the sendAck function in only two cases:
-             * 1) if connection failed. In this case all channels will be closed and will be unable to send ack. Also ack is made based on
-             *    delivery tags, which are unique to channels, so if channels fail, those delivery tags will become invalid and there is
-             *    no way to send specific ack from a different channel. Actually once the server realises that it has messages in a queue
-             *    waiting for confirm from a channel which suddenly closed, it will immediately make those messages accessible to other
-             *    consumers. So in this case duplicates are inevitable.
-             * 2) size of the sent frame (libraries's internal request interface) exceeds max frame - internal library error. This is more
-             *    common for message frames, but not likely to happen to ack frame I suppose. So I do not believe it is likely to happen.
-             *    Also in this case if channel didn't get closed - it is ok if failed to send ack, because the next attempt to send ack on
-             *    the same channel will also commit all previously not-committed messages. Anyway I do not think that for ack frame this
-             *    will ever happen.
-             */
-            if (write_failed ? source->sendNack() : source->sendAck())
             {
-                /// Iterate loop to activate error callbacks if they happened
-                connection->getHandler().iterateLoop();
-                if (!connection->isConnected())
-                    break;
+                LOG_TEST(log, "Channel {} is in error state, will update", source->getChannelID());
+                source->updateChannel(*connection);
             }
+            else
+            {
+                /* false is returned by the sendAck function in only two cases:
+                * 1) if connection failed. In this case all channels will be closed and will be unable to send ack. Also ack is made based on
+                *    delivery tags, which are unique to channels, so if channels fail, those delivery tags will become invalid and there is
+                *    no way to send specific ack from a different channel. Actually once the server realises that it has messages in a queue
+                *    waiting for confirm from a channel which suddenly closed, it will immediately make those messages accessible to other
+                *    consumers. So in this case duplicates are inevitable.
+                * 2) size of the sent frame (libraries's internal request interface) exceeds max frame - internal library error. This is more
+                *    common for message frames, but not likely to happen to ack frame I suppose. So I do not believe it is likely to happen.
+                *    Also in this case if channel didn't get closed - it is ok if failed to send ack, because the next attempt to send ack on
+                *    the same channel will also commit all previously not-committed messages. Anyway I do not think that for ack frame this
+                *    will ever happen.
+                */
+                if (write_failed ? source->sendNack() : source->sendAck())
+                {
+                    /// Iterate loop to activate error callbacks if they happened
+                    connection->getHandler().iterateLoop();
+                    if (!connection->isConnected())
+                        break;
+                }
 
-            connection->getHandler().iterateLoop();
+                connection->getHandler().iterateLoop();
+            }
         }
     }
 
     if (write_failed)
     {
         LOG_TRACE(log, "Write failed, reschedule");
-        return false;
+        return true;
     }
 
     if (!hasDependencies(getStorageID()))
@@ -1200,10 +1218,11 @@ bool StorageRabbitMQ::tryStreamToViews()
     }
     else
     {
+        LOG_TEST(log, "Will start background loop to let messages be pushed to channel");
         startLoop();
     }
 
-    /// Do not reschedule, do not stop event loop.
+    /// Reschedule.
     return true;
 }
 

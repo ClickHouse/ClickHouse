@@ -240,10 +240,10 @@ try
             bool should_evaluate_missing_defaults = false;
             reader->fillMissingColumns(columns, should_evaluate_missing_defaults, rows_read);
 
+            reader->performRequiredConversions(columns);
+
             if (should_evaluate_missing_defaults)
                 reader->evaluateMissingDefaults({}, columns);
-
-            reader->performRequiredConversions(columns);
 
             /// Reorder columns and fill result block.
             size_t num_columns = sample.size();

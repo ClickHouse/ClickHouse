@@ -3680,3 +3680,99 @@ def test_rabbitmq_nack_failed_insert(rabbitmq_cluster):
     """
     )
     connection.close()
+
+
+def test_rabbitmq_reject_broken_messages(rabbitmq_cluster):
+    credentials = pika.PlainCredentials("root", "clickhouse")
+    parameters = pika.ConnectionParameters(
+        rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, "/", credentials
+    )
+    connection = pika.BlockingConnection(parameters)
+    channel = connection.channel()
+
+    deadletter_exchange = "deadletter_exchange_handle_error_mode_stream"
+    deadletter_queue = "deadletter_queue_handle_error_mode_stream"
+    channel.exchange_declare(exchange=deadletter_exchange)
+
+    result = channel.queue_declare(queue=deadletter_queue)
+    channel.queue_bind(
+        exchange=deadletter_exchange, routing_key="", queue=deadletter_queue
+    )
+
+    instance.query(
+        f"""
+        DROP TABLE IF EXISTS test.rabbitmq;
+        DROP TABLE IF EXISTS test.view;
+        DROP TABLE IF EXISTS test.data;
+        DROP TABLE IF EXISTS test.errors;
+        DROP TABLE IF EXISTS test.errors_view;
+
+        CREATE TABLE test.rabbit (key UInt64, value UInt64)
+            ENGINE = RabbitMQ
+            SETTINGS rabbitmq_host_port = '{rabbitmq_cluster.rabbitmq_host}:5672',
+                     rabbitmq_exchange_name = 'select',
+                     rabbitmq_commit_on_select = 1,
+                     rabbitmq_format = 'JSONEachRow',
+                     rabbitmq_row_delimiter = '\\n',
+                     rabbitmq_handle_error_mode = 'stream',
+                     rabbitmq_queue_settings_list='x-dead-letter-exchange={deadletter_exchange}';
+
+
+        CREATE TABLE test.errors (error Nullable(String), broken_message Nullable(String))
+             ENGINE = MergeTree()
+             ORDER BY tuple();
+
+        CREATE MATERIALIZED VIEW test.errors_view TO test.errors AS
+                SELECT _error as error, _raw_message as broken_message FROM test.rabbit where not isNull(_error);
+
+        CREATE TABLE test.data (key UInt64, value UInt64)
+             ENGINE = MergeTree()
+             ORDER BY key;
+
+        CREATE MATERIALIZED VIEW test.view TO test.data AS
+                SELECT key, value FROM test.rabbit;
+        """
+    )
+
+    messages = []
+    num_rows = 50
+    for i in range(num_rows):
+        if i % 2 == 0:
+            messages.append(json.dumps({"key": i, "value": i}))
+        else:
+            messages.append("Broken message " + str(i))
+
+    for message in messages:
+        channel.basic_publish(exchange="select", routing_key="", body=message)
+
+    time.sleep(1)
+
+    attempt = 0
+    rows = 0
+    while attempt < 500:
+        rows = int(instance.query("SELECT count() FROM test.data"))
+        if rows == num_rows:
+            break
+        attempt += 1
+        time.sleep(1)
+
+    assert rows == num_rows
+
+    dead_letters = []
+
+    def on_dead_letter(channel, method, properties, body):
+        dead_letters.append(body)
+        if len(dead_letters) == num_rows / 2:
+            channel.stop_consuming()
+
+    channel.basic_consume(deadletter_queue, on_dead_letter)
+    channel.start_consuming()
+
+    assert len(dead_letters) == num_rows / 2
+
+    i = 1
+    for letter in dead_letters:
+        assert f"Broken message {i}" in str(letter)
+        i += 2
+
+    connection.close()

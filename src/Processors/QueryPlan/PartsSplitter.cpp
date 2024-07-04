@@ -617,14 +617,11 @@ SplitPartsRangesResult splitPartsRanges(RangesInDataParts ranges_in_data_parts, 
     }
 
     /// Process parts ranges with undefined value at end mark
-    bool is_intersecting = part_index_start_to_range.size() > 1;
+    /// The last parts ranges could be non-intersect only if: (1) there is only one part range left, (2) it belongs to a non-L0 part,
+    /// and (3) the begin value of this range is larger than the largest end value of all previous ranges. This is too complicated
+    /// to check, so we just add the last part ranges to the intersecting ranges.
     for (const auto & [part_range_index, mark_range] : part_index_start_to_range)
-    {
-        if (is_intersecting)
-            add_intersecting_range(part_range_index.part_index, mark_range);
-        else
-            add_non_intersecting_range(part_range_index.part_index, mark_range);
-    }
+        add_intersecting_range(part_range_index.part_index, mark_range);
 
     auto && non_intersecting_ranges_in_data_parts = std::move(non_intersecting_ranges_in_data_parts_builder.getCurrentRangesInDataParts());
     auto && intersecting_ranges_in_data_parts = std::move(intersecting_ranges_in_data_parts_builder.getCurrentRangesInDataParts());

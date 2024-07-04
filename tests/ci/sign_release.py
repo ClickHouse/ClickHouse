@@ -47,7 +47,7 @@ def sign_file(file_path):
     return out_file_path
 
 def main():
-    reports_path = REPORT_PATH
+    reports_path = Path(REPORT_PATH)
 
     if not os.path.exists(TEMP_PATH):
         os.makedirs(TEMP_PATH)
@@ -63,10 +63,12 @@ def main():
     ).replace("(", "_").replace(")", "_").replace(",", "_"))
 
     # downloads `package_release` artifacts generated
-    download_builds_filter(CHECK_NAME, reports_path, TEMP_PATH)
+    download_builds_filter(CHECK_NAME, reports_path, Path(TEMP_PATH))
 
     for f in os.listdir(TEMP_PATH):
         full_path = os.path.join(TEMP_PATH, f)
+        if os.path.isdir(full_path):
+            continue
         hashed_file_path = hash_file(full_path)
         signed_file_path = sign_file(hashed_file_path)
         s3_path = s3_path_prefix / os.path.basename(signed_file_path)

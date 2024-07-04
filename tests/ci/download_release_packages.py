@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 
-import os
 import logging
+import os
 
 import requests
-
 from requests.adapters import HTTPAdapter  # type: ignore
 from urllib3.util.retry import Retry  # type: ignore
 
@@ -19,10 +18,10 @@ CLICKHOUSE_COMMON_STATIC_PACKAGE_NAME = "clickhouse-common-static_{version}_amd6
 CLICKHOUSE_COMMON_STATIC_DBG_PACKAGE_NAME = (
     "clickhouse-common-static-dbg_{version}_amd64.deb"
 )
-CLICKHOUSE_SERVER_PACKAGE_NAME = "clickhouse-server_{version}_amd64.deb"
-CLICKHOUSE_SERVER_PACKAGE_FALLBACK = "clickhouse-server_{version}_all.deb"
 CLICKHOUSE_CLIENT_PACKAGE_NAME = "clickhouse-client_{version}_amd64.deb"
-CLICKHOUSE_CLIENT_PACKAGE_FALLBACK = "clickhouse-client_{version}_all.deb"
+CLICKHOUSE_LIBRARY_BRIDGE_PACKAGE_NAME = "clickhouse-library-bridge_{version}_amd64.deb"
+CLICKHOUSE_ODBC_BRIDGE_PACKAGE_NAME = "clickhouse-odbc-bridge_{version}_amd64.deb"
+CLICKHOUSE_SERVER_PACKAGE_NAME = "clickhouse-server_{version}_amd64.deb"
 
 PACKAGES_DIR = "previous_release_package_folder/"
 VERSION_PATTERN = r"((?:\d+\.)?(?:\d+\.)?(?:\d+\.)?\d+-[a-zA-Z]*)"
@@ -59,25 +58,14 @@ def download_packages(release, dest_path=PACKAGES_DIR):
     for pkg in (
         CLICKHOUSE_COMMON_STATIC_PACKAGE_NAME,
         CLICKHOUSE_COMMON_STATIC_DBG_PACKAGE_NAME,
+        CLICKHOUSE_CLIENT_PACKAGE_NAME,
+        CLICKHOUSE_LIBRARY_BRIDGE_PACKAGE_NAME,
+        CLICKHOUSE_ODBC_BRIDGE_PACKAGE_NAME,
+        CLICKHOUSE_SERVER_PACKAGE_NAME,
     ):
         url = (DOWNLOAD_PREFIX + pkg).format(version=release.version, type=release.type)
         pkg_name = get_dest_path(pkg.format(version=release.version))
         download_package(url, pkg_name)
-
-    for pkg, fallback in (
-        (CLICKHOUSE_SERVER_PACKAGE_NAME, CLICKHOUSE_SERVER_PACKAGE_FALLBACK),
-        (CLICKHOUSE_CLIENT_PACKAGE_NAME, CLICKHOUSE_CLIENT_PACKAGE_FALLBACK),
-    ):
-        url = (DOWNLOAD_PREFIX + pkg).format(version=release.version, type=release.type)
-        pkg_name = get_dest_path(pkg.format(version=release.version))
-        try:
-            download_package(url, pkg_name)
-        except Exception:
-            url = (DOWNLOAD_PREFIX + fallback).format(
-                version=release.version, type=release.type
-            )
-            pkg_name = get_dest_path(fallback.format(version=release.version))
-            download_package(url, pkg_name)
 
 
 def download_last_release(dest_path):
