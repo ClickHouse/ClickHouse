@@ -736,17 +736,8 @@ public:
         NumberType value;
 
         tryGetNumericValueFromJSONElement<JSONParser, NumberType>(value, element, convert_bool_to_integer, error);
-
-        if (dest.getDataType() == TypeIndex::LowCardinality)
-        {
-            ColumnLowCardinality & col_low = assert_cast<ColumnLowCardinality &>(dest);
-            col_low.insertData(reinterpret_cast<const char *>(&value), sizeof(value));
-        }
-        else
-        {
-            auto & col_vec = assert_cast<ColumnVector<NumberType> &>(dest);
-            col_vec.insertValue(value);
-        }
+        auto & col_vec = assert_cast<ColumnVector<NumberType> &>(dest);
+        col_vec.insertValue(value);
         return true;
     }
 };
