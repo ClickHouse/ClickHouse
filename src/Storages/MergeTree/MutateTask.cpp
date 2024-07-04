@@ -72,8 +72,6 @@ static bool haveMutationsOfDynamicColumns(const MergeTreeData::DataPartPtr & dat
             if (column && column->type->hasDynamicSubcolumns())
                 return true;
         }
-        if (command.type == MutationCommand::Type::MATERIALIZE_COLUMNS)
-            return true;
     }
 
     return false;

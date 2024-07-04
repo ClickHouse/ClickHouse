@@ -11,7 +11,17 @@ alter table z materialize projection pp settings mutations_sync=1;
 
 SELECT name, partition, formatReadableSize(sum(data_compressed_bytes) AS size) AS compressed, formatReadableSize(sum(data_uncompressed_bytes) AS usize) AS uncompressed, round(usize / size, 2) AS compr_rate, sum(rows) AS rows, count() AS part_count FROM system.projection_parts WHERE database = currentDatabase() and table = 'z' AND active GROUP BY name, partition ORDER BY size DESC;
 
-alter table z add projection pp1 (select id, sum(c) group by id);
+alter table z add projection pp1 (select id, count(c) group by id);
 alter table z materialize projections settings mutations_sync=1;
+
+-- wait for the materialized data stored on disk
+SELECT sleep(3);
+SELECT COUNT(c) FROM z WHERE id = 10;
+
+SYSTEM FLUSH LOGS;
+SELECT read_rows FROM system.query_log
+WHERE current_database = currentDatabase()
+  AND query LIKE '%SELECT COUNT%'
+  AND type = 'QueryFinish';
 
 drop table z;
