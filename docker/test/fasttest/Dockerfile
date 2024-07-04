@@ -36,6 +36,8 @@ RUN ln -s /usr/bin/lld-${LLVM_VERSION} /usr/bin/ld.lld
 # FIXME: workaround for "The imported target "merge-fdata" references the file" error
 # https://salsa.debian.org/pkg-llvm-team/llvm-toolchain/-/commit/992e52c0b156a5ba9c6a8a54f8c4857ddd3d371d
 RUN sed -i '/_IMPORT_CHECK_FILES_FOR_\(mlir-\|llvm-bolt\|merge-fdata\|MLIR\)/ {s|^|#|}' /usr/lib/llvm-${LLVM_VERSION}/lib/cmake/llvm/LLVMExports-*.cmake
+# LLVM changes paths for compiler-rt libraries. For some reason clang-18.1.8 cannot catch up libraries from default install path.
+# It's very dirty workaround, better to build compiler and LLVM ourself and use it.
 RUN ls /usr/lib/llvm-18/lib/clang/18/lib/aarch64-unknown-linux-gnu 2>/dev/null 1>/dev/null && ln -s /usr/lib/llvm-18/lib/clang/18/lib/aarch64-unknown-linux-gnu /usr/lib/llvm-18/lib/clang/18/lib/linux 2>/dev/null ||:
 RUN ls /usr/lib/llvm-18/lib/clang/18/lib/x86_64-pc-linux-gnu 2>/dev/null 1>/dev/null && ln -s /usr/lib/llvm-18/lib/clang/18/lib/x86_64-pc-linux-gnu /usr/lib/llvm-18/lib/clang/18/lib/linux 2>/dev/null ||:
 
