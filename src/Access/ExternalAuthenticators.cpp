@@ -261,7 +261,7 @@ HTTPAuthClientParams parseHTTPAuthParams(const Poco::Util::AbstractConfiguration
     return http_auth_params;
 }
 
-std::unique_ptr<DB::IJWTVerifier> makeJWTVerifier(const Poco::Util::AbstractConfiguration & config, const String & prefix, const String &global_settings_key)
+std::unique_ptr<DB::IJWTVerifier> makeJWTVerifier(const Poco::Util::AbstractConfiguration & config, const String & prefix, const String &name, const String &global_settings_key)
 {
     auto settings_key = String(global_settings_key);
     if (config.hasProperty(prefix + ".settings_key"))
@@ -272,14 +272,14 @@ std::unique_ptr<DB::IJWTVerifier> makeJWTVerifier(const Poco::Util::AbstractConf
         SimpleJWTVerifierParams params = {};
         params.settings_key = settings_key;
         params.algo = config.getString(prefix + ".algo");
-        params.single_key = config.getString(prefix + ".single_key");
-        params.single_key_in_base64 = config.getBool(prefix + ".single_key_in_base64");
-        params.public_key = config.getString(prefix + ".public_key");
-        params.private_key = config.getString(prefix + ".private_key");
-        params.public_key_password = config.getString(prefix + ".public_key_password");
-        params.private_key_password = config.getString(prefix + ".private_key_password");
+        params.single_key = config.getString(prefix + ".single_key", "");
+        params.single_key_in_base64 = config.getBool(prefix + ".single_key_in_base64", false);
+        params.public_key = config.getString(prefix + ".public_key", "");
+        params.private_key = config.getString(prefix + ".private_key", "");
+        params.public_key_password = config.getString(prefix + ".public_key_password", "");
+        params.private_key_password = config.getString(prefix + ".private_key_password", "");
         params.validate();
-        auto result = std::make_unique<SimpleJWTVerifier>();
+        auto result = std::make_unique<SimpleJWTVerifier>(name);
         result->init(params);
         return result;
     }
@@ -305,17 +305,19 @@ std::unique_ptr<DB::IJWTVerifier> makeJWTVerifier(const Poco::Util::AbstractConf
         params.refresh_ms = config.getInt(prefix + ".refrest_ms", 300000);
         provider = std::make_shared<JWKSClient>(params);
     }
-    else if (config.hasProperty(prefix + ".static_key"))
+    else if (config.hasProperty(prefix + ".static_jwks") || config.hasProperty(prefix + ".static_jwks_file"))
     {
         StaticJWKSParams params;
-        params.static_jwks = config.getString(prefix + ".static_key");
+        params.static_jwks = config.getString(prefix + ".static_jwks", "");
+        params.static_jwks_file = config.getString(prefix + ".static_jwks_file", "");
+        params.validate();
         auto instance = std::make_shared<StaticJWKS>();
         instance->init(params);
         provider = instance;
     }
     else
         throw DB::Exception(ErrorCodes::BAD_ARGUMENTS, "unsupported configuration");
-    auto result = std::make_unique<JWKSVerifier>(provider);
+    auto result = std::make_unique<JWKSVerifier>(name, provider);
     JWTVerifierParams params = {.settings_key = settings_key};
     result->init(params);
     return result;
@@ -462,7 +464,7 @@ void ExternalAuthenticators::setConfiguration(const Poco::Util::AbstractConfigur
         String prefix = fmt::format("{}.{}", jwt_verifiers_config, jwt_verifier);
         try
         {
-            jwt_verifiers[jwt_verifier] = makeJWTVerifier(config, prefix, jwt_verifier_settings_key);
+            jwt_verifiers[jwt_verifier] = makeJWTVerifier(config, prefix, jwt_verifier, jwt_verifier_settings_key);
         }
         catch (...)
         {
@@ -652,13 +654,15 @@ bool ExternalAuthenticators::checkJWTCredentials(const String &claims, const JWT
     std::lock_guard lock{mutex};
 
     const auto token = String(credentials.getToken());
+    const auto &user_name = credentials.getUserName();
     for (const auto &it : jwt_verifiers)
     {
         if (it.second->verify(claims, token, settings))
         {
-            LOG_DEBUG(getLogger("JWTAuth"), "success auth with JWT for {} by {}", credentials.getUserName(), it.first);
+            LOG_DEBUG(getLogger("JWTAuth"), "success auth with JWT for {} by {}", user_name, it.first);
             return true;
         }
+        LOG_TRACE(getLogger("JWTAuth"), "failed auth with JWT for {} by {}", user_name, it.first);
     }
     return false;
 }

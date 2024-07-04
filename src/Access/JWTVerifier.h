@@ -24,13 +24,16 @@ struct JWTVerifierParams
 class IJWTVerifier
 {
 public:
-    IJWTVerifier() = default;
+    explicit IJWTVerifier(const String & _name)
+        : name(_name)
+    {}
     void init(const JWTVerifierParams &_params);
     bool verify(const String &claims, const String &token, SettingsChanges & settings) const;
     virtual ~IJWTVerifier() = default;
 protected:
     virtual bool verify_impl(const jwt::decoded_jwt<jwt::traits::kazuho_picojson> &token) const = 0;
     JWTVerifierParams params;
+    const String name;
 };
 
 struct SimpleJWTVerifierParams:
@@ -49,7 +52,7 @@ struct SimpleJWTVerifierParams:
 class SimpleJWTVerifier: public IJWTVerifier
 {
 public:
-    SimpleJWTVerifier();
+    explicit SimpleJWTVerifier(const String & _name);
     void init(const SimpleJWTVerifierParams & _params);
 private:
     bool verify_impl(const jwt::decoded_jwt<jwt::traits::kazuho_picojson> &token) const override;
@@ -66,7 +69,7 @@ public:
 class JWKSVerifier: public IJWTVerifier
 {
 public:
-    explicit JWKSVerifier(std::shared_ptr<IJWKSProvider> _provider);
+    explicit JWKSVerifier(const String & _name, std::shared_ptr<IJWKSProvider> _provider);
 private:
     bool verify_impl(const jwt::decoded_jwt<jwt::traits::kazuho_picojson> &token) const override;
 
@@ -115,6 +118,8 @@ private:
 struct StaticJWKSParams
 {
     String static_jwks;
+    String static_jwks_file;
+    void validate() const;
 };
 
 class StaticJWKS: public IJWKSProvider

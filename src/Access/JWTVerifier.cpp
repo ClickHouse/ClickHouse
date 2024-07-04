@@ -1,13 +1,16 @@
 #include "JWTVerifier.h"
+#include <exception>
 #include <map>
 #include <utility>
 #include <absl/strings/match.h>
 #include <jwt-cpp/jwt.h>
+#include <jwt-cpp/traits/kazuho-picojson/traits.h>
 #include <picojson/picojson.h>
 #include "Poco/StreamCopier.h"
 #include <Poco/String.h>
 #include "Common/Base64.h"
 #include "Common/Exception.h"
+#include "Common/logger_useful.h"
 
 namespace DB
 {
@@ -227,9 +230,9 @@ void IJWTVerifier::init(const JWTVerifierParams &_params)
 
 bool IJWTVerifier::verify(const String &claims, const String &token, SettingsChanges & settings) const
 {
-    auto decoded_jwt = jwt::decode(token);
     try
     {
+        auto decoded_jwt = jwt::decode(token);
         if (!verify_impl(decoded_jwt))
             return false;
         if (!check_claims(claims, decoded_jwt.get_payload_json()))
@@ -243,9 +246,9 @@ bool IJWTVerifier::verify(const String &claims, const String &token, SettingsCha
             settings.insertSetting(it.first, it.second);
         return true;
     }
-    catch (...)
+    catch (const std::exception &ex)
     {
-        tryLogCurrentException(getLogger("JWTAuthentication"), "Failed to validate jwt");
+        LOG_TRACE(getLogger("JWTAuthentication"), "{}: Failed to validate jwt: {}",name, ex.what());
     }
     return false;
 }
@@ -283,8 +286,9 @@ void SimpleJWTVerifierParams::validate() const
     throw DB::Exception(ErrorCodes::BAD_ARGUMENTS, "unknown algo {}", algo);
 }
 
-SimpleJWTVerifier::SimpleJWTVerifier()
-    : verifier(jwt::verify())
+SimpleJWTVerifier::SimpleJWTVerifier(const String & _name)
+    : IJWTVerifier(_name)
+    , verifier(jwt::verify())
 {}
 
 void SimpleJWTVerifier::init(const SimpleJWTVerifierParams & _params)
@@ -342,8 +346,9 @@ bool SimpleJWTVerifier::verify_impl(const jwt::decoded_jwt<jwt::traits::kazuho_p
     return true;
 }
 
-JWKSVerifier::JWKSVerifier(std::shared_ptr<IJWKSProvider> _provider)
-    : provider(_provider)
+JWKSVerifier::JWKSVerifier(const String & _name, std::shared_ptr<IJWKSProvider> _provider)
+    : IJWTVerifier(_name)
+    , provider(_provider)
 {}
 
 bool JWKSVerifier::verify_impl(const jwt::decoded_jwt<jwt::traits::kazuho_picojson> &token) const
@@ -358,12 +363,12 @@ bool JWKSVerifier::verify_impl(const jwt::decoded_jwt<jwt::traits::kazuho_picojs
     String public_key;
     if (!x5c.empty() && !issuer.empty())
     {
-        LOG_TRACE(getLogger("JWTAuthentication"), "Verifying {} with 'x5c' key", subject);
+        LOG_TRACE(getLogger("JWTAuthentication"), "{}: Verifying {} with 'x5c' key", name, subject);
         public_key = jwt::helper::convert_base64_der_to_pem(x5c);
     }
     else
     {
-        LOG_TRACE(getLogger("JWTAuthentication"), "Verifying {} with RSA components", subject);
+        LOG_TRACE(getLogger("JWTAuthentication"), "{}: Verifying {} with RSA components", name, subject);
         const auto modulus = jwk.get_jwk_claim("n").as_string();
         const auto exponent = jwk.get_jwk_claim("e").as_string();
         public_key = jwt::helper::create_public_key_from_rsa_components(modulus, exponent);
@@ -447,9 +452,24 @@ JWKSResponseParser::parse(const Poco::Net::HTTPResponse & response, std::istream
     return result;
 }
 
+void StaticJWKSParams::validate() const
+{
+    if (static_jwks.empty() && static_jwks_file.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "`static_jwks` or `static_jwks_file` keys must be present");
+    if (!static_jwks.empty() && !static_jwks_file.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Only one of the static_jwks or static_jwks_file keys must be present");
+}
+
 void StaticJWKS::init(const StaticJWKSParams& params)
 {
-    auto keys = jwt::parse_jwks(params.static_jwks);
+    params.validate();
+    String content = String(params.static_jwks);
+    if (!params.static_jwks_file.empty())
+    {
+        std::ifstream ifs(params.static_jwks_file);
+        content = String((std::istreambuf_iterator<char>(ifs)), (std::istreambuf_iterator<char>()));
+    }
+    auto keys = jwt::parse_jwks(content);
     jwks = std::move(keys);
 }
 

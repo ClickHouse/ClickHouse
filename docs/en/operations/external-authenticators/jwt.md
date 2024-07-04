@@ -65,17 +65,22 @@ To enable JWT validators, one should include `jwt_verifiers` section in `config.
     <!- ... -->
     <jwt_verifiers>
         <basic_jwt_validator>
-          <static_key>CONTENT_OF_JWKS</static_key>
+          <static_jwks>CONTENT_OF_JWKS</static_jwks>
         </basic_jwt_validator>
     </jwt_verifiers>
 </clickhouse>
 ```
 
 #### Parameters:
-- `static_key` - content of JWKS in json
+- `static_jwks` - content of JWKS in json
+- `static_jwks_file` - path to file with JWKS
 
 :::note
 Supported only RS* family algorithms
+:::
+
+:::note
+Only one of `static_jwks` or `static_jwks_file` keys must be present in one verifier
 :::
 
 ### Verifying JWT signature using JWKS servers {$verifying-jwt-signature-using-static-jwks}
