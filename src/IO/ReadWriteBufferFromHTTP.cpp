@@ -717,10 +717,6 @@ ReadWriteBufferFromHTTP::HTTPFileInfo ReadWriteBufferFromHTTP::getFileInfo()
             e.getHTTPStatus() != Poco::Net::HTTPResponse::HTTP_REQUEST_TIMEOUT &&
             e.getHTTPStatus() != Poco::Net::HTTPResponse::HTTP_MISDIRECTED_REQUEST)
         {
-            LOG_DEBUG(log,
-                      "HEAD request to '{}'{} failed with HTTP status {}",
-                      initial_uri.toString(), current_uri == initial_uri ? String() : fmt::format(" redirect to '{}'", current_uri.toString()),
-                      e.getHTTPStatus());
             return HTTPFileInfo{};
         }
 
