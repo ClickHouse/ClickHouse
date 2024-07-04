@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-fasttest
+# Tag no-fasttest: this test relies on the timeouts, it always takes no less that 4 seconds to run
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -12,11 +14,12 @@ errors_111=$($CLICKHOUSE_CLIENT -q "SELECT sum(value) FROM system.error_log WHER
 errors_222=$($CLICKHOUSE_CLIENT -q "SELECT sum(value) FROM system.error_log WHERE code = 222")
 errors_333=$($CLICKHOUSE_CLIENT -q "SELECT sum(value) FROM system.error_log WHERE code = 333")
 
-# Throw three random errors: 111, 222 and 333 and call flush logs to ensure system.error_log is flushed
+# Throw three random errors: 111, 222 and 333 and wait for more than collect_interval_milliseconds to ensure system.error_log is flushed
 $CLICKHOUSE_CLIENT -mn -q "
 SELECT throwIf(true, 'error_log', toInt16(111)) SETTINGS allow_custom_error_code_in_throwif=1; -- { serverError 111 }
 SELECT throwIf(true, 'error_log', toInt16(222)) SETTINGS allow_custom_error_code_in_throwif=1; -- { serverError 222 }
 SELECT throwIf(true, 'error_log', toInt16(333)) SETTINGS allow_custom_error_code_in_throwif=1; -- { serverError 333 }
+SELECT sleep(2) format NULL;
 SYSTEM FLUSH LOGS;
 "
 
@@ -32,6 +35,7 @@ $CLICKHOUSE_CLIENT -mn -q "
 SELECT throwIf(true, 'error_log', toInt16(111)) SETTINGS allow_custom_error_code_in_throwif=1; -- { serverError 111 }
 SELECT throwIf(true, 'error_log', toInt16(222)) SETTINGS allow_custom_error_code_in_throwif=1; -- { serverError 222 }
 SELECT throwIf(true, 'error_log', toInt16(333)) SETTINGS allow_custom_error_code_in_throwif=1; -- { serverError 333 }
+SELECT sleep(2) format NULL;
 SYSTEM FLUSH LOGS;
 "
 
