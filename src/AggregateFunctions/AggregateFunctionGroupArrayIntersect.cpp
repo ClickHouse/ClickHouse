@@ -111,14 +111,12 @@ public:
             return;
 
         UInt64 version = this->data(place).version++;
-        if (version == 0)
+        if (version == 1)
         {
             for (auto & rhs_elem : rhs_set)
                 set.insert(rhs_elem.getValue());
-            return;
         }
-
-        if (!set.empty())
+        else if (!set.empty())
         {
             auto create_new_set = [](auto & lhs_val, auto & rhs_val)
             {
@@ -150,8 +148,18 @@ public:
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
     {
-        readVarUInt(this->data(place).version, buf);
-        this->data(place).value.read(buf);
+        auto & set = this->data(place).value;
+        auto & version = this->data(place).version;
+        size_t size;
+        readVarUInt(version, buf);
+        readVarUInt(size, buf);
+        set.reserve(size);
+        for (size_t i = 0; i < size; ++i)
+        {
+            int key;
+            readIntBinary(key, buf);
+            set.insert(key);
+        }
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
@@ -270,30 +278,28 @@ public:
             return;
 
         UInt64 version = this->data(place).version++;
-        if (version == 0)
+        if (version == 1)
         {
             bool inserted;
             State::Set::LookupResult it;
             for (auto & rhs_elem : rhs_value)
-            {
                 set.emplace(ArenaKeyHolder{rhs_elem.getValue(), *arena}, it, inserted);
-            }
         }
         else if (!set.empty())
         {
-            auto create_new_map = [](auto & lhs_val, auto & rhs_val)
+            auto create_matched_set = [](auto & lhs_val, auto & rhs_val)
             {
-                typename State::Set new_map;
-                for (auto & lhs_elem : lhs_val)
+                typename State::Set new_set;
+                for (const auto & lhs_elem : lhs_val)
                 {
-                    auto val = rhs_val.find(lhs_elem.getValue());
-                    if (val != nullptr)
-                        new_map.insert(lhs_elem.getValue());
+                    auto is_match = rhs_val.find(lhs_elem.getValue());
+                    if (is_match != nullptr)
+                        new_set.insert(lhs_elem.getValue());
                 }
-                return new_map;
+                return new_set;
             };
-            auto new_map = rhs_value.size() < set.size() ? create_new_map(rhs_value, set) : create_new_map(set, rhs_value);
-            set = std::move(new_map);
+            auto matched_set = rhs_value.size() < set.size() ? create_matched_set(rhs_value, set) : create_matched_set(set, rhs_value);
+            set = std::move(matched_set);
         }
     }
 
@@ -316,11 +322,9 @@ public:
         readVarUInt(version, buf);
         readVarUInt(size, buf);
         set.reserve(size);
-        UInt64 elem_version;
         for (size_t i = 0; i < size; ++i)
         {
             auto key = readStringBinaryInto(*arena, buf);
-            readVarUInt(elem_version, buf);
             set.insert(key);
         }
     }
