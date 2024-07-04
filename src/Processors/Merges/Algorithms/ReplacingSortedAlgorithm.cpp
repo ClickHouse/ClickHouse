@@ -17,7 +17,7 @@ namespace ErrorCodes
 
 static IMergingAlgorithm::Status emitChunk(detail::SharedChunkPtr & chunk, bool finished = false)
 {
-    chunk->setChunkInfo(std::make_shared<ChunkSelectFinalIndices>(std::move(chunk->replace_final_selection)));
+    chunk->getChunkInfos().add(std::make_shared<ChunkSelectFinalIndices>(std::move(chunk->replace_final_selection)));
     return IMergingAlgorithm::Status(std::move(*chunk), finished);
 }
 
