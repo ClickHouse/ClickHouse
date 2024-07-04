@@ -17,7 +17,6 @@
 #include <QueryPipeline/Pipe.h>
 #include <Processors/Sources/MongoDBSource.h>
 #include <Processors/Sinks/SinkToStorage.h>
-#include <unordered_set>
 
 #include <DataTypes/DataTypeArray.h>
 
@@ -107,12 +106,12 @@ public:
 
     String getName() const override { return "StorageMongoDBSink"; }
 
-    void consume(Chunk chunk) override
+    void consume(Chunk & chunk) override
     {
         Poco::MongoDB::Database db(db_name);
         Poco::MongoDB::Document::Vector documents;
 
-        auto block = getHeader().cloneWithColumns(chunk.detachColumns());
+        auto block = getHeader().cloneWithColumns(chunk.getColumns());
 
         size_t num_rows = block.rows();
         size_t num_cols = block.columns();
