@@ -36,40 +36,47 @@ void IObjectStorageIteratorAsync::deactivate()
 void IObjectStorageIteratorAsync::nextBatch()
 {
     std::lock_guard lock(mutex);
-    if (is_finished)
+
+    if (!has_next_batch)
     {
         current_batch.clear();
         current_batch_iterator = current_batch.begin();
+        is_finished = true;
+        return;
     }
-    else
-    {
-        if (!is_initialized)
-        {
-            outcome_future = scheduleBatch();
-            is_initialized = true;
-        }
 
+    if (!is_initialized)
+    {
+        outcome_future = scheduleBatch();
+        is_initialized = true;
+    }
+
+    try
+    {
         chassert(outcome_future.valid());
-        BatchAndHasNext result;
-        try
-        {
-            result = outcome_future.get();
-        }
-        catch (...)
-        {
-            is_finished = true;
-            throw;
-        }
+        BatchAndHasNext result = outcome_future.get();
 
         current_batch = std::move(result.batch);
         current_batch_iterator = current_batch.begin();
 
-        accumulated_size.fetch_add(current_batch.size(), std::memory_order_relaxed);
-
-        if (result.has_next)
-            outcome_future = scheduleBatch();
-        else
+        if (current_batch.empty())
+        {
             is_finished = true;
+            has_next_batch = false;
+        }
+        else
+        {
+            accumulated_size.fetch_add(current_batch.size(), std::memory_order_relaxed);
+
+            has_next_batch = result.has_next;
+            if (has_next_batch)
+                outcome_future = scheduleBatch();
+        }
+    }
+    catch (...)
+    {
+        has_next_batch = false;
+        throw;
     }
 }
 
@@ -77,10 +84,12 @@ void IObjectStorageIteratorAsync::next()
 {
     std::lock_guard lock(mutex);
 
+    if (is_finished)
+        return;
+
+    ++current_batch_iterator;
     if (current_batch_iterator == current_batch.end())
         nextBatch();
-    else
-        ++current_batch_iterator;
 }
 
 std::future<IObjectStorageIteratorAsync::BatchAndHasNext> IObjectStorageIteratorAsync::scheduleBatch()
@@ -95,35 +104,39 @@ std::future<IObjectStorageIteratorAsync::BatchAndHasNext> IObjectStorageIterator
 
 bool IObjectStorageIteratorAsync::isValid()
 {
+    std::lock_guard lock(mutex);
+
     if (!is_initialized)
         nextBatch();
 
-    std::lock_guard lock(mutex);
-    return current_batch_iterator != current_batch.end();
+    return !is_finished;
 }
 
 RelativePathWithMetadataPtr IObjectStorageIteratorAsync::current()
 {
+    std::lock_guard lock(mutex);
+
     if (!isValid())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to access invalid iterator");
 
-    std::lock_guard lock(mutex);
     return *current_batch_iterator;
 }
 
 
 RelativePathsWithMetadata IObjectStorageIteratorAsync::currentBatch()
 {
+    std::lock_guard lock(mutex);
+
     if (!isValid())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to access invalid iterator");
 
-    std::lock_guard lock(mutex);
     return current_batch;
 }
 
 std::optional<RelativePathsWithMetadata> IObjectStorageIteratorAsync::getCurrentBatchAndScheduleNext()
 {
     std::lock_guard lock(mutex);
+
     if (!is_initialized)
         nextBatch();
 

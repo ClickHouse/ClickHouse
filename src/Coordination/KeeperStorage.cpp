@@ -41,6 +41,8 @@ namespace ProfileEvents
     extern const Event KeeperGetRequest;
     extern const Event KeeperListRequest;
     extern const Event KeeperExistsRequest;
+    extern const Event KeeperPreprocessElapsedMicroseconds;
+    extern const Event KeeperProcessElapsedMicroseconds;
 }
 
 namespace DB
@@ -619,6 +621,10 @@ bool KeeperStorage<Container>::UncommittedState::hasACL(int64_t session_id, bool
     if (is_local)
         return check_auth(storage.session_and_auth[session_id]);
 
+    /// we want to close the session and with that we will remove all the auth related to the session
+    if (closed_sessions.contains(session_id))
+        return false;
+
     if (check_auth(storage.session_and_auth[session_id]))
         return true;
 
@@ -644,6 +650,10 @@ void KeeperStorage<Container>::UncommittedState::addDelta(Delta new_delta)
     {
         auto & uncommitted_auth = session_and_auth[auth_delta->session_id];
         uncommitted_auth.emplace_back(&auth_delta->auth_id);
+    }
+    else if (const auto * close_session_delta = std::get_if<CloseSessionDelta>(&added_delta.operation))
+    {
+        closed_sessions.insert(close_session_delta->session_id);
     }
 }
 
@@ -697,7 +707,10 @@ void KeeperStorage<Container>::UncommittedState::commit(int64_t commit_zxid)
             uncommitted_auth.pop_front();
             if (uncommitted_auth.empty())
                 session_and_auth.erase(add_auth->session_id);
-
+        }
+        else if (auto * close_session = std::get_if<CloseSessionDelta>(&front_delta.operation))
+        {
+            closed_sessions.erase(close_session->session_id);
         }
 
         deltas.pop_front();
@@ -770,6 +783,10 @@ void KeeperStorage<Container>::UncommittedState::rollback(int64_t rollback_zxid)
                 if (uncommitted_auth.empty())
                     session_and_auth.erase(add_auth->session_id);
             }
+        }
+        else if (auto * close_session = std::get_if<CloseSessionDelta>(&delta_it->operation))
+        {
+           closed_sessions.erase(close_session->session_id);
         }
     }
 
@@ -974,6 +991,10 @@ Coordination::Error KeeperStorage<Container>::commit(int64_t commit_zxid)
                     session_and_auth[operation.session_id].emplace_back(std::move(operation.auth_id));
                     return Coordination::Error::ZOK;
                 }
+                else if constexpr (std::same_as<DeltaType, KeeperStorage::CloseSessionDelta>)
+                {
+                    return Coordination::Error::ZOK;
+                }
                 else
                 {
                     // shouldn't be called in any process functions
@@ -1118,9 +1139,11 @@ struct KeeperStorageHeartbeatRequestProcessor final : public KeeperStorageReques
     using KeeperStorageRequestProcessor<Storage>::KeeperStorageRequestProcessor;
 
     Coordination::ZooKeeperResponsePtr
-    process(Storage & /* storage */, int64_t /* zxid */) const override
+    process(Storage & storage, int64_t zxid) const override
     {
-        return this->zk_request->makeResponse();
+        Coordination::ZooKeeperResponsePtr response_ptr = this->zk_request->makeResponse();
+        response_ptr->error = storage.commit(zxid);
+        return response_ptr;
     }
 };
 
@@ -2451,6 +2474,20 @@ void KeeperStorage<Container>::preprocessRequest(
     std::optional<Digest> digest,
     int64_t log_idx)
 {
+    Stopwatch watch;
+    SCOPE_EXIT({
+        auto elapsed = watch.elapsedMicroseconds();
+        if (auto elapsed_ms = elapsed / 1000; elapsed_ms > keeper_context->getCoordinationSettings()->log_slow_cpu_threshold_ms)
+        {
+            LOG_INFO(
+                getLogger("KeeperStorage"),
+                "Preprocessing a request took too long ({}ms).\nRequest info: {}",
+                elapsed_ms,
+                zk_request->toString(/*short_format=*/true));
+        }
+        ProfileEvents::increment(ProfileEvents::KeeperPreprocessElapsedMicroseconds, elapsed);
+    });
+
     if (!initialized)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "KeeperStorage system nodes are not initialized");
 
@@ -2530,6 +2567,7 @@ void KeeperStorage<Container>::preprocessRequest(
             ephemerals.erase(session_ephemerals);
         }
 
+        new_deltas.emplace_back(transaction.zxid, CloseSessionDelta{session_id});
         new_digest = calculateNodesDigest(new_digest, new_deltas);
         return;
     }
@@ -2551,6 +2589,20 @@ KeeperStorage<Container>::ResponsesForSessions KeeperStorage<Container>::process
     bool check_acl,
     bool is_local)
 {
+    Stopwatch watch;
+    SCOPE_EXIT({
+        auto elapsed = watch.elapsedMicroseconds();
+        if (auto elapsed_ms = elapsed / 1000; elapsed_ms > keeper_context->getCoordinationSettings()->log_slow_cpu_threshold_ms)
+        {
+            LOG_INFO(
+                getLogger("KeeperStorage"),
+                "Processing a request took too long ({}ms).\nRequest info: {}",
+                elapsed_ms,
+                zk_request->toString(/*short_format=*/true));
+        }
+        ProfileEvents::increment(ProfileEvents::KeeperProcessElapsedMicroseconds, elapsed);
+    });
+
     if (!initialized)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "KeeperStorage system nodes are not initialized");
 
@@ -2591,8 +2643,6 @@ KeeperStorage<Container>::ResponsesForSessions KeeperStorage<Container>::process
                 results.insert(results.end(), responses.begin(), responses.end());
             }
         }
-
-        uncommitted_state.commit(zxid);
 
         clearDeadWatches(session_id);
         auto auth_it = session_and_auth.find(session_id);
@@ -2638,7 +2688,6 @@ KeeperStorage<Container>::ResponsesForSessions KeeperStorage<Container>::process
         else
         {
             response = request_processor->process(*this, zxid);
-            uncommitted_state.commit(zxid);
         }
 
         /// Watches for this requests are added to the watches lists
@@ -2678,6 +2727,7 @@ KeeperStorage<Container>::ResponsesForSessions KeeperStorage<Container>::process
         results.push_back(ResponseForSession{session_id, response});
     }
 
+    uncommitted_state.commit(zxid);
     return results;
 }
 

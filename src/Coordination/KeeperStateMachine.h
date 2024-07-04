@@ -253,8 +253,7 @@ private:
     /// Save/Load and Serialize/Deserialize logic for snapshots.
     KeeperSnapshotManager<Storage> snapshot_manager;
 
-    KeeperStorageBase::ResponseForSession processReconfiguration(
-        const KeeperStorageBase::RequestForSession& request_for_session)
+    KeeperStorageBase::ResponseForSession processReconfiguration(const KeeperStorageBase::RequestForSession & request_for_session)
         TSA_REQUIRES(storage_and_responses_lock) override;
 };
 }

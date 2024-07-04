@@ -41,11 +41,11 @@ void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemo
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot alter table {} because it was created AS table function"
                                                      " and doesn't have structure in metadata", backQuote(ast_create_query.getTable()));
 
-    if (!has_structure && !ast_create_query.is_dictionary)
+    if (!has_structure && !ast_create_query.is_dictionary && !ast_create_query.isParameterizedView())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot alter table {} metadata doesn't have structure",
                         backQuote(ast_create_query.getTable()));
 
-    if (!ast_create_query.is_dictionary)
+    if (!ast_create_query.is_dictionary && !ast_create_query.isParameterizedView())
     {
         ASTPtr new_columns = InterpreterCreateQuery::formatColumns(metadata.columns);
         ASTPtr new_indices = InterpreterCreateQuery::formatIndices(metadata.secondary_indices);
@@ -260,7 +260,9 @@ StoragePtr DatabaseWithOwnTablesBase::detachTableUnlocked(const String & table_n
     res = it->second;
     tables.erase(it);
     res->is_detached = true;
-    CurrentMetrics::sub(getAttachedCounterForStorage(res), 1);
+
+    if (res->isSystemStorage() == false)
+        CurrentMetrics::sub(getAttachedCounterForStorage(res), 1);
 
     auto table_id = res->getStorageID();
     if (table_id.hasUUID())
@@ -301,7 +303,9 @@ void DatabaseWithOwnTablesBase::attachTableUnlocked(const String & table_name, c
     /// It is important to reset is_detached here since in case of RENAME in
     /// non-Atomic database the is_detached is set to true before RENAME.
     table->is_detached = false;
-    CurrentMetrics::add(getAttachedCounterForStorage(table), 1);
+
+    if (table->isSystemStorage() == false && table_id.database_name != DatabaseCatalog::SYSTEM_DATABASE)
+        CurrentMetrics::add(getAttachedCounterForStorage(table), 1);
 }
 
 void DatabaseWithOwnTablesBase::shutdown()
