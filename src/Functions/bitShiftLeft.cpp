@@ -42,7 +42,7 @@ struct BitShiftLeftImpl
         {
             const UInt8 word_size = 8 * sizeof(*pos);
             size_t n = end - pos;
-            const UInt256 bit_limit = word_size * n;
+            const UInt128 bit_limit = static_cast<UInt128>(word_size) * n;
             if (b < 0 || static_cast<decltype(bit_limit)>(b) > bit_limit)
                 throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "The number of shift positions needs to be a non-negative value and less or equal to the bit width of the value to shift");
             else if (b == bit_limit)
@@ -110,7 +110,7 @@ struct BitShiftLeftImpl
         {
             const UInt8 word_size = 8;
             size_t n = end - pos;
-            const UInt256 bit_limit = word_size * n;
+            const UInt128 bit_limit = static_cast<UInt128>(word_size) * n;
             if (b < 0 || static_cast<decltype(bit_limit)>(b) > bit_limit)
                 throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "The number of shift positions needs to be a non-negative value and less or equal to the bit width of the value to shift");
             else if (b == bit_limit)
