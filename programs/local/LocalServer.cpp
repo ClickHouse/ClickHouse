@@ -201,10 +201,10 @@ static DatabasePtr createMemoryDatabaseIfNotExists(ContextPtr context, const Str
 
 static DatabasePtr createClickHouseLocalDatabaseOverlay(const String & name_, ContextPtr context)
 {
-    auto databaseCombiner = std::make_shared<DatabasesOverlay>(name_, context);
-    databaseCombiner->registerNextDatabase(std::make_shared<DatabaseFilesystem>(name_, "", context));
-    databaseCombiner->registerNextDatabase(std::make_shared<DatabaseAtomic>(name_, fs::weakly_canonical(context->getPath()), UUIDHelpers::generateV4(), context));
-    return databaseCombiner;
+    auto overlay = std::make_shared<DatabasesOverlay>(name_, context);
+    overlay->registerNextDatabase(std::make_shared<DatabaseAtomic>(name_, fs::weakly_canonical(context->getPath()), UUIDHelpers::generateV4(), context));
+    overlay->registerNextDatabase(std::make_shared<DatabaseFilesystem>(name_, "", context));
+    return overlay;
 }
 
 /// If path is specified and not empty, will try to setup server environment and load existing metadata

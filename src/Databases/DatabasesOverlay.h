@@ -35,6 +35,14 @@ public:
 
     StoragePtr detachTable(ContextPtr context, const String & table_name) override;
 
+    void renameTable(
+        ContextPtr current_context,
+        const String & name,
+        IDatabase & to_database,
+        const String & to_name,
+        bool exchange,
+        bool dictionary) override;
+
     ASTPtr getCreateTableQueryImpl(const String & name, ContextPtr context, bool throw_on_error) const override;
     ASTPtr getCreateDatabaseQuery() const override;
 
