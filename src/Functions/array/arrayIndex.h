@@ -744,6 +744,9 @@ private:
             nullptr,
             nullptr);
 
+        if (col_array_const)
+            return ColumnConst::create(std::move(col_result), arguments[0].column->size());
+
         return col_result;
     }
 
