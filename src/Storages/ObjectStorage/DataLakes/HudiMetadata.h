@@ -26,6 +26,10 @@ public:
 
     NamesAndTypesList getTableSchema() const override { return {}; }
 
+    const DataLakePartitionColumns & getPartitionColumns() const override { return partition_columns; }
+
+    const std::unordered_map<String, String> & getColumnNameToPhysicalNameMapping() const override { return column_name_to_physical_name; }
+
     bool operator ==(const IDataLakeMetadata & other) const override
     {
         const auto * hudi_metadata = dynamic_cast<const HudiMetadata *>(&other);
@@ -46,6 +50,8 @@ private:
     const ObjectStoragePtr object_storage;
     const ConfigurationPtr configuration;
     mutable Strings data_files;
+    std::unordered_map<String, String> column_name_to_physical_name;
+    DataLakePartitionColumns partition_columns;
 
     Strings getDataFilesImpl() const;
 };

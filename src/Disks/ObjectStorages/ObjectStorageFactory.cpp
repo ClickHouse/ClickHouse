@@ -7,19 +7,17 @@
 #include <Disks/ObjectStorages/S3/S3ObjectStorage.h>
 #include <Disks/ObjectStorages/S3/diskSettings.h>
 #endif
-#if USE_HDFS && !defined(CLICKHOUSE_KEEPER_STANDALONE_BUILD)
+#if USE_HDFS
 #include <Disks/ObjectStorages/HDFS/HDFSObjectStorage.h>
 #include <Storages/ObjectStorage/HDFS/HDFSCommon.h>
 #endif
-#if USE_AZURE_BLOB_STORAGE && !defined(CLICKHOUSE_KEEPER_STANDALONE_BUILD)
+#if USE_AZURE_BLOB_STORAGE
 #include <Disks/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
 #include <Disks/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
 #endif
-#ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD
 #include <Disks/ObjectStorages/Web/WebObjectStorage.h>
 #include <Disks/ObjectStorages/Local/LocalObjectStorage.h>
 #include <Disks/loadLocalDiskConfig.h>
-#endif
 #include <Disks/ObjectStorages/MetadataStorageFactory.h>
 #include <Disks/ObjectStorages/PlainObjectStorage.h>
 #include <Disks/ObjectStorages/PlainRewritableObjectStorage.h>
@@ -284,7 +282,7 @@ void registerS3PlainRewritableObjectStorage(ObjectStorageFactory & factory)
 
 #endif
 
-#if USE_HDFS && !defined(CLICKHOUSE_KEEPER_STANDALONE_BUILD)
+#if USE_HDFS
 void registerHDFSObjectStorage(ObjectStorageFactory & factory)
 {
     factory.registerObjectStorageType(
@@ -309,7 +307,7 @@ void registerHDFSObjectStorage(ObjectStorageFactory & factory)
 }
 #endif
 
-#if USE_AZURE_BLOB_STORAGE && !defined(CLICKHOUSE_KEEPER_STANDALONE_BUILD)
+#if USE_AZURE_BLOB_STORAGE
 void registerAzureObjectStorage(ObjectStorageFactory & factory)
 {
     auto creator = [](
@@ -340,7 +338,6 @@ void registerAzureObjectStorage(ObjectStorageFactory & factory)
 }
 #endif
 
-#ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD
 void registerWebObjectStorage(ObjectStorageFactory & factory)
 {
     factory.registerObjectStorageType("web", [](
@@ -388,7 +385,6 @@ void registerLocalObjectStorage(ObjectStorageFactory & factory)
     factory.registerObjectStorageType("local_blob_storage", creator);
     factory.registerObjectStorageType("local", creator);
 }
-#endif
 
 void registerObjectStorages()
 {
@@ -400,18 +396,16 @@ void registerObjectStorages()
     registerS3PlainRewritableObjectStorage(factory);
 #endif
 
-#if USE_HDFS && !defined(CLICKHOUSE_KEEPER_STANDALONE_BUILD)
+#if USE_HDFS
     registerHDFSObjectStorage(factory);
 #endif
 
-#if USE_AZURE_BLOB_STORAGE && !defined(CLICKHOUSE_KEEPER_STANDALONE_BUILD)
+#if USE_AZURE_BLOB_STORAGE
     registerAzureObjectStorage(factory);
 #endif
 
-#ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD
     registerWebObjectStorage(factory);
     registerLocalObjectStorage(factory);
-#endif
 }
 
 }
