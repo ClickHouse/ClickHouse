@@ -424,14 +424,14 @@ Chunk ObjectStorageQueueSource::generateImpl()
 {
     while (true)
     {
-        if (shutdown_called)
-        {
-            LOG_TRACE(log, "Shutdown was called, stopping sync");
-            break;
-        }
-
         if (!reader)
         {
+            if (shutdown_called)
+            {
+                LOG_TEST(log, "Shutdown called");
+                break;
+            }
+
             const auto context = getContext();
             reader = StorageObjectStorageSource::createReader(
                 processor_id, file_iterator, configuration, object_storage, read_from_format_info,
@@ -448,28 +448,6 @@ Chunk ObjectStorageQueueSource::generateImpl()
         const auto * object_info = dynamic_cast<const ObjectStorageQueueObjectInfo *>(reader.getObjectInfo().get());
         auto file_metadata = object_info->file_metadata;
         auto file_status = file_metadata->getFileStatus();
-
-        if (isCancelled())
-        {
-            reader->cancel();
-
-            if (processed_rows_from_file)
-            {
-                try
-                {
-                    file_metadata->setFailed("Cancelled", /* reduce_retry_count */true, /* overwrite_status */false);
-                }
-                catch (...)
-                {
-                    LOG_ERROR(log, "Failed to set file {} as failed: {}",
-                             object_info->relative_path, getCurrentExceptionMessage(true));
-                }
-            }
-
-            LOG_TEST(log, "Query is cancelled");
-            break;
-        }
-
         const auto & path = reader.getObjectInfo()->getPath();
 
         if (shutdown_called)
@@ -502,6 +480,27 @@ Chunk ObjectStorageQueueSource::generateImpl()
             LOG_DEBUG(log, "Shutdown called, but file {} is partially processed ({} rows). "
                      "Will process the file fully and then shutdown",
                      path, processed_rows_from_file);
+        }
+
+        if (isCancelled())
+        {
+            reader->cancel();
+
+            if (processed_rows_from_file)
+            {
+                try
+                {
+                    file_metadata->setFailed("Cancelled", /* reduce_retry_count */true, /* overwrite_status */false);
+                }
+                catch (...)
+                {
+                    LOG_ERROR(log, "Failed to set file {} as failed: {}",
+                             object_info->relative_path, getCurrentExceptionMessage(true));
+                }
+            }
+
+            LOG_TEST(log, "Query is cancelled");
+            break;
         }
 
         auto * prev_scope = CurrentThread::get().attachProfileCountersScope(&file_status->profile_counters);

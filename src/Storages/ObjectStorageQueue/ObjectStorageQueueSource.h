@@ -21,7 +21,6 @@ class ObjectStorageQueueSource : public ISource, WithContext
 public:
     using Storage = StorageObjectStorage;
     using Source = StorageObjectStorageSource;
-    using RemoveFileFunc = std::function<void(std::string)>;
     using BucketHolderPtr = ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr;
     using BucketHolder = ObjectStorageQueueOrderedFileMetadata::BucketHolder;
 
