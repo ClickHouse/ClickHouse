@@ -161,7 +161,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
                 ErrorCodes::UNKNOWN_TABLE, "Metadata for table {} does not exist. Table was dropped early", table_id.getNameForLogs());
         }
 
-        database->dropDetachedTable(context_, table_id.getTableName(), query.sync);
+        database->dropDetachedTable(context_, table_name, query.sync);
         return {};
     }
 

@@ -150,7 +150,6 @@ def test_drop_replicated_table(start_cluster):
     assert exists_replica == None
 
 
-
 def test_drop_table_in_replicated_db(start_cluster):
     replica1.query(
         f"CREATE DATABASE IF NOT EXISTS repl_db ON CLUSTER test_cluster ENGINE=Replicated('/clickhouse/tables/test_replicated_table', shard1, '{{replica}}');"
@@ -172,9 +171,7 @@ def test_drop_table_in_replicated_db(start_cluster):
     )
     replica1.query("SYSTEM SYNC REPLICA repl_db.test_replicated_table;", timeout=20)
 
-    replica1.query(
-        "DETACH TABLE repl_db.test_replicated_table PERMANENTLY;"
-    )
+    replica1.query("DETACH TABLE repl_db.test_replicated_table PERMANENTLY;")
 
     zk = cluster.get_kazoo_client("zoo1")
 
