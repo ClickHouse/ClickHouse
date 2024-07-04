@@ -96,4 +96,5 @@ CommandPtr makeCommandCopy()
 {
     return std::make_shared<DB::CommandCopy>();
 }
+
 }
