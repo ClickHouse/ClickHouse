@@ -7,6 +7,7 @@
 #include <Processors/LimitTransform.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/QueryLogMetric.h>
 #include <QueryPipeline/ReadProgressCallback.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/printPipeline.h>
@@ -26,6 +27,7 @@
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/TotalsHavingTransform.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
+#include "Common/CurrentThread.h"
 
 
 namespace DB
@@ -540,7 +542,16 @@ Block QueryPipeline::getHeader() const
 
 void QueryPipeline::setProgressCallback(const ProgressCallback & callback)
 {
-    progress_callback = callback;
+    progress_callback = [callback](const Progress & progress)
+    {
+        const auto & query_id = CurrentThread::getQueryId();
+        const auto & context = CurrentThread::getQueryContext();
+        if (auto query_log_metric = context->getQueryLogMetric())
+            query_log_metric->updateQueryLogMetric(query_id, std::chrono::system_clock::now());
+
+        if (callback)
+            callback(progress);
+    };
 }
 
 void QueryPipeline::setProcessListElement(QueryStatusPtr elem)
