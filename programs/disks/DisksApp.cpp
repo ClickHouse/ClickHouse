@@ -514,6 +514,7 @@ int DisksApp::main(const std::vector<String> & /*args*/)
 
 DisksApp::~DisksApp()
 {
+    client.reset(nullptr);
     if (global_context)
         global_context->shutdown();
 }
