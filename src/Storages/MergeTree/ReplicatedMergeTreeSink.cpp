@@ -894,10 +894,11 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
         {
             if (e.code() == ErrorCodes::DUPLICATE_DATA_PART || e.code() == ErrorCodes::PART_IS_TEMPORARILY_LOCKED)
             {
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
-                                "Part with name {} is already written by concurrent request."
-                                " It should not happen for non-duplicate data parts because unique names are assigned for them. It's a bug",
-                                part->name);
+                LOG_ERROR(
+                    log,
+                    "Part with name {} is already written by concurrent request. It should not happen for non-duplicate data parts "
+                    "because unique names are assigned for them. It's a bug",
+                    part->name);
             }
 
             throw;
