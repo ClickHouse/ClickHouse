@@ -176,35 +176,24 @@ jobs:
 ############################################################################################
 ##################################### BUILD REPORTER #######################################
 ############################################################################################
-  BuilderReport:
+  Builds_Report:
     # run report check for failed builds to indicate the CI error
-    if: ${{ !cancelled() }}
-    needs:
-      - RunConfig
-      - BuilderDebRelease
-      - BuilderDebAarch64
-      - BuilderDebAsan
-      - BuilderDebTsan
-      - BuilderDebUBsan
-      - BuilderDebMsan
-      - BuilderDebDebug
-    uses: ./.github/workflows/reusable_test.yml
-    with:
-      test_name: ClickHouse build check
-      runner_type: style-checker-aarch64
-      data: ${{ needs.RunConfig.outputs.data }}
-  BuilderSpecialReport:
-    # run report check for failed builds to indicate the CI error
-    if: ${{ !cancelled() }}
-    needs:
-      - RunConfig
-      - BuilderBinDarwin
-      - BuilderBinDarwinAarch64
-    uses: ./.github/workflows/reusable_test.yml
-    with:
-      test_name: ClickHouse special build check
-      runner_type: style-checker-aarch64
-      data: ${{ needs.RunConfig.outputs.data }}
+    if: ${{ !cancelled() && needs.RunConfig.result == 'success' && contains(fromJson(needs.RunConfig.outputs.data).jobs_data.jobs_to_do, 'Builds') }}
+    needs: [RunConfig, BuilderDebRelease, BuilderDebAarch64, BuilderDebAsan, BuilderDebUBsan, BuilderDebMsan, BuilderDebTsan, BuilderDebDebug, BuilderBinDarwin, BuilderBinDarwinAarch64]
+    runs-on: [self-hosted, style-checker-aarch64]
+    steps:
+      - name: Check out repository code
+        uses: ClickHouse/checkout@v1
+      - name: Download reports
+        run: |
+          python3 "$GITHUB_WORKSPACE/tests/ci/ci.py" --infile ${{ toJson(needs.RunConfig.outputs.data) }} --pre --job-name Builds
+      - name: Builds report
+        run: |
+          cd "$GITHUB_WORKSPACE/tests/ci"
+          python3 ./build_report_check.py --reports package_release package_aarch64 package_asan package_msan package_ubsan package_tsan package_debug binary_darwin binary_darwin_aarch64
+      - name: Set status
+        run: |
+          python3 "$GITHUB_WORKSPACE/tests/ci/ci.py" --infile ${{ toJson(needs.RunConfig.outputs.data) }} --post --job-name Builds
   MarkReleaseReady:
     if: ${{ !failure() && !cancelled() }}
     needs:
@@ -460,8 +449,7 @@ jobs:
     needs:
       - DockerServerImage
       - DockerKeeperImage
-      - BuilderReport
-      - BuilderSpecialReport
+      - Builds_Report
       - MarkReleaseReady
       - FunctionalStatelessTestDebug
       - FunctionalStatelessTestRelease
@@ -496,4 +484,7 @@ jobs:
       - name: Finish label
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
+          # update mergeable check
+          python3 merge_pr.py --set-ci-status --wf-status ${{ contains(needs.*.result, 'failure') && 'failure' || 'success' }}
+          # update overall ci report
           python3 finish_check.py --wf-status ${{ contains(needs.*.result, 'failure') && 'failure' || 'success' }}
