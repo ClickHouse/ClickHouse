@@ -375,6 +375,12 @@ void IMergeTreeDataPart::unloadIndex()
     index_loaded = false;
 }
 
+bool IMergeTreeDataPart::isIndexLoaded() const
+{
+    std::scoped_lock lock(index_mutex);
+    return index_loaded;
+}
+
 void IMergeTreeDataPart::setName(const String & new_name)
 {
     mutable_name = new_name;

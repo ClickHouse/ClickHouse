@@ -7,30 +7,27 @@
 namespace DB
 {
 
-class UniqStatistics : public IStatistics
+class StatisticsUniq : public IStatistics
 {
 public:
-    UniqStatistics(const SingleStatisticsDescription & stat_, const DataTypePtr & data_type);
-
-    ~UniqStatistics() override;
-
-    UInt64 getCardinality();
-
-    void serialize(WriteBuffer & buf) override;
-
-    void deserialize(ReadBuffer & buf) override;
+    StatisticsUniq(const SingleStatisticsDescription & stat_, const DataTypePtr & data_type);
+    ~StatisticsUniq() override;
 
     void update(const ColumnPtr & column) override;
 
-private:
+    void serialize(WriteBuffer & buf) override;
+    void deserialize(ReadBuffer & buf) override;
 
+    UInt64 estimateCardinality() const override;
+
+private:
     std::unique_ptr<Arena> arena;
     AggregateFunctionPtr collector;
     AggregateDataPtr data;
 
 };
 
-StatisticsPtr UniqCreator(const SingleStatisticsDescription & stat, DataTypePtr data_type);
 void UniqValidator(const SingleStatisticsDescription &, DataTypePtr data_type);
+StatisticsPtr UniqCreator(const SingleStatisticsDescription & stat, DataTypePtr data_type);
 
 }
