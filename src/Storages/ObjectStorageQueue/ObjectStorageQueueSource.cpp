@@ -111,10 +111,12 @@ void ObjectStorageQueueSource::FileIterator::returnForRetry(Source::ObjectInfoPt
     if (metadata->useBucketsForProcessing())
     {
         const auto bucket = metadata->getBucketForPath(object_info->relative_path);
+        std::lock_guard lock(mutex);
         listed_keys_cache[bucket].keys.emplace_front(object_info);
     }
     else
     {
+        std::lock_guard lock(mutex);
         objects_to_retry.push_back(object_info);
     }
 }
