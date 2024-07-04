@@ -69,7 +69,7 @@ namespace ErrorCodes
 
 RowNumber IWindowFunction::firstRequiredRowInFrame(const WindowTransform * transform) const
 {
-    return transform->current_row;
+    return transform->prev_frame_start;
 }
 
 // Compares ORDER BY column values at given rows to find the boundaries of frame:
@@ -476,15 +476,18 @@ void WindowTransform::advancePartitionEnd()
     // dropped the blocks where the partition starts, but any other row in the
     // partition will do. We can't use frame_start or frame_end or current_row (the next row
     // for which we are calculating the window functions), because they all might be
-    // past the end of the partition. prev_frame_start is suitable, because it
+    // past the end of the partition. prev_partition_row is suitable, because it
     // is a pointer to the first row of the previous frame that must have been
     // valid, or to the first row of the partition, and we make sure not to drop
     // its block.
-    assert(partition_start <= prev_frame_start);
+    auto prev_partition_row = first_required_row;
+    if (prev_partition_row < prev_frame_start)
+        prev_partition_row = prev_frame_start;
+    assert(partition_start <= prev_partition_row);
     // The frame start should be inside the prospective partition, except the
     // case when it still has no rows.
-    assert(prev_frame_start < partition_end || partition_start == partition_end);
-    assert(first_block_number <= prev_frame_start.block);
+    assert(prev_partition_row < partition_end || partition_start == partition_end);
+    assert(first_block_number <= prev_partition_row.block);
     const auto block_rows = blockRowsNumber(partition_end);
     for (; partition_end.row < block_rows; ++partition_end.row)
     {
@@ -492,12 +495,12 @@ void WindowTransform::advancePartitionEnd()
         for (; i < partition_by_columns; ++i)
         {
             const auto * reference_column
-                = inputAt(prev_frame_start)[partition_by_indices[i]].get();
+                = inputAt(prev_partition_row)[partition_by_indices[i]].get();
             const auto * compared_column
                 = inputAt(partition_end)[partition_by_indices[i]].get();
 
             if (compared_column->compareAt(partition_end.row,
-                    prev_frame_start.row, *reference_column,
+                    prev_partition_row.row, *reference_column,
                     1 /* nan_direction_hint */) != 0)
             {
                 break;
