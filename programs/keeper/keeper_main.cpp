@@ -4,7 +4,6 @@
 #include <new>
 #include <iostream>
 #include <vector>
-#include <string>
 #include <string_view>
 #include <utility> /// pair
 
@@ -15,6 +14,7 @@
 
 #include <Common/EnvironmentChecks.h>
 #include <Common/Coverage.h>
+
 #include <Common/StringUtils.h>
 #include <Common/getHashOfLoadedBinary.h>
 #include <Common/IO.h>
@@ -23,44 +23,13 @@
 #include <base/coverage.h>
 
 
-/// Universal executable for various clickhouse applications
-int mainEntryClickHouseServer(int argc, char ** argv);
-int mainEntryClickHouseClient(int argc, char ** argv);
-int mainEntryClickHouseLocal(int argc, char ** argv);
-int mainEntryClickHouseBenchmark(int argc, char ** argv);
-int mainEntryClickHouseExtractFromConfig(int argc, char ** argv);
-int mainEntryClickHouseCompressor(int argc, char ** argv);
-int mainEntryClickHouseFormat(int argc, char ** argv);
-int mainEntryClickHouseObfuscator(int argc, char ** argv);
-int mainEntryClickHouseGitImport(int argc, char ** argv);
-int mainEntryClickHouseStaticFilesDiskUploader(int argc, char ** argv);
-int mainEntryClickHouseSU(int argc, char ** argv);
-int mainEntryClickHouseDisks(int argc, char ** argv);
-
-int mainEntryClickHouseHashBinary(int, char **)
-{
-    /// Intentionally without newline. So you can run:
-    /// objcopy --add-section .clickhouse.hash=<(./clickhouse hash-binary) clickhouse
-    std::cout << getHashOfLoadedBinaryHex();
-    return 0;
-}
-
-#if ENABLE_CLICKHOUSE_KEEPER
 int mainEntryClickHouseKeeper(int argc, char ** argv);
-#endif
 #if ENABLE_CLICKHOUSE_KEEPER_CONVERTER
 int mainEntryClickHouseKeeperConverter(int argc, char ** argv);
 #endif
 #if ENABLE_CLICKHOUSE_KEEPER_CLIENT
 int mainEntryClickHouseKeeperClient(int argc, char ** argv);
 #endif
-
-// install
-int mainEntryClickHouseInstall(int argc, char ** argv);
-int mainEntryClickHouseStart(int argc, char ** argv);
-int mainEntryClickHouseStop(int argc, char ** argv);
-int mainEntryClickHouseStatus(int argc, char ** argv);
-int mainEntryClickHouseRestart(int argc, char ** argv);
 
 namespace
 {
@@ -70,37 +39,17 @@ using MainFunc = int (*)(int, char**);
 /// Add an item here to register new application
 std::pair<std::string_view, MainFunc> clickhouse_applications[] =
 {
-    {"local", mainEntryClickHouseLocal},
-    {"client", mainEntryClickHouseClient},
-    {"benchmark", mainEntryClickHouseBenchmark},
-    {"server", mainEntryClickHouseServer},
-    {"extract-from-config", mainEntryClickHouseExtractFromConfig},
-    {"compressor", mainEntryClickHouseCompressor},
-    {"format", mainEntryClickHouseFormat},
-    {"obfuscator", mainEntryClickHouseObfuscator},
-    {"git-import", mainEntryClickHouseGitImport},
-    {"static-files-disk-uploader", mainEntryClickHouseStaticFilesDiskUploader},
-    {"su", mainEntryClickHouseSU},
-    {"hash-binary", mainEntryClickHouseHashBinary},
-    {"disks", mainEntryClickHouseDisks},
-
     // keeper
-#if ENABLE_CLICKHOUSE_KEEPER
     {"keeper", mainEntryClickHouseKeeper},
-#endif
 #if ENABLE_CLICKHOUSE_KEEPER_CONVERTER
+    {"converter", mainEntryClickHouseKeeperConverter},
     {"keeper-converter", mainEntryClickHouseKeeperConverter},
 #endif
 #if ENABLE_CLICKHOUSE_KEEPER_CLIENT
+    {"client", mainEntryClickHouseKeeperClient},
     {"keeper-client", mainEntryClickHouseKeeperClient},
 #endif
 
-    // install
-    {"install", mainEntryClickHouseInstall},
-    {"start", mainEntryClickHouseStart},
-    {"stop", mainEntryClickHouseStop},
-    {"status", mainEntryClickHouseStatus},
-    {"restart", mainEntryClickHouseRestart},
 };
 
 int printHelp(int, char **)
@@ -111,22 +60,11 @@ int printHelp(int, char **)
     return -1;
 }
 
-/// Add an item here to register a new short name
-std::pair<std::string_view, std::string_view> clickhouse_short_names[] =
-{
-    {"chl", "local"},
-    {"chc", "client"},
-};
-
 }
+
 
 bool isClickhouseApp(std::string_view app_suffix, std::vector<char *> & argv)
 {
-    for (const auto & [alias, name] : clickhouse_short_names)
-        if (app_suffix == name
-            && !argv.empty() && (alias == argv[0] || endsWith(argv[0], "/" + std::string(alias))))
-            return true;
-
     /// Use app if the first arg 'app' is passed (the arg should be quietly removed)
     if (argv.size() >= 2)
     {
@@ -140,6 +78,10 @@ bool isClickhouseApp(std::string_view app_suffix, std::vector<char *> & argv)
             return true;
         }
     }
+
+    /// keeper suffix is default which will be used if no other app is detected
+    if (app_suffix == "keeper")
+        return false;
 
     /// Use app if clickhouse binary is run through symbolic link with name clickhouse-app
     std::string app_name = "clickhouse-" + std::string(app_suffix);
@@ -219,30 +161,22 @@ int main(int argc_, char ** argv_)
     std::vector<char *> argv(argv_, argv_ + argc_);
 
     /// Print a basic help if nothing was matched
-    MainFunc main_func = printHelp;
+    MainFunc main_func = mainEntryClickHouseKeeper;
 
-    for (auto & application : clickhouse_applications)
+    if (isClickhouseApp("help", argv))
     {
-        if (isClickhouseApp(application.first, argv))
-        {
-            main_func = application.second;
-            break;
-        }
+        main_func = printHelp;
     }
-
-    /// Interpret binary without argument or with arguments starts with dash
-    /// ('-') as clickhouse-local for better usability:
-    ///
-    ///     clickhouse help # dumps help
-    ///     clickhouse -q 'select 1' # use local
-    ///     clickhouse # spawn local
-    ///     clickhouse local # spawn local
-    ///     clickhouse "select ..." # spawn local
-    ///
-    if (main_func == printHelp && !argv.empty() && (argv.size() == 1 || argv[1][0] == '-'
-        || std::string_view(argv[1]).contains(' ')))
+    else
     {
-        main_func = mainEntryClickHouseLocal;
+        for (auto & application : clickhouse_applications)
+        {
+            if (isClickhouseApp(application.first, argv))
+            {
+                main_func = application.second;
+                break;
+            }
+        }
     }
 
     int exit_code = main_func(static_cast<int>(argv.size()), argv.data());
