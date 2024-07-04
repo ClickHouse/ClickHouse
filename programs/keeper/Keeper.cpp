@@ -27,6 +27,8 @@
 #include <sys/stat.h>
 #include <pwd.h>
 
+#include <Common/Jemalloc.h>
+
 #include <Interpreters/Context.h>
 
 #include <Coordination/FourLetterCommand.h>
@@ -277,6 +279,9 @@ HTTPContextPtr httpContext()
 int Keeper::main(const std::vector<std::string> & /*args*/)
 try
 {
+#if USE_JEMALLOC
+    setJemallocBackgroundThreads(true);
+#endif
     Poco::Logger * log = &logger();
 
     UseSSL use_ssl;
