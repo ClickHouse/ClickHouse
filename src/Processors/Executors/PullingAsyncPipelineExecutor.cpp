@@ -89,6 +89,9 @@ static void threadFunction(
 
         /// Finish lazy format in case of exception. Otherwise thread.join() may hung.
         data.lazy_format->finalize();
+
+        /// Do not set is_finished
+        return;
     }
 
     data.is_finished = true;
