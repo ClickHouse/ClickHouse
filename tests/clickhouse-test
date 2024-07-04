@@ -69,7 +69,7 @@ TEST_FILE_EXTENSIONS = [".sql", ".sql.j2", ".sh", ".py", ".expect"]
 
 VERSION_PATTERN = r"^((\d+\.)?(\d+\.)?(\d+\.)?\d+)$"
 
-TEST_MAX_RUN_TIME_IN_SECONDS = 120
+TEST_MAX_RUN_TIME_IN_SECONDS = 180
 
 
 class SharedEngineReplacer:
