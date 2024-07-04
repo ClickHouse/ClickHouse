@@ -15,9 +15,8 @@ void SinkToStorage::onConsume(Chunk chunk)
       */
     Nested::validateArraySizes(getHeader().cloneWithColumns(chunk.getColumns()));
 
-    consume(chunk.clone());
-    if (!lastBlockIsDuplicate())
-        cur_chunk = std::move(chunk);
+    consume(chunk);
+    cur_chunk = std::move(chunk);
 }
 
 SinkToStorage::GenerateResult SinkToStorage::onGenerate()

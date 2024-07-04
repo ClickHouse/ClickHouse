@@ -32,7 +32,7 @@ public:
 
     ~EmbeddedRocksDBBulkSink() override;
 
-    void consume(Chunk chunk) override;
+    void consume(Chunk & chunk) override;
 
     void onFinish() override;
 

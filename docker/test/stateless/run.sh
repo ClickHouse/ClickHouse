@@ -207,7 +207,7 @@ function run_tests()
 
     if [[ -n "$USE_AZURE_STORAGE_FOR_MERGE_TREE" ]] && [[ "$USE_AZURE_STORAGE_FOR_MERGE_TREE"  -eq 1 ]]; then
         # to disable the same tests
-        ADDITIONAL_OPTIONS+=('--s3-storage')
+        ADDITIONAL_OPTIONS+=('--azure-blob-storage')
         # azurite is slow, but with these two settings it can be super slow
         ADDITIONAL_OPTIONS+=('--no-random-settings')
         ADDITIONAL_OPTIONS+=('--no-random-merge-tree-settings')

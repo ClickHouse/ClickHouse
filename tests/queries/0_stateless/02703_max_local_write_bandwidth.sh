@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-s3-storage
+# Tags: no-object-storage
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
