@@ -150,7 +150,7 @@ private:
     std::map<UInt64, MergeTreeMutationEntry> current_mutations_by_version;
 
     /// Unfinished mutations that are required for AlterConversions.
-    Int64 num_alter_conversions;
+    Int64 num_alter_conversions = 0;
 
     std::atomic<bool> shutdown_called {false};
     std::atomic<bool> flush_called {false};

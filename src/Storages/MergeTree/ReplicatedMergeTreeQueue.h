@@ -154,7 +154,7 @@ private:
     std::map<String, MutationStatus> mutations_by_znode;
 
     /// Unfinished mutations that are required for AlterConversions.
-    Int64 num_alter_conversions;
+    Int64 num_alter_conversions = 0;
 
     /// Partition -> (block_number -> MutationStatus)
     std::unordered_map<String, std::map<Int64, MutationStatus *>> mutations_by_partition;
