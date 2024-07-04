@@ -6,5 +6,5 @@ rmt1
 rmt2
 02858000-1000-4000-8000-0000000000
 0
-CREATE TABLE rdb_default.rmt1\n(\n    `n` Int32\n)\nENGINE = ReplicatedMergeTree(\'/test/default/auto_{shard}\', \'1auto_{replica}\')\nORDER BY n\nSETTINGS index_granularity = 8192
+CREATE TABLE rdb_default.rmt1\n(\n    `n` Int32\n)\nENGINE = ReplicatedMergeTree(\'/test/02858_explicit_uuid_and_zk_path_default/rmt/auto_{shard}\', \'1auto_{replica}\')\nORDER BY n\nSETTINGS index_granularity = 8192
 CREATE TABLE rdb_default.rmt2\n(\n    `n` Int32\n)\nENGINE = ReplicatedMergeTree(\'/clickhouse/tables/{uuid}/{shard}\', \'{replica}\')\nORDER BY n\nSETTINGS index_granularity = 8192

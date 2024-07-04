@@ -1062,15 +1062,15 @@ void InterpreterCreateQuery::assertOrSetUUID(ASTCreateQuery & create, const Data
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "It's not allowed to explicitly specify UUIDs for tables in Replicated databases, "
                                                        "see database_replicated_allow_explicit_uuid");
         }
-        else if (getContext()->getSettingsRef().database_replicated_allow_explicit_uuid == 0)
+        else if (getContext()->getSettingsRef().database_replicated_allow_explicit_uuid == 1)
         {
             LOG_WARNING(&Poco::Logger::get("InterpreterCreateQuery"), "It's not recommended to explicitly specify UUIDs for tables in Replicated databases");
         }
-        else // if (getContext()->getSettingsRef().database_replicated_allow_explicit_uuid == 2)
+        else if (getContext()->getSettingsRef().database_replicated_allow_explicit_uuid == 2)
         {
             UUID old_uuid = create.uuid;
             create.generateRandomUUID(/*always_generate_new_uuid*/ true);
-            LOG_INFO(&Poco::Logger::get("InterpreterCreateQuery"), "Replaced a user-provided UUID ({}) with a random one ({}) "
+            LOG_WARNING(&Poco::Logger::get("InterpreterCreateQuery"), "Replaced a user-provided UUID ({}) with a random one ({}) "
                                                                    "to make sure it's unique", old_uuid, create.uuid);
         }
     }

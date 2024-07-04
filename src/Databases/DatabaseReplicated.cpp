@@ -786,7 +786,8 @@ void DatabaseReplicated::checkQueryValid(const ASTPtr & query, ContextPtr query_
                 return;
             }
 
-            throw Exception(ErrorCodes::INCORRECT_QUERY,
+            if (query_context->getSettingsRef().database_replicated_allow_replicated_engine_arguments == 0)
+                throw Exception(ErrorCodes::INCORRECT_QUERY,
                             "Explicit zookeeper_path and replica_name are specified in ReplicatedMergeTree arguments. "
                             "If you really want to specify it explicitly, then you should use some macros "
                             "to distinguish different shards and replicas");
