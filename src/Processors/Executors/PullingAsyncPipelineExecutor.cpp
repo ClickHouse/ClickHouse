@@ -53,6 +53,11 @@ PullingAsyncPipelineExecutor::~PullingAsyncPipelineExecutor()
 {
     try
     {
+        /// NOTE: It can be error-prone to cancel the query in destructor
+        ///
+        /// For instance RemoteQueryExecutor should be cancelled before the
+        /// worker thread destroyed, otherwise active fibers could lead to
+        /// use-after-free
         cancel();
     }
     catch (...)
