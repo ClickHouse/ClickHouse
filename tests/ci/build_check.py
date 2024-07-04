@@ -62,7 +62,7 @@ def get_packager_cmd(
     if build_config.tidy:
         cmd += " --clang-tidy"
 
-    cmd += " --cache=sccache"
+    cmd += " --cache=ccache"
     cmd += " --s3-rw-access"
     cmd += f" --s3-bucket={S3_BUILDS_BUCKET}"
 
