@@ -94,7 +94,7 @@ protected:
             }
         }
 
-        if (databases->size() == database_idx && max_block_size != rows_count)
+        if (databases->size() == database_idx && (!detached_tables_it || !detached_tables_it->isValid()))
         {
             done = true;
         }
