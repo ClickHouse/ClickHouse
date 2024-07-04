@@ -196,13 +196,36 @@ Chunk StorageObjectStorageSource::generate()
             const auto & filename = object_info->getFileName();
             chassert(object_info->metadata);
             VirtualColumnUtils::addRequestedFileLikeStorageVirtualsToChunk(
-                chunk, read_from_format_info.requested_virtual_columns,
+                chunk,
+                read_from_format_info.requested_virtual_columns,
+                {.path = getUniqueStoragePathIdentifier(*configuration, *object_info, false),
+                 .size = object_info->isArchive() ? object_info->fileSizeInArchive() : object_info->metadata->size_bytes,
+                 .filename = &filename,
+                 .last_modified = object_info->metadata->last_modified});
+
+            const auto & partition_columns = configuration->getPartitionColumns();
+            if (!partition_columns.empty() && chunk_size && chunk.hasColumns())
+            {
+                auto partition_values = partition_columns.find(filename);
+
+                for (const auto & [name_and_type, value] : partition_values->second)
                 {
-                    .path = getUniqueStoragePathIdentifier(*configuration, *object_info, false),
-                    .size = object_info->metadata->size_bytes,
-                    .filename = &filename,
-                    .last_modified = object_info->metadata->last_modified
-                });
+                    if (!read_from_format_info.source_header.has(name_and_type.name))
+                        continue;
+
+                    const auto column_pos = read_from_format_info.source_header.getPositionByName(name_and_type.name);
+                    auto partition_column = name_and_type.type->createColumnConst(chunk.getNumRows(), value)->convertToFullColumnIfConst();
+
+                    /// This column is filled with default value now, remove it.
+                    chunk.erase(column_pos);
+
+                    /// Add correct values.
+                    if (chunk.hasColumns())
+                        chunk.addColumn(column_pos, std::move(partition_column));
+                    else
+                        chunk.addColumn(std::move(partition_column));
+                }
+            }
             return chunk;
         }
 
@@ -690,10 +713,9 @@ static IArchiveReader::NameFilter createArchivePathFilter(const std::string & ar
 StorageObjectStorageSource::ArchiveIterator::ObjectInfoInArchive::ObjectInfoInArchive(
     ObjectInfoPtr archive_object_,
     const std::string & path_in_archive_,
-    std::shared_ptr<IArchiveReader> archive_reader_)
-    : archive_object(archive_object_)
-    , path_in_archive(path_in_archive_)
-    , archive_reader(archive_reader_)
+    std::shared_ptr<IArchiveReader> archive_reader_,
+    IArchiveReader::FileInfo && file_info_)
+    : archive_object(archive_object_), path_in_archive(path_in_archive_), archive_reader(archive_reader_), file_info(file_info_)
 {
 }
 
@@ -732,6 +754,7 @@ StorageObjectStorageSource::ObjectInfoPtr
 StorageObjectStorageSource::ArchiveIterator::nextImpl(size_t processor)
 {
     std::unique_lock lock{next_mutex};
+    IArchiveReader::FileInfo current_file_info{};
     while (true)
     {
         if (filter)
@@ -756,6 +779,8 @@ StorageObjectStorageSource::ArchiveIterator::nextImpl(size_t processor)
             path_in_archive = file_enumerator->getFileName();
             if (!filter(path_in_archive))
                 continue;
+            else
+                current_file_info = file_enumerator->getFileInfo();
         }
         else
         {
@@ -769,15 +794,19 @@ StorageObjectStorageSource::ArchiveIterator::nextImpl(size_t processor)
             archive_reader = createArchiveReader(archive_object);
             if (!archive_reader->fileExists(path_in_archive))
                 continue;
+            else
+                current_file_info = archive_reader->getFileInfo(path_in_archive);
         }
-
-        auto object_in_archive = std::make_shared<ObjectInfoInArchive>(archive_object, path_in_archive, archive_reader);
-
-        if (read_keys != nullptr)
-            read_keys->push_back(object_in_archive);
-
-        return object_in_archive;
+        break;
     }
+
+    auto object_in_archive
+        = std::make_shared<ObjectInfoInArchive>(archive_object, path_in_archive, archive_reader, std::move(current_file_info));
+
+    if (read_keys != nullptr)
+        read_keys->push_back(object_in_archive);
+
+    return object_in_archive;
 }
 
 size_t StorageObjectStorageSource::ArchiveIterator::estimatedKeysCount()
