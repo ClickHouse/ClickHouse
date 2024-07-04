@@ -3,7 +3,7 @@
 #include <IO/ReadBufferFromFile.h>
 #include <Interpreters/Aggregator.h>
 #include <Processors/IAccumulatingTransform.h>
-#include <Processors/RowsBeforeLimitCounter.h>
+#include <Processors/RowsBeforeStepCounter.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
 #include <Common/Stopwatch.h>

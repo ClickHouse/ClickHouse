@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Processors/ISource.h>
-#include <Processors/RowsBeforeLimitCounter.h>
+#include <Processors/RowsBeforeStepCounter.h>
 #include <QueryPipeline/Pipe.h>
 
 #include <Core/UUID.h>

@@ -1,8 +1,8 @@
 #pragma once
 
-#include <Processors/IProcessor.h>
-#include <Processors/RowsBeforeLimitCounter.h>
 #include <Core/SortDescription.h>
+#include <Processors/IProcessor.h>
+#include <Processors/RowsBeforeStepCounter.h>
 
 namespace DB
 {

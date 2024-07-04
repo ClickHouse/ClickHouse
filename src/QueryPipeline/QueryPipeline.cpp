@@ -262,7 +262,7 @@ static void initRowsBeforeLimit(IOutputFormat * output_format)
 
     if (!processors.empty())
     {
-        rows_before_limit_at_least = std::make_shared<RowsBeforeLimitCounter>();
+        rows_before_limit_at_least = std::make_shared<RowsBeforeStepCounter>();
         for (auto & processor : processors)
             processor->setRowsBeforeLimitCounter(rows_before_limit_at_least);
 
@@ -278,7 +278,7 @@ static void initRowsBeforeAggregation(std::shared_ptr<Processors> processors, IO
 {
     if (!processors->empty())
     {
-        RowsBeforeAggregationCounterPtr rows_before_aggregation_at_least = std::make_shared<RowsBeforeLimitCounter>();
+        RowsBeforeAggregationCounterPtr rows_before_aggregation_at_least = std::make_shared<RowsBeforeStepCounter>();
         for (auto & processor : *processors)
         {
             if (auto transform = std::dynamic_pointer_cast<AggregatingTransform>(processor))

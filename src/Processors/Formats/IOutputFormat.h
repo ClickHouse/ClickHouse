@@ -1,9 +1,9 @@
 #pragma once
 
 #include <string>
-#include <Processors/IProcessor.h>
-#include <Processors/RowsBeforeLimitCounter.h>
 #include <IO/Progress.h>
+#include <Processors/IProcessor.h>
+#include <Processors/RowsBeforeStepCounter.h>
 #include <Common/Stopwatch.h>
 
 namespace DB

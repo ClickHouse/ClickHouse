@@ -21,10 +21,10 @@ class IQueryPlanStep;
 struct StorageLimits;
 using StorageLimitsList = std::list<StorageLimits>;
 
-class RowsBeforeLimitCounter;
-using RowsBeforeLimitCounterPtr = std::shared_ptr<RowsBeforeLimitCounter>;
+class RowsBeforeStepCounter;
+using RowsBeforeLimitCounterPtr = std::shared_ptr<RowsBeforeStepCounter>;
 
-using RowsBeforeAggregationCounterPtr = std::shared_ptr<RowsBeforeLimitCounter>;
+using RowsBeforeAggregationCounterPtr = std::shared_ptr<RowsBeforeStepCounter>;
 
 class IProcessor;
 using ProcessorPtr = std::shared_ptr<IProcessor>;

@@ -1,7 +1,7 @@
 #pragma once
-#include <Processors/ISimpleTransform.h>
-#include <Processors/RowsBeforeLimitCounter.h>
 #include <Core/SortDescription.h>
+#include <Processors/ISimpleTransform.h>
+#include <Processors/RowsBeforeStepCounter.h>
 #include <Common/PODArray.h>
 
 namespace DB
