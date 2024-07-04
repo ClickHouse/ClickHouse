@@ -122,6 +122,10 @@ def _get_statless_tests_to_run(pr_info: PRInfo) -> List[str]:
 
     for fpath in pr_info.changed_files:
         if re.match(r"tests/queries/0_stateless/[0-9]{5}", fpath):
+            path_ = Path(REPO_COPY + "/" + fpath)
+            if not path_.exists():
+                logging.info("File '%s' is removed - skip", fpath)
+                continue
             logging.info("File '%s' is changed and seems like a test", fpath)
             fname = fpath.split("/")[3]
             fname_without_ext = os.path.splitext(fname)[0]
