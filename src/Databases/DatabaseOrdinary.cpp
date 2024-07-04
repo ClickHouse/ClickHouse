@@ -539,7 +539,7 @@ void DatabaseOrdinary::alterTable(ContextPtr local_context, const StorageID & ta
     }
 
     /// The create query of the table has been just changed, we need to update dependencies too.
-    auto ref_dependencies = getDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), ast);
+    auto ref_dependencies = getDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), ast, local_context->getCurrentDatabase());
     auto loading_dependencies = getLoadingDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), ast);
     DatabaseCatalog::instance().updateDependencies(table_id, ref_dependencies, loading_dependencies);
 
