@@ -498,6 +498,11 @@ std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
     if (storage_objects.empty() && file_can_be_empty)
         return std::make_unique<ReadBufferFromEmptyFile>();
 
+    Strings paths;
+    for (const auto & object : storage_objects)
+        paths.push_back(object.local_path + ":" + object.remote_path);
+    LOG_DEBUG(log, "Reading objects ({})", fmt::join(paths, ", "));
+
     return object_storage->readObjects(
         storage_objects,
         updateResourceLink(settings, getReadResourceName()),

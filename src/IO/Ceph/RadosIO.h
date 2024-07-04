@@ -72,6 +72,7 @@ public:
 private:
     /// In some case can own rados object?
     std::shared_ptr<librados::Rados> rados;
+    /// librados::IoCtx is thread-safe unless when changing pool, namespace, snapshot, or object locator
     librados::IoCtx io_ctx;
     String pool;
     String ns;

@@ -75,10 +75,11 @@ size_t RadosIO::read(const String & oid, char * data, size_t length, uint64_t of
 {
     assertConnected();
     ceph::bufferlist bl;
-    bl.append(data, safe_cast<int>(length));
+    // bl.append(data, safe_cast<int>(length));
     auto bytes_read = io_ctx.read(oid, bl, length, offset);
     if (bytes_read < 0)
         throw Exception(ErrorCodes::CEPH_ERROR, "Cannot read from object `{}:{}`. Error: {}", pool, oid, strerror(-bytes_read));
+    memcpy(data, bl.c_str(), bytes_read);
     return bytes_read;
 }
 
@@ -87,10 +88,9 @@ size_t RadosIO::writeFull(const String & oid, const char * data, size_t length)
     assertConnected();
     ceph::bufferlist bl;
     bl.append(data, safe_cast<int>(length));
-    auto bytes_written = io_ctx.write_full(oid, bl);
-    if (bytes_written < 0)
-        throw Exception(ErrorCodes::CEPH_ERROR, "Cannot write to object `{}:{}`. Error: {}", pool, oid, strerror(-bytes_written));
-    return bytes_written;
+    if(auto ec = io_ctx.write_full(oid, bl); ec < 0)
+        throw Exception(ErrorCodes::CEPH_ERROR, "Cannot write to object `{}:{}`. Error: {}", pool, oid, strerror(-ec));
+    return length;
 }
 
 size_t RadosIO::write(const String & oid, const char * data, size_t length, uint64_t offset)
@@ -98,10 +98,9 @@ size_t RadosIO::write(const String & oid, const char * data, size_t length, uint
     assertConnected();
     ceph::bufferlist bl;
     bl.append(data, safe_cast<int>(length));
-    auto bytes_written = io_ctx.write(oid, bl, length, offset);
-    if (bytes_written < 0)
-        throw Exception(ErrorCodes::CEPH_ERROR, "Cannot write to object `{}:{}`. Error: {}", pool, oid, strerror(-bytes_written));
-    return bytes_written;
+    if (auto ec = io_ctx.write(oid, bl, length, offset); ec < 0)
+        throw Exception(ErrorCodes::CEPH_ERROR, "Cannot write to object `{}:{}`. Error: {}", pool, oid, strerror(-ec));
+    return length;
 }
 
 size_t RadosIO::append(const String & oid, const char * data, size_t length)
@@ -109,10 +108,9 @@ size_t RadosIO::append(const String & oid, const char * data, size_t length)
     assertConnected();
     ceph::bufferlist bl;
     bl.append(data, safe_cast<int>(length));
-    auto bytes_written = io_ctx.append(oid, bl, length);
-    if (bytes_written < 0)
-        throw Exception(ErrorCodes::CEPH_ERROR, "Cannot append to object `{}:{}`. Error: {}", pool, oid, strerror(-bytes_written));
-    return bytes_written;
+    if (auto ec = io_ctx.append(oid, bl, length); ec < 0)
+        throw Exception(ErrorCodes::CEPH_ERROR, "Cannot append to object `{}:{}`. Error: {}", pool, oid, strerror(-ec));
+    return length;
 }
 
 void RadosIO::stat(const String & oid, uint64_t * size, struct timespec * mtime)

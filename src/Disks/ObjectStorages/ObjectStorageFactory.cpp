@@ -348,6 +348,7 @@ void registerCephObjectStorage(ObjectStorageFactory & factory)
         CephEndpoint endpoint;
         endpoint.mon_hosts = settings->global_options["mon_host"]; /// Redundant
         endpoint.pool = config.getString(config_prefix + ".pool");
+        endpoint.nspace = config.getString(config_prefix + ".namespace");
         return createObjectStorage<CephObjectStorage>(ObjectStorageType::Ceph, config, config_prefix, std::move(rados), std::move(settings), endpoint, name);
     };
     factory.registerObjectStorageType("ceph", creator);

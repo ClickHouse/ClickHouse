@@ -20,75 +20,47 @@ namespace DB
 /// Accepts a pool and an object id, opens and read the object
 class ReadBufferFromCeph : public ReadBufferFromFileBase
 {
+struct Impl;
 public:
     ReadBufferFromCeph(
         std::shared_ptr<librados::Rados> rados_,
         const String & pool,
+        const String & nspace,
         const String & object_id_,
         const ReadSettings & read_settings_,
         bool use_external_buffer_ = false,
-        bool restricted_seek_ = false,
+        size_t offset_ = 0,
         size_t read_until_position_ = 0,
         std::optional<size_t> file_size_ = std::nullopt);
 
     ReadBufferFromCeph(
-        std::unique_ptr<Ceph::RadosIO> impl_,
+        std::shared_ptr<Ceph::RadosIO> io_,
         const String & object_id_,
         const ReadSettings & read_settings_,
         bool use_external_buffer_ = false,
-        bool restricted_seek_ = false,
+        size_t offset_ = 0,
         size_t read_until_position_ = 0,
         std::optional<size_t> file_size_ = std::nullopt);
 
-    ~ReadBufferFromCeph() override = default;
+    ~ReadBufferFromCeph() override;
+
+    size_t getFileSize() override;
+    String getFileName() const override;
 
     off_t seek(off_t off, int whence) override;
 
-    off_t getPosition() override;
-
     bool nextImpl() override;
 
-    size_t getFileOffsetOfBufferEnd() const override { return offset; }
-
-    String getFileName() const override { return object_id; }
-
-    void setReadUntilPosition(size_t position) override;
-    void setReadUntilEnd() override;
-
-    bool supportsRightBoundedReads() const override { return true; }
-
-    size_t getFileSize() override;
-
-    size_t readBigAt(char * to, size_t n, size_t range_begin, const std::function<bool(size_t)> & progress_callback) const override;
+    off_t getPosition() override;
+    size_t getFileOffsetOfBufferEnd() const override;
 
     bool supportsReadAt() override { return true; }
+    size_t readBigAt(char * to, size_t n, size_t range_begin, const std::function<bool(size_t)> & progress_callback) const override;
 
 private:
 
-    void initialize();
-    size_t readImpl(char * to, size_t len, off_t begin) const;
-
-    std::unique_ptr<Ceph::RadosIO> impl;
-
-    String object_id;
-
-    ReadSettings read_settings;
-    std::vector<char> tmp_buffer;
-    size_t tmp_buffer_size;
+    std::unique_ptr<Impl> impl;
     bool use_external_buffer;
-    /// There is different seek policy for disk seek and for non-disk seek
-    /// (non-disk seek is applied for seekable input formats: orc, arrow, parquet).
-    bool restricted_seek;
-
-    off_t read_until_position = 0;
-
-    off_t offset = 0;
-    size_t total_size;
-    bool initialized = false;
-    char * data_ptr;
-    size_t data_capacity;
-
-    LoggerPtr log = getLogger("ReadBufferFromCeph");
 };
 
 }

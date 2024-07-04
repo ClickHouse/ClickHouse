@@ -19,6 +19,7 @@ public:
     WriteBufferFromCeph(
         std::shared_ptr<librados::Rados> rados_,
         const String & pool,
+        const String & nspace,
         const String & object_id_,
         const WriteSettings & write_settings_,
         std::optional<std::map<String, String>> object_attributes_ = {},
@@ -26,7 +27,7 @@ public:
         WriteMode mode_ = WriteMode::Rewrite);
 
     WriteBufferFromCeph(
-        std::unique_ptr<Ceph::RadosIO> impl_,
+        std::shared_ptr<Ceph::RadosIO> impl_,
         const String & object_id_,
         const WriteSettings & write_settings_,
         std::optional<std::map<String, String>> object_attributes_ = {},
@@ -47,7 +48,7 @@ private:
     void nextImpl() override;
     void finalizeImpl() override;
 
-    std::unique_ptr<Ceph::RadosIO> impl;
+    std::shared_ptr<Ceph::RadosIO> impl;
 
     String object_id;
     WriteSettings write_settings;

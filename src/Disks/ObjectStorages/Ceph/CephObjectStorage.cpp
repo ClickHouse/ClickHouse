@@ -117,54 +117,29 @@ std::unique_ptr<ReadBufferFromFileBase> CephObjectStorage::readObjects( /// NOLI
     std::optional<size_t>,
     std::optional<size_t>) const
 {
+    if (objects.size() == 1)
+        return readObject(objects.front(), read_settings);
+
     ReadSettings disk_read_settings = patchSettings(read_settings);
     auto global_context = Context::getGlobalContextInstance();
 
-    auto settings_ptr = ceph_settings.get();
-
-    auto read_buffer_creator =
-        [this, settings_ptr, disk_read_settings]
-        (bool restricted_seek, const StoredObject & object_) -> std::unique_ptr<ReadBufferFromFileBase>
+    auto read_buffer_creator
+        = [this, disk_read_settings](bool, const StoredObject & object_) -> std::unique_ptr<ReadBufferFromFileBase>
     {
         return std::make_unique<ReadBufferFromCeph>(
-            std::make_unique<Ceph::RadosIO>(rados, endpoint.pool),
+            io_impl,
             object_.remote_path,
             disk_read_settings,
-            /* use_external_buffer */true,
-            /* offset */0,
-            /* read_until_position */0,
-            restricted_seek);
+            /* use_external_buffer */ true);
     };
 
-    switch (read_settings.remote_fs_method)
-    {
-        case RemoteFSReadMethod::read:
-        {
-            return std::make_unique<ReadBufferFromRemoteFSGather>(
-                std::move(read_buffer_creator),
-                objects,
-                "ceph:" + endpoint.pool + "/",
-                disk_read_settings,
-                global_context->getFilesystemCacheLog(),
-                /* use_external_buffer */false);
-        }
-        case RemoteFSReadMethod::threadpool:
-        {
-            auto impl = std::make_unique<ReadBufferFromRemoteFSGather>(
-                std::move(read_buffer_creator),
-                objects,
-                "ceph:" + endpoint.pool + "/",
-                disk_read_settings,
-                global_context->getFilesystemCacheLog(),
-                /* use_external_buffer */true);
-
-            auto & reader = global_context->getThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER);
-            return std::make_unique<AsynchronousBoundedReadBuffer>(
-                std::move(impl), reader, disk_read_settings,
-                global_context->getAsyncReadCounters(),
-                global_context->getFilesystemReadPrefetchesLog());
-        }
-    }
+    return std::make_unique<ReadBufferFromRemoteFSGather>(
+        std::move(read_buffer_creator),
+        objects,
+        "ceph:" + endpoint.pool + "/",
+        disk_read_settings,
+        global_context->getFilesystemCacheLog(),
+        /* use_external_buffer */ false);
 }
 
 std::unique_ptr<ReadBufferFromFileBase> CephObjectStorage::readObject( /// NOLINT
@@ -173,11 +148,11 @@ std::unique_ptr<ReadBufferFromFileBase> CephObjectStorage::readObject( /// NOLIN
     std::optional<size_t>,
     std::optional<size_t>) const
 {
-    auto settings_ptr = ceph_settings.get();
+    ReadSettings disk_read_settings = patchSettings(read_settings);
     return std::make_unique<ReadBufferFromCeph>(
-        std::make_unique<Ceph::RadosIO>(rados, endpoint.pool),
+        io_impl,
         object.remote_path,
-        read_settings);
+        disk_read_settings);
 }
 
 std::unique_ptr<WriteBufferFromFileBase> CephObjectStorage::writeObject( /// NOLINT
@@ -190,7 +165,7 @@ std::unique_ptr<WriteBufferFromFileBase> CephObjectStorage::writeObject( /// NOL
     WriteSettings disk_write_settings = IObjectStorage::patchSettings(write_settings);
 
     return std::make_unique<WriteBufferFromCeph>(
-        std::make_unique<Ceph::RadosIO>(rados, endpoint.pool),
+        io_impl,
         object.remote_path,
         write_settings,
         attributes,
@@ -257,17 +232,6 @@ ObjectMetadata CephObjectStorage::getObjectMetadata(const std::string & path) co
     return io_impl->getMetadata(path);
 }
 
-void CephObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT
-    const StoredObject & object_from,
-    const StoredObject & object_to,
-    const ReadSettings & read_settings,
-    const WriteSettings & write_settings,
-    IObjectStorage & object_storage_to,
-    std::optional<ObjectAttributes> object_to_attributes)
-{
-    IObjectStorage::copyObjectToAnotherObjectStorage(object_from, object_to, read_settings, write_settings, object_storage_to, object_to_attributes);
-}
-
 void CephObjectStorage::copyObject( // NOLINT
     const StoredObject & object_from,
     const StoredObject & object_to,
@@ -275,10 +239,10 @@ void CephObjectStorage::copyObject( // NOLINT
     const WriteSettings & write_settings,
     std::optional<ObjectAttributes> object_to_attributes)
 {
-    ReadBufferFromCeph from(rados, endpoint.pool, object_from.remote_path, read_settings);
-    WriteBufferFromCeph to(rados, endpoint.pool, object_to.remote_path, write_settings, object_to_attributes);
-    copyData(from, to);
-    to.finalize();
+    auto in = readObject(object_from, read_settings);
+    auto out = writeObject(object_to, WriteMode::Rewrite, /* attributes= */ object_to_attributes, /* buf_size= */ DBMS_DEFAULT_BUFFER_SIZE, write_settings);
+    copyData(*in, *out);
+    out->finalize();
 }
 
 void CephObjectStorage::setNewSettings(std::unique_ptr<CephObjectStorageSettings> && ceph_settings_)

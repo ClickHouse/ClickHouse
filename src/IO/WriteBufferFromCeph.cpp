@@ -33,6 +33,7 @@ namespace ErrorCodes
 WriteBufferFromCeph::WriteBufferFromCeph(
     std::shared_ptr<librados::Rados> rados_,
     const String & pool,
+    const String & nspace,
     const String & object_id_,
     const WriteSettings & write_settings_,
     std::optional<std::map<String, String>> object_attributes_,
@@ -44,12 +45,12 @@ WriteBufferFromCeph::WriteBufferFromCeph(
     , object_attributes(std::move(object_attributes_))
     , mode(mode_)
 {
-    impl = std::make_unique<Ceph::RadosIO>(std::move(rados_), pool, "", false);
+    impl = std::make_shared<Ceph::RadosIO>(std::move(rados_), pool, nspace, false);
 }
 
 
 WriteBufferFromCeph::WriteBufferFromCeph(
-    std::unique_ptr<Ceph::RadosIO> impl_,
+    std::shared_ptr<Ceph::RadosIO> impl_,
     const String & object_id_,
     const WriteSettings & write_settings_,
     std::optional<std::map<String, String>> object_attributes_,
