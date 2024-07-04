@@ -22,4 +22,4 @@ Test statistics multi-types:
           Prewhere filter
           Prewhere filter column: and(equals(a, \'10000\'), equals(b, 0), less(c, 0)) (removed)
 Test LowCardinality and Nullable data type:
-t2
+tab2
