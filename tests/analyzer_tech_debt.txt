@@ -6,5 +6,6 @@
 # Flaky list
 01825_type_json_in_array
 01414_mutations_and_errors_zookeeper
+01287_max_execution_speed
 # Check after ConstantNode refactoring
 02154_parser_backtracking

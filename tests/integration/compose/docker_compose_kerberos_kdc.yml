@@ -2,7 +2,7 @@ version: '2.3'
 
 services:
   kerberoskdc:
-    image: clickhouse/kerberos-kdc:${DOCKER_KERBEROS_KDC_TAG:-latest}
+    image: altinityinfra/kerberos-kdc:${DOCKER_KERBEROS_KDC_TAG:-latest}
     hostname: kerberoskdc
     volumes:
       - ${KERBEROS_KDC_DIR}/secrets:/tmp/keytab

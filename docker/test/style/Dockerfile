@@ -1,4 +1,4 @@
-# docker build -t clickhouse/style-test .
+# docker build -t altinityinfra/style-test .
 FROM ubuntu:22.04
 ARG ACT_VERSION=0.2.33
 ARG ACTIONLINT_VERSION=1.6.22

@@ -104,8 +104,8 @@ def started_cluster():
         cluster.add_instance(
             "old_instance",
             with_zookeeper=True,
-            image="clickhouse/clickhouse-server",
-            tag="23.12",
+            image="altinity/clickhouse-server",
+            tag="23.8.11.29.altinitystable", #TODO: (mtkachenko) verify this substitution is ok. Originally 23.12
             stay_alive=True,
             with_installed_binary=True,
             use_old_analyzer=True,

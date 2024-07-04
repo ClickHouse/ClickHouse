@@ -180,6 +180,9 @@ class JobNames(metaclass=WithIter):
     DOCS_CHECK = "Docs check"
     BUGFIX_VALIDATE = "Bugfix validation"
 
+    SIGN_RELEASE = "Sign release"
+    SIGN_AARCH64 = "Sign aarch64"
+
 
 # dynamically update JobName with Build jobs
 for attr_name in dir(Build):
@@ -227,7 +230,7 @@ class JobConfig:
     # label that enables job in CI, if set digest won't be used
     run_by_label: str = ""
     # to run always regardless of the job digest or/and label
-    run_always: bool = False
+    run_always: bool = True
     # if the job needs to be run on the release branch, including master (e.g. building packages, docker server).
     # NOTE: Subsequent runs on the same branch with the similar digest are still considered skippable.
     required_on_release_branch: bool = False
@@ -270,7 +273,7 @@ builds_job_config = JobConfig(
             "./tests/performance",
         ],
         exclude_files=[".md"],
-        docker=["clickhouse/binary-builder"],
+        docker=["altinityinfra/binary-builder"],
         git_submodules=True,
     ),
     run_command="build_check.py $BUILD_NAME",
@@ -339,11 +342,11 @@ LabelConfigs = Dict[str, LabelConfig]
 # common digests configs
 compatibility_check_digest = DigestConfig(
     include_paths=["./tests/ci/compatibility_check.py"],
-    docker=["clickhouse/test-old-ubuntu", "clickhouse/test-old-centos"],
+    docker=["altinityinfra/test-old-ubuntu", "altinityinfra/test-old-centos"],
 )
 install_check_digest = DigestConfig(
     include_paths=["./tests/ci/install_check.py"],
-    docker=["clickhouse/install-deb-test", "clickhouse/install-rpm-test"],
+    docker=["altinityinfra/install-deb-test", "altinityinfra/install-rpm-test"],
 )
 stateless_check_digest = DigestConfig(
     include_paths=[
@@ -354,7 +357,7 @@ stateless_check_digest = DigestConfig(
         "./tests/*.txt",
     ],
     exclude_files=[".md"],
-    docker=["clickhouse/stateless-test"],
+    docker=["altinityinfra/stateless-test"],
 )
 stateful_check_digest = DigestConfig(
     include_paths=[
@@ -365,7 +368,7 @@ stateful_check_digest = DigestConfig(
         "./tests/*.txt",
     ],
     exclude_files=[".md"],
-    docker=["clickhouse/stateful-test"],
+    docker=["altinityinfra/stateful-test"],
 )
 
 stress_check_digest = DigestConfig(
@@ -377,13 +380,13 @@ stress_check_digest = DigestConfig(
         "./tests/*.txt",
     ],
     exclude_files=[".md"],
-    docker=["clickhouse/stress-test"],
+    docker=["altinityinfra/stress-test"],
 )
 # FIXME: which tests are upgrade? just python?
 upgrade_check_digest = DigestConfig(
     include_paths=["./tests/ci/upgrade_check.py"],
     exclude_files=[".md"],
-    docker=["clickhouse/upgrade-check"],
+    docker=["altinityinfra/upgrade-check"],
 )
 integration_check_digest = DigestConfig(
     include_paths=[
@@ -398,12 +401,12 @@ integration_check_digest = DigestConfig(
 ast_fuzzer_check_digest = DigestConfig(
     # include_paths=["./tests/ci/ast_fuzzer_check.py"],
     # exclude_files=[".md"],
-    # docker=["clickhouse/fuzzer"],
+    # docker=["altinityinfra/fuzzer"],
 )
 unit_check_digest = DigestConfig(
     include_paths=["./tests/ci/unit_tests_check.py"],
     exclude_files=[".md"],
-    docker=["clickhouse/unit-test"],
+    docker=["altinityinfra/unit-test"],
 )
 perf_check_digest = DigestConfig(
     include_paths=[
@@ -411,22 +414,22 @@ perf_check_digest = DigestConfig(
         "./tests/performance/",
     ],
     exclude_files=[".md"],
-    docker=["clickhouse/performance-comparison"],
+    docker=["altinityinfra/performance-comparison"],
 )
 sqllancer_check_digest = DigestConfig(
     # include_paths=["./tests/ci/sqlancer_check.py"],
     # exclude_files=[".md"],
-    # docker=["clickhouse/sqlancer-test"],
+    # docker=["altinityinfra/sqlancer-test"],
 )
 sqllogic_check_digest = DigestConfig(
     include_paths=["./tests/ci/sqllogic_test.py"],
     exclude_files=[".md"],
-    docker=["clickhouse/sqllogic-test"],
+    docker=["altinityinfra/sqllogic-test"],
 )
 sqltest_check_digest = DigestConfig(
     include_paths=["./tests/ci/sqltest.py"],
     exclude_files=[".md"],
-    docker=["clickhouse/sqltest"],
+    docker=["altinityinfra/sqltest"],
 )
 bugfix_validate_check = DigestConfig(
     include_paths=[
@@ -438,7 +441,7 @@ bugfix_validate_check = DigestConfig(
     exclude_files=[".md"],
     docker=IMAGES.copy()
     + [
-        "clickhouse/stateless-test",
+        "altinityinfra/stateless-test",
     ],
 )
 # common test params
@@ -469,6 +472,7 @@ stateful_test_common_params = {
 stress_test_common_params = {
     "digest": stress_check_digest,
     "run_command": "stress_check.py",
+    "timeout": 9000,
 }
 upgrade_test_common_params = {
     "digest": upgrade_check_digest,
@@ -514,9 +518,10 @@ clickbench_test_params = {
         include_paths=[
             "tests/ci/clickbench.py",
         ],
-        docker=["clickhouse/clickbench"],
+        docker=["altinityinfra/clickbench"],
     ),
     "run_command": 'clickbench.py "$CHECK_NAME"',
+    "timeout": 900,
 }
 install_test_params = JobConfig(
     digest=install_check_digest,
@@ -609,6 +614,7 @@ class CIConfig:
                 "build check",
                 "jepsen",
                 "style check",
+                "sign"
             ]
         ):
             result = Runners.STYLE_CHECKER
@@ -1075,7 +1081,7 @@ CI_CONFIG = CIConfig(
             job_config=JobConfig(
                 digest=DigestConfig(
                     include_paths=["**/*.md", "./docs", "tests/ci/docs_check.py"],
-                    docker=["clickhouse/docs-builder"],
+                    docker=["altinityinfra/docs-builder"],
                 ),
                 run_command="docs_check.py",
             ),
@@ -1087,7 +1093,7 @@ CI_CONFIG = CIConfig(
                 digest=DigestConfig(
                     include_paths=["./tests/queries/0_stateless/"],
                     exclude_files=[".md"],
-                    docker=["clickhouse/fasttest"],
+                    docker=["altinityinfra/fasttest"],
                 ),
             ),
         ),
@@ -1205,13 +1211,13 @@ CI_CONFIG = CIConfig(
             Build.PACKAGE_TSAN, job_config=JobConfig(**stress_test_common_params)  # type: ignore
         ),
         JobNames.STRESS_TEST_ASAN: TestConfig(
-            Build.PACKAGE_ASAN, job_config=JobConfig(random_bucket="stress_with_sanitizer", **stress_test_common_params)  # type: ignore
+            Build.PACKAGE_ASAN, job_config=JobConfig(**stress_test_common_params)  # type: ignore
         ),
         JobNames.STRESS_TEST_UBSAN: TestConfig(
-            Build.PACKAGE_UBSAN, job_config=JobConfig(random_bucket="stress_with_sanitizer", **stress_test_common_params)  # type: ignore
+            Build.PACKAGE_UBSAN, job_config=JobConfig(**stress_test_common_params)  # type: ignore
         ),
         JobNames.STRESS_TEST_MSAN: TestConfig(
-            Build.PACKAGE_MSAN, job_config=JobConfig(random_bucket="stress_with_sanitizer", **stress_test_common_params)  # type: ignore
+            Build.PACKAGE_MSAN, job_config=JobConfig(**stress_test_common_params)  # type: ignore
         ),
         JobNames.UPGRADE_TEST_ASAN: TestConfig(
             Build.PACKAGE_ASAN, job_config=JobConfig(pr_only=True, random_bucket="upgrade_with_sanitizer", **upgrade_test_common_params)  # type: ignore
@@ -1227,7 +1233,7 @@ CI_CONFIG = CIConfig(
         ),
         JobNames.INTEGRATION_TEST_ASAN: TestConfig(
             Build.PACKAGE_ASAN,
-            job_config=JobConfig(num_batches=4, **integration_test_common_params, release_only=True),  # type: ignore
+            job_config=JobConfig(num_batches=4, **integration_test_common_params),  # type: ignore
         ),
         JobNames.INTEGRATION_TEST_ASAN_ANALYZER: TestConfig(
             Build.PACKAGE_ASAN,
@@ -1244,7 +1250,7 @@ CI_CONFIG = CIConfig(
         ),
         JobNames.INTEGRATION_TEST: TestConfig(
             Build.PACKAGE_RELEASE,
-            job_config=JobConfig(num_batches=4, **integration_test_common_params, release_only=True),  # type: ignore
+            job_config=JobConfig(num_batches=4, **integration_test_common_params),  # type: ignore
         ),
         JobNames.INTEGRATION_TEST_FLAKY: TestConfig(
             Build.PACKAGE_ASAN, job_config=JobConfig(pr_only=True, **integration_test_common_params)  # type: ignore
@@ -1340,6 +1346,12 @@ CI_CONFIG = CIConfig(
                 run_command='libfuzzer_test_check.py "$CHECK_NAME" 10800',
             ),
         ),  # type: ignore
+        JobNames.SIGN_RELEASE: TestConfig(
+            Build.PACKAGE_RELEASE
+        ),
+        JobNames.SIGN_AARCH64: TestConfig(
+            Build.PACKAGE_AARCH64
+        ),
     },
 )
 CI_CONFIG.validate()

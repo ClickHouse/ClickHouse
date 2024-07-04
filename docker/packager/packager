@@ -10,7 +10,7 @@ from typing import List, Optional
 
 SCRIPT_PATH = Path(__file__).absolute()
 IMAGE_TYPE = "binary-builder"
-IMAGE_NAME = f"clickhouse/{IMAGE_TYPE}"
+IMAGE_NAME = f"altinityinfra/{IMAGE_TYPE}"
 
 
 class BuildException(Exception):
@@ -130,9 +130,11 @@ def parse_env_variables(
     sanitizer: str,
     package_type: str,
     cache: str,
+    s3_access_key_id: str,
     s3_bucket: str,
     s3_directory: str,
     s3_rw_access: bool,
+    s3_secret_access_key: str,
     clang_tidy: bool,
     version: str,
     official: bool,
@@ -317,6 +319,10 @@ def parse_env_variables(
         result.append(f"SCCACHE_S3_KEY_PREFIX={sccache_dir}")
         if not s3_rw_access:
             result.append("SCCACHE_S3_NO_CREDENTIALS=true")
+        if s3_access_key_id:
+            result.append(f"AWS_ACCESS_KEY_ID={s3_access_key_id}")
+        if s3_secret_access_key:
+            result.append(f"AWS_SECRET_ACCESS_KEY={s3_secret_access_key}")
 
     if clang_tidy:
         # `CTCACHE_DIR` has the same purpose as the `CCACHE_DIR` above.
@@ -443,6 +449,14 @@ def parse_args() -> argparse.Namespace:
         help="a directory with ccache",
     )
     parser.add_argument(
+        "--s3-access-key-id",
+        help="an S3 access key id used for sscache bucket",
+    )
+    parser.add_argument(
+        "--s3-secret-access-key",
+        help="an S3 secret access key used for sscache bucket",
+    )
+    parser.add_argument(
         "--s3-bucket",
         help="an S3 bucket used for sscache and clang-tidy-cache",
     )
@@ -525,9 +539,11 @@ def main() -> None:
         args.sanitizer,
         args.package_type,
         args.cache,
+        args.s3_access_key_id,
         args.s3_bucket,
         args.s3_directory,
         args.s3_rw_access,
+        args.s3_secret_access_key,
         args.clang_tidy,
         args.version,
         args.official,

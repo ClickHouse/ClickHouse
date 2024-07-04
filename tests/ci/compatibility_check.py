@@ -16,8 +16,8 @@ from env_helper import REPORT_PATH, TEMP_PATH
 from report import FAILURE, SUCCESS, JobReport, TestResult, TestResults
 from stopwatch import Stopwatch
 
-IMAGE_UBUNTU = "clickhouse/test-old-ubuntu"
-IMAGE_CENTOS = "clickhouse/test-old-centos"
+IMAGE_UBUNTU = "altinityinfra/test-old-ubuntu"
+IMAGE_CENTOS = "altinityinfra/test-old-centos"
 DOWNLOAD_RETRIES_COUNT = 5
 
 

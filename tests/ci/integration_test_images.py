@@ -1,19 +1,19 @@
 #!/usr/bin/env python3
 
 IMAGES_ENV = {
-    "clickhouse/dotnet-client": "DOCKER_DOTNET_CLIENT_TAG",
-    "clickhouse/integration-helper": "DOCKER_HELPER_TAG",
-    "clickhouse/integration-test": "DOCKER_BASE_TAG",
-    "clickhouse/integration-tests-runner": "",
-    "clickhouse/kerberized-hadoop": "DOCKER_KERBERIZED_HADOOP_TAG",
-    "clickhouse/kerberos-kdc": "DOCKER_KERBEROS_KDC_TAG",
-    "clickhouse/mysql-golang-client": "DOCKER_MYSQL_GOLANG_CLIENT_TAG",
-    "clickhouse/mysql-java-client": "DOCKER_MYSQL_JAVA_CLIENT_TAG",
-    "clickhouse/mysql-js-client": "DOCKER_MYSQL_JS_CLIENT_TAG",
-    "clickhouse/mysql-php-client": "DOCKER_MYSQL_PHP_CLIENT_TAG",
-    "clickhouse/nginx-dav": "DOCKER_NGINX_DAV_TAG",
-    "clickhouse/postgresql-java-client": "DOCKER_POSTGRESQL_JAVA_CLIENT_TAG",
-    "clickhouse/python-bottle": "DOCKER_PYTHON_BOTTLE_TAG",
+    "altinityinfra/dotnet-client": "DOCKER_DOTNET_CLIENT_TAG",
+    "altinityinfra/integration-helper": "DOCKER_HELPER_TAG",
+    "altinityinfra/integration-test": "DOCKER_BASE_TAG",
+    "altinityinfra/integration-tests-runner": "",
+    "altinityinfra/kerberized-hadoop": "DOCKER_KERBERIZED_HADOOP_TAG",
+    "altinityinfra/kerberos-kdc": "DOCKER_KERBEROS_KDC_TAG",
+    "altinityinfra/mysql-golang-client": "DOCKER_MYSQL_GOLANG_CLIENT_TAG",
+    "altinityinfra/mysql-java-client": "DOCKER_MYSQL_JAVA_CLIENT_TAG",
+    "altinityinfra/mysql-js-client": "DOCKER_MYSQL_JS_CLIENT_TAG",
+    "altinityinfra/mysql-php-client": "DOCKER_MYSQL_PHP_CLIENT_TAG",
+    "altinityinfra/nginx-dav": "DOCKER_NGINX_DAV_TAG",
+    "altinityinfra/postgresql-java-client": "DOCKER_POSTGRESQL_JAVA_CLIENT_TAG",
+    "altinityinfra/python-bottle": "DOCKER_PYTHON_BOTTLE_TAG",
 }
 
 IMAGES = list(IMAGES_ENV.keys())
