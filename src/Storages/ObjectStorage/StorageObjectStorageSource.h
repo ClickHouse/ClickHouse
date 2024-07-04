@@ -200,7 +200,7 @@ private:
     std::unique_ptr<re2::RE2> matcher;
 
     bool is_finished = false;
-    bool first_iteration = true;
+    bool any_files_matched_glob = false;
     std::mutex next_mutex;
 
     std::function<void(FileProgress)> file_progress_callback;

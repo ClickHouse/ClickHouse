@@ -484,7 +484,7 @@ StorageObjectStorage::ObjectInfoPtr StorageObjectStorageSource::GlobIterator::ne
 {
     std::lock_guard lock(next_mutex);
     auto object_info = nextImplUnlocked(processor);
-    if (first_iteration && !object_info && throw_on_zero_files_match)
+    if (!object_info && !any_files_matched_glob && throw_on_zero_files_match)
     {
         throw Exception(ErrorCodes::FILE_DOESNT_EXIST,
                         "Can not match any files with path {}{}",
@@ -493,7 +493,6 @@ StorageObjectStorage::ObjectInfoPtr StorageObjectStorageSource::GlobIterator::ne
                           ? fmt::format(" (this error can be suppressed by setting {} = false)", throw_on_zero_files_match_setting_name)
                           : "");
     }
-    first_iteration = false;
     return object_info;
 }
 
@@ -524,6 +523,7 @@ StorageObjectStorage::ObjectInfoPtr StorageObjectStorageSource::GlobIterator::ne
                     ++it;
             }
         }
+        any_files_matched_glob = true;
 
         index = 0;
 
