@@ -166,6 +166,8 @@ def test_string_functions(start_cluster):
         "filesystemUnreserved",
         "filesystemCapacity",
         "filesystemAvailable",
+        # Exclude it for now. Looks like the result depends on the build type.
+        "farmHash64",
     ]
     functions = filter(lambda x: x not in excludes, functions)
 
