@@ -11,6 +11,7 @@
 #include <Poco/Util/HelpFormatter.h>
 #include <Poco/Environment.h>
 #include <Poco/Config.h>
+#include <Common/Jemalloc.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/logger_useful.h>
 #include <base/phdr_cache.h>
@@ -133,10 +134,6 @@
 #    include <Server/KeeperTCPHandlerFactory.h>
 #endif
 
-#if USE_JEMALLOC
-#    include <jemalloc/jemalloc.h>
-#endif
-
 #if USE_AZURE_BLOB_STORAGE
 #   include <azure/storage/common/internal/xml_wrapper.hpp>
 #   include <azure/core/diagnostics/logger.hpp>
@@ -176,33 +173,9 @@ namespace ProfileEvents
 
 namespace fs = std::filesystem;
 
-#if USE_JEMALLOC
-static bool jemallocOptionEnabled(const char *name)
-{
-    bool value;
-    size_t size = sizeof(value);
-
-    if (mallctl(name, reinterpret_cast<void *>(&value), &size, /* newp= */ nullptr, /* newlen= */ 0))
-        throw Poco::SystemException("mallctl() failed");
-
-    return value;
-}
-#else
-static bool jemallocOptionEnabled(const char *) { return false; }
-#endif
-
 int mainEntryClickHouseServer(int argc, char ** argv)
 {
     DB::Server app;
-
-    if (jemallocOptionEnabled("opt.background_thread"))
-    {
-        LOG_ERROR(&app.logger(),
-            "jemalloc.background_thread was requested, "
-            "however ClickHouse uses percpu_arena and background_thread most likely will not give any benefits, "
-            "and also background_thread is not compatible with ClickHouse watchdog "
-            "(that can be disabled with CLICKHOUSE_WATCHDOG_ENABLE=0)");
-    }
 
     /// Do not fork separate process from watchdog if we attached to terminal.
     /// Otherwise it breaks gdb usage.
@@ -656,6 +629,10 @@ static void initializeAzureSDKLogger(
 int Server::main(const std::vector<std::string> & /*args*/)
 try
 {
+#if USE_JEMALLOC
+    setJemallocBackgroundThreads(true);
+#endif
+
     Stopwatch startup_watch;
 
     Poco::Logger * log = &logger();
