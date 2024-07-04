@@ -63,7 +63,7 @@ struct LowerUpperUTF8Impl
             size_t valid_size = res_end - output.data();
 
             res_data.resize(curr_offset + valid_size + 1);
-            memcpySmallAllowReadWriteOverflow15(&res_data[curr_offset], output.data(), valid_size);
+            memcpy(&res_data[curr_offset], output.data(), valid_size);
             res_data[curr_offset + valid_size] = 0;
 
             curr_offset += valid_size + 1;
