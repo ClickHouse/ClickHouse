@@ -6,6 +6,7 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Storages/ObjectStorage/DataLakes/PartitionColumns.h>
 
 
 namespace DB
@@ -15,7 +16,7 @@ class SchemaCache;
 
 class StorageObjectStorageSource : public SourceWithKeyCondition, WithContext
 {
-    friend class StorageS3QueueSource;
+    friend class ObjectStorageQueueSource;
 public:
     using Configuration = StorageObjectStorage::Configuration;
     using ConfigurationPtr = StorageObjectStorage::ConfigurationPtr;
@@ -100,7 +101,7 @@ protected:
         PullingPipelineExecutor * operator->() { return reader.get(); }
         const PullingPipelineExecutor * operator->() const { return reader.get(); }
 
-        const ObjectInfo & getObjectInfo() const { return *object_info; }
+        ObjectInfoPtr getObjectInfo() const { return object_info; }
         const IInputFormat * getInputFormat() const { return dynamic_cast<const IInputFormat *>(source.get()); }
 
     private:
@@ -261,7 +262,8 @@ public:
         ObjectInfoInArchive(
             ObjectInfoPtr archive_object_,
             const std::string & path_in_archive_,
-            std::shared_ptr<IArchiveReader> archive_reader_);
+            std::shared_ptr<IArchiveReader> archive_reader_,
+            IArchiveReader::FileInfo && file_info_);
 
         std::string getFileName() const override
         {
@@ -280,9 +282,12 @@ public:
 
         bool isArchive() const override { return true; }
 
+        size_t fileSizeInArchive() const override { return file_info.uncompressed_size; }
+
         const ObjectInfoPtr archive_object;
         const std::string path_in_archive;
         const std::shared_ptr<IArchiveReader> archive_reader;
+        const IArchiveReader::FileInfo file_info;
     };
 
 private:

@@ -153,6 +153,7 @@ void registerBackupEngineAzureBlobStorage(BackupFactory & factory)
                 params.base_backup_info,
                 reader,
                 params.context,
+                params.is_internal_backup,
                 /* use_same_s3_credentials_for_base_backup*/ false);
         }
         else

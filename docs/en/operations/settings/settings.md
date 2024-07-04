@@ -2536,7 +2536,7 @@ Possible values:
 - 0 — Optimization disabled.
 - 1 — Optimization enabled.
 
-Default value: `0`.
+Default value: `1`.
 
 ## optimize_trivial_count_query {#optimize-trivial-count-query}
 
@@ -5418,11 +5418,14 @@ When set to `false` than all attempts are made with identical timeouts.
 
 Default value: `true`.
 
-## uniform_snowflake_conversion_functions {#uniform_snowflake_conversion_functions}
+## allow_deprecated_snowflake_conversion_functions {#allow_deprecated_snowflake_conversion_functions}
 
-If set to `true`, then functions `snowflakeIDToDateTime`, `snowflakeIDToDateTime64`, `dateTimeToSnowflakeID`, and `dateTime64ToSnowflakeID` are enabled, and functions `snowflakeToDateTime`, `snowflakeToDateTime64`, `dateTimeToSnowflake`, and `dateTime64ToSnowflake` are disabled (and vice versa if set to `false`).
+Functions `snowflakeToDateTime`, `snowflakeToDateTime64`, `dateTimeToSnowflake`, and `dateTime64ToSnowflake` are deprecated and disabled by default.
+Please use functions `snowflakeIDToDateTime`, `snowflakeIDToDateTime64`, `dateTimeToSnowflakeID`, and `dateTime64ToSnowflakeID` instead.
 
-Default value: `true`
+To re-enable the deprecated functions (e.g., during a transition period), please set this setting to `true`.
+
+Default value: `false`
 
 ## allow_experimental_variant_type {#allow_experimental_variant_type}
 
