@@ -80,9 +80,9 @@ void IStorageSystemOneBlock::read(
 
 void ReadFromSystemOneBlock::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    const auto & sample_block = getOutputStream().header;
+    const Block & sample_block = getOutputStream().header;
     MutableColumns res_columns = sample_block.cloneEmptyColumns();
-    auto predicate = filter ? filter->getOutputs().at(0) : nullptr;
+    const ActionsDAG::Node * predicate = filter ? filter->getOutputs().at(0) : nullptr;
     storage->fillData(res_columns, context, predicate, std::move(columns_mask));
 
     UInt64 num_rows = res_columns.at(0)->size();
