@@ -385,13 +385,8 @@ private:
             // Reset data hooks for IO scheduling
             if (ResourceLink link = CurrentThread::getReadResourceLink())
                 Session::setReceiveDataHooks(std::make_shared<ResourceGuardSessionDataHooks>(ResourceGuard::Metrics::getIORead(), link));
-            else
-                Session::setReceiveDataHooks();
-
             if (ResourceLink link = CurrentThread::getWriteResourceLink())
                 Session::setSendDataHooks(std::make_shared<ResourceGuardSessionDataHooks>(ResourceGuard::Metrics::getIOWrite(), link));
-            else
-                Session::setSendDataHooks();
 
             std::ostream & result = Session::sendRequest(request);
             result.exceptions(std::ios::badbit);
@@ -449,9 +444,8 @@ private:
                 }
             }
             response_stream = nullptr;
-            // FIXME: We are not sure that response stream is fully read at this moment, so hooks could possible be called after this point, right?
-            // Session::setSendDataHooks();
-            // Session::setReceiveDataHooks();
+            Session::setSendDataHooks();
+            Session::setReceiveDataHooks();
 
             group->atConnectionDestroy();
 
