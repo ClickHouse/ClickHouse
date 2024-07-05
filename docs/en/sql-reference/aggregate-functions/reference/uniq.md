@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/aggregate-functions/reference/uniq
-sidebar_position: 190
+sidebar_position: 204
 ---
 
 # uniq

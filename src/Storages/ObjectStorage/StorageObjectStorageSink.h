@@ -20,7 +20,7 @@ public:
 
     String getName() const override { return "StorageObjectStorageSink"; }
 
-    void consume(Chunk chunk) override;
+    void consume(Chunk & chunk) override;
 
     void onCancel() override;
 
@@ -35,8 +35,9 @@ private:
     bool cancelled = false;
     std::mutex cancel_mutex;
 
-    void finalize();
-    void release();
+    void finalizeBuffers();
+    void releaseBuffers();
+    void cancelBuffers();
 };
 
 class PartitionedStorageObjectStorageSink : public PartitionedSink

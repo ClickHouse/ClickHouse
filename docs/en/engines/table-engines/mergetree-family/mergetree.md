@@ -993,11 +993,11 @@ They can be used for prewhere optimization only if we enable `set allow_statisti
 
 - `TDigest`
 
-    Stores distribution of values from numeric columns in [TDigest](https://github.com/tdunning/t-digest) sketch.
+    [TDigest](https://github.com/tdunning/t-digest) sketches which allow to compute approximate percentiles (e.g. the 90th percentile) for numeric columns.
 
 - `Uniq`
-    
-    Estimate the number of distinct values of a column by HyperLogLog.
+
+    [HyperLogLog](https://en.wikipedia.org/wiki/HyperLogLog) sketches which provide an estimation how many distinct values a column contains.
 
 ## Column-level Settings {#column-level-settings}
 
