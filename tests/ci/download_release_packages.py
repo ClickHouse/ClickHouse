@@ -13,7 +13,9 @@ from get_previous_release_tag import (
 PACKAGES_DIR = Path("previous_release_package_folder")
 
 
-def download_packages(release: ReleaseInfo, dest_path: Path = PACKAGES_DIR, debug: bool = False) -> None:
+def download_packages(
+    release: ReleaseInfo, dest_path: Path = PACKAGES_DIR, debug: bool = False
+) -> None:
     dest_path.mkdir(parents=True, exist_ok=True)
 
     logging.info("Will download %s", release)
