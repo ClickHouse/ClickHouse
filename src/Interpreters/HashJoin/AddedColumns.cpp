@@ -150,7 +150,7 @@ template <>
 void AddedColumns<true>::appendFromBlock(const RowRef * row_ref, bool)
 {
 #ifndef NDEBUG
-    checkBlock(block);
+    checkBlock(*row_ref->block);
 #endif
     if (has_columns_to_add)
     {
