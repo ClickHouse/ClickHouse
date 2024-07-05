@@ -6,6 +6,7 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Storages/ObjectStorage/DataLakes/PartitionColumns.h>
 
 
 namespace DB
@@ -15,7 +16,7 @@ class SchemaCache;
 
 class StorageObjectStorageSource : public SourceWithKeyCondition, WithContext
 {
-    friend class StorageS3QueueSource;
+    friend class ObjectStorageQueueSource;
 public:
     using Configuration = StorageObjectStorage::Configuration;
     using ConfigurationPtr = StorageObjectStorage::ConfigurationPtr;
@@ -75,7 +76,6 @@ protected:
     const ReadFromFormatInfo read_from_format_info;
     const std::shared_ptr<ThreadPool> create_reader_pool;
 
-    ColumnsDescription columns_desc;
     std::shared_ptr<IIterator> file_iterator;
     SchemaCache & schema_cache;
     bool initialized = false;
@@ -116,13 +116,32 @@ protected:
     std::future<ReaderHolder> reader_future;
 
     /// Recreate ReadBuffer and Pipeline for each file.
-    ReaderHolder createReader(size_t processor = 0);
-    std::future<ReaderHolder> createReaderAsync(size_t processor = 0);
-    std::unique_ptr<ReadBuffer> createReadBuffer(const ObjectInfo & object_info);
+    static ReaderHolder createReader(
+        size_t processor,
+        const std::shared_ptr<IIterator> & file_iterator,
+        const ConfigurationPtr & configuration,
+        const ObjectStoragePtr & object_storage,
+        const ReadFromFormatInfo & read_from_format_info,
+        const std::optional<FormatSettings> & format_settings,
+        const std::shared_ptr<const KeyCondition> & key_condition_,
+        const ContextPtr & context_,
+        SchemaCache * schema_cache,
+        const LoggerPtr & log,
+        size_t max_block_size,
+        size_t max_parsing_threads,
+        bool need_only_count);
+
+    ReaderHolder createReader();
+
+    std::future<ReaderHolder> createReaderAsync();
+    static std::unique_ptr<ReadBuffer> createReadBuffer(
+        const ObjectInfo & object_info,
+        const ObjectStoragePtr & object_storage,
+        const ContextPtr & context_,
+        const LoggerPtr & log);
 
     void addNumRowsToCache(const ObjectInfo & object_info, size_t num_rows);
-    std::optional<size_t> tryGetNumRowsFromCache(const ObjectInfo & object_info);
-    void lazyInitialize(size_t processor);
+    void lazyInitialize();
 };
 
 class StorageObjectStorageSource::IIterator
@@ -259,7 +278,8 @@ public:
         ObjectInfoInArchive(
             ObjectInfoPtr archive_object_,
             const std::string & path_in_archive_,
-            std::shared_ptr<IArchiveReader> archive_reader_);
+            std::shared_ptr<IArchiveReader> archive_reader_,
+            IArchiveReader::FileInfo && file_info_);
 
         std::string getFileName() const override
         {
@@ -278,9 +298,12 @@ public:
 
         bool isArchive() const override { return true; }
 
+        size_t fileSizeInArchive() const override { return file_info.uncompressed_size; }
+
         const ObjectInfoPtr archive_object;
         const std::string path_in_archive;
         const std::shared_ptr<IArchiveReader> archive_reader;
+        const IArchiveReader::FileInfo file_info;
     };
 
 private:
