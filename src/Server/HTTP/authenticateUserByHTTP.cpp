@@ -37,6 +37,13 @@ namespace
         throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
                         "Invalid authentication: it is not allowed to use {} and {} simultaneously", method1, method2);
     }
+
+    /// Checks that a specified user name is not empty, and throws an exception if it's empty.
+    void checkUserNameNotEmpty(const String & user_name, std::string_view method)
+    {
+        if (user_name.empty())
+            throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Got an empty user name from {}", method);
+    }
 }
 
 
@@ -74,6 +81,9 @@ bool authenticateUserByHTTP(
     if (has_ssl_certificate_auth)
     {
 #if USE_SSL
+        /// For SSL certificate authentication we extract the user name from the "X-ClickHouse-User" HTTP header.
+        checkUserNameNotEmpty(user, "X-ClickHouse HTTP headers");
+
         /// It is prohibited to mix different authorization schemes.
         if (!password.empty())
             throwMultipleAuthenticationMethods("SSL certificate authentication", "authentication via password");
@@ -95,6 +105,8 @@ bool authenticateUserByHTTP(
     }
     else if (has_auth_headers)
     {
+        checkUserNameNotEmpty(user, "X-ClickHouse HTTP headers");
+
         /// It is prohibited to mix different authorization schemes.
         if (has_http_credentials)
             throwMultipleAuthenticationMethods("X-ClickHouse HTTP headers", "Authorization HTTP header");
@@ -116,6 +128,7 @@ bool authenticateUserByHTTP(
             Poco::Net::HTTPBasicCredentials credentials(auth_info);
             user = credentials.getUsername();
             password = credentials.getPassword();
+            checkUserNameNotEmpty(user, "Authorization HTTP header");
         }
         else if (Poco::icompare(scheme, "Negotiate") == 0)
         {
@@ -134,10 +147,12 @@ bool authenticateUserByHTTP(
         /// If the user name is not set we assume it's the 'default' user.
         user = params.get("user", "default");
         password = params.get("password", "");
+        checkUserNameNotEmpty(user, "authentication via parameters");
     }
 
     if (!certificate_subjects.empty())
     {
+        chassert(!user.empty());
         if (!current_credentials)
             current_credentials = std::make_unique<SSLCertificateCredentials>(user, std::move(certificate_subjects));
 
@@ -183,6 +198,7 @@ bool authenticateUserByHTTP(
         if (!basic_credentials)
             throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Invalid authentication: expected 'Basic' HTTP Authorization scheme");
 
+        chassert(!user.empty());
         basic_credentials->setUserName(user);
         basic_credentials->setPassword(password);
     }
