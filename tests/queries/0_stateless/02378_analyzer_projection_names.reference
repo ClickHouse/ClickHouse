@@ -447,13 +447,13 @@ SELECT '--';
 --
 DESCRIBE (WITH test_table_in_cte_1 AS (SELECT 1 AS c1), test_table_in_cte_2 AS (SELECT 1 AS c1) SELECT *
 FROM test_table_in_cte_1 INNER JOIN test_table_in_cte_2 as test_table_in_cte_2 ON test_table_in_cte_1.c1 = test_table_in_cte_2.c1);
-c1	UInt8					
+test_table_in_cte_1.c1	UInt8					
 test_table_in_cte_2.c1	UInt8					
 SELECT '--';
 --
 DESCRIBE (WITH test_table_in_cte_1 AS (SELECT 1 AS c1), test_table_in_cte_2 AS (SELECT 1 AS c1 UNION ALL SELECT 1 AS c1) SELECT *
 FROM test_table_in_cte_1 INNER JOIN test_table_in_cte_2 as test_table_in_cte_2 ON test_table_in_cte_1.c1 = test_table_in_cte_2.c1);
-c1	UInt8					
+test_table_in_cte_1.c1	UInt8					
 test_table_in_cte_2.c1	UInt8					
 SELECT 'Joins';
 Joins
