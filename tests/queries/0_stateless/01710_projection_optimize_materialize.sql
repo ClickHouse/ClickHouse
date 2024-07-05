@@ -14,8 +14,6 @@ SELECT name, partition, formatReadableSize(sum(data_compressed_bytes) AS size) A
 alter table z add projection pp1 (select id, count(c) group by id);
 alter table z materialize projections settings mutations_sync=1;
 
--- wait for the materialized data stored on disk
-SELECT sleep(3);
 SELECT COUNT(c) FROM z WHERE id = 10;
 
 SYSTEM FLUSH LOGS;

@@ -34,10 +34,7 @@ INSERT INTO index_test (a, b, c) SELECT intDiv(number,4096), intDiv(number,4096)
 ALTER TABLE index_test ADD INDEX skip_i_a a TYPE set(100) GRANULARITY 2;
 ALTER TABLE index_test ADD INDEX skip_i_b b TYPE set(100) GRANULARITY 2;
 
-ALTER TABLE index_test MATERIALIZE INDEXES;
-
--- wait for the materialized data stored on disk
-SELECT sleep(3);
+ALTER TABLE index_test MATERIALIZE INDEXES settings mutations_sync=1;
 
 SELECT COUNT(b) FROM index_test WHERE b IN (125, 700);
 SELECT COUNT(b) FROM index_test WHERE c IN (125, 700);
