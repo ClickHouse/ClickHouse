@@ -207,7 +207,7 @@ function run_tests()
 
     if [[ -n "$USE_AZURE_STORAGE_FOR_MERGE_TREE" ]] && [[ "$USE_AZURE_STORAGE_FOR_MERGE_TREE"  -eq 1 ]]; then
         # to disable the same tests
-        ADDITIONAL_OPTIONS+=('--s3-storage')
+        ADDITIONAL_OPTIONS+=('--azure-blob-storage')
         # azurite is slow, but with these two settings it can be super slow
         ADDITIONAL_OPTIONS+=('--no-random-settings')
         ADDITIONAL_OPTIONS+=('--no-random-merge-tree-settings')
@@ -253,7 +253,7 @@ function run_tests()
     try_run_with_retry 10 clickhouse-client -q "insert into system.zookeeper (name, path, value) values ('auxiliary_zookeeper2', '/test/chroot/', '')"
 
     set +e
-    clickhouse-test --testname --shard --zookeeper --check-zookeeper-session --hung-check --print-time \
+    timeout -s TERM --preserve-status 120m clickhouse-test --testname --shard --zookeeper --check-zookeeper-session --hung-check --print-time \
          --no-drop-if-fail --test-runs "$NUM_TRIES" "${ADDITIONAL_OPTIONS[@]}" 2>&1 \
     | ts '%Y-%m-%d %H:%M:%S' \
     | tee -a test_output/test_result.txt

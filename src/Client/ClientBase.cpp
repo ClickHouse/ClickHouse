@@ -1207,11 +1207,8 @@ void ClientBase::receiveResult(ASTPtr parsed_query, Int32 signals_before_stop, b
     if (local_format_error)
         std::rethrow_exception(local_format_error);
 
-    if (cancelled && is_interactive)
-    {
+    if (cancelled && is_interactive && !cancelled_printed.exchange(true))
         output_stream << "Query was cancelled." << std::endl;
-        cancelled_printed = true;
-    }
 }
 
 
@@ -1327,7 +1324,7 @@ void ClientBase::onEndOfStream()
 
     if (is_interactive)
     {
-        if (cancelled && !cancelled_printed)
+        if (cancelled && !cancelled_printed.exchange(true))
             output_stream << "Query was cancelled." << std::endl;
         else if (!written_first_block)
             output_stream << "Ok." << std::endl;
