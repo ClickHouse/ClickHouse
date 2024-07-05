@@ -28,11 +28,12 @@ jobs:
       - name: DebugInfo
         uses: hmarr/debug-action@f7318c783045ac39ed9bb497e22ce835fdafbfe6
       - name: Check out repository code
-        uses: ClickHouse/checkout@v1
+        # test checkout with timeout
+        uses: ClickHouse/checkout@set_default_timeout
         with:
           clear-repository: true # to ensure correct digests
-          fetch-depth: 0 # to get a version
-          filter: tree:0
+#          fetch-depth: 0 # to get a version
+#          filter: tree:0
       - name: Cancel previous Sync PR workflow
         run: |
           python3 "$GITHUB_WORKSPACE/tests/ci/ci.py" --cancel-previous-run
