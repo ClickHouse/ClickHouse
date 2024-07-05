@@ -53,7 +53,7 @@
 #include <Interpreters/ArrayJoinAction.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/HashJoin.h>
+#include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/getCustomKeyFilterForParallelReplicas.h>
@@ -693,14 +693,14 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 if (select_query_info.local_storage_limits.local_limits.size_limits.max_rows != 0)
                 {
                     if (max_block_size_limited < select_query_info.local_storage_limits.local_limits.size_limits.max_rows)
-                        table_expression_query_info.limit = max_block_size_limited;
+                        table_expression_query_info.trivial_limit = max_block_size_limited;
                     /// Ask to read just enough rows to make the max_rows limit effective (so it has a chance to be triggered).
                     else if (select_query_info.local_storage_limits.local_limits.size_limits.max_rows < std::numeric_limits<UInt64>::max())
-                        table_expression_query_info.limit = 1 + select_query_info.local_storage_limits.local_limits.size_limits.max_rows;
+                        table_expression_query_info.trivial_limit = 1 + select_query_info.local_storage_limits.local_limits.size_limits.max_rows;
                 }
                 else
                 {
-                    table_expression_query_info.limit = max_block_size_limited;
+                    table_expression_query_info.trivial_limit = max_block_size_limited;
                 }
             }
 
@@ -913,8 +913,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                         auto result_ptr = reading->selectRangesToRead();
 
                         UInt64 rows_to_read = result_ptr->selected_rows;
-                        if (table_expression_query_info.limit > 0 && table_expression_query_info.limit < rows_to_read)
-                            rows_to_read = table_expression_query_info.limit;
+                        if (table_expression_query_info.trivial_limit > 0 && table_expression_query_info.trivial_limit < rows_to_read)
+                            rows_to_read = table_expression_query_info.trivial_limit;
 
                         if (max_block_size_limited && (max_block_size_limited < rows_to_read))
                             rows_to_read = max_block_size_limited;

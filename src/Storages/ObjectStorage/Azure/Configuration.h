@@ -57,9 +57,6 @@ protected:
     std::string blob_path;
     std::vector<String> blobs_paths;
     AzureBlobStorage::ConnectionParams connection_params;
-
-    // AzureClientPtr createClient(bool is_read_only, bool attempt_to_create_container);
-    // AzureObjectStorage::SettingsPtr createSettings(ContextPtr local_context);
 };
 
 }

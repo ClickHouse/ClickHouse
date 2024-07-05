@@ -11,6 +11,7 @@
 #include <Poco/Util/HelpFormatter.h>
 #include <Poco/Environment.h>
 #include <Poco/Config.h>
+#include <Common/Jemalloc.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/logger_useful.h>
 #include <base/phdr_cache.h>
@@ -133,10 +134,6 @@
 #    include <Server/KeeperTCPHandlerFactory.h>
 #endif
 
-#if USE_JEMALLOC
-#    include <jemalloc/jemalloc.h>
-#endif
-
 #if USE_AZURE_BLOB_STORAGE
 #   include <azure/storage/common/internal/xml_wrapper.hpp>
 #   include <azure/core/diagnostics/logger.hpp>
@@ -176,33 +173,9 @@ namespace ProfileEvents
 
 namespace fs = std::filesystem;
 
-#if USE_JEMALLOC
-static bool jemallocOptionEnabled(const char *name)
-{
-    bool value;
-    size_t size = sizeof(value);
-
-    if (mallctl(name, reinterpret_cast<void *>(&value), &size, /* newp= */ nullptr, /* newlen= */ 0))
-        throw Poco::SystemException("mallctl() failed");
-
-    return value;
-}
-#else
-static bool jemallocOptionEnabled(const char *) { return false; }
-#endif
-
 int mainEntryClickHouseServer(int argc, char ** argv)
 {
     DB::Server app;
-
-    if (jemallocOptionEnabled("opt.background_thread"))
-    {
-        LOG_ERROR(&app.logger(),
-            "jemalloc.background_thread was requested, "
-            "however ClickHouse uses percpu_arena and background_thread most likely will not give any benefits, "
-            "and also background_thread is not compatible with ClickHouse watchdog "
-            "(that can be disabled with CLICKHOUSE_WATCHDOG_ENABLE=0)");
-    }
 
     /// Do not fork separate process from watchdog if we attached to terminal.
     /// Otherwise it breaks gdb usage.
@@ -656,6 +629,10 @@ static void initializeAzureSDKLogger(
 int Server::main(const std::vector<std::string> & /*args*/)
 try
 {
+#if USE_JEMALLOC
+    setJemallocBackgroundThreads(true);
+#endif
+
     Stopwatch startup_watch;
 
     Poco::Logger * log = &logger();
@@ -1002,6 +979,8 @@ try
     StatusFile status{path / "status", StatusFile::write_full_info};
 
     ServerUUID::load(path / "uuid", log);
+
+    PlacementInfo::PlacementInfo::instance().initialize(config());
 
     zkutil::validateZooKeeperConfig(config());
     bool has_zookeeper = zkutil::hasZooKeeperConfig(config());
@@ -1540,6 +1519,8 @@ try
             global_context->setMaxDictionaryNumToWarn(new_server_settings.max_dictionary_num_to_warn);
             global_context->setMaxDatabaseNumToWarn(new_server_settings.max_database_num_to_warn);
             global_context->setMaxPartNumToWarn(new_server_settings.max_part_num_to_warn);
+            /// Only for system.server_settings
+            global_context->setConfigReloaderInterval(new_server_settings.config_reload_interval_ms);
 
             SlotCount concurrent_threads_soft_limit = UnlimitedSlots;
             if (new_server_settings.concurrent_threads_soft_limit_num > 0 && new_server_settings.concurrent_threads_soft_limit_num < concurrent_threads_soft_limit)
@@ -1702,8 +1683,7 @@ try
 
             /// Must be the last.
             latest_config = config;
-        },
-        /* already_loaded = */ false);  /// Reload it right now (initial loading)
+        });
 
     const auto listen_hosts = getListenHosts(config());
     const auto interserver_listen_hosts = getInterserverListenHosts(config());
@@ -1814,11 +1794,6 @@ try
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "ClickHouse server built without NuRaft library. Cannot use internal coordination.");
 #endif
 
-    }
-
-    if (config().has(DB::PlacementInfo::PLACEMENT_CONFIG_PREFIX))
-    {
-        PlacementInfo::PlacementInfo::instance().initialize(config());
     }
 
     {
