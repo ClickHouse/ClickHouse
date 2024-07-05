@@ -4,16 +4,13 @@
 #include <Access/Common/SSLCertificateSubjects.h>
 #include <Access/Credentials.h>
 #include <Access/ExternalAuthenticators.h>
+#include <Common/Base64.h>
 #include <Server/HTTP/HTTPServerRequest.h>
 #include <Server/HTTP/HTMLForm.h>
 #include <Server/HTTP/HTTPServerResponse.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/Session.h>
 
-#include <Poco/MemoryStream.h>
-#include <Poco/Base64Decoder.h>
-#include <Poco/Base64Encoder.h>
-#include <Poco/StreamCopier.h>
 #include <Poco/Net/HTTPBasicCredentials.h>
 
 #if USE_SSL
@@ -29,30 +26,6 @@ namespace ErrorCodes
     extern const int AUTHENTICATION_FAILED;
     extern const int BAD_ARGUMENTS;
     extern const int SUPPORT_IS_DISABLED;
-}
-
-
-namespace
-{
-    String base64Decode(const String & encoded)
-    {
-        String decoded;
-        Poco::MemoryInputStream istr(encoded.data(), encoded.size());
-        Poco::Base64Decoder decoder(istr);
-        Poco::StreamCopier::copyToString(decoder, decoded);
-        return decoded;
-    }
-
-    String base64Encode(const String & decoded)
-    {
-        std::ostringstream ostr; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-        ostr.exceptions(std::ios::failbit);
-        Poco::Base64Encoder encoder(ostr);
-        encoder.rdbuf()->setLineLength(0);
-        encoder << decoded;
-        encoder.close();
-        return ostr.str();
-    }
 }
 
 
