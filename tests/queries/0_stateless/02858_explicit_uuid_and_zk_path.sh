@@ -17,7 +17,7 @@ $CLICKHOUSE_CLIENT --distributed_ddl_output_mode=none --database_replicated_allo
 UUID '02858000-1000-4000-8000-000000000000' (n int) ENGINE=Memory" 2>&1| grep -Fac "database_replicated_allow_explicit_uuid"
 
 $CLICKHOUSE_CLIENT --distributed_ddl_output_mode=none --database_replicated_allow_explicit_uuid=1 -q "CREATE TABLE $db.m1
-UUID '02858000-1000-4000-8000-0000000000$(($RANDOM % 10))$(($RANDOM % 10))' (n int) ENGINE=Memory"
+UUID '02858000-1000-4000-8000-000000000$(($RANDOM % 10))$(($RANDOM % 10))$(($RANDOM % 10))' (n int) ENGINE=Memory"
 
 $CLICKHOUSE_CLIENT --distributed_ddl_output_mode=none --database_replicated_allow_explicit_uuid=2 -q "CREATE TABLE $db.m2
 UUID '02858000-1000-4000-8000-000000000002' (n int) ENGINE=Memory"
@@ -35,7 +35,7 @@ ENGINE=ReplicatedMergeTree('/test/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/rmt/{shard}'
 
 $CLICKHOUSE_CLIENT -q "SELECT name FROM system.tables WHERE database='$db' ORDER BY name"
 
-$CLICKHOUSE_CLIENT -q "SELECT substring(toString(uuid) as s, 1, length(s) - 2) FROM system.tables WHERE database='$db' and name='m1'"
+$CLICKHOUSE_CLIENT -q "SELECT substring(toString(uuid) as s, 1, length(s) - 3) FROM system.tables WHERE database='$db' and name='m1'"
 $CLICKHOUSE_CLIENT -q "SELECT toString(uuid) LIKE '02858000%' FROM system.tables WHERE database='$db' and name='m2'"
 
 $CLICKHOUSE_CLIENT -q "SHOW CREATE $db.rmt1"
