@@ -128,7 +128,7 @@ Reading data from `table.csv`, located in `archive1.zip` or/and `archive2.zip`:
 SELECT * FROM file('user_files/archives/archive{1..2}.zip :: table.csv');
 ```
 
-## Globs in path 
+## Globs in path
 
 Paths may use globbing. Files must match the whole path pattern, not only the suffix or prefix.
 
@@ -197,6 +197,7 @@ SELECT count(*) FROM file('big_dir/**/file002', 'CSV', 'name String, value UInt3
 - `_file` — Name of the file. Type: `LowCardinalty(String)`.
 - `_size` — Size of the file in bytes. Type: `Nullable(UInt64)`. If the file size is unknown, the value is `NULL`.
 - `_time` — Last modified time of the file. Type: `Nullable(DateTime)`. If the time is unknown, the value is `NULL`.
+- `_mtime` — Last modified time of the file. Type: `Nullable(DateTime)`. If the time is unknown, the value is `NULL`.
 
 ## Settings {#settings}
 
