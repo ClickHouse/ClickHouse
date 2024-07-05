@@ -167,16 +167,16 @@ int HTTPSession::write(const char* buffer, std::streamsize length)
 	try
 	{
 		if (_sendDataHooks)
-			_sendDataHooks->start((int) length);
+			_sendDataHooks->atStart((int) length);
 		int result = _socket.sendBytes(buffer, (int) length);
 		if (_sendDataHooks)
-			_sendDataHooks->finish(result);
+			_sendDataHooks->atFinish(result);
 		return result;
 	}
 	catch (Poco::Exception& exc)
 	{
 		if (_sendDataHooks)
-			_sendDataHooks->fail();
+			_sendDataHooks->atFail();
 		setException(exc);
 		throw;
 	}
@@ -188,16 +188,16 @@ int HTTPSession::receive(char* buffer, int length)
 	try
 	{
 		if (_receiveDataHooks)
-			_receiveDataHooks->start(length);
+			_receiveDataHooks->atStart(length);
 		int result = _socket.receiveBytes(buffer, length);
 		if (_receiveDataHooks)
-			_receiveDataHooks->finish(result);
+			_receiveDataHooks->atFinish(result);
 		return result;
 	}
 	catch (Poco::Exception& exc)
 	{
 		if (_receiveDataHooks)
-			_receiveDataHooks->fail();
+			_receiveDataHooks->atFail();
 		setException(exc);
 		throw;
 	}

@@ -42,13 +42,13 @@ namespace Net
     public:
         virtual ~IHTTPSessionDataHooks() = default;
 
-        virtual void start(int bytes) = 0;
+        virtual void atStart(int bytes) = 0;
         /// Called before sending/receiving data `bytes` to/from socket.
 
-        virtual void finish(int bytes) = 0;
+        virtual void atFinish(int bytes) = 0;
         /// Called when sending/receiving of data `bytes` is successfully finished.
 
-        virtual void fail() = 0;
+        virtual void atFail() = 0;
         /// If an error occurred during send/receive `fail()` is called instead of `finish()`.
     };
 

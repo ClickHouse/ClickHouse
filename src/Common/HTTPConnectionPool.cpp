@@ -239,13 +239,13 @@ public:
 
 // Session data hooks implementation for integration with resource scheduler.
 // Hooks are created per every request-response pair and are registered/unregistered in HTTP session.
-// * `start()` send resource request to the scheduler every time HTTP session is going to send or receive
+// * `atStart()` send resource request to the scheduler every time HTTP session is going to send or receive
 //   data to/from socket. `start()` waits for the scheduler confirmation. This way scheduler might
 //   throttle and/or schedule socket data streams.
-// * `finish()` hook is called on successful socket read/write operation.
+// * `atFinish()` hook is called on successful socket read/write operation.
 //   It informs the scheduler that operation is complete, which allows the scheduler to control the total
 //   amount of in-flight bytes and/or operations.
-// * `fail()` hook is called on failure of socket operation. The purpose is to correct the amount of bytes
+// * `atFail()` hook is called on failure of socket operation. The purpose is to correct the amount of bytes
 //   passed through the scheduler queue to ensure fair bandwidth allocation even in presence of errors.
 struct ResourceGuardSessionDataHooks : public Poco::Net::IHTTPSessionDataHooks
 {
@@ -261,18 +261,18 @@ struct ResourceGuardSessionDataHooks : public Poco::Net::IHTTPSessionDataHooks
         request.assertFinished(); // Never destruct with an active request
     }
 
-    void start(int bytes) override
+    void atStart(int bytes) override
     {
         request.enqueue(bytes, link);
         request.wait();
     }
 
-    void finish(int bytes) override
+    void atFinish(int bytes) override
     {
         request.finish(bytes, link);
     }
 
-    void fail() override
+    void atFail() override
     {
         request.finish(0, link);
     }
