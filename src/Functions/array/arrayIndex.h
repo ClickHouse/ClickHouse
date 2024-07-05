@@ -1,4 +1,5 @@
 #pragma once
+#include <cstddef>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
@@ -13,6 +14,8 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>
+#include "Common/Logger.h"
+#include "Common/logger_useful.h"
 #include <Common/FieldVisitorsAccurateComparison.h>
 #include <Common/memcmpSmall.h>
 #include <Common/assert_cast.h>
@@ -712,6 +715,7 @@ private:
         auto right = recursiveRemoveLowCardinality(right_const->getDataColumnPtr());
 
         UInt64 index = 0;
+        UInt64 left_size = arguments[0].column->size();
         ResultColumnPtr col_result = ResultColumnType::create();
 
         if (!right->isNullAt(0))
@@ -732,6 +736,10 @@ private:
             else
             {
                 col_result->getData().resize_fill(col_array->size());
+
+                if (col_array_const)
+                    return ColumnConst::create(std::move(col_result), left_size);
+
                 return col_result;
             }
         }
@@ -745,7 +753,7 @@ private:
             nullptr);
 
         if (col_array_const)
-            return ColumnConst::create(std::move(col_result), arguments[0].column->size());
+            return ColumnConst::create(std::move(col_result), left_size);
 
         return col_result;
     }
