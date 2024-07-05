@@ -111,7 +111,7 @@ public:
             return;
 
         UInt64 version = this->data(place).version++;
-        if (version == 1)
+        if (version == 0)
         {
             for (auto & rhs_elem : rhs_set)
                 set.insert(rhs_elem.getValue());
@@ -278,14 +278,14 @@ public:
             return;
 
         UInt64 version = this->data(place).version++;
-        if (version == 1)
+        if (version == 1 && set.empty())
         {
             bool inserted;
             State::Set::LookupResult it;
             for (auto & rhs_elem : rhs_value)
                 set.emplace(ArenaKeyHolder{rhs_elem.getValue(), *arena}, it, inserted);
         }
-        else if (!set.empty())
+        else
         {
             auto create_matched_set = [](auto & lhs_val, auto & rhs_val)
             {
