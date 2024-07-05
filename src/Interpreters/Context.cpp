@@ -544,6 +544,9 @@ struct ContextSharedPart : boost::noncopyable
         for (const auto & [_, cache] : caches)
             cache->cache->deactivateBackgroundOperations();
 
+        LOG_TRACE(log, "Shutting down AccessControl");
+        access_control->shutdown();
+
         {
             auto lock = std::lock_guard(mutex);
 
