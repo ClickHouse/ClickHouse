@@ -4,7 +4,7 @@
 #include <Interpreters/Context.h>
 #include <IO/SwapHelper.h>
 #include <IO/ReadBufferFromFile.h>
-#include <IO/EmptyReadBuffer.h>
+#include <IO/ReadBufferFromEmptyFile.h>
 
 #include <base/scope_guard.h>
 
@@ -134,7 +134,7 @@ std::unique_ptr<ReadBuffer> WriteBufferToFileSegment::getReadBufferImpl()
     if (file_segment->getDownloadedSize() > 0)
         return std::make_unique<ReadBufferFromFile>(file_segment->getPath());
     else
-        return std::make_unique<EmptyReadBuffer>();
+        return std::make_unique<ReadBufferFromEmptyFile>();
 }
 
 }
