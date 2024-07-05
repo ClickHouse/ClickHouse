@@ -22,11 +22,7 @@ void WriteBufferFromFileDecorator::finalizeImpl()
         }
         catch (...)
         {
-            /// In case of exception in preFinalize as a part of finalize call
-            /// WriteBufferFromFileDecorator.finalized is set as true
-            /// but impl->finalized is remain false
-            /// That leads to situation when the destructor of impl is called with impl->finalized equal false.
-            impl->finalizeFailed();
+            impl->cancel();
             throw;
         }
     }
@@ -35,6 +31,12 @@ void WriteBufferFromFileDecorator::finalizeImpl()
         SwapHelper swap(*this, *impl);
         impl->finalize();
     }
+}
+
+void WriteBufferFromFileDecorator::cancelImpl() noexcept
+{
+    SwapHelper swap(*this, *impl);
+    impl->cancel();
 }
 
 WriteBufferFromFileDecorator::~WriteBufferFromFileDecorator()

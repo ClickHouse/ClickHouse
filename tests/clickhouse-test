@@ -700,7 +700,9 @@ class FailureReason(enum.Enum):
     NO_LONG = "not running long tests"
     REPLICATED_DB = "replicated-database"
     NON_ATOMIC_DB = "database engine not Atomic"
+    OBJECT_STORAGE = "object-storage"
     S3_STORAGE = "s3-storage"
+    AZURE_BLOB_STORAGE = "azure-blob-storage"
     BUILD = "not running for current build"
     NO_PARALLEL_REPLICAS = "smth in not supported with parallel replicas"
     SHARED_MERGE_TREE = "no-shared-merge-tree"
@@ -808,10 +810,10 @@ class SettingsRandomizer:
         "merge_tree_coarse_index_granularity": lambda: random.randint(2, 32),
         "optimize_distinct_in_order": lambda: random.randint(0, 1),
         "max_bytes_before_external_sort": threshold_generator(
-            0.3, 0.5, 1, 10 * 1024 * 1024 * 1024
+            0.3, 0.5, 0, 10 * 1024 * 1024 * 1024
         ),
         "max_bytes_before_external_group_by": threshold_generator(
-            0.3, 0.5, 1, 10 * 1024 * 1024 * 1024
+            0.3, 0.5, 0, 10 * 1024 * 1024 * 1024
         ),
         "max_bytes_before_remerge_sort": lambda: random.randint(1, 3000000000),
         "min_compress_block_size": lambda: random.randint(1, 1048576 * 3),
@@ -850,6 +852,11 @@ class SettingsRandomizer:
         "merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability": lambda: round(
             random.random(), 2
         ),
+        "prefer_external_sort_block_bytes": lambda: random.choice([0, 1, 100000000]),
+        "cross_join_min_rows_to_compress": lambda: random.choice([0, 1, 100000000]),
+        "cross_join_min_bytes_to_compress": lambda: random.choice([0, 1, 100000000]),
+        "min_external_table_block_size_bytes": lambda: random.choice([0, 1, 100000000]),
+        "max_parsing_threads": lambda: random.choice([0, 1, 10]),
     }
 
     @staticmethod
@@ -1221,13 +1228,21 @@ class TestCase:
 
         elif tags and ("no-s3-storage" in tags) and args.s3_storage:
             return FailureReason.S3_STORAGE
+        elif tags and ("no-azure-blob-storage" in tags) and args.azure_blob_storage:
+            return FailureReason.AZURE_BLOB_STORAGE
         elif (
             tags
-            and "no-s3-storage-with-slow-build" in tags
-            and args.s3_storage
+            and ("no-object-storage" in tags)
+            and (args.azure_blob_storage or args.s3_storage)
+        ):
+            return FailureReason.OBJECT_STORAGE
+        elif (
+            tags
+            and "no-object-storage-with-slow-build" in tags
+            and (args.s3_storage or args.azure_blob_storage)
             and BuildFlags.RELEASE not in args.build_flags
         ):
-            return FailureReason.S3_STORAGE
+            return FailureReason.OBJECT_STORAGE
 
         elif tags:
             for build_flag in args.build_flags:
@@ -3093,6 +3108,12 @@ def parse_args():
         action="store_true",
         default=False,
         help="Run tests over s3 storage",
+    )
+    parser.add_argument(
+        "--azure-blob-storage",
+        action="store_true",
+        default=False,
+        help="Run tests over azure blob storage",
     )
     parser.add_argument(
         "--no-random-settings",

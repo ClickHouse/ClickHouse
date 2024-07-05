@@ -26,7 +26,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/PartMetadataManagerOrdinary.h>
 #include <Storages/MergeTree/checkDataPart.h>
-#include <Storages/MergeTree/localBackup.h>
+#include <Storages/MergeTree/Backup.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <base/JSON.h>
 #include <boost/algorithm/string/join.hpp>
@@ -375,6 +375,12 @@ void IMergeTreeDataPart::unloadIndex()
     index_loaded = false;
 }
 
+bool IMergeTreeDataPart::isIndexLoaded() const
+{
+    std::scoped_lock lock(index_mutex);
+    return index_loaded;
+}
+
 void IMergeTreeDataPart::setName(const String & new_name)
 {
     mutable_name = new_name;
@@ -673,16 +679,16 @@ String IMergeTreeDataPart::getColumnNameWithMinimumCompressedSize(bool with_subc
     return *minimum_size_column;
 }
 
-Statistics IMergeTreeDataPart::loadStatistics() const
+ColumnsStatistics IMergeTreeDataPart::loadStatistics() const
 {
     const auto & metadata_snaphost = storage.getInMemoryMetadata();
 
     auto total_statistics = MergeTreeStatisticsFactory::instance().getMany(metadata_snaphost.getColumns());
 
-    Statistics result;
+    ColumnsStatistics result;
     for (auto & stat : total_statistics)
     {
-        String file_name = stat->getFileName() + STAT_FILE_SUFFIX;
+        String file_name = stat->getFileName() + STATS_FILE_SUFFIX;
         String file_path = fs::path(getDataPartStorage().getRelativePath()) / file_name;
 
         if (!metadata_manager->exists(file_name))
@@ -737,10 +743,10 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
     {
         /// Don't scare people with broken part error
         if (!isRetryableException(std::current_exception()))
-            LOG_ERROR(storage.log, "Part {} is broken and need manual correction", getDataPartStorage().getFullPath());
+            LOG_ERROR(storage.log, "Part {} is broken and needs manual correction", getDataPartStorage().getFullPath());
 
         // There could be conditions that data part to be loaded is broken, but some of meta infos are already written
-        // into meta data before exception, need to clean them all.
+        // into metadata before exception, need to clean them all.
         metadata_manager->deleteAll(/*include_projection*/ true);
         metadata_manager->assertAllDeleted(/*include_projection*/ true);
         throw;
@@ -1577,7 +1583,7 @@ void IMergeTreeDataPart::loadColumns(bool require)
             if (getFileNameForColumn(column))
                 loaded_columns.push_back(column);
 
-        if (columns.empty())
+        if (loaded_columns.empty())
             throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART, "No columns in part {}", name);
 
         if (!is_readonly_storage)
@@ -2322,21 +2328,26 @@ String IMergeTreeDataPart::getUniqueId() const
     return getDataPartStorage().getUniqueId();
 }
 
+UInt128 IMergeTreeDataPart::getPartBlockIDHash() const
+{
+    SipHash hash;
+    checksums.computeTotalChecksumDataOnly(hash);
+    return hash.get128();
+}
+
 String IMergeTreeDataPart::getZeroLevelPartBlockID(std::string_view token) const
 {
     if (info.level != 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to get block id for non zero level part {}", name);
 
-    SipHash hash;
     if (token.empty())
     {
-        checksums.computeTotalChecksumDataOnly(hash);
-    }
-    else
-    {
-        hash.update(token.data(), token.size());
+        const auto hash_value = getPartBlockIDHash();
+        return info.partition_id + "_" + toString(hash_value.items[0]) + "_" + toString(hash_value.items[1]);
     }
 
+    SipHash hash;
+    hash.update(token.data(), token.size());
     const auto hash_value = hash.get128();
     return info.partition_id + "_" + toString(hash_value.items[0]) + "_" + toString(hash_value.items[1]);
 }

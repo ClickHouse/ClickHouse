@@ -68,7 +68,7 @@ using DatabaseAndTableName = std::pair<String, String>;
 class BackupEntriesCollector;
 class RestorerFromBackup;
 
-class ConditionEstimator;
+class ConditionSelectivityEstimator;
 
 struct ColumnSize
 {
@@ -135,7 +135,7 @@ public:
     /// Returns true if the storage supports queries with the PREWHERE section.
     virtual bool supportsPrewhere() const { return false; }
 
-    virtual ConditionEstimator getConditionEstimatorByPredicate(const SelectQueryInfo &, const StorageSnapshotPtr &, ContextPtr) const;
+    virtual ConditionSelectivityEstimator getConditionSelectivityEstimatorByPredicate(const StorageSnapshotPtr &, const ActionsDAGPtr &, ContextPtr) const;
 
     /// Returns which columns supports PREWHERE, or empty std::nullopt if all columns is supported.
     /// This is needed for engines whose aggregates data from multiple tables, like Merge.
@@ -165,6 +165,8 @@ public:
 
     /// Returns true if the storage supports reading of subcolumns of complex types.
     virtual bool supportsSubcolumns() const { return false; }
+    /// Returns true if storage supports optimizations of functions by reading subcolumns.
+    virtual bool supportsOptimizationToSubcolumns() const { return supportsSubcolumns(); }
 
     /// Returns true if the storage supports transactions for SELECT, INSERT and ALTER queries.
     /// Storage may throw an exception later if some query kind is not fully supported.

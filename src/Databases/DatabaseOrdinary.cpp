@@ -44,6 +44,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_DATABASE_ENGINE;
     extern const int NOT_IMPLEMENTED;
+    extern const int UNEXPECTED_NODE_IN_ZOOKEEPER;
 }
 
 static constexpr size_t METADATA_FILE_BUFFER_SIZE = 32768;
@@ -75,6 +76,20 @@ static void setReplicatedEngine(ASTCreateQuery * create_query, ContextPtr contex
     const auto & server_settings = context->getServerSettings();
     String replica_path = server_settings.default_replica_path;
     String replica_name = server_settings.default_replica_name;
+
+    /// Check that replica path doesn't exist
+    Macros::MacroExpansionInfo info;
+    StorageID table_id = StorageID(create_query->getDatabase(), create_query->getTable(), create_query->uuid);
+    info.table_id = table_id;
+    info.expand_special_macros_only = false;
+
+    String zookeeper_path = context->getMacros()->expand(replica_path, info);
+    if (context->getZooKeeper()->exists(zookeeper_path))
+        throw Exception(
+            ErrorCodes::UNEXPECTED_NODE_IN_ZOOKEEPER,
+            "Found existing ZooKeeper path {} while trying to convert table {} to replicated. Table will not be converted.",
+            zookeeper_path, backQuote(table_id.getFullTableName())
+        );
 
     auto args = std::make_shared<ASTExpressionList>();
     args->children.push_back(std::make_shared<ASTLiteral>(replica_path));
@@ -524,7 +539,7 @@ void DatabaseOrdinary::alterTable(ContextPtr local_context, const StorageID & ta
     }
 
     /// The create query of the table has been just changed, we need to update dependencies too.
-    auto ref_dependencies = getDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), ast);
+    auto ref_dependencies = getDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), ast, local_context->getCurrentDatabase());
     auto loading_dependencies = getLoadingDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), ast);
     DatabaseCatalog::instance().updateDependencies(table_id, ref_dependencies, loading_dependencies);
 

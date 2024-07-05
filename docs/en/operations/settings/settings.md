@@ -1590,6 +1590,22 @@ Possible values:
 
 Default value: `default`.
 
+## parallel_replicas_custom_key_range_lower {#parallel_replicas_custom_key_range_lower}
+
+Allows the filter type `range` to split the work evenly between replicas based on the custom range `[parallel_replicas_custom_key_range_lower, INT_MAX]`.
+
+When used in conjuction with [parallel_replicas_custom_key_range_upper](#parallel_replicas_custom_key_range_upper), it lets the filter evenly split the work over replicas for the range `[parallel_replicas_custom_key_range_lower, parallel_replicas_custom_key_range_upper]`.
+
+Note: This setting will not cause any additional data to be filtered during query processing, rather it changes the points at which the range filter breaks up the range `[0, INT_MAX]` for parallel processing.
+
+## parallel_replicas_custom_key_range_upper {#parallel_replicas_custom_key_range_upper}
+
+Allows the filter type `range` to split the work evenly between replicas based on the custom range `[0, parallel_replicas_custom_key_range_upper]`. A value of 0 disables the upper bound, setting it the max value of the custom key expression.
+
+When used in conjuction with [parallel_replicas_custom_key_range_lower](#parallel_replicas_custom_key_range_lower), it lets the filter evenly split the work over replicas for the range `[parallel_replicas_custom_key_range_lower, parallel_replicas_custom_key_range_upper]`.
+
+Note: This setting will not cause any additional data to be filtered during query processing, rather it changes the points at which the range filter breaks up the range `[0, INT_MAX]` for parallel processing.
+
 ## allow_experimental_parallel_reading_from_replicas
 
 Enables or disables sending SELECT queries to all replicas of a table (up to `max_parallel_replicas`). Reading is parallelized and coordinated dynamically. It will work for any kind of MergeTree table.
@@ -2520,7 +2536,7 @@ Possible values:
 - 0 — Optimization disabled.
 - 1 — Optimization enabled.
 
-Default value: `0`.
+Default value: `1`.
 
 ## optimize_trivial_count_query {#optimize-trivial-count-query}
 
@@ -3169,6 +3185,18 @@ Possible values:
 - 2 - The query waits for all mutations to complete on all replicas (if they exist).
 
 Default value: `0`.
+
+## lightweight_deletes_sync {#lightweight_deletes_sync}
+
+The same as 'mutation_sync', but controls only execution of lightweight deletes.
+
+Possible values:
+
+- 0 - Mutations execute asynchronously.
+- 1 - The query waits for the lightweight deletes to complete on the current server.
+- 2 - The query waits for the lightweight deletes to complete on all replicas (if they exist).
+
+Default value: `2`.
 
 **See Also**
 
@@ -3849,6 +3877,10 @@ Possible values:
 - 0 - Disabled (infinite timeout).
 
 Default value: 30.
+
+:::note
+It's applicable only to the default profile. A server reboot is required for the changes to take effect.
+:::
 
 ## http_receive_timeout {#http_receive_timeout}
 
@@ -5108,7 +5140,7 @@ a	Tuple(
 )
 ```
 
-## allow_experimental_statistic {#allow_experimental_statistic}
+## allow_experimental_statistics {#allow_experimental_statistics}
 
 Allows defining columns with [statistics](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) and [manipulate statistics](../../engines/table-engines/mergetree-family/mergetree.md#column-statistics).
 
@@ -5118,7 +5150,7 @@ Allows using statistic to optimize the order of [prewhere conditions](../../sql-
 
 ## analyze_index_with_space_filling_curves
 
-If a table has a space-filling curve in its index, e.g. `ORDER BY mortonEncode(x, y)`, and the query has conditions on its arguments, e.g. `x >= 10 AND x <= 20 AND y >= 20 AND y <= 30`, use the space-filling curve for index analysis.
+If a table has a space-filling curve in its index, e.g. `ORDER BY mortonEncode(x, y)` or `ORDER BY hilbertEncode(x, y)`, and the query has conditions on its arguments, e.g. `x >= 10 AND x <= 20 AND y >= 20 AND y <= 30`, use the space-filling curve for index analysis.
 
 ## query_plan_enable_optimizations {#query_plan_enable_optimizations}
 
@@ -5385,6 +5417,15 @@ When set to `true` than for all s3 requests first two attempts are made with low
 When set to `false` than all attempts are made with identical timeouts.
 
 Default value: `true`.
+
+## allow_deprecated_snowflake_conversion_functions {#allow_deprecated_snowflake_conversion_functions}
+
+Functions `snowflakeToDateTime`, `snowflakeToDateTime64`, `dateTimeToSnowflake`, and `dateTime64ToSnowflake` are deprecated and disabled by default.
+Please use functions `snowflakeIDToDateTime`, `snowflakeIDToDateTime64`, `dateTimeToSnowflakeID`, and `dateTime64ToSnowflakeID` instead.
+
+To re-enable the deprecated functions (e.g., during a transition period), please set this setting to `true`.
+
+Default value: `false`
 
 ## allow_experimental_variant_type {#allow_experimental_variant_type}
 

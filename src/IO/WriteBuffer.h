@@ -59,6 +59,7 @@ public:
               */
             pos = working_buffer.begin();
             bytes += bytes_in_buffer;
+
             throw;
         }
 
@@ -74,7 +75,6 @@ public:
         if (!hasPendingData())
             next();
     }
-
 
     void write(const char * from, size_t n)
     {
@@ -121,6 +121,9 @@ public:
         if (finalized)
             return;
 
+        if (canceled)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot finalize buffer after cancellation.");
+
         LockMemoryExceptionInThread lock(VariableContext::Global);
         try
         {
@@ -129,23 +132,21 @@ public:
         }
         catch (...)
         {
-            finalizeFailed();
+            pos = working_buffer.begin();
+
+            cancel();
+
             throw;
         }
     }
+
+    void cancel() noexcept;
 
     /// Wait for data to be reliably written. Mainly, call fsync for fd.
     /// May be called after finalize() if needed.
     virtual void sync()
     {
         next();
-    }
-
-    /// Mark the WriteBuffer as not needing finalization.
-    void finalizeFailed()
-    {
-        pos = working_buffer.begin();
-        finalized = true;
     }
 
 protected:
@@ -156,7 +157,12 @@ protected:
         next();
     }
 
+    virtual void cancelImpl() noexcept
+    {
+    }
+
     bool finalized = false;
+    bool canceled = false;
 
 private:
     /** Write the data in the buffer (from the beginning of the buffer to the current position).

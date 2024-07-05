@@ -171,7 +171,7 @@ public:
 
     void remove();
 
-    Statistics loadStatistics() const;
+    ColumnsStatistics loadStatistics() const;
 
     /// Initialize columns (from columns.txt if exists, or create from column files if not).
     /// Load various metadata into memory: checksums from checksums.txt, index if required, etc.
@@ -210,6 +210,7 @@ public:
 
     /// Compute part block id for zero level part. Otherwise throws an exception.
     /// If token is not empty, block id is calculated based on it instead of block data
+    UInt128 getPartBlockIDHash() const;
     String getZeroLevelPartBlockID(std::string_view token) const;
 
     void setName(const String & new_name);
@@ -369,6 +370,7 @@ public:
     void setIndex(const Columns & cols_);
     void setIndex(Columns && cols_);
     void unloadIndex();
+    bool isIndexLoaded() const;
 
     /// For data in RAM ('index')
     UInt64 getIndexSizeInBytes() const;
