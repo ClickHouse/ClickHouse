@@ -238,7 +238,12 @@
     \
     M(CannotRemoveEphemeralNode, "Number of times an error happened while trying to remove ephemeral node. This is not an issue, because our implementation of ZooKeeper library guarantee that the session will expire and the node will be removed.") \
     \
-    M(RegexpCreated, "Compiled regular expressions. Identical regular expressions compiled just once and cached forever.") \
+    M(RegexpWithMultipleNeedlesCreated, "Regular expressions with multiple needles (VectorScan library) compiled.") \
+    M(RegexpWithMultipleNeedlesGlobalCacheHit, "Number of times we fetched compiled regular expression with multiple needles (VectorScan library) from the global cache.") \
+    M(RegexpWithMultipleNeedlesGlobalCacheMiss, "Number of times we failed to fetch compiled regular expression with multiple needles (VectorScan library) from the global cache.") \
+    M(RegexpLocalCacheHit, "Number of times we fetched compiled regular expression from a local cache.") \
+    M(RegexpLocalCacheMiss, "Number of times we failed to fetch compiled regular expression from a local cache.") \
+    \
     M(ContextLock, "Number of times the lock of Context was acquired or tried to acquire. This is global lock.") \
     M(ContextLockWaitMicroseconds, "Context lock wait time in microseconds") \
     \
@@ -447,14 +452,18 @@ The server successfully detected this situation and will download merged part fr
     M(QueryMemoryLimitExceeded, "Number of times when memory limit exceeded for query.") \
     \
     M(AzureGetObject, "Number of Azure API GetObject calls.") \
-    M(AzureUploadPart, "Number of Azure blob storage API UploadPart calls") \
+    M(AzureUpload, "Number of Azure blob storage API Upload calls") \
+    M(AzureStageBlock, "Number of Azure blob storage API StageBlock calls") \
+    M(AzureCommitBlockList, "Number of Azure blob storage API CommitBlockList calls") \
     M(AzureCopyObject, "Number of Azure blob storage API CopyObject calls") \
     M(AzureDeleteObjects, "Number of Azure blob storage API DeleteObject(s) calls.") \
     M(AzureListObjects, "Number of Azure blob storage API ListObjects calls.") \
     M(AzureGetProperties, "Number of Azure blob storage API GetProperties calls.") \
     \
     M(DiskAzureGetObject, "Number of Disk Azure API GetObject calls.") \
-    M(DiskAzureUploadPart, "Number of Disk Azure blob storage API UploadPart calls") \
+    M(DiskAzureUpload, "Number of Disk Azure blob storage API Upload calls") \
+    M(DiskAzureStageBlock, "Number of Disk Azure blob storage API StageBlock calls") \
+    M(DiskAzureCommitBlockList, "Number of Disk Azure blob storage API CommitBlockList calls") \
     M(DiskAzureCopyObject, "Number of Disk Azure blob storage API CopyObject calls") \
     M(DiskAzureListObjects, "Number of Disk Azure blob storage API ListObjects calls.") \
     M(DiskAzureDeleteObjects, "Number of Azure blob storage API DeleteObject(s) calls.") \
