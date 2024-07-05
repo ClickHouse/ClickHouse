@@ -792,7 +792,7 @@ concat(s1, s2, ...)
 
 **Arguments**
 
-At least one value of arbitrary type.
+Values of arbitrary type.
 
 Arguments which are not of types [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md) are converted to strings using their default serialization. As this decreases performance, it is not recommended to use non-String/FixedString arguments.
 
