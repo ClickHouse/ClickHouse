@@ -20,11 +20,6 @@ replica2 = cluster.add_instance(
 )
 
 
-def check_exists(zk, path):
-    zk.sync(path)
-    return zk.exists(path)
-
-
 @pytest.fixture(scope="module")
 def start_cluster():
     try:
@@ -56,5 +51,4 @@ def test_replicated_detach_table(start_cluster):
         "INSERT INTO repl_db.test_replicated_table SELECT number FROM system.numbers LIMIT 6;"
     )
     replica1.query("SYSTEM SYNC REPLICA repl_db.test_replicated_table;", timeout=20)
-
     replica1.query("DETACH TABLE repl_db.test_replicated_table PERMANENTLY;")
