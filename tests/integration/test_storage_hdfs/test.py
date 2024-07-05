@@ -1229,6 +1229,7 @@ def test_hive_partitioning_without_setting(started_cluster):
             settings={"hdfs_hive_partitioning": 0},
         )
 
+
 if __name__ == "__main__":
     cluster.start()
     input("Cluster created, press any key to destroy...")

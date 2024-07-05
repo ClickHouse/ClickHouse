@@ -81,7 +81,6 @@ StorageObjectStorage::StorageObjectStorage(
     metadata.setConstraints(constraints_);
     metadata.setComment(comment);
 
-    
     if (sample_path.empty() && context->getSettings().use_hive_partitioning)
         sample_path = getPathSample(metadata, context);
     else if (!context->getSettings().use_hive_partitioning)
