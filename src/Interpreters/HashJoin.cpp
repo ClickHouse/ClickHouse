@@ -2178,21 +2178,21 @@ ColumnWithTypeAndName copyLeftKeyColumnToRight(
 }
 
 /// Cut first num_rows rows from block in place and returns block with remaining rows
-// Block sliceBlock(Block & block, size_t num_rows)
-// {
-//     size_t total_rows = block.rows();
-//     if (num_rows >= total_rows)
-//         return {};
-//     size_t remaining_rows = total_rows - num_rows;
-//     Block remaining_block = block.cloneEmpty();
-//     for (size_t i = 0; i < block.columns(); ++i)
-//     {
-//         auto & col = block.getByPosition(i);
-//         remaining_block.getByPosition(i).column = col.column->cut(num_rows, remaining_rows);
-//         col.column = col.column->cut(0, num_rows);
-//     }
-//     return remaining_block;
-// }
+Block sliceBlock(Block & block, size_t num_rows)
+{
+    size_t total_rows = block.rows();
+    if (num_rows >= total_rows)
+        return {};
+    size_t remaining_rows = total_rows - num_rows;
+    Block remaining_block = block.cloneEmpty();
+    for (size_t i = 0; i < block.columns(); ++i)
+    {
+        auto & col = block.getByPosition(i);
+        remaining_block.getByPosition(i).column = col.column->cut(num_rows, remaining_rows);
+        col.column = col.column->cut(0, num_rows);
+    }
+    return remaining_block;
+}
 
 } /// nameless
 
@@ -2227,8 +2227,8 @@ Block HashJoin::joinBlockImpl(
       */
     if constexpr (join_features.right || join_features.full)
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "RIGHT and FULL JOINs are not supported in HashJoin");
-        // materializeBlockInplace(block);
+        /// TODO: throw Exception(ErrorCodes::LOGICAL_ERROR, "RIGHT and FULL JOINs are not supported in HashJoin");
+        materializeBlockInplace(*block.block);
     }
 
     /** For LEFT/INNER JOIN, the saved blocks do not contain keys.
@@ -2255,24 +2255,15 @@ Block HashJoin::joinBlockImpl(
         added_columns.reserve(join_features.need_replication);
 
     size_t num_joined = switchJoinRightColumns<KIND, STRICTNESS>(maps_, added_columns, data->type, used_flags);
-    if (num_joined != block.rows())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Number of joined rows {} is not equal to block rows {}", num_joined, block.rows());
     /// Do not hold memory for join_on_keys anymore
     added_columns.join_on_keys.clear();
-    Block remaining_block; // TODO: = sliceBlock(block, num_joined);
+    Block remaining_block = sliceBlock(*block.block, num_joined);
 
     added_columns.buildOutput();
-    block.filterBySelector();
+    // block.filterBySelector();
     for (size_t i = 0; i < added_columns.size(); ++i)
     {
         block.block->insert(added_columns.moveColumn(i));
-        if (block.block->getColumnsWithTypeAndName().back().column->size() != block.rows())
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Column {} has size {} while block has {} rows",
-                i,
-                block.block->getColumnsWithTypeAndName().back().column->size(),
-                block.rows());
     }
 
     std::vector<size_t> right_keys_to_replicate [[maybe_unused]];
@@ -2316,6 +2307,15 @@ Block HashJoin::joinBlockImpl(
                 right_keys_to_replicate.push_back(block.block->getPositionByName(right_col_name));
         }
     }
+
+    // for (size_t i = 0; i < block.block->columns(); ++i)
+    //     if (block.block->getColumnsWithTypeAndName().at(i).column->size() != block.block->getColumnsWithTypeAndName().at(0).column->size())
+    //         throw Exception(
+    //             ErrorCodes::LOGICAL_ERROR,
+    //             "Column {} has size {} while block has {} rows",
+    //             i,
+    //             block.block->getColumnsWithTypeAndName().at(i).column->size(),
+    //             block.block->getColumnsWithTypeAndName().at(0).column->size());
 
     if constexpr (join_features.need_replication)
     {
