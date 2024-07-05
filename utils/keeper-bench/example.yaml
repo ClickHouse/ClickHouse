@@ -18,45 +18,46 @@ connections:
 
   host: "localhost:9181"
 
-generator:
-  setup:
+setup:
+  node:
+    name: "test3"
+  node:
+    name: "test_create"
+  node:
+    name: "test4"
+  node:
+    name: "test"
+    data: "somedata"
     node:
-      name: "test3"
+      repeat: 4
+      name:
+        random_string:
+          size: 15
+      data:
+        random_string:
+          size:
+            min_value: 10
+            max_value: 20
     node:
-      name: "test_create"
-    node:
-      name: "test4"
-    node:
-      name: "test"
-      data: "somedata"
-      node:
-        repeat: 4
-        name:
-          random_string:
-            size: 15
-        data:
-          random_string:
-            size:
-              min_value: 10
-              max_value: 20
+      repeat: 2
       node:
         repeat: 2
-        node:
-          repeat: 2
-          name:
-            random_string:
-              size: 12
         name:
           random_string:
-            size: 15
-        data:
-          random_string:
-            size:
-              min_value: 10
-              max_value: 20
-    node:
-      name: "test2"
-      data: "somedata"
+            size: 12
+      name:
+        random_string:
+          size: 15
+      data:
+        random_string:
+          size:
+            min_value: 10
+            max_value: 20
+  node:
+    name: "test2"
+    data: "somedata"
+
+generator:
   requests:
     create:
       path: "/test_create"

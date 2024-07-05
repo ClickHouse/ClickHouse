@@ -1,7 +1,5 @@
 #pragma once
 
-#ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD
-
 #include <base/types.h>
 #include <Common/isLocalAddress.h>
 #include <Common/MultiVersion.h>
@@ -1464,9 +1462,3 @@ struct HTTPContext : public IHTTPContext
 };
 
 }
-
-#else
-
-#include <Coordination/Standalone/Context.h>
-
-#endif

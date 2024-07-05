@@ -150,6 +150,12 @@ void MultiplexedConnections::sendQuery(
         }
     }
 
+    /// FIXME: Remove once we will make `allow_experimental_analyzer` obsolete setting.
+    /// Make the analyzer being set, so it will be effectively applied on the remote server.
+    /// In other words, the initiator always controls whether the analyzer enabled or not for
+    /// all servers involved in the distributed query processing.
+    modified_settings.set("allow_experimental_analyzer", static_cast<bool>(modified_settings.allow_experimental_analyzer));
+
     const bool enable_offset_parallel_processing = context->canUseOffsetParallelReplicas();
 
     size_t num_replicas = replica_states.size();
