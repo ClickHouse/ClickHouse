@@ -38,14 +38,8 @@ RUN ln -s /usr/bin/lld-${LLVM_VERSION} /usr/bin/ld.lld
 RUN sed -i '/_IMPORT_CHECK_FILES_FOR_\(mlir-\|llvm-bolt\|merge-fdata\|MLIR\)/ {s|^|#|}' /usr/lib/llvm-${LLVM_VERSION}/lib/cmake/llvm/LLVMExports-*.cmake
 
 # LLVM changes paths for compiler-rt libraries. For some reason clang-18.1.8 cannot catch up libraries from default install path.
-# It's very dirty workaround, better to build compiler and LLVM ourself and use it.
-RUN ls /usr/lib/llvm-18/lib/clang/18/lib/aarch64-unknown-linux-gnu 2>/dev/null 1>/dev/null \
-    && ln -s /usr/lib/llvm-18/lib/clang/18/lib/aarch64-unknown-linux-gnu /usr/lib/llvm-18/lib/clang/18/lib/linux 2>/dev/null \
-    && cd /usr/lib/llvm-18/lib/clang/18/lib/linux && rename 's/.a.syms$/-aarch64.a.syms/' *.a.syms && rename 's/.a$/-aarch64.a/' *.a && rename 's/.so$/-aarch64.so/' *.so  && rename 's/.o$/-aarch64.o/' *.o ||:
-
-RUN ls /usr/lib/llvm-18/lib/clang/18/lib/x86_64-pc-linux-gnu 2>/dev/null 1>/dev/null \
-    && ln -s /usr/lib/llvm-18/lib/clang/18/lib/x86_64-pc-linux-gnu /usr/lib/llvm-18/lib/clang/18/lib/linux 2>/dev/null \
-    && cd /usr/lib/llvm-18/lib/clang/18/lib/linux && rename 's/.a.syms$/-x86_64.a.syms/' *.a.syms && rename 's/.a$/-x86_64.a/' *.a && rename 's/.so$/-x86_64.so/' *.so  && rename 's/.o$/-x86_64.o/' *.o ||:
+# It's very dirty workaround, better to build compiler and LLVM ourself and use it. Details: https://github.com/llvm/llvm-project/issues/95792
+RUN test ! -d /usr/lib/llvm-18/lib/clang/18/lib/x86_64-pc-linux-gnu || mv /usr/lib/llvm-18/lib/clang/18/lib/x86_64-pc-linux-gnu /usr/lib/llvm-18/lib/clang/18/lib/x86_64-unknown-linux-gnu
 
 ARG CCACHE_VERSION=4.6.1
 RUN mkdir /tmp/ccache \
