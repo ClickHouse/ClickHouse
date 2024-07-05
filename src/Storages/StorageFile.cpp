@@ -502,7 +502,7 @@ namespace
             StorageFile::getSchemaCache(getContext()).addManyColumns(cache_keys, columns);
         }
 
-        String getLastFileName() const override
+        String getLastFilePath() const override
         {
             if (current_index != 0)
                 return paths[current_index - 1];
@@ -777,7 +777,7 @@ namespace
             format = format_name;
         }
 
-        String getLastFileName() const override
+        String getLastFilePath() const override
         {
             return last_read_file_path;
         }
@@ -880,10 +880,11 @@ std::pair<ColumnsDescription, String> StorageFile::getTableStructureAndFormatFro
     auto read_buffer_iterator = SingleReadBufferIterator(std::move(read_buf));
 
     ColumnsDescription columns;
+    std::string sample_path;
     if (format)
-        columns = readSchemaFromFormat(*format, format_settings, read_buffer_iterator, context);
+        columns = readSchemaFromFormat(*format, format_settings, read_buffer_iterator, sample_path, context);
     else
-        std::tie(columns, format) = detectFormatAndReadSchema(format_settings, read_buffer_iterator, context);
+        std::tie(columns, format) = detectFormatAndReadSchema(format_settings, read_buffer_iterator, sample_path, context);
 
     peekable_read_buffer_from_fd = read_buffer_iterator.releaseBuffer();
     if (peekable_read_buffer_from_fd)
@@ -928,20 +929,21 @@ std::pair<ColumnsDescription, String> StorageFile::getTableStructureAndFormatFro
 
     }
 
+    std::string sample_path;
     if (archive_info)
     {
         ReadBufferFromArchiveIterator read_buffer_iterator(*archive_info, format, format_settings, context);
         if (format)
-            return {readSchemaFromFormat(*format, format_settings, read_buffer_iterator, context), *format};
+            return {readSchemaFromFormat(*format, format_settings, read_buffer_iterator, sample_path, context), *format};
 
-        return detectFormatAndReadSchema(format_settings, read_buffer_iterator, context);
+        return detectFormatAndReadSchema(format_settings, read_buffer_iterator, sample_path, context);
     }
 
     ReadBufferFromFileIterator read_buffer_iterator(paths, format, compression_method, format_settings, context);
     if (format)
-        return {readSchemaFromFormat(*format, format_settings, read_buffer_iterator, context), *format};
+        return {readSchemaFromFormat(*format, format_settings, read_buffer_iterator, sample_path, context), *format};
 
-    return detectFormatAndReadSchema(format_settings, read_buffer_iterator, context);
+    return detectFormatAndReadSchema(format_settings, read_buffer_iterator, sample_path, context);
 }
 
 ColumnsDescription StorageFile::getTableStructureFromFile(
@@ -1097,10 +1099,10 @@ void StorageFile::setStorageMetadata(CommonArguments args)
     storage_metadata.setComment(args.comment);
     setInMemoryMetadata(storage_metadata);
 
-    Strings paths_for_virtuals;
-    if (args.getContext()->getSettingsRef().file_hive_partitioning)
-        paths_for_virtuals = paths;
-    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.getColumns(), paths_for_virtuals));
+    std::string path_for_virtuals;
+    if (args.getContext()->getSettingsRef().use_hive_partitioning && !paths.empty())
+        path_for_virtuals = paths[0];
+    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.getColumns(), path_for_virtuals, format_settings.value_or(FormatSettings{})));
 }
 
 
@@ -1442,14 +1444,9 @@ Chunk StorageFileSource::generate()
                 chunk_size = input_format->getApproxBytesReadForChunk();
             progress(num_rows, chunk_size ? chunk_size : chunk.bytes());
 
-            std::map<std::string, std::string> hive_map;
-            if (getContext()->getSettingsRef().file_hive_partitioning)
-            {
-                hive_map = VirtualColumnUtils::parsePartitionMapFromPath(current_path);
-
-                for (const auto& item : hive_map)
-                    requested_virtual_columns.push_back(NameAndTypePair(item.first, std::make_shared<DataTypeString>()));
-            }
+            std::string hive_partitioning_path;
+            if (getContext()->getSettingsRef().use_hive_partitioning)
+                hive_partitioning_path = current_path;
 
             /// Enrich with virtual columns.
             VirtualColumnUtils::addRequestedFileLikeStorageVirtualsToChunk(
@@ -1459,8 +1456,7 @@ Chunk StorageFileSource::generate()
                     .size = current_file_size,
                     .filename = (filename_override.has_value() ? &filename_override.value() : nullptr),
                     .last_modified = current_file_last_modified,
-                    .hive_partitioning_map = hive_map
-                });
+                }, hive_partitioning_path);
 
             return chunk;
         }
@@ -1636,16 +1632,6 @@ void ReadFromFile::createIterator(const ActionsDAG::Node * predicate)
         storage->distributed_processing);
 }
 
-void addPartitionColumnsToInfoHeader(Strings paths, ReadFromFormatInfo & info)
-{
-    for (const auto& path : paths)
-    {
-        auto map = VirtualColumnUtils::parsePartitionMapFromPath(path);
-        for (const auto& item : map)
-            info.source_header.insertUnique(ColumnWithTypeAndName(std::make_shared<DataTypeString>(), item.first));
-    }
-}
-
 void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     createIterator(nullptr);
@@ -1664,9 +1650,6 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
         files_to_read = storage->paths.size();
         paths = storage->paths;
     }
-
-    if (getContext()->getSettingsRef().file_hive_partitioning)
-        addPartitionColumnsToInfoHeader(paths, info);
 
     if (max_num_streams > files_to_read)
         num_streams = files_to_read;

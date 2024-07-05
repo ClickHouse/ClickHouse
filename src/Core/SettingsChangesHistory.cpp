@@ -59,11 +59,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
 {
     {"24.7", {{"output_format_parquet_write_page_index", false, true, "Add a possibility to write page index into parquet files."},
               {"optimize_trivial_insert_select", true, false, "The optimization does not make sense in many cases."},
-              {"file_hive_partitioning", false, false, "A new settings that allows to use hive partitioning for file format."},
-              {"url_hive_partitioning", false, false, "A new settings that allows to use hive partitioning for url format."},
-              {"s3_hive_partitioning", false, false, "A new settings that allows to use hive partitioning for s3 format."},
-              {"azure_blob_storage_hive_partitioning", false, false, "A new settings that allows to use hive partitioning for AzureBlobStorage format."},
-              {"hdfs_hive_partitioning", false, false, "A new settings that allows to use hive partitioning for hdfs format."},
+              {"use_hive_partitioning", false, false, "Allows to use hive partitioning for File, URL, S3, AzureBlobStorage and HDFS engines."},
               }},
     {"24.6", {{"materialize_skip_indexes_on_insert", true, true, "Added new setting to allow to disable materialization of skip indexes on insert"},
               {"materialize_statistics_on_insert", true, true, "Added new setting to allow to disable materialization of statistics on insert"},

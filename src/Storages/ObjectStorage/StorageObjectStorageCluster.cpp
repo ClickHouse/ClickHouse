@@ -33,7 +33,8 @@ StorageObjectStorageCluster::StorageObjectStorageCluster(
     , object_storage(object_storage_)
 {
     ColumnsDescription columns{columns_};
-    resolveSchemaAndFormat(columns, configuration->format, object_storage, configuration, {}, context_);
+    std::string sample_path;
+    resolveSchemaAndFormat(columns, configuration->format, object_storage, configuration, {}, sample_path, context_);
     configuration->check(context_);
 
     StorageInMemoryMetadata metadata;

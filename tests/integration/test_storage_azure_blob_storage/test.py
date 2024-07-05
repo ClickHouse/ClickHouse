@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import io
+import re
 import random
 import threading
 import time
@@ -1462,3 +1463,112 @@ def test_insert_create_new_file(cluster):
     assert TSV(res) == TSV(
         "test_create_new_file.csv\t1\ntest_create_new_file.1.csv\t2\n"
     )
+
+
+def test_hive_partitioning_with_one_parameter(cluster):
+    # type: (ClickHouseCluster) -> None
+    node = cluster.instances["node"]  # type: ClickHouseInstance
+    table_format = "column1 String, column2 String"
+    values = f"('Elizabeth', 'Gordon')"
+    path = "a/column1=Elizabeth/sample.csv"
+
+    azure_query(
+        node,
+        f"INSERT INTO TABLE FUNCTION azureBlobStorage(azure_conf2, storage_account_url = '{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}',"
+        f" container='cont', blob_path='{path}', format='CSV', compression='auto', structure='{table_format}') VALUES {values}",
+    )
+
+    query = (
+        f"SELECT column1, column2, _file, _path, _column1 FROM azureBlobStorage(azure_conf2, "
+        f"storage_account_url = '{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}', container='cont', "
+        f"blob_path='{path}', format='CSV', structure='{table_format}')"
+    )
+    assert azure_query(
+        node, query, settings={"azure_blob_storage_hive_partitioning": 1}
+    ).splitlines() == [
+        "Elizabeth\tGordon\tsample.csv\t{bucket}/{max_path}\tElizabeth".format(
+            bucket="cont", max_path=path
+        )
+    ]
+
+    query = (
+        f"SELECT column2 FROM azureBlobStorage(azure_conf2, "
+        f"storage_account_url = '{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}', container='cont', "
+        f"blob_path='{path}', format='CSV', structure='{table_format}') WHERE column1=_column1;"
+    )
+    assert azure_query(
+        node, query, settings={"azure_blob_storage_hive_partitioning": 1}
+    ).splitlines() == ["Gordon"]
+
+
+def test_hive_partitioning_with_two_parameters(cluster):
+    # type: (ClickHouseCluster) -> None
+    node = cluster.instances["node"]  # type: ClickHouseInstance
+    table_format = "column1 String, column2 String"
+    values_1 = f"('Elizabeth', 'Gordon')"
+    values_2 = f"('Emilia', 'Gregor')"
+    path = "a/column1=Elizabeth/column2=Gordon/sample.csv"
+
+    azure_query(
+        node,
+        f"INSERT INTO TABLE FUNCTION azureBlobStorage(azure_conf2, storage_account_url = '{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}',"
+        f" container='cont', blob_path='{path}', format='CSV', compression='auto', structure='{table_format}') VALUES {values_1}, {values_2}",
+    )
+
+    query = (
+        f"SELECT column1, column2, _file, _path, _column1, _column2 FROM azureBlobStorage(azure_conf2, "
+        f"storage_account_url = '{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}', container='cont', "
+        f"blob_path='{path}', format='CSV', structure='{table_format}') WHERE column1=_column1;"
+    )
+    assert azure_query(
+        node, query, settings={"azure_blob_storage_hive_partitioning": 1}
+    ).splitlines() == [
+        "Elizabeth\tGordon\tsample.csv\t{bucket}/{max_path}\tElizabeth\tGordon".format(
+            bucket="cont", max_path=path
+        )
+    ]
+
+    query = (
+        f"SELECT column1 FROM azureBlobStorage(azure_conf2, "
+        f"storage_account_url = '{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}', container='cont', "
+        f"blob_path='{path}', format='CSV', structure='{table_format}') WHERE column2=_column2;"
+    )
+    assert azure_query(
+        node, query, settings={"azure_blob_storage_hive_partitioning": 1}
+    ).splitlines() == ["Elizabeth"]
+
+    query = (
+        f"SELECT column1 FROM azureBlobStorage(azure_conf2, "
+        f"storage_account_url = '{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}', container='cont', "
+        f"blob_path='{path}', format='CSV', structure='{table_format}') WHERE column2=_column2 AND column1=_column1;"
+    )
+    assert azure_query(
+        node, query, settings={"azure_blob_storage_hive_partitioning": 1}
+    ).splitlines() == ["Elizabeth"]
+
+
+def test_hive_partitioning_without_setting(cluster):
+    # type: (ClickHouseCluster) -> None
+    node = cluster.instances["node"]  # type: ClickHouseInstance
+    table_format = "column1 String, column2 String"
+    values_1 = f"('Elizabeth', 'Gordon')"
+    values_2 = f"('Emilia', 'Gregor')"
+    path = "a/column1=Elizabeth/column2=Gordon/sample.csv"
+
+    azure_query(
+        node,
+        f"INSERT INTO TABLE FUNCTION azureBlobStorage(azure_conf2, storage_account_url = '{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}',"
+        f" container='cont', blob_path='{path}', format='CSV', compression='auto', structure='{table_format}') VALUES {values_1}, {values_2}",
+    )
+
+    query = (
+        f"SELECT column1, column2, _file, _path, _column1, _column2 FROM azureBlobStorage(azure_conf2, "
+        f"storage_account_url = '{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}', container='cont', "
+        f"blob_path='{path}', format='CSV', structure='{table_format}') WHERE column1=_column1;"
+    )
+    pattern = re.compile(
+        r"DB::Exception: Unknown expression identifier '.*' in scope.*", re.DOTALL
+    )
+
+    with pytest.raises(Exception, match=pattern):
+        azure_query(node, query, settings={"azure_blob_storage_hive_partitioning": 0})

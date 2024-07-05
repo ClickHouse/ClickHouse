@@ -56,8 +56,8 @@ struct IReadBufferIterator
     /// Set auto detected format name.
     virtual void setFormatName(const String & /*format_name*/) {}
 
-    /// Get last processed file name for better exception messages.
-    virtual String getLastFileName() const { return ""; }
+    /// Get last processed file path for better exception messages.
+    virtual String getLastFilePath() const { return ""; }
 
     /// Return true if method recreateLastReadBuffer is implemented.
     virtual bool supportsLastReadBufferRecreation() const { return false; }
@@ -122,6 +122,7 @@ ColumnsDescription readSchemaFromFormat(
     const String & format_name,
     const std::optional<FormatSettings> & format_settings,
     IReadBufferIterator & read_buffer_iterator,
+    std::string & sample_path,
     const ContextPtr & context);
 
 /// Try to detect the format of the data and it's schema.
@@ -131,6 +132,7 @@ ColumnsDescription readSchemaFromFormat(
 std::pair<ColumnsDescription, String> detectFormatAndReadSchema(
     const std::optional<FormatSettings> & format_settings,
     IReadBufferIterator & read_buffer_iterator,
+    std::string & sample_path,
     const ContextPtr & context);
 
 SchemaCache::Key getKeyForSchemaCache(const String & source, const String & format, const std::optional<FormatSettings> & format_settings, const ContextPtr & context);

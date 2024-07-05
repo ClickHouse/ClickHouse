@@ -94,6 +94,7 @@ std::pair<ColumnsDescription, String> readSchemaFromFormatImpl(
     std::optional<String> format_name,
     const std::optional<FormatSettings> & format_settings,
     IReadBufferIterator & read_buffer_iterator,
+    std::string & sample_path,
     const ContextPtr & context)
 try
 {
@@ -143,6 +144,10 @@ try
             {
                 iterator_data = read_buffer_iterator.next();
 
+                /// Extracting the File path for hive-style partitioning
+                if (sample_path.empty())
+                    sample_path = read_buffer_iterator.getLastFilePath();
+
                 /// Read buffer iterator can determine the data format if it's unknown.
                 /// For example by scanning schema cache or by finding new file with format extension.
                 if (!format_name && iterator_data.format_name)
@@ -163,7 +168,7 @@ try
                         return {*iterator_data.cached_columns, *format_name};
                     }
 
-                    schemas_for_union_mode.emplace_back(iterator_data.cached_columns->getAll(), read_buffer_iterator.getLastFileName());
+                    schemas_for_union_mode.emplace_back(iterator_data.cached_columns->getAll(), read_buffer_iterator.getLastFilePath());
                     continue;
                 }
 
@@ -249,7 +254,7 @@ try
 
                     if (!names_and_types.empty())
                         read_buffer_iterator.setSchemaToLastFile(ColumnsDescription(names_and_types));
-                    schemas_for_union_mode.emplace_back(names_and_types, read_buffer_iterator.getLastFileName());
+                    schemas_for_union_mode.emplace_back(names_and_types, read_buffer_iterator.getLastFilePath());
                 }
                 catch (...)
                 {
@@ -410,7 +415,7 @@ try
                         throw Exception(ErrorCodes::CANNOT_DETECT_FORMAT, "The data format cannot be detected by the contents of the files. You can specify the format manually");
 
                     read_buffer_iterator.setSchemaToLastFile(ColumnsDescription(names_and_types));
-                    schemas_for_union_mode.emplace_back(names_and_types, read_buffer_iterator.getLastFileName());
+                    schemas_for_union_mode.emplace_back(names_and_types, read_buffer_iterator.getLastFilePath());
                 }
 
                 if (format_name && mode == SchemaInferenceMode::DEFAULT)
@@ -526,9 +531,9 @@ try
 }
 catch (Exception & e)
 {
-    auto file_name = read_buffer_iterator.getLastFileName();
-    if (!file_name.empty())
-        e.addMessage(fmt::format("(in file/uri {})", file_name));
+    auto file_path = read_buffer_iterator.getLastFilePath();
+    if (!file_path.empty())
+        e.addMessage(fmt::format("(in file/uri {})", file_path));
     throw;
 }
 
@@ -536,17 +541,19 @@ ColumnsDescription readSchemaFromFormat(
     const String & format_name,
     const std::optional<FormatSettings> & format_settings,
     IReadBufferIterator & read_buffer_iterator,
+    std::string & sample_path,
     const ContextPtr & context)
 {
-    return readSchemaFromFormatImpl(format_name, format_settings, read_buffer_iterator, context).first;
+    return readSchemaFromFormatImpl(format_name, format_settings, read_buffer_iterator, sample_path, context).first;
 }
 
 std::pair<ColumnsDescription, String> detectFormatAndReadSchema(
     const std::optional<FormatSettings> & format_settings,
     IReadBufferIterator & read_buffer_iterator,
+    std::string & sample_path,
     const ContextPtr & context)
 {
-    return readSchemaFromFormatImpl(std::nullopt, format_settings, read_buffer_iterator, context);
+    return readSchemaFromFormatImpl(std::nullopt, format_settings, read_buffer_iterator, sample_path, context);
 }
 
 SchemaCache::Key getKeyForSchemaCache(

@@ -153,10 +153,10 @@ IStorageURLBase::IStorageURLBase(
     storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
 
-    Strings uri_for_partitioning;
-    if (context_->getSettingsRef().url_hive_partitioning)
-        uri_for_partitioning = {uri};
-    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.getColumns(), uri_for_partitioning));
+    std::string uri_for_partitioning;
+    if (context_->getSettingsRef().use_hive_partitioning)
+        uri_for_partitioning = uri;
+    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.getColumns(), uri_for_partitioning, format_settings.value_or(FormatSettings{})));
 }
 
 
@@ -415,9 +415,9 @@ Chunk StorageURLSource::generate()
             size_t chunk_size = 0;
             if (input_format)
                 chunk_size = input_format->getApproxBytesReadForChunk();
-            std::map<std::string, std::string> hive_map;
-            if (getContext()->getSettingsRef().url_hive_partitioning)
-                hive_map = VirtualColumnUtils::parsePartitionMapFromPath(curr_uri.getPath());
+            std::string hive_partitioning_path;
+            if (getContext()->getSettingsRef().use_hive_partitioning)
+                hive_partitioning_path = curr_uri.getPath();
 
             progress(num_rows, chunk_size ? chunk_size : chunk.bytes());
             VirtualColumnUtils::addRequestedFileLikeStorageVirtualsToChunk(
@@ -425,8 +425,7 @@ Chunk StorageURLSource::generate()
                 {
                     .path = curr_uri.getPath(),
                     .size = current_file_size,
-                    .hive_partitioning_map = hive_map
-                });
+                }, hive_partitioning_path);
             return chunk;
         }
 
@@ -859,7 +858,7 @@ namespace
             format = format_name;
         }
 
-        String getLastFileName() const override { return current_url_option; }
+        String getLastFilePath() const override { return current_url_option; }
 
         bool supportsLastReadBufferRecreation() const override { return true; }
 
@@ -960,9 +959,10 @@ std::pair<ColumnsDescription, String> IStorageURLBase::getTableStructureAndForma
         urls_to_check = {uri};
 
     ReadBufferIterator read_buffer_iterator(urls_to_check, format, compression_method, headers, format_settings, context);
+    std::string sample_path;
     if (format)
-        return {readSchemaFromFormat(*format, format_settings, read_buffer_iterator, context), *format};
-    return detectFormatAndReadSchema(format_settings, read_buffer_iterator, context);
+        return {readSchemaFromFormat(*format, format_settings, read_buffer_iterator, sample_path, context), *format};
+    return detectFormatAndReadSchema(format_settings, read_buffer_iterator, sample_path, context);
 }
 
 ColumnsDescription IStorageURLBase::getTableStructureFromData(

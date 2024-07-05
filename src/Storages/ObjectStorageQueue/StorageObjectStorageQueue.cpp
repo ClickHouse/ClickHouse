@@ -160,7 +160,8 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     configuration->check(context_);
 
     ColumnsDescription columns{columns_};
-    resolveSchemaAndFormat(columns, configuration->format, object_storage, configuration, format_settings, context_);
+    std::string sample_path;
+    resolveSchemaAndFormat(columns, configuration->format, object_storage, configuration, format_settings, sample_path, context_);
     configuration->check(context_);
 
     StorageInMemoryMetadata storage_metadata;

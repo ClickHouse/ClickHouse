@@ -42,6 +42,7 @@ public:
         size_t list_object_keys_size;
         bool throw_on_zero_files_match;
         bool ignore_non_existent_file;
+        bool use_hive_partitioning;
     };
 
     StorageObjectStorage(
@@ -100,22 +101,27 @@ public:
         const ObjectStoragePtr & object_storage,
         const ConfigurationPtr & configuration,
         const std::optional<FormatSettings> & format_settings,
+        std::string & sample_path,
         const ContextPtr & context);
 
     static std::string resolveFormatFromData(
         const ObjectStoragePtr & object_storage,
         const ConfigurationPtr & configuration,
         const std::optional<FormatSettings> & format_settings,
+        std::string & sample_path,
         const ContextPtr & context);
 
     static std::pair<ColumnsDescription, std::string> resolveSchemaAndFormatFromData(
         const ObjectStoragePtr & object_storage,
         const ConfigurationPtr & configuration,
         const std::optional<FormatSettings> & format_settings,
+        std::string & sample_path,
         const ContextPtr & context);
 
 protected:
     virtual void updateConfiguration(ContextPtr local_context);
+
+    std::string getPathSample(StorageInMemoryMetadata metadata, ContextPtr context);
 
     static std::unique_ptr<ReadBufferIterator> createReadBufferIterator(
         const ObjectStoragePtr & object_storage,
