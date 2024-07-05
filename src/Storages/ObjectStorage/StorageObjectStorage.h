@@ -43,7 +43,6 @@ public:
         size_t list_object_keys_size;
         bool throw_on_zero_files_match;
         bool ignore_non_existent_file;
-        bool use_hive_partitioning;
     };
 
     StorageObjectStorage(
