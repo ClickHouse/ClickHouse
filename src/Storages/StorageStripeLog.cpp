@@ -207,7 +207,10 @@ public:
                 /// Rollback partial writes.
 
                 /// No more writing.
+                data_out->cancel();
                 data_out.reset();
+
+                data_out_compressed->cancel();
                 data_out_compressed.reset();
 
                 /// Truncate files to the older sizes.
@@ -223,9 +226,9 @@ public:
         }
     }
 
-    void consume(Chunk chunk) override
+    void consume(Chunk & chunk) override
     {
-        block_out->write(getHeader().cloneWithColumns(chunk.detachColumns()));
+        block_out->write(getHeader().cloneWithColumns(chunk.getColumns()));
     }
 
     void onFinish() override
@@ -233,8 +236,7 @@ public:
         if (done)
             return;
 
-        data_out->next();
-        data_out_compressed->next();
+        data_out->finalize();
         data_out_compressed->finalize();
 
         /// Save the new indices.
@@ -494,8 +496,7 @@ void StorageStripeLog::saveIndices(const WriteLock & /* already locked for writi
     for (size_t i = start; i != num_indices; ++i)
         indices.blocks[i].write(*index_out);
 
-    index_out->next();
-    index_out_compressed->next();
+    index_out->finalize();
     index_out_compressed->finalize();
 
     num_indices_saved = num_indices;

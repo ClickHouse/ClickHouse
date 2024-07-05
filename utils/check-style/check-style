@@ -322,10 +322,14 @@ std_cerr_cout_excludes=(
     src/Client/LineReader.cpp
     src/Client/QueryFuzzer.cpp
     src/Client/Suggest.cpp
+    src/Client/ClientBase.h
+    src/Client/LineReader.h
+    src/Client/ReplxxLineReader.h
     src/Bridge/IBridge.cpp
     src/Daemon/BaseDaemon.cpp
     src/Loggers/Loggers.cpp
     src/Common/GWPAsan.cpp
+    src/Common/ProgressIndication.h
 )
 sources_with_std_cerr_cout=( $(
     find $ROOT_PATH/{src,base} -name '*.h' -or -name '*.cpp' | \
