@@ -2184,6 +2184,7 @@ parseReadableSizeOrZero
 parseTimeDelta
 parseable
 parsers
+partitionId
 pathFull
 pclmulqdq
 pcre
