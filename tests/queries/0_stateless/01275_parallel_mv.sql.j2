@@ -12,9 +12,9 @@ drop table if exists testXC;
 
 create table testX (A Int64) engine=MergeTree order by tuple();
 
-create materialized view testXA engine=MergeTree order by tuple() as select sleep(0.1) from testX;
-create materialized view testXB engine=MergeTree order by tuple() as select sleep(0.2), throwIf(A=1) from testX;
-create materialized view testXC engine=MergeTree order by tuple() as select sleep(0.1) from testX;
+create materialized view testXA engine=MergeTree order by tuple() as select sleepEachRow(0.2) from testX;
+create materialized view testXB engine=MergeTree order by tuple() as select sleepEachRow(0.4), throwIf(A=1) from testX;
+create materialized view testXC engine=MergeTree order by tuple() as select sleepEachRow(0.2) from testX;
 
 -- { echoOn }
 {% for parallel_view_processing in [0, 1] %}
