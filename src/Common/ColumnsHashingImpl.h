@@ -324,6 +324,7 @@ protected:
 
         typename Data::LookupResult it;
         bool inserted = false;
+
         data.emplace(key_holder, it, inserted);
 
         [[maybe_unused]] Mapped * cached = nullptr;

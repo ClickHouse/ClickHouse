@@ -76,7 +76,7 @@ using FutureSetFromStoragePtr = std::shared_ptr<FutureSetFromStorage>;
 class FutureSetFromTuple final : public FutureSet
 {
 public:
-    FutureSetFromTuple(Block block, const Settings & settings);
+    FutureSetFromTuple(Block block, const Settings & settings, bool first_argument_has_nullable_nothing = false);
 
     SetPtr get() const override { return set; }
     SetPtr buildOrderedSetInplace(const ContextPtr & context) override;
@@ -148,6 +148,8 @@ public:
 
     FutureSetFromStoragePtr addFromStorage(const Hash & key, SetPtr set_);
     FutureSetFromTuplePtr addFromTuple(const Hash & key, Block block, const Settings & settings);
+
+    void addFromTupleIfNotExist(const Hash & key, Block block, const Settings & settings, bool first_argument_has_nullable_nothing);
 
     FutureSetFromSubqueryPtr addFromSubquery(
         const Hash & key,

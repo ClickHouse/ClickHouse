@@ -18,6 +18,7 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 
 #include <DataTypes/DataTypeSet.h>
+#include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeFunction.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -99,6 +100,87 @@ static size_t getTypeDepth(const DataTypePtr & type)
     return 0;
 }
 
+static DataTypes CheckAndGetBlockTypes(const DataTypes & block_types, const DataTypes & value_types, bool transform_null_in)
+{
+    if (transform_null_in == false)
+    {
+        return block_types;
+    }
+    DataTypes result;
+    size_t columns_size = block_types.size();
+    if (columns_size == 1)
+    {
+        if (!block_types[0]->isNullableNothing())
+        {
+            result.push_back(block_types[0]);
+        }
+        else
+        {
+            bool value_types_has_null_literal = false;
+            for (const auto & value_type : value_types)
+            {
+                // select the first not-nullable-nothing type in set as block type.
+                if (!value_type->isNullableNothing())
+                {
+                    if (result.empty())
+                        result.push_back(value_type);
+                }
+                else
+                {
+                    value_types_has_null_literal = true;
+                }
+            }
+            if (result.empty())
+            {
+                assert(value_types_has_null_literal == true);
+                result.push_back(std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>()));
+            }
+            // e.g. NULL in (1, 2, NULL), select UInt8 as block type now.
+            // But this is not correct because we will insert NULL into the UInt8 type column
+            if (value_types_has_null_literal == true && !result[0]->isNullable())
+            {
+                if (!result[0]->canBeInsideNullable())
+                {
+                    throw Exception(ErrorCodes::INCORRECT_ELEMENT_OF_SET, "DataType {} can not be inside nullable with NULL set element", result[0]->getName());
+                }
+                result[0] = std::make_shared<DataTypeNullable>(result[0]);
+            }
+        }
+    }
+    else
+    {
+        std::vector<DataTypes> value_tuple_types(columns_size);
+        for (const auto & value_type : value_types)
+        {
+            if (value_type->getTypeId() != TypeIndex::Tuple)
+            {
+                throw Exception(ErrorCodes::INCORRECT_ELEMENT_OF_SET,
+                    "Invalid type in set. Expected tuple, got {}",
+                    value_type->getName());
+            }
+            const auto * tuple_type = assert_cast<const DataTypeTuple *>(value_type.get());
+            const auto & tuple_element_types = tuple_type->getElements();
+            if (tuple_element_types.size() != columns_size)
+            {
+                throw Exception(ErrorCodes::INCORRECT_ELEMENT_OF_SET,
+                    "Incorrect size of tuple in set: {} instead of {}",
+                    tuple_element_types.size(),
+                    columns_size);
+            }
+            for (size_t i = 0; i < columns_size; ++i)
+            {
+                value_tuple_types[i].push_back(tuple_element_types[i]);
+            }
+        }
+        for (size_t i = 0; i < columns_size; ++i)
+        {
+            DataTypes tuple_element_block_type = CheckAndGetBlockTypes({block_types[i]}, value_tuple_types[i], transform_null_in);
+            result.push_back(tuple_element_block_type[0]);
+        }
+    }
+    return result;
+}
+
 /// The `convertFieldToTypeStrict` is used to prevent unexpected results in case of conversion with loss of precision.
 /// Example: `SELECT 33.3 :: Decimal(9, 1) AS a WHERE a IN (33.33 :: Decimal(9, 2))`
 /// 33.33 in the set is converted to 33.3, but it is not equal to 33.3 in the column, so the result should still be empty.
@@ -108,9 +190,11 @@ static Block createBlockFromCollection(const Collection & collection, const Data
 {
     size_t columns_num = types.size();
     MutableColumns columns(columns_num);
+
+    DataTypes ret_types = CheckAndGetBlockTypes(types, value_types, transform_null_in);
     for (size_t i = 0; i < columns_num; ++i)
     {
-        columns[i] = types[i]->createColumn();
+        columns[i] = ret_types[i]->createColumn();
         columns[i]->reserve(collection.size());
     }
 
@@ -120,7 +204,7 @@ static Block createBlockFromCollection(const Collection & collection, const Data
         const auto& value = collection[collection_index];
         if (columns_num == 1)
         {
-            auto field = convertFieldToTypeStrict(value, *value_types[collection_index], *types[0]);
+            auto field = convertFieldToTypeStrictWithTransformNullIn(value, *value_types[collection_index], *types[0], transform_null_in);
             bool need_insert_null = transform_null_in && types[0]->isNullable();
             if (field && (!field->isNull() || need_insert_null))
                 columns[0]->insert(*field);
@@ -146,7 +230,7 @@ static Block createBlockFromCollection(const Collection & collection, const Data
             size_t i = 0;
             for (; i < tuple_size; ++i)
             {
-                auto converted_field = convertFieldToTypeStrict(tuple[i], *tuple_value_type[i], *types[i]);
+                auto converted_field = convertFieldToTypeStrictWithTransformNullIn(tuple[i], *tuple_value_type[i], *types[i], transform_null_in);
                 if (!converted_field)
                     break;
                 tuple_values[i] = std::move(*converted_field);
@@ -164,7 +248,7 @@ static Block createBlockFromCollection(const Collection & collection, const Data
 
     Block res;
     for (size_t i = 0; i < columns_num; ++i)
-        res.insert(ColumnWithTypeAndName{std::move(columns[i]), types[i], "_" + toString(i)});
+        res.insert(ColumnWithTypeAndName{std::move(columns[i]), ret_types[i], "_" + toString(i)});
     return res;
 }
 

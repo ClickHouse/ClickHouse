@@ -24,4 +24,6 @@ Field convertFieldToTypeOrThrow(const Field & from_value, const IDataType & to_t
 /// Returns `Field` if the conversion was successful and the result is equal to the original value, otherwise returns nullopt.
 std::optional<Field> convertFieldToTypeStrict(const Field & from_value, const IDataType & from_type, const IDataType & to_type);
 
+std::optional<Field> convertFieldToTypeStrictWithTransformNullIn(const Field & from_value, const IDataType & from_type, const IDataType & to_type, bool transform_null_in);
+
 }

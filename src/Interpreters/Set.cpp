@@ -6,6 +6,7 @@
 #include <Columns/ColumnTuple.h>
 
 #include <Common/typeid_cast.h>
+#include <Interpreters/SetVariants.h>
 
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -167,8 +168,15 @@ void Set::setHeader(const ColumnsWithTypeAndName & header)
         extractNestedColumnsAndNullMap(key_columns, null_map);
     }
 
-    /// Choose data structure to use for the set.
-    data.init(SetVariants::chooseMethod(key_columns, key_sizes));
+    if (first_argument_has_nullable_nothing)
+    {
+        data.init(SetVariants::Type::hashed);
+    }
+    else
+    {
+        /// Choose data structure to use for the set.
+        data.init(SetVariants::chooseMethod(key_columns, key_sizes));
+    }
 }
 
 void Set::fillSetElements()
@@ -313,6 +321,25 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
     /// The constant columns to the left of IN are not supported directly. For this, they first materialize.
     Columns materialized_columns;
     materialized_columns.reserve(num_key_columns);
+
+    bool terminate_due_to_failure = false;
+    for (size_t i = 0; i < num_key_columns; ++i)
+    {
+        if (transform_null_in && columns.at(i).type->isNullableNothing())
+        {
+            // NULL IN SomeType which is not Nullable.
+            if (!data_types[i]->isNullable())
+            {
+                terminate_due_to_failure = true;
+                break;
+            }
+        }
+    }
+    if (terminate_due_to_failure)
+    {
+        vec_res = ColumnUInt8::Container(columns.at(0).column->size(), negative);
+        return res;
+    }
 
     for (size_t i = 0; i < num_key_columns; ++i)
     {
