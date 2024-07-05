@@ -54,7 +54,7 @@ public:
     {
         FunctionArgumentDescriptors args{{"days", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeInteger), nullptr, "Integer"}};
 
-        validateFunctionArgumentTypes(*this, arguments, args);
+        validateFunctionArguments(*this, arguments, args);
 
         return std::make_shared<typename Traits::ReturnDataType>();
     }
