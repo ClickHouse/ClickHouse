@@ -11,7 +11,8 @@ function attach_gdb_to_clickhouse()
     # explicitly ignore non-fatal signals that are used by server.
     # Number of SIGRTMIN can be determined only in runtime.
     RTMIN=$(kill -l SIGRTMIN)
-  echo "
+    # shellcheck disable=SC2016
+    echo "
 set follow-fork-mode parent
 handle SIGHUP nostop noprint pass
 handle SIGINT nostop noprint pass
