@@ -14,6 +14,14 @@ namespace DB
 constexpr auto STATS_FILE_PREFIX = "statistics_";
 constexpr auto STATS_FILE_SUFFIX = ".stats";
 
+
+///Returns std::nullopt if input Field cannot be converted to a concrete value
+struct StatisticsUtils
+{
+    static std::optional<Float64> tryConvertToFloat64(const Field & f);
+    static std::optional<String> tryConvertToString(const Field & f);
+};
+
 /// Statistics describe properties of the values in the column,
 /// e.g. how many unique values exist,
 /// what are the N most frequent values,
@@ -36,13 +44,7 @@ public:
     /// Per-value estimations.
     /// Throws if the statistics object is not able to do a meaningful estimation.
     virtual Float64 estimateEqual(const Field & val) const; /// cardinality of val in the column
-    virtual Float64 estimateLess(Float64 val) const;  /// summarized cardinality of values < val in the column
-
-    /// Convert filed to Float64, used when estimating the number of rows.
-    /// Return a Float64 value if f can be represented by number, otherwise return null.
-    /// See IDataType::isValueRepresentedByNumber
-    static std::optional<Float64> getFloat64(const Field & f);
-    static std::optional<String> getString(const Field & f);
+    virtual Float64 estimateLess(const Field & val) const;  /// summarized cardinality of values < val in the column
 
 protected:
     SingleStatisticsDescription stat;
@@ -65,8 +67,8 @@ public:
 
     void update(const ColumnPtr & column);
 
-    Float64 estimateLess(Float64 val) const;
-    Float64 estimateGreater(Float64 val) const;
+    Float64 estimateLess(const Field & val) const;
+    Float64 estimateGreater(const Field & val) const;
     Float64 estimateEqual(const Field & val) const;
 
 private:

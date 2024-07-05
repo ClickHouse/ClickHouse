@@ -3,6 +3,8 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Storages/Statistics/StatisticsCountMinSketch.h>
+#include <Interpreters/convertFieldToType.h>
+#include <DataTypes/FieldToDataType.h>
 
 #if USE_DATASKETCHES
 
@@ -12,10 +14,13 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int ILLEGAL_STATISTICS;
+extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
-static constexpr auto num_hashes = 8uz;
-static constexpr auto num_buckets = 2048uz;
+/// Constants chosen based on rolling dices, which provides an error tolerance of 0.1% (ε = 0.001) and a confidence level of 99.9% (δ = 0.001).
+/// And sketch the size is 152kb.
+static constexpr auto num_hashes = 7uz;
+static constexpr auto num_buckets = 2718uz;
 
 StatisticsCountMinSketch::StatisticsCountMinSketch(const SingleStatisticsDescription & stat_, DataTypePtr data_type_)
     : IStatistics(stat_)
@@ -24,13 +29,49 @@ StatisticsCountMinSketch::StatisticsCountMinSketch(const SingleStatisticsDescrip
 {
 }
 
-Float64 StatisticsCountMinSketch::estimateEqual(const Field & value) const
+Float64 StatisticsCountMinSketch::estimateEqual(const Field & val) const
 {
-    if (auto float_val = IStatistics::getFloat64(value))
-        return sketch.get_estimate(&float_val.value(), 8);
-    if (auto string_val = IStatistics::getString(value))
-        return sketch.get_estimate(string_val->data(), string_val->size());
-    UNREACHABLE();
+    if (data_type->isValueRepresentedByNumber())
+    {
+        /// convertFieldToType will
+        ///     1. convert string to number, date, datetime, IPv4, Decimal etc
+        ///     2. do other conversion
+        ///     3. return null if val larger than the range of data_type
+        auto val_converted = convertFieldToType(val, *data_type);
+        if (val_converted.isNull())
+            return 0;
+
+        /// We will get the proper data type of val_converted, for example, UInt8 for 1, UInt16 for 257.
+        auto data_type_converted = applyVisitor(FieldToDataType<LeastSupertypeOnError::Null>(), val_converted);
+        DataTypes data_types = {data_type, data_type_converted};
+        auto super_type = tryGetLeastSupertype(data_types);
+
+        /// If data_type is UInt8 but val_typed is UInt16, we should return 0.
+        if (!super_type->equals(*data_type))
+            return 0;
+
+        return sketch.get_estimate(&val_converted, data_type->getSizeOfValueInMemory());
+    }
+
+    if (isStringOrFixedString(data_type))
+    {
+        return sketch.get_estimate(val.get<String>());
+    }
+
+    throw Exception(
+        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Statistics 'count_min' does not support estimate constant value of type {}", val.getTypeName());
+}
+
+void StatisticsCountMinSketch::update(const ColumnPtr & column)
+{
+    size_t size = column->size();
+    for (size_t row = 0; row < size; ++row)
+    {
+        if (column->isNullAt(row))
+            continue;
+        auto data = column->getDataAt(row);
+        sketch.update(data.data, data.size, 1);
+    }
 }
 
 void StatisticsCountMinSketch::serialize(WriteBuffer & buf)
@@ -52,28 +93,11 @@ void StatisticsCountMinSketch::deserialize(ReadBuffer & buf)
     sketch = Sketch::deserialize(bytes.data(), size);
 }
 
-void StatisticsCountMinSketch::update(const ColumnPtr & column)
-{
-    size_t size = column->size();
-    for (size_t i = 0; i < size; ++i)
-    {
-        Field f;
-        column->get(i, f);
-
-        if (f.isNull())
-            continue;
-
-        if (auto float_val = IStatistics::getFloat64(f))
-            sketch.update(&float_val, 8, 1);
-        else
-            sketch.update(f.get<String>(), 1);
-    }
-}
-
 void CountMinSketchValidator(const SingleStatisticsDescription &, DataTypePtr data_type)
 {
     data_type = removeNullable(data_type);
     data_type = removeLowCardinalityAndNullable(data_type);
+    /// Numeric, String family, IPv4, IPv6, Date family, Enum family are supported.
     if (!data_type->isValueRepresentedByNumber() && !isStringOrFixedString(data_type))
         throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "Statistics of type 'count_min' does not support type {}", data_type->getName());
 }

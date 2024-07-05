@@ -1,8 +1,8 @@
+#include <Storages/Statistics/Statistics.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
-#include <Storages/Statistics/Statistics.h>
 #include <Storages/Statistics/StatisticsCountMinSketch.h>
 #include <Storages/Statistics/StatisticsTDigest.h>
 #include <Storages/Statistics/StatisticsUniq.h>
@@ -27,44 +27,22 @@ enum StatisticsFileVersion : UInt16
     V0 = 0,
 };
 
-std::optional<Float64> IStatistics::getFloat64(const Field & f)
+std::optional<Float64> StatisticsUtils::tryConvertToFloat64(const Field & f)
 {
     switch (f.getType())
     {
-        case Field::Types::Bool:
-            return f.get<bool>();
         case Field::Types::Int64:
             return f.get<Int64>();
         case Field::Types::UInt64:
             return f.get<UInt64>();
         case Field::Types::Float64:
             return f.get<Float64>();
-        case Field::Types::Int128:
-            return f.get<Int128>();
-        case Field::Types::UInt128:
-            return f.get<UInt128>();
-        case Field::Types::Int256:
-            return f.get<Int256>();
-        case Field::Types::UInt256:
-            return f.get<UInt256>();
-        case Field::Types::Decimal32:
-            return f.get<Decimal32>().getValue().value;
-        case Field::Types::Decimal64:
-            return f.get<Decimal64>().getValue().value;
-        case Field::Types::Decimal128:
-            return f.get<Decimal128>().getValue().value;
-        case Field::Types::Decimal256:
-            return f.get<Decimal256>().getValue().value;
-        case Field::Types::IPv4:
-            return f.get<IPv4>().toUnderType();
-        case Field::Types::IPv6:
-            return f.get<IPv6>().toUnderType();
         default:
             return {};
     }
 }
 
-std::optional<String> IStatistics::getString(const Field & f)
+std::optional<String> StatisticsUtils::tryConvertToString(const DB::Field & f)
 {
     if (f.getType() == Field::Types::String)
         return f.get<String>();
@@ -98,7 +76,7 @@ Float64 IStatistics::estimateEqual(const Field & /*val*/) const
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Equality estimation is not implemented for this type of statistics");
 }
 
-Float64 IStatistics::estimateLess(Float64 /*val*/) const
+Float64 IStatistics::estimateLess(const Field & /*val*/) const
 {
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Less-than estimation is not implemented for this type of statistics");
 }
@@ -113,21 +91,21 @@ Float64 IStatistics::estimateLess(Float64 /*val*/) const
 /// For that reason, all estimation are performed in a central place (here), and we don't simply pass the predicate to the first statistics
 /// object that supports it natively.
 
-Float64 ColumnStatistics::estimateLess(Float64 val) const
+Float64 ColumnStatistics::estimateLess(const Field & val) const
 {
     if (stats.contains(StatisticsType::TDigest))
         return stats.at(StatisticsType::TDigest)->estimateLess(val);
     return rows * ConditionSelectivityEstimator::default_normal_cond_factor;
 }
 
-Float64 ColumnStatistics::estimateGreater(Float64 val) const
+Float64 ColumnStatistics::estimateGreater(const Field & val) const
 {
     return rows - estimateLess(val);
 }
 
 Float64 ColumnStatistics::estimateEqual(const Field & val) const
 {
-    auto float_val = IStatistics::getFloat64(val);
+    auto float_val = StatisticsUtils::tryConvertToFloat64(val);
     if (float_val.has_value() && stats.contains(StatisticsType::Uniq) && stats.contains(StatisticsType::TDigest))
     {
         /// 2048 is the default number of buckets in TDigest. In this case, TDigest stores exactly one value (with many rows) for every bucket.
@@ -254,7 +232,7 @@ ColumnStatisticsPtr MergeTreeStatisticsFactory::get(const ColumnStatisticsDescri
     {
         auto it = creators.find(type);
         if (it == creators.end())
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "Unknown statistic type '{}'. Available types: 'tdigest' 'uniq' 'count_min'", type);
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Unknown statistic type '{}'. Available types: 'tdigest' 'uniq' and 'count_min'", type);
         auto stat_ptr = (it->second)(desc, stats.data_type);
         column_stat->stats[type] = stat_ptr;
     }

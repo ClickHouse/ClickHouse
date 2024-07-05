@@ -16,7 +16,7 @@ void ConditionSelectivityEstimator::ColumnSelectivityEstimator::merge(String par
     part_statistics[part_name] = stats;
 }
 
-Float64 ConditionSelectivityEstimator::ColumnSelectivityEstimator::estimateLess(Float64 val, Float64 rows) const
+Float64 ConditionSelectivityEstimator::ColumnSelectivityEstimator::estimateLess(const Field & val, Float64 rows) const
 {
     if (part_statistics.empty())
         return default_normal_cond_factor * rows;
@@ -30,14 +30,14 @@ Float64 ConditionSelectivityEstimator::ColumnSelectivityEstimator::estimateLess(
     return result * rows / part_rows;
 }
 
-Float64 ConditionSelectivityEstimator::ColumnSelectivityEstimator::estimateGreater(Float64 val, Float64 rows) const
+Float64 ConditionSelectivityEstimator::ColumnSelectivityEstimator::estimateGreater(const Field & val, Float64 rows) const
 {
     return rows - estimateLess(val, rows);
 }
 
 Float64 ConditionSelectivityEstimator::ColumnSelectivityEstimator::estimateEqual(const Field & val, Float64 rows) const
 {
-    auto float_val = IStatistics::getFloat64(val);
+    auto float_val = StatisticsUtils::tryConvertToFloat64(val);
     if (part_statistics.empty())
     {
         if (!float_val)
@@ -148,7 +148,7 @@ Float64 ConditionSelectivityEstimator::estimateRowCount(const RPNBuilderTreeNode
     else
         dummy = true;
     auto [op, val] = extractBinaryOp(node, col);
-    auto float_val = IStatistics::getFloat64(val);
+    auto float_val = StatisticsUtils::tryConvertToFloat64(val);
     if (op == "equals")
     {
         if (dummy)
@@ -164,13 +164,13 @@ Float64 ConditionSelectivityEstimator::estimateRowCount(const RPNBuilderTreeNode
     {
         if (dummy)
             return default_normal_cond_factor * total_rows;
-        return estimator.estimateLess(float_val.value(), total_rows);
+        return estimator.estimateLess(val, total_rows);
     }
     else if (op == "greater" || op == "greaterOrEquals")
     {
         if (dummy)
             return default_normal_cond_factor * total_rows;
-        return estimator.estimateGreater(float_val.value(), total_rows);
+        return estimator.estimateGreater(val, total_rows);
     }
     else
         return default_unknown_cond_factor * total_rows;

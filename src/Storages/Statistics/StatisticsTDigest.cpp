@@ -6,7 +6,8 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_STATISTICS;
+extern const int ILLEGAL_STATISTICS;
+extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 StatisticsTDigest::StatisticsTDigest(const SingleStatisticsDescription & stat_)
@@ -19,14 +20,14 @@ void StatisticsTDigest::update(const ColumnPtr & column)
     size_t rows = column->size();
     for (size_t row = 0; row < rows; ++row)
     {
-        Field f;
-        column->get(row, f);
+        Field field;
+        column->get(row, field);
 
-        if (f.isNull())
+        if (field.isNull())
             continue;
 
-        if (auto float_val = IStatistics::getFloat64(f))
-            t_digest.add(*float_val, 1);
+        if (auto field_as_float = StatisticsUtils::tryConvertToFloat64(field))
+            t_digest.add(*field_as_float, 1);
     }
 }
 
@@ -40,14 +41,20 @@ void StatisticsTDigest::deserialize(ReadBuffer & buf)
     t_digest.deserialize(buf);
 }
 
-Float64 StatisticsTDigest::estimateLess(Float64 val) const
+Float64 StatisticsTDigest::estimateLess(const Field & val) const
 {
-    return t_digest.getCountLessThan(val);
+    auto val_as_float = StatisticsUtils::tryConvertToFloat64(val);
+    if (val_as_float)
+        return t_digest.getCountLessThan(*val_as_float);
+    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Statistics 'tdigest' does not support estimate constant value of type {}", val.getTypeName());
 }
 
 Float64 StatisticsTDigest::estimateEqual(const Field & val) const
 {
-    return t_digest.getCountEqual(IStatistics::getFloat64(val).value());
+    auto val_as_float = StatisticsUtils::tryConvertToFloat64(val);
+    if (val_as_float)
+        return t_digest.getCountEqual(*val_as_float);
+    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Statistics 'tdigest' does not support estimate constant value of type {}", val.getTypeName());
 }
 
 void TDigestValidator(const SingleStatisticsDescription &, DataTypePtr data_type)

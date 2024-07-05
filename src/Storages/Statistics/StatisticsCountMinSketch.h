@@ -16,12 +16,12 @@ class StatisticsCountMinSketch : public IStatistics
 public:
     StatisticsCountMinSketch(const SingleStatisticsDescription & stat_, DataTypePtr data_type_);
 
-    Float64 estimateEqual(const Field & value) const override;
+    Float64 estimateEqual(const Field & val) const override;
+
+    void update(const ColumnPtr & column) override;
 
     void serialize(WriteBuffer & buf) override;
     void deserialize(ReadBuffer & buf) override;
-
-    void update(const ColumnPtr & column) override;
 
 private:
     using Sketch = datasketches::count_min_sketch<UInt64>;

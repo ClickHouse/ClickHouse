@@ -29,9 +29,9 @@ private:
 
         void merge(String part_name, ColumnStatisticsPtr stats);
 
-        Float64 estimateLess(Float64 val, Float64 rows) const;
+        Float64 estimateLess(const Field & val, Float64 rows) const;
 
-        Float64 estimateGreater(Float64 val, Float64 rows) const;
+        Float64 estimateGreater(const Field & val, Float64 rows) const;
 
         Float64 estimateEqual(const Field & val, Float64 rows) const;
     };
