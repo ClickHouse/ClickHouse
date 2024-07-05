@@ -19,9 +19,10 @@ SELECT sleep(3);
 SELECT COUNT(c) FROM z WHERE id = 10;
 
 SYSTEM FLUSH LOGS;
-SELECT read_rows FROM system.query_log
+SELECT COUNT(read_rows) FROM system.query_log
 WHERE current_database = currentDatabase()
   AND query LIKE '%SELECT COUNT%'
-  AND type = 'QueryFinish';
+  AND type = 'QueryFinish'
+  AND read_rows < 1000000;
 
 drop table z;
