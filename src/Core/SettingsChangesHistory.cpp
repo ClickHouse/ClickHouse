@@ -63,6 +63,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
               {"optimize_trivial_insert_select", true, false, "The optimization does not make sense in many cases."},
               {"lightweight_mutation_projection_mode", "throw", "throw", "When lightweight delete happens on a table with projection(s), the possible operations include throw the exception as projection exists, or drop all projection related to this table then do lightweight delete."},
               {"database_replicated_allow_heavy_create", true, false, "Long-running DDL queries (CREATE AS SELECT and POPULATE) for Replicated database engine was forbidden"},
+              {"azure_check_objects_after_upload", false, false, "Check each uploaded object to azure blob storage with head request to be sure that upload was successful"},
               }},
     {"24.6", {{"materialize_skip_indexes_on_insert", true, true, "Added new setting to allow to disable materialization of skip indexes on insert"},
               {"materialize_statistics_on_insert", true, true, "Added new setting to allow to disable materialization of statistics on insert"},
