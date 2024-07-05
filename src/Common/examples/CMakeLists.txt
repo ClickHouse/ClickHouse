@@ -11,10 +11,10 @@ clickhouse_add_executable (small_table small_table.cpp)
 target_link_libraries (small_table PRIVATE clickhouse_common_io)
 
 clickhouse_add_executable (parallel_aggregation parallel_aggregation.cpp)
-target_link_libraries (parallel_aggregation PRIVATE dbms)
+target_link_libraries (parallel_aggregation PRIVATE dbms clickhouse_functions)
 
 clickhouse_add_executable (parallel_aggregation2 parallel_aggregation2.cpp)
-target_link_libraries (parallel_aggregation2 PRIVATE dbms)
+target_link_libraries (parallel_aggregation2 PRIVATE dbms clickhouse_functions)
 
 clickhouse_add_executable (int_hashes_perf int_hashes_perf.cpp)
 target_link_libraries (int_hashes_perf PRIVATE clickhouse_common_io)
@@ -85,7 +85,7 @@ target_link_libraries (interval_tree PRIVATE dbms)
 
 if (ENABLE_SSL)
     clickhouse_add_executable (encrypt_decrypt encrypt_decrypt.cpp)
-    target_link_libraries (encrypt_decrypt PRIVATE dbms)
+    target_link_libraries (encrypt_decrypt PRIVATE dbms clickhouse_functions)
 endif()
 
 clickhouse_add_executable (check_pointer_valid check_pointer_valid.cpp)

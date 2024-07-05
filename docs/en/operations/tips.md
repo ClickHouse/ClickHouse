@@ -36,9 +36,24 @@ $ echo 0 | sudo tee /proc/sys/vm/overcommit_memory
 Use `perf top` to watch the time spent in the kernel for memory management.
 Permanent huge pages also do not need to be allocated.
 
-:::warning
-If your system has less than 16 GB of RAM, you may experience various memory exceptions because default settings do not match this amount of memory. The recommended amount of RAM is 32 GB or more. You can use ClickHouse in a system with a small amount of RAM, even with 2 GB of RAM, but it requires additional tuning and can ingest at a low rate.
-:::
+### Using less than 16GB of RAM
+
+The recommended amount of RAM is 32 GB or more.
+
+If your system has less than 16 GB of RAM, you may experience various memory exceptions because default settings do not match this amount of memory. You can use ClickHouse in a system with a small amount of RAM (as low as 2 GB), but these setups require additional tuning and can only ingest at a low rate.
+
+When using ClickHouse with less than 16GB of RAM, we recommend the following:
+
+- Lower the size of the mark cache in the `config.xml`. It can be set as low as 500 MB, but it cannot be set to zero.
+- Lower the number of query processing threads down to `1`.
+- Lower the `max_block_size` to `8192`. Values as low as `1024` can still be practical.
+- Lower `max_download_threads` to `1`.
+- Set `input_format_parallel_parsing` and `output_format_parallel_formatting` to `0`.
+
+Additional notes:
+- To flush the memory cached by the memory allocator, you can run the `SYSTEM JEMALLOC PURGE`
+command.
+- We do not recommend using S3 or Kafka integrations on low-memory machines because they require significant memory for buffers.
 
 ## Storage Subsystem {#storage-subsystem}
 

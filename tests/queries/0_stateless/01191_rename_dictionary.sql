@@ -17,7 +17,7 @@ SELECT name, status FROM system.dictionaries WHERE database='test_01191';
 SELECT name, engine FROM system.tables WHERE database='test_01191' ORDER BY name;
 
 RENAME DICTIONARY test_01191.table TO test_01191.table1; -- {serverError UNKNOWN_TABLE}
-EXCHANGE DICTIONARIES test_01191._ AND test_01191.dict; -- {serverError INCORRECT_QUERY}
+EXCHANGE DICTIONARIES test_01191._ AND test_01191.dict; -- {serverError INFINITE_LOOP}
 EXCHANGE TABLES test_01191.t AND test_01191.dict;
 SELECT name, status FROM system.dictionaries WHERE database='test_01191';
 SELECT name, engine FROM system.tables WHERE database='test_01191' ORDER BY name;

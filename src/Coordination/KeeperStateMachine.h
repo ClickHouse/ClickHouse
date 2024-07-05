@@ -182,8 +182,7 @@ private:
 
     KeeperSnapshotManagerS3 * snapshot_manager_s3;
 
-    KeeperStorage::ResponseForSession processReconfiguration(
-        const KeeperStorage::RequestForSession& request_for_session)
+    KeeperStorage::ResponseForSession processReconfiguration(const KeeperStorage::RequestForSession & request_for_session)
         TSA_REQUIRES(storage_and_responses_lock);
 };
 }

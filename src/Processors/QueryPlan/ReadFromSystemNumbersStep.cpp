@@ -393,7 +393,7 @@ ReadFromSystemNumbersStep::ReadFromSystemNumbersStep(
     , num_streams{num_streams_}
     , limit_length_and_offset(InterpreterSelectQuery::getLimitLengthAndOffset(query_info.query->as<ASTSelectQuery &>(), context))
     , should_pushdown_limit(shouldPushdownLimit(query_info, limit_length_and_offset.first))
-    , query_info_limit(query_info.limit)
+    , query_info_limit(query_info.trivial_limit)
     , storage_limits(query_info.storage_limits)
 {
     storage_snapshot->check(column_names);

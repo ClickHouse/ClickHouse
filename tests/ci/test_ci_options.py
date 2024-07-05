@@ -132,8 +132,7 @@ _TEST_JOB_LIST = [
     "ClickBench (release)",
     "ClickBench (aarch64)",
     "libFuzzer tests",
-    "ClickHouse build check",
-    "ClickHouse special build check",
+    "Builds",
     "Docs check",
     "Bugfix validation",
 ]

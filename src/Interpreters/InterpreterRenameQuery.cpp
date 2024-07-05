@@ -127,14 +127,23 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
         {
             StorageID from_table_id{elem.from_database_name, elem.from_table_name};
             StorageID to_table_id{elem.to_database_name, elem.to_table_name};
-            std::vector<StorageID> ref_dependencies;
-            std::vector<StorageID> loading_dependencies;
+            std::vector<StorageID> from_ref_dependencies;
+            std::vector<StorageID> from_loading_dependencies;
+            std::vector<StorageID> to_ref_dependencies;
+            std::vector<StorageID> to_loading_dependencies;
 
-            if (!exchange_tables)
+            if (exchange_tables)
             {
+                DatabaseCatalog::instance().checkTablesCanBeExchangedWithNoCyclicDependencies(from_table_id, to_table_id);
+                std::tie(from_ref_dependencies, from_loading_dependencies) = database_catalog.removeDependencies(from_table_id, false, false);
+                std::tie(to_ref_dependencies, to_loading_dependencies) = database_catalog.removeDependencies(to_table_id, false, false);
+            }
+            else
+            {
+                DatabaseCatalog::instance().checkTableCanBeRenamedWithNoCyclicDependencies(from_table_id, to_table_id);
                 bool check_ref_deps = getContext()->getSettingsRef().check_referential_table_dependencies;
                 bool check_loading_deps = !check_ref_deps && getContext()->getSettingsRef().check_table_dependencies;
-                std::tie(ref_dependencies, loading_dependencies) = database_catalog.removeDependencies(from_table_id, check_ref_deps, check_loading_deps);
+                std::tie(from_ref_dependencies, from_loading_dependencies) = database_catalog.removeDependencies(from_table_id, check_ref_deps, check_loading_deps);
             }
 
             try
@@ -147,12 +156,17 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
                     exchange_tables,
                     rename.dictionary);
 
-                DatabaseCatalog::instance().addDependencies(to_table_id, ref_dependencies, loading_dependencies);
+                DatabaseCatalog::instance().addDependencies(to_table_id, from_ref_dependencies, from_loading_dependencies);
+                if (!to_ref_dependencies.empty() || !to_loading_dependencies.empty())
+                    DatabaseCatalog::instance().addDependencies(from_table_id, to_ref_dependencies, to_loading_dependencies);
+
             }
             catch (...)
             {
                 /// Restore dependencies if RENAME fails
-                DatabaseCatalog::instance().addDependencies(from_table_id, ref_dependencies, loading_dependencies);
+                DatabaseCatalog::instance().addDependencies(from_table_id, from_ref_dependencies, from_loading_dependencies);
+                if (!to_ref_dependencies.empty() || !to_loading_dependencies.empty())
+                    DatabaseCatalog::instance().addDependencies(to_table_id, to_ref_dependencies, to_loading_dependencies);
                 throw;
             }
         }

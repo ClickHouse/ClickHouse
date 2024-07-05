@@ -910,7 +910,7 @@ bool InterpreterSelectQuery::adjustParallelReplicasAfterAnalysis()
     UInt64 max_rows = maxBlockSizeByLimit();
     if (settings.max_rows_to_read)
         max_rows = max_rows ? std::min(max_rows, settings.max_rows_to_read.value) : settings.max_rows_to_read;
-    query_info_copy.limit = max_rows;
+    query_info_copy.trivial_limit = max_rows;
 
     /// Apply filters to prewhere and add them to the query_info so we can filter out parts efficiently during row estimation
     applyFiltersToPrewhereInAnalysis(analysis_copy);
@@ -2445,13 +2445,13 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
         if (local_limits.local_limits.size_limits.max_rows != 0)
         {
             if (max_block_limited < local_limits.local_limits.size_limits.max_rows)
-                query_info.limit = max_block_limited;
+                query_info.trivial_limit = max_block_limited;
             else if (local_limits.local_limits.size_limits.max_rows < std::numeric_limits<UInt64>::max()) /// Ask to read just enough rows to make the max_rows limit effective (so it has a chance to be triggered).
-                query_info.limit = 1 + local_limits.local_limits.size_limits.max_rows;
+                query_info.trivial_limit = 1 + local_limits.local_limits.size_limits.max_rows;
         }
         else
         {
-            query_info.limit = max_block_limited;
+            query_info.trivial_limit = max_block_limited;
         }
     }
 

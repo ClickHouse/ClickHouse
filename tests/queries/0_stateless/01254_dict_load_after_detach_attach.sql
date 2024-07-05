@@ -17,7 +17,7 @@ LAYOUT(FLAT());
 DETACH DATABASE dict_db_01254;
 ATTACH DATABASE dict_db_01254;
 
-SELECT query_count, status FROM system.dictionaries WHERE database = 'dict_db_01254' AND name = 'dict';
+SELECT COALESCE((SELECT status FROM system.dictionaries WHERE database = 'dict_db_01254' AND name = 'dict')::Nullable(String), 'NOT_LOADED');
 SYSTEM RELOAD DICTIONARY dict_db_01254.dict;
 SELECT query_count, status FROM system.dictionaries WHERE database = 'dict_db_01254' AND name = 'dict';
 SELECT dictGetUInt64('dict_db_01254.dict', 'val', toUInt64(0));
