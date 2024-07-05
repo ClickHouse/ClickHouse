@@ -29,6 +29,17 @@ namespace ErrorCodes
 }
 
 
+namespace
+{
+    /// Throws an exception that multiple authorization schemes are used simultaneously.
+    [[noreturn]] void throwMultipleAuthenticationMethods(std::string_view method1, std::string_view method2)
+    {
+        throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
+                        "Invalid authentication: it is not allowed to use {} and {} simultaneously", method1, method2);
+    }
+}
+
+
 bool authenticateUserByHTTP(
     const HTTPServerRequest & request,
     const HTMLForm & params,
@@ -46,11 +57,11 @@ bool authenticateUserByHTTP(
     std::string user = request.get("X-ClickHouse-User", "");
     std::string password = request.get("X-ClickHouse-Key", "");
     std::string quota_key = request.get("X-ClickHouse-Quota", "");
+    bool has_auth_headers = !user.empty() || !password.empty();
 
     /// The header 'X-ClickHouse-SSL-Certificate-Auth: on' enables checking the common name
     /// extracted from the SSL certificate used for this connection instead of checking password.
     bool has_ssl_certificate_auth = (request.get("X-ClickHouse-SSL-Certificate-Auth", "") == "on");
-    bool has_auth_headers = !user.empty() || !password.empty() || has_ssl_certificate_auth;
 
     /// User name and password can be passed using HTTP Basic auth or query parameters
     /// (both methods are insecure).
@@ -60,45 +71,41 @@ bool authenticateUserByHTTP(
     std::string spnego_challenge;
     SSLCertificateSubjects certificate_subjects;
 
-    if (has_auth_headers)
+    if (has_ssl_certificate_auth)
+    {
+#if USE_SSL
+        /// It is prohibited to mix different authorization schemes.
+        if (!password.empty())
+            throwMultipleAuthenticationMethods("SSL certificate authentication", "authentication via password");
+        if (has_http_credentials)
+            throwMultipleAuthenticationMethods("SSL certificate authentication", "Authorization HTTP header");
+        if (has_credentials_in_query_params)
+            throwMultipleAuthenticationMethods("SSL certificate authentication", "authentication via parameters");
+
+        if (request.havePeerCertificate())
+            certificate_subjects = extractSSLCertificateSubjects(request.peerCertificate());
+
+        if (certificate_subjects.empty())
+            throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
+                            "Invalid authentication: SSL certificate authentication requires nonempty certificate's Common Name or Subject Alternative Name");
+#else
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                        "SSL certificate authentication disabled because ClickHouse was built without SSL library");
+#endif
+    }
+    else if (has_auth_headers)
     {
         /// It is prohibited to mix different authorization schemes.
         if (has_http_credentials)
-            throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
-                            "Invalid authentication: it is not allowed "
-                            "to use SSL certificate authentication and Authorization HTTP header simultaneously");
+            throwMultipleAuthenticationMethods("X-ClickHouse HTTP headers", "Authorization HTTP header");
         if (has_credentials_in_query_params)
-            throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
-                            "Invalid authentication: it is not allowed "
-                            "to use SSL certificate authentication and authentication via parameters simultaneously simultaneously");
-
-        if (has_ssl_certificate_auth)
-        {
-#if USE_SSL
-            if (!password.empty())
-                throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
-                                "Invalid authentication: it is not allowed "
-                                "to use SSL certificate authentication and authentication via password simultaneously");
-
-            if (request.havePeerCertificate())
-                certificate_subjects = extractSSLCertificateSubjects(request.peerCertificate());
-
-            if (certificate_subjects.empty())
-                throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
-                                "Invalid authentication: SSL certificate authentication requires nonempty certificate's Common Name or Subject Alternative Name");
-#else
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                            "SSL certificate authentication disabled because ClickHouse was built without SSL library");
-#endif
-        }
+            throwMultipleAuthenticationMethods("X-ClickHouse HTTP headers", "authentication via parameters");
     }
     else if (has_http_credentials)
     {
         /// It is prohibited to mix different authorization schemes.
         if (has_credentials_in_query_params)
-            throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
-                            "Invalid authentication: it is not allowed "
-                            "to use Authorization HTTP header and authentication via parameters simultaneously");
+            throwMultipleAuthenticationMethods("Authorization HTTP header", "authentication via parameters");
 
         std::string scheme;
         std::string auth_info;
