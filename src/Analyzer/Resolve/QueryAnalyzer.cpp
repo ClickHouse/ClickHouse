@@ -4459,7 +4459,7 @@ void QueryAnalyzer::initializeTableExpressionData(const QueryTreeNodePtr & table
     {
         auto left_table_expression = extractLeftTableExpression(scope_query_node->getJoinTree());
         if (table_expression_node.get() == left_table_expression.get() &&
-            scope.joins_count && scope.context->getSettingsRef().single_join_prefer_left_table)
+            scope.joins_count == 1 && scope.context->getSettingsRef().single_join_prefer_left_table)
                 table_expression_data.should_qualify_columns = false;
     }
 
