@@ -169,6 +169,7 @@ public:
         ObjectInfos * read_keys_,
         size_t list_object_keys_size,
         bool throw_on_zero_files_match_,
+        const char * throw_on_zero_files_match_setting_name_,
         std::function<void(FileProgress)> file_progress_callback_ = {});
 
     ~GlobIterator() override = default;
@@ -185,6 +186,7 @@ private:
     const ConfigurationPtr configuration;
     const NamesAndTypesList virtual_columns;
     const bool throw_on_zero_files_match;
+    const char * throw_on_zero_files_match_setting_name;
 
     size_t index = 0;
 
@@ -199,7 +201,7 @@ private:
     std::unique_ptr<re2::RE2> matcher;
 
     bool is_finished = false;
-    bool first_iteration = true;
+    bool any_files_matched_glob = false;
     std::mutex next_mutex;
 
     std::function<void(FileProgress)> file_progress_callback;
