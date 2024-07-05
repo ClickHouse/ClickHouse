@@ -63,7 +63,10 @@ def get_access_token_by_key_app(private_key: str, app_id: int) -> str:
         "iss": app_id,
     }
 
-    encoded_jwt = jwt.encode(payload, private_key, algorithm="RS256")
+    # FIXME: apparently should be switched to this so that mypy is happy
+    # jwt_instance = JWT()
+    # encoded_jwt = jwt_instance.encode(payload, private_key, algorithm="RS256")
+    encoded_jwt = jwt.encode(payload, private_key, algorithm="RS256")  # type: ignore
     installation_id = get_installation_id(encoded_jwt)
     return get_access_token_by_jwt(encoded_jwt, installation_id)
 
