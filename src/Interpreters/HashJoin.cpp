@@ -2564,6 +2564,48 @@ void HashJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
     }
 }
 
+void HashJoin::joinBlock(ScatteredBlock & block, ExtraBlockPtr & not_processed)
+{
+    if (!data)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot join after data has been released");
+
+    for (const auto & onexpr : table_join->getClauses())
+    {
+        auto cond_column_name = onexpr.condColumnNames();
+        JoinCommon::checkTypesOfKeys(
+            *block.block,
+            onexpr.key_names_left,
+            cond_column_name.first,
+            right_sample_block,
+            onexpr.key_names_right,
+            cond_column_name.second);
+    }
+
+    chassert(kind == JoinKind::Left || kind == JoinKind::Inner);
+
+    std::vector<const std::decay_t<decltype(data->maps[0])> *> maps_vector;
+    for (size_t i = 0; i < table_join->getClauses().size(); ++i)
+        maps_vector.push_back(&data->maps[i]);
+
+    if (joinDispatch(
+            kind,
+            strictness,
+            maps_vector,
+            [&](auto kind_, auto strictness_, auto & maps_vector_)
+            {
+                Block remaining_block = joinBlockImpl<kind_, strictness_>(block, sample_block_with_columns_to_add, maps_vector_);
+                if (remaining_block.rows())
+                    not_processed = std::make_shared<ExtraBlock>(ExtraBlock{std::move(remaining_block)});
+                else
+                    not_processed.reset();
+            }))
+    {
+        /// Joined
+    }
+    else
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong JOIN combination: {} {}", strictness, kind);
+}
+
 HashJoin::~HashJoin()
 {
     if (!data)
