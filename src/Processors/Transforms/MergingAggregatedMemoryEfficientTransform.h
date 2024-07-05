@@ -3,7 +3,6 @@
 #include <Core/SortDescription.h>
 #include <Common/HashTable/HashSet.h>
 #include <Interpreters/Aggregator.h>
-#include <Processors/Chunk.h>
 #include <Processors/IProcessor.h>
 #include <Processors/ISimpleTransform.h>
 #include <Processors/ResizeProcessor.h>
@@ -143,9 +142,9 @@ private:
     void addChunk(Chunk chunk, size_t from_input);
 };
 
-struct ChunksToMerge : public ChunkInfoCloneable<ChunksToMerge>
+struct ChunksToMerge : public ChunkInfo
 {
-    std::shared_ptr<Chunks> chunks;
+    std::unique_ptr<Chunks> chunks;
     Int32 bucket_num = -1;
     bool is_overflows = false;
     UInt64 chunk_num = 0; // chunk number in order of generation, used during memory bound merging to restore chunks order

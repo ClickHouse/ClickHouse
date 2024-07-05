@@ -377,13 +377,7 @@ void RefreshTask::executeRefreshUnlocked(std::shared_ptr<StorageMaterializedView
         {
             CurrentThread::QueryScope query_scope(refresh_context); // create a thread group for the query
 
-            BlockIO block_io = InterpreterInsertQuery(
-                refresh_query,
-                refresh_context,
-                /* allow_materialized */ false,
-                /* no_squash */ false,
-                /* no_destination */ false,
-                /* async_isnert */ false).execute();
+            BlockIO block_io = InterpreterInsertQuery(refresh_query, refresh_context).execute();
             QueryPipeline & pipeline = block_io.pipeline;
 
             pipeline.setProgressCallback([this](const Progress & prog)
