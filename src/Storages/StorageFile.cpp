@@ -1233,9 +1233,9 @@ StorageFileSource::~StorageFileSource()
     beforeDestroy();
 }
 
-void StorageFileSource::setKeyCondition(const ActionsDAGPtr & filter_actions_dag, ContextPtr context_)
+void StorageFileSource::setKeyCondition(const std::optional<ActionsDAG> & filter_actions_dag, ContextPtr context_)
 {
-    setKeyConditionImpl(filter_actions_dag.get(), context_, block_for_format);
+    setKeyConditionImpl(filter_actions_dag, context_, block_for_format);
 }
 
 

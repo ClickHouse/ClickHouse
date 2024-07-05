@@ -961,9 +961,9 @@ NameSet ActionsDAG::foldActionsByProjection(
 }
 
 
-ActionsDAGPtr ActionsDAG::foldActionsByProjection(const std::unordered_map<const Node *, const Node *> & new_inputs, const NodeRawConstPtrs & required_outputs)
+ActionsDAG ActionsDAG::foldActionsByProjection(const std::unordered_map<const Node *, const Node *> & new_inputs, const NodeRawConstPtrs & required_outputs)
 {
-    auto dag = std::make_unique<ActionsDAG>();
+    ActionsDAG dag;
     std::unordered_map<const Node *, const Node *> inputs_mapping;
     std::unordered_map<const Node *, const Node *> mapping;
     struct Frame
@@ -1003,9 +1003,9 @@ ActionsDAGPtr ActionsDAG::foldActionsByProjection(const std::unordered_map<const
                         {
                             bool should_rename = new_input->result_name != rename->result_name;
                             const auto & input_name = should_rename ? rename->result_name : new_input->result_name;
-                            mapped_input = &dag->addInput(input_name, new_input->result_type);
+                            mapped_input = &dag.addInput(input_name, new_input->result_type);
                             if (should_rename)
-                                mapped_input = &dag->addAlias(*mapped_input, new_input->result_name);
+                                mapped_input = &dag.addAlias(*mapped_input, new_input->result_name);
                         }
 
                         node = mapped_input;
@@ -1034,7 +1034,7 @@ ActionsDAGPtr ActionsDAG::foldActionsByProjection(const std::unordered_map<const
                     "Cannot fold actions for projection. Node {} requires input {} which does not belong to projection",
                     stack.front().node->result_name, frame.node->result_name);
 
-            auto & node = dag->nodes.emplace_back(*frame.node);
+            auto & node = dag.nodes.emplace_back(*frame.node);
             for (auto & child : node.children)
                 child = mapping[child];
 
@@ -1049,8 +1049,8 @@ ActionsDAGPtr ActionsDAG::foldActionsByProjection(const std::unordered_map<const
         /// Add an alias if the mapped node has a different result name.
         const auto * mapped_output = mapping[output];
         if (output->result_name != mapped_output->result_name)
-            mapped_output = &dag->addAlias(*mapped_output, output->result_name);
-        dag->outputs.push_back(mapped_output);
+            mapped_output = &dag.addAlias(*mapped_output, output->result_name);
+        dag.outputs.push_back(mapped_output);
     }
 
     return dag;
@@ -1411,7 +1411,7 @@ const ActionsDAG::Node & ActionsDAG::materializeNode(const Node & node)
     return addAlias(*func, name);
 }
 
-ActionsDAGPtr ActionsDAG::makeConvertingActions(
+ActionsDAG ActionsDAG::makeConvertingActions(
     const ColumnsWithTypeAndName & source,
     const ColumnsWithTypeAndName & result,
     MatchColumnsMode mode,
@@ -1428,7 +1428,7 @@ ActionsDAGPtr ActionsDAG::makeConvertingActions(
     if (add_casted_columns && mode != MatchColumnsMode::Name)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Converting with add_casted_columns supported only for MatchColumnsMode::Name");
 
-    auto actions_dag = std::make_unique<ActionsDAG>(source);
+    ActionsDAG actions_dag(source);
     NodeRawConstPtrs projection(num_result_columns);
 
     FunctionOverloadResolverPtr func_builder_materialize = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionMaterialize>());
@@ -1436,9 +1436,9 @@ ActionsDAGPtr ActionsDAG::makeConvertingActions(
     std::unordered_map<std::string_view, std::list<size_t>> inputs;
     if (mode == MatchColumnsMode::Name)
     {
-        size_t input_nodes_size = actions_dag->inputs.size();
+        size_t input_nodes_size = actions_dag.inputs.size();
         for (size_t pos = 0; pos < input_nodes_size; ++pos)
-            inputs[actions_dag->inputs[pos]->result_name].push_back(pos);
+            inputs[actions_dag.inputs[pos]->result_name].push_back(pos);
     }
 
     for (size_t result_col_num = 0; result_col_num < num_result_columns; ++result_col_num)
@@ -1451,7 +1451,7 @@ ActionsDAGPtr ActionsDAG::makeConvertingActions(
         {
             case MatchColumnsMode::Position:
             {
-                src_node = dst_node = actions_dag->inputs[result_col_num];
+                src_node = dst_node = actions_dag.inputs[result_col_num];
                 break;
             }
 
@@ -1462,7 +1462,7 @@ ActionsDAGPtr ActionsDAG::makeConvertingActions(
                 {
                     const auto * res_const = typeid_cast<const ColumnConst *>(res_elem.column.get());
                     if (ignore_constant_values && res_const)
-                        src_node = dst_node = &actions_dag->addColumn(res_elem);
+                        src_node = dst_node = &actions_dag.addColumn(res_elem);
                     else
                         throw Exception(ErrorCodes::THERE_IS_NO_COLUMN,
                                         "Cannot find column `{}` in source stream, there are only columns: [{}]",
@@ -1470,7 +1470,7 @@ ActionsDAGPtr ActionsDAG::makeConvertingActions(
                 }
                 else
                 {
-                    src_node = dst_node = actions_dag->inputs[input.front()];
+                    src_node = dst_node = actions_dag.inputs[input.front()];
                     input.pop_front();
                 }
                 break;
@@ -1483,7 +1483,7 @@ ActionsDAGPtr ActionsDAG::makeConvertingActions(
             if (const auto * src_const = typeid_cast<const ColumnConst *>(dst_node->column.get()))
             {
                 if (ignore_constant_values)
-                    dst_node = &actions_dag->addColumn(res_elem);
+                    dst_node = &actions_dag.addColumn(res_elem);
                 else if (res_const->getField() != src_const->getField())
                     throw Exception(
                         ErrorCodes::ILLEGAL_COLUMN,
@@ -1505,7 +1505,7 @@ ActionsDAGPtr ActionsDAG::makeConvertingActions(
             column.column = DataTypeString().createColumnConst(0, column.name);
             column.type = std::make_shared<DataTypeString>();
 
-            const auto * right_arg = &actions_dag->addColumn(std::move(column));
+            const auto * right_arg = &actions_dag.addColumn(std::move(column));
             const auto * left_arg = dst_node;
 
             CastDiagnostic diagnostic = {dst_node->result_name, res_elem.name};
@@ -1513,13 +1513,13 @@ ActionsDAGPtr ActionsDAG::makeConvertingActions(
                 = createInternalCastOverloadResolver(CastType::nonAccurate, std::move(diagnostic));
 
             NodeRawConstPtrs children = { left_arg, right_arg };
-            dst_node = &actions_dag->addFunction(func_builder_cast, std::move(children), {});
+            dst_node = &actions_dag.addFunction(func_builder_cast, std::move(children), {});
         }
 
         if (dst_node->column && isColumnConst(*dst_node->column) && !(res_elem.column && isColumnConst(*res_elem.column)))
         {
             NodeRawConstPtrs children = {dst_node};
-            dst_node = &actions_dag->addFunction(func_builder_materialize, std::move(children), {});
+            dst_node = &actions_dag.addFunction(func_builder_materialize, std::move(children), {});
         }
 
         if (dst_node->result_name != res_elem.name)
@@ -1538,7 +1538,7 @@ ActionsDAGPtr ActionsDAG::makeConvertingActions(
             }
             else
             {
-                dst_node = &actions_dag->addAlias(*dst_node, res_elem.name);
+                dst_node = &actions_dag.addAlias(*dst_node, res_elem.name);
                 projection[result_col_num] = dst_node;
             }
         }
@@ -1548,36 +1548,36 @@ ActionsDAGPtr ActionsDAG::makeConvertingActions(
         }
     }
 
-    actions_dag->outputs.swap(projection);
-    actions_dag->removeUnusedActions(false);
+    actions_dag.outputs.swap(projection);
+    actions_dag.removeUnusedActions(false);
 
     return actions_dag;
 }
 
-ActionsDAGPtr ActionsDAG::makeAddingColumnActions(ColumnWithTypeAndName column)
+ActionsDAG ActionsDAG::makeAddingColumnActions(ColumnWithTypeAndName column)
 {
-    auto adding_column_action = std::make_unique<ActionsDAG>();
+    ActionsDAG adding_column_action;
     FunctionOverloadResolverPtr func_builder_materialize
         = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionMaterialize>());
 
     auto column_name = column.name;
-    const auto * column_node = &adding_column_action->addColumn(std::move(column));
+    const auto * column_node = &adding_column_action.addColumn(std::move(column));
     NodeRawConstPtrs inputs = {column_node};
-    const auto & function_node = adding_column_action->addFunction(func_builder_materialize, std::move(inputs), {});
-    const auto & alias_node = adding_column_action->addAlias(function_node, std::move(column_name));
+    const auto & function_node = adding_column_action.addFunction(func_builder_materialize, std::move(inputs), {});
+    const auto & alias_node = adding_column_action.addAlias(function_node, std::move(column_name));
 
-    adding_column_action->outputs.push_back(&alias_node);
+    adding_column_action.outputs.push_back(&alias_node);
     return adding_column_action;
 }
 
-ActionsDAGPtr ActionsDAG::merge(ActionsDAG && first, ActionsDAG && second)
+ActionsDAG ActionsDAG::merge(ActionsDAG && first, ActionsDAG && second)
 {
     first.mergeInplace(std::move(second));
 
     /// Some actions could become unused. Do not drop inputs to preserve the header.
     first.removeUnusedActions(false);
 
-    return std::make_unique<ActionsDAG>(std::move(first));
+    return std::move(first);
 }
 
 void ActionsDAG::mergeInplace(ActionsDAG && second)
@@ -1970,15 +1970,15 @@ ActionsDAG::SplitResult ActionsDAG::split(std::unordered_set<const Node *> split
             second_inputs.push_back(cur.to_second);
     }
 
-    auto first_actions = std::make_unique<ActionsDAG>();
-    first_actions->nodes.swap(first_nodes);
-    first_actions->outputs.swap(first_outputs);
-    first_actions->inputs.swap(first_inputs);
+    ActionsDAG first_actions;
+    first_actions.nodes.swap(first_nodes);
+    first_actions.outputs.swap(first_outputs);
+    first_actions.inputs.swap(first_inputs);
 
-    auto second_actions = std::make_unique<ActionsDAG>();
-    second_actions->nodes.swap(second_nodes);
-    second_actions->outputs.swap(second_outputs);
-    second_actions->inputs.swap(second_inputs);
+    ActionsDAG second_actions;
+    second_actions.nodes.swap(second_nodes);
+    second_actions.outputs.swap(second_outputs);
+    second_actions.inputs.swap(second_inputs);
 
     std::unordered_map<const Node *, const Node *> split_nodes_mapping;
     if (create_split_nodes_mapping)
@@ -2098,7 +2098,7 @@ ActionsDAG::SplitResult ActionsDAG::splitActionsBySortingDescription(const NameS
     return res;
 }
 
-bool ActionsDAG::isFilterAlwaysFalseForDefaultValueInputs(const std::string & filter_name, const Block & input_stream_header)
+bool ActionsDAG::isFilterAlwaysFalseForDefaultValueInputs(const std::string & filter_name, const Block & input_stream_header) const
 {
     const auto * filter_node = tryFindInOutputs(filter_name);
     if (!filter_node)
@@ -2122,7 +2122,7 @@ bool ActionsDAG::isFilterAlwaysFalseForDefaultValueInputs(const std::string & fi
         input_node_name_to_default_input_column.emplace(input->result_name, std::move(constant_column_with_type_and_name));
     }
 
-    ActionsDAGPtr filter_with_default_value_inputs;
+    std::optional<ActionsDAG> filter_with_default_value_inputs;
 
     try
     {
@@ -2304,12 +2304,12 @@ ColumnsWithTypeAndName prepareFunctionArguments(const ActionsDAG::NodeRawConstPt
 ///
 /// Result actions add single column with conjunction result (it is always first in outputs).
 /// No other columns are added or removed.
-ActionsDAGPtr ActionsDAG::createActionsForConjunction(NodeRawConstPtrs conjunction, const ColumnsWithTypeAndName & all_inputs)
+std::optional<ActionsDAG> ActionsDAG::createActionsForConjunction(NodeRawConstPtrs conjunction, const ColumnsWithTypeAndName & all_inputs)
 {
     if (conjunction.empty())
-        return nullptr;
+        return {};
 
-    auto actions = std::make_unique<ActionsDAG>();
+    ActionsDAG actions;
 
     FunctionOverloadResolverPtr func_builder_and = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
 
@@ -2350,7 +2350,7 @@ ActionsDAGPtr ActionsDAG::createActionsForConjunction(NodeRawConstPtrs conjuncti
 
             if (cur.next_child_to_visit == cur.node->children.size())
             {
-                auto & node = actions->nodes.emplace_back(*cur.node);
+                auto & node = actions.nodes.emplace_back(*cur.node);
                 nodes_mapping[cur.node] = &node;
 
                 for (auto & child : node.children)
@@ -2373,33 +2373,33 @@ ActionsDAGPtr ActionsDAG::createActionsForConjunction(NodeRawConstPtrs conjuncti
         for (const auto * predicate : conjunction)
             args.emplace_back(nodes_mapping[predicate]);
 
-        result_predicate = &actions->addFunction(func_builder_and, std::move(args), {});
+        result_predicate = &actions.addFunction(func_builder_and, std::move(args), {});
     }
 
-    actions->outputs.push_back(result_predicate);
+    actions.outputs.push_back(result_predicate);
 
     for (const auto & col : all_inputs)
     {
         const Node * input;
         auto & list = required_inputs[col.name];
         if (list.empty())
-            input = &actions->addInput(col);
+            input = &actions.addInput(col);
         else
         {
             input = list.front();
             list.pop_front();
-            actions->inputs.push_back(input);
+            actions.inputs.push_back(input);
         }
 
         /// We should not add result_predicate into the outputs for the second time.
         if (input->result_name != result_predicate->result_name)
-            actions->outputs.push_back(input);
+            actions.outputs.push_back(input);
     }
 
     return actions;
 }
 
-ActionsDAGPtr ActionsDAG::splitActionsForFilterPushDown(
+std::optional<ActionsDAG> ActionsDAG::splitActionsForFilterPushDown(
     const std::string & filter_name,
     bool removes_filter,
     const Names & available_inputs,
@@ -2415,7 +2415,7 @@ ActionsDAGPtr ActionsDAG::splitActionsForFilterPushDown(
     /// If condition is constant let's do nothing.
     /// It means there is nothing to push down or optimization was already applied.
     if (predicate->type == ActionType::COLUMN)
-        return nullptr;
+        return {};
 
     std::unordered_set<const Node *> allowed_nodes;
 
@@ -2439,7 +2439,7 @@ ActionsDAGPtr ActionsDAG::splitActionsForFilterPushDown(
     auto conjunction = getConjunctionNodes(predicate, allowed_nodes);
 
     if (conjunction.allowed.empty())
-        return nullptr;
+        return {};
 
     chassert(predicate->result_type);
 
@@ -2451,13 +2451,13 @@ ActionsDAGPtr ActionsDAG::splitActionsForFilterPushDown(
             && !conjunction.rejected.front()->result_type->equals(*predicate->result_type))
         {
             /// No further optimization can be done
-            return nullptr;
+            return {};
         }
     }
 
     auto actions = createActionsForConjunction(conjunction.allowed, all_inputs);
     if (!actions)
-        return nullptr;
+        return {};
 
     /// Now, when actions are created, update the current DAG.
     removeUnusedConjunctions(std::move(conjunction.rejected), predicate, removes_filter);
@@ -2562,11 +2562,11 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
     auto left_stream_filter_to_push_down = createActionsForConjunction(left_stream_allowed_conjunctions, left_stream_header.getColumnsWithTypeAndName());
     auto right_stream_filter_to_push_down = createActionsForConjunction(right_stream_allowed_conjunctions, right_stream_header.getColumnsWithTypeAndName());
 
-    auto replace_equivalent_columns_in_filter = [](const ActionsDAGPtr & filter,
+    auto replace_equivalent_columns_in_filter = [](const ActionsDAG & filter,
         const Block & stream_header,
         const std::unordered_map<std::string, ColumnWithTypeAndName> & columns_to_replace)
     {
-        auto updated_filter = ActionsDAG::buildFilterActionsDAG({filter->getOutputs()[0]}, columns_to_replace);
+        auto updated_filter = ActionsDAG::buildFilterActionsDAG({filter.getOutputs()[0]}, columns_to_replace);
         chassert(updated_filter->getOutputs().size() == 1);
 
         /** If result filter to left or right stream has column that is one of the stream inputs, we need distinguish filter column from
@@ -2587,7 +2587,7 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
         for (const auto & input : updated_filter->getInputs())
             updated_filter_inputs[input->result_name].push_back(input);
 
-        for (const auto & input : filter->getInputs())
+        for (const auto & input : filter.getInputs())
         {
             if (updated_filter_inputs.contains(input->result_name))
                 continue;
@@ -2625,12 +2625,12 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
     };
 
     if (left_stream_filter_to_push_down)
-        left_stream_filter_to_push_down = replace_equivalent_columns_in_filter(left_stream_filter_to_push_down,
+        left_stream_filter_to_push_down = replace_equivalent_columns_in_filter(*left_stream_filter_to_push_down,
             left_stream_header,
             equivalent_right_stream_column_to_left_stream_column);
 
     if (right_stream_filter_to_push_down)
-        right_stream_filter_to_push_down = replace_equivalent_columns_in_filter(right_stream_filter_to_push_down,
+        right_stream_filter_to_push_down = replace_equivalent_columns_in_filter(*right_stream_filter_to_push_down,
             right_stream_header,
             equivalent_left_stream_column_to_right_stream_column);
 
@@ -2859,13 +2859,13 @@ bool ActionsDAG::isSortingPreserved(
     return true;
 }
 
-ActionsDAGPtr ActionsDAG::buildFilterActionsDAG(
+std::optional<ActionsDAG> ActionsDAG::buildFilterActionsDAG(
     const NodeRawConstPtrs & filter_nodes,
     const std::unordered_map<std::string, ColumnWithTypeAndName> & node_name_to_input_node_column,
     bool single_output_condition_node)
 {
     if (filter_nodes.empty())
-        return nullptr;
+        return {};
 
     struct Frame
     {
@@ -2873,7 +2873,7 @@ ActionsDAGPtr ActionsDAG::buildFilterActionsDAG(
         bool visited_children = false;
     };
 
-    auto result_dag = std::make_unique<ActionsDAG>();
+    ActionsDAG result_dag;
     std::unordered_map<std::string, const ActionsDAG::Node *> result_inputs;
     std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> node_to_result_node;
 
@@ -2904,7 +2904,7 @@ ActionsDAGPtr ActionsDAG::buildFilterActionsDAG(
         {
             auto & result_input = result_inputs[input_node_it->second.name];
             if (!result_input)
-                result_input = &result_dag->addInput(input_node_it->second);
+                result_input = &result_dag.addInput(input_node_it->second);
 
             node_to_result_node.emplace(node, result_input);
             nodes_to_process.pop_back();
@@ -2931,25 +2931,25 @@ ActionsDAGPtr ActionsDAG::buildFilterActionsDAG(
             {
                 auto & result_input = result_inputs[node->result_name];
                 if (!result_input)
-                    result_input = &result_dag->addInput({node->column, node->result_type, node->result_name});
+                    result_input = &result_dag.addInput({node->column, node->result_type, node->result_name});
                 result_node = result_input;
                 break;
             }
             case ActionsDAG::ActionType::COLUMN:
             {
-                result_node = &result_dag->addColumn({node->column, node->result_type, node->result_name});
+                result_node = &result_dag.addColumn({node->column, node->result_type, node->result_name});
                 break;
             }
             case ActionsDAG::ActionType::ALIAS:
             {
                 const auto * child = node->children.front();
-                result_node = &result_dag->addAlias(*(node_to_result_node.find(child)->second), node->result_name);
+                result_node = &result_dag.addAlias(*(node_to_result_node.find(child)->second), node->result_name);
                 break;
             }
             case ActionsDAG::ActionType::ARRAY_JOIN:
             {
                 const auto * child = node->children.front();
-                result_node = &result_dag->addArrayJoin(*(node_to_result_node.find(child)->second), {});
+                result_node = &result_dag.addArrayJoin(*(node_to_result_node.find(child)->second), {});
                 break;
             }
             case ActionsDAG::ActionType::FUNCTION:
@@ -2967,13 +2967,11 @@ ActionsDAGPtr ActionsDAG::buildFilterActionsDAG(
                     {
                         if (const auto * index_hint = typeid_cast<const FunctionIndexHint *>(adaptor->getFunction().get()))
                         {
-                            ActionsDAGPtr index_hint_filter_dag;
-                            const auto & index_hint_args = index_hint->getActions()->getOutputs();
+                            ActionsDAG index_hint_filter_dag;
+                            const auto & index_hint_args = index_hint->getActions().getOutputs();
 
-                            if (index_hint_args.empty())
-                                index_hint_filter_dag = std::make_unique<ActionsDAG>();
-                            else
-                                index_hint_filter_dag = buildFilterActionsDAG(index_hint_args,
+                            if (!index_hint_args.empty())
+                                index_hint_filter_dag = *buildFilterActionsDAG(index_hint_args,
                                     node_name_to_input_node_column,
                                     false /*single_output_condition_node*/);
 
@@ -2995,7 +2993,7 @@ ActionsDAGPtr ActionsDAG::buildFilterActionsDAG(
                 auto [arguments, all_const] = getFunctionArguments(function_children);
                 auto function_base = function_overload_resolver ? function_overload_resolver->build(arguments) : node->function_base;
 
-                result_node = &result_dag->addFunctionImpl(
+                result_node = &result_dag.addFunctionImpl(
                     function_base,
                     std::move(function_children),
                     std::move(arguments),
@@ -3010,7 +3008,7 @@ ActionsDAGPtr ActionsDAG::buildFilterActionsDAG(
         nodes_to_process.pop_back();
     }
 
-    auto & result_dag_outputs = result_dag->getOutputs();
+    auto & result_dag_outputs = result_dag.getOutputs();
     result_dag_outputs.reserve(filter_nodes_size);
 
     for (const auto & node : filter_nodes)
@@ -3019,7 +3017,7 @@ ActionsDAGPtr ActionsDAG::buildFilterActionsDAG(
     if (result_dag_outputs.size() > 1 && single_output_condition_node)
     {
         FunctionOverloadResolverPtr func_builder_and = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
-        result_dag_outputs = { &result_dag->addFunction(func_builder_and, result_dag_outputs, {}) };
+        result_dag_outputs = { &result_dag.addFunction(func_builder_and, result_dag_outputs, {}) };
     }
 
     return result_dag;

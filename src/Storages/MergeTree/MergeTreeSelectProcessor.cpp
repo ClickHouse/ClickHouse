@@ -80,7 +80,7 @@ PrewhereExprInfo MergeTreeSelectProcessor::getPrewhereActions(PrewhereInfoPtr pr
             PrewhereExprStep row_level_filter_step
             {
                 .type = PrewhereExprStep::Filter,
-                .actions = std::make_shared<ExpressionActions>(ActionsDAG::clone(prewhere_info->row_level_filter), actions_settings),
+                .actions = std::make_shared<ExpressionActions>(std::move(*ActionsDAG::clone(&*prewhere_info->row_level_filter)), actions_settings),
                 .filter_column_name = prewhere_info->row_level_column_name,
                 .remove_filter_column = true,
                 .need_filter = true,
@@ -96,7 +96,7 @@ PrewhereExprInfo MergeTreeSelectProcessor::getPrewhereActions(PrewhereInfoPtr pr
             PrewhereExprStep prewhere_step
             {
                 .type = PrewhereExprStep::Filter,
-                .actions = std::make_shared<ExpressionActions>(ActionsDAG::clone(prewhere_info->prewhere_actions), actions_settings),
+                .actions = std::make_shared<ExpressionActions>(std::move(*ActionsDAG::clone(&*prewhere_info->prewhere_actions)), actions_settings),
                 .filter_column_name = prewhere_info->prewhere_column_name,
                 .remove_filter_column = prewhere_info->remove_prewhere_column,
                 .need_filter = prewhere_info->need_filter,

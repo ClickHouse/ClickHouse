@@ -93,16 +93,16 @@ public:
     ~MergeTreeIndexConditionSet() override = default;
 private:
     const ActionsDAG::Node & traverseDAG(const ActionsDAG::Node & node,
-        ActionsDAGPtr & result_dag,
+        ActionsDAG & result_dag,
         const ContextPtr & context,
         std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> & node_to_result_node) const;
 
     const ActionsDAG::Node * atomFromDAG(const ActionsDAG::Node & node,
-        ActionsDAGPtr & result_dag,
+        ActionsDAG & result_dag,
         const ContextPtr & context) const;
 
     const ActionsDAG::Node * operatorFromDAG(const ActionsDAG::Node & node,
-        ActionsDAGPtr & result_dag,
+        ActionsDAG & result_dag,
         const ContextPtr & context,
         std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> & node_to_result_node) const;
 

@@ -146,16 +146,16 @@ bool allOutputsDependsOnlyOnAllowedNodes(
 /// 3. We match partition key actions with group by key actions to find col1', ..., coln' in partition key actions.
 /// 4. We check that partition key is indeed a deterministic function of col1', ..., coln'.
 bool isPartitionKeySuitsGroupByKey(
-    const ReadFromMergeTree & reading, const ActionsDAGPtr & group_by_actions, const AggregatingStep & aggregating)
+    const ReadFromMergeTree & reading, const ActionsDAG & group_by_actions, const AggregatingStep & aggregating)
 {
     if (aggregating.isGroupingSets())
         return false;
 
-    if (group_by_actions->hasArrayJoin() || group_by_actions->hasStatefulFunctions() || group_by_actions->hasNonDeterministic())
+    if (group_by_actions.hasArrayJoin() || group_by_actions.hasStatefulFunctions() || group_by_actions.hasNonDeterministic())
         return false;
 
     /// We are interested only in calculations required to obtain group by keys (and not aggregate function arguments for example).
-    auto key_nodes = group_by_actions->findInOutpus(aggregating.getParams().keys);
+    auto key_nodes = group_by_actions.findInOutpus(aggregating.getParams().keys);
     auto group_by_key_actions = ActionsDAG::cloneSubDAG(key_nodes, /*remove_aliases=*/ true);
 
     const auto & gb_key_required_columns = group_by_key_actions->getRequiredColumnsNames();

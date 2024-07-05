@@ -46,9 +46,9 @@ struct PrewhereInfo
 {
     /// Actions for row level security filter. Applied separately before prewhere_actions.
     /// This actions are separate because prewhere condition should not be executed over filtered rows.
-    ActionsDAGPtr row_level_filter;
+    std::optional<ActionsDAG> row_level_filter;
     /// Actions which are executed on block in order to get filter column for prewhere step.
-    ActionsDAGPtr prewhere_actions;
+    std::optional<ActionsDAG> prewhere_actions;
     String row_level_column_name;
     String prewhere_column_name;
     bool remove_prewhere_column = false;
@@ -56,7 +56,7 @@ struct PrewhereInfo
     bool generated_by_optimizer = false;
 
     PrewhereInfo() = default;
-    explicit PrewhereInfo(ActionsDAGPtr prewhere_actions_, String prewhere_column_name_)
+    explicit PrewhereInfo(std::optional<ActionsDAG> prewhere_actions_, String prewhere_column_name_)
             : prewhere_actions(std::move(prewhere_actions_)), prewhere_column_name(std::move(prewhere_column_name_)) {}
 
     std::string dump() const;
@@ -66,10 +66,10 @@ struct PrewhereInfo
         PrewhereInfoPtr prewhere_info = std::make_shared<PrewhereInfo>();
 
         if (row_level_filter)
-            prewhere_info->row_level_filter = ActionsDAG::clone(row_level_filter);
+            prewhere_info->row_level_filter = std::move(*ActionsDAG::clone(&*row_level_filter));
 
         if (prewhere_actions)
-            prewhere_info->prewhere_actions = ActionsDAG::clone(prewhere_actions);
+            prewhere_info->prewhere_actions = std::move(*ActionsDAG::clone(&*prewhere_actions));
 
         prewhere_info->row_level_column_name = row_level_column_name;
         prewhere_info->prewhere_column_name = prewhere_column_name;
@@ -93,7 +93,7 @@ struct FilterInfo
 /// Same as FilterInfo, but with ActionsDAG.
 struct FilterDAGInfo
 {
-    ActionsDAGPtr actions;
+    std::optional<ActionsDAG> actions;
     String column_name;
     bool do_remove_column = false;
 

@@ -49,14 +49,13 @@ namespace ErrorCodes
 
 static std::unordered_set<const ActionsDAG::Node *> processShortCircuitFunctions(const ActionsDAG & actions_dag, ShortCircuitFunctionEvaluation short_circuit_function_evaluation);
 
-ExpressionActions::ExpressionActions(ActionsDAGPtr actions_dag_, const ExpressionActionsSettings & settings_, bool project_inputs_)
-    : project_inputs(project_inputs_)
+ExpressionActions::ExpressionActions(ActionsDAG actions_dag_, const ExpressionActionsSettings & settings_, bool project_inputs_)
+    : actions_dag(std::move(actions_dag_))
+    , project_inputs(project_inputs_)
     , settings(settings_)
 {
-    actions_dag = ActionsDAG::clone(actions_dag_);
-
     /// It's important to determine lazy executed nodes before compiling expressions.
-    std::unordered_set<const ActionsDAG::Node *> lazy_executed_nodes = processShortCircuitFunctions(*actions_dag, settings.short_circuit_function_evaluation);
+    std::unordered_set<const ActionsDAG::Node *> lazy_executed_nodes = processShortCircuitFunctions(actions_dag, settings.short_circuit_function_evaluation);
 
 #if USE_EMBEDDED_COMPILER
     if (settings.can_compile_expressions && settings.compile_expressions == CompileExpressions::yes)
@@ -68,7 +67,7 @@ ExpressionActions::ExpressionActions(ActionsDAGPtr actions_dag_, const Expressio
     if (settings.max_temporary_columns && num_columns > settings.max_temporary_columns)
         throw Exception(ErrorCodes::TOO_MANY_TEMPORARY_COLUMNS,
                         "Too many temporary columns: {}. Maximum: {}",
-                        actions_dag->dumpNames(), settings.max_temporary_columns);
+                        actions_dag.dumpNames(), settings.max_temporary_columns);
 }
 
 ExpressionActionsPtr ExpressionActions::clone() const
@@ -76,12 +75,12 @@ ExpressionActionsPtr ExpressionActions::clone() const
     auto copy = std::make_shared<ExpressionActions>(ExpressionActions());
 
     std::unordered_map<const Node *, Node *> copy_map;
-    copy->actions_dag = ActionsDAG::clone(actions_dag.get(), copy_map);
+    copy->actions_dag = std::move(*ActionsDAG::clone(&actions_dag, copy_map));
     copy->actions = actions;
     for (auto & action : copy->actions)
         action.node = copy_map[action.node];
 
-    for (const auto * input : copy->actions_dag->getInputs())
+    for (const auto * input : copy->actions_dag.getInputs())
         copy->input_positions.emplace(input->result_name, input_positions.at(input->result_name));
 
     copy->num_columns = num_columns;
@@ -357,8 +356,8 @@ void ExpressionActions::linearizeActions(const std::unordered_set<const ActionsD
     };
 
     const auto & nodes = getNodes();
-    const auto & outputs = actions_dag->getOutputs();
-    const auto & inputs = actions_dag->getInputs();
+    const auto & outputs = actions_dag.getOutputs();
+    const auto & inputs = actions_dag.getInputs();
 
     auto reverse_info = getActionsDAGReverseInfo(nodes, outputs);
     std::vector<Data> data;

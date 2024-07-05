@@ -117,12 +117,12 @@ public:
     /// If add_aliases, only the calculated values in the desired order and add aliases.
     ///     If also remove_unused_result, than only aliases remain in the output block.
     /// Otherwise, only temporary columns will be deleted from the block.
-    ActionsDAGPtr getActionsDAG(bool add_aliases, bool remove_unused_result = true);
+    ActionsDAG getActionsDAG(bool add_aliases, bool remove_unused_result = true);
     ExpressionActionsPtr getActions(bool add_aliases, bool remove_unused_result = true, CompileExpressions compile_expressions = CompileExpressions::no);
 
     /// Get actions to evaluate a constant expression. The function adds constants and applies functions that depend only on constants.
     /// Does not execute subqueries.
-    ActionsDAGPtr getConstActionsDAG(const ColumnsWithTypeAndName & constant_inputs = {});
+    ActionsDAG getConstActionsDAG(const ColumnsWithTypeAndName & constant_inputs = {});
     ExpressionActionsPtr getConstActions(const ColumnsWithTypeAndName & constant_inputs = {});
 
     /** Sets that require a subquery to be create.
@@ -367,7 +367,7 @@ private:
     JoinPtr makeJoin(
         const ASTTablesInSelectQueryElement & join_element,
         const ColumnsWithTypeAndName & left_columns,
-        ActionsDAGPtr & left_convert_actions);
+        std::optional<ActionsDAG> & left_convert_actions);
 
     const ASTSelectQuery * getAggregatingQuery() const;
 

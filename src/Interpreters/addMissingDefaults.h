@@ -24,7 +24,7 @@ using ActionsDAGPtr = std::unique_ptr<ActionsDAG>;
   * Also can substitute NULL with DEFAULT value in case of INSERT SELECT query (null_as_default) if according setting is 1.
   * All three types of columns are materialized (not constants).
   */
-ActionsDAGPtr addMissingDefaults(
+ActionsDAG addMissingDefaults(
     const Block & header, const NamesAndTypesList & required_columns,
     const ColumnsDescription & columns, ContextPtr context, bool null_as_default = false);
 }

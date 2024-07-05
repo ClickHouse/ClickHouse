@@ -79,9 +79,9 @@ size_t tryDistinctReadInOrder(QueryPlan::Node * parent_node)
         steps_to_update.push_back(step);
 
         if (const auto * const expr = typeid_cast<const ExpressionStep *>(step); expr)
-            dag_stack.push_back(expr->getExpression().get());
+            dag_stack.push_back(&expr->getExpression());
         else if (const auto * const filter = typeid_cast<const FilterStep *>(step); filter)
-            dag_stack.push_back(filter->getExpression().get());
+            dag_stack.push_back(&filter->getExpression());
 
         node = node->children.front();
     }

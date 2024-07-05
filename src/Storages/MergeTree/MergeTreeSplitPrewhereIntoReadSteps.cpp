@@ -349,7 +349,7 @@ bool tryBuildPrewhereSteps(PrewhereInfoPtr prewhere_info, const ExpressionAction
             PrewhereExprStep new_step
             {
                 .type = PrewhereExprStep::Filter,
-                .actions = std::make_shared<ExpressionActions>(std::move(step.actions), actions_settings),
+                .actions = std::make_shared<ExpressionActions>(std::move(*step.actions), actions_settings),
                 .filter_column_name = step.column_name,
                 /// Don't remove if it's in the list of original outputs
                 .remove_filter_column =

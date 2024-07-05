@@ -591,19 +591,19 @@ UInt64 mainQueryNodeBlockSizeByLimit(const SelectQueryInfo & select_query_info)
 std::unique_ptr<ExpressionStep> createComputeAliasColumnsStep(
     const std::unordered_map<std::string, ActionsDAGPtr> & alias_column_expressions, const DataStream & current_data_stream)
 {
-    ActionsDAGPtr merged_alias_columns_actions_dag = std::make_unique<ActionsDAG>(current_data_stream.header.getColumnsWithTypeAndName());
-    ActionsDAG::NodeRawConstPtrs action_dag_outputs = merged_alias_columns_actions_dag->getInputs();
+    ActionsDAG merged_alias_columns_actions_dag(current_data_stream.header.getColumnsWithTypeAndName());
+    ActionsDAG::NodeRawConstPtrs action_dag_outputs = merged_alias_columns_actions_dag.getInputs();
 
     for (const auto & [column_name, alias_column_actions_dag] : alias_column_expressions)
     {
         const auto & current_outputs = alias_column_actions_dag->getOutputs();
         action_dag_outputs.insert(action_dag_outputs.end(), current_outputs.begin(), current_outputs.end());
-        merged_alias_columns_actions_dag->mergeNodes(std::move(*alias_column_actions_dag));
+        merged_alias_columns_actions_dag.mergeNodes(std::move(*alias_column_actions_dag));
     }
 
     for (const auto * output_node : action_dag_outputs)
-        merged_alias_columns_actions_dag->addOrReplaceInOutputs(*output_node);
-    merged_alias_columns_actions_dag->removeUnusedActions(false);
+        merged_alias_columns_actions_dag.addOrReplaceInOutputs(*output_node);
+    merged_alias_columns_actions_dag.removeUnusedActions(false);
 
     auto alias_column_step = std::make_unique<ExpressionStep>(current_data_stream, std::move(merged_alias_columns_actions_dag));
     alias_column_step->setStepDescription("Compute alias columns");
@@ -776,7 +776,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 if (prewhere_actions)
                 {
                     prewhere_info = std::make_shared<PrewhereInfo>();
-                    prewhere_info->prewhere_actions = ActionsDAG::clone(prewhere_actions);
+                    prewhere_info->prewhere_actions = std::move(*ActionsDAG::clone(prewhere_actions));
                     prewhere_info->prewhere_column_name = prewhere_actions->getOutputs().at(0)->result_name;
                     prewhere_info->remove_prewhere_column = true;
                     prewhere_info->need_filter = true;
@@ -805,14 +805,14 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
 
                         if (!prewhere_info->prewhere_actions)
                         {
-                            prewhere_info->prewhere_actions = std::move(filter_info.actions);
+                            prewhere_info->prewhere_actions = std::move(*filter_info.actions);
                             prewhere_info->prewhere_column_name = filter_info.column_name;
                             prewhere_info->remove_prewhere_column = filter_info.do_remove_column;
                             prewhere_info->need_filter = true;
                         }
                         else if (!prewhere_info->row_level_filter)
                         {
-                            prewhere_info->row_level_filter = std::move(filter_info.actions);
+                            prewhere_info->row_level_filter = std::move(*filter_info.actions);
                             prewhere_info->row_level_column_name = filter_info.column_name;
                             prewhere_info->need_filter = true;
                         }
@@ -831,7 +831,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 auto row_policy_filter_info
                     = buildRowPolicyFilterIfNeeded(storage, table_expression_query_info, planner_context, used_row_policies);
                 if (row_policy_filter_info.actions)
-                    table_expression_data.setRowLevelFilterActions(ActionsDAG::clone(row_policy_filter_info.actions));
+                    table_expression_data.setRowLevelFilterActions(ActionsDAG::clone(&*row_policy_filter_info.actions));
                 add_filter(row_policy_filter_info, "Row-level security filter");
 
                 if (query_context->getParallelReplicasMode() == Context::ParallelReplicasMode::CUSTOM_KEY)
@@ -964,15 +964,14 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     query_plan.addStep(std::move(alias_column_step));
                 }
 
-                for (const auto & filter_info_and_description : where_filters)
+                for (auto && [filter_info, description] : where_filters)
                 {
-                    const auto & [filter_info, description] = filter_info_and_description;
                     if (query_plan.isInitialized() &&
                         from_stage == QueryProcessingStage::FetchColumns &&
                         filter_info.actions)
                     {
                         auto filter_step = std::make_unique<FilterStep>(query_plan.getCurrentDataStream(),
-                            filter_info.actions,
+                            std::move(*filter_info.actions),
                             filter_info.column_name,
                             filter_info.do_remove_column);
                         filter_step->setStepDescription(description);
@@ -1063,19 +1062,19 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
 
     if (from_stage == QueryProcessingStage::FetchColumns)
     {
-        auto rename_actions_dag = std::make_unique<ActionsDAG>(query_plan.getCurrentDataStream().header.getColumnsWithTypeAndName());
+        ActionsDAG rename_actions_dag(query_plan.getCurrentDataStream().header.getColumnsWithTypeAndName());
         ActionsDAG::NodeRawConstPtrs updated_actions_dag_outputs;
 
-        for (auto & output_node : rename_actions_dag->getOutputs())
+        for (auto & output_node : rename_actions_dag.getOutputs())
         {
             const auto * column_identifier = table_expression_data.getColumnIdentifierOrNull(output_node->result_name);
             if (!column_identifier)
                 continue;
 
-            updated_actions_dag_outputs.push_back(&rename_actions_dag->addAlias(*output_node, *column_identifier));
+            updated_actions_dag_outputs.push_back(&rename_actions_dag.addAlias(*output_node, *column_identifier));
         }
 
-        rename_actions_dag->getOutputs() = std::move(updated_actions_dag_outputs);
+        rename_actions_dag.getOutputs() = std::move(updated_actions_dag_outputs);
 
         auto rename_step = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), std::move(rename_actions_dag));
         rename_step->setStepDescription("Change column names to column identifiers");
@@ -1117,9 +1116,9 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
 
 void joinCastPlanColumnsToNullable(QueryPlan & plan_to_add_cast, PlannerContextPtr & planner_context, const FunctionOverloadResolverPtr & to_nullable_function)
 {
-    auto cast_actions_dag = std::make_unique<ActionsDAG>(plan_to_add_cast.getCurrentDataStream().header.getColumnsWithTypeAndName());
+    ActionsDAG cast_actions_dag(plan_to_add_cast.getCurrentDataStream().header.getColumnsWithTypeAndName());
 
-    for (auto & output_node : cast_actions_dag->getOutputs())
+    for (auto & output_node : cast_actions_dag.getOutputs())
     {
         if (planner_context->getGlobalPlannerContext()->hasColumnIdentifier(output_node->result_name))
         {
@@ -1128,11 +1127,11 @@ void joinCastPlanColumnsToNullable(QueryPlan & plan_to_add_cast, PlannerContextP
                 type_to_check = type_to_check_low_cardinality->getDictionaryType();
 
             if (type_to_check->canBeInsideNullable())
-                output_node = &cast_actions_dag->addFunction(to_nullable_function, {output_node}, output_node->result_name);
+                output_node = &cast_actions_dag.addFunction(to_nullable_function, {output_node}, output_node->result_name);
         }
     }
 
-    cast_actions_dag->appendInputsForUnusedColumns(plan_to_add_cast.getCurrentDataStream().header);
+    cast_actions_dag.appendInputsForUnusedColumns(plan_to_add_cast.getCurrentDataStream().header);
     auto cast_join_columns_step = std::make_unique<ExpressionStep>(plan_to_add_cast.getCurrentDataStream(), std::move(cast_actions_dag));
     cast_join_columns_step->setStepDescription("Cast JOIN columns to Nullable");
     plan_to_add_cast.addStep(std::move(cast_join_columns_step));
@@ -1178,16 +1177,16 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
             join_table_expression,
             planner_context);
 
-        join_clauses_and_actions.left_join_expressions_actions->appendInputsForUnusedColumns(left_plan.getCurrentDataStream().header);
-        auto left_join_expressions_actions_step = std::make_unique<ExpressionStep>(left_plan.getCurrentDataStream(), join_clauses_and_actions.left_join_expressions_actions);
+        join_clauses_and_actions.left_join_expressions_actions.appendInputsForUnusedColumns(left_plan.getCurrentDataStream().header);
+        auto left_join_expressions_actions_step = std::make_unique<ExpressionStep>(left_plan.getCurrentDataStream(), std::move(join_clauses_and_actions.left_join_expressions_actions));
         left_join_expressions_actions_step->setStepDescription("JOIN actions");
-        appendSetsFromActionsDAG(*left_join_expressions_actions_step->getExpression(), left_join_tree_query_plan.useful_sets);
+        appendSetsFromActionsDAG(left_join_expressions_actions_step->getExpression(), left_join_tree_query_plan.useful_sets);
         left_plan.addStep(std::move(left_join_expressions_actions_step));
 
-        join_clauses_and_actions.right_join_expressions_actions->appendInputsForUnusedColumns(right_plan.getCurrentDataStream().header);
-        auto right_join_expressions_actions_step = std::make_unique<ExpressionStep>(right_plan.getCurrentDataStream(), join_clauses_and_actions.right_join_expressions_actions);
+        join_clauses_and_actions.right_join_expressions_actions.appendInputsForUnusedColumns(right_plan.getCurrentDataStream().header);
+        auto right_join_expressions_actions_step = std::make_unique<ExpressionStep>(right_plan.getCurrentDataStream(), std::move(join_clauses_and_actions.right_join_expressions_actions));
         right_join_expressions_actions_step->setStepDescription("JOIN actions");
-        appendSetsFromActionsDAG(*right_join_expressions_actions_step->getExpression(), right_join_tree_query_plan.useful_sets);
+        appendSetsFromActionsDAG(right_join_expressions_actions_step->getExpression(), right_join_tree_query_plan.useful_sets);
         right_plan.addStep(std::move(right_join_expressions_actions_step));
     }
 
@@ -1225,19 +1224,19 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
 
     auto join_cast_plan_output_nodes = [&](QueryPlan & plan_to_add_cast, std::unordered_map<std::string, DataTypePtr> & plan_column_name_to_cast_type)
     {
-        auto cast_actions_dag = std::make_unique<ActionsDAG>(plan_to_add_cast.getCurrentDataStream().header.getColumnsWithTypeAndName());
+        ActionsDAG cast_actions_dag(plan_to_add_cast.getCurrentDataStream().header.getColumnsWithTypeAndName());
 
-        for (auto & output_node : cast_actions_dag->getOutputs())
+        for (auto & output_node : cast_actions_dag.getOutputs())
         {
             auto it = plan_column_name_to_cast_type.find(output_node->result_name);
             if (it == plan_column_name_to_cast_type.end())
                 continue;
 
             const auto & cast_type = it->second;
-            output_node = &cast_actions_dag->addCast(*output_node, cast_type, output_node->result_name);
+            output_node = &cast_actions_dag.addCast(*output_node, cast_type, output_node->result_name);
         }
 
-        cast_actions_dag->appendInputsForUnusedColumns(plan_to_add_cast.getCurrentDataStream().header);
+        cast_actions_dag.appendInputsForUnusedColumns(plan_to_add_cast.getCurrentDataStream().header);
         auto cast_join_columns_step
             = std::make_unique<ExpressionStep>(plan_to_add_cast.getCurrentDataStream(), std::move(cast_actions_dag));
         cast_join_columns_step->setStepDescription("Cast JOIN USING columns");
@@ -1385,7 +1384,7 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
         {
             ExpressionActionsPtr & mixed_join_expression = table_join->getMixedJoinExpression();
             mixed_join_expression = std::make_shared<ExpressionActions>(
-                std::move(join_clauses_and_actions.mixed_join_expressions_actions),
+                std::move(*join_clauses_and_actions.mixed_join_expressions_actions),
                 ExpressionActionsSettings::fromContext(planner_context->getQueryContext()));
 
             appendSetsFromActionsDAG(mixed_join_expression->getActionsDAG(), left_join_tree_query_plan.useful_sets);
@@ -1542,12 +1541,12 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
         result_plan.unitePlans(std::move(join_step), {std::move(plans)});
     }
 
-    auto drop_unused_columns_after_join_actions_dag = std::make_unique<ActionsDAG>(result_plan.getCurrentDataStream().header.getColumnsWithTypeAndName());
+    ActionsDAG drop_unused_columns_after_join_actions_dag(result_plan.getCurrentDataStream().header.getColumnsWithTypeAndName());
     ActionsDAG::NodeRawConstPtrs drop_unused_columns_after_join_actions_dag_updated_outputs;
     std::unordered_set<std::string_view> drop_unused_columns_after_join_actions_dag_updated_outputs_names;
     std::optional<size_t> first_skipped_column_node_index;
 
-    auto & drop_unused_columns_after_join_actions_dag_outputs = drop_unused_columns_after_join_actions_dag->getOutputs();
+    auto & drop_unused_columns_after_join_actions_dag_outputs = drop_unused_columns_after_join_actions_dag.getOutputs();
     size_t drop_unused_columns_after_join_actions_dag_outputs_size = drop_unused_columns_after_join_actions_dag_outputs.size();
 
     for (size_t i = 0; i < drop_unused_columns_after_join_actions_dag_outputs_size; ++i)
@@ -1619,7 +1618,7 @@ JoinTreeQueryPlan buildQueryPlanForArrayJoinNode(const QueryTreeNodePtr & array_
     auto plan = std::move(join_tree_query_plan.query_plan);
     auto plan_output_columns = plan.getCurrentDataStream().header.getColumnsWithTypeAndName();
 
-    ActionsDAGPtr array_join_action_dag = std::make_unique<ActionsDAG>(plan_output_columns);
+    ActionsDAG array_join_action_dag(plan_output_columns);
     PlannerActionsVisitor actions_visitor(planner_context);
     std::unordered_set<std::string> array_join_expressions_output_nodes;
 
@@ -1630,28 +1629,28 @@ JoinTreeQueryPlan buildQueryPlanForArrayJoinNode(const QueryTreeNodePtr & array_
         array_join_column_names.insert(array_join_column_identifier);
 
         auto & array_join_expression_column = array_join_expression->as<ColumnNode &>();
-        auto expression_dag_index_nodes = actions_visitor.visit(*array_join_action_dag, array_join_expression_column.getExpressionOrThrow());
+        auto expression_dag_index_nodes = actions_visitor.visit(array_join_action_dag, array_join_expression_column.getExpressionOrThrow());
 
         for (auto & expression_dag_index_node : expression_dag_index_nodes)
         {
-            const auto * array_join_column_node = &array_join_action_dag->addAlias(*expression_dag_index_node, array_join_column_identifier);
-            array_join_action_dag->getOutputs().push_back(array_join_column_node);
+            const auto * array_join_column_node = &array_join_action_dag.addAlias(*expression_dag_index_node, array_join_column_identifier);
+            array_join_action_dag.getOutputs().push_back(array_join_column_node);
             array_join_expressions_output_nodes.insert(array_join_column_node->result_name);
         }
     }
 
-    array_join_action_dag->appendInputsForUnusedColumns(plan.getCurrentDataStream().header);
+    array_join_action_dag.appendInputsForUnusedColumns(plan.getCurrentDataStream().header);
 
     auto array_join_actions = std::make_unique<ExpressionStep>(plan.getCurrentDataStream(), std::move(array_join_action_dag));
     array_join_actions->setStepDescription("ARRAY JOIN actions");
-    appendSetsFromActionsDAG(*array_join_actions->getExpression(), join_tree_query_plan.useful_sets);
+    appendSetsFromActionsDAG(array_join_actions->getExpression(), join_tree_query_plan.useful_sets);
     plan.addStep(std::move(array_join_actions));
 
-    auto drop_unused_columns_before_array_join_actions_dag = std::make_unique<ActionsDAG>(plan.getCurrentDataStream().header.getColumnsWithTypeAndName());
+    ActionsDAG drop_unused_columns_before_array_join_actions_dag(plan.getCurrentDataStream().header.getColumnsWithTypeAndName());
     ActionsDAG::NodeRawConstPtrs drop_unused_columns_before_array_join_actions_dag_updated_outputs;
     std::unordered_set<std::string_view> drop_unused_columns_before_array_join_actions_dag_updated_outputs_names;
 
-    auto & drop_unused_columns_before_array_join_actions_dag_outputs = drop_unused_columns_before_array_join_actions_dag->getOutputs();
+    auto & drop_unused_columns_before_array_join_actions_dag_outputs = drop_unused_columns_before_array_join_actions_dag.getOutputs();
     size_t drop_unused_columns_before_array_join_actions_dag_outputs_size = drop_unused_columns_before_array_join_actions_dag_outputs.size();
 
     for (size_t i = 0; i < drop_unused_columns_before_array_join_actions_dag_outputs_size; ++i)

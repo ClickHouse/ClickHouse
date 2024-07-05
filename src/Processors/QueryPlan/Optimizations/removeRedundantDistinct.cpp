@@ -132,10 +132,10 @@ namespace
             return true;
 
         if (const auto * const expr = typeid_cast<const ExpressionStep *>(step); expr)
-            return !expr->getExpression()->hasArrayJoin();
+            return !expr->getExpression().hasArrayJoin();
 
         if (const auto * const filter = typeid_cast<const FilterStep *>(step); filter)
-            return !filter->getExpression()->hasArrayJoin();
+            return !filter->getExpression().hasArrayJoin();
 
         if (typeid_cast<const LimitStep *>(step) || typeid_cast<const LimitByStep *>(step) || typeid_cast<const SortingStep *>(step)
             || typeid_cast<const WindowStep *>(step))
@@ -183,9 +183,9 @@ namespace
             }
 
             if (const auto * const expr = typeid_cast<const ExpressionStep *>(current_step); expr)
-                dag_stack.push_back(expr->getExpression().get());
+                dag_stack.push_back(&expr->getExpression());
             else if (const auto * const filter = typeid_cast<const FilterStep *>(current_step); filter)
-                dag_stack.push_back(filter->getExpression().get());
+                dag_stack.push_back(&filter->getExpression());
 
             node = node->children.front();
             if (inner_distinct_step = typeid_cast<DistinctStep *>(node->step.get()); inner_distinct_step)
@@ -236,9 +236,9 @@ namespace
             }
 
             if (const auto * const expr = typeid_cast<const ExpressionStep *>(current_step); expr)
-                dag_stack.push_back(expr->getExpression().get());
+                dag_stack.push_back(&expr->getExpression());
             else if (const auto * const filter = typeid_cast<const FilterStep *>(current_step); filter)
-                dag_stack.push_back(filter->getExpression().get());
+                dag_stack.push_back(&filter->getExpression());
 
             node = node->children.front();
             inner_distinct_step = typeid_cast<DistinctStep *>(node->step.get());

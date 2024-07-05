@@ -332,12 +332,12 @@ void addExpressionStep(QueryPlan & query_plan,
     const std::string & step_description,
     UsefulSets & useful_sets)
 {
-    auto actions = ActionsDAG::clone(&expression_actions->dag);
+    auto actions = std::move(*ActionsDAG::clone(&expression_actions->dag));
     if (expression_actions->project_input)
-        actions->appendInputsForUnusedColumns(query_plan.getCurrentDataStream().header);
+        actions.appendInputsForUnusedColumns(query_plan.getCurrentDataStream().header);
 
-    auto expression_step = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), actions);
-    appendSetsFromActionsDAG(*expression_step->getExpression(), useful_sets);
+    auto expression_step = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), std::move(actions));
+    appendSetsFromActionsDAG(expression_step->getExpression(), useful_sets);
     expression_step->setStepDescription(step_description);
     query_plan.addStep(std::move(expression_step));
 }
@@ -347,15 +347,15 @@ void addFilterStep(QueryPlan & query_plan,
     const std::string & step_description,
     UsefulSets & useful_sets)
 {
-    auto actions = ActionsDAG::clone(&filter_analysis_result.filter_actions->dag);
+    auto actions = std::move(*ActionsDAG::clone(&filter_analysis_result.filter_actions->dag));
     if (filter_analysis_result.filter_actions->project_input)
-        actions->appendInputsForUnusedColumns(query_plan.getCurrentDataStream().header);
+        actions.appendInputsForUnusedColumns(query_plan.getCurrentDataStream().header);
 
     auto where_step = std::make_unique<FilterStep>(query_plan.getCurrentDataStream(),
-        actions,
+        std::move(actions),
         filter_analysis_result.filter_column_name,
         filter_analysis_result.remove_filter_column);
-    appendSetsFromActionsDAG(*where_step->getExpression(), useful_sets);
+    appendSetsFromActionsDAG(where_step->getExpression(), useful_sets);
     where_step->setStepDescription(step_description);
     query_plan.addStep(std::move(where_step));
 }
@@ -552,10 +552,10 @@ void addTotalsHavingStep(QueryPlan & query_plan,
     const auto & having_analysis_result = expression_analysis_result.getHaving();
     bool need_finalize = !query_node.isGroupByWithRollup() && !query_node.isGroupByWithCube();
 
-    ActionsDAGPtr actions;
+    std::optional<ActionsDAG> actions;
     if (having_analysis_result.filter_actions)
     {
-        actions = ActionsDAG::clone(&having_analysis_result.filter_actions->dag);
+        actions = std::move(*ActionsDAG::clone(&having_analysis_result.filter_actions->dag));
         if (having_analysis_result.filter_actions->project_input)
             actions->appendInputsForUnusedColumns(query_plan.getCurrentDataStream().header);
     }
@@ -564,7 +564,7 @@ void addTotalsHavingStep(QueryPlan & query_plan,
         query_plan.getCurrentDataStream(),
         aggregation_analysis_result.aggregate_descriptions,
         query_analysis_result.aggregate_overflow_row,
-        actions,
+        std::move(actions),
         having_analysis_result.filter_column_name,
         having_analysis_result.remove_filter_column,
         settings.totals_mode,
@@ -715,13 +715,13 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
 
     if (query_node.hasInterpolate())
     {
-        auto interpolate_actions_dag = std::make_unique<ActionsDAG>();
+        ActionsDAG interpolate_actions_dag;
         auto query_plan_columns = query_plan.getCurrentDataStream().header.getColumnsWithTypeAndName();
         for (auto & query_plan_column : query_plan_columns)
         {
             /// INTERPOLATE actions dag input columns must be non constant
             query_plan_column.column = nullptr;
-            interpolate_actions_dag->addInput(query_plan_column);
+            interpolate_actions_dag.addInput(query_plan_column);
         }
 
         auto & interpolate_list_node = query_node.getInterpolate()->as<ListNode &>();
@@ -729,12 +729,12 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
 
         if (interpolate_list_nodes.empty())
         {
-            for (const auto * input_node : interpolate_actions_dag->getInputs())
+            for (const auto * input_node : interpolate_actions_dag.getInputs())
             {
                 if (column_names_with_fill.contains(input_node->result_name))
                     continue;
 
-                interpolate_actions_dag->getOutputs().push_back(input_node);
+                interpolate_actions_dag.getOutputs().push_back(input_node);
             }
         }
         else
@@ -744,12 +744,12 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
                 auto & interpolate_node_typed = interpolate_node->as<InterpolateNode &>();
 
                 PlannerActionsVisitor planner_actions_visitor(planner_context);
-                auto expression_to_interpolate_expression_nodes = planner_actions_visitor.visit(*interpolate_actions_dag,
+                auto expression_to_interpolate_expression_nodes = planner_actions_visitor.visit(interpolate_actions_dag,
                     interpolate_node_typed.getExpression());
                 if (expression_to_interpolate_expression_nodes.size() != 1)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expression to interpolate expected to have single action node");
 
-                auto interpolate_expression_nodes = planner_actions_visitor.visit(*interpolate_actions_dag,
+                auto interpolate_expression_nodes = planner_actions_visitor.visit(interpolate_actions_dag,
                     interpolate_node_typed.getInterpolateExpression());
                 if (interpolate_expression_nodes.size() != 1)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Interpolate expression expected to have single action node");
@@ -760,16 +760,16 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
                 const auto * interpolate_expression = interpolate_expression_nodes[0];
                 if (!interpolate_expression->result_type->equals(*expression_to_interpolate->result_type))
                 {
-                    interpolate_expression = &interpolate_actions_dag->addCast(*interpolate_expression,
+                    interpolate_expression = &interpolate_actions_dag.addCast(*interpolate_expression,
                         expression_to_interpolate->result_type,
                         interpolate_expression->result_name);
                 }
 
-                const auto * alias_node = &interpolate_actions_dag->addAlias(*interpolate_expression, expression_to_interpolate_name);
-                interpolate_actions_dag->getOutputs().push_back(alias_node);
+                const auto * alias_node = &interpolate_actions_dag.addAlias(*interpolate_expression, expression_to_interpolate_name);
+                interpolate_actions_dag.getOutputs().push_back(alias_node);
             }
 
-            interpolate_actions_dag->removeUnusedActions();
+            interpolate_actions_dag.removeUnusedActions();
         }
 
         Aliases empty_aliases;
@@ -1130,7 +1130,7 @@ void addAdditionalFilterStepIfNeeded(QueryPlan & query_plan,
         return;
 
     auto filter_step = std::make_unique<FilterStep>(query_plan.getCurrentDataStream(),
-        filter_info.actions,
+        std::move(*filter_info.actions),
         filter_info.column_name,
         filter_info.do_remove_column);
     filter_step->setStepDescription("additional result filter");
@@ -1418,7 +1418,7 @@ void Planner::buildPlanForQueryNode()
             if (it != table_filters.end())
             {
                 const auto & filters = it->second;
-                table_expression_data.setFilterActions(ActionsDAG::clone(filters.filter_actions));
+                table_expression_data.setFilterActions(ActionsDAG::clone(&*filters.filter_actions));
                 table_expression_data.setPrewhereInfo(filters.prewhere_info);
             }
         }

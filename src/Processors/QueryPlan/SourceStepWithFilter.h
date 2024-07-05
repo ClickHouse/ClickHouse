@@ -33,8 +33,8 @@ public:
     {
     }
 
-    const ActionsDAGPtr & getFilterActionsDAG() const { return filter_actions_dag; }
-    ActionsDAGPtr detachFilterActionsDAG() { return std::move(filter_actions_dag); }
+    const std::optional<ActionsDAG> & getFilterActionsDAG() const { return filter_actions_dag; }
+    std::optional<ActionsDAG> detachFilterActionsDAG() { return std::move(filter_actions_dag); }
 
     const SelectQueryInfo & getQueryInfo() const { return query_info; }
     const PrewhereInfoPtr & getPrewhereInfo() const { return prewhere_info; }
@@ -81,7 +81,7 @@ protected:
     ContextPtr context;
     std::optional<size_t> limit;
 
-    ActionsDAGPtr filter_actions_dag;
+    std::optional<ActionsDAG> filter_actions_dag;
 
 private:
     /// Will be cleared after applyFilters() is called.

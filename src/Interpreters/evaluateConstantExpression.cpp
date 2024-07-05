@@ -89,7 +89,7 @@ std::optional<EvaluateConstantExpressionResult> evaluateConstantExpressionImpl(c
     ColumnPtr result_column;
     DataTypePtr result_type;
     String result_name = ast->getColumnName();
-    for (const auto & action_node : actions->getOutputs())
+    for (const auto & action_node : actions.getOutputs())
     {
         if ((action_node->result_name == result_name) && action_node->column)
         {

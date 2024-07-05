@@ -799,7 +799,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(RangesInDataParts && parts_
                 info.use_uncompressed_cache);
         };
 
-        auto sorting_expr = std::make_shared<ExpressionActions>(ActionsDAG::clone(&metadata_for_reading->getSortingKey().expression->getActionsDAG()));
+        auto sorting_expr = std::make_shared<ExpressionActions>(std::move(*ActionsDAG::clone(&metadata_for_reading->getSortingKey().expression->getActionsDAG())));
 
         SplitPartsWithRangesByPrimaryKeyResult split_ranges_result = splitPartsWithRangesByPrimaryKey(
             metadata_for_reading->getPrimaryKey(),
@@ -848,16 +848,16 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(RangesInDataParts && parts_
         info.use_uncompressed_cache);
 }
 
-static ActionsDAGPtr createProjection(const Block & header)
+static ActionsDAG createProjection(const Block & header)
 {
-    return std::make_unique<ActionsDAG>(header.getNamesAndTypesList());
+    return ActionsDAG(header.getNamesAndTypesList());
 }
 
 Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
     RangesInDataParts && parts_with_ranges,
     size_t num_streams,
     const Names & column_names,
-    ActionsDAGPtr & out_projection,
+    std::optional<ActionsDAG> & out_projection,
     const InputOrderInfoPtr & input_order_info)
 {
     const auto & settings = context->getSettingsRef();
@@ -1171,7 +1171,7 @@ bool ReadFromMergeTree::doNotMergePartsAcrossPartitionsFinal() const
 }
 
 Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
-    RangesInDataParts && parts_with_ranges, size_t num_streams, const Names & origin_column_names, const Names & column_names, ActionsDAGPtr & out_projection)
+    RangesInDataParts && parts_with_ranges, size_t num_streams, const Names & origin_column_names, const Names & column_names, std::optional<ActionsDAG> & out_projection)
 {
     const auto & settings = context->getSettingsRef();
     const auto & data_settings = data.getSettings();
@@ -1212,7 +1212,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
     /// we will store lonely parts with level > 0 to use parallel select on them.
     RangesInDataParts non_intersecting_parts_by_primary_key;
 
-    auto sorting_expr = std::make_shared<ExpressionActions>(ActionsDAG::clone(&metadata_for_reading->getSortingKey().expression->getActionsDAG()));
+    auto sorting_expr = std::make_shared<ExpressionActions>(std::move(*ActionsDAG::clone(&metadata_for_reading->getSortingKey().expression->getActionsDAG())));
 
     if (prewhere_info)
     {
@@ -1333,7 +1333,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
 
     if (!merging_pipes.empty() && !no_merging_pipes.empty())
     {
-        out_projection = nullptr; /// We do projection here
+        out_projection = {}; /// We do projection here
         Pipes pipes;
         pipes.resize(2);
         pipes[0] = Pipe::unitePipes(std::move(merging_pipes));
@@ -1519,7 +1519,8 @@ void ReadFromMergeTree::applyFilters(ActionDAGNodes added_filter_nodes)
         /// (1) SourceStepWithFilter::filter_nodes, (2) query_info.filter_actions_dag. Make sure there are consistent.
         /// TODO: Get rid of filter_actions_dag in query_info after we move analysis of
         /// parallel replicas and unused shards into optimization, similar to projection analysis.
-        query_info.filter_actions_dag = std::move(filter_actions_dag);
+        if (filter_actions_dag)
+            query_info.filter_actions_dag = std::make_shared<const ActionsDAG>(std::move(*filter_actions_dag));
 
         buildIndexes(
             indexes,
@@ -1833,7 +1834,7 @@ bool ReadFromMergeTree::isQueryWithSampling() const
 }
 
 Pipe ReadFromMergeTree::spreadMarkRanges(
-    RangesInDataParts && parts_with_ranges, size_t num_streams, AnalysisResult & result, ActionsDAGPtr & result_projection)
+    RangesInDataParts && parts_with_ranges, size_t num_streams, AnalysisResult & result, std::optional<ActionsDAG> & result_projection)
 {
     const bool final = isQueryWithFinal();
     Names column_names_to_read = result.column_names_to_read;
@@ -1894,7 +1895,7 @@ Pipe ReadFromMergeTree::spreadMarkRanges(
     }
 }
 
-Pipe ReadFromMergeTree::groupStreamsByPartition(AnalysisResult & result, ActionsDAGPtr & result_projection)
+Pipe ReadFromMergeTree::groupStreamsByPartition(AnalysisResult & result, std::optional<ActionsDAG> & result_projection)
 {
     auto && parts_with_ranges = std::move(result.parts_with_ranges);
 
@@ -1983,7 +1984,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
     /// Projection, that needed to drop columns, which have appeared by execution
     /// of some extra expressions, and to allow execute the same expressions later.
     /// NOTE: It may lead to double computation of expressions.
-    ActionsDAGPtr result_projection;
+    std::optional<ActionsDAG> result_projection;
 
     Pipe pipe = output_each_partition_through_separate_port
         ? groupStreamsByPartition(result, result_projection)
@@ -2000,7 +2001,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
 
     if (result.sampling.use_sampling)
     {
-        auto sampling_actions = std::make_shared<ExpressionActions>(ActionsDAG::clone(result.sampling.filter_expression.get()));
+        auto sampling_actions = std::make_shared<ExpressionActions>(std::move(*ActionsDAG::clone(result.sampling.filter_expression.get())));
         pipe.addSimpleTransform([&](const Block & header)
         {
             return std::make_shared<FilterTransform>(
@@ -2013,12 +2014,12 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
 
     Block cur_header = pipe.getHeader();
 
-    auto append_actions = [&result_projection](ActionsDAGPtr actions)
+    auto append_actions = [&result_projection](ActionsDAG actions)
     {
         if (!result_projection)
             result_projection = std::move(actions);
         else
-            result_projection = ActionsDAG::merge(std::move(*result_projection), std::move(*actions));
+            result_projection = ActionsDAG::merge(std::move(*result_projection), std::move(actions));
     };
 
     if (result_projection)
@@ -2038,7 +2039,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
 
     if (result_projection)
     {
-        auto projection_actions = std::make_shared<ExpressionActions>(ActionsDAG::clone(result_projection));
+        auto projection_actions = std::make_shared<ExpressionActions>(std::move(*result_projection));
         pipe.addSimpleTransform([&](const Block & header)
         {
             return std::make_shared<ExpressionTransform>(header, projection_actions);
@@ -2133,7 +2134,7 @@ void ReadFromMergeTree::describeActions(FormatSettings & format_settings) const
                format_settings.out << " (removed)";
             format_settings.out << '\n';
 
-            auto expression = std::make_shared<ExpressionActions>(ActionsDAG::clone(prewhere_info->prewhere_actions));
+            auto expression = std::make_shared<ExpressionActions>(std::move(*ActionsDAG::clone(&*prewhere_info->prewhere_actions)));
             expression->describeActions(format_settings.out, prefix);
         }
 
@@ -2142,7 +2143,7 @@ void ReadFromMergeTree::describeActions(FormatSettings & format_settings) const
             format_settings.out << prefix << "Row level filter" << '\n';
             format_settings.out << prefix << "Row level filter column: " << prewhere_info->row_level_column_name << '\n';
 
-            auto expression = std::make_shared<ExpressionActions>(ActionsDAG::clone(prewhere_info->row_level_filter));
+            auto expression = std::make_shared<ExpressionActions>(std::move(*ActionsDAG::clone(&*prewhere_info->row_level_filter)));
             expression->describeActions(format_settings.out, prefix);
         }
     }
@@ -2168,7 +2169,7 @@ void ReadFromMergeTree::describeActions(JSONBuilder::JSONMap & map) const
             std::unique_ptr<JSONBuilder::JSONMap> prewhere_filter_map = std::make_unique<JSONBuilder::JSONMap>();
             prewhere_filter_map->add("Prewhere filter column", prewhere_info->prewhere_column_name);
             prewhere_filter_map->add("Prewhere filter remove filter column", prewhere_info->remove_prewhere_column);
-            auto expression = std::make_shared<ExpressionActions>(ActionsDAG::clone(prewhere_info->prewhere_actions));
+            auto expression = std::make_shared<ExpressionActions>(std::move(*ActionsDAG::clone(&*prewhere_info->prewhere_actions)));
             prewhere_filter_map->add("Prewhere filter expression", expression->toTree());
 
             prewhere_info_map->add("Prewhere filter", std::move(prewhere_filter_map));
@@ -2178,7 +2179,7 @@ void ReadFromMergeTree::describeActions(JSONBuilder::JSONMap & map) const
         {
             std::unique_ptr<JSONBuilder::JSONMap> row_level_filter_map = std::make_unique<JSONBuilder::JSONMap>();
             row_level_filter_map->add("Row level filter column", prewhere_info->row_level_column_name);
-            auto expression = std::make_shared<ExpressionActions>(ActionsDAG::clone(prewhere_info->row_level_filter));
+            auto expression = std::make_shared<ExpressionActions>(std::move(*ActionsDAG::clone(&*prewhere_info->row_level_filter)));
             row_level_filter_map->add("Row level filter expression", expression->toTree());
 
             prewhere_info_map->add("Row level filter", std::move(row_level_filter_map));

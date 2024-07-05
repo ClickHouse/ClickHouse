@@ -58,11 +58,11 @@ public:
         return DataTypeUInt8().createColumnConst(input_rows_count, 1u);
     }
 
-    void setActions(ActionsDAGPtr actions_) { actions = std::move(actions_); }
-    const ActionsDAGPtr & getActions() const { return actions; }
+    void setActions(ActionsDAG actions_) { actions = std::move(actions_); }
+    const ActionsDAG & getActions() const { return actions; }
 
 private:
-    ActionsDAGPtr actions;
+    ActionsDAG actions;
 };
 
 }

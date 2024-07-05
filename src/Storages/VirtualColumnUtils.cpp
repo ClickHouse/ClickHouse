@@ -80,7 +80,7 @@ void buildSetsForDAG(const ActionsDAGPtr & dag, const ContextPtr & context)
 void filterBlockWithDAG(const ActionsDAGPtr & dag, Block & block, ContextPtr context)
 {
     buildSetsForDAG(dag, context);
-    auto actions = std::make_shared<ExpressionActions>(ActionsDAG::clone(dag));
+    auto actions = std::make_shared<ExpressionActions>(std::move(*ActionsDAG::clone(dag)));
     Block block_with_filter = block;
     actions->execute(block_with_filter, /*dry_run=*/ false, /*allow_duplicates_in_input=*/ true);
 
@@ -318,9 +318,9 @@ static const ActionsDAG::Node * splitFilterNodeForAllowedInputs(
             {
                 if (const auto * index_hint = typeid_cast<const FunctionIndexHint *>(adaptor->getFunction().get()))
                 {
-                    auto index_hint_dag = ActionsDAG::clone(index_hint->getActions());
+                    auto index_hint_dag = std::move(*ActionsDAG::clone(&index_hint->getActions()));
                     ActionsDAG::NodeRawConstPtrs atoms;
-                    for (const auto & output : index_hint_dag->getOutputs())
+                    for (const auto & output : index_hint_dag.getOutputs())
                         if (const auto * child_copy = splitFilterNodeForAllowedInputs(output, allowed_inputs, additional_nodes))
                             atoms.push_back(child_copy);
 
@@ -331,13 +331,13 @@ static const ActionsDAG::Node * splitFilterNodeForAllowedInputs(
                         if (atoms.size() > 1)
                         {
                             FunctionOverloadResolverPtr func_builder_and = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
-                            res = &index_hint_dag->addFunction(func_builder_and, atoms, {});
+                            res = &index_hint_dag.addFunction(func_builder_and, atoms, {});
                         }
 
                         if (!res->result_type->equals(*node->result_type))
-                            res = &index_hint_dag->addCast(*res, node->result_type, {});
+                            res = &index_hint_dag.addCast(*res, node->result_type, {});
 
-                        additional_nodes.splice(additional_nodes.end(), ActionsDAG::detachNodes(std::move(*index_hint_dag)));
+                        additional_nodes.splice(additional_nodes.end(), ActionsDAG::detachNodes(std::move(index_hint_dag)));
                         return res;
                     }
                 }

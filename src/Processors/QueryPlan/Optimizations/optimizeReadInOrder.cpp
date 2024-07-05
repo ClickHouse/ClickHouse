@@ -170,12 +170,12 @@ static void appendFixedColumnsFromFilterExpression(const ActionsDAG::Node & filt
     }
 }
 
-static void appendExpression(ActionsDAGPtr & dag, const ActionsDAGPtr & expression)
+static void appendExpression(ActionsDAGPtr & dag, const ActionsDAG & expression)
 {
     if (dag)
-        dag->mergeInplace(std::move(*ActionsDAG::clone(expression)));
+        dag->mergeInplace(std::move(*ActionsDAG::clone(&expression)));
     else
-        dag = ActionsDAG::clone(expression);
+        dag = ActionsDAG::clone(&expression);
 }
 
 /// This function builds a common DAG which is a merge of DAGs from Filter and Expression steps chain.
@@ -193,7 +193,7 @@ void buildSortingDAG(QueryPlan::Node & node, ActionsDAGPtr & dag, FixedColumns &
             if (prewhere_info->prewhere_actions)
             {
                 //std::cerr << "====== Adding prewhere " << std::endl;
-                appendExpression(dag, prewhere_info->prewhere_actions);
+                appendExpression(dag, *prewhere_info->prewhere_actions);
                 if (const auto * filter_expression = dag->tryFindInOutputs(prewhere_info->prewhere_column_name))
                     appendFixedColumnsFromFilterExpression(*filter_expression, fixed_columns);
             }
@@ -211,7 +211,7 @@ void buildSortingDAG(QueryPlan::Node & node, ActionsDAGPtr & dag, FixedColumns &
         const auto & actions = expression->getExpression();
 
         /// Should ignore limit because arrayJoin() can reduce the number of rows in case of empty array.
-        if (actions->hasArrayJoin())
+        if (actions.hasArrayJoin())
             limit = 0;
 
         appendExpression(dag, actions);
@@ -1066,13 +1066,13 @@ size_t tryReuseStorageOrderingForWindowFunctions(QueryPlan::Node * parent_node, 
     for (const auto & actions_dag : window_desc.partition_by_actions)
     {
         order_by_elements_actions.emplace_back(
-            std::make_shared<ExpressionActions>(ActionsDAG::clone(actions_dag.get()), ExpressionActionsSettings::fromContext(context, CompileExpressions::yes)));
+            std::make_shared<ExpressionActions>(std::move(*ActionsDAG::clone(actions_dag.get())), ExpressionActionsSettings::fromContext(context, CompileExpressions::yes)));
     }
 
     for (const auto & actions_dag : window_desc.order_by_actions)
     {
         order_by_elements_actions.emplace_back(
-            std::make_shared<ExpressionActions>(ActionsDAG::clone(actions_dag.get()), ExpressionActionsSettings::fromContext(context, CompileExpressions::yes)));
+            std::make_shared<ExpressionActions>(std::move(*ActionsDAG::clone(actions_dag.get())), ExpressionActionsSettings::fromContext(context, CompileExpressions::yes)));
     }
 
     auto order_optimizer = std::make_shared<ReadInOrderOptimizer>(

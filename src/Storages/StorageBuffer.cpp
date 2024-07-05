@@ -312,7 +312,7 @@ void StorageBuffer::read(
                     if (src_table_query_info.prewhere_info->row_level_filter)
                     {
                         src_table_query_info.prewhere_info->row_level_filter = ActionsDAG::merge(
-                            std::move(*ActionsDAG::clone(actions_dag)),
+                            std::move(*ActionsDAG::clone(&actions_dag)),
                             std::move(*src_table_query_info.prewhere_info->row_level_filter));
 
                         src_table_query_info.prewhere_info->row_level_filter->removeUnusedActions();
@@ -321,7 +321,7 @@ void StorageBuffer::read(
                     if (src_table_query_info.prewhere_info->prewhere_actions)
                     {
                         src_table_query_info.prewhere_info->prewhere_actions = ActionsDAG::merge(
-                            std::move(*ActionsDAG::clone(actions_dag)),
+                            std::move(*ActionsDAG::clone(&actions_dag)),
                             std::move(*src_table_query_info.prewhere_info->prewhere_actions));
 
                         src_table_query_info.prewhere_info->prewhere_actions->removeUnusedActions();
@@ -353,7 +353,7 @@ void StorageBuffer::read(
                             header.getColumnsWithTypeAndName(),
                             ActionsDAG::MatchColumnsMode::Name);
 
-                    auto converting = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), actions_dag);
+                    auto converting = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), std::move(actions_dag));
 
                     converting->setStepDescription("Convert destination table columns to Buffer table structure");
                     query_plan.addStep(std::move(converting));
@@ -432,7 +432,7 @@ void StorageBuffer::read(
                 {
                     return std::make_shared<FilterTransform>(
                             header,
-                            std::make_shared<ExpressionActions>(ActionsDAG::clone(query_info.prewhere_info->row_level_filter), actions_settings),
+                            std::make_shared<ExpressionActions>(std::move(*ActionsDAG::clone(&*query_info.prewhere_info->row_level_filter)), actions_settings),
                             query_info.prewhere_info->row_level_column_name,
                             false);
                 });
@@ -442,7 +442,7 @@ void StorageBuffer::read(
             {
                 return std::make_shared<FilterTransform>(
                         header,
-                        std::make_shared<ExpressionActions>(ActionsDAG::clone(query_info.prewhere_info->prewhere_actions), actions_settings),
+                        std::make_shared<ExpressionActions>(std::move(*ActionsDAG::clone(&*query_info.prewhere_info->prewhere_actions)), actions_settings),
                         query_info.prewhere_info->prewhere_column_name,
                         query_info.prewhere_info->remove_prewhere_column);
             });
@@ -472,7 +472,7 @@ void StorageBuffer::read(
                 result_header.getColumnsWithTypeAndName(),
                 ActionsDAG::MatchColumnsMode::Name);
 
-        auto converting = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), convert_actions_dag);
+        auto converting = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), std::move(convert_actions_dag));
         query_plan.addStep(std::move(converting));
     }
 

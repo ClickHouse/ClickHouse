@@ -247,7 +247,7 @@ public:
     ///        c * d       e
     ///            \      /
     ///            c * d - e
-    static ActionsDAGPtr foldActionsByProjection(
+    static ActionsDAG foldActionsByProjection(
         const std::unordered_map<const Node *, const Node *> & new_inputs,
         const NodeRawConstPtrs & required_outputs);
 
@@ -303,7 +303,7 @@ public:
     /// @param ignore_constant_values - Do not check that constants are same. Use value from result_header.
     /// @param add_casted_columns - Create new columns with converted values instead of replacing original.
     /// @param new_names - Output parameter for new column names when add_casted_columns is used.
-    static ActionsDAGPtr makeConvertingActions(
+    static ActionsDAG makeConvertingActions(
         const ColumnsWithTypeAndName & source,
         const ColumnsWithTypeAndName & result,
         MatchColumnsMode mode,
@@ -312,13 +312,13 @@ public:
         NameToNameMap * new_names = nullptr);
 
     /// Create expression which add const column and then materialize it.
-    static ActionsDAGPtr makeAddingColumnActions(ColumnWithTypeAndName column);
+    static ActionsDAG makeAddingColumnActions(ColumnWithTypeAndName column);
 
     /// Create ActionsDAG which represents expression equivalent to applying first and second actions consequently.
     /// Is used to replace `(first -> second)` expression chain to single `merge(first, second)` expression.
     /// If first.settings.project_input is set, then outputs of `first` must include inputs of `second`.
     /// Otherwise, any two actions may be combined.
-    static ActionsDAGPtr merge(ActionsDAG && first, ActionsDAG && second);
+    static ActionsDAG merge(ActionsDAG && first, ActionsDAG && second);
 
     /// The result is similar to merge(*this, second);
     /// Invariant : no nodes are removed from the first (this) DAG.
@@ -329,12 +329,7 @@ public:
     /// *out_outputs is filled with pointers to the nodes corresponding to second.getOutputs().
     void mergeNodes(ActionsDAG && second, NodeRawConstPtrs * out_outputs = nullptr);
 
-    struct SplitResult
-    {
-        ActionsDAGPtr first;
-        ActionsDAGPtr second;
-        std::unordered_map<const Node *, const Node *> split_nodes_mapping;
-    };
+    struct SplitResult;
 
     /// Split ActionsDAG into two DAGs, where first part contains all nodes from split_nodes and their children.
     /// Execution of first then second parts on block is equivalent to execution of initial DAG.
@@ -362,7 +357,7 @@ public:
       * @param filter_name - name of filter node in current DAG.
       * @param input_stream_header - input stream header.
       */
-    bool isFilterAlwaysFalseForDefaultValueInputs(const std::string & filter_name, const Block & input_stream_header);
+    bool isFilterAlwaysFalseForDefaultValueInputs(const std::string & filter_name, const Block & input_stream_header) const;
 
     /// Create actions which may calculate part of filter using only available_inputs.
     /// If nothing may be calculated, returns nullptr.
@@ -381,19 +376,13 @@ public:
     /// columns will be transformed like `x, y, z` -> `z > 0, z, x, y` -(remove filter)-> `z, x, y`.
     /// To avoid it, add inputs from `all_inputs` list,
     /// so actions `x, y, z -> z > 0, x, y, z` -(remove filter)-> `x, y, z` will not change columns order.
-    ActionsDAGPtr splitActionsForFilterPushDown(
+    std::optional<ActionsDAG> splitActionsForFilterPushDown(
         const std::string & filter_name,
         bool removes_filter,
         const Names & available_inputs,
         const ColumnsWithTypeAndName & all_inputs);
 
-    struct ActionsForJOINFilterPushDown
-    {
-        ActionsDAGPtr left_stream_filter_to_push_down;
-        bool left_stream_filter_removes_filter;
-        ActionsDAGPtr right_stream_filter_to_push_down;
-        bool right_stream_filter_removes_filter;
-    };
+    struct ActionsForJOINFilterPushDown;
 
     /** Split actions for JOIN filter push down.
       *
@@ -440,7 +429,7 @@ public:
       *
       * If single_output_condition_node = false, result dag has multiple output nodes.
       */
-    static ActionsDAGPtr buildFilterActionsDAG(
+    static std::optional<ActionsDAG> buildFilterActionsDAG(
         const NodeRawConstPtrs & filter_nodes,
         const std::unordered_map<std::string, ColumnWithTypeAndName> & node_name_to_input_node_column = {},
         bool single_output_condition_node = true);
@@ -472,9 +461,24 @@ private:
     void compileFunctions(size_t min_count_to_compile_expression, const std::unordered_set<const Node *> & lazy_executed_nodes = {});
 #endif
 
-    static ActionsDAGPtr createActionsForConjunction(NodeRawConstPtrs conjunction, const ColumnsWithTypeAndName & all_inputs);
+    static std::optional<ActionsDAG> createActionsForConjunction(NodeRawConstPtrs conjunction, const ColumnsWithTypeAndName & all_inputs);
 
     void removeUnusedConjunctions(NodeRawConstPtrs rejected_conjunctions, Node * predicate, bool removes_filter);
+};
+
+struct ActionsDAG::SplitResult
+{
+    ActionsDAG first;
+    ActionsDAG second;
+    std::unordered_map<const Node *, const Node *> split_nodes_mapping;
+};
+
+struct ActionsDAG::ActionsForJOINFilterPushDown
+{
+    std::optional<ActionsDAG> left_stream_filter_to_push_down;
+    bool left_stream_filter_removes_filter;
+    std::optional<ActionsDAG> right_stream_filter_to_push_down;
+    bool right_stream_filter_removes_filter;
 };
 
 class FindOriginalNodeForOutputName

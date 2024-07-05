@@ -83,10 +83,11 @@ void optimizePrewhere(Stack & stack, QueryPlan::Nodes &)
 
     Names queried_columns = source_step_with_filter->requiredSourceColumns();
 
+    const auto & source_filter_actions_dag = source_step_with_filter->getFilterActionsDAG();
     MergeTreeWhereOptimizer where_optimizer{
         std::move(column_compressed_sizes),
         storage_metadata,
-        storage.getConditionSelectivityEstimatorByPredicate(storage_snapshot, source_step_with_filter->getFilterActionsDAG(), context),
+        storage.getConditionSelectivityEstimatorByPredicate(storage_snapshot, source_filter_actions_dag ? &*source_filter_actions_dag : nullptr, context),
         queried_columns,
         storage.supportedPrewhereColumns(),
         getLogger("QueryPlanOptimizePrewhere")};
@@ -113,15 +114,15 @@ void optimizePrewhere(Stack & stack, QueryPlan::Nodes &)
 
     if (prewhere_info->remove_prewhere_column)
     {
-        removeFromOutput(*filter_expression, filter_column_name);
-        auto & outputs = filter_expression->getOutputs();
+        removeFromOutput(filter_expression, filter_column_name);
+        auto & outputs = filter_expression.getOutputs();
         size_t size = outputs.size();
         outputs.insert(outputs.end(), optimize_result.prewhere_nodes.begin(), optimize_result.prewhere_nodes.end());
-        filter_expression->removeUnusedActions(false);
+        filter_expression.removeUnusedActions(false);
         outputs.resize(size);
     }
 
-    auto split_result = filter_expression->split(optimize_result.prewhere_nodes, true, true);
+    auto split_result = filter_expression.split(optimize_result.prewhere_nodes, true, true);
 
     /// This is the leak of abstraction.
     /// Splited actions may have inputs which are needed only for PREWHERE.
@@ -137,15 +138,15 @@ void optimizePrewhere(Stack & stack, QueryPlan::Nodes &)
     /// So, here we restore removed inputs for PREWHERE actions
     {
         std::unordered_set<const ActionsDAG::Node *> first_outputs(
-            split_result.first->getOutputs().begin(), split_result.first->getOutputs().end());
-        for (const auto * input : split_result.first->getInputs())
+            split_result.first.getOutputs().begin(), split_result.first.getOutputs().end());
+        for (const auto * input : split_result.first.getInputs())
         {
             if (!first_outputs.contains(input))
             {
-                split_result.first->getOutputs().push_back(input);
+                split_result.first.getOutputs().push_back(input);
                 /// Add column to second actions as input.
                 /// Do not add it to result, so it would be removed.
-                split_result.second->addInput(input->result_name, input->result_type);
+                split_result.second.addInput(input->result_name, input->result_type);
             }
         }
     }

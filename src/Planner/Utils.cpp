@@ -442,22 +442,22 @@ FilterDAGInfo buildFilterInfo(QueryTreeNodePtr filter_query_tree,
     collectSourceColumns(filter_query_tree, planner_context, false /*keep_alias_columns*/);
     collectSets(filter_query_tree, *planner_context);
 
-    auto filter_actions_dag = std::make_unique<ActionsDAG>();
+    ActionsDAG filter_actions_dag;
 
     PlannerActionsVisitor actions_visitor(planner_context, false /*use_column_identifier_as_action_node_name*/);
-    auto expression_nodes = actions_visitor.visit(*filter_actions_dag, filter_query_tree);
+    auto expression_nodes = actions_visitor.visit(filter_actions_dag, filter_query_tree);
     if (expression_nodes.size() != 1)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Filter actions must return single output node. Actual {}",
             expression_nodes.size());
 
-    auto & filter_actions_outputs = filter_actions_dag->getOutputs();
+    auto & filter_actions_outputs = filter_actions_dag.getOutputs();
     filter_actions_outputs = std::move(expression_nodes);
 
     std::string filter_node_name = filter_actions_outputs[0]->result_name;
     bool remove_filter_column = true;
 
-    for (const auto & filter_input_node : filter_actions_dag->getInputs())
+    for (const auto & filter_input_node : filter_actions_dag.getInputs())
         if (table_expression_required_names_without_filter.contains(filter_input_node->result_name))
             filter_actions_outputs.push_back(filter_input_node);
 
@@ -498,7 +498,7 @@ void appendSetsFromActionsDAG(const ActionsDAG & dag, UsefulSets & useful_sets)
             {
                 if (const auto * index_hint = typeid_cast<const FunctionIndexHint *>(adaptor->getFunction().get()))
                 {
-                    appendSetsFromActionsDAG(*index_hint->getActions(), useful_sets);
+                    appendSetsFromActionsDAG(index_hint->getActions(), useful_sets);
                 }
             }
         }

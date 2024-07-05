@@ -265,15 +265,15 @@ MergeTreeIndexConditionSet::MergeTreeIndexConditionSet(
         if (!set->buildOrderedSetInplace(context))
             return;
 
-    auto filter_actions_dag = ActionsDAG::clone(filter_dag);
-    const auto * filter_actions_dag_node = filter_actions_dag->getOutputs().at(0);
+    auto filter_actions_dag = std::move(*ActionsDAG::clone(filter_dag));
+    const auto * filter_actions_dag_node = filter_actions_dag.getOutputs().at(0);
 
     std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> node_to_result_node;
-    filter_actions_dag->getOutputs()[0] = &traverseDAG(*filter_actions_dag_node, filter_actions_dag, context, node_to_result_node);
+    filter_actions_dag.getOutputs()[0] = &traverseDAG(*filter_actions_dag_node, filter_actions_dag, context, node_to_result_node);
 
-    filter_actions_dag->removeUnusedActions();
+    filter_actions_dag.removeUnusedActions();
 
-    actions_output_column_name = filter_actions_dag->getOutputs().at(0)->result_name;
+    actions_output_column_name = filter_actions_dag.getOutputs().at(0)->result_name;
     actions = std::make_shared<ExpressionActions>(std::move(filter_actions_dag));
 }
 
@@ -306,7 +306,7 @@ bool MergeTreeIndexConditionSet::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx
 }
 
 
-static const ActionsDAG::NodeRawConstPtrs & getArguments(const ActionsDAG::Node & node, const ActionsDAGPtr & result_dag_or_null, ActionsDAG::NodeRawConstPtrs * storage)
+static const ActionsDAG::NodeRawConstPtrs & getArguments(const ActionsDAG::Node & node, ActionsDAG * result_dag_or_null, ActionsDAG::NodeRawConstPtrs * storage)
 {
     chassert(node.type == ActionsDAG::ActionType::FUNCTION);
     if (node.function_base->getName() != "indexHint")
@@ -316,17 +316,17 @@ static const ActionsDAG::NodeRawConstPtrs & getArguments(const ActionsDAG::Node 
     const auto & adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor &>(*node.function_base);
     const auto & index_hint = typeid_cast<const FunctionIndexHint &>(*adaptor.getFunction());
     if (!result_dag_or_null)
-        return index_hint.getActions()->getOutputs();
+        return index_hint.getActions().getOutputs();
 
     /// Import the DAG and map argument pointers.
-    ActionsDAGPtr actions_clone = ActionsDAG::clone(index_hint.getActions());
+    auto actions_clone = std::move(*ActionsDAG::clone(&index_hint.getActions()));
     chassert(storage);
-    result_dag_or_null->mergeNodes(std::move(*actions_clone), storage);
+    result_dag_or_null->mergeNodes(std::move(actions_clone), storage);
     return *storage;
 }
 
 const ActionsDAG::Node & MergeTreeIndexConditionSet::traverseDAG(const ActionsDAG::Node & node,
-    ActionsDAGPtr & result_dag,
+    ActionsDAG & result_dag,
     const ContextPtr & context,
     std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> & node_to_result_node) const
 {
@@ -348,7 +348,7 @@ const ActionsDAG::Node & MergeTreeIndexConditionSet::traverseDAG(const ActionsDA
             atom_node_ptr->type == ActionsDAG::ActionType::FUNCTION)
         {
             auto bit_wrapper_function = FunctionFactory::instance().get("__bitWrapperFunc", context);
-            result_node = &result_dag->addFunction(bit_wrapper_function, {atom_node_ptr}, {});
+            result_node = &result_dag.addFunction(bit_wrapper_function, {atom_node_ptr}, {});
         }
     }
     else
@@ -359,14 +359,14 @@ const ActionsDAG::Node & MergeTreeIndexConditionSet::traverseDAG(const ActionsDA
         unknown_field_column_with_type.type = std::make_shared<DataTypeUInt8>();
         unknown_field_column_with_type.column = unknown_field_column_with_type.type->createColumnConst(1, UNKNOWN_FIELD);
 
-        result_node = &result_dag->addColumn(unknown_field_column_with_type);
+        result_node = &result_dag.addColumn(unknown_field_column_with_type);
     }
 
     node_to_result_node.emplace(&node, result_node);
     return *result_node;
 }
 
-const ActionsDAG::Node * MergeTreeIndexConditionSet::atomFromDAG(const ActionsDAG::Node & node, ActionsDAGPtr & result_dag, const ContextPtr & context) const
+const ActionsDAG::Node * MergeTreeIndexConditionSet::atomFromDAG(const ActionsDAG::Node & node, ActionsDAG & result_dag, const ContextPtr & context) const
 {
     /// Function, literal or column
 
@@ -386,7 +386,7 @@ const ActionsDAG::Node * MergeTreeIndexConditionSet::atomFromDAG(const ActionsDA
         const auto * result_node = node_to_check;
 
         if (node.type != ActionsDAG::ActionType::INPUT)
-            result_node = &result_dag->addInput(column_name, node.result_type);
+            result_node = &result_dag.addInput(column_name, node.result_type);
 
         return result_node;
     }
@@ -407,11 +407,11 @@ const ActionsDAG::Node * MergeTreeIndexConditionSet::atomFromDAG(const ActionsDA
             return nullptr;
     }
 
-    return &result_dag->addFunction(node.function_base, children, {});
+    return &result_dag.addFunction(node.function_base, children, {});
 }
 
 const ActionsDAG::Node * MergeTreeIndexConditionSet::operatorFromDAG(const ActionsDAG::Node & node,
-    ActionsDAGPtr & result_dag,
+    ActionsDAG & result_dag,
     const ContextPtr & context,
     std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> & node_to_result_node) const
 {
@@ -429,7 +429,7 @@ const ActionsDAG::Node * MergeTreeIndexConditionSet::operatorFromDAG(const Actio
 
     auto function_name = node_to_check->function->getName();
     ActionsDAG::NodeRawConstPtrs temp_ptrs_to_argument;
-    const auto & arguments = getArguments(*node_to_check, result_dag, &temp_ptrs_to_argument);
+    const auto & arguments = getArguments(*node_to_check, &result_dag, &temp_ptrs_to_argument);
     size_t arguments_size = arguments.size();
 
     if (function_name == "not")
@@ -440,7 +440,7 @@ const ActionsDAG::Node * MergeTreeIndexConditionSet::operatorFromDAG(const Actio
         const ActionsDAG::Node * argument = &traverseDAG(*arguments[0], result_dag, context, node_to_result_node);
 
         auto bit_swap_last_two_function = FunctionFactory::instance().get("__bitSwapLastTwo", context);
-        return &result_dag->addFunction(bit_swap_last_two_function, {argument}, {});
+        return &result_dag.addFunction(bit_swap_last_two_function, {argument}, {});
     }
     else if (function_name == "and" || function_name == "indexHint" || function_name == "or")
     {
@@ -468,7 +468,7 @@ const ActionsDAG::Node * MergeTreeIndexConditionSet::operatorFromDAG(const Actio
             const auto * before_last_argument = children.back();
             children.pop_back();
 
-            last_argument = &result_dag->addFunction(function, {before_last_argument, last_argument}, {});
+            last_argument = &result_dag.addFunction(function, {before_last_argument, last_argument}, {});
         }
 
         return last_argument;

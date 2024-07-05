@@ -1197,7 +1197,7 @@ void MutationsInterpreter::Source::read(
         const auto & names = first_stage.filter_column_names;
         size_t num_filters = names.size();
 
-        ActionsDAGPtr filter;
+        std::optional<ActionsDAG> filter;
         if (!first_stage.filter_column_names.empty())
         {
             ActionsDAG::NodeRawConstPtrs nodes(num_filters);
@@ -1278,19 +1278,19 @@ QueryPipelineBuilder MutationsInterpreter::addStreamsForLaterStages(const std::v
 
             if (i < stage.filter_column_names.size())
             {
-                auto dag = ActionsDAG::clone(&step->actions()->dag);
+                auto dag = std::move(*ActionsDAG::clone(&step->actions()->dag));
                 if (step->actions()->project_input)
-                    dag->appendInputsForUnusedColumns(plan.getCurrentDataStream().header);
+                    dag.appendInputsForUnusedColumns(plan.getCurrentDataStream().header);
                 /// Execute DELETEs.
-                plan.addStep(std::make_unique<FilterStep>(plan.getCurrentDataStream(), dag, stage.filter_column_names[i], false));
+                plan.addStep(std::make_unique<FilterStep>(plan.getCurrentDataStream(), std::move(dag), stage.filter_column_names[i], false));
             }
             else
             {
-                auto dag = ActionsDAG::clone(&step->actions()->dag);
+                auto dag = std::move(*ActionsDAG::clone(&step->actions()->dag));
                 if (step->actions()->project_input)
-                    dag->appendInputsForUnusedColumns(plan.getCurrentDataStream().header);
+                    dag.appendInputsForUnusedColumns(plan.getCurrentDataStream().header);
                 /// Execute UPDATE or final projection.
-                plan.addStep(std::make_unique<ExpressionStep>(plan.getCurrentDataStream(), dag));
+                plan.addStep(std::make_unique<ExpressionStep>(plan.getCurrentDataStream(), std::move(dag)));
             }
         }
 
