@@ -11,14 +11,13 @@ set -e -x -a
 # NOTE: that clickhouse-test will randomize session_timezone by itself as well
 # (it will choose between default server timezone and something specific).
 TZ="$(rg -v '#' /usr/share/zoneinfo/zone.tab  | awk '{print $3}' | shuf | head -n1)"
-echo "Choosen random timezone $TZ"
+echo "Chosen random timezone $TZ"
 ln -snf "/usr/share/zoneinfo/$TZ" /etc/localtime && echo "$TZ" > /etc/timezone
 
 dpkg -i package_folder/clickhouse-common-static_*.deb
 dpkg -i package_folder/clickhouse-common-static-dbg_*.deb
-# Accept failure in the next two commands until 24.4 is released (for compatibility and Bugfix validation run)
-dpkg -i package_folder/clickhouse-odbc-bridge_*.deb || true
-dpkg -i package_folder/clickhouse-library-bridge_*.deb || true
+dpkg -i package_folder/clickhouse-odbc-bridge_*.deb
+dpkg -i package_folder/clickhouse-library-bridge_*.deb
 dpkg -i package_folder/clickhouse-server_*.deb
 dpkg -i package_folder/clickhouse-client_*.deb
 
@@ -54,12 +53,6 @@ if [[ -n "$BUGFIX_VALIDATE_CHECK" ]] && [[ "$BUGFIX_VALIDATE_CHECK" -eq 1 ]]; th
     rm /etc/clickhouse-server/config.d/handlers.yaml
     rm /etc/clickhouse-server/users.d/s3_cache_new.xml
     rm /etc/clickhouse-server/config.d/zero_copy_destructive_operations.xml
-
-    #todo: remove these after 24.3 released.
-    sudo sed -i "s|<object_storage_type>azure<|<object_storage_type>azure_blob_storage<|" /etc/clickhouse-server/config.d/azure_storage_conf.xml
-
-    #todo: remove these after 24.3 released.
-    sudo sed -i "s|<object_storage_type>local<|<object_storage_type>local_blob_storage<|" /etc/clickhouse-server/config.d/storage_conf.xml
 
     function remove_keeper_config()
     {
