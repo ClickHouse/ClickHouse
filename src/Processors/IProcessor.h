@@ -221,6 +221,8 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'schedule' is not implemented for {} processor", getName());
     }
 
+    virtual void asyncImmediateWork() {}
+
     virtual bool canBeExecutedImmediately()
     {
         return false;

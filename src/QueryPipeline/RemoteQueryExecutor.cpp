@@ -462,6 +462,9 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::read()
 
 RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAsync(bool probe)
 {
+    LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "probe={}", probe);
+    // LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "probe={}\n{}", probe, StackTrace().toString());
+
 #if defined(OS_LINUX)
     if (!read_context || (resent_query && recreate_read_context))
     {
@@ -477,7 +480,21 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAsync(bool probe)
     {
         std::lock_guard lock(was_cancelled_mutex);
         if (was_cancelled)
+        {
+            LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "was_cancelled");
             return ReadResult(Block());
+        }
+
+        if (has_postponed_packet)
+        {
+            has_postponed_packet = false;
+            auto read_result = processPacket(read_context->getPacket());
+            if (read_result.getType() == ReadResult::Type::Data || read_result.getType() == ReadResult::Type::ParallelReplicasToken)
+                return read_result;
+
+            if (got_duplicated_part_uuids)
+                break;
+        }
 
         read_context->resume();
 
@@ -497,18 +514,26 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAsync(bool probe)
 
         /// Check if packet is not ready yet.
         if (read_context->isInProgress())
+        {
+            LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "read_context still in progress");
             return ReadResult(read_context->getFileDescriptor());
+        }
+
+        const auto packet_type = read_context->getPacketType();
+        LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "Packet type: {}", packet_type);
 
         if (probe)
         {
-            const auto packet_type = read_context->getPacketType();
+            has_postponed_packet = true;
             if (packet_type == Protocol::Server::MergeTreeReadTaskRequest
                 || packet_type == Protocol::Server::MergeTreeAllRangesAnnouncement)
+            {
                 return ReadResult(ReadResult::Type::ParallelReplicasToken);
+            }
+            return ReadResult(ReadResult::Type::Nothing);
         }
 
         auto read_result = processPacket(read_context->getPacket());
-
         if (read_result.getType() == ReadResult::Type::Data || read_result.getType() == ReadResult::Type::ParallelReplicasToken)
             return read_result;
 

@@ -54,9 +54,13 @@ MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicas::getTask(size_t /*task_id
             /// For Default coordination mode we don't need to pass part names.
             RangesInDataPartsDescription{}));
 
+        if (result)
+            LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "ParallelReadResponse: {}", result->describe());
+
         if (!result || result->finish)
         {
             no_more_tasks_available = true;
+            LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "ParallelReadResponse: resutl is empty");
             return nullptr;
         }
 

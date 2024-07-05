@@ -204,11 +204,7 @@ void ExecutorTasks::processAsyncTasks()
         while (auto task = async_task_queue.wait(lock))
         {
             auto * node = static_cast<ExecutingGraph::Node *>(task.data);
-            if (node->processor->canBeExecutedImmediately())
-            {
-                node->processor->work();
-                continue;
-            }
+            node->processor->asyncImmediateWork();
 
             executor_contexts[task.thread_num]->pushAsyncTask(node);
             ++num_waiting_async_tasks;

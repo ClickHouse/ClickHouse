@@ -32,7 +32,7 @@ public:
 
     int schedule() override { return fd; }
 
-    bool canBeExecutedImmediately() override;
+    void asyncImmediateWork() override;
 
     void setStorageLimits(const std::shared_ptr<const StorageLimitsList> & storage_limits_) override;
 
@@ -54,6 +54,7 @@ private:
     int fd = -1;
     size_t rows = 0;
     bool manually_add_rows_before_limit_counter = false;
+    std::atomic_bool async_immediate_work{false};
 };
 
 /// Totals source from RemoteQueryExecutor.

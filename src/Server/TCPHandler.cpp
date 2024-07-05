@@ -1208,6 +1208,7 @@ void TCPHandler::sendMergeTreeAllRangesAnnouncementAssumeLocked(InitialAllRanges
 
 void TCPHandler::sendMergeTreeReadTaskRequestAssumeLocked(ParallelReadRequest request)
 {
+    LOG_TRACE(getLogger(__PRETTY_FUNCTION__), "ParallelReadRequest: {}", request.describe());
     writeVarUInt(Protocol::Server::MergeTreeReadTaskRequest, *out);
     request.serialize(*out);
     out->next();

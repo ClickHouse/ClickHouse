@@ -303,6 +303,8 @@ private:
       */
     bool got_duplicated_part_uuids = false;
 
+    bool has_postponed_packet = false;
+
     /// Parts uuids, collected from remote replicas
     std::vector<UUID> duplicated_part_uuids;
 
