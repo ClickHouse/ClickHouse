@@ -2855,7 +2855,7 @@ The minimum chunk size in bytes, which each thread will parse in parallel.
 
 ## merge_selecting_sleep_ms {#merge_selecting_sleep_ms}
 
-Minimum sleep time for merge selecting when no part is selected. A lower setting triggers selecting tasks in `background_schedule_pool` frequently, which results in a large number of requests to ClickHouse Keeper in large-scale clusters.
+Minimum time to wait before trying to select parts to merge again after no parts were selected. A lower setting triggers selecting tasks in `background_schedule_pool` frequently, which results in a large number of requests to ClickHouse Keeper in large-scale clusters.
 
 Possible values:
 
@@ -2865,7 +2865,7 @@ Default value: `5000`.
 
 ## max_merge_selecting_sleep_ms
 
-Maximum sleep time for merge selecting when no part is selected. A lower setting triggers selecting tasks in `background_schedule_pool` frequently, which results in a large number of requests to ClickHouse Keeper in large-scale clusters.
+Maximum time to wait before trying to select parts to merge again after no parts were selected. A lower setting triggers selecting tasks in `background_schedule_pool` frequently, which results in a large number of requests to ClickHouse Keeper in large-scale clusters.
 
 Possible values:
 
