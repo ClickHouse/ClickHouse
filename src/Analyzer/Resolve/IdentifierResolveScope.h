@@ -150,6 +150,10 @@ struct IdentifierResolveScope
     /// CTE name to query node
     std::unordered_map<std::string, QueryTreeNodePtr> cte_name_to_query_node;
 
+    std::unordered_map<std::string, QueryTreeNodePtr> cte_name_to_lambda;
+
+    std::unordered_map<std::string, QueryTreeNodePtr> cte_name_to_expression;
+
     /// Window name to window node
     std::unordered_map<std::string, QueryTreeNodePtr> window_name_to_window_node;
 
