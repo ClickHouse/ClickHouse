@@ -9,7 +9,7 @@ $CLICKHOUSE_LOCAL -q "SELECT 'TESTING THE FILE HIVE PARTITIONING'"
 
 
 $CLICKHOUSE_LOCAL -n -q """
-set file_hive_partitioning = 1;
+set use_hive_partitioning = 1;
 
 SELECT *, _column0 FROM file('$CURDIR/data_hive/partitioning/column0=Elizabeth/sample.parquet') LIMIT 10;
 
@@ -31,7 +31,7 @@ SELECT *, _non_existing_column FROM file('$CURDIR/data_hive/partitioning/non_exi
 SELECT *, _column0 FROM file('$CURDIR/data_hive/partitioning/column0=*/sample.parquet') WHERE column0 = _column0;"""
 
 $CLICKHOUSE_LOCAL -n -q """
-set file_hive_partitioning = 0;
+set use_hive_partitioning = 0;
 
 SELECT *, _column0 FROM file('$CURDIR/data_hive/partitioning/column0=Elizabeth/sample.parquet') LIMIT 10;
 """ 2>&1 | grep -c "UNKNOWN_IDENTIFIER"
@@ -41,7 +41,7 @@ $CLICKHOUSE_LOCAL -q "SELECT 'TESTING THE URL PARTITIONING'"
 
 
 $CLICKHOUSE_LOCAL -n -q """
-set url_hive_partitioning = 1;
+set use_hive_partitioning = 1;
 
 SELECT *, _column0 FROM url('http://localhost:11111/test/partitioning/column0=Elizabeth/sample.parquet') LIMIT 10;
 
@@ -63,7 +63,7 @@ SELECT *, _non_existing_column FROM url('http://localhost:11111/test/partitionin
 SELECT *, _column0 FROM url('http://localhost:11111/test/partitioning/column0=*/sample.parquet') WHERE column0 = _column0;"""
 
 $CLICKHOUSE_LOCAL -n -q """
-set url_hive_partitioning = 0;
+set use_hive_partitioning = 0;
 
 SELECT *, _column0 FROM url('http://localhost:11111/test/partitioning/column0=Elizabeth/sample.parquet') LIMIT 10;
 """ 2>&1 | grep -c "UNKNOWN_IDENTIFIER"
@@ -73,7 +73,7 @@ $CLICKHOUSE_LOCAL -q "SELECT 'TESTING THE S3 PARTITIONING'"
 
 
 $CLICKHOUSE_LOCAL -n -q """
-set s3_hive_partitioning = 1;
+set use_hive_partitioning = 1;
 
 SELECT *, _column0 FROM s3('http://localhost:11111/test/partitioning/column0=Elizabeth/sample.parquet') LIMIT 10;
 
@@ -96,7 +96,7 @@ SELECT *, _column0 FROM s3('http://localhost:11111/test/partitioning/column0=*/s
 """
 
 $CLICKHOUSE_LOCAL -n -q """
-set s3_hive_partitioning = 0;
+set use_hive_partitioning = 0;
 
 SELECT *, _column0 FROM s3('http://localhost:11111/test/partitioning/column0=Elizabeth/sample.parquet') LIMIT 10;
 """ 2>&1 | grep -c "UNKNOWN_IDENTIFIER"
