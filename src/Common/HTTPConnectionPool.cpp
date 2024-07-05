@@ -2,6 +2,7 @@
 #include <Common/HostResolvePool.h>
 
 #include <Common/ProfileEvents.h>
+#include <Common/Stopwatch.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
@@ -249,8 +250,10 @@ public:
 //   passed through the scheduler queue to ensure fair bandwidth allocation even in presence of errors.
 struct ResourceGuardSessionDataHooks : public Poco::Net::IHTTPSessionDataHooks
 {
-    explicit ResourceGuardSessionDataHooks(const ResourceGuard::Metrics * metrics, ResourceLink link_)
+    ResourceGuardSessionDataHooks(ResourceLink link_, const ResourceGuard::Metrics * metrics, LoggerPtr log_, const String & method, const String & uri)
         : link(link_)
+        , log(log_)
+        , http_request(method + " " + uri)
     {
         request.metrics = metrics;
         chassert(link);
@@ -263,8 +266,12 @@ struct ResourceGuardSessionDataHooks : public Poco::Net::IHTTPSessionDataHooks
 
     void atStart(int bytes) override
     {
+        Stopwatch timer;
         request.enqueue(bytes, link);
         request.wait();
+        timer.stop();
+        if (timer.elapsedMilliseconds() >= 5000)
+            LOG_INFO(log, "Resource request took too long to finish: {} ms for {}", timer.elapsedMilliseconds(), http_request);
     }
 
     void atFinish(int bytes) override
@@ -279,6 +286,8 @@ struct ResourceGuardSessionDataHooks : public Poco::Net::IHTTPSessionDataHooks
 
     ResourceLink link;
     ResourceGuard::Request request;
+    LoggerPtr log;
+    String http_request;
 };
 
 
@@ -384,9 +393,9 @@ private:
 
             // Reset data hooks for IO scheduling
             if (ResourceLink link = CurrentThread::getReadResourceLink())
-                Session::setReceiveDataHooks(std::make_shared<ResourceGuardSessionDataHooks>(ResourceGuard::Metrics::getIORead(), link));
+                Session::setReceiveDataHooks(std::make_shared<ResourceGuardSessionDataHooks>(link, ResourceGuard::Metrics::getIORead(), log, request.getMethod(), request.getURI()));
             if (ResourceLink link = CurrentThread::getWriteResourceLink())
-                Session::setSendDataHooks(std::make_shared<ResourceGuardSessionDataHooks>(ResourceGuard::Metrics::getIOWrite(), link));
+                Session::setSendDataHooks(std::make_shared<ResourceGuardSessionDataHooks>(link, ResourceGuard::Metrics::getIOWrite(), log, request.getMethod(), request.getURI()));
 
             std::ostream & result = Session::sendRequest(request);
             result.exceptions(std::ios::badbit);
