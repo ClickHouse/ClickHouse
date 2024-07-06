@@ -1250,6 +1250,8 @@ DatabaseCatalog::TablesMarkedAsDropped DatabaseCatalog::getTablesToDrop()
 
     std::lock_guard lock(tables_marked_dropped_mutex);
 
+    const auto was_count = tables_marked_dropped.size();
+
     auto it = tables_marked_dropped.begin();
     while (it != tables_marked_dropped.end())
     {
@@ -1269,6 +1271,8 @@ DatabaseCatalog::TablesMarkedAsDropped DatabaseCatalog::getTablesToDrop()
         result.emplace_back(std::move(*it));
         it = tables_marked_dropped.erase(it);
     }
+
+    chassert(was_count == tables_marked_dropped.size() + result.size());
 
     return result;
 }
@@ -1299,10 +1303,10 @@ void DatabaseCatalog::dropTablesParallel(TablesMarkedAsDropped tables_to_drop)
 
     SCOPE_EXIT({
         std::lock_guard lock(tables_marked_dropped_mutex);
-        if (first_async_drop_in_queue == tables_marked_dropped.end())
-            first_async_drop_in_queue = tables_to_drop.begin();
-
         tables_marked_dropped.splice(tables_marked_dropped.end(), tables_to_drop);
+
+        if (first_async_drop_in_queue == tables_marked_dropped.end())
+            first_async_drop_in_queue = tables_marked_dropped.begin();
     });
 
     ThreadPool pool(
