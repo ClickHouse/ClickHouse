@@ -3018,7 +3018,7 @@ CREATE TABLE mt
   `i` int,
   `j` int
 )
-  ENGINE = MergeTree
+ENGINE = MergeTree
 PARTITION BY i
 ORDER BY j
 SETTINGS index_granularity = 1;
