@@ -58,13 +58,14 @@ void SquashingTransform::work()
 
 SimpleSquashingChunksTransform::SimpleSquashingChunksTransform(
     const Block & header, size_t min_block_size_rows, size_t min_block_size_bytes)
-    : IInflatingTransform(header, header), squashing(header, min_block_size_rows, min_block_size_bytes)
+    : IInflatingTransform(header, header), squashing(min_block_size_rows, min_block_size_bytes)
 {
 }
 
 void SimpleSquashingChunksTransform::consume(Chunk chunk)
 {
-    squashed_chunk = squashing.add(std::move(chunk));
+    Block current_block = squashing.add(getInputPort().getHeader().cloneWithColumns(chunk.detachColumns()));
+    squashed_chunk.setColumns(current_block.getColumns(), current_block.rows());
 }
 
 Chunk SimpleSquashingChunksTransform::generate()
@@ -82,7 +83,8 @@ bool SimpleSquashingChunksTransform::canGenerate()
 
 Chunk SimpleSquashingChunksTransform::getRemaining()
 {
-    squashed_chunk = squashing.flush();
+    Block current_block = squashing.add({});
+    squashed_chunk.setColumns(current_block.getColumns(), current_block.rows());
     return std::move(squashed_chunk);
 }
 

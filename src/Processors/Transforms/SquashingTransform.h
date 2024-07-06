@@ -44,7 +44,7 @@ protected:
     Chunk getRemaining() override;
 
 private:
-    Squashing squashing;
+    SquashingTransform squashing;
     Chunk squashed_chunk;
 };
 
