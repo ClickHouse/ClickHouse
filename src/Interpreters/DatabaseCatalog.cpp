@@ -1257,8 +1257,6 @@ DatabaseCatalog::TablesMarkedAsDropped DatabaseCatalog::getTablesToDrop()
     {
         bool in_use = it->table && !it->table.unique();
         bool old_enough = it->drop_time <= current_time;
-        LOG_DEBUG(log, "check {}: in_use {}, old_enough {}", it->table_id.getFullTableName(), in_use, old_enough);
-
         if (in_use || !old_enough)
         {
             ++it;
