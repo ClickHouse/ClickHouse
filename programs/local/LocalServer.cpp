@@ -32,6 +32,7 @@
 #include <Common/quoteString.h>
 #include <Common/randomSeed.h>
 #include <Common/ThreadPool.h>
+#include <Common/CurrentMetrics.h>
 #include <Loggers/OwnFormattingChannel.h>
 #include <Loggers/OwnPatternFormatter.h>
 #include <IO/ReadBufferFromFile.h>
@@ -59,8 +60,13 @@
 #   include <azure/storage/common/internal/xml_wrapper.hpp>
 #endif
 
+
 namespace fs = std::filesystem;
 
+namespace CurrentMetrics
+{
+    extern const Metric MemoryTracking;
+}
 
 namespace DB
 {
@@ -131,11 +137,12 @@ void LocalServer::initialize(Poco::Util::Application & self)
         getClientConfiguration().add(loaded_config.configuration.duplicate(), PRIO_DEFAULT, false);
     }
 
+    server_settings.loadSettingsFromConfig(config());
+
     GlobalThreadPool::initialize(
-        getClientConfiguration().getUInt("max_thread_pool_size", 10000),
-        getClientConfiguration().getUInt("max_thread_pool_free_size", 1000),
-        getClientConfiguration().getUInt("thread_pool_queue_size", 10000)
-    );
+        server_settings.max_thread_pool_size,
+        server_settings.max_thread_pool_free_size,
+        server_settings.thread_pool_queue_size);
 
 #if USE_AZURE_BLOB_STORAGE
     /// See the explanation near the same line in Server.cpp
@@ -146,17 +153,17 @@ void LocalServer::initialize(Poco::Util::Application & self)
 #endif
 
     getIOThreadPool().initialize(
-        getClientConfiguration().getUInt("max_io_thread_pool_size", 100),
-        getClientConfiguration().getUInt("max_io_thread_pool_free_size", 0),
-        getClientConfiguration().getUInt("io_thread_pool_queue_size", 10000));
+        server_settings.max_io_thread_pool_size,
+        server_settings.max_io_thread_pool_free_size,
+        server_settings.io_thread_pool_queue_size);
 
-    const size_t active_parts_loading_threads = getClientConfiguration().getUInt("max_active_parts_loading_thread_pool_size", 64);
+    const size_t active_parts_loading_threads = server_settings.max_active_parts_loading_thread_pool_size;
     getActivePartsLoadingThreadPool().initialize(
         active_parts_loading_threads,
         0, // We don't need any threads one all the parts will be loaded
         active_parts_loading_threads);
 
-    const size_t outdated_parts_loading_threads = getClientConfiguration().getUInt("max_outdated_parts_loading_thread_pool_size", 32);
+    const size_t outdated_parts_loading_threads = server_settings.max_outdated_parts_loading_thread_pool_size;
     getOutdatedPartsLoadingThreadPool().initialize(
         outdated_parts_loading_threads,
         0, // We don't need any threads one all the parts will be loaded
@@ -164,7 +171,7 @@ void LocalServer::initialize(Poco::Util::Application & self)
 
     getOutdatedPartsLoadingThreadPool().setMaxTurboThreads(active_parts_loading_threads);
 
-    const size_t unexpected_parts_loading_threads = getClientConfiguration().getUInt("max_unexpected_parts_loading_thread_pool_size", 32);
+    const size_t unexpected_parts_loading_threads = server_settings.max_unexpected_parts_loading_thread_pool_size;
     getUnexpectedPartsLoadingThreadPool().initialize(
         unexpected_parts_loading_threads,
         0, // We don't need any threads one all the parts will be loaded
@@ -172,7 +179,7 @@ void LocalServer::initialize(Poco::Util::Application & self)
 
     getUnexpectedPartsLoadingThreadPool().setMaxTurboThreads(active_parts_loading_threads);
 
-    const size_t cleanup_threads = getClientConfiguration().getUInt("max_parts_cleaning_thread_pool_size", 128);
+    const size_t cleanup_threads = server_settings.max_parts_cleaning_thread_pool_size;
     getPartsCleaningThreadPool().initialize(
         cleanup_threads,
         0, // We don't need any threads one all the parts will be deleted
@@ -437,7 +444,7 @@ try
     UseSSL use_ssl;
     thread_status.emplace();
 
-    StackTrace::setShowAddresses(getClientConfiguration().getBool("show_addresses_in_stack_traces", true));
+    StackTrace::setShowAddresses(server_settings.show_addresses_in_stack_traces);
 
     setupSignalHandler();
 
@@ -623,12 +630,43 @@ void LocalServer::processConfig()
     global_context->getProcessList().setMaxSize(0);
 
     const size_t physical_server_memory = getMemoryAmount();
-    const double cache_size_to_ram_max_ratio = getClientConfiguration().getDouble("cache_size_to_ram_max_ratio", 0.5);
+
+    size_t max_server_memory_usage = server_settings.max_server_memory_usage;
+    double max_server_memory_usage_to_ram_ratio = server_settings.max_server_memory_usage_to_ram_ratio;
+
+    size_t default_max_server_memory_usage = static_cast<size_t>(physical_server_memory * max_server_memory_usage_to_ram_ratio);
+
+    if (max_server_memory_usage == 0)
+    {
+        max_server_memory_usage = default_max_server_memory_usage;
+        LOG_INFO(log, "Setting max_server_memory_usage was set to {}"
+                      " ({} available * {:.2f} max_server_memory_usage_to_ram_ratio)",
+                 formatReadableSizeWithBinarySuffix(max_server_memory_usage),
+                 formatReadableSizeWithBinarySuffix(physical_server_memory),
+                 max_server_memory_usage_to_ram_ratio);
+    }
+    else if (max_server_memory_usage > default_max_server_memory_usage)
+    {
+        max_server_memory_usage = default_max_server_memory_usage;
+        LOG_INFO(log, "Setting max_server_memory_usage was lowered to {}"
+                      " because the system has low amount of memory. The amount was"
+                      " calculated as {} available"
+                      " * {:.2f} max_server_memory_usage_to_ram_ratio",
+                 formatReadableSizeWithBinarySuffix(max_server_memory_usage),
+                 formatReadableSizeWithBinarySuffix(physical_server_memory),
+                 max_server_memory_usage_to_ram_ratio);
+    }
+
+    total_memory_tracker.setHardLimit(max_server_memory_usage);
+    total_memory_tracker.setDescription("(total)");
+    total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
+
+    const double cache_size_to_ram_max_ratio = server_settings.cache_size_to_ram_max_ratio;
     const size_t max_cache_size = static_cast<size_t>(physical_server_memory * cache_size_to_ram_max_ratio);
 
-    String uncompressed_cache_policy = getClientConfiguration().getString("uncompressed_cache_policy", DEFAULT_UNCOMPRESSED_CACHE_POLICY);
-    size_t uncompressed_cache_size = getClientConfiguration().getUInt64("uncompressed_cache_size", DEFAULT_UNCOMPRESSED_CACHE_MAX_SIZE);
-    double uncompressed_cache_size_ratio = getClientConfiguration().getDouble("uncompressed_cache_size_ratio", DEFAULT_UNCOMPRESSED_CACHE_SIZE_RATIO);
+    String uncompressed_cache_policy = server_settings.uncompressed_cache_policy;
+    size_t uncompressed_cache_size = server_settings.uncompressed_cache_size;
+    double uncompressed_cache_size_ratio = server_settings.uncompressed_cache_size_ratio;
     if (uncompressed_cache_size > max_cache_size)
     {
         uncompressed_cache_size = max_cache_size;
@@ -636,9 +674,9 @@ void LocalServer::processConfig()
     }
     global_context->setUncompressedCache(uncompressed_cache_policy, uncompressed_cache_size, uncompressed_cache_size_ratio);
 
-    String mark_cache_policy = getClientConfiguration().getString("mark_cache_policy", DEFAULT_MARK_CACHE_POLICY);
-    size_t mark_cache_size = getClientConfiguration().getUInt64("mark_cache_size", DEFAULT_MARK_CACHE_MAX_SIZE);
-    double mark_cache_size_ratio = getClientConfiguration().getDouble("mark_cache_size_ratio", DEFAULT_MARK_CACHE_SIZE_RATIO);
+    String mark_cache_policy = server_settings.mark_cache_policy;
+    size_t mark_cache_size = server_settings.mark_cache_size;
+    double mark_cache_size_ratio = server_settings.mark_cache_size_ratio;
     if (!mark_cache_size)
         LOG_ERROR(log, "Too low mark cache size will lead to severe performance degradation.");
     if (mark_cache_size > max_cache_size)
@@ -648,9 +686,9 @@ void LocalServer::processConfig()
     }
     global_context->setMarkCache(mark_cache_policy, mark_cache_size, mark_cache_size_ratio);
 
-    String index_uncompressed_cache_policy = getClientConfiguration().getString("index_uncompressed_cache_policy", DEFAULT_INDEX_UNCOMPRESSED_CACHE_POLICY);
-    size_t index_uncompressed_cache_size = getClientConfiguration().getUInt64("index_uncompressed_cache_size", DEFAULT_INDEX_UNCOMPRESSED_CACHE_MAX_SIZE);
-    double index_uncompressed_cache_size_ratio = getClientConfiguration().getDouble("index_uncompressed_cache_size_ratio", DEFAULT_INDEX_UNCOMPRESSED_CACHE_SIZE_RATIO);
+    String index_uncompressed_cache_policy = server_settings.index_uncompressed_cache_policy;
+    size_t index_uncompressed_cache_size = server_settings.index_uncompressed_cache_size;
+    double index_uncompressed_cache_size_ratio = server_settings.index_uncompressed_cache_size_ratio;
     if (index_uncompressed_cache_size > max_cache_size)
     {
         index_uncompressed_cache_size = max_cache_size;
@@ -658,9 +696,9 @@ void LocalServer::processConfig()
     }
     global_context->setIndexUncompressedCache(index_uncompressed_cache_policy, index_uncompressed_cache_size, index_uncompressed_cache_size_ratio);
 
-    String index_mark_cache_policy = getClientConfiguration().getString("index_mark_cache_policy", DEFAULT_INDEX_MARK_CACHE_POLICY);
-    size_t index_mark_cache_size = getClientConfiguration().getUInt64("index_mark_cache_size", DEFAULT_INDEX_MARK_CACHE_MAX_SIZE);
-    double index_mark_cache_size_ratio = getClientConfiguration().getDouble("index_mark_cache_size_ratio", DEFAULT_INDEX_MARK_CACHE_SIZE_RATIO);
+    String index_mark_cache_policy = server_settings.index_mark_cache_policy;
+    size_t index_mark_cache_size = server_settings.index_mark_cache_size;
+    double index_mark_cache_size_ratio = server_settings.index_mark_cache_size_ratio;
     if (index_mark_cache_size > max_cache_size)
     {
         index_mark_cache_size = max_cache_size;
@@ -668,7 +706,7 @@ void LocalServer::processConfig()
     }
     global_context->setIndexMarkCache(index_mark_cache_policy, index_mark_cache_size, index_mark_cache_size_ratio);
 
-    size_t mmap_cache_size = getClientConfiguration().getUInt64("mmap_cache_size", DEFAULT_MMAP_CACHE_MAX_SIZE);
+    size_t mmap_cache_size = server_settings.mmap_cache_size;
     if (mmap_cache_size > max_cache_size)
     {
         mmap_cache_size = max_cache_size;
@@ -680,8 +718,8 @@ void LocalServer::processConfig()
     global_context->setQueryCache(0, 0, 0, 0);
 
 #if USE_EMBEDDED_COMPILER
-    size_t compiled_expression_cache_max_size_in_bytes = getClientConfiguration().getUInt64("compiled_expression_cache_size", DEFAULT_COMPILED_EXPRESSION_CACHE_MAX_SIZE);
-    size_t compiled_expression_cache_max_elements = getClientConfiguration().getUInt64("compiled_expression_cache_elements_size", DEFAULT_COMPILED_EXPRESSION_CACHE_MAX_ENTRIES);
+    size_t compiled_expression_cache_max_size_in_bytes = server_settings.compiled_expression_cache_size;
+    size_t compiled_expression_cache_max_elements = server_settings.compiled_expression_cache_elements_size;
     CompiledExpressionCacheFactory::instance().init(compiled_expression_cache_max_size_in_bytes, compiled_expression_cache_max_elements);
 #endif
 
@@ -698,7 +736,7 @@ void LocalServer::processConfig()
     /// We load temporary database first, because projections need it.
     DatabaseCatalog::instance().initializeAndLoadTemporaryDatabase();
 
-    std::string default_database = getClientConfiguration().getString("default_database", "default");
+    std::string default_database = server_settings.default_database;
     DatabaseCatalog::instance().attachDatabase(default_database, createClickHouseLocalDatabaseOverlay(default_database, global_context));
     global_context->setCurrentDatabase(default_database);
 
