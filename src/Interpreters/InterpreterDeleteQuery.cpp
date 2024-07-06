@@ -117,18 +117,10 @@ BlockIO InterpreterDeleteQuery::execute()
         {
             auto context = Context::createCopy(getContext());
             auto mode = context->getSettingsRef().lightweight_mutation_projection_mode;
-            if (mode == LightweightMutationProjectionMode::THROW)
-            {
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                    "DELETE query is not supported for table {} as it has projections. "
-                    "User should drop all the projections manually before running the query",
-                    table->getStorageID().getFullTableName());
-            }
-            else if (mode == LightweightMutationProjectionMode::DROP)
+
+            auto dropOrClearProjections = [&](bool isDrop)
             {
                 std::vector<String> all_projections = metadata_snapshot->projections.getAllRegisteredNames();
-
-                context->setSetting("mutations_sync", Field(context->getSettingsRef().lightweight_deletes_sync));
 
                 /// Drop projections first so that lightweight delete can be performed.
                 for (const auto & projection : all_projections)
@@ -136,7 +128,7 @@ BlockIO InterpreterDeleteQuery::execute()
                     String alter_query =
                         "ALTER TABLE " + table->getStorageID().getFullTableName()
                         + (delete_query.cluster.empty() ? "" : " ON CLUSTER " + backQuoteIfNeed(delete_query.cluster))
-                        + " DROP PROJECTION IF EXISTS " + projection;
+                        + (isDrop ? " DROP" : " CLEAR") +" PROJECTION " + projection;
 
                     ParserAlterQuery parser;
                     ASTPtr alter_ast = parseQuery(
@@ -151,6 +143,48 @@ BlockIO InterpreterDeleteQuery::execute()
                     InterpreterAlterQuery alter_interpreter(alter_ast, context);
                     alter_interpreter.execute();
                 }
+
+                return all_projections;
+            };
+
+            if (mode == LightweightMutationProjectionMode::THROW)
+            {
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "DELETE query is not supported for table {} as it has projections. "
+                    "User should drop all the projections manually before running the query",
+                    table->getStorageID().getFullTableName());
+            }
+            else if (mode == LightweightMutationProjectionMode::DROP)
+            {
+                dropOrClearProjections(true);
+            }
+            else if (mode == LightweightMutationProjectionMode::REBUILD)
+            {
+                std::vector<String> all_projections{dropOrClearProjections(false)};
+                BlockIO res = lightweightDelete();
+
+                for (const auto & projection : all_projections)
+                {
+                    String alter_query =
+                        "ALTER TABLE " + table->getStorageID().getFullTableName()
+                        + (delete_query.cluster.empty() ? "" : " ON CLUSTER " + backQuoteIfNeed(delete_query.cluster))
+                        + " MATERIALIZE PROJECTION " + projection;
+
+                    ParserAlterQuery parser;
+                    ASTPtr alter_ast = parseQuery(
+                        parser,
+                        alter_query.data(),
+                        alter_query.data() + alter_query.size(),
+                        "ALTER query",
+                        0,
+                        DBMS_DEFAULT_MAX_PARSER_DEPTH,
+                        DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+
+                    InterpreterAlterQuery alter_interpreter(alter_ast, context);
+                    alter_interpreter.execute();
+                }
+
+                return res;
             }
             else
             {
