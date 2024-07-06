@@ -12,32 +12,10 @@
 
 #include <Interpreters/Context.h>
 
-#include <Functions/CastOverloadResolver.h>
-
+#include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
 
 #include <base/scope_guard.h>
-
-
-namespace DB
-{
-
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-}
-
-class IFunctionBase;
-using FunctionBasePtr = std::shared_ptr<const IFunctionBase>;
-
-FunctionBasePtr createFunctionBaseCast(
-    ContextPtr, const char *, const ColumnsWithTypeAndName &, const DataTypePtr &, std::optional<CastDiagnostic>, CastType)
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Type conversions are not implemented for aggregate_function_state_deserialization_fuzzer");
-}
-
-}
-
 
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
 {

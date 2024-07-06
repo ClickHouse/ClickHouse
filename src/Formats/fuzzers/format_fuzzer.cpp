@@ -3,7 +3,6 @@
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
 
-#include <Formats/FormatFactory.h>
 #include <Formats/registerFormats.h>
 
 #include <QueryPipeline/Pipe.h>
@@ -19,26 +18,6 @@
 #include <Interpreters/parseColumnsListForTableFunction.h>
 
 #include <AggregateFunctions/registerAggregateFunctions.h>
-
-
-namespace DB
-{
-
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-}
-
-class IFunctionBase;
-using FunctionBasePtr = std::shared_ptr<const IFunctionBase>;
-
-FunctionBasePtr createFunctionBaseCast(
-    ContextPtr, const char *, const ColumnsWithTypeAndName &, const DataTypePtr &, std::optional<CastDiagnostic>, CastType)
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Type conversions are not implemented for format_fuzzer");
-}
-
-}
 
 
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
