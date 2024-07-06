@@ -250,10 +250,9 @@ String PreparedSets::toString(const PreparedSets::Hash & key, const DataTypes & 
     return buf.str();
 }
 
-FutureSetFromTuplePtr PreparedSets::addFromTuple(const Hash & key, Block block, const Settings & settings)
+FutureSetFromTuplePtr PreparedSets::addFromTuple(const Hash & key, Block block, const Settings & settings, const DataTypes & set_types, bool first_argument_has_nullable_nothing)
 {
-    auto from_tuple = std::make_shared<FutureSetFromTuple>(std::move(block), settings);
-    const auto & set_types = from_tuple->getTypes();
+    auto from_tuple = std::make_shared<FutureSetFromTuple>(std::move(block), settings, first_argument_has_nullable_nothing);
     auto & sets_by_hash = sets_from_tuple[key];
 
     for (const auto & set : sets_by_hash)
@@ -262,19 +261,6 @@ FutureSetFromTuplePtr PreparedSets::addFromTuple(const Hash & key, Block block, 
 
     sets_by_hash.push_back(from_tuple);
     return from_tuple;
-}
-
-void PreparedSets::addFromTupleIfNotExist(const Hash & key, Block block, const Settings & settings, bool first_argument_has_nullable_nothing)
-{
-    auto from_tuple = std::make_shared<FutureSetFromTuple>(std::move(block), settings, first_argument_has_nullable_nothing);
-    const auto & set_types = from_tuple->getTypes();
-    auto & sets_by_hash = sets_from_tuple[key];
-
-    for (const auto & set : sets_by_hash)
-        if (equals(set->getTypes(), set_types))
-            return;
-
-    sets_by_hash.push_back(from_tuple);
 }
 
 FutureSetFromStoragePtr PreparedSets::addFromStorage(const Hash & key, SetPtr set_)

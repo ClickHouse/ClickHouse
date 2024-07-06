@@ -147,9 +147,7 @@ public:
     using SetsFromSubqueries = std::unordered_map<Hash, FutureSetFromSubqueryPtr, Hashing>;
 
     FutureSetFromStoragePtr addFromStorage(const Hash & key, SetPtr set_);
-    FutureSetFromTuplePtr addFromTuple(const Hash & key, Block block, const Settings & settings);
-
-    void addFromTupleIfNotExist(const Hash & key, Block block, const Settings & settings, bool first_argument_has_nullable_nothing);
+    FutureSetFromTuplePtr addFromTuple(const Hash & key, Block block, const Settings & settings, const DataTypes & set_types, bool first_argument_has_nullable_nothing);
 
     FutureSetFromSubqueryPtr addFromSubquery(
         const Hash & key,
