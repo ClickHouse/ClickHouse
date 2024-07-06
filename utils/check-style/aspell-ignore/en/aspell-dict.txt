@@ -1102,7 +1102,7 @@ aggregatefunction
 aggregatingmergetree
 aggregatio
 aggretate
-aggthrow  
+aggthrow
 aggThrow
 aiochclient
 allocator
