@@ -24,6 +24,14 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 
+namespace
+{
+constexpr auto * database_column_name = "database";
+constexpr auto * table_column_name = "table";
+constexpr auto * engine_column_name = "engine";
+constexpr auto * active_column_name = "active";
+constexpr auto * storage_uuid_column_name = "storage_uuid";
+}
 
 namespace DB
 {
@@ -112,7 +120,7 @@ StoragesInfoStream::StoragesInfoStream(const ActionsDAGPtr & filter_by_database,
                 database_column_mut->insert(database.first);
         }
         block_to_filter.insert(ColumnWithTypeAndName(
-            std::move(database_column_mut), std::make_shared<DataTypeString>(), "database"));
+            std::move(database_column_mut), std::make_shared<DataTypeString>(), database_column_name));
 
         /// Filter block_to_filter with column 'database'.
         if (filter_by_database)
@@ -120,7 +128,7 @@ StoragesInfoStream::StoragesInfoStream(const ActionsDAGPtr & filter_by_database,
         rows = block_to_filter.rows();
 
         /// Block contains new columns, update database_column.
-        ColumnPtr database_column_for_filter = block_to_filter.getByName("database").column;
+        ColumnPtr database_column_for_filter = block_to_filter.getByName(database_column_name).column;
 
         if (rows)
         {
@@ -187,10 +195,10 @@ StoragesInfoStream::StoragesInfoStream(const ActionsDAGPtr & filter_by_database,
         }
     }
 
-    block_to_filter.insert(ColumnWithTypeAndName(std::move(table_column_mut), std::make_shared<DataTypeString>(), "table"));
-    block_to_filter.insert(ColumnWithTypeAndName(std::move(engine_column_mut), std::make_shared<DataTypeString>(), "engine"));
-    block_to_filter.insert(ColumnWithTypeAndName(std::move(active_column_mut), std::make_shared<DataTypeUInt8>(), "active"));
-    block_to_filter.insert(ColumnWithTypeAndName(std::move(storage_uuid_column_mut), std::make_shared<DataTypeUUID>(), "uuid"));
+    block_to_filter.insert(ColumnWithTypeAndName(std::move(table_column_mut), std::make_shared<DataTypeString>(), table_column_name));
+    block_to_filter.insert(ColumnWithTypeAndName(std::move(engine_column_mut), std::make_shared<DataTypeString>(), engine_column_name));
+    block_to_filter.insert(ColumnWithTypeAndName(std::move(active_column_mut), std::make_shared<DataTypeUInt8>(), active_column_name));
+    block_to_filter.insert(ColumnWithTypeAndName(std::move(storage_uuid_column_mut), std::make_shared<DataTypeUUID>(), storage_uuid_column_name));
 
     if (rows)
     {
@@ -200,10 +208,10 @@ StoragesInfoStream::StoragesInfoStream(const ActionsDAGPtr & filter_by_database,
         rows = block_to_filter.rows();
     }
 
-    database_column = block_to_filter.getByName("database").column;
-    table_column = block_to_filter.getByName("table").column;
-    active_column = block_to_filter.getByName("active").column;
-    storage_uuid_column = block_to_filter.getByName("uuid").column;
+    database_column = block_to_filter.getByName(database_column_name).column;
+    table_column = block_to_filter.getByName(table_column_name).column;
+    active_column = block_to_filter.getByName(active_column_name).column;
+    storage_uuid_column = block_to_filter.getByName(storage_uuid_column_name).column;
 }
 
 class ReadFromSystemPartsBase : public SourceStepWithFilter
@@ -255,22 +263,23 @@ ReadFromSystemPartsBase::ReadFromSystemPartsBase(
 
 void ReadFromSystemPartsBase::applyFilters(ActionDAGNodes added_filter_nodes)
 {
-    filter_actions_dag = ActionsDAG::buildFilterActionsDAG(added_filter_nodes.nodes);
+    SourceStepWithFilter::applyFilters(std::move(added_filter_nodes));
+
     if (filter_actions_dag)
     {
         const auto * predicate = filter_actions_dag->getOutputs().at(0);
 
         Block block;
-        block.insert(ColumnWithTypeAndName({}, std::make_shared<DataTypeString>(), "database"));
+        block.insert(ColumnWithTypeAndName({}, std::make_shared<DataTypeString>(), database_column_name));
 
         filter_by_database = VirtualColumnUtils::splitFilterDagForAllowedInputs(predicate, &block);
         if (filter_by_database)
             VirtualColumnUtils::buildSetsForDAG(filter_by_database, context);
 
-        block.insert(ColumnWithTypeAndName({}, std::make_shared<DataTypeString>(), "table"));
-        block.insert(ColumnWithTypeAndName({}, std::make_shared<DataTypeString>(), "engine"));
-        block.insert(ColumnWithTypeAndName({}, std::make_shared<DataTypeUInt8>(), "active"));
-        block.insert(ColumnWithTypeAndName({}, std::make_shared<DataTypeUUID>(), "uuid"));
+        block.insert(ColumnWithTypeAndName({}, std::make_shared<DataTypeString>(), table_column_name));
+        block.insert(ColumnWithTypeAndName({}, std::make_shared<DataTypeString>(), engine_column_name));
+        block.insert(ColumnWithTypeAndName({}, std::make_shared<DataTypeUInt8>(), active_column_name));
+        block.insert(ColumnWithTypeAndName({}, std::make_shared<DataTypeUUID>(), storage_uuid_column_name));
 
         filter_by_other_columns = VirtualColumnUtils::splitFilterDagForAllowedInputs(predicate, &block);
         if (filter_by_other_columns)

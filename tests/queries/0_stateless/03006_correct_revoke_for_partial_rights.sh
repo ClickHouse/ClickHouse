@@ -5,8 +5,8 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 db=${CLICKHOUSE_DATABASE}
-user1="user1_03006_$db_$RANDOM"
-user2="user2_03006_$db_$RANDOM"
+user1="user1_03006_${db}_$RANDOM"
+user2="user2_03006_${db}_$RANDOM"
 
 ${CLICKHOUSE_CLIENT} --multiquery <<EOF
 DROP DATABASE IF EXISTS $db;

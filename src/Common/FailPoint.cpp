@@ -39,6 +39,8 @@ static struct InitFiu
     REGULAR(replicated_merge_tree_commit_zk_fail_when_recovering_from_hw_fault) \
     REGULAR(use_delayed_remote_source) \
     REGULAR(cluster_discovery_faults) \
+    REGULAR(replicated_sends_failpoint) \
+    REGULAR(stripe_log_sink_write_fallpoint)\
     ONCE(smt_commit_merge_mutate_zk_fail_after_op) \
     ONCE(smt_commit_merge_mutate_zk_fail_before_op) \
     ONCE(smt_commit_write_zk_fail_after_op) \
@@ -50,9 +52,13 @@ static struct InitFiu
     REGULAR(check_table_query_delay_for_part) \
     REGULAR(dummy_failpoint) \
     REGULAR(prefetched_reader_pool_failpoint) \
-    PAUSEABLE_ONCE(dummy_pausable_failpoint_once) \
+    PAUSEABLE_ONCE(replicated_merge_tree_insert_retry_pause) \
+    PAUSEABLE_ONCE(finish_set_quorum_failed_parts) \
+    PAUSEABLE_ONCE(finish_clean_quorum_failed_parts) \
     PAUSEABLE(dummy_pausable_failpoint) \
-    ONCE(execute_query_calling_empty_set_result_func_on_exception)
+    ONCE(execute_query_calling_empty_set_result_func_on_exception) \
+    ONCE(receive_timeout_on_table_status_response)
+
 
 namespace FailPoints
 {

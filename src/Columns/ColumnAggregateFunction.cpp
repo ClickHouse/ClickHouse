@@ -1,7 +1,13 @@
 #include <Columns/ColumnAggregateFunction.h>
 
+#include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/MaskOperations.h>
+#include <IO/Operators.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/WriteBufferFromArena.h>
+#include <IO/WriteBufferFromString.h>
+#include <Processors/Transforms/ColumnGathererTransform.h>
 #include <Common/AlignedBuffer.h>
 #include <Common/Arena.h>
 #include <Common/FieldVisitorToString.h>
@@ -11,10 +17,6 @@
 #include <Common/assert_cast.h>
 #include <Common/iota.h>
 #include <Common/typeid_cast.h>
-#include <IO/Operators.h>
-#include <IO/WriteBufferFromArena.h>
-#include <IO/WriteBufferFromString.h>
-#include <Processors/Transforms/ColumnGathererTransform.h>
 
 
 namespace DB
@@ -107,6 +109,11 @@ ConstArenas concatArenas(const ConstArenas & array, ConstArenaPtr arena)
     return result;
 }
 
+}
+
+std::string ColumnAggregateFunction::getName() const
+{
+    return "AggregateFunction(" + func->getName() + ")";
 }
 
 MutableColumnPtr ColumnAggregateFunction::convertToValues(MutableColumnPtr column)

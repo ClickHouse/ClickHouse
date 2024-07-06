@@ -1,3 +1,5 @@
+// NOLINTBEGIN(clang-analyzer-optin.core.EnumCastOutOfRange)
+
 #include <iterator>
 #include <variant>
 #include <IO/Operators.h>
@@ -9,7 +11,7 @@
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/SipHash.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <base/hex.h>
 #include <base/scope_guard.h>
@@ -38,6 +40,8 @@ namespace ProfileEvents
     extern const Event KeeperGetRequest;
     extern const Event KeeperListRequest;
     extern const Event KeeperExistsRequest;
+    extern const Event KeeperPreprocessElapsedMicroseconds;
+    extern const Event KeeperProcessElapsedMicroseconds;
 }
 
 namespace DB
@@ -532,6 +536,10 @@ bool KeeperStorage::UncommittedState::hasACL(int64_t session_id, bool is_local, 
     if (is_local)
         return check_auth(storage.session_and_auth[session_id]);
 
+    /// we want to close the session and with that we will remove all the auth related to the session
+    if (closed_sessions.contains(session_id))
+        return false;
+
     if (check_auth(storage.session_and_auth[session_id]))
         return true;
 
@@ -556,6 +564,10 @@ void KeeperStorage::UncommittedState::addDelta(Delta new_delta)
     {
         auto & uncommitted_auth = session_and_auth[auth_delta->session_id];
         uncommitted_auth.emplace_back(&auth_delta->auth_id);
+    }
+    else if (const auto * close_session_delta = std::get_if<CloseSessionDelta>(&added_delta.operation))
+    {
+        closed_sessions.insert(close_session_delta->session_id);
     }
 }
 
@@ -607,7 +619,10 @@ void KeeperStorage::UncommittedState::commit(int64_t commit_zxid)
             uncommitted_auth.pop_front();
             if (uncommitted_auth.empty())
                 session_and_auth.erase(add_auth->session_id);
-
+        }
+        else if (auto * close_session = std::get_if<CloseSessionDelta>(&front_delta.operation))
+        {
+            closed_sessions.erase(close_session->session_id);
         }
 
         deltas.pop_front();
@@ -679,6 +694,10 @@ void KeeperStorage::UncommittedState::rollback(int64_t rollback_zxid)
                 if (uncommitted_auth.empty())
                     session_and_auth.erase(add_auth->session_id);
             }
+        }
+        else if (auto * close_session = std::get_if<CloseSessionDelta>(&delta_it->operation))
+        {
+           closed_sessions.erase(close_session->session_id);
         }
     }
 
@@ -876,6 +895,10 @@ Coordination::Error KeeperStorage::commit(int64_t commit_zxid)
                     session_and_auth[operation.session_id].emplace_back(std::move(operation.auth_id));
                     return Coordination::Error::ZOK;
                 }
+                else if constexpr (std::same_as<DeltaType, KeeperStorage::CloseSessionDelta>)
+                {
+                    return Coordination::Error::ZOK;
+                }
                 else
                 {
                     // shouldn't be called in any process functions
@@ -1000,9 +1023,11 @@ struct KeeperStorageHeartbeatRequestProcessor final : public KeeperStorageReques
 {
     using KeeperStorageRequestProcessor::KeeperStorageRequestProcessor;
     Coordination::ZooKeeperResponsePtr
-    process(KeeperStorage & /* storage */, int64_t /* zxid */) const override
+    process(KeeperStorage & storage, int64_t zxid) const override
     {
-        return zk_request->makeResponse();
+        Coordination::ZooKeeperResponsePtr response_ptr = zk_request->makeResponse();
+        response_ptr->error = storage.commit(zxid);
+        return response_ptr;
     }
 };
 
@@ -1172,8 +1197,7 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
             else if (parent_cversion > node.cversion)
                 node.cversion = parent_cversion;
 
-            if (zxid > node.pzxid)
-                node.pzxid = zxid;
+            node.pzxid = std::max(zxid, node.pzxid);
             node.increaseNumChildren();
         };
 
@@ -1351,9 +1375,8 @@ struct KeeperStorageRemoveRequestProcessor final : public KeeperStorageRequestPr
                 {
                     [zxid](KeeperStorage::Node & parent)
                     {
-                        if (parent.pzxid < zxid)
-                            parent.pzxid = zxid;
-                   }
+                        parent.pzxid = std::max(parent.pzxid, zxid);
+                    }
                 }
             );
         };
@@ -2288,6 +2311,20 @@ void KeeperStorage::preprocessRequest(
     std::optional<Digest> digest,
     int64_t log_idx)
 {
+    Stopwatch watch;
+    SCOPE_EXIT({
+        auto elapsed = watch.elapsedMicroseconds();
+        if (auto elapsed_ms = elapsed / 1000; elapsed_ms > keeper_context->getCoordinationSettings()->log_slow_cpu_threshold_ms)
+        {
+            LOG_INFO(
+                getLogger("KeeperStorage"),
+                "Preprocessing a request took too long ({}ms).\nRequest info: {}",
+                elapsed_ms,
+                zk_request->toString(/*short_format=*/true));
+        }
+        ProfileEvents::increment(ProfileEvents::KeeperPreprocessElapsedMicroseconds, elapsed);
+    });
+
     if (!initialized)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "KeeperStorage system nodes are not initialized");
 
@@ -2367,6 +2404,7 @@ void KeeperStorage::preprocessRequest(
             ephemerals.erase(session_ephemerals);
         }
 
+        new_deltas.emplace_back(transaction.zxid, CloseSessionDelta{session_id});
         new_digest = calculateNodesDigest(new_digest, new_deltas);
         return;
     }
@@ -2387,6 +2425,20 @@ KeeperStorage::ResponsesForSessions KeeperStorage::processRequest(
     bool check_acl,
     bool is_local)
 {
+    Stopwatch watch;
+    SCOPE_EXIT({
+        auto elapsed = watch.elapsedMicroseconds();
+        if (auto elapsed_ms = elapsed / 1000; elapsed_ms > keeper_context->getCoordinationSettings()->log_slow_cpu_threshold_ms)
+        {
+            LOG_INFO(
+                getLogger("KeeperStorage"),
+                "Processing a request took too long ({}ms).\nRequest info: {}",
+                elapsed_ms,
+                zk_request->toString(/*short_format=*/true));
+        }
+        ProfileEvents::increment(ProfileEvents::KeeperProcessElapsedMicroseconds, elapsed);
+    });
+
     if (!initialized)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "KeeperStorage system nodes are not initialized");
 
@@ -2427,8 +2479,6 @@ KeeperStorage::ResponsesForSessions KeeperStorage::processRequest(
                 results.insert(results.end(), responses.begin(), responses.end());
             }
         }
-
-        uncommitted_state.commit(zxid);
 
         clearDeadWatches(session_id);
         auto auth_it = session_and_auth.find(session_id);
@@ -2474,7 +2524,6 @@ KeeperStorage::ResponsesForSessions KeeperStorage::processRequest(
         else
         {
             response = request_processor->process(*this, zxid);
-            uncommitted_state.commit(zxid);
         }
 
         /// Watches for this requests are added to the watches lists
@@ -2514,6 +2563,7 @@ KeeperStorage::ResponsesForSessions KeeperStorage::processRequest(
         results.push_back(ResponseForSession{session_id, response});
     }
 
+    uncommitted_state.commit(zxid);
     return results;
 }
 
@@ -2708,3 +2758,5 @@ String KeeperStorage::generateDigest(const String & userdata)
 
 
 }
+
+// NOLINTEND(clang-analyzer-optin.core.EnumCastOutOfRange)

@@ -2,6 +2,7 @@
 
 set allow_deprecated_syntax_for_merge_tree=1;
 set optimize_on_insert = 0;
+set optimize_trivial_insert_select = 1;
 
 drop table if exists mult_tab;
 create table mult_tab (date Date, value String, version UInt64, sign Int8) engine = VersionedCollapsingMergeTree(date, (date), 8192, sign, version);

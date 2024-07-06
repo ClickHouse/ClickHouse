@@ -16,6 +16,8 @@
 #include <IO/ReadBufferFromString.h>
 #include <Poco/UUIDGenerator.h>
 #include <base/insertAtEnd.h>
+
+#include <boost/range/adaptor/map.hpp>
 #include <boost/range/algorithm/copy.hpp>
 
 namespace fs = std::filesystem;
@@ -91,8 +93,6 @@ namespace
                         break;
                     }
 
-                    size_t id_endpos = line.find('\t');
-                    String id_as_string = line.substr(0, id_endpos);
                     UUID id = parse<UUID>(line);
                     line.clear();
 

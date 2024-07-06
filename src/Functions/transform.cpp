@@ -755,7 +755,6 @@ namespace
 
             WhichDataType which(from_type);
 
-            /// Note: Doesn't check the duplicates in the `from` array.
             /// Field may be of Float type, but for the purpose of bitwise equality we can treat them as UInt64
             if (isNativeNumber(which) || which.isDecimal32() || which.isDecimal64() || which.isEnum())
             {
@@ -777,7 +776,7 @@ namespace
 #pragma clang diagnostic pop
 
                         memcpy(dst, ref.data, ref.size);
-                        table[key] = i;
+                        table.insertIfNotPresent(key, i);
                     }
                 }
             }
@@ -790,7 +789,7 @@ namespace
                     if (applyVisitor(FieldVisitorAccurateEquals(), (*cache.from_column)[i], (*from_column_uncasted)[i]))
                     {
                         StringRef ref = cache.from_column->getDataAt(i);
-                        table[ref] = i;
+                        table.insertIfNotPresent(ref, i);
                     }
                 }
             }
@@ -804,7 +803,7 @@ namespace
                     {
                         SipHash hash;
                         cache.from_column->updateHashWithValue(i, hash);
-                        table[hash.get128()] = i;
+                        table.insertIfNotPresent(hash.get128(), i);
                     }
                 }
             }

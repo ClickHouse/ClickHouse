@@ -448,7 +448,7 @@ std::vector<StorageID> TablesDependencyGraph::getTables() const
 void TablesDependencyGraph::mergeWith(const TablesDependencyGraph & other)
 {
     for (const auto & other_node : other.nodes)
-        addDependencies(other_node->storage_id, other.getDependencies(*other_node));
+        addDependencies(other_node->storage_id, TablesDependencyGraph::getDependencies(*other_node));
 }
 
 

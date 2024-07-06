@@ -1,10 +1,10 @@
 ---
 slug: /en/sql-reference/data-types/variant
-sidebar_position: 55
-sidebar_label: Variant
+sidebar_position: 40
+sidebar_label: Variant(T1, T2, ...)
 ---
 
-# Variant(T1, T2, T3, ...)
+# Variant(T1, T2, ...)
 
 This type represents a union of other data types. Type `Variant(T1, T2, ..., TN)` means that each row of this type 
 has a value of either type `T1` or `T2` or ... or `TN` or none of them (`NULL` value).
@@ -190,22 +190,67 @@ SELECT toTypeName(variantType(v)) FROM test LIMIT 1;
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-## Conversion between Variant column and other columns
+## Conversion between a Variant column and other columns
 
-There are 3 possible conversions that can be performed with Variant column.
+There are 4 possible conversions that can be performed with a column of type `Variant`.
 
-### Converting an ordinary column to a Variant column
+### Converting a String column to a Variant column
 
-It is possible to convert ordinary column with type `T` to a `Variant` column containing this type:
+Conversion from `String` to `Variant` is performed by parsing a value of `Variant` type from the string value:
 
 ```sql
-SELECT toTypeName(variant) as type_name, 'Hello, World!'::Variant(UInt64, String, Array(UInt64)) as variant;
+SELECT '42'::Variant(String, UInt64) as variant, variantType(variant) as variant_type
 ```
 
 ```text
-┌─type_name──────────────────────────────┬─variant───────┐
-│ Variant(Array(UInt64), String, UInt64) │ Hello, World! │
-└────────────────────────────────────────┴───────────────┘
+┌─variant─┬─variant_type─┐
+│ 42      │ UInt64       │
+└─────────┴──────────────┘
+```
+
+```sql
+SELECT '[1, 2, 3]'::Variant(String, Array(UInt64)) as variant, variantType(variant) as variant_type
+```
+
+```text
+┌─variant─┬─variant_type──┐
+│ [1,2,3] │ Array(UInt64) │
+└─────────┴───────────────┘
+```
+
+```sql
+SELECT CAST(map('key1', '42', 'key2', 'true', 'key3', '2020-01-01'), 'Map(String, Variant(UInt64, Bool, Date))') as map_of_variants, mapApply((k, v) -> (k, variantType(v)), map_of_variants) as map_of_variant_types```
+```
+
+```text
+┌─map_of_variants─────────────────────────────┬─map_of_variant_types──────────────────────────┐
+│ {'key1':42,'key2':true,'key3':'2020-01-01'} │ {'key1':'UInt64','key2':'Bool','key3':'Date'} │
+└─────────────────────────────────────────────┴───────────────────────────────────────────────┘
+```
+
+### Converting an ordinary column to a Variant column
+
+It is possible to convert an ordinary column with type `T` to a `Variant` column containing this type:
+
+```sql
+SELECT toTypeName(variant) as type_name, [1,2,3]::Array(UInt64)::Variant(UInt64, String, Array(UInt64)) as variant, variantType(variant) as variant_name
+ ```
+
+```text
+┌─type_name──────────────────────────────┬─variant─┬─variant_name──┐
+│ Variant(Array(UInt64), String, UInt64) │ [1,2,3] │ Array(UInt64) │
+└────────────────────────────────────────┴─────────┴───────────────┘
+```
+
+Note: converting from `String` type is always performed through parsing, if you need to convert `String` column to `String` variant of a `Variant` without parsing, you can do the following:
+```sql
+SELECT '[1, 2, 3]'::Variant(String)::Variant(String, Array(UInt64), UInt64) as variant, variantType(variant) as variant_type
+```
+
+```sql
+┌─variant───┬─variant_type─┐
+│ [1, 2, 3] │ String       │
+└───────────┴──────────────┘
 ```
 
 ### Converting a Variant column to an ordinary column
@@ -394,4 +439,38 @@ SELECT v, variantType(v) FROM test ORDER by v;
 │ 1   │ UInt32         │
 │ 100 │ UInt32         │
 └─────┴────────────────┘
+```
+
+## JSONExtract functions with Variant
+
+All `JSONExtract*` functions support `Variant` type:
+
+```sql
+SELECT JSONExtract('{"a" : [1, 2, 3]}', 'a', 'Variant(UInt32, String, Array(UInt32))') AS variant, variantType(variant) AS variant_type;
+```
+
+```text
+┌─variant─┬─variant_type──┐
+│ [1,2,3] │ Array(UInt32) │
+└─────────┴───────────────┘
+```
+
+```sql
+SELECT JSONExtract('{"obj" : {"a" : 42, "b" : "Hello", "c" : [1,2,3]}}', 'obj', 'Map(String, Variant(UInt32, String, Array(UInt32)))') AS map_of_variants, mapApply((k, v) -> (k, variantType(v)), map_of_variants) AS map_of_variant_types
+```
+
+```text
+┌─map_of_variants──────────────────┬─map_of_variant_types────────────────────────────┐
+│ {'a':42,'b':'Hello','c':[1,2,3]} │ {'a':'UInt32','b':'String','c':'Array(UInt32)'} │
+└──────────────────────────────────┴─────────────────────────────────────────────────┘
+```
+
+```sql
+SELECT JSONExtractKeysAndValues('{"a" : 42, "b" : "Hello", "c" : [1,2,3]}', 'Variant(UInt32, String, Array(UInt32))') AS variants, arrayMap(x -> (x.1, variantType(x.2)), variants) AS variant_types
+```
+
+```text
+┌─variants───────────────────────────────┬─variant_types─────────────────────────────────────────┐
+│ [('a',42),('b','Hello'),('c',[1,2,3])] │ [('a','UInt32'),('b','String'),('c','Array(UInt32)')] │
+└────────────────────────────────────────┴───────────────────────────────────────────────────────┘
 ```

@@ -62,4 +62,6 @@ DataTypePtr makeNullableOrLowCardinalityNullableSafe(const DataTypePtr & type);
 /// Nullable(T) -> T, LowCardinality(Nullable(T)) -> T
 DataTypePtr removeNullableOrLowCardinalityNullable(const DataTypePtr & type);
 
+bool canContainNull(const IDataType & type);
+
 }

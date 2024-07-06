@@ -44,6 +44,7 @@
 #include <Formats/FormatFactory.h>
 #include <Storages/StorageInput.h>
 
+#include <Access/ContextAccess.h>
 #include <Access/EnabledQuota.h>
 #include <Interpreters/ApplyWithGlobalVisitor.h>
 #include <Interpreters/Context.h>
@@ -97,12 +98,12 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS;
+    extern const int QUERY_CACHE_USED_WITH_SYSTEM_TABLE;
     extern const int INTO_OUTFILE_NOT_ALLOWED;
     extern const int INVALID_TRANSACTION;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int QUERY_WAS_CANCELLED;
-    extern const int INCORRECT_DATA;
     extern const int SYNTAX_ERROR;
     extern const int SUPPORT_IS_DISABLED;
     extern const int INCORRECT_QUERY;
@@ -199,6 +200,7 @@ static void logException(ContextPtr context, QueryLogElement & elem, bool log_er
     /// so we pass elem.exception_format_string as format string instead.
     PreformattedMessage message;
     message.format_string = elem.exception_format_string;
+    message.format_string_args = elem.exception_format_string_args;
 
     if (elem.stack_trace.empty() || !log_error)
         message.text = fmt::format("{} (from {}){} (in query: {})", elem.exception,
@@ -218,6 +220,17 @@ static void logException(ContextPtr context, QueryLogElement & elem, bool log_er
         LOG_ERROR(getLogger("executeQuery"), message);
     else
         LOG_INFO(getLogger("executeQuery"), message);
+}
+
+static void
+addPrivilegesInfoToQueryLogElement(QueryLogElement & element, const ContextPtr context_ptr)
+{
+    const auto & privileges_info = context_ptr->getQueryPrivilegesInfo();
+    {
+        std::lock_guard lock(privileges_info.mutex);
+        element.used_privileges = privileges_info.used_privileges;
+        element.missing_privileges = privileges_info.missing_privileges;
+    }
 }
 
 static void
@@ -258,25 +271,34 @@ addStatusInfoToQueryLogElement(QueryLogElement & element, const QueryStatusInfo 
     /// We need to refresh the access info since dependent views might have added extra information, either during
     /// creation of the view (PushingToViews chain) or while executing its internal SELECT
     const auto & access_info = context_ptr->getQueryAccessInfo();
-    element.query_databases.insert(access_info.databases.begin(), access_info.databases.end());
-    element.query_tables.insert(access_info.tables.begin(), access_info.tables.end());
-    element.query_columns.insert(access_info.columns.begin(), access_info.columns.end());
-    element.query_partitions.insert(access_info.partitions.begin(), access_info.partitions.end());
-    element.query_projections.insert(access_info.projections.begin(), access_info.projections.end());
-    element.query_views.insert(access_info.views.begin(), access_info.views.end());
+    {
+        std::lock_guard lock(access_info.mutex);
+        element.query_databases.insert(access_info.databases.begin(), access_info.databases.end());
+        element.query_tables.insert(access_info.tables.begin(), access_info.tables.end());
+        element.query_columns.insert(access_info.columns.begin(), access_info.columns.end());
+        element.query_partitions.insert(access_info.partitions.begin(), access_info.partitions.end());
+        element.query_projections.insert(access_info.projections.begin(), access_info.projections.end());
+        element.query_views.insert(access_info.views.begin(), access_info.views.end());
+    }
 
-    const auto factories_info = context_ptr->getQueryFactoriesInfo();
-    element.used_aggregate_functions = factories_info.aggregate_functions;
-    element.used_aggregate_function_combinators = factories_info.aggregate_function_combinators;
-    element.used_database_engines = factories_info.database_engines;
-    element.used_data_type_families = factories_info.data_type_families;
-    element.used_dictionaries = factories_info.dictionaries;
-    element.used_formats = factories_info.formats;
-    element.used_functions = factories_info.functions;
-    element.used_storages = factories_info.storages;
-    element.used_table_functions = factories_info.table_functions;
+    /// We copy QueryFactoriesInfo for thread-safety, because it is possible that query context can be modified by some processor even
+    /// after query is finished
+    const auto & factories_info(context_ptr->getQueryFactoriesInfo());
+    {
+        std::lock_guard lock(factories_info.mutex);
+        element.used_aggregate_functions = factories_info.aggregate_functions;
+        element.used_aggregate_function_combinators = factories_info.aggregate_function_combinators;
+        element.used_database_engines = factories_info.database_engines;
+        element.used_data_type_families = factories_info.data_type_families;
+        element.used_dictionaries = factories_info.dictionaries;
+        element.used_formats = factories_info.formats;
+        element.used_functions = factories_info.functions;
+        element.used_storages = factories_info.storages;
+        element.used_table_functions = factories_info.table_functions;
+    }
 
     element.async_read_counters = context_ptr->getAsyncReadCounters();
+    addPrivilegesInfoToQueryLogElement(element, context_ptr);
 }
 
 
@@ -323,6 +345,7 @@ QueryLogElement logQueryStart(
         if (pipeline.initialized())
         {
             const auto & info = context->getQueryAccessInfo();
+            std::lock_guard lock(info.mutex);
             elem.query_databases = info.databases;
             elem.query_tables = info.tables;
             elem.query_columns = info.columns;
@@ -503,6 +526,7 @@ void logQueryException(
     auto exception_message = getCurrentExceptionMessageAndPattern(/* with_stacktrace */ false);
     elem.exception = std::move(exception_message.text);
     elem.exception_format_string = exception_message.format_string;
+    elem.exception_format_string_args = exception_message.format_string_args;
 
     QueryStatusPtr process_list_elem = context->getProcessListElement();
 
@@ -590,12 +614,15 @@ void logExceptionBeforeStart(
             elem.formatted_query = queryToString(ast);
     }
 
+    addPrivilegesInfoToQueryLogElement(elem, context);
+
     // We don't calculate databases, tables and columns when the query isn't able to start
 
     elem.exception_code = getCurrentExceptionCode();
     auto exception_message = getCurrentExceptionMessageAndPattern(/* with_stacktrace */ false);
     elem.exception = std::move(exception_message.text);
     elem.exception_format_string = exception_message.format_string;
+    elem.exception_format_string_args = exception_message.format_string_args;
 
     elem.client_info = context->getClientInfo();
 
@@ -641,15 +668,6 @@ void logExceptionBeforeStart(
         {
             ProfileEvents::increment(ProfileEvents::FailedInsertQuery);
         }
-    }
-}
-
-static void setQuerySpecificSettings(ASTPtr & ast, ContextMutablePtr context)
-{
-    if (auto * ast_insert_into = ast->as<ASTInsertQuery>())
-    {
-        if (ast_insert_into->watch)
-            context->setSetting("output_format_enable_streaming", 1);
     }
 }
 
@@ -779,6 +797,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             catch (const Exception & e)
             {
                 if (e.code() == ErrorCodes::SYNTAX_ERROR)
+                    /// Don't print the original query text because it may contain sensitive data.
                     throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Inconsistent AST formatting: the query:\n{}\ncannot parse.",
                         formatted1);
@@ -803,12 +822,14 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
         bool is_create_parameterized_view = false;
         if (const auto * create_query = ast->as<ASTCreateQuery>())
+        {
             is_create_parameterized_view = create_query->isParameterizedView();
+        }
         else if (const auto * explain_query = ast->as<ASTExplainQuery>())
         {
-            assert(!explain_query->children.empty());
-            if (const auto * create_of_explain_query = explain_query->children[0]->as<ASTCreateQuery>())
-                is_create_parameterized_view = create_of_explain_query->isParameterizedView();
+            if (!explain_query->children.empty())
+                if (const auto * create_of_explain_query = explain_query->children[0]->as<ASTCreateQuery>())
+                    is_create_parameterized_view = create_of_explain_query->isParameterizedView();
         }
 
         /// Replace ASTQueryParameter with ASTLiteral for prepared statements.
@@ -898,8 +919,6 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         if (auto * insert_query = ast->as<ASTInsertQuery>())
             insert_query->tail = istr;
 
-        setQuerySpecificSettings(ast, context);
-
         /// There is an option of probabilistic logging of queries.
         /// If it is used - do the random sampling and "collapse" the settings.
         /// It allows to consistently log queries with all the subqueries in distributed query processing
@@ -923,7 +942,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         /// Propagate WITH statement to children ASTSelect.
         if (settings.enable_global_with_statement)
         {
-            ApplyWithGlobalVisitor().visit(ast);
+            ApplyWithGlobalVisitor::visit(ast);
         }
 
         {
@@ -1089,6 +1108,15 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             && (ast->as<ASTSelectQuery>() || ast->as<ASTSelectWithUnionQuery>());
         QueryCache::Usage query_cache_usage = QueryCache::Usage::None;
 
+        /// If the query runs with "use_query_cache = 1", we first probe if the query cache already contains the query result (if yes:
+        /// return result from cache). If doesn't, we execute the query normally and write the result into the query cache. Both steps use a
+        /// hash of the AST, the current database and the settings as cache key. Unfortunately, the settings are in some places internally
+        /// modified between steps 1 and 2 (= during query execution) - this is silly but hard to forbid. As a result, the hashes no longer
+        /// match and the cache is rendered ineffective. Therefore make a copy of the settings and use it for steps 1 and 2.
+        std::optional<Settings> settings_copy;
+        if (can_use_query_cache)
+            settings_copy = settings;
+
         if (!async_insert)
         {
             /// If it is a non-internal SELECT, and passive (read) use of the query cache is enabled, and the cache knows the query, then set
@@ -1097,7 +1125,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             {
                 if (can_use_query_cache && settings.enable_reads_from_query_cache)
                 {
-                    QueryCache::Key key(ast, context->getUserID(), context->getCurrentRoles());
+                    QueryCache::Key key(ast, context->getCurrentDatabase(), *settings_copy, context->getUserID(), context->getCurrentRoles());
                     QueryCache::Reader reader = query_cache->createReader(key);
                     if (reader.hasCacheEntryForKey())
                     {
@@ -1181,7 +1209,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 }
 
                 if (auto * create_interpreter = typeid_cast<InterpreterCreateQuery *>(&*interpreter))
+                {
                     create_interpreter->setIsRestoreFromBackup(flags.distributed_backup_restore);
+                }
 
                 {
                     std::unique_ptr<OpenTelemetry::SpanHolder> span;
@@ -1198,18 +1228,29 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     /// top of the pipeline which stores the result in the query cache.
                     if (can_use_query_cache && settings.enable_writes_to_query_cache)
                     {
+                        /// Only use the query cache if the query does not contain non-deterministic functions or system tables (which are typically non-deterministic)
+
                         const bool ast_contains_nondeterministic_functions = astContainsNonDeterministicFunctions(ast, context);
+                        const bool ast_contains_system_tables = astContainsSystemTables(ast, context);
+
                         const QueryCacheNondeterministicFunctionHandling nondeterministic_function_handling = settings.query_cache_nondeterministic_function_handling;
+                        const QueryCacheSystemTableHandling system_table_handling = settings.query_cache_system_table_handling;
 
                         if (ast_contains_nondeterministic_functions && nondeterministic_function_handling == QueryCacheNondeterministicFunctionHandling::Throw)
                             throw Exception(ErrorCodes::QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS,
                                 "The query result was not cached because the query contains a non-deterministic function."
                                 " Use setting `query_cache_nondeterministic_function_handling = 'save'` or `= 'ignore'` to cache the query result regardless or to omit caching");
 
-                        if (!ast_contains_nondeterministic_functions || nondeterministic_function_handling == QueryCacheNondeterministicFunctionHandling::Save)
+                        if (ast_contains_system_tables && system_table_handling == QueryCacheSystemTableHandling::Throw)
+                            throw Exception(ErrorCodes::QUERY_CACHE_USED_WITH_SYSTEM_TABLE,
+                                "The query result was not cached because the query contains a system table."
+                                " Use setting `query_cache_system_table_handling = 'save'` or `= 'ignore'` to cache the query result regardless or to omit caching");
+
+                        if ((!ast_contains_nondeterministic_functions || nondeterministic_function_handling == QueryCacheNondeterministicFunctionHandling::Save)
+                            && (!ast_contains_system_tables || system_table_handling == QueryCacheSystemTableHandling::Save))
                         {
                             QueryCache::Key key(
-                                ast, res.pipeline.getHeader(),
+                                ast, context->getCurrentDatabase(), *settings_copy, res.pipeline.getHeader(),
                                 context->getUserID(), context->getCurrentRoles(),
                                 settings.query_cache_share_between_users,
                                 std::chrono::system_clock::now() + std::chrono::seconds(settings.query_cache_ttl),
@@ -1236,32 +1277,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                             }
                         }
                     }
-
                 }
             }
-        }
-        // Here we check if our our projections contain force_optimize_projection_name
-        if (!settings.force_optimize_projection_name.value.empty())
-        {
-            bool found = false;
-            std::set<std::string> projections = context->getQueryAccessInfo().projections;
-
-            for (const auto &projection : projections)
-            {
-                // projection value has structure like: <db_name>.<table_name>.<projection_name>
-                // We need to get only the projection name
-                size_t last_dot_pos = projection.find_last_of('.');
-                std::string projection_name = (last_dot_pos != std::string::npos) ? projection.substr(last_dot_pos + 1) : projection;
-                if (settings.force_optimize_projection_name.value == projection_name)
-                {
-                    found = true;
-                    break;
-                }
-            }
-
-            if (!found)
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Projection {} is specified in setting force_optimize_projection_name but not used",
-                                settings.force_optimize_projection_name.value);
         }
 
         if (process_list_entry)
@@ -1400,7 +1417,16 @@ void executeQuery(
     const char * begin;
     const char * end;
 
-    istr.nextIfAtEnd();
+    try
+    {
+        istr.nextIfAtEnd();
+    }
+    catch (...)
+    {
+        /// If buffer contains invalid data and we failed to decompress, we still want to have some information about the query in the log.
+        logQuery("<cannot parse>", context, /* internal = */ false, QueryProcessingStage::Complete);
+        throw;
+    }
 
     size_t max_query_size = context->getSettingsRef().max_query_size;
 
@@ -1453,6 +1479,7 @@ void executeQuery(
     ASTPtr ast;
     BlockIO streams;
     OutputFormatPtr output_format;
+    String format_name;
 
     auto update_format_on_exception_if_needed = [&]()
     {
@@ -1460,7 +1487,7 @@ void executeQuery(
         {
             try
             {
-                String format_name = context->getDefaultFormat();
+                format_name = context->getDefaultFormat();
                 output_format = FormatFactory::instance().getOutputFormat(format_name, ostr, {}, context, output_format_settings);
                 if (output_format && output_format->supportsWritingException())
                 {
@@ -1501,10 +1528,17 @@ void executeQuery(
         {
             update_format_on_exception_if_needed();
             if (output_format)
-                handle_exception_in_output_format(*output_format);
+                handle_exception_in_output_format(*output_format, format_name, context, output_format_settings);
         }
+        /// The timezone was already set before query was processed,
+        /// But `session_timezone` setting could be modified in the query itself, so we update the value.
+        result_details.timezone = DateLUT::instance().getTimeZone();
         throw;
     }
+
+    /// The timezone was already set before query was processed,
+    /// But `session_timezone` setting could be modified in the query itself, so we update the value.
+    result_details.timezone = DateLUT::instance().getTimeZone();
 
     auto & pipeline = streams.pipeline;
 
@@ -1543,7 +1577,7 @@ void executeQuery(
                 );
             }
 
-            String format_name = ast_query_with_output && (ast_query_with_output->format != nullptr)
+            format_name = ast_query_with_output && (ast_query_with_output->format != nullptr)
                                     ? getIdentifierName(ast_query_with_output->format)
                                     : context->getDefaultFormat();
 
@@ -1609,7 +1643,7 @@ void executeQuery(
         {
             update_format_on_exception_if_needed();
             if (output_format)
-                handle_exception_in_output_format(*output_format);
+                handle_exception_in_output_format(*output_format, format_name, context, output_format_settings);
         }
         throw;
     }

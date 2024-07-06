@@ -51,7 +51,7 @@ class ActionsDAG
 {
 public:
 
-    enum class ActionType
+    enum class ActionType : uint8_t
     {
         /// Column which must be in input.
         INPUT,
@@ -103,13 +103,11 @@ private:
     NodeRawConstPtrs inputs;
     NodeRawConstPtrs outputs;
 
-    bool project_input = false;
-    bool projected_output = false;
-
 public:
     ActionsDAG() = default;
     ActionsDAG(ActionsDAG &&) = default;
     ActionsDAG(const ActionsDAG &) = delete;
+    ActionsDAG & operator=(ActionsDAG &&) = default;
     ActionsDAG & operator=(const ActionsDAG &) = delete;
     explicit ActionsDAG(const NamesAndTypesList & inputs_);
     explicit ActionsDAG(const ColumnsWithTypeAndName & inputs_);
@@ -168,8 +166,11 @@ public:
     /// Call addAlias several times.
     void addAliases(const NamesWithAliases & aliases);
 
-    /// Add alias actions and remove unused columns from outputs. Also specify result columns order in outputs.
+    /// Add alias actions. Also specify result columns order in outputs.
     void project(const NamesWithAliases & projection);
+
+    /// Add input for every column from sample_block which is not mapped to existing input.
+    void appendInputsForUnusedColumns(const Block & sample_block);
 
     /// If column is not in outputs, try to find it in nodes and insert back into outputs.
     bool tryRestoreColumn(const std::string & column_name);
@@ -178,10 +179,6 @@ public:
     /// If columns is in inputs and has no dependent nodes, remove it from inputs too.
     /// Return true if column was removed from inputs.
     bool removeUnusedResult(const std::string & column_name);
-
-    void projectInput(bool project = true) { project_input = project; }
-    bool isInputProjected() const { return project_input; }
-    bool isOutputProjected() const { return projected_output; }
 
     /// Remove actions that are not needed to compute output nodes
     void removeUnusedActions(bool allow_remove_inputs = true, bool allow_constant_folding = true);
@@ -194,6 +191,8 @@ public:
 
     /// Remove actions that are not needed to compute output nodes with required names
     void removeUnusedActions(const NameSet & required_names, bool allow_remove_inputs = true, bool allow_constant_folding = true);
+
+    void removeAliasesForFilter(const std::string & filter_name);
 
     /// Transform the current DAG in a way that leaf nodes get folded into their parents. It's done
     /// because each projection can provide some columns as inputs to substitute certain sub-DAGs
@@ -272,7 +271,7 @@ public:
     ///
     /// In addition, check that result constants are constants according to DAG.
     /// In case if function return constant, but arguments are not constant, materialize it.
-    Block updateHeader(Block header) const;
+    Block updateHeader(const Block & header) const;
 
     using IntermediateExecutionResult = std::unordered_map<const Node *, ColumnWithTypeAndName>;
     static ColumnsWithTypeAndName evaluatePartialResult(
@@ -288,7 +287,7 @@ public:
     /// Apply materialize() function to node. Result node has the same name.
     const Node & materializeNode(const Node & node);
 
-    enum class MatchColumnsMode
+    enum class MatchColumnsMode : uint8_t
     {
         /// Require same number of columns in source and result. Match columns by corresponding positions, regardless to names.
         Position,
@@ -324,8 +323,9 @@ public:
     /// So that pointers to nodes are kept valid.
     void mergeInplace(ActionsDAG && second);
 
-    /// Merge current nodes with specified dag nodes
-    void mergeNodes(ActionsDAG && second);
+    /// Merge current nodes with specified dag nodes.
+    /// *out_outputs is filled with pointers to the nodes corresponding to second.getOutputs().
+    void mergeNodes(ActionsDAG && second, NodeRawConstPtrs * out_outputs = nullptr);
 
     struct SplitResult
     {
@@ -342,7 +342,7 @@ public:
     ///   initial DAG    : (a, b, c, d, e) -> (w, x, y, z)  | 1 a 2 b 3 c 4 d 5 e 6      ->  1 2 3 4 5 6 w x y z
     ///   split (first)  : (a, c, d) -> (i, j, k, w, y)     | 1 a 2 b 3 c 4 d 5 e 6      ->  1 2 b 3 4 5 e 6 i j k w y
     ///   split (second) : (i, j, k, y, b, e) -> (x, y, z)  | 1 2 b 3 4 5 e 6 i j k w y  ->  1 2 3 4 5 6 w x y z
-    SplitResult split(std::unordered_set<const Node *> split_nodes, bool create_split_nodes_mapping = false) const;
+    SplitResult split(std::unordered_set<const Node *> split_nodes, bool create_split_nodes_mapping = false, bool avoid_duplicate_inputs = false) const;
 
     /// Splits actions into two parts. Returned first half may be swapped with ARRAY JOIN.
     SplitResult splitActionsBeforeArrayJoin(const NameSet & array_joined_columns) const;
@@ -354,6 +354,13 @@ public:
     /// Splits actions into two parts. The first part contains all the calculations required to calculate sort_columns.
     /// The second contains the rest.
     SplitResult splitActionsBySortingDescription(const NameSet & sort_columns) const;
+
+    /** Returns true if filter DAG is always false for inputs with default values.
+      *
+      * @param filter_name - name of filter node in current DAG.
+      * @param input_stream_header - input stream header.
+      */
+    bool isFilterAlwaysFalseForDefaultValueInputs(const std::string & filter_name, const Block & input_stream_header);
 
     /// Create actions which may calculate part of filter using only available_inputs.
     /// If nothing may be calculated, returns nullptr.
@@ -372,11 +379,45 @@ public:
     /// columns will be transformed like `x, y, z` -> `z > 0, z, x, y` -(remove filter)-> `z, x, y`.
     /// To avoid it, add inputs from `all_inputs` list,
     /// so actions `x, y, z -> z > 0, x, y, z` -(remove filter)-> `x, y, z` will not change columns order.
-    ActionsDAGPtr cloneActionsForFilterPushDown(
+    ActionsDAGPtr splitActionsForFilterPushDown(
         const std::string & filter_name,
-        bool can_remove_filter,
+        bool removes_filter,
         const Names & available_inputs,
         const ColumnsWithTypeAndName & all_inputs);
+
+    struct ActionsForJOINFilterPushDown
+    {
+        ActionsDAGPtr left_stream_filter_to_push_down;
+        bool left_stream_filter_removes_filter;
+        ActionsDAGPtr right_stream_filter_to_push_down;
+        bool right_stream_filter_removes_filter;
+    };
+
+    /** Split actions for JOIN filter push down.
+      *
+      * @param filter_name - name of filter node in current DAG.
+      * @param removes_filter - if filter is removed after it is applied.
+      * @param left_stream_available_columns_to_push_down - columns from left stream that are safe to use in push down conditions
+      * to left stream.
+      * @param left_stream_header - left stream header.
+      * @param right_stream_available_columns_to_push_down - columns from right stream that are safe to use in push down conditions
+      * to right stream.
+      * @param right_stream_header - right stream header.
+      * @param equivalent_columns_to_push_down - columns from left and right streams that are safe to use in push down conditions
+      * to left and right streams.
+      * @param equivalent_left_stream_column_to_right_stream_column - equivalent left stream column name to right stream column map.
+      * @param equivalent_right_stream_column_to_left_stream_column - equivalent right stream column name to left stream column map.
+      */
+    ActionsForJOINFilterPushDown splitActionsForJOINFilterPushDown(
+        const std::string & filter_name,
+        bool removes_filter,
+        const Names & left_stream_available_columns_to_push_down,
+        const Block & left_stream_header,
+        const Names & right_stream_available_columns_to_push_down,
+        const Block & right_stream_header,
+        const Names & equivalent_columns_to_push_down,
+        const std::unordered_map<std::string, ColumnWithTypeAndName> & equivalent_left_stream_column_to_right_stream_column,
+        const std::unordered_map<std::string, ColumnWithTypeAndName> & equivalent_right_stream_column_to_left_stream_column);
 
     bool
     isSortingPreserved(const Block & input_header, const SortDescription & sort_description, const String & ignore_output_column = "") const;
@@ -429,7 +470,9 @@ private:
     void compileFunctions(size_t min_count_to_compile_expression, const std::unordered_set<const Node *> & lazy_executed_nodes = {});
 #endif
 
-    static ActionsDAGPtr cloneActionsForConjunction(NodeRawConstPtrs conjunction, const ColumnsWithTypeAndName & all_inputs);
+    static ActionsDAGPtr createActionsForConjunction(NodeRawConstPtrs conjunction, const ColumnsWithTypeAndName & all_inputs);
+
+    void removeUnusedConjunctions(NodeRawConstPtrs rejected_conjunctions, Node * predicate, bool removes_filter);
 };
 
 class FindOriginalNodeForOutputName
@@ -463,5 +506,16 @@ struct ActionDAGNodes
 {
     ActionsDAG::NodeRawConstPtrs nodes;
 };
+
+/// Helper for query analysis.
+/// If project_input is set, all columns not found in inputs should be removed.
+/// Now, we do it before adding a step to query plan by calling appendInputsForUnusedColumns.
+struct ActionsAndProjectInputsFlag
+{
+    ActionsDAG dag;
+    bool project_input = false;
+};
+
+using ActionsAndProjectInputsFlagPtr = std::shared_ptr<ActionsAndProjectInputsFlag>;
 
 }

@@ -20,12 +20,12 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_COLUMN;
+    extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int DUPLICATE_COLUMN;
+    extern const int EXPERIMENTAL_FEATURE_ERROR;
+    extern const int ILLEGAL_COLUMN;
     extern const int NUMBER_OF_DIMENSIONS_MISMATCHED;
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
-    extern const int ARGUMENT_OUT_OF_BOUND;
-    extern const int EXPERIMENTAL_FEATURE_ERROR;
 }
 
 namespace
@@ -334,7 +334,18 @@ void ColumnObject::Subcolumn::insert(Field field, FieldInfo info)
     if (type_changed || info.need_convert)
         field = convertFieldToTypeOrThrow(field, *least_common_type.get());
 
-    data.back()->insert(field);
+    if (!data.back()->tryInsert(field))
+    {
+        /** Normalization of the field above is pretty complicated (it uses several FieldVisitors),
+          * so in the case of a bug, we may get mismatched types.
+          * The `IColumn::insert` method does not check the type of the inserted field, and it can lead to a segmentation fault.
+          * Therefore, we use the safer `tryInsert` method to get an exception instead of a segmentation fault.
+          */
+        throw Exception(ErrorCodes::EXPERIMENTAL_FEATURE_ERROR,
+            "Cannot insert field {} to column {}",
+            field.dump(), data.back()->dumpStructure());
+    }
+
     ++num_rows;
 }
 
@@ -929,7 +940,7 @@ void ColumnObject::addNestedSubcolumn(const PathInData & key, const FieldInfo & 
     if (nested_node)
     {
         /// Find any leaf of Nested subcolumn.
-        const auto * leaf = subcolumns.findLeaf(nested_node, [&](const auto &) { return true; });
+        const auto * leaf = Subcolumns::findLeaf(nested_node, [&](const auto &) { return true; });
         assert(leaf);
 
         /// Recreate subcolumn with default values and the same sizes of arrays.
@@ -972,7 +983,7 @@ const ColumnObject::Subcolumns::Node * ColumnObject::getLeafOfTheSameNested(cons
     while (current_node)
     {
         /// Try to find the first Nested up to the current node.
-        const auto * node_nested = subcolumns.findParent(current_node,
+        const auto * node_nested = Subcolumns::findParent(current_node,
             [](const auto & candidate) { return candidate.isNested(); });
 
         if (!node_nested)
@@ -982,7 +993,7 @@ const ColumnObject::Subcolumns::Node * ColumnObject::getLeafOfTheSameNested(cons
         /// for the last rows.
         /// If there are no leaves, skip current node and find
         /// the next node up to the current.
-        leaf = subcolumns.findLeaf(node_nested,
+        leaf = Subcolumns::findLeaf(node_nested,
             [&](const auto & candidate)
             {
                 return candidate.data.size() > old_size;

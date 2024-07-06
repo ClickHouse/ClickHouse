@@ -8,6 +8,7 @@
 #include <numeric>
 #include <thread>
 
+#include <Core/ServerUUID.h>
 #include <Common/iota.h>
 #include <Common/randomSeed.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -333,6 +334,7 @@ public:
 
 TEST_F(FileCacheTest, LRUPolicy)
 {
+    ServerUUID::setRandomForUnitTests();
     DB::ThreadStatus thread_status;
 
     /// To work with cache need query_id and query context.
@@ -364,7 +366,7 @@ TEST_F(FileCacheTest, LRUPolicy)
         std::cerr << "Step 1\n";
         auto cache = DB::FileCache("1", settings);
         cache.initialize();
-        auto key = cache.createKeyForPath("key1");
+        auto key = DB::FileCache::createKeyForPath("key1");
 
         auto get_or_set = [&](size_t offset, size_t size)
         {
@@ -728,7 +730,7 @@ TEST_F(FileCacheTest, LRUPolicy)
 
         auto cache2 = DB::FileCache("2", settings);
         cache2.initialize();
-        auto key = cache2.createKeyForPath("key1");
+        auto key = DB::FileCache::createKeyForPath("key1");
 
         /// Get [2, 29]
         assertEqual(
@@ -747,7 +749,7 @@ TEST_F(FileCacheTest, LRUPolicy)
         fs::create_directories(settings2.base_path);
         auto cache2 = DB::FileCache("3", settings2);
         cache2.initialize();
-        auto key = cache2.createKeyForPath("key1");
+        auto key = DB::FileCache::createKeyForPath("key1");
 
         /// Get [0, 24]
         assertEqual(
@@ -762,7 +764,7 @@ TEST_F(FileCacheTest, LRUPolicy)
 
         auto cache = FileCache("4", settings);
         cache.initialize();
-        const auto key = cache.createKeyForPath("key10");
+        const auto key = FileCache::createKeyForPath("key10");
         const auto key_path = cache.getKeyPath(key, user);
 
         cache.removeAllReleasable(user.user_id);
@@ -786,7 +788,7 @@ TEST_F(FileCacheTest, LRUPolicy)
 
         auto cache = DB::FileCache("5", settings);
         cache.initialize();
-        const auto key = cache.createKeyForPath("key10");
+        const auto key = FileCache::createKeyForPath("key10");
         const auto key_path = cache.getKeyPath(key, user);
 
         cache.removeAllReleasable(user.user_id);
@@ -807,6 +809,7 @@ TEST_F(FileCacheTest, LRUPolicy)
 
 TEST_F(FileCacheTest, writeBuffer)
 {
+    ServerUUID::setRandomForUnitTests();
     FileCacheSettings settings;
     settings.max_size = 100;
     settings.max_elements = 5;
@@ -823,7 +826,7 @@ TEST_F(FileCacheTest, writeBuffer)
         segment_settings.kind = FileSegmentKind::Temporary;
         segment_settings.unbounded = true;
 
-        auto cache_key = cache.createKeyForPath(key);
+        auto cache_key = FileCache::createKeyForPath(key);
         auto holder = cache.set(cache_key, 0, 3, segment_settings, user);
         /// The same is done in TemporaryDataOnDisk::createStreamToCacheFile.
         std::filesystem::create_directories(cache.getKeyPath(cache_key, user));
@@ -938,6 +941,7 @@ static size_t readAllTemporaryData(TemporaryFileStream & stream)
 
 TEST_F(FileCacheTest, temporaryData)
 {
+    ServerUUID::setRandomForUnitTests();
     DB::FileCacheSettings settings;
     settings.max_size = 10_KiB;
     settings.max_file_segment_size = 1_KiB;
@@ -949,7 +953,7 @@ TEST_F(FileCacheTest, temporaryData)
     const auto user = FileCache::getCommonUser();
     auto tmp_data_scope = std::make_shared<TemporaryDataOnDiskScope>(nullptr, &file_cache, TemporaryDataOnDiskSettings{});
 
-    auto some_data_holder = file_cache.getOrSet(file_cache.createKeyForPath("some_data"), 0, 5_KiB, 5_KiB, CreateFileSegmentSettings{}, 0, user);
+    auto some_data_holder = file_cache.getOrSet(FileCache::createKeyForPath("some_data"), 0, 5_KiB, 5_KiB, CreateFileSegmentSettings{}, 0, user);
 
     {
         ASSERT_EQ(some_data_holder->size(), 5);
@@ -1044,6 +1048,7 @@ TEST_F(FileCacheTest, temporaryData)
 
 TEST_F(FileCacheTest, CachedReadBuffer)
 {
+    ServerUUID::setRandomForUnitTests();
     DB::ThreadStatus thread_status;
 
     /// To work with cache need query_id and query context.
@@ -1120,6 +1125,7 @@ TEST_F(FileCacheTest, CachedReadBuffer)
 
 TEST_F(FileCacheTest, TemporaryDataReadBufferSize)
 {
+    ServerUUID::setRandomForUnitTests();
     /// Temporary data stored in cache
     {
         DB::FileCacheSettings settings;
@@ -1167,6 +1173,7 @@ TEST_F(FileCacheTest, TemporaryDataReadBufferSize)
 
 TEST_F(FileCacheTest, SLRUPolicy)
 {
+    ServerUUID::setRandomForUnitTests();
     DB::ThreadStatus thread_status;
     std::string query_id = "query_id"; /// To work with cache need query_id and query context.
 
@@ -1199,7 +1206,7 @@ TEST_F(FileCacheTest, SLRUPolicy)
     {
         auto cache = DB::FileCache(std::to_string(++file_cache_name), settings);
         cache.initialize();
-        auto key = cache.createKeyForPath("key1");
+        auto key = FileCache::createKeyForPath("key1");
 
         auto add_range = [&](size_t offset, size_t size)
         {

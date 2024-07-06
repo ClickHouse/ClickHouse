@@ -110,7 +110,8 @@ void registerBackupEngineS3(BackupFactory & factory)
                                                            params.allow_s3_native_copy,
                                                            params.read_settings,
                                                            params.write_settings,
-                                                           params.context);
+                                                           params.context,
+                                                           params.is_internal_backup);
 
             return std::make_unique<BackupImpl>(
                 params.backup_info,
@@ -118,6 +119,7 @@ void registerBackupEngineS3(BackupFactory & factory)
                 params.base_backup_info,
                 reader,
                 params.context,
+                params.is_internal_backup,
                 params.use_same_s3_credentials_for_base_backup);
         }
         else
@@ -129,7 +131,8 @@ void registerBackupEngineS3(BackupFactory & factory)
                                                            params.s3_storage_class,
                                                            params.read_settings,
                                                            params.write_settings,
-                                                           params.context);
+                                                           params.context,
+                                                           params.is_internal_backup);
 
             return std::make_unique<BackupImpl>(
                 params.backup_info,

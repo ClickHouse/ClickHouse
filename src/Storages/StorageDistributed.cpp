@@ -193,8 +193,7 @@ UInt64 getMaximumFileNumber(const std::string & dir_path)
             throw;
         }
 
-        if (num > res)
-            res = num;
+        res = std::max(num, res);
     }
 
     return res;
@@ -283,17 +282,6 @@ size_t getClusterQueriedNodes(const Settings & settings, const ClusterPtr & clus
     return (num_remote_shards + num_local_shards) * settings.max_parallel_replicas;
 }
 
-template <class F>
-void waitFutures(F & futures)
-{
-    for (auto & future : futures)
-        future.wait();
-    /// Make sure there is no exception.
-    for (auto & future : futures)
-        future.get();
-    futures.clear();
-}
-
 }
 
 /// For destruction of std::unique_ptr of type that is incomplete in class definition.
@@ -334,6 +322,7 @@ StorageDistributed::StorageDistributed(
     , remote_database(remote_database_)
     , remote_table(remote_table_)
     , remote_table_function_ptr(remote_table_function_ptr_)
+    , remote_storage(remote_table_function_ptr ? StorageID::createEmpty() : StorageID{remote_database, remote_table})
     , log(getLogger("StorageDistributed (" + id_.table_name + ")"))
     , owned_cluster(std::move(owned_cluster_))
     , cluster_name(getContext()->getMacros()->expand(cluster_name_))
@@ -711,7 +700,7 @@ static bool requiresObjectColumns(const ColumnsDescription & all_columns, ASTPtr
         auto name_in_storage = Nested::splitName(required_column).first;
         auto column_in_storage = all_columns.tryGetPhysical(name_in_storage);
 
-        if (column_in_storage && column_in_storage->type->hasDynamicSubcolumns())
+        if (column_in_storage && column_in_storage->type->hasDynamicSubcolumnsDeprecated())
             return true;
     }
 
@@ -857,7 +846,7 @@ void StorageDistributed::read(
             remote_storage_id = StorageID{remote_database, remote_table};
 
         auto query_tree_distributed = buildQueryTreeDistributed(modified_query_info,
-            storage_snapshot,
+            query_info.merge_storage_snapshot ? query_info.merge_storage_snapshot : storage_snapshot,
             remote_storage_id,
             remote_table_function_ptr);
         header = InterpreterSelectQueryAnalyzer::getSampleBlock(query_tree_distributed, local_context, SelectQueryOptions(processed_stage).analyze());
@@ -896,10 +885,6 @@ void StorageDistributed::read(
         return;
     }
 
-    StorageID main_table = StorageID::createEmpty();
-    if (!remote_table_function_ptr)
-        main_table = StorageID{remote_database, remote_table};
-
     const auto & snapshot_data = assert_cast<const SnapshotData &>(*storage_snapshot->data);
     ClusterProxy::SelectStreamFactory select_stream_factory =
         ClusterProxy::SelectStreamFactory(
@@ -919,11 +904,13 @@ void StorageDistributed::read(
                 [my_custom_key_ast = std::move(custom_key_ast),
                  column_description = this->getInMemoryMetadataPtr()->columns,
                  custom_key_type = settings.parallel_replicas_custom_key_filter_type.value,
+                 custom_key_range_lower = settings.parallel_replicas_custom_key_range_lower.value,
+                 custom_key_range_upper = settings.parallel_replicas_custom_key_range_upper.value,
                  context = local_context,
                  replica_count = modified_query_info.getCluster()->getShardsInfo().front().per_replica_pools.size()](uint64_t replica_num) -> ASTPtr
             {
                 return getCustomKeyFilterForParallelReplica(
-                    replica_count, replica_num - 1, my_custom_key_ast, custom_key_type, column_description, context);
+                    replica_count, replica_num - 1, my_custom_key_ast, {custom_key_type, custom_key_range_lower, custom_key_range_upper}, column_description, context);
             };
         }
     }
@@ -932,7 +919,7 @@ void StorageDistributed::read(
         query_plan,
         header,
         processed_stage,
-        main_table,
+        remote_storage,
         remote_table_function_ptr,
         select_stream_factory,
         log,
@@ -941,7 +928,8 @@ void StorageDistributed::read(
         sharding_key_expr,
         sharding_key_column_name,
         distributed_settings,
-        additional_shard_filter_generator);
+        additional_shard_filter_generator,
+        /* is_remote_function= */ static_cast<bool>(owned_cluster));
 
     /// This is a bug, it is possible only when there is no shards to query, and this is handled earlier.
     if (!query_plan.isInitialized())
@@ -978,10 +966,8 @@ SinkToStoragePtr StorageDistributed::write(const ASTPtr &, const StorageMetadata
     else
         columns_to_send = metadata_snapshot->getSampleBlockNonMaterialized().getNames();
 
-    /// DistributedSink will not own cluster
-    return std::make_shared<DistributedSink>(
-        local_context, *this, metadata_snapshot, cluster, insert_sync, timeout,
-        StorageID{remote_database, remote_table}, columns_to_send);
+    /// DistributedSink will not own cluster, but will own ConnectionPools of the cluster
+    return std::make_shared<DistributedSink>(local_context, *this, metadata_snapshot, cluster, insert_sync, timeout, columns_to_send);
 }
 
 
@@ -1301,31 +1287,27 @@ void StorageDistributed::initializeFromDisk()
 
     /// Make initialization for large number of disks parallel.
     ThreadPool pool(CurrentMetrics::StorageDistributedThreads, CurrentMetrics::StorageDistributedThreadsActive, CurrentMetrics::StorageDistributedThreadsScheduled, disks.size());
-    std::vector<std::future<void>> futures;
+    ThreadPoolCallbackRunnerLocal<void> runner(pool, "DistInit");
 
     for (const DiskPtr & disk : disks)
     {
-        auto future = scheduleFromThreadPool<void>([this, disk_to_init = disk]
+        runner([this, disk_to_init = disk]
         {
             initializeDirectoryQueuesForDisk(disk_to_init);
-        }, pool, "DistInit");
-        futures.push_back(std::move(future));
+        });
     }
-    waitFutures(futures);
-    pool.wait();
+    runner.waitForAllToFinishAndRethrowFirstError();
 
     const auto & paths = getDataPaths();
     std::vector<UInt64> last_increment(paths.size());
     for (size_t i = 0; i < paths.size(); ++i)
     {
-        auto future = scheduleFromThreadPool<void>([&paths, &last_increment, i]
+        runner([&paths, &last_increment, i]
         {
             last_increment[i] = getMaximumFileNumber(paths[i]);
-        }, pool, "DistInit");
-        futures.push_back(std::move(future));
+        });
     }
-    waitFutures(futures);
-    pool.wait();
+    runner.waitForAllToFinishAndRethrowFirstError();
 
     for (const auto inc : last_increment)
     {
@@ -1765,19 +1747,17 @@ void StorageDistributed::flushClusterNodesAllDataImpl(ContextPtr local_context, 
 
         Stopwatch watch;
         ThreadPool pool(CurrentMetrics::StorageDistributedThreads, CurrentMetrics::StorageDistributedThreadsActive, CurrentMetrics::StorageDistributedThreadsScheduled, directory_queues.size());
-        std::vector<std::future<void>> futures;
+        ThreadPoolCallbackRunnerLocal<void> runner(pool, "DistFlush");
 
         for (const auto & node : directory_queues)
         {
-            auto future = scheduleFromThreadPool<void>([node_to_flush = node, &settings_changes]
+            runner([node_to_flush = node, &settings_changes]
             {
                 node_to_flush->flushAllData(settings_changes);
-            }, pool, "DistFlush");
-            futures.push_back(std::move(future));
+            });
         }
 
-        waitFutures(futures);
-        pool.wait();
+        runner.waitForAllToFinishAndRethrowFirstError();
 
         LOG_INFO(log, "Pending INSERT blocks flushed, took {} ms.", watch.elapsedMilliseconds());
     }
@@ -2008,8 +1988,17 @@ void registerStorageDistributed(StorageFactory & factory)
 
 bool StorageDistributed::initializeDiskOnConfigChange(const std::set<String> & new_added_disks)
 {
-    if (!data_volume)
+    if (!storage_policy || !data_volume)
         return true;
+
+    auto new_storage_policy = getContext()->getStoragePolicy(storage_policy->getName());
+    auto new_data_volume = new_storage_policy->getVolume(0);
+    if (new_storage_policy->getVolumes().size() > 1)
+        LOG_WARNING(log, "Storage policy for Distributed table has multiple volumes. "
+                            "Only {} volume will be used to store data. Other will be ignored.", data_volume->getName());
+
+    std::atomic_store(&storage_policy, new_storage_policy);
+    std::atomic_store(&data_volume, new_data_volume);
 
     for (auto & disk : data_volume->getDisks())
     {

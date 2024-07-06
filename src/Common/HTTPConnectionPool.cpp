@@ -9,6 +9,7 @@
 #include <Common/ProxyConfiguration.h>
 #include <Common/MemoryTrackerSwitcher.h>
 #include <Common/SipHash.h>
+#include <Common/proxyConfigurationToPocoProxyConfig.h>
 
 #include <Poco/Net/HTTPChunkedStream.h>
 #include <Poco/Net/HTTPClientSession.h>
@@ -16,6 +17,7 @@
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPResponse.h>
 #include <Poco/Net/HTTPStream.h>
+#include <Poco/Net/NetException.h>
 #include <Poco/Timespan.h>
 
 #include <queue>
@@ -69,31 +71,15 @@ namespace CurrentMetrics
 
 namespace
 {
-    Poco::Net::HTTPClientSession::ProxyConfig proxyConfigurationToPocoProxyConfig(const DB::ProxyConfiguration & proxy_configuration)
-    {
-        Poco::Net::HTTPClientSession::ProxyConfig poco_proxy_config;
-
-        poco_proxy_config.host = proxy_configuration.host;
-        poco_proxy_config.port = proxy_configuration.port;
-        poco_proxy_config.protocol = DB::ProxyConfiguration::protocolToString(proxy_configuration.protocol);
-        poco_proxy_config.tunnel = proxy_configuration.tunneling;
-        poco_proxy_config.originalRequestProtocol = DB::ProxyConfiguration::protocolToString(proxy_configuration.original_request_protocol);
-
-        return poco_proxy_config;
-    }
-
-
-    size_t roundUp(size_t x, size_t rounding)
+    constexpr size_t roundUp(size_t x, size_t rounding)
     {
         chassert(rounding > 0);
-        return (x + (rounding - 1)) / rounding * rounding;
+        return (x + rounding) / rounding * rounding;
     }
-
-
-    Poco::Timespan divide(const Poco::Timespan span, int divisor)
-    {
-        return Poco::Timespan(Poco::Timestamp::TimeDiff(span.totalMicroseconds() / divisor));
-    }
+    static_assert(roundUp(10000, 100) == 10100);
+    static_assert(roundUp(10001, 100) == 10100);
+    static_assert(roundUp(10099, 100) == 10100);
+    static_assert(roundUp(10100, 100) == 10200);
 }
 
 namespace DB
@@ -202,8 +188,9 @@ public:
 
         if (total_connections_in_group >= limits.warning_limit && total_connections_in_group >= mute_warning_until)
         {
-            LOG_WARNING(log, "Too many active sessions in group {}, count {}, warning limit {}", type, total_connections_in_group, limits.warning_limit);
-            mute_warning_until = roundUp(total_connections_in_group, limits.warning_step);
+            mute_warning_until = roundUp(total_connections_in_group, HTTPConnectionPools::Limits::warning_step);
+            LOG_WARNING(log, "Too many active sessions in group {}, count {}, warning limit {}, next warning at {}",
+                        type, total_connections_in_group, limits.warning_limit, mute_warning_until);
         }
     }
 
@@ -213,7 +200,8 @@ public:
 
         --total_connections_in_group;
 
-        const size_t reduced_warning_limit = limits.warning_limit > 10 ? limits.warning_limit - 10 : 1;
+        const size_t gap = 20;
+        const size_t reduced_warning_limit = limits.warning_limit > gap ? limits.warning_limit - gap : 1;
         if (mute_warning_until > 0 && total_connections_in_group < reduced_warning_limit)
         {
             LOG_WARNING(log, "Sessions count is OK in the group {}, count {}", type, total_connections_in_group);
@@ -273,9 +261,15 @@ private:
     public:
         using Ptr = std::shared_ptr<PooledConnection>;
 
+        using Session::mustReconnect;
+
+        void markAsExpired()
+        {
+            isExpired = true;
+        }
+
         void reconnect() override
         {
-            ProfileEvents::increment(metrics.reset);
             Session::close();
 
             if (auto lock = pool.lock())
@@ -283,6 +277,7 @@ private:
                 auto timeouts = getTimeouts(*this);
                 auto new_connection = lock->getConnection(timeouts);
                 Session::assign(*new_connection);
+                Session::setKeepAliveRequest(Session::getKeepAliveRequest() + 1);
             }
             else
             {
@@ -295,8 +290,19 @@ private:
         String getTarget() const
         {
             if (!Session::getProxyConfig().host.empty())
-                return fmt::format("{} over proxy {}", Session::getHost(), Session::getProxyConfig().host);
-            return Session::getHost();
+                return fmt::format("{}:{} over proxy {}",
+                                   Session::getHost(),
+                                   Session::getPort(),
+                                   Session::getProxyConfig().host);
+            return fmt::format("{}:{}",
+                               Session::getHost(),
+                               Session::getPort());
+        }
+
+        Poco::Timespan idleTime()
+        {
+            Poco::Timestamp now;
+            return now - Session::getLastRequest();
         }
 
         void flushRequest() override
@@ -330,6 +336,7 @@ private:
 
         std::ostream & sendRequest(Poco::Net::HTTPRequest & request) override
         {
+            auto idle = idleTime();
             std::ostream & result = Session::sendRequest(request);
             result.exceptions(std::ios::badbit);
 
@@ -387,10 +394,11 @@ private:
             }
             response_stream = nullptr;
 
-            if (auto lock = pool.lock())
-                lock->atConnectionDestroy(*this);
-            else
-                ProfileEvents::increment(metrics.reset);
+            group->atConnectionDestroy();
+
+            if (!isExpired)
+                if (auto lock = pool.lock())
+                    lock->atConnectionDestroy(*this);
 
             CurrentMetrics::sub(metrics.active_count);
         }
@@ -399,10 +407,18 @@ private:
         friend class EndpointConnectionPool;
 
         template <class... Args>
-        explicit PooledConnection(EndpointConnectionPool::WeakPtr pool_, IHTTPConnectionPoolForEndpoint::Metrics metrics_, Args &&... args)
-            : Session(args...), pool(std::move(pool_)), metrics(std::move(metrics_))
+        explicit PooledConnection(
+                EndpointConnectionPool::WeakPtr pool_,
+                ConnectionGroup::Ptr group_,
+                IHTTPConnectionPoolForEndpoint::Metrics metrics_,
+                Args &&... args)
+            : Session(std::forward<Args>(args)...)
+            , pool(std::move(pool_))
+            , group(group_)
+            , metrics(std::move(metrics_))
         {
             CurrentMetrics::add(metrics.active_count);
+            group->atConnectionCreate();
         }
 
         template <class... Args>
@@ -428,10 +444,12 @@ private:
             return request_stream_completed && response_stream_completed;
         }
 
-        WeakPtr pool;
+        EndpointConnectionPool::WeakPtr pool;
+        ConnectionGroup::Ptr group;
         IHTTPConnectionPoolForEndpoint::Metrics metrics;
+        bool isExpired = false;
 
-        Poco::Logger * log = &Poco::Logger::get("PooledConnection");
+        LoggerPtr log = getLogger("PooledConnection");
 
         std::ostream * request_stream = nullptr;
         std::istream * response_stream = nullptr;
@@ -472,13 +490,13 @@ public:
     String getTarget() const
     {
         if (!proxy_configuration.isEmpty())
-            return fmt::format("{} over proxy {}", host, proxy_configuration.host);
+            return fmt::format("{} over proxy {}",
+                               host, proxy_configuration.host);
         return host;
     }
 
     IHTTPConnectionPoolForEndpoint::ConnectionPtr getConnection(const ConnectionTimeouts & timeouts) override
     {
-        Poco::Timestamp now;
         std::vector<ConnectionPtr> expired_connections;
 
         SCOPE_EXIT({
@@ -488,8 +506,9 @@ public:
 
         {
             std::lock_guard lock(mutex);
+            expired_connections.reserve(stored_connections.size());
 
-            wipeExpiredImpl(expired_connections, now);
+            wipeExpiredImpl(expired_connections);
 
             if (!stored_connections.empty())
             {
@@ -520,7 +539,6 @@ public:
 
     size_t wipeExpired() override
     {
-        Poco::Timestamp now;
         std::vector<ConnectionPtr> expired_connections;
 
         SCOPE_EXIT({
@@ -529,24 +547,28 @@ public:
         });
 
         std::lock_guard lock(mutex);
-        return wipeExpiredImpl(expired_connections, now);
+        return wipeExpiredImpl(expired_connections);
     }
 
-    size_t wipeExpiredImpl(std::vector<ConnectionPtr> & expired_connections, Poco::Timestamp now) TSA_REQUIRES(mutex)
+    size_t wipeExpiredImpl(std::vector<ConnectionPtr> & expired_connections) TSA_REQUIRES(mutex)
     {
+        SCOPE_EXIT({
+            CurrentMetrics::sub(getMetrics().stored_count, expired_connections.size());
+            ProfileEvents::increment(getMetrics().expired, expired_connections.size());
+        });
+
+        auto isSoftLimitReached = group->isSoftLimitReached();
         while (!stored_connections.empty())
         {
             auto connection = stored_connections.top();
 
-            if (!isExpired(now, connection))
+            if (!isExpired(connection, isSoftLimitReached))
                 return stored_connections.size();
 
             stored_connections.pop();
+            connection->markAsExpired();
             expired_connections.push_back(connection);
         }
-
-        CurrentMetrics::sub(getMetrics().stored_count, expired_connections.size());
-        ProfileEvents::increment(getMetrics().expired, expired_connections.size());
 
         return stored_connections.size();
     }
@@ -563,57 +585,53 @@ private:
 
     WeakPtr getWeakFromThis() { return EndpointConnectionPool::weak_from_this(); }
 
-    bool isExpired(Poco::Timestamp & now, ConnectionPtr connection)
+    bool isExpired(ConnectionPtr connection, bool isSoftLimitReached) TSA_REQUIRES(mutex)
     {
-        if (group->isSoftLimitReached())
-            return now > (connection->getLastRequest() + divide(connection->getKeepAliveTimeout(), 10));
-        return now > connection->getLastRequest() + connection->getKeepAliveTimeout();
+        if (isSoftLimitReached)
+            return connection->isKeepAliveExpired(0.1);
+        return connection->isKeepAliveExpired(0.8);
     }
 
-    ConnectionPtr allocateNewConnection()
+
+    ConnectionPtr prepareNewConnection(const ConnectionTimeouts & timeouts)
     {
-        ConnectionPtr connection = PooledConnection::create(this->getWeakFromThis(), getMetrics(), host, port);
+        auto connection = PooledConnection::create(this->getWeakFromThis(), group, getMetrics(), host, port);
+
         connection->setKeepAlive(true);
+        setTimeouts(*connection, timeouts);
 
         if (!proxy_configuration.isEmpty())
         {
             connection->setProxyConfig(proxyConfigurationToPocoProxyConfig(proxy_configuration));
         }
 
-        group->atConnectionCreate();
-
-        return connection;
-    }
-
-    ConnectionPtr prepareNewConnection(const ConnectionTimeouts & timeouts)
-    {
         auto address = HostResolversPool::instance().getResolver(host)->resolve();
-
-        auto session = allocateNewConnection();
-
-        setTimeouts(*session, timeouts);
-        session->setResolvedHost(*address);
+        connection->setResolvedHost(*address);
 
         try
         {
             auto timer = CurrentThread::getProfileEvents().timer(getMetrics().elapsed_microseconds);
-            session->doConnect();
+            connection->doConnect();
         }
         catch (...)
         {
             address.setFail();
             ProfileEvents::increment(getMetrics().errors);
-            session->reset();
+            connection->reset();
             throw;
         }
 
         ProfileEvents::increment(getMetrics().created);
-        return session;
+        return connection;
     }
 
     void atConnectionDestroy(PooledConnection & connection)
     {
-        group->atConnectionDestroy();
+        if (connection.getKeepAliveRequest() >= connection.getKeepAliveMaxRequests())
+        {
+            ProfileEvents::increment(getMetrics().expired, 1);
+            return;
+        }
 
         if (!connection.connected() || connection.mustReconnect() || !connection.isCompleted() || connection.buffered()
             || group->isStoreLimitReached())
@@ -622,17 +640,17 @@ private:
             return;
         }
 
-        auto connection_to_store = allocateNewConnection();
+        auto connection_to_store = PooledConnection::create(this->getWeakFromThis(), group, getMetrics(), host, port);
         connection_to_store->assign(connection);
-
-        CurrentMetrics::add(getMetrics().stored_count, 1);
-        ProfileEvents::increment(getMetrics().preserved, 1);
 
         {
             MemoryTrackerSwitcher switcher{&total_memory_tracker};
             std::lock_guard lock(mutex);
             stored_connections.push(connection_to_store);
         }
+
+        CurrentMetrics::add(getMetrics().stored_count, 1);
+        ProfileEvents::increment(getMetrics().preserved, 1);
     }
 
 
@@ -665,7 +683,8 @@ struct EndpointPoolKey
                    proxy_config.port,
                    proxy_config.protocol,
                    proxy_config.tunneling,
-                   proxy_config.original_request_protocol)
+                   proxy_config.original_request_protocol,
+                   proxy_config.no_proxy_hosts)
             == std::tie(
                    rhs.connection_group,
                    rhs.target_host,
@@ -675,7 +694,8 @@ struct EndpointPoolKey
                    rhs.proxy_config.port,
                    rhs.proxy_config.protocol,
                    rhs.proxy_config.tunneling,
-                   rhs.proxy_config.original_request_protocol);
+                   rhs.proxy_config.original_request_protocol,
+                   rhs.proxy_config.no_proxy_hosts);
     }
 };
 
@@ -720,13 +740,12 @@ createConnectionPool(ConnectionGroup::Ptr group, std::string host, UInt16 port, 
 class HTTPConnectionPools::Impl
 {
 private:
-    const size_t DEFAULT_WIPE_TIMEOUT_SECONDS = 5 * 60;
+    const size_t DEFAULT_WIPE_TIMEOUT_SECONDS = 10 * 60;
     const Poco::Timespan wipe_timeout = Poco::Timespan(DEFAULT_WIPE_TIMEOUT_SECONDS, 0);
 
     ConnectionGroup::Ptr disk_group = std::make_shared<ConnectionGroup>(HTTPConnectionGroupType::DISK);
     ConnectionGroup::Ptr storage_group = std::make_shared<ConnectionGroup>(HTTPConnectionGroupType::STORAGE);
     ConnectionGroup::Ptr http_group = std::make_shared<ConnectionGroup>(HTTPConnectionGroupType::HTTP);
-
 
     /// If multiple mutexes are held simultaneously,
     /// they should be locked in this order:

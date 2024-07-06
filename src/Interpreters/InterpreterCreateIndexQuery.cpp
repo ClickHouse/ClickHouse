@@ -25,7 +25,7 @@ namespace ErrorCodes
 
 BlockIO InterpreterCreateIndexQuery::execute()
 {
-    FunctionNameNormalizer().visit(query_ptr.get());
+    FunctionNameNormalizer::visit(query_ptr.get());
     auto current_context = getContext();
     const auto & create_index = query_ptr->as<ASTCreateIndexQuery &>();
 
@@ -39,12 +39,12 @@ BlockIO InterpreterCreateIndexQuery::execute()
 
     }
     // Noop if allow_create_index_without_type = true. throw otherwise
-    if (!create_index.index_decl->as<ASTIndexDeclaration>()->type)
+    if (!create_index.index_decl->as<ASTIndexDeclaration>()->getType())
     {
         if (!current_context->getSettingsRef().allow_create_index_without_type)
         {
             throw Exception(ErrorCodes::INCORRECT_QUERY, "CREATE INDEX without TYPE is forbidden."
-                " SET allow_create_index_without_type=1 to ignore this statements.");
+                " SET allow_create_index_without_type=1 to ignore this statements");
         }
         else
         {

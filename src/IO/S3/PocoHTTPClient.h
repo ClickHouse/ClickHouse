@@ -51,6 +51,8 @@ struct PocoHTTPClientConfiguration : public Aws::Client::ClientConfiguration
 
     /// See PoolBase::BehaviourOnLimit
     bool s3_use_adaptive_timeouts = true;
+    size_t http_keep_alive_timeout = DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT;
+    size_t http_keep_alive_max_requests = DEFAULT_HTTP_KEEP_ALIVE_MAX_REQUEST;
 
     std::function<void(const DB::ProxyConfiguration &)> error_report;
 
@@ -133,7 +135,7 @@ private:
         Aws::Utils::RateLimits::RateLimiterInterface * readLimiter,
         Aws::Utils::RateLimits::RateLimiterInterface * writeLimiter) const;
 
-    enum class S3MetricType
+    enum class S3MetricType : uint8_t
     {
         Microseconds,
         Count,
@@ -144,7 +146,7 @@ private:
         EnumSize,
     };
 
-    enum class S3MetricKind
+    enum class S3MetricKind : uint8_t
     {
         Read,
         Write,
@@ -154,7 +156,6 @@ private:
 
     void makeRequestInternalImpl(
         Aws::Http::HttpRequest & request,
-        const DB::ProxyConfiguration & proxy_configuration,
         std::shared_ptr<PocoHTTPResponse> & response,
         Aws::Utils::RateLimits::RateLimiterInterface * readLimiter,
         Aws::Utils::RateLimits::RateLimiterInterface * writeLimiter) const;

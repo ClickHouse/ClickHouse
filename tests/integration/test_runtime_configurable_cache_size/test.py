@@ -1,7 +1,6 @@
 import os
-import pytest
-import shutil
 import time
+import pytest
 from helpers.cluster import ClickHouseCluster
 
 # Tests that sizes of in-memory caches (mark / uncompressed / index mark / index uncompressed / mmapped file / query cache) can be changed
@@ -101,9 +100,10 @@ def test_query_cache_size_is_runtime_configurable(start_cluster):
     node.query("SELECT 2 SETTINGS use_query_cache = 1, query_cache_ttl = 1")
     node.query("SELECT 3 SETTINGS use_query_cache = 1, query_cache_ttl = 1")
 
-    res = node.query_with_retry(
+    time.sleep(2)
+    node.query("SYSTEM RELOAD ASYNCHRONOUS METRICS")
+    res = node.query(
         "SELECT value FROM system.asynchronous_metrics WHERE metric = 'QueryCacheEntries'",
-        check_callback=lambda result: result == "2\n",
     )
     assert res == "2\n"
 
@@ -116,9 +116,10 @@ def test_query_cache_size_is_runtime_configurable(start_cluster):
     node.query("SYSTEM RELOAD CONFIG")
 
     # check that eviction worked as expected
-    res = node.query_with_retry(
+    time.sleep(2)
+    node.query("SYSTEM RELOAD ASYNCHRONOUS METRICS")
+    res = node.query(
         "SELECT value FROM system.asynchronous_metrics WHERE metric = 'QueryCacheEntries'",
-        check_callback=lambda result: result == "2\n",
     )
     assert (
         res == "2\n"
@@ -132,9 +133,10 @@ def test_query_cache_size_is_runtime_configurable(start_cluster):
     node.query("SELECT 4 SETTINGS use_query_cache = 1, query_cache_ttl = 1")
     node.query("SELECT 5 SETTINGS use_query_cache = 1, query_cache_ttl = 1")
 
-    res = node.query_with_retry(
+    time.sleep(2)
+    node.query("SYSTEM RELOAD ASYNCHRONOUS METRICS")
+    res = node.query(
         "SELECT value FROM system.asynchronous_metrics WHERE metric = 'QueryCacheEntries'",
-        check_callback=lambda result: result == "1\n",
     )
     assert res == "1\n"
 

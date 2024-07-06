@@ -14,7 +14,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Common/typeid_cast.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Disks/IStoragePolicy.h>
@@ -24,6 +24,8 @@
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <DataTypes/DataTypeUUID.h>
+
+#include <boost/range/adaptor/map.hpp>
 
 
 namespace DB
@@ -144,7 +146,7 @@ ColumnPtr getFilteredTables(const ActionsDAG::Node * predicate, const ColumnPtr 
                 filter_by_engine = true;
 
         if (filter_by_engine)
-            engine_column= ColumnString::create();
+            engine_column = ColumnString::create();
     }
 
     for (size_t database_idx = 0; database_idx < filtered_databases_column->size(); ++database_idx)
@@ -222,7 +224,7 @@ protected:
         MutableColumns res_columns = getPort().getHeader().cloneEmptyColumns();
 
         const auto access = context->getAccess();
-        const bool check_access_for_databases = !access->isGranted(AccessType::SHOW_TABLES);
+        const bool need_to_check_access_for_databases = !access->isGranted(AccessType::SHOW_TABLES);
 
         size_t rows_count = 0;
         while (rows_count < max_block_size)
@@ -346,7 +348,7 @@ protected:
                 return Chunk(std::move(res_columns), num_rows);
             }
 
-            const bool check_access_for_tables = check_access_for_databases && !access->isGranted(AccessType::SHOW_TABLES, database_name);
+            const bool need_to_check_access_for_tables = need_to_check_access_for_databases && !access->isGranted(AccessType::SHOW_TABLES, database_name);
 
             if (!tables_it || !tables_it->isValid())
                 tables_it = database->getTablesIterator(context);
@@ -359,7 +361,7 @@ protected:
                 if (!tables.contains(table_name))
                     continue;
 
-                if (check_access_for_tables && !access->isGranted(AccessType::SHOW_TABLES, database_name, table_name))
+                if (need_to_check_access_for_tables && !access->isGranted(AccessType::SHOW_TABLES, database_name, table_name))
                     continue;
 
                 StoragePtr table = nullptr;
@@ -748,7 +750,8 @@ void StorageSystemTables::read(
 
 void ReadFromSystemTables::applyFilters(ActionDAGNodes added_filter_nodes)
 {
-    filter_actions_dag = ActionsDAG::buildFilterActionsDAG(added_filter_nodes.nodes);
+    SourceStepWithFilter::applyFilters(std::move(added_filter_nodes));
+
     const ActionsDAG::Node * predicate = nullptr;
     if (filter_actions_dag)
         predicate = filter_actions_dag->getOutputs().at(0);

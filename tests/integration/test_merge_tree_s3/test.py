@@ -857,9 +857,9 @@ def test_merge_canceled_by_s3_errors(cluster, broken_s3, node_name, storage_poli
     error = node.query_and_get_error(
         "OPTIMIZE TABLE test_merge_canceled_by_s3_errors FINAL",
     )
-    assert "ExpectedError Message: mock s3 injected error" in error, error
+    assert "ExpectedError Message: mock s3 injected unretryable error" in error, error
 
-    node.wait_for_log_line("ExpectedError Message: mock s3 injected error")
+    node.wait_for_log_line("ExpectedError Message: mock s3 injected unretryable error")
 
     table_uuid = node.query(
         "SELECT uuid FROM system.tables WHERE database = 'default' AND name = 'test_merge_canceled_by_s3_errors' LIMIT 1"
@@ -867,7 +867,7 @@ def test_merge_canceled_by_s3_errors(cluster, broken_s3, node_name, storage_poli
 
     node.query("SYSTEM FLUSH LOGS")
     error_count_in_blob_log = node.query(
-        f"SELECT count() FROM system.blob_storage_log WHERE query_id like '{table_uuid}::%' AND error like '%mock s3 injected error%'"
+        f"SELECT count() FROM system.blob_storage_log WHERE query_id like '{table_uuid}::%' AND error like '%mock s3 injected unretryable error%'"
     ).strip()
     assert int(error_count_in_blob_log) > 0, node.query(
         f"SELECT * FROM system.blob_storage_log WHERE query_id like '{table_uuid}::%' FORMAT PrettyCompactMonoBlock"
@@ -911,7 +911,7 @@ def test_merge_canceled_by_s3_errors_when_move(cluster, broken_s3, node_name):
 
     node.query("OPTIMIZE TABLE merge_canceled_by_s3_errors_when_move FINAL")
 
-    node.wait_for_log_line("ExpectedError Message: mock s3 injected error")
+    node.wait_for_log_line("ExpectedError Message: mock s3 injected unretryable error")
 
     count = node.query("SELECT count() FROM merge_canceled_by_s3_errors_when_move")
     assert int(count) == 2000, count
@@ -962,7 +962,7 @@ def test_s3_engine_heavy_write_check_mem(
         "INSERT INTO s3_test SELECT number, toString(number) FROM numbers(50000000)"
         f" SETTINGS "
         f" max_memory_usage={2*memory}"
-        f", max_threads=1"  # ParallelFormattingOutputFormat consumption depends on it
+        ", max_threads=1, optimize_trivial_insert_select=1"  # ParallelFormattingOutputFormat consumption depends on it
         f", s3_max_inflight_parts_for_one_file={in_flight}",
         query_id=query_id,
     )
@@ -1010,9 +1010,10 @@ def test_s3_disk_heavy_write_check_mem(cluster, broken_s3, node_name):
     node.query(
         "INSERT INTO s3_test SELECT number, toString(number) FROM numbers(50000000)"
         f" SETTINGS max_memory_usage={2*memory}"
-        f", max_insert_block_size=50000000"
-        f", min_insert_block_size_rows=50000000"
-        f", min_insert_block_size_bytes=1000000000000",
+        ", max_insert_block_size=50000000"
+        ", min_insert_block_size_rows=50000000"
+        ", min_insert_block_size_bytes=1000000000000"
+        ", optimize_trivial_insert_select=1",
         query_id=query_id,
     )
 

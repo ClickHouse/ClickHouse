@@ -44,15 +44,18 @@ struct ProtocolServerMetrics
     size_t current_threads;
 };
 
-/** Periodically (by default, each minute, starting at 30 seconds offset)
-  *  calculates and updates some metrics,
-  *  that are not updated automatically (so, need to be asynchronously calculated).
+/** Periodically (by default, each second)
+  * calculates and updates some metrics,
+  * that are not updated automatically (so, need to be asynchronously calculated).
   *
-  * This includes both ClickHouse-related metrics (like memory usage of ClickHouse process)
-  *  and common OS-related metrics (like total memory usage on the server).
+  * This includes both general process metrics (like memory usage)
+  * and common OS-related metrics (like total memory usage on the server).
   *
   * All the values are either gauge type (like the total number of tables, the current memory usage).
   * Or delta-counters representing some accumulation during the interval of time.
+  *
+  * Server and Keeper specific metrics are contained inside
+  * ServerAsynchronousMetrics and KeeperAsynchronousMetrics respectively.
   */
 class AsynchronousMetrics
 {
@@ -64,7 +67,7 @@ public:
     using ProtocolServerMetricsFunc = std::function<std::vector<ProtocolServerMetrics>()>;
 
     AsynchronousMetrics(
-        int update_period_seconds,
+        unsigned update_period_seconds,
         const ProtocolServerMetricsFunc & protocol_server_metrics_func_);
 
     virtual ~AsynchronousMetrics();

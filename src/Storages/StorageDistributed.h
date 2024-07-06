@@ -85,6 +85,7 @@ public:
     bool supportsFinal() const override { return true; }
     bool supportsPrewhere() const override { return true; }
     bool supportsSubcolumns() const override { return true; }
+    bool supportsDynamicSubcolumnsDeprecated() const override { return true; }
     bool supportsDynamicSubcolumns() const override { return true; }
     StoragePolicyPtr getStoragePolicy() const override;
 
@@ -241,6 +242,7 @@ private:
     String remote_database;
     String remote_table;
     ASTPtr remote_table_function_ptr;
+    StorageID remote_storage;
 
     LoggerPtr log;
 
@@ -275,7 +277,7 @@ private:
     struct ClusterNodeData
     {
         std::shared_ptr<DistributedAsyncInsertDirectoryQueue> directory_queue;
-        ConnectionPoolPtr connection_pool;
+        ConnectionPoolWithFailoverPtr connection_pool;
         Cluster::Addresses addresses;
         size_t clusters_version;
     };
