@@ -2,6 +2,7 @@
 
 #include "config.h"
 
+#include <memory>
 #include <unordered_map>
 #include <string>
 #include <boost/noncopyable.hpp>

@@ -18,7 +18,9 @@ SquashingTransform::SquashingTransform(
 
 void SquashingTransform::onConsume(Chunk chunk)
 {
-    cur_chunk = Squashing::squash(squashing.add(std::move(chunk)));
+    Chunk planned_chunk = squashing.add(std::move(chunk));
+    if (planned_chunk.hasChunkInfo())
+        cur_chunk = DB::Squashing::squash(std::move(planned_chunk));
 }
 
 SquashingTransform::GenerateResult SquashingTransform::onGenerate()
@@ -31,7 +33,10 @@ SquashingTransform::GenerateResult SquashingTransform::onGenerate()
 
 void SquashingTransform::onFinish()
 {
-    finish_chunk = Squashing::squash(squashing.flush());
+    Chunk chunk = squashing.flush();
+    if (chunk.hasChunkInfo())
+        chunk = DB::Squashing::squash(std::move(chunk));
+    finish_chunk.setColumns(chunk.getColumns(), chunk.getNumRows());
 }
 
 void SquashingTransform::work()
@@ -44,7 +49,6 @@ void SquashingTransform::work()
     }
 
     ExceptionKeepingTransform::work();
-
     if (finish_chunk)
     {
         data.chunk = std::move(finish_chunk);
@@ -63,14 +67,18 @@ void SimpleSquashingTransform::transform(Chunk & chunk)
 {
     if (!finished)
     {
-        chunk = Squashing::squash(squashing.add(std::move(chunk)));
+        Chunk planned_chunk = squashing.add(std::move(chunk));
+        if (planned_chunk.hasChunkInfo())
+            chunk = DB::Squashing::squash(std::move(planned_chunk));
     }
     else
     {
         if (chunk.hasRows())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Chunk expected to be empty, otherwise it will be lost");
 
-        chunk = Squashing::squash(squashing.flush());
+        chunk = squashing.flush();
+        if (chunk.hasChunkInfo())
+            chunk = DB::Squashing::squash(std::move(chunk));
     }
 }
 

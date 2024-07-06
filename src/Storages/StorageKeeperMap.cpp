@@ -119,10 +119,10 @@ public:
 
     std::string getName() const override { return "StorageKeeperMapSink"; }
 
-    void consume(Chunk & chunk) override
+    void consume(Chunk chunk) override
     {
         auto rows = chunk.getNumRows();
-        auto block = getHeader().cloneWithColumns(chunk.getColumns());
+        auto block = getHeader().cloneWithColumns(chunk.detachColumns());
 
         WriteBufferFromOwnString wb_key;
         WriteBufferFromOwnString wb_value;
@@ -1248,10 +1248,7 @@ void StorageKeeperMap::mutate(const MutationCommands & commands, ContextPtr loca
 
     Block block;
     while (executor.pull(block))
-    {
-        auto chunk = Chunk(block.getColumns(), block.rows());
-        sink->consume(chunk);
-    }
+        sink->consume(Chunk{block.getColumns(), block.rows()});
 
     sink->finalize<true>(strict);
 }

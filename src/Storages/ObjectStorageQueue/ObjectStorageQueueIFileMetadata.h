@@ -23,7 +23,7 @@ public:
         void onProcessing();
         void onProcessed();
         void onFailed(const std::string & exception);
-        void updateState(State state_) { state = state_; }
+        void updateState(State state_);
 
         std::string getException() const;
 

@@ -137,7 +137,7 @@ select arrayUniq(thread_ids) from system.query_log where
     Settings['parallel_view_processing'] = '1' and
     Settings['optimize_trivial_insert_select'] = '0' and
     Settings['max_insert_threads'] = '16';
-18
+5
 select count() from testX;
 60
 select count() from testXA;
@@ -185,7 +185,7 @@ select arrayUniq(thread_ids) from system.query_log where
     Settings['parallel_view_processing'] = '1' and
     Settings['optimize_trivial_insert_select'] = '1' and
     Settings['max_insert_threads'] = '16';
-18
+5
 select count() from testX;
 80
 select count() from testXA;

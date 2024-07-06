@@ -1,7 +1,6 @@
 #pragma once
 #include <Processors/IProcessor.h>
-#include <Processors/Chunk.h>
-#include <memory>
+
 
 namespace DB
 {
@@ -112,12 +111,11 @@ private:
 };
 
 
-class DelayedBlocksTask : public ChunkInfoCloneable<DelayedBlocksTask>
+class DelayedBlocksTask : public ChunkInfo
 {
 public:
 
     DelayedBlocksTask() = default;
-    DelayedBlocksTask(const DelayedBlocksTask & other) = default;
     explicit DelayedBlocksTask(IBlocksStreamPtr delayed_blocks_, JoiningTransform::FinishCounterPtr left_delayed_stream_finish_counter_)
         : delayed_blocks(std::move(delayed_blocks_))
         , left_delayed_stream_finish_counter(left_delayed_stream_finish_counter_)
