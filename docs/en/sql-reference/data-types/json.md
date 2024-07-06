@@ -5,14 +5,11 @@ sidebar_label: Object Data Type
 keywords: [object, data type]
 ---
 
-:::note
-**ClickHouse handles JSON documents in a variety of way, allowing you to bring structure to this data and query it quickly and efficiently. See [this guide](/docs/en/integrations/data-formats/json) for detailed guidance on working with JSON.**:::
+# Object Data Type (deprecated)
 
-# Object Data Type
+**This feature is not production-ready and is now deprecated.** If you need to work with JSON documents, consider using [this guide](/docs/en/integrations/data-ingestion/data-formats/json) instead. A new implementation to support JSON object is in progress and can be tracked [here](https://github.com/ClickHouse/ClickHouse/issues/54864).
 
-:::note
-This feature is not production-ready and is now deprecated. If you need to work with JSON documents, consider using [this guide](/docs/en/integrations/data-ingestion/data-formats/json) instead. A new implementation to support JSON object is in progress and can be tracked [here](https://github.com/ClickHouse/ClickHouse/issues/54864)
-:::
+<hr />
 
 Stores JavaScript Object Notation (JSON) documents in a single column.
 
