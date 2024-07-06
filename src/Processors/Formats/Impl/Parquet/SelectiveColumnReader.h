@@ -18,11 +18,32 @@ namespace DB
 class RowSet
 {
 public:
-    void set(size_t i, bool value) { }
-    bool get(size_t i) { return true; }
-    size_t offset() { return 0; }
-    size_t addOffset(size_t i);
-    size_t totalRows() { return 0; }
+    explicit RowSet(size_t maxRows) : max_rows_(maxRows)
+    {
+        bitset.flip();
+    }
+
+    void set(size_t i, bool value) { bitset.set(i, value);}
+    bool get(size_t i) { return bitset.test(i); }
+    size_t totalRows() const { return max_rows_; }
+    bool none() const
+    {
+        size_t count =0;
+        for (size_t i = 0; i < max_rows_; i++)
+        {
+            if (bitset.test(i))
+            {
+                count++;
+            }
+        }
+        if (!count)
+            return true;
+        false;
+    }
+
+private:
+    size_t max_rows_ = 0;
+    std::bitset<8192> bitset;
 };
 
 class SelectiveColumnReader;
@@ -43,29 +64,53 @@ public:
     std::shared_ptr<parquet::Page> page;
     PaddedPODArray<Int16> def_levels;
     PaddedPODArray<Int16> rep_levels;
-    const uint8_t * buffer = nullptr;
-    size_t rows_read = 0;
+    const uint8_t * buffer;
     size_t remain_rows = 0;
 };
 
 class SelectiveColumnReader
 {
 public:
-    virtual ~SelectiveColumnReader();
-    virtual void computeRowSet(RowSet row_set, size_t & rows_to_read) = 0;
-    virtual void read(MutableColumnPtr & column, RowSet row_set, size_t & rows_to_read) = 0;
+    virtual ~SelectiveColumnReader() = 0;
+    virtual void computeRowSet(RowSet& row_set, size_t rows_to_read) = 0;
+    virtual void computeRowSetSpace(RowSet& row_set, PaddedPODArray<UInt8>& null_map, size_t rows_to_read) {};
+    virtual void read(MutableColumnPtr & column, RowSet& row_set, size_t rows_to_read) = 0;
+    virtual void readSpace(MutableColumnPtr & column, RowSet& row_set, PaddedPODArray<UInt8>& null_map, size_t rows_to_read) {};
     virtual void getValues() { }
-    const PaddedPODArray<Int16> & getDefenitionLevels()
+    void readPageIfNeeded();
+
+    virtual MutableColumnPtr createColumn() = 0;
+    const PaddedPODArray<Int16> & getDefinitionLevels()
     {
         readPageIfNeeded();
         return state.def_levels;
     }
 
+    virtual size_t currentRemainRows() const
+    {
+        return state.remain_rows;
+    }
+
+    void skipNulls(size_t rows_to_skip)
+    {
+        state.remain_rows -= rows_to_skip;
+    }
+
+    virtual void skip(size_t rows) = 0;
+
 protected:
-    void readPageIfNeeded();
     void readPage();
     void readDataPageV1(const parquet::DataPageV1 & page);
-    void readDictPage(const parquet::DictionaryPage & page);
+    void readDictPage(const parquet::DictionaryPage & page) {}
+    int16_t max_definition_level() const
+    {
+        return scan_spec.column_desc->max_definition_level();
+    }
+
+    int16_t max_repetition_level() const
+    {
+        return scan_spec.column_desc->max_repetition_level();
+    }
 
     std::unique_ptr<parquet::PageReader> page_reader;
     ScanState state;
@@ -77,14 +122,18 @@ class Int64ColumnDirectReader : public SelectiveColumnReader
 {
 public:
     ~Int64ColumnDirectReader() override = default;
-    void computeRowSet(RowSet row_set, size_t & rows_to_read) override;
-    void read(MutableColumnPtr & column, RowSet row_set, size_t & rows_to_read) override;
+    MutableColumnPtr createColumn() override;
+    void computeRowSet(RowSet& row_set, size_t offset, size_t value_offset, size_t rows_to_read) override;
+    void computeRowSetSpace(RowSet & row_set, PaddedPODArray<UInt8> & null_map, size_t rows_to_read) override;
+    void read(MutableColumnPtr & column, RowSet& row_set, size_t rows_to_read) override;
+    void readSpace(MutableColumnPtr & column, RowSet & row_set, PaddedPODArray<UInt8>& null_map, size_t rows_to_read) override;
+    void skip(size_t rows) override;
 };
 
 class RowGroupChunkReader
 {
 public:
-    Chunk readChunk(int rows);
+    Chunk readChunk(size_t rows);
 
 private:
     std::vector<String> filter_columns;
@@ -95,10 +144,25 @@ private:
 class OptionalColumnReader : public SelectiveColumnReader
 {
 public:
-    void computeRowSet(RowSet row_set, size_t & rows_to_read) override;
-    void read(MutableColumnPtr & column, RowSet row_set, size_t & rows_to_read) override;
+    ~OptionalColumnReader() override {}
+    MutableColumnPtr createColumn() override;
+    size_t currentRemainRows() const override;
+    void computeRowSet(RowSet& row_set, size_t rows_to_read) override;
+    void read(MutableColumnPtr & column, RowSet& row_set, size_t offset, size_t rows_to_read) override;
+    void skip(size_t rows) override;
 
 private:
+    void nextBatchNullMap(size_t rows_to_read);
+    void cleanNullMap()
+    {
+        cur_null_count = 0;
+        cur_null_map.resize(0);
+    }
+
     SelectiveColumnReaderPtr child;
+    PaddedPODArray<UInt8> cur_null_map;
+    size_t cur_null_count = 0;
+    int def_level = 0;
+    int rep_level = 0;
 };
 }
