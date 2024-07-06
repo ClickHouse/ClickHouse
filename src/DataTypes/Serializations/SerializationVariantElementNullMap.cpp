@@ -118,8 +118,8 @@ void SerializationVariantElementNullMap::deserializeBinaryBulkWithMultipleStream
     }
     else
     {
-        /// There is no such stream or cached data, it means that there is no Variant column in this part (it could happend after alter table add column).
-        /// In such cases columns are filled with default values, but for null-map column default value should be 1, not 0. Fill column with 1 here instead
+        /// There is no such stream or cached data, it means that there is no Variant column in this part (it could happen after alter table add column).
+        /// In such cases columns are filled with default values, but for null-map column default value should be 1, not 0. Fill column with 1 here instead.
         MutableColumnPtr mutable_column = result_column->assumeMutable();
         auto & data = assert_cast<ColumnUInt8 &>(*mutable_column).getData();
         data.resize_fill(data.size() + limit, 1);
