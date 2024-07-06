@@ -737,7 +737,12 @@ void LocalServer::processConfig()
     DatabaseCatalog::instance().initializeAndLoadTemporaryDatabase();
 
     std::string default_database = server_settings.default_database;
-    DatabaseCatalog::instance().attachDatabase(default_database, createClickHouseLocalDatabaseOverlay(default_database, global_context));
+    {
+        DatabasePtr database = createClickHouseLocalDatabaseOverlay(default_database, global_context);
+        if (UUID uuid = database->getUUID(); uuid != UUIDHelpers::Nil)
+            DatabaseCatalog::instance().addUUIDMapping(uuid);
+        DatabaseCatalog::instance().attachDatabase(default_database, std::move(database));
+    }
     global_context->setCurrentDatabase(default_database);
 
     if (getClientConfiguration().has("path"))
