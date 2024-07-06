@@ -1966,7 +1966,9 @@ macOS
 mailrugo
 mailto
 makeDate
+makeDate32
 makeDateTime
+makeDateTime64
 mannWhitneyUTest
 mannwhitneyutest
 mapAdd
