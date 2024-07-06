@@ -568,7 +568,7 @@ SELECT upper('clickhouse');
 Converts a string to lowercase, assuming that the string contains valid UTF-8 encoded text. If this assumption is violated, no exception is thrown and the result is undefined.
 
 :::note
-Does not detect the language, e.g. for Turkish the result might not be exactly correct (i/İ vs. i/I). If the length of the UTF-8 byte sequence is different for upper and lower case of a code point, the result may be incorrect for this code point.
+Does not detect the language, e.g. for Turkish the result might not be exactly correct (i/İ vs. i/I). If the length of the UTF-8 byte sequence is different for upper and lower case of a code point (such as `ẞ` and `ß`), the result may be incorrect for this code point.
 :::
 
 **Syntax**
@@ -606,7 +606,7 @@ Result:
 Converts a string to uppercase, assuming that the string contains valid UTF-8 encoded text. If this assumption is violated, no exception is thrown and the result is undefined.
 
 :::note
-Does not detect the language, e.g. for Turkish the result might not be exactly correct (i/İ vs. i/I). If the length of the UTF-8 byte sequence is different for upper and lower case of a code point, the result may be incorrect for this code point.
+Does not detect the language, e.g. for Turkish the result might not be exactly correct (i/İ vs. i/I). If the length of the UTF-8 byte sequence is different for upper and lower case of a code point (such as `ẞ` and `ß`), the result may be incorrect for this code point.
 :::
 
 **Syntax**
@@ -2335,6 +2335,24 @@ Result:
 ## initcap
 
 Convert the first letter of each word to upper case and the rest to lower case. Words are sequences of alphanumeric characters separated by non-alphanumeric characters.
+
+:::note
+Because `initCap` converts only the first letter of each word to upper case you may observe unexpected behaviour for words containing apostrophes or capital letters. For example:
+
+```sql
+SELECT initCap('mother''s daughter'), initCap('joe McAdam');
+```
+
+will return
+
+```response
+┌─initCap('mother\'s daughter')─┬─initCap('joe McAdam')─┐
+│ Mother'S Daughter             │ Joe Mcadam            │
+└───────────────────────────────┴───────────────────────┘
+```
+
+This is a known behaviour, with no plans currently to fix it.
+:::
 
 **Syntax**
 
