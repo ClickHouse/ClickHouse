@@ -3013,25 +3013,24 @@ Query:
 
 ```sql
 DROP TABLE IF EXISTS mt;
-CREATE TABLE mt (n UInt64) ENGINE=MergeTree ORDER BY n PARTITION BY n % 2;
-INSERT INTO mt SELECT * FROM numbers(10);
-SELECT partitionId(*) FROM mt;
+CREATE TABLE mt (i int, j int) ENGINE=MergeTree PARTITION BY i ORDER BY j SETTINGS index_granularity = 1;
+INSERT INTO mt VALUES (1, 1), (1, 2), (1, 3), (2, 4), (2, 5), (2, 6);
+SELECT * FROM mt WHERE _partition_id = partitionId(1);
+SELECT * FROM mt WHERE _partition_id = partitionId(2);
 ```
 Result:
 
 ```response
-    ┌─partitionId(n)─┐
- 1. │ 0              │
- 2. │ 2              │
- 3. │ 4              │
- 4. │ 6              │
- 5. │ 8              │
- 6. │ 10             │
- 7. │ 12             │
- 8. │ 14             │
- 9. │ 16             │
-10. │ 18             │
-    └────────────────┘
+   ┌─i─┬─j─┐
+1. │ 1 │ 1 │
+2. │ 1 │ 2 │
+3. │ 1 │ 3 │
+   └───┴───┘
+   ┌─i─┬─j─┐
+1. │ 2 │ 4 │
+2. │ 2 │ 5 │
+3. │ 2 │ 6 │
+   └───┴───┘
 ```
 
 
