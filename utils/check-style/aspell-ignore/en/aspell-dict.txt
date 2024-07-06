@@ -1967,7 +1967,6 @@ mailrugo
 mailto
 makeDate
 makeDateTime
-makeDateTime64
 mannWhitneyUTest
 mannwhitneyutest
 mapAdd
