@@ -3013,8 +3013,18 @@ Query:
 
 ```sql
 DROP TABLE IF EXISTS mt;
-CREATE TABLE mt (i int, j int) ENGINE=MergeTree PARTITION BY i ORDER BY j SETTINGS index_granularity = 1;
+CREATE TABLE mt
+(
+  `i` int,
+  `j` int
+)
+  ENGINE = MergeTree
+PARTITION BY i
+ORDER BY j
+SETTINGS index_granularity = 1;
+
 INSERT INTO mt VALUES (1, 1), (1, 2), (1, 3), (2, 4), (2, 5), (2, 6);
+
 SELECT * FROM mt WHERE _partition_id = partitionId(1);
 SELECT * FROM mt WHERE _partition_id = partitionId(2);
 ```
