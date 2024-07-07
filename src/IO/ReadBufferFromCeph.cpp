@@ -97,6 +97,21 @@ struct ReadBufferFromCeph::Impl : public BufferWithOwnMemory<SeekableReadBuffer>
         return psize;
     }
 
+    void setReadUntilPosition(size_t position) override
+    {
+        read_until_position = position;
+        resetWorkingBuffer();
+    }
+
+    void setReadUntilEnd() override
+    {
+        if (read_until_position)
+        {
+            read_until_position = 0;
+            resetWorkingBuffer();
+        }
+    }
+
     bool nextImpl() override
     {
         size_t num_bytes_to_read;
@@ -194,6 +209,16 @@ ReadBufferFromCeph::ReadBufferFromCeph(
 }
 
 ReadBufferFromCeph::~ReadBufferFromCeph() = default;
+
+void ReadBufferFromCeph::setReadUntilPosition(size_t position)
+{
+    impl->setReadUntilPosition(position);
+}
+
+void ReadBufferFromCeph::setReadUntilEnd()
+{
+    impl->setReadUntilEnd();
+}
 
 bool ReadBufferFromCeph::nextImpl()
 {

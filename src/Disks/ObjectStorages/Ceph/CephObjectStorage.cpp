@@ -117,8 +117,6 @@ std::unique_ptr<ReadBufferFromFileBase> CephObjectStorage::readObjects( /// NOLI
     std::optional<size_t>,
     std::optional<size_t>) const
 {
-    if (objects.size() == 1)
-        return readObject(objects.front(), read_settings);
 
     ReadSettings disk_read_settings = patchSettings(read_settings);
     auto global_context = Context::getGlobalContextInstance();
@@ -133,13 +131,35 @@ std::unique_ptr<ReadBufferFromFileBase> CephObjectStorage::readObjects( /// NOLI
             /* use_external_buffer */ true);
     };
 
-    return std::make_unique<ReadBufferFromRemoteFSGather>(
-        std::move(read_buffer_creator),
-        objects,
-        "ceph:" + endpoint.pool + "/",
-        disk_read_settings,
-        global_context->getFilesystemCacheLog(),
-        /* use_external_buffer */ false);
+    switch (read_settings.remote_fs_method)
+    {
+        case RemoteFSReadMethod::read: {
+            return std::make_unique<ReadBufferFromRemoteFSGather>(
+                std::move(read_buffer_creator),
+                objects,
+                "ceph:" + endpoint.pool + "/",
+                disk_read_settings,
+                global_context->getFilesystemCacheLog(),
+                /* use_external_buffer */ false);
+        }
+        case RemoteFSReadMethod::threadpool: {
+            auto impl = std::make_unique<ReadBufferFromRemoteFSGather>(
+                std::move(read_buffer_creator),
+                objects,
+                "ceph:" + endpoint.pool + "/",
+                disk_read_settings,
+                global_context->getFilesystemCacheLog(),
+                /* use_external_buffer */ true);
+
+            auto & reader = global_context->getThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER);
+            return std::make_unique<AsynchronousBoundedReadBuffer>(
+                std::move(impl),
+                reader,
+                disk_read_settings,
+                global_context->getAsyncReadCounters(),
+                global_context->getFilesystemReadPrefetchesLog());
+        }
+    }
 }
 
 std::unique_ptr<ReadBufferFromFileBase> CephObjectStorage::readObject( /// NOLINT

@@ -47,6 +47,10 @@ public:
     size_t getFileSize() override;
     String getFileName() const override;
 
+    void setReadUntilPosition(size_t position) override;
+    void setReadUntilEnd() override;
+    bool supportsRightBoundedReads() const override { return true; }
+
     off_t seek(off_t off, int whence) override;
 
     bool nextImpl() override;

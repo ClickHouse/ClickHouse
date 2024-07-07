@@ -75,11 +75,22 @@ size_t RadosIO::read(const String & oid, char * data, size_t length, uint64_t of
 {
     assertConnected();
     ceph::bufferlist bl;
-    // bl.append(data, safe_cast<int>(length));
+    ceph::bufferptr bp = ceph::buffer::create_static(safe_cast<int>(length), data);
+    bl.push_back(bp);
     auto bytes_read = io_ctx.read(oid, bl, length, offset);
+
     if (bytes_read < 0)
         throw Exception(ErrorCodes::CEPH_ERROR, "Cannot read from object `{}:{}`. Error: {}", pool, oid, strerror(-bytes_read));
-    memcpy(data, bl.c_str(), bytes_read);
+    if (bl.length() > length)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Error while reading object `{}:{}`: expect maximum {} bytes, get {} bytes", pool, oid, length, bl.length());
+
+    /// I expect that read data will be populated in the provided buffer, nevertheless, bufferlist doesn't always work this way
+    /// This implementation is borrowed from librados_c.cc implementation of method `rados_read`
+    if (!bl.is_provided_buffer(data))
+    {
+        bl.begin().copy(bl.length(), data);
+        bytes_read = bl.length();
+    }
     return bytes_read;
 }
 

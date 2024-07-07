@@ -8,8 +8,8 @@
 
 #if USE_CEPH
 
-#include <atomic>
 #include <memory>
+#include <rados/librados.h>
 #include <rados/librados.hpp>
 #include <base/types.h>
 #include <Poco/Util/AbstractConfiguration.h>
