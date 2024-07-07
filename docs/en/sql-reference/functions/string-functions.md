@@ -1556,8 +1556,7 @@ The result type is UInt64.
 
 ## normalizeQuery
 
-Replaces literals, sequences of literals and complex aliases (containing whitespace, more than two digits
-or at least 36 bytes long such as UUIDs) with placeholder `?`.
+Replaces literals, sequences of literals and complex aliases (containing whitespace, more than two digits or at least 36 bytes long such as UUIDs) with placeholder `?`.
 
 **Syntax**
 
