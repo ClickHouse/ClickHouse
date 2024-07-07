@@ -17,6 +17,14 @@ JSONCompactWithProgressRowOutputFormat::JSONCompactWithProgressRowOutputFormat(
 {
 }
 
+void JSONCompactWithProgressRowOutputFormat::writePrefix()
+{
+    JSONUtils::writeCompactObjectStart(*ostr);
+    JSONUtils::writeCompactMetadata(names, types, settings, *ostr);
+    JSONUtils::writeCompactObjectEnd(*ostr);
+    writeCString("}\n", *ostr);
+}
+
 void JSONCompactWithProgressRowOutputFormat::writeField(const IColumn & column, const ISerialization & serialization, size_t row_num)
 {
     JSONUtils::writeFieldFromColumn(column, serialization, row_num, yield_strings, settings, *ostr);
@@ -32,14 +40,20 @@ void JSONCompactWithProgressRowOutputFormat::writeRowStartDelimiter()
 {
     if (has_progress)
         writeProgress();
-    JSONUtils::writeCompactArrayStart(*ostr, 2);
+    writeCString("{\"data\":", *ostr);
+    JSONUtils::writeCompactArrayStart(*ostr);
 }
 
 void JSONCompactWithProgressRowOutputFormat::writeRowEndDelimiter()
 {
     JSONUtils::writeCompactArrayEnd(*ostr);
+    writeCString("}\n", *ostr);
     field_number = 0;
     ++row_count;
+}
+
+void JSONCompactWithProgressRowOutputFormat::writeRowBetweenDelimiter()
+{
 }
 
 void JSONCompactWithProgressRowOutputFormat::writeBeforeTotals()
@@ -91,7 +105,6 @@ void JSONCompactWithProgressRowOutputFormat::writeSuffix()
 {
     if (has_progress)
         writeProgress();
-    JSONRowOutputFormat::writeSuffix();
 }
 
 void JSONCompactWithProgressRowOutputFormat::writeProgress()
@@ -101,6 +114,28 @@ void JSONCompactWithProgressRowOutputFormat::writeProgress()
         writeString(progress_line,  *ostr);
     progress_lines.clear();
     has_progress = false;
+}
+
+void JSONCompactWithProgressRowOutputFormat::finalizeImpl()
+{
+    JSONUtils::writeCompactAdditionalInfo(
+        row_count,
+        statistics.rows_before_limit,
+        statistics.applied_limit,
+        statistics.watch,
+        statistics.progress,
+        settings.write_statistics && exception_message.empty(),
+        *ostr);
+
+    exception_message = "Test exception message.";
+    if (!exception_message.empty())
+    {
+        writeCString("\n", *ostr);
+        JSONUtils::writeCompactObjectStart(*ostr);
+        JSONUtils::writeException(exception_message, *ostr, settings, 0);
+        JSONUtils::writeCompactObjectEnd(*ostr);
+    }
+    ostr->next();
 }
 
 void registerOutputFormatJSONCompactWithProgress(FormatFactory & factory)

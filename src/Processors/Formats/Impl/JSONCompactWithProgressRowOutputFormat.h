@@ -32,6 +32,7 @@ private:
     void writeFieldDelimiter() override;
     void writeRowStartDelimiter() override;
     void writeRowEndDelimiter() override;
+    void writeRowBetweenDelimiter() override;
     bool supportTotals() const override { return true; }
     bool supportExtremes() const override { return true; }
     void writeBeforeTotals() override;
@@ -40,7 +41,10 @@ private:
     void writeTotals(const Columns & columns, size_t row_num) override;
 
     void writeProgress();
+    void writePrefix() override;
     void writeSuffix() override;
+    void finalizeImpl() override;
+
 
     Progress progress;
     std::vector<String> progress_lines;
