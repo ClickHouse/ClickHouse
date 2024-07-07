@@ -14,6 +14,8 @@ public:
     explicit ReadBufferFromString(const S & s) : ReadBufferFromMemory(s.data(), s.size()) {}
 
     explicit ReadBufferFromString(std::string_view s) : ReadBufferFromMemory(s.data(), s.size()) {}
+
+    std::string_view stringView() const { return std::string_view(pos, working_buffer.end() - pos); }
 };
 
 class ReadBufferFromOwnString : public String, public ReadBufferFromString

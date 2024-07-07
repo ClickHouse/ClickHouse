@@ -98,6 +98,7 @@
 #include <Storages/System/StorageSystemDashboards.h>
 #include <Storages/System/StorageSystemViewRefreshes.h>
 #include <Storages/System/StorageSystemDNSCache.h>
+#include <Storages/System/StorageSystemWasmModules.h>
 
 #if defined(__ELF__) && !defined(OS_FREEBSD)
 #include <Storages/System/StorageSystemSymbols.h>
@@ -237,6 +238,12 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
 
     if (context->getConfigRef().getInt("allow_experimental_transactions", 0))
         attach<StorageSystemTransactions>(context, system_database, "transactions", "Contains a list of transactions and their state.");
+
+    if (context->hasWasmModuleManager())
+    {
+        attach<StorageSystemWasmModules>(context, system_database, "webassembly_modules", "Allows to load Webassembly modules into ClickHouse to create User Defined Functions from them.",
+            context->getWasmModuleManager());
+    }
 }
 
 void attachSystemTablesAsync(ContextPtr context, IDatabase & system_database, AsynchronousMetrics & async_metrics)

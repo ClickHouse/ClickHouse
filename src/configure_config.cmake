@@ -194,5 +194,7 @@ endif()
 if (ENABLE_BUZZHOUSE)
     set (USE_BUZZHOUSE 1)
 endif()
-
+if (TARGET ch_contrib::wasmedge)
+    set(USE_WASMEDGE 1)
+endif()
 set(SOURCE_DIR ${PROJECT_SOURCE_DIR})

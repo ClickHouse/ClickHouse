@@ -247,6 +247,7 @@ add_object_library(clickhouse_interpreters_access Interpreters/Access)
 add_object_library(clickhouse_interpreters_mysql Interpreters/MySQL)
 add_object_library(clickhouse_interpreters_clusterproxy Interpreters/ClusterProxy)
 add_object_library(clickhouse_interpreters_jit Interpreters/JIT)
+add_object_library(clickhouse_interpreters_wasm Interpreters/WebAssembly)
 add_object_library(clickhouse_columns Columns)
 add_object_library(clickhouse_storages Storages)
 add_object_library(clickhouse_storages_mysql Storages/MySQL)
@@ -662,6 +663,10 @@ endif()
 
 if (ENABLE_BUZZHOUSE)
     dbms_target_link_libraries(PRIVATE clickhouse_buzzhouse_proto)
+endif()
+
+if (TARGET ch_contrib::wasmedge)
+    dbms_target_link_libraries(PUBLIC ch_contrib::wasmedge)
 endif()
 
 if (ENABLE_TESTS)

@@ -16,6 +16,7 @@
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
+#include <Functions/UserDefined/UserDefinedWebAssembly.h>
 #include <Functions/grouping.h>
 
 #include <TableFunctions/TableFunctionFactory.h>
@@ -30,6 +31,9 @@
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
+
+#include <Parsers/ASTCreateSQLMacroFunctionQuery.h>
+#include <Parsers/ASTCreateWasmFunctionQuery.h>
 
 #include <Analyzer/Utils.h>
 #include <Analyzer/SetUtils.h>
@@ -489,17 +493,17 @@ ProjectionName QueryAnalyzer::calculateSortColumnProjectionName(
 /** Try to get lambda node from sql user defined functions if sql user defined function with function name exists.
   * Returns lambda node if function exists, nullptr otherwise.
   */
-QueryTreeNodePtr QueryAnalyzer::tryGetLambdaFromSQLUserDefinedFunctions(const std::string & function_name, ContextPtr context)
+QueryTreeNodePtr QueryAnalyzer::tryGetLambdaFromSQLUserDefinedMacroFunctions(const ASTPtr & create_function_ast, ContextPtr context)
 {
-    auto user_defined_function = UserDefinedSQLFunctionFactory::instance().tryGet(function_name);
-    if (!user_defined_function)
-        return {};
+    const auto * create_function_query = typeid_cast<const ASTCreateSQLMacroFunctionQuery *>(create_function_ast.get());
+    if (!create_function_query)
+        return nullptr;
 
+    const auto & function_name = create_function_query->getFunctionName();
     auto it = function_name_to_user_defined_lambda.find(function_name);
     if (it != function_name_to_user_defined_lambda.end())
         return it->second;
 
-    const auto & create_function_query = user_defined_function->as<ASTCreateFunctionQuery>();
     auto result_node = buildQueryTree(create_function_query->function_core, context);
     if (result_node->getNodeType() != QueryTreeNodeType::LAMBDA)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
@@ -3118,22 +3122,26 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     /// Calculate function projection name
     ProjectionNames result_projection_names = { calculateFunctionProjectionName(node, parameters_projection_names, arguments_projection_names) };
 
+    ASTPtr user_defined_function = nullptr;
     /** Try to resolve function as
-      * 1. Lambda function in current scope. Example: WITH (x -> x + 1) AS lambda SELECT lambda(1);
-      * 2. Lambda function from sql user defined functions.
-      * 3. Special `untuple` function.
-      * 4. Special `grouping` function.
-      * 5. Window function.
-      * 6. Executable user defined function.
-      * 7. Ordinary function.
-      * 8. Aggregate function.
+      * - Lambda function in current scope. Example: WITH (x -> x + 1) AS lambda SELECT lambda(1);
+      * - Lambda function from sql user defined functions.
+      * - Special `untuple` function.
+      * - Special `grouping` function.
+      * - Window function.
+      * - Executable user defined function.
+      * - Ordinary function.
+      * - Aggregate function.
       *
       * TODO: Provide better error hints.
       */
     if (!function_node.isWindowFunction())
     {
-        if (!lambda_expression_untyped)
-            lambda_expression_untyped = tryGetLambdaFromSQLUserDefinedFunctions(function_node.getFunctionName(), scope.context);
+        user_defined_function = UserDefinedSQLFunctionFactory::instance().tryGet(function_name);
+
+        if (!lambda_expression_untyped && user_defined_function)
+            /// Try to substitute user defined SQL expression
+            lambda_expression_untyped = tryGetLambdaFromSQLUserDefinedMacroFunctions(user_defined_function, scope.context);
 
         /** If function is resolved as lambda.
           * Clone lambda before resolve.
@@ -3285,7 +3293,17 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     }
 
     FunctionOverloadResolverPtr function = UserDefinedExecutableFunctionFactory::instance().tryGet(function_name, scope.context, parameters); /// NOLINT(readability-static-accessed-through-instance)
-    bool is_executable_udf = true;
+    /// Executable UDFs may have parameters. They are checked in UserDefinedExecutableFunctionFactory.
+    bool can_have_parameters = bool(function);
+
+    if (!function)
+    {
+        if (const auto * create_function_query = typeid_cast<const ASTCreateWasmFunctionQuery *>(user_defined_function.get()))
+        {
+            UNUSED(create_function_query);
+            function = UserDefinedWebAssemblyFunctionFactory::instance().get(function_name);
+        }
+    }
 
     IdentifierResolveScope::ResolvedFunctionsCache * function_cache = nullptr;
 
@@ -3300,8 +3318,6 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             function_cache->resolver = FunctionFactory::instance().tryGet(function_name, scope.context);
 
         function = function_cache->resolver;
-
-        is_executable_udf = false;
     }
 
     if (function)
@@ -3358,8 +3374,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         return result_projection_names;
     }
 
-    /// Executable UDFs may have parameters. They are checked in UserDefinedExecutableFunctionFactory.
-    if (!parameters.empty() && !is_executable_udf)
+    if (!parameters.empty() && !can_have_parameters)
     {
         throw Exception(ErrorCodes::FUNCTION_CANNOT_HAVE_PARAMETERS, "Function {} is not parametric", function_name);
     }
