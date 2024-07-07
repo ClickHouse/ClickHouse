@@ -1098,6 +1098,8 @@ aggregatefunction
 aggregatingmergetree
 aggregatio
 aggretate
+aggthrow
+aggThrow
 aiochclient
 allocator
 alphaTokens
