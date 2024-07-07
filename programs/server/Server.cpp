@@ -11,6 +11,7 @@
 #include <Poco/Util/HelpFormatter.h>
 #include <Poco/Environment.h>
 #include <Poco/Config.h>
+#include <Common/Jemalloc.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/logger_useful.h>
 #include <base/phdr_cache.h>
@@ -625,9 +626,35 @@ static void initializeAzureSDKLogger(
 #endif
 }
 
+#if defined(SANITIZER)
+static std::vector<String> getSanitizerNames()
+{
+    std::vector<String> names;
+
+#if defined(ADDRESS_SANITIZER)
+    names.push_back("address");
+#endif
+#if defined(THREAD_SANITIZER)
+    names.push_back("thread");
+#endif
+#if defined(MEMORY_SANITIZER)
+    names.push_back("memory");
+#endif
+#if defined(UNDEFINED_BEHAVIOR_SANITIZER)
+    names.push_back("undefined behavior");
+#endif
+
+    return names;
+}
+#endif
+
 int Server::main(const std::vector<std::string> & /*args*/)
 try
 {
+#if USE_JEMALLOC
+    setJemallocBackgroundThreads(true);
+#endif
+
     Stopwatch startup_watch;
 
     Poco::Logger * log = &logger();
@@ -711,7 +738,17 @@ try
         global_context->addWarningMessage("ThreadFuzzer is enabled. Application will run slowly and unstable.");
 
 #if defined(SANITIZER)
-    global_context->addWarningMessage("Server was built with sanitizer. It will work slowly.");
+    auto sanitizers = getSanitizerNames();
+
+    String log_message;
+    if (sanitizers.empty())
+        log_message = "sanitizer";
+    else if (sanitizers.size() == 1)
+        log_message = fmt::format("{} sanitizer", sanitizers.front());
+    else
+        log_message = fmt::format("sanitizers ({})", fmt::join(sanitizers, ", "));
+
+    global_context->addWarningMessage(fmt::format("Server was built with {}. It will work slowly.", log_message));
 #endif
 
 #if defined(SANITIZE_COVERAGE) || WITH_COVERAGE
