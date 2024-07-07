@@ -559,6 +559,7 @@ namespace JSONUtils
         bool write_statistics,
         WriteBuffer & out)
     {
+        writeCompactObjectStart(out);
         writeCompactObjectStart(out, 0, "statistics");
         writeTitle("rows", out, 0, "");
         writeIntText(rows, out);
@@ -584,6 +585,7 @@ namespace JSONUtils
             writeTitle("bytes_read", out, 0, "");
             writeText(progress.read_bytes.load(), out);
         }
+        writeCompactObjectEnd(out);
         writeCompactObjectEnd(out);
     }
 
