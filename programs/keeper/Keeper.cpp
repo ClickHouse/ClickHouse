@@ -27,6 +27,8 @@
 #include <sys/stat.h>
 #include <pwd.h>
 
+#include <Common/Jemalloc.h>
+
 #include <Interpreters/Context.h>
 
 #include <Coordination/FourLetterCommand.h>
@@ -74,16 +76,6 @@ int mainEntryClickHouseKeeper(int argc, char ** argv)
         return code ? code : 1;
     }
 }
-
-#ifdef CLICKHOUSE_KEEPER_STANDALONE_BUILD
-
-// Weak symbols don't work correctly on Darwin
-// so we have a stub implementation to avoid linker errors
-void collectCrashLog(
-    Int32, UInt64, const String &, const StackTrace &)
-{}
-
-#endif
 
 namespace DB
 {
@@ -277,6 +269,9 @@ HTTPContextPtr httpContext()
 int Keeper::main(const std::vector<std::string> & /*args*/)
 try
 {
+#if USE_JEMALLOC
+    setJemallocBackgroundThreads(true);
+#endif
     Poco::Logger * log = &logger();
 
     UseSSL use_ssl;

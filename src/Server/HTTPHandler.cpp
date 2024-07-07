@@ -37,7 +37,9 @@
 #include <base/getFQDNOrHostName.h>
 #include <base/scope_guard.h>
 #include <Server/HTTP/HTTPResponse.h>
+#include <boost/container/flat_set.hpp>
 
+#include <Access/Common/SSLCertificateSubjects.h>
 #include "config.h"
 
 #include <Poco/Base64Decoder.h>
@@ -380,7 +382,7 @@ bool HTTPHandler::authenticateUser(
     bool has_credentials_in_query_params = params.has("user") || params.has("password");
 
     std::string spnego_challenge;
-    std::string certificate_common_name;
+    SSLCertificateSubjects certificate_subjects;
 
     if (has_auth_headers)
     {
@@ -403,11 +405,11 @@ bool HTTPHandler::authenticateUser(
                                 "to use SSL certificate authentication and authentication via password simultaneously");
 
             if (request.havePeerCertificate())
-                certificate_common_name = request.peerCertificate().commonName();
+                certificate_subjects = extractSSLCertificateSubjects(request.peerCertificate());
 
-            if (certificate_common_name.empty())
+            if (certificate_subjects.empty())
                 throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
-                                "Invalid authentication: SSL certificate authentication requires nonempty certificate's Common Name");
+                                "Invalid authentication: SSL certificate authentication requires nonempty certificate's Common Name or Subject Alternative Name");
 #else
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                             "SSL certificate authentication disabled because ClickHouse was built without SSL library");
@@ -451,10 +453,10 @@ bool HTTPHandler::authenticateUser(
         password = params.get("password", "");
     }
 
-    if (!certificate_common_name.empty())
+    if (!certificate_subjects.empty())
     {
         if (!request_credentials)
-            request_credentials = std::make_unique<SSLCertificateCredentials>(user, certificate_common_name);
+            request_credentials = std::make_unique<SSLCertificateCredentials>(user, std::move(certificate_subjects));
 
         auto * certificate_credentials = dynamic_cast<SSLCertificateCredentials *>(request_credentials.get());
         if (!certificate_credentials)
