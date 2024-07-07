@@ -5,6 +5,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnTuple.h>
 
+#include <Common/Exception.h>
 #include <Common/typeid_cast.h>
 #include <Interpreters/SetVariants.h>
 
@@ -176,6 +177,26 @@ void Set::setHeader(const ColumnsWithTypeAndName & header)
     {
         /// Choose data structure to use for the set.
         data.init(SetVariants::chooseMethod(key_columns, key_sizes));
+    }
+}
+
+void Set::setDataTypes(const DataTypes & datatypes)
+{
+    std::lock_guard lock(rwlock);
+    if (datatypes.size() != keys_size)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Method Set::setDataTypes error, expect size {} but {}", keys_size, datatypes.size());
+
+    for (size_t i = 0; i < keys_size; ++i)
+    {
+        data_types[i] = datatypes[i];
+        if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(data_types[i].get()))
+        {
+            data_types[i] = low_cardinality_type->getDictionaryType();
+        }
+        if (!transform_null_in)
+        {
+            data_types[i] = removeNullable(data_types[i]);
+        }
     }
 }
 

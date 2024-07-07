@@ -47,6 +47,13 @@ public:
       */
     void setHeader(const ColumnsWithTypeAndName & header);
 
+    /**
+      * By default, data_types and set_elements_types remain consistent, but due to handling NULL literals,
+      * data_types may differ from set_elements_types, so this function needs to be called to update data_types.
+      * Note that this function should be called after setHeader.
+      */
+    void setDataTypes(const DataTypes & datatypes);
+
     /// Returns false, if some limit was exceeded and no need to insert more data.
     bool insertFromColumns(const Columns & columns);
     bool insertFromBlock(const ColumnsWithTypeAndName & columns);

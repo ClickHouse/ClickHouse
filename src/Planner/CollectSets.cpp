@@ -69,15 +69,15 @@ public:
         }
         else if (const auto * constant_node = in_second_argument->as<ConstantNode>())
         {
-            DataTypes set_element_types = {in_first_argument->getResultType()};
-            const auto * left_tuple_type = typeid_cast<const DataTypeTuple *>(set_element_types.front().get());
+            DataTypes first_arg_types = {in_first_argument->getResultType()};
+            const auto * left_tuple_type = typeid_cast<const DataTypeTuple *>(first_arg_types.front().get());
             if (left_tuple_type && left_tuple_type->getElements().size() != 1)
-                set_element_types = left_tuple_type->getElements();
+                first_arg_types = left_tuple_type->getElements();
 
-            set_element_types = Set::getElementTypes(std::move(set_element_types), settings.transform_null_in);
+            first_arg_types = Set::getElementTypes(std::move(first_arg_types), settings.transform_null_in);
             auto set_key = in_second_argument->getTreeHash();
 
-            if (sets.findTuple(set_key, set_element_types))
+            if (sets.findTuple(set_key, first_arg_types))
                 return;
 
             bool first_argument_has_nullable_nothing = false;
@@ -87,7 +87,7 @@ public:
                 constant_node->getResultType(),
                 settings.transform_null_in,
                 first_argument_has_nullable_nothing);
-            sets.addFromTuple(set_key, std::move(set), settings, set_element_types, first_argument_has_nullable_nothing);
+            sets.addFromTuple(set_key, std::move(set), settings, first_arg_types, first_argument_has_nullable_nothing);
         }
         else if (in_second_argument_node_type == QueryTreeNodeType::QUERY ||
             in_second_argument_node_type == QueryTreeNodeType::UNION ||

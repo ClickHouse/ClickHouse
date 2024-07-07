@@ -434,15 +434,15 @@ FutureSetPtr makeExplicitSet(
     const auto & dag_node = actions.findInOutputs(column_name);
     const DataTypePtr & left_arg_type = dag_node.result_type;
 
-    DataTypes set_element_types = {left_arg_type};
+    DataTypes left_arg_types = {left_arg_type};
     const auto * left_tuple_type = typeid_cast<const DataTypeTuple *>(left_arg_type.get());
     if (left_tuple_type && left_tuple_type->getElements().size() != 1)
-        set_element_types = left_tuple_type->getElements();
+        left_arg_types = left_tuple_type->getElements();
 
-    set_element_types = Set::getElementTypes(set_element_types, context->getSettingsRef().transform_null_in);
+    left_arg_types = Set::getElementTypes(left_arg_types, context->getSettingsRef().transform_null_in);
 
     auto set_key = right_arg->getTreeHash(/*ignore_aliases=*/ true);
-    if (auto set = prepared_sets.findTuple(set_key, set_element_types))
+    if (auto set = prepared_sets.findTuple(set_key, left_arg_types))
         return set; /// Already prepared.
 
     Block block;
@@ -452,7 +452,8 @@ FutureSetPtr makeExplicitSet(
         block = createBlockForSet(left_arg_type, right_arg_func, context, first_argument_has_nullable_nothing);
     else
         block = createBlockForSet(left_arg_type, right_arg, context, first_argument_has_nullable_nothing);
-    return prepared_sets.addFromTuple(set_key, block, context->getSettingsRef(), set_element_types, first_argument_has_nullable_nothing);
+
+    return prepared_sets.addFromTuple(set_key, block, context->getSettingsRef(), left_arg_types, first_argument_has_nullable_nothing);
 }
 
 class ScopeStack::Index
