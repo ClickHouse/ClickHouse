@@ -2,6 +2,7 @@ import os
 
 import pytest
 import time
+import re
 from helpers.cluster import ClickHouseCluster, is_arm
 from helpers.client import QueryRuntimeException
 from helpers.test_tools import TSV
