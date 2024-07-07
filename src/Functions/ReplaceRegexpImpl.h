@@ -1,9 +1,12 @@
 #pragma once
 
-#include <base/types.h>
 #include <Columns/ColumnString.h>
+#include <Common/OptimizedRegularExpression.h>
 #include <Common/re2.h>
+#include <Functions/Regexps.h>
+#include <Functions/ReplaceStringImpl.h>
 #include <IO/WriteHelpers.h>
+#include <base/types.h>
 
 namespace DB
 {
@@ -100,6 +103,21 @@ struct ReplaceRegexpImpl
             instructions.emplace_back(literals);
 
         return instructions;
+    }
+
+    static bool canFallbackToStringReplacement(const String & needle, const String & replacement, const re2::RE2 & searcher, int num_captures)
+    {
+        if (searcher.NumberOfCapturingGroups())
+            return false;
+
+        checkSubstitutions(replacement, num_captures);
+
+        String required_substring;
+        bool is_trivial;
+        bool required_substring_is_prefix;
+        std::vector<String> alternatives;
+        OptimizedRegularExpression::analyze(needle, required_substring, is_trivial, required_substring_is_prefix, alternatives);
+        return is_trivial && required_substring_is_prefix && required_substring == needle;
     }
 
     static void processString(
@@ -201,6 +219,23 @@ struct ReplaceRegexpImpl
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The pattern argument is not a valid re2 pattern: {}", searcher.error());
 
         int num_captures = std::min(searcher.NumberOfCapturingGroups() + 1, max_captures);
+
+        /// Try to use non-regexp string replacement. This shortcut is implemented only for const-needles + const-replacement as
+        /// pattern analysis incurs some cost too.
+        if (canFallbackToStringReplacement(needle, replacement, searcher, num_captures))
+        {
+            auto convertTrait = [](ReplaceRegexpTraits::Replace first_or_all)
+            {
+                switch (first_or_all)
+                {
+                    case ReplaceRegexpTraits::Replace::First: return ReplaceStringTraits::Replace::First;
+                    case ReplaceRegexpTraits::Replace::All:   return ReplaceStringTraits::Replace::All;
+                }
+            };
+            ReplaceStringImpl<Name, convertTrait(replace)>::vectorConstantConstant(haystack_data, haystack_offsets, needle, replacement, res_data, res_offsets);
+            return;
+        }
+
         Instructions instructions = createInstructions(replacement, num_captures);
 
         for (size_t i = 0; i < haystack_size; ++i)
