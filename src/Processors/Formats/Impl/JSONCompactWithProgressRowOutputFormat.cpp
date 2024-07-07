@@ -81,11 +81,11 @@ void JSONCompactWithProgressRowOutputFormat::writeExtremesElement(const char * t
 
 void JSONCompactWithProgressRowOutputFormat::onProgress(const Progress & value)
 {
-    progress.incrementPiecewiseAtomically(value);
+    statistics.progress.incrementPiecewiseAtomically(value);
     String progress_line;
     WriteBufferFromString buf(progress_line);
     writeCString("{\"progress\":", buf);
-    progress.writeJSON(buf);
+    statistics.progress.writeJSON(buf);
     writeCString("}\n", buf);
     buf.finalize();
     std::lock_guard lock(progress_lines_mutex);
@@ -127,7 +127,6 @@ void JSONCompactWithProgressRowOutputFormat::finalizeImpl()
         settings.write_statistics && exception_message.empty(),
         *ostr);
 
-    exception_message = "Test exception message.";
     if (!exception_message.empty())
     {
         writeCString("\n", *ostr);

@@ -46,7 +46,6 @@ private:
     void finalizeImpl() override;
 
 
-    Progress progress;
     std::vector<String> progress_lines;
     std::mutex progress_lines_mutex;
     /// To not lock mutex and check progress_lines every row,
