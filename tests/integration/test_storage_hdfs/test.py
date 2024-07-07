@@ -1189,7 +1189,7 @@ def test_hive_partitioning_with_one_parameter(started_cluster):
 
     r = node1.query(
         "SELECT _column0 FROM hdfs('hdfs://hdfs1:9000/column0=Elizabeth/parquet_1', 'TSV')",
-        settings={"hdfs_hive_partitioning": 1},
+        settings={"use_hive_partitioning": 1},
     )
     assert r == f"Elizabeth\n"
 
@@ -1206,7 +1206,7 @@ def test_hive_partitioning_with_two_parameters(started_cluster):
 
     r = node1.query(
         "SELECT _column1 FROM hdfs('hdfs://hdfs1:9000/column0=Elizabeth/column1=Gordon/parquet_2', 'TSV');",
-        settings={"hdfs_hive_partitioning": 1},
+        settings={"use_hive_partitioning": 1},
     )
     assert r == f"Gordon\n"
 
@@ -1227,7 +1227,7 @@ def test_hive_partitioning_without_setting(started_cluster):
     with pytest.raises(QueryRuntimeException, match=pattern):
         node1.query(
             f"SELECT _column1 FROM hdfs('hdfs://hdfs1:9000/column0=Elizabeth/column1=Gordon/parquet_2', 'TSV');",
-            settings={"hdfs_hive_partitioning": 0},
+            settings={"use_hive_partitioning": 0},
         )
 
 

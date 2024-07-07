@@ -1484,7 +1484,7 @@ def test_hive_partitioning_with_one_parameter(cluster):
         f"blob_path='{path}', format='CSV', structure='{table_format}')"
     )
     assert azure_query(
-        node, query, settings={"azure_blob_storage_hive_partitioning": 1}
+        node, query, settings={"use_hive_partitioning": 1}
     ).splitlines() == [
         "Elizabeth\tGordon\tsample.csv\t{bucket}/{max_path}\tElizabeth".format(
             bucket="cont", max_path=path
@@ -1497,7 +1497,7 @@ def test_hive_partitioning_with_one_parameter(cluster):
         f"blob_path='{path}', format='CSV', structure='{table_format}') WHERE column1=_column1;"
     )
     assert azure_query(
-        node, query, settings={"azure_blob_storage_hive_partitioning": 1}
+        node, query, settings={"use_hive_partitioning": 1}
     ).splitlines() == ["Gordon"]
 
 
@@ -1521,7 +1521,7 @@ def test_hive_partitioning_with_two_parameters(cluster):
         f"blob_path='{path}', format='CSV', structure='{table_format}') WHERE column1=_column1;"
     )
     assert azure_query(
-        node, query, settings={"azure_blob_storage_hive_partitioning": 1}
+        node, query, settings={"use_hive_partitioning": 1}
     ).splitlines() == [
         "Elizabeth\tGordon\tsample.csv\t{bucket}/{max_path}\tElizabeth\tGordon".format(
             bucket="cont", max_path=path
@@ -1534,7 +1534,7 @@ def test_hive_partitioning_with_two_parameters(cluster):
         f"blob_path='{path}', format='CSV', structure='{table_format}') WHERE column2=_column2;"
     )
     assert azure_query(
-        node, query, settings={"azure_blob_storage_hive_partitioning": 1}
+        node, query, settings={"use_hive_partitioning": 1}
     ).splitlines() == ["Elizabeth"]
 
     query = (
@@ -1543,7 +1543,7 @@ def test_hive_partitioning_with_two_parameters(cluster):
         f"blob_path='{path}', format='CSV', structure='{table_format}') WHERE column2=_column2 AND column1=_column1;"
     )
     assert azure_query(
-        node, query, settings={"azure_blob_storage_hive_partitioning": 1}
+        node, query, settings={"use_hive_partitioning": 1}
     ).splitlines() == ["Elizabeth"]
 
 
@@ -1571,4 +1571,4 @@ def test_hive_partitioning_without_setting(cluster):
     )
 
     with pytest.raises(Exception, match=pattern):
-        azure_query(node, query, settings={"azure_blob_storage_hive_partitioning": 0})
+        azure_query(node, query, settings={"use_hive_partitioning": 0})
