@@ -1556,7 +1556,8 @@ The result type is UInt64.
 
 ## normalizeQuery
 
-Replaces literals, sequences of literals and complex aliases with placeholders.
+Replaces literals, sequences of literals and complex aliases (containing whitespace, more than two digits
+or at least 36 bytes long such as UUIDs) with placeholder `?`.
 
 **Syntax**
 
@@ -1574,6 +1575,8 @@ normalizeQuery(x)
 
 **Example**
 
+Query:
+
 ``` sql
 SELECT normalizeQuery('[1, 2, 3, x]') AS query;
 ```
@@ -1586,9 +1589,44 @@ Result:
 └──────────┘
 ```
 
+## normalizeQueryKeepNames
+
+Replaces literals, sequences of literals with placeholder `?` but does not replace complex aliases (containing whitespace, more than two digits
+or at least 36 bytes long such as UUIDs). This helps better analyze complex query logs.
+
+**Syntax**
+
+``` sql
+normalizeQueryKeepNames(x)
+```
+
+**Arguments**
+
+- `x` — Sequence of characters. [String](../data-types/string.md).
+
+**Returned value**
+
+- Sequence of characters with placeholders. [String](../data-types/string.md).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT normalizeQuery('SELECT 1 AS aComplexName123'), normalizeQueryKeepNames('SELECT 1 AS aComplexName123');
+```
+
+Result:
+
+```result
+┌─normalizeQuery('SELECT 1 AS aComplexName123')─┬─normalizeQueryKeepNames('SELECT 1 AS aComplexName123')─┐
+│ SELECT ? AS `?`                               │ SELECT ? AS aComplexName123                            │
+└───────────────────────────────────────────────┴────────────────────────────────────────────────────────┘
+```
+
 ## normalizedQueryHash
 
-Returns identical 64bit hash values without the values of literals for similar queries. Can be helpful to analyze query log.
+Returns identical 64bit hash values without the values of literals for similar queries. Can be helpful to analyze query logs.
 
 **Syntax**
 
@@ -1606,6 +1644,8 @@ normalizedQueryHash(x)
 
 **Example**
 
+Query:
+
 ``` sql
 SELECT normalizedQueryHash('SELECT 1 AS `xyz`') != normalizedQueryHash('SELECT 1 AS `abc`') AS res;
 ```
@@ -1616,6 +1656,43 @@ Result:
 ┌─res─┐
 │   1 │
 └─────┘
+```
+
+## normalizedQueryHashKeepNames
+
+Like [normalizedQueryHash](#normalizedqueryhash) it returns identical 64bit hash values without the values of literals for similar queries but it does not replace complex aliases (containing whitespace, more than two digits
+or at least 36 bytes long such as UUIDs) with a placeholder before hashing. Can be helpful to analyze query logs.
+
+**Syntax**
+
+``` sql
+normalizedQueryHashKeepNames(x)
+```
+
+**Arguments**
+
+- `x` — Sequence of characters. [String](../data-types/string.md).
+
+**Returned value**
+
+- Hash value. [UInt64](../data-types/int-uint.md#uint-ranges).
+
+**Example**
+
+``` sql
+SELECT normalizedQueryHash('SELECT 1 AS `xyz123`') != normalizedQueryHash('SELECT 1 AS `abc123`') AS normalizedQueryHash;
+SELECT normalizedQueryHashKeepNames('SELECT 1 AS `xyz123`') != normalizedQueryHashKeepNames('SELECT 1 AS `abc123`') AS normalizedQueryHashKeepNames;
+```
+
+Result:
+
+```result
+┌─normalizedQueryHash─┐
+│                   0 │
+└─────────────────────┘
+┌─normalizedQueryHashKeepNames─┐
+│                            1 │
+└──────────────────────────────┘
 ```
 
 ## normalizeUTF8NFC
