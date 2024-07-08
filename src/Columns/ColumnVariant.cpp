@@ -609,7 +609,11 @@ void ColumnVariant::doInsertRangeFrom(const IColumn & src_, size_t start, size_t
     insertRangeFromImpl(src_, start, length, nullptr);
 }
 
+#if !defined(ABORT_ON_LOGICAL_ERROR)
+void ColumnVariant::insertManyFrom(const DB::IColumn & src_, size_t position, size_t length)
+#else
 void ColumnVariant::doInsertManyFrom(const DB::IColumn & src_, size_t position, size_t length)
+#endif
 {
     insertManyFromImpl(src_, position, length, nullptr);
 }

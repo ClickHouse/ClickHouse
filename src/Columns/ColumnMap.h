@@ -67,7 +67,11 @@ public:
     void updateWeakHash32(WeakHash32 & hash) const override;
     void updateHashFast(SipHash & hash) const override;
     void doInsertFrom(const IColumn & src_, size_t n) override;
+#if !defined(ABORT_ON_LOGICAL_ERROR)
+    void insertManyFrom(const IColumn & src, size_t position, size_t length) override;
+#else
     void doInsertManyFrom(const IColumn & src, size_t position, size_t length) override;
+#endif
 #if !defined(ABORT_ON_LOGICAL_ERROR)
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
 #else

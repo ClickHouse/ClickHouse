@@ -186,7 +186,11 @@ public:
 #else
     void doInsertRangeFrom(const IColumn & src_, size_t start, size_t length) override;
 #endif
+#if !defined(ABORT_ON_LOGICAL_ERROR)
+    void insertManyFrom(const IColumn & src_, size_t position, size_t length) override;
+#else
     void doInsertManyFrom(const IColumn & src_, size_t position, size_t length) override;
+#endif
 
     using IColumn::insertFrom;
     using IColumn::insertManyFrom;

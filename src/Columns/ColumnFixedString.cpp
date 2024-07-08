@@ -86,7 +86,11 @@ void ColumnFixedString::doInsertFrom(const IColumn & src_, size_t index)
     memcpySmallAllowReadWriteOverflow15(chars.data() + old_size, &src.chars[n * index], n);
 }
 
+#if !defined(ABORT_ON_LOGICAL_ERROR)
+void ColumnFixedString::insertManyFrom(const IColumn & src, size_t position, size_t length)
+#else
 void ColumnFixedString::doInsertManyFrom(const IColumn & src, size_t position, size_t length)
+#endif
 {
     const ColumnFixedString & src_concrete = assert_cast<const ColumnFixedString &>(src);
     if (n != src_concrete.getN())

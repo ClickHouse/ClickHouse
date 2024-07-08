@@ -433,7 +433,11 @@ void ColumnDynamic::doInsertRangeFrom(const DB::IColumn & src_, size_t start, si
     }
 }
 
+#if !defined(ABORT_ON_LOGICAL_ERROR)
+void ColumnDynamic::insertManyFrom(const DB::IColumn & src_, size_t position, size_t length)
+#else
 void ColumnDynamic::doInsertManyFrom(const DB::IColumn & src_, size_t position, size_t length)
+#endif
 {
     const auto & dynamic_src = assert_cast<const ColumnDynamic &>(src_);
 

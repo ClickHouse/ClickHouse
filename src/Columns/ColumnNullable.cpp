@@ -270,7 +270,11 @@ void ColumnNullable::doInsertFrom(const IColumn & src, size_t n)
 }
 
 
+#if !defined(ABORT_ON_LOGICAL_ERROR)
+void ColumnNullable::insertManyFrom(const IColumn & src, size_t position, size_t length)
+#else
 void ColumnNullable::doInsertManyFrom(const IColumn & src, size_t position, size_t length)
+#endif
 {
     const ColumnNullable & src_concrete = assert_cast<const ColumnNullable &>(src);
     getNestedColumn().insertManyFrom(src_concrete.getNestedColumn(), position, length);

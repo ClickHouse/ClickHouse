@@ -165,7 +165,11 @@ public:
         }
     }
 
+#if !defined(ABORT_ON_LOGICAL_ERROR)
+    void insertManyFrom(const IColumn & src, size_t position, size_t length) override;
+#else
     void doInsertManyFrom(const IColumn & src, size_t position, size_t length) override;
+#endif
 
     void insertData(const char * pos, size_t length) override
     {

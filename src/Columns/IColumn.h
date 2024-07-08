@@ -198,11 +198,19 @@ public:
 #endif
 
     /// Appends one element from other column with the same type multiple times.
+#if !defined(ABORT_ON_LOGICAL_ERROR)
+    virtual void insertManyFrom(const IColumn & src, size_t position, size_t length)
+    {
+        for (size_t i = 0; i < length; ++i)
+            insertFrom(src, position);
+    }
+#else
     void insertManyFrom(const IColumn & src, size_t position, size_t length)
     {
         assertTypeEquality(src);
         doInsertManyFrom(src, position, length);
     }
+#endif
 
     /// Appends one field multiple times. Can be optimized in inherited classes.
     virtual void insertMany(const Field & field, size_t length)
@@ -657,11 +665,13 @@ protected:
     virtual void doInsertRangeFrom(const IColumn & src, size_t start, size_t length) = 0;
 #endif
 
+#if defined(ABORT_ON_LOGICAL_ERROR)
     virtual void doInsertManyFrom(const IColumn & src, size_t position, size_t length)
     {
         for (size_t i = 0; i < length; ++i)
             insertFrom(src, position);
     }
+#endif
 
     virtual int doCompareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const = 0;
 

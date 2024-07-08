@@ -158,7 +158,11 @@ void ColumnMap::doInsertFrom(const IColumn & src, size_t n)
     nested->insertFrom(assert_cast<const ColumnMap &>(src).getNestedColumn(), n);
 }
 
+#if !defined(ABORT_ON_LOGICAL_ERROR)
+void ColumnMap::insertManyFrom(const IColumn & src, size_t position, size_t length)
+#else
 void ColumnMap::doInsertManyFrom(const IColumn & src, size_t position, size_t length)
+#endif
 {
     assert_cast<ColumnArray &>(*nested).insertManyFrom(assert_cast<const ColumnMap &>(src).getNestedColumn(), position, length);
 }

@@ -218,7 +218,11 @@ void ColumnTuple::doInsertFrom(const IColumn & src_, size_t n)
         columns[i]->insertFrom(*src.columns[i], n);
 }
 
+#if !defined(ABORT_ON_LOGICAL_ERROR)
+void ColumnTuple::insertManyFrom(const IColumn & src, size_t position, size_t length)
+#else
 void ColumnTuple::doInsertManyFrom(const IColumn & src, size_t position, size_t length)
+#endif
 {
     const ColumnTuple & src_tuple = assert_cast<const ColumnTuple &>(src);
 

@@ -39,7 +39,11 @@ ColumnString::ColumnString(const ColumnString & src)
             last_offset, chars.size());
 }
 
+#if !defined(ABORT_ON_LOGICAL_ERROR)
+void ColumnString::insertManyFrom(const IColumn & src, size_t position, size_t length)
+#else
 void ColumnString::doInsertManyFrom(const IColumn & src, size_t position, size_t length)
+#endif
 {
     const ColumnString & src_concrete = assert_cast<const ColumnString &>(src);
     const UInt8 * src_buf = &src_concrete.chars[src_concrete.offsets[position - 1]];

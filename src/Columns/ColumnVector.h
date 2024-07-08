@@ -69,7 +69,11 @@ public:
         data.push_back(assert_cast<const Self &>(src).getData()[n]);
     }
 
+#if !defined(ABORT_ON_LOGICAL_ERROR)
+    void insertManyFrom(const IColumn & src, size_t position, size_t length) override
+#else
     void doInsertManyFrom(const IColumn & src, size_t position, size_t length) override
+#endif
     {
         ValueType v = assert_cast<const Self &>(src).getData()[position];
         data.resize_fill(data.size() + length, v);

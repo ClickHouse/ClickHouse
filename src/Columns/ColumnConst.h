@@ -156,7 +156,11 @@ public:
         ++s;
     }
 
+#if !defined(ABORT_ON_LOGICAL_ERROR)
+    void insertManyFrom(const IColumn & /*src*/, size_t /* position */, size_t length) override { s += length; }
+#else
     void doInsertManyFrom(const IColumn & /*src*/, size_t /* position */, size_t length) override { s += length; }
+#endif
 
     void insertDefault() override
     {
