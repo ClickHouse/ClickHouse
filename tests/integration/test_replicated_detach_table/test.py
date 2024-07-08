@@ -35,7 +35,6 @@ def test_replicated_detach_table(start_cluster):
     replica1.query(
         f"CREATE DATABASE IF NOT EXISTS repl_db ON CLUSTER test_cluster ENGINE=Replicated('/clickhouse/tables/test_replicated_table', shard1, '{{replica}}');"
     )
-
     replica1.query_with_retry(
         f"""
         CREATE TABLE repl_db.test_replicated_table
