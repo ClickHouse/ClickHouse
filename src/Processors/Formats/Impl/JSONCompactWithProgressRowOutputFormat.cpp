@@ -146,6 +146,14 @@ void registerOutputFormatJSONCompactWithProgress(FormatFactory & factory)
     {
         return std::make_shared<JSONCompactWithProgressRowOutputFormat>(buf, sample, format_settings, false);
     });
+
+    factory.registerOutputFormat("JSONCompactWithProgressStrings", [](
+        WriteBuffer & buf,
+        const Block & sample,
+        const FormatSettings & format_settings)
+    {
+        return std::make_shared<JSONCompactWithProgressRowOutputFormat>(buf, sample, format_settings, true);
+    });
 }
 
 }
