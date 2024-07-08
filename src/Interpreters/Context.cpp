@@ -2238,6 +2238,12 @@ void Context::setSetting(std::string_view name, const Field & value)
     contextSanityClampSettingsWithLock(*this, settings, lock);
 }
 
+void Context::setServerSetting(std::string_view name, const Field & value)
+{
+    std::lock_guard lock(mutex);
+    shared->server_settings.set(name, value);
+}
+
 void Context::applySettingChange(const SettingChange & change)
 {
     try
@@ -3402,8 +3408,6 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
     const auto & config = shared->zookeeper_config ? *shared->zookeeper_config : getConfigRef();
     if (!shared->zookeeper)
         shared->zookeeper = zkutil::ZooKeeper::create(config, zkutil::getZooKeeperConfigName(config), getZooKeeperLog());
-    else if (shared->zookeeper->hasReachedDeadline())
-        shared->zookeeper->finalize("ZooKeeper session has reached its deadline");
 
     if (shared->zookeeper->expired())
     {
@@ -4135,13 +4139,22 @@ std::shared_ptr<FilesystemCacheLog> Context::getFilesystemCacheLog() const
     return shared->system_logs->filesystem_cache_log;
 }
 
-std::shared_ptr<S3QueueLog> Context::getS3QueueLog() const
+std::shared_ptr<ObjectStorageQueueLog> Context::getS3QueueLog() const
 {
     SharedLockGuard lock(shared->mutex);
     if (!shared->system_logs)
         return {};
 
     return shared->system_logs->s3_queue_log;
+}
+
+std::shared_ptr<ObjectStorageQueueLog> Context::getAzureQueueLog() const
+{
+    SharedLockGuard lock(shared->mutex);
+    if (!shared->system_logs)
+        return {};
+
+    return shared->system_logs->azure_queue_log;
 }
 
 std::shared_ptr<FilesystemReadPrefetchesLog> Context::getFilesystemReadPrefetchesLog() const

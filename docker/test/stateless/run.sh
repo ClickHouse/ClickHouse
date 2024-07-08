@@ -6,6 +6,9 @@ source /setup_export_logs.sh
 # fail on errors, verbose and export all env variables
 set -e -x -a
 
+MAX_RUN_TIME=${MAX_RUN_TIME:-10800}
+MAX_RUN_TIME=$((MAX_RUN_TIME == 0 ? 10800 : MAX_RUN_TIME))
+
 # Choose random timezone for this test run.
 #
 # NOTE: that clickhouse-test will randomize session_timezone by itself as well
@@ -207,7 +210,7 @@ function run_tests()
 
     if [[ -n "$USE_AZURE_STORAGE_FOR_MERGE_TREE" ]] && [[ "$USE_AZURE_STORAGE_FOR_MERGE_TREE"  -eq 1 ]]; then
         # to disable the same tests
-        ADDITIONAL_OPTIONS+=('--s3-storage')
+        ADDITIONAL_OPTIONS+=('--azure-blob-storage')
         # azurite is slow, but with these two settings it can be super slow
         ADDITIONAL_OPTIONS+=('--no-random-settings')
         ADDITIONAL_OPTIONS+=('--no-random-merge-tree-settings')
@@ -253,7 +256,7 @@ function run_tests()
     try_run_with_retry 10 clickhouse-client -q "insert into system.zookeeper (name, path, value) values ('auxiliary_zookeeper2', '/test/chroot/', '')"
 
     set +e
-    clickhouse-test --testname --shard --zookeeper --check-zookeeper-session --hung-check --print-time \
+    timeout -s TERM --preserve-status 120m clickhouse-test --testname --shard --zookeeper --check-zookeeper-session --hung-check --print-time \
          --no-drop-if-fail --test-runs "$NUM_TRIES" "${ADDITIONAL_OPTIONS[@]}" 2>&1 \
     | ts '%Y-%m-%d %H:%M:%S' \
     | tee -a test_output/test_result.txt
@@ -262,14 +265,17 @@ function run_tests()
 
 export -f run_tests
 
+
+# This should be enough to setup job and collect artifacts
+TIMEOUT=$((MAX_RUN_TIME - 300))
 if [ "$NUM_TRIES" -gt "1" ]; then
     # We don't run tests with Ordinary database in PRs, only in master.
     # So run new/changed tests with Ordinary at least once in flaky check.
-    timeout_with_logging "$MAX_RUN_TIME" bash -c 'NUM_TRIES=1; USE_DATABASE_ORDINARY=1; run_tests' \
+    timeout_with_logging "$TIMEOUT" bash -c 'NUM_TRIES=1; USE_DATABASE_ORDINARY=1; run_tests' \
       | sed 's/All tests have finished//' | sed 's/No tests were run//' ||:
 fi
 
-timeout_with_logging "$MAX_RUN_TIME" bash -c run_tests ||:
+timeout_with_logging "$TIMEOUT" bash -c run_tests ||:
 
 echo "Files in current directory"
 ls -la ./
