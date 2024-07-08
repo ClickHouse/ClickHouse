@@ -177,7 +177,7 @@ set(SOURCES
     ${ROCKSDB_SOURCE_DIR}/env/file_system_tracer.cc
     ${ROCKSDB_SOURCE_DIR}/env/fs_remap.cc
     ${ROCKSDB_SOURCE_DIR}/env/mock_env.cc
-    ${ROCKSDB_SOURCE_DIR}/env/unique_id.cc
+    ${ROCKSDB_SOURCE_DIR}/env/unique_id_gen.cc
     ${ROCKSDB_SOURCE_DIR}/file/delete_scheduler.cc
     ${ROCKSDB_SOURCE_DIR}/file/file_prefetch_buffer.cc
     ${ROCKSDB_SOURCE_DIR}/file/file_util.cc
@@ -271,6 +271,7 @@ set(SOURCES
     ${ROCKSDB_SOURCE_DIR}/table/table_factory.cc
     ${ROCKSDB_SOURCE_DIR}/table/table_properties.cc
     ${ROCKSDB_SOURCE_DIR}/table/two_level_iterator.cc
+    ${ROCKSDB_SOURCE_DIR}/table/unique_id.cc
     ${ROCKSDB_SOURCE_DIR}/test_util/sync_point.cc
     ${ROCKSDB_SOURCE_DIR}/test_util/sync_point_impl.cc
     ${ROCKSDB_SOURCE_DIR}/test_util/testutil.cc
@@ -315,6 +316,8 @@ set(SOURCES
     ${ROCKSDB_SOURCE_DIR}/utilities/blob_db/blob_db_impl_filesnapshot.cc
     ${ROCKSDB_SOURCE_DIR}/utilities/blob_db/blob_dump_tool.cc
     ${ROCKSDB_SOURCE_DIR}/utilities/blob_db/blob_file.cc
+    ${ROCKSDB_SOURCE_DIR}/utilities/cache_dump_load.cc
+    ${ROCKSDB_SOURCE_DIR}/utilities/cache_dump_load_impl.cc
     ${ROCKSDB_SOURCE_DIR}/utilities/cassandra/cassandra_compaction_filter.cc
     ${ROCKSDB_SOURCE_DIR}/utilities/cassandra/format.cc
     ${ROCKSDB_SOURCE_DIR}/utilities/cassandra/merge_operator.cc
@@ -367,6 +370,7 @@ set(SOURCES
     ${ROCKSDB_SOURCE_DIR}/utilities/transactions/write_unprepared_txn.cc
     ${ROCKSDB_SOURCE_DIR}/utilities/transactions/write_unprepared_txn_db.cc
     ${ROCKSDB_SOURCE_DIR}/utilities/ttl/db_ttl_impl.cc
+    ${ROCKSDB_SOURCE_DIR}/utilities/wal_filter.cc
     ${ROCKSDB_SOURCE_DIR}/utilities/write_batch_with_index/write_batch_with_index.cc
     ${ROCKSDB_SOURCE_DIR}/utilities/write_batch_with_index/write_batch_with_index_internal.cc
     ${ROCKSDB_SOURCE_DIR}/utilities/transactions/lock/range/range_tree/lib/locktree/concurrent_tree.cc
