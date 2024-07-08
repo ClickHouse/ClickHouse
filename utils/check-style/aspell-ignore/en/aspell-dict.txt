@@ -1,4 +1,4 @@
-personal_ws-1.1 en 2758
+personal_ws-1.1 en 2942 
 AArch
 ACLs
 ALTERs
@@ -449,7 +449,7 @@ Kahan
 Kaser
 KeeperAliveConnections
 KeeperMap
-KeeperOutstandingRequets
+KeeperOutstandingRequests
 Kerberos
 Khanna
 KittenHouse
@@ -1658,9 +1658,9 @@ fsync
 func
 fuzzBits
 fuzzJSON
+fuzzQuery
 fuzzer
 fuzzers
-fuzzQuery
 gRPC
 gccMurmurHash
 gcem
@@ -2000,6 +2000,7 @@ maxMap
 maxintersections
 maxintersectionsposition
 maxmap
+minMappedArrays
 maxmind
 mdadm
 meanZTest
@@ -2017,6 +2018,7 @@ metrica
 metroHash
 mfedotov
 minMap
+minMappedArrays
 minSampleSizeContinuous
 minSampleSizeConversion
 mindsdb
@@ -2124,8 +2126,10 @@ noaa
 nonNegativeDerivative
 noop
 normalizeQuery
+normalizeQueryKeepNames
 normalizeUTF
 normalizedQueryHash
+normalizedQueryHashKeepNames
 notEmpty
 notEquals
 notILike
