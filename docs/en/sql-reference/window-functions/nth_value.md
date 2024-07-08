@@ -1,20 +1,19 @@
 ---
-slug: /en/sql-reference/window-functions/rank
-sidebar_label: rank
-sidebar_position: 6
+slug: /en/sql-reference/window-functions/leadInFrame
+sidebar_label: leadInFrame
+sidebar_position: 5
 ---
 
-# rank
+# nth_value
 
-This window function ranks the current row within its partition with gaps. In other words, if the value of any row it encounters is equal to the value of a previous row then it will receive the same rank as that previous row.
-The rank of the next row is then equal to the rank of the previous row plus a gap equal to the number of times the previous rank was given.
+Return the first non-NULL value evaluated against the nth row (offset) in its ordered frame.
 
-The [dense_rank](./dense_rank.md) function provides the same behaviour but without gaps in ranking. 
+The [dense_rank](./dense_rank.md) function provides the same behaviour but without gaps in ranking.
 
 **Syntax**
 
 ```sql
-rank (column_name)
+nth_value (x, offset)
   OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column] 
         [ROWS or RANGE expression_to_bound_rows_withing_the_group]] | [window_name])
 FROM table_name
@@ -23,17 +22,23 @@ WINDOW window_name as ([[PARTITION BY grouping_column] [ORDER BY sorting_column]
 
 For more detail on window function syntax see: [Window Functions - Syntax](./index.md/#syntax).
 
+**Parameters**
+
+- `x` — Column name.
+- `offset` — nth row to evaluate current row against.
+
 **Returned value**
 
-- A number for the current row within its partition, including gaps. [UInt64](../data-types/int-uint.md).
+- The first non-NULL value evaluated against the nth row (offset) in its ordered frame.
 
 **Example**
 
-The following example is based on the example provided in the video instructional [Ranking window functions in ClickHouse](https://youtu.be/Yku9mmBYm_4?si=XIMu1jpYucCQEoXA).
+In this example the `nth-value` function is used to find the third-highest salary from a fictional dataset of salaries of Premier League football players.
 
 Query:
 
 ```sql
+DROP TABLE IF EXISTS salaries;
 CREATE TABLE salaries
 (
     `team` String,
@@ -46,17 +51,15 @@ Engine = Memory;
 INSERT INTO salaries FORMAT Values
     ('Port Elizabeth Barbarians', 'Gary Chen', 195000, 'F'),
     ('New Coreystad Archdukes', 'Charles Juarez', 190000, 'F'),
-    ('Port Elizabeth Barbarians', 'Michael Stanley', 150000, 'D'),
-    ('New Coreystad Archdukes', 'Scott Harrison', 150000, 'D'),
+    ('Port Elizabeth Barbarians', 'Michael Stanley', 10000, 'D'),
+    ('New Coreystad Archdukes', 'Scott Harrison', 180000, 'D'),
     ('Port Elizabeth Barbarians', 'Robert George', 195000, 'M'),
     ('South Hampton Seagulls', 'Douglas Benson', 150000, 'M'),
     ('South Hampton Seagulls', 'James Henderson', 140000, 'M');
 ```
 
 ```sql
-SELECT player, salary, 
-       rank() OVER (ORDER BY salary DESC) AS rank
-FROM salaries;
+SELECT salary, nth_value(salary,3) OVER(ORDER BY salary DESC) FROM salaries GROUP BY salary;
 ```
 
 Result:
