@@ -449,7 +449,7 @@ Kahan
 Kaser
 KeeperAliveConnections
 KeeperMap
-KeeperOutstandingRequets
+KeeperOutstandingRequests
 Kerberos
 Khanna
 KittenHouse
