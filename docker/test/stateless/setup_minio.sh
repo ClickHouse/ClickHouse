@@ -101,7 +101,7 @@ upload_data() {
   # shellcheck disable=SC2045
   for file in $(ls "${data_path}"); do
     echo "${file}";
-    ./mc cp "${data_path}"/"${file}" clickminio/test/"${file}";
+    ./mc cp --recursive "${data_path}"/"${file}" clickminio/test/"${file}";
   done
 }
 
