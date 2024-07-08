@@ -830,6 +830,7 @@ public:
     /// Set settings by name.
     void setSetting(std::string_view name, const String & value);
     void setSetting(std::string_view name, const Field & value);
+    void setServerSetting(std::string_view name, const Field & value);
     void applySettingChange(const SettingChange & change);
     void applySettingsChanges(const SettingsChanges & changes);
 

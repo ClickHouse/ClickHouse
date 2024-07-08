@@ -118,7 +118,7 @@ public:
         return 0;
     }
 
-    void writeBlock(StorageLiveView & live_view, Block && block, Chunk::ChunkInfoCollection && chunk_infos, ContextPtr context);
+    void writeBlock(const Block & block, ContextPtr context);
 
     void refresh();
 
