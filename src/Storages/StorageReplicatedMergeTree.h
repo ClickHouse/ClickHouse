@@ -246,7 +246,7 @@ public:
      * returns true if there are no replicas left
      */
     static bool dropReplica(zkutil::ZooKeeperPtr zookeeper, const String & zookeeper_path, const String & replica,
-                            LoggerPtr logger, MergeTreeSettingsPtr table_settings = nullptr, std::optional<bool> * has_metadata_out = nullptr, ReplicatedMergeTreeCluster * cluster = nullptr);
+                            LoggerPtr logger, MergeTreeSettingsPtr table_settings = nullptr, std::optional<bool> * has_metadata_out = nullptr, ReplicatedMergeTreeCluster * replicated_cluster = nullptr);
 
     bool dropReplica(const String & drop_zookeeper_path, const String & drop_replica, LoggerPtr logger);
 
@@ -466,7 +466,7 @@ private:
     String getLastQueueUpdateException() const;
 
     /// NOTE: marked as mutable for now (to avoid more conflicts in the code)
-    mutable std::optional<ReplicatedMergeTreeCluster> cluster;
+    mutable std::optional<ReplicatedMergeTreeCluster> replicated_cluster;
 
     DataPartsExchange::Fetcher fetcher;
 

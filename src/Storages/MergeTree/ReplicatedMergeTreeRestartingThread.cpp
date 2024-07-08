@@ -141,8 +141,8 @@ bool ReplicatedMergeTreeRestartingThread::runImpl()
     }
 
     bool is_active = true;
-    if (storage.cluster.has_value())
-        is_active = storage.cluster->isReplicaActive();
+    if (storage.replicated_cluster.has_value())
+        is_active = storage.replicated_cluster->isReplicaActive();
     if (is_active)
         setNotReadonly();
 
@@ -155,8 +155,8 @@ bool ReplicatedMergeTreeRestartingThread::runImpl()
     storage.cleanup_thread.start();
     storage.async_block_ids_cache.start();
     storage.part_check_thread.start();
-    if (storage.cluster.has_value())
-        storage.cluster->startDistributor();
+    if (storage.replicated_cluster.has_value())
+        storage.replicated_cluster->startDistributor();
 
     LOG_DEBUG(log, "Table started successfully");
     return true;
@@ -174,10 +174,10 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
         const auto & zookeeper = storage.getZooKeeper();
         const auto storage_settings = storage.getSettings();
 
-        if (storage.cluster.has_value())
+        if (storage.replicated_cluster.has_value())
         {
             LOG_INFO(log, "Table is part of the cluster, instead of clone, replica will take part in re-sharding process.");
-            storage.cluster->initialize(zookeeper);
+            storage.replicated_cluster->initialize(zookeeper);
         }
         else
             storage.cloneReplicaIfNeeded(zookeeper);

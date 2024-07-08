@@ -49,7 +49,7 @@ ReplicatedMergeTreeClusterSink::ReplicatedMergeTreeClusterSink(
     , context(context_)
     , log(&Poco::Logger::get(storage.getLogName() + " (Cluster OutputStream)"))
 {
-    chassert(storage.cluster.has_value());
+    chassert(storage.replicated_cluster.has_value());
 }
 
 ReplicatedMergeTreeClusterSink::~ReplicatedMergeTreeClusterSink() = default;
@@ -73,8 +73,8 @@ void ReplicatedMergeTreeClusterSink::consume(Chunk chunk)
 
         /// FIXME: this should be done with cluster partition version check to
         /// ensure that nothing will goes to outdated replicas.
-        const auto & cluster_partition = storage.cluster->getOrCreateClusterPartition(partition_id);
-        ReplicatedMergeTreeClusterReplicas cluster_replicas = storage.cluster->getClusterReplicas();
+        const auto & cluster_partition = storage.replicated_cluster->getOrCreateClusterPartition(partition_id);
+        ReplicatedMergeTreeClusterReplicas cluster_replicas = storage.replicated_cluster->getClusterReplicas();
         auto replicas = cluster_partition.getAllNonMigrationReplicas();
         /// Remove replicas for which we don't have enough information
         std::erase_if(replicas, [&](const auto & replica)

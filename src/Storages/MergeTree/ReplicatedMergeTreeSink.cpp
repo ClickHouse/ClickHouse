@@ -774,9 +774,9 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
             log_entry.block_id = block_id;
 
         /// Ensure that the partition had not been migrated.
-        if (storage.cluster.has_value())
+        if (storage.replicated_cluster.has_value())
         {
-            const auto & cluster_partition = storage.cluster->getOrCreateClusterPartition(part->info.partition_id);
+            const auto & cluster_partition = storage.replicated_cluster->getOrCreateClusterPartition(part->info.partition_id);
             log_entry.replicas = cluster_partition.getAllReplicas();
             ops.emplace_back(zkutil::makeCheckRequest(
                 storage.zookeeper_path + "/block_numbers/" + cluster_partition.getPartitionId(),

@@ -707,8 +707,8 @@ std::pair<int32_t, int32_t> ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::Zo
                 /// - there SHOULD BE replicas in the log entry if the cluster mode is enabled,
                 ///   but not for ALTER_METADATA case, since ALTER should be applied on the whole cluster
                 /// - but if cluster mode is disabled, log entry CANNOT have any replicas
-                if ((storage.cluster.has_value() && entry.replicas.empty() && entry.type != LogEntry::ALTER_METADATA) ||
-                    (!storage.cluster.has_value() && !entry.replicas.empty()))
+                if ((storage.replicated_cluster.has_value() && entry.replicas.empty() && entry.type != LogEntry::ALTER_METADATA) ||
+                    (!storage.replicated_cluster.has_value() && !entry.replicas.empty()))
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Corrupted cluster log entry: {}", entry.toString());
 
                 if (!entry.replicas.empty())
@@ -2365,8 +2365,8 @@ ReplicatedMergeTreeMergePredicate::ReplicatedMergeTreeMergePredicate(
 
     /// We need to update the clusters partitions map to get recent changes in it.
     /// In case it will be changed again, the version of the "log" (merges_version) will not match.
-    if (queue.storage.cluster.has_value())
-        queue.storage.cluster->loadFromCoordinator(zookeeper);
+    if (queue.storage.replicated_cluster.has_value())
+        queue.storage.replicated_cluster->loadFromCoordinator(zookeeper);
 
     {
         /// We avoid returning here a version to be used in a lightweight transaction.

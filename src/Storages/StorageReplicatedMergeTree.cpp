@@ -335,7 +335,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     , replicated_sends_throttler(std::make_shared<Throttler>(getSettings()->max_replicated_sends_network_bandwidth, getContext()->getReplicatedSendsThrottler()))
 {
     if (getSettings()->cluster)
-        cluster.emplace(*this);
+        replicated_cluster.emplace(*this);
 
     initializeDirectoriesAndFormatVersion(relative_data_path_, LoadingStrictnessLevel::ATTACH <= mode, date_column_name);
     /// We create and deactivate all tasks for consistency.
@@ -934,8 +934,8 @@ bool StorageReplicatedMergeTree::createTableIfNotExists(const StorageMetadataPtr
         ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/creator_info", toString(getStorageID().uuid) + "|" + toString(ServerUUID::get()),
             zkutil::CreateMode::Persistent));
 
-        if (cluster.has_value())
-            cluster->addCreateOps(ops);
+        if (replicated_cluster.has_value())
+            replicated_cluster->addCreateOps(ops);
 
         Coordination::Responses responses;
         auto code = zookeeper->tryMulti(ops, responses);
@@ -1087,8 +1087,8 @@ void StorageReplicatedMergeTree::createReplica(const StorageMetadataPtr & metada
         ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/creator_info", creator_info,
             zkutil::CreateMode::Persistent));
 
-        if (cluster.has_value())
-            cluster->addCreateReplicaOps(ops);
+        if (replicated_cluster.has_value())
+            replicated_cluster->addCreateReplicaOps(ops);
 
         /// Check version of /replicas to see if there are any replicas created at the same moment of time.
         ops.emplace_back(zkutil::makeSetRequest(zookeeper_path + "/replicas", "last added replica: " + replica_name, replicas_stat.version));
@@ -1238,14 +1238,14 @@ void StorageReplicatedMergeTree::drop()
             log.load(),
             getSettings(),
             &has_metadata_in_zookeeper,
-            cluster.has_value() ? &cluster.value() : nullptr);
+            replicated_cluster.has_value() ? &replicated_cluster.value() : nullptr);
         if (last_replica_dropped)
             dropZookeeperZeroCopyLockPaths(zookeeper, zero_copy_locks_paths, log.load());
     }
 }
 
 bool StorageReplicatedMergeTree::dropReplica(zkutil::ZooKeeperPtr zookeeper, const String & zookeeper_path, const String & replica,
-                                             LoggerPtr logger, MergeTreeSettingsPtr table_settings, std::optional<bool> * has_metadata_out, ReplicatedMergeTreeCluster * cluster)
+                                             LoggerPtr logger, MergeTreeSettingsPtr table_settings, std::optional<bool> * has_metadata_out, ReplicatedMergeTreeCluster * replicated_cluster)
 {
     if (zookeeper->expired())
         throw Exception(ErrorCodes::TABLE_WAS_NOT_DROPPED, "Table was not dropped because ZooKeeper session has expired.");
@@ -1288,8 +1288,8 @@ bool StorageReplicatedMergeTree::dropReplica(zkutil::ZooKeeperPtr zookeeper, con
         for (const auto & node : flat_nodes)
             ops.emplace_back(zkutil::makeRemoveRequest(remote_replica_path + "/" + node, -1));
 
-        if (cluster)
-            cluster->addRemoveReplicaOps(zookeeper, ops);
+        if (replicated_cluster)
+            replicated_cluster->addRemoveReplicaOps(zookeeper, ops);
 
         ops.emplace_back(zkutil::makeRemoveRequest(remote_replica_path + "/columns", -1));
         ops.emplace_back(zkutil::makeRemoveRequest(remote_replica_path + "/is_lost", -1));
@@ -1342,8 +1342,8 @@ bool StorageReplicatedMergeTree::dropReplica(zkutil::ZooKeeperPtr zookeeper, con
     Coordination::Responses responses;
     String drop_lock_path = zookeeper_path + "/dropped/lock";
     ops.emplace_back(zkutil::makeRemoveRequest(zookeeper_path + "/replicas", -1));
-    if (cluster)
-        cluster->addDropOps(ops);
+    if (replicated_cluster)
+        replicated_cluster->addDropOps(ops);
     ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/dropped", "", zkutil::CreateMode::Persistent));
     ops.emplace_back(zkutil::makeCreateRequest(drop_lock_path, "", zkutil::CreateMode::Ephemeral));
     Coordination::Error code = zookeeper->tryMulti(ops, responses);
@@ -1393,7 +1393,7 @@ void StorageReplicatedMergeTree::dropClusterReplica(ContextPtr local_context)
 
     flushAndPrepareForShutdown();
     partialShutdown();
-    cluster->dropReplica(local_context);
+    replicated_cluster->dropReplica(local_context);
 }
 
 bool StorageReplicatedMergeTree::removeTableNodesFromZooKeeper(zkutil::ZooKeeperPtr zookeeper,
@@ -1984,8 +1984,8 @@ MergeTreeData::DataPartsVector StorageReplicatedMergeTree::checkPartChecksumsAnd
             /// deterministic, i.e. what if the partition already exists and
             /// incorrect (i.e. re-assigned on this local node), need to check
             /// this.
-            if (cluster.has_value())
-                cluster->loadPartitionFromCoordinator(part->info.partition_id);
+            if (replicated_cluster.has_value())
+                replicated_cluster->loadPartitionFromCoordinator(part->info.partition_id);
 
             return transaction.commit();
         }
@@ -2160,9 +2160,9 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
             executeClonePartFromShard(entry);
             return true;
         case LogEntry::CLUSTER_SYNC:
-            if (!cluster.has_value())
+            if (!replicated_cluster.has_value())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Cluster mode is not enabled to process {} log entry", static_cast<int>(entry.type));
-            cluster->sync();
+            replicated_cluster->sync();
             return true;
         default:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected log entry type: {}", static_cast<int>(entry.type));
@@ -4079,9 +4079,9 @@ StorageReplicatedMergeTree::CreateMergeEntryResult StorageReplicatedMergeTree::c
     String partition_id = MergeTreePartInfo::fromPartName(merged_name, format_version).partition_id;
     Strings partition_replicas;
     int partition_version = -1;
-    if (cluster.has_value())
+    if (replicated_cluster.has_value())
     {
-        const auto & partition = cluster->getClusterPartition(partition_id);
+        const auto & partition = replicated_cluster->getClusterPartition(partition_id);
         partition_replicas = partition.getAllReplicas();
         partition_version = partition.getVersion();
     }
@@ -4101,7 +4101,7 @@ StorageReplicatedMergeTree::CreateMergeEntryResult StorageReplicatedMergeTree::c
     for (const auto & part : parts)
         entry.source_parts.push_back(part->name);
 
-    if (cluster.has_value())
+    if (replicated_cluster.has_value())
         entry.replicas = partition_replicas;
 
     Coordination::Requests ops;
@@ -4114,7 +4114,7 @@ StorageReplicatedMergeTree::CreateMergeEntryResult StorageReplicatedMergeTree::c
     ops.emplace_back(zkutil::makeSetRequest(
         fs::path(zookeeper_path) / "log", "", log_version)); /// Check and update version.
 
-    if (cluster.has_value())
+    if (replicated_cluster.has_value())
     {
         /// Ensure that partition version is up-to-date, otherwise replicas is out of sync.
         ops.emplace_back(zkutil::makeCheckRequest(
@@ -4156,9 +4156,9 @@ StorageReplicatedMergeTree::CreateMergeEntryResult StorageReplicatedMergeTree::c
 
     Strings partition_replicas;
     int partition_version = -1;
-    if (cluster.has_value())
+    if (replicated_cluster.has_value())
     {
-        const auto & partition = cluster->getClusterPartition(part.info.partition_id);
+        const auto & partition = replicated_cluster->getClusterPartition(part.info.partition_id);
         /// NOTE: we cannot use all replicas here, because there is no proper
         /// sync between queue.load() and queue.pullLogsToQueue(), and so if
         /// here:
@@ -4212,7 +4212,7 @@ StorageReplicatedMergeTree::CreateMergeEntryResult StorageReplicatedMergeTree::c
     entry.create_time = time(nullptr);
     entry.alter_version = alter_version;
 
-    if (cluster.has_value())
+    if (replicated_cluster.has_value())
         entry.replicas = partition_replicas;
 
     Coordination::Requests ops;
@@ -4225,7 +4225,7 @@ StorageReplicatedMergeTree::CreateMergeEntryResult StorageReplicatedMergeTree::c
     ops.emplace_back(zkutil::makeSetRequest(
         fs::path(zookeeper_path) / "log", "", log_version)); /// Check and update version.
 
-    if (cluster.has_value())
+    if (replicated_cluster.has_value())
     {
         ops.emplace_back(zkutil::makeCheckRequest(
             fs::path(zookeeper_path) / "block_numbers" / part.info.partition_id, partition_version));
@@ -5397,8 +5397,8 @@ void StorageReplicatedMergeTree::flushAndPrepareForShutdown()
     if (shutdown_prepared_called.exchange(true))
         return;
 
-    if (cluster)
-        cluster->shutdown();
+    if (replicated_cluster)
+        replicated_cluster->shutdown();
 
     try
     {
@@ -5510,7 +5510,7 @@ StorageReplicatedMergeTree::~StorageReplicatedMergeTree()
     try
     {
         shutdown(false);
-        cluster.reset();
+        replicated_cluster.reset();
     }
     catch (...)
     {
@@ -5574,7 +5574,7 @@ ReplicatedMergeTreeQuorumAddedParts::PartitionIdToMaxBlock StorageReplicatedMerg
 bool StorageReplicatedMergeTree::supportsTrivialCountOptimization(const StorageSnapshotPtr &, ContextPtr) const
 {
     /// TODO: allow optimization if cluster_query_shards==0
-    return !hasLightweightDeletedMask() && !cluster.has_value();
+    return !hasLightweightDeletedMask() && !replicated_cluster.has_value();
 }
 
 void StorageReplicatedMergeTree::read(
@@ -5589,20 +5589,56 @@ void StorageReplicatedMergeTree::read(
 {
     const auto & settings = local_context->getSettingsRef();
 
+    if (settings.cluster_query_shards && replicated_cluster.has_value())
+    {
+        readClusterImpl(query_plan, column_names, storage_snapshot, query_info, local_context, processed_stage, max_block_size, num_streams);
+        return;
+    }
+
     /// The `select_sequential_consistency` setting has two meanings:
     /// 1. To throw an exception if on a replica there are not all parts which have been written down on quorum of remaining replicas.
     /// 2. Do not read parts that have not yet been written to the quorum of the replicas.
     /// For this you have to synchronously go to ZooKeeper.
     if (settings.select_sequential_consistency)
-        return readLocalSequentialConsistencyImpl(query_plan, column_names, storage_snapshot, query_info, local_context, max_block_size, num_streams);
+    {
+        readLocalSequentialConsistencyImpl(query_plan, column_names, storage_snapshot, query_info, local_context, max_block_size, num_streams);
+        return;
+    }
     /// reading step for parallel replicas with new analyzer is built in Planner, so don't do it here
-    else if (local_context->canUseParallelReplicasOnInitiator() && !settings.allow_experimental_analyzer)
+    if (local_context->canUseParallelReplicasOnInitiator() && !settings.allow_experimental_analyzer)
+    {
         readParallelReplicasImpl(query_plan, column_names, query_info, local_context, processed_stage);
-    else if (settings.cluster_query_shards && cluster.has_value())
-        return readClusterImpl(query_plan, column_names, storage_snapshot, query_info, local_context, processed_stage, max_block_size, num_streams);
-    else
-        readLocalImpl(query_plan, column_names, storage_snapshot, query_info, local_context, max_block_size, num_streams);
-}
+        return;
+    }
+
+    if (local_context->canUseParallelReplicasCustomKey() && !settings.allow_experimental_analyzer
+        && local_context->getClientInfo().distributed_depth == 0)
+    {
+        if (auto cluster = local_context->getClusterForParallelReplicas();
+            local_context->canUseParallelReplicasCustomKeyForCluster(*cluster))
+        {
+            auto modified_query_info = query_info;
+            modified_query_info.cluster = std::move(cluster);
+            ClusterProxy::executeQueryWithParallelReplicasCustomKey(
+                query_plan,
+                getStorageID(),
+                std::move(modified_query_info),
+                getInMemoryMetadataPtr()->getColumns(),
+                storage_snapshot,
+                processed_stage,
+                query_info.query,
+                local_context);
+            return;
+        }
+        else
+            LOG_WARNING(
+                log,
+                "Parallel replicas with custom key will not be used because cluster defined by 'cluster_for_parallel_replicas' ('{}') has "
+                "multiple shards",
+                cluster->getName());
+    }
+
+    readLocalImpl(query_plan, column_names, storage_snapshot, query_info, local_context, max_block_size, num_streams); }
 
 void StorageReplicatedMergeTree::readLocalSequentialConsistencyImpl(
     QueryPlan & query_plan,
@@ -5666,7 +5702,7 @@ void StorageReplicatedMergeTree::readClusterImpl(
     const size_t /*max_block_size*/,
     const size_t /*num_streams*/)
 {
-    chassert(cluster.has_value());
+    chassert(replicated_cluster.has_value());
 
     if (query_info.query->as<ASTSelectQuery &>().final())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "FINAL is not supported for cluster mode yet");
@@ -5708,7 +5744,7 @@ void StorageReplicatedMergeTree::readClusterImpl(
         modified_query_ast,
         new_context,
         query_info,
-        *cluster);
+        *replicated_cluster);
 }
 
 template <class Func>
@@ -5795,7 +5831,7 @@ SinkToStoragePtr StorageReplicatedMergeTree::write(const ASTPtr & /*query*/, con
             "Table is in readonly mode since table metadata was not found in zookeeper: replica_path={}",
             replica_path);
 
-    if (query_settings.cluster_query_shards && cluster.has_value())
+    if (query_settings.cluster_query_shards && replicated_cluster.has_value())
     {
         ContextMutablePtr new_context = Context::createCopy(local_context);
         /// Avoid recursive clustering
@@ -5949,6 +5985,12 @@ bool StorageReplicatedMergeTree::optimize(
 
     if (!is_leader)
         throw Exception(ErrorCodes::NOT_A_LEADER, "OPTIMIZE cannot be done on this replica because it is not a leader");
+
+    if (deduplicate && getInMemoryMetadataPtr()->hasProjections())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "OPTIMIZE DEDUPLICATE query is not supported for table {} as it has projections. "
+                    "User should drop all the projections manually before running the query",
+                    getStorageID().getTableName());
 
     if (cleanup)
     {
@@ -6909,10 +6951,10 @@ std::optional<EphemeralLockInZooKeeper> StorageReplicatedMergeTree::allocateBloc
         /// Check that table is not being dropped ("host" is the first node that is removed on replica drop)
         ops.push_back(zkutil::makeCheckRequest(fs::path(replica_path) / "host", -1));
         ops.push_back(zkutil::makeCreateRequest(partition_path, "", zkutil::CreateMode::Persistent));
-        if (cluster.has_value())
+        if (replicated_cluster.has_value())
         {
             /// FIXME(cluster): this may reassign replicas for partitions, since there is no versions bump
-            auto cluster_partition = cluster->getOrCreateClusterPartition(partition_id);
+            auto cluster_partition = replicated_cluster->getOrCreateClusterPartition(partition_id);
             ops.push_back(zkutil::makeSetRequest(partition_path,
                 cluster_partition.toString(),
                 cluster_partition.getVersion()));
@@ -8183,11 +8225,11 @@ void StorageReplicatedMergeTree::clearBlocksInPartition(
 void StorageReplicatedMergeTree::replacePartitionFrom(
     const StoragePtr & source_table, const ASTPtr & partition, bool replace, ContextPtr query_context)
 {
-    if (cluster.has_value())
+    if (replicated_cluster.has_value())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is clustered, REPLACE PARTITION is not implemented for this mode.", getStorageID().getNameForLogs());
     if (StorageReplicatedMergeTree * source_replicated_table = dynamic_cast<StorageReplicatedMergeTree *>(source_table.get()))
     {
-        if (source_replicated_table->cluster.has_value())
+        if (source_replicated_table->replicated_cluster.has_value())
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is clustered, REPLACE PARTITION is not implemented for this mode.", source_table->getStorageID().getNameForLogs());
     }
 
@@ -8467,7 +8509,7 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
 
 void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_table, const ASTPtr & partition, ContextPtr query_context)
 {
-    if (cluster.has_value())
+    if (replicated_cluster.has_value())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is clustered, MOVE PARTITION is not implemented for this mode.", getStorageID().getNameForLogs());
 
     auto dest_table_storage = std::dynamic_pointer_cast<StorageReplicatedMergeTree>(dest_table);
@@ -8968,10 +9010,10 @@ bool StorageReplicatedMergeTree::waitForProcessingQueue(UInt64 max_wait_millisec
 
     if (sync_mode == SyncReplicaMode::CLUSTER)
     {
-        if (!cluster.has_value())
+        if (!replicated_cluster.has_value())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "SYSTEM SYNC REPLICA CLUSTER supported only for cluster=true");
 
-        cluster->sync();
+        replicated_cluster->sync();
     }
 
     if (sync_mode == SyncReplicaMode::PULL)
@@ -9101,8 +9143,8 @@ bool StorageReplicatedMergeTree::dropPartImpl(
         entry.detach = detach;
         entry.create_time = time(nullptr);
 
-        if (cluster.has_value())
-            entry.replicas = cluster->getClusterPartition(part->info.partition_id).getAllReplicas();
+        if (replicated_cluster.has_value())
+            entry.replicas = replicated_cluster->getClusterPartition(part->info.partition_id).getAllReplicas();
 
         ops.emplace_back(zkutil::makeCheckRequest(fs::path(zookeeper_path) / "log", merge_pred.getVersion())); /// Make sure no new events were added to the log.
         ops.emplace_back(zkutil::makeCreateRequest(fs::path(zookeeper_path) / "log/log-", entry.toString(), zkutil::CreateMode::PersistentSequential));
@@ -9168,8 +9210,8 @@ bool StorageReplicatedMergeTree::addOpsToDropAllPartsInPartition(
     entry->detach = detach;
     entry->create_time = time(nullptr);
 
-    if (cluster.has_value())
-        entry->replicas = cluster->getClusterPartition(drop_range_info.partition_id).getAllReplicas();
+    if (replicated_cluster.has_value())
+        entry->replicas = replicated_cluster->getClusterPartition(drop_range_info.partition_id).getAllReplicas();
 
     log_entry_ops_idx.push_back(ops.size());
     ops.emplace_back(zkutil::makeCreateRequest(fs::path(zookeeper_path) / "log/log-", entry->toString(),
@@ -10814,8 +10856,8 @@ void StorageReplicatedMergeTree::attachRestoredParts(MutableDataPartsVector && p
 
 ReplicatedMergeTreeClusterPartitions StorageReplicatedMergeTree::getClusterPartitions() const
 {
-    if (cluster.has_value())
-        return cluster->getClusterPartitions();
+    if (replicated_cluster.has_value())
+        return replicated_cluster->getClusterPartitions();
     return {};
 }
 
