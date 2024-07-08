@@ -2124,8 +2124,10 @@ noaa
 nonNegativeDerivative
 noop
 normalizeQuery
+normalizeQueryKeepNames
 normalizeUTF
 normalizedQueryHash
+normalizedQueryHashKeepNames
 notEmpty
 notEquals
 notILike
