@@ -39,15 +39,10 @@ inline void iotaWithStepOptimized(T * begin, size_t count, T first_value, T step
 class NumbersSource : public ISource
 {
 public:
-    NumbersSource(UInt64 block_size_, UInt64 offset_, std::optional<UInt64> limit_, UInt64 chunk_step_, const std::string & column_name, UInt64 step_)
-        : ISource(createHeader(column_name))
-        , block_size(block_size_)
-        , next(offset_)
-        , chunk_step(chunk_step_)
-        , step(step_)
+    NumbersSource(
+        UInt64 block_size_, UInt64 offset_, std::optional<UInt64> end_, UInt64 chunk_step_, const std::string & column_name, UInt64 step_)
+        : ISource(createHeader(column_name)), block_size(block_size_), next(offset_), chunk_step(chunk_step_), end(end_), step(step_)
     {
-        if (limit_.has_value())
-            end = limit_.value() + offset_;
     }
     String getName() const override { return "Numbers"; }
 
@@ -79,7 +74,6 @@ protected:
         next += chunk_step;
 
         progress(column->size(), column->byteSize());
-
         return {Columns{std::move(column)}, real_block_size};
     }
 
@@ -549,13 +543,21 @@ Pipe ReadFromSystemNumbersStep::makePipe()
         return pipe;
     }
 
+    const auto end = std::invoke(
+        [&]() -> std::optional<UInt64>
+        {
+            if (numbers_storage.limit.has_value())
+                return *(numbers_storage.limit) + numbers_storage.offset;
+            return {};
+        });
+
     /// Fall back to NumbersSource
     for (size_t i = 0; i < num_streams; ++i)
     {
         auto source = std::make_shared<NumbersSource>(
             max_block_size,
             numbers_storage.offset + i * max_block_size * numbers_storage.step,
-            numbers_storage.limit,
+            end,
             num_streams * max_block_size * numbers_storage.step,
             numbers_storage.column_name,
             numbers_storage.step);
@@ -569,19 +571,6 @@ Pipe ReadFromSystemNumbersStep::makePipe()
         }
 
         pipe.addSource(std::move(source));
-    }
-
-    if (numbers_storage.limit)
-    {
-        size_t i = 0;
-        auto storage_limit = (*numbers_storage.limit - 1) / numbers_storage.step + 1;
-        /// This formula is how to split 'limit' elements to 'num_streams' chunks almost uniformly.
-        pipe.addSimpleTransform(
-            [&](const Block & header)
-            {
-                ++i;
-                return std::make_shared<LimitTransform>(header, storage_limit * i / num_streams - storage_limit * (i - 1) / num_streams, 0);
-            });
     }
 
     return pipe;
