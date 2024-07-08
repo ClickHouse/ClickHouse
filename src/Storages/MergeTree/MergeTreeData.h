@@ -453,9 +453,6 @@ public:
             Int64 metadata_version = -1;
             Int64 min_part_metadata_version = -1;
             bool need_data_mutations = false;
-
-            bool needAnyMutations() const { return need_data_mutations || needMetadataMutations(); }
-            bool needMetadataMutations() const { return min_part_metadata_version < metadata_version; }
         };
 
         Params params;
@@ -1776,7 +1773,16 @@ struct CurrentlySubmergingEmergingTagger
 
 /// Look at MutationCommands if it contains mutations for AlterConversions, update the counter.
 /// Return true if the counter had been updated
-void incrementAlterConversionsCounter(Int64 & num_alter_conversions, const MutationCommands & commands, std::lock_guard<std::mutex> & lock);
-void decrementAlterConversionsCounter(Int64 & num_alter_conversions, const MutationCommands & commands, std::lock_guard<std::mutex> & lock);
+void incrementMutationsCounters(
+    Int64 & data_mutations_to_apply,
+    Int64 & metadata_mutations_to_apply,
+    const MutationCommands & commands,
+    std::lock_guard<std::mutex> & lock);
+
+void decrementMutationsCounters(
+    Int64 & data_mutations_to_apply,
+    Int64 & metadata_mutations_to_apply,
+    const MutationCommands & commands,
+    std::lock_guard<std::mutex> & lock);
 
 }

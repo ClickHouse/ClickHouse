@@ -502,7 +502,7 @@ Int64 StorageMergeTree::startMutation(const MutationCommands & commands, Context
         if (!inserted)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Mutation {} already exists, it's a bug", version);
 
-        incrementAlterConversionsCounter(num_alter_conversions, *it->second.commands, lock);
+        incrementMutationsCounters(data_mutations_to_apply, metadata_mutations_to_apply, *it->second.commands, lock);
         LOG_INFO(log, "Added mutation: {}{}", mutation_id, additional_info);
     }
     background_operations_assignee.trigger();
@@ -538,7 +538,7 @@ void StorageMergeTree::updateMutationEntriesErrors(FutureMergedMutatedPartPtr re
                     if (static_cast<UInt64>(result_part->part_info.mutation) == it->first)
                         mutation_backoff_policy.removePartFromFailed(failed_part->name);
 
-                    decrementAlterConversionsCounter(num_alter_conversions, *entry.commands, lock);
+                    decrementMutationsCounters(data_mutations_to_apply, metadata_mutations_to_apply, *entry.commands, lock);
                 }
             }
             else
@@ -819,7 +819,7 @@ CancellationCode StorageMergeTree::killMutation(const String & mutation_id)
             {
                 bool mutation_finished = *min_version > static_cast<Int64>(mutation_version);
                 if (!mutation_finished)
-                    decrementAlterConversionsCounter(num_alter_conversions, *it->second.commands, lock);
+                    decrementMutationsCounters(data_mutations_to_apply, metadata_mutations_to_apply, *it->second.commands, lock);
             }
 
             to_kill.emplace(std::move(it->second));
@@ -904,7 +904,7 @@ void StorageMergeTree::loadMutations()
                 if (!inserted)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Mutation {} already exists, it's a bug", block_number);
 
-                incrementAlterConversionsCounter(num_alter_conversions, *entry_it->second.commands, lock);
+                incrementMutationsCounters(data_mutations_to_apply, metadata_mutations_to_apply, *entry_it->second.commands, lock);
             }
             else if (startsWith(it->name(), "tmp_mutation_"))
             {
@@ -2449,10 +2449,10 @@ MergeTreeData::MutationsSnapshotPtr StorageMergeTree::getMutationsSnapshot(const
 
     std::lock_guard lock(currently_processing_in_background_mutex);
 
-    bool need_data_mutations = res->params.need_data_mutations && num_alter_conversions > 0;
-    bool need_metatadata_mutations = res->params.needMetadataMutations();
+    bool need_data_mutations = res->params.need_data_mutations && data_mutations_to_apply > 0;
+    bool need_metadata_mutations = metadata_mutations_to_apply > 0;
 
-    if (!need_data_mutations && !need_metatadata_mutations)
+    if (!need_data_mutations && !need_metadata_mutations)
         return res;
 
     for (const auto & [version, entry] : current_mutations_by_version)
@@ -2462,7 +2462,7 @@ MergeTreeData::MutationsSnapshotPtr StorageMergeTree::getMutationsSnapshot(const
             if (need_data_mutations && AlterConversions::isSupportedDataMutation(command.type))
                 return true;
 
-            if (need_metatadata_mutations && AlterConversions::isSupportedMetadataMutation(command.type))
+            if (need_metadata_mutations && AlterConversions::isSupportedMetadataMutation(command.type))
                 return true;
 
             return false;

@@ -951,7 +951,7 @@ int32_t ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper
                 {
                     const auto commands = entry.commands;
                     it = mutations_by_znode.erase(it);
-                    decrementAlterConversionsCounter(num_alter_conversions, commands, state_lock);
+                    decrementMutationsCounters(data_mutations_to_apply, metadata_mutations_to_apply, commands, state_lock);
                 }
                 else
                     it = mutations_by_znode.erase(it);
@@ -1001,7 +1001,7 @@ int32_t ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper
             for (const ReplicatedMergeTreeMutationEntryPtr & entry : new_mutations)
             {
                 auto & mutation = mutations_by_znode.emplace(entry->znode_name, MutationStatus(entry, format_version)).first->second;
-                incrementAlterConversionsCounter(num_alter_conversions, entry->commands, lock);
+                incrementMutationsCounters(data_mutations_to_apply, metadata_mutations_to_apply, entry->commands, lock);
 
                 NOEXCEPT_SCOPE({
                     for (const auto & pair : entry->block_numbers)
@@ -1076,7 +1076,7 @@ ReplicatedMergeTreeMutationEntryPtr ReplicatedMergeTreeQueue::removeMutation(
         }
 
         mutations_by_znode.erase(it);
-        /// decrementAlterConversionsCounter() will be called in updateMutations()
+        /// decrementMutationsCounters() will be called in updateMutations()
 
         LOG_DEBUG(log, "Removed mutation {} from local state.", entry->znode_name);
     }
@@ -1913,7 +1913,7 @@ MutationCommands ReplicatedMergeTreeQueue::MutationsSnapshot::getAlterMutationCo
     MutationCommands result;
 
     bool seen_all_data_mutations = !params.need_data_mutations;
-    bool seen_all_metadata_mutations = !params.needMetadataMutations();
+    bool seen_all_metadata_mutations = part_metadata_version >= params.metadata_version;
 
     if (seen_all_data_mutations && seen_all_metadata_mutations)
         return {};
@@ -1968,8 +1968,8 @@ MergeTreeData::MutationsSnapshotPtr ReplicatedMergeTreeQueue::getMutationsSnapsh
 
     std::lock_guard lock(state_mutex);
 
-    bool need_data_mutations = res->params.need_data_mutations && num_alter_conversions > 0;
-    bool need_metatadata_mutations = res->params.needMetadataMutations();
+    bool need_data_mutations = params.need_data_mutations && data_mutations_to_apply > 0;
+    bool need_metatadata_mutations = params.min_part_metadata_version < params.metadata_version;
 
     if (!need_data_mutations && !need_metatadata_mutations)
         return res;
@@ -2113,7 +2113,7 @@ bool ReplicatedMergeTreeQueue::tryFinalizeMutations(zkutil::ZooKeeperPtr zookeep
                     mutation.parts_to_do.clear();
                 }
 
-                decrementAlterConversionsCounter(num_alter_conversions, mutation.entry->commands, lock);
+                decrementMutationsCounters(data_mutations_to_apply, metadata_mutations_to_apply, mutation.entry->commands, lock);
             }
             else if (mutation.parts_to_do.size() == 0)
             {
@@ -2170,7 +2170,7 @@ bool ReplicatedMergeTreeQueue::tryFinalizeMutations(zkutil::ZooKeeperPtr zookeep
                     LOG_TRACE(log, "Finishing data alter with version {} for entry {}", entry->alter_version, entry->znode_name);
                     alter_sequence.finishDataAlter(entry->alter_version, lock);
                 }
-                decrementAlterConversionsCounter(num_alter_conversions, entry->commands, lock);
+                decrementMutationsCounters(data_mutations_to_apply, metadata_mutations_to_apply, entry->commands, lock);
             }
         }
     }
