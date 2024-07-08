@@ -1,7 +1,5 @@
 #pragma once
 
-#ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD
-
 #include <base/types.h>
 #include <Common/isLocalAddress.h>
 #include <Common/MultiVersion.h>
@@ -825,6 +823,7 @@ public:
     /// Set settings by name.
     void setSetting(std::string_view name, const String & value);
     void setSetting(std::string_view name, const Field & value);
+    void setServerSetting(std::string_view name, const Field & value);
     void applySettingChange(const SettingChange & change);
     void applySettingsChanges(const SettingsChanges & changes);
 
@@ -1451,9 +1450,3 @@ struct HTTPContext : public IHTTPContext
 };
 
 }
-
-#else
-
-#include <Coordination/Standalone/Context.h>
-
-#endif
