@@ -182,23 +182,17 @@ public:
 
 #if !defined(ABORT_ON_LOGICAL_ERROR)
     void insertFrom(const IColumn & src_, size_t n) override;
-#else
-    void doInsertFrom(const IColumn & src_, size_t n) override;
-#endif
-#if !defined(ABORT_ON_LOGICAL_ERROR)
     void insertRangeFrom(const IColumn & src_, size_t start, size_t length) override;
-#else
-    void doInsertRangeFrom(const IColumn & src_, size_t start, size_t length) override;
-#endif
-#if !defined(ABORT_ON_LOGICAL_ERROR)
     void insertManyFrom(const IColumn & src_, size_t position, size_t length) override;
 #else
-    void doInsertManyFrom(const IColumn & src_, size_t position, size_t length) override;
-#endif
-
     using IColumn::insertFrom;
     using IColumn::insertManyFrom;
     using IColumn::insertRangeFrom;
+
+    void doInsertFrom(const IColumn & src_, size_t n) override;
+    void doInsertRangeFrom(const IColumn & src_, size_t start, size_t length) override;
+    void doInsertManyFrom(const IColumn & src_, size_t position, size_t length) override;
+#endif
 
     /// Methods for insertion from another Variant but with known mapping between global discriminators.
     void insertFrom(const IColumn & src_, size_t n, const std::vector<ColumnVariant::Discriminator> & global_discriminators_mapping);

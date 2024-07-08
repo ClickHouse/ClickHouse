@@ -65,16 +65,15 @@ public:
     void insertData(const char * pos, size_t length) override;
     void insert(const Field & x) override;
     bool tryInsert(const Field & x) override;
+
 #if !defined(ABORT_ON_LOGICAL_ERROR)
     void insertFrom(const IColumn & src_, size_t n) override;
-#else
-    void doInsertFrom(const IColumn & src_, size_t n) override;
-#endif
-#if !defined(ABORT_ON_LOGICAL_ERROR)
     void insertManyFrom(const IColumn & src, size_t position, size_t length) override;
 #else
+    void doInsertFrom(const IColumn & src_, size_t n) override;
     void doInsertManyFrom(const IColumn & src, size_t position, size_t length) override;
 #endif
+
     void insertDefault() override;
     void popBack(size_t n) override;
     StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;

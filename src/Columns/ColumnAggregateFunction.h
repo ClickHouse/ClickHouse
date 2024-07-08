@@ -148,10 +148,11 @@ public:
 #if !defined(ABORT_ON_LOGICAL_ERROR)
     void insertFrom(const IColumn & from, size_t n) override;
 #else
+    using IColumn::insertFrom;
+
     void doInsertFrom(const IColumn & from, size_t n) override;
 #endif
 
-    using IColumn::insertFrom;
 
     void insertFrom(ConstAggregateDataPtr place);
 
