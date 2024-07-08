@@ -155,9 +155,6 @@ void AzureObjectStorage::listObjects(const std::string & path, RelativePathsWith
 {
     auto client_ptr = client.get();
 
-    /// NOTE: list doesn't work if endpoint contains non-empty prefix for blobs.
-    /// See AzureBlobStorageEndpoint and processAzureBlobStorageEndpoint for details.
-
     Azure::Storage::Blobs::ListBlobsOptions options;
     options.Prefix = path;
     if (max_keys)

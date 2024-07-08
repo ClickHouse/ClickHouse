@@ -1,6 +1,4 @@
 #include <Disks/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
-#include "Common/StackTrace.h"
-#include "Common/logger_useful.h"
 
 #if USE_AZURE_BLOB_STORAGE
 

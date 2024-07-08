@@ -99,6 +99,8 @@ using RawContainerClient = Azure::Storage::Blobs::BlobContainerClient;
 using Azure::Storage::Blobs::ListBlobsOptions;
 using Azure::Storage::Blobs::ListBlobsPagedResponse;
 
+/// A wrapper for ContainerClient that correctly handles the prefix of blobs.
+/// See AzureBlobStorageEndpoint and processAzureBlobStorageEndpoint for details.
 class ContainerClientWrapper
 {
 public:

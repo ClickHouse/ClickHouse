@@ -159,7 +159,7 @@ namespace
         {
             auto block_blob_client = client->GetBlockBlobClient(dest_blob);
             ProfileEvents::increment(ProfileEvents::AzureCommitBlockList);
-            if (client->GetClickhouseOptions().IsClientForDisk)
+            if (client->IsClientForDisk())
                 ProfileEvents::increment(ProfileEvents::DiskAzureCommitBlockList);
 
             block_blob_client.CommitBlockList(block_ids);
