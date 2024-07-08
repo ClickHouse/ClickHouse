@@ -33,8 +33,9 @@ bool cgroupsV2MemoryControllerEnabled()
     /// According to https://docs.kernel.org/admin-guide/cgroup-v2.html, file "cgroup.controllers" defines which controllers are available
     /// for the current + child cgroups. The set of available controllers can be restricted from level to level using file
     /// "cgroups.subtree_control". It is therefore sufficient to check the bottom-most nested "cgroup.controllers" file.
-    std::string cgroup = cgroupV2OfProcess();
-    auto cgroup_dir = cgroup.empty() ? default_cgroups_mount : (default_cgroups_mount / cgroup);
+    auto cgroup_dir = currentCGroupV2Path();
+    if (cgroup_dir.empty())
+        return false;
     std::ifstream controllers_file(cgroup_dir / "cgroup.controllers");
     if (!controllers_file.is_open())
         return false;
@@ -46,7 +47,7 @@ bool cgroupsV2MemoryControllerEnabled()
 #endif
 }
 
-std::string cgroupV2OfProcess()
+std::filesystem::path currentCGroupV2Path()
 {
 #if defined(OS_LINUX)
     chassert(cgroupsV2Enabled());
@@ -54,17 +55,19 @@ std::string cgroupV2OfProcess()
     /// A simpler way to get the membership is:
     std::ifstream cgroup_name_file("/proc/self/cgroup");
     if (!cgroup_name_file.is_open())
-        return "";
+        return {};
     /// With cgroups v2, there will be a *single* line with prefix "0::/"
     /// (see https://docs.kernel.org/admin-guide/cgroup-v2.html)
     std::string cgroup;
     std::getline(cgroup_name_file, cgroup);
     static const std::string v2_prefix = "0::/";
     if (!cgroup.starts_with(v2_prefix))
-        return "";
+        return {};
+
+    // the 'root' cgroup can have empty path, which is valid
     cgroup = cgroup.substr(v2_prefix.length());
-    return cgroup;
+    return default_cgroups_mount / cgroup;
 #else
-    return "";
+    return {};
 #endif
 }
