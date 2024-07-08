@@ -50,56 +50,54 @@ void StorageObjectStorageSink::consume(Chunk chunk)
 void StorageObjectStorageSink::onCancel()
 {
     std::lock_guard lock(cancel_mutex);
-    cancelBuffers();
-    releaseBuffers();
+    finalize();
     cancelled = true;
 }
 
-void StorageObjectStorageSink::onException(std::exception_ptr)
+void StorageObjectStorageSink::onException(std::exception_ptr exception)
 {
     std::lock_guard lock(cancel_mutex);
-    cancelBuffers();
-    releaseBuffers();
+    try
+    {
+        std::rethrow_exception(exception);
+    }
+    catch (...)
+    {
+        /// An exception context is needed to proper delete write buffers without finalization.
+        release();
+    }
 }
 
 void StorageObjectStorageSink::onFinish()
 {
     std::lock_guard lock(cancel_mutex);
-    finalizeBuffers();
+    finalize();
 }
 
-void StorageObjectStorageSink::finalizeBuffers()
+void StorageObjectStorageSink::finalize()
 {
     if (!writer)
         return;
 
     try
     {
-        writer->flush();
         writer->finalize();
+        writer->flush();
     }
     catch (...)
     {
         /// Stop ParallelFormattingOutputFormat correctly.
-        releaseBuffers();
+        release();
         throw;
     }
 
     write_buf->finalize();
 }
 
-void StorageObjectStorageSink::releaseBuffers()
+void StorageObjectStorageSink::release()
 {
     writer.reset();
     write_buf.reset();
-}
-
-void StorageObjectStorageSink::cancelBuffers()
-{
-    if (writer)
-        writer->cancel();
-    if (write_buf)
-        write_buf->cancel();
 }
 
 PartitionedStorageObjectStorageSink::PartitionedStorageObjectStorageSink(

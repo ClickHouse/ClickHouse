@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/aggregate-functions/reference/any
-sidebar_position: 102
+sidebar_position: 6
 ---
 
 # any

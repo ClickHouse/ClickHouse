@@ -74,7 +74,8 @@ public:
 
                 new_arguments[1] = std::move(if_arguments_nodes[0]);
                 function_arguments_nodes = std::move(new_arguments);
-                resolveAggregateFunctionNodeByName(*function_node, function_node->getFunctionName() + "If");
+                resolveAsAggregateFunctionWithIf(
+                    *function_node, {function_arguments_nodes[0]->getResultType(), function_arguments_nodes[1]->getResultType()});
             }
         }
         else if (first_const_node)
@@ -103,9 +104,26 @@ public:
                 new_arguments[1] = std::move(not_function);
 
                 function_arguments_nodes = std::move(new_arguments);
-                resolveAggregateFunctionNodeByName(*function_node, function_node->getFunctionName() + "If");
+                resolveAsAggregateFunctionWithIf(
+                    *function_node, {function_arguments_nodes[0]->getResultType(), function_arguments_nodes[1]->getResultType()});
             }
         }
+    }
+
+private:
+    static void resolveAsAggregateFunctionWithIf(FunctionNode & function_node, const DataTypes & argument_types)
+    {
+        auto result_type = function_node.getResultType();
+
+        AggregateFunctionProperties properties;
+        auto aggregate_function = AggregateFunctionFactory::instance().get(
+            function_node.getFunctionName() + "If",
+            function_node.getNullsAction(),
+            argument_types,
+            function_node.getAggregateFunction()->getParameters(),
+            properties);
+
+        function_node.resolveAsAggregateFunction(std::move(aggregate_function));
     }
 };
 

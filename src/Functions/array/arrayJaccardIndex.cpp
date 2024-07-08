@@ -87,7 +87,7 @@ public:
             {"array_1", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isArray), nullptr, "Array"},
             {"array_2", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isArray), nullptr, "Array"},
         };
-        validateFunctionArguments(*this, arguments, args);
+        validateFunctionArgumentTypes(*this, arguments, args);
         return std::make_shared<DataTypeNumber<ResultType>>();
     }
 

@@ -6,7 +6,6 @@
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
-#include <Analyzer/Utils.h>
 #include <Interpreters/Context.h>
 #include <DataTypes/DataTypesNumber.h>
 
@@ -48,16 +47,24 @@ public:
 
         if (function_node->getFunctionName() == "count" && !first_argument_constant_literal.isNull())
         {
+            resolveAsCountAggregateFunction(*function_node);
             function_node->getArguments().getNodes().clear();
-            resolveAggregateFunctionNodeByName(*function_node, "count");
         }
         else if (function_node->getFunctionName() == "sum" &&
             first_argument_constant_literal.getType() == Field::Types::UInt64 &&
             first_argument_constant_literal.get<UInt64>() == 1)
         {
+            resolveAsCountAggregateFunction(*function_node);
             function_node->getArguments().getNodes().clear();
-            resolveAggregateFunctionNodeByName(*function_node, "count");
         }
+    }
+private:
+    static void resolveAsCountAggregateFunction(FunctionNode & function_node)
+    {
+        AggregateFunctionProperties properties;
+        auto aggregate_function = AggregateFunctionFactory::instance().get("count", NullsAction::EMPTY, {}, {}, properties);
+
+        function_node.resolveAsAggregateFunction(std::move(aggregate_function));
     }
 };
 

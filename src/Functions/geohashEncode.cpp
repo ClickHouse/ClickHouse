@@ -17,6 +17,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
 }
 
 namespace
@@ -39,16 +40,19 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        FunctionArgumentDescriptors mandatory_args{
-            {"longitude", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isFloat), nullptr, "Float*"},
-            {"latitude", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isFloat), nullptr, "Float*"}
-        };
-        FunctionArgumentDescriptors optional_args{
-            {"precision", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isInteger), nullptr, "(U)Int*"}
-        };
-        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
+        validateArgumentType(*this, arguments, 0, isFloat, "float");
+        validateArgumentType(*this, arguments, 1, isFloat, "float");
+        if (arguments.size() == 3)
+        {
+            validateArgumentType(*this, arguments, 2, isInteger, "integer");
+        }
+        if (arguments.size() > 3)
+        {
+            throw Exception(ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION, "Too many arguments for function {} expected at most 3",
+                            getName());
+        }
 
         return std::make_shared<DataTypeString>();
     }

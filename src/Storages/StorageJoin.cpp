@@ -2,7 +2,7 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageSet.h>
 #include <Storages/TableLockHolder.h>
-#include <Interpreters/HashJoin/HashJoin.h>
+#include <Interpreters/HashJoin.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTIdentifier_fwd.h>
@@ -395,13 +395,10 @@ void registerStorageJoin(StorageFactory & factory)
             else if (kind_str == "full")
             {
                 if (strictness == JoinStrictness::Any)
-                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ANY FULL JOINs are not implemented");
+                    strictness = JoinStrictness::RightAny;
                 kind = JoinKind::Full;
             }
         }
-
-        if ((strictness == JoinStrictness::Semi || strictness == JoinStrictness::Anti) && (kind != JoinKind::Left && kind != JoinKind::Right))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, " SEMI|ANTI JOIN should be LEFT or RIGHT");
 
         if (kind == JoinKind::Comma)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second parameter of storage Join must be LEFT or INNER or RIGHT or FULL (without quotes).");

@@ -12,7 +12,6 @@ system stop distributed sends dist_in;
 create table dist_out as data engine=Distributed(test_shard_localhost, currentDatabase(), data);
 
 set prefer_localhost_replica=0;
-SET optimize_trivial_insert_select = 1;
 
 insert into dist_in select number/100, number from system.numbers limit 1e6 settings max_memory_usage='20Mi';
 system flush distributed dist_in; -- { serverError MEMORY_LIMIT_EXCEEDED }

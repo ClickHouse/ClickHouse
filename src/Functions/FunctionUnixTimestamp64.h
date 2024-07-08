@@ -47,7 +47,7 @@ public:
         FunctionArgumentDescriptors args{
             {"value", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isDateTime64), nullptr, "DateTime64"}
         };
-        validateFunctionArguments(*this, arguments, args);
+        validateFunctionArgumentTypes(*this, arguments, args);
 
         return std::make_shared<DataTypeInt64>();
     }

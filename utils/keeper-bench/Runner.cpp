@@ -1238,13 +1238,9 @@ void Runner::createConnections()
 
 std::shared_ptr<Coordination::ZooKeeper> Runner::getConnection(const ConnectionInfo & connection_info, size_t connection_info_idx)
 {
-    zkutil::ShuffleHost host;
-    host.host = connection_info.host;
-    host.secure = connection_info.secure;
-    host.original_index = static_cast<UInt8>(connection_info_idx);
-    host.address = Poco::Net::SocketAddress{connection_info.host};
-
-    zkutil::ShuffleHosts nodes{host};
+    Coordination::ZooKeeper::Node node{Poco::Net::SocketAddress{connection_info.host}, static_cast<UInt8>(connection_info_idx), connection_info.secure};
+    std::vector<Coordination::ZooKeeper::Node> nodes;
+    nodes.push_back(node);
     zkutil::ZooKeeperArgs args;
     args.session_timeout_ms = connection_info.session_timeout_ms;
     args.connection_timeout_ms = connection_info.connection_timeout_ms;
@@ -1311,9 +1307,9 @@ void removeRecursive(Coordination::ZooKeeper & zookeeper, const std::string & pa
     while (!children_span.empty())
     {
         Coordination::Requests ops;
-        for (size_t i = 0; i < 1000 && !children_span.empty(); ++i)
+        for (size_t i = 0; i < 1000 && !children.empty(); ++i)
         {
-            removeRecursive(zookeeper, fs::path(path) / children_span.back());
+            removeRecursive(zookeeper, fs::path(path) / children.back());
             ops.emplace_back(zkutil::makeRemoveRequest(fs::path(path) / children_span.back(), -1));
             children_span = children_span.subspan(0, children_span.size() - 1);
         }

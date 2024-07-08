@@ -195,6 +195,7 @@ public:
     /// DiskObjectStorage(CachedObjectStorage(CachedObjectStorage(S3ObjectStorage)))
     String getStructure() const { return fmt::format("DiskObjectStorage-{}({})", getName(), object_storage->getName()); }
 
+#ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD
     /// Add a cache layer.
     /// Example: DiskObjectStorage(S3ObjectStorage) -> DiskObjectStorage(CachedObjectStorage(S3ObjectStorage))
     /// There can be any number of cache layers:
@@ -203,6 +204,7 @@ public:
 
     /// Get names of all cache layers. Name is how cache is defined in configuration file.
     NameSet getCacheLayersNames() const override;
+#endif
 
     bool supportsStat() const override { return metadata_storage->supportsStat(); }
     struct stat stat(const String & path) const override;
@@ -212,7 +214,6 @@ public:
 
 #if USE_AWS_S3
     std::shared_ptr<const S3::Client> getS3StorageClient() const override;
-    std::shared_ptr<const S3::Client> tryGetS3StorageClient() const override;
 #endif
 
 private:

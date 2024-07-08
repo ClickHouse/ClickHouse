@@ -184,7 +184,6 @@ public:
             VariantOffsets,
             VariantElements,
             VariantElement,
-            VariantElementNullMap,
 
             DynamicData,
             DynamicStructure,
@@ -256,8 +255,6 @@ public:
         bool low_cardinality_use_single_dictionary_for_part = true;
 
         bool position_independent_encoding = true;
-
-        bool use_compact_variant_discriminators_serialization = false;
 
         enum class DynamicStatisticsMode
         {
@@ -437,9 +434,6 @@ protected:
     template <typename State, typename StatePtr>
     State * checkAndGetState(const StatePtr & state) const;
 
-    template <typename State, typename StatePtr>
-    static State * checkAndGetState(const StatePtr & state, const ISerialization * serialization);
-
     [[noreturn]] void throwUnexpectedDataAfterParsedValue(IColumn & column, ReadBuffer & istr, const FormatSettings &, const String & type_name) const;
 };
 
@@ -451,15 +445,9 @@ using SubstreamType = ISerialization::Substream::Type;
 template <typename State, typename StatePtr>
 State * ISerialization::checkAndGetState(const StatePtr & state) const
 {
-    return checkAndGetState<State, StatePtr>(state, this);
-}
-
-template <typename State, typename StatePtr>
-State * ISerialization::checkAndGetState(const StatePtr & state, const ISerialization * serialization)
-{
     if (!state)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Got empty state for {}", demangle(typeid(*serialization).name()));
+            "Got empty state for {}", demangle(typeid(*this).name()));
 
     auto * state_concrete = typeid_cast<State *>(state.get());
     if (!state_concrete)
@@ -467,7 +455,7 @@ State * ISerialization::checkAndGetState(const StatePtr & state, const ISerializ
         auto & state_ref = *state;
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Invalid State for {}. Expected: {}, got {}",
-                demangle(typeid(*serialization).name()),
+                demangle(typeid(*this).name()),
                 demangle(typeid(State).name()),
                 demangle(typeid(state_ref).name()));
     }

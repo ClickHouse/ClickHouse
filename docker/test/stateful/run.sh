@@ -213,10 +213,6 @@ function run_tests()
         ADDITIONAL_OPTIONS+=('--s3-storage')
     fi
 
-    if [[ -n "$USE_AZURE_STORAGE_FOR_MERGE_TREE" ]] && [[ "$USE_AZURE_STORAGE_FOR_MERGE_TREE" -eq 1 ]]; then
-        ADDITIONAL_OPTIONS+=('--azure-blob-storage')
-    fi
-
     if [[ -n "$USE_DATABASE_ORDINARY" ]] && [[ "$USE_DATABASE_ORDINARY" -eq 1 ]]; then
         ADDITIONAL_OPTIONS+=('--db-engine=Ordinary')
     fi

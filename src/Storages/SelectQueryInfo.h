@@ -229,8 +229,8 @@ struct SelectQueryInfo
     bool is_parameterized_view = false;
     bool optimize_trivial_count = false;
 
-    // If not 0, that means it's a trivial limit query.
-    UInt64 trivial_limit = 0;
+    // If limit is not 0, that means it's a trivial limit query.
+    UInt64 limit = 0;
 
     /// For IStorageSystemOneBlock
     std::vector<UInt8> columns_mask;

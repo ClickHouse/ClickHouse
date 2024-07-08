@@ -9,7 +9,6 @@ namespace DB
 {
 
 class SerializationVariant;
-class SerializationVariantElementNullMap;
 
 /// Serialization for Variant element when we read it as a subcolumn.
 class SerializationVariantElement final : public SerializationWrapper
@@ -67,14 +66,12 @@ public:
         const String variant_element_name;
         const ColumnVariant::Discriminator global_variant_discriminator;
         const ColumnVariant::Discriminator local_variant_discriminator;
-        bool make_nullable;
 
         VariantSubcolumnCreator(
             const ColumnPtr & local_discriminators_,
             const String & variant_element_name_,
             ColumnVariant::Discriminator global_variant_discriminator_,
-            ColumnVariant::Discriminator local_variant_discriminator_,
-            bool make_nullable_);
+            ColumnVariant::Discriminator local_variant_discriminator_);
 
         DataTypePtr create(const DataTypePtr & prev) const override;
         ColumnPtr create(const ColumnPtr & prev) const override;
@@ -82,18 +79,6 @@ public:
     };
 private:
     friend SerializationVariant;
-    friend SerializationVariantElementNullMap;
-
-    struct DeserializeBinaryBulkStateVariantElement;
-
-    static size_t deserializeCompactDiscriminators(
-        ColumnPtr & discriminators_column,
-        ColumnVariant::Discriminator variant_discriminator,
-        size_t limit,
-        ReadBuffer * stream,
-        bool continuous_reading,
-        DeserializeBinaryBulkStatePtr & discriminators_state_,
-        const ISerialization * serialization);
 
     void addVariantToPath(SubstreamPath & path) const;
     void removeVariantFromPath(SubstreamPath & path) const;

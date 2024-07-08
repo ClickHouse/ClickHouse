@@ -339,14 +339,6 @@ enum class ParallelReplicasCustomKeyFilterType : uint8_t
 
 DECLARE_SETTING_ENUM(ParallelReplicasCustomKeyFilterType)
 
-enum class LightweightMutationProjectionMode : uint8_t
-{
-    THROW,
-    DROP,
-};
-
-DECLARE_SETTING_ENUM(LightweightMutationProjectionMode)
-
 DECLARE_SETTING_ENUM(LocalFSReadMethod)
 
 enum class ObjectStorageQueueMode : uint8_t

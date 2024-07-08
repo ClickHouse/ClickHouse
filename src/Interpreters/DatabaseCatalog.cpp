@@ -274,12 +274,10 @@ void DatabaseCatalog::shutdownImpl()
         database->shutdown();
     }
 
-    TablesMarkedAsDropped tables_marked_dropped_to_destroy;
     {
         std::lock_guard lock(tables_marked_dropped_mutex);
-        tables_marked_dropped.swap(tables_marked_dropped_to_destroy);
+        tables_marked_dropped.clear();
     }
-    tables_marked_dropped_to_destroy.clear();
 
     std::lock_guard lock(databases_mutex);
     for (const auto & db : databases)

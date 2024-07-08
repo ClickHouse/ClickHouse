@@ -31,13 +31,6 @@ namespace CurrentMetrics
     extern const Metric KeeperOutstandingRequets;
 }
 
-namespace ProfileEvents
-{
-    extern const Event KeeperCommitWaitElapsedMicroseconds;
-    extern const Event KeeperBatchMaxCount;
-    extern const Event KeeperBatchMaxTotalSize;
-}
-
 using namespace std::chrono_literals;
 
 namespace DB
@@ -126,7 +119,6 @@ void KeeperDispatcher::requestThread()
         auto coordination_settings = configuration_and_settings->coordination_settings;
         uint64_t max_wait = coordination_settings->operation_timeout_ms.totalMilliseconds();
         uint64_t max_batch_bytes_size = coordination_settings->max_requests_batch_bytes_size;
-        size_t max_batch_size = coordination_settings->max_requests_batch_size;
 
         /// The code below do a very simple thing: batch all write (quorum) requests into vector until
         /// previous write batch is not finished or max_batch size achieved. The main complexity goes from
@@ -196,6 +188,7 @@ void KeeperDispatcher::requestThread()
                         return false;
                     };
 
+                    size_t max_batch_size = coordination_settings->max_requests_batch_size;
                     while (!shutdown_called && current_batch.size() < max_batch_size && !has_reconfig_request
                            && current_batch_bytes_size < max_batch_bytes_size && try_get_request())
                         ;
@@ -232,12 +225,6 @@ void KeeperDispatcher::requestThread()
                 /// Process collected write requests batch
                 if (!current_batch.empty())
                 {
-                    if (current_batch.size() == max_batch_size)
-                        ProfileEvents::increment(ProfileEvents::KeeperBatchMaxCount, 1);
-
-                    if (current_batch_bytes_size == max_batch_bytes_size)
-                        ProfileEvents::increment(ProfileEvents::KeeperBatchMaxTotalSize, 1);
-
                     LOG_TRACE(log, "Processing requests batch, size: {}, bytes: {}", current_batch.size(), current_batch_bytes_size);
 
                     auto result = server->putRequestBatch(current_batch);
@@ -256,8 +243,6 @@ void KeeperDispatcher::requestThread()
                 /// If we will execute read or reconfig next, we have to process result now
                 if (execute_requests_after_write)
                 {
-                    Stopwatch watch;
-                    SCOPE_EXIT(ProfileEvents::increment(ProfileEvents::KeeperCommitWaitElapsedMicroseconds, watch.elapsedMicroseconds()));
                     if (prev_result)
                         result_buf = forceWaitAndProcessResult(
                             prev_result, prev_batch, /*clear_requests_on_success=*/!execute_requests_after_write);
@@ -334,12 +319,18 @@ void KeeperDispatcher::snapshotThread()
 {
     setThreadName("KeeperSnpT");
     const auto & shutdown_called = keeper_context->isShutdownCalled();
-    CreateSnapshotTask task;
-    while (snapshots_queue.pop(task))
+    while (!shutdown_called)
     {
+        CreateSnapshotTask task;
+        if (!snapshots_queue.pop(task))
+            break;
+
         try
         {
             auto snapshot_file_info = task.create_snapshot(std::move(task.snapshot), /*execute_only_cleanup=*/shutdown_called);
+
+            if (shutdown_called)
+                break;
 
             if (!snapshot_file_info)
                 continue;

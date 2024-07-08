@@ -175,8 +175,6 @@ Float32 ReplicatedMergeTreeCleanupThread::iterate()
         cleaned_part_like += storage.clearEmptyParts();
     }
 
-    cleaned_part_like += storage.unloadPrimaryKeysOfOutdatedParts();
-
     /// We need to measure the number of removed objects somehow (for better scheduling),
     /// but just summing the number of removed async blocks, logs, and empty parts does not make any sense.
     /// So we are trying to (approximately) measure the number of inserted blocks/parts, so we will be able to compare apples to apples.

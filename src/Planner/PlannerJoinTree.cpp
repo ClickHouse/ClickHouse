@@ -53,7 +53,7 @@
 #include <Interpreters/ArrayJoinAction.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/HashJoin/HashJoin.h>
+#include <Interpreters/HashJoin.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/getCustomKeyFilterForParallelReplicas.h>
@@ -693,14 +693,14 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 if (select_query_info.local_storage_limits.local_limits.size_limits.max_rows != 0)
                 {
                     if (max_block_size_limited < select_query_info.local_storage_limits.local_limits.size_limits.max_rows)
-                        table_expression_query_info.trivial_limit = max_block_size_limited;
+                        table_expression_query_info.limit = max_block_size_limited;
                     /// Ask to read just enough rows to make the max_rows limit effective (so it has a chance to be triggered).
                     else if (select_query_info.local_storage_limits.local_limits.size_limits.max_rows < std::numeric_limits<UInt64>::max())
-                        table_expression_query_info.trivial_limit = 1 + select_query_info.local_storage_limits.local_limits.size_limits.max_rows;
+                        table_expression_query_info.limit = 1 + select_query_info.local_storage_limits.local_limits.size_limits.max_rows;
                 }
                 else
                 {
-                    table_expression_query_info.trivial_limit = max_block_size_limited;
+                    table_expression_query_info.limit = max_block_size_limited;
                 }
             }
 
@@ -913,8 +913,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                         auto result_ptr = reading->selectRangesToRead();
 
                         UInt64 rows_to_read = result_ptr->selected_rows;
-                        if (table_expression_query_info.trivial_limit > 0 && table_expression_query_info.trivial_limit < rows_to_read)
-                            rows_to_read = table_expression_query_info.trivial_limit;
+                        if (table_expression_query_info.limit > 0 && table_expression_query_info.limit < rows_to_read)
+                            rows_to_read = table_expression_query_info.limit;
 
                         if (max_block_size_limited && (max_block_size_limited < rows_to_read))
                             rows_to_read = max_block_size_limited;
@@ -1132,7 +1132,7 @@ void joinCastPlanColumnsToNullable(QueryPlan & plan_to_add_cast, PlannerContextP
         }
     }
 
-    cast_actions_dag->appendInputsForUnusedColumns(plan_to_add_cast.getCurrentDataStream().header);
+    cast_actions_dag->projectInput();
     auto cast_join_columns_step = std::make_unique<ExpressionStep>(plan_to_add_cast.getCurrentDataStream(), std::move(cast_actions_dag));
     cast_join_columns_step->setStepDescription("Cast JOIN columns to Nullable");
     plan_to_add_cast.addStep(std::move(cast_join_columns_step));
@@ -1178,12 +1178,12 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
             join_table_expression,
             planner_context);
 
-        join_clauses_and_actions.left_join_expressions_actions->appendInputsForUnusedColumns(left_plan.getCurrentDataStream().header);
+        join_clauses_and_actions.left_join_expressions_actions->projectInput();
         auto left_join_expressions_actions_step = std::make_unique<ExpressionStep>(left_plan.getCurrentDataStream(), join_clauses_and_actions.left_join_expressions_actions);
         left_join_expressions_actions_step->setStepDescription("JOIN actions");
         left_plan.addStep(std::move(left_join_expressions_actions_step));
 
-        join_clauses_and_actions.right_join_expressions_actions->appendInputsForUnusedColumns(right_plan.getCurrentDataStream().header);
+        join_clauses_and_actions.right_join_expressions_actions->projectInput();
         auto right_join_expressions_actions_step = std::make_unique<ExpressionStep>(right_plan.getCurrentDataStream(), join_clauses_and_actions.right_join_expressions_actions);
         right_join_expressions_actions_step->setStepDescription("JOIN actions");
         right_plan.addStep(std::move(right_join_expressions_actions_step));
@@ -1235,7 +1235,7 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
             output_node = &cast_actions_dag->addCast(*output_node, cast_type, output_node->result_name);
         }
 
-        cast_actions_dag->appendInputsForUnusedColumns(plan_to_add_cast.getCurrentDataStream().header);
+        cast_actions_dag->projectInput();
         auto cast_join_columns_step
             = std::make_unique<ExpressionStep>(plan_to_add_cast.getCurrentDataStream(), std::move(cast_actions_dag));
         cast_join_columns_step->setStepDescription("Cast JOIN USING columns");
@@ -1630,7 +1630,7 @@ JoinTreeQueryPlan buildQueryPlanForArrayJoinNode(const QueryTreeNodePtr & array_
         array_join_column_names.insert(array_join_column_identifier);
 
         auto & array_join_expression_column = array_join_expression->as<ColumnNode &>();
-        auto expression_dag_index_nodes = actions_visitor.visit(*array_join_action_dag, array_join_expression_column.getExpressionOrThrow());
+        auto expression_dag_index_nodes = actions_visitor.visit(array_join_action_dag, array_join_expression_column.getExpressionOrThrow());
 
         for (auto & expression_dag_index_node : expression_dag_index_nodes)
         {
@@ -1640,7 +1640,7 @@ JoinTreeQueryPlan buildQueryPlanForArrayJoinNode(const QueryTreeNodePtr & array_
         }
     }
 
-    array_join_action_dag->appendInputsForUnusedColumns(plan.getCurrentDataStream().header);
+    array_join_action_dag->projectInput();
 
     join_tree_query_plan.actions_dags.push_back(array_join_action_dag);
 

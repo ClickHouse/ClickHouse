@@ -5,7 +5,6 @@
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
-#include <Analyzer/Utils.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Common/DateLUT.h>
 #include <Common/DateLUTImpl.h>

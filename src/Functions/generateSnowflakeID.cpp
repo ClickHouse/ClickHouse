@@ -167,7 +167,7 @@ public:
         FunctionArgumentDescriptors optional_args{
             {"expr", nullptr, nullptr, "Arbitrary expression"}
         };
-        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
+        validateFunctionArgumentTypes(*this, arguments, mandatory_args, optional_args);
 
         return std::make_shared<DataTypeUInt64>();
     }

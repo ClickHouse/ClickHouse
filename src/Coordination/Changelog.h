@@ -5,7 +5,6 @@
 #include <Common/ConcurrentBoundedQueue.h>
 
 #include <map>
-#include <unordered_map>
 #include <unordered_set>
 #include <future>
 

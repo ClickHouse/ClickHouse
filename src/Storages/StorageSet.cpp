@@ -97,7 +97,8 @@ void SetOrJoinSink::onFinish()
     if (persistent)
     {
         backup_stream.flush();
-        compressed_backup_buf.finalize();
+        compressed_backup_buf.next();
+        backup_buf->next();
         backup_buf->finalize();
 
         table.disk->replaceFile(fs::path(backup_tmp_path) / backup_file_name, fs::path(backup_path) / backup_file_name);

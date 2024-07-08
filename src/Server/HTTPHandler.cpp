@@ -37,9 +37,7 @@
 #include <base/getFQDNOrHostName.h>
 #include <base/scope_guard.h>
 #include <Server/HTTP/HTTPResponse.h>
-#include <boost/container/flat_set.hpp>
 
-#include <Access/Common/SSLCertificateSubjects.h>
 #include "config.h"
 
 #include <Poco/Base64Decoder.h>
@@ -382,7 +380,7 @@ bool HTTPHandler::authenticateUser(
     bool has_credentials_in_query_params = params.has("user") || params.has("password");
 
     std::string spnego_challenge;
-    SSLCertificateSubjects certificate_subjects;
+    std::string certificate_common_name;
 
     if (has_auth_headers)
     {
@@ -405,11 +403,11 @@ bool HTTPHandler::authenticateUser(
                                 "to use SSL certificate authentication and authentication via password simultaneously");
 
             if (request.havePeerCertificate())
-                certificate_subjects = extractSSLCertificateSubjects(request.peerCertificate());
+                certificate_common_name = request.peerCertificate().commonName();
 
-            if (certificate_subjects.empty())
+            if (certificate_common_name.empty())
                 throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
-                                "Invalid authentication: SSL certificate authentication requires nonempty certificate's Common Name or Subject Alternative Name");
+                                "Invalid authentication: SSL certificate authentication requires nonempty certificate's Common Name");
 #else
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                             "SSL certificate authentication disabled because ClickHouse was built without SSL library");
@@ -453,10 +451,10 @@ bool HTTPHandler::authenticateUser(
         password = params.get("password", "");
     }
 
-    if (!certificate_subjects.empty())
+    if (!certificate_common_name.empty())
     {
         if (!request_credentials)
-            request_credentials = std::make_unique<SSLCertificateCredentials>(user, std::move(certificate_subjects));
+            request_credentials = std::make_unique<SSLCertificateCredentials>(user, certificate_common_name);
 
         auto * certificate_credentials = dynamic_cast<SSLCertificateCredentials *>(request_credentials.get());
         if (!certificate_credentials)
@@ -1029,7 +1027,14 @@ catch (...)
 {
     tryLogCurrentException(log, "Cannot send exception to client");
 
-    used_output.cancel();
+    try
+    {
+        used_output.finalize();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, "Cannot flush data to client (after sending exception)");
+    }
 }
 
 void HTTPHandler::formatExceptionForClient(int exception_code, HTTPServerRequest & request, HTTPServerResponse & response, Output & used_output)
@@ -1167,7 +1172,7 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
         /// Check if exception was thrown in used_output.finalize().
         /// In this case used_output can be in invalid state and we
         /// cannot write in it anymore. So, just log this exception.
-        if (used_output.isFinalized() || used_output.isCanceled())
+        if (used_output.isFinalized())
         {
             if (thread_trace_context)
                 thread_trace_context->root_span.addAttribute("clickhouse.exception", "Cannot flush data to client");
@@ -1186,8 +1191,6 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
 
         if (thread_trace_context)
             thread_trace_context->root_span.addAttribute(status);
-
-        return;
     }
 
     used_output.finalize();

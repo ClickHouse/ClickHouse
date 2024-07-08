@@ -322,10 +322,6 @@ public:
                 /// Rollback partial writes.
 
                 /// No more writing.
-                for (auto & [_, stream] : streams)
-                {
-                    stream.cancel();
-                }
                 streams.clear();
 
                 /// Truncate files to the older sizes.
@@ -376,12 +372,6 @@ private:
 
             plain->next();
             plain->finalize();
-        }
-
-        void cancel()
-        {
-            compressed.cancel();
-            plain->cancel();
         }
     };
 

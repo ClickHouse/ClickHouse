@@ -213,14 +213,14 @@ StorageLimits buildStorageLimits(const Context & context, const SelectQueryOptio
     return {limits, leaf_limits};
 }
 
-ActionsDAG buildActionsDAGFromExpressionNode(const QueryTreeNodePtr & expression_node,
+ActionsDAGPtr buildActionsDAGFromExpressionNode(const QueryTreeNodePtr & expression_node,
     const ColumnsWithTypeAndName & input_columns,
     const PlannerContextPtr & planner_context)
 {
-    ActionsDAG action_dag(input_columns);
+    ActionsDAGPtr action_dag = std::make_shared<ActionsDAG>(input_columns);
     PlannerActionsVisitor actions_visitor(planner_context);
     auto expression_dag_index_nodes = actions_visitor.visit(action_dag, expression_node);
-    action_dag.getOutputs() = std::move(expression_dag_index_nodes);
+    action_dag->getOutputs() = std::move(expression_dag_index_nodes);
 
     return action_dag;
 }
@@ -443,7 +443,7 @@ FilterDAGInfo buildFilterInfo(QueryTreeNodePtr filter_query_tree,
     auto filter_actions_dag = std::make_shared<ActionsDAG>();
 
     PlannerActionsVisitor actions_visitor(planner_context, false /*use_column_identifier_as_action_node_name*/);
-    auto expression_nodes = actions_visitor.visit(*filter_actions_dag, filter_query_tree);
+    auto expression_nodes = actions_visitor.visit(filter_actions_dag, filter_query_tree);
     if (expression_nodes.size() != 1)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Filter actions must return single output node. Actual {}",

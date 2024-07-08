@@ -56,7 +56,7 @@ public:
             {"epoch", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeUInt), isColumnConst, "const UInt*"},
             {"time_zone", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"}
         };
-        validateFunctionArguments(*this, arguments, args, optional_args);
+        validateFunctionArgumentTypes(*this, arguments, args, optional_args);
 
         String timezone;
         if (arguments.size() == 3)
@@ -127,7 +127,7 @@ public:
             {"epoch", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeUInt), isColumnConst, "const UInt*"},
             {"time_zone", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"}
         };
-        validateFunctionArguments(*this, arguments, args, optional_args);
+        validateFunctionArgumentTypes(*this, arguments, args, optional_args);
 
         String timezone;
         if (arguments.size() == 3)

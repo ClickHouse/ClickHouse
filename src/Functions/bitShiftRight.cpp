@@ -6,7 +6,6 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
 }
@@ -26,8 +25,6 @@ struct BitShiftRightImpl
     {
         if constexpr (is_big_int_v<B>)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "BitShiftRight is not implemented for big integers as second argument");
-        else if (b < 0 || static_cast<UInt256>(b) > 8 * sizeof(A))
-            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "The number of shift positions needs to be a non-negative value and less or equal to the bit width of the value to shift");
         else if constexpr (is_big_int_v<A>)
             return static_cast<Result>(a) >> static_cast<UInt32>(b);
         else
@@ -56,12 +53,9 @@ struct BitShiftRightImpl
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "BitShiftRight is not implemented for big integers as second argument");
         else
         {
-            const UInt8 word_size = 8;
-            size_t n = end - pos;
-            const UInt128 bit_limit = static_cast<UInt128>(word_size) * n;
-            if (b < 0 || static_cast<decltype(bit_limit)>(b) > bit_limit)
-                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "The number of shift positions needs to be a non-negative value and less or equal to the bit width of the value to shift");
-            else if (b == bit_limit)
+            UInt8 word_size = 8;
+            /// To prevent overflow
+            if (static_cast<double>(b) >= (static_cast<double>(end - pos) * word_size) || b < 0)
             {
                 /// insert default value
                 out_vec.push_back(0);
@@ -96,12 +90,10 @@ struct BitShiftRightImpl
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "BitShiftRight is not implemented for big integers as second argument");
         else
         {
-            const UInt8 word_size = 8;
+            UInt8 word_size = 8;
             size_t n = end - pos;
-            const UInt128 bit_limit = static_cast<UInt128>(word_size) * n;
-            if (b < 0 || static_cast<decltype(bit_limit)>(b) > bit_limit)
-                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "The number of shift positions needs to be a non-negative value and less or equal to the bit width of the value to shift");
-            else if (b == bit_limit)
+            /// To prevent overflow
+            if (static_cast<double>(b) >= (static_cast<double>(n) * word_size) || b < 0)
             {
                 // insert default value
                 out_vec.resize_fill(out_vec.size() + n);

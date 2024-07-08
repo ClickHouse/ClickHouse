@@ -369,7 +369,6 @@ public:
     void setIndex(const Columns & cols_);
     void setIndex(Columns && cols_);
     void unloadIndex();
-    bool isIndexLoaded() const;
 
     /// For data in RAM ('index')
     UInt64 getIndexSizeInBytes() const;

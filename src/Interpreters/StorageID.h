@@ -1,6 +1,7 @@
 #pragma once
 #include <base/types.h>
 #include <Core/UUID.h>
+#include <tuple>
 #include <Parsers/IAST_fwd.h>
 #include <Core/QualifiedTableName.h>
 #include <Common/Exception.h>

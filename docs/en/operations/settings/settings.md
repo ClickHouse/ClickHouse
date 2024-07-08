@@ -2536,7 +2536,7 @@ Possible values:
 - 0 — Optimization disabled.
 - 1 — Optimization enabled.
 
-Default value: `1`.
+Default value: `0`.
 
 ## optimize_trivial_count_query {#optimize-trivial-count-query}
 

@@ -3,7 +3,7 @@
 #include <Formats/formatBlock.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/GraceHashJoin.h>
-#include <Interpreters/HashJoin/HashJoin.h>
+#include <Interpreters/HashJoin.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <base/FnTraits.h>

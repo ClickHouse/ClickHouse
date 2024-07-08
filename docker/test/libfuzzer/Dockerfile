@@ -1,4 +1,3 @@
-# docker build -t clickhouse/libfuzzer .
 ARG FROM_TAG=latest
 FROM clickhouse/test-base:$FROM_TAG
 
@@ -30,8 +29,7 @@ RUN apt-get update \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
-COPY requirements.txt /
-RUN pip3 install --no-cache-dir -r /requirements.txt
+RUN pip3 install Jinja2
 
 COPY * /
 

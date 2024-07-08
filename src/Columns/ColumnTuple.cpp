@@ -711,13 +711,7 @@ void ColumnTuple::takeDynamicStructureFromSourceColumns(const Columns & source_c
 ColumnPtr ColumnTuple::compress() const
 {
     if (columns.empty())
-    {
-        return ColumnCompressed::create(size(), 0,
-            [n = column_length]
-            {
-                return ColumnTuple::create(n);
-            });
-    }
+        return Ptr();
 
     size_t byte_size = 0;
     Columns compressed;

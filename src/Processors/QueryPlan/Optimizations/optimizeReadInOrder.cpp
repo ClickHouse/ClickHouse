@@ -176,6 +176,8 @@ static void appendExpression(ActionsDAGPtr & dag, const ActionsDAGPtr & expressi
         dag->mergeInplace(std::move(*expression->clone()));
     else
         dag = expression->clone();
+
+    dag->projectInput(false);
 }
 
 /// This function builds a common DAG which is a merge of DAGs from Filter and Expression steps chain.
