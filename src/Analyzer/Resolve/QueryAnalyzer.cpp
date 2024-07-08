@@ -1281,7 +1281,7 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierInParentScopes(const 
                 {
                     if (current_column->getColumnSource() != expected_source)
                     {
-                        LOG_DEBUG(&Poco::Logger::get("resolveInParentScope"), "Found dependancy for'{}' with source:\n{}", identifier_lookup.dump(), current_column->getColumnSource()->dumpTree());
+                        LOG_DEBUG(&Poco::Logger::get("resolveInParentScope"), "Found dependency for'{}' with source:\n{}", identifier_lookup.dump(), current_column->getColumnSource()->dumpTree());
                         dependent_column = true;
                         break;
                     }
