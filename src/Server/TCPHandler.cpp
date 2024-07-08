@@ -888,11 +888,12 @@ AsynchronousInsertQueue::PushResult TCPHandler::processAsyncInsertQuery(Asynchro
 
     while (readDataNext())
     {
-        squashing.setHeader(state.block_for_insert.cloneEmpty());
-        auto result_chunk = Squashing::squash(squashing.add({state.block_for_insert.getColumns(), state.block_for_insert.rows()}));
-        if (result_chunk)
+        squashing.header = state.block_for_insert;
+        auto planned_chunk = squashing.add({state.block_for_insert.getColumns(), state.block_for_insert.rows()});
+        if (planned_chunk.hasChunkInfo())
         {
-            auto result = squashing.getHeader().cloneWithColumns(result_chunk.detachColumns());
+            Chunk result_chunk = DB::Squashing::squash(std::move(planned_chunk));
+            auto result = state.block_for_insert.cloneWithColumns(result_chunk.getColumns());
             return PushResult
             {
                 .status = PushResult::TOO_MUCH_DATA,
@@ -901,13 +902,12 @@ AsynchronousInsertQueue::PushResult TCPHandler::processAsyncInsertQuery(Asynchro
         }
     }
 
-    Chunk result_chunk = Squashing::squash(squashing.flush());
-    if (!result_chunk)
-    {
-        return insert_queue.pushQueryWithBlock(state.parsed_query, squashing.getHeader(), query_context);
-    }
+    auto planned_chunk = squashing.flush();
+    Chunk result_chunk;
+    if (planned_chunk.hasChunkInfo())
+        result_chunk = DB::Squashing::squash(std::move(planned_chunk));
 
-    auto result = squashing.getHeader().cloneWithColumns(result_chunk.detachColumns());
+    auto result = squashing.header.cloneWithColumns(result_chunk.getColumns());
     return insert_queue.pushQueryWithBlock(state.parsed_query, std::move(result), query_context);
 }
 
@@ -1875,7 +1875,7 @@ void TCPHandler::receiveQuery()
 #endif
     }
 
-    query_context = session->makeQueryContext(std::move(client_info));
+    query_context = session->makeQueryContext(client_info);
 
     /// Sets the default database if it wasn't set earlier for the session context.
     if (is_interserver_mode && !default_database.empty())
@@ -1890,6 +1890,16 @@ void TCPHandler::receiveQuery()
     ///
     /// Settings
     ///
+
+    /// FIXME: Remove when allow_experimental_analyzer will become obsolete.
+    /// Analyzer became Beta in 24.3 and started to be enabled by default.
+    /// We have to disable it for ourselves to make sure we don't have different settings on
+    /// different servers.
+    if (query_kind == ClientInfo::QueryKind::SECONDARY_QUERY
+        && client_info.getVersionNumber() < VersionNumber(23, 3, 0)
+        && !passed_settings.allow_experimental_analyzer.changed)
+        passed_settings.set("allow_experimental_analyzer", false);
+
     auto settings_changes = passed_settings.changes();
     query_kind = query_context->getClientInfo().query_kind;
     if (query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
