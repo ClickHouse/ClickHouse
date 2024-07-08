@@ -88,6 +88,7 @@ endif()
 set(SOURCES
     ${ROCKSDB_SOURCE_DIR}/cache/cache.cc
     ${ROCKSDB_SOURCE_DIR}/cache/cache_entry_roles.cc
+    ${ROCKSDB_SOURCE_DIR}/cache/cache_key.cc
     ${ROCKSDB_SOURCE_DIR}/cache/cache_reservation_manager.cc
     ${ROCKSDB_SOURCE_DIR}/cache/clock_cache.cc
     ${ROCKSDB_SOURCE_DIR}/cache/lru_cache.cc
@@ -197,6 +198,7 @@ set(SOURCES
     ${ROCKSDB_SOURCE_DIR}/memory/concurrent_arena.cc
     ${ROCKSDB_SOURCE_DIR}/memory/jemalloc_nodump_allocator.cc
     ${ROCKSDB_SOURCE_DIR}/memory/memkind_kmem_allocator.cc
+    ${ROCKSDB_SOURCE_DIR}/memory/memory_allocator.cc
     ${ROCKSDB_SOURCE_DIR}/memtable/alloc_tracker.cc
     ${ROCKSDB_SOURCE_DIR}/memtable/hash_linklist_rep.cc
     ${ROCKSDB_SOURCE_DIR}/memtable/hash_skiplist_rep.cc
