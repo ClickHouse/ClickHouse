@@ -974,6 +974,13 @@ Default value: false
 
 - [exclude_deleted_rows_for_part_size_in_merge](#exclude_deleted_rows_for_part_size_in_merge) setting
 
+## use_compact_variant_discriminators_serialization {#use_compact_variant_discriminators_serialization}
+
+Enables compact mode for binary serialization of discriminators in Variant data type.
+This mode allows to use significantly less memory for storing discriminators in parts when there is mostly one variant or a lot of NULL values.
+
+Default value: true
+
 ## merge_workload
 
 Used to regulate how resources are utilized and shared between merges and other workloads. Specified value is used as `workload` setting value for background merges of this table. If not specified (empty string), then server setting `merge_workload` is used instead.
