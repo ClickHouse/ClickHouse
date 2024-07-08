@@ -36,6 +36,7 @@ public:
 protected:
     void fillColumnPositions();
     NameAndTypePair getColumnConvertedToSubcolumnOfNested(const NameAndTypePair & column);
+    void findPositionForMissedNested(size_t pos);
 
     using InputStreamGetter = ISerialization::InputStreamGetter;
 

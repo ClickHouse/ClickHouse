@@ -18,6 +18,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <DataTypes/NestedUtils.h>
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnConst.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Storages/StorageInMemoryMetadata.h>
 
@@ -35,8 +36,13 @@ namespace
 
 /// Add all required expressions for missing columns calculation
 void addDefaultRequiredExpressionsRecursively(
-    const Block & block, const String & required_column_name, DataTypePtr required_column_type,
-    const ColumnsDescription & columns, ASTPtr default_expr_list_accum, NameSet & added_columns, bool null_as_default)
+    const Block & block,
+    const String & required_column_name,
+    DataTypePtr required_column_type,
+    const ColumnsDescription & columns,
+    ASTPtr default_expr_list_accum,
+    NameSet & added_columns,
+    bool null_as_default)
 {
     checkStackSize();
 
@@ -273,6 +279,20 @@ static std::unordered_map<String, ColumnPtr> collectOffsetsColumns(
     return offsets_columns;
 }
 
+static ColumnPtr createColumnWithDefaultValue(const IDataType & data_type, const String & subcolumn_name, size_t num_rows)
+{
+    auto column = data_type.createColumnConstWithDefaultValue(num_rows);
+
+    if (subcolumn_name.empty())
+        return column->convertToFullColumnIfConst();
+
+    /// Firstly get subcolumn from const column and then replicate.
+    column = assert_cast<const ColumnConst &>(*column).getDataColumnPtr();
+    column = data_type.getSubcolumn(subcolumn_name, column);
+
+    return ColumnConst::create(std::move(column), num_rows)->convertToFullColumnIfConst();
+}
+
 void fillMissingColumns(
     Columns & res_columns,
     size_t num_rows,
@@ -298,21 +318,19 @@ void fillMissingColumns(
     auto requested_column = requested_columns.begin();
     for (size_t i = 0; i < num_columns; ++i, ++requested_column)
     {
-        const auto & [name, type] = *requested_column;
-
-        if (res_columns[i] && partially_read_columns.contains(name))
+        if (res_columns[i] && partially_read_columns.contains(requested_column->name))
             res_columns[i] = nullptr;
 
         if (res_columns[i])
             continue;
 
-        if (metadata_snapshot && metadata_snapshot->getColumns().hasDefault(name))
+        if (metadata_snapshot && metadata_snapshot->getColumns().hasDefault(requested_column->getNameInStorage()))
             continue;
 
         std::vector<ColumnPtr> current_offsets;
         size_t num_dimensions = 0;
 
-        const auto * array_type = typeid_cast<const DataTypeArray *>(type.get());
+        const auto * array_type = typeid_cast<const DataTypeArray *>(requested_column->type.get());
         if (array_type && !offsets_columns.empty())
         {
             num_dimensions = getNumberOfDimensions(*array_type);
@@ -348,10 +366,10 @@ void fillMissingColumns(
         if (!current_offsets.empty())
         {
             size_t num_empty_dimensions = num_dimensions - current_offsets.size();
-            auto scalar_type = createArrayOfType(getBaseTypeOfArray(type), num_empty_dimensions);
+            auto scalar_type = createArrayOfType(getBaseTypeOfArray(requested_column->getTypeInStorage()), num_empty_dimensions);
 
             size_t data_size = assert_cast<const ColumnUInt64 &>(*current_offsets.back()).getData().back();
-            res_columns[i] = scalar_type->createColumnConstWithDefaultValue(data_size)->convertToFullColumnIfConst();
+            res_columns[i] = createColumnWithDefaultValue(*scalar_type, requested_column->getSubcolumnName(), data_size);
 
             for (auto it = current_offsets.rbegin(); it != current_offsets.rend(); ++it)
                 res_columns[i] = ColumnArray::create(res_columns[i], *it);
@@ -360,7 +378,7 @@ void fillMissingColumns(
         {
             /// We must turn a constant column into a full column because the interpreter could infer
             /// that it is constant everywhere but in some blocks (from other parts) it can be a full column.
-            res_columns[i] = type->createColumnConstWithDefaultValue(num_rows)->convertToFullColumnIfConst();
+            res_columns[i] = createColumnWithDefaultValue(*requested_column->getTypeInStorage(), requested_column->getSubcolumnName(), num_rows);
         }
     }
 }

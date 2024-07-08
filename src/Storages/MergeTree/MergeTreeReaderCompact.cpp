@@ -60,39 +60,25 @@ void MergeTreeReaderCompact::fillColumnPositions()
 
     for (size_t i = 0; i < columns_num; ++i)
     {
-        const auto & column_to_read = columns_to_read[i];
-
+        auto & column_to_read = columns_to_read[i];
         auto position = data_part_info_for_read->getColumnPosition(column_to_read.getNameInStorage());
-        bool is_array = isArray(column_to_read.type);
 
         if (column_to_read.isSubcolumn())
         {
-            auto storage_column_from_part = getColumnInPart(
-                {column_to_read.getNameInStorage(), column_to_read.getTypeInStorage()});
+            NameAndTypePair column_in_storage{column_to_read.getNameInStorage(), column_to_read.getTypeInStorage()};
+            auto storage_column_from_part = getColumnInPart(column_in_storage);
 
             auto subcolumn_name = column_to_read.getSubcolumnName();
             if (!storage_column_from_part.type->hasSubcolumn(subcolumn_name))
                 position.reset();
         }
 
+        column_positions[i] = std::move(position);
+
         /// If array of Nested column is missing in part,
         /// we have to read its offsets if they exist.
-        if (!position && is_array)
-        {
-            auto column_to_read_with_subcolumns = getColumnConvertedToSubcolumnOfNested(column_to_read);
-            auto name_level_for_offsets = findColumnForOffsets(column_to_read_with_subcolumns);
-
-            if (name_level_for_offsets.has_value())
-            {
-                column_positions[i] = data_part_info_for_read->getColumnPosition(name_level_for_offsets->first);
-                columns_for_offsets[i] = name_level_for_offsets;
-                partially_read_columns.insert(column_to_read.name);
-            }
-        }
-        else
-        {
-            column_positions[i] = std::move(position);
-        }
+        if (!column_positions[i])
+            findPositionForMissedNested(i);
     }
 }
 
@@ -123,6 +109,38 @@ NameAndTypePair MergeTreeReaderCompact::getColumnConvertedToSubcolumnOfNested(co
     return storage_columns_with_collected_nested->getColumnOrSubcolumn(
         GetColumnsOptions::All,
         Nested::concatenateName(name_in_storage, subcolumn_name));
+}
+
+void MergeTreeReaderCompact::findPositionForMissedNested(size_t pos)
+{
+    auto & column = columns_to_read[pos];
+
+    bool is_array = isArray(column.type);
+    bool is_offsets_subcolumn = isArray(column.getTypeInStorage()) && column.getSubcolumnName() == "size0";
+
+    if (!is_array && !is_offsets_subcolumn)
+        return;
+
+    NameAndTypePair column_in_storage{column.getNameInStorage(), column.getTypeInStorage()};
+
+    auto column_to_read_with_subcolumns = getColumnConvertedToSubcolumnOfNested(column_in_storage);
+    auto name_level_for_offsets = findColumnForOffsets(column_to_read_with_subcolumns);
+
+    if (!name_level_for_offsets)
+        return;
+
+    column_positions[pos] = data_part_info_for_read->getColumnPosition(name_level_for_offsets->first);
+
+    if (is_offsets_subcolumn)
+    {
+        /// Read offsets from antoher array from the same Nested column.
+        column = {name_level_for_offsets->first, column.getSubcolumnName(), column.getTypeInStorage(), column.type};
+    }
+    else
+    {
+        columns_for_offsets[pos] = std::move(name_level_for_offsets);
+        partially_read_columns.insert(column.name);
+    }
 }
 
 void MergeTreeReaderCompact::readData(
