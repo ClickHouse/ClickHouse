@@ -104,6 +104,7 @@ set(SOURCES
     ${ROCKSDB_SOURCE_DIR}/db/blob/blob_log_format.cc
     ${ROCKSDB_SOURCE_DIR}/db/blob/blob_log_sequential_reader.cc
     ${ROCKSDB_SOURCE_DIR}/db/blob/blob_log_writer.cc
+    ${ROCKSDB_SOURCE_DIR}/db/blob/prefetch_buffer_collection.cc
     ${ROCKSDB_SOURCE_DIR}/db/builder.cc
     ${ROCKSDB_SOURCE_DIR}/db/c.cc
     ${ROCKSDB_SOURCE_DIR}/db/column_family.cc
@@ -329,6 +330,7 @@ set(SOURCES
     ${ROCKSDB_SOURCE_DIR}/utilities/env_timed.cc
     ${ROCKSDB_SOURCE_DIR}/utilities/fault_injection_env.cc
     ${ROCKSDB_SOURCE_DIR}/utilities/fault_injection_fs.cc
+    ${ROCKSDB_SOURCE_DIR}/utilities/fault_injection_secondary_cache.cc
     ${ROCKSDB_SOURCE_DIR}/utilities/leveldb_options/leveldb_options.cc
     ${ROCKSDB_SOURCE_DIR}/utilities/memory/memory_util.cc
     ${ROCKSDB_SOURCE_DIR}/utilities/merge_operators.cc
