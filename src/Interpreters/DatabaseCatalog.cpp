@@ -1243,14 +1243,12 @@ time_t DatabaseCatalog::getMinDropTime()
     return min_drop_time;
 }
 
-DatabaseCatalog::TablesMarkedAsDropped DatabaseCatalog::getTablesToDrop()
+std::vector<DatabaseCatalog::TablesMarkedAsDropped::iterator> DatabaseCatalog::getTablesToDrop()
 {
     time_t current_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-    DatabaseCatalog::TablesMarkedAsDropped result;
+    decltype(getTablesToDrop()) result;
 
     std::lock_guard lock(tables_marked_dropped_mutex);
-
-    const auto was_count = tables_marked_dropped.size();
 
     auto it = tables_marked_dropped.begin();
     while (it != tables_marked_dropped.end())
@@ -1263,14 +1261,8 @@ DatabaseCatalog::TablesMarkedAsDropped DatabaseCatalog::getTablesToDrop()
             continue;
         }
 
-        if (it == first_async_drop_in_queue)
-            ++first_async_drop_in_queue;
-
-        result.emplace_back(std::move(*it));
-        it = tables_marked_dropped.erase(it);
+        result.emplace_back(it);
     }
-
-    chassert(was_count == tables_marked_dropped.size() + result.size());
 
     return result;
 }
@@ -1294,18 +1286,10 @@ void DatabaseCatalog::rescheduleDropTableTask()
     (*drop_task)->scheduleAfter(schedule_after);
 }
 
-void DatabaseCatalog::dropTablesParallel(TablesMarkedAsDropped tables_to_drop)
+void DatabaseCatalog::dropTablesParallel(std::vector<DatabaseCatalog::TablesMarkedAsDropped::iterator> tables_to_drop)
 {
     if (tables_to_drop.empty())
         return;
-
-    SCOPE_EXIT({
-        std::lock_guard lock(tables_marked_dropped_mutex);
-        tables_marked_dropped.splice(tables_marked_dropped.end(), tables_to_drop);
-
-        if (first_async_drop_in_queue == tables_marked_dropped.end())
-            first_async_drop_in_queue = tables_marked_dropped.begin();
-    });
 
     ThreadPool pool(
         CurrentMetrics::DatabaseCatalogThreads,
@@ -1315,29 +1299,41 @@ void DatabaseCatalog::dropTablesParallel(TablesMarkedAsDropped tables_to_drop)
         /* max_free_threads */0,
         /* queue_size */tables_to_drop.size());
 
-    while (!tables_to_drop.empty())
+    for (const auto & item : tables_to_drop)
     {
-        auto front_table = std::move(tables_to_drop.front());
-        tables_to_drop.pop_front();
-
-        pool.scheduleOrThrowOnError([&, table = front_table] ()
+        pool.scheduleOrThrowOnError([&, table_iterator = item] ()
         {
             try
             {
-                dropTableFinally(table);
-                std::lock_guard lock(tables_marked_dropped_mutex);
-                [[maybe_unused]] auto removed = tables_marked_dropped_ids.erase(table.table_id.uuid);
-                chassert(removed);
-                wait_table_finally_dropped.notify_all();
+                dropTableFinally(*table_iterator);
+
+                {
+                    std::lock_guard lock(tables_marked_dropped_mutex);
+
+                    if (first_async_drop_in_queue == table_iterator)
+                        ++first_async_drop_in_queue;
+
+                    [[maybe_unused]] auto removed = tables_marked_dropped_ids.erase(table_iterator->table_id.uuid);
+                    chassert(removed);
+
+                    tables_marked_dropped.erase(table_iterator);
+
+                    wait_table_finally_dropped.notify_all();
+                }
             }
             catch (...)
             {
-                tryLogCurrentException(log, "Cannot drop table " + table.table_id.getNameForLogs() +
+                tryLogCurrentException(log, "Cannot drop table " + table_iterator->table_id.getNameForLogs() +
                                             ". Will retry later.");
                 {
                     std::lock_guard lock(tables_marked_dropped_mutex);
-                    tables_marked_dropped.emplace_back(table);
-                    tables_marked_dropped.back().drop_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()) + drop_error_cooldown_sec;
+
+                    if (first_async_drop_in_queue == table_iterator)
+                        ++first_async_drop_in_queue;
+
+                    tables_marked_dropped.splice(tables_marked_dropped.end(), tables_marked_dropped, table_iterator);
+                    table_iterator->drop_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()) + drop_error_cooldown_sec;
+
                     if (first_async_drop_in_queue == tables_marked_dropped.end())
                         --first_async_drop_in_queue;
                 }

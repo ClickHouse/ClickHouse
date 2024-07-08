@@ -298,8 +298,8 @@ private:
 
     time_t getMinDropTime() TSA_REQUIRES(tables_marked_dropped_mutex);
     std::tuple<size_t, size_t> getDroppedTablesCountAndInuseCount();
-    TablesMarkedAsDropped getTablesToDrop();
-    void dropTablesParallel(TablesMarkedAsDropped tables);
+    std::vector<TablesMarkedAsDropped::iterator> getTablesToDrop();
+    void dropTablesParallel(std::vector<TablesMarkedAsDropped::iterator> tables);
     void rescheduleDropTableTask();
 
     void cleanupStoreDirectoryTask();
