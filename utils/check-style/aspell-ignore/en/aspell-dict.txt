@@ -1098,6 +1098,8 @@ aggregatefunction
 aggregatingmergetree
 aggregatio
 aggretate
+aggthrow
+aggThrow
 aiochclient
 allocator
 alphaTokens
@@ -1658,6 +1660,7 @@ fuzzBits
 fuzzJSON
 fuzzer
 fuzzers
+fuzzQuery
 gRPC
 gccMurmurHash
 gcem
@@ -1979,6 +1982,8 @@ mapExtractKeyLike
 mapFilter
 mapFromArrays
 mapKeys
+mapPartialReverseSort
+mapPartialSort
 mapPopulateSeries
 mapReverseSort
 mapSort

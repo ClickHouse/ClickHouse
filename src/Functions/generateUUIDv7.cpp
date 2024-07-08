@@ -149,7 +149,7 @@ public:
         FunctionArgumentDescriptors optional_args{
             {"expr", nullptr, nullptr, "Arbitrary expression"}
         };
-        validateFunctionArgumentTypes(*this, arguments, mandatory_args, optional_args);
+        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
 
         return std::make_shared<DataTypeUUID>();
     }
