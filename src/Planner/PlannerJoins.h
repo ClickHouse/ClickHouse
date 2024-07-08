@@ -182,8 +182,8 @@ struct JoinClausesAndActions
     /// Join clauses. Actions dag nodes point into join_expression_actions.
     JoinClauses join_clauses;
     /// Whole JOIN ON section expressions
-    // ActionsDAGPtr left_join_tmp_expression_actions;
-    // ActionsDAGPtr right_join_tmp_expression_actions;
+    ActionsDAG left_join_tmp_expression_actions;
+    ActionsDAG right_join_tmp_expression_actions;
     /// Left join expressions actions
     ActionsDAG left_join_expressions_actions;
     /// Right join expressions actions
