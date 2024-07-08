@@ -6,6 +6,7 @@ AMPLab
 AMQP
 ANNIndex
 ANNIndexes
+ANOVA
 AORM
 APIs
 ARMv
@@ -46,8 +47,6 @@ AutoFDO
 AutoML
 Autocompletion
 AvroConfluent
-analysisOfVariance
-ANOVA
 BIGINT
 BIGSERIAL
 BORO
@@ -447,9 +446,10 @@ KafkaLibrdkafkaThreads
 KafkaProducers
 KafkaWrites
 Kahan
+Kaser
 KeeperAliveConnections
 KeeperMap
-KeeperOutstandingRequets
+KeeperOutstandingRequests
 Kerberos
 Khanna
 KittenHouse
@@ -472,6 +472,7 @@ Liao
 LibFuzzer
 LightHouse
 LineAsString
+LineString
 Linf
 LinfDistance
 LinfNorm
@@ -570,6 +571,7 @@ MySQLDump
 MySQLThreads
 NATS
 NCHAR
+NDJSON
 NEKUDOTAYIM
 NEWDATE
 NEWDECIMAL
@@ -712,6 +714,8 @@ PlantUML
 PointDistKm
 PointDistM
 PointDistRads
+PostHistory
+PostLink
 PostgreSQLConnection
 PostgreSQLThreads
 Postgres
@@ -959,6 +963,7 @@ ToGeoBoundary
 ToIPv
 ToParent
 ToSnowflake
+ToSnowflakeID
 ToString
 ToUnicode
 Toolset
@@ -986,10 +991,13 @@ UPDATEs
 URIs
 URL
 URL's
+URLDecode
+URLEncode
 URLHash
 URLHierarchy
 URLPathHierarchy
 USearch
+UTCTimestamp
 UUIDNumToString
 UUIDStringToNum
 UUIDToNum
@@ -1089,10 +1097,13 @@ aggregatefunction
 aggregatingmergetree
 aggregatio
 aggretate
+aggthrow
+aggThrow
 aiochclient
 allocator
 alphaTokens
 amplab
+analysisOfVariance
 analytics
 anonymize
 anonymized
@@ -1210,6 +1221,7 @@ basename
 bcrypt
 benchmarking
 bfloat
+bigrams
 binlog
 bitAnd
 bitCount
@@ -1363,6 +1375,7 @@ cond
 conf
 config
 configs
+conformant
 congruential
 conjuction
 conjuctive
@@ -1371,6 +1384,10 @@ const
 contrib
 convertCharset
 coroutines
+corrMatrix
+corrStable
+corrmatrix
+corrstable
 cosineDistance
 countDigits
 countEqual
@@ -1380,10 +1397,19 @@ countSubstrings
 countSubstringsCaseInsensitive
 countSubstringsCaseInsensitiveUTF
 covarPop
+covarPopMatrix
+covarPopStable
 covarSamp
+covarSampMatrix
+covarSampStable
+covarStable
 covariates
 covarpop
+covarpopmatrix
+covarpopstable
 covarsamp
+covarsampmatrix
+covarsampstable
 covid
 cpp
 cppkafka
@@ -1419,8 +1445,12 @@ cutQueryString
 cutQueryStringAndFragment
 cutToFirstSignificantSubdomain
 cutToFirstSignificantSubdomainCustom
+cutToFirstSignificantSubdomainCustomRFC
 cutToFirstSignificantSubdomainCustomWithWWW
+cutToFirstSignificantSubdomainCustomWithWWWRFC
+cutToFirstSignificantSubdomainRFC
 cutToFirstSignificantSubdomainWithWWW
+cutToFirstSignificantSubdomainWithWWWRFC
 cutURLParameter
 cutWWW
 cyrus
@@ -1438,6 +1468,7 @@ datatypes
 dateName
 dateTime
 dateTimeToSnowflake
+dateTimeToSnowflakeID
 datetime
 datetimes
 dayofyear
@@ -1446,6 +1477,7 @@ dbeaver
 dbgen
 dbms
 ddl
+deallocated
 deallocation
 deallocations
 debian
@@ -1488,6 +1520,8 @@ detectCharset
 detectLanguage
 detectLanguageMixed
 detectLanguageUnknown
+detectProgrammingLanguage
+detectTonality
 determinator
 deterministically
 dictGet
@@ -1503,11 +1537,15 @@ dictIsIn
 disableProtocols
 disjunction
 disjunctions
+displayName
 displaySecretsInShowAndSelect
 distro
 divideDecimal
 dmesg
+doesnt
+domainRFC
 domainWithoutWWW
+domainWithoutWWWRFC
 dont
 dotProduct
 downsampling
@@ -1518,6 +1556,7 @@ dumpColumnStructure
 durations
 ecto
 editDistance
+editDistanceUTF
 embeddings
 emptyArray
 emptyArrayDate
@@ -1549,6 +1588,10 @@ evalMLMethod
 exFAT
 expiryMsec
 exponentialMovingAverage
+exponentialTimeDecayedAvg
+exponentialTimeDecayedCount
+exponentialTimeDecayedMax
+exponentialTimeDecayedSum
 exponentialmovingaverage
 expr
 exprN
@@ -1580,9 +1623,13 @@ filesystems
 finalizeAggregation
 fips
 firstLine
+firstSignficantSubdomain
 firstSignificantSubdomain
 firstSignificantSubdomainCustom
+firstSignificantSubdomainCustomRFC
+firstSignificantSubdomainRFC
 fixedstring
+flameGraph
 flamegraph
 flatbuffers
 flattenTuple
@@ -1604,6 +1651,7 @@ formated
 formatschema
 formatter
 formatters
+frac
 freezed
 fromDaysSinceYearZero
 fromModifiedJulianDay
@@ -1617,12 +1665,14 @@ fuzzBits
 fuzzJSON
 fuzzer
 fuzzers
+fuzzQuery
 gRPC
 gccMurmurHash
 gcem
 generateRandom
 generateRandomStructure
 generateSeries
+generateSnowflakeID
 generateULID
 generateUUIDv
 geoDistance
@@ -1729,6 +1779,8 @@ hdfs
 hdfsCluster
 heredoc
 heredocs
+hilbertDecode
+hilbertEncode
 hiveHash
 holistics
 homebrew
@@ -1762,6 +1814,7 @@ indexHint
 indexOf
 infi
 inflight
+infty
 initcap
 initcapUTF
 initialQueryID
@@ -1868,6 +1921,7 @@ lessOrEquals
 lessorequals
 levenshtein
 levenshteinDistance
+levenshteinDistanceUTF
 lexicographically
 lgamma
 libFuzzer
@@ -1931,6 +1985,8 @@ mapExtractKeyLike
 mapFilter
 mapFromArrays
 mapKeys
+mapPartialReverseSort
+mapPartialSort
 mapPopulateSeries
 mapReverseSort
 mapSort
@@ -1947,6 +2003,7 @@ maxMap
 maxintersections
 maxintersectionsposition
 maxmap
+minMappedArrays
 maxmind
 mdadm
 meanZTest
@@ -1964,6 +2021,7 @@ metrica
 metroHash
 mfedotov
 minMap
+minMappedArrays
 minSampleSizeContinuous
 minSampleSizeConversion
 mindsdb
@@ -1975,6 +2033,8 @@ minmax
 mins
 misconfiguration
 mispredictions
+mlock
+mlockall
 mmap
 mmapped
 modularization
@@ -2069,8 +2129,10 @@ noaa
 nonNegativeDerivative
 noop
 normalizeQuery
+normalizeQueryKeepNames
 normalizeUTF
 normalizedQueryHash
+normalizedQueryHashKeepNames
 notEmpty
 notEquals
 notILike
@@ -2096,6 +2158,7 @@ ok
 omclickhouse
 onstraints
 ontime
+onwards
 openSSL
 openSUSE
 openldap
@@ -2126,6 +2189,9 @@ parseDateTimeInJodaSyntaxOrNull
 parseDateTimeInJodaSyntaxOrZero
 parseDateTimeOrNull
 parseDateTimeOrZero
+parseReadableSize
+parseReadableSizeOrNull
+parseReadableSizeOrZero
 parseTimeDelta
 parseable
 parsers
@@ -2159,6 +2225,7 @@ polygonsUnionSpherical
 polygonsWithinCartesian
 polygonsWithinSpherical
 popcnt
+portRFC
 porthttps
 positionCaseInsensitive
 positionCaseInsensitiveUTF
@@ -2207,9 +2274,11 @@ procfs
 profiler
 proleptic
 prometheus
+proportionsZTest
 proto
 protobuf
 protobufsingle
+protocol
 proxied
 pseudorandom
 pseudorandomize
@@ -2277,6 +2346,7 @@ randomStringUTF
 rankCorr
 rapidjson
 rawblob
+readWKTLineString
 readWKTMultiPolygon
 readWKTPoint
 readWKTPolygon
@@ -2435,6 +2505,7 @@ skewpop
 skewsamp
 skippingerrors
 sleepEachRow
+snowflakeIDToDateTime
 snowflakeToDateTime
 socketcache
 soundex
@@ -2459,6 +2530,7 @@ sqlite
 sqrt
 src
 srcReplicas
+stackoverflow
 stacktrace
 stacktraces
 startsWith
@@ -2655,8 +2727,11 @@ toStartOfFiveMinutes
 toStartOfHour
 toStartOfISOYear
 toStartOfInterval
+toStartOfMicrosecond
+toStartOfMillisecond
 toStartOfMinute
 toStartOfMonth
+toStartOfNanosecond
 toStartOfQuarter
 toStartOfSecond
 toStartOfTenMinutes
@@ -2692,8 +2767,12 @@ toolset
 topK
 topKWeighted
 topLevelDomain
+topLevelDomainRFC
 topk
 topkweighted
+transactionID
+transactionLatestSnapshot
+transactionOldestSnapshot
 transactional
 transactionally
 translateUTF
@@ -2747,6 +2826,7 @@ unescaping
 unhex
 unicode
 unidimensional
+unigrams
 unintuitive
 uniq
 uniqCombined
@@ -2768,6 +2848,7 @@ unixODBC
 unixodbc
 unoptimized
 unparsed
+unpooled
 unrealiable
 unreplicated
 unresolvable
@@ -2792,6 +2873,7 @@ userver
 utils
 uuid
 uuidv
+vCPU
 varPop
 varPopStable
 varSamp
@@ -2801,7 +2883,9 @@ variantElement
 variantType
 varint
 varpop
+varpopstable
 varsamp
+varsampstable
 vectorized
 vectorscan
 vendoring
