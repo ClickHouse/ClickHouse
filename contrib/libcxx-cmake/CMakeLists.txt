@@ -1,4 +1,6 @@
 set(LIBCXX_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/llvm-project/libcxx")
+set(LIBCXX_BINARY_DIR "${ClickHouse_BINARY_DIR}/contrib/llvm-project/libcxx")
+set(LIBCXX_GENERATED_INCLUDE_DIR "${LIBCXX_BINARY_DIR}/include/c++/v1")
 
 set(SRCS
 "${LIBCXX_SOURCE_DIR}/src/algorithm.cpp"
@@ -40,7 +42,8 @@ set(SRCS
 "${LIBCXX_SOURCE_DIR}/src/optional.cpp"
 "${LIBCXX_SOURCE_DIR}/src/ostream.cpp"
 "${LIBCXX_SOURCE_DIR}/src/print.cpp"
-"${LIBCXX_SOURCE_DIR}/src/pstl/libdispatch.cpp"
+# This file is needed only if LIBCXX_PSTL_CPU_BACKEND equals "libdispatch"
+# "${LIBCXX_SOURCE_DIR}/src/pstl/libdispatch.cpp"
 "${LIBCXX_SOURCE_DIR}/src/random.cpp"
 "${LIBCXX_SOURCE_DIR}/src/random_shuffle.cpp"
 "${LIBCXX_SOURCE_DIR}/src/regex.cpp"
@@ -51,12 +54,13 @@ set(SRCS
 "${LIBCXX_SOURCE_DIR}/src/stdexcept.cpp"
 "${LIBCXX_SOURCE_DIR}/src/string.cpp"
 "${LIBCXX_SOURCE_DIR}/src/strstream.cpp"
-"${LIBCXX_SOURCE_DIR}/src/support/ibm/mbsnrtowcs.cpp"
-"${LIBCXX_SOURCE_DIR}/src/support/ibm/wcsnrtombs.cpp"
-"${LIBCXX_SOURCE_DIR}/src/support/ibm/xlocale_zos.cpp"
-"${LIBCXX_SOURCE_DIR}/src/support/win32/locale_win32.cpp"
-"${LIBCXX_SOURCE_DIR}/src/support/win32/support.cpp"
-"${LIBCXX_SOURCE_DIR}/src/support/win32/thread_win32.cpp"
+# Don't compile anything non-Unix related.
+# "${LIBCXX_SOURCE_DIR}/src/support/ibm/mbsnrtowcs.cpp"
+# "${LIBCXX_SOURCE_DIR}/src/support/ibm/wcsnrtombs.cpp"
+# "${LIBCXX_SOURCE_DIR}/src/support/ibm/xlocale_zos.cpp"
+# "${LIBCXX_SOURCE_DIR}/src/support/win32/locale_win32.cpp"
+# "${LIBCXX_SOURCE_DIR}/src/support/win32/support.cpp"
+# "${LIBCXX_SOURCE_DIR}/src/support/win32/thread_win32.cpp"
 "${LIBCXX_SOURCE_DIR}/src/system_error.cpp"
 "${LIBCXX_SOURCE_DIR}/src/thread.cpp"
 "${LIBCXX_SOURCE_DIR}/src/typeinfo.cpp"
@@ -67,6 +71,22 @@ set(SRCS
 "${LIBCXX_SOURCE_DIR}/src/vector.cpp"
 "${LIBCXX_SOURCE_DIR}/src/verbose_abort.cpp"
 )
+
+# Hardening mode = none.
+# Maybe we can enable it for debug builds.
+set(_LIBCPP_HARDENING_MODE_DEFAULT 2)
+set(_LIBCPP_PSTL_CPU_BACKEND_SERIAL 1)
+set(_LIBCPP_ABI_VERSION 999)
+set(_LIBCPP_ABI_UNSTABLE ON)
+set(_LIBCPP_HAS_NO_VENDOR_AVAILABILITY_ANNOTATIONS ON)
+set(_LIBCPP_ABI_NAMESPACE __1)
+configure_file("${LIBCXX_SOURCE_DIR}/include/__config_site.in" "${LIBCXX_GENERATED_INCLUDE_DIR}/__config_site")
+configure_file("${LIBCXX_SOURCE_DIR}/include/module.modulemap.in" "${LIBCXX_GENERATED_INCLUDE_DIR}/module.modulemap" @ONLY)
+set(generate-cxx-headers "${LIBCXX_GENERATED_INCLUDE_DIR}/__config_site" "${LIBCXX_GENERATED_INCLUDE_DIR}/module.modulemap")
+
+add_library(cxx-headers INTERFACE)
+add_dependencies(cxx-headers generate-cxx-headers)
+target_include_directories(cxx-headers INTERFACE ${LIBCXX_GENERATED_INCLUDE_DIR})
 
 add_library(cxx ${SRCS})
 set_target_properties(cxx PROPERTIES FOLDER "contrib/libcxx-cmake")
@@ -90,6 +110,7 @@ target_compile_options(cxx PRIVATE -w)
 # Enable support for Clang-Thread-Safety-Analysis in libcxx
 target_compile_definitions(cxx PUBLIC -D_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS)
 
+target_link_libraries(cxx PUBLIC cxx-headers)
 target_link_libraries(cxx PUBLIC cxxabi)
 
 install(
