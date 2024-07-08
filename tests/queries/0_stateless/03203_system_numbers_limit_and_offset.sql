@@ -3,11 +3,13 @@ SELECT number FROM numbers_mt(10000)
 WHERE (number % 10) = 0
 ORDER BY number ASC
 LIMIT 990, 3;
+
 SELECT 'case 2';
 SELECT number FROM numbers_mt(10000)
 WHERE (number % 10) = 0
 ORDER BY number ASC
 LIMIT 999, 20 SETTINGS max_block_size = 31;
+
 --- The following query was buggy before, so let's use it as a test case
 WITH
     toUInt64(-1) AS umax,
@@ -35,3 +37,9 @@ WHERE is_prime_slow(num)
 ORDER BY num ASC
 LIMIT 998, 1
 SETTINGS max_block_size = 64, max_threads=16;
+
+SELECT number
+FROM numbers_mt(120)
+WHERE (number % 10) = 0
+ORDER BY number ASC
+SETTINGS max_block_size = 31, max_threads = 11
