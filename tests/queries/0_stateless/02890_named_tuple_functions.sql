@@ -20,3 +20,12 @@ select tupleNames(tuple(i, i, j, j)) from x;
 select tupleNames(1); -- { serverError 43 }
 
 drop table x;
+
+drop table if exists tbl;
+
+-- Make sure named tuple won't break Values insert
+create table tbl (x Tuple(a Int32, b Int32, c Int32)) engine MergeTree order by ();
+insert into tbl values (tuple(1, 2, 3)); -- without tuple it's interpreted differently inside values block.
+select * from tbl;
+
+drop table tbl

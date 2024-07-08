@@ -6,3 +6,4 @@ Tuple(\n    k UInt8,\n    j Int32)
 ['k','j']
 Tuple(Int32, Int32, Int32, Int32)
 ['1','2','3','4']
+(1,2,3)

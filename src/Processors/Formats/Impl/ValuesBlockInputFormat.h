@@ -37,18 +37,7 @@ public:
     void resetReadBuffer() override;
 
     /// TODO: remove context somehow.
-    void setContext(const ContextPtr & context_)
-    {
-        auto context_copy = Context::createCopy(context_);
-
-        /// ConstantExpressionTemplate generates placeholder names (_dummy_N)
-        /// for all literals, which are valid names for creating named tuples.
-        /// This behavior needs to be explicitly disabled, because if named
-        /// tuples with different names are inserted into a named tuple, it will
-        /// only insert default values.
-        context_copy->setSetting("enable_named_columns_in_function_tuple", false);
-        context = context_copy;
-    }
+    void setContext(const ContextPtr & context_) { context = Context::createCopy(context_); }
 
     const BlockMissingValues & getMissingValues() const override { return block_missing_values; }
 
