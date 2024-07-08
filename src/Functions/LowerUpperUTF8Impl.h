@@ -59,8 +59,8 @@ struct LowerUpperUTF8Impl
             /// For valid UTF-8 input strings, ICU sometimes produces output with extra '\0's at the end. Only the data before the first
             /// '\0' is valid. It the input is not valid UTF-8, then the behavior of lower/upperUTF8 is undefined by definition. In this
             /// case, the behavior is also reasonable.
-            const char * res_end = find_first_symbols<'\0'>(output.data(), output.data() + output.size());
-            size_t valid_size = res_end - output.data();
+            const char * res_end = find_last_not_symbols_or_null<'\0'>(output.data(), output.data() + output.size());
+            size_t valid_size = res_end ? res_end - output.data() + 1 : 0;
 
             res_data.resize(curr_offset + valid_size + 1);
             memcpy(&res_data[curr_offset], output.data(), valid_size);

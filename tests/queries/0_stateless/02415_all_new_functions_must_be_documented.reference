@@ -416,6 +416,7 @@ logTrace
 lowCardinalityIndices
 lowCardinalityKeys
 lower
+lowerUTF8
 makeDate
 makeDate32
 makeDateTime
