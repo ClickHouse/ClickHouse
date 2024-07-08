@@ -91,6 +91,7 @@
 #include <Common/StackTrace.h>
 #include <Common/Config/ConfigHelper.h>
 #include <Common/Config/ConfigProcessor.h>
+#include <Common/Config/ConfigReloader.h>
 #include <Common/Config/AbstractConfigurationComparison.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ShellCommand.h>
@@ -367,6 +368,9 @@ struct ContextSharedPart : boost::noncopyable
     std::atomic_size_t max_view_num_to_warn = 10000lu;
     std::atomic_size_t max_dictionary_num_to_warn = 1000lu;
     std::atomic_size_t max_part_num_to_warn = 100000lu;
+    /// Only for system.server_settings, actually value stored in reloader itself
+    std::atomic_size_t config_reload_interval_ms = ConfigReloader::DEFAULT_RELOAD_INTERVAL.count();
+
     String format_schema_path;                              /// Path to a directory that contains schema files used by input formats.
     String google_protos_path; /// Path to a directory that contains the proto files for the well-known Protobuf types.
     mutable OnceFlag action_locks_manager_initialized;
@@ -678,6 +682,9 @@ struct ContextSharedPart : boost::noncopyable
                     disk->shutdown();
             }
         }
+
+        LOG_TRACE(log, "Shutting down AccessControl");
+        access_control->shutdown();
 
         {
             std::lock_guard lock(mutex);
@@ -2109,7 +2116,7 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
 }
 
 
-StoragePtr Context::buildParametrizedViewStorage(const ASTPtr & table_expression, const String & database_name, const String & table_name)
+StoragePtr Context::buildParametrizedViewStorage(const String & database_name, const String & table_name, const NameToNameMap & param_values)
 {
     if (table_name.empty())
         return nullptr;
@@ -2122,8 +2129,7 @@ StoragePtr Context::buildParametrizedViewStorage(const ASTPtr & table_expression
         return nullptr;
 
     auto query = original_view->getInMemoryMetadataPtr()->getSelectQuery().inner_query->clone();
-    NameToNameMap parameterized_view_values = analyzeFunctionParamValues(table_expression, getQueryContext());
-    StorageView::replaceQueryParametersIfParametrizedView(query, parameterized_view_values);
+    StorageView::replaceQueryParametersIfParametrizedView(query, param_values);
 
     ASTCreateQuery create;
     create.select = query->as<ASTSelectWithUnionQuery>();
@@ -2230,6 +2236,12 @@ void Context::setSetting(std::string_view name, const Field & value)
     std::lock_guard lock(mutex);
     setSettingWithLock(name, value, lock);
     contextSanityClampSettingsWithLock(*this, settings, lock);
+}
+
+void Context::setServerSetting(std::string_view name, const Field & value)
+{
+    std::lock_guard lock(mutex);
+    shared->server_settings.set(name, value);
 }
 
 void Context::applySettingChange(const SettingChange & change)
@@ -3396,8 +3408,6 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
     const auto & config = shared->zookeeper_config ? *shared->zookeeper_config : getConfigRef();
     if (!shared->zookeeper)
         shared->zookeeper = zkutil::ZooKeeper::create(config, zkutil::getZooKeeperConfigName(config), getZooKeeperLog());
-    else if (shared->zookeeper->hasReachedDeadline())
-        shared->zookeeper->finalize("ZooKeeper session has reached its deadline");
 
     if (shared->zookeeper->expired())
     {
@@ -4129,13 +4139,22 @@ std::shared_ptr<FilesystemCacheLog> Context::getFilesystemCacheLog() const
     return shared->system_logs->filesystem_cache_log;
 }
 
-std::shared_ptr<S3QueueLog> Context::getS3QueueLog() const
+std::shared_ptr<ObjectStorageQueueLog> Context::getS3QueueLog() const
 {
     SharedLockGuard lock(shared->mutex);
     if (!shared->system_logs)
         return {};
 
     return shared->system_logs->s3_queue_log;
+}
+
+std::shared_ptr<ObjectStorageQueueLog> Context::getAzureQueueLog() const
+{
+    SharedLockGuard lock(shared->mutex);
+    if (!shared->system_logs)
+        return {};
+
+    return shared->system_logs->azure_queue_log;
 }
 
 std::shared_ptr<FilesystemReadPrefetchesLog> Context::getFilesystemReadPrefetchesLog() const
@@ -4498,6 +4517,16 @@ void Context::checkPartitionCanBeDropped(const String & database, const String &
 void Context::checkPartitionCanBeDropped(const String & database, const String & table, const size_t & partition_size, const size_t & max_partition_size_to_drop) const
 {
     checkCanBeDropped(database, table, partition_size, max_partition_size_to_drop);
+}
+
+void Context::setConfigReloaderInterval(size_t value_ms)
+{
+    shared->config_reload_interval_ms.store(value_ms, std::memory_order_relaxed);
+}
+
+size_t Context::getConfigReloaderInterval() const
+{
+    return shared->config_reload_interval_ms.load(std::memory_order_relaxed);
 }
 
 InputFormatPtr Context::getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size, const std::optional<FormatSettings> & format_settings, std::optional<size_t> max_parsing_threads) const
@@ -5446,10 +5475,37 @@ bool Context::canUseParallelReplicasOnFollower() const
     return canUseTaskBasedParallelReplicas() && getClientInfo().collaborate_with_initiator;
 }
 
-bool Context::canUseParallelReplicasCustomKey(const Cluster & cluster) const
+bool Context::canUseParallelReplicasCustomKey() const
 {
-    return settings.max_parallel_replicas > 1 && getParallelReplicasMode() == Context::ParallelReplicasMode::CUSTOM_KEY
-        && cluster.getShardCount() == 1 && cluster.getShardsInfo()[0].getAllNodeCount() > 1;
+    return settings.max_parallel_replicas > 1 && getParallelReplicasMode() == Context::ParallelReplicasMode::CUSTOM_KEY;
+}
+
+bool Context::canUseParallelReplicasCustomKeyForCluster(const Cluster & cluster) const
+{
+    return canUseParallelReplicasCustomKey() && cluster.getShardCount() == 1 && cluster.getShardsInfo()[0].getAllNodeCount() > 1;
+}
+
+bool Context::canUseOffsetParallelReplicas() const
+{
+    return offset_parallel_replicas_enabled && settings.max_parallel_replicas > 1
+        && getParallelReplicasMode() != Context::ParallelReplicasMode::READ_TASKS;
+}
+
+void Context::disableOffsetParallelReplicas()
+{
+    offset_parallel_replicas_enabled = false;
+}
+
+ClusterPtr Context::getClusterForParallelReplicas() const
+{
+    /// check cluster for parallel replicas
+    if (settings.cluster_for_parallel_replicas.value.empty())
+        throw Exception(
+            ErrorCodes::CLUSTER_DOESNT_EXIST,
+            "Reading in parallel from replicas is enabled but cluster to execute query is not provided. Please set "
+            "'cluster_for_parallel_replicas' setting");
+
+    return getCluster(settings.cluster_for_parallel_replicas);
 }
 
 void Context::setPreparedSetsCache(const PreparedSetsCachePtr & cache)

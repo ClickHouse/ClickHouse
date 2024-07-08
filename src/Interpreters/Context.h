@@ -1,7 +1,5 @@
 #pragma once
 
-#ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD
-
 #include <base/types.h>
 #include <Common/isLocalAddress.h>
 #include <Common/MultiVersion.h>
@@ -107,7 +105,7 @@ class TransactionsInfoLog;
 class ProcessorsProfileLog;
 class FilesystemCacheLog;
 class FilesystemReadPrefetchesLog;
-class S3QueueLog;
+class ObjectStorageQueueLog;
 class AsynchronousInsertLog;
 class BackupLog;
 class BlobStorageLog;
@@ -151,6 +149,8 @@ class AsyncLoader;
 
 struct TemporaryTableHolder;
 using TemporaryTablesMapping = std::map<String, std::shared_ptr<TemporaryTableHolder>>;
+
+using ClusterPtr = std::shared_ptr<Cluster>;
 
 class LoadTask;
 using LoadTaskPtr = std::shared_ptr<LoadTask>;
@@ -458,6 +458,11 @@ protected:
     /// Prepared sets that can be shared between different queries. One use case is when is to share prepared sets between
     /// mutation tasks of one mutation executed against different parts of the same table.
     PreparedSetsCachePtr prepared_sets_cache;
+
+    /// this is a mode of parallel replicas where we set parallel_replicas_count and parallel_replicas_offset
+    /// and generate specific filters on the replicas (e.g. when using parallel replicas with sample key)
+    /// if we already use a different mode of parallel replicas we want to disable this mode
+    bool offset_parallel_replicas_enabled = true;
 
 public:
     /// Some counters for current query execution.
@@ -774,7 +779,7 @@ public:
     /// Overload for the new analyzer. Structure inference is performed in QueryAnalysisPass.
     StoragePtr executeTableFunction(const ASTPtr & table_expression, const TableFunctionPtr & table_function_ptr);
 
-    StoragePtr buildParametrizedViewStorage(const ASTPtr & table_expression, const String & database_name, const String & table_name);
+    StoragePtr buildParametrizedViewStorage(const String & database_name, const String & table_name, const NameToNameMap & param_values);
 
     void addViewSource(const StoragePtr & storage);
     StoragePtr getViewSource() const;
@@ -825,6 +830,7 @@ public:
     /// Set settings by name.
     void setSetting(std::string_view name, const String & value);
     void setSetting(std::string_view name, const Field & value);
+    void setServerSetting(std::string_view name, const Field & value);
     void applySettingChange(const SettingChange & change);
     void applySettingsChanges(const SettingsChanges & changes);
 
@@ -1133,7 +1139,8 @@ public:
     std::shared_ptr<TransactionsInfoLog> getTransactionsInfoLog() const;
     std::shared_ptr<ProcessorsProfileLog> getProcessorsProfileLog() const;
     std::shared_ptr<FilesystemCacheLog> getFilesystemCacheLog() const;
-    std::shared_ptr<S3QueueLog> getS3QueueLog() const;
+    std::shared_ptr<ObjectStorageQueueLog> getS3QueueLog() const;
+    std::shared_ptr<ObjectStorageQueueLog> getAzureQueueLog() const;
     std::shared_ptr<FilesystemReadPrefetchesLog> getFilesystemReadPrefetchesLog() const;
     std::shared_ptr<AsynchronousInsertLog> getAsynchronousInsertLog() const;
     std::shared_ptr<BackupLog> getBackupLog() const;
@@ -1161,6 +1168,9 @@ public:
     size_t getMaxPartitionSizeToDrop() const;
     void checkPartitionCanBeDropped(const String & database, const String & table, const size_t & partition_size) const;
     void checkPartitionCanBeDropped(const String & database, const String & table, const size_t & partition_size, const size_t & max_partition_size_to_drop) const;
+    /// Only for system.server_settings, actual value is stored in ConfigReloader
+    void setConfigReloaderInterval(size_t value_ms);
+    size_t getConfigReloaderInterval() const;
 
     /// Lets you select the compression codec according to the conditions described in the configuration file.
     std::shared_ptr<ICompressionCodec> chooseCompressionCodec(size_t part_size, double part_size_ratio) const;
@@ -1306,7 +1316,13 @@ public:
     bool canUseTaskBasedParallelReplicas() const;
     bool canUseParallelReplicasOnInitiator() const;
     bool canUseParallelReplicasOnFollower() const;
-    bool canUseParallelReplicasCustomKey(const Cluster & cluster) const;
+    bool canUseParallelReplicasCustomKey() const;
+    bool canUseParallelReplicasCustomKeyForCluster(const Cluster & cluster) const;
+    bool canUseOffsetParallelReplicas() const;
+
+    void disableOffsetParallelReplicas();
+
+    ClusterPtr getClusterForParallelReplicas() const;
 
     enum class ParallelReplicasMode : uint8_t
     {
@@ -1447,9 +1463,3 @@ struct HTTPContext : public IHTTPContext
 };
 
 }
-
-#else
-
-#include <Coordination/Standalone/Context.h>
-
-#endif
