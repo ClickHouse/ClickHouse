@@ -42,6 +42,8 @@ source /utils.lib
 # install test configs
 /usr/share/clickhouse-test/config/install.sh
 
+azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --silent --inMemoryPersistence &
+
 ./setup_minio.sh stateless
 ./setup_hdfs_minicluster.sh
 
