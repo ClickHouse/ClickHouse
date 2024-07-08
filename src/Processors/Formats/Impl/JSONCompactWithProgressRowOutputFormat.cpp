@@ -111,7 +111,7 @@ void JSONCompactWithProgressRowOutputFormat::writeProgress()
 {
     std::lock_guard lock(progress_lines_mutex);
     for (const auto & progress_line : progress_lines)
-        writeString(progress_line,  *ostr);
+        writeString(progress_line, *ostr);
     progress_lines.clear();
     has_progress = false;
 }
