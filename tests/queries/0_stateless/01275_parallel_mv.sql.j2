@@ -3,7 +3,12 @@
 -- no-parallel: it checks the number of threads, which can be lowered in presence of other queries
 
 -- avoid settings randomization by clickhouse-test
-set max_threads = 0;
+set max_threads = 10;
+
+
+-- more blocks to process
+set max_block_size = 10;
+set min_insert_block_size_rows = 10;
 
 drop table if exists testX;
 drop table if exists testXA;
@@ -12,23 +17,23 @@ drop table if exists testXC;
 
 create table testX (A Int64) engine=MergeTree order by tuple();
 
-create materialized view testXA engine=MergeTree order by tuple() as select sleepEachRow(0.2) from testX;
-create materialized view testXB engine=MergeTree order by tuple() as select sleepEachRow(0.4), throwIf(A=1) from testX;
-create materialized view testXC engine=MergeTree order by tuple() as select sleepEachRow(0.2) from testX;
+create materialized view testXA engine=MergeTree order by tuple() as select sleep(0.1) from testX;
+create materialized view testXB engine=MergeTree order by tuple() as select sleep(0.2), throwIf(A=1) from testX;
+create materialized view testXC engine=MergeTree order by tuple() as select sleep(0.1) from testX;
 
 -- { echoOn }
 {% for parallel_view_processing in [0, 1] %}
 {% for optimize_trivial_insert_select in [0, 1] %}
-{% for max_insert_threads in [0, 16] %}
+{% for max_insert_threads in [0, 5] %}
 select 'optimize_trivial_insert_select={{ optimize_trivial_insert_select }}', 'max_insert_threads={{ max_insert_threads }}';
 
-insert into testX select number from numbers(10) settings
+insert into testX select number from numbers(200) settings
     log_queries=1,
     parallel_view_processing={{ parallel_view_processing }},
     optimize_trivial_insert_select={{ optimize_trivial_insert_select }},
     max_insert_threads={{ max_insert_threads }}; -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
 system flush logs;
-select arrayUniq(thread_ids) from system.query_log where
+select peak_threads_usage from system.query_log where
     current_database = currentDatabase() and
     type != 'QueryStart' and
     query like '%insert into testX %' and
