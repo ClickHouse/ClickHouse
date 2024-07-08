@@ -14,8 +14,6 @@
 
 #include <Common/logger_useful.h>
 
-#include <chrono>
-
 namespace DB
 {
 
@@ -83,28 +81,6 @@ void QueryLogMetricElement::appendToBlock(MutableColumns & columns) const
         columns[column_idx++]->insert(current_metrics[i].toUnderType());
 }
 
-void QueryLogMetric::startQueryLogMetric(std::string_view query_id, const QueryTime & time, const UInt64 interval_microseconds)
-{
-    LOG_DEBUG(getLogger("PMO"), "Start query {}", query_id);
-    if (query_id.empty())
-        return;
-
-    QueryLogMetricStatus query_status;
-    query_status.start_time = time;
-    query_status.last_time = time;
-    query_status.interval_microseconds = interval_microseconds;
-    query_status.last_profile_events.resize(ProfileEvents::end());
-
-    CurrentThread::updatePerformanceCountersIfNeeded();
-    for (ProfileEvents::Event i = ProfileEvents::Event(0), end = ProfileEvents::end(); i < end; ++i)
-    {
-        const ProfileEvents::Count value = ProfileEvents::global_counters[i].load(std::memory_order_relaxed);
-        query_status.last_profile_events[i] = value;
-    }
-
-    queries.insert({String(query_id), query_status});
-}
-
 QueryLogMetricElement createLogMetricElement(std::string_view query_id, const QueryLogMetricStatus::QueryTime & time, QueryLogMetricStatus & query_status)
 {
     QueryLogMetricElement elem;
@@ -133,41 +109,10 @@ QueryLogMetricElement createLogMetricElement(std::string_view query_id, const Qu
     return elem;
 }
 
-void QueryLogMetric::finishQueryLogMetric(std::string_view query_id, const QueryTime & time)
+void QueryLogMetric::stepFunction(TimePoint current_time)
 {
-    LOG_DEBUG(getLogger("PMO"), "Finish query {}", query_id);
-    if (query_id.empty())
-        return;
-
-    auto it = queries.find(String(query_id));
-    if (it == queries.end())
-        return;
-
-    auto & query_status = it->second;
-    const auto elem = createLogMetricElement(query_id, time, query_status);
-    add(elem);
-
-    queries.erase(it);
-}
-
-void QueryLogMetric::updateQueryLogMetric(std::string_view query_id, const QueryTime & time)
-{
-    LOG_DEBUG(getLogger("PMO"), "Update query {}", query_id);
-    if (query_id.empty())
-        return;
-
-    // updateQueryLogMetric is called by the progress callback for all queries.
-    // However, only non-internal queries are logged via the startQueryLogMetric/stopQueryLogMetric.
-    auto it = queries.find(String(query_id));
-    if (it == queries.end())
-        return;
-
-    auto & query_status = it->second;
-    if (time < query_status.last_time + std::chrono::microseconds(query_status.interval_microseconds))
-        return;
-
-    const auto elem = createLogMetricElement(query_id, time, query_status);
-    add(elem);
+    (void)(current_time);
+    LOG_DEBUG(getLogger("PMO"), "QueryLogMetric::stepFunction");
 }
 
 }

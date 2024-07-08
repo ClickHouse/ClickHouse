@@ -1,6 +1,8 @@
-#include <Interpreters/PeriodicLog.h>
+#include <Common/SystemLogBase.h>
 #include <Interpreters/ErrorLog.h>
 #include <Interpreters/MetricLog.h>
+#include <Interpreters/PeriodicLog.h>
+#include <Interpreters/QueryLogMetric.h>
 
 namespace DB
 {
@@ -56,7 +58,7 @@ void PeriodicLog<LogElement>::threadFunction()
     }
 }
 
-#define INSTANTIATE_SYSTEM_LOG(ELEMENT) template class PeriodicLog<ELEMENT>;
-SYSTEM_PERIODIC_LOG_ELEMENTS(INSTANTIATE_SYSTEM_LOG)
+#define INSTANTIATE_PERIODIC_SYSTEM_LOG(ELEMENT) template class PeriodicLog<ELEMENT>;
+SYSTEM_PERIODIC_LOG_ELEMENTS(INSTANTIATE_PERIODIC_SYSTEM_LOG)
 
 }

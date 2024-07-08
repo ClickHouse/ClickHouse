@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Interpreters/SystemLog.h>
+#include <Interpreters/PeriodicLog.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
 #include <Core/NamesAndTypes.h>
@@ -42,18 +42,12 @@ struct QueryLogMetricStatus
   std::vector<ProfileEvents::Count> last_profile_events;
 };
 
-class QueryLogMetric : public SystemLog<QueryLogMetricElement>
+class QueryLogMetric : public PeriodicLog<QueryLogMetricElement>
 {
-    using SystemLog<QueryLogMetricElement>::SystemLog;
-    using QueryTime = std::chrono::time_point<std::chrono::system_clock>;
+    using PeriodicLog<QueryLogMetricElement>::PeriodicLog;
 
-public:
-    void startQueryLogMetric(std::string_view query_id, const QueryTime & time, const UInt64 interval_microseconds);
-    void finishQueryLogMetric(std::string_view query_id, const QueryTime & time);
-    void updateQueryLogMetric(std::string_view query_id, const QueryTime & time);
-
-private:
-    std::unordered_map<String, QueryLogMetricStatus> queries;
+protected:
+    void stepFunction(TimePoint current_time) override;
 };
 
 }

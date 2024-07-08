@@ -7,7 +7,6 @@
 #include <Processors/LimitTransform.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/QueryLogMetric.h>
 #include <QueryPipeline/ReadProgressCallback.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/printPipeline.h>
@@ -544,10 +543,10 @@ void QueryPipeline::setProgressCallback(const ProgressCallback & callback)
 {
     progress_callback = [callback](const Progress & progress)
     {
-        const auto & query_id = CurrentThread::getQueryId();
-        const auto & context = CurrentThread::getQueryContext();
+        // TODO: PMO to update counters only for the query log metric interval
+        auto context = CurrentThread::getQueryContext();
         if (auto query_log_metric = context->getQueryLogMetric())
-            query_log_metric->updateQueryLogMetric(query_id, std::chrono::system_clock::now());
+            CurrentThread::updatePerformanceCounters();
 
         if (callback)
             callback(progress);

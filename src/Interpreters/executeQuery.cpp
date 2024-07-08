@@ -8,7 +8,6 @@
 
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/Cache/QueryCache.h>
-#include <Interpreters/QueryLogMetric.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromVector.h>
 #include <IO/LimitReadBuffer.h>
@@ -374,12 +373,6 @@ QueryLogElement logQueryStart(
         }
     }
 
-    if (auto query_log_metric = context->getQueryLogMetric(); query_log_metric && !internal)
-    {
-        const auto interval_microseconds = context->getConfigRef().getUInt64("query_log_metric.collect_interval_milliseconds", 1000) * 1000;
-        query_log_metric->startQueryLogMetric(elem.client_info.current_query_id, query_start_time, interval_microseconds);
-    }
-
     return elem;
 }
 
@@ -511,12 +504,6 @@ void logQueryFinish(
         query_span->addAttributeIfNotZero("clickhouse.memory_usage", elem.memory_usage);
         query_span->finish();
     }
-
-    if (auto query_log_metric = context->getQueryLogMetric(); query_log_metric && !internal)
-    {
-        auto query_end_time = std::chrono::system_clock::now();
-        query_log_metric->finishQueryLogMetric(elem.client_info.current_query_id, query_end_time);
-    }
 }
 
 void logQueryException(
@@ -585,9 +572,6 @@ void logQueryException(
         query_span->addAttribute("clickhouse.exception_code", elem.exception_code);
         query_span->finish();
     }
-
-    if (auto query_log_metric = context->getQueryLogMetric(); query_log_metric && !internal)
-            query_log_metric->finishQueryLogMetric(elem.client_info.current_query_id, time_now);
 }
 
 void logExceptionBeforeStart(
@@ -684,9 +668,6 @@ void logExceptionBeforeStart(
             ProfileEvents::increment(ProfileEvents::FailedInsertQuery);
         }
     }
-
-    if (auto query_log_metric = context->getQueryLogMetric())
-        query_log_metric->finishQueryLogMetric(elem.client_info.current_query_id, query_end_time);
 }
 
 void validateAnalyzerSettings(ASTPtr ast, bool context_value)
