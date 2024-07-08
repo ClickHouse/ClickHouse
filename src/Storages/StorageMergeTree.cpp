@@ -1577,6 +1577,12 @@ bool StorageMergeTree::optimize(
 {
     assertNotReadonly();
 
+    if (deduplicate && getInMemoryMetadataPtr()->hasProjections())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "OPTIMIZE DEDUPLICATE query is not supported for table {} as it has projections. "
+                    "User should drop all the projections manually before running the query",
+                    getStorageID().getTableName());
+
     if (deduplicate)
     {
         if (deduplicate_by_columns.empty())
