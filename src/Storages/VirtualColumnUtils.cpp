@@ -112,7 +112,7 @@ void filterBlockWithDAG(ActionsDAGPtr dag, Block & block, ContextPtr context)
 
 NameSet getVirtualNamesForFileLikeStorage()
 {
-  return {"_path", "_file", "_size", "_time", "_mtime"};
+    return {"_path", "_file", "_size", "_time", "_mtime"};
 }
 
 VirtualColumnsDescription getVirtualsForFileLikeStorage(const ColumnsDescription & storage_columns)
