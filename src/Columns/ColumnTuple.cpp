@@ -318,7 +318,11 @@ void ColumnTuple::updateHashFast(SipHash & hash) const
         column->updateHashFast(hash);
 }
 
+#if !defined(ABORT_ON_LOGICAL_ERROR)
+void ColumnTuple::insertRangeFrom(const IColumn & src, size_t start, size_t length)
+#else
 void ColumnTuple::doInsertRangeFrom(const IColumn & src, size_t start, size_t length)
+#endif
 {
     column_length += length;
     const size_t tuple_size = columns.size();

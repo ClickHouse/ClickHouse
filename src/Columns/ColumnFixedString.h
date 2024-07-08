@@ -144,7 +144,11 @@ public:
 
     size_t estimateCardinalityInPermutedRange(const Permutation & permutation, const EqualRange & equal_range) const override;
 
+#if !defined(ABORT_ON_LOGICAL_ERROR)
+    void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
+#else
     void doInsertRangeFrom(const IColumn & src, size_t start, size_t length) override;
+#endif
 
     ColumnPtr filter(const IColumn::Filter & filt, ssize_t result_size_hint) const override;
 

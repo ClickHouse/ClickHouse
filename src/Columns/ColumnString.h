@@ -212,7 +212,11 @@ public:
         hash.update(reinterpret_cast<const char *>(chars.data()), chars.size() * sizeof(chars[0]));
     }
 
+#if !defined(ABORT_ON_LOGICAL_ERROR)
+    void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
+#else
     void doInsertRangeFrom(const IColumn & src, size_t start, size_t length) override;
+#endif
 
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
 

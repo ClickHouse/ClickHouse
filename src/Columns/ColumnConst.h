@@ -123,7 +123,11 @@ public:
         return data->isNullAt(0);
     }
 
+#if !defined(ABORT_ON_LOGICAL_ERROR)
+    void insertRangeFrom(const IColumn &, size_t /*start*/, size_t length) override
+#else
     void doInsertRangeFrom(const IColumn &, size_t /*start*/, size_t length) override
+#endif
     {
         s += length;
     }

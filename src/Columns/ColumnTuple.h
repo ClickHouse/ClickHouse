@@ -76,7 +76,11 @@ public:
     void updateHashWithValue(size_t n, SipHash & hash) const override;
     void updateWeakHash32(WeakHash32 & hash) const override;
     void updateHashFast(SipHash & hash) const override;
+#if !defined(ABORT_ON_LOGICAL_ERROR)
+    void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
+#else
     void doInsertRangeFrom(const IColumn & src, size_t start, size_t length) override;
+#endif
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
     void expand(const Filter & mask, bool inverted) override;
     ColumnPtr permute(const Permutation & perm, size_t limit) const override;

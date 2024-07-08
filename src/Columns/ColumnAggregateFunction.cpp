@@ -267,7 +267,11 @@ bool ColumnAggregateFunction::structureEquals(const IColumn & to) const
 }
 
 
+#if !defined(ABORT_ON_LOGICAL_ERROR)
+void ColumnAggregateFunction::insertRangeFrom(const IColumn & from, size_t start, size_t length)
+#else
 void ColumnAggregateFunction::doInsertRangeFrom(const IColumn & from, size_t start, size_t length)
+#endif
 {
     const ColumnAggregateFunction & from_concrete = assert_cast<const ColumnAggregateFunction &>(from);
 

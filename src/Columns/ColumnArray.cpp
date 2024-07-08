@@ -535,7 +535,11 @@ void ColumnArray::getExtremes(Field & min, Field & max) const
 }
 
 
+#if !defined(ABORT_ON_LOGICAL_ERROR)
+void ColumnArray::insertRangeFrom(const IColumn & src, size_t start, size_t length)
+#else
 void ColumnArray::doInsertRangeFrom(const IColumn & src, size_t start, size_t length)
+#endif
 {
     if (length == 0)
         return;

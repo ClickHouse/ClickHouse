@@ -263,7 +263,11 @@ void ColumnDynamic::doInsertFrom(const DB::IColumn & src_, size_t n)
     variant_col.insertIntoVariantFrom(string_variant_discr, *tmp_string_column, 0);
 }
 
+#if !defined(ABORT_ON_LOGICAL_ERROR)
+void ColumnDynamic::insertRangeFrom(const DB::IColumn & src_, size_t start, size_t length)
+#else
 void ColumnDynamic::doInsertRangeFrom(const DB::IColumn & src_, size_t start, size_t length)
+#endif
 {
     if (start + length > src_.size())
         throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND, "Parameter out of bound in ColumnDynamic::insertRangeFrom method. "

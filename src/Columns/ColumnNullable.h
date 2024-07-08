@@ -69,7 +69,11 @@ public:
     char * serializeValueIntoMemory(size_t n, char * memory) const override;
     const char * deserializeAndInsertFromArena(const char * pos) override;
     const char * skipSerializedInArena(const char * pos) const override;
+#if !defined(ABORT_ON_LOGICAL_ERROR)
+    void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
+#else
     void doInsertRangeFrom(const IColumn & src, size_t start, size_t length) override;
+#endif
     void insert(const Field & x) override;
     bool tryInsert(const Field & x) override;
     void doInsertFrom(const IColumn & src, size_t n) override;

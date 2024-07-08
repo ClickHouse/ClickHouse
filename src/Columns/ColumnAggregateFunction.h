@@ -184,7 +184,11 @@ public:
 
     void protect() override;
 
+#if !defined(ABORT_ON_LOGICAL_ERROR)
+    void insertRangeFrom(const IColumn & from, size_t start, size_t length) override;
+#else
     void doInsertRangeFrom(const IColumn & from, size_t start, size_t length) override;
+#endif
 
     void popBack(size_t n) override;
 

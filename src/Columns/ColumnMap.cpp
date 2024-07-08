@@ -163,7 +163,11 @@ void ColumnMap::doInsertManyFrom(const IColumn & src, size_t position, size_t le
     assert_cast<ColumnArray &>(*nested).insertManyFrom(assert_cast<const ColumnMap &>(src).getNestedColumn(), position, length);
 }
 
+#if !defined(ABORT_ON_LOGICAL_ERROR)
+void ColumnMap::insertRangeFrom(const IColumn & src, size_t start, size_t length)
+#else
 void ColumnMap::doInsertRangeFrom(const IColumn & src, size_t start, size_t length)
+#endif
 {
     nested->insertRangeFrom(
         assert_cast<const ColumnMap &>(src).getNestedColumn(),

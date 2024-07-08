@@ -221,7 +221,11 @@ const char * ColumnNullable::skipSerializedInArena(const char * pos) const
     return pos;
 }
 
+#if !defined(ABORT_ON_LOGICAL_ERROR)
+void ColumnNullable::insertRangeFrom(const IColumn & src, size_t start, size_t length)
+#else
 void ColumnNullable::doInsertRangeFrom(const IColumn & src, size_t start, size_t length)
+#endif
 {
     const ColumnNullable & nullable_col = assert_cast<const ColumnNullable &>(src);
     getNullMapColumn().insertRangeFrom(*nullable_col.null_map, start, length);

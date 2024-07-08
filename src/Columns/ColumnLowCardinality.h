@@ -81,7 +81,11 @@ public:
     void doInsertFrom(const IColumn & src, size_t n) override;
     void insertFromFullColumn(const IColumn & src, size_t n);
 
+#if !defined(ABORT_ON_LOGICAL_ERROR)
+    void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
+#else
     void doInsertRangeFrom(const IColumn & src, size_t start, size_t length) override;
+#endif
     void insertRangeFromFullColumn(const IColumn & src, size_t start, size_t length);
     void insertRangeFromDictionaryEncodedColumn(const IColumn & keys, const IColumn & positions);
 

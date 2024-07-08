@@ -89,7 +89,11 @@ void ColumnFunction::doInsertFrom(const IColumn & src, size_t n)
     ++elements_size;
 }
 
+#if !defined(ABORT_ON_LOGICAL_ERROR)
+void ColumnFunction::insertRangeFrom(const IColumn & src, size_t start, size_t length)
+#else
 void ColumnFunction::doInsertRangeFrom(const IColumn & src, size_t start, size_t length)
+#endif
 {
     const ColumnFunction & src_func = assert_cast<const ColumnFunction &>(src);
 

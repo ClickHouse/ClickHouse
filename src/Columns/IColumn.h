@@ -187,11 +187,15 @@ public:
 
     /// Appends range of elements from other column with the same type.
     /// Could be used to concatenate columns.
+#if !defined(ABORT_ON_LOGICAL_ERROR)
+    virtual void insertRangeFrom(const IColumn & src, size_t start, size_t length) = 0;
+#else
     void insertRangeFrom(const IColumn & src, size_t start, size_t length)
     {
         assertTypeEquality(src);
         doInsertRangeFrom(src, start, length);
     }
+#endif
 
     /// Appends one element from other column with the same type multiple times.
     void insertManyFrom(const IColumn & src, size_t position, size_t length)
@@ -649,7 +653,9 @@ protected:
 
     virtual void doInsertFrom(const IColumn & src, size_t n);
 
+#if defined(ABORT_ON_LOGICAL_ERROR)
     virtual void doInsertRangeFrom(const IColumn & src, size_t start, size_t length) = 0;
+#endif
 
     virtual void doInsertManyFrom(const IColumn & src, size_t position, size_t length)
     {

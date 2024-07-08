@@ -72,7 +72,11 @@ public:
         ++s;
     }
 
+#if !defined(ABORT_ON_LOGICAL_ERROR)
+    void insertRangeFrom(const IColumn & /*src*/, size_t /*start*/, size_t length) override
+#else
     void doInsertRangeFrom(const IColumn & /*src*/, size_t /*start*/, size_t length) override
+#endif
     {
         s += length;
     }

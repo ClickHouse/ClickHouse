@@ -219,7 +219,11 @@ size_t ColumnFixedString::estimateCardinalityInPermutedRange(const Permutation &
     return elements.size();
 }
 
+#if !defined(ABORT_ON_LOGICAL_ERROR)
+void ColumnFixedString::insertRangeFrom(const IColumn & src, size_t start, size_t length)
+#else
 void ColumnFixedString::doInsertRangeFrom(const IColumn & src, size_t start, size_t length)
+#endif
 {
     const ColumnFixedString & src_concrete = assert_cast<const ColumnFixedString &>(src);
     chassert(this->n == src_concrete.n);

@@ -187,7 +187,11 @@ void ColumnLowCardinality::insertFromFullColumn(const IColumn & src, size_t n)
     idx.insertPosition(getDictionary().uniqueInsertFrom(src, n));
 }
 
+#if !defined(ABORT_ON_LOGICAL_ERROR)
+void ColumnLowCardinality::insertRangeFrom(const IColumn & src, size_t start, size_t length)
+#else
 void ColumnLowCardinality::doInsertRangeFrom(const IColumn & src, size_t start, size_t length)
+#endif
 {
     const auto * low_cardinality_src = typeid_cast<const ColumnLowCardinality *>(&src);
 

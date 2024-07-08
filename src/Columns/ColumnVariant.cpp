@@ -600,7 +600,11 @@ void ColumnVariant::doInsertFrom(const IColumn & src_, size_t n)
     insertFromImpl(src_, n, nullptr);
 }
 
+#if !defined(ABORT_ON_LOGICAL_ERROR)
+void ColumnVariant::insertRangeFrom(const IColumn & src_, size_t start, size_t length)
+#else
 void ColumnVariant::doInsertRangeFrom(const IColumn & src_, size_t start, size_t length)
+#endif
 {
     insertRangeFromImpl(src_, start, length, nullptr);
 }

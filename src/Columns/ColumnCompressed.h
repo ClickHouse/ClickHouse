@@ -85,7 +85,11 @@ public:
     bool isDefaultAt(size_t) const override { throwMustBeDecompressed(); }
     void insert(const Field &) override { throwMustBeDecompressed(); }
     bool tryInsert(const Field &) override { throwMustBeDecompressed(); }
+#if !defined(ABORT_ON_LOGICAL_ERROR)
+    void insertRangeFrom(const IColumn &, size_t, size_t) override { throwMustBeDecompressed(); }
+#else
     void doInsertRangeFrom(const IColumn &, size_t, size_t) override { throwMustBeDecompressed(); }
+#endif
     void insertData(const char *, size_t) override { throwMustBeDecompressed(); }
     void insertDefault() override { throwMustBeDecompressed(); }
     void popBack(size_t) override { throwMustBeDecompressed(); }

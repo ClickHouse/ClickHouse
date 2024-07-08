@@ -174,7 +174,11 @@ const char * ColumnSparse::skipSerializedInArena(const char * pos) const
     return values->skipSerializedInArena(pos);
 }
 
+#if !defined(ABORT_ON_LOGICAL_ERROR)
+void ColumnSparse::insertRangeFrom(const IColumn & src, size_t start, size_t length)
+#else
 void ColumnSparse::doInsertRangeFrom(const IColumn & src, size_t start, size_t length)
+#endif
 {
     if (length == 0)
         return;

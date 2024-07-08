@@ -129,7 +129,11 @@ void ColumnString::updateWeakHash32(WeakHash32 & hash) const
 }
 
 
+#if !defined(ABORT_ON_LOGICAL_ERROR)
+void ColumnString::insertRangeFrom(const IColumn & src, size_t start, size_t length)
+#else
 void ColumnString::doInsertRangeFrom(const IColumn & src, size_t start, size_t length)
+#endif
 {
     if (length == 0)
         return;
