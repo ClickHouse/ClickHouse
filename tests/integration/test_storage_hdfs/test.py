@@ -1012,6 +1012,7 @@ def test_read_subcolumn_time(started_cluster):
 
     assert res == "42\t1\n"
 
+
 def test_read_subcolumn_mtime(started_cluster):
     node = started_cluster.instances["node1"]
 

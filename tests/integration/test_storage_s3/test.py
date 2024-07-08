@@ -2167,6 +2167,7 @@ def test_read_subcolumn_time(started_cluster):
 
     assert res == "42\t1\n"
 
+
 def test_read_subcolumn_mtime(started_cluster):
     bucket = started_cluster.minio_bucket
     instance = started_cluster.instances["dummy"]
