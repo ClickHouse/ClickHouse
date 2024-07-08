@@ -38,6 +38,7 @@ The supported formats are:
 | [JSONCompact](#jsoncompact)                                                               | ✔    | ✔     |
 | [JSONCompactStrings](#jsoncompactstrings)                                                 | ✗    | ✔     |
 | [JSONCompactColumns](#jsoncompactcolumns)                                                 | ✔    | ✔     |
+| [JSONCompactWithProgress](#jsoncompactwithprogress)                                       | ✗    | ✔     |
 | [JSONEachRow](#jsoneachrow)                                                               | ✔    | ✔     |
 | [PrettyJSONEachRow](#prettyjsoneachrow)                                                   | ✗    | ✔     |
 | [JSONEachRowWithProgress](#jsoneachrowwithprogress)                                       | ✗    | ✔     |
@@ -924,6 +925,23 @@ Example:
 ```
 
 Columns that are not present in the block will be filled with default values (you can use  [input_format_defaults_for_omitted_fields](/docs/en/operations/settings/settings-formats.md/#input_format_defaults_for_omitted_fields) setting here)
+
+## JSONCompactWithProgress (#jsoncompactwithprogress)
+
+In this format, ClickHouse outputs each row as a separated, newline-delimited JSON Object.
+
+Each row is either a metadata object, data object, progress information or statistics object.
+
+Example:
+
+```json
+{"meta": [{"name":"id", "type":"UInt32"}, {"name":"name", "type":"String"}]}}
+{"progress":{"read_rows":"8","read_bytes":"168","written_rows":"0","written_bytes":"0","total_rows_to_read":"2","result_rows":"0","result_bytes":"0","elapsed_ns":"0"}}
+{"data":["1", "John Doe"]}
+{"data":["2", "Joe Doe"]}
+{"statistics": {"rows":2, "rows_before_limit_at_least":8, "elapsed":0.001995, "rows_read":8, "bytes_read":168}}
+```
+
 
 ## JSONEachRow {#jsoneachrow}
 
