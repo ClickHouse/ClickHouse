@@ -22,11 +22,28 @@
 #include <Common/setThreadName.h>
 #include <Common/typeid_cast.h>
 
+using namespace DB;
+
 namespace CurrentMetrics
 {
 extern const Metric ConcurrentHashJoinPoolThreads;
 extern const Metric ConcurrentHashJoinPoolThreadsActive;
 extern const Metric ConcurrentHashJoinPoolThreadsScheduled;
+}
+
+namespace
+{
+Block concatenateBlocks(const HashJoin::ScatteredBlocks & blocks)
+{
+    Blocks inner_blocks;
+    for (const auto & block : blocks)
+    {
+        if (block.block)
+            inner_blocks.push_back(*block.block);
+    }
+    return concatenateBlocks(inner_blocks);
+}
+
 }
 
 namespace DB
@@ -177,12 +194,13 @@ void ConcurrentHashJoin::joinBlock(Block & block, std::shared_ptr<ExtraBlock> & 
         std::shared_ptr<ExtraBlock> none_extra_block;
         auto & hash_join = hash_joins[i];
         auto & dispatched_block = dispatched_blocks[i];
+        chassert(dispatched_block.block);
         hash_join->data->joinBlock(dispatched_block, none_extra_block);
         if (none_extra_block && !none_extra_block->empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "not_processed should be empty");
     }
 
-    // block = concatenateBlocks(dispatched_blocks);
+    block = ::concatenateBlocks(dispatched_blocks);
 }
 
 void ConcurrentHashJoin::checkTypesOfKeys(const Block & block) const
@@ -304,11 +322,11 @@ HashJoin::ScatteredBlocks ConcurrentHashJoin::dispatchBlockNew(const Strings & k
     size_t num_shards = hash_joins.size();
     IColumn::Selector selector = selectDispatchBlock(num_shards, key_columns_names, from_block);
     HashJoin::ScatteredBlocks result(num_shards);
+    for (size_t i = 0; i < num_shards; ++i)
+        result[i].block = std::make_shared<Block>(from_block);
     for (size_t i = 0; i < selector.size(); ++i)
     {
         const size_t shard = selector[i];
-        if (!result[shard].block)
-            result[shard].block = std::make_shared<Block>(from_block);
         result[shard].selector.push_back(i);
     }
     return result;

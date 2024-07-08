@@ -1913,7 +1913,8 @@ NO_INLINE size_t joinRightColumns(
 {
     constexpr JoinFeatures<KIND, STRICTNESS> join_features;
 
-    size_t rows = added_columns.rows_to_add;
+    const auto & block = added_columns.join_on_keys.at(0).block;
+    size_t rows = block.rows();
     if constexpr (need_filter)
         added_columns.filter = IColumn::Filter(rows, 0);
 
@@ -1938,17 +1939,18 @@ NO_INLINE size_t joinRightColumns(
         }
 
         bool right_row_found = false;
+        const auto ind = block.selector[i];
 
         KnownRowsHolder<flag_per_row> known_rows;
         for (size_t onexpr_idx = 0; onexpr_idx < added_columns.join_on_keys.size(); ++onexpr_idx)
         {
             const auto & join_keys = added_columns.join_on_keys[onexpr_idx];
-            if (join_keys.null_map && (*join_keys.null_map)[i])
+            if (join_keys.null_map && (*join_keys.null_map)[ind])
                 continue;
 
-            bool row_acceptable = !join_keys.isRowFiltered(i);
+            bool row_acceptable = !join_keys.isRowFiltered(ind);
             using FindResult = typename KeyGetter::FindResult;
-            auto find_result = row_acceptable ? key_getter_vector[onexpr_idx].findKey(*(mapv[onexpr_idx]), i, pool) : FindResult();
+            auto find_result = row_acceptable ? key_getter_vector[onexpr_idx].findKey(*(mapv[onexpr_idx]), ind, pool) : FindResult();
 
             if (find_result.isFound())
             {
@@ -1958,7 +1960,7 @@ NO_INLINE size_t joinRightColumns(
                 {
                     const IColumn & left_asof_key = added_columns.leftAsofKey();
 
-                    auto row_ref = mapped->findAsof(left_asof_key, i);
+                    auto row_ref = mapped->findAsof(left_asof_key, ind);
                     if (row_ref.block)
                     {
                         setUsed<need_filter>(added_columns.filter, i);
@@ -2178,21 +2180,21 @@ ColumnWithTypeAndName copyLeftKeyColumnToRight(
 }
 
 /// Cut first num_rows rows from block in place and returns block with remaining rows
-Block sliceBlock(Block & block, size_t num_rows)
-{
-    size_t total_rows = block.rows();
-    if (num_rows >= total_rows)
-        return {};
-    size_t remaining_rows = total_rows - num_rows;
-    Block remaining_block = block.cloneEmpty();
-    for (size_t i = 0; i < block.columns(); ++i)
-    {
-        auto & col = block.getByPosition(i);
-        remaining_block.getByPosition(i).column = col.column->cut(num_rows, remaining_rows);
-        col.column = col.column->cut(0, num_rows);
-    }
-    return remaining_block;
-}
+// Block sliceBlock(HashJoin::ScatteredBlock & scattered_block, size_t num_rows)
+// {
+//     size_t total_rows = scattered_block.rows();
+//     if (num_rows >= total_rows)
+//         return {};
+//     size_t remaining_rows = total_rows - num_rows;
+//     Block remaining_block = block.cloneEmpty();
+//     for (size_t i = 0; i < block.columns(); ++i)
+//     {
+//         auto & col = block.getByPosition(i);
+//         remaining_block.getByPosition(i).column = col.column->cut(num_rows, remaining_rows);
+//         col.column = col.column->cut(0, num_rows);
+//     }
+//     return remaining_block;
+// }
 
 } /// nameless
 
@@ -2254,10 +2256,10 @@ Block HashJoin::joinBlockImpl(
     else
         added_columns.reserve(join_features.need_replication);
 
-    size_t num_joined = switchJoinRightColumns<KIND, STRICTNESS>(maps_, added_columns, data->type, used_flags);
+    switchJoinRightColumns<KIND, STRICTNESS>(maps_, added_columns, data->type, used_flags);
     /// Do not hold memory for join_on_keys anymore
     added_columns.join_on_keys.clear();
-    Block remaining_block = sliceBlock(*block.block, num_joined);
+    Block remaining_block{}; // = sliceBlock(block, num_joined);
 
     added_columns.buildOutput();
     // block.filterBySelector();
