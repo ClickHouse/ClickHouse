@@ -106,6 +106,7 @@ def get_run_command(
         f"docker run --volume={builds_path}:/package_folder "
         f"{ci_logs_args}"
         f"--volume={repo_path}/tests:/usr/share/clickhouse-test "
+        f"--volume={repo_path}/utils/grpc-client:/usr/share/clickhouse-utils/grpc-client "
         f"{volume_with_broken_test}"
         f"--volume={result_path}:/test_output "
         f"--volume={server_log_path}:/var/log/clickhouse-server "
