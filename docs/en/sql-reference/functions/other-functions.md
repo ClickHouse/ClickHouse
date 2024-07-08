@@ -2984,66 +2984,6 @@ Result:
 └─────────┘
 ```
 
-## partitionId
-
-Returns computed [partition](../../engines/table-engines/mergetree-family/custom-partitioning-key.md) IDs of its arguments.
-
-:::note
-This function is slow and should not be called for large amount of rows.
-:::
-
-**Syntax**
-
-```sql
-partitionId(x[, y, ...]);
-```
-
-**Arguments**
-
-- `x` — Column for which to return the partition ID.
-- `y, ...` — Remaining N columns for which to return the partition ID (optional).
-
-**Return Type**
-
-- Partition ID that the row belongs to. [String](../data-types/string.md).
-
-**Example**
-
-Query:
-
-```sql
-DROP TABLE IF EXISTS mt;
-CREATE TABLE mt
-(
-  `i` int,
-  `j` int
-)
-ENGINE = MergeTree
-PARTITION BY i
-ORDER BY j
-SETTINGS index_granularity = 1;
-
-INSERT INTO mt VALUES (1, 1), (1, 2), (1, 3), (2, 4), (2, 5), (2, 6);
-
-SELECT * FROM mt WHERE _partition_id = partitionId(1);
-SELECT * FROM mt WHERE _partition_id = partitionId(2);
-```
-Result:
-
-```response
-   ┌─i─┬─j─┐
-1. │ 1 │ 1 │
-2. │ 1 │ 2 │
-3. │ 1 │ 3 │
-   └───┴───┘
-   ┌─i─┬─j─┐
-1. │ 2 │ 4 │
-2. │ 2 │ 5 │
-3. │ 2 │ 6 │
-   └───┴───┘
-```
-
-
 ## shardNum
 
 Returns the index of a shard which processes a part of data in a distributed query. Indices are started from `1`.
