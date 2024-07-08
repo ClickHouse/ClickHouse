@@ -1272,14 +1272,23 @@ void DatabaseCatalog::rescheduleDropTableTask()
 
     if (first_async_drop_in_queue != tables_marked_dropped.begin())
     {
+        LOG_TRACE(
+            log,
+            "Have {} tables in queue to drop. Some of them are being dropped in sync mode. Schedule background task ASAP",
+            tables_marked_dropped.size());
         (*drop_task)->scheduleAfter(0);
         return;
     }
 
     time_t current_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
     auto min_drop_time = getMinDropTime();
-    time_t schedule_after = min_drop_time < current_time ? (min_drop_time - current_time) * 1000 : 0;
-    (*drop_task)->scheduleAfter(schedule_after);
+    time_t schedule_after_ms = min_drop_time > current_time ? (min_drop_time - current_time) * 1000 : 0;
+
+    LOG_TRACE(
+        log,
+        "Have {} tables in queue to drop. Schedule background task in {} seconds",
+        tables_marked_dropped.size(), schedule_after_ms / 1000);
+    (*drop_task)->scheduleAfter(schedule_after_ms);
 }
 
 void DatabaseCatalog::dropTablesParallel(std::vector<DatabaseCatalog::TablesMarkedAsDropped::iterator> tables_to_drop)
@@ -1297,7 +1306,7 @@ void DatabaseCatalog::dropTablesParallel(std::vector<DatabaseCatalog::TablesMark
 
     for (const auto & item : tables_to_drop)
     {
-        pool.scheduleOrThrowOnError([&, table_iterator = item] ()
+        auto job = [&, table_iterator = item] ()
         {
             try
             {
@@ -1334,10 +1343,27 @@ void DatabaseCatalog::dropTablesParallel(std::vector<DatabaseCatalog::TablesMark
                         --first_async_drop_in_queue;
                 }
             }
-        });
+        };
+
+        try
+        {
+            pool.scheduleOrThrowOnError(std::move(job));
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Cannot drop tables. Will retry later.");
+            break;
+        }
     }
 
-    pool.wait();
+    try
+    {
+        pool.wait();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, "Cannot drop tables. Will retry later.");
+    }
 }
 
 void DatabaseCatalog::dropTableDataTask()
@@ -1355,11 +1381,6 @@ void DatabaseCatalog::dropTableDataTask()
             drop_tables_count, drop_tables_in_use_count, tables_to_drop.size());
 
         dropTablesParallel(tables_to_drop);
-    }
-    else
-    {
-        LOG_TRACE(log, "Not found any suitable tables to drop, still have {} tables in drop queue ({} of them are in use). "
-                           "Will check again later", drop_tables_count, drop_tables_in_use_count);
     }
 
     rescheduleDropTableTask();
