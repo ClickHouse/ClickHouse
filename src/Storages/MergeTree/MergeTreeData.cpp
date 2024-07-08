@@ -283,13 +283,12 @@ void MergeTreeData::initializeDirectoriesAndFormatVersion(const std::string & re
         }
     }
 
-
-    // When data path or file not exists, ignore the format_version check
+    /// When data path or file not exists, ignore the format_version check
     if (!attach || !read_format_version)
     {
         format_version = min_format_version;
 
-        // try to write to first non-readonly disk
+        /// Try to write to first non-readonly disk
         for (const auto & disk : getStoragePolicy()->getDisks())
         {
             if (disk->isBroken())
@@ -7078,6 +7077,20 @@ QueryProcessingStage::Enum MergeTreeData::getQueryProcessingStage(
     /// with new analyzer, Planner make decision regarding parallel replicas usage, and so about processing stage on reading
     if (!query_context->getSettingsRef().allow_experimental_analyzer)
     {
+        const auto & settings = query_context->getSettingsRef();
+        if (query_context->canUseParallelReplicasCustomKey())
+        {
+            if (query_context->getClientInfo().distributed_depth > 0)
+                return QueryProcessingStage::FetchColumns;
+
+            if (!supportsReplication() && !settings.parallel_replicas_for_non_replicated_merge_tree)
+                return QueryProcessingStage::Enum::FetchColumns;
+
+            if (to_stage >= QueryProcessingStage::WithMergeableState
+                && query_context->canUseParallelReplicasCustomKeyForCluster(*query_context->getClusterForParallelReplicas()))
+                return QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
+        }
+
         if (query_context->getClientInfo().collaborate_with_initiator)
             return QueryProcessingStage::Enum::FetchColumns;
 
@@ -7089,7 +7102,7 @@ QueryProcessingStage::Enum MergeTreeData::getQueryProcessingStage(
                 return QueryProcessingStage::Enum::WithMergeableState;
 
             /// For non-replicated MergeTree we allow them only if parallel_replicas_for_non_replicated_merge_tree is enabled
-            if (query_context->getSettingsRef().parallel_replicas_for_non_replicated_merge_tree)
+            if (settings.parallel_replicas_for_non_replicated_merge_tree)
                 return QueryProcessingStage::Enum::WithMergeableState;
         }
     }
@@ -7114,8 +7127,8 @@ UInt64 MergeTreeData::estimateNumberOfRowsToRead(
         query_context->getSettingsRef().max_threads);
 
     UInt64 total_rows = result_ptr->selected_rows;
-    if (query_info.limit > 0 && query_info.limit < total_rows)
-        total_rows = query_info.limit;
+    if (query_info.trivial_limit > 0 && query_info.trivial_limit < total_rows)
+        total_rows = query_info.trivial_limit;
     return total_rows;
 }
 
@@ -8607,6 +8620,38 @@ void MergeTreeData::unloadPrimaryKeys()
     {
         const_cast<IMergeTreeDataPart &>(*part).unloadIndex();
     }
+}
+
+size_t MergeTreeData::unloadPrimaryKeysOfOutdatedParts()
+{
+    /// If the method is already called from another thread, then we don't need to do anything.
+    std::unique_lock lock(unload_primary_key_mutex, std::defer_lock);
+    if (!lock.try_lock())
+        return 0;
+
+    DataPartsVector parts_to_unload_index;
+
+    {
+        auto parts_lock = lockParts();
+        auto parts_range = getDataPartsStateRange(DataPartState::Outdated);
+
+        for (const auto & part : parts_range)
+        {
+            /// Outdated part may be hold by SELECT query and still needs the index.
+            /// This check requires lock of index_mutex but if outdated part is unique then there is no
+            /// contention on it, so it's relatively cheap and it's ok to check under a global parts lock.
+            if (part.unique() && part->isIndexLoaded())
+                parts_to_unload_index.push_back(part);
+        }
+    }
+
+    for (const auto & part : parts_to_unload_index)
+    {
+        const_cast<IMergeTreeDataPart &>(*part).unloadIndex();
+        LOG_TEST(log, "Unloaded primary key for outdated part {}", part->name);
+    }
+
+    return parts_to_unload_index.size();
 }
 
 void MergeTreeData::verifySortingKey(const KeyDescription & sorting_key)
