@@ -209,43 +209,6 @@ struct DeltaLakeMetadataImpl
             // object->stringify(oss);
             // LOG_TEST(log, "Metadata: {}", oss.str());
 
-            if (object->has("add"))
-            {
-                auto add_object = object->get("add").extract<Poco::JSON::Object::Ptr>();
-                auto path = add_object->getValue<String>("path");
-                result.insert(fs::path(configuration->getPath()) / path);
-
-                auto filename = fs::path(path).filename().string();
-                auto it = file_partition_columns.find(filename);
-                if (it == file_partition_columns.end())
-                {
-                    if (add_object->has("partitionValues"))
-                    {
-                        auto partition_values = add_object->get("partitionValues").extract<Poco::JSON::Object::Ptr>();
-                        if (partition_values->size())
-                        {
-                            auto & current_partition_columns = file_partition_columns[filename];
-                            for (const auto & partition_name : partition_values->getNames())
-                            {
-                                const auto value = partition_values->getValue<String>(partition_name);
-                                auto name_and_type = file_schema.tryGetByName(partition_name);
-                                if (!name_and_type)
-                                    throw Exception(ErrorCodes::LOGICAL_ERROR, "No such column in schema: {}", partition_name);
-
-                                auto field = getFieldValue(value, name_and_type->type);
-                                current_partition_columns.emplace_back(*name_and_type, field);
-
-                                LOG_TEST(log, "Partition {} value is {} (for {})", partition_name, value, filename);
-                            }
-                        }
-                    }
-                }
-            }
-            else if (object->has("remove"))
-            {
-                auto path = object->get("remove").extract<Poco::JSON::Object::Ptr>()->getValue<String>("path");
-                result.erase(fs::path(configuration->getPath()) / path);
-            }
             if (object->has("metaData"))
             {
                 const auto metadata_object = object->get("metaData").extract<Poco::JSON::Object::Ptr>();
@@ -288,6 +251,44 @@ struct DeltaLakeMetadataImpl
                                     "({} is different from {})",
                                     file_schema.toString(), current_schema.toString());
                 }
+            }
+
+            if (object->has("add"))
+            {
+                auto add_object = object->get("add").extract<Poco::JSON::Object::Ptr>();
+                auto path = add_object->getValue<String>("path");
+                result.insert(fs::path(configuration->getPath()) / path);
+
+                auto filename = fs::path(path).filename().string();
+                auto it = file_partition_columns.find(filename);
+                if (it == file_partition_columns.end())
+                {
+                    if (add_object->has("partitionValues"))
+                    {
+                        auto partition_values = add_object->get("partitionValues").extract<Poco::JSON::Object::Ptr>();
+                        if (partition_values->size())
+                        {
+                            auto & current_partition_columns = file_partition_columns[filename];
+                            for (const auto & partition_name : partition_values->getNames())
+                            {
+                                const auto value = partition_values->getValue<String>(partition_name);
+                                auto name_and_type = file_schema.tryGetByName(partition_name);
+                                if (!name_and_type)
+                                    throw Exception(ErrorCodes::LOGICAL_ERROR, "No such column in schema: {}", partition_name);
+
+                                auto field = getFieldValue(value, name_and_type->type);
+                                current_partition_columns.emplace_back(*name_and_type, field);
+
+                                LOG_TEST(log, "Partition {} value is {} (for {})", partition_name, value, filename);
+                            }
+                        }
+                    }
+                }
+            }
+            else if (object->has("remove"))
+            {
+                auto path = object->get("remove").extract<Poco::JSON::Object::Ptr>()->getValue<String>("path");
+                result.erase(fs::path(configuration->getPath()) / path);
             }
         }
     }
