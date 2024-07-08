@@ -11,8 +11,6 @@ namespace DB
 
 struct FormatSettings;
 
-/** The stream for outputting data in the JSONCompact- formats.
-  */
 class JSONCompactWithProgressRowOutputFormat final : public JSONRowOutputFormat
 {
 public:
