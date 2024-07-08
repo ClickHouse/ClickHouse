@@ -1,6 +1,6 @@
-#include <Processors/Formats/Impl/JSONCompactWithProgressRowOutputFormat.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/JSONUtils.h>
+#include <Processors/Formats/Impl/JSONCompactWithProgressRowOutputFormat.h>
 
 #include <IO/WriteHelpers.h>
 
@@ -9,10 +9,7 @@ namespace DB
 {
 
 JSONCompactWithProgressRowOutputFormat::JSONCompactWithProgressRowOutputFormat(
-    WriteBuffer & out_,
-    const Block & header,
-    const FormatSettings & settings_,
-    bool yield_strings_)
+    WriteBuffer & out_, const Block & header, const FormatSettings & settings_, bool yield_strings_)
     : JSONRowOutputFormat(out_, header, settings_, yield_strings_)
 {
 }
@@ -139,21 +136,15 @@ void JSONCompactWithProgressRowOutputFormat::finalizeImpl()
 
 void registerOutputFormatJSONCompactWithProgress(FormatFactory & factory)
 {
-    factory.registerOutputFormat("JSONCompactWithProgress", [](
-        WriteBuffer & buf,
-        const Block & sample,
-        const FormatSettings & format_settings)
-    {
-        return std::make_shared<JSONCompactWithProgressRowOutputFormat>(buf, sample, format_settings, false);
-    });
+    factory.registerOutputFormat(
+        "JSONCompactWithProgress",
+        [](WriteBuffer & buf, const Block & sample, const FormatSettings & format_settings)
+        { return std::make_shared<JSONCompactWithProgressRowOutputFormat>(buf, sample, format_settings, false); });
 
-    factory.registerOutputFormat("JSONCompactWithProgressStrings", [](
-        WriteBuffer & buf,
-        const Block & sample,
-        const FormatSettings & format_settings)
-    {
-        return std::make_shared<JSONCompactWithProgressRowOutputFormat>(buf, sample, format_settings, true);
-    });
+    factory.registerOutputFormat(
+        "JSONCompactWithProgressStrings",
+        [](WriteBuffer & buf, const Block & sample, const FormatSettings & format_settings)
+        { return std::make_shared<JSONCompactWithProgressRowOutputFormat>(buf, sample, format_settings, true); });
 }
 
 }

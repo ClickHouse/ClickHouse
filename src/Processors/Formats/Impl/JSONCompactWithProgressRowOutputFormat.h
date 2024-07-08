@@ -14,11 +14,7 @@ struct FormatSettings;
 class JSONCompactWithProgressRowOutputFormat final : public JSONRowOutputFormat
 {
 public:
-    JSONCompactWithProgressRowOutputFormat(
-        WriteBuffer & out_,
-        const Block & header,
-        const FormatSettings & settings_,
-        bool yield_strings_);
+    JSONCompactWithProgressRowOutputFormat(WriteBuffer & out_, const Block & header, const FormatSettings & settings_, bool yield_strings_);
 
     String getName() const override { return "JSONCompactWithProgressRowOutputFormat"; }
 
