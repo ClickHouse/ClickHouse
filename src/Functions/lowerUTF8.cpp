@@ -32,7 +32,7 @@ REGISTER_FUNCTION(LowerUTF8)
     };
     FunctionDocumentation::Categories categories = {"String"};
 
-    factory.registerFunction<FunctionLowerUTF8>();
+    factory.registerFunction<FunctionLowerUTF8>({description, syntax, arguments, returned_value, examples, categories});
 }
 
 }
