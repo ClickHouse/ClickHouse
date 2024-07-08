@@ -52,19 +52,20 @@ public:
         String relative_path = validatePathAndGetAsRelative(command_arguments[0]);
 
         String path_output = config.getString("output", "");
+        const auto read_settings = getReadSettings();
 
         if (!path_output.empty())
         {
             String relative_path_output = validatePathAndGetAsRelative(path_output);
 
-            auto in = disk->readFile(relative_path);
+            auto in = disk->readFile(relative_path, read_settings);
             auto out = disk->writeFile(relative_path_output);
             copyData(*in, *out);
             out->finalize();
         }
         else
         {
-            auto in = disk->readFile(relative_path);
+            auto in = disk->readFile(relative_path, read_settings);
             std::unique_ptr<WriteBufferFromFileBase> out = std::make_unique<WriteBufferFromFileDescriptor>(STDOUT_FILENO);
             copyData(*in, *out);
         }

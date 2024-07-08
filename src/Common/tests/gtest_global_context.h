@@ -13,6 +13,7 @@ struct ContextHolder
     {
         context->makeGlobalContext();
         context->setPath("./");
+        const_cast<DB::Settings &>(context->getSettingsRef()).local_filesystem_read_method = "pread";
     }
 
     ContextHolder(ContextHolder &&) = default;
