@@ -41,11 +41,6 @@ enum class Component
     Second
 };
 
-bool isTimeComponentChange(Component type)
-{
-    return type == Component::Hour || type == Component::Minute || type == Component::Second;
-}
-
 }
 
 template <typename Traits>
@@ -65,11 +60,11 @@ public:
             {"date_or_datetime", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isDateOrDate32OrDateTimeOrDateTime64), nullptr, "Date or date with time"},
             {"value", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeInteger), nullptr, "Integer"}
         };
-        validateFunctionArgumentTypes(*this, arguments, args);
+        validateFunctionArguments(*this, arguments, args);
 
         const auto & input_type = arguments[0].type;
 
-        if (isTimeComponentChange(Traits::component))
+        if constexpr (Traits::component == Component::Hour || Traits::component == Component::Minute || Traits::component == Component::Second)
         {
             if (isDate(input_type))
                 return std::make_shared<DataTypeDateTime>();
@@ -85,13 +80,13 @@ public:
         const auto & input_type = arguments[0].type;
         if (isDate(input_type))
         {
-            if (isTimeComponentChange(Traits::component))
+            if constexpr (Traits::component == Component::Hour || Traits::component == Component::Minute || Traits::component == Component::Second)
                 return execute<DataTypeDate, DataTypeDateTime>(arguments, input_type, result_type, input_rows_count);
             return execute<DataTypeDate, DataTypeDate>(arguments, input_type, result_type, input_rows_count);
         }
         if (isDate32(input_type))
         {
-            if (isTimeComponentChange(Traits::component))
+            if constexpr (Traits::component == Component::Hour || Traits::component == Component::Minute || Traits::component == Component::Second)
                 return execute<DataTypeDate32, DataTypeDateTime64>(arguments, input_type, result_type, input_rows_count);
             return execute<DataTypeDate32, DataTypeDate32>(arguments, input_type, result_type, input_rows_count);
         }
@@ -109,83 +104,92 @@ public:
         bool is_const = (isColumnConst(*arguments[0].column) && isColumnConst(*arguments[1].column));
         size_t result_rows_count = (is_const ? 1 : input_rows_count);
 
-        typename ResultDataType::ColumnType::MutablePtr result_column;
+        typename ResultDataType::ColumnType::MutablePtr result_col;
         if constexpr (std::is_same_v<ResultDataType, DataTypeDateTime64>)
         {
             auto scale = DataTypeDateTime64::default_scale;
             if constexpr (std::is_same_v<InputDataType, DateTime64>)
                 scale = typeid_cast<const DataTypeDateTime64 &>(*result_type).getScale();
-            result_column = ResultDataType::ColumnType::create(result_rows_count, scale);
+            result_col = ResultDataType::ColumnType::create(result_rows_count, scale);
         }
         else
-            result_column = ResultDataType::ColumnType::create(result_rows_count);
+            result_col = ResultDataType::ColumnType::create(result_rows_count);
 
-        auto input_column = arguments[0].column->convertToFullIfNeeded();
-        const auto & input_column_data = typeid_cast<const typename InputDataType::ColumnType &>(*input_column).getData();
+        auto date_time_col = arguments[0].column->convertToFullIfNeeded();
+        const auto & date_time_col_data = typeid_cast<const typename InputDataType::ColumnType &>(*date_time_col).getData();
 
-        auto new_value_column = castColumn(arguments[1], std::make_shared<DataTypeFloat64>());
-        new_value_column = new_value_column->convertToFullIfNeeded();
-        const auto & new_value_column_data = typeid_cast<const ColumnFloat64 &>(*new_value_column).getData();
+        auto value_col = castColumn(arguments[1], std::make_shared<DataTypeFloat64>());
+        value_col = value_col->convertToFullIfNeeded();
+        const auto & value_col_data = typeid_cast<const ColumnFloat64 &>(*value_col).getData();
 
-        auto & result_data = result_column->getData();
+        auto & result_col_data = result_col->getData();
 
-        for (size_t i = 0; i < result_rows_count; ++i)
+        if constexpr (std::is_same_v<InputDataType, DataTypeDateTime64>)
         {
-            if constexpr (std::is_same_v<InputDataType, DataTypeDateTime64>)
+            const auto scale = typeid_cast<const DataTypeDateTime64 &>(*result_type).getScale();
+            const auto & date_lut = typeid_cast<const DataTypeDateTime64 &>(*result_type).getTimeZone();
+
+            Int64 deg = 1;
+            for (size_t j = 0; j < scale; ++j)
+                deg *= 10;
+
+            for (size_t i = 0; i < result_rows_count; ++i)
             {
-                const auto scale = typeid_cast<const DataTypeDateTime64 &>(*result_type).getScale();
-                const auto & date_lut = typeid_cast<const DataTypeDateTime64 &>(*result_type).getTimeZone();
+                Int64 time = date_lut.toNumYYYYMMDDhhmmss(date_time_col_data[i] / deg);
+                Int64 fraction = date_time_col_data[i] % deg;
 
-                Int64 deg = 1;
-                for (size_t j = 0; j < scale; ++j)
-                    deg *= 10;
-
-                Int64 time = date_lut.toNumYYYYMMDDhhmmss(input_column_data[i] / deg);
-                Int64 fraction = input_column_data[i] % deg;
-
-                result_data[i] = getChangedDate(time, new_value_column_data[i], result_type, date_lut, scale, fraction);
+                result_col_data[i] = getChangedDate(time, value_col_data[i], result_type, date_lut, scale, fraction);
             }
-            else if constexpr (std::is_same_v<InputDataType, DataTypeDate32> && std::is_same_v<ResultDataType, DataTypeDateTime64>)
+        }
+        else if constexpr (std::is_same_v<InputDataType, DataTypeDate32> && std::is_same_v<ResultDataType, DataTypeDateTime64>)
+        {
+            const auto & date_lut = typeid_cast<const DataTypeDateTime64 &>(*result_type).getTimeZone();
+            for (size_t i = 0; i < result_rows_count; ++i)
             {
-                const auto & date_lut = typeid_cast<const DataTypeDateTime64 &>(*result_type).getTimeZone();
-                Int64 time = static_cast<Int64>(date_lut.toNumYYYYMMDD(ExtendedDayNum(input_column_data[i]))) * 1'000'000;
-
-                result_data[i] = getChangedDate(time, new_value_column_data[i], result_type, date_lut, 3, 0);
+                Int64 time = static_cast<Int64>(date_lut.toNumYYYYMMDD(ExtendedDayNum(date_time_col_data[i]))) * 1'000'000;
+                result_col_data[i] = getChangedDate(time, value_col_data[i], result_type, date_lut, 3, 0);
             }
-            else if constexpr (std::is_same_v<InputDataType, DataTypeDate> && std::is_same_v<ResultDataType, DataTypeDateTime>)
+        }
+        else if constexpr (std::is_same_v<InputDataType, DataTypeDate> && std::is_same_v<ResultDataType, DataTypeDateTime>)
+        {
+            const auto & date_lut = typeid_cast<const DataTypeDateTime &>(*result_type).getTimeZone();
+            for (size_t i = 0; i < result_rows_count; ++i)
             {
-                const auto & date_lut = typeid_cast<const DataTypeDateTime &>(*result_type).getTimeZone();
-                Int64 time = static_cast<Int64>(date_lut.toNumYYYYMMDD(ExtendedDayNum(input_column_data[i]))) * 1'000'000;
-
-                result_data[i] = static_cast<UInt32>(getChangedDate(time, new_value_column_data[i], result_type, date_lut));
+                Int64 time = static_cast<Int64>(date_lut.toNumYYYYMMDD(ExtendedDayNum(date_time_col_data[i]))) * 1'000'000;
+                result_col_data[i] = static_cast<UInt32>(getChangedDate(time, value_col_data[i], result_type, date_lut));
             }
-            else if constexpr (std::is_same_v<InputDataType, DataTypeDateTime>)
+        }
+        else if constexpr (std::is_same_v<InputDataType, DataTypeDateTime>)
+        {
+            const auto & date_lut = typeid_cast<const DataTypeDateTime &>(*result_type).getTimeZone();
+            for (size_t i = 0; i < result_rows_count; ++i)
             {
-                const auto & date_lut = typeid_cast<const DataTypeDateTime &>(*result_type).getTimeZone();
-                Int64 time = date_lut.toNumYYYYMMDDhhmmss(input_column_data[i]);
-
-                result_data[i] = static_cast<UInt32>(getChangedDate(time, new_value_column_data[i], result_type, date_lut));
+                Int64 time = date_lut.toNumYYYYMMDDhhmmss(date_time_col_data[i]);
+                result_col_data[i] = static_cast<UInt32>(getChangedDate(time, value_col_data[i], result_type, date_lut));
             }
-            else
+        }
+        else
+        {
+            const auto & date_lut = DateLUT::instance();
+            for (size_t i = 0; i < result_rows_count; ++i)
             {
-                const auto & date_lut = DateLUT::instance();
                 Int64 time;
                 if (isDate(input_type))
-                    time = static_cast<Int64>(date_lut.toNumYYYYMMDD(DayNum(input_column_data[i]))) * 1'000'000;
+                    time = static_cast<Int64>(date_lut.toNumYYYYMMDD(DayNum(date_time_col_data[i]))) * 1'000'000;
                 else
-                    time = static_cast<Int64>(date_lut.toNumYYYYMMDD(ExtendedDayNum(input_column_data[i]))) * 1'000'000;
+                    time = static_cast<Int64>(date_lut.toNumYYYYMMDD(ExtendedDayNum(date_time_col_data[i]))) * 1'000'000;
 
                 if (isDate(result_type))
-                    result_data[i] = static_cast<UInt16>(getChangedDate(time, new_value_column_data[i], result_type, date_lut));
+                    result_col_data[i] = static_cast<UInt16>(getChangedDate(time, value_col_data[i], result_type, date_lut));
                 else
-                    result_data[i] = static_cast<Int32>(getChangedDate(time, new_value_column_data[i], result_type, date_lut));
+                    result_col_data[i] = static_cast<Int32>(getChangedDate(time, value_col_data[i], result_type, date_lut));
             }
         }
 
         if (is_const)
-            return ColumnConst::create(std::move(result_column), input_rows_count);
+            return ColumnConst::create(std::move(result_col), input_rows_count);
 
-        return result_column;
+        return result_col;
     }
 
     Int64 getChangedDate(Int64 time, Float64 new_value, const DataTypePtr & result_type, const DateLUTImpl & date_lut, Int64 scale = 0, Int64 fraction = 0) const

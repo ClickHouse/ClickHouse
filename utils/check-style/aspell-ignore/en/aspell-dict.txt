@@ -467,6 +467,7 @@ LOCALTIME
 LOCALTIMESTAMP
 LONGLONG
 LOONGARCH
+Lemire
 Levenshtein
 Liao
 LibFuzzer
@@ -1962,6 +1963,8 @@ loghouse
 london
 lookups
 loongarch
+lowCardinalityIndices
+lowCardinalityKeys
 lowcardinality
 lowerUTF
 lowercased
