@@ -1252,18 +1252,12 @@ std::vector<DatabaseCatalog::TablesMarkedAsDropped::iterator> DatabaseCatalog::g
 
     std::lock_guard lock(tables_marked_dropped_mutex);
 
-    auto it = tables_marked_dropped.begin();
-    while (it != tables_marked_dropped.end())
+    for (auto it = tables_marked_dropped.begin(); it != tables_marked_dropped.end(); ++it)
     {
         bool in_use = it->table && !it->table.unique();
         bool old_enough = it->drop_time <= current_time;
-        if (in_use || !old_enough)
-        {
-            ++it;
-            continue;
-        }
-
-        result.emplace_back(it);
+        if (!in_use && old_enough)
+            result.emplace_back(it);
     }
 
     return result;
