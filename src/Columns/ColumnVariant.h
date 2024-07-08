@@ -229,7 +229,11 @@ public:
     ColumnPtr indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const;
     ColumnPtr replicate(const Offsets & replicate_offsets) const override;
     MutableColumns scatter(ColumnIndex num_columns, const Selector & selector) const override;
+#if !defined(ABORT_ON_LOGICAL_ERROR)
+    int compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const override;
+#else
     int doCompareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const override;
+#endif
     bool hasEqualValues() const override;
     void getExtremes(Field & min, Field & max) const override;
     void getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,

@@ -32,7 +32,11 @@ namespace ErrorCodes
 }
 
 template <is_decimal T>
+#if !defined(ABORT_ON_LOGICAL_ERROR)
+int ColumnDecimal<T>::compareAt(size_t n, size_t m, const IColumn & rhs_, int) const
+#else
 int ColumnDecimal<T>::doCompareAt(size_t n, size_t m, const IColumn & rhs_, int) const
+#endif
 {
     auto & other = static_cast<const Self &>(rhs_);
     const T & a = data[n];

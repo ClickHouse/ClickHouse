@@ -137,7 +137,11 @@ public:
 
     void updateHashFast(SipHash & hash) const override;
 
+#if !defined(ABORT_ON_LOGICAL_ERROR)
+    int compareAt(size_t p1, size_t p2, const IColumn & rhs_, int /*nan_direction_hint*/) const override
+#else
     int doCompareAt(size_t p1, size_t p2, const IColumn & rhs_, int /*nan_direction_hint*/) const override
+#endif
     {
         const ColumnFixedString & rhs = assert_cast<const ColumnFixedString &>(rhs_);
         chassert(this->n == rhs.n);

@@ -222,7 +222,11 @@ MutableColumns ColumnMap::scatter(ColumnIndex num_columns, const Selector & sele
     return res;
 }
 
+#if !defined(ABORT_ON_LOGICAL_ERROR)
+int ColumnMap::compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const
+#else
 int ColumnMap::doCompareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const
+#endif
 {
     const auto & rhs_map = assert_cast<const ColumnMap &>(rhs);
     return nested->compareAt(n, m, rhs_map.getNestedColumn(), nan_direction_hint);

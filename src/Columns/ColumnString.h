@@ -250,7 +250,11 @@ public:
             offsets.push_back(offsets.back() + 1);
     }
 
+#if !defined(ABORT_ON_LOGICAL_ERROR)
+    int compareAt(size_t n, size_t m, const IColumn & rhs_, int /*nan_direction_hint*/) const override
+#else
     int doCompareAt(size_t n, size_t m, const IColumn & rhs_, int /*nan_direction_hint*/) const override
+#endif
     {
         const ColumnString & rhs = assert_cast<const ColumnString &>(rhs_);
         return memcmpSmallAllowOverflow15(chars.data() + offsetAt(n), sizeAt(n) - 1, rhs.chars.data() + rhs.offsetAt(m), rhs.sizeAt(m) - 1);

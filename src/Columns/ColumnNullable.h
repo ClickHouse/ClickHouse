@@ -102,7 +102,11 @@ public:
     void expand(const Filter & mask, bool inverted) override;
     ColumnPtr permute(const Permutation & perm, size_t limit) const override;
     ColumnPtr index(const IColumn & indexes, size_t limit) const override;
+#if !defined(ABORT_ON_LOGICAL_ERROR)
+    int compareAt(size_t n, size_t m, const IColumn & rhs_, int null_direction_hint) const override;
+#else
     int doCompareAt(size_t n, size_t m, const IColumn & rhs_, int null_direction_hint) const override;
+#endif
 
 #if USE_EMBEDDED_COMPILER
 

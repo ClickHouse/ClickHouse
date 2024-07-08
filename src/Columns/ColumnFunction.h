@@ -145,7 +145,11 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "popBack is not implemented for {}", getName());
     }
 
+#if !defined(ABORT_ON_LOGICAL_ERROR)
+    int compareAt(size_t, size_t, const IColumn &, int) const override
+#else
     int doCompareAt(size_t, size_t, const IColumn &, int) const override
+#endif
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "compareAt is not implemented for {}", getName());
     }

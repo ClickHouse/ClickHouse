@@ -104,7 +104,11 @@ public:
     void expand(const Filter &, bool) override { throwMustBeDecompressed(); }
     ColumnPtr permute(const Permutation &, size_t) const override { throwMustBeDecompressed(); }
     ColumnPtr index(const IColumn &, size_t) const override { throwMustBeDecompressed(); }
+#if !defined(ABORT_ON_LOGICAL_ERROR)
+    int compareAt(size_t, size_t, const IColumn &, int) const override { throwMustBeDecompressed(); }
+#else
     int doCompareAt(size_t, size_t, const IColumn &, int) const override { throwMustBeDecompressed(); }
+#endif
     void compareColumn(const IColumn &, size_t, PaddedPODArray<UInt64> *, PaddedPODArray<Int8> &, int, int) const override
     {
         throwMustBeDecompressed();

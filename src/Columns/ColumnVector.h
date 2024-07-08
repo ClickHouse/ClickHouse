@@ -150,7 +150,11 @@ public:
     }
 
     /// This method implemented in header because it could be possibly devirtualized.
+#if !defined(ABORT_ON_LOGICAL_ERROR)
+    int compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const override
+#else
     int doCompareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const override
+#endif
     {
         return CompareHelper<T>::compare(data[n], assert_cast<const Self &>(rhs_).data[m], nan_direction_hint);
     }

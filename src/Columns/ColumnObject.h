@@ -236,7 +236,11 @@ public:
     /// Order of rows in ColumnObject is undefined.
     void getPermutation(PermutationSortDirection, PermutationSortStability, size_t, int, Permutation & res) const override;
     void updatePermutation(PermutationSortDirection, PermutationSortStability, size_t, int, Permutation &, EqualRanges &) const override {}
+#if !defined(ABORT_ON_LOGICAL_ERROR)
+    int compareAt(size_t, size_t, const IColumn &, int) const override { return 0; }
+#else
     int doCompareAt(size_t, size_t, const IColumn &, int) const override { return 0; }
+#endif
     void getExtremes(Field & min, Field & max) const override;
 
     /// All other methods throw exception.

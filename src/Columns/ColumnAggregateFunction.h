@@ -211,7 +211,11 @@ public:
 
     MutableColumns scatter(ColumnIndex num_columns, const Selector & selector) const override;
 
+#if !defined(ABORT_ON_LOGICAL_ERROR)
+    int compareAt(size_t, size_t, const IColumn &, int) const override
+#else
     int doCompareAt(size_t, size_t, const IColumn &, int) const override
+#endif
     {
         return 0;
     }

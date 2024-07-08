@@ -345,11 +345,15 @@ public:
       *
       * For non Nullable and non floating point types, nan_direction_hint is ignored.
       */
+#if !defined(ABORT_ON_LOGICAL_ERROR)
+    [[nodiscard]] virtual int compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const = 0;
+#else
     [[nodiscard]] int compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const
     {
         assertTypeEquality(rhs);
         return doCompareAt(n, m, rhs, nan_direction_hint);
     }
+#endif
 
 #if USE_EMBEDDED_COMPILER
 
@@ -673,7 +677,6 @@ protected:
         for (size_t i = 0; i < length; ++i)
             insertFrom(src, position);
     }
-#endif
 
     virtual int doCompareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const = 0;
 
@@ -685,6 +688,7 @@ private:
         /// For the rest of column types we can compare the types directly.
         chassert((isConst() || isSparse()) ? getDataType() == rhs.getDataType() : typeid(*this) == typeid(rhs));
     }
+#endif
 };
 
 using ColumnPtr = IColumn::Ptr;

@@ -103,7 +103,11 @@ public:
     ColumnPtr permute(const Permutation & perm, size_t limit) const override;
     ColumnPtr index(const IColumn & indexes, size_t limit) const override;
     template <typename Type> ColumnPtr indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const;
+#if !defined(ABORT_ON_LOGICAL_ERROR)
+    int compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const override;
+#else
     int doCompareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const override;
+#endif
     int compareAtWithCollation(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint, const Collator & collator) const override;
     void getPermutation(PermutationSortDirection direction, PermutationSortStability stability,
                             size_t limit, int nan_direction_hint, Permutation & res) const override;

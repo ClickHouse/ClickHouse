@@ -599,7 +599,11 @@ void ColumnDynamic::updateHashWithValue(size_t n, SipHash & hash) const
     variant_col.getVariantByGlobalDiscriminator(discr).updateHashWithValue(variant_col.offsetAt(n), hash);
 }
 
+#if !defined(ABORT_ON_LOGICAL_ERROR)
+int ColumnDynamic::compareAt(size_t n, size_t m, const DB::IColumn & rhs, int nan_direction_hint) const
+#else
 int ColumnDynamic::doCompareAt(size_t n, size_t m, const DB::IColumn & rhs, int nan_direction_hint) const
+#endif
 {
     const auto & left_variant = assert_cast<const ColumnVariant &>(*variant_column);
     const auto & right_dynamic = assert_cast<const ColumnDynamic &>(rhs);

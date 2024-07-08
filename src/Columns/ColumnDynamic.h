@@ -225,7 +225,11 @@ public:
         return scattered_columns;
     }
 
+#if !defined(ABORT_ON_LOGICAL_ERROR)
+    int compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const override;
+#else
     int doCompareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const override;
+#endif
 
     bool hasEqualValues() const override
     {

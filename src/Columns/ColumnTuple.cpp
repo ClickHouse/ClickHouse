@@ -482,7 +482,11 @@ int ColumnTuple::compareAtImpl(size_t n, size_t m, const IColumn & rhs, int nan_
     return 0;
 }
 
+#if !defined(ABORT_ON_LOGICAL_ERROR)
+int ColumnTuple::compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const
+#else
 int ColumnTuple::doCompareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const
+#endif
 {
     return compareAtImpl(n, m, rhs, nan_direction_hint);
 }

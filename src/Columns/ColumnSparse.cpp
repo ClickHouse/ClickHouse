@@ -454,7 +454,11 @@ ColumnPtr ColumnSparse::indexImpl(const PaddedPODArray<Type> & indexes, size_t l
     return ColumnSparse::create(std::move(res_values), std::move(res_offsets), limit);
 }
 
+#if !defined(ABORT_ON_LOGICAL_ERROR)
+int ColumnSparse::compareAt(size_t n, size_t m, const IColumn & rhs_, int null_direction_hint) const
+#else
 int ColumnSparse::doCompareAt(size_t n, size_t m, const IColumn & rhs_, int null_direction_hint) const
+#endif
 {
     if (const auto * rhs_sparse = typeid_cast<const ColumnSparse *>(&rhs_))
         return values->compareAt(getValueIndex(n), rhs_sparse->getValueIndex(m), rhs_sparse->getValuesColumn(), null_direction_hint);

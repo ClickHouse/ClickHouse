@@ -237,7 +237,11 @@ public:
         return data->allocatedBytes() + sizeof(s);
     }
 
+#if !defined(ABORT_ON_LOGICAL_ERROR)
+    int compareAt(size_t, size_t, const IColumn & rhs, int nan_direction_hint) const override
+#else
     int doCompareAt(size_t, size_t, const IColumn & rhs, int nan_direction_hint) const override
+#endif
     {
         return data->compareAt(0, 0, *assert_cast<const ColumnConst &>(rhs).data, nan_direction_hint);
     }

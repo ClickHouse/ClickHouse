@@ -396,7 +396,11 @@ int ColumnArray::compareAtImpl(size_t n, size_t m, const IColumn & rhs_, int nan
             : 1);
 }
 
+#if !defined(ABORT_ON_LOGICAL_ERROR)
+int ColumnArray::compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const
+#else
 int ColumnArray::doCompareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const
+#endif
 {
     return compareAtImpl(n, m, rhs_, nan_direction_hint);
 }
