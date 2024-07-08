@@ -38,6 +38,11 @@ void StorageSystemNumbers::read(
     size_t max_block_size,
     size_t num_streams)
 {
+    if (limit && *limit < max_block_size)
+    {
+        max_block_size = static_cast<size_t>(*limit);
+        multithreaded = false;
+    }
     query_plan.addStep(std::make_unique<ReadFromSystemNumbersStep>(
         column_names, query_info, storage_snapshot, context, shared_from_this(), max_block_size, num_streams));
 }
