@@ -6,6 +6,8 @@
 #include <Interpreters/Cache/FileSegment.h>
 #include <Interpreters/Cache/FileCache_fwd_internal.h>
 #include <Common/ThreadPool.h>
+
+#include <memory>
 #include <shared_mutex>
 
 namespace DB
@@ -30,7 +32,7 @@ struct FileSegmentMetadata : private boost::noncopyable
 
     explicit FileSegmentMetadata(FileSegmentPtr && file_segment_);
 
-    bool releasable() const { return file_segment.unique(); }
+    bool releasable() const { return file_segment.use_count() == 1; }
 
     size_t size() const;
 

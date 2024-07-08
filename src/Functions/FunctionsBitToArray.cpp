@@ -284,7 +284,13 @@ public:
             {
                 while (x)
                 {
-                    result_array_values_data.push_back(std::countr_zero(x));
+                    /// С++20 char8_t is not an unsigned type anymore
+                    /// https://stackoverflow.com/questions/57402464/is-c20-char8-t-the-same-as-our-old-char
+                    // and thus you cannot use std::countr_zero on it.
+                    if constexpr (std::is_same_v<UnsignedType, UInt8>)
+                        result_array_values_data.push_back(std::countr_zero(static_cast<unsigned char>(x)));
+                    else
+                        result_array_values_data.push_back(std::countr_zero(x));
                     x &= (x - 1);
                 }
             }
@@ -336,4 +342,3 @@ REGISTER_FUNCTION(BitToArray)
 }
 
 }
-
