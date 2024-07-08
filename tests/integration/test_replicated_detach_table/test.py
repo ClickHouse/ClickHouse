@@ -45,7 +45,6 @@ def test_replicated_detach_table(start_cluster):
         ORDER BY number
         """
     )
-
     replica1.query(
         "INSERT INTO repl_db.test_replicated_table SELECT number FROM system.numbers LIMIT 6;"
     )
