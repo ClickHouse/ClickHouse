@@ -88,6 +88,7 @@ endif()
 set(SOURCES
     ${ROCKSDB_SOURCE_DIR}/cache/cache.cc
     ${ROCKSDB_SOURCE_DIR}/cache/cache_entry_roles.cc
+    ${ROCKSDB_SOURCE_DIR}/cache/cache_reservation_manager.cc
     ${ROCKSDB_SOURCE_DIR}/cache/clock_cache.cc
     ${ROCKSDB_SOURCE_DIR}/cache/lru_cache.cc
     ${ROCKSDB_SOURCE_DIR}/cache/sharded_cache.cc
@@ -176,6 +177,7 @@ set(SOURCES
     ${ROCKSDB_SOURCE_DIR}/env/file_system_tracer.cc
     ${ROCKSDB_SOURCE_DIR}/env/fs_remap.cc
     ${ROCKSDB_SOURCE_DIR}/env/mock_env.cc
+    ${ROCKSDB_SOURCE_DIR}/env/unique_id.cc
     ${ROCKSDB_SOURCE_DIR}/file/delete_scheduler.cc
     ${ROCKSDB_SOURCE_DIR}/file/file_prefetch_buffer.cc
     ${ROCKSDB_SOURCE_DIR}/file/file_util.cc
@@ -297,6 +299,7 @@ set(SOURCES
     ${ROCKSDB_SOURCE_DIR}/util/murmurhash.cc
     ${ROCKSDB_SOURCE_DIR}/util/random.cc
     ${ROCKSDB_SOURCE_DIR}/util/rate_limiter.cc
+    ${ROCKSDB_SOURCE_DIR}/util/regex.cc
     ${ROCKSDB_SOURCE_DIR}/util/ribbon_config.cc
     ${ROCKSDB_SOURCE_DIR}/util/slice.cc
     ${ROCKSDB_SOURCE_DIR}/util/file_checksum_helper.cc
