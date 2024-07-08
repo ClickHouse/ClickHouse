@@ -21,6 +21,8 @@ void setJemallocBackgroundThreads(bool enabled);
 
 void setJemallocMaxBackgroundThreads(size_t max_threads);
 
+std::string getJemallocStats();
+
 }
 
 #endif

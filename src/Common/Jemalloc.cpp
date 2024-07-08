@@ -108,6 +108,22 @@ void setJemallocMaxBackgroundThreads(size_t max_threads)
     setJemallocValue("max_background_threads", max_threads);
 }
 
+namespace
+{
+void printToString(void * output, const char * data)
+{
+    std::string * output_data = reinterpret_cast<std::string *>(output);
+    *output_data += std::string(data);
+}
+}
+
+std::string getJemallocStats()
+{
+    std::string output;
+    malloc_stats_print(printToString, &output, nullptr);
+    return output;
+}
+
 }
 
 #endif
