@@ -26,6 +26,12 @@ IProcessor::Status BufferChunksTransform::prepare()
         return Status::Finished;
     }
 
+    if (input.isFinished() && chunks.empty())
+    {
+        output.finish();
+        return Status::Finished;
+    }
+
     if (output.canPush())
     {
         input.setNeeded();
@@ -44,11 +50,6 @@ IProcessor::Status BufferChunksTransform::prepare()
         {
             auto chunk = pullChunk();
             output.push(std::move(chunk));
-        }
-        else if (input.isFinished())
-        {
-            output.finish();
-            return Status::Finished;
         }
     }
 

@@ -5,9 +5,15 @@
 namespace DB
 {
 
+/// Transform that buffers chunks from the input
+/// up to the certain limit  and pushes chunks to
+/// the output whenever it is ready. It can be used
+/// to increase parallelism of execution, for example
+/// when it is adeded before MergingSortedTransform.
 class BufferChunksTransform : public IProcessor
 {
 public:
+    /// OR condition is used for the limits on rows and bytes.
     BufferChunksTransform(
         const Block & header_,
         size_t max_rows_to_buffer_,
