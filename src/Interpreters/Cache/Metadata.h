@@ -1,5 +1,8 @@
 #pragma once
+
+
 #include <boost/noncopyable.hpp>
+#include <base/isSharedPtrUnique.h>
 #include <Interpreters/Cache/Guards.h>
 #include <Interpreters/Cache/IFileCachePriority.h>
 #include <Interpreters/Cache/FileCacheKey.h>
@@ -32,7 +35,7 @@ struct FileSegmentMetadata : private boost::noncopyable
 
     explicit FileSegmentMetadata(FileSegmentPtr && file_segment_);
 
-    bool releasable() const { return file_segment.use_count() == 1; }
+    bool releasable() const { return isSharedPtrUnique(file_segment); }
 
     size_t size() const;
 
