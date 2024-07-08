@@ -66,7 +66,11 @@ public:
     void updateHashWithValue(size_t n, SipHash & hash) const override;
     void updateWeakHash32(WeakHash32 & hash) const override;
     void updateHashFast(SipHash & hash) const override;
+#if !defined(ABORT_ON_LOGICAL_ERROR)
+    void insertFrom(const IColumn & src_, size_t n) override;
+#else
     void doInsertFrom(const IColumn & src_, size_t n) override;
+#endif
 #if !defined(ABORT_ON_LOGICAL_ERROR)
     void insertManyFrom(const IColumn & src, size_t position, size_t length) override;
 #else

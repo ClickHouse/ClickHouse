@@ -98,7 +98,11 @@ public:
 
     bool tryInsert(const Field & x) override;
 
+#if !defined(ABORT_ON_LOGICAL_ERROR)
+    void insertFrom(const IColumn & src_, size_t index) override;
+#else
     void doInsertFrom(const IColumn & src_, size_t index) override;
+#endif
 
 #if !defined(ABORT_ON_LOGICAL_ERROR)
     void insertManyFrom(const IColumn & src, size_t position, size_t length) override;

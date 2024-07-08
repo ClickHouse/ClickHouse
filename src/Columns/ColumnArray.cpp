@@ -337,7 +337,11 @@ bool ColumnArray::tryInsert(const Field & x)
     return true;
 }
 
+#if !defined(ABORT_ON_LOGICAL_ERROR)
+void ColumnArray::insertFrom(const IColumn & src_, size_t n)
+#else
 void ColumnArray::doInsertFrom(const IColumn & src_, size_t n)
+#endif
 {
     const ColumnArray & src = assert_cast<const ColumnArray &>(src_);
     size_t size = src.sizeAt(n);

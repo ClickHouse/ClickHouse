@@ -595,7 +595,11 @@ void ColumnVariant::insertManyFromImpl(const DB::IColumn & src_, size_t position
     }
 }
 
+#if !defined(ABORT_ON_LOGICAL_ERROR)
+void ColumnVariant::insertFrom(const IColumn & src_, size_t n)
+#else
 void ColumnVariant::doInsertFrom(const IColumn & src_, size_t n)
+#endif
 {
     insertFromImpl(src_, n, nullptr);
 }

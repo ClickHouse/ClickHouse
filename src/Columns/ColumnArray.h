@@ -91,7 +91,11 @@ public:
 #endif
     void insert(const Field & x) override;
     bool tryInsert(const Field & x) override;
+#if !defined(ABORT_ON_LOGICAL_ERROR)
+    void insertFrom(const IColumn & src_, size_t n) override;
+#else
     void doInsertFrom(const IColumn & src_, size_t n) override;
+#endif
     void insertDefault() override;
     void popBack(size_t n) override;
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;

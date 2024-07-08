@@ -262,7 +262,11 @@ bool ColumnNullable::tryInsert(const Field & x)
     return true;
 }
 
+#if !defined(ABORT_ON_LOGICAL_ERROR)
+void ColumnNullable::insertFrom(const IColumn & src, size_t n)
+#else
 void ColumnNullable::doInsertFrom(const IColumn & src, size_t n)
+#endif
 {
     const ColumnNullable & src_concrete = assert_cast<const ColumnNullable &>(src);
     getNestedColumn().insertFrom(src_concrete.getNestedColumn(), n);

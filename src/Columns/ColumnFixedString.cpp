@@ -74,7 +74,11 @@ bool ColumnFixedString::tryInsert(const Field & x)
     return true;
 }
 
+#if !defined(ABORT_ON_LOGICAL_ERROR)
+void ColumnFixedString::insertFrom(const IColumn & src_, size_t index)
+#else
 void ColumnFixedString::doInsertFrom(const IColumn & src_, size_t index)
+#endif
 {
     const ColumnFixedString & src = assert_cast<const ColumnFixedString &>(src_);
 

@@ -142,7 +142,11 @@ public:
         return true;
     }
 
+#if !defined(ABORT_ON_LOGICAL_ERROR)
+    void insertFrom(const IColumn & src_, size_t n) override
+#else
     void doInsertFrom(const IColumn & src_, size_t n) override
+#endif
     {
         const ColumnString & src = assert_cast<const ColumnString &>(src_);
         const size_t size_to_append = src.offsets[n] - src.offsets[n - 1];  /// -1th index is Ok, see PaddedPODArray.

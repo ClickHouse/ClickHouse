@@ -205,7 +205,11 @@ bool ColumnTuple::tryInsert(const Field & x)
     return true;
 }
 
+#if !defined(ABORT_ON_LOGICAL_ERROR)
+void ColumnTuple::insertFrom(const IColumn & src_, size_t n)
+#else
 void ColumnTuple::doInsertFrom(const IColumn & src_, size_t n)
+#endif
 {
     const ColumnTuple & src = assert_cast<const ColumnTuple &>(src_);
 

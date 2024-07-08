@@ -252,7 +252,11 @@ bool ColumnSparse::tryInsert(const Field & x)
     return true;
 }
 
+#if !defined(ABORT_ON_LOGICAL_ERROR)
+void ColumnSparse::insertFrom(const IColumn & src, size_t n)
+#else
 void ColumnSparse::doInsertFrom(const IColumn & src, size_t n)
+#endif
 {
     if (const auto * src_sparse = typeid_cast<const ColumnSparse *>(&src))
     {

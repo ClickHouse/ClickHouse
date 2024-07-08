@@ -209,7 +209,11 @@ public:
     void insert(const Field & field) override;
     bool tryInsert(const Field & field) override;
     void insertDefault() override;
+#if !defined(ABORT_ON_LOGICAL_ERROR)
+    void insertFrom(const IColumn & src, size_t n) override;
+#else
     void doInsertFrom(const IColumn & src, size_t n) override;
+#endif
 #if !defined(ABORT_ON_LOGICAL_ERROR)
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
 #else

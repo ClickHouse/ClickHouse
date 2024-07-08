@@ -151,7 +151,11 @@ public:
         ++s;
     }
 
+#if !defined(ABORT_ON_LOGICAL_ERROR)
+    void insertFrom(const IColumn &, size_t) override
+#else
     void doInsertFrom(const IColumn &, size_t) override
+#endif
     {
         ++s;
     }

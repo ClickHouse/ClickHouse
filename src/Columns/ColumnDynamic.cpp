@@ -213,7 +213,11 @@ bool ColumnDynamic::tryInsert(const DB::Field & x)
 }
 
 
+#if !defined(ABORT_ON_LOGICAL_ERROR)
+void ColumnDynamic::insertFrom(const DB::IColumn & src_, size_t n)
+#else
 void ColumnDynamic::doInsertFrom(const DB::IColumn & src_, size_t n)
+#endif
 {
     const auto & dynamic_src = assert_cast<const ColumnDynamic &>(src_);
 

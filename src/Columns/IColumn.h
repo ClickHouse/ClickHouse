@@ -179,11 +179,15 @@ public:
 
     /// Appends n-th element from other column with the same type.
     /// Is used in merge-sort and merges. It could be implemented in inherited classes more optimally than default implementation.
+#if !defined(ABORT_ON_LOGICAL_ERROR)
+    virtual void insertFrom(const IColumn & src, size_t n);
+#else
     void insertFrom(const IColumn & src, size_t n)
     {
         assertTypeEquality(src);
         doInsertFrom(src, n);
     }
+#endif
 
     /// Appends range of elements from other column with the same type.
     /// Could be used to concatenate columns.
@@ -659,13 +663,11 @@ protected:
         Sort full_sort,
         PartialSort partial_sort) const;
 
+#if defined(ABORT_ON_LOGICAL_ERROR)
     virtual void doInsertFrom(const IColumn & src, size_t n);
 
-#if defined(ABORT_ON_LOGICAL_ERROR)
     virtual void doInsertRangeFrom(const IColumn & src, size_t start, size_t length) = 0;
-#endif
 
-#if defined(ABORT_ON_LOGICAL_ERROR)
     virtual void doInsertManyFrom(const IColumn & src, size_t position, size_t length)
     {
         for (size_t i = 0; i < length; ++i)

@@ -159,7 +159,11 @@ void ColumnLowCardinality::insertDefault()
     idx.insertPosition(getDictionary().getDefaultValueIndex());
 }
 
+#if !defined(ABORT_ON_LOGICAL_ERROR)
+void ColumnLowCardinality::insertFrom(const IColumn & src, size_t n)
+#else
 void ColumnLowCardinality::doInsertFrom(const IColumn & src, size_t n)
+#endif
 {
     const auto * low_cardinality_src = typeid_cast<const ColumnLowCardinality *>(&src);
 

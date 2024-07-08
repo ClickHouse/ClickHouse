@@ -55,7 +55,11 @@ public:
     void reserve(size_t n) override { data.reserve_exact(n); }
     void shrinkToFit() override { data.shrink_to_fit(); }
 
+#if !defined(ABORT_ON_LOGICAL_ERROR)
+    void insertFrom(const IColumn & src, size_t n) override { data.push_back(static_cast<const Self &>(src).getData()[n]); }
+#else
     void doInsertFrom(const IColumn & src, size_t n) override { data.push_back(static_cast<const Self &>(src).getData()[n]); }
+#endif
 
 #if !defined(ABORT_ON_LOGICAL_ERROR)
     void insertManyFrom(const IColumn & src, size_t position, size_t length) override

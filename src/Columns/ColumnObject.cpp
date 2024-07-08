@@ -763,7 +763,11 @@ void ColumnObject::get(size_t n, Field & res) const
     }
 }
 
+#if !defined(ABORT_ON_LOGICAL_ERROR)
+void ColumnObject::insertFrom(const IColumn & src, size_t n)
+#else
 void ColumnObject::doInsertFrom(const IColumn & src, size_t n)
+#endif
 {
     insert(src[n]);
 }

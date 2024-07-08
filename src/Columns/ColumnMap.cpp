@@ -153,7 +153,11 @@ void ColumnMap::updateHashFast(SipHash & hash) const
     nested->updateHashFast(hash);
 }
 
+#if !defined(ABORT_ON_LOGICAL_ERROR)
+void ColumnMap::insertFrom(const IColumn & src, size_t n)
+#else
 void ColumnMap::doInsertFrom(const IColumn & src, size_t n)
+#endif
 {
     nested->insertFrom(assert_cast<const ColumnMap &>(src).getNestedColumn(), n);
 }

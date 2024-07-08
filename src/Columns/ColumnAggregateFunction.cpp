@@ -466,7 +466,11 @@ void ColumnAggregateFunction::insertFromWithOwnership(const IColumn & from, size
     insertMergeFrom(from, n);
 }
 
+#if !defined(ABORT_ON_LOGICAL_ERROR)
+void ColumnAggregateFunction::insertFrom(const IColumn & from, size_t n)
+#else
 void ColumnAggregateFunction::doInsertFrom(const IColumn & from, size_t n)
+#endif
 {
     insertRangeFrom(from, n, 1);
 }

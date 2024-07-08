@@ -64,7 +64,11 @@ public:
         return data.size();
     }
 
+#if !defined(ABORT_ON_LOGICAL_ERROR)
+    void insertFrom(const IColumn & src, size_t n) override
+#else
     void doInsertFrom(const IColumn & src, size_t n) override
+#endif
     {
         data.push_back(assert_cast<const Self &>(src).getData()[n]);
     }

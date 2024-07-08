@@ -145,7 +145,11 @@ public:
 
     void insertData(const char * pos, size_t length) override;
 
+#if !defined(ABORT_ON_LOGICAL_ERROR)
+    void insertFrom(const IColumn & from, size_t n) override;
+#else
     void doInsertFrom(const IColumn & from, size_t n) override;
+#endif
 
     using IColumn::insertFrom;
 
