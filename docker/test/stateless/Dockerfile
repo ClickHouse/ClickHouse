@@ -25,10 +25,7 @@ RUN apt-get update -y \
             openssl \
             postgresql-client \
             python3 \
-            python3-lxml \
             python3-pip \
-            python3-requests \
-            python3-termcolor \
             qemu-user-static \
             sqlite3 \
             sudo \
@@ -51,7 +48,8 @@ RUN curl -OL https://github.com/protocolbuffers/protobuf/releases/download/v${PR
     && unzip protoc-${PROTOC_VERSION}-linux-x86_64.zip -d /usr/local \
     && rm protoc-${PROTOC_VERSION}-linux-x86_64.zip
 
-RUN pip3 install numpy==1.26.3 scipy==1.12.0 pandas==1.5.3 Jinja2==3.1.3 pyarrow==15.0.0
+COPY requirements.txt /
+RUN pip3 install --no-cache-dir -r /requirements.txt
 
 RUN mkdir -p /tmp/clickhouse-odbc-tmp \
   && cd /tmp/clickhouse-odbc-tmp \

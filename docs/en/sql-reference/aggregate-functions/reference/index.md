@@ -43,6 +43,7 @@ Standard aggregate functions:
 
 ClickHouse-specific aggregate functions:
 
+- [aggThrow](../reference/aggthrow.md)
 - [analysisOfVariance](../reference/analysis_of_variance.md)
 - [any](../reference/any_respect_nulls.md)
 - [anyHeavy](../reference/anyheavy.md)

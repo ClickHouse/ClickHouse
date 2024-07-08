@@ -44,7 +44,7 @@ struct Memory : boost::noncopyable, Allocator
     char * m_data = nullptr;
     size_t alignment = 0;
 
-    [[maybe_unused]] bool allow_gwp_asan_force_sample;
+    [[maybe_unused]] bool allow_gwp_asan_force_sample{false};
 
     Memory() = default;
 
