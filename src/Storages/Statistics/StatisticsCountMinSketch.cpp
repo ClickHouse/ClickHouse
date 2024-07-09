@@ -33,10 +33,9 @@ Float64 StatisticsCountMinSketch::estimateEqual(const Field & val) const
 {
     if (data_type->isValueRepresentedByNumber())
     {
-        /// convertFieldToType will
+        /// 'val' maybe number or string, method 'convertFieldToType' will
         ///     1. convert string to number, date, datetime, IPv4, Decimal etc
-        ///     2. do other conversion
-        ///     3. return null if val larger than the range of data_type
+        ///     2. return null if val larger than the range of data_type
         auto val_converted = convertFieldToType(val, *data_type);
         if (val_converted.isNull())
             return 0;
@@ -87,7 +86,7 @@ void StatisticsCountMinSketch::deserialize(ReadBuffer & buf)
     readIntBinary(size, buf);
 
     Sketch::vector_bytes bytes;
-    bytes.reserve(size);
+    bytes.resize(size); /// To avoid 'container-overflow' in AddressSanitizer checking
     buf.readStrict(reinterpret_cast<char *>(bytes.data()), size);
 
     sketch = Sketch::deserialize(bytes.data(), size);

@@ -17,7 +17,7 @@ Test statistics count_min:
 Test statistics multi-types:
         Prewhere info
           Prewhere filter
-          Prewhere filter column: and(equals(a, \'0\'), less(c, -90), greater(b, 900_UInt16)) (removed)
+          Prewhere filter column: and(equals(a, \'0\'), less(c, -90), greater(b, 900)) (removed)
         Prewhere info
           Prewhere filter
           Prewhere filter column: and(equals(a, \'10000\'), equals(b, 0), less(c, 0)) (removed)

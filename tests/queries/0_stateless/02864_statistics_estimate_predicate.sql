@@ -26,11 +26,11 @@ SELECT 'Test statistics TDigest:';
 ALTER TABLE tab ADD STATISTICS b, c TYPE tdigest;
 ALTER TABLE tab MATERIALIZE STATISTICS b, c;
 
-SELECT replaceRegexpAll(explain, '__table1.|_UInt8|_Int8|_String', '')
+SELECT replaceRegexpAll(explain, '__table1.|_UInt8|_Int8|_UInt16|_String', '')
 FROM (EXPLAIN actions=1 SELECT count(*) FROM tab WHERE b > 0/*9990*/ and c < -98/*100*/)
 WHERE explain LIKE '%Prewhere%' OR explain LIKE '%Filter column%';
 
-SELECT replaceRegexpAll(explain, '__table1.|_UInt8|_Int8|_String', '')
+SELECT replaceRegexpAll(explain, '__table1.|_UInt8|_Int8|_UInt16|_String', '')
 FROM (EXPLAIN actions=1 SELECT count(*) FROM tab WHERE b = 0/*1000*/ and c < -98/*100*/)
 WHERE explain LIKE '%Prewhere%' OR explain LIKE '%Filter column%';
 
@@ -41,7 +41,7 @@ SELECT 'Test statistics Uniq:';
 
 ALTER TABLE tab ADD STATISTICS b TYPE uniq, tdigest;
 ALTER TABLE tab MATERIALIZE STATISTICS b;
-SELECT replaceRegexpAll(explain, '__table1.|_UInt8|_Int8|_String', '')
+SELECT replaceRegexpAll(explain, '__table1.|_UInt8|_Int8|_UInt16|_String', '')
 FROM (EXPLAIN actions=1 SELECT count(*) FROM tab WHERE c = 0/*1000*/ and b = 0/*10*/)
 WHERE explain LIKE '%Prewhere%' OR explain LIKE '%Filter column%';
 
@@ -55,7 +55,7 @@ ALTER TABLE tab ADD STATISTICS b TYPE count_min;
 ALTER TABLE tab ADD STATISTICS c TYPE count_min;
 ALTER TABLE tab MATERIALIZE STATISTICS a, b, c;
 
-SELECT replaceRegexpAll(explain, '__table1.|_UInt8|_Int8|_String', '')
+SELECT replaceRegexpAll(explain, '__table1.|_UInt8|_Int8|_UInt16|_String', '')
 FROM (EXPLAIN actions=1 SELECT count(*) FROM tab WHERE c = 0/*100*/ and b = 0/*10*/ and a = '0'/*1*/) xx
 WHERE explain LIKE '%Prewhere%' OR explain LIKE '%Filter column%';
 
@@ -69,11 +69,11 @@ ALTER TABLE tab ADD STATISTICS b TYPE count_min, uniq, tdigest;
 ALTER TABLE tab ADD STATISTICS c TYPE count_min, uniq, tdigest;
 ALTER TABLE tab MATERIALIZE STATISTICS a, b, c;
 
-SELECT replaceRegexpAll(explain, '__table1.|_UInt8|_Int8|_String', '')
+SELECT replaceRegexpAll(explain, '__table1.|_UInt8|_Int8|_UInt16|_String', '')
 FROM (EXPLAIN actions=1 SELECT count(*) FROM tab WHERE c < -90/*900*/ and b > 900/*990*/ and a = '0'/*1*/)
 WHERE explain LIKE '%Prewhere%' OR explain LIKE '%Filter column%';
 
-SELECT replaceRegexpAll(explain, '__table1.|_UInt8|_Int8|_String', '')
+SELECT replaceRegexpAll(explain, '__table1.|_UInt8|_Int8|_UInt16|_String', '')
 FROM (EXPLAIN actions=1 SELECT count(*) FROM tab WHERE c < 0/*9900*/ and b = 0/*10*/ and a = '10000'/*0*/)
 WHERE explain LIKE '%Prewhere%' OR explain LIKE '%Filter column%';
 
