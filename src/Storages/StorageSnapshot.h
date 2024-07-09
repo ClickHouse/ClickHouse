@@ -18,6 +18,7 @@ struct StorageSnapshot
     const IStorage & storage;
     const StorageMetadataPtr metadata;
     const VirtualsDescriptionPtr virtual_columns;
+    const VirtualsDescriptionPtr all_virtual_columns;
     const ColumnsDescription object_columns;
 
     /// Additional data, on which set of columns may depend.
@@ -40,7 +41,8 @@ struct StorageSnapshot
     StorageSnapshot(
         const IStorage & storage_,
         StorageMetadataPtr metadata_,
-        VirtualsDescriptionPtr virtual_columns_);
+        VirtualsDescriptionPtr virtual_columns_,
+        VirtualsDescriptionPtr all_virtual_columns_);
 
     StorageSnapshot(
         const IStorage & storage_,

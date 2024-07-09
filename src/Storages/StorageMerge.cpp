@@ -351,8 +351,10 @@ StorageSnapshotPtr StorageMerge::getStorageSnapshot(const StorageMetadataPtr & m
         }
     }
 
+    auto all_virtuals = virtuals;
     auto virtuals_ptr = std::make_shared<VirtualColumnsDescription>(std::move(virtuals));
-    return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, std::move(virtuals_ptr));
+    auto all_virtuals_ptr = std::make_shared<VirtualColumnsDescription>(std::move(all_virtuals));
+    return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, std::move(virtuals_ptr), std::move(all_virtuals_ptr));
 }
 
 void StorageMerge::read(
@@ -905,7 +907,7 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
         modified_query_info.table_expression = replacement_table_expression;
         modified_query_info.planner_context->getOrCreateTableExpressionData(replacement_table_expression);
 
-        auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withExtendedObjects().withVirtuals();
+        auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withExtendedObjects();
         if (storage_snapshot_->storage.supportsSubcolumns())
             get_column_options.withSubcolumns();
 
