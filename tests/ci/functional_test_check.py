@@ -253,7 +253,7 @@ def main():
     packages_path.mkdir(parents=True, exist_ok=True)
 
     if validate_bugfix_check:
-        download_last_release(packages_path)
+        download_last_release(packages_path, debug=True)
     else:
         download_all_deb_packages(check_name, reports_path, packages_path)
 

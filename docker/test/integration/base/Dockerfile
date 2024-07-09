@@ -33,7 +33,8 @@ RUN apt-get update \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
-RUN pip3 install pycurl
+COPY requirements.txt /
+RUN pip3 install --no-cache-dir -r requirements.txt && rm -rf /root/.cache/pip
 
 # Architecture of the image when BuildKit/buildx is used
 ARG TARGETARCH
