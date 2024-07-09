@@ -17,10 +17,6 @@
 
 namespace DB
 {
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
 
 /// Storage for read-only integration with Apache Iceberg tables in Amazon S3 (see https://iceberg.apache.org/)
 /// Right now it's implemented on top of StorageS3 and right now it doesn't support
