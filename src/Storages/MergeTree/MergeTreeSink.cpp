@@ -56,6 +56,15 @@ void MergeTreeSink::onFinish()
 
 void MergeTreeSink::onCancel()
 {
+    if (!delayed_chunk)
+            return;
+
+    for (auto & partition : delayed_chunk->partitions)
+    {
+        partition.temp_part.cancel();
+    }
+
+    delayed_chunk.reset();
 }
 
 void MergeTreeSink::consume(Chunk chunk)
