@@ -107,8 +107,8 @@ ConnectionParameters::ConnectionParameters(const Poco::Util::AbstractConfigurati
         }
     }
 
-    proto_send_chunked = config.getString("proto_caps.send", "notchunked_optional");
-    proto_recv_chunked = config.getString("proto_caps.recv", "notchunked_optional");
+    proto_send_chunked = config.getString("proto_caps.send", "chunked");
+    proto_recv_chunked = config.getString("proto_caps.recv", "chunked");
 
     quota_key = config.getString("quota_key", "");
 
