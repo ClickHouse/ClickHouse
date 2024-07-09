@@ -252,7 +252,6 @@ protected:
     [[noreturn]] void throwReadonlyCannotRemove(AccessEntityType type, const String & name) const;
     [[noreturn]] static void throwAddressNotAllowed(const Poco::Net::IPAddress & address);
     [[noreturn]] static void throwInvalidCredentials();
-    [[noreturn]] static void throwAuthenticationTypeNotAllowed(AuthenticationType auth_type);
     [[noreturn]] void throwBackupNotAllowed() const;
     [[noreturn]] void throwRestoreNotAllowed() const;
 

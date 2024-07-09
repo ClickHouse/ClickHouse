@@ -533,7 +533,9 @@ std::optional<AuthResult> IAccessStorage::authenticateImpl(
                 auto auth_type = auth_method.getType();
                 if (((auth_type == AuthenticationType::NO_PASSWORD) && !allow_no_password) ||
                     ((auth_type == AuthenticationType::PLAINTEXT_PASSWORD) && !allow_plaintext_password))
-                    throwAuthenticationTypeNotAllowed(auth_type);
+                {
+                    continue;
+                }
 
                 if (areCredentialsValid(user->getName(), user->valid_until, auth_method, credentials, external_authenticators, auth_result.settings))
                 {
@@ -754,14 +756,6 @@ void IAccessStorage::throwReadonlyCannotRemove(AccessEntityType type, const Stri
 void IAccessStorage::throwAddressNotAllowed(const Poco::Net::IPAddress & address)
 {
     throw Exception(ErrorCodes::IP_ADDRESS_NOT_ALLOWED, "Connections from {} are not allowed", address.toString());
-}
-
-void IAccessStorage::throwAuthenticationTypeNotAllowed(AuthenticationType auth_type)
-{
-    throw Exception(
-        ErrorCodes::AUTHENTICATION_FAILED,
-        "Authentication type {} is not allowed, check the setting allow_{} in the server configuration",
-        toString(auth_type), AuthenticationTypeInfo::get(auth_type).name);
 }
 
 void IAccessStorage::throwInvalidCredentials()
