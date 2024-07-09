@@ -242,13 +242,13 @@ AVX512BW_FUNCTION_SPECIFIC_ATTRIBUTE void NO_INLINE RandImpl::executeAVX512BW(ch
         unalignedStore<UInt64x8>(output, combineValuesAVX512BW(gens1, gens2));
         gens3 = gens3 * a + c;
         gens4 = gens4 * a + c;
-        unalignedStore<UInt64x8>(output + sizeof(UInt64x4), combineValuesAVX512BW(gens3, gens4));
+        unalignedStore<UInt64x8>(output + sizeof(UInt64x8), combineValuesAVX512BW(gens3, gens4));
         gens1 = gens1 * a + c;
         gens2 = gens2 * a + c;
-        unalignedStore<UInt64x8>(output + 2 * sizeof(UInt64x4), combineValuesAVX512BW(gens1, gens2));
+        unalignedStore<UInt64x8>(output + 2 * sizeof(UInt64x8), combineValuesAVX512BW(gens1, gens2));
         gens3 = gens3 * a + c;
         gens4 = gens4 * a + c;
-        unalignedStore<UInt64x8>(output + 3 * sizeof(UInt64x4), combineValuesAVX512BW(gens3, gens4));
+        unalignedStore<UInt64x8>(output + 3 * sizeof(UInt64x8), combineValuesAVX512BW(gens3, gens4));
         output += bytes_per_write;
     }
 
