@@ -1265,9 +1265,16 @@ public:
     bool insertResultToColumn(IColumn & column, const typename JSONParser::Element & element, const JSONExtractInsertSettings & insert_settings, const FormatSettings & format_settings, String & error) const override
     {
         auto & column_dynamic = assert_cast<ColumnDynamic &>(column);
+        /// First, check if element is NULL.
+        if (element.isNull())
+        {
+            column_dynamic.insertDefault();
+            return true;
+        }
+
         auto & variant_column = column_dynamic.getVariantColumn();
         auto variant_info = column_dynamic.getVariantInfo();
-        /// First, infer ClickHouse type for this element and add it as a new variant.
+        /// Second, infer ClickHouse type for this element and add it as a new variant.
         auto element_type = elementToDataType(element, format_settings);
         if (column_dynamic.addNewVariant(element_type))
         {
