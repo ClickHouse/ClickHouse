@@ -12,6 +12,8 @@
 #include <Core/ExternalTable.h>
 #include <Poco/Util/Application.h>
 #include <Poco/ConsoleChannel.h>
+#include <Poco/SimpleFileChannel.h>
+#include <Poco/SplitterChannel.h>
 #include <Interpreters/Context.h>
 #include <Client/Suggest.h>
 #include <boost/program_options.hpp>
@@ -213,7 +215,9 @@ protected:
     ContextMutablePtr global_context;
 
     LoggerPtr fatal_log;
-    Poco::AutoPtr<Poco::Channel> fatal_channel_ptr;
+    Poco::AutoPtr<Poco::SplitterChannel> fatal_channel_ptr;
+    Poco::AutoPtr<Poco::Channel> fatal_console_channel_ptr;
+    Poco::AutoPtr<Poco::Channel> fatal_file_channel_ptr;
     Poco::Thread signal_listener_thread;
     std::unique_ptr<Poco::Runnable> signal_listener;
 

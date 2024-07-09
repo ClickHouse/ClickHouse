@@ -3068,6 +3068,8 @@ void ClientBase::init(int argc, char ** argv)
         ("max_memory_usage_in_client", po::value<std::string>(), "Set memory limit in client/local server")
 
         ("fuzzer-args", po::value<std::string>(), "Command line arguments for the LLVM's libFuzzer driver. Only relevant if the application is compiled with libFuzzer.")
+
+        ("client_log_file", po::value<std::string>(), "Path to a file for logging fatal errors in client")
     ;
 
     addOptions(options_description);
@@ -3231,7 +3233,15 @@ void ClientBase::init(int argc, char ** argv)
     /// We don't setup signal handlers for SIGINT, SIGQUIT, SIGTERM because we don't
     /// have an option for client to shutdown gracefully.
 
-    fatal_channel_ptr = new Poco::ConsoleChannel;
+    fatal_channel_ptr = new Poco::SplitterChannel;
+    fatal_console_channel_ptr = new Poco::ConsoleChannel;
+    fatal_channel_ptr->addChannel(fatal_console_channel_ptr);
+    if (options.count("client_log_file"))
+    {
+        fatal_file_channel_ptr = new Poco::SimpleFileChannel(options["client_log_file"].as<std::string>());
+        fatal_channel_ptr->addChannel(fatal_file_channel_ptr);
+    }
+
     fatal_log = createLogger("ClientBase", fatal_channel_ptr.get(), Poco::Message::PRIO_FATAL);
     signal_listener = std::make_unique<SignalListener>(nullptr, fatal_log);
     signal_listener_thread.start(*signal_listener);
