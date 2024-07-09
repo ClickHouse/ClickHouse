@@ -30,10 +30,10 @@ void GroupingAggregatedTransform::pushData(Chunks chunks, Int32 bucket, bool is_
     auto info = std::make_shared<ChunksToMerge>();
     info->bucket_num = bucket;
     info->is_overflows = is_overflows;
-    info->chunks = std::make_shared<Chunks>(std::move(chunks));
+    info->chunks = std::make_unique<Chunks>(std::move(chunks));
 
     Chunk chunk;
-    chunk.getChunkInfos().add(std::move(info));
+    chunk.setChunkInfo(std::move(info));
     output.push(std::move(chunk));
 }
 
@@ -255,10 +255,11 @@ void GroupingAggregatedTransform::addChunk(Chunk chunk, size_t input)
     if (!chunk.hasRows())
         return;
 
-    if (chunk.getChunkInfos().empty())
+    const auto & info = chunk.getChunkInfo();
+    if (!info)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Chunk info was not set for chunk in GroupingAggregatedTransform.");
 
-    if (auto agg_info = chunk.getChunkInfos().get<AggregatedChunkInfo>())
+    if (const auto * agg_info = typeid_cast<const AggregatedChunkInfo *>(info.get()))
     {
         Int32 bucket = agg_info->bucket_num;
         bool is_overflows = agg_info->is_overflows;
@@ -274,7 +275,7 @@ void GroupingAggregatedTransform::addChunk(Chunk chunk, size_t input)
             last_bucket_number[input] = bucket;
         }
     }
-    else if (chunk.getChunkInfos().get<ChunkInfoWithAllocatedBytes>())
+    else if (typeid_cast<const ChunkInfoWithAllocatedBytes *>(info.get()))
     {
         single_level_chunks.emplace_back(std::move(chunk));
     }
@@ -303,11 +304,7 @@ void GroupingAggregatedTransform::work()
             Int32 bucket = cur_block.info.bucket_num;
             auto chunk_info = std::make_shared<AggregatedChunkInfo>();
             chunk_info->bucket_num = bucket;
-
-            auto chunk = Chunk(cur_block.getColumns(), cur_block.rows());
-            chunk.getChunkInfos().add(std::move(chunk_info));
-
-            chunks_map[bucket].emplace_back(std::move(chunk));
+            chunks_map[bucket].emplace_back(Chunk(cur_block.getColumns(), cur_block.rows(), std::move(chunk_info)));
         }
     }
 }
@@ -322,7 +319,9 @@ MergingAggregatedBucketTransform::MergingAggregatedBucketTransform(
 
 void MergingAggregatedBucketTransform::transform(Chunk & chunk)
 {
-    auto chunks_to_merge = chunk.getChunkInfos().get<ChunksToMerge>();
+    const auto & info = chunk.getChunkInfo();
+    const auto * chunks_to_merge = typeid_cast<const ChunksToMerge *>(info.get());
+
     if (!chunks_to_merge)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "MergingAggregatedSimpleTransform chunk must have ChunkInfo with type ChunksToMerge.");
 
@@ -331,10 +330,11 @@ void MergingAggregatedBucketTransform::transform(Chunk & chunk)
     BlocksList blocks_list;
     for (auto & cur_chunk : *chunks_to_merge->chunks)
     {
-        if (cur_chunk.getChunkInfos().empty())
+        const auto & cur_info = cur_chunk.getChunkInfo();
+        if (!cur_info)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Chunk info was not set for chunk in MergingAggregatedBucketTransform.");
 
-        if (auto agg_info = cur_chunk.getChunkInfos().get<AggregatedChunkInfo>())
+        if (const auto * agg_info = typeid_cast<const AggregatedChunkInfo *>(cur_info.get()))
         {
             Block block = header.cloneWithColumns(cur_chunk.detachColumns());
             block.info.is_overflows = agg_info->is_overflows;
@@ -342,7 +342,7 @@ void MergingAggregatedBucketTransform::transform(Chunk & chunk)
 
             blocks_list.emplace_back(std::move(block));
         }
-        else if (cur_chunk.getChunkInfos().get<ChunkInfoWithAllocatedBytes>())
+        else if (typeid_cast<const ChunkInfoWithAllocatedBytes *>(cur_info.get()))
         {
             Block block = header.cloneWithColumns(cur_chunk.detachColumns());
             block.info.is_overflows = false;
@@ -361,7 +361,7 @@ void MergingAggregatedBucketTransform::transform(Chunk & chunk)
     res_info->is_overflows = chunks_to_merge->is_overflows;
     res_info->bucket_num = chunks_to_merge->bucket_num;
     res_info->chunk_num = chunks_to_merge->chunk_num;
-    chunk.getChunkInfos().add(std::move(res_info));
+    chunk.setChunkInfo(std::move(res_info));
 
     auto block = params->aggregator.mergeBlocks(blocks_list, params->final, is_cancelled);
 
@@ -405,7 +405,11 @@ bool SortingAggregatedTransform::tryPushChunk()
 
 void SortingAggregatedTransform::addChunk(Chunk chunk, size_t from_input)
 {
-    auto agg_info = chunk.getChunkInfos().get<AggregatedChunkInfo>();
+    const auto & info = chunk.getChunkInfo();
+    if (!info)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Chunk info was not set for chunk in SortingAggregatedTransform.");
+
+    const auto * agg_info = typeid_cast<const AggregatedChunkInfo *>(info.get());
     if (!agg_info)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Chunk should have AggregatedChunkInfo in SortingAggregatedTransform.");

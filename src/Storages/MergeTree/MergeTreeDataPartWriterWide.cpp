@@ -433,6 +433,7 @@ void MergeTreeDataPartWriterWide::writeColumn(
     if (inserted)
     {
         ISerialization::SerializeBinaryBulkSettings serialize_settings;
+        serialize_settings.use_compact_variant_discriminators_serialization = settings.use_compact_variant_discriminators_serialization;
         serialize_settings.getter = createStreamGetter(name_and_type, offset_columns);
         serialization->serializeBinaryBulkStatePrefix(column, serialize_settings, it->second);
     }
@@ -441,6 +442,7 @@ void MergeTreeDataPartWriterWide::writeColumn(
     serialize_settings.getter = createStreamGetter(name_and_type, offset_columns);
     serialize_settings.low_cardinality_max_dictionary_size = settings.low_cardinality_max_dictionary_size;
     serialize_settings.low_cardinality_use_single_dictionary_for_part = settings.low_cardinality_use_single_dictionary_for_part;
+    serialize_settings.use_compact_variant_discriminators_serialization = settings.use_compact_variant_discriminators_serialization;
 
     for (const auto & granule : granules)
     {
@@ -558,7 +560,10 @@ void MergeTreeDataPartWriterWide::validateColumnOfFixedSize(const NameAndTypePai
 
         if (index_granularity_rows != index_granularity.getMarkRows(mark_num))
         {
-            throw Exception(
+            /// With fixed granularity we can have last mark with less rows than granularity
+            const bool is_last_mark = (mark_num + 1 == index_granularity.getMarksCount());
+            if (!index_granularity_info.fixed_index_granularity || !is_last_mark)
+                throw Exception(
                             ErrorCodes::LOGICAL_ERROR,
                             "Incorrect mark rows for part {} for mark #{}"
                             " (compressed offset {}, decompressed offset {}), in-memory {}, on disk {}, total marks {}",
@@ -627,6 +632,7 @@ void MergeTreeDataPartWriterWide::fillDataChecksums(MergeTreeDataPartChecksums &
     ISerialization::SerializeBinaryBulkSettings serialize_settings;
     serialize_settings.low_cardinality_max_dictionary_size = settings.low_cardinality_max_dictionary_size;
     serialize_settings.low_cardinality_use_single_dictionary_for_part = settings.low_cardinality_use_single_dictionary_for_part;
+    serialize_settings.use_compact_variant_discriminators_serialization = settings.use_compact_variant_discriminators_serialization;
     WrittenOffsetColumns offset_columns;
     if (rows_written_in_last_mark > 0)
     {
@@ -821,7 +827,14 @@ void MergeTreeDataPartWriterWide::adjustLastMarkIfNeedAndFlushToDisk(size_t new_
             /// Without offset
             rows_written_in_last_mark = 0;
         }
+
+        if (compute_granularity)
+        {
+            index_granularity.popMark();
+            index_granularity.appendMark(new_rows_in_last_mark);
+        }
     }
+
 }
 
 }

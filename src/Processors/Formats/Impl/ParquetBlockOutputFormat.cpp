@@ -179,9 +179,7 @@ void ParquetBlockOutputFormat::consume(Chunk chunk)
                 columns[i]->insertRangeFrom(*concatenated.getColumns()[i], offset, count);
 
             Chunks piece;
-            piece.emplace_back(std::move(columns), count);
-            piece.back().setChunkInfos(concatenated.getChunkInfos());
-
+            piece.emplace_back(std::move(columns), count, concatenated.getChunkInfo());
             writeRowGroup(std::move(piece));
         }
     }

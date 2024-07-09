@@ -83,7 +83,57 @@ Result:
 ```
 ## makeDate32
 
-Like [makeDate](#makedate) but produces a [Date32](../data-types/date32.md).
+Creates a date of type [Date32](../../sql-reference/data-types/date32.md) from a year, month, day (or optionally a year and a day). 
+
+**Syntax**
+
+```sql
+makeDate32(year, [month,] day)
+```
+
+**Arguments**
+
+- `year` — Year. [Integer](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) or [Decimal](../../sql-reference/data-types/decimal.md).
+- `month` — Month (optional). [Integer](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) or [Decimal](../../sql-reference/data-types/decimal.md).
+- `day` — Day. [Integer](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) or [Decimal](../../sql-reference/data-types/decimal.md).
+
+:::note
+If `month` is omitted then `day` should take a value between `1` and `365`, otherwise it should take a value between `1` and `31`.
+:::
+
+**Returned values**
+
+- A date created from the arguments. [Date32](../../sql-reference/data-types/date32.md).
+
+**Examples**
+
+Create a date from a year, month, and day:
+
+Query:
+
+```sql
+SELECT makeDate32(2024, 1, 1);
+```
+
+Result:
+
+```response
+2024-01-01
+```
+
+Create a Date from a year and day of year:
+
+Query:
+
+``` sql
+SELECT makeDate32(2024, 100);
+```
+
+Result:
+
+```response
+2024-04-09
+```
 
 ## makeDateTime
 
@@ -125,12 +175,38 @@ Result:
 
 ## makeDateTime64
 
-Like [makeDateTime](#makedatetime) but produces a [DateTime64](../data-types/datetime64.md).
+Creates a [DateTime64](../../sql-reference/data-types/datetime64.md) data type value from its components: year, month, day, hour, minute, second. With optional sub-second precision.
 
 **Syntax**
 
+```sql
+makeDateTime64(year, month, day, hour, minute, second[, precision])
+```
+
+**Arguments**
+
+- `year` — Year (0-9999). [Integer](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) or [Decimal](../../sql-reference/data-types/decimal.md).
+- `month` — Month (1-12). [Integer](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) or [Decimal](../../sql-reference/data-types/decimal.md). 
+- `day` — Day (1-31). [Integer](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) or [Decimal](../../sql-reference/data-types/decimal.md).
+- `hour` — Hour (0-23). [Integer](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) or [Decimal](../../sql-reference/data-types/decimal.md).
+- `minute` — Minute (0-59). [Integer](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) or [Decimal](../../sql-reference/data-types/decimal.md). 
+- `second` — Second (0-59). [Integer](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) or [Decimal](../../sql-reference/data-types/decimal.md). 
+- `precision` — Optional precision of the sub-second component (0-9). [Integer](../../sql-reference/data-types/int-uint.md).
+
+**Returned value**
+
+- A date and time created from the supplied arguments. [DateTime64](../../sql-reference/data-types/datetime64.md).  
+
+**Example**
+
 ``` sql
-makeDateTime64(year, month, day, hour, minute, second[, fraction[, precision[, timezone]]])
+SELECT makeDateTime64(2023, 5, 15, 10, 30, 45, 779, 5);
+```
+
+```response
+┌─makeDateTime64(2023, 5, 15, 10, 30, 45, 779, 5)─┐
+│                       2023-05-15 10:30:45.00779 │
+└─────────────────────────────────────────────────┘
 ```
 
 ## timestamp

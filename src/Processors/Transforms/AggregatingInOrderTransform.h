@@ -5,7 +5,6 @@
 #include <Processors/ISimpleTransform.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Processors/Transforms/finalizeChunk.h>
-#include <Processors/Chunk.h>
 
 namespace DB
 {
@@ -13,12 +12,10 @@ namespace DB
 struct InputOrderInfo;
 using InputOrderInfoPtr = std::shared_ptr<const InputOrderInfo>;
 
-struct ChunkInfoWithAllocatedBytes : public ChunkInfoCloneable<ChunkInfoWithAllocatedBytes>
+struct ChunkInfoWithAllocatedBytes : public ChunkInfo
 {
-    ChunkInfoWithAllocatedBytes(const ChunkInfoWithAllocatedBytes & other) = default;
     explicit ChunkInfoWithAllocatedBytes(Int64 allocated_bytes_)
         : allocated_bytes(allocated_bytes_) {}
-
     Int64 allocated_bytes;
 };
 

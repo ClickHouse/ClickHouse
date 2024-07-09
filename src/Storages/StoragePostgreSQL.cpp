@@ -227,9 +227,9 @@ public:
 
     String getName() const override { return "PostgreSQLSink"; }
 
-    void consume(Chunk & chunk) override
+    void consume(Chunk chunk) override
     {
-        auto block = getHeader().cloneWithColumns(chunk.getColumns());
+        auto block = getHeader().cloneWithColumns(chunk.detachColumns());
         if (!inserter)
         {
             if (on_conflict.empty())

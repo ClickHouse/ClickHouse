@@ -1,7 +1,7 @@
-option (ENABLE_ROCKSDB "Enable rocksdb library" ${ENABLE_LIBRARIES})
+option (ENABLE_ROCKSDB "Enable RocksDB" ${ENABLE_LIBRARIES})
 
 if (NOT ENABLE_ROCKSDB)
-  message (STATUS "Not using rocksdb")
+  message (STATUS "Not using RocksDB")
   return()
 endif()
 

@@ -210,7 +210,6 @@ public:
 
     /// Compute part block id for zero level part. Otherwise throws an exception.
     /// If token is not empty, block id is calculated based on it instead of block data
-    UInt128 getPartBlockIDHash() const;
     String getZeroLevelPartBlockID(std::string_view token) const;
 
     void setName(const String & new_name);
