@@ -59,6 +59,7 @@
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/ProcessorsProfileLog.h>
 #include <Interpreters/QueryLog.h>
+#include <Interpreters/QueryLogMetric.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Interpreters/SelectIntersectExceptQueryVisitor.h>
 #include <Interpreters/SelectQueryOptions.h>
@@ -373,6 +374,9 @@ QueryLogElement logQueryStart(
         }
     }
 
+    if (auto query_log_metric = context->getQueryLogMetric(); query_log_metric && !internal)
+        query_log_metric->startQuery(elem.client_info.current_query_id);
+
     return elem;
 }
 
@@ -504,6 +508,9 @@ void logQueryFinish(
         query_span->addAttributeIfNotZero("clickhouse.memory_usage", elem.memory_usage);
         query_span->finish();
     }
+
+    if (auto query_log_metric = context->getQueryLogMetric(); query_log_metric && !internal)
+        query_log_metric->finishQuery(elem.client_info.current_query_id);
 }
 
 void logQueryException(
@@ -572,6 +579,9 @@ void logQueryException(
         query_span->addAttribute("clickhouse.exception_code", elem.exception_code);
         query_span->finish();
     }
+
+    if (auto query_log_metric = context->getQueryLogMetric(); query_log_metric && !internal)
+            query_log_metric->finishQuery(elem.client_info.current_query_id);
 }
 
 void logExceptionBeforeStart(
@@ -668,6 +678,9 @@ void logExceptionBeforeStart(
             ProfileEvents::increment(ProfileEvents::FailedInsertQuery);
         }
     }
+
+    if (auto query_log_metric = context->getQueryLogMetric(); query_log_metric)
+            query_log_metric->finishQuery(elem.client_info.current_query_id);
 }
 
 void validateAnalyzerSettings(ASTPtr ast, bool context_value)

@@ -316,6 +316,8 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
 
     if (query_log)
         logs.emplace_back(query_log.get());
+    if (query_log_metric)
+        logs.emplace_back(query_log_metric.get());
     if (query_thread_log)
         logs.emplace_back(query_thread_log.get());
     if (part_log)
@@ -359,8 +361,6 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
         logs.emplace_back(s3_queue_log.get());
     if (blob_storage_log)
         logs.emplace_back(blob_storage_log.get());
-    if (query_log_metric)
-        logs.emplace_back(query_log_metric.get());
 
     bool should_prepare = global_context->getServerSettings().prepare_system_log_tables_on_startup;
     try
@@ -383,21 +383,21 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
     {
         size_t collect_interval_milliseconds = config.getUInt64("metric_log.collect_interval_milliseconds",
                                                                 DEFAULT_METRIC_LOG_COLLECT_INTERVAL_MILLISECONDS);
-        metric_log->startCollect(collect_interval_milliseconds);
+        metric_log->startCollect(global_context, collect_interval_milliseconds);
     }
 
     if (error_log)
     {
         size_t collect_interval_milliseconds = config.getUInt64("error_log.collect_interval_milliseconds",
                                                                 DEFAULT_ERROR_LOG_COLLECT_INTERVAL_MILLISECONDS);
-        error_log->startCollect(collect_interval_milliseconds);
+        error_log->startCollect(global_context, collect_interval_milliseconds);
     }
 
     if (query_log_metric)
     {
         size_t collect_interval_milliseconds = config.getUInt64("query_log_metric.collect_interval_milliseconds",
                                                                 DEFAULT_QUERY_LOG_METRIC_COLLECT_INTERVAL_MILLISECONDS);
-        query_log_metric->startCollect(collect_interval_milliseconds);
+        query_log_metric->startCollect(global_context, collect_interval_milliseconds);
     }
 
     if (crash_log)

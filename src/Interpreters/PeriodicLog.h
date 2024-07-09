@@ -22,8 +22,8 @@ class PeriodicLog : public SystemLog<LogElement>
 public:
     using TimePoint = std::chrono::system_clock::time_point;
 
-    /// Launches a background thread to collect metrics with interval
-    void startCollect(size_t collect_interval_milliseconds_);
+    /// Launches a background thread to collect metrics with periodic interval
+    void startCollect(ContextPtr context_, size_t collect_interval_milliseconds_);
 
     /// Stop background thread
     void stopCollect();
@@ -32,6 +32,8 @@ public:
 
 protected:
     virtual void stepFunction(TimePoint current_time) = 0;
+
+    ContextPtr context;
 
 private:
     void threadFunction();

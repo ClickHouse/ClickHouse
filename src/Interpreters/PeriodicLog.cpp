@@ -8,8 +8,9 @@ namespace DB
 {
 
 template <typename LogElement>
-void PeriodicLog<LogElement>::startCollect(size_t collect_interval_milliseconds_)
+void PeriodicLog<LogElement>::startCollect(ContextPtr context_, size_t collect_interval_milliseconds_)
 {
+    context = context_;
     collect_interval_milliseconds = collect_interval_milliseconds_;
     is_shutdown_metric_thread = false;
     flush_thread = std::make_unique<ThreadFromGlobalPool>([this] { threadFunction(); });

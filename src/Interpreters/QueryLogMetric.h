@@ -9,7 +9,6 @@
 
 #include <ctime>
 
-
 namespace DB
 {
 
@@ -21,10 +20,9 @@ struct QueryLogMetricElement
     time_t event_time{};
     Decimal64 event_time_microseconds{};
     String query_id{};
-    UInt64 interval_microseconds{};
-
-    std::vector<ProfileEvents::Count> profile_events;
-    std::vector<CurrentMetrics::Metric> current_metrics;
+    Int64 memory{};
+    Int64 background_memory{};
+    std::vector<ProfileEvents::Count> profile_events = std::vector<ProfileEvents::Count>(ProfileEvents::end());
 
     static std::string name() { return "QueryLogMetric"; }
     static ColumnsDescription getColumnsDescription();
@@ -34,20 +32,23 @@ struct QueryLogMetricElement
 
 struct QueryLogMetricStatus
 {
-  using QueryTime = std::chrono::time_point<std::chrono::system_clock>;
-
-  QueryTime start_time{};
-  QueryTime last_time{};
-  UInt64 interval_microseconds;
-  std::vector<ProfileEvents::Count> last_profile_events;
+    std::vector<ProfileEvents::Count> last_profile_events = std::vector<ProfileEvents::Count>(ProfileEvents::end());
 };
 
 class QueryLogMetric : public PeriodicLog<QueryLogMetricElement>
 {
     using PeriodicLog<QueryLogMetricElement>::PeriodicLog;
 
+public:
+    void startQuery(String query_id);
+    void finishQuery(String query_id);
+
 protected:
     void stepFunction(TimePoint current_time) override;
+
+private:
+    std::mutex queries_status_mutex;
+    std::unordered_map<String, QueryLogMetricStatus> queries_status;
 };
 
 }
