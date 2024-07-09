@@ -8600,6 +8600,18 @@ bool MergeTreeData::initializeDiskOnConfigChange(const std::set<String> & new_ad
     return true;
 }
 
+void MergeTreeData::loadPrimaryKeys()
+{
+    for (auto & part : getAllDataPartsVector())
+    {
+        if (!part->isIndexLoaded())
+        {
+            const_cast<IMergeTreeDataPart &>(*part).loadIndex();
+        }
+    }
+}
+
+
 void MergeTreeData::unloadPrimaryKeys()
 {
     for (auto & part : getAllDataPartsVector())

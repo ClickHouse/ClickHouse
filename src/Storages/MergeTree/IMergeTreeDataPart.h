@@ -368,9 +368,9 @@ public:
     Index getIndex() const;
     void setIndex(const Columns & cols_);
     void setIndex(Columns && cols_);
+    void loadIndex();
     void unloadIndex();
     bool isIndexLoaded() const;
-
     /// For data in RAM ('index')
     UInt64 getIndexSizeInBytes() const;
     UInt64 getIndexSizeInAllocatedBytes() const;
