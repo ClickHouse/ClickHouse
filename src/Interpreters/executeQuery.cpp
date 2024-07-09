@@ -375,7 +375,10 @@ QueryLogElement logQueryStart(
     }
 
     if (auto query_log_metric = context->getQueryLogMetric(); query_log_metric && !internal)
-        query_log_metric->startQuery(elem.client_info.current_query_id);
+    {
+        const auto interval_milliseconds = context->getSettingsRef().query_log_metric_interval;
+        query_log_metric->startQuery(elem.client_info.current_query_id, query_start_time, interval_milliseconds);
+    }
 
     return elem;
 }

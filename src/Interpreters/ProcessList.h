@@ -69,6 +69,8 @@ struct QueryStatusInfo
     std::string current_database;
 };
 
+using QueryStatusInfoPtr = std::shared_ptr<QueryStatusInfo>;
+
 /// Query and information about its execution.
 class QueryStatus : public WithContext
 {
@@ -436,6 +438,9 @@ public:
 
     /// Get current state of process list.
     Info getInfo(bool get_thread_list = false, bool get_profile_events = false, bool get_settings = false) const;
+
+    // Get current state of a particular process.
+    QueryStatusInfoPtr getQueryInfo(const String & query_id, bool get_thread_list = false, bool get_profile_events = false, bool get_settings = false) const;
 
     /// Get current state of process list per user.
     UserInfo getUserInfo(bool get_profile_events = false) const;

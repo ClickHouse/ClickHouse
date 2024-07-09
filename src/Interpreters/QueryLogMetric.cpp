@@ -10,6 +10,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/QueryLogMetric.h>
+#include <Interpreters/PeriodicLog.h>
 #include <Interpreters/ProcessList.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/parseQuery.h>
@@ -18,7 +19,7 @@
 #include <unordered_map>
 
 #include <Common/logger_useful.h>
-#include "Interpreters/PeriodicLog.h"
+#include "base/types.h"
 
 
 namespace CurrentMetrics
@@ -90,19 +91,42 @@ void QueryLogMetricElement::appendToBlock(MutableColumns & columns) const
         columns[column_idx++]->insert(profile_events[i]);
 }
 
-QueryLogMetricElement createLogMetricElement(std::string_view query_id, PeriodicLog<QueryLogMetricElement>::TimePoint current_time, QueryLogMetricStatus & query_status)
+void QueryLogMetric::startQuery(String query_id, TimePoint query_start_time, UInt64 interval_milliseconds)
+{
+    QueryLogMetricStatus status;
+    status.interval_milliseconds = interval_milliseconds;
+    status.next_collect_time = query_start_time + std::chrono::milliseconds(interval_milliseconds);
+
+    const auto & profile_events = CurrentThread::getProfileEvents();
+    for (ProfileEvents::Event i = ProfileEvents::Event(0), end = ProfileEvents::end(); i < end; ++i)
+        status.last_profile_events[i] = profile_events[i].load(std::memory_order_relaxed);
+
+    std::lock_guard<std::mutex> lock(queries_mutex);
+    queries.emplace(query_id, std::move(status));
+
+    if (queries_closest.query_id.empty() || status.next_collect_time < queries_closest.next_collect_time)
+        queries_closest = CloseQuery{query_id, status.next_collect_time};
+}
+
+void QueryLogMetric::finishQuery(String query_id)
+{
+    std::lock_guard<std::mutex> lock(queries_mutex);
+    if (auto it = queries.find(query_id); it != queries.end())
+        queries.erase(it);
+}
+
+QueryLogMetricElement createLogMetricElement(std::string_view query_id, std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters, PeriodicLog<QueryLogMetricElement>::TimePoint current_time, QueryLogMetricStatus & query_status)
 {
     QueryLogMetricElement elem;
     elem.event_time = timeInSeconds(current_time);
     elem.event_time_microseconds = timeInMicroseconds(current_time);
     elem.query_id = query_id;
-
     elem.memory = CurrentMetrics::values[CurrentMetrics::MemoryTracking];
     elem.background_memory = CurrentMetrics::values[CurrentMetrics::MergesMutationsMemoryTracking];
 
     for (ProfileEvents::Event i = ProfileEvents::Event(0), end = ProfileEvents::end(); i < end; ++i)
     {
-        const ProfileEvents::Count value = ProfileEvents::global_counters[i].load(std::memory_order_relaxed);
+        const auto & value = (*profile_counters)[i];
         elem.profile_events[i] = query_status.last_profile_events[i] - value;
         query_status.last_profile_events[i] = value;
     }
@@ -110,40 +134,18 @@ QueryLogMetricElement createLogMetricElement(std::string_view query_id, Periodic
     return elem;
 }
 
-void QueryLogMetric::startQuery(String query_id)
-{
-    QueryLogMetricStatus status;
-    for (ProfileEvents::Event i = ProfileEvents::Event(0), end = ProfileEvents::end(); i < end; ++i)
-        status.last_profile_events[i] = ProfileEvents::global_counters[i].load(std::memory_order_relaxed);
-
-    std::lock_guard<std::mutex> lock(queries_status_mutex);
-    queries_status.emplace(query_id, std::move(status));
-}
-
-void QueryLogMetric::finishQuery(String query_id)
-{
-    std::lock_guard<std::mutex> lock(queries_status_mutex);
-    if (auto it = queries_status.find(query_id); it != queries_status.end())
-        queries_status.erase(it);
-}
-
 void QueryLogMetric::stepFunction(TimePoint current_time)
 {
     static const auto & process_list = context->getProcessList();
 
     LOG_DEBUG(getLogger("PMO"), "QueryLogMetric::stepFunction");
-    const auto & queries = process_list.getInfo(false, true, false);
-    std::lock_guard<std::mutex> lock(queries_status_mutex);
-    for (const auto & query : queries)
+    std::lock_guard<std::mutex> lock(queries_mutex);
+    for (auto & [query_id, query_status] : queries)
     {
-        const auto & query_id = query.client_info.current_query_id;
-        const auto it = queries_status.find(query_id);
-
-        // Do not track queries that have not started to be monitored. e.g. internal queries
-        if (it == queries_status.end())
-            return;
-
-        auto elem = createLogMetricElement(query_id, current_time, it->second);
+        const auto query_info = process_list.getQueryInfo(query_id, false, true, false);
+        if (!query_info)
+            continue;
+        auto elem = createLogMetricElement(query_id, query_info->profile_counters, current_time, query_status);
         add(std::move(elem));
     }
 }

@@ -34,12 +34,12 @@ protected:
     virtual void stepFunction(TimePoint current_time) = 0;
 
     ContextPtr context;
+    size_t collect_interval_milliseconds;
 
 private:
     void threadFunction();
 
     std::unique_ptr<ThreadFromGlobalPool> flush_thread;
-    size_t collect_interval_milliseconds;
     std::atomic<bool> is_shutdown_metric_thread{false};
 };
 

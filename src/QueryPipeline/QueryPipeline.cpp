@@ -546,7 +546,7 @@ void QueryPipeline::setProgressCallback(const ProgressCallback & callback)
         // TODO: PMO to update counters only for the query log metric interval
         auto context = CurrentThread::getQueryContext();
         if (auto query_log_metric = context->getQueryLogMetric())
-            CurrentThread::updatePerformanceCounters();
+            CurrentThread::updatePerformanceCountersIfNeeded();
 
         if (callback)
             callback(progress);
