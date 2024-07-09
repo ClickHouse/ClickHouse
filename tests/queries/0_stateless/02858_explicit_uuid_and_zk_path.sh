@@ -38,7 +38,7 @@ $CLICKHOUSE_CLIENT -q "SELECT name FROM system.tables WHERE database='$db' ORDER
 $CLICKHOUSE_CLIENT -q "SELECT substring(toString(uuid) as s, 1, length(s) - 3) FROM system.tables WHERE database='$db' and name='m1'"
 $CLICKHOUSE_CLIENT -q "SELECT toString(uuid) LIKE '02858000%' FROM system.tables WHERE database='$db' and name='m2'"
 
-$CLICKHOUSE_CLIENT -q "SHOW CREATE $db.rmt1"
-$CLICKHOUSE_CLIENT -q "SHOW CREATE $db.rmt2"
+$CLICKHOUSE_CLIENT -q "SHOW CREATE $db.rmt1" | sed "s/$db/default/g"
+$CLICKHOUSE_CLIENT -q "SHOW CREATE $db.rmt2" | sed "s/$db/default/g"
 
 $CLICKHOUSE_CLIENT -q "DROP DATABASE IF EXISTS rdb_$CLICKHOUSE_DATABASE"
