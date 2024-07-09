@@ -8,6 +8,7 @@
 #include <IO/ReadBufferFromString.h>
 
 #include <rocksdb/convenience.h>
+#include <rocksdb/options.h>
 #include <rocksdb/status.h>
 #include <rocksdb/table.h>
 #include <rocksdb/snapshot.h>
@@ -195,7 +196,6 @@ public:
                 rocksdb_dir, status.ToString());
         }
         rocksdb_ptr = std::unique_ptr<rocksdb::DB>(db);
-        /// storage_ptr = storage_;
         initialized = true;
     }
 
@@ -312,8 +312,10 @@ public:
         }
         else if (status.IsNotFound())
         {
-            // storage->addDigest(value, key);
-            status = rocksdb_ptr->Put(rocksdb::WriteOptions(), encoded_key, value.getEncodedString());
+            rocksdb::WriteOptions write_options;
+            write_options.disableWAL = true;
+
+            status = rocksdb_ptr->Put(write_options, encoded_key, value.getEncodedString());
             if (status.ok())
             {
                 counter++;
@@ -336,7 +338,10 @@ public:
         else if (!status.ok())
             throw Exception(ErrorCodes::ROCKSDB_ERROR, "Got rocksdb error during get. The error message is {}.", status.ToString());
 
-        status = rocksdb_ptr->Put(rocksdb::WriteOptions(), encoded_key, value.getEncodedString());
+        rocksdb::WriteOptions write_options;
+        write_options.disableWAL = true;
+
+        status = rocksdb_ptr->Put(write_options, encoded_key, value.getEncodedString());
         if (status.ok())
             counter += increase_counter;
         else
@@ -361,7 +366,11 @@ public:
     {
         /// storage->removeDigest(value, key);
         const std::string & encoded_key = getEncodedKey(key);
-        auto status = rocksdb_ptr->Delete(rocksdb::WriteOptions(), encoded_key);
+
+        rocksdb::WriteOptions write_options;
+        write_options.disableWAL = true;
+
+        auto status = rocksdb_ptr->Delete(write_options, encoded_key);
         if (status.IsNotFound())
             return false;
         if (status.ok())
@@ -444,8 +453,6 @@ private:
     String rocksdb_dir;
 
     std::unique_ptr<rocksdb::DB> rocksdb_ptr;
-
-    /// Storage* storage_ptr;
 
     const rocksdb::Snapshot * snapshot;
 
