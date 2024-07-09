@@ -1,0 +1,7 @@
+{
+  "version": "24.3.6.5",
+  "release_tag": "v24.3.6.5-lts",
+  "release_branch": "24.3",
+  "commit_sha": "1b0c45dfe0e852aad7795518cb0659636fd3a941",
+  "codename": "lts"
+}
