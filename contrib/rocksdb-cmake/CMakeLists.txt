@@ -51,6 +51,14 @@ if(ENABLE_SSE42 AND ENABLE_PCLMULQDQ)
   add_definitions(-DHAVE_PCLMUL)
 endif()
 
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64|AARCH64")
+  set (HAS_ARMV8_CRC 1)
+  # the original build descriptions set specific flags for ARM. These flags are already subsumed by ClickHouse's general
+  # ARM flags, see cmake/cpu_features.cmake
+  # set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -march=armv8-a+crc+crypto -Wno-unused-function")
+  # set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -march=armv8-a+crc+crypto -Wno-unused-function")
+endif()
+
 set (HAVE_THREAD_LOCAL 1)
 if(HAVE_THREAD_LOCAL)
   add_definitions(-DROCKSDB_SUPPORT_THREAD_LOCAL)
