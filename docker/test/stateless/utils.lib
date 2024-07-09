@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# core.COMM.PID-TID
+sysctl kernel.core_pattern='core.%e.%p-%P'
+
 function run_with_retry()
 {
     if [[ $- =~ e ]]; then
@@ -46,6 +49,14 @@ function timeout_with_logging() {
     fi
 
     return $exit_code
+}
+
+function collect_core_dumps()
+{
+  find . -type f -maxdepth 1 -name 'core.*' | while read -r core; do
+      zstd --threads=0 "$core"
+      mv "$core.zst" /test_output/
+  done
 }
 
 # vi: ft=bash
