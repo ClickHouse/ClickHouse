@@ -38,6 +38,7 @@
 #include <Common/re2.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
+#include <Formats/SharedParsingThreadPool.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/HTTPHeaderEntries.h>
 
@@ -271,7 +272,7 @@ StorageURLSource::StorageURLSource(
     UInt64 max_block_size,
     const ConnectionTimeouts & timeouts,
     CompressionMethod compression_method,
-    size_t max_parsing_threads,
+    SharedParsingThreadPoolPtr shared_pool,
     const HTTPHeaderEntries & headers_,
     const URIParams & params,
     bool glob_url,
@@ -350,11 +351,12 @@ StorageURLSource::StorageURLSource(
                 getContext(),
                 max_block_size,
                 format_settings,
-                max_parsing_threads,
+                shared_pool->getMaxParsingThreadsPerStream(),
                 /*max_download_threads*/ std::nullopt,
                 /* is_remote_ fs */ true,
                 compression_method,
-                need_only_count);
+                need_only_count,
+                shared_pool);
 
             if (key_condition)
                 input_format->setKeyCondition(key_condition);
@@ -1183,7 +1185,7 @@ void ReadFromURL::initializePipeline(QueryPipelineBuilder & pipeline, const Buil
     pipes.reserve(num_streams);
 
     const auto & settings = context->getSettingsRef();
-    const size_t max_parsing_threads = num_streams >= settings.max_parsing_threads ? 1 : (settings.max_parsing_threads  / num_streams);
+    auto shared_pool = std::make_shared<SharedParsingThreadPool>(settings.max_parsing_threads, num_streams);
 
     for (size_t i = 0; i < num_streams; ++i)
     {
@@ -1199,7 +1201,7 @@ void ReadFromURL::initializePipeline(QueryPipelineBuilder & pipeline, const Buil
             max_block_size,
             getHTTPTimeouts(context),
             storage->compression_method,
-            max_parsing_threads,
+            shared_pool,
             storage->headers,
             read_uri_params,
             is_url_with_globs,

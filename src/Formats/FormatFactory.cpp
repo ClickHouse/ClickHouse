@@ -315,7 +315,8 @@ InputFormatPtr FormatFactory::getInput(
     std::optional<size_t> _max_download_threads,
     bool is_remote_fs,
     CompressionMethod compression,
-    bool need_only_count) const
+    bool need_only_count,
+    SharedParsingThreadPoolPtr shared_pool) const
 {
     const auto& creators = getCreators(name);
     if (!creators.input_creator && !creators.random_access_input_creator)
@@ -388,7 +389,8 @@ InputFormatPtr FormatFactory::getInput(
             context->getReadSettings(),
             is_remote_fs,
             max_download_threads,
-            max_parsing_threads);
+            max_parsing_threads,
+            shared_pool);
     }
     else
     {

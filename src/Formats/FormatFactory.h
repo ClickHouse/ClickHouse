@@ -46,6 +46,9 @@ using InputFormatPtr = std::shared_ptr<IInputFormat>;
 using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
 using RowOutputFormatPtr = std::shared_ptr<IRowOutputFormat>;
 
+class SharedParsingThreadPool;
+using SharedParsingThreadPoolPtr = std::shared_ptr<SharedParsingThreadPool>;
+
 template <typename Allocator>
 struct Memory;
 
@@ -101,7 +104,8 @@ private:
             const ReadSettings& read_settings,
             bool is_remote_fs,
             size_t max_download_threads,
-            size_t max_parsing_threads)>;
+            size_t max_parsing_threads,
+            SharedParsingThreadPoolPtr shared_pool)>;
 
     using OutputCreator = std::function<OutputFormatPtr(
             WriteBuffer & buf,
@@ -173,7 +177,8 @@ public:
         // allows to do: buf -> parallel read -> decompression,
         // because parallel read after decompression is not possible
         CompressionMethod compression = CompressionMethod::None,
-        bool need_only_count = false) const;
+        bool need_only_count = false,
+        SharedParsingThreadPoolPtr shared_pool = {}) const;
 
     /// Checks all preconditions. Returns ordinary format if parallel formatting cannot be done.
     OutputFormatPtr getOutputFormatParallelIfPossible(
