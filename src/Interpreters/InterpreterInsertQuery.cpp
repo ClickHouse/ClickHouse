@@ -606,7 +606,7 @@ QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(ASTInsertQuery &
 
     size_t sink_streams_size = table->supportsParallelInsert() ? std::max<size_t>(1, settings.max_insert_threads) : 1;
 
-    size_t views_involved =  table->isView() || DatabaseCatalog::instance().getDependentViews(table->getStorageID()).size() > 0;
+    size_t views_involved =  table->isView() || !DatabaseCatalog::instance().getDependentViews(table->getStorageID()).empty();
     if (!settings.parallel_view_processing && views_involved)
     {
         sink_streams_size = 1;
