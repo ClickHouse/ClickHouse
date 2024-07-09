@@ -1058,7 +1058,7 @@ bool AlterCommand::isRemovingProperty() const
 
 bool AlterCommand::isDropSomething() const
 {
-    return type == Type::DROP_COLUMN || type == Type::DROP_INDEX
+    return type == Type::DROP_COLUMN || type == Type::DROP_INDEX || type == Type::DROP_STATISTICS
         || type == Type::DROP_CONSTRAINT || type == Type::DROP_PROJECTION;
 }
 
