@@ -63,7 +63,7 @@ public:
 
     String getName() const override { return "MemorySink"; }
 
-    void consume(Chunk & chunk) override
+    void consume(Chunk chunk) override
     {
         auto block = getHeader().cloneWithColumns(chunk.getColumns());
         storage_snapshot->metadata->check(block, true);
