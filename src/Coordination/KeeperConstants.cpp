@@ -372,7 +372,7 @@ extern const std::vector<Event> keeper_profile_events
     M(AsynchronousReadWait) \
     M(S3Requests) \
     M(KeeperAliveConnections) \
-    M(KeeperOutstandingRequets) \
+    M(KeeperOutstandingRequests) \
     M(ThreadsInOvercommitTracker) \
     M(IOUringPendingEvents) \
     M(IOUringInFlightEvents) \
