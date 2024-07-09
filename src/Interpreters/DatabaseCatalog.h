@@ -7,6 +7,7 @@
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
 #include <Common/SharedMutex.h>
+#include <Common/logger_useful.h>
 
 #include <boost/noncopyable.hpp>
 #include <Poco/Logger.h>
@@ -325,6 +326,7 @@ private:
     TablesDependencyGraph view_dependencies TSA_GUARDED_BY(databases_mutex);
 
     LoggerPtr log;
+    LogSeriesLimiterPtr limitedLog;
 
     std::atomic_bool is_shutting_down = false;
 
