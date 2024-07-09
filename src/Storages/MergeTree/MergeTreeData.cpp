@@ -73,6 +73,7 @@
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <Storages/MergeTree/MergeTreeDataPartBuilder.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
 #include <Storages/MergeTree/checkDataPart.h>
@@ -6172,6 +6173,11 @@ bool MergeTreeData::hasProjection() const
     return false;
 }
 
+bool MergeTreeData::areAsynchronousInsertsEnabled() const
+{
+    return getSettings()->async_insert;
+}
+
 MergeTreeData::ProjectionPartsVector MergeTreeData::getAllProjectionPartsVector(MergeTreeData::DataPartStateVector * out_states) const
 {
     ProjectionPartsVector res;
@@ -7391,6 +7397,13 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
     dst_data_part->loadColumnsChecksumsIndexes(require_part_metadata, true);
     dst_data_part->modification_time = dst_part_storage->getLastModified().epochTime();
     return std::make_pair(dst_data_part, std::move(temporary_directory_lock));
+}
+
+bool MergeTreeData::canUseAdaptiveGranularity() const
+{
+    const auto settings = getSettings();
+    return settings->index_granularity_bytes != 0
+        && (settings->enable_mixed_granularity_parts || !has_non_adaptive_index_granularity_parts);
 }
 
 String MergeTreeData::getFullPathOnDisk(const DiskPtr & disk) const

@@ -2,6 +2,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/Context.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/System/StorageSystemMergeTreeSettings.h>
 #include <Access/SettingsConstraintsAndProfileIDs.h>
 

@@ -30,6 +30,7 @@
 #include <Common/logger_useful.h>
 #include <Common/CurrentMetrics.h>
 #include <Core/Defines.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 
 #include <boost/algorithm/string/replace.hpp>

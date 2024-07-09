@@ -32,6 +32,7 @@
 #include <Storages/MergeTree/MergeList.h>
 #include <Storages/MergeTree/MergePlainMergeTreeTask.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeSink.h>
 #include <Storages/MergeTree/PartitionPruner.h>
 #include <Storages/MergeTree/checkDataPart.h>

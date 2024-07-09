@@ -11,6 +11,7 @@
 #include <Common/ThreadFuzzer.h>
 #include <Storages/MergeTree/MergeAlgorithm.h>
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/AsyncBlockIDsCache.h>
 #include <DataTypes/ObjectUtils.h>
 #include <Core/Block.h>

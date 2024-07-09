@@ -17,6 +17,7 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Processors/Transforms/CheckSortedTransform.h>
@@ -41,6 +42,7 @@
 #include <Parsers/makeASTForLogicalFunction.h>
 #include <Common/logger_useful.h>
 #include <Storages/MergeTree/MergeTreeDataPartType.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 
 namespace DB
 {

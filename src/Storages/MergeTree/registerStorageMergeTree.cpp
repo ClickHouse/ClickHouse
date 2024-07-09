@@ -1,6 +1,7 @@
 #include <Databases/DatabaseReplicatedHelpers.h>
 #include <Storages/MergeTree/MergeTreeIndexMinMax.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/extractZooKeeperPathFromReplicatedTableDef.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMergeTree.h>

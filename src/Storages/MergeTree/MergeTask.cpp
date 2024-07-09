@@ -16,6 +16,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeSequentialSource.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/FutureMergedMutatedPart.h>
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
 #include <Processors/Transforms/ExpressionTransform.h>
@@ -420,6 +421,16 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
 
     /// This is the end of preparation. Execution will be per block.
     return false;
+}
+
+bool MergeTask::enabledBlockNumberColumn(GlobalRuntimeContextPtr global_ctx)
+{
+    return global_ctx->data->getSettings()->enable_block_number_column && global_ctx->metadata_snapshot->getGroupByTTLs().empty();
+}
+
+bool MergeTask::enabledBlockOffsetColumn(GlobalRuntimeContextPtr global_ctx)
+{
+    return global_ctx->data->getSettings()->enable_block_offset_column && global_ctx->metadata_snapshot->getGroupByTTLs().empty();
 }
 
 void MergeTask::addGatheringColumn(GlobalRuntimeContextPtr global_ctx, const String & name, const DataTypePtr & type)

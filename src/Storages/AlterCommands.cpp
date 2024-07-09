@@ -33,9 +33,9 @@
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Common/typeid_cast.h>
 #include <Common/randomSeed.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
 
 #include <ranges>
 

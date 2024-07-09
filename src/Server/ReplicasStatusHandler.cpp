@@ -7,6 +7,7 @@
 #include <Server/HTTPHandlerFactory.h>
 #include <Server/HTTPHandlerRequestFilter.h>
 #include <Server/IServer.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Common/typeid_cast.h>
 
