@@ -127,6 +127,20 @@ size_t getCompoundTypeDepth(const IDataType & type)
     return result;
 }
 
+/** Check whether the Tuple elements types (value_types here) meet the requirements of IN Operator and obtain the types of Block to be constructed.
+  * This function is executed according to the following logic:
+  * - if transform_null_in == false, just use left arg's types as Block type. (the Tuple elements types will be checked in createBlockFromCollection)
+  * - distinguish situations where the number of left arg is one or more:
+  *   - one : xxx IN (xxx, xxx, xxx, ...)
+  *     * if left arg's type is not NULL, just use it as Block type.
+  *     * select the first non-null-type in Tuple as the type of Block, and count whether there is a NULL type in Tuple.
+  *     * if such a type does not exist, it means that all types in Tuple are NULL, then select NULL as the type of Block.
+  *     * if the selected type is not a Nullable type and there is a NULL type in the Tuple, the selected type will be converted to the corresponding Nullable type. like:
+  *       NULL in (1, 2, NULL), we need to choose Nullable(UInt8) as Block type.
+  *     * if the selected type does not have a corresponding Nullable type, an exception is thrown.
+  *   - more : (xxx, yyy, ...) IN ((xxx, yyy, ...), ...)
+  *     extract the types from Tuple one by one, handle them according to the first situation, and finally merge them back into Tuple.
+  */
 DataTypes CheckAndGetBlockTypes(const DataTypes & block_types, const DataTypes & value_types, bool transform_null_in)
 {
     if (transform_null_in == false)

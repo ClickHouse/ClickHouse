@@ -32,10 +32,10 @@ public:
     /// (that is useful only for checking that some value is in the set and may not store the original values),
     /// store all set elements in explicit form.
     /// This is needed for subsequent use for index.
-    Set(const SizeLimits & limits_, size_t max_elements_to_fill_, bool transform_null_in_, bool first_argument_has_nullable_nothing_ = false)
+    Set(const SizeLimits & limits_, size_t max_elements_to_fill_, bool transform_null_in_, bool choose_hashed_method_ = false)
         : log(getLogger("Set")),
         limits(limits_), max_elements_to_fill(max_elements_to_fill_), transform_null_in(transform_null_in_),
-        first_argument_has_nullable_nothing(first_argument_has_nullable_nothing_),
+        choose_hashed_method(choose_hashed_method_),
         cast_cache(std::make_unique<InternalCastFunctionCache>())
     {}
 
@@ -135,7 +135,10 @@ private:
     /// If true, insert NULL values to set.
     bool transform_null_in;
 
-    bool first_argument_has_nullable_nothing;
+    /// If true, skip SetVariants::chooseMethod and choose hashed set directly.
+    /// When the parameter to the left of the IN operator is or contains NULL,
+    /// this flag will be set to true because the selected method needs to have the ability to insert and search for NULL.
+    bool choose_hashed_method;
 
     /// Check if set contains all the data.
     std::atomic<bool> is_created = false;

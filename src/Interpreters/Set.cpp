@@ -169,7 +169,7 @@ void Set::setHeader(const ColumnsWithTypeAndName & header)
         extractNestedColumnsAndNullMap(key_columns, null_map);
     }
 
-    if (first_argument_has_nullable_nothing)
+    if (choose_hashed_method)
     {
         data.init(SetVariants::Type::hashed);
     }
@@ -343,7 +343,7 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
     Columns materialized_columns;
     materialized_columns.reserve(num_key_columns);
 
-    bool terminate_due_to_failure = false;
+    bool return_in_advance = false;
     for (size_t i = 0; i < num_key_columns; ++i)
     {
         if (transform_null_in && columns.at(i).type->isNullableNothing())
@@ -351,12 +351,12 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
             // NULL IN SomeType which is not Nullable.
             if (!data_types[i]->isNullable())
             {
-                terminate_due_to_failure = true;
+                return_in_advance = true;
                 break;
             }
         }
     }
-    if (terminate_due_to_failure)
+    if (return_in_advance)
     {
         vec_res = ColumnUInt8::Container(columns.at(0).column->size(), negative);
         return res;
