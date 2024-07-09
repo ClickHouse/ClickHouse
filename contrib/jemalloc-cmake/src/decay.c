@@ -3,6 +3,22 @@
 
 #include "jemalloc/internal/decay.h"
 
+#ifdef JEMALLOC_PROF_LIBUNWIND
+#define UNW_LOCAL_ONLY
+#include <libunwind.h>
+#endif
+
+#ifdef JEMALLOC_PROF_LIBGCC
+/*
+ * We have a circular dependency -- jemalloc_internal.h tells us if we should
+ * use libgcc's unwinding functionality, but after we've included that, we've
+ * already hooked _Unwind_Backtrace.  We'll temporarily disable hooking.
+ */
+#undef _Unwind_Backtrace
+#include <unwind.h>
+#define _Unwind_Backtrace JEMALLOC_TEST_HOOK(_Unwind_Backtrace, test_hooks_libc_hook)
+#endif
+
 static const uint64_t h_steps[SMOOTHSTEP_NSTEPS] = {
 #define STEP(step, h, x, y)			\
 		h,
@@ -72,6 +88,36 @@ decay_ms_valid(ssize_t decay_ms) {
 	return false;
 }
 
+#ifdef JEMALLOC_DEBUG
+static const unsigned MAX_FRAME_SIZE = 128;
+
+typedef struct
+{
+    void **frames;
+    unsigned *len;
+} decay_unwind_data_t;
+
+static _Unwind_Reason_Code
+decay_unwind_callback(struct _Unwind_Context *context, void *arg) {
+	decay_unwind_data_t *data = (decay_unwind_data_t *)arg;
+	void *ip;
+
+	cassert(config_prof);
+
+	ip = (void *)_Unwind_GetIP(context);
+	if (ip == NULL) {
+		return _URC_END_OF_STACK;
+	}
+	data->frames[*data->len] = ip;
+	(*data->len)++;
+	if (*data->len == MAX_FRAME_SIZE) {
+		return _URC_END_OF_STACK;
+	}
+
+	return _URC_NO_REASON;
+}
+#endif
+
 static void
 decay_maybe_update_time(decay_t *decay, nstime_t *new_time) {
 	if (unlikely(!nstime_monotonic() && nstime_compare(&decay->epoch,
@@ -88,11 +134,33 @@ decay_maybe_update_time(decay_t *decay, nstime_t *new_time) {
 		nstime_copy(&decay->epoch, new_time);
 		decay_deadline_init(decay);
 	} else {
+#ifdef JEMALLOC_DEBUG
 		/* Verify that time does not go backwards. */
         if (nstime_compare(&decay->epoch, new_time) > 0)
-            malloc_printf("<jemalloc>: Invalid new time for decay: old - %llu, new - %llu\n", decay->epoch.ns, new_time->ns);
+        {
+            malloc_printf(
+                "<jemalloc>: Invalid new time for decay: old - %llu, new - %llu\ndeadline %llu, jitter_state %llu, interval %llu, time_ms "
+                "%llu\n",
+                decay->epoch.ns,
+                new_time->ns,
+                decay->deadline.ns,
+                decay->jitter_state,
+                decay->interval.ns,
+                decay->time_ms);
 
-		assert(nstime_compare(&decay->epoch, new_time) <= 0);
+            void *frames[MAX_FRAME_SIZE];
+            unsigned len = 0;
+            decay_unwind_data_t data = {&frames, &len};
+            _Unwind_Backtrace(decay_unwind_callback, &data);
+
+            for (unsigned i = 0; i < len; ++i)
+            {
+                malloc_printf("frame %llu - %x\n", i, (uint64_t)frames[i]);
+            }
+
+            abort();
+        }
+#endif
 	}
 }
 
