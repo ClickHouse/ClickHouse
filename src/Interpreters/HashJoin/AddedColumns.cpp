@@ -26,25 +26,16 @@ template<> void AddedColumns<true>::buildOutputFromRowRef()
     for (size_t i = 0; i < this->size(); ++i)
     {
         auto & col = columns[i];
-        std::array<const Block *, 255> blocks;
-        std::array<size_t, 255> rows;
-        uint8_t next_pos = 0;
-
         for (auto row_ref_i : lazy_output.row_refs)
         {
             if (row_ref_i)
             {
                 const RowRef * row_ref = reinterpret_cast<const RowRef *>(row_ref_i);
-                next_pos = appendFromBlock(col, i, blocks, rows, next_pos, row_ref->block, row_ref->row_num);
-                ++next_pos;
+                col->insertFrom(*row_ref->block->getByPosition(right_indexes[i]).column, row_ref->row_num);
             }
             else
-            {
-                next_pos = appendFromBlock(col, i, blocks, rows, next_pos, nullptr, 0);
-                ++next_pos;
-            }
+                type_name[i].type->insertDefaultInto(*col);
         }
-        insertFromBlockArray(col, i, blocks, rows, next_pos);
     }
 }
 
@@ -53,28 +44,17 @@ template<> void AddedColumns<true>::buildOutputFromRowRefList()
     for (size_t i = 0; i < this->size(); ++i)
     {
         auto & col = columns[i];
-        std::array<const Block *, 255> blocks;
-        std::array<size_t, 255> rows;
-        uint8_t next_pos = 0;
-
         for (auto row_ref_i : lazy_output.row_refs)
         {
             if (row_ref_i)
             {
                 const RowRefList * row_ref_list = reinterpret_cast<const RowRefList *>(row_ref_i);
                 for (auto it = row_ref_list->begin(); it.ok(); ++it)
-                {
-                    next_pos = appendFromBlock(col, i, blocks, rows, next_pos, it->block, it->row_num);
-                    ++next_pos;
-                }
+                    col->insertFrom(*it->block->getByPosition(right_indexes[i]).column, it->row_num);
             }
             else
-            {
-                next_pos = appendFromBlock(col, i, blocks, rows, next_pos, nullptr, 0);
-                ++next_pos;
-            }
+                type_name[i].type->insertDefaultInto(*col);
         }
-        insertFromBlockArray(col, i, blocks, rows, next_pos);
     }
 }
 

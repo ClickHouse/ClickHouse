@@ -128,34 +128,6 @@ public:
         return ColumnWithTypeAndName(std::move(columns[i]), type_name[i].type, type_name[i].qualified_name);
     }
 
-    void insertFromBlockArray(const MutableColumnPtr & col, size_t col_index, const std::array<const Block *, 255> & blocks, const std::array<size_t, 255> & rows, uint8_t pos)
-    {
-        for (size_t j = 0; j < pos; ++j)
-        {
-            if (blocks[j])
-                col->insertFrom(*blocks[j]->getByPosition(right_indexes[col_index]).column, rows[j]);
-            else
-                type_name[col_index].type->insertDefaultInto(*col);
-        }
-    }
-
-    uint8_t appendFromBlock(const MutableColumnPtr & col, size_t col_index, std::array<const Block *, 255> & blocks, std::array<size_t, 255> & rows, uint8_t pos, const Block * block, size_t row_num)
-    {
-        if (pos == blocks.size())
-        {
-            insertFromBlockArray(col, col_index, blocks, rows, pos);
-            blocks[0] = block;
-            rows[0] = row_num;
-            return 0;
-        }
-        else
-        {
-            blocks[pos] = block;
-            rows[pos] = row_num;
-            return pos;
-        }
-    }
-
     void appendFromBlock(const RowRef * row_ref, bool has_default);
 
     void appendDefaultRow();
