@@ -45,6 +45,10 @@ target_link_libraries(cxxabi PUBLIC unwind)
 # Enable capturing stack traces for all exceptions.
 target_compile_definitions(cxxabi PUBLIC -DSTD_EXCEPTION_HAS_STACK_TRACE=1)
 
+if (USE_MUSL)
+    target_compile_definitions(cxxabi PUBLIC -D_LIBCPP_HAS_MUSL_LIBC)
+endif()
+
 install(
     TARGETS cxxabi
     EXPORT global
