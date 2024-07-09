@@ -837,7 +837,7 @@ DatabaseCatalog::DatabaseCatalog(ContextMutablePtr global_context_)
     , loading_dependencies{"LoadingDeps"}
     , view_dependencies{"ViewDeps"}
     , log(getLogger("DatabaseCatalog"))
-    , limitedLog(std::make_shared<LogSeriesLimiter>(log, 1, 5))
+    , limitedLog(std::make_shared<LogSeriesLimiter>(log, 1, 20))
     , first_async_drop_in_queue(tables_marked_dropped.end())
 {
 }
