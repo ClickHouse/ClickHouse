@@ -65,6 +65,9 @@ void terminateRequestedSignalHandler(int sig, siginfo_t *, void *)
 
 void signalHandler(int sig, siginfo_t * info, void * context)
 {
+    if (asynchronous_stack_unwinding && sig == SIGSEGV)
+        siglongjmp(asynchronous_stack_unwinding_signal_jump_buffer, 1);
+
     DENY_ALLOCATIONS_IN_SCOPE;
     auto saved_errno = errno;   /// We must restore previous value of errno in signal handler.
 
@@ -74,6 +77,12 @@ void signalHandler(int sig, siginfo_t * info, void * context)
 
     const ucontext_t * signal_context = reinterpret_cast<ucontext_t *>(context);
     const StackTrace stack_trace(*signal_context);
+
+#if USE_GWP_ASAN
+    if (const auto fault_address = reinterpret_cast<uintptr_t>(info->si_addr);
+        GWPAsan::isGWPAsanError(fault_address))
+        GWPAsan::printReport(fault_address);
+#endif
 
     writeBinary(sig, out);
     writePODBinary(*info, out);
@@ -299,7 +308,8 @@ void SignalListener::run()
             }
 
             readPODBinary(stack_trace, in);
-            readVectorBinary(thread_frame_pointers, in);
+            if (sig != SanitizerTrap)
+                readVectorBinary(thread_frame_pointers, in);
             readBinary(thread_num, in);
             readPODBinary(thread_ptr, in);
 
@@ -445,26 +455,26 @@ try
 
     /// In case it's a scheduled job write all previous jobs origins call stacks
     std::for_each(thread_frame_pointers.rbegin(), thread_frame_pointers.rend(),
-                  [this](const StackTrace::FramePointers & frame_pointers)
-                  {
-                      if (size_t size = std::ranges::find(frame_pointers, nullptr) - frame_pointers.begin())
-                      {
-                          LOG_FATAL(log, "========================================");
-                          WriteBufferFromOwnString bare_stacktrace;
-                          writeString("Job's origin stack trace:", bare_stacktrace);
-                          std::for_each_n(frame_pointers.begin(), size,
-                                          [&bare_stacktrace](const void * ptr)
-                                          {
-                                              writeChar(' ', bare_stacktrace);
-                                              writePointerHex(ptr, bare_stacktrace);
-                                          }
-                          );
+        [this](const StackTrace::FramePointers & frame_pointers)
+        {
+            if (size_t size = std::ranges::find(frame_pointers, nullptr) - frame_pointers.begin())
+            {
+                LOG_FATAL(log, "========================================");
+                WriteBufferFromOwnString bare_stacktrace;
+                writeString("Job's origin stack trace:", bare_stacktrace);
+                std::for_each_n(frame_pointers.begin(), size,
+                                [&bare_stacktrace](const void * ptr)
+                                {
+                                    writeChar(' ', bare_stacktrace);
+                                    writePointerHex(ptr, bare_stacktrace);
+                                }
+                );
 
-                          LOG_FATAL(log, fmt::runtime(bare_stacktrace.str()));
+                LOG_FATAL(log, fmt::runtime(bare_stacktrace.str()));
 
-                          StackTrace::toStringEveryLine(const_cast<void **>(frame_pointers.data()), 0, size, [this](std::string_view s) { LOG_FATAL(log, fmt::runtime(s)); });
-                      }
-                  }
+                StackTrace::toStringEveryLine(const_cast<void **>(frame_pointers.data()), 0, size, [this](std::string_view s) { LOG_FATAL(log, fmt::runtime(s)); });
+            }
+        }
     );
 
 
@@ -505,9 +515,7 @@ try
     if (collectCrashLog)
         collectCrashLog(sig, thread_num, query_id, stack_trace);
 
-#ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD
     Context::getGlobalContextInstance()->handleCrash();
-#endif
 
     /// Send crash report to developers (if configured)
     if (sig != SanitizerTrap)
@@ -539,8 +547,6 @@ try
         }
     }
 
-    /// ClickHouse Keeper does not link to some parts of Settings.
-#ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD
     /// List changed settings.
     if (!query_id.empty())
     {
@@ -555,7 +561,6 @@ try
                 LOG_FATAL(log, "Changed settings: {}", changed_settings);
         }
     }
-#endif
 
     /// When everything is done, we will try to send these error messages to the client.
     if (thread_ptr)

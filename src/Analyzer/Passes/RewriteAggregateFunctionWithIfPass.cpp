@@ -36,6 +36,10 @@ public:
         if (!function_node || !function_node->isAggregateFunction())
             return;
 
+        auto lower_name = Poco::toLower(function_node->getFunctionName());
+        if (lower_name.ends_with("if"))
+            return;
+
         auto & function_arguments_nodes = function_node->getArguments().getNodes();
         if (function_arguments_nodes.size() != 1)
             return;
@@ -44,7 +48,6 @@ public:
         if (!if_node || if_node->getFunctionName() != "if")
             return;
 
-        auto lower_name = Poco::toLower(function_node->getFunctionName());
         auto if_arguments_nodes = if_node->getArguments().getNodes();
         auto * first_const_node = if_arguments_nodes[1]->as<ConstantNode>();
         auto * second_const_node = if_arguments_nodes[2]->as<ConstantNode>();
@@ -71,8 +74,7 @@ public:
 
                 new_arguments[1] = std::move(if_arguments_nodes[0]);
                 function_arguments_nodes = std::move(new_arguments);
-                resolveAsAggregateFunctionWithIf(
-                    *function_node, {function_arguments_nodes[0]->getResultType(), function_arguments_nodes[1]->getResultType()});
+                resolveAggregateFunctionNodeByName(*function_node, function_node->getFunctionName() + "If");
             }
         }
         else if (first_const_node)
@@ -101,26 +103,9 @@ public:
                 new_arguments[1] = std::move(not_function);
 
                 function_arguments_nodes = std::move(new_arguments);
-                resolveAsAggregateFunctionWithIf(
-                    *function_node, {function_arguments_nodes[0]->getResultType(), function_arguments_nodes[1]->getResultType()});
+                resolveAggregateFunctionNodeByName(*function_node, function_node->getFunctionName() + "If");
             }
         }
-    }
-
-private:
-    static inline void resolveAsAggregateFunctionWithIf(FunctionNode & function_node, const DataTypes & argument_types)
-    {
-        auto result_type = function_node.getResultType();
-
-        AggregateFunctionProperties properties;
-        auto aggregate_function = AggregateFunctionFactory::instance().get(
-            function_node.getFunctionName() + "If",
-            function_node.getNullsAction(),
-            argument_types,
-            function_node.getAggregateFunction()->getParameters(),
-            properties);
-
-        function_node.resolveAsAggregateFunction(std::move(aggregate_function));
     }
 };
 

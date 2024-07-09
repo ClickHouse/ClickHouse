@@ -68,7 +68,6 @@ def get_run_command(
     repo_path: Path,
     result_path: Path,
     server_log_path: Path,
-    kill_timeout: int,
     additional_envs: List[str],
     ci_logs_args: str,
     image: DockerImage,
@@ -86,7 +85,6 @@ def get_run_command(
     )
 
     envs = [
-        f"-e MAX_RUN_TIME={int(0.9 * kill_timeout)}",
         # a static link, don't use S3_URL or S3_DOWNLOAD
         '-e S3_URL="https://s3.amazonaws.com/clickhouse-datasets"',
     ]
@@ -124,6 +122,10 @@ def _get_statless_tests_to_run(pr_info: PRInfo) -> List[str]:
 
     for fpath in pr_info.changed_files:
         if re.match(r"tests/queries/0_stateless/[0-9]{5}", fpath):
+            path_ = Path(REPO_COPY + "/" + fpath)
+            if not path_.exists():
+                logging.info("File '%s' is removed - skip", fpath)
+                continue
             logging.info("File '%s' is changed and seems like a test", fpath)
             fname = fpath.split("/")[3]
             fname_without_ext = os.path.splitext(fname)[0]
@@ -192,7 +194,6 @@ def process_results(
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("check_name")
-    parser.add_argument("kill_timeout", type=int)
     parser.add_argument(
         "--validate-bugfix",
         action="store_true",
@@ -224,12 +225,7 @@ def main():
     assert (
         check_name
     ), "Check name must be provided as an input arg or in CHECK_NAME env"
-    kill_timeout = args.kill_timeout or int(os.getenv("KILL_TIMEOUT", "0"))
-    assert (
-        kill_timeout > 0
-    ), "kill timeout must be provided as an input arg or in KILL_TIMEOUT env"
     validate_bugfix_check = args.validate_bugfix
-    print(f"Runnin check [{check_name}] with timeout [{kill_timeout}]")
 
     flaky_check = "flaky" in check_name.lower()
 
@@ -257,7 +253,7 @@ def main():
     packages_path.mkdir(parents=True, exist_ok=True)
 
     if validate_bugfix_check:
-        download_last_release(packages_path)
+        download_last_release(packages_path, debug=True)
     else:
         download_all_deb_packages(check_name, reports_path, packages_path)
 
@@ -288,7 +284,6 @@ def main():
             repo_path,
             result_path,
             server_log_path,
-            kill_timeout,
             additional_envs,
             ci_logs_args,
             docker_image,
@@ -318,9 +313,6 @@ def main():
         state, description, test_results, additional_logs = process_results(
             result_path, server_log_path
         )
-        # FIXME (alesapin)
-        if "azure" in check_name:
-            state = "success"
     else:
         print(
             "This is validate bugfix or flaky check run, but no changes test to run - skip with success"

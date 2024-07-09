@@ -39,10 +39,6 @@ def wait_for_clickhouse_stop(started_node):
     assert result == "OK", "ClickHouse process is still running"
 
 
-@pytest.mark.skipif(
-    helpers.cluster.is_arm(),
-    reason="Fails on ARM, issue https://github.com/ClickHouse/ClickHouse/issues/63855",
-)
 def test_pkill(started_node):
     if (
         started_node.is_built_with_thread_sanitizer()
@@ -63,10 +59,6 @@ def test_pkill(started_node):
         )
 
 
-@pytest.mark.skipif(
-    helpers.cluster.is_arm(),
-    reason="Fails on ARM, issue https://github.com/ClickHouse/ClickHouse/issues/63855",
-)
 def test_pkill_query_log(started_node):
     for signal in ["SEGV", "4"]:
         # force create query_log if it was not created

@@ -7,6 +7,7 @@
 #include <Functions/PositionImpl.h>
 #include <Interpreters/Context_fwd.h>
 #include <base/find_symbols.h>
+#include <Common/StringUtils.h>
 #include <Common/UTF8Helpers.h>
 #include <Common/register_objects.h>
 
@@ -129,8 +130,8 @@ namespace
             res_data.reserve(str_column->getChars().size() / 2);
             res_offsets.reserve(rows);
 
-            bool all_ascii = UTF8::isAllASCII(str_column->getChars().data(), str_column->getChars().size())
-                && UTF8::isAllASCII(reinterpret_cast<const UInt8 *>(delim.data()), delim.size());
+            bool all_ascii = isAllASCII(str_column->getChars().data(), str_column->getChars().size())
+                && isAllASCII(reinterpret_cast<const UInt8 *>(delim.data()), delim.size());
             std::unique_ptr<PositionCaseSensitiveUTF8::SearcherInBigHaystack> searcher
                 = !is_utf8 || all_ascii ? nullptr : std::make_unique<PositionCaseSensitiveUTF8::SearcherInBigHaystack>(delim.data(), delim.size());
 
@@ -162,8 +163,8 @@ namespace
             res_data.reserve(str_column->getChars().size() / 2);
             res_offsets.reserve(rows);
 
-            bool all_ascii = UTF8::isAllASCII(str_column->getChars().data(), str_column->getChars().size())
-                && UTF8::isAllASCII(reinterpret_cast<const UInt8 *>(delim.data()), delim.size());
+            bool all_ascii = isAllASCII(str_column->getChars().data(), str_column->getChars().size())
+                && isAllASCII(reinterpret_cast<const UInt8 *>(delim.data()), delim.size());
             std::unique_ptr<PositionCaseSensitiveUTF8::SearcherInBigHaystack> searcher
                 = !is_utf8 || all_ascii ? nullptr : std::make_unique<PositionCaseSensitiveUTF8::SearcherInBigHaystack>(delim.data(), delim.size());
 
@@ -194,8 +195,8 @@ namespace
             res_data.reserve(str.size() * rows / 2);
             res_offsets.reserve(rows);
 
-            bool all_ascii = UTF8::isAllASCII(reinterpret_cast<const UInt8 *>(str.data()), str.size())
-                && UTF8::isAllASCII(reinterpret_cast<const UInt8 *>(delim.data()), delim.size());
+            bool all_ascii = isAllASCII(reinterpret_cast<const UInt8 *>(str.data()), str.size())
+                && isAllASCII(reinterpret_cast<const UInt8 *>(delim.data()), delim.size());
             std::unique_ptr<PositionCaseSensitiveUTF8::SearcherInBigHaystack> searcher
                 = !is_utf8 || all_ascii ? nullptr : std::make_unique<PositionCaseSensitiveUTF8::SearcherInBigHaystack>(delim.data(), delim.size());
 

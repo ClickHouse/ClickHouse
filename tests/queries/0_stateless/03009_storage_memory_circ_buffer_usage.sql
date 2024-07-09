@@ -57,7 +57,7 @@ INSERT INTO memory SELECT * FROM numbers(9000, 10000);
 SELECT total_bytes FROM system.tables WHERE name = 'memory' and database = currentDatabase();
 
 SELECT 'TESTING INVALID SETTINGS';
-CREATE TABLE faulty_memory (i UInt32) ENGINE = Memory SETTINGS min_rows_to_keep = 100;  -- { serverError 452 }
-CREATE TABLE faulty_memory (i UInt32) ENGINE = Memory SETTINGS min_bytes_to_keep = 100; -- { serverError 452 }
+CREATE TABLE faulty_memory (i UInt32) ENGINE = Memory SETTINGS min_rows_to_keep = 100;  -- { serverError SETTING_CONSTRAINT_VIOLATION }
+CREATE TABLE faulty_memory (i UInt32) ENGINE = Memory SETTINGS min_bytes_to_keep = 100; -- { serverError SETTING_CONSTRAINT_VIOLATION }
 
 DROP TABLE memory;

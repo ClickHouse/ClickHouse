@@ -25,6 +25,7 @@
 
 #include <Poco/Logger.h>
 #include <Poco/Util/AbstractConfiguration.h>
+#include <Common/Logger.h>
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
 #include <Storages/AlterCommands.h>
@@ -42,6 +43,7 @@
 
 #include <cstddef>
 #include <filesystem>
+#include <memory>
 #include <utility>
 
 
@@ -185,6 +187,7 @@ StorageEmbeddedRocksDB::StorageEmbeddedRocksDB(const StorageID & table_id_,
         bool read_only_)
     : IStorage(table_id_)
     , WithContext(context_->getGlobalContext())
+    , log(getLogger(fmt::format("StorageEmbeddedRocksDB ({})", getStorageID().getNameForLogs())))
     , primary_key{primary_key_}
     , rocksdb_dir(std::move(rocksdb_dir_))
     , ttl(ttl_)
@@ -316,6 +319,7 @@ void StorageEmbeddedRocksDB::mutate(const MutationCommands & commands, ContextPt
 
 void StorageEmbeddedRocksDB::drop()
 {
+    std::lock_guard lock(rocksdb_ptr_mx);
     rocksdb_ptr->Close();
     rocksdb_ptr = nullptr;
 }
@@ -349,6 +353,72 @@ bool StorageEmbeddedRocksDB::optimize(
         throw Exception(ErrorCodes::ROCKSDB_ERROR, "Compaction failed: {}", status.ToString());
     return true;
 }
+
+static_assert(rocksdb::DEBUG_LEVEL == 0);
+static_assert(rocksdb::HEADER_LEVEL == 5);
+static constexpr std::array<std::pair<DB::LogsLevel, Poco::Message::Priority>, 6> rocksdb_logger_map = {
+    std::make_pair(DB::LogsLevel::debug, Poco::Message::Priority::PRIO_DEBUG),
+    std::make_pair(DB::LogsLevel::information, Poco::Message::Priority::PRIO_INFORMATION),
+    std::make_pair(DB::LogsLevel::warning, Poco::Message::Priority::PRIO_WARNING),
+    std::make_pair(DB::LogsLevel::error, Poco::Message::Priority::PRIO_ERROR),
+    std::make_pair(DB::LogsLevel::fatal, Poco::Message::Priority::PRIO_FATAL),
+    /// Same as default logger does for HEADER_LEVEL
+    std::make_pair(DB::LogsLevel::information, Poco::Message::Priority::PRIO_INFORMATION),
+};
+class StorageEmbeddedRocksDBLogger : public rocksdb::Logger
+{
+public:
+    explicit StorageEmbeddedRocksDBLogger(const rocksdb::InfoLogLevel log_level, LoggerRawPtr log_)
+        : rocksdb::Logger(log_level)
+        , log(log_)
+    {}
+
+    void Logv(const char * format, va_list ap) override
+        __attribute__((format(printf, 2, 0)))
+    {
+        Logv(rocksdb::InfoLogLevel::DEBUG_LEVEL, format, ap);
+    }
+
+    void Logv(const rocksdb::InfoLogLevel log_level, const char * format, va_list ap) override
+        __attribute__((format(printf, 3, 0)))
+    {
+        if (log_level < GetInfoLogLevel())
+            return;
+
+        auto level = rocksdb_logger_map[log_level];
+
+        /// stack buffer was enough
+        {
+            va_list backup_ap;
+            va_copy(backup_ap, ap);
+            std::array<char, 1024> stack;
+            if (vsnprintf(stack.data(), stack.size(), format, backup_ap) < static_cast<int>(stack.size()))
+            {
+                va_end(backup_ap);
+                LOG_IMPL(log, level.first, level.second, "{}", stack.data());
+                return;
+            }
+            va_end(backup_ap);
+        }
+
+        /// let's try with a bigger dynamic buffer (but not too huge, since
+        /// some of rocksdb internal code has also such a limitation, i..e
+        /// HdfsLogger)
+        {
+            va_list backup_ap;
+            va_copy(backup_ap, ap);
+            static constexpr int buffer_size = 30000;
+            std::unique_ptr<char[]> buffer(new char[buffer_size]);
+            if (vsnprintf(buffer.get(), buffer_size, format, backup_ap) >= buffer_size)
+                buffer[buffer_size - 1] = 0;
+            va_end(backup_ap);
+            LOG_IMPL(log, level.first, level.second, "{}", buffer.get());
+        }
+    }
+
+private:
+    LoggerRawPtr log;
+};
 
 void StorageEmbeddedRocksDB::initDB()
 {
@@ -446,6 +516,7 @@ void StorageEmbeddedRocksDB::initDB()
         }
     }
 
+    merged.info_log = std::make_shared<StorageEmbeddedRocksDBLogger>(merged.info_log_level, log.get());
     merged.table_factory.reset(rocksdb::NewBlockBasedTableFactory(table_options));
 
     if (ttl > 0)
@@ -463,18 +534,13 @@ void StorageEmbeddedRocksDB::initDB()
     {
         rocksdb::DB * db;
         if (read_only)
-        {
             status = rocksdb::DB::OpenForReadOnly(merged, rocksdb_dir, &db);
-        }
         else
-        {
             status = rocksdb::DB::Open(merged, rocksdb_dir, &db);
-        }
+
         if (!status.ok())
-        {
-            throw Exception(ErrorCodes::ROCKSDB_ERROR, "Failed to open rocksdb path at: {}: {}",
-                rocksdb_dir, status.ToString());
-        }
+            throw Exception(ErrorCodes::ROCKSDB_ERROR, "Failed to open rocksdb path at: {}: {}", rocksdb_dir, status.ToString());
+
         rocksdb_ptr = std::unique_ptr<rocksdb::DB>(db);
     }
 }
@@ -578,7 +644,8 @@ void ReadFromEmbeddedRocksDB::initializePipeline(QueryPipelineBuilder & pipeline
 
 void ReadFromEmbeddedRocksDB::applyFilters(ActionDAGNodes added_filter_nodes)
 {
-    filter_actions_dag = ActionsDAG::buildFilterActionsDAG(added_filter_nodes.nodes);
+    SourceStepWithFilter::applyFilters(std::move(added_filter_nodes));
+
     const auto & sample_block = getOutputStream().header;
     auto primary_key_data_type = sample_block.getByName(storage.primary_key).type;
     std::tie(keys, all_scan) = getFilterKeys(storage.primary_key, primary_key_data_type, filter_actions_dag, context);
@@ -588,8 +655,12 @@ SinkToStoragePtr StorageEmbeddedRocksDB::write(
     const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr  query_context, bool /*async_insert*/)
 {
     if (getSettings().optimize_for_bulk_insert)
+    {
+        LOG_DEBUG(log, "Using bulk insert");
         return std::make_shared<EmbeddedRocksDBBulkSink>(query_context, *this, metadata_snapshot);
+    }
 
+    LOG_DEBUG(log, "Using regular insert");
     return std::make_shared<EmbeddedRocksDBSink>(*this, metadata_snapshot);
 }
 
