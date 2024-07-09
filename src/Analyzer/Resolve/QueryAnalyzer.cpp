@@ -472,6 +472,7 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
             "Node must have query or union type. Actual {} {}",
             node->getNodeTypeName(),
             node->formatASTForErrorMessage());
+    LOG_DEBUG(&Poco::Logger::get("evaluateScalarSubqueryIfNeeded"), "QT:\n{}", node->dumpTree());
 
     auto & context = scope.context;
 
@@ -1251,24 +1252,29 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierInParentScopes(const 
 
         if (resolved_identifier)
         {
-            auto * subquery_node = resolved_identifier->as<QueryNode>();
-            auto * union_node = resolved_identifier->as<UnionNode>();
-
-            bool is_cte = (subquery_node && subquery_node->isCTE()) || (union_node && union_node->isCTE());
-            bool is_table_from_expression_arguments = lookup_result.resolve_place == IdentifierResolvePlace::EXPRESSION_ARGUMENTS &&
-                resolved_identifier->getNodeType() == QueryTreeNodeType::TABLE;
-            bool is_valid_table_expression = is_cte || is_table_from_expression_arguments;
-
             /** From parent scopes we can resolve table identifiers only as CTE.
               * Example: SELECT (SELECT 1 FROM a) FROM test_table AS a;
               *
               * During child scope table identifier resolve a, table node test_table with alias a from parent scope
               * is invalid.
               */
-            if (identifier_lookup.isTableExpressionLookup() && !is_valid_table_expression)
-                continue;
+            if (identifier_lookup.isTableExpressionLookup())
+            {
+                auto * subquery_node = resolved_identifier->as<QueryNode>();
+                auto * union_node = resolved_identifier->as<UnionNode>();
 
-            if (lookup_result.isResolvedFromCTEs())
+                bool is_cte = (subquery_node && subquery_node->isCTE()) || (union_node && union_node->isCTE());
+                bool is_table_from_expression_arguments = lookup_result.resolve_place == IdentifierResolvePlace::EXPRESSION_ARGUMENTS &&
+                    resolved_identifier->getNodeType() == QueryTreeNodeType::TABLE;
+                bool is_valid_table_expression = is_cte || is_table_from_expression_arguments;
+
+
+                if (!is_valid_table_expression)
+                    continue;
+                return lookup_result;
+            }
+
+            if (identifier_lookup.isExpressionLookup() && lookup_result.isResolvedFromCTEs())
                 resolveExpressionNode(resolved_identifier, scope, false, false);
 
             bool dependent_column = false;
