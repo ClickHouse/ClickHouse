@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Formats/FormatSettings.h>
-#include "Formats/SharedParsingThreadPool.h"
+#include <Formats/SharedParsingThreadPool.h>
 #include <IO/CompressionMethod.h>
 #include <IO/HTTPHeaderEntries.h>
 #include <IO/ReadWriteBufferFromHTTP.h>

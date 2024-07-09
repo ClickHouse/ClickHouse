@@ -17,11 +17,8 @@ public:
     explicit SharedParsingThreadPool(size_t max_threads_, size_t num_streams)
         : max_threads(max_threads_)
     {
-        chassert(num_streams > 0);
-        max_parsing_threads_per_stream = std::max<size_t>(max_threads / num_streams, 1UL);
-        free_threads = 0;
-        if (max_threads > max_parsing_threads_per_stream * num_streams)
-            free_threads = max_threads - max_parsing_threads_per_stream * num_streams;
+        max_parsing_threads_per_stream = num_streams >= max_threads ? 1 : (max_threads / std::max(num_streams, 1ul));
+        free_threads = max_threads > max_parsing_threads_per_stream * num_streams ? (max_threads - max_parsing_threads_per_stream * num_streams) : 0;
     }
 
     size_t getMaxParsingThreadsPerStream() const

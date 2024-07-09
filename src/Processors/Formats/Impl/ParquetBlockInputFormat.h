@@ -2,7 +2,7 @@
 #include "config.h"
 #if USE_PARQUET
 
-#include "Common/logger_useful.h"
+#include <Common/logger_useful.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/ISchemaReader.h>
 #include <Formats/FormatSettings.h>
