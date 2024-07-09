@@ -520,6 +520,13 @@ class ClickHouseCluster:
         self.with_azurite = False
         self._azurite_port = 0
 
+        # available when with_ceph == True
+        self.with_ceph = False
+        self.ceph_host = "ceph1"
+        self.ceph_admin_secret = ""
+        self.rados = None  # type: rados.Rados
+        self.rados_ioctx = None  # type: rados.Ioctx
+
         # available when with_hdfs == True
         self.hdfs_host = "hdfs1"
         self.hdfs_ip = None
@@ -1454,9 +1461,9 @@ class ClickHouseCluster:
     def setup_azurite_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_azurite = True
         env_variables["AZURITE_PORT"] = str(self.azurite_port)
-        env_variables[
-            "AZURITE_STORAGE_ACCOUNT_URL"
-        ] = f"http://azurite1:{env_variables['AZURITE_PORT']}/devstoreaccount1"
+        env_variables["AZURITE_STORAGE_ACCOUNT_URL"] = (
+            f"http://azurite1:{env_variables['AZURITE_PORT']}/devstoreaccount1"
+        )
         env_variables["AZURITE_CONNECTION_STRING"] = (
             f"DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;"
             f"AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;"
@@ -1562,6 +1569,22 @@ class ClickHouseCluster:
         ]
         return self.base_hive_cmd
 
+    def setup_ceph_cmd(self, instance, env_variables, docker_compose_yml_dir):
+        self.with_ceph = True
+        self.base_cmd.extend(
+            ["--file", p.join(docker_compose_yml_dir, "docker_compose_ceph.yml")]
+        )
+        self.base_ceph_cmd = [
+            "docker-compose",
+            "--env-file",
+            instance.env_file,
+            "--project-name",
+            self.project_name,
+            "--file",
+            p.join(docker_compose_yml_dir, "docker_compose_ceph.yml"),
+        ]
+        return self.base_ceph_cmd
+
     def add_instance(
         self,
         name,
@@ -1601,6 +1624,7 @@ class ClickHouseCluster:
         with_ldap=False,
         with_jdbc_bridge=False,
         with_hive=False,
+        with_ceph=False,
         with_coredns=False,
         use_old_analyzer=None,
         hostname=None,
@@ -1653,9 +1677,9 @@ class ClickHouseCluster:
 
         # Code coverage files will be placed in database directory
         # (affect only WITH_COVERAGE=1 build)
-        env_variables[
-            "LLVM_PROFILE_FILE"
-        ] = "/var/lib/clickhouse/server_%h_%p_%m.profraw"
+        env_variables["LLVM_PROFILE_FILE"] = (
+            "/var/lib/clickhouse/server_%h_%p_%m.profraw"
+        )
 
         clickhouse_start_command = CLICKHOUSE_START_COMMAND
         if clickhouse_log_file:
@@ -1668,9 +1692,9 @@ class ClickHouseCluster:
             cluster=self,
             base_path=self.base_dir,
             name=name,
-            base_config_dir=base_config_dir
-            if base_config_dir
-            else self.base_config_dir,
+            base_config_dir=(
+                base_config_dir if base_config_dir else self.base_config_dir
+            ),
             custom_main_configs=main_configs or [],
             custom_user_configs=user_configs or [],
             custom_dictionaries=dictionaries or [],
@@ -1696,6 +1720,7 @@ class ClickHouseCluster:
             with_redis=with_redis,
             with_minio=with_minio,
             with_azurite=with_azurite,
+            with_ceph=with_ceph,
             with_jdbc_bridge=with_jdbc_bridge,
             with_hive=with_hive,
             with_coredns=with_coredns,
@@ -1906,6 +1931,11 @@ class ClickHouseCluster:
         if with_azurite and not self.with_azurite:
             cmds.append(
                 self.setup_azurite_cmd(instance, env_variables, docker_compose_yml_dir)
+            )
+
+        if with_ceph and not self.with_ceph:
+            cmds.append(
+                self.setup_ceph_cmd(instance, env_variables, docker_compose_yml_dir)
             )
 
         if minio_certs_dir is not None:
@@ -2574,6 +2604,46 @@ class ClickHouseCluster:
 
         raise Exception("Can't wait Azurite to start")
 
+    def wait_ceph_to_start(self, timeout=180):
+        from rados import Rados
+
+        ceph_instance_id = self.get_instance_docker_id(self.ceph_host)
+        logging.info("Ceph instance id: %s", ceph_instance_id)
+        ceph_mon_host = self.get_instance_ip(self.ceph_host) + ":3300"
+        logging.info("Ceph mon host: %s", ceph_mon_host)
+        self.ceph_admin_secret = self.exec_in_container(
+            ceph_instance_id, ["ceph", "auth", "print-key", "client.admin"]
+        )
+        logging.debug("Ceph admin secret: %s", self.ceph_admin_secret)
+        start = time.time()
+        while time.time() - start < timeout:
+            try:
+                cluster = Rados(
+                    conf={"mon_host": ceph_mon_host, "key": self.ceph_admin_secret}
+                )
+                cluster.connect()
+                logging.debug("Connected to Ceph")
+
+                # Create necessary pool and handle for ClickHouse
+                cluster.create_pool("clickhouse")
+                logging.debug("Created pool 'clickhouse'")
+                ioctx = cluster.open_ioctx("clickhouse")
+
+                # Smoke test by writing and reading an object
+                ioctx.write_full("test", b"hello")
+                logging.debug("Wrote object 'test'")
+                assert ioctx.read("test") == b"hello"
+                ioctx.remove_object("test")
+
+                self.rados = cluster
+                self.rados_ioctx = ioctx
+                return
+            except Exception as ex:
+                logging.debug("Can't connect to Ceph: %s", str(ex))
+                time.sleep(1)
+
+        raise Exception("Can't wait Ceph to start")
+
     def wait_schema_registry_to_start(self, timeout=180):
         for port in self.schema_registry_port, self.schema_registry_auth_port:
             reg_url = "http://localhost:{}".format(port)
@@ -2974,6 +3044,17 @@ class ClickHouseCluster:
                 logging.info("Trying to connect to Azurite")
                 self.wait_azurite_to_start()
 
+            if self.with_ceph and self.base_ceph_cmd:
+                ceph_start_cmd = self.base_ceph_cmd + common_opts
+                logging.info(
+                    "Trying to create Ceph instance by command %s",
+                    " ".join(map(str, ceph_start_cmd)),
+                )
+                run_and_check(ceph_start_cmd)
+                self.up_called = True
+                logging.info("Trying to connect to Ceph...")
+                self.wait_ceph_to_start()
+
             if self.with_cassandra and self.base_cassandra_cmd:
                 subprocess_check_call(self.base_cassandra_cmd + ["up", "-d"])
                 self.up_called = True
@@ -3258,6 +3339,7 @@ class ClickHouseInstance:
         with_redis,
         with_minio,
         with_azurite,
+        with_ceph,
         with_jdbc_bridge,
         with_hive,
         with_coredns,
@@ -3351,6 +3433,7 @@ class ClickHouseInstance:
         self.with_redis = with_redis
         self.with_minio = with_minio
         self.with_azurite = with_azurite
+        self.with_ceph = with_ceph
         self.with_cassandra = with_cassandra
         self.with_ldap = with_ldap
         self.with_jdbc_bridge = with_jdbc_bridge
@@ -4555,6 +4638,9 @@ class ClickHouseInstance:
 
         if self.with_azurite:
             depends_on.append("azurite1")
+
+        if self.with_ceph:
+            depends_on.append("ceph1")
 
         # In case the environment variables are exclusive, we don't want it to be in the cluster's env file.
         # Instead, a separate env file will be created for the instance and needs to be filled with cluster's env variables.

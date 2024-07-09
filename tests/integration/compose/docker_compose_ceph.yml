@@ -1,0 +1,13 @@
+version: '2.3'
+services:
+  ceph1:
+    # build from https://github.com/canhld94/clickhouse-ceph-docker, based on ceph/ceph:v18
+    image: canhld/ceph_ch_test:v1
+    pull_policy: if_not_present
+    hostname: ceph1
+    environment:
+      - ADMIN_SECRET=AQBbAI1miwfiCRAAySWvPQPgLjjA3EsRJEcBSw==
+    ulimits:
+      nofile:
+        soft: "65536"
+        hard: "65536"

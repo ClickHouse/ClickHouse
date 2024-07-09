@@ -1,0 +1,34 @@
+<?xml version="1.0"?>
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <ceph0>
+                <type>ceph</type>
+                <user>admin</user>
+                <pool>clickhouse</pool>
+                <namespace>integration_test</namespace>
+                <options>
+                    <mon_host>ceph1:3300</mon_host>
+                    <key>AQBbAI1miwfiCRAAySWvPQPgLjjA3EsRJEcBSw==</key>
+                </options>
+                <metadata_path>/var/lib/clickhouse/ceph_metadata/</metadata_path>
+                <skip_access_check>true</skip_access_check>
+            </ceph0>
+            <ceph0_cache>
+                <type>cache</type>
+                <disk>ceph0</disk>
+                <path>/var/lib/clickhouse/ceph_cache/</path>
+                <max_size>1Gi</max_size>
+            </ceph0_cache>
+        </disks>
+        <policies>
+            <ceph>
+                <volumes>
+                    <main>
+                        <disk>ceph0_cache</disk>
+                    </main>
+                </volumes>
+            </ceph>
+        </policies>
+    </storage_configuration>
+</clickhouse>
