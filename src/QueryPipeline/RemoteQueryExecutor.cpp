@@ -104,6 +104,10 @@ RemoteQueryExecutor::RemoteQueryExecutor(
 
             connection_entries.emplace_back(std::move(result.entry));
         }
+        else
+        {
+            LOG_DEBUG(log, "Failed to connect to replica {}. {}", pool->getAddress(), fail_message);
+        }
 
         auto res = std::make_unique<MultiplexedConnections>(std::move(connection_entries), context, throttler);
         if (extension_ && extension_->replica_info)
