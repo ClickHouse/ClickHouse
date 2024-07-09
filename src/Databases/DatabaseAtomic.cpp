@@ -106,8 +106,8 @@ void DatabaseAtomic::attachTable(ContextPtr /* context_ */, const String & name,
 
 StoragePtr DatabaseAtomic::detachTable(ContextPtr /* context */, const String & name)
 {
-    // it is important to call destructures not_in_use without
-    // blocking mutex for avoid potential deadlock.
+    // it is important to call the destructors of not_in_use without
+    // locked mutex to avoid potential deadlock.
     DetachedTables not_in_use;
     StoragePtr table;
     {
