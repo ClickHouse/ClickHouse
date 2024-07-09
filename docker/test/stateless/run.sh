@@ -6,19 +6,21 @@ source /setup_export_logs.sh
 # fail on errors, verbose and export all env variables
 set -e -x -a
 
+MAX_RUN_TIME=${MAX_RUN_TIME:-10800}
+MAX_RUN_TIME=$((MAX_RUN_TIME == 0 ? 10800 : MAX_RUN_TIME))
+
 # Choose random timezone for this test run.
 #
 # NOTE: that clickhouse-test will randomize session_timezone by itself as well
 # (it will choose between default server timezone and something specific).
 TZ="$(rg -v '#' /usr/share/zoneinfo/zone.tab  | awk '{print $3}' | shuf | head -n1)"
-echo "Choosen random timezone $TZ"
+echo "Chosen random timezone $TZ"
 ln -snf "/usr/share/zoneinfo/$TZ" /etc/localtime && echo "$TZ" > /etc/timezone
 
 dpkg -i package_folder/clickhouse-common-static_*.deb
 dpkg -i package_folder/clickhouse-common-static-dbg_*.deb
-# Accept failure in the next two commands until 24.4 is released (for compatibility and Bugfix validation run)
-dpkg -i package_folder/clickhouse-odbc-bridge_*.deb || true
-dpkg -i package_folder/clickhouse-library-bridge_*.deb || true
+dpkg -i package_folder/clickhouse-odbc-bridge_*.deb
+dpkg -i package_folder/clickhouse-library-bridge_*.deb
 dpkg -i package_folder/clickhouse-server_*.deb
 dpkg -i package_folder/clickhouse-client_*.deb
 
@@ -54,12 +56,6 @@ if [[ -n "$BUGFIX_VALIDATE_CHECK" ]] && [[ "$BUGFIX_VALIDATE_CHECK" -eq 1 ]]; th
     rm /etc/clickhouse-server/config.d/handlers.yaml
     rm /etc/clickhouse-server/users.d/s3_cache_new.xml
     rm /etc/clickhouse-server/config.d/zero_copy_destructive_operations.xml
-
-    #todo: remove these after 24.3 released.
-    sudo sed -i "s|<object_storage_type>azure<|<object_storage_type>azure_blob_storage<|" /etc/clickhouse-server/config.d/azure_storage_conf.xml
-
-    #todo: remove these after 24.3 released.
-    sudo sed -i "s|<object_storage_type>local<|<object_storage_type>local_blob_storage<|" /etc/clickhouse-server/config.d/storage_conf.xml
 
     function remove_keeper_config()
     {
@@ -207,7 +203,7 @@ function run_tests()
 
     if [[ -n "$USE_AZURE_STORAGE_FOR_MERGE_TREE" ]] && [[ "$USE_AZURE_STORAGE_FOR_MERGE_TREE"  -eq 1 ]]; then
         # to disable the same tests
-        ADDITIONAL_OPTIONS+=('--s3-storage')
+        ADDITIONAL_OPTIONS+=('--azure-blob-storage')
         # azurite is slow, but with these two settings it can be super slow
         ADDITIONAL_OPTIONS+=('--no-random-settings')
         ADDITIONAL_OPTIONS+=('--no-random-merge-tree-settings')
@@ -262,14 +258,17 @@ function run_tests()
 
 export -f run_tests
 
+
+# This should be enough to setup job and collect artifacts
+TIMEOUT=$((MAX_RUN_TIME - 300))
 if [ "$NUM_TRIES" -gt "1" ]; then
     # We don't run tests with Ordinary database in PRs, only in master.
     # So run new/changed tests with Ordinary at least once in flaky check.
-    timeout_with_logging "$MAX_RUN_TIME" bash -c 'NUM_TRIES=1; USE_DATABASE_ORDINARY=1; run_tests' \
+    timeout_with_logging "$TIMEOUT" bash -c 'NUM_TRIES=1; USE_DATABASE_ORDINARY=1; run_tests' \
       | sed 's/All tests have finished//' | sed 's/No tests were run//' ||:
 fi
 
-timeout_with_logging "$MAX_RUN_TIME" bash -c run_tests ||:
+timeout_with_logging "$TIMEOUT" bash -c run_tests ||:
 
 echo "Files in current directory"
 ls -la ./
