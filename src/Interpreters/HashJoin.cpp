@@ -1732,6 +1732,8 @@ NO_INLINE size_t joinRightColumnsWithAddtitionalFilter(
     bool add_missing [[maybe_unused]],
     bool flag_per_row [[maybe_unused]])
 {
+    LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
+
     size_t left_block_rows = added_columns.rows_to_add;
     if (need_filter)
         added_columns.filter = IColumn::Filter(left_block_rows, 0);
@@ -1914,6 +1916,14 @@ NO_INLINE size_t joinRightColumns(
     constexpr JoinFeatures<KIND, STRICTNESS> join_features;
 
     const auto & block = added_columns.join_on_keys.at(0).block;
+    LOG_DEBUG(
+        &Poco::Logger::get("debug"),
+        "__PRETTY_FUNCTION__={}, __LINE__={}, block.rows()={}, block.selector.size()={}",
+        __PRETTY_FUNCTION__,
+        __LINE__,
+        block.rows(),
+        block.selector.size());
+
     size_t rows = block.rows();
     if constexpr (need_filter)
         added_columns.filter = IColumn::Filter(rows, 0);
@@ -1923,23 +1933,34 @@ NO_INLINE size_t joinRightColumns(
     if constexpr (join_features.need_replication)
         added_columns.offsets_to_replicate = std::make_unique<IColumn::Offsets>(rows);
 
+    // if (added_columns.offsets_to_replicate)
+    //     LOG_DEBUG(&Poco::Logger::get("debug"), "added_columns.offsets_to_replicate.size()={}", added_columns.offsets_to_replicate->size());
+
     IColumn::Offset current_offset = 0;
     size_t max_joined_block_rows = added_columns.max_joined_block_rows;
     size_t i = 0;
     for (; i < rows; ++i)
     {
+        const auto ind = block.selector[i];
+
         if constexpr (join_features.need_replication)
         {
             if (unlikely(current_offset >= max_joined_block_rows))
             {
-                added_columns.offsets_to_replicate->resize_assume_reserved(i);
-                added_columns.filter.resize_assume_reserved(i);
+                // LOG_DEBUG(
+                //     &Poco::Logger::get("debug"),
+                //     "current_offset={}, i={}, ind={}, max_joined_block_rows={}",
+                //     current_offset,
+                //     i,
+                //     ind,
+                //     max_joined_block_rows);
+                added_columns.offsets_to_replicate->resize_assume_reserved(ind);
+                added_columns.filter.resize_assume_reserved(ind);
                 break;
             }
         }
 
         bool right_row_found = false;
-        const auto ind = block.selector[i];
 
         KnownRowsHolder<flag_per_row> known_rows;
         for (size_t onexpr_idx = 0; onexpr_idx < added_columns.join_on_keys.size(); ++onexpr_idx)
@@ -1972,14 +1993,48 @@ NO_INLINE size_t joinRightColumns(
                         added_columns.appendFromBlock(*row_ref.block, row_ref.row_num, join_features.add_missing);
                     }
                     else
+                    {
+                        // LOG_DEBUG(
+                        //     &Poco::Logger::get("debug"),
+                        //     "__PRETTY_FUNCTION__={}, __LINE__={}, i={}, ind={}, current_offset={}",
+                        //     __PRETTY_FUNCTION__,
+                        //     __LINE__,
+                        //     i,
+                        //     ind,
+                        //     current_offset);
                         addNotFoundRow<join_features.add_missing, join_features.need_replication>(added_columns, current_offset);
+                        // LOG_DEBUG(
+                        //     &Poco::Logger::get("debug"),
+                        //     "__PRETTY_FUNCTION__={}, __LINE__={}, i={}, ind={}, current_offset={}",
+                        //     __PRETTY_FUNCTION__,
+                        //     __LINE__,
+                        //     i,
+                        //     ind,
+                        //     current_offset);
+                    }
                 }
                 else if constexpr (join_features.is_all_join)
                 {
                     setUsed<need_filter>(added_columns.filter, i);
                     used_flags.template setUsed<join_features.need_flags, flag_per_row>(find_result);
                     auto used_flags_opt = join_features.need_flags ? &used_flags : nullptr;
+                    // LOG_DEBUG(
+                    //     &Poco::Logger::get("debug"),
+                    //     "__PRETTY_FUNCTION__={}, __LINE__={}, i={}, ind={}, current_offset={}",
+                    //     __PRETTY_FUNCTION__,
+                    //     __LINE__,
+                    //     i,
+                    //     ind,
+                    //     current_offset);
                     addFoundRowAll<Map, join_features.add_missing>(mapped, added_columns, current_offset, known_rows, used_flags_opt);
+                    // LOG_DEBUG(
+                    //     &Poco::Logger::get("debug"),
+                    //     "__PRETTY_FUNCTION__={}, __LINE__={}, i={}, ind={}, current_offset={}",
+                    //     __PRETTY_FUNCTION__,
+                    //     __LINE__,
+                    //     i,
+                    //     ind,
+                    //     current_offset);
                 }
                 else if constexpr ((join_features.is_any_join || join_features.is_semi_join) && join_features.right)
                 {
@@ -1989,7 +2044,23 @@ NO_INLINE size_t joinRightColumns(
                     {
                         auto used_flags_opt = join_features.need_flags ? &used_flags : nullptr;
                         setUsed<need_filter>(added_columns.filter, i);
+                        // LOG_DEBUG(
+                        //     &Poco::Logger::get("debug"),
+                        //     "__PRETTY_FUNCTION__={}, __LINE__={}, i={}, ind={}, current_offset={}",
+                        //     __PRETTY_FUNCTION__,
+                        //     __LINE__,
+                        //     i,
+                        //     ind,
+                        //     current_offset);
                         addFoundRowAll<Map, join_features.add_missing>(mapped, added_columns, current_offset, known_rows, used_flags_opt);
+                        // LOG_DEBUG(
+                        //     &Poco::Logger::get("debug"),
+                        //     "__PRETTY_FUNCTION__={}, __LINE__={}, i={}, ind={}, current_offset={}",
+                        //     __PRETTY_FUNCTION__,
+                        //     __LINE__,
+                        //     i,
+                        //     ind,
+                        //     current_offset);
                     }
                 }
                 else if constexpr (join_features.is_any_join && KIND == JoinKind::Inner)
@@ -2032,12 +2103,44 @@ NO_INLINE size_t joinRightColumns(
         {
             if constexpr (join_features.is_anti_join && join_features.left)
                 setUsed<need_filter>(added_columns.filter, i);
+            // LOG_DEBUG(
+            //     &Poco::Logger::get("debug"),
+            //     "__PRETTY_FUNCTION__={}, __LINE__={}, i={}, ind={}, current_offset={}",
+            //     __PRETTY_FUNCTION__,
+            //     __LINE__,
+            //     i,
+            //     ind,
+            //     current_offset);
             addNotFoundRow<join_features.add_missing, join_features.need_replication>(added_columns, current_offset);
+            // LOG_DEBUG(
+            //     &Poco::Logger::get("debug"),
+            //     "__PRETTY_FUNCTION__={}, __LINE__={}, i={}, ind={}, current_offset={}",
+            //     __PRETTY_FUNCTION__,
+            //     __LINE__,
+            //     i,
+            //     ind,
+            //     current_offset);
         }
 
         if constexpr (join_features.need_replication)
         {
-           (*added_columns.offsets_to_replicate)[i] = current_offset;
+            // LOG_DEBUG(
+            //     &Poco::Logger::get("debug"),
+            //     "__PRETTY_FUNCTION__={}, __LINE__={}, i={}, ind={}, current_offset={}",
+            //     __PRETTY_FUNCTION__,
+            //     __LINE__,
+            //     i,
+            //     ind,
+            //     current_offset);
+            (*added_columns.offsets_to_replicate)[i] = current_offset;
+            // LOG_DEBUG(
+            //     &Poco::Logger::get("debug"),
+            //     "__PRETTY_FUNCTION__={}, __LINE__={}, i={}, ind={}, current_offset={}",
+            //     __PRETTY_FUNCTION__,
+            //     __LINE__,
+            //     i,
+            //     ind,
+            //     current_offset);
         }
     }
 
@@ -2179,23 +2282,6 @@ ColumnWithTypeAndName copyLeftKeyColumnToRight(
     return right_column;
 }
 
-/// Cut first num_rows rows from block in place and returns block with remaining rows
-// Block sliceBlock(HashJoin::ScatteredBlock & scattered_block, size_t num_rows)
-// {
-//     size_t total_rows = scattered_block.rows();
-//     if (num_rows >= total_rows)
-//         return {};
-//     size_t remaining_rows = total_rows - num_rows;
-//     Block remaining_block = block.cloneEmpty();
-//     for (size_t i = 0; i < block.columns(); ++i)
-//     {
-//         auto & col = block.getByPosition(i);
-//         remaining_block.getByPosition(i).column = col.column->cut(num_rows, remaining_rows);
-//         col.column = col.column->cut(0, num_rows);
-//     }
-//     return remaining_block;
-// }
-
 } /// nameless
 
 template <JoinKind KIND, JoinStrictness STRICTNESS, typename Maps>
@@ -2204,12 +2290,30 @@ Block HashJoin::joinBlockImpl(
 {
     ScatteredBlock scattered_block{block};
     auto ret = joinBlockImpl<KIND, STRICTNESS>(scattered_block, block_with_columns_to_add, maps_, is_join_get);
+    if (ret.block)
+        LOG_DEBUG(&Poco::Logger::get("debug"), "before ret.rows()={}, ret.block->rows())={}", ret.rows(), ret.block->rows());
+    ret.filterBySelector();
+    if (ret.block)
+        LOG_DEBUG(&Poco::Logger::get("debug"), "after ret.rows()={}, ret.block->rows())={}", ret.rows(), ret.block->rows());
+    if (scattered_block.block)
+        LOG_DEBUG(
+            &Poco::Logger::get("debug"),
+            "after scattered_block.rows()={}, scattered_block.block->rows())={}",
+            scattered_block.rows(),
+            scattered_block.block->rows());
+    scattered_block.filterBySelector();
+    if (scattered_block.block)
+        LOG_DEBUG(
+            &Poco::Logger::get("debug"),
+            "after scattered_block.rows()={}, scattered_block.block->rows())={}",
+            scattered_block.rows(),
+            scattered_block.block->rows());
     block = std::move(*scattered_block.block);
-    return ret;
+    return *ret.block;
 }
 
 template <JoinKind KIND, JoinStrictness STRICTNESS, typename Maps>
-Block HashJoin::joinBlockImpl(
+HashJoin::ScatteredBlock HashJoin::joinBlockImpl(
     ScatteredBlock & block, const Block & block_with_columns_to_add, const std::vector<const Maps *> & maps_, bool is_join_get) const
 {
     constexpr JoinFeatures<KIND, STRICTNESS> join_features;
@@ -2256,13 +2360,24 @@ Block HashJoin::joinBlockImpl(
     else
         added_columns.reserve(join_features.need_replication);
 
-    switchJoinRightColumns<KIND, STRICTNESS>(maps_, added_columns, data->type, used_flags);
+    const auto num_joined = switchJoinRightColumns<KIND, STRICTNESS>(maps_, added_columns, data->type, used_flags);
+    LOG_DEBUG(&Poco::Logger::get("debug"), "num_joined={}", num_joined);
     /// Do not hold memory for join_on_keys anymore
     added_columns.join_on_keys.clear();
-    Block remaining_block{}; // = sliceBlock(block, num_joined);
+    auto remaining_block = block.cut(num_joined);
+    // LOG_DEBUG(
+    //     &Poco::Logger::get("debug"),
+    //     "before remaining_block.rows()={}, remaining_block.block.rows={}",
+    //     remaining_block.rows(),
+    //     remaining_block.block ? remaining_block.block->rows() : 0);
+    block.filterBySelector();
+    // LOG_DEBUG(
+    //     &Poco::Logger::get("debug"),
+    //     "after remaining_block.rows()={}, remaining_block.block.rows={}",
+    //     remaining_block.rows(),
+    //     remaining_block.block ? remaining_block.block->rows() : 0);
 
     added_columns.buildOutput();
-    // block.filterBySelector();
     for (size_t i = 0; i < added_columns.size(); ++i)
     {
         block.block->insert(added_columns.moveColumn(i));
@@ -2323,6 +2438,25 @@ Block HashJoin::joinBlockImpl(
     {
         std::unique_ptr<IColumn::Offsets> & offsets_to_replicate = added_columns.offsets_to_replicate;
 
+        LOG_DEBUG(
+            &Poco::Logger::get("debug"),
+            "__PRETTY_FUNCTION__={}, __LINE__={}, block.rows()={}, block.selector.size()={}, offsets_to_replicate={}",
+            __PRETTY_FUNCTION__,
+            __LINE__,
+            block.rows(),
+            block.selector.size(),
+            fmt::join(*offsets_to_replicate, ", "));
+
+        // block.filterBySelector();
+
+        // LOG_DEBUG(
+        //     &Poco::Logger::get("debug"),
+        //     "__PRETTY_FUNCTION__={}, __LINE__={}, block.rows()={}, block.selector.size()={}",
+        //     __PRETTY_FUNCTION__,
+        //     __LINE__,
+        //     block.rows(),
+        //     block.selector.size());
+
         /// If ALL ... JOIN - we replicate all the columns except the new ones.
         for (size_t i = 0; i < existing_columns; ++i)
         {
@@ -2334,6 +2468,8 @@ Block HashJoin::joinBlockImpl(
         {
             block.block->safeGetByPosition(pos).column = block.block->safeGetByPosition(pos).column->replicate(*offsets_to_replicate);
         }
+
+        block.selector = block.createTrivialSelector(block.block->rows());
     }
 
     return remaining_block;
@@ -2553,6 +2689,12 @@ void HashJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
         if (joinDispatch(kind, strictness, maps_vector, [&](auto kind_, auto strictness_, auto & maps_vector_)
         {
             Block remaining_block = joinBlockImpl<kind_, strictness_>(block, sample_block_with_columns_to_add, maps_vector_);
+            LOG_DEBUG(
+                &Poco::Logger::get("debug"),
+                "__PRETTY_FUNCTION__={}, __LINE__={}, remaining_block.rows()={}",
+                __PRETTY_FUNCTION__,
+                __LINE__,
+                remaining_block.rows());
             if (remaining_block.rows())
                 not_processed = std::make_shared<ExtraBlock>(ExtraBlock{std::move(remaining_block)});
             else
@@ -2595,9 +2737,25 @@ void HashJoin::joinBlock(ScatteredBlock & block, ExtraBlockPtr & not_processed)
             maps_vector,
             [&](auto kind_, auto strictness_, auto & maps_vector_)
             {
-                Block remaining_block = joinBlockImpl<kind_, strictness_>(block, sample_block_with_columns_to_add, maps_vector_);
+                ScatteredBlock remaining_block = joinBlockImpl<kind_, strictness_>(block, sample_block_with_columns_to_add, maps_vector_);
+                LOG_DEBUG(
+                    &Poco::Logger::get("debug"),
+                    "__PRETTY_FUNCTION__={}, __LINE__={}, remaining_block.rows()={}",
+                    __PRETTY_FUNCTION__,
+                    __LINE__,
+                    remaining_block.rows());
                 if (remaining_block.rows())
-                    not_processed = std::make_shared<ExtraBlock>(ExtraBlock{std::move(remaining_block)});
+                {
+                    /// TODO: selector should be trivial since for concurrent hash join we always have empty remaining block
+                    remaining_block.filterBySelector();
+                    LOG_DEBUG(
+                        &Poco::Logger::get("debug"),
+                        "__PRETTY_FUNCTION__={}, __LINE__={}, remaining_block.rows()={}",
+                        __PRETTY_FUNCTION__,
+                        __LINE__,
+                        remaining_block.rows());
+                    not_processed = std::make_shared<ExtraBlock>(ExtraBlock{std::move(*remaining_block.block)});
+                }
                 else
                     not_processed.reset();
             }))

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <deque>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <variant>
@@ -17,6 +18,7 @@
 #include <Common/ColumnsHashing.h>
 #include <Common/HashTable/FixedHashMap.h>
 #include <Common/HashTable/HashMap.h>
+#include "Columns/IColumn.h"
 #include "Core/ColumnsWithTypeAndName.h"
 #include "base/defines.h"
 
@@ -184,10 +186,9 @@ public:
         bool was_scattered = true;
 
         ScatteredBlock() = default;
-        ScatteredBlock(const Block & block_) : block(std::make_shared<Block>(block_)), selector(block->rows()), was_scattered(false)
+        ScatteredBlock(const Block & block_)
+            : block(std::make_shared<Block>(block_)), selector(createTrivialSelector(block->rows())), was_scattered(false)
         {
-            for (size_t i = 0; i < block->rows(); ++i)
-                selector[i] = i;
         }
 
         operator bool() const { return block != nullptr; }
@@ -216,7 +217,8 @@ public:
 
         void filterBySelector()
         {
-            for (auto & col : block->getColumns())
+            auto columns = block->getColumns();
+            for (auto & col : columns)
             {
                 auto c = col->cloneEmpty();
                 c->reserve(selector.size());
@@ -224,6 +226,35 @@ public:
                     c->insertFrom(*col, idx);
                 col = std::move(c);
             }
+            block = std::make_shared<Block>(block->cloneWithColumns(std::move(columns)));
+            selector = createTrivialSelector(block->rows());
+            was_scattered = false;
+        }
+
+        /// Cut first num_rows rows from block in place and returns block with remaining rows
+        ScatteredBlock cut(size_t num_rows)
+        {
+            // TODO: fix me
+            // if (num_rows >= rows())
+            //     return ScatteredBlock(Block{});
+
+            ScatteredBlock remaining_block;
+            remaining_block.selector.assign(selector.begin() + num_rows, selector.end());
+            remaining_block.block = block;
+            remaining_block.was_scattered = was_scattered;
+
+            /// Cut rows from current block
+            selector.erase(selector.begin() + num_rows, selector.end());
+
+            return remaining_block;
+        }
+
+        IColumn::Selector createTrivialSelector(size_t size)
+        {
+            IColumn::Selector res(size);
+            for (size_t i = 0; i < size; ++i)
+                res[i] = i;
+            return res;
         }
     };
 
@@ -557,7 +588,7 @@ private:
         Block & block, const Block & block_with_columns_to_add, const std::vector<const Maps *> & maps_, bool is_join_get = false) const;
 
     template <JoinKind KIND, JoinStrictness STRICTNESS, typename Maps>
-    Block joinBlockImpl(
+    ScatteredBlock joinBlockImpl(
         ScatteredBlock & block,
         const Block & block_with_columns_to_add,
         const std::vector<const Maps *> & maps_,
