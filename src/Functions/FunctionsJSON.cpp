@@ -354,7 +354,10 @@ public:
     explicit ExecutableFunctionJSON(const NullPresence & null_presence_, bool allow_simdjson_, const DataTypePtr & json_return_type_, const FormatSettings & format_settings_)
         : null_presence(null_presence_), allow_simdjson(allow_simdjson_), json_return_type(json_return_type_), format_settings(format_settings_)
     {
+        /// Don't escape forward slashes during converting JSON elements to raw string.
         format_settings.json.escape_forward_slashes = false;
+        /// Don't insert default values on null during traversing the JSON element.
+        /// We allow to insert null only to Nullable columns in JSONExtract functions.
         format_settings.null_as_default = false;
     }
 

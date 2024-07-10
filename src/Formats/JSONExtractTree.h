@@ -9,7 +9,13 @@ namespace DB
 
 struct JSONExtractInsertSettings
 {
+    /// If false, JSON boolean values won't be inserted into columns with integer types
+    /// It's used in JSONExtractInt64/JSONExtractUInt64/... functions.
     bool convert_bool_to_integer = true;
+    /// If true, when complex type like Array/Map has both valid and invalid elements,
+    /// the default value will be inserted on invalid elements.
+    /// For example, if we have [1, "hello", 2] and type Array(UInt32),
+    /// we will insert [1, 0, 2] in the column. Used in all JSONExtract functions.
     bool insert_default_on_invalid_elements_in_complex_types = false;
 };
 
