@@ -46,9 +46,6 @@ public:
     /// Initialize the callback and perform the initial cert loading
     void init();
 
-    /// Handle configuration reload
-    void tryLoad(const Poco::Util::AbstractConfiguration & config);
-
     /// Callback for Let's Enrypt integration
     void reloadCertificates();
 
@@ -110,7 +107,6 @@ public:
         LetsEncryptConfigurationData(bool is_issuing_enabled_, int reissue_hours_before_);
     };
 
-    MultiVersion<Data> data;
     bool init_was_not_made = true;
 
     MultiVersion<LetsEncryptConfigurationData> let_encrypt_configuration_data;
