@@ -1,7 +1,7 @@
 ---
 slug: /en/sql-reference/window-functions/row_number
 sidebar_label: row_number
-sidebar_position: 7
+sidebar_position: 8
 ---
 
 # row_number

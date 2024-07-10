@@ -1,7 +1,7 @@
 ---
 slug: /en/sql-reference/window-functions/leadInFrame
 sidebar_label: leadInFrame
-sidebar_position: 5
+sidebar_position: 6
 ---
 
 # nth_value
@@ -51,7 +51,7 @@ Engine = Memory;
 INSERT INTO salaries FORMAT Values
     ('Port Elizabeth Barbarians', 'Gary Chen', 195000, 'F'),
     ('New Coreystad Archdukes', 'Charles Juarez', 190000, 'F'),
-    ('Port Elizabeth Barbarians', 'Michael Stanley', 10000, 'D'),
+    ('Port Elizabeth Barbarians', 'Michael Stanley', 100000, 'D'),
     ('New Coreystad Archdukes', 'Scott Harrison', 180000, 'D'),
     ('Port Elizabeth Barbarians', 'Robert George', 195000, 'M'),
     ('South Hampton Seagulls', 'Douglas Benson', 150000, 'M'),
@@ -59,19 +59,19 @@ INSERT INTO salaries FORMAT Values
 ```
 
 ```sql
-SELECT salary, nth_value(salary,3) OVER(ORDER BY salary DESC) FROM salaries GROUP BY salary;
+SELECT player, salary, nth_value(player,3) OVER(ORDER BY salary DESC) AS third_highest_salary FROM salaries;
 ```
 
 Result:
 
 ```response
-   ┌─player──────────┬─salary─┬─rank─┐
-1. │ Gary Chen       │ 195000 │    1 │
-2. │ Robert George   │ 195000 │    1 │
-3. │ Charles Juarez  │ 190000 │    3 │
-4. │ Douglas Benson  │ 150000 │    4 │
-5. │ Michael Stanley │ 150000 │    4 │
-6. │ Scott Harrison  │ 150000 │    4 │
-7. │ James Henderson │ 140000 │    7 │
-   └─────────────────┴────────┴──────┘
+   ┌─player──────────┬─salary─┬─third_highest_salary─┐
+1. │ Gary Chen       │ 195000 │                      │
+2. │ Robert George   │ 195000 │                      │
+3. │ Charles Juarez  │ 190000 │ Charles Juarez       │
+4. │ Scott Harrison  │ 180000 │ Charles Juarez       │
+5. │ Douglas Benson  │ 150000 │ Charles Juarez       │
+6. │ James Henderson │ 140000 │ Charles Juarez       │
+7. │ Michael Stanley │ 100000 │ Charles Juarez       │
+   └─────────────────┴────────┴──────────────────────┘
 ```

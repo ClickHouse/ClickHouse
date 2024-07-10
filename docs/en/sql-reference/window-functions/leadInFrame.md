@@ -1,7 +1,7 @@
 ---
 slug: /en/sql-reference/window-functions/leadInFrame
 sidebar_label: leadInFrame
-sidebar_position: 4
+sidebar_position: 5
 ---
 
 # leadInFrame
