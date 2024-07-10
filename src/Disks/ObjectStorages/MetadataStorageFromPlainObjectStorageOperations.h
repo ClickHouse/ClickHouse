@@ -2,6 +2,7 @@
 
 #include <Disks/ObjectStorages/IMetadataOperation.h>
 #include <Disks/ObjectStorages/MetadataStorageFromPlainObjectStorage.h>
+#include "Disks/ObjectStorages/PathComparator.h"
 
 #include <filesystem>
 #include <map>
@@ -14,7 +15,7 @@ class MetadataStorageFromPlainObjectStorageCreateDirectoryOperation final : publ
 private:
     std::filesystem::path path;
     std::string key_prefix;
-    MetadataStorageFromPlainObjectStorage::PathMap & path_map;
+    InMemoryPathMap & path_map;
     ObjectStoragePtr object_storage;
     const std::string metadata_key_prefix;
 
@@ -26,7 +27,7 @@ public:
     MetadataStorageFromPlainObjectStorageCreateDirectoryOperation(
         std::filesystem::path && path_,
         std::string && key_prefix_,
-        MetadataStorageFromPlainObjectStorage::PathMap & path_map_,
+        InMemoryPathMap & path_map_,
         ObjectStoragePtr object_storage_,
         const std::string & metadata_key_prefix_);
 
@@ -39,7 +40,7 @@ class MetadataStorageFromPlainObjectStorageMoveDirectoryOperation final : public
 private:
     std::filesystem::path path_from;
     std::filesystem::path path_to;
-    MetadataStorageFromPlainObjectStorage::PathMap & path_map;
+    InMemoryPathMap & path_map;
     ObjectStoragePtr object_storage;
     const std::string metadata_key_prefix;
 
@@ -53,7 +54,7 @@ public:
     MetadataStorageFromPlainObjectStorageMoveDirectoryOperation(
         std::filesystem::path && path_from_,
         std::filesystem::path && path_to_,
-        MetadataStorageFromPlainObjectStorage::PathMap & path_map_,
+        InMemoryPathMap & path_map_,
         ObjectStoragePtr object_storage_,
         const std::string & metadata_key_prefix_);
 
@@ -67,7 +68,7 @@ class MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation final : publ
 private:
     std::filesystem::path path;
 
-    MetadataStorageFromPlainObjectStorage::PathMap & path_map;
+    InMemoryPathMap & path_map;
     ObjectStoragePtr object_storage;
     const std::string metadata_key_prefix;
 
@@ -77,7 +78,7 @@ private:
 public:
     MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation(
         std::filesystem::path && path_,
-        MetadataStorageFromPlainObjectStorage::PathMap & path_map_,
+        InMemoryPathMap & path_map_,
         ObjectStoragePtr object_storage_,
         const std::string & metadata_key_prefix_);
 

@@ -3,11 +3,12 @@
 
 #include <unordered_set>
 #include <IO/ReadHelpers.h>
-#include <IO/SharedThreadPools.h>
 #include <IO/S3Common.h>
+#include <IO/SharedThreadPools.h>
 #include <Common/ErrorCodes.h>
 #include <Common/logger_useful.h>
 #include "CommonPathPrefixKeyGenerator.h"
+#include "Disks/ObjectStorages/PathComparator.h"
 
 
 namespace DB
@@ -37,9 +38,10 @@ std::string getMetadataKeyPrefix(ObjectStoragePtr object_storage)
         : metadata_key_prefix;
 }
 
-MetadataStorageFromPlainObjectStorage::PathMap loadPathPrefixMap(const std::string & metadata_key_prefix, ObjectStoragePtr object_storage)
+InMemoryPathMap::Map loadPathPrefixMap(const std::string & metadata_key_prefix, ObjectStoragePtr object_storage)
 {
-    MetadataStorageFromPlainObjectStorage::PathMap result;
+    using Map = InMemoryPathMap::Map;
+    Map result;
 
     ThreadPool & pool = getIOThreadPool().get();
     ThreadPoolCallbackRunnerLocal<void> runner(pool, "PlainRWMetaLoad");
@@ -94,7 +96,7 @@ MetadataStorageFromPlainObjectStorage::PathMap loadPathPrefixMap(const std::stri
             chassert(remote_metadata_path.string().starts_with(metadata_key_prefix));
             auto suffix = remote_metadata_path.string().substr(metadata_key_prefix.size());
             auto remote_path = std::filesystem::path(std::move(suffix));
-            std::pair<MetadataStorageFromPlainObjectStorage::PathMap::iterator, bool> res;
+            std::pair<Map::iterator, bool> res;
             {
                 std::lock_guard lock(mutex);
                 res = result.emplace(std::filesystem::path(local_path).parent_path(), remote_path.parent_path());
@@ -126,14 +128,13 @@ void getDirectChildrenOnDiskImpl(
     const std::string & storage_key_perfix,
     const RelativePathsWithMetadata & remote_paths,
     const std::string & local_path,
-    const MetadataStorageFromPlainObjectStorage::PathMap & local_path_prefixes,
+    const InMemoryPathMap::Map & local_path_prefixes,
     SharedMutex & shared_mutex,
     std::unordered_set<std::string> & result)
 {
-    using PathMap = MetadataStorageFromPlainObjectStorage::PathMap;
-
     /// Map remote paths into local subdirectories.
-    std::unordered_map<PathMap::mapped_type, PathMap::key_type> remote_to_local_subdir;
+    using Map = InMemoryPathMap::Map;
+    std::unordered_map<Map::mapped_type, Map::key_type> remote_to_local_subdir;
 
     {
         std::shared_lock lock(shared_mutex);
@@ -189,7 +190,7 @@ MetadataStorageFromPlainRewritableObjectStorage::MetadataStorageFromPlainRewrita
     ObjectStoragePtr object_storage_, String storage_path_prefix_)
     : MetadataStorageFromPlainObjectStorage(object_storage_, storage_path_prefix_)
     , metadata_key_prefix(DB::getMetadataKeyPrefix(object_storage))
-    , path_map(std::make_shared<PathMap>(loadPathPrefixMap(metadata_key_prefix, object_storage)))
+    , path_map(std::make_shared<InMemoryPathMap>(loadPathPrefixMap(metadata_key_prefix, object_storage)))
 {
     if (object_storage->isWriteOnce())
         throw Exception(
@@ -197,14 +198,14 @@ MetadataStorageFromPlainRewritableObjectStorage::MetadataStorageFromPlainRewrita
             "MetadataStorageFromPlainRewritableObjectStorage is not compatible with write-once storage '{}'",
             object_storage->getName());
 
-    auto keys_gen = std::make_shared<CommonPathPrefixKeyGenerator>(object_storage->getCommonKeyPrefix(), metadata_mutex, path_map);
+    auto keys_gen = std::make_shared<CommonPathPrefixKeyGenerator>(object_storage->getCommonKeyPrefix(), path_map);
     object_storage->setKeysGenerator(keys_gen);
 }
 
 MetadataStorageFromPlainRewritableObjectStorage::~MetadataStorageFromPlainRewritableObjectStorage()
 {
     auto metric = object_storage->getMetadataStorageMetrics().directory_map_size;
-    CurrentMetrics::sub(metric, path_map->size());
+    CurrentMetrics::sub(metric, path_map->map.size());
 }
 
 bool MetadataStorageFromPlainRewritableObjectStorage::exists(const std::string & path) const
@@ -263,7 +264,7 @@ void MetadataStorageFromPlainRewritableObjectStorage::getDirectChildrenOnDisk(
     const std::string & local_path,
     std::unordered_set<std::string> & result) const
 {
-    getDirectChildrenOnDiskImpl(storage_key, storage_key_perfix, remote_paths, local_path, *getPathMap(), metadata_mutex, result);
+    getDirectChildrenOnDiskImpl(storage_key, storage_key_perfix, remote_paths, local_path, getPathMap()->map, getPathMap()->mutex, result);
 }
 
 }

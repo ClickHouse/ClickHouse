@@ -28,10 +28,6 @@ using UnlinkMetadataFileOperationOutcomePtr = std::shared_ptr<UnlinkMetadataFile
 /// structure as on disk MergeTree, and does not require metadata from a local disk to restore.
 class MetadataStorageFromPlainObjectStorage : public IMetadataStorage
 {
-public:
-    /// Local path prefixes mapped to storage key prefixes.
-    using PathMap = std::map<std::filesystem::path, std::string, PathComparator>;
-
 private:
     friend class MetadataStorageFromPlainObjectStorageTransaction;
 
@@ -86,7 +82,7 @@ protected:
     virtual std::string getMetadataKeyPrefix() const { return object_storage->getCommonKeyPrefix(); }
 
     /// Returns a map of local paths to paths in object storage.
-    virtual std::shared_ptr<PathMap> getPathMap() const { throwNotImplemented(); }
+    virtual std::shared_ptr<InMemoryPathMap> getPathMap() const { throwNotImplemented(); }
 };
 
 class MetadataStorageFromPlainObjectStorageTransaction final : public IMetadataTransaction, private MetadataOperationsHolder
