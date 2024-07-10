@@ -153,12 +153,8 @@ public:
             return true;
         }
 
-        std::vector<double> xfreq(spec_len);
         double step = 0.5 / (spec_len - 1);
-        for (size_t i = 0; i < spec_len; ++i)
-            xfreq[i] = i * step;
-
-        auto freq = xfreq[idx];
+        auto freq = idx * step;
 
         period = std::round(1 / freq);
         return true;
