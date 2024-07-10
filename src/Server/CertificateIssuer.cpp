@@ -31,10 +31,13 @@ namespace
         CertificateIssuer::instance().PlaceFile(domainName, url, keyAuthorization);
     }
 
-    void CheckConfiguration(const Poco::Util::AbstractConfiguration & config) {
-        for (const auto & name : config_names){
-            if (!config.has(name)){
-                throw Poco::Net::SSLException(fmt::format("Config must have {} for Let's Ecrypt Integration", name));
+    void CheckConfiguration (const Poco::Util::AbstractConfiguration & config)
+    {
+        for (const auto & name : config_names)
+        {
+            if (!config.has(name))
+            {
+                throw Poco::Net::SSLException(fmt::format("Config must have {} for Let's Encrypt Integration", name));
             }
         }
     }
@@ -42,9 +45,9 @@ namespace
 
 void CertificateIssuer::UpdateCertificates(const LetsEncryptConfigurationData & config_data, std::function<void()> callback)
 {
-    if (update_started.load()){
+    if (update_started.load())
         return;
-    }
+
     update_started = true;
 
     acme_lw::AcmeClient::init();
@@ -98,7 +101,7 @@ CertificateIssuer::LetsEncryptConfigurationData::LetsEncryptConfigurationData(co
 
     DB::WriteBufferFromString out_buffer(account_private_key);
     DB::ReadBufferFromFile in_buffer(config.getString("LetsEncrypt.accountPrivateKeyFile", ""));
-    DB::copyData(in_buffer, out_buffer);     
+    DB::copyData(in_buffer, out_buffer);
 }
 
 void CertificateIssuer::PlaceFile(const std::string & domainName, const std::string & url, const std::string & keyAuthorization)
