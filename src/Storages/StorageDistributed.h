@@ -63,20 +63,6 @@ public:
         ClusterPtr owned_cluster_ = {},
         ASTPtr remote_table_function_ptr_ = {});
 
-    StorageDistributed(
-        const StorageID & id_,
-        const ColumnsDescription & columns_,
-        const ConstraintsDescription & constraints_,
-        ASTPtr remote_table_function_ptr_,
-        const String & cluster_name_,
-        ContextPtr context_,
-        const ASTPtr & sharding_key_,
-        const String & storage_policy_name_,
-        const String & relative_data_path_,
-        const DistributedSettings & distributed_settings_,
-        LoadingStrictnessLevel mode,
-        ClusterPtr owned_cluster_ = {});
-
     ~StorageDistributed() override;
 
     std::string getName() const override { return "Distributed"; }
