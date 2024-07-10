@@ -1,6 +1,7 @@
 #include <atomic>
 #include <cerrno>
 #include <chrono>
+#include <Coordination/CoordinationSettings.h>
 #include <Coordination/KeeperDispatcher.h>
 #include <Coordination/KeeperReconfiguration.h>
 #include <Coordination/KeeperSnapshotManager.h>

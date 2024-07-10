@@ -4,6 +4,7 @@
 
 #include <Common/ZooKeeper/ZooKeeperIO.h>
 #include <Core/Types.h>
+#include <Coordination/CoordinationSettings.h>
 #include <IO/WriteBufferFromPocoSocket.h>
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <Poco/Net/NetException.h>
