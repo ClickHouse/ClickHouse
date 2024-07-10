@@ -8,7 +8,6 @@ endif()
 set(Ceph_LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/ceph")
 set(Ceph_CMAKE_DIR "${ClickHouse_SOURCE_DIR}/contrib/ceph-cmake")
 set(Ceph_BUILD_DIR "${ClickHouse_BINARY_DIR}/contrib/ceph-cmake")
-set(Ceph_INCLUDE_DIR "${Ceph_BUILD_DIR}/include")
 set (CMAKE_CXX_STANDARD 20)
 
 ### common ceph infrastructure
@@ -26,12 +25,12 @@ list(GET CEPH_RELEASE_FILE 2 CEPH_RELEASE_TYPE)
 
 configure_file(
   ${Ceph_LIBRARY_DIR}/src/include/config-h.in.cmake
-  ${Ceph_INCLUDE_DIR}/acconfig.h
+  ${Ceph_BUILD_DIR}/acconfig.h
 )
 
 configure_file(
   ${Ceph_LIBRARY_DIR}/src/ceph_ver.h.in.cmake
-  ${Ceph_INCLUDE_DIR}/ceph_ver.h
+  ${Ceph_BUILD_DIR}/ceph_ver.h
   @ONLY)
 
 
@@ -53,7 +52,7 @@ configure_file(
 #   configure_file("${yaml_in_file}"
 #     "${yaml_file}" @ONLY)
 #   set(cc_file "${Ceph_BUILD_DIR}/${name}_options.cc")
-#   set(h_file "${Ceph_INCLUDE_DIR}/${name}_legacy_options.h")
+#   set(h_file "${Ceph_BUILD_DIR}/${name}_legacy_options.h")
 #   execute_process(
 #     COMMAND ${Python3_EXECUTABLE} ${OPTIONS_DIR}/y2c.py
 #       --input ${yaml_file}
@@ -329,7 +328,7 @@ add_library(_librados ${SRCS})
 add_library(ch_contrib::ceph ALIAS _librados)
 
 ### ceph origin
-target_include_directories(_librados PRIVATE "${Ceph_LIBRARY_DIR}/src/" "${Ceph_INCLUDE_DIR}")
+target_include_directories(_librados PRIVATE "${Ceph_LIBRARY_DIR}/src/" "${Ceph_BUILD_DIR}" "${Ceph_CMAKE_DIR}/Options")
 target_include_directories(_librados SYSTEM BEFORE INTERFACE "${Ceph_LIBRARY_DIR}/src/include/rados")
 target_compile_definitions(_librados PRIVATE HAVE_CONFIG_H __CEPH__ CEPH_USE_RE2)
 
