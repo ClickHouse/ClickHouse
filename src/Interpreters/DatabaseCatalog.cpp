@@ -1314,6 +1314,7 @@ void DatabaseCatalog::dropTablesParallel(std::vector<DatabaseCatalog::TablesMark
             {
                 dropTableFinally(*table_iterator);
 
+                TableMarkedAsDropped table_to_delete_without_lock;
                 {
                     std::lock_guard lock(tables_marked_dropped_mutex);
 
@@ -1323,6 +1324,7 @@ void DatabaseCatalog::dropTablesParallel(std::vector<DatabaseCatalog::TablesMark
                     [[maybe_unused]] auto removed = tables_marked_dropped_ids.erase(table_iterator->table_id.uuid);
                     chassert(removed);
 
+                    table_to_delete_without_lock = std::move(*table_iterator);
                     tables_marked_dropped.erase(table_iterator);
 
                     wait_table_finally_dropped.notify_all();
