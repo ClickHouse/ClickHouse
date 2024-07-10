@@ -2510,17 +2510,13 @@ def do_run_tests(jobs, test_suite: TestSuite):
                 future.wait()
                 print("future wait DONE")
         finally:
-
-
+            print("pool.terminate")
+            pool.terminate()
+            print("pool.close")
+            pool.close()
             print("pool.join")
-            pool.join(timeout=2200)
+            pool.join()
             print("pool.join DONE")
-
-            # print("pool.terminate")
-            # pool.terminate()
-            # print("pool.close")
-            # pool.close(force=True)
-            # print("pool.join")
 
         if not args.run_sequential_tests_in_parallel:
             run_tests_array(
