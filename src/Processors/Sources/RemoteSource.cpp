@@ -182,7 +182,7 @@ std::optional<Chunk> RemoteSource::tryGenerate()
     return chunk;
 }
 
-void RemoteSource::onCancel()
+void RemoteSource::onCancelX()
 {
     query_executor->cancel();
 }

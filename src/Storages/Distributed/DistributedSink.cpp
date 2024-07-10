@@ -596,7 +596,7 @@ void DistributedSink::onFinish()
     }
 }
 
-void DistributedSink::onCancel()
+void DistributedSink::onCancelX()
 {
     std::lock_guard lock(execution_mutex);
     if (pool && !pool->finished())

@@ -122,7 +122,7 @@ public:
         started_prefix = true;
     }
 
-    void onCancel() override
+    void onCancelX() override
     {
         finishAndWait();
     }

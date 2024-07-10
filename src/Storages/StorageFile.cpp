@@ -52,6 +52,7 @@
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <Common/re2.h>
+#include "base/defines.h"
 
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -1747,6 +1748,12 @@ public:
         initialize();
     }
 
+    ~StorageFileSink() override
+    {
+        if (isCancelled())
+            cancelBuffers();
+    }
+
     void initialize()
     {
         std::unique_ptr<WriteBufferFromFileDescriptor> naked_buffer;
@@ -1780,37 +1787,14 @@ public:
 
     void consume(Chunk chunk) override
     {
-        std::lock_guard cancel_lock(cancel_mutex);
-        if (cancelled)
+        if (isCancelled())
             return;
         writer->write(getHeader().cloneWithColumns(chunk.detachColumns()));
     }
 
-    void onCancel() override
-    {
-        std::lock_guard cancel_lock(cancel_mutex);
-        cancelBuffers();
-        releaseBuffers();
-        cancelled = true;
-    }
-
-    void onException(std::exception_ptr exception) override
-    {
-        std::lock_guard cancel_lock(cancel_mutex);
-        try
-        {
-            std::rethrow_exception(exception);
-        }
-        catch (...)
-        {
-            /// An exception context is needed to proper delete write buffers without finalization
-            releaseBuffers();
-        }
-    }
-
     void onFinish() override
     {
-        std::lock_guard cancel_lock(cancel_mutex);
+        chassert(!isCancelled());
         finalizeBuffers();
     }
 
@@ -1865,9 +1849,6 @@ private:
 
     int flags;
     std::unique_lock<std::shared_timed_mutex> lock;
-
-    std::mutex cancel_mutex;
-    bool cancelled = false;
 };
 
 class PartitionedStorageFileSink : public PartitionedSink

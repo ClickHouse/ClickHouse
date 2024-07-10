@@ -176,7 +176,7 @@ Chunk ParallelParsingInputFormat::read()
         if (background_exception)
         {
             lock.unlock();
-            onCancel();
+            onCancelX();
             std::rethrow_exception(background_exception);
         }
 

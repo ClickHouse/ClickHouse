@@ -556,7 +556,10 @@ void TCPHandler::runImpl()
                             std::scoped_lock lock(out_mutex, task_callback_mutex);
 
                             if (getQueryCancellationStatus() == CancellationStatus::FULLY_CANCELLED)
+                            {
+                                LOG_INFO(log, "CancelCallback FULLY_CANCELLED");
                                 return true;
+                            }
 
                             sendProgress();
                             sendSelectProfileEvents();

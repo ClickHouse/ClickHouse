@@ -137,7 +137,7 @@ private:
 
     Chunk read() final;
 
-    void onCancel() final
+    void onCancelX() final
     {
         /*
          * The format parsers themselves are not being cancelled here, so we'll

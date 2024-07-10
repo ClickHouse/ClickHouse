@@ -3,6 +3,7 @@
 #include <QueryPipeline/QueryPipeline.h>
 #include <QueryPipeline/ReadProgressCallback.h>
 #include <Poco/Event.h>
+#include "Common/Logger.h"
 #include <Common/setThreadName.h>
 #include <Common/ThreadPool.h>
 #include <Common/scope_guard_safe.h>
@@ -97,7 +98,10 @@ void CompletedPipelineExecutor::execute()
                 break;
 
             if (is_cancelled_callback())
+            {
+                LOG_INFO(getLogger("CompletedPipelineExecutor"), "execute CancelCallback FULLY_CANCELLED");
                 data->executor->cancel();
+            }
         }
 
         if (data->has_exception)
@@ -116,7 +120,10 @@ CompletedPipelineExecutor::~CompletedPipelineExecutor()
     try
     {
         if (data && data->executor)
+        {
+            LOG_INFO(getLogger("CompletedPipelineExecutor"), "~CompletedPipelineExecutor");
             data->executor->cancel();
+        }
     }
     catch (...)
     {

@@ -26,7 +26,23 @@ struct MergeTreeSink::DelayedChunk
 };
 
 
-MergeTreeSink::~MergeTreeSink() = default;
+MergeTreeSink::~MergeTreeSink()
+{
+    size_t addr = delayed_chunk ? size_t(delayed_chunk.get()) : 0;
+    LOG_INFO(storage.log, "~ReplicatedMergeTreeSinkImpl, delayed_chunk {}, called from {}", addr, StackTrace().toString());
+
+    if (!delayed_chunk)
+        return;
+
+    for (auto & partition : delayed_chunk->partitions)
+    {
+        partition.temp_part.cancel();
+    }
+
+    delayed_chunk.reset();
+
+    LOG_INFO(storage.log, "~ReplicatedMergeTreeSinkImpl end");
+}
 
 MergeTreeSink::MergeTreeSink(
     StorageMergeTree & storage_,
@@ -51,20 +67,8 @@ void MergeTreeSink::onStart()
 
 void MergeTreeSink::onFinish()
 {
+    chassert(!isCancelled());
     finishDelayedChunk();
-}
-
-void MergeTreeSink::onCancel()
-{
-    if (!delayed_chunk)
-            return;
-
-    for (auto & partition : delayed_chunk->partitions)
-    {
-        partition.temp_part.cancel();
-    }
-
-    delayed_chunk.reset();
 }
 
 void MergeTreeSink::consume(Chunk chunk)

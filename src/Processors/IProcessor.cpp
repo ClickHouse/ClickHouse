@@ -16,7 +16,7 @@ void IProcessor::cancel()
     if (already_cancelled)
         return;
 
-    onCancel();
+    onCancelX();
 }
 
 String IProcessor::debug() const

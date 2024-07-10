@@ -33,13 +33,17 @@ public:
         const String & storage_name_,
         const ContextPtr & context_);
 
+    ~MessageQueueSink() override
+    {
+        onFinish();
+    }
+
     String getName() const override { return storage_name + "Sink"; }
 
     void consume(Chunk chunk) override;
 
     void onStart() override;
     void onFinish() override;
-    void onCancel() override { onFinish(); }
     void onException(std::exception_ptr /* exception */) override { onFinish(); }
 
 protected:

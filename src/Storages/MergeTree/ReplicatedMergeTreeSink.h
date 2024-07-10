@@ -54,8 +54,6 @@ public:
     void consume(Chunk chunk) override;
     void onFinish() override;
 
-    void onCancel() override;
-
     String getName() const override { return "ReplicatedMergeTreeSink"; }
 
     /// For ATTACHing existing data on filesystem.

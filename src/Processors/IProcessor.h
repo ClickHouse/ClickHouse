@@ -363,7 +363,7 @@ public:
     virtual void setRowsBeforeLimitCounter(RowsBeforeLimitCounterPtr /* counter */) {}
 
 protected:
-    virtual void onCancel() {}
+    virtual void onCancelX() {}
 
     std::atomic<bool> is_cancelled{false};
 
