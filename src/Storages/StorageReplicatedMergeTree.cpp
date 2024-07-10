@@ -20,6 +20,7 @@
 #include <Common/FailPoint.h>
 #include <Common/randomDelay.h>
 
+#include <Core/ServerSettings.h>
 #include <Core/ServerUUID.h>
 
 #include <Disks/ObjectStorages/IMetadataStorage.h>

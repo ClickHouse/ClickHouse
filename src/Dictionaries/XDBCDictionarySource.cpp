@@ -15,6 +15,7 @@
 #include "readInvalidateQuery.h"
 #include "registerDictionaries.h"
 #include <Common/escapeForFileName.h>
+#include <Core/ServerSettings.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <Processors/Formats/IInputFormat.h>
 #include "config.h"

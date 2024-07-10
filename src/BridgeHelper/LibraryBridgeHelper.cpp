@@ -1,5 +1,6 @@
 #include "LibraryBridgeHelper.h"
 
+#include <Core/ServerSettings.h>
 #include <IO/ConnectionTimeouts.h>
 
 namespace DB

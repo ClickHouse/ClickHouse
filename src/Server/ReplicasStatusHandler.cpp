@@ -1,5 +1,6 @@
 #include <Server/ReplicasStatusHandler.h>
 
+#include <Core/ServerSettings.h>
 #include <Databases/IDatabase.h>
 #include <IO/HTTPCommon.h>
 #include <Interpreters/Context.h>

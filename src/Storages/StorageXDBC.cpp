@@ -4,6 +4,7 @@
 #include <Storages/transformQueryForExternalDatabase.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 
+#include <Core/ServerSettings.h>
 #include <Formats/FormatFactory.h>
 #include <IO/ConnectionTimeouts.h>
 #include <Interpreters/Context.h>
