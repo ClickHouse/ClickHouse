@@ -6,17 +6,24 @@ sidebar_position: 3
 
 # first_value
 
-Returns the first non-NULL value evaluated within its ordered frame.
+Returns the first value evaluated within its ordered frame. By default, NULL arguments are skipped, however the `RESPECT NULLS` modifier can be used to override this behaviour.
 
 **Syntax**
 
 ```sql
-first_value (column_name)
+first_value (column_name) [RESPECT NULLS]
   OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column] 
         [ROWS or RANGE expression_to_bound_rows_withing_the_group]] | [window_name])
 FROM table_name
 WINDOW window_name as ([[PARTITION BY grouping_column] [ORDER BY sorting_column])
 ```
+
+Alias: `any`.
+
+:::note
+Using the optional modifier `RESPECT NULLS` after `first_value(column_name)` will ensure that `NULL` arguments are not skipped.
+See [NULL processing](../aggregate-functions/index.md/#null-processing) for more information.
+:::
 
 For more detail on window function syntax see: [Window Functions - Syntax](./index.md/#syntax).
 
