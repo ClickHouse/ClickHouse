@@ -30,7 +30,6 @@ protected:
     std::shared_ptr<InMemoryPathMap> getPathMap() const override { return path_map; }
     void getDirectChildrenOnDisk(
         const std::string & storage_key,
-        const std::string & storage_key_perfix,
         const RelativePathsWithMetadata & remote_paths,
         const std::string & local_path,
         std::unordered_set<std::string> & result) const;

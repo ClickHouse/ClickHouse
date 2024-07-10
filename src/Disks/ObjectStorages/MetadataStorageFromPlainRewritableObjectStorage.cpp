@@ -125,17 +125,12 @@ InMemoryPathMap::Map loadPathPrefixMap(const std::string & metadata_key_prefix, 
 
 void getDirectChildrenOnDiskImpl(
     const std::string & storage_key,
-    const std::string & storage_key_perfix,
     const RelativePathsWithMetadata & remote_paths,
     const std::string & local_path,
     const InMemoryPathMap::Map & local_path_prefixes,
     SharedMutex & shared_mutex,
     std::unordered_set<std::string> & result)
 {
-    /// Map remote paths into local subdirectories.
-    using Map = InMemoryPathMap::Map;
-    std::unordered_map<Map::mapped_type, Map::key_type> remote_to_local_subdir;
-
     {
         std::shared_lock lock(shared_mutex);
         auto end_it = local_path_prefixes.end();
@@ -147,9 +142,9 @@ void getDirectChildrenOnDiskImpl(
 
             auto slash_num = count(k.begin() + local_path.size(), k.end(), '/');
             if (slash_num != 0)
-                continue;
+                break;
 
-            remote_to_local_subdir.emplace(v, std::string(k.begin() + local_path.size(), k.end()) + "/");
+            result.emplace(std::string(k.begin() + local_path.size(), k.end()) + "/");
         }
     }
 
@@ -168,18 +163,6 @@ void getDirectChildrenOnDiskImpl(
             auto filename = path.substr(child_pos);
             if (!skip_list.contains(filename))
                 result.emplace(std::move(filename));
-        }
-        else
-        {
-            /// Subdirectories.
-            chassert(path.find(storage_key_perfix) == 0);
-            auto it = remote_to_local_subdir.find(path.substr(storage_key_perfix.size(), slash_pos - storage_key_perfix.size()));
-            /// Mapped subdirectories.
-            if (it != remote_to_local_subdir.end())
-                result.emplace(it->second);
-            /// The remote subdirectory name is the same as the local subdirectory.
-            else
-                result.emplace(path.substr(child_pos, slash_pos - child_pos));
         }
     }
 }
@@ -243,7 +226,7 @@ std::vector<std::string> MetadataStorageFromPlainRewritableObjectStorage::listDi
     object_storage->listObjects(abs_key, files, 0);
 
     std::unordered_set<std::string> directories;
-    getDirectChildrenOnDisk(abs_key, object_storage->getCommonKeyPrefix(), files, std::filesystem::path(path) / "", directories);
+    getDirectChildrenOnDisk(abs_key, files, std::filesystem::path(path) / "", directories);
     /// List empty directories that are identified by the `prefix.path` metadata files. This is required to, e.g., remove
     /// metadata along with regular files.
     if (object_storage->getCommonKeyPrefix() != getMetadataKeyPrefix())
@@ -251,7 +234,7 @@ std::vector<std::string> MetadataStorageFromPlainRewritableObjectStorage::listDi
         auto metadata_key = std::filesystem::path(getMetadataKeyPrefix()) / key_prefix / "";
         RelativePathsWithMetadata metadata_files;
         object_storage->listObjects(metadata_key, metadata_files, 0);
-        getDirectChildrenOnDisk(metadata_key, getMetadataKeyPrefix(), metadata_files, path, directories);
+        getDirectChildrenOnDisk(metadata_key, metadata_files, std::filesystem::path(path) / "", directories);
     }
 
     return std::vector<std::string>(std::make_move_iterator(directories.begin()), std::make_move_iterator(directories.end()));
@@ -259,12 +242,11 @@ std::vector<std::string> MetadataStorageFromPlainRewritableObjectStorage::listDi
 
 void MetadataStorageFromPlainRewritableObjectStorage::getDirectChildrenOnDisk(
     const std::string & storage_key,
-    const std::string & storage_key_perfix,
     const RelativePathsWithMetadata & remote_paths,
     const std::string & local_path,
     std::unordered_set<std::string> & result) const
 {
-    getDirectChildrenOnDiskImpl(storage_key, storage_key_perfix, remote_paths, local_path, getPathMap()->map, getPathMap()->mutex, result);
+    getDirectChildrenOnDiskImpl(storage_key, remote_paths, local_path, getPathMap()->map, getPathMap()->mutex, result);
 }
 
 }
