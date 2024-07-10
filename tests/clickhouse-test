@@ -2501,28 +2501,13 @@ def do_run_tests(jobs, test_suite: TestSuite):
                             )
                         ],
                     )
-                    while not future_seq.ready():
-                        sleep(0.1)
-                        if server_died.is_set():
-                            sleep(5)
-                            break
+                    future_seq.wait()
 
-                while not future.ready():
-                    sleep(0.1)
-                    if server_died.is_set():
-                        print("== Server died ==")
-                        sleep(5)
-                        break
-
-                print("future wait DONE")
+                future.wait()
         finally:
-            print("pool.terminate")
             pool.terminate()
-            print("pool.close")
             pool.close()
-            print("pool.join")
             pool.join()
-            print("pool.join DONE")
 
         if not args.run_sequential_tests_in_parallel:
             run_tests_array(
