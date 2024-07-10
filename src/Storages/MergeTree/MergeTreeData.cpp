@@ -1523,33 +1523,37 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
 
     res.part->setState(to_state);
 
-    DataPartIteratorByInfo it;
-    bool inserted;
-
+    /// Temporary part is not supposed to be inserted into data_parts_indexes
+    if (to_state != MergeTreeDataPartState::Temporary)
     {
-        std::lock_guard lock(part_loading_mutex);
-        LOG_TEST(log, "loadDataPart: inserting {} into data_parts_indexes", res.part->getNameWithState());
-        std::tie(it, inserted) = data_parts_indexes.insert(res.part);
-    }
+        DataPartIteratorByInfo it;
+        bool inserted;
 
-    /// Remove duplicate parts with the same checksum.
-    if (!inserted)
-    {
-        if ((*it)->checksums.getTotalChecksumHex() == res.part->checksums.getTotalChecksumHex())
         {
-            LOG_ERROR(log, "Remove duplicate part {}", data_part_storage->getFullPath());
-            res.part->is_duplicate = true;
-            return res;
+            std::lock_guard lock(part_loading_mutex);
+            LOG_TEST(log, "loadDataPart: inserting {} into data_parts_indexes", res.part->getNameWithState());
+            std::tie(it, inserted) = data_parts_indexes.insert(res.part);
         }
-        else
-            throw Exception(ErrorCodes::DUPLICATE_DATA_PART, "Part {} already exists but with different checksums", res.part->name);
+
+        /// Remove duplicate parts with the same checksum.
+        if (!inserted)
+        {
+            if ((*it)->checksums.getTotalChecksumHex() == res.part->checksums.getTotalChecksumHex())
+            {
+                LOG_ERROR(log, "Remove duplicate part {}", data_part_storage->getFullPath());
+                res.part->is_duplicate = true;
+                return res;
+            }
+            else
+                throw Exception(ErrorCodes::DUPLICATE_DATA_PART, "Part {} already exists but with different checksums", res.part->name);
+        }
+
+        if (to_state == DataPartState::Active)
+            addPartContributionToDataVolume(res.part);
+
+        if (res.part->hasLightweightDelete())
+            has_lightweight_delete_parts.store(true);
     }
-
-    if (to_state == DataPartState::Active)
-        addPartContributionToDataVolume(res.part);
-
-    if (res.part->hasLightweightDelete())
-        has_lightweight_delete_parts.store(true);
 
     LOG_TRACE(log, "Finished loading {} part {} on disk {}", magic_enum::enum_name(to_state), part_name, part_disk_ptr->getName());
     return res;
