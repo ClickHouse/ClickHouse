@@ -112,7 +112,7 @@ def main():
         run_by_hash_num = 0
         run_by_hash_total = 0
 
-    docker_image = pull_image(get_docker_image("clickhouse/libfuzzer"))
+    docker_image = pull_image(get_docker_image("altinityinfra/libfuzzer"))
 
     fuzzers_path = temp_path / "fuzzers"
     fuzzers_path.mkdir(parents=True, exist_ok=True)

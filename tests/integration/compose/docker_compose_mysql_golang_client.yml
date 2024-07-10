@@ -1,6 +1,6 @@
 version: '2.3'
 services:
   golang1:
-    image: clickhouse/mysql-golang-client:${DOCKER_MYSQL_GOLANG_CLIENT_TAG:-latest}
+    image: altinityinfra/mysql-golang-client:${DOCKER_MYSQL_GOLANG_CLIENT_TAG:-latest}
     # to keep container running
     command: sleep infinity

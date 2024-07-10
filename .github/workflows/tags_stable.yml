@@ -47,7 +47,7 @@ jobs:
         ./utils/list-versions/update-docker-version.sh
         GID=$(id -g "${UID}")
         docker run -u "${UID}:${GID}" -e PYTHONUNBUFFERED=1 \
-            --volume="${GITHUB_WORKSPACE}:/ClickHouse" clickhouse/style-test \
+            --volume="${GITHUB_WORKSPACE}:/ClickHouse" altinityinfra/style-test \
                 /ClickHouse/utils/changelog/changelog.py -v --debug-helpers \
                 --gh-user-or-token="$GITHUB_TOKEN" --jobs=5 \
                 --output="/ClickHouse/docs/changelogs/${GITHUB_TAG}.md" "${GITHUB_TAG}"

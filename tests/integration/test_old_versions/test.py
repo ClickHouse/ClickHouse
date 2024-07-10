@@ -6,7 +6,7 @@ from helpers.test_tools import assert_eq_with_retry
 cluster = ClickHouseCluster(__file__)
 node_oldest = cluster.add_instance(
     "node_oldest",
-    image="clickhouse/clickhouse-server",
+    image="altinity/clickhouse-server",
     tag=CLICKHOUSE_CI_MIN_TESTED_VERSION,
     with_installed_binary=True,
     main_configs=["configs/config.d/test_cluster.xml"],

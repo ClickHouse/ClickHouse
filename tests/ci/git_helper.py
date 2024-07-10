@@ -11,20 +11,22 @@ logger = logging.getLogger(__name__)
 
 # ^ and $ match subline in `multiple\nlines`
 # \A and \Z match only start and end of the whole string
+# NOTE (vnemkov): support both upstream tag style: v22.x.y.z-lts and Altinity tag style: v22.x.y.z.altinitystable
+# Because at early release stages there could be no Altinity tag set on commit, only upstream one.
 RELEASE_BRANCH_REGEXP = r"\A\d+[.]\d+\Z"
 TAG_REGEXP = (
     r"\Av\d{2}"  # First two digits of major part
     r"([.][1-9]\d*){3}"  # minor.patch.tweak parts
-    r"-(new|testing|prestable|stable|lts)\Z"  # suffix with a version type
+    r"-(new|testing|prestable|stable|lts|altinitystable)\Z"  # suffix with a version type
 )
 SHA_REGEXP = re.compile(r"\A([0-9]|[a-f]){40}\Z")
 
 CWD = p.dirname(p.realpath(__file__))
 TWEAK = 1
 
-GIT_PREFIX = (  # All commits to remote are done as robot-clickhouse
-    "git -c user.email=robot-clickhouse@users.noreply.github.com "
-    "-c user.name=robot-clickhouse -c commit.gpgsign=false "
+GIT_PREFIX = (  # All commits to remote are done as altinity-robot
+    "git -c user.email=altinity-robot@users.noreply.github.com "
+    "-c user.name=altinity-robot -c commit.gpgsign=false "
     "-c core.sshCommand="
     "'ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no'"
 )

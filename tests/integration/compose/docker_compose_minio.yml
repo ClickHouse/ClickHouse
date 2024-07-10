@@ -19,14 +19,14 @@ services:
 
   # HTTP proxies for Minio.
   proxy1:
-    image: clickhouse/s3-proxy
+    image: altinityinfra/s3-proxy
     expose:
       - "8080" # Redirect proxy port
       - "80"   # Reverse proxy port
       - "443"  # Reverse proxy port (secure)
 
   proxy2:
-    image: clickhouse/s3-proxy
+    image: altinityinfra/s3-proxy
     expose:
       - "8080"
       - "80"
@@ -34,7 +34,7 @@ services:
 
   # Empty container to run proxy resolver.
   resolver:
-    image: clickhouse/python-bottle:${DOCKER_PYTHON_BOTTLE_TAG:-latest}
+    image: altinityinfra/python-bottle:${DOCKER_PYTHON_BOTTLE_TAG:-latest}
     expose:
       - "8080"
     tty: true

@@ -1,6 +1,7 @@
 version: '2.3'
 services:
   bridge1:
+    # NOTE(vnemkov): not produced by CI/CD, so must not be replaced with altinityinfra/jdbc-bridge
     image: clickhouse/jdbc-bridge
     command: |
       /bin/bash -c 'cat << EOF > config/datasources/self.json
