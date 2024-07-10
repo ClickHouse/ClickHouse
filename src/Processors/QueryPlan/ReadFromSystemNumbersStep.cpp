@@ -582,13 +582,15 @@ Pipe ReadFromSystemNumbersStep::makePipe()
     const auto step_between_chunks = num_streams * block_range;
     for (size_t i = 0; i < num_streams; ++i)
     {
-        const auto source_start = numbers_storage.offset + i * block_range;
-        if (numbers_storage.limit.has_value() && *numbers_storage.limit < source_start)
+        const auto source_offset = i * block_range;
+        if (numbers_storage.limit.has_value() && *numbers_storage.limit < source_offset)
             break;
+
+        const auto source_start = numbers_storage.offset + source_offset;
 
         auto source = std::make_shared<NumbersSource>(
             max_block_size,
-            numbers_storage.offset + i * block_range,
+            source_start,
             end,
             numbers_storage.column_name,
             numbers_storage.step,
