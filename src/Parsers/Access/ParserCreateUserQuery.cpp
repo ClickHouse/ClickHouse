@@ -596,6 +596,19 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         break;
     }
 
+    bool has_no_password_authentication_method = std::find_if(
+        auth_data.begin(),
+        auth_data.end(),
+        [](const std::shared_ptr<ASTAuthenticationData> & ast_authentication_data)
+        {
+            return ast_authentication_data->type == AuthenticationType::NO_PASSWORD;
+        }) != auth_data.end();
+
+    if (has_no_password_authentication_method && auth_data.size() > 1)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "NO_PASSWORD Authentication method cannot co-exist with other authentication methods");
+    }
+
     if (!alter && !hosts)
     {
         String common_host_pattern;
@@ -630,7 +643,7 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     query->valid_until = std::move(valid_until);
     query->storage_name = std::move(storage_name);
     query->reset_authentication_methods_to_new = reset_authentication_methods_to_new.value_or(false);
-    query->replace_authentication_methods = parsed_identified_with;
+    query->replace_authentication_methods = parsed_identified_with || has_no_password_authentication_method;
 
     for (const auto & authentication_method : query->authentication_methods)
     {

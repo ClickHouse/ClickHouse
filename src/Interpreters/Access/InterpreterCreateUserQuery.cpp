@@ -65,8 +65,17 @@ namespace
             user.authentication_methods.emplace_back();
         }
 
-        // a leading IDENTIFIED WITH will drop existing authentication methods in favor of new ones
-        if (replace_authentication_methods)
+        bool has_no_password_authentication_method = std::find_if(
+                                                         user.authentication_methods.begin(),
+                                                         user.authentication_methods.end(),
+                                                         [](const AuthenticationData & authentication_method)
+                                                         {
+                                                             return authentication_method.getType() == AuthenticationType::NO_PASSWORD;
+                                                         }) != user.authentication_methods.end();
+
+        // 1. a leading IDENTIFIED WITH will drop existing authentication methods in favor of new ones.
+        // 2. if the user contains an auth method of type NO_PASSWORD and another one is being added, NO_PASSWORD must be dropped
+        if (replace_authentication_methods || (has_no_password_authentication_method && !authentication_methods.empty()))
         {
             user.authentication_methods.clear();
         }

@@ -37,4 +37,10 @@ CREATE Identified with must precede all add identified with, not allowed
 BAD_ARGUMENTS
 Create user with no identification
 Add identified with
-CREATE USER u01_03174 IDENTIFIED WITH no_password ADD IDENTIFIED WITH plaintext_password
+CREATE USER u01_03174 IDENTIFIED WITH plaintext_password
+Try to provide no_password mixed with other authentication methods, should not be allowed
+BAD_ARGUMENTS
+Adding no_password, should drop existing auth method
+CREATE USER u01_03174 IDENTIFIED WITH no_password
+Trying to auth with no pwd, should succeed
+1

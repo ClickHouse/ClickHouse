@@ -13,6 +13,11 @@ ssh_key="-----BEGIN OPENSSH PRIVATE KEY-----
          Ux7i7d3xPoseFrwnhY4YAAAADWFydGh1ckBhcnRodXI=
          -----END OPENSSH PRIVATE KEY-----"
 
+function test_login_no_pwd
+{
+  ${CLICKHOUSE_CLIENT} --user $1 --query "select 1"
+}
+
 function test_login_pwd
 {
   ${CLICKHOUSE_CLIENT} --user $1 --password $2 --query "select 1"
@@ -106,5 +111,15 @@ echo "Add identified with"
 ${CLICKHOUSE_CLIENT} --query "ALTER USER ${user} ADD IDENTIFIED WITH plaintext_password by '7'"
 
 ${CLICKHOUSE_CLIENT} --query "SHOW CREATE USER ${user}"
+
+echo "Try to provide no_password mixed with other authentication methods, should not be allowed"
+${CLICKHOUSE_CLIENT} --query "ALTER USER ${user} ADD IDENTIFIED WITH plaintext_password by '8' ADD IDENTIFIED WITH no_password" 2>&1 | grep -m1 -o "BAD_ARGUMENTS"
+
+echo "Adding no_password, should drop existing auth method"
+${CLICKHOUSE_CLIENT} --query "ALTER USER ${user} ADD IDENTIFIED WITH no_password"
+${CLICKHOUSE_CLIENT} --query "SHOW CREATE USER ${user}"
+
+echo "Trying to auth with no pwd, should succeed"
+test_login_no_pwd ${user}
 
 ${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS ${user}"
