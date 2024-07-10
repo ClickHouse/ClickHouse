@@ -236,10 +236,10 @@ Read 2 rows, 32.00 B in 0.000 sec., 5182 rows/sec., 80.97 KiB/sec.
 Previous example is the same as:
 
 ``` bash
-$ echo -e "1,2\n3,4" | clickhouse-local --query "
+$ echo -e "1,2\n3,4" | clickhouse-local -n --query "
     CREATE TABLE table (a Int64, b Int64) ENGINE = File(CSV, stdin);
     SELECT a, b FROM table;
-    DROP TABLE table"
+    DROP TABLE table;"
 Read 2 rows, 32.00 B in 0.000 sec., 4987 rows/sec., 77.93 KiB/sec.
 1   2
 3   4

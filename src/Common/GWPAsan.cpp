@@ -57,9 +57,12 @@ static bool guarded_alloc_initialized = []
         opts.MaxSimultaneousAllocations = 1024;
 
     if (!env_options_raw || !std::string_view{env_options_raw}.contains("SampleRate"))
-        opts.SampleRate = 50000;
+        opts.SampleRate = 10000;
 
-    opts.Backtrace = getBackTrace;
+    const char * collect_stacktraces = std::getenv("GWP_ASAN_COLLECT_STACKTRACES"); // NOLINT(concurrency-mt-unsafe)
+    if (collect_stacktraces && std::string_view{collect_stacktraces} == "1")
+        opts.Backtrace = getBackTrace;
+
     GuardedAlloc.init(opts);
 
     return true;
