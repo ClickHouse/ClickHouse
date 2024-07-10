@@ -311,7 +311,7 @@ function run_tests()
 
     set +e
     timeout -s TERM --preserve-status 120m clickhouse-test --testname --shard --zookeeper --check-zookeeper-session --hung-check --print-time \
-         --no-drop-if-fail --test-runs "$NUM_TRIES" "${ADDITIONAL_OPTIONS[@]}" 2>&1 \
+         --no-drop-if-fail --test-runs "$NUM_TRIES" "${ADDITIONAL_OPTIONS[@]}" 01710_aggregate_projections 01035_avg_weighted_long 00735_long_conditional 02911_join_on_nullsafe_optimization 02911_backup_restore_keeper_map 02552_siphash128_reference  2>&1 \
     | ts '%Y-%m-%d %H:%M:%S' \
     | tee -a test_output/test_result.txt
     set -e

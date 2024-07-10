@@ -2189,7 +2189,10 @@ def run_tests_array(all_tests_with_params: Tuple[List[str], int, TestSuite, bool
                 sys.stdout.flush()
 
             while True:
-                print(test_case.name)
+                sys.stdout.flush()
+                sys.stdout.write(test_case.name)
+                sys.stdout.flush()
+
                 test_result = test_case.run(
                     args, test_suite, client_options, server_logs_level
                 )
@@ -2505,10 +2508,19 @@ def do_run_tests(jobs, test_suite: TestSuite):
                     future_seq.wait()
 
                 future.wait()
+                print("future wait DONE")
         finally:
-            pool.terminate()
-            pool.close()
-            pool.join()
+
+
+            print("pool.join")
+            pool.join(timeout=2200)
+            print("pool.join DONE")
+
+            # print("pool.terminate")
+            # pool.terminate()
+            # print("pool.close")
+            # pool.close(force=True)
+            # print("pool.join")
 
         if not args.run_sequential_tests_in_parallel:
             run_tests_array(
