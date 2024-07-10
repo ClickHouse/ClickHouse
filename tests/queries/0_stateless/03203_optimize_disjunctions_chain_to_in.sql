@@ -1,5 +1,5 @@
 SET allow_experimental_analyzer=1;
-CREATE OR REPLACE TABLE foo (i Date) ENGINE MergeTree ORDER BY i;
+CREATE TABLE foo (i Date) ENGINE MergeTree ORDER BY i;
 INSERT INTO foo VALUES ('2020-01-01');
 INSERT INTO foo VALUES ('2020-01-02');
 
