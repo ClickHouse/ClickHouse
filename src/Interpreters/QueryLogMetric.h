@@ -8,7 +8,7 @@
 #include <Storages/ColumnsDescription.h>
 
 #include <ctime>
-#include <unordered_map>
+#include <set>
 
 namespace DB
 {
@@ -33,15 +33,18 @@ struct QueryLogMetricElement
 
 struct QueryLogMetricStatus
 {
-    std::vector<ProfileEvents::Count> last_profile_events = std::vector<ProfileEvents::Count>(ProfileEvents::end());
+    String query_id;
     UInt64 interval_milliseconds;
     std::chrono::system_clock::time_point next_collect_time;
+    std::vector<ProfileEvents::Count> last_profile_events = std::vector<ProfileEvents::Count>(ProfileEvents::end());
 };
 
-struct CloseQuery
+struct QueryLogMetricsStatusCmp
 {
-    String query_id;
-    std::chrono::system_clock::time_point next_collect_time;
+    bool operator()(const QueryLogMetricStatus & lhs, const QueryLogMetricStatus & rhs) const
+    {
+        return lhs.next_collect_time < rhs.next_collect_time;
+    }
 };
 
 class QueryLogMetric : public PeriodicLog<QueryLogMetricElement>
@@ -49,16 +52,15 @@ class QueryLogMetric : public PeriodicLog<QueryLogMetricElement>
     using PeriodicLog<QueryLogMetricElement>::PeriodicLog;
 
 public:
-    void startQuery(String query_id, TimePoint query_start_time, UInt64 interval_milliseconds);
-    void finishQuery(String query_id);
+    void startQuery(const String & query_id, TimePoint query_start_time, UInt64 interval_milliseconds);
+    void finishQuery(const String & query_id);
 
 protected:
     void stepFunction(TimePoint current_time) override;
 
 private:
     std::mutex queries_mutex;
-    CloseQuery queries_closest;
-    std::unordered_map<String, QueryLogMetricStatus> queries;
+    std::set<QueryLogMetricStatus, QueryLogMetricsStatusCmp> queries;
 
 };
 

@@ -91,9 +91,10 @@ void QueryLogMetricElement::appendToBlock(MutableColumns & columns) const
         columns[column_idx++]->insert(profile_events[i]);
 }
 
-void QueryLogMetric::startQuery(String query_id, TimePoint query_start_time, UInt64 interval_milliseconds)
+void QueryLogMetric::startQuery(const String & query_id, TimePoint query_start_time, UInt64 interval_milliseconds)
 {
     QueryLogMetricStatus status;
+    status.query_id = query_id;
     status.interval_milliseconds = interval_milliseconds;
     status.next_collect_time = query_start_time + std::chrono::milliseconds(interval_milliseconds);
 
@@ -102,27 +103,32 @@ void QueryLogMetric::startQuery(String query_id, TimePoint query_start_time, UIn
         status.last_profile_events[i] = profile_events[i].load(std::memory_order_relaxed);
 
     std::lock_guard<std::mutex> lock(queries_mutex);
-    queries.emplace(query_id, std::move(status));
-
-    if (queries_closest.query_id.empty() || status.next_collect_time < queries_closest.next_collect_time)
-        queries_closest = CloseQuery{query_id, status.next_collect_time};
+    queries.emplace(std::move(status));
 }
 
-void QueryLogMetric::finishQuery(String query_id)
+void QueryLogMetric::finishQuery(const String & query_id)
 {
     std::lock_guard<std::mutex> lock(queries_mutex);
-    if (auto it = queries.find(query_id); it != queries.end())
-        queries.erase(it);
+    for (const auto & query_status : queries)
+    {
+        if (query_status.query_id == query_id)
+        {
+            queries.erase(query_status);
+            break;
+        }
+    }
 }
 
-QueryLogMetricElement createLogMetricElement(std::string_view query_id, std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters, PeriodicLog<QueryLogMetricElement>::TimePoint current_time, QueryLogMetricStatus & query_status)
+QueryLogMetricElement createLogMetricElement(QueryLogMetricStatus & query_status, std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters, PeriodicLog<QueryLogMetricElement>::TimePoint current_time)
 {
     QueryLogMetricElement elem;
     elem.event_time = timeInSeconds(current_time);
     elem.event_time_microseconds = timeInMicroseconds(current_time);
-    elem.query_id = query_id;
+    elem.query_id = query_status.query_id;
     elem.memory = CurrentMetrics::values[CurrentMetrics::MemoryTracking];
     elem.background_memory = CurrentMetrics::values[CurrentMetrics::MergesMutationsMemoryTracking];
+
+    query_status.next_collect_time = query_status.next_collect_time + std::chrono::milliseconds(query_status.interval_milliseconds);
 
     for (ProfileEvents::Event i = ProfileEvents::Event(0), end = ProfileEvents::end(); i < end; ++i)
     {
@@ -140,14 +146,19 @@ void QueryLogMetric::stepFunction(TimePoint current_time)
 
     LOG_DEBUG(getLogger("PMO"), "QueryLogMetric::stepFunction");
     std::lock_guard<std::mutex> lock(queries_mutex);
-    for (auto & [query_id, query_status] : queries)
+    decltype(queries) new_queries;
+    for (const auto & query_status : queries)
     {
-        const auto query_info = process_list.getQueryInfo(query_id, false, true, false);
+        const auto query_info = process_list.getQueryInfo(query_status.query_id, false, true, false);
         if (!query_info)
             continue;
-        auto elem = createLogMetricElement(query_id, query_info->profile_counters, current_time, query_status);
+        auto new_query_status = query_status;
+        auto elem = createLogMetricElement(new_query_status, query_info->profile_counters, current_time);
+        new_queries.emplace(std::move(new_query_status));
         add(std::move(elem));
     }
+
+    queries.swap(new_queries);
 }
 
 }
