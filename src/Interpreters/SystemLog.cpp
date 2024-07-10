@@ -120,7 +120,6 @@ namespace
 
 constexpr size_t DEFAULT_METRIC_LOG_COLLECT_INTERVAL_MILLISECONDS = 1000;
 constexpr size_t DEFAULT_ERROR_LOG_COLLECT_INTERVAL_MILLISECONDS = 1000;
-constexpr size_t DEFAULT_QUERY_LOG_METRIC_COLLECT_INTERVAL_MILLISECONDS = 1000;
 
 /// Creates a system log with MergeTree engine using parameters from config
 template <typename TSystemLog>
@@ -394,11 +393,7 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
     }
 
     if (query_log_metric)
-    {
-        size_t collect_interval_milliseconds = config.getUInt64("query_log_metric.collect_interval_milliseconds",
-                                                                DEFAULT_QUERY_LOG_METRIC_COLLECT_INTERVAL_MILLISECONDS);
-        query_log_metric->startCollect(global_context, collect_interval_milliseconds);
-    }
+        query_log_metric->startCollect(global_context, 0);
 
     if (crash_log)
     {

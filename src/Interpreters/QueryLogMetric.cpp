@@ -15,11 +15,10 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/parseQuery.h>
 
+#include <chrono>
 #include <mutex>
-#include <unordered_map>
 
 #include <Common/logger_useful.h>
-#include "base/types.h"
 
 
 namespace CurrentMetrics
@@ -102,13 +101,19 @@ void QueryLogMetric::startQuery(const String & query_id, TimePoint query_start_t
     for (ProfileEvents::Event i = ProfileEvents::Event(0), end = ProfileEvents::end(); i < end; ++i)
         status.last_profile_events[i] = profile_events[i].load(std::memory_order_relaxed);
 
-    std::lock_guard<std::mutex> lock(queries_mutex);
+    std::lock_guard lock(queries_mutex);
     queries.emplace(std::move(status));
+
+    if (query_id == queries.begin()->query_id)
+    {
+        std::unique_lock cv_lock(queries_cv_mutex);
+        queries_cv.notify_all();
+    }
 }
 
 void QueryLogMetric::finishQuery(const String & query_id)
 {
-    std::lock_guard<std::mutex> lock(queries_mutex);
+    std::lock_guard lock(queries_mutex);
     for (const auto & query_status : queries)
     {
         if (query_status.query_id == query_id)
@@ -140,18 +145,72 @@ QueryLogMetricElement createLogMetricElement(QueryLogMetricStatus & query_status
     return elem;
 }
 
+void QueryLogMetric::threadFunction()
+{
+    auto desired_timepoint = std::chrono::system_clock::now();
+    while (!is_shutdown_metric_thread)
+    {
+        try
+        {
+            String next_query_id;
+            {
+                std::lock_guard lock(queries_mutex);
+                const auto current_time = std::chrono::system_clock::now();
+                if (!queries.empty())
+                {
+                    // Avoid doing unnecessary work to avoid set copies
+                    if (current_time >= queries.begin()->next_collect_time)
+                        stepFunction(current_time);
+                    auto first_query = queries.begin();
+                    desired_timepoint = first_query->next_collect_time;
+                    next_query_id = first_query->query_id;
+                }
+                else
+                {
+                    // Use an absurdidly far time to avoid waking up too often
+                    desired_timepoint = desired_timepoint + std::chrono::hours(1);
+                }
+            }
+
+            std::unique_lock cv_lock(queries_cv_mutex);
+            LOG_DEBUG(getLogger("PMO"), "Before the wait");
+            queries_cv.wait_until(cv_lock, desired_timepoint, [this, next_query_id] {
+                // Only wake up whenever there's a new query with a sooner next_collect_time
+                // We now it's a sooner one because it's an ordered set by next_collect_time
+                std::unique_lock lock(queries_mutex);
+                return !queries.empty() && queries.begin()->query_id != next_query_id;
+            });
+            LOG_DEBUG(getLogger("PMO"), "After the wait");
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+    }
+}
+
 void QueryLogMetric::stepFunction(TimePoint current_time)
 {
     static const auto & process_list = context->getProcessList();
 
     LOG_DEBUG(getLogger("PMO"), "QueryLogMetric::stepFunction");
-    std::lock_guard<std::mutex> lock(queries_mutex);
     decltype(queries) new_queries;
     for (const auto & query_status : queries)
     {
+        // The queries are already sorted by next_collect_time, so once we find a query with a next_collect_time
+        // in the future, we know we don't need to collect data anymore
+        if (query_status.next_collect_time > current_time)
+        {
+            new_queries.emplace(query_status);
+            continue;
+        }
+
+        LOG_DEBUG(getLogger("PMO"), "Collecting query {}", query_status.query_id);
+
         const auto query_info = process_list.getQueryInfo(query_status.query_id, false, true, false);
         if (!query_info)
             continue;
+
         auto new_query_status = query_status;
         auto elem = createLogMetricElement(new_query_status, query_info->profile_counters, current_time);
         new_queries.emplace(std::move(new_query_status));

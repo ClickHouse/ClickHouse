@@ -376,7 +376,9 @@ QueryLogElement logQueryStart(
 
     if (auto query_log_metric = context->getQueryLogMetric(); query_log_metric && !internal)
     {
-        const auto interval_milliseconds = context->getSettingsRef().query_log_metric_interval;
+        auto interval_milliseconds = context->getSettingsRef().query_log_metric_interval;
+        if (interval_milliseconds == 0)
+            interval_milliseconds = context->getConfigRef().getUInt64("query_log_metric.collect_interval_milliseconds", 1000);
         query_log_metric->startQuery(elem.client_info.current_query_id, query_start_time, interval_milliseconds);
     }
 

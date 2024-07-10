@@ -7,6 +7,7 @@
 #include <Interpreters/PeriodicLog.h>
 #include <Storages/ColumnsDescription.h>
 
+#include <condition_variable>
 #include <ctime>
 #include <set>
 
@@ -52,16 +53,19 @@ class QueryLogMetric : public PeriodicLog<QueryLogMetricElement>
     using PeriodicLog<QueryLogMetricElement>::PeriodicLog;
 
 public:
+    // Both startQuery and finishQuery are called from the thread that executes the query
     void startQuery(const String & query_id, TimePoint query_start_time, UInt64 interval_milliseconds);
     void finishQuery(const String & query_id);
 
 protected:
     void stepFunction(TimePoint current_time) override;
+    void threadFunction() override;
 
 private:
     std::mutex queries_mutex;
     std::set<QueryLogMetricStatus, QueryLogMetricsStatusCmp> queries;
-
+    std::mutex queries_cv_mutex;
+    std::condition_variable queries_cv;
 };
 
 }
