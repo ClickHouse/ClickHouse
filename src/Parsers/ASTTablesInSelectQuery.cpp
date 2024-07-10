@@ -250,7 +250,7 @@ void ASTTableJoin::formatImplAfterTable(const FormatSettings & settings, FormatS
 void ASTTableJoin::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     formatImplBeforeTable(settings, state, frame);
-    settings.ostr << " ... ";
+    settings.ostr << " ...";
     formatImplAfterTable(settings, state, frame);
 }
 

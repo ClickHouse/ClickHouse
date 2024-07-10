@@ -528,7 +528,7 @@ JoinClausesAndActions buildJoinClausesAndActions(
         size_t join_clause_key_nodes_size = join_clause.getLeftKeyNodes().size();
 
         if (join_clause_key_nodes_size == 0)
-            throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "JOIN {} cannot get JOIN keys",
+            throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "Cannot determine join keys in {}",
                 join_node.formatASTForErrorMessage());
 
         for (size_t i = 0; i < join_clause_key_nodes_size; ++i)
