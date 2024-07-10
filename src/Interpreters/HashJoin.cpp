@@ -1144,7 +1144,7 @@ public:
     };
 
     AddedColumns(
-        const Block & left_block_,
+        HashJoin::ScatteredBlock & left_block_,
         const Block & block_with_columns_to_add,
         const Block & saved_block_sample,
         const HashJoin & join,
@@ -1152,7 +1152,8 @@ public:
         ExpressionActionsPtr additional_filter_expression_,
         bool is_asof_join,
         bool is_join_get_)
-        : left_block(left_block_)
+        : src_block(left_block_)
+        , left_block(*left_block_.block)
         , join_on_keys(join_on_keys_)
         , additional_filter_expression(additional_filter_expression_)
         , rows_to_add(left_block.rows())
@@ -1223,6 +1224,7 @@ public:
 
     const IColumn & leftAsofKey() const { return *left_asof_key; }
 
+    HashJoin::ScatteredBlock & src_block;
     Block left_block;
     std::vector<JoinOnKeyColumns> join_on_keys;
     ExpressionActionsPtr additional_filter_expression;
@@ -1915,7 +1917,7 @@ NO_INLINE size_t joinRightColumns(
 {
     constexpr JoinFeatures<KIND, STRICTNESS> join_features;
 
-    const auto & block = added_columns.join_on_keys.at(0).block;
+    auto & block = added_columns.src_block;
     LOG_DEBUG(
         &Poco::Logger::get("debug"),
         "__PRETTY_FUNCTION__={}, __LINE__={}, block.rows()={}, block.selector.size()={}",
@@ -1927,6 +1929,8 @@ NO_INLINE size_t joinRightColumns(
     size_t rows = block.rows();
     if constexpr (need_filter)
         added_columns.filter = IColumn::Filter(rows, 0);
+
+    // IColumn::Filter selector_filter(rows, 1);
 
     Arena pool;
 
@@ -2103,6 +2107,10 @@ NO_INLINE size_t joinRightColumns(
         {
             if constexpr (join_features.is_anti_join && join_features.left)
                 setUsed<need_filter>(added_columns.filter, i);
+
+            // if constexpr (!join_features.add_missing)
+            //     selector_filter[i] = 0;
+
             // LOG_DEBUG(
             //     &Poco::Logger::get("debug"),
             //     "__PRETTY_FUNCTION__={}, __LINE__={}, i={}, ind={}, current_offset={}",
@@ -2142,7 +2150,11 @@ NO_INLINE size_t joinRightColumns(
             //     ind,
             //     current_offset);
         }
+        // LOG_DEBUG(
+        //     &Poco::Logger::get("debug"), "i={}, ind={}, right_row_found={}, current_offset={}", i, ind, right_row_found, current_offset);
     }
+
+    // block.filter(selector_filter);
 
     added_columns.applyLazyDefaults();
     return i;
@@ -2298,7 +2310,7 @@ Block HashJoin::joinBlockImpl(
     if (scattered_block.block)
         LOG_DEBUG(
             &Poco::Logger::get("debug"),
-            "after scattered_block.rows()={}, scattered_block.block->rows())={}",
+            "before scattered_block.rows()={}, scattered_block.block->rows())={}",
             scattered_block.rows(),
             scattered_block.block->rows());
     scattered_block.filterBySelector();
@@ -2343,7 +2355,7 @@ HashJoin::ScatteredBlock HashJoin::joinBlockImpl(
       * For ASOF, the last column is used as the ASOF column
       */
     AddedColumns<!join_features.is_any_join> added_columns(
-        *block.block,
+        block,
         block_with_columns_to_add,
         savedBlockSample(),
         *this,
@@ -2387,9 +2399,15 @@ HashJoin::ScatteredBlock HashJoin::joinBlockImpl(
 
     if constexpr (join_features.need_filter)
     {
+        // std::vector<int> x{added_columns.filter.begin(), added_columns.filter.end()};
+        // LOG_DEBUG(&Poco::Logger::get("debug"), "added_columns.filter={}", fmt::join(x, ", "));
+        block.filter(added_columns.filter);
+
         /// If ANY INNER | RIGHT JOIN - filter all the columns except the new ones.
         for (size_t i = 0; i < existing_columns; ++i)
             block.block->safeGetByPosition(i).column = block.block->safeGetByPosition(i).column->filter(added_columns.filter, -1);
+
+        block.selector = block.createTrivialSelector(block.block->rows());
 
         /// Add join key columns from right block if needed using value from left table because of equality
         for (size_t i = 0; i < required_right_keys.columns(); ++i)
@@ -2438,24 +2456,31 @@ HashJoin::ScatteredBlock HashJoin::joinBlockImpl(
     {
         std::unique_ptr<IColumn::Offsets> & offsets_to_replicate = added_columns.offsets_to_replicate;
 
-        LOG_DEBUG(
-            &Poco::Logger::get("debug"),
-            "__PRETTY_FUNCTION__={}, __LINE__={}, block.rows()={}, block.selector.size()={}, offsets_to_replicate={}",
-            __PRETTY_FUNCTION__,
-            __LINE__,
-            block.rows(),
-            block.selector.size(),
-            fmt::join(*offsets_to_replicate, ", "));
+        // LOG_DEBUG(
+        //     &Poco::Logger::get("debug"),
+        //     "__PRETTY_FUNCTION__={}, __LINE__={}, block.rows()={}, block.selector.size()={}, rows={}, offsets_to_replicate.size()={}, "
+        //     "offsets_to_replicate={}",
+        //     __PRETTY_FUNCTION__,
+        //     __LINE__,
+        //     block.rows(),
+        //     block.selector.size(),
+        //     block.block ? block.block->rows() : 0,
+        //     offsets_to_replicate->size(),
+        //     fmt::join(*offsets_to_replicate, ", "));
 
         // block.filterBySelector();
 
         // LOG_DEBUG(
         //     &Poco::Logger::get("debug"),
-        //     "__PRETTY_FUNCTION__={}, __LINE__={}, block.rows()={}, block.selector.size()={}",
+        //     "__PRETTY_FUNCTION__={}, __LINE__={}, block.rows()={}, block.selector.size()={}, rows={}, offsets_to_replicate.size()={}, "
+        //     "offsets_to_replicate={}",
         //     __PRETTY_FUNCTION__,
         //     __LINE__,
         //     block.rows(),
-        //     block.selector.size());
+        //     block.selector.size(),
+        //     block.block ? block.block->rows() : 0,
+        //     offsets_to_replicate->size(),
+        //     fmt::join(*offsets_to_replicate, ", "));
 
         /// If ALL ... JOIN - we replicate all the columns except the new ones.
         for (size_t i = 0; i < existing_columns; ++i)
