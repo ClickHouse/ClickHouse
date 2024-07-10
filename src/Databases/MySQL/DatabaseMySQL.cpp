@@ -2,6 +2,7 @@
 
 #if USE_MYSQL
 #    include <string>
+#    include <base/isSharedPtrUnique.h>
 #    include <Databases/DatabaseFactory.h>
 #    include <DataTypes/DataTypeDateTime.h>
 #    include <DataTypes/DataTypeNullable.h>
@@ -354,7 +355,7 @@ void DatabaseMySQL::cleanOutdatedTables()
     {
         for (auto iterator = outdated_tables.begin(); iterator != outdated_tables.end();)
         {
-            if (!iterator->unique())
+            if (!isSharedPtrUnique(*iterator))
                 ++iterator;
             else
             {
