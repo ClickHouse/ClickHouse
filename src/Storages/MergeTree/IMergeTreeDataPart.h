@@ -65,10 +65,7 @@ enum class DataPartRemovalState : uint8_t
 class IMergeTreeDataPart : public std::enable_shared_from_this<IMergeTreeDataPart>, public DataPartStorageHolder
 {
 public:
-    void loadIndexWithLock() const {
-        std::scoped_lock lock(index_mutex);
-        loadIndex();
-    }
+    void loadIndexWithLock() const { std::scoped_lock lock(index_mutex); loadIndex(); }
     static constexpr auto DATA_FILE_EXTENSION = ".bin";
 
     using Checksums = MergeTreeDataPartChecksums;

@@ -8602,23 +8602,16 @@ bool MergeTreeData::initializeDiskOnConfigChange(const std::set<String> & new_ad
 
 void MergeTreeData::loadPrimaryKeys()
 {
-    DataPartStates affordable_states = {
-        MergeTreeDataPartState::Active, 
-        MergeTreeDataPartState::Outdated, 
-        MergeTreeDataPartState::Deleting
-    };
+    DataPartStates affordable_states = { MergeTreeDataPartState::Active, MergeTreeDataPartState::Outdated, MergeTreeDataPartState::Deleting};
 
-    for (const auto & part : getDataParts(affordable_states))
+    for (const auto &data_part : getDataParts(affordable_states))
     {
-        if (part->isProjectionPart())
-            continue;
-
-        // Lock the mutex before calling loadIndex
+        if (data_part->isProjectionPart())
         {
-            // std::scoped_lock lock(part->index_mutex);
-            // const_cast<IMergeTreeDataPart &>(*part).loadIndex()
-            const_cast<IMergeTreeDataPart &>(*part).loadIndexWithLock();
+            continue;
         }
+        // Lock the mutex and call loadIndexWithLock
+        const_cast<IMergeTreeDataPart &>(*data_part).loadIndexWithLock();
     }
 }
 
