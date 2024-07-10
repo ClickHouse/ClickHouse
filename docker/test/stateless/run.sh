@@ -282,7 +282,7 @@ function run_tests()
     else
         # All other configurations are OK.
         ADDITIONAL_OPTIONS+=('--jobs')
-        ADDITIONAL_OPTIONS+=('5')
+        ADDITIONAL_OPTIONS+=('1')
     fi
 
     if [[ "$RUN_SEQUENTIAL_TESTS_IN_PARALLEL" -eq 1 ]]; then
@@ -310,7 +310,7 @@ function run_tests()
     try_run_with_retry 10 clickhouse-client -q "insert into system.zookeeper (name, path, value) values ('auxiliary_zookeeper2', '/test/chroot/', '')"
 
     set +e
-    clickhouse-test --sequential --testname --shard --zookeeper --check-zookeeper-session --hung-check --print-time \
+    clickhouse-test --testname --shard --zookeeper --check-zookeeper-session --hung-check --print-time \
          --no-drop-if-fail --test-runs "$NUM_TRIES" "${ADDITIONAL_OPTIONS[@]}" 01710_aggregate_projections 01035_avg_weighted_long 00735_long_conditional 02911_join_on_nullsafe_optimization 02911_backup_restore_keeper_map 02552_siphash128_reference  2>&1 \
     | ts '%Y-%m-%d %H:%M:%S' \
     | tee -a test_output/test_result.txt

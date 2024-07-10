@@ -2510,12 +2510,10 @@ def do_run_tests(jobs, test_suite: TestSuite):
                 while not future.ready():
                     sleep(0.1)
                     if server_died.is_set():
-                        print("== Server died")
+                        print("== Server died ==")
                         sleep(5)
-                        pool.terminate()
-                        pool.close()
+                        break
 
-                # future.wait()
                 print("future wait DONE")
         finally:
             print("pool.terminate")
