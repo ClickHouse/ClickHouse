@@ -30,6 +30,7 @@
 #include <Common/checkStackSize.h>
 #include <base/scope_guard.h>
 
+#include <base/isSharedPtrUnique.h>
 #include <boost/range/adaptor/map.hpp>
 
 #include "config.h"
@@ -1202,7 +1203,7 @@ void DatabaseCatalog::undropTable(StorageID table_id)
 
     /// It's unsafe to create another instance while the old one exists
     /// We cannot wait on shared_ptr's refcount, so it's busy wait
-    while (!dropped_table.table.unique())
+    while (!isSharedPtrUnique(dropped_table.table))
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     dropped_table.table.reset();
 
@@ -1230,7 +1231,7 @@ std::tuple<size_t, size_t> DatabaseCatalog::getDroppedTablesCountAndInuseCount()
     size_t in_use_count = 0;
     for (const auto & item : tables_marked_dropped)
     {
-        bool in_use = item.table && !item.table.unique();
+        bool in_use = item.table && !isSharedPtrUnique(item.table);
         in_use_count += in_use;
     }
     return {tables_marked_dropped.size(), in_use_count};
@@ -1255,7 +1256,7 @@ std::vector<DatabaseCatalog::TablesMarkedAsDropped::iterator> DatabaseCatalog::g
 
     for (auto it = tables_marked_dropped.begin(); it != tables_marked_dropped.end(); ++it)
     {
-        bool in_use = it->table && !it->table.unique();
+        bool in_use = it->table && !isSharedPtrUnique(it->table);
         bool old_enough = it->drop_time <= current_time;
         if (!in_use && old_enough)
             result.emplace_back(it);
