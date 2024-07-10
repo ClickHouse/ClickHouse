@@ -67,6 +67,15 @@
 #include <csignal>
 #include <algorithm>
 #include <unistd.h>
+#include <Common/CurrentMetrics.h>
+#include <Common/ThreadPool.h>
+#include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/Context.h>
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <Interpreters/InterpreterSystemQuery.h>
+#include <Common/logger_useful.h>
+#include <IO/SharedThreadPools.h> 
+
 
 #if USE_PROTOBUF
 #include <Formats/ProtobufSchemas.h>
@@ -1190,16 +1199,22 @@ void InterpreterSystemQuery::loadPrimaryKeys()
         getContext()->checkAccess(AccessType::SYSTEM_LOAD_PRIMARY_KEY);
         LOG_TRACE(log, "Loading primary keys for all tables");
 
+        auto & thread_pool = DB::getActivePartsLoadingThreadPool().get(); // Get the appropriate thread pool
+
         for (auto & database : DatabaseCatalog::instance().getDatabases())
         {
             for (auto it = database.second->getTablesIterator(getContext()); it->isValid(); it->next())
             {
                 if (auto * merge_tree = dynamic_cast<MergeTreeData *>(it->table().get()))
                 {
-                    merge_tree->loadPrimaryKeys();
+                    thread_pool.scheduleOrThrowOnError([merge_tree]() {
+                        merge_tree->loadPrimaryKeys();
+                    });
                 }
             }
         }
+
+        thread_pool.wait();
     }
 }
 
