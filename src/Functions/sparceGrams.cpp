@@ -11,14 +11,14 @@ namespace DB
 
 /** Functions that finds all substrings such their crc32-hash is more than crc32-hash of every bigram in substring.
   *
-  * sparceGrams(s)
+  * sparseGrams(s)
   */
 namespace
 {
 
 using Pos = const char *;
 
-class SparceGramsImpl
+class SparseGramsImpl
 {
 private:
     Pos pos;
@@ -37,12 +37,12 @@ private:
 
     void BuildBigramHashes()
     {
-        if (pos == end || pos + 1 == end) {
+        if (pos == end) {
             return;
         }
 
         for (size_t i = 0;; ++i) {
-            if (pos + i + 2 == end) {
+            if (pos + i + 1 == end) {
                 break;
             }
             bigram_hashes.push_back(CalcHash(i, i + 2));
@@ -50,7 +50,7 @@ private:
     }
 
 public:
-    static constexpr auto name = "sparceGrams";
+    static constexpr auto name = "sparseGrams";
 
     static bool isVariadic() { return true; }
     static size_t getNumberOfArguments() { return 0; }
@@ -82,7 +82,7 @@ public:
     bool get(Pos & token_begin, Pos & token_end)
     {
         while (pos + left != end) {
-            while (pos + right != end && right - left < 3) {
+            while (pos + right - 1 != end && right - left < 3) {
                 right++;
             }
 
@@ -95,15 +95,19 @@ public:
                 max_substr_bigram_hash = std::max(max_substr_bigram_hash, bigram_hashes[i]);   
             }
 
-            while (pos + right != end && CalcHash(left, right) <= max_substr_bigram_hash) {
+            while (pos + right - 1 != end && CalcHash(left, right) <= max_substr_bigram_hash) {
                 max_substr_bigram_hash = std::max(max_substr_bigram_hash, bigram_hashes[right - 1]);
                 right++;
             }
 
-            if (pos + right != end) {
+            if (pos + right - 1 != end) {
                 token_begin = pos + left;
                 token_end = pos + right;
                 right++;
+                if (pos + right - 1 == end) {
+                    left++;
+                    right = left;
+                }
                 return true;
             }
             left++;
@@ -114,13 +118,13 @@ public:
     }
 };
 
-using FunctionSparceGrams = FunctionTokens<SparceGramsImpl>;
+using FunctionSparseGrams = FunctionTokens<SparseGramsImpl>;
 
 }
 
-REGISTER_FUNCTION(SparceGrams)
+REGISTER_FUNCTION(SparseGrams)
 {
-    factory.registerFunction<FunctionSparceGrams>();
+    factory.registerFunction<FunctionSparseGrams>();
 }
 
 }
