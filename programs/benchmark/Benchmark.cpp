@@ -666,8 +666,8 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
 
         Strings hosts = options.count("host") ? options["host"].as<Strings>() : Strings({"localhost"});
 
-        String proto_send_chunked {"chunked"};
-        String proto_recv_chunked {"chunked"};
+        String proto_send_chunked {"notchunked"};
+        String proto_recv_chunked {"notchunked"};
 
         if (options.count("proto_caps"))
         {

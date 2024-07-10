@@ -113,8 +113,8 @@ Cluster::Address::Address(
     secure = ConfigHelper::getBool(config, config_prefix + ".secure", false, /* empty_as */true) ? Protocol::Secure::Enable : Protocol::Secure::Disable;
     priority = Priority{config.getInt(config_prefix + ".priority", 1)};
 
-    proto_send_chunked = config.getString(config_prefix + ".proto_caps.send", "chunked");
-    proto_recv_chunked = config.getString(config_prefix + ".proto_caps.recv", "chunked");
+    proto_send_chunked = config.getString(config_prefix + ".proto_caps.send", "notchunked");
+    proto_recv_chunked = config.getString(config_prefix + ".proto_caps.recv", "notchunked");
 
     const char * port_type = secure == Protocol::Secure::Enable ? "tcp_port_secure" : "tcp_port";
     auto default_port = config.getInt(port_type, 0);
