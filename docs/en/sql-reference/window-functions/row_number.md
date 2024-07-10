@@ -1,12 +1,12 @@
 ---
 slug: /en/sql-reference/window-functions/row_number
 sidebar_label: row_number
-sidebar_position: 8
+sidebar_position: 2
 ---
 
 # row_number
 
-Numbers the current row within its partition starting from 1
+Numbers the current row within its partition starting from 1.
 
 **Syntax**
 

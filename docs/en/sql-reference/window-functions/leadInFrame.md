@@ -1,12 +1,12 @@
 ---
 slug: /en/sql-reference/window-functions/leadInFrame
 sidebar_label: leadInFrame
-sidebar_position: 5
+sidebar_position: 9
 ---
 
 # leadInFrame
 
-Return a value evaluated at the row that is offset rows after the current row within the ordered frame.
+Returns a value evaluated at the row that is offset rows after the current row within the ordered frame.
 
 **Syntax**
 

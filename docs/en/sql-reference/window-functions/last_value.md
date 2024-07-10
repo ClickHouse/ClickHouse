@@ -1,17 +1,17 @@
 ---
-slug: /en/sql-reference/window-functions/lagInFrame
-sidebar_label: lagInFrame
+slug: /en/sql-reference/window-functions/last_value
+sidebar_label: last_value
 sidebar_position: 4
 ---
 
-# first_value
+# last_value
 
-Return the last non-NULL value evaluated within its ordered frame.
+Returns the last non-NULL value evaluated within its ordered frame.
 
 **Syntax**
 
 ```sql
-first_value (column_name)
+last_value (column_name)
   OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column] 
         [ROWS or RANGE expression_to_bound_rows_withing_the_group]] | [window_name])
 FROM table_name

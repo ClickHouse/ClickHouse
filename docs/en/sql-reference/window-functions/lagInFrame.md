@@ -1,12 +1,12 @@
 ---
 slug: /en/sql-reference/window-functions/lagInFrame
 sidebar_label: lagInFrame
-sidebar_position: 3
+sidebar_position: 8
 ---
 
 # lagInFrame
 
-Return a value evaluated at the row that is at a specified physical offset before the current row within the ordered frame. The offset parameter, if not specified, defaults to 1, meaning it will fetch the value from the next row. If the calculated row exceeds the boundaries of the window frame, the specified default value is returned.
+Returns a value evaluated at the row that is at a specified physical offset row before the current row within the ordered frame.
 
 **Syntax**
 

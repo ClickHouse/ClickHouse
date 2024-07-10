@@ -1,14 +1,12 @@
 ---
-slug: /en/sql-reference/window-functions/leadInFrame
-sidebar_label: leadInFrame
-sidebar_position: 6
+slug: /en/sql-reference/window-functions/nth_value
+sidebar_label: nth_value
+sidebar_position: 5
 ---
 
 # nth_value
 
-Return the first non-NULL value evaluated against the nth row (offset) in its ordered frame.
-
-The [dense_rank](./dense_rank.md) function provides the same behaviour but without gaps in ranking.
+Returns the first non-NULL value evaluated against the nth row (offset) in its ordered frame.
 
 **Syntax**
 
