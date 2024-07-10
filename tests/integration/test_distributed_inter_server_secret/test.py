@@ -418,7 +418,7 @@ def test_per_user_protocol_settings_secure_cluster(user, password):
     )
 
 
-def test_secure_cluster_distributed_over_distributed_different_users():
+def test_secure_cluster_distributed_over_distributed_different_users_remote():
     # This works because we will have initial_user='default'
     n1.query(
         "SELECT * FROM remote('n1', currentDatabase(), dist_secure)", user="new_user"
@@ -433,3 +433,16 @@ def test_secure_cluster_distributed_over_distributed_different_users():
     # and stuff).
     with pytest.raises(QueryRuntimeException):
         n1.query("SELECT * FROM dist_over_dist_secure", user="new_user")
+
+
+def test_secure_cluster_distributed_over_distributed_different_users_cluster():
+    id_ = "cluster-user"
+    n1.query(
+        f"SELECT *, '{id_}' FROM cluster(secure, currentDatabase(), dist_secure)",
+        user="nopass",
+        settings={
+            "prefer_localhost_replica": 0,
+        },
+    )
+    assert get_query_user_info(n1, id_) == [["nopass", "nopass"]] * 4
+    assert get_query_user_info(n2, id_) == [["nopass", "nopass"]] * 3

@@ -61,7 +61,8 @@ public:
         const DistributedSettings & distributed_settings_,
         LoadingStrictnessLevel mode,
         ClusterPtr owned_cluster_ = {},
-        ASTPtr remote_table_function_ptr_ = {});
+        ASTPtr remote_table_function_ptr_ = {},
+        bool is_remote_function_ = false);
 
     ~StorageDistributed() override;
 
@@ -273,6 +274,8 @@ private:
     // For random shard index generation
     mutable std::mutex rng_mutex;
     pcg64 rng;
+
+    bool is_remote_function;
 };
 
 }

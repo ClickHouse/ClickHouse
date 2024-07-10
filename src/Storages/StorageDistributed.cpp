@@ -308,7 +308,8 @@ StorageDistributed::StorageDistributed(
     const DistributedSettings & distributed_settings_,
     LoadingStrictnessLevel mode,
     ClusterPtr owned_cluster_,
-    ASTPtr remote_table_function_ptr_)
+    ASTPtr remote_table_function_ptr_,
+    bool is_remote_function_)
     : IStorage(id_)
     , WithContext(context_->getGlobalContext())
     , remote_database(remote_database_)
@@ -322,6 +323,7 @@ StorageDistributed::StorageDistributed(
     , relative_data_path(relative_data_path_)
     , distributed_settings(distributed_settings_)
     , rng(randomSeed())
+    , is_remote_function(is_remote_function_)
 {
     if (!distributed_settings.flush_on_detach && distributed_settings.background_insert_batch)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Settings flush_on_detach=0 and background_insert_batch=1 are incompatible");
@@ -869,7 +871,7 @@ void StorageDistributed::read(
         sharding_key_column_name,
         distributed_settings,
         shard_filter_generator,
-        /* is_remote_function= */ static_cast<bool>(owned_cluster));
+        is_remote_function);
 
     /// This is a bug, it is possible only when there is no shards to query, and this is handled earlier.
     if (!query_plan.isInitialized())
