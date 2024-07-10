@@ -184,6 +184,7 @@ public:
             VariantOffsets,
             VariantElements,
             VariantElement,
+            VariantElementNullMap,
 
             DynamicData,
             DynamicStructure,
@@ -256,6 +257,11 @@ public:
 
         bool position_independent_encoding = true;
 
+        /// True if data type names should be serialized in binary encoding.
+        bool data_types_binary_encoding = false;
+
+        bool use_compact_variant_discriminators_serialization = false;
+
         enum class DynamicStatisticsMode
         {
             NONE,   /// Don't write statistics.
@@ -274,6 +280,9 @@ public:
         bool continuous_reading = true;
 
         bool position_independent_encoding = true;
+
+        /// True if data type names should be deserialized in binary encoding.
+        bool data_types_binary_encoding = false;
 
         bool native_format = false;
 
@@ -434,6 +443,9 @@ protected:
     template <typename State, typename StatePtr>
     State * checkAndGetState(const StatePtr & state) const;
 
+    template <typename State, typename StatePtr>
+    static State * checkAndGetState(const StatePtr & state, const ISerialization * serialization);
+
     [[noreturn]] void throwUnexpectedDataAfterParsedValue(IColumn & column, ReadBuffer & istr, const FormatSettings &, const String & type_name) const;
 };
 
@@ -445,9 +457,15 @@ using SubstreamType = ISerialization::Substream::Type;
 template <typename State, typename StatePtr>
 State * ISerialization::checkAndGetState(const StatePtr & state) const
 {
+    return checkAndGetState<State, StatePtr>(state, this);
+}
+
+template <typename State, typename StatePtr>
+State * ISerialization::checkAndGetState(const StatePtr & state, const ISerialization * serialization)
+{
     if (!state)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Got empty state for {}", demangle(typeid(*this).name()));
+            "Got empty state for {}", demangle(typeid(*serialization).name()));
 
     auto * state_concrete = typeid_cast<State *>(state.get());
     if (!state_concrete)
@@ -455,7 +473,7 @@ State * ISerialization::checkAndGetState(const StatePtr & state) const
         auto & state_ref = *state;
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Invalid State for {}. Expected: {}, got {}",
-                demangle(typeid(*this).name()),
+                demangle(typeid(*serialization).name()),
                 demangle(typeid(State).name()),
                 demangle(typeid(state_ref).name()));
     }
