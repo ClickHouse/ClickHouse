@@ -781,6 +781,9 @@ def test_keeper_storage_remove_on_cluster(cluster, ignore, expected_raise):
 
     with expected_raise:
         node.query(
+            "DROP NAMED COLLECTION IF EXISTS test_nc ON CLUSTER `replicated_nc_nodes_cluster`"
+        )
+        node.query(
             f"CREATE NAMED COLLECTION test_nc ON CLUSTER `replicated_nc_nodes_cluster` AS key1=1, key2=2 OVERRIDABLE"
         )
         node.query(
