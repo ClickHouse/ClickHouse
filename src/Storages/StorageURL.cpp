@@ -99,6 +99,17 @@ static ConnectionTimeouts getHTTPTimeouts(ContextPtr context)
     return ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings().keep_alive_timeout);
 }
 
+String getSampleURI(String uri, ContextPtr context)
+{
+    if (urlWithGlobs(uri))
+    {
+        auto uris = parseRemoteDescription(uri, 0, uri.size(), ',', context->getSettingsRef().glob_expansion_max_elements);
+        if (!uris.empty())
+            return uris[0];
+    }
+    return uri;
+}
+
 IStorageURLBase::IStorageURLBase(
     const String & uri_,
     const ContextPtr & context_,
@@ -155,8 +166,8 @@ IStorageURLBase::IStorageURLBase(
 
     std::string uri_for_partitioning;
     if (context_->getSettingsRef().use_hive_partitioning)
-        uri_for_partitioning = uri;
-    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.getColumns(), uri_for_partitioning, format_settings.value_or(FormatSettings{})));
+        uri_for_partitioning = getSampleURI(uri, context_);
+    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.getColumns(), context_, uri_for_partitioning, format_settings.value_or(FormatSettings{})));
 }
 
 
@@ -425,7 +436,8 @@ Chunk StorageURLSource::generate()
                 {
                     .path = curr_uri.getPath(),
                     .size = current_file_size,
-                }, hive_partitioning_path);
+                    .hive_partitioning_path = hive_partitioning_path,
+                });
             return chunk;
         }
 
@@ -959,10 +971,9 @@ std::pair<ColumnsDescription, String> IStorageURLBase::getTableStructureAndForma
         urls_to_check = {uri};
 
     ReadBufferIterator read_buffer_iterator(urls_to_check, format, compression_method, headers, format_settings, context);
-    std::string sample_path;
     if (format)
-        return {readSchemaFromFormat(*format, format_settings, read_buffer_iterator, sample_path, context), *format};
-    return detectFormatAndReadSchema(format_settings, read_buffer_iterator, sample_path, context);
+        return {readSchemaFromFormat(*format, format_settings, read_buffer_iterator, context), *format};
+    return detectFormatAndReadSchema(format_settings, read_buffer_iterator, context);
 }
 
 ColumnsDescription IStorageURLBase::getTableStructureFromData(

@@ -60,7 +60,10 @@ Stanley	Gibson	Elizabeth
 Eugenia	Greer	Elizabeth
 Jeffery	Delgado	Elizabeth
 Clara	Cross	Elizabeth
-Elizabeth	Gordon	Elizabeth
+42      2020-01-01
+[1,2,3] 42.42
+Array(Int64)    LowCardinality(Float64)
+101
 1
 TESTING THE S3 PARTITIONING
 first	 last	Elizabeth

@@ -122,7 +122,6 @@ ColumnsDescription readSchemaFromFormat(
     const String & format_name,
     const std::optional<FormatSettings> & format_settings,
     IReadBufferIterator & read_buffer_iterator,
-    std::string & sample_path,
     const ContextPtr & context);
 
 /// Try to detect the format of the data and it's schema.
@@ -132,7 +131,6 @@ ColumnsDescription readSchemaFromFormat(
 std::pair<ColumnsDescription, String> detectFormatAndReadSchema(
     const std::optional<FormatSettings> & format_settings,
     IReadBufferIterator & read_buffer_iterator,
-    std::string & sample_path,
     const ContextPtr & context);
 
 SchemaCache::Key getKeyForSchemaCache(const String & source, const String & format, const std::optional<FormatSettings> & format_settings, const ContextPtr & context);

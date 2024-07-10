@@ -50,7 +50,11 @@ auto extractSingleValueFromBlock(const Block & block, const String & name)
 }
 
 NameSet getVirtualNamesForFileLikeStorage();
-VirtualColumnsDescription getVirtualsForFileLikeStorage(const ColumnsDescription & storage_columns, std::string path = "", FormatSettings settings = FormatSettings());
+VirtualColumnsDescription getVirtualsForFileLikeStorage(
+    const ColumnsDescription & storage_columns,
+    const ContextPtr & context,
+    std::string sample_path = "",
+    std::optional<FormatSettings> format_settings_ = std::nullopt);
 
 ActionsDAGPtr createPathAndFileFilterDAG(const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns);
 
@@ -77,13 +81,14 @@ struct VirtualsForFileLikeStorage
     std::optional<size_t> size { std::nullopt };
     const String * filename { nullptr };
     std::optional<Poco::Timestamp> last_modified { std::nullopt };
+    const String & hive_partitioning_path = "";
 };
 
 std::map<std::string, std::string> parseFromPath(const std::string& path);
 
 void addRequestedFileLikeStorageVirtualsToChunk(
     Chunk & chunk, const NamesAndTypesList & requested_virtual_columns,
-    VirtualsForFileLikeStorage virtual_values, const std::string & hive_partitioning_path = "");
+    VirtualsForFileLikeStorage virtual_values);
 }
 
 }

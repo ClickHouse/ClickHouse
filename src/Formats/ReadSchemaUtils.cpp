@@ -94,7 +94,6 @@ std::pair<ColumnsDescription, String> readSchemaFromFormatImpl(
     std::optional<String> format_name,
     const std::optional<FormatSettings> & format_settings,
     IReadBufferIterator & read_buffer_iterator,
-    std::string & sample_path,
     const ContextPtr & context)
 try
 {
@@ -143,10 +142,6 @@ try
             try
             {
                 iterator_data = read_buffer_iterator.next();
-
-                /// Extracting the File path for hive-style partitioning
-                if (sample_path.empty())
-                    sample_path = read_buffer_iterator.getLastFilePath();
 
                 /// Read buffer iterator can determine the data format if it's unknown.
                 /// For example by scanning schema cache or by finding new file with format extension.
@@ -541,19 +536,17 @@ ColumnsDescription readSchemaFromFormat(
     const String & format_name,
     const std::optional<FormatSettings> & format_settings,
     IReadBufferIterator & read_buffer_iterator,
-    std::string & sample_path,
     const ContextPtr & context)
 {
-    return readSchemaFromFormatImpl(format_name, format_settings, read_buffer_iterator, sample_path, context).first;
+    return readSchemaFromFormatImpl(format_name, format_settings, read_buffer_iterator, context).first;
 }
 
 std::pair<ColumnsDescription, String> detectFormatAndReadSchema(
     const std::optional<FormatSettings> & format_settings,
     IReadBufferIterator & read_buffer_iterator,
-    std::string & sample_path,
     const ContextPtr & context)
 {
-    return readSchemaFromFormatImpl(std::nullopt, format_settings, read_buffer_iterator, sample_path, context);
+    return readSchemaFromFormatImpl(std::nullopt, format_settings, read_buffer_iterator, context);
 }
 
 SchemaCache::Key getKeyForSchemaCache(

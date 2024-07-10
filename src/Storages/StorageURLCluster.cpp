@@ -75,7 +75,7 @@ StorageURLCluster::StorageURLCluster(
 
     storage_metadata.setConstraints(constraints_);
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.getColumns()));
+    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.getColumns(), context));
 }
 
 void StorageURLCluster::updateQueryToSendIfNeeded(ASTPtr & query, const StorageSnapshotPtr & storage_snapshot, const ContextPtr & context)

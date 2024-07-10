@@ -198,6 +198,23 @@ SELECT count(*) FROM file('big_dir/**/file002', 'CSV', 'name String, value UInt3
 - `_size` — Size of the file in bytes. Type: `Nullable(UInt64)`. If the file size is unknown, the value is `NULL`.
 - `_time` — Last modified time of the file. Type: `Nullable(DateTime)`. If the time is unknown, the value is `NULL`.
 
+## Hive-style partitioning {#hive-style-patitioning}
+
+When setting `use_hive_partitioning` is set to 1, ClickHouse can introduce virtual columns due to Hive partitioning style if the path has the specific structure.
+
+**Example**
+
+Use virtual column, created with Hive-style partitioning
+
+``` sql
+SET use_hive_patitioning = 1;
+SELECT _specified_column from file('/specified_column=specified_data/file.txt');
+```
+
+``` reference
+specified_data
+```
+
 ## Settings {#settings}
 
 - [engine_file_empty_if_not_exists](/docs/en/operations/settings/settings.md#engine-file-empty_if-not-exists) - allows to select empty data from a file that doesn't exist. Disabled by default.

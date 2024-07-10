@@ -52,6 +52,7 @@
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <Common/re2.h>
+#include "Formats/FormatSettings.h"
 #include <Formats/SchemaInferenceUtils.h>
 
 #include <QueryPipeline/Pipe.h>
@@ -880,11 +881,10 @@ std::pair<ColumnsDescription, String> StorageFile::getTableStructureAndFormatFro
     auto read_buffer_iterator = SingleReadBufferIterator(std::move(read_buf));
 
     ColumnsDescription columns;
-    std::string sample_path;
     if (format)
-        columns = readSchemaFromFormat(*format, format_settings, read_buffer_iterator, sample_path, context);
+        columns = readSchemaFromFormat(*format, format_settings, read_buffer_iterator, context);
     else
-        std::tie(columns, format) = detectFormatAndReadSchema(format_settings, read_buffer_iterator, sample_path, context);
+        std::tie(columns, format) = detectFormatAndReadSchema(format_settings, read_buffer_iterator, context);
 
     peekable_read_buffer_from_fd = read_buffer_iterator.releaseBuffer();
     if (peekable_read_buffer_from_fd)
@@ -929,21 +929,20 @@ std::pair<ColumnsDescription, String> StorageFile::getTableStructureAndFormatFro
 
     }
 
-    std::string sample_path;
     if (archive_info)
     {
         ReadBufferFromArchiveIterator read_buffer_iterator(*archive_info, format, format_settings, context);
         if (format)
-            return {readSchemaFromFormat(*format, format_settings, read_buffer_iterator, sample_path, context), *format};
+            return {readSchemaFromFormat(*format, format_settings, read_buffer_iterator, context), *format};
 
-        return detectFormatAndReadSchema(format_settings, read_buffer_iterator, sample_path, context);
+        return detectFormatAndReadSchema(format_settings, read_buffer_iterator, context);
     }
 
     ReadBufferFromFileIterator read_buffer_iterator(paths, format, compression_method, format_settings, context);
     if (format)
-        return {readSchemaFromFormat(*format, format_settings, read_buffer_iterator, sample_path, context), *format};
+        return {readSchemaFromFormat(*format, format_settings, read_buffer_iterator, context), *format};
 
-    return detectFormatAndReadSchema(format_settings, read_buffer_iterator, sample_path, context);
+    return detectFormatAndReadSchema(format_settings, read_buffer_iterator, context);
 }
 
 ColumnsDescription StorageFile::getTableStructureFromFile(
@@ -1102,7 +1101,7 @@ void StorageFile::setStorageMetadata(CommonArguments args)
     std::string path_for_virtuals;
     if (args.getContext()->getSettingsRef().use_hive_partitioning && !paths.empty())
         path_for_virtuals = paths[0];
-    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.getColumns(), path_for_virtuals, format_settings.value_or(FormatSettings{})));
+    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.getColumns(), args.getContext(), path_for_virtuals, format_settings.value_or(FormatSettings{})));
 }
 
 
@@ -1456,7 +1455,8 @@ Chunk StorageFileSource::generate()
                     .size = current_file_size,
                     .filename = (filename_override.has_value() ? &filename_override.value() : nullptr),
                     .last_modified = current_file_last_modified,
-                }, hive_partitioning_path);
+                    .hive_partitioning_path = hive_partitioning_path,
+                });
 
             return chunk;
         }

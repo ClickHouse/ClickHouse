@@ -43,7 +43,8 @@ std::string StorageObjectStorage::getPathSample(StorageInMemoryMetadata metadata
         {}, // predicate
         metadata.getColumns().getAll(), // virtual_columns
         nullptr, // read_keys
-        {} // file_progress_callback
+        {}, // file_progress_callback
+        true // override_settings_for_hive_partitioning
     );
 
     if (auto file = file_iterator->next(0))
@@ -86,7 +87,7 @@ StorageObjectStorage::StorageObjectStorage(
     else if (!context->getSettings().use_hive_partitioning)
         sample_path = "";
 
-    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(metadata.getColumns(), sample_path));
+    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(metadata.getColumns(), context, sample_path));
     setInMemoryMetadata(metadata);
 }
 
@@ -396,7 +397,8 @@ ColumnsDescription StorageObjectStorage::resolveSchemaFromData(
 {
     ObjectInfos read_keys;
     auto iterator = createReadBufferIterator(object_storage, configuration, format_settings, read_keys, context);
-    return readSchemaFromFormat(configuration->format, format_settings, *iterator, sample_path, context);
+    sample_path = iterator->getLastFilePath();
+    return readSchemaFromFormat(configuration->format, format_settings, *iterator, context);
 }
 
 std::string StorageObjectStorage::resolveFormatFromData(
@@ -408,7 +410,8 @@ std::string StorageObjectStorage::resolveFormatFromData(
 {
     ObjectInfos read_keys;
     auto iterator = createReadBufferIterator(object_storage, configuration, format_settings, read_keys, context);
-    return detectFormatAndReadSchema(format_settings, *iterator, sample_path, context).second;
+    sample_path = iterator->getLastFilePath();
+    return detectFormatAndReadSchema(format_settings, *iterator, context).second;
 }
 
 std::pair<ColumnsDescription, std::string> StorageObjectStorage::resolveSchemaAndFormatFromData(
@@ -420,7 +423,8 @@ std::pair<ColumnsDescription, std::string> StorageObjectStorage::resolveSchemaAn
 {
     ObjectInfos read_keys;
     auto iterator = createReadBufferIterator(object_storage, configuration, format_settings, read_keys, context);
-    auto [columns, format] = detectFormatAndReadSchema(format_settings, *iterator, sample_path, context);
+    sample_path = iterator->getLastFilePath();
+    auto [columns, format] = detectFormatAndReadSchema(format_settings, *iterator, context);
     configuration->format = format;
     return std::pair(columns, format);
 }

@@ -1308,8 +1308,7 @@ try
 
         SingleReadBufferIterator read_buffer_iterator(std::move(file));
 
-        std::string sample_string;
-        schema_columns = readSchemaFromFormat(input_format, {}, read_buffer_iterator, sample_string, context_const);
+        schema_columns = readSchemaFromFormat(input_format, {}, read_buffer_iterator, context_const);
     }
     else
     {

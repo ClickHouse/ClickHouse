@@ -85,10 +85,9 @@ ColumnsDescription TableFunctionFormat::getActualTableStructure(ContextPtr conte
     if (structure == "auto")
     {
         SingleReadBufferIterator read_buffer_iterator(std::make_unique<ReadBufferFromString>(data));
-        std::string sample_path;
         if (format == "auto")
-            return detectFormatAndReadSchema(std::nullopt, read_buffer_iterator, sample_path, context).first;
-        return readSchemaFromFormat(format, std::nullopt, read_buffer_iterator, sample_path, context);
+            return detectFormatAndReadSchema(std::nullopt, read_buffer_iterator, context).first;
+        return readSchemaFromFormat(format, std::nullopt, read_buffer_iterator, context);
     }
     return parseColumnsListFromString(structure, context);
 }
@@ -132,12 +131,11 @@ StoragePtr TableFunctionFormat::executeImpl(const ASTPtr & /*ast_function*/, Con
     String format_name = format;
     if (structure == "auto")
     {
-        std::string sample_path;
         SingleReadBufferIterator read_buffer_iterator(std::make_unique<ReadBufferFromString>(data));
         if (format_name == "auto")
-            std::tie(columns, format_name) = detectFormatAndReadSchema(std::nullopt, read_buffer_iterator, sample_path, context);
+            std::tie(columns, format_name) = detectFormatAndReadSchema(std::nullopt, read_buffer_iterator, context);
         else
-            columns = readSchemaFromFormat(format, std::nullopt, read_buffer_iterator, sample_path, context);
+            columns = readSchemaFromFormat(format, std::nullopt, read_buffer_iterator, context);
     }
     else
     {

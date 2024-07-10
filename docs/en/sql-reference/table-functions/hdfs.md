@@ -99,6 +99,23 @@ FROM hdfs('hdfs://hdfs1:9000/big_dir/file{0..9}{0..9}{0..9}', 'CSV', 'name Strin
 - `_size` — Size of the file in bytes. Type: `Nullable(UInt64)`. If the size is unknown, the value is `NULL`.
 - `_time` — Last modified time of the file. Type: `Nullable(DateTime)`. If the time is unknown, the value is `NULL`.
 
+## Hive-style partitioning {#hive-style-patitioning}
+
+When setting `use_hive_partitioning` is set to 1, ClickHouse can introduce virtual columns due to Hive partitioning style if the path has the specific structure.
+
+**Example**
+
+Use virtual column, created with Hive-style partitioning
+
+``` sql
+SET use_hive_patitioning = 1;
+SELECT _specified_column from HDFS('hdfs://hdfs1:9000/specified_column=specified_data/file.txt');
+```
+
+``` reference
+specified_data
+```
+
 ## Storage Settings {#storage-settings}
 
 - [hdfs_truncate_on_insert](/docs/en/operations/settings/settings.md#hdfs_truncate_on_insert) - allows to truncate file before insert into it. Disabled by default.

@@ -39,10 +39,13 @@
 #include <Common/re2.h>
 #include <Common/typeid_cast.h>
 #include <Formats/SchemaInferenceUtils.h>
+#include <Formats/EscapingRuleUtils.h>
+#include <Formats/FormatFactory.h>
 #include "Functions/FunctionsLogical.h"
 #include "Functions/IFunction.h"
 #include "Functions/IFunctionAdaptors.h"
 #include "Functions/indexHint.h"
+#include <Interpreters/convertFieldToType.h>
 #include <Parsers/makeASTForLogicalFunction.h>
 #include <Columns/ColumnSet.h>
 #include <Functions/FunctionHelpers.h>
@@ -116,7 +119,7 @@ NameSet getVirtualNamesForFileLikeStorage()
     return {"_path", "_file", "_size", "_time"};
 }
 
-std::map<std::string, std::string> parseFromPath(const std::string& path)
+std::map<std::string, std::string> parseHivePartitioningKeysAndValues(const std::string& path)
 {
     std::string pattern = "/([^/]+)=([^/]+)";
     re2::StringPiece input_piece(path);
@@ -128,7 +131,7 @@ std::map<std::string, std::string> parseFromPath(const std::string& path)
     return key_values;
 }
 
-VirtualColumnsDescription getVirtualsForFileLikeStorage(const ColumnsDescription & storage_columns, std::string path, FormatSettings settings)
+VirtualColumnsDescription getVirtualsForFileLikeStorage(const ColumnsDescription & storage_columns, const ContextPtr & context, std::string path, std::optional<FormatSettings> format_settings_)
 {
     VirtualColumnsDescription desc;
 
@@ -145,13 +148,17 @@ VirtualColumnsDescription getVirtualsForFileLikeStorage(const ColumnsDescription
     add_virtual("_size", makeNullable(std::make_shared<DataTypeUInt64>()));
     add_virtual("_time", makeNullable(std::make_shared<DataTypeDateTime>()));
 
-    auto map = parseFromPath(path);
-    for (const auto& item : map)
+    auto map = parseHivePartitioningKeysAndValues(path);
+    for (auto& item : map)
     {
-        auto type = tryInferDataTypeForSingleField(item.second, settings);
+        auto format_settings = format_settings_ ? *format_settings_ : getFormatSettings(context);
+        auto type = tryInferDataTypeByEscapingRule(item.second, format_settings, FormatSettings::EscapingRule::Raw);
         if (type == nullptr)
             type = std::make_shared<DataTypeString>();
-        add_virtual(item.first, std::make_shared<DataTypeLowCardinality>(type));
+        if (type->canBeInsideLowCardinality())
+            add_virtual(item.first, std::make_shared<DataTypeLowCardinality>(type));
+        else
+            add_virtual(item.first, type);
     }
 
     return desc;
@@ -215,9 +222,9 @@ ColumnPtr getFilterByPathAndFileIndexes(const std::vector<String> & paths, const
 
 void addRequestedFileLikeStorageVirtualsToChunk(
     Chunk & chunk, const NamesAndTypesList & requested_virtual_columns,
-    VirtualsForFileLikeStorage virtual_values, const std::string & hive_partitioning_path)
+    VirtualsForFileLikeStorage virtual_values)
 {
-    auto hive_map = parseFromPath(hive_partitioning_path);
+    auto hive_map = parseHivePartitioningKeysAndValues(virtual_values.hive_partitioning_path);
     for (const auto & virtual_column : requested_virtual_columns)
     {
         if (virtual_column.name == "_path")
@@ -265,7 +272,7 @@ void addRequestedFileLikeStorageVirtualsToChunk(
             auto it = hive_map.find(virtual_column.getNameInStorage());
             if (it != hive_map.end())
             {
-                chunk.addColumn(virtual_column.getTypeInStorage()->createColumnConst(chunk.getNumRows(), it->second)->convertToFullColumnIfConst());
+                chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), convertFieldToType(Field(it->second), *virtual_column.type))->convertToFullColumnIfConst());
                 hive_map.erase(it);
             }
         }

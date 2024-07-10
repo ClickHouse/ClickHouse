@@ -61,7 +61,7 @@ StorageFileCluster::StorageFileCluster(
 
     storage_metadata.setConstraints(constraints_);
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.getColumns()));
+    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.getColumns(), context));
 }
 
 void StorageFileCluster::updateQueryToSendIfNeeded(DB::ASTPtr & query, const StorageSnapshotPtr & storage_snapshot, const DB::ContextPtr & context)

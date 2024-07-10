@@ -58,7 +58,8 @@ public:
         const ActionsDAG::Node * predicate,
         const NamesAndTypesList & virtual_columns,
         ObjectInfos * read_keys,
-        std::function<void(FileProgress)> file_progress_callback = {});
+        std::function<void(FileProgress)> file_progress_callback = {},
+        bool override_settings_for_hive_partitioning = false);
 
     static std::string getUniqueStoragePathIdentifier(
         const Configuration & configuration,

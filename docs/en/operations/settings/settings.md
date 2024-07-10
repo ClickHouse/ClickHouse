@@ -5591,3 +5591,9 @@ Default value: `10000000`.
 Minimal size of block to compress in CROSS JOIN. Zero value means - disable this threshold. This block is compressed when any of the two thresholds (by rows or by bytes) are reached.
 
 Default value: `1GiB`.
+
+## use_hive_partitioning
+
+Allows the usage of Hive-style partitioning in queries. When enabled, ClickHouse interprets and maintains table partitions in a way that is consistent with the Hive partitioning scheme, which is commonly used in Hadoop ecosystems.
+
+Default value: `0`.
