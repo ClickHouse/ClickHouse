@@ -3,8 +3,8 @@
 
 #if USE_CEPH
 #include <map>
+#include <librados.hpp>
 #include <base/types.h>
-#include <rados/librados.hpp>
 #include <Core/Types.h>
 #include <Poco/Util/AbstractConfiguration.h>
 

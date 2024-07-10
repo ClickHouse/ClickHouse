@@ -4,13 +4,13 @@
 #include "Common/logger_useful.h"
 
 #if USE_CEPH
-#    include <IO/Ceph/RadosIO.h>
-#    include <rados/librados.hpp>
-#    include <Common/ElapsedTimeProfileEventIncrement.h>
-#    include <Common/Exception.h>
-#    include <Common/Scheduler/ResourceGuard.h>
-#    include <Common/Throttler.h>
-#    include <Common/safe_cast.h>
+
+#include <IO/Ceph/RadosIO.h>
+#include <Common/ElapsedTimeProfileEventIncrement.h>
+#include <Common/Exception.h>
+#include <Common/Scheduler/ResourceGuard.h>
+#include <Common/Throttler.h>
+#include <Common/safe_cast.h>
 
 namespace ProfileEvents
 {

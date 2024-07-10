@@ -1,13 +1,11 @@
 #pragma once
 
-#include <rados/rados_types.h>
 #include "config.h"
 
 #if USE_CEPH
 
 #include <memory>
-#include <rados/librados.hpp>
-#include "IO/Ceph/RadosIO.h"
+#include <IO/Ceph/RadosIO.h>
 #include <Disks/ObjectStorages/Ceph/CephUtils.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Storages/StorageCephSettings.h>

@@ -9,8 +9,7 @@
 #if USE_CEPH
 
 #include <memory>
-#include <rados/librados.h>
-#include <rados/librados.hpp>
+#include <librados.hpp>
 #include <base/types.h>
 #include <Poco/Util/AbstractConfiguration.h>
 

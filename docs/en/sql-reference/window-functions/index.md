@@ -23,6 +23,7 @@ ClickHouse supports the standard grammar for defining windows and window functio
 | `GROUPS` frame                                                                     | ❌                                                                                                                                                                               |
 | Calculating aggregate functions over a frame (`sum(value) over (order by time)`)   | ✅ (All aggregate functions are supported)                                                                                                                                                       |
 | `rank()`, `dense_rank()`, `row_number()`                                           | ✅                                                                                                                                                                                   |
+| `percent_rank()` | ✅  Efficiently computes the relative standing of a value within a partition in a dataset. This function effectively replaces the more verbose and computationally intensive manual SQL calculation expressed as `ifNull((rank() OVER(PARTITION BY x ORDER BY y) - 1) / nullif(count(1) OVER(PARTITION BY x) - 1, 0), 0)`| 
 | `lag/lead(value, offset)`                                                          | ❌ <br/> You can use one of the following workarounds:<br/> 1) `any(value) over (.... rows between <offset> preceding and <offset> preceding)`, or `following` for `lead` <br/> 2) `lagInFrame/leadInFrame`, which are analogous, but respect the window frame. To get behavior identical to `lag/lead`, use `rows between unbounded preceding and unbounded following`                                                                 |
 | ntile(buckets) | ✅ <br/> Specify window like, (partition by x order by y rows between unbounded preceding and unrounded following). |
 
@@ -36,7 +37,7 @@ Finds non-negative derivative for given `metric_column` by `timestamp_column`.
 `INTERVAL` can be omitted, default is `INTERVAL 1 SECOND`.
 The computed value is the following for each row:
 - `0` for 1st row,
-- ${metric_i - metric_{i-1} \over timestamp_i - timestamp_{i-1}}  * interval$ for $i_th$ row.
+- ${\text{metric}_i - \text{metric}_{i-1} \over \text{timestamp}_i - \text{timestamp}_{i-1}}  * \text{interval}$ for $i_{th}$ row.
 
 ## Syntax
 
@@ -80,8 +81,8 @@ These functions can be used only as a window function.
 - `nth_value(x, offset)` - Return the first non-NULL value evaluated against the nth row (offset) in its ordered frame.
 - `rank()` - Rank the current row within its partition with gaps.
 - `dense_rank()` - Rank the current row within its partition without gaps.
-- `lagInFrame(x)` - Return a value evaluated at the row that is at a specified physical offset row before the current row within the ordered frame.
-- `leadInFrame(x)` - Return a value evaluated at the row that is offset rows after the current row within the ordered frame.
+- `lagInFrame(x[, offset[, default]])` - Return a value evaluated at the row that is at a specified physical offset row before the current row within the ordered frame. The offset parameter, if not specified, defaults to 1, meaning it will fetch the value from the next row. If the calculated row exceeds the boundaries of the window frame, the specified default value is returned.
+- `leadInFrame(x[, offset[, default]])` - Return a value evaluated at the row that is offset rows after the current row within the ordered frame. If offset is not provided, it defaults to 1. If the offset leads to a position outside the window frame, the specified default value is used.
 
 ## Examples
 

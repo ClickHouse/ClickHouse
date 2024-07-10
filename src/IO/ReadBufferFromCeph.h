@@ -9,7 +9,6 @@
 #include <IO/BufferWithOwnMemory.h>
 #include <string>
 #include <memory>
-#include <rados/librados.hpp>
 #include <base/types.h>
 #include <Interpreters/Context.h>
 #include <IO/ReadBufferFromFileBase.h>

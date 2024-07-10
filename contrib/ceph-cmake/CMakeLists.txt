@@ -128,7 +128,6 @@ set(SRCS
     "${Ceph_LIBRARY_DIR}/src/common/Finisher.cc"
     "${Ceph_LIBRARY_DIR}/src/common/strtol.cc"
     "${Ceph_LIBRARY_DIR}/src/common/reverse.c"
-    # "${Ceph_LIBRARY_DIR}/src/common/util.cc"
     "${Ceph_LIBRARY_DIR}/src/common/Formatter.cc"
     "${Ceph_LIBRARY_DIR}/src/common/errno.cc"
     "${Ceph_LIBRARY_DIR}/src/common/utf8.c"
@@ -163,7 +162,6 @@ set(SRCS
     "${Ceph_LIBRARY_DIR}/src/common/bloom_filter.cc"
     "${Ceph_LIBRARY_DIR}/src/common/assert.cc"
     "${Ceph_LIBRARY_DIR}/src/common/RefCountedObj.cc"
-    # "${Ceph_LIBRARY_DIR}/src/common/blkdev.cc"
     "${Ceph_LIBRARY_DIR}/src/common/random_string.cc"
     "${Ceph_LIBRARY_DIR}/src/common/str_list.cc"
     "${Ceph_LIBRARY_DIR}/src/common/perf_counters_cache.cc"
@@ -209,11 +207,9 @@ set(SRCS
 
     "${Ceph_LIBRARY_DIR}/src/common/sctp_crc32.c"
     "${Ceph_LIBRARY_DIR}/src/common/crc32c.cc"
-    # "${Ceph_LIBRARY_DIR}/src/common/crc32c_intel_fast_zero_asm.s"
     "${Ceph_LIBRARY_DIR}/src/common/crc32c_intel_baseline.c"
     "${Ceph_LIBRARY_DIR}/src/common/crc32c_intel_fast.c"
 
-    # "${Ceph_LIBRARY_DIR}/src/extblkdev/ExtBlkDevPlugin.cc"
     "${Ceph_LIBRARY_DIR}/src/erasure-code/ErasureCodePlugin.cc"
     "${Ceph_LIBRARY_DIR}/src/compressor/Compressor.cc"
 
@@ -329,7 +325,7 @@ add_library(ch_contrib::ceph ALIAS _librados)
 
 ### ceph origin
 target_include_directories(_librados PRIVATE "${Ceph_LIBRARY_DIR}/src/" "${Ceph_INCLUDE_DIR}")
-target_include_directories(_librados SYSTEM BEFORE INTERFACE "${Ceph_LIBRARY_DIR}/src/include")
+target_include_directories(_librados SYSTEM BEFORE INTERFACE "${Ceph_LIBRARY_DIR}/src/include/rados")
 target_compile_definitions(_librados PRIVATE HAVE_CONFIG_H __CEPH__ CEPH_USE_RE2)
 
 ### test if current libcxx has spaceship operator

@@ -3,7 +3,6 @@
 #include <cstring>
 #include <memory>
 #include <fcntl.h>
-#include <rados/librados.hpp>
 
 #include "Common/ObjectStorageKey.h"
 #include "Common/getRandomASCIIString.h"

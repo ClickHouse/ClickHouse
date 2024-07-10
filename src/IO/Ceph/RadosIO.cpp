@@ -1,12 +1,10 @@
 #include "RadosIO.h"
-#include <rados/librados.hpp>
 
 #if USE_CEPH
 
 #include <cstring>
-#include <buffer_fwd.h>
 #include <fmt/format.h>
-#include "Common/safe_cast.h"
+#include <Common/safe_cast.h>
 #include <Common/Exception.h>
 
 namespace DB

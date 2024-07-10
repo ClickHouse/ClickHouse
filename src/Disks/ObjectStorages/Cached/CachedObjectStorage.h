@@ -100,6 +100,12 @@ public:
 
     ObjectStorageKey generateObjectKeyForPath(const std::string & path) const override;
 
+    ObjectStorageKey generateObjectKeyPrefixForDirectoryPath(const std::string & path) const override;
+
+    void setKeysGenerator(ObjectStorageKeysGeneratorPtr gen) override { object_storage->setKeysGenerator(gen); }
+
+    bool isPlain() const override { return object_storage->isPlain(); }
+
     bool isRemote() const override { return object_storage->isRemote(); }
 
     void removeCacheIfExists(const std::string & path_key_for_cache) override;
@@ -121,7 +127,7 @@ public:
     const FileCacheSettings & getCacheSettings() const { return cache_settings; }
 
 #if USE_AZURE_BLOB_STORAGE
-    std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> getAzureBlobStorageClient() override
+    std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> getAzureBlobStorageClient() const override
     {
         return object_storage->getAzureBlobStorageClient();
     }
@@ -131,6 +137,11 @@ public:
     std::shared_ptr<const S3::Client> getS3StorageClient() override
     {
         return object_storage->getS3StorageClient();
+    }
+
+    std::shared_ptr<const S3::Client> tryGetS3StorageClient() override
+    {
+        return object_storage->tryGetS3StorageClient();
     }
 #endif
 

@@ -83,7 +83,57 @@ Result:
 ```
 ## makeDate32
 
-Like [makeDate](#makeDate) but produces a [Date32](../data-types/date32.md).
+Creates a date of type [Date32](../../sql-reference/data-types/date32.md) from a year, month, day (or optionally a year and a day). 
+
+**Syntax**
+
+```sql
+makeDate32(year, [month,] day)
+```
+
+**Arguments**
+
+- `year` — Year. [Integer](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) or [Decimal](../../sql-reference/data-types/decimal.md).
+- `month` — Month (optional). [Integer](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) or [Decimal](../../sql-reference/data-types/decimal.md).
+- `day` — Day. [Integer](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) or [Decimal](../../sql-reference/data-types/decimal.md).
+
+:::note
+If `month` is omitted then `day` should take a value between `1` and `365`, otherwise it should take a value between `1` and `31`.
+:::
+
+**Returned values**
+
+- A date created from the arguments. [Date32](../../sql-reference/data-types/date32.md).
+
+**Examples**
+
+Create a date from a year, month, and day:
+
+Query:
+
+```sql
+SELECT makeDate32(2024, 1, 1);
+```
+
+Result:
+
+```response
+2024-01-01
+```
+
+Create a Date from a year and day of year:
+
+Query:
+
+``` sql
+SELECT makeDate32(2024, 100);
+```
+
+Result:
+
+```response
+2024-04-09
+```
 
 ## makeDateTime
 
@@ -125,12 +175,38 @@ Result:
 
 ## makeDateTime64
 
-Like [makeDateTime](#makedatetime) but produces a [DateTime64](../data-types/datetime64.md).
+Creates a [DateTime64](../../sql-reference/data-types/datetime64.md) data type value from its components: year, month, day, hour, minute, second. With optional sub-second precision.
 
 **Syntax**
 
+```sql
+makeDateTime64(year, month, day, hour, minute, second[, precision])
+```
+
+**Arguments**
+
+- `year` — Year (0-9999). [Integer](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) or [Decimal](../../sql-reference/data-types/decimal.md).
+- `month` — Month (1-12). [Integer](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) or [Decimal](../../sql-reference/data-types/decimal.md). 
+- `day` — Day (1-31). [Integer](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) or [Decimal](../../sql-reference/data-types/decimal.md).
+- `hour` — Hour (0-23). [Integer](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) or [Decimal](../../sql-reference/data-types/decimal.md).
+- `minute` — Minute (0-59). [Integer](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) or [Decimal](../../sql-reference/data-types/decimal.md). 
+- `second` — Second (0-59). [Integer](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) or [Decimal](../../sql-reference/data-types/decimal.md). 
+- `precision` — Optional precision of the sub-second component (0-9). [Integer](../../sql-reference/data-types/int-uint.md).
+
+**Returned value**
+
+- A date and time created from the supplied arguments. [DateTime64](../../sql-reference/data-types/datetime64.md).  
+
+**Example**
+
 ``` sql
-makeDateTime64(year, month, day, hour, minute, second[, fraction[, precision[, timezone]]])
+SELECT makeDateTime64(2023, 5, 15, 10, 30, 45, 779, 5);
+```
+
+```response
+┌─makeDateTime64(2023, 5, 15, 10, 30, 45, 779, 5)─┐
+│                       2023-05-15 10:30:45.00779 │
+└─────────────────────────────────────────────────┘
 ```
 
 ## timestamp
@@ -214,7 +290,7 @@ Result:
 
 **See also**
 
-- [serverTimeZone](#serverTimeZone)
+- [serverTimeZone](#servertimezone)
 
 ## serverTimeZone
 
@@ -249,7 +325,7 @@ Result:
 
 **See also**
 
-- [timeZone](#timeZone)
+- [timeZone](#timezone)
 
 ## toTimeZone
 
@@ -305,7 +381,7 @@ int32samoa: 1546300800
 
 **See Also**
 
-- [formatDateTime](#formatDateTime) - supports non-constant timezone.
+- [formatDateTime](#formatdatetime) - supports non-constant timezone.
 - [toString](type-conversion-functions.md#tostring) - supports non-constant timezone.
 
 ## timeZoneOf
@@ -1006,7 +1082,7 @@ toStartOfWeek(t[, mode[, timezone]])
 **Arguments**
 
 - `t` - a [Date](../data-types/date.md), [Date32](../data-types/date32.md), [DateTime](../data-types/datetime.md) or [DateTime64](../data-types/datetime64.md)
-- `mode` - determines the first day of the week as described in the [toWeek()](date-time-functions#toweek) function
+- `mode` - determines the first day of the week as described in the [toWeek()](#toweek) function
 - `timezone` - Optional parameter, it behaves like any other conversion function
 
 **Returned value**
@@ -1049,7 +1125,7 @@ toLastDayOfWeek(t[, mode[, timezone]])
 **Arguments**
 
 - `t` - a [Date](../data-types/date.md), [Date32](../data-types/date32.md), [DateTime](../data-types/datetime.md) or [DateTime64](../data-types/datetime64.md)
-- `mode` - determines the last day of the week as described in the [toWeek()](date-time-functions#toweek) function
+- `mode` - determines the last day of the week as described in the [toWeek](#toweek) function
 - `timezone` - Optional parameter, it behaves like any other conversion function
 
 **Returned value**
@@ -1719,7 +1795,7 @@ Result:
 
 **See Also**
 
-- [fromDaysSinceYearZero](#fromDaysSinceYearZero)
+- [fromDaysSinceYearZero](#fromdayssinceyearzero)
 
 ## fromDaysSinceYearZero
 
@@ -1759,11 +1835,11 @@ Result:
 
 **See Also**
 
-- [toDaysSinceYearZero](#toDaysSinceYearZero)
+- [toDaysSinceYearZero](#todayssinceyearzero)
 
 ## fromDaysSinceYearZero32
 
-Like [fromDaysSinceYearZero](#fromDaysSinceYearZero) but returns a [Date32](../data-types/date32.md).
+Like [fromDaysSinceYearZero](#fromdayssinceyearzero) but returns a [Date32](../data-types/date32.md).
 
 ## age
 
@@ -1982,7 +2058,7 @@ Result:
 
 **See Also**
 
-- [toStartOfInterval](#tostartofintervaldate_or_date_with_time-interval-x-unit--time_zone)
+- [toStartOfInterval](#tostartofinterval)
 
 ## date\_add
 
@@ -2055,7 +2131,7 @@ Result:
 
 **See Also**
 
-- [addDate](#addDate)
+- [addDate](#adddate)
 
 ## date\_sub
 
@@ -2129,7 +2205,7 @@ Result:
 
 **See Also**
 
-- [subDate](#subDate)
+- [subDate](#subdate)
 
 ## timestamp\_add
 
@@ -2310,7 +2386,7 @@ Alias: `SUBDATE`
 
 - [date_sub](#date_sub)
 
-## now {#now}
+## now
 
 Returns the current date and time at the moment of query analysis. The function is a constant expression.
 
@@ -3609,7 +3685,7 @@ SELECT timeSlots(toDateTime64('1980-12-12 21:01:02.1234', 4, 'UTC'), toDecimal64
 └───────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## formatDateTime {#formatDateTime}
+## formatDateTime
 
 Formats a Time according to the given Format string. Format is a constant expression, so you cannot have multiple formats for a single result column.
 
@@ -3734,10 +3810,9 @@ LIMIT 10
 
 **See Also**
 
-- [formatDateTimeInJodaSyntax](##formatDateTimeInJodaSyntax)
+- [formatDateTimeInJodaSyntax](#formatdatetimeinjodasyntax)
 
-
-## formatDateTimeInJodaSyntax {#formatDateTimeInJodaSyntax}
+## formatDateTimeInJodaSyntax
 
 Similar to formatDateTime, except that it formats datetime in Joda style instead of MySQL style. Refer to https://joda-time.sourceforge.net/apidocs/org/joda/time/format/DateTimeFormat.html.
 
@@ -3902,11 +3977,11 @@ Result:
 
 **See Also**
 
-- [fromUnixTimestampInJodaSyntax](##fromUnixTimestampInJodaSyntax)
+- [fromUnixTimestampInJodaSyntax](#fromunixtimestampinjodasyntax)
 
 ## fromUnixTimestampInJodaSyntax
 
-Same as [fromUnixTimestamp](#fromUnixTimestamp) but when called in the second way (two or three arguments), the formatting is performed using [Joda style](https://joda-time.sourceforge.net/apidocs/org/joda/time/format/DateTimeFormat.html) instead of MySQL style.
+Same as [fromUnixTimestamp](#fromunixtimestamp) but when called in the second way (two or three arguments), the formatting is performed using [Joda style](https://joda-time.sourceforge.net/apidocs/org/joda/time/format/DateTimeFormat.html) instead of MySQL style.
 
 **Example:**
 
@@ -4121,7 +4196,7 @@ Result:
 Returns the current date and time at the moment of query analysis. The function is a constant expression.
 
 :::note
-This function gives the same result that `now('UTC')` would. It was added only for MySQL support and [`now`](#now-now) is the preferred usage.
+This function gives the same result that `now('UTC')` would. It was added only for MySQL support and [`now`](#now) is the preferred usage.
 :::
 
 **Syntax**
