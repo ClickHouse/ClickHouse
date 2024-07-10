@@ -1613,7 +1613,7 @@ private:
         }
         if (element.isDouble())
         {
-            writeFloatText(element.getDouble(), buf);
+            writeFloatText(element.getDouble(), buf, true);
             return;
         }
         if (element.isBool())
