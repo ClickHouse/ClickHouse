@@ -99,7 +99,9 @@ upload_data() {
   # iterating over globs will cause redundant file variable to be
   # a path to a file, not a filename
   # shellcheck disable=SC2045
-  ./mc cp --recursive "${data_path}"/ clickminio/test/
+  if [ -d "${data_path}" ]; then
+    ./mc cp --recursive "${data_path}"/ clickminio/test/
+  fi
 }
 
 setup_aws_credentials() {
