@@ -838,7 +838,6 @@ DatabaseCatalog::DatabaseCatalog(ContextMutablePtr global_context_)
     , loading_dependencies{"LoadingDeps"}
     , view_dependencies{"ViewDeps"}
     , log(getLogger("DatabaseCatalog"))
-    , limitedLog(std::make_shared<LogSeriesLimiter>(log, 1, 20))
     , first_async_drop_in_queue(tables_marked_dropped.end())
 {
 }
@@ -1274,10 +1273,6 @@ void DatabaseCatalog::rescheduleDropTableTask()
 
     if (first_async_drop_in_queue != tables_marked_dropped.begin())
     {
-        LOG_TRACE(
-            limitedLog,
-            "Have {} tables in queue to drop. Some of them are being dropped in sync mode. Schedule background task ASAP",
-            tables_marked_dropped.size());
         (*drop_task)->scheduleAfter(0);
         return;
     }
