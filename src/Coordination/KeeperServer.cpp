@@ -134,7 +134,7 @@ KeeperServer::KeeperServer(
 
 #if USE_ROCKSDB
     const auto & coordination_settings = keeper_context->getCoordinationSettings();
-    if (coordination_settings->use_rocksdb)
+    if (coordination_settings->experimental_use_rocksdb)
     {
         state_machine = nuraft::cs_new<KeeperStateMachine<KeeperRocksStorage>>(
             responses_queue_,

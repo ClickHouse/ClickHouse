@@ -85,7 +85,7 @@ public:
         Poco::Logger::root().setLevel("trace");
 
         auto settings = std::make_shared<DB::CoordinationSettings>();
-        settings->use_rocksdb = true;
+        settings->experimental_use_rocksdb = true;
         keeper_context = std::make_shared<DB::KeeperContext>(true, settings);
         keeper_context->setLocalLogsPreprocessed();
         keeper_context->setRocksDBOptions();
