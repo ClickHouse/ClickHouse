@@ -74,7 +74,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Interpreters/InterpreterSystemQuery.h>
 #include <Common/logger_useful.h>
-#include <IO/SharedThreadPools.h> 
+#include <IO/SharedThreadPools.h>
 
 
 #if USE_PROTOBUF
