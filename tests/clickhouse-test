@@ -2189,10 +2189,6 @@ def run_tests_array(all_tests_with_params: Tuple[List[str], int, TestSuite, bool
                 sys.stdout.flush()
 
             while True:
-                sys.stdout.flush()
-                sys.stdout.write(test_case.name)
-                sys.stdout.flush()
-
                 test_result = test_case.run(
                     args, test_suite, client_options, server_logs_level
                 )
@@ -2505,7 +2501,11 @@ def do_run_tests(jobs, test_suite: TestSuite):
                             )
                         ],
                     )
-                    future_seq.wait()
+                    while not future_seq.ready():
+                        sleep(0.1)
+                        if server_died.is_set():
+                            sleep(5)
+                            break
 
                 while not future.ready():
                     sleep(0.1)
