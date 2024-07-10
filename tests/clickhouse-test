@@ -709,9 +709,9 @@ def get_localzone():
 
 class SettingsRandomizer:
     settings = {
-        "max_insert_threads": lambda: (
-            0 if random.random() < 0.5 else random.randint(1, 16)
-        ),
+        "max_insert_threads": lambda: 32
+        if random.random() < 0.03
+        else random.randint(1, 3),
         "group_by_two_level_threshold": threshold_generator(0.2, 0.2, 1, 1000000),
         "group_by_two_level_threshold_bytes": threshold_generator(
             0.2, 0.2, 1, 50000000
@@ -727,7 +727,7 @@ class SettingsRandomizer:
         "prefer_localhost_replica": lambda: random.randint(0, 1),
         "max_block_size": lambda: random.randint(8000, 100000),
         "max_joined_block_size_rows": lambda: random.randint(8000, 100000),
-        "max_threads": lambda: random.randint(1, 64),
+        "max_threads": lambda: 64 if random.random() < 0.03 else random.randint(1, 3),
         "optimize_append_index": lambda: random.randint(0, 1),
         "optimize_if_chain_to_multiif": lambda: random.randint(0, 1),
         "optimize_if_transform_strings_to_enum": lambda: random.randint(0, 1),
@@ -1217,6 +1217,11 @@ class TestCase:
         ):
             return FailureReason.OBJECT_STORAGE
 
+        elif "no-batch" in tags and (
+            args.run_by_hash_num is not None or args.run_by_hash_total is not None
+        ):
+            return FailureReason.SKIP
+
         elif tags:
             for build_flag in args.build_flags:
                 if "no-" + build_flag in tags:
@@ -1447,8 +1452,7 @@ class TestCase:
         description_full = messages[result.status]
         description_full += self.print_test_time(result.total_time)
         if result.reason is not None:
-            description_full += " - "
-            description_full += result.reason.value
+            description_full += f"\nReason: {result.reason.value} "
 
         description_full += result.description
 
@@ -1575,10 +1579,11 @@ class TestCase:
         # pylint:disable-next=consider-using-with; TODO: fix
         proc = Popen(command, shell=True, env=os.environ, start_new_session=True)
 
-        while (
-            datetime.now() - start_time
-        ).total_seconds() < args.timeout and proc.poll() is None:
-            sleep(0.01)
+        try:
+            proc.wait(args.timeout)
+        except subprocess.TimeoutExpired:
+            # Whether the test timed out will be decided later
+            pass
 
         debug_log = ""
         if os.path.exists(self.testcase_args.debug_log_file):
@@ -1599,6 +1604,44 @@ class TestCase:
 
         # Normalize hostname in stdout file.
         replace_in_file(self.stdout_file, socket.gethostname(), "localhost")
+
+        if os.environ.get("CLICKHOUSE_PORT_TCP"):
+            replace_in_file(
+                self.stdout_file,
+                f"PORT {os.environ['CLICKHOUSE_PORT_TCP']}",
+                "PORT 9000",
+            )
+            replace_in_file(
+                self.stdout_file,
+                f"localhost	{os.environ['CLICKHOUSE_PORT_TCP']}",
+                "localhost	9000",
+            )
+
+        if os.environ.get("CLICKHOUSE_PORT_TCP_SECURE"):
+            replace_in_file(
+                self.stdout_file,
+                f"PORT {os.environ['CLICKHOUSE_PORT_TCP_SECURE']}",
+                "PORT 9440",
+            )
+            replace_in_file(
+                self.stdout_file,
+                f"localhost	{os.environ['CLICKHOUSE_PORT_TCP_SECURE']}",
+                "localhost	9440",
+            )
+
+        if os.environ.get("CLICKHOUSE_PATH"):
+            replace_in_file(
+                self.stdout_file,
+                os.environ["CLICKHOUSE_PATH"],
+                "/var/lib/clickhouse",
+            )
+
+        if os.environ.get("CLICKHOUSE_PORT_HTTPS"):
+            replace_in_file(
+                self.stdout_file,
+                f"https://localhost:{os.environ['CLICKHOUSE_PORT_HTTPS']}/",
+                "https://localhost:8443/",
+            )
 
         stdout = ""
         if os.path.exists(self.stdout_file):
@@ -2056,8 +2099,13 @@ class GlobalTimeout(Exception):
     pass
 
 
-def run_tests_array(all_tests_with_params: Tuple[List[str], int, TestSuite]):
-    all_tests, num_tests, test_suite = all_tests_with_params
+def run_tests_array(all_tests_with_params: Tuple[List[str], int, TestSuite, bool]):
+    (
+        all_tests,
+        num_tests,
+        test_suite,
+        is_concurrent,
+    ) = all_tests_with_params
     global stop_time
     global exit_code
     global server_died
@@ -2100,14 +2148,12 @@ def run_tests_array(all_tests_with_params: Tuple[List[str], int, TestSuite]):
     failures_chain = 0
     start_time = datetime.now()
 
-    is_concurrent = multiprocessing.current_process().name != "MainProcess"
-
     client_options = get_additional_client_options(args)
 
     if num_tests > 0:
         about = "about " if is_concurrent else ""
         proc_name = multiprocessing.current_process().name
-        print(f"\nRunning {about}{num_tests} {test_suite.suite} tests ({proc_name}).\n")
+        print(f"Running {about}{num_tests} {test_suite.suite} tests ({proc_name}).")
 
     while True:
         if all_tests:
@@ -2128,16 +2174,17 @@ def run_tests_array(all_tests_with_params: Tuple[List[str], int, TestSuite]):
 
         try:
             description = ""
-            test_cace_name = removesuffix(test_case.name, ".gen", ".sql") + ": "
-            if not is_concurrent:
+            test_case_name = removesuffix(test_case.name, ".gen", ".sql") + ": "
+
+            if is_concurrent or args.run_sequential_tests_in_parallel:
+                description = f"{test_case_name:72}"
+            else:
                 sys.stdout.flush()
-                sys.stdout.write(f"{test_cace_name:72}")
+                sys.stdout.write(f"{test_case_name:72}")
                 # This flush is needed so you can see the test name of the long
                 # running test before it will finish. But don't do it in parallel
                 # mode, so that the lines don't mix.
                 sys.stdout.flush()
-            else:
-                description = f"{test_cace_name:72}"
 
             while True:
                 test_result = test_case.run(
@@ -2372,6 +2419,35 @@ def extract_key(key: str) -> str:
     )[1]
 
 
+def override_envs(*args_, **kwargs):
+    global args
+    args.client += " --port 19000"
+    args.http_port = 18123
+    args.https_port = 18443
+
+    updated_env = {
+        "CLICKHOUSE_CONFIG": "/etc/clickhouse-server3/config.xml",
+        "CLICKHOUSE_CONFIG_DIR": "/etc/clickhouse-server3",
+        "CLICKHOUSE_CONFIG_GREP": "/etc/clickhouse-server3/preprocessed/config.xml",
+        "CLICKHOUSE_USER_FILES": "/var/lib/clickhouse3/user_files",
+        "CLICKHOUSE_SCHEMA_FILES": "/var/lib/clickhouse3/format_schemas",
+        "CLICKHOUSE_PATH": "/var/lib/clickhouse3",
+        "CLICKHOUSE_PORT_TCP": "19000",
+        "CLICKHOUSE_PORT_TCP_SECURE": "19440",
+        "CLICKHOUSE_PORT_TCP_WITH_PROXY": "19010",
+        "CLICKHOUSE_PORT_HTTP": "18123",
+        "CLICKHOUSE_PORT_HTTPS": "18443",
+        "CLICKHOUSE_PORT_INTERSERVER": "19009",
+        "CLICKHOUSE_PORT_KEEPER": "19181",
+        "CLICKHOUSE_PORT_PROMTHEUS_PORT": "19988",
+        "CLICKHOUSE_PORT_MYSQL": "19004",
+        "CLICKHOUSE_PORT_POSTGRESQL": "19005",
+    }
+    os.environ.update(updated_env)
+
+    run_tests_array(*args_, **kwargs)
+
+
 def do_run_tests(jobs, test_suite: TestSuite):
     if jobs > 1 and len(test_suite.parallel_tests) > 0:
         print(
@@ -2400,24 +2476,55 @@ def do_run_tests(jobs, test_suite: TestSuite):
         for job in range(jobs):
             range_ = job * batch_size, job * batch_size + batch_size
             batch = test_suite.parallel_tests[range_[0] : range_[1]]
-            parallel_tests_array.append((batch, batch_size, test_suite))
+            parallel_tests_array.append((batch, batch_size, test_suite, True))
 
         try:
-            with multiprocessing.Pool(processes=jobs) as pool:
+            with multiprocessing.Pool(processes=jobs + 1) as pool:
                 future = pool.map_async(run_tests_array, parallel_tests_array)
+
+                if args.run_sequential_tests_in_parallel:
+                    # Run parallel tests and sequential tests at the same time
+                    # Sequential tests will use different ClickHouse instance
+                    # In this process we can safely override values in `args` and `os.environ`
+                    future_seq = pool.map_async(
+                        override_envs,
+                        [
+                            (
+                                test_suite.sequential_tests,
+                                len(test_suite.sequential_tests),
+                                test_suite,
+                                False,
+                            )
+                        ],
+                    )
+                    future_seq.wait()
+
                 future.wait()
         finally:
             pool.terminate()
             pool.close()
             pool.join()
 
-        run_tests_array(
-            (test_suite.sequential_tests, len(test_suite.sequential_tests), test_suite)
-        )
+        if not args.run_sequential_tests_in_parallel:
+            run_tests_array(
+                (
+                    test_suite.sequential_tests,
+                    len(test_suite.sequential_tests),
+                    test_suite,
+                    False,
+                )
+            )
         return len(test_suite.sequential_tests) + len(test_suite.parallel_tests)
     else:
         num_tests = len(test_suite.all_tests)
-        run_tests_array((test_suite.all_tests, num_tests, test_suite))
+        run_tests_array(
+            (
+                test_suite.all_tests,
+                num_tests,
+                test_suite,
+                False,
+            )
+        )
         return num_tests
 
 
@@ -2722,6 +2829,7 @@ def main(args):
                     f"{get_db_engine(args, db_name)}",
                     settings=get_create_database_settings(args, None),
                 )
+                break
             except HTTPError as e:
                 total_time = (datetime.now() - start_time).total_seconds()
                 if not need_retry(args, e.message, e.message, total_time):
@@ -3232,6 +3340,15 @@ def parse_args():
         action="store_true",
         default=False,
         help="Replace ordinary MergeTree engine with SharedMergeTree",
+    )
+
+    parser.add_argument(
+        "--run-sequential-tests-in-parallel",
+        action="store_true",
+        default=False,
+        help="If `true`, tests with the tag `no-parallel` will run on a "
+        "separate ClickHouse instance in parallel with other tests. "
+        "This is used in CI to make test jobs run faster.",
     )
 
     return parser.parse_args()
