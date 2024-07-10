@@ -407,7 +407,7 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, n
     if (!keeper_context->localLogsPreprocessed() && !preprocess(*request_for_session))
         return nullptr;
 
-    auto try_push = [&](const KeeperStorage::ResponseForSession& response)
+    auto try_push = [&](const KeeperStorage::ResponseForSession & response)
     {
         if (!responses_queue.push(response))
         {
@@ -415,17 +415,6 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, n
             LOG_WARNING(log,
                 "Failed to push response with session id {} to the queue, probably because of shutdown",
                 response.session_id);
-        }
-
-        using namespace std::chrono;
-        uint64_t elapsed = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count() - request_for_session->time;
-        if (elapsed > keeper_context->getCoordinationSettings()->log_slow_total_threshold_ms)
-        {
-            LOG_INFO(
-                log,
-                "Total time to process a request took too long ({}ms).\nRequest info: {}",
-                elapsed,
-                request_for_session->request->toString(/*short_format=*/true));
         }
     };
 
@@ -443,6 +432,7 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, n
             KeeperStorage::ResponseForSession response_for_session;
             response_for_session.session_id = -1;
             response_for_session.response = response;
+            response_for_session.request = request_for_session->request;
 
             LockGuardWithStats lock(storage_and_responses_lock);
             session_id = storage->getSessionID(session_id_request.session_timeout_ms);
@@ -462,8 +452,14 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, n
             LockGuardWithStats lock(storage_and_responses_lock);
             KeeperStorage::ResponsesForSessions responses_for_sessions
                 = storage->processRequest(request_for_session->request, request_for_session->session_id, request_for_session->zxid);
+
             for (auto & response_for_session : responses_for_sessions)
+            {
+                if (response_for_session.response->xid != Coordination::WATCH_XID)
+                    response_for_session.request = request_for_session->request;
+
                 try_push(response_for_session);
+            }
 
             if (keeper_context->digestEnabled() && request_for_session->digest)
                 assertDigest(*request_for_session->digest, storage->getNodesDigest(true), *request_for_session->request, request_for_session->log_idx, true);
@@ -797,9 +793,14 @@ void KeeperStateMachine::processReadRequest(const KeeperStorage::RequestForSessi
     LockGuardWithStats lock(storage_and_responses_lock);
     auto responses = storage->processRequest(
         request_for_session.request, request_for_session.session_id, std::nullopt, true /*check_acl*/, true /*is_local*/);
-    for (const auto & response : responses)
-        if (!responses_queue.push(response))
-            LOG_WARNING(log, "Failed to push response with session id {} to the queue, probably because of shutdown", response.session_id);
+
+    for (auto & response_for_session : responses)
+    {
+        if (response_for_session.response->xid != Coordination::WATCH_XID)
+            response_for_session.request = request_for_session.request;
+        if (!responses_queue.push(response_for_session))
+            LOG_WARNING(log, "Failed to push response with session id {} to the queue, probably because of shutdown", response_for_session.session_id);
+    }
 }
 
 void KeeperStateMachine::shutdownStorage()

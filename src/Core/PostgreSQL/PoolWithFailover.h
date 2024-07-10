@@ -14,7 +14,6 @@
 
 static constexpr inline auto POSTGRESQL_POOL_DEFAULT_SIZE = 16;
 static constexpr inline auto POSTGRESQL_POOL_WAIT_TIMEOUT = 5000;
-static constexpr inline auto POSTGRESQL_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES = 2;
 
 namespace postgres
 {
@@ -30,14 +29,16 @@ public:
         size_t pool_size,
         size_t pool_wait_timeout,
         size_t max_tries_,
-        bool auto_close_connection_);
+        bool auto_close_connection_,
+        size_t connection_attempt_timeout_);
 
     explicit PoolWithFailover(
         const DB::StoragePostgreSQL::Configuration & configuration,
         size_t pool_size,
         size_t pool_wait_timeout,
         size_t max_tries_,
-        bool auto_close_connection_);
+        bool auto_close_connection_,
+        size_t connection_attempt_timeout_);
 
     PoolWithFailover(const PoolWithFailover & other) = delete;
 
