@@ -2190,6 +2190,7 @@ def run_tests_array(all_tests_with_params: Tuple[List[str], int, TestSuite, bool
                 test_result = test_case.run(
                     args, test_suite, client_options, server_logs_level
                 )
+                print(test_result, test_result.case_name, test_result.need_retry)
                 test_result = test_case.process_result(test_result, MESSAGES)
                 if not test_result.need_retry:
                     break
@@ -2211,7 +2212,9 @@ def run_tests_array(all_tests_with_params: Tuple[List[str], int, TestSuite, bool
                 failures_total += 1
                 failures_chain += 1
                 if test_result.reason == FailureReason.SERVER_DIED:
+                    stop_tests()
                     server_died.set()
+                    raise ServerDied("Server died")
             elif test_result.status == TestStatus.SKIPPED:
                 skipped_total += 1
 
