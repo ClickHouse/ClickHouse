@@ -3,6 +3,7 @@
 #include <Core/Joins.h>
 #include <Core/LogsLevel.h>
 #include <Core/SettingsFields.h>
+#include <Core/ShortCircuitFunctionEvaluation.h>
 #include <Formats/FormatSettings.h>
 #include <IO/ReadSettings.h>
 #include <Parsers/ASTSQLSecurity.h>
@@ -291,13 +292,6 @@ enum class StreamingHandleErrorMode : uint8_t
 };
 
 DECLARE_SETTING_ENUM(StreamingHandleErrorMode)
-
-enum class ShortCircuitFunctionEvaluation : uint8_t
-{
-    ENABLE, // Use short-circuit function evaluation for functions that are suitable for it.
-    FORCE_ENABLE, // Use short-circuit function evaluation for all functions.
-    DISABLE, // Disable short-circuit function evaluation.
-};
 
 DECLARE_SETTING_ENUM(ShortCircuitFunctionEvaluation)
 
