@@ -310,7 +310,7 @@ function run_tests()
     try_run_with_retry 10 clickhouse-client -q "insert into system.zookeeper (name, path, value) values ('auxiliary_zookeeper2', '/test/chroot/', '')"
 
     set +e
-    timeout -s TERM --preserve-status 120m clickhouse-test --testname --shard --zookeeper --check-zookeeper-session --hung-check --print-time \
+    clickhouse-test --testname --shard --zookeeper --check-zookeeper-session --hung-check --print-time \
          --no-drop-if-fail --test-runs "$NUM_TRIES" "${ADDITIONAL_OPTIONS[@]}" 2>&1 \
     | ts '%Y-%m-%d %H:%M:%S' \
     | tee -a test_output/test_result.txt
@@ -321,7 +321,7 @@ export -f run_tests
 
 
 # This should be enough to setup job and collect artifacts
-TIMEOUT=$((MAX_RUN_TIME - 300))
+TIMEOUT=$((MAX_RUN_TIME - 600))
 if [ "$NUM_TRIES" -gt "1" ]; then
     # We don't run tests with Ordinary database in PRs, only in master.
     # So run new/changed tests with Ordinary at least once in flaky check.
