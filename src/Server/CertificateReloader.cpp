@@ -8,7 +8,6 @@
 #include <Poco/Net/Context.h>
 #include <Poco/Net/SSLManager.h>
 #include <Poco/Net/Utility.h>
-#include <Common/logger_useful.h>
 
 
 namespace DB
@@ -25,11 +24,6 @@ int callSetCertificate(SSL * ssl, void * arg)
 
     const CertificateReloader::MultiData * pdata = reinterpret_cast<CertificateReloader::MultiData *>(arg);
     return CertificateReloader::instance().setCertificate(ssl, pdata);
-}
-
-void callReloadCertificates()
-{
-    return CertificateReloader::instance().reloadCertificates();
 }
 
 }
@@ -49,14 +43,11 @@ int setCertificateCallback(SSL * ssl, const CertificateReloader::Data * current_
     if (current_data->certs_chain.empty())
         return -1;
 
-    auto letsencrypt_configuration = let_encrypt_configuration_data.get();
-    if (letsencrypt_configuration
-        && current->cert.expiresOn().timestamp()
-            <= Poco::Timestamp() + Poco::Timespan(3600ll * letsencrypt_configuration->reissue_hours_before, 0))
-        CertificateIssuer::instance().UpdateCertificates(*letsencrypt_configuration, callReloadCertificates);
-
-    SSL_use_certificate(ssl, const_cast<X509 *>(current->cert.certificate()));
-    SSL_use_PrivateKey(ssl, const_cast<EVP_PKEY *>(static_cast<const EVP_PKEY *>(current->key)));
+    // auto letsencrypt_configuration = let_encrypt_configuration_data.get();
+    // if (letsencrypt_configuration
+    //     && current->certs_chain.expiresOn().timestamp()
+    //         <= Poco::Timestamp() + Poco::Timespan(3600ll * letsencrypt_configuration->reissue_hours_before, 0))
+    //     CertificateIssuer::instance().UpdateCertificates(*letsencrypt_configuration, callReloadCertificates);
 
     if (auto err = SSL_clear_chain_certs(ssl); err != 1)
     {
@@ -152,7 +143,7 @@ void CertificateReloader::tryLoadImpl(const Poco::Util::AbstractConfiguration & 
 
     // Fetching configuration for possible reissuing let's encrypt certificates
     if (config.getBool("LetsEncrypt.enableAutomaticIssue", false))
-        let_encrypt_configuration_data.set(std::make_unique<const CertificateIssuer::LetsEncryptConfigurationData>(config));
+        let_encrypt_configuration_data.set(std::make_unique<const LetsEncryptConfigurationData>(config));
 
     /// For empty paths (that means, that user doesn't want to use certificates)
     /// no processing required
@@ -193,9 +184,9 @@ void CertificateReloader::tryLoadImpl(const Poco::Util::AbstractConfiguration & 
 
 void CertificateReloader::reloadCertificates()
 {
-    LOG_DEBUG(log, "Reloading certificate ({}) and key ({}).", cert_file.path, key_file.path);
-    data.set(std::make_unique<const Data>(cert_file.path, key_file.path, ""));
-    LOG_INFO(log, "Reloaded certificate ({}) and key ({}).", cert_file.path, key_file.path);
+    // LOG_DEBUG(log, "Reloading certificate ({}) and key ({}).", cert_file.path, key_file.path);
+    // data.set(std::make_unique<const Data>(cert_file.path, key_file.path, ""));
+    // LOG_INFO(log, "Reloaded certificate ({}) and key ({}).", cert_file.path, key_file.path);
 }
 
 

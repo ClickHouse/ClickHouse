@@ -99,12 +99,24 @@ public:
     /// A callback for OpenSSL
     int setCertificate(SSL * ssl, const MultiData * pdata);
 
+    // struct LetsEncryptConfigurationData
+    // {
+    //     bool is_issuing_enabled;
+    //     int reissue_hours_before;
+    //
+    //     LetsEncryptConfigurationData(bool is_issuing_enabled_, int reissue_hours_before_);
+    // };
     struct LetsEncryptConfigurationData
     {
-        bool is_issuing_enabled;
         int reissue_hours_before;
+        std::string domain_name;
+        std::string account_private_key;
+        std::string export_directory_path;
 
-        LetsEncryptConfigurationData(bool is_issuing_enabled_, int reissue_hours_before_);
+        std::string certificate_private_key_path;
+        std::string certificate_path;
+
+        explicit LetsEncryptConfigurationData(const Poco::Util::AbstractConfiguration & config);
     };
 
     bool init_was_not_made = true;

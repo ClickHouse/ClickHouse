@@ -143,16 +143,7 @@
          This interface is also used by ODBC and JDBC drivers (DataGrip, Dbeaver, ...)
          and by most of the web interfaces (embedded UI, Grafana, Redash, ...).
       -->
-    <!-- <https_port>8443</https_port> -->
-
-     <!-- Setting that allows to download files from directory.
-          It is essentially used for completing HTTP-01 challenge and fetching
-          certificates from Let's Encrypt. (Port should be equal to 80)
-      -->
-    <file_system>
-        <port>8124</port>
-        <base_directory>/etc/clickhouse-server/export</base_directory>
-    </file_system>
+    <http_port>8123</http_port>
 
     <!-- Port for interaction by native protocol with:
          - clickhouse-client and other native ClickHouse tools (clickhouse-benchmark);
@@ -192,7 +183,7 @@
          You have to configure certificate to enable this interface.
          See the openSSL section below.
     -->
-    <https_port>8443</https_port>
+    <!-- <https_port>8443</https_port> -->
 
     <!-- Native interface with TLS.
          You have to configure certificate to enable this interface.
