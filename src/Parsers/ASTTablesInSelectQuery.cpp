@@ -235,7 +235,12 @@ void ASTTableJoin::formatImplAfterTable(const FormatSettings & settings, FormatS
     else if (on_expression)
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << " ON " << (settings.hilite ? hilite_none : "");
+        bool on_has_alias = !on_expression->tryGetAlias().empty();
+        if (on_has_alias)
+            settings.ostr << "(";
         on_expression->formatImpl(settings, state, frame);
+        if (on_has_alias)
+            settings.ostr << ")";
     }
 }
 
