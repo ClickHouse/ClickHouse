@@ -123,6 +123,8 @@ public:
 
     void buildOutputFromSortedRowRefList();
 
+    void buildOutputFromBlocks();
+
     void buildJoinGetOutput();
 
     ColumnWithTypeAndName moveColumn(size_t i)
@@ -149,6 +151,7 @@ public:
     std::unique_ptr<IColumn::Offsets> offsets_to_replicate;
     bool need_filter = false;
     bool output_by_row_list = false;
+    bool output_by_blocks = false;
     IColumn::Filter filter;
 
     void reserve(bool need_replicate)

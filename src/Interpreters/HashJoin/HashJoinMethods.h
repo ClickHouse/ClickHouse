@@ -160,6 +160,12 @@ public:
         added_columns.join_on_keys.clear();
         Block remaining_block = sliceBlock(block, num_joined);
 
+        if (join.getJoinedData()->avgPerKeyRows() < join.getTableJoin().sortRightPerkeyRowsThreshold())
+        {
+            added_columns.output_by_blocks = true;
+            added_columns.output_by_row_list = false;
+        }
+
         if (is_join_get)
             added_columns.buildJoinGetOutput();
         else if (added_columns.output_by_row_list)
@@ -169,6 +175,8 @@ public:
             else
                 added_columns.buildOutputFromRowRefList();
         }
+        else if (added_columns.output_by_blocks)
+            added_columns.buildOutputFromBlocks();
         else
             added_columns.buildOutputFromRowRef();
 

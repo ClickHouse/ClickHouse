@@ -306,7 +306,7 @@ void FillingRightJoinSideTransform::work()
         join->setTotals(block);
     else
         stop_reading = !join->addBlockToJoin(block);
-    
+
     if (input.isFinished())
         join->tryRerangeRightTableData();
 
