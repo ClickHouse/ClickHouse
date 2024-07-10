@@ -116,10 +116,10 @@ def start_cluster():
         cluster.shutdown()
 
 
-# @return -- [user, initial_user]
+# @return -- [[user, initial_user]]
 def get_query_user_info(node, query_pattern):
     node.query("SYSTEM FLUSH LOGS")
-    return (
+    lines = (
         node.query(
             """
     SELECT user, initial_user
@@ -133,8 +133,10 @@ def get_query_user_info(node, query_pattern):
             )
         )
         .strip()
-        .split("\t")
+        .split("\n")
     )
+    lines = map(lambda x: x.split("\t"), lines)
+    return list(lines)
 
 
 # @return -- [user, initial_user]
@@ -331,19 +333,19 @@ def test_secure_disagree_insert():
 def test_user_insecure_cluster(user, password):
     id_ = "query-dist_insecure-" + user
     n1.query(f"SELECT *, '{id_}' FROM dist_insecure", user=user, password=password)
-    assert get_query_user_info(n1, id_) == [
+    assert get_query_user_info(n1, id_)[0] == [
         user,
         user,
     ]  # due to prefer_localhost_replica
-    assert get_query_user_info(n2, id_) == ["default", user]
+    assert get_query_user_info(n2, id_)[0] == ["default", user]
 
 
 @users
 def test_user_secure_cluster(user, password):
     id_ = "query-dist_secure-" + user
     n1.query(f"SELECT *, '{id_}' FROM dist_secure", user=user, password=password)
-    assert get_query_user_info(n1, id_) == [user, user]
-    assert get_query_user_info(n2, id_) == [user, user]
+    assert get_query_user_info(n1, id_)[0] == [user, user]
+    assert get_query_user_info(n2, id_)[0] == [user, user]
 
 
 @users
