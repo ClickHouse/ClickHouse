@@ -6,6 +6,7 @@ if (NOT ENABLE_CEPH)
 endif()
 
 set(Ceph_LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/ceph")
+set(Ceph_CMAKE_DIR "${ClickHouse_SOURCE_DIR}/contrib/ceph-cmake")
 set(Ceph_BUILD_DIR "${ClickHouse_BINARY_DIR}/contrib/ceph-cmake")
 set(Ceph_INCLUDE_DIR "${Ceph_BUILD_DIR}/include")
 set (CMAKE_CXX_STANDARD 20)
@@ -33,61 +34,65 @@ configure_file(
   ${Ceph_INCLUDE_DIR}/ceph_ver.h
   @ONLY)
 
-find_package(Python3 REQUIRED COMPONENTS Interpreter)
 
-execute_process(
-    COMMAND ${Python3_EXECUTABLE} -m pip install pyyaml
-    COMMAND_ECHO STDOUT
-)
+# Below code is for generating options from yaml files
+# In ClickHouse build we pre-generated these files in
+# ${Ceph_CMAKE_DIR}/Options/
 
-set(OPTIONS_DIR "${Ceph_LIBRARY_DIR}/src/common/options")
-function(add_options name)
-  set(yaml_in_file ${OPTIONS_DIR}/${name}.yaml.in)
-  set(yaml_file ${Ceph_BUILD_DIR}/${name}.yaml)
-  configure_file("${yaml_in_file}"
-    "${yaml_file}" @ONLY)
-  set(cc_file "${Ceph_BUILD_DIR}/${name}_options.cc")
-  set(h_file "${Ceph_INCLUDE_DIR}/${name}_legacy_options.h")
-  execute_process(
-    COMMAND ${Python3_EXECUTABLE} ${OPTIONS_DIR}/y2c.py
-      --input ${yaml_file}
-      --output ${cc_file}
-      --legacy ${h_file}
-      --name ${name}
-      COMMAND_ECHO STDOUT)
-endfunction()
+# find_package(Python3 REQUIRED COMPONENTS Interpreter)
 
-add_options(global)
-add_options(cephfs-mirror)
-add_options(crimson)
-add_options(mgr)
-add_options(mds)
-add_options(mds-client)
-add_options(mon)
-add_options(osd)
-add_options(rbd)
-add_options(rbd-mirror)
-add_options(immutable-object-cache)
-add_options(ceph-exporter)
-add_options(rgw)
+# execute_process(
+#     COMMAND ${Python3_EXECUTABLE} -m pip install pyyaml
+#     COMMAND_ECHO STDOUT
+# )
+
+# set(OPTIONS_DIR "${Ceph_LIBRARY_DIR}/src/common/options")
+# function(add_options name)
+#   set(yaml_in_file ${OPTIONS_DIR}/${name}.yaml.in)
+#   set(yaml_file ${Ceph_BUILD_DIR}/${name}.yaml)
+#   configure_file("${yaml_in_file}"
+#     "${yaml_file}" @ONLY)
+#   set(cc_file "${Ceph_BUILD_DIR}/${name}_options.cc")
+#   set(h_file "${Ceph_INCLUDE_DIR}/${name}_legacy_options.h")
+#   execute_process(
+#     COMMAND ${Python3_EXECUTABLE} ${OPTIONS_DIR}/y2c.py
+#       --input ${yaml_file}
+#       --output ${cc_file}
+#       --legacy ${h_file}
+#       --name ${name}
+#       COMMAND_ECHO STDOUT)
+# endfunction()
+
+# add_options(global)
+# add_options(cephfs-mirror)
+# add_options(crimson)
+# add_options(mgr)
+# add_options(mds)
+# add_options(mds-client)
+# add_options(mon)
+# add_options(osd)
+# add_options(rbd)
+# add_options(rbd-mirror)
+# add_options(immutable-object-cache)
+# add_options(ceph-exporter)
+# add_options(rgw)
 
 set(SRCS
 
     ### build options
-    "${Ceph_BUILD_DIR}/rgw_options.cc"
-    "${Ceph_BUILD_DIR}/mgr_options.cc"
-    "${Ceph_BUILD_DIR}/rbd-mirror_options.cc"
-    "${Ceph_BUILD_DIR}/mds-client_options.cc"
-    "${Ceph_BUILD_DIR}/osd_options.cc"
-    "${Ceph_BUILD_DIR}/global_options.cc"
-    "${Ceph_BUILD_DIR}/rbd_options.cc"
-    "${Ceph_BUILD_DIR}/ceph-exporter_options.cc"
-    "${Ceph_BUILD_DIR}/immutable-object-cache_options.cc"
-    "${Ceph_BUILD_DIR}/cephfs-mirror_options.cc"
-    "${Ceph_BUILD_DIR}/crimson_options.cc"
-    "${Ceph_BUILD_DIR}/mds_options.cc"
-    "${Ceph_BUILD_DIR}/mon_options.cc"
-
+    "${Ceph_CMAKE_DIR}/Options/rgw_options.cc"
+    "${Ceph_CMAKE_DIR}/Options/mgr_options.cc"
+    "${Ceph_CMAKE_DIR}/Options/rbd-mirror_options.cc"
+    "${Ceph_CMAKE_DIR}/Options/mds-client_options.cc"
+    "${Ceph_CMAKE_DIR}/Options/osd_options.cc"
+    "${Ceph_CMAKE_DIR}/Options/global_options.cc"
+    "${Ceph_CMAKE_DIR}/Options/rbd_options.cc"
+    "${Ceph_CMAKE_DIR}/Options/ceph-exporter_options.cc"
+    "${Ceph_CMAKE_DIR}/Options/immutable-object-cache_options.cc"
+    "${Ceph_CMAKE_DIR}/Options/cephfs-mirror_options.cc"
+    "${Ceph_CMAKE_DIR}/Options/crimson_options.cc"
+    "${Ceph_CMAKE_DIR}/Options/mds_options.cc"
+    "${Ceph_CMAKE_DIR}/Options/mon_options.cc"
     "${Ceph_LIBRARY_DIR}/src/common/options/build_options.cc"
 
     ### auth
