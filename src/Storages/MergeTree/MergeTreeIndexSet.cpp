@@ -87,15 +87,6 @@ void MergeTreeIndexGranuleSet::serializeBinary(WriteBuffer & ostr) const
         serialization->serializeBinaryBulkWithMultipleStreams(column, 0, size(), settings, state);
         serialization->serializeBinaryBulkStateSuffix(settings, state);
     }
-
-    for (size_t i = 0; i < num_columns; ++i)
-    {
-        const DataTypePtr & type = block.getByPosition(i).type;
-        auto serialization = type->getDefaultSerialization();
-
-        serialization->serializeBinary(set_hyperrectangle[i].left, ostr, {});
-        serialization->serializeBinary(set_hyperrectangle[i].right, ostr, {});
-    }
 }
 
 void MergeTreeIndexGranuleSet::deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version)
@@ -117,6 +108,10 @@ void MergeTreeIndexGranuleSet::deserializeBinary(ReadBuffer & istr, MergeTreeInd
     settings.getter = [&](ISerialization::SubstreamPath) -> ReadBuffer * { return &istr; };
     settings.position_independent_encoding = false;
 
+    set_hyperrectangle.clear();
+    Field min_val;
+    Field max_val;
+
     for (size_t i = 0; i < num_columns; ++i)
     {
         auto & elem = block.getByPosition(i);
@@ -127,24 +122,12 @@ void MergeTreeIndexGranuleSet::deserializeBinary(ReadBuffer & istr, MergeTreeInd
 
         serialization->deserializeBinaryBulkStatePrefix(settings, state, nullptr);
         serialization->deserializeBinaryBulkWithMultipleStreams(elem.column, rows_to_read, settings, state, nullptr);
-    }
 
-    set_hyperrectangle.clear();
-    Field min_val;
-    Field max_val;
-    for (size_t i = 0; i < num_columns; ++i)
-    {
-        const DataTypePtr & type = block.getByPosition(i).type;
-        auto serialization = type->getDefaultSerialization();
+        if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(elem.column.get()))
+            column_nullable->getExtremesNullLast(min_val, max_val);
+        else
+            elem.column->getExtremes(min_val, max_val);
 
-        serialization->deserializeBinary(min_val, istr, {});
-        serialization->deserializeBinary(max_val, istr, {});
-
-        // NULL_LAST
-        if (min_val.isNull())
-            min_val = POSITIVE_INFINITY;
-        if (max_val.isNull())
-            max_val = POSITIVE_INFINITY;
         set_hyperrectangle.emplace_back(min_val, true, max_val, true);
     }
 }
@@ -295,18 +278,16 @@ KeyCondition buildCondition(const IndexDescription & index, const ActionsDAGPtr 
 }
 
 MergeTreeIndexConditionSet::MergeTreeIndexConditionSet(
-    const String & index_name_,
-    const Block & index_sample_block,
     size_t max_rows_,
     const ActionsDAGPtr & filter_dag,
     ContextPtr context,
     const IndexDescription & index_description)
-    : index_name(index_name_)
+    : index_name(index_description.name)
     , max_rows(max_rows_)
     , index_data_types(index_description.data_types)
     , condition(buildCondition(index_description, filter_dag, context))
 {
-    for (const auto & name : index_sample_block.getNames())
+    for (const auto & name : index_description.sample_block.getNames())
         if (!key_columns.contains(name))
             key_columns.insert(name);
 
@@ -605,7 +586,7 @@ MergeTreeIndexAggregatorPtr MergeTreeIndexSet::createIndexAggregator(const Merge
 MergeTreeIndexConditionPtr MergeTreeIndexSet::createIndexCondition(
     const ActionsDAGPtr & filter_actions_dag, ContextPtr context) const
 {
-    return std::make_shared<MergeTreeIndexConditionSet>(index.name, index.sample_block, max_rows, filter_actions_dag, context, index);
+    return std::make_shared<MergeTreeIndexConditionSet>(max_rows, filter_actions_dag, context, index);
 }
 
 MergeTreeIndexPtr setIndexCreator(const IndexDescription & index)

@@ -83,8 +83,6 @@ class MergeTreeIndexConditionSet final : public IMergeTreeIndexCondition
 {
 public:
     MergeTreeIndexConditionSet(
-        const String & index_name_,
-        const Block & index_sample_block,
         size_t max_rows_,
         const ActionsDAGPtr & filter_dag,
         ContextPtr context,
