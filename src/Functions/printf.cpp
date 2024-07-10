@@ -52,7 +52,7 @@ private:
 
         String toString() const
         {
-            std::ostringstream oss;
+            std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
             oss << "format:" << format << ", rows:" << rows << ", is_literal:" << is_literal << ", input:" << input.dumpStructure()
                       << std::endl;
             return oss.str();
@@ -195,9 +195,9 @@ public:
         ColumnsWithTypeAndName concat_args(instructions.size());
         for (size_t i = 0; i < instructions.size(); ++i)
         {
-            std::cout << "instruction[" << i << "]:" << instructions[i].toString() << std::endl;
+            // std::cout << "instruction[" << i << "]:" << instructions[i].toString() << std::endl;
             concat_args[i] = instructions[i].execute();
-            std::cout << "concat_args[" << i << "]:" << concat_args[i].dumpStructure() << std::endl;
+            // std::cout << "concat_args[" << i << "]:" << concat_args[i].dumpStructure() << std::endl;
         }
 
         auto res = function_concat->build(concat_args)->execute(concat_args, std::make_shared<DataTypeString>(), input_rows_count);
