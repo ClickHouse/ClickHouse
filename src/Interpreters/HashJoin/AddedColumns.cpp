@@ -19,6 +19,8 @@ template<> void AddedColumns<false>::buildOutputFromRowRef() {}
 
 template<> void AddedColumns<false>::buildOutputFromRowRefList() {}
 
+template<> void AddedColumns<false>::buildOutputFromSortedRowRefList() {}
+
 template<> void AddedColumns<false>::buildJoinGetOutput() {}
 
 template<> void AddedColumns<true>::buildOutputFromRowRef()
@@ -57,6 +59,26 @@ template<> void AddedColumns<true>::buildOutputFromRowRefList()
         }
     }
 }
+
+template<> void AddedColumns<true>::buildOutputFromSortedRowRefList()
+{
+    std::cout << "build sort" << std::endl;
+    for (size_t i = 0; i < this->size(); ++i)
+    {
+        auto & col = columns[i];
+        for (auto row_ref_i : lazy_output.row_refs)
+        {
+            if (row_ref_i)
+            {
+                const RowRefList * row_ref_list = reinterpret_cast<const RowRefList *>(row_ref_i);
+                col->insertRangeFrom(*row_ref_list->block->getByPosition(right_indexes[i]).column, row_ref_list->row_num, row_ref_list->rows);
+            }
+            else
+                type_name[i].type->insertDefaultInto(*col);
+        }
+    }
+}
+
 
 template<> void AddedColumns<true>::buildJoinGetOutput()
 {

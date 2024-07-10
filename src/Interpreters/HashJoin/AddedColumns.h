@@ -121,6 +121,8 @@ public:
 
     void buildOutputFromRowRefList();
 
+    void buildOutputFromSortedRowRefList();
+
     void buildJoinGetOutput();
 
     ColumnWithTypeAndName moveColumn(size_t i)
