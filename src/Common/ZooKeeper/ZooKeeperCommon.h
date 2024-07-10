@@ -62,13 +62,13 @@ struct ZooKeeperRequest : virtual Request
 
     /// Writes length, xid, op_num, then the rest.
     void write(WriteBuffer & out) const;
-    std::string toString() const;
+    std::string toString(bool short_format = false) const;
 
     virtual void writeImpl(WriteBuffer &) const = 0;
     virtual size_t sizeImpl() const = 0;
     virtual void readImpl(ReadBuffer &) = 0;
 
-    virtual std::string toStringImpl() const { return ""; }
+    virtual std::string toStringImpl(bool /*short_format*/) const { return ""; }
 
     static std::shared_ptr<ZooKeeperRequest> read(ReadBuffer & in);
 
@@ -100,7 +100,7 @@ struct ZooKeeperSyncRequest final : ZooKeeperRequest
     void writeImpl(WriteBuffer & out) const override;
     size_t sizeImpl() const override;
     void readImpl(ReadBuffer & in) override;
-    std::string toStringImpl() const override;
+    std::string toStringImpl(bool short_format) const override;
     ZooKeeperResponsePtr makeResponse() const override;
     bool isReadRequest() const override { return false; }
 
@@ -127,7 +127,7 @@ struct ZooKeeperReconfigRequest final : ZooKeeperRequest
     void writeImpl(WriteBuffer & out) const override;
     size_t sizeImpl() const override;
     void readImpl(ReadBuffer & in) override;
-    std::string toStringImpl() const override;
+    std::string toStringImpl(bool short_format) const override;
     ZooKeeperResponsePtr makeResponse() const override;
     bool isReadRequest() const override { return false; }
 
@@ -184,7 +184,7 @@ struct ZooKeeperAuthRequest final : ZooKeeperRequest
     void writeImpl(WriteBuffer & out) const override;
     size_t sizeImpl() const override;
     void readImpl(ReadBuffer & in) override;
-    std::string toStringImpl() const override;
+    std::string toStringImpl(bool short_format) const override;
 
     ZooKeeperResponsePtr makeResponse() const override;
     bool isReadRequest() const override { return false; }
@@ -241,7 +241,7 @@ struct ZooKeeperCreateRequest final : public CreateRequest, ZooKeeperRequest
     void writeImpl(WriteBuffer & out) const override;
     size_t sizeImpl() const override;
     void readImpl(ReadBuffer & in) override;
-    std::string toStringImpl() const override;
+    std::string toStringImpl(bool short_format) const override;
 
     ZooKeeperResponsePtr makeResponse() const override;
     bool isReadRequest() const override { return false; }
@@ -280,7 +280,7 @@ struct ZooKeeperRemoveRequest final : RemoveRequest, ZooKeeperRequest
     void writeImpl(WriteBuffer & out) const override;
     size_t sizeImpl() const override;
     void readImpl(ReadBuffer & in) override;
-    std::string toStringImpl() const override;
+    std::string toStringImpl(bool short_format) const override;
 
     ZooKeeperResponsePtr makeResponse() const override;
     bool isReadRequest() const override { return false; }
@@ -309,7 +309,7 @@ struct ZooKeeperExistsRequest final : ExistsRequest, ZooKeeperRequest
     void writeImpl(WriteBuffer & out) const override;
     size_t sizeImpl() const override;
     void readImpl(ReadBuffer & in) override;
-    std::string toStringImpl() const override;
+    std::string toStringImpl(bool short_format) const override;
 
     ZooKeeperResponsePtr makeResponse() const override;
     bool isReadRequest() const override { return true; }
@@ -338,7 +338,7 @@ struct ZooKeeperGetRequest final : GetRequest, ZooKeeperRequest
     void writeImpl(WriteBuffer & out) const override;
     size_t sizeImpl() const override;
     void readImpl(ReadBuffer & in) override;
-    std::string toStringImpl() const override;
+    std::string toStringImpl(bool short_format) const override;
 
     ZooKeeperResponsePtr makeResponse() const override;
     bool isReadRequest() const override { return true; }
@@ -367,7 +367,7 @@ struct ZooKeeperSetRequest final : SetRequest, ZooKeeperRequest
     void writeImpl(WriteBuffer & out) const override;
     size_t sizeImpl() const override;
     void readImpl(ReadBuffer & in) override;
-    std::string toStringImpl() const override;
+    std::string toStringImpl(bool short_format) const override;
     ZooKeeperResponsePtr makeResponse() const override;
     bool isReadRequest() const override { return false; }
 
@@ -397,7 +397,7 @@ struct ZooKeeperListRequest : ListRequest, ZooKeeperRequest
     void writeImpl(WriteBuffer & out) const override;
     size_t sizeImpl() const override;
     void readImpl(ReadBuffer & in) override;
-    std::string toStringImpl() const override;
+    std::string toStringImpl(bool short_format) const override;
     ZooKeeperResponsePtr makeResponse() const override;
     bool isReadRequest() const override { return true; }
 
@@ -418,7 +418,7 @@ struct ZooKeeperFilteredListRequest final : ZooKeeperListRequest
     void writeImpl(WriteBuffer & out) const override;
     size_t sizeImpl() const override;
     void readImpl(ReadBuffer & in) override;
-    std::string toStringImpl() const override;
+    std::string toStringImpl(bool short_format) const override;
 
     size_t bytesSize() const override { return ZooKeeperListRequest::bytesSize() + sizeof(list_request_type); }
 };
@@ -454,7 +454,7 @@ struct ZooKeeperCheckRequest : CheckRequest, ZooKeeperRequest
     void writeImpl(WriteBuffer & out) const override;
     size_t sizeImpl() const override;
     void readImpl(ReadBuffer & in) override;
-    std::string toStringImpl() const override;
+    std::string toStringImpl(bool short_format) const override;
 
     ZooKeeperResponsePtr makeResponse() const override;
     bool isReadRequest() const override { return true; }
@@ -498,7 +498,7 @@ struct ZooKeeperSetACLRequest final : SetACLRequest, ZooKeeperRequest
     void writeImpl(WriteBuffer & out) const override;
     size_t sizeImpl() const override;
     void readImpl(ReadBuffer & in) override;
-    std::string toStringImpl() const override;
+    std::string toStringImpl(bool short_format) const override;
     ZooKeeperResponsePtr makeResponse() const override;
     bool isReadRequest() const override { return false; }
 
@@ -521,7 +521,7 @@ struct ZooKeeperGetACLRequest final : GetACLRequest, ZooKeeperRequest
     void writeImpl(WriteBuffer & out) const override;
     size_t sizeImpl() const override;
     void readImpl(ReadBuffer & in) override;
-    std::string toStringImpl() const override;
+    std::string toStringImpl(bool short_format) const override;
     ZooKeeperResponsePtr makeResponse() const override;
     bool isReadRequest() const override { return true; }
 
@@ -549,7 +549,7 @@ struct ZooKeeperMultiRequest final : MultiRequest, ZooKeeperRequest
     void writeImpl(WriteBuffer & out) const override;
     size_t sizeImpl() const override;
     void readImpl(ReadBuffer & in) override;
-    std::string toStringImpl() const override;
+    std::string toStringImpl(bool short_format) const override;
 
     ZooKeeperResponsePtr makeResponse() const override;
     bool isReadRequest() const override;

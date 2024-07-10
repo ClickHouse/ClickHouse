@@ -40,6 +40,8 @@ namespace ProfileEvents
     extern const Event KeeperGetRequest;
     extern const Event KeeperListRequest;
     extern const Event KeeperExistsRequest;
+    extern const Event KeeperPreprocessElapsedMicroseconds;
+    extern const Event KeeperProcessElapsedMicroseconds;
 }
 
 namespace DB
@@ -2369,6 +2371,20 @@ void KeeperStorage::preprocessRequest(
     std::optional<Digest> digest,
     int64_t log_idx)
 {
+    Stopwatch watch;
+    SCOPE_EXIT({
+        auto elapsed = watch.elapsedMicroseconds();
+        if (auto elapsed_ms = elapsed / 1000; elapsed_ms > keeper_context->getCoordinationSettings()->log_slow_cpu_threshold_ms)
+        {
+            LOG_INFO(
+                getLogger("KeeperStorage"),
+                "Preprocessing a request took too long ({}ms).\nRequest info: {}",
+                elapsed_ms,
+                zk_request->toString(/*short_format=*/true));
+        }
+        ProfileEvents::increment(ProfileEvents::KeeperPreprocessElapsedMicroseconds, elapsed);
+    });
+
     if (!initialized)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "KeeperStorage system nodes are not initialized");
 
@@ -2477,6 +2493,20 @@ KeeperStorage::ResponsesForSessions KeeperStorage::processRequest(
     bool check_acl,
     bool is_local)
 {
+    Stopwatch watch;
+    SCOPE_EXIT({
+        auto elapsed = watch.elapsedMicroseconds();
+        if (auto elapsed_ms = elapsed / 1000; elapsed_ms > keeper_context->getCoordinationSettings()->log_slow_cpu_threshold_ms)
+        {
+            LOG_INFO(
+                getLogger("KeeperStorage"),
+                "Processing a request took too long ({}ms).\nRequest info: {}",
+                elapsed_ms,
+                zk_request->toString(/*short_format=*/true));
+        }
+        ProfileEvents::increment(ProfileEvents::KeeperProcessElapsedMicroseconds, elapsed);
+    });
+
     if (!initialized)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "KeeperStorage system nodes are not initialized");
 

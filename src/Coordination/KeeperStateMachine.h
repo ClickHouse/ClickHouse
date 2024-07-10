@@ -65,10 +65,6 @@ public:
     // (can happen in case of exception during preprocessing)
     void rollbackRequest(const KeeperStorage::RequestForSession & request_for_session, bool allow_missing);
 
-    void rollbackRequestNoLock(
-        const KeeperStorage::RequestForSession & request_for_session,
-        bool allow_missing) TSA_NO_THREAD_SAFETY_ANALYSIS;
-
     uint64_t last_commit_index() override { return keeper_context->lastCommittedIndex(); }
 
     /// Apply preliminarily saved (save_logical_snp_obj) snapshot to our state.
