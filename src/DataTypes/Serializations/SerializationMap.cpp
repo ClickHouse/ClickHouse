@@ -55,13 +55,13 @@ void SerializationMap::deserializeBinary(Field & field, ReadBuffer & istr, const
 {
     size_t size;
     readVarUInt(size, istr);
-    if (settings.max_binary_array_size && size > settings.max_binary_array_size)
+    if (settings.binary.max_binary_string_size && size > settings.binary.max_binary_string_size)
         throw Exception(
             ErrorCodes::TOO_LARGE_ARRAY_SIZE,
             "Too large map size: {}. The maximum is: {}. To increase the maximum, use setting "
             "format_binary_max_array_size",
             size,
-            settings.max_binary_array_size);
+            settings.binary.max_binary_string_size);
     field = Map();
     Map & map = field.get<Map &>();
     map.reserve(size);

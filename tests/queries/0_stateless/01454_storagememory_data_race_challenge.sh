@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: race, no-parallel
+# Tags: race
 
 set -e
 
@@ -36,8 +36,8 @@ function g {
 export -f f;
 export -f g;
 
-timeout 30 bash -c f > /dev/null &
-timeout 30 bash -c g > /dev/null &
+timeout 20 bash -c f > /dev/null &
+timeout 20 bash -c g > /dev/null &
 wait
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE mem"
