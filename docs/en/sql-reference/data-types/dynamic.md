@@ -529,10 +529,10 @@ SELECT JSONExtractKeysAndValues('{"a" : 42, "b" : "Hello", "c" : [1,2,3]}', 'Var
 
 ### Binary output format
 
-In [RowBinary](../../interfaces/formats.md#rowbinary-rowbinary) format values of `Dynamic` type are serialized in the following format:
+In [RowBinary](/docs/en/interfaces/formats.md#rowbinary-rowbinary) format values of `Dynamic` type are serialized in the following format:
 
 ```text
 <binary_encoded_data_type><value_in_binary_format_according_to_the_data_type>
 ```
 
-See the [data types binary encoding specification](../../sql-reference/data-types/data-types-binary-encoding.md)
+See the [data types binary encoding specification](/docs/en/sql-reference/data-types/data-types-binary-encoding.md)
