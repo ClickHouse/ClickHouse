@@ -1389,6 +1389,8 @@ void HashJoin::tryRerangeRightTableDataImpl(Map & map [[maybe_unused]])
 
 void HashJoin::tryRerangeRightTableData()
 {
+    if ((kind != JoinKind::Inner && kind != JoinKind::Left ) || strictness != JoinStrictness::All)
+        return;
     if (!data || data->blocks.empty() || data->maps.size() > 1)
         return;
     size_t keys_to_join = data->keys_to_join != 0 ? data->keys_to_join : getTotalRowCount();

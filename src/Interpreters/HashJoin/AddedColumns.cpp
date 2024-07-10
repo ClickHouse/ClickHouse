@@ -62,7 +62,6 @@ template<> void AddedColumns<true>::buildOutputFromRowRefList()
 
 template<> void AddedColumns<true>::buildOutputFromSortedRowRefList()
 {
-    std::cout << "build sort" << std::endl;
     for (size_t i = 0; i < this->size(); ++i)
     {
         auto & col = columns[i];
