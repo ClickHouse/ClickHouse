@@ -9,19 +9,19 @@
 #include <IO/WriteHelpers.h>
 
 #include <memory>
+#include <sstream>
 #include <string>
 #include <vector>
 #include <fmt/format.h>
 #include <fmt/printf.h>
-#include <sstream>
 
 namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_COLUMN;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+extern const int ILLEGAL_COLUMN;
+extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 namespace
@@ -54,7 +54,7 @@ private:
         {
             std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
             oss << "format:" << format << ", rows:" << rows << ", is_literal:" << is_literal << ", input:" << input.dumpStructure()
-                      << std::endl;
+                << std::endl;
             return oss.str();
         }
 
@@ -93,15 +93,15 @@ private:
             WhichDataType which(arg.type);
 
 #define EXECUTE_BY_TYPE(IS_TYPE, GET_TYPE) \
-            else if (which.IS_TYPE()) \
-            { \
-                for (size_t i = 0; i < size; ++i) \
-                { \
-                    auto a = arg.column->GET_TYPE(i); \
-                    s = fmt::sprintf(format, a); \
-                    res_str.insertData(s.data(), s.size()); \
-                } \
-            }
+    else if (which.IS_TYPE()) \
+    { \
+        for (size_t i = 0; i < size; ++i) \
+        { \
+            auto a = arg.column->GET_TYPE(i); \
+            s = fmt::sprintf(format, a); \
+            res_str.insertData(s.data(), s.size()); \
+        } \
+    }
 
             if (false)
                 ;
@@ -205,7 +205,8 @@ public:
     }
 
 private:
-    std::vector<Instruction> buildInstructions(const String & format , const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
+    std::vector<Instruction>
+    buildInstructions(const String & format, const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
     {
         std::vector<Instruction> instructions;
         instructions.reserve(arguments.size());
@@ -248,7 +249,7 @@ private:
         {
             const char * tmp = curr;
             bool is_first = curr == begin; /// If current instruction is the first one
-            bool is_literal = false;       /// If current instruction is literal string without any argument
+            bool is_literal = false; /// If current instruction is literal string without any argument
             if (is_first)
             {
                 if (*curr != '%')
