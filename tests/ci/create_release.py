@@ -5,6 +5,7 @@ import os
 import subprocess
 
 from contextlib import contextmanager
+from copy import copy
 from pathlib import Path
 from typing import Iterator, List
 
@@ -12,6 +13,7 @@ from git_helper import Git, GIT_PREFIX, Runner
 from ssh import SSHAgent
 from env_helper import GITHUB_REPOSITORY, S3_BUILDS_BUCKET
 from s3_helper import S3Helper
+from autoscale_runners_lambda.lambda_shared.pr import Labels
 from version_helper import (
     FILE_WITH_VERSION_PATH,
     GENERATED_CONTRIBUTORS,
@@ -19,6 +21,7 @@ from version_helper import (
     get_version_from_repo,
     update_cmake_version,
     update_contributors,
+    VersionType,
 )
 from git_helper import git_runner as runner
 from ci_config import CI
@@ -30,7 +33,12 @@ CONTRIBUTORS_PATH = get_abs_path(GENERATED_CONTRIBUTORS)
 class ShellRunner:
 
     @classmethod
-    def run(cls, command, check_retcode=True, print_output=True, async_=False):
+    def run(
+        cls, command, check_retcode=True, print_output=True, async_=False, dry_run=False
+    ):
+        if dry_run:
+            print(f"Dry-run: Would run shell command: [{command}]")
+            return 0, ""
         print(f"Running shell command: [{command}]")
         if async_:
             subprocess.Popen(command.split(" "))
@@ -73,23 +81,31 @@ class ReleaseInfo:
         release_branch = None
         release_tag = None
         codename = None
-        assert release_type in ("patch",)
-        # if release_type == "new":
-        #     assert False, "TODO"
-        #     git = Git()
-        #     version = get_version_from_repo(git=git)
-        #     assert runner.check_command(
-        #         f"git merge-base --is-ancestor {commit_ref} origin/master"
-        #     )
-        #     expected_tag = f"v{version.major}.{version.minor}-new"
-        #     assert (
-        #         git.latest_tag == expected_tag
-        #     ), f"BUG: latest tag [{git.latest_tag}], expected [{expected_tag}]"
-        #     release_branch = "master"
+        assert release_type in ("patch", "new")
+        if release_type == "new":
+            # check commit_ref is right and on a right branch
+            ShellRunner.run(
+                f"git merge-base --is-ancestor origin/{commit_ref} origin/master"
+            )
+            with checkout(commit_ref):
+                commit_sha = Runner().run(f"git rev-parse {commit_ref}")
+                # Git() must be inside "with checkout" contextmanager
+                git = Git()
+                version = get_version_from_repo(git=git)
+                release_branch = "master"
+                expected_prev_tag = f"v{version.major}.{version.minor}.1.1-new"
+                version.bump().with_description(VersionType.NEW)
+                assert (
+                    git.latest_tag == expected_prev_tag
+                ), f"BUG: latest tag [{git.latest_tag}], expected [{expected_prev_tag}]"
+                release_tag = version.describe
+                codename = (
+                    VersionType.STABLE
+                )  # dummy value (artifactory won't be updated for new release)
         if release_type == "patch":
             with checkout(commit_ref):
-                # Git() must be inside "with checkout" contextmanager
                 commit_sha = Runner().run(f"git rev-parse {commit_ref}")
+                # Git() must be inside "with checkout" contextmanager
                 git = Git()
                 version = get_version_from_repo(git=git)
                 codename = version.get_stable_release_type()
@@ -97,11 +113,16 @@ class ReleaseInfo:
                 release_branch = f"{version.major}.{version.minor}"
                 release_tag = version.describe
             runner.run(f"{GIT_PREFIX} fetch origin {release_branch} --tags")
-            assert runner.check_command(
+            # check commit is right and on a right branch
+            ShellRunner.run(
                 f"git merge-base --is-ancestor {commit_ref} origin/{release_branch}"
             )
             if version.patch == 1:
-                expected_tag_prefix = f"v{version.major}.{version.minor+1}-"
+                expected_version = copy(version)
+                expected_version.bump()
+                expected_tag_prefix = (
+                    f"v{expected_version.major}.{expected_version.minor}-"
+                )
                 expected_tag_suffix = "-new"
             else:
                 expected_tag_prefix = (
@@ -157,16 +178,71 @@ class ReleaseInfo:
             print("Dry run, would execute:")
             print(f"*    {cmd_push_tag}")
 
+    @staticmethod
+    def _create_gh_label(label: str, color_hex: str, dry_run: bool):
+        cmd = f"gh api repos/{GITHUB_REPOSITORY}/labels -f name={label} -f color={color_hex}"
+        ShellRunner.run(cmd, dry_run=dry_run)
+
+    def push_new_release_branch(self, dry_run: bool) -> None:
+        assert (
+            self.release_branch == "master"
+        ), "New release branch can be created only for release type [new]"
+        git = Git()
+        version = get_version_from_repo(git=git)
+        new_release_branch = f"{version.major}.{version.minor}"
+        stable_release_type = version.get_stable_release_type()
+        version_after_release = copy(version)
+        version_after_release.bump()
+        assert (
+            version_after_release.string == self.version
+        ), f"Unexpected current version in git, must precede [{self.version}] by one step, actual [{version.string}]"
+        if dry_run:
+            # remove locally created branch from prev run
+            ShellRunner.run(
+                f"{GIT_PREFIX} branch -l | grep -q {new_release_branch} && git branch -d {new_release_branch} ||:"
+            )
+        print(
+            f"Create and push new release branch [{new_release_branch}], commit [{self.commit_sha}]"
+        )
+        with checkout(self.release_branch):
+            with checkout_new(new_release_branch):
+                pr_labels = f"--label {Labels.RELEASE}"
+                if stable_release_type == VersionType.LTS:
+                    pr_labels += f" --label {Labels.RELEASE_LTS}"
+                cmd_push_branch = (
+                    f"{GIT_PREFIX} push --set-upstream origin {new_release_branch}"
+                )
+                ShellRunner.run(cmd_push_branch, dry_run=dry_run)
+
+        print("Create and push backport tags for new release branch")
+        ReleaseInfo._create_gh_label(
+            f"v{new_release_branch}-must-backport", "10dbed", dry_run=dry_run
+        )
+        ReleaseInfo._create_gh_label(
+            f"v{new_release_branch}-affected", "c2bfff", dry_run=dry_run
+        )
+        ShellRunner.run(
+            f"""gh pr create --repo {GITHUB_REPOSITORY} --title 'Release pull request for branch {new_release_branch}'
+            --head {new_release_branch} {pr_labels}
+            --body 'This PullRequest is a part of ClickHouse release cycle. It is used by CI system only. Do not perform any changes with it.'
+            """,
+            dry_run=dry_run,
+        )
+
     def update_version_and_contributors_list(self, dry_run: bool) -> None:
         # Bump version, update contributors list, create PR
         branch_upd_version_contributors = f"bump_version_{self.version}"
         with checkout(self.commit_sha):
             git = Git()
             version = get_version_from_repo(git=git)
-            version.with_description(version.get_stable_release_type())
+            if self.release_branch == "master":
+                version.bump()
+                version.with_description(VersionType.TESTING)
+            else:
+                version.with_description(version.get_stable_release_type())
             assert (
                 version.string == self.version
-            ), "BUG: version in release info does not match version in git commit"
+            ), f"BUG: version in release info does not match version in git commit, expected [{self.version}], got [{version.string}]"
         with checkout(self.release_branch):
             with checkout_new(branch_upd_version_contributors):
                 update_cmake_version(version)
@@ -431,6 +507,11 @@ def parse_args() -> argparse.Namespace:
         help="Creates and pushes git tag",
     )
     parser.add_argument(
+        "--push-new-release-branch",
+        action="store_true",
+        help="Creates and pushes new release branch and corresponding service gh tags for backports",
+    )
+    parser.add_argument(
         "--create-bump-version-pr",
         action="store_true",
         help="Updates version, contributors' list and creates PR",
@@ -533,6 +614,10 @@ if __name__ == "__main__":
         assert args.infile, "--infile <release info file path> must be provided"
         release_info = ReleaseInfo.from_file(args.infile)
         release_info.push_release_tag(dry_run=args.dry_run)
+    if args.push_new_release_branch:
+        assert args.infile, "--infile <release info file path> must be provided"
+        release_info = ReleaseInfo.from_file(args.infile)
+        release_info.push_new_release_branch(dry_run=args.dry_run)
     if args.create_bump_version_pr:
         # TODO: store link to PR in release info
         assert args.infile, "--infile <release info file path> must be provided"
@@ -563,7 +648,7 @@ if __name__ == "__main__":
 
 
 """
-Prepare release machine (for arm machine):
+Prepare release machine:
 
 ### INSTALL PACKAGES
 sudo apt update

@@ -15,9 +15,8 @@ concurrency:
         required: true
         type: choice
         options:
-          # TODO:
-          #- new
           - patch
+          - new
       dry-run:
         description: 'Dry run'
         required: false
@@ -28,7 +27,6 @@ jobs:
   CreateRelease:
     env:
       GH_TOKEN: ${{ secrets.ROBOT_CLICKHOUSE_COMMIT_TOKEN }}
-      RELEASE_TYPE:
     runs-on: [self-hosted, release-maker]
     steps:
       - name: DebugInfo
@@ -61,11 +59,16 @@ jobs:
           echo "RELEASE_TAG=$release_tag" >> "$GITHUB_ENV"
           echo "COMMIT_SHA=$commit_sha" >> "$GITHUB_ENV"
       - name: Download All Release Artifacts
+        if: ${{ inputs.type == 'patch' }}
         run: |
           python3 ./tests/ci/create_release.py --infile "$RELEASE_INFO_FILE" --download-packages ${{ inputs.dry-run && '--dry-run' || '' }}
       - name: Push Git Tag for the Release
         run: |
           python3 ./tests/ci/create_release.py --push-release-tag --infile "$RELEASE_INFO_FILE" ${{ inputs.dry-run && '--dry-run' || '' }}
+      - name: Push New Release Branch
+        if: ${{ inputs.type == 'new' }}
+        run: |
+          python3 ./tests/ci/create_release.py --push-new-release-branch --infile "$RELEASE_INFO_FILE" ${{ inputs.dry-run && '--dry-run' || '' }}
       - name: Bump CH Version and Update Contributors' List
         run: |
           python3 ./tests/ci/create_release.py --create-bump-version-pr --infile "$RELEASE_INFO_FILE"  ${{ inputs.dry-run && '--dry-run' || '' }}
@@ -73,6 +76,7 @@ jobs:
         run: |
           git checkout master
       - name: Bump Docker versions, Changelog, Security
+        if: ${{ inputs.type == 'patch' }}
         run: |
           [ "$(git branch --show-current)" != "master" ] && echo "not on the master" && exit 1
           echo "List versions"
@@ -90,8 +94,8 @@ jobs:
           echo "Generate Security"
           python3 ./utils/security-generator/generate_security.py > SECURITY.md
           git diff HEAD
-      - name: Create ChangeLog Pull Request
-        if: ${{ ! inputs.dry-run }}
+      - name: Generate ChangeLog
+        if: ${{ inputs.type == 'patch' && ! inputs.dry-run }}
         uses: peter-evans/create-pull-request@v6
         with:
           author: "robot-clickhouse <robot-clickhouse@users.noreply.github.com>"
@@ -115,39 +119,48 @@ jobs:
         run: |
           git checkout "$GITHUB_REF_NAME"
       - name: Create GH Release
+        if: ${{ inputs.type == 'patch' }}
         run: |
           python3 ./tests/ci/create_release.py --create-gh-release \
             --infile ${{ env.RELEASE_INFO_FILE }} ${{ inputs.dry-run && '--dry-run' || '' }}
 
       - name: Export TGZ Packages
+        if: ${{ inputs.type == 'patch' }}
         run: |
           python3 ./tests/ci/artifactory.py --export-tgz --infile ${{ env.RELEASE_INFO_FILE }} ${{ inputs.dry-run && '--dry-run' || '' }}
       - name: Test TGZ Packages
+        if: ${{ inputs.type == 'patch' }}
         run: |
           python3 ./tests/ci/artifactory.py --test-tgz --infile ${{ env.RELEASE_INFO_FILE }} ${{ inputs.dry-run && '--dry-run' || '' }}
       - name: Export RPM Packages
+        if: ${{ inputs.type == 'patch' }}
         run: |
           python3 ./tests/ci/artifactory.py --export-rpm --infile ${{ env.RELEASE_INFO_FILE }} ${{ inputs.dry-run && '--dry-run' || '' }}
       - name: Test RPM Packages
+        if: ${{ inputs.type == 'patch' }}
         run: |
           python3 ./tests/ci/artifactory.py --test-rpm --infile ${{ env.RELEASE_INFO_FILE }} ${{ inputs.dry-run && '--dry-run' || '' }}
       - name: Export Debian Packages
+        if: ${{ inputs.type == 'patch' }}
         run: |
             python3 ./tests/ci/artifactory.py --export-debian --infile ${{ env.RELEASE_INFO_FILE }} ${{ inputs.dry-run && '--dry-run' || '' }}
       - name: Test Debian Packages
+        if: ${{ inputs.type == 'patch' }}
         run: |
           python3 ./tests/ci/artifactory.py --test-debian --infile ${{ env.RELEASE_INFO_FILE }} ${{ inputs.dry-run && '--dry-run' || '' }}
       - name: Docker clickhouse/clickhouse-server building
+        if: ${{ inputs.type == 'patch' }}
         run: |
           cd "./tests/ci"
           export CHECK_NAME="Docker server image"
           python3 docker_server.py --release-type auto --version ${{ env.RELEASE_TAG }} --check-name "$CHECK_NAME" --sha ${{ env.COMMIT_SHA }} ${{ ! inputs.dry-run && '--push' || '' }}
       - name: Docker clickhouse/clickhouse-keeper building
+        if: ${{ inputs.type == 'patch' }}
         run: |
           cd "./tests/ci"
           export CHECK_NAME="Docker keeper image"
           python3 docker_server.py --release-type auto --version ${{ env.RELEASE_TAG }} --check-name "$CHECK_NAME" --sha ${{ env.COMMIT_SHA }} ${{ ! inputs.dry-run && '--push'  || '' }}
       - name: Post Slack Message
-        if: failure()
+        if: always()
         run: |
           echo Slack Message

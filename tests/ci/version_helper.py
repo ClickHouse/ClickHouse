@@ -72,6 +72,19 @@ class ClickHouseVersion:
             return self.patch_update()
         raise KeyError(f"wrong part {part} is used")
 
+    def bump(self) -> "ClickHouseVersion":
+        if self.minor < 12:
+            self._minor += 1
+            self._revision += 1
+            self._patch = 1
+            self._tweak = 1
+        else:
+            self._major += 1
+            self._revision += 1
+            self._patch = 1
+            self._tweak = 1
+        return self
+
     def major_update(self) -> "ClickHouseVersion":
         if self._git is not None:
             self._git.update()
