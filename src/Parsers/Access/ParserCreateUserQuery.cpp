@@ -523,6 +523,13 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
         if (parsed_add_new_method)
         {
+            if (add_new_auth_method->type == AuthenticationType::NO_PASSWORD)
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The authentication method 'no_password' cannot be used with the ADD keyword. "
+                                                           "Use 'ALTER USER xyz IDENTIFIED WITH no_password' to replace existing authentication methods");
+
+            }
+
             auth_data.push_back(add_new_auth_method);
             continue;
         }

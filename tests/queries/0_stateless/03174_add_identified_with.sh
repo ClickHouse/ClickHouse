@@ -115,8 +115,12 @@ ${CLICKHOUSE_CLIENT} --query "SHOW CREATE USER ${user}"
 echo "Try to provide no_password mixed with other authentication methods, should not be allowed"
 ${CLICKHOUSE_CLIENT} --query "ALTER USER ${user} ADD IDENTIFIED WITH plaintext_password by '8' ADD IDENTIFIED WITH no_password" 2>&1 | grep -m1 -o "BAD_ARGUMENTS"
 
-echo "Adding no_password, should drop existing auth method"
-${CLICKHOUSE_CLIENT} --query "ALTER USER ${user} ADD IDENTIFIED WITH no_password"
+echo "Adding no_password, should fail"
+${CLICKHOUSE_CLIENT} --query "ALTER USER ${user} ADD IDENTIFIED WITH no_password" 2>&1 | grep -m1 -o "BAD_ARGUMENTS"
+${CLICKHOUSE_CLIENT} --query "SHOW CREATE USER ${user}"
+
+echo "Replacing existing authentication methods in favor of no_password, should succeed"
+${CLICKHOUSE_CLIENT} --query "ALTER USER ${user} IDENTIFIED WITH no_password"
 ${CLICKHOUSE_CLIENT} --query "SHOW CREATE USER ${user}"
 
 echo "Trying to auth with no pwd, should succeed"

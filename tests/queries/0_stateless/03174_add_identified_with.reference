@@ -40,7 +40,10 @@ Add identified with
 CREATE USER u01_03174 IDENTIFIED WITH plaintext_password
 Try to provide no_password mixed with other authentication methods, should not be allowed
 BAD_ARGUMENTS
-Adding no_password, should drop existing auth method
+Adding no_password, should fail
+BAD_ARGUMENTS
+CREATE USER u01_03174 IDENTIFIED WITH plaintext_password
+Replacing existing authentication methods in favor of no_password, should succeed
 CREATE USER u01_03174 IDENTIFIED WITH no_password
 Trying to auth with no pwd, should succeed
 1
