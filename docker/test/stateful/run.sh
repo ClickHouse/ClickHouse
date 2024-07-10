@@ -20,7 +20,10 @@ ln -s /usr/share/clickhouse-test/clickhouse-test /usr/bin/clickhouse-test
 /usr/share/clickhouse-test/config/install.sh
 
 azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --silent --inMemoryPersistence &
+
 ./setup_minio.sh stateful
+mc admin trace clickminio > /test_output/rubbish.log &
+MC_ADMIN_PID=$!
 
 config_logs_export_cluster /etc/clickhouse-server/config.d/system_logs_export.yaml
 
@@ -251,6 +254,8 @@ if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]
     sudo clickhouse stop --pid-path /var/run/clickhouse-server2 ||:
 fi
 
+# Kill minio admin client to stop collecting logs
+kill $MC_ADMIN_PID
 rg -Fa "<Fatal>" /var/log/clickhouse-server/clickhouse-server.log ||:
 
 zstd --threads=0 < /var/log/clickhouse-server/clickhouse-server.log > /test_output/clickhouse-server.log.zst ||:
