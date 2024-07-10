@@ -49,7 +49,7 @@ jobs:
         run: |
           python3 ./tests/ci/create_release.py --prepare-release-info \
             --ref ${{ inputs.ref }} --release-type ${{ inputs.type }} \
-            --outfile ${{ env.RELEASE_INFO_FILE }} ${{ inputs.dry-run && '--dry-run' || '' }} 
+            --outfile ${{ env.RELEASE_INFO_FILE }} ${{ inputs.dry-run && '--dry-run' || '' }}
           echo "::group::Release Info"
           python3 -m json.tool "$RELEASE_INFO_FILE"
           echo "::endgroup::"

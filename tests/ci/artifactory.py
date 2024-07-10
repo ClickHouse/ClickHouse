@@ -2,10 +2,9 @@ import argparse
 import time
 from pathlib import Path
 from typing import Optional
-
+from shutil import copy2
 from create_release import PackageDownloader, ReleaseInfo, ShellRunner
 from ci_utils import WithIter
-from shutil import copy2
 
 
 class MountPointApp(metaclass=WithIter):
@@ -201,7 +200,7 @@ class RpmArtifactory:
         print(f"Exporting RPM packages into [{codename}]")
 
         for command in commands:
-            print(f"Running command:")
+            print("Running command:")
             print(f"    {command}")
             ShellRunner.run(command)
 
