@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <string>
 #include <mutex>
 #include <Interpreters/DatabaseCatalog.h>
@@ -27,6 +28,7 @@
 #include <Common/noexcept_scope.h>
 #include <Common/checkStackSize.h>
 
+#include <base/isSharedPtrUnique.h>
 #include <boost/range/adaptor/map.hpp>
 
 #include "config.h"
@@ -1197,7 +1199,7 @@ void DatabaseCatalog::dequeueDroppedTableCleanup(StorageID table_id)
 
     /// It's unsafe to create another instance while the old one exists
     /// We cannot wait on shared_ptr's refcount, so it's busy wait
-    while (!dropped_table.table.unique())
+    while (!isSharedPtrUnique(dropped_table.table))
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     dropped_table.table.reset();
 
@@ -1237,7 +1239,7 @@ void DatabaseCatalog::dropTableDataTask()
         size_t tables_in_use_count = 0;
         auto it = std::find_if(tables_marked_dropped.begin(), tables_marked_dropped.end(), [&](const auto & elem)
         {
-            bool not_in_use = !elem.table || elem.table.unique();
+            bool not_in_use = !elem.table || isSharedPtrUnique(elem.table);
             bool old_enough = elem.drop_time <= current_time;
             min_drop_time = std::min(min_drop_time, elem.drop_time);
             tables_in_use_count += !not_in_use;

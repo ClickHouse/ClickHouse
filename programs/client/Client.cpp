@@ -1117,6 +1117,7 @@ void Client::processOptions(const OptionsDescription & options_description,
         if (!options["user"].defaulted())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "User and JWT flags can't be specified together");
         config().setString("jwt", options["jwt"].as<std::string>());
+        config().setString("user", "");
     }
     if (options.count("accept-invalid-certificate"))
     {

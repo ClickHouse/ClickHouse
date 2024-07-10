@@ -1,4 +1,5 @@
 #include <filesystem>
+#include <base/isSharedPtrUnique.h>
 #include <Databases/DatabaseAtomic.h>
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseOnDisk.h>
@@ -12,7 +13,7 @@
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Parsers/formatAST.h>
 #include <Storages/StorageMaterializedView.h>
-#include "Common/logger_useful.h"
+#include <Common/logger_useful.h>
 #include <Common/PoolId.h>
 #include <Common/atomicRename.h>
 #include <Common/filesystemHelpers.h>
@@ -397,7 +398,7 @@ DatabaseAtomic::DetachedTables DatabaseAtomic::cleanupDetachedTables()
     LOG_DEBUG(log, "There are {} detached tables. Start searching non used tables.", detached_tables.size());
     while (it != detached_tables.end())
     {
-        if (it->second.unique())
+        if (isSharedPtrUnique(it->second))
         {
             not_in_use.emplace(it->first, it->second);
             it = detached_tables.erase(it);

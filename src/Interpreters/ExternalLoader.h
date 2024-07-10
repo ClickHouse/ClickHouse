@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <functional>
+#include <exception>
 #include <unordered_map>
 #include <base/types.h>
 #include <Interpreters/IExternalLoadable.h>

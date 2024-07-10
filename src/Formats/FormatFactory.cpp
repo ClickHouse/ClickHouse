@@ -243,6 +243,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.orc.output_row_index_stride = settings.output_format_orc_row_index_stride;
     format_settings.orc.use_fast_decoder = settings.input_format_orc_use_fast_decoder;
     format_settings.orc.filter_push_down = settings.input_format_orc_filter_push_down;
+    format_settings.orc.read_use_writer_time_zone = settings.input_format_orc_read_use_writer_time_zone;
     format_settings.defaults_for_omitted_fields = settings.input_format_defaults_for_omitted_fields;
     format_settings.capn_proto.enum_comparing_mode = settings.format_capn_proto_enum_comparising_mode;
     format_settings.capn_proto.skip_fields_with_unsupported_types_in_schema_inference = settings.input_format_capn_proto_skip_fields_with_unsupported_types_in_schema_inference;
@@ -269,9 +270,13 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.markdown.escape_special_characters = settings.output_format_markdown_escape_special_characters;
     format_settings.bson.output_string_as_string = settings.output_format_bson_string_as_string;
     format_settings.bson.skip_fields_with_unsupported_types_in_schema_inference = settings.input_format_bson_skip_fields_with_unsupported_types_in_schema_inference;
-    format_settings.max_binary_string_size = settings.format_binary_max_string_size;
-    format_settings.max_binary_array_size = settings.format_binary_max_array_size;
+    format_settings.binary.max_binary_string_size = settings.format_binary_max_string_size;
+    format_settings.binary.max_binary_array_size = settings.format_binary_max_array_size;
+    format_settings.binary.encode_types_in_binary_format = settings.output_format_binary_encode_types_in_binary_format;
+    format_settings.binary.decode_types_in_binary_format = settings.input_format_binary_decode_types_in_binary_format;
     format_settings.native.allow_types_conversion = settings.input_format_native_allow_types_conversion;
+    format_settings.native.encode_types_in_binary_format = settings.output_format_native_encode_types_in_binary_format;
+    format_settings.native.decode_types_in_binary_format = settings.input_format_native_decode_types_in_binary_format;
     format_settings.max_parser_depth = context->getSettingsRef().max_parser_depth;
     format_settings.client_protocol_version = context->getClientProtocolVersion();
     format_settings.date_time_overflow_behavior = settings.date_time_overflow_behavior;
