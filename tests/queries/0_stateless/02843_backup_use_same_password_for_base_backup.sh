@@ -30,7 +30,7 @@ echo "inc_2"
 $CLICKHOUSE_CLIENT -q "BACKUP TABLE data TO Disk('backups', '${CLICKHOUSE_TEST_UNIQUE_NAME}_inc_2.zip') SETTINGS base_backup=Disk('backups', '${CLICKHOUSE_TEST_UNIQUE_NAME}_inc_1.zip'),password='password',use_same_password_for_base_backup=1" | cut -f2
 
 echo "inc_2_bad"
-$CLICKHOUSE_CLIENT -q "BACKUP TABLE data TO Disk('backups', '${CLICKHOUSE_TEST_UNIQUE_NAME}_inc_2_bad.zip') SETTINGS base_backup=Disk('backups', '${CLICKHOUSE_TEST_UNIQUE_NAME}_inc_1.zip'),password='password'" |& grep -m1 -o "Couldn't unpack zip archive '${CLICKHOUSE_TEST_UNIQUE_NAME}_inc_1.zip': Password is required. (CANNOT_UNPACK_ARCHIVE)"
+$CLICKHOUSE_CLIENT -q "BACKUP TABLE data TO Disk('backups', '${CLICKHOUSE_TEST_UNIQUE_NAME}_inc_2_bad.zip') SETTINGS base_backup=Disk('backups', '${CLICKHOUSE_TEST_UNIQUE_NAME}_inc_1.zip'),password='password'" |& grep -m1 -o "_inc_1.zip': Password is required. (CANNOT_UNPACK_ARCHIVE)"
 
 echo "restore_inc_1"
 $CLICKHOUSE_CLIENT -q "RESTORE TABLE data AS data_1 FROM Disk('backups', '${CLICKHOUSE_TEST_UNIQUE_NAME}_inc_1.zip') SETTINGS password='password',use_same_password_for_base_backup=1" | cut -f2
@@ -39,7 +39,7 @@ echo "restore_inc_2"
 $CLICKHOUSE_CLIENT -q "RESTORE TABLE data AS data_2 FROM Disk('backups', '${CLICKHOUSE_TEST_UNIQUE_NAME}_inc_2.zip') SETTINGS password='password',use_same_password_for_base_backup=1" | cut -f2
 
 echo "restore_inc_2_bad"
-$CLICKHOUSE_CLIENT -q "RESTORE TABLE data AS data_2 FROM Disk('backups', '${CLICKHOUSE_TEST_UNIQUE_NAME}_inc_2.zip') SETTINGS password='password'" |& grep -m1 -o "Couldn't unpack zip archive '${CLICKHOUSE_TEST_UNIQUE_NAME}_inc_1.zip': Password is required. (CANNOT_UNPACK_ARCHIVE)"
+$CLICKHOUSE_CLIENT -q "RESTORE TABLE data AS data_2 FROM Disk('backups', '${CLICKHOUSE_TEST_UNIQUE_NAME}_inc_2.zip') SETTINGS password='password'" |& grep -m1 -o "_inc_1.zip': Password is required. (CANNOT_UNPACK_ARCHIVE)"
 
 echo "count_inc_1"
 $CLICKHOUSE_CLIENT -q "SELECT COUNT(*) FROM data_1" | cut -f2
