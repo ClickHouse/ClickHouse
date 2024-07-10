@@ -23,37 +23,29 @@ template<> void AddedColumns<false>::buildJoinGetOutput() {}
 
 template<> void AddedColumns<true>::buildOutputFromRowRef()
 {
-    for (size_t i = 0; i < this->size(); ++i)
-    {
-        auto & col = columns[i];
-        for (auto row_ref_i : lazy_output.row_refs)
-        {
-            if (row_ref_i)
-            {
-                const RowRef * row_ref = reinterpret_cast<const RowRef *>(row_ref_i);
-                col->insertFrom(*row_ref->block->getByPosition(right_indexes[i]).column, row_ref->row_num);
-            }
-            else
-                type_name[i].type->insertDefaultInto(*col);
-        }
-    }
+    buildOutputFromBlocks<false>();
 }
 
 template<> void AddedColumns<true>::buildOutputFromRowRefList()
 {
-    for (size_t i = 0; i < this->size(); ++i)
+    if (join_data_avg_perkey_rows < output_by_row_list_threshold)
+        buildOutputFromBlocks<true>();
+    else
     {
-        auto & col = columns[i];
-        for (auto row_ref_i : lazy_output.row_refs)
+        for (size_t i = 0; i < this->size(); ++i)
         {
-            if (row_ref_i)
+            auto & col = columns[i];
+            for (auto row_ref_i : lazy_output.row_refs)
             {
-                const RowRefList * row_ref_list = reinterpret_cast<const RowRefList *>(row_ref_i);
-                for (auto it = row_ref_list->begin(); it.ok(); ++it)
-                    col->insertFrom(*it->block->getByPosition(right_indexes[i]).column, it->row_num);
+                if (row_ref_i)
+                {
+                    const RowRefList * row_ref_list = reinterpret_cast<const RowRefList *>(row_ref_i);
+                    for (auto it = row_ref_list->begin(); it.ok(); ++it)
+                        col->insertFrom(*it->block->getByPosition(right_indexes[i]).column, it->row_num);
+                }
+                else
+                    type_name[i].type->insertDefaultInto(*col);
             }
-            else
-                type_name[i].type->insertDefaultInto(*col);
         }
     }
 }

@@ -113,6 +113,8 @@ public:
             if (columns[j]->isNullable() && !saved_column->isNullable())
                 nullable_column_ptrs[j] = typeid_cast<ColumnNullable *>(columns[j].get());
         }
+        join_data_avg_perkey_rows = join.getJoinedData()->avgPerKeyRows();
+        output_by_row_list_threshold = join.getTableJoin().outputByRowListPerkeyRowsThreshold();
     }
 
     size_t size() const { return columns.size(); }
@@ -122,6 +124,54 @@ public:
     void buildOutputFromRowRefList();
 
     void buildJoinGetOutput();
+
+    template<bool from_row_list>
+    void buildOutputFromBlocks()
+    {
+        if (this->size() == 0)
+            return;
+        std::vector<const Block *> blocks;
+        std::vector<UInt32> row_nums;
+        blocks.reserve(lazy_output.row_refs.size());
+        row_nums.reserve(lazy_output.row_refs.size());
+        for (auto row_ref_i : lazy_output.row_refs)
+        {
+            if (row_ref_i)
+            {
+                if constexpr (from_row_list)
+                {
+                    const RowRefList * row_ref_list = reinterpret_cast<const RowRefList *>(row_ref_i);
+                    for (auto it = row_ref_list->begin(); it.ok(); ++it)
+                    {
+                        blocks.emplace_back(it->block);
+                        row_nums.emplace_back(it->row_num);
+                    }
+                }
+                else
+                {
+                    const RowRef * row_ref = reinterpret_cast<const RowRefList *>(row_ref_i);
+                    blocks.emplace_back(row_ref->block);
+                    row_nums.emplace_back(row_ref->row_num);
+                }
+            }
+            else
+            {
+                blocks.emplace_back(nullptr);
+                row_nums.emplace_back(0);
+            }
+        }
+        for (size_t i = 0; i < this->size(); ++i)
+        {
+            auto & col = columns[i];
+            for (size_t j = 0; j < blocks.size(); ++j)
+            {
+                if (blocks[j])
+                    col->insertFrom(*blocks[j]->getByPosition(right_indexes[i]).column, row_nums[j]);
+                else
+                    type_name[i].type->insertDefaultInto(*col);
+            }
+        }
+    }
 
     ColumnWithTypeAndName moveColumn(size_t i)
     {
@@ -147,6 +197,8 @@ public:
     std::unique_ptr<IColumn::Offsets> offsets_to_replicate;
     bool need_filter = false;
     bool output_by_row_list = false;
+    size_t join_data_avg_perkey_rows = 0;
+    size_t output_by_row_list_threshold = 0;
     IColumn::Filter filter;
 
     void reserve(bool need_replicate)
