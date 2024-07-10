@@ -8,6 +8,9 @@
 #include <Functions/TransformDateTime64.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
+#include <DataTypes/DataTypeString.h>
+#include <Functions/FunctionHelpers.h>
+#include <Functions/FunctionFactory.h>
 
 namespace DB
 {
@@ -50,15 +53,15 @@ public:
 
         if (checkAndGetDataType<DataTypeDate>(&type))
         {
-            return Transform::FactorTransform::execute(UInt16(left.get<UInt64>()), date_lut)
-                    == Transform::FactorTransform::execute(UInt16(right.get<UInt64>()), date_lut)
+            return Transform::FactorTransform::execute(UInt16(left.safeGet<UInt64>()), date_lut)
+                    == Transform::FactorTransform::execute(UInt16(right.safeGet<UInt64>()), date_lut)
                 ? is_monotonic
                 : is_not_monotonic;
         }
         else
         {
-            return Transform::FactorTransform::execute(UInt32(left.get<UInt64>()), date_lut)
-                    == Transform::FactorTransform::execute(UInt32(right.get<UInt64>()), date_lut)
+            return Transform::FactorTransform::execute(UInt32(left.safeGet<UInt64>()), date_lut)
+                    == Transform::FactorTransform::execute(UInt32(right.safeGet<UInt64>()), date_lut)
                 ? is_monotonic
                 : is_not_monotonic;
         }
@@ -115,7 +118,6 @@ protected:
                 "Number of arguments for function {} doesn't match: passed {}, expected 1, 2 or 3.",
                 getName(), arguments.size());
     }
-
 };
 
 }
