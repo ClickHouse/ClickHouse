@@ -2507,7 +2507,15 @@ def do_run_tests(jobs, test_suite: TestSuite):
                     )
                     future_seq.wait()
 
-                future.wait()
+                while not future.ready():
+                    sleep(0.1)
+                    if server_died.is_set():
+                        print("== Server died")
+                        sleep(5)
+                        pool.terminate()
+                        pool.close()
+
+                # future.wait()
                 print("future wait DONE")
         finally:
             print("pool.terminate")
