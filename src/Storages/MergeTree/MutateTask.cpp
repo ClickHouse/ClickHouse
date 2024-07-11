@@ -36,7 +36,6 @@
 #include <Core/ColumnsWithTypeAndName.h>
 
 
-
 namespace ProfileEvents
 {
 extern const Event MutateTaskProjectionsCalculationMicroseconds;

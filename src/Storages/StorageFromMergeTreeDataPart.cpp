@@ -6,6 +6,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+extern const int LOGICAL_ERROR;
+}
+
 bool StorageFromMergeTreeDataPart::materializeTTLRecalculateOnly() const
 {
     if (parts.empty())

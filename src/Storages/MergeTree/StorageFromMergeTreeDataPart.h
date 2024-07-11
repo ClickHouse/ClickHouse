@@ -8,14 +8,8 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 
-
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
 
 class QueryPlan;
 
