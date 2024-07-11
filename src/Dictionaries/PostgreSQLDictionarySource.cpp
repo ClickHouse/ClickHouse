@@ -205,8 +205,9 @@ void registerDictionarySourcePostgreSQL(DictionarySourceFactory & factory)
             configuration.replicas_configurations,
             settings.postgresql_connection_pool_size,
             settings.postgresql_connection_pool_wait_timeout,
-            POSTGRESQL_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES,
-            settings.postgresql_connection_pool_auto_close_connection);
+            settings.postgresql_connection_pool_retries,
+            settings.postgresql_connection_pool_auto_close_connection,
+            settings.postgresql_connection_attempt_timeout);
 
         PostgreSQLDictionarySource::Configuration dictionary_configuration
         {

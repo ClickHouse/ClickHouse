@@ -2,6 +2,7 @@
 
 #include <DataTypes/Serializations/ISerialization.h>
 #include <DataTypes/Serializations/SerializationVariantElement.h>
+#include <DataTypes/Serializations/SerializationVariantElementNullMap.h>
 
 namespace DB
 {
@@ -161,6 +162,7 @@ public:
 
 private:
     friend SerializationVariantElement;
+    friend SerializationVariantElementNullMap;
 
     void addVariantElementToPath(SubstreamPath & path, size_t i) const;
 

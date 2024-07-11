@@ -115,7 +115,14 @@ void SerializationVariantElement::deserializeBinaryBulkWithMultipleStreams(
         if (discriminators_state->mode.value == SerializationVariant::DiscriminatorsSerializationMode::BASIC)
             SerializationNumber<ColumnVariant::Discriminator>().deserializeBinaryBulk(*variant_element_state->discriminators->assumeMutable(), *discriminators_stream, limit, 0);
         else
-            variant_limit = deserializeCompactDiscriminators(variant_element_state->discriminators, limit, discriminators_stream, settings.continuous_reading, *variant_element_state);
+            variant_limit = deserializeCompactDiscriminators(
+                variant_element_state->discriminators,
+                variant_discriminator,
+                limit,
+                discriminators_stream,
+                settings.continuous_reading,
+                variant_element_state->discriminators_state,
+                this);
 
         addToSubstreamsCache(cache, settings.path, variant_element_state->discriminators);
     }
@@ -224,12 +231,14 @@ void SerializationVariantElement::deserializeBinaryBulkWithMultipleStreams(
 
 size_t SerializationVariantElement::deserializeCompactDiscriminators(
     DB::ColumnPtr & discriminators_column,
+    ColumnVariant::Discriminator variant_discriminator,
     size_t limit,
     DB::ReadBuffer * stream,
     bool continuous_reading,
-    DeserializeBinaryBulkStateVariantElement & variant_element_state) const
+    DeserializeBinaryBulkStatePtr & discriminators_state_,
+    const ISerialization * serialization)
 {
-    auto * discriminators_state = checkAndGetState<SerializationVariant::DeserializeBinaryBulkStateVariantDiscriminators>(variant_element_state.discriminators_state);
+    auto * discriminators_state = checkAndGetState<SerializationVariant::DeserializeBinaryBulkStateVariantDiscriminators>(discriminators_state_, serialization);
     auto & discriminators = assert_cast<ColumnVariant::ColumnDiscriminators &>(*discriminators_column->assumeMutable());
     auto & discriminators_data = discriminators.getData();
 
@@ -290,17 +299,19 @@ SerializationVariantElement::VariantSubcolumnCreator::VariantSubcolumnCreator(
     const ColumnPtr & local_discriminators_,
     const String & variant_element_name_,
     ColumnVariant::Discriminator global_variant_discriminator_,
-    ColumnVariant::Discriminator local_variant_discriminator_)
+    ColumnVariant::Discriminator local_variant_discriminator_,
+    bool make_nullable_)
     : local_discriminators(local_discriminators_)
     , variant_element_name(variant_element_name_)
     , global_variant_discriminator(global_variant_discriminator_)
     , local_variant_discriminator(local_variant_discriminator_)
+    , make_nullable(make_nullable_)
 {
 }
 
 DataTypePtr SerializationVariantElement::VariantSubcolumnCreator::create(const DB::DataTypePtr & prev) const
 {
-    return makeNullableOrLowCardinalityNullableSafe(prev);
+    return make_nullable ? makeNullableOrLowCardinalityNullableSafe(prev) : prev;
 }
 
 SerializationPtr SerializationVariantElement::VariantSubcolumnCreator::create(const DB::SerializationPtr & prev) const
@@ -313,12 +324,12 @@ ColumnPtr SerializationVariantElement::VariantSubcolumnCreator::create(const DB:
     /// Case when original Variant column contained only one non-empty variant and no NULLs.
     /// In this case just use this variant.
     if (prev->size() == local_discriminators->size())
-        return makeNullableOrLowCardinalityNullableSafe(prev);
+        return make_nullable ? makeNullableOrLowCardinalityNullableSafe(prev) : prev;
 
     /// If this variant is empty, fill result column with default values.
     if (prev->empty())
     {
-        auto res = makeNullableOrLowCardinalityNullableSafe(prev)->cloneEmpty();
+        auto res = make_nullable ? makeNullableOrLowCardinalityNullableSafe(prev)->cloneEmpty() : prev->cloneEmpty();
         res->insertManyDefaults(local_discriminators->size());
         return res;
     }
@@ -333,16 +344,16 @@ ColumnPtr SerializationVariantElement::VariantSubcolumnCreator::create(const DB:
     /// Now we can create new column from null-map and variant column using IColumn::expand.
     auto res_column = IColumn::mutate(prev);
 
-    /// Special case for LowCardinality. We want the result to be LowCardinality(Nullable),
+    /// Special case for LowCardinality when we want the result to be LowCardinality(Nullable),
     /// but we don't have a good way to apply null-mask for LowCardinality(), so, we first
     /// convert our column to LowCardinality(Nullable()) and then use expand which will
     /// fill rows with 0 in mask with default value (that is NULL).
-    if (prev->lowCardinality())
+    if (make_nullable && prev->lowCardinality())
         res_column = assert_cast<ColumnLowCardinality &>(*res_column).cloneNullable();
 
     res_column->expand(null_map, /*inverted = */ true);
 
-    if (res_column->canBeInsideNullable())
+    if (make_nullable && prev->canBeInsideNullable())
     {
         auto null_map_col = ColumnUInt8::create();
         null_map_col->getData() = std::move(null_map);
