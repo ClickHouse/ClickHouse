@@ -29,7 +29,7 @@ For more detail on window function syntax see: [Window Functions - Syntax](./ind
 
 **Returned value**
 
-- The first non-NULL value evaluated within its ordered frame.
+- The first value evaluated within its ordered frame.
 
 **Example**
 
