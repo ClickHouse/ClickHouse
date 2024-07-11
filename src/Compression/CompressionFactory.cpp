@@ -213,7 +213,7 @@ CompressionCodecFactory::CompressionCodecFactory()
     registerCodecDeflateQpl(*this);
 #endif
     registerCodecGCD(*this);
-
+    
     default_codec = get("LZ4", {});
 }
 

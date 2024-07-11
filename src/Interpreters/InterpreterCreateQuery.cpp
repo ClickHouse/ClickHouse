@@ -14,6 +14,7 @@
 #include <Common/atomicRename.h>
 #include <Common/PoolId.h>
 #include <Common/logger_useful.h>
+#include "Storages/MergeTree/MergeTreeData.h"
 #include <Parsers/ASTSetQuery.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <base/hex.h>

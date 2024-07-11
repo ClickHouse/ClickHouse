@@ -1,3 +1,4 @@
+#include <utility>
 #include <Storages/ColumnsDescription.h>
 
 #include <Parsers/ASTLiteral.h>
@@ -25,6 +26,8 @@
 #include <Interpreters/Context.h>
 #include <Storages/IStorage.h>
 #include <Common/typeid_cast.h>
+#include "Access/EnabledRowPolicies.h"
+#include "base/types.h"
 #include <Core/Defines.h>
 #include <Compression/CompressionFactory.h>
 #include <Interpreters/ExpressionAnalyzer.h>
@@ -867,6 +870,63 @@ bool ColumnsDescription::hasCompressionCodec(const String & column_name) const
     const auto it = columns.get<1>().find(column_name);
 
     return it != columns.get<1>().end() && it->codec != nullptr;
+}
+
+void ColumnsDescription::setDefaultCompressionCodec(const String & codec_name)
+{
+    auto columns_to_override = std::invoke([this, &codec_name](){    
+        std::vector<std::pair<String, String>> ret;
+        String codec_info_str = std::invoke([&codec_name]{
+            WriteBufferFromOwnString codec_buf;
+            writeCString("\tCODEC(", codec_buf);
+            writeCString(codec_name.c_str(), codec_buf);
+            writeCString(")\n", codec_buf);
+            return codec_buf.str();
+        });
+
+        for(const auto & column : columns)
+        {
+            if(column.codec) continue;
+
+            String new_column_desc = std::invoke([&column, &codec_info_str]{
+                WriteBufferFromOwnString buf;
+                column.writeText(buf);
+                auto first_part = buf.str();
+                // Remove the unnecessary new line
+                first_part.pop_back();
+
+                WriteBufferFromOwnString whole_part;        
+                writeCString(first_part.c_str(), whole_part);
+                writeCString(codec_info_str.c_str(), whole_part);
+                return whole_part.str();
+            });
+
+            ret.push_back(std::make_pair(column.name, new_column_desc));
+        }
+
+        return ret;
+    });
+
+    for(const auto & [name, desc] : columns_to_override)
+    {
+        auto it = std::find_if(columns.begin(), columns.end(), [&name](const auto & column){
+            return column.name == name;
+        });
+
+        auto [after_column_name, first] = std::invoke([this, &it]()->std::pair<String, bool>{
+            if(it == columns.begin())
+                return {"", true};
+            else
+                return {(--it)->name, false};
+        });
+
+        remove(name);
+        ReadBufferFromString read_buf{desc};
+        ColumnDescription column_desc;
+        column_desc.readText(read_buf);
+        add(column_desc);
+        modifyColumnOrder(name, after_column_name, first);
+    }
 }
 
 ColumnsDescription::ColumnTTLs ColumnsDescription::getColumnTTLs() const
