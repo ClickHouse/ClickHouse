@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/data-types/dynamic
-sidebar_position: 56
+sidebar_position: 62
 sidebar_label: Dynamic
 ---
 
