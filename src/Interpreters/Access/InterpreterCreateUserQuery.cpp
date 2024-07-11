@@ -259,7 +259,22 @@ void InterpreterCreateUserQuery::updateUserFromQuery(User & user, const ASTCreat
     if (query.auth_data)
         auth_data = AuthenticationData::fromAST(*query.auth_data, {}, !query.attach);
 
-    updateUserFromQueryImpl(user, query, auth_data, {}, {}, {}, {}, {}, allow_no_password, allow_plaintext_password, true);
+    std::optional<time_t> valid_until;
+    if (query.valid_until)
+    {
+        const String valid_until_str = checkAndGetLiteralArgument<String>(query.valid_until, "valid_until");
+        time_t time = 0;
+
+        if (valid_until_str != "infinity")
+        {
+            ReadBufferFromString in(valid_until_str);
+            readDateTimeText(time, in);
+        }
+
+        valid_until = time;
+    }
+
+    updateUserFromQueryImpl(user, query, auth_data, {}, {}, {}, {}, valid_until, allow_no_password, allow_plaintext_password, true);
 }
 
 void registerInterpreterCreateUserQuery(InterpreterFactory & factory)
