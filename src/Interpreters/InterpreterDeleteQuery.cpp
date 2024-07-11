@@ -60,6 +60,7 @@ BlockIO InterpreterDeleteQuery::execute()
 
     auto table_lock = table->lockForShare(getContext()->getCurrentQueryId(), getContext()->getSettingsRef().lock_acquire_timeout);
     auto metadata_snapshot = table->getInMemoryMetadataPtr();
+    bool hasProjection = table->hasProjection();
 
     auto lightweightDelete = [&]()
     {
@@ -107,13 +108,13 @@ BlockIO InterpreterDeleteQuery::execute()
         table->mutate(mutation_commands, getContext());
         return {};
     }
-    else if (table->supportsLightweightDelete())
+    else if (!hasProjection && table->supportsLightweightDelete())
     {
         return lightweightDelete();
     }
     else
     {
-        if (table->hasProjection())
+        if (hasProjection)
         {
             auto context = Context::createCopy(getContext());
             auto mode = context->getSettingsRef().lightweight_mutation_projection_mode;

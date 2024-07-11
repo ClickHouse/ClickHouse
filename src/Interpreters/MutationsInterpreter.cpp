@@ -487,11 +487,7 @@ static void validateUpdateColumns(
             if (column_name == RowExistsColumn::name)
             {
                 if (!source.supportsLightweightDelete())
-                {
-                    // if (!source.getStorage()->isMergeTree()
-                    //     || context->getSettingsRef().lightweight_mutation_projection_mode == LightweightMutationProjectionMode::THROW)
-                    //     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Lightweight delete is not supported for table");
-                }
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Lightweight delete is not supported for table");
             }
             else if (virtual_columns.tryGet(column_name))
             {
