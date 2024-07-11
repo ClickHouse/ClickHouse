@@ -1043,7 +1043,7 @@ struct MutationContext
     /// Whether we need to count lightweight delete rows in this mutation
     bool count_lightweight_deleted_rows;
 
-    bool lightweight_mutation_mode;
+    bool lightweight_delete_mode;
 };
 
 using MutationContextPtr = std::shared_ptr<MutationContext>;
@@ -1573,7 +1573,7 @@ private:
             }
             else
             {
-                if (!ctx->lightweight_mutation_mode && ctx->source_part->checksums.has(projection.getDirectoryName()))
+                if (!ctx->lightweight_delete_mode && ctx->source_part->checksums.has(projection.getDirectoryName()))
                     entries_to_hardlink.insert(projection.getDirectoryName());
             }
         }
@@ -1843,7 +1843,8 @@ private:
                     hardlinked_files.insert(it->name());
                 }
             }
-            else if (!endsWith(it->name(), ".tmp_proj")) // ignore projection tmp merge dir
+            /// Ignore projection tmp merge dir, and under lightweight delete mode ignore projection files.
+            else if (!endsWith(it->name(), ".tmp_proj") && !ctx->lightweight_delete_mode) 
             {
                 // it's a projection part directory
                 ctx->new_data_part->getDataPartStorage().createProjection(destination);
@@ -2257,8 +2258,8 @@ bool MutateTask::prepare()
     if (ctx->mutating_pipeline_builder.initialized())
         ctx->execute_ttl_type = MutationHelpers::shouldExecuteTTL(ctx->metadata_snapshot, ctx->interpreter->getColumnDependencies());
 
-    ctx->lightweight_mutation_mode = ctx->updated_header.has(RowExistsColumn::name);
-    if (ctx->data->getSettings()->exclude_deleted_rows_for_part_size_in_merge && ctx->lightweight_mutation_mode)
+    ctx->lightweight_delete_mode = ctx->updated_header.has(RowExistsColumn::name);
+    if (ctx->data->getSettings()->exclude_deleted_rows_for_part_size_in_merge && ctx->lightweight_delete_mode)
     {
         /// This mutation contains lightweight delete and we need to count the deleted rows,
         /// Reset existing_rows_count of new data part to 0 and it will be updated while writing _row_exists column
