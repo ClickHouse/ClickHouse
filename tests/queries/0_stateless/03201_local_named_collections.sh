@@ -13,7 +13,7 @@ INSERT INTO test VALUES ('Hello, world!');
 ${CLICKHOUSE_LOCAL} --multiquery "
 CREATE NAMED COLLECTION mydb AS host = '${CLICKHOUSE_HOST}', port = ${CLICKHOUSE_PORT_TCP}, user = 'default', password = '', db = '${CLICKHOUSE_DATABASE}';
 SELECT * FROM remote(mydb, table = 'test');
-" | grep --text -F -v "ASan doesn't fully support makecontext/swapcontext functions"
+" 2>&1 | grep --text -F -v "ASan doesn't fully support makecontext/swapcontext functions"
 
 ${CLICKHOUSE_CLIENT} --multiquery "
 DROP TABLE test;
