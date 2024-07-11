@@ -1,5 +1,5 @@
-#include "CommonPathPrefixKeyGenerator.h"
-#include "Disks/ObjectStorages/PathComparator.h"
+#include <Disks/ObjectStorages/CommonPathPrefixKeyGenerator.h>
+#include <Disks/ObjectStorages/InMemoryPathMap.h>
 
 #include <Common/getRandomASCIIString.h>
 

@@ -1,8 +1,8 @@
 #pragma once
 
 #include <Disks/ObjectStorages/IMetadataOperation.h>
+#include <Disks/ObjectStorages/InMemoryPathMap.h>
 #include <Disks/ObjectStorages/MetadataStorageFromPlainObjectStorage.h>
-#include "Disks/ObjectStorages/PathComparator.h"
 
 #include <filesystem>
 #include <map>

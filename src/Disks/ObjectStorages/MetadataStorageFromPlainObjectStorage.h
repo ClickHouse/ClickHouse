@@ -2,9 +2,9 @@
 
 #include <Disks/IDisk.h>
 #include <Disks/ObjectStorages/IMetadataStorage.h>
+#include <Disks/ObjectStorages/InMemoryPathMap.h>
 #include <Disks/ObjectStorages/MetadataOperationsHolder.h>
 #include <Disks/ObjectStorages/MetadataStorageTransactionState.h>
-#include <Disks/ObjectStorages/PathComparator.h>
 
 #include <map>
 #include <string>
@@ -13,6 +13,7 @@
 namespace DB
 {
 
+struct InMemoryPathMap;
 struct UnlinkMetadataFileOperationOutcome;
 using UnlinkMetadataFileOperationOutcomePtr = std::shared_ptr<UnlinkMetadataFileOperationOutcome>;
 

@@ -1,9 +1,6 @@
 #pragma once
 
 #include <Common/ObjectStorageKeyGenerator.h>
-#include <Common/SharedMutex.h>
-
-#include <Disks/ObjectStorages/PathComparator.h>
 
 #include <filesystem>
 #include <map>
@@ -21,6 +18,8 @@ namespace DB
 ///
 /// The key generator ensures that the original directory hierarchy is
 /// preserved, which is required for the MergeTree family.
+
+struct InMemoryPathMap;
 class CommonPathPrefixKeyGenerator : public IObjectStorageKeysGenerator
 {
 public:

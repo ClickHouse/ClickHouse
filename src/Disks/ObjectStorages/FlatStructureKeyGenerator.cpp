@@ -1,7 +1,7 @@
 #include "FlatStructureKeyGenerator.h"
+#include <Disks/ObjectStorages/InMemoryPathMap.h>
 #include "Common/ObjectStorageKey.h"
 #include "Common/SharedMutex.h"
-#include "Disks/ObjectStorages/PathComparator.h"
 #include <Common/getRandomASCIIString.h>
 
 #include <optional>

@@ -1,7 +1,7 @@
-#include <Disks/ObjectStorages/MetadataStorageFromPlainRewritableObjectStorage.h>
 #include <Disks/ObjectStorages/FlatStructureKeyGenerator.h>
+#include <Disks/ObjectStorages/InMemoryPathMap.h>
+#include <Disks/ObjectStorages/MetadataStorageFromPlainRewritableObjectStorage.h>
 #include <Disks/ObjectStorages/ObjectStorageIterator.h>
-#include <Disks/ObjectStorages/PathComparator.h>
 
 #include <unordered_set>
 #include <IO/ReadHelpers.h>

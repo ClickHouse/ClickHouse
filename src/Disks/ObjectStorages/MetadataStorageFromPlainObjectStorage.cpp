@@ -1,5 +1,6 @@
 #include "MetadataStorageFromPlainObjectStorage.h"
 #include <Disks/IDisk.h>
+#include <Disks/ObjectStorages/InMemoryPathMap.h>
 #include <Disks/ObjectStorages/MetadataStorageFromPlainObjectStorageOperations.h>
 #include <Disks/ObjectStorages/StaticDirectoryIterator.h>
 

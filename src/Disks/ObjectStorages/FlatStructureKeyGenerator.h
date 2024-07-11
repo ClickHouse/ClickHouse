@@ -1,12 +1,12 @@
 #pragma once
 
-#include <Disks/ObjectStorages/PathComparator.h>
 #include <Common/ObjectStorageKeyGenerator.h>
 
 #include <memory>
 namespace DB
 {
 
+struct InMemoryPathMap;
 class FlatStructureKeyGenerator : public IObjectStorageKeysGenerator
 {
 public:

@@ -1,5 +1,5 @@
 #include "MetadataStorageFromPlainObjectStorageOperations.h"
-#include "Disks/ObjectStorages/PathComparator.h"
+#include <Disks/ObjectStorages/InMemoryPathMap.h>
 
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
