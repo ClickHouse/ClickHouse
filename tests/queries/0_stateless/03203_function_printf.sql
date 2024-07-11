@@ -19,6 +19,16 @@ select printf('%%A: %A', 123.456) = '%A: 0X1.EDD2F1A9FBE77P+6';
 -- Testing character formats
 select printf('%%s: %s', 'abc') = '%s: abc';
 
-
 -- Testing the %% specifier
 select printf('%%%%: %%') = '%%: %';
+
+-- Testing integer formats with precision
+select printf('%%.5d: %.5d', 123) = '%.5d: 00123';
+
+-- Testing floating point formats with precision
+select printf('%%.2f: %.2f', 123.456) = '%.2f: 123.46';
+select printf('%%.2e: %.2e', 123.456) = '%.2e: 1.23e+02';
+select printf('%%.2g: %.2g', 123.456) = '%.2g: 1.2e+02';
+
+-- Testing character formats with precision
+select printf('%%.2s: %.2s', 'abc') = '%.2s: ab';
