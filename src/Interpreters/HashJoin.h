@@ -28,6 +28,7 @@
 #include <Interpreters/IKeyValueEntity.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <Storages/IStorage_fwd.h>
+#include <__algorithm/ranges_remove_if.h>
 #include <boost/core/noncopyable.hpp>
 
 namespace DB
@@ -174,11 +175,9 @@ public:
 
     struct ScatteredBlock : private boost::noncopyable
     {
-        BlockPtr block;
+        BlockPtr block; // TODO: we don't need shared_ptr here since if any changes are made to block, they're supposed to be private
         IColumn::Selector selector;
-        bool was_scattered = true;
-
-        ScatteredBlock() = default; // TODO: remove me
+        bool was_scattered = true; // TODO: could be replaced with selector.size() != block->rows()
 
         ScatteredBlock(const Block & block_)
             : block(std::make_shared<Block>(block_)), selector(createTrivialSelector(block->rows())), was_scattered(false)
@@ -200,14 +199,25 @@ public:
 
         ScatteredBlock & operator=(ScatteredBlock && other) noexcept
         {
-            std::swap(*this, other);
+            if (this != &other)
+            {
+                block = std::move(other.block);
+                selector = std::move(other.selector);
+                was_scattered = other.was_scattered;
+
+                other.block = nullptr;
+                other.selector.clear();
+                other.was_scattered = false;
+            }
             return *this;
         }
 
         operator bool() const { return block != nullptr; }
 
+        /// Accounts only selected rows
         size_t rows() const { return selector.size(); }
 
+        /// Whether block was scattered, i.e. has non-trivial selector
         bool wasScattered() const { return was_scattered; }
 
         const ColumnWithTypeAndName & getByName(const std::string & name) const
@@ -216,16 +226,13 @@ public:
             return block->getByName(name);
         }
 
-        void filter(const IColumn::Filter & filt)
+        /// Filters selector by mask discarding rows for which filter is false
+        void filter(const IColumn::Filter & filter)
         {
-            chassert(block && block->rows() == filt.size());
-            IColumn::Selector filtered;
-            filtered.reserve(selector.size());
-            for (const auto ind : selector)
-                if (filt[ind])
-                    filtered.push_back(ind);
-            filtered.shrink_to_fit(); /// selector never grows in size
-            selector.swap(filtered);
+            chassert(block && block->rows() == filter.size());
+            auto it = std::remove_if(selector.begin(), selector.end(), [&](size_t idx) { return filter[idx]; });
+            selector.resize(std::distance(selector.begin(), it));
+            was_scattered = selector.size() != block->rows();
         }
 
         void filterBySelector()
@@ -251,15 +258,13 @@ public:
             // if (num_rows >= rows())
             //     return ScatteredBlock(Block{});
 
-            ScatteredBlock remaining_block;
-            remaining_block.selector.assign(selector.begin() + num_rows, selector.end());
-            remaining_block.block = block;
-            remaining_block.was_scattered = was_scattered;
+            IColumn::Selector remaining_selector(selector.begin() + num_rows, selector.end());
+            auto remaining = ScatteredBlock{*block, std::move(remaining_selector), was_scattered};
 
             /// Cut rows from current block
             selector.erase(selector.begin() + num_rows, selector.end());
 
-            return remaining_block;
+            return remaining;
         }
 
         IColumn::Selector createTrivialSelector(size_t size)

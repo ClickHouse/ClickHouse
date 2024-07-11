@@ -39,8 +39,11 @@ Block concatenateBlocks(const HashJoin::ScatteredBlocks & blocks)
     Blocks inner_blocks;
     for (const auto & block : blocks)
     {
-        if (block.block)
-            inner_blocks.push_back(*block.block);
+        chassert(block.block);
+        chassert(!block.wasScattered());
+        if (block.wasScattered())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Not scattered block is expected here");
+        inner_blocks.push_back(*block.block);
     }
     return concatenateBlocks(inner_blocks);
 }
@@ -170,11 +173,9 @@ bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block, bool check_li
                 if (!lock.owns_lock())
                     continue;
 
-                bool limit_exceeded = !hash_join->data->addBlockToJoin(dispatched_block, check_limits);
-
-                dispatched_block = {};
                 blocks_left--;
 
+                bool limit_exceeded = !hash_join->data->addBlockToJoin(dispatched_block, check_limits);
                 if (limit_exceeded)
                     return false;
             }
