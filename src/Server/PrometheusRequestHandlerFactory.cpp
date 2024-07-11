@@ -9,6 +9,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int UNKNOWN_ELEMENT_IN_CONFIG;
+}
+
 namespace
 {
     /// Parses common configuration which is attached to any other configuration. The common configuration looks like this:
@@ -38,6 +43,22 @@ namespace
         res.expose_errors = config.getBool(config_prefix + ".errors", true);
         parseCommonConfig(config, res);
         return res;
+    }
+
+    /// Parses a configuration like this:
+    /// <type>expose_metrics</type>
+    /// <metrics>true</metrics>
+    /// <asynchronous_metrics>true</asynchronous_metrics>
+    /// <events>true</events>
+    /// <errors>true</errors>
+    PrometheusRequestHandlerConfig parseHandlerConfig(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
+    {
+        String type = config.getString(config_prefix + ".type");
+
+        if (type == "expose_metrics")
+            return parseExposeMetricsConfig(config, config_prefix);
+        else
+            throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Unknown type {} is specified in the configuration for a prometheus protocol", type);
     }
 
     /// Returns true if the protocol represented by a passed config can be handled.
@@ -84,13 +105,31 @@ namespace
     {
         auto factory = std::make_shared<HTTPRequestHandlerFactoryMain>(name);
 
-        auto parsed_config = parseExposeMetricsConfig(config, "prometheus");
-        if (auto handler = createPrometheusHandlerFactoryFromConfig(server, asynchronous_metrics, parsed_config, for_keeper))
+        if (config.has("prometheus.handlers"))
         {
-            String endpoint = config.getString("prometheus.endpoint", "/metrics");
-            handler->attachStrictPath(endpoint);
-            handler->allowGetAndHeadRequest();
-            factory->addHandler(handler);
+            Strings keys;
+            config.keys("prometheus.handlers", keys);
+            for (const String & key : keys)
+            {
+                String prefix = "prometheus.handlers." + key;
+                auto parsed_config = parseHandlerConfig(config, prefix + ".handler");
+                if (auto handler = createPrometheusHandlerFactoryFromConfig(server, asynchronous_metrics, parsed_config, for_keeper))
+                {
+                    handler->addFiltersFromConfig(config, prefix);
+                    factory->addHandler(handler);
+                }
+            }
+        }
+        else
+        {
+            auto parsed_config = parseExposeMetricsConfig(config, "prometheus");
+            if (auto handler = createPrometheusHandlerFactoryFromConfig(server, asynchronous_metrics, parsed_config, for_keeper))
+            {
+                String endpoint = config.getString("prometheus.endpoint", "/metrics");
+                handler->attachStrictPath(endpoint);
+                handler->allowGetAndHeadRequest();
+                factory->addHandler(handler);
+            }
         }
 
         return factory;

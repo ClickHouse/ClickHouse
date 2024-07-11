@@ -26,6 +26,25 @@ class AsynchronousMetrics;
 ///     <errors>true</errors>
 /// </prometheus>
 ///
+/// More prometheus protocols can be supported with using a different configuration <prometheus.handlers>
+/// (which is similar to the <http_handlers> section):
+///
+/// <prometheus>
+///     <port>1234</port>
+///     <handlers>
+///         <my_rule1>
+///             <url>/metrics</url>
+///             <handler>
+///                 <type>expose_metrics</type>
+///                 <metrics>true</metrics>
+///                 <asynchronous_metrics>true</asynchronous_metrics>
+///                 <events>true</events>
+///                 <errors>true</errors>
+///             </handler>
+///         </my_rule1>
+///    </handlers>
+/// </prometheus>
+///
 /// An alternative port to serve prometheus protocols can be specified in the <protocols> section:
 ///
 /// <protocols>
