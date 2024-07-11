@@ -22,6 +22,7 @@ struct PrometheusRequestHandlerConfig
     bool expose_errors = false;
 
     size_t keep_alive_timeout = 0;
+    bool is_stacktrace_enabled = true;
 };
 
 }

@@ -1,8 +1,10 @@
 #include <Server/PrometheusRequestHandler.h>
 
 #include <Common/logger_useful.h>
+#include <Common/setThreadName.h>
 #include <IO/HTTPCommon.h>
 #include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
+#include <Server/HTTP/sendExceptionToHTTPClient.h>
 #include <Server/IServer.h>
 #include <Server/PrometheusMetricsWriter.h>
 #include "config.h"
@@ -103,6 +105,8 @@ void PrometheusRequestHandler::createImpl()
 
 void PrometheusRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event_)
 {
+    setThreadName("PrometheusHndlr");
+
     try
     {
         write_event = write_event_;
@@ -129,6 +133,10 @@ void PrometheusRequestHandler::handleRequest(HTTPServerRequest & request, HTTPSe
         tryLogCurrentException(log);
         tryCallOnException();
 
+        ExecutionStatus status = ExecutionStatus::fromCurrentException("", send_stacktrace);
+        trySendExceptionToClient(status.message, status.code, request, response);
+        tryCallOnException();
+
         /// `write_buffer_from_response` must be finalized already or at least tried to finalize.
         write_buffer_from_response = nullptr;
     }
@@ -141,6 +149,30 @@ WriteBuffer & PrometheusRequestHandler::getOutputStream(HTTPServerResponse & res
     write_buffer_from_response = std::make_unique<WriteBufferFromHTTPServerResponse>(
         response, http_method == HTTPRequest::HTTP_HEAD, config.keep_alive_timeout, write_event);
     return *write_buffer_from_response;
+}
+
+void PrometheusRequestHandler::trySendExceptionToClient(const String & exception_message, int exception_code, HTTPServerRequest & request, HTTPServerResponse & response)
+{
+    try
+    {
+        sendExceptionToHTTPClient(exception_message, exception_code, request, response, write_buffer_from_response.get(), log);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, "Couldn't send exception to client");
+
+        if (write_buffer_from_response)
+        {
+            try
+            {
+                write_buffer_from_response->finalize();
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, "Cannot flush data to client (after sending exception)");
+            }
+        }
+    }
 }
 
 void PrometheusRequestHandler::tryCallOnException()

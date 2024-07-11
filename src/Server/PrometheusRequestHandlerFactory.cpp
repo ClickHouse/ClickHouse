@@ -12,9 +12,13 @@ namespace DB
 namespace
 {
     /// Parses common configuration which is attached to any other configuration. The common configuration looks like this:
+    /// <prometheus>
+    ///     <enable_stacktrace>true</enable_stacktrace>
+    /// </prometheus>
     /// <keep_alive_timeout>30</keep_alive_timeout>
     void parseCommonConfig(const Poco::Util::AbstractConfiguration & config, PrometheusRequestHandlerConfig & res)
     {
+        res.is_stacktrace_enabled = config.getBool("prometheus.enable_stacktrace", true);
         res.keep_alive_timeout = config.getUInt("keep_alive_timeout", DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT);
     }
 
