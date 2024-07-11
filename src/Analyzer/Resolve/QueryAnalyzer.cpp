@@ -1497,10 +1497,11 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
         {
             auto cte_expression_node_it = scope.cte_name_to_expression.find(full_name);
 
-            auto resolved_node = cte_expression_node_it->second->clone();
-            resolveExpressionNode(resolved_node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
             if (cte_expression_node_it != scope.cte_name_to_expression.end())
             {
+                auto resolved_node = cte_expression_node_it->second->clone();
+                resolveExpressionNode(resolved_node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+
                 resolve_result.resolved_identifier = resolved_node;
                 resolve_result.resolve_place = IdentifierResolvePlace::CTE;
             }
