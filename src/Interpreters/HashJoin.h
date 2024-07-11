@@ -264,7 +264,7 @@ public:
             return remaining;
         }
 
-    private:
+        // private:
         IColumn::Selector createTrivialSelector(size_t size)
         {
             IColumn::Selector res(size);
