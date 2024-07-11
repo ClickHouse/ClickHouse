@@ -1,51 +1,51 @@
-#include "StorageMergeTree.h"
-#include "Core/QueryProcessingStage.h"
-#include "Storages/MergeTree/IMergeTreeDataPart.h"
+#include <Storages/StorageMergeTree.h>
 
 #include <optional>
 #include <ranges>
 
-#include <Poco/Timestamp.h>
-#include <base/sort.h>
 #include <Backups/BackupEntriesCollector.h>
+#include <Core/QueryProcessingStage.h>
 #include <Databases/IDatabase.h>
-#include "Common/Exception.h"
-#include <Common/MemoryTracker.h>
-#include <Common/escapeForFileName.h>
-#include <Common/ProfileEventsScope.h>
-#include <Common/typeid_cast.h>
-#include <Common/ThreadPool.h>
-#include <Interpreters/PartLog.h>
-#include <Interpreters/MutationsInterpreter.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/TransactionLog.h>
-#include <Interpreters/ClusterProxy/executeQuery.h>
-#include <Interpreters/ClusterProxy/SelectStreamFactory.h>
-#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <IO/copyData.h>
+#include <Interpreters/ClusterProxy/SelectStreamFactory.h>
+#include <Interpreters/ClusterProxy/executeQuery.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Interpreters/MutationsInterpreter.h>
+#include <Interpreters/PartLog.h>
+#include <Interpreters/TransactionLog.h>
 #include <Parsers/ASTCheckQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTPartition.h>
 #include <Parsers/ASTSetQuery.h>
-#include <Parsers/queryToString.h>
 #include <Parsers/formatAST.h>
+#include <Parsers/queryToString.h>
 #include <Planner/Utils.h>
-#include <Storages/buildQueryTreeForShard.h>
-#include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/MergeTree/ActiveDataPartSet.h>
-#include <Storages/AlterCommands.h>
-#include <Storages/PartitionCommands.h>
-#include <Storages/MergeTree/MergeTreeSink.h>
-#include <Storages/MergeTree/MergePlainMergeTreeTask.h>
-#include <Storages/MergeTree/PartitionPruner.h>
-#include <Storages/MergeTree/MergeList.h>
-#include <Storages/MergeTree/checkDataPart.h>
-#include <QueryPipeline/Pipe.h>
-#include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <QueryPipeline/Pipe.h>
+#include <Storages/AlterCommands.h>
+#include <Storages/MergeTree/ActiveDataPartSet.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/MergeTree/MergeList.h>
+#include <Storages/MergeTree/MergePlainMergeTreeTask.h>
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeSink.h>
+#include <Storages/MergeTree/PartitionPruner.h>
+#include <Storages/MergeTree/checkDataPart.h>
+#include <Storages/PartitionCommands.h>
+#include <Storages/buildQueryTreeForShard.h>
+#include <base/sort.h>
 #include <fmt/core.h>
+#include <Poco/Timestamp.h>
+#include <Common/Exception.h>
+#include <Common/MemoryTracker.h>
+#include <Common/ProfileEventsScope.h>
+#include <Common/ThreadPool.h>
+#include <Common/escapeForFileName.h>
+#include <Common/typeid_cast.h>
 
 
 namespace DB
@@ -220,24 +220,50 @@ void StorageMergeTree::read(
     {
         ClusterProxy::executeQueryWithParallelReplicas(
             query_plan, getStorageID(), processed_stage, query_info.query, local_context, query_info.storage_limits);
+        return;
     }
-    else
-    {
-        const bool enable_parallel_reading = local_context->canUseParallelReplicasOnFollower()
-            && local_context->getSettingsRef().parallel_replicas_for_non_replicated_merge_tree
-            && (!local_context->getSettingsRef().allow_experimental_analyzer || query_info.analyzer_can_use_parallel_replicas_on_follower);
 
-        if (auto plan = reader.read(
-                column_names,
+    if (local_context->canUseParallelReplicasCustomKey() && settings.parallel_replicas_for_non_replicated_merge_tree
+        && !settings.allow_experimental_analyzer && local_context->getClientInfo().distributed_depth == 0)
+    {
+        if (auto cluster = local_context->getClusterForParallelReplicas();
+            local_context->canUseParallelReplicasCustomKeyForCluster(*cluster))
+        {
+            auto modified_query_info = query_info;
+            modified_query_info.cluster = std::move(cluster);
+            ClusterProxy::executeQueryWithParallelReplicasCustomKey(
+                query_plan,
+                getStorageID(),
+                std::move(modified_query_info),
+                getInMemoryMetadataPtr()->getColumns(),
                 storage_snapshot,
-                query_info,
-                local_context,
-                max_block_size,
-                num_streams,
-                nullptr,
-                enable_parallel_reading))
-            query_plan = std::move(*plan);
+                processed_stage,
+                query_info.query,
+                local_context);
+            return;
+        }
+        else
+            LOG_WARNING(
+                log,
+                "Parallel replicas with custom key will not be used because cluster defined by 'cluster_for_parallel_replicas' ('{}') has "
+                "multiple shards",
+                cluster->getName());
     }
+
+    const bool enable_parallel_reading = local_context->canUseParallelReplicasOnFollower()
+        && local_context->getSettingsRef().parallel_replicas_for_non_replicated_merge_tree
+        && (!local_context->getSettingsRef().allow_experimental_analyzer || query_info.current_table_chosen_for_reading_with_parallel_replicas);
+
+    if (auto plan = reader.read(
+            column_names,
+            storage_snapshot,
+            query_info,
+            local_context,
+            max_block_size,
+            num_streams,
+            nullptr,
+            enable_parallel_reading))
+        query_plan = std::move(*plan);
 }
 
 std::optional<UInt64> StorageMergeTree::totalRows(const Settings &) const
@@ -1550,6 +1576,12 @@ bool StorageMergeTree::optimize(
     ContextPtr local_context)
 {
     assertNotReadonly();
+
+    if (deduplicate && getInMemoryMetadataPtr()->hasProjections())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "OPTIMIZE DEDUPLICATE query is not supported for table {} as it has projections. "
+                    "User should drop all the projections manually before running the query",
+                    getStorageID().getTableName());
 
     if (deduplicate)
     {
