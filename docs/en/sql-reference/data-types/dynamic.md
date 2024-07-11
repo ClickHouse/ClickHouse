@@ -493,3 +493,14 @@ SELECT count(), dynamicType(d), _part FROM test GROUP BY _part, dynamicType(d) O
 ```
 
 As we can see, ClickHouse kept the most frequent types `UInt64` and `Array(UInt64)` and casted all other types to `String`.
+
+
+### Binary output format
+
+In [RowBinary](../../interfaces/formats.md#rowbinary-rowbinary) format values of `Dynamic` type are serialized in the following format:
+
+```text
+<binary_encoded_data_type><value_in_binary_format_according_to_the_data_type>
+```
+
+See the [data types binary encoding specification](../../sql-reference/data-types/data-types-binary-encoding.md)

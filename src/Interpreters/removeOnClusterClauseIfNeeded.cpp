@@ -16,6 +16,10 @@
 #include <Parsers/Access/ASTCreateUserQuery.h>
 #include <Parsers/Access/ASTDropAccessEntityQuery.h>
 #include <Parsers/Access/ASTGrantQuery.h>
+#include <Parsers/ASTCreateNamedCollectionQuery.h>
+#include <Parsers/ASTAlterNamedCollectionQuery.h>
+#include <Parsers/ASTDropNamedCollectionQuery.h>
+#include <Common/NamedCollections/NamedCollectionsFactory.h>
 
 
 namespace DB
@@ -39,6 +43,13 @@ static bool isAccessControlQuery(const ASTPtr & query)
         || query->as<ASTGrantQuery>();
 }
 
+static bool isNamedCollectionQuery(const ASTPtr & query)
+{
+    return query->as<ASTCreateNamedCollectionQuery>()
+        || query->as<ASTDropNamedCollectionQuery>()
+        || query->as<ASTAlterNamedCollectionQuery>();
+}
+
 ASTPtr removeOnClusterClauseIfNeeded(const ASTPtr & query, ContextPtr context, const WithoutOnClusterASTRewriteParams & params)
 {
     auto * query_on_cluster = dynamic_cast<ASTQueryWithOnCluster *>(query.get());
@@ -51,7 +62,10 @@ ASTPtr removeOnClusterClauseIfNeeded(const ASTPtr & query, ContextPtr context, c
          && context->getUserDefinedSQLObjectsStorage().isReplicated())
         || (isAccessControlQuery(query)
             && context->getSettingsRef().ignore_on_cluster_for_replicated_access_entities_queries
-            && context->getAccessControl().containsStorage(ReplicatedAccessStorage::STORAGE_TYPE)))
+            && context->getAccessControl().containsStorage(ReplicatedAccessStorage::STORAGE_TYPE))
+        || (isNamedCollectionQuery(query)
+            && context->getSettingsRef().ignore_on_cluster_for_replicated_named_collections_queries
+            && NamedCollectionFactory::instance().usesReplicatedStorage()))
     {
         LOG_DEBUG(getLogger("removeOnClusterClauseIfNeeded"), "ON CLUSTER clause was ignored for query {}", query->getID());
         return query_on_cluster->getRewrittenASTWithoutOnCluster(params);

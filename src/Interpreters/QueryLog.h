@@ -3,7 +3,7 @@
 #include <Common/ProfileEvents.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/NamesAndAliases.h>
-#include <Core/SettingsEnums.h>
+#include <Core/QueryLogElementType.h>
 #include <Interpreters/Cache/QueryCache.h>
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/SystemLog.h>
