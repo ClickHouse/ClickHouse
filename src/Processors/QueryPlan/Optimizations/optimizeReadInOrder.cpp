@@ -919,15 +919,23 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
     {
         auto & union_node = node.children.front();
 
-        std::vector<InputOrderInfoPtr> infos;
+        bool use_buffering = false;
         const SortDescription * max_sort_descr = nullptr;
+
+        std::vector<InputOrderInfoPtr> infos;
         infos.reserve(node.children.size());
+
         for (auto * child : union_node->children)
         {
             infos.push_back(buildInputOrderInfo(*sorting, *child, steps_to_update));
 
-            if (infos.back() && (!max_sort_descr || max_sort_descr->size() < infos.back()->sort_description_for_merging.size()))
-                max_sort_descr = &infos.back()->sort_description_for_merging;
+            if (infos.back())
+            {
+                if (!max_sort_descr || max_sort_descr->size() < infos.back()->sort_description_for_merging.size())
+                    max_sort_descr = &infos.back()->sort_description_for_merging;
+
+                use_buffering |= infos.back()->limit == 0;
+            }
         }
 
         if (!max_sort_descr || max_sort_descr->empty())
@@ -972,12 +980,13 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
             }
         }
 
-        sorting->convertToFinishSorting(*max_sort_descr);
+        sorting->convertToFinishSorting(*max_sort_descr, use_buffering);
     }
     else if (auto order_info = buildInputOrderInfo(*sorting, *node.children.front(), steps_to_update))
     {
-        sorting->convertToFinishSorting(order_info->sort_description_for_merging);
-        /// update data stream's sorting properties
+        /// Use buffering only if have filter or don't have limit.
+        bool use_buffering = order_info->limit == 0;
+        sorting->convertToFinishSorting(order_info->sort_description_for_merging, use_buffering);
         updateStepsDataStreams(steps_to_update);
     }
 }
@@ -1091,7 +1100,7 @@ size_t tryReuseStorageOrderingForWindowFunctions(QueryPlan::Node * parent_node, 
         bool can_read = read_from_merge_tree->requestReadingInOrder(order_info->used_prefix_of_sorting_key_size, order_info->direction, order_info->limit);
         if (!can_read)
             return 0;
-        sorting->convertToFinishSorting(order_info->sort_description_for_merging);
+        sorting->convertToFinishSorting(order_info->sort_description_for_merging, false);
     }
 
     return 0;
