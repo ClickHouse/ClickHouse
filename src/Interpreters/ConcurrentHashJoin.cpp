@@ -21,6 +21,7 @@
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
 #include <Common/typeid_cast.h>
+#include "Interpreters/HashJoin.h"
 
 using namespace DB;
 
@@ -143,7 +144,7 @@ ConcurrentHashJoin::~ConcurrentHashJoin()
 
 bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block, bool check_limits)
 {
-    auto dispatched_blocks = dispatchBlockNew(table_join->getOnlyClause().key_names_right, right_block);
+    auto dispatched_blocks = dispatchBlock(table_join->getOnlyClause().key_names_right, right_block);
 
     size_t blocks_left = 0;
     for (const auto & block : dispatched_blocks)
@@ -187,14 +188,13 @@ bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block, bool check_li
 
 void ConcurrentHashJoin::joinBlock(Block & block, std::shared_ptr<ExtraBlock> & /*not_processed*/)
 {
-    auto dispatched_blocks = dispatchBlockNew(table_join->getOnlyClause().key_names_left, block);
+    auto dispatched_blocks = dispatchBlock(table_join->getOnlyClause().key_names_left, block);
     block = {};
     for (size_t i = 0; i < dispatched_blocks.size(); ++i)
     {
         std::shared_ptr<ExtraBlock> none_extra_block;
         auto & hash_join = hash_joins[i];
         auto & dispatched_block = dispatched_blocks[i];
-        chassert(dispatched_block.block);
         hash_join->data->joinBlock(dispatched_block, none_extra_block);
         if (none_extra_block && !none_extra_block->empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "not_processed should be empty");
@@ -293,42 +293,22 @@ IColumn::Selector selectDispatchBlock(size_t num_shards, const Strings & key_col
     return hashToSelector(hash, num_shards);
 }
 
-Blocks ConcurrentHashJoin::dispatchBlock(const Strings & key_columns_names, const Block & from_block)
-{
-    /// TODO: use JoinCommon::scatterBlockByHash
-    size_t num_shards = hash_joins.size();
-    size_t num_cols = from_block.columns();
-
-    IColumn::Selector selector = selectDispatchBlock(num_shards, key_columns_names, from_block);
-
-    Blocks result(num_shards);
-    for (size_t i = 0; i < num_shards; ++i)
-        result[i] = from_block.cloneEmpty();
-
-    for (size_t i = 0; i < num_cols; ++i)
-    {
-        auto dispatched_columns = from_block.getByPosition(i).column->scatter(num_shards, selector);
-        assert(result.size() == dispatched_columns.size());
-        for (size_t block_index = 0; block_index < num_shards; ++block_index)
-        {
-            result[block_index].getByPosition(i).column = std::move(dispatched_columns[block_index]);
-        }
-    }
-    return result;
-}
-
-HashJoin::ScatteredBlocks ConcurrentHashJoin::dispatchBlockNew(const Strings & key_columns_names, const Block & from_block)
+HashJoin::ScatteredBlocks ConcurrentHashJoin::dispatchBlock(const Strings & key_columns_names, const Block & from_block)
 {
     size_t num_shards = hash_joins.size();
     IColumn::Selector selector = selectDispatchBlock(num_shards, key_columns_names, from_block);
-    HashJoin::ScatteredBlocks result(num_shards);
+    std::vector<IColumn::Selector> selectors(num_shards);
     for (size_t i = 0; i < num_shards; ++i)
-        result[i].block = std::make_shared<Block>(from_block);
+        selectors[i].reserve(selector.size() / num_shards + 1);
     for (size_t i = 0; i < selector.size(); ++i)
     {
         const size_t shard = selector[i];
-        result[shard].selector.push_back(i);
+        selectors[shard].push_back(i);
     }
+    HashJoin::ScatteredBlocks result;
+    result.reserve(num_shards);
+    for (size_t i = 0; i < num_shards; ++i)
+        result.emplace_back(from_block, std::move(selectors[i]), /* was_scattered */ true);
     return result;
 }
 

@@ -1,16 +1,14 @@
 #pragma once
 
-#include <deque>
-#include <memory>
-#include <mutex>
-#include <optional>
 #include <variant>
+#include <optional>
+#include <deque>
 #include <vector>
 
 #include <Parsers/ASTTablesInSelectQuery.h>
 
-#include <Interpreters/AggregationCommon.h>
 #include <Interpreters/IJoin.h>
+#include <Interpreters/AggregationCommon.h>
 #include <Interpreters/RowRefs.h>
 
 #include <Storages/TableLockHolder.h>
@@ -19,11 +17,9 @@
 #include <Common/HashTable/FixedHashMap.h>
 #include <Common/HashTable/HashMap.h>
 #include "Columns/IColumn.h"
-#include "Core/ColumnsWithTypeAndName.h"
-#include "base/defines.h"
 
-#include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnFixedString.h>
 
 #include <QueryPipeline/SizeLimits.h>
 
@@ -32,6 +28,7 @@
 #include <Interpreters/IKeyValueEntity.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <Storages/IStorage_fwd.h>
+#include <boost/core/noncopyable.hpp>
 
 namespace DB
 {
@@ -154,11 +151,8 @@ class HashJoin : public IJoin
 {
 public:
     HashJoin(
-        std::shared_ptr<TableJoin> table_join_,
-        const Block & right_sample_block,
-        bool any_take_last_row_ = false,
-        size_t reserve_num_ = 0,
-        const String & instance_id_ = "");
+        std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block,
+        bool any_take_last_row_ = false, size_t reserve_num_ = 0, const String & instance_id_ = "");
 
     ~HashJoin() override;
 
@@ -166,29 +160,48 @@ public:
 
     const TableJoin & getTableJoin() const override { return *table_join; }
 
-    bool isCloneSupported() const override { return true; }
+    bool isCloneSupported() const override
+    {
+        return true;
+    }
 
-    std::shared_ptr<IJoin>
-    clone(const std::shared_ptr<TableJoin> & table_join_, const Block &, const Block & right_sample_block_) const override
+    std::shared_ptr<IJoin> clone(const std::shared_ptr<TableJoin> & table_join_,
+        const Block &,
+        const Block & right_sample_block_) const override
     {
         return std::make_shared<HashJoin>(table_join_, right_sample_block_, any_take_last_row, reserve_num, instance_id);
     }
 
-    /** Add block of data from right hand of JOIN to the map.
-      * Returns false, if some limit was exceeded and you should not insert more data.
-      */
-    bool addBlockToJoin(const Block & source_block_, bool check_limits) override;
-
-    struct ScatteredBlock
+    struct ScatteredBlock : private boost::noncopyable
     {
         BlockPtr block;
         IColumn::Selector selector;
         bool was_scattered = true;
 
-        ScatteredBlock() = default;
+        ScatteredBlock() = default; // TODO: remove me
+
         ScatteredBlock(const Block & block_)
             : block(std::make_shared<Block>(block_)), selector(createTrivialSelector(block->rows())), was_scattered(false)
         {
+        }
+
+        ScatteredBlock(const Block & block_, IColumn::Selector && selector_, bool was_scattered_)
+            : block(std::make_shared<Block>(block_)), selector(std::move(selector_)), was_scattered(was_scattered_)
+        {
+        }
+
+        ScatteredBlock(ScatteredBlock && other) noexcept
+            : block(std::move(other.block)), selector(std::move(other.selector)), was_scattered(other.was_scattered)
+        {
+            other.block = nullptr;
+            other.selector.clear();
+            other.was_scattered = false;
+        }
+
+        ScatteredBlock & operator=(ScatteredBlock && other) noexcept
+        {
+            std::swap(*this, other);
+            return *this;
         }
 
         operator bool() const { return block != nullptr; }
@@ -260,6 +273,12 @@ public:
 
     using ScatteredBlocks = std::vector<ScatteredBlock>;
 
+    /** Add block of data from right hand of JOIN to the map.
+      * Returns false, if some limit was exceeded and you should not insert more data.
+      */
+    bool addBlockToJoin(const Block & source_block_, bool check_limits) override;
+
+    /// Called directly from ConcurrentJoin::addBlockToJoin
     bool addBlockToJoin(ScatteredBlock & source_block_, bool check_limits);
 
     void checkTypesOfKeys(const Block & block) const override;
@@ -269,9 +288,8 @@ public:
       */
     void joinBlock(Block & block, ExtraBlockPtr & not_processed) override;
 
+    /// Called directly from ConcurrentJoin::joinBlock
     void joinBlock(ScatteredBlock & block, ExtraBlockPtr & not_processed);
-
-    // void joinBlock(ScatteredBlock & block, ExtraBlockPtr & not_processed);
 
     /// Check joinGet arguments and infer the return type.
     DataTypePtr joinGetCheckAndGetReturnType(const DataTypes & data_types, const String & column_name, bool or_null) const;
@@ -296,8 +314,8 @@ public:
       * Use only after all calls to joinBlock was done.
       * left_sample_block is passed without account of 'use_nulls' setting (columns will be converted to Nullable inside).
       */
-    IBlocksStreamPtr
-    getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const override;
+    IBlocksStreamPtr getNonJoinedBlocks(
+        const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const override;
 
     /// Number of keys in all built JOIN maps.
     size_t getTotalRowCount() const final;
@@ -314,44 +332,44 @@ public:
 
     const ColumnWithTypeAndName & rightAsofKeyColumn() const;
 
-/// Different types of keys for maps.
-#define APPLY_FOR_JOIN_VARIANTS(M) \
-    M(key8) \
-    M(key16) \
-    M(key32) \
-    M(key64) \
-    M(key_string) \
-    M(key_fixed_string) \
-    M(keys128) \
-    M(keys256) \
-    M(hashed)
+    /// Different types of keys for maps.
+    #define APPLY_FOR_JOIN_VARIANTS(M) \
+        M(key8)                        \
+        M(key16)                       \
+        M(key32)                       \
+        M(key64)                       \
+        M(key_string)                  \
+        M(key_fixed_string)            \
+        M(keys128)                     \
+        M(keys256)                     \
+        M(hashed)
 
-/// Only for maps using hash table.
-#define APPLY_FOR_HASH_JOIN_VARIANTS(M) \
-    M(key32) \
-    M(key64) \
-    M(key_string) \
-    M(key_fixed_string) \
-    M(keys128) \
-    M(keys256) \
-    M(hashed)
+    /// Only for maps using hash table.
+    #define APPLY_FOR_HASH_JOIN_VARIANTS(M) \
+        M(key32)                            \
+        M(key64)                            \
+        M(key_string)                       \
+        M(key_fixed_string)                 \
+        M(keys128)                          \
+        M(keys256)                          \
+        M(hashed)
 
-/// Used for reading from StorageJoin and applying joinGet function
-#define APPLY_FOR_JOIN_VARIANTS_LIMITED(M) \
-    M(key8) \
-    M(key16) \
-    M(key32) \
-    M(key64) \
-    M(key_string) \
-    M(key_fixed_string)
+    /// Used for reading from StorageJoin and applying joinGet function
+    #define APPLY_FOR_JOIN_VARIANTS_LIMITED(M) \
+        M(key8)                                \
+        M(key16)                               \
+        M(key32)                               \
+        M(key64)                               \
+        M(key_string)                          \
+        M(key_fixed_string)
 
     enum class Type : uint8_t
     {
         EMPTY,
         CROSS,
-#define M(NAME) NAME,
-        APPLY_FOR_JOIN_VARIANTS(M)
-#undef M
+        #define M(NAME) NAME,
+            APPLY_FOR_JOIN_VARIANTS(M)
+        #undef M
     };
 
     /** Different data structures, that are used to perform JOIN.
@@ -359,33 +377,29 @@ public:
     template <typename Mapped>
     struct MapsTemplate
     {
-        /// NOLINTBEGIN(bugprone-macro-parentheses)
+/// NOLINTBEGIN(bugprone-macro-parentheses)
         using MappedType = Mapped;
-        std::unique_ptr<FixedHashMap<UInt8, Mapped>> key8;
-        std::unique_ptr<FixedHashMap<UInt16, Mapped>> key16;
-        std::unique_ptr<HashMap<UInt32, Mapped, HashCRC32<UInt32>>> key32;
-        std::unique_ptr<HashMap<UInt64, Mapped, HashCRC32<UInt64>>> key64;
-        std::unique_ptr<HashMapWithSavedHash<StringRef, Mapped>> key_string;
-        std::unique_ptr<HashMapWithSavedHash<StringRef, Mapped>> key_fixed_string;
-        std::unique_ptr<HashMap<UInt128, Mapped, UInt128HashCRC32>> keys128;
-        std::unique_ptr<HashMap<UInt256, Mapped, UInt256HashCRC32>> keys256;
+        std::unique_ptr<FixedHashMap<UInt8, Mapped>>                  key8;
+        std::unique_ptr<FixedHashMap<UInt16, Mapped>>                 key16;
+        std::unique_ptr<HashMap<UInt32, Mapped, HashCRC32<UInt32>>>   key32;
+        std::unique_ptr<HashMap<UInt64, Mapped, HashCRC32<UInt64>>>   key64;
+        std::unique_ptr<HashMapWithSavedHash<StringRef, Mapped>>      key_string;
+        std::unique_ptr<HashMapWithSavedHash<StringRef, Mapped>>      key_fixed_string;
+        std::unique_ptr<HashMap<UInt128, Mapped, UInt128HashCRC32>>   keys128;
+        std::unique_ptr<HashMap<UInt256, Mapped, UInt256HashCRC32>>   keys256;
         std::unique_ptr<HashMap<UInt128, Mapped, UInt128TrivialHash>> hashed;
 
         void create(Type which)
         {
             switch (which)
             {
-                case Type::EMPTY:
-                    break;
-                case Type::CROSS:
-                    break;
+                case Type::EMPTY:            break;
+                case Type::CROSS:            break;
 
-#define M(NAME) \
-    case Type::NAME: \
-        NAME = std::make_unique<typename decltype(NAME)::element_type>(); \
-        break;
-                    APPLY_FOR_JOIN_VARIANTS(M)
-#undef M
+            #define M(NAME) \
+                case Type::NAME: NAME = std::make_unique<typename decltype(NAME)::element_type>(); break;
+                APPLY_FOR_JOIN_VARIANTS(M)
+            #undef M
             }
         }
 
@@ -393,21 +407,15 @@ public:
         {
             switch (which)
             {
-                case Type::EMPTY:
-                    break;
-                case Type::CROSS:
-                    break;
-                case Type::key8:
-                    break;
-                case Type::key16:
-                    break;
+                case Type::EMPTY:            break;
+                case Type::CROSS:            break;
+                case Type::key8:             break;
+                case Type::key16:            break;
 
-#define M(NAME) \
-    case Type::NAME: \
-        NAME->reserve(num); \
-        break;
-                    APPLY_FOR_HASH_JOIN_VARIANTS(M)
-#undef M
+            #define M(NAME) \
+                case Type::NAME: NAME->reserve(num); break;
+                APPLY_FOR_HASH_JOIN_VARIANTS(M)
+            #undef M
             }
         }
 
@@ -415,16 +423,13 @@ public:
         {
             switch (which)
             {
-                case Type::EMPTY:
-                    return 0;
-                case Type::CROSS:
-                    return 0;
+                case Type::EMPTY:            return 0;
+                case Type::CROSS:            return 0;
 
-#define M(NAME) \
-    case Type::NAME: \
-        return NAME ? NAME->size() : 0;
-                    APPLY_FOR_JOIN_VARIANTS(M)
-#undef M
+            #define M(NAME) \
+                case Type::NAME: return NAME ? NAME->size() : 0;
+                APPLY_FOR_JOIN_VARIANTS(M)
+            #undef M
             }
         }
 
@@ -432,16 +437,13 @@ public:
         {
             switch (which)
             {
-                case Type::EMPTY:
-                    return 0;
-                case Type::CROSS:
-                    return 0;
+                case Type::EMPTY:            return 0;
+                case Type::CROSS:            return 0;
 
-#define M(NAME) \
-    case Type::NAME: \
-        return NAME ? NAME->getBufferSizeInBytes() : 0;
-                    APPLY_FOR_JOIN_VARIANTS(M)
-#undef M
+            #define M(NAME) \
+                case Type::NAME: return NAME ? NAME->getBufferSizeInBytes() : 0;
+                APPLY_FOR_JOIN_VARIANTS(M)
+            #undef M
             }
         }
 
@@ -449,19 +451,16 @@ public:
         {
             switch (which)
             {
-                case Type::EMPTY:
-                    return 0;
-                case Type::CROSS:
-                    return 0;
+                case Type::EMPTY:            return 0;
+                case Type::CROSS:            return 0;
 
-#define M(NAME) \
-    case Type::NAME: \
-        return NAME ? NAME->getBufferSizeInCells() : 0;
-                    APPLY_FOR_JOIN_VARIANTS(M)
-#undef M
+            #define M(NAME) \
+                case Type::NAME: return NAME ? NAME->getBufferSizeInCells() : 0;
+                APPLY_FOR_JOIN_VARIANTS(M)
+            #undef M
             }
         }
-        /// NOLINTEND(bugprone-macro-parentheses)
+/// NOLINTEND(bugprone-macro-parentheses)
     };
 
     using MapsOne = MapsTemplate<RowRef>;
@@ -494,7 +493,10 @@ public:
 
     /// We keep correspondence between used_flags and hash table internal buffer.
     /// Hash table cannot be modified during HashJoin lifetime and must be protected with lock.
-    void setLock(TableLockHolder rwlock_holder) { storage_join_lock = rwlock_holder; }
+    void setLock(TableLockHolder rwlock_holder)
+    {
+        storage_join_lock = rwlock_holder;
+    }
 
     void reuseJoinedData(const HashJoin & join);
 
@@ -549,7 +551,7 @@ private:
 
     /// Needed to do external cross join
     TemporaryDataOnDiskPtr tmp_data;
-    TemporaryFileStream * tmp_stream{nullptr};
+    TemporaryFileStream* tmp_stream{nullptr};
 
     /// Block with columns from the right-side table.
     Block right_sample_block;
@@ -585,7 +587,10 @@ private:
 
     template <JoinKind KIND, JoinStrictness STRICTNESS, typename Maps>
     Block joinBlockImpl(
-        Block & block, const Block & block_with_columns_to_add, const std::vector<const Maps *> & maps_, bool is_join_get = false) const;
+        Block & block,
+        const Block & block_with_columns_to_add,
+        const std::vector<const Maps *> & maps_,
+        bool is_join_get = false) const;
 
     template <JoinKind KIND, JoinStrictness STRICTNESS, typename Maps>
     ScatteredBlock joinBlockImpl(

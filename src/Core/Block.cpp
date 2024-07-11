@@ -111,12 +111,8 @@ static ReturnType checkBlockStructure(const Block & lhs, const Block & rhs, std:
 {
     size_t columns = rhs.columns();
     if (lhs.columns() != columns)
-        return onError<ReturnType>(
-            ErrorCodes::LOGICAL_ERROR,
-            "Block structure mismatch in {} stream: different number of columns:\nlhs: {}\nrhs: {}",
-            context_description,
-            lhs.dumpStructure(),
-            rhs.dumpStructure());
+        return onError<ReturnType>(ErrorCodes::LOGICAL_ERROR, "Block structure mismatch in {} stream: different number of columns:\n{}\n{}",
+                                   context_description, lhs.dumpStructure(), rhs.dumpStructure());
 
     for (size_t i = 0; i < columns; ++i)
     {
