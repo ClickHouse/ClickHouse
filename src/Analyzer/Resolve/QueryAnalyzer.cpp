@@ -1175,7 +1175,7 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromAliases(const Identifier
         }
         else if (identifier_lookup.isFunctionLookup() || identifier_lookup.isTableExpressionLookup())
         {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
                 "Compound identifier '{}' cannot be resolved as {}. In scope {}",
                 identifier_lookup.identifier.getFullName(),
                 identifier_lookup.isFunctionLookup() ? "function" : "table expression",
@@ -5416,23 +5416,34 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
                     cte_name,
                     scope.scope_node->formatASTForErrorMessage());
         }
-        else if (node->as<LambdaNode>())
-        {
-            auto [_, inserted] = scope.cte_name_to_lambda.emplace(node->getAlias(), node);
-            if (!inserted)
-                throw Exception(ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS,
-                    "Lambda with name {} already exists. In scope {}",
-                    node->getAlias(),
-                    scope.scope_node->formatASTForErrorMessage());
-        }
         else
         {
-            auto [_, inserted] = scope.cte_name_to_expression.emplace(node->getAlias(), node);
-            if (!inserted)
-                throw Exception(ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS,
-                    "Expression with name {} already exists. In scope {}",
-                    node->getAlias(),
+            const auto & node_alias = node->getAlias();
+            if (node_alias.empty())
+                throw Exception(ErrorCodes::ALIAS_REQUIRED,
+                    "Scalar expression in WITH clause does not have an alias {}. In scope {}",
+                    node->formatASTForErrorMessage(),
                     scope.scope_node->formatASTForErrorMessage());
+
+
+            if (node->as<LambdaNode>())
+            {
+                auto [_, inserted] = scope.cte_name_to_lambda.emplace(node_alias, node);
+                if (!inserted)
+                    throw Exception(ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS,
+                        "Lambda with name {} already exists. In scope {}",
+                        node->getAlias(),
+                        scope.scope_node->formatASTForErrorMessage());
+            }
+            else
+            {
+                auto [_, inserted] = scope.cte_name_to_expression.emplace(node_alias, node);
+                if (!inserted)
+                    throw Exception(ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS,
+                        "Expression with name {} already exists. In scope {}",
+                        node->getAlias(),
+                        scope.scope_node->formatASTForErrorMessage());
+            }
         }
     }
 
