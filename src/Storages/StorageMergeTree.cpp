@@ -252,7 +252,7 @@ void StorageMergeTree::read(
 
     const bool enable_parallel_reading = local_context->canUseParallelReplicasOnFollower()
         && local_context->getSettingsRef().parallel_replicas_for_non_replicated_merge_tree
-        && (!local_context->getSettingsRef().allow_experimental_analyzer || query_info.analyzer_can_use_parallel_replicas_on_follower);
+        && (!local_context->getSettingsRef().allow_experimental_analyzer || query_info.current_table_chosen_for_reading_with_parallel_replicas);
 
     if (auto plan = reader.read(
             column_names,
@@ -1576,6 +1576,12 @@ bool StorageMergeTree::optimize(
     ContextPtr local_context)
 {
     assertNotReadonly();
+
+    if (deduplicate && getInMemoryMetadataPtr()->hasProjections())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "OPTIMIZE DEDUPLICATE query is not supported for table {} as it has projections. "
+                    "User should drop all the projections manually before running the query",
+                    getStorageID().getTableName());
 
     if (deduplicate)
     {
