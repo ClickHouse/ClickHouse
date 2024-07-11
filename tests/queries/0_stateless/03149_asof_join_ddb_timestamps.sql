@@ -87,7 +87,7 @@ FROM
     probe0 p
     ASOF LEFT JOIN (
         SELECT * FROM events0 WHERE log(value + 5) > 10
-    ) e ON p.begin >= e.begin
+    ) e ON p.begin + INTERVAL 2 HOUR >= e.begin + INTERVAL 1 HOUR
 ORDER BY p.begin ASC;
 
 

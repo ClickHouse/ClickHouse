@@ -43,7 +43,7 @@ FullMergeJoinCursorPtr createCursor(const Block & block, const Names & columns, 
     return std::make_unique<FullMergeJoinCursor>(block, desc, strictness == JoinStrictness::Asof);
 }
 
-bool isNullAt(const IColumn & column, size_t row)
+bool ALWAYS_INLINE isNullAt(const IColumn & column, size_t row)
 {
     if (const auto * nullable_column = checkAndGetColumn<ColumnNullable>(&column))
         return nullable_column->isNullAt(row);

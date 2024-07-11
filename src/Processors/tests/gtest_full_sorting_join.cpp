@@ -484,7 +484,7 @@ try
     right_source.addRow({"AAPL", 2, 98});
     right_source.addRow({"AAPL", 3, 99});
     right_source.addRow({"AMZN", 1, 100});
-    right_source.addRow({"AMZN", 2, 0});
+    right_source.addRow({"AMZN", 2, 110});
     right_source.addChunk();
     right_source.addRow({"AMZN", 2, 110});
     right_source.addChunk();
@@ -574,12 +574,15 @@ catch (Exception & e)
 TEST_F(FullSortingJoinTest, AsofLessGeneratedTestData)
 try
 {
-    auto join_kind = getRandomFrom(rng, { JoinKind::Inner, JoinKind::Left });
+    /// Generate data random and build expected result at the same time.
 
+    /// Test specific combinations of join kind and inequality per each run
+    auto join_kind = getRandomFrom(rng, { JoinKind::Inner, JoinKind::Left });
     auto asof_inequality = getRandomFrom(rng, { ASOFJoinInequality::Less, ASOFJoinInequality::LessOrEquals });
 
     SCOPED_TRACE(fmt::format("{} {}", join_kind, asof_inequality));
 
+    /// Key is complex, `k1, k2` for equality and `t` for asof
     SourceChunksBuilder left_source_builder({
         {std::make_shared<DataTypeUInt64>(), "k1"},
         {std::make_shared<DataTypeString>(), "k2"},
@@ -594,9 +597,11 @@ try
         {std::make_shared<DataTypeInt64>(), "attr"},
     });
 
+    /// How small generated block should be
     left_source_builder.setBreakProbability(rng);
     right_source_builder.setBreakProbability(rng);
 
+    /// We are going to generate sorted data and remember expected result
     ColumnInt64::Container expected;
 
     UInt64 k1 = 1;
@@ -604,29 +609,34 @@ try
     auto key_num_total = std::uniform_int_distribution<>(1, 1000)(rng);
     for (size_t key_num = 0; key_num < key_num_total; ++key_num)
     {
+        /// Generate new key greater than previous
         generateNextKey(rng, k1, k2);
 
         Int64 left_t = 0;
+        /// Generate several rows for the key
         size_t num_left_rows = std::uniform_int_distribution<>(1, 100)(rng);
         for (size_t i = 0; i < num_left_rows; ++i)
         {
+            /// t is strictly greater than previous
             left_t += std::uniform_int_distribution<>(1, 10)(rng);
 
-            left_source_builder.addRow({k1, k2, left_t, 10 * left_t});
-            expected.push_back(10 * left_t);
+            auto left_arrtibute_value = 10 * left_t;
+            left_source_builder.addRow({k1, k2, left_t, left_arrtibute_value});
+            expected.push_back(left_arrtibute_value);
 
             auto num_matches = 1 + std::poisson_distribution<>(4)(rng);
-
+            /// Generate several matches in the right table
             auto right_t = left_t;
             for (size_t j = 0; j < num_matches; ++j)
             {
                 int min_step = isStrict(asof_inequality) ? 1 : 0;
                 right_t += std::uniform_int_distribution<>(min_step, 3)(rng);
 
+                /// First row should match
                 bool is_match = j == 0;
-                right_source_builder.addRow({k1, k2, right_t, is_match ? 100 * left_t : -1});
+                right_source_builder.addRow({k1, k2, right_t, is_match ? 10 * left_arrtibute_value : -1});
             }
-            /// next left_t should be greater than right_t not to match with previous rows
+            /// Next left_t should be greater than right_t not to match with previous rows
             left_t = right_t;
         }
 
@@ -650,7 +660,9 @@ try
     assertColumnVectorEq<Int64>(expected, result_block, "t1.attr");
 
     for (auto & e : expected)
-        e = e < 0 ? 0 : 10 * e; /// non matched rows from left table have negative attr
+        /// Non matched rows from left table have negative attr
+        /// Value if attribute in right table is 10 times greater than in left table
+        e = e < 0 ? 0 : 10 * e;
 
     assertColumnVectorEq<Int64>(expected, result_block, "t2.attr");
 }
@@ -663,8 +675,10 @@ catch (Exception & e)
 TEST_F(FullSortingJoinTest, AsofGreaterGeneratedTestData)
 try
 {
-    auto join_kind = getRandomFrom(rng, { JoinKind::Inner, JoinKind::Left });
+    /// Generate data random and build expected result at the same time.
 
+    /// Test specific combinations of join kind and inequality per each run
+    auto join_kind = getRandomFrom(rng, { JoinKind::Inner, JoinKind::Left });
     auto asof_inequality = getRandomFrom(rng, { ASOFJoinInequality::Greater, ASOFJoinInequality::GreaterOrEquals });
 
     SCOPED_TRACE(fmt::format("{} {}", join_kind, asof_inequality));
@@ -695,9 +709,10 @@ try
     auto key_num_total = std::uniform_int_distribution<>(1, 1000)(rng);
     for (size_t key_num = 0; key_num < key_num_total; ++key_num)
     {
+        /// Generate new key greater than previous
         generateNextKey(rng, k1, k2);
 
-        /// generate some rows with smaller left_t to check that they are not matched
+        /// Generate some rows with smaller left_t to check that they are not matched
         size_t num_left_rows = std::bernoulli_distribution(0.5)(rng) ? std::uniform_int_distribution<>(1, 100)(rng) : 0;
         for (size_t i = 0; i < num_left_rows; ++i)
         {
@@ -713,21 +728,22 @@ try
 
         size_t num_right_matches = std::uniform_int_distribution<>(1, 10)(rng);
         auto right_t = left_t + std::uniform_int_distribution<>(isStrict(asof_inequality) ? 0 : 1, 10)(rng);
+        auto attribute_value = 10 * right_t;
         for (size_t j = 0; j < num_right_matches; ++j)
         {
             right_t += std::uniform_int_distribution<>(0, 3)(rng);
             bool is_match = j == num_right_matches - 1;
-            right_source_builder.addRow({k1, k2, right_t, is_match ? 100 * right_t : -1});
+            right_source_builder.addRow({k1, k2, right_t, is_match ? 10 * attribute_value : -1});
         }
 
-        /// next left_t should be greater than (or equals) right_t to match with previous rows
+        /// Next left_t should be greater than (or equals) right_t to match with previous rows
         left_t = right_t + std::uniform_int_distribution<>(isStrict(asof_inequality) ? 1 : 0, 100)(rng);
         size_t num_left_matches = std::uniform_int_distribution<>(1, 100)(rng);
         for (size_t j = 0; j < num_left_matches; ++j)
         {
             left_t += std::uniform_int_distribution<>(0, 3)(rng);
-            left_source_builder.addRow({k1, k2, left_t, 10 * right_t});
-            expected.push_back(10 * right_t);
+            left_source_builder.addRow({k1, k2, left_t, attribute_value});
+            expected.push_back(attribute_value);
         }
     }
 
@@ -739,7 +755,9 @@ try
     assertColumnVectorEq<Int64>(expected, result_block, "t1.attr");
 
     for (auto & e : expected)
-        e = e < 0 ? 0 : 10 * e; /// non matched rows from left table have negative attr
+        /// Non matched rows from left table have negative attr
+        /// Value if attribute in right table is 10 times greater than in left table
+        e = e < 0 ? 0 : 10 * e;
 
     assertColumnVectorEq<Int64>(expected, result_block, "t2.attr");
 }

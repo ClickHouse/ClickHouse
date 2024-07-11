@@ -8,7 +8,7 @@ SET session_timezone = 'UTC';
 
 SET join_algorithm = '{{ join_algorithm }}';
 
--- TODO: support enable for full_sorting_merge
+-- TODO: enable once USING and `join_use_nulls` is supported by `full_sorting_merge`
 -- SET join_use_nulls = 1;
 
 WITH build AS (

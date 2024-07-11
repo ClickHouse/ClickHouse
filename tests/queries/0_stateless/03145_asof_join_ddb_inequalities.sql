@@ -21,18 +21,19 @@ INSERT INTO probe0 VALUES (NULL),('9999-12-31 23:59:59');
 
 SET join_use_nulls = 1;
 
+SELECT '-';
 SELECT p.begin, e.begin, e.value
 FROM probe0 p
 ASOF JOIN events0 e
 ON p.begin > e.begin
 ORDER BY p.begin ASC;
 
+SELECT '-';
 SELECT p.begin, e.begin, e.value
 FROM probe0 p
 ASOF LEFT JOIN events0 e
 ON p.begin > e.begin
-ORDER BY p.begin ASC
-;
+ORDER BY p.begin ASC;
 
 SELECT p.begin, e.begin, e.value
 FROM probe0 p
@@ -40,25 +41,26 @@ ASOF JOIN events0 e
 ON p.begin <= e.begin
 ORDER BY p.begin ASC;
 
+SELECT '-';
 SELECT p.begin, e.begin, e.value
 FROM probe0 p
 ASOF LEFT JOIN events0 e
 ON p.begin <= e.begin
 ORDER BY p.begin ASC;
 
+SELECT '-';
 SELECT p.begin, e.begin, e.value
 FROM probe0 p
 ASOF JOIN events0 e
 ON p.begin < e.begin
-ORDER BY p.begin ASC
-;
+ORDER BY p.begin ASC;
 
+SELECT '-';
 SELECT p.begin, e.begin, e.value
 FROM probe0 p
 ASOF LEFT JOIN events0 e
 ON p.begin < e.begin
 ORDER BY p.begin ASC;
-
 
 DROP TABLE IF EXISTS events0;
 DROP TABLE IF EXISTS probe0;
