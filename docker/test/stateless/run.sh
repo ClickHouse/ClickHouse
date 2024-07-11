@@ -12,8 +12,7 @@ MAX_RUN_TIME=$((MAX_RUN_TIME == 0 ? 10800 : MAX_RUN_TIME))
 USE_DATABASE_REPLICATED=${USE_DATABASE_REPLICATED:=0}
 USE_SHARED_CATALOG=${USE_SHARED_CATALOG:=0}
 
-# disable for now
-RUN_SEQUENTIAL_TESTS_IN_PARALLEL=0
+RUN_SEQUENTIAL_TESTS_IN_PARALLEL=1
 
 if [[ "$USE_DATABASE_REPLICATED" -eq 1 ]] || [[ "$USE_SHARED_CATALOG" -eq 1 ]]; then
   RUN_SEQUENTIAL_TESTS_IN_PARALLEL=0
@@ -310,7 +309,7 @@ function run_tests()
     try_run_with_retry 10 clickhouse-client -q "insert into system.zookeeper (name, path, value) values ('auxiliary_zookeeper2', '/test/chroot/', '')"
 
     set +e
-    timeout -s TERM --preserve-status 120m clickhouse-test --testname --shard --zookeeper --check-zookeeper-session --hung-check --print-time \
+    clickhouse-test --testname --shard --zookeeper --check-zookeeper-session --hung-check --print-time \
          --no-drop-if-fail --test-runs "$NUM_TRIES" "${ADDITIONAL_OPTIONS[@]}" 2>&1 \
     | ts '%Y-%m-%d %H:%M:%S' \
     | tee -a test_output/test_result.txt
@@ -321,7 +320,7 @@ export -f run_tests
 
 
 # This should be enough to setup job and collect artifacts
-TIMEOUT=$((MAX_RUN_TIME - 300))
+TIMEOUT=$((MAX_RUN_TIME - 600))
 if [ "$NUM_TRIES" -gt "1" ]; then
     # We don't run tests with Ordinary database in PRs, only in master.
     # So run new/changed tests with Ordinary at least once in flaky check.
