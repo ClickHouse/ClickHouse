@@ -35,6 +35,7 @@ private:
     StorageID table_id;
     const ASTs constraints_to_check;
     const ConstraintsExpressions expressions;
+    ContextPtr context;
     size_t rows_written = 0;
     Chunk cur_chunk;
 };

@@ -361,9 +361,11 @@ def clickhouse_execute_json(
 def stop_tests():
     # send signal to all processes in group to avoid hung check triggering
     # (to avoid terminating clickhouse-test itself, the signal should be ignored)
+    print("Sending signals")
     signal.signal(signal.SIGTERM, signal.SIG_IGN)
     os.killpg(os.getpgid(os.getpid()), signal.SIGTERM)
     signal.signal(signal.SIGTERM, signal.SIG_DFL)
+    print("Sending signals DONE")
 
 
 def get_db_engine(args, database_name):
@@ -2211,7 +2213,9 @@ def run_tests_array(all_tests_with_params: Tuple[List[str], int, TestSuite, bool
                 failures_total += 1
                 failures_chain += 1
                 if test_result.reason == FailureReason.SERVER_DIED:
+                    stop_tests()
                     server_died.set()
+                    raise ServerDied("Server died")
             elif test_result.status == TestStatus.SKIPPED:
                 skipped_total += 1
 
@@ -2497,13 +2501,28 @@ def do_run_tests(jobs, test_suite: TestSuite):
                             )
                         ],
                     )
-                    future_seq.wait()
+                    while not future_seq.ready():
+                        sleep(0.1)
+                        if server_died.is_set():
+                            sleep(5)
+                            break
 
-                future.wait()
+                while not future.ready():
+                    sleep(0.1)
+                    if server_died.is_set():
+                        print("== Server died ==")
+                        sleep(5)
+                        break
+
+                print("future wait DONE")
         finally:
+            print("pool.terminate")
             pool.terminate()
+            print("pool.close")
             pool.close()
+            print("pool.join")
             pool.join()
+            print("pool.join DONE")
 
         if not args.run_sequential_tests_in_parallel:
             run_tests_array(
