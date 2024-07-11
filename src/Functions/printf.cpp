@@ -40,7 +40,7 @@ private:
         bool is_literal; /// format is literal string without any argument
         ColumnWithTypeAndName input; /// Only used when is_literal is false
 
-        ColumnWithTypeAndName execute()
+        ColumnWithTypeAndName execute() const
         {
             if (is_literal)
                 return executeLiteral(format);
@@ -50,7 +50,7 @@ private:
                 return executeNonconstant(input);
         }
 
-        String toString() const
+        [[maybe_unused]] String toString() const
         {
             std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
             oss << "format:" << format << ", rows:" << rows << ", is_literal:" << is_literal << ", input:" << input.dumpStructure()
@@ -59,7 +59,7 @@ private:
         }
 
     private:
-        ColumnWithTypeAndName executeLiteral(std::string_view literal)
+        ColumnWithTypeAndName executeLiteral(std::string_view literal) const
         {
             ColumnWithTypeAndName res;
             auto str_col = ColumnString::create();
@@ -69,7 +69,7 @@ private:
             return res;
         }
 
-        ColumnWithTypeAndName executeConstant(const ColumnWithTypeAndName & arg)
+        ColumnWithTypeAndName executeConstant(const ColumnWithTypeAndName & arg) const
         {
             ColumnWithTypeAndName tmp_arg = arg;
             const auto & const_col = static_cast<const ColumnConst &>(*arg.column);
@@ -79,57 +79,85 @@ private:
             return ColumnWithTypeAndName{ColumnConst::create(tmp_res.column, arg.column->size()), tmp_res.type, tmp_res.name};
         }
 
-        ColumnWithTypeAndName executeNonconstant(const ColumnWithTypeAndName & arg)
+        template <typename T>
+        bool executeNumber(const IColumn & column, ColumnString::Chars & res_chars, ColumnString::Offsets & res_offsets) const
+        {
+            const ColumnVector<T> * concrete_column = checkAndGetColumn<ColumnVector<T>>(&column);
+            if (!concrete_column)
+                return false;
+
+            String s;
+            size_t curr_offset = 0;
+            const auto & data = concrete_column->getData();
+            for (size_t i = 0; i < data.size(); ++i)
+            {
+                T a = data[i];
+                s = fmt::sprintf(format, static_cast<NearestFieldType<T>>(a));
+                memcpy(&res_chars[curr_offset], s.data(), s.size());
+                res_chars[curr_offset + s.size()] = 0;
+
+                curr_offset += s.size() + 1;
+                res_offsets[i] = curr_offset;
+            }
+            return true;
+        }
+
+        template <typename COLUMN>
+        bool executeString(const IColumn & column, ColumnString::Chars & res_chars, ColumnString::Offsets & res_offsets) const
+        {
+            const COLUMN * concrete_column = checkAndGetColumn<COLUMN>(&column);
+            if (!concrete_column)
+                return false;
+
+            String s;
+            size_t curr_offset = 0;
+            for (size_t i = 0; i < concrete_column->size(); ++i)
+            {
+                auto a = concrete_column->getDataAt(i).toView();
+                s = fmt::sprintf(format, a);
+                memcpy(&res_chars[curr_offset], s.data(), s.size());
+                res_chars[curr_offset + s.size()] = 0;
+
+                curr_offset += s.size() + 1;
+                res_offsets[i] = curr_offset;
+            }
+            return true;
+        }
+
+        ColumnWithTypeAndName executeNonconstant(const ColumnWithTypeAndName & arg) const
         {
             size_t size = arg.column->size();
             auto res_col = ColumnString::create();
             auto & res_str = static_cast<ColumnString &>(*res_col);
             auto & res_offsets = res_str.getOffsets();
             auto & res_chars = res_str.getChars();
-            res_offsets.reserve_exact(size);
-            res_chars.reserve(format.size() * size * 2);
+            res_offsets.resize_exact(size);
+            res_chars.reserve(format.size() * size);
 
-            String s;
             WhichDataType which(arg.type);
-
-#define EXECUTE_BY_TYPE(IS_TYPE, GET_TYPE) \
-    else if (which.IS_TYPE()) \
-    { \
-        for (size_t i = 0; i < size; ++i) \
-        { \
-            auto a = arg.column->GET_TYPE(i); \
-            s = fmt::sprintf(format, a); \
-            res_str.insertData(s.data(), s.size()); \
-        } \
-    }
-
-            if (false)
-                ;
-            EXECUTE_BY_TYPE(isNativeInt, getInt)
-            EXECUTE_BY_TYPE(isNativeUInt, getUInt)
-            EXECUTE_BY_TYPE(isFloat32, getFloat32)
-            EXECUTE_BY_TYPE(isFloat64, getFloat64)
-            else if (which.isStringOrFixedString())
+            if (which.isNativeNumber()
+                && (executeNumber<UInt8>(*arg.column, res_chars, res_offsets) || executeNumber<UInt16>(*arg.column, res_chars, res_offsets)
+                    || executeNumber<UInt32>(*arg.column, res_chars, res_offsets)
+                    || executeNumber<UInt64>(*arg.column, res_chars, res_offsets)
+                    || executeNumber<Int8>(*arg.column, res_chars, res_offsets) || executeNumber<Int16>(*arg.column, res_chars, res_offsets)
+                    || executeNumber<Int32>(*arg.column, res_chars, res_offsets)
+                    || executeNumber<Int64>(*arg.column, res_chars, res_offsets)))
             {
-                for (size_t i = 0; i < size; ++i)
-                {
-                    auto a = arg.column->getDataAt(i).toView();
-                    s = fmt::sprintf(format, a);
-                    res_str.insertData(s.data(), s.size());
-                }
+                return {std::move(res_col), std::make_shared<DataTypeString>(), arg.name};
             }
-            else throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "The argument type of function {} is {}, but native numeric or string type is expected",
-                FunctionPrintf::name,
-                arg.type->getName());
-#undef EXECUTE_BY_TYPE
-
-            ColumnWithTypeAndName res;
-            res.name = arg.name;
-            res.type = std::make_shared<DataTypeString>();
-            res.column = std::move(res_col);
-            return res;
+            else if (
+                which.isStringOrFixedString()
+                && (executeString<ColumnString>(*arg.column, res_chars, res_offsets)
+                    || executeString<ColumnFixedString>(*arg.column, res_chars, res_offsets)))
+            {
+                return {std::move(res_col), std::make_shared<DataTypeString>(), arg.name};
+            }
+            else
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "The argument type of function {} is {}, but native numeric or string type is expected",
+                    FunctionPrintf::name,
+                    arg.type->getName());
         }
     };
 
