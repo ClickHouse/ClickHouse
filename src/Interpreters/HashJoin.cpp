@@ -1734,7 +1734,7 @@ NO_INLINE size_t joinRightColumnsWithAddtitionalFilter(
     bool add_missing [[maybe_unused]],
     bool flag_per_row [[maybe_unused]])
 {
-    LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
+    // LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
 
     size_t left_block_rows = added_columns.rows_to_add;
     if (need_filter)
@@ -1918,13 +1918,13 @@ NO_INLINE size_t joinRightColumns(
     constexpr JoinFeatures<KIND, STRICTNESS> join_features;
 
     auto & block = added_columns.src_block;
-    LOG_DEBUG(
-        &Poco::Logger::get("debug"),
-        "__PRETTY_FUNCTION__={}, __LINE__={}, block.rows()={}, block.selector.size()={}",
-        __PRETTY_FUNCTION__,
-        __LINE__,
-        block.rows(),
-        block.selector.size());
+    // LOG_DEBUG(
+    //     &Poco::Logger::get("debug"),
+    //     "__PRETTY_FUNCTION__={}, __LINE__={}, block.rows()={}, block.selector.size()={}",
+    //     __PRETTY_FUNCTION__,
+    //     __LINE__,
+    //     block.rows(),
+    //     block.selector.size());
 
     size_t rows = block.rows();
     if constexpr (need_filter)
@@ -2302,24 +2302,24 @@ Block HashJoin::joinBlockImpl(
 {
     ScatteredBlock scattered_block{block};
     auto ret = joinBlockImpl<KIND, STRICTNESS>(scattered_block, block_with_columns_to_add, maps_, is_join_get);
-    if (ret.block)
-        LOG_DEBUG(&Poco::Logger::get("debug"), "before ret.rows()={}, ret.block->rows())={}", ret.rows(), ret.block->rows());
+    // if (ret.block)
+    //     LOG_DEBUG(&Poco::Logger::get("debug"), "before ret.rows()={}, ret.block->rows())={}", ret.rows(), ret.block->rows());
     ret.filterBySelector();
-    if (ret.block)
-        LOG_DEBUG(&Poco::Logger::get("debug"), "after ret.rows()={}, ret.block->rows())={}", ret.rows(), ret.block->rows());
-    if (scattered_block.block)
-        LOG_DEBUG(
-            &Poco::Logger::get("debug"),
-            "before scattered_block.rows()={}, scattered_block.block->rows())={}",
-            scattered_block.rows(),
-            scattered_block.block->rows());
+    // if (ret.block)
+    //     LOG_DEBUG(&Poco::Logger::get("debug"), "after ret.rows()={}, ret.block->rows())={}", ret.rows(), ret.block->rows());
+    // if (scattered_block.block)
+    //     LOG_DEBUG(
+    //         &Poco::Logger::get("debug"),
+    //         "before scattered_block.rows()={}, scattered_block.block->rows())={}",
+    //         scattered_block.rows(),
+    //         scattered_block.block->rows());
     scattered_block.filterBySelector();
-    if (scattered_block.block)
-        LOG_DEBUG(
-            &Poco::Logger::get("debug"),
-            "after scattered_block.rows()={}, scattered_block.block->rows())={}",
-            scattered_block.rows(),
-            scattered_block.block->rows());
+    // if (scattered_block.block)
+    //     LOG_DEBUG(
+    //         &Poco::Logger::get("debug"),
+    //         "after scattered_block.rows()={}, scattered_block.block->rows())={}",
+    //         scattered_block.rows(),
+    //         scattered_block.block->rows());
     block = std::move(*scattered_block.block);
     return *ret.block;
 }
@@ -2345,7 +2345,7 @@ HashJoin::ScatteredBlock HashJoin::joinBlockImpl(
       */
     if constexpr (join_features.right || join_features.full)
     {
-        /// TODO: throw Exception(ErrorCodes::LOGICAL_ERROR, "RIGHT and FULL JOINs are not supported in HashJoin");
+        /// TODO: do materialization once before scattering the source block by hash
         materializeBlockInplace(*block.block);
     }
 
@@ -2373,7 +2373,7 @@ HashJoin::ScatteredBlock HashJoin::joinBlockImpl(
         added_columns.reserve(join_features.need_replication);
 
     const auto num_joined = switchJoinRightColumns<KIND, STRICTNESS>(maps_, added_columns, data->type, used_flags);
-    LOG_DEBUG(&Poco::Logger::get("debug"), "num_joined={}", num_joined);
+    // LOG_DEBUG(&Poco::Logger::get("debug"), "num_joined={}", num_joined);
     /// Do not hold memory for join_on_keys anymore
     added_columns.join_on_keys.clear();
     auto remaining_block = block.cut(num_joined);
@@ -2401,7 +2401,7 @@ HashJoin::ScatteredBlock HashJoin::joinBlockImpl(
     {
         // std::vector<int> x{added_columns.filter.begin(), added_columns.filter.end()};
         // LOG_DEBUG(&Poco::Logger::get("debug"), "added_columns.filter={}", fmt::join(x, ", "));
-        block.filter(added_columns.filter);
+        // block.filter(added_columns.filter);
 
         /// If ANY INNER | RIGHT JOIN - filter all the columns except the new ones.
         for (size_t i = 0; i < existing_columns; ++i)
@@ -2714,12 +2714,12 @@ void HashJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
         if (joinDispatch(kind, strictness, maps_vector, [&](auto kind_, auto strictness_, auto & maps_vector_)
         {
             Block remaining_block = joinBlockImpl<kind_, strictness_>(block, sample_block_with_columns_to_add, maps_vector_);
-            LOG_DEBUG(
-                &Poco::Logger::get("debug"),
-                "__PRETTY_FUNCTION__={}, __LINE__={}, remaining_block.rows()={}",
-                __PRETTY_FUNCTION__,
-                __LINE__,
-                remaining_block.rows());
+            // LOG_DEBUG(
+            //     &Poco::Logger::get("debug"),
+            //     "__PRETTY_FUNCTION__={}, __LINE__={}, remaining_block.rows()={}",
+            //     __PRETTY_FUNCTION__,
+            //     __LINE__,
+            //     remaining_block.rows());
             if (remaining_block.rows())
                 not_processed = std::make_shared<ExtraBlock>(ExtraBlock{std::move(remaining_block)});
             else
@@ -2763,24 +2763,8 @@ void HashJoin::joinBlock(ScatteredBlock & block, ExtraBlockPtr & not_processed)
             [&](auto kind_, auto strictness_, auto & maps_vector_)
             {
                 ScatteredBlock remaining_block = joinBlockImpl<kind_, strictness_>(block, sample_block_with_columns_to_add, maps_vector_);
-                LOG_DEBUG(
-                    &Poco::Logger::get("debug"),
-                    "__PRETTY_FUNCTION__={}, __LINE__={}, remaining_block.rows()={}",
-                    __PRETTY_FUNCTION__,
-                    __LINE__,
-                    remaining_block.rows());
                 if (remaining_block.rows())
-                {
-                    /// TODO: selector should be trivial since for concurrent hash join we always have empty remaining block
-                    remaining_block.filterBySelector();
-                    LOG_DEBUG(
-                        &Poco::Logger::get("debug"),
-                        "__PRETTY_FUNCTION__={}, __LINE__={}, remaining_block.rows()={}",
-                        __PRETTY_FUNCTION__,
-                        __LINE__,
-                        remaining_block.rows());
                     not_processed = std::make_shared<ExtraBlock>(ExtraBlock{std::move(*remaining_block.block)});
-                }
                 else
                     not_processed.reset();
             }))
