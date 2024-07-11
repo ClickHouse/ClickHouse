@@ -22,7 +22,7 @@ set(SRCS
 
 add_library(_acme-lw ${SRCS})
 
-target_link_libraries(_acme-lw PRIVATE OpenSSL::Crypto OpenSSL::Crypto)
+target_link_libraries(_acme-lw PRIVATE OpenSSL::Crypto OpenSSL::SSL)
 target_link_libraries(_acme-lw PRIVATE ch_contrib::curl)
 
 target_include_directories(_acme-lw SYSTEM BEFORE PUBLIC "${ACME_SOURCE_DIR}/lib" "${ACME_SOURCE_DIR}/internal" "${OPENSSL_INCLUDE_DIR}")
