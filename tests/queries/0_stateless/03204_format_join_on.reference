@@ -1,0 +1,4 @@
+SELECT * FROM t1 INNER JOIN t2 ON ((t1.x = t2.x) AND (t1.x IS NULL) AS e2)
+SELECT * FROM t1 INNER JOIN t2 ON ((t1.x = t2.x) AND (t1.x IS NULL) AS e2)
+SELECT * FROM t1 INNER JOIN t2 ON (t1.x = t2.x) AND ((t1.x IS NULL) AS e2)
+SELECT * FROM t1 INNER JOIN t2 ON t1.x = t2.x
