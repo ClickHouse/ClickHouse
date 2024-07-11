@@ -376,10 +376,10 @@ def main():
     repo_urls = {}
     direct_urls: Dict[str, List[str]] = {}
     if pr_info.event_type == EventType.PULL_REQUEST:
-        release_or_pr = pr_info.number
+        release_or_pr = str(pr_info.number)
         sha = pr_info.sha
     elif pr_info.event_type == EventType.PUSH and pr_info.is_master:
-        release_or_pr = 0
+        release_or_pr = str(0)
         sha = pr_info.sha
     else:
         release_or_pr = f"{args.version.major}.{args.version.minor}"

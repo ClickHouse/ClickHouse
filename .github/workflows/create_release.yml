@@ -89,8 +89,8 @@ jobs:
             --volume=".:/ClickHouse" clickhouse/style-test \
             /ClickHouse/tests/ci/changelog.py -v --debug-helpers \
             --gh-user-or-token="$GH_TOKEN" --jobs=5 \
-            --output="/ClickHouse/docs/changelogs/${RELEASE_TAG}.md" "${RELEASE_TAG}"
-          git add ./docs/changelogs/${RELEASE_TAG}.md
+            --output="/ClickHouse/docs/changelogs/${{ env.RELEASE_TAG }}.md" ${{ env.RELEASE_TAG }}
+          git add ./docs/changelogs/${{ env.RELEASE_TAG }}.md
           echo "Generate Security"
           python3 ./utils/security-generator/generate_security.py > SECURITY.md
           git diff HEAD

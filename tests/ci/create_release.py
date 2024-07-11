@@ -40,7 +40,7 @@ class ShellRunner:
             return 0, ""
         print(f"Running shell command: [{command}]")
         if async_:
-            subprocess.Popen(command.split(" "))
+            subprocess.Popen(command.split(" "))  # pylint:disable=consider-using-with
             return 0, ""
         result = subprocess.run(
             command + " 2>&1",
@@ -316,9 +316,9 @@ class PackageDownloader:
     def __init__(self, release, commit_sha, version):
         assert version.startswith(release), "Invalid release branch or version"
         major, minor = map(int, release.split("."))
-        self.package_names = self.PACKAGES
+        self.package_names = list(self.PACKAGES)
         if major > 24 or (major == 24 and minor > 3):
-            self.package_names += self.EXTRA_PACKAGES
+            self.package_names += list(self.EXTRA_PACKAGES)
         self.release = release
         self.commit_sha = commit_sha
         self.version = version

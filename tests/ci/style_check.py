@@ -16,7 +16,15 @@ from docker_images_helper import get_docker_image, pull_image
 from env_helper import IS_CI, REPO_COPY, TEMP_PATH, GITHUB_EVENT_PATH
 from git_helper import GIT_PREFIX, git_runner
 from pr_info import PRInfo
-from report import ERROR, FAILURE, SUCCESS, JobReport, TestResults, read_test_results
+from report import (
+    ERROR,
+    FAILURE,
+    SUCCESS,
+    JobReport,
+    TestResults,
+    read_test_results,
+    FAIL,
+)
 from ssh import SSHKey
 from stopwatch import Stopwatch
 
@@ -204,8 +212,8 @@ def main():
     autofix_description = ""
     fail_cnt = 0
     for result in test_results:
-        if result.status == FAILURE:
-            # do not autofix if not only back failed
+        if result.status in (FAILURE, FAIL):
+            # do not autofix if not only black failed
             fail_cnt += 1
 
     if args.push and fail_cnt == 1:
