@@ -635,7 +635,7 @@ struct DeltaLakeMetadataImpl
                         }
                         const auto value = tuple[1].safeGet<String>();
                         auto field = getFieldValue(value, name_and_type->type);
-                        current_partition_columns.emplace_back(*name_and_type, field);
+                        current_partition_columns.emplace_back(std::move(name_and_type.value()), std::move(field));
 
                         LOG_TEST(log, "Partition {} value is {} (for {})", partition_name, value, filename);
                     }
