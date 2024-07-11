@@ -6,13 +6,13 @@
 #include <Common/quoteString.h>
 #include <Common/logger_useful.h>
 #include <Common/NamedCollections/NamedCollections.h>
+#include <Core/Settings.h>
 #include <Poco/Util/AbstractConfiguration.h>
 
 #include "config.h"
 
 #if USE_AWS_S3
 
-#include <Core/Settings.h>
 #include <IO/HTTPHeaderEntries.h>
 #include <IO/S3/Client.h>
 #include <IO/S3/Requests.h>
