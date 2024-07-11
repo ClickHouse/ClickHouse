@@ -71,11 +71,6 @@ public:
     /// How much seconds passed since query execution start.
     double elapsedSeconds() const { return getElapsedNanoseconds() / 1e9; }
 
-    void updateThreadEventData(HostToTimesMap & new_hosts_data);
-
-private:
-    double getCPUUsage();
-
     struct MemoryUsage
     {
         UInt64 total = 0;
@@ -84,6 +79,11 @@ private:
     };
 
     MemoryUsage getMemoryUsage() const;
+
+    void updateThreadEventData(HostToTimesMap & new_hosts_data);
+
+private:
+    double getCPUUsage();
 
     UInt64 getElapsedNanoseconds() const;
 
