@@ -13,7 +13,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int ILLEGAL_STATISTICS;
 extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
@@ -23,9 +22,7 @@ static constexpr auto num_hashes = 7uz;
 static constexpr auto num_buckets = 2718uz;
 
 StatisticsCountMinSketch::StatisticsCountMinSketch(const SingleStatisticsDescription & stat_, DataTypePtr data_type_)
-    : IStatistics(stat_)
-    , sketch(num_hashes, num_buckets)
-    , data_type(data_type_)
+    : IStatistics(stat_), sketch(num_hashes, num_buckets), data_type(data_type_)
 {
 }
 
@@ -40,7 +37,7 @@ Float64 StatisticsCountMinSketch::estimateEqual(const Field & val) const
         if (val_converted.isNull())
             return 0;
 
-        /// We will get the proper data type of val_converted, for example, UInt8 for 1, UInt16 for 257.
+        /// We will get the proper data type of val_converted, for example, Int8 for 1, Int16 for 257.
         auto data_type_converted = applyVisitor(FieldToDataType<LeastSupertypeOnError::Null>(), val_converted);
         DataTypes data_types = {data_type, data_type_converted};
         auto super_type = tryGetLeastSupertype(data_types);
@@ -58,7 +55,9 @@ Float64 StatisticsCountMinSketch::estimateEqual(const Field & val) const
     }
 
     throw Exception(
-        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Statistics 'count_min' does not support estimate constant value of type {}", val.getTypeName());
+        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+        "Statistics 'count_min' does not support estimate constant value of type {}",
+        val.getTypeName());
 }
 
 void StatisticsCountMinSketch::update(const ColumnPtr & column)
@@ -92,20 +91,36 @@ void StatisticsCountMinSketch::deserialize(ReadBuffer & buf)
     sketch = Sketch::deserialize(bytes.data(), size);
 }
 
+}
+
+#endif
+
+
+namespace DB
+{
+
+namespace ErrorCodes
+{
+extern const int FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME;
+extern const int ILLEGAL_STATISTICS;
+}
+
 void CountMinSketchValidator(const SingleStatisticsDescription &, DataTypePtr data_type)
 {
     data_type = removeNullable(data_type);
     data_type = removeLowCardinalityAndNullable(data_type);
-    /// Numeric, String family, IPv4, IPv6, Date family, Enum family are supported.
+    /// Data types of Numeric, String family, IPv4, IPv6, Date family, Enum family are supported.
     if (!data_type->isValueRepresentedByNumber() && !isStringOrFixedString(data_type))
         throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "Statistics of type 'count_min' does not support type {}", data_type->getName());
 }
 
 StatisticsPtr CountMinSketchCreator(const SingleStatisticsDescription & stat, DataTypePtr data_type)
 {
+#if USE_DATASKETCHES
     return std::make_shared<StatisticsCountMinSketch>(stat, data_type);
-}
-
-}
-
+#else
+    throw Exception(ErrorCodes::FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME, "Statistics of type 'count_min' is not supported in this build, to enable it turn on USE_DATASKETCHES when building.");
 #endif
+}
+
+}

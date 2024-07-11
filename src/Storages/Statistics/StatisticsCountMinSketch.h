@@ -30,9 +30,9 @@ private:
     DataTypePtr data_type;
 };
 
+#endif
+
 void CountMinSketchValidator(const SingleStatisticsDescription &, DataTypePtr data_type);
 StatisticsPtr CountMinSketchCreator(const SingleStatisticsDescription & stat, DataTypePtr);
 
 }
-
-#endif
