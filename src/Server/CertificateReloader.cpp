@@ -8,6 +8,7 @@
 #include <Poco/Net/Context.h>
 #include <Poco/Net/SSLManager.h>
 #include <Poco/Net/Utility.h>
+#include <Server/ACMEClient.h>
 
 
 namespace DB
@@ -138,8 +139,8 @@ void CertificateReloader::tryLoadImpl(const Poco::Util::AbstractConfiguration & 
 {
     /// If at least one of the files is modified - recreate
 
-    std::string new_cert_path = config.getString(prefix + "certificateFile", "");
-    std::string new_key_path = config.getString(prefix + "privateKeyFile", "");
+    // std::string new_cert_path = config.getString(prefix + "certificateFile", "");
+    // std::string new_key_path = config.getString(prefix + "privateKeyFile", "");
 
     // Fetching configuration for possible reissuing let's encrypt certificates
     // if (config.getBool("LetsEncrypt.enableAutomaticIssue", false))
@@ -148,40 +149,57 @@ void CertificateReloader::tryLoadImpl(const Poco::Util::AbstractConfiguration & 
     /// For empty paths (that means, that user doesn't want to use certificates)
     /// no processing required
 
-    if (new_cert_path.empty() || new_key_path.empty())
+    // if (new_cert_path.empty() || new_key_path.empty())
+    // {
+    //     LOG_WARNING(log, "One of paths is empty. Cannot apply new configuration for certificates. Fill all paths and try again.");
+    //     return;
+    // }
+
+    try
     {
-        LOG_INFO(log, "One of paths is empty. Cannot apply new configuration for certificates. Fill all paths and try again.");
+        auto maybe_certificates = ACMEClient::ACMEClient::instance().requestCertificate(config);
+        if (!maybe_certificates)
+        {
+            LOG_WARNING(log, "Certificates are not ready yet.");
+            return;
+        }
+
+        auto [pkey, certificate] = maybe_certificates.value();
+        auto it = findOrInsert(ctx, prefix);
+        it->data.set(std::make_unique<const Data>(pkey, certificate));
+        if (!it->initialized)
+            init(&*it);
     }
-    else
+    catch (...)
     {
-        CertificateIssuer::instance().UpdateCertificatesIfNeeded(config);
-
-        try
-        {
-            auto it = findOrInsert(ctx, prefix);
-
-            bool cert_file_changed = it->cert_file.changeIfModified(std::move(new_cert_path), log);
-            bool key_file_changed = it->key_file.changeIfModified(std::move(new_key_path), log);
-
-            if (cert_file_changed || key_file_changed)
-            {
-                LOG_DEBUG(log, "Reloading certificate ({}) and key ({}).", it->cert_file.path, it->key_file.path);
-
-                std::string pass_phrase = config.getString(prefix + "privateKeyPassphraseHandler.options.password", "");
-                it->data.set(std::make_unique<const Data>(it->cert_file.path, it->key_file.path, pass_phrase));
-
-                LOG_INFO(log, "Reloaded certificate ({}) and key ({}).", it->cert_file.path, it->key_file.path);
-            }
-
-            /// If callback is not set yet
-            if (!it->initialized)
-                init(&*it);
-        }
-        catch (...)
-        {
-            LOG_ERROR(log, getCurrentExceptionMessageAndPattern(/* with_stacktrace */ false));
-        }
+        LOG_ERROR(log, getCurrentExceptionMessageAndPattern(/* with_stacktrace */ false));
     }
+
+    // try
+    // {
+    //     auto it = findOrInsert(ctx, prefix);
+    //
+    //     bool cert_file_changed = it->cert_file.changeIfModified(std::move(new_cert_path), log);
+    //     bool key_file_changed = it->key_file.changeIfModified(std::move(new_key_path), log);
+    //
+    //     if (cert_file_changed || key_file_changed)
+    //     {
+    //         LOG_DEBUG(log, "Reloading certificate ({}) and key ({}).", it->cert_file.path, it->key_file.path);
+    //
+    //         std::string pass_phrase = config.getString(prefix + "privateKeyPassphraseHandler.options.password", "");
+    //         it->data.set(std::make_unique<const Data>(it->cert_file.path, it->key_file.path, pass_phrase));
+    //
+    //         LOG_INFO(log, "Reloaded certificate ({}) and key ({}).", it->cert_file.path, it->key_file.path);
+    //     }
+    //
+    //     /// If callback is not set yet
+    //     if (!it->initialized)
+    //         init(&*it);
+    // }
+    // catch (...)
+    // {
+    //     LOG_ERROR(log, getCurrentExceptionMessageAndPattern(/* with_stacktrace */ false));
+    // }
 }
 
 
@@ -195,6 +213,11 @@ void CertificateReloader::tryReloadAll(const Poco::Util::AbstractConfiguration &
 
 CertificateReloader::Data::Data(std::string cert_path, std::string key_path, std::string pass_phrase)
     : certs_chain(Poco::Crypto::X509Certificate::readPEM(cert_path)), key(/* public key */ "", /* private key */ key_path, pass_phrase)
+{
+}
+
+CertificateReloader::Data::Data(Poco::Crypto::EVPPKey _pkey, Poco::Crypto::X509Certificate _cert)
+    : certs_chain({_cert}), key(_pkey)
 {
 }
 

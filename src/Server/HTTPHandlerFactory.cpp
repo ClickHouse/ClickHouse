@@ -148,6 +148,14 @@ static inline auto createHandlersFactoryFromConfig(
                 handler->addFiltersFromConfig(config, prefix + "." + key);
                 main_handler_factory->addHandler(std::move(handler));
             }
+#if USE_SSL
+            else if (handler_type == "acme")
+            {
+                auto handler = std::make_shared<HandlingRuleHTTPHandlerFactory<ACMERequestHandler>>(server);
+                handler->addFiltersFromConfig(config, prefix + "." + key);
+                main_handler_factory->addHandler(std::move(handler));
+            }
+#endif
             else if (handler_type == "binary")
             {
                 auto handler = std::make_shared<HandlingRuleHTTPHandlerFactory<BinaryWebUIRequestHandler>>(server);
@@ -259,10 +267,13 @@ void addCommonDefaultHandlersFactory(HTTPRequestHandlerFactoryMain & factory, IS
     factory.addPathToHints("/merges");
     factory.addHandler(merges_handler);
 
+#if USE_SSL
+    /// FIXME redundant if ACME is not enabled
     auto acme_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<ACMERequestHandler>>(server);
-    acme_handler->attachNonStrictPath(ACMEClient::ACME_CHALLENGE_PATH);
+    acme_handler->attachNonStrictPath(ACMEClient::ACME_CHALLENGE_HTTP_PATH);
     acme_handler->allowGetAndHeadRequest();
     factory.addHandler(acme_handler);
+#endif
 
     auto js_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<JavaScriptWebUIRequestHandler>>(server);
     js_handler->attachNonStrictPath("/js/");

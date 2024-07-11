@@ -4,7 +4,6 @@
 
 #if USE_SSL
 
-#include <chrono>
 #include <string>
 #include <filesystem>
 #include <list>
@@ -19,7 +18,6 @@
 #include <Poco/Crypto/X509Certificate.h>
 #include <Common/MultiVersion.h>
 #include <Common/Logger.h>
-#include <Server/CertificateIssuer.h>
 
 
 namespace DB
@@ -34,7 +32,7 @@ namespace DB
 class CertificateReloader
 {
 public:
-    using stat_t = struct stat;
+    // using stat_t = struct stat;
 
     struct Data
     {
@@ -42,6 +40,7 @@ public:
         Poco::Crypto::EVPPKey key;
 
         Data(std::string cert_path, std::string key_path, std::string pass_phrase);
+        Data(Poco::Crypto::EVPPKey, Poco::Crypto::X509Certificate);
     };
 
     struct File

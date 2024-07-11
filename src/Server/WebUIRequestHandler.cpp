@@ -74,9 +74,11 @@ void MergesWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPS
     handle(request, response, {reinterpret_cast<const char *>(gresource_merges_htmlData), gresource_merges_htmlSize});
 }
 
+#if USE_SSL
 /// FIXME not a Web UI
 void ACMERequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event &)
 {
+    LOG_DEBUG(&Poco::Logger::get("ACME"), "ACME request: {}", request.getURI());
     auto challenge = ACMEClient::ACMEClient::instance().requestChallenge(request.getURI());
 
     if (challenge.empty())
@@ -85,8 +87,9 @@ void ACMERequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerRe
         *response.send() << "Not found.\n";
     }
 
-    handle(server, request, response, challenge);
+    handle(request, response, { challenge });
 }
+#endif
 
 void JavaScriptWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event &)
 {
