@@ -2528,7 +2528,7 @@ struct WindowFunctionNthValue final : public WindowFunction
         if (offset <= 0)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "The offset for function {} must be in (0, {}], {} given",
+                "The offset for function {} must be in (1, {}], {} given",
                 getName(), INT64_MAX, offset);
         }
 
