@@ -30,9 +30,12 @@ private:
     DataTypePtr data_type;
 };
 
+}
+
 #endif
 
+namespace DB
+{
 void CountMinSketchValidator(const SingleStatisticsDescription &, DataTypePtr data_type);
 StatisticsPtr CountMinSketchCreator(const SingleStatisticsDescription & stat, DataTypePtr);
-
 }

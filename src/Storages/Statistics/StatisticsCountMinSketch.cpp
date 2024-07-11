@@ -113,14 +113,18 @@ void CountMinSketchValidator(const SingleStatisticsDescription &, DataTypePtr da
     if (!data_type->isValueRepresentedByNumber() && !isStringOrFixedString(data_type))
         throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "Statistics of type 'count_min' does not support type {}", data_type->getName());
 }
-
+#if USE_DATASKETCHES
 StatisticsPtr CountMinSketchCreator(const SingleStatisticsDescription & stat, DataTypePtr data_type)
 {
-#if USE_DATASKETCHES
     return std::make_shared<StatisticsCountMinSketch>(stat, data_type);
-#else
-    throw Exception(ErrorCodes::FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME, "Statistics of type 'count_min' is not supported in this build, to enable it turn on USE_DATASKETCHES when building.");
-#endif
 }
+#else
+StatisticsPtr CountMinSketchCreator(const SingleStatisticsDescription &, DataTypePtr)
+{
+    throw Exception(
+        ErrorCodes::FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME,
+        "Statistics of type 'count_min' is not supported in this build, to enable it turn on USE_DATASKETCHES when building.");
+}
+#endif
 
 }

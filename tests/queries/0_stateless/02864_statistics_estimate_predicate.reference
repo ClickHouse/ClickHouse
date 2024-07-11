@@ -11,3 +11,15 @@ Test statistics Uniq:
           Prewhere filter
           Prewhere filter column: and(equals(b, 0), equals(c, 0)) (removed)
 Test statistics count_min:
+        Prewhere info
+          Prewhere filter
+          Prewhere filter column: and(equals(a, \'0\'), equals(b, 0), equals(c, 0)) (removed)
+Test statistics multi-types:
+        Prewhere info
+          Prewhere filter
+          Prewhere filter column: and(equals(a, \'0\'), less(c, -90), greater(b, 900)) (removed)
+        Prewhere info
+          Prewhere filter
+          Prewhere filter column: and(equals(a, \'10000\'), equals(b, 0), less(c, 0)) (removed)
+Test LowCardinality and Nullable data type:
+tab2
