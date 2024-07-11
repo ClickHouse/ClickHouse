@@ -77,6 +77,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
         {
             {"merge_tree_min_bytes_per_task_for_remote_reading", 4194304, 2097152, "Value is unified with `filesystem_prefetch_min_bytes_for_single_read_task`"},
             {"allow_archive_path_syntax", true, true, "Added new setting to allow disabling archive path syntax."},
+            {"allow_experimental_time_series_table", false, false, "Added new setting to allow the TimeSeries table engine"},
         }
     },
     {"24.7",

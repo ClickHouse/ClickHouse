@@ -1,5 +1,6 @@
 #include <Storages/StorageTimeSeries.h>
 
+#include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterDropQuery.h>
@@ -25,6 +26,7 @@ namespace ErrorCodes
     extern const int INCORRECT_QUERY;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
+    extern const int SUPPORT_IS_DISABLED;
     extern const int UNEXPECTED_TABLE_ENGINE;
 }
 
@@ -124,6 +126,13 @@ StorageTimeSeries::StorageTimeSeries(
     : IStorage(table_id)
     , WithContext(local_context->getGlobalContext())
 {
+    if (mode <= LoadingStrictnessLevel::CREATE && !local_context->getSettingsRef().allow_experimental_time_series_table)
+    {
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                        "Experimental TimeSeries table engine "
+                        "is not enabled (the setting 'allow_experimental_time_series_table')");
+    }
+
     storage_settings = getTimeSeriesSettingsFromQuery(query);
 
     if (mode < LoadingStrictnessLevel::ATTACH)
