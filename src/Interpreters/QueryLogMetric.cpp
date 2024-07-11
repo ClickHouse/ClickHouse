@@ -2,6 +2,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/DateLUT.h>
 #include <Common/DateLUTImpl.h>
+#include <Common/setThreadName.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
@@ -19,6 +20,7 @@
 #include <mutex>
 
 #include <Common/logger_useful.h>
+#include "Interpreters/Set.h"
 
 
 namespace CurrentMetrics
@@ -104,6 +106,7 @@ void QueryLogMetric::startQuery(const String & query_id, TimePoint query_start_t
     std::lock_guard lock(queries_mutex);
     queries.emplace(std::move(status));
 
+    // Wake up the sleeping thread only if the collection for this query needs to wake up sooner
     if (query_id == queries.begin()->query_id)
     {
         std::unique_lock cv_lock(queries_cv_mutex);
@@ -147,12 +150,12 @@ QueryLogMetricElement createLogMetricElement(QueryLogMetricStatus & query_status
 
 void QueryLogMetric::threadFunction()
 {
+    setThreadName("QueryLogMetric");
     auto desired_timepoint = std::chrono::system_clock::now();
     while (!is_shutdown_metric_thread)
     {
         try
         {
-            String next_query_id;
             {
                 std::lock_guard lock(queries_mutex);
                 const auto current_time = std::chrono::system_clock::now();
@@ -161,9 +164,7 @@ void QueryLogMetric::threadFunction()
                     // Avoid doing unnecessary work to avoid set copies
                     if (current_time >= queries.begin()->next_collect_time)
                         stepFunction(current_time);
-                    auto first_query = queries.begin();
-                    desired_timepoint = first_query->next_collect_time;
-                    next_query_id = first_query->query_id;
+                    desired_timepoint = queries.begin()->next_collect_time;
                 }
                 else
                 {
@@ -173,14 +174,9 @@ void QueryLogMetric::threadFunction()
             }
 
             std::unique_lock cv_lock(queries_cv_mutex);
-            LOG_DEBUG(getLogger("PMO"), "Before the wait");
-            queries_cv.wait_until(cv_lock, desired_timepoint, [this, next_query_id] {
-                // Only wake up whenever there's a new query with a sooner next_collect_time
-                // We now it's a sooner one because it's an ordered set by next_collect_time
-                std::unique_lock lock(queries_mutex);
-                return !queries.empty() && queries.begin()->query_id != next_query_id;
-            });
-            LOG_DEBUG(getLogger("PMO"), "After the wait");
+            // LOG_DEBUG(getLogger("PMO"), "Before the wait");
+            queries_cv.wait_until(cv_lock, desired_timepoint);
+            // LOG_DEBUG(getLogger("PMO"), "After the wait");
         }
         catch (...)
         {
@@ -193,7 +189,7 @@ void QueryLogMetric::stepFunction(TimePoint current_time)
 {
     static const auto & process_list = context->getProcessList();
 
-    LOG_DEBUG(getLogger("PMO"), "QueryLogMetric::stepFunction");
+    // LOG_DEBUG(getLogger("PMO"), "QueryLogMetric::stepFunction");
     decltype(queries) new_queries;
     for (const auto & query_status : queries)
     {
@@ -205,7 +201,7 @@ void QueryLogMetric::stepFunction(TimePoint current_time)
             continue;
         }
 
-        LOG_DEBUG(getLogger("PMO"), "Collecting query {}", query_status.query_id);
+        // LOG_DEBUG(getLogger("PMO"), "Collecting query {}", query_status.query_id);
 
         const auto query_info = process_list.getQueryInfo(query_status.query_id, false, true, false);
         if (!query_info)
