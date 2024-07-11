@@ -794,7 +794,7 @@ PushingToLiveViewSink::PushingToLiveViewSink(const Block & header, StorageLiveVi
 void PushingToLiveViewSink::consume(Chunk & chunk)
 {
     Progress local_progress(chunk.getNumRows(), chunk.bytes(), 0);
-    live_view.writeBlock(live_view, getHeader().cloneWithColumns(chunk.detachColumns()), std::move(chunk.getChunkInfos()), context);
+    live_view.writeBlock(live_view, getHeader().cloneWithColumns(chunk.getColumns()), std::move(chunk.getChunkInfos()), context);
 
     if (auto process = context->getProcessListElement())
         process->updateProgressIn(local_progress);
@@ -818,7 +818,7 @@ void PushingToWindowViewSink::consume(Chunk & chunk)
 {
     Progress local_progress(chunk.getNumRows(), chunk.bytes(), 0);
     StorageWindowView::writeIntoWindowView(
-        window_view, getHeader().cloneWithColumns(chunk.detachColumns()), std::move(chunk.getChunkInfos()), context);
+        window_view, getHeader().cloneWithColumns(chunk.getColumns()), std::move(chunk.getChunkInfos()), context);
 
     if (auto process = context->getProcessListElement())
         process->updateProgressIn(local_progress);
