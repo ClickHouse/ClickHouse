@@ -3,6 +3,7 @@
 #include <Functions/IFunction.h>
 
 #include <Columns/ColumnTuple.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/Context.h>

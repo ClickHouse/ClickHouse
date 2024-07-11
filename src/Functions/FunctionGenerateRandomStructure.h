@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Functions/IFunction.h>
+#include <Core/Settings.h>
 #include <Interpreters/Context.h>
 
 #include <pcg_random.hpp>

@@ -23,6 +23,7 @@
 #include <Common/DateLUTImpl.h>
 #include <base/find_symbols.h>
 #include <Core/DecimalFunctions.h>
+#include <Core/Settings.h>
 
 #include <type_traits>
 #include <concepts>

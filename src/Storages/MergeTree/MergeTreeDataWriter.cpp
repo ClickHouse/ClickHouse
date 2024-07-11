@@ -19,6 +19,7 @@
 #include <Common/HashTable/HashMap.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/typeid_cast.h>
+#include <Core/Settings.h>
 
 #include <Parsers/queryToString.h>
 

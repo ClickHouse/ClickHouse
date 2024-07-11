@@ -12,6 +12,7 @@
 
 #if USE_AWS_S3
 
+#include <Core/Settings.h>
 #include <IO/HTTPHeaderEntries.h>
 #include <IO/S3/Client.h>
 #include <IO/S3/Requests.h>

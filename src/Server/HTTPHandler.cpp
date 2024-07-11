@@ -5,6 +5,7 @@
 #include <Compression/CompressedWriteBuffer.h>
 #include <Core/ExternalTable.h>
 #include <Core/ServerSettings.h>
+#include <Core/Settings.h>
 #include <Disks/StoragePolicy.h>
 #include <IO/CascadeWriteBuffer.h>
 #include <IO/ConcatReadBuffer.h>

@@ -12,10 +12,11 @@
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Parsers/formatAST.h>
 #include <Storages/StorageMaterializedView.h>
-#include "Common/logger_useful.h"
+#include <Common/logger_useful.h>
 #include <Common/PoolId.h>
 #include <Common/atomicRename.h>
 #include <Common/filesystemHelpers.h>
+#include <Core/Settings.h>
 
 namespace fs = std::filesystem;
 

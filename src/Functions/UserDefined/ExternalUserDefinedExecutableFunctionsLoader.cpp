@@ -2,6 +2,7 @@
 
 #include <boost/algorithm/string/split.hpp>
 #include <Common/StringUtils.h>
+#include <Core/Settings.h>
 
 #include <DataTypes/DataTypeFactory.h>
 

@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <Columns/ColumnsDateTime.h>
 #include <Columns/ColumnVector.h>
+#include <Core/Settings.h>
 #include <Interpreters/Context.h>
 
 

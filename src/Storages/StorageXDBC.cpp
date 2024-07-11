@@ -5,6 +5,7 @@
 #include <Storages/checkAndGetLiteralArgument.h>
 
 #include <Core/ServerSettings.h>
+#include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
 #include <IO/ConnectionTimeouts.h>
 #include <Interpreters/Context.h>

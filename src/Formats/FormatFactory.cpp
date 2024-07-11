@@ -17,6 +17,7 @@
 #include <Common/Exception.h>
 #include <Common/KnownObjectNames.h>
 #include <Common/tryGetFileNameByFileDescriptor.h>
+#include <Core/Settings.h>
 
 #include <boost/algorithm/string/case_conv.hpp>
 

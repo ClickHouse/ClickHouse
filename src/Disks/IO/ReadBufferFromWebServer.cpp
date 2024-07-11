@@ -1,6 +1,7 @@
 #include "ReadBufferFromWebServer.h"
 
 #include <Core/ServerSettings.h>
+#include <Core/Settings.h>
 #include <IO/Operators.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/WriteBufferFromString.h>

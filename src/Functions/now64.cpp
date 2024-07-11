@@ -1,6 +1,7 @@
 #include <DataTypes/DataTypeDateTime64.h>
 
 #include <Core/DecimalFunctions.h>
+#include <Core/Settings.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/extractTimeZoneFromFunctionArguments.h>

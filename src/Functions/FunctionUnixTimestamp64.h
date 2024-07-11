@@ -6,6 +6,7 @@
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnsNumber.h>
+#include <Core/Settings.h>
 #include <Interpreters/Context.h>
 
 #include <base/arithmeticOverflow.h>

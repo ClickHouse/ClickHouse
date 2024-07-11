@@ -9,6 +9,7 @@
 
 #include <IO/WriteHelpers.h>
 #include <Common/assert_cast.h>
+#include <Core/Settings.h>
 
 namespace DB
 {

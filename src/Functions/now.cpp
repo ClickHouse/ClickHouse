@@ -1,6 +1,7 @@
 #include <ctime>
 #include <Core/Field.h>
 #include <Core/DecimalFunctions.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>

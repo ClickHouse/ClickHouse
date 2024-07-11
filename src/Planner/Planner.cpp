@@ -3,6 +3,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
 #include <Core/ProtocolDefines.h>
+#include <Core/Settings.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 

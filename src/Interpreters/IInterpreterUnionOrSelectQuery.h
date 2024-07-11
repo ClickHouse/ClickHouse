@@ -6,6 +6,8 @@
 #include <Parsers/IAST_fwd.h>
 #include <DataTypes/DataTypesNumber.h>
 
+#include <Core/Settings.h>
+
 namespace DB
 {
 

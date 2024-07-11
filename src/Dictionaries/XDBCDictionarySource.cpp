@@ -10,6 +10,7 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/LocalDateTime.h>
 #include <Common/logger_useful.h>
+#include <Core/Settings.h>
 #include "DictionarySourceFactory.h"
 #include "DictionaryStructure.h"
 #include "readInvalidateQuery.h"

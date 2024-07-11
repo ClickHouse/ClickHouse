@@ -1,4 +1,5 @@
 #include <Core/ServerSettings.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <IO/ConnectionTimeouts.h>
 #include <IO/ReadHelpers.h>

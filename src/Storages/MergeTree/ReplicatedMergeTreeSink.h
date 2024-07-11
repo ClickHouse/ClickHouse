@@ -5,6 +5,7 @@
 #include <base/types.h>
 #include <Common/ZooKeeper/ZooKeeperRetries.h>
 #include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
+#include <Core/Settings.h>
 #include <Storages/MergeTree/AsyncBlockIDsCache.h>
 
 

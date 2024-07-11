@@ -3,6 +3,7 @@
 #include <Access/AccessControl.h>
 #include <Access/ReplicatedAccessStorage.h>
 #include <Common/logger_useful.h>
+#include <Core/Settings.h>
 #include <Functions/UserDefined/IUserDefinedSQLObjectsStorage.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateFunctionQuery.h>

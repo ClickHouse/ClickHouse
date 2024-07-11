@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/ApproximateNearestNeighborIndexesCommon.h>
 
+#include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
