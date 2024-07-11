@@ -140,7 +140,7 @@ KeeperServer::KeeperServer(
             responses_queue_,
             snapshots_queue_,
             keeper_context,
-            config.getBool("keeper_server.upload_snapshot_on_exit", true) ? &snapshot_manager_s3 : nullptr,
+            config.getBool("keeper_server.upload_snapshot_on_exit", false) ? &snapshot_manager_s3 : nullptr,
             commit_callback,
             checkAndGetSuperdigest(configuration_and_settings_->super_digest));
         LOG_WARNING(log, "Use RocksDB as Keeper backend storage.");
