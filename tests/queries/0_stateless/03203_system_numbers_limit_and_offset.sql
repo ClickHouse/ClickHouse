@@ -21,10 +21,10 @@ SELECT
     ds
 FROM
 (
-    WITH x -> arraySum(arrayMap(y -> toUInt8(y), splitByString('', toString(x)))) AS digits_sum
+    WITH arraySum(arrayMap(y -> toUInt8(y), splitByString('', toString(num)))) AS digits_sum
     SELECT
         1 + (number * 2) AS num,
-        digits_sum(num) AS ds
+        digits_sum AS ds
     FROM numbers_mt(10000)
     WHERE ds IN (
         WITH x -> ((x > 1) AND (arraySum(arrayMap(y -> ((y > 1) AND (y < x) AND ((x % y) = 0)), range(toUInt64(sqrt(x)) + 1))) = 0)) AS is_prime_slow
