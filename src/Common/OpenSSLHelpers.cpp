@@ -10,6 +10,8 @@
 #include <openssl/kdf.h>
 #include <openssl/core_names.h>
 
+#include <Common/Base64.h>
+#include <Common/Exception.h>
 
 namespace DB
 {
@@ -168,6 +170,44 @@ std::vector<uint8_t> pbkdf2SHA256(std::string_view password, const std::vector<u
         throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_KDF_derive failed");
 
     return derived_key;
+}
+
+std::string calculateHMACwithSHA256(std::string to_sign, const Poco::Crypto::RSAKey & key)
+{
+    EVP_PKEY * pkey = EVP_PKEY_new();
+
+    if (EVP_PKEY_assign_RSA(pkey, key.impl()->getRSA()) != 1)
+    {
+        EVP_PKEY_free(pkey);
+        throw Exception(ErrorCodes::OPENSSL_ERROR, "Error converting RSA key to an EVP_PKEY structure: {}", getOpenSSLErrors());
+    }
+
+    size_t signature_length = 0;
+
+    EVP_MD_CTX * context(EVP_MD_CTX_create());
+    const EVP_MD * digest = EVP_get_digestbyname("SHA256");
+    if (!digest || EVP_DigestInit_ex(context, digest, nullptr) != 1
+        || EVP_DigestSignInit(context, nullptr, digest, nullptr, pkey) != 1
+        || EVP_DigestSignUpdate(context, to_sign.c_str(), to_sign.size()) != 1
+        || EVP_DigestSignFinal(context, nullptr, &signature_length) != 1)
+    {
+        EVP_MD_CTX_destroy(context);
+        EVP_PKEY_free(pkey);
+        throw Exception(ErrorCodes::OPENSSL_ERROR, "Error forming SHA256 digest: {}", getOpenSSLErrors());
+    }
+
+    std::vector<unsigned char> signature_bytes(signature_length);
+    if (EVP_DigestSignFinal(context, &signature_bytes.front(), &signature_length) != 1)
+    {
+        EVP_MD_CTX_destroy(context);
+        throw Exception(ErrorCodes::OPENSSL_ERROR, "Error finalizing SHA256 digest: {}", getOpenSSLErrors());
+    }
+
+    EVP_MD_CTX_destroy(context);
+    // EVP_PKEY_free(pkey);  /// FIXME this segfaults due to cleaning RSAKey memory.
+
+    std::string signature = { signature_bytes.begin(), signature_bytes.end() };
+    return base64Encode(signature, /*url_encoding*/ true, /*no_padding*/ true);
 }
 
 String getOpenSSLErrors()

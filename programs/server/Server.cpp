@@ -110,9 +110,13 @@
 #include <Common/filesystemHelpers.h>
 #include <Compression/CompressionCodecEncrypted.h>
 #include <Parsers/ASTAlterQuery.h>
+#include <Server/CloudPlacementInfo.h>
+#include <Server/HTTP/HTTPServer.h>
 #include <Server/HTTP/HTTPServerConnectionFactory.h>
+#include <Server/KeeperReadinessHandler.h>
 #include <Server/MySQLHandlerFactory.h>
 #include <Server/PostgreSQLHandlerFactory.h>
+#include <Server/ProtocolServerAdapter.h>
 #include <Server/ProxyV1HandlerFactory.h>
 #include <Server/TLSHandlerFactory.h>
 #include <Server/ProtocolServerAdapter.h>
@@ -127,7 +131,6 @@
 
 #include <Common/Jemalloc.h>
 
-#include "Server/ACMEClient.h"
 #include "config.h"
 #include <Common/config_version.h>
 
@@ -145,6 +148,7 @@
 #    include <Server/SSH/SSHPtyHandlerFactory.h>
 #    include <Common/LibSSHInitializer.h>
 #    include <Common/LibSSHLogger.h>
+#    include <Server/ACMEClient.h>
 #endif
 
 #if USE_GRPC
@@ -579,8 +583,9 @@ void Server::createServer(
         }
         global_context->registerServerPort(port_name, port);
     }
-    catch (const Poco::Exception &)
+    catch (const Poco::Exception & e)
     {
+        LOG_WARNING(&logger(), "Got exception {}", e.what());
         if (listen_try)
         {
             LOG_WARNING(&logger(), "Listen [{}]:{} failed: {}. If it is an IPv6 or IPv4 address and your host has disabled IPv6 or IPv4, "
@@ -2282,8 +2287,8 @@ try
 
             CompressionCodecEncrypted::Configuration::instance().tryLoad(*config, "encryption_codecs");
 #if USE_SSL
+            ACMEClient::ACMEClient::instance().initialize(*config);
             CertificateReloader::instance().tryReloadAll(*config);
-            ACMEClient::ACMEClient::instance().reload(*config);
 #endif
             NamedCollectionFactory::instance().reloadFromConfig(*config);
             FileCacheFactory::instance().updateSettingsFromConfig(*config);
@@ -2758,9 +2763,8 @@ try
                              "to configuration file.)");
 
 #if USE_SSL
+        ACMEClient::ACMEClient::instance().initialize(config());
         CertificateReloader::instance().tryLoad(config());
-        CertificateReloader::instance().tryLoadClient(config());
-        ACMEClient::ACMEClient::instance().reload(config());
 #endif
 
         /// Must be done after initialization of `servers`, because async_metrics will access `servers` variable from its thread.
@@ -3175,6 +3179,12 @@ void Server::createServers(
             createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
             {
 #if USE_SSL
+                // while (!ACMEClient::ACMEClient::instance().isReady())
+                // {
+                //     LOG_WARNING(&logger(), "Failed to initialize ACME client. Retry in 10 seconds.");
+                //     std::this_thread::sleep_for(std::chrono::seconds(10));
+                // }
+
                 Poco::Net::SecureServerSocket socket;
                 auto address = socketBindListen(config, socket, listen_host, port, /* secure = */ true);
                 socket.setReceiveTimeout(settings[Setting::http_receive_timeout]);

@@ -23,6 +23,7 @@ void encodeSHA256(const void * text, size_t size, unsigned char * out);
 
 std::vector<uint8_t> hmacSHA256(const std::vector<uint8_t> & key, const std::string & data);
 std::vector<uint8_t> pbkdf2SHA256(std::string_view password, const std::vector<uint8_t>& salt, int iterations);
+std::string calculateHMACwithSHA256(std::string, const Poco::Crypto::RSAKey &);
 
 std::string rsaSHA256Sign(EVP_PKEY * pkey, const std::string & data);
 bool rsaSHA256Verify(EVP_PKEY * pkey, const std::string & data, const std::string & signature);
