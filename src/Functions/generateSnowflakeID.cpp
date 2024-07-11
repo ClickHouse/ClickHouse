@@ -165,17 +165,28 @@ public:
     {
         FunctionArgumentDescriptors mandatory_args;
         FunctionArgumentDescriptors optional_args{
-            {"expr", nullptr, nullptr, "Arbitrary expression"}
+            {"machine_id", nullptr, nullptr, "Optional machine ID"}
         };
         validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
 
         return std::make_shared<DataTypeUInt64>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & /*arguments*/, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         auto col_res = ColumnVector<UInt64>::create();
         typename ColumnVector<UInt64>::Container & vec_to = col_res->getData();
+
+        uint64_t machine_id = 0;
+        if (arguments.size() > 0)
+        {
+            machine_id = arguments[0].column->getUInt(0);
+        }
+
+        if (machine_id == 0)
+        {
+            machine_id = getMachineId();
+        }
 
         if (input_rows_count != 0)
         {
@@ -208,10 +219,10 @@ public:
 REGISTER_FUNCTION(GenerateSnowflakeID)
 {
     FunctionDocumentation::Description description = R"(Generates a Snowflake ID. The generated Snowflake ID contains the current Unix timestamp in milliseconds (41 + 1 top zero bits), followed by a machine id (10 bits), and a counter (12 bits) to distinguish IDs within a millisecond. For any given timestamp (unix_ts_ms), the counter starts at 0 and is incremented by 1 for each new Snowflake ID until the timestamp changes. In case the counter overflows, the timestamp field is incremented by 1 and the counter is reset to 0. Function generateSnowflakeID guarantees that the counter field within a timestamp increments monotonically across all function invocations in concurrently running threads and queries.)";
-    FunctionDocumentation::Syntax syntax = "generateSnowflakeID([expression])";
-    FunctionDocumentation::Arguments arguments = {{"expression", "The expression is used to bypass common subexpression elimination if the function is called multiple times in a query but otherwise ignored. Optional."}};
+    FunctionDocumentation::Syntax syntax = "generateSnowflakeID([machine_id])";
+    FunctionDocumentation::Arguments arguments = {{"machine_id", "Optional machine ID"}};
     FunctionDocumentation::ReturnedValue returned_value = "A value of type UInt64";
-    FunctionDocumentation::Examples examples = {{"single", "SELECT generateSnowflakeID()", "7201148511606784000"}, {"multiple", "SELECT generateSnowflakeID(1), generateSnowflakeID(2)", ""}};
+    FunctionDocumentation::Examples examples = {{"single", "SELECT generateSnowflakeID()", "7201148511606784000"}, {"with_machine_id", "SELECT generateSnowflakeID(1)", ""}};
     FunctionDocumentation::Categories categories = {"Snowflake ID"};
 
     factory.registerFunction<FunctionGenerateSnowflakeID>({description, syntax, arguments, returned_value, examples, categories});
