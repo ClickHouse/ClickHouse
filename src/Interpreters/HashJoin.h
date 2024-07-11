@@ -17,6 +17,7 @@
 #include <Common/HashTable/FixedHashMap.h>
 #include <Common/HashTable/HashMap.h>
 #include "Columns/IColumn.h"
+#include "base/defines.h"
 
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
@@ -28,7 +29,6 @@
 #include <Interpreters/IKeyValueEntity.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <Storages/IStorage_fwd.h>
-#include <__algorithm/ranges_remove_if.h>
 #include <boost/core/noncopyable.hpp>
 
 namespace DB
@@ -177,24 +177,18 @@ public:
     {
         BlockPtr block; // TODO: we don't need shared_ptr here since if any changes are made to block, they're supposed to be private
         IColumn::Selector selector;
-        bool was_scattered = true; // TODO: could be replaced with selector.size() != block->rows()
 
-        ScatteredBlock(const Block & block_)
-            : block(std::make_shared<Block>(block_)), selector(createTrivialSelector(block->rows())), was_scattered(false)
+        ScatteredBlock(const Block & block_) : block(std::make_shared<Block>(block_)), selector(createTrivialSelector(block->rows())) { }
+
+        ScatteredBlock(const Block & block_, IColumn::Selector && selector_)
+            : block(std::make_shared<Block>(block_)), selector(std::move(selector_))
         {
         }
 
-        ScatteredBlock(const Block & block_, IColumn::Selector && selector_, bool was_scattered_)
-            : block(std::make_shared<Block>(block_)), selector(std::move(selector_)), was_scattered(was_scattered_)
-        {
-        }
-
-        ScatteredBlock(ScatteredBlock && other) noexcept
-            : block(std::move(other.block)), selector(std::move(other.selector)), was_scattered(other.was_scattered)
+        ScatteredBlock(ScatteredBlock && other) noexcept : block(std::move(other.block)), selector(std::move(other.selector))
         {
             other.block = nullptr;
             other.selector.clear();
-            other.was_scattered = false;
         }
 
         ScatteredBlock & operator=(ScatteredBlock && other) noexcept
@@ -203,22 +197,24 @@ public:
             {
                 block = std::move(other.block);
                 selector = std::move(other.selector);
-                was_scattered = other.was_scattered;
 
                 other.block = nullptr;
                 other.selector.clear();
-                other.was_scattered = false;
             }
             return *this;
         }
 
-        operator bool() const { return block != nullptr; }
+        operator bool() const { return block && block->rows(); }
 
         /// Accounts only selected rows
         size_t rows() const { return selector.size(); }
 
         /// Whether block was scattered, i.e. has non-trivial selector
-        bool wasScattered() const { return was_scattered; }
+        bool wasScattered() const
+        {
+            chassert(block);
+            return selector.size() != block->rows();
+        }
 
         const ColumnWithTypeAndName & getByName(const std::string & name) const
         {
@@ -232,46 +228,47 @@ public:
             chassert(block && block->rows() == filter.size());
             auto it = std::remove_if(selector.begin(), selector.end(), [&](size_t idx) { return filter[idx]; });
             selector.resize(std::distance(selector.begin(), it));
-            was_scattered = selector.size() != block->rows();
         }
 
+        /// Applies selector to block in place
         void filterBySelector()
         {
+            chassert(block);
             auto columns = block->getColumns();
             for (auto & col : columns)
             {
                 auto c = col->cloneEmpty();
                 c->reserve(selector.size());
+                /// TODO: create new method in IColumnHelper to devirtualize
                 for (const auto idx : selector)
                     c->insertFrom(*col, idx);
                 col = std::move(c);
             }
-            block = std::make_shared<Block>(block->cloneWithColumns(std::move(columns)));
-            selector = createTrivialSelector(block->rows());
-            was_scattered = false;
+
+            *this = ScatteredBlock{block->cloneWithColumns(std::move(columns))};
         }
 
         /// Cut first num_rows rows from block in place and returns block with remaining rows
         ScatteredBlock cut(size_t num_rows)
         {
-            // TODO: fix me
-            // if (num_rows >= rows())
-            //     return ScatteredBlock(Block{});
+            if (num_rows >= rows())
+                return Block{};
+
+            chassert(block);
 
             IColumn::Selector remaining_selector(selector.begin() + num_rows, selector.end());
-            auto remaining = ScatteredBlock{*block, std::move(remaining_selector), was_scattered};
+            auto remaining = ScatteredBlock{*block, std::move(remaining_selector)};
 
-            /// Cut rows from current block
             selector.erase(selector.begin() + num_rows, selector.end());
 
             return remaining;
         }
 
+    private:
         IColumn::Selector createTrivialSelector(size_t size)
         {
             IColumn::Selector res(size);
-            for (size_t i = 0; i < size; ++i)
-                res[i] = i;
+            std::iota(res.begin(), res.end(), 0);
             return res;
         }
     };

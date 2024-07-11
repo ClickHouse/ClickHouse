@@ -173,9 +173,11 @@ bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block, bool check_li
                 if (!lock.owns_lock())
                     continue;
 
+                bool limit_exceeded = !hash_join->data->addBlockToJoin(dispatched_block, check_limits);
+
+                dispatched_block = Block{};
                 blocks_left--;
 
-                bool limit_exceeded = !hash_join->data->addBlockToJoin(dispatched_block, check_limits);
                 if (limit_exceeded)
                     return false;
             }
@@ -309,7 +311,7 @@ HashJoin::ScatteredBlocks ConcurrentHashJoin::dispatchBlock(const Strings & key_
     HashJoin::ScatteredBlocks result;
     result.reserve(num_shards);
     for (size_t i = 0; i < num_shards; ++i)
-        result.emplace_back(from_block, std::move(selectors[i]), /* was_scattered */ true);
+        result.emplace_back(from_block, std::move(selectors[i]));
     return result;
 }
 
