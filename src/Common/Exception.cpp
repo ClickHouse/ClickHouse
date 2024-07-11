@@ -38,7 +38,7 @@ namespace ErrorCodes
     extern const int CANNOT_MREMAP;
 }
 
-[[noreturn]] void abortOnFailedAssertion(const String & description, const Exception::FramePointers * trace = nullptr)
+void abortOnFailedAssertion(const String & description, const Exception::FramePointers * trace)
 {
     auto & logger = Poco::Logger::root();
     LOG_FATAL(&logger, "Logical error: '{}'.", description);
