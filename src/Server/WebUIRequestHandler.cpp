@@ -14,6 +14,7 @@
 
 #include <incbin.h>
 
+#include "Server/ACMEClient.h"
 #include "config.h"
 
 /// Embedded HTML pages
@@ -74,6 +75,20 @@ void BinaryWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPS
 void MergesWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event &)
 {
     handle(request, response, {reinterpret_cast<const char *>(gresource_merges_htmlData), gresource_merges_htmlSize}, http_response_headers_override);
+}
+
+/// FIXME not a Web UI
+void ACMERequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event &)
+{
+    auto challenge = ACMEClient::ACMEClient::instance().requestChallenge(request.getURI());
+
+    if (challenge.empty())
+    {
+        response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_NOT_FOUND);
+        *response.send() << "Not found.\n";
+    }
+
+    handle(server, request, response, challenge);
 }
 
 void JavaScriptWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event &)

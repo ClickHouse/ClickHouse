@@ -343,6 +343,11 @@ void addCommonDefaultHandlersFactory(HTTPRequestHandlerFactoryMain & factory, IS
     factory.addPathToHints("/merges");
     factory.addHandler(merges_handler);
 
+    auto acme_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<ACMERequestHandler>>(server);
+    acme_handler->attachNonStrictPath(ACMEClient::ACME_CHALLENGE_PATH);
+    acme_handler->allowGetAndHeadRequest();
+    factory.addHandler(acme_handler);
+
     auto js_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<JavaScriptWebUIRequestHandler>>(server);
     js_handler->attachNonStrictPath("/js/");
     js_handler->allowGetAndHeadRequest();
