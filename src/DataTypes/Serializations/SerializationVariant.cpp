@@ -1,5 +1,6 @@
 #include <DataTypes/Serializations/SerializationVariant.h>
 #include <DataTypes/Serializations/SerializationVariantElement.h>
+#include <DataTypes/Serializations/SerializationVariantElementNullMap.h>
 #include <DataTypes/Serializations/SerializationNumber.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
 #include <DataTypes/Serializations/SerializationNamed.h>
@@ -71,10 +72,16 @@ void SerializationVariant::enumerateStreams(
 
     for (size_t i = 0; i < variants.size(); ++i)
     {
-        settings.path.back().creator = std::make_shared<SerializationVariantElement::VariantSubcolumnCreator>(local_discriminators, variant_names[i], i, column_variant ? column_variant->localDiscriminatorByGlobal(i) : i);
+        DataTypePtr type = type_variant ? type_variant->getVariant(i) : nullptr;
+        settings.path.back().creator = std::make_shared<SerializationVariantElement::VariantSubcolumnCreator>(
+            local_discriminators,
+            variant_names[i],
+            i,
+            column_variant ? column_variant->localDiscriminatorByGlobal(i) : i,
+            !type || type->canBeInsideNullable() || type->lowCardinality());
 
         auto variant_data = SubstreamData(variants[i])
-                             .withType(type_variant ? type_variant->getVariant(i) : nullptr)
+                             .withType(type)
                              .withColumn(column_variant ? column_variant->getVariantPtrByGlobalDiscriminator(i) : nullptr)
                              .withSerializationInfo(data.serialization_info)
                              .withDeserializeState(variant_deserialize_state ? variant_deserialize_state->variant_states[i] : nullptr);
@@ -82,6 +89,24 @@ void SerializationVariant::enumerateStreams(
         addVariantElementToPath(settings.path, i);
         settings.path.back().data = variant_data;
         variants[i]->enumerateStreams(settings, callback, variant_data);
+        settings.path.pop_back();
+    }
+
+    /// Variant subcolumns like variant.Type have type Nullable(Type), so we want to support reading null map subcolumn from it: variant.Type.null.
+    /// Nullable column is created during deserialization of a variant subcolumn according to the discriminators, so we don't have actual Nullable
+    /// serialization with null map subcolumn. To be able to read null map subcolumn from the variant subcolumn we use special serialization
+    /// SerializationVariantElementNullMap.
+    auto null_map_data = SubstreamData(std::make_shared<SerializationNumber<UInt8>>())
+                             .withType(type_variant ? std::make_shared<DataTypeUInt8>() : nullptr)
+                             .withColumn(column_variant ? ColumnUInt8::create() : nullptr);
+
+    for (size_t i = 0; i < variants.size(); ++i)
+    {
+        settings.path.back().creator = std::make_shared<SerializationVariantElementNullMap::VariantNullMapSubcolumnCreator>(local_discriminators, variant_names[i], i, column_variant ? column_variant->localDiscriminatorByGlobal(i) : i);
+        settings.path.push_back(Substream::VariantElementNullMap);
+        settings.path.back().variant_element_name = variant_names[i];
+        settings.path.back().data = null_map_data;
+        callback(settings.path);
         settings.path.pop_back();
     }
 
