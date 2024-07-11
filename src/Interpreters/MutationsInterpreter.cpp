@@ -488,7 +488,7 @@ static void validateUpdateColumns(
             {
                 if (!source.supportsLightweightDelete())
                 {
-                    // if (!source.getStorage()->isMergeTree() 
+                    // if (!source.getStorage()->isMergeTree()
                     //     || context->getSettingsRef().lightweight_mutation_projection_mode == LightweightMutationProjectionMode::THROW)
                     //     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Lightweight delete is not supported for table");
                 }
