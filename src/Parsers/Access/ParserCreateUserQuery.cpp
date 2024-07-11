@@ -48,21 +48,10 @@ namespace
         });
     }
 
-    bool parseAuthenticationData(IParserBase::Pos & pos, Expected & expected, std::shared_ptr<ASTAuthenticationData> & auth_data)
+    bool parseAuthenticationData(IParserBase::Pos & pos, Expected & expected, std::shared_ptr<ASTAuthenticationData> & auth_data, bool is_type_specifier_mandatory)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            if (ParserKeyword{Keyword::NOT_IDENTIFIED}.ignore(pos, expected))
-            {
-                auth_data = std::make_shared<ASTAuthenticationData>();
-                auth_data->type = AuthenticationType::NO_PASSWORD;
-
-                return true;
-            }
-
-            if (!ParserKeyword{Keyword::IDENTIFIED}.ignore(pos, expected))
-                return false;
-
             std::optional<AuthenticationType> type;
 
             bool expect_password = false;
@@ -73,51 +62,48 @@ namespace
             bool expect_public_ssh_key = false;
             bool expect_http_auth_server = false;
 
-            if (ParserKeyword{Keyword::WITH}.ignore(pos, expected))
+            for (auto check_type : collections::range(AuthenticationType::MAX))
             {
-                for (auto check_type : collections::range(AuthenticationType::MAX))
+                if (ParserKeyword{AuthenticationTypeInfo::get(check_type).keyword}.ignore(pos, expected))
                 {
-                    if (ParserKeyword{AuthenticationTypeInfo::get(check_type).keyword}.ignore(pos, expected))
-                    {
-                        type = check_type;
+                    type = check_type;
 
-                        if (check_type == AuthenticationType::LDAP)
-                            expect_ldap_server_name = true;
-                        else if (check_type == AuthenticationType::KERBEROS)
-                            expect_kerberos_realm = true;
-                        else if (check_type == AuthenticationType::SSL_CERTIFICATE)
-                            expect_ssl_cert_subjects = true;
-                        else if (check_type == AuthenticationType::SSH_KEY)
-                            expect_public_ssh_key = true;
-                        else if (check_type == AuthenticationType::HTTP)
-                            expect_http_auth_server = true;
-                        else if (check_type != AuthenticationType::NO_PASSWORD)
-                            expect_password = true;
+                    if (check_type == AuthenticationType::LDAP)
+                        expect_ldap_server_name = true;
+                    else if (check_type == AuthenticationType::KERBEROS)
+                        expect_kerberos_realm = true;
+                    else if (check_type == AuthenticationType::SSL_CERTIFICATE)
+                        expect_ssl_cert_subjects = true;
+                    else if (check_type == AuthenticationType::SSH_KEY)
+                        expect_public_ssh_key = true;
+                    else if (check_type == AuthenticationType::HTTP)
+                        expect_http_auth_server = true;
+                    else if (check_type != AuthenticationType::NO_PASSWORD)
+                        expect_password = true;
 
-                        break;
-                    }
+                    break;
                 }
+            }
 
-                if (!type)
+            if (!type)
+            {
+                if (ParserKeyword{Keyword::SHA256_HASH}.ignore(pos, expected))
                 {
-                    if (ParserKeyword{Keyword::SHA256_HASH}.ignore(pos, expected))
-                    {
-                        type = AuthenticationType::SHA256_PASSWORD;
-                        expect_hash = true;
-                    }
-                    else if (ParserKeyword{Keyword::DOUBLE_SHA1_HASH}.ignore(pos, expected))
-                    {
-                        type = AuthenticationType::DOUBLE_SHA1_PASSWORD;
-                        expect_hash = true;
-                    }
-                    else if (ParserKeyword{Keyword::BCRYPT_HASH}.ignore(pos, expected))
-                    {
-                        type = AuthenticationType::BCRYPT_PASSWORD;
-                        expect_hash = true;
-                    }
-                    else
-                        return false;
+                    type = AuthenticationType::SHA256_PASSWORD;
+                    expect_hash = true;
                 }
+                else if (ParserKeyword{Keyword::DOUBLE_SHA1_HASH}.ignore(pos, expected))
+                {
+                    type = AuthenticationType::DOUBLE_SHA1_PASSWORD;
+                    expect_hash = true;
+                }
+                else if (ParserKeyword{Keyword::BCRYPT_HASH}.ignore(pos, expected))
+                {
+                    type = AuthenticationType::BCRYPT_PASSWORD;
+                    expect_hash = true;
+                }
+                else if (is_type_specifier_mandatory)
+                    return false;
             }
 
             /// If authentication type is not specified, then the default password type is used
@@ -220,6 +206,43 @@ namespace
                 auth_data->children.push_back(std::move(http_auth_scheme));
 
             return true;
+        });
+    }
+
+
+    bool parseIdentifiedWith(IParserBase::Pos & pos, Expected & expected, std::vector<std::shared_ptr<ASTAuthenticationData>> & authentication_methods)
+    {
+        return IParserBase::wrapParseImpl(pos, [&]
+        {
+            if (ParserKeyword{Keyword::NOT_IDENTIFIED}.ignore(pos, expected))
+            {
+                authentication_methods.emplace_back(std::make_shared<ASTAuthenticationData>());
+                authentication_methods.back()->type = AuthenticationType::NO_PASSWORD;
+
+                return true;
+            }
+
+            if (!ParserKeyword{Keyword::IDENTIFIED}.ignore(pos, expected))
+                return false;
+
+            bool is_type_specifier_mandatory = ParserKeyword{Keyword::WITH}.ignore(pos, expected);
+
+            std::shared_ptr<ASTAuthenticationData> ast_authentication_data;
+            while (parseAuthenticationData(pos, expected, ast_authentication_data, is_type_specifier_mandatory))
+            {
+                authentication_methods.push_back(ast_authentication_data);
+
+                if (!ParserToken{TokenType::Comma}.ignore(pos, expected))
+                {
+                    break;
+                }
+
+                ParserToken{TokenType::Whitespace}.ignore(pos, expected);
+
+                is_type_specifier_mandatory = false;
+            }
+
+            return !authentication_methods.empty();
         });
     }
 
@@ -417,7 +440,7 @@ namespace
         });
     }
 
-    bool parseAddNewAuthenticationMethod(IParserBase::Pos & pos, Expected & expected, std::shared_ptr<ASTAuthenticationData> & auth_data)
+    bool parseAddIdentifiedWith(IParserBase::Pos & pos, Expected & expected, std::vector<std::shared_ptr<ASTAuthenticationData>> & auth_data)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
@@ -426,7 +449,7 @@ namespace
                 return false;
             }
 
-            return parseAuthenticationData(pos, expected, auth_data);
+            return parseIdentifiedWith(pos, expected, auth_data);
         });
     }
 
@@ -497,41 +520,14 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
     while (true)
     {
-        std::shared_ptr<ASTAuthenticationData> identified_with_auth_data;
-        bool parse_auth_data = parseAuthenticationData(pos, expected, identified_with_auth_data);
-
-        bool found_multiple_identified_with = parsed_identified_with && parse_auth_data;
-
-        if (found_multiple_identified_with)
+        if (auth_data.empty())
         {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Only one identified with is permitted");
-        }
+            parsed_identified_with = parseIdentifiedWith(pos, expected, auth_data);
 
-        if (parse_auth_data)
-        {
-            if (parsed_add_new_method)
+            if (!parsed_identified_with)
             {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Identified with must precede add new auth");
+                parsed_add_new_method = parseAddIdentifiedWith(pos, expected, auth_data);
             }
-            auth_data.push_back(identified_with_auth_data);
-            parsed_identified_with = true;
-            continue;
-        }
-
-        std::shared_ptr<ASTAuthenticationData> add_new_auth_method;
-        parsed_add_new_method = parseAddNewAuthenticationMethod(pos, expected, add_new_auth_method);
-
-        if (parsed_add_new_method)
-        {
-            if (add_new_auth_method->type == AuthenticationType::NO_PASSWORD)
-            {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The authentication method 'no_password' cannot be used with the ADD keyword. "
-                                                           "Use 'ALTER USER xyz IDENTIFIED WITH no_password' to replace existing authentication methods");
-
-            }
-
-            auth_data.push_back(add_new_auth_method);
-            continue;
         }
 
         if (!reset_authentication_methods_to_new.has_value())
@@ -614,6 +610,13 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     if (has_no_password_authentication_method && auth_data.size() > 1)
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "NO_PASSWORD Authentication method cannot co-exist with other authentication methods");
+    }
+
+    if (has_no_password_authentication_method && parsed_add_new_method)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The authentication method 'no_password' cannot be used with the ADD keyword. "
+                                                   "Use 'ALTER USER xyz IDENTIFIED WITH no_password' to replace existing authentication methods");
+
     }
 
     if (!alter && !hosts)

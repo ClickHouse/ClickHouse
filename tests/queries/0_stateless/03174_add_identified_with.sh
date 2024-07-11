@@ -45,7 +45,7 @@ test_login_pwd_expect_error ${user} '1'
 echo "New password should work"
 test_login_pwd ${user} '2'
 
-${CLICKHOUSE_CLIENT} --query "ALTER USER ${user} ADD IDENTIFIED WITH plaintext_password BY '3' ADD IDENTIFIED WITH plaintext_password BY '4'"
+${CLICKHOUSE_CLIENT} --query "ALTER USER ${user} ADD IDENTIFIED WITH plaintext_password BY '3', plaintext_password BY '4'"
 
 echo "Two new passwords were added, should both work"
 test_login_pwd ${user} '3'
@@ -87,20 +87,12 @@ echo "Should work"
 test_login_pwd ${user} '6'
 
 echo "Multiple identified with, not allowed"
-${CLICKHOUSE_CLIENT} --query "ALTER USER ${user} IDENTIFIED WITH plaintext_password by '7' IDENTIFIED WITH plaintext_password by '8'" 2>&1 | grep -m1 -o "BAD_ARGUMENTS"
-echo "Multiple identified with, not allowed, even if mixed"
-${CLICKHOUSE_CLIENT} --query "ALTER USER ${user} IDENTIFIED WITH plaintext_password by '7' ADD IDENTIFIED WITH plaintext_password by '8' IDENTIFIED WITH plaintext_password by '9'" 2>&1 | grep -m1 -o "BAD_ARGUMENTS"
-echo "Identified with must precede all add identified with, not allowed"
-${CLICKHOUSE_CLIENT} --query "ALTER USER ${user} ADD IDENTIFIED WITH plaintext_password by '7' IDENTIFIED WITH plaintext_password by '8'" 2>&1 | grep -m1 -o "BAD_ARGUMENTS"
+${CLICKHOUSE_CLIENT} --query "ALTER USER ${user} IDENTIFIED WITH plaintext_password by '7', IDENTIFIED plaintext_password by '8'" 2>&1 | grep -m1 -o "Syntax error"
 
 ${CLICKHOUSE_CLIENT} --query "DROP USER ${user}"
 
 echo "CREATE Multiple identified with, not allowed"
-${CLICKHOUSE_CLIENT} --query "CREATE USER ${user} IDENTIFIED WITH plaintext_password by '7' IDENTIFIED WITH plaintext_password by '8'" 2>&1 | grep -m1 -o "BAD_ARGUMENTS"
-echo "CREATE Multiple identified with, not allowed, even if mixed"
-${CLICKHOUSE_CLIENT} --query "CREATE USER ${user} IDENTIFIED WITH plaintext_password by '7' ADD IDENTIFIED WITH plaintext_password by '8' IDENTIFIED WITH plaintext_password by '9'" 2>&1 | grep -m1 -o "BAD_ARGUMENTS"
-echo "CREATE Identified with must precede all add identified with, not allowed"
-${CLICKHOUSE_CLIENT} --query "CREATE USER ${user} ADD IDENTIFIED WITH plaintext_password by '7' IDENTIFIED WITH plaintext_password by '8'" 2>&1 | grep -m1 -o "BAD_ARGUMENTS"
+${CLICKHOUSE_CLIENT} --query "CREATE USER ${user} IDENTIFIED WITH plaintext_password by '7', IDENTIFIED WITH plaintext_password by '8'" 2>&1 | grep -m1 -o "Syntax error"
 
 ${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS ${user}"
 
@@ -113,7 +105,7 @@ ${CLICKHOUSE_CLIENT} --query "ALTER USER ${user} ADD IDENTIFIED WITH plaintext_p
 ${CLICKHOUSE_CLIENT} --query "SHOW CREATE USER ${user}"
 
 echo "Try to provide no_password mixed with other authentication methods, should not be allowed"
-${CLICKHOUSE_CLIENT} --query "ALTER USER ${user} ADD IDENTIFIED WITH plaintext_password by '8' ADD IDENTIFIED WITH no_password" 2>&1 | grep -m1 -o "BAD_ARGUMENTS"
+${CLICKHOUSE_CLIENT} --query "ALTER USER ${user} ADD IDENTIFIED WITH plaintext_password by '8', no_password" 2>&1 | grep -m1 -o "BAD_ARGUMENTS"
 
 echo "Adding no_password, should fail"
 ${CLICKHOUSE_CLIENT} --query "ALTER USER ${user} ADD IDENTIFIED WITH no_password" 2>&1 | grep -m1 -o "BAD_ARGUMENTS"

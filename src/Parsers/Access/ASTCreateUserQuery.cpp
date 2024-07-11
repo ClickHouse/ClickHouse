@@ -21,16 +21,24 @@ namespace
 
     void formatAuthenticationData(const std::vector<std::shared_ptr<ASTAuthenticationData>> & authentication_methods, const IAST::FormatSettings & settings)
     {
-        /*
-         * The first authentication method must be formatted in the form of: `IDENTIFIED WITH xyz..`
-         * The remaining ones shall contain the `ADD`: `ADD IDENTIFIED WITH`.
-         * */
-        authentication_methods[0]->format(settings);
+        settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " IDENTIFIED" << (settings.hilite ? IAST::hilite_none : "");
 
-        for (std::size_t i = 1; i < authentication_methods.size(); i++)
+        // safe because this method is only called if authentication_methods.size > 1
+        // if the first type is present, include the `WITH` keyword
+        if (authentication_methods[0]->type)
         {
-            settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " ADD" << (settings.hilite ? IAST::hilite_none : "");
+            settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " WITH" << (settings.hilite ? IAST::hilite_none : "");
+        }
+
+        for (std::size_t i = 0; i < authentication_methods.size(); i++)
+        {
             authentication_methods[i]->format(settings);
+
+            bool is_last = i < authentication_methods.size() - 1;
+            if (is_last)
+            {
+                settings.ostr << (settings.hilite ? IAST::hilite_keyword : ",");
+            }
         }
     }
 

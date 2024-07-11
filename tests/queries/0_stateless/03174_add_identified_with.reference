@@ -24,17 +24,9 @@ AUTHENTICATION_FAILED
 Should work
 1
 Multiple identified with, not allowed
-BAD_ARGUMENTS
-Multiple identified with, not allowed, even if mixed
-BAD_ARGUMENTS
-Identified with must precede all add identified with, not allowed
-BAD_ARGUMENTS
+Syntax error
 CREATE Multiple identified with, not allowed
-BAD_ARGUMENTS
-CREATE Multiple identified with, not allowed, even if mixed
-BAD_ARGUMENTS
-CREATE Identified with must precede all add identified with, not allowed
-BAD_ARGUMENTS
+Syntax error
 Create user with no identification
 Add identified with
 CREATE USER u01_03174 IDENTIFIED WITH plaintext_password
