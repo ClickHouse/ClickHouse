@@ -16,18 +16,13 @@ namespace ProfileEvents
     extern const Event RemoteWriteThrottlerSleepMicroseconds;
     extern const Event WriteBufferFromCephMicroseconds;
     extern const Event WriteBufferFromCephBytes;
-    extern const Event WriteBufferFromCephRequestsErrors;
 }
 
 namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int CEPH_ERROR;
-    extern const int NETWORK_ERROR;
     extern const int LOGICAL_ERROR;
-    extern const int CANNOT_SEEK_THROUGH_FILE;
-    extern const int SEEK_POSITION_OUT_OF_BOUND;
 }
 
 WriteBufferFromCeph::WriteBufferFromCeph(

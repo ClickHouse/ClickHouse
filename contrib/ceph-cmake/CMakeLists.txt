@@ -34,16 +34,10 @@ configure_file(
   @ONLY)
 
 
-# Below code is for generating options from yaml files
-# In ClickHouse build we pre-generated these files in
-# ${Ceph_CMAKE_DIR}/Options/
-
-# find_package(Python3 REQUIRED COMPONENTS Interpreter)
-
-# execute_process(
-#     COMMAND ${Python3_EXECUTABLE} -m pip install pyyaml
-#     COMMAND_ECHO STDOUT
-# )
+# Below code is for generating options from yaml files. In ClickHouse build we
+# pre-generated these files in ${Ceph_CMAKE_DIR}/Options/ and ${Ceph_BUILD_DIR}
+# Even only librados required all options to build.
+# Must have python3 and pyyaml installed
 
 # set(OPTIONS_DIR "${Ceph_LIBRARY_DIR}/src/common/options")
 # function(add_options name)
@@ -54,7 +48,7 @@ configure_file(
 #   set(cc_file "${Ceph_BUILD_DIR}/${name}_options.cc")
 #   set(h_file "${Ceph_BUILD_DIR}/${name}_legacy_options.h")
 #   execute_process(
-#     COMMAND ${Python3_EXECUTABLE} ${OPTIONS_DIR}/y2c.py
+#     COMMAND python3 ${OPTIONS_DIR}/y2c.py
 #       --input ${yaml_file}
 #       --output ${cc_file}
 #       --legacy ${h_file}
@@ -208,18 +202,14 @@ set(SRCS
     "${Ceph_LIBRARY_DIR}/src/common/addr_parsing.c"
     "${Ceph_LIBRARY_DIR}/src/common/TextTable.cc"
     "${Ceph_LIBRARY_DIR}/src/common/ceph_regex.cc"
-
     "${Ceph_LIBRARY_DIR}/src/common/sctp_crc32.c"
     "${Ceph_LIBRARY_DIR}/src/common/crc32c.cc"
     "${Ceph_LIBRARY_DIR}/src/common/crc32c_intel_baseline.c"
     "${Ceph_LIBRARY_DIR}/src/common/crc32c_intel_fast.c"
-
     "${Ceph_LIBRARY_DIR}/src/erasure-code/ErasureCodePlugin.cc"
     "${Ceph_LIBRARY_DIR}/src/compressor/Compressor.cc"
-
     "${Ceph_LIBRARY_DIR}/src/arch/intel.c"
     "${Ceph_LIBRARY_DIR}/src/arch/probe.cc"
-
     "${Ceph_LIBRARY_DIR}/src/xxHash/xxhash.c"
     "${Ceph_LIBRARY_DIR}/src/ceph_ver.c"
     "${Ceph_LIBRARY_DIR}/src/log/Log.cc"
@@ -330,21 +320,7 @@ add_library(ch_contrib::ceph ALIAS _librados)
 ### ceph origin
 target_include_directories(_librados PRIVATE "${Ceph_LIBRARY_DIR}/src/" "${Ceph_BUILD_DIR}" "${Ceph_CMAKE_DIR}/Options")
 target_include_directories(_librados SYSTEM BEFORE INTERFACE "${Ceph_LIBRARY_DIR}/src/include/rados")
-target_compile_definitions(_librados PRIVATE HAVE_CONFIG_H __CEPH__ CEPH_USE_RE2)
-
-### test if current libcxx has spaceship operator
-include(CheckCXXSourceCompiles)
-check_cxx_source_compiles("
-#include <string>
-int main() {
-    std::string a, b;
-    return a <=> b;
-}
-" LIBCXX_HAS_STRING_SPACESHIP)
-
-if (NOT LIBCXX_HAS_STRING_SPACESHIP)
-    target_compile_definitions(_librados PRIVATE LIBCXX_NO_STRING_SPACESHIP)
-endif()
+target_compile_definitions(_librados PRIVATE HAVE_CONFIG_H __CEPH__ CEPH_USE_RE2 LIBCXX_NO_STRING_SPACESHIP)
 
 target_link_libraries(_librados
     PRIVATE

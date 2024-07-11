@@ -157,7 +157,7 @@ public:
     bool isRemote() const override { return true; }
 
     std::unique_ptr<IObjectStorage> cloneObjectStorage(
-        const std::string & new_namespace, ///!!! Not rados namespace, this is a new pool name (equivalent to bucket in S3)
+        const std::string & new_namespace, /// Not rados namespace, this is a new pool name (equivalent to bucket in S3)
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
         ContextPtr context) override;

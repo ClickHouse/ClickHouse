@@ -1,4 +1,5 @@
 #include "RadosIO.h"
+#include <buffer_fwd.h>
 
 #if USE_CEPH
 
@@ -72,7 +73,7 @@ void RadosIO::assertConnected() const
 size_t RadosIO::read(const String & oid, char * data, size_t length, uint64_t offset)
 {
     assertConnected();
-    ceph::bufferlist bl;
+    ceph::bufferlist bl = ceph::bufferlist::static_from_mem(data, length);
     ceph::bufferptr bp = ceph::buffer::create_static(safe_cast<int>(length), data);
     bl.push_back(bp);
     auto bytes_read = io_ctx.read(oid, bl, length, offset);
@@ -145,10 +146,15 @@ void RadosIO::remove(const String & oid, bool if_exists)
 String RadosIO::getAttribute(const String & oid, const String & attr)
 {
     assertConnected();
-    ceph::bufferlist bl;
+    String res;
+    ceph::bufferlist bl = ceph::bufferlist::static_from_string(res);
     if (auto ec = io_ctx.getxattr(oid, attr.c_str(), bl); ec < 0)
         throw Exception(ErrorCodes::CEPH_ERROR, "Cannot get attribute `{}` for object `{}:{}`. Error: {}", attr, pool, oid, strerror(-ec));
-    String res(bl.c_str(), bl.length());
+    if (!bl.is_provided_buffer(res.data()))
+    {
+        res.resize(bl.length());
+        bl.begin().copy(bl.length(), res.data());
+    }
     return res;
 }
 
@@ -167,9 +173,10 @@ void RadosIO::getAttributes(const String & oid, std::map<String, String> & attrs
     std::map<std::string, ceph::bufferlist> xattrs;
     if (auto ec = io_ctx.getxattrs(oid, xattrs); ec < 0)
         throw Exception(ErrorCodes::CEPH_ERROR, "Cannot get attributes for object `{}:{}`. Error: {}", pool, oid, strerror(-ec));
-    for (auto && [key, value] : xattrs)
+    for (auto & [key, value] : xattrs)
     {
-        attrs.emplace(key, String(value.c_str(), value.length()));
+        /// TODO: zero copy from bufferlist to string
+        attrs.emplace(key, value.to_str());
     }
 }
 
@@ -208,7 +215,7 @@ std::optional<ObjectMetadata> RadosIO::tryGetMetadata(const String & oid, std::o
     metadata.size_bytes = size;
     metadata.last_modified = Poco::Timestamp::fromEpochTime(mtime.tv_sec);
     for (auto && [key, value] : xattrs)
-        metadata.attributes.emplace(key, String(value.c_str(), value.length()));
+        metadata.attributes.emplace(key, value.to_str()); /// TODO: zero copy from bufferlist to string
     return std::move(metadata);
 }
 

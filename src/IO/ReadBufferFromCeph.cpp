@@ -16,8 +16,6 @@ namespace ProfileEvents
 {
 extern const Event ReadBufferFromCephMicroseconds;
 extern const Event ReadBufferFromCephBytes;
-extern const Event ReadBufferFromCephRequestsErrors;
-extern const Event ReadBufferFromCephInitMicroseconds;
 extern const Event RemoteReadThrottlerBytes;
 extern const Event RemoteReadThrottlerSleepMicroseconds;
 }
@@ -27,8 +25,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int CEPH_ERROR;
-extern const int NETWORK_ERROR;
 extern const int LOGICAL_ERROR;
 extern const int CANNOT_SEEK_THROUGH_FILE;
 extern const int SEEK_POSITION_OUT_OF_BOUND;
