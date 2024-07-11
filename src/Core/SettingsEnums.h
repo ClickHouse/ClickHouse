@@ -342,8 +342,7 @@ DECLARE_SETTING_ENUM(ParallelReplicasCustomKeyFilterType)
 enum class LightweightMutationProjectionMode : uint8_t
 {
     THROW,
-    DROP,
-    REBUILD,
+    DROP
 };
 
 DECLARE_SETTING_ENUM(LightweightMutationProjectionMode)
