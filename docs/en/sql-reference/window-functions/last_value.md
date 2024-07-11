@@ -11,7 +11,7 @@ Returns the last value evaluated within its ordered frame. By default, NULL argu
 **Syntax**
 
 ```sql
-last_value (column_name) [RESPECT NULLS]
+last_value (column_name) [[RESPECT NULLS] | [IGNORE NULLS]]
   OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column] 
         [ROWS or RANGE expression_to_bound_rows_withing_the_group]] | [window_name])
 FROM table_name
