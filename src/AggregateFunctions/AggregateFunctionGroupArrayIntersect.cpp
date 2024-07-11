@@ -115,8 +115,10 @@ public:
         {
             for (auto & rhs_elem : rhs_set)
                 set.insert(rhs_elem.getValue());
+            return;
         }
-        else if (!set.empty())
+
+        if (!set.empty())
         {
             auto create_new_set = [](auto & lhs_val, auto & rhs_val)
             {
@@ -278,28 +280,30 @@ public:
             return;
 
         UInt64 version = this->data(place).version++;
-        if (version == 1 && set.empty())
+        if (version == 0)
         {
             bool inserted;
             State::Set::LookupResult it;
             for (auto & rhs_elem : rhs_value)
-                set.emplace(ArenaKeyHolder{rhs_elem.getValue(), *arena}, it, inserted);
-        }
-        else
-        {
-            auto create_matched_set = [](auto & lhs_val, auto & rhs_val)
             {
-                typename State::Set new_set;
-                for (const auto & lhs_elem : lhs_val)
+                set.emplace(ArenaKeyHolder{rhs_elem.getValue(), *arena}, it, inserted);
+            }
+        }
+        else if (!set.empty())
+        {
+            auto create_new_map = [](auto & lhs_val, auto & rhs_val)
+            {
+                typename State::Set new_map;
+                for (auto & lhs_elem : lhs_val)
                 {
-                    auto is_match = rhs_val.find(lhs_elem.getValue());
-                    if (is_match != nullptr)
-                        new_set.insert(lhs_elem.getValue());
+                    auto val = rhs_val.find(lhs_elem.getValue());
+                    if (val != nullptr)
+                        new_map.insert(lhs_elem.getValue());
                 }
-                return new_set;
+                return new_map;
             };
-            auto matched_set = rhs_value.size() < set.size() ? create_matched_set(rhs_value, set) : create_matched_set(set, rhs_value);
-            set = std::move(matched_set);
+            auto new_map = create_new_map(set, rhs_value);
+            set = std::move(new_map);
         }
     }
 
