@@ -42,6 +42,7 @@ struct ProtocolServerMetrics
 {
     String port_name;
     size_t current_threads;
+    size_t rejected_connections;
 };
 
 /** Periodically (by default, each second)

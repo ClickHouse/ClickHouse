@@ -21,6 +21,7 @@
 #include "Poco/Exception.h"
 #include "Poco/Foundation.h"
 #include "Poco/Mutex.h"
+#include "Poco/Message.h"
 
 
 namespace Poco
@@ -78,6 +79,10 @@ public:
     ///
     /// The default implementation just breaks into the debugger.
 
+    virtual void logMessageImpl(Message::Priority priority, const std::string & msg) {}
+    /// Write a messages to the log
+    /// Useful for logging from Poco
+
     static void handle(const Exception & exc);
     /// Invokes the currently registered ErrorHandler.
 
@@ -85,6 +90,9 @@ public:
     /// Invokes the currently registered ErrorHandler.
 
     static void handle();
+    /// Invokes the currently registered ErrorHandler.
+
+    static void logMessage(Message::Priority priority, const std::string & msg);
     /// Invokes the currently registered ErrorHandler.
 
     static ErrorHandler * set(ErrorHandler * pHandler);
