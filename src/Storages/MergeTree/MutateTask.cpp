@@ -1844,7 +1844,7 @@ private:
                 }
             }
             /// Ignore projection tmp merge dir, and under lightweight delete mode ignore projection files.
-            else if (!endsWith(it->name(), ".tmp_proj") && !ctx->lightweight_delete_mode) 
+            else if (!endsWith(it->name(), ".tmp_proj") && !ctx->lightweight_delete_mode)
             {
                 // it's a projection part directory
                 ctx->new_data_part->getDataPartStorage().createProjection(destination);
