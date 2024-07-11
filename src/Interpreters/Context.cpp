@@ -5503,8 +5503,9 @@ Context::ParallelReplicasMode Context::getParallelReplicasMode() const
 
 bool Context::canUseTaskBasedParallelReplicas() const
 {
-    const auto & settings_ref = getSettingsRef();
-    return getParallelReplicasMode() == ParallelReplicasMode::READ_TASKS && settings_ref.max_parallel_replicas > 1;
+    return getParallelReplicasMode() == ParallelReplicasMode::READ_TASKS
+        && settings.max_parallel_replicas > 1
+        && settings.allow_experimental_streaming == false;
 }
 
 bool Context::canUseParallelReplicasOnInitiator() const
@@ -5519,7 +5520,9 @@ bool Context::canUseParallelReplicasOnFollower() const
 
 bool Context::canUseParallelReplicasCustomKey() const
 {
-    return settings.max_parallel_replicas > 1 && getParallelReplicasMode() == Context::ParallelReplicasMode::CUSTOM_KEY;
+    return getParallelReplicasMode() == Context::ParallelReplicasMode::CUSTOM_KEY
+        && settings.max_parallel_replicas > 1
+        && settings.allow_experimental_streaming == false;
 }
 
 bool Context::canUseParallelReplicasCustomKeyForCluster(const Cluster & cluster) const
@@ -5529,7 +5532,9 @@ bool Context::canUseParallelReplicasCustomKeyForCluster(const Cluster & cluster)
 
 bool Context::canUseOffsetParallelReplicas() const
 {
-    return offset_parallel_replicas_enabled && settings.max_parallel_replicas > 1
+    return offset_parallel_replicas_enabled
+        && settings.max_parallel_replicas > 1
+        && settings.allow_experimental_streaming == false
         && getParallelReplicasMode() != Context::ParallelReplicasMode::READ_TASKS;
 }
 

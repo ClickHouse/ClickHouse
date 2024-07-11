@@ -14,6 +14,7 @@
 #include <Storages/VirtualColumnsDescription.h>
 #include <Storages/TableLockHolder.h>
 #include <Storages/StorageSnapshot.h>
+#include <Storages/Streaming/SubscriptionManager.h>
 #include <Common/ActionLock.h>
 #include <Common/Exception.h>
 #include <Common/RWLock.h>
@@ -125,6 +126,9 @@ public:
 
     /// Returns true if the storage supports queries with the FINAL section.
     virtual bool supportsFinal() const { return false; }
+
+    /// Returns true if the storage supports queries with the STREAM section.
+    virtual bool supportsStreaming() const { return true; }
 
     /// Returns true if the storage supports insert queries with the PARTITION BY section.
     virtual bool supportsPartitionBy() const { return false; }
@@ -288,6 +292,9 @@ private:
     MultiVersionVirtualsDescriptionPtr virtuals;
 
 protected:
+    /// Structure for managing subscriptions
+    mutable StreamSubscriptionManager subscription_manager;
+
     RWLockImpl::LockHolder tryLockTimed(
         const RWLock & rwlock, RWLockImpl::Type type, const String & query_id, const std::chrono::milliseconds & acquire_timeout) const;
 
@@ -362,6 +369,9 @@ public:
         size_t /*max_block_size*/,
         size_t /*num_streams*/);
 
+    /// Registers subscription in storage's subscription manager
+    virtual void registerSubscription(StreamSubscriptionPtr subscription) const;
+
     /// Returns true if FINAL modifier must be added to SELECT query depending on required columns.
     /// It's needed for ReplacingMergeTree wrappers such as MaterializedMySQL and MaterializedPostrgeSQL
     virtual bool needRewriteQueryWithFinal(const Names & /*column_names*/) const { return false; }
@@ -419,6 +429,18 @@ public:
         size_t /*max_block_size*/,
         size_t /*num_streams*/);
 
+    /// Version of read for streaming queries
+    /// Default implementation calls default read and constructs reading from subscription pipeline
+    virtual void streamingRead(
+        QueryPlan & query_plan,
+        const Names & /*column_names*/,
+        const StorageSnapshotPtr & /*storage_snapshot*/,
+        SelectQueryInfo & /*query_info*/,
+        ContextPtr /*context*/,
+        QueryProcessingStage::Enum /*processed_stage*/,
+        size_t /*max_block_size*/,
+        size_t /*num_streams*/);
+
     /** Writes the data to a table.
       * Receives a description of the query, which can contain information about the data write method.
       * Returns an object by which you can write data sequentially.
@@ -438,6 +460,8 @@ public:
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method write is not supported by storage {}", getName());
     }
+
+    virtual Chain toSubscribersWrite(const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr /*context*/);
 
     /** Writes the data to a table in distributed manner.
       * It is supposed that implementation looks into SELECT part of the query and executes distributed

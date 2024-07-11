@@ -1,0 +1,17 @@
+=== Test Streaming read from shards ===
+started
+started
+from-shard-1
+from-shard-1
+from-shard-1
+from-shard-1
+from-shard-2
+from-shard-2
+from-shard-2
+from-shard-2
+
+****************
+Killing process
+Removing FIFO
+****************
+

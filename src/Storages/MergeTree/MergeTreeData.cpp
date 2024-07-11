@@ -73,6 +73,9 @@
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <Storages/MergeTree/MergeTreeDataPartBuilder.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
+#include <Storages/MergeTree/Streaming/SubscriptionEnrichment.h>
+#include <Storages/MergeTree/Streaming/StreamingUtils.h>
+#include <Storages/MergeTree/Streaming/CursorUtils.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
 #include <Storages/MergeTree/checkDataPart.h>
@@ -429,6 +432,19 @@ MergeTreeData::MergeTreeData(
         else
             background_moves_assignee.trigger();
     };
+
+    if (settings->queue_mode)
+    {
+        background_streaming_assignee.emplace(*this, BackgroundJobsAssignee::Type::Streaming, getContext());
+
+        streaming_assignee_trigger = [this] (bool delay) noexcept
+        {
+            if (delay)
+                background_streaming_assignee->postpone();
+            else
+                background_streaming_assignee->trigger();
+        };
+    }
 }
 
 VirtualColumnsDescription MergeTreeData::createVirtuals(const StorageInMemoryMetadata & metadata)
@@ -534,6 +550,11 @@ bool MergeTreeData::supportsFinal() const
         || merging_params.mode == MergingParams::Replacing
         || merging_params.mode == MergingParams::Graphite
         || merging_params.mode == MergingParams::VersionedCollapsing;
+}
+
+bool MergeTreeData::supportsStreaming() const
+{
+    return getSettings()->queue_mode;
 }
 
 static void checkKeyExpression(const ExpressionActions & expr, const Block & sample_block, const String & key_name, bool allow_nullable_key)
@@ -6790,6 +6811,9 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(DataPartsLock 
             ssize_t diff_parts  = add_parts - reduce_parts;
             data.increaseDataVolume(diff_bytes, diff_rows, diff_parts);
         });
+
+        if (settings->queue_mode && data.subscription_manager.hasSome())
+            data.background_streaming_assignee->trigger();
     }
 
     clear();
@@ -7757,6 +7781,36 @@ StorageMergeTree::PinnedPartUUIDsPtr MergeTreeData::getPinnedPartUUIDs() const
     return pinned_part_uuids;
 }
 
+bool MergeTreeData::scheduleStreamingJob([[maybe_unused]] BackgroundJobsAssignee & assignee)
+{
+    if (subscription_manager.isEmpty())
+        return false;
+
+    Stopwatch logging_stopwatch;
+
+    logging_stopwatch.start();
+    auto parts_index = buildRightPartsIndex(getDataPartsVectorForInternalUsage());
+    auto parts_index_build_elapsed_ms = logging_stopwatch.elapsedMilliseconds();
+
+    logging_stopwatch.restart();
+    auto promoters = buildPromoters();
+    auto promoters_build_elapsed_ms = logging_stopwatch.elapsedMilliseconds();
+
+    LOG_INFO(log, "Started scheduleStreamingJob | building parts_index took: {} ms, building promoters took: {} ms",
+        parts_index_build_elapsed_ms, promoters_build_elapsed_ms);
+
+    bool scheduled_reading = false;
+
+    auto promote = [&](StreamSubscriptionPtr & subscription)
+    {
+        scheduled_reading = scheduled_reading | enrichSubscription(subscription, *this, parts_index, promoters);
+    };
+
+    subscription_manager.executeOnEachSubscription(promote);
+
+    return scheduled_reading;
+}
+
 MergeTreeData::CurrentlyMovingPartsTagger::CurrentlyMovingPartsTagger(MergeTreeMovingParts && moving_parts_, MergeTreeData & data_)
     : parts_to_move(std::move(moving_parts_)), data(data_)
 {
@@ -8455,6 +8509,11 @@ StorageSnapshotPtr MergeTreeData::getStorageSnapshotWithoutData(const StorageMet
 {
     auto lock = lockParts();
     return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, object_columns, std::make_unique<SnapshotData>());
+}
+
+Chain MergeTreeData::toSubscribersWrite(const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr /*context*/)
+{
+    return Chain();
 }
 
 void MergeTreeData::incrementInsertedPartsProfileEvent(MergeTreeDataPartType type)

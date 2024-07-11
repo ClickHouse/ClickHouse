@@ -768,7 +768,8 @@ public:
 QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
     const StorageSnapshotPtr & distributed_storage_snapshot,
     const StorageID & remote_storage_id,
-    const ASTPtr & remote_table_function)
+    const ASTPtr & remote_table_function,
+    ShardCursorChanges & changes)
 {
     auto & planner_context = query_info.planner_context;
     const auto & query_context = planner_context->getQueryContext();
@@ -820,7 +821,7 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
     ReplaseAliasColumnsVisitor replase_alias_columns_visitor;
     replase_alias_columns_visitor.visit(query_tree_to_modify);
 
-    return buildQueryTreeForShard(query_info.planner_context, query_tree_to_modify);
+    return buildQueryTreeForShard(query_info.planner_context, query_tree_to_modify, &changes);
 }
 
 }
@@ -838,6 +839,7 @@ void StorageDistributed::read(
     Block header;
 
     SelectQueryInfo modified_query_info = query_info;
+    ShardCursorChanges changes;
 
     const auto & settings = local_context->getSettingsRef();
 
@@ -850,7 +852,8 @@ void StorageDistributed::read(
         auto query_tree_distributed = buildQueryTreeDistributed(modified_query_info,
             query_info.merge_storage_snapshot ? query_info.merge_storage_snapshot : storage_snapshot,
             remote_storage_id,
-            remote_table_function_ptr);
+            remote_table_function_ptr,
+            changes);
         header = InterpreterSelectQueryAnalyzer::getSampleBlock(query_tree_distributed, local_context, SelectQueryOptions(processed_stage).analyze());
         /** For distributed tables we do not need constants in header, since we don't send them to remote servers.
           * Moreover, constants can break some functions like `hostName` that are constants only for local queries.
@@ -893,7 +896,8 @@ void StorageDistributed::read(
             header,
             snapshot_data.objects_by_shard,
             storage_snapshot,
-            processed_stage);
+            processed_stage,
+            std::move(changes));
 
     auto shard_filter_generator = ClusterProxy::getShardFilterGeneratorForCustomKey(
         *modified_query_info.getCluster(), local_context, getInMemoryMetadataPtr()->columns);
@@ -919,6 +923,19 @@ void StorageDistributed::read(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline is not initialized");
 }
 
+void StorageDistributed::streamingRead(
+    QueryPlan & query_plan,
+    const Names & column_names,
+    const StorageSnapshotPtr & storage_snapshot,
+    SelectQueryInfo & query_info,
+    ContextPtr local_context,
+    QueryProcessingStage::Enum processed_stage,
+    size_t max_block_size,
+    size_t num_streams)
+{
+    // it is possible to call regular read here, because streaming will be configured on every shard locally
+    read(query_plan, column_names, storage_snapshot, query_info, local_context, processed_stage, max_block_size, num_streams);
+}
 
 SinkToStoragePtr StorageDistributed::write(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
 {

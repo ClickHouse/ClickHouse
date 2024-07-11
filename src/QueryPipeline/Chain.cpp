@@ -107,6 +107,31 @@ void Chain::appendChain(Chain chain)
     num_threads += chain.num_threads;
 }
 
+Chain Chain::concat(Chain lhs, Chain rhs)
+{
+    if (!lhs.empty() && !rhs.empty())
+    {
+        // just to be sure
+        checkInitialized(lhs.processors);
+        checkInitialized(rhs.processors);
+
+        lhs.appendChain(std::move(rhs));
+
+        return lhs;
+    }
+
+    if (!lhs.empty())
+    {
+        lhs.attachResources(rhs.detachResources());
+        lhs.num_threads += rhs.num_threads;
+        return lhs;
+    }
+
+    rhs.attachResources(lhs.detachResources());
+    rhs.num_threads += lhs.num_threads;
+    return rhs;
+}
+
 IProcessor & Chain::getSource()
 {
     checkInitialized(processors);

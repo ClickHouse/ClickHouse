@@ -50,6 +50,8 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeSink.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeTableMetadata.h>
 #include <Storages/MergeTree/ZeroCopyLock.h>
+#include <Storages/MergeTree/Streaming/StreamingUtils.h>
+#include <Storages/MergeTree/Streaming/CursorUtils.h>
 #include <Storages/PartitionCommands.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/VirtualColumnUtils.h>
@@ -71,6 +73,7 @@
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/Sinks/EmptySink.h>
+#include <Processors/QueryPlan/StreamingAdapterStep.h>
 
 #include <Planner/Utils.h>
 
@@ -3723,7 +3726,6 @@ bool StorageReplicatedMergeTree::scheduleDataProcessingJob(BackgroundJobsAssigne
     }
 }
 
-
 bool StorageReplicatedMergeTree::canExecuteFetch(const ReplicatedMergeTreeLogEntry & entry, String & disable_reason) const
 {
     if (fetcher.blocker.isCancelled())
@@ -4425,6 +4427,12 @@ void StorageReplicatedMergeTree::waitForUniquePartsToBeFetchedByOtherReplicas(St
         LOG_INFO(log, "Failed to wait for unique parts to be fetched in {} ms, {} parts can be left on this replica", wait_ms, unique_parts_set.size());
     else
         LOG_INFO(log, "Successfully waited all the parts");
+}
+
+CursorPromotersMap StorageReplicatedMergeTree::buildPromoters()
+{
+    auto zookeeper = getZooKeeper();
+    return queue.buildPromoters(zookeeper);
 }
 
 std::set<MergeTreePartInfo> StorageReplicatedMergeTree::findReplicaUniqueParts(const String & replica_name_, const String & zookeeper_path_, MergeTreeDataFormatVersion format_version_, zkutil::ZooKeeper::Ptr zookeeper_, LoggerPtr log_)
@@ -5321,7 +5329,11 @@ void StorageReplicatedMergeTree::partialShutdown()
         auto fetch_lock = fetcher.blocker.cancel();
         auto merge_lock = merger_mutator.merges_blocker.cancel();
         auto move_lock = parts_mover.moves_blocker.cancel();
+
         background_operations_assignee.finish();
+
+        if (getSettings()->queue_mode)
+            background_streaming_assignee->finish();
     }
 
     LOG_TRACE(log, "Threads finished");
@@ -5355,6 +5367,8 @@ void StorageReplicatedMergeTree::shutdown(bool)
     partialShutdown();
 
     part_moves_between_shards_orchestrator.shutdown();
+
+    /// TODO Cursors: add blocker?
 
     {
         auto lock = queue.lockQueue();
@@ -5499,6 +5513,33 @@ void StorageReplicatedMergeTree::read(
     }
 
     readLocalImpl(query_plan, column_names, storage_snapshot, query_info, local_context, max_block_size, num_streams); }
+
+void StorageReplicatedMergeTree::streamingRead(
+        QueryPlan & query_plan,
+        const Names & column_names,
+        const StorageSnapshotPtr & storage_snapshot,
+        SelectQueryInfo & query_info,
+        ContextPtr local_context,
+        QueryProcessingStage::Enum /*processed_stage*/,
+        size_t max_block_size,
+        size_t num_streams)
+{
+    const auto & stream_settings = query_info.table_expression_modifiers->getStreamSettings();
+
+    auto columns_to_read = extendColumnsWithStreamingAux(column_names);
+    auto promoters = buildPromoters();
+    auto cursor = buildMergeTreeCursor(stream_settings->stage, stream_settings->tree, promoters);
+
+    QueryPlanPtr storage_query_plan = reader.read(
+        columns_to_read, storage_snapshot, query_info, local_context, max_block_size, num_streams,
+        nullptr, false, cursor, std::move(promoters));
+
+    chassert(storage_query_plan->isInitialized());
+    query_plan = std::move(*storage_query_plan);
+
+    addDropAuxColumnsStep(query_plan, storage_snapshot->getSampleBlockForColumns(column_names));
+    makeStreamInfinite(query_plan);
+}
 
 void StorageReplicatedMergeTree::readLocalSequentialConsistencyImpl(
     QueryPlan & query_plan,
@@ -8775,6 +8816,7 @@ void StorageReplicatedMergeTree::onActionLockRemove(StorageActionBlockType actio
         background_moves_assignee.trigger();
     else if (action_type == ActionLocks::Cleanup)
         cleanup_thread.wakeup();
+    /// TODO Cursors: add action lock?
 }
 
 bool StorageReplicatedMergeTree::waitForProcessingQueue(UInt64 max_wait_milliseconds, SyncReplicaMode sync_mode, std::unordered_set<String> source_replicas)

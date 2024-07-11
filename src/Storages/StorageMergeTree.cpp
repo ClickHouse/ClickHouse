@@ -3,6 +3,17 @@
 #include <optional>
 #include <ranges>
 
+#include <base/sort.h>
+#include <fmt/core.h>
+#include <Poco/Timestamp.h>
+
+#include <Common/Exception.h>
+#include <Common/MemoryTracker.h>
+#include <Common/ProfileEventsScope.h>
+#include <Common/ThreadPool.h>
+#include <Common/escapeForFileName.h>
+#include <Common/typeid_cast.h>
+
 #include <Backups/BackupEntriesCollector.h>
 #include <Core/QueryProcessingStage.h>
 #include <Databases/IDatabase.h>
@@ -25,6 +36,9 @@
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/ReadFromSubscriptionStep.h>
+#include <Processors/QueryPlan/ReadNothingStep.h>
+#include <Processors/QueryPlan/StreamingAdapterStep.h>
 #include <QueryPipeline/Pipe.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/MergeTree/ActiveDataPartSet.h>
@@ -35,17 +49,11 @@
 #include <Storages/MergeTree/MergeTreeSink.h>
 #include <Storages/MergeTree/PartitionPruner.h>
 #include <Storages/MergeTree/checkDataPart.h>
+#include <Storages/MergeTree/Streaming/StreamingUtils.h>
+#include <Storages/MergeTree/Streaming/CursorUtils.h>
+#include <Storages/MergeTree/Streaming/SubscriptionEnrichment.h>
 #include <Storages/PartitionCommands.h>
 #include <Storages/buildQueryTreeForShard.h>
-#include <base/sort.h>
-#include <fmt/core.h>
-#include <Poco/Timestamp.h>
-#include <Common/Exception.h>
-#include <Common/MemoryTracker.h>
-#include <Common/ProfileEventsScope.h>
-#include <Common/ThreadPool.h>
-#include <Common/escapeForFileName.h>
-#include <Common/typeid_cast.h>
 
 
 namespace DB
@@ -152,6 +160,10 @@ void StorageMergeTree::startup()
     try
     {
         background_operations_assignee.start();
+
+        if (getSettings()->queue_mode)
+            background_streaming_assignee->start();
+
         startBackgroundMovesIfNeeded();
         startOutdatedAndUnexpectedDataPartsLoadingTask();
     }
@@ -190,8 +202,13 @@ void StorageMergeTree::shutdown(bool)
     merger_mutator.merges_blocker.cancelForever();
     parts_mover.moves_blocker.cancelForever();
 
+    /// TODO Cursors: add blocker?
+
     background_operations_assignee.finish();
     background_moves_assignee.finish();
+
+    if (getSettings()->queue_mode)
+        background_streaming_assignee->finish();
 
     if (deduplication_log)
         deduplication_log->shutdown();
@@ -266,6 +283,33 @@ void StorageMergeTree::read(
         query_plan = std::move(*plan);
 }
 
+void StorageMergeTree::streamingRead(
+        QueryPlan & query_plan,
+        const Names & column_names,
+        const StorageSnapshotPtr & storage_snapshot,
+        SelectQueryInfo & query_info,
+        ContextPtr local_context,
+        QueryProcessingStage::Enum /*processed_stage*/,
+        size_t max_block_size,
+        size_t num_streams)
+{
+    const auto & stream_settings = query_info.table_expression_modifiers->getStreamSettings();
+
+    auto columns_to_read = extendColumnsWithStreamingAux(column_names);
+    auto promoters = buildPromoters();
+    auto cursor = buildMergeTreeCursor(stream_settings->stage, stream_settings->tree, promoters);
+
+    QueryPlanPtr storage_query_plan = reader.read(
+        columns_to_read, storage_snapshot, query_info, local_context, max_block_size, num_streams,
+        nullptr, false, cursor, std::move(promoters));
+
+    chassert(storage_query_plan->isInitialized());
+    query_plan = std::move(*storage_query_plan);
+
+    addDropAuxColumnsStep(query_plan, storage_snapshot->getSampleBlockForColumns(column_names));
+    makeStreamInfinite(query_plan);
+}
+
 std::optional<UInt64> StorageMergeTree::totalRows(const Settings &) const
 {
     return getTotalActiveSizeInRows();
@@ -281,6 +325,7 @@ std::optional<UInt64> StorageMergeTree::totalBytes(const Settings &) const
 {
     return getTotalActiveSizeInBytes();
 }
+
 
 std::optional<UInt64> StorageMergeTree::totalBytesUncompressed(const Settings &) const
 {
@@ -785,6 +830,23 @@ std::map<std::string, MutationCommands> StorageMergeTree::getUnfinishedMutationC
     return result;
 }
 
+CursorPromotersMap StorageMergeTree::buildPromoters()
+{
+    std::map<String, std::set<Int64>> committing_block_numbers_snapshot;
+    {
+        std::lock_guard guard(committing_block_numbers_mutex);
+        committing_block_numbers_snapshot = committing_block_numbers;
+    }
+
+    auto data_parts = getDataPartsVectorForInternalUsage();
+    std::map<String, PartBlockNumberRanges> partition_ranges;
+
+    for (const auto & part : data_parts)
+        partition_ranges[part->info.partition_id].addPart(part->info.min_block, part->info.max_block);
+
+    return constructPromoters(std::move(committing_block_numbers_snapshot), std::move(partition_ranges));
+}
+
 std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() const
 {
     std::lock_guard lock(currently_processing_in_background_mutex);
@@ -977,8 +1039,44 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMerge(
     CurrentlyMergingPartsTaggerPtr merging_tagger;
     MergeList::EntryPtr merge_entry;
 
-    auto can_merge = [this, &lock](const DataPartPtr & left, const DataPartPtr & right, const MergeTreeTransaction * tx, PreformattedMessage & disable_reason) -> bool
+    std::optional<std::map<String, std::set<Int64>>> committing_block_numbers_snapshot;
+    std::optional<ActiveDataPartSet> data_parts_snapshot;
+
+    /// if storage in queue mode, make actual snapshot of state.
+    /// logic is similar to ReplicatedMergeRree merge predicate.
+    if (data_settings->queue_mode)
     {
+        DataPartsVector data_parts;
+
+        {
+            auto parts_lock = lockParts();
+            std::lock_guard committing_block_numbers_lock{committing_block_numbers_mutex};
+            committing_block_numbers_snapshot = committing_block_numbers;
+            data_parts = getDataPartsVectorForInternalUsage({DataPartState::Active}, parts_lock);
+        }
+
+        data_parts_snapshot = ActiveDataPartSet(format_version);
+
+        for (const auto & part : data_parts)
+        {
+            bool is_added = data_parts_snapshot->add(part->info, part->name);
+            chassert(is_added);
+        }
+    }
+
+    auto can_merge = [this, &lock, &data_settings, &committing_block_numbers_snapshot, &data_parts_snapshot](
+                         const DataPartPtr & left,
+                         const DataPartPtr & right,
+                         const MergeTreeTransaction * tx,
+                         PreformattedMessage & disable_reason) -> bool
+    {
+        /// sanity check for queue_mode
+        if (data_settings->queue_mode)
+        {
+            chassert(committing_block_numbers_snapshot.has_value());
+            chassert(data_parts_snapshot.has_value());
+        }
+
         if (tx)
         {
             /// Cannot merge parts if some of them are not visible in current snapshot
@@ -997,6 +1095,17 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMerge(
                 disable_reason = PreformattedMessage::create("Some part is locked for removal in another cuncurrent transaction");
                 return false;
             }
+        }
+
+        /// If storage in queue mode, permit to merge parts only from data_parts_snapshot
+        if (data_settings->queue_mode)
+        {
+            for (const auto & part : {left, right})
+                if (part && data_parts_snapshot->getContainingPart(part->info).empty())
+                {
+                    disable_reason = PreformattedMessage::create("Part {} hasn't been visible in snapshot before merge", part->name);
+                    return false;
+                }
         }
 
         /// This predicate is checked for the first part of each range.
@@ -1026,6 +1135,35 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMerge(
 
         if (!partsContainSameProjections(left, right, disable_reason))
             return false;
+
+        /// If storage in queue mode then block number allocation is performed not under parts lock.
+        /// So here we must guarantee that any other part will not appear between left, right. For this
+        /// we have committing_block_numbers set.
+        ///
+        /// If block number will be allocated after this check then it must have at least value of
+        /// max(left.max_block, right.max_block) + 1 and if it is already allocated but not committed yet
+        /// it will be seen in set.
+        if (data_settings->queue_mode)
+        {
+            if (left->info.partition_id != right->info.partition_id)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Parts {} and {} belong to different partitions", left->name, right->name);
+
+            Int64 min_block = std::min(left->info.min_block, right->info.min_block);
+            Int64 max_block = std::max(left->info.max_block, right->info.max_block);
+
+            auto block_numbers_it = committing_block_numbers_snapshot->find(left->info.partition_id);
+            if (block_numbers_it != committing_block_numbers_snapshot->end())
+            {
+                const std::set<Int64> & block_numbers = block_numbers_it->second;
+
+                auto it = block_numbers.upper_bound(min_block);
+                if (it != block_numbers.end() && *it < max_block)
+                {
+                    disable_reason = PreformattedMessage::create("There is committing part between (min_block, max_block) range with block number: {}", *it);
+                    return false;
+                }
+            }
+        }
 
         auto max_possible_level = getMaxLevelInBetween(left, right);
         if (max_possible_level > std::max(left->info.level, right->info.level))
@@ -2333,6 +2471,7 @@ void StorageMergeTree::onActionLockRemove(StorageActionBlockType action_type)
         background_operations_assignee.trigger();
     else if (action_type == ActionLocks::PartsMove)
         background_moves_assignee.trigger();
+    /// TODO Cursors: add lock action?
 }
 
 IStorage::DataValidationTasksPtr StorageMergeTree::getCheckTaskList(
@@ -2538,9 +2677,9 @@ void StorageMergeTree::assertNotReadonly() const
         throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is in readonly mode due to static storage");
 }
 
-void StorageMergeTree::fillNewPartName(MutableDataPartPtr & part, DataPartsLock &)
+void StorageMergeTree::fillNewPartName(MutableDataPartPtr & part, DataPartsLock & /*lock*/, std::optional<int64_t> block_number)
 {
-    part->info.min_block = part->info.max_block = increment.get();
+    part->info.min_block = part->info.max_block = block_number.has_value() ? block_number.value() : increment.get();
     part->info.mutation = 0;
     part->setName(part->getNewName(part->info));
 }

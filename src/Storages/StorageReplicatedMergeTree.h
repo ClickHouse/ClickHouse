@@ -158,6 +158,16 @@ public:
         size_t max_block_size,
         size_t num_streams) override;
 
+    void streamingRead(
+        QueryPlan & query_plan,
+        const Names & column_names,
+        const StorageSnapshotPtr & storage_snapshot,
+        SelectQueryInfo & query_info,
+        ContextPtr context,
+        QueryProcessingStage::Enum processed_stage,
+        size_t max_block_size,
+        size_t num_streams) override;
+
     std::optional<UInt64> totalRows(const Settings & settings) const override;
     std::optional<UInt64> totalRowsByPartitionPredicate(const ActionsDAGPtr & filter_actions_dag, ContextPtr context) const override;
     std::optional<UInt64> totalBytes(const Settings & settings) const override;
@@ -361,6 +371,8 @@ public:
     /// download unique parts from our replica
     using ShutdownDeadline = std::chrono::time_point<std::chrono::system_clock>;
     void waitForUniquePartsToBeFetchedByOtherReplicas(ShutdownDeadline shutdown_deadline);
+
+    CursorPromotersMap buildPromoters() override;
 
 private:
     std::atomic_bool are_restoring_replica {false};

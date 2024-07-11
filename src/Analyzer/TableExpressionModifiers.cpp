@@ -1,5 +1,7 @@
 #include <Analyzer/TableExpressionModifiers.h>
 
+#include <Common/FieldVisitorToString.h>
+#include <Common/quoteString.h>
 #include <Common/SipHash.h>
 
 #include <IO/WriteBuffer.h>
@@ -10,9 +12,34 @@
 namespace DB
 {
 
+bool TableExpressionModifiers::StreamSettings::operator==(const StreamSettings & other) const
+{
+    auto lhs_cursor_str = cursorTreeToString(tree);
+    auto rhs_cursor_str = cursorTreeToString(other.tree);
+    return std::tie(stage, keeper_key, lhs_cursor_str) == std::tie(other.stage, other.keeper_key, rhs_cursor_str);
+}
+
 void TableExpressionModifiers::dump(WriteBuffer & buffer) const
 {
     buffer << "final: " << has_final;
+
+    if (stream_settings)
+    {
+        buffer << ", stream(";
+
+        if (stream_settings->stage == StreamReadingStage::TailOnly)
+            buffer << "stage: tail";
+        else
+            buffer << "stage: all";
+
+        if (stream_settings->keeper_key)
+            buffer << ", keeper: " << quoteString(stream_settings->keeper_key.value());
+
+        if (stream_settings->tree)
+            buffer << ", collapsed_tree: " << cursorTreeToString(stream_settings->tree);
+
+        buffer << ")";
+    }
 
     if (sample_size_ratio)
         buffer << ", sample_size: " << ASTSampleRatio::toString(*sample_size_ratio);
@@ -24,8 +51,16 @@ void TableExpressionModifiers::dump(WriteBuffer & buffer) const
 void TableExpressionModifiers::updateTreeHash(SipHash & hash_state) const
 {
     hash_state.update(has_final);
+    hash_state.update(stream_settings.has_value());
     hash_state.update(sample_size_ratio.has_value());
     hash_state.update(sample_offset_ratio.has_value());
+
+    if (stream_settings.has_value())
+    {
+        hash_state.update(stream_settings->stage);
+        hash_state.update(stream_settings->keeper_key.value_or("none"));
+        hash_state.update(cursorTreeToString(stream_settings->tree));
+    }
 
     if (sample_size_ratio.has_value())
     {
@@ -43,6 +78,21 @@ void TableExpressionModifiers::updateTreeHash(SipHash & hash_state) const
 String TableExpressionModifiers::formatForErrorMessage() const
 {
     WriteBufferFromOwnString buffer;
+
+    if (stream_settings)
+    {
+        buffer << "STREAM";
+
+        if (stream_settings->stage == StreamReadingStage::TailOnly)
+            buffer << " TAIL";
+
+        if (stream_settings->keeper_key)
+            buffer << " " << quoteString(stream_settings->keeper_key.value());
+
+        if (stream_settings->tree)
+            buffer << " " << cursorTreeToString(stream_settings->tree);
+    }
+
     if (has_final)
         buffer << "FINAL";
 

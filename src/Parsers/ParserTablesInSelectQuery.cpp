@@ -5,9 +5,9 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ParserSelectQuery.h>
 #include <Parsers/ParserSampleRatio.h>
+#include <Parsers/ParserStreamSettings.h>
 #include <Parsers/ParserTablesInSelectQuery.h>
 #include <Core/Joins.h>
-
 
 namespace DB
 {
@@ -29,6 +29,13 @@ bool ParserTableExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         && !ParserWithOptionalAlias(std::make_unique<ParserTableAsStringLiteralIdentifier>(), allow_alias_without_as_keyword)
                 .parse(pos, res->database_and_table_name, expected))
         return false;
+
+    /// STREAM
+    if (ParserKeyword(Keyword::STREAM).ignore(pos, expected))
+    {
+        ParserStreamSettings stream_settings_p;
+        stream_settings_p.parse(pos, res->stream_settings, expected);
+    }
 
     /// FINAL
     if (ParserKeyword(Keyword::FINAL).ignore(pos, expected))

@@ -36,6 +36,7 @@ ASTPtr ASTTableExpression::clone() const
     CLONE(database_and_table_name);
     CLONE(table_function);
     CLONE(subquery);
+    CLONE(stream_settings);
     CLONE(sample_size);
     CLONE(sample_offset);
 
@@ -122,6 +123,12 @@ void ASTTableExpression::formatImpl(const FormatSettings & settings, FormatState
     {
         settings.ostr << settings.nl_or_ws << indent_str;
         subquery->formatImpl(settings, state, frame);
+    }
+
+    if (stream_settings)
+    {
+        settings.ostr << settings.nl_or_ws << indent_str;
+        stream_settings->formatImpl(settings, state, frame);
     }
 
     if (final)

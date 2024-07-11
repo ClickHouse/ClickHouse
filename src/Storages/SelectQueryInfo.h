@@ -239,6 +239,7 @@ struct SelectQueryInfo
     bool merge_tree_enable_remove_parts_from_snapshot_optimization = true;
 
     bool isFinal() const;
+    bool isStream() const;
 
     /// Analyzer generates unique ColumnIdentifiers like __table1.__partition_id in filter nodes,
     /// while key analysis still requires unqualified column names.

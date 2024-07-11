@@ -1,6 +1,7 @@
 #pragma once
 
 #include <mutex>
+#include <optional>
 #include <base/defines.h>
 #include <Common/SimpleIncrement.h>
 #include <Common/SharedMutex.h>
@@ -32,6 +33,7 @@
 #include <Storages/DataDestinationType.h>
 #include <Storages/extractKeyExpressionList.h>
 #include <Storages/PartitionCommands.h>
+#include <Storages/MergeTree/Streaming/CursorPromoter.h>
 #include <Interpreters/PartLog.h>
 #include <Poco/Timestamp.h>
 #include <Common/threadPoolCallbackRunner.h>
@@ -430,6 +432,8 @@ public:
 
     bool supportsFinal() const override;
 
+    bool supportsStreaming() const override;
+
     bool supportsSubcolumns() const override { return true; }
 
     bool supportsTTL() const override { return true; }
@@ -457,6 +461,8 @@ public:
 
     /// The same as above but does not hold vector of data parts.
     StorageSnapshotPtr getStorageSnapshotWithoutData(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const override;
+
+    Chain toSubscribersWrite(const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr /*context*/) override;
 
     /// Load the set of data parts from disk. Call once - immediately after the object is created.
     void loadDataParts(bool skip_sanity_checks, std::optional<std::unordered_set<std::string>> expected_parts);
@@ -1035,10 +1041,13 @@ public:
 
     /// Schedules background job to like merge/mutate/fetch an executor
     virtual bool scheduleDataProcessingJob(BackgroundJobsAssignee & assignee) = 0;
+
+    /// Schedules job to push new data to subscribers.
+    virtual bool scheduleStreamingJob(BackgroundJobsAssignee & assignee);
+
     /// Schedules job to move parts between disks/volumes and so on.
     bool scheduleDataMovingJob(BackgroundJobsAssignee & assignee);
     bool areBackgroundMovesNeeded() const;
-
 
     /// Lock part in zookeeper for shared data in several nodes
     /// Overridden in StorageReplicatedMergeTree
@@ -1209,6 +1218,11 @@ protected:
     /// These callbacks will be passed to the constructor of each task.
     IExecutableTask::TaskResultCallback common_assignee_trigger;
     IExecutableTask::TaskResultCallback moves_assignee_trigger;
+
+    /// Assigns parts for streaming queries to read.
+    /// Enabled only if queue mode is configured.
+    std::optional<BackgroundJobsAssignee> background_streaming_assignee;
+    IExecutableTask::TaskResultCallback streaming_assignee_trigger;
 
     using DataPartIteratorByInfo = DataPartsIndexes::index<TagByInfo>::type::iterator;
     using DataPartIteratorByStateAndInfo = DataPartsIndexes::index<TagByStateAndInfo>::type::iterator;
@@ -1600,6 +1614,8 @@ protected:
         Transaction & out_transaction,
         DataPartsLock & lock,
         DataPartsVector * out_covered_parts);
+
+    virtual CursorPromotersMap buildPromoters() = 0;
 
 private:
     /// Checking that candidate part doesn't break invariants: correct partition

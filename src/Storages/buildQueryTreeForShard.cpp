@@ -1,4 +1,5 @@
 
+#include <optional>
 #include <Storages/buildQueryTreeForShard.h>
 
 #include <Analyzer/ColumnNode.h>
@@ -182,20 +183,29 @@ private:
             return;
 
         auto distributed_product_mode = getSettings().distributed_product_mode;
+        const auto & modifiers = table_node_typed.getTableExpressionModifiers();
 
         if (distributed_product_mode == DistributedProductMode::LOCAL)
         {
-            StorageID remote_storage_id = StorageID{distributed_storage->getRemoteDatabaseName(),
-                distributed_storage->getRemoteTableName()};
+            StorageID remote_storage_id = StorageID{distributed_storage->getRemoteDatabaseName(), distributed_storage->getRemoteTableName()};
             auto resolved_remote_storage_id = getContext()->resolveStorageID(remote_storage_id);
+
             const auto & distributed_storage_columns = table_node_typed.getStorageSnapshot()->metadata->getColumns();
             auto storage = std::make_shared<StorageDummy>(resolved_remote_storage_id, distributed_storage_columns);
             auto replacement_table_expression = std::make_shared<TableNode>(std::move(storage), getContext());
+            replacement_table_expression->setAlias(table_node->getAlias());
+
+            if (modifiers)
+                replacement_table_expression->setTableExpressionModifiers(modifiers.value());
+
             replacement_map.emplace(table_node.get(), std::move(replacement_table_expression));
         }
         else if ((distributed_product_mode == DistributedProductMode::GLOBAL || getSettings().prefer_global_in_and_join) &&
             !in_function_or_join_stack.empty())
         {
+            if (modifiers && modifiers->hasStream())
+                throw Exception(ErrorCodes::DISTRIBUTED_IN_JOIN_SUBQUERY_DENIED, "Global IN/JOIN subqueries in Streaming mode are denied.");
+
             auto * in_or_join_node_to_modify = in_function_or_join_stack.back().query_node.get();
 
             if (auto * in_function_to_modify = in_or_join_node_to_modify->as<FunctionNode>())
@@ -305,9 +315,54 @@ TableNodePtr executeSubqueryNode(const QueryTreeNodePtr & subquery_node,
     return temporary_table_expression_node;
 }
 
+class ShardChangesVisitor : public InDepthQueryTreeVisitor<ShardChangesVisitor>
+{
+    bool collect_keeper_keys = false;
+    std::map<const IQueryTreeNode *, String> table_expression_to_alias;
+    std::map<const IQueryTreeNode *, std::optional<String>> table_expression_to_keeper_key;
+
+    void processNode(const IQueryTreeNode * node, const std::optional<TableExpressionModifiers> & modifiers)
+    {
+        table_expression_to_alias[node] = node->getAlias();
+
+        if (!collect_keeper_keys || !modifiers || !modifiers->hasStream())
+            return;
+
+        table_expression_to_keeper_key[node] = modifiers->getStreamSettings()->keeper_key;
+    }
+
+public:
+    using Base = InDepthQueryTreeVisitor<ShardChangesVisitor>;
+    using Base::Base;
+
+    explicit ShardChangesVisitor(bool collect_keeper_keys_)
+        : collect_keeper_keys(collect_keeper_keys_)
+    {
+    }
+
+    std::map<const IQueryTreeNode *, String> extractAliases()
+    {
+        return std::move(table_expression_to_alias);
+    }
+
+    std::map<const IQueryTreeNode *, std::optional<String>> extractKeeperKeys()
+    {
+        return std::move(table_expression_to_keeper_key);
+    }
+
+    void visitImpl(QueryTreeNodePtr & node)
+    {
+        if (const auto * table_node = node->as<const TableNode>())
+            processNode(table_node, table_node->getTableExpressionModifiers());
+        else if (const auto * function_node = node->as<const TableFunctionNode>())
+            processNode(function_node, function_node->getTableExpressionModifiers());
+    }
+};
+
 }
 
-QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_context, QueryTreeNodePtr query_tree_to_modify)
+QueryTreeNodePtr buildQueryTreeForShard(
+    const PlannerContextPtr & planner_context, QueryTreeNodePtr query_tree_to_modify, ShardCursorChanges * changes)
 {
     CollectColumnSourceToColumnsVisitor collect_column_source_to_columns_visitor;
     collect_column_source_to_columns_visitor.visit(query_tree_to_modify);
@@ -393,7 +448,29 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
 
     removeGroupingFunctionSpecializations(query_tree_to_modify);
 
+    std::map<const IQueryTreeNode *, String> prev_aliases;
+    if (changes)
+    {
+        ShardChangesVisitor changes_visitor(/*collect_keeper_keys_=*/ false);
+        changes_visitor.visit(query_tree_to_modify);
+        prev_aliases = changes_visitor.extractAliases();
+    }
+
     createUniqueTableAliases(query_tree_to_modify, nullptr, planner_context->getQueryContext());
+
+    if (changes)
+    {
+        ShardChangesVisitor changes_visitor(/*collect_keeper_keys_=*/ true);
+        changes_visitor.visit(query_tree_to_modify);
+        auto new_aliases = changes_visitor.extractAliases();
+        auto keeper_keys = changes_visitor.extractKeeperKeys();
+
+        for (const auto & [node, new_alias] : new_aliases)
+            changes->stream_name_restore_map[new_alias] = prev_aliases.at(node);
+
+        for (const auto & [node, keeper_key] : keeper_keys)
+            changes->keeper_restore_map[new_aliases.at(node)] = keeper_key;
+    }
 
     // Get rid of the settings clause so we don't send them to remote. Thus newly non-important
     // settings won't break any remote parser. It's also more reasonable since the query settings
@@ -461,6 +538,55 @@ void rewriteJoinToGlobalJoin(QueryTreeNodePtr query_tree_to_modify, ContextPtr c
 {
     RewriteJoinToGlobalJoinVisitor visitor(context);
     visitor.visit(query_tree_to_modify);
+}
+
+class NarrowShardCursorsVisitor : public InDepthQueryTreeVisitor<NarrowShardCursorsVisitor>
+{
+    String shard_key;
+    bool changed = false;
+
+public:
+    using Base = InDepthQueryTreeVisitor<NarrowShardCursorsVisitor>;
+    using Base::Base;
+
+    explicit NarrowShardCursorsVisitor(size_t shard_num_) : shard_key(fmt::format("{}", shard_num_))
+    {
+    }
+
+    bool isChanged() const
+    {
+        return changed;
+    }
+
+    void visitImpl(QueryTreeNodePtr & node)
+    {
+        if (auto * table_node = node->as<TableNode>())
+            rewriteModifiers(table_node->getTableExpressionModifiers());
+        else if (auto * table_function_node = node->as<TableFunctionNode>())
+            rewriteModifiers(table_function_node->getTableExpressionModifiers());
+    }
+
+private:
+    void rewriteModifiers(std::optional<TableExpressionModifiers> & modifiers)
+    {
+        if (!modifiers || !modifiers->hasStream())
+            return;
+
+        auto stream_settings = modifiers->getStreamSettings();
+        stream_settings->keeper_key.reset();
+        stream_settings->tree = stream_settings->tree->next(shard_key);
+
+        modifiers->setStreamSettings(std::move(stream_settings));
+
+        changed = true;
+    }
+};
+
+bool narrowShardCursors(QueryTreeNodePtr query_tree_to_modify, size_t shard_num)
+{
+    NarrowShardCursorsVisitor visitor(shard_num);
+    visitor.visit(query_tree_to_modify);
+    return visitor.isChanged();
 }
 
 }

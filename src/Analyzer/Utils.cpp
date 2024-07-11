@@ -196,6 +196,54 @@ bool isQueryOrUnionNode(const QueryTreeNodePtr & node)
     return isQueryOrUnionNode(node.get());
 }
 
+namespace
+{
+
+class CheckCursorKeeperKeyVisitor : public ConstInDepthQueryTreeVisitor<CheckCursorKeeperKeyVisitor>
+{
+    bool keeper_key_found = false;
+
+public:
+    using Base = ConstInDepthQueryTreeVisitor<CheckCursorKeeperKeyVisitor>;
+    using Base::Base;
+
+    bool hasCursorKeeper() const
+    {
+        return keeper_key_found;
+    }
+
+    void visitImpl(const QueryTreeNodePtr & node)
+    {
+        if (const auto * table_node = node->as<const TableNode>())
+            checkModifiers(table_node->getTableExpressionModifiers());
+        else if (const auto * table_function_node = node->as<const TableFunctionNode>())
+            checkModifiers(table_function_node->getTableExpressionModifiers());
+    }
+
+    bool needChildVisit(VisitQueryTreeNodeType & parent [[maybe_unused]], VisitQueryTreeNodeType & child [[maybe_unused]]) const
+    {
+        return !keeper_key_found;
+    }
+
+private:
+    void checkModifiers(const std::optional<TableExpressionModifiers> & modifiers)
+    {
+        if (!modifiers || !modifiers->hasStream())
+            return;
+
+        keeper_key_found |= modifiers->getStreamSettings()->keeper_key.has_value();
+    }
+};
+
+}
+
+bool areKeeperCursorsUsed(const QueryTreeNodePtr & node)
+{
+    CheckCursorKeeperKeyVisitor visitor;
+    visitor.visit(node);
+    return visitor.hasCursorKeeper();
+}
+
 QueryTreeNodePtr buildCastFunction(const QueryTreeNodePtr & expression,
     const DataTypePtr & type,
     const ContextPtr & context,
@@ -301,6 +349,18 @@ static ASTPtr convertIntoTableExpressionAST(const QueryTreeNodePtr & table_expre
     if (table_expression_modifiers)
     {
         result_table_expression->final = table_expression_modifiers->hasFinal();
+
+        const auto & stream_settings = table_expression_modifiers->getStreamSettings();
+        if (stream_settings.has_value())
+        {
+            ASTStreamSettings::StreamSettings ast_stream_settings
+            {
+                .stage = stream_settings->stage,
+                .keeper_key = stream_settings->keeper_key,
+                .collapsed_tree = cursorTreeToMap(stream_settings->tree),
+            };
+            result_table_expression->stream_settings = std::make_shared<ASTStreamSettings>(std::move(ast_stream_settings));
+        }
 
         const auto & sample_size_ratio = table_expression_modifiers->getSampleSizeRatio();
         if (sample_size_ratio.has_value())

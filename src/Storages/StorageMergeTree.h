@@ -64,6 +64,16 @@ public:
         size_t max_block_size,
         size_t num_streams) override;
 
+    void streamingRead(
+        QueryPlan & query_plan,
+        const Names & column_names,
+        const StorageSnapshotPtr & storage_snapshot,
+        SelectQueryInfo & query_info,
+        ContextPtr context,
+        QueryProcessingStage::Enum processed_stage,
+        size_t max_block_size,
+        size_t num_streams) override;
+
     std::optional<UInt64> totalRows(const Settings &) const override;
     std::optional<UInt64> totalRowsByPartitionPredicate(const ActionsDAGPtr & filter_actions_dag, ContextPtr) const override;
     std::optional<UInt64> totalBytes(const Settings &) const override;
@@ -115,6 +125,8 @@ public:
 
     MergeTreeDeduplicationLog * getDeduplicationLog() { return deduplication_log.get(); }
 
+    CursorPromotersMap buildPromoters() override;
+
 private:
 
     /// Mutex and condvar for synchronous mutations wait
@@ -145,6 +157,13 @@ private:
     /// Parts that currently participate in merge or mutation.
     /// This set have to be used with `currently_processing_in_background_mutex`.
     DataParts currently_merging_mutating_parts;
+
+    /// Block numbers of parts that are currently being inserted into storage
+    /// NOTE: in queue mode block numbers must be allocated before commit, because we must materialize block number column with
+    /// actual block number to have correct indexes. That is why we store currently committing block numbers here - to check
+    /// if there are some committing blocks in merge task and do not break the invariants.
+    std::mutex committing_block_numbers_mutex;
+    std::map<String, std::set<Int64>> committing_block_numbers;
 
     std::map<UInt64, MergeTreeMutationEntry> current_mutations_by_version;
     /// Unfinished mutations that is required AlterConversions (see getAlterMutationCommandsForPart())
@@ -261,7 +280,7 @@ private:
     std::optional<MergeTreeMutationStatus> getIncompleteMutationsStatusUnlocked(Int64 mutation_version, std::unique_lock<std::mutex> & lock,
                                                                         std::set<String> * mutation_ids = nullptr, bool from_another_mutation = false) const;
 
-    void fillNewPartName(MutableDataPartPtr & part, DataPartsLock & lock);
+    void fillNewPartName(MutableDataPartPtr & part, DataPartsLock & lock, std::optional<int64_t> block_number = {});
     void fillNewPartNameAndResetLevel(MutableDataPartPtr & part, DataPartsLock & lock);
 
     void startBackgroundMovesIfNeeded() override;
