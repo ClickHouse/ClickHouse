@@ -119,3 +119,23 @@ echo "Trying to auth with no pwd, should succeed"
 test_login_no_pwd ${user}
 
 ${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS ${user}"
+
+echo "Create user with mix both implicit and explicit auth type, starting with with"
+${CLICKHOUSE_CLIENT} --query "CREATE USER ${user} IDENTIFIED WITH plaintext_password by '1', by '2', bcrypt_password by '3', by '4';"
+${CLICKHOUSE_CLIENT} --query "SHOW CREATE USER ${user}"
+
+${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS ${user}"
+
+echo "Create user with mix both implicit and explicit auth type, starting with by"
+${CLICKHOUSE_CLIENT} --query "CREATE USER ${user} IDENTIFIED by '1', plaintext_password by '2', bcrypt_password by '3', by '4';"
+${CLICKHOUSE_CLIENT} --query "SHOW CREATE USER ${user}"
+
+${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS ${user}"
+
+echo "Use WITH without providing authentication type, should fail"
+${CLICKHOUSE_CLIENT} --query "CREATE USER ${user} IDENTIFIED WITH BY '1';" 2>&1 | grep -m1 -o "Syntax error"
+
+echo "Create user with ADD identification, should fail, add is not allowed for create query"
+${CLICKHOUSE_CLIENT} --query "CREATE USER ${user} ADD IDENTIFIED WITH plaintext_password by '1'" 2>&1 | grep -m1 -o "BAD_ARGUMENTS"
+
+${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS ${user}"
