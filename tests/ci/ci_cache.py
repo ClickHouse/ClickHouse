@@ -674,6 +674,47 @@ class CiCache:
             bucket=S3_BUILDS_BUCKET, file_path=result_json_path, s3_path=s3_path
         )
 
+    def filter_out_not_affected_jobs(self):
+        """
+        removes the following jobs from to_do and to_wait lists:
+         test jobs - as not affected by the change
+         build jobs which are not required by left test jobs
+        :return:
+        """
+        remove_from_await_list = []
+        for job_name, job_config in self.jobs_to_wait.items():
+            if CI.is_test_job(job_name):
+                remove_from_await_list.append(job_name)
+        for job in remove_from_await_list:
+            print(f"Filter job [{job}] - test job and not affected by the change")
+            del self.jobs_to_wait[job]
+            del self.jobs_to_do[job]
+
+        required_builds = list()
+        for job_name, job_config in self.jobs_to_do.items():
+            if CI.is_test_job(job_name) and job_config.required_builds:
+                required_builds += job_config.required_builds
+        required_builds = list(set(required_builds))
+
+        remove_builds = []
+        has_builds_to_do = False
+        for job_name, job_config in self.jobs_to_do.items():
+            if CI.is_build_job(job_name):
+                if job_name not in required_builds:
+                    remove_builds += job_name
+                else:
+                    has_builds_to_do = True
+
+        for build_job in remove_builds:
+            print(f"Filter build job [{build_job}] - not affected and not required by test jobs")
+            del self.jobs_to_do[build_job]
+            if build_job in self.jobs_to_wait:
+                del self.jobs_to_wait[build_job]
+
+        if not has_builds_to_do and CI.JobNames.BUILD_CHECK in self.jobs_to_do:
+            print(f"Filter job [{CI.JobNames.BUILD_CHECK}] - no builds to do")
+            del self.jobs_to_do[CI.JobNames.BUILD_CHECK]
+
     def await_pending_jobs(self, is_release: bool, dry_run: bool = False) -> None:
         """
         await pending jobs to be finished

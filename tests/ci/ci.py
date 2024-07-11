@@ -997,6 +997,9 @@ def main() -> int:
         )
         ci_cache.print_status()
 
+        if IS_CI and pr_info.is_pr:
+            ci_cache.filter_out_not_affected_jobs()
+
         if IS_CI and not pr_info.is_merge_queue:
             # wait for pending jobs to be finished, await_jobs is a long blocking call
             ci_cache.await_pending_jobs(pr_info.is_release)
