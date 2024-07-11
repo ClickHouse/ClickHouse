@@ -141,7 +141,9 @@ private:
                     || executeNumber<UInt64>(*arg.column, res_chars, res_offsets)
                     || executeNumber<Int8>(*arg.column, res_chars, res_offsets) || executeNumber<Int16>(*arg.column, res_chars, res_offsets)
                     || executeNumber<Int32>(*arg.column, res_chars, res_offsets)
-                    || executeNumber<Int64>(*arg.column, res_chars, res_offsets)))
+                    || executeNumber<Int64>(*arg.column, res_chars, res_offsets)
+                    || executeNumber<Float32>(*arg.column, res_chars, res_offsets)
+                    || executeNumber<Float64>(*arg.column, res_chars, res_offsets)))
             {
                 return {std::move(res_col), std::make_shared<DataTypeString>(), arg.name};
             }
