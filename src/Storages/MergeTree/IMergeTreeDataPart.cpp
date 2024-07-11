@@ -319,7 +319,10 @@ IMergeTreeDataPart::IMergeTreeDataPart(
 {
     if (parent_part)
     {
-        chassert(parent_part_name.starts_with(parent_part->info.partition_id));     /// Make sure there's no prefix
+        if (parent_part->state != MergeTreeDataPartState::Temporary)
+        {
+            chassert(parent_part_name.starts_with(parent_part->info.partition_id));     /// Make sure there's no prefix
+        }
         state = MergeTreeDataPartState::Active;
     }
 
