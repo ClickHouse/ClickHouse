@@ -46,7 +46,7 @@ source /utils.lib
 /usr/share/clickhouse-test/config/install.sh
 
 ./setup_minio.sh stateless
-mc admin trace clickminio > /test_output/rubbish.log &
+m./c admin trace clickminio > /test_output/rubbish.log &
 MC_ADMIN_PID=$!
 
 ./setup_hdfs_minicluster.sh
