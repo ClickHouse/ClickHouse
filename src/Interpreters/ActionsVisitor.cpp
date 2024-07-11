@@ -405,10 +405,6 @@ Block createBlockForSet(
 
 }
 
-ScopeStack::Level::Level() = default;
-ScopeStack::Level::~Level() = default;
-ScopeStack::Level::Level(Level &&) noexcept = default;
-
 FutureSetPtr makeExplicitSet(
     const ASTFunction * node, const ActionsDAG & actions, ContextPtr context, PreparedSets & prepared_sets)
 {
@@ -462,6 +458,7 @@ public:
         for (const auto * node : index)
             map.emplace(node->result_name, node);
     }
+    ~Index() = default;
 
     void addNode(const ActionsDAG::Node * node)
     {
@@ -501,6 +498,10 @@ public:
         return result;
     }
 };
+
+ScopeStack::Level::Level() = default;
+ScopeStack::Level::~Level() = default;
+ScopeStack::Level::Level(Level &&) noexcept = default;
 
 ActionsMatcher::Data::Data(
     ContextPtr context_,

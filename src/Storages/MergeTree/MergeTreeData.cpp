@@ -87,6 +87,7 @@
 
 #include <base/insertAtEnd.h>
 #include <base/interpolate.h>
+#include <base/isSharedPtrUnique.h>
 
 #include <algorithm>
 #include <atomic>
@@ -2464,7 +2465,7 @@ MergeTreeData::DataPartsVector MergeTreeData::grabOldParts(bool force)
             }
 
             /// Grab only parts that are not used by anyone (SELECTs for example).
-            if (!part.unique())
+            if (!isSharedPtrUnique(part))
             {
                 part->removal_state.store(DataPartRemovalState::NON_UNIQUE_OWNERSHIP, std::memory_order_relaxed);
                 skipped_parts.push_back(part->info);
@@ -4360,13 +4361,13 @@ bool MergeTreeData::tryRemovePartImmediately(DataPartPtr && part)
 
             part.reset();
 
-            if (!((*it)->getState() == DataPartState::Outdated && it->unique()))
+            if (!((*it)->getState() == DataPartState::Outdated && isSharedPtrUnique(*it)))
             {
                 if ((*it)->getState() != DataPartState::Outdated)
                     LOG_WARNING(log, "Cannot immediately remove part {} because it's not in Outdated state "
                              "usage counter {}", part_name_with_state, it->use_count());
 
-                if (!it->unique())
+                if (!isSharedPtrUnique(*it))
                     LOG_WARNING(log, "Cannot immediately remove part {} because someone using it right now "
                              "usage counter {}", part_name_with_state, it->use_count());
                 return false;
@@ -4432,7 +4433,7 @@ size_t MergeTreeData::getNumberOfOutdatedPartsWithExpiredRemovalTime() const
     for (const auto & part : outdated_parts_range)
     {
         auto part_remove_time = part->remove_time.load(std::memory_order_relaxed);
-        if (part_remove_time <= time_now && time_now - part_remove_time >= getSettings()->old_parts_lifetime.totalSeconds() && part.unique())
+        if (part_remove_time <= time_now && time_now - part_remove_time >= getSettings()->old_parts_lifetime.totalSeconds() && isSharedPtrUnique(part))
             ++res;
     }
 
@@ -7077,6 +7078,20 @@ QueryProcessingStage::Enum MergeTreeData::getQueryProcessingStage(
     /// with new analyzer, Planner make decision regarding parallel replicas usage, and so about processing stage on reading
     if (!query_context->getSettingsRef().allow_experimental_analyzer)
     {
+        const auto & settings = query_context->getSettingsRef();
+        if (query_context->canUseParallelReplicasCustomKey())
+        {
+            if (query_context->getClientInfo().distributed_depth > 0)
+                return QueryProcessingStage::FetchColumns;
+
+            if (!supportsReplication() && !settings.parallel_replicas_for_non_replicated_merge_tree)
+                return QueryProcessingStage::Enum::FetchColumns;
+
+            if (to_stage >= QueryProcessingStage::WithMergeableState
+                && query_context->canUseParallelReplicasCustomKeyForCluster(*query_context->getClusterForParallelReplicas()))
+                return QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
+        }
+
         if (query_context->getClientInfo().collaborate_with_initiator)
             return QueryProcessingStage::Enum::FetchColumns;
 
@@ -7088,7 +7103,7 @@ QueryProcessingStage::Enum MergeTreeData::getQueryProcessingStage(
                 return QueryProcessingStage::Enum::WithMergeableState;
 
             /// For non-replicated MergeTree we allow them only if parallel_replicas_for_non_replicated_merge_tree is enabled
-            if (query_context->getSettingsRef().parallel_replicas_for_non_replicated_merge_tree)
+            if (settings.parallel_replicas_for_non_replicated_merge_tree)
                 return QueryProcessingStage::Enum::WithMergeableState;
         }
     }
@@ -8626,7 +8641,7 @@ size_t MergeTreeData::unloadPrimaryKeysOfOutdatedParts()
             /// Outdated part may be hold by SELECT query and still needs the index.
             /// This check requires lock of index_mutex but if outdated part is unique then there is no
             /// contention on it, so it's relatively cheap and it's ok to check under a global parts lock.
-            if (part.unique() && part->isIndexLoaded())
+            if (isSharedPtrUnique(part) && part->isIndexLoaded())
                 parts_to_unload_index.push_back(part);
         }
     }

@@ -142,7 +142,11 @@ public:
         return true;
     }
 
+#if !defined(ABORT_ON_LOGICAL_ERROR)
     void insertFrom(const IColumn & src_, size_t n) override
+#else
+    void doInsertFrom(const IColumn & src_, size_t n) override
+#endif
     {
         const ColumnString & src = assert_cast<const ColumnString &>(src_);
         const size_t size_to_append = src.offsets[n] - src.offsets[n - 1];  /// -1th index is Ok, see PaddedPODArray.
@@ -165,7 +169,11 @@ public:
         }
     }
 
+#if !defined(ABORT_ON_LOGICAL_ERROR)
     void insertManyFrom(const IColumn & src, size_t position, size_t length) override;
+#else
+    void doInsertManyFrom(const IColumn & src, size_t position, size_t length) override;
+#endif
 
     void insertData(const char * pos, size_t length) override
     {
@@ -212,7 +220,11 @@ public:
         hash.update(reinterpret_cast<const char *>(chars.data()), chars.size() * sizeof(chars[0]));
     }
 
+#if !defined(ABORT_ON_LOGICAL_ERROR)
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
+#else
+    void doInsertRangeFrom(const IColumn & src, size_t start, size_t length) override;
+#endif
 
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
 
@@ -238,7 +250,11 @@ public:
             offsets.push_back(offsets.back() + 1);
     }
 
+#if !defined(ABORT_ON_LOGICAL_ERROR)
     int compareAt(size_t n, size_t m, const IColumn & rhs_, int /*nan_direction_hint*/) const override
+#else
+    int doCompareAt(size_t n, size_t m, const IColumn & rhs_, int /*nan_direction_hint*/) const override
+#endif
     {
         const ColumnString & rhs = assert_cast<const ColumnString &>(rhs_);
         return memcmpSmallAllowOverflow15(chars.data() + offsetAt(n), sizeAt(n) - 1, rhs.chars.data() + rhs.offsetAt(m), rhs.sizeAt(m) - 1);

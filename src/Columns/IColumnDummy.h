@@ -26,7 +26,11 @@ public:
     size_t byteSize() const override { return 0; }
     size_t byteSizeAt(size_t) const override { return 0; }
     size_t allocatedBytes() const override { return 0; }
+#if !defined(ABORT_ON_LOGICAL_ERROR)
     int compareAt(size_t, size_t, const IColumn &, int) const override { return 0; }
+#else
+    int doCompareAt(size_t, size_t, const IColumn &, int) const override { return 0; }
+#endif
     void compareColumn(const IColumn &, size_t, PaddedPODArray<UInt64> *, PaddedPODArray<Int8> &, int, int) const override
     {
     }
@@ -67,12 +71,20 @@ public:
     {
     }
 
+#if !defined(ABORT_ON_LOGICAL_ERROR)
     void insertFrom(const IColumn &, size_t) override
+#else
+    void doInsertFrom(const IColumn &, size_t) override
+#endif
     {
         ++s;
     }
 
+#if !defined(ABORT_ON_LOGICAL_ERROR)
     void insertRangeFrom(const IColumn & /*src*/, size_t /*start*/, size_t length) override
+#else
+    void doInsertRangeFrom(const IColumn & /*src*/, size_t /*start*/, size_t length) override
+#endif
     {
         s += length;
     }

@@ -1,7 +1,7 @@
 #pragma once
 
-#include <Interpreters/Context_fwd.h>
 #include <Core/QueryProcessingStage.h>
+#include <Interpreters/Context_fwd.h>
 #include <Parsers/IAST.h>
 
 namespace DB
@@ -12,6 +12,11 @@ struct DistributedSettings;
 class Cluster;
 using ClusterPtr = std::shared_ptr<Cluster>;
 struct SelectQueryInfo;
+
+class ColumnsDescription;
+struct StorageSnapshot;
+
+using StorageSnapshotPtr = std::shared_ptr<StorageSnapshot>;
 
 class Pipe;
 class QueryPlan;
@@ -47,6 +52,9 @@ class SelectStreamFactory;
 ContextMutablePtr updateSettingsForCluster(const Cluster & cluster, ContextPtr context, const Settings & settings, const StorageID & main_table);
 
 using AdditionalShardFilterGenerator = std::function<ASTPtr(uint64_t)>;
+AdditionalShardFilterGenerator
+getShardFilterGeneratorForCustomKey(const Cluster & cluster, ContextPtr context, const ColumnsDescription & columns);
+
 /// Execute a distributed query, creating a query plan, from which the query pipeline can be built.
 /// `stream_factory` object encapsulates the logic of creating plans for a different type of query
 /// (currently SELECT, DESCRIBE).
@@ -91,6 +99,36 @@ void executeQueryWithParallelReplicas(
     const PlannerContextPtr & planner_context,
     ContextPtr context,
     std::shared_ptr<const StorageLimitsList> storage_limits);
+
+void executeQueryWithParallelReplicasCustomKey(
+    QueryPlan & query_plan,
+    const StorageID & storage_id,
+    const SelectQueryInfo & query_info,
+    const ColumnsDescription & columns,
+    const StorageSnapshotPtr & snapshot,
+    QueryProcessingStage::Enum processed_stage,
+    const Block & header,
+    ContextPtr context);
+
+void executeQueryWithParallelReplicasCustomKey(
+    QueryPlan & query_plan,
+    const StorageID & storage_id,
+    const SelectQueryInfo & query_info,
+    const ColumnsDescription & columns,
+    const StorageSnapshotPtr & snapshot,
+    QueryProcessingStage::Enum processed_stage,
+    const QueryTreeNodePtr & query_tree,
+    ContextPtr context);
+
+void executeQueryWithParallelReplicasCustomKey(
+    QueryPlan & query_plan,
+    const StorageID & storage_id,
+    SelectQueryInfo query_info,
+    const ColumnsDescription & columns,
+    const StorageSnapshotPtr & snapshot,
+    QueryProcessingStage::Enum processed_stage,
+    const ASTPtr & query_ast,
+    ContextPtr context);
 }
 
 }
