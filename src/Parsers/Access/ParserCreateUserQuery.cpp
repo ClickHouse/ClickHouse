@@ -527,6 +527,11 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
             if (!parsed_identified_with)
             {
                 parsed_add_new_method = parseAddIdentifiedWith(pos, expected, auth_data);
+
+                if (parsed_add_new_method && !alter)
+                {
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Create user query is not allowed to have ADD IDENTIFIED, remove the ADD keyword.");
+                }
             }
         }
 

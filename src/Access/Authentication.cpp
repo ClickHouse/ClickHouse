@@ -120,7 +120,7 @@ namespace
         {
             case AuthenticationType::NO_PASSWORD:
             {
-                return true;
+                return true; // N.B. even if the password is not empty!
             }
             case AuthenticationType::PLAINTEXT_PASSWORD:
             {
