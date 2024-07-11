@@ -241,7 +241,7 @@ void registerDictionarySourceXDBC(DictionarySourceFactory & factory)
 #if USE_ODBC
         BridgeHelperPtr bridge = std::make_shared<XDBCBridgeHelper<ODBCBridgeMixin>>(
             global_context,
-            global_context->getSettings().http_receive_timeout,
+            global_context->getSettingsRef().http_receive_timeout,
             config.getString(config_prefix + ".odbc.connection_string"),
             config.getBool(config_prefix + ".settings.odbc_bridge_use_connection_pooling",
             global_context->getSettingsRef().odbc_bridge_use_connection_pooling));

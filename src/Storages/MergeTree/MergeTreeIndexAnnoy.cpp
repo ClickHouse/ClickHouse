@@ -231,7 +231,7 @@ MergeTreeIndexConditionAnnoy::MergeTreeIndexConditionAnnoy(
     ContextPtr context)
     : ann_condition(query, context)
     , distance_function(distance_function_)
-    , search_k(context->getSettings().annoy_index_search_k_nodes)
+    , search_k(context->getSettingsRef().annoy_index_search_k_nodes)
 {}
 
 bool MergeTreeIndexConditionAnnoy::mayBeTrueOnGranule(MergeTreeIndexGranulePtr /*idx_granule*/) const

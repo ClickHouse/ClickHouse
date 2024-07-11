@@ -474,7 +474,7 @@ StoragePolicyPtr MergeTreeData::getStoragePolicy() const
 ConditionSelectivityEstimator MergeTreeData::getConditionSelectivityEstimatorByPredicate(
     const StorageSnapshotPtr & storage_snapshot, const ActionsDAGPtr & filter_dag, ContextPtr local_context) const
 {
-    if (!local_context->getSettings().allow_statistics_optimize)
+    if (!local_context->getSettingsRef().allow_statistics_optimize)
         return {};
 
     const auto & parts = assert_cast<const MergeTreeData::SnapshotData &>(*storage_snapshot->data).parts;

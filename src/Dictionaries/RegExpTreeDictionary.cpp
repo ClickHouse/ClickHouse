@@ -1003,9 +1003,9 @@ void registerDictionaryRegExpTree(DictionaryFactory & factory)
             dict_struct,
             std::move(source_ptr),
             configuration,
-            context->getSettings().regexp_dict_allow_hyperscan,
-            context->getSettings().regexp_dict_flag_case_insensitive,
-            context->getSettings().regexp_dict_flag_dotall);
+            context->getSettingsRef().regexp_dict_allow_hyperscan,
+            context->getSettingsRef().regexp_dict_flag_case_insensitive,
+            context->getSettingsRef().regexp_dict_flag_dotall);
     };
 
     factory.registerLayout("regexp_tree", create_layout, true);

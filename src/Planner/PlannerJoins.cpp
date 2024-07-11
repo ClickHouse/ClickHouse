@@ -807,7 +807,8 @@ static std::shared_ptr<IJoin> tryCreateJoin(JoinAlgorithm algorithm,
         auto query_context = planner_context->getQueryContext();
 
         if (table_join->allowParallelHashJoin())
-            return std::make_shared<ConcurrentHashJoin>(query_context, table_join, query_context->getSettings().max_threads, right_table_expression_header);
+            return std::make_shared<ConcurrentHashJoin>(
+                query_context, table_join, query_context->getSettingsRef().max_threads, right_table_expression_header);
 
         return std::make_shared<HashJoin>(table_join, right_table_expression_header, query_context->getSettingsRef().join_any_take_last_row);
     }

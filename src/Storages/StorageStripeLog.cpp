@@ -291,7 +291,7 @@ StorageStripeLog::StorageStripeLog(
     , data_file_path(table_path + "data.bin")
     , index_file_path(table_path + "index.mrk")
     , file_checker(disk, table_path + "sizes.json")
-    , max_compress_block_size(context_->getSettings().max_compress_block_size)
+    , max_compress_block_size(context_->getSettingsRef().max_compress_block_size)
     , log(getLogger("StorageStripeLog"))
 {
     StorageInMemoryMetadata storage_metadata;
