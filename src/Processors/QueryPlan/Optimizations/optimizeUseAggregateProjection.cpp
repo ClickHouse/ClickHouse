@@ -17,6 +17,7 @@
 #include <Analyzer/QueryNode.h>
 
 #include <Common/logger_useful.h>
+#include <Core/Settings.h>
 #include <Storages/StorageDummy.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Planner/PlannerExpressionAnalysis.h>

@@ -5,7 +5,7 @@
 #include <Access/AccessControl.h>
 #include <Access/User.h>
 
-#include "Common/Exception.h"
+#include <Common/Exception.h>
 #include <Common/StringUtils.h>
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
@@ -14,6 +14,7 @@
 #include <Common/atomicRename.h>
 #include <Common/PoolId.h>
 #include <Common/logger_useful.h>
+#include <Core/Settings.h>
 #include <Parsers/ASTSetQuery.h>
 #include <base/hex.h>
 

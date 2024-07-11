@@ -6,7 +6,6 @@
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnsNumber.h>
-#include <Core/Settings.h>
 #include <Interpreters/Context.h>
 
 #include <base/arithmeticOverflow.h>
@@ -108,11 +107,7 @@ private:
     const bool allow_nonconst_timezone_arguments;
 
 public:
-    FunctionFromUnixTimestamp64(size_t target_scale_, const char * name_, ContextPtr context)
-        : target_scale(target_scale_)
-        , name(name_)
-        , allow_nonconst_timezone_arguments(context->getSettingsRef().allow_nonconst_timezone_arguments)
-    {}
+    FunctionFromUnixTimestamp64(size_t target_scale_, const char * name_, ContextPtr context);
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 0; }

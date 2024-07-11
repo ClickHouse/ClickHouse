@@ -8,6 +8,7 @@
 
 #include <Core/ColumnNumbers.h>
 #include <Core/ColumnWithTypeAndName.h>
+#include <Core/Settings.h>
 
 #include <Functions/grouping.h>
 #include <Functions/FunctionFactory.h>

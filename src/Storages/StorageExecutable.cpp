@@ -8,6 +8,7 @@
 #include <Common/filesystemHelpers.h>
 
 #include <Core/Block.h>
+#include <Core/Settings.h>
 
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>

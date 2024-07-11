@@ -5,6 +5,7 @@
 
 #include <Backups/BackupEntriesCollector.h>
 #include <Core/QueryProcessingStage.h>
+#include <Core/Settings.h>
 #include <Databases/IDatabase.h>
 #include <IO/copyData.h>
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>

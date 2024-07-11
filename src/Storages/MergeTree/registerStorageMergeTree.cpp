@@ -8,6 +8,7 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 
 #include <Core/ServerSettings.h>
+#include <Core/Settings.h>
 #include <Common/Macros.h>
 #include <Common/OptimizedRegularExpression.h>
 #include <Common/typeid_cast.h>

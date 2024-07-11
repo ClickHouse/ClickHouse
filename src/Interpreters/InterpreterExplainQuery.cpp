@@ -29,6 +29,7 @@
 #include <QueryPipeline/printPipeline.h>
 
 #include <Common/JSONBuilder.h>
+#include <Core/Settings.h>
 
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/QueryTreePassManager.h>
