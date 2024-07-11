@@ -1125,10 +1125,14 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             {
                 if (can_use_query_cache && settings.enable_reads_from_query_cache)
                 {
-                    QueryCache::Key key(ast, context->getCurrentDatabase(), *settings_copy, context->getUserID(), context->getCurrentRoles());
-                    QueryCache::Reader reader = query_cache->createReader(key);
+                    auto key_creator = [&context, &settings_copy](const ASTPtr& from_ast) -> QueryCache::Key {
+                        return {from_ast, context->getCurrentDatabase(), *settings_copy, context->getUserID(), context->getCurrentRoles()};
+                    };
+                    QueryCache::Reader reader = query_cache->createReader(ast, key_creator);
+
                     if (reader.hasCacheEntryForKey())
                     {
+                        
                         QueryPipeline pipeline;
                         pipeline.readFromQueryCache(reader.getSource(), reader.getSourceTotals(), reader.getSourceExtremes());
                         res.pipeline = std::move(pipeline);

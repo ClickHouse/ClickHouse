@@ -1,4 +1,6 @@
 #include "Interpreters/Cache/QueryCache.h"
+#include <memory>
+#include <optional>
 
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/Context.h>
@@ -7,6 +9,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/IAST.h>
 #include <Parsers/IParser.h>
@@ -18,6 +21,7 @@
 #include <Common/TTLCachePolicy.h>
 #include <Common/formatReadable.h>
 #include <Common/quoteString.h>
+#include "Parsers/IAST_fwd.h"
 #include <Core/Settings.h>
 #include <base/defines.h> /// chassert
 
@@ -487,13 +491,52 @@ void QueryCache::Reader::buildSourceFromChunks(Block header, Chunks && chunks, c
     }
 }
 
-QueryCache::Reader::Reader(Cache & cache_, const Key & key, const std::lock_guard<std::mutex> &)
+std::optional<QueryCache::Cache::KeyMapped> QueryCache::Reader::findSubqueryInCache(Cache & cache_, ASTPtr & ast, const KeyCreator & key_creator) {
+    auto select = std::static_pointer_cast<ASTSelectQuery>(ast);
+    
+    // limit
+    
+    if (ASTPtr where = select->where(); where != nullptr && select->groupBy() == nullptr) {
+        select->setExpression(ASTSelectQuery::Expression::WHERE, nullptr);
+        auto entry = cache_.getWithKey(key_creator(select));
+        select->setExpression(ASTSelectQuery::Expression::WHERE, std::move(where));
+
+        if (entry.has_value()) {
+            return entry;
+        }
+    }
+
+    if (ASTPtr order_by = select->orderBy(); order_by != nullptr) {
+        select->setExpression(ASTSelectQuery::Expression::ORDER_BY, nullptr);
+        auto entry = cache_.getWithKey(key_creator(select));
+        select->setExpression(ASTSelectQuery::Expression::ORDER_BY, std::move(order_by));
+
+        if (entry.has_value()) {
+            return entry;
+        }
+    }
+
+    if (ASTPtr group_by = select->groupBy(); group_by != nullptr) {
+        select->setExpression(ASTSelectQuery::Expression::GROUP_BY, nullptr);
+        auto entry = cache_.getWithKey(key_creator(select));
+        select->setExpression(ASTSelectQuery::Expression::GROUP_BY, std::move(group_by));
+
+        if (entry.has_value()) {
+            return entry;
+        }
+
+    }
+
+    return std::nullopt;
+}
+
+QueryCache::Reader::Reader(Cache & cache_, ASTPtr & ast, const KeyCreator & key_creator, const std::lock_guard<std::mutex> &)
 {
-    auto entry = cache_.getWithKey(key);
+    auto entry = findSubqueryInCache(cache_, ast, key_creator);
 
     if (!entry.has_value())
     {
-        LOG_TRACE(logger, "No query result found for query {}", doubleQuoteString(key.query_string));
+        LOG_TRACE(logger, "No query result found for query {}", doubleQuoteString(key_creator(ast).query_string));
         return;
     }
 
@@ -593,10 +636,10 @@ void QueryCache::updateConfiguration(size_t max_size_in_bytes, size_t max_entrie
     max_entry_size_in_rows = max_entry_size_in_rows_;
 }
 
-QueryCache::Reader QueryCache::createReader(const Key & key)
+QueryCache::Reader QueryCache::createReader(ASTPtr & ast, const KeyCreator & key_creator)
 {
     std::lock_guard lock(mutex);
-    return Reader(cache, key, lock);
+    return Reader(cache, ast, key_creator, lock);
 }
 
 QueryCache::Writer QueryCache::createWriter(const Key & key, std::chrono::milliseconds min_query_runtime, bool squash_partial_results, size_t max_block_size, size_t max_query_cache_size_in_bytes_quota, size_t max_query_cache_entries_quota)
