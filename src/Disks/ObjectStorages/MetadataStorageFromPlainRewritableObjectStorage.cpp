@@ -1,5 +1,7 @@
 #include <Disks/ObjectStorages/MetadataStorageFromPlainRewritableObjectStorage.h>
+#include <Disks/ObjectStorages/FlatStructureKeyGenerator.h>
 #include <Disks/ObjectStorages/ObjectStorageIterator.h>
+#include <Disks/ObjectStorages/PathComparator.h>
 
 #include <unordered_set>
 #include <IO/ReadHelpers.h>
@@ -8,7 +10,6 @@
 #include <Common/ErrorCodes.h>
 #include <Common/logger_useful.h>
 #include "CommonPathPrefixKeyGenerator.h"
-#include "Disks/ObjectStorages/PathComparator.h"
 
 
 namespace DB
@@ -181,8 +182,16 @@ MetadataStorageFromPlainRewritableObjectStorage::MetadataStorageFromPlainRewrita
             "MetadataStorageFromPlainRewritableObjectStorage is not compatible with write-once storage '{}'",
             object_storage->getName());
 
-    auto keys_gen = std::make_shared<CommonPathPrefixKeyGenerator>(object_storage->getCommonKeyPrefix(), path_map);
-    object_storage->setKeysGenerator(keys_gen);
+    if (getMetadataKeyPrefix() == object_storage->getCommonKeyPrefix())
+    {
+        auto keys_gen = std::make_shared<CommonPathPrefixKeyGenerator>(object_storage->getCommonKeyPrefix(), path_map);
+        object_storage->setKeysGenerator(keys_gen);
+    }
+    else
+    {
+        auto keys_gen = std::make_shared<FlatStructureKeyGenerator>(object_storage->getCommonKeyPrefix(), path_map);
+        object_storage->setKeysGenerator(keys_gen);
+    }
 }
 
 MetadataStorageFromPlainRewritableObjectStorage::~MetadataStorageFromPlainRewritableObjectStorage()
