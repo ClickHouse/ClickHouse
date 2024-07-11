@@ -38,6 +38,15 @@ public:
     void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
 };
 
+class ACMERequestHandler : public HTTPRequestHandler
+{
+private:
+    IServer & server;
+public:
+    explicit ACMERequestHandler(IServer & server_);
+    void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
+};
+
 class JavaScriptWebUIRequestHandler : public HTTPRequestHandler
 {
 public:

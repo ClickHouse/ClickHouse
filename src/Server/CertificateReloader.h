@@ -43,14 +43,6 @@ public:
 
         Data(std::string cert_path, std::string key_path, std::string pass_phrase);
     };
-    /// Initialize the callback and perform the initial cert loading
-    void init();
-
-    /// Callback for Let's Enrypt integration
-    void reloadCertificates();
-
-    /// A callback for OpenSSL
-    int setCertificate(SSL * ssl);
 
     struct File
     {
@@ -67,7 +59,7 @@ public:
     {
         SSL_CTX * ctx = nullptr;
         MultiVersion<Data> data;
-        bool init_was_not_made = true;
+        bool initialized = false;
 
         File cert_file{"certificate"};
         File key_file{"key"};
@@ -98,32 +90,6 @@ public:
 
     /// A callback for OpenSSL
     int setCertificate(SSL * ssl, const MultiData * pdata);
-
-    // struct LetsEncryptConfigurationData
-    // {
-    //     bool is_issuing_enabled;
-    //     int reissue_hours_before;
-    //
-    //     LetsEncryptConfigurationData(bool is_issuing_enabled_, int reissue_hours_before_);
-    // };
-    struct LetsEncryptConfigurationData
-    {
-        int reissue_hours_before;
-        std::string domain_name;
-        std::string account_private_key;
-        std::string export_directory_path;
-
-        std::string certificate_private_key_path;
-        std::string certificate_path;
-
-        explicit LetsEncryptConfigurationData(const Poco::Util::AbstractConfiguration & config);
-    };
-
-    bool init_was_not_made = true;
-
-    MultiVersion<LetsEncryptConfigurationData> let_encrypt_configuration_data;
-
-    bool ShouldReissueCertificates();
 
 private:
     CertificateReloader() = default;

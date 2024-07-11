@@ -8,6 +8,7 @@
 #include <Poco/Util/AbstractConfiguration.h>
 
 #include "HTTPHandler.h"
+#include "Server/ACMEClient.h"
 #include "StaticRequestHandler.h"
 #include "ReplicasStatusHandler.h"
 #include "InterserverIOHTTPHandler.h"
@@ -257,6 +258,11 @@ void addCommonDefaultHandlersFactory(HTTPRequestHandlerFactoryMain & factory, IS
     merges_handler->allowGetAndHeadRequest();
     factory.addPathToHints("/merges");
     factory.addHandler(merges_handler);
+
+    auto acme_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<ACMERequestHandler>>(server);
+    acme_handler->attachNonStrictPath(ACMEClient::ACME_CHALLENGE_PATH);
+    acme_handler->allowGetAndHeadRequest();
+    factory.addHandler(acme_handler);
 
     auto js_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<JavaScriptWebUIRequestHandler>>(server);
     js_handler->attachNonStrictPath("/js/");
