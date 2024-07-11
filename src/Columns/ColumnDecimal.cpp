@@ -32,7 +32,11 @@ namespace ErrorCodes
 }
 
 template <is_decimal T>
+#if !defined(ABORT_ON_LOGICAL_ERROR)
 int ColumnDecimal<T>::compareAt(size_t n, size_t m, const IColumn & rhs_, int) const
+#else
+int ColumnDecimal<T>::doCompareAt(size_t n, size_t m, const IColumn & rhs_, int) const
+#endif
 {
     auto & other = static_cast<const Self &>(rhs_);
     const T & a = data[n];
@@ -331,7 +335,11 @@ void ColumnDecimal<T>::insertData(const char * src, size_t /*length*/)
 }
 
 template <is_decimal T>
+#if !defined(ABORT_ON_LOGICAL_ERROR)
 void ColumnDecimal<T>::insertRangeFrom(const IColumn & src, size_t start, size_t length)
+#else
+void ColumnDecimal<T>::doInsertRangeFrom(const IColumn & src, size_t start, size_t length)
+#endif
 {
     const ColumnDecimal & src_vec = assert_cast<const ColumnDecimal &>(src);
 

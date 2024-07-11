@@ -366,12 +366,21 @@ Strings StorageFile::getPathsList(const String & table_path, const String & user
     }
     else if (path.find_first_of("*?{") == std::string::npos)
     {
-        std::error_code error;
-        size_t size = fs::file_size(path, error);
-        if (!error)
-            total_bytes_to_read += size;
+        if (!fs::is_directory(path))
+        {
+            std::error_code error;
+            size_t size = fs::file_size(path, error);
+            if (!error)
+                total_bytes_to_read += size;
 
-        paths.push_back(path);
+            paths.push_back(path);
+        }
+        else
+        {
+            /// We list non-directory files under that directory.
+            paths = listFilesWithRegexpMatching(path / fs::path("*"), total_bytes_to_read);
+            can_be_directory = false;
+        }
     }
     else
     {

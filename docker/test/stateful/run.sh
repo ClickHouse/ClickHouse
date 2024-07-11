@@ -16,6 +16,9 @@ dpkg -i package_folder/clickhouse-client_*.deb
 
 ln -s /usr/share/clickhouse-test/clickhouse-test /usr/bin/clickhouse-test
 
+# shellcheck disable=SC1091
+source /utils.lib
+
 # install test configs
 /usr/share/clickhouse-test/config/install.sh
 
@@ -213,6 +216,10 @@ function run_tests()
         ADDITIONAL_OPTIONS+=('--s3-storage')
     fi
 
+    if [[ -n "$USE_AZURE_STORAGE_FOR_MERGE_TREE" ]] && [[ "$USE_AZURE_STORAGE_FOR_MERGE_TREE" -eq 1 ]]; then
+        ADDITIONAL_OPTIONS+=('--azure-blob-storage')
+    fi
+
     if [[ -n "$USE_DATABASE_ORDINARY" ]] && [[ "$USE_DATABASE_ORDINARY" -eq 1 ]]; then
         ADDITIONAL_OPTIONS+=('--db-engine=Ordinary')
     fi
@@ -268,3 +275,5 @@ if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]
     mv /var/log/clickhouse-server/stderr1.log /test_output/ ||:
     mv /var/log/clickhouse-server/stderr2.log /test_output/ ||:
 fi
+
+collect_core_dumps
