@@ -351,7 +351,7 @@ public:
         /// Number of keys of right table to join
         size_t keys_to_join = 0;
 
-        size_t avgPerKeyRows()
+        size_t avgPerKeyRows() const
         {
             if (keys_to_join == 0)
                 return 0;
