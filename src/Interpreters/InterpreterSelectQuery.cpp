@@ -178,12 +178,12 @@ FilterDAGInfoPtr generateFilterActions(
     filter_info->actions = std::move(analyzer.simpleSelectActions()->dag);
 
     filter_info->column_name = expr_list->children.at(0)->getColumnName();
-    filter_info->actions->removeUnusedActions(NameSet{filter_info->column_name});
+    filter_info->actions.removeUnusedActions(NameSet{filter_info->column_name});
 
-    for (const auto * node : filter_info->actions->getInputs())
-        filter_info->actions->getOutputs().push_back(node);
+    for (const auto * node : filter_info->actions.getInputs())
+        filter_info->actions.getOutputs().push_back(node);
 
-    auto required_columns_from_filter = filter_info->actions->getRequiredColumns();
+    auto required_columns_from_filter = filter_info->actions.getRequiredColumns();
 
     for (const auto & column : required_columns_from_filter)
     {
@@ -1486,7 +1486,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
         {
             auto row_level_security_step = std::make_unique<FilterStep>(
                 query_plan.getCurrentDataStream(),
-                std::move(*ActionsDAG::clone(&*expressions.filter_info->actions)),
+                std::move(*ActionsDAG::clone(&expressions.filter_info->actions)),
                 expressions.filter_info->column_name,
                 expressions.filter_info->do_remove_column);
 
@@ -1612,7 +1612,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
             {
                 auto row_level_security_step = std::make_unique<FilterStep>(
                     query_plan.getCurrentDataStream(),
-                    std::move(*ActionsDAG::clone(&*expressions.filter_info->actions)),
+                    std::move(*ActionsDAG::clone(&expressions.filter_info->actions)),
                     expressions.filter_info->column_name,
                     expressions.filter_info->do_remove_column);
 
@@ -1620,11 +1620,11 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                 query_plan.addStep(std::move(row_level_security_step));
             }
 
-            const auto add_filter_step = [&](const auto & new_filter_info, const std::string & description)
+            const auto add_filter_step = [&](auto & new_filter_info, const std::string & description)
             {
                 auto filter_step = std::make_unique<FilterStep>(
                     query_plan.getCurrentDataStream(),
-                    std::move(*ActionsDAG::clone(&*new_filter_info->actions)),
+                    std::move(new_filter_info->actions),
                     new_filter_info->column_name,
                     new_filter_info->do_remove_column);
 
@@ -2107,7 +2107,7 @@ void InterpreterSelectQuery::applyFiltersToPrewhereInAnalysis(ExpressionAnalysis
     else
     {
         /// Add row level security actions to prewhere.
-        analysis.prewhere_info->row_level_filter = std::move(*analysis.filter_info->actions);
+        analysis.prewhere_info->row_level_filter = std::move(analysis.filter_info->actions);
         analysis.prewhere_info->row_level_column_name = std::move(analysis.filter_info->column_name);
         analysis.filter_info = nullptr;
     }

@@ -458,7 +458,7 @@ void updatePrewhereOutputsIfNeeded(SelectQueryInfo & table_expression_query_info
     prewhere_outputs.insert(prewhere_outputs.end(), required_output_nodes.begin(), required_output_nodes.end());
 }
 
-FilterDAGInfo buildRowPolicyFilterIfNeeded(const StoragePtr & storage,
+std::optional<FilterDAGInfo> buildRowPolicyFilterIfNeeded(const StoragePtr & storage,
     SelectQueryInfo & table_expression_query_info,
     PlannerContextPtr & planner_context,
     std::set<std::string> & used_row_policies)
@@ -479,7 +479,7 @@ FilterDAGInfo buildRowPolicyFilterIfNeeded(const StoragePtr & storage,
     return buildFilterInfo(row_policy_filter->expression, table_expression_query_info.table_expression, planner_context);
 }
 
-FilterDAGInfo buildCustomKeyFilterIfNeeded(const StoragePtr & storage,
+std::optional<FilterDAGInfo> buildCustomKeyFilterIfNeeded(const StoragePtr & storage,
     SelectQueryInfo & table_expression_query_info,
     PlannerContextPtr & planner_context)
 {
@@ -513,7 +513,7 @@ FilterDAGInfo buildCustomKeyFilterIfNeeded(const StoragePtr & storage,
 }
 
 /// Apply filters from additional_table_filters setting
-FilterDAGInfo buildAdditionalFiltersIfNeeded(const StoragePtr & storage,
+std::optional<FilterDAGInfo> buildAdditionalFiltersIfNeeded(const StoragePtr & storage,
     const String & table_expression_alias,
     SelectQueryInfo & table_expression_query_info,
     PlannerContextPtr & planner_context)
@@ -789,9 +789,6 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 std::vector<std::pair<FilterDAGInfo, std::string>> where_filters;
                 const auto add_filter = [&](FilterDAGInfo & filter_info, std::string description)
                 {
-                    if (!filter_info.actions)
-                        return;
-
                     bool is_final = table_expression_query_info.table_expression_modifiers
                         && table_expression_query_info.table_expression_modifiers->hasFinal();
                     bool optimize_move_to_prewhere
@@ -805,14 +802,14 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
 
                         if (!prewhere_info->prewhere_actions)
                         {
-                            prewhere_info->prewhere_actions = std::move(*filter_info.actions);
+                            prewhere_info->prewhere_actions = std::move(filter_info.actions);
                             prewhere_info->prewhere_column_name = filter_info.column_name;
                             prewhere_info->remove_prewhere_column = filter_info.do_remove_column;
                             prewhere_info->need_filter = true;
                         }
                         else if (!prewhere_info->row_level_filter)
                         {
-                            prewhere_info->row_level_filter = std::move(*filter_info.actions);
+                            prewhere_info->row_level_filter = std::move(filter_info.actions);
                             prewhere_info->row_level_column_name = filter_info.column_name;
                             prewhere_info->need_filter = true;
                         }
@@ -830,17 +827,18 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
 
                 auto row_policy_filter_info
                     = buildRowPolicyFilterIfNeeded(storage, table_expression_query_info, planner_context, used_row_policies);
-                if (row_policy_filter_info.actions)
-                    table_expression_data.setRowLevelFilterActions(ActionsDAG::clone(&*row_policy_filter_info.actions));
-                add_filter(row_policy_filter_info, "Row-level security filter");
+                if (row_policy_filter_info)
+                {
+                    table_expression_data.setRowLevelFilterActions(ActionsDAG::clone(&row_policy_filter_info->actions));
+                    add_filter(*row_policy_filter_info, "Row-level security filter");
+                }
 
                 if (query_context->getParallelReplicasMode() == Context::ParallelReplicasMode::CUSTOM_KEY)
                 {
                     if (settings.parallel_replicas_count > 1)
                     {
-                        auto parallel_replicas_custom_key_filter_info
-                            = buildCustomKeyFilterIfNeeded(storage, table_expression_query_info, planner_context);
-                        add_filter(parallel_replicas_custom_key_filter_info, "Parallel replicas custom key filter");
+                        if (auto parallel_replicas_custom_key_filter_info= buildCustomKeyFilterIfNeeded(storage, table_expression_query_info, planner_context))
+                            add_filter(*parallel_replicas_custom_key_filter_info, "Parallel replicas custom key filter");
                     }
                     else if (auto * distributed = typeid_cast<StorageDistributed *>(storage.get());
                              distributed && query_context->canUseParallelReplicasCustomKey(*distributed->getCluster()))
@@ -850,9 +848,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 }
 
                 const auto & table_expression_alias = table_expression->getOriginalAlias();
-                auto additional_filters_info
-                    = buildAdditionalFiltersIfNeeded(storage, table_expression_alias, table_expression_query_info, planner_context);
-                add_filter(additional_filters_info, "additional filter");
+                if (auto additional_filters_info = buildAdditionalFiltersIfNeeded(storage, table_expression_alias, table_expression_query_info, planner_context))
+                    add_filter(*additional_filters_info, "additional filter");
 
                 from_stage = storage->getQueryProcessingStage(
                     query_context, select_query_options.to_stage, storage_snapshot, table_expression_query_info);
@@ -967,11 +964,10 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 for (auto && [filter_info, description] : where_filters)
                 {
                     if (query_plan.isInitialized() &&
-                        from_stage == QueryProcessingStage::FetchColumns &&
-                        filter_info.actions)
+                        from_stage == QueryProcessingStage::FetchColumns)
                     {
                         auto filter_step = std::make_unique<FilterStep>(query_plan.getCurrentDataStream(),
-                            std::move(*filter_info.actions),
+                            std::move(filter_info.actions),
                             filter_info.column_name,
                             filter_info.do_remove_column);
                         filter_step->setStepDescription(description);

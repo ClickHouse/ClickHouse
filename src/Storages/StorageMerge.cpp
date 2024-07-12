@@ -407,7 +407,7 @@ void ReadFromMerge::addFilter(FilterDAGInfo filter)
 {
     output_stream->header = FilterTransform::transformHeader(
             output_stream->header,
-            filter.actions ? &*filter.actions : nullptr,
+            &filter.actions,
             filter.column_name,
             filter.do_remove_column);
     pushed_down_filters.push_back(std::move(filter));
@@ -662,7 +662,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
             {
                 auto filter_step = std::make_unique<FilterStep>(
                     child.plan.getCurrentDataStream(),
-                    std::move(*ActionsDAG::clone(&*filter_info.actions)),
+                    std::move(*ActionsDAG::clone(&filter_info.actions)),
                     filter_info.column_name,
                     filter_info.do_remove_column);
 
@@ -1565,7 +1565,7 @@ bool ReadFromMerge::requestReadingInOrder(InputOrderInfoPtr order_info_)
 void ReadFromMerge::applyFilters(ActionDAGNodes added_filter_nodes)
 {
     for (const auto & filter_info : pushed_down_filters)
-        added_filter_nodes.nodes.push_back(&filter_info.actions->findInOutputs(filter_info.column_name));
+        added_filter_nodes.nodes.push_back(&filter_info.actions.findInOutputs(filter_info.column_name));
 
     SourceStepWithFilter::applyFilters(added_filter_nodes);
 

@@ -1249,31 +1249,30 @@ bool ActionsDAG::removeUnusedResult(const std::string & column_name)
 ActionsDAGPtr ActionsDAG::clone(const ActionsDAG * from)
 {
     std::unordered_map<const Node *, Node *> old_to_new_nodes;
-    return ActionsDAG::clone(from, old_to_new_nodes);
+    if (from == nullptr)
+        return nullptr;
+    return std::make_unique<ActionsDAG>(ActionsDAG::clone(*from, old_to_new_nodes));
 }
 
-ActionsDAGPtr ActionsDAG::clone(const ActionsDAG * from, std::unordered_map<const Node *, Node *> & old_to_new_nodes)
+ActionsDAG ActionsDAG::clone(const ActionsDAG & from, std::unordered_map<const Node *, Node *> & old_to_new_nodes)
 {
-    if (!from)
-        return nullptr;
+    ActionsDAG actions;
 
-    auto actions = std::make_unique<ActionsDAG>();
-
-    for (const auto & node : from->nodes)
+    for (const auto & node : from.nodes)
     {
-        auto & copy_node = actions->nodes.emplace_back(node);
+        auto & copy_node = actions.nodes.emplace_back(node);
         old_to_new_nodes[&node] = &copy_node;
     }
 
-    for (auto & node : actions->nodes)
+    for (auto & node : actions.nodes)
         for (auto & child : node.children)
             child = old_to_new_nodes[child];
 
-    for (const auto & output_node : from->outputs)
-        actions->outputs.push_back(old_to_new_nodes[output_node]);
+    for (const auto & output_node : from.outputs)
+        actions.outputs.push_back(old_to_new_nodes[output_node]);
 
-    for (const auto & input_node : from->inputs)
-        actions->inputs.push_back(old_to_new_nodes[input_node]);
+    for (const auto & input_node : from.inputs)
+        actions.inputs.push_back(old_to_new_nodes[input_node]);
 
     return actions;
 }

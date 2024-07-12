@@ -93,7 +93,7 @@ struct FilterInfo
 /// Same as FilterInfo, but with ActionsDAG.
 struct FilterDAGInfo
 {
-    std::optional<ActionsDAG> actions;
+    ActionsDAG actions;
     String column_name;
     bool do_remove_column = false;
 

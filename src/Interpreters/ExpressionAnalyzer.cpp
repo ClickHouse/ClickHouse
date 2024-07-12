@@ -1922,7 +1922,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
 
         if (storage && additional_filter)
         {
-            Names columns_for_additional_filter = additional_filter->actions->getRequiredColumnsNames();
+            Names columns_for_additional_filter = additional_filter->actions.getRequiredColumnsNames();
             additional_required_columns_after_prewhere.insert(additional_required_columns_after_prewhere.end(),
                 columns_for_additional_filter.begin(), columns_for_additional_filter.end());
         }

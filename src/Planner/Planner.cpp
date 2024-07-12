@@ -1128,11 +1128,11 @@ void addAdditionalFilterStepIfNeeded(QueryPlan & query_plan,
     auto fake_table_expression = std::make_shared<TableNode>(std::move(storage), query_context);
 
     auto filter_info = buildFilterInfo(additional_result_filter_ast, fake_table_expression, planner_context, std::move(fake_name_set));
-    if (!filter_info.actions || !query_plan.isInitialized())
+    if (!query_plan.isInitialized())
         return;
 
     auto filter_step = std::make_unique<FilterStep>(query_plan.getCurrentDataStream(),
-        std::move(*filter_info.actions),
+        std::move(filter_info.actions),
         filter_info.column_name,
         filter_info.do_remove_column);
     filter_step->setStepDescription("additional result filter");

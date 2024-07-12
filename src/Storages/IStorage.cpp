@@ -340,10 +340,8 @@ std::string FilterDAGInfo::dump() const
     WriteBufferFromOwnString ss;
     ss << "FilterDAGInfo for column '" << column_name <<"', do_remove_column "
        << do_remove_column << "\n";
-    if (actions)
-    {
-        ss << "actions " << actions->dumpDAG() << "\n";
-    }
+
+    ss << "actions " << actions.dumpDAG() << "\n";
 
     return ss.str();
 }
