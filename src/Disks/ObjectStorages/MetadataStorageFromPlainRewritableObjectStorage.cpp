@@ -1,4 +1,4 @@
-#include <Disks/ObjectStorages/FlatStructureKeyGenerator.h>
+#include <Disks/ObjectStorages/FlatDirectoryStructureKeyGenerator.h>
 #include <Disks/ObjectStorages/InMemoryPathMap.h>
 #include <Disks/ObjectStorages/MetadataStorageFromPlainRewritableObjectStorage.h>
 #include <Disks/ObjectStorages/ObjectStorageIterator.h>
@@ -132,16 +132,20 @@ void getDirectChildrenOnDiskImpl(
     SharedMutex & shared_mutex,
     std::unordered_set<std::string> & result)
 {
+    /// Directories are retrieved from the in-memory path map.
     {
         std::shared_lock lock(shared_mutex);
         auto end_it = local_path_prefixes.end();
         for (auto it = local_path_prefixes.lower_bound(local_path); it != end_it; ++it)
         {
-            const auto & [k, v] = std::make_tuple(it->first.string(), it->second);
+            const auto & [k, _] = std::make_tuple(it->first.string(), it->second);
             if (!k.starts_with(local_path))
                 break;
 
             auto slash_num = count(k.begin() + local_path.size(), k.end(), '/');
+            /// The local_path_prefixes comparator ensures that the paths with the smallest number of
+            /// hops from the local_path are iterated first. The paths do not end with '/', hence
+            /// break the loop if the number of slashes is greater than 0.
             if (slash_num != 0)
                 break;
 
@@ -149,6 +153,7 @@ void getDirectChildrenOnDiskImpl(
         }
     }
 
+    /// Files.
     auto skip_list = std::set<std::string>{PREFIX_PATH_FILE_NAME};
     for (const auto & elem : remote_paths)
     {
@@ -189,7 +194,8 @@ MetadataStorageFromPlainRewritableObjectStorage::MetadataStorageFromPlainRewrita
     }
     else
     {
-        auto keys_gen = std::make_shared<FlatStructureKeyGenerator>(object_storage->getCommonKeyPrefix(), path_map);
+        /// Use flat directory structure if the metadata is stored separately from the table data.
+        auto keys_gen = std::make_shared<FlatDirectoryStructureKeyGenerator>(object_storage->getCommonKeyPrefix(), path_map);
         object_storage->setKeysGenerator(keys_gen);
     }
 }

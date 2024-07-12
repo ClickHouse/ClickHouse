@@ -29,25 +29,21 @@ ObjectStorageKey createMetadataObjectKey(const std::string & key_prefix, const s
 }
 
 MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::MetadataStorageFromPlainObjectStorageCreateDirectoryOperation(
-    std::filesystem::path && path_,
-    std::string && key_prefix_,
-    InMemoryPathMap & path_map_,
-    ObjectStoragePtr object_storage_,
-    const std::string & metadata_key_prefix_)
+    std::filesystem::path && path_, InMemoryPathMap & path_map_, ObjectStoragePtr object_storage_, const std::string & metadata_key_prefix_)
     : path(std::move(path_))
-    , key_prefix(key_prefix_)
     , path_map(path_map_)
     , object_storage(object_storage_)
     , metadata_key_prefix(metadata_key_prefix_)
+    , key_prefix(object_storage->generateObjectKeyPrefixForDirectoryPath(path, "" /* key_prefix */).serialize())
 {
 }
 
 void MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::execute(std::unique_lock<SharedMutex> &)
 {
-    auto & map = path_map.map;
     auto & mutex = path_map.mutex;
     {
         std::shared_lock lock(mutex);
+        auto & map = path_map.map;
         if (map.contains(path.parent_path()))
             return;
     }
@@ -72,6 +68,7 @@ void MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::execute(std:
 
     {
         std::unique_lock lock(mutex);
+        auto & map = path_map.map;
         [[maybe_unused]] auto result = map.emplace(path.parent_path(), std::move(key_prefix));
         chassert(result.second);
     }
@@ -89,7 +86,6 @@ void MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::execute(std:
 
 void MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::undo(std::unique_lock<SharedMutex> &)
 {
-    auto & map = path_map.map;
     auto & mutex = path_map.mutex;
 
     auto metadata_object_key = createMetadataObjectKey(key_prefix, metadata_key_prefix);
@@ -98,6 +94,7 @@ void MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::undo(std::un
     {
         {
             std::unique_lock lock(mutex);
+            auto & map = path_map.map;
             map.erase(path.parent_path());
         }
         auto metric = object_storage->getMetadataStorageMetrics().directory_map_size;
@@ -126,12 +123,12 @@ MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::MetadataStorageFrom
 std::unique_ptr<WriteBufferFromFileBase> MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::createWriteBuf(
     const std::filesystem::path & expected_path, const std::filesystem::path & new_path, bool validate_content)
 {
-    auto & map = path_map.map;
     auto & mutex = path_map.mutex;
 
     std::filesystem::path remote_path;
     {
         std::shared_lock lock(mutex);
+        auto & map = path_map.map;
         auto expected_it = map.find(expected_path.parent_path());
         if (expected_it == map.end())
             throw Exception(
@@ -182,10 +179,10 @@ void MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::execute(std::u
     writeString(path_to.string(), *write_buf);
     write_buf->finalize();
 
-    auto & map = path_map.map;
     auto & mutex = path_map.mutex;
     {
         std::unique_lock lock(mutex);
+        auto & map = path_map.map;
         [[maybe_unused]] auto result = map.emplace(path_to.parent_path(), map.extract(path_from.parent_path()).mapped());
         chassert(result.second);
     }
@@ -197,9 +194,9 @@ void MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::undo(std::uniq
 {
     if (write_finalized)
     {
-        auto & map = path_map.map;
         auto & mutex = path_map.mutex;
         std::unique_lock lock(mutex);
+        auto & map = path_map.map;
         map.emplace(path_from.parent_path(), map.extract(path_to.parent_path()).mapped());
     }
 
@@ -219,10 +216,10 @@ MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation::MetadataStorageFr
 
 void MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation::execute(std::unique_lock<SharedMutex> & /* metadata_lock */)
 {
-    auto & map = path_map.map;
     auto & mutex = path_map.mutex;
     {
         std::shared_lock lock(mutex);
+        auto & map = path_map.map;
         auto path_it = map.find(path.parent_path());
         if (path_it == map.end())
             return;
@@ -237,6 +234,7 @@ void MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation::execute(std:
 
     {
         std::unique_lock lock(mutex);
+        auto & map = path_map.map;
         map.erase(path.parent_path());
     }
 
@@ -265,10 +263,10 @@ void MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation::undo(std::un
     writeString(path.string(), *buf);
     buf->finalize();
 
-    auto & map = path_map.map;
     auto & mutex = path_map.mutex;
     {
         std::unique_lock lock(mutex);
+        auto & map = path_map.map;
         map.emplace(path.parent_path(), std::move(key_prefix));
     }
     auto metric = object_storage->getMetadataStorageMetrics().directory_map_size;

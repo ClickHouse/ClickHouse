@@ -78,11 +78,10 @@ public:
     bool supportsStat() const override { return false; }
 
 protected:
-    /// Get the object storage prefix for storing metadata files. If stored behind a separate endpoint,
-    /// the metadata keys reflect the layout of the regular files.
+    /// Get the object storage prefix for storing metadata files.
     virtual std::string getMetadataKeyPrefix() const { return object_storage->getCommonKeyPrefix(); }
 
-    /// Returns a map of local paths to paths in object storage.
+    /// Returns a map of virtual filesystem paths to paths in the object storage.
     virtual std::shared_ptr<InMemoryPathMap> getPathMap() const { throwNotImplemented(); }
 };
 

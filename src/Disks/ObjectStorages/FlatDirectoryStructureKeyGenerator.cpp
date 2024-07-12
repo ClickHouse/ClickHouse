@@ -1,4 +1,4 @@
-#include "FlatStructureKeyGenerator.h"
+#include "FlatDirectoryStructureKeyGenerator.h"
 #include <Disks/ObjectStorages/InMemoryPathMap.h>
 #include "Common/ObjectStorageKey.h"
 #include "Common/SharedMutex.h"
@@ -11,20 +11,18 @@
 namespace DB
 {
 
-FlatStructureKeyGenerator::FlatStructureKeyGenerator(String storage_key_prefix_, std::weak_ptr<InMemoryPathMap> path_map_)
+FlatDirectoryStructureKeyGenerator::FlatDirectoryStructureKeyGenerator(String storage_key_prefix_, std::weak_ptr<InMemoryPathMap> path_map_)
     : storage_key_prefix(storage_key_prefix_), path_map(std::move(path_map_))
 {
 }
 
-ObjectStorageKey FlatStructureKeyGenerator::generate(const String & path, bool is_directory, const std::optional<String> & key_prefix) const
+ObjectStorageKey FlatDirectoryStructureKeyGenerator::generate(const String & path, bool is_directory, const std::optional<String> & key_prefix) const
 {
     if (is_directory)
         chassert(path.ends_with('/'));
 
     const auto p = std::filesystem::path(path);
     auto directory = p.parent_path();
-
-    constexpr size_t part_size = 32;
 
     std::optional<std::filesystem::path> remote_path;
     {
@@ -38,6 +36,7 @@ ObjectStorageKey FlatStructureKeyGenerator::generate(const String & path, bool i
         if (it != ptr->map.end())
             remote_path = it->second;
     }
+    constexpr size_t part_size = 32;
     std::filesystem::path key = remote_path.has_value() ? *remote_path
         : is_directory                                  ? std::filesystem::path(getRandomASCIIString(part_size))
                                                         : directory;

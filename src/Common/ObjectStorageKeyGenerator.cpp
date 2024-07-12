@@ -3,7 +3,6 @@
 #include <Common/getRandomASCIIString.h>
 #include <Common/MatchGenerator.h>
 
-#include <optional>
 #include <fmt/format.h>
 
 

@@ -9,6 +9,7 @@
 namespace DB
 {
 
+/// Deprecated. Used for backward compatibility with plain rewritable disks without a separate metadata layout.
 /// Object storage key generator used specifically with the
 /// MetadataStorageFromPlainObjectStorage if multiple writes are allowed.
 

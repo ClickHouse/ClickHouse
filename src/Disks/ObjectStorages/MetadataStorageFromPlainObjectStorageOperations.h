@@ -14,10 +14,10 @@ class MetadataStorageFromPlainObjectStorageCreateDirectoryOperation final : publ
 {
 private:
     std::filesystem::path path;
-    std::string key_prefix;
     InMemoryPathMap & path_map;
     ObjectStoragePtr object_storage;
     const std::string metadata_key_prefix;
+    const std::string key_prefix;
 
     bool write_created = false;
     bool write_finalized = false;
@@ -26,7 +26,6 @@ public:
     // Assuming that paths are normalized.
     MetadataStorageFromPlainObjectStorageCreateDirectoryOperation(
         std::filesystem::path && path_,
-        std::string && key_prefix_,
         InMemoryPathMap & path_map_,
         ObjectStoragePtr object_storage_,
         const std::string & metadata_key_prefix_);

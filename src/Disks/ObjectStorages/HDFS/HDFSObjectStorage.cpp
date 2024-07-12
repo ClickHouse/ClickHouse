@@ -4,7 +4,6 @@
 #include <Storages/ObjectStorage/HDFS/WriteBufferFromHDFS.h>
 #include <Storages/ObjectStorage/HDFS/HDFSCommon.h>
 
-#include <optional>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Storages/ObjectStorage/HDFS/ReadBufferFromHDFS.h>
 #include <Common/getRandomASCIIString.h>
