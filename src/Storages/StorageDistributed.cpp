@@ -833,7 +833,7 @@ void StorageDistributed::read(
 
     const auto & settings = local_context->getSettingsRef();
 
-    if (settings.allow_experimental_analyzer)
+    if (settings.enable_analyzer)
     {
         StorageID remote_storage_id = StorageID::createEmpty();
         if (!remote_table_function_ptr)
@@ -1057,7 +1057,7 @@ static std::optional<ActionsDAG> getFilterFromQuery(const ASTPtr & ast, ContextP
     QueryPlan plan;
     SelectQueryOptions options;
     options.only_analyze = true;
-    if (context->getSettingsRef().allow_experimental_analyzer)
+    if (context->getSettingsRef().enable_analyzer)
     {
         InterpreterSelectQueryAnalyzer interpreter(ast, context, options);
         plan = std::move(interpreter).extractQueryPlan();
@@ -1611,7 +1611,7 @@ ClusterPtr StorageDistributed::skipUnusedShards(
     const StorageSnapshotPtr & storage_snapshot,
     ContextPtr local_context) const
 {
-    if (local_context->getSettingsRef().allow_experimental_analyzer)
+    if (local_context->getSettingsRef().enable_analyzer)
         return skipUnusedShardsWithAnalyzer(cluster, query_info, storage_snapshot, local_context);
 
     const auto & select = query_info.query->as<ASTSelectQuery &>();

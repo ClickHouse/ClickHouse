@@ -7097,7 +7097,7 @@ QueryProcessingStage::Enum MergeTreeData::getQueryProcessingStage(
     SelectQueryInfo &) const
 {
     /// with new analyzer, Planner make decision regarding parallel replicas usage, and so about processing stage on reading
-    if (!query_context->getSettingsRef().allow_experimental_analyzer)
+    if (!query_context->getSettingsRef().enable_analyzer)
     {
         const auto & settings = query_context->getSettingsRef();
         if (query_context->canUseParallelReplicasCustomKey())

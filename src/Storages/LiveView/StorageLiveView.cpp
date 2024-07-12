@@ -378,7 +378,7 @@ void StorageLiveView::writeBlock(StorageLiveView & live_view, Block && block, Ch
 
         QueryPipelineBuilder builder;
 
-        if (local_context->getSettingsRef().allow_experimental_analyzer)
+        if (local_context->getSettingsRef().enable_analyzer)
         {
             auto select_description = buildSelectQueryTreeDescription(select_query_description.inner_query, local_context);
             if (select_description.dependent_table_node)
@@ -475,7 +475,7 @@ Block StorageLiveView::getHeader() const
 
     if (!sample_block)
     {
-        if (live_view_context->getSettingsRef().allow_experimental_analyzer)
+        if (live_view_context->getSettingsRef().enable_analyzer)
         {
             sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(select_query_description.select_query,
                 live_view_context,
@@ -519,7 +519,7 @@ ASTPtr StorageLiveView::getInnerBlocksQuery()
         auto & select_with_union_query = select_query_description.select_query->as<ASTSelectWithUnionQuery &>();
         auto blocks_query = select_with_union_query.list_of_selects->children.at(0)->clone();
 
-        if (!live_view_context->getSettingsRef().allow_experimental_analyzer)
+        if (!live_view_context->getSettingsRef().enable_analyzer)
         {
             /// Rewrite inner query with right aliases for JOIN.
             /// It cannot be done in constructor or startup() because InterpreterSelectQuery may access table,
@@ -543,7 +543,7 @@ MergeableBlocksPtr StorageLiveView::collectMergeableBlocks(ContextPtr local_cont
 
     QueryPipelineBuilder builder;
 
-    if (local_context->getSettingsRef().allow_experimental_analyzer)
+    if (local_context->getSettingsRef().enable_analyzer)
     {
         InterpreterSelectQueryAnalyzer interpreter(select_query_description.inner_query,
             local_context,
@@ -599,7 +599,7 @@ QueryPipelineBuilder StorageLiveView::completeQuery(Pipes pipes)
 
     QueryPipelineBuilder builder;
 
-    if (block_context->getSettingsRef().allow_experimental_analyzer)
+    if (block_context->getSettingsRef().enable_analyzer)
     {
         auto select_description = buildSelectQueryTreeDescription(select_query_description.select_query, block_context);
 

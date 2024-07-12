@@ -15,5 +15,5 @@
 
     <query>SELECT keys.key, value1 FROM keys ANY LEFT JOIN dict AS d ON (keys.key = d.key) FORMAT Null;</query>
     <query>SELECT keys.key, value1 FROM keys ANY LEFT JOIN dict AS d ON (keys.key = d.key) FORMAT Null SETTINGS
-        allow_experimental_analyzer=1</query>
+        enable_analyzer=1</query>
 </test>

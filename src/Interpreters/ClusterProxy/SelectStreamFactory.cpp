@@ -68,7 +68,7 @@ ASTPtr rewriteSelectQuery(
     // are written into the query context and will be sent by the query pipeline.
     select_query.setExpression(ASTSelectQuery::Expression::SETTINGS, {});
 
-    if (!context->getSettingsRef().allow_experimental_analyzer)
+    if (!context->getSettingsRef().enable_analyzer)
     {
         if (table_function_ptr)
             select_query.addTableFunction(table_function_ptr);
@@ -165,7 +165,7 @@ void SelectStreamFactory::createForShardImpl(
     auto emplace_remote_stream = [&](bool lazy = false, time_t local_delay = 0)
     {
         Block shard_header;
-        if (context->getSettingsRef().allow_experimental_analyzer)
+        if (context->getSettingsRef().enable_analyzer)
             shard_header = InterpreterSelectQueryAnalyzer::getSampleBlock(query_tree, context, SelectQueryOptions(processed_stage).analyze());
         else
             shard_header = header;

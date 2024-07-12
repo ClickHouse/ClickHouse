@@ -114,7 +114,7 @@ bool TableFunctionViewIfPermitted::isPermitted(const ContextPtr & context, const
 
     try
     {
-        if (context->getSettingsRef().allow_experimental_analyzer)
+        if (context->getSettingsRef().enable_analyzer)
         {
             sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(create.children[0], context);
         }

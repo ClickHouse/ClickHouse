@@ -150,7 +150,7 @@ void StorageExecutable::read(
     for (auto & input_query : input_queries)
     {
         QueryPipelineBuilder builder;
-        if (context->getSettingsRef().allow_experimental_analyzer)
+        if (context->getSettingsRef().enable_analyzer)
             builder = InterpreterSelectQueryAnalyzer(input_query, context, {}).buildQueryPipeline();
         else
             builder = InterpreterSelectWithUnionQuery(input_query, context, {}).buildQueryPipeline();

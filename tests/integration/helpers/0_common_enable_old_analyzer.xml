@@ -1,7 +1,7 @@
 <clickhouse>
     <profiles>
         <default>
-            <allow_experimental_analyzer>0</allow_experimental_analyzer>
+            <enable_analyzer>0</enable_analyzer>
         </default>
     </profiles>
 </clickhouse>

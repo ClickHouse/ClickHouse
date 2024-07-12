@@ -129,7 +129,7 @@ void InterpreterDescribeQuery::fillColumnsFromSubquery(const ASTTableExpression 
     auto select_query = table_expression.subquery->children.at(0);
     auto current_context = getContext();
 
-    if (settings.allow_experimental_analyzer)
+    if (settings.enable_analyzer)
     {
         SelectQueryOptions select_query_options;
         sample_block = InterpreterSelectQueryAnalyzer(select_query, current_context, select_query_options).getSampleBlock();

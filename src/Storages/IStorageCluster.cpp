@@ -125,7 +125,7 @@ void IStorageCluster::read(
     Block sample_block;
     ASTPtr query_to_send = query_info.query;
 
-    if (context->getSettingsRef().allow_experimental_analyzer)
+    if (context->getSettingsRef().enable_analyzer)
     {
         sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(query_info.query, context, SelectQueryOptions(processed_stage));
     }

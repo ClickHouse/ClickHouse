@@ -1197,7 +1197,7 @@ StorageWindowView::StorageWindowView(
     , fire_signal_timeout_s(context_->getSettingsRef().wait_for_window_view_fire_signal_timeout.totalSeconds())
     , clean_interval_usec(context_->getSettingsRef().window_view_clean_interval.totalMicroseconds())
 {
-    if (context_->getSettingsRef().allow_experimental_analyzer)
+    if (context_->getSettingsRef().enable_analyzer)
         disabled_due_to_analyzer = true;
 
     if (mode <= LoadingStrictnessLevel::CREATE)
@@ -1753,9 +1753,9 @@ StoragePtr StorageWindowView::getTargetTable() const
 
 void StorageWindowView::throwIfWindowViewIsDisabled(ContextPtr local_context) const
 {
-    if (disabled_due_to_analyzer || (local_context && local_context->getSettingsRef().allow_experimental_analyzer))
+    if (disabled_due_to_analyzer || (local_context && local_context->getSettingsRef().enable_analyzer))
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Experimental WINDOW VIEW feature is not supported "
-                        "in the current infrastructure for query analysis (the setting 'allow_experimental_analyzer')");
+                        "in the current infrastructure for query analysis (the setting 'enable_analyzer')");
 }
 
 void registerStorageWindowView(StorageFactory & factory)
