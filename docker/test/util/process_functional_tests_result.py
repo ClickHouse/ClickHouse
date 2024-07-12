@@ -228,5 +228,20 @@ if __name__ == "__main__":
     state, description, test_results = process_result(args.in_results_dir, broken_tests)
     logging.info("Result parsed")
     status = (state, description)
+
+    def test_result_comparator(item):
+        # sort by status then by check name
+        order = {
+            "FAIL": 0,
+            "Timeout": 1,
+            "NOT_FAILED": 2,
+            "BROKEN": 3,
+            "OK": 4,
+            "SKIPPED": 5,
+        }
+        return order.get(item[1], 10), str(item[0]), item[1]
+
+    test_results.sort(key=test_result_comparator)
+
     write_results(args.out_results_file, args.out_status_file, test_results, status)
     logging.info("Result written")
