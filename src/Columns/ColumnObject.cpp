@@ -1132,10 +1132,15 @@ void ColumnObject::takeDynamicStructureFromSourceColumns(const DB::Columns & sou
 size_t ColumnObject::findPathLowerBoundInSharedData(StringRef path, const ColumnString & shared_data_paths, size_t start, size_t end)
 {
     /// Simple random access iterator over values in ColumnString in specified range.
-    class Iterator : public std::iterator<std::random_access_iterator_tag, StringRef>
+    class Iterator
     {
     public:
         using difference_type = size_t;
+        using value_type = StringRef;
+        using iterator_category = std::random_access_iterator_tag;
+        using pointer = StringRef*;
+        using reference = StringRef&;
+
         Iterator() = delete;
         Iterator(const ColumnString * data_, size_t index_) : data(data_), index(index_) {}
         Iterator(const Iterator & rhs) : data(rhs.data), index(rhs.index) {}
