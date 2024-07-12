@@ -75,11 +75,17 @@ public:
 
 private:
     SchemaFormat schema_format;
+    /// Set of paths with types that were specified in type declaration.
     std::unordered_map<String, DataTypePtr> typed_paths;
+    /// Set of paths that should be skipped during data parsing.
     std::unordered_set<String> paths_to_skip;
+    /// List of path prefixes that should be skipped during data parsing.
     std::vector<String> path_prefixes_to_skip;
+    /// List of regular expressions that should be used to skip paths during data parsing.
     std::vector<String> path_regexps_to_skip;
+    /// Limit on the number of paths that can be stored as subcolumn.
     size_t max_dynamic_paths;
+    /// Limit of dynamic types that should be used for Dynamic columns.
     size_t max_dynamic_types;
 };
 
