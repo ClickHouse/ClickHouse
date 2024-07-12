@@ -524,15 +524,15 @@ std::optional<AuthResult> IAccessStorage::authenticateImpl(
             if (!isAddressAllowed(*user, address))
                 throwAddressNotAllowed(address);
 
-            // for now, just throw exception in case a user exists with invalid auth method
-            // back in the day, it would also throw an exception. There might be a smarter alternative
-            // like a user scan during startup.
+            bool skipped_not_allowed_authentication_methods = false;
+
             for (const auto & auth_method : user->authentication_methods)
             {
                 auto auth_type = auth_method.getType();
                 if (((auth_type == AuthenticationType::NO_PASSWORD) && !allow_no_password) ||
                     ((auth_type == AuthenticationType::PLAINTEXT_PASSWORD) && !allow_plaintext_password))
                 {
+                    skipped_not_allowed_authentication_methods = true;
                     continue;
                 }
 
@@ -541,6 +541,12 @@ std::optional<AuthResult> IAccessStorage::authenticateImpl(
                     auth_result.authentication_data = auth_method;
                     return auth_result;
                 }
+            }
+
+            if (skipped_not_allowed_authentication_methods)
+            {
+                LOG_INFO(log, "Skipped the check for not allowed authentication methods,"
+                              "check allow_no_password and allow_plaintext_password settings in the server configuration");
             }
 
             throwInvalidCredentials();
