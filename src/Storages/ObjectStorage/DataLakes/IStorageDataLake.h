@@ -41,6 +41,7 @@ public:
         auto object_storage = base_configuration->createObjectStorage(context, /* is_readonly */true);
         DataLakeMetadataPtr metadata;
         NamesAndTypesList schema_from_metadata;
+        const bool use_schema_from_metadata = columns_.empty();
 
         if (base_configuration->format == "auto")
             base_configuration->format = "Parquet";
@@ -50,8 +51,9 @@ public:
         try
         {
             metadata = DataLakeMetadata::create(object_storage, base_configuration, context);
-            schema_from_metadata = metadata->getTableSchema();
             configuration->setPaths(metadata->getDataFiles());
+            if (use_schema_from_metadata)
+                schema_from_metadata = metadata->getTableSchema();
         }
         catch (...)
         {
@@ -66,7 +68,7 @@ public:
         return std::make_shared<IStorageDataLake<DataLakeMetadata>>(
             base_configuration, std::move(metadata), configuration, object_storage,
             context, table_id_,
-            columns_.empty() ? ColumnsDescription(schema_from_metadata) : columns_,
+            use_schema_from_metadata ? ColumnsDescription(schema_from_metadata) : columns_,
             constraints_, comment_, format_settings_);
     }
 

@@ -215,23 +215,25 @@ Chunk StorageObjectStorageSource::generate()
             if (!partition_columns.empty() && chunk_size && chunk.hasColumns())
             {
                 auto partition_values = partition_columns.find(filename);
-
-                for (const auto & [name_and_type, value] : partition_values->second)
+                if (partition_values != partition_columns.end())
                 {
-                    if (!read_from_format_info.source_header.has(name_and_type.name))
-                        continue;
+                    for (const auto & [name_and_type, value] : partition_values->second)
+                    {
+                        if (!read_from_format_info.source_header.has(name_and_type.name))
+                            continue;
 
-                    const auto column_pos = read_from_format_info.source_header.getPositionByName(name_and_type.name);
-                    auto partition_column = name_and_type.type->createColumnConst(chunk.getNumRows(), value)->convertToFullColumnIfConst();
+                        const auto column_pos = read_from_format_info.source_header.getPositionByName(name_and_type.name);
+                        auto partition_column = name_and_type.type->createColumnConst(chunk.getNumRows(), value)->convertToFullColumnIfConst();
 
-                    /// This column is filled with default value now, remove it.
-                    chunk.erase(column_pos);
+                        /// This column is filled with default value now, remove it.
+                        chunk.erase(column_pos);
 
-                    /// Add correct values.
-                    if (chunk.hasColumns())
-                        chunk.addColumn(column_pos, std::move(partition_column));
-                    else
-                        chunk.addColumn(std::move(partition_column));
+                        /// Add correct values.
+                        if (column_pos < chunk.getNumColumns())
+                            chunk.addColumn(column_pos, std::move(partition_column));
+                        else
+                            chunk.addColumn(std::move(partition_column));
+                    }
                 }
             }
             return chunk;
