@@ -280,7 +280,7 @@ QueryPipelineBuilder QueryPipelineBuilder::unitePipelines(
     /// Note: it may be > than settings.max_threads, so we should apply this limit again.
     bool will_limit_max_threads = true;
     size_t max_threads = 0;
-    std::optional<bool> concurrency_control;
+    bool concurrency_control = false;
     Pipes pipes;
     QueryPlanResourceHolder resources;
 
@@ -301,13 +301,7 @@ QueryPipelineBuilder QueryPipelineBuilder::unitePipelines(
         max_threads_limit = std::max(pipeline.max_threads, max_threads_limit);
 
         // Use concurrency control if at least one of pipelines is using it
-        if (pipeline.tryGetConcurrencyControl().has_value())
-        {
-            if (concurrency_control.has_value())
-                *concurrency_control = *concurrency_control || pipeline.tryGetConcurrencyControl();
-            else
-                concurrency_control = pipeline.tryGetConcurrencyControl();
-        }
+        concurrency_control = concurrency_control || pipeline.getConcurrencyControl();
     }
 
     QueryPipelineBuilder pipeline;
@@ -319,8 +313,7 @@ QueryPipelineBuilder QueryPipelineBuilder::unitePipelines(
         pipeline.setMaxThreads(max_threads);
         pipeline.limitMaxThreads(max_threads_limit);
     }
-    if (concurrency_control.has_value())
-        pipeline.setConcurrencyControl(*concurrency_control);
+    pipeline.setConcurrencyControl(concurrency_control);
 
     pipeline.setCollectedProcessors(nullptr);
     return pipeline;
