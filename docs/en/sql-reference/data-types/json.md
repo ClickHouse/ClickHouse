@@ -4,7 +4,7 @@ sidebar_position: 63
 sidebar_label: JSON
 ---
 
-# JSON`
+# JSON
 
 Stores JavaScript Object Notation (JSON) documents in a single column.
 
