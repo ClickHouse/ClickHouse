@@ -7,11 +7,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
 /// Has one unconnected input port and one unconnected output port.
 /// There may be other ports on the processors, but they must all be connected.
 /// The unconnected input must be on the first processor, output - on the last.
