@@ -29,6 +29,7 @@ struct URI
     std::string key;
     std::string version_id;
     std::string storage_name;
+    /// Path (or path pattern) in archive if uri is an archive.
     std::optional<std::string> archive_pattern;
     std::string uri_str;
 

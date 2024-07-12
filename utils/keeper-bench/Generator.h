@@ -173,27 +173,9 @@ public:
 
     void startup(Coordination::ZooKeeper & zookeeper);
     Coordination::ZooKeeperRequestPtr generate();
-    void cleanup(Coordination::ZooKeeper & zookeeper);
 private:
-    struct Node
-    {
-        StringGetter name;
-        std::optional<StringGetter> data;
-        std::vector<std::shared_ptr<Node>> children;
-        size_t repeat_count = 0;
-
-        std::shared_ptr<Node> clone() const;
-
-        void createNode(Coordination::ZooKeeper & zookeeper, const std::string & parent_path, const Coordination::ACLs & acls) const;
-        void dumpTree(int level = 0) const;
-    };
-
-    static std::shared_ptr<Node> parseNode(const std::string & key, const Poco::Util::AbstractConfiguration & config);
 
     std::uniform_int_distribution<size_t> request_picker;
-    std::vector<std::shared_ptr<Node>> root_nodes;
     RequestGetter request_getter;
     Coordination::ACLs default_acls;
 };
-
-std::optional<Generator> getGenerator(const std::string & name);

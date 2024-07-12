@@ -703,7 +703,7 @@ bool ParserCodec::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     return true;
 }
 
-bool ParserStatisticType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+bool ParserStatisticsType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserList stat_type_parser(std::make_unique<ParserIdentifierWithOptionalParameters>(),
         std::make_unique<ParserToken>(TokenType::Comma), false);
@@ -722,7 +722,7 @@ bool ParserStatisticType::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
     ++pos;
 
     auto function_node = std::make_shared<ASTFunction>();
-    function_node->name = "STATISTIC";
+    function_node->name = "STATISTICS";
     function_node->arguments = stat_type;
     function_node->children.push_back(function_node->arguments);
 
@@ -1129,11 +1129,11 @@ inline static bool makeHexOrBinStringLiteral(IParser::Pos & pos, ASTPtr & node, 
 
     if (hex)
     {
-        hexStringDecode(str_begin, str_end, res_pos);
+        hexStringDecode(str_begin, str_end, res_pos, word_size);
     }
     else
     {
-        binStringDecode(str_begin, str_end, res_pos);
+        binStringDecode(str_begin, str_end, res_pos, word_size);
     }
 
     return makeStringLiteral(pos, node, String(reinterpret_cast<char *>(res.data()), (res_pos - res_begin - 1)));

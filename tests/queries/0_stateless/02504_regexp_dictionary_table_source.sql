@@ -55,19 +55,19 @@ select dictGet(regexp_dict1, ('name', 'version'), key) from needle_table;
 
 -- test invalid
 INSERT INTO regexp_dictionary_source_table VALUES (6, 2, '3[12]/tclwebkit', ['version'], ['10'])
-SYSTEM RELOAD dictionary regexp_dict1; -- { serverError 489  }
+SYSTEM RELOAD dictionary regexp_dict1; -- { serverError INCORRECT_DICTIONARY_DEFINITION  }
 
 truncate table regexp_dictionary_source_table;
 
 INSERT INTO regexp_dictionary_source_table VALUES (6, 2, '3[12]/tclwebkit', ['version'], ['10'])
-SYSTEM RELOAD dictionary regexp_dict1; -- { serverError 489  }
+SYSTEM RELOAD dictionary regexp_dict1; -- { serverError INCORRECT_DICTIONARY_DEFINITION  }
 
 truncate table regexp_dictionary_source_table;
 
 INSERT INTO regexp_dictionary_source_table VALUES (1, 2, 'Linux/(\d+[\.\d]*).+tlinux', ['name', 'version'], ['TencentOS', '\1'])
 INSERT INTO regexp_dictionary_source_table VALUES (2, 3, '(\d+)/tclwebkit(\d+[\.\d]*)', ['name', 'version', 'comment'], ['Android', '$1', 'test $1 and $2'])
 INSERT INTO regexp_dictionary_source_table VALUES (3, 1, '(\d+)/tclwebkit(\d+[\.\d]*)', ['name', 'version', 'comment'], ['Android', '$1', 'test $1 and $2'])
-SYSTEM RELOAD dictionary regexp_dict1; -- { serverError 489  }
+SYSTEM RELOAD dictionary regexp_dict1; -- { serverError INCORRECT_DICTIONARY_DEFINITION  }
 
 -- test priority
 truncate table regexp_dictionary_source_table;
@@ -78,7 +78,7 @@ SYSTEM RELOAD dictionary regexp_dict1;
 select dictGet(regexp_dict1, ('name', 'version', 'comment'), '33/tclwebkit');
 
 truncate table regexp_dictionary_source_table;
-SYSTEM RELOAD dictionary regexp_dict1; -- { serverError 489 }
+SYSTEM RELOAD dictionary regexp_dict1; -- { serverError INCORRECT_DICTIONARY_DEFINITION }
 
 select * from dictionary(regexp_dict1);
 
