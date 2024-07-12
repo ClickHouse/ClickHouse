@@ -7,9 +7,15 @@
 #include <Interpreters/PeriodicLog.h>
 #include <Storages/ColumnsDescription.h>
 
+#include <boost/multi_index_container.hpp>
+#include <boost/multi_index/hashed_index.hpp>
+#include <boost/multi_index/ordered_index.hpp>
+
+#include <chrono>
 #include <condition_variable>
 #include <ctime>
 #include <set>
+
 
 namespace DB
 {
@@ -38,13 +44,10 @@ struct QueryLogMetricStatus
     UInt64 interval_milliseconds;
     std::chrono::system_clock::time_point next_collect_time;
     std::vector<ProfileEvents::Count> last_profile_events = std::vector<ProfileEvents::Count>(ProfileEvents::end());
-};
 
-struct QueryLogMetricsStatusCmp
-{
-    bool operator()(const QueryLogMetricStatus & lhs, const QueryLogMetricStatus & rhs) const
+    bool operator<(const QueryLogMetricStatus & other) const
     {
-        return lhs.next_collect_time < rhs.next_collect_time;
+        return next_collect_time < other.next_collect_time;
     }
 };
 
@@ -53,6 +56,12 @@ class QueryLogMetric : public PeriodicLog<QueryLogMetricElement>
     using PeriodicLog<QueryLogMetricElement>::PeriodicLog;
 
 public:
+    using QuerySet = boost::multi_index_container<
+        QueryLogMetricStatus,
+        boost::multi_index::indexed_by<
+            boost::multi_index::hashed_unique<boost::multi_index::member<QueryLogMetricStatus, String, &QueryLogMetricStatus::query_id>>,
+            boost::multi_index::ordered_non_unique<boost::multi_index::member<QueryLogMetricStatus, std::chrono::system_clock::time_point, &QueryLogMetricStatus::next_collect_time>>>>;
+
     // Both startQuery and finishQuery are called from the thread that executes the query
     void startQuery(const String & query_id, TimePoint query_start_time, UInt64 interval_milliseconds);
     void finishQuery(const String & query_id);
@@ -62,8 +71,10 @@ protected:
     void threadFunction() override;
 
 private:
+    QueryLogMetricElement createLogMetricElement(const String & query_id, std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters, PeriodicLog<QueryLogMetricElement>::TimePoint current_time);
+
     std::mutex queries_mutex;
-    std::set<QueryLogMetricStatus, QueryLogMetricsStatusCmp> queries;
+    QuerySet queries;
     std::mutex queries_cv_mutex;
     std::condition_variable queries_cv;
 };

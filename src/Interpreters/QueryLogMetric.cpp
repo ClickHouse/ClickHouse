@@ -108,7 +108,8 @@ void QueryLogMetric::startQuery(const String & query_id, TimePoint query_start_t
     queries.emplace(std::move(status));
 
     // Wake up the sleeping thread only if the collection for this query needs to wake up sooner
-    if (query_id == queries.begin()->query_id)
+    const auto & queries_by_next_collect_time = queries.get<1>();
+    if (query_id == queries_by_next_collect_time.begin()->query_id)
     {
         std::unique_lock cv_lock(queries_cv_mutex);
         queries_cv.notify_all();
@@ -119,37 +120,15 @@ void QueryLogMetric::finishQuery(const String & query_id)
 {
     LOG_DEBUG(getLogger("PMO"), "Finishing query {}", query_id);
     std::lock_guard lock(queries_mutex);
-    for (const auto & query_status : queries)
+    auto & queries_by_name = queries.get<0>();
+    if (queries_by_name.erase(query_id) != 0)
     {
-        if (query_status.query_id == query_id)
-        {
-            LOG_DEBUG(getLogger("PMO"), "Removing query {}", query_id);
-            queries.erase(query_status);
-            return;
-        }
+        LOG_DEBUG(getLogger("PMO"), "Removing query {}", query_id);
     }
-    LOG_DEBUG(getLogger("PMO"), "Query {} not found when trying to remove it", query_id);
-}
-
-QueryLogMetricElement createLogMetricElement(QueryLogMetricStatus & query_status, std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters, PeriodicLog<QueryLogMetricElement>::TimePoint current_time)
-{
-    QueryLogMetricElement elem;
-    elem.event_time = timeInSeconds(current_time);
-    elem.event_time_microseconds = timeInMicroseconds(current_time);
-    elem.query_id = query_status.query_id;
-    elem.memory = CurrentMetrics::values[CurrentMetrics::MemoryTracking];
-    elem.background_memory = CurrentMetrics::values[CurrentMetrics::MergesMutationsMemoryTracking];
-
-    query_status.next_collect_time += std::chrono::milliseconds(query_status.interval_milliseconds);
-
-    for (ProfileEvents::Event i = ProfileEvents::Event(0), end = ProfileEvents::end(); i < end; ++i)
+    else
     {
-        const auto & value = (*profile_counters)[i];
-        elem.profile_events[i] = query_status.last_profile_events[i] - value;
-        query_status.last_profile_events[i] = value;
+        LOG_DEBUG(getLogger("PMO"), "Query {} not found when trying to remove it", query_id);
     }
-
-    return elem;
 }
 
 void QueryLogMetric::threadFunction()
@@ -165,10 +144,9 @@ void QueryLogMetric::threadFunction()
                 const auto current_time = std::chrono::system_clock::now();
                 if (!queries.empty())
                 {
-                    // Avoid doing unnecessary work to avoid set copies
-                    if (current_time >= queries.begin()->next_collect_time)
-                        stepFunction(current_time);
-                    desired_timepoint = queries.begin()->next_collect_time;
+                    auto & queries_by_next_collect_time = queries.get<1>();
+                    stepFunction(current_time);
+                    desired_timepoint = queries_by_next_collect_time.begin()->next_collect_time;
                 }
                 else
                 {
@@ -189,21 +167,48 @@ void QueryLogMetric::threadFunction()
     }
 }
 
+QueryLogMetricElement QueryLogMetric::createLogMetricElement(const String & query_id, std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters, PeriodicLog<QueryLogMetricElement>::TimePoint current_time)
+{
+    auto query_status_it = queries.find(query_id);
+
+    QueryLogMetricElement elem;
+    elem.event_time = timeInSeconds(current_time);
+    elem.event_time_microseconds = timeInMicroseconds(current_time);
+    elem.query_id = query_status_it->query_id;
+    elem.memory = CurrentMetrics::values[CurrentMetrics::MemoryTracking];
+    elem.background_memory = CurrentMetrics::values[CurrentMetrics::MergesMutationsMemoryTracking];
+
+    // We copy the QueryLogMetricStatus and update the queries in a final step because updating the multi-index set
+    // for every profile event doesn't seem a good idea.
+    auto new_query_status = *query_status_it;
+    new_query_status.next_collect_time += std::chrono::milliseconds(new_query_status.interval_milliseconds);
+
+    for (ProfileEvents::Event i = ProfileEvents::Event(0), end = ProfileEvents::end(); i < end; ++i)
+    {
+        const auto & value = (*profile_counters)[i];
+        elem.profile_events[i] = new_query_status.last_profile_events[i] - value;
+        new_query_status.last_profile_events[i] = value;
+    }
+
+    queries.modify(query_status_it, [&](QueryLogMetricStatus & query_status) { query_status = std::move(new_query_status); });
+
+    return elem;
+}
+
 void QueryLogMetric::stepFunction(TimePoint current_time)
 {
     static const auto & process_list = context->getProcessList();
 
     LOG_DEBUG(getLogger("PMO"), "QueryLogMetric::stepFunction");
-    decltype(queries) new_queries;
-    for (const auto & query_status : queries)
+    auto & queries_by_next_collect_time = queries.get<1>();
+    for (const auto & query_status : queries_by_next_collect_time)
     {
         // The queries are already sorted by next_collect_time, so once we find a query with a next_collect_time
         // in the future, we know we don't need to collect data anymore
         if (query_status.next_collect_time > current_time)
         {
             LOG_DEBUG(getLogger("PMO"), "Skipping query {} because it's too early. Now {}, next collect time {}", query_status.query_id, current_time.time_since_epoch().count(), query_status.next_collect_time.time_since_epoch().count());
-            new_queries.emplace(query_status);
-            continue;
+            break;
         }
 
         LOG_DEBUG(getLogger("PMO"), "Collecting query {}", query_status.query_id);
@@ -215,13 +220,9 @@ void QueryLogMetric::stepFunction(TimePoint current_time)
             continue;
         }
 
-        auto new_query_status = query_status;
-        auto elem = createLogMetricElement(new_query_status, query_info->profile_counters, current_time);
-        new_queries.emplace(std::move(new_query_status));
+        auto elem = createLogMetricElement(query_status.query_id, query_info->profile_counters, current_time);
         add(std::move(elem));
     }
-
-    queries.swap(new_queries);
 }
 
 }
