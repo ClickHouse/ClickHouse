@@ -1,4 +1,5 @@
 #include <filesystem>
+#include <base/isSharedPtrUnique.h>
 #include <Databases/DatabaseAtomic.h>
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseOnDisk.h>
@@ -12,7 +13,7 @@
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Parsers/formatAST.h>
 #include <Storages/StorageMaterializedView.h>
-#include "Common/logger_useful.h"
+#include <Common/logger_useful.h>
 #include <Common/PoolId.h>
 #include <Common/atomicRename.h>
 #include <Common/filesystemHelpers.h>
@@ -103,18 +104,29 @@ void DatabaseAtomic::attachTable(ContextPtr /* context_ */, const String & name,
     auto table_id = table->getStorageID();
     assertDetachedTableNotInUse(table_id.uuid);
     DatabaseOrdinary::attachTableUnlocked(name, table);
-
     table_name_to_path.emplace(std::make_pair(name, relative_table_path));
 }
 
 StoragePtr DatabaseAtomic::detachTable(ContextPtr /* context */, const String & name)
 {
+    // it is important to call the destructors of not_in_use without
+    // locked mutex to avoid potential deadlock.
     DetachedTables not_in_use;
-    std::lock_guard lock(mutex);
-    auto detached_table = DatabaseOrdinary::detachTableUnlocked(name);
-    table_name_to_path.erase(name);
-    detached_tables.emplace(detached_table->getStorageID().uuid, detached_table);
-    not_in_use = cleanupDetachedTables();
+    StoragePtr detached_table;
+    {
+        std::lock_guard lock(mutex);
+        detached_table = DatabaseOrdinary::detachTableUnlocked(name);
+        table_name_to_path.erase(name);
+        detached_tables.emplace(detached_table->getStorageID().uuid, detached_table);
+        not_in_use = cleanupDetachedTables();
+    }
+
+    if (!not_in_use.empty())
+    {
+        not_in_use.clear();
+        LOG_DEBUG(log, "Finished removing not used detached tables");
+    }
+
     return detached_table;
 }
 
@@ -400,7 +412,7 @@ DatabaseAtomic::DetachedTables DatabaseAtomic::cleanupDetachedTables()
     LOG_DEBUG(log, "There are {} detached tables. Start searching non used tables.", detached_tables.size());
     while (it != detached_tables.end())
     {
-        if (it->second.unique())
+        if (isSharedPtrUnique(it->second))
         {
             not_in_use.emplace(it->first, it->second);
             it = detached_tables.erase(it);
