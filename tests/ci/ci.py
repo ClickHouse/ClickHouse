@@ -15,7 +15,7 @@ import upload_result_helper
 from build_check import get_release_or_pr
 from ci_config import CI
 from ci_metadata import CiMetadata
-from ci_utils import GHActions, normalize_string
+from ci_utils import GHActions, normalize_string, Shell
 from clickhouse_helper import (
     CiLogsCredentials,
     ClickHouseHelper,
@@ -53,6 +53,7 @@ from stopwatch import Stopwatch
 from tee_popen import TeePopen
 from ci_cache import CiCache
 from ci_settings import CiSettings
+from ci_buddy import CIBuddy
 from version_helper import get_version_from_repo
 
 # pylint: disable=too-many-lines
@@ -262,6 +263,8 @@ def check_missing_images_on_dockerhub(
 
 
 def _pre_action(s3, indata, pr_info):
+    print("Clear dmesg")
+    Shell.run("sudo dmesg --clear ||:")
     CommitStatusData.cleanup()
     JobReport.cleanup()
     BuildResult.cleanup()
@@ -1118,6 +1121,14 @@ def main() -> int:
 
     ### POST action: start
     elif args.post:
+        if Shell.check(
+            "sudo dmesg -T | grep -q -e 'Out of memory: Killed process' -e 'oom_reaper: reaped process' -e 'oom-kill:constraint=CONSTRAINT_NONE'"
+        ):
+            print("WARNING: OOM while job execution")
+            CIBuddy(dry_run=not pr_info.is_release).post_error(
+                "Out Of Memory", job_name=_get_ext_check_name(args.job_name)
+            )
+
         job_report = JobReport.load() if JobReport.exist() else None
         if job_report:
             ch_helper = ClickHouseHelper()
