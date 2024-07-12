@@ -1636,7 +1636,7 @@ private:
 
         auto & typed_paths = column_object.getTypedPaths();
         auto & dynamic_paths = column_object.getDynamicPaths();
-        /// Check if we have this path in typed pahts.
+        /// Check if we have this path in typed paths.
         if (auto typed_it = typed_paths.find(current_path); typed_it != typed_paths.end())
         {
             /// Check if we already had this path.
@@ -1683,7 +1683,7 @@ private:
         }
         /// Otherwise this path should go to the shared data.
         /// Don't insert null values into shared data.
-        /// We consider null equivalent to the absense of this path.
+        /// We consider null equivalent to the absence of this path.
         else if (!element.isNull())
         {
             auto tmp_dynamic_column = ColumnDynamic::create();

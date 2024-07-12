@@ -39,7 +39,7 @@ void SerializationSubObject::enumerateStreams(
     settings.path.push_back(Substream::ObjectStructure);
     callback(settings.path);
     settings.path.pop_back();
-    
+
     const auto * column_object = data.column ? &assert_cast<const ColumnObject &>(*data.column) : nullptr;
     const auto * type_object = data.type ? &assert_cast<const DataTypeObject &>(*data.type) : nullptr;
     const auto * deserialize_state = data.deserialize_state ? checkAndGetState<DeserializeBinaryBulkStateSubObject>(data.deserialize_state) : nullptr;

@@ -4004,7 +4004,7 @@ private:
         throw Exception(ErrorCodes::TYPE_MISMATCH,
             "Cast to Object can be performed only from flatten named Tuple, Map or String. Got: {}", from_type->getName());
     }
-    
+
     WrapperType createObjectWrapper(const DataTypePtr & from_type, const DataTypeObject * to_object) const
     {
         if (checkAndGetDataType<DataTypeString>(from_type.get()))

@@ -7,6 +7,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
 /// Serialization of a sub-object Object subcolumns.
 /// For example, if we have type JSON and data {"a" : {"b" : {"c" : 42, "d" : "Hello"}}, "c" : [1, 2, 3], "d" : 42}
 /// this class will be responsible for reading sub-object a.b and will read JSON column with data {"c" : 43, "d" : "Hello"}.

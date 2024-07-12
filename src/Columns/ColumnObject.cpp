@@ -481,7 +481,7 @@ void ColumnObject::insertFromSharedDataAndFillRemainingDynamicPaths(const DB::Co
                 shared_data_offsets.push_back(shared_data_paths->size());
             }
         }
-        
+
         /// Insert default values in all remaining dynamic paths.
         for (auto & [_, column] : dynamic_paths)
         {
@@ -550,7 +550,7 @@ void ColumnObject::insertFromSharedDataAndFillRemainingDynamicPaths(const DB::Co
 
 void ColumnObject::serializePathAndValueIntoSharedData(ColumnString * shared_data_paths, ColumnString * shared_data_values, const String & path, const IColumn & column, size_t n)
 {
-    /// Don't store Null values in shared data. We consider Null value equivalent to the absense
+    /// Don't store Null values in shared data. We consider Null value equivalent to the absence
     /// of this path in the row because we cannot distinguish these 2 cases for dynamic paths.
     if (column.isNullAt(n))
         return;

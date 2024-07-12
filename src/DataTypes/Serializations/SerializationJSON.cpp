@@ -123,7 +123,7 @@ void SerializationJSON<Parser>::serializeTextImpl(const IColumn & column, size_t
         sorted_paths.emplace_back(path);
     for (const auto & [path, dynamic_column] : dynamic_paths)
     {
-        /// We consider null value and absense of the path in a row as equivalent cases, because we cannot actually distinguish them.
+        /// We consider null value and absence of the path in a row as equivalent cases, because we cannot actually distinguish them.
         /// So, we don't output null values at all.
         if (!dynamic_column->isNullAt(row_num))
             sorted_paths.emplace_back(path);
@@ -402,8 +402,5 @@ template class SerializationJSON<RapidJSONParser>;
 #else
 template class SerializationJSON<DummyJSONParser>;
 #endif
-
-
-
 
 }

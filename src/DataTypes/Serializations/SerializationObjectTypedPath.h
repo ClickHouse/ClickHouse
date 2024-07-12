@@ -49,7 +49,7 @@ public:
         DeserializeBinaryBulkSettings & settings,
         DeserializeBinaryBulkStatePtr & state,
         SubstreamsCache * cache) const override;
-    
+
 private:
     String path;
 };

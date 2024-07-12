@@ -285,7 +285,7 @@ void SerializationObject::deserializeBinaryBulkStatePrefix(
     shared_data_serialization->deserializeBinaryBulkStatePrefix(settings, object_state->shared_data_state, cache);
     settings.path.pop_back();
     settings.path.pop_back();
-    
+
     state = std::move(object_state);
 }
 
@@ -605,7 +605,7 @@ void SerializationObject::deserializeBinary(IColumn & col, ReadBuffer & istr, co
                         typed_it->second->deserializeBinary(*typed_column, istr, settings);
                     }
                 }
-                /// Check if we have this path in dynamc paths.
+                /// Check if we have this path in dynamic paths.
                 else if (auto dynamic_it = dynamic_paths.find(path); dynamic_it != dynamic_paths.end())
                 {
                     /// Check if we already had this path.

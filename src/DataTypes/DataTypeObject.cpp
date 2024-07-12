@@ -31,7 +31,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int UNEXPECTED_AST_STRUCTURE;
     extern const int BAD_ARGUMENTS;
 }
@@ -403,7 +402,7 @@ static DataTypePtr createObject(const ASTPtr & arguments, const DataTypeObject::
 {
     if (!arguments || arguments->children.empty())
         return std::make_shared<DataTypeObject>(schema_format);
-    
+
     std::unordered_map<String, DataTypePtr> typed_paths;
     std::unordered_set<String> paths_to_skip;
     /// Collect prefixes in unordered_set to avoid duplicate prefixes

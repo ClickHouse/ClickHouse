@@ -300,7 +300,7 @@ private:
 
             offsets.push_back(paths_column->size());
         }
-        
+
         return ColumnMap::create(ColumnPtr(std::move(paths_column)), ColumnPtr(std::move(types_column)), ColumnPtr(std::move(offsets_column)));
     }
 
