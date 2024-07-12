@@ -522,8 +522,8 @@
     const current_url = new URL(window.location);
     const opened_locally = location.protocol == 'file:';
 
-    /// Run query instantly after page is loaded
-    const run_immediately = current_url.searchParams.get("run") == 1;
+    /// Run query instantly after page is loaded if the run parameter is present.
+    const run_immediately = !!current_url.searchParams.get("run");
 
     const server_address = current_url.searchParams.get('url');
     if (server_address) {
