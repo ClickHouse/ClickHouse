@@ -523,7 +523,7 @@
     const opened_locally = location.protocol == 'file:';
 
     /// Run query instantly after page is loaded if the run parameter is present.
-    const run_immediately = !!current_url.searchParams.get("run");
+    const run_immediately = current_url.searchParams.has("run");
 
     const server_address = current_url.searchParams.get('url');
     if (server_address) {
