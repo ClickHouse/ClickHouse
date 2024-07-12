@@ -335,22 +335,22 @@ void collectTableExpressionData(QueryTreeNodePtr & query_node, PlannerContextPtr
         collect_source_columns_visitor.setKeepAliasColumns(false);
         collect_source_columns_visitor.visit(query_node_typed.getPrewhere());
 
-        auto prewhere_actions_dag = std::make_unique<ActionsDAG>();
+        ActionsDAG prewhere_actions_dag;
 
         QueryTreeNodePtr query_tree_node = query_node_typed.getPrewhere();
 
         PlannerActionsVisitor visitor(planner_context, false /*use_column_identifier_as_action_node_name*/);
-        auto expression_nodes = visitor.visit(*prewhere_actions_dag, query_tree_node);
+        auto expression_nodes = visitor.visit(prewhere_actions_dag, query_tree_node);
         if (expression_nodes.size() != 1)
             throw Exception(ErrorCodes::ILLEGAL_PREWHERE,
                 "Invalid PREWHERE. Expected single boolean expression. In query {}",
                 query_node->formatASTForErrorMessage());
 
-        prewhere_actions_dag->getOutputs().push_back(expression_nodes.back());
+        prewhere_actions_dag.getOutputs().push_back(expression_nodes.back());
 
-        for (const auto & prewhere_input_node : prewhere_actions_dag->getInputs())
+        for (const auto & prewhere_input_node : prewhere_actions_dag.getInputs())
             if (required_column_names_without_prewhere.contains(prewhere_input_node->result_name))
-                prewhere_actions_dag->getOutputs().push_back(prewhere_input_node);
+                prewhere_actions_dag.getOutputs().push_back(prewhere_input_node);
 
         table_expression_data.setPrewhereFilterActions(std::move(prewhere_actions_dag));
     }

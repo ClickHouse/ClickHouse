@@ -263,7 +263,9 @@ public:
 
     static ActionsDAGPtr clone(const ActionsDAGPtr & from) { return clone(from.get()); }
     static ActionsDAGPtr clone(const ActionsDAG * from);
-    static ActionsDAG clone(const ActionsDAG & from, std::unordered_map<const Node *, Node *> & old_to_new_nodes);
+
+    ActionsDAG clone(std::unordered_map<const Node *, Node *> & old_to_new_nodes) const;
+    ActionsDAG clone() const;
 
     static ActionsDAGPtr cloneSubDAG(const NodeRawConstPtrs & outputs, bool remove_aliases);
 

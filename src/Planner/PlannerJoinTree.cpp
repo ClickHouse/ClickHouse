@@ -646,7 +646,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
 
         auto table_expression_query_info = select_query_info;
         table_expression_query_info.table_expression = table_expression;
-        table_expression_query_info.filter_actions_dag = ActionsDAG::clone(table_expression_data.getFilterActions());
+        if (const auto & filter_actions = table_expression_data.getFilterActions())
+            table_expression_query_info.filter_actions_dag = std::make_shared<const ActionsDAG>(filter_actions->clone());
         table_expression_query_info.analyzer_can_use_parallel_replicas_on_follower = table_node == planner_context->getGlobalPlannerContext()->parallel_replicas_table;
 
         size_t max_streams = settings.max_threads;
@@ -776,7 +777,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 if (prewhere_actions)
                 {
                     prewhere_info = std::make_shared<PrewhereInfo>();
-                    prewhere_info->prewhere_actions = std::move(*ActionsDAG::clone(prewhere_actions));
+                    prewhere_info->prewhere_actions = prewhere_actions->clone();
                     prewhere_info->prewhere_column_name = prewhere_actions->getOutputs().at(0)->result_name;
                     prewhere_info->remove_prewhere_column = true;
                     prewhere_info->need_filter = true;
@@ -829,7 +830,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     = buildRowPolicyFilterIfNeeded(storage, table_expression_query_info, planner_context, used_row_policies);
                 if (row_policy_filter_info)
                 {
-                    table_expression_data.setRowLevelFilterActions(ActionsDAG::clone(&row_policy_filter_info->actions));
+                    table_expression_data.setRowLevelFilterActions(row_policy_filter_info->actions.clone());
                     add_filter(*row_policy_filter_info, "Row-level security filter");
                 }
 

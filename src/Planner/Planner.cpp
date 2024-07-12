@@ -1412,7 +1412,7 @@ void Planner::buildPlanForQueryNode()
     checkStoragesSupportTransactions(planner_context);
 
     const auto & table_filters = planner_context->getGlobalPlannerContext()->filters_for_table_expressions;
-    if (!select_query_options.only_analyze && !table_filters.empty()) // && top_level)
+    if (!select_query_options.only_analyze && !table_filters.empty())
     {
         for (auto & [table_node, table_expression_data] : planner_context->getTableExpressionNodeToData())
         {
@@ -1420,7 +1420,7 @@ void Planner::buildPlanForQueryNode()
             if (it != table_filters.end())
             {
                 const auto & filters = it->second;
-                table_expression_data.setFilterActions(ActionsDAG::clone(&*filters.filter_actions));
+                table_expression_data.setFilterActions(filters.filter_actions->clone());
                 table_expression_data.setPrewhereInfo(filters.prewhere_info);
             }
         }
