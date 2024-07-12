@@ -1526,7 +1526,7 @@ class TestCase:
         database = args.testcase_database
 
         if args.client_log:
-            log_opt = " --client_log_file=" + args.client_log
+            log_opt = " --client_logs_file=" + args.client_log + " "
             client_options += log_opt
             os.environ["CLICKHOUSE_CLIENT_OPT"] = (
                 os.environ["CLICKHOUSE_CLIENT_OPT"]

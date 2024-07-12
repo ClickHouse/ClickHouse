@@ -3069,7 +3069,7 @@ void ClientBase::init(int argc, char ** argv)
 
         ("fuzzer-args", po::value<std::string>(), "Command line arguments for the LLVM's libFuzzer driver. Only relevant if the application is compiled with libFuzzer.")
 
-        ("client_log_file", po::value<std::string>(), "Path to a file for logging fatal errors in client")
+        ("client_logs_file", po::value<std::string>(), "Path to a file for writing client logs. Currently we only have fatal logs (when the client crashes)")
     ;
 
     addOptions(options_description);
@@ -3236,9 +3236,9 @@ void ClientBase::init(int argc, char ** argv)
     fatal_channel_ptr = new Poco::SplitterChannel;
     fatal_console_channel_ptr = new Poco::ConsoleChannel;
     fatal_channel_ptr->addChannel(fatal_console_channel_ptr);
-    if (options.count("client_log_file"))
+    if (options.count("client_logs_file"))
     {
-        fatal_file_channel_ptr = new Poco::SimpleFileChannel(options["client_log_file"].as<std::string>());
+        fatal_file_channel_ptr = new Poco::SimpleFileChannel(options["client_logs_file"].as<std::string>());
         fatal_channel_ptr->addChannel(fatal_file_channel_ptr);
     }
 
