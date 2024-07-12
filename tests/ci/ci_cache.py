@@ -697,7 +697,7 @@ class CiCache:
         # 2.
         remove_from_to_do = []
         for job_name, job_config in self.jobs_to_do.items():
-            if CI.is_test_job(job_name):
+            if CI.is_test_job(job_name) and job_name != CI.JobNames.BUILD_CHECK:
                 batches_to_remove = []
                 assert job_config.batches is not None
                 for batch in job_config.batches:
