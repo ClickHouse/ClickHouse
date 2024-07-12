@@ -233,7 +233,7 @@ public:
     /** This is a special flags for functions which return constant value for the server,
       * but the result could be different for different servers in distributed query.
       *
-      * This fuctions can't support constant folding on the initiator, but can on the follower.
+      * This functions can't support constant folding on the initiator, but can on the follower.
       * We can't apply some optimizations as well (e.g. can't remove constant result from GROUP BY key).
       * So, it is convenient to have a special flag for them.
       *
