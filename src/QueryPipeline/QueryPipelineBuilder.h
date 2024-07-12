@@ -193,20 +193,11 @@ public:
         concurrency_control = concurrency_control_;
     }
 
-    // bool getConcurrencyControl() const
-    // {
-    //     return concurrency_control;
-    // }
     bool getConcurrencyControl() const
-    {
-        if (!concurrency_control.has_value())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "concurrency_control is not set yet");
-        return *concurrency_control;
-    }
-    std::optional<bool> tryGetConcurrencyControl() const
     {
         return concurrency_control;
     }
+
     void addResources(QueryPlanResourceHolder resources_) { resources = std::move(resources_); }
     void setQueryIdHolder(std::shared_ptr<QueryIdHolder> query_id_holder) { resources.query_id_holders.emplace_back(std::move(query_id_holder)); }
     void addContext(ContextPtr context) { resources.interpreter_context.emplace_back(std::move(context)); }
@@ -225,7 +216,7 @@ private:
     /// Sometimes, more streams are created then the number of threads for more optimal execution.
     size_t max_threads = 0;
 
-    std::optional<bool> concurrency_control;
+    bool concurrency_control = false;
 
     QueryStatusPtr process_list_element;
     ProgressCallback progress_callback = nullptr;
