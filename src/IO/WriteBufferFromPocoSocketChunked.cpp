@@ -202,7 +202,7 @@ void WriteBufferFromPocoSocketChunked::nextImpl()
 
 void WriteBufferFromPocoSocketChunked::finalizeImpl()
 {
-    if (offset() == sizeof(*chunk_size_ptr))
+    if (chunked && offset() == sizeof(*chunk_size_ptr))
         pos -= sizeof(*chunk_size_ptr);
     WriteBufferFromPocoSocket::finalizeImpl();
 }
