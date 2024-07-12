@@ -291,13 +291,14 @@ def main():
             )
             can_continue = False
         if failed_to_get_info:
-            print(f"Unexpected commit status state - block further testing")
+            print("Unexpected commit status state - block further testing")
             can_continue = False
         if args.wf_status != SUCCESS:
             can_continue = False
             print("Workflow has failures - block further testing")
 
         if args.wf_status == "success" or has_failed_statuses:
+            # do not set mergeable check status if args.wf_status == failure, apparently it has died runners and is to be restarted
             state = trigger_mergeable_check(
                 commit,
                 statuses,
