@@ -6,7 +6,7 @@ FROM
     SELECT DISTINCT a
     FROM test_rewrite_uniq_to_count
 )
-SETTINGS allow_experimental_analyzer = 0
+SETTINGS enable_analyzer = 0
 3
 QUERY id: 0
   PROJECTION COLUMNS
@@ -23,7 +23,7 @@ QUERY id: 0
           COLUMN id: 5, column_name: a, result_type: UInt8, source_id: 6
       JOIN TREE
         TABLE id: 6, alias: __table2, table_name: default.test_rewrite_uniq_to_count
-  SETTINGS allow_experimental_analyzer=1
+  SETTINGS enable_analyzer=1
 2. test distinct with subquery alias
 3
 SELECT count()
@@ -32,7 +32,7 @@ FROM
     SELECT DISTINCT a
     FROM test_rewrite_uniq_to_count
 ) AS t
-SETTINGS allow_experimental_analyzer = 0
+SETTINGS enable_analyzer = 0
 3
 QUERY id: 0
   PROJECTION COLUMNS
@@ -49,7 +49,7 @@ QUERY id: 0
           COLUMN id: 5, column_name: a, result_type: UInt8, source_id: 6
       JOIN TREE
         TABLE id: 6, alias: __table2, table_name: default.test_rewrite_uniq_to_count
-  SETTINGS allow_experimental_analyzer=1
+  SETTINGS enable_analyzer=1
 3. test distinct with compound column name
 3
 SELECT count()
@@ -58,7 +58,7 @@ FROM
     SELECT DISTINCT a
     FROM test_rewrite_uniq_to_count
 ) AS t
-SETTINGS allow_experimental_analyzer = 0
+SETTINGS enable_analyzer = 0
 3
 QUERY id: 0
   PROJECTION COLUMNS
@@ -75,7 +75,7 @@ QUERY id: 0
           COLUMN id: 5, column_name: a, result_type: UInt8, source_id: 6
       JOIN TREE
         TABLE id: 6, alias: __table2, table_name: default.test_rewrite_uniq_to_count
-  SETTINGS allow_experimental_analyzer=1
+  SETTINGS enable_analyzer=1
 4. test distinct with select expression alias
 3
 SELECT count()
@@ -84,7 +84,7 @@ FROM
     SELECT DISTINCT a AS alias_of_a
     FROM test_rewrite_uniq_to_count
 ) AS t
-SETTINGS allow_experimental_analyzer = 0
+SETTINGS enable_analyzer = 0
 3
 QUERY id: 0
   PROJECTION COLUMNS
@@ -101,7 +101,7 @@ QUERY id: 0
           COLUMN id: 5, column_name: a, result_type: UInt8, source_id: 6
       JOIN TREE
         TABLE id: 6, alias: __table2, table_name: default.test_rewrite_uniq_to_count
-  SETTINGS allow_experimental_analyzer=1
+  SETTINGS enable_analyzer=1
 5. test simple group by
 3
 SELECT count()
@@ -113,7 +113,7 @@ FROM
     FROM test_rewrite_uniq_to_count
     GROUP BY a
 )
-SETTINGS allow_experimental_analyzer = 0
+SETTINGS enable_analyzer = 0
 3
 QUERY id: 0
   PROJECTION COLUMNS
@@ -133,7 +133,7 @@ QUERY id: 0
       GROUP BY
         LIST id: 7, nodes: 1
           COLUMN id: 5, column_name: a, result_type: UInt8, source_id: 6
-  SETTINGS allow_experimental_analyzer=1
+  SETTINGS enable_analyzer=1
 6. test group by with subquery alias
 3
 SELECT count()
@@ -145,7 +145,7 @@ FROM
     FROM test_rewrite_uniq_to_count
     GROUP BY a
 ) AS t
-SETTINGS allow_experimental_analyzer = 0
+SETTINGS enable_analyzer = 0
 3
 QUERY id: 0
   PROJECTION COLUMNS
@@ -165,7 +165,7 @@ QUERY id: 0
       GROUP BY
         LIST id: 7, nodes: 1
           COLUMN id: 5, column_name: a, result_type: UInt8, source_id: 6
-  SETTINGS allow_experimental_analyzer=1
+  SETTINGS enable_analyzer=1
 7. test group by with compound column name
 3
 SELECT count()
@@ -177,7 +177,7 @@ FROM
     FROM test_rewrite_uniq_to_count
     GROUP BY a
 ) AS t
-SETTINGS allow_experimental_analyzer = 0
+SETTINGS enable_analyzer = 0
 3
 QUERY id: 0
   PROJECTION COLUMNS
@@ -197,7 +197,7 @@ QUERY id: 0
       GROUP BY
         LIST id: 7, nodes: 1
           COLUMN id: 5, column_name: a, result_type: UInt8, source_id: 6
-  SETTINGS allow_experimental_analyzer=1
+  SETTINGS enable_analyzer=1
 8. test group by with select expression alias
 3
 SELECT count()
@@ -209,7 +209,7 @@ FROM
     FROM test_rewrite_uniq_to_count
     GROUP BY alias_of_a
 ) AS t
-SETTINGS allow_experimental_analyzer = 0
+SETTINGS enable_analyzer = 0
 3
 QUERY id: 0
   PROJECTION COLUMNS
@@ -229,4 +229,4 @@ QUERY id: 0
       GROUP BY
         LIST id: 7, nodes: 1
           COLUMN id: 5, column_name: a, result_type: UInt8, source_id: 6
-  SETTINGS allow_experimental_analyzer=1
+  SETTINGS enable_analyzer=1

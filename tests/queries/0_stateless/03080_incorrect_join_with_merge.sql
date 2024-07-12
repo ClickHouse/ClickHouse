@@ -1,5 +1,5 @@
 -- https://github.com/ClickHouse/ClickHouse/issues/29838
-SET allow_experimental_analyzer=1;
+SET enable_analyzer=1;
 SET distributed_foreground_insert=1;
 
 CREATE TABLE first_table_lr

@@ -1,7 +1,7 @@
 -- this test is just like 02944_variant_as_common_type, but with different expected output, because
 -- analyzer changes some return types. Specifically, if(c, x, y) always casts to the common type of
 -- x and y, even if c is constant.
-set allow_experimental_analyzer=1;
+set enable_analyzer=1;
 
 set allow_experimental_variant_type=1;
 set use_variant_as_common_type=1;
@@ -76,4 +76,3 @@ select toTypeName(res), array([1, 2, 3], [[1, 2, 3]]) as res;
 select toTypeName(res), map('a', 1, 'b', 'str_1') as res;
 select toTypeName(res), map('a', 1, 'b', map('c', 2, 'd', 'str_1')) as res;
 select toTypeName(res), map('a', 1, 'b', [1, 2, 3], 'c', [[4, 5, 6]]) as res;
-

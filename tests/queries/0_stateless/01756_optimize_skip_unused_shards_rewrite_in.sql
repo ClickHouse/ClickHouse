@@ -113,7 +113,7 @@ select 'errors';
 -- optimize_skip_unused_shards does not support non-constants
 select * from dist_01756 where dummy in (select * from system.one); -- { serverError UNABLE_TO_SKIP_UNUSED_SHARDS }
 -- this is a constant for analyzer
-select * from dist_01756 where dummy in (toUInt8(0)) settings allow_experimental_analyzer=0; -- { serverError UNABLE_TO_SKIP_UNUSED_SHARDS }
+select * from dist_01756 where dummy in (toUInt8(0)) settings enable_analyzer=0; -- { serverError UNABLE_TO_SKIP_UNUSED_SHARDS }
 -- NOT IN does not supported
 select * from dist_01756 where dummy not in (0, 2); -- { serverError UNABLE_TO_SKIP_UNUSED_SHARDS }
 
@@ -146,7 +146,7 @@ create table dist_01756_str as data_01756_str engine=Distributed(test_cluster_tw
 select * from dist_01756_str where key in ('0', '2');
 select * from dist_01756_str where key in (0, 2);
 -- analyzer does support this
-select * from dist_01756_str where key in ('0', Null) settings allow_experimental_analyzer=0; -- { serverError UNABLE_TO_SKIP_UNUSED_SHARDS }
+select * from dist_01756_str where key in ('0', Null) settings enable_analyzer=0; -- { serverError UNABLE_TO_SKIP_UNUSED_SHARDS }
 -- select * from dist_01756_str where key in (0, 2); -- { serverError TYPE_MISMATCH }
 -- select * from dist_01756_str where key in (0, Null); -- { serverError TYPE_MISMATCH }
 

@@ -8,7 +8,7 @@ true
 =====
 1
 =====
-allow_experimental_analyzer
+enable_analyzer
 true
 #45440
 2086579505	0	1	0	0

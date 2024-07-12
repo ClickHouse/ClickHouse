@@ -88,7 +88,7 @@ StoragePtr InterpreterInsertQuery::getTable(ASTInsertQuery & query)
             Block header_block;
             auto select_query_options = SelectQueryOptions(QueryProcessingStage::Complete, 1);
 
-            if (current_context->getSettingsRef().allow_experimental_analyzer)
+            if (current_context->getSettingsRef().enable_analyzer)
             {
                 InterpreterSelectQueryAnalyzer interpreter_select(query.select, current_context, select_query_options);
                 header_block = interpreter_select.getSampleBlock();
@@ -486,7 +486,7 @@ BlockIO InterpreterInsertQuery::execute()
 
                 auto select_query_options = SelectQueryOptions(QueryProcessingStage::Complete, 1);
 
-                if (settings.allow_experimental_analyzer)
+                if (settings.enable_analyzer)
                 {
                     InterpreterSelectQueryAnalyzer interpreter_select_analyzer(query.select, new_context, select_query_options);
                     pipeline = interpreter_select_analyzer.buildQueryPipeline();
@@ -502,7 +502,7 @@ BlockIO InterpreterInsertQuery::execute()
                 /// Passing 1 as subquery_depth will disable limiting size of intermediate result.
                 auto select_query_options = SelectQueryOptions(QueryProcessingStage::Complete, 1);
 
-                if (settings.allow_experimental_analyzer)
+                if (settings.enable_analyzer)
                 {
                     InterpreterSelectQueryAnalyzer interpreter_select_analyzer(query.select, getContext(), select_query_options);
                     pipeline = interpreter_select_analyzer.buildQueryPipeline();

@@ -115,7 +115,7 @@ EOL
 # NOTE: due to [1] we cannot use dot.dot notation, only tupleElement()
 #
 #   [1]: https://github.com/ClickHouse/ClickHouse/issues/24607
-$CLICKHOUSE_LOCAL --allow_experimental_analyzer=1 "${gharchive_settings[@]}" --structure="${gharchive_structure[*]}" -q "
+$CLICKHOUSE_LOCAL --enable_analyzer=1 "${gharchive_settings[@]}" --structure="${gharchive_structure[*]}" -q "
     SELECT
         payload.issue.labels.name AS labels,
         payload.pull_request.merged_by.login AS merged_by

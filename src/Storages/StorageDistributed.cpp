@@ -496,7 +496,7 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
     }
 
     std::optional<QueryProcessingStage::Enum> optimized_stage;
-    if (settings.allow_experimental_analyzer)
+    if (settings.enable_analyzer)
         optimized_stage = getOptimizedQueryProcessingStageAnalyzer(query_info, settings);
     else
         optimized_stage = getOptimizedQueryProcessingStage(query_info, settings);
@@ -841,7 +841,7 @@ void StorageDistributed::read(
 
     const auto & settings = local_context->getSettingsRef();
 
-    if (settings.allow_experimental_analyzer)
+    if (settings.enable_analyzer)
     {
         StorageID remote_storage_id = StorageID::createEmpty();
         if (!remote_table_function_ptr)
@@ -866,7 +866,7 @@ void StorageDistributed::read(
         header = InterpreterSelectQuery(modified_query_info.query, local_context, SelectQueryOptions(processed_stage).analyze()).getSampleBlock();
     }
 
-    if (!settings.allow_experimental_analyzer)
+    if (!settings.enable_analyzer)
     {
         modified_query_info.query = ClusterProxy::rewriteSelectQuery(
             local_context, modified_query_info.query,
@@ -876,7 +876,7 @@ void StorageDistributed::read(
     /// Return directly (with correct header) if no shard to query.
     if (modified_query_info.getCluster()->getShardsInfo().empty())
     {
-        if (settings.allow_experimental_analyzer)
+        if (settings.enable_analyzer)
             return;
 
         Pipe pipe(std::make_shared<NullSource>(header));
@@ -1062,7 +1062,7 @@ static ActionsDAGPtr getFilterFromQuery(const ASTPtr & ast, ContextPtr context)
     QueryPlan plan;
     SelectQueryOptions options;
     options.only_analyze = true;
-    if (context->getSettingsRef().allow_experimental_analyzer)
+    if (context->getSettingsRef().enable_analyzer)
     {
         InterpreterSelectQueryAnalyzer interpreter(ast, context, options);
         plan = std::move(interpreter).extractQueryPlan();
@@ -1616,7 +1616,7 @@ ClusterPtr StorageDistributed::skipUnusedShards(
     const StorageSnapshotPtr & storage_snapshot,
     ContextPtr local_context) const
 {
-    if (local_context->getSettingsRef().allow_experimental_analyzer)
+    if (local_context->getSettingsRef().enable_analyzer)
         return skipUnusedShardsWithAnalyzer(cluster, query_info, storage_snapshot, local_context);
 
     const auto & select = query_info.query->as<ASTSelectQuery &>();

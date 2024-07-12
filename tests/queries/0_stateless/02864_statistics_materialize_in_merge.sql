@@ -2,7 +2,7 @@
 
 DROP TABLE IF EXISTS tab;
 
-SET allow_experimental_analyzer = 1;
+SET enable_analyzer = 1;
 SET allow_experimental_statistics = 1;
 SET allow_statistics_optimize = 1;
 

@@ -4414,7 +4414,7 @@ class ClickHouseInstance:
 
         use_old_analyzer = os.environ.get("CLICKHOUSE_USE_OLD_ANALYZER") is not None
         # If specific version was used there can be no
-        # allow_experimental_analyzer setting, so do this only if it was
+        # enable_analyzer setting, so do this only if it was
         # explicitly requested.
         if self.tag:
             use_old_analyzer = False

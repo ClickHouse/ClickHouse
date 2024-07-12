@@ -1,5 +1,5 @@
 -- https://github.com/ClickHouse/ClickHouse/issues/22627
-SET allow_experimental_analyzer=1;
+SET enable_analyzer=1;
 WITH
     x AS
     (

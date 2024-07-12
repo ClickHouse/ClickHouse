@@ -10,7 +10,7 @@
 a
 -- { echoOn }
 -- USING alias column contains default in old analyzer (but both queries below should have the same result)
-SELECT y * 2, s || 'a' FROM t1 FULL JOIN t2 USING (y) ORDER BY ALL SETTINGS allow_experimental_analyzer = 1;
+SELECT y * 2, s || 'a' FROM t1 FULL JOIN t2 USING (y) ORDER BY ALL SETTINGS enable_analyzer = 1;
 738	ba
 7386	aa
 13332	a
@@ -18,11 +18,11 @@ SELECT y * 2, s || 'a' FROM (SELECT s, y FROM t1) t1 FULL JOIN (SELECT y FROM t2
 738	ba
 7386	aa
 13332	a
-SELECT (1, *) FROM t1 FULL JOIN t2 USING (y) ORDER BY ALL SETTINGS allow_experimental_analyzer = 1;
+SELECT (1, *) FROM t1 FULL JOIN t2 USING (y) ORDER BY ALL SETTINGS enable_analyzer = 1;
 (1,369,123,'b',124)
 (1,3693,1231,'a',0)
 (1,6666,0,'',48)
-SELECT (1, *) FROM (SELECT s, y FROM t1) t1 FULL JOIN (SELECT y FROM t2) t2 USING (y) ORDER BY ALL SETTINGS allow_experimental_analyzer = 1;
+SELECT (1, *) FROM (SELECT s, y FROM t1) t1 FULL JOIN (SELECT y FROM t2) t2 USING (y) ORDER BY ALL SETTINGS enable_analyzer = 1;
 (1,369,'b')
 (1,3693,'a')
 (1,6666,'')
@@ -42,27 +42,27 @@ SELECT (1, t1.*, t2.*) FROM (SELECT s, y FROM t1) t1 FULL JOIN (SELECT y FROM t2
 (1,'',0,6666)
 (1,'a',3693,0)
 (1,'b',369,369)
-SELECT t1.z, t2.z, t3.z FROM t1 FULL JOIN t2 USING (y) FULL JOIN t3 USING (y) ORDER BY 1,2,3 SETTINGS allow_experimental_analyzer = 1;
+SELECT t1.z, t2.z, t3.z FROM t1 FULL JOIN t2 USING (y) FULL JOIN t3 USING (y) ORDER BY 1,2,3 SETTINGS enable_analyzer = 1;
 0	0	43
 0	48	0
 124	124	0
 1232	0	1232
-SELECT * FROM t1 FULL JOIN t2 USING (y) FULL JOIN t3 USING (y) ORDER BY 1,2,3 SETTINGS allow_experimental_analyzer = 1;
+SELECT * FROM t1 FULL JOIN t2 USING (y) FULL JOIN t3 USING (y) ORDER BY 1,2,3 SETTINGS enable_analyzer = 1;
 126	0		0	42
 369	123	b	124	0
 3693	1231	a	0	1231
 6666	0		48	0
-SELECT t1.*, t2.*, t3.* FROM t1 FULL JOIN t2 USING (y) FULL JOIN t3 USING (y) ORDER BY 1,2,3 SETTINGS allow_experimental_analyzer = 1;
+SELECT t1.*, t2.*, t3.* FROM t1 FULL JOIN t2 USING (y) FULL JOIN t3 USING (y) ORDER BY 1,2,3 SETTINGS enable_analyzer = 1;
 0		126	0	42
 0		6666	48	0
 123	b	369	124	0
 1231	a	3693	0	1231
-SELECT (1, t1.*, t2.*, t3.*) FROM t1 FULL JOIN t2 USING (y) FULL JOIN t3 USING (y) ORDER BY 1 SETTINGS allow_experimental_analyzer = 1;
+SELECT (1, t1.*, t2.*, t3.*) FROM t1 FULL JOIN t2 USING (y) FULL JOIN t3 USING (y) ORDER BY 1 SETTINGS enable_analyzer = 1;
 (1,0,'',126,0,42)
 (1,0,'',6666,48,0)
 (1,123,'b',369,124,0)
 (1,1231,'a',3693,0,1231)
-SELECT y FROM t1 FULL JOIN t2 USING (y) ORDER BY ALL SETTINGS allow_experimental_analyzer = 1;
+SELECT y FROM t1 FULL JOIN t2 USING (y) ORDER BY ALL SETTINGS enable_analyzer = 1;
 369
 3693
 6666
@@ -78,11 +78,11 @@ SELECT s FROM (SELECT s, y FROM t1) t1 FULL JOIN (SELECT y FROM t2) t2 USING (y)
 
 a
 b
-SELECT y FROM t1 FULL JOIN t2 USING (y) PREWHERE y * 2 > 2 ORDER BY ALL SETTINGS allow_experimental_analyzer = 1, join_use_nulls = 0;
+SELECT y FROM t1 FULL JOIN t2 USING (y) PREWHERE y * 2 > 2 ORDER BY ALL SETTINGS enable_analyzer = 1, join_use_nulls = 0;
 369
 3693
 6666
-SELECT y FROM t1 FULL JOIN t2 USING (y) PREWHERE y * 2 > 2 ORDER BY ALL SETTINGS allow_experimental_analyzer = 1, join_use_nulls = 1;
+SELECT y FROM t1 FULL JOIN t2 USING (y) PREWHERE y * 2 > 2 ORDER BY ALL SETTINGS enable_analyzer = 1, join_use_nulls = 1;
 369
 3693
 6666

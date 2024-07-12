@@ -51,7 +51,7 @@ def test_two_new_versions(start_cluster):
     assert (
         current.query(
             """
-SELECT hostname() AS h, getSetting('allow_experimental_analyzer')
+SELECT hostname() AS h, getSetting('enable_analyzer')
 FROM clusterAllReplicas('test_cluster_mixed', system.one)
 ORDER BY h;"""
         )
@@ -62,7 +62,7 @@ ORDER BY h;"""
     analyzer_enabled = current.query(
         f"""
 SELECT
-DISTINCT Settings['allow_experimental_analyzer']
+DISTINCT Settings['enable_analyzer']
 FROM clusterAllReplicas('test_cluster_mixed', system.query_log)
 WHERE initial_query_id = '{query_id}';"""
     )
@@ -81,7 +81,7 @@ WHERE initial_query_id = '{query_id}';"""
     assert (
         backward.query(
             """
-SELECT hostname() AS h, getSetting('allow_experimental_analyzer')
+SELECT hostname() AS h, getSetting('enable_analyzer')
 FROM clusterAllReplicas('test_cluster_mixed', system.one)
 ORDER BY h;"""
         )
@@ -92,7 +92,7 @@ ORDER BY h;"""
     analyzer_enabled = backward.query(
         f"""
 SELECT
-DISTINCT Settings['allow_experimental_analyzer']
+DISTINCT Settings['enable_analyzer']
 FROM clusterAllReplicas('test_cluster_mixed', system.query_log)
 WHERE initial_query_id = '{query_id}';"""
     )

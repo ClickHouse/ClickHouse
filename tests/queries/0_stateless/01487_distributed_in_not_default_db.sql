@@ -27,7 +27,7 @@ DROP DATABASE test_01487;
 
 -- After the default database is dropped QueryAnalysisPass cannot process the following SELECT query.
 -- That query is invalid on the initiator node.
-set allow_experimental_analyzer = 0;
+set enable_analyzer = 0;
 
 SELECT * FROM main_01487.d WHERE value IN (SELECT l.value FROM l) ORDER BY value;
 

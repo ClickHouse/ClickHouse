@@ -685,10 +685,10 @@ void validateAnalyzerSettings(ASTPtr ast, bool context_value)
 
         if (auto * set_query = node->as<ASTSetQuery>())
         {
-            if (auto * value = set_query->changes.tryGet("allow_experimental_analyzer"))
+            if (auto * value = set_query->changes.tryGet("enable_analyzer"))
             {
                 if (top_level != value->safeGet<bool>())
-                    throw Exception(ErrorCodes::INCORRECT_QUERY, "Setting 'allow_experimental_analyzer' is changed in the subquery. Top level value: {}", top_level);
+                    throw Exception(ErrorCodes::INCORRECT_QUERY, "Setting 'enable_analyzer' is changed in the subquery. Top level value: {}", top_level);
             }
         }
 
@@ -913,7 +913,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         /// Interpret SETTINGS clauses as early as possible (before invoking the corresponding interpreter),
         /// to allow settings to take effect.
         InterpreterSetQuery::applySettingsFromQuery(ast, context);
-        validateAnalyzerSettings(ast, context->getSettingsRef().allow_experimental_analyzer);
+        validateAnalyzerSettings(ast, context->getSettingsRef().enable_analyzer);
 
         if (auto * insert_query = ast->as<ASTInsertQuery>())
             insert_query->tail = istr;

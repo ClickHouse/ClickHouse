@@ -1,4 +1,4 @@
-SET allow_experimental_analyzer=1;
+SET enable_analyzer=1;
 
 -- { echoOn }
 Select sum(number + 1) from numbers(10);

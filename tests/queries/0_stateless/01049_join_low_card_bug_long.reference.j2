@@ -1,5 +1,5 @@
 -- { echoOn }
-SET allow_experimental_analyzer = 0;
+SET enable_analyzer = 0;
 {% for join_algorithm in ['default', 'partial_merge', 'parallel_hash'] -%}
 SET join_algorithm = '{{ join_algorithm }}';
 SET join_use_nulls = 0;
@@ -19,17 +19,17 @@ str_r	LowCardinality(String)
 str_l	LowCardinality(String)
 SELECT toTypeName(r.lc), toTypeName(materialize(r.lc)), r.lc, materialize(r.lc), toTypeName(l.lc), toTypeName(materialize(l.lc)), l.lc, materialize(l.lc) FROM l_lc AS l RIGHT JOIN r_lc AS r USING (x) ORDER BY x, r.lc, l.lc;
 LowCardinality(String)	LowCardinality(String)	str	str	LowCardinality(String)	LowCardinality(String)	str	str
-LowCardinality(String)	LowCardinality(String)	str_r	str_r	LowCardinality(String)	LowCardinality(String)		
+LowCardinality(String)	LowCardinality(String)	str_r	str_r	LowCardinality(String)	LowCardinality(String)
 SELECT toTypeName(r.lc), toTypeName(materialize(r.lc)), r.lc, materialize(r.lc), toTypeName(l.lc), toTypeName(materialize(l.lc)), l.lc, materialize(l.lc) FROM l_lc AS l RIGHT JOIN r_lc AS r USING (lc) ORDER BY x, r.lc, l.lc;
 LowCardinality(String)	LowCardinality(String)	str	str	LowCardinality(String)	LowCardinality(String)	str	str
-LowCardinality(String)	LowCardinality(String)	str_r	str_r	LowCardinality(String)	LowCardinality(String)		
+LowCardinality(String)	LowCardinality(String)	str_r	str_r	LowCardinality(String)	LowCardinality(String)
 SELECT toTypeName(r.lc), toTypeName(materialize(r.lc)), r.lc, materialize(r.lc), toTypeName(l.lc), toTypeName(materialize(l.lc)), l.lc, materialize(l.lc) FROM l_lc AS l FULL JOIN r_lc AS r USING (x) ORDER BY x, r.lc, l.lc;
 LowCardinality(String)	LowCardinality(String)	str	str	LowCardinality(String)	LowCardinality(String)	str	str
-LowCardinality(String)	LowCardinality(String)	str_r	str_r	LowCardinality(String)	LowCardinality(String)		
+LowCardinality(String)	LowCardinality(String)	str_r	str_r	LowCardinality(String)	LowCardinality(String)
 LowCardinality(String)	LowCardinality(String)			LowCardinality(String)	LowCardinality(String)	str_l	str_l
 SELECT toTypeName(r.lc), toTypeName(materialize(r.lc)), r.lc, materialize(r.lc), toTypeName(l.lc), toTypeName(materialize(l.lc)), l.lc, materialize(l.lc) FROM l_lc AS l FULL JOIN r_lc AS r USING (lc) ORDER BY x, r.lc, l.lc;
 LowCardinality(String)	LowCardinality(String)	str	str	LowCardinality(String)	LowCardinality(String)	str	str
-LowCardinality(String)	LowCardinality(String)	str_r	str_r	LowCardinality(String)	LowCardinality(String)		
+LowCardinality(String)	LowCardinality(String)	str_r	str_r	LowCardinality(String)	LowCardinality(String)
 LowCardinality(String)	LowCardinality(String)			LowCardinality(String)	LowCardinality(String)	str_l	str_l
 --
 
@@ -49,17 +49,17 @@ str_r	LowCardinality(String)
 str_l	LowCardinality(String)
 SELECT toTypeName(r.lc), toTypeName(materialize(r.lc)), r.lc, materialize(r.lc), toTypeName(l.lc), toTypeName(materialize(l.lc)), l.lc, materialize(l.lc) FROM l_lc AS l RIGHT JOIN r USING (x) ORDER BY x, r.lc, l.lc;
 String	String	str	str	LowCardinality(String)	LowCardinality(String)	str	str
-String	String	str_r	str_r	LowCardinality(String)	LowCardinality(String)		
+String	String	str_r	str_r	LowCardinality(String)	LowCardinality(String)
 SELECT toTypeName(r.lc), toTypeName(materialize(r.lc)), r.lc, materialize(r.lc), toTypeName(l.lc), toTypeName(materialize(l.lc)), l.lc, materialize(l.lc) FROM l_lc AS l RIGHT JOIN r USING (lc) ORDER BY x, r.lc, l.lc;
 String	String	str	str	LowCardinality(String)	LowCardinality(String)	str	str
-String	String	str_r	str_r	LowCardinality(String)	LowCardinality(String)		
+String	String	str_r	str_r	LowCardinality(String)	LowCardinality(String)
 SELECT toTypeName(r.lc), toTypeName(materialize(r.lc)), r.lc, materialize(r.lc), toTypeName(l.lc), toTypeName(materialize(l.lc)), l.lc, materialize(l.lc) FROM l_lc AS l FULL JOIN r USING (x) ORDER BY x, r.lc, l.lc;
 String	String	str	str	LowCardinality(String)	LowCardinality(String)	str	str
-String	String	str_r	str_r	LowCardinality(String)	LowCardinality(String)		
+String	String	str_r	str_r	LowCardinality(String)	LowCardinality(String)
 String	String			LowCardinality(String)	LowCardinality(String)	str_l	str_l
 SELECT toTypeName(r.lc), toTypeName(materialize(r.lc)), r.lc, materialize(r.lc), toTypeName(l.lc), toTypeName(materialize(l.lc)), l.lc, materialize(l.lc) FROM l_lc AS l FULL JOIN r USING (lc) ORDER BY x, r.lc, l.lc;
 String	String	str	str	LowCardinality(String)	LowCardinality(String)	str	str
-String	String	str_r	str_r	LowCardinality(String)	LowCardinality(String)		
+String	String	str_r	str_r	LowCardinality(String)	LowCardinality(String)
 String	String			LowCardinality(String)	LowCardinality(String)	str_l	str_l
 --
 
@@ -79,17 +79,17 @@ str_r	String
 str_l	String
 SELECT toTypeName(r.lc), toTypeName(materialize(r.lc)), r.lc, materialize(r.lc), toTypeName(l.lc), toTypeName(materialize(l.lc)), l.lc, materialize(l.lc) FROM l RIGHT JOIN r_lc AS r USING (x) ORDER BY x, r.lc, l.lc;
 LowCardinality(String)	LowCardinality(String)	str	str	String	String	str	str
-LowCardinality(String)	LowCardinality(String)	str_r	str_r	String	String		
+LowCardinality(String)	LowCardinality(String)	str_r	str_r	String	String
 SELECT toTypeName(r.lc), toTypeName(materialize(r.lc)), r.lc, materialize(r.lc), toTypeName(l.lc), toTypeName(materialize(l.lc)), l.lc, materialize(l.lc) FROM l RIGHT JOIN r_lc AS r USING (lc) ORDER BY x, r.lc, l.lc;
 LowCardinality(String)	LowCardinality(String)	str	str	String	String	str	str
-LowCardinality(String)	LowCardinality(String)	str_r	str_r	String	String		
+LowCardinality(String)	LowCardinality(String)	str_r	str_r	String	String
 SELECT toTypeName(r.lc), toTypeName(materialize(r.lc)), r.lc, materialize(r.lc), toTypeName(l.lc), toTypeName(materialize(l.lc)), l.lc, materialize(l.lc) FROM l FULL JOIN r_lc AS r USING (x) ORDER BY x, r.lc, l.lc;
 LowCardinality(String)	LowCardinality(String)	str	str	String	String	str	str
-LowCardinality(String)	LowCardinality(String)	str_r	str_r	String	String		
+LowCardinality(String)	LowCardinality(String)	str_r	str_r	String	String
 LowCardinality(String)	LowCardinality(String)			String	String	str_l	str_l
 SELECT toTypeName(r.lc), toTypeName(materialize(r.lc)), r.lc, materialize(r.lc), toTypeName(l.lc), toTypeName(materialize(l.lc)), l.lc, materialize(l.lc) FROM l FULL JOIN r_lc AS r USING (lc) ORDER BY x, r.lc, l.lc;
 LowCardinality(String)	LowCardinality(String)	str	str	String	String	str	str
-LowCardinality(String)	LowCardinality(String)	str_r	str_r	String	String		
+LowCardinality(String)	LowCardinality(String)	str_r	str_r	String	String
 LowCardinality(String)	LowCardinality(String)			String	String	str_l	str_l
 --
 
@@ -109,17 +109,17 @@ str_r	LowCardinality(String)
 str_l	LowCardinality(String)
 SELECT toTypeName(r.lc), toTypeName(materialize(r.lc)), r.lc, materialize(r.lc), toTypeName(l.lc), toTypeName(materialize(l.lc)), l.lc, materialize(l.lc) FROM l_lc AS l RIGHT JOIN nr AS r USING (x) ORDER BY x, r.lc, l.lc;
 Nullable(String)	Nullable(String)	str	str	LowCardinality(String)	LowCardinality(String)	str	str
-Nullable(String)	Nullable(String)	str_r	str_r	LowCardinality(String)	LowCardinality(String)		
+Nullable(String)	Nullable(String)	str_r	str_r	LowCardinality(String)	LowCardinality(String)
 SELECT toTypeName(r.lc), toTypeName(materialize(r.lc)), r.lc, materialize(r.lc), toTypeName(l.lc), toTypeName(materialize(l.lc)), l.lc, materialize(l.lc) FROM l_lc AS l RIGHT JOIN nr AS r USING (lc) ORDER BY x, r.lc, l.lc;
 Nullable(String)	Nullable(String)	str	str	LowCardinality(String)	LowCardinality(String)	str	str
-Nullable(String)	Nullable(String)	str_r	str_r	LowCardinality(String)	LowCardinality(String)		
+Nullable(String)	Nullable(String)	str_r	str_r	LowCardinality(String)	LowCardinality(String)
 SELECT toTypeName(r.lc), toTypeName(materialize(r.lc)), r.lc, materialize(r.lc), toTypeName(l.lc), toTypeName(materialize(l.lc)), l.lc, materialize(l.lc) FROM l_lc AS l FULL JOIN nr AS r USING (x) ORDER BY x, r.lc, l.lc;
 Nullable(String)	Nullable(String)	str	str	LowCardinality(String)	LowCardinality(String)	str	str
-Nullable(String)	Nullable(String)	str_r	str_r	LowCardinality(String)	LowCardinality(String)		
+Nullable(String)	Nullable(String)	str_r	str_r	LowCardinality(String)	LowCardinality(String)
 Nullable(String)	Nullable(String)	\N	\N	LowCardinality(String)	LowCardinality(String)	str_l	str_l
 SELECT toTypeName(r.lc), toTypeName(materialize(r.lc)), r.lc, materialize(r.lc), toTypeName(l.lc), toTypeName(materialize(l.lc)), l.lc, materialize(l.lc) FROM l_lc AS l FULL JOIN nr AS r USING (lc) ORDER BY x, r.lc, l.lc;
 Nullable(String)	Nullable(String)	str	str	LowCardinality(String)	LowCardinality(String)	str	str
-Nullable(String)	Nullable(String)	str_r	str_r	LowCardinality(String)	LowCardinality(String)		
+Nullable(String)	Nullable(String)	str_r	str_r	LowCardinality(String)	LowCardinality(String)
 Nullable(String)	Nullable(String)	\N	\N	LowCardinality(String)	LowCardinality(String)	str_l	str_l
 --
 
@@ -313,7 +313,7 @@ SELECT r.lc, materialize(r.lc), toTypeName(r.lc), toTypeName(materialize(r.lc)) 
 str	str	LowCardinality(Nullable(String))	LowCardinality(Nullable(String))
 str_r	str_r	LowCardinality(Nullable(String))	LowCardinality(Nullable(String))
 \N	\N	LowCardinality(Nullable(String))	LowCardinality(Nullable(String))
-SET allow_experimental_analyzer = 1;
+SET enable_analyzer = 1;
 {% for join_algorithm in ['default', 'partial_merge', 'parallel_hash'] -%}
 SET join_algorithm = '{{ join_algorithm }}';
 SET join_use_nulls = 0;
@@ -333,17 +333,17 @@ str_r	LowCardinality(String)
 str_l	LowCardinality(String)
 SELECT toTypeName(r.lc), toTypeName(materialize(r.lc)), r.lc, materialize(r.lc), toTypeName(l.lc), toTypeName(materialize(l.lc)), l.lc, materialize(l.lc) FROM l_lc AS l RIGHT JOIN r_lc AS r USING (x) ORDER BY x, r.lc, l.lc;
 LowCardinality(String)	LowCardinality(String)	str	str	LowCardinality(String)	LowCardinality(String)	str	str
-LowCardinality(String)	LowCardinality(String)	str_r	str_r	LowCardinality(String)	LowCardinality(String)		
+LowCardinality(String)	LowCardinality(String)	str_r	str_r	LowCardinality(String)	LowCardinality(String)
 SELECT toTypeName(r.lc), toTypeName(materialize(r.lc)), r.lc, materialize(r.lc), toTypeName(l.lc), toTypeName(materialize(l.lc)), l.lc, materialize(l.lc) FROM l_lc AS l RIGHT JOIN r_lc AS r USING (lc) ORDER BY x, r.lc, l.lc;
 LowCardinality(String)	LowCardinality(String)	str	str	LowCardinality(String)	LowCardinality(String)	str	str
-LowCardinality(String)	LowCardinality(String)	str_r	str_r	LowCardinality(String)	LowCardinality(String)		
+LowCardinality(String)	LowCardinality(String)	str_r	str_r	LowCardinality(String)	LowCardinality(String)
 SELECT toTypeName(r.lc), toTypeName(materialize(r.lc)), r.lc, materialize(r.lc), toTypeName(l.lc), toTypeName(materialize(l.lc)), l.lc, materialize(l.lc) FROM l_lc AS l FULL JOIN r_lc AS r USING (x) ORDER BY x, r.lc, l.lc;
 LowCardinality(String)	LowCardinality(String)	str	str	LowCardinality(String)	LowCardinality(String)	str	str
-LowCardinality(String)	LowCardinality(String)	str_r	str_r	LowCardinality(String)	LowCardinality(String)		
+LowCardinality(String)	LowCardinality(String)	str_r	str_r	LowCardinality(String)	LowCardinality(String)
 LowCardinality(String)	LowCardinality(String)			LowCardinality(String)	LowCardinality(String)	str_l	str_l
 SELECT toTypeName(r.lc), toTypeName(materialize(r.lc)), r.lc, materialize(r.lc), toTypeName(l.lc), toTypeName(materialize(l.lc)), l.lc, materialize(l.lc) FROM l_lc AS l FULL JOIN r_lc AS r USING (lc) ORDER BY x, r.lc, l.lc;
 LowCardinality(String)	LowCardinality(String)	str	str	LowCardinality(String)	LowCardinality(String)	str	str
-LowCardinality(String)	LowCardinality(String)	str_r	str_r	LowCardinality(String)	LowCardinality(String)		
+LowCardinality(String)	LowCardinality(String)	str_r	str_r	LowCardinality(String)	LowCardinality(String)
 LowCardinality(String)	LowCardinality(String)			LowCardinality(String)	LowCardinality(String)	str_l	str_l
 --
 
@@ -363,17 +363,17 @@ str_r	String
 str_l	String
 SELECT toTypeName(r.lc), toTypeName(materialize(r.lc)), r.lc, materialize(r.lc), toTypeName(l.lc), toTypeName(materialize(l.lc)), l.lc, materialize(l.lc) FROM l_lc AS l RIGHT JOIN r USING (x) ORDER BY x, r.lc, l.lc;
 String	String	str	str	LowCardinality(String)	LowCardinality(String)	str	str
-String	String	str_r	str_r	LowCardinality(String)	LowCardinality(String)		
+String	String	str_r	str_r	LowCardinality(String)	LowCardinality(String)
 SELECT toTypeName(r.lc), toTypeName(materialize(r.lc)), r.lc, materialize(r.lc), toTypeName(l.lc), toTypeName(materialize(l.lc)), l.lc, materialize(l.lc) FROM l_lc AS l RIGHT JOIN r USING (lc) ORDER BY x, r.lc, l.lc;
 String	String	str	str	String	String	str	str
-String	String	str_r	str_r	String	String		
+String	String	str_r	str_r	String	String
 SELECT toTypeName(r.lc), toTypeName(materialize(r.lc)), r.lc, materialize(r.lc), toTypeName(l.lc), toTypeName(materialize(l.lc)), l.lc, materialize(l.lc) FROM l_lc AS l FULL JOIN r USING (x) ORDER BY x, r.lc, l.lc;
 String	String	str	str	LowCardinality(String)	LowCardinality(String)	str	str
-String	String	str_r	str_r	LowCardinality(String)	LowCardinality(String)		
+String	String	str_r	str_r	LowCardinality(String)	LowCardinality(String)
 String	String			LowCardinality(String)	LowCardinality(String)	str_l	str_l
 SELECT toTypeName(r.lc), toTypeName(materialize(r.lc)), r.lc, materialize(r.lc), toTypeName(l.lc), toTypeName(materialize(l.lc)), l.lc, materialize(l.lc) FROM l_lc AS l FULL JOIN r USING (lc) ORDER BY x, r.lc, l.lc;
 String	String	str	str	String	String	str	str
-String	String	str_r	str_r	String	String		
+String	String	str_r	str_r	String	String
 String	String			String	String	str_l	str_l
 --
 
@@ -393,17 +393,17 @@ str_r	String
 str_l	String
 SELECT toTypeName(r.lc), toTypeName(materialize(r.lc)), r.lc, materialize(r.lc), toTypeName(l.lc), toTypeName(materialize(l.lc)), l.lc, materialize(l.lc) FROM l RIGHT JOIN r_lc AS r USING (x) ORDER BY x, r.lc, l.lc;
 LowCardinality(String)	LowCardinality(String)	str	str	String	String	str	str
-LowCardinality(String)	LowCardinality(String)	str_r	str_r	String	String		
+LowCardinality(String)	LowCardinality(String)	str_r	str_r	String	String
 SELECT toTypeName(r.lc), toTypeName(materialize(r.lc)), r.lc, materialize(r.lc), toTypeName(l.lc), toTypeName(materialize(l.lc)), l.lc, materialize(l.lc) FROM l RIGHT JOIN r_lc AS r USING (lc) ORDER BY x, r.lc, l.lc;
 String	String	str	str	String	String	str	str
-String	String	str_r	str_r	String	String		
+String	String	str_r	str_r	String	String
 SELECT toTypeName(r.lc), toTypeName(materialize(r.lc)), r.lc, materialize(r.lc), toTypeName(l.lc), toTypeName(materialize(l.lc)), l.lc, materialize(l.lc) FROM l FULL JOIN r_lc AS r USING (x) ORDER BY x, r.lc, l.lc;
 LowCardinality(String)	LowCardinality(String)	str	str	String	String	str	str
-LowCardinality(String)	LowCardinality(String)	str_r	str_r	String	String		
+LowCardinality(String)	LowCardinality(String)	str_r	str_r	String	String
 LowCardinality(String)	LowCardinality(String)			String	String	str_l	str_l
 SELECT toTypeName(r.lc), toTypeName(materialize(r.lc)), r.lc, materialize(r.lc), toTypeName(l.lc), toTypeName(materialize(l.lc)), l.lc, materialize(l.lc) FROM l FULL JOIN r_lc AS r USING (lc) ORDER BY x, r.lc, l.lc;
 String	String	str	str	String	String	str	str
-String	String	str_r	str_r	String	String		
+String	String	str_r	str_r	String	String
 String	String			String	String	str_l	str_l
 --
 
@@ -423,13 +423,13 @@ str_r	Nullable(String)
 str_l	Nullable(String)
 SELECT toTypeName(r.lc), toTypeName(materialize(r.lc)), r.lc, materialize(r.lc), toTypeName(l.lc), toTypeName(materialize(l.lc)), l.lc, materialize(l.lc) FROM l_lc AS l RIGHT JOIN nr AS r USING (x) ORDER BY x, r.lc, l.lc;
 Nullable(String)	Nullable(String)	str	str	LowCardinality(String)	LowCardinality(String)	str	str
-Nullable(String)	Nullable(String)	str_r	str_r	LowCardinality(String)	LowCardinality(String)		
+Nullable(String)	Nullable(String)	str_r	str_r	LowCardinality(String)	LowCardinality(String)
 SELECT toTypeName(r.lc), toTypeName(materialize(r.lc)), r.lc, materialize(r.lc), toTypeName(l.lc), toTypeName(materialize(l.lc)), l.lc, materialize(l.lc) FROM l_lc AS l RIGHT JOIN nr AS r USING (lc) ORDER BY x, r.lc, l.lc;
 Nullable(String)	Nullable(String)	str	str	Nullable(String)	Nullable(String)	str	str
 Nullable(String)	Nullable(String)	str_r	str_r	Nullable(String)	Nullable(String)	\N	\N
 SELECT toTypeName(r.lc), toTypeName(materialize(r.lc)), r.lc, materialize(r.lc), toTypeName(l.lc), toTypeName(materialize(l.lc)), l.lc, materialize(l.lc) FROM l_lc AS l FULL JOIN nr AS r USING (x) ORDER BY x, r.lc, l.lc;
 Nullable(String)	Nullable(String)	str	str	LowCardinality(String)	LowCardinality(String)	str	str
-Nullable(String)	Nullable(String)	str_r	str_r	LowCardinality(String)	LowCardinality(String)		
+Nullable(String)	Nullable(String)	str_r	str_r	LowCardinality(String)	LowCardinality(String)
 Nullable(String)	Nullable(String)	\N	\N	LowCardinality(String)	LowCardinality(String)	str_l	str_l
 SELECT toTypeName(r.lc), toTypeName(materialize(r.lc)), r.lc, materialize(r.lc), toTypeName(l.lc), toTypeName(materialize(l.lc)), l.lc, materialize(l.lc) FROM l_lc AS l FULL JOIN nr AS r USING (lc) ORDER BY x, r.lc, l.lc;
 Nullable(String)	Nullable(String)	str	str	Nullable(String)	Nullable(String)	str	str

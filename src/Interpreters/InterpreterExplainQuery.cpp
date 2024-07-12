@@ -393,9 +393,9 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
         }
         case ASTExplainQuery::QueryTree:
         {
-            if (!getContext()->getSettingsRef().allow_experimental_analyzer)
+            if (!getContext()->getSettingsRef().enable_analyzer)
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                    "EXPLAIN QUERY TREE is only supported with a new analyzer. Set allow_experimental_analyzer = 1.");
+                    "EXPLAIN QUERY TREE is only supported with a new analyzer. Set enable_analyzer = 1.");
 
             if (ast.getExplainedQuery()->as<ASTSelectWithUnionQuery>() == nullptr)
                 throw Exception(ErrorCodes::INCORRECT_QUERY, "Only SELECT is supported for EXPLAIN QUERY TREE query");
@@ -452,7 +452,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
 
             ContextPtr context;
 
-            if (getContext()->getSettingsRef().allow_experimental_analyzer)
+            if (getContext()->getSettingsRef().enable_analyzer)
             {
                 InterpreterSelectQueryAnalyzer interpreter(ast.getExplainedQuery(), getContext(), options);
                 context = interpreter.getContext();
@@ -498,7 +498,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 QueryPlan plan;
                 ContextPtr context;
 
-                if (getContext()->getSettingsRef().allow_experimental_analyzer)
+                if (getContext()->getSettingsRef().enable_analyzer)
                 {
                     InterpreterSelectQueryAnalyzer interpreter(ast.getExplainedQuery(), getContext(), options);
                     context = interpreter.getContext();
@@ -551,7 +551,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             QueryPlan plan;
             ContextPtr context = getContext();
 
-            if (context->getSettingsRef().allow_experimental_analyzer)
+            if (context->getSettingsRef().enable_analyzer)
             {
                 InterpreterSelectQueryAnalyzer interpreter(ast.getExplainedQuery(), getContext(), SelectQueryOptions());
                 context = interpreter.getContext();
