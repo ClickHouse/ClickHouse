@@ -15,11 +15,11 @@ constexpr auto STATS_FILE_PREFIX = "statistics_";
 constexpr auto STATS_FILE_SUFFIX = ".stats";
 
 
-///Returns std::nullopt if input Field cannot be converted to a concrete value
 struct StatisticsUtils
 {
-    static std::optional<Float64> tryConvertToFloat64(const Field & f);
-    static std::optional<String> tryConvertToString(const Field & f);
+    /// Returns std::nullopt if input Field cannot be converted to a concrete value
+    static std::optional<Float64> tryConvertToFloat64(const Field & field);
+    static std::optional<String> tryConvertToString(const Field & field);
 };
 
 /// Statistics describe properties of the values in the column,

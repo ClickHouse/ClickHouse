@@ -4,7 +4,7 @@
 #include <IO/WriteHelpers.h>
 #include <Storages/Statistics/StatisticsCountMinSketch.h>
 #include <Interpreters/convertFieldToType.h>
-#include <DataTypes/FieldToDataType.h>
+
 
 #if USE_DATASKETCHES
 
@@ -13,7 +13,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+extern const int LOGICAL_ERROR;
 }
 
 /// Constants chosen based on rolling dices, which provides an error tolerance of 0.1% (ε = 0.001) and a confidence level of 99.9% (δ = 0.001).
@@ -28,36 +28,32 @@ StatisticsCountMinSketch::StatisticsCountMinSketch(const SingleStatisticsDescrip
 
 Float64 StatisticsCountMinSketch::estimateEqual(const Field & val) const
 {
-    if (data_type->isValueRepresentedByNumber())
+    /// Try to convert field to data_type. Converting string to proper data types such as: number, date, datetime, IPv4, Decimal etc.
+    /// Return null if val larger than the range of data_type
+    ///
+    /// For example: if data_type is Int32:
+    ///     1. For 1.0, 1, '1', return Field(1)
+    ///     2. For 1.1, max_value_int64, return null
+    Field val_converted;
+    try
     {
-        /// 'val' maybe number or string, method 'convertFieldToType' will
-        ///     1. convert string to number, date, datetime, IPv4, Decimal etc
-        ///     2. return null if val larger than the range of data_type
-        auto val_converted = convertFieldToType(val, *data_type);
+        val_converted = convertFieldToType(val, *data_type);
         if (val_converted.isNull())
             return 0;
-
-        /// We will get the proper data type of val_converted, for example, Int8 for 1, Int16 for 257.
-        auto data_type_converted = applyVisitor(FieldToDataType<LeastSupertypeOnError::Null>(), val_converted);
-        DataTypes data_types = {data_type, data_type_converted};
-        auto super_type = tryGetLeastSupertype(data_types);
-
-        /// If data_type is UInt8 but val_typed is UInt16, we should return 0.
-        if (!super_type->equals(*data_type))
-            return 0;
-
-        return sketch.get_estimate(&val_converted, data_type->getSizeOfValueInMemory());
     }
+    catch (...)
+    {
+        /// If the conversion fails for example, when converting 'not a number' to Int32, return 0
+        return 0;
+    }
+
+    if (data_type->isValueRepresentedByNumber())
+        return sketch.get_estimate(&val_converted, data_type->getSizeOfValueInMemory());
 
     if (isStringOrFixedString(data_type))
-    {
         return sketch.get_estimate(val.get<String>());
-    }
 
-    throw Exception(
-        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-        "Statistics 'count_min' does not support estimate constant value of type {}",
-        val.getTypeName());
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Statistics 'count_min' does not support estimate data type of {}", data_type->getName());
 }
 
 void StatisticsCountMinSketch::update(const ColumnPtr & column)

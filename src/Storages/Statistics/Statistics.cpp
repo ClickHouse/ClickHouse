@@ -27,25 +27,25 @@ enum StatisticsFileVersion : UInt16
     V0 = 0,
 };
 
-std::optional<Float64> StatisticsUtils::tryConvertToFloat64(const Field & f)
+std::optional<Float64> StatisticsUtils::tryConvertToFloat64(const Field & field)
 {
-    switch (f.getType())
+    switch (field.getType())
     {
         case Field::Types::Int64:
-            return f.get<Int64>();
+            return field.get<Int64>();
         case Field::Types::UInt64:
-            return f.get<UInt64>();
+            return field.get<UInt64>();
         case Field::Types::Float64:
-            return f.get<Float64>();
+            return field.get<Float64>();
         default:
             return {};
     }
 }
 
-std::optional<String> StatisticsUtils::tryConvertToString(const DB::Field & f)
+std::optional<String> StatisticsUtils::tryConvertToString(const DB::Field & field)
 {
-    if (f.getType() == Field::Types::String)
-        return f.get<String>();
+    if (field.getType() == Field::Types::String)
+        return field.get<String>();
     return {};
 }
 
