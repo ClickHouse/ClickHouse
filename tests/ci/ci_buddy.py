@@ -66,11 +66,11 @@ class CIBuddy:
             instance_type = Shell.run("ec2metadata --instance-type") or instance_type
         if not job_name:
             job_name = os.getenv("CHECK_NAME", "unknown")
-        line_err = f":red_circle:  {error_description}  :red_circle:\n\n"
-        line_ghr = f"   *Runner:* `{instance_type}`, `{instance_id}`\n"
-        line_job = f"   *Job:*    `{job_name}`\n"
-        line_pr_ = f"   *PR:*     <https://github.com/{self.repo}/pull/{self.pr_number}|#{self.pr_number}>\n"
-        line_br_ = f"   *Branch:* `{self.head_ref}`, <{self.commit_url}|commit>\n"
+        line_err = f":red_circle:    *Error: {error_description}*\n\n"
+        line_ghr = f"   *Runner:*    `{instance_type}`, `{instance_id}`\n"
+        line_job = f"   *Job:*          `{job_name}`\n"
+        line_pr_ = f"   *PR:*           <https://github.com/{self.repo}/pull/{self.pr_number}|#{self.pr_number}>\n"
+        line_br_ = f"   *Branch:*    `{self.head_ref}`, <{self.commit_url}|commit>\n"
         message = line_err
         message += line_job
         if with_instance_info:
