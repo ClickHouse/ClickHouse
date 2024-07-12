@@ -6,6 +6,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnVariant.h>
+#include <Columns/ColumnDynamic.h>
 
 
 namespace DB
@@ -30,6 +31,18 @@ public:
         return name;
     }
 
+    ColumnPtr getConstantResultForNonConstArguments(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const override
+    {
+        const ColumnWithTypeAndName & elem = arguments[0];
+        if (elem.type->onlyNull())
+            return result_type->createColumnConst(1, UInt8(1));
+
+        if (canContainNull(*elem.type))
+            return nullptr;
+
+        return result_type->createColumnConst(1, UInt8(0));
+    }
+
     size_t getNumberOfArguments() const override { return 1; }
     bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
@@ -46,9 +59,10 @@ public:
     {
         const ColumnWithTypeAndName & elem = arguments[0];
 
-        if (isVariant(elem.type))
+        if (isVariant(elem.type) || isDynamic(elem.type))
         {
-            const auto & discriminators = checkAndGetColumn<ColumnVariant>(*elem.column).getLocalDiscriminators();
+            const auto & column_variant = isVariant(elem.type) ? checkAndGetColumn<ColumnVariant>(*elem.column) : checkAndGetColumn<ColumnDynamic>(*elem.column).getVariantColumn();
+            const auto & discriminators = column_variant.getLocalDiscriminators();
             auto res = DataTypeUInt8().createColumn();
             auto & data = typeid_cast<ColumnUInt8 &>(*res).getData();
             data.reserve(discriminators.size());

@@ -1,4 +1,4 @@
--- Tags: long, no-parallel
+-- Tags: long
 
 drop table if exists t;
 

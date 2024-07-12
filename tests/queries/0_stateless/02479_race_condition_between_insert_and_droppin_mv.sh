@@ -38,7 +38,7 @@ ${CLICKHOUSE_CLIENT} -q "CREATE TABLE test_race_condition_landing (number Int64,
 export -f drop_mv;
 export -f insert;
 
-TIMEOUT=55
+TIMEOUT=50
 
 for i in {1..4}
 do

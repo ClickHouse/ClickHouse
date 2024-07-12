@@ -245,7 +245,7 @@ private:
         DefaultValueExtractor & default_value_extractor) const;
 
     template <typename ValueType, bool is_nullable>
-    size_t getItemsShortCircuitImpl(
+    void getItemsShortCircuitImpl(
         const Attribute & attribute,
         const Columns & key_columns,
         ValueSetterFunc<ValueType> && set_value,
