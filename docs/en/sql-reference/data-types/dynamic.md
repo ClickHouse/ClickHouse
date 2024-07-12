@@ -534,4 +534,3 @@ In RowBinary format values of `Dynamic` type are serialized in the following for
 ```text
 <binary_encoded_data_type><value_in_binary_format_according_to_the_data_type>
 ```
-
