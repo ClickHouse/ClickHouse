@@ -122,7 +122,7 @@ ConcurrencyControl::~ConcurrencyControl()
     // Acquire as many slots as we can, but not lower than `min`
     SlotCount granted = std::max(min, std::min(max, available(lock)));
     cur_concurrency += granted;
-    ProfileEvents::increment(ProfileEvents::ConcurrencyControlGrantedHard, granted);
+    ProfileEvents::increment(ProfileEvents::ConcurrencyControlGrantedHard, min);
 
     // Create allocation and start waiting if more slots are required
     if (granted < max)
