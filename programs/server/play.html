@@ -523,7 +523,7 @@
     const opened_locally = location.protocol == 'file:';
 
     /// Run query instantly after page is loaded
-    const play_now = current_url.searchParams.get("play_now");
+    const run_immediately = current_url.searchParams.get("run");
 
     const server_address = current_url.searchParams.get('url');
     if (server_address) {
@@ -602,8 +602,8 @@
                     const title = "ClickHouse Query: " + query;
 
                     let history_url = window.location.pathname + '?user=' + encodeURIComponent(user);
-                    if (play_now) {
-                        history_url += "&play_now=" + encodeURIComponent(play_now);
+                    if (run_immediately) {
+                        history_url += "&run=" + encodeURIComponent(run_immediately);
                     }
                     if (server_address != location.origin) {
                         /// Save server's address in URL if it's not identical to the address of the play UI.
@@ -1166,7 +1166,7 @@
         });
     }
 
-    if (play_now === 'true') {
+    if (run_immediately === 'true') {
         post();
     }
 
