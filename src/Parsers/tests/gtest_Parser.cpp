@@ -292,8 +292,8 @@ INSTANTIATE_TEST_SUITE_P(ParserCreateUserQuery, ParserTest,
             "CREATE USER user1 IDENTIFIED WITH no_password"
         },
         {
-            "CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'abc123' ADD IDENTIFIED WITH plaintext_password BY 'def123' ADD IDENTIFIED WITH sha256_password BY 'ghi123'",
-            "CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'abc123' ADD IDENTIFIED WITH plaintext_password BY 'def123' ADD IDENTIFIED WITH sha256_password BY 'ghi123'"
+            "CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'abc123', plaintext_password BY 'def123', sha256_password BY 'ghi123'",
+            "CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'abc123', plaintext_password BY 'def123', sha256_password BY 'ghi123'"
         },
         {
             "CREATE USER user1 IDENTIFIED WITH sha256_hash BY '7A37B85C8918EAC19A9089C0FA5A2AB4DCE3F90528DCDEEC108B23DDF3607B99' SALT 'salt'",
@@ -304,8 +304,8 @@ INSTANTIATE_TEST_SUITE_P(ParserCreateUserQuery, ParserTest,
             "ALTER USER user1 IDENTIFIED WITH sha256_password BY 'qwe123'"
         },
         {
-            "ALTER USER user1 IDENTIFIED WITH plaintext_password BY 'abc123' ADD IDENTIFIED WITH plaintext_password BY 'def123' ADD IDENTIFIED WITH sha256_password BY 'ghi123'",
-            "ALTER USER user1 IDENTIFIED WITH plaintext_password BY 'abc123' ADD IDENTIFIED WITH plaintext_password BY 'def123' ADD IDENTIFIED WITH sha256_password BY 'ghi123'"
+            "ALTER USER user1 IDENTIFIED WITH plaintext_password BY 'abc123', plaintext_password BY 'def123', sha256_password BY 'ghi123'",
+            "ALTER USER user1 IDENTIFIED WITH plaintext_password BY 'abc123', plaintext_password BY 'def123', sha256_password BY 'ghi123'"
         },
         {
             "ALTER USER user1 IDENTIFIED WITH sha256_hash BY '7A37B85C8918EAC19A9089C0FA5A2AB4DCE3F90528DCDEEC108B23DDF3607B99' SALT 'salt'",
