@@ -104,6 +104,8 @@ def get_run_command(
 
     return (
         f"docker run --volume={builds_path}:/package_folder "
+        # For dmesg and sysctl
+        "--privileged "
         f"{ci_logs_args}"
         f"--volume={repo_path}/tests:/usr/share/clickhouse-test "
         f"{volume_with_broken_test}"
