@@ -995,6 +995,10 @@ def main() -> int:
             ci_settings,
             args.skip_jobs,
         )
+
+        if IS_CI and pr_info.is_pr:
+            ci_cache.filter_out_not_affected_jobs()
+
         ci_cache.print_status()
 
         if IS_CI and not pr_info.is_merge_queue:
