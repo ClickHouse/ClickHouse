@@ -523,7 +523,7 @@
     const opened_locally = location.protocol == 'file:';
 
     /// Run query instantly after page is loaded
-    const run_immediately = current_url.searchParams.get("run");
+    const run_immediately = !!current_url.searchParams.get("run");
 
     const server_address = current_url.searchParams.get('url');
     if (server_address) {
@@ -603,7 +603,7 @@
 
                     let history_url = window.location.pathname + '?user=' + encodeURIComponent(user);
                     if (run_immediately) {
-                        history_url += "&run=" + encodeURIComponent(run_immediately);
+                        history_url += "&run=" + run_immediately;
                     }
                     if (server_address != location.origin) {
                         /// Save server's address in URL if it's not identical to the address of the play UI.
