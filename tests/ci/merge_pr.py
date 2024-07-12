@@ -26,6 +26,8 @@ from pr_info import PRInfo
 from report import SUCCESS, FAILURE
 from env_helper import GITHUB_UPSTREAM_REPOSITORY, GITHUB_REPOSITORY
 from synchronizer_utils import SYNC_BRANCH_PREFIX
+from ci_config import CI
+from ci_utils import Utils
 
 # The team name for accepted approvals
 TEAM_NAME = getenv("GITHUB_TEAM_NAME", "core")
@@ -251,23 +253,69 @@ def main():
         # set mergeable check status and exit
         commit = get_commit(gh, args.pr_info.sha)
         statuses = get_commit_filtered_statuses(commit)
-        state = trigger_mergeable_check(
-            commit,
-            statuses,
-            workflow_failed=(args.wf_status != "success"),
-        )
 
-        # Process upstream StatusNames.SYNC
-        pr_info = PRInfo()
-        if (
-            pr_info.head_ref.startswith(f"{SYNC_BRANCH_PREFIX}/pr/")
-            and GITHUB_REPOSITORY != GITHUB_UPSTREAM_REPOSITORY
-        ):
-            print("Updating upstream statuses")
-            update_upstream_sync_status(pr_info, state)
+        max_failed_tests_per_job = 0
+        job_name_with_max_failures = None
+        total_failed_tests = 0
+        failed_to_get_info = False
+        has_failed_statuses = False
+        for status in statuses:
+            if not CI.is_required(status.context):
+                continue
+            if status.state == FAILURE:
+                has_failed_statuses = True
+                failed_cnt = Utils.get_failed_tests_number(status.description)
+                if failed_cnt is None:
+                    failed_to_get_info = True
+                else:
+                    if failed_cnt > max_failed_tests_per_job:
+                        job_name_with_max_failures = status.context
+                        max_failed_tests_per_job = failed_cnt
+                    total_failed_tests += failed_cnt
+            elif status.state != SUCCESS:
+                has_failed_statuses = True
+                print(
+                    f"Unexpected status for [{status.context}]: [{status.state}] - block further testing"
+                )
+                failed_to_get_info = True
 
-        if args.wf_status != "success":
-            # exit with 1 to rerun on workflow failed job restart
+        can_continue = True
+        if total_failed_tests > CI.MAX_TOTAL_FAILURES_BEFORE_BLOCKING_CI:
+            print(
+                f"Required check has [{total_failed_tests}] failed - block further testing"
+            )
+            can_continue = False
+        if max_failed_tests_per_job > CI.MAX_TOTAL_FAILURES_PER_JOB_BEFORE_BLOCKING_CI:
+            print(
+                f"Job [{job_name_with_max_failures}] has [{max_failed_tests_per_job}] failures - block further testing"
+            )
+            can_continue = False
+        if failed_to_get_info:
+            print(f"Unexpected commit status state - block further testing")
+            can_continue = False
+        if args.wf_status != SUCCESS:
+            can_continue = False
+            print("Workflow has failures - block further testing")
+
+        if args.wf_status == "success" or has_failed_statuses:
+            state = trigger_mergeable_check(
+                commit,
+                statuses,
+            )
+            # Process upstream StatusNames.SYNC
+            pr_info = PRInfo()
+            if (
+                pr_info.head_ref.startswith(f"{SYNC_BRANCH_PREFIX}/pr/")
+                and GITHUB_REPOSITORY != GITHUB_UPSTREAM_REPOSITORY
+            ):
+                print("Updating upstream statuses")
+                update_upstream_sync_status(pr_info, state)
+        else:
+            print(
+                "Workflow failed but no failed statuses found (died runner?) - cannot set Mergeable Check status"
+            )
+
+        if not can_continue:
             sys.exit(1)
         sys.exit(0)
 

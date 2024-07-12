@@ -1,8 +1,9 @@
 import os
+import re
 import subprocess
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Iterator, List, Union
+from typing import Any, Iterator, List, Union, Optional
 
 
 class WithIter(type):
@@ -83,3 +84,15 @@ class Shell:
             check=False,
         )
         return result.returncode == 0
+
+
+class Utils:
+    @staticmethod
+    def get_failed_tests_number(description: str) -> Optional[int]:
+        description = description.lower()
+
+        pattern = r"fail:\s*(\d+)\s*(?=,|$)"
+        match = re.search(pattern, description)
+        if match:
+            return int(match.group(1))
+        return None
