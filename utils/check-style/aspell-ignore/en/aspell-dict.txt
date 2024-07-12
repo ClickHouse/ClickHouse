@@ -735,6 +735,7 @@ PlantUML
 PointDistKm
 PointDistM
 PointDistRads
+PolygonToCells
 PostHistory
 PostLink
 PostgreSQLConnection
