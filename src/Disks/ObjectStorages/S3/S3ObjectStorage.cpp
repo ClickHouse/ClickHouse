@@ -1,5 +1,12 @@
+#include <mutex>
+#include <optional>
+#include <shared_mutex>
+#include <stdexcept>
 #include <Disks/ObjectStorages/S3/S3ObjectStorage.h>
+#include "Common/Exception.h"
 #include "Common/ObjectStorageKey.h"
+#include "Common/ThreadPool.h"
+#include "Interpreters/Cache/QueryCache.h"
 
 #if USE_AWS_S3
 
@@ -26,6 +33,9 @@
 #include <Common/MultiVersion.h>
 #include <Common/Macros.h>
 
+#include <boost/multiprecision/cpp_int.hpp>
+#include <boost/multiprecision/cpp_dec_float.hpp>
+
 
 namespace ProfileEvents
 {
@@ -51,6 +61,98 @@ namespace ErrorCodes
     extern const int S3_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
+}
+
+namespace HexArithmetics
+{
+
+static constexpr std::string_view alphabet = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ./-";
+
+class HexFile
+{
+public:
+    explicit HexFile(int x)
+        : number_representation(x)
+    {
+    }
+
+    explicit HexFile(const std::string& filename)
+    {
+        number_representation = 0;
+        for (auto elem : filename) 
+        {
+            char converted_number;
+            auto it = alphabet.find(elem);
+            if (it != std::string::npos)
+            {
+                converted_number = it;
+            }
+            else 
+            {
+                std::string error_msg = "S3 doesn't support symbol ";
+                error_msg.push_back(elem);
+                throw std::runtime_error(error_msg);
+                //throw Exception(ErrorCodes::BAD_ARGUMENTS,  "S3 doesn't support symbol", elem);
+            }
+            number_representation = number_representation * alphabet.size() + converted_number;
+        }
+    }
+
+    HexFile& operator*=(float value) 
+    {
+        boost::multiprecision::cpp_dec_float_100 float_representation(number_representation);
+        float_representation *= value;
+        number_representation = static_cast<boost::multiprecision::cpp_int>(float_representation);
+        return *this;
+    }
+
+    HexFile operator-(const HexFile& other)
+    {
+        return HexFile(number_representation - other.number_representation);
+    }
+
+    HexFile operator+(const HexFile& other)
+    {
+        return HexFile(number_representation + other.number_representation);
+    }
+
+    HexFile operator*(size_t number)
+    {
+        return HexFile(number_representation * number);
+    }
+
+    bool operator<=(const HexFile& other) const
+    {
+        return number_representation <= other.number_representation;
+    }
+
+    std::string toString() const
+    {
+        auto current = number_representation;
+        std::string answer;
+        while (current > 0)
+        {
+            int token = static_cast<int>(current % alphabet.size());
+            if (token < 0 || token >= static_cast<int>(alphabet.size()))
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Error decoding filename");   
+            }
+            answer.push_back(alphabet[token]);
+            current /= alphabet.size();
+        }
+        std::reverse(answer.begin(), answer.end());
+        return answer;
+    }
+
+private:
+    explicit HexFile(boost::multiprecision::cpp_int number_representation_)
+        : number_representation(number_representation_)
+    {
+    }
+
+    boost::multiprecision::cpp_int number_representation;
+};
+
 }
 
 namespace
@@ -106,9 +208,9 @@ class S3IteratorAsync final : public IObjectStorageIteratorAsync
 public:
     S3IteratorAsync(
         const std::string & bucket_,
-        const std::string & path_prefix,
+        const std::string & path_prefix_,
         std::shared_ptr<const S3::Client> client_,
-        size_t max_list_size)
+        size_t max_list_size_)
         : IObjectStorageIteratorAsync(
             CurrentMetrics::ObjectStorageS3Threads,
             CurrentMetrics::ObjectStorageS3ThreadsActive,
@@ -116,10 +218,13 @@ public:
             "ListObjectS3")
         , client(client_)
         , request(std::make_unique<S3::ListObjectsV2Request>())
+        , bucket(bucket_)
+        , path_prefix(path_prefix_)
+        , max_list_size(max_list_size_)
     {
         request->SetBucket(bucket_);
-        request->SetPrefix(path_prefix);
-        request->SetMaxKeys(static_cast<int>(max_list_size));
+        request->SetPrefix(path_prefix_);
+        request->SetMaxKeys(static_cast<int>(max_list_size_));
     }
 
     ~S3IteratorAsync() override
@@ -131,25 +236,154 @@ public:
     }
 
 private:
+    class QueryCache 
+    {
+    public:
+        std::vector<Aws::S3::Model::Object> getBatchFrom(const std::string& filename_after, size_t count) const
+        {
+            std::shared_lock<std::shared_mutex> lock(mutex);
+
+            std::vector<Aws::S3::Model::Object> result;
+            result.reserve(count);
+            for (auto it = std::upper_bound(extracted_keys.begin(), extracted_keys.end(), filename_after); it != extracted_keys.end(); ++it) {
+                result.push_back(key_to_object.at(*it));
+                if (result.size() == count) {
+                    break;
+                }
+            }
+            return result;
+        }
+
+        void insertObjects(const std::vector<Aws::S3::Model::Object>& objects) 
+        {
+            std::unique_lock<std::shared_mutex> lock(mutex);
+                
+            for (const auto& object : objects)
+            {
+                extracted_keys.push_back(object.GetKey());
+                key_to_object[object.GetKey()] = object;
+            }
+        }
+
+        void build()
+        {
+            std::sort(extracted_keys.begin(), extracted_keys.end());
+        }
+
+        void clear()
+        {
+            extracted_keys.clear();
+            key_to_object.clear();
+        }
+
+    private:
+        std::vector<std::string> extracted_keys;
+        std::unordered_map<std::string, Aws::S3::Model::Object> key_to_object;
+
+        mutable std::shared_mutex mutex;
+    };
+
+    void RunSubrequest(
+        const HexArithmetics::HexFile& start_file, 
+        const HexArithmetics::HexFile& end_file)
+    {
+        S3::ListObjectsV2Request current_request;
+        current_request.SetBucket(bucket);
+        current_request.SetPrefix(path_prefix);
+        current_request.SetMaxKeys(static_cast<int>(max_list_size));
+        
+        bool done = false;
+        std::string file_iterator = start_file.toString();
+
+        while (!done)
+        {
+            current_request.SetStartAfter(file_iterator);
+            auto outcome = client->ListObjectsV2(current_request);
+            if (outcome.IsSuccess()) {
+                const auto& result = outcome.GetResult();
+                cache.insertObjects(result.GetContents());
+                if (result.GetIsTruncated() || end_file <= HexArithmetics::HexFile(result.GetContents().back().GetKey()))
+                {
+                    done = true;
+                }
+            } else {
+                throw S3Exception(outcome.GetError().GetErrorType(),
+                    "Could not list objects in bucket {} with prefix {}, S3 exception: {}, message: {}",
+                    quoteString(current_request.GetBucket()), quoteString(current_request.GetPrefix()),
+                    backQuote(outcome.GetError().GetExceptionName()), quoteString(outcome.GetError().GetMessage()));
+            }
+        }
+    }
+
+    void fillCache(
+        const std::string& first_request_file_start,
+        const std::string& first_request_file_end,
+        size_t num_requests,
+        size_t num_worker,
+        float lenght_decrease)
+    {
+        auto file_start = HexArithmetics::HexFile(first_request_file_start);
+        auto file_end = HexArithmetics::HexFile(first_request_file_end);
+        auto distance = file_end - file_start;
+        distance *= lenght_decrease;
+
+        ThreadPool pool_requests(
+            CurrentMetrics::ObjectStorageS3Threads,
+            CurrentMetrics::ObjectStorageS3ThreadsActive,
+            CurrentMetrics::ObjectStorageS3ThreadsScheduled,
+            num_worker,
+            num_worker,
+            0);
+
+        for (size_t i = 0; i < num_requests; ++i)
+        {
+            auto start_file = file_end + HexArithmetics::HexFile(1) + distance * i;
+            auto end_file = file_end + HexArithmetics::HexFile(1) + distance * (i + 1);
+            std::cerr << start_file.toString() << ' ' << end_file.toString() << '\n';
+            pool_requests.scheduleOrThrow([this, start_file, end_file] {
+                this->RunSubrequest(start_file, end_file);
+            });
+        }
+        pool_requests.wait();
+        cache.build();
+    }
+
     bool getBatchAndCheckNext(RelativePathsWithMetadata & batch) override
     {
         ProfileEvents::increment(ProfileEvents::S3ListObjects);
         ProfileEvents::increment(ProfileEvents::DiskS3ListObjects);
+
+        auto cache_result = cache.getBatchFrom(request->GetStartAfter(), max_list_size);
+
+        if (cache_result.size() == max_list_size)
+        {
+            for (const auto & object : cache_result)
+            {
+                ObjectMetadata metadata{static_cast<uint64_t>(object.GetSize()), Poco::Timestamp::fromEpochTime(object.GetLastModified().Seconds()), {}};
+                batch.emplace_back(std::make_shared<RelativePathWithMetadata>(object.GetKey(), std::move(metadata)));
+            }
+
+            request->SetStartAfter(cache_result.back().GetKey());
+            return true;
+        }
 
         auto outcome = client->ListObjectsV2(*request);
 
         /// Outcome failure will be handled on the caller side.
         if (outcome.IsSuccess())
         {
-            request->SetContinuationToken(outcome.GetResult().GetNextContinuationToken());
-
             auto objects = outcome.GetResult().GetContents();
             for (const auto & object : objects)
             {
                 ObjectMetadata metadata{static_cast<uint64_t>(object.GetSize()), Poco::Timestamp::fromEpochTime(object.GetLastModified().Seconds()), {}};
                 batch.emplace_back(std::make_shared<RelativePathWithMetadata>(object.GetKey(), std::move(metadata)));
             }
-
+            request->SetStartAfter(objects.back().GetKey());
+            {
+                cache.clear();
+                fillCache(objects[0].GetKey(), objects.back().GetKey(), 1000, 100, 0.9f);
+                //first_request = false;
+            }
             /// It returns false when all objects were returned
             return outcome.GetResult().GetIsTruncated();
         }
@@ -160,8 +394,13 @@ private:
                           backQuote(outcome.GetError().GetExceptionName()), quoteString(outcome.GetError().GetMessage()));
     }
 
+    //bool first_request = true;
     std::shared_ptr<const S3::Client> client;
     std::unique_ptr<S3::ListObjectsV2Request> request;
+    QueryCache cache;
+    std::string bucket;
+    std::string path_prefix;
+    size_t max_list_size;
 };
 
 }
