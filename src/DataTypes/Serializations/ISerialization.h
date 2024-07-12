@@ -176,8 +176,8 @@ public:
             SparseElements,
             SparseOffsets,
 
-            ObjectStructure,
-            ObjectData,
+            DeprecatedObjectStructure,
+            DeprecatedObjectData,
 
             VariantDiscriminators,
             NamedVariantDiscriminators,
@@ -188,6 +188,12 @@ public:
 
             DynamicData,
             DynamicStructure,
+
+            ObjectData,
+            ObjectTypedPath,
+            ObjectDynamicPath,
+            ObjectSharedData,
+            ObjectStructure,
 
             Regular,
         };
@@ -202,6 +208,9 @@ public:
 
         /// Name of substream for type from 'named_types'.
         String name_of_substream;
+
+        /// Path name for Object type elements.
+        String object_path_name;
 
         /// Data for current substream.
         SubstreamData data;
@@ -262,13 +271,13 @@ public:
 
         bool use_compact_variant_discriminators_serialization = false;
 
-        enum class DynamicStatisticsMode
+        enum class ObjectAndDynamicStatisticsMode
         {
             NONE,   /// Don't write statistics.
             PREFIX, /// Write statistics in prefix.
             SUFFIX, /// Write statistics in suffix.
         };
-        DynamicStatisticsMode dynamic_write_statistics = DynamicStatisticsMode::NONE;
+        ObjectAndDynamicStatisticsMode object_and_dynamic_write_statistics = ObjectAndDynamicStatisticsMode::NONE;
     };
 
     struct DeserializeBinaryBulkSettings
@@ -289,7 +298,7 @@ public:
         /// If not zero, may be used to avoid reallocations while reading column of String type.
         double avg_value_size_hint = 0;
 
-        bool dynamic_read_statistics = false;
+        bool object_and_dynamic_read_statistics = false;
     };
 
     /// Call before serializeBinaryBulkWithMultipleStreams chain to write something before first mark.
@@ -438,6 +447,7 @@ public:
     static size_t getArrayLevel(const SubstreamPath & path);
     static bool hasSubcolumnForPath(const SubstreamPath & path, size_t prefix_len);
     static SubstreamData createFromPath(const SubstreamPath & path, size_t prefix_len);
+    static bool isFictitiousSubcolumn(const SubstreamPath & path, size_t prefix_len);
 
 protected:
     template <typename State, typename StatePtr>
@@ -480,5 +490,70 @@ State * ISerialization::checkAndGetState(const StatePtr & state, const ISerializ
 
     return state_concrete;
 }
+
+
+WITH snaps AS (
+    SELECT
+        rs.brokerfk brokerfk,
+    rs.brokerinstancefk brokerinstancefk,
+    rs.tradedt tradedt,
+    min(rs.snapdttm) snapdttmmin,
+    max(rs.snapdttm) snapdttmmax
+            FROM risksnapshothistory rs
+                WHERE rs.snapdttm >= now() - interval '10 minutes'
+                   AND rs.snapdttm <= now()
+               GROUP BY rs.brokerfk, rs.brokerinstancefk, rs.tradedt
+        ORDER BY rs.brokerfk, rs.brokerinstancefk, rs.tradedt
+    ),
+    start_snaps_by_trade_dt AS (
+        SELECT
+                rs.*
+            FROM risksnapshothistory rs
+                WHERE (rs.brokerfk, rs.brokerinstancefk, rs.tradedt, rs.snapdttm) IN (
+                    SELECT
+                        s.brokerfk s_brokerfk,
+                    s.brokerinstancefk s_brokerinstancefk,
+                    s.tradedt s_tradedt,
+                    s.snapdttmmin s_snapdttmmin
+                        FROM snaps s)
+                    ORDER BY rs.brokerfk, rs.brokerinstancefk, rs.snapdttm
+        ),
+    end_snaps_by_trade_dt AS (
+        SELECT
+                rs.*
+            FROM risksnapshothistory rs
+                WHERE (rs.brokerfk, rs.brokerinstancefk, rs.tradedt, rs.snapdttm) IN (
+                    SELECT
+                        s.brokerfk s_brokerfk,
+                    s.brokerinstancefk s_brokerinstancefk,
+                    s.tradedt s_tradedt,
+                    s.snapdttmmax s_snapdttmmax
+                        FROM snaps s)
+                    ORDER BY rs.brokerfk, rs.brokerinstancefk, rs.snapdttm
+        ),
+    data as (
+        SELECT
+            ssbtd.snapdttm startdttm,
+        esbtd.snapdttm enddttm,
+        case when(ssbtd.snapdttm = '1970-01-01 00:00:00.000000') then 0 else 1 end hasstart,
+        case when(esbtd.snapdttm = '1970-01-01 00:00:00.000000') then 0 else 1 end hasend,
+        IF(esbtd.brokerfk = 0, ssbtd.brokerfk, esbtd.brokerfk) brokerfk,
+        IF(esbtd.brokerinstancefk = 0, ssbtd.brokerinstancefk, esbtd.brokerinstancefk) brokerinstancefk
+            FROM start_snaps_by_trade_dt ssbtd
+                FULL OUTER JOIN end_snaps_by_trade_dt esbtd ON ssbtd.brokerfk = esbtd.brokerfk AND ssbtd.brokerinstancefk = esbtd.brokerinstancefk AND ssbtd.tradedt = esbtd.tradedt AND ssbtd.traderfk = esbtd.traderfk AND ssbtd.brokersymbolfk = esbtd.brokersymbolfk
+        )
+        SELECT
+    d.brokerfk, d.brokerinstancefk,
+    max(startdttm) startdttm,
+    max(enddttm) enddttm,
+    countIf(d.hasstart =1 and d.hasend=1) matches,
+    countIf(d.hasstart =1 and d.hasend=0) beforeonly,
+    countIf(d.hasstart =0 and d.hasend=1) afteronly,
+    (select array_agg(toJSONString(map(
+        'snapdttmmax', toString(snapdttmmax), 'snapdttmmin', toString(snapdttmmin),
+        'tradedt', toString(tradedt), 'brokerfk', toString(brokerfk), 'brokerinstancefk', toString(brokerinstancefk))))
+         from snaps) snaps
+    FROM data d
+    GROUP BY d.brokerfk, d.brokerinstancefk
 
 }

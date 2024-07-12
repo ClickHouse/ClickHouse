@@ -91,6 +91,12 @@ inline void writeUUIDBinary(const UUID & x, WriteBuffer & buf)
 }
 
 template <typename T>
+void setValue(char * data, const T & value)
+{
+    memcpy(data, reinterpret_cast<const char *>(&value), sizeof(T));
+}
+
+template <typename T>
 inline void writeIntBinary(const T & x, WriteBuffer & buf)
 {
     writePODBinary(x, buf);

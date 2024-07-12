@@ -22,7 +22,6 @@ namespace DB
 class ColumnDynamic final : public COWHelper<IColumnHelper<ColumnDynamic>, ColumnDynamic>
 {
 public:
-    ///
     struct Statistics
     {
         enum class Source
@@ -77,7 +76,7 @@ public:
         return create(variant_column_->assumeMutable(), variant_type, max_dynamic_types_, statistics_);
     }
 
-    static MutablePtr create(size_t max_dynamic_types_)
+    static MutablePtr create(size_t max_dynamic_types_ = ColumnVariant::MAX_NESTED_COLUMNS)
     {
         return Base::create(max_dynamic_types_);
     }

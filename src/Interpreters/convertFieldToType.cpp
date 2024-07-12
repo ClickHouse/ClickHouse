@@ -459,7 +459,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
 
         return src;
     }
-    else if (isObject(type))
+    else if (isObjectDeprecated(type))
     {
         if (src.getType() == Field::Types::Object)
             return src;  /// Already in needed type.

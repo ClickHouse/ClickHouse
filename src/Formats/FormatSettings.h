@@ -227,7 +227,8 @@ struct FormatSettings
         bool try_infer_numbers_from_strings = false;
         bool validate_types_from_metadata = true;
         bool validate_utf8 = false;
-        bool allow_object_type = false;
+        bool allow_deprecated_object_type = false;
+        bool allow_json_type = false;
         bool valid_output_on_exception = false;
         bool compact_allow_variable_number_of_columns = false;
         bool try_infer_objects_as_tuples = false;
@@ -235,6 +236,7 @@ struct FormatSettings
         bool throw_on_bad_escape_sequence = true;
         bool ignore_unnecessary_fields = true;
         bool ignore_key_case = false;
+        bool type_json_skip_duplicated_paths = false;
     } json{};
 
     struct

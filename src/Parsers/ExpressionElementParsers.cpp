@@ -285,19 +285,40 @@ bool ParserTableAsStringLiteralIdentifier::parseImpl(Pos & pos, ASTPtr & node, E
 
 bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    ASTPtr id_list;
-    if (!ParserList(std::make_unique<ParserIdentifier>(allow_query_parameter, highlight_type), std::make_unique<ParserToken>(TokenType::Dot), false)
-             .parse(pos, id_list, expected))
-        return false;
+    auto element_parser = std::make_unique<ParserIdentifier>(allow_query_parameter, highlight_type);
+    std::vector<std::pair<ParserPtr, SpecialDelimiter>> delimiter_parsers;
+    delimiter_parsers.emplace_back(std::make_unique<ParserTokenSequence>(std::vector<TokenType>{TokenType::Dot, TokenType::Colon}), SpecialDelimiter::JSON_PATH_DYNAMIC_TYPE);
+    delimiter_parsers.emplace_back(std::make_unique<ParserTokenSequence>(std::vector<TokenType>{TokenType::Dot, TokenType::Caret}), SpecialDelimiter::JSON_PATH_PREFIX);
+    delimiter_parsers.emplace_back(std::make_unique<ParserToken>(TokenType::Dot), SpecialDelimiter::NONE);
 
     std::vector<String> parts;
+    SpecialDelimiter last_special_delimiter = SpecialDelimiter::NONE;
     ASTs params;
-    const auto & list = id_list->as<ASTExpressionList &>();
-    for (const auto & child : list.children)
+
+    bool parsed_delimiter = true;
+    while (parsed_delimiter)
     {
-        parts.emplace_back(getIdentifierName(child));
+        ASTPtr element;
+        if (!element_parser->parse(pos, element, expected))
+            return false;
+        if (last_special_delimiter != SpecialDelimiter::NONE)
+            parts.push_back(static_cast<char>(last_special_delimiter) + backQuote(getIdentifierName(element)));
+        else
+            parts.push_back(getIdentifierName(element));
+
         if (parts.back().empty())
-            params.push_back(child->as<ASTIdentifier>()->getParam());
+            params.push_back(element->as<ASTIdentifier>()->getParam());
+
+        parsed_delimiter = false;
+        for (const auto & [parser, special_delimiter] : delimiter_parsers)
+        {
+            if (parser->check(pos, expected))
+            {
+                parsed_delimiter = true;
+                last_special_delimiter = special_delimiter;
+                break;
+            }
+        }
     }
 
     ParserKeyword s_uuid(Keyword::UUID);

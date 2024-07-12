@@ -62,7 +62,7 @@ bool ParserNestedTable::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ASTPtr name;
     ASTPtr columns;
 
-    /// For now `name == 'Nested'`, probably alternative nested data structures will appear
+    /// For now `name == 'Nested'` or `name == 'Tuple'`, probably alternative nested data structures will appear
     if (!name_p.parse(pos, name, expected))
         return false;
 

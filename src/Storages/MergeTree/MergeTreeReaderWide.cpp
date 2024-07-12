@@ -326,7 +326,7 @@ void MergeTreeReaderWide::deserializePrefix(
     if (!deserialize_binary_bulk_state_map.contains(name))
     {
         ISerialization::DeserializeBinaryBulkSettings deserialize_settings;
-        deserialize_settings.dynamic_read_statistics = true;
+        deserialize_settings.object_and_dynamic_read_statistics = true;
         deserialize_settings.getter = [&](const ISerialization::SubstreamPath & substream_path)
         {
             return getStream(/* seek_to_start = */true, substream_path, data_part_info_for_read->getChecksums(), name_and_type, 0, /* seek_to_mark = */false, current_task_last_mark, cache);

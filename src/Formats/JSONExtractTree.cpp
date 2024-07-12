@@ -8,7 +8,6 @@
 #if USE_RAPIDJSON
 #include <Common/JSONParsers/RapidJSONParser.h>
 #endif
-
 #include <Common/JSONParsers/DummyJSONParser.h>
 
 #include <Columns/ColumnArray.h>
@@ -22,6 +21,7 @@
 #include <Columns/ColumnVariant.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsDateTime.h>
+#include <Columns/ColumnObject.h>
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -38,8 +38,10 @@
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeObject.h>
 #include <DataTypes/Serializations/SerializationDecimal.h>
 #include <DataTypes/Serializations/SerializationVariant.h>
+#include <DataTypes/Serializations/SerializationObject.h>
 
 
 #include <IO/ReadBufferFromMemory.h>
@@ -53,6 +55,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int INCORRECT_DATA;
 }
 
 template <typename JSONParser>
@@ -172,7 +175,7 @@ bool tryGetNumericValueFromJSONElement(
             {
                 if (!tryReadFloatText(value, rb) || !rb.eof())
                 {
-                    error = fmt::format("cannot parse {} value here: {}", TypeName<NumberType>, element.getString());
+                    error = fmt::format("cannot parse {} value here: \"{}\"", TypeName<NumberType>, element.getString());
                     return false;
                 }
             }
@@ -186,13 +189,13 @@ bool tryGetNumericValueFromJSONElement(
                 rb.position() = rb.buffer().begin();
                 if (!tryReadFloatText(tmp_float, rb) || !rb.eof())
                 {
-                    error = fmt::format("cannot parse {} value here: {}", TypeName<NumberType>, element.getString());
+                    error = fmt::format("cannot parse {} value here: \"{}\"", TypeName<NumberType>, element.getString());
                     return false;
                 }
 
                 if (!accurate::convertNumeric<Float64, NumberType, false>(tmp_float, value))
                 {
-                    error = fmt::format("cannot parse {} value here: {}", TypeName<NumberType>, element.getString());
+                    error = fmt::format("cannot parse {} value here: \"{}\"", TypeName<NumberType>, element.getString());
                     return false;
                 }
             }
@@ -1104,7 +1107,7 @@ public:
             }
         }
 
-        if (!were_valid_elements)
+        if (data.size() != old_size && !were_valid_elements)
         {
             data.popBack(data.size() - old_size);
             return false;
@@ -1174,7 +1177,7 @@ public:
                 else
                 {
                     set_size(old_size);
-                    error += fmt::format("(during reading tuple {} element)", index);
+                    error += fmt::format(" (during reading tuple {} element)", index);
                     return false;
                 }
             }
@@ -1202,7 +1205,7 @@ public:
                     else
                     {
                         set_size(old_size);
-                        error += fmt::format("(during reading tuple {} element)", index);
+                        error += fmt::format(" (during reading tuple {} element)", index);
                         return false;
                     }
                 }
@@ -1221,7 +1224,7 @@ public:
                         else if (!insert_settings.insert_default_on_invalid_elements_in_complex_types)
                         {
                             set_size(old_size);
-                            error += fmt::format("(during reading tuple element \"{}\")", key);
+                            error += fmt::format(" (during reading tuple element \"{}\")", key);
                             return false;
                         }
                     }
@@ -1288,7 +1291,7 @@ public:
                 {
                     key_col.popBack(key_col.size() - offsets.back());
                     value_col.popBack(value_col.size() - offsets.back());
-                    error += fmt::format("(during reading value of key \"{}\")", pair.first);
+                    error += fmt::format(" (during reading value of key \"{}\")", pair.first);
                     return false;
                 }
             }
@@ -1346,6 +1349,13 @@ template <typename JSONParser>
 class DynamicNode : public JSONExtractTreeNode<JSONParser>
 {
 public:
+    DynamicNode(
+        size_t max_dynamic_paths_for_object_ = DataTypeObject::DEFAULT_MAX_SEPARATELY_STORED_PATHS,
+        size_t max_dynamic_types_for_object_ = DataTypeDynamic::DEFAULT_MAX_DYNAMIC_TYPES)
+        :  max_dynamic_paths_for_object(max_dynamic_paths_for_object_), max_dynamic_types_for_object(max_dynamic_types_for_object_)
+    {
+    }
+
     bool insertResultToColumn(
         IColumn & column,
         const typename JSONParser::Element & element,
@@ -1362,13 +1372,22 @@ public:
         }
 
         auto & variant_column = column_dynamic.getVariantColumn();
-        auto variant_info = column_dynamic.getVariantInfo();
-        /// Second, infer ClickHouse type for this element and add it as a new variant.
-        auto element_type = elementToDataType(element, format_settings);
+        auto & variant_info = column_dynamic.getVariantInfo();
+        /// First, infer ClickHouse type for this element and add it as a new variant.
+        auto element_type = removeNullable(elementToDataType(element, format_settings));
+        if (!checkIfTypeIsComplete(element_type))
+        {
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Cannot infer the type of JSON element {}, because it contains only nulls. To use String type for elements with incomplete "
+                "type, enable setting input_format_json_infer_incomplete_types_as_strings",
+                jsonElementToString<JSONParser>(element, format_settings));
+        }
+
         if (column_dynamic.addNewVariant(element_type))
         {
             auto node = buildJSONExtractTree<JSONParser>(element_type, "Dynamic inference");
-            auto global_discriminator = variant_info.variant_name_to_discriminator[element_type->getName()];
+            auto global_discriminator = variant_info.variant_name_to_discriminator.at(element_type->getName());
             auto & variant = variant_column.getVariantByGlobalDiscriminator(global_discriminator);
             if (!node->insertResultToColumn(variant, element, insert_settings, format_settings, error))
                 return false;
@@ -1384,7 +1403,7 @@ public:
 
         /// We couldn't insert element into any existing variant, add String variant and read value as String.
         column_dynamic.addStringVariant();
-        auto string_global_discriminator = variant_info.variant_name_to_discriminator["String"];
+        auto string_global_discriminator = variant_info.variant_name_to_discriminator.at("String");
         auto & string_column = variant_column.getVariantByGlobalDiscriminator(string_global_discriminator);
         if (!getStringNode()->insertResultToColumn(string_column, element, insert_settings, format_settings, error))
             return false;
@@ -1400,16 +1419,18 @@ public:
         return string_node;
     }
 
-    static DataTypePtr elementToDataType(const typename JSONParser::Element & element, const FormatSettings & format_settings)
+    DataTypePtr elementToDataType(const typename JSONParser::Element & element, const FormatSettings & format_settings) const
     {
         JSONInferenceInfo json_inference_info;
         auto type = elementToDataTypeImpl(element, format_settings, json_inference_info);
         transformFinalInferredJSONTypeIfNeeded(type, format_settings, &json_inference_info);
+        if (format_settings.schema_inference_make_columns_nullable)
+            type = makeNullableRecursively(type);
         return type;
     }
 
 private:
-    static DataTypePtr elementToDataTypeImpl(const typename JSONParser::Element & element, const FormatSettings & format_settings, JSONInferenceInfo & json_inference_info)
+    DataTypePtr elementToDataTypeImpl(const typename JSONParser::Element & element, const FormatSettings & format_settings, JSONInferenceInfo & json_inference_info) const
     {
         switch (element.type())
         {
@@ -1452,10 +1473,10 @@ private:
                 DataTypes types;
                 types.reserve(array.size());
                 for (auto value : array)
-                    types.push_back(makeNullableSafe(elementToDataTypeImpl(value, format_settings, json_inference_info)));
+                    types.push_back(elementToDataTypeImpl(value, format_settings, json_inference_info));
 
                 if (types.empty())
-                    return std::make_shared<DataTypeArray>(makeNullable(std::make_shared<DataTypeNothing>()));
+                    return std::make_shared<DataTypeArray>(std::make_shared<DataTypeNothing>());
 
                 if (checkIfTypesAreEqual(types))
                     return std::make_shared<DataTypeArray>(types.back());
@@ -1482,12 +1503,231 @@ private:
 
                 return std::make_shared<DataTypeTuple>(types);
             }
-            case ElementType::OBJECT: {
-                /// TODO: Use new JSON type here when it's ready.
-                return std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), makeNullable(std::make_shared<DataTypeString>()));
+            case ElementType::OBJECT:
+            {
+                return std::make_shared<DataTypeObject>(DataTypeObject::SchemaFormat::JSON, max_dynamic_paths_for_object, max_dynamic_types_for_object);
             }
         }
     }
+
+    size_t max_dynamic_paths_for_object;
+    size_t max_dynamic_types_for_object;
+};
+
+template <typename JSONParser>
+class ObjectJSONNode : public JSONExtractTreeNode<JSONParser>
+{
+public:
+    ObjectJSONNode(
+        std::unordered_map<String, std::unique_ptr<JSONExtractTreeNode<JSONParser>>> typed_path_nodes_,
+        const std::unordered_set<String> & paths_to_skip_,
+        const std::vector<String> & path_prefixes_to_skip_,
+        const std::vector<String> & path_regexps_to_skip_,
+        size_t max_dynamic_paths_,
+        size_t max_dynamic_types)
+        : typed_path_nodes(std::move(typed_path_nodes_))
+        , paths_to_skip(paths_to_skip_)
+        , path_prefixes_to_skip(path_prefixes_to_skip_)
+        , dynamic_node(std::make_unique<DynamicNode<JSONParser>>(
+              max_dynamic_paths_ / DataTypeObject::NESTED_OBJECT_MAX_DYNAMIC_PATHS_REDUCE_FACTOR,
+              std::max(max_dynamic_types / DataTypeObject::NESTED_OBJECT_MAX_DYNAMIC_TYPES_REDUCE_FACTOR, 1lu)))
+        , dynamic_serialization(std::make_shared<SerializationDynamic>())
+    {
+        for (const auto & regexp : path_regexps_to_skip_)
+            path_regexps_to_skip.emplace_back(regexp);
+    }
+
+    bool insertResultToColumn(IColumn & column, const typename JSONParser::Element & element, const JSONExtractInsertSettings & insert_settings, const FormatSettings & format_settings, String & error) const override
+    {
+        if (element.isNull() && format_settings.null_as_default)
+        {
+            column.insertDefault();
+            return true;
+        }
+
+        if (!element.isObject())
+        {
+            error = fmt::format("Cannot read JSON object from JSON element: {}", jsonElementToString<JSONParser>(element, format_settings));
+            return false;
+        }
+
+        auto & column_object = assert_cast<ColumnObject &>(column);
+        size_t prev_size = column_object.size();
+
+        /// Paths in shared data should be sorted, so we cannot insert paths there during traverse.
+        /// Instead we collect all paths and values that should go to shared data, sort them and insert later.
+        /// It's not optimal, but it's a price we pay for faster reading of subcolumns.
+        std::vector<std::pair<String, String>> paths_and_values_for_shared_data;
+        if (!traverseAndInsert(column_object, element, "", insert_settings, format_settings, paths_and_values_for_shared_data, prev_size, error))
+        {
+            /// If there was an error, restore previous state.
+            SerializationObject::restoreColumnObject(column_object, prev_size);
+            return false;
+        }
+
+        /// Fill shared data.
+        auto [shared_data_paths, shared_data_values] = column_object.getSharedDataPathsAndValues();
+        std::sort(paths_and_values_for_shared_data.begin(), paths_and_values_for_shared_data.end());
+        for (size_t i = 0; i != paths_and_values_for_shared_data.size(); ++i)
+        {
+            const auto & [path, value] = paths_and_values_for_shared_data[i];
+            /// Check if we duplicated paths.
+            if (i != 0 && path == paths_and_values_for_shared_data[i - 1].first)
+            {
+                if (!format_settings.json.type_json_skip_duplicated_paths)
+                {
+                    error = fmt::format("Duplicate path found during parsing JSON object: {}", path);
+                    SerializationObject::restoreColumnObject(column_object, prev_size);
+                    return false;
+                }
+            }
+            else
+            {
+                shared_data_paths->insertData(path.data(), path.size());
+                shared_data_values->insertData(value.data(), value.size());
+            }
+        }
+        column_object.getSharedDataOffsets().push_back(shared_data_paths->size());
+
+        /// Fill remaining typed and dynamic paths.
+        for (auto & [_, typed_column] : column_object.getTypedPaths())
+        {
+            if (typed_column->size() == prev_size)
+                typed_column->insertDefault();
+        }
+
+        for (auto & [_, dynamic_column] : column_object.getDynamicPaths())
+        {
+            if (dynamic_column->size() == prev_size)
+                dynamic_column->insertDefault();
+        }
+
+        return true;
+    }
+
+private:
+    bool traverseAndInsert(
+        ColumnObject & column_object,
+        const typename JSONParser::Element & element,
+        const String & current_path,
+        const JSONExtractInsertSettings & insert_settings,
+        const FormatSettings & format_settings,
+        std::vector<std::pair<String, String>> & paths_and_values_for_shared_data,
+        size_t current_size,
+        String & error) const
+    {
+        if (element.isObject() && !typed_path_nodes.contains(current_path))
+        {
+            for (auto [key, value] : element.getObject())
+            {
+                String path = current_path;
+                if (!path.empty())
+                    path.append(".");
+                path += key;
+                if (!traverseAndInsert(column_object, value, path, insert_settings, format_settings, paths_and_values_for_shared_data, current_size, error))
+                    return false;
+            }
+
+            return true;
+        }
+
+        if (shouldSkipPath(current_path))
+            return true;
+
+        auto & typed_paths = column_object.getTypedPaths();
+        auto & dynamic_paths = column_object.getDynamicPaths();
+        /// Check if we have this path in typed pahts.
+        if (auto typed_it = typed_paths.find(current_path); typed_it != typed_paths.end())
+        {
+            /// Check if we already had this path.
+            if (typed_it->second->size() > current_size)
+            {
+                if (!format_settings.json.type_json_skip_duplicated_paths)
+                {
+                    error = fmt::format("Duplicate path found during parsing JSON object: {}", current_path);
+                    return false;
+                }
+            }
+            else if (!typed_path_nodes.at(current_path)->insertResultToColumn(*typed_it->second, element, insert_settings, format_settings, error))
+            {
+                error += fmt::format(" (while reading path {})", current_path);
+                return false;
+            }
+        }
+        /// Check if we have this path in dynamic paths.
+        else if (auto dynamic_it = dynamic_paths.find(current_path); dynamic_it != dynamic_paths.end())
+        {
+            /// Check if we already had this path.
+            if (dynamic_it->second->size() > current_size)
+            {
+                if (!format_settings.json.type_json_skip_duplicated_paths)
+                {
+                    error = fmt::format("Duplicate path found during parsing JSON object: {}", current_path);
+                    return false;
+                }
+            }
+            else if (!dynamic_node->insertResultToColumn(*dynamic_it->second, element, insert_settings, format_settings, error))
+            {
+                error += fmt::format(" (while reading path {})", current_path);
+                return false;
+            }
+        }
+        /// Try to add a new dynamic path.
+        else if (auto dynamic_column = column_object.tryToAddNewDynamicPath(current_path))
+        {
+            if (!dynamic_node->insertResultToColumn(*dynamic_column, element, insert_settings, format_settings, error))
+            {
+                error += fmt::format(" (while reading path {})", current_path);
+                return false;
+            }
+        }
+        /// Otherwise this path should go to the shared data.
+        /// Don't insert null values into shared data.
+        /// We consider null equivalent to the absense of this path.
+        else if (!element.isNull())
+        {
+            auto tmp_dynamic_column = ColumnDynamic::create();
+            tmp_dynamic_column->reserve(1);
+            if (!dynamic_node->insertResultToColumn(*tmp_dynamic_column, element, insert_settings, format_settings, error))
+            {
+                error += fmt::format(" (while reading path {})", current_path);
+                return false;
+            }
+
+            paths_and_values_for_shared_data.emplace_back(current_path, "");
+            WriteBufferFromString buf(paths_and_values_for_shared_data.back().second);
+            dynamic_serialization->serializeBinary(*tmp_dynamic_column, 0, buf, format_settings);
+        }
+
+        return true;
+    }
+
+    bool shouldSkipPath(const String & path) const
+    {
+        if (paths_to_skip.contains(path))
+            return true;
+
+        for (const auto & prefix : path_prefixes_to_skip)
+        {
+            if (path.starts_with(prefix))
+                return true;
+        }
+
+        for (const auto & regexp : path_regexps_to_skip)
+        {
+            if (re2::RE2::FullMatch(path, regexp))
+                return true;
+        }
+
+        return false;
+    }
+
+    std::unordered_map<String, std::unique_ptr<JSONExtractTreeNode<JSONParser>>> typed_path_nodes;
+    std::unordered_set<String> paths_to_skip;
+    std::vector<String> path_prefixes_to_skip;
+    std::list<re2::RE2> path_regexps_to_skip;
+    std::unique_ptr<DynamicNode<JSONParser>> dynamic_node;
+    std::shared_ptr<SerializationDynamic> dynamic_serialization;
 };
 
 }
@@ -1634,6 +1874,27 @@ std::unique_ptr<JSONExtractTreeNode<JSONParser>> buildJSONExtractTree(const Data
         }
         case TypeIndex::Dynamic:
             return std::make_unique<DynamicNode<JSONParser>>();
+        case TypeIndex::Object:
+        {
+            const auto & object_type = assert_cast<const DataTypeObject &>(*type);
+            const auto & typed_paths = object_type.getTypedPaths();
+            std::unordered_map<String, std::unique_ptr<JSONExtractTreeNode<JSONParser>>> typed_path_nodes;
+            typed_path_nodes.reserve(typed_paths.size());
+            for (const auto & [path, path_type] : typed_paths)
+                typed_path_nodes[path] = buildJSONExtractTree<JSONParser>(path_type, source_for_exception_message);
+
+            switch (object_type.getSchemaFormat())
+            {
+                case DataTypeObject::SchemaFormat::JSON:
+                    return std::make_unique<ObjectJSONNode<JSONParser>>(
+                        std::move(typed_path_nodes),
+                        object_type.getPathsToSkip(),
+                        object_type.getPathPrefixesToSkip(),
+                        object_type.getPathRegexpsToSkip(),
+                        object_type.getMaxDynamicPaths(),
+                        object_type.getMaxDynamicTypes());
+            }
+        }
         default:
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,

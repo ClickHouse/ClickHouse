@@ -1,11 +1,12 @@
 #pragma once
 
-#include <Processors/Formats/Impl/JSONEachRowRowInputFormat.h>
-#include <Processors/Formats/ISchemaReader.h>
+#include <DataTypes/DataTypeObject.h>
+#include <DataTypes/DataTypeObjectDeprecated.h>
+#include <DataTypes/DataTypeString.h>
 #include <Formats/FormatFactory.h>
 #include <IO/PeekableReadBuffer.h>
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeObject.h>
+#include <Processors/Formats/ISchemaReader.h>
+#include <Processors/Formats/Impl/JSONEachRowRowInputFormat.h>
 
 namespace DB
 {
@@ -69,12 +70,17 @@ public:
 class JSONAsObjectExternalSchemaReader : public IExternalSchemaReader
 {
 public:
-    explicit JSONAsObjectExternalSchemaReader(const FormatSettings & settings);
+    explicit JSONAsObjectExternalSchemaReader(const FormatSettings & settings_);
 
     NamesAndTypesList readSchema() override
     {
-        return {{"json", std::make_shared<DataTypeObject>("json", false)}};
+        if (settings.json.allow_json_type)
+            return {{"json", std::make_shared<DataTypeObject>(DataTypeObject::SchemaFormat::JSON)}};
+        return {{"json", std::make_shared<DataTypeObjectDeprecated>("json", false)}};
     }
+
+private:
+    FormatSettings settings;
 };
 
 }

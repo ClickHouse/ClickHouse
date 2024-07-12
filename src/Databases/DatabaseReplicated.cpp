@@ -996,6 +996,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         query_context->setSetting("allow_experimental_object_type", 1);
         query_context->setSetting("allow_experimental_variant_type", 1);
         query_context->setSetting("allow_experimental_dynamic_type", 1);
+        query_context->setSetting("allow_experimental_json_type", 1);
         query_context->setSetting("allow_experimental_annoy_index", 1);
         query_context->setSetting("allow_experimental_usearch_index", 1);
         query_context->setSetting("allow_experimental_bigint_types", 1);

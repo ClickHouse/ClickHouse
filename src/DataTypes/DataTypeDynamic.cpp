@@ -14,6 +14,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <base/find_symbols.h>
 
 namespace DB
 {
@@ -65,7 +66,11 @@ static DataTypePtr create(const ASTPtr & arguments)
     if (!argument || argument->name != "equals")
         throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Dynamic data type argument should be in a form 'max_types=N'");
 
-    auto identifier_name = argument->arguments->children[0]->as<ASTIdentifier>()->name();
+    const auto * identifier = argument->arguments->children[0]->as<ASTIdentifier>();
+    if (!identifier)
+        throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Unexpected Dynamic type argument: {}. Expected expression 'max_types=N'", identifier->formatForErrorMessage());
+
+    auto identifier_name = identifier->name();
     if (identifier_name != "max_types")
         throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Unexpected identifier: {}. Dynamic data type argument should be in a form 'max_types=N'", identifier_name);
 
@@ -82,9 +87,51 @@ void registerDataTypeDynamic(DataTypeFactory & factory)
     factory.registerDataType("Dynamic", create);
 }
 
+namespace
+{
+
+std::pair<std::string_view, std::string_view> splitSubcolumnName(std::string_view subcolumn_name)
+{
+    bool inside_quotes = false;
+    const char * pos = subcolumn_name.data();
+    const char * end = subcolumn_name.data() + subcolumn_name.size();
+    while (true)
+    {
+        pos = find_first_symbols<'`', '.', '\\'>(pos, end);
+        if (pos == end)
+            break;
+
+        if (*pos == '`')
+        {
+            inside_quotes = !inside_quotes;
+            ++pos;
+        }
+        else if (*pos == '\\')
+        {
+            ++pos;
+        }
+        else if (*pos == '.')
+        {
+            if (inside_quotes)
+                ++pos;
+            else
+                break;
+        }
+    }
+
+    if (pos == end)
+        return {subcolumn_name, {}};
+
+    return {std::string_view(subcolumn_name.data(), pos), std::string_view(pos + 1, end)};
+}
+
+}
+
 std::unique_ptr<IDataType::SubstreamData> DataTypeDynamic::getDynamicSubcolumnData(std::string_view subcolumn_name, const DB::IDataType::SubstreamData & data, bool throw_if_null) const
 {
-    auto [subcolumn_type_name, subcolumn_nested_name] = Nested::splitName(subcolumn_name);
+    auto [subcolumn_type_name, subcolumn_nested_name] = splitSubcolumnName(subcolumn_name);
+//    std::cerr << "Dynamic subcolumn: " << subcolumn_name << ", " << subcolumn_nested_name << "\n";
+
     /// Check if requested subcolumn is a valid data type.
     auto subcolumn_type = DataTypeFactory::instance().tryGet(String(subcolumn_type_name));
     if (!subcolumn_type)

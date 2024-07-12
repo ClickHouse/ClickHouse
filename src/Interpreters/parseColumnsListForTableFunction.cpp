@@ -2,6 +2,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeVariant.h>
+#include <DataTypes/DataTypeObject.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterCreateQuery.h>
@@ -110,12 +111,25 @@ void validateDataType(const DataTypePtr & type_to_check, const DataTypeValidatio
 
         if (!settings.allow_experimental_dynamic_type)
         {
-            if (data_type.hasDynamicSubcolumns())
+            if (isDynamic(data_type))
             {
                 throw Exception(
                     ErrorCodes::ILLEGAL_COLUMN,
                     "Cannot create column with type '{}' because experimental Dynamic type is not allowed. "
                     "Set setting allow_experimental_dynamic_type = 1 in order to allow it",
+                    data_type.getName());
+            }
+        }
+
+        if (!settings.allow_experimental_json_type)
+        {
+            const auto * object_type = typeid_cast<const DataTypeObject *>(&data_type);
+            if (object_type && object_type->getSchemaFormat() == DataTypeObject::SchemaFormat::JSON)
+            {
+                throw Exception(
+                    ErrorCodes::ILLEGAL_COLUMN,
+                    "Cannot create column with type '{}' because experimental JSON type is not allowed. "
+                    "Set setting allow_experimental_json_type = 1 in order to allow it",
                     data_type.getName());
             }
         }
