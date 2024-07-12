@@ -20,7 +20,6 @@
 #include <mutex>
 
 #include <Common/logger_useful.h>
-#include "Interpreters/Set.h"
 
 
 namespace CurrentMetrics
@@ -103,6 +102,8 @@ void QueryLogMetric::startQuery(const String & query_id, TimePoint query_start_t
     for (ProfileEvents::Event i = ProfileEvents::Event(0), end = ProfileEvents::end(); i < end; ++i)
         status.last_profile_events[i] = profile_events[i].load(std::memory_order_relaxed);
 
+    LOG_DEBUG(getLogger("PMO"), "Starting query {}", query_id);
+
     std::lock_guard lock(queries_mutex);
     queries.emplace(std::move(status));
 
@@ -116,15 +117,18 @@ void QueryLogMetric::startQuery(const String & query_id, TimePoint query_start_t
 
 void QueryLogMetric::finishQuery(const String & query_id)
 {
+    LOG_DEBUG(getLogger("PMO"), "Finishing query {}", query_id);
     std::lock_guard lock(queries_mutex);
     for (const auto & query_status : queries)
     {
         if (query_status.query_id == query_id)
         {
+            LOG_DEBUG(getLogger("PMO"), "Removing query {}", query_id);
             queries.erase(query_status);
-            break;
+            return;
         }
     }
+    LOG_DEBUG(getLogger("PMO"), "Query {} not found when trying to remove it", query_id);
 }
 
 QueryLogMetricElement createLogMetricElement(QueryLogMetricStatus & query_status, std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters, PeriodicLog<QueryLogMetricElement>::TimePoint current_time)
@@ -136,7 +140,7 @@ QueryLogMetricElement createLogMetricElement(QueryLogMetricStatus & query_status
     elem.memory = CurrentMetrics::values[CurrentMetrics::MemoryTracking];
     elem.background_memory = CurrentMetrics::values[CurrentMetrics::MergesMutationsMemoryTracking];
 
-    query_status.next_collect_time = query_status.next_collect_time + std::chrono::milliseconds(query_status.interval_milliseconds);
+    query_status.next_collect_time += std::chrono::milliseconds(query_status.interval_milliseconds);
 
     for (ProfileEvents::Event i = ProfileEvents::Event(0), end = ProfileEvents::end(); i < end; ++i)
     {
@@ -174,9 +178,9 @@ void QueryLogMetric::threadFunction()
             }
 
             std::unique_lock cv_lock(queries_cv_mutex);
-            // LOG_DEBUG(getLogger("PMO"), "Before the wait");
+            LOG_DEBUG(getLogger("PMO"), "Before the wait");
             queries_cv.wait_until(cv_lock, desired_timepoint);
-            // LOG_DEBUG(getLogger("PMO"), "After the wait");
+            LOG_DEBUG(getLogger("PMO"), "After the wait");
         }
         catch (...)
         {
@@ -189,7 +193,7 @@ void QueryLogMetric::stepFunction(TimePoint current_time)
 {
     static const auto & process_list = context->getProcessList();
 
-    // LOG_DEBUG(getLogger("PMO"), "QueryLogMetric::stepFunction");
+    LOG_DEBUG(getLogger("PMO"), "QueryLogMetric::stepFunction");
     decltype(queries) new_queries;
     for (const auto & query_status : queries)
     {
@@ -197,15 +201,19 @@ void QueryLogMetric::stepFunction(TimePoint current_time)
         // in the future, we know we don't need to collect data anymore
         if (query_status.next_collect_time > current_time)
         {
+            LOG_DEBUG(getLogger("PMO"), "Skipping query {} because it's too early. Now {}, next collect time {}", query_status.query_id, current_time.time_since_epoch().count(), query_status.next_collect_time.time_since_epoch().count());
             new_queries.emplace(query_status);
             continue;
         }
 
-        // LOG_DEBUG(getLogger("PMO"), "Collecting query {}", query_status.query_id);
+        LOG_DEBUG(getLogger("PMO"), "Collecting query {}", query_status.query_id);
 
         const auto query_info = process_list.getQueryInfo(query_status.query_id, false, true, false);
         if (!query_info)
+        {
+            LOG_DEBUG(getLogger("PMO"), "Removing query {} because it's not running anymore", query_status.query_id);
             continue;
+        }
 
         auto new_query_status = query_status;
         auto elem = createLogMetricElement(new_query_status, query_info->profile_counters, current_time);

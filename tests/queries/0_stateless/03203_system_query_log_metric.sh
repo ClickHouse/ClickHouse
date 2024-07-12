@@ -18,16 +18,50 @@ $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS"
 function check_log()
 {
     interval=$1
-    $CLICKHOUSE_CLIENT -m -q """
+    set -x
+    output=$($CLICKHOUSE_CLIENT --max_threads=1 -m -q """
     WITH diff AS (
-        SELECT dateDiff('ms', first_value(event_time_microseconds) OVER (ROWS BETWEEN 1 PRECEDING AND 0 FOLLOWING), event_time_microseconds) AS diff
+        SELECT
+            event_time_microseconds,
+            first_value(event_time_microseconds) OVER (ORDER BY event_time_microseconds ROWS BETWEEN 1 PRECEDING AND 0 FOLLOWING) as prev,
+            dateDiff('ms', prev, event_time_microseconds) AS diff
         FROM system.query_log_metric
         WHERE query_id = '${query_prefix}_${interval}'
-        ORDER BY 1
+        ORDER BY event_time_microseconds
         OFFSET 1
     )
-    SELECT count(), avg(diff) BETWEEN $interval * 0.90 AND $interval * 1.10, stddevSampStable(diff) BETWEEN 0 AND $interval * 0.2 FROM diff
-    """
+    SELECT count() BETWEEN (3000 / $interval - 1) * 0.9 AND (3000 / $interval - 1) * 1.1, avg(diff) BETWEEN $interval * 0.9 AND $interval * 1.1, stddevPopStable(diff) BETWEEN 0 AND $interval * 0.2 FROM diff
+    """)
+    echo -e "$output"
+    if [[ "$output" != $(echo -e "1\t1\t1") ]]; then
+        $CLICKHOUSE_CLIENT --max_threads=1 -m -q """
+        WITH diff AS (
+            SELECT
+                event_time_microseconds,
+                first_value(event_time_microseconds) OVER (ORDER BY event_time_microseconds ROWS BETWEEN 1 PRECEDING AND 0 FOLLOWING) as prev,
+                dateDiff('ms', prev, event_time_microseconds) AS diff
+            FROM system.query_log_metric
+            WHERE query_id = '${query_prefix}_${interval}'
+            ORDER BY event_time_microseconds
+        )
+        SELECT * FROM diff
+        """
+
+        $CLICKHOUSE_CLIENT --max_threads=1 -m -q """
+        WITH diff AS (
+            SELECT
+                event_time_microseconds,
+                first_value(event_time_microseconds) OVER (ORDER BY event_time_microseconds ROWS BETWEEN 1 PRECEDING AND 0 FOLLOWING) as prev,
+                dateDiff('ms', prev, event_time_microseconds) AS diff
+            FROM system.query_log_metric
+            WHERE query_id = '${query_prefix}_${interval}'
+            ORDER BY event_time_microseconds
+            OFFSET 1
+        )
+        SELECT count(), avg(diff), stddevPopStable(diff) FROM diff
+        """
+    fi
+    set +x
 }
 
 check_log 1000
