@@ -44,10 +44,9 @@ Standard aggregate functions:
 ClickHouse-specific aggregate functions:
 
 - [analysisOfVariance](../reference/analysis_of_variance.md)
-- [any](../reference/any_respect_nulls.md)
+- [any](../reference/any.md)
 - [anyHeavy](../reference/anyheavy.md)
 - [anyLast](../reference/anylast.md)
-- [anyLast](../reference/anylast_respect_nulls.md)
 - [boundingRatio](../reference/boundrat.md)
 - [first_value](../reference/first_value.md)
 - [last_value](../reference/last_value.md)
