@@ -13,6 +13,8 @@ Selects the last value encountered, irregardless of whether it is `NULL` or not.
 anyLast_respect_nulls(column)
 ```
 
+Alias: `last_value_respect_nulls`.
+
 **Parameters**
 - `column`: The column name. 
 
