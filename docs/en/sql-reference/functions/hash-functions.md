@@ -353,7 +353,7 @@ It works faster than [intHash32](#inthash32).
 **Syntax**
 
 ```sql
-intHash32(int)
+intHash64(int)
 ```
 
 **Arguments**
