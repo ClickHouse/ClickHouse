@@ -52,8 +52,6 @@ void optimizeFunctionEmpty(QueryTreeNodePtr &, FunctionNode & function_node, Col
     /// Replace `notEmpty(argument)` with `notEquals(argument.size0, 0)` if not positive
     /// `argument` may be Array or Map.
 
-    std::cerr << "optimizeFunctionEmpty " << ctx.column.name << "\n";
-
     NameAndTypePair column{ctx.column.name + ".size0", std::make_shared<DataTypeUInt64>()};
     auto & function_arguments_nodes = function_node.getArguments().getNodes();
 
@@ -236,18 +234,9 @@ std::tuple<FunctionNode *, ColumnNode *, TableNode *> getTypedNodesForOptimizati
         return {};
 
     auto column_in_table = storage_snapshot->tryGetColumn(GetColumnsOptions::All, column.name);
-    std::cerr << "getTypedNodesForOptimization " << column.name << "\n";
     if (!column_in_table || !column_in_table->type->equals(*column.type))
-    {
-        std::cerr << "getTypedNodesForOptimization FAIL\n";
-        if (column_in_table)
-            std::cerr << column_in_table->type->getName() << "/" << column.type->getName() << "\n";
-        else
-            std::cerr << "null\n";
         return {};
-    }
 
-    std::cerr << "getTypedNodesForOptimization OK\n";
     return std::make_tuple(function_node, first_argument_column_node, table_node);
 }
 
@@ -433,15 +422,9 @@ public:
         auto table_name = table_node->getStorage()->getStorageID().getFullTableName();
 
         Identifier qualified_name({table_name, column.name});
-        std::cerr << "FunctionToSubcolumnsVisitorSecondPass " << column.name << "\n";
-
         if (!identifiers_to_optimize.contains(qualified_name))
-        {
-            std::cerr << "FunctionToSubcolumnsVisitorSecondPass FAIL\n";
             return;
-        }
 
-        std::cerr << "FunctionToSubcolumnsVisitorSecondPass OK\n";
         auto transformer_it = node_transformers.find({column.type->getTypeId(), function_node->getFunctionName()});
         if (transformer_it != node_transformers.end())
         {

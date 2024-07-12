@@ -130,7 +130,6 @@ std::pair<std::string_view, std::string_view> splitSubcolumnName(std::string_vie
 std::unique_ptr<IDataType::SubstreamData> DataTypeDynamic::getDynamicSubcolumnData(std::string_view subcolumn_name, const DB::IDataType::SubstreamData & data, bool throw_if_null) const
 {
     auto [subcolumn_type_name, subcolumn_nested_name] = splitSubcolumnName(subcolumn_name);
-//    std::cerr << "Dynamic subcolumn: " << subcolumn_name << ", " << subcolumn_nested_name << "\n";
 
     /// Check if requested subcolumn is a valid data type.
     auto subcolumn_type = DataTypeFactory::instance().tryGet(String(subcolumn_type_name));

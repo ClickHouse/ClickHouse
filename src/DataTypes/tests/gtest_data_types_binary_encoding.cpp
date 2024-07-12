@@ -32,7 +32,7 @@ extern const int UNSUPPORTED_METHOD;
 
 void check(const DataTypePtr & type)
 {
-    std::cerr << "Check " << type->getName() << "\n";
+//    std::cerr << "Check " << type->getName() << "\n";
     WriteBufferFromOwnString ostr;
     encodeDataType(type, ostr);
     ReadBufferFromString istr(ostr.str());

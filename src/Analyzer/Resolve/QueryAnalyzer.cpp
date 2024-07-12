@@ -1,14 +1,14 @@
 #include <Common/FieldVisitorToString.h>
 
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeFunction.h>
-#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeObjectDeprecated.h>
-#include <DataTypes/DataTypeSet.h>
-#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeFunction.h>
+#include <DataTypes/DataTypeSet.h>
 #include <DataTypes/getLeastSupertype.h>
 
 #include <Functions/FunctionFactory.h>

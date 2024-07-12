@@ -10,7 +10,6 @@
 #include <Parsers/ParserCreateQuery.h>
 #include <Common/StringUtils.h>
 
-#include <Common/logger_useful.h>
 
 namespace DB
 {
