@@ -66,13 +66,13 @@ ALTER USER john GRANTEES jack;
 Adds new authentication methods to the user while keeping the existing ones
 
 ``` sql
-ALTER USER user ADD IDENTIFIED WITH plaintext_password by '1' ADD IDENTIFIED WITH bcrypt_password by '2' ADD IDENTIFIED WITH plaintext_password by '3'
+ALTER USER user ADD IDENTIFIED WITH plaintext_password by '1', bcrypt_password by '2', plaintext_password by '3'
 ```
 
 Reset authentication methods and adds the ones specified in the query (effect of leading IDENTIFIED without the ADD keyword)
 
 ``` sql
-ALTER USER user IDENTIFIED WITH plaintext_password by '1' ADD IDENTIFIED WITH bcrypt_password by '2' ADD IDENTIFIED WITH plaintext_password by '3'
+ALTER USER user IDENTIFIED WITH plaintext_password by '1', bcrypt_password by '2', plaintext_password by '3'
 ```
 
 Reset authentication methods and keep the most recent added one
