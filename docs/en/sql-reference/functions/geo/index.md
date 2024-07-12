@@ -29,6 +29,7 @@ title: "Geo Functions"
 - [geoToH3](./h3.md#geotoh3)
 - [h3ToGeo](./h3.md#h3togeo)
 - [h3ToGeoBoundary](./h3.md#h3togeoboundary)
+- [h3PolygonToCells](./h3.md#h3polygontocells)
 - [h3kRing](./h3.md#h3kring)
 - [h3GetBaseCell](./h3.md#h3getbasecell)
 - [h3HexAreaM2](./h3.md#h3hexaream2)

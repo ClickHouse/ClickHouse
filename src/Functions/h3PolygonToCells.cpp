@@ -85,7 +85,7 @@ public:
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The second argument of function {} must not be Point", getName());
             else if constexpr (std::is_same_v<ColumnToLineStringsConverter<CartesianPoint>, Converter>)
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The second argument of function {} must not be LineString", getName());
-            
+
             // all geometries will be of same kind
             auto geometries = Converter::convert(arguments[0].column);
             for (size_t row = 0; row < input_rows_count; ++row)
