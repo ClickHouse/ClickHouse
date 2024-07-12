@@ -1125,7 +1125,9 @@ def main() -> int:
             "sudo dmesg -T | grep -q -e 'Out of memory: Killed process' -e 'oom_reaper: reaped process' -e 'oom-kill:constraint=CONSTRAINT_NONE'"
         ):
             print("WARNING: OOM while job execution")
-            CIBuddy().post_error("Out Of Memory")
+            CIBuddy(dry_run=not pr_info.is_release).post_error(
+                "Out Of Memory", job_name=_get_ext_check_name(args.job_name)
+            )
 
         job_report = JobReport.load() if JobReport.exist() else None
         if job_report:
