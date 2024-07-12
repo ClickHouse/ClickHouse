@@ -10,7 +10,7 @@ insert into testX select number from numbers(10) settings
     optimize_trivial_insert_select=0,
     max_insert_threads=0; -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
 system flush logs;
-select arrayUniq(thread_ids) from system.query_log where
+select peak_threads_usage from system.query_log where
     current_database = currentDatabase() and
     type != 'QueryStart' and
     query like '%insert into testX %' and
@@ -34,7 +34,7 @@ insert into testX select number from numbers(10) settings
     optimize_trivial_insert_select=0,
     max_insert_threads=16; -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
 system flush logs;
-select arrayUniq(thread_ids) from system.query_log where
+select peak_threads_usage from system.query_log where
     current_database = currentDatabase() and
     type != 'QueryStart' and
     query like '%insert into testX %' and
@@ -58,7 +58,7 @@ insert into testX select number from numbers(10) settings
     optimize_trivial_insert_select=1,
     max_insert_threads=0; -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
 system flush logs;
-select arrayUniq(thread_ids) from system.query_log where
+select peak_threads_usage from system.query_log where
     current_database = currentDatabase() and
     type != 'QueryStart' and
     query like '%insert into testX %' and
@@ -82,7 +82,7 @@ insert into testX select number from numbers(10) settings
     optimize_trivial_insert_select=1,
     max_insert_threads=16; -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
 system flush logs;
-select arrayUniq(thread_ids) from system.query_log where
+select peak_threads_usage from system.query_log where
     current_database = currentDatabase() and
     type != 'QueryStart' and
     query like '%insert into testX %' and
@@ -106,7 +106,7 @@ insert into testX select number from numbers(10) settings
     optimize_trivial_insert_select=0,
     max_insert_threads=0; -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
 system flush logs;
-select arrayUniq(thread_ids) from system.query_log where
+select peak_threads_usage from system.query_log where
     current_database = currentDatabase() and
     type != 'QueryStart' and
     query like '%insert into testX %' and
@@ -130,7 +130,7 @@ insert into testX select number from numbers(10) settings
     optimize_trivial_insert_select=0,
     max_insert_threads=16; -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
 system flush logs;
-select arrayUniq(thread_ids) from system.query_log where
+select peak_threads_usage from system.query_log where
     current_database = currentDatabase() and
     type != 'QueryStart' and
     query like '%insert into testX %' and
@@ -154,7 +154,7 @@ insert into testX select number from numbers(10) settings
     optimize_trivial_insert_select=1,
     max_insert_threads=0; -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
 system flush logs;
-select arrayUniq(thread_ids) from system.query_log where
+select peak_threads_usage from system.query_log where
     current_database = currentDatabase() and
     type != 'QueryStart' and
     query like '%insert into testX %' and
@@ -178,7 +178,7 @@ insert into testX select number from numbers(10) settings
     optimize_trivial_insert_select=1,
     max_insert_threads=16; -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
 system flush logs;
-select arrayUniq(thread_ids) from system.query_log where
+select peak_threads_usage from system.query_log where
     current_database = currentDatabase() and
     type != 'QueryStart' and
     query like '%insert into testX %' and

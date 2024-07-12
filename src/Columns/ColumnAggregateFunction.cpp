@@ -267,7 +267,11 @@ bool ColumnAggregateFunction::structureEquals(const IColumn & to) const
 }
 
 
+#if !defined(ABORT_ON_LOGICAL_ERROR)
 void ColumnAggregateFunction::insertRangeFrom(const IColumn & from, size_t start, size_t length)
+#else
+void ColumnAggregateFunction::doInsertRangeFrom(const IColumn & from, size_t start, size_t length)
+#endif
 {
     const ColumnAggregateFunction & from_concrete = assert_cast<const ColumnAggregateFunction &>(from);
 
@@ -462,7 +466,11 @@ void ColumnAggregateFunction::insertFromWithOwnership(const IColumn & from, size
     insertMergeFrom(from, n);
 }
 
+#if !defined(ABORT_ON_LOGICAL_ERROR)
 void ColumnAggregateFunction::insertFrom(const IColumn & from, size_t n)
+#else
+void ColumnAggregateFunction::doInsertFrom(const IColumn & from, size_t n)
+#endif
 {
     insertRangeFrom(from, n, 1);
 }
