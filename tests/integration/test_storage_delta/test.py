@@ -596,19 +596,116 @@ def test_partition_columns(started_cluster):
     )
     assert result == 1
 
-    # instance.query(
-    #    f"""
-    #    DROP TABLE IF EXISTS {TABLE_NAME};
-    #    CREATE TABLE {TABLE_NAME} (a Int32, b String, c DateTime)
-    #    ENGINE=DeltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', 'minio123')"""
-    # )
-    # assert (
-    #    int(
-    #        instance.query(
-    #            f"SELECT count() FROM {TABLE_NAME} WHERE c != toDateTime('2000/01/05')"
-    #        )
-    #    )
-    #    == num_rows - 1
-    # )
-    # instance.query(f"SELECT a, b, c, FROM {TABLE_NAME}")
-    # assert False
+    instance.query(
+        f"""
+       DROP TABLE IF EXISTS {TABLE_NAME};
+       CREATE TABLE {TABLE_NAME} (a Nullable(Int32), b Nullable(String), c Nullable(Date32), d Nullable(Int32), e Nullable(Bool))
+       ENGINE=DeltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', 'minio123')"""
+    )
+    assert (
+        """1	test1	2000-01-01	1	false
+2	test2	2000-01-02	2	false
+3	test3	2000-01-03	3	false
+4	test4	2000-01-04	4	false
+5	test5	2000-01-05	5	false
+6	test6	2000-01-06	6	false
+7	test7	2000-01-07	7	false
+8	test8	2000-01-08	8	false
+9	test9	2000-01-09	9	false"""
+        == instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY b").strip()
+    )
+
+    assert (
+        int(
+            instance.query(
+                f"SELECT count() FROM {TABLE_NAME} WHERE c == toDateTime('2000/01/05')"
+            )
+        )
+        == 1
+    )
+
+    # Subset of columns should work.
+    instance.query(
+        f"""
+       DROP TABLE IF EXISTS {TABLE_NAME};
+       CREATE TABLE {TABLE_NAME} (b Nullable(String), c Nullable(Date32), d Nullable(Int32))
+       ENGINE=DeltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', 'minio123')"""
+    )
+    assert (
+        """test1	2000-01-01	1
+test2	2000-01-02	2
+test3	2000-01-03	3
+test4	2000-01-04	4
+test5	2000-01-05	5
+test6	2000-01-06	6
+test7	2000-01-07	7
+test8	2000-01-08	8
+test9	2000-01-09	9"""
+        == instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY b").strip()
+    )
+
+    for i in range(num_rows + 1, 2 * num_rows + 1):
+        data = [
+            (
+                i,
+                "test" + str(i),
+                datetime.strptime(f"2000-01-{i}", "%Y-%m-%d"),
+                i,
+                False,
+            )
+        ]
+        df = spark.createDataFrame(data=data, schema=schema)
+        df.printSchema()
+        df.write.mode("append").format("delta").partitionBy(partition_columns).save(
+            f"/{TABLE_NAME}"
+        )
+
+    files = upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
+    ok = False
+    for file in files:
+        if file.endswith("last_checkpoint"):
+            ok = True
+    assert ok
+
+    result = int(
+        instance.query(
+            f"""SELECT count()
+            FROM deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', 'minio123')
+            """
+        )
+    )
+    assert result == num_rows * 2
+
+    assert (
+        """1	test1	2000-01-01	1	false
+2	test2	2000-01-02	2	false
+3	test3	2000-01-03	3	false
+4	test4	2000-01-04	4	false
+5	test5	2000-01-05	5	false
+6	test6	2000-01-06	6	false
+7	test7	2000-01-07	7	false
+8	test8	2000-01-08	8	false
+9	test9	2000-01-09	9	false
+10	test10	2000-01-10	10	false
+11	test11	2000-01-11	11	false
+12	test12	2000-01-12	12	false
+13	test13	2000-01-13	13	false
+14	test14	2000-01-14	14	false
+15	test15	2000-01-15	15	false
+16	test16	2000-01-16	16	false
+17	test17	2000-01-17	17	false
+18	test18	2000-01-18	18	false"""
+        == instance.query(
+            f"""
+SELECT * FROM deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', 'minio123') ORDER BY c
+        """
+        ).strip()
+    )
+    assert (
+        int(
+            instance.query(
+                f"SELECT count() FROM {TABLE_NAME} WHERE c == toDateTime('2000/01/15')"
+            )
+        )
+        == 1
+    )
