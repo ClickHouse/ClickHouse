@@ -699,15 +699,15 @@ class CiCache:
         for job_name, job_config in self.jobs_to_do.items():
             if CI.is_test_job(job_name):
                 batches_to_remove = []
-                if job_config.batches is not None:
-                    for batch in job_config.batches:
-                        if self.is_failed(
-                            job_name, batch, job_config.num_batches, release_branch=True
-                        ):
-                            print(
-                                f"Filter [{job_name}/{batch}] - not affected by the change (failed on release branch)"
-                            )
-                            batches_to_remove.append(batch)
+                assert job_config.batches is not None
+                for batch in job_config.batches:
+                    if self.is_failed(
+                        job_name, batch, job_config.num_batches, release_branch=True
+                    ):
+                        print(
+                            f"Filter [{job_name}/{batch}] - not affected by the change (failed on release branch)"
+                        )
+                        batches_to_remove.append(batch)
                 for batch in batches_to_remove:
                     job_config.batches.remove(batch)
                 if not job_config.batches:
