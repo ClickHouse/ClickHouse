@@ -43,7 +43,7 @@ public:
         FunctionArgumentDescriptors optional_args{
             {"epoch", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeUInt), isColumnConst, "const UInt*"}
         };
-        validateFunctionArgumentTypes(*this, arguments, args, optional_args);
+        validateFunctionArguments(*this, arguments, args, optional_args);
 
         return std::make_shared<DataTypeUInt64>();
     }
@@ -91,7 +91,7 @@ public:
         FunctionArgumentDescriptors optional_args{
             {"epoch", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeUInt), isColumnConst, "const UInt*"}
         };
-        validateFunctionArgumentTypes(*this, arguments, args, optional_args);
+        validateFunctionArguments(*this, arguments, args, optional_args);
 
         return std::make_shared<DataTypeUInt64>();
     }

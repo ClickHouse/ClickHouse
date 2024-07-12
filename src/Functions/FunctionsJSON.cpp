@@ -354,7 +354,10 @@ public:
     explicit ExecutableFunctionJSON(const NullPresence & null_presence_, bool allow_simdjson_, const DataTypePtr & json_return_type_, const FormatSettings & format_settings_)
         : null_presence(null_presence_), allow_simdjson(allow_simdjson_), json_return_type(json_return_type_), format_settings(format_settings_)
     {
+        /// Don't escape forward slashes during converting JSON elements to raw string.
         format_settings.json.escape_forward_slashes = false;
+        /// Don't insert default values on null during traversing the JSON element.
+        /// We allow to insert null only to Nullable columns in JSONExtract functions.
         format_settings.null_as_default = false;
     }
 
@@ -736,17 +739,8 @@ public:
         NumberType value;
 
         tryGetNumericValueFromJSONElement<JSONParser, NumberType>(value, element, convert_bool_to_integer, error);
-
-        if (dest.getDataType() == TypeIndex::LowCardinality)
-        {
-            ColumnLowCardinality & col_low = assert_cast<ColumnLowCardinality &>(dest);
-            col_low.insertData(reinterpret_cast<const char *>(&value), sizeof(value));
-        }
-        else
-        {
-            auto & col_vec = assert_cast<ColumnVector<NumberType> &>(dest);
-            col_vec.insertValue(value);
-        }
+        auto & col_vec = assert_cast<ColumnVector<NumberType> &>(dest);
+        col_vec.insertValue(value);
         return true;
     }
 };

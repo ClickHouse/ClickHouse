@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/data-types/dynamic
-sidebar_position: 56
+sidebar_position: 62
 sidebar_label: Dynamic
 ---
 
@@ -494,17 +494,6 @@ SELECT count(), dynamicType(d), _part FROM test GROUP BY _part, dynamicType(d) O
 
 As we can see, ClickHouse kept the most frequent types `UInt64` and `Array(UInt64)` and casted all other types to `String`.
 
-
-## Binary output format
-
-In [RowBinary](../../interfaces/formats.md#rowbinary-rowbinary) format values of `Dynamic` type are serialized in the following format:
-
-```text
-<binary_encoded_data_type><value_in_binary_format_according_to_the_data_type>
-```
-
-See the [data types binary encoding specification](../../sql-reference/data-types/data-types-binary-encoding.md)
-
 ## JSONExtract functions with Dynamic
 
 All `JSONExtract*` functions support `Dynamic` type:
@@ -537,3 +526,12 @@ SELECT JSONExtractKeysAndValues('{"a" : 42, "b" : "Hello", "c" : [1,2,3]}', 'Var
 │ [('a',42),('b','Hello'),('c',[1,2,3])] │ [('a','UInt32'),('b','String'),('c','Array(UInt32)')] │
 └────────────────────────────────────────┴───────────────────────────────────────────────────────┘
 ```
+
+### Binary output format
+
+In RowBinary format values of `Dynamic` type are serialized in the following format:
+
+```text
+<binary_encoded_data_type><value_in_binary_format_according_to_the_data_type>
+```
+

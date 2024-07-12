@@ -26,6 +26,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -35,9 +36,8 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeVariant.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
-#include <DataTypes/DataTypeEnum.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/Serializations/SerializationDecimal.h>
 #include <DataTypes/Serializations/SerializationVariant.h>
 
@@ -123,10 +123,7 @@ void jsonElementToString(const typename JSONParser::Element & element, WriteBuff
 
 template <typename JSONParser, typename NumberType>
 bool tryGetNumericValueFromJSONElement(
-    NumberType & value,
-    const typename JSONParser::Element & element,
-    bool convert_bool_to_integer,
-    String & error)
+    NumberType & value, const typename JSONParser::Element & element, bool convert_bool_to_integer, String & error)
 {
     switch (element.type())
     {
@@ -226,7 +223,11 @@ public:
     explicit NumericNode(bool is_bool_type_ = false) : is_bool_type(is_bool_type_) { }
 
     bool insertResultToColumn(
-        IColumn & column, const typename JSONParser::Element & element, const JSONExtractInsertSettings & insert_settings, const FormatSettings & format_settings, String & error) const override
+        IColumn & column,
+        const typename JSONParser::Element & element,
+        const JSONExtractInsertSettings & insert_settings,
+        const FormatSettings & format_settings,
+        String & error) const override
     {
         if (element.isNull())
         {
@@ -270,7 +271,11 @@ public:
     }
 
     bool insertResultToColumn(
-        IColumn & column, const typename JSONParser::Element & element, const JSONExtractInsertSettings & insert_settings, const FormatSettings & format_settings, String & error) const override
+        IColumn & column,
+        const typename JSONParser::Element & element,
+        const JSONExtractInsertSettings & insert_settings,
+        const FormatSettings & format_settings,
+        String & error) const override
     {
         if (element.isNull())
         {
@@ -309,7 +314,11 @@ class StringNode : public JSONExtractTreeNode<JSONParser>
 {
 public:
     bool insertResultToColumn(
-        IColumn & column, const typename JSONParser::Element & element, const JSONExtractInsertSettings &, const FormatSettings & format_settings, String & error) const override
+        IColumn & column,
+        const typename JSONParser::Element & element,
+        const JSONExtractInsertSettings &,
+        const FormatSettings & format_settings,
+        String & error) const override
     {
         if (element.isNull())
         {
@@ -349,7 +358,11 @@ public:
     explicit LowCardinalityStringNode(bool is_nullable_) : is_nullable(is_nullable_) { }
 
     bool insertResultToColumn(
-        IColumn & column, const typename JSONParser::Element & element, const JSONExtractInsertSettings &, const FormatSettings & format_settings, String & error) const override
+        IColumn & column,
+        const typename JSONParser::Element & element,
+        const JSONExtractInsertSettings &,
+        const FormatSettings & format_settings,
+        String & error) const override
     {
         if (element.isNull())
         {
@@ -387,7 +400,11 @@ class FixedStringNode : public JSONExtractTreeNode<JSONParser>
 public:
     explicit FixedStringNode(size_t fixed_length_) : fixed_length(fixed_length_) { }
     bool insertResultToColumn(
-        IColumn & column, const typename JSONParser::Element & element, const JSONExtractInsertSettings &, const FormatSettings & format_settings, String & error) const override
+        IColumn & column,
+        const typename JSONParser::Element & element,
+        const JSONExtractInsertSettings &,
+        const FormatSettings & format_settings,
+        String & error) const override
     {
         if (element.isNull())
         {
@@ -431,7 +448,11 @@ public:
     }
 
     bool insertResultToColumn(
-        IColumn & column, const typename JSONParser::Element & element, const JSONExtractInsertSettings &, const FormatSettings & format_settings, String & error) const override
+        IColumn & column,
+        const typename JSONParser::Element & element,
+        const JSONExtractInsertSettings &,
+        const FormatSettings & format_settings,
+        String & error) const override
     {
         if (element.isNull())
         {
@@ -484,7 +505,11 @@ class UUIDNode : public JSONExtractTreeNode<JSONParser>
 {
 public:
     bool insertResultToColumn(
-        IColumn & column, const typename JSONParser::Element & element, const JSONExtractInsertSettings &, const FormatSettings & format_settings, String & error) const override
+        IColumn & column,
+        const typename JSONParser::Element & element,
+        const JSONExtractInsertSettings &,
+        const FormatSettings & format_settings,
+        String & error) const override
     {
         if (element.isNull() && format_settings.null_as_default)
         {
@@ -525,7 +550,11 @@ public:
     explicit LowCardinalityUUIDNode(bool is_nullable_) : is_nullable(is_nullable_) { }
 
     bool insertResultToColumn(
-        IColumn & column, const typename JSONParser::Element & element, const JSONExtractInsertSettings &, const FormatSettings & format_settings, String & error) const override
+        IColumn & column,
+        const typename JSONParser::Element & element,
+        const JSONExtractInsertSettings &,
+        const FormatSettings & format_settings,
+        String & error) const override
     {
         if (element.isNull() && (is_nullable || format_settings.null_as_default))
         {
@@ -560,7 +589,11 @@ class DateNode : public JSONExtractTreeNode<JSONParser>
 {
 public:
     bool insertResultToColumn(
-        IColumn & column, const typename JSONParser::Element & element, const JSONExtractInsertSettings &, const FormatSettings & format_settings, String & error) const override
+        IColumn & column,
+        const typename JSONParser::Element & element,
+        const JSONExtractInsertSettings &,
+        const FormatSettings & format_settings,
+        String & error) const override
     {
         if (element.isNull() && format_settings.null_as_default)
         {
@@ -595,7 +628,11 @@ public:
     explicit DateTimeNode(const DataTypeDateTime & datetime_type) : TimezoneMixin(datetime_type) { }
 
     bool insertResultToColumn(
-        IColumn & column, const typename JSONParser::Element & element, const JSONExtractInsertSettings &, const FormatSettings & format_settings, String & error) const override
+        IColumn & column,
+        const typename JSONParser::Element & element,
+        const JSONExtractInsertSettings &,
+        const FormatSettings & format_settings,
+        String & error) const override
     {
         if (element.isNull() && format_settings.null_as_default)
         {
@@ -656,7 +693,11 @@ public:
     explicit DecimalNode(const DataTypePtr & type) : scale(assert_cast<const DataTypeDecimal<DecimalType> &>(*type).getScale()) { }
 
     bool insertResultToColumn(
-        IColumn & column, const typename JSONParser::Element & element, const JSONExtractInsertSettings &, const FormatSettings & format_settings, String & error) const override
+        IColumn & column,
+        const typename JSONParser::Element & element,
+        const JSONExtractInsertSettings &,
+        const FormatSettings & format_settings,
+        String & error) const override
     {
         DecimalType value{};
 
@@ -688,7 +729,8 @@ public:
                 }
                 break;
             }
-            default: {
+            default:
+            {
                 error = fmt::format("cannot read Decimal value from JSON element: {}", jsonElementToString<JSONParser>(element, format_settings));
                 return false;
             }
@@ -707,10 +749,16 @@ template <typename JSONParser>
 class DateTime64Node : public JSONExtractTreeNode<JSONParser>, public TimezoneMixin
 {
 public:
-    explicit DateTime64Node(const DataTypeDateTime64 & datetime64_type) : TimezoneMixin(datetime64_type), scale(datetime64_type.getScale()) { }
+    explicit DateTime64Node(const DataTypeDateTime64 & datetime64_type) : TimezoneMixin(datetime64_type), scale(datetime64_type.getScale())
+    {
+    }
 
     bool insertResultToColumn(
-        IColumn & column, const typename JSONParser::Element & element, const JSONExtractInsertSettings &, const FormatSettings & format_settings, String & error) const override
+        IColumn & column,
+        const typename JSONParser::Element & element,
+        const JSONExtractInsertSettings &,
+        const FormatSettings & format_settings,
+        String & error) const override
     {
         if (element.isNull() && format_settings.null_as_default)
         {
@@ -790,7 +838,11 @@ public:
     }
 
     bool insertResultToColumn(
-        IColumn & column, const typename JSONParser::Element & element, const JSONExtractInsertSettings &, const FormatSettings & format_settings, String & error) const override
+        IColumn & column,
+        const typename JSONParser::Element & element,
+        const JSONExtractInsertSettings &,
+        const FormatSettings & format_settings,
+        String & error) const override
     {
         if (element.isNull())
         {
@@ -857,7 +909,11 @@ class IPv4Node : public JSONExtractTreeNode<JSONParser>
 {
 public:
     bool insertResultToColumn(
-        IColumn & column, const typename JSONParser::Element & element, const JSONExtractInsertSettings &, const FormatSettings & format_settings, String & error) const override
+        IColumn & column,
+        const typename JSONParser::Element & element,
+        const JSONExtractInsertSettings &,
+        const FormatSettings & format_settings,
+        String & error) const override
     {
         if (element.isNull() && format_settings.null_as_default)
         {
@@ -895,7 +951,11 @@ class IPv6Node : public JSONExtractTreeNode<JSONParser>
 {
 public:
     bool insertResultToColumn(
-        IColumn & column, const typename JSONParser::Element & element, const JSONExtractInsertSettings &, const FormatSettings & format_settings, String & error) const override
+        IColumn & column,
+        const typename JSONParser::Element & element,
+        const JSONExtractInsertSettings &,
+        const FormatSettings & format_settings,
+        String & error) const override
     {
         if (element.isNull() && format_settings.null_as_default)
         {
@@ -936,7 +996,11 @@ public:
     explicit NullableNode(std::unique_ptr<JSONExtractTreeNode<JSONParser>> nested_) : nested(std::move(nested_)) { }
 
     bool insertResultToColumn(
-        IColumn & column, const typename JSONParser::Element & element, const JSONExtractInsertSettings & insert_settings, const FormatSettings & format_settings, String & error) const override
+        IColumn & column,
+        const typename JSONParser::Element & element,
+        const JSONExtractInsertSettings & insert_settings,
+        const FormatSettings & format_settings,
+        String & error) const override
     {
         if (element.isNull())
         {
@@ -945,7 +1009,7 @@ public:
         }
 
         auto & col_null = assert_cast<ColumnNullable &>(column);
-        if (!nested-> insertResultToColumn(col_null.getNestedColumn(), element, insert_settings, format_settings, error))
+        if (!nested->insertResultToColumn(col_null.getNestedColumn(), element, insert_settings, format_settings, error))
             return false;
         col_null.getNullMapColumn().insertValue(0);
         return true;
@@ -965,7 +1029,11 @@ public:
     }
 
     bool insertResultToColumn(
-        IColumn & column, const typename JSONParser::Element & element, const JSONExtractInsertSettings & insert_settings, const FormatSettings & format_settings, String & error) const override
+        IColumn & column,
+        const typename JSONParser::Element & element,
+        const JSONExtractInsertSettings & insert_settings,
+        const FormatSettings & format_settings,
+        String & error) const override
     {
         if (element.isNull() && (is_nullable || format_settings.null_as_default))
         {
@@ -975,7 +1043,7 @@ public:
 
         auto & col_lc = assert_cast<ColumnLowCardinality &>(column);
         auto tmp_nested = col_lc.getDictionary().getNestedColumn()->cloneEmpty();
-        if (!nested-> insertResultToColumn(*tmp_nested, element, insert_settings, format_settings, error))
+        if (!nested->insertResultToColumn(*tmp_nested, element, insert_settings, format_settings, error))
             return false;
 
         col_lc.insertFromFullColumn(*tmp_nested, 0);
@@ -994,7 +1062,11 @@ public:
     explicit ArrayNode(std::unique_ptr<JSONExtractTreeNode<JSONParser>> nested_) : nested(std::move(nested_)) { }
 
     bool insertResultToColumn(
-        IColumn & column, const typename JSONParser::Element & element, const JSONExtractInsertSettings & insert_settings, const FormatSettings & format_settings, String & error) const override
+        IColumn & column,
+        const typename JSONParser::Element & element,
+        const JSONExtractInsertSettings & insert_settings,
+        const FormatSettings & format_settings,
+        String & error) const override
     {
         if (element.isNull() && format_settings.null_as_default)
         {
@@ -1017,7 +1089,7 @@ public:
 
         for (auto value : array)
         {
-            if (nested-> insertResultToColumn(data, value, insert_settings, format_settings, error))
+            if (nested->insertResultToColumn(data, value, insert_settings, format_settings, error))
             {
                 were_valid_elements = true;
             }
@@ -1058,7 +1130,11 @@ public:
     }
 
     bool insertResultToColumn(
-        IColumn & column, const typename JSONParser::Element & element, const JSONExtractInsertSettings & insert_settings, const FormatSettings & format_settings, String & error) const override
+        IColumn & column,
+        const typename JSONParser::Element & element,
+        const JSONExtractInsertSettings & insert_settings,
+        const FormatSettings & format_settings,
+        String & error) const override
     {
         auto & tuple = assert_cast<ColumnTuple &>(column);
         size_t old_size = column.size();
@@ -1087,7 +1163,7 @@ public:
 
             for (size_t index = 0; (index != nested.size()) && (it != array.end()); ++index)
             {
-                if (nested[index]-> insertResultToColumn(tuple.getColumn(index), *it++, insert_settings, format_settings, error))
+                if (nested[index]->insertResultToColumn(tuple.getColumn(index), *it++, insert_settings, format_settings, error))
                 {
                     were_valid_elements = true;
                 }
@@ -1115,7 +1191,7 @@ public:
                 auto it = object.begin();
                 for (size_t index = 0; (index != nested.size()) && (it != object.end()); ++index)
                 {
-                    if (nested[index]-> insertResultToColumn(tuple.getColumn(index), (*it++).second, insert_settings, format_settings, error))
+                    if (nested[index]->insertResultToColumn(tuple.getColumn(index), (*it++).second, insert_settings, format_settings, error))
                     {
                         were_valid_elements = true;
                     }
@@ -1138,7 +1214,7 @@ public:
                     auto index = name_to_index_map.find(key);
                     if (index != name_to_index_map.end())
                     {
-                        if (nested[index->second]-> insertResultToColumn(tuple.getColumn(index->second), value, insert_settings, format_settings, error))
+                        if (nested[index->second]->insertResultToColumn(tuple.getColumn(index->second), value, insert_settings, format_settings, error))
                         {
                             were_valid_elements = true;
                         }
@@ -1173,7 +1249,11 @@ public:
     explicit MapNode(std::unique_ptr<JSONExtractTreeNode<JSONParser>> value_) : value(std::move(value_)) { }
 
     bool insertResultToColumn(
-        IColumn & column, const typename JSONParser::Element & element, const JSONExtractInsertSettings & insert_settings, const FormatSettings & format_settings, String & error) const override
+        IColumn & column,
+        const typename JSONParser::Element & element,
+        const JSONExtractInsertSettings & insert_settings,
+        const FormatSettings & format_settings,
+        String & error) const override
     {
         if (!element.isObject())
         {
@@ -1198,7 +1278,7 @@ public:
             key_col.insertData(pair.first.data(), pair.first.size());
 
             /// Insert value
-            if (!value-> insertResultToColumn(value_col, pair.second, insert_settings, format_settings, error))
+            if (!value->insertResultToColumn(value_col, pair.second, insert_settings, format_settings, error))
             {
                 if (insert_settings.insert_default_on_invalid_elements_in_complex_types)
                 {
@@ -1232,13 +1312,17 @@ public:
     }
 
     bool insertResultToColumn(
-        IColumn & column, const typename JSONParser::Element & element, const JSONExtractInsertSettings & insert_settings, const FormatSettings & format_settings, String & error) const override
+        IColumn & column,
+        const typename JSONParser::Element & element,
+        const JSONExtractInsertSettings & insert_settings,
+        const FormatSettings & format_settings,
+        String & error) const override
     {
         auto & column_variant = assert_cast<ColumnVariant &>(column);
         for (size_t i : order)
         {
             auto & variant = column_variant.getVariantByGlobalDiscriminator(i);
-            if (variant_nodes[i]-> insertResultToColumn(variant, element, insert_settings, format_settings, error))
+            if (variant_nodes[i]->insertResultToColumn(variant, element, insert_settings, format_settings, error))
             {
                 column_variant.getLocalDiscriminators().push_back(column_variant.localDiscriminatorByGlobal(i));
                 column_variant.getOffsets().push_back(variant.size() - 1);
@@ -1262,19 +1346,31 @@ template <typename JSONParser>
 class DynamicNode : public JSONExtractTreeNode<JSONParser>
 {
 public:
-    bool insertResultToColumn(IColumn & column, const typename JSONParser::Element & element, const JSONExtractInsertSettings & insert_settings, const FormatSettings & format_settings, String & error) const override
+    bool insertResultToColumn(
+        IColumn & column,
+        const typename JSONParser::Element & element,
+        const JSONExtractInsertSettings & insert_settings,
+        const FormatSettings & format_settings,
+        String & error) const override
     {
         auto & column_dynamic = assert_cast<ColumnDynamic &>(column);
+        /// First, check if element is NULL.
+        if (element.isNull())
+        {
+            column_dynamic.insertDefault();
+            return true;
+        }
+
         auto & variant_column = column_dynamic.getVariantColumn();
         auto variant_info = column_dynamic.getVariantInfo();
-        /// First, infer ClickHouse type for this element and add it as a new variant.
+        /// Second, infer ClickHouse type for this element and add it as a new variant.
         auto element_type = elementToDataType(element, format_settings);
         if (column_dynamic.addNewVariant(element_type))
         {
             auto node = buildJSONExtractTree<JSONParser>(element_type, "Dynamic inference");
             auto global_discriminator = variant_info.variant_name_to_discriminator[element_type->getName()];
             auto & variant = variant_column.getVariantByGlobalDiscriminator(global_discriminator);
-            if (!node-> insertResultToColumn(variant, element, insert_settings, format_settings, error))
+            if (!node->insertResultToColumn(variant, element, insert_settings, format_settings, error))
                 return false;
             variant_column.getLocalDiscriminators().push_back(variant_column.localDiscriminatorByGlobal(global_discriminator));
             variant_column.getOffsets().push_back(variant.size() - 1);
@@ -1283,14 +1379,14 @@ public:
 
         /// We couldn't add new variant. Try to insert element into current variants.
         auto variant_node = buildJSONExtractTree<JSONParser>(variant_info.variant_type, "Dynamic inference");
-        if (variant_node-> insertResultToColumn(variant_column, element, insert_settings, format_settings, error))
+        if (variant_node->insertResultToColumn(variant_column, element, insert_settings, format_settings, error))
             return true;
 
         /// We couldn't insert element into any existing variant, add String variant and read value as String.
         column_dynamic.addStringVariant();
         auto string_global_discriminator = variant_info.variant_name_to_discriminator["String"];
         auto & string_column = variant_column.getVariantByGlobalDiscriminator(string_global_discriminator);
-        if (!getStringNode()-> insertResultToColumn(string_column, element, insert_settings, format_settings, error))
+        if (!getStringNode()->insertResultToColumn(string_column, element, insert_settings, format_settings, error))
             return false;
         variant_column.getLocalDiscriminators().push_back(variant_column.localDiscriminatorByGlobal(string_global_discriminator));
         variant_column.getOffsets().push_back(string_column.size() - 1);
@@ -1341,12 +1437,9 @@ private:
 
                 if (format_settings.json.try_infer_numbers_from_strings)
                 {
-                    bool is_negative = false;
                     if (auto type = tryInferJSONNumberFromString(data, format_settings, &json_inference_info))
                     {
                         json_inference_info.numbers_parsed_from_json_strings.insert(type.get());
-                        if (is_negative)
-                            json_inference_info.negative_integers.insert(type.get());
                         return type;
                     }
                 }
@@ -1465,9 +1558,9 @@ std::unique_ptr<JSONExtractTreeNode<JSONParser>> buildJSONExtractTree(const Data
         case TypeIndex::LowCardinality:
         {
             /// To optimize inserting into LowCardinality we have special nodes for LowCardinality of numeric and string types.
-            auto lc_type = typeid_cast<const DataTypeLowCardinality *>(type.get());
-            auto dictionary_type = removeNullable(lc_type->getDictionaryType());
-            bool is_nullable = lc_type->isLowCardinalityNullable();
+            const auto & lc_type = assert_cast<const DataTypeLowCardinality &>(*type);
+            auto dictionary_type = removeNullable(lc_type.getDictionaryType());
+            bool is_nullable = lc_type.isLowCardinalityNullable();
 
             switch (dictionary_type->getTypeId())
             {
@@ -1558,6 +1651,7 @@ template std::unique_ptr<JSONExtractTreeNode<SimdJSONParser>> buildJSONExtractTr
 #if USE_RAPIDJSON
 template void jsonElementToString<RapidJSONParser>(const RapidJSONParser::Element & element, WriteBuffer & buf, const FormatSettings & format_settings);
 template std::unique_ptr<JSONExtractTreeNode<RapidJSONParser>> buildJSONExtractTree<RapidJSONParser>(const DataTypePtr & type, const char * source_for_exception_message);
+template bool tryGetNumericValueFromJSONElement<RapidJSONParser, Float64>(Float64 & value, const RapidJSONParser::Element & element, bool convert_bool_to_integer, String & error);
 #else
 template void jsonElementToString<DummyJSONParser>(const DummyJSONParser::Element & element, WriteBuffer & buf, const FormatSettings & format_settings);
 template std::unique_ptr<JSONExtractTreeNode<DummyJSONParser>> buildJSONExtractTree<DummyJSONParser>(const DataTypePtr & type, const char * source_for_exception_message);
