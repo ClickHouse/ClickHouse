@@ -676,37 +676,68 @@ class CiCache:
 
     def filter_out_not_affected_jobs(self):
         """
-        removes the following jobs from to_do and to_wait lists:
-         test jobs - as not affected by the change
-         build jobs which are not required by left test jobs
+        Filter is to be applied in PRs to remove jobs that are not affected by the change
+        It removes jobs from @jobs_to_do if it is a:
+         1. test job and it is in @jobs_to_wait (no need to wait not affected jobs in PRs)
+         2. test job and it has finished on release branch (even if failed)
+         2. build job which is not required by any test job that is left in @jobs_to_do
+
         :return:
         """
+        # 1.
         remove_from_await_list = []
         for job_name, job_config in self.jobs_to_wait.items():
-            if CI.is_test_job(job_name):
+            if CI.is_test_job(job_name) and job_name != CI.JobNames.BUILD_CHECK:
                 remove_from_await_list.append(job_name)
         for job in remove_from_await_list:
             print(f"Filter job [{job}] - test job and not affected by the change")
             del self.jobs_to_wait[job]
             del self.jobs_to_do[job]
 
-        required_builds = list()
+        # 2.
+        remove_from_to_do = []
+        for job_name, job_config in self.jobs_to_do.items():
+            if CI.is_test_job(job_name):
+                batches_to_remove = []
+                if job_config.batches is not None:
+                    for batch in job_config.batches:
+                        if self.is_failed(
+                            job_name, batch, job_config.num_batches, release_branch=True
+                        ):
+                            print(
+                                f"Filter [{job_name}/{batch}] - not affected by the change (failed on release branch)"
+                            )
+                            batches_to_remove.append(batch)
+                for batch in batches_to_remove:
+                    job_config.batches.remove(batch)
+                if not job_config.batches:
+                    print(
+                        f"Filter [{job_name}] - not affected by the change (failed on release branch)"
+                    )
+                    remove_from_to_do.append(job_name)
+        for job in remove_from_to_do:
+            del self.jobs_to_do[job]
+
+        # 3.
+        required_builds = []  # type: List[str]
         for job_name, job_config in self.jobs_to_do.items():
             if CI.is_test_job(job_name) and job_config.required_builds:
                 required_builds += job_config.required_builds
         required_builds = list(set(required_builds))
 
-        remove_builds = []
+        remove_builds = []  # type: List[str]
         has_builds_to_do = False
         for job_name, job_config in self.jobs_to_do.items():
             if CI.is_build_job(job_name):
                 if job_name not in required_builds:
-                    remove_builds += job_name
+                    remove_builds.append(job_name)
                 else:
                     has_builds_to_do = True
 
         for build_job in remove_builds:
-            print(f"Filter build job [{build_job}] - not affected and not required by test jobs")
+            print(
+                f"Filter build job [{build_job}] - not affected and not required by test jobs"
+            )
             del self.jobs_to_do[build_job]
             if build_job in self.jobs_to_wait:
                 del self.jobs_to_wait[build_job]
