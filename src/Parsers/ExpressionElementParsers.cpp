@@ -295,12 +295,21 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
     SpecialDelimiter last_special_delimiter = SpecialDelimiter::NONE;
     ASTs params;
 
-    bool parsed_delimiter = true;
-    while (parsed_delimiter)
+    bool is_first = true;
+    Pos begin = pos;
+    while (true)
     {
         ASTPtr element;
         if (!element_parser->parse(pos, element, expected))
-            return false;
+        {
+            if (is_first)
+                return false;
+            pos = begin;
+            break;
+        }
+
+        is_first = false;
+
         if (last_special_delimiter != SpecialDelimiter::NONE)
             parts.push_back(static_cast<char>(last_special_delimiter) + backQuote(getIdentifierName(element)));
         else
@@ -309,7 +318,8 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
         if (parts.back().empty())
             params.push_back(element->as<ASTIdentifier>()->getParam());
 
-        parsed_delimiter = false;
+        begin = pos;
+        bool parsed_delimiter = false;
         for (const auto & [parser, special_delimiter] : delimiter_parsers)
         {
             if (parser->check(pos, expected))
@@ -318,6 +328,12 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
                 last_special_delimiter = special_delimiter;
                 break;
             }
+        }
+
+        if (!parsed_delimiter)
+        {
+            pos = begin;
+            break;
         }
     }
 

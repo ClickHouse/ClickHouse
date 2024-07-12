@@ -81,7 +81,6 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
               {"postgresql_connection_pool_retries", 2, 2, "Allow to control the number of retries in PostgreSQL connection pool."},
               {"allow_experimental_json_type", false, false, "Add new experimental JSON type"},
               {"use_json_alias_for_old_object_type", true, false, "Use JSON type alias to create new JSON type"},
-              {"input_format_json_try_infer_numbers_from_strings", false, true, "Infer numbers from strings in JSON formats for better usability of new JSON object"},
               }},
     {"24.6", {{"materialize_skip_indexes_on_insert", true, true, "Added new setting to allow to disable materialization of skip indexes on insert"},
               {"materialize_statistics_on_insert", true, true, "Added new setting to allow to disable materialization of statistics on insert"},
