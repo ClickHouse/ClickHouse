@@ -224,10 +224,10 @@ void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTables
                 if (fs::exists(full_path.string() + detached_suffix))
                 {
                     const std::string table_name = unescapeForFileName(file_name.substr(0, file_name.size() - 4));
-                    permanently_detached_tables.push_back(table_name);
                     LOG_DEBUG(log, "Skipping permanently detached table {}.", backQuote(table_name));
 
                     std::lock_guard lock(mutex);
+                    permanently_detached_tables.push_back(table_name);
 
                     const auto detached_table_name = create_query->getTable();
 

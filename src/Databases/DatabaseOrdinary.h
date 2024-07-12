@@ -67,7 +67,11 @@ public:
         const StorageID & table_id,
         const StorageInMemoryMetadata & metadata) override;
 
-    Strings getNamesOfPermanentlyDetachedTables() const override { return permanently_detached_tables; }
+    Strings getNamesOfPermanentlyDetachedTables() const override
+    {
+        std::lock_guard lock(mutex);
+        return permanently_detached_tables;
+    }
 
 protected:
     virtual void commitAlterTable(
@@ -77,7 +81,7 @@ protected:
         const String & statement,
         ContextPtr query_context);
 
-    Strings permanently_detached_tables;
+    Strings permanently_detached_tables TSA_GUARDED_BY(mutex);
 
     std::unordered_map<String, LoadTaskPtr> load_table TSA_GUARDED_BY(mutex);
     std::unordered_map<String, LoadTaskPtr> startup_table TSA_GUARDED_BY(mutex);
