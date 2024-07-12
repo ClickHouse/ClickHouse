@@ -248,6 +248,10 @@ std::vector<String> Client::loadWarningMessages()
     }
 }
 
+Poco::Util::LayeredConfiguration & Client::getClientConfiguration()
+{
+    return config();
+}
 
 void Client::initialize(Poco::Util::Application & self)
 {
@@ -697,9 +701,7 @@ bool Client::processWithFuzzing(const String & full_query)
         const char * begin = full_query.data();
         orig_ast = parseQuery(begin, begin + full_query.size(),
             global_context->getSettingsRef(),
-            /*allow_multi_statements=*/ true,
-            /*is_interactive=*/ is_interactive,
-            /*ignore_error=*/ ignore_error);
+            /*allow_multi_statements=*/ true);
     }
     catch (const Exception & e)
     {
@@ -1115,6 +1117,7 @@ void Client::processOptions(const OptionsDescription & options_description,
         if (!options["user"].defaulted())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "User and JWT flags can't be specified together");
         config().setString("jwt", options["jwt"].as<std::string>());
+        config().setString("user", "");
     }
     if (options.count("accept-invalid-certificate"))
     {

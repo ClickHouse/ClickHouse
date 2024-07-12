@@ -59,6 +59,7 @@ public:
               */
             pos = working_buffer.begin();
             bytes += bytes_in_buffer;
+
             throw;
         }
 
@@ -75,7 +76,6 @@ public:
         if (!hasPendingData())
             next();
     }
-
 
     void write(const char * from, size_t n)
     {
@@ -122,6 +122,9 @@ public:
         if (finalized)
             return;
 
+        if (canceled)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot finalize buffer after cancellation.");
+
         LockMemoryExceptionInThread lock(VariableContext::Global);
         try
         {
@@ -131,10 +134,14 @@ public:
         catch (...)
         {
             pos = working_buffer.begin();
-            finalized = true;
+
+            cancel();
+
             throw;
         }
     }
+
+    void cancel() noexcept;
 
     /// Wait for data to be reliably written. Mainly, call fsync for fd.
     /// May be called after finalize() if needed.
@@ -151,7 +158,12 @@ protected:
         next();
     }
 
+    virtual void cancelImpl() noexcept
+    {
+    }
+
     bool finalized = false;
+    bool canceled = false;
 
     /// The number of bytes to preserve from the initial position of `working_buffer`
     /// buffer. Apparently this is an additional out-parameter for nextImpl(),

@@ -29,7 +29,14 @@
           -->
         <size>1000M</size>
         <count>10</count>
+
         <!-- <console>1</console> --> <!-- Default behavior is autodetection (log to console if not daemon mode and is tty) -->
+        <!-- <console_log_level>trace</console_log_level> -->
+
+        <!-- <use_syslog>0</use_syslog> -->
+        <!-- <syslog_level>trace</syslog_level> -->
+
+        <!-- <stream_compress>0</stream_compress> -->
 
         <!-- Per level overrides (legacy):
 
