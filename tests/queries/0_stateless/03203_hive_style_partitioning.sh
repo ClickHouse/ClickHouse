@@ -104,4 +104,4 @@ $CLICKHOUSE_CLIENT -n -q """
 set use_hive_partitioning = 0;
 
 SELECT *, _column0 FROM s3('http://localhost:11111/test/hive_partitioning/column0=Elizabeth/sample.parquet') LIMIT 10;
-""" 2>&1 | grep -c "UNKNOWN_IDENTIFIER"
+""" 2>&1 | grep -F -q "UNKNOWN_IDENTIFIER" && echo "OK" || echo "FAIL";
