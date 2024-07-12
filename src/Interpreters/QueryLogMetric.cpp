@@ -19,9 +19,6 @@
 #include <chrono>
 #include <mutex>
 
-#include <Common/logger_useful.h>
-
-
 namespace CurrentMetrics
 {
     extern const Metric MemoryTracking;
@@ -102,8 +99,6 @@ void QueryLogMetric::startQuery(const String & query_id, TimePoint query_start_t
     for (ProfileEvents::Event i = ProfileEvents::Event(0), end = ProfileEvents::end(); i < end; ++i)
         status.last_profile_events[i] = profile_events[i].load(std::memory_order_relaxed);
 
-    LOG_DEBUG(getLogger("PMO"), "Starting query {}", query_id);
-
     std::lock_guard lock(queries_mutex);
     queries.emplace(std::move(status));
 
@@ -118,17 +113,9 @@ void QueryLogMetric::startQuery(const String & query_id, TimePoint query_start_t
 
 void QueryLogMetric::finishQuery(const String & query_id)
 {
-    LOG_DEBUG(getLogger("PMO"), "Finishing query {}", query_id);
     std::lock_guard lock(queries_mutex);
     auto & queries_by_name = queries.get<0>();
-    if (queries_by_name.erase(query_id) != 0)
-    {
-        LOG_DEBUG(getLogger("PMO"), "Removing query {}", query_id);
-    }
-    else
-    {
-        LOG_DEBUG(getLogger("PMO"), "Query {} not found when trying to remove it", query_id);
-    }
+    queries_by_name.erase(query_id);
 }
 
 void QueryLogMetric::threadFunction()
@@ -156,9 +143,7 @@ void QueryLogMetric::threadFunction()
             }
 
             std::unique_lock cv_lock(queries_cv_mutex);
-            LOG_DEBUG(getLogger("PMO"), "Before the wait");
             queries_cv.wait_until(cv_lock, desired_timepoint);
-            LOG_DEBUG(getLogger("PMO"), "After the wait");
         }
         catch (...)
         {
@@ -199,26 +184,17 @@ void QueryLogMetric::stepFunction(TimePoint current_time)
 {
     static const auto & process_list = context->getProcessList();
 
-    LOG_DEBUG(getLogger("PMO"), "QueryLogMetric::stepFunction");
     auto & queries_by_next_collect_time = queries.get<1>();
     for (const auto & query_status : queries_by_next_collect_time)
     {
         // The queries are already sorted by next_collect_time, so once we find a query with a next_collect_time
         // in the future, we know we don't need to collect data anymore
         if (query_status.next_collect_time > current_time)
-        {
-            LOG_DEBUG(getLogger("PMO"), "Skipping query {} because it's too early. Now {}, next collect time {}", query_status.query_id, current_time.time_since_epoch().count(), query_status.next_collect_time.time_since_epoch().count());
             break;
-        }
-
-        LOG_DEBUG(getLogger("PMO"), "Collecting query {}", query_status.query_id);
 
         const auto query_info = process_list.getQueryInfo(query_status.query_id, false, true, false);
         if (!query_info)
-        {
-            LOG_DEBUG(getLogger("PMO"), "Removing query {} because it's not running anymore", query_status.query_id);
             continue;
-        }
 
         auto elem = createLogMetricElement(query_status.query_id, query_info->profile_counters, current_time);
         add(std::move(elem));
