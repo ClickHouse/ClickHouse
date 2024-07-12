@@ -29,8 +29,6 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/StorageSnapshot.h>
 #include <Storages/buildQueryTreeForShard.h>
-#include <Planner/Utils.h>
-#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Processors/QueryPlan/ParallelReplicasLocalPlan.h>
 #include <Storages/getStructureOfRemoteTable.h>
 

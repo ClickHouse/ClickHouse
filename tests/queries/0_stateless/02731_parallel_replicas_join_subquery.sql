@@ -23,6 +23,7 @@ LIMIT 100;
 
 SET max_parallel_replicas = 3;
 SET cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
+SET parallel_replicas_local_plan = 1;
 SET joined_subquery_requires_alias = 0;
 
 SELECT '=============== INNER QUERY (NO PARALLEL) ===============';
