@@ -14,7 +14,6 @@ node2 = cluster.add_instance(
     tag=CLICKHOUSE_CI_MIN_TESTED_VERSION,
     with_installed_binary=True,
     stay_alive=True,
-    allow_analyzer=False,
 )
 
 

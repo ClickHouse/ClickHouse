@@ -230,7 +230,7 @@ void MergeTreeColumnSettings::validate(const SettingsChanges & changes)
                 "Setting {} is unknown or not supported at column level, supported settings: {}",
                 change.name,
                 fmt::join(allowed_column_level_settings, ", "));
-        merge_tree_settings.checkCanSet(change.name, change.value);
+        MergeTreeSettings::checkCanSet(change.name, change.value);
     }
 }
 

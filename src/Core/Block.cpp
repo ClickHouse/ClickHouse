@@ -1,19 +1,17 @@
-#include <Common/Exception.h>
-#include <Common/FieldVisitorToString.h>
-
-#include <Core/Block.h>
-
-#include <IO/WriteBufferFromString.h>
-#include <IO/Operators.h>
-
-#include <Common/assert_cast.h>
-
+#include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSparse.h>
+#include <Core/Block.h>
+#include <IO/Operators.h>
+#include <IO/WriteBufferFromString.h>
+#include <base/sort.h>
+#include <Common/Exception.h>
+#include <Common/FieldVisitorToString.h>
+#include <Common/assert_cast.h>
 
 #include <iterator>
-#include <base/sort.h>
+
 #include <boost/algorithm/string.hpp>
 
 
@@ -602,6 +600,24 @@ Block Block::shrinkToFit() const
     Columns new_columns(data.size(), nullptr);
     for (size_t i = 0; i < data.size(); ++i)
         new_columns[i] = data[i].column->cloneResized(data[i].column->size());
+    return cloneWithColumns(new_columns);
+}
+
+Block Block::compress() const
+{
+    size_t num_columns = data.size();
+    Columns new_columns(num_columns);
+    for (size_t i = 0; i < num_columns; ++i)
+        new_columns[i] = data[i].column->compress();
+    return cloneWithColumns(new_columns);
+}
+
+Block Block::decompress() const
+{
+    size_t num_columns = data.size();
+    Columns new_columns(num_columns);
+    for (size_t i = 0; i < num_columns; ++i)
+        new_columns[i] = data[i].column->decompress();
     return cloneWithColumns(new_columns);
 }
 

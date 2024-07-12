@@ -80,7 +80,7 @@ protected:
 
         for (const auto & col : key_columns)
         {
-            if (const auto * nullable = checkAndGetColumn<ColumnNullable>(*col))
+            if (const auto * nullable = checkAndGetColumn<ColumnNullable>(&*col))
             {
                 actual_columns.push_back(&nullable->getNestedColumn());
                 null_maps.push_back(&nullable->getNullMapColumn());
@@ -254,7 +254,7 @@ struct SetVariantsTemplate: public Variant
         APPLY_FOR_SET_VARIANTS(M)
     #undef M
 
-    enum class Type
+    enum class Type : uint8_t
     {
         EMPTY,
 

@@ -20,6 +20,7 @@
 #include <Poco/Util/Application.h>
 
 #include <istream>
+#include <sstream>
 #include <unordered_map>
 #include <Common/ProxyConfiguration.h>
 
@@ -47,7 +48,7 @@ HTTPSessionPtr makeHTTPSession(
     HTTPConnectionGroupType group,
     const Poco::URI & uri,
     const ConnectionTimeouts & timeouts,
-    ProxyConfiguration proxy_configuration)
+    const ProxyConfiguration & proxy_configuration)
 {
     auto connection_pool = HTTPConnectionPools::instance().getPool(group, uri, proxy_configuration);
     return connection_pool->getConnection(timeouts);

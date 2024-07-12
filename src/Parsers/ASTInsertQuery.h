@@ -24,7 +24,6 @@ public:
     ASTPtr settings_ast;
 
     ASTPtr select;
-    ASTPtr watch;
     ASTPtr infile;
     ASTPtr compression;
 
@@ -63,7 +62,6 @@ public:
         if (partition_by) { res->partition_by = partition_by->clone(); res->children.push_back(res->partition_by); }
         if (settings_ast) { res->settings_ast = settings_ast->clone(); res->children.push_back(res->settings_ast); }
         if (select) { res->select = select->clone(); res->children.push_back(res->select); }
-        if (watch) { res->watch = watch->clone(); res->children.push_back(res->watch); }
         if (infile) { res->infile = infile->clone(); res->children.push_back(res->infile); }
         if (compression) { res->compression = compression->clone(); res->children.push_back(res->compression); }
 

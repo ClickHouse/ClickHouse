@@ -29,6 +29,16 @@ struct TextLogElement
     UInt64 source_line{};
 
     std::string_view message_format_string;
+    String value1;
+    String value2;
+    String value3;
+    String value4;
+    String value5;
+    String value6;
+    String value7;
+    String value8;
+    String value9;
+    String value10;
 
     static std::string name() { return "TextLog"; }
     static ColumnsDescription getColumnsDescription();

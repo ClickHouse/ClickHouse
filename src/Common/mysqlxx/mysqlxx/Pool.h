@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Common/Logger.h>
+
 #include <list>
 #include <memory>
 #include <mutex>
@@ -60,17 +62,6 @@ public:
         ~Entry()
         {
             decrementRefCount();
-        }
-
-        Entry & operator= (const Entry & src) /// NOLINT
-        {
-            pool = src.pool;
-            if (data)
-                decrementRefCount();
-            data = src.data;
-            if (data)
-                incrementRefCount();
-            return * this;
         }
 
         bool isNull() const

@@ -1,7 +1,8 @@
-from contextlib import contextmanager
 import os
-from typing import Any, List, Union, Iterator
+import subprocess
+from contextlib import contextmanager
 from pathlib import Path
+from typing import Any, Iterator, List, Union
 
 
 class WithIter(type):
@@ -28,16 +29,10 @@ def is_hex(s):
 
 
 def normalize_string(string: str) -> str:
-    lowercase_string = string.lower()
-    normalized_string = (
-        lowercase_string.replace(" ", "_")
-        .replace("-", "_")
-        .replace("/", "_")
-        .replace("(", "")
-        .replace(")", "")
-        .replace(",", "")
-    )
-    return normalized_string
+    res = string.lower()
+    for r in ((" ", "_"), ("(", "_"), (")", "_"), (",", "_"), ("/", "_"), ("-", "_")):
+        res = res.replace(*r)
+    return res
 
 
 class GHActions:
@@ -48,3 +43,43 @@ class GHActions:
         for line in lines:
             print(line)
         print("::endgroup::")
+
+
+class Shell:
+    @classmethod
+    def run_strict(cls, command):
+        subprocess.run(
+            command + " 2>&1",
+            shell=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=True,
+        )
+
+    @classmethod
+    def run(cls, command):
+        res = ""
+        result = subprocess.run(
+            command,
+            shell=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=False,
+        )
+        if result.returncode == 0:
+            res = result.stdout
+        return res.strip()
+
+    @classmethod
+    def check(cls, command):
+        result = subprocess.run(
+            command + " 2>&1",
+            shell=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=False,
+        )
+        return result.returncode == 0

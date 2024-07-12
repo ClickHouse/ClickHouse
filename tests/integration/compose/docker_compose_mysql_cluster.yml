@@ -22,6 +22,7 @@ services:
             - type: ${MYSQL_CLUSTER_LOGS_FS:-tmpfs}
               source: ${MYSQL_CLUSTER_LOGS:-}
               target: /mysql/
+        user: ${MYSQL_CLUSTER_DOCKER_USER}
     mysql3:
         image: mysql:8.0
         restart: always
@@ -44,6 +45,7 @@ services:
             - type: ${MYSQL_CLUSTER_LOGS_FS:-tmpfs}
               source: ${MYSQL_CLUSTER_LOGS:-}
               target: /mysql/
+        user: ${MYSQL_CLUSTER_DOCKER_USER}
     mysql4:
         image: mysql:8.0
         restart: always
@@ -66,3 +68,4 @@ services:
             - type: ${MYSQL_CLUSTER_LOGS_FS:-tmpfs}
               source: ${MYSQL_CLUSTER_LOGS:-}
               target: /mysql/
+        user: ${MYSQL_CLUSTER_DOCKER_USER}

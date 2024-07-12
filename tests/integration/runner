@@ -285,11 +285,11 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        "--analyzer",
+        "--old-analyzer",
         action="store_true",
         default=False,
-        dest="analyzer",
-        help="Use new analyzer infrastructure",
+        dest="old_analyzer",
+        help="Use old analyzer infrastructure",
     )
 
     parser.add_argument(
@@ -385,9 +385,9 @@ if __name__ == "__main__":
     if args.keyword_expression:
         args.pytest_args += ["-k", args.keyword_expression]
 
-    use_analyzer = ""
-    if args.analyzer:
-        use_analyzer = "-e CLICKHOUSE_USE_NEW_ANALYZER=1"
+    use_old_analyzer = ""
+    if args.old_analyzer:
+        use_old_analyzer = "-e CLICKHOUSE_USE_OLD_ANALYZER=1"
 
     # NOTE: since pytest options is in the argument value already we need to additionally escape '"'
     pytest_opts = " ".join(
@@ -408,7 +408,7 @@ if __name__ == "__main__":
         f"--volume={args.utils_dir}/backupview:/ClickHouse/utils/backupview "
         f"--volume={args.utils_dir}/grpc-client/pb2:/ClickHouse/utils/grpc-client/pb2 "
         f"--volume=/run:/run/host:ro {dockerd_internal_volume} {env_tags} {env_cleanup} "
-        f"-e DOCKER_CLIENT_TIMEOUT=300 -e COMPOSE_HTTP_TIMEOUT=600 {use_analyzer} -e PYTHONUNBUFFERED=1 "
+        f"-e DOCKER_CLIENT_TIMEOUT=300 -e COMPOSE_HTTP_TIMEOUT=600 {use_old_analyzer} -e PYTHONUNBUFFERED=1 "
         f'-e PYTEST_ADDOPTS="{parallel_args} {pytest_opts} {tests_list} {rand_args} -vvv"'
         f" {DIND_INTEGRATION_TESTS_IMAGE_NAME}:{args.docker_image_version}"
     )

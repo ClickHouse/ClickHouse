@@ -21,3 +21,4 @@ services:
             - type: ${MYSQL8_LOGS_FS:-tmpfs}
               source: ${MYSQL8_LOGS:-}
               target: /mysql/
+        user: ${MYSQL8_DOCKER_USER}

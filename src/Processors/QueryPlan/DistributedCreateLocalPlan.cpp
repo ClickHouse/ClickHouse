@@ -1,8 +1,6 @@
 #include <Processors/QueryPlan/DistributedCreateLocalPlan.h>
 
-#include <Common/config_version.h>
 #include <Common/checkStackSize.h>
-#include <Core/ProtocolDefines.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
@@ -68,6 +66,10 @@ std::unique_ptr<QueryPlan> createLocalPlan(
 
     if (context->getSettingsRef().allow_experimental_analyzer)
     {
+        /// For Analyzer, identifier in GROUP BY/ORDER BY/LIMIT BY lists has been resolved to
+        /// ConstantNode in QueryTree if it is an alias of a constant, so we should not replace
+        /// ConstantNode with ProjectionNode again(https://github.com/ClickHouse/ClickHouse/issues/62289).
+        new_context->setSetting("enable_positional_arguments", Field(false));
         auto interpreter = InterpreterSelectQueryAnalyzer(query_ast, new_context, select_query_options);
         query_plan = std::make_unique<QueryPlan>(std::move(interpreter).extractQueryPlan());
     }

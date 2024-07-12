@@ -1635,7 +1635,7 @@ def test_alter_with_merge_work(started_cluster, name, engine, positive):
         optimize_table(20)
 
         if positive:
-            assert check_used_disks_with_retry(node1, name, set(["external"]), 50)
+            assert check_used_disks_with_retry(node1, name, set(["external"]), 100)
         else:
             assert check_used_disks_with_retry(node1, name, set(["jbod1", "jbod2"]), 50)
 
@@ -1850,7 +1850,7 @@ class TestCancelBackgroundMoving:
         config = inspect.cleandoc(
             f"""
             <clickhouse>
-                <max_local_write_bandwidth_for_server>{ 256 * 1024 }</max_local_write_bandwidth_for_server>
+                <max_local_write_bandwidth_for_server>{256 * 1024}</max_local_write_bandwidth_for_server>
             </clickhouse>
             """
         )

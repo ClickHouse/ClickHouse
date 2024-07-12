@@ -1,5 +1,5 @@
 #pragma once
-#include <AggregateFunctions/IAggregateFunction.h>
+#include <AggregateFunctions/IAggregateFunction_fwd.h>
 
 #include <Common/HashTable/FixedHashMap.h>
 #include <Common/HashTable/StringHashMap.h>

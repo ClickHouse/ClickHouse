@@ -63,13 +63,13 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-enum class ExecutionErrorPolicy
+enum class ExecutionErrorPolicy : uint8_t
 {
     Null,
     Throw
 };
 
-enum class HaystackNeedleOrderIsConfigurable
+enum class HaystackNeedleOrderIsConfigurable : uint8_t
 {
     No,     /// function arguments are always: (haystack, needle[, position])
     Yes     /// depending on a setting, the function arguments are (haystack, needle[, position]) or (needle, haystack[, position])
@@ -81,7 +81,7 @@ template <typename Impl,
 class FunctionsStringSearch : public IFunction
 {
 private:
-    enum class ArgumentOrder
+    enum class ArgumentOrder : uint8_t
     {
         HaystackNeedle,
         NeedleHaystack

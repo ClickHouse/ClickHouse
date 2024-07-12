@@ -56,9 +56,9 @@ namespace
             const std::shared_ptr<const S3::Client> & client_ptr_,
             const String & dest_bucket_,
             const String & dest_key_,
-            const S3Settings::RequestSettings & request_settings_,
+            const S3::RequestSettings & request_settings_,
             const std::optional<std::map<String, String>> & object_metadata_,
-            ThreadPoolCallbackRunner<void> schedule_,
+            ThreadPoolCallbackRunnerUnsafe<void> schedule_,
             bool for_disk_s3_,
             BlobStorageLogWriterPtr blob_storage_log_,
             const LoggerPtr log_)
@@ -66,7 +66,6 @@ namespace
             , dest_bucket(dest_bucket_)
             , dest_key(dest_key_)
             , request_settings(request_settings_)
-            , upload_settings(request_settings.getUploadSettings())
             , object_metadata(object_metadata_)
             , schedule(schedule_)
             , for_disk_s3(for_disk_s3_)
@@ -81,10 +80,9 @@ namespace
         std::shared_ptr<const S3::Client> client_ptr;
         const String & dest_bucket;
         const String & dest_key;
-        const S3Settings::RequestSettings & request_settings;
-        const S3Settings::RequestSettings::PartUploadSettings & upload_settings;
+        const S3::RequestSettings & request_settings;
         const std::optional<std::map<String, String>> & object_metadata;
-        ThreadPoolCallbackRunner<void> schedule;
+        ThreadPoolCallbackRunnerUnsafe<void> schedule;
         bool for_disk_s3;
         BlobStorageLogWriterPtr blob_storage_log;
         const LoggerPtr log;
@@ -127,8 +125,8 @@ namespace
             if (object_metadata.has_value())
                 request.SetMetadata(object_metadata.value());
 
-            const auto & storage_class_name = upload_settings.storage_class_name;
-            if (!storage_class_name.empty())
+            const auto & storage_class_name = request_settings.storage_class_name;
+            if (!storage_class_name.value.empty())
                 request.SetStorageClass(Aws::S3::Model::StorageClassMapper::GetStorageClassForName(storage_class_name));
 
             client_ptr->setKMSHeaders(request);
@@ -140,7 +138,7 @@ namespace
             fillCreateMultipartRequest(request);
 
             ProfileEvents::increment(ProfileEvents::S3CreateMultipartUpload);
-            if (for_disk_s3)
+            if (client_ptr->isClientForDisk())
                 ProfileEvents::increment(ProfileEvents::DiskS3CreateMultipartUpload);
 
             auto outcome = client_ptr->CreateMultipartUpload(request);
@@ -149,16 +147,18 @@ namespace
                                            dest_bucket, dest_key, /* local_path_ */ {}, /* data_size */ 0,
                                            outcome.IsSuccess() ? nullptr : &outcome.GetError());
 
-            if (outcome.IsSuccess())
-            {
-                multipart_upload_id = outcome.GetResult().GetUploadId();
-                LOG_TRACE(log, "Multipart upload has created. Bucket: {}, Key: {}, Upload id: {}", dest_bucket, dest_key, multipart_upload_id);
-            }
-            else
+            if (!outcome.IsSuccess())
             {
                 ProfileEvents::increment(ProfileEvents::WriteBufferFromS3RequestsErrors, 1);
                 throw S3Exception(outcome.GetError().GetMessage(), outcome.GetError().GetErrorType());
             }
+            multipart_upload_id = outcome.GetResult().GetUploadId();
+            if (multipart_upload_id.empty())
+            {
+                ProfileEvents::increment(ProfileEvents::WriteBufferFromS3RequestsErrors, 1);
+                throw Exception(ErrorCodes::S3_ERROR, "Invalid CreateMultipartUpload result: missing UploadId.");
+            }
+            LOG_TRACE(log, "Multipart upload was created. Bucket: {}, Key: {}, Upload id: {}", dest_bucket, dest_key, multipart_upload_id);
         }
 
         void completeMultipartUpload()
@@ -185,19 +185,14 @@ namespace
 
             request.SetMultipartUpload(multipart_upload);
 
-            size_t max_retries = std::max(request_settings.max_unexpected_write_error_retries, 1UL);
+            size_t max_retries = std::max<UInt64>(request_settings.max_unexpected_write_error_retries.value, 1UL);
             for (size_t retries = 1;; ++retries)
             {
                 ProfileEvents::increment(ProfileEvents::S3CompleteMultipartUpload);
-                if (for_disk_s3)
+                if (client_ptr->isClientForDisk())
                     ProfileEvents::increment(ProfileEvents::DiskS3CompleteMultipartUpload);
 
                 auto outcome = client_ptr->CompleteMultipartUpload(request);
-
-                if (blob_storage_log)
-                    blob_storage_log->addEvent(BlobStorageLogElement::EventType::MultiPartUploadComplete,
-                                               dest_bucket, dest_key, /* local_path_ */ {}, /* data_size */ 0,
-                                               outcome.IsSuccess() ? nullptr : &outcome.GetError());
 
                 if (blob_storage_log)
                     blob_storage_log->addEvent(BlobStorageLogElement::EventType::MultiPartUploadComplete,
@@ -244,7 +239,7 @@ namespace
         void checkObjectAfterUpload()
         {
             LOG_TRACE(log, "Checking object {} exists after upload", dest_key);
-            S3::checkObjectExists(*client_ptr, dest_bucket, dest_key, {}, request_settings, {}, "Immediately after upload");
+            S3::checkObjectExists(*client_ptr, dest_bucket, dest_key, {}, "Immediately after upload");
             LOG_TRACE(log, "Object {} exists after upload", dest_key);
         }
 
@@ -295,9 +290,9 @@ namespace
             if (!total_size)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Chosen multipart upload for an empty file. This must not happen");
 
-            auto max_part_number = upload_settings.max_part_number;
-            auto min_upload_part_size = upload_settings.min_upload_part_size;
-            auto max_upload_part_size = upload_settings.max_upload_part_size;
+            auto max_part_number = request_settings.max_part_number;
+            auto min_upload_part_size = request_settings.min_upload_part_size;
+            auto max_upload_part_size = request_settings.max_upload_part_size;
 
             if (!max_part_number)
                 throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "max_part_number must not be 0");
@@ -321,23 +316,23 @@ namespace
                 num_parts = (total_size + part_size - 1) / part_size;
             }
 
-            if (num_parts < 1 || num_parts > max_part_number || part_size < min_upload_part_size || part_size > max_upload_part_size)
-            {
-                String msg;
-                if (num_parts < 1)
-                    msg = "Number of parts is zero";
-                else if (num_parts > max_part_number)
-                    msg = fmt::format("Number of parts exceeds {}", num_parts, max_part_number);
-                else if (part_size < min_upload_part_size)
-                    msg = fmt::format("Size of a part is less than {}", part_size, min_upload_part_size);
-                else
-                    msg = fmt::format("Size of a part exceeds {}", part_size, max_upload_part_size);
+            String error;
+            if (num_parts < 1)
+                error = "Number of parts is zero";
+            else if (num_parts > max_part_number)
+                error = fmt::format("Number of parts exceeds {}/{}", num_parts, max_part_number);
+            else if (part_size < min_upload_part_size)
+                error = fmt::format("Size of a part is less than {}/{}", part_size, min_upload_part_size);
+            else if (part_size > max_upload_part_size)
+                error = fmt::format("Size of a part exceeds {}/{}", part_size, max_upload_part_size);
 
+            if (!error.empty())
+            {
                 throw Exception(
                     ErrorCodes::INVALID_CONFIG_PARAMETER,
                     "{} while writing {} bytes to S3. Check max_part_number = {}, "
                     "min_upload_part_size = {}, max_upload_part_size = {}",
-                    msg, total_size, max_part_number, min_upload_part_size, max_upload_part_size);
+                    error, total_size, max_part_number, min_upload_part_size, max_upload_part_size);
             }
 
             /// We've calculated the size of a normal part (the final part can be smaller).
@@ -470,9 +465,9 @@ namespace
             const std::shared_ptr<const S3::Client> & client_ptr_,
             const String & dest_bucket_,
             const String & dest_key_,
-            const S3Settings::RequestSettings & request_settings_,
+            const S3::RequestSettings & request_settings_,
             const std::optional<std::map<String, String>> & object_metadata_,
-            ThreadPoolCallbackRunner<void> schedule_,
+            ThreadPoolCallbackRunnerUnsafe<void> schedule_,
             bool for_disk_s3_,
             BlobStorageLogWriterPtr blob_storage_log_)
             : UploadHelper(client_ptr_, dest_bucket_, dest_key_, request_settings_, object_metadata_, schedule_, for_disk_s3_, blob_storage_log_, getLogger("copyDataToS3File"))
@@ -484,7 +479,7 @@ namespace
 
         void performCopy()
         {
-            if (size <= upload_settings.max_single_part_upload_size)
+            if (size <= request_settings.max_single_part_upload_size)
                 performSinglepartUpload();
             else
                 performMultipartUpload();
@@ -517,8 +512,8 @@ namespace
             if (object_metadata.has_value())
                 request.SetMetadata(object_metadata.value());
 
-            const auto & storage_class_name = upload_settings.storage_class_name;
-            if (!storage_class_name.empty())
+            const auto & storage_class_name = request_settings.storage_class_name;
+            if (!storage_class_name.value.empty())
                 request.SetStorageClass(Aws::S3::Model::StorageClassMapper::GetStorageClassForName(storage_class_name));
 
             /// If we don't do it, AWS SDK can mistakenly set it to application/xml, see https://github.com/aws/aws-sdk-cpp/issues/1840
@@ -529,11 +524,11 @@ namespace
 
         void processPutRequest(S3::PutObjectRequest & request)
         {
-            size_t max_retries = std::max(request_settings.max_unexpected_write_error_retries, 1UL);
+            size_t max_retries = std::max<UInt64>(request_settings.max_unexpected_write_error_retries.value, 1UL);
             for (size_t retries = 1;; ++retries)
             {
                 ProfileEvents::increment(ProfileEvents::S3PutObject);
-                if (for_disk_s3)
+                if (client_ptr->isClientForDisk())
                     ProfileEvents::increment(ProfileEvents::DiskS3PutObject);
 
                 Stopwatch watch;
@@ -620,7 +615,7 @@ namespace
             auto & req = typeid_cast<S3::UploadPartRequest &>(request);
 
             ProfileEvents::increment(ProfileEvents::S3UploadPart);
-            if (for_disk_s3)
+            if (client_ptr->isClientForDisk())
                 ProfileEvents::increment(ProfileEvents::DiskS3UploadPart);
 
             auto outcome = client_ptr->UploadPart(req);
@@ -652,26 +647,37 @@ namespace
             size_t src_size_,
             const String & dest_bucket_,
             const String & dest_key_,
-            const S3Settings::RequestSettings & request_settings_,
+            const S3::RequestSettings & request_settings_,
             const ReadSettings & read_settings_,
             const std::optional<std::map<String, String>> & object_metadata_,
-            ThreadPoolCallbackRunner<void> schedule_,
+            ThreadPoolCallbackRunnerUnsafe<void> schedule_,
             bool for_disk_s3_,
-            BlobStorageLogWriterPtr blob_storage_log_)
-            : UploadHelper(client_ptr_, dest_bucket_, dest_key_, request_settings_, object_metadata_, schedule_, for_disk_s3_, blob_storage_log_, getLogger("copyS3File"))
+            BlobStorageLogWriterPtr blob_storage_log_,
+            std::function<void()> fallback_method_)
+            : UploadHelper(
+                client_ptr_,
+                dest_bucket_,
+                dest_key_,
+                request_settings_,
+                object_metadata_,
+                schedule_,
+                for_disk_s3_,
+                blob_storage_log_,
+                getLogger("copyS3File"))
             , src_bucket(src_bucket_)
             , src_key(src_key_)
             , offset(src_offset_)
             , size(src_size_)
             , supports_multipart_copy(client_ptr_->supportsMultiPartCopy())
             , read_settings(read_settings_)
+            , fallback_method(std::move(fallback_method_))
         {
         }
 
         void performCopy()
         {
             LOG_TEST(log, "Copy object {} to {} using native copy", src_key, dest_key);
-            if (!supports_multipart_copy || size <= upload_settings.max_single_operation_copy_size)
+            if (!supports_multipart_copy || size <= request_settings.max_single_operation_copy_size)
                 performSingleOperationCopy();
             else
                 performMultipartUploadCopy();
@@ -687,14 +693,7 @@ namespace
         size_t size;
         bool supports_multipart_copy;
         const ReadSettings read_settings;
-
-        CreateReadBuffer getSourceObjectReadBuffer()
-        {
-            return [&]
-            {
-                return std::make_unique<ReadBufferFromS3>(client_ptr, src_bucket, src_key, "", request_settings, read_settings);
-            };
-        }
+        std::function<void()> fallback_method;
 
         void performSingleOperationCopy()
         {
@@ -715,8 +714,8 @@ namespace
                 request.SetMetadataDirective(Aws::S3::Model::MetadataDirective::REPLACE);
             }
 
-            const auto & storage_class_name = upload_settings.storage_class_name;
-            if (!storage_class_name.empty())
+            const auto & storage_class_name = request_settings.storage_class_name;
+            if (!storage_class_name.value.empty())
                 request.SetStorageClass(Aws::S3::Model::StorageClassMapper::GetStorageClassForName(storage_class_name));
 
             /// If we don't do it, AWS SDK can mistakenly set it to application/xml, see https://github.com/aws/aws-sdk-cpp/issues/1840
@@ -727,11 +726,11 @@ namespace
 
         void processCopyRequest(S3::CopyObjectRequest & request)
         {
-            size_t max_retries = std::max(request_settings.max_unexpected_write_error_retries, 1UL);
+            size_t max_retries = std::max<UInt64>(request_settings.max_unexpected_write_error_retries.value, 1UL);
             for (size_t retries = 1;; ++retries)
             {
                 ProfileEvents::increment(ProfileEvents::S3CopyObject);
-                if (for_disk_s3)
+                if (client_ptr->isClientForDisk())
                     ProfileEvents::increment(ProfileEvents::DiskS3CopyObject);
 
                 auto outcome = client_ptr->CopyObject(request);
@@ -749,28 +748,21 @@ namespace
                 if (outcome.GetError().GetExceptionName() == "EntityTooLarge" ||
                     outcome.GetError().GetExceptionName() == "InvalidRequest" ||
                     outcome.GetError().GetExceptionName() == "InvalidArgument" ||
+                    outcome.GetError().GetExceptionName() == "AccessDenied" ||
                     (outcome.GetError().GetExceptionName() == "InternalError" &&
                         outcome.GetError().GetResponseCode() == Aws::Http::HttpResponseCode::GATEWAY_TIMEOUT &&
                         outcome.GetError().GetMessage().contains("use the Rewrite method in the JSON API")))
                 {
-                    if (!supports_multipart_copy)
+                    if (!supports_multipart_copy || outcome.GetError().GetExceptionName() == "AccessDenied")
                     {
-                        LOG_INFO(log, "Multipart upload using copy is not supported, will try regular upload for Bucket: {}, Key: {}, Object size: {}",
-                                dest_bucket,
-                                dest_key,
-                                size);
-                        copyDataToS3File(
-                            getSourceObjectReadBuffer(),
-                            offset,
-                            size,
-                            client_ptr,
+                        LOG_INFO(
+                            log,
+                            "Multipart upload using copy is not supported, will try regular upload for Bucket: {}, Key: {}, Object size: "
+                            "{}",
                             dest_bucket,
                             dest_key,
-                            request_settings,
-                            blob_storage_log,
-                            object_metadata,
-                            schedule,
-                            for_disk_s3);
+                            size);
+                        fallback_method();
                         break;
                     }
                     else
@@ -835,7 +827,7 @@ namespace
             auto & req = typeid_cast<S3::UploadPartCopyRequest &>(request);
 
             ProfileEvents::increment(ProfileEvents::S3UploadPartCopy);
-            if (for_disk_s3)
+            if (client_ptr->isClientForDisk())
                 ProfileEvents::increment(ProfileEvents::DiskS3UploadPartCopy);
 
             auto outcome = client_ptr->UploadPartCopy(req);
@@ -858,45 +850,88 @@ void copyDataToS3File(
     const std::shared_ptr<const S3::Client> & dest_s3_client,
     const String & dest_bucket,
     const String & dest_key,
-    const S3Settings::RequestSettings & settings,
+    const S3::RequestSettings & settings,
     BlobStorageLogWriterPtr blob_storage_log,
     const std::optional<std::map<String, String>> & object_metadata,
-    ThreadPoolCallbackRunner<void> schedule,
+    ThreadPoolCallbackRunnerUnsafe<void> schedule,
     bool for_disk_s3)
 {
-    CopyDataToFileHelper helper{create_read_buffer, offset, size, dest_s3_client, dest_bucket, dest_key, settings, object_metadata, schedule, for_disk_s3, blob_storage_log};
+    CopyDataToFileHelper helper{
+        create_read_buffer,
+        offset,
+        size,
+        dest_s3_client,
+        dest_bucket,
+        dest_key,
+        settings,
+        object_metadata,
+        schedule,
+        for_disk_s3,
+        blob_storage_log};
     helper.performCopy();
 }
 
 
 void copyS3File(
-    const std::shared_ptr<const S3::Client> & s3_client,
+    const std::shared_ptr<const S3::Client> & src_s3_client,
     const String & src_bucket,
     const String & src_key,
     size_t src_offset,
     size_t src_size,
+    std::shared_ptr<const S3::Client> dest_s3_client,
     const String & dest_bucket,
     const String & dest_key,
-    const S3Settings::RequestSettings & settings,
+    const S3::RequestSettings & settings,
     const ReadSettings & read_settings,
     BlobStorageLogWriterPtr blob_storage_log,
     const std::optional<std::map<String, String>> & object_metadata,
-    ThreadPoolCallbackRunner<void> schedule,
+    ThreadPoolCallbackRunnerUnsafe<void> schedule,
     bool for_disk_s3)
 {
-    if (settings.allow_native_copy)
+    if (!dest_s3_client)
+        dest_s3_client = src_s3_client;
+
+    std::function<void()> fallback_method = [&]
     {
-        CopyFileHelper helper{s3_client, src_bucket, src_key, src_offset, src_size, dest_bucket, dest_key, settings, read_settings, object_metadata, schedule, for_disk_s3, blob_storage_log};
-        helper.performCopy();
-    }
-    else
+        auto create_read_buffer
+            = [&] { return std::make_unique<ReadBufferFromS3>(src_s3_client, src_bucket, src_key, "", settings, read_settings); };
+
+        copyDataToS3File(
+            create_read_buffer,
+            src_offset,
+            src_size,
+            dest_s3_client,
+            dest_bucket,
+            dest_key,
+            settings,
+            blob_storage_log,
+            object_metadata,
+            schedule,
+            for_disk_s3);
+    };
+
+    if (!settings.allow_native_copy)
     {
-        auto create_read_buffer = [&]
-        {
-            return std::make_unique<ReadBufferFromS3>(s3_client, src_bucket, src_key, "", settings, read_settings);
-        };
-        copyDataToS3File(create_read_buffer, src_offset, src_size, s3_client, dest_bucket, dest_key, settings, blob_storage_log, object_metadata, schedule, for_disk_s3);
+        fallback_method();
+        return;
     }
+
+    CopyFileHelper helper{
+        src_s3_client,
+        src_bucket,
+        src_key,
+        src_offset,
+        src_size,
+        dest_bucket,
+        dest_key,
+        settings,
+        read_settings,
+        object_metadata,
+        schedule,
+        for_disk_s3,
+        blob_storage_log,
+        std::move(fallback_method)};
+    helper.performCopy();
 }
 
 }

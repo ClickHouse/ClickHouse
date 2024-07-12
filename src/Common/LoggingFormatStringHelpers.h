@@ -2,8 +2,11 @@
 
 #include <base/defines.h>
 #include <base/types.h>
+#include <fmt/args.h>
+#include <fmt/core.h>
 #include <fmt/format.h>
 #include <mutex>
+#include <type_traits>
 #include <unordered_map>
 #include <Poco/Logger.h>
 #include <Poco/Message.h>
@@ -13,6 +16,10 @@
 struct PreformattedMessage;
 consteval void formatStringCheckArgsNumImpl(std::string_view str, size_t nargs);
 template <typename T> constexpr std::string_view tryGetStaticFormatString(T && x);
+
+[[maybe_unused]] inline void tryGetFormattedArgs(std::vector<std::string>&) {};
+template <typename T, typename... Ts> [[maybe_unused]] inline void tryGetFormattedArgs(std::vector<std::string>&, T &&, Ts && ...);
+template <typename... Args> inline std::string tryGetArgsAndFormat(std::vector<std::string>&, fmt::format_string<Args...>, Args && ...);
 
 /// Extract format string from a string literal and constructs consteval fmt::format_string
 template <typename... Args>
@@ -39,6 +46,7 @@ struct PreformattedMessage
 {
     std::string text;
     std::string_view format_string;
+    std::vector<std::string> format_string_args;
 
     template <typename... Args>
     static PreformattedMessage create(FormatStringHelper<Args...> fmt, Args &&... args);
@@ -47,22 +55,26 @@ struct PreformattedMessage
     operator std::string () && { return std::move(text); } /// NOLINT
     operator fmt::format_string<> () const { UNREACHABLE(); } /// NOLINT
 
-    void apply(std::string & out_text, std::string_view & out_format_string) const &
+    void apply(std::string & out_text, std::string_view & out_format_string, std::vector<std::string> & out_format_string_args) const &
     {
         out_text = text;
         out_format_string = format_string;
+        out_format_string_args = format_string_args;
     }
-    void apply(std::string & out_text, std::string_view & out_format_string) &&
+    void apply(std::string & out_text, std::string_view & out_format_string, std::vector<std::string> & out_format_string_args) &&
     {
         out_text = std::move(text);
         out_format_string = format_string;
+        out_format_string_args = std::move(format_string_args);
     }
 };
 
 template <typename... Args>
 PreformattedMessage FormatStringHelperImpl<Args...>::format(Args && ...args) const
 {
-    return PreformattedMessage{fmt::format(fmt_str, std::forward<Args>(args)...), message_format_string};
+    std::vector<std::string> out_format_string_args;
+    std::string msg_text = tryGetArgsAndFormat(out_format_string_args, fmt_str, std::forward<Args>(args)...);
+    return PreformattedMessage{.text = msg_text, .format_string = message_format_string, .format_string_args = out_format_string_args};
 }
 
 template <typename... Args>
@@ -113,12 +125,23 @@ template <typename T> constexpr std::string_view tryGetStaticFormatString(T && x
     }
 }
 
+template <typename T, typename... Ts> void tryGetFormattedArgs(std::vector<std::string>& out, T && x, Ts && ...rest)
+{
+    if constexpr (std::is_base_of_v<fmt::detail::view, std::decay_t<T>>)
+        out.push_back(fmt::format("{}", std::remove_reference_t<T>(x)));
+    else
+        out.push_back(fmt::format("{}", std::forward<T>(x)));
+
+    tryGetFormattedArgs(out, std::forward<Ts>(rest)...);
+}
+
 /// Constexpr ifs are not like ifdefs, and compiler still checks that unneeded code can be compiled
 /// This template is useful to avoid compilation failures when condition of some "constexpr if" is false
 template<bool enable> struct ConstexprIfsAreNotIfdefs
 {
     template <typename T> constexpr static std::string_view getStaticFormatString(T &&) { return {}; }
     template <typename T> static PreformattedMessage getPreformatted(T &&) { return {}; }
+    template <typename... Args> static std::string getArgsAndFormat(std::vector<std::string>&, fmt::format_string<Args...>, Args &&...) { return {}; }
 };
 
 template<> struct ConstexprIfsAreNotIfdefs<true>
@@ -133,7 +156,18 @@ template<> struct ConstexprIfsAreNotIfdefs<true>
     }
 
     template <typename T> static T && getPreformatted(T && x) { return std::forward<T>(x); }
+
+    template <typename... Args> static std::string getArgsAndFormat(std::vector<std::string>& out, fmt::format_string<Args...> fmt_str, Args && ...args)
+    {
+        return tryGetArgsAndFormat(out, std::move(fmt_str), std::forward<Args>(args)...);
+    }
 };
+
+template <typename... Args> inline std::string tryGetArgsAndFormat(std::vector<std::string>& out, fmt::format_string<Args...> fmt_str, Args && ...args)
+{
+    tryGetFormattedArgs(out, args...);
+    return fmt::format(fmt_str, std::forward<Args>(args)...);
+}
 
 template <typename... Ts> constexpr size_t numArgs(Ts &&...) { return sizeof...(Ts); }
 template <typename T, typename... Ts> constexpr auto firstArg(T && x, Ts &&...) { return std::forward<T>(x); }

@@ -6,11 +6,13 @@ tests/ci/cancel_and_rerun_workflow_lambda/app.py
 -->
 ### Changelog category (leave one):
 - New Feature
+- Experimental Feature
 - Improvement
 - Performance Improvement
 - Backward Incompatible Change
 - Build/Testing/Packaging Improvement
 - Documentation (changelog entry is not required)
+- Critical Bug Fix (crash, LOGICAL_ERROR, data loss, RBAC)
 - Bug Fix (user-visible misbehavior in an official stable release)
 - CI Fix or Improvement (changelog entry is not required)
 - Not for changelog (changelog entry is not required)
@@ -41,32 +43,24 @@ At a minimum, the following information should be added (but add more as needed)
 
 > Information about CI checks: https://clickhouse.com/docs/en/development/continuous-integration/
 
+#### CI Settings (Only check the boxes if you know what you are doing):
+- [ ] <!---ci_set_required--> Allow: All Required Checks
+- [ ] <!---ci_include_stateless--> Allow: Stateless tests
+- [ ] <!---ci_include_stateful--> Allow: Stateful tests
+- [ ] <!---ci_include_integration--> Allow: Integration Tests
+- [ ] <!---ci_include_performance--> Allow: Performance tests
+- [ ] <!---ci_set_builds--> Allow: All Builds
+- [ ] <!---batch_0_1--> Allow: batch 1, 2 for multi-batch jobs
+- [ ] <!---batch_2_3--> Allow: batch 3, 4, 5, 6 for multi-batch jobs
 ---
-### Modify your CI run:
-##### NOTE:
-- if your merge the PR with modified CI you **MUST** know what you are doing.
-- modifiers can be applied only if set before CI starts
-- remove `!` to apply
-- return all `!` to restore defaults
-```
-!#ci_set_<SET_NAME> - to run only preconfigured set of tests, e.g.:
-!#ci_set_arm - to run only integration tests on ARM
-!#ci_set_integration - to run only integration tests on AMD
-!#ci_set_analyzer - to run only tests for analyzer
-NOTE: you can configure your own ci set
-```
-```
-!#job_<JOB NAME> - to run only specified job, e.g.:
-!#job_stateless_tests_release
-!#job_package_debug
-!#job_style_check
-!#job_integration_tests_asan
-```
-```
-!#batch_2 - to run only 2nd batch for all multi-batch jobs
-!#btach_1_2_3 - to run only 1, 2, 3rd batch for all multi-batch jobs
-```
-```
-!#no_merge_commit - to disable merge commit (no merge from master)
-!#do_not_test - to disable whole CI (except style check)
-```
+- [ ] <!---ci_exclude_style--> Exclude: Style check
+- [ ] <!---ci_exclude_fast--> Exclude: Fast test
+- [ ] <!---ci_exclude_asan--> Exclude: All with ASAN
+- [ ] <!---ci_exclude_tsan|msan|ubsan|coverage--> Exclude: All with TSAN, MSAN, UBSAN, Coverage
+- [ ] <!---ci_exclude_aarch64|release|debug--> Exclude: All with aarch64, release, debug
+---
+- [ ] <!---do_not_test--> Do not test
+- [ ] <!---woolen_wolfdog--> Woolen Wolfdog
+- [ ] <!---upload_all--> Upload binaries for special builds
+- [ ] <!---no_merge_commit--> Disable merge-commit
+- [ ] <!---no_ci_cache--> Disable CI cache

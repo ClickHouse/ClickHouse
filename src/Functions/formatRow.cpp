@@ -38,8 +38,14 @@ public:
         : format_name(std::move(format_name_))
         , arguments_column_names(std::move(arguments_column_names_))
         , context(std::move(context_))
+        , format_settings(getFormatSettings(context))
     {
         FormatFactory::instance().checkFormatName(format_name);
+
+        /// We don't need handling exceptions while formatting as a row.
+        /// But it can be enabled in query sent via http interface.
+        format_settings.json.valid_output_on_exception = false;
+        format_settings.xml.valid_output_on_exception = false;
     }
 
     String getName() const override { return name; }
@@ -68,7 +74,6 @@ public:
         }
 
         materializeBlockInplace(arg_columns);
-        auto format_settings = getFormatSettings(context);
         auto out = FormatFactory::instance().getOutputFormat(format_name, buffer, arg_columns, context, format_settings);
 
         /// This function make sense only for row output formats.
@@ -104,6 +109,7 @@ private:
     String format_name;
     Names arguments_column_names;
     ContextPtr context;
+    FormatSettings format_settings;
 };
 
 template <bool no_newline>

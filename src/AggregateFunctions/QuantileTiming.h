@@ -262,7 +262,7 @@ namespace detail
         UInt64 count_big[BIG_SIZE];
 
         /// Get value of quantile by index in array `count_big`.
-        static inline UInt16 indexInBigToValue(size_t i)
+        static UInt16 indexInBigToValue(size_t i)
         {
             return (i * BIG_PRECISION) + SMALL_THRESHOLD
                 + (intHash32<0>(i) % BIG_PRECISION - (BIG_PRECISION / 2));    /// A small randomization so that it is not noticeable that all the values are even.

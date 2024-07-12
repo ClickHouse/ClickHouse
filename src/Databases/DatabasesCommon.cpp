@@ -1,4 +1,10 @@
 #include <Databases/DatabasesCommon.h>
+
+#include <Backups/BackupEntriesCollector.h>
+#include <Backups/RestorerFromBackup.h>
+#include <Common/typeid_cast.h>
+#include <Common/CurrentMetrics.h>
+#include <Common/escapeForFileName.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -8,17 +14,8 @@
 #include <Parsers/formatAST.h>
 #include <Storages/StorageDictionary.h>
 #include <Storages/StorageFactory.h>
-#include <Common/typeid_cast.h>
-#include <Common/CurrentMetrics.h>
-#include <Common/escapeForFileName.h>
+#include <Storages/Utils.h>
 #include <TableFunctions/TableFunctionFactory.h>
-#include <Backups/BackupEntriesCollector.h>
-#include <Backups/RestorerFromBackup.h>
-
-namespace CurrentMetrics
-{
-    extern const Metric AttachedTable;
-}
 
 
 namespace DB
@@ -44,11 +41,11 @@ void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemo
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot alter table {} because it was created AS table function"
                                                      " and doesn't have structure in metadata", backQuote(ast_create_query.getTable()));
 
-    if (!has_structure && !ast_create_query.is_dictionary)
+    if (!has_structure && !ast_create_query.is_dictionary && !ast_create_query.isParameterizedView())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot alter table {} metadata doesn't have structure",
                         backQuote(ast_create_query.getTable()));
 
-    if (!ast_create_query.is_dictionary)
+    if (!ast_create_query.is_dictionary && !ast_create_query.isParameterizedView())
     {
         ASTPtr new_columns = InterpreterCreateQuery::formatColumns(metadata.columns);
         ASTPtr new_indices = InterpreterCreateQuery::formatIndices(metadata.secondary_indices);
@@ -69,6 +66,17 @@ void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemo
     if (metadata.refresh)
     {
         query->replace(ast_create_query.refresh_strategy, metadata.refresh);
+    }
+
+    if (metadata.sql_security_type)
+    {
+        auto new_sql_security = std::make_shared<ASTSQLSecurity>();
+        new_sql_security->type = metadata.sql_security_type;
+
+        if (metadata.definer)
+            new_sql_security->definer = std::make_shared<ASTUserNameWithHost>(*metadata.definer);
+
+        ast_create_query.sql_security = std::move(new_sql_security);
     }
 
     /// MaterializedView, Dictionary are types of CREATE query without storage.
@@ -215,7 +223,7 @@ StoragePtr DatabaseWithOwnTablesBase::tryGetTable(const String & table_name, Con
     return tryGetTableNoWait(table_name);
 }
 
-DatabaseTablesIteratorPtr DatabaseWithOwnTablesBase::getTablesIterator(ContextPtr, const FilterByNameFunction & filter_by_table_name) const
+DatabaseTablesIteratorPtr DatabaseWithOwnTablesBase::getTablesIterator(ContextPtr, const FilterByNameFunction & filter_by_table_name, bool /* skip_not_loaded */) const
 {
     std::lock_guard lock(mutex);
     if (!filter_by_table_name)
@@ -252,7 +260,9 @@ StoragePtr DatabaseWithOwnTablesBase::detachTableUnlocked(const String & table_n
     res = it->second;
     tables.erase(it);
     res->is_detached = true;
-    CurrentMetrics::sub(CurrentMetrics::AttachedTable, 1);
+
+    if (res->isSystemStorage() == false)
+        CurrentMetrics::sub(getAttachedCounterForStorage(res), 1);
 
     auto table_id = res->getStorageID();
     if (table_id.hasUUID())
@@ -293,7 +303,9 @@ void DatabaseWithOwnTablesBase::attachTableUnlocked(const String & table_name, c
     /// It is important to reset is_detached here since in case of RENAME in
     /// non-Atomic database the is_detached is set to true before RENAME.
     table->is_detached = false;
-    CurrentMetrics::add(CurrentMetrics::AttachedTable, 1);
+
+    if (table->isSystemStorage() == false && table_id.database_name != DatabaseCatalog::SYSTEM_DATABASE)
+        CurrentMetrics::add(getAttachedCounterForStorage(table), 1);
 }
 
 void DatabaseWithOwnTablesBase::shutdown()
@@ -352,7 +364,7 @@ std::vector<std::pair<ASTPtr, StoragePtr>> DatabaseWithOwnTablesBase::getTablesF
 {
     std::vector<std::pair<ASTPtr, StoragePtr>> res;
 
-    for (auto it = getTablesIterator(local_context, filter); it->isValid(); it->next())
+    for (auto it = getTablesIterator(local_context, filter, /*skip_not_loaded=*/false); it->isValid(); it->next())
     {
         auto storage = it->table();
         if (!storage)
