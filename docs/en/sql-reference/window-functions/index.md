@@ -1,9 +1,10 @@
 ---
 slug: /en/sql-reference/window-functions/
-sidebar_position: 62
 sidebar_label: Window Functions
-title: Window Functions
+sidebar_position: 1
 ---
+
+# Window Functions 
 
 Windows functions let you perform calculations across a set of rows that are related to the current row.
 Some of the calculations that you can do are similar to those that can be done with an aggregate function, but a window function doesn't cause rows to be grouped into a single output - the individual rows are still returned.
@@ -12,8 +13,8 @@ Some of the calculations that you can do are similar to those that can be done w
 
 ClickHouse supports the standard grammar for defining windows and window functions. The table below indicates whether a feature is currently supported.
 
-| Feature                                                                            | Supported?                                                                                                                                                                       |
-|------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Feature                                                                  | Supported?                                                                                                                                                                       |
+|--------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | ad hoc window specification (`count(*) over (partition by id order by time desc)`) | ✅                                                                                                                                                                                  |
 | expressions involving window functions, e.g. `(count(*) over ()) / 2)`             | ✅                                                                                                                                                                                   |
 | `WINDOW` clause (`select ... from table window w as (partition by id)`)            | ✅                                                                                                                                                                                   |
@@ -75,14 +76,14 @@ WINDOW window_name as ([[PARTITION BY grouping_column] [ORDER BY sorting_column]
 
 These functions can be used only as a window function.
 
-- `row_number()` - Number the current row within its partition starting from 1.
-- `first_value(x)` - Return the first non-NULL value evaluated within its ordered frame.
-- `last_value(x)` -	Return the last non-NULL value evaluated within its ordered frame.
-- `nth_value(x, offset)` - Return the first non-NULL value evaluated against the nth row (offset) in its ordered frame.
-- `rank()` - Rank the current row within its partition with gaps.
-- `dense_rank()` - Rank the current row within its partition without gaps.
-- `lagInFrame(x[, offset[, default]])` - Return a value evaluated at the row that is at a specified physical offset row before the current row within the ordered frame. The offset parameter, if not specified, defaults to 1, meaning it will fetch the value from the next row. If the calculated row exceeds the boundaries of the window frame, the specified default value is returned.
-- `leadInFrame(x[, offset[, default]])` - Return a value evaluated at the row that is offset rows after the current row within the ordered frame. If offset is not provided, it defaults to 1. If the offset leads to a position outside the window frame, the specified default value is used.
+- [`row_number()`](./row_number.md) - Number the current row within its partition starting from 1.
+- [`first_value(x)`](./first_value.md) - Return the first value evaluated within its ordered frame.
+- [`last_value(x)`](./last_value.md) -	Return the last value evaluated within its ordered frame.
+- [`nth_value(x, offset)`](./nth_value.md) - Return the first non-NULL value evaluated against the nth row (offset) in its ordered frame.
+- [`rank()`](./rank.md) - Rank the current row within its partition with gaps.
+- [`dense_rank()`](./dense_rank.md) - Rank the current row within its partition without gaps.
+- [`lagInFrame(x)`](./lagInFrame.md) - Return a value evaluated at the row that is at a specified physical offset row before the current row within the ordered frame.
+- [`leadInFrame(x)`](./leadInFrame.md) - Return a value evaluated at the row that is offset rows after the current row within the ordered frame.
 
 ## Examples
 
