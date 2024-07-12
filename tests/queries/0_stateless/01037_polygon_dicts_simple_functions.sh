@@ -5,7 +5,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-TMP_DIR=${CLICKHOUSE_TMP}${CLICKHOUSE_DATABASE}
+TMP_DIR=${CLICKHOUSE_TMP}/tmp
 mkdir -p $TMP_DIR
 
 $CLICKHOUSE_CLIENT -n --query="

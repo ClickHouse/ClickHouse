@@ -5,12 +5,13 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-TMP_DIR=${CLICKHOUSE_TMP}${CLICKHOUSE_DATABASE}
+TMP_DIR=${CLICKHOUSE_TMP}/tmp
+DATA_DIR=${CLICKHOUSE_TMP}/data
 mkdir -p $TMP_DIR
+mkdir -p $DATA_DIR
 
 declare -a SearchTypes=("POLYGON_INDEX_EACH" "POLYGON_INDEX_CELL")
 
-DATA_DIR=${CURDIR}/${CLICKHOUSE_DATABASE}
 tar -xf "${CURDIR}"/01037_test_data_perf.tar.gz -C "${DATA_DIR}"
 
 $CLICKHOUSE_CLIENT -n --query="
