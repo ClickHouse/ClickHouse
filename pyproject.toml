@@ -35,10 +35,9 @@ disable = '''
           broad-except,
           bare-except,
           no-else-return,
-          global-statement
+          global-statement,
           '''
 
 [tool.pylint.SIMILARITIES]
 # due to SQL
 min-similarity-lines=1000
-
