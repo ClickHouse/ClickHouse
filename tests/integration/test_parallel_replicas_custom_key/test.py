@@ -161,6 +161,9 @@ def test_parallel_replicas_custom_key_replicatedmergetree(
 
     insert_data("test_table_for_rmt", row_num, all_nodes=False)
 
+    for node in nodes:
+        node.query("SYSTEM SYNC REPLICA test_table_for_rmt LIGHTWEIGHT")
+
     expected_result = ""
     for i in range(4):
         expected_result += f"{i}\t250\n"

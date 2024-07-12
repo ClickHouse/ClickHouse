@@ -1,6 +1,7 @@
 #include <Databases/DatabaseLazy.h>
 
 #include <base/sort.h>
+#include <base/isSharedPtrUnique.h>
 #include <iomanip>
 #include <filesystem>
 #include <Common/CurrentMetrics.h>
@@ -305,7 +306,7 @@ try
         String table_name = expired_tables.front().table_name;
         auto it = tables_cache.find(table_name);
 
-        if (!it->second.table || it->second.table.unique())
+        if (!it->second.table || isSharedPtrUnique(it->second.table))
         {
             LOG_DEBUG(log, "Drop table {} from cache.", backQuote(it->first));
             it->second.table.reset();

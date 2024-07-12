@@ -2110,6 +2110,7 @@ void TCPHandler::initBlockOutput(const Block & block)
             *state.maybe_compressed_out,
             client_tcp_protocol_version,
             block.cloneEmpty(),
+            std::nullopt,
             !query_settings.low_cardinality_allow_in_native_format);
     }
 }
@@ -2124,6 +2125,7 @@ void TCPHandler::initLogsBlockOutput(const Block & block)
             *out,
             client_tcp_protocol_version,
             block.cloneEmpty(),
+            std::nullopt,
             !query_settings.low_cardinality_allow_in_native_format);
     }
 }
@@ -2138,6 +2140,7 @@ void TCPHandler::initProfileEventsBlockOutput(const Block & block)
             *out,
             client_tcp_protocol_version,
             block.cloneEmpty(),
+            std::nullopt,
             !query_settings.low_cardinality_allow_in_native_format);
     }
 }

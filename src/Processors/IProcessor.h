@@ -303,9 +303,9 @@ public:
     IQueryPlanStep * getQueryPlanStep() const { return query_plan_step; }
     size_t getQueryPlanStepGroup() const { return query_plan_step_group; }
 
-    uint64_t getElapsedUs() const { return elapsed_us; }
-    uint64_t getInputWaitElapsedUs() const { return input_wait_elapsed_us; }
-    uint64_t getOutputWaitElapsedUs() const { return output_wait_elapsed_us; }
+    uint64_t getElapsedNs() const { return elapsed_ns; }
+    uint64_t getInputWaitElapsedNs() const { return input_wait_elapsed_ns; }
+    uint64_t getOutputWaitElapsedNs() const { return output_wait_elapsed_ns; }
 
     struct ProcessorDataStats
     {
@@ -369,21 +369,21 @@ protected:
 
 private:
     /// For:
-    /// - elapsed_us
+    /// - elapsed_ns
     friend class ExecutionThreadContext;
     /// For
-    /// - input_wait_elapsed_us
-    /// - output_wait_elapsed_us
+    /// - input_wait_elapsed_ns
+    /// - output_wait_elapsed_ns
     friend class ExecutingGraph;
 
     std::string processor_description;
 
     /// For processors_profile_log
-    uint64_t elapsed_us = 0;
+    uint64_t elapsed_ns = 0;
     Stopwatch input_wait_watch;
-    uint64_t input_wait_elapsed_us = 0;
+    uint64_t input_wait_elapsed_ns = 0;
     Stopwatch output_wait_watch;
-    uint64_t output_wait_elapsed_us = 0;
+    uint64_t output_wait_elapsed_ns = 0;
 
     size_t stream_number = NO_STREAM;
 

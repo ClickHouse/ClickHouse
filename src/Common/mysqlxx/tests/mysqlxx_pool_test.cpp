@@ -13,13 +13,11 @@ mysqlxx::Pool::Entry getWithFailover(mysqlxx::Pool & connections_pool)
 
     constexpr size_t max_tries = 3;
 
-    mysqlxx::Pool::Entry worker_connection;
-
     for (size_t try_no = 1; try_no <= max_tries; ++try_no)
     {
         try
         {
-            worker_connection = connections_pool.tryGet();
+            mysqlxx::Pool::Entry worker_connection = connections_pool.tryGet();
 
             if (!worker_connection.isNull())
             {
