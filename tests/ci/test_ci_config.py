@@ -417,7 +417,7 @@ class TestCIConfig(unittest.TestCase):
         assert not ci_cache.jobs_to_skip
         assert not ci_cache.jobs_to_wait
 
-        # pretend there are pending jobs that we neet to wait
+        # pretend there are pending jobs that we need to wait
         ci_cache.jobs_to_wait = dict(ci_cache.jobs_to_do)
         for job, config in ci_cache.jobs_to_wait.items():
             assert not config.pending_batches
@@ -489,3 +489,87 @@ class TestCIConfig(unittest.TestCase):
         self.assertCountEqual(
             list(ci_cache.jobs_to_do) + ci_cache.jobs_to_skip, all_jobs_in_wf
         )
+
+    def test_ci_py_filters_not_affected_jobs_in_prs(self):
+        """
+        checks ci.py filters not affected jobs in PRs
+        """
+        settings = CiSettings()
+        settings.no_ci_cache = True
+        pr_info = PRInfo(github_event=_TEST_EVENT_JSON)
+        pr_info.event_type = EventType.PUSH
+        pr_info.number = 0
+        assert pr_info.is_release and not pr_info.is_merge_queue
+        ci_cache = CIPY._configure_jobs(
+            S3Helper(), pr_info, settings, skip_jobs=False, dry_run=True
+        )
+        self.assertTrue(not ci_cache.jobs_to_skip, "Must be no jobs in skip list")
+        all_jobs_in_wf = list(ci_cache.jobs_to_do)
+        assert not ci_cache.jobs_to_wait
+        assert not ci_cache.jobs_to_skip
+
+        # pretend there are pending jobs that we need to wait
+        for job, job_config in ci_cache.jobs_to_do.items():
+            ci_cache.jobs_to_wait[job] = job_config
+
+        # remove couple tests from to_wait and
+        #   expect they are preserved in @jobs_to_to along with required package_asan
+        del ci_cache.jobs_to_wait[CI.JobNames.STATELESS_TEST_ASAN]
+        del ci_cache.jobs_to_wait[CI.JobNames.INTEGRATION_TEST_TSAN]
+        del ci_cache.jobs_to_wait[CI.JobNames.STATELESS_TEST_MSAN]
+
+        # pretend we have some batches failed for one of the job from the to_do list
+        failed_job = CI.JobNames.INTEGRATION_TEST_TSAN
+        failed_job_config = ci_cache.jobs_to_do[failed_job]
+        FAILED_BATCHES = [0, 3]
+        for batch in FAILED_BATCHES:
+            assert batch < failed_job_config.num_batches
+            record = CiCache.Record(
+                record_type=CiCache.RecordType.FAILED,
+                job_name=failed_job,
+                job_digest=ci_cache.job_digests[failed_job],
+                batch=batch,
+                num_batches=failed_job_config.num_batches,
+                release_branch=True,
+            )
+            for record_t_, records_ in ci_cache.records.items():
+                if record_t_.value == CiCache.RecordType.FAILED.value:
+                    records_[record.to_str_key()] = record
+
+        # pretend we have all batches failed for one of the job from the to_do list
+        failed_job = CI.JobNames.STATELESS_TEST_MSAN
+        failed_job_config = ci_cache.jobs_to_do[failed_job]
+        assert failed_job_config.num_batches > 1
+        for batch in range(failed_job_config.num_batches):
+            record = CiCache.Record(
+                record_type=CiCache.RecordType.FAILED,
+                job_name=failed_job,
+                job_digest=ci_cache.job_digests[failed_job],
+                batch=batch,
+                num_batches=failed_job_config.num_batches,
+                release_branch=True,
+            )
+            for record_t_, records_ in ci_cache.records.items():
+                if record_t_.value == CiCache.RecordType.FAILED.value:
+                    records_[record.to_str_key()] = record
+
+        ci_cache.filter_out_not_affected_jobs()
+        expected_to_do = [
+            CI.JobNames.STATELESS_TEST_ASAN,
+            CI.BuildNames.PACKAGE_ASAN,
+            CI.JobNames.INTEGRATION_TEST_TSAN,
+            CI.BuildNames.PACKAGE_TSAN,
+            CI.JobNames.BUILD_CHECK,
+        ]
+        self.assertCountEqual(
+            list(ci_cache.jobs_to_wait),
+            [
+                CI.BuildNames.PACKAGE_ASAN,
+                CI.BuildNames.PACKAGE_TSAN,
+                CI.JobNames.BUILD_CHECK,
+            ],
+        )
+        self.assertCountEqual(list(ci_cache.jobs_to_do), expected_to_do)
+        self.assertTrue(ci_cache.jobs_to_do[CI.JobNames.INTEGRATION_TEST_TSAN].batches)
+        for batch in ci_cache.jobs_to_do[CI.JobNames.INTEGRATION_TEST_TSAN].batches:
+            self.assertTrue(batch not in FAILED_BATCHES)

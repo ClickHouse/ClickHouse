@@ -1,4 +1,5 @@
 """Module to get the token for GitHub"""
+
 from dataclasses import dataclass
 import json
 import time

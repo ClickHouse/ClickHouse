@@ -78,13 +78,13 @@ def wait_rabbitmq_to_start(rabbitmq_docker_id, cookie, timeout=180):
 
 def kill_rabbitmq(rabbitmq_id):
     p = subprocess.Popen(("docker", "stop", rabbitmq_id), stdout=subprocess.PIPE)
-    p.communicate()
+    p.wait(timeout=60)
     return p.returncode == 0
 
 
 def revive_rabbitmq(rabbitmq_id, cookie):
     p = subprocess.Popen(("docker", "start", rabbitmq_id), stdout=subprocess.PIPE)
-    p.communicate()
+    p.wait(timeout=60)
     wait_rabbitmq_to_start(rabbitmq_id, cookie)
 
 

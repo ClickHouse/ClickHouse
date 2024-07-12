@@ -1905,11 +1905,13 @@ kurtosis
 kurtpop
 kurtsamp
 laion
+lagInFrame
 lang
 laravel
 largestTriangleThreeBuckets
 latencies
 ldap
+leadInFrame
 leftPad
 leftPadUTF
 leftUTF

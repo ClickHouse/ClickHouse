@@ -6,8 +6,8 @@ source /setup_export_logs.sh
 # fail on errors, verbose and export all env variables
 set -e -x -a
 
-MAX_RUN_TIME=${MAX_RUN_TIME:-10800}
-MAX_RUN_TIME=$((MAX_RUN_TIME == 0 ? 10800 : MAX_RUN_TIME))
+MAX_RUN_TIME=${MAX_RUN_TIME:-7200}
+MAX_RUN_TIME=$((MAX_RUN_TIME == 0 ? 7200 : MAX_RUN_TIME))
 
 USE_DATABASE_REPLICATED=${USE_DATABASE_REPLICATED:=0}
 USE_SHARED_CATALOG=${USE_SHARED_CATALOG:=0}
@@ -309,7 +309,7 @@ function run_tests()
     try_run_with_retry 10 clickhouse-client -q "insert into system.zookeeper (name, path, value) values ('auxiliary_zookeeper2', '/test/chroot/', '')"
 
     set +e
-    clickhouse-test --testname --shard --zookeeper --check-zookeeper-session --hung-check --print-time \
+    timeout -k 60m -s TERM --preserve-status 140m  clickhouse-test --testname --shard --zookeeper --check-zookeeper-session --hung-check --print-time \
          --no-drop-if-fail --test-runs "$NUM_TRIES" "${ADDITIONAL_OPTIONS[@]}" 2>&1 \
     | ts '%Y-%m-%d %H:%M:%S' \
     | tee -a test_output/test_result.txt
@@ -320,7 +320,7 @@ export -f run_tests
 
 
 # This should be enough to setup job and collect artifacts
-TIMEOUT=$((MAX_RUN_TIME - 600))
+TIMEOUT=$((MAX_RUN_TIME - 700))
 if [ "$NUM_TRIES" -gt "1" ]; then
     # We don't run tests with Ordinary database in PRs, only in master.
     # So run new/changed tests with Ordinary at least once in flaky check.
@@ -482,3 +482,5 @@ if [[ "$USE_SHARED_CATALOG" -eq 1 ]]; then
     mv /var/log/clickhouse-server/stderr1.log /test_output/ ||:
     tar -chf /test_output/coordination1.tar /var/lib/clickhouse1/coordination ||:
 fi
+
+collect_core_dumps
