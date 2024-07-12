@@ -378,7 +378,7 @@ class CommonJobConfigs:
         ),
         run_command='functional_test_check.py "$CHECK_NAME"',
         runner_type=Runners.FUNC_TESTER,
-        timeout=10800,
+        timeout=7200,
     )
     STATEFUL_TEST = JobConfig(
         job_name_keyword="stateful",

@@ -385,7 +385,11 @@ bool ColumnObject::tryInsert(const Field & x)
     return true;
 }
 
+#if !defined(ABORT_ON_LOGICAL_ERROR)
 void ColumnObject::insertFrom(const IColumn & src, size_t n)
+#else
+void ColumnObject::doInsertFrom(const IColumn & src, size_t n)
+#endif
 {
     const auto & src_object_column = assert_cast<const ColumnObject &>(src);
 
@@ -414,7 +418,11 @@ void ColumnObject::insertFrom(const IColumn & src, size_t n)
     insertFromSharedDataAndFillRemainingDynamicPaths(src_object_column, src_dynamic_paths_for_shared_data, n, 1);
 }
 
+#if !defined(ABORT_ON_LOGICAL_ERROR)
 void ColumnObject::insertRangeFrom(const IColumn & src, size_t start, size_t length)
+#else
+void ColumnObject::doInsertRangeFrom(const IColumn & src, size_t start, size_t length)
+#endif
 {
     const auto & src_object_column = assert_cast<const ColumnObject &>(src);
 

@@ -73,8 +73,13 @@ public:
 
     void insert(const Field & x) override;
     bool tryInsert(const Field & x) override;
-    void insertFrom(const IColumn & src_, size_t n) override;
+#if !defined(ABORT_ON_LOGICAL_ERROR)
+    void insertFrom(const IColumn & src, size_t n) override;
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
+#else
+    void doInsertFrom(const IColumn & src, size_t n) override;
+    void doInsertRangeFrom(const IColumn & src, size_t start, size_t length) override;
+#endif
     /// TODO: implement more optimal insertManyFrom
     void insertDefault() override;
     void insertManyDefaults(size_t length) override;
@@ -97,7 +102,11 @@ public:
     MutableColumns scatter(ColumnIndex num_columns, const Selector & selector) const override;
 
     /// Values of ColumnObject are not comparable.
+#if !defined(ABORT_ON_LOGICAL_ERROR)
     int compareAt(size_t, size_t, const IColumn &, int) const override { return 0; }
+#else
+    int doCompareAt(size_t, size_t, const IColumn &, int) const override { return 0; }
+#endif
     void getPermutation(PermutationSortDirection, PermutationSortStability, size_t, int, Permutation &) const override;
     void updatePermutation(PermutationSortDirection, PermutationSortStability, size_t, int, Permutation &, EqualRanges &) const override {}
     void getExtremes(Field & min, Field & max) const override
