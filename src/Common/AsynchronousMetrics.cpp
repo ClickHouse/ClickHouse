@@ -1,5 +1,11 @@
 #include <Common/AsynchronousMetrics.h>
-
+#include <Common/Exception.h>
+#include <Common/setThreadName.h>
+#include <Common/CurrentMetrics.h>
+#include <Common/filesystemHelpers.h>
+#include <Common/logger_useful.h>
+#include <Common/ProfileEvents.h>
+#include <IO/UncompressedCache.h>
 #include <IO/MMappedFileCache.h>
 #include <IO/ReadHelpers.h>
 #include <IO/UncompressedCache.h>
@@ -19,6 +25,7 @@
 
 #include <chrono>
 #include <string_view>
+
 
 #include "config.h"
 
@@ -743,6 +750,9 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
     AsynchronousMetricValues new_values;
 
     std::lock_guard lock(data_mutex);
+
+    // Add MemoryCredits increment here
+    ProfileEvents::increment(ProfileEvents::MemoryCredits);
 
     auto current_time = std::chrono::system_clock::now();
     auto time_since_previous_update = current_time - previous_update_time;
