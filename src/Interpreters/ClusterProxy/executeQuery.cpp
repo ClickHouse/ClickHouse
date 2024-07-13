@@ -519,9 +519,7 @@ void executeQueryWithParallelReplicas(
                 "`cluster_for_parallel_replicas` setting refers to cluster with several shards. Expected a cluster with one shard");
     }
 
-    auto replica_count = new_cluster->getShardsInfo().begin()->getAllNodeCount();
-    if (settings.max_parallel_replicas < replica_count)
-        replica_count = settings.max_parallel_replicas;
+    const auto replica_count = std::min(settings.max_parallel_replicas.value, new_cluster->getShardsInfo().begin()->getAllNodeCount());
 
     auto coordinator = std::make_shared<ParallelReplicasReadingCoordinator>(replica_count, settings.parallel_replicas_mark_segment_size);
 

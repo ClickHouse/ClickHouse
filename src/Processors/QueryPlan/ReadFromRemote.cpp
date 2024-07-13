@@ -458,7 +458,6 @@ void ReadFromParallelRemoteReplicasStep::initializePipeline(QueryPipelineBuilder
     pools_to_use.reserve(shuffled_pool.size());
     if (exclude_local_replica)
     {
-        std::vector<size_t> local_addr_possitions;
         for (auto & pool : shuffled_pool)
         {
             const auto & hostname = pool.pool->getHost();
@@ -466,16 +465,11 @@ void ReadFromParallelRemoteReplicasStep::initializePipeline(QueryPipelineBuilder
                 begin(shard.local_addresses),
                 end(shard.local_addresses),
                 [&hostname](const Cluster::Address & local_addr) { return hostname == local_addr.host_name; });
-            if (it != shard.local_addresses.end())
+            if (it == shard.local_addresses.end())
             {
-                pool.pool.reset();
+                pools_to_use.push_back(pool.pool);
             }
         }
-    }
-    for (const auto & pool : shuffled_pool)
-    {
-        if (pool.pool)
-            pools_to_use.push_back(pool.pool);
     }
 
     LOG_DEBUG(
