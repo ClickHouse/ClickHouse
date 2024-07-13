@@ -37,7 +37,7 @@ constexpr auto machine_seq_num_bits_count = 12;
 
 /// bits masks for Snowflake ID components
 constexpr uint64_t machine_id_mask = ((1ull << machine_id_bits_count) - 1) << machine_seq_num_bits_count;
-constexpr uint64_t machine_seq_num_mask = (1ull << machine seq_num_bits_count) - 1;
+constexpr uint64_t machine_seq_num_mask = (1ull << machine_seq_num_bits_count) - 1;
 
 /// max values
 constexpr uint64_t max_machine_seq_num = machine_seq_num_mask;
