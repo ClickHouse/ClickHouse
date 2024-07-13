@@ -193,6 +193,7 @@ void registerCodecGorilla(CompressionCodecFactory & factory);
 void registerCodecEncrypted(CompressionCodecFactory & factory);
 void registerCodecFPC(CompressionCodecFactory & factory);
 void registerCodecGCD(CompressionCodecFactory & factory);
+void registerCodecChimp(CompressionCodecFactory & factory);
 #endif
 
 CompressionCodecFactory::CompressionCodecFactory()
@@ -212,6 +213,7 @@ CompressionCodecFactory::CompressionCodecFactory()
     registerCodecGorilla(*this);
     registerCodecEncrypted(*this);
     registerCodecFPC(*this);
+    registerCodecChimp(*this);
 #ifdef ENABLE_QPL_COMPRESSION
     registerCodecDeflateQpl(*this);
 #endif
