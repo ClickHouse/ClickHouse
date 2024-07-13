@@ -438,3 +438,65 @@ Result:
 │                                                                            5 │
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
+
+## __bitBoolMaskOr(a,b)
+
+This function performs a bitwise "OR" operation on two BoolMasks, allowing for efficient computation of boolean logic directly at the bit level. It is particularly useful in scenarios where compact representation and fast evaluation of boolean conditions are required.
+
+## Syntax
+
+```sql
+__bitBoolMaskOr(mask_a, mask_b)
+```
+
+### Arguments
+
+- `mask_a`: The first operand, a [UInt8](../data-types/int-uint.md),  representing the first BoolMask.
+- `mask_b`: The second operand, also a [UInt8](../data-types/int-uint.md), representing the second BoolMask.
+
+### Return Value
+
+The function returns a [UInt8](../data-types/int-uint.md) value.
+
+The result encapsulates both the "can be true" and "can be false" states in a single [UInt8](../data-types/int-uint.md) value, leveraging the bit-level representation for efficient boolean logic computation.
+
+### Implementation Details
+
+It is important to note that this function is strictly intended for use with [UInt8](../data-types/int-uint.md) data types, and it will throw an exception if provided with inputs of any other type.
+
+### Example Usage
+
+The following example demonstrates how to use the `__bitBoolMaskOr` function within a SQL query:
+
+```sql
+CREATE TABLE bool_mask_table
+(
+    id UInt32,
+    mask1 UInt8,
+    mask2 UInt8
+) ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO bool_mask_table VALUES (1, 3, 2); -- 3: 0b11 (can be true, can be false), 2: 0b10 (can be false)
+INSERT INTO bool_mask_table VALUES (2, 1, 2); -- 1: 0b01 (can be true), 2: 0b10 (can be false)
+
+SELECT id, __bitBoolMaskOr(mask1, mask2) AS result
+FROM bool_mask_table;
+
+```
+
+**Expected Output:**
+
+```response
+┌─id─┬─toTypeName(id)─┬─result─┬─toTypeName(result)─┐
+│  1 │ UInt32         │      3 │ UInt8              │
+│  2 │ UInt32         │      3 │ UInt8              │
+└────┴────────────────┴────────┴────────────────────┘
+```
+
+The example demonstrates how the __bitBoolMaskOr function combines the boolean masks:
+
+For the first row, 3 (0b11) OR 2 (0b10) results in 3 (0b11).
+For the second row, 1 (0b01) OR 2 (0b10) results in 3 (0b11).
+
+ 
