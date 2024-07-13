@@ -6,6 +6,6 @@ INSERT INTO test_numbers__fuzz_29 VALUES ([1,2,3,4,5,6]);
 INSERT INTO test_numbers__fuzz_29 VALUES ([1,2,4,5]);
 INSERT INTO test_numbers__fuzz_29 VALUES ([1,4,3,0,5,5,5]);
 
-SELECT groupArrayIntersect(*) FROM test_numbers__fuzz_29 GROUP BY a WITH ROLLUP;
+SELECT arraySort(groupArrayIntersect(*)) FROM test_numbers__fuzz_29 GROUP BY a WITH ROLLUP ORDER BY ALL;
 
 DROP TABLE test_numbers__fuzz_29;
