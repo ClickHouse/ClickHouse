@@ -16,10 +16,6 @@ namespace DB
 struct DictionaryStructure;
 class SettingsChanges;
 
-class PullingPipelineExecutor;
-class PullingAsyncPipelineExecutor;
-class QueryPipeline;
-
 /// For simple key
 
 Block blockForIds(
@@ -53,19 +49,6 @@ public:
 private:
     Block block_to_add;
     size_t current_range_index = 0;
-};
-
-/// Wrapper for `Pulling(Async)PipelineExecutor` to dynamically dispatch calls to the right executor
-class DictionaryPipelineExecutor
-{
-public:
-    DictionaryPipelineExecutor(QueryPipeline & pipeline_, bool async);
-    bool pull(Block & block);
-
-    ~DictionaryPipelineExecutor();
-private:
-    std::unique_ptr<PullingAsyncPipelineExecutor> async_executor;
-    std::unique_ptr<PullingPipelineExecutor> executor;
 };
 
 }

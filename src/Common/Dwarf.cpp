@@ -202,7 +202,10 @@ uint64_t readU64(std::string_view & sp)
 {
     SAFE_CHECK(sp.size() >= N, "underflow");
     uint64_t x = 0;
-    memcpy(&x, sp.data(), N);
+    if constexpr (std::endian::native == std::endian::little)
+        memcpy(&x, sp.data(), N);
+    else
+        memcpy(reinterpret_cast<char*>(&x) + sizeof(uint64_t) - N, sp.data(), N);
     sp.remove_prefix(N);
     return x;
 }
@@ -2067,8 +2070,8 @@ Dwarf::LineNumberVM::StepResult Dwarf::LineNumberVM::step(std::string_view & pro
     if (opcode != 0)
     { // standard opcode
         // Only interpret opcodes that are recognized by the version we're parsing;
-        // the others are vendor extensions and we should ignore them.
-        switch (opcode) // NOLINT(bugprone-switch-missing-default-case)
+        // the others are vendor extensions, and we should ignore them.
+        switch (opcode)
         {
             case DW_LNS_copy:
                 basicBlock_ = false;
@@ -2121,6 +2124,7 @@ Dwarf::LineNumberVM::StepResult Dwarf::LineNumberVM::step(std::string_view & pro
                 }
                 isa_ = readULEB(program);
                 return CONTINUE;
+            default:
         }
 
         // Unrecognized standard opcode, slurp the appropriate number of LEB

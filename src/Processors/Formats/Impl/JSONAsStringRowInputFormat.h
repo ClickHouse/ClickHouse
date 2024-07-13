@@ -18,8 +18,8 @@ class JSONAsRowInputFormat : public JSONEachRowRowInputFormat
 public:
     JSONAsRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings);
 
-    void resetParser() override;
     void setReadBuffer(ReadBuffer & in_) override;
+    void resetReadBuffer() override;
 
 private:
     JSONAsRowInputFormat(const Block & header_, std::unique_ptr<PeekableReadBuffer> buf_, Params params_, const FormatSettings & format_settings);
@@ -69,7 +69,7 @@ public:
 class JSONAsObjectExternalSchemaReader : public IExternalSchemaReader
 {
 public:
-    JSONAsObjectExternalSchemaReader(const FormatSettings & settings);
+    explicit JSONAsObjectExternalSchemaReader(const FormatSettings & settings);
 
     NamesAndTypesList readSchema() override
     {

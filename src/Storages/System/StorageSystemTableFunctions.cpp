@@ -10,17 +10,17 @@ namespace ErrorCodes
     extern const int UNKNOWN_FUNCTION;
 }
 
-NamesAndTypesList StorageSystemTableFunctions::getNamesAndTypes()
+ColumnsDescription StorageSystemTableFunctions::getColumnsDescription()
 {
-    return
-        {
-            {"name", std::make_shared<DataTypeString>()},
-            {"description", std::make_shared<DataTypeString>()},
-            {"allow_readonly", std::make_shared<DataTypeUInt8>()}
-       };
+    return ColumnsDescription
+    {
+        {"name", std::make_shared<DataTypeString>(), "Name of a table function."},
+        {"description", std::make_shared<DataTypeString>(), "Brief description of a table function."},
+        {"allow_readonly", std::make_shared<DataTypeUInt8>(), "Flag that indicated whether a readonly user may use this function."}
+    };
 }
 
-void StorageSystemTableFunctions::fillData(MutableColumns & res_columns, ContextPtr, const SelectQueryInfo &) const
+void StorageSystemTableFunctions::fillData(MutableColumns & res_columns, ContextPtr, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
     const auto & factory = TableFunctionFactory::instance();
     const auto & functions_names = factory.getAllRegisteredNames();

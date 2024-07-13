@@ -64,12 +64,58 @@ template <> struct is_arithmetic<UInt256> { static constexpr bool value = true; 
 template <typename T>
 inline constexpr bool is_arithmetic_v = is_arithmetic<T>::value;
 
+#define FOR_EACH_ARITHMETIC_TYPE(M) \
+    M(DataTypeDate) \
+    M(DataTypeDate32) \
+    M(DataTypeDateTime) \
+    M(DataTypeInt8) \
+    M(DataTypeUInt8) \
+    M(DataTypeInt16) \
+    M(DataTypeUInt16) \
+    M(DataTypeInt32) \
+    M(DataTypeUInt32) \
+    M(DataTypeInt64) \
+    M(DataTypeUInt64) \
+    M(DataTypeInt128) \
+    M(DataTypeUInt128) \
+    M(DataTypeInt256) \
+    M(DataTypeUInt256) \
+    M(DataTypeFloat32) \
+    M(DataTypeFloat64)
+
+#define FOR_EACH_ARITHMETIC_TYPE_PASS(M, X) \
+    M(DataTypeDate, X) \
+    M(DataTypeDate32, X) \
+    M(DataTypeDateTime, X) \
+    M(DataTypeInt8, X) \
+    M(DataTypeUInt8, X) \
+    M(DataTypeInt16, X) \
+    M(DataTypeUInt16, X) \
+    M(DataTypeInt32, X) \
+    M(DataTypeUInt32, X) \
+    M(DataTypeInt64, X) \
+    M(DataTypeUInt64, X) \
+    M(DataTypeInt128, X) \
+    M(DataTypeUInt128, X) \
+    M(DataTypeInt256, X) \
+    M(DataTypeUInt256, X) \
+    M(DataTypeFloat32, X) \
+    M(DataTypeFloat64, X)
+
 template <typename T>
 struct make_unsigned // NOLINT(readability-identifier-naming)
 {
     using type = std::make_unsigned_t<T>;
 };
 
+template <> struct make_unsigned<Int8> { using type = UInt8; };
+template <> struct make_unsigned<UInt8> { using type = UInt8; };
+template <> struct make_unsigned<Int16> { using type = UInt16; };
+template <> struct make_unsigned<UInt16> { using type = UInt16; };
+template <> struct make_unsigned<Int32> { using type = UInt32; };
+template <> struct make_unsigned<UInt32> { using type = UInt32; };
+template <> struct make_unsigned<Int64> { using type = UInt64; };
+template <> struct make_unsigned<UInt64> { using type = UInt64; };
 template <> struct make_unsigned<Int128> { using type = UInt128; };
 template <> struct make_unsigned<UInt128> { using type = UInt128; };
 template <> struct make_unsigned<Int256>  { using type = UInt256; };
@@ -83,6 +129,14 @@ struct make_signed // NOLINT(readability-identifier-naming)
     using type = std::make_signed_t<T>;
 };
 
+template <> struct make_signed<Int8> { using type = Int8; };
+template <> struct make_signed<UInt8> { using type = Int8; };
+template <> struct make_signed<Int16> { using type = Int16; };
+template <> struct make_signed<UInt16> { using type = Int16; };
+template <> struct make_signed<Int32> { using type = Int32; };
+template <> struct make_signed<UInt32> { using type = Int32; };
+template <> struct make_signed<Int64> { using type = Int64; };
+template <> struct make_signed<UInt64> { using type = Int64; };
 template <> struct make_signed<Int128>  { using type = Int128; };
 template <> struct make_signed<UInt128> { using type = Int128; };
 template <> struct make_signed<Int256>  { using type = Int256; };

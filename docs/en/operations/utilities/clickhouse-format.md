@@ -11,6 +11,8 @@ Keys:
 - `--query` — Format queries of any length and complexity.
 - `--hilite` — Add syntax highlight with ANSI terminal escape sequences.
 - `--oneline` — Format in single line.
+- `--max_line_length` — Format in single line queries with length less than specified.
+- `--comments` — Keep comments in the output.
 - `--quiet` or `-q` — Just check syntax, no output on success.
 - `--multiquery` or `-n` — Allow multiple queries in the same file.
 - `--obfuscate` — Obfuscate instead of formatting.
@@ -27,7 +29,7 @@ $ clickhouse-format --query "select number from numbers(10) where number%2 order
 
 Result:
 
-```sql
+```bash
 SELECT number
 FROM numbers(10)
 WHERE number % 2
@@ -49,22 +51,20 @@ SELECT sum(number) FROM numbers(5)
 3. Multiqueries:
 
 ```bash
-$ clickhouse-format -n <<< "SELECT * FROM (SELECT 1 AS x UNION ALL SELECT 1 UNION DISTINCT SELECT 3);"
+$ clickhouse-format -n <<< "SELECT min(number) FROM numbers(5); SELECT max(number) FROM numbers(5);"
 ```
 
 Result:
 
-```sql
-SELECT *
-FROM
-(
-    SELECT 1 AS x
-    UNION ALL
-    SELECT 1
-    UNION DISTINCT
-    SELECT 3
-)
+```
+SELECT min(number)
+FROM numbers(5)
 ;
+
+SELECT max(number)
+FROM numbers(5)
+;
+
 ```
 
 4. Obfuscating:
@@ -75,7 +75,7 @@ $ clickhouse-format --seed Hello --obfuscate <<< "SELECT cost_first_screen BETWE
 
 Result:
 
-```sql
+```
 SELECT treasury_mammoth_hazelnut BETWEEN nutmeg AND span, CASE WHEN chive >= 116 THEN switching ELSE ANYTHING END;
 ```
 
@@ -87,7 +87,7 @@ $ clickhouse-format --seed World --obfuscate <<< "SELECT cost_first_screen BETWE
 
 Result:
 
-```sql
+```
 SELECT horse_tape_summer BETWEEN folklore AND moccasins, CASE WHEN intestine >= 116 THEN nonconformist ELSE FORESTRY END;
 ```
 
@@ -99,7 +99,7 @@ $ clickhouse-format --backslash <<< "SELECT * FROM (SELECT 1 AS x UNION ALL SELE
 
 Result:
 
-```sql
+```
 SELECT * \
 FROM  \
 ( \

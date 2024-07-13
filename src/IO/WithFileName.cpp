@@ -1,5 +1,5 @@
 #include <IO/WithFileName.h>
-#include <IO/CompressedReadBufferWrapper.h>
+#include <IO/ReadBufferWrapperBase.h>
 #include <IO/ParallelReadBuffer.h>
 #include <IO/PeekableReadBuffer.h>
 
@@ -16,10 +16,10 @@ static String getFileName(const T & entry)
 
 String getFileNameFromReadBuffer(const ReadBuffer & in)
 {
-    if (const auto * compressed = dynamic_cast<const CompressedReadBufferWrapper *>(&in))
-        return getFileName(compressed->getWrappedReadBuffer());
+    if (const auto * wrapper = dynamic_cast<const ReadBufferWrapperBase *>(&in))
+        return getFileNameFromReadBuffer(wrapper->getWrappedReadBuffer());
     else if (const auto * parallel = dynamic_cast<const ParallelReadBuffer *>(&in))
-        return getFileName(parallel->getReadBuffer());
+        return getFileNameFromReadBuffer(parallel->getReadBuffer());
     else if (const auto * peekable = dynamic_cast<const PeekableReadBuffer *>(&in))
         return getFileNameFromReadBuffer(peekable->getSubBuffer());
     else

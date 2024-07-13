@@ -120,7 +120,9 @@ DataTypePtr FunctionArrayReduceInRanges::getReturnTypeImpl(const ColumnsWithType
                                                    aggregate_function_name, params_row, "function " + getName(), getContext());
 
         AggregateFunctionProperties properties;
-        aggregate_function = AggregateFunctionFactory::instance().get(aggregate_function_name, argument_types, params_row, properties);
+        auto action = NullsAction::EMPTY;
+        aggregate_function
+            = AggregateFunctionFactory::instance().get(aggregate_function_name, action, argument_types, params_row, properties);
     }
 
     return std::make_shared<DataTypeArray>(aggregate_function->getResultType());

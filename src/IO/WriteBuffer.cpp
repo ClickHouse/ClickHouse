@@ -11,16 +11,16 @@ namespace DB
 WriteBuffer::~WriteBuffer()
 {
     // That destructor could be call with finalized=false in case of exceptions
-    if (count() > 0 && !finalized)
+    if (count() > 0 && !finalized && !canceled)
     {
         /// It is totally OK to destroy instance without finalization when an exception occurs
         /// However it is suspicious to destroy instance without finalization at the green path
         if (!std::uncaught_exceptions() && std::current_exception() == nullptr)
         {
-            Poco::Logger * log = &Poco::Logger::get("WriteBuffer");
+            LoggerPtr log = getLogger("WriteBuffer");
             LOG_ERROR(
                 log,
-                "WriteBuffer is not finalized when destructor is called. "
+                "WriteBuffer is neither finalized nor canceled when destructor is called. "
                 "No exceptions in flight are detected. "
                 "The file might not be written at all or might be truncated. "
                 "Stack trace: {}",
@@ -30,4 +30,13 @@ WriteBuffer::~WriteBuffer()
     }
 }
 
+void WriteBuffer::cancel() noexcept
+{
+    if (canceled || finalized)
+        return;
+
+    LockMemoryExceptionInThread lock(VariableContext::Global);
+    cancelImpl();
+    canceled = true;
+}
 }

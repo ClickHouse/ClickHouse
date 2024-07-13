@@ -25,7 +25,11 @@ protected:
     char * compressed_buffer = nullptr;
 
     /// Don't checksum on decompressing.
+#if defined(FUZZER)
+    bool disable_checksum = true;
+#else
     bool disable_checksum = false;
+#endif
 
     /// Allow reading data, compressed by different codecs from one file.
     bool allow_different_codecs;

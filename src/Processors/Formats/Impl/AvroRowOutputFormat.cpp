@@ -27,21 +27,14 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnMap.h>
 
+#include <Common/re2.h>
+
 #include <DataFile.hh>
 #include <Encoder.hh>
 #include <Node.hh>
 #include <Schema.hh>
 
 #include <boost/algorithm/string.hpp>
-
-#ifdef __clang__
-#  pragma clang diagnostic push
-#  pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
-#endif
-#include <re2/re2.h>
-#ifdef __clang__
-#  pragma clang diagnostic pop
-#endif
 
 namespace DB
 {
@@ -59,7 +52,7 @@ public:
         : string_to_string_regexp(settings_.avro.string_column_pattern)
     {
         if (!string_to_string_regexp.ok())
-            throw DB::Exception(DB::ErrorCodes::CANNOT_COMPILE_REGEXP, "Avro: cannot compile re2: {}, error: {}. "
+            throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP, "Avro: cannot compile re2: {}, error: {}. "
                 "Look at https://github.com/google/re2/wiki/Syntax for reference.",
                 settings_.avro.string_column_pattern, string_to_string_regexp.error());
     }
@@ -527,8 +520,11 @@ static avro::Codec getCodec(const std::string & codec_name)
 
     if (codec_name == "null")    return avro::Codec::NULL_CODEC;
     if (codec_name == "deflate") return avro::Codec::DEFLATE_CODEC;
+    if (codec_name == "zstd")
+        return avro::Codec::ZSTD_CODEC;
 #ifdef SNAPPY_CODEC_AVAILABLE
-    if (codec_name == "snappy")  return avro::Codec::SNAPPY_CODEC;
+    if (codec_name == "snappy")
+        return avro::Codec::SNAPPY_CODEC;
 #endif
 
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Avro codec {} is not available", codec_name);

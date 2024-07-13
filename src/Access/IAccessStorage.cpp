@@ -6,6 +6,7 @@
 #include <Backups/BackupEntriesCollector.h>
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
+#include <Common/callOnce.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <Poco/UUIDGenerator.h>
@@ -256,8 +257,7 @@ std::vector<UUID> IAccessStorage::insert(const std::vector<AccessEntityPtr> & mu
             }
             e.addMessage("After successfully inserting {}/{}: {}", successfully_inserted.size(), multiple_entities.size(), successfully_inserted_str);
         }
-        e.rethrow();
-        UNREACHABLE();
+        throw;
     }
 }
 
@@ -360,8 +360,7 @@ std::vector<UUID> IAccessStorage::remove(const std::vector<UUID> & ids, bool thr
             }
             e.addMessage("After successfully removing {}/{}: {}", removed_names.size(), ids.size(), removed_names_str);
         }
-        e.rethrow();
-        UNREACHABLE();
+        throw;
     }
 }
 
@@ -457,8 +456,7 @@ std::vector<UUID> IAccessStorage::update(const std::vector<UUID> & ids, const Up
             }
             e.addMessage("After successfully updating {}/{}: {}", names_of_updated.size(), ids.size(), names_of_updated_str);
         }
-        e.rethrow();
-        UNREACHABLE();
+        throw;
     }
 }
 
@@ -582,7 +580,7 @@ void IAccessStorage::backup(BackupEntriesCollector & backup_entries_collector, c
         throwBackupNotAllowed();
 
     auto entities = readAllWithIDs(type);
-    boost::range::remove_erase_if(entities, [](const std::pair<UUID, AccessEntityPtr> & x) { return !x.second->isBackupAllowed(); });
+    std::erase_if(entities, [](const std::pair<UUID, AccessEntityPtr> & x) { return !x.second->isBackupAllowed(); });
 
     if (entities.empty())
         return;
@@ -615,7 +613,7 @@ UUID IAccessStorage::generateRandomID()
 }
 
 
-void IAccessStorage::clearConflictsInEntitiesList(std::vector<std::pair<UUID, AccessEntityPtr>> & entities, const Poco::Logger * log_)
+void IAccessStorage::clearConflictsInEntitiesList(std::vector<std::pair<UUID, AccessEntityPtr>> & entities, LoggerPtr log_)
 {
     std::unordered_map<UUID, size_t> positions_by_id;
     std::unordered_map<std::string_view, size_t> positions_by_type_and_name[static_cast<size_t>(AccessEntityType::MAX)];
@@ -671,12 +669,13 @@ void IAccessStorage::clearConflictsInEntitiesList(std::vector<std::pair<UUID, Ac
 }
 
 
-Poco::Logger * IAccessStorage::getLogger() const
+LoggerPtr IAccessStorage::getLogger() const
 {
-    Poco::Logger * ptr = log.load();
-    if (!ptr)
-        log.store(ptr = &Poco::Logger::get("Access(" + storage_name + ")"), std::memory_order_relaxed);
-    return ptr;
+    callOnce(log_initialized, [&] {
+        log = ::getLogger("Access(" + storage_name + ")");
+    });
+
+    return log;
 }
 
 

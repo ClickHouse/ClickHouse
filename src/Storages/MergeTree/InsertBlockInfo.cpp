@@ -9,7 +9,7 @@ namespace ErrorCodes
 }
 
 AsyncInsertBlockInfo::AsyncInsertBlockInfo(
-    Poco::Logger * log_,
+    LoggerPtr log_,
     std::vector<std::string> && block_id_,
     BlockWithPartition && block_,
     std::optional<BlockWithPartition> && unmerged_block_with_partition_)

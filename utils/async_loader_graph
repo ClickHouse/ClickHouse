@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+set -e
+
+if [ "$1" == "--help" ] || [ -z "$1" ]; then
+    cat <<EOF >&2
+SELECT data from 'system.asynchronous_loader' table and render .svg graph of load jobs using 'dot' graphviz tool.
+USAGE: async_loader_graph CLICKHOUSE_CLIENT CLIENT_OPTIONS
+EXAMPLES:
+  $ async_loader_graph clickhouse-client > async_loader.svg
+EOF
+    exit 1
+fi
+
+CLICKHOUSE_CLIENT="$@"
+
+(
+
+echo 'digraph {'
+echo 'rankdir=LR;'
+
+$CLICKHOUSE_CLIENT --query='select job, job_id, status, is_blocked, is_ready, is_executing, pool, dependencies from system.asynchronous_loader FORMAT JSON' \
+    | jq -r '
+        .data[]
+            | { "FgLoad": "box", "BgLoad": "hexagon", "BgStartup": "ellipse" } as $shape
+            | { "PENDING": "white", "OK": "lightgreen", "FAILED": "red", "CANCELED": "darkred" } as $fillcolor
+            | [ "black", "blue", "orange", "yellow" ] as $color
+            | (.job_id | tostring) as $self
+            | [
+                # Nodes
+                $self + " [label=\"" + .job +
+                    "\", shape=\"" + $shape[.pool] +
+                    "\", style=\"filled\", fillcolor=\"" + $fillcolor[.status] +
+                    "\", penwidth=\"3.0\", color=\"" + $color[.is_blocked + .is_ready * 2 + .is_executing * 3] +
+                    "\"];",
+
+                # Edges
+                (.dependencies[] | ($self + " -> " + (. | tostring) + ";"))
+                ]
+            | join("\n")
+    '
+
+cat <<LEGEND
+    subgraph cluster0 {
+        label="LEGEND"
+        subgraph cluster1 {
+            label="POOL"
+            FgLoad[shape="box" penwidth="3.0"];
+            BgLoad[shape="hexagon" penwidth="3.0"];
+            BgStartup[shape="ellipse" penwidth="3.0"];
+        }
+        subgraph cluster2 {
+            label="STATUS"
+            PENDING[shape="ellipse" penwidth="3.0" style="filled" fillcolor="white"];
+            OK[shape="ellipse" penwidth="3.0" style="filled" fillcolor="lightgreen"];
+            FAILED[shape="ellipse" penwidth="3.0" style="filled" fillcolor="red"];
+            CANCELED[shape="ellipse" penwidth="3.0" style="filled" fillcolor="darkred"];
+        }
+        subgraph cluster3 {
+            label="STATE"
+            is_assigned[shape="ellipse" penwidth="3.0" style="filled" fillcolor="white" color="black"];
+            is_blocked[shape="ellipse" penwidth="3.0" style="filled" fillcolor="white" color="blue"];
+            is_ready[shape="ellipse" penwidth="3.0" style="filled" fillcolor="white" color="orange"];
+            is_executing[shape="ellipse" penwidth="3.0" style="filled" fillcolor="white" color="yellow"];
+        }
+        FgLoad -> PENDING -> is_assigned [style="invis"]
+    }
+LEGEND
+
+echo '}' # digraph
+
+) | dot -Tsvg

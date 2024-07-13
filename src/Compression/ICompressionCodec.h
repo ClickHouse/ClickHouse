@@ -54,7 +54,7 @@ public:
     /// --- For the codec with HW decompressor, it means submit request to HW and return immediately.
     /// --- Must be used in pair with flushAsynchronousDecompressRequests.
     /// SoftwareFallback mode is exclusively defined for the codec with HW decompressor, enable its capability of "fallback to SW codec".
-    enum class CodecMode
+    enum class CodecMode : uint8_t
     {
         Synchronous,
         Asynchronous,
@@ -120,6 +120,9 @@ public:
 
     /// Is this the DEFLATE_QPL codec?
     virtual bool isDeflateQpl() const { return false; }
+
+    /// Is this the ZSTD_QAT codec?
+    virtual bool isZstdQat() const { return false; }
 
     /// If it does nothing.
     virtual bool isNone() const { return false; }

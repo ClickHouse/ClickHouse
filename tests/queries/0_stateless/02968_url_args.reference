@@ -1,0 +1,8 @@
+CREATE TABLE default.a\n(\n    `x` Int64\n)\nENGINE = URL(\'https://example.com/\', \'CSV\', headers(\'foo\' = \'[HIDDEN]\', \'a\' = \'[HIDDEN]\'))
+CREATE TABLE default.b\n(\n    `x` Int64\n)\nENGINE = URL(\'https://example.com/\', \'CSV\', headers())
+CREATE TABLE default.c\n(\n    `x` Int64\n)\nENGINE = S3(\'https://example.s3.amazonaws.com/a.csv\', \'NOSIGN\', \'CSV\', headers(\'foo\' = \'[HIDDEN]\'))
+CREATE TABLE default.d\n(\n    `x` Int64\n)\nENGINE = S3(\'https://example.s3.amazonaws.com/a.csv\', \'NOSIGN\', headers(\'foo\' = \'[HIDDEN]\'))
+CREATE VIEW default.e\n(\n    `x` Int64\n)\nAS SELECT count()\nFROM url(\'https://example.com/\', CSV, headers(\'foo\' = \'[HIDDEN]\', \'a\' = \'[HIDDEN]\'))
+CREATE VIEW default.f\n(\n    `x` Int64\n)\nAS SELECT count()\nFROM url(\'https://example.com/\', CSV, headers())
+CREATE VIEW default.g\n(\n    `x` Int64\n)\nAS SELECT count()\nFROM s3(\'https://example.s3.amazonaws.com/a.csv\', CSV, headers(\'foo\' = \'[HIDDEN]\'))
+CREATE VIEW default.h\n(\n    `x` Int64\n)\nAS SELECT count()\nFROM s3(\'https://example.s3.amazonaws.com/a.csv\', headers(\'foo\' = \'[HIDDEN]\'))

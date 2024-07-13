@@ -8,6 +8,7 @@
 #include <DataTypes/getLeastSupertype.h>
 #include <Columns/ColumnMap.h>
 #include <Interpreters/castColumn.h>
+#include <Interpreters/Context.h>
 #include <Common/HashTable/HashSet.h>
 
 
@@ -30,9 +31,11 @@ class FunctionMap : public IFunction
 public:
     static constexpr auto name = "map";
 
-    static FunctionPtr create(ContextPtr)
+    explicit FunctionMap(bool use_variant_as_common_type_) : use_variant_as_common_type(use_variant_as_common_type_) {}
+
+    static FunctionPtr create(ContextPtr context)
     {
-        return std::make_shared<FunctionMap>();
+        return std::make_shared<FunctionMap>(context->getSettingsRef().allow_experimental_variant_type && context->getSettingsRef().use_variant_as_common_type);
     }
 
     String getName() const override
@@ -77,8 +80,16 @@ public:
         }
 
         DataTypes tmp;
-        tmp.emplace_back(getLeastSupertype(keys));
-        tmp.emplace_back(getLeastSupertype(values));
+        if (use_variant_as_common_type)
+        {
+            tmp.emplace_back(getLeastSupertypeOrVariant(keys));
+            tmp.emplace_back(getLeastSupertypeOrVariant(values));
+        }
+        else
+        {
+            tmp.emplace_back(getLeastSupertype(keys));
+            tmp.emplace_back(getLeastSupertype(values));
+        }
         return std::make_shared<DataTypeMap>(tmp);
     }
 
@@ -138,6 +149,9 @@ public:
 
         return ColumnMap::create(nested_column);
     }
+
+private:
+    bool use_variant_as_common_type = false;
 };
 
 /// mapFromArrays(keys, values) is a function that allows you to make key-value pair from a pair of arrays

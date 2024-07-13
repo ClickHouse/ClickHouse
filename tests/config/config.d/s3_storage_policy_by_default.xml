@@ -25,4 +25,5 @@
     <merge_tree>
         <storage_policy>s3</storage_policy>
     </merge_tree>
+    <temporary_data_in_cache>cached_s3</temporary_data_in_cache>
 </clickhouse>

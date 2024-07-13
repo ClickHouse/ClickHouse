@@ -1,17 +1,18 @@
+#include "PostgreSQLHandler.h"
 #include <IO/ReadBufferFromPocoSocket.h>
-#include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromPocoSocket.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/executeQuery.h>
-#include "PostgreSQLHandler.h"
 #include <Parsers/parseQuery.h>
 #include <Server/TCPServer.h>
-#include <Common/randomSeed.h>
-#include <Common/setThreadName.h>
 #include <base/scope_guard.h>
 #include <pcg_random.hpp>
+#include <Common/CurrentThread.h>
 #include <Common/config_version.h>
+#include <Common/randomSeed.h>
+#include <Common/setThreadName.h>
 
 #if USE_SSL
 #   include <Poco/Net/SecureStreamSocket.h>
@@ -32,12 +33,16 @@ PostgreSQLHandler::PostgreSQLHandler(
     TCPServer & tcp_server_,
     bool ssl_enabled_,
     Int32 connection_id_,
-    std::vector<std::shared_ptr<PostgreSQLProtocol::PGAuthentication::AuthenticationMethod>> & auth_methods_)
+    std::vector<std::shared_ptr<PostgreSQLProtocol::PGAuthentication::AuthenticationMethod>> & auth_methods_,
+    const ProfileEvents::Event & read_event_,
+    const ProfileEvents::Event & write_event_)
     : Poco::Net::TCPServerConnection(socket_)
     , server(server_)
     , tcp_server(tcp_server_)
     , ssl_enabled(ssl_enabled_)
     , connection_id(connection_id_)
+    , read_event(read_event_)
+    , write_event(write_event_)
     , authentication_manager(auth_methods_)
 {
     changeIO(socket());
@@ -45,15 +50,14 @@ PostgreSQLHandler::PostgreSQLHandler(
 
 void PostgreSQLHandler::changeIO(Poco::Net::StreamSocket & socket)
 {
-    in = std::make_shared<ReadBufferFromPocoSocket>(socket);
-    out = std::make_shared<WriteBufferFromPocoSocket>(socket);
+    in = std::make_shared<ReadBufferFromPocoSocket>(socket, read_event);
+    out = std::make_shared<WriteBufferFromPocoSocket>(socket, write_event);
     message_transport = std::make_shared<PostgreSQLProtocol::Messaging::MessageTransport>(in.get(), out.get());
 }
 
 void PostgreSQLHandler::run()
 {
     setThreadName("PostgresHandler");
-    ThreadStatus thread_status;
 
     session = std::make_unique<Session>(server.context(), ClientInfo::Interface::POSTGRESQL);
     SCOPE_EXIT({ session.reset(); });
@@ -280,6 +284,7 @@ void PostgreSQLHandler::processQuery()
         auto parse_res = splitMultipartQuery(query->query, queries,
             settings.max_query_size,
             settings.max_parser_depth,
+            settings.max_parser_backtracks,
             settings.allow_settings_after_format_in_insert);
         if (!parse_res.second)
             throw Exception(ErrorCodes::SYNTAX_ERROR, "Cannot parse and execute the following part of query: {}", String(parse_res.first));

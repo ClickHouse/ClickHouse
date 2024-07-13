@@ -42,9 +42,6 @@ struct UniqCombinedHashTableGrower : public HashTableGrowerWithPrecalculation<>
     void increaseSize() { increaseSizeDegree(1); }
 };
 
-namespace
-{
-
 template <typename T, UInt8 K, typename HashValueType>
 struct AggregateFunctionUniqCombinedData
 {
@@ -266,8 +263,6 @@ AggregateFunctionPtr createAggregateFunctionWithK(const DataTypes & argument_typ
         return std::make_shared<typename WithK<K, HashValueType>::template AggregateFunctionVariadic<true, false>>(argument_types, params);
     else
         return std::make_shared<typename WithK<K, HashValueType>::template AggregateFunctionVariadic<false, false>>(argument_types, params);
-}
-
 }
 
 template <UInt8 K>

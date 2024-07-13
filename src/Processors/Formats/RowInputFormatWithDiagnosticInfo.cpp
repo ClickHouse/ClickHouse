@@ -26,8 +26,6 @@ RowInputFormatWithDiagnosticInfo::RowInputFormatWithDiagnosticInfo(const Block &
 
 void RowInputFormatWithDiagnosticInfo::updateDiagnosticInfo()
 {
-    ++row_num;
-
     bytes_read_at_start_of_buffer_on_prev_row = bytes_read_at_start_of_buffer_on_current_row;
     bytes_read_at_start_of_buffer_on_current_row = in->count() - in->offset();
 
@@ -59,13 +57,11 @@ std::pair<String, String> RowInputFormatWithDiagnosticInfo::getDiagnosticAndRawD
 
     max_length_of_column_name = 0;
     for (size_t i = 0; i < header.columns(); ++i)
-        if (header.safeGetByPosition(i).name.size() > max_length_of_column_name)
-            max_length_of_column_name = header.safeGetByPosition(i).name.size();
+        max_length_of_column_name = std::max(header.safeGetByPosition(i).name.size(), max_length_of_column_name);
 
     max_length_of_data_type_name = 0;
     for (size_t i = 0; i < header.columns(); ++i)
-        if (header.safeGetByPosition(i).type->getName().size() > max_length_of_data_type_name)
-            max_length_of_data_type_name = header.safeGetByPosition(i).type->getName().size();
+        max_length_of_data_type_name = std::max(header.safeGetByPosition(i).type->getName().size(), max_length_of_data_type_name);
 
     /// Roll back the cursor to the beginning of the previous or current row and parse all over again. But now we derive detailed information.
 
@@ -73,7 +69,7 @@ std::pair<String, String> RowInputFormatWithDiagnosticInfo::getDiagnosticAndRawD
     {
         in->position() = in->buffer().begin() + offset_of_prev_row;
 
-        out_diag << "\nRow " << (row_num - 1) << ":\n";
+        out_diag << "\nRow " << getRowNum() - 1 << ":\n";
         if (!parseRowAndPrintDiagnosticInfo(columns, out_diag))
             return std::make_pair(out_diag.str(), out_data.str());
     }
@@ -96,7 +92,7 @@ std::pair<String, String> RowInputFormatWithDiagnosticInfo::getDiagnosticAndRawD
         ++data;
     }
 
-    out_diag << "\nRow " << row_num << ":\n";
+    out_diag << "\nRow " << getRowNum() << ":\n";
     parseRowAndPrintDiagnosticInfo(columns, out_diag);
     out_diag << "\n";
 
@@ -138,7 +134,7 @@ bool RowInputFormatWithDiagnosticInfo::deserializeFieldAndPrintDiagnosticInfo(co
     auto * curr_position = in->position();
 
     if (curr_position < prev_position)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: parsing is non-deterministic.");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Parsing is non-deterministic.");
 
     if (isNativeNumber(type) || isDate(type) || isDateTime(type) || isDateTime64(type))
     {
@@ -193,7 +189,6 @@ bool RowInputFormatWithDiagnosticInfo::deserializeFieldAndPrintDiagnosticInfo(co
 void RowInputFormatWithDiagnosticInfo::resetParser()
 {
     IRowInputFormat::resetParser();
-    row_num = 0;
     bytes_read_at_start_of_buffer_on_current_row = 0;
     bytes_read_at_start_of_buffer_on_prev_row = 0;
     offset_of_current_row = std::numeric_limits<size_t>::max();

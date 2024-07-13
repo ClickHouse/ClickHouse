@@ -1,13 +1,7 @@
 import pytest
 from helpers.cluster import ClickHouseCluster
 import helpers.keeper_utils as keeper_utils
-import random
-import string
-import os
 import time
-from multiprocessing.dummy import Pool
-from helpers.network import PartitionManager
-from helpers.test_tools import assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
@@ -82,6 +76,13 @@ def test_single_node_broken_log(started_cluster):
         node1_conn.close()
 
         node1.stop_clickhouse()
+
+        # wait until cluster stabilizes with a new leader
+        while not keeper_utils.is_leader(
+            started_cluster, node2
+        ) and not keeper_utils.is_leader(started_cluster, node3):
+            time.sleep(1)
+
         node1.exec_in_container(
             [
                 "truncate",

@@ -6,9 +6,11 @@
 #include <Parsers/parseQuery.h>
 #include <Parsers/Kusto/parseKQLQuery.h>
 
+#include <Common/re2.h>
+
 #include <gmock/gmock.h>
 
-#include <regex>
+
 
 namespace
 {
@@ -26,7 +28,7 @@ TEST_P(ParserRegexTest, parseQuery)
     ASSERT_TRUE(expected_ast);
 
     DB::ASTPtr ast;
-    ASSERT_NO_THROW(ast = parseQuery(*parser, input_text.begin(), input_text.end(), 0, 0));
+    ASSERT_NO_THROW(ast = parseQuery(*parser, input_text.begin(), input_text.end(), 0, 0, 0));
     DB::WriteBufferFromOwnString buf;
     formatAST(*ast->clone(), buf, false, false);
     EXPECT_THAT(buf.str(), ::testing::MatchesRegex(expected_ast));
@@ -43,12 +45,12 @@ TEST_P(ParserKQLTest, parseKQLQuery)
     {
         if (std::string(expected_ast).starts_with("throws"))
         {
-            EXPECT_THROW(parseKQLQuery(*parser, input_text.begin(), input_text.end(), 0, 0), DB::Exception);
+            EXPECT_THROW(parseKQLQuery(*parser, input_text.begin(), input_text.end(), 0, 0, 0), DB::Exception);
         }
         else
         {
             DB::ASTPtr ast;
-            ASSERT_NO_THROW(ast = parseKQLQuery(*parser, input_text.begin(), input_text.end(), 0, 0));
+            ASSERT_NO_THROW(ast = parseKQLQuery(*parser, input_text.begin(), input_text.end(), 0, 0, 0));
             if (std::string("CREATE USER or ALTER USER query") != parser->getName()
                     && std::string("ATTACH access entity query") != parser->getName())
             {
@@ -62,20 +64,20 @@ TEST_P(ParserKQLTest, parseKQLQuery)
                 if (input_text.starts_with("ATTACH"))
                 {
                     auto salt = (dynamic_cast<const ASTCreateUserQuery *>(ast.get())->auth_data)->getSalt().value_or("");
-                    EXPECT_TRUE(std::regex_match(salt, std::regex(expected_ast)));
+                    EXPECT_TRUE(re2::RE2::FullMatch(salt, expected_ast));
                 }
                 else
                 {
                     DB::WriteBufferFromOwnString buf;
                     formatAST(*ast->clone(), buf, false, false);
                     String formatted_ast = buf.str();
-                    EXPECT_TRUE(std::regex_match(formatted_ast, std::regex(expected_ast)));
+                    EXPECT_TRUE(re2::RE2::FullMatch(formatted_ast, expected_ast));
                 }
             }
         }
     }
     else
     {
-        ASSERT_THROW(parseKQLQuery(*parser, input_text.begin(), input_text.end(), 0, 0), DB::Exception);
+        ASSERT_THROW(parseKQLQuery(*parser, input_text.begin(), input_text.end(), 0, 0, 0), DB::Exception);
     }
 }

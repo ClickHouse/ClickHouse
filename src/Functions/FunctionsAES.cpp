@@ -15,14 +15,13 @@ namespace ErrorCodes
 {
     extern const int OPENSSL_ERROR;
 }
-}
+
 
 namespace OpenSSLDetails
 {
 void onError(std::string error_message)
 {
-    error_message += ". OpenSSL error code: " + std::to_string(ERR_get_error());
-    throw DB::Exception::createDeprecated(error_message, DB::ErrorCodes::OPENSSL_ERROR);
+    throw Exception(ErrorCodes::OPENSSL_ERROR, "{}. OpenSSL error code: {}", error_message, ERR_get_error());
 }
 
 StringRef foldEncryptionKeyInMySQLCompatitableMode(size_t cipher_key_size, StringRef key, std::array<char, EVP_MAX_KEY_LENGTH> & folded_key)
@@ -44,6 +43,8 @@ const EVP_CIPHER * getCipherByName(StringRef cipher_name)
     // with EVP_CIPHER_CTX_reset() or EVP_EncryptInit_ex(), but using EVP_CIPHER_fetch()
     // causes data race, so we stick to the slower but safer alternative here.
     return EVP_get_cipherbyname(cipher_name.data);
+}
+
 }
 
 }

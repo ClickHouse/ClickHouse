@@ -1,3 +1,4 @@
+#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/Access/InterpreterShowAccessQuery.h>
 
 #include <Parsers/formatAST.h>
@@ -78,6 +79,15 @@ ASTs InterpreterShowAccessQuery::getCreateAndGrantQueries() const
     ASTs result = std::move(create_queries);
     insertAtEnd(result, std::move(grant_queries));
     return result;
+}
+
+void registerInterpreterShowAccessQuery(InterpreterFactory & factory)
+{
+    auto create_fn = [] (const InterpreterFactory::Arguments & args)
+    {
+        return std::make_unique<InterpreterShowAccessQuery>(args.query, args.context);
+    };
+    factory.registerInterpreter("InterpreterShowAccessQuery", create_fn);
 }
 
 }

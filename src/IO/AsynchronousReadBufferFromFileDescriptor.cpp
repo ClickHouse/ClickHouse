@@ -76,6 +76,9 @@ void AsynchronousReadBufferFromFileDescriptor::prefetch(Priority priority)
 
 bool AsynchronousReadBufferFromFileDescriptor::nextImpl()
 {
+    /// If internal_buffer size is empty, then read() cannot be distinguished from EOF
+    assert(!internal_buffer.empty());
+
     IAsynchronousReader::Result result;
     if (prefetch_future.valid())
     {

@@ -3,6 +3,7 @@ import pytest
 import concurrent
 from helpers.cluster import ClickHouseCluster
 from helpers.client import QueryRuntimeException
+from helpers.corrupt_part_data_on_disk import corrupt_part_data_on_disk
 
 cluster = ClickHouseCluster(__file__)
 
@@ -19,22 +20,6 @@ def started_cluster():
 
     finally:
         cluster.shutdown()
-
-
-def corrupt_data_part_on_disk(node, database, table, part_name):
-    part_path = node.query(
-        f"SELECT path FROM system.parts WHERE database = '{database}' AND table = '{table}' AND name = '{part_name}'"
-    ).strip()
-    node.exec_in_container(
-        [
-            "bash",
-            "-c",
-            "cd {p} && ls *.bin | head -n 1 | xargs -I{{}} sh -c 'echo \"1\" >> $1' -- {{}}".format(
-                p=part_path
-            ),
-        ],
-        privileged=True,
-    )
 
 
 def remove_checksums_on_disk(node, database, table, part_name):
@@ -59,14 +44,15 @@ def remove_part_from_disk(node, table, part_name):
     )
 
 
-def test_check_normal_table_corruption(started_cluster):
+@pytest.mark.parametrize("merge_tree_settings", [""])
+def test_check_normal_table_corruption(started_cluster, merge_tree_settings):
     node1.query("DROP TABLE IF EXISTS non_replicated_mt")
 
     node1.query(
-        """
+        f"""
         CREATE TABLE non_replicated_mt(date Date, id UInt32, value Int32)
         ENGINE = MergeTree() PARTITION BY toYYYYMM(date) ORDER BY id
-        SETTINGS min_bytes_for_wide_part=0;
+        {merge_tree_settings};
     """
     )
 
@@ -105,7 +91,9 @@ def test_check_normal_table_corruption(started_cluster):
 
     assert node1.query("SELECT COUNT() FROM non_replicated_mt") == "2\n"
 
-    corrupt_data_part_on_disk(node1, "default", "non_replicated_mt", "201902_1_1_0")
+    corrupt_part_data_on_disk(
+        node1, "non_replicated_mt", "201902_1_1_0", database="default"
+    )
 
     assert node1.query(
         "CHECK TABLE non_replicated_mt",
@@ -129,7 +117,9 @@ def test_check_normal_table_corruption(started_cluster):
         == "201901_2_2_0\t1\t\n"
     )
 
-    corrupt_data_part_on_disk(node1, "default", "non_replicated_mt", "201901_2_2_0")
+    corrupt_part_data_on_disk(
+        node1, "non_replicated_mt", "201901_2_2_0", database="default"
+    )
 
     remove_checksums_on_disk(node1, "default", "non_replicated_mt", "201901_2_2_0")
 
@@ -139,16 +129,23 @@ def test_check_normal_table_corruption(started_cluster):
     ).strip().split("\t")[0:2] == ["201901_2_2_0", "0"]
 
 
-def test_check_replicated_table_simple(started_cluster):
+@pytest.mark.parametrize("merge_tree_settings, zk_path_suffix", [("", "_0")])
+def test_check_replicated_table_simple(
+    started_cluster, merge_tree_settings, zk_path_suffix
+):
     for node in [node1, node2]:
-        node.query("DROP TABLE IF EXISTS replicated_mt")
+        node.query("DROP TABLE IF EXISTS replicated_mt SYNC")
 
         node.query(
             """
         CREATE TABLE replicated_mt(date Date, id UInt32, value Int32)
-        ENGINE = ReplicatedMergeTree('/clickhouse/tables/replicated_mt', '{replica}') PARTITION BY toYYYYMM(date) ORDER BY id;
+        ENGINE = ReplicatedMergeTree('/clickhouse/tables/replicated_mt_{zk_path_suffix}', '{replica}')
+        PARTITION BY toYYYYMM(date) ORDER BY id
+        {merge_tree_settings}
             """.format(
-                replica=node.name
+                replica=node.name,
+                zk_path_suffix=zk_path_suffix,
+                merge_tree_settings=merge_tree_settings,
             )
         )
 
@@ -220,16 +217,32 @@ def test_check_replicated_table_simple(started_cluster):
     )
 
 
-def test_check_replicated_table_corruption(started_cluster):
+@pytest.mark.parametrize(
+    "merge_tree_settings, zk_path_suffix, part_file_ext",
+    [
+        (
+            "",
+            "_0",
+            ".bin",
+        )
+    ],
+)
+def test_check_replicated_table_corruption(
+    started_cluster, merge_tree_settings, zk_path_suffix, part_file_ext
+):
     for node in [node1, node2]:
-        node.query_with_retry("DROP TABLE IF EXISTS replicated_mt_1")
+        node.query_with_retry("DROP TABLE IF EXISTS replicated_mt_1 SYNC")
 
         node.query_with_retry(
             """
         CREATE TABLE replicated_mt_1(date Date, id UInt32, value Int32)
-        ENGINE = ReplicatedMergeTree('/clickhouse/tables/replicated_mt_1', '{replica}') PARTITION BY toYYYYMM(date) ORDER BY id;
+        ENGINE = ReplicatedMergeTree('/clickhouse/tables/replicated_mt_1_{zk_path_suffix}', '{replica}')
+        PARTITION BY toYYYYMM(date) ORDER BY id
+        {merge_tree_settings}
             """.format(
-                replica=node.name
+                replica=node.name,
+                merge_tree_settings=merge_tree_settings,
+                zk_path_suffix=zk_path_suffix,
             )
         )
 
@@ -248,7 +261,10 @@ def test_check_replicated_table_corruption(started_cluster):
         "SELECT name from system.parts where table = 'replicated_mt_1' and partition_id = '201901' and active = 1"
     ).strip()
 
-    corrupt_data_part_on_disk(node1, "default", "replicated_mt_1", part_name)
+    corrupt_part_data_on_disk(
+        node1, "replicated_mt_1", part_name, part_file_ext, database="default"
+    )
+
     assert node1.query(
         "CHECK TABLE replicated_mt_1 PARTITION 201901",
         settings={"check_query_single_value_result": 0, "max_threads": 1},

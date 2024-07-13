@@ -50,6 +50,21 @@ BackupFileInfo BackupCoordinationFileInfos::getFileInfoByDataFileIndex(size_t da
     return *(file_infos_for_all_hosts[data_file_index]);
 }
 
+namespace
+{
+
+/// copy all the file infos that are shared between reference target and source
+void copyFileInfoToReference(const BackupFileInfo & target, BackupFileInfo & reference)
+{
+    reference.size = target.size;
+    reference.checksum = target.checksum;
+    reference.base_size = target.base_size;
+    reference.base_checksum = target.base_checksum;
+    reference.encrypted_by_disk = target.encrypted_by_disk;
+}
+
+}
+
 void BackupCoordinationFileInfos::prepare() const
 {
     if (prepared)
@@ -78,8 +93,38 @@ void BackupCoordinationFileInfos::prepare() const
     num_files = 0;
     total_size_of_files = 0;
 
+    std::vector<BackupFileInfo *> unresolved_references;
+    std::unordered_map<std::string_view, BackupFileInfo *> file_name_to_info;
+
+    const auto handle_unresolved_references = [&](const auto & try_resolve_reference)
+    {
+        for (auto * reference : unresolved_references)
+        {
+            if (!try_resolve_reference(*reference))
+                throw DB::Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Couldn't resolve reference {} with target {}",
+                    reference->file_name,
+                    reference->reference_target);
+        }
+    };
+
     if (plain_backup)
     {
+        const auto try_resolve_reference = [&](BackupFileInfo & reference)
+        {
+            auto it = file_name_to_info.find(reference.reference_target);
+
+            if (it == file_name_to_info.end())
+                return false;
+
+            auto & target_info = it->second;
+            target_info->data_file_copies.push_back(reference.file_name);
+            copyFileInfoToReference(*target_info, reference);
+            total_size_of_files += reference.size;
+            return true;
+        };
+
         /// For plain backup all file infos are stored as is, without checking for duplicates or skipping empty files.
         for (size_t i = 0; i != file_infos_for_all_hosts.size(); ++i)
         {
@@ -88,12 +133,38 @@ void BackupCoordinationFileInfos::prepare() const
             info.data_file_index = i;
             info.base_size = 0; /// Base backup must not be used while creating a plain backup.
             info.base_checksum = 0;
-            total_size_of_files += info.size;
+
+            if (info.reference_target.empty())
+            {
+                file_name_to_info.emplace(info.file_name, &info);
+                total_size_of_files += info.size;
+            }
+            else if (!try_resolve_reference(info))
+            {
+                unresolved_references.push_back(&info);
+            }
         }
+
+        handle_unresolved_references(try_resolve_reference);
+
         num_files = file_infos_for_all_hosts.size();
     }
     else
     {
+        const auto try_resolve_reference = [&](BackupFileInfo & reference)
+        {
+            auto it = file_name_to_info.find(reference.reference_target);
+
+            if (it == file_name_to_info.end())
+                return false;
+
+            auto & target_info = it->second;
+            copyFileInfoToReference(*target_info, reference);
+            reference.data_file_name = target_info->data_file_name;
+            reference.data_file_index = target_info->data_file_index;
+            return true;
+        };
+
         /// For non-plain backups files with the same size and checksum are stored only once,
         /// in order to find those files we'll use this map.
         std::map<SizeAndChecksum, size_t> data_file_index_by_checksum;
@@ -101,6 +172,15 @@ void BackupCoordinationFileInfos::prepare() const
         for (size_t i = 0; i != file_infos_for_all_hosts.size(); ++i)
         {
             auto & info = *(file_infos_for_all_hosts[i]);
+
+            if (!info.reference_target.empty())
+            {
+                if (!try_resolve_reference(info))
+                    unresolved_references.push_back(&info);
+
+                continue;
+            }
+
             if (info.size == info.base_size)
             {
                 /// A file is either empty or can be get from the base backup as a whole.
@@ -126,7 +206,13 @@ void BackupCoordinationFileInfos::prepare() const
                     info.data_file_name = file_infos_for_all_hosts[it->second]->data_file_name;
                 }
             }
+
+            file_name_to_info.emplace(info.file_name, &info);
         }
+
+        handle_unresolved_references(try_resolve_reference);
+
+        num_files = file_infos_for_all_hosts.size();
     }
 
     prepared = true;

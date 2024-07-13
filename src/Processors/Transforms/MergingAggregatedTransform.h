@@ -21,7 +21,7 @@ protected:
 
 private:
     AggregatingTransformParamsPtr params;
-    Poco::Logger * log = &Poco::Logger::get("MergingAggregatedTransform");
+    LoggerPtr log = getLogger("MergingAggregatedTransform");
     size_t max_threads;
 
     AggregatedDataVariants data_variants;

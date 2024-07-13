@@ -54,7 +54,7 @@ Customers | summarize dcount(Education);
 Customers | summarize dcountif(Education, Occupation=='Professional');
 Customers | summarize count_ = count() by bin(Age, 10) | order by count_ asc;
 Customers | summarize job_count = count() by Occupation | where job_count > 0 | order by Occupation;
-Customers | summarize 'Edu Count'=count() by Education | sort by 'Edu Count' desc; -- { clientError 62 }
+Customers | summarize 'Edu Count'=count() by Education | sort by 'Edu Count' desc; -- { clientError SYNTAX_ERROR }
 
 print '-- make_list() --';
 Customers | summarize f_list = make_list(Education) by Occupation | sort by Occupation;
@@ -89,9 +89,9 @@ print '-- Summarize following sort --';
 Customers | sort by FirstName | summarize count() by Occupation | sort by Occupation;
 
 print '-- summarize with bin --';
-EventLog | summarize count=count() by bin(Created, 1000);
-EventLog | summarize count=count() by bin(unixtime_seconds_todatetime(Created/1000), 1s);
-EventLog | summarize count=count() by time_label=bin(Created/1000, 1s);
+EventLog | summarize count=count() by bin(Created, 1000) | sort by Created asc;
+EventLog | summarize count=count() by bin(unixtime_seconds_todatetime(Created/1000), 1s) | sort by Columns1 asc;
+EventLog | summarize count=count() by time_label=bin(Created/1000, 1s) | sort by time_label asc;
 Dates | project bin(datetime(EventTime), 1m);
 print '-- make_list_with_nulls --';
 Customers | summarize t = make_list_with_nulls(FirstName);

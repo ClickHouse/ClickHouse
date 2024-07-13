@@ -140,7 +140,7 @@ ParquetMetadataInputFormat::ParquetMetadataInputFormat(ReadBuffer & in_, Block h
     checkHeader(getPort().getHeader());
 }
 
-Chunk ParquetMetadataInputFormat::generate()
+Chunk ParquetMetadataInputFormat::read()
 {
     Chunk res;
     if (done)

@@ -40,8 +40,7 @@ size_t shortest_literal_length(const Literals & literals)
     if (literals.empty()) return 0;
     size_t shortest = std::numeric_limits<size_t>::max();
     for (const auto & lit : literals)
-        if (shortest > lit.literal.size())
-            shortest = lit.literal.size();
+        shortest = std::min(shortest, lit.literal.size());
     return shortest;
 }
 
@@ -451,7 +450,7 @@ try
 {
     Literals alternative_literals;
     Literal required_literal;
-    analyzeImpl(regexp_, regexp_.data(), required_literal, is_trivial, alternative_literals);
+    analyzeImpl(regexp_, regexp_.data(), required_literal, is_trivial, alternative_literals); // NOLINT
     required_substring = std::move(required_literal.literal);
     required_substring_is_prefix = required_literal.prefix;
     for (auto & lit : alternative_literals)
@@ -463,7 +462,7 @@ catch (...)
     is_trivial = false;
     required_substring_is_prefix = false;
     alternatives.clear();
-    LOG_ERROR(&Poco::Logger::get("OptimizeRegularExpression"), "Analyze RegularExpression failed, got error: {}", DB::getCurrentExceptionMessage(false));
+    LOG_ERROR(getLogger("OptimizeRegularExpression"), "Analyze RegularExpression failed, got error: {}", DB::getCurrentExceptionMessage(false));
 }
 
 OptimizedRegularExpression::OptimizedRegularExpression(const std::string & regexp_, int options)
@@ -484,7 +483,7 @@ OptimizedRegularExpression::OptimizedRegularExpression(const std::string & regex
     if (!is_trivial)
     {
         /// Compile the re2 regular expression.
-        typename re2::RE2::Options regexp_options;
+        re2::RE2::Options regexp_options;
 
         /// Never write error messages to stderr. It's ignorant to do it from library code.
         regexp_options.set_log_errors(false);
@@ -649,8 +648,7 @@ unsigned OptimizedRegularExpression::match(const char * subject, size_t subject_
     if (limit == 0)
         return 0;
 
-    if (limit > number_of_subpatterns + 1)
-        limit = number_of_subpatterns + 1;
+    limit = std::min(limit, number_of_subpatterns + 1);
 
     if (is_trivial)
     {

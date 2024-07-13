@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<clickhouse>
+  <storage_configuration>
+    <disks>
+        <default/>
+
+        <s3>
+            <type>s3</type>
+            <endpoint>http://minio1:9001/root/data/</endpoint>
+            <access_key_id>minio</access_key_id>
+            <secret_access_key>minio123</secret_access_key>
+        </s3>
+
+        <broken_s3>
+            <type>s3</type>
+            <endpoint>http://resolver:8083/root/data/</endpoint>
+            <access_key_id>minio</access_key_id>
+            <secret_access_key>minio123</secret_access_key>
+        </broken_s3>
+    </disks>
+
+    <policies>
+        <slow_s3>
+            <volumes>
+                <main>
+                    <disk>default</disk>
+                </main>
+                <broken>
+                    <disk>broken_s3</disk>
+                </broken>
+            </volumes>
+
+            <move_factor>0.0</move_factor>
+        </slow_s3>
+    </policies>
+  </storage_configuration>
+
+</clickhouse>

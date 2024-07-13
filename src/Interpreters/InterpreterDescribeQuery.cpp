@@ -9,6 +9,8 @@
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterDescribeQuery.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Access/Common/AccessFlags.h>
@@ -122,28 +124,29 @@ BlockIO InterpreterDescribeQuery::execute()
 
 void InterpreterDescribeQuery::fillColumnsFromSubquery(const ASTTableExpression & table_expression)
 {
-    NamesAndTypesList names_and_types;
+    Block sample_block;
     auto select_query = table_expression.subquery->children.at(0);
     auto current_context = getContext();
 
     if (settings.allow_experimental_analyzer)
     {
         SelectQueryOptions select_query_options;
-        names_and_types = InterpreterSelectQueryAnalyzer(select_query, current_context, select_query_options).getSampleBlock().getNamesAndTypesList();
+        sample_block = InterpreterSelectQueryAnalyzer(select_query, current_context, select_query_options).getSampleBlock();
     }
     else
     {
-        names_and_types = InterpreterSelectWithUnionQuery::getSampleBlock(select_query, current_context).getNamesAndTypesList();
+        sample_block = InterpreterSelectWithUnionQuery::getSampleBlock(select_query, current_context);
     }
 
-    for (auto && [name, type] : names_and_types)
-        columns.emplace_back(std::move(name), std::move(type));
+    for (auto && column : sample_block)
+        columns.emplace_back(std::move(column.name), std::move(column.type));
 }
 
 void InterpreterDescribeQuery::fillColumnsFromTableFunction(const ASTTableExpression & table_expression)
 {
     auto current_context = getContext();
     TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().get(table_expression.table_function, current_context);
+
     auto column_descriptions = table_function_ptr->getActualTableStructure(getContext(), /*is_insert_query*/ true);
     for (const auto & column : column_descriptions)
         columns.emplace_back(column);
@@ -153,14 +156,16 @@ void InterpreterDescribeQuery::fillColumnsFromTableFunction(const ASTTableExpres
         auto table = table_function_ptr->execute(table_expression.table_function, getContext(), table_function_ptr->getName());
         if (table)
         {
-            for (const auto & column : table->getVirtuals())
+            auto virtuals = table->getVirtualsPtr();
+            for (const auto & column : *virtuals)
             {
                 if (!column_descriptions.has(column.name))
-                    virtual_columns.emplace_back(column.name, column.type);
+                    virtual_columns.push_back(column);
             }
         }
     }
 }
+
 void InterpreterDescribeQuery::fillColumnsFromTable(const ASTTableExpression & table_expression)
 {
     auto table_id = getContext()->resolveStorageID(table_expression.database_and_table_name);
@@ -175,10 +180,11 @@ void InterpreterDescribeQuery::fillColumnsFromTable(const ASTTableExpression & t
 
     if (settings.describe_include_virtual_columns)
     {
-        for (const auto & column : table->getVirtuals())
+        auto virtuals = table->getVirtualsPtr();
+        for (const auto & column : *virtuals)
         {
             if (!column_descriptions.has(column.name))
-                virtual_columns.emplace_back(column.name, column.type);
+                virtual_columns.push_back(column);
         }
     }
 
@@ -269,6 +275,15 @@ void InterpreterDescribeQuery::addSubcolumns(const ColumnDescription & column, b
             res_columns[i++]->insert(is_virtual);
 
     }, ISerialization::SubstreamData(type->getDefaultSerialization()).withType(type));
+}
+
+void registerInterpreterDescribeQuery(InterpreterFactory & factory)
+{
+    auto create_fn = [] (const InterpreterFactory::Arguments & args)
+    {
+        return std::make_unique<InterpreterDescribeQuery>(args.query, args.context);
+    };
+    factory.registerInterpreter("InterpreterDescribeQuery", create_fn);
 }
 
 }

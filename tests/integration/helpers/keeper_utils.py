@@ -37,39 +37,59 @@ class KeeperException(Exception):
 class KeeperClient(object):
     SEPARATOR = b"\a\a\a\a\n"
 
-    def __init__(self, bin_path: str, host: str, port: int):
+    def __init__(self, bin_path: str, host: str, port: int, connection_tries=30):
         self.bin_path = bin_path
         self.host = host
         self.port = port
 
-        self.proc = subprocess.Popen(
-            [
-                bin_path,
-                "keeper-client",
-                "--host",
-                host,
-                "--port",
-                str(port),
-                "--log-level",
-                "error",
-                "--tests-mode",
-                "--no-confirmation",
-            ],
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-        )
+        retry_count = 0
 
-        self.poller = select.epoll()
-        self.poller.register(self.proc.stdout)
-        self.poller.register(self.proc.stderr)
+        while True:
+            try:
+                self.proc = subprocess.Popen(
+                    [
+                        bin_path,
+                        "keeper-client",
+                        "--host",
+                        host,
+                        "--port",
+                        str(port),
+                        "--log-level",
+                        "error",
+                        "--tests-mode",
+                        "--no-confirmation",
+                    ],
+                    stdin=subprocess.PIPE,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                )
 
-        self._fd_nums = {
-            self.proc.stdout.fileno(): self.proc.stdout,
-            self.proc.stderr.fileno(): self.proc.stderr,
-        }
+                self.poller = select.epoll()
+                self.poller.register(self.proc.stdout)
+                self.poller.register(self.proc.stderr)
 
-        self.stopped = False
+                self._fd_nums = {
+                    self.proc.stdout.fileno(): self.proc.stdout,
+                    self.proc.stderr.fileno(): self.proc.stderr,
+                }
+
+                self.stopped = False
+
+                self.get("/keeper", 60.0)
+                break
+            except Exception as e:
+                retry_count += 1
+                if (
+                    "All connection tries failed while connecting to ZooKeeper"
+                    in str(e)
+                    and retry_count < connection_tries
+                ):
+                    print(
+                        f"Got exception while connecting to Keeper: {e}\nWill reconnect, reconnect count = {retry_count}"
+                    )
+                    time.sleep(1)
+                else:
+                    raise
 
     def execute_query(self, query: str, timeout: float = 60.0) -> str:
         output = io.BytesIO()
@@ -94,7 +114,7 @@ class KeeperClient(object):
                         output.write(chunk)
 
                 elif file == self.proc.stderr:
-                    assert self.proc.stdout.readline() == self.SEPARATOR
+                    self.proc.stdout.readline()
                     raise KeeperException(self.proc.stderr.readline().strip().decode())
 
             else:
@@ -104,27 +124,27 @@ class KeeperClient(object):
         return data
 
     def cd(self, path: str, timeout: float = 60.0):
-        self.execute_query(f"cd {path}", timeout)
+        self.execute_query(f"cd '{path}'", timeout)
 
     def ls(self, path: str, timeout: float = 60.0) -> list[str]:
-        return self.execute_query(f"ls {path}", timeout).split(" ")
+        return self.execute_query(f"ls '{path}'", timeout).split(" ")
 
     def create(self, path: str, value: str, timeout: float = 60.0):
-        self.execute_query(f"create {path} {value}", timeout)
+        self.execute_query(f"create '{path}' '{value}'", timeout)
 
     def get(self, path: str, timeout: float = 60.0) -> str:
-        return self.execute_query(f"get {path}", timeout)
+        return self.execute_query(f"get '{path}'", timeout)
 
     def set(self, path: str, value: str, version: tp.Optional[int] = None) -> None:
         self.execute_query(
-            f"set {path} {value} {version if version is not None else ''}"
+            f"set '{path}' '{value}' {version if version is not None else ''}"
         )
 
     def rm(self, path: str, version: tp.Optional[int] = None) -> None:
-        self.execute_query(f"rm {path} {version if version is not None else ''}")
+        self.execute_query(f"rm '{path}' {version if version is not None else ''}")
 
     def exists(self, path: str, timeout: float = 60.0) -> bool:
-        return bool(int(self.execute_query(f"exists {path}", timeout)))
+        return bool(int(self.execute_query(f"exists '{path}'", timeout)))
 
     def stop(self):
         if not self.stopped:
@@ -132,22 +152,22 @@ class KeeperClient(object):
             self.proc.communicate(b"exit\n", timeout=10.0)
 
     def sync(self, path: str, timeout: float = 60.0):
-        self.execute_query(f"sync {path}", timeout)
+        self.execute_query(f"sync '{path}'", timeout)
 
     def touch(self, path: str, timeout: float = 60.0):
-        self.execute_query(f"touch {path}", timeout)
+        self.execute_query(f"touch '{path}'", timeout)
 
     def find_big_family(self, path: str, n: int = 10, timeout: float = 60.0) -> str:
-        return self.execute_query(f"find_big_family {path} {n}", timeout)
+        return self.execute_query(f"find_big_family '{path}' {n}", timeout)
 
     def find_super_nodes(self, threshold: int, timeout: float = 60.0) -> str:
         return self.execute_query(f"find_super_nodes {threshold}", timeout)
 
     def get_direct_children_number(self, path: str, timeout: float = 60.0) -> str:
-        return self.execute_query(f"get_direct_children_number {path}", timeout)
+        return self.execute_query(f"get_direct_children_number '{path}'", timeout)
 
     def get_all_children_number(self, path: str, timeout: float = 60.0) -> str:
-        return self.execute_query(f"get_all_children_number {path}", timeout)
+        return self.execute_query(f"get_all_children_number '{path}'", timeout)
 
     def delete_stale_backups(self, timeout: float = 60.0) -> str:
         return self.execute_query("delete_stale_backups", timeout)
@@ -176,7 +196,7 @@ class KeeperClient(object):
             )
 
         return self.execute_query(
-            f"reconfig {operation} {joining or leaving or new_members}", timeout
+            f"reconfig {operation} '{joining or leaving or new_members}'", timeout
         )
 
     @classmethod
@@ -221,13 +241,12 @@ NOT_SERVING_REQUESTS_ERROR_MSG = "This instance is not currently serving request
 
 
 def wait_until_connected(cluster, node, port=9181, timeout=30.0):
-    elapsed = 0.0
+    start = time.time()
 
     while send_4lw_cmd(cluster, node, "mntr", port) == NOT_SERVING_REQUESTS_ERROR_MSG:
         time.sleep(0.1)
-        elapsed += 0.1
 
-        if elapsed >= timeout:
+        if time.time() - start > timeout:
             raise Exception(
                 f"{timeout}s timeout while waiting for {node.name} to start serving requests"
             )
@@ -260,6 +279,13 @@ def get_leader(cluster, nodes):
     raise Exception("No leader in Keeper cluster.")
 
 
+def get_any_follower(cluster, nodes):
+    for node in nodes:
+        if is_follower(cluster, node):
+            return node
+    raise Exception("No followers in Keeper cluster.")
+
+
 def get_fake_zk(cluster, node, timeout: float = 30.0) -> KazooClient:
     _fake = KazooClient(
         hosts=cluster.get_instance_ip(node.name) + ":9181", timeout=timeout
@@ -280,14 +306,16 @@ def wait_configs_equal(left_config: str, right_zk: KeeperClient, timeout: float 
     Check whether get /keeper/config result in left_config is equal
     to get /keeper/config on right_zk ZK connection.
     """
-    elapsed: float = 0.0
-    while sorted(left_config.split("\n")) != sorted(
-        get_config_str(right_zk).split("\n")
-    ):
+    start = time.time()
+    left_config = sorted(left_config.split("\n"))
+    while True:
+        right_config = sorted(get_config_str(right_zk).split("\n"))
+        if left_config == right_config:
+            return
+
         time.sleep(1)
-        elapsed += 1
-        if elapsed >= timeout:
+        if time.time() - start > timeout:
             raise Exception(
                 f"timeout while checking nodes configs to get equal. "
-                f"Left: {left_config}, right: {get_config_str(right_zk)}"
+                f"Left: {left_config}, right: {right_config}"
             )

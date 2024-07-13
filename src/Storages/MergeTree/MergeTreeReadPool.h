@@ -26,12 +26,12 @@ public:
 
     MergeTreeReadPool(
         RangesInDataParts && parts_,
+        VirtualFields shared_virtual_fields_,
         const StorageSnapshotPtr & storage_snapshot_,
         const PrewhereInfoPtr & prewhere_info_,
         const ExpressionActionsSettings & actions_settings_,
         const MergeTreeReaderSettings & reader_settings_,
         const Names & column_names_,
-        const Names & virtual_column_names_,
         const PoolSettings & settings_,
         const ContextPtr & context_);
 
@@ -108,7 +108,7 @@ private:
     std::vector<ThreadTask> threads_tasks;
     std::set<size_t> remaining_thread_tasks;
 
-    Poco::Logger * log = &Poco::Logger::get("MergeTreeReadPool");
+    LoggerPtr log = getLogger("MergeTreeReadPool");
 };
 
 }

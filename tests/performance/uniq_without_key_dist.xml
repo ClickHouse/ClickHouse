@@ -1,0 +1,22 @@
+<test>
+    <substitutions>
+        <substitution>
+           <name>uniq_keys</name>
+           <values>
+               <value>100000</value>
+               <value>250000</value>
+               <value>500000</value>
+               <value>1000000</value>
+               <value>5000000</value>
+           </values>
+        </substitution>
+    </substitutions>
+
+    <create_query>create table t_{uniq_keys}(a UInt64) engine=MergeTree order by tuple()</create_query>
+
+    <fill_query>insert into t_{uniq_keys} select number % {uniq_keys} from numbers_mt(5e7)</fill_query>
+
+    <query>SELECT uniqExact(a) FROM remote('127.0.0.{{1,2}}', default, t_{uniq_keys}) SETTINGS max_threads=5</query>
+
+    <drop_query>drop table t_{uniq_keys}</drop_query>
+</test>

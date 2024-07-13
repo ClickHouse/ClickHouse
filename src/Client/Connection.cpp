@@ -1,3 +1,4 @@
+#include <cstddef>
 #include <memory>
 #include <Poco/Net/NetException.h>
 #include <Core/Defines.h>
@@ -20,7 +21,7 @@
 #include <Common/NetException.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/DNSResolver.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/OpenSSLHelpers.h>
 #include <Common/randomSeed.h>
 #include <Common/logger_useful.h>
@@ -34,8 +35,10 @@
 #include <Processors/Executors/PipelineExecutor.h>
 #include <pcg_random.hpp>
 #include <base/scope_guard.h>
+#include <Common/FailPoint.h>
 
 #include <Common/config_version.h>
+#include <Core/Types.h>
 #include "config.h"
 
 #if USE_SSL
@@ -51,6 +54,11 @@ namespace CurrentMetrics
 namespace DB
 {
 
+namespace FailPoints
+{
+    extern const char receive_timeout_on_table_status_response[];
+}
+
 namespace ErrorCodes
 {
     extern const int NETWORK_ERROR;
@@ -62,12 +70,23 @@ namespace ErrorCodes
     extern const int EMPTY_DATA_PASSED;
 }
 
-Connection::~Connection() = default;
+Connection::~Connection()
+{
+    try{
+        if (connected)
+            Connection::disconnect();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+}
 
 Connection::Connection(const String & host_, UInt16 port_,
     const String & default_database_,
     const String & user_, const String & password_,
-    const ssh::SSHKey & ssh_private_key_,
+    [[maybe_unused]] const SSHKey & ssh_private_key_,
+    const String & jwt_,
     const String & quota_key_,
     const String & cluster_,
     const String & cluster_secret_,
@@ -76,8 +95,11 @@ Connection::Connection(const String & host_, UInt16 port_,
     Protocol::Secure secure_)
     : host(host_), port(port_), default_database(default_database_)
     , user(user_), password(password_)
+#if USE_SSH
     , ssh_private_key(ssh_private_key_)
+#endif
     , quota_key(quota_key_)
+    , jwt(jwt_)
     , cluster(cluster_)
     , cluster_secret(cluster_secret_)
     , client_name(client_name_)
@@ -141,7 +163,7 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
                         async_callback(socket->impl()->sockfd(), connection_timeout, AsyncEventTimeoutType::CONNECT, description, AsyncTaskExecutor::READ | AsyncTaskExecutor::WRITE | AsyncTaskExecutor::ERROR);
 
                     if (auto err = socket->impl()->socketError())
-                        socket->impl()->error(err); // Throws an exception
+                        socket->impl()->error(err); // Throws an exception /// NOLINT(readability-static-accessed-through-instance)
 
                     socket->setBlocking(true);
                 }
@@ -152,6 +174,12 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
 
                 current_resolved_address = *it;
                 break;
+            }
+            catch (DB::NetException &)
+            {
+                if (++it == addresses.end())
+                    throw;
+                continue;
             }
             catch (Poco::Net::NetException &)
             {
@@ -189,6 +217,7 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
         out = std::make_shared<WriteBufferFromPocoSocket>(*socket);
         out->setAsyncCallback(async_callback);
         connected = true;
+        setDescription();
 
         sendHello();
         receiveHello(timeouts.handshake_timeout);
@@ -199,6 +228,17 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
         LOG_TRACE(log_wrapper.get(), "Connected to {} server version {}.{}.{}.",
             server_name, server_version_major, server_version_minor, server_version_patch);
     }
+    catch (DB::NetException & e)
+    {
+        disconnect();
+
+        /// Remove this possible stale entry from cache
+        DNSResolver::instance().removeHostFromCache(host);
+
+        /// Add server address to exception. Exception will preserve stack trace.
+        e.addMessage("({})", getDescription(/*with_extra*/ true));
+        throw;
+    }
     catch (Poco::Net::NetException & e)
     {
         disconnect();
@@ -206,8 +246,8 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
         /// Remove this possible stale entry from cache
         DNSResolver::instance().removeHostFromCache(host);
 
-        /// Add server address to exception. Also Exception will remember stack trace. It's a pity that more precise exception type is lost.
-        throw NetException(ErrorCodes::NETWORK_ERROR, "{} ({})", e.displayText(), getDescription());
+        /// Add server address to exception. Also Exception will remember new stack trace. It's a pity that more precise exception type is lost.
+        throw NetException(ErrorCodes::NETWORK_ERROR, "{} ({})", e.displayText(), getDescription(/*with_extra*/ true));
     }
     catch (Poco::TimeoutException & e)
     {
@@ -216,14 +256,14 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
         /// Remove this possible stale entry from cache
         DNSResolver::instance().removeHostFromCache(host);
 
-        /// Add server address to exception. Also Exception will remember stack trace. It's a pity that more precise exception type is lost.
+        /// Add server address to exception. Also Exception will remember new stack trace. It's a pity that more precise exception type is lost.
         /// This exception can only be thrown from socket->connect(), so add information about connection timeout.
         const auto & connection_timeout = static_cast<bool>(secure) ? timeouts.secure_connection_timeout : timeouts.connection_timeout;
         throw NetException(
             ErrorCodes::SOCKET_TIMEOUT,
             "{} ({}, connection timeout {} ms)",
             e.displayText(),
-            getDescription(),
+            getDescription(/*with_extra*/ true),
             connection_timeout.totalMilliseconds());
     }
 }
@@ -231,13 +271,31 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
 
 void Connection::disconnect()
 {
-    maybe_compressed_out = nullptr;
     in = nullptr;
     last_input_packet_type.reset();
     std::exception_ptr finalize_exception;
+
     try
     {
-        // finalize() can write to socket and throw an exception.
+        // finalize() can write and throw an exception.
+        if (maybe_compressed_out)
+            maybe_compressed_out->finalize();
+    }
+    catch (...)
+    {
+        /// Don't throw an exception here, it will leave Connection in invalid state.
+        finalize_exception = std::current_exception();
+
+        if (out)
+        {
+            out->cancel();
+            out = nullptr;
+        }
+    }
+    maybe_compressed_out = nullptr;
+
+    try
+    {
         if (out)
             out->finalize();
     }
@@ -250,23 +308,13 @@ void Connection::disconnect()
 
     if (socket)
         socket->close();
+
     socket = nullptr;
     connected = false;
     nonce.reset();
 
     if (finalize_exception)
         std::rethrow_exception(finalize_exception);
-}
-
-
-String Connection::packStringForSshSign(String challenge)
-{
-    String message;
-    message.append(std::to_string(DBMS_TCP_PROTOCOL_VERSION));
-    message.append(default_database);
-    message.append(user);
-    message.append(challenge);
-    return message;
 }
 
 
@@ -316,16 +364,21 @@ void Connection::sendHello()
                         "Inter-server secret support is disabled, because ClickHouse was built without SSL library");
 #endif
     }
-#if USE_SSL
-    /// Just inform server that we will authenticate using SSH keys.
+#if USE_SSH
     else if (!ssh_private_key.isEmpty())
     {
-        writeStringBinary(fmt::format("{}{}", EncodedUserInfo::SSH_KEY_AUTHENTICAION_MARKER, user), *out);
+        /// Inform server that we will authenticate using SSH keys.
+        writeStringBinary(String(EncodedUserInfo::SSH_KEY_AUTHENTICAION_MARKER) + user, *out);
         writeStringBinary(password, *out);
 
         performHandshakeForSSHAuth();
     }
 #endif
+    else if (!jwt.empty())
+    {
+        writeStringBinary(EncodedUserInfo::JWT_AUTHENTICAION_MARKER, *out);
+        writeStringBinary(jwt, *out);
+    }
     else
     {
         writeStringBinary(user, *out);
@@ -344,9 +397,9 @@ void Connection::sendAddendum()
 }
 
 
+#if USE_SSH
 void Connection::performHandshakeForSSHAuth()
 {
-#if USE_SSL
     String challenge;
     {
         writeVarUInt(Protocol::Client::SSHChallengeRequest, *out);
@@ -371,12 +424,23 @@ void Connection::performHandshakeForSSHAuth()
     }
 
     writeVarUInt(Protocol::Client::SSHChallengeResponse, *out);
-    String to_sign = packStringForSshSign(challenge);
+
+    auto pack_string_for_ssh_sign = [&](String challenge_)
+    {
+        String message;
+        message.append(std::to_string(DBMS_TCP_PROTOCOL_VERSION));
+        message.append(default_database);
+        message.append(user);
+        message.append(challenge_);
+        return message;
+    };
+
+    String to_sign = pack_string_for_ssh_sign(challenge);
     String signature = ssh_private_key.signString(to_sign);
     writeStringBinary(signature, *out);
     out->next();
-#endif
 }
+#endif
 
 
 void Connection::receiveHello(const Poco::Timespan & handshake_timeout)
@@ -455,8 +519,10 @@ const String & Connection::getDefaultDatabase() const
     return default_database;
 }
 
-const String & Connection::getDescription() const
+const String & Connection::getDescription(bool with_extra) const /// NOLINT
 {
+    if (with_extra)
+        return full_description;
     return description;
 }
 
@@ -585,6 +651,11 @@ TablesStatusResponse Connection::getTablesStatus(const ConnectionTimeouts & time
     if (!connected)
         connect(timeouts);
 
+    fiu_do_on(FailPoints::receive_timeout_on_table_status_response, {
+        sleepForSeconds(5);
+        throw NetException(ErrorCodes::SOCKET_TIMEOUT, "Injected timeout exceeded while reading from socket ({}:{})", host, port);
+    });
+
     TimeoutSetter timeout_setter(*socket, timeouts.sync_request_timeout, true);
 
     writeVarUInt(Protocol::Client::TablesStatusRequest, *out);
@@ -616,7 +687,7 @@ void Connection::sendQuery(
     bool with_pending_data,
     std::function<void(const Progress &)>)
 {
-    OpenTelemetry::SpanHolder span("Connection::sendQuery()", OpenTelemetry::CLIENT);
+    OpenTelemetry::SpanHolder span("Connection::sendQuery()", OpenTelemetry::SpanKind::CLIENT);
     span.addAttribute("clickhouse.query_id", query_id_);
     span.addAttribute("clickhouse.query", query);
     span.addAttribute("target", [this] () { return this->getHost() + ":" + std::to_string(this->getPort()); });
@@ -651,7 +722,13 @@ void Connection::sendQuery(
         if (method == "ZSTD")
             level = settings->network_zstd_compression_level;
 
-        CompressionCodecFactory::instance().validateCodec(method, level, !settings->allow_suspicious_codecs, settings->allow_experimental_codecs, settings->enable_deflate_qpl_codec);
+        CompressionCodecFactory::instance().validateCodec(
+            method,
+            level,
+            !settings->allow_suspicious_codecs,
+            settings->allow_experimental_codecs,
+            settings->enable_deflate_qpl_codec,
+            settings->enable_zstd_qat_codec);
         compression_codec = CompressionCodecFactory::instance().get(method, level);
     }
     else
@@ -728,6 +805,8 @@ void Connection::sendQuery(
     }
 
     maybe_compressed_in.reset();
+    if (maybe_compressed_out && maybe_compressed_out != out)
+        maybe_compressed_out->cancel();
     maybe_compressed_out.reset();
     block_in.reset();
     block_logs_in.reset();
@@ -1196,11 +1275,19 @@ void Connection::setDescription()
     auto resolved_address = getResolvedAddress();
     description = host + ":" + toString(port);
 
+    full_description = description;
+
     if (resolved_address)
     {
         auto ip_address = resolved_address->host().toString();
         if (host != ip_address)
-            description += ", " + ip_address;
+            full_description += ", " + ip_address;
+    }
+
+    if (const auto * socket_ = getSocket())
+    {
+        full_description += ", local address: ";
+        full_description += socket_->address().toString();
     }
 }
 
@@ -1263,6 +1350,7 @@ ServerConnectionPtr Connection::createConnection(const ConnectionParameters & pa
         parameters.user,
         parameters.password,
         parameters.ssh_private_key,
+        parameters.jwt,
         parameters.quota_key,
         "", /* cluster */
         "", /* cluster_secret */

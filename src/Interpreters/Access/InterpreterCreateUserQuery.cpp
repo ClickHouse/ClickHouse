@@ -1,3 +1,4 @@
+#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/Access/InterpreterCreateUserQuery.h>
 
 #include <Access/AccessControl.h>
@@ -259,6 +260,15 @@ void InterpreterCreateUserQuery::updateUserFromQuery(User & user, const ASTCreat
         auth_data = AuthenticationData::fromAST(*query.auth_data, {}, !query.attach);
 
     updateUserFromQueryImpl(user, query, auth_data, {}, {}, {}, {}, {}, allow_no_password, allow_plaintext_password, true);
+}
+
+void registerInterpreterCreateUserQuery(InterpreterFactory & factory)
+{
+    auto create_fn = [] (const InterpreterFactory::Arguments & args)
+    {
+        return std::make_unique<InterpreterCreateUserQuery>(args.query, args.context);
+    };
+    factory.registerInterpreter("InterpreterCreateUserQuery", create_fn);
 }
 
 }

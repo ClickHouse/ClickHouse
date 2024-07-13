@@ -2,7 +2,7 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageSet.h>
 #include <Storages/TableLockHolder.h>
-#include <Interpreters/HashJoin.h>
+#include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTIdentifier_fwd.h>
@@ -16,6 +16,7 @@
 #include <Common/Exception.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Interpreters/JoinUtils.h>
+#include <Formats/NativeWriter.h>
 
 #include <Compression/CompressedWriteBuffer.h>
 #include <Processors/ISource.h>
@@ -24,6 +25,7 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Poco/String.h>
 #include <filesystem>
+
 
 namespace fs = std::filesystem;
 
@@ -104,7 +106,7 @@ void StorageJoin::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPt
     if (disk->exists(path))
         disk->removeRecursive(path);
     else
-        LOG_INFO(&Poco::Logger::get("StorageJoin"), "Path {} is already removed from disk {}", path, disk->getName());
+        LOG_INFO(getLogger("StorageJoin"), "Path {} is already removed from disk {}", path, disk->getName());
 
     disk->createDirectories(path);
     disk->createDirectories(fs::path(path) / "tmp/");
@@ -393,10 +395,13 @@ void registerStorageJoin(StorageFactory & factory)
             else if (kind_str == "full")
             {
                 if (strictness == JoinStrictness::Any)
-                    strictness = JoinStrictness::RightAny;
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ANY FULL JOINs are not implemented");
                 kind = JoinKind::Full;
             }
         }
+
+        if ((strictness == JoinStrictness::Semi || strictness == JoinStrictness::Anti) && (kind != JoinKind::Left && kind != JoinKind::Right))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, " SEMI|ANTI JOIN should be LEFT or RIGHT");
 
         if (kind == JoinKind::Comma)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second parameter of storage Join must be LEFT or INNER or RIGHT or FULL (without quotes).");
@@ -500,7 +505,7 @@ protected:
         Chunk chunk;
         if (!joinDispatch(join->kind, join->strictness, join->data->maps.front(),
                 [&](auto kind, auto strictness, auto & map) { chunk = createChunk<kind, strictness>(map); }))
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: unknown JOIN strictness");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown JOIN strictness");
         return chunk;
     }
 
@@ -535,8 +540,7 @@ private:
 #undef M
 
             default:
-                throw Exception(ErrorCodes::UNSUPPORTED_JOIN_KEYS, "Unsupported JOIN keys in StorageJoin. Type: {}",
-                                static_cast<UInt32>(join->data->type));
+                throw Exception(ErrorCodes::UNSUPPORTED_JOIN_KEYS, "Unsupported JOIN keys of type {} in StorageJoin", join->data->type);
         }
 
         if (!rows_added)

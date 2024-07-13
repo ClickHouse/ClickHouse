@@ -1,7 +1,4 @@
-#include <IO/WriteBufferFromOStream.h>
-#include <Interpreters/applyTableOverride.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/Access/ASTCreateUserQuery.h>
 #include <Parsers/Access/ParserCreateUserQuery.h>
@@ -9,17 +6,18 @@
 #include <Parsers/ParserAlterQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ParserOptimizeQuery.h>
-#include <Parsers/ParserQueryWithOutput.h>
+#include <Parsers/ParserRenameQuery.h>
 #include <Parsers/ParserAttachAccessEntity.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/Kusto/ParserKQLQuery.h>
 #include <Parsers/PRQL/ParserPRQLQuery.h>
+#include <Common/re2.h>
 #include <string_view>
-#include <regex>
 #include <gtest/gtest.h>
 #include "gtest_common.h"
 #include <boost/algorithm/string/replace.hpp>
+
 
 namespace
 {
@@ -52,40 +50,59 @@ TEST_P(ParserTest, parseQuery)
     {
         if (std::string(expected_ast).starts_with("throws"))
         {
-            EXPECT_THROW(parseQuery(*parser, input_text.begin(), input_text.end(), 0, 0), DB::Exception);
+            EXPECT_THROW(parseQuery(*parser, input_text.begin(), input_text.end(), 0, 0, 0), DB::Exception);
         }
         else
         {
             ASTPtr ast;
-            ASSERT_NO_THROW(ast = parseQuery(*parser, input_text.begin(), input_text.end(), 0, 0));
+            ASSERT_NO_THROW(ast = parseQuery(*parser, input_text.begin(), input_text.end(), 0, 0, 0));
             if (std::string("CREATE USER or ALTER USER query") != parser->getName()
                     && std::string("ATTACH access entity query") != parser->getName())
             {
-                WriteBufferFromOwnString buf;
-                formatAST(*ast->clone(), buf, false, false);
-                String formatted_ast = buf.str();
-                EXPECT_EQ(expected_ast, formatted_ast);
+                ASTPtr ast_clone = ast->clone();
+                {
+                    WriteBufferFromOwnString buf;
+                    formatAST(*ast_clone, buf, false, false);
+                    String formatted_ast = buf.str();
+                    EXPECT_EQ(expected_ast, formatted_ast);
+                }
+
+
+                ASTPtr ast_clone2 = ast_clone->clone();
+                /// Break `ast_clone2`, it should not affect `ast_clone` if `clone()` implemented properly
+                for (auto & child : ast_clone2->children)
+                {
+                    if (auto * identifier = dynamic_cast<ASTIdentifier *>(child.get()))
+                        identifier->setShortName("new_name");
+                }
+
+                {
+                    WriteBufferFromOwnString buf;
+                    formatAST(*ast_clone, buf, false, false);
+                    String formatted_ast = buf.str();
+                    EXPECT_EQ(expected_ast, formatted_ast);
+                }
             }
             else
             {
                 if (input_text.starts_with("ATTACH"))
                 {
                     auto salt = (dynamic_cast<const ASTCreateUserQuery *>(ast.get())->auth_data)->getSalt().value_or("");
-                    EXPECT_TRUE(std::regex_match(salt, std::regex(expected_ast)));
+                    EXPECT_TRUE(re2::RE2::FullMatch(salt, expected_ast));
                 }
                 else
                 {
                     WriteBufferFromOwnString buf;
                     formatAST(*ast->clone(), buf, false, false);
                     String formatted_ast = buf.str();
-                    EXPECT_TRUE(std::regex_match(formatted_ast, std::regex(expected_ast)));
+                    EXPECT_TRUE(re2::RE2::FullMatch(formatted_ast, expected_ast));
                 }
             }
         }
     }
     else
     {
-        ASSERT_THROW(parseQuery(*parser, input_text.begin(), input_text.end(), 0, 0), DB::Exception);
+        ASSERT_THROW(parseQuery(*parser, input_text.begin(), input_text.end(), 0, 0, 0), DB::Exception);
     }
 }
 
@@ -131,7 +148,7 @@ INSTANTIATE_TEST_SUITE_P(ParserOptimizeQuery, ParserTest,
 
 INSTANTIATE_TEST_SUITE_P(ParserOptimizeQuery_FAIL, ParserTest,
     ::testing::Combine(
-        ::testing::Values(std::make_shared<ParserAlterCommand>()),
+        ::testing::Values(std::make_shared<ParserAlterCommand>(false)),
         ::testing::ValuesIn(std::initializer_list<ParserTestCase>
         {
             {
@@ -158,7 +175,7 @@ INSTANTIATE_TEST_SUITE_P(ParserOptimizeQuery_FAIL, ParserTest,
 
 INSTANTIATE_TEST_SUITE_P(ParserAlterCommand_MODIFY_COMMENT, ParserTest,
     ::testing::Combine(
-        ::testing::Values(std::make_shared<ParserAlterCommand>()),
+        ::testing::Values(std::make_shared<ParserAlterCommand>(false)),
         ::testing::ValuesIn(std::initializer_list<ParserTestCase>
         {
             {
@@ -295,6 +312,16 @@ INSTANTIATE_TEST_SUITE_P(ParserAttachUserQuery, ParserTest,
         {
             "ATTACH USER user1 IDENTIFIED WITH sha256_hash BY '2CC4880302693485717D34E06046594CFDFE425E3F04AA5A094C4AABAB3CB0BF'",  //for users created in older releases that sha256_password has no salt
             "^$"
+        }
+})));
+
+INSTANTIATE_TEST_SUITE_P(ParserRenameQuery, ParserTest,
+    ::testing::Combine(
+        ::testing::Values(std::make_shared<ParserRenameQuery>()),
+        ::testing::ValuesIn(std::initializer_list<ParserTestCase>{
+        {
+            "RENAME TABLE eligible_test TO eligible_test2",
+            "RENAME TABLE eligible_test TO eligible_test2"
         }
 })));
 
@@ -618,12 +645,13 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery, ParserKQLTest,
 
 static constexpr size_t kDummyMaxQuerySize = 256 * 1024;
 static constexpr size_t kDummyMaxParserDepth = 256;
+static constexpr size_t kDummyMaxParserBacktracks = 1000000;
 
 INSTANTIATE_TEST_SUITE_P(
     ParserPRQL,
     ParserTest,
     ::testing::Combine(
-        ::testing::Values(std::make_shared<ParserPRQLQuery>(kDummyMaxQuerySize, kDummyMaxParserDepth)),
+        ::testing::Values(std::make_shared<ParserPRQLQuery>(kDummyMaxQuerySize, kDummyMaxParserDepth, kDummyMaxParserBacktracks)),
         ::testing::ValuesIn(std::initializer_list<ParserTestCase>{
             {
                 "from albums\ngroup {author_id} (\n  aggregate {first_published = min published}\n)\njoin a=author side:left (==author_id)\njoin p=purchases side:right (==author_id)\ngroup {a.id, p.purchase_id} (\n  aggregate {avg_sell = min first_published}\n)",

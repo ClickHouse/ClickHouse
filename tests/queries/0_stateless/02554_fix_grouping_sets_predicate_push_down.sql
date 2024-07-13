@@ -1,3 +1,5 @@
+-- Tags: no-object-storage
+
 DROP TABLE IF EXISTS test_grouping_sets_predicate;
 
 CREATE TABLE test_grouping_sets_predicate

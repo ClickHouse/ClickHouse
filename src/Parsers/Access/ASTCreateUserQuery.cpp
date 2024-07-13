@@ -4,6 +4,7 @@
 #include <Parsers/Access/ASTUserNameWithHost.h>
 #include <Parsers/Access/ASTAuthenticationData.h>
 #include <Common/quoteString.h>
+#include <Access/Common/SSLCertificateSubjects.h>
 #include <IO/Operators.h>
 
 
@@ -17,7 +18,6 @@ namespace
         settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " RENAME TO " << (settings.hilite ? IAST::hilite_none : "")
                       << quoteString(new_name);
     }
-
 
     void formatAuthenticationData(const ASTAuthenticationData & auth_data, const IAST::FormatSettings & settings)
     {

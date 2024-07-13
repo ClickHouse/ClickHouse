@@ -222,7 +222,7 @@ void registerDictionarySourceClickHouse(DictionarySourceFactory & factory)
         {
             validateNamedCollection(
                 *named_collection, {}, ValidateKeysMultiset<ExternalDatabaseEqualKeysSet>{
-                    "secure", "host", "hostnmae", "port", "user", "username", "password", "quota_key", "name",
+                    "secure", "host", "hostname", "port", "user", "username", "password", "quota_key", "name",
                     "db", "database", "table","query", "where", "invalidate_query", "update_field", "update_lag"});
 
             const auto secure = named_collection->getOrDefault("secure", false);

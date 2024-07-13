@@ -22,9 +22,9 @@ StorageSystemSymbols::StorageSystemSymbols(const StorageID & table_id_)
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(ColumnsDescription(
     {
-        {"symbol", std::make_shared<DataTypeString>()},
-        {"address_begin", std::make_shared<DataTypeUInt64>()},
-        {"address_end", std::make_shared<DataTypeUInt64>()},
+        {"symbol", std::make_shared<DataTypeString>(), "Symbol name in the binary. It is mangled. You can apply demangle(symbol) to obtain a readable name."},
+        {"address_begin", std::make_shared<DataTypeUInt64>(), "Start address of the symbol in the binary."},
+        {"address_end", std::make_shared<DataTypeUInt64>(), "End address of the symbol in the binary."},
     }));
     setInMemoryMetadata(storage_metadata);
 }

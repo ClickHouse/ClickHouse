@@ -54,7 +54,7 @@ public:
     static std::optional<CNF> tryBuildCNF(const QueryTreeNodePtr & node, ContextPtr context, size_t max_growth_multiplier = DEFAULT_MAX_GROWTH_MULTIPLIER);
     static CNF toCNF(const QueryTreeNodePtr & node, ContextPtr context, size_t max_growth_multiplier = DEFAULT_MAX_GROWTH_MULTIPLIER);
 
-    QueryTreeNodePtr toQueryTree(ContextPtr context) const;
+    QueryTreeNodePtr toQueryTree() const;
 
     const auto & getStatements() const
     {

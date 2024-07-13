@@ -9,6 +9,12 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
 class SeekableReadBuffer;
 
 /// A backup entry represents some data which should be written to the backup or has been read from the backup.
@@ -38,6 +44,12 @@ public:
     virtual bool isFromImmutableFile() const { return false; }
     virtual String getFilePath() const { return ""; }
     virtual DiskPtr getDisk() const { return nullptr; }
+
+    virtual bool isReference() const { return false; }
+    virtual String getReferenceTarget() const
+    {
+        throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "getReferenceTarget not implemented for the backup entry");
+    }
 
     virtual DataSourceDescription getDataSourceDescription() const = 0;
 };

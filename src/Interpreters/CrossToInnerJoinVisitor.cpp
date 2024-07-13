@@ -173,7 +173,7 @@ std::vector<JoinedElement> getTables(const ASTSelectQuery & select)
     {
         const auto * table_element = child->as<ASTTablesInSelectQueryElement>();
         if (!table_element)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: TablesInSelectQueryElement expected");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "TablesInSelectQueryElement expected");
 
         JoinedElement & t = joined_tables.emplace_back(*table_element);
         t.rewriteCommaToCross();
@@ -224,7 +224,7 @@ void CrossToInnerJoinMatcher::visit(ASTSelectQuery & select, ASTPtr &, Data & da
     {
         if (joined_tables.size() != data.tables_with_columns.size())
             throw Exception(ErrorCodes::LOGICAL_ERROR,
-                            "Logical error: inconsistent number of tables: {} != {}",
+                            "Inconsistent number of tables: {} != {}",
                             joined_tables.size(), data.tables_with_columns.size());
 
         for (size_t i = 0; i < joined_tables.size(); ++i)
@@ -249,7 +249,7 @@ void CrossToInnerJoinMatcher::visit(ASTSelectQuery & select, ASTPtr &, Data & da
                 ASTPtr on_expr = makeOnExpression(expr_it->second);
                 if (rewritten = joined.rewriteCrossToInner(on_expr); rewritten)
                 {
-                    LOG_DEBUG(&Poco::Logger::get("CrossToInnerJoin"), "Rewritten '{}' to '{}'", query_before, queryToString(*joined.tableJoin()));
+                    LOG_DEBUG(getLogger("CrossToInnerJoin"), "Rewritten '{}' to '{}'", query_before, queryToString(*joined.tableJoin()));
                 }
             }
 

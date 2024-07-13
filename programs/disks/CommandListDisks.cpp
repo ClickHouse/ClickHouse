@@ -1,47 +1,40 @@
-#include "ICommand.h"
+#include <algorithm>
 #include <Interpreters/Context.h>
+#include <Common/TerminalSize.h>
+#include "DisksClient.h"
+#include "ICommand.h"
 
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int BAD_ARGUMENTS;
-}
-
 class CommandListDisks final : public ICommand
 {
 public:
-    CommandListDisks()
+    explicit CommandListDisks() : ICommand()
     {
         command_name = "list-disks";
-        description = "List disks names";
-        usage = "list-disks [OPTION]";
+        description = "Lists all available disks";
     }
 
-    void processOptions(
-        Poco::Util::LayeredConfiguration &,
-        po::variables_map &) const override
-    {}
-
-    void execute(
-        const std::vector<String> & command_arguments,
-        DB::ContextMutablePtr & global_context,
-        Poco::Util::LayeredConfiguration &) override
+    void executeImpl(const CommandLineOptions &, DisksClient & client) override
     {
-        if (!command_arguments.empty())
+        std::vector<String> sorted_and_selected{};
+        for (const auto & disk_name : client.getAllDiskNames())
         {
-            printHelpMessage();
-            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Bad Arguments");
+            sorted_and_selected.push_back(disk_name + ":" + client.getDiskWithPath(disk_name).getAbsolutePath(""));
         }
-
-        for (const auto & [disk_name, _] : global_context->getDisksMap())
-            std::cout << disk_name << '\n';
+        std::sort(sorted_and_selected.begin(), sorted_and_selected.end());
+        for (const auto & disk_name : sorted_and_selected)
+        {
+            std::cout << disk_name << "\n";
+        }
     }
-};
-}
 
-std::unique_ptr <DB::ICommand> makeCommandListDisks()
+private:
+};
+
+CommandPtr makeCommandListDisks()
 {
-    return std::make_unique<DB::CommandListDisks>();
+    return std::make_shared<DB::CommandListDisks>();
+}
 }

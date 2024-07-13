@@ -53,7 +53,7 @@ private:
     void prepare();
     void finish();
 
-    enum class State
+    enum class State : uint8_t
     {
         NEED_PREPARE,
         NEED_EXECUTE,

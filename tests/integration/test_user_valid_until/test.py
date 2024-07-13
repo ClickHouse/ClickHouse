@@ -78,7 +78,9 @@ def test_details(started_cluster):
     # 2. Time only is not supported
     node.query("CREATE USER user_details_time_only VALID UNTIL '22:03:40'")
 
+    until_year = datetime.today().strftime("%Y")
+
     assert (
         node.query("SHOW CREATE USER user_details_time_only")
-        == "CREATE USER user_details_time_only VALID UNTIL \\'2023-01-01 22:03:40\\'\n"
+        == f"CREATE USER user_details_time_only VALID UNTIL \\'{until_year}-01-01 22:03:40\\'\n"
     )

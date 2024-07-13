@@ -1,7 +1,4 @@
-#include <string>
-
 #include <iostream>
-#include <fstream>
 #include <iomanip>
 
 #include <Common/Stopwatch.h>
@@ -23,7 +20,7 @@ int main(int, char **)
         Stopwatch stopwatch;
 
         {
-            DB::WriteBufferFromFile buf("test1", DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_CREAT | O_TRUNC);
+            DB::WriteBufferFromFile buf("test1", DB::DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_CREAT | O_TRUNC);
             DB::CompressedWriteBuffer compressed_buf(buf);
 
             stopwatch.restart();

@@ -5,8 +5,10 @@
 #include <Parsers/parseQuery.h>
 #include <Parsers/HiliteComparator/HiliteComparator.h>
 #include <gtest/gtest.h>
-#include <Common/StackTrace.h>
+#include <Common/quoteString.h>
 
+
+using namespace DB;
 
 String hilite(const String & s, const char * hilite_type)
 {
@@ -20,12 +22,12 @@ String keyword(const String & s)
 
 String identifier(const String & s)
 {
-    return hilite(s, DB::IAST::hilite_identifier);
+    return hilite(backQuoteIfNeed(s), DB::IAST::hilite_identifier);
 }
 
 String alias(const String & s)
 {
-    return hilite(s, DB::IAST::hilite_alias);
+    return hilite(backQuoteIfNeed(s), DB::IAST::hilite_alias);
 }
 
 String op(const String & s)
@@ -48,7 +50,7 @@ void compare(const String & expected, const String & query)
 {
     using namespace DB;
     ParserQuery parser(query.data() + query.size());
-    ASTPtr ast = parseQuery(parser, query, 0, 0);
+    ASTPtr ast = parseQuery(parser, query, 0, 0, 0);
 
     WriteBufferFromOwnString write_buffer;
     IAST::FormatSettings settings(write_buffer, true, true);
@@ -61,65 +63,65 @@ void compare(const String & expected, const String & query)
 const std::vector<std::pair<std::string, std::string>> expected_and_query_pairs = {
     // Simple select
     {
-        keyword("SELECT ") + "* " + keyword("FROM ") + identifier("table"),
-        "select * from table"
+        keyword("SELECT") + " * " + keyword("FROM") + " " + identifier("table"),
+        "select * from `table`"
     },
 
     // ASTWithElement
     {
-        keyword("WITH ") + alias("alias ") + keyword("AS ")
-            + "(" + keyword("SELECT ") + "* " + keyword("FROM ") + identifier("table") + ") "
-            + keyword("SELECT ") + "* " + keyword("FROM ") + identifier("table"),
-        "with alias as (select * from table) select * from table"
+        keyword("WITH ") + alias("alias ") + " " + keyword("AS")
+            + " (" + keyword("SELECT") + " * " + keyword("FROM") + " " + identifier("table") + ") "
+            + keyword("SELECT") + " * " + keyword("FROM") + " " + identifier("table"),
+        "with `alias ` as (select * from `table`) select * from `table`"
     },
 
     // ASTWithAlias
     {
-        keyword("SELECT ") + identifier("a ") + op("+ ") + "1 " + keyword("AS ") + alias("b") + ", " + identifier("b"),
+        keyword("SELECT") + " " + identifier("a") + " " + op("+") + " 1 " + keyword("AS") + " " + alias("b") + ", " + identifier("b"),
         "select a + 1 as b, b"
     },
 
     // ASTFunction
     {
         keyword("SELECT ") + "* " + keyword("FROM ")
-            + function("view(") + keyword("SELECT ") + "* " + keyword("FROM ") + identifier("table") + function(")"),
-        "select * from view(select * from table)"
+            + function("view(") + keyword("SELECT") + " * " + keyword("FROM ") + identifier("table") + function(")"),
+        "select * from view(select * from `table`)"
     },
 
     // ASTDictionaryAttributeDeclaration
     {
-        keyword("CREATE DICTIONARY ") + "name "
-            + "(`Name` " + function("ClickHouseDataType ")
-            + keyword("DEFAULT ") + "'' "
-            + keyword("EXPRESSION ") + function("rand64() ")
+        keyword("CREATE DICTIONARY ") + identifier("name") + " "
+            + "(`Name` " + function("ClickHouseDataType")
+            + keyword(" DEFAULT") + " '' "
+            + keyword("EXPRESSION") + " " + function("rand64()") + " "
             + keyword("IS_OBJECT_ID") + ")",
         "CREATE DICTIONARY name (`Name` ClickHouseDataType DEFAULT '' EXPRESSION rand64() IS_OBJECT_ID)"
     },
 
     // ASTDictionary, SOURCE keyword
     {
-        keyword("CREATE DICTIONARY ") + "name "
-            + "(`Name` " + function("ClickHouseDataType ")
-            + keyword("DEFAULT ") + "'' "
-            + keyword("EXPRESSION ") + function("rand64() ")
+        keyword("CREATE DICTIONARY ") + identifier("name") + " "
+            + "(`Name`" + " " + function("ClickHouseDataType ")
+            + keyword("DEFAULT") + " '' "
+            + keyword("EXPRESSION") + " " + function("rand64()") + " "
             + keyword("IS_OBJECT_ID") + ") "
-            + keyword("SOURCE") + "(" + keyword("FILE") + "(" + keyword("PATH ") + "'path'))",
+            + keyword("SOURCE") + "(" + keyword("FILE") + "(" + keyword("PATH") + " 'path'))",
         "CREATE DICTIONARY name (`Name` ClickHouseDataType DEFAULT '' EXPRESSION rand64() IS_OBJECT_ID) "
         "SOURCE(FILE(PATH 'path'))"
     },
 
     // ASTKillQueryQuery
     {
-        keyword("KILL QUERY ON CLUSTER ") + "clustername "
-            + keyword("WHERE ") + identifier("user ") + op("= ") + "'username' "
+        keyword("KILL QUERY ON CLUSTER") + " clustername "
+            + keyword("WHERE") + " " + identifier("user") + op(" = ") + "'username' "
             + keyword("SYNC"),
         "KILL QUERY ON CLUSTER clustername WHERE user = 'username' SYNC"
     },
 
     // ASTCreateQuery
     {
-        keyword("CREATE TABLE ") + "name " + keyword("AS (SELECT ") + "*" + keyword(") ")
-            + keyword("COMMENT ") + "'hello'",
+        keyword("CREATE TABLE ") + identifier("name") + " " + keyword("AS (SELECT") + " *" + keyword(")") + " "
+            + keyword("COMMENT") + " 'hello'",
         "CREATE TABLE name AS (SELECT *) COMMENT 'hello'"
     },
 };

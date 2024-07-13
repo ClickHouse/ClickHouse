@@ -1,3 +1,5 @@
+			"detail": "clickhouse",
+			"row_number": "999997"
 		},
 		{
 			"datetime": "2020-12-12",
@@ -18,6 +20,4 @@
 	],
 
 	"rows": 1000000,
-
-	"rows_before_limit_at_least": 1048080,
 

@@ -3,6 +3,8 @@
 #include <memory>
 #include "Entries.h"
 
+namespace DB
+{
 
 // Iterates over all name entries in data source
 class ILanguageRegionsNamesReader
@@ -49,3 +51,5 @@ public:
 };
 
 using IRegionsNamesDataProviderPtr = std::unique_ptr<IRegionsNamesDataProvider>;
+
+}

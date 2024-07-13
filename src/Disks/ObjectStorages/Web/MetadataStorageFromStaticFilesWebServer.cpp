@@ -60,22 +60,22 @@ void MetadataStorageFromStaticFilesWebServer::assertExists(const std::string & p
 bool MetadataStorageFromStaticFilesWebServer::isFile(const std::string & path) const
 {
     assertExists(path);
-    std::shared_lock shared_lock(object_storage.metadata_mutex);
-    return object_storage.files.at(path).type == WebObjectStorage::FileType::File;
+    auto file_info = object_storage.getFileInfo(path);
+    return file_info->type == WebObjectStorage::FileType::File;
 }
 
 bool MetadataStorageFromStaticFilesWebServer::isDirectory(const std::string & path) const
 {
     assertExists(path);
-    std::shared_lock shared_lock(object_storage.metadata_mutex);
-    return object_storage.files.at(path).type == WebObjectStorage::FileType::Directory;
+    auto file_info = object_storage.getFileInfo(path);
+    return file_info->type == WebObjectStorage::FileType::Directory;
 }
 
 uint64_t MetadataStorageFromStaticFilesWebServer::getFileSize(const String & path) const
 {
     assertExists(path);
-    std::shared_lock shared_lock(object_storage.metadata_mutex);
-    return object_storage.files.at(path).size;
+    auto file_info = object_storage.getFileInfo(path);
+    return file_info->size;
 }
 
 StoredObjects MetadataStorageFromStaticFilesWebServer::getStorageObjects(const std::string & path) const
@@ -86,8 +86,8 @@ StoredObjects MetadataStorageFromStaticFilesWebServer::getStorageObjects(const s
     std::string remote_path = fs_path.parent_path() / (escapeForFileName(fs_path.stem()) + fs_path.extension().string());
     remote_path = remote_path.substr(object_storage.url.size());
 
-    std::shared_lock shared_lock(object_storage.metadata_mutex);
-    return {StoredObject(remote_path, object_storage.files.at(path).size, path)};
+    auto file_info = object_storage.getFileInfo(path);
+    return {StoredObject(remote_path, path, file_info->size)};
 }
 
 std::vector<std::string> MetadataStorageFromStaticFilesWebServer::listDirectory(const std::string & path) const
@@ -109,13 +109,7 @@ DirectoryIteratorPtr MetadataStorageFromStaticFilesWebServer::iterateDirectory(c
     if (!exists(path))
         return std::make_unique<StaticDirectoryIterator>(std::move(dir_file_paths));
 
-    std::shared_lock shared_lock(object_storage.metadata_mutex);
-    for (const auto & [file_path, _] : object_storage.files)
-    {
-        if (fs::path(parentPath(file_path)) / "" == fs::path(path) / "")
-            dir_file_paths.emplace_back(file_path);
-    }
-
+    dir_file_paths = object_storage.listDirectory(path);
     LOG_TRACE(object_storage.log, "Iterate directory {} with {} files", path, dir_file_paths.size());
     return std::make_unique<StaticDirectoryIterator>(std::move(dir_file_paths));
 }

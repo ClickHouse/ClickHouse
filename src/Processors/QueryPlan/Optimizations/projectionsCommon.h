@@ -1,30 +1,14 @@
 #pragma once
 #include <Interpreters/ActionsDAG.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/ReadFromMergeTree.h>
 
 namespace DB
 {
 
-class ReadFromMergeTree;
-
 using PartitionIdToMaxBlock = std::unordered_map<String, Int64>;
-
 struct ProjectionDescription;
-
 class MergeTreeDataSelectExecutor;
-
-struct MergeTreeDataSelectAnalysisResult;
-using MergeTreeDataSelectAnalysisResultPtr = std::shared_ptr<MergeTreeDataSelectAnalysisResult>;
-
-class IMergeTreeDataPart;
-using DataPartPtr = std::shared_ptr<const IMergeTreeDataPart>;
-using DataPartsVector = std::vector<DataPartPtr>;
-struct RangesInDataParts;
-
-struct StorageInMemoryMetadata;
-using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
-
-struct SelectQueryInfo;
 
 }
 
@@ -61,8 +45,8 @@ struct ProjectionCandidate
     /// Analysis result, separate for parts with and without projection.
     /// Analysis is done in order to estimate the number of marks we are going to read.
     /// For chosen projection, it is reused for reading step.
-    MergeTreeDataSelectAnalysisResultPtr merge_tree_projection_select_result_ptr;
-    MergeTreeDataSelectAnalysisResultPtr merge_tree_ordinary_select_result_ptr;
+    ReadFromMergeTree::AnalysisResultPtr merge_tree_projection_select_result_ptr;
+    ReadFromMergeTree::AnalysisResultPtr merge_tree_ordinary_select_result_ptr;
 };
 
 /// This function fills ProjectionCandidate structure for specified projection.
@@ -73,10 +57,9 @@ bool analyzeProjectionCandidate(
     const MergeTreeDataSelectExecutor & reader,
     const Names & required_column_names,
     const RangesInDataParts & parts_with_ranges,
-    const StorageMetadataPtr & metadata,
     const SelectQueryInfo & query_info,
     const ContextPtr & context,
     const std::shared_ptr<PartitionIdToMaxBlock> & max_added_blocks,
-    const ActionDAGNodes & added_filter_nodes);
+    const ActionsDAGPtr & dag);
 
 }

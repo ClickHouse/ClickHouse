@@ -3,6 +3,7 @@
 import pytest
 from helpers.cluster import ClickHouseCluster, ClickHouseInstance
 from os.path import join, dirname, realpath
+import time
 import helpers.keeper_utils as ku
 import typing as tp
 
@@ -82,6 +83,12 @@ def test_reconfig_replace_leader(started_cluster):
     assert "node2" in config
     assert "node3" in config
     assert "node4" not in config
+
+    # wait until cluster stabilizes with a new leader
+    while not ku.is_leader(started_cluster, node2) and not ku.is_leader(
+        started_cluster, node3
+    ):
+        time.sleep(1)
 
     # additional 20s wait before removing leader
     ku.wait_configs_equal(config, zk2, timeout=50)

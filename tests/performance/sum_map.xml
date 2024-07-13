@@ -7,7 +7,7 @@
         <substitution>
            <name>scale</name>
            <values>
-               <value>1000000</value>
+               <value>100000</value>
            </values>
        </substitution>
         <substitution>

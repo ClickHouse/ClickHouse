@@ -39,11 +39,11 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors mandatory_args = {
-            {"Value", &isNumber<IDataType>, nullptr, "Number"},
-            {"precision", &isNativeInteger<IDataType>, &isColumnConst, "const Integer"}
+            {"Value", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNumber), nullptr, "Number"},
+            {"precision", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeInteger), &isColumnConst, "const Integer"}
         };
 
-        validateFunctionArgumentTypes(*this, arguments, mandatory_args, {});
+        validateFunctionArguments(*this, arguments, mandatory_args, {});
 
         return std::make_shared<DataTypeString>();
     }
@@ -225,10 +225,10 @@ private:
         if constexpr (is_decimal<T>)
         {
             const auto * from_col = checkAndGetColumn<ColumnDecimal<T>>(arguments[0].column.get());
-            UInt8 from_scale = from_col->getScale();
 
             if (from_col)
             {
+                UInt8 from_scale = from_col->getScale();
                 if (precision_col_const)
                     vectorConstant(from_col->getData(), precision_col_const->template getValue<UInt8>(), result_chars, result_offsets, from_scale);
                 else if (precision_col)

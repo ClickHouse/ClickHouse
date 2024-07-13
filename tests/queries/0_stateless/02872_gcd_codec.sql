@@ -103,8 +103,24 @@ SELECT * FROM table_gcd_codec_datetime;
 SELECT * FROM table_gcd_codec_datetime64;
 
 
--- A column with all 0 values can be compressed/decompressed
+-- A column with all zero values can be compressed/decompressed
 
-CREATE TEMPORARY TABLE table_gcd_codec_only_zero_values (n UInt8 CODEC(GCD, LZ4)) ENGINE = Memory;
-INSERT INTO table_gcd_codec_only_zero_values VALUES (0), (0), (0);
-SELECT * FROM table_gcd_codec_only_zero_values;
+CREATE TEMPORARY TABLE table_gcd_codec_only_zeros (n UInt8 CODEC(GCD, LZ4)) ENGINE = Memory;
+INSERT INTO table_gcd_codec_only_zeros VALUES (0), (0), (0);
+SELECT * FROM table_gcd_codec_only_zeros;
+
+-- Tests for Bug #56672:
+
+DROP TABLE IF EXISTS table_gcd_codec_one_hundred_zeros;
+DROP TABLE IF EXISTS table_gcd_codec_one_hundred_ones;
+
+CREATE TABLE table_gcd_codec_one_hundred_zeros (a Nullable(Int64) CODEC (GCD,LZ4)) ENGINE=MergeTree ORDER BY ();
+INSERT INTO table_gcd_codec_one_hundred_zeros SELECT 0 FROM numbers(100);
+SELECT * FROM table_gcd_codec_one_hundred_zeros;
+
+CREATE TABLE table_gcd_codec_one_hundred_ones (a Nullable(Int64) CODEC (GCD,LZ4)) ENGINE=MergeTree Order by ();
+INSERT INTO table_gcd_codec_one_hundred_ones SELECT 1 FROM numbers(100);
+SELECT * FROM table_gcd_codec_one_hundred_ones;
+
+DROP TABLE table_gcd_codec_one_hundred_zeros;
+DROP TABLE table_gcd_codec_one_hundred_ones;

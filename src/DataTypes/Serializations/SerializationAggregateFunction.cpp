@@ -1,17 +1,15 @@
-#include <DataTypes/Serializations/SerializationAggregateFunction.h>
-
-#include <IO/WriteHelpers.h>
-
+#include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnAggregateFunction.h>
-
-#include <Common/typeid_cast.h>
-#include <Common/assert_cast.h>
-#include <Common/AlignedBuffer.h>
-#include <Common/Arena.h>
-
+#include <DataTypes/Serializations/SerializationAggregateFunction.h>
 #include <Formats/FormatSettings.h>
 #include <IO/Operators.h>
+#include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
+#include <Common/AlignedBuffer.h>
+#include <Common/Arena.h>
+#include <Common/assert_cast.h>
+#include <Common/typeid_cast.h>
 
 namespace DB
 {
@@ -65,9 +63,7 @@ void SerializationAggregateFunction::serializeBinaryBulk(const IColumn & column,
     ColumnAggregateFunction::Container::const_iterator it = vec.begin() + offset;
     ColumnAggregateFunction::Container::const_iterator end = limit ? it + limit : vec.end();
 
-    if (end > vec.end())
-        end = vec.end();
-
+    end = std::min(end, vec.end());
     for (; it != end; ++it)
         function->serialize(*it, ostr, version);
 }
@@ -150,10 +146,10 @@ void SerializationAggregateFunction::serializeTextEscaped(const IColumn & column
 }
 
 
-void SerializationAggregateFunction::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
+void SerializationAggregateFunction::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     String s;
-    readEscapedString(s, istr);
+    settings.tsv.crlf_end_of_line_input ? readEscapedStringCRLF(s, istr) : readEscapedString(s, istr);
     deserializeFromString(function, column, s, version);
 }
 
@@ -186,10 +182,10 @@ void SerializationAggregateFunction::serializeTextJSON(const IColumn & column, s
 }
 
 
-void SerializationAggregateFunction::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
+void SerializationAggregateFunction::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     String s;
-    readJSONString(s, istr);
+    readJSONString(s, istr, settings.json);
     deserializeFromString(function, column, s, version);
 }
 

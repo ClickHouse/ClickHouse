@@ -6,6 +6,9 @@
 #include <Functions/FunctionsStringSimilarity.h>
 #include <Common/PODArray.h>
 #include <Common/UTF8Helpers.h>
+#include <Common/iota.h>
+
+#include <numeric>
 
 #ifdef __SSE4_2__
 #    include <nmmintrin.h>
@@ -24,7 +27,7 @@ struct FunctionStringDistanceImpl
 {
     using ResultType = typename Op::ResultType;
 
-    static void constantConstant(const std::string & haystack, const std::string & needle, ResultType & res)
+    static void constantConstant(const String & haystack, const String & needle, ResultType & res)
     {
         res = Op::process(haystack.data(), haystack.size(), needle.data(), needle.size());
     }
@@ -50,7 +53,7 @@ struct FunctionStringDistanceImpl
     }
 
     static void constantVector(
-        const std::string & haystack,
+        const String & haystack,
         const ColumnString::Chars & needle_data,
         const ColumnString::Offsets & needle_offsets,
         PaddedPODArray<ResultType> & res)
@@ -69,7 +72,7 @@ struct FunctionStringDistanceImpl
     static void vectorConstant(
         const ColumnString::Chars & data,
         const ColumnString::Offsets & offsets,
-        const std::string & needle,
+        const String & needle,
         PaddedPODArray<ResultType> & res)
     {
         constantVector(needle, data, offsets, res);
@@ -80,7 +83,7 @@ struct FunctionStringDistanceImpl
 struct ByteHammingDistanceImpl
 {
     using ResultType = UInt64;
-    static ResultType inline process(
+    static ResultType process(
         const char * __restrict haystack, size_t haystack_size, const char * __restrict needle, size_t needle_size)
     {
         UInt64 res = 0;
@@ -110,11 +113,41 @@ struct ByteHammingDistanceImpl
     }
 };
 
+void parseUTF8String(const char * __restrict data, size_t size, std::function<void(UInt32)> utf8_consumer, std::function<void(unsigned char)> ascii_consumer = nullptr)
+{
+    const char * end = data + size;
+    while (data < end)
+    {
+        size_t len = UTF8::seqLength(*data);
+        if (len == 1)
+        {
+            if (ascii_consumer)
+                ascii_consumer(static_cast<unsigned char>(*data));
+            else
+                utf8_consumer(static_cast<UInt32>(*data));
+            ++data;
+        }
+        else
+        {
+            auto code_point = UTF8::convertUTF8ToCodePoint(data, end - data);
+            if (code_point.has_value())
+            {
+                utf8_consumer(code_point.value());
+                data += len;
+            }
+            else
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Illegal UTF-8 sequence, while processing '{}'", StringRef(data, end - data));
+            }
+        }
+    }
+}
+
 template <bool is_utf8>
 struct ByteJaccardIndexImpl
 {
     using ResultType = Float64;
-    static ResultType inline process(
+    static ResultType process(
         const char * __restrict haystack, size_t haystack_size, const char * __restrict needle, size_t needle_size)
     {
         if (haystack_size == 0 || needle_size == 0)
@@ -135,56 +168,27 @@ struct ByteJaccardIndexImpl
         haystack_set.fill(0);
         needle_set.fill(0);
 
-        while (haystack < haystack_end)
+        if constexpr (is_utf8)
         {
-            size_t len = 1;
-            if constexpr (is_utf8)
-                len = UTF8::seqLength(*haystack);
-
-            if (len == 1)
+            parseUTF8String(
+                haystack,
+                haystack_size,
+                [&](UInt32 data) { haystack_utf8_set.insert(data); },
+                [&](unsigned char data) { haystack_set[data] = 1; });
+            parseUTF8String(
+                needle, needle_size, [&](UInt32 data) { needle_utf8_set.insert(data); }, [&](unsigned char data) { needle_set[data] = 1; });
+        }
+        else
+        {
+            while (haystack < haystack_end)
             {
                 haystack_set[static_cast<unsigned char>(*haystack)] = 1;
                 ++haystack;
             }
-            else
-            {
-                auto code_point = UTF8::convertUTF8ToCodePoint(haystack, haystack_end - haystack);
-                if (code_point.has_value())
-                {
-                    haystack_utf8_set.insert(code_point.value());
-                    haystack += len;
-                }
-                else
-                {
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Illegal UTF-8 sequence, while processing '{}'", StringRef(haystack, haystack_end - haystack));
-                }
-            }
-        }
-
-        while (needle < needle_end)
-        {
-
-            size_t len = 1;
-            if constexpr (is_utf8)
-                len = UTF8::seqLength(*needle);
-
-            if (len == 1)
+            while (needle < needle_end)
             {
                 needle_set[static_cast<unsigned char>(*needle)] = 1;
                 ++needle;
-            }
-            else
-            {
-                auto code_point = UTF8::convertUTF8ToCodePoint(needle, needle_end - needle);
-                if (code_point.has_value())
-                {
-                    needle_utf8_set.insert(code_point.value());
-                    needle += len;
-                }
-                else
-                {
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Illegal UTF-8 sequence, while processing '{}'", StringRef(needle, needle_end - needle));
-                }
             }
         }
 
@@ -221,23 +225,34 @@ struct ByteJaccardIndexImpl
     }
 };
 
+static constexpr size_t max_string_size = 1u << 16;
+
+template<bool is_utf8>
 struct ByteEditDistanceImpl
 {
     using ResultType = UInt64;
-    static constexpr size_t max_string_size = 1u << 16;
 
-    static ResultType inline process(
+    static ResultType process(
         const char * __restrict haystack, size_t haystack_size, const char * __restrict needle, size_t needle_size)
     {
         if (haystack_size == 0 || needle_size == 0)
             return haystack_size + needle_size;
 
-        /// Safety threshold against DoS, since we use two array to calculate the distance.
+        /// Safety threshold against DoS, since we use two arrays to calculate the distance.
         if (haystack_size > max_string_size || needle_size > max_string_size)
             throw Exception(
                 ErrorCodes::TOO_LARGE_STRING_SIZE,
-                "The string size is too big for function editDistance, "
-                "should be at most {}", max_string_size);
+                "The string size is too big for function editDistance, should be at most {}", max_string_size);
+
+        PaddedPODArray<UInt32> haystack_utf8;
+        PaddedPODArray<UInt32> needle_utf8;
+        if constexpr (is_utf8)
+        {
+            parseUTF8String(haystack, haystack_size, [&](UInt32 data) { haystack_utf8.push_back(data); });
+            parseUTF8String(needle, needle_size, [&](UInt32 data) { needle_utf8.push_back(data); });
+            haystack_size = haystack_utf8.size();
+            needle_size = needle_utf8.size();
+        }
 
         PaddedPODArray<ResultType> distances0(haystack_size + 1, 0);
         PaddedPODArray<ResultType> distances1(haystack_size + 1, 0);
@@ -246,8 +261,7 @@ struct ByteEditDistanceImpl
         ResultType insertion = 0;
         ResultType deletion = 0;
 
-        for (size_t i = 0; i <= haystack_size; ++i)
-            distances0[i] = i;
+        iota(distances0.data(), haystack_size + 1, ResultType(0));
 
         for (size_t pos_needle = 0; pos_needle < needle_size; ++pos_needle)
         {
@@ -259,15 +273,196 @@ struct ByteEditDistanceImpl
                 insertion = distances1[pos_haystack] + 1;
                 substitution = distances0[pos_haystack];
 
-                if (*(needle + pos_needle) != *(haystack + pos_haystack))
-                    substitution += 1;
-
+                if constexpr (is_utf8)
+                {
+                    if (needle_utf8[pos_needle] != haystack_utf8[pos_haystack])
+                        substitution += 1;
+                }
+                else
+                {
+                    if (*(needle + pos_needle) != *(haystack + pos_haystack))
+                        substitution += 1;
+                }
                 distances1[pos_haystack + 1] = std::min(deletion, std::min(substitution, insertion));
             }
             distances0.swap(distances1);
         }
 
         return distances0[haystack_size];
+    }
+};
+
+struct ByteDamerauLevenshteinDistanceImpl
+{
+    using ResultType = UInt64;
+
+    static ResultType process(
+        const char * __restrict haystack, size_t haystack_size, const char * __restrict needle, size_t needle_size)
+    {
+        /// Safety threshold against DoS
+        if (haystack_size > max_string_size || needle_size > max_string_size)
+            throw Exception(
+                ErrorCodes::TOO_LARGE_STRING_SIZE,
+                "The string size is too big for function damerauLevenshteinDistance, should be at most {}", max_string_size);
+
+        /// Shortcuts:
+
+        if (haystack_size == 0)
+            return needle_size;
+
+        if (needle_size == 0)
+            return haystack_size;
+
+        if (haystack_size == needle_size && memcmp(haystack, needle, haystack_size) == 0)
+            return 0;
+
+        /// Implements the algorithm for optimal string alignment distance from
+        /// https://en.wikipedia.org/wiki/Damerau%E2%80%93Levenshtein_distance#Optimal_string_alignment_distance
+
+        /// Dynamically allocate memory for the 2D array
+        /// Allocating a 2D array, for convenience starts is an array of pointers to the start of the rows.
+        std::vector<int> d((needle_size + 1) * (haystack_size + 1));
+        std::vector<int *> starts(haystack_size + 1);
+
+        /// Setting the pointers in starts to the beginning of (needle_size + 1)-long intervals.
+        /// Also initialize the row values based on the mentioned algorithm.
+        for (size_t i = 0; i <= haystack_size; ++i)
+        {
+            starts[i] = d.data() + (needle_size + 1) * i;
+            starts[i][0] = static_cast<int>(i);
+        }
+
+        for (size_t j = 0; j <= needle_size; ++j)
+        {
+            starts[0][j] = static_cast<int>(j);
+        }
+
+        for (size_t i = 1; i <= haystack_size; ++i)
+        {
+            for (size_t j = 1; j <= needle_size; ++j)
+            {
+                int cost = (haystack[i - 1] == needle[j - 1]) ? 0 : 1;
+                starts[i][j] = std::min(starts[i - 1][j] + 1,                  /// deletion
+                                        std::min(starts[i][j - 1] + 1,         /// insertion
+                                                 starts[i - 1][j - 1] + cost)  /// substitution
+                               );
+                if (i > 1 && j > 1 && haystack[i - 1] == needle[j - 2] && haystack[i - 2] == needle[j - 1])
+                    starts[i][j] = std::min(starts[i][j], starts[i - 2][j - 2] + 1); /// transposition
+            }
+        }
+
+        return starts[haystack_size][needle_size];
+    }
+};
+
+struct ByteJaroSimilarityImpl
+{
+    using ResultType = Float64;
+
+    static ResultType process(
+        const char * __restrict haystack, size_t haystack_size, const char * __restrict needle, size_t needle_size)
+    {
+        /// Safety threshold against DoS
+        if (haystack_size > max_string_size || needle_size > max_string_size)
+            throw Exception(
+                ErrorCodes::TOO_LARGE_STRING_SIZE,
+                "The string size is too big for function jaroSimilarity, should be at most {}", max_string_size);
+
+        /// Shortcuts:
+
+        if (haystack_size == 0)
+            return needle_size;
+
+        if (needle_size == 0)
+            return haystack_size;
+
+        if (haystack_size == needle_size && memcmp(haystack, needle, haystack_size) == 0)
+            return 1.0;
+
+        const int s1len = static_cast<int>(haystack_size);
+        const int s2len = static_cast<int>(needle_size);
+
+        /// Window size to search for matches in the other string
+        const int max_range = std::max(0, std::max(s1len, s2len) / 2 - 1);
+        std::vector<int> s1_matching(s1len, -1);
+        std::vector<int> s2_matching(s2len, -1);
+
+        /// Calculate matching characters
+        size_t matching_characters = 0;
+        for (int i = 0; i < s1len; i++)
+        {
+            /// Matching window
+            const int min_index = std::max(i - max_range, 0);
+            const int max_index = std::min(i + max_range + 1, s2len);
+            for (int j = min_index; j < max_index; j++)
+            {
+                if (s2_matching[j] == -1 && haystack[i] == needle[j])
+                {
+                    s1_matching[i] = i;
+                    s2_matching[j] = j;
+                    matching_characters++;
+                    break;
+                }
+            }
+        }
+
+        if (matching_characters == 0)
+            return 0.0;
+
+        /// Transpositions (one-way only)
+        double transpositions = 0.0;
+        for (size_t i = 0, s1i = 0, s2i = 0; i < matching_characters; i++)
+        {
+            while (s1_matching[s1i] == -1)
+                s1i++;
+            while (s2_matching[s2i] == -1)
+                s2i++;
+            if (haystack[s1i] != needle[s2i])
+                transpositions += 0.5;
+            s1i++;
+            s2i++;
+        }
+
+        double m = static_cast<double>(matching_characters);
+        double jaro_similarity = 1.0 / 3.0  * (m / static_cast<double>(s1len)
+                                            + m / static_cast<double>(s2len)
+                                            + (m - transpositions) / m);
+        return jaro_similarity;
+    }
+};
+
+struct ByteJaroWinklerSimilarityImpl
+{
+    using ResultType = Float64;
+
+    static ResultType process(
+        const char * __restrict haystack, size_t haystack_size, const char * __restrict needle, size_t needle_size)
+    {
+        static constexpr int max_prefix_length = 4;
+        static constexpr double scaling_factor =  0.1;
+        static constexpr double boost_threshold = 0.7;
+
+        /// Safety threshold against DoS
+        if (haystack_size > max_string_size || needle_size > max_string_size)
+            throw Exception(
+                ErrorCodes::TOO_LARGE_STRING_SIZE,
+                "The string size is too big for function jaroWinklerSimilarity, should be at most {}", max_string_size);
+
+        const int s1len = static_cast<int>(haystack_size);
+        const int s2len = static_cast<int>(needle_size);
+
+        ResultType jaro_winkler_similarity = ByteJaroSimilarityImpl::process(haystack, haystack_size, needle, needle_size);
+
+        if (jaro_winkler_similarity > boost_threshold)
+        {
+            const int common_length = std::min(max_prefix_length, std::min(s1len, s2len));
+            int common_prefix = 0;
+            while (common_prefix < common_length && haystack[common_prefix] == needle[common_prefix])
+                common_prefix++;
+
+            jaro_winkler_similarity += common_prefix * scaling_factor * (1.0 - jaro_winkler_similarity);
+        }
+        return jaro_winkler_similarity;
     }
 };
 
@@ -281,7 +476,18 @@ struct NameEditDistance
 {
     static constexpr auto name = "editDistance";
 };
-using FunctionEditDistance = FunctionsStringSimilarity<FunctionStringDistanceImpl<ByteEditDistanceImpl>, NameEditDistance>;
+using FunctionEditDistance = FunctionsStringSimilarity<FunctionStringDistanceImpl<ByteEditDistanceImpl<false>>, NameEditDistance>;
+struct NameEditDistanceUTF8
+{
+    static constexpr auto name = "editDistanceUTF8";
+};
+using FunctionEditDistanceUTF8 = FunctionsStringSimilarity<FunctionStringDistanceImpl<ByteEditDistanceImpl<true>>, NameEditDistanceUTF8>;
+
+struct NameDamerauLevenshteinDistance
+{
+    static constexpr auto name = "damerauLevenshteinDistance";
+};
+using FunctionDamerauLevenshteinDistance = FunctionsStringSimilarity<FunctionStringDistanceImpl<ByteDamerauLevenshteinDistanceImpl>, NameDamerauLevenshteinDistance>;
 
 struct NameJaccardIndex
 {
@@ -295,6 +501,18 @@ struct NameJaccardIndexUTF8
 };
 using FunctionStringJaccardIndexUTF8 = FunctionsStringSimilarity<FunctionStringDistanceImpl<ByteJaccardIndexImpl<true>>, NameJaccardIndexUTF8>;
 
+struct NameJaroSimilarity
+{
+    static constexpr auto name = "jaroSimilarity";
+};
+using FunctionJaroSimilarity = FunctionsStringSimilarity<FunctionStringDistanceImpl<ByteJaroSimilarityImpl>, NameJaroSimilarity>;
+
+struct NameJaroWinklerSimilarity
+{
+    static constexpr auto name = "jaroWinklerSimilarity";
+};
+using FunctionJaroWinklerSimilarity = FunctionsStringSimilarity<FunctionStringDistanceImpl<ByteJaroWinklerSimilarityImpl>, NameJaroWinklerSimilarity>;
+
 REGISTER_FUNCTION(StringDistance)
 {
     factory.registerFunction<FunctionByteHammingDistance>(
@@ -305,9 +523,22 @@ REGISTER_FUNCTION(StringDistance)
         FunctionDocumentation{.description = R"(Calculates the edit distance between two byte-strings.)"});
     factory.registerAlias("levenshteinDistance", NameEditDistance::name);
 
+    factory.registerFunction<FunctionEditDistanceUTF8>(
+        FunctionDocumentation{.description = R"(Calculates the edit distance between two UTF8 strings.)"});
+    factory.registerAlias("levenshteinDistanceUTF8", NameEditDistanceUTF8::name);
+
+    factory.registerFunction<FunctionDamerauLevenshteinDistance>(
+        FunctionDocumentation{.description = R"(Calculates the Damerau-Levenshtein distance two between two byte-string.)"});
+
     factory.registerFunction<FunctionStringJaccardIndex>(
-        FunctionDocumentation{.description = R"(Calculates the [Jaccard similarity index](https://en.wikipedia.org/wiki/Jaccard_index) between two byte strings.)"});
+        FunctionDocumentation{.description = R"(Calculates the Jaccard similarity index between two byte strings.)"});
     factory.registerFunction<FunctionStringJaccardIndexUTF8>(
-        FunctionDocumentation{.description = R"(Calculates the [Jaccard similarity index](https://en.wikipedia.org/wiki/Jaccard_index) between two UTF8 strings.)"});
+        FunctionDocumentation{.description = R"(Calculates the Jaccard similarity index between two UTF8 strings.)"});
+
+    factory.registerFunction<FunctionJaroSimilarity>(
+        FunctionDocumentation{.description = R"(Calculates the Jaro similarity between two byte-string.)"});
+
+    factory.registerFunction<FunctionJaroWinklerSimilarity>(
+        FunctionDocumentation{.description = R"(Calculates the Jaro-Winkler similarity between two byte-string.)"});
 }
 }

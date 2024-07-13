@@ -1,5 +1,5 @@
 1000
-data	Tuple(_id Tuple(`$oid` String), date Tuple(`$date` String), teams Nested(abbreviation String, city String, home UInt8, name String, players Nested(ast Int8, blk Int8, drb Int8, fg Int8, fg3 Int8, fg3_pct String, fg3a Int8, fg_pct String, fga Int8, ft Int8, ft_pct String, fta Int8, mp String, orb Int8, pf Int8, player String, pts Int8, stl Int8, tov Int8, trb Int8), results Tuple(ast Int8, blk Int8, drb Int8, fg Int8, fg3 Int8, fg3_pct String, fg3a Int8, fg_pct String, fga Int8, ft Int8, ft_pct String, fta Int8, mp Int16, orb Int8, pf Int8, pts Int16, stl Int8, tov Int8, trb Int8), score Int16, won Int8))					
+data	Tuple(\n    _id Tuple(\n        `$oid` String),\n    date Tuple(\n        `$date` String),\n    teams Nested(abbreviation String, city String, home UInt8, name String, players Nested(ast Int8, blk Int8, drb Int8, fg Int8, fg3 Int8, fg3_pct String, fg3a Int8, fg_pct String, fga Int8, ft Int8, ft_pct String, fta Int8, mp String, orb Int8, pf Int8, player String, pts Int8, stl Int8, tov Int8, trb Int8), results Tuple(ast Int8, blk Int8, drb Int8, fg Int8, fg3 Int8, fg3_pct String, fg3a Int8, fg_pct String, fga Int8, ft Int8, ft_pct String, fta Int8, mp Int16, orb Int8, pf Int8, pts Int16, stl Int8, tov Int8, trb Int8), score Int16, won Int8))					
 Boston Celtics	70
 Los Angeles Lakers	64
 Milwaukee Bucks	61

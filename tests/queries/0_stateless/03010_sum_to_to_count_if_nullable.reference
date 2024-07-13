@@ -1,0 +1,118 @@
+(5,NULL)
+(5,NULL)
+((6150),3)
+(5,NULL)
+QUERY id: 0
+  PROJECTION COLUMNS
+    (sumIf(toNullable(1), equals(modulo(number, 2), 0)), NULL) Tuple(Nullable(UInt64), Nullable(Nothing))
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: tuple, function_type: ordinary, result_type: Tuple(Nullable(UInt64), Nullable(Nothing))
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: sumIf, function_type: aggregate, result_type: Nullable(UInt64)
+              ARGUMENTS
+                LIST id: 5, nodes: 2
+                  CONSTANT id: 6, constant_value: UInt64_1, constant_value_type: Nullable(UInt8)
+                    EXPRESSION
+                      FUNCTION id: 7, function_name: toNullable, function_type: ordinary, result_type: Nullable(UInt8)
+                        ARGUMENTS
+                          LIST id: 8, nodes: 1
+                            CONSTANT id: 9, constant_value: UInt64_1, constant_value_type: UInt8
+                  FUNCTION id: 10, function_name: equals, function_type: ordinary, result_type: UInt8
+                    ARGUMENTS
+                      LIST id: 11, nodes: 2
+                        FUNCTION id: 12, function_name: modulo, function_type: ordinary, result_type: UInt8
+                          ARGUMENTS
+                            LIST id: 13, nodes: 2
+                              COLUMN id: 14, column_name: number, result_type: UInt64, source_id: 15
+                              CONSTANT id: 16, constant_value: UInt64_2, constant_value_type: UInt8
+                        CONSTANT id: 17, constant_value: UInt64_0, constant_value_type: UInt8
+            CONSTANT id: 18, constant_value: NULL, constant_value_type: Nullable(Nothing)
+  JOIN TREE
+    TABLE_FUNCTION id: 15, alias: __table1, table_function_name: numbers
+      ARGUMENTS
+        LIST id: 19, nodes: 1
+          CONSTANT id: 20, constant_value: UInt64_10, constant_value_type: UInt8
+(5,NULL)
+QUERY id: 0
+  PROJECTION COLUMNS
+    (sum(if(equals(modulo(number, 2), 0), toNullable(1), 0)), NULL) Tuple(Nullable(UInt64), Nullable(Nothing))
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: tuple, function_type: ordinary, result_type: Tuple(Nullable(UInt64), Nullable(Nothing))
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: sum, function_type: aggregate, result_type: Nullable(UInt64)
+              ARGUMENTS
+                LIST id: 5, nodes: 1
+                  FUNCTION id: 6, function_name: if, function_type: ordinary, result_type: Nullable(UInt8)
+                    ARGUMENTS
+                      LIST id: 7, nodes: 3
+                        FUNCTION id: 8, function_name: equals, function_type: ordinary, result_type: UInt8
+                          ARGUMENTS
+                            LIST id: 9, nodes: 2
+                              FUNCTION id: 10, function_name: modulo, function_type: ordinary, result_type: UInt8
+                                ARGUMENTS
+                                  LIST id: 11, nodes: 2
+                                    COLUMN id: 12, column_name: number, result_type: UInt64, source_id: 13
+                                    CONSTANT id: 14, constant_value: UInt64_2, constant_value_type: UInt8
+                              CONSTANT id: 15, constant_value: UInt64_0, constant_value_type: UInt8
+                        CONSTANT id: 16, constant_value: UInt64_1, constant_value_type: Nullable(UInt8)
+                          EXPRESSION
+                            FUNCTION id: 17, function_name: toNullable, function_type: ordinary, result_type: Nullable(UInt8)
+                              ARGUMENTS
+                                LIST id: 18, nodes: 1
+                                  CONSTANT id: 19, constant_value: UInt64_1, constant_value_type: UInt8
+                        CONSTANT id: 20, constant_value: UInt64_0, constant_value_type: UInt8
+            CONSTANT id: 21, constant_value: NULL, constant_value_type: Nullable(Nothing)
+  JOIN TREE
+    TABLE_FUNCTION id: 13, alias: __table1, table_function_name: numbers
+      ARGUMENTS
+        LIST id: 22, nodes: 1
+          CONSTANT id: 23, constant_value: UInt64_10, constant_value_type: UInt8
+((6150),3)
+QUERY id: 0
+  PROJECTION COLUMNS
+    ((sum(if(equals(modulo(number, 2), 0), toNullable(0), 123))), toUInt8(3)) Tuple(Tuple(Nullable(UInt64)), UInt8)
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: tuple, function_type: ordinary, result_type: Tuple(Tuple(Nullable(UInt64)), UInt8)
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: tuple, function_type: ordinary, result_type: Tuple(Nullable(UInt64))
+              ARGUMENTS
+                LIST id: 5, nodes: 1
+                  FUNCTION id: 6, function_name: sum, function_type: aggregate, nulls_action : IGNORE_NULLS, result_type: Nullable(UInt64)
+                    ARGUMENTS
+                      LIST id: 7, nodes: 1
+                        FUNCTION id: 8, function_name: if, function_type: ordinary, result_type: Nullable(UInt8)
+                          ARGUMENTS
+                            LIST id: 9, nodes: 3
+                              FUNCTION id: 10, function_name: equals, function_type: ordinary, result_type: UInt8
+                                ARGUMENTS
+                                  LIST id: 11, nodes: 2
+                                    FUNCTION id: 12, function_name: modulo, function_type: ordinary, result_type: UInt8
+                                      ARGUMENTS
+                                        LIST id: 13, nodes: 2
+                                          COLUMN id: 14, column_name: number, result_type: UInt64, source_id: 15
+                                          CONSTANT id: 16, constant_value: UInt64_2, constant_value_type: UInt8
+                                    CONSTANT id: 17, constant_value: UInt64_0, constant_value_type: UInt8
+                              CONSTANT id: 18, constant_value: UInt64_0, constant_value_type: Nullable(UInt8)
+                                EXPRESSION
+                                  FUNCTION id: 19, function_name: toNullable, function_type: ordinary, result_type: Nullable(UInt8)
+                                    ARGUMENTS
+                                      LIST id: 20, nodes: 1
+                                        CONSTANT id: 21, constant_value: UInt64_0, constant_value_type: UInt8
+                              CONSTANT id: 22, constant_value: UInt64_123, constant_value_type: UInt8
+            CONSTANT id: 23, constant_value: UInt64_3, constant_value_type: UInt8
+              EXPRESSION
+                FUNCTION id: 24, function_name: toUInt8, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 25, nodes: 1
+                      CONSTANT id: 26, constant_value: UInt64_3, constant_value_type: UInt8
+  JOIN TREE
+    TABLE_FUNCTION id: 15, alias: __table1, table_function_name: numbers
+      ARGUMENTS
+        LIST id: 27, nodes: 1
+          CONSTANT id: 28, constant_value: UInt64_100, constant_value_type: UInt8

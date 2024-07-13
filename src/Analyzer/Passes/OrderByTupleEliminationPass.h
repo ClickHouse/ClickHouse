@@ -17,7 +17,7 @@ public:
 
     String getDescription() override { return "Remove tuple from ORDER BY."; }
 
-    void run(QueryTreeNodePtr query_tree_node, ContextPtr context) override;
+    void run(QueryTreeNodePtr & query_tree_node, ContextPtr context) override;
 
 };
 

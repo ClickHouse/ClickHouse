@@ -130,6 +130,8 @@ if [ -n "$SANITIZER" ]; then
     fi
 elif [[ $BUILD_TYPE == 'debug' ]]; then
     VERSION_POSTFIX+="+debug"
+elif [[ $BUILD_TYPE =~ 'coverage' ]]; then
+    VERSION_POSTFIX+="+coverage"
 fi
 
 if [[ "$PKG_ROOT" != "$SOURCE" ]]; then

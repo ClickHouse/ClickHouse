@@ -10,14 +10,10 @@
 #define JSON_MAX_DEPTH 100
 
 
-#ifdef __clang__
-#  pragma clang diagnostic push
-#  pragma clang diagnostic ignored "-Wdeprecated-dynamic-exception-spec"
-#endif
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-dynamic-exception-spec"
 POCO_IMPLEMENT_EXCEPTION(JSONException, Poco::Exception, "JSONException") // NOLINT(cert-err60-cpp, modernize-use-noexcept, hicpp-use-noexcept)
-#ifdef __clang__
-#  pragma clang diagnostic pop
-#endif
+#pragma clang diagnostic pop
 
 
 /// Read unsigned integer in a simple form from a non-0-terminated string.
@@ -655,7 +651,9 @@ std::string_view JSON::getRawString() const
     Pos s = ptr_begin;
     if (*s != '"')
         throw JSONException(std::string("JSON: expected \", got ") + *s);
-    while (++s != ptr_end && *s != '"');
+    ++s;
+    while (s != ptr_end && *s != '"')
+        ++s;
     if (s != ptr_end)
         return std::string_view(ptr_begin + 1, s - ptr_begin - 1);
     throw JSONException("JSON: incorrect syntax (expected end of string, found end of JSON).");

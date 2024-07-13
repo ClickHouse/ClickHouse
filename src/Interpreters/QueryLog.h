@@ -10,6 +10,7 @@
 #include <Interpreters/TransactionVersionMetadata.h>
 #include <IO/AsyncReadCounters.h>
 #include <Parsers/IAST.h>
+#include <Storages/ColumnsDescription.h>
 
 
 namespace ProfileEvents
@@ -80,11 +81,14 @@ struct QueryLogElement
     std::unordered_set<String> used_storages;
     std::unordered_set<String> used_table_functions;
     std::set<String> used_row_policies;
+    std::unordered_set<String> used_privileges;
+    std::unordered_set<String> missing_privileges;
 
     Int32 exception_code{}; // because ErrorCodes are int
     String exception;
     String stack_trace;
     std::string_view exception_format_string{};
+    std::vector<std::string> exception_format_string_args{};
 
     ClientInfo client_info;
 
@@ -102,10 +106,9 @@ struct QueryLogElement
 
     static std::string name() { return "QueryLog"; }
 
-    static NamesAndTypesList getNamesAndTypes();
+    static ColumnsDescription getColumnsDescription();
     static NamesAndAliases getNamesAndAliases();
     void appendToBlock(MutableColumns & columns) const;
-    static const char * getCustomColumnList() { return nullptr; }
 
     static void appendClientInfo(const ClientInfo & client_info, MutableColumns & columns, size_t & i);
 };

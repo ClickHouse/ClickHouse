@@ -1,9 +1,9 @@
 #pragma once
 
-#include <Disks/ObjectStorages/IMetadataStorage.h>
-#include <Disks/ObjectStorages/MetadataFromDiskTransactionState.h>
-#include <Disks/ObjectStorages/Web/WebObjectStorage.h>
 #include <Disks/IDisk.h>
+#include <Disks/ObjectStorages/IMetadataStorage.h>
+#include <Disks/ObjectStorages/MetadataStorageTransactionState.h>
+#include <Disks/ObjectStorages/Web/WebObjectStorage.h>
 
 
 namespace DB
@@ -25,6 +25,8 @@ public:
     MetadataTransactionPtr createTransaction() override;
 
     const std::string & getPath() const override;
+
+    MetadataStorageType getType() const override { return MetadataStorageType::StaticWeb; }
 
     bool exists(const std::string & path) const override;
 
