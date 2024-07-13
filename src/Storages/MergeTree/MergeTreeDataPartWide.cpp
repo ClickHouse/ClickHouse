@@ -64,7 +64,7 @@ MergeTreeDataPartWriterPtr createMergeTreeDataPartWideWriter(
     const StorageMetadataPtr & metadata_snapshot,
     const VirtualsDescriptionPtr & virtual_columns,
     const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
-    const Statistics & stats_to_recalc_,
+    const ColumnsStatistics & stats_to_recalc_,
     const String & marks_file_extension_,
     const CompressionCodecPtr & default_codec_,
     const MergeTreeWriterSettings & writer_settings,
@@ -298,6 +298,11 @@ std::optional<time_t> MergeTreeDataPartWide::getColumnModificationTime(const Str
 std::optional<String> MergeTreeDataPartWide::getFileNameForColumn(const NameAndTypePair & column) const
 {
     std::optional<String> filename;
+
+    /// Fallback for the case when serializations was not loaded yet (called from loadColumns())
+    if (getSerializations().empty())
+        return getStreamNameForColumn(column, {}, DATA_FILE_EXTENSION, getDataPartStorage());
+
     getSerialization(column.name)->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
     {
         if (!filename.has_value())
@@ -309,6 +314,7 @@ std::optional<String> MergeTreeDataPartWide::getFileNameForColumn(const NameAndT
                 filename = getStreamNameForColumn(column, substream_path, DATA_FILE_EXTENSION, getDataPartStorage());
         }
     });
+
     return filename;
 }
 

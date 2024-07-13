@@ -30,6 +30,9 @@ public:
     int main(const std::vector<String> & /*args*/) override;
 
 protected:
+
+    Poco::Util::LayeredConfiguration & getClientConfiguration() override;
+
     void connect() override;
 
     void processError(const String & query) const override;
@@ -62,6 +65,8 @@ private:
 
     void applyCmdOptions(ContextMutablePtr context);
     void applyCmdSettings(ContextMutablePtr context);
+
+    ServerSettings server_settings;
 
     std::optional<StatusFile> status;
     std::optional<std::filesystem::path> temporary_directory_to_delete;

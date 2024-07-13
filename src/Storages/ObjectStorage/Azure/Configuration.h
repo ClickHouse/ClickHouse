@@ -35,8 +35,8 @@ public:
     const Paths & getPaths() const override { return blobs_paths; }
     void setPaths(const Paths & paths) override { blobs_paths = paths; }
 
-    String getNamespace() const override { return container; }
-    String getDataSourceDescription() const override { return std::filesystem::path(connection_url) / container; }
+    String getNamespace() const override { return connection_params.getContainer(); }
+    String getDataSourceDescription() const override { return std::filesystem::path(connection_params.getConnectionURL()) / connection_params.getContainer(); }
     StorageObjectStorage::QuerySettings getQuerySettings(const ContextPtr &) const override;
 
     void check(ContextPtr context) const override;
@@ -51,25 +51,12 @@ public:
         ContextPtr context) override;
 
 protected:
-    void fromNamedCollection(const NamedCollection & collection) override;
+    void fromNamedCollection(const NamedCollection & collection, ContextPtr context) override;
     void fromAST(ASTs & args, ContextPtr context, bool with_structure) override;
 
-    using AzureClient = Azure::Storage::Blobs::BlobContainerClient;
-    using AzureClientPtr = std::unique_ptr<Azure::Storage::Blobs::BlobContainerClient>;
-
-    std::string connection_url;
-    bool is_connection_string;
-
-    std::optional<std::string> account_name;
-    std::optional<std::string> account_key;
-
-    std::string container;
     std::string blob_path;
     std::vector<String> blobs_paths;
-
-    AzureClientPtr createClient(bool is_read_only, bool attempt_to_create_container);
-    AzureObjectStorage::SettingsPtr createSettings(ContextPtr local_context);
-    Poco::URI getConnectionURL() const;
+    AzureBlobStorage::ConnectionParams connection_params;
 };
 
 }
