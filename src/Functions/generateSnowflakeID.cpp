@@ -181,22 +181,25 @@ public:
         vec_to.resize(input_rows_count);
 
         uint64_t machine_id = 0;
-        if (arguments.size() == 2)
-            machine_id = arguments[1].column->getUInt(0);
+        if (arguments.size() == 2 && input_rows_count > 0)
+        {
+            const auto & column = arguments[1].column;
+            if (column && !column->empty())
+                machine_id = column->getUInt(0);
+        }
 
         if (machine_id == 0)
             machine_id = getMachineId();
 
-        // Ensure machine_id is within the valid range
+        /// Ensure machine_id is within the valid range
         machine_id &= (1ull << machine_id_bits_count) - 1;
 
-        // Process expr argument here if necessary (currently a placeholder)
+        /// Process expr argument here if necessary (currently a placeholder)
 
-        if (input_rows_count != 0)
+        if (input_rows_count > 0)
         {
             Data data;
-            SnowflakeId snowflake_id = data.reserveRange(input_rows_count); /// returns begin of available snowflake ids range
-            snowflake_id.machine_id = machine_id; //Assign the provided machine_id
+            SnowflakeId snowflake_id = data.reserveRange(input_rows_count, machine_id);
 
             for (UInt64 & to_row : vec_to)
             {
