@@ -229,6 +229,8 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceed
             auto metric_loaded = metric.load(std::memory_order_relaxed);
             if (metric_loaded != CurrentMetrics::end())
                 CurrentMetrics::add(metric_loaded, size);
+
+            updateMemoryCredits();
         }
 
         /// Since the MemoryTrackerBlockerInThread should respect the level, we should go to the next parent.
@@ -250,6 +252,8 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceed
     auto metric_loaded = metric.load(std::memory_order_relaxed);
     if (metric_loaded != CurrentMetrics::end() && size)
         CurrentMetrics::add(metric_loaded, size);
+
+    updateMemoryCredits();
 
     Int64 current_hard_limit = hard_limit.load(std::memory_order_relaxed);
     Int64 current_profiler_limit = profiler_limit.load(std::memory_order_relaxed);
@@ -398,6 +402,7 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceed
         return loaded_next->allocImpl(size, throw_if_memory_exceeded, tracker, _sample_probability);
     }
 
+    updateMemoryCredits();
     return AllocationTrace(_sample_probability);
 }
 
@@ -442,6 +447,7 @@ AllocationTrace MemoryTracker::free(Int64 size, double _sample_probability)
             auto metric_loaded = metric.load(std::memory_order_relaxed);
             if (metric_loaded != CurrentMetrics::end())
                 CurrentMetrics::sub(metric_loaded, size);
+            updateMemoryCredits();
         }
 
         /// Since the MemoryTrackerBlockerInThread should respect the level, we should go to the next parent.
@@ -483,6 +489,8 @@ AllocationTrace MemoryTracker::free(Int64 size, double _sample_probability)
 
     if (auto * loaded_next = parent.load(std::memory_order_relaxed))
         return loaded_next->free(size, _sample_probability);
+
+    updateMemoryCredits();
 
     return AllocationTrace(_sample_probability);
 }
@@ -605,4 +613,17 @@ bool canEnqueueBackgroundTask()
     auto limit = background_memory_tracker.getSoftLimit();
     auto amount = background_memory_tracker.get();
     return limit == 0 || amount < limit;
+}
+
+void MemoryTracker::updateMemoryCredits()
+{
+    size_t current_value = amount;
+    if (current_value - previous_value > threshold)
+    {
+        size_t delta = (current_value - previous_value) * stopwatch.elapsedMicroseconds();
+        memory_credits += delta;
+        ProfileEvents::increment(ProfileEvents::MemoryCredits, delta);
+        previous_value = current_value;
+        stopwatch.restart();
+    }
 }
