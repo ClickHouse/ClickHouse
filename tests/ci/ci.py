@@ -996,7 +996,7 @@ def main() -> int:
             args.skip_jobs,
         )
 
-        if IS_CI and pr_info.is_pr:
+        if IS_CI and pr_info.is_pr and not ci_settings.no_ci_cache:
             ci_cache.filter_out_not_affected_jobs()
 
         ci_cache.print_status()
@@ -1086,6 +1086,16 @@ def main() -> int:
                     print(status)
                     print("::endgroup::")
                     previous_status = status.state
+                    print("Create dummy job report with job_skipped flag")
+                    JobReport(
+                        status=status.state,
+                        description="",
+                        test_results=[],
+                        start_time="",
+                        duration=0.0,
+                        additional_files=[],
+                        job_skipped=True,
+                    ).dump()
 
             # ci cache check
             if not previous_status and not ci_settings.no_ci_cache:
@@ -1136,7 +1146,7 @@ def main() -> int:
             has_oom_error = True
 
         job_report = JobReport.load() if JobReport.exist() else None
-        if job_report:
+        if job_report and not job_report.job_skipped:
             ch_helper = ClickHouseHelper()
             check_url = ""
 
@@ -1242,6 +1252,9 @@ def main() -> int:
                     description = "ERROR: Out Of Memory"
                 else:
                     description = "ERROR: Unknown job status"
+                print(
+                    f"No job report for {[args.job_name]} - post status [{description}]"
+                )
                 gh = GitHub(get_best_robot_token(), per_page=100)
                 commit = get_commit(gh, pr_info.sha)
                 post_commit_status(
@@ -1249,7 +1262,7 @@ def main() -> int:
                     ERROR,
                     "",
                     description,
-                    job_report.check_name or _get_ext_check_name(args.job_name),
+                    _get_ext_check_name(args.job_name),
                     pr_info,
                     dump_to_file=True,
                 )

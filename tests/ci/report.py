@@ -296,6 +296,7 @@ class JobReport:
     build_dir_for_upload: Union[Path, str] = ""
     # if False no GH commit status will be created by CI
     need_commit_status: bool = True
+    job_skipped: bool = False
 
     def __post_init__(self):
         assert self.status in (SUCCESS, ERROR, FAILURE, PENDING)
