@@ -1,0 +1,4 @@
+[fuzzer_arguments]
+--log-file=tcp_protocol_fuzzer.log
+--=
+--logging.terminal=0

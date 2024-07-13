@@ -20,6 +20,7 @@ def run_fuzzer(fuzzer: str):
 
     options_file = f"{fuzzer}.options"
     custom_libfuzzer_options = ""
+    fuzzer_arguments = ""
 
     with Path(options_file) as path:
         if path.exists() and path.is_file():
@@ -45,6 +46,12 @@ def run_fuzzer(fuzzer: str):
                 custom_libfuzzer_options = " ".join(
                     "-%s=%s" % (key, value)
                     for key, value in parser["libfuzzer"].items()
+                )
+
+            if parser.has_section("fuzzer_arguments"):
+                fuzzer_arguments = " ".join(
+                    ("%s" % key) if value == "" else ("%s=%s" % (key, value))
+                    for key, value in parser["fuzzer_arguments"].items()
                 )
 
     cmd_line = f"{DEBUGGER} ./{fuzzer} {FUZZER_ARGS} {corpus_dir}"
