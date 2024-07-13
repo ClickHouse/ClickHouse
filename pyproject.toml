@@ -36,6 +36,7 @@ disable = '''
           bare-except,
           no-else-return,
           global-statement,
+          f-string-without-interpolation,
           '''
 
 [tool.pylint.SIMILARITIES]
