@@ -325,8 +325,8 @@ def _mark_success_action(
         # do nothing, exit without failure
         print(f"ERROR: no status file for job [{job}]")
 
-    if job_config.run_always or job_config.run_by_label:
-        print(f"Job [{job}] runs always or by label in CI - do not cache")
+    if job_config.run_by_label or not job_config.has_digest():
+        print(f"Job [{job}] has no digest or run by label in CI - do not cache")
     else:
         if pr_info.is_master:
             pass
@@ -996,7 +996,7 @@ def main() -> int:
             args.skip_jobs,
         )
 
-        if IS_CI and pr_info.is_pr:
+        if IS_CI and pr_info.is_pr and not ci_settings.no_ci_cache:
             ci_cache.filter_out_not_affected_jobs()
 
         ci_cache.print_status()
@@ -1086,6 +1086,16 @@ def main() -> int:
                     print(status)
                     print("::endgroup::")
                     previous_status = status.state
+                    print("Create dummy job report with job_skipped flag")
+                    JobReport(
+                        status=status.state,
+                        description="",
+                        test_results=[],
+                        start_time="",
+                        duration=0.0,
+                        additional_files=[],
+                        job_skipped=True,
+                    ).dump()
 
             # ci cache check
             if not previous_status and not ci_settings.no_ci_cache:
@@ -1125,6 +1135,7 @@ def main() -> int:
 
     ### POST action: start
     elif args.post:
+        has_oom_error = False
         if Shell.check(
             "sudo dmesg -T | grep -q -e 'Out of memory: Killed process' -e 'oom_reaper: reaped process' -e 'oom-kill:constraint=CONSTRAINT_NONE'"
         ):
@@ -1132,9 +1143,10 @@ def main() -> int:
             CIBuddy(dry_run=not pr_info.is_release).post_error(
                 "Out Of Memory", job_name=_get_ext_check_name(args.job_name)
             )
+            has_oom_error = True
 
         job_report = JobReport.load() if JobReport.exist() else None
-        if job_report:
+        if job_report and not job_report.job_skipped:
             ch_helper = ClickHouseHelper()
             check_url = ""
 
@@ -1234,9 +1246,31 @@ def main() -> int:
                     indata["build"],
                     ch_helper,
                 )
+        elif job_report.job_skipped:
+            print(f"Skipped after rerun check {[args.job_name]} - do nothing")
         else:
-            # no job report
-            print(f"No job report for {[args.job_name]} - do nothing")
+            if CI.is_test_job(args.job_name):
+                if has_oom_error:
+                    description = "ERROR: Out Of Memory"
+                else:
+                    description = "ERROR: Unknown job status"
+                print(
+                    f"No job report for {[args.job_name]} - post status [{description}]"
+                )
+                gh = GitHub(get_best_robot_token(), per_page=100)
+                commit = get_commit(gh, pr_info.sha)
+                post_commit_status(
+                    commit,
+                    ERROR,
+                    "",
+                    description,
+                    _get_ext_check_name(args.job_name),
+                    pr_info,
+                    dump_to_file=True,
+                )
+            else:
+                # no job report
+                print(f"No job report for {[args.job_name]} - do nothing")
     ### POST action: end
 
     ### MARK SUCCESS action: start
