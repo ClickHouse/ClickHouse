@@ -15,7 +15,7 @@ import upload_result_helper
 from build_check import get_release_or_pr
 from ci_config import CI
 from ci_metadata import CiMetadata
-from ci_utils import GHActions, normalize_string, Shell
+from ci_utils import GHActions, normalize_string, Utils
 from clickhouse_helper import (
     CiLogsCredentials,
     ClickHouseHelper,
@@ -264,7 +264,7 @@ def check_missing_images_on_dockerhub(
 
 def _pre_action(s3, indata, pr_info):
     print("Clear dmesg")
-    Shell.run("sudo dmesg --clear ||:")
+    Utils.clear_dmesg()
     CommitStatusData.cleanup()
     JobReport.cleanup()
     BuildResult.cleanup()
@@ -996,7 +996,7 @@ def main() -> int:
             args.skip_jobs,
         )
 
-        if IS_CI and pr_info.is_pr:
+        if IS_CI and pr_info.is_pr and not ci_settings.no_ci_cache:
             ci_cache.filter_out_not_affected_jobs()
 
         ci_cache.print_status()
@@ -1035,6 +1035,7 @@ def main() -> int:
     elif args.pre:
         assert indata, "Run config must be provided via --infile"
         _pre_action(s3, indata, pr_info)
+        JobReport.create_pre_report().dump()
 
     ### RUN action: start
     elif args.run:
@@ -1086,6 +1087,16 @@ def main() -> int:
                     print(status)
                     print("::endgroup::")
                     previous_status = status.state
+                    print("Create dummy job report with job_skipped flag")
+                    JobReport(
+                        status=status.state,
+                        description="",
+                        test_results=[],
+                        start_time="",
+                        duration=0.0,
+                        additional_files=[],
+                        job_skipped=True,
+                    ).dump()
 
             # ci cache check
             if not previous_status and not ci_settings.no_ci_cache:
@@ -1121,22 +1132,22 @@ def main() -> int:
                 exit_code = 1
         else:
             exit_code = _run_test(check_name, args.run_command)
+            job_report = JobReport.load() if JobReport.exist() else None
+            assert (
+                job_report
+            ), "BUG. There must be job report either real report, or pre-report if job was killed"
+            job_report.exit_code = exit_code
+            job_report.dump()
     ### RUN action: end
 
     ### POST action: start
     elif args.post:
-        has_oom_error = False
-        if Shell.check(
-            "sudo dmesg -T | grep -q -e 'Out of memory: Killed process' -e 'oom_reaper: reaped process' -e 'oom-kill:constraint=CONSTRAINT_NONE'"
-        ):
-            print("WARNING: OOM while job execution")
-            CIBuddy(dry_run=not pr_info.is_release).post_error(
-                "Out Of Memory", job_name=_get_ext_check_name(args.job_name)
-            )
-            has_oom_error = True
-
         job_report = JobReport.load() if JobReport.exist() else None
-        if job_report:
+        assert (
+            job_report
+        ), "BUG. There must be job report either real report, or pre-report if job was killed"
+        if not job_report.job_skipped and not job_report.pre_report:
+            # it's a real job report
             ch_helper = ClickHouseHelper()
             check_url = ""
 
@@ -1236,26 +1247,32 @@ def main() -> int:
                     indata["build"],
                     ch_helper,
                 )
-        else:
+        elif job_report.job_skipped:
+            print(f"Skipped after rerun check {[args.job_name]} - do nothing")
+        elif job_report.job_skipped:
+            print(f"Job was skipped {[args.job_name]} - do nothing")
+        elif job_report.pre_report:
+            print(f"ERROR: Job was killed - generate evidence")
+            job_report.update_duration()
+            # Job was killed!
+            if Utils.is_killed_with_oom():
+                print("WARNING: OOM while job execution")
+                error = f"Out Of Memory, exit_code {job_report.exit_code}, after {job_report.duration}s"
+            else:
+                error = f"Unknown, exit_code {job_report.exit_code}, after {job_report.duration}s"
+            CIBuddy().post_error(error, job_name=_get_ext_check_name(args.job_name))
             if CI.is_test_job(args.job_name):
-                if has_oom_error:
-                    description = "ERROR: Out Of Memory"
-                else:
-                    description = "ERROR: Unknown job status"
                 gh = GitHub(get_best_robot_token(), per_page=100)
                 commit = get_commit(gh, pr_info.sha)
                 post_commit_status(
                     commit,
                     ERROR,
                     "",
-                    description,
-                    job_report.check_name or _get_ext_check_name(args.job_name),
+                    "Error: " + error,
+                    _get_ext_check_name(args.job_name),
                     pr_info,
                     dump_to_file=True,
                 )
-            else:
-                # no job report
-                print(f"No job report for {[args.job_name]} - do nothing")
     ### POST action: end
 
     ### MARK SUCCESS action: start
