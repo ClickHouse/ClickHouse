@@ -534,6 +534,7 @@ parseDateTimeInJodaSyntaxOrZero
 parseDateTimeOrNull
 parseDateTimeOrZero
 parseTimeDelta
+partitionId
 path
 pathFull
 pi
