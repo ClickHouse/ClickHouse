@@ -8,7 +8,6 @@
 #include <Common/logger_useful.h>
 #include "base/types.h"
 
-
 namespace DB
 {
 
@@ -38,7 +37,7 @@ constexpr auto machine_seq_num_bits_count = 12;
 
 /// bits masks for Snowflake ID components
 constexpr uint64_t machine_id_mask = ((1ull << machine_id_bits_count) - 1) << machine_seq_num_bits_count;
-constexpr uint64_t machine_seq_num_mask = (1ull << machine_seq_num_bits_count) - 1;
+constexpr uint64_t machine_seq_num_mask = (1ull << machine seq_num_bits_count) - 1;
 
 /// max values
 constexpr uint64_t max_machine_seq_num = machine_seq_num_mask;
@@ -97,10 +96,10 @@ struct SnowflakeIdRange
 /// 1. calculate Snowflake ID by current timestamp (`now`)
 /// 2. `begin = max(available, now)`
 /// 3. Calculate `end = begin + input_rows_count` handling `machine_seq_num` overflow
-SnowflakeIdRange getRangeOfAvailableIds(const SnowflakeId & available, size_t input_rows_count)
+SnowflakeIdRange getRangeOfAvailableIds(const SnowflakeId & available, size_t input_rows_count, uint64_t machine_id)
 {
     /// 1. `now`
-    SnowflakeId begin = {.timestamp = getTimestamp(), .machine_id = getMachineId(), .machine_seq_num = 0};
+    SnowflakeId begin = {.timestamp = getTimestamp(), .machine_id = machine_id, .machine_seq_num = 0};
 
     /// 2. `begin`
     if (begin.timestamp <= available.timestamp)
@@ -129,13 +128,13 @@ struct Data
     /// Guarantee counter monotonicity within one timestamp across all threads generating Snowflake IDs simultaneously.
     static inline std::atomic<uint64_t> lowest_available_snowflake_id = 0;
 
-    SnowflakeId reserveRange(size_t input_rows_count)
+    SnowflakeId reserveRange(size_t input_rows_count, uint64_t machine_id)
     {
         uint64_t available_snowflake_id = lowest_available_snowflake_id.load();
         SnowflakeIdRange range;
         do
         {
-            range = getRangeOfAvailableIds(toSnowflakeId(available_snowflake_id), input_rows_count);
+            range = getRangeOfAvailableIds(toSnowflakeId(available_snowflake_id), input_rows_count, machine_id);
         }
         while (!lowest_available_snowflake_id.compare_exchange_weak(available_snowflake_id, fromSnowflakeId(range.end)));
         /// CAS failed --> another thread updated `lowest_available_snowflake_id` and we re-try
@@ -167,7 +166,7 @@ public:
         FunctionArgumentDescriptors mandatory_args;
         FunctionArgumentDescriptors optional_args{
             {"expr", nullptr, nullptr, "Arbitrary expression"},
-            {"machine_id", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeUInt), nullptr, "Optional machine ID in UInt*"}
+            {"machine_id", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeUInt), nullptr, "UInt*"}
         };
         validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
 
@@ -183,24 +182,19 @@ public:
         uint64_t machine_id = 0;
         if (arguments.size() == 2 && input_rows_count > 0)
         {
-            const auto & column = arguments[1].column;
-            if (column && !column->empty())
-                machine_id = column->getUInt(0);
+            const auto & col_machine_id = arguments[1].column;
+            machine_id = col_machine_id->getUInt(0);
         }
-
-        if (machine_id == 0)
+        else
             machine_id = getMachineId();
 
-        /// Ensure machine_id is within the valid range
+        /// Truncate machine id to 10 bits
         machine_id &= (1ull << machine_id_bits_count) - 1;
-
-        /// Process expr argument here if necessary (currently a placeholder)
 
         if (input_rows_count > 0)
         {
             Data data;
-            SnowflakeId snowflake_id = data.reserveRange(input_rows_count);
-            snowflake_id.machine_id = machine_id;
+            SnowflakeId snowflake_id = data.reserveRange(input_rows_count, machine_id);
 
             for (UInt64 & to_row : vec_to)
             {
