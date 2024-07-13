@@ -13,6 +13,9 @@ class CI:
     each config item in the below dicts should be an instance of JobConfig class or inherited from it
     """
 
+    MAX_TOTAL_FAILURES_BEFORE_BLOCKING_CI = 5
+    MAX_TOTAL_FAILURES_PER_JOB_BEFORE_BLOCKING_CI = 2
+
     # reimport types to CI class so that they visible as CI.* and mypy is happy
     # pylint:disable=useless-import-alias,reimported,import-outside-toplevel
     from ci_definitions import BuildConfig as BuildConfig

@@ -325,8 +325,8 @@ def _mark_success_action(
         # do nothing, exit without failure
         print(f"ERROR: no status file for job [{job}]")
 
-    if job_config.run_always or job_config.run_by_label:
-        print(f"Job [{job}] runs always or by label in CI - do not cache")
+    if job_config.run_by_label or not job_config.has_digest():
+        print(f"Job [{job}] has no digest or run by label in CI - do not cache")
     else:
         if pr_info.is_master:
             pass
@@ -1125,6 +1125,7 @@ def main() -> int:
 
     ### POST action: start
     elif args.post:
+        has_oom_error = False
         if Shell.check(
             "sudo dmesg -T | grep -q -e 'Out of memory: Killed process' -e 'oom_reaper: reaped process' -e 'oom-kill:constraint=CONSTRAINT_NONE'"
         ):
@@ -1132,6 +1133,7 @@ def main() -> int:
             CIBuddy(dry_run=not pr_info.is_release).post_error(
                 "Out Of Memory", job_name=_get_ext_check_name(args.job_name)
             )
+            has_oom_error = True
 
         job_report = JobReport.load() if JobReport.exist() else None
         if job_report:
@@ -1235,8 +1237,25 @@ def main() -> int:
                     ch_helper,
                 )
         else:
-            # no job report
-            print(f"No job report for {[args.job_name]} - do nothing")
+            if CI.is_test_job(args.job_name):
+                if has_oom_error:
+                    description = "ERROR: Out Of Memory"
+                else:
+                    description = "ERROR: Unknown job status"
+                gh = GitHub(get_best_robot_token(), per_page=100)
+                commit = get_commit(gh, pr_info.sha)
+                post_commit_status(
+                    commit,
+                    ERROR,
+                    "",
+                    description,
+                    job_report.check_name or _get_ext_check_name(args.job_name),
+                    pr_info,
+                    dump_to_file=True,
+                )
+            else:
+                # no job report
+                print(f"No job report for {[args.job_name]} - do nothing")
     ### POST action: end
 
     ### MARK SUCCESS action: start
