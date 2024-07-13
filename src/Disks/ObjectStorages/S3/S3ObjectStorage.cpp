@@ -66,7 +66,7 @@ namespace ErrorCodes
 namespace HexArithmetics
 {
 
-static constexpr std::string_view alphabet = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ./-";
+static constexpr std::string_view alphabet = "0123456789abcdefghijklmnopqrstuvwxyz./-";//ABCDEFGHIJKLMNOPQRSTUVWXYZ
 
 class HexFile
 {
@@ -268,6 +268,7 @@ private:
         void build()
         {
             std::sort(extracted_keys.begin(), extracted_keys.end());
+            extracted_keys.erase(std::unique(extracted_keys.begin(), extracted_keys.end()), extracted_keys.end());
         }
 
         void clear()
@@ -302,7 +303,7 @@ private:
             if (outcome.IsSuccess()) {
                 const auto& result = outcome.GetResult();
                 cache.insertObjects(result.GetContents());
-                if (result.GetIsTruncated() || end_file <= HexArithmetics::HexFile(result.GetContents().back().GetKey()))
+                if (!result.GetIsTruncated() || end_file <= HexArithmetics::HexFile(result.GetContents().back().GetKey()))
                 {
                     done = true;
                 }
@@ -339,7 +340,9 @@ private:
         {
             auto start_file = file_end + HexArithmetics::HexFile(1) + distance * i;
             auto end_file = file_end + HexArithmetics::HexFile(1) + distance * (i + 1);
-            std::cerr << start_file.toString() << ' ' << end_file.toString() << '\n';
+            //std::cerr << start_file.toString() << ' ' << end_file.toString() << '\n';
+            throw_message += start_file.toString() + "\n";
+            throw_message += end_file.toString() + "\n\n";
             pool_requests.scheduleOrThrow([this, start_file, end_file] {
                 this->RunSubrequest(start_file, end_file);
             });
@@ -350,6 +353,7 @@ private:
 
     bool getBatchAndCheckNext(RelativePathsWithMetadata & batch) override
     {
+        cnt++;
         ProfileEvents::increment(ProfileEvents::S3ListObjects);
         ProfileEvents::increment(ProfileEvents::DiskS3ListObjects);
 
@@ -357,10 +361,19 @@ private:
 
         if (cache_result.size() == max_list_size)
         {
+            throw_message += std::to_string(cnt) + "\n";
+            throw_message += (cache_result[0].GetKey()) + "\n";
+            throw_message += (cache_result.back().GetKey()) + "\n\n";
+
             for (const auto & object : cache_result)
             {
                 ObjectMetadata metadata{static_cast<uint64_t>(object.GetSize()), Poco::Timestamp::fromEpochTime(object.GetLastModified().Seconds()), {}};
                 batch.emplace_back(std::make_shared<RelativePathWithMetadata>(object.GetKey(), std::move(metadata)));
+            }
+
+            if (cnt > 600)
+            {
+                throw std::runtime_error(throw_message);
             }
 
             request->SetStartAfter(cache_result.back().GetKey());
@@ -379,10 +392,13 @@ private:
                 batch.emplace_back(std::make_shared<RelativePathWithMetadata>(object.GetKey(), std::move(metadata)));
             }
             request->SetStartAfter(objects.back().GetKey());
-            {
+            if (first_request) {
                 cache.clear();
-                fillCache(objects[0].GetKey(), objects.back().GetKey(), 1000, 100, 0.9f);
-                //first_request = false;
+                fillCache(objects[0].GetKey(), objects.back().GetKey(), 900, 100, 1.0f);
+                first_request = false;
+            } else {
+                throw_message += "EXCEEDED AT " + std::to_string(cnt) + "\n";
+                throw std::runtime_error(throw_message);
             }
             /// It returns false when all objects were returned
             return outcome.GetResult().GetIsTruncated();
@@ -394,7 +410,10 @@ private:
                           backQuote(outcome.GetError().GetExceptionName()), quoteString(outcome.GetError().GetMessage()));
     }
 
-    //bool first_request = true;
+    int cnt = 0;
+    std::string throw_message = "";
+
+    bool first_request = true;
     std::shared_ptr<const S3::Client> client;
     std::unique_ptr<S3::ListObjectsV2Request> request;
     QueryCache cache;
