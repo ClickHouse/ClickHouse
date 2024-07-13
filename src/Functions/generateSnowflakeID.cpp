@@ -199,7 +199,8 @@ public:
         if (input_rows_count > 0)
         {
             Data data;
-            SnowflakeId snowflake_id = data.reserveRange(input_rows_count, machine_id);
+            SnowflakeId snowflake_id = data.reserveRange(input_rows_count);
+            snowflake_id.machine_id = machine_id;
 
             for (UInt64 & to_row : vec_to)
             {
