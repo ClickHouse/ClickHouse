@@ -1246,6 +1246,8 @@ def main() -> int:
                     indata["build"],
                     ch_helper,
                 )
+        elif job_report.job_skipped:
+            print(f"Skipped after rerun check {[args.job_name]} - do nothing")
         else:
             if CI.is_test_job(args.job_name):
                 if has_oom_error:
