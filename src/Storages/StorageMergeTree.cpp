@@ -2132,7 +2132,11 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
         Int64 temp_index = insert_increment.get();
         MergeTreePartInfo dst_part_info(partition_id, temp_index, temp_index, src_part->info.level);
 
-        IDataPartStorage::ClonePartParams clone_params{.txn = local_context->getCurrentTransaction()};
+        IDataPartStorage::ClonePartParams clone_params{
+            .txn = local_context->getCurrentTransaction(),
+            .metadata_version_to_write = my_metadata_snapshot->getMetadataVersion(),
+            .fsync_metadata_version_to_write = getSettings()->fsync_after_insert,
+        };
         if (replace)
         {
             /// Replace can only work on the same disk
@@ -2140,11 +2144,10 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
                 src_part,
                 TMP_PREFIX,
                 dst_part_info,
-                my_metadata_snapshot,
                 clone_params,
                 local_context->getReadSettings(),
                 local_context->getWriteSettings(),
-                true/*must_on_same_disk*/);
+                true /*must_on_same_disk*/);
             dst_parts.emplace_back(std::move(dst_part));
             dst_parts_locks.emplace_back(std::move(part_lock));
         }
@@ -2155,11 +2158,10 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
                 src_part,
                 TMP_PREFIX,
                 dst_part_info,
-                my_metadata_snapshot,
                 clone_params,
                 local_context->getReadSettings(),
                 local_context->getWriteSettings(),
-                false/*must_on_same_disk*/);
+                false /*must_on_same_disk*/);
             dst_parts.emplace_back(std::move(dst_part));
             dst_parts_locks.emplace_back(std::move(part_lock));
         }
@@ -2261,21 +2263,21 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
         Int64 temp_index = insert_increment.get();
         MergeTreePartInfo dst_part_info(partition_id, temp_index, temp_index, src_part->info.level);
 
-        IDataPartStorage::ClonePartParams clone_params
-        {
+        IDataPartStorage::ClonePartParams clone_params{
             .txn = local_context->getCurrentTransaction(),
             .copy_instead_of_hardlink = getSettings()->always_use_copy_instead_of_hardlinks,
+            .metadata_version_to_write = dest_metadata_snapshot->getMetadataVersion(),
+            .fsync_metadata_version_to_write = getSettings()->fsync_after_insert,
         };
 
         auto [dst_part, part_lock] = dest_table_storage->cloneAndLoadDataPart(
             src_part,
             TMP_PREFIX,
             dst_part_info,
-            dest_metadata_snapshot,
             clone_params,
             local_context->getReadSettings(),
             local_context->getWriteSettings(),
-            true/*must_on_same_disk*/
+            true /*must_on_same_disk*/
         );
 
         dst_parts.emplace_back(std::move(dst_part));

@@ -7272,7 +7272,6 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
     const MergeTreeData::DataPartPtr & src_part,
     const String & tmp_part_prefix,
     const MergeTreePartInfo & dst_part_info,
-    const StorageMetadataPtr & metadata_snapshot,
     const IDataPartStorage::ClonePartParams & params,
     const ReadSettings & read_settings,
     const WriteSettings & write_settings,
@@ -7335,16 +7334,6 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
             /* save_metadata_callback= */ {},
             params
         );
-    }
-
-    if (params.metadata_version_to_write.has_value())
-    {
-        chassert(!params.keep_metadata_version);
-        auto out_metadata = dst_part_storage->writeFile(IMergeTreeDataPart::METADATA_VERSION_FILE_NAME, 4096, getContext()->getWriteSettings());
-        writeText(metadata_snapshot->getMetadataVersion(), *out_metadata);
-        out_metadata->finalize();
-        if (getSettings()->fsync_after_insert)
-            out_metadata->sync();
     }
 
     LOG_DEBUG(log, "Clone{} part {} to {}{}",

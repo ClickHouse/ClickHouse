@@ -2830,11 +2830,10 @@ bool StorageReplicatedMergeTree::executeReplaceRange(LogEntry & entry)
                 part_desc->src_table_part,
                 TMP_PREFIX + "clone_",
                 part_desc->new_part_info,
-                metadata_snapshot,
                 clone_params,
                 getContext()->getReadSettings(),
                 getContext()->getWriteSettings(),
-                true/*must_on_same_disk*/);
+                true /*must_on_same_disk*/);
             part_desc->res_part = std::move(res_part);
             part_desc->temporary_part_lock = std::move(temporary_part_lock);
         }
@@ -4909,11 +4908,10 @@ bool StorageReplicatedMergeTree::fetchPart(
                 part_to_clone,
                 "tmp_clone_",
                 part_info,
-                metadata_snapshot,
                 clone_params,
                 getContext()->getReadSettings(),
                 getContext()->getWriteSettings(),
-                true/*must_on_same_disk*/);
+                true /*must_on_same_disk*/);
 
             part_directory_lock = std::move(lock);
             return cloned_part;
@@ -8145,11 +8143,10 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
                     src_part,
                     TMP_PREFIX,
                     dst_part_info,
-                    metadata_snapshot,
                     clone_params,
                     query_context->getReadSettings(),
                     query_context->getWriteSettings(),
-                    true/*must_on_same_disk*/);
+                    true /*must_on_same_disk*/);
                 dst_parts.emplace_back(std::move(dst_part));
                 dst_parts_locks.emplace_back(std::move(part_lock));
             }
@@ -8160,11 +8157,10 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
                     src_part,
                     TMP_PREFIX,
                     dst_part_info,
-                    metadata_snapshot,
                     clone_params,
                     query_context->getReadSettings(),
                     query_context->getWriteSettings(),
-                    false/*must_on_same_disk*/);
+                    false /*must_on_same_disk*/);
                 dst_parts.emplace_back(std::move(dst_part));
                 dst_parts_locks.emplace_back(std::move(part_lock));
             }
@@ -8428,11 +8424,10 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
                 src_part,
                 TMP_PREFIX,
                 dst_part_info,
-                dest_metadata_snapshot,
                 clone_params,
                 query_context->getReadSettings(),
                 query_context->getWriteSettings(),
-                true/*must_on_same_disk*/);
+                true /*must_on_same_disk*/);
 
             src_parts.emplace_back(src_part);
             dst_parts.emplace_back(dst_part);

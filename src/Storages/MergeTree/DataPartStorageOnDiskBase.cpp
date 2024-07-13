@@ -20,6 +20,45 @@
 namespace DB
 {
 
+namespace
+{
+
+using DiskVariant = std::variant<IDiskTransaction *, IDisk *>;
+void handleMetadataVersion(
+    DiskVariant & disk_variant,
+    const fs::path & part_dir,
+    const bool keep_metadata_version,
+    const std::optional<int32_t> & metadata_version_to_write,
+    const bool fsync_metadata_version_to_write,
+    const WriteSettings & write_settings)
+{
+    std::visit(
+        [&](auto * disk)
+        {
+            disk->removeFileIfExists(part_dir / "delete-on-destroy.txt");
+            disk->removeFileIfExists(part_dir / "txn_version.txt");
+            if (!keep_metadata_version)
+            {
+                disk->removeFileIfExists(part_dir / IMergeTreeDataPart::METADATA_VERSION_FILE_NAME);
+            }
+            if (metadata_version_to_write.has_value())
+            {
+                auto out_metadata = disk->writeFile(
+                    part_dir / IMergeTreeDataPart::METADATA_VERSION_FILE_NAME,
+                    /*buf_size=*/4096,
+                    WriteMode::Rewrite,
+                    write_settings);
+
+                writeText(*metadata_version_to_write, *out_metadata);
+                out_metadata->finalize();
+                if (fsync_metadata_version_to_write)
+                    out_metadata->sync();
+            }
+        },
+        disk_variant);
+}
+}
+
 namespace ErrorCodes
 {
     extern const int DIRECTORY_ALREADY_EXISTS;
@@ -453,6 +492,9 @@ MutableDataPartStoragePtr DataPartStorageOnDiskBase::freeze(
     std::function<void(const DiskPtr &)> save_metadata_callback,
     const ClonePartParams & params) const
 {
+    chassert(
+        !(params.keep_metadata_version && params.metadata_version_to_write.has_value())
+        && "Cannot keep the metadata version and also write a new one");
     auto disk = volume->getDisk();
     if (params.external_transaction)
         params.external_transaction->createDirectories(to);
@@ -475,20 +517,17 @@ MutableDataPartStoragePtr DataPartStorageOnDiskBase::freeze(
     if (save_metadata_callback)
         save_metadata_callback(disk);
 
-    if (params.external_transaction)
-    {
-        params.external_transaction->removeFileIfExists(fs::path(to) / dir_path / "delete-on-destroy.txt");
-        params.external_transaction->removeFileIfExists(fs::path(to) / dir_path / "txn_version.txt");
-        if (!params.keep_metadata_version)
-            params.external_transaction->removeFileIfExists(fs::path(to) / dir_path / IMergeTreeDataPart::METADATA_VERSION_FILE_NAME);
-    }
-    else
-    {
-        disk->removeFileIfExists(fs::path(to) / dir_path / "delete-on-destroy.txt");
-        disk->removeFileIfExists(fs::path(to) / dir_path / "txn_version.txt");
-        if (!params.keep_metadata_version)
-            disk->removeFileIfExists(fs::path(to) / dir_path / IMergeTreeDataPart::METADATA_VERSION_FILE_NAME);
-    }
+    auto disk_handler = params.external_transaction ? DiskVariant{params.external_transaction.get()} : DiskVariant{disk.get()};
+
+    const auto dst_part_dir = fs::path(to) / dir_path;
+
+    handleMetadataVersion(
+        disk_handler,
+        dst_part_dir,
+        params.keep_metadata_version,
+        params.metadata_version_to_write,
+        params.fsync_metadata_version_to_write,
+        write_settings);
 
     auto single_disk_volume = std::make_shared<SingleDiskVolume>(disk->getName(), disk, 0);
 
@@ -506,6 +545,9 @@ MutableDataPartStoragePtr DataPartStorageOnDiskBase::freezeRemote(
     std::function<void(const DiskPtr &)> save_metadata_callback,
     const ClonePartParams & params) const
 {
+    chassert(
+        !(params.keep_metadata_version && params.metadata_version_to_write.has_value())
+        && "Cannot keep the metadata version and also write a new one");
     auto src_disk = volume->getDisk();
     if (params.external_transaction)
         params.external_transaction->createDirectories(to);
@@ -531,20 +573,17 @@ MutableDataPartStoragePtr DataPartStorageOnDiskBase::freezeRemote(
     if (save_metadata_callback)
         save_metadata_callback(dst_disk);
 
-    if (params.external_transaction)
-    {
-        params.external_transaction->removeFileIfExists(fs::path(to) / dir_path / "delete-on-destroy.txt");
-        params.external_transaction->removeFileIfExists(fs::path(to) / dir_path / "txn_version.txt");
-        if (!params.keep_metadata_version)
-            params.external_transaction->removeFileIfExists(fs::path(to) / dir_path / IMergeTreeDataPart::METADATA_VERSION_FILE_NAME);
-    }
-    else
-    {
-        dst_disk->removeFileIfExists(fs::path(to) / dir_path / "delete-on-destroy.txt");
-        dst_disk->removeFileIfExists(fs::path(to) / dir_path / "txn_version.txt");
-        if (!params.keep_metadata_version)
-            dst_disk->removeFileIfExists(fs::path(to) / dir_path / IMergeTreeDataPart::METADATA_VERSION_FILE_NAME);
-    }
+    auto disk_handler = params.external_transaction ? DiskVariant{params.external_transaction.get()} : DiskVariant{dst_disk.get()};
+
+    const auto dst_part_dir = fs::path(to) / dir_path;
+
+    handleMetadataVersion(
+        disk_handler,
+        dst_part_dir,
+        params.keep_metadata_version,
+        params.metadata_version_to_write,
+        params.fsync_metadata_version_to_write,
+        write_settings);
 
     auto single_disk_volume = std::make_shared<SingleDiskVolume>(dst_disk->getName(), dst_disk, 0);
 
