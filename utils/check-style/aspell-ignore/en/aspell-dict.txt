@@ -2193,6 +2193,7 @@ parseTimeDelta
 parseable
 parsers
 partitionId
+partitionID
 pathFull
 pclmulqdq
 pcre

@@ -2984,7 +2984,7 @@ Result:
 └─────────┘
 ```
 
-## partitionId
+## partitionID
 
 Computes the [partition ID](../../engines/table-engines/mergetree-family/custom-partitioning-key.md).
 
@@ -2995,7 +2995,7 @@ This function is slow and should not be called for large amount of rows.
 **Syntax**
 
 ```sql
-partitionId(x[, y, ...]);
+partitionID(x[, y, ...]);
 ```
 
 **Arguments**
@@ -3025,18 +3025,18 @@ ORDER BY tuple();
 
 INSERT INTO tab VALUES (1, 1), (1, 2), (1, 3), (2, 4), (2, 5), (2, 6);
 
-SELECT i, j, partitionId(i), _partition_id FROM tab ORDER BY i, j;
+SELECT i, j, partitionID(i), _partition_id FROM tab ORDER BY i, j;
 ```
 
 Result:
 
 ```response
-┌─i─┬─j─┬─partitionId(i)─┬─_partition_id─┐
+┌─i─┬─j─┬─partitionID(i)─┬─_partition_id─┐
 │ 1 │ 1 │ 1              │ 1             │
 │ 1 │ 2 │ 1              │ 1             │
 │ 1 │ 3 │ 1              │ 1             │
 └───┴───┴────────────────┴───────────────┘
-┌─i─┬─j─┬─partitionId(i)─┬─_partition_id─┐
+┌─i─┬─j─┬─partitionID(i)─┬─_partition_id─┐
 │ 2 │ 4 │ 2              │ 2             │
 │ 2 │ 5 │ 2              │ 2             │
 │ 2 │ 6 │ 2              │ 2             │
