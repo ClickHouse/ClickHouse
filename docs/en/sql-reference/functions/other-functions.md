@@ -2986,7 +2986,7 @@ Result:
 
 ## partitionId
 
-Returns computed [partition](../../engines/table-engines/mergetree-family/custom-partitioning-key.md) IDs of its arguments.
+Computes the [partition ID](../../engines/table-engines/mergetree-family/custom-partitioning-key.md).
 
 :::note
 This function is slow and should not be called for large amount of rows.
@@ -3003,44 +3003,44 @@ partitionId(x[, y, ...]);
 - `x` — Column for which to return the partition ID.
 - `y, ...` — Remaining N columns for which to return the partition ID (optional).
 
-**Return Type**
+**Returned Value**
 
-- Partition ID that the row belongs to. [String](../data-types/string.md).
+- Partition ID that the row would belong to. [String](../data-types/string.md).
 
 **Example**
 
 Query:
 
 ```sql
-DROP TABLE IF EXISTS mt;
-CREATE TABLE mt
+DROP TABLE IF EXISTS tab;
+
+CREATE TABLE tab
 (
-  `i` int,
-  `j` int
+  i int,
+  j int
 )
 ENGINE = MergeTree
 PARTITION BY i
-ORDER BY j
-SETTINGS index_granularity = 1;
+ORDER BY tuple();
 
-INSERT INTO mt VALUES (1, 1), (1, 2), (1, 3), (2, 4), (2, 5), (2, 6);
+INSERT INTO tab VALUES (1, 1), (1, 2), (1, 3), (2, 4), (2, 5), (2, 6);
 
-SELECT * FROM mt WHERE _partition_id = partitionId(1);
-SELECT * FROM mt WHERE _partition_id = partitionId(2);
+SELECT i, j, partitionId(i), _partition_id FROM tab ORDER BY i, j;
 ```
+
 Result:
 
 ```response
-   ┌─i─┬─j─┐
-1. │ 1 │ 1 │
-2. │ 1 │ 2 │
-3. │ 1 │ 3 │
-   └───┴───┘
-   ┌─i─┬─j─┐
-1. │ 2 │ 4 │
-2. │ 2 │ 5 │
-3. │ 2 │ 6 │
-   └───┴───┘
+┌─i─┬─j─┬─partitionId(i)─┬─_partition_id─┐
+│ 1 │ 1 │ 1              │ 1             │
+│ 1 │ 2 │ 1              │ 1             │
+│ 1 │ 3 │ 1              │ 1             │
+└───┴───┴────────────────┴───────────────┘
+┌─i─┬─j─┬─partitionId(i)─┬─_partition_id─┐
+│ 2 │ 4 │ 2              │ 2             │
+│ 2 │ 5 │ 2              │ 2             │
+│ 2 │ 6 │ 2              │ 2             │
+└───┴───┴────────────────┴───────────────┘
 ```
 
 
