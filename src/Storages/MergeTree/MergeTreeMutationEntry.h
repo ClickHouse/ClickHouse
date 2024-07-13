@@ -36,9 +36,13 @@ struct MergeTreeMutationEntry
     /// or UnknownCSN if it's not committed (yet) or RolledBackCSN if it's rolled back or PrehistoricCSN if there is no transaction.
     CSN csn = Tx::UnknownCSN;
 
+    /// From query context.
+    Field lightweight_delete_projection_mode;
+
     /// Create a new entry and write it to a temporary file.
     MergeTreeMutationEntry(MutationCommands commands_, DiskPtr disk, const String & path_prefix_, UInt64 tmp_number,
-                           const TransactionID & tid_, const WriteSettings & settings);
+                           const TransactionID & tid_, const WriteSettings & settings,
+                           const Field & lightweight_delete_projection_mode_);
     MergeTreeMutationEntry(const MergeTreeMutationEntry &) = delete;
     MergeTreeMutationEntry(MergeTreeMutationEntry &&) = default;
 

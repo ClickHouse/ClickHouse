@@ -40,12 +40,15 @@ struct MergeMutateSelectedEntry
     CurrentlyMergingPartsTaggerPtr tagger;
     MutationCommandsConstPtr commands;
     MergeTreeTransactionPtr txn;
+    Field lightweight_delete_projection_mode;
     MergeMutateSelectedEntry(FutureMergedMutatedPartPtr future_part_, CurrentlyMergingPartsTaggerPtr tagger_,
-                             MutationCommandsConstPtr commands_, const MergeTreeTransactionPtr & txn_ = NO_TRANSACTION_PTR)
+                             MutationCommandsConstPtr commands_, const MergeTreeTransactionPtr & txn_ = NO_TRANSACTION_PTR,
+                             const Field & lightweight_delete_projection_mode_ = LightweightMutationProjectionMode::THROW)
         : future_part(future_part_)
         , tagger(std::move(tagger_))
         , commands(commands_)
         , txn(txn_)
+        , lightweight_delete_projection_mode(lightweight_delete_projection_mode_)
     {}
 };
 
