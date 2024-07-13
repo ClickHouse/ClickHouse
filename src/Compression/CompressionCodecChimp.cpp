@@ -312,7 +312,7 @@ void decompressDataForType(const char * source, UInt32 source_size, char * dest,
     }
 
     // since data is tightly packed, up to 1 bit per value, and last byte is padded with zeroes,
-    // we have to keep track of items to avoid reading more that there is.
+    // we have to keep track of items to avoid reading more than there is.
     for (UInt32 items_read = 1; items_read < items_count && !reader.eof(); ++items_read)
     {
         T curr_value = prev_value;
