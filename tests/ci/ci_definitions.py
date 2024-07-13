@@ -327,6 +327,9 @@ class JobConfig:
         assert self.required_builds
         return self.required_builds[0]
 
+    def has_digest(self) -> bool:
+        return self.digest != DigestConfig()
+
 
 class CommonJobConfigs:
     """
@@ -440,7 +443,12 @@ class CommonJobConfigs:
     )
     ASTFUZZER_TEST = JobConfig(
         job_name_keyword="ast",
-        digest=DigestConfig(),
+        digest=DigestConfig(
+            include_paths=[
+                "./tests/ci/ast_fuzzer_check.py",
+            ],
+            docker=["clickhouse/fuzzer"],
+        ),
         run_command="ast_fuzzer_check.py",
         run_always=True,
         runner_type=Runners.FUZZER_UNIT_TESTER,
