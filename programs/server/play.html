@@ -639,7 +639,7 @@
                 renderChart(json);
             } else {
                 renderUnparsedResult(response);
-                stats.innerText = `Elapsed: ${(elapsed_msec/1000).toFixed(3)} sec.`;
+                stats.innerText = `Elapsed (client-side): ${(elapsed_msec / 1000).toFixed(3)} sec.`;
             }
             document.getElementById('check-mark').style.display = 'inline';
         } else {
