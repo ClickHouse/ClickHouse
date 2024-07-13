@@ -447,7 +447,8 @@ class CommonJobConfigs:
             include_paths=[
                 "./tests/ci/ast_fuzzer_check.py",
             ],
-            docker=["clickhouse/fuzzer"]),
+            docker=["clickhouse/fuzzer"],
+        ),
         run_command="ast_fuzzer_check.py",
         run_always=True,
         runner_type=Runners.FUZZER_UNIT_TESTER,
