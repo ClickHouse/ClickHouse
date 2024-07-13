@@ -272,7 +272,11 @@ def main():
                         job_name_with_max_failures = status.context
                         max_failed_tests_per_job = failed_cnt
                     total_failed_tests += failed_cnt
-            elif status.state != SUCCESS:
+            elif status.state != SUCCESS and status.context not in (
+                CI.StatusNames.SYNC,
+                CI.StatusNames.PR_CHECK,
+            ):
+                # do not block CI on failures in (CI.StatusNames.SYNC, CI.StatusNames.PR_CHECK)
                 has_failed_statuses = True
                 print(
                     f"Unexpected status for [{status.context}]: [{status.state}] - block further testing"
