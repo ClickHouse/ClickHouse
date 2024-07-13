@@ -59,10 +59,8 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64|AARCH64")
   # set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -march=armv8-a+crc+crypto -Wno-unused-function")
 endif()
 
-set (HAVE_THREAD_LOCAL 1)
-if(HAVE_THREAD_LOCAL)
-  add_definitions(-DROCKSDB_SUPPORT_THREAD_LOCAL)
-endif()
+# thread_local is part of C++11 and later (TODO: clean up this define)
+add_definitions(-DROCKSDB_SUPPORT_THREAD_LOCAL)
 
 if(CMAKE_SYSTEM_NAME MATCHES "Darwin")
   add_definitions(-DOS_MACOSX)
@@ -182,7 +180,6 @@ set(SOURCES
     ${ROCKSDB_SOURCE_DIR}/env/env.cc
     ${ROCKSDB_SOURCE_DIR}/env/env_chroot.cc
     ${ROCKSDB_SOURCE_DIR}/env/env_encryption.cc
-    ${ROCKSDB_SOURCE_DIR}/env/env_hdfs.cc
     ${ROCKSDB_SOURCE_DIR}/env/file_system.cc
     ${ROCKSDB_SOURCE_DIR}/env/file_system_tracer.cc
     ${ROCKSDB_SOURCE_DIR}/env/fs_remap.cc
@@ -311,7 +308,6 @@ set(SOURCES
     ${ROCKSDB_SOURCE_DIR}/util/murmurhash.cc
     ${ROCKSDB_SOURCE_DIR}/util/random.cc
     ${ROCKSDB_SOURCE_DIR}/util/rate_limiter.cc
-    ${ROCKSDB_SOURCE_DIR}/util/regex.cc
     ${ROCKSDB_SOURCE_DIR}/util/ribbon_config.cc
     ${ROCKSDB_SOURCE_DIR}/util/slice.cc
     ${ROCKSDB_SOURCE_DIR}/util/file_checksum_helper.cc
@@ -335,6 +331,7 @@ set(SOURCES
     ${ROCKSDB_SOURCE_DIR}/utilities/checkpoint/checkpoint_impl.cc
     ${ROCKSDB_SOURCE_DIR}/utilities/compaction_filters.cc
     ${ROCKSDB_SOURCE_DIR}/utilities/compaction_filters/remove_emptyvalue_compactionfilter.cc
+    ${ROCKSDB_SOURCE_DIR}/utilities/counted_fs.cc
     ${ROCKSDB_SOURCE_DIR}/utilities/debug.cc
     ${ROCKSDB_SOURCE_DIR}/utilities/env_mirror.cc
     ${ROCKSDB_SOURCE_DIR}/utilities/env_timed.cc
