@@ -1,6 +1,6 @@
 #include "MetadataStorageFromPlainObjectStorageOperations.h"
-#include "Common/SharedLockGuard.h"
 #include <Disks/ObjectStorages/InMemoryPathMap.h>
+#include "Common/SharedLockGuard.h"
 
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>

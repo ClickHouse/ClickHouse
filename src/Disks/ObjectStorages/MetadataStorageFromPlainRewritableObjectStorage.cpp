@@ -7,10 +7,10 @@
 #include <IO/ReadHelpers.h>
 #include <IO/S3Common.h>
 #include <IO/SharedThreadPools.h>
-#include <Common/ErrorCodes.h>
-#include <Common/logger_useful.h>
 #include "Common/SharedLockGuard.h"
 #include "Common/SharedMutex.h"
+#include <Common/ErrorCodes.h>
+#include <Common/logger_useful.h>
 #include "CommonPathPrefixKeyGenerator.h"
 
 
@@ -67,54 +67,55 @@ std::shared_ptr<InMemoryPathMap> loadPathPrefixMap(const std::string & metadata_
         if (remote_metadata_path.filename() != PREFIX_PATH_FILE_NAME)
             continue;
 
-        runner([remote_metadata_path, path, &object_storage, &result, &log, &settings, &metadata_key_prefix]
-        {
-            setThreadName("PlainRWMetaLoad");
-
-            StoredObject object{path};
-            String local_path;
-
-            try
+        runner(
+            [remote_metadata_path, path, &object_storage, &result, &log, &settings, &metadata_key_prefix]
             {
-                auto read_buf = object_storage->readObject(object, settings);
-                readStringUntilEOF(local_path, *read_buf);
-            }
+                setThreadName("PlainRWMetaLoad");
+
+                StoredObject object{path};
+                String local_path;
+
+                try
+                {
+                    auto read_buf = object_storage->readObject(object, settings);
+                    readStringUntilEOF(local_path, *read_buf);
+                }
 #if USE_AWS_S3
-            catch (const S3Exception & e)
-            {
-                /// It is ok if a directory was removed just now.
-                /// We support attaching a filesystem that is concurrently modified by someone else.
-                if (e.getS3ErrorCode() == Aws::S3::S3Errors::NO_SUCH_KEY)
-                    return;
-                throw;
-            }
+                catch (const S3Exception & e)
+                {
+                    /// It is ok if a directory was removed just now.
+                    /// We support attaching a filesystem that is concurrently modified by someone else.
+                    if (e.getS3ErrorCode() == Aws::S3::S3Errors::NO_SUCH_KEY)
+                        return;
+                    throw;
+                }
 #endif
-            catch (...)
-            {
-                throw;
-            }
+                catch (...)
+                {
+                    throw;
+                }
 
-            chassert(remote_metadata_path.has_parent_path());
-            chassert(remote_metadata_path.string().starts_with(metadata_key_prefix));
-            auto suffix = remote_metadata_path.string().substr(metadata_key_prefix.size());
-            auto remote_path = std::filesystem::path(std::move(suffix));
-            std::pair<Map::iterator, bool> res;
-            {
-                std::lock_guard lock(result->mutex);
-                res = result->map.emplace(std::filesystem::path(local_path).parent_path(), remote_path.parent_path());
-            }
+                chassert(remote_metadata_path.has_parent_path());
+                chassert(remote_metadata_path.string().starts_with(metadata_key_prefix));
+                auto suffix = remote_metadata_path.string().substr(metadata_key_prefix.size());
+                auto remote_path = std::filesystem::path(std::move(suffix));
+                std::pair<Map::iterator, bool> res;
+                {
+                    std::lock_guard lock(result->mutex);
+                    res = result->map.emplace(std::filesystem::path(local_path).parent_path(), remote_path.parent_path());
+                }
 
-            /// This can happen if table replication is enabled, then the same local path is written
-            /// in `prefix.path` of each replica.
-            /// TODO: should replicated tables (e.g., RMT) be explicitly disallowed?
-            if (!res.second)
-                LOG_WARNING(
-                    log,
-                    "The local path '{}' is already mapped to a remote path '{}', ignoring: '{}'",
-                    local_path,
-                    res.first->second,
-                    remote_path.parent_path().string());
-        });
+                /// This can happen if table replication is enabled, then the same local path is written
+                /// in `prefix.path` of each replica.
+                /// TODO: should replicated tables (e.g., RMT) be explicitly disallowed?
+                if (!res.second)
+                    LOG_WARNING(
+                        log,
+                        "The local path '{}' is already mapped to a remote path '{}', ignoring: '{}'",
+                        local_path,
+                        res.first->second,
+                        remote_path.parent_path().string());
+            });
     }
 
     runner.waitForAllToFinishAndRethrowFirstError();
