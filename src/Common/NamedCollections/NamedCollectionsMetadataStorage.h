@@ -30,7 +30,7 @@ public:
     /// Return true if update was made
     bool waitUpdate();
 
-    bool supportsPeriodicUpdate() const;
+    bool isReplicated() const;
 
 private:
     class INamedCollectionsStorage;
