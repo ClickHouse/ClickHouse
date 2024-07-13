@@ -609,7 +609,7 @@ class CiCache:
         pushes pending records for all jobs that supposed to be run
         """
         for job, job_config in self.jobs_to_do.items():
-            if job_config.run_always:
+            if not job_config.has_digest():
                 continue
             pending_state = PendingState(time.time(), run_url=GITHUB_RUN_URL)
             assert job_config.batches
@@ -680,7 +680,7 @@ class CiCache:
         It removes jobs from @jobs_to_do if it is a:
          1. test job and it is in @jobs_to_wait (no need to wait not affected jobs in PRs)
          2. test job and it has finished on release branch (even if failed)
-         2. build job which is not required by any test job that is left in @jobs_to_do
+         3. build job which is not required by any test job that is left in @jobs_to_do
 
         :return:
         """
