@@ -9,6 +9,8 @@
 #include <IO/SharedThreadPools.h>
 #include <Common/ErrorCodes.h>
 #include <Common/logger_useful.h>
+#include "Common/SharedLockGuard.h"
+#include "Common/SharedMutex.h"
 #include "CommonPathPrefixKeyGenerator.h"
 
 
@@ -39,14 +41,13 @@ std::string getMetadataKeyPrefix(ObjectStoragePtr object_storage)
         : metadata_key_prefix;
 }
 
-InMemoryPathMap::Map loadPathPrefixMap(const std::string & metadata_key_prefix, ObjectStoragePtr object_storage)
+std::shared_ptr<InMemoryPathMap> loadPathPrefixMap(const std::string & metadata_key_prefix, ObjectStoragePtr object_storage)
 {
+    auto result = std::make_shared<InMemoryPathMap>();
     using Map = InMemoryPathMap::Map;
-    Map result;
 
     ThreadPool & pool = getIOThreadPool().get();
     ThreadPoolCallbackRunnerLocal<void> runner(pool, "PlainRWMetaLoad");
-    std::mutex mutex;
 
     LoggerPtr log = getLogger("MetadataStorageFromPlainObjectStorage");
 
@@ -66,7 +67,7 @@ InMemoryPathMap::Map loadPathPrefixMap(const std::string & metadata_key_prefix, 
         if (remote_metadata_path.filename() != PREFIX_PATH_FILE_NAME)
             continue;
 
-        runner([remote_metadata_path, path, &object_storage, &result, &mutex, &log, &settings, &metadata_key_prefix]
+        runner([remote_metadata_path, path, &object_storage, &result, &log, &settings, &metadata_key_prefix]
         {
             setThreadName("PlainRWMetaLoad");
 
@@ -99,8 +100,8 @@ InMemoryPathMap::Map loadPathPrefixMap(const std::string & metadata_key_prefix, 
             auto remote_path = std::filesystem::path(std::move(suffix));
             std::pair<Map::iterator, bool> res;
             {
-                std::lock_guard lock(mutex);
-                res = result.emplace(std::filesystem::path(local_path).parent_path(), remote_path.parent_path());
+                std::lock_guard lock(result->mutex);
+                res = result->map.emplace(std::filesystem::path(local_path).parent_path(), remote_path.parent_path());
             }
 
             /// This can happen if table replication is enabled, then the same local path is written
@@ -117,10 +118,13 @@ InMemoryPathMap::Map loadPathPrefixMap(const std::string & metadata_key_prefix, 
     }
 
     runner.waitForAllToFinishAndRethrowFirstError();
-    LOG_DEBUG(log, "Loaded metadata for {} files, found {} directories", num_files, result.size());
+    {
+        SharedLockGuard lock(result->mutex);
+        LOG_DEBUG(log, "Loaded metadata for {} files, found {} directories", num_files, result->map.size());
 
-    auto metric = object_storage->getMetadataStorageMetrics().directory_map_size;
-    CurrentMetrics::add(metric, result.size());
+        auto metric = object_storage->getMetadataStorageMetrics().directory_map_size;
+        CurrentMetrics::add(metric, result->map.size());
+    }
     return result;
 }
 
@@ -128,14 +132,14 @@ void getDirectChildrenOnDiskImpl(
     const std::string & storage_key,
     const RelativePathsWithMetadata & remote_paths,
     const std::string & local_path,
-    const InMemoryPathMap::Map & local_path_prefixes,
-    SharedMutex & shared_mutex,
+    const InMemoryPathMap & path_map,
     std::unordered_set<std::string> & result)
 {
     /// Directories are retrieved from the in-memory path map.
     {
-        std::shared_lock lock(shared_mutex);
-        auto end_it = local_path_prefixes.end();
+        SharedLockGuard lock(path_map.mutex);
+        const auto & local_path_prefixes = path_map.map;
+        const auto end_it = local_path_prefixes.end();
         for (auto it = local_path_prefixes.lower_bound(local_path); it != end_it; ++it)
         {
             const auto & [k, _] = std::make_tuple(it->first.string(), it->second);
@@ -179,7 +183,7 @@ MetadataStorageFromPlainRewritableObjectStorage::MetadataStorageFromPlainRewrita
     ObjectStoragePtr object_storage_, String storage_path_prefix_)
     : MetadataStorageFromPlainObjectStorage(object_storage_, storage_path_prefix_)
     , metadata_key_prefix(DB::getMetadataKeyPrefix(object_storage))
-    , path_map(std::make_shared<InMemoryPathMap>(loadPathPrefixMap(metadata_key_prefix, object_storage)))
+    , path_map(loadPathPrefixMap(metadata_key_prefix, object_storage))
 {
     if (object_storage->isWriteOnce())
         throw Exception(
@@ -261,7 +265,7 @@ void MetadataStorageFromPlainRewritableObjectStorage::getDirectChildrenOnDisk(
     const std::string & local_path,
     std::unordered_set<std::string> & result) const
 {
-    getDirectChildrenOnDiskImpl(storage_key, remote_paths, local_path, getPathMap()->map, getPathMap()->mutex, result);
+    getDirectChildrenOnDiskImpl(storage_key, remote_paths, local_path, *getPathMap(), result);
 }
 
 }

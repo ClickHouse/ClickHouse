@@ -22,8 +22,8 @@ struct InMemoryPathMap
         }
     };
     using Map = std::map<std::filesystem::path, std::string, PathComparator>;
-    Map map;
-    SharedMutex mutex;
+    mutable SharedMutex mutex;
+    Map map TSA_GUARDED_BY(mutex);
 };
 
 }

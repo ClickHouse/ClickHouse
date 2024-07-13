@@ -1,4 +1,5 @@
 #include "MetadataStorageFromPlainObjectStorageOperations.h"
+#include "Common/SharedLockGuard.h"
 #include <Disks/ObjectStorages/InMemoryPathMap.h>
 
 #include <IO/ReadHelpers.h>
@@ -40,11 +41,9 @@ MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::MetadataStorageFr
 
 void MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::execute(std::unique_lock<SharedMutex> &)
 {
-    auto & mutex = path_map.mutex;
     {
-        std::shared_lock lock(mutex);
-        auto & map = path_map.map;
-        if (map.contains(path.parent_path()))
+        SharedLockGuard lock(path_map.mutex);
+        if (path_map.map.contains(path.parent_path()))
             return;
     }
 
@@ -67,7 +66,7 @@ void MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::execute(std:
     write_created = true;
 
     {
-        std::unique_lock lock(mutex);
+        std::lock_guard lock(path_map.mutex);
         auto & map = path_map.map;
         [[maybe_unused]] auto result = map.emplace(path.parent_path(), std::move(key_prefix));
         chassert(result.second);
@@ -86,16 +85,13 @@ void MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::execute(std:
 
 void MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::undo(std::unique_lock<SharedMutex> &)
 {
-    auto & mutex = path_map.mutex;
-
     auto metadata_object_key = createMetadataObjectKey(key_prefix, metadata_key_prefix);
 
     if (write_finalized)
     {
         {
-            std::unique_lock lock(mutex);
-            auto & map = path_map.map;
-            map.erase(path.parent_path());
+            std::lock_guard lock(path_map.mutex);
+            path_map.map.erase(path.parent_path());
         }
         auto metric = object_storage->getMetadataStorageMetrics().directory_map_size;
         CurrentMetrics::sub(metric, 1);
@@ -123,11 +119,9 @@ MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::MetadataStorageFrom
 std::unique_ptr<WriteBufferFromFileBase> MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::createWriteBuf(
     const std::filesystem::path & expected_path, const std::filesystem::path & new_path, bool validate_content)
 {
-    auto & mutex = path_map.mutex;
-
     std::filesystem::path remote_path;
     {
-        std::shared_lock lock(mutex);
+        SharedLockGuard lock(path_map.mutex);
         auto & map = path_map.map;
         auto expected_it = map.find(expected_path.parent_path());
         if (expected_it == map.end())
@@ -179,9 +173,8 @@ void MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::execute(std::u
     writeString(path_to.string(), *write_buf);
     write_buf->finalize();
 
-    auto & mutex = path_map.mutex;
     {
-        std::unique_lock lock(mutex);
+        std::lock_guard lock(path_map.mutex);
         auto & map = path_map.map;
         [[maybe_unused]] auto result = map.emplace(path_to.parent_path(), map.extract(path_from.parent_path()).mapped());
         chassert(result.second);
@@ -194,8 +187,7 @@ void MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::undo(std::uniq
 {
     if (write_finalized)
     {
-        auto & mutex = path_map.mutex;
-        std::unique_lock lock(mutex);
+        std::lock_guard lock(path_map.mutex);
         auto & map = path_map.map;
         map.emplace(path_from.parent_path(), map.extract(path_to.parent_path()).mapped());
     }
@@ -216,9 +208,8 @@ MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation::MetadataStorageFr
 
 void MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation::execute(std::unique_lock<SharedMutex> & /* metadata_lock */)
 {
-    auto & mutex = path_map.mutex;
     {
-        std::shared_lock lock(mutex);
+        SharedLockGuard lock(path_map.mutex);
         auto & map = path_map.map;
         auto path_it = map.find(path.parent_path());
         if (path_it == map.end())
@@ -233,7 +224,7 @@ void MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation::execute(std:
     object_storage->removeObject(metadata_object);
 
     {
-        std::unique_lock lock(mutex);
+        std::lock_guard lock(path_map.mutex);
         auto & map = path_map.map;
         map.erase(path.parent_path());
     }
@@ -263,9 +254,8 @@ void MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation::undo(std::un
     writeString(path.string(), *buf);
     buf->finalize();
 
-    auto & mutex = path_map.mutex;
     {
-        std::unique_lock lock(mutex);
+        std::lock_guard lock(path_map.mutex);
         auto & map = path_map.map;
         map.emplace(path.parent_path(), std::move(key_prefix));
     }

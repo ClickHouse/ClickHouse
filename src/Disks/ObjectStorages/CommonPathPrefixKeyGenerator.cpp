@@ -2,6 +2,7 @@
 #include <Disks/ObjectStorages/InMemoryPathMap.h>
 
 #include <Common/getRandomASCIIString.h>
+#include <Common/SharedLockGuard.h>
 
 #include <deque>
 #include <filesystem>
@@ -49,8 +50,8 @@ std::tuple<std::string, std::vector<std::string>> CommonPathPrefixKeyGenerator::
     std::filesystem::path p(path);
     std::deque<std::string> dq;
 
-    auto ptr = path_map.lock();
-    std::shared_lock lock(ptr->mutex);
+    const auto ptr = path_map.lock();
+    SharedLockGuard lock(ptr->mutex);
 
     while (p != p.root_path())
     {
