@@ -266,7 +266,7 @@ def test_lost_last_part(start_cluster):
             "ALTER TABLE mt3 UPDATE id = 777 WHERE 1", settings={"mutations_sync": "0"}
         )
 
-        partition_id = node1.query("select distinct _partition_id from mt3 where p = 'x'").strip()
+        partition_id = node1.query("select _partition_id").strip()
         remove_part_from_disk(node1, "mt3", f"{partition_id}_0_0_0")
 
         # other way to detect broken parts
