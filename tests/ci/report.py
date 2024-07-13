@@ -23,7 +23,7 @@ from typing import (
 from build_download_helper import get_gh_api
 from ci_config import CI
 from ci_utils import normalize_string
-from env_helper import REPORT_PATH, TEMP_PATH
+from env_helper import REPORT_PATH, GITHUB_WORKSPACE
 
 logger = logging.getLogger(__name__)
 
@@ -244,7 +244,8 @@ HTML_TEST_PART = """
 """
 
 BASE_HEADERS = ["Test name", "Test status"]
-JOB_REPORT_FILE = Path(TEMP_PATH) / "job_report.json"
+# should not be in TEMP directory or any directory that may be cleaned during the job execution
+JOB_REPORT_FILE = Path(GITHUB_WORKSPACE) / "job_report.json"
 
 
 @dataclass
@@ -296,6 +297,7 @@ class JobReport:
     build_dir_for_upload: Union[Path, str] = ""
     # if False no GH commit status will be created by CI
     need_commit_status: bool = True
+    job_skipped: bool = False
 
     def __post_init__(self):
         assert self.status in (SUCCESS, ERROR, FAILURE, PENDING)
