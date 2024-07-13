@@ -345,7 +345,7 @@ void decompressDataForType(const char * source, UInt32 source_size, char * dest,
                 prev_value = storedValues[match_index];
                 curr_xored_info.leading_zero_bits = LeadingZero::reverseBinaryRepresentation[reader.readBits(LeadingZero::BIT_LENGTH)];
                 curr_xored_info.data_bits = reader.readBits(DATA_BIT_LENGTH);
-                if(curr_xored_info.data_bits == 0)
+                if (curr_xored_info.data_bits == 0)
                 {
                     curr_xored_info.data_bits = 64;
                 }
@@ -361,7 +361,7 @@ void decompressDataForType(const char * source, UInt32 source_size, char * dest,
                 curr_value = prev_value;
                 break;
         }
-     
+
         unalignedStoreLittleEndian<T>(dest, curr_value);
         dest += sizeof(curr_value);
 
