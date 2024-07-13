@@ -16,6 +16,9 @@ dpkg -i package_folder/clickhouse-client_*.deb
 
 ln -s /usr/share/clickhouse-test/clickhouse-test /usr/bin/clickhouse-test
 
+# shellcheck disable=SC1091
+source /utils.lib
+
 # install test configs
 /usr/share/clickhouse-test/config/install.sh
 
@@ -272,3 +275,5 @@ if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]
     mv /var/log/clickhouse-server/stderr1.log /test_output/ ||:
     mv /var/log/clickhouse-server/stderr2.log /test_output/ ||:
 fi
+
+collect_core_dumps
