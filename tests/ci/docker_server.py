@@ -11,7 +11,6 @@ from os import path as p
 from pathlib import Path
 from typing import Dict, List
 
-from build_check import get_release_or_pr
 from build_download_helper import read_build_urls
 from docker_images_helper import DockerImageData, docker_login
 from env_helper import (
@@ -22,7 +21,7 @@ from env_helper import (
     TEMP_PATH,
 )
 from git_helper import Git
-from pr_info import PRInfo
+from pr_info import PRInfo, EventType
 from report import FAILURE, SUCCESS, JobReport, TestResult, TestResults
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
@@ -62,6 +61,12 @@ def parse_args() -> argparse.Namespace:
         default=get_version_from_repo(git=git).string,
         help="a version to build, automaticaly got from version_helper, accepts either "
         "tag ('refs/tags/' is removed automatically) or a normal 22.2.2.2 format",
+    )
+    parser.add_argument(
+        "--sha",
+        type=str,
+        default="",
+        help="sha of the commit to use packages from",
     )
     parser.add_argument(
         "--release-type",
@@ -122,7 +127,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def retry_popen(cmd: str, log_file: Path) -> int:
-    max_retries = 5
+    max_retries = 2
     for retry in range(max_retries):
         # From time to time docker build may failed. Curl issues, or even push
         # It will sleep progressively 5, 15, 30 and 50 seconds between retries
@@ -370,13 +375,22 @@ def main():
     tags = gen_tags(args.version, args.release_type)
     repo_urls = {}
     direct_urls: Dict[str, List[str]] = {}
-    release_or_pr, _ = get_release_or_pr(pr_info, args.version)
+    if pr_info.event_type == EventType.PULL_REQUEST:
+        release_or_pr = str(pr_info.number)
+        sha = pr_info.sha
+    elif pr_info.event_type == EventType.PUSH and pr_info.is_master:
+        release_or_pr = str(0)
+        sha = pr_info.sha
+    else:
+        release_or_pr = f"{args.version.major}.{args.version.minor}"
+        sha = args.sha
+        assert sha
 
     for arch, build_name in zip(ARCH, ("package_release", "package_aarch64")):
         if not args.bucket_prefix:
             repo_urls[arch] = (
                 f"{S3_DOWNLOAD}/{S3_BUILDS_BUCKET}/"
-                f"{release_or_pr}/{pr_info.sha}/{build_name}"
+                f"{release_or_pr}/{sha}/{build_name}"
             )
         else:
             repo_urls[arch] = f"{args.bucket_prefix}/{build_name}"

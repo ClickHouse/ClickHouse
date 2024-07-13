@@ -520,6 +520,35 @@ class CiCache:
             self.RecordType.SUCCESSFUL, job, batch, num_batches, release_branch
         )
 
+    def has_evidence(self, job: str, job_config: CI.JobConfig) -> bool:
+        """
+        checks if the job has been seen in master/release CI
+        function is to be used to check if change did not affect the job
+        :param job_config:
+        :param job:
+        :return:
+        """
+        return (
+            self.is_successful(
+                job=job,
+                batch=0,
+                num_batches=job_config.num_batches,
+                release_branch=not job_config.pr_only,
+            )
+            or self.is_pending(
+                job=job,
+                batch=0,
+                num_batches=job_config.num_batches,
+                release_branch=not job_config.pr_only,
+            )
+            or self.is_failed(
+                job=job,
+                batch=0,
+                num_batches=job_config.num_batches,
+                release_branch=not job_config.pr_only,
+            )
+        )
+
     def is_failed(
         self, job: str, batch: int, num_batches: int, release_branch: bool
     ) -> bool:
@@ -609,7 +638,7 @@ class CiCache:
         pushes pending records for all jobs that supposed to be run
         """
         for job, job_config in self.jobs_to_do.items():
-            if job_config.run_always:
+            if not job_config.has_digest():
                 continue
             pending_state = PendingState(time.time(), run_url=GITHUB_RUN_URL)
             assert job_config.batches
@@ -673,6 +702,50 @@ class CiCache:
         return self.s3.upload_file(
             bucket=S3_BUILDS_BUCKET, file_path=result_json_path, s3_path=s3_path
         )
+
+    def filter_out_not_affected_jobs(self):
+        """
+        Filter is to be applied in PRs to remove jobs that are not affected by the change
+        :return:
+        """
+        remove_from_to_do = []
+        required_builds = []
+        for job_name, job_config in self.jobs_to_do.items():
+            if CI.is_test_job(job_name) and job_name != CI.JobNames.BUILD_CHECK:
+                if job_config.reference_job_name:
+                    reference_name = job_config.reference_job_name
+                    reference_config = self.jobs_to_do[reference_name]
+                else:
+                    reference_name = job_name
+                    reference_config = job_config
+                if self.has_evidence(
+                    job=reference_name,
+                    job_config=reference_config,
+                ):
+                    remove_from_to_do.append(job_name)
+                else:
+                    required_builds += (
+                        job_config.required_builds if job_config.required_builds else []
+                    )
+
+        has_builds_to_do = False
+        for job_name, job_config in self.jobs_to_do.items():
+            if CI.is_build_job(job_name):
+                if job_name not in required_builds:
+                    remove_from_to_do.append(job_name)
+                else:
+                    has_builds_to_do = True
+
+        if not has_builds_to_do:
+            remove_from_to_do.append(CI.JobNames.BUILD_CHECK)
+
+        for job in remove_from_to_do:
+            print(f"Filter job [{job}] - not affected by the change")
+            if job in self.jobs_to_do:
+                del self.jobs_to_do[job]
+            if job in self.jobs_to_wait:
+                del self.jobs_to_wait[job]
+            self.jobs_to_skip.append(job)
 
     def await_pending_jobs(self, is_release: bool, dry_run: bool = False) -> None:
         """
