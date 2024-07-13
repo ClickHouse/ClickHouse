@@ -490,7 +490,7 @@ FROM bool_mask_table;
 ```response
 ┌─id─┬─toTypeName(id)─┬─result─┬─toTypeName(result)─┐
 │  1 │ UInt32         │      3 │ UInt8              │
-│  2 │ UInt32         │      3 │ UInt8              │
+│  2 │ UInt32         │      1 │ UInt8              │
 └────┴────────────────┴────────┴────────────────────┘
 ```
 
