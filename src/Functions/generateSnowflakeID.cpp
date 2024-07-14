@@ -185,11 +185,7 @@ public:
         {
             const auto & col_machine_id = arguments[1].column;
             if (!isColumnConst(*col_machine_id))
-            {
-                // Return an empty column if machine ID is not constant
-                vec_to.clear();
-                return col_res;
-            }
+                return nullptr;
             machine_id = col_machine_id->getUInt(0);
             /// Truncate machine id to 10 bits
             machine_id &= (1ull << machine_id_bits_count) - 1;
