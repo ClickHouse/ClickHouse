@@ -96,7 +96,8 @@ struct SnowflakeIdRange
 /// 1. calculate Snowflake ID by current timestamp (`now`)
 /// 2. `begin = max(available, now)`
 /// 3. Calculate `end = begin + input_rows_count` handling `machine_seq_num` overflow
-SnowflakeIdRange getRangeOfAvailableIds(const SnowflakeId & available, size_t input_rows_count, uint64_t machine_id)
+SnowflakeIdRange getRangeOfAvailableIds(const SnowflakeId & available, uint64_t machine_id, size_t input_rows_count)
+
 {
     /// 1. `now`
     SnowflakeId begin = {.timestamp = getTimestamp(), .machine_id = machine_id, .machine_seq_num = 0};
@@ -134,7 +135,7 @@ struct Data
         SnowflakeIdRange range;
         do
         {
-            range = getRangeOfAvailableIds(toSnowflakeId(available_snowflake_id), input_rows_count, machine_id);
+            range = getRangeOfAvailableIds(toSnowflakeId(available_snowflake_id), machine_id, input_rows_count);
         }
         while (!lowest_available_snowflake_id.compare_exchange_weak(available_snowflake_id, fromSnowflakeId(range.end)));
         /// CAS failed --> another thread updated `lowest_available_snowflake_id` and we re-try
@@ -166,7 +167,9 @@ public:
         FunctionArgumentDescriptors mandatory_args;
         FunctionArgumentDescriptors optional_args{
             {"expr", nullptr, nullptr, "Arbitrary expression"},
-            {"machine_id", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeUInt), nullptr, "UInt*"}
+            {"machine_id", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeUInt), static_cast<FunctionArgumentDescriptor::ColumnValidator>(&isColumnConst), "UInt*"}
+            {"machine_id", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeUInt), static_cast<FunctionArgumentDescriptor::ColumnValidator>(&isColumnConst), "const UInt*"}
+
         };
         validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
 
@@ -179,17 +182,14 @@ public:
         typename ColumnVector<UInt64>::Container & vec_to = col_res->getData();
         vec_to.resize(input_rows_count);
 
-        uint64_t machine_id = 0;
+        uint64_t machine_id = getMachineId();
         if (arguments.size() == 2 && input_rows_count > 0)
         {
             const auto & col_machine_id = arguments[1].column;
             machine_id = col_machine_id->getUInt(0);
+            /// Truncate machine id to 10 bits
+            machine_id &= (1ull << machine_id_bits_count) - 1;
         }
-        else
-            machine_id = getMachineId();
-
-        /// Truncate machine id to 10 bits
-        machine_id &= (1ull << machine_id_bits_count) - 1;
 
         if (input_rows_count > 0)
         {
@@ -226,7 +226,7 @@ REGISTER_FUNCTION(GenerateSnowflakeID)
         {"machine_id", "A machine ID, the 10 least significant bits are used. Optional."}
     };
     FunctionDocumentation::ReturnedValue returned_value = "A value of type UInt64";
-    FunctionDocumentation::Examples examples = {{"single", "SELECT generateSnowflakeID()", "7201148511606784000"}, {"with_machine_id", "SELECT generateSnowflakeID(1)", ""}, {"with_machine_id_and_expression", "SELECT generateSnowflakeID('some_expression', 1)", ""}};
+    FunctionDocumentation::Examples examples = {{"no_arguments", "SELECT generateSnowflakeID()", "7201148511606784000"}, {"with_machine_id", "SELECT generateSnowflakeID(1)", "7201148511606784001"}, {"with_expression_and_machine_id", "SELECT generateSnowflakeID('some_expression', 1)", "7201148511606784002"}};
     FunctionDocumentation::Categories categories = {"Snowflake ID"};
 
     factory.registerFunction<FunctionGenerateSnowflakeID>({description, syntax, arguments, returned_value, examples, categories});

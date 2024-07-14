@@ -567,12 +567,14 @@ While no standard or recommendation exists for the epoch of Snowflake IDs, imple
 **Syntax**
 
 ``` sql
-generateSnowflakeID([expr])
+generateSnowflakeID([expr, [machine_id]])
 ```
 
 **Arguments**
 
 - `expr` — An arbitrary [expression](../../sql-reference/syntax.md#syntax-expressions) used to bypass [common subexpression elimination](../../sql-reference/functions/index.md#common-subexpression-elimination) if the function is called multiple times in a query. The value of the expression has no effect on the returned Snowflake ID. Optional.
+
+- `machine_id` — A machine ID, the 10 least significant bits are used. Optional.
 
 **Returned value**
 
@@ -607,6 +609,16 @@ SELECT generateSnowflakeID(1), generateSnowflakeID(2);
 │    7199081609652224000 │    7199081609652224001 │
 └────────────────────────┴────────────────────────┘
 ```
+
+Example with expression and machine ID
+```
+SELECT generateSnowflakeID('expr', 1);
+
+┌─generateSnowflakeID('expr', 1)─┐
+│            7201148511606784002 │
+└────────────────────────────────┘
+```
+
 
 ## snowflakeToDateTime
 
