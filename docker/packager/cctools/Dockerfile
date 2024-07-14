@@ -1,3 +1,5 @@
+# docker build -t clickhouse/cctools .
+
 # This is a hack to significantly reduce the build time of the clickhouse/binary-builder
 # It's based on the assumption that we don't care of the cctools version so much
 # It event does not depend on the clickhouse/fasttest in the `docker/images.json`
