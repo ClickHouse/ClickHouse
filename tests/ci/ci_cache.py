@@ -533,19 +533,19 @@ class CiCache:
                 job=job,
                 batch=0,
                 num_batches=job_config.num_batches,
-                release_branch=not job_config.pr_only,
+                release_branch=True,
             )
             or self.is_pending(
                 job=job,
                 batch=0,
                 num_batches=job_config.num_batches,
-                release_branch=not job_config.pr_only,
+                release_branch=True,
             )
             or self.is_failed(
                 job=job,
                 batch=0,
                 num_batches=job_config.num_batches,
-                release_branch=not job_config.pr_only,
+                release_branch=True,
             )
         )
 
@@ -765,14 +765,19 @@ class CiCache:
         MAX_JOB_NUM_TO_WAIT = 3
         round_cnt = 0
 
-        # FIXME: temporary experiment: lets enable await for PR' workflows but for a shorter time
+        def _has_build_job():
+            for job in self.jobs_to_wait:
+                if CI.is_build_job(job):
+                    return True
+            return False
+
         if not is_release:
-            MAX_ROUNDS_TO_WAIT = 3
+            # in PRs we can wait only for builds, TIMEOUT*MAX_ROUNDS_TO_WAIT=100min is enough
+            MAX_ROUNDS_TO_WAIT = 2
 
         while (
-            len(self.jobs_to_wait) > MAX_JOB_NUM_TO_WAIT
-            and round_cnt < MAX_ROUNDS_TO_WAIT
-        ):
+            len(self.jobs_to_wait) > MAX_JOB_NUM_TO_WAIT or _has_build_job()
+        ) and round_cnt < MAX_ROUNDS_TO_WAIT:
             round_cnt += 1
             GHActions.print_in_group(
                 f"Wait pending jobs, round [{round_cnt}/{MAX_ROUNDS_TO_WAIT}]:",
