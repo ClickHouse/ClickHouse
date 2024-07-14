@@ -96,3 +96,15 @@ class Utils:
         if match:
             return int(match.group(1))
         return None
+
+    @staticmethod
+    def is_killed_with_oom():
+        if Shell.check(
+            "sudo dmesg -T | grep -q -e 'Out of memory: Killed process' -e 'oom_reaper: reaped process' -e 'oom-kill:constraint=CONSTRAINT_NONE'"
+        ):
+            return True
+        return False
+
+    @staticmethod
+    def clear_dmesg():
+        Shell.run("sudo dmesg --clear ||:")
