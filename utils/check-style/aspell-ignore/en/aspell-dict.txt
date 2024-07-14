@@ -1,4 +1,4 @@
-personal_ws-1.1 en 2758
+personal_ws-1.1 en 2942 
 AArch
 ACLs
 ALTERs
@@ -449,7 +449,7 @@ Kahan
 Kaser
 KeeperAliveConnections
 KeeperMap
-KeeperOutstandingRequets
+KeeperOutstandingRequests
 Kerberos
 Khanna
 KittenHouse
@@ -467,7 +467,7 @@ LOCALTIME
 LOCALTIMESTAMP
 LONGLONG
 LOONGARCH
-Lemir
+Lemire
 Levenshtein
 Liao
 LibFuzzer
@@ -1098,6 +1098,8 @@ aggregatefunction
 aggregatingmergetree
 aggregatio
 aggretate
+aggthrow
+aggThrow
 aiochclient
 allocator
 alphaTokens
@@ -1317,6 +1319,12 @@ cfg
 cgroup
 cgroups
 chadmin
+changeDay
+changeHour
+changeMinute
+changeMonth
+changeSecond
+changeYear
 changelog
 changelogs
 charset
@@ -1656,6 +1664,7 @@ fsync
 func
 fuzzBits
 fuzzJSON
+fuzzQuery
 fuzzer
 fuzzers
 gRPC
@@ -1897,11 +1906,13 @@ kurtosis
 kurtpop
 kurtsamp
 laion
+lagInFrame
 lang
 laravel
 largestTriangleThreeBuckets
 latencies
 ldap
+leadInFrame
 leftPad
 leftPadUTF
 leftUTF
@@ -1979,6 +1990,8 @@ mapExtractKeyLike
 mapFilter
 mapFromArrays
 mapKeys
+mapPartialReverseSort
+mapPartialSort
 mapPopulateSeries
 mapReverseSort
 mapSort
@@ -1995,6 +2008,7 @@ maxMap
 maxintersections
 maxintersectionsposition
 maxmap
+minMappedArrays
 maxmind
 mdadm
 meanZTest
@@ -2012,6 +2026,7 @@ metrica
 metroHash
 mfedotov
 minMap
+minMappedArrays
 minSampleSizeContinuous
 minSampleSizeConversion
 mindsdb
@@ -2119,8 +2134,10 @@ noaa
 nonNegativeDerivative
 noop
 normalizeQuery
+normalizeQueryKeepNames
 normalizeUTF
 normalizedQueryHash
+normalizedQueryHashKeepNames
 notEmpty
 notEquals
 notILike
@@ -2794,6 +2811,7 @@ tupleModulo
 tupleModuloByNumber
 tupleMultiply
 tupleMultiplyByNumber
+tupleNames
 tupleNegate
 tuplePlus
 tupleToNameValuePairs
