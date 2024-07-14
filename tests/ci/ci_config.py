@@ -413,7 +413,9 @@ class CI:
             release_only=True,
         ),
         JobNames.INTEGRATION_TEST_FLAKY: CommonJobConfigs.INTEGRATION_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_ASAN], pr_only=True
+            required_builds=[BuildNames.PACKAGE_ASAN],
+            pr_only=True,
+            reference_job_name=JobNames.INTEGRATION_TEST_TSAN,
         ),
         JobNames.COMPATIBILITY_TEST: CommonJobConfigs.COMPATIBILITY_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_RELEASE],
@@ -455,7 +457,10 @@ class CI:
             required_builds=[BuildNames.PACKAGE_UBSAN],
         ),
         JobNames.STATELESS_TEST_FLAKY_ASAN: CommonJobConfigs.STATELESS_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_ASAN], pr_only=True, timeout=3600
+            required_builds=[BuildNames.PACKAGE_ASAN],
+            pr_only=True,
+            timeout=3600,
+            reference_job_name=JobNames.STATELESS_TEST_RELEASE,
         ),
         JobNames.JEPSEN_KEEPER: JobConfig(
             required_builds=[BuildNames.BINARY_RELEASE],
@@ -640,7 +645,7 @@ class CI:
 
     @classmethod
     def is_test_job(cls, job: str) -> bool:
-        return not cls.is_build_job(job) and job != cls.JobNames.STYLE_CHECK
+        return not cls.is_build_job(job)
 
     @classmethod
     def is_docs_job(cls, job: str) -> bool:
