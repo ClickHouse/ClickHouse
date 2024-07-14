@@ -188,6 +188,4 @@ namespace ProfileEvents
 
         std::unique_ptr<Increment[]> increment_holder;
     };
-    // Declare MemoryCredits event
-    extern const Event MemoryCredits;
 }
