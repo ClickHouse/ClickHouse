@@ -91,6 +91,7 @@
 #include <Compression/CompressionCodecEncrypted.h>
 #include <Server/ServersManager/InterServersManager.h>
 #include <Server/ServersManager/ProtocolServersManager.h>
+#include <Server/CloudPlacementInfo.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Core/ServerSettings.h>
 #include <filesystem>
@@ -739,18 +740,6 @@ try
             total_memory_tracker.setSampleMaxAllocationSize(server_settings.total_memory_profiler_sample_max_allocation_size);
     }
 
-    Poco::ThreadPool server_pool(
-        /* minCapacity */3,
-        /* maxCapacity */server_settings.max_connections,
-        /* idleTime */60,
-        /* stackSize */POCO_THREAD_STACK_SIZE,
-        server_settings.global_profiler_real_time_period_ns,
-        server_settings.global_profiler_cpu_time_period_ns);
-
-    std::mutex servers_lock;
-    std::vector<ProtocolServerAdapter> servers;
-    std::vector<ProtocolServerAdapter> servers_to_start_before_tables;
-
     /// Wait for all threads to avoid possible use-after-free (for example logging objects can be already destroyed).
     SCOPE_EXIT({
         Stopwatch watch;
@@ -758,7 +747,6 @@ try
         GlobalThreadPool::instance().shutdown();
         LOG_INFO(log, "Background threads finished in {} ms", watch.elapsedMilliseconds());
     });
-
 
     /// This object will periodically calculate some metrics.
     ServerAsynchronousMetrics async_metrics(
@@ -1598,8 +1586,7 @@ try
 
             /// Must be the last.
             latest_config = config;
-        },
-        /* already_loaded = */ false); /// Reload it right now (initial loading)
+        });
 
     servers_to_start_before_tables.createServers(
         config(),
