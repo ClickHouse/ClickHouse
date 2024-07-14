@@ -714,7 +714,7 @@ class CiCache:
             if CI.is_test_job(job_name) and job_name != CI.JobNames.BUILD_CHECK:
                 if job_config.reference_job_name:
                     reference_name = job_config.reference_job_name
-                    reference_config = self.jobs_to_do[reference_name]
+                    reference_config = CI.JOB_CONFIGS[reference_name]
                 else:
                     reference_name = job_name
                     reference_config = job_config
@@ -745,7 +745,8 @@ class CiCache:
                 del self.jobs_to_do[job]
             if job in self.jobs_to_wait:
                 del self.jobs_to_wait[job]
-            self.jobs_to_skip.append(job)
+            if job in self.jobs_to_skip:
+                self.jobs_to_skip.remove(job)
 
     def await_pending_jobs(self, is_release: bool, dry_run: bool = False) -> None:
         """
