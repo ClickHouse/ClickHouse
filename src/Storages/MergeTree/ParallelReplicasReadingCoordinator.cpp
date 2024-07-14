@@ -863,9 +863,6 @@ void InOrderCoordinator<mode>::doHandleInitialAllRangesAnnouncement(InitialAllRa
 
     ++stats[announcement.replica_num].number_of_requests;
 
-    if (state_initialized)
-        return;
-
     size_t new_rows_to_read = 0;
 
     /// To get rid of duplicates
@@ -874,12 +871,15 @@ void InOrderCoordinator<mode>::doHandleInitialAllRangesAnnouncement(InitialAllRa
         auto the_same_it = std::find_if(all_parts_to_read.begin(), all_parts_to_read.end(),
             [&part] (const Part & other) { return other.description.info == part.info; });
 
-        /// We have the same part - add the info about presence on current replica to it
+        /// We have the same part - add the info about presence on the corresponding replica to it
         if (the_same_it != all_parts_to_read.end())
         {
             the_same_it->replicas.insert(announcement.replica_num);
             continue;
         }
+
+        if (state_initialized)
+            continue;
 
         auto covering_or_the_same_it = std::find_if(all_parts_to_read.begin(), all_parts_to_read.end(),
             [&part] (const Part & other) { return other.description.info.contains(part.info) ||  part.info.contains(other.description.info); });
