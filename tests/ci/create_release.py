@@ -618,6 +618,8 @@ sudo apt install --yes --no-install-recommends python3-dev python3-pip gh unzip
 sudo apt install --yes python3-boto3
 sudo apt install --yes python3-github
 sudo apt install --yes python3-unidiff
+sudo apt install --yes python3-tqdm # cloud changelog
+sudo apt install --yes python3-thefuzz # cloud changelog
 sudo apt install --yes s3fs
 
 ### INSTALL AWS CLI
