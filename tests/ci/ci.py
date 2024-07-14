@@ -1007,10 +1007,10 @@ def main() -> int:
             args.skip_jobs,
         )
 
+        ci_cache.print_status()
         if IS_CI and pr_info.is_pr and not ci_settings.no_ci_cache:
             ci_cache.filter_out_not_affected_jobs()
-
-        ci_cache.print_status()
+            ci_cache.print_status()
 
         if IS_CI and not pr_info.is_merge_queue:
             # wait for pending jobs to be finished, await_jobs is a long blocking call
