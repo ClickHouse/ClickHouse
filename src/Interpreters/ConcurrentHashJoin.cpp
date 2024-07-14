@@ -34,7 +34,7 @@ extern const Metric ConcurrentHashJoinPoolThreadsScheduled;
 
 namespace
 {
-/// 01428_nullable_asof_join 02735_asof_join_right_null
+
 Block concatenateBlocks(const HashJoin::ScatteredBlocks & blocks)
 {
     Blocks inner_blocks;

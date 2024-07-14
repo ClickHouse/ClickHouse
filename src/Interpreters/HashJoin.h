@@ -204,7 +204,7 @@ public:
             return *this;
         }
 
-        operator bool() const { return block && block->rows(); }
+        operator bool() const { return block && *block; }
 
         /// Accounts only selected rows
         size_t rows() const { return selector.size(); }
@@ -226,7 +226,7 @@ public:
         void filter(const IColumn::Filter & filter)
         {
             chassert(block && block->rows() == filter.size());
-            auto it = std::remove_if(selector.begin(), selector.end(), [&](size_t idx) { return filter[idx]; });
+            auto it = std::remove_if(selector.begin(), selector.end(), [&](size_t idx) { return !filter[idx]; });
             selector.resize(std::distance(selector.begin(), it));
         }
 
