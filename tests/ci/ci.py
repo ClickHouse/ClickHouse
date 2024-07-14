@@ -6,6 +6,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -550,7 +551,17 @@ def _update_gh_statuses_action(indata: Dict, s3: S3Helper) -> None:
             except Exception as e:
                 raise e
     print("Going to update overall CI report")
-    set_status_comment(commit, pr_info)
+    for retry in range(2):
+        try:
+            set_status_comment(commit, pr_info)
+            break
+        except Exception as e:
+            print(
+                f"WARNING: Failed to update CI Running status, attempt [{retry + 1}], exception [{e}]"
+            )
+            time.sleep(1)
+    else:
+        print("ERROR: All retry attempts failed.")
     print("... CI report update - done")
 
 
@@ -996,10 +1007,10 @@ def main() -> int:
             args.skip_jobs,
         )
 
+        ci_cache.print_status()
         if IS_CI and pr_info.is_pr and not ci_settings.no_ci_cache:
             ci_cache.filter_out_not_affected_jobs()
-
-        ci_cache.print_status()
+            ci_cache.print_status()
 
         if IS_CI and not pr_info.is_merge_queue:
             # wait for pending jobs to be finished, await_jobs is a long blocking call
