@@ -123,6 +123,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
     ParserCompoundIdentifier parser_name;
     ParserStringLiteral parser_string_literal;
+    ParserNumber parser_number;
     ParserStringAndSubstitution parser_string_and_substituion;
     ParserIdentifier parser_remove_property;
     ParserCompoundColumnDeclaration parser_col_decl;
@@ -847,6 +848,10 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             else if (s_materialize_ttl.ignore(pos, expected))
             {
                 command->type = ASTAlterCommand::MATERIALIZE_TTL;
+
+                ASTPtr ttl_delta;
+                if (parser_number.parse(pos, ttl_delta, expected))
+                    command->ttl_delta = ttl_delta->as<ASTLiteral &>().value.get<Int64>();
 
                 if (s_in_partition.ignore(pos, expected))
                 {

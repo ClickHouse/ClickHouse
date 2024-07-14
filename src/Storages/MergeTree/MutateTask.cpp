@@ -2128,12 +2128,7 @@ bool MutateTask::prepare()
     /// Skip using large sets in KeyCondition
     context_for_reading->setSetting("use_index_for_in_with_subqueries_max_values", 100000);
 
-    for (const auto & command : *ctx->commands)
-        if (!canSkipMutationCommandForPart(ctx->source_part, command, context_for_reading))
-            ctx->commands_for_part.emplace_back(command);
-
-    if (ctx->source_part->isStoredOnDisk() && !isStorageTouchedByMutations(
-        *ctx->data, ctx->source_part, ctx->metadata_snapshot, ctx->commands_for_part, context_for_reading))
+    auto clone_part = [&]()
     {
         NameSet files_to_copy_instead_of_hardlinks;
         auto settings_ptr = ctx->data->getSettings();
@@ -2166,13 +2161,89 @@ bool MutateTask::prepare()
         MergeTreeData::MutableDataPartPtr part;
         scope_guard lock;
 
+        return ctx->data->cloneAndLoadDataPart(
+            ctx->source_part, prefix, ctx->future_part->part_info, ctx->metadata_snapshot, clone_params, ctx->context->getReadSettings(), ctx->context->getWriteSettings(), true/*must_on_same_disk*/);
+    };
+
+    bool is_fast_materialize_ttl = false;
+    for (const auto & command : *ctx->commands)
+    {
+        if (command.type == MutationCommand::Type::FAST_MATERIALIZE_TTL)
+            is_fast_materialize_ttl = true;
+    }
+
+    if (is_fast_materialize_ttl)
+    {
+        if (ctx->commands->size() != 1)
+            throw Exception(ErrorCodes::ABORTED, "The size of the commands of Fast materialize ttl is not 1, cancelled mutating parts.");
+
+        time_t ttl_delta = ctx->commands->front().ttl_delta;
+        /// For completely expired part are directly replaced with empty part.
+        if (ctx->source_part->ttl_infos.part_max_ttl + ttl_delta <= ctx->time_of_mutation)
         {
-            std::tie(part, lock) = ctx->data->cloneAndLoadDataPart(
-                ctx->source_part, prefix, ctx->future_part->part_info, ctx->metadata_snapshot, clone_params, ctx->context->getReadSettings(), ctx->context->getWriteSettings(), true/*must_on_same_disk*/);
-            part->getDataPartStorage().beginTransaction();
+            auto [part, lock] = ctx->data->createEmptyPart(
+                ctx->future_part->part_info, ctx->future_part->getPartition(), ctx->future_part->name, ctx->txn);
+
             ctx->temporary_directory_lock = std::move(lock);
+            promise.set_value(std::move(part));
+            return false;
         }
 
+        /// For part that have not expired, copy a new part and modify it to the new TTL.
+        if (ctx->source_part->ttl_infos.part_min_ttl + ttl_delta >= ctx->time_of_mutation)
+        {
+            auto [part, lock] = clone_part();
+
+            {
+                part->ttl_infos.table_ttl.min += ttl_delta;
+                part->ttl_infos.table_ttl.max += ttl_delta;
+                part->ttl_infos.part_min_ttl += ttl_delta;
+                part->ttl_infos.part_max_ttl += ttl_delta;
+
+                /// Write a file with ttl infos in json format.
+                part->getDataPartStorage().removeFile("ttl.txt");
+                auto out_ttl = part->getDataPartStorage().writeFile("ttl.txt", 4096, ctx->context->getWriteSettings());
+                HashingWriteBuffer out_hashing(*out_ttl);
+                part->ttl_infos.write(out_hashing);
+                out_hashing.finalize();
+                part->checksums.files["ttl.txt"].file_size = out_hashing.count();
+                part->checksums.files["ttl.txt"].file_hash = out_hashing.getHash();
+                out_ttl->finalize();
+                out_ttl->sync();
+
+                /// Write file with checksums.
+                part->getDataPartStorage().removeFile("checksums.txt");
+                auto out_checksums = part->getDataPartStorage().writeFile("checksums.txt", 4096, ctx->context->getWriteSettings());
+                part->checksums.write(*out_checksums);
+                out_checksums->finalize();
+                out_checksums->sync();
+
+                part->modification_time = time(nullptr);
+            }
+
+            part->getDataPartStorage().beginTransaction();
+            ctx->temporary_directory_lock = std::move(lock);
+            promise.set_value(std::move(part));
+            return false;
+        }
+
+        /// For partially expired part, if ttl_only_drop_parts is false, change `FAST_MATERIALIZE_TTL` to `MATERIALIZE_TTL`.
+        auto & command = ctx->commands->front();
+        command.ast->as<ASTAlterCommand>()->ttl_delta = 0;
+        command.ttl_delta = 0;
+        command.type = MutationCommand::MATERIALIZE_TTL;
+    }
+
+    for (const auto & command : *ctx->commands)
+        if (!canSkipMutationCommandForPart(ctx->source_part, command, context_for_reading))
+            ctx->commands_for_part.emplace_back(command);
+
+    if (ctx->source_part->isStoredOnDisk() && !isStorageTouchedByMutations(
+        *ctx->data, ctx->source_part, ctx->metadata_snapshot, ctx->commands_for_part, context_for_reading))
+    {
+        auto [part, lock] = clone_part();
+        part->getDataPartStorage().beginTransaction();
+        ctx->temporary_directory_lock = std::move(lock);
         promise.set_value(std::move(part));
         return false;
     }
