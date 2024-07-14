@@ -533,19 +533,19 @@ class CiCache:
                 job=job,
                 batch=0,
                 num_batches=job_config.num_batches,
-                release_branch=not job_config.pr_only,
+                release_branch=True,
             )
             or self.is_pending(
                 job=job,
                 batch=0,
                 num_batches=job_config.num_batches,
-                release_branch=not job_config.pr_only,
+                release_branch=True,
             )
             or self.is_failed(
                 job=job,
                 batch=0,
                 num_batches=job_config.num_batches,
-                release_branch=not job_config.pr_only,
+                release_branch=True,
             )
         )
 
