@@ -71,4 +71,3 @@ select toTypeName(res), array([1, 2, 3], [[1, 2, 3]]) as res;
 select toTypeName(res), map('a', 1, 'b', 'str_1') as res;
 select toTypeName(res), map('a', 1, 'b', map('c', 2, 'd', 'str_1')) as res;
 select toTypeName(res), map('a', 1, 'b', [1, 2, 3], 'c', [[4, 5, 6]]) as res;
-
