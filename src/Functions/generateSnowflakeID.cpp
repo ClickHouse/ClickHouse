@@ -167,9 +167,7 @@ public:
         FunctionArgumentDescriptors mandatory_args;
         FunctionArgumentDescriptors optional_args{
             {"expr", nullptr, nullptr, "Arbitrary expression"},
-            {"machine_id", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeUInt), static_cast<FunctionArgumentDescriptor::ColumnValidator>(&isColumnConst), "UInt*"}
             {"machine_id", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeUInt), static_cast<FunctionArgumentDescriptor::ColumnValidator>(&isColumnConst), "const UInt*"}
-
         };
         validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
 
