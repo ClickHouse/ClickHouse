@@ -90,12 +90,12 @@ void PrettyBlockOutputFormat::calculateWidths(
         {
             name_widths[i] = UTF8::computeWidth(reinterpret_cast<const UInt8 *>(elem.name.data()), elem.name.size());
             size_t max_name_width = name_widths[i];
-            if(name_widths[i] > format_settings.pretty.max_column_name_width
+            if (name_widths[i] > format_settings.pretty.max_column_name_width
                 && name_widths[i] > max_padded_widths[i] + format_settings.pretty.max_column_name_width_histeresis)
                 max_name_width = format_settings.pretty.max_column_name_width;
             // name string doesn't contain Tab, no need to pass `prefix`
-            max_padded_widths[i] = std::max<UInt64>(max_padded_widths[i],
-                std::min<UInt64>(format_settings.pretty.max_column_pad_width, max_name_width));
+            max_padded_widths[i]
+                = std::max<UInt64>(max_padded_widths[i], std::min<UInt64>(format_settings.pretty.max_column_pad_width, max_name_width));
         }
         prefix += max_padded_widths[i] + 3;
     }
@@ -467,10 +467,7 @@ void PrettyBlockOutputFormat::writeValueWithPadding(
     if (cut_to_width && value_width > cut_to_width)
     {
         serialized_value.resize(UTF8::computeBytesBeforeWidth(
-            reinterpret_cast<const UInt8 *>(serialized_value.data()),
-            serialized_value.size(),
-            0,
-            1 + cut_to_width));
+            reinterpret_cast<const UInt8 *>(serialized_value.data()), serialized_value.size(), 0, 1 + cut_to_width));
 
         const char * ellipsis = format_settings.pretty.charset == FormatSettings::Pretty::Charset::UTF8 ? "⋯" : "~";
         if (color)
@@ -511,66 +508,56 @@ void PrettyBlockOutputFormat::writeValueWithPadding(
 }
 
 void PrettyBlockOutputFormat::writeHeaderWithPadding(
-    const PrettyBlockOutputFormat::Widths & max_widths,
-    const PrettyBlockOutputFormat::Widths & name_widths,
-    const char* separator,
-    size_t col_num,
-    const ColumnWithTypeAndName & col)
+    const Widths & max_widths, const Widths & name_widths, const char * separator, size_t col_num, const ColumnWithTypeAndName & col)
 {
+    String visible_col_name = col.name;
+    UInt64 name_width = name_widths[col_num];
+    if (name_width > max_widths[col_num])
+    {
+        const char * ellipsis = format_settings.pretty.charset == FormatSettings::Pretty::Charset::UTF8 ? "⋯" : "~";
+        const size_t front_bytes = UTF8::computeBytesBeforeWidth(
+            reinterpret_cast<const UInt8 *>(col.name.data()),
+            col.name.size(),
+            0,
+            static_cast<size_t>(std::ceil((max_widths[col_num] - 1) / 2.0)));
+
+        const UInt8* temp = reinterpret_cast<const UInt8 *>(col.name.data());
+        const size_t back_width = static_cast<size_t>(std::floor((max_widths[col_num] - 1) / 2.0));
+        size_t cur_back_width = 0;
+        size_t pos = col.name.size()-1;
+        while(cur_back_width < back_width)
+        {
+            cur_back_width = UTF8::computeWidth(temp+pos, col.name.size()-pos, 0);
+            pos--;
+        }
+        visible_col_name = col.name.substr(0, front_bytes);
+        if (color)
+        {
+            visible_col_name += "\033[31;1m";
+            visible_col_name += ellipsis;
+            visible_col_name += "\033[0m";
+        }
+        else
+            visible_col_name += ellipsis;
+        visible_col_name += col.name.substr(pos+1);
+        name_width = max_widths[col_num];
+    }
     if (col.type->shouldAlignRightInPrettyFormats())
     {
-        String serialized_value = col.name;
-        UInt64 name_width = name_widths[col_num];
-        if (name_width > max_widths[col_num])
-        {
-            serialized_value.resize(UTF8::computeBytesBeforeWidth(
-                reinterpret_cast<const UInt8 *>(serialized_value.data()), serialized_value.size(), 0, max_widths[col_num] - 1));
-
-            const char * ellipsis = format_settings.pretty.charset == FormatSettings::Pretty::Charset::UTF8 ? "⋯" : "~";
-            if (color)
-            {
-                serialized_value += "\033[31;1m";
-                serialized_value += ellipsis;
-                serialized_value += "\033[0m";
-            }
-            else
-                serialized_value += ellipsis;
-            name_width = max_widths[col_num];
-        }
-
         for (size_t k = 0; k < max_widths[col_num] - name_width; ++k)
             writeCString(separator, out);
 
         if (color)
             writeCString("\033[1m", out);
-        writeString(serialized_value, out);
+        writeString(visible_col_name, out);
         if (color)
             writeCString("\033[0m", out);
     }
     else
     {
-        auto serialized_value = col.name;
-
-        auto name_width = name_widths[col_num];
-        if (name_width > max_widths[col_num])
-        {
-            serialized_value.resize(UTF8::computeBytesBeforeWidth(
-                reinterpret_cast<const UInt8 *>(serialized_value.data()), serialized_value.size(), 0, max_widths[col_num] - 1));
-
-            const char * ellipsis = format_settings.pretty.charset == FormatSettings::Pretty::Charset::UTF8 ? "⋯" : "~";
-            if (color)
-            {
-                serialized_value += "\033[31;1m";
-                serialized_value += ellipsis;
-                serialized_value += "\033[0m";
-            }
-            else
-                serialized_value += ellipsis;
-            name_width = max_widths[col_num];
-        }
         if (color)
             writeCString("\033[1m", out);
-        writeString(serialized_value, out);
+        writeString(visible_col_name, out);
         if (color)
             writeCString("\033[0m", out);
         for (size_t k = 0; k < max_widths[col_num] - name_width; ++k)
