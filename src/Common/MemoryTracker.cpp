@@ -621,10 +621,9 @@ bool canEnqueueBackgroundTask()
 void MemoryTracker::updateMemoryCredits()
 {
     size_t current_value = amount;
-    if (current_value - previous_value > threshold)
+    if (current_value > previous_value && current_value - previous_value > threshold)
     {
         size_t delta = (current_value - previous_value) * stopwatch.elapsedMicroseconds();
-        memory_credits += delta;
         ProfileEvents::increment(ProfileEvents::MemoryCredits, delta);
         previous_value = current_value;
         stopwatch.restart();

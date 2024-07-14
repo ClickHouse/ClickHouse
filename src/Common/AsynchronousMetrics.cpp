@@ -26,7 +26,6 @@
 #include <chrono>
 #include <string_view>
 
-
 #include "config.h"
 
 #if USE_JEMALLOC
@@ -750,9 +749,6 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
     AsynchronousMetricValues new_values;
 
     std::lock_guard lock(data_mutex);
-
-    // Add MemoryCredits increment here
-    ProfileEvents::increment(ProfileEvents::MemoryCredits);
 
     auto current_time = std::chrono::system_clock::now();
     auto time_since_previous_update = current_time - previous_update_time;

@@ -258,9 +258,7 @@ public:
     void logPeakMemoryUsage();
 
     void debugLogBigAllocationWithoutCheck(Int64 size [[maybe_unused]]);
-    Stopwatch stopwatch;
-    size_t previous_value = 0;
-    size_t memory_credits = 0; // This will hold the memory usage in microseconds*bytes
+    size_t memory_credits = 0;
     void updateMemoryCredits();
 };
 
