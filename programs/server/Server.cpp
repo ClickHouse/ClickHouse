@@ -572,7 +572,6 @@ try
 
     ServerSettings server_settings;
     server_settings.loadSettingsFromConfig(config());
-    Poco::ThreadPool server_pool(3, server_settings.max_connections);
 
     ASTAlterCommand::setFormatAlterCommandsWithParentheses(server_settings.format_alter_operations_with_parentheses);
 
@@ -708,10 +707,6 @@ try
         LOG_INFO(log, "Query Profiler and TraceCollector are disabled because they require PHDR cache to be created"
             " (otherwise the function 'dl_iterate_phdr' is not lock free and not async-signal safe).");
 
-    std::mutex servers_lock;
-    ProtocolServersManager servers(context(), &logger());
-    InterServersManager servers_to_start_before_tables(context(), &logger());
-
     // Initialize global thread pool. Do it before we fetch configs from zookeeper
     // nodes (`from_zk`), because ZooKeeper interface uses the pool. We will
     // ignore `max_thread_pool_size` in configs we fetch from ZK, but oh well.
@@ -739,6 +734,18 @@ try
         if (server_settings.total_memory_profiler_sample_max_allocation_size)
             total_memory_tracker.setSampleMaxAllocationSize(server_settings.total_memory_profiler_sample_max_allocation_size);
     }
+
+    Poco::ThreadPool server_pool(
+        /* minCapacity */3,
+        /* maxCapacity */server_settings.max_connections,
+        /* idleTime */60,
+        /* stackSize */POCO_THREAD_STACK_SIZE,
+        server_settings.global_profiler_real_time_period_ns,
+        server_settings.global_profiler_cpu_time_period_ns);
+
+    std::mutex servers_lock;
+    ProtocolServersManager servers(context(), &logger());
+    InterServersManager servers_to_start_before_tables(context(), &logger());
 
     /// Wait for all threads to avoid possible use-after-free (for example logging objects can be already destroyed).
     SCOPE_EXIT({
