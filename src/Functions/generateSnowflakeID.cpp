@@ -184,7 +184,13 @@ public:
         if (arguments.size() == 2 && input_rows_count > 0)
         {
             const auto & col_machine_id = arguments[1].column;
+            if (!isColumnConst(*col_machine_id))
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The machine_id argument must be a constant UInt64");
+
             machine_id = col_machine_id->getUInt(0);
+            if (col_machine_id->getDataType() != TypeIndex::UInt64)
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The machine_id argument must be of type UInt64");
+
             /// Truncate machine id to 10 bits
             machine_id &= (1ull << machine_id_bits_count) - 1;
         }
