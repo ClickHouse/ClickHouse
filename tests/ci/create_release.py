@@ -120,7 +120,7 @@ class ReleaseInfo:
                 expected_version = copy(version)
                 expected_version.bump()
                 expected_tag_prefix = (
-                    f"v{expected_version.major}.{expected_version.minor}-"
+                    f"v{expected_version.major}.{expected_version.minor}."
                 )
                 expected_tag_suffix = "-new"
             else:
