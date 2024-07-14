@@ -104,8 +104,11 @@ def get_run_command(
 
     return (
         f"docker run --volume={builds_path}:/package_folder "
+        # For dmesg and sysctl
+        "--privileged "
         f"{ci_logs_args}"
         f"--volume={repo_path}/tests:/usr/share/clickhouse-test "
+        f"--volume={repo_path}/utils/grpc-client:/usr/share/clickhouse-utils/grpc-client "
         f"{volume_with_broken_test}"
         f"--volume={result_path}:/test_output "
         f"--volume={server_log_path}:/var/log/clickhouse-server "
@@ -253,7 +256,7 @@ def main():
     packages_path.mkdir(parents=True, exist_ok=True)
 
     if validate_bugfix_check:
-        download_last_release(packages_path)
+        download_last_release(packages_path, debug=True)
     else:
         download_all_deb_packages(check_name, reports_path, packages_path)
 

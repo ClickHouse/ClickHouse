@@ -8,6 +8,7 @@
 #include <Common/logger_useful.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnArray.h>
 #include <Formats/FormatFactory.h>
 
 #include <IO/ReadBufferFromFileBase.h>
@@ -30,6 +31,7 @@
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/NestedUtils.h>
 
 #include <boost/algorithm/string/case_conv.hpp>
 #include <parquet/file_reader.h>
@@ -111,7 +113,7 @@ struct DeltaLakeMetadataImpl
         std::set<String> result_files;
         NamesAndTypesList current_schema;
         DataLakePartitionColumns current_partition_columns;
-        const auto checkpoint_version = getCheckpointIfExists(result_files);
+        const auto checkpoint_version = getCheckpointIfExists(result_files, current_schema, current_partition_columns);
 
         if (checkpoint_version)
         {
@@ -205,9 +207,32 @@ struct DeltaLakeMetadataImpl
             Poco::Dynamic::Var json = parser.parse(json_str);
             Poco::JSON::Object::Ptr object = json.extract<Poco::JSON::Object::Ptr>();
 
-            // std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-            // object->stringify(oss);
-            // LOG_TEST(log, "Metadata: {}", oss.str());
+            std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+            object->stringify(oss);
+            LOG_TEST(log, "Metadata: {}", oss.str());
+
+            if (object->has("metaData"))
+            {
+                const auto metadata_object = object->get("metaData").extract<Poco::JSON::Object::Ptr>();
+                const auto schema_object = metadata_object->getValue<String>("schemaString");
+
+                Poco::JSON::Parser p;
+                Poco::Dynamic::Var fields_json = parser.parse(schema_object);
+                const Poco::JSON::Object::Ptr & fields_object = fields_json.extract<Poco::JSON::Object::Ptr>();
+
+                auto current_schema = parseMetadata(fields_object);
+                if (file_schema.empty())
+                {
+                    file_schema = current_schema;
+                }
+                else if (file_schema != current_schema)
+                {
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                                    "Reading from files with different schema is not possible "
+                                    "({} is different from {})",
+                                    file_schema.toString(), current_schema.toString());
+                }
+            }
 
             if (object->has("add"))
             {
@@ -230,7 +255,12 @@ struct DeltaLakeMetadataImpl
                                 const auto value = partition_values->getValue<String>(partition_name);
                                 auto name_and_type = file_schema.tryGetByName(partition_name);
                                 if (!name_and_type)
-                                    throw Exception(ErrorCodes::LOGICAL_ERROR, "No such column in schema: {}", partition_name);
+                                {
+                                    throw Exception(
+                                        ErrorCodes::LOGICAL_ERROR,
+                                        "No such column in schema: {} (schema: {})",
+                                        partition_name, file_schema.toNamesAndTypesDescription());
+                                }
 
                                 auto field = getFieldValue(value, name_and_type->type);
                                 current_partition_columns.emplace_back(*name_and_type, field);
@@ -246,50 +276,33 @@ struct DeltaLakeMetadataImpl
                 auto path = object->get("remove").extract<Poco::JSON::Object::Ptr>()->getValue<String>("path");
                 result.erase(fs::path(configuration->getPath()) / path);
             }
-            if (object->has("metaData"))
-            {
-                const auto metadata_object = object->get("metaData").extract<Poco::JSON::Object::Ptr>();
-                const auto schema_object = metadata_object->getValue<String>("schemaString");
-
-                Poco::JSON::Parser p;
-                Poco::Dynamic::Var fields_json = parser.parse(schema_object);
-                Poco::JSON::Object::Ptr fields_object = fields_json.extract<Poco::JSON::Object::Ptr>();
-
-                const auto fields = fields_object->get("fields").extract<Poco::JSON::Array::Ptr>();
-                NamesAndTypesList current_schema;
-                for (size_t i = 0; i < fields->size(); ++i)
-                {
-                    const auto field = fields->getObject(static_cast<UInt32>(i));
-                    auto column_name = field->getValue<String>("name");
-                    auto type = field->getValue<String>("type");
-                    auto is_nullable = field->getValue<bool>("nullable");
-
-                    std::string physical_name;
-                    auto schema_metadata_object = field->get("metadata").extract<Poco::JSON::Object::Ptr>();
-                    if (schema_metadata_object->has("delta.columnMapping.physicalName"))
-                        physical_name = schema_metadata_object->getValue<String>("delta.columnMapping.physicalName");
-                    else
-                        physical_name = column_name;
-
-                    LOG_TEST(log, "Found column: {}, type: {}, nullable: {}, physical name: {}",
-                             column_name, type, is_nullable, physical_name);
-
-                    current_schema.push_back({physical_name, getFieldType(field, "type", is_nullable)});
-                }
-
-                if (file_schema.empty())
-                {
-                    file_schema = current_schema;
-                }
-                else if (file_schema != current_schema)
-                {
-                    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                                    "Reading from files with different schema is not possible "
-                                    "({} is different from {})",
-                                    file_schema.toString(), current_schema.toString());
-                }
-            }
         }
+    }
+
+    NamesAndTypesList parseMetadata(const Poco::JSON::Object::Ptr & metadata_json)
+    {
+        NamesAndTypesList schema;
+        const auto fields = metadata_json->get("fields").extract<Poco::JSON::Array::Ptr>();
+        for (size_t i = 0; i < fields->size(); ++i)
+        {
+            const auto field = fields->getObject(static_cast<UInt32>(i));
+            auto column_name = field->getValue<String>("name");
+            auto type = field->getValue<String>("type");
+            auto is_nullable = field->getValue<bool>("nullable");
+
+            std::string physical_name;
+            auto schema_metadata_object = field->get("metadata").extract<Poco::JSON::Object::Ptr>();
+            if (schema_metadata_object->has("delta.columnMapping.physicalName"))
+                physical_name = schema_metadata_object->getValue<String>("delta.columnMapping.physicalName");
+            else
+                physical_name = column_name;
+
+            LOG_TEST(log, "Found column: {}, type: {}, nullable: {}, physical name: {}",
+                        column_name, type, is_nullable, physical_name);
+
+            schema.push_back({physical_name, getFieldType(field, "type", is_nullable)});
+        }
+        return schema;
     }
 
     DataTypePtr getFieldType(const Poco::JSON::Object::Ptr & field, const String & type_key, bool is_nullable)
@@ -505,7 +518,10 @@ struct DeltaLakeMetadataImpl
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Arrow error: {}", _s.ToString()); \
         } while (false)
 
-    size_t getCheckpointIfExists(std::set<String> & result)
+    size_t getCheckpointIfExists(
+        std::set<String> & result,
+        NamesAndTypesList & file_schema,
+        DataLakePartitionColumns & file_partition_columns)
     {
         const auto version = readLastCheckpointIfExists();
         if (!version)
@@ -526,7 +542,8 @@ struct DeltaLakeMetadataImpl
         auto columns = ParquetSchemaReader(*buf, format_settings).readSchema();
 
         /// Read only columns that we need.
-        columns.filterColumns(NameSet{"add", "remove"});
+        auto filter_column_names = NameSet{"add", "metaData"};
+        columns.filterColumns(filter_column_names);
         Block header;
         for (const auto & column : columns)
             header.insert({column.type->createColumn(), column.type, column.name});
@@ -540,9 +557,6 @@ struct DeltaLakeMetadataImpl
                 ArrowMemoryPool::instance(),
                 &reader));
 
-        std::shared_ptr<arrow::Schema> file_schema;
-        THROW_ARROW_NOT_OK(reader->GetSchema(&file_schema));
-
         ArrowColumnToCHColumn column_reader(
             header, "Parquet",
             format_settings.parquet.allow_missing_columns,
@@ -553,29 +567,85 @@ struct DeltaLakeMetadataImpl
         std::shared_ptr<arrow::Table> table;
         THROW_ARROW_NOT_OK(reader->ReadTable(&table));
 
-        Chunk res = column_reader.arrowTableToCHChunk(table, reader->parquet_reader()->metadata()->num_rows());
-        const auto & res_columns = res.getColumns();
+        Chunk chunk = column_reader.arrowTableToCHChunk(table, reader->parquet_reader()->metadata()->num_rows());
+        auto res_block = header.cloneWithColumns(chunk.detachColumns());
+        res_block = Nested::flatten(res_block);
 
-        if (res_columns.size() != 2)
-        {
-            throw Exception(
-                ErrorCodes::INCORRECT_DATA,
-                "Unexpected number of columns: {} (having: {}, expected: {})",
-                res_columns.size(), res.dumpStructure(), header.dumpStructure());
-        }
+        const auto * nullable_path_column = assert_cast<const ColumnNullable *>(res_block.getByName("add.path").column.get());
+        const auto & path_column = assert_cast<const ColumnString &>(nullable_path_column->getNestedColumn());
 
-        const auto * tuple_column = assert_cast<const ColumnTuple *>(res_columns[0].get());
-        const auto & nullable_column = assert_cast<const ColumnNullable &>(tuple_column->getColumn(0));
-        const auto & path_column = assert_cast<const ColumnString &>(nullable_column.getNestedColumn());
+        const auto * nullable_schema_column = assert_cast<const ColumnNullable *>(res_block.getByName("metaData.schemaString").column.get());
+        const auto & schema_column = assert_cast<const ColumnString &>(nullable_schema_column->getNestedColumn());
+
+        auto partition_values_column_raw = res_block.getByName("add.partitionValues").column;
+        const auto & partition_values_column = assert_cast<const ColumnMap &>(*partition_values_column_raw);
+
         for (size_t i = 0; i < path_column.size(); ++i)
         {
-            const auto filename = String(path_column.getDataAt(i));
-            if (filename.empty())
+            const auto metadata = String(schema_column.getDataAt(i));
+            if (!metadata.empty())
+            {
+                Poco::JSON::Parser parser;
+                Poco::Dynamic::Var json = parser.parse(metadata);
+                const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
+
+                auto current_schema = parseMetadata(object);
+                if (file_schema.empty())
+                {
+                    file_schema = current_schema;
+                    LOG_TEST(log, "Processed schema from checkpoint: {}", file_schema.toString());
+                }
+                else if (file_schema != current_schema)
+                {
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                                    "Reading from files with different schema is not possible "
+                                    "({} is different from {})",
+                                    file_schema.toString(), current_schema.toString());
+                }
+            }
+        }
+
+        for (size_t i = 0; i < path_column.size(); ++i)
+        {
+            const auto path = String(path_column.getDataAt(i));
+            if (path.empty())
                 continue;
-            LOG_TEST(log, "Adding {}", filename);
-            const auto [_, inserted] = result.insert(std::filesystem::path(configuration->getPath()) / filename);
+
+            auto filename = fs::path(path).filename().string();
+            auto it = file_partition_columns.find(filename);
+            if (it == file_partition_columns.end())
+            {
+                Field map;
+                partition_values_column.get(i, map);
+                auto partition_values_map = map.safeGet<Map>();
+                if (!partition_values_map.empty())
+                {
+                    auto & current_partition_columns = file_partition_columns[filename];
+                    for (const auto & map_value : partition_values_map)
+                    {
+                        const auto tuple = map_value.safeGet<Tuple>();
+                        const auto partition_name = tuple[0].safeGet<String>();
+                        auto name_and_type = file_schema.tryGetByName(partition_name);
+                        if (!name_and_type)
+                        {
+                            throw Exception(
+                                ErrorCodes::LOGICAL_ERROR,
+                                "No such column in schema: {} (schema: {})",
+                                partition_name, file_schema.toString());
+                        }
+                        const auto value = tuple[1].safeGet<String>();
+                        auto field = getFieldValue(value, name_and_type->type);
+                        current_partition_columns.emplace_back(std::move(name_and_type.value()), std::move(field));
+
+                        LOG_TEST(log, "Partition {} value is {} (for {})", partition_name, value, filename);
+                    }
+                }
+            }
+
+            LOG_TEST(log, "Adding {}", path);
+            const auto [_, inserted] = result.insert(std::filesystem::path(configuration->getPath()) / path);
             if (!inserted)
-                throw Exception(ErrorCodes::INCORRECT_DATA, "File already exists {}", filename);
+                throw Exception(ErrorCodes::INCORRECT_DATA, "File already exists {}", path);
         }
 
         return version;
