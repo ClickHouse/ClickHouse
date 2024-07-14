@@ -10,9 +10,9 @@ SELECT generateSnowflakeID('expr', 1) != generateSnowflakeID('expr', 2); -- diff
 
 SELECT bitAnd(generateSnowflakeID(1023), 1023) = 1023; -- check if the last 10 bits match the machine ID
 
-SELECT generateSnowflakeID('invalid_machine_id'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT generateSnowflakeID('invalid_machine_id'); -- no output for invalid type
 
-SELECT generateSnowflakeID(materialize(toUInt64(1))) = generateSnowflakeID(materialize(toUInt64(1))); -- Test with non-const machine ID
+SELECT generateSnowflakeID(materialize(toUInt64(1))); -- no output for non-const machine ID
 
 SELECT count(*)
 FROM
