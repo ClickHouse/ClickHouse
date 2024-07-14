@@ -9,6 +9,7 @@
 #include <Common/formatReadable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <boost/algorithm/string/split.hpp>
 
 
 namespace DB
@@ -338,7 +339,7 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
             if (j != 0)
                 writeCString(grid_symbols.bar, out);
             const auto & type = *header.getByPosition(j).type;
-            writeValueWithPadding(
+            writeValueWithPadding(chunk,
                 *columns[j],
                 *serializations[j],
                 i,
@@ -456,56 +457,107 @@ static String highlightDigitGroups(String source)
 }
 
 
-void PrettyBlockOutputFormat::writeValueWithPadding(
+void PrettyBlockOutputFormat::writeValueWithPadding(const Chunk & chunk,
     const IColumn & column, const ISerialization & serialization, size_t row_num,
     size_t value_width, size_t pad_to_width, size_t cut_to_width, bool align_right, bool is_number)
 {
-    String serialized_value = " ";
+    const GridSymbols & grid_symbols
+        = format_settings.pretty.charset == FormatSettings::Pretty::Charset::UTF8 ? utf8_grid_symbols : ascii_grid_symbols;
+    String serialized_full_value = " ";
     {
-        WriteBufferFromString out_serialize(serialized_value, AppendModeTag());
+        WriteBufferFromString out_serialize(serialized_full_value, AppendModeTag());
         serialization.serializeText(column, row_num, out_serialize, format_settings);
     }
 
-    if (cut_to_width && value_width > cut_to_width)
+    Strings split;
+    boost::split(split, serialized_full_value, [](char c){ return c == '\n'; });
+    bool first_line = true;
+    std::stack<String> value_all_row;
+    for (auto row_value = split.rbegin();row_value!=split.rend();++row_value)
     {
-        serialized_value.resize(UTF8::computeBytesBeforeWidth(
-            reinterpret_cast<const UInt8 *>(serialized_value.data()), serialized_value.size(), 0, 1 + format_settings.pretty.max_value_width));
+        value_all_row.push(*row_value);
+    }
+    bool multi_row_split = value_all_row.size() > 1 ? true : false;
 
-        const char * ellipsis = format_settings.pretty.charset == FormatSettings::Pretty::Charset::UTF8 ? "⋯" : "~";
-        if (color)
+    for (; !value_all_row.empty();) {
+        String serialized_value = value_all_row.top();
+        value_all_row.pop();
+
+        if(serialized_value.size() > pad_to_width) {
+            size_t last_found = 0;
+            for(size_t found = serialized_value.find(',');;)
+            {
+                if (found > pad_to_width || found == std::string::npos) {
+                    break;
+                }
+                last_found = found;
+                found = serialized_value.find(',', found + 1);
+            }
+            if (last_found != 0 && last_found < serialized_value.size()) {
+                String remain_value = serialized_value.substr(last_found + 1);
+                serialized_value = serialized_value.substr(0, last_found + 1);
+                value_all_row.push(remain_value);
+            }
+        }
+        if (multi_row_split)
         {
-            serialized_value += "\033[31;1m";
-            serialized_value += ellipsis;
-            serialized_value += "\033[0m";
+            value_width = UTF8::computeWidth(reinterpret_cast<const UInt8 *>(serialized_value.data()), serialized_value.size(), 2);
+        }
+
+        if (!first_line)
+        {
+            writeCString(grid_symbols.bar, out);
+            writeReadableNumberTip(chunk);
+            writeCString("\n", out);
+            writeCString("   ", out);
+            writeCString(grid_symbols.bar, out);
         }
         else
-            serialized_value += ellipsis;
+        {
+            first_line = false;
+        }
 
-        value_width = format_settings.pretty.max_value_width;
-    }
-    else
-        serialized_value += ' ';
+        if (cut_to_width && value_width > cut_to_width)
+        {
+            serialized_value.resize(UTF8::computeBytesBeforeWidth(
+                reinterpret_cast<const UInt8 *>(serialized_value.data()), serialized_value.size(), 0, 1 + format_settings.pretty.max_value_width));
 
-    auto write_padding = [&]()
-    {
-        if (pad_to_width > value_width)
-            for (size_t k = 0; k < pad_to_width - value_width; ++k)
-                writeChar(' ', out);
-    };
+            const char * ellipsis = format_settings.pretty.charset == FormatSettings::Pretty::Charset::UTF8 ? "⋯" : "~";
+            if (color)
+            {
+                serialized_value += "\033[31;1m";
+                serialized_value += ellipsis;
+                serialized_value += "\033[0m";
+            }
+            else
+                serialized_value += ellipsis;
 
-    /// Highlight groups of thousands.
-    if (color && is_number && format_settings.pretty.highlight_digit_groups)
-        serialized_value = highlightDigitGroups(serialized_value);
+            value_width = format_settings.pretty.max_value_width;
+        }
+        else
+            serialized_value += ' ';
 
-    if (align_right)
-    {
-        write_padding();
-        out.write(serialized_value.data(), serialized_value.size());
-    }
-    else
-    {
-        out.write(serialized_value.data(), serialized_value.size());
-        write_padding();
+        auto write_padding = [&]()
+        {
+            if (pad_to_width > value_width)
+                for (size_t k = 0; k < pad_to_width - value_width; ++k)
+                    writeChar(' ', out);
+        };
+
+        /// Highlight groups of thousands.
+        if (color && is_number && format_settings.pretty.highlight_digit_groups)
+            serialized_value = highlightDigitGroups(serialized_value);
+
+        if (align_right)
+        {
+            write_padding();
+            out.write(serialized_value.data(), serialized_value.size());
+        }
+        else
+        {
+            out.write(serialized_value.data(), serialized_value.size());
+            write_padding();
+        }
     }
 }
 
