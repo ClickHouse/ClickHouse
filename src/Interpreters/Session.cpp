@@ -10,6 +10,7 @@
 #include <Common/Exception.h>
 #include <Common/ThreadPool.h>
 #include <Common/setThreadName.h>
+#include "Core/Protocol.h"
 #include <Interpreters/SessionTracker.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/SessionLog.h>
@@ -346,11 +347,14 @@ void Session::authenticate(const Credentials & credentials_, const Poco::Net::So
     if ((address == Poco::Net::SocketAddress{}) && (prepared_client_info->interface == ClientInfo::Interface::LOCAL))
         address = Poco::Net::SocketAddress{"127.0.0.1", 0};
 
-    LOG_DEBUG(log, "{} Authenticating user '{}' from {}",
-            toString(auth_id), credentials_.getUserName(), address.toString());
-
+    String user_name = EncodedUserInfo::JWT_AUTHENTICAION_MARKER;
     try
     {
+        LOG_DEBUG(log, "{} Authenticating user '{}' from {}",
+                toString(auth_id), credentials_.getUserName(), address.toString());
+
+        user_name = String(credentials_.getUserName());
+
         auto auth_result = global_context->getAccessControl().authenticate(credentials_, address.host(), getClientInfo().getLastForwardedFor());
         user_id = auth_result.user_id;
         settings_from_auth_server = auth_result.settings;
@@ -363,7 +367,7 @@ void Session::authenticate(const Credentials & credentials_, const Poco::Net::So
         throw;
     }
 
-    prepared_client_info->current_user = credentials_.getUserName();
+    prepared_client_info->current_user = user_name;
     prepared_client_info->current_address = address;
 }
 

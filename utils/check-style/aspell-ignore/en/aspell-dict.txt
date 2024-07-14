@@ -246,8 +246,10 @@ DockerHub
 DoubleDelta
 Doxygen
 Durre
+ECDSA
 ECMA
 Ecto
+EdDSA
 EdgeAngle
 EdgeLengthKm
 EdgeLengthM
@@ -333,6 +335,7 @@ Greenwald
 HDDs
 HHMM
 HMAC
+HMSC
 HNSW
 HSTS
 HTTPConnection
@@ -436,6 +439,7 @@ Jitter
 Joda
 JumpConsistentHash
 Jupyter
+JWKS
 KDevelop
 KafkaAssignedPartitions
 KafkaBackgroundReads
@@ -1883,6 +1887,7 @@ jsonstrings
 jsonstringseachrow
 jsonstringseachrowwithprogress
 jumpConsistentHash
+jwks
 kRing
 kafka
 kafkaMurmurHash
@@ -2880,6 +2885,7 @@ utils
 uuid
 uuidv
 vCPU
+validators
 varPop
 varPopStable
 varSamp
@@ -2887,6 +2893,8 @@ varSampStable
 variadic
 variantElement
 variantType
+verifier
+verifiers
 varint
 varpop
 varpopstable

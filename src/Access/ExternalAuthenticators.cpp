@@ -2,14 +2,21 @@
 #include <Access/LDAPClient.h>
 #include <Access/SettingsAuthResponseParser.h>
 #include <Access/resolveSetting.h>
+#include "Common/Logger.h"
+#include "Common/logger_useful.h"
 #include <Common/Exception.h>
 #include <Common/SettingsChanges.h>
 #include <Common/SipHash.h>
 #include <Common/quoteString.h>
+#include "Access/AccessControl.h"
+#include "Access/Credentials.h"
+#include "Access/JWTVerifier.h"
 
 #include <boost/algorithm/string/case_conv.hpp>
 #include <Poco/Util/AbstractConfiguration.h>
 
+#include <map>
+#include <memory>
 #include <optional>
 #include <utility>
 
@@ -254,6 +261,68 @@ HTTPAuthClientParams parseHTTPAuthParams(const Poco::Util::AbstractConfiguration
     return http_auth_params;
 }
 
+std::unique_ptr<DB::IJWTVerifier> makeJWTVerifier(const Poco::Util::AbstractConfiguration & config, const String & prefix, const String &name, const String &global_settings_key)
+{
+    auto settings_key = String(global_settings_key);
+    if (config.hasProperty(prefix + ".settings_key"))
+        settings_key = config.getString(prefix + ".settings_key");
+
+    if (config.hasProperty(prefix + ".algo"))
+    {
+        SimpleJWTVerifierParams params = {};
+        params.settings_key = settings_key;
+        params.algo = config.getString(prefix + ".algo");
+        params.single_key = config.getString(prefix + ".single_key", "");
+        params.single_key_in_base64 = config.getBool(prefix + ".single_key_in_base64", false);
+        params.public_key = config.getString(prefix + ".public_key", "");
+        params.private_key = config.getString(prefix + ".private_key", "");
+        params.public_key_password = config.getString(prefix + ".public_key_password", "");
+        params.private_key_password = config.getString(prefix + ".private_key_password", "");
+        params.validate();
+        auto result = std::make_unique<SimpleJWTVerifier>(name);
+        result->init(params);
+        return result;
+    }
+
+    std::shared_ptr<IJWKSProvider> provider;
+    if (config.hasProperty(prefix + ".uri"))
+    {
+        JWKSAuthClientParams params;
+
+        params.uri = config.getString(prefix + ".uri");
+
+        size_t connection_timeout_ms = config.getInt(prefix + ".connection_timeout_ms", 1000);
+        size_t receive_timeout_ms = config.getInt(prefix + ".receive_timeout_ms", 1000);
+        size_t send_timeout_ms = config.getInt(prefix + ".send_timeout_ms", 1000);
+        params.timeouts = ConnectionTimeouts()
+            .withConnectionTimeout(Poco::Timespan(connection_timeout_ms * 1000))
+            .withReceiveTimeout(Poco::Timespan(receive_timeout_ms * 1000))
+            .withSendTimeout(Poco::Timespan(send_timeout_ms * 1000));
+
+        params.max_tries = config.getInt(prefix + ".max_tries", 3);
+        params.retry_initial_backoff_ms = config.getInt(prefix + ".retry_initial_backoff_ms", 50);
+        params.retry_max_backoff_ms = config.getInt(prefix + ".retry_max_backoff_ms", 1000);
+        params.refresh_ms = config.getInt(prefix + ".refrest_ms", 300000);
+        provider = std::make_shared<JWKSClient>(params);
+    }
+    else if (config.hasProperty(prefix + ".static_jwks") || config.hasProperty(prefix + ".static_jwks_file"))
+    {
+        StaticJWKSParams params;
+        params.static_jwks = config.getString(prefix + ".static_jwks", "");
+        params.static_jwks_file = config.getString(prefix + ".static_jwks_file", "");
+        params.validate();
+        auto instance = std::make_shared<StaticJWKS>();
+        instance->init(params);
+        provider = instance;
+    }
+    else
+        throw DB::Exception(ErrorCodes::BAD_ARGUMENTS, "unsupported configuration");
+    auto result = std::make_unique<JWKSVerifier>(name, provider);
+    JWTVerifierParams params = {.settings_key = settings_key};
+    result->init(params);
+    return result;
+}
+
 }
 
 void parseLDAPRoleSearchParams(LDAPClient::RoleSearchParams & params, const Poco::Util::AbstractConfiguration & config, const String & prefix)
@@ -271,6 +340,13 @@ void ExternalAuthenticators::resetImpl()
     ldap_client_params_blueprint.clear();
     ldap_caches.clear();
     kerberos_params.reset();
+    jwt_verifiers.clear();
+}
+
+bool ExternalAuthenticators::isJWTAllowed() const
+{
+    std::lock_guard lock(mutex);
+    return !jwt_verifiers.empty();
 }
 
 void ExternalAuthenticators::reset()
@@ -290,8 +366,10 @@ void ExternalAuthenticators::setConfiguration(const Poco::Util::AbstractConfigur
     std::size_t ldap_servers_key_count = 0;
     std::size_t kerberos_keys_count = 0;
     std::size_t http_auth_server_keys_count = 0;
+    std::size_t jwt_verifiers_count = 0;
 
     const String http_auth_servers_config = "http_authentication_servers";
+    const String jwt_verifiers_config = "jwt_verifiers";
 
     for (auto key : all_keys)
     {
@@ -304,6 +382,7 @@ void ExternalAuthenticators::setConfiguration(const Poco::Util::AbstractConfigur
         ldap_servers_key_count += (key == "ldap_servers");
         kerberos_keys_count += (key == "kerberos");
         http_auth_server_keys_count += (key == http_auth_servers_config);
+        jwt_verifiers_count += (key == jwt_verifiers_config);
     }
 
     if (ldap_servers_key_count > 1)
@@ -314,6 +393,9 @@ void ExternalAuthenticators::setConfiguration(const Poco::Util::AbstractConfigur
 
     if (http_auth_server_keys_count > 1)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Multiple http_authentication_servers sections are not allowed");
+
+    if (jwt_verifiers_count > 1)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Multiple jwt_verifiers sections are not allowed");
 
     Poco::Util::AbstractConfiguration::Keys http_auth_server_names;
     config.keys(http_auth_servers_config, http_auth_server_names);
@@ -368,6 +450,26 @@ void ExternalAuthenticators::setConfiguration(const Poco::Util::AbstractConfigur
     catch (...)
     {
         tryLogCurrentException(log, "Could not parse Kerberos section");
+    }
+
+    Poco::Util::AbstractConfiguration::Keys jwt_verifiers_keys;
+    config.keys(jwt_verifiers_config, jwt_verifiers_keys);
+    jwt_verifiers.clear();
+    String jwt_verifier_settings_key;
+    if (config.has(jwt_verifiers_config + ".settings_key"))
+        jwt_verifier_settings_key = config.getString(jwt_verifiers_config + ".settings_key");
+    for (const auto & jwt_verifier : jwt_verifiers_keys)
+    {
+        if (jwt_verifier == "settings_key") continue;
+        String prefix = fmt::format("{}.{}", jwt_verifiers_config, jwt_verifier);
+        try
+        {
+            jwt_verifiers[jwt_verifier] = makeJWTVerifier(config, prefix, jwt_verifier, jwt_verifier_settings_key);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Could not parse JWT verifier" + backQuote(jwt_verifier));
+        }
     }
 }
 
@@ -545,6 +647,24 @@ HTTPAuthClientParams ExternalAuthenticators::getHTTPAuthenticationParams(const S
     if (it == http_auth_servers.end())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "HTTP server '{}' is not configured", server);
     return it->second;
+}
+
+bool ExternalAuthenticators::checkJWTCredentials(const String &claims, const JWTCredentials & credentials, SettingsChanges &settings) const
+{
+    std::lock_guard lock{mutex};
+
+    const auto token = String(credentials.getToken());
+    const auto &user_name = credentials.getUserName();
+    for (const auto &it : jwt_verifiers)
+    {
+        if (it.second->verify(claims, token, settings))
+        {
+            LOG_DEBUG(getLogger("JWTAuth"), "success auth with JWT for {} by {}", user_name, it.first);
+            return true;
+        }
+        LOG_TRACE(getLogger("JWTAuth"), "failed auth with JWT for {} by {}", user_name, it.first);
+    }
+    return false;
 }
 
 bool ExternalAuthenticators::checkHTTPBasicCredentials(
