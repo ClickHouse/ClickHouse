@@ -456,9 +456,9 @@ void ReadFromParallelRemoteReplicasStep::initializePipeline(QueryPipelineBuilder
 
     std::vector<ConnectionPoolPtr> pools_to_use;
     pools_to_use.reserve(shuffled_pool.size());
-    if (exclude_local_replica)
+    for (const auto & pool : shuffled_pool)
     {
-        for (auto & pool : shuffled_pool)
+        if (exclude_local_replica)
         {
             const auto & hostname = pool.pool->getHost();
             auto it = std::find_if(
@@ -466,9 +466,11 @@ void ReadFromParallelRemoteReplicasStep::initializePipeline(QueryPipelineBuilder
                 end(shard.local_addresses),
                 [&hostname](const Cluster::Address & local_addr) { return hostname == local_addr.host_name; });
             if (it == shard.local_addresses.end())
-            {
                 pools_to_use.push_back(pool.pool);
-            }
+        }
+        else
+        {
+            pools_to_use.push_back(pool.pool);
         }
     }
 
