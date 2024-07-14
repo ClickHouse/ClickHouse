@@ -1,14 +1,10 @@
-#include <charconv>
-#include <mutex>
 #include <optional>
-#include <shared_mutex>
 #include <stdexcept>
 #include <Disks/ObjectStorages/S3/S3ObjectStorage.h>
 #include "Common/Exception.h"
 #include "Common/ObjectStorageKey.h"
 #include "Common/ThreadPool.h"
 #include "Core/TypeId.h"
-#include "IO/S3/Client.h"
 #include "IO/S3/Requests.h"
 #include "Interpreters/Cache/QueryCache.h"
 
@@ -94,10 +90,7 @@ public:
             }
             else 
             {
-                std::string error_msg = "S3 doesn't support symbol ";
-                error_msg.push_back(elem);
-                throw std::runtime_error(error_msg);
-                //throw Exception(ErrorCodes::BAD_ARGUMENTS,  "S3 doesn't support symbol", elem);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "S3 doesn't support symbol ");
             }
             number_representation = number_representation * alphabet.size() + converted_number;
         }
