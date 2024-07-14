@@ -474,17 +474,16 @@ void ReadFromParallelRemoteReplicasStep::initializePipeline(QueryPipelineBuilder
         }
     }
 
+    pools_to_use.resize(std::min(pools_to_use.size(), all_replicas_count));
+    // if local plan is used for local replica, we should exclude one remote replica
+    if (exclude_local_replica && !pools_to_use.empty())
+        pools_to_use.resize(all_replicas_count - 1);
+
     LOG_DEBUG(
         getLogger("ReadFromParallelRemoteReplicasStep"),
         "Number of pools to use is {}. Originally {}",
         pools_to_use.size(),
         shuffled_pool.size());
-
-    if (pools_to_use.size() > all_replicas_count)
-        pools_to_use.resize(all_replicas_count);
-
-    if (exclude_local_replica && !pools_to_use.empty())
-        pools_to_use.resize(all_replicas_count - 1);
 
     if (pools_to_use.empty())
         return;
@@ -497,7 +496,7 @@ void ReadFromParallelRemoteReplicasStep::initializePipeline(QueryPipelineBuilder
         LOG_DEBUG(getLogger("ReadFromParallelRemoteReplicasStep"), "Addresses to use: {}", pool_addresses);
     }
 
-    /// local replicas has number 0
+    /// when using local plan for local replica, local replica has 0 number
     size_t offset = (exclude_local_replica ? 1 : 0);
     for (size_t i = 0 + offset; i < all_replicas_count; ++i)
     {
