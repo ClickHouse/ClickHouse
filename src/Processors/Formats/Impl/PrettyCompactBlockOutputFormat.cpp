@@ -1,10 +1,11 @@
-#include <Common/PODArray.h>
-#include <Common/formatReadable.h>
+#include <Formats/FormatFactory.h>
+#include <IO/Operators.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
-#include <IO/Operators.h>
-#include <Formats/FormatFactory.h>
 #include <Processors/Formats/Impl/PrettyCompactBlockOutputFormat.h>
+#include <Common/PODArray.h>
+#include <Common/UTF8Helpers.h>
+#include <Common/formatReadable.h>
 
 
 namespace DB
@@ -36,29 +37,18 @@ struct GridSymbols
 
 GridSymbols utf8_grid_symbols;
 
-GridSymbols ascii_grid_symbols {
-    "+",
-    "+",
-    "+",
-    "+",
-    "+",
-    "+",
-    "-",
-    "|"
-};
+GridSymbols ascii_grid_symbols{"+", "+", "+", "+", "+", "+", "-", "|"};
 
 }
 
-PrettyCompactBlockOutputFormat::PrettyCompactBlockOutputFormat(WriteBuffer & out_, const Block & header, const FormatSettings & format_settings_, bool mono_block_, bool color_)
+PrettyCompactBlockOutputFormat::PrettyCompactBlockOutputFormat(
+    WriteBuffer & out_, const Block & header, const FormatSettings & format_settings_, bool mono_block_, bool color_)
     : PrettyBlockOutputFormat(out_, header, format_settings_, mono_block_, color_)
 {
 }
 
 void PrettyCompactBlockOutputFormat::writeHeader(
-    const Block & block,
-    const Widths & max_widths,
-    const Widths & name_widths,
-    const bool write_footer)
+    const Block & block, const Widths & max_widths, const Widths & name_widths, const bool write_footer)
 {
     if (format_settings.pretty.output_format_pretty_row_numbers)
     {
@@ -66,9 +56,8 @@ void PrettyCompactBlockOutputFormat::writeHeader(
         writeString(String(row_number_width, ' '), out);
     }
 
-    const GridSymbols & grid_symbols = format_settings.pretty.charset == FormatSettings::Pretty::Charset::UTF8 ?
-                                       utf8_grid_symbols :
-                                       ascii_grid_symbols;
+    const GridSymbols & grid_symbols
+        = format_settings.pretty.charset == FormatSettings::Pretty::Charset::UTF8 ? utf8_grid_symbols : ascii_grid_symbols;
 
     /// Names
     if (write_footer)
@@ -90,28 +79,7 @@ void PrettyCompactBlockOutputFormat::writeHeader(
 
         const ColumnWithTypeAndName & col = block.getByPosition(i);
 
-        if (col.type->shouldAlignRightInPrettyFormats())
-        {
-            for (size_t k = 0; k < max_widths[i] - name_widths[i]; ++k)
-                writeCString(grid_symbols.dash, out);
-
-            if (color)
-                writeCString("\033[1m", out);
-            writeString(col.name, out);
-            if (color)
-                writeCString("\033[0m", out);
-        }
-        else
-        {
-            if (color)
-                writeCString("\033[1m", out);
-            writeString(col.name, out);
-            if (color)
-                writeCString("\033[0m", out);
-
-            for (size_t k = 0; k < max_widths[i] - name_widths[i]; ++k)
-                writeCString(grid_symbols.dash, out);
-        }
+        writeHeaderWithPadding(max_widths, name_widths, grid_symbols.dash, i, col);
     }
     writeCString(grid_symbols.dash, out);
     if (write_footer)
@@ -129,9 +97,8 @@ void PrettyCompactBlockOutputFormat::writeBottom(const Widths & max_widths)
         writeString(String(row_number_width, ' '), out);
     }
 
-    const GridSymbols & grid_symbols = format_settings.pretty.charset == FormatSettings::Pretty::Charset::UTF8 ?
-                                       utf8_grid_symbols :
-                                       ascii_grid_symbols;
+    const GridSymbols & grid_symbols
+        = format_settings.pretty.charset == FormatSettings::Pretty::Charset::UTF8 ? utf8_grid_symbols : ascii_grid_symbols;
     /// Write delimiters
     out << grid_symbols.left_bottom_corner;
     for (size_t i = 0; i < max_widths.size(); ++i)
@@ -146,11 +113,7 @@ void PrettyCompactBlockOutputFormat::writeBottom(const Widths & max_widths)
 }
 
 void PrettyCompactBlockOutputFormat::writeRow(
-    size_t row_num,
-    const Block & header,
-    const Chunk & chunk,
-    const WidthsPerColumn & widths,
-    const Widths & max_widths)
+    size_t row_num, const Block & header, const Chunk & chunk, const WidthsPerColumn & widths, const Widths & max_widths)
 {
     if (format_settings.pretty.output_format_pretty_row_numbers)
     {
@@ -165,17 +128,14 @@ void PrettyCompactBlockOutputFormat::writeRow(
             writeCString("\033[0m", out);
     }
 
-    const GridSymbols & grid_symbols = format_settings.pretty.charset == FormatSettings::Pretty::Charset::UTF8 ?
-                                       utf8_grid_symbols :
-                                       ascii_grid_symbols;
+    const GridSymbols & grid_symbols
+        = format_settings.pretty.charset == FormatSettings::Pretty::Charset::UTF8 ? utf8_grid_symbols : ascii_grid_symbols;
 
     size_t num_columns = max_widths.size();
     const auto & columns = chunk.getColumns();
 
-    size_t cut_to_width = format_settings.pretty.max_value_width;
-    if (!format_settings.pretty.max_value_width_apply_for_single_value && chunk.getNumRows() == 1 && num_columns == 1 && total_rows == 0)
-        cut_to_width = 0;
-
+    bool cut_to_width = !(
+        !format_settings.pretty.max_value_width_apply_for_single_value && chunk.getNumRows() == 1 && num_columns == 1 && total_rows == 0);
     writeCString(grid_symbols.bar, out);
 
     for (size_t j = 0; j < num_columns; ++j)
@@ -185,7 +145,15 @@ void PrettyCompactBlockOutputFormat::writeRow(
 
         const auto & type = *header.getByPosition(j).type;
         const auto & cur_widths = widths[j].empty() ? max_widths[j] : widths[j][row_num];
-        writeValueWithPadding(*columns[j], *serializations[j], row_num, cur_widths, max_widths[j], cut_to_width, type.shouldAlignRightInPrettyFormats(), isNumber(type));
+        writeValueWithPadding(
+            *columns[j],
+            *serializations[j],
+            row_num,
+            cur_widths,
+            max_widths[j],
+            cut_to_width ? max_widths[j] : 0,
+            type.shouldAlignRightInPrettyFormats(),
+            isNumber(type));
     }
 
     writeCString(grid_symbols.bar, out);
@@ -210,7 +178,8 @@ void PrettyCompactBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind po
     for (size_t i = 0; i < num_rows && total_rows + i < max_rows; ++i)
         writeRow(i, header, chunk, widths, max_widths);
 
-    if ((num_rows >= format_settings.pretty.output_format_pretty_display_footer_column_names_min_rows) && format_settings.pretty.output_format_pretty_display_footer_column_names)
+    if ((num_rows >= format_settings.pretty.output_format_pretty_display_footer_column_names_min_rows)
+        && format_settings.pretty.output_format_pretty_display_footer_column_names)
     {
         writeHeader(header, max_widths, name_widths, true);
     }
