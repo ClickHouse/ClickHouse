@@ -499,4 +499,151 @@ The example demonstrates how the __bitBoolMaskOr function combines the boolean m
 For the first row, 3 (0b11) OR 2 (0b10) results in 3 (0b11).
 For the second row, 1 (0b01) OR 2 (0b10) results in 3 (0b11).
 
+## __bitBoolMaskAnd(a,b)
+
+This function performs a bitwise "AND" operation on two BoolMasks, enabling precise control over boolean logic at the bit level. It is optimized for scenarios requiring both compact data representation and rapid evaluation of boolean expressions.
+
+## Syntax
+
+```sql
+__bitBoolMaskAnd(mask_a, mask_b)
+```
+
+### Arguments
+
+- `mask_a`: The first operand, a [UInt8](../data-types/int-uint.md), representing the first BoolMask.
+- `mask_b`: The second operand, also a [UInt8](../data-types/int-uint.md), representing the second BoolMask.
+
+### Return Value
+
+The function returns a [UInt8](../data-types/int-uint.md) value.
+
+This result combines the "can be true" and "can be false" states of both BoolMasks into a single [UInt8](../data-types/int-uint.md) value, utilizing bit-level operations for efficient boolean logic evaluation.
+
+### Implementation Details
+
+This function is designed exclusively for [UInt8](../data-types/int-uint.md) data types. It will raise an exception if inputs of any other type are provided, ensuring type safety and consistency in its operation.
+
+### Example Usage
+
+The following example illustrates how to employ the `__bitBoolMaskAnd` function within a SQL query:
+
+```sql
+CREATE TABLE bool_mask_table
+(
+    id UInt32,
+    mask1 UInt8,
+    mask2 UInt8
+) ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO bool_mask_table VALUES (1, 3, 5);
+INSERT INTO bool_mask_table VALUES (2, 1, 3); 
+SELECT id, __bitBoolMaskAnd(mask1, mask2) AS result
+FROM bool_mask_table;
+```
+
+**Expected Output:**
+
+```response
+┌─id─┬─toTypeName(id)─┬─result─┬─toTypeName(result)─┐
+│  1 │ UInt32         │      3 │ UInt8              │
+│  2 │ UInt32         │      3 │ UInt8              │
+└────┴────────────────┴────────┴────────────────────┘
+```
+
+The example demonstrates how the `__bitBoolMaskAnd` function combines the boolean masks.
+
+# __bitSwapLastTwo Function
+
+
+The `__bitSwapLastTwo` function is a specialized SQL function that swaps the last two bits of a `UInt8` value. This operation is particularly useful for toggling the "can be true" and "can be false" states in boolean masks, enabling precise control over boolean logic at the bit level.
+
+## Syntax
+
+```sql
+__bitSwapLastTwo(mask)
+```
+
+## Arguments
+
+- `mask`: A `UInt8` value representing the BoolMask to be manipulated. This parameter is mandatory.
+
+## Return Value
+
+- Returns a `UInt8` value with the last two bits swapped from the input `mask`.
+
+## Example Usage
+
+Below is an example demonstrating how to use the `__bitSwapLastTwo` function within a SQL query:
+
+```sql
+CREATE TABLE bool_mask_table
+(
+    id UInt32,
+    mask UInt8
+) ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO bool_mask_table VALUES (1, 3); 
+INSERT INTO bool_mask_table VALUES (2, 2); 
+
+SELECT id, __bitSwapLastTwo(mask) AS result
+FROM bool_mask_table;
+```
+
+### Expected Output
+
+The expected output for the SQL query provided in the example usage section, demonstrating the `__bitBoolMaskAnd` function's effect on combining boolean masks, is as follows:
+
+```response
+┌─id─┬─toTypeName(id)─┬─result─┬─toTypeName(result)─┐
+│  1 │ UInt32         │      3 │ UInt8              │
+│  2 │ UInt32         │      1 │ UInt8              │
+└────┴────────────────┴────────┴────────────────────┘
+```
+
+## `__bitWrapperFunc`
+
+The `__bitWrapperFunc` function transforms the boolean value of an integer input into a `BoolMask`, represented as a `UInt8`.
+
+### Syntax
+
+```sql
+__bitWrapperFunc(value)
+```
+
+## Arguments
+
+- `a`: A `UInt8` value that will be evaluated and transformed into a `BoolMask`.
+
+## Return Value
+
+- Returns a `UInt8` value with the last two bits swapped from the input `mask`.
+  
+### Example Usage
+
+```sql
+CREATE TABLE bool_mask_table
+(
+    id UInt32,
+    mask UInt8,
+) ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO bool_mask_table VALUES (1, 3); 
+INSERT INTO bool_mask_table VALUES (2, 0);
+SELECT id, __bitWrapperFunc(mask) AS result
+FROM bool_mask_table;
+```
+
+### Expected Output
+
+```response
+┌─id─┬─toTypeName(id)─┬─result─┬─toTypeName(result)─┐
+│  1 │ UInt32         │      1 │ UInt8              │
+│  2 │ UInt32         │      2 │ UInt8              │
+└────┴────────────────┴────────┴────────────────────┘
+```
+
  
