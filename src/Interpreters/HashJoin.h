@@ -18,6 +18,7 @@
 #include <Common/HashTable/HashMap.h>
 #include "Columns/IColumn.h"
 #include "base/defines.h"
+#include "base/scope_guard.h"
 
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
@@ -251,6 +252,8 @@ public:
         /// Cut first num_rows rows from block in place and returns block with remaining rows
         ScatteredBlock cut(size_t num_rows)
         {
+            SCOPE_EXIT(filterBySelector());
+
             if (num_rows >= rows())
                 return Block{};
 
@@ -262,6 +265,26 @@ public:
             selector.erase(selector.begin() + num_rows, selector.end());
 
             return remaining;
+        }
+
+        void replicate(const IColumn::Offsets & offsets, size_t existing_columns, const std::vector<size_t> & right_keys_to_replicate)
+        {
+            chassert(block);
+            chassert(offsets.size() == rows());
+
+            auto columns = block->getColumns();
+            for (size_t i = 0; i < existing_columns; ++i)
+            {
+                auto c = columns[i]->replicate(offsets);
+                columns[i] = std::move(c);
+            }
+            for (size_t pos : right_keys_to_replicate)
+            {
+                auto c = columns[pos]->replicate(offsets);
+                columns[pos] = std::move(c);
+            }
+
+            *this = ScatteredBlock{block->cloneWithColumns(std::move(columns))};
         }
 
         // private:

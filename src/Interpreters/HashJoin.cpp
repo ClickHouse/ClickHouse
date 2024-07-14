@@ -2377,38 +2377,20 @@ HashJoin::ScatteredBlock HashJoin::joinBlockImpl(
     /// Do not hold memory for join_on_keys anymore
     added_columns.join_on_keys.clear();
     auto remaining_block = block.cut(num_joined);
-    // LOG_DEBUG(
-    //     &Poco::Logger::get("debug"),
-    //     "before remaining_block.rows()={}, remaining_block.block.rows={}",
-    //     remaining_block.rows(),
-    //     remaining_block.block ? remaining_block.block->rows() : 0);
-    block.filterBySelector();
-    // LOG_DEBUG(
-    //     &Poco::Logger::get("debug"),
-    //     "after remaining_block.rows()={}, remaining_block.block.rows={}",
-    //     remaining_block.rows(),
-    //     remaining_block.block ? remaining_block.block->rows() : 0);
-
     added_columns.buildOutput();
+
+    if constexpr (join_features.need_filter)
+        block.filter(added_columns.filter);
+
+    block.filterBySelector();
+
     for (size_t i = 0; i < added_columns.size(); ++i)
-    {
         block.block->insert(added_columns.moveColumn(i));
-    }
 
     std::vector<size_t> right_keys_to_replicate [[maybe_unused]];
 
     if constexpr (join_features.need_filter)
     {
-        // std::vector<int> x{added_columns.filter.begin(), added_columns.filter.end()};
-        // LOG_DEBUG(&Poco::Logger::get("debug"), "added_columns.filter={}", fmt::join(x, ", "));
-        // block.filter(added_columns.filter);
-
-        /// If ANY INNER | RIGHT JOIN - filter all the columns except the new ones.
-        for (size_t i = 0; i < existing_columns; ++i)
-            block.block->safeGetByPosition(i).column = block.block->safeGetByPosition(i).column->filter(added_columns.filter, -1);
-
-        block.selector = block.createTrivialSelector(block.block->rows());
-
         /// Add join key columns from right block if needed using value from left table because of equality
         for (size_t i = 0; i < required_right_keys.columns(); ++i)
         {
@@ -2443,58 +2425,11 @@ HashJoin::ScatteredBlock HashJoin::joinBlockImpl(
         }
     }
 
-    // for (size_t i = 0; i < block.block->columns(); ++i)
-    //     if (block.block->getColumnsWithTypeAndName().at(i).column->size() != block.block->getColumnsWithTypeAndName().at(0).column->size())
-    //         throw Exception(
-    //             ErrorCodes::LOGICAL_ERROR,
-    //             "Column {} has size {} while block has {} rows",
-    //             i,
-    //             block.block->getColumnsWithTypeAndName().at(i).column->size(),
-    //             block.block->getColumnsWithTypeAndName().at(0).column->size());
-
     if constexpr (join_features.need_replication)
     {
         std::unique_ptr<IColumn::Offsets> & offsets_to_replicate = added_columns.offsets_to_replicate;
-
-        // LOG_DEBUG(
-        //     &Poco::Logger::get("debug"),
-        //     "__PRETTY_FUNCTION__={}, __LINE__={}, block.rows()={}, block.selector.size()={}, rows={}, offsets_to_replicate.size()={}, "
-        //     "offsets_to_replicate={}",
-        //     __PRETTY_FUNCTION__,
-        //     __LINE__,
-        //     block.rows(),
-        //     block.selector.size(),
-        //     block.block ? block.block->rows() : 0,
-        //     offsets_to_replicate->size(),
-        //     fmt::join(*offsets_to_replicate, ", "));
-
-        // block.filterBySelector();
-
-        // LOG_DEBUG(
-        //     &Poco::Logger::get("debug"),
-        //     "__PRETTY_FUNCTION__={}, __LINE__={}, block.rows()={}, block.selector.size()={}, rows={}, offsets_to_replicate.size()={}, "
-        //     "offsets_to_replicate={}",
-        //     __PRETTY_FUNCTION__,
-        //     __LINE__,
-        //     block.rows(),
-        //     block.selector.size(),
-        //     block.block ? block.block->rows() : 0,
-        //     offsets_to_replicate->size(),
-        //     fmt::join(*offsets_to_replicate, ", "));
-
         /// If ALL ... JOIN - we replicate all the columns except the new ones.
-        for (size_t i = 0; i < existing_columns; ++i)
-        {
-            block.block->safeGetByPosition(i).column = block.block->safeGetByPosition(i).column->replicate(*offsets_to_replicate);
-        }
-
-        /// Replicate additional right keys
-        for (size_t pos : right_keys_to_replicate)
-        {
-            block.block->safeGetByPosition(pos).column = block.block->safeGetByPosition(pos).column->replicate(*offsets_to_replicate);
-        }
-
-        block.selector = block.createTrivialSelector(block.block->rows());
+        block.replicate(*offsets_to_replicate, existing_columns, right_keys_to_replicate);
     }
 
     return remaining_block;
