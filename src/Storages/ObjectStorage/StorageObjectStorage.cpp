@@ -400,8 +400,9 @@ ColumnsDescription StorageObjectStorage::resolveSchemaFromData(
 {
     ObjectInfos read_keys;
     auto iterator = createReadBufferIterator(object_storage, configuration, format_settings, read_keys, context);
+    auto schema = readSchemaFromFormat(configuration->format, format_settings, *iterator, context);
     sample_path = iterator->getLastFilePath();
-    return readSchemaFromFormat(configuration->format, format_settings, *iterator, context);
+    return schema;
 }
 
 std::string StorageObjectStorage::resolveFormatFromData(
