@@ -58,7 +58,8 @@ private:
 
     void BuildBigramHashes()
     {
-        if (pos == end) {
+        if (pos == end)
+        {
             utf8_offsets.push_back(0);
             return;
         }
@@ -70,18 +71,27 @@ private:
             {
                 utf8_offsets.push_back(byte_offset);
                 auto elem = static_cast<unsigned char>(pos[byte_offset]);
-                if (elem < 0x7f) {
+                if (elem < 0x7f)
+                {
                     byte_offset++;
-                } else if (elem < 0x7ff) {
+                }
+                else if (elem < 0x7ff)
+                {
                     byte_offset += 2;
-                } else if (elem < 0xffff) {
+                }
+                else if (elem < 0xffff)
+                {
                     byte_offset += 3;
-                } else if (elem < 0x10ffff) {
+                }
+                else if (elem < 0x10ffff)
+                {
                     byte_offset += 4;
-                } else {
+                }
+                else
+                {
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incorrect utf8 symbol");
                 }
-            }   
+            }
             utf8_offsets.push_back(byte_offset);
             for (size_t i = 0; i < utf8_offsets.size() - 2; ++i)
             {
@@ -158,39 +168,44 @@ public:
             std::cerr << elem << ' ';
         }
         std::cerr << '\n';
-        while (pos + utf8_offsets[left] != end) {
-            while (right < utf8_offsets.size() && 
-                pos + utf8_offsets[right] - 1 != end &&
-                (right - left < minimal_length)) 
+        while (pos + utf8_offsets[left] != end)
+        {
+            while (right < utf8_offsets.size()
+                && pos + utf8_offsets[right] - 1 != end
+                && right - left < minimal_length)
             {
                 right++;
             }
 
-            if (right - left < minimal_length) 
+            if (right - left < minimal_length)
             {
                 return false;
             }
 
             size_t max_substr_bigram_hash = 0;
-            for (size_t i = left; i < right - 1; ++i) 
+            for (size_t i = left; i < right - 1; ++i)
             {
                 max_substr_bigram_hash = std::max(max_substr_bigram_hash, bigram_hashes[i]);
             }
 
-            while (right - 1 < utf8_offsets.size() &&
-                pos + utf8_offsets[right - 1] != end && 
-                CalcHash(utf8_offsets[left], utf8_offsets[right]) <= max_substr_bigram_hash) 
+            while (right - 1 < utf8_offsets.size()
+                && pos + utf8_offsets[right - 1] != end
+                && CalcHash(
+                    utf8_offsets[left],
+                    utf8_offsets[right]) <= max_substr_bigram_hash)
             {
                 max_substr_bigram_hash = std::max(max_substr_bigram_hash, bigram_hashes[right - 1]);
                 right++;
             }
 
-            if (right - 1 < utf8_offsets.size() && pos + utf8_offsets[right - 1] != end) {
+            if (right - 1 < utf8_offsets.size() && pos + utf8_offsets[right - 1] != end)
+            {
                 token_begin = pos + utf8_offsets[left];
                 token_end = pos + utf8_offsets[right];
 
                 right++;
-                if (right - 1 < utf8_offsets.size() && pos + utf8_offsets[right - 1] == end) {
+                if (right - 1 < utf8_offsets.size() && pos + utf8_offsets[right - 1] == end)
+                {
                     left++;
                     right = left;
                 }
