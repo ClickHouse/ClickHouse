@@ -253,7 +253,7 @@ The number of rows in one Kafka message depends on whether the format is row-bas
 
 ## Experimental engine to store committed offsets in ClickHouse Keeper
 
-If `allow_experimental_kafka_store_offsets_in_keeper` is enabled, then two more settings can be specified to the Kafka table engine:
+If `allow_experimental_kafka_offsets_storage_in_keeper` is enabled, then two more settings can be specified to the Kafka table engine:
  - `kafka_keeper_path` specifies the path to the table in ClickHouse Keeper
  - `kafka_replica_name` specifies the replica name in ClickHouse Keeper
 
@@ -267,7 +267,7 @@ ENGINE = Kafka('localhost:19092', 'my-topic', 'my-consumer', 'JSONEachRow')
 SETTINGS
   kafka_keeper_path = '/clickhouse/{database}/experimental_kafka',
   kafka_replica_name = 'r1'
-SETTINGS allow_experimental_kafka_store_offsets_in_keeper=1;
+SETTINGS allow_experimental_kafka_offsets_storage_in_keeper=1;
 ```
 
 Or to utilize the `uuid` and `replica` macros similarly to ReplicatedMergeTree:
@@ -278,7 +278,7 @@ ENGINE = Kafka('localhost:19092', 'my-topic', 'my-consumer', 'JSONEachRow')
 SETTINGS
   kafka_keeper_path = '/clickhouse/{database}/{uuid}',
   kafka_replica_name = '{replica}'
-SETTINGS allow_experimental_kafka_store_offsets_in_keeper=1;
+SETTINGS allow_experimental_kafka_offsets_storage_in_keeper=1;
 ```
 
 ### Known limitations

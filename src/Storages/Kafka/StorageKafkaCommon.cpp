@@ -467,10 +467,10 @@ void registerStorageKafka(StorageFactory & factory)
             return std::make_shared<StorageKafka>(
                 args.table_id, args.getContext(), args.columns, std::move(kafka_settings), collection_name);
 
-        if (!args.getLocalContext()->getSettingsRef().allow_experimental_kafka_store_offsets_in_keeper && !args.query.attach)
+        if (!args.getLocalContext()->getSettingsRef().allow_experimental_kafka_offsets_storage_in_keeper && !args.query.attach)
             throw Exception(
                 ErrorCodes::SUPPORT_IS_DISABLED,
-                "Storing the Kafka offsets in Keeper is experimental. Set `allow_experimental_kafka_store_offsets_in_keeper` setting "
+                "Storing the Kafka offsets in Keeper is experimental. Set `allow_experimental_kafka_offsets_storage_in_keeper` setting "
                 "to enable it");
 
         if (!has_keeper_path || !has_replica_name)

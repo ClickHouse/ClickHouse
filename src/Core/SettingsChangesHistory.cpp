@@ -69,7 +69,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
               {"optimize_trivial_insert_select", true, false, "The optimization does not make sense in many cases."},
               {"collect_hash_table_stats_during_joins", false, true, "New setting."},
               {"max_size_to_preallocate_for_joins", 0, 100'000'000, "New setting."},
-              {"allow_experimental_kafka_store_offsets_in_keeper", false, false, "Allow the usage of experimental Kafka storage engine that stores the committed offsets in ClickHouse Keeper"},
+              {"allow_experimental_kafka_offsets_storage_in_keeper", false, false, "Allow the usage of experimental Kafka storage engine that stores the committed offsets in ClickHouse Keeper"},
               {"input_format_orc_read_use_writer_time_zone", false, false, "Whether use the writer's time zone in ORC stripe for ORC row reader, the default ORC row reader's time zone is GMT."},
               {"lightweight_mutation_projection_mode", "throw", "throw", "When lightweight delete happens on a table with projection(s), the possible operations include throw the exception as projection exists, or drop all projection related to this table then do lightweight delete."},
               {"database_replicated_allow_heavy_create", true, false, "Long-running DDL queries (CREATE AS SELECT and POPULATE) for Replicated database engine was forbidden"},

@@ -422,7 +422,7 @@ def generate_new_create_table_query(
     settings_string = create_settings_string(settings)
     query = f"""CREATE TABLE {database}.{table_name} ({columns_def}) ENGINE = Kafka('{brokers}', '{topic_list}', '{consumer_group}', '{format}', '{row_delimiter}')
 {settings_string}
-SETTINGS allow_experimental_kafka_store_offsets_in_keeper=1"""
+SETTINGS allow_experimental_kafka_offsets_storage_in_keeper=1"""
     logging.debug(f"Generated new create query: {query}")
     return query
 
