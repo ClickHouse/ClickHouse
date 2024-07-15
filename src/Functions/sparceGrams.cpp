@@ -163,11 +163,6 @@ public:
     /// Get the next token, if any, or return false.
     bool get(Pos & token_begin, Pos & token_end)
     {
-        for (auto elem : utf8_offsets)
-        {
-            std::cerr << elem << ' ';
-        }
-        std::cerr << '\n';
         while (pos + utf8_offsets[left] != end)
         {
             while (right < utf8_offsets.size()
