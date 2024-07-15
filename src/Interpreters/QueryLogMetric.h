@@ -56,8 +56,8 @@ class QueryLogMetric : public PeriodicLog<QueryLogMetricElement>
     using PeriodicLog<QueryLogMetricElement>::PeriodicLog;
 
 public:
-    struct by_query_id {};
-    struct by_next_collect_time {};
+    struct by_query_id{};
+    struct by_next_collect_time{};
 
     using QuerySet = boost::multi_index_container<
         QueryLogMetricStatus,
