@@ -1068,6 +1068,15 @@ def main() -> int:
             if build_result:
                 if build_result.status == SUCCESS:
                     previous_status = build_result.status
+                    JobReport(
+                        status=SUCCESS,
+                        description="",
+                        test_results=[],
+                        start_time="",
+                        duration=0.0,
+                        additional_files=[],
+                        job_skipped=True,
+                    ).dump()
                 else:
                     # FIXME: Consider reusing failures for build jobs.
                     #   Just remove this if/else - that makes build job starting and failing immediately
