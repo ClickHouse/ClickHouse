@@ -1,2 +1,2 @@
 SYSTEM RELOAD CONFIG;
-SELECT value FROM system.events WHERE event = 'MemoryCredits' >= 0;
+SELECT count() FROM system.events WHERE event = 'MemoryCredits' AND value >= 0;
