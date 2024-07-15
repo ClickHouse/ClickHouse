@@ -1010,32 +1010,32 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
             setDefaultTableEngine(*create.storage, getContext()->getSettingsRef().default_table_engine.value);
         /// For exrternal tables with restore_replace_external_engine_to_null setting we replace external engines to
         /// Null table engine.
-        else (create.storage->engine == "AzureBlobStorage" ||
-              create.storage->engine == "AzureQueue" ||
-              create.storage->engine == "COSN" ||
-              create.storage->engine == "DeltaLake" ||
-              create.storage->engine == "Dictionary" ||
-              create.storage->engine == "Executable" ||
-              create.storage->engine == "ExecutablePool" ||
-              create.storage->engine == "ExternalDistributed" ||
-              create.storage->engine == "File" ||
-              create.storage->engine == "Hudi" ||
-              create.storage->engine == "Iceberg" ||
-              create.storage->engine == "JDBC" ||
-              create.storage->engine == "Kafka" ||
-              create.storage->engine == "MaterializedPostgreSQL" ||
-              create.storage->engine == "MongoDB" ||
-              create.storage->engine == "MySQL" ||
-              create.storage->engine == "NATS" ||
-              create.storage->engine == "ODBC" ||
-              create.storage->engine == "OSS" ||
-              create.storage->engine == "PostgreSQL" ||
-              create.storage->engine == "RabbitMQ" ||
-              create.storage->engine == "Redis" ||
-              create.storage->engine == "S3" ||
-              create.storage->engine == "S3Queue" ||
-              create.storage->engine == "TinyLog" ||
-              create.storage->engine == "URL")
+        else (create.storage->engine->name == "AzureBlobStorage" ||
+              create.storage->engine->name == "AzureQueue" ||
+              create.storage->engine->name == "COSN" ||
+              create.storage->engine->name == "DeltaLake" ||
+              create.storage->engine->name == "Dictionary" ||
+              create.storage->engine->name == "Executable" ||
+              create.storage->engine->name == "ExecutablePool" ||
+              create.storage->engine->name == "ExternalDistributed" ||
+              create.storage->engine->name == "File" ||
+              create.storage->engine->name == "Hudi" ||
+              create.storage->engine->name == "Iceberg" ||
+              create.storage->engine->name == "JDBC" ||
+              create.storage->engine->name == "Kafka" ||
+              create.storage->engine->name == "MaterializedPostgreSQL" ||
+              create.storage->engine->name == "MongoDB" ||
+              create.storage->engine->name == "MySQL" ||
+              create.storage->engine->name == "NATS" ||
+              create.storage->engine->name == "ODBC" ||
+              create.storage->engine->name == "OSS" ||
+              create.storage->engine->name == "PostgreSQL" ||
+              create.storage->engine->name == "RabbitMQ" ||
+              create.storage->engine->name == "Redis" ||
+              create.storage->engine->name == "S3" ||
+              create.storage->engine->name == "S3Queue" ||
+              create.storage->engine->name == "TinyLog" ||
+              create.storage->engine->name == "URL")
         {
             if (getContext()->getSettingsRef().restore_replace_external_engine_to_null)
                 setNullTableEngine(*create.storage)
