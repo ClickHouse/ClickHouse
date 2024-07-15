@@ -5,6 +5,7 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTForeignKeyDeclaration.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTDataType.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTStatisticsDeclaration.h>
@@ -75,9 +76,9 @@ bool ParserNestedTable::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (!close.ignore(pos, expected))
         return false;
 
-    auto func = std::make_shared<ASTFunction>();
+    auto func = std::make_shared<ASTDataType>();
     tryGetIdentifierNameInto(name, func->name);
-    // FIXME(ilezhankin): func->no_empty_args = true; ?
+
     func->arguments = columns;
     func->children.push_back(columns);
     node = func;
@@ -749,7 +750,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
 
     auto * table_id = table->as<ASTTableIdentifier>();
 
-    // Shortcut for ATTACH a previously detached table
+    /// A shortcut for ATTACH a previously detached table.
     bool short_attach = attach && !from_path;
     if (short_attach && (!pos.isValid() || pos.get().type == TokenType::Semicolon))
     {

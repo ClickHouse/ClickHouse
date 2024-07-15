@@ -7,10 +7,8 @@
 #include <Common/parseAddress.h>
 #include <Common/assert_cast.h>
 
-#include <Core/Settings.h>
 #include <Core/PostgreSQL/Connection.h>
 
-#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesDecimal.h>
@@ -22,6 +20,7 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTDataType.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ExpressionListParsers.h>
@@ -295,7 +294,7 @@ std::shared_ptr<ASTColumnDeclaration> StorageMaterializedPostgreSQL::getMaterial
     auto column_declaration = std::make_shared<ASTColumnDeclaration>();
 
     column_declaration->name = std::move(name);
-    column_declaration->type = makeASTFunction(type);
+    column_declaration->type = makeASTDataType(type);
 
     column_declaration->default_specifier = "MATERIALIZED";
     column_declaration->default_expression = std::make_shared<ASTLiteral>(default_value);
@@ -312,17 +311,17 @@ ASTPtr StorageMaterializedPostgreSQL::getColumnDeclaration(const DataTypePtr & d
     WhichDataType which(data_type);
 
     if (which.isNullable())
-        return makeASTFunction("Nullable", getColumnDeclaration(typeid_cast<const DataTypeNullable *>(data_type.get())->getNestedType()));
+        return makeASTDataType("Nullable", getColumnDeclaration(typeid_cast<const DataTypeNullable *>(data_type.get())->getNestedType()));
 
     if (which.isArray())
-        return makeASTFunction("Array", getColumnDeclaration(typeid_cast<const DataTypeArray *>(data_type.get())->getNestedType()));
+        return makeASTDataType("Array", getColumnDeclaration(typeid_cast<const DataTypeArray *>(data_type.get())->getNestedType()));
 
     /// getName() for decimal returns 'Decimal(precision, scale)', will get an error with it
     if (which.isDecimal())
     {
         auto make_decimal_expression = [&](std::string type_name)
         {
-            auto ast_expression = std::make_shared<ASTFunction>();
+            auto ast_expression = std::make_shared<ASTDataType>();
 
             ast_expression->name = type_name;
             ast_expression->arguments = std::make_shared<ASTExpressionList>();
@@ -354,7 +353,7 @@ ASTPtr StorageMaterializedPostgreSQL::getColumnDeclaration(const DataTypePtr & d
         return ast_expression;
     }
 
-    return std::make_shared<ASTIdentifier>(data_type->getName());
+    return makeASTDataType(data_type->getName());
 }
 
 

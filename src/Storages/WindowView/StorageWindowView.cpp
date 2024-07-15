@@ -20,6 +20,7 @@
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTDropQuery.h>
+#include <Parsers/ASTDataType.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTOrderByElement.h>
@@ -805,7 +806,7 @@ ASTPtr StorageWindowView::getInnerTableCreateQuery(const ASTPtr & inner_query, c
     {
         auto column_window = std::make_shared<ASTColumnDeclaration>();
         column_window->name = window_id_name;
-        column_window->type = std::make_shared<ASTIdentifier>("UInt32");
+        column_window->type = makeASTDataType("UInt32");
         columns_list->children.push_back(column_window);
     }
 

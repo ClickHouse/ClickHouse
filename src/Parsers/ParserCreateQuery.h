@@ -101,17 +101,15 @@ class IParserColumnDeclaration : public IParserBase
 {
 public:
     explicit IParserColumnDeclaration(bool require_type_ = true, bool allow_null_modifiers_ = false, bool check_keywords_after_name_ = false)
-    : require_type(require_type_)
-    , allow_null_modifiers(allow_null_modifiers_)
-    , check_keywords_after_name(check_keywords_after_name_)
+        : require_type(require_type_)
+        , allow_null_modifiers(allow_null_modifiers_)
+        , check_keywords_after_name(check_keywords_after_name_)
     {
     }
 
     void enableCheckTypeKeyword() { check_type_keyword = true; }
 
 protected:
-    using ASTDeclarePtr = std::shared_ptr<ASTColumnDeclaration>;
-
     const char * getName() const  override{ return "column declaration"; }
 
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;

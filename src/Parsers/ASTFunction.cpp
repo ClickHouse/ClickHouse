@@ -7,7 +7,6 @@
 #include <Common/FieldVisitorToString.h>
 #include <Common/KnownObjectNames.h>
 #include <Common/SipHash.h>
-#include <Common/typeid_cast.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
@@ -19,9 +18,6 @@
 #include <Parsers/queryToString.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/FunctionSecretArgumentsFinderAST.h>
-#include <Core/QualifiedTableName.h>
-
-#include <boost/algorithm/string.hpp>
 
 
 using namespace std::literals;

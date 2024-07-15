@@ -3,6 +3,7 @@
 #include <Parsers/IAST.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTDataType.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -28,6 +29,7 @@
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/applyTableOverride.h>
 #include <Storages/IStorage.h>
+
 
 namespace DB
 {
@@ -95,22 +97,22 @@ NamesAndTypesList getColumnsList(const ASTExpressionList * columns_definition)
         }
 
         ASTPtr data_type = declare_column->data_type;
-        auto * data_type_function = data_type->as<ASTFunction>();
+        auto * data_type_node = data_type->as<ASTDataType>();
 
-        if (data_type_function)
+        if (data_type_node)
         {
-            String type_name_upper = Poco::toUpper(data_type_function->name);
+            String type_name_upper = Poco::toUpper(data_type_node->name);
 
             if (is_unsigned)
             {
                 /// For example(in MySQL): CREATE TABLE test(column_name INT NOT NULL ... UNSIGNED)
                 if (type_name_upper.find("INT") != String::npos && !endsWith(type_name_upper, "SIGNED")
                     && !endsWith(type_name_upper, "UNSIGNED"))
-                    data_type_function->name = type_name_upper + " UNSIGNED";
+                    data_type_node->name = type_name_upper + " UNSIGNED";
             }
 
             if (type_name_upper == "SET")
-                data_type_function->arguments.reset();
+                data_type_node->arguments.reset();
 
             /// Transforms MySQL ENUM's list of strings to ClickHouse string-integer pairs
             /// For example ENUM('a', 'b', 'c') -> ENUM('a'=1, 'b'=2, 'c'=3)
@@ -119,7 +121,7 @@ NamesAndTypesList getColumnsList(const ASTExpressionList * columns_definition)
             if (type_name_upper.find("ENUM") != String::npos)
             {
                 UInt16 i = 0;
-                for (ASTPtr & child : data_type_function->arguments->children)
+                for (ASTPtr & child : data_type_node->arguments->children)
                 {
                     auto new_child = std::make_shared<ASTFunction>();
                     new_child->name = "equals";
@@ -133,10 +135,10 @@ NamesAndTypesList getColumnsList(const ASTExpressionList * columns_definition)
             }
 
             if (type_name_upper == "DATE")
-                data_type_function->name = "Date32";
+                data_type_node->name = "Date32";
         }
         if (is_nullable)
-            data_type = makeASTFunction("Nullable", data_type);
+            data_type = makeASTDataType("Nullable", data_type);
 
         columns_name_and_type.emplace_back(declare_column->name, DataTypeFactory::instance().get(data_type));
     }
@@ -175,7 +177,7 @@ static ColumnsDescription createColumnsDescription(const NamesAndTypesList & col
     return columns_description;
 }
 
-static NamesAndTypesList getNames(const ASTFunction & expr, ContextPtr context, const NamesAndTypesList & columns)
+static NamesAndTypesList getNames(const ASTDataType & expr, ContextPtr context, const NamesAndTypesList & columns)
 {
     if (expr.arguments->children.empty())
         return NamesAndTypesList{};
@@ -219,9 +221,9 @@ static std::tuple<NamesAndTypesList, NamesAndTypesList, NamesAndTypesList, NameS
     ASTExpressionList * columns_definition, ASTExpressionList * indices_define, ContextPtr context, NamesAndTypesList & columns)
 {
     NameSet increment_columns;
-    auto keys = makeASTFunction("tuple");
-    auto unique_keys = makeASTFunction("tuple");
-    auto primary_keys = makeASTFunction("tuple");
+    auto keys = makeASTDataType("tuple");
+    auto unique_keys = makeASTDataType("tuple");
+    auto primary_keys = makeASTDataType("tuple");
 
     if (indices_define && !indices_define->children.empty())
     {
@@ -482,7 +484,7 @@ ASTs InterpreterCreateImpl::getRewrittenQueries(
     {
         auto column_declaration = std::make_shared<ASTColumnDeclaration>();
         column_declaration->name = name;
-        column_declaration->type = makeASTFunction(type);
+        column_declaration->type = makeASTDataType(type);
         column_declaration->default_specifier = "MATERIALIZED";
         column_declaration->default_expression = std::make_shared<ASTLiteral>(default_value);
         column_declaration->children.emplace_back(column_declaration->type);

@@ -1,9 +1,7 @@
 #include <Storages/IStorage.h>
 #include <Parsers/TablePropertiesQueriesASTs.h>
-#include <Parsers/formatAST.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <QueryPipeline/BlockIO.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnString.h>
 #include <Common/typeid_cast.h>

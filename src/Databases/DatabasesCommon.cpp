@@ -149,7 +149,7 @@ ASTPtr getCreateQueryFromStorage(const StoragePtr & storage, const ASTPtr & ast_
             columns = metadata_ptr->columns.getAll();
         for (const auto & column_name_and_type: columns)
         {
-            const auto & ast_column_declaration = std::make_shared<ASTColumnDeclaration>();
+            const auto ast_column_declaration = std::make_shared<ASTColumnDeclaration>();
             ast_column_declaration->name = column_name_and_type.name;
             /// parser typename
             {

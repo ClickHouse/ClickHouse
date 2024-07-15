@@ -1,6 +1,7 @@
 #include <Parsers/ParserDataType.h>
 
 #include <boost/algorithm/string/case_conv.hpp>
+#include <Parsers/ASTDataType.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIdentifier_fwd.h>
@@ -198,13 +199,12 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         }
     }
 
-    auto function_node = std::make_shared<ASTFunction>();
-    function_node->name = type_name;
-    function_node->no_empty_args = true;
+    auto data_type_node = std::make_shared<ASTDataType>();
+    data_type_node->name = type_name;
 
     if (pos->type != TokenType::OpeningRoundBracket)
     {
-        node = function_node;
+        node = data_type_node;
         return true;
     }
     ++pos;
@@ -222,10 +222,10 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         return false;
     ++pos;
 
-    function_node->arguments = expr_list_args;
-    function_node->children.push_back(function_node->arguments);
+    data_type_node->arguments = expr_list_args;
+    data_type_node->children.push_back(data_type_node->arguments);
 
-    node = function_node;
+    node = data_type_node;
     return true;
 }
 
