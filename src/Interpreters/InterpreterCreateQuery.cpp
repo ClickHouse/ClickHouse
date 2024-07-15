@@ -960,6 +960,14 @@ namespace
         engine_ast->no_empty_args = true;
         storage.set(storage.engine, engine_ast);
     }
+
+    void setNullTableEngine(ASTStorage &storage)
+    {
+        auto engine_ast = std::make_shared<ASTFunction>();
+        engine_ast->name = "Null";
+        engine_ast->no_empty_args = true;
+        storage.set(storage.engine, engine_ast);
+    }
 }
 
 void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
@@ -1000,6 +1008,38 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
         /// Some part of storage definition (such as PARTITION BY) is specified, but ENGINE is not: just set default one.
         if (!create.storage->engine)
             setDefaultTableEngine(*create.storage, getContext()->getSettingsRef().default_table_engine.value);
+        /// For exrternal tables with restore_replace_external_engine_to_null setting we replace external engines to
+        /// Null table engine.
+        else (create.storage->engine == "AzureBlobStorage" ||
+              create.storage->engine == "AzureQueue" ||
+              create.storage->engine == "COSN" ||
+              create.storage->engine == "DeltaLake" ||
+              create.storage->engine == "Dictionary" ||
+              create.storage->engine == "Executable" ||
+              create.storage->engine == "ExecutablePool" ||
+              create.storage->engine == "ExternalDistributed" ||
+              create.storage->engine == "File" ||
+              create.storage->engine == "Hudi" ||
+              create.storage->engine == "Iceberg" ||
+              create.storage->engine == "JDBC" ||
+              create.storage->engine == "Kafka" ||
+              create.storage->engine == "MaterializedPostgreSQL" ||
+              create.storage->engine == "MongoDB" ||
+              create.storage->engine == "MySQL" ||
+              create.storage->engine == "NATS" ||
+              create.storage->engine == "ODBC" ||
+              create.storage->engine == "OSS" ||
+              create.storage->engine == "PostgreSQL" ||
+              create.storage->engine == "RabbitMQ" ||
+              create.storage->engine == "Redis" ||
+              create.storage->engine == "S3" ||
+              create.storage->engine == "S3Queue" ||
+              create.storage->engine == "TinyLog" ||
+              create.storage->engine == "URL")
+        {
+            if (getContext()->getSettingsRef().restore_replace_external_engine_to_null)
+                setNullTableEngine(*create.storage)
+        }
         return;
     }
 
