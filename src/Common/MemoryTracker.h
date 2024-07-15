@@ -103,7 +103,7 @@ private:
     [[nodiscard]] AllocationTrace allocImpl(Int64 size, bool throw_if_memory_exceeded, MemoryTracker * query_tracker = nullptr, double _sample_probability = -1.0);
     [[nodiscard]] AllocationTrace free(Int64 size, double _sample_probability = -1.0);
 public:
-
+    static constexpr Int64 threshold = 16 * 1024 * 1024;   /// The choice is arbitrary (maybe we should decrease it)
     static constexpr auto USAGE_EVENT_NAME = "MemoryTrackerUsage";
     static constexpr auto PEAK_USAGE_EVENT_NAME = "MemoryTrackerPeakUsage";
 
@@ -258,7 +258,6 @@ public:
     void logPeakMemoryUsage();
 
     void debugLogBigAllocationWithoutCheck(Int64 size [[maybe_unused]]);
-    size_t memory_credits = 0;
     void updateMemoryCredits();
 };
 
