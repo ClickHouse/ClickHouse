@@ -5,3 +5,7 @@ SELECT sparseGrams('bce');
 SELECT sparseGrams('abcdef');
 SELECT sparseGrams('hello world');
 SELECT sparseGrams('hello world hello world hello world hello world');
+SELECT sparseGrams('', 5);
+SELECT sparseGrams('cd', 5);
+SELECT sparseGrams('hello world', 5);
+SELECT sparseGrams('hello world hello world hello world hello world', 5);

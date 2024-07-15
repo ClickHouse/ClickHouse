@@ -4,6 +4,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Common/StringUtils.h>
 #include <Common/assert_cast.h>
+#include "base/types.h"
 #include <base/StringRef.h>
 
 namespace DB
@@ -27,6 +28,8 @@ private:
     std::vector<size_t> bigram_hashes;
     size_t left;
     size_t right;
+
+    size_t minimal_length = 3;
 
     /// Calculates CRC32-hash from substring [it_left, it_right)
     unsigned CalcHash(size_t it_left, size_t it_right) 
@@ -62,8 +65,20 @@ public:
         checkArgumentsWithOptionalMaxSubstrings(func, arguments);
     }
 
-    void init(const ColumnsWithTypeAndName & /*arguments*/, bool /*max_substrings_includes_remaining_string*/)
-	{ }
+    void init(const ColumnsWithTypeAndName & arguments, bool /*max_substrings_includes_remaining_string*/)
+	{ 
+        if (arguments.size() < 2)
+        {
+            return;
+        }
+
+        const auto * col = checkAndGetColumnConstIntOrUInt(arguments[1].column.get());
+        if (!col)
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}. "
+                "Must be constant int.", arguments[1].column->getName(), name);
+
+        minimal_length = col->getValue<Int32>();
+    }
 
     static constexpr auto strings_argument_position = 0uz;
 
@@ -82,11 +97,11 @@ public:
     bool get(Pos & token_begin, Pos & token_end)
     {
         while (pos + left != end) {
-            while (pos + right - 1 != end && right - left < 3) {
+            while (pos + right - 1 != end && right - left < minimal_length) {
                 right++;
             }
 
-            if (right - left < 3) {
+            if (right - left < minimal_length) {
                 return false;
             }
 
