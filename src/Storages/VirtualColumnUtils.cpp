@@ -41,6 +41,7 @@
 #include <Formats/SchemaInferenceUtils.h>
 #include <Formats/EscapingRuleUtils.h>
 #include <Formats/FormatFactory.h>
+#include <Core/Settings.h>
 #include "Functions/FunctionsLogical.h"
 #include "Functions/IFunction.h"
 #include "Functions/IFunctionAdaptors.h"
