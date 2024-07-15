@@ -4,6 +4,7 @@
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Parsers/queryToString.h>
 #include <Common/logger_useful.h>
+#include <Core/Settings.h>
 
 
 namespace DB
