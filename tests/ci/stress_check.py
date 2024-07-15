@@ -131,7 +131,8 @@ def process_results(
 def run_stress_test(docker_image_name: str) -> None:
     logging.basicConfig(level=logging.INFO)
     for handler in logging.root.handlers:
-        handler.setFormatter(SensitiveFormatter(handler.formatter._fmt))
+        # pylint: disable=protected-access
+        handler.setFormatter(SensitiveFormatter(handler.formatter._fmt))  # type: ignore
 
     stopwatch = Stopwatch()
     temp_path = Path(TEMP_PATH)

@@ -226,7 +226,8 @@ def parse_args():
 def main():
     logging.basicConfig(level=logging.INFO)
     for handler in logging.root.handlers:
-        handler.setFormatter(SensitiveFormatter(handler.formatter._fmt))
+        # pylint: disable=protected-access
+        handler.setFormatter(SensitiveFormatter(handler.formatter._fmt))  # type: ignore
 
     stopwatch = Stopwatch()
 
