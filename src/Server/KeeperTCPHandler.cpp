@@ -623,7 +623,7 @@ void KeeperTCPHandler::updateStats(Coordination::ZooKeeperResponsePtr & response
             LOG_INFO(
                 log,
                 "Total time to process a request took too long ({}ms).\nRequest info: {}",
-                elapsed,
+                elapsed_ms,
                 request->toString(/*short_format=*/true));
         }
 
