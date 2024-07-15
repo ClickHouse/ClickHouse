@@ -1,5 +1,8 @@
 #!/bin/bash -eu
 
+# copy runner
+cp $SRC/utils/libfuzzer/runner.py $OUT/
+
 # copy fuzzer options and dictionaries
 cp $SRC/tests/fuzz/*.dict $OUT/
 cp $SRC/tests/fuzz/*.options $OUT/

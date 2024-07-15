@@ -275,5 +275,5 @@ def download_fuzzers(
         check_name,
         reports_path,
         result_path,
-        lambda x: x.endswith(("_fuzzer", ".dict", ".options", "_seed_corpus.zip")),
+        lambda x: x.endswith(("_fuzzer", ".dict", ".options", "_seed_corpus.zip", "runner.py")),
     )
