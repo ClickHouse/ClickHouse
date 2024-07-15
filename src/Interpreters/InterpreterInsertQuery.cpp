@@ -56,6 +56,7 @@ namespace ErrorCodes
     extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int ILLEGAL_COLUMN;
     extern const int DUPLICATE_COLUMN;
+    extern const int QUERY_IS_PROHIBITED;
 }
 
 InterpreterInsertQuery::InterpreterInsertQuery(
