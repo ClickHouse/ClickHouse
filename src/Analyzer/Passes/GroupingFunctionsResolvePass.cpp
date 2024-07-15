@@ -1,6 +1,7 @@
 #include <Analyzer/Passes/GroupingFunctionsResolvePass.h>
 
 #include <Core/ColumnNumbers.h>
+#include <Core/Settings.h>
 
 #include <Functions/grouping.h>
 
