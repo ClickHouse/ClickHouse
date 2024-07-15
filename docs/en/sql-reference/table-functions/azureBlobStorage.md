@@ -88,5 +88,5 @@ Use virtual column, created with Hive-style partitioning
 
 ``` sql
 SET use_hive_partitioning = 1;
-SELECT * from azureBlobStorage(config, storage_account_url='...', container='...', blob_path='http://data/path/date=*/country=*/code=*/*.parquet', format='Parquet', structure='Date DateTime64, Country String, Code UInt64') where _date > '2020-01-01' and _country = 'Netherlands' and code = 42;
+SELECT * from azureBlobStorage(config, storage_account_url='...', container='...', blob_path='http://data/path/date=*/country=*/code=*/*.parquet') where _date > '2020-01-01' and _country = 'Netherlands' and _code = 42;
 ```

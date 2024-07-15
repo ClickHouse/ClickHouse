@@ -85,7 +85,7 @@ StorageObjectStorage::StorageObjectStorage(
     metadata.setConstraints(constraints_);
     metadata.setComment(comment);
 
-    if (sample_path.empty())
+    if (sample_path.empty() && context->getSettingsRef().use_hive_partitioning)
         sample_path = getPathSample(metadata, context);
 
     setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(metadata.getColumns(), context, sample_path, format_settings));
@@ -412,8 +412,9 @@ std::string StorageObjectStorage::resolveFormatFromData(
 {
     ObjectInfos read_keys;
     auto iterator = createReadBufferIterator(object_storage, configuration, format_settings, read_keys, context);
+    auto format_and_schema = detectFormatAndReadSchema(format_settings, *iterator, context).second;
     sample_path = iterator->getLastFilePath();
-    return detectFormatAndReadSchema(format_settings, *iterator, context).second;
+    return format_and_schema;
 }
 
 std::pair<ColumnsDescription, std::string> StorageObjectStorage::resolveSchemaAndFormatFromData(
@@ -425,8 +426,8 @@ std::pair<ColumnsDescription, std::string> StorageObjectStorage::resolveSchemaAn
 {
     ObjectInfos read_keys;
     auto iterator = createReadBufferIterator(object_storage, configuration, format_settings, read_keys, context);
-    sample_path = iterator->getLastFilePath();
     auto [columns, format] = detectFormatAndReadSchema(format_settings, *iterator, context);
+    sample_path = iterator->getLastFilePath();
     configuration->format = format;
     return std::pair(columns, format);
 }
