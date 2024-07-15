@@ -55,7 +55,7 @@ void MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::execute(std:
         path,
         metadata_object_key.serialize());
 
-    auto metadata_object = StoredObject(metadata_object_key.serialize(), path / PREFIX_PATH_FILE_NAME);
+    auto metadata_object = StoredObject(/*remote_path*/ metadata_object_key.serialize(), /*local_path*/ path / PREFIX_PATH_FILE_NAME);
     auto buf = object_storage->writeObject(
         metadata_object,
         WriteMode::Rewrite,
@@ -137,7 +137,8 @@ std::unique_ptr<WriteBufferFromFileBase> MetadataStorageFromPlainObjectStorageMo
 
     auto metadata_object_key = createMetadataObjectKey(remote_path, metadata_key_prefix);
 
-    auto metadata_object = StoredObject(metadata_object_key.serialize(), expected_path / PREFIX_PATH_FILE_NAME);
+    auto metadata_object
+        = StoredObject(/*remote_path*/ metadata_object_key.serialize(), /*local_path*/ expected_path / PREFIX_PATH_FILE_NAME);
 
     if (validate_content)
     {
@@ -220,7 +221,7 @@ void MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation::execute(std:
     LOG_TRACE(getLogger("MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation"), "Removing directory '{}'", path);
 
     auto metadata_object_key = createMetadataObjectKey(key_prefix, metadata_key_prefix);
-    auto metadata_object = StoredObject(metadata_object_key.serialize(), path / PREFIX_PATH_FILE_NAME);
+    auto metadata_object = StoredObject(/*remote_path*/ metadata_object_key.serialize(), /*local_path*/ path / PREFIX_PATH_FILE_NAME);
     object_storage->removeObject(metadata_object);
 
     {
