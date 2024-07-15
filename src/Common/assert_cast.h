@@ -25,7 +25,7 @@ namespace DB
 template <typename To, typename From>
 inline To assert_cast(From && from)
 {
-#ifndef NDEBUG
+#ifdef ABORT_ON_LOGICAL_ERROR
     try
     {
         if constexpr (std::is_pointer_v<To>)

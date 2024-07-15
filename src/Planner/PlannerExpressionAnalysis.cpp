@@ -23,6 +23,8 @@
 #include <Planner/PlannerWindowFunctions.h>
 #include <Planner/Utils.h>
 
+#include <Core/Settings.h>
+
 namespace DB
 {
 
