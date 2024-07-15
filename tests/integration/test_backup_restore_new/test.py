@@ -1520,6 +1520,7 @@ def test_backup_all(exclude_system_log_tables):
             "asynchronous_insert_log",
             "backup_log",
             "error_log",
+            "latency_log",
         ]
         exclude_from_backup += ["system." + table_name for table_name in log_tables]
 
