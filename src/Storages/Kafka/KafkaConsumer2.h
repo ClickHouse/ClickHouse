@@ -71,18 +71,13 @@ public:
 
     using TopicPartitionCounts = std::vector<KafkaConsumer2::TopicPartitionCount>;
 
-    // struct AssignmentChanges {
-    //     TopicPartitions revoked_partitions;
-    //     TopicPartitions new_partitions;
-    // };
-
     KafkaConsumer2(
         ConsumerPtr consumer_,
         LoggerPtr log_,
         size_t max_batch_size,
         size_t poll_timeout_,
         const std::atomic<bool> & stopped_,
-        const Names & _topics);
+        const Names & topics_);
 
     ~KafkaConsumer2();
 

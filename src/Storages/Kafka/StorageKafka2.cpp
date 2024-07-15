@@ -25,6 +25,7 @@
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <Storages/ColumnDefault.h>
+#include <Storages/Kafka/KafkaConsumer2.h>
 #include <Storages/Kafka/KafkaProducer.h>
 #include <Storages/Kafka/KafkaSettings.h>
 #include <Storages/Kafka/StorageKafkaCommon.h>
@@ -33,10 +34,8 @@
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMaterializedView.h>
-#include <base/getFQDNOrHostName.h>
 #include <base/scope_guard.h>
 #include <Poco/Util/AbstractConfiguration.h>
-#include "Common/config_version.h"
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
 #include <Common/Macros.h>
@@ -45,12 +44,12 @@
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/config_version.h>
 #include <Common/formatReadable.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <Common/setThreadName.h>
-#include "Storages/Kafka/KafkaConsumer2.h"
 
 #if USE_KRB5
 #    include <Access/KerberosInit.h>
@@ -115,18 +114,18 @@ StorageKafka2::StorageKafka2(
     , replica_path(keeper_path + "/replicas/" + kafka_settings_->kafka_replica_name.value)
     , kafka_settings(std::move(kafka_settings_))
     , macros_info{.table_id = table_id_}
-    , topics(parseTopics(getContext()->getMacros()->expand(kafka_settings->kafka_topic_list.value, macros_info)))
+    , topics(StorageKafkaUtils::parseTopics(getContext()->getMacros()->expand(kafka_settings->kafka_topic_list.value, macros_info)))
     , brokers(getContext()->getMacros()->expand(kafka_settings->kafka_broker_list.value, macros_info))
     , group(getContext()->getMacros()->expand(kafka_settings->kafka_group_name.value, macros_info))
     , client_id(
           kafka_settings->kafka_client_id.value.empty()
-              ? getDefaultClientId(table_id_)
+              ? StorageKafkaUtils::getDefaultClientId(table_id_)
               : getContext()->getMacros()->expand(kafka_settings->kafka_client_id.value, macros_info))
     , format_name(getContext()->getMacros()->expand(kafka_settings->kafka_format.value))
     , max_rows_per_message(kafka_settings->kafka_max_rows_per_message.value)
     , schema_name(getContext()->getMacros()->expand(kafka_settings->kafka_schema.value, macros_info))
     , num_consumers(kafka_settings->kafka_num_consumers.value)
-    , log(getLogger(String("StorageKafka2 ") + table_id_.getNameForLogs()))
+    , log(getLogger("StorageKafka2 (" + table_id_.getNameForLogs() + ")"))
     , semaphore(0, static_cast<int>(num_consumers))
     , settings_adjustments(createSettingsAdjustments())
     , thread_per_consumer(kafka_settings->kafka_thread_per_consumer.value)
@@ -134,7 +133,7 @@ StorageKafka2::StorageKafka2(
     , active_node_identifier(toString(ServerUUID::get()))
 {
     if (kafka_settings->kafka_num_consumers > 1 && !thread_per_consumer)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "With multiple consumer you have to use thread per consumer!");
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "With multiple consumers, it is required to use `kafka_thread_per_consumer` setting");
 
     if (kafka_settings->kafka_handle_error_mode == StreamingHandleErrorMode::STREAM)
     {
@@ -186,15 +185,15 @@ VirtualColumnsDescription StorageKafka2::createVirtuals(StreamingHandleErrorMode
 }
 void StorageKafka2::partialShutdown()
 {
+    LOG_TRACE(log, "Cancelling streams");
     for (auto & task : tasks)
     {
-        LOG_TRACE(log, "Cancelling streams");
         task->stream_cancelled = true;
     }
 
+    LOG_TRACE(log, "Waiting for cleanup");
     for (auto & task : tasks)
     {
-        LOG_TRACE(log, "Waiting for cleanup");
         task->holder->deactivate();
     }
     is_active = false;
@@ -202,14 +201,14 @@ void StorageKafka2::partialShutdown()
 
 bool StorageKafka2::activate()
 {
-    LOG_TEST(log, "activate task");
+    LOG_TEST(log, "Activate task");
     if (is_active && !getZooKeeper()->expired())
     {
         LOG_TEST(log, "No need to activate");
         return true;
     }
 
-    if (first_time)
+    if (first_activation_time)
     {
         LOG_DEBUG(log, "Activating replica");
         assert(!is_active);
@@ -252,12 +251,9 @@ bool StorageKafka2::activate()
             String is_active_path = fs::path(replica_path) / "is_active";
             zookeeper->deleteEphemeralNodeIfContentMatches(is_active_path, active_node_identifier);
 
-            /// Simultaneously declare that this replica is active, and update the host.
-            Coordination::Requests ops;
-            ops.emplace_back(zkutil::makeCreateRequest(is_active_path, active_node_identifier, zkutil::CreateMode::Ephemeral));
-
             try
             {
+                /// Simultaneously declare that this replica is active, and update the host.
                 zookeeper->create(is_active_path, active_node_identifier, zkutil::CreateMode::Ephemeral);
             }
             catch (const Coordination::Exception & e)
@@ -276,27 +272,21 @@ bool StorageKafka2::activate()
 
             return true;
         }
-        catch (...)
+        catch (const Coordination::Exception & e)
         {
             replica_is_active_node = nullptr;
+            LOG_ERROR(log, "Couldn't start replica: {}. {}", e.what(), DB::getCurrentExceptionMessage(true));
+            return false;
 
-            try
-            {
+        }
+        catch (const Exception & e)
+        {
+            replica_is_active_node = nullptr;
+            if (e.code() != ErrorCodes::REPLICA_IS_ALREADY_ACTIVE)
                 throw;
-            }
-            catch (const Coordination::Exception & e)
-            {
-                LOG_ERROR(log, "Couldn't start replica: {}. {}", e.what(), DB::getCurrentExceptionMessage(true));
-                return false;
-            }
-            catch (const Exception & e)
-            {
-                if (e.code() != ErrorCodes::REPLICA_IS_ALREADY_ACTIVE)
-                    throw;
 
-                LOG_ERROR(log, "Couldn't start replica: {}. {}", e.what(), DB::getCurrentExceptionMessage(true));
-                return false;
-            }
+            LOG_ERROR(log, "Couldn't start replica: {}. {}", e.what(), DB::getCurrentExceptionMessage(true));
+            return false;
         }
     };
 
@@ -315,8 +305,8 @@ bool StorageKafka2::activate()
         task->holder->activateAndSchedule();
     }
 
-    if (first_time)
-        first_time = false;
+    if (first_activation_time)
+        first_activation_time = false;
 
     LOG_DEBUG(log, "Table activated successfully");
     return true;
@@ -357,20 +347,6 @@ SettingsChanges StorageKafka2::createSettingsAdjustments()
     return result;
 }
 
-Names StorageKafka2::parseTopics(String topic_list)
-{
-    Names result;
-    boost::split(result, topic_list, [](char c) { return c == ','; });
-    for (String & topic : result)
-        boost::trim(topic);
-    return result;
-}
-
-String StorageKafka2::getDefaultClientId(const StorageID & table_id_)
-{
-    return fmt::format("{}-{}-{}-{}", VERSION_NAME, getFQDNOrHostName(), table_id_.database_name, table_id_.table_name);
-}
-
 
 Pipe StorageKafka2::read(
     const Names & /*column_names */,
@@ -381,7 +357,7 @@ Pipe StorageKafka2::read(
     size_t /* max_block_size */,
     size_t /* num_streams */)
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "You cannot read from the new Kafka storage!");
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Direct read from the new Kafka storage is not implemented");
 }
 
 

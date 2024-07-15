@@ -167,9 +167,6 @@ private:
     size_t getMaxBlockSize() const;
     size_t getPollTimeoutMillisecond() const;
 
-    static Names parseTopics(String topic_list);
-    static String getDefaultClientId(const StorageID & table_id_);
-
     bool streamToViews();
     bool checkDependencies(const StorageID & table_id);
 

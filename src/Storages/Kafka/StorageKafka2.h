@@ -162,7 +162,7 @@ private:
     zkutil::EphemeralNodeHolderPtr replica_is_active_node;
     BackgroundSchedulePool::TaskHolder activating_task;
     String active_node_identifier;
-    bool first_time = true;
+    bool first_activation_time = true;
     bool activate();
     void partialShutdown();
 
@@ -193,9 +193,6 @@ private:
     size_t getPollMaxBatchSize() const;
     size_t getMaxBlockSize() const;
     size_t getPollTimeoutMillisecond() const;
-
-    static Names parseTopics(String topic_list);
-    static String getDefaultClientId(const StorageID & table_id_);
 
     enum class StallReason
     {

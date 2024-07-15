@@ -21,19 +21,18 @@
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/QueryPlan/ISourceStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/ReadFromStreamLikeEngine.h>
 #include <QueryPipeline/Pipe.h>
-#include <Storages/Kafka/StorageKafkaCommon.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/Kafka/KafkaProducer.h>
 #include <Storages/Kafka/KafkaSettings.h>
 #include <Storages/Kafka/KafkaSource.h>
+#include <Storages/Kafka/StorageKafkaCommon.h>
 #include <Storages/MessageQueueSink.h>
 #include <Storages/NamedCollectionsHelpers.h>
-#include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMaterializedView.h>
-#include <base/getFQDNOrHostName.h>
 #include <boost/algorithm/string/replace.hpp>
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/trim.hpp>
@@ -42,10 +41,10 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/Exception.h>
 #include <Common/Macros.h>
+#include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/Stopwatch.h>
 #include <Common/formatReadable.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
-#include <Processors/QueryPlan/ReadFromStreamLikeEngine.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <Common/setThreadName.h>
@@ -148,19 +147,22 @@ private:
 };
 
 StorageKafka::StorageKafka(
-    const StorageID & table_id_, ContextPtr context_,
-    const ColumnsDescription & columns_, std::unique_ptr<KafkaSettings> kafka_settings_,
+    const StorageID & table_id_,
+    ContextPtr context_,
+    const ColumnsDescription & columns_,
+    std::unique_ptr<KafkaSettings> kafka_settings_,
     const String & collection_name_)
     : IStorage(table_id_)
     , WithContext(context_->getGlobalContext())
     , kafka_settings(std::move(kafka_settings_))
     , macros_info{.table_id = table_id_}
-    , topics(parseTopics(getContext()->getMacros()->expand(kafka_settings->kafka_topic_list.value, macros_info)))
+    , topics(StorageKafkaUtils::parseTopics(getContext()->getMacros()->expand(kafka_settings->kafka_topic_list.value, macros_info)))
     , brokers(getContext()->getMacros()->expand(kafka_settings->kafka_broker_list.value, macros_info))
     , group(getContext()->getMacros()->expand(kafka_settings->kafka_group_name.value, macros_info))
     , client_id(
-          kafka_settings->kafka_client_id.value.empty() ? getDefaultClientId(table_id_)
-                                                        : getContext()->getMacros()->expand(kafka_settings->kafka_client_id.value, macros_info))
+          kafka_settings->kafka_client_id.value.empty()
+              ? StorageKafkaUtils::getDefaultClientId(table_id_)
+              : getContext()->getMacros()->expand(kafka_settings->kafka_client_id.value, macros_info))
     , format_name(getContext()->getMacros()->expand(kafka_settings->kafka_format.value))
     , max_rows_per_message(kafka_settings->kafka_max_rows_per_message.value)
     , schema_name(getContext()->getMacros()->expand(kafka_settings->kafka_schema.value, macros_info))
@@ -259,22 +261,6 @@ SettingsChanges StorageKafka::createSettingsAdjustments()
             result.emplace_back(name, setting.getValue());
     }
     return result;
-}
-
-Names StorageKafka::parseTopics(String topic_list)
-{
-    Names result;
-    boost::split(result,topic_list,[](char c){ return c == ','; });
-    for (String & topic : result)
-    {
-        boost::trim(topic);
-    }
-    return result;
-}
-
-String StorageKafka::getDefaultClientId(const StorageID & table_id_)
-{
-    return fmt::format("{}-{}-{}-{}", VERSION_NAME, getFQDNOrHostName(), table_id_.database_name, table_id_.table_name);
 }
 
 void StorageKafka::read(

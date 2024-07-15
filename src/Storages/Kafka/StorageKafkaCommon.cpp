@@ -11,11 +11,13 @@
 #include <Storages/Kafka/StorageKafka2.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/StorageFactory.h>
+#include <base/getFQDNOrHostName.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/ThreadPool.h>
 #include <Common/ThreadStatus.h>
+#include <Common/config_version.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
@@ -505,7 +507,7 @@ void registerStorageKafka(StorageFactory & factory)
 
 
         auto * settings_query = args.storage_def->settings;
-        chassert(settings_query != nullptr && "Unexpected settings query in StorageKafka");
+        chassert(has_settings && "Unexpected settings query in StorageKafka");
 
         settings_query->changes.setSetting("kafka_keeper_path", kafka_settings->kafka_keeper_path.value);
         settings_query->changes.setSetting("kafka_replica_name", kafka_settings->kafka_replica_name.value);
@@ -537,6 +539,23 @@ void registerStorageKafka(StorageFactory & factory)
         StorageFactory::StorageFeatures{
             .supports_settings = true,
         });
+}
+
+namespace StorageKafkaUtils
+{
+Names parseTopics(String topic_list)
+{
+    Names result;
+    boost::split(result, topic_list, [](char c) { return c == ','; });
+    for (String & topic : result)
+        boost::trim(topic);
+    return result;
+}
+
+String getDefaultClientId(const StorageID & table_id)
+{
+    return fmt::format("{}-{}-{}-{}", VERSION_NAME, getFQDNOrHostName(), table_id.database_name, table_id.table_name);
+}
 }
 
 template struct StorageKafkaInterceptors<StorageKafka>;

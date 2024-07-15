@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/Names.h>
+#include <Interpreters/StorageID.h>
 #include <base/types.h>
 #include <cppkafka/cppkafka.h>
 #include <cppkafka/topic_partition.h>
@@ -60,8 +61,13 @@ struct KafkaConfigLoader
         const String & config_prefix,
         const Names & topics);
 };
-}
 
+namespace StorageKafkaUtils
+{
+Names parseTopics(String topic_list);
+String getDefaultClientId(const StorageID & table_id);
+}
+}
 
 template <>
 struct fmt::formatter<cppkafka::TopicPartition> : fmt::ostream_formatter

@@ -55,14 +55,14 @@ KafkaConsumer2::KafkaConsumer2(
     size_t max_batch_size,
     size_t poll_timeout_,
     const std::atomic<bool> & stopped_,
-    const Names & _topics)
+    const Names & topics_)
     : consumer(consumer_)
     , log(log_)
     , batch_size(max_batch_size)
     , poll_timeout(poll_timeout_)
     , stopped(stopped_)
     , current(messages.begin())
-    , topics(_topics)
+    , topics(topics_)
 {
     // called (synchronously, during poll) when we enter the consumer group
     consumer->set_assignment_callback(
