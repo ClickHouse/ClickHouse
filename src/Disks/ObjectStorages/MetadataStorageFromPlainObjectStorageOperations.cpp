@@ -31,7 +31,7 @@ ObjectStorageKey createMetadataObjectKey(const std::string & object_key_prefix, 
 
 MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::MetadataStorageFromPlainObjectStorageCreateDirectoryOperation(
     std::filesystem::path && path_, InMemoryPathMap & path_map_, ObjectStoragePtr object_storage_, const std::string & metadata_key_prefix_)
-    : path(std::move(path_))
+    : path((chassert(path_.string().ends_with('/')), std::move(path_)))
     , path_map(path_map_)
     , object_storage(object_storage_)
     , metadata_key_prefix(metadata_key_prefix_)
@@ -41,9 +41,11 @@ MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::MetadataStorageFr
 
 void MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::execute(std::unique_lock<SharedMutex> &)
 {
+    /// parent_path() removes the trailing '/'
+    const auto base_path = path.parent_path();
     {
         SharedLockGuard lock(path_map.mutex);
-        if (path_map.map.contains(path.parent_path()))
+        if (path_map.map.contains(base_path))
             return;
     }
 
@@ -68,7 +70,7 @@ void MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::execute(std:
     {
         std::lock_guard lock(path_map.mutex);
         auto & map = path_map.map;
-        [[maybe_unused]] auto result = map.emplace(path.parent_path(), std::move(object_key_prefix));
+        [[maybe_unused]] auto result = map.emplace(base_path, std::move(object_key_prefix));
         chassert(result.second);
     }
     auto metric = object_storage->getMetadataStorageMetrics().directory_map_size;
@@ -89,9 +91,10 @@ void MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::undo(std::un
 
     if (write_finalized)
     {
+        const auto base_path = path.parent_path();
         {
             std::lock_guard lock(path_map.mutex);
-            path_map.map.erase(path.parent_path());
+            path_map.map.erase(base_path);
         }
         auto metric = object_storage->getMetadataStorageMetrics().directory_map_size;
         CurrentMetrics::sub(metric, 1);
@@ -108,8 +111,8 @@ MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::MetadataStorageFrom
     InMemoryPathMap & path_map_,
     ObjectStoragePtr object_storage_,
     const std::string & metadata_key_prefix_)
-    : path_from(std::move(path_from_))
-    , path_to(std::move(path_to_))
+    : path_from((chassert(path_from_.string().ends_with('/')), std::move(path_from_)))
+    , path_to((chassert(path_to_.string().ends_with('/')), std::move(path_to_)))
     , path_map(path_map_)
     , object_storage(object_storage_)
     , metadata_key_prefix(metadata_key_prefix_)
@@ -123,6 +126,7 @@ std::unique_ptr<WriteBufferFromFileBase> MetadataStorageFromPlainObjectStorageMo
     {
         SharedLockGuard lock(path_map.mutex);
         auto & map = path_map.map;
+        /// parent_path() removes the trailing '/'.
         auto expected_it = map.find(expected_path.parent_path());
         if (expected_it == map.end())
             throw Exception(
@@ -174,10 +178,14 @@ void MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::execute(std::u
     writeString(path_to.string(), *write_buf);
     write_buf->finalize();
 
+    /// parent_path() removes the trailing '/'.
+    auto base_path_to = path_to.parent_path();
+    auto base_path_from = path_from.parent_path();
+
     {
         std::lock_guard lock(path_map.mutex);
         auto & map = path_map.map;
-        [[maybe_unused]] auto result = map.emplace(path_to.parent_path(), map.extract(path_from.parent_path()).mapped());
+        [[maybe_unused]] auto result = map.emplace(base_path_to, map.extract(base_path_from).mapped());
         chassert(result.second);
     }
 
@@ -203,16 +211,18 @@ void MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::undo(std::uniq
 
 MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation::MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation(
     std::filesystem::path && path_, InMemoryPathMap & path_map_, ObjectStoragePtr object_storage_, const std::string & metadata_key_prefix_)
-    : path(std::move(path_)), path_map(path_map_), object_storage(object_storage_), metadata_key_prefix(metadata_key_prefix_)
+    : path((chassert(path_.string().ends_with('/')), std::move(path_))), path_map(path_map_), object_storage(object_storage_), metadata_key_prefix(metadata_key_prefix_)
 {
 }
 
 void MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation::execute(std::unique_lock<SharedMutex> & /* metadata_lock */)
 {
+    /// parent_path() removes the trailing '/'
+    const auto base_path = path.parent_path();
     {
         SharedLockGuard lock(path_map.mutex);
         auto & map = path_map.map;
-        auto path_it = map.find(path.parent_path());
+        auto path_it = map.find(base_path);
         if (path_it == map.end())
             return;
         key_prefix = path_it->second;
@@ -227,7 +237,7 @@ void MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation::execute(std:
     {
         std::lock_guard lock(path_map.mutex);
         auto & map = path_map.map;
-        map.erase(path.parent_path());
+        map.erase(base_path);
     }
 
     auto metric = object_storage->getMetadataStorageMetrics().directory_map_size;

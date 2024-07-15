@@ -23,8 +23,8 @@ private:
     bool write_finalized = false;
 
 public:
-    // Assuming that paths are normalized.
     MetadataStorageFromPlainObjectStorageCreateDirectoryOperation(
+        /// path_ must end with a trailing '/'.
         std::filesystem::path && path_,
         InMemoryPathMap & path_map_,
         ObjectStoragePtr object_storage_,
@@ -51,6 +51,7 @@ private:
 
 public:
     MetadataStorageFromPlainObjectStorageMoveDirectoryOperation(
+        /// Both path_from_ and path_to_ must end with a trailing '/'.
         std::filesystem::path && path_from_,
         std::filesystem::path && path_to_,
         InMemoryPathMap & path_map_,
@@ -76,6 +77,7 @@ private:
 
 public:
     MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation(
+        /// path_ must end with a trailing '/'.
         std::filesystem::path && path_,
         InMemoryPathMap & path_map_,
         ObjectStoragePtr object_storage_,
