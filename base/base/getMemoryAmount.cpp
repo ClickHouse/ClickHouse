@@ -23,8 +23,7 @@ std::optional<uint64_t> getCgroupsV2MemoryLimit()
     if (!cgroupsV2MemoryControllerEnabled())
         return {};
 
-    auto current_cgroup = currentCGroupV2Path();
-
+    std::filesystem::path current_cgroup = cgroupV2PathOfProcess();
     if (current_cgroup.empty())
         return {};
 
