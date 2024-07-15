@@ -34,7 +34,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-std::string StorageObjectStorage::getPathSample(StorageInMemoryMetadata metadata, ContextPtr context)
+String StorageObjectStorage::getPathSample(StorageInMemoryMetadata metadata, ContextPtr context)
 {
     auto query_settings = configuration->getQuerySettings(context);
     /// We don't want to throw an exception if there are no files with specified path.

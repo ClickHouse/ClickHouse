@@ -119,18 +119,18 @@ NameSet getVirtualNamesForFileLikeStorage()
     return {"_path", "_file", "_size", "_time"};
 }
 
-std::unordered_map<std::string, std::string> parseHivePartitioningKeysAndValues(const std::string& path, const ColumnsDescription & storage_columns)
+std::unordered_map<std::string, std::string> parseHivePartitioningKeysAndValues(const String & path, const ColumnsDescription & storage_columns)
 {
     std::string pattern = "/([^/]+)=([^/]+)";
     re2::StringPiece input_piece(path);
 
     std::unordered_map<std::string, std::string> key_values;
     std::string key, value;
-    std::set<String> used_keys;
+    std::unordered_set<String> used_keys;
     while (RE2::FindAndConsume(&input_piece, pattern, &key, &value))
     {
         if (used_keys.contains(key))
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Link to file with enabled hive-style partitioning contains duplicated key {}, only unique keys required", key);
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Path '{}' to file with enabled hive-style partitioning contains duplicated partition key {}, only unique keys are allowed", path, key);
         used_keys.insert(key);
 
         auto col_name = "_" + key;

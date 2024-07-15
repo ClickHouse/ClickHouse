@@ -122,7 +122,7 @@ public:
 protected:
     virtual void updateConfiguration(ContextPtr local_context);
 
-    std::string getPathSample(StorageInMemoryMetadata metadata, ContextPtr context);
+    String getPathSample(StorageInMemoryMetadata metadata, ContextPtr context);
 
     virtual ReadFromFormatInfo prepareReadingFromFormat(
         const Strings & requested_columns,

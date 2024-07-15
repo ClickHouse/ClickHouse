@@ -1109,10 +1109,7 @@ void StorageFile::setStorageMetadata(CommonArguments args)
     storage_metadata.setComment(args.comment);
     setInMemoryMetadata(storage_metadata);
 
-    std::string path_for_virtuals;
-    if (!paths.empty())
-        path_for_virtuals = paths[0];
-    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.getColumns(), args.getContext(), path_for_virtuals, format_settings));
+    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.getColumns(), args.getContext(), paths.empty() ? "" : paths[0], format_settings));
 }
 
 

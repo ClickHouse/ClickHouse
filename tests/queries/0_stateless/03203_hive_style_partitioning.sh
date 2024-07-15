@@ -118,3 +118,19 @@ set use_hive_partitioning = 0;
 
 SELECT *, _column0 FROM s3('http://localhost:11111/test/hive_partitioning/column0=Elizabeth/sample.parquet') LIMIT 10;
 """ 2>&1 | grep -F -q "UNKNOWN_IDENTIFIER" && echo "OK" || echo "FAIL";
+
+$CLICKHOUSE_LOCAL -q "SELECT 'TESTING THE S3CLUSTER PARTITIONING'"
+
+$CLICKHOUSE_CLIENT -n -q """
+set use_hive_partitioning = 1;
+
+SELECT *, _column0 FROM s3Cluster('test_cluster_two_shards_localhost', 'http://localhost:11111/test/hive_partitioning/column0=Elizabeth/sample.parquet') LIMIT 10;
+
+SELECT *, _column0 FROM s3Cluster('test_cluster_two_shards_localhost', 'http://localhost:11111/test/hive_partitioning/column0=Elizabeth/sample.parquet') WHERE column0 = _column0;
+
+SELECT *, _column0, _column1 FROM s3Cluster('test_cluster_two_shards_localhost', 'http://localhost:11111/test/hive_partitioning/column0=Elizabeth/column1=Schmidt/sample.parquet') WHERE column1 = _column1;
+SELECT *, _column0 FROM s3Cluster('test_cluster_two_shards_localhost', 'http://localhost:11111/test/hive_partitioning/column0=Elizabeth/column1=Schmidt/sample.parquet') WHERE column1 = _column1;
+
+SELECT *, _column0, _column1 FROM s3Cluster('test_cluster_two_shards_localhost', 'http://localhost:11111/test/hive_partitioning/column0=Elizabeth/column1=Schmidt/sample.parquet') WHERE column0 = _column0 AND column1 = _column1;
+SELECT *, _column0 FROM s3Cluster('test_cluster_two_shards_localhost', 'http://localhost:11111/test/hive_partitioning/column0=Elizabeth/column1=Schmidt/sample.parquet') WHERE column0 = _column0 AND column1 = _column1;
+"""
