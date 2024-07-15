@@ -710,6 +710,7 @@ class CiCache:
         """
         remove_from_to_do = []
         required_builds = []
+        has_test_jobs_to_skip = False
         for job_name, job_config in self.jobs_to_do.items():
             if CI.is_test_job(job_name) and job_name != CI.JobNames.BUILD_CHECK:
                 if job_config.reference_job_name:
@@ -723,30 +724,30 @@ class CiCache:
                     job_config=reference_config,
                 ):
                     remove_from_to_do.append(job_name)
+                    has_test_jobs_to_skip = True
                 else:
                     required_builds += (
                         job_config.required_builds if job_config.required_builds else []
                     )
 
-        has_builds_to_do = False
         for job_name, job_config in self.jobs_to_do.items():
             if CI.is_build_job(job_name):
                 if job_name not in required_builds:
                     remove_from_to_do.append(job_name)
-                else:
-                    has_builds_to_do = True
 
-        if not has_builds_to_do:
+        if not required_builds:
             remove_from_to_do.append(CI.JobNames.BUILD_CHECK)
 
-        for job in remove_from_to_do:
-            print(f"Filter job [{job}] - not affected by the change")
-            if job in self.jobs_to_do:
-                del self.jobs_to_do[job]
-            if job in self.jobs_to_wait:
-                del self.jobs_to_wait[job]
-            if job in self.jobs_to_skip:
-                self.jobs_to_skip.remove(job)
+        if has_test_jobs_to_skip:
+            # if there are no test jobs to skip, then we must not skip anything - it's a new CI run with new build digest
+            for job in remove_from_to_do:
+                print(f"Filter job [{job}] - not affected by the change")
+                if job in self.jobs_to_do:
+                    del self.jobs_to_do[job]
+                if job in self.jobs_to_wait:
+                    del self.jobs_to_wait[job]
+                if job in self.jobs_to_skip:
+                    self.jobs_to_skip.remove(job)
 
     def await_pending_jobs(self, is_release: bool, dry_run: bool = False) -> None:
         """
