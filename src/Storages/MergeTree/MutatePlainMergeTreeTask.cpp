@@ -140,7 +140,7 @@ ContextMutablePtr MutatePlainMergeTreeTask::createTaskContext() const
     auto queryId = getQueryId();
     context->setCurrentQueryId(queryId);
     context->setBackgroundOperationTypeForContext(ClientInfo::BackgroundOperationType::MUTATION);
-    context->setSetting("lightweight_mutation_projection_mode", merge_mutate_entry->lightweight_delete_projection_mode);
+    // context->setSetting("lightweight_mutation_projection_mode", merge_mutate_entry->lightweight_delete_projection_mode);
     return context;
 }
 
