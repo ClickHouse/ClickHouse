@@ -192,15 +192,15 @@ MetadataStorageFromPlainRewritableObjectStorage::MetadataStorageFromPlainRewrita
             "MetadataStorageFromPlainRewritableObjectStorage is not compatible with write-once storage '{}'",
             object_storage->getName());
 
-    if (getMetadataKeyPrefix() == object_storage->getCommonKeyPrefix())
+    if (useSeparateLayoutForMetadata())
     {
-        auto keys_gen = std::make_shared<CommonPathPrefixKeyGenerator>(object_storage->getCommonKeyPrefix(), path_map);
+        /// Use flat directory structure if the metadata is stored separately from the table data.
+        auto keys_gen = std::make_shared<FlatDirectoryStructureKeyGenerator>(object_storage->getCommonKeyPrefix(), path_map);
         object_storage->setKeysGenerator(keys_gen);
     }
     else
     {
-        /// Use flat directory structure if the metadata is stored separately from the table data.
-        auto keys_gen = std::make_shared<FlatDirectoryStructureKeyGenerator>(object_storage->getCommonKeyPrefix(), path_map);
+        auto keys_gen = std::make_shared<CommonPathPrefixKeyGenerator>(object_storage->getCommonKeyPrefix(), path_map);
         object_storage->setKeysGenerator(keys_gen);
     }
 }
@@ -216,7 +216,7 @@ bool MetadataStorageFromPlainRewritableObjectStorage::exists(const std::string &
     if (MetadataStorageFromPlainObjectStorage::exists(path))
         return true;
 
-    if (getMetadataKeyPrefix() != object_storage->getCommonKeyPrefix())
+    if (useSeparateLayoutForMetadata())
     {
         auto key_prefix = object_storage->generateObjectKeyForPath(path, getMetadataKeyPrefix()).serialize();
         return object_storage->existsOrHasAnyChild(key_prefix);
@@ -227,7 +227,7 @@ bool MetadataStorageFromPlainRewritableObjectStorage::exists(const std::string &
 
 bool MetadataStorageFromPlainRewritableObjectStorage::isDirectory(const std::string & path) const
 {
-    if (getMetadataKeyPrefix() != object_storage->getCommonKeyPrefix())
+    if (useSeparateLayoutForMetadata())
     {
         auto directory = std::filesystem::path(object_storage->generateObjectKeyForPath(path, getMetadataKeyPrefix()).serialize()) / "";
         return object_storage->existsOrHasAnyChild(directory);
@@ -249,7 +249,7 @@ std::vector<std::string> MetadataStorageFromPlainRewritableObjectStorage::listDi
     getDirectChildrenOnDisk(abs_key, files, std::filesystem::path(path) / "", directories);
     /// List empty directories that are identified by the `prefix.path` metadata files. This is required to, e.g., remove
     /// metadata along with regular files.
-    if (object_storage->getCommonKeyPrefix() != getMetadataKeyPrefix())
+    if (useSeparateLayoutForMetadata())
     {
         auto metadata_key = std::filesystem::path(getMetadataKeyPrefix()) / key_prefix / "";
         RelativePathsWithMetadata metadata_files;
@@ -269,4 +269,8 @@ void MetadataStorageFromPlainRewritableObjectStorage::getDirectChildrenOnDisk(
     getDirectChildrenOnDiskImpl(storage_key, remote_paths, local_path, *getPathMap(), result);
 }
 
+bool MetadataStorageFromPlainRewritableObjectStorage::useSeparateLayoutForMetadata() const
+{
+    return getMetadataKeyPrefix() != object_storage->getCommonKeyPrefix();
+}
 }
