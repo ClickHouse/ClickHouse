@@ -1,0 +1,21 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <s3_with_keeper>
+                <type>s3_with_keeper</type>
+                <endpoint>http://minio1:9001/root/data/</endpoint>
+                <access_key_id>minio</access_key_id>
+                <secret_access_key>minio123</secret_access_key>
+            </s3_with_keeper>
+        </disks>
+        <policies>
+            <s3_with_keeper>
+                <volumes>
+                    <main>
+                        <disk>s3_with_keeper</disk>
+                    </main>
+                </volumes>
+            </s3_with_keeper>
+        </policies>
+    </storage_configuration>
+</clickhouse>

@@ -44,6 +44,7 @@ namespace ProfileEvents
 {
     extern const Event InsertQueriesWithSubqueries;
     extern const Event QueriesWithSubqueries;
+    extern const int QUERY_IS_PROHIBITED;
 }
 
 namespace DB
@@ -405,6 +406,10 @@ BlockIO InterpreterInsertQuery::execute()
 
     StoragePtr table = getTable(query);
     checkStorageSupportsTransactionsIfNeeded(table, getContext());
+
+    if (getContext()->getServerSettings().disable_insertion_and_mutation
+        && query.table_id.database_name != DatabaseCatalog::SYSTEM_DATABASE)
+        throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Insert queries are prohibited");
 
     StoragePtr inner_table;
     if (const auto * mv = dynamic_cast<const StorageMaterializedView *>(table.get()))
