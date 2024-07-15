@@ -1820,6 +1820,12 @@ Possible values:
 
 Default value: 0 (no restriction).
 
+## query_log_metric_interval (#query_log_metric_interval)
+
+The interval in milliseconds at which the [query_log_metric](../../operations/system-tables/query_log_metric.md) for individual queries is collected.
+
+Default value: 1000
+
 ## insert_quorum {#insert_quorum}
 
 :::note

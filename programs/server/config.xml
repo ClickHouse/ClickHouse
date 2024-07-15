@@ -1182,7 +1182,8 @@
         <flush_on_crash>false</flush_on_crash>
     </error_log>
 
-    <!-- Query log metric contains rows with current values of ProfileEvents, CurrentMetrics collected with "collect_interval_milliseconds" interval for individual queries -->
+    <!-- Query log metric contains rows Contains history of memory and metric values from table system.events for individual queries, periodically flushed to disk
+    every "collect_interval_milliseconds" interval-->
     <query_log_metric>
         <database>system</database>
         <table>query_log_metric</table>
