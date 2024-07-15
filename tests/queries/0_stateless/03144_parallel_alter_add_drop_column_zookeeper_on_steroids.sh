@@ -85,7 +85,7 @@ export -f optimize_thread;
 export -f insert_thread;
 
 
-TIMEOUT=30
+TIMEOUT=20
 
 # Sometimes we detach and attach tables
 timeout $TIMEOUT bash -c alter_thread 2> /dev/null &

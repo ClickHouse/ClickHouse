@@ -17,6 +17,7 @@
 #include <Common/StringUtils.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
+#include <Core/Settings.h>
 
 
 namespace DB
@@ -194,7 +195,7 @@ static inline void checkArgumentsWithSeparatorAndOptionalMaxSubstrings(
         {"max_substrings", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeInteger), isColumnConst, "const Number"},
     };
 
-    validateFunctionArgumentTypes(func, arguments, mandatory_args, optional_args);
+    validateFunctionArguments(func, arguments, mandatory_args, optional_args);
 }
 
 static inline void checkArgumentsWithOptionalMaxSubstrings(const IFunction & func, const ColumnsWithTypeAndName & arguments)
@@ -207,7 +208,7 @@ static inline void checkArgumentsWithOptionalMaxSubstrings(const IFunction & fun
         {"max_substrings", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeInteger), isColumnConst, "const Number"},
     };
 
-    validateFunctionArgumentTypes(func, arguments, mandatory_args, optional_args);
+    validateFunctionArguments(func, arguments, mandatory_args, optional_args);
 }
 
 }
