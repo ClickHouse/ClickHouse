@@ -55,6 +55,8 @@
 #include "Formats/FormatSettings.h"
 #include <Formats/SchemaInferenceUtils.h>
 
+#include <Core/Settings.h>
+
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
