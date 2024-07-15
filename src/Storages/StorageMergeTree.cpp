@@ -5,6 +5,7 @@
 
 #include <Backups/BackupEntriesCollector.h>
 #include <Core/QueryProcessingStage.h>
+#include <Core/Settings.h>
 #include <Databases/IDatabase.h>
 #include <IO/copyData.h>
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
@@ -32,6 +33,7 @@
 #include <Storages/MergeTree/MergeList.h>
 #include <Storages/MergeTree/MergePlainMergeTreeTask.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeSink.h>
 #include <Storages/MergeTree/PartitionPruner.h>
 #include <Storages/MergeTree/checkDataPart.h>
@@ -252,7 +254,7 @@ void StorageMergeTree::read(
 
     const bool enable_parallel_reading = local_context->canUseParallelReplicasOnFollower()
         && local_context->getSettingsRef().parallel_replicas_for_non_replicated_merge_tree
-        && (!local_context->getSettingsRef().allow_experimental_analyzer || query_info.analyzer_can_use_parallel_replicas_on_follower);
+        && (!local_context->getSettingsRef().allow_experimental_analyzer || query_info.current_table_chosen_for_reading_with_parallel_replicas);
 
     if (auto plan = reader.read(
             column_names,
@@ -656,12 +658,13 @@ void StorageMergeTree::mutate(const MutationCommands & commands, ContextPtr quer
     {
         /// It's important to serialize order of mutations with alter queries because
         /// they can depend on each other.
-        if (auto alter_lock = tryLockForAlter(query_context->getSettings().lock_acquire_timeout); alter_lock == std::nullopt)
+        if (auto alter_lock = tryLockForAlter(query_context->getSettingsRef().lock_acquire_timeout); alter_lock == std::nullopt)
         {
-            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED,
-                            "Cannot start mutation in {}ms because some metadata-changing ALTER (MODIFY|RENAME|ADD|DROP) is currently executing. "
-                            "You can change this timeout with `lock_acquire_timeout` setting",
-                            query_context->getSettings().lock_acquire_timeout.totalMilliseconds());
+            throw Exception(
+                ErrorCodes::TIMEOUT_EXCEEDED,
+                "Cannot start mutation in {}ms because some metadata-changing ALTER (MODIFY|RENAME|ADD|DROP) is currently executing. "
+                "You can change this timeout with `lock_acquire_timeout` setting",
+                query_context->getSettingsRef().lock_acquire_timeout.totalMilliseconds());
         }
         version = startMutation(commands, query_context);
     }

@@ -55,9 +55,17 @@ public:
     void reserve(size_t n) override { data.reserve_exact(n); }
     void shrinkToFit() override { data.shrink_to_fit(); }
 
+#if !defined(ABORT_ON_LOGICAL_ERROR)
     void insertFrom(const IColumn & src, size_t n) override { data.push_back(static_cast<const Self &>(src).getData()[n]); }
+#else
+    void doInsertFrom(const IColumn & src, size_t n) override { data.push_back(static_cast<const Self &>(src).getData()[n]); }
+#endif
 
+#if !defined(ABORT_ON_LOGICAL_ERROR)
     void insertManyFrom(const IColumn & src, size_t position, size_t length) override
+#else
+    void doInsertManyFrom(const IColumn & src, size_t position, size_t length) override
+#endif
     {
         ValueType v = assert_cast<const Self &>(src).getData()[position];
         data.resize_fill(data.size() + length, v);
@@ -68,7 +76,11 @@ public:
     void insertManyDefaults(size_t length) override { data.resize_fill(data.size() + length); }
     void insert(const Field & x) override { data.push_back(x.get<T>()); }
     bool tryInsert(const Field & x) override;
+#if !defined(ABORT_ON_LOGICAL_ERROR)
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
+#else
+    void doInsertRangeFrom(const IColumn & src, size_t start, size_t length) override;
+#endif
 
     void popBack(size_t n) override
     {
@@ -92,7 +104,11 @@ public:
     void updateHashWithValue(size_t n, SipHash & hash) const override;
     void updateWeakHash32(WeakHash32 & hash) const override;
     void updateHashFast(SipHash & hash) const override;
+#if !defined(ABORT_ON_LOGICAL_ERROR)
     int compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const override;
+#else
+    int doCompareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const override;
+#endif
     void getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
                         size_t limit, int nan_direction_hint, IColumn::Permutation & res) const override;
     void updatePermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
