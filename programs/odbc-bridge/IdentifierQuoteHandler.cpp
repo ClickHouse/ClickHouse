@@ -11,6 +11,7 @@
 #include <Poco/Net/HTTPServerResponse.h>
 #include <Common/BridgeProtocolVersion.h>
 #include <Common/logger_useful.h>
+#include <Core/Settings.h>
 #include "getIdentifierQuote.h"
 #include "validateODBCConnectionString.h"
 #include "ODBCPooledConnectionFactory.h"

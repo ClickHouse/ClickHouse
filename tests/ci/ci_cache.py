@@ -520,6 +520,35 @@ class CiCache:
             self.RecordType.SUCCESSFUL, job, batch, num_batches, release_branch
         )
 
+    def has_evidence(self, job: str, job_config: CI.JobConfig) -> bool:
+        """
+        checks if the job has been seen in master/release CI
+        function is to be used to check if change did not affect the job
+        :param job_config:
+        :param job:
+        :return:
+        """
+        return (
+            self.is_successful(
+                job=job,
+                batch=0,
+                num_batches=job_config.num_batches,
+                release_branch=True,
+            )
+            or self.is_pending(
+                job=job,
+                batch=0,
+                num_batches=job_config.num_batches,
+                release_branch=True,
+            )
+            or self.is_failed(
+                job=job,
+                batch=0,
+                num_batches=job_config.num_batches,
+                release_branch=True,
+            )
+        )
+
     def is_failed(
         self, job: str, batch: int, num_batches: int, release_branch: bool
     ) -> bool:
@@ -609,7 +638,7 @@ class CiCache:
         pushes pending records for all jobs that supposed to be run
         """
         for job, job_config in self.jobs_to_do.items():
-            if job_config.run_always:
+            if not job_config.has_digest():
                 continue
             pending_state = PendingState(time.time(), run_url=GITHUB_RUN_URL)
             assert job_config.batches
@@ -674,6 +703,52 @@ class CiCache:
             bucket=S3_BUILDS_BUCKET, file_path=result_json_path, s3_path=s3_path
         )
 
+    def filter_out_not_affected_jobs(self):
+        """
+        Filter is to be applied in PRs to remove jobs that are not affected by the change
+        :return:
+        """
+        remove_from_to_do = []
+        required_builds = []
+        has_test_jobs_to_skip = False
+        for job_name, job_config in self.jobs_to_do.items():
+            if CI.is_test_job(job_name) and job_name != CI.JobNames.BUILD_CHECK:
+                if job_config.reference_job_name:
+                    reference_name = job_config.reference_job_name
+                    reference_config = CI.JOB_CONFIGS[reference_name]
+                else:
+                    reference_name = job_name
+                    reference_config = job_config
+                if self.has_evidence(
+                    job=reference_name,
+                    job_config=reference_config,
+                ):
+                    remove_from_to_do.append(job_name)
+                    has_test_jobs_to_skip = True
+                else:
+                    required_builds += (
+                        job_config.required_builds if job_config.required_builds else []
+                    )
+        if has_test_jobs_to_skip:
+            # If there are tests to skip, it means build digest has not been changed.
+            # No need to test builds. Let's keep all builds required for test jobs and skip the others
+            for job_name, job_config in self.jobs_to_do.items():
+                if CI.is_build_job(job_name):
+                    if job_name not in required_builds:
+                        remove_from_to_do.append(job_name)
+
+        if not required_builds:
+            remove_from_to_do.append(CI.JobNames.BUILD_CHECK)
+
+        for job in remove_from_to_do:
+            print(f"Filter job [{job}] - not affected by the change")
+            if job in self.jobs_to_do:
+                del self.jobs_to_do[job]
+            if job in self.jobs_to_wait:
+                del self.jobs_to_wait[job]
+            if job in self.jobs_to_skip:
+                self.jobs_to_skip.remove(job)
+
     def await_pending_jobs(self, is_release: bool, dry_run: bool = False) -> None:
         """
         await pending jobs to be finished
@@ -691,14 +766,19 @@ class CiCache:
         MAX_JOB_NUM_TO_WAIT = 3
         round_cnt = 0
 
-        # FIXME: temporary experiment: lets enable await for PR' workflows but for a shorter time
+        def _has_build_job():
+            for job in self.jobs_to_wait:
+                if CI.is_build_job(job):
+                    return True
+            return False
+
         if not is_release:
-            MAX_ROUNDS_TO_WAIT = 3
+            # in PRs we can wait only for builds, TIMEOUT*MAX_ROUNDS_TO_WAIT=100min is enough
+            MAX_ROUNDS_TO_WAIT = 2
 
         while (
-            len(self.jobs_to_wait) > MAX_JOB_NUM_TO_WAIT
-            and round_cnt < MAX_ROUNDS_TO_WAIT
-        ):
+            len(self.jobs_to_wait) > MAX_JOB_NUM_TO_WAIT or _has_build_job()
+        ) and round_cnt < MAX_ROUNDS_TO_WAIT:
             round_cnt += 1
             GHActions.print_in_group(
                 f"Wait pending jobs, round [{round_cnt}/{MAX_ROUNDS_TO_WAIT}]:",
