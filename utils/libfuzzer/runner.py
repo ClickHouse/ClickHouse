@@ -69,7 +69,7 @@ def run_fuzzer(fuzzer: str):
     subprocess.check_call(cmd_line, shell=True)
 
 
-def run():
+def main():
     logging.basicConfig(level=logging.INFO)
 
     subprocess.check_call("ls -al", shell=True)
@@ -78,3 +78,7 @@ def run():
         for fuzzer in current.iterdir():
             if (current / fuzzer).is_file() and os.access(current / fuzzer, os.X_OK):
                 run_fuzzer(fuzzer)
+
+
+if __name__ == "__main__":
+    main()
