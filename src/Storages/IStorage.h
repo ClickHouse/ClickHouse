@@ -259,6 +259,9 @@ public:
     /// Return true if there is at least one part containing lightweight deleted mask.
     virtual bool hasLightweightDeletedMask() const { return false; }
 
+    /// Return true if storage has any projection.
+    virtual bool hasProjection() const { return false; }
+
     /// Return true if storage can execute lightweight delete mutations.
     virtual bool supportsLightweightDelete() const { return false; }
 

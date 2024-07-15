@@ -439,6 +439,8 @@ public:
 
     bool supportsLightweightDelete() const override;
 
+    bool hasProjection() const override;
+
     bool areAsynchronousInsertsEnabled() const override;
 
     bool supportsTrivialCountOptimization(const StorageSnapshotPtr &, ContextPtr) const override;

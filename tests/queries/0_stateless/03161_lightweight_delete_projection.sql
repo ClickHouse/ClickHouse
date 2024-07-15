@@ -13,11 +13,13 @@ SETTINGS min_bytes_for_wide_part = 10485760;
 
 INSERT INTO users VALUES (1231, 'John', 33);
 
-DELETE FROM users WHERE 1; -- { serverError NOT_IMPLEMENTED }
+ALTER TABLE users MODIFY SETTING lightweight_mutation_projection_mode = 'throw';
 
-DELETE FROM users WHERE uid = 1231 SETTINGS lightweight_mutation_projection_mode = 'throw';  -- { serverError NOT_IMPLEMENTED }
+DELETE FROM users WHERE uid = 1231;  -- { serverError NOT_IMPLEMENTED }
 
-DELETE FROM users WHERE uid = 1231 SETTINGS lightweight_mutation_projection_mode = 'drop';
+ALTER TABLE users MODIFY SETTING lightweight_mutation_projection_mode = 'drop';
+
+DELETE FROM users WHERE uid = 1231;
 
 SYSTEM FLUSH LOGS;
 
@@ -45,11 +47,13 @@ SETTINGS min_bytes_for_wide_part = 0;
 
 INSERT INTO users VALUES (1231, 'John', 33);
 
-DELETE FROM users WHERE 1; -- { serverError NOT_IMPLEMENTED }
+ALTER TABLE users MODIFY SETTING lightweight_mutation_projection_mode = 'throw';
 
-DELETE FROM users WHERE uid = 1231 SETTINGS lightweight_mutation_projection_mode = 'throw';  -- { serverError NOT_IMPLEMENTED }
+DELETE FROM users WHERE uid = 1231;  -- { serverError NOT_IMPLEMENTED }
 
-DELETE FROM users WHERE uid = 1231 SETTINGS lightweight_mutation_projection_mode = 'drop';
+ALTER TABLE users MODIFY SETTING lightweight_mutation_projection_mode = 'drop';
+
+DELETE FROM users WHERE uid = 1231;
 
 SYSTEM FLUSH LOGS;
 
