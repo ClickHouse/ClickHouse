@@ -102,6 +102,9 @@ jobs:
             --job-name '${{inputs.test_name}}' \
             --run \
             --run-command '''${{inputs.run_command}}'''
+          if [ "$?" != 0 ]; then
+            echo JOB_EXIT_CODE="$?" >> "$GITHUB_ENV"
+          fi
       - name: Post run
         if: ${{ !cancelled() }}
         run: |

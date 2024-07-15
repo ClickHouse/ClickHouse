@@ -1274,10 +1274,15 @@ def main() -> int:
         elif job_report.pre_report:
             print(f"ERROR: Job was killed - generate evidence")
             job_report.update_duration()
-            # Job was killed!
+            ret_code = os.getenv("JOB_EXIT_CODE", "")
+            if ret_code:
+                try:
+                    job_report.exit_code = int(ret_code)
+                except ValueError:
+                    pass
             if Utils.is_killed_with_oom():
                 print("WARNING: OOM while job execution")
-                error = f"Out Of Memory, exit_code {job_report.exit_code}, after {job_report.duration}s"
+                error = f"Out Of Memory, exit_code {job_report.exit_code}, after {int(job_report.duration)}s"
             else:
                 error = f"Unknown, exit_code {job_report.exit_code}, after {job_report.duration}s"
             CIBuddy().post_error(error, job_name=_get_ext_check_name(args.job_name))
