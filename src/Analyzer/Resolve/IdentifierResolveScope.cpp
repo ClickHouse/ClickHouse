@@ -12,10 +12,9 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-IdentifierResolveScope::IdentifierResolveScope(QueryTreeNodePtr scope_node_, IdentifierResolveScope * parent_scope_, bool is_query_)
+IdentifierResolveScope::IdentifierResolveScope(QueryTreeNodePtr scope_node_, IdentifierResolveScope * parent_scope_)
     : scope_node(std::move(scope_node_))
     , parent_scope(parent_scope_)
-    , is_query(is_query_)
 {
     if (parent_scope)
     {

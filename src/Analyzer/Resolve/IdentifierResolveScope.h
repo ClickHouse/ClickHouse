@@ -128,7 +128,7 @@ constexpr auto PROJECTION_NAME_PLACEHOLDER = "__projection_name_placeholder";
 struct IdentifierResolveScope
 {
     /// Construct identifier resolve scope using scope node, and parent scope
-    IdentifierResolveScope(QueryTreeNodePtr scope_node_, IdentifierResolveScope * parent_scope_, bool is_query_);
+    IdentifierResolveScope(QueryTreeNodePtr scope_node_, IdentifierResolveScope * parent_scope_);
 
     QueryTreeNodePtr scope_node;
 
@@ -187,8 +187,6 @@ struct IdentifierResolveScope
     bool group_by_use_nulls = false;
     /// Join retutns NULLs instead of default values
     bool join_use_nulls = false;
-
-    bool is_query;
 
     /// JOINs count
     size_t joins_count = 0;
