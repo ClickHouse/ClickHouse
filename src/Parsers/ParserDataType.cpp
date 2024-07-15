@@ -70,20 +70,32 @@ private:
             DynamicArgumentsParser parser;
             return parser.parse(pos, node, expected);
         }
-
-        ParserNestedTable nested_parser;
-        ParserDataType data_type_parser;
-        ParserAllCollectionsOfLiterals literal_parser(false);
-
-        const char * operators[] = {"=", "equals", nullptr};
-        ParserLeftAssociativeBinaryOperatorList enum_parser(operators, std::make_unique<ParserLiteral>());
-
-        if (pos->type == TokenType::BareWord && std::string_view(pos->begin, pos->size()) == "Nested")
+        else if (type_name == "Nested")
+        {
+            ParserNestedTable nested_parser;
             return nested_parser.parse(pos, node, expected);
+        }
+        else if (type_name == "AggregateFunction")
+        {
+            ParserFunction function_parser;
+            ParserIdentifier identifier_parser;
+            ParserAllCollectionsOfLiterals literal_parser(false);
+            return literal_parser.parse(pos, node, expected)
+                || identifier_parser.parse(pos, node, expected)
+                || function_parser.parse(pos, node, expected);
+        }
+        else
+        {
+            ParserDataType data_type_parser;
+            ParserAllCollectionsOfLiterals literal_parser(false);
 
-        return enum_parser.parse(pos, node, expected)
-            || literal_parser.parse(pos, node, expected)
-            || data_type_parser.parse(pos, node, expected);
+            const char * operators[] = {"=", "equals", nullptr};
+            ParserLeftAssociativeBinaryOperatorList enum_parser(operators, std::make_unique<ParserLiteral>());
+
+            return enum_parser.parse(pos, node, expected)
+                || literal_parser.parse(pos, node, expected)
+                || data_type_parser.parse(pos, node, expected);
+        }
     }
 
     std::string_view type_name;
