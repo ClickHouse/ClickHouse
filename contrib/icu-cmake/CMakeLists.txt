@@ -4,7 +4,7 @@ else ()
     option(ENABLE_ICU "Enable ICU" 0)
 endif ()
 
-# Temporarily disabled s390x because the ICU build links a blob (icudt71b_dat.S) and our friends from IBM did not explain how they re-generated
+# Temporarily disabled s390x because the ICU build links a blob (icudt71b_dat.S) and our friends from IBM did not explain how they generated
 # the blob on s390x: https://github.com/ClickHouse/icudata/pull/2#issuecomment-2226957255
 if (NOT ENABLE_ICU OR ARCH_S390X)
     message(STATUS "Not using ICU")
@@ -462,9 +462,9 @@ file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/empty.cpp" CONTENT " ")
 enable_language(ASM)
 
 if (ARCH_S390X)
-    set(ICUDATA_SOURCE_FILE "${ICUDATA_SOURCE_DIR}/icudt71b_dat.S" )
+    set(ICUDATA_SOURCE_FILE "${ICUDATA_SOURCE_DIR}/icudt75b_dat.S" )
 else()
-    set(ICUDATA_SOURCE_FILE "${ICUDATA_SOURCE_DIR}/icudt71l_dat.S" )
+    set(ICUDATA_SOURCE_FILE "${ICUDATA_SOURCE_DIR}/icudt75l_dat.S" )
 endif()
 
 set(ICUDATA_SOURCES
