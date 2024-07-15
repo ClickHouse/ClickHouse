@@ -58,6 +58,7 @@
 #include <Access/EnabledRowPolicies.h>
 #include <Access/QuotaUsage.h>
 #include <Access/User.h>
+#include <Access/Role.h>
 #include <Access/SettingsProfile.h>
 #include <Access/SettingsProfilesInfo.h>
 #include <Access/SettingsConstraintsAndProfileIDs.h>
@@ -190,6 +191,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
     extern const int CLUSTER_DOESNT_EXIST;
+    extern const int SET_NON_GRANTED_ROLE;
 }
 
 #define SHUTDOWN(log, desc, ptr, method) do             \
@@ -1303,7 +1305,7 @@ ConfigurationPtr Context::getUsersConfig()
     return shared->users_config;
 }
 
-void Context::setUser(const UUID & user_id_, const std::optional<const std::vector<UUID>> & current_roles_)
+void Context::setUser(const UUID & user_id_)
 {
     /// Prepare lists of user's profiles, constraints, settings, roles.
     /// NOTE: AccessControl::read<User>() and other AccessControl's functions may require some IO work,
@@ -1312,8 +1314,8 @@ void Context::setUser(const UUID & user_id_, const std::optional<const std::vect
     auto & access_control = getAccessControl();
     auto user = access_control.read<User>(user_id_);
 
-    auto new_current_roles = current_roles_ ? user->granted_roles.findGranted(*current_roles_) : user->granted_roles.findGranted(user->default_roles);
-    auto enabled_roles = access_control.getEnabledRolesInfo(new_current_roles, {});
+    auto default_roles = user->granted_roles.findGranted(user->default_roles);
+    auto enabled_roles = access_control.getEnabledRolesInfo(default_roles, {});
     auto enabled_profiles = access_control.getEnabledSettingsInfo(user_id_, user->settings, enabled_roles->enabled_roles, enabled_roles->settings_from_enabled_roles);
     const auto & database = user->default_database;
 
@@ -1327,7 +1329,7 @@ void Context::setUser(const UUID & user_id_, const std::optional<const std::vect
     /// so we shouldn't check constraints here.
     setCurrentProfilesWithLock(*enabled_profiles, /* check_constraints= */ false, lock);
 
-    setCurrentRolesWithLock(new_current_roles, lock);
+    setCurrentRolesWithLock(default_roles, lock);
 
     /// It's optional to specify the DEFAULT DATABASE in the user's definition.
     if (!database.empty())
@@ -1362,25 +1364,66 @@ std::optional<UUID> Context::getUserID() const
     return user_id;
 }
 
-void Context::setCurrentRolesWithLock(const std::vector<UUID> & current_roles_, const std::lock_guard<ContextSharedMutex> &)
+void Context::setCurrentRolesWithLock(const std::vector<UUID> & new_current_roles, const std::lock_guard<ContextSharedMutex> &)
 {
-    if (current_roles_.empty())
+    if (new_current_roles.empty())
         current_roles = nullptr;
     else
-        current_roles = std::make_shared<std::vector<UUID>>(current_roles_);
+        current_roles = std::make_shared<std::vector<UUID>>(new_current_roles);
     need_recalculate_access = true;
 }
 
-void Context::setCurrentRoles(const std::vector<UUID> & current_roles_)
+void Context::setCurrentRolesImpl(const std::vector<UUID> & new_current_roles, bool throw_if_not_granted, bool skip_if_not_granted, const std::shared_ptr<const User> & user)
 {
-    std::lock_guard lock(mutex);
-    setCurrentRolesWithLock(current_roles_, lock);
+    if (skip_if_not_granted)
+    {
+        auto filtered_role_ids = user->granted_roles.findGranted(new_current_roles);
+        std::lock_guard lock{mutex};
+        setCurrentRolesWithLock(filtered_role_ids, lock);
+        return;
+    }
+    if (throw_if_not_granted)
+    {
+        for (const auto & role_id : new_current_roles)
+        {
+            if (!user->granted_roles.isGranted(role_id))
+            {
+                auto role_name = getAccessControl().tryReadName(role_id);
+                throw Exception(ErrorCodes::SET_NON_GRANTED_ROLE, "Role {} should be granted to set as a current", role_name.value_or(toString(role_id)));
+            }
+        }
+    }
+    std::lock_guard lock2{mutex};
+    setCurrentRolesWithLock(new_current_roles, lock2);
+}
+
+void Context::setCurrentRoles(const std::vector<UUID> & new_current_roles, bool check_grants)
+{
+    setCurrentRolesImpl(new_current_roles, /* throw_if_not_granted= */ check_grants, /* skip_if_not_granted= */ !check_grants, getUser());
+}
+
+void Context::setCurrentRoles(const RolesOrUsersSet & new_current_roles, bool check_grants)
+{
+    if (new_current_roles.all)
+    {
+        auto user = getUser();
+        setCurrentRolesImpl(user->granted_roles.findGranted(new_current_roles), /* throw_if_not_granted= */ false, /* skip_if_not_granted= */ false, user);
+    }
+    else
+    {
+        setCurrentRoles(new_current_roles.getMatchingIDs(), check_grants);
+    }
+}
+
+void Context::setCurrentRoles(const Strings & new_current_roles, bool check_grants)
+{
+    setCurrentRoles(getAccessControl().getIDs<Role>(new_current_roles), check_grants);
 }
 
 void Context::setCurrentRolesDefault()
 {
     auto user = getUser();
-    setCurrentRoles(user->granted_roles.findGranted(user->default_roles));
+    setCurrentRolesImpl(user->granted_roles.findGranted(user->default_roles), /* throw_if_not_granted= */ false, /* skip_if_not_granted= */ false, user);
 }
 
 std::vector<UUID> Context::getCurrentRoles() const
@@ -2236,6 +2279,12 @@ void Context::setSetting(std::string_view name, const Field & value)
     std::lock_guard lock(mutex);
     setSettingWithLock(name, value, lock);
     contextSanityClampSettingsWithLock(*this, settings, lock);
+}
+
+void Context::setServerSetting(std::string_view name, const Field & value)
+{
+    std::lock_guard lock(mutex);
+    shared->server_settings.set(name, value);
 }
 
 void Context::applySettingChange(const SettingChange & change)
@@ -4002,7 +4051,6 @@ std::shared_ptr<QueryThreadLog> Context::getQueryThreadLog() const
 std::shared_ptr<QueryViewsLog> Context::getQueryViewsLog() const
 {
     SharedLockGuard lock(shared->mutex);
-
     if (!shared->system_logs)
         return {};
 
@@ -5469,10 +5517,37 @@ bool Context::canUseParallelReplicasOnFollower() const
     return canUseTaskBasedParallelReplicas() && getClientInfo().collaborate_with_initiator;
 }
 
-bool Context::canUseParallelReplicasCustomKey(const Cluster & cluster) const
+bool Context::canUseParallelReplicasCustomKey() const
 {
-    return settings.max_parallel_replicas > 1 && getParallelReplicasMode() == Context::ParallelReplicasMode::CUSTOM_KEY
-        && cluster.getShardCount() == 1 && cluster.getShardsInfo()[0].getAllNodeCount() > 1;
+    return settings.max_parallel_replicas > 1 && getParallelReplicasMode() == Context::ParallelReplicasMode::CUSTOM_KEY;
+}
+
+bool Context::canUseParallelReplicasCustomKeyForCluster(const Cluster & cluster) const
+{
+    return canUseParallelReplicasCustomKey() && cluster.getShardCount() == 1 && cluster.getShardsInfo()[0].getAllNodeCount() > 1;
+}
+
+bool Context::canUseOffsetParallelReplicas() const
+{
+    return offset_parallel_replicas_enabled && settings.max_parallel_replicas > 1
+        && getParallelReplicasMode() != Context::ParallelReplicasMode::READ_TASKS;
+}
+
+void Context::disableOffsetParallelReplicas()
+{
+    offset_parallel_replicas_enabled = false;
+}
+
+ClusterPtr Context::getClusterForParallelReplicas() const
+{
+    /// check cluster for parallel replicas
+    if (settings.cluster_for_parallel_replicas.value.empty())
+        throw Exception(
+            ErrorCodes::CLUSTER_DOESNT_EXIST,
+            "Reading in parallel from replicas is enabled but cluster to execute query is not provided. Please set "
+            "'cluster_for_parallel_replicas' setting");
+
+    return getCluster(settings.cluster_for_parallel_replicas);
 }
 
 void Context::setPreparedSetsCache(const PreparedSetsCachePtr & cache)

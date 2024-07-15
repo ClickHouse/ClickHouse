@@ -1188,7 +1188,7 @@ bool TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
         }
     }
 
-    /// Check for dynamic subcolumns in unknown required columns.
+    /// Check for dynamic subcolums in unknown required columns.
     if (!unknown_required_source_columns.empty())
     {
         for (const NameAndTypePair & pair : source_columns_ordinary)
