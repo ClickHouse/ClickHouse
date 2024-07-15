@@ -12,10 +12,10 @@ node = cluster.add_instance(
     main_configs=[
         "configs/async_metrics_no.xml",
     ],
-    env_variables={
-        "MALLOC_CONF": "dirty_decay_ms:0"
-    }
+    mem_limit="4g",
+    env_variables={"MALLOC_CONF": "dirty_decay_ms:0"},
 )
+
 
 @pytest.fixture(scope="module", autouse=True)
 def start_cluster():
@@ -24,6 +24,7 @@ def start_cluster():
         yield cluster
     finally:
         cluster.shutdown()
+
 
 def test_multiple_queries():
     p = Pool(15)
@@ -37,16 +38,14 @@ def test_multiple_queries():
 
     tasks = []
     for i in range(30):
-        tasks.append(p.apply_async(run_query, (node, )))
+        tasks.append(p.apply_async(run_query, (node,)))
         time.sleep(i * 0.1)
-
 
     for task in tasks:
         try:
             task.get()
         except Exception as ex:
             print("Exception", ex)
-
 
     # test that we didn't kill the server
     node.query("SELECT 1")
