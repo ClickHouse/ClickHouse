@@ -710,6 +710,7 @@ class CiCache:
         """
         remove_from_to_do = []
         required_builds = []
+        has_test_jobs_to_skip = False
         for job_name, job_config in self.jobs_to_do.items():
             if CI.is_test_job(job_name) and job_name != CI.JobNames.BUILD_CHECK:
                 if job_config.reference_job_name:
@@ -723,20 +724,20 @@ class CiCache:
                     job_config=reference_config,
                 ):
                     remove_from_to_do.append(job_name)
+                    has_test_jobs_to_skip = True
                 else:
                     required_builds += (
                         job_config.required_builds if job_config.required_builds else []
                     )
+        if has_test_jobs_to_skip:
+            # If there are tests to skip, it means build digest has not been changed.
+            # No need to test builds. Let's keep all builds required for test jobs and skip the others
+            for job_name, job_config in self.jobs_to_do.items():
+                if CI.is_build_job(job_name):
+                    if job_name not in required_builds:
+                        remove_from_to_do.append(job_name)
 
-        has_builds_to_do = False
-        for job_name, job_config in self.jobs_to_do.items():
-            if CI.is_build_job(job_name):
-                if job_name not in required_builds:
-                    remove_from_to_do.append(job_name)
-                else:
-                    has_builds_to_do = True
-
-        if not has_builds_to_do:
+        if not required_builds:
             remove_from_to_do.append(CI.JobNames.BUILD_CHECK)
 
         for job in remove_from_to_do:
