@@ -284,8 +284,12 @@ class JobConfig:
 
     # GH Runner type (tag from @Runners)
     runner_type: str
-    # used for config validation in ci unittests
+    # used in ci unittests for config validation
     job_name_keyword: str = ""
+    # name of another job that (if provided) should be used to check if job was affected by the change or not (in CiCache.has_evidence(job=@reference_job_name) call)
+    # for example: "Stateless flaky check" can use reference_job_name="Stateless tests (release)". "Stateless flaky check" does not run on master
+    #   and there cannot be an evidence for it, so instead "Stateless tests (release)" job name can be used to check the evidence
+    reference_job_name: str = ""
     # builds required for the job (applicable for test jobs)
     required_builds: Optional[List[str]] = None
     # build config for the build job (applicable for builds)
@@ -326,6 +330,9 @@ class JobConfig:
     def get_required_build(self) -> str:
         assert self.required_builds
         return self.required_builds[0]
+
+    def has_digest(self) -> bool:
+        return self.digest != DigestConfig()
 
 
 class CommonJobConfigs:
@@ -378,7 +385,7 @@ class CommonJobConfigs:
         ),
         run_command='functional_test_check.py "$CHECK_NAME"',
         runner_type=Runners.FUNC_TESTER,
-        timeout=10800,
+        timeout=7200,
     )
     STATEFUL_TEST = JobConfig(
         job_name_keyword="stateful",
@@ -440,7 +447,12 @@ class CommonJobConfigs:
     )
     ASTFUZZER_TEST = JobConfig(
         job_name_keyword="ast",
-        digest=DigestConfig(),
+        digest=DigestConfig(
+            include_paths=[
+                "./tests/ci/ast_fuzzer_check.py",
+            ],
+            docker=["clickhouse/fuzzer"],
+        ),
         run_command="ast_fuzzer_check.py",
         run_always=True,
         runner_type=Runners.FUZZER_UNIT_TESTER,

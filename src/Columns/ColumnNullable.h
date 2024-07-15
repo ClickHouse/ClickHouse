@@ -69,11 +69,21 @@ public:
     char * serializeValueIntoMemory(size_t n, char * memory) const override;
     const char * deserializeAndInsertFromArena(const char * pos) override;
     const char * skipSerializedInArena(const char * pos) const override;
+#if !defined(ABORT_ON_LOGICAL_ERROR)
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
+#else
+    void doInsertRangeFrom(const IColumn & src, size_t start, size_t length) override;
+#endif
     void insert(const Field & x) override;
     bool tryInsert(const Field & x) override;
+
+#if !defined(ABORT_ON_LOGICAL_ERROR)
     void insertFrom(const IColumn & src, size_t n) override;
     void insertManyFrom(const IColumn & src, size_t position, size_t length) override;
+#else
+    void doInsertFrom(const IColumn & src, size_t n) override;
+    void doInsertManyFrom(const IColumn & src, size_t position, size_t length) override;
+#endif
 
     void insertFromNotNullable(const IColumn & src, size_t n);
     void insertRangeFromNotNullable(const IColumn & src, size_t start, size_t length);
@@ -90,7 +100,11 @@ public:
     void expand(const Filter & mask, bool inverted) override;
     ColumnPtr permute(const Permutation & perm, size_t limit) const override;
     ColumnPtr index(const IColumn & indexes, size_t limit) const override;
+#if !defined(ABORT_ON_LOGICAL_ERROR)
     int compareAt(size_t n, size_t m, const IColumn & rhs_, int null_direction_hint) const override;
+#else
+    int doCompareAt(size_t n, size_t m, const IColumn & rhs_, int null_direction_hint) const override;
+#endif
 
 #if USE_EMBEDDED_COMPILER
 

@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 
 import unittest
+import random
+
 from ci_config import CI
 import ci as CIPY
 from ci_settings import CiSettings
@@ -56,6 +58,18 @@ class TestCIConfig(unittest.TestCase):
                     in normalize_string(job),
                     f"Job [{job}] apparently uses wrong common config with job keyword [{CI.JOB_CONFIGS[job].job_name_keyword}]",
                 )
+
+    def test_job_config_has_proper_values(self):
+        for job in CI.JobNames:
+            if CI.JOB_CONFIGS[job].reference_job_name:
+                reference_job_config = CI.JOB_CONFIGS[
+                    CI.JOB_CONFIGS[job].reference_job_name
+                ]
+                # reference job must run in all workflows and has digest
+                self.assertTrue(reference_job_config.pr_only == False)
+                self.assertTrue(reference_job_config.release_only == False)
+                self.assertTrue(reference_job_config.run_always == False)
+                self.assertTrue(reference_job_config.digest != CI.DigestConfig())
 
     def test_required_checks(self):
         for job in CI.REQUIRED_CHECKS:
@@ -269,6 +283,7 @@ class TestCIConfig(unittest.TestCase):
         ci_cache = CIPY._configure_jobs(
             S3Helper(), pr_info, settings, skip_jobs=False, dry_run=True
         )
+        ci_cache.filter_out_not_affected_jobs()
         actual_jobs_to_do = list(ci_cache.jobs_to_do)
         expected_jobs_to_do = []
         for set_ in settings.ci_sets:
@@ -417,7 +432,7 @@ class TestCIConfig(unittest.TestCase):
         assert not ci_cache.jobs_to_skip
         assert not ci_cache.jobs_to_wait
 
-        # pretend there are pending jobs that we neet to wait
+        # pretend there are pending jobs that we need to wait
         ci_cache.jobs_to_wait = dict(ci_cache.jobs_to_do)
         for job, config in ci_cache.jobs_to_wait.items():
             assert not config.pending_batches
@@ -489,3 +504,76 @@ class TestCIConfig(unittest.TestCase):
         self.assertCountEqual(
             list(ci_cache.jobs_to_do) + ci_cache.jobs_to_skip, all_jobs_in_wf
         )
+
+    def test_ci_py_filters_not_affected_jobs_in_prs(self):
+        """
+        checks ci.py filters not affected jobs in PRs
+        """
+        settings = CiSettings()
+        settings.no_ci_cache = True
+        pr_info = PRInfo(github_event=_TEST_EVENT_JSON)
+        pr_info.event_type = EventType.PULL_REQUEST
+        pr_info.number = 123
+        assert pr_info.is_pr
+        ci_cache = CIPY._configure_jobs(
+            S3Helper(), pr_info, settings, skip_jobs=False, dry_run=True
+        )
+        self.assertTrue(not ci_cache.jobs_to_skip, "Must be no jobs in skip list")
+        assert not ci_cache.jobs_to_wait
+        assert not ci_cache.jobs_to_skip
+
+        MOCK_AFFECTED_JOBS = [
+            CI.JobNames.STATELESS_TEST_S3_DEBUG,
+            CI.JobNames.STRESS_TEST_TSAN,
+        ]
+        MOCK_REQUIRED_BUILDS = []
+
+        # pretend there are pending jobs that we need to wait
+        for job, job_config in ci_cache.jobs_to_do.items():
+            if job in MOCK_AFFECTED_JOBS:
+                MOCK_REQUIRED_BUILDS += job_config.required_builds
+            elif job not in MOCK_AFFECTED_JOBS:
+                ci_cache.jobs_to_wait[job] = job_config
+
+        for job, job_config in ci_cache.jobs_to_do.items():
+            if job_config.reference_job_name:
+                # jobs with reference_job_name in config are not supposed to have records in the cache - continue
+                continue
+            if job in MOCK_AFFECTED_JOBS:
+                continue
+            for batch in range(job_config.num_batches):
+                # add any record into cache
+                record = CiCache.Record(
+                    record_type=random.choice(
+                        [
+                            CiCache.RecordType.FAILED,
+                            CiCache.RecordType.PENDING,
+                            CiCache.RecordType.SUCCESSFUL,
+                        ]
+                    ),
+                    job_name=job,
+                    job_digest=ci_cache.job_digests[job],
+                    batch=batch,
+                    num_batches=job_config.num_batches,
+                    release_branch=True,
+                )
+                for record_t_, records_ in ci_cache.records.items():
+                    if record_t_.value == CiCache.RecordType.FAILED.value:
+                        records_[record.to_str_key()] = record
+
+        ci_cache.filter_out_not_affected_jobs()
+        expected_to_do = (
+            [
+                CI.JobNames.BUILD_CHECK,
+            ]
+            + MOCK_AFFECTED_JOBS
+            + MOCK_REQUIRED_BUILDS
+        )
+        self.assertCountEqual(
+            list(ci_cache.jobs_to_wait),
+            [
+                CI.JobNames.BUILD_CHECK,
+            ]
+            + MOCK_REQUIRED_BUILDS,
+        )
+        self.assertCountEqual(list(ci_cache.jobs_to_do), expected_to_do)
