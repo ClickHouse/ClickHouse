@@ -7,7 +7,7 @@ cluster = ClickHouseCluster(__file__)
 
 writing_node = cluster.add_instance(
     "writing_node",
-    main_configs=["config/writing_node.xml", "config/storage_policy.xml", "config/cluster.xml"],
+    main_configs=["config/writing_node.xml", "config/cluster.xml"],
     with_zookeeper=True,
     with_minio=True,
     stay_alive=True,
@@ -15,7 +15,7 @@ writing_node = cluster.add_instance(
 )
 reading_node = cluster.add_instance(
     "reading_node",
-    main_configs=["config/reading_node.xml", "config/storage_policy.xml", "config/cluster.xml"],
+    main_configs=["config/reading_node.xml", "config/cluster.xml"],
     with_zookeeper=True,
     with_minio=True,
     stay_alive=True,
@@ -35,7 +35,7 @@ def started_cluster():
 
 
 def test_disable_insertion_and_mutation(started_cluster):
-    writing_node.query("""CREATE TABLE my_table on cluster default (key UInt64, value String) ENGINE=ReplicatedMergeTree('/clickhouse/tables/{shard}/default.my_table', '{replica}') ORDER BY key partition by (key % 5) SETTINGS storage_policy='s3_with_keeper' """)
+    writing_node.query("""CREATE TABLE my_table on cluster default (key UInt64, value String) ENGINE=ReplicatedMergeTree('/clickhouse/tables/{shard}/default.my_table', '{replica}') ORDER BY key partition by (key % 5) """)
 
     assert (
         "QUERY_IS_PROHIBITED"
