@@ -1,3 +1,4 @@
+#include <Core/Settings.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -8,6 +9,7 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Functions/FunctionsLogical.h>
 #include <Functions/IFunctionAdaptors.h>
+
 namespace DB
 {
 

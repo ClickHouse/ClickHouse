@@ -5,6 +5,7 @@
 #include <Access/EnabledQuota.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Columns/ColumnNullable.h>
+#include <Core/Settings.h>
 #include <Processors/Transforms/buildPushingToViewsChain.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/DatabaseCatalog.h>

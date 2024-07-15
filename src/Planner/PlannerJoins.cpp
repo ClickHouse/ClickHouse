@@ -29,7 +29,7 @@
 
 #include <Dictionaries/IDictionary.h>
 #include <Interpreters/IKeyValueEntity.h>
-#include <Interpreters/HashJoin.h>
+#include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/MergeJoin.h>
 #include <Interpreters/FullSortingMergeJoin.h>
 #include <Interpreters/ConcurrentHashJoin.h>
@@ -42,6 +42,9 @@
 #include <Planner/PlannerActionsVisitor.h>
 #include <Planner/PlannerContext.h>
 #include <Planner/Utils.h>
+
+#include <Core/Settings.h>
+#include <Core/ServerSettings.h>
 
 namespace DB
 {
@@ -528,7 +531,7 @@ JoinClausesAndActions buildJoinClausesAndActions(
         size_t join_clause_key_nodes_size = join_clause.getLeftKeyNodes().size();
 
         if (join_clause_key_nodes_size == 0)
-            throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "JOIN {} cannot get JOIN keys",
+            throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "Cannot determine join keys in {}",
                 join_node.formatASTForErrorMessage());
 
         for (size_t i = 0; i < join_clause_key_nodes_size; ++i)
@@ -768,9 +771,7 @@ std::shared_ptr<DirectKeyValueJoin> tryDirectJoin(const std::shared_ptr<TableJoi
 
     return std::make_shared<DirectKeyValueJoin>(table_join, right_table_expression_header, storage, right_table_expression_header_with_storage_column_names);
 }
-
 }
-
 
 static std::shared_ptr<IJoin> tryCreateJoin(JoinAlgorithm algorithm,
     std::shared_ptr<TableJoin> & table_join,
@@ -802,13 +803,20 @@ static std::shared_ptr<IJoin> tryCreateJoin(JoinAlgorithm algorithm,
         algorithm == JoinAlgorithm::PARALLEL_HASH ||
         algorithm == JoinAlgorithm::DEFAULT)
     {
+        auto query_context = planner_context->getQueryContext();
         if (table_join->allowParallelHashJoin())
         {
-            auto query_context = planner_context->getQueryContext();
-            return std::make_shared<ConcurrentHashJoin>(query_context, table_join, query_context->getSettings().max_threads, right_table_expression_header);
+            const auto & settings = query_context->getSettingsRef();
+            StatsCollectingParams params{
+                calculateCacheKey(table_join, right_table_expression),
+                settings.collect_hash_table_stats_during_joins,
+                query_context->getServerSettings().max_entries_for_hash_table_stats,
+                settings.max_size_to_preallocate_for_joins};
+            return std::make_shared<ConcurrentHashJoin>(
+                query_context, table_join, query_context->getSettingsRef().max_threads, right_table_expression_header, params);
         }
 
-        return std::make_shared<HashJoin>(table_join, right_table_expression_header);
+        return std::make_shared<HashJoin>(table_join, right_table_expression_header, query_context->getSettingsRef().join_any_take_last_row);
     }
 
     if (algorithm == JoinAlgorithm::FULL_SORTING_MERGE)

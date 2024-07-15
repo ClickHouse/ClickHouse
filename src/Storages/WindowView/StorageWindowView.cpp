@@ -48,6 +48,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
+#include <Core/Settings.h>
 #include <boost/algorithm/string/replace.hpp>
 
 #include <Storages/LiveView/StorageBlocks.h>
@@ -1068,9 +1069,10 @@ void StorageWindowView::threadFuncFireProc()
     if (max_watermark >= timestamp_now)
         clean_cache_task->schedule();
 
+    UInt64 next_fire_ms = static_cast<UInt64>(next_fire_signal) * 1000;
     UInt64 timestamp_ms = static_cast<UInt64>(Poco::Timestamp().epochMicroseconds()) / 1000;
     if (!shutdown_called)
-        fire_task->scheduleAfter(std::max(UInt64(0), static_cast<UInt64>(next_fire_signal) * 1000 - timestamp_ms));
+        fire_task->scheduleAfter(next_fire_ms - std::min(next_fire_ms, timestamp_ms));
 }
 
 void StorageWindowView::threadFuncFireEvent()

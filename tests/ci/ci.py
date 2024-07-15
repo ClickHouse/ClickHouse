@@ -6,6 +6,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -15,7 +16,7 @@ import upload_result_helper
 from build_check import get_release_or_pr
 from ci_config import CI
 from ci_metadata import CiMetadata
-from ci_utils import GHActions, normalize_string
+from ci_utils import GHActions, normalize_string, Utils
 from clickhouse_helper import (
     CiLogsCredentials,
     ClickHouseHelper,
@@ -53,6 +54,7 @@ from stopwatch import Stopwatch
 from tee_popen import TeePopen
 from ci_cache import CiCache
 from ci_settings import CiSettings
+from ci_buddy import CIBuddy
 from version_helper import get_version_from_repo
 
 # pylint: disable=too-many-lines
@@ -262,6 +264,8 @@ def check_missing_images_on_dockerhub(
 
 
 def _pre_action(s3, indata, pr_info):
+    print("Clear dmesg")
+    Utils.clear_dmesg()
     CommitStatusData.cleanup()
     JobReport.cleanup()
     BuildResult.cleanup()
@@ -322,8 +326,8 @@ def _mark_success_action(
         # do nothing, exit without failure
         print(f"ERROR: no status file for job [{job}]")
 
-    if job_config.run_always or job_config.run_by_label:
-        print(f"Job [{job}] runs always or by label in CI - do not cache")
+    if job_config.run_by_label or not job_config.has_digest():
+        print(f"Job [{job}] has no digest or run by label in CI - do not cache")
     else:
         if pr_info.is_master:
             pass
@@ -547,7 +551,17 @@ def _update_gh_statuses_action(indata: Dict, s3: S3Helper) -> None:
             except Exception as e:
                 raise e
     print("Going to update overall CI report")
-    set_status_comment(commit, pr_info)
+    for retry in range(2):
+        try:
+            set_status_comment(commit, pr_info)
+            break
+        except Exception as e:
+            print(
+                f"WARNING: Failed to update CI Running status, attempt [{retry + 1}], exception [{e}]"
+            )
+            time.sleep(1)
+    else:
+        print("ERROR: All retry attempts failed.")
     print("... CI report update - done")
 
 
@@ -992,7 +1006,11 @@ def main() -> int:
             ci_settings,
             args.skip_jobs,
         )
+
         ci_cache.print_status()
+        if IS_CI and pr_info.is_pr and not ci_settings.no_ci_cache:
+            ci_cache.filter_out_not_affected_jobs()
+            ci_cache.print_status()
 
         if IS_CI and not pr_info.is_merge_queue:
             # wait for pending jobs to be finished, await_jobs is a long blocking call
@@ -1028,6 +1046,7 @@ def main() -> int:
     elif args.pre:
         assert indata, "Run config must be provided via --infile"
         _pre_action(s3, indata, pr_info)
+        JobReport.create_pre_report().dump()
 
     ### RUN action: start
     elif args.run:
@@ -1079,6 +1098,16 @@ def main() -> int:
                     print(status)
                     print("::endgroup::")
                     previous_status = status.state
+                    print("Create dummy job report with job_skipped flag")
+                    JobReport(
+                        status=status.state,
+                        description="",
+                        test_results=[],
+                        start_time="",
+                        duration=0.0,
+                        additional_files=[],
+                        job_skipped=True,
+                    ).dump()
 
             # ci cache check
             if not previous_status and not ci_settings.no_ci_cache:
@@ -1114,12 +1143,22 @@ def main() -> int:
                 exit_code = 1
         else:
             exit_code = _run_test(check_name, args.run_command)
+            job_report = JobReport.load() if JobReport.exist() else None
+            assert (
+                job_report
+            ), "BUG. There must be job report either real report, or pre-report if job was killed"
+            job_report.exit_code = exit_code
+            job_report.dump()
     ### RUN action: end
 
     ### POST action: start
     elif args.post:
         job_report = JobReport.load() if JobReport.exist() else None
-        if job_report:
+        assert (
+            job_report
+        ), "BUG. There must be job report either real report, or pre-report if job was killed"
+        if not job_report.job_skipped and not job_report.pre_report:
+            # it's a real job report
             ch_helper = ClickHouseHelper()
             check_url = ""
 
@@ -1219,9 +1258,32 @@ def main() -> int:
                     indata["build"],
                     ch_helper,
                 )
-        else:
-            # no job report
-            print(f"No job report for {[args.job_name]} - do nothing")
+        elif job_report.job_skipped:
+            print(f"Skipped after rerun check {[args.job_name]} - do nothing")
+        elif job_report.job_skipped:
+            print(f"Job was skipped {[args.job_name]} - do nothing")
+        elif job_report.pre_report:
+            print(f"ERROR: Job was killed - generate evidence")
+            job_report.update_duration()
+            # Job was killed!
+            if Utils.is_killed_with_oom():
+                print("WARNING: OOM while job execution")
+                error = f"Out Of Memory, exit_code {job_report.exit_code}, after {job_report.duration}s"
+            else:
+                error = f"Unknown, exit_code {job_report.exit_code}, after {job_report.duration}s"
+            CIBuddy().post_error(error, job_name=_get_ext_check_name(args.job_name))
+            if CI.is_test_job(args.job_name):
+                gh = GitHub(get_best_robot_token(), per_page=100)
+                commit = get_commit(gh, pr_info.sha)
+                post_commit_status(
+                    commit,
+                    ERROR,
+                    "",
+                    "Error: " + error,
+                    _get_ext_check_name(args.job_name),
+                    pr_info,
+                    dump_to_file=True,
+                )
     ### POST action: end
 
     ### MARK SUCCESS action: start

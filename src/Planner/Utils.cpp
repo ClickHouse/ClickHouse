@@ -35,6 +35,8 @@
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/Passes/QueryAnalysisPass.h>
 
+#include <Core/Settings.h>
+
 #include <Planner/PlannerActionsVisitor.h>
 #include <Planner/CollectTableExpressionData.h>
 #include <Planner/CollectSets.h>

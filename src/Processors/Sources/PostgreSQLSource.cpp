@@ -120,7 +120,7 @@ Chunk PostgreSQLSource<T>::generate()
     MutableColumns columns = description.sample_block.cloneEmptyColumns();
     size_t num_rows = 0;
 
-    while (true)
+    while (!isCancelled())
     {
         const std::vector<pqxx::zview> * row{stream->read_row()};
 
@@ -191,6 +191,20 @@ PostgreSQLSource<T>::~PostgreSQLSource()
     {
         try
         {
+            if (stream)
+            {
+                /** Internally libpqxx::stream_from runs PostgreSQL copy query `COPY query TO STDOUT`.
+                  * During transaction abort we try to execute PostgreSQL `ROLLBACK` command and if
+                  * copy query is not cancelled, we wait until it finishes.
+                  */
+                tx->conn().cancel_query();
+
+                /** If stream is not closed, libpqxx::stream_from closes stream in destructor, but that way
+                  * exception is added into transaction pending error and we can potentially ignore exception message.
+                  */
+                stream->close();
+            }
+
             stream.reset();
             tx.reset();
         }

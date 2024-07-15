@@ -5,6 +5,7 @@
 #include <Columns/ColumnArray.h>
 #include <Common/typeid_cast.h>
 #include <Core/Field.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <IO/ReadHelpers.h>
@@ -230,7 +231,7 @@ MergeTreeIndexConditionAnnoy::MergeTreeIndexConditionAnnoy(
     ContextPtr context)
     : ann_condition(query, context)
     , distance_function(distance_function_)
-    , search_k(context->getSettings().annoy_index_search_k_nodes)
+    , search_k(context->getSettingsRef().annoy_index_search_k_nodes)
 {}
 
 bool MergeTreeIndexConditionAnnoy::mayBeTrueOnGranule(MergeTreeIndexGranulePtr /*idx_granule*/) const
