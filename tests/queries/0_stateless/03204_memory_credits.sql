@@ -1,2 +1,2 @@
 SYSTEM RELOAD CONFIG;
-SELECT ProfileEvents['MemoryCredits'] >= 0;
+SELECT value FROM system.events WHERE event = 'MemoryCredits' >= 0;
