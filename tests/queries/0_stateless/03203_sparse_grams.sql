@@ -9,3 +9,6 @@ SELECT sparseGrams('', 5);
 SELECT sparseGrams('cd', 5);
 SELECT sparseGrams('hello world', 5);
 SELECT sparseGrams('hello world hello world hello world hello world', 5);
+SELECT sparseGramsUTF8('', 5);
+SELECT sparseGramsUTF8('Клик', 5);
+SELECT sparseGramsUTF8('Клик клак не тормозит', 5);
