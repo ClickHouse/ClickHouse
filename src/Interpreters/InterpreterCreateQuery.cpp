@@ -1038,7 +1038,7 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
               create.storage->engine->name == "URL")
         {
             if (getContext()->getSettingsRef().restore_replace_external_engine_to_null)
-                setNullTableEngine(*create.storage)
+                setNullTableEngine(*create.storage);
         }
         return;
     }
