@@ -2,6 +2,7 @@
 
 #include <Storages/MergeTree/FutureMergedMutatedPart.h>
 #include <Storages/MutationCommands.h>
+#include <Core/SettingsEnums.h>
 
 namespace DB
 {

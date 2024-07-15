@@ -5,6 +5,7 @@
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/MutationCommands.h>
 #include <Common/TransactionID.h>
+#include <Core/SettingsEnums.h>
 
 
 namespace DB
