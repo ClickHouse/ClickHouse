@@ -32,7 +32,7 @@ void buildSetsForDAG(const ActionsDAGPtr & dag, const ContextPtr & context);
 bool isDeterministicInScopeOfQuery(const ActionsDAG::Node * node);
 
 /// Extract a part of predicate that can be evaluated using only columns from input_names.
-ActionsDAGPtr splitFilterDagForAllowedInputs(const ActionsDAG::Node * predicate, const Block * allowed_inputs);
+ActionsDAGPtr splitFilterDagForAllowedInputs(const ActionsDAG::Node * predicate, const Block * allowed_inputs, bool strict = false);
 
 /// Extract from the input stream a set of `name` column values
 template <typename T>
