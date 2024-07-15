@@ -151,6 +151,22 @@ UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest,
 
     const UInt32 items_count = source_size / sizeof(T);
 
+    static const short NO_PREVIOUS_VALUES = sizeof(T) * 16;
+    T stored_values[NO_PREVIOUS_VALUES];
+    for (int i = 0; i < NO_PREVIOUS_VALUES; i++)
+    {
+        stored_values[i] = 0;
+    }
+    static const short LOG_NO_PREVIOUS_VALUES = static_cast<short>(std::log2(NO_PREVIOUS_VALUES) / std::log2(2));
+    static const short THRESHOLD = 6 + LOG_NO_PREVIOUS_VALUES;
+    static const int ARRAY_SIZE = static_cast<int>(std::pow(2, THRESHOLD + 1));
+    int indices[ARRAY_SIZE];
+    for (int i = 0; i < ARRAY_SIZE; i++)
+    {
+        indices[i] = 0;
+    }
+    static const short setLsb = ARRAY_SIZE - 1;
+
     unalignedStoreLittleEndian<UInt32>(dest, items_count);
     dest += sizeof(items_count);
 
@@ -165,26 +181,12 @@ UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest,
 
         source += sizeof(prev_value);
         dest += sizeof(prev_value);
+        stored_values[0] = prev_value;
     }
 
     BitWriter writer(dest, dest_end - dest);
 
     static const auto DATA_BIT_LENGTH = getBitLengthOfLength(sizeof(T));
-    static const short NO_PREVIOUS_VALUES = sizeof(T) * 16;
-    T storedValues[NO_PREVIOUS_VALUES];
-    for (int i=0;i<NO_PREVIOUS_VALUES;i++)
-    {
-        storedValues[i] = 0;
-    }
-    static const short LOG_NO_PREVIOUS_VALUES = static_cast<short>(std::log2(NO_PREVIOUS_VALUES) / std::log2(2));
-    static const short THRESHOLD = 6 + LOG_NO_PREVIOUS_VALUES;
-    static const int ARRAY_SIZE = static_cast<int>(std::pow(2, THRESHOLD + 1));
-    int indices[ARRAY_SIZE];
-    for (int i=0;i<ARRAY_SIZE;i++)
-    {
-        indices[i] = 0;
-    }
-    static const short setLsb = ARRAY_SIZE - 1;
 
     int total = 0;
     int previous_index = 0;
@@ -202,7 +204,7 @@ UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest,
         int match_index = indices[match_key];
         if ((total - match_index) < NO_PREVIOUS_VALUES)
         {
-            T tempXor = curr_value ^ storedValues[match_index % NO_PREVIOUS_VALUES];
+            T tempXor = curr_value ^ stored_values[match_index % NO_PREVIOUS_VALUES];
             curr_xored_info = getBinaryValueInfo(tempXor);
             // if match is good enough, use it
             if (curr_xored_info.trailing_zero_bits > THRESHOLD)
@@ -214,7 +216,7 @@ UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest,
             else
             {
                 previous_index =  total % NO_PREVIOUS_VALUES;
-                xored_data = curr_value ^ storedValues[previous_index];
+                xored_data = curr_value ^ stored_values[previous_index];
                 curr_xored_info = getBinaryValueInfo(xored_data);
             }
         }
@@ -222,7 +224,7 @@ UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest,
         else
         {
             previous_index =  total % NO_PREVIOUS_VALUES;
-            xored_data = curr_value ^ storedValues[previous_index];
+            xored_data = curr_value ^ stored_values[previous_index];
             curr_xored_info = getBinaryValueInfo(xored_data);
         }
 
@@ -262,7 +264,7 @@ UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest,
         prev_xored_info = curr_xored_info;
         prev_value = curr_value;
         current_index = (current_index + 1) % NO_PREVIOUS_VALUES;
-        storedValues[current_index] = curr_value;
+        stored_values[current_index] = curr_value;
         total++;
         indices[match_key] = total;
     }
@@ -275,6 +277,15 @@ UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest,
 template <typename T>
 void decompressDataForType(const char * source, UInt32 source_size, char * dest, UInt32 dest_size)
 {
+    static const short NO_PREVIOUS_VALUES = sizeof(T) * 16;
+    static const short LOG_NO_PREVIOUS_VALUES = static_cast<short>(std::log2(NO_PREVIOUS_VALUES) / std::log2(2));
+    int current_index = 0;
+    T stored_values[NO_PREVIOUS_VALUES];
+    for (int i = 0; i < NO_PREVIOUS_VALUES; i++)
+    {
+        stored_values[i] = 0;
+    }
+
     const char * const source_end = source + source_size;
 
     if (source + sizeof(UInt32) > source_end)
@@ -298,21 +309,13 @@ void decompressDataForType(const char * source, UInt32 source_size, char * dest,
 
     source += sizeof(prev_value);
     dest += sizeof(prev_value);
+    stored_values[0] = prev_value;
 
     BitReader reader(source, source_size - sizeof(items_count) - sizeof(prev_value));
 
     BinaryValueInfo prev_xored_info{0, 0, 0};
 
     static const auto DATA_BIT_LENGTH = getBitLengthOfLength(sizeof(T));
-
-    static const short NO_PREVIOUS_VALUES = sizeof(T) * 16;
-    static const short LOG_NO_PREVIOUS_VALUES = static_cast<short>(std::log2(NO_PREVIOUS_VALUES) / std::log2(2));
-    int current_index = 0;
-    T storedValues[NO_PREVIOUS_VALUES];
-    for (int i=0;i<NO_PREVIOUS_VALUES;i++)
-    {
-        storedValues[i] = 0;
-    }
 
     // since data is tightly packed, up to 1 bit per value, and last byte is padded with zeroes,
     // we have to keep track of items to avoid reading more than there is.
@@ -342,12 +345,12 @@ void decompressDataForType(const char * source, UInt32 source_size, char * dest,
             // 0b01 prefix
             case 1:
                 match_index = reader.readBits(LOG_NO_PREVIOUS_VALUES);
-                prev_value = storedValues[match_index];
+                prev_value = stored_values[match_index];
                 curr_xored_info.leading_zero_bits = LeadingZero::reverseBinaryRepresentation[reader.readBits(LeadingZero::BIT_LENGTH)];
                 curr_xored_info.data_bits = reader.readBits(DATA_BIT_LENGTH);
                 if (curr_xored_info.data_bits == 0)
                 {
-                    curr_xored_info.data_bits = 64;
+                    curr_xored_info.data_bits = sizeof(T) * 8;
                 }
                 curr_xored_info.trailing_zero_bits = sizeof(T) * 8 - curr_xored_info.leading_zero_bits - curr_xored_info.data_bits;
                 xored_data = static_cast<T>(reader.readBits(curr_xored_info.data_bits));
@@ -357,16 +360,15 @@ void decompressDataForType(const char * source, UInt32 source_size, char * dest,
             // 0b00 prefix
             case 0:
                 match_index = reader.readBits(LOG_NO_PREVIOUS_VALUES);
-                prev_value = storedValues[match_index];
+                prev_value = stored_values[match_index];
                 curr_value = prev_value;
                 break;
         }
-
         unalignedStoreLittleEndian<T>(dest, curr_value);
         dest += sizeof(curr_value);
 
         current_index = (current_index + 1) % NO_PREVIOUS_VALUES;
-        storedValues[current_index] = curr_value;
+        stored_values[current_index] = curr_value;
         prev_xored_info = curr_xored_info;
         prev_value = curr_value;
     }
