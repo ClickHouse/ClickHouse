@@ -521,25 +521,15 @@ void PrettyBlockOutputFormat::writeHeaderWithPadding(
             0,
             static_cast<size_t>(std::ceil((max_widths[col_num] - 1) / 2.0)));
 
-        const UInt8* temp = reinterpret_cast<const UInt8 *>(col.name.data());
         const size_t back_width = static_cast<size_t>(std::floor((max_widths[col_num] - 1) / 2.0));
         size_t cur_back_width = 0;
         size_t pos = col.name.size()-1;
         while(cur_back_width < back_width)
         {
-            cur_back_width = UTF8::computeWidth(temp+pos, col.name.size()-pos, 0);
-            pos--;
+            cur_back_width = UTF8::computeWidth(reinterpret_cast<const UInt8 *>(col.name.data()+pos), col.name.size()-pos, 0);
+            --pos;
         }
-        visible_col_name = col.name.substr(0, front_bytes);
-        if (color)
-        {
-            visible_col_name += "\033[31;1m";
-            visible_col_name += ellipsis;
-            visible_col_name += "\033[0m";
-        }
-        else
-            visible_col_name += ellipsis;
-        visible_col_name += col.name.substr(pos+1);
+        visible_col_name = col.name.substr(0, front_bytes) + ellipsis + col.name.substr(pos+1);
         name_width = max_widths[col_num];
     }
     if (col.type->shouldAlignRightInPrettyFormats())
