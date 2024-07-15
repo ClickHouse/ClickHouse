@@ -117,6 +117,7 @@ namespace ProfileEvents
     extern const Event QueryMemoryLimitExceeded;
     extern const Event MemoryAllocatorPurge;
     extern const Event MemoryAllocatorPurgeTimeMicroseconds;
+    extern const Event MemoryCredits;
 }
 
 using namespace std::chrono_literals;
@@ -199,7 +200,6 @@ void MemoryTracker::debugLogBigAllocationWithoutCheck(Int64 size [[maybe_unused]
     if (size < 0)
         return;
 
-    constexpr Int64 threshold = 16 * 1024 * 1024;   /// The choice is arbitrary (maybe we should decrease it)
     if (size < threshold)
         return;
 
@@ -620,6 +620,9 @@ bool canEnqueueBackgroundTask()
 
 void MemoryTracker::updateMemoryCredits()
 {
+    static Stopwatch stopwatch;
+    static size_t previous_value = 0;
+
     size_t current_value = amount;
     if (current_value > previous_value && current_value - previous_value > threshold)
     {
