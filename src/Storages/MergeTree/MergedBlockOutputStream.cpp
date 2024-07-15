@@ -93,6 +93,7 @@ struct MergedBlockOutputStream::Finalizer::Impl
 void MergedBlockOutputStream::Finalizer::finish()
 {
     std::unique_ptr<Impl> to_finish = std::move(impl);
+    impl.reset();
     if (to_finish)
         to_finish->finish();
 }
@@ -130,7 +131,19 @@ MergedBlockOutputStream::Finalizer::Finalizer(Finalizer &&) noexcept = default;
 MergedBlockOutputStream::Finalizer & MergedBlockOutputStream::Finalizer::operator=(Finalizer &&) noexcept = default;
 MergedBlockOutputStream::Finalizer::Finalizer(std::unique_ptr<Impl> impl_) : impl(std::move(impl_)) {}
 
-MergedBlockOutputStream::Finalizer::~Finalizer() = default;
+MergedBlockOutputStream::Finalizer::~Finalizer()
+{
+    try
+    {
+        if (impl)
+            finish();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+}
+
 
 void MergedBlockOutputStream::finalizePart(
     const MergeTreeMutableDataPartPtr & new_part,
