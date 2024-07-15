@@ -71,7 +71,9 @@ class CIBuddy:
         line_ghr = f"   *Runner:*    `{instance_type}`, `{instance_id}`\n"
         line_job = f"   *Job:*          `{job_name}`\n"
         line_pr_ = f"   *PR:*           <https://github.com/{self.repo}/pull/{self.pr_number}|#{self.pr_number}>, <{self.commit_url}|{self.sha}>\n"
-        line_br_ = f"   *Branch:*    `{self.head_ref}`, <{self.commit_url}|{self.sha}>\n"
+        line_br_ = (
+            f"   *Branch:*    `{self.head_ref}`, <{self.commit_url}|{self.sha}>\n"
+        )
         message = line_err
         message += line_job
         if with_instance_info:
@@ -86,4 +88,4 @@ class CIBuddy:
 if __name__ == "__main__":
     # test
     buddy = CIBuddy(dry_run=True)
-    buddy.post_error("Out of memory")
+    buddy.post_error("TEst")

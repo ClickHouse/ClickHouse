@@ -1284,7 +1284,7 @@ def main() -> int:
                 print("WARNING: OOM while job execution")
                 error = f"Out Of Memory, exit_code {job_report.exit_code}, after {int(job_report.duration)}s"
             else:
-                error = f"Unknown, exit_code {job_report.exit_code}, after {job_report.duration}s"
+                error = f"Unknown, exit_code {job_report.exit_code}, after {int(job_report.duration)}s"
             CIBuddy().post_error(error, job_name=_get_ext_check_name(args.job_name))
             if CI.is_test_job(args.job_name):
                 gh = GitHub(get_best_robot_token(), per_page=100)
