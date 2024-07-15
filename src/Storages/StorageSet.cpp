@@ -1,3 +1,4 @@
+#include <Storages/SetSettings.h>
 #include <Storages/StorageSet.h>
 #include <Storages/StorageFactory.h>
 #include <Compression/CompressedReadBuffer.h>
