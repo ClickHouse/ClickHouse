@@ -66,7 +66,7 @@ public:
 REGISTER_FUNCTION(PartitionId)
 {
     factory.registerFunction<FunctionPartitionId>();
-    factory.registerAlias("partitionID", "partitionId", FunctionFactory::CaseInsensitive);
+    factory.registerAlias("partitionID", "partitionId");
 }
 
 }
