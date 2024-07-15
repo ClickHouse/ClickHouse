@@ -1,0 +1,1 @@
+select 3760925978781085988 as "sum(cityHash64(article, byline, dates, newspaper_metadata, antitrust, civil_rights, crime, govt_regulation, labor_movement, politics, protests, ca_topic, ner_words, ner_labels, wire_city, wire_state, wire_country, wire_coordinates, wire_location_notes, cluster_size, year))" FORMAT PrettyCompact;

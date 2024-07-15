@@ -1,0 +1,3 @@
+   ┌─sum(cityHash64(article, byline, dates, newspaper_m⋯inates, wire_location_notes, cluster_size, year))─┐
+1. │                                                                                  3760925978781085988 │ -- 3.76 quintillion
+   └──────────────────────────────────────────────────────────────────────────────────────────────────────┘
