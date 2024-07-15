@@ -7,6 +7,7 @@
 #include <Columns/ColumnSparse.h>
 #include <Common/logger_useful.h>
 #include <Storages/ColumnsDescription.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 
 namespace DB
 {

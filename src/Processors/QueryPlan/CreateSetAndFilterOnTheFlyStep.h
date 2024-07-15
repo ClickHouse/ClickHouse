@@ -1,4 +1,6 @@
 #pragma once
+
+#include <Core/Joins.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/Transforms/CreateSetAndFilterOnTheFlyTransform.h>
 
