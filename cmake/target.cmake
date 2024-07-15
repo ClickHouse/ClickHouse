@@ -84,5 +84,5 @@ if (CMAKE_CROSSCOMPILING)
         message (FATAL_ERROR "Trying to cross-compile to unsupported system: ${CMAKE_SYSTEM_NAME}!")
     endif ()
 
-    message (STATUS "Cross-compiling for target: ${CMAKE_CXX_COMPILE_TARGET}")
+    message (STATUS "Cross-compiling for target: ${CMAKE_CXX_COMPILER_TARGET}")
 endif ()

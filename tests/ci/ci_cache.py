@@ -5,7 +5,8 @@ from enum import Enum
 from pathlib import Path
 from typing import Dict, Optional, Any, Union, Sequence, List, Set
 
-from ci_config import JobNames, Build, CI_CONFIG, JobConfig
+from ci_config import CI
+
 from ci_utils import is_hex, GHActions
 from commit_status_helper import CommitStatusData
 from env_helper import (
@@ -41,7 +42,7 @@ class CiCache:
         release - for jobs being executed on the release branch including master branch (not a PR branch)
     """
 
-    _REQUIRED_DIGESTS = [JobNames.DOCS_CHECK, Build.PACKAGE_RELEASE]
+    _REQUIRED_DIGESTS = [CI.JobNames.DOCS_CHECK, CI.BuildNames.PACKAGE_RELEASE]
     _S3_CACHE_PREFIX = "CI_cache_v1"
     _CACHE_BUILD_REPORT_PREFIX = "build_report"
     _RECORD_FILE_EXTENSION = ".ci"
@@ -80,7 +81,7 @@ class CiCache:
 
         @classmethod
         def is_docs_job(cls, job_name: str) -> bool:
-            return job_name == JobNames.DOCS_CHECK
+            return job_name == CI.JobNames.DOCS_CHECK
 
         @classmethod
         def is_srcs_job(cls, job_name: str) -> bool:
@@ -105,8 +106,8 @@ class CiCache:
     ):
         self.enabled = cache_enabled
         self.jobs_to_skip = []  # type: List[str]
-        self.jobs_to_wait = {}  # type: Dict[str, JobConfig]
-        self.jobs_to_do = {}  # type: Dict[str, JobConfig]
+        self.jobs_to_wait = {}  # type: Dict[str, CI.JobConfig]
+        self.jobs_to_do = {}  # type: Dict[str, CI.JobConfig]
         self.s3 = s3
         self.job_digests = job_digests
         self.cache_s3_paths = {
@@ -127,9 +128,13 @@ class CiCache:
 
     @classmethod
     def calc_digests_and_create(
-        cls, s3: S3Helper, job_configs: Dict[str, JobConfig], cache_enabled: bool = True
+        cls,
+        s3: S3Helper,
+        job_configs: Dict[str, CI.JobConfig],
+        cache_enabled: bool = True,
+        dry_run: bool = False,
     ) -> "CiCache":
-        job_digester = JobDigester()
+        job_digester = JobDigester(dry_run=dry_run)
         digests = {}
 
         print("::group::Job Digests")
@@ -140,9 +145,7 @@ class CiCache:
 
         for job in cls._REQUIRED_DIGESTS:
             if job not in job_configs:
-                digest = job_digester.get_job_digest(
-                    CI_CONFIG.get_job_config(job).digest
-                )
+                digest = job_digester.get_job_digest(CI.get_job_config(job).digest)
                 digests[job] = digest
                 print(
                     f"    job [{job.rjust(50)}] required for CI Cache has digest [{digest}]"
@@ -154,10 +157,10 @@ class CiCache:
         self, job_digests: Dict[str, str], job_type: JobType
     ) -> str:
         if job_type == self.JobType.DOCS:
-            res = job_digests[JobNames.DOCS_CHECK]
+            res = job_digests[CI.JobNames.DOCS_CHECK]
         elif job_type == self.JobType.SRCS:
-            if Build.PACKAGE_RELEASE in job_digests:
-                res = job_digests[Build.PACKAGE_RELEASE]
+            if CI.BuildNames.PACKAGE_RELEASE in job_digests:
+                res = job_digests[CI.BuildNames.PACKAGE_RELEASE]
             else:
                 assert False, "BUG, no build job in digest' list"
         else:
@@ -517,6 +520,35 @@ class CiCache:
             self.RecordType.SUCCESSFUL, job, batch, num_batches, release_branch
         )
 
+    def has_evidence(self, job: str, job_config: CI.JobConfig) -> bool:
+        """
+        checks if the job has been seen in master/release CI
+        function is to be used to check if change did not affect the job
+        :param job_config:
+        :param job:
+        :return:
+        """
+        return (
+            self.is_successful(
+                job=job,
+                batch=0,
+                num_batches=job_config.num_batches,
+                release_branch=True,
+            )
+            or self.is_pending(
+                job=job,
+                batch=0,
+                num_batches=job_config.num_batches,
+                release_branch=True,
+            )
+            or self.is_failed(
+                job=job,
+                batch=0,
+                num_batches=job_config.num_batches,
+                release_branch=True,
+            )
+        )
+
     def is_failed(
         self, job: str, batch: int, num_batches: int, release_branch: bool
     ) -> bool:
@@ -606,7 +638,7 @@ class CiCache:
         pushes pending records for all jobs that supposed to be run
         """
         for job, job_config in self.jobs_to_do.items():
-            if job_config.run_always:
+            if not job_config.has_digest():
                 continue
             pending_state = PendingState(time.time(), run_url=GITHUB_RUN_URL)
             assert job_config.batches
@@ -648,7 +680,7 @@ class CiCache:
         report_path = Path(REPORT_PATH)
         report_path.mkdir(exist_ok=True, parents=True)
         path = (
-            self._get_record_s3_path(Build.PACKAGE_RELEASE)
+            self._get_record_s3_path(CI.BuildNames.PACKAGE_RELEASE)
             + self._CACHE_BUILD_REPORT_PREFIX
         )
         if file_prefix:
@@ -664,13 +696,59 @@ class CiCache:
     def upload_build_report(self, build_result: BuildResult) -> str:
         result_json_path = build_result.write_json(Path(TEMP_PATH))
         s3_path = (
-            self._get_record_s3_path(Build.PACKAGE_RELEASE) + result_json_path.name
+            self._get_record_s3_path(CI.BuildNames.PACKAGE_RELEASE)
+            + result_json_path.name
         )
         return self.s3.upload_file(
             bucket=S3_BUILDS_BUCKET, file_path=result_json_path, s3_path=s3_path
         )
 
-    def await_pending_jobs(self, is_release: bool) -> None:
+    def filter_out_not_affected_jobs(self):
+        """
+        Filter is to be applied in PRs to remove jobs that are not affected by the change
+        :return:
+        """
+        remove_from_to_do = []
+        required_builds = []
+        for job_name, job_config in self.jobs_to_do.items():
+            if CI.is_test_job(job_name) and job_name != CI.JobNames.BUILD_CHECK:
+                if job_config.reference_job_name:
+                    reference_name = job_config.reference_job_name
+                    reference_config = CI.JOB_CONFIGS[reference_name]
+                else:
+                    reference_name = job_name
+                    reference_config = job_config
+                if self.has_evidence(
+                    job=reference_name,
+                    job_config=reference_config,
+                ):
+                    remove_from_to_do.append(job_name)
+                else:
+                    required_builds += (
+                        job_config.required_builds if job_config.required_builds else []
+                    )
+
+        has_builds_to_do = False
+        for job_name, job_config in self.jobs_to_do.items():
+            if CI.is_build_job(job_name):
+                if job_name not in required_builds:
+                    remove_from_to_do.append(job_name)
+                else:
+                    has_builds_to_do = True
+
+        if not has_builds_to_do:
+            remove_from_to_do.append(CI.JobNames.BUILD_CHECK)
+
+        for job in remove_from_to_do:
+            print(f"Filter job [{job}] - not affected by the change")
+            if job in self.jobs_to_do:
+                del self.jobs_to_do[job]
+            if job in self.jobs_to_wait:
+                del self.jobs_to_wait[job]
+            if job in self.jobs_to_skip:
+                self.jobs_to_skip.remove(job)
+
+    def await_pending_jobs(self, is_release: bool, dry_run: bool = False) -> None:
         """
         await pending jobs to be finished
         @jobs_with_params - jobs to await. {JOB_NAME: {"batches": [BATCHES...], "num_batches": NUM_BATCHES}}
@@ -687,21 +765,19 @@ class CiCache:
         MAX_JOB_NUM_TO_WAIT = 3
         round_cnt = 0
 
-        # FIXME: temporary experiment: lets enable await for PR' workflows awaiting on build' jobs only
-        if not is_release:
-            MAX_ROUNDS_TO_WAIT = 1
-            remove_from_wait = []
+        def _has_build_job():
             for job in self.jobs_to_wait:
-                if job not in Build:
-                    remove_from_wait.append(job)
-            for job in remove_from_wait:
-                del self.jobs_to_wait[job]
+                if CI.is_build_job(job):
+                    return True
+            return False
+
+        if not is_release:
+            # in PRs we can wait only for builds, TIMEOUT*MAX_ROUNDS_TO_WAIT=100min is enough
+            MAX_ROUNDS_TO_WAIT = 2
 
         while (
-            len(self.jobs_to_wait) > MAX_JOB_NUM_TO_WAIT
-            and round_cnt < MAX_ROUNDS_TO_WAIT
-        ):
-            await_finished: Set[str] = set()
+            len(self.jobs_to_wait) > MAX_JOB_NUM_TO_WAIT or _has_build_job()
+        ) and round_cnt < MAX_ROUNDS_TO_WAIT:
             round_cnt += 1
             GHActions.print_in_group(
                 f"Wait pending jobs, round [{round_cnt}/{MAX_ROUNDS_TO_WAIT}]:",
@@ -713,11 +789,13 @@ class CiCache:
             expired_sec = 0
             start_at = int(time.time())
             while expired_sec < TIMEOUT and self.jobs_to_wait:
-                time.sleep(poll_interval_sec)
+                await_finished: Set[str] = set()
+                if not dry_run:
+                    time.sleep(poll_interval_sec)
                 self.update()
                 for job_name, job_config in self.jobs_to_wait.items():
                     num_batches = job_config.num_batches
-                    job_config = CI_CONFIG.get_job_config(job_name)
+                    job_config = CI.get_job_config(job_name)
                     assert job_config.pending_batches
                     assert job_config.batches
                     pending_batches = list(job_config.pending_batches)
@@ -741,12 +819,11 @@ class CiCache:
                                 f"Job [{job_name}_[{batch}/{num_batches}]] is not pending anymore"
                             )
                             job_config.batches.remove(batch)
-                            job_config.pending_batches.remove(batch)
                         else:
                             print(
                                 f"NOTE: Job [{job_name}:{batch}] finished failed - do not add to ready"
                             )
-                            job_config.pending_batches.remove(batch)
+                        job_config.pending_batches.remove(batch)
 
                         if not job_config.pending_batches:
                             await_finished.add(job_name)
@@ -754,23 +831,25 @@ class CiCache:
                 for job in await_finished:
                     self.jobs_to_skip.append(job)
                     del self.jobs_to_wait[job]
+                    del self.jobs_to_do[job]
 
-                expired_sec = int(time.time()) - start_at
-                print(
-                    f"...awaiting continues... seconds left [{TIMEOUT - expired_sec}]"
-                )
-            if await_finished:
-                GHActions.print_in_group(
-                    f"Finished jobs, round [{round_cnt}]: [{list(await_finished)}]",
-                    list(await_finished),
-                )
+                if not dry_run:
+                    expired_sec = int(time.time()) - start_at
+                    print(
+                        f"...awaiting continues... seconds left [{TIMEOUT - expired_sec}]"
+                    )
+                else:
+                    # make up for 2 iterations in dry_run
+                    expired_sec += int(TIMEOUT / 2) + 1
 
         GHActions.print_in_group(
             "Remaining jobs:",
             [list(self.jobs_to_wait)],
         )
 
-    def apply(self, job_configs: Dict[str, JobConfig], is_release: bool) -> "CiCache":
+    def apply(
+        self, job_configs: Dict[str, CI.JobConfig], is_release: bool
+    ) -> "CiCache":
         if not self.enabled:
             self.jobs_to_do = job_configs
             return self

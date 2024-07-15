@@ -503,7 +503,11 @@ bool ColumnVector<T>::tryInsert(const DB::Field & x)
 }
 
 template <typename T>
+#if !defined(ABORT_ON_LOGICAL_ERROR)
 void ColumnVector<T>::insertRangeFrom(const IColumn & src, size_t start, size_t length)
+#else
+void ColumnVector<T>::doInsertRangeFrom(const IColumn & src, size_t start, size_t length)
+#endif
 {
     const ColumnVector & src_vec = assert_cast<const ColumnVector &>(src);
 
