@@ -1,6 +1,6 @@
 #include "StorageExternalDistributed.h"
 
-
+#include <Core/Settings.h>
 #include <Storages/StorageFactory.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/InterpreterSelectQuery.h>
