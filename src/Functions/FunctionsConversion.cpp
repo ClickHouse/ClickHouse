@@ -17,6 +17,7 @@
 #include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnsCommon.h>
 #include <Core/AccurateComparison.h>
+#include <Core/Settings.h>
 #include <Core/Types.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeArray.h>
