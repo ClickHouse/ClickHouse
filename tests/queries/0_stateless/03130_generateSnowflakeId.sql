@@ -1,19 +1,22 @@
 -- Test SQL function 'generateSnowflakeID'
 
-SELECT bitAnd(bitShiftRight(toUInt64(generateSnowflakeID()), 63), 1) = 0; -- check first bit is zero
-SELECT generateSnowflakeID() = generateSnowflakeID(1); -- same as ^^
+SELECT 'Negative tests';
+SELECT generateSnowflakeID(1, 2, 3); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+SELECT generateSnowflakeID(1, 'not_an_int'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT generateSnowflakeID(1, materialize(2)); -- { serverError ILLEGAL_COLUMN }
+
+ SELECT 'The first bit must be zero';
+SELECT bitAnd(bitShiftRight(generateSnowflakeID(), 63), 1) = 0;
+
+SELECT 'Test disabling of common subexpression elimination via first parameter';
 SELECT generateSnowflakeID(1) = generateSnowflakeID(2); -- disabled common subexpression elimination --> lhs != rhs
-SELECT generateSnowflakeID(1) = generateSnowflakeID(1); -- enabled common subexpression elimination
+SELECT generateSnowflakeID() = generateSnowflakeID(1); -- same as ^^
+SELECT generateSnowflakeID(1) = generateSnowflakeID(1); -- with common subexpression elimination
 
-SELECT generateSnowflakeID('expr', 1) = generateSnowflakeID('expr', 1); -- enabled common subexpression elimination
-SELECT generateSnowflakeID('expr', 1) != generateSnowflakeID('expr', 2); -- different machine IDs should produce different results
+SELECT 'Test user-provided machine ID';
+SELECT bitAnd(bitShiftRight(generateSnowflakeID(1, 123), 12), 1024 - 1) = 123; -- the machine id is actually set in the generated snowflake ID (1024 = 2^10)
 
-SELECT bitAnd(generateSnowflakeID(1023), 1023) = 1023; -- check if the last 10 bits match the machine ID
-
-SELECT generateSnowflakeID('invalid_machine_id'); -- no output for invalid type
-
-SELECT generateSnowflakeID(materialize(toUInt64(1))); -- no output for non-const machine ID
-
+SELECT 'Generated Snowflake IDs are unique';
 SELECT count(*)
 FROM
 (

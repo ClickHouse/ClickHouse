@@ -18,7 +18,7 @@ namespace
   https://en.wikipedia.org/wiki/Snowflake_ID
 
  0                   1                   2                   3
- 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+ 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
 ├─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┤
 |0|                         timestamp                           |
 ├─┼                 ┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┤
@@ -129,7 +129,7 @@ struct Data
     /// Guarantee counter monotonicity within one timestamp across all threads generating Snowflake IDs simultaneously.
     static inline std::atomic<uint64_t> lowest_available_snowflake_id = 0;
 
-    SnowflakeId reserveRange(size_t input_rows_count, uint64_t machine_id)
+    SnowflakeId reserveRange(uint64_t machine_id, size_t input_rows_count)
     {
         uint64_t available_snowflake_id = lowest_available_snowflake_id.load();
         SnowflakeIdRange range;
@@ -178,23 +178,20 @@ public:
     {
         auto col_res = ColumnVector<UInt64>::create();
         typename ColumnVector<UInt64>::Container & vec_to = col_res->getData();
-        vec_to.resize(input_rows_count);
-
-        uint64_t machine_id = getMachineId();
-        if (arguments.size() == 2 && input_rows_count > 0)
-        {
-            const auto & col_machine_id = arguments[1].column;
-            if (!isColumnConst(*col_machine_id))
-                return nullptr;
-            machine_id = col_machine_id->getUInt(0);
-            /// Truncate machine id to 10 bits
-            machine_id &= (1ull << machine_id_bits_count) - 1;
-        }
 
         if (input_rows_count > 0)
         {
+            vec_to.resize(input_rows_count);
+
+            uint64_t machine_id = getMachineId();
+            if (arguments.size() == 2)
+            {
+                machine_id = arguments[1].column->getUInt(0);
+                machine_id &= (1ull << machine_id_bits_count) - 1;
+            }
+
             Data data;
-            SnowflakeId snowflake_id = data.reserveRange(input_rows_count, machine_id);
+            SnowflakeId snowflake_id = data.reserveRange(machine_id, input_rows_count);
 
             for (UInt64 & to_row : vec_to)
             {
@@ -223,7 +220,7 @@ REGISTER_FUNCTION(GenerateSnowflakeID)
     FunctionDocumentation::Syntax syntax = "generateSnowflakeID([expression, [machine_id]])";
     FunctionDocumentation::Arguments arguments = {
         {"expression", "The expression is used to bypass common subexpression elimination if the function is called multiple times in a query but otherwise ignored. Optional."},
-        {"machine_id", "A machine ID, the 10 least significant bits are used. Optional."}
+        {"machine_id", "A machine ID, the lowest 10 bits are used. Optional."}
     };
     FunctionDocumentation::ReturnedValue returned_value = "A value of type UInt64";
     FunctionDocumentation::Examples examples = {{"no_arguments", "SELECT generateSnowflakeID()", "7201148511606784000"}, {"with_machine_id", "SELECT generateSnowflakeID(1)", "7201148511606784001"}, {"with_expression_and_machine_id", "SELECT generateSnowflakeID('some_expression', 1)", "7201148511606784002"}};

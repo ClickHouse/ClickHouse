@@ -573,8 +573,7 @@ generateSnowflakeID([expr, [machine_id]])
 **Arguments**
 
 - `expr` — An arbitrary [expression](../../sql-reference/syntax.md#syntax-expressions) used to bypass [common subexpression elimination](../../sql-reference/functions/index.md#common-subexpression-elimination) if the function is called multiple times in a query. The value of the expression has no effect on the returned Snowflake ID. Optional.
-
-- `machine_id` — A machine ID, the 10 least significant bits are used. Optional.
+- `machine_id` — A machine ID, the lowest 10 bits are used. [Int64](../data-types/int-uint.md). Optional.
 
 **Returned value**
 
@@ -610,7 +609,8 @@ SELECT generateSnowflakeID(1), generateSnowflakeID(2);
 └────────────────────────┴────────────────────────┘
 ```
 
-Example with expression and machine ID
+**Example with expression and a machine ID**
+
 ```
 SELECT generateSnowflakeID('expr', 1);
 
@@ -618,7 +618,6 @@ SELECT generateSnowflakeID('expr', 1);
 │            7201148511606784002 │
 └────────────────────────────────┘
 ```
-
 
 ## snowflakeToDateTime
 
