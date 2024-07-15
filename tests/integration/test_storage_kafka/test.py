@@ -5444,8 +5444,6 @@ def test_multiple_read_in_materialized_views(kafka_cluster, create_query_generat
         )
 
 
-
-
 @pytest.mark.parametrize(
     "create_query_generator",
     [generate_old_create_table_query, generate_new_create_table_query],
@@ -5474,24 +5472,25 @@ def test_kafka_null_message(kafka_cluster, create_query_generator):
         message = json.dumps({"value": i}) if i != 3 else None
         message_key_values.append({"key": f"{i}".encode(), "message": message})
 
-    producer = get_kafka_producer(
-        kafka_cluster.kafka_port, producer_serializer, 15
-    )
+    producer = get_kafka_producer(kafka_cluster.kafka_port, producer_serializer, 15)
     for message_kv in message_key_values:
-        producer.send(topic=topic_name, key = message_kv["key"], value=message_kv["message"])
+        producer.send(
+            topic=topic_name, key=message_kv["key"], value=message_kv["message"]
+        )
         producer.flush()
 
     expected = TSV(
-            """
+        """
 0
 1
 2
 4
 """
-        )
+    )
     with existing_kafka_topic(get_admin_client(kafka_cluster), topic_name):
         result = instance.query_with_retry(
-            "SELECT * FROM test.null_message_view", check_callback=lambda res: TSV(res) == expected
+            "SELECT * FROM test.null_message_view",
+            check_callback=lambda res: TSV(res) == expected,
         )
 
         assert expected == TSV(result)
@@ -5503,6 +5502,7 @@ def test_kafka_null_message(kafka_cluster, create_query_generator):
             DROP TABLE test.null_message_kafka;
         """
         )
+
 
 if __name__ == "__main__":
     cluster.start()
