@@ -445,6 +445,9 @@ bool NpyRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &  /*
         elements_in_current_column *= header.shape[i];
     }
 
+    if (typeid_cast<ColumnArray *>(current_column))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected nesting level of column '{}', expected {}", column->getName(), header.shape.size() - 1);
+
     for (size_t i = 0; i != elements_in_current_column; ++i)
         readValue(current_column);
 
