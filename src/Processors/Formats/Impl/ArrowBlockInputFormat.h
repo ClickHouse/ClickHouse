@@ -32,7 +32,7 @@ public:
 private:
     Chunk read() override;
 
-    void onCancelX() override
+    void onCancel() noexcept override
     {
         is_stopped = 1;
     }

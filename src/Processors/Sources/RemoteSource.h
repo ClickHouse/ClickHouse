@@ -36,7 +36,7 @@ public:
 
 protected:
     std::optional<Chunk> tryGenerate() override;
-    void onCancelX() override;
+    void onCancel() noexcept override;
 
 private:
     bool was_query_sent = false;

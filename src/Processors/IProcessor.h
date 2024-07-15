@@ -238,7 +238,7 @@ public:
     /// In case if query was cancelled executor will wait till all processors finish their jobs.
     /// Generally, there is no reason to check this flag. However, it may be reasonable for long operations (e.g. i/o).
     bool isCancelled() const { return is_cancelled.load(std::memory_order_acquire); }
-    void cancel();
+    void cancel() noexcept;
 
     /// Additional method which is called in case if ports were updated while work() method.
     /// May be used to stop execution in rare cases.
@@ -363,7 +363,7 @@ public:
     virtual void setRowsBeforeLimitCounter(RowsBeforeLimitCounterPtr /* counter */) {}
 
 protected:
-    virtual void onCancelX() {}
+    virtual void onCancel() noexcept {}
 
     std::atomic<bool> is_cancelled{false};
 

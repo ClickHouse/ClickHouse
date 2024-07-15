@@ -64,7 +64,7 @@ public:
 protected:
     Chunk read() override;
 
-    void onCancelX() override { is_stopped = 1; }
+    void onCancel() noexcept override { is_stopped = 1; }
 
 private:
     void prepareFileReader();

@@ -149,7 +149,7 @@ std::string MergeTreeSource::getName() const
     return processor->getName();
 }
 
-void MergeTreeSource::onCancelX()
+void MergeTreeSource::onCancel() noexcept
 {
     processor->cancel();
 }

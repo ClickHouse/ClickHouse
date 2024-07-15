@@ -155,9 +155,6 @@ ReplicatedMergeTreeSinkImpl<async_insert>::ReplicatedMergeTreeSinkImpl(
 template<bool async_insert>
 ReplicatedMergeTreeSinkImpl<async_insert>::~ReplicatedMergeTreeSinkImpl()
 {
-    size_t addr = delayed_chunk ? size_t(delayed_chunk.get()) : 0;
-    LOG_INFO(log, "~ReplicatedMergeTreeSinkImpl, delayed_chunk {}, called from {}", addr, StackTrace().toString());
-
     if (!delayed_chunk)
         return;
 
@@ -167,8 +164,6 @@ ReplicatedMergeTreeSinkImpl<async_insert>::~ReplicatedMergeTreeSinkImpl()
     }
 
     delayed_chunk.reset();
-
-    LOG_INFO(log, "~ReplicatedMergeTreeSinkImpl end");
 }
 
 template<bool async_insert>
@@ -273,8 +268,6 @@ size_t ReplicatedMergeTreeSinkImpl<async_insert>::checkQuorumPrecondition(const 
 template<bool async_insert>
 void ReplicatedMergeTreeSinkImpl<async_insert>::consume(Chunk chunk)
 {
-    LOG_INFO(log, "consume");
-
     if (num_blocks_processed > 0)
         storage.delayInsertOrThrowIfNeeded(&storage.partial_shutdown_event, context, false);
 
@@ -448,9 +441,6 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::consume(Chunk chunk)
 template<>
 void ReplicatedMergeTreeSinkImpl<false>::finishDelayedChunk(const ZooKeeperWithFaultInjectionPtr & zookeeper)
 {
-    size_t addr = delayed_chunk ? size_t(delayed_chunk.get()) : 0;
-    LOG_INFO(log, "finishDelayedChunk {}", addr);
-
     if (!delayed_chunk)
         return;
 
@@ -480,22 +470,16 @@ void ReplicatedMergeTreeSinkImpl<false>::finishDelayedChunk(const ZooKeeperWithF
         {
             auto counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(partition.part_counters.getPartiallyAtomicSnapshot());
             PartLog::addNewPart(storage.getContext(), PartLog::PartLogEntry(part, partition.elapsed_ns, counters_snapshot), ExecutionStatus::fromCurrentException("", true));
-
-            size_t addr1 = delayed_chunk ? size_t(delayed_chunk.get()) : 0;
-            LOG_INFO(log, "finishDelayedChunk exception, delayed_chunk {}", addr1);
             throw;
         }
     }
 
     delayed_chunk.reset();
-
-    LOG_INFO(log, "finishDelayedChunk end, delayed_chunk {}", bool(delayed_chunk));
 }
 
 template<>
 void ReplicatedMergeTreeSinkImpl<true>::finishDelayedChunk(const ZooKeeperWithFaultInjectionPtr & zookeeper)
 {
-
     if (!delayed_chunk)
         return;
 

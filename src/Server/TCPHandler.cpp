@@ -557,7 +557,6 @@ void TCPHandler::runImpl()
 
                             if (getQueryCancellationStatus() == CancellationStatus::FULLY_CANCELLED)
                             {
-                                LOG_INFO(log, "CancelCallback FULLY_CANCELLED");
                                 return true;
                             }
 

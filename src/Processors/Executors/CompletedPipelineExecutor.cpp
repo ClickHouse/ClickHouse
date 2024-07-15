@@ -99,7 +99,6 @@ void CompletedPipelineExecutor::execute()
 
             if (is_cancelled_callback())
             {
-                LOG_INFO(getLogger("CompletedPipelineExecutor"), "execute CancelCallback FULLY_CANCELLED");
                 data->executor->cancel();
             }
         }
@@ -121,7 +120,6 @@ CompletedPipelineExecutor::~CompletedPipelineExecutor()
     {
         if (data && data->executor)
         {
-            LOG_INFO(getLogger("CompletedPipelineExecutor"), "~CompletedPipelineExecutor");
             data->executor->cancel();
         }
     }

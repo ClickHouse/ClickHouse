@@ -28,9 +28,6 @@ struct MergeTreeSink::DelayedChunk
 
 MergeTreeSink::~MergeTreeSink()
 {
-    size_t addr = delayed_chunk ? size_t(delayed_chunk.get()) : 0;
-    LOG_INFO(storage.log, "~ReplicatedMergeTreeSinkImpl, delayed_chunk {}, called from {}", addr, StackTrace().toString());
-
     if (!delayed_chunk)
         return;
 
@@ -40,8 +37,6 @@ MergeTreeSink::~MergeTreeSink()
     }
 
     delayed_chunk.reset();
-
-    LOG_INFO(storage.log, "~ReplicatedMergeTreeSinkImpl end");
 }
 
 MergeTreeSink::MergeTreeSink(
