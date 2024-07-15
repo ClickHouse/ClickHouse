@@ -57,6 +57,8 @@ def run_fuzzer(fuzzer: str):
     cmd_line = f"{DEBUGGER} ./{fuzzer} {FUZZER_ARGS} {corpus_dir}"
     if custom_libfuzzer_options:
         cmd_line += f" {custom_libfuzzer_options}"
+    if fuzzer_arguments:
+        cmd_line += f" {fuzzer_arguments}"
 
     if not "-dict=" in cmd_line and Path(f"{fuzzer}.dict").exists():
         cmd_line += f" -dict={fuzzer}.dict"
@@ -76,8 +78,6 @@ def main():
         for fuzzer in current.iterdir():
             if (current / fuzzer).is_file() and os.access(current / fuzzer, os.X_OK):
                 run_fuzzer(fuzzer)
-
-    exit(0)
 
 
 if __name__ == "__main__":

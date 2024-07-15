@@ -94,7 +94,7 @@ jobs:
           echo "Generate Security"
           python3 ./utils/security-generator/generate_security.py > SECURITY.md
           git diff HEAD
-      - name: Generate ChangeLog
+      - name: Create ChangeLog PR
         if: ${{ inputs.type == 'patch' && ! inputs.dry-run }}
         uses: peter-evans/create-pull-request@v6
         with:

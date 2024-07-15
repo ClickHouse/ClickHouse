@@ -9,6 +9,8 @@
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 
+#include <Core/Settings.h>
+
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>

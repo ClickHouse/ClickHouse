@@ -6,6 +6,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -550,7 +551,17 @@ def _update_gh_statuses_action(indata: Dict, s3: S3Helper) -> None:
             except Exception as e:
                 raise e
     print("Going to update overall CI report")
-    set_status_comment(commit, pr_info)
+    for retry in range(2):
+        try:
+            set_status_comment(commit, pr_info)
+            break
+        except Exception as e:
+            print(
+                f"WARNING: Failed to update CI Running status, attempt [{retry + 1}], exception [{e}]"
+            )
+            time.sleep(1)
+    else:
+        print("ERROR: All retry attempts failed.")
     print("... CI report update - done")
 
 
@@ -996,10 +1007,10 @@ def main() -> int:
             args.skip_jobs,
         )
 
+        ci_cache.print_status()
         if IS_CI and pr_info.is_pr and not ci_settings.no_ci_cache:
             ci_cache.filter_out_not_affected_jobs()
-
-        ci_cache.print_status()
+            ci_cache.print_status()
 
         if IS_CI and not pr_info.is_merge_queue:
             # wait for pending jobs to be finished, await_jobs is a long blocking call
@@ -1057,6 +1068,15 @@ def main() -> int:
             if build_result:
                 if build_result.status == SUCCESS:
                     previous_status = build_result.status
+                    JobReport(
+                        status=SUCCESS,
+                        description="",
+                        test_results=[],
+                        start_time="",
+                        duration=0.0,
+                        additional_files=[],
+                        job_skipped=True,
+                    ).dump()
                 else:
                     # FIXME: Consider reusing failures for build jobs.
                     #   Just remove this if/else - that makes build job starting and failing immediately
@@ -1254,12 +1274,17 @@ def main() -> int:
         elif job_report.pre_report:
             print(f"ERROR: Job was killed - generate evidence")
             job_report.update_duration()
-            # Job was killed!
+            ret_code = os.getenv("JOB_EXIT_CODE", "")
+            if ret_code:
+                try:
+                    job_report.exit_code = int(ret_code)
+                except ValueError:
+                    pass
             if Utils.is_killed_with_oom():
                 print("WARNING: OOM while job execution")
-                error = f"Out Of Memory, exit_code {job_report.exit_code}, after {job_report.duration}s"
+                error = f"Out Of Memory, exit_code {job_report.exit_code}, after {int(job_report.duration)}s"
             else:
-                error = f"Unknown, exit_code {job_report.exit_code}, after {job_report.duration}s"
+                error = f"Unknown, exit_code {job_report.exit_code}, after {int(job_report.duration)}s"
             CIBuddy().post_error(error, job_name=_get_ext_check_name(args.job_name))
             if CI.is_test_job(args.job_name):
                 gh = GitHub(get_best_robot_token(), per_page=100)
