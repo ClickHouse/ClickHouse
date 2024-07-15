@@ -168,13 +168,13 @@ String DataTypeObject::doGetName() const
     for (const auto & skip_path : sorted_skip_paths)
     {
         write_separator();
-        out << "SKIP " << skip_path;
+        out << "SKIP " << backQuoteIfNeed(skip_path);
     }
 
     for (const auto & skip_regexp : path_regexps_to_skip)
     {
         write_separator();
-        out << "SKIP REGEXP " << skip_regexp;
+        out << "SKIP REGEXP " << quoteString(skip_regexp);
     }
 
     if (!first)
