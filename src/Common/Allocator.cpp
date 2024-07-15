@@ -190,9 +190,6 @@ void * Allocator<clear_memory_, populate>::realloc(void * buf, size_t old_size, 
         auto trace_alloc = CurrentMemoryTracker::alloc(new_size);
         if (void * ptr = GWPAsan::GuardedAlloc.allocate(new_size, alignment))
         {
-            auto trace_free = CurrentMemoryTracker::free(old_size);
-            trace_free.onFree(buf, old_size);
-
             memcpy(ptr, buf, std::min(old_size, new_size));
             free(buf, old_size);
             trace_alloc.onAlloc(buf, new_size);
@@ -209,6 +206,7 @@ void * Allocator<clear_memory_, populate>::realloc(void * buf, size_t old_size, 
         }
         else
         {
+            [[maybe_unused]] auto trace_free = CurrentMemoryTracker::free(old_size);
             ProfileEvents::increment(ProfileEvents::GWPAsanAllocateFailed);
         }
     }
