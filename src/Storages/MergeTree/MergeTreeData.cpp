@@ -6160,6 +6160,11 @@ bool MergeTreeData::supportsLightweightDelete() const
     return true;
 }
 
+bool MergeTreeData::areAsynchronousInsertsEnabled() const
+{
+    return getSettings()->async_insert;
+}
+
 MergeTreeData::ProjectionPartsVector MergeTreeData::getAllProjectionPartsVector(MergeTreeData::DataPartStateVector * out_states) const
 {
     ProjectionPartsVector res;
