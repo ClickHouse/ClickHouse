@@ -6,6 +6,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <Common/UTF8Helpers.h>
 #include <Common/assert_cast.h>
+#include <Core/Settings.h>
 #include <Interpreters/Context.h>
 
 
