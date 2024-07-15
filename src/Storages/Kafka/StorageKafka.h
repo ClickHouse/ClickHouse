@@ -149,18 +149,6 @@ private:
 
     std::atomic<bool> shutdown_called = false;
 
-    // Load Kafka global configuration
-    // https://github.com/confluentinc/librdkafka/blob/master/CONFIGURATION.md#global-configuration-properties
-    void updateGlobalConfiguration(cppkafka::Configuration & kafka_config);
-    // Load Kafka properties from consumer configuration
-    // NOTE: librdkafka allow to set a consumer property to a producer and vice versa,
-    //       but a warning will be generated e.g:
-    //       "Configuration property session.timeout.ms is a consumer property and
-    //        will be ignored by this producer instance"
-    void updateConsumerConfiguration(cppkafka::Configuration & kafka_config);
-    // Load Kafka properties from producer configuration
-    void updateProducerConfiguration(cppkafka::Configuration & kafka_config);
-
     void threadFunc(size_t idx);
 
     size_t getPollMaxBatchSize() const;

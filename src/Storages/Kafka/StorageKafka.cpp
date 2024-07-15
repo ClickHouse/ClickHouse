@@ -1,5 +1,4 @@
 #include <Storages/Kafka/StorageKafka.h>
-#include <Storages/Kafka/parseSyslogLevel.h>
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -54,10 +53,6 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/ProfileEvents.h>
 #include <base/sleep.h>
-
-#if USE_KRB5
-#include <Access/KerberosInit.h>
-#endif // USE_KRB5
 
 namespace CurrentMetrics
 {
@@ -463,65 +458,26 @@ KafkaConsumerPtr StorageKafka::createKafkaConsumer(size_t consumer_number)
         topics);
     return kafka_consumer_ptr;
 }
-
 cppkafka::Configuration StorageKafka::getConsumerConfiguration(size_t consumer_number)
 {
-    cppkafka::Configuration conf;
-
-    conf.set("metadata.broker.list", brokers);
-    conf.set("group.id", group);
-    if (num_consumers > 1)
-    {
-        conf.set("client.id", fmt::format("{}-{}", client_id, consumer_number));
-    }
-    else
-    {
-        conf.set("client.id", client_id);
-    }
-    conf.set("client.software.name", VERSION_NAME);
-    conf.set("client.software.version", VERSION_DESCRIBE);
-    conf.set("auto.offset.reset", "earliest");     // If no offset stored for this group, read all messages from the start
-
-    // that allows to prevent fast draining of the librdkafka queue
-    // during building of single insert block. Improves performance
-    // significantly, but may lead to bigger memory consumption.
-    size_t default_queued_min_messages = 100000; // must be greater than or equal to default
-    size_t max_allowed_queued_min_messages = 10000000; // must be less than or equal to max allowed value
-    conf.set("queued.min.messages", std::min(std::max(getMaxBlockSize(), default_queued_min_messages), max_allowed_queued_min_messages));
-
-    updateGlobalConfiguration(conf);
-    updateConsumerConfiguration(conf);
-
-    // those settings should not be changed by users.
-    conf.set("enable.auto.commit", "false");       // We manually commit offsets after a stream successfully finished
-    conf.set("enable.auto.offset.store", "false"); // Update offset automatically - to commit them all at once.
-    conf.set("enable.partition.eof", "false");     // Ignore EOF messages
-
-    for (auto & property : conf.get_all())
-    {
-        LOG_TRACE(log, "Consumer set property {}:{}", property.first, property.second);
-    }
-
-    return conf;
+    KafkaConfigLoader::ConsumerConfigParams params{
+        {getContext()->getConfigRef(), collection_name, topics, log},
+        brokers,
+        group,
+        num_consumers > 1,
+        consumer_number,
+        client_id,
+        getMaxBlockSize()};
+    return KafkaConfigLoader::getConsumerConfiguration(*this, params);
 }
 
 cppkafka::Configuration StorageKafka::getProducerConfiguration()
 {
-    cppkafka::Configuration conf;
-    conf.set("metadata.broker.list", brokers);
-    conf.set("client.id", client_id);
-    conf.set("client.software.name", VERSION_NAME);
-    conf.set("client.software.version", VERSION_DESCRIBE);
-
-    updateGlobalConfiguration(conf);
-    updateProducerConfiguration(conf);
-
-    for (auto & property : conf.get_all())
-    {
-        LOG_TRACE(log, "Producer set property {}:{}", property.first, property.second);
-    }
-
-    return conf;
+    KafkaConfigLoader::ProducerConfigParams params{
+        {getContext()->getConfigRef(), collection_name, topics, log},
+        brokers,
+        client_id};
+    return KafkaConfigLoader::getProducerConfiguration(*this, params);
 }
 
 void StorageKafka::cleanConsumers()
@@ -597,98 +553,6 @@ size_t StorageKafka::getPollTimeoutMillisecond() const
     return kafka_settings->kafka_poll_timeout_ms.changed
         ? kafka_settings->kafka_poll_timeout_ms.totalMilliseconds()
         : getContext()->getSettingsRef().stream_poll_timeout_ms.totalMilliseconds();
-}
-
-void StorageKafka::updateGlobalConfiguration(cppkafka::Configuration & kafka_config)
-{
-    const auto & config = getContext()->getConfigRef();
-    KafkaConfigLoader::loadFromConfig(kafka_config, config, collection_name, KafkaConfigLoader::CONFIG_KAFKA_TAG, topics);
-
-#if USE_KRB5
-    if (kafka_config.has_property("sasl.kerberos.kinit.cmd"))
-        LOG_WARNING(log, "sasl.kerberos.kinit.cmd configuration parameter is ignored.");
-
-    kafka_config.set("sasl.kerberos.kinit.cmd","");
-    kafka_config.set("sasl.kerberos.min.time.before.relogin","0");
-
-    if (kafka_config.has_property("sasl.kerberos.keytab") && kafka_config.has_property("sasl.kerberos.principal"))
-    {
-        String keytab = kafka_config.get("sasl.kerberos.keytab");
-        String principal = kafka_config.get("sasl.kerberos.principal");
-        LOG_DEBUG(log, "Running KerberosInit");
-        try
-        {
-            kerberosInit(keytab,principal);
-        }
-        catch (const Exception & e)
-        {
-            LOG_ERROR(log, "KerberosInit failure: {}", getExceptionMessage(e, false));
-        }
-        LOG_DEBUG(log, "Finished KerberosInit");
-    }
-#else // USE_KRB5
-    if (kafka_config.has_property("sasl.kerberos.keytab") || kafka_config.has_property("sasl.kerberos.principal"))
-        LOG_WARNING(log, "Ignoring Kerberos-related parameters because ClickHouse was built without krb5 library support.");
-#endif // USE_KRB5
-    // No need to add any prefix, messages can be distinguished
-    kafka_config.set_log_callback(
-        [this](cppkafka::KafkaHandleBase & handle, int level, const std::string & facility, const std::string & message)
-        {
-            auto [poco_level, client_logs_level] = parseSyslogLevel(level);
-            const auto & kafka_object_config = handle.get_configuration();
-            const std::string client_id_key{"client.id"};
-            chassert(kafka_object_config.has_property(client_id_key) && "Kafka configuration doesn't have expected client.id set");
-            LOG_IMPL(
-                log,
-                client_logs_level,
-                poco_level,
-                "[client.id:{}] [rdk:{}] {}",
-                kafka_object_config.get(client_id_key),
-                facility,
-                message);
-        });
-
-    /// NOTE: statistics should be consumed, otherwise it creates too much
-    /// entries in the queue, that leads to memory leak and slow shutdown.
-    if (!kafka_config.has_property("statistics.interval.ms"))
-    {
-        // every 3 seconds by default. set to 0 to disable.
-        kafka_config.set("statistics.interval.ms", "3000");
-    }
-
-    // Configure interceptor to change thread name
-    //
-    // TODO: add interceptors support into the cppkafka.
-    // XXX:  rdkafka uses pthread_set_name_np(), but glibc-compatibliity overrides it to noop.
-    {
-        // This should be safe, since we wait the rdkafka object anyway.
-        void * self = static_cast<void *>(this);
-
-        int status;
-
-        status = rd_kafka_conf_interceptor_add_on_new(kafka_config.get_handle(),
-            "init", StorageKafkaInterceptors::rdKafkaOnNew, self);
-        if (status != RD_KAFKA_RESP_ERR_NO_ERROR)
-            LOG_ERROR(log, "Cannot set new interceptor due to {} error", status);
-
-        // cppkafka always copy the configuration
-        status = rd_kafka_conf_interceptor_add_on_conf_dup(kafka_config.get_handle(),
-            "init", StorageKafkaInterceptors::rdKafkaOnConfDup, self);
-        if (status != RD_KAFKA_RESP_ERR_NO_ERROR)
-            LOG_ERROR(log, "Cannot set dup conf interceptor due to {} error", status);
-    }
-}
-
-void StorageKafka::updateConsumerConfiguration(cppkafka::Configuration & kafka_config)
-{
-    const auto & config = getContext()->getConfigRef();
-    KafkaConfigLoader::loadConsumerConfig(kafka_config, config, collection_name, KafkaConfigLoader::CONFIG_KAFKA_TAG, topics);
-}
-
-void StorageKafka::updateProducerConfiguration(cppkafka::Configuration & kafka_config)
-{
-    const auto & config = getContext()->getConfigRef();
-    KafkaConfigLoader::loadProducerConfig(kafka_config, config, collection_name, KafkaConfigLoader::CONFIG_KAFKA_TAG, topics);
 }
 
 bool StorageKafka::checkDependencies(const StorageID & table_id)

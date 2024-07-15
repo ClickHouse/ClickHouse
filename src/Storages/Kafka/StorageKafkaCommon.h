@@ -4,6 +4,7 @@
 #include <Core/Names.h>
 #include <Interpreters/StorageID.h>
 #include <base/types.h>
+#include <cppkafka/configuration.h>
 #include <cppkafka/cppkafka.h>
 #include <cppkafka/topic_partition.h>
 #include <fmt/ostream.h>
@@ -40,27 +41,38 @@ struct KafkaConfigLoader
     static inline const String CONFIG_NAME_TAG = "name";
     static inline const String CONFIG_KAFKA_CONSUMER_TAG = "consumer";
     static inline const String CONFIG_KAFKA_PRODUCER_TAG = "producer";
+    using LogCallback = cppkafka::Configuration::LogCallback;
 
-    static void loadConsumerConfig(
-        cppkafka::Configuration & kafka_config,
-        const Poco::Util::AbstractConfiguration & config,
-        const String & collection_name,
-        const String & prefix,
-        const Names & topics);
 
-    static void loadProducerConfig(
-        cppkafka::Configuration & kafka_config,
-        const Poco::Util::AbstractConfiguration & config,
-        const String & collection_name,
-        const String & prefix,
-        const Names & topics);
+    struct LoadConfigParams
+    {
+        const Poco::Util::AbstractConfiguration & config;
+        String & collection_name;
+        const Names & topics;
+        LoggerPtr & log;
+    };
 
-    static void loadFromConfig(
-        cppkafka::Configuration & kafka_config,
-        const Poco::Util::AbstractConfiguration & config,
-        const String & collection_name,
-        const String & config_prefix,
-        const Names & topics);
+    struct ConsumerConfigParams : public LoadConfigParams
+    {
+        String brokers;
+        String group;
+        bool multiple_consumers;
+        size_t consumer_number;
+        String client_id;
+        size_t max_block_size;
+    };
+
+    struct ProducerConfigParams : public LoadConfigParams
+    {
+        String brokers;
+        String client_id;
+    };
+
+    template <typename TKafkaStorage>
+    static cppkafka::Configuration getConsumerConfiguration(TKafkaStorage & storage, const ConsumerConfigParams & params);
+
+    template <typename TKafkaStorage>
+    static cppkafka::Configuration getProducerConfiguration(TKafkaStorage & storage, const ProducerConfigParams & params);
 };
 
 namespace StorageKafkaUtils
