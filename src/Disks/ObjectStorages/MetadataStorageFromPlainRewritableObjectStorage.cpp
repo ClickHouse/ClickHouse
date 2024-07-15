@@ -28,7 +28,7 @@ namespace
 constexpr auto PREFIX_PATH_FILE_NAME = "prefix.path";
 constexpr auto METADATA_PATH_TOKEN = "__meta/";
 
-/// Use a separate layout for metadata iff:
+/// Use a separate layout for metadata if:
 /// 1. The disk endpoint does not contain any objects yet (empty), OR
 /// 2. The metadata is already stored behind a separate endpoint.
 /// Otherwise, store metadata along with regular data for backward compatibility.
