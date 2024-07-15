@@ -21,6 +21,7 @@ struct InMemoryPathMap
             return path1 < path2;
         }
     };
+    /// Local -> Remote path.
     using Map = std::map<std::filesystem::path, std::string, PathComparator>;
     mutable SharedMutex mutex;
     Map map TSA_GUARDED_BY(mutex);
