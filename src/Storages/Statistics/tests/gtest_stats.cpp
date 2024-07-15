@@ -59,7 +59,7 @@ void testConvertFieldToDataType(const DataTypePtr & data_type, const Fields & fi
         }
         catch(...)
         {
-            /// Just ignore exceptions
+            ASSERT_FALSE(convert_failed);
         }
         if (convert_failed)
             ASSERT_TRUE(converted_value.isNull());

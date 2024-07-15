@@ -1,10 +1,10 @@
+
+#include <Storages/Statistics/StatisticsCountMinSketch.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <Storages/Statistics/StatisticsCountMinSketch.h>
 #include <Interpreters/convertFieldToType.h>
-
 
 #if USE_DATASKETCHES
 
@@ -14,6 +14,7 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int LOGICAL_ERROR;
+extern const int ILLEGAL_STATISTICS;
 }
 
 /// Constants chosen based on rolling dices, which provides an error tolerance of 0.1% (ε = 0.001) and a confidence level of 99.9% (δ = 0.001).
@@ -34,18 +35,9 @@ Float64 StatisticsCountMinSketch::estimateEqual(const Field & val) const
     /// For example: if data_type is Int32:
     ///     1. For 1.0, 1, '1', return Field(1)
     ///     2. For 1.1, max_value_int64, return null
-    Field val_converted;
-    try
-    {
-        val_converted = convertFieldToType(val, *data_type);
-        if (val_converted.isNull())
-            return 0;
-    }
-    catch (...)
-    {
-        /// If the conversion fails for example, when converting 'not a number' to Int32, return 0
+    Field val_converted = convertFieldToType(val, *data_type);
+    if (val_converted.isNull())
         return 0;
-    }
 
     if (data_type->isValueRepresentedByNumber())
         return sketch.get_estimate(&val_converted, data_type->getSizeOfValueInMemory());
@@ -87,19 +79,6 @@ void StatisticsCountMinSketch::deserialize(ReadBuffer & buf)
     sketch = Sketch::deserialize(bytes.data(), size);
 }
 
-}
-
-#endif
-
-
-namespace DB
-{
-
-namespace ErrorCodes
-{
-extern const int FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME;
-extern const int ILLEGAL_STATISTICS;
-}
 
 void CountMinSketchValidator(const SingleStatisticsDescription &, DataTypePtr data_type)
 {
@@ -109,18 +88,12 @@ void CountMinSketchValidator(const SingleStatisticsDescription &, DataTypePtr da
     if (!data_type->isValueRepresentedByNumber() && !isStringOrFixedString(data_type))
         throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "Statistics of type 'count_min' does not support type {}", data_type->getName());
 }
-#if USE_DATASKETCHES
+
 StatisticsPtr CountMinSketchCreator(const SingleStatisticsDescription & stat, DataTypePtr data_type)
 {
     return std::make_shared<StatisticsCountMinSketch>(stat, data_type);
 }
-#else
-StatisticsPtr CountMinSketchCreator(const SingleStatisticsDescription &, DataTypePtr)
-{
-    throw Exception(
-        ErrorCodes::FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME,
-        "Statistics of type 'count_min' is not supported in this build, to enable it turn on USE_DATASKETCHES when building.");
-}
-#endif
 
 }
+
+#endif

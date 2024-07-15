@@ -7,7 +7,7 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int ILLEGAL_STATISTICS;
-extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+extern const int LOGICAL_ERROR;
 }
 
 StatisticsTDigest::StatisticsTDigest(const SingleStatisticsDescription & stat_)
@@ -54,7 +54,7 @@ Float64 StatisticsTDigest::estimateEqual(const Field & val) const
     auto val_as_float = StatisticsUtils::tryConvertToFloat64(val);
     if (val_as_float)
         return t_digest.getCountEqual(*val_as_float);
-    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Statistics 'tdigest' does not support estimate constant value of type {}", val.getTypeName());
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Statistics 'tdigest' does not support estimating value of type {}", val.getTypeName());
 }
 
 void TDigestValidator(const SingleStatisticsDescription &, DataTypePtr data_type)

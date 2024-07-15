@@ -37,9 +37,9 @@ Float64 ConditionSelectivityEstimator::ColumnSelectivityEstimator::estimateGreat
 
 Float64 ConditionSelectivityEstimator::ColumnSelectivityEstimator::estimateEqual(const Field & val, Float64 rows) const
 {
-    auto float_val = StatisticsUtils::tryConvertToFloat64(val);
     if (part_statistics.empty())
     {
+        auto float_val = StatisticsUtils::tryConvertToFloat64(val);
         if (!float_val)
             return default_unknown_cond_factor * rows;
         else if (float_val.value() < - threshold || float_val.value() > threshold)
@@ -133,9 +133,8 @@ Float64 ConditionSelectivityEstimator::estimateRowCount(const RPNBuilderTreeNode
 {
     auto result = tryToExtractSingleColumn(node);
     if (result.second != 1)
-    {
         return default_unknown_cond_factor * total_rows;
-    }
+
     String col = result.first;
     auto it = column_estimators.find(col);
 
@@ -147,12 +146,14 @@ Float64 ConditionSelectivityEstimator::estimateRowCount(const RPNBuilderTreeNode
         estimator = it->second;
     else
         dummy = true;
+
     auto [op, val] = extractBinaryOp(node, col);
-    auto float_val = StatisticsUtils::tryConvertToFloat64(val);
+
     if (op == "equals")
     {
         if (dummy)
         {
+            auto float_val = StatisticsUtils::tryConvertToFloat64(val);
             if (!float_val || (float_val < - threshold || float_val > threshold))
                 return default_normal_cond_factor * total_rows;
             else

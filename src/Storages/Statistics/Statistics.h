@@ -1,9 +1,9 @@
 #pragma once
 
 #include <Core/Block.h>
+#include <Core/Field.h>
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
-#include <Core/Field.h>
 #include <Storages/StatisticsDescription.h>
 
 #include <boost/core/noncopyable.hpp>
