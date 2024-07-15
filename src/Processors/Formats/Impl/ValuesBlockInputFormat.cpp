@@ -406,7 +406,7 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
 {
     const Block & header = getPort().getHeader();
     const IDataType & type = *header.getByPosition(column_idx).type;
-    auto settings = context->getSettingsRef();
+    const auto & settings = context->getSettingsRef();
 
     /// Advance the token iterator until the start of the column expression
     readUntilTheEndOfRowAndReTokenize(column_idx);

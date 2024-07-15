@@ -469,7 +469,7 @@ BlockIO InterpreterInsertQuery::execute()
                   * to avoid unnecessary squashing.
                   */
 
-                Settings new_settings = getContext()->getSettings();
+                Settings new_settings = getContext()->getSettingsCopy();
 
                 new_settings.max_threads = std::max<UInt64>(1, settings.max_insert_threads);
 

@@ -39,7 +39,7 @@ public:
     FunctionFormatQuery(ContextPtr context, String name_, OutputFormatting output_formatting_, ErrorHandling error_handling_)
         : name(name_), output_formatting(output_formatting_), error_handling(error_handling_)
     {
-        const Settings & settings = context->getSettings();
+        const Settings & settings = context->getSettingsRef();
         max_query_size = settings.max_query_size;
         max_parser_depth = settings.max_parser_depth;
         max_parser_backtracks = settings.max_parser_backtracks;

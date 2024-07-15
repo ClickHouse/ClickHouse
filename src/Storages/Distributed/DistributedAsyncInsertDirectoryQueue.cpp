@@ -283,7 +283,7 @@ ConnectionPoolWithFailoverPtr DistributedAsyncInsertDirectoryQueue::createPool(c
 
     auto pools = createPoolsForAddresses(addresses, pool_factory, storage.log);
 
-    const auto settings = storage.getContext()->getSettings();
+    const auto & settings = storage.getContext()->getSettingsRef();
     return std::make_shared<ConnectionPoolWithFailover>(std::move(pools),
         settings.load_balancing,
         settings.distributed_replica_error_half_life.totalSeconds(),
