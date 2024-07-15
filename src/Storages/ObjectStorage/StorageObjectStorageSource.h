@@ -52,14 +52,14 @@ public:
 
     static std::shared_ptr<IIterator> createFileIterator(
         ConfigurationPtr configuration,
+        const StorageObjectStorage::QuerySettings & query_settings,
         ObjectStoragePtr object_storage,
         bool distributed_processing,
         const ContextPtr & local_context,
         const ActionsDAG::Node * predicate,
         const NamesAndTypesList & virtual_columns,
         ObjectInfos * read_keys,
-        std::function<void(FileProgress)> file_progress_callback = {},
-        bool override_settings_for_hive_partitioning = false);
+        std::function<void(FileProgress)> file_progress_callback = {});
 
     static std::string getUniqueStoragePathIdentifier(
         const Configuration & configuration,

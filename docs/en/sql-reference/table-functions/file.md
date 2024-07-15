@@ -208,7 +208,7 @@ SELECT count(*) FROM file('big_dir/**/file002', 'CSV', 'name String, value UInt3
 
 ## Hive-style partitioning {#hive-style-partitioning}
 
-When setting `use_hive_partitioning` is set to 1, ClickHouse can introduce virtual columns due to Hive partitioning style if the path has the specific structure.
+When setting `use_hive_partitioning` is set to 1, ClickHouse will detect Hive-style partitioning in the path (`/name=value/`) and will allow to use partition columns as virtual columns in the query. These virtual columns will have the same names as in the partitioned path, but starting with `_`.
 
 **Example**
 
@@ -216,11 +216,7 @@ Use virtual column, created with Hive-style partitioning
 
 ``` sql
 SET use_hive_partitioning = 1;
-SELECT _specified_column from file('/specified_column=specified_data/file.txt');
-```
-
-``` reference
-specified_data
+SELECT * from file('data/path/date=*/country=*/code=*/*.parquet') where _date > '2020-01-01' and _country = 'Netherlands' and code = 42;
 ```
 
 ## Settings {#settings}

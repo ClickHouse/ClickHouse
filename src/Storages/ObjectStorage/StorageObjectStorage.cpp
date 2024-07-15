@@ -35,16 +35,19 @@ namespace ErrorCodes
 
 std::string StorageObjectStorage::getPathSample(StorageInMemoryMetadata metadata, ContextPtr context)
 {
+    auto query_settings = configuration->getQuerySettings(context);
+    /// We don't want to throw an exception if there are no files with specified path.
+    query_settings.throw_on_zero_files_match = false;
     auto file_iterator = StorageObjectStorageSource::createFileIterator(
         configuration,
+        query_settings,
         object_storage,
         distributed_processing,
         context,
         {}, // predicate
         metadata.getColumns().getAll(), // virtual_columns
         nullptr, // read_keys
-        {}, // file_progress_callback
-        true // override_settings_for_hive_partitioning
+        {} // file_progress_callback
     );
 
     if (auto file = file_iterator->next(0))
@@ -82,12 +85,10 @@ StorageObjectStorage::StorageObjectStorage(
     metadata.setConstraints(constraints_);
     metadata.setComment(comment);
 
-    if (sample_path.empty() && context->getSettings().use_hive_partitioning)
+    if (sample_path.empty())
         sample_path = getPathSample(metadata, context);
-    else if (!context->getSettings().use_hive_partitioning)
-        sample_path = "";
 
-    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(metadata.getColumns(), context, sample_path));
+    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(metadata.getColumns(), context, sample_path, format_settings));
     setInMemoryMetadata(metadata);
 }
 
@@ -224,7 +225,7 @@ private:
             return;
         auto context = getContext();
         iterator_wrapper = StorageObjectStorageSource::createFileIterator(
-            configuration, object_storage, distributed_processing,
+            configuration, configuration->getQuerySettings(context), object_storage, distributed_processing,
             context, predicate, virtual_columns, nullptr, context->getFileProgressCallback());
     }
 };
@@ -376,6 +377,7 @@ std::unique_ptr<ReadBufferIterator> StorageObjectStorage::createReadBufferIterat
 {
     auto file_iterator = StorageObjectStorageSource::createFileIterator(
         configuration,
+        configuration->getQuerySettings(context),
         object_storage,
         false/* distributed_processing */,
         context,

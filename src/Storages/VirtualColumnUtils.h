@@ -7,8 +7,6 @@
 #include <Storages/VirtualColumnsDescription.h>
 #include <Formats/FormatSettings.h>
 
-#include <map>
-#include <string>
 #include <unordered_set>
 
 
@@ -81,14 +79,11 @@ struct VirtualsForFileLikeStorage
     std::optional<size_t> size { std::nullopt };
     const String * filename { nullptr };
     std::optional<Poco::Timestamp> last_modified { std::nullopt };
-    const String & hive_partitioning_path = "";
 };
-
-std::map<std::string, std::string> parseFromPath(const std::string& path);
 
 void addRequestedFileLikeStorageVirtualsToChunk(
     Chunk & chunk, const NamesAndTypesList & requested_virtual_columns,
-    VirtualsForFileLikeStorage virtual_values);
+    VirtualsForFileLikeStorage virtual_values, ColumnsDescription columns = {}, ContextPtr context = {});
 }
 
 }

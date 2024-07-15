@@ -5611,6 +5611,6 @@ Default value: `1GiB`.
 
 ## use_hive_partitioning
 
-Allows the usage of Hive-style partitioning in queries. When enabled, ClickHouse interprets and maintains table partitions in a way that is consistent with the Hive partitioning scheme, which is commonly used in Hadoop ecosystems.
+When enabled, ClickHouse will detect Hive-style partitioning in path (`/name=value/`) in file-like table engines [File](../../engines/table-engines/special/file.md#hive-style-partitioning)/[S3](../../engines/table-engines/integrations/s3.md#hive-style-partitioning)/[URL](../../engines/table-engines/special/url.md#hive-style-partitioning)/[HDFS](../../engines/table-engines/integrations/hdfs.md#hive-style-partitioning)/[AzureBlobStorage](../../engines/table-engines/integrations/azureBlobStorage.md#hive-style-partitioning) and will allow to use partition columns as virtual columns in the query. These virtual columns will have the same names as in the partitioned path, but starting with `_`.
 
 Default value: `0`.

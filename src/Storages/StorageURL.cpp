@@ -164,10 +164,7 @@ IStorageURLBase::IStorageURLBase(
     storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
 
-    std::string uri_for_partitioning;
-    if (context_->getSettingsRef().use_hive_partitioning)
-        uri_for_partitioning = getSampleURI(uri, context_);
-    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.getColumns(), context_, uri_for_partitioning, format_settings.value_or(FormatSettings{})));
+    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.getColumns(), context_, getSampleURI(uri, context_), format_settings));
 }
 
 
@@ -426,9 +423,6 @@ Chunk StorageURLSource::generate()
             size_t chunk_size = 0;
             if (input_format)
                 chunk_size = input_format->getApproxBytesReadForChunk();
-            std::string hive_partitioning_path;
-            if (getContext()->getSettingsRef().use_hive_partitioning)
-                hive_partitioning_path = curr_uri.getPath();
 
             progress(num_rows, chunk_size ? chunk_size : chunk.bytes());
             VirtualColumnUtils::addRequestedFileLikeStorageVirtualsToChunk(
@@ -436,8 +430,7 @@ Chunk StorageURLSource::generate()
                 {
                     .path = curr_uri.getPath(),
                     .size = current_file_size,
-                    .hive_partitioning_path = hive_partitioning_path,
-                });
+                }, columns_description, getContext());
             return chunk;
         }
 

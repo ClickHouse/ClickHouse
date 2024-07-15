@@ -84,8 +84,8 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
     const ActionsDAG::Node * predicate, const ContextPtr & local_context) const
 {
     auto iterator = StorageObjectStorageSource::createFileIterator(
-        configuration, object_storage, /* distributed_processing */false, local_context,
-        predicate, virtual_columns, nullptr, local_context->getFileProgressCallback());
+        configuration, configuration->getQuerySettings(local_context), object_storage, /* distributed_processing */false,
+        local_context, predicate, virtual_columns, nullptr, local_context->getFileProgressCallback());
 
     auto callback = std::make_shared<std::function<String()>>([iterator]() mutable -> String
     {

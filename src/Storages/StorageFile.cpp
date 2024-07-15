@@ -1108,9 +1108,9 @@ void StorageFile::setStorageMetadata(CommonArguments args)
     setInMemoryMetadata(storage_metadata);
 
     std::string path_for_virtuals;
-    if (args.getContext()->getSettingsRef().use_hive_partitioning && !paths.empty())
+    if (!paths.empty())
         path_for_virtuals = paths[0];
-    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.getColumns(), args.getContext(), path_for_virtuals, format_settings.value_or(FormatSettings{})));
+    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.getColumns(), args.getContext(), path_for_virtuals, format_settings));
 }
 
 
@@ -1452,10 +1452,6 @@ Chunk StorageFileSource::generate()
                 chunk_size = input_format->getApproxBytesReadForChunk();
             progress(num_rows, chunk_size ? chunk_size : chunk.bytes());
 
-            std::string hive_partitioning_path;
-            if (getContext()->getSettingsRef().use_hive_partitioning)
-                hive_partitioning_path = current_path;
-
             /// Enrich with virtual columns.
             VirtualColumnUtils::addRequestedFileLikeStorageVirtualsToChunk(
                 chunk, requested_virtual_columns,
@@ -1463,9 +1459,8 @@ Chunk StorageFileSource::generate()
                     .path = current_path,
                     .size = current_file_size,
                     .filename = (filename_override.has_value() ? &filename_override.value() : nullptr),
-                    .last_modified = current_file_last_modified,
-                    .hive_partitioning_path = hive_partitioning_path,
-                });
+                    .last_modified = current_file_last_modified
+                }, columns_description, getContext());
 
             return chunk;
         }
@@ -1648,17 +1643,10 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
     size_t num_streams = max_num_streams;
 
     size_t files_to_read = 0;
-    Strings paths;
     if (storage->archive_info)
-    {
         files_to_read = storage->archive_info->paths_to_archives.size();
-        paths = storage->archive_info->paths_to_archives;
-    }
     else
-    {
         files_to_read = storage->paths.size();
-        paths = storage->paths;
-    }
 
     if (max_num_streams > files_to_read)
         num_streams = files_to_read;

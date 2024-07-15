@@ -99,14 +99,14 @@ std::string StorageObjectStorageSource::getUniqueStoragePathIdentifier(
 
 std::shared_ptr<StorageObjectStorageSource::IIterator> StorageObjectStorageSource::createFileIterator(
     ConfigurationPtr configuration,
+    const StorageObjectStorage::QuerySettings & query_settings,
     ObjectStoragePtr object_storage,
     bool distributed_processing,
     const ContextPtr & local_context,
     const ActionsDAG::Node * predicate,
     const NamesAndTypesList & virtual_columns,
     ObjectInfos * read_keys,
-    std::function<void(FileProgress)> file_progress_callback,
-    bool override_settings_for_hive_partitioning)
+    std::function<void(FileProgress)> file_progress_callback)
 {
     if (distributed_processing)
         return std::make_shared<ReadTaskIterator>(
@@ -117,20 +117,16 @@ std::shared_ptr<StorageObjectStorageSource::IIterator> StorageObjectStorageSourc
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "Expression can not have wildcards inside {} name", configuration->getNamespaceType());
 
-    auto settings = configuration->getQuerySettings(local_context);
     const bool is_archive = configuration->isArchive();
 
     std::unique_ptr<IIterator> iterator;
     if (configuration->isPathWithGlobs())
     {
-        bool throw_on_zero_files_match = settings.throw_on_zero_files_match;
-        if (override_settings_for_hive_partitioning)
-            throw_on_zero_files_match = false;
         /// Iterate through disclosed globs and make a source for each file
         iterator = std::make_unique<GlobIterator>(
             object_storage, configuration, predicate, virtual_columns,
-            local_context, is_archive ? nullptr : read_keys, settings.list_object_keys_size,
-            throw_on_zero_files_match, file_progress_callback);
+            local_context, is_archive ? nullptr : read_keys, query_settings.list_object_keys_size,
+            query_settings.throw_on_zero_files_match, file_progress_callback);
     }
     else
     {
@@ -149,7 +145,7 @@ std::shared_ptr<StorageObjectStorageSource::IIterator> StorageObjectStorageSourc
 
         iterator = std::make_unique<KeysIterator>(
             object_storage, copy_configuration, virtual_columns, is_archive ? nullptr : read_keys,
-            settings.ignore_non_existent_file, file_progress_callback);
+            query_settings.ignore_non_existent_file, file_progress_callback);
     }
 
     if (is_archive)
@@ -208,8 +204,7 @@ Chunk StorageObjectStorageSource::generate()
                   .size = object_info->isArchive() ? object_info->fileSizeInArchive() : object_info->metadata->size_bytes,
                   .filename = &filename,
                   .last_modified = object_info->metadata->last_modified,
-                  .hive_partitioning_path = object_info->getPath(),
-                });
+                }, read_from_format_info.columns_description, getContext());
 
             const auto & partition_columns = configuration->getPartitionColumns();
             if (!partition_columns.empty() && chunk_size && chunk.hasColumns())
