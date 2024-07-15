@@ -760,6 +760,7 @@ QueryCacheMisses
 QueryPreempted
 QueryThread
 QuickAssist
+QuickSight
 QuoteMeta
 RBAC
 RClickHouse
