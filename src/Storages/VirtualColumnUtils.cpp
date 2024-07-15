@@ -142,7 +142,7 @@ std::unordered_map<std::string, std::string> parseHivePartitioningKeysAndValues(
     return key_values;
 }
 
-VirtualColumnsDescription getVirtualsForFileLikeStorage(const ColumnsDescription & storage_columns, const ContextPtr & context, std::string path, std::optional<FormatSettings> format_settings_)
+VirtualColumnsDescription getVirtualsForFileLikeStorage(const ColumnsDescription & storage_columns, const ContextPtr & context, const std::string & path, std::optional<FormatSettings> format_settings_)
 {
     VirtualColumnsDescription desc;
 
