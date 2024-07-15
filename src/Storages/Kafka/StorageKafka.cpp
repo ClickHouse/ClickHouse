@@ -1,12 +1,5 @@
 #include <Storages/Kafka/StorageKafka.h>
 
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeDateTime.h>
-#include <DataTypes/DataTypeDateTime64.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <Formats/FormatFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterInsertQuery.h>
@@ -164,7 +157,7 @@ StorageKafka::StorageKafka(
     , num_consumers(kafka_settings->kafka_num_consumers.value)
     , log(getLogger("StorageKafka (" + table_id_.table_name + ")"))
     , intermediate_commit(kafka_settings->kafka_commit_every_batch.value)
-    , settings_adjustments(createSettingsAdjustments())
+    , settings_adjustments(StorageKafkaUtils::createSettingsAdjustments(*kafka_settings, schema_name))
     , thread_per_consumer(kafka_settings->kafka_thread_per_consumer.value)
     , collection_name(collection_name_)
 {
@@ -179,7 +172,7 @@ StorageKafka::StorageKafka(
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(createVirtuals(kafka_settings->kafka_handle_error_mode));
+    setVirtuals(StorageKafkaUtils::createVirtuals(kafka_settings->kafka_handle_error_mode));
 
     auto task_count = thread_per_consumer ? num_consumers : 1;
     for (size_t i = 0; i < task_count; ++i)
@@ -203,60 +196,6 @@ StorageKafka::StorageKafka(
 }
 
 StorageKafka::~StorageKafka() = default;
-
-VirtualColumnsDescription StorageKafka::createVirtuals(StreamingHandleErrorMode handle_error_mode)
-{
-    VirtualColumnsDescription desc;
-
-    desc.addEphemeral("_topic", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "");
-    desc.addEphemeral("_key", std::make_shared<DataTypeString>(), "");
-    desc.addEphemeral("_offset", std::make_shared<DataTypeUInt64>(), "");
-    desc.addEphemeral("_partition", std::make_shared<DataTypeUInt64>(), "");
-    desc.addEphemeral("_timestamp", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>()), "");
-    desc.addEphemeral("_timestamp_ms", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime64>(3)), "");
-    desc.addEphemeral("_headers.name", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "");
-    desc.addEphemeral("_headers.value", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "");
-
-    if (handle_error_mode == StreamingHandleErrorMode::STREAM)
-    {
-        desc.addEphemeral("_raw_message", std::make_shared<DataTypeString>(), "");
-        desc.addEphemeral("_error", std::make_shared<DataTypeString>(), "");
-    }
-
-    return desc;
-}
-
-SettingsChanges StorageKafka::createSettingsAdjustments()
-{
-    SettingsChanges result;
-    // Needed for backward compatibility
-    if (!kafka_settings->input_format_skip_unknown_fields.changed)
-    {
-        // Always skip unknown fields regardless of the context (JSON or TSKV)
-        kafka_settings->input_format_skip_unknown_fields = true;
-    }
-
-    if (!kafka_settings->input_format_allow_errors_ratio.changed)
-    {
-        kafka_settings->input_format_allow_errors_ratio = 0.;
-    }
-
-    if (!kafka_settings->input_format_allow_errors_num.changed)
-    {
-        kafka_settings->input_format_allow_errors_num = kafka_settings->kafka_skip_broken_messages.value;
-    }
-
-    if (!schema_name.empty())
-        result.emplace_back("format_schema", schema_name);
-
-    for (const auto & setting : *kafka_settings)
-    {
-        const auto & name = setting.getName();
-        if (name.find("kafka_") == std::string::npos)
-            result.emplace_back(name, setting.getValue());
-    }
-    return result;
-}
 
 void StorageKafka::read(
     QueryPlan & query_plan,
@@ -555,33 +494,6 @@ size_t StorageKafka::getPollTimeoutMillisecond() const
         : getContext()->getSettingsRef().stream_poll_timeout_ms.totalMilliseconds();
 }
 
-bool StorageKafka::checkDependencies(const StorageID & table_id)
-{
-    // Check if all dependencies are attached
-    auto view_ids = DatabaseCatalog::instance().getDependentViews(table_id);
-    if (view_ids.empty())
-        return true;
-
-    // Check the dependencies are ready?
-    for (const auto & view_id : view_ids)
-    {
-        auto view = DatabaseCatalog::instance().tryGetTable(view_id, getContext());
-        if (!view)
-            return false;
-
-        // If it materialized view, check it's target table
-        auto * materialized_view = dynamic_cast<StorageMaterializedView *>(view.get());
-        if (materialized_view && !materialized_view->tryGetTargetTable())
-            return false;
-
-        // Check all its dependencies
-        if (!checkDependencies(view_id))
-            return false;
-    }
-
-    return true;
-}
-
 void StorageKafka::threadFunc(size_t idx)
 {
     assert(idx < tasks.size());
@@ -602,7 +514,7 @@ void StorageKafka::threadFunc(size_t idx)
             // Keep streaming as long as there are attached views and streaming is not cancelled
             while (!task->stream_cancelled)
             {
-                if (!checkDependencies(table_id))
+                if (!StorageKafkaUtils::checkDependencies(table_id, getContext()))
                     break;
 
                 LOG_DEBUG(log, "Started streaming to {} attached views", num_views);

@@ -134,7 +134,6 @@ private:
     std::mutex thread_statuses_mutex;
     std::list<std::shared_ptr<ThreadStatus>> thread_statuses;
 
-    SettingsChanges createSettingsAdjustments();
     /// Creates KafkaConsumer object without real consumer (cppkafka::Consumer)
     KafkaConsumerPtr createKafkaConsumer(size_t consumer_number);
     /// Returns full consumer related configuration, also the configuration
@@ -156,11 +155,8 @@ private:
     size_t getPollTimeoutMillisecond() const;
 
     bool streamToViews();
-    bool checkDependencies(const StorageID & table_id);
 
     void cleanConsumers();
-
-    static VirtualColumnsDescription createVirtuals(StreamingHandleErrorMode handle_error_mode);
 };
 
 }

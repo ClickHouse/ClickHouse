@@ -1,4 +1,3 @@
-#include <type_traits>
 #include <Storages/Kafka/StorageKafkaCommon.h>
 
 
@@ -11,8 +10,16 @@
 #include <Storages/Kafka/StorageKafka.h>
 #include <Storages/Kafka/StorageKafka2.h>
 #include <Storages/Kafka/parseSyslogLevel.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/StorageMaterializedView.h>
 #include <base/getFQDNOrHostName.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/CurrentMetrics.h>
@@ -469,7 +476,6 @@ cppkafka::Configuration KafkaConfigLoader::getProducerConfiguration(TKafkaStorag
 template cppkafka::Configuration KafkaConfigLoader::getProducerConfiguration<StorageKafka>(StorageKafka & storage, const ProducerConfigParams & params);
 template cppkafka::Configuration KafkaConfigLoader::getProducerConfiguration<StorageKafka2>(StorageKafka2 & storage, const ProducerConfigParams & params);
 
-
 void registerStorageKafka(StorageFactory & factory)
 {
     auto creator_fn = [](const StorageFactory::Arguments & args) -> std::shared_ptr<IStorage>
@@ -778,6 +784,89 @@ void eraseMessageErrors(Messages & messages, const LoggerPtr & log, ErrorHandler
 
     if (skipped)
         LOG_ERROR(log, "There were {} messages with an error", skipped);
+}
+
+SettingsChanges createSettingsAdjustments(KafkaSettings & kafka_settings, const String & schema_name)
+{
+    SettingsChanges result;
+    // Needed for backward compatibility
+    if (!kafka_settings.input_format_skip_unknown_fields.changed)
+    {
+        // Always skip unknown fields regardless of the context (JSON or TSKV)
+        kafka_settings.input_format_skip_unknown_fields = true;
+    }
+
+    if (!kafka_settings.input_format_allow_errors_ratio.changed)
+    {
+        kafka_settings.input_format_allow_errors_ratio = 0.;
+    }
+
+    if (!kafka_settings.input_format_allow_errors_num.changed)
+    {
+        kafka_settings.input_format_allow_errors_num = kafka_settings.kafka_skip_broken_messages.value;
+    }
+
+    if (!schema_name.empty())
+        result.emplace_back("format_schema", schema_name);
+
+    for (const auto & setting : kafka_settings)
+    {
+        const auto & name = setting.getName();
+        if (name.find("kafka_") == std::string::npos)
+            result.emplace_back(name, setting.getValue());
+    }
+    return result;
+}
+
+
+bool checkDependencies(const StorageID & table_id, const ContextPtr& context)
+{
+    // Check if all dependencies are attached
+    auto view_ids = DatabaseCatalog::instance().getDependentViews(table_id);
+    if (view_ids.empty())
+        return true;
+
+    // Check the dependencies are ready?
+    for (const auto & view_id : view_ids)
+    {
+        auto view = DatabaseCatalog::instance().tryGetTable(view_id, context);
+        if (!view)
+            return false;
+
+        // If it materialized view, check it's target table
+        auto * materialized_view = dynamic_cast<StorageMaterializedView *>(view.get());
+        if (materialized_view && !materialized_view->tryGetTargetTable())
+            return false;
+
+        // Check all its dependencies
+        if (!checkDependencies(view_id, context))
+            return false;
+    }
+
+    return true;
+}
+
+
+VirtualColumnsDescription createVirtuals(StreamingHandleErrorMode handle_error_mode)
+{
+    VirtualColumnsDescription desc;
+
+    desc.addEphemeral("_topic", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "");
+    desc.addEphemeral("_key", std::make_shared<DataTypeString>(), "");
+    desc.addEphemeral("_offset", std::make_shared<DataTypeUInt64>(), "");
+    desc.addEphemeral("_partition", std::make_shared<DataTypeUInt64>(), "");
+    desc.addEphemeral("_timestamp", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>()), "");
+    desc.addEphemeral("_timestamp_ms", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime64>(3)), "");
+    desc.addEphemeral("_headers.name", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "");
+    desc.addEphemeral("_headers.value", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "");
+
+    if (handle_error_mode == StreamingHandleErrorMode::STREAM)
+    {
+        desc.addEphemeral("_raw_message", std::make_shared<DataTypeString>(), "");
+        desc.addEphemeral("_error", std::make_shared<DataTypeString>(), "");
+    }
+
+    return desc;
 }
 }
 

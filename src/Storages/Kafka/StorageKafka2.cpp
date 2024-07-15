@@ -1,13 +1,6 @@
 #include <Storages/Kafka/StorageKafka2.h>
 
 #include <Core/ServerUUID.h>
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeDateTime.h>
-#include <DataTypes/DataTypeDateTime64.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <Formats/FormatFactory.h>
 #include <IO/EmptyReadBuffer.h>
 #include <Interpreters/Context.h>
@@ -122,7 +115,7 @@ StorageKafka2::StorageKafka2(
     , num_consumers(kafka_settings->kafka_num_consumers.value)
     , log(getLogger("StorageKafka2 (" + table_id_.getNameForLogs() + ")"))
     , semaphore(0, static_cast<int>(num_consumers))
-    , settings_adjustments(createSettingsAdjustments())
+    , settings_adjustments(StorageKafkaUtils::createSettingsAdjustments(*kafka_settings, schema_name))
     , thread_per_consumer(kafka_settings->kafka_thread_per_consumer.value)
     , collection_name(collection_name_)
     , active_node_identifier(toString(ServerUUID::get()))
@@ -138,7 +131,7 @@ StorageKafka2::StorageKafka2(
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(createVirtuals(kafka_settings->kafka_handle_error_mode));
+    setVirtuals(StorageKafkaUtils::createVirtuals(kafka_settings->kafka_handle_error_mode));
 
     auto task_count = thread_per_consumer ? num_consumers : 1;
     for (size_t i = 0; i < task_count; ++i)
@@ -157,27 +150,6 @@ StorageKafka2::StorageKafka2(
     activating_task->deactivate();
 }
 
-VirtualColumnsDescription StorageKafka2::createVirtuals(StreamingHandleErrorMode handle_error_mode)
-{
-    VirtualColumnsDescription desc;
-
-    desc.addEphemeral("_topic", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "");
-    desc.addEphemeral("_key", std::make_shared<DataTypeString>(), "");
-    desc.addEphemeral("_offset", std::make_shared<DataTypeUInt64>(), "");
-    desc.addEphemeral("_partition", std::make_shared<DataTypeUInt64>(), "");
-    desc.addEphemeral("_timestamp", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>()), "");
-    desc.addEphemeral("_timestamp_ms", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime64>(3)), "");
-    desc.addEphemeral("_headers.name", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "");
-    desc.addEphemeral("_headers.value", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "");
-
-    if (handle_error_mode == StreamingHandleErrorMode::STREAM)
-    {
-        desc.addEphemeral("_raw_message", std::make_shared<DataTypeString>(), "");
-        desc.addEphemeral("_error", std::make_shared<DataTypeString>(), "");
-    }
-
-    return desc;
-}
 void StorageKafka2::partialShutdown()
 {
     // This is called in a background task within a catch block, thus this function shouldn't throw
@@ -514,33 +486,6 @@ size_t StorageKafka2::getPollTimeoutMillisecond() const
 {
     return kafka_settings->kafka_poll_timeout_ms.changed ? kafka_settings->kafka_poll_timeout_ms.totalMilliseconds()
                                                          : getContext()->getSettingsRef().stream_poll_timeout_ms.totalMilliseconds();
-}
-
-bool StorageKafka2::checkDependencies(const StorageID & table_id)
-{
-    // Check if all dependencies are attached
-    auto view_ids = DatabaseCatalog::instance().getDependentViews(table_id);
-    if (view_ids.empty())
-        return true;
-
-    // Check the dependencies are ready?
-    for (const auto & view_id : view_ids)
-    {
-        auto view = DatabaseCatalog::instance().tryGetTable(view_id, getContext());
-        if (!view)
-            return false;
-
-        // If it materialized view, check it's target table
-        auto * materialized_view = dynamic_cast<StorageMaterializedView *>(view.get());
-        if (materialized_view && !materialized_view->tryGetTargetTable())
-            return false;
-
-        // Check all its dependencies
-        if (!checkDependencies(view_id))
-            return false;
-    }
-
-    return true;
 }
 
 namespace
@@ -1095,7 +1040,7 @@ void StorageKafka2::threadFunc(size_t idx)
             while (!task->stream_cancelled && num_created_consumers > 0)
             {
                 maybe_stall_reason.reset();
-                if (!checkDependencies(table_id))
+                if (!StorageKafkaUtils::checkDependencies(table_id, getContext()))
                     break;
 
                 LOG_DEBUG(log, "Started streaming to {} attached views", num_views);

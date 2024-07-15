@@ -196,8 +196,6 @@ private:
 
     std::optional<size_t> streamFromConsumer(ConsumerAndAssignmentInfo & consumer_info);
 
-    bool checkDependencies(const StorageID & table_id);
-
     // Returns true if this is the first replica
     bool createTableIfNotExists();
     // Returns true if all of the nodes were cleaned up
@@ -226,8 +224,6 @@ private:
 
 
     std::filesystem::path getTopicPartitionPath(const TopicPartition & topic_partition);
-
-    static VirtualColumnsDescription createVirtuals(StreamingHandleErrorMode handle_error_mode);
 };
 
 }
