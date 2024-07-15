@@ -818,7 +818,7 @@ StorageKafka2::lockTopicPartitions(zkutil::ZooKeeper & keeper_to_use, const Topi
         if (code != Coordination::Error::ZNODEEXISTS)
             zkutil::KeeperMultiException::check(code, ops, responses);
 
-        // Possible optimization: check the content of logfiles, if we locked them, then we can clean them up and retry to lock them.
+        // Possible optimization: check the content of lock files, if we locked them, then we can clean them up and retry to lock them.
         return std::nullopt;
     }
 
@@ -1064,7 +1064,7 @@ StorageKafka2::PolledBatchInfo StorageKafka2::pollConsumer(
     // they are not needed here:
     // and it's misleading to use them here,
     // as columns 'materialized' that way stays 'ephemeral'
-    // i.e. will not be stored anythere
+    // i.e. will not be stored anywhere
     // If needed any extra columns can be added using DEFAULT they can be added at MV level if needed.
 
     auto result_block = non_virtual_header.cloneWithColumns(executor.getResultColumns());
