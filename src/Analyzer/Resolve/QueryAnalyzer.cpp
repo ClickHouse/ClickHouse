@@ -64,6 +64,8 @@
 #include <Analyzer/Resolve/TableExpressionsAliasVisitor.h>
 #include <Analyzer/Resolve/ReplaceColumnsVisitor.h>
 
+#include <Core/Settings.h>
+
 namespace ProfileEvents
 {
     extern const Event ScalarSubqueriesGlobalCacheHit;
@@ -1490,6 +1492,10 @@ void QueryAnalyzer::qualifyColumnNodesWithProjectionNames(const QueryTreeNodes &
         additional_column_qualification_parts = {table_expression_node->getAlias()};
     else if (auto * table_node = table_expression_node->as<TableNode>())
         additional_column_qualification_parts = {table_node->getStorageID().getDatabaseName(), table_node->getStorageID().getTableName()};
+    else if (auto * query_node = table_expression_node->as<QueryNode>(); query_node && query_node->isCTE())
+        additional_column_qualification_parts = {query_node->getCTEName()};
+    else if (auto * union_node = table_expression_node->as<UnionNode>(); union_node && union_node->isCTE())
+        additional_column_qualification_parts = {union_node->getCTEName()};
 
     size_t additional_column_qualification_parts_size = additional_column_qualification_parts.size();
     const auto & table_expression_data = scope.getTableExpressionDataOrThrow(table_expression_node);
@@ -4455,9 +4461,8 @@ void QueryAnalyzer::initializeTableExpressionData(const QueryTreeNodePtr & table
     {
         auto left_table_expression = extractLeftTableExpression(scope_query_node->getJoinTree());
         if (table_expression_node.get() == left_table_expression.get() &&
-            scope.joins_count == 1 &&
-            scope.context->getSettingsRef().single_join_prefer_left_table)
-            table_expression_data.should_qualify_columns = false;
+            scope.joins_count == 1 && scope.context->getSettingsRef().single_join_prefer_left_table)
+                table_expression_data.should_qualify_columns = false;
     }
 
     scope.table_expression_node_to_data.emplace(table_expression_node, std::move(table_expression_data));

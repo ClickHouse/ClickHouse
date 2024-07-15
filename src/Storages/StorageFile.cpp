@@ -53,6 +53,8 @@
 #include <Common/ProfileEvents.h>
 #include <Common/re2.h>
 
+#include <Core/Settings.h>
+
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
