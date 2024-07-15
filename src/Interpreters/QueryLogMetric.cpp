@@ -103,7 +103,7 @@ void QueryLogMetric::startQuery(const String & query_id, TimePoint query_start_t
     queries.emplace(std::move(status));
 
     // Wake up the sleeping thread only if the collection for this query needs to wake up sooner
-    const auto & queries_by_next_collect_time = queries.get<1>();
+    const auto & queries_by_next_collect_time = queries.get<by_next_collect_time>();
     if (query_id == queries_by_next_collect_time.begin()->query_id)
     {
         std::unique_lock cv_lock(queries_cv_mutex);
@@ -114,7 +114,7 @@ void QueryLogMetric::startQuery(const String & query_id, TimePoint query_start_t
 void QueryLogMetric::finishQuery(const String & query_id)
 {
     std::lock_guard lock(queries_mutex);
-    auto & queries_by_name = queries.get<0>();
+    auto & queries_by_name = queries.get<by_query_id>();
     queries_by_name.erase(query_id);
 }
 
@@ -131,7 +131,7 @@ void QueryLogMetric::threadFunction()
                 const auto current_time = std::chrono::system_clock::now();
                 if (!queries.empty())
                 {
-                    auto & queries_by_next_collect_time = queries.get<1>();
+                    auto & queries_by_next_collect_time = queries.get<by_next_collect_time>();
                     stepFunction(current_time);
                     desired_timepoint = queries_by_next_collect_time.begin()->next_collect_time;
                 }
@@ -184,7 +184,7 @@ void QueryLogMetric::stepFunction(TimePoint current_time)
 {
     static const auto & process_list = context->getProcessList();
 
-    auto & queries_by_next_collect_time = queries.get<1>();
+    auto & queries_by_next_collect_time = queries.get<by_next_collect_time>();
     for (const auto & query_status : queries_by_next_collect_time)
     {
         // The queries are already sorted by next_collect_time, so once we find a query with a next_collect_time

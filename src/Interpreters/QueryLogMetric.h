@@ -56,11 +56,14 @@ class QueryLogMetric : public PeriodicLog<QueryLogMetricElement>
     using PeriodicLog<QueryLogMetricElement>::PeriodicLog;
 
 public:
+    struct by_query_id {};
+    struct by_next_collect_time {};
+
     using QuerySet = boost::multi_index_container<
         QueryLogMetricStatus,
         boost::multi_index::indexed_by<
-            boost::multi_index::hashed_unique<boost::multi_index::member<QueryLogMetricStatus, String, &QueryLogMetricStatus::query_id>>,
-            boost::multi_index::ordered_non_unique<boost::multi_index::member<QueryLogMetricStatus, std::chrono::system_clock::time_point, &QueryLogMetricStatus::next_collect_time>>>>;
+            boost::multi_index::hashed_unique<boost::multi_index::tag<by_query_id>, boost::multi_index::member<QueryLogMetricStatus, String, &QueryLogMetricStatus::query_id>>,
+            boost::multi_index::ordered_non_unique<boost::multi_index::tag<by_next_collect_time>, boost::multi_index::member<QueryLogMetricStatus, std::chrono::system_clock::time_point, &QueryLogMetricStatus::next_collect_time>>>>;
 
     // Both startQuery and finishQuery are called from the thread that executes the query
     void startQuery(const String & query_id, TimePoint query_start_time, UInt64 interval_milliseconds);
