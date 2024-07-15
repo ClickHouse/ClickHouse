@@ -8,6 +8,7 @@
 #include <Coordination/KeeperStorage.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/ColumnsWithTypeAndName.h>
+#include <Core/Settings.h>
 #include <Disks/DiskLocal.h>
 #include <Formats/ReadSchemaUtils.h>
 #include <Formats/registerFormats.h>
