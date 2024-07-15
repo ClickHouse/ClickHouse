@@ -1,9 +1,8 @@
-#include <stdexcept>
 #include <Columns/ColumnConst.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionTokens.h>
 #include <Functions/FunctionFactory.h>
-#include "Common/Exception.h"
+#include <Common/Exception.h>
 #include <Common/StringUtils.h>
 #include <Common/assert_cast.h>
 #include "base/types.h"
@@ -11,6 +10,12 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+    extern const int ILLEGAL_COLUMN;
+}
 
 /** Functions that finds all substrings such their crc32-hash is more than crc32-hash of every bigram in substring.
   *
