@@ -2,7 +2,7 @@
 
 #include <Storages/MergeTree/FutureMergedMutatedPart.h>
 #include <Storages/MutationCommands.h>
-#include <Core/SettingsEnums.h>
+
 
 namespace DB
 {
@@ -41,15 +41,12 @@ struct MergeMutateSelectedEntry
     CurrentlyMergingPartsTaggerPtr tagger;
     MutationCommandsConstPtr commands;
     MergeTreeTransactionPtr txn;
-    LightweightMutationProjectionMode lightweight_delete_projection_mode;
     MergeMutateSelectedEntry(FutureMergedMutatedPartPtr future_part_, CurrentlyMergingPartsTaggerPtr tagger_,
-                             MutationCommandsConstPtr commands_, const MergeTreeTransactionPtr & txn_ = NO_TRANSACTION_PTR,
-                             const LightweightMutationProjectionMode & lightweight_delete_projection_mode_ = LightweightMutationProjectionMode::THROW)
+                             MutationCommandsConstPtr commands_, const MergeTreeTransactionPtr & txn_ = NO_TRANSACTION_PTR)
         : future_part(future_part_)
         , tagger(std::move(tagger_))
         , commands(commands_)
         , txn(txn_)
-        , lightweight_delete_projection_mode(lightweight_delete_projection_mode_)
     {}
 };
 

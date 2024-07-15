@@ -48,8 +48,7 @@ UInt64 MergeTreeMutationEntry::parseFileName(const String & file_name_)
 }
 
 MergeTreeMutationEntry::MergeTreeMutationEntry(MutationCommands commands_, DiskPtr disk_, const String & path_prefix_, UInt64 tmp_number,
-                                               const TransactionID & tid_, const WriteSettings & settings,
-                                               const LightweightMutationProjectionMode & lightweight_delete_projection_mode_)
+                                               const TransactionID & tid_, const WriteSettings & settings)
     : create_time(time(nullptr))
     , commands(std::move(commands_))
     , disk(std::move(disk_))
@@ -57,7 +56,6 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(MutationCommands commands_, DiskP
     , file_name("tmp_mutation_" + toString(tmp_number) + ".txt")
     , is_temp(true)
     , tid(tid_)
-    , lightweight_delete_projection_mode(lightweight_delete_projection_mode_)
 {
     try
     {

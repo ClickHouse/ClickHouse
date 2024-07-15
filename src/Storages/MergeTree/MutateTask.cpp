@@ -2200,7 +2200,6 @@ bool MutateTask::prepare()
     context_for_reading->setSetting("allow_asynchronous_read_from_io_pool_for_merge_tree", false);
     context_for_reading->setSetting("max_streams_for_merge_tree_reading", Field(0));
     context_for_reading->setSetting("read_from_filesystem_cache_if_exists_otherwise_bypass_cache", 1);
-    context_for_reading->setSetting("lightweight_mutation_projection_mode", Field(ctx->context->getSettingsRef().lightweight_mutation_projection_mode));
 
     MutationHelpers::splitAndModifyMutationCommands(
         ctx->source_part, ctx->metadata_snapshot,
@@ -2225,15 +2224,6 @@ bool MutateTask::prepare()
         ctx->mutating_pipeline_builder = ctx->interpreter->execute();
         ctx->updated_header = ctx->interpreter->getUpdatedHeader();
         ctx->progress_callback = MergeProgressCallback((*ctx->mutate_entry)->ptr(), ctx->watch_prev_elapsed, *ctx->stage_progress);
-
-        // ctx->updated_header.has(RowExistsColumn::name);
-        // for (const auto & projection : ctx->metadata_snapshot->getProjections())
-        // {
-        //     if (!ctx->source_part->hasProjection(projection.name))
-        //         continue;
-
-        //     ctx->materialized_projections.insert(projection.name);
-        // }
     }
 
     auto single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + ctx->future_part->name, ctx->space_reservation->getDisk(), 0);

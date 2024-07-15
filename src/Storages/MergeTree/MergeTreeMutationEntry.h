@@ -5,7 +5,6 @@
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/MutationCommands.h>
 #include <Common/TransactionID.h>
-#include <Core/SettingsEnums.h>
 
 
 namespace DB
@@ -37,13 +36,9 @@ struct MergeTreeMutationEntry
     /// or UnknownCSN if it's not committed (yet) or RolledBackCSN if it's rolled back or PrehistoricCSN if there is no transaction.
     CSN csn = Tx::UnknownCSN;
 
-    /// From query context.
-    LightweightMutationProjectionMode lightweight_delete_projection_mode;
-
     /// Create a new entry and write it to a temporary file.
     MergeTreeMutationEntry(MutationCommands commands_, DiskPtr disk, const String & path_prefix_, UInt64 tmp_number,
-                           const TransactionID & tid_, const WriteSettings & settings,
-                           const LightweightMutationProjectionMode & lightweight_delete_projection_mode_);
+                           const TransactionID & tid_, const WriteSettings & settings);
     MergeTreeMutationEntry(const MergeTreeMutationEntry &) = delete;
     MergeTreeMutationEntry(MergeTreeMutationEntry &&) = default;
 

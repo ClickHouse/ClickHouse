@@ -517,8 +517,7 @@ Int64 StorageMergeTree::startMutation(const MutationCommands & commands, Context
     {
         std::lock_guard lock(currently_processing_in_background_mutex);
 
-        MergeTreeMutationEntry entry(commands, disk, relative_data_path, insert_increment.get(), current_tid, getContext()->getWriteSettings(),
-                                     query_context->getSettingsRef().lightweight_mutation_projection_mode);
+        MergeTreeMutationEntry entry(commands, disk, relative_data_path, insert_increment.get(), current_tid, getContext()->getWriteSettings());
         version = increment.get();
         entry.commit(version);
         String mutation_id = entry.file_name;
@@ -1284,16 +1283,11 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
         size_t current_ast_elements = 0;
         auto last_mutation_to_apply = mutations_end_it;
 
-        /// Trying to grab it from query context.
-        LightweightMutationProjectionMode lightweight_delete_projection_mode = LightweightMutationProjectionMode::THROW;
-
         for (auto it = mutations_begin_it; it != mutations_end_it; ++it)
         {
             /// Do not squash mutations from different transactions to be able to commit/rollback them independently.
             if (first_mutation_tid != it->second.tid)
                 break;
-
-            lightweight_delete_projection_mode = it->second.lightweight_delete_projection_mode;
 
             size_t commands_size = 0;
             MutationCommands commands_for_size_validation;
@@ -1371,7 +1365,7 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
             future_part->part_format = part->getFormat();
 
             tagger = std::make_unique<CurrentlyMergingPartsTagger>(future_part, MergeTreeDataMergerMutator::estimateNeededDiskSpace({part}, false), *this, metadata_snapshot, true);
-            return std::make_shared<MergeMutateSelectedEntry>(future_part, std::move(tagger), commands, txn, lightweight_delete_projection_mode);
+            return std::make_shared<MergeMutateSelectedEntry>(future_part, std::move(tagger), commands, txn);
         }
     }
 
