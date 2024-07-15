@@ -19,6 +19,8 @@ If you are trying other untested clients or integrations, keep in mind that ther
 
 If there is a native driver available (e.g., [DBeaver](../integrations/dbeaver)), it is always preferred to use it instead of the MySQL interface. Additionally, while most of the MySQL language clients should work fine, MySQL interface is not guaranteed to be a drop-in replacement for a codebase with existing MySQL queries.
 
+If your use case involves a particular tool that does not have a native ClickHouse driver, and you would like to use it via the MySQL interface and you found certain incompatibilities - please [create an issue](https://github.com/ClickHouse/ClickHouse/issues) in the ClickHouse repository.
+
 ## Enabling the MySQL Interface On ClickHouse Cloud
 
 1. After creating your ClickHouse Cloud Service, on the credentials screen, select the MySQL tab
