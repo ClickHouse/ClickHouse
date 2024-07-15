@@ -200,6 +200,7 @@ void MemoryTracker::debugLogBigAllocationWithoutCheck(Int64 size [[maybe_unused]
     if (size < 0)
         return;
 
+    constexpr Int64 threshold = 16 * 1024 * 1024;   /// The choice is arbitrary (maybe we should decrease it)
     if (size < threshold)
         return;
 
@@ -622,9 +623,9 @@ void MemoryTracker::updateMemoryCredits()
 {
     static Stopwatch stopwatch;
     static size_t previous_value = 0;
-
+    constexpr Int64 local_threshold = 1024 * 1024;   /// The choice is arbitrary (maybe we should decrease it)
     size_t current_value = amount;
-    if (current_value > previous_value && current_value - previous_value > threshold)
+    if (current_value > previous_value && current_value - previous_value > local_threshold)
     {
         size_t delta = (current_value - previous_value) * stopwatch.elapsedMicroseconds();
         ProfileEvents::increment(ProfileEvents::MemoryCredits, delta);
