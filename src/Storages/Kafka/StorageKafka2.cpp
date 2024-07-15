@@ -158,7 +158,7 @@ StorageKafka2::StorageKafka2(
     if (!first_replica)
         createReplica();
 
-    activating_task = getContext()->getSchedulePool().createTask(log->name() + "(activating task)", [this]() { activate(); });
+    activating_task = getContext()->getSchedulePool().createTask(log->name() + "(activating task)", [this]() { activateAndReschedule(); });
     activating_task->deactivate();
 }
 
@@ -185,6 +185,7 @@ VirtualColumnsDescription StorageKafka2::createVirtuals(StreamingHandleErrorMode
 }
 void StorageKafka2::partialShutdown()
 {
+    // This is called in a background task within a catch block, thus this function shouldn't throw
     LOG_TRACE(log, "Cancelling streams");
     for (auto & task : tasks)
     {
@@ -208,12 +209,7 @@ bool StorageKafka2::activate()
         return true;
     }
 
-    if (first_activation_time)
-    {
-        LOG_DEBUG(log, "Activating replica");
-        assert(!is_active);
-    }
-    else if (!is_active)
+    if (!is_active)
     {
         LOG_WARNING(log, "Table was not active. Will try to activate it");
     }
@@ -305,11 +301,46 @@ bool StorageKafka2::activate()
         task->holder->activateAndSchedule();
     }
 
-    if (first_activation_time)
-        first_activation_time = false;
-
     LOG_DEBUG(log, "Table activated successfully");
     return true;
+}
+
+void StorageKafka2::activateAndReschedule()
+{
+    if (shutdown_called)
+        return;
+
+    /// It would be ideal to introduce a setting for this
+    constexpr static size_t check_period_ms = 60000;
+    /// In case of any exceptions we want to rerun the this task as fast as possible but we also don't want to keep retrying immediately
+    /// in a close loop (as fast as tasks can be processed), so we'll retry in between 100 and 10000 ms
+    const size_t backoff_ms = 100 * ((consecutive_activate_failures + 1) * (consecutive_activate_failures + 2)) / 2;
+    const size_t next_failure_retry_ms = std::min(size_t{10000}, backoff_ms);
+
+    try
+    {
+        bool replica_is_active = activate();
+        if (replica_is_active)
+        {
+            consecutive_activate_failures = 0;
+            activating_task->scheduleAfter(check_period_ms);
+        }
+        else
+        {
+            consecutive_activate_failures++;
+            activating_task->scheduleAfter(next_failure_retry_ms);
+        }
+    }
+    catch (...)
+    {
+        consecutive_activate_failures++;
+        activating_task->scheduleAfter(next_failure_retry_ms);
+
+        /// We couldn't activate table let's set it into readonly mode if necessary
+        /// We do this after scheduling the task in case it throws
+        partialShutdown();
+        tryLogCurrentException(log, "Failed to restart the table. Will try again");
+    }
 }
 
 void StorageKafka2::assertActive() const

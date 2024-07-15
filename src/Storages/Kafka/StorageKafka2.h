@@ -162,8 +162,9 @@ private:
     zkutil::EphemeralNodeHolderPtr replica_is_active_node;
     BackgroundSchedulePool::TaskHolder activating_task;
     String active_node_identifier;
-    bool first_activation_time = true;
+    UInt64 consecutive_activate_failures = 0;
     bool activate();
+    void activateAndReschedule();
     void partialShutdown();
 
     void assertActive() const;
