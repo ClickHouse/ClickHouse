@@ -6,6 +6,7 @@
 #include <Columns/ColumnsCommon.h>
 
 #include <Common/typeid_cast.h>
+#include <Core/SettingsEnums.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <Interpreters/ExpressionActions.h>
 

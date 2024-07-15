@@ -11,9 +11,11 @@
 #include <Common/SharedMutex.h>
 #include <Common/SharedMutexHelper.h>
 #include <Core/NamesAndTypes.h>
-#include <Core/Settings.h>
 #include <Core/UUID.h>
+#include <Formats/FormatSettings.h>
 #include <IO/AsyncReadCounters.h>
+#include <IO/ReadSettings.h>
+#include <IO/WriteSettings.h>
 #include <Disks/IO/getThreadPoolReader.h>
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/Context_fwd.h>
@@ -129,6 +131,7 @@ class ShellCommand;
 class ICompressionCodec;
 class AccessControl;
 class GSSAcceptorContext;
+struct Settings;
 struct SettingsConstraintsAndProfileIDs;
 class SettingsProfileElements;
 class RemoteHostFilter;
@@ -276,7 +279,7 @@ protected:
     mutable std::shared_ptr<const ContextAccess> access;
     mutable bool need_recalculate_access = true;
     String current_database;
-    Settings settings;  /// Setting for query execution.
+    std::unique_ptr<Settings> settings{};  /// Setting for query execution.
 
     using ProgressCallback = std::function<void(const Progress & progress)>;
     ProgressCallback progress_callback;  /// Callback for tracking progress of query execution.
@@ -952,7 +955,7 @@ public:
     void makeSessionContext();
     void makeGlobalContext();
 
-    const Settings & getSettingsRef() const { return settings; }
+    const Settings & getSettingsRef() const { return *settings; }
 
     void setProgressCallback(ProgressCallback callback);
     /// Used in executeQuery() to pass it to the QueryPipeline.
@@ -1428,40 +1431,19 @@ struct HTTPContext : public IHTTPContext
         : context(Context::createCopy(context_))
     {}
 
-    uint64_t getMaxHstsAge() const override
-    {
-        return context->getSettingsRef().hsts_max_age;
-    }
+    uint64_t getMaxHstsAge() const override;
 
-    uint64_t getMaxUriSize() const override
-    {
-        return context->getSettingsRef().http_max_uri_size;
-    }
+    uint64_t getMaxUriSize() const override;
 
-    uint64_t getMaxFields() const override
-    {
-        return context->getSettingsRef().http_max_fields;
-    }
+    uint64_t getMaxFields() const override;
 
-    uint64_t getMaxFieldNameSize() const override
-    {
-        return context->getSettingsRef().http_max_field_name_size;
-    }
+    uint64_t getMaxFieldNameSize() const override;
 
-    uint64_t getMaxFieldValueSize() const override
-    {
-        return context->getSettingsRef().http_max_field_value_size;
-    }
+    uint64_t getMaxFieldValueSize() const override;
 
-    Poco::Timespan getReceiveTimeout() const override
-    {
-        return context->getSettingsRef().http_receive_timeout;
-    }
+    Poco::Timespan getReceiveTimeout() const override;
 
-    Poco::Timespan getSendTimeout() const override
-    {
-        return context->getSettingsRef().http_send_timeout;
-    }
+    Poco::Timespan getSendTimeout() const override;
 
     ContextPtr context;
 };

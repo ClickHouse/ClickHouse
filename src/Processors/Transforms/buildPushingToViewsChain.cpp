@@ -27,8 +27,9 @@
 #include <Common/ThreadStatus.h>
 #include <Common/checkStackSize.h>
 #include <Common/logger_useful.h>
-#include "base/defines.h"
 #include <Core/Field.h>
+#include <Core/Settings.h>
+#include <base/defines.h>
 
 #include <atomic>
 #include <chrono>
