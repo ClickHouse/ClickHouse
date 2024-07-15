@@ -260,18 +260,29 @@ def main():
         failed_to_get_info = False
         has_failed_statuses = False
         for status in statuses:
-            if not CI.is_required(status.context):
+            if not CI.is_required(status.context) or status.context in (
+                CI.StatusNames.SYNC,
+                CI.StatusNames.PR_CHECK,
+            ):
+                # CI.StatusNames.SYNC or CI.StatusNames.PR_CHECK should not be checked
                 continue
+            print(f"Check status [{status.context}], [{status.state}]")
             if status.state == FAILURE:
                 has_failed_statuses = True
                 failed_cnt = Utils.get_failed_tests_number(status.description)
                 if failed_cnt is None:
                     failed_to_get_info = True
+                    print(
+                        f"WARNING: failed to get number of failed tests from [{status.description}]"
+                    )
                 else:
                     if failed_cnt > max_failed_tests_per_job:
                         job_name_with_max_failures = status.context
                         max_failed_tests_per_job = failed_cnt
                     total_failed_tests += failed_cnt
+                    print(
+                        f"Failed test cases in [{status.context}] is [{failed_cnt}], total failures [{total_failed_tests}]"
+                    )
             elif status.state != SUCCESS and status.context not in (
                 CI.StatusNames.SYNC,
                 CI.StatusNames.PR_CHECK,

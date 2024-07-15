@@ -763,22 +763,13 @@ class CiCache:
         # TIMEOUT * MAX_ROUNDS_TO_WAIT must be less than 6h (GH job timeout) with a room for rest RunConfig work
         TIMEOUT = 3000  # 50 min
         MAX_ROUNDS_TO_WAIT = 6
-        MAX_JOB_NUM_TO_WAIT = 3
         round_cnt = 0
-
-        def _has_build_job():
-            for job in self.jobs_to_wait:
-                if CI.is_build_job(job):
-                    return True
-            return False
 
         if not is_release:
             # in PRs we can wait only for builds, TIMEOUT*MAX_ROUNDS_TO_WAIT=100min is enough
             MAX_ROUNDS_TO_WAIT = 2
 
-        while (
-            len(self.jobs_to_wait) > MAX_JOB_NUM_TO_WAIT or _has_build_job()
-        ) and round_cnt < MAX_ROUNDS_TO_WAIT:
+        while round_cnt < MAX_ROUNDS_TO_WAIT:
             round_cnt += 1
             GHActions.print_in_group(
                 f"Wait pending jobs, round [{round_cnt}/{MAX_ROUNDS_TO_WAIT}]:",
@@ -820,6 +811,10 @@ class CiCache:
                                 f"Job [{job_name}_[{batch}/{num_batches}]] is not pending anymore"
                             )
                             job_config.batches.remove(batch)
+                            if not job_config.batches:
+                                print(f"Remove job [{job_name}] from jobs_to_do")
+                                self.jobs_to_skip.append(job_name)
+                                del self.jobs_to_do[job_name]
                         else:
                             print(
                                 f"NOTE: Job [{job_name}:{batch}] finished failed - do not add to ready"
@@ -830,9 +825,7 @@ class CiCache:
                             await_finished.add(job_name)
 
                 for job in await_finished:
-                    self.jobs_to_skip.append(job)
                     del self.jobs_to_wait[job]
-                    del self.jobs_to_do[job]
 
                 if not dry_run:
                     expired_sec = int(time.time()) - start_at
