@@ -15,7 +15,7 @@ import upload_result_helper
 from build_check import get_release_or_pr
 from ci_config import CI
 from ci_metadata import CiMetadata
-from ci_utils import GHActions, normalize_string
+from ci_utils import GHActions, normalize_string, Shell
 from clickhouse_helper import (
     CiLogsCredentials,
     ClickHouseHelper,
@@ -53,6 +53,7 @@ from stopwatch import Stopwatch
 from tee_popen import TeePopen
 from ci_cache import CiCache
 from ci_settings import CiSettings
+from ci_buddy import CIBuddy
 from version_helper import get_version_from_repo
 
 # pylint: disable=too-many-lines
@@ -262,6 +263,8 @@ def check_missing_images_on_dockerhub(
 
 
 def _pre_action(s3, indata, pr_info):
+    print("Clear dmesg")
+    Shell.run("sudo dmesg --clear ||:")
     CommitStatusData.cleanup()
     JobReport.cleanup()
     BuildResult.cleanup()
@@ -322,8 +325,8 @@ def _mark_success_action(
         # do nothing, exit without failure
         print(f"ERROR: no status file for job [{job}]")
 
-    if job_config.run_always or job_config.run_by_label:
-        print(f"Job [{job}] runs always or by label in CI - do not cache")
+    if job_config.run_by_label or not job_config.has_digest():
+        print(f"Job [{job}] has no digest or run by label in CI - do not cache")
     else:
         if pr_info.is_master:
             pass
@@ -992,6 +995,10 @@ def main() -> int:
             ci_settings,
             args.skip_jobs,
         )
+
+        if IS_CI and pr_info.is_pr:
+            ci_cache.filter_out_not_affected_jobs()
+
         ci_cache.print_status()
 
         if IS_CI and not pr_info.is_merge_queue:
@@ -1118,6 +1125,16 @@ def main() -> int:
 
     ### POST action: start
     elif args.post:
+        has_oom_error = False
+        if Shell.check(
+            "sudo dmesg -T | grep -q -e 'Out of memory: Killed process' -e 'oom_reaper: reaped process' -e 'oom-kill:constraint=CONSTRAINT_NONE'"
+        ):
+            print("WARNING: OOM while job execution")
+            CIBuddy(dry_run=not pr_info.is_release).post_error(
+                "Out Of Memory", job_name=_get_ext_check_name(args.job_name)
+            )
+            has_oom_error = True
+
         job_report = JobReport.load() if JobReport.exist() else None
         if job_report:
             ch_helper = ClickHouseHelper()
@@ -1220,8 +1237,25 @@ def main() -> int:
                     ch_helper,
                 )
         else:
-            # no job report
-            print(f"No job report for {[args.job_name]} - do nothing")
+            if CI.is_test_job(args.job_name):
+                if has_oom_error:
+                    description = "ERROR: Out Of Memory"
+                else:
+                    description = "ERROR: Unknown job status"
+                gh = GitHub(get_best_robot_token(), per_page=100)
+                commit = get_commit(gh, pr_info.sha)
+                post_commit_status(
+                    commit,
+                    ERROR,
+                    "",
+                    description,
+                    job_report.check_name or _get_ext_check_name(args.job_name),
+                    pr_info,
+                    dump_to_file=True,
+                )
+            else:
+                # no job report
+                print(f"No job report for {[args.job_name]} - do nothing")
     ### POST action: end
 
     ### MARK SUCCESS action: start

@@ -17,8 +17,8 @@
 #include "Poco/NumberFormatter.h"
 #include "Poco/NumberParser.h"
 #include "Poco/String.h"
+#include <charconv>
 #include <format>
-
 
 using Poco::NumberFormatter;
 using Poco::NumberParser;
@@ -75,7 +75,7 @@ void HTTPMessage::setContentLength(std::streamsize length)
 		erase(CONTENT_LENGTH);
 }
 
-	
+
 std::streamsize HTTPMessage::getContentLength() const
 {
 	const std::string& contentLength = get(CONTENT_LENGTH, EMPTY);
@@ -98,7 +98,7 @@ void HTTPMessage::setContentLength64(Poco::Int64 length)
 		erase(CONTENT_LENGTH);
 }
 
-	
+
 Poco::Int64 HTTPMessage::getContentLength64() const
 {
 	const std::string& contentLength = get(CONTENT_LENGTH, EMPTY);
@@ -133,13 +133,13 @@ void HTTPMessage::setChunkedTransferEncoding(bool flag)
 		setTransferEncoding(IDENTITY_TRANSFER_ENCODING);
 }
 
-	
+
 bool HTTPMessage::getChunkedTransferEncoding() const
 {
 	return icompare(getTransferEncoding(), CHUNKED_TRANSFER_ENCODING) == 0;
 }
 
-	
+
 void HTTPMessage::setContentType(const std::string& mediaType)
 {
 	if (mediaType.empty())
@@ -154,7 +154,7 @@ void HTTPMessage::setContentType(const MediaType& mediaType)
 	setContentType(mediaType.toString());
 }
 
-	
+
 const std::string& HTTPMessage::getContentType() const
 {
 	return get(CONTENT_TYPE, UNKNOWN_CONTENT_TYPE);

@@ -3,6 +3,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
 #include <Core/ProtocolDefines.h>
+#include <Interpreters/HashTablesStatistics.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 
@@ -370,10 +371,10 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
     const auto & query_context = planner_context->getQueryContext();
     const Settings & settings = query_context->getSettingsRef();
 
-    const auto stats_collecting_params = Aggregator::Params::StatsCollectingParams(
-        select_query_info.query,
+    const auto stats_collecting_params = StatsCollectingParams(
+        calculateCacheKey(select_query_info.query),
         settings.collect_hash_table_stats_during_aggregation,
-        settings.max_entries_for_hash_table_stats,
+        query_context->getServerSettings().max_entries_for_hash_table_stats,
         settings.max_size_to_preallocate_for_aggregation);
 
     auto aggregate_descriptions = aggregation_analysis_result.aggregate_descriptions;

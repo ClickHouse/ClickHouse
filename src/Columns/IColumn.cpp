@@ -46,7 +46,11 @@ String IColumn::dumpStructure() const
     return res.str();
 }
 
+#if !defined(ABORT_ON_LOGICAL_ERROR)
 void IColumn::insertFrom(const IColumn & src, size_t n)
+#else
+void IColumn::doInsertFrom(const IColumn & src, size_t n)
+#endif
 {
     insert(src[n]);
 }

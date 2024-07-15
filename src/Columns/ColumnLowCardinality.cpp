@@ -159,7 +159,11 @@ void ColumnLowCardinality::insertDefault()
     idx.insertPosition(getDictionary().getDefaultValueIndex());
 }
 
+#if !defined(ABORT_ON_LOGICAL_ERROR)
 void ColumnLowCardinality::insertFrom(const IColumn & src, size_t n)
+#else
+void ColumnLowCardinality::doInsertFrom(const IColumn & src, size_t n)
+#endif
 {
     const auto * low_cardinality_src = typeid_cast<const ColumnLowCardinality *>(&src);
 
@@ -187,7 +191,11 @@ void ColumnLowCardinality::insertFromFullColumn(const IColumn & src, size_t n)
     idx.insertPosition(getDictionary().uniqueInsertFrom(src, n));
 }
 
+#if !defined(ABORT_ON_LOGICAL_ERROR)
 void ColumnLowCardinality::insertRangeFrom(const IColumn & src, size_t start, size_t length)
+#else
+void ColumnLowCardinality::doInsertRangeFrom(const IColumn & src, size_t start, size_t length)
+#endif
 {
     const auto * low_cardinality_src = typeid_cast<const ColumnLowCardinality *>(&src);
 
@@ -364,7 +372,11 @@ int ColumnLowCardinality::compareAtImpl(size_t n, size_t m, const IColumn & rhs,
     return getDictionary().compareAt(n_index, m_index, low_cardinality_column.getDictionary(), nan_direction_hint);
 }
 
+#if !defined(ABORT_ON_LOGICAL_ERROR)
 int ColumnLowCardinality::compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const
+#else
+int ColumnLowCardinality::doCompareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const
+#endif
 {
     return compareAtImpl(n, m, rhs, nan_direction_hint);
 }

@@ -193,7 +193,7 @@ public:
         storage.saveFileSizes(lock);
 
         size_t initial_data_size = storage.file_checker.getFileSize(storage.data_file_path);
-        block_out = std::make_unique<NativeWriter>(*data_out, 0, metadata_snapshot->getSampleBlock(), false, &storage.indices, initial_data_size);
+        block_out = std::make_unique<NativeWriter>(*data_out, 0, metadata_snapshot->getSampleBlock(), std::nullopt, false, &storage.indices, initial_data_size);
     }
 
     String getName() const override { return "StripeLogSink"; }

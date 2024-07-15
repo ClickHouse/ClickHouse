@@ -84,10 +84,18 @@ public:
     void updateHashWithValue(size_t n, SipHash & hash) const override;
     void updateWeakHash32(WeakHash32 & hash) const override;
     void updateHashFast(SipHash & hash) const override;
+#if !defined(ABORT_ON_LOGICAL_ERROR)
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
+#else
+    void doInsertRangeFrom(const IColumn & src, size_t start, size_t length) override;
+#endif
     void insert(const Field & x) override;
     bool tryInsert(const Field & x) override;
+#if !defined(ABORT_ON_LOGICAL_ERROR)
     void insertFrom(const IColumn & src_, size_t n) override;
+#else
+    void doInsertFrom(const IColumn & src_, size_t n) override;
+#endif
     void insertDefault() override;
     void popBack(size_t n) override;
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
@@ -95,7 +103,11 @@ public:
     ColumnPtr permute(const Permutation & perm, size_t limit) const override;
     ColumnPtr index(const IColumn & indexes, size_t limit) const override;
     template <typename Type> ColumnPtr indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const;
+#if !defined(ABORT_ON_LOGICAL_ERROR)
     int compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const override;
+#else
+    int doCompareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const override;
+#endif
     int compareAtWithCollation(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint, const Collator & collator) const override;
     void getPermutation(PermutationSortDirection direction, PermutationSortStability stability,
                             size_t limit, int nan_direction_hint, Permutation & res) const override;

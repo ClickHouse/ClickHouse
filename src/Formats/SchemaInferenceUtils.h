@@ -2,6 +2,7 @@
 
 #include <DataTypes/IDataType.h>
 #include <IO/ReadBuffer.h>
+#include <Formats/FormatSettings.h>
 
 #include <vector>
 
@@ -18,6 +19,11 @@ struct JSONInferenceInfo
     /// We store numbers that were parsed from strings.
     /// It's used in types transformation to change such numbers back to string if needed.
     std::unordered_set<const IDataType *> numbers_parsed_from_json_strings;
+    /// Store integer types that were inferred from negative numbers.
+    /// It's used to determine common type for Int64 and UInt64
+    /// TODO: check it not only in JSON formats.
+    std::unordered_set<const IDataType *> negative_integers;
+
     /// Indicates if currently we are inferring type for Map/Object key.
     bool is_object_key = false;
     /// When we transform types for the same column from different files
@@ -48,6 +54,7 @@ DataTypePtr tryInferDateOrDateTimeFromString(std::string_view field, const Forma
 /// Try to parse a number value from a string. By default, it tries to parse Float64,
 /// but if setting try_infer_integers is enabled, it also tries to parse Int64.
 DataTypePtr tryInferNumberFromString(std::string_view field, const FormatSettings & settings);
+DataTypePtr tryInferJSONNumberFromString(std::string_view field, const FormatSettings & settings, JSONInferenceInfo * json_info);
 
 /// It takes two types inferred for the same column and tries to transform them to a common type if possible.
 /// It's also used when we try to infer some not ordinary types from another types.
@@ -77,6 +84,7 @@ void transformInferredTypesIfNeeded(DataTypePtr & first, DataTypePtr & second, c
 /// Example 2:
 ///     We merge DataTypeJSONPaths types to a single DataTypeJSONPaths type with union of all JSON paths.
 void transformInferredJSONTypesIfNeeded(DataTypePtr & first, DataTypePtr & second, const FormatSettings & settings, JSONInferenceInfo * json_info);
+void transformInferredJSONTypesIfNeeded(DataTypes & types, const FormatSettings & settings, JSONInferenceInfo * json_info);
 
 /// Make final transform for types inferred in JSON format. It does 3 types of transformation:
 /// 1) Checks if type is unnamed Tuple(...), tries to transform nested types to find a common type for them and if all nested types
@@ -106,5 +114,7 @@ NamesAndTypesList getNamesAndRecursivelyNullableTypes(const Block & header);
 
 /// Check if type contains Nothing, like Array(Tuple(Nullable(Nothing), String))
 bool checkIfTypeIsComplete(const DataTypePtr & type);
+
+bool checkIfTypesAreEqual(const DataTypes & types);
 
 }

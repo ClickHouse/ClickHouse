@@ -900,6 +900,11 @@ bool NativeORCBlockInputFormat::prepareStripeReader()
 
     orc::RowReaderOptions row_reader_options;
     row_reader_options.includeTypes(include_indices);
+    if (format_settings.orc.read_use_writer_time_zone)
+    {
+        String writer_time_zone = current_stripe_info->getWriterTimezone();
+        row_reader_options.setTimezoneName(writer_time_zone);
+    }
     row_reader_options.range(current_stripe_info->getOffset(), current_stripe_info->getLength());
     if (format_settings.orc.filter_push_down && sarg)
     {

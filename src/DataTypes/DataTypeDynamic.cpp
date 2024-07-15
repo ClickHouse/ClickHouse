@@ -71,7 +71,7 @@ static DataTypePtr create(const ASTPtr & arguments)
 
     auto * literal = argument->arguments->children[1]->as<ASTLiteral>();
 
-    if (!literal || literal->value.getType() != Field::Types::UInt64 || literal->value.get<UInt64>() == 0 || literal->value.get<UInt64>() > 255)
+    if (!literal || literal->value.getType() != Field::Types::UInt64 || literal->value.get<UInt64>() == 0 || literal->value.get<UInt64>() > ColumnVariant::MAX_NESTED_COLUMNS)
         throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "'max_types' argument for Dynamic type should be a positive integer between 1 and 255");
 
     return std::make_shared<DataTypeDynamic>(literal->value.get<UInt64>());
