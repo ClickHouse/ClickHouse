@@ -22,9 +22,9 @@ namespace
 
 constexpr auto PREFIX_PATH_FILE_NAME = "prefix.path";
 
-ObjectStorageKey createMetadataObjectKey(const std::string & key_prefix, const std::string & metadata_key_prefix)
+ObjectStorageKey createMetadataObjectKey(const std::string & object_key_prefix, const std::string & metadata_key_prefix)
 {
-    auto prefix = std::filesystem::path(metadata_key_prefix) / key_prefix;
+    auto prefix = std::filesystem::path(metadata_key_prefix) / object_key_prefix;
     return ObjectStorageKey::createAsRelative(prefix.string(), PREFIX_PATH_FILE_NAME);
 }
 }
@@ -35,7 +35,7 @@ MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::MetadataStorageFr
     , path_map(path_map_)
     , object_storage(object_storage_)
     , metadata_key_prefix(metadata_key_prefix_)
-    , key_prefix(object_storage->generateObjectKeyPrefixForDirectoryPath(path, "" /* key_prefix */).serialize())
+    , object_key_prefix(object_storage->generateObjectKeyPrefixForDirectoryPath(path, "" /* object_key_prefix */).serialize())
 {
 }
 
@@ -47,7 +47,7 @@ void MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::execute(std:
             return;
     }
 
-    auto metadata_object_key = createMetadataObjectKey(key_prefix, metadata_key_prefix);
+    auto metadata_object_key = createMetadataObjectKey(object_key_prefix, metadata_key_prefix);
 
     LOG_TRACE(
         getLogger("MetadataStorageFromPlainObjectStorageCreateDirectoryOperation"),
@@ -68,7 +68,7 @@ void MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::execute(std:
     {
         std::lock_guard lock(path_map.mutex);
         auto & map = path_map.map;
-        [[maybe_unused]] auto result = map.emplace(path.parent_path(), std::move(key_prefix));
+        [[maybe_unused]] auto result = map.emplace(path.parent_path(), std::move(object_key_prefix));
         chassert(result.second);
     }
     auto metric = object_storage->getMetadataStorageMetrics().directory_map_size;
@@ -85,7 +85,7 @@ void MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::execute(std:
 
 void MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::undo(std::unique_lock<SharedMutex> &)
 {
-    auto metadata_object_key = createMetadataObjectKey(key_prefix, metadata_key_prefix);
+    auto metadata_object_key = createMetadataObjectKey(object_key_prefix, metadata_key_prefix);
 
     if (write_finalized)
     {

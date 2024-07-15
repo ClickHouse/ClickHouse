@@ -17,7 +17,7 @@ private:
     InMemoryPathMap & path_map;
     ObjectStoragePtr object_storage;
     const std::string metadata_key_prefix;
-    const std::string key_prefix;
+    const std::string object_key_prefix;
 
     bool write_created = false;
     bool write_finalized = false;
