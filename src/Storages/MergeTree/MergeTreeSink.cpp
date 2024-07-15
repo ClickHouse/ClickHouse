@@ -3,6 +3,7 @@
 #include <Interpreters/PartLog.h>
 #include <DataTypes/ObjectUtils.h>
 #include <Common/ProfileEventsScope.h>
+#include <Core/Settings.h>
 
 namespace ProfileEvents
 {
