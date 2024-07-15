@@ -401,15 +401,14 @@ void KafkaConsumer2::commit(const TopicPartition & topic_partition)
 
 ReadBufferPtr KafkaConsumer2::getNextMessage()
 {
-    while (current != messages.end())
+    if (current != messages.end())
     {
         const auto * data = current->get_payload().get_data();
         size_t size = current->get_payload().get_size();
         ++current;
 
-        // TODO(antaljanosbenjamin): When this can be nullptr?
-        if (data)
-            return std::make_shared<ReadBufferFromMemory>(data, size);
+        chassert(data != nullptr);
+        return std::make_shared<ReadBufferFromMemory>(data, size);
     }
 
     return nullptr;
@@ -433,7 +432,11 @@ size_t KafkaConsumer2::filterMessageErrors()
         });
 
     if (skipped)
+    {
         LOG_ERROR(log, "There were {} messages with an error", skipped);
+        // Technically current is invalidated as soon as we erased a single message
+        current = messages.begin();
+    }
 
     return skipped;
 }
