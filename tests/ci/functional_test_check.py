@@ -24,6 +24,18 @@ from tee_popen import TeePopen
 NO_CHANGES_MSG = "Nothing to run"
 
 
+class SensitiveFormatter(logging.Formatter):
+    @staticmethod
+    def _filter(s):
+        return re.sub(
+            r"(.*)(AZURE_CONNECTION_STRING.*\')(.*)", r"\1AZURE_CONNECTION_STRING\3", s
+        )
+
+    def format(self, record):
+        original = logging.Formatter.format(self, record)
+        return self._filter(original)
+
+
 def get_additional_envs(
     check_name: str, run_by_hash_num: int, run_by_hash_total: int
 ) -> List[str]:
@@ -213,6 +225,9 @@ def parse_args():
 
 def main():
     logging.basicConfig(level=logging.INFO)
+    for handler in logging.root.handlers:
+        # pylint: disable=protected-access
+        handler.setFormatter(SensitiveFormatter(handler.formatter._fmt))  # type: ignore
 
     stopwatch = Stopwatch()
 

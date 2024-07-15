@@ -64,6 +64,8 @@
 #include <Analyzer/Resolve/TableExpressionsAliasVisitor.h>
 #include <Analyzer/Resolve/ReplaceColumnsVisitor.h>
 
+#include <Core/Settings.h>
+
 namespace ProfileEvents
 {
     extern const Event ScalarSubqueriesGlobalCacheHit;
