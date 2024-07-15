@@ -21,6 +21,8 @@
 #include <Analyzer/Utils.h>
 #include <Analyzer/JoinNode.h>
 
+#include <Core/Settings.h>
+
 namespace DB
 {
 

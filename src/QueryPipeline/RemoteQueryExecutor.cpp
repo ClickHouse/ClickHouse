@@ -5,6 +5,7 @@
 #include <Columns/ColumnConst.h>
 #include <Common/CurrentThread.h>
 #include <Core/Protocol.h>
+#include <Core/Settings.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
@@ -907,4 +908,10 @@ void RemoteQueryExecutor::setProfileInfoCallback(ProfileInfoCallback callback)
     std::lock_guard guard(was_cancelled_mutex);
     profile_info_callback = std::move(callback);
 }
+
+bool RemoteQueryExecutor::needToSkipUnavailableShard() const
+{
+    return context->getSettingsRef().skip_unavailable_shards && (0 == connections->size());
+}
+
 }
