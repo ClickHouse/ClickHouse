@@ -1,10 +1,10 @@
 #include "MetadataStorageFromPlainObjectStorageOperations.h"
 #include <Disks/ObjectStorages/InMemoryPathMap.h>
-#include "Common/SharedLockGuard.h"
 
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Common/Exception.h>
+#include <Common/SharedLockGuard.h>
 #include <Common/logger_useful.h>
 
 namespace DB
@@ -31,12 +31,13 @@ ObjectStorageKey createMetadataObjectKey(const std::string & object_key_prefix, 
 
 MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::MetadataStorageFromPlainObjectStorageCreateDirectoryOperation(
     std::filesystem::path && path_, InMemoryPathMap & path_map_, ObjectStoragePtr object_storage_, const std::string & metadata_key_prefix_)
-    : path((chassert(path_.string().ends_with('/')), std::move(path_)))
+    : path(std::move(path_))
     , path_map(path_map_)
     , object_storage(object_storage_)
     , metadata_key_prefix(metadata_key_prefix_)
     , object_key_prefix(object_storage->generateObjectKeyPrefixForDirectoryPath(path, "" /* object_key_prefix */).serialize())
 {
+    chassert(path.string().ends_with('/'));
 }
 
 void MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::execute(std::unique_lock<SharedMutex> &)
@@ -70,7 +71,7 @@ void MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::execute(std:
     {
         std::lock_guard lock(path_map.mutex);
         auto & map = path_map.map;
-        [[maybe_unused]] auto result = map.emplace(base_path, std::move(object_key_prefix));
+        [[maybe_unused]] auto result = map.emplace(base_path, object_key_prefix);
         chassert(result.second);
     }
     auto metric = object_storage->getMetadataStorageMetrics().directory_map_size;
@@ -111,12 +112,14 @@ MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::MetadataStorageFrom
     InMemoryPathMap & path_map_,
     ObjectStoragePtr object_storage_,
     const std::string & metadata_key_prefix_)
-    : path_from((chassert(path_from_.string().ends_with('/')), std::move(path_from_)))
-    , path_to((chassert(path_to_.string().ends_with('/')), std::move(path_to_)))
+    : path_from(std::move(path_from_))
+    , path_to(std::move(path_to_))
     , path_map(path_map_)
     , object_storage(object_storage_)
     , metadata_key_prefix(metadata_key_prefix_)
 {
+    chassert(path_from.string().ends_with('/'));
+    chassert(path_to.string().ends_with('/'));
 }
 
 std::unique_ptr<WriteBufferFromFileBase> MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::createWriteBuf(
@@ -211,8 +214,9 @@ void MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::undo(std::uniq
 
 MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation::MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation(
     std::filesystem::path && path_, InMemoryPathMap & path_map_, ObjectStoragePtr object_storage_, const std::string & metadata_key_prefix_)
-    : path((chassert(path_.string().ends_with('/')), std::move(path_))), path_map(path_map_), object_storage(object_storage_), metadata_key_prefix(metadata_key_prefix_)
+    : path(std::move(path_)), path_map(path_map_), object_storage(object_storage_), metadata_key_prefix(metadata_key_prefix_)
 {
+    chassert(path.string().ends_with('/'));
 }
 
 void MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation::execute(std::unique_lock<SharedMutex> & /* metadata_lock */)

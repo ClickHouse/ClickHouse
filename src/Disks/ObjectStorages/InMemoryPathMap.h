@@ -2,6 +2,7 @@
 
 #include <filesystem>
 #include <map>
+#include <base/defines.h>
 #include <Common/SharedMutex.h>
 
 namespace DB
