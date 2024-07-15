@@ -42,19 +42,32 @@ const Block & PullingPipelineExecutor::getHeader() const
 
 bool PullingPipelineExecutor::pull(Chunk & chunk)
 {
+    LOG_DEBUG(&Poco::Logger::get("Pulling 1"), "Pulling 1");
+
     if (!executor)
     {
         executor = std::make_shared<PipelineExecutor>(pipeline.processors, pipeline.process_list_element);
         executor->setReadProgressCallback(pipeline.getReadProgressCallback());
     }
 
+    LOG_DEBUG(&Poco::Logger::get("Pulling 2"), "Pulling 2");
+
     if (!executor->checkTimeLimitSoft())
         return false;
+
+    LOG_DEBUG(&Poco::Logger::get("Pulling 3"), "Pulling 3");
+
 
     if (!executor->executeStep(&has_data_flag))
         return false;
 
+    LOG_DEBUG(&Poco::Logger::get("Pulling 4"), "Pulling 4");
+
+
     chunk = pulling_format->getChunk();
+
+    LOG_DEBUG(&Poco::Logger::get("Pulling 5"), "Pulling 5");
+
     return true;
 }
 

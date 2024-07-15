@@ -2,11 +2,13 @@
 
 #include <memory>
 #include "Disks/ObjectStorages/Local/LocalObjectStorage.h"
-#include "config.h"
 
-#if USE_AWS_S3
-#    include <IO/S3Settings.h>
-#    include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Storages/ObjectStorage/StorageObjectStorage.h>
+
+#include <filesystem>
+
+
+namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -34,12 +36,12 @@ public:
     String getDataSourceDescription() const override { return ""; }
     StorageObjectStorage::QuerySettings getQuerySettings(const ContextPtr &) const override;
 
-    void check(ContextPtr) const override { }
-    void validateNamespace(const String &) const override { }
     ConfigurationPtr clone() override { return std::make_shared<StorageLocalConfiguration>(*this); }
-    bool isStaticConfiguration() const override { return true; }
 
-    ObjectStoragePtr createObjectStorage(ContextPtr, bool) override { return std::make_shared<LocalObjectStorage>(path); }
+    ObjectStoragePtr createObjectStorage(ContextPtr, bool) override
+    {
+        return std::make_shared<LocalObjectStorage>(fs::path{path}.parent_path());
+    }
 
     void addStructureAndFormatToArgs(ASTs &, const String &, const String &, ContextPtr) override { }
 
@@ -51,5 +53,3 @@ private:
 };
 
 }
-
-#endif

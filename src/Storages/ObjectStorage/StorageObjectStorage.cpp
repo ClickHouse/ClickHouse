@@ -124,6 +124,12 @@ public:
         , num_streams(num_streams_)
         , distributed_processing(distributed_processing_)
     {
+        LOG_DEBUG(&Poco::Logger::get("Read step created"), "Read step created");
+        LOG_DEBUG(&Poco::Logger::get("Conf"), "Keys size: {}", configuration->getPaths().size());
+        for (auto && key : configuration->getPaths())
+        {
+            LOG_DEBUG(&Poco::Logger::get("Conf"), "Current key: {}", key);
+        }
     }
 
     std::string getName() const override { return name; }
@@ -420,6 +426,12 @@ SchemaCache & StorageObjectStorage::getSchemaCache(const ContextPtr & context, c
             context->getConfigRef().getUInt(
                 "schema_inference_cache_max_elements_for_azure",
                 DEFAULT_SCHEMA_CACHE_ELEMENTS));
+        return schema_cache;
+    }
+    else if (storage_type_name == "local")
+    {
+        static SchemaCache schema_cache(
+            context->getConfigRef().getUInt("schema_inference_cache_max_elements_for_local", DEFAULT_SCHEMA_CACHE_ELEMENTS));
         return schema_cache;
     }
     else
