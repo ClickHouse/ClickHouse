@@ -32,7 +32,6 @@ public:
     SerializationObject(
         std::unordered_map<String, SerializationPtr> typed_path_serializations_,
         const std::unordered_set<String> & paths_to_skip_,
-        const std::vector<String> & path_prefixes_to_skip_,
         const std::vector<String> & path_regexps_to_skip_);
 
     void enumerateStreams(
@@ -114,7 +113,7 @@ protected:
 
     std::unordered_map<String, SerializationPtr> typed_path_serializations;
     std::unordered_set<String> paths_to_skip;
-    std::vector<String> path_prefixes_to_skip;
+    std::vector<String> sorted_paths_to_skip;
     std::list<re2::RE2> path_regexps_to_skip;
     SerializationPtr dynamic_serialization;
 

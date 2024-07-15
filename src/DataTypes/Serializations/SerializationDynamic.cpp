@@ -338,6 +338,8 @@ void SerializationDynamic::serializeBinary(const IColumn & column, size_t row_nu
     }
 
     const auto & variant_type = assert_cast<const DataTypeVariant &>(*variant_info.variant_type).getVariant(global_discr);
+    if (!variant_type)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Nullptr type in variant {}", variant_info.variant_name);
     encodeDataType(variant_type, ostr);
     variant_type->getDefaultSerialization()->serializeBinary(variant_column.getVariantByGlobalDiscriminator(global_discr), variant_column.offsetAt(row_num), ostr, settings);
 }

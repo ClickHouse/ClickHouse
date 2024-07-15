@@ -22,10 +22,9 @@ template <typename Parser>
 SerializationJSON<Parser>::SerializationJSON(
     std::unordered_map<String, SerializationPtr> typed_paths_serializations_,
     const std::unordered_set<String> & paths_to_skip_,
-    const std::vector<String> & path_prefixes_to_skip_,
     const std::vector<String> & path_regexps_to_skip_,
     std::unique_ptr<JSONExtractTreeNode<Parser>> json_extract_tree_)
-    : SerializationObject(std::move(typed_paths_serializations_), paths_to_skip_, path_prefixes_to_skip_, path_regexps_to_skip_)
+    : SerializationObject(std::move(typed_paths_serializations_), paths_to_skip_, path_regexps_to_skip_)
     , json_extract_tree(std::move(json_extract_tree_))
 {
 }

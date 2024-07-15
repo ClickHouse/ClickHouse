@@ -1386,10 +1386,13 @@ public:
 
         if (column_dynamic.addNewVariant(element_type))
         {
-            auto node = buildJSONExtractTree<JSONParser>(element_type, "Dynamic inference");
-            auto global_discriminator = variant_info.variant_name_to_discriminator.at(element_type->getName());
+            auto element_type_name = element_type->getName();
+            auto it = json_extract_nodes_cache.find(element_type_name);
+            if (it == json_extract_nodes_cache.end())
+                it = json_extract_nodes_cache.emplace(element_type_name, buildJSONExtractTree<JSONParser>(element_type, "Dynamic inference")).first;
+            auto global_discriminator = variant_info.variant_name_to_discriminator.at(element_type_name);
             auto & variant = variant_column.getVariantByGlobalDiscriminator(global_discriminator);
-            if (!node->insertResultToColumn(variant, element, insert_settings, format_settings, error))
+            if (!it->second->insertResultToColumn(variant, element, insert_settings, format_settings, error))
                 return false;
             variant_column.getLocalDiscriminators().push_back(variant_column.localDiscriminatorByGlobal(global_discriminator));
             variant_column.getOffsets().push_back(variant.size() - 1);
@@ -1397,8 +1400,10 @@ public:
         }
 
         /// We couldn't add new variant. Try to insert element into current variants.
-        auto variant_node = buildJSONExtractTree<JSONParser>(variant_info.variant_type, "Dynamic inference");
-        if (variant_node->insertResultToColumn(variant_column, element, insert_settings, format_settings, error))
+        auto it = json_extract_nodes_cache.find(variant_info.variant_name);
+        if (it == json_extract_nodes_cache.end())
+            it = json_extract_nodes_cache.emplace(variant_info.variant_name, buildJSONExtractTree<JSONParser>(variant_info.variant_type, "Dynamic inference")).first;
+        if (it->second->insertResultToColumn(variant_column, element, insert_settings, format_settings, error))
             return true;
 
         /// We couldn't insert element into any existing variant, add String variant and read value as String.
@@ -1424,7 +1429,7 @@ public:
         JSONInferenceInfo json_inference_info;
         auto type = elementToDataTypeImpl(element, format_settings, json_inference_info);
         transformFinalInferredJSONTypeIfNeeded(type, format_settings, &json_inference_info);
-        if (format_settings.schema_inference_make_columns_nullable)
+        if (format_settings.schema_inference_make_columns_nullable && type->haveSubtypes())
             type = makeNullableRecursively(type);
         return type;
     }
@@ -1435,20 +1440,20 @@ private:
         switch (element.type())
         {
             case ElementType::NULL_VALUE:
-                return makeNullable(std::make_shared<DataTypeNothing>());
+                return getNullType();
             case ElementType::BOOL:
-                return DataTypeFactory::instance().get("Bool");
+                return getBoolType();
             case ElementType::INT64:
             {
-                auto type = std::make_shared<DataTypeInt64>();
+                auto type = getInt64Type();
                 if (element.getInt64() < 0)
                     json_inference_info.negative_integers.insert(type.get());
                 return type;
             }
             case ElementType::UINT64:
-                return std::make_shared<DataTypeUInt64>();
+                return getUInt64Type();
             case ElementType::DOUBLE:
-                return std::make_shared<DataTypeFloat64>();
+                return getFloat64Type();
             case ElementType::STRING:
             {
                 auto data = element.getString();
@@ -1465,7 +1470,7 @@ private:
                     }
                 }
 
-                return std::make_shared<DataTypeString>();
+                return getStringType();
             }
             case ElementType::ARRAY:
             {
@@ -1476,7 +1481,7 @@ private:
                     types.push_back(elementToDataTypeImpl(value, format_settings, json_inference_info));
 
                 if (types.empty())
-                    return std::make_shared<DataTypeArray>(std::make_shared<DataTypeNothing>());
+                    return getEmptyArrayType();
 
                 if (checkIfTypesAreEqual(types))
                     return std::make_shared<DataTypeArray>(types.back());
@@ -1505,13 +1510,67 @@ private:
             }
             case ElementType::OBJECT:
             {
-                return std::make_shared<DataTypeObject>(DataTypeObject::SchemaFormat::JSON, max_dynamic_paths_for_object, max_dynamic_types_for_object);
+                return getObjectType();
             }
         }
     }
 
+    /// During schema inference we create shared_ptr to the some data types quite a lot.
+    /// Single creating of such shared_ptr is not expensive, but when it happens on each
+    /// column on each row, it can be noticeable.
+    const DataTypePtr & getBoolType() const
+    {
+        static const DataTypePtr bool_type = DataTypeFactory::instance().get("Bool");
+        return bool_type;
+    }
+
+    const DataTypePtr & getStringType() const
+    {
+        static const DataTypePtr string_type = std::make_shared<DataTypeString>();
+        return string_type;
+    }
+
+    const DataTypePtr & getInt64Type() const
+    {
+        static const DataTypePtr int64_type = std::make_shared<DataTypeInt64>();
+        return int64_type;
+    }
+
+    const DataTypePtr & getUInt64Type() const
+    {
+        static const DataTypePtr uint64_type = std::make_shared<DataTypeUInt64>();
+        return uint64_type;
+    }
+
+    const DataTypePtr & getFloat64Type() const
+    {
+        static const DataTypePtr float64_type = std::make_shared<DataTypeFloat64>();
+        return float64_type;
+    }
+
+    const DataTypePtr & getObjectType() const
+    {
+        static const DataTypePtr object_type = std::make_shared<DataTypeObject>(DataTypeObject::SchemaFormat::JSON, max_dynamic_paths_for_object, max_dynamic_types_for_object);
+        return object_type;
+    }
+
+    const DataTypePtr & getNullType() const
+    {
+        static const DataTypePtr null_type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>());
+        return null_type;
+    }
+
+    const DataTypePtr & getEmptyArrayType() const
+    {
+        static const DataTypePtr empty_array_type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeNothing>());
+        return empty_array_type;
+    }
+
     size_t max_dynamic_paths_for_object;
     size_t max_dynamic_types_for_object;
+
+    /// Avoid building JSONExtractTreeNode for the same data types on each row by using cache.
+    mutable std::unordered_map<String, std::unique_ptr<JSONExtractTreeNode<JSONParser>>> json_extract_nodes_cache;
 };
 
 template <typename JSONParser>
@@ -1521,18 +1580,18 @@ public:
     ObjectJSONNode(
         std::unordered_map<String, std::unique_ptr<JSONExtractTreeNode<JSONParser>>> typed_path_nodes_,
         const std::unordered_set<String> & paths_to_skip_,
-        const std::vector<String> & path_prefixes_to_skip_,
         const std::vector<String> & path_regexps_to_skip_,
         size_t max_dynamic_paths_,
         size_t max_dynamic_types)
         : typed_path_nodes(std::move(typed_path_nodes_))
         , paths_to_skip(paths_to_skip_)
-        , path_prefixes_to_skip(path_prefixes_to_skip_)
         , dynamic_node(std::make_unique<DynamicNode<JSONParser>>(
               max_dynamic_paths_ / DataTypeObject::NESTED_OBJECT_MAX_DYNAMIC_PATHS_REDUCE_FACTOR,
               std::max(max_dynamic_types / DataTypeObject::NESTED_OBJECT_MAX_DYNAMIC_TYPES_REDUCE_FACTOR, 1lu)))
         , dynamic_serialization(std::make_shared<SerializationDynamic>())
     {
+        sorted_paths_to_skip.assign(paths_to_skip.begin(), paths_to_skip.end());
+        std::sort(sorted_paths_to_skip.begin(), sorted_paths_to_skip.end());
         for (const auto & regexp : path_regexps_to_skip_)
             path_regexps_to_skip.emplace_back(regexp);
     }
@@ -1616,6 +1675,9 @@ private:
         size_t current_size,
         String & error) const
     {
+        if (shouldSkipPath(current_path))
+            return true;
+
         if (element.isObject() && !typed_path_nodes.contains(current_path))
         {
             for (auto [key, value] : element.getObject())
@@ -1630,9 +1692,6 @@ private:
 
             return true;
         }
-
-        if (shouldSkipPath(current_path))
-            return true;
 
         auto & typed_paths = column_object.getTypedPaths();
         auto & dynamic_paths = column_object.getDynamicPaths();
@@ -1707,11 +1766,9 @@ private:
         if (paths_to_skip.contains(path))
             return true;
 
-        for (const auto & prefix : path_prefixes_to_skip)
-        {
-            if (path.starts_with(prefix))
-                return true;
-        }
+        auto it = std::lower_bound(sorted_paths_to_skip.begin(), sorted_paths_to_skip.end(), path);
+        if (it != sorted_paths_to_skip.end() && it != sorted_paths_to_skip.begin() && path.starts_with(*std::prev(it)))
+            return true;
 
         for (const auto & regexp : path_regexps_to_skip)
         {
@@ -1724,7 +1781,7 @@ private:
 
     std::unordered_map<String, std::unique_ptr<JSONExtractTreeNode<JSONParser>>> typed_path_nodes;
     std::unordered_set<String> paths_to_skip;
-    std::vector<String> path_prefixes_to_skip;
+    std::vector<String> sorted_paths_to_skip;
     std::list<re2::RE2> path_regexps_to_skip;
     std::unique_ptr<DynamicNode<JSONParser>> dynamic_node;
     std::shared_ptr<SerializationDynamic> dynamic_serialization;
@@ -1889,7 +1946,6 @@ std::unique_ptr<JSONExtractTreeNode<JSONParser>> buildJSONExtractTree(const Data
                     return std::make_unique<ObjectJSONNode<JSONParser>>(
                         std::move(typed_path_nodes),
                         object_type.getPathsToSkip(),
-                        object_type.getPathPrefixesToSkip(),
                         object_type.getPathRegexpsToSkip(),
                         object_type.getMaxDynamicPaths(),
                         object_type.getMaxDynamicTypes());

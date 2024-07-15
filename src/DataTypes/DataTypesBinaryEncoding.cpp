@@ -507,10 +507,6 @@ void encodeDataType(const DataTypePtr & type, WriteBuffer & buf)
             writeVarUInt(paths_to_skip.size(), buf);
             for (const auto & path : paths_to_skip)
                 writeStringBinary(path, buf);
-            const auto & path_prefixes_to_skip = object_type.getPathPrefixesToSkip();
-            writeVarUInt(path_prefixes_to_skip.size(), buf);
-            for (const auto & prefix : path_prefixes_to_skip)
-                writeStringBinary(prefix, buf);
             const auto & path_regexps_to_skip = object_type.getPathRegexpsToSkip();
             writeVarUInt(path_regexps_to_skip.size(), buf);
             for (const auto & regexp : path_regexps_to_skip)
@@ -754,17 +750,6 @@ DataTypePtr decodeDataType(ReadBuffer & buf)
                 paths_to_skip.insert(path);
             }
 
-            size_t path_prefixes_to_skip_size;
-            readVarUInt(path_prefixes_to_skip_size, buf);
-            std::vector<String> path_prefixes_to_skip;
-            path_prefixes_to_skip.reserve(path_prefixes_to_skip_size);
-            for (size_t i = 0; i != path_prefixes_to_skip_size; ++i)
-            {
-                String prefix;
-                readStringBinary(prefix, buf);
-                path_prefixes_to_skip.push_back(prefix);
-            }
-
             size_t path_regexps_to_skip_size;
             readVarUInt(path_regexps_to_skip_size, buf);
             std::vector<String> path_regexps_to_skip;
@@ -779,7 +764,6 @@ DataTypePtr decodeDataType(ReadBuffer & buf)
                 DataTypeObject::SchemaFormat::JSON,
                 typed_paths,
                 paths_to_skip,
-                path_prefixes_to_skip,
                 path_regexps_to_skip,
                 max_dynamic_paths,
                 max_dynamic_types);

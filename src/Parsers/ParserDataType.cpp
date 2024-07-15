@@ -69,25 +69,16 @@ private:
                 argument->skip_path_regexp = literal;
                 argument->children.push_back(argument->skip_path_regexp);
             }
-            /// SKIP PREFIX some.path.prefix or SKIP some.path
+            /// SKIP some.path
             else
             {
-                bool is_prefix = ParserKeyword(Keyword::PREFIX).ignore(pos);
                 ParserCompoundIdentifier compound_identifier_parser;
                 ASTPtr compound_identifier;
                 if (!compound_identifier_parser.parse(pos, compound_identifier, expected))
                     return false;
 
-                if (is_prefix)
-                {
-                    argument->skip_path_prefix = compound_identifier;
-                    argument->children.push_back(argument->skip_path_prefix);
-                }
-                else
-                {
-                    argument->skip_path = compound_identifier;
-                    argument->children.push_back(argument->skip_path);
-                }
+                argument->skip_path = compound_identifier;
+                argument->children.push_back(argument->skip_path);
             }
 
             node = argument;

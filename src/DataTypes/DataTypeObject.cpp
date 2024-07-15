@@ -39,22 +39,29 @@ DataTypeObject::DataTypeObject(
     const SchemaFormat & schema_format_,
     const std::unordered_map<String, DataTypePtr> & typed_paths_,
     const std::unordered_set<String> & paths_to_skip_,
-    const std::vector<String> & path_prefixes_to_skip_,
     const std::vector<String> & path_regexps_to_skip_,
     size_t max_dynamic_paths_,
     size_t max_dynamic_types_)
     : schema_format(schema_format_)
     , typed_paths(typed_paths_)
     , paths_to_skip(paths_to_skip_)
-    , path_prefixes_to_skip(path_prefixes_to_skip_)
     , path_regexps_to_skip(path_regexps_to_skip_)
     , max_dynamic_paths(max_dynamic_paths_)
     , max_dynamic_types(max_dynamic_types_)
 {
-    for (const auto & path : paths_to_skip)
+    for (const auto & [typed_path, type] : typed_paths)
     {
-        if (typed_paths.contains(path))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path '{}' is specified both with the data type ('{}') and in the SKIP section", path, typed_paths[path]->getName());
+        for (const auto & path_to_skip : paths_to_skip)
+        {
+            if (typed_path.starts_with(path_to_skip))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path '{}' is specified with the data type ('{}') and matches the SKIP path prefix '{}'", typed_path, type->getName(), path_to_skip);
+        }
+
+        for (const auto & path_regext_to_skip : paths_to_skip)
+        {
+            if (re2::RE2::FullMatch(typed_path, re2::RE2(path_regext_to_skip)))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path '{}' is specified with the data type ('{}') and matches the SKIP REGEXP '{}'", typed_path, type->getName(), path_regext_to_skip);
+        }
     }
 }
 
@@ -81,7 +88,7 @@ bool DataTypeObject::equals(const IDataType & rhs) const
                 return false;
         }
 
-        return schema_format == object->schema_format && paths_to_skip == object->paths_to_skip && path_prefixes_to_skip == object->path_prefixes_to_skip && path_regexps_to_skip == object->path_regexps_to_skip
+        return schema_format == object->schema_format && paths_to_skip == object->paths_to_skip && path_regexps_to_skip == object->path_regexps_to_skip
             && max_dynamic_types == object->max_dynamic_types && max_dynamic_paths == object->max_dynamic_paths;
     }
 
@@ -102,7 +109,6 @@ SerializationPtr DataTypeObject::doGetDefaultSerialization() const
             return std::make_shared<SerializationJSON<SimdJSONParser>>(
                 std::move(typed_path_serializations),
                 paths_to_skip,
-                path_prefixes_to_skip,
                 path_regexps_to_skip,
                 buildJSONExtractTree<SimdJSONParser>(getPtr(), "JSON serialization"));
 #elif USE_RAPIDJSON
@@ -163,12 +169,6 @@ String DataTypeObject::doGetName() const
     {
         write_separator();
         out << "SKIP " << skip_path;
-    }
-
-    for (const auto & skip_prefix : path_prefixes_to_skip)
-    {
-        write_separator();
-        out << "SKIP PREFIX " << skip_prefix;
     }
 
     for (const auto & skip_regexp : path_regexps_to_skip)
@@ -275,7 +275,7 @@ std::unique_ptr<ISerialization::SubstreamData> DataTypeObject::getDynamicSubcolu
 
         std::unique_ptr<SubstreamData> res = std::make_unique<SubstreamData>(std::make_shared<SerializationSubObject>(prefix, typed_paths_serializations));
         /// Keep all current constrains like limits and skip paths/prefixes/regexps.
-        res->type = std::make_shared<DataTypeObject>(schema_format, typed_sub_paths, paths_to_skip, path_prefixes_to_skip, path_prefixes_to_skip, max_dynamic_paths, max_dynamic_types);
+        res->type = std::make_shared<DataTypeObject>(schema_format, typed_sub_paths, paths_to_skip, path_regexps_to_skip, max_dynamic_paths, max_dynamic_types);
         /// If column was provided, we should create a column for the requested subcolumn.
         if (data.column)
         {
@@ -405,8 +405,6 @@ static DataTypePtr createObject(const ASTPtr & arguments, const DataTypeObject::
 
     std::unordered_map<String, DataTypePtr> typed_paths;
     std::unordered_set<String> paths_to_skip;
-    /// Collect prefixes in unordered_set to avoid duplicate prefixes
-    std::unordered_set<String> path_prefixes_to_skip_set;
     std::vector<String> path_regexps_to_skip;
 
     size_t max_dynamic_types = DataTypeDynamic::DEFAULT_MAX_DYNAMIC_TYPES;
@@ -458,14 +456,6 @@ static DataTypePtr createObject(const ASTPtr & arguments, const DataTypeObject::
 
             paths_to_skip.insert(identifier->name());
         }
-        else if (object_type_argument->skip_path_prefix)
-        {
-            const auto * identifier = object_type_argument->skip_path_prefix->as<ASTIdentifier>();
-            if (!identifier)
-                throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Unexpected AST in SKIP section of {} type arguments: {}. Expected identifier with path name", magic_enum::enum_name(schema_format), object_type_argument->skip_path->formatForErrorMessage());
-
-            path_prefixes_to_skip_set.insert(identifier->name());
-        }
         else if (object_type_argument->skip_path_regexp)
         {
             const auto * literal = object_type_argument->skip_path_regexp->as<ASTLiteral>();
@@ -476,10 +466,8 @@ static DataTypePtr createObject(const ASTPtr & arguments, const DataTypeObject::
         }
     }
 
-    std::vector<String> path_prefixes_to_skip(path_prefixes_to_skip_set.begin(), path_prefixes_to_skip_set.end());
-    std::sort(path_prefixes_to_skip.begin(), path_prefixes_to_skip.end());
     std::sort(path_regexps_to_skip.begin(), path_regexps_to_skip.end());
-    return std::make_shared<DataTypeObject>(schema_format, typed_paths, paths_to_skip, path_prefixes_to_skip, path_regexps_to_skip, max_dynamic_paths, max_dynamic_types);
+    return std::make_shared<DataTypeObject>(schema_format, typed_paths, paths_to_skip, path_regexps_to_skip, max_dynamic_paths, max_dynamic_types);
 }
 
 static DataTypePtr createJSON(const ASTPtr & arguments)

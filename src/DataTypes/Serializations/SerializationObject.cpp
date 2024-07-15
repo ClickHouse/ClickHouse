@@ -19,11 +19,9 @@ namespace ErrorCodes
 SerializationObject::SerializationObject(
     std::unordered_map<String, SerializationPtr> typed_path_serializations_,
     const std::unordered_set<String> & paths_to_skip_,
-    const std::vector<String> & path_prefixes_to_skip_,
     const std::vector<String> & path_regexps_to_skip_)
     : typed_path_serializations(std::move(typed_path_serializations_))
     , paths_to_skip(paths_to_skip_)
-    , path_prefixes_to_skip(path_prefixes_to_skip_)
     , dynamic_serialization(std::make_shared<SerializationDynamic>())
     , shared_data_serialization(getTypeOfSharedData()->getDefaultSerialization())
 {
@@ -32,6 +30,8 @@ SerializationObject::SerializationObject(
     for (const auto & [path, _] : typed_path_serializations)
         sorted_typed_paths.emplace_back(path);
     std::sort(sorted_typed_paths.begin(), sorted_typed_paths.end());
+    sorted_paths_to_skip.assign(paths_to_skip.begin(), paths_to_skip.end());
+    std::sort(sorted_paths_to_skip.begin(), sorted_paths_to_skip.end());
     for (const auto & regexp_str : path_regexps_to_skip_)
         path_regexps_to_skip.emplace_back(regexp_str);
 }
@@ -48,11 +48,9 @@ bool SerializationObject::shouldSkipPath(const String & path) const
     if (paths_to_skip.contains(path))
         return true;
 
-    for (const auto & prefix : path_prefixes_to_skip)
-    {
-        if (path.starts_with(prefix))
-            return true;
-    }
+    auto it = std::lower_bound(sorted_typed_paths.begin(), sorted_typed_paths.end(), path);
+    if (it != sorted_paths_to_skip.end() && it != sorted_paths_to_skip.begin() && path.starts_with(*std::prev(it)))
+        return true;
 
     for (const auto & regexp : path_regexps_to_skip)
     {

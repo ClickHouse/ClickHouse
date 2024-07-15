@@ -21,11 +21,6 @@ ASTPtr ASTObjectTypeArgument::clone() const
         res->skip_path = skip_path->clone();
         res->children.push_back(res->skip_path);
     }
-    else if (skip_path_prefix)
-    {
-        res->skip_path_prefix = skip_path_prefix->clone();
-        res->children.push_back(res->skip_path_prefix);
-    }
     else if (skip_path_regexp)
     {
         res->skip_path_regexp = skip_path_regexp->clone();
@@ -55,12 +50,6 @@ void ASTObjectTypeArgument::formatImpl(const FormatSettings & parameters, Format
         std::string indent_str = parameters.one_line ? "" : std::string(4 * frame.indent, ' ');
         parameters.ostr << indent_str << "SKIP" << ' ';
         skip_path->formatImpl(parameters, state, frame);
-    }
-    else if (skip_path_prefix)
-    {
-        std::string indent_str = parameters.one_line ? "" : std::string(4 * frame.indent, ' ');
-        parameters.ostr << indent_str << "SKIP PREFIX" << ' ';
-        skip_path_prefix->formatImpl(parameters, state, frame);
     }
     else if (skip_path_regexp)
     {

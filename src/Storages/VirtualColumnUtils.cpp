@@ -283,6 +283,7 @@ static const ActionsDAG::Node * splitFilterNodeForAllowedInputs(
                 if (const auto * child_copy = splitFilterNodeForAllowedInputs(child, allowed_inputs, additional_nodes))
                     node_copy.children.push_back(child_copy);
 
+
             if (node_copy.children.empty())
                 return nullptr;
 

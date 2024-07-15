@@ -32,7 +32,6 @@ public:
         const SchemaFormat & schema_format_,
         const std::unordered_map<String, DataTypePtr> & typed_paths_ = {},
         const std::unordered_set<String> & paths_to_skip_ = {},
-        const std::vector<String> & path_prefixes_to_skip_ = {},
         const std::vector<String> & path_regexps_to_skip_ = {},
         size_t max_dynamic_paths_ = DEFAULT_MAX_SEPARATELY_STORED_PATHS,
         size_t max_dynamic_types_ = DataTypeDynamic::DEFAULT_MAX_DYNAMIC_TYPES);
@@ -67,7 +66,6 @@ public:
     const SchemaFormat & getSchemaFormat() const { return schema_format; }
     const std::unordered_map<String, DataTypePtr> & getTypedPaths() const { return typed_paths; }
     const std::unordered_set<String> & getPathsToSkip() const { return paths_to_skip; }
-    const std::vector<String> & getPathPrefixesToSkip() const { return path_prefixes_to_skip; }
     const std::vector<String> & getPathRegexpsToSkip() const { return path_regexps_to_skip; }
 
     size_t getMaxDynamicTypes() const { return max_dynamic_types; }
@@ -79,8 +77,6 @@ private:
     std::unordered_map<String, DataTypePtr> typed_paths;
     /// Set of paths that should be skipped during data parsing.
     std::unordered_set<String> paths_to_skip;
-    /// List of path prefixes that should be skipped during data parsing.
-    std::vector<String> path_prefixes_to_skip;
     /// List of regular expressions that should be used to skip paths during data parsing.
     std::vector<String> path_regexps_to_skip;
     /// Limit on the number of paths that can be stored as subcolumn.
