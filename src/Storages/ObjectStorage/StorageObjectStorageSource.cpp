@@ -248,6 +248,7 @@ Chunk StorageObjectStorageSource::generate()
         reader_future = createReaderAsync();
     }
 
+    shared_pool->finishStream();
     return {};
 }
 
@@ -265,7 +266,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 {
     return createReader(
         0, file_iterator, configuration, object_storage, read_from_format_info, format_settings,
-        key_condition, getContext(), &schema_cache, log, max_block_size, shared_pool->getMaxParsingThreadsPerStream(), need_only_count, shared_pool);
+        key_condition, getContext(), &schema_cache, log, max_block_size, shared_pool->getThreadsPerStream(), need_only_count, shared_pool);
 }
 
 StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReader(

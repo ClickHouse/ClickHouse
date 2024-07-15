@@ -272,7 +272,7 @@ StorageURLSource::StorageURLSource(
     UInt64 max_block_size,
     const ConnectionTimeouts & timeouts,
     CompressionMethod compression_method,
-    SharedParsingThreadPoolPtr shared_pool,
+    SharedParsingThreadPoolPtr shared_pool_,
     const HTTPHeaderEntries & headers_,
     const URIParams & params,
     bool glob_url,
@@ -288,6 +288,7 @@ StorageURLSource::StorageURLSource(
     , format_settings(format_settings_)
     , headers(getHeaders(headers_))
     , need_only_count(need_only_count_)
+    , shared_pool(std::move(shared_pool_))
 {
     /// Lazy initialization. We should not perform requests in constructor, because we need to do it in query pipeline.
     initialize = [=, this]()
@@ -351,7 +352,7 @@ StorageURLSource::StorageURLSource(
                 getContext(),
                 max_block_size,
                 format_settings,
-                shared_pool->getMaxParsingThreadsPerStream(),
+                shared_pool->getThreadsPerStream(),
                 /*max_download_threads*/ std::nullopt,
                 /* is_remote_ fs */ true,
                 compression_method,
@@ -404,7 +405,10 @@ Chunk StorageURLSource::generate()
         }
 
         if (!reader && !initialize())
+        {
+            shared_pool->finishStream();
             return {};
+        }
 
         Chunk chunk;
         if (reader->pull(chunk))

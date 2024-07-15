@@ -390,11 +390,11 @@ ParquetBlockInputFormat::ParquetBlockInputFormat(
     if (shared_pool)
     {
         pool = shared_pool->getOrSetPool(
-            [] (size_t max_threads)
-            {
-                return std::make_shared<ThreadPool>(CurrentMetrics::ParquetDecoderThreads, CurrentMetrics::ParquetDecoderThreadsActive,
-                    CurrentMetrics::ParquetDecoderThreadsScheduled, max_threads);
-            });
+            CurrentMetrics::ParquetDecoderThreads,
+            CurrentMetrics::ParquetDecoderThreadsActive,
+            CurrentMetrics::ParquetDecoderThreadsScheduled);
+
+        shared_pool->acquireThreads(max_decoding_threads);
     }
     else if (max_decoding_threads > 1)
     {
@@ -709,12 +709,12 @@ void ParquetBlockInputFormat::scheduleMoreWorkIfNeeded(std::optional<size_t> row
             size_t num_remaining_tasks = row_group_batches.size() - row_group_batches_completed;
             if (num_remaining_tasks < max_decoding_threads)
             {
-                shared_pool->release(max_decoding_threads - num_remaining_tasks);
+                shared_pool->releaseThreads(max_decoding_threads - num_remaining_tasks);
                 max_decoding_threads = num_remaining_tasks;
             }
             else
             {
-                max_decoding_threads += shared_pool->tryAcquire(num_remaining_tasks);
+                max_decoding_threads += shared_pool->tryAcquireFreeThreads(num_remaining_tasks);
             }
         }
 

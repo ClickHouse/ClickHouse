@@ -1293,7 +1293,10 @@ Chunk StorageFileSource::generate()
                     {
                         auto archive = files_iterator->next();
                         if (archive.empty())
+                        {
+                            shared_pool->finishStream();
                             return {};
+                        }
 
                         auto file_stat = getFileStat(archive, storage->use_table_fd, storage->table_fd, storage->getName());
                         if (getContext()->getSettingsRef().engine_file_skip_empty_files && file_stat.st_size == 0)
@@ -1321,7 +1324,10 @@ Chunk StorageFileSource::generate()
                             {
                                 auto archive = files_iterator->next();
                                 if (archive.empty())
+                                {
+                                    shared_pool->finishStream();
                                     return {};
+                                }
 
                                 current_archive_stat = getFileStat(archive, storage->use_table_fd, storage->table_fd, storage->getName());
                                 if (getContext()->getSettingsRef().engine_file_skip_empty_files && current_archive_stat.st_size == 0)
@@ -1367,7 +1373,10 @@ Chunk StorageFileSource::generate()
                 {
                     current_path = files_iterator->next();
                     if (current_path.empty())
+                    {
+                        shared_pool->finishStream();
                         return {};
+                    }
                 }
 
                 /// Special case for distributed format. Defaults are not needed here.
@@ -1397,7 +1406,7 @@ Chunk StorageFileSource::generate()
 
             input_format = FormatFactory::instance().getInput(
                 storage->format_name, *read_buf, block_for_format, getContext(), max_block_size, storage->format_settings,
-                shared_pool->getMaxParsingThreadsPerStream(), std::nullopt, /*is_remote_fs*/ false, CompressionMethod::None, need_only_count, shared_pool);
+                shared_pool->getThreadsPerStream(), std::nullopt, /*is_remote_fs*/ false, CompressionMethod::None, need_only_count, shared_pool);
 
             if (key_condition)
                 input_format->setKeyCondition(key_condition);

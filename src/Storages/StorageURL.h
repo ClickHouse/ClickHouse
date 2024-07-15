@@ -228,6 +228,7 @@ private:
     HTTPHeaderEntries headers;
     bool need_only_count;
     size_t total_rows_in_file = 0;
+    SharedParsingThreadPoolPtr shared_pool;
 
     std::unique_ptr<ReadBuffer> read_buf;
     std::shared_ptr<IInputFormat> input_format;
