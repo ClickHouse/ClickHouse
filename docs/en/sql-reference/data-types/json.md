@@ -16,14 +16,13 @@ If you want to use JSON type, set `allow_experimental_json_type = 1`.
 To declare a column of `JSON` type, use the following syntax:
 
 ``` sql
-<column_name> JSON(max_dynamic_paths=N, max_dynamic_types=M, some.path TypeName, SKIP path.to.skip, SKIP PREFIX path.prefix.to.skip, SKIP REGEXP 'paths_regexp')
+<column_name> JSON(max_dynamic_paths=N, max_dynamic_types=M, some.path TypeName, SKIP path.to.skip, SKIP REGEXP 'paths_regexp')
 ```
 Where:
 - `max_dynamic_paths` is an optional parameter indicating how many paths can be stored separately as subcolumns across single block of data that is stored separately (for example across single data part for MergeTree table). If this limit is exceeded, all other paths will be stored together in a single structure. Default value of `max_dynamic_paths` is `1000`.
 - `max_dynamic_types` is an optional parameter between `1` and `255` indicating how many different data types can be stored inside a single path column with type `Dynamic` across single block of data that is stored separately (for example across single data part for MergeTree table). If this limit is exceeded, all new types will be converted to type `String`. Default value of `max_dynamic_types` is `32`.
 - `some.path TypeName` is an optional type hint for particular path in the JSON. Such paths will be always stored as subcolumns with specified type.
-- `SKIP path.to.skip` is an optional hint for particular path that should be skipped during JSON parsing. Such paths will never be stored in the JSON column.
-- `SKIP PREFIX path.prefix.to.skip` is an optional hint for particular path prefix that should be skipped during JSON parsing. All paths with such prefix will never be stored in the JSON column.
+- `SKIP path.to.skip` is an optional hint for particular path that should be skipped during JSON parsing. Such paths will never be stored in the JSON column. If specified path is a nested JSON object, the whole nested object will be skipped.
 - `SKIP REGEXP 'path_regexp'` is an optional hint with a regular expression that is used to skip paths during JSON parsing. All paths that match this regular expression will never be stored in the JSON column.
 
 ## Creating JSON
@@ -345,7 +344,7 @@ All text formats (JSONEachRow, TSV, CSV, CustomSeparated, Values, etc) supports 
 Examples:
 
 ```sql
-SELECT json FROM format(JSONEachRow, 'json JSON(a.b.c UInt32, SKIP a.b.d, SKIP PREFIX d.e, SKIP REGEXP \'b.*\')', '
+SELECT json FROM format(JSONEachRow, 'json JSON(a.b.c UInt32, SKIP a.b.d, SKIP d.e, SKIP REGEXP \'b.*\')', '
 {"json" : {"a" : {"b" : {"c" : 1, "d" : [0, 1]}}, "b" : "2020-01-01", "c" : 42, "d" : {"e" : {"f" : ["s1", "s2"]}, "i" : [1, 2, 3]}}}
 {"json" : {"a" : {"b" : {"c" : 2, "d" : [2, 3]}}, "b" : [1, 2, 3], "c" : null, "d" : {"e" : {"g" : 43}, "i" : [4, 5, 6]}}}
 {"json" : {"a" : {"b" : {"c" : 3, "d" : [4, 5]}}, "b" : {"c" : 10}, "e" : "Hello, World!"}}
@@ -367,7 +366,7 @@ SELECT json FROM format(JSONEachRow, 'json JSON(a.b.c UInt32, SKIP a.b.d, SKIP P
 For text formats like CSV/TSV/etc `JSON` is parsed from a string containing JSON object
 
 ```sql
-SELECT json FROM format(TSV, 'json JSON(a.b.c UInt32, SKIP a.b.d, SKIP PREFIX d.e, SKIP REGEXP \'b.*\')',
+SELECT json FROM format(TSV, 'json JSON(a.b.c UInt32, SKIP a.b.d, SKIP REGEXP \'b.*\')',
 '{"a" : {"b" : {"c" : 1, "d" : [0, 1]}}, "b" : "2020-01-01", "c" : 42, "d" : {"e" : {"f" : ["s1", "s2"]}, "i" : [1, 2, 3]}}
 {"a" : {"b" : {"c" : 2, "d" : [2, 3]}}, "b" : [1, 2, 3], "c" : null, "d" : {"e" : {"g" : 43}, "i" : [4, 5, 6]}}
 {"a" : {"b" : {"c" : 3, "d" : [4, 5]}}, "b" : {"c" : 10}, "e" : "Hello, World!"}
@@ -478,5 +477,5 @@ As we can see, ClickHouse kept the most frequent paths `a`, `b` and `c` and move
 Before creating `JSON` column and loading data into it, consider the following tips:
 
 - Investigate your data and specify as many path hints with types as you can. It will make the storage and the reading much more efficient.
-- Think about what paths you will need and what paths you will never need. Specify paths that you won't need in the SKIP section, use SKIP PREFIX and SKIP REGEXP if needed. It will improve the storage.
+- Think about what paths you will need and what paths you will never need. Specify paths that you won't need in the SKIP section and SKIP REGEXP if needed. It will improve the storage.
 - Don't set `max_dynamic_paths` parameter to very high values, it can make the storage and reading less efficient.
