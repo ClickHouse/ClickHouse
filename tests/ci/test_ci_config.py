@@ -283,6 +283,7 @@ class TestCIConfig(unittest.TestCase):
         ci_cache = CIPY._configure_jobs(
             S3Helper(), pr_info, settings, skip_jobs=False, dry_run=True
         )
+        ci_cache.filter_out_not_affected_jobs()
         actual_jobs_to_do = list(ci_cache.jobs_to_do)
         expected_jobs_to_do = []
         for set_ in settings.ci_sets:

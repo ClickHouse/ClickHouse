@@ -729,25 +729,25 @@ class CiCache:
                     required_builds += (
                         job_config.required_builds if job_config.required_builds else []
                     )
-
-        for job_name, job_config in self.jobs_to_do.items():
-            if CI.is_build_job(job_name):
-                if job_name not in required_builds:
-                    remove_from_to_do.append(job_name)
+        if has_test_jobs_to_skip:
+            # If there are tests to skip, it means build digest has not been changed.
+            # No need to test builds. Let's keep all builds required for test jobs and skip the others
+            for job_name, job_config in self.jobs_to_do.items():
+                if CI.is_build_job(job_name):
+                    if job_name not in required_builds:
+                        remove_from_to_do.append(job_name)
 
         if not required_builds:
             remove_from_to_do.append(CI.JobNames.BUILD_CHECK)
 
-        if has_test_jobs_to_skip:
-            # if there are no test jobs to skip, then we must not skip anything - it's a new CI run with new build digest
-            for job in remove_from_to_do:
-                print(f"Filter job [{job}] - not affected by the change")
-                if job in self.jobs_to_do:
-                    del self.jobs_to_do[job]
-                if job in self.jobs_to_wait:
-                    del self.jobs_to_wait[job]
-                if job in self.jobs_to_skip:
-                    self.jobs_to_skip.remove(job)
+        for job in remove_from_to_do:
+            print(f"Filter job [{job}] - not affected by the change")
+            if job in self.jobs_to_do:
+                del self.jobs_to_do[job]
+            if job in self.jobs_to_wait:
+                del self.jobs_to_wait[job]
+            if job in self.jobs_to_skip:
+                self.jobs_to_skip.remove(job)
 
     def await_pending_jobs(self, is_release: bool, dry_run: bool = False) -> None:
         """
