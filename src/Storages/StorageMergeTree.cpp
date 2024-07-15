@@ -518,7 +518,7 @@ Int64 StorageMergeTree::startMutation(const MutationCommands & commands, Context
         std::lock_guard lock(currently_processing_in_background_mutex);
 
         MergeTreeMutationEntry entry(commands, disk, relative_data_path, insert_increment.get(), current_tid, getContext()->getWriteSettings(),
-                                     Field(query_context->getSettingsRef().lightweight_mutation_projection_mode));
+                                     query_context->getSettingsRef().lightweight_mutation_projection_mode);
         version = increment.get();
         entry.commit(version);
         String mutation_id = entry.file_name;
@@ -1285,7 +1285,7 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
         auto last_mutation_to_apply = mutations_end_it;
 
         /// Trying to grab it from query context.
-        Field lightweight_delete_projection_mode = LightweightMutationProjectionMode::THROW;
+        LightweightMutationProjectionMode lightweight_delete_projection_mode = LightweightMutationProjectionMode::THROW;
 
         for (auto it = mutations_begin_it; it != mutations_end_it; ++it)
         {
