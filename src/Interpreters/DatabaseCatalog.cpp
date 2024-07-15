@@ -1281,10 +1281,6 @@ void DatabaseCatalog::rescheduleDropTableTask()
     auto min_drop_time = getMinDropTime();
     time_t schedule_after_ms = min_drop_time > current_time ? (min_drop_time - current_time) * 1000 : 0;
 
-    LOG_TRACE(
-        log,
-        "Have {} tables in queue to drop. Schedule background task in {} seconds",
-        tables_marked_dropped.size(), schedule_after_ms / 1000);
     (*drop_task)->scheduleAfter(schedule_after_ms);
 }
 
