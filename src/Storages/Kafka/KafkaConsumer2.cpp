@@ -32,7 +32,6 @@ extern const Event KafkaRebalanceErrors;
 extern const Event KafkaMessagesPolled;
 extern const Event KafkaCommitFailures;
 extern const Event KafkaCommits;
-extern const Event KafkaConsumerErrors;
 }
 
 namespace DB
@@ -156,40 +155,7 @@ KafkaConsumer2::~KafkaConsumer2()
 //     https://github.com/confluentinc/confluent-kafka-go/issues/189 etc.
 void KafkaConsumer2::drainConsumerQueue()
 {
-    auto start_time = std::chrono::steady_clock::now();
-    cppkafka::Error last_error(RD_KAFKA_RESP_ERR_NO_ERROR);
-
-    while (true)
-    {
-        auto msg = consumer->poll(100ms);
-        if (!msg)
-            break;
-
-        auto error = msg.get_error();
-
-        if (error)
-        {
-            if (msg.is_eof() || error == last_error)
-            {
-                break;
-            }
-            else
-            {
-                LOG_ERROR(log, "Error during draining: {}", error);
-            }
-        }
-
-        // i don't stop draining on first error,
-        // only if it repeats once again sequentially
-        last_error = error;
-
-        auto ts = std::chrono::steady_clock::now();
-        if (std::chrono::duration_cast<std::chrono::milliseconds>(ts - start_time) > DRAIN_TIMEOUT_MS)
-        {
-            LOG_ERROR(log, "Timeout during draining.");
-            break;
-        }
-    }
+    StorageKafkaUtils::drainConsumer(*consumer, DRAIN_TIMEOUT_MS, log);
 }
 
 void KafkaConsumer2::pollEvents()
@@ -414,31 +380,12 @@ ReadBufferPtr KafkaConsumer2::getNextMessage()
     return nullptr;
 }
 
-size_t KafkaConsumer2::filterMessageErrors()
+void KafkaConsumer2::filterMessageErrors()
 {
     assert(current == messages.begin());
 
-    size_t skipped = std::erase_if(
-        messages,
-        [this](auto & message)
-        {
-            if (auto error = message.get_error())
-            {
-                ProfileEvents::increment(ProfileEvents::KafkaConsumerErrors);
-                LOG_ERROR(log, "Consumer error: {}", error);
-                return true;
-            }
-            return false;
-        });
-
-    if (skipped)
-    {
-        LOG_ERROR(log, "There were {} messages with an error", skipped);
-        // Technically current is invalidated as soon as we erased a single message
-        current = messages.begin();
-    }
-
-    return skipped;
+    StorageKafkaUtils::eraseMessageErrors(messages, log);
+    current = messages.begin();
 }
 
 void KafkaConsumer2::resetIfStopped()

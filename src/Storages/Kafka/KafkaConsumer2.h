@@ -151,8 +151,7 @@ private:
     bool polledDataUnusable(const TopicPartition & topic_partition) const;
     void drainConsumerQueue();
     void resetIfStopped();
-    /// Return number of messages with an error.
-    size_t filterMessageErrors();
+    void filterMessageErrors();
     ReadBufferPtr getNextMessage();
 
     void initializeQueues(const cppkafka::TopicPartitionList & topic_partitions);

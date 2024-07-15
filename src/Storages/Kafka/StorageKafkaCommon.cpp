@@ -32,8 +32,15 @@ namespace CurrentMetrics
 extern const Metric KafkaLibrdkafkaThreads;
 }
 
+namespace ProfileEvents
+{
+extern const Event KafkaConsumerErrors;
+}
+
 namespace DB
 {
+
+using namespace std::chrono_literals;
 
 namespace ErrorCodes
 {
@@ -555,6 +562,68 @@ Names parseTopics(String topic_list)
 String getDefaultClientId(const StorageID & table_id)
 {
     return fmt::format("{}-{}-{}-{}", VERSION_NAME, getFQDNOrHostName(), table_id.database_name, table_id.table_name);
+}
+
+void drainConsumer(
+    cppkafka::Consumer & consumer, const std::chrono::milliseconds drain_timeout, const LoggerPtr & log, ErrorHandler error_handler)
+{
+    auto start_time = std::chrono::steady_clock::now();
+    cppkafka::Error last_error(RD_KAFKA_RESP_ERR_NO_ERROR);
+
+    while (true)
+    {
+        auto msg = consumer.poll(100ms);
+        if (!msg)
+            break;
+
+        auto error = msg.get_error();
+
+        if (error)
+        {
+            if (msg.is_eof() || error == last_error)
+            {
+                break;
+            }
+            else
+            {
+                LOG_ERROR(log, "Error during draining: {}", error);
+                error_handler(error);
+            }
+        }
+
+        // i don't stop draining on first error,
+        // only if it repeats once again sequentially
+        last_error = error;
+
+        auto ts = std::chrono::steady_clock::now();
+        if (std::chrono::duration_cast<std::chrono::milliseconds>(ts - start_time) > drain_timeout)
+        {
+            LOG_ERROR(log, "Timeout during draining.");
+            break;
+        }
+    }
+}
+
+void eraseMessageErrors(Messages & messages, const LoggerPtr & log, ErrorHandler error_handler)
+{
+    assert(current == messages.begin());
+
+    size_t skipped = std::erase_if(
+        messages,
+        [&](auto & message)
+        {
+            if (auto error = message.get_error())
+            {
+                ProfileEvents::increment(ProfileEvents::KafkaConsumerErrors);
+                LOG_ERROR(log, "Consumer error: {}", error);
+                error_handler(error);
+                return true;
+            }
+            return false;
+        });
+
+    if (skipped)
+        LOG_ERROR(log, "There were {} messages with an error", skipped);
 }
 }
 

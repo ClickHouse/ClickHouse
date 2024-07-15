@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <Core/Names.h>
 #include <Interpreters/StorageID.h>
 #include <base/types.h>
@@ -66,6 +67,17 @@ namespace StorageKafkaUtils
 {
 Names parseTopics(String topic_list);
 String getDefaultClientId(const StorageID & table_id);
+
+using ErrorHandler = std::function<void(const cppkafka::Error &)>;
+
+void drainConsumer(
+    cppkafka::Consumer & consumer,
+    std::chrono::milliseconds drain_timeout,
+    const LoggerPtr & log,
+    ErrorHandler error_handler = [](const cppkafka::Error & /*err*/) {});
+
+using Messages = std::vector<cppkafka::Message>;
+void eraseMessageErrors(Messages & messages, const LoggerPtr & log, ErrorHandler error_handler = [](const cppkafka::Error & /*err*/) {});
 }
 }
 
