@@ -608,7 +608,7 @@ void DistributedSink::onCancel() noexcept
         }
         catch (...)
         {
-            tryLogCurrentException(storage.log, "Error occurs on cancelation.");
+            tryLogCurrentException(storage.log, "Error occurs on cancellation.");
         }
     }
 
@@ -623,7 +623,7 @@ void DistributedSink::onCancel() noexcept
             }
             catch (...)
             {
-                tryLogCurrentException(storage.log, "Error occurs on cancelation.");
+                tryLogCurrentException(storage.log, "Error occurs on cancellation.");
             }
         }
     }

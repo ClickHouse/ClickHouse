@@ -192,7 +192,7 @@ void RemoteSource::onCancel() noexcept
     }
     catch (...)
     {
-        tryLogCurrentException(getLogger("RemoteSource"), "Error occurs on cancelation.");
+        tryLogCurrentException(getLogger("RemoteSource"), "Error occurs on cancellation.");
     }
 }
 

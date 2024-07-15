@@ -88,7 +88,7 @@ void MessageQueueSink::onCancel() noexcept
     }
     catch (...)
     {
-        tryLogCurrentException(getLogger("MessageQueueSink"), "Error occurs on cancelation.");
+        tryLogCurrentException(getLogger("MessageQueueSink"), "Error occurs on cancellation.");
     }
 }
 
