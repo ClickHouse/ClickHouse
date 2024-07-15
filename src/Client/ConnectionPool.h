@@ -4,11 +4,12 @@
 #include <Common/Priority.h>
 #include <Client/Connection.h>
 #include <IO/ConnectionTimeouts.h>
-#include <Core/Settings.h>
 #include <base/defines.h>
 
 namespace DB
 {
+
+struct Settings;
 
 /** Interface for connection pools.
   *
@@ -102,15 +103,7 @@ public:
 
     Entry get(const ConnectionTimeouts & timeouts, /// NOLINT
               const Settings & settings,
-              bool force_connected = true) override
-    {
-        Entry entry = Base::get(settings.connection_pool_max_wait_ms.totalMilliseconds());
-
-        if (force_connected)
-            entry->forceConnected(timeouts);
-
-        return entry;
-    }
+              bool force_connected = true) override;
 
     std::string getDescription() const
     {
