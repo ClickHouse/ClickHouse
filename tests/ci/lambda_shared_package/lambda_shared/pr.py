@@ -9,7 +9,6 @@ from typing import Tuple
 TRUSTED_CONTRIBUTORS = {
     e.lower()
     for e in [
-        "Algunenano",  # Raúl Marín, ClickHouse, Inc
         "amosbird",
         "azat",  # SEMRush
         "bharatnc",  # Many contributions.
@@ -19,11 +18,9 @@ TRUSTED_CONTRIBUTORS = {
         "nvartolomei",  # Seasoned contributor, CloudFlare
         "taiyang-li",
         "ucasFL",  # Amos Bird's friend
-        "vdimir",  # ClickHouse, Inc
         "thomoco",  # ClickHouse, Inc
         "tonickkozlov",  # Cloudflare
         "tylerhannan",  # ClickHouse, Inc
-        "thevar1able",  # ClickHouse, Inc
         "tsolodov",  # ClickHouse, Inc
         "justindeguzman",  # ClickHouse, Inc
         "XuJia0210",  # ClickHouse, Inc
