@@ -22,7 +22,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Parsers/ASTFunction.h>
 
-#include <boost/algorithm/string/join.hpp>
+#include <fmt/format.h>
 
 namespace DB
 {
@@ -391,15 +391,11 @@ ReadFromParallelRemoteReplicasStep::ReadFromParallelRemoteReplicasStep(
     std::vector<String> replicas;
     replicas.reserve(cluster->getShardsAddresses().front().size());
 
-    bool first_local = false;
     for (const auto & addr : cluster->getShardsAddresses().front())
     {
         /// skip first local
-        if (exclude_local_replica && addr.is_local && !first_local)
-        {
-            first_local = true;
+        if (exclude_local_replica && addr.is_local)
             continue;
-        }
 
         /// replace hostname with replica name if the hostname started with replica namespace,
         /// it makes description shorter and more readable
@@ -409,7 +405,7 @@ ReadFromParallelRemoteReplicasStep::ReadFromParallelRemoteReplicasStep(
             replicas.push_back(fmt::format("{}", addr.host_name));
     }
 
-    auto description = fmt::format("Query: {} Replicas: ", formattedAST(query_ast)) + boost::algorithm::join(replicas, ", ");
+    auto description = fmt::format("Query: {} Replicas: {}", formattedAST(query_ast), fmt::join(replicas, ", "));
     setStepDescription(std::move(description));
 }
 
@@ -489,13 +485,11 @@ void ReadFromParallelRemoteReplicasStep::initializePipeline(QueryPipelineBuilder
     if (pools_to_use.empty())
         return;
 
-    {
-        String pool_addresses;
-        for (const auto & pool : pools_to_use)
-            pool_addresses += pool->getAddress() + ";";
-
-        LOG_DEBUG(getLogger("ReadFromParallelRemoteReplicasStep"), "Addresses to use: {}", pool_addresses);
-    }
+    std::vector<std::string_view> addresses;
+    addresses.reserve(pools_to_use.size());
+    for (const auto & pool : pools_to_use)
+        addresses.emplace_back(pool->getAddress());
+    LOG_DEBUG(getLogger("ReadFromParallelRemoteReplicasStep"), "Addresses to use: {}", fmt::join(addresses, ", "));
 
     /// when using local plan for local replica, local replica has 0 number
     size_t offset = (exclude_local_replica ? 1 : 0);
