@@ -736,6 +736,12 @@ bool canUseParallelReplicasOnInitiator(const ContextPtr & context)
         return cluster->getShardsInfo().at(shard_num - 1).getAllNodeCount() > 1;
     }
 
+    if (cluster->getShardCount() > 1)
+        throw DB::Exception(
+            ErrorCodes::UNEXPECTED_CLUSTER,
+            "`cluster_for_parallel_replicas` setting refers to cluster with {} shards. Expected a cluster with one shard",
+            cluster->getShardCount());
+
     return false;
 }
 
