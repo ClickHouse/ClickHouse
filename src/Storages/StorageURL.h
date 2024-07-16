@@ -143,6 +143,9 @@ private:
     virtual Block getHeaderBlock(const Names & column_names, const StorageSnapshotPtr & storage_snapshot) const = 0;
 };
 
+bool urlWithGlobs(const String & uri);
+
+String getSampleURI(String uri, ContextPtr context);
 
 class StorageURLSource : public SourceWithKeyCondition, WithContext
 {
@@ -268,22 +271,6 @@ private:
     std::mutex cancel_mutex;
     bool cancelled = false;
 };
-
-static bool urlWithGlobs(const String & uri)
-{
-    return (uri.find('{') != std::string::npos && uri.find('}') != std::string::npos) || uri.find('|') != std::string::npos;
-}
-
-inline String getSampleURI(String uri, ContextPtr context)
-{
-    if (urlWithGlobs(uri))
-    {
-        auto uris = parseRemoteDescription(uri, 0, uri.size(), ',', context->getSettingsRef().glob_expansion_max_elements);
-        if (!uris.empty())
-            return uris[0];
-    }
-    return uri;
-}
 
 class StorageURL : public IStorageURLBase
 {
