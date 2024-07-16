@@ -695,7 +695,7 @@ void ColumnSparse::updateWeakHash32(WeakHash32 & hash) const
     if (getNumberOfDefaultRows() > 0)
         values_hash_data[0] = hash_data[getFirstDefaultValueIndex()];
 
-    for (size_t i = 0; i < values_size; ++i)
+    for (size_t i = 0; i + 1 < values_size; ++i)
         values_hash_data[i + 1] = hash_data[offsets_data[i]];
 
     values->updateWeakHash32(values_hash);
