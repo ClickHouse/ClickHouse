@@ -3,7 +3,8 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
 #include <Core/ProtocolDefines.h>
-#include <Interpreters/HashTablesStatistics.h>
+#include <Core/Settings.h>
+#include <Core/ServerSettings.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 
@@ -40,6 +41,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 #include <Interpreters/Context.h>
+#include <Interpreters/HashTablesStatistics.h>
 #include <Interpreters/StorageID.h>
 
 #include <Storages/ColumnsDescription.h>
