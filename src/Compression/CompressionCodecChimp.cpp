@@ -93,11 +93,9 @@ namespace
 
 constexpr UInt8 getBitLengthOfLength(UInt8 data_bytes_size)
 {
-    // 1-byte value is 8 bits, and we need 4 bits to represent 8 : 1000,
-    // 2-byte         16 bits        =>    5
     // 4-byte         32 bits        =>    6
     // 8-byte         64 bits        =>    7
-    const UInt8 bit_lengths[] = {0, 4, 5, 0, 6, 0, 0, 0, 7};
+    const UInt8 bit_lengths[] = {0, 0, 0, 0, 6, 0, 0, 0, 7};
     assert(data_bytes_size >= 1 && data_bytes_size < sizeof(bit_lengths) && bit_lengths[data_bytes_size] != 0);
     return bit_lengths[data_bytes_size];
 }
@@ -111,12 +109,11 @@ UInt32 getCompressedHeaderSize(UInt8 data_bytes_size)
 UInt32 getCompressedDataSize(UInt8 data_bytes_size, UInt32 uncompressed_size)
 {
     const UInt32 items_count = uncompressed_size / data_bytes_size;
-
     static const auto DATA_BIT_LENGTH = getBitLengthOfLength(data_bytes_size);
+    static const short LOG_NO_PREVIOUS_VALUES = static_cast<short>(std::log2(data_bytes_size * 16));
     // worst case (for 32-bit value):
-    // 11 + 5 bits of leading zeroes bit-size + 5 bits of data bit-size + non-zero data bits.
-    const UInt32 max_item_size_bits = 2 + LeadingZero::BIT_LENGTH + DATA_BIT_LENGTH + data_bytes_size * 8;
-
+    // 2 bits (flag) + 6 bits (previous values index) + 3 bits (no of leading zeroes) + 5 bits(data bit-size) + non-zero data bits.
+    const UInt32 max_item_size_bits = 2 + LOG_NO_PREVIOUS_VALUES + LeadingZero::BIT_LENGTH + DATA_BIT_LENGTH + data_bytes_size * 8;
     // + 8 is to round up to next byte.
     return (items_count * max_item_size_bits + 8) / 8;
 }
@@ -135,7 +132,6 @@ BinaryValueInfo getBinaryValueInfo(const T & value)
     const UInt8 lz = LeadingZero::round[getLeadingZeroBits(value)];
     const UInt8 tz = getTrailingZeroBits(value);
     const UInt8 data_size = value == 0 ? 0 : static_cast<UInt8>(bit_size - lz - tz);
-
     return {lz, data_size, tz};
 }
 
@@ -157,7 +153,7 @@ UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest,
     {
         stored_values[i] = 0;
     }
-    static const short LOG_NO_PREVIOUS_VALUES = static_cast<short>(std::log2(NO_PREVIOUS_VALUES) / std::log2(2));
+    static const short LOG_NO_PREVIOUS_VALUES = static_cast<short>(std::log2(NO_PREVIOUS_VALUES));
     static const short THRESHOLD = 6 + LOG_NO_PREVIOUS_VALUES;
     static const int ARRAY_SIZE = static_cast<int>(std::pow(2, THRESHOLD + 1));
     int indices[ARRAY_SIZE];
@@ -268,7 +264,6 @@ UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest,
         total++;
         indices[match_key] = total;
     }
-
     writer.flush();
 
     return static_cast<UInt32>((dest - dest_start) + (writer.count() + 7) / 8);
@@ -278,7 +273,7 @@ template <typename T>
 void decompressDataForType(const char * source, UInt32 source_size, char * dest, UInt32 dest_size)
 {
     static const short NO_PREVIOUS_VALUES = sizeof(T) * 16;
-    static const short LOG_NO_PREVIOUS_VALUES = static_cast<short>(std::log2(NO_PREVIOUS_VALUES) / std::log2(2));
+    static const short LOG_NO_PREVIOUS_VALUES = static_cast<short>(std::log2(NO_PREVIOUS_VALUES));
     int current_index = 0;
     T stored_values[NO_PREVIOUS_VALUES];
     for (int i = 0; i < NO_PREVIOUS_VALUES; i++)
@@ -414,7 +409,6 @@ UInt32 CompressionCodecChimp::getMaxCompressedDataSize(UInt32 uncompressed_size)
             + data_bytes_size // max bytes skipped if source is not properly aligned.
             + getCompressedHeaderSize(data_bytes_size) // data-specific header
             + getCompressedDataSize(data_bytes_size, uncompressed_size);
-
     return result;
 }
 
@@ -430,12 +424,6 @@ UInt32 CompressionCodecChimp::doCompressData(const char * source, UInt32 source_
     const UInt32 compressed_size = getMaxCompressedDataSize(source_size);
     switch (data_bytes_size) // NOLINT(bugprone-switch-missing-default-case)
     {
-    case 1:
-        result_size = compressDataForType<UInt8>(&source[bytes_to_skip], source_size - bytes_to_skip, &dest[start_pos], compressed_size);
-        break;
-    case 2:
-        result_size = compressDataForType<UInt16>(&source[bytes_to_skip], source_size - bytes_to_skip, &dest[start_pos], compressed_size);
-        break;
     case 4:
         result_size = compressDataForType<UInt32>(&source[bytes_to_skip], source_size - bytes_to_skip, &dest[start_pos], compressed_size);
         break;
@@ -443,7 +431,6 @@ UInt32 CompressionCodecChimp::doCompressData(const char * source, UInt32 source_
         result_size = compressDataForType<UInt64>(&source[bytes_to_skip], source_size - bytes_to_skip, &dest[start_pos], compressed_size);
         break;
     }
-
     return 2 + bytes_to_skip + result_size;
 }
 
@@ -470,12 +457,6 @@ void CompressionCodecChimp::doDecompressData(const char * source, UInt32 source_
     UInt32 uncompressed_size_left = uncompressed_size - bytes_to_skip;
     switch (bytes_size) // NOLINT(bugprone-switch-missing-default-case)
     {
-    case 1:
-        decompressDataForType<UInt8>(&source[2 + bytes_to_skip], source_size_no_header, &dest[bytes_to_skip], uncompressed_size_left);
-        break;
-    case 2:
-        decompressDataForType<UInt16>(&source[2 + bytes_to_skip], source_size_no_header, &dest[bytes_to_skip], uncompressed_size_left);
-        break;
     case 4:
         decompressDataForType<UInt32>(&source[2 + bytes_to_skip], source_size_no_header, &dest[bytes_to_skip], uncompressed_size_left);
         break;
@@ -505,8 +486,8 @@ void registerCodecChimp(CompressionCodecFactory & factory)
                 throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "Chimp codec argument must be unsigned integer");
 
             size_t user_bytes_size = literal->value.safeGet<UInt64>();
-            if (user_bytes_size != 1 && user_bytes_size != 2 && user_bytes_size != 4 && user_bytes_size != 8)
-                throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "Argument value for Chimp codec can be 1, 2, 4 or 8, given {}", user_bytes_size);
+            if (user_bytes_size != 4 && user_bytes_size != 8)
+                throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "Argument value for Chimp codec can be 4 or 8, given {}", user_bytes_size);
             data_bytes_size = static_cast<UInt8>(user_bytes_size);
         }
         else if (column_type)
