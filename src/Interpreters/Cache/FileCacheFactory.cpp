@@ -184,6 +184,18 @@ void FileCacheFactory::updateSettingsFromConfig(const Poco::Util::AbstractConfig
     }
 }
 
+void FileCacheFactory::remove(FileCachePtr cache)
+{
+    std::lock_guard lock(mutex);
+    for (auto it = caches_by_name.begin(); it != caches_by_name.end();)
+    {
+        if (it->second->cache == cache)
+            it = caches_by_name.erase(it);
+        else
+            ++it;
+    }
+}
+
 void FileCacheFactory::clear()
 {
     std::lock_guard lock(mutex);

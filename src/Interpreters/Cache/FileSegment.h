@@ -36,8 +36,8 @@ struct CreateFileSegmentSettings
 
     CreateFileSegmentSettings() = default;
 
-    explicit CreateFileSegmentSettings(FileSegmentKind kind_, bool unbounded_ = false)
-        : kind(kind_), unbounded(unbounded_) {}
+    explicit CreateFileSegmentSettings(FileSegmentKind kind_)
+        : kind(kind_), unbounded(kind == FileSegmentKind::Ephemeral) {}
 };
 
 class FileSegment : private boost::noncopyable
@@ -291,7 +291,7 @@ struct FileSegmentsHolder : private boost::noncopyable
 
     size_t size() const { return file_segments.size(); }
 
-    String toString();
+    String toString() const;
 
     void popFront() { completeAndPopFrontImpl(); }
 
@@ -308,6 +308,7 @@ struct FileSegmentsHolder : private boost::noncopyable
 
     FileSegments::const_iterator begin() const { return file_segments.begin(); }
     FileSegments::const_iterator end() const { return file_segments.end(); }
+    FileSegmentPtr getSingleFileSegment() const;
 
 private:
     FileSegments file_segments{};
