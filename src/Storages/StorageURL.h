@@ -12,8 +12,6 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/prepareReadingFromFormat.h>
 #include <Poco/URI.h>
-#include <Common/parseRemoteDescription.h>
-#include <Core/Settings.h>
 
 
 namespace DB
