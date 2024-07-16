@@ -611,11 +611,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// sorting key.
         merging_param_key_arg = merging_params.version_column;
     }
-    
-    const auto & initial_storage_settings = replicated ? context->getReplicatedMergeTreeSettings() : context->getMergeTreeSettings();
-    std::unique_ptr<MergeTreeSettings> storage_settings = std::make_unique<MergeTreeSettings>(initial_storage_settings);
-
-    storage_settings->loadFromQuery(*args.storage_def, context, LoadingStrictnessLevel::ATTACH <= args.mode);
 
     String date_column_name;
 
@@ -627,10 +622,11 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     else
         columns = args.columns;
 
-    auto default_compression_codec = storage_settings->default_compression_codec.toString();
-
     metadata.setColumns(columns);
     metadata.setComment(args.comment);
+
+    const auto & initial_storage_settings = replicated ? context->getReplicatedMergeTreeSettings() : context->getMergeTreeSettings();
+    std::unique_ptr<MergeTreeSettings> storage_settings = std::make_unique<MergeTreeSettings>(initial_storage_settings);
 
     if (is_extended_storage_def)
     {
@@ -723,6 +719,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             metadata.column_ttls_by_name[name] = new_ttl_entry;
         }
 
+        storage_settings->loadFromQuery(*args.storage_def, context, LoadingStrictnessLevel::ATTACH <= args.mode);
 
         // updates the default storage_settings with settings specified via SETTINGS arg in a query
         if (args.storage_def->settings)
