@@ -12,6 +12,7 @@
 #include <fmt/format.h>
 #include <Common/iota.h>
 #include <Common/typeid_cast.h>
+#include <Core/Settings.h>
 #include <Core/Types.h>
 
 
