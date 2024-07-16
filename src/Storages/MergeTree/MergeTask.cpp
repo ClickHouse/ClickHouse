@@ -8,9 +8,13 @@
 #include <Common/logger_useful.h>
 #include <Common/ActionBlocker.h>
 #include <Core/Settings.h>
+#include <Disks/ObjectStorages/Cached/CachedObjectStorage.h>
+#include <Disks/ObjectStorages/DiskObjectStorage.h>
 #include <Processors/Transforms/CheckSortedTransform.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
+#include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 #include <Compression/CompressedWriteBuffer.h>
+
 #include <DataTypes/ObjectUtils.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
 #include <IO/IReadableWriteBuffer.h>
@@ -38,6 +42,7 @@
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/MergeTreeTransaction.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Interpreters/Cache/FileCacheFactory.h>
 
 namespace DB
 {
@@ -104,19 +109,19 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
     std::set<String> key_columns(sort_key_columns_vec.cbegin(), sort_key_columns_vec.cend());
 
     /// Force sign column for Collapsing mode
-    if (ctx->merging_params.mode == MergeTreeData::MergingParams::Collapsing)
-        key_columns.emplace(ctx->merging_params.sign_column);
+    if (global_ctx->merging_params.mode == MergeTreeData::MergingParams::Collapsing)
+        key_columns.emplace(global_ctx->merging_params.sign_column);
 
     /// Force version column for Replacing mode
-    if (ctx->merging_params.mode == MergeTreeData::MergingParams::Replacing)
+    if (global_ctx->merging_params.mode == MergeTreeData::MergingParams::Replacing)
     {
-        key_columns.emplace(ctx->merging_params.is_deleted_column);
-        key_columns.emplace(ctx->merging_params.version_column);
+        key_columns.emplace(global_ctx->merging_params.is_deleted_column);
+        key_columns.emplace(global_ctx->merging_params.version_column);
     }
 
     /// Force sign column for VersionedCollapsing mode. Version is already in primary key.
-    if (ctx->merging_params.mode == MergeTreeData::MergingParams::VersionedCollapsing)
-        key_columns.emplace(ctx->merging_params.sign_column);
+    if (global_ctx->merging_params.mode == MergeTreeData::MergingParams::VersionedCollapsing)
+        key_columns.emplace(global_ctx->merging_params.sign_column);
 
     /// Force to merge at least one column in case of empty key
     if (key_columns.empty())
@@ -176,7 +181,8 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
         // E.g. `proj_a.proj` for a normal projection merge and `proj_a.tmp_proj` for a projection materialization merge.
         local_tmp_prefix = global_ctx->parent_part ? "" : "tmp_merge_";
     }
-    const String local_tmp_suffix = global_ctx->parent_part ? ctx->suffix : "";
+
+    const String local_tmp_suffix = global_ctx->parent_part ? global_ctx->suffix : "";
 
     if (global_ctx->merges_blocker->isCancelled() || global_ctx->merge_list_element_ptr->is_cancelled.load(std::memory_order_relaxed))
         throw Exception(ErrorCodes::ABORTED, "Cancelled merging parts");
@@ -201,19 +207,19 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
             LOG_DEBUG(ctx->log, "DEDUPLICATE BY ('{}')", fmt::join(global_ctx->deduplicate_by_columns, "', '"));
     }
 
-    ctx->disk = global_ctx->space_reservation->getDisk();
+    global_ctx->disk = global_ctx->space_reservation->getDisk();
     auto local_tmp_part_basename = local_tmp_prefix + global_ctx->future_part->name + local_tmp_suffix;
 
     std::optional<MergeTreeDataPartBuilder> builder;
     if (global_ctx->parent_part)
     {
-        auto data_part_storage = global_ctx->parent_part->getDataPartStorage().getProjection(local_tmp_part_basename,  /* use parent transaction */ false);
+        auto data_part_storage = global_ctx->parent_part->getDataPartStorage().getProjection(local_tmp_part_basename, /* use parent transaction */ false);
         builder.emplace(*global_ctx->data, global_ctx->future_part->name, data_part_storage);
         builder->withParentPart(global_ctx->parent_part);
     }
     else
     {
-        auto local_single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + global_ctx->future_part->name, ctx->disk, 0);
+        auto local_single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + global_ctx->future_part->name, global_ctx->disk, 0);
         builder.emplace(global_ctx->data->getDataPartBuilder(global_ctx->future_part->name, local_single_disk_volume, local_tmp_part_basename));
         builder->withPartStorageType(global_ctx->future_part->part_format.storage_type);
     }
@@ -464,8 +470,7 @@ MergeTask::StageRuntimeContextPtr MergeTask::ExecuteAndFinalizeHorizontalPart::g
 MergeTask::StageRuntimeContextPtr MergeTask::VerticalMergeStage::getContextForNextStage()
 {
     auto new_ctx = std::make_shared<MergeProjectionsRuntimeContext>();
-
-    new_ctx->need_sync = std::move(ctx->need_sync);
+    new_ctx->need_sync = ctx->need_sync;
 
     ctx.reset();
     return new_ctx;
@@ -882,6 +887,9 @@ bool MergeTask::MergeProjectionsStage::finalizeProjectionsAndWholeMerge() const
     for (const auto & task : ctx->tasks_for_projections)
     {
         auto part = task->getFuture().get();
+        /// FIXME (alesapin) we should use some temporary storage for this,
+        /// not commit each subprojection part
+        part->getDataPartStorage().commitTransaction();
         global_ctx->new_data_part->addProjectionPart(part->name, std::move(part));
     }
 
@@ -1076,7 +1084,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream()
     const UInt64 merge_block_size_rows = data_settings->merge_max_block_size;
     const UInt64 merge_block_size_bytes = data_settings->merge_max_block_size_bytes;
 
-    switch (ctx->merging_params.mode)
+    switch (global_ctx->merging_params.mode)
     {
         case MergeTreeData::MergingParams::Ordinary:
             merged_transform = std::make_shared<MergingSortedTransform>(
@@ -1095,13 +1103,13 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream()
 
         case MergeTreeData::MergingParams::Collapsing:
             merged_transform = std::make_shared<CollapsingSortedTransform>(
-                header, pipes.size(), sort_description, ctx->merging_params.sign_column, false,
+                header, pipes.size(), sort_description, global_ctx->merging_params.sign_column, false,
                 merge_block_size_rows, merge_block_size_bytes, ctx->rows_sources_write_buf.get(), ctx->blocks_are_granules_size);
             break;
 
         case MergeTreeData::MergingParams::Summing:
             merged_transform = std::make_shared<SummingSortedTransform>(
-                header, pipes.size(), sort_description, ctx->merging_params.columns_to_sum, partition_key_columns, merge_block_size_rows, merge_block_size_bytes);
+                header, pipes.size(), sort_description, global_ctx->merging_params.columns_to_sum, partition_key_columns, merge_block_size_rows, merge_block_size_bytes);
             break;
 
         case MergeTreeData::MergingParams::Aggregating:
@@ -1113,7 +1121,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream()
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Experimental merges with CLEANUP are not allowed");
 
             merged_transform = std::make_shared<ReplacingSortedTransform>(
-                header, pipes.size(), sort_description, ctx->merging_params.is_deleted_column, ctx->merging_params.version_column,
+                header, pipes.size(), sort_description, global_ctx->merging_params.is_deleted_column, global_ctx->merging_params.version_column,
                 merge_block_size_rows, merge_block_size_bytes, ctx->rows_sources_write_buf.get(), ctx->blocks_are_granules_size,
                 global_ctx->cleanup);
             break;
@@ -1121,12 +1129,12 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream()
         case MergeTreeData::MergingParams::Graphite:
             merged_transform = std::make_shared<GraphiteRollupSortedTransform>(
                 header, pipes.size(), sort_description, merge_block_size_rows, merge_block_size_bytes,
-                ctx->merging_params.graphite_params, global_ctx->time_of_merge);
+                global_ctx->merging_params.graphite_params, global_ctx->time_of_merge);
             break;
 
         case MergeTreeData::MergingParams::VersionedCollapsing:
             merged_transform = std::make_shared<VersionedCollapsingTransform>(
-                header, pipes.size(), sort_description, ctx->merging_params.sign_column,
+                header, pipes.size(), sort_description, global_ctx->merging_params.sign_column,
                 merge_block_size_rows, merge_block_size_bytes, ctx->rows_sources_write_buf.get(), ctx->blocks_are_granules_size);
             break;
     }
@@ -1232,10 +1240,10 @@ MergeAlgorithm MergeTask::ExecuteAndFinalizeHorizontalPart::chooseMergeAlgorithm
     }
 
     bool is_supported_storage =
-        ctx->merging_params.mode == MergeTreeData::MergingParams::Ordinary ||
-        ctx->merging_params.mode == MergeTreeData::MergingParams::Collapsing ||
-        ctx->merging_params.mode == MergeTreeData::MergingParams::Replacing ||
-        ctx->merging_params.mode == MergeTreeData::MergingParams::VersionedCollapsing;
+        global_ctx->merging_params.mode == MergeTreeData::MergingParams::Ordinary ||
+        global_ctx->merging_params.mode == MergeTreeData::MergingParams::Collapsing ||
+        global_ctx->merging_params.mode == MergeTreeData::MergingParams::Replacing ||
+        global_ctx->merging_params.mode == MergeTreeData::MergingParams::VersionedCollapsing;
 
     bool enough_ordinary_cols = global_ctx->gathering_columns.size() >= data_settings->vertical_merge_algorithm_min_columns_to_activate;
 
