@@ -96,6 +96,16 @@ public:
         return cell.value;
     }
 
+    Cell getCell(const Key & key) override
+    {
+        auto it = cells.find(key);
+        if (it == cells.end())
+            return {};
+
+        Cell & cell = it->second;
+        return cell;
+    }
+
     std::optional<KeyMapped> getWithKey(const Key & key) override
     {
         auto it = cells.find(key);
