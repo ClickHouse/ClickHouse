@@ -7,6 +7,7 @@
 #include <Common/parseAddress.h>
 #include <Common/assert_cast.h>
 
+#include <Core/Settings.h>
 #include <Core/PostgreSQL/Connection.h>
 
 #include <DataTypes/DataTypeNullable.h>
