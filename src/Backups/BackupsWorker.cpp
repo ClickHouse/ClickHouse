@@ -26,6 +26,7 @@
 #include <Common/setThreadName.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/ThreadPool.h>
+#include <Core/Settings.h>
 
 #include <boost/range/adaptor/map.hpp>
 
