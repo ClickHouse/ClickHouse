@@ -22,13 +22,13 @@ public:
 template <typename... Args>
 std::shared_ptr<ASTDataType> makeASTDataType(const String & name, Args &&... args)
 {
-    auto function = std::make_shared<ASTDataType>();
+    auto data_type = std::make_shared<ASTDataType>();
 
-    function->name = name;
-    function->arguments = std::make_shared<ASTExpressionList>();
-    function->children.push_back(function->arguments);
+    data_type->name = name;
+    data_type->arguments = std::make_shared<ASTExpressionList>();
+    data_type->children.push_back(function->arguments);
 
-    function->arguments->children = { std::forward<Args>(args)... };
+    data_type->arguments->children = { std::forward<Args>(args)... };
 
     return function;
 }
