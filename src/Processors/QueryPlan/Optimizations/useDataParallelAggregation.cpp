@@ -74,11 +74,11 @@ void removeInjectiveFunctionsFromResultsRecursively(const ActionsDAG::Node * nod
 /// Our objective is to replace injective function nodes in `actions` results with its children
 /// until only the irreducible subset of nodes remains. Against these set of nodes we will match partition key expression
 /// to determine if it maps all rows with the same value of group by key to the same partition.
-NodeSet removeInjectiveFunctionsFromResultsRecursively(const ActionsDAGPtr & actions)
+NodeSet removeInjectiveFunctionsFromResultsRecursively(const ActionsDAG & actions)
 {
     NodeSet irreducible;
     NodeSet visited;
-    for (const auto & node : actions->getOutputs())
+    for (const auto & node : actions.getOutputs())
         removeInjectiveFunctionsFromResultsRecursively(node, irreducible, visited);
     return irreducible;
 }
@@ -158,7 +158,7 @@ bool isPartitionKeySuitsGroupByKey(
     auto key_nodes = group_by_actions.findInOutpus(aggregating.getParams().keys);
     auto group_by_key_actions = ActionsDAG::cloneSubDAG(key_nodes, /*remove_aliases=*/ true);
 
-    const auto & gb_key_required_columns = group_by_key_actions->getRequiredColumnsNames();
+    const auto & gb_key_required_columns = group_by_key_actions.getRequiredColumnsNames();
 
     const auto & partition_actions = reading.getStorageMetadata()->getPartitionKey().expression->getActionsDAG();
 
@@ -169,7 +169,7 @@ bool isPartitionKeySuitsGroupByKey(
 
     const auto irreducibe_nodes = removeInjectiveFunctionsFromResultsRecursively(group_by_key_actions);
 
-    const auto matches = matchTrees(group_by_key_actions->getOutputs(), partition_actions);
+    const auto matches = matchTrees(group_by_key_actions.getOutputs(), partition_actions);
 
     return allOutputsDependsOnlyOnAllowedNodes(partition_actions, irreducibe_nodes, matches);
 }

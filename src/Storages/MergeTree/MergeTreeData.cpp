@@ -1154,7 +1154,7 @@ std::optional<UInt64> MergeTreeData::totalRowsByPartitionPredicateImpl(
         if (!virtual_columns_block.has(input->result_name))
             valid = false;
 
-    PartitionPruner partition_pruner(metadata_snapshot, filter_dag.get(), local_context, true /* strict */);
+    PartitionPruner partition_pruner(metadata_snapshot, &*filter_dag, local_context, true /* strict */);
     if (partition_pruner.isUseless() && !valid)
         return {};
 
@@ -1162,7 +1162,7 @@ std::optional<UInt64> MergeTreeData::totalRowsByPartitionPredicateImpl(
     if (valid)
     {
         virtual_columns_block = getBlockWithVirtualsForFilter(metadata_snapshot, parts);
-        VirtualColumnUtils::filterBlockWithDAG(filter_dag, virtual_columns_block, local_context);
+        VirtualColumnUtils::filterBlockWithDAG(std::move(*filter_dag), virtual_columns_block, local_context);
         part_values = VirtualColumnUtils::extractSingleValueFromBlock<String>(virtual_columns_block, "_part");
         if (part_values.empty())
             return 0;

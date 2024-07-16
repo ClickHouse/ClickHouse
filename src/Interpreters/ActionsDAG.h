@@ -261,13 +261,12 @@ public:
     void compileExpressions(size_t min_count_to_compile_expression, const std::unordered_set<const Node *> & lazy_executed_nodes = {});
 #endif
 
-    static ActionsDAGPtr clone(const ActionsDAGPtr & from) { return clone(from.get()); }
     static ActionsDAGPtr clone(const ActionsDAG * from);
 
     ActionsDAG clone(std::unordered_map<const Node *, Node *> & old_to_new_nodes) const;
     ActionsDAG clone() const;
 
-    static ActionsDAGPtr cloneSubDAG(const NodeRawConstPtrs & outputs, bool remove_aliases);
+    static ActionsDAG cloneSubDAG(const NodeRawConstPtrs & outputs, bool remove_aliases);
 
     /// Execute actions for header. Input block must have empty columns.
     /// Result should be equal to the execution of ExpressionActions built from this DAG.

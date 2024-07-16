@@ -465,7 +465,7 @@ void MergeTreeDataSelectExecutor::buildKeyConditionFromPartOffset(
         return;
 
     part_offset_condition.emplace(KeyCondition{
-        dag.get(),
+        &*dag,
         context,
         sample.getNames(),
         std::make_shared<ExpressionActions>(ActionsDAG(sample.getColumnsWithTypeAndName()), ExpressionActionsSettings{}),
@@ -488,7 +488,7 @@ std::optional<std::unordered_set<String>> MergeTreeDataSelectExecutor::filterPar
         return {};
 
     auto virtual_columns_block = data.getBlockWithVirtualsForFilter(metadata_snapshot, parts);
-    VirtualColumnUtils::filterBlockWithDAG(dag, virtual_columns_block, context);
+    VirtualColumnUtils::filterBlockWithDAG(std::move(*dag), virtual_columns_block, context);
     return VirtualColumnUtils::extractSingleValueFromBlock<String>(virtual_columns_block, "_part");
 }
 

@@ -77,15 +77,20 @@ void buildSetsForDAG(const ActionsDAG & dag, const ContextPtr & context)
     }
 }
 
-void filterBlockWithDAG(const ActionsDAGPtr & dag, Block & block, ContextPtr context)
+void filterBlockWithDAG(ActionsDAG dag, Block & block, ContextPtr context)
 {
-    buildSetsForDAG(*dag, context);
-    auto actions = std::make_shared<ExpressionActions>(std::move(*ActionsDAG::clone(dag)));
+    buildSetsForDAG(dag, context);
+    auto actions = std::make_shared<ExpressionActions>(std::move(dag));
+    filterBlockWithExpression(actions, block);
+}
+
+void filterBlockWithExpression(const ExpressionActionsPtr & actions, Block & block)
+{
     Block block_with_filter = block;
     actions->execute(block_with_filter, /*dry_run=*/ false, /*allow_duplicates_in_input=*/ true);
 
     /// Filter the block.
-    String filter_column_name = dag->getOutputs().at(0)->result_name;
+    String filter_column_name = actions->getActionsDAG().getOutputs().at(0)->result_name;
     ColumnPtr filter_column = block_with_filter.getByName(filter_column_name).column->convertToFullColumnIfConst();
 
     ConstantFilterDescription constant_filter(*filter_column);
@@ -155,7 +160,7 @@ static void addPathAndFileToVirtualColumns(Block & block, const String & path, s
     block.getByName("_idx").column->assumeMutableRef().insert(idx);
 }
 
-ActionsDAGPtr createPathAndFileFilterDAG(const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns)
+std::optional<ActionsDAG> createPathAndFileFilterDAG(const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns)
 {
     if (!predicate || virtual_columns.empty())
         return {};
@@ -171,7 +176,7 @@ ActionsDAGPtr createPathAndFileFilterDAG(const ActionsDAG::Node * predicate, con
     return splitFilterDagForAllowedInputs(predicate, &block);
 }
 
-ColumnPtr getFilterByPathAndFileIndexes(const std::vector<String> & paths, const ActionsDAGPtr & dag, const NamesAndTypesList & virtual_columns, const ContextPtr & context)
+ColumnPtr getFilterByPathAndFileIndexes(const std::vector<String> & paths, const ExpressionActionsPtr & actions, const NamesAndTypesList & virtual_columns)
 {
     Block block;
     for (const auto & column : virtual_columns)
@@ -184,7 +189,7 @@ ColumnPtr getFilterByPathAndFileIndexes(const std::vector<String> & paths, const
     for (size_t i = 0; i != paths.size(); ++i)
         addPathAndFileToVirtualColumns(block, paths[i], i);
 
-    filterBlockWithDAG(dag, block, context);
+    filterBlockWithExpression(actions, block);
 
     return block.getByName("_idx").column;
 }
@@ -355,15 +360,15 @@ static const ActionsDAG::Node * splitFilterNodeForAllowedInputs(
     return node;
 }
 
-ActionsDAGPtr splitFilterDagForAllowedInputs(const ActionsDAG::Node * predicate, const Block * allowed_inputs)
+std::optional<ActionsDAG> splitFilterDagForAllowedInputs(const ActionsDAG::Node * predicate, const Block * allowed_inputs)
 {
     if (!predicate)
-        return nullptr;
+        return {};
 
     ActionsDAG::Nodes additional_nodes;
     const auto * res = splitFilterNodeForAllowedInputs(predicate, allowed_inputs, additional_nodes);
     if (!res)
-        return nullptr;
+        return {};
 
     return ActionsDAG::cloneSubDAG({res}, true);
 }
@@ -372,7 +377,7 @@ void filterBlockWithPredicate(const ActionsDAG::Node * predicate, Block & block,
 {
     auto dag = splitFilterDagForAllowedInputs(predicate, &block);
     if (dag)
-        filterBlockWithDAG(dag, block, context);
+        filterBlockWithDAG(std::move(*dag), block, context);
 }
 
 }

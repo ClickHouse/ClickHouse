@@ -447,6 +447,13 @@ void SortingStep::describeActions(FormatSettings & settings) const
         settings.out << '\n';
     }
 
+    if (!partition_by_description.empty())
+    {
+        settings.out << prefix << "Partition by description: ";
+        dumpSortDescription(partition_by_description, settings.out);
+        settings.out << '\n';
+    }
+
     if (limit)
         settings.out << prefix << "Limit " << limit << '\n';
 }
@@ -460,6 +467,9 @@ void SortingStep::describeActions(JSONBuilder::JSONMap & map) const
     }
     else
         map.add("Sort Description", explainSortDescription(result_description));
+
+    if (!partition_by_description.empty())
+         map.add("Partition By Description", explainSortDescription(partition_by_description));
 
     if (limit)
         map.add("Limit", limit);

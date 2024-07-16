@@ -624,9 +624,9 @@ void ActionsDAG::removeAliasesForFilter(const std::string & filter_name)
     }
 }
 
-ActionsDAGPtr ActionsDAG::cloneSubDAG(const NodeRawConstPtrs & outputs, bool remove_aliases)
+ActionsDAG ActionsDAG::cloneSubDAG(const NodeRawConstPtrs & outputs, bool remove_aliases)
 {
-    auto actions = std::make_unique<ActionsDAG>();
+    ActionsDAG actions;
     std::unordered_map<const Node *, Node *> copy_map;
 
     struct Frame
@@ -661,21 +661,21 @@ ActionsDAGPtr ActionsDAG::cloneSubDAG(const NodeRawConstPtrs & outputs, bool rem
             if (remove_aliases && frame.node->type == ActionType::ALIAS)
                 copy_node = copy_map[frame.node->children.front()];
             else
-                copy_node = &actions->nodes.emplace_back(*frame.node);
+                copy_node = &actions.nodes.emplace_back(*frame.node);
 
             if (frame.node->type == ActionType::INPUT)
-                actions->inputs.push_back(copy_node);
+                actions.inputs.push_back(copy_node);
 
             stack.pop();
         }
     }
 
-    for (auto & node : actions->nodes)
+    for (auto & node : actions.nodes)
         for (auto & child : node.children)
             child = copy_map[child];
 
     for (const auto * output : outputs)
-        actions->outputs.push_back(copy_map[output]);
+        actions.outputs.push_back(copy_map[output]);
 
     return actions;
 }

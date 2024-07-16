@@ -208,7 +208,7 @@ private:
 
     ObjectInfos object_infos;
     ObjectInfos * read_keys;
-    ActionsDAGPtr filter_dag;
+    ExpressionActionsPtr filter_expr;
     ObjectStorageIteratorPtr object_storage_iterator;
     bool recursive{false};
     std::vector<String> expanded_keys;
