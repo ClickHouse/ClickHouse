@@ -1,4 +1,5 @@
 #include <Disks/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
+#include <azure/identity/chained_token_credential.hpp>
 
 #if USE_AZURE_BLOB_STORAGE
 
@@ -190,6 +191,7 @@ void processURL(const String & url, const String & container_name, Endpoint & en
 {
     endpoint.container_name = container_name;
 
+
     if (isConnectionString(url))
     {
         endpoint.storage_account_url = url;
@@ -199,18 +201,20 @@ void processURL(const String & url, const String & container_name, Endpoint & en
 
     auto pos = url.find('?');
 
-    /// If conneciton_url does not have '?', then its not SAS
+    /// If connection_url does not have '?', then its not SAS
     if (pos == std::string::npos)
     {
         endpoint.storage_account_url = url;
-        auth_method = std::make_shared<Azure::Identity::WorkloadIdentityCredential>();
     }
     else
     {
         endpoint.storage_account_url = url.substr(0, pos);
         endpoint.sas_auth = url.substr(pos + 1);
-        auth_method = std::make_shared<Azure::Identity::ManagedIdentityCredential>();
     }
+    auth_method = std::make_shared<Azure::Identity::ChainedTokenCredential>(std::vector<std::shared_ptr<Azure::Core::Credentials::TokenCredential>>{
+        std::make_shared<Azure::Identity::WorkloadIdentityCredential>(),
+        std::make_shared<Azure::Identity::ManagedIdentityCredential>()
+    });
 }
 
 std::unique_ptr<ContainerClient> getContainerClient(const ConnectionParams & params, bool readonly)

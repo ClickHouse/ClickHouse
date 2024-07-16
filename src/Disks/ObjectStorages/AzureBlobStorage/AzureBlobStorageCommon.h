@@ -1,4 +1,5 @@
 #pragma once
+#include <azure/identity/chained_token_credential.hpp>
 #include "config.h"
 
 #if USE_AZURE_BLOB_STORAGE
@@ -104,6 +105,7 @@ using AuthMethod = std::variant<
     ConnectionString,
     std::shared_ptr<Azure::Storage::StorageSharedKeyCredential>,
     std::shared_ptr<Azure::Identity::WorkloadIdentityCredential>,
+    std::shared_ptr<Azure::Identity::ChainedTokenCredential>,
     std::shared_ptr<Azure::Identity::ManagedIdentityCredential>>;
 
 struct ConnectionParams
