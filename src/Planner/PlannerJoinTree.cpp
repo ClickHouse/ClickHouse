@@ -920,7 +920,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                             query_plan = std::move(query_plan_parallel_replicas);
                         }
                     }
-                    else if (query_context->canUseParallelReplicasOnInitiator())
+                    else if (ClusterProxy::canUseParallelReplicasOnInitiator(query_context))
                     {
                         // (1) find read step
                         QueryPlan::Node * node = query_plan.getRootNode();
