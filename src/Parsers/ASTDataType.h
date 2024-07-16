@@ -26,11 +26,11 @@ std::shared_ptr<ASTDataType> makeASTDataType(const String & name, Args &&... arg
 
     data_type->name = name;
     data_type->arguments = std::make_shared<ASTExpressionList>();
-    data_type->children.push_back(function->arguments);
+    data_type->children.push_back(data_type->arguments);
 
     data_type->arguments->children = { std::forward<Args>(args)... };
 
-    return function;
+    return data_type;
 }
 
 }
