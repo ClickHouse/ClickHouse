@@ -29,17 +29,17 @@ def run_fuzzer(fuzzer: str):
 
             if parser.has_section("asan"):
                 os.environ["ASAN_OPTIONS"] = (
-                    f"{os.environ['ASAN_OPTIONS']}:{':'.join(f"{key}={value}" for key, value in parser['asan'].items())}"
+                    f"{os.environ['ASAN_OPTIONS']}:{':'.join(f'{key}={value}' for key, value in parser['asan'].items())}"
                 )
 
             if parser.has_section("msan"):
                 os.environ["MSAN_OPTIONS"] = (
-                    f"{os.environ['MSAN_OPTIONS']}:{':'.join(f"{key}={value}" for key, value in parser['msan'].items())}"
+                    f"{os.environ['MSAN_OPTIONS']}:{':'.join(f'{key}={value}' for key, value in parser['msan'].items())}"
                 )
 
             if parser.has_section("ubsan"):
                 os.environ["UBSAN_OPTIONS"] = (
-                    f"{os.environ['UBSAN_OPTIONS']}:{':'.join(f"{key}={value}" for key, value in parser['ubsan'].items())}"
+                    f"{os.environ['UBSAN_OPTIONS']}:{':'.join(f'{key}={value}' for key, value in parser['ubsan'].items())}"
                 )
 
             if parser.has_section("libfuzzer"):
