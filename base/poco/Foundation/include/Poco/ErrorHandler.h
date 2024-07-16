@@ -93,7 +93,7 @@ public:
     /// Invokes the currently registered ErrorHandler.
 
     static void logMessage(Message::Priority priority, const std::string & msg);
-    /// Invokes the currently registered ErrorHandler.
+    /// Invokes the currently registered ErrorHandler to log a message.
 
     static ErrorHandler * set(ErrorHandler * pHandler);
     /// Registers the given handler as the current error handler.
