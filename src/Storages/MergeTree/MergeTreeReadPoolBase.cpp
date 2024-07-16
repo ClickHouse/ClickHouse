@@ -1,7 +1,10 @@
-#include <cmath>
+#include <Storages/MergeTree/MergeTreeReadPoolBase.h>
+
+#include <Core/Settings.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
-#include <Storages/MergeTree/MergeTreeReadPoolBase.h>
+
+#include <cmath>
 
 
 namespace DB
