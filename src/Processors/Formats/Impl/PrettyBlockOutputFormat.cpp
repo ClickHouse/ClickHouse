@@ -262,26 +262,7 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
 
             const auto & col = header.getByPosition(i);
 
-            if (color)
-                writeCString("\033[1m", out);
-
-            if (col.type->shouldAlignRightInPrettyFormats())
-            {
-                for (size_t k = 0; k < max_widths[i] - name_widths[i]; ++k)
-                    writeChar(' ', out);
-
-                writeString(col.name, out);
-            }
-            else
-            {
-                writeString(col.name, out);
-
-                for (size_t k = 0; k < max_widths[i] - name_widths[i]; ++k)
-                    writeChar(' ', out);
-            }
-
-            if (color)
-                writeCString("\033[0m", out);
+            writeHeaderWithPadding(max_widths, name_widths," ", i, col);
         }
         writeCString(" ", out);
         writeCString(grid_symbols.bold_bar, out);
