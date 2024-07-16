@@ -28,6 +28,7 @@
 #include <Common/filesystemHelpers.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
+#include <Core/Settings.h>
 
 
 namespace fs = std::filesystem;

@@ -86,7 +86,7 @@ Returns the fully qualified domain name of the ClickHouse server.
 fqdn();
 ```
 
-This function is case-insensitive.
+Aliases: `fullHostName`, 'FQDN'. 
 
 **Returned value**
 
@@ -2984,6 +2984,66 @@ Result:
 └─────────┘
 ```
 
+## partitionID
+
+Computes the [partition ID](../../engines/table-engines/mergetree-family/custom-partitioning-key.md).
+
+:::note
+This function is slow and should not be called for large amount of rows.
+:::
+
+**Syntax**
+
+```sql
+partitionID(x[, y, ...]);
+```
+
+**Arguments**
+
+- `x` — Column for which to return the partition ID.
+- `y, ...` — Remaining N columns for which to return the partition ID (optional).
+
+**Returned Value**
+
+- Partition ID that the row would belong to. [String](../data-types/string.md).
+
+**Example**
+
+Query:
+
+```sql
+DROP TABLE IF EXISTS tab;
+
+CREATE TABLE tab
+(
+  i int,
+  j int
+)
+ENGINE = MergeTree
+PARTITION BY i
+ORDER BY tuple();
+
+INSERT INTO tab VALUES (1, 1), (1, 2), (1, 3), (2, 4), (2, 5), (2, 6);
+
+SELECT i, j, partitionID(i), _partition_id FROM tab ORDER BY i, j;
+```
+
+Result:
+
+```response
+┌─i─┬─j─┬─partitionID(i)─┬─_partition_id─┐
+│ 1 │ 1 │ 1              │ 1             │
+│ 1 │ 2 │ 1              │ 1             │
+│ 1 │ 3 │ 1              │ 1             │
+└───┴───┴────────────────┴───────────────┘
+┌─i─┬─j─┬─partitionID(i)─┬─_partition_id─┐
+│ 2 │ 4 │ 2              │ 2             │
+│ 2 │ 5 │ 2              │ 2             │
+│ 2 │ 6 │ 2              │ 2             │
+└───┴───┴────────────────┴───────────────┘
+```
+
+
 ## shardNum
 
 Returns the index of a shard which processes a part of data in a distributed query. Indices are started from `1`.
@@ -3860,3 +3920,138 @@ Result:
 └───────────────┘
 ```
 
+## transactionID
+
+Returns the ID of a [transaction](https://clickhouse.com/docs/en/guides/developer/transactional#transactions-commit-and-rollback).
+
+:::note
+This function is part of an experimental feature set. Enable experimental transaction support by adding this setting to your configuration:
+
+```
+<clickhouse>
+  <allow_experimental_transactions>1</allow_experimental_transactions>
+</clickhouse>
+```
+
+For more information see the page [Transactional (ACID) support](https://clickhouse.com/docs/en/guides/developer/transactional#transactions-commit-and-rollback).
+:::
+
+**Syntax**
+
+```sql
+transactionID()
+```
+
+**Returned value**
+
+- Returns a tuple consisting of `start_csn`, `local_tid` and `host_id`. [Tuple](../data-types/tuple.md).
+
+- `start_csn`: Global sequential number, the newest commit timestamp that was seen when this transaction began. [UInt64](../data-types/int-uint.md).
+- `local_tid`: Local sequential number that is unique for each transaction started by this host within a specific start_csn. [UInt64](../data-types/int-uint.md).
+- `host_id`: UUID of the host that has started this transaction. [UUID](../data-types/uuid.md).
+
+**Example**
+
+Query:
+
+```sql
+BEGIN TRANSACTION;
+SELECT transactionID();
+ROLLBACK;
+```
+
+Result:
+
+```response
+┌─transactionID()────────────────────────────────┐
+│ (32,34,'0ee8b069-f2bb-4748-9eae-069c85b5252b') │
+└────────────────────────────────────────────────┘
+```
+
+## transactionLatestSnapshot
+
+Returns the newest snapshot (Commit Sequence Number) of a [transaction](https://clickhouse.com/docs/en/guides/developer/transactional#transactions-commit-and-rollback) that is available for reading.
+
+:::note
+This function is part of an experimental feature set. Enable experimental transaction support by adding this setting to your configuration:
+
+```
+<clickhouse>
+  <allow_experimental_transactions>1</allow_experimental_transactions>
+</clickhouse>
+```
+
+For more information see the page [Transactional (ACID) support](https://clickhouse.com/docs/en/guides/developer/transactional#transactions-commit-and-rollback).
+:::
+
+**Syntax**
+
+```sql
+transactionLatestSnapshot()
+```
+
+**Returned value**
+
+- Returns the latest snapshot (CSN) of a transaction. [UInt64](../data-types/int-uint.md)
+
+**Example**
+
+Query:
+
+```sql
+BEGIN TRANSACTION;
+SELECT transactionLatestSnapshot();
+ROLLBACK;
+```
+
+Result:
+
+```response
+┌─transactionLatestSnapshot()─┐
+│                          32 │
+└─────────────────────────────┘
+```
+
+## transactionOldestSnapshot
+
+Returns the oldest snapshot (Commit Sequence Number) that is visible for some running [transaction](https://clickhouse.com/docs/en/guides/developer/transactional#transactions-commit-and-rollback).
+
+:::note
+This function is part of an experimental feature set. Enable experimental transaction support by adding this setting to your configuration:
+
+```
+<clickhouse>
+  <allow_experimental_transactions>1</allow_experimental_transactions>
+</clickhouse>
+```
+
+For more information see the page [Transactional (ACID) support](https://clickhouse.com/docs/en/guides/developer/transactional#transactions-commit-and-rollback).
+:::
+
+**Syntax**
+
+```sql
+transactionOldestSnapshot()
+```
+
+**Returned value**
+
+- Returns the oldest snapshot (CSN) of a transaction. [UInt64](../data-types/int-uint.md)
+
+**Example**
+
+Query:
+
+```sql
+BEGIN TRANSACTION;
+SELECT transactionLatestSnapshot();
+ROLLBACK;
+```
+
+Result:
+
+```response
+┌─transactionOldestSnapshot()─┐
+│                          32 │
+└─────────────────────────────┘
+```

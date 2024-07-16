@@ -1,4 +1,4 @@
-personal_ws-1.1 en 2758
+personal_ws-1.1 en 2942 
 AArch
 ACLs
 ALTERs
@@ -48,7 +48,6 @@ AutoML
 Autocompletion
 AvroConfluent
 BIGINT
-bigrams
 BIGSERIAL
 BORO
 BSON
@@ -223,7 +222,6 @@ DatabaseOrdinaryThreadsActive
 DateTime
 DateTimes
 DbCL
-deallocated
 Decrypted
 Deduplicate
 Deduplication
@@ -295,7 +293,6 @@ FilesystemMainPathUsedBytes
 FilesystemMainPathUsedINodes
 FixedString
 FlameGraph
-flameGraph
 Flink
 ForEach
 FreeBSD
@@ -452,7 +449,7 @@ Kahan
 Kaser
 KeeperAliveConnections
 KeeperMap
-KeeperOutstandingRequets
+KeeperOutstandingRequests
 Kerberos
 Khanna
 KittenHouse
@@ -470,7 +467,7 @@ LOCALTIME
 LOCALTIMESTAMP
 LONGLONG
 LOONGARCH
-Lemir
+Lemire
 Levenshtein
 Liao
 LibFuzzer
@@ -764,6 +761,7 @@ QueryCacheMisses
 QueryPreempted
 QueryThread
 QuickAssist
+QuickSight
 QuoteMeta
 RBAC
 RClickHouse
@@ -995,6 +993,8 @@ UPDATEs
 URIs
 URL
 URL's
+URLDecode
+URLEncode
 URLHash
 URLHierarchy
 URLPathHierarchy
@@ -1012,13 +1012,10 @@ UncompressedCacheBytes
 UncompressedCacheCells
 UnidirectionalEdgeIsValid
 UniqThetaSketch
-unigrams
 Updatable
 Uppercased
 Uptime
 Uptrace
-URLDecode
-URLEncode
 UserID
 Util
 VARCHAR
@@ -1102,6 +1099,8 @@ aggregatefunction
 aggregatingmergetree
 aggregatio
 aggretate
+aggthrow
+aggThrow
 aiochclient
 allocator
 alphaTokens
@@ -1224,6 +1223,7 @@ basename
 bcrypt
 benchmarking
 bfloat
+bigrams
 binlog
 bitAnd
 bitCount
@@ -1320,6 +1320,12 @@ cfg
 cgroup
 cgroups
 chadmin
+changeDay
+changeHour
+changeMinute
+changeMonth
+changeSecond
+changeYear
 changelog
 changelogs
 charset
@@ -1473,6 +1479,7 @@ dbeaver
 dbgen
 dbms
 ddl
+deallocated
 deallocation
 deallocations
 debian
@@ -1512,11 +1519,11 @@ deserializing
 destructor
 destructors
 detectCharset
-detectTonality
 detectLanguage
 detectLanguageMixed
 detectLanguageUnknown
 detectProgrammingLanguage
+detectTonality
 determinator
 deterministically
 dictGet
@@ -1532,8 +1539,8 @@ dictIsIn
 disableProtocols
 disjunction
 disjunctions
-displaySecretsInShowAndSelect
 displayName
+displaySecretsInShowAndSelect
 distro
 divideDecimal
 dmesg
@@ -1583,11 +1590,11 @@ evalMLMethod
 exFAT
 expiryMsec
 exponentialMovingAverage
-exponentialmovingaverage
 exponentialTimeDecayedAvg
 exponentialTimeDecayedCount
 exponentialTimeDecayedMax
 exponentialTimeDecayedSum
+exponentialmovingaverage
 expr
 exprN
 extendedVerification
@@ -1624,6 +1631,7 @@ firstSignificantSubdomainCustom
 firstSignificantSubdomainCustomRFC
 firstSignificantSubdomainRFC
 fixedstring
+flameGraph
 flamegraph
 flatbuffers
 flattenTuple
@@ -1657,6 +1665,7 @@ fsync
 func
 fuzzBits
 fuzzJSON
+fuzzQuery
 fuzzer
 fuzzers
 gRPC
@@ -1806,8 +1815,8 @@ incrementing
 indexHint
 indexOf
 infi
-infty
 inflight
+infty
 initcap
 initcapUTF
 initialQueryID
@@ -1898,11 +1907,13 @@ kurtosis
 kurtpop
 kurtsamp
 laion
+lagInFrame
 lang
 laravel
 largestTriangleThreeBuckets
 latencies
 ldap
+leadInFrame
 leftPad
 leftPadUTF
 leftUTF
@@ -1955,9 +1966,9 @@ loghouse
 london
 lookups
 loongarch
-lowcardinality
 lowCardinalityIndices
 lowCardinalityKeys
+lowcardinality
 lowerUTF
 lowercased
 lttb
@@ -1980,6 +1991,8 @@ mapExtractKeyLike
 mapFilter
 mapFromArrays
 mapKeys
+mapPartialReverseSort
+mapPartialSort
 mapPopulateSeries
 mapReverseSort
 mapSort
@@ -1996,6 +2009,7 @@ maxMap
 maxintersections
 maxintersectionsposition
 maxmap
+minMappedArrays
 maxmind
 mdadm
 meanZTest
@@ -2013,6 +2027,7 @@ metrica
 metroHash
 mfedotov
 minMap
+minMappedArrays
 minSampleSizeContinuous
 minSampleSizeConversion
 mindsdb
@@ -2120,8 +2135,10 @@ noaa
 nonNegativeDerivative
 noop
 normalizeQuery
+normalizeQueryKeepNames
 normalizeUTF
 normalizedQueryHash
+normalizedQueryHashKeepNames
 notEmpty
 notEquals
 notILike
@@ -2184,6 +2201,8 @@ parseReadableSizeOrZero
 parseTimeDelta
 parseable
 parsers
+partitionId
+partitionID
 pathFull
 pclmulqdq
 pcre
@@ -2265,9 +2284,9 @@ proleptic
 prometheus
 proportionsZTest
 proto
-protocol
 protobuf
 protobufsingle
+protocol
 proxied
 pseudorandom
 pseudorandomize
@@ -2759,6 +2778,9 @@ topLevelDomain
 topLevelDomainRFC
 topk
 topkweighted
+transactionID
+transactionLatestSnapshot
+transactionOldestSnapshot
 transactional
 transactionally
 translateUTF
@@ -2792,6 +2814,7 @@ tupleModulo
 tupleModuloByNumber
 tupleMultiply
 tupleMultiplyByNumber
+tupleNames
 tupleNegate
 tuplePlus
 tupleToNameValuePairs
@@ -2812,6 +2835,7 @@ unescaping
 unhex
 unicode
 unidimensional
+unigrams
 unintuitive
 uniq
 uniqCombined

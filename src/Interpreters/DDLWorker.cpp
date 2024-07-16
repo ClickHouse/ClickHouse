@@ -25,6 +25,7 @@
 #include <Common/ZooKeeper/ZooKeeperLock.h>
 #include <Common/isLocalAddress.h>
 #include <Core/ServerUUID.h>
+#include <Core/Settings.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Poco/Timestamp.h>
 #include <base/sleep.h>

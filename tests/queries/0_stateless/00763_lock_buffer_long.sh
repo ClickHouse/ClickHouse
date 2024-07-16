@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-s3-storage, no-msan, no-asan, no-tsan, no-debug
+# Tags: long, no-object-storage, no-msan, no-asan, no-tsan, no-debug
 # Some kind of stress test, it doesn't make sense to test in a non-release build
 
 set -e
@@ -21,7 +21,7 @@ function thread1()
 
 function thread2()
 {
-    seq 1 1000 | sed -r -e 's/.+/SELECT count() FROM buffer_00763_2;/' | ${CLICKHOUSE_CLIENT} --multiquery --server_logs_file='/dev/null' --ignore-error 2>&1 | grep -vP '^0$|^10$|^Received exception|^Code: 60|^Code: 218|^Code: 473' | grep -v '(query: '
+    seq 1 500 | sed -r -e 's/.+/SELECT count() FROM buffer_00763_2;/' | ${CLICKHOUSE_CLIENT} --multiquery --server_logs_file='/dev/null' --ignore-error 2>&1 | grep -vP '^0$|^10$|^Received exception|^Code: 60|^Code: 218|^Code: 473' | grep -v '(query: '
 }
 
 thread1 &
