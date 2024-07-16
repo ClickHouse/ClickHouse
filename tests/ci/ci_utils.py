@@ -95,7 +95,8 @@ class Shell:
         return res.stdout.strip()
 
     @classmethod
-    def run(cls, command):
+    def run(cls, command, check=False):
+        print(f"Run command [{command}]")
         res = ""
         result = subprocess.run(
             command,
@@ -107,6 +108,9 @@ class Shell:
         )
         if result.returncode == 0:
             res = result.stdout
+        elif check:
+            print(f"ERROR: stdout {result.stdout}, stderr {result.stderr}")
+            assert result.returncode == 0
         return res.strip()
 
     @classmethod

@@ -1,13 +1,16 @@
 import argparse
-from datetime import timedelta, datetime
+import dataclasses
+import json
 import logging
 import os
-from commit_status_helper import get_commit_filtered_statuses
+from typing import List
+
 from get_robot_token import get_best_robot_token
 from github_helper import GitHub
-from release import Release, Repo as ReleaseRepo, RELEASE_READY_STATUS
-from report import SUCCESS
 from ssh import SSHKey
+from ci_utils import Shell
+from env_helper import GITHUB_REPOSITORY
+from report import SUCCESS
 
 LOGGER_NAME = __name__
 HELPER_LOGGERS = ["github_helper", LOGGER_NAME]
@@ -20,116 +23,104 @@ def parse_args():
         "branches and do a release in case for green builds."
     )
     parser.add_argument("--token", help="GitHub token, if not set, used from smm")
-    parser.add_argument(
-        "--repo", default="ClickHouse/ClickHouse", help="Repo owner/name"
-    )
-    parser.add_argument("--dry-run", action="store_true", help="Do not create anything")
-    parser.add_argument(
-        "--release-after-days",
-        type=int,
-        default=3,
-        help="Do automatic release on the latest green commit after the latest "
-        "release if the newest release is older than the specified days",
-    )
-    parser.add_argument(
-        "--debug-helpers",
-        action="store_true",
-        help="Add debug logging for this script and github_helper",
-    )
-    parser.add_argument(
-        "--remote-protocol",
-        "-p",
-        default="ssh",
-        choices=ReleaseRepo.VALID,
-        help="repo protocol for git commands remote, 'origin' is a special case and "
-        "uses 'origin' as a remote",
-    )
 
     return parser.parse_args()
 
 
+MAX_NUMBER_OF_COMMITS_TO_CONSIDER_FOR_RELEASE = 5
+AUTORELEASE_INFO_FILE = "/tmp/autorelease_info.json"
+
+
+@dataclasses.dataclass
+class ReleaseParams:
+    release_branch: str
+    commit_sha: str
+
+
+@dataclasses.dataclass
+class AutoReleaseInfo:
+    releases: List[ReleaseParams]
+
+    def add_release(self, release_params: ReleaseParams):
+        self.releases.append(release_params)
+
+    def dump(self):
+        print(f"Dump release info into [{AUTORELEASE_INFO_FILE}]")
+        with open(AUTORELEASE_INFO_FILE, "w", encoding="utf-8") as f:
+            print(json.dumps(dataclasses.asdict(self), indent=2), file=f)
+
+
 def main():
     args = parse_args()
-    logging.basicConfig(level=logging.INFO)
-    if args.debug_helpers:
-        for logger_name in HELPER_LOGGERS:
-            logging.getLogger(logger_name).setLevel(logging.DEBUG)
 
     token = args.token or get_best_robot_token()
-    days_as_timedelta = timedelta(days=args.release_after_days)
-    now = datetime.now()
-
+    assert len(token) > 10
+    os.environ["GH_TOKEN"] = token
+    (Shell.run("gh auth status", check=True))
     gh = GitHub(token)
-    prs = gh.get_release_pulls(args.repo)
+    prs = gh.get_release_pulls(GITHUB_REPOSITORY)
     branch_names = [pr.head.ref for pr in prs]
 
-    logger.info("Found release branches: %s\n ", " \n".join(branch_names))
-    repo = gh.get_repo(args.repo)
+    print(f"Found release branches [{branch_names}]")
+    repo = gh.get_repo(GITHUB_REPOSITORY)
 
-    # In general there is no guarantee on which order the refs/commits are
-    # returned from the API, so we have to order them.
+    autoRelease_info = AutoReleaseInfo(releases=[])
     for pr in prs:
-        logger.info("Checking PR %s", pr.head.ref)
+        print(f"Checking PR [{pr.head.ref}]")
 
         refs = list(repo.get_git_matching_refs(f"tags/v{pr.head.ref}"))
         refs.sort(key=lambda ref: ref.ref)
 
         latest_release_tag_ref = refs[-1]
         latest_release_tag = repo.get_git_tag(latest_release_tag_ref.object.sha)
-        logger.info("That last release was done at %s", latest_release_tag.tagger.date)
-
-        if latest_release_tag.tagger.date + days_as_timedelta > now:
-            logger.info(
-                "Not enough days since the last release %s,"
-                " no automatic release can be done",
-                latest_release_tag.tag,
+        commit_num = int(
+            Shell.run(
+                f"git rev-list --count {latest_release_tag.tag}..origin/{pr.head.ref}",
+                check=True,
             )
-            continue
-
-        unreleased_commits = list(
-            repo.get_commits(sha=pr.head.ref, since=latest_release_tag.tagger.date)
         )
-        unreleased_commits.sort(
-            key=lambda commit: commit.commit.committer.date, reverse=True
+        print(
+            f"Previous release is [{latest_release_tag}] was [{commit_num}] commits before, date [{latest_release_tag.tagger.date}]"
         )
-
-        for commit in unreleased_commits:
-            logger.info("Checking statuses of commit %s", commit.sha)
-            statuses = get_commit_filtered_statuses(commit)
-            all_success = all(st.state == SUCCESS for st in statuses)
-            passed_ready_for_release_check = any(
-                st.context == RELEASE_READY_STATUS and st.state == SUCCESS
-                for st in statuses
+        commit_reverse_index = 0
+        commit_found = False
+        commit_checked = False
+        commit_sha = ""
+        while (
+            commit_reverse_index < commit_num - 1
+            and commit_reverse_index < MAX_NUMBER_OF_COMMITS_TO_CONSIDER_FOR_RELEASE
+        ):
+            commit_checked = True
+            commit_sha = Shell.run(
+                f"git rev-list --max-count=1 --skip={commit_reverse_index} origin/{pr.head.ref}",
+                check=True,
             )
-            if not (all_success and passed_ready_for_release_check):
-                logger.info("Commit is not green, thus not suitable for release")
-                continue
-
-            logger.info("Commit is ready for release, let's release!")
-
-            release = Release(
-                ReleaseRepo(args.repo, args.remote_protocol),
-                commit.sha,
-                "patch",
-                args.dry_run,
-                True,
+            print(
+                f"Check if commit [{commit_sha}] [{pr.head.ref}~{commit_reverse_index}] is ready for release"
             )
-            try:
-                release.do(True, True, True)
-            except:
-                if release.has_rollback:
-                    logging.error(
-                        "!!The release process finished with error, read the output carefully!!"
-                    )
-                    logging.error(
-                        "Probably, rollback finished with error. "
-                        "If you don't see any of the following commands in the output, "
-                        "execute them manually:"
-                    )
-                    release.log_rollback()
-                raise
-            logging.info("New release is done!")
+            commit_reverse_index += 1
+
+            cmd = f"gh api -H 'Accept: application/vnd.github.v3+json' /repos/{GITHUB_REPOSITORY}/commits/{commit_sha}/status"
+            ci_status_json = Shell.run(cmd, check=True)
+            ci_status = json.loads(ci_status_json)["state"]
+            if ci_status == SUCCESS:
+                commit_found = True
             break
+        if commit_found:
+            print(
+                f"Add release ready info for commit [{commit_sha}] and release branch [{pr.head.ref}]"
+            )
+            autoRelease_info.add_release(
+                ReleaseParams(release_branch=pr.head.ref, commit_sha=commit_sha)
+            )
+        else:
+            print(f"WARNING: No good commits found for release branch [{pr.head.ref}]")
+            if commit_checked:
+                print(
+                    f"ERROR: CI is failed. check CI status for branch [{pr.head.ref}]"
+                )
+
+    autoRelease_info.dump()
 
 
 if __name__ == "__main__":
