@@ -8,7 +8,6 @@
 #include <Common/assert_cast.h>
 #include <DataTypes/DataTypesNumber.h>
 
-#include "Core/NamesAndTypes.h"
 #include "base/types.h"
 #include <base/StringRef.h>
 
@@ -19,6 +18,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_COLUMN;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 /** Functions that finds all substrings such their crc32-hash is more than crc32-hash of every bigram in substring.
