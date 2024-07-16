@@ -25,7 +25,13 @@ struct InMemoryPathMap
     /// Local -> Remote path.
     using Map = std::map<std::filesystem::path, std::string, PathComparator>;
     mutable SharedMutex mutex;
-    Map map TSA_GUARDED_BY(mutex);
+
+#ifdef OS_LINUX
+    Map TSA_GUARDED_BY(mutex) map;
+/// std::shared_mutex may not be annotated with the 'capability' attribute in libcxx.
+#else
+    Map map;
+#endif
 };
 
 }
