@@ -183,9 +183,6 @@ if [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
     --keeper_server.tcp_port 29181 --keeper_server.server_id 3 \
     --prometheus.port 29988 \
     --macros.shard s2   # It doesn't work :(
-
-    MAX_RUN_TIME=$((MAX_RUN_TIME < 9000 ? MAX_RUN_TIME : 9000))  # min(MAX_RUN_TIME, 2.5 hours)
-    MAX_RUN_TIME=$((MAX_RUN_TIME != 0 ? MAX_RUN_TIME : 9000))    # set to 2.5 hours if 0 (unlimited)
 fi
 
 if [[ "$USE_SHARED_CATALOG" -eq 1 ]]; then
@@ -210,9 +207,6 @@ if [[ "$USE_SHARED_CATALOG" -eq 1 ]]; then
     --keeper_server.tcp_port 19181 --keeper_server.server_id 2 \
     --prometheus.port 19988 \
     --macros.replica r2   # It doesn't work :(
-
-    MAX_RUN_TIME=$((MAX_RUN_TIME < 9000 ? MAX_RUN_TIME : 9000))  # min(MAX_RUN_TIME, 2.5 hours)
-    MAX_RUN_TIME=$((MAX_RUN_TIME != 0 ? MAX_RUN_TIME : 9000))    # set to 2.5 hours if 0 (unlimited)
 fi
 
 # Wait for the server to start, but not for too long.
