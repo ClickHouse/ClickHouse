@@ -869,7 +869,6 @@ bool ColumnsDescription::hasCompressionCodec(const String & column_name) const
     return it != columns.get<1>().end() && it->codec != nullptr;
 }
 
-
 ColumnsDescription::ColumnTTLs ColumnsDescription::getColumnTTLs() const
 {
     ColumnTTLs ret;
