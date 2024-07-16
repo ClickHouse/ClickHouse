@@ -8,6 +8,7 @@
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/HashUtils.h>
 #include <Analyzer/Utils.h>
+#include <Core/Settings.h>
 
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypesNumber.h>

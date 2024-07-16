@@ -2,6 +2,7 @@
 
 #include <Common/thread_local_rng.h>
 #include <Core/Protocol.h>
+#include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <IO/ConnectionTimeouts.h>
 #include <IO/Operators.h>

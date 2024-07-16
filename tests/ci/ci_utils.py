@@ -49,14 +49,15 @@ class GHActions:
 class Shell:
     @classmethod
     def run_strict(cls, command):
-        subprocess.run(
-            command + " 2>&1",
+        res = subprocess.run(
+            command,
             shell=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
             check=True,
         )
+        return res.stdout.strip()
 
     @classmethod
     def run(cls, command):
@@ -96,3 +97,15 @@ class Utils:
         if match:
             return int(match.group(1))
         return None
+
+    @staticmethod
+    def is_killed_with_oom():
+        if Shell.check(
+            "sudo dmesg -T | grep -q -e 'Out of memory: Killed process' -e 'oom_reaper: reaped process' -e 'oom-kill:constraint=CONSTRAINT_NONE'"
+        ):
+            return True
+        return False
+
+    @staticmethod
+    def clear_dmesg():
+        Shell.run("sudo dmesg --clear ||:")
