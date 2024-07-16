@@ -44,8 +44,7 @@ def run_fuzzer(fuzzer: str):
 
             if parser.has_section("libfuzzer"):
                 custom_libfuzzer_options = " ".join(
-                    f"-{key}={value}"
-                    for key, value in parser["libfuzzer"].items()
+                    f"-{key}={value}" for key, value in parser["libfuzzer"].items()
                 )
 
             if parser.has_section("fuzzer_arguments"):
