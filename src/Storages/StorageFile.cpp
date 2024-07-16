@@ -52,7 +52,6 @@
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <Common/re2.h>
-#include "Formats/FormatSettings.h"
 #include <Formats/SchemaInferenceUtils.h>
 
 #include <Core/Settings.h>
