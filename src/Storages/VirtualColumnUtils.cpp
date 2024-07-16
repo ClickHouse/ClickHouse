@@ -282,15 +282,13 @@ static const ActionsDAG::Node * splitFilterNodeForAllowedInputs(
             node_copy.children.clear();
             for (const auto * child : node->children)
                 if (const auto * child_copy = splitFilterNodeForAllowedInputs(child, allowed_inputs, additional_nodes, strict))
-                {
-                    /// Expression like (now_allowed AND allowed) is not allowed if strict = true. This is important for
-                    /// trivial count optimization, otherwise we can get incorrect results. For example, if the query is
-                    /// SELECT count() FROM table WHERE _partition_id = '0' AND rowNumberInBlock() = 1, we cannot apply
-                    /// trivial count.
-                    if (strict)
-                        return nullptr;
                     node_copy.children.push_back(child_copy);
-                }
+                /// Expression like (now_allowed AND allowed) is not allowed if strict = true. This is important for
+                /// trivial count optimization, otherwise we can get incorrect results. For example, if the query is
+                /// SELECT count() FROM table WHERE _partition_id = '0' AND rowNumberInBlock() = 1, we cannot apply
+                /// trivial count.
+                else if (strict)
+                    return nullptr;
 
             if (node_copy.children.empty())
                 return nullptr;
