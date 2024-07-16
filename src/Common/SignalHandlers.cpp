@@ -12,6 +12,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <Interpreters/Context.h>
+#include <Core/Settings.h>
 
 #pragma clang diagnostic ignored "-Wreserved-identifier"
 
