@@ -239,7 +239,7 @@ ColumnPtr getFilterByPathAndFileIndexes(const std::vector<String> & paths, const
 
 void addRequestedFileLikeStorageVirtualsToChunk(
     Chunk & chunk, const NamesAndTypesList & requested_virtual_columns,
-    VirtualsForFileLikeStorage virtual_values, ColumnsDescription columns, ContextPtr context)
+    VirtualsForFileLikeStorage virtual_values, ContextPtr context, const ColumnsDescription & columns)
 {
     std::unordered_map<std::string, std::string> hive_map;
     if (context->getSettingsRef().use_hive_partitioning)

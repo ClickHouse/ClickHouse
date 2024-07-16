@@ -83,7 +83,7 @@ struct VirtualsForFileLikeStorage
 
 void addRequestedFileLikeStorageVirtualsToChunk(
     Chunk & chunk, const NamesAndTypesList & requested_virtual_columns,
-    VirtualsForFileLikeStorage virtual_values, ColumnsDescription columns = {}, ContextPtr context = {});
+    VirtualsForFileLikeStorage virtual_values, ContextPtr context, const ColumnsDescription & columns);
 }
 
 }

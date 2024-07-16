@@ -1459,7 +1459,7 @@ Chunk StorageFileSource::generate()
                     .size = current_file_size,
                     .filename = (filename_override.has_value() ? &filename_override.value() : nullptr),
                     .last_modified = current_file_last_modified
-                }, columns_description, getContext());
+                }, getContext(), columns_description);
 
             return chunk;
         }

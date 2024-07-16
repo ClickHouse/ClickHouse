@@ -12,6 +12,8 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/prepareReadingFromFormat.h>
 #include <Poco/URI.h>
+#include <Common/parseRemoteDescription.h>
+#include <Core/Settings.h>
 
 
 namespace DB
@@ -266,6 +268,22 @@ private:
     std::mutex cancel_mutex;
     bool cancelled = false;
 };
+
+static bool urlWithGlobs(const String & uri)
+{
+    return (uri.find('{') != std::string::npos && uri.find('}') != std::string::npos) || uri.find('|') != std::string::npos;
+}
+
+inline String getSampleURI(String uri, ContextPtr context)
+{
+    if (urlWithGlobs(uri))
+    {
+        auto uris = parseRemoteDescription(uri, 0, uri.size(), ',', context->getSettingsRef().glob_expansion_max_elements);
+        if (!uris.empty())
+            return uris[0];
+    }
+    return uri;
+}
 
 class StorageURL : public IStorageURLBase
 {

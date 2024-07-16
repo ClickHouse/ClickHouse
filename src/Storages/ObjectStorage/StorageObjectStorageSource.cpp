@@ -204,7 +204,7 @@ Chunk StorageObjectStorageSource::generate()
                   .size = object_info->isArchive() ? object_info->fileSizeInArchive() : object_info->metadata->size_bytes,
                   .filename = &filename,
                   .last_modified = object_info->metadata->last_modified,
-                }, read_from_format_info.columns_description, getContext());
+                }, getContext(), read_from_format_info.columns_description);
 
             const auto & partition_columns = configuration->getPartitionColumns();
             if (!partition_columns.empty() && chunk_size && chunk.hasColumns())

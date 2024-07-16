@@ -112,10 +112,6 @@ SET use_hive_partitioning = 1;
 SELECT * from HDFS('hdfs://hdfs1:9000/data/path/date=*/country=*/code=*/*.parquet') where _date > '2020-01-01' and _country = 'Netherlands' and _code = 42;
 ```
 
-``` reference
-specified_data
-```
-
 ## Storage Settings {#storage-settings}
 
 - [hdfs_truncate_on_insert](/docs/en/operations/settings/settings.md#hdfs_truncate_on_insert) - allows to truncate file before insert into it. Disabled by default.

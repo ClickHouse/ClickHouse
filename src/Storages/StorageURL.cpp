@@ -39,7 +39,6 @@
 
 #include <Formats/SchemaInferenceUtils.h>
 #include <Core/ServerSettings.h>
-#include <Core/Settings.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/HTTPHeaderEntries.h>
 
@@ -92,25 +91,9 @@ static const std::vector<std::shared_ptr<re2::RE2>> optional_regex_keys = {
     std::make_shared<re2::RE2>(R"(headers.header\[[0-9]*\].value)"),
 };
 
-static bool urlWithGlobs(const String & uri)
-{
-    return (uri.find('{') != std::string::npos && uri.find('}') != std::string::npos) || uri.find('|') != std::string::npos;
-}
-
 static ConnectionTimeouts getHTTPTimeouts(ContextPtr context)
 {
     return ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings().keep_alive_timeout);
-}
-
-String getSampleURI(String uri, ContextPtr context)
-{
-    if (urlWithGlobs(uri))
-    {
-        auto uris = parseRemoteDescription(uri, 0, uri.size(), ',', context->getSettingsRef().glob_expansion_max_elements);
-        if (!uris.empty())
-            return uris[0];
-    }
-    return uri;
 }
 
 IStorageURLBase::IStorageURLBase(
@@ -433,7 +416,7 @@ Chunk StorageURLSource::generate()
                 {
                     .path = curr_uri.getPath(),
                     .size = current_file_size,
-                }, columns_description, getContext());
+                }, getContext(), columns_description);
             return chunk;
         }
 
