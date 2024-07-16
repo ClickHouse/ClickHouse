@@ -2234,7 +2234,7 @@ bool MutateTask::prepare()
         lightweight_delete_mode = ctx->updated_header.has(RowExistsColumn::name);
         /// If under the condition of lightweight delete mode with rebuild option, add projections again here as we can only know
         /// the condition as early as from here.
-        if (lightweight_delete_mode 
+        if (lightweight_delete_mode
             && ctx->data->getSettings()->lightweight_mutation_projection_mode == LightweightMutationProjectionMode::REBUILD)
         {
             for (const auto & projection : ctx->metadata_snapshot->getProjections())
