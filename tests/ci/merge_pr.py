@@ -256,7 +256,12 @@ def main():
         has_failed_statuses = False
         for status in statuses:
             print(f"Check status [{status.context}], [{status.state}]")
-            if not CI.is_required(status.context) and status.state != SUCCESS:
+            if (
+                not CI.is_required(status.context)
+                and status.context not in (CI.StatusNames.SYNC, CI.StatusNames.PR_CHECK)
+                and status.state != SUCCESS
+            ):
+                print(f"WARNING: Failed status [{status.context}], [{status.state}]")
                 has_failed_statuses = True
 
         if args.wf_status == SUCCESS or has_failed_statuses:
