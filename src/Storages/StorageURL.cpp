@@ -39,6 +39,7 @@
 
 #include <Formats/SchemaInferenceUtils.h>
 #include <Core/ServerSettings.h>
+#include <Core/Settings.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/HTTPHeaderEntries.h>
 
