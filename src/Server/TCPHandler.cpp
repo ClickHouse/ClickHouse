@@ -888,11 +888,12 @@ AsynchronousInsertQueue::PushResult TCPHandler::processAsyncInsertQuery(Asynchro
 
     while (readDataNext())
     {
-        squashing.setHeader(state.block_for_insert.cloneEmpty());
-        auto result_chunk = Squashing::squash(squashing.add({state.block_for_insert.getColumns(), state.block_for_insert.rows()}));
-        if (result_chunk)
+        squashing.header = state.block_for_insert;
+        auto planned_chunk = squashing.add({state.block_for_insert.getColumns(), state.block_for_insert.rows()});
+        if (planned_chunk.hasChunkInfo())
         {
-            auto result = squashing.getHeader().cloneWithColumns(result_chunk.detachColumns());
+            Chunk result_chunk = DB::Squashing::squash(std::move(planned_chunk));
+            auto result = state.block_for_insert.cloneWithColumns(result_chunk.getColumns());
             return PushResult
             {
                 .status = PushResult::TOO_MUCH_DATA,
@@ -901,13 +902,12 @@ AsynchronousInsertQueue::PushResult TCPHandler::processAsyncInsertQuery(Asynchro
         }
     }
 
-    Chunk result_chunk = Squashing::squash(squashing.flush());
-    if (!result_chunk)
-    {
-        return insert_queue.pushQueryWithBlock(state.parsed_query, squashing.getHeader(), query_context);
-    }
+    auto planned_chunk = squashing.flush();
+    Chunk result_chunk;
+    if (planned_chunk.hasChunkInfo())
+        result_chunk = DB::Squashing::squash(std::move(planned_chunk));
 
-    auto result = squashing.getHeader().cloneWithColumns(result_chunk.detachColumns());
+    auto result = squashing.header.cloneWithColumns(result_chunk.getColumns());
     return insert_queue.pushQueryWithBlock(state.parsed_query, std::move(result), query_context);
 }
 
@@ -2107,6 +2107,7 @@ void TCPHandler::initBlockOutput(const Block & block)
             *state.maybe_compressed_out,
             client_tcp_protocol_version,
             block.cloneEmpty(),
+            std::nullopt,
             !query_settings.low_cardinality_allow_in_native_format);
     }
 }
@@ -2121,6 +2122,7 @@ void TCPHandler::initLogsBlockOutput(const Block & block)
             *out,
             client_tcp_protocol_version,
             block.cloneEmpty(),
+            std::nullopt,
             !query_settings.low_cardinality_allow_in_native_format);
     }
 }
@@ -2135,6 +2137,7 @@ void TCPHandler::initProfileEventsBlockOutput(const Block & block)
             *out,
             client_tcp_protocol_version,
             block.cloneEmpty(),
+            std::nullopt,
             !query_settings.low_cardinality_allow_in_native_format);
     }
 }

@@ -24,9 +24,8 @@
 #include <Common/TerminalSize.h>
 #include <Common/config_version.h>
 #include <Common/formatReadable.h>
-
+#include <Core/Settings.h>
 #include <Columns/ColumnString.h>
-#include <Poco/Util/Application.h>
 
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
@@ -48,6 +47,8 @@
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <Formats/registerFormats.h>
 #include <Formats/FormatFactory.h>
+
+#include <Poco/Util/Application.h>
 
 namespace fs = std::filesystem;
 using namespace std::literals;
@@ -1117,6 +1118,7 @@ void Client::processOptions(const OptionsDescription & options_description,
         if (!options["user"].defaulted())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "User and JWT flags can't be specified together");
         config().setString("jwt", options["jwt"].as<std::string>());
+        config().setString("user", "");
     }
     if (options.count("accept-invalid-certificate"))
     {

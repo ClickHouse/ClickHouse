@@ -17,6 +17,7 @@
 #include <Analyzer/QueryNode.h>
 
 #include <Common/logger_useful.h>
+#include <Core/Settings.h>
 #include <Storages/StorageDummy.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Planner/PlannerExpressionAnalysis.h>
@@ -515,10 +516,11 @@ AggregateProjectionCandidates getAggregateProjectionCandidates(
 
     if (!candidates.minmax_projection)
     {
-        auto it = std::find_if(agg_projections.begin(), agg_projections.end(), [&](const auto * projection)
-        {
-            return projection->name == context->getSettings().preferred_optimize_projection_name.value;
-        });
+        auto it = std::find_if(
+            agg_projections.begin(),
+            agg_projections.end(),
+            [&](const auto * projection)
+            { return projection->name == context->getSettingsRef().preferred_optimize_projection_name.value; });
 
         if (it != agg_projections.end())
         {
