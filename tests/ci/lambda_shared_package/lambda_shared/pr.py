@@ -26,7 +26,7 @@ TRUSTED_CONTRIBUTORS = {
         "thevar1able",  # ClickHouse, Inc
         "tsolodov",  # ClickHouse, Inc
         "justindeguzman",  # ClickHouse, Inc
-        "XuJia0210", # ClickHouse, Inc
+        "XuJia0210",  # ClickHouse, Inc
     ]
 }
 
