@@ -45,6 +45,7 @@ TRUSTED_CONTRIBUTORS = {
         "k-morozov",  # Konstantin Morozov, Yandex Cloud
         "justindeguzman",  # ClickHouse, Inc
         "jrdi",  # ClickHouse contributor, TinyBird
+        "XuJia0210", # ClickHouse, Inc
     ]
 }
 
