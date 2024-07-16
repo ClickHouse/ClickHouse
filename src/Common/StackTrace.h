@@ -8,6 +8,7 @@
 #include <optional>
 #include <functional>
 #include <csignal>
+#include <csetjmp>
 
 #ifdef OS_DARWIN
 // ucontext is not available without _XOPEN_SOURCE
@@ -58,7 +59,7 @@ public:
     const FramePointers & getFramePointers() const { return frame_pointers; }
     std::string toString() const;
 
-    static std::string toString(void ** frame_pointers, size_t offset, size_t size);
+    static std::string toString(void * const * frame_pointers, size_t offset, size_t size);
     static void dropCache();
 
     /// @param fatal - if true, will process inline frames (slower)
@@ -87,3 +88,8 @@ protected:
 };
 
 std::string signalToErrorMessage(int sig, const siginfo_t & info, const ucontext_t & context);
+
+/// Special handling for errors during asynchronous stack unwinding,
+/// Which is used in Query Profiler
+extern thread_local bool asynchronous_stack_unwinding;
+extern thread_local sigjmp_buf asynchronous_stack_unwinding_signal_jump_buffer;

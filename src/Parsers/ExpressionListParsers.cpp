@@ -20,7 +20,7 @@
 #include <Parsers/ParserUnionQueryElement.h>
 #include <Parsers/parseIntervalKind.h>
 #include <Common/assert_cast.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 
 #include <Parsers/ParserSelectWithUnionQuery.h>
 
@@ -2179,7 +2179,7 @@ public:
 
     bool parse(IParser::Pos & pos, Expected & expected, Action & /*action*/) override
     {
-        /// kql(table|project ...)
+        /// kql('table|project ...')
         /// 0. Parse the kql query
         /// 1. Parse closing token
         if (state == 0)

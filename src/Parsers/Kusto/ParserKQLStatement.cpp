@@ -2,11 +2,12 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/IParserBase.h>
-#include <Parsers/Kusto/KustoFunctions/KQLFunctionFactory.h>
 #include <Parsers/Kusto/ParserKQLQuery.h>
 #include <Parsers/Kusto/ParserKQLStatement.h>
 #include <Parsers/Kusto/Utilities.h>
 #include <Parsers/ParserSetQuery.h>
+#include <Parsers/ASTLiteral.h>
+
 
 namespace DB
 {
@@ -62,49 +63,56 @@ bool ParserKQLWithUnionQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
 
 bool ParserKQLTableFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    ParserKQLWithUnionQuery kql_p;
-    ASTPtr select;
-    ParserToken s_lparen(TokenType::OpeningRoundBracket);
+    /// TODO: This code is idiotic, see https://github.com/ClickHouse/ClickHouse/issues/61742
 
-    auto begin = pos;
-    auto paren_count = 0;
+    ParserToken lparen(TokenType::OpeningRoundBracket);
+
+    ASTPtr string_literal;
+    ParserStringLiteral parser_string_literal;
+
+    if (!lparen.ignore(pos, expected))
+        return false;
+
+    size_t paren_count = 0;
     String kql_statement;
-
-    if (s_lparen.ignore(pos, expected))
+    if (parser_string_literal.parse(pos, string_literal, expected))
     {
-        if (pos->type == TokenType::HereDoc)
-        {
-            kql_statement = String(pos->begin + 2, pos->end - 2);
-        }
-        else
-        {
-            ++paren_count;
-            auto pos_start = pos;
-            while (isValidKQLPos(pos))
-            {
-                if (pos->type == TokenType::ClosingRoundBracket)
-                    --paren_count;
-                if (pos->type == TokenType::OpeningRoundBracket)
-                    ++paren_count;
-
-                if (paren_count == 0)
-                    break;
-                ++pos;
-            }
-            kql_statement = String(pos_start->begin, (--pos)->end);
-        }
-        ++pos;
-        Tokens token_kql(kql_statement.c_str(), kql_statement.c_str() + kql_statement.size());
-        IParser::Pos pos_kql(token_kql, pos.max_depth, pos.max_backtracks);
-
-        if (kql_p.parse(pos_kql, select, expected))
-        {
-            node = select;
-            ++pos;
-            return true;
-        }
+        kql_statement = typeid_cast<const ASTLiteral &>(*string_literal).value.safeGet<String>();
     }
-    pos = begin;
-    return false;
+    else
+    {
+        ++paren_count;
+        auto pos_start = pos;
+        while (isValidKQLPos(pos))
+        {
+            if (pos->type == TokenType::ClosingRoundBracket)
+                --paren_count;
+            if (pos->type == TokenType::OpeningRoundBracket)
+                ++paren_count;
+
+            if (paren_count == 0)
+                break;
+            ++pos;
+        }
+        if (!isValidKQLPos(pos))
+        {
+            return false;
+        }
+        --pos;
+        kql_statement = String(pos_start->begin, pos->end);
+        ++pos;
+    }
+
+    Tokens tokens_kql(kql_statement.data(), kql_statement.data() + kql_statement.size(), 0, true);
+    IParser::Pos pos_kql(tokens_kql, pos.max_depth, pos.max_backtracks);
+
+    Expected kql_expected;
+    kql_expected.enable_highlighting = false;
+    if (!ParserKQLWithUnionQuery().parse(pos_kql, node, kql_expected))
+        return false;
+
+    ++pos;
+    return true;
 }
+
 }

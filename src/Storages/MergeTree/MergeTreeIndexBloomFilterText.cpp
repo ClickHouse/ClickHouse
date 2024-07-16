@@ -444,11 +444,11 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
         if (key_function_node_function_name == "arrayElement")
         {
             /** Try to parse arrayElement for mapKeys index.
-              * It is important to ignore keys like column_map['Key'] = '' because if key does not exists in map
-              * we return default value for arrayElement.
+              * It is important to ignore keys like column_map['Key'] = '' because if key does not exist in the map
+              * we return default the value for arrayElement.
               *
               * We cannot skip keys that does not exist in map if comparison is with default type value because
-              * that way we skip necessary granules where map key does not exists.
+              * that way we skip necessary granules where map key does not exist.
               */
             if (value_field == value_type->getDefault())
                 return false;
@@ -566,7 +566,7 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
         out.function = RPNElement::FUNCTION_EQUALS;
         out.bloom_filter = std::make_unique<BloomFilter>(params);
         const auto & value = const_value.get<String>();
-        token_extractor->stringToBloomFilter(value.data(), value.size(), *out.bloom_filter);
+        token_extractor->substringToBloomFilter(value.data(), value.size(), *out.bloom_filter, true, false);
         return true;
     }
     else if (function_name == "endsWith")
@@ -575,7 +575,7 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
         out.function = RPNElement::FUNCTION_EQUALS;
         out.bloom_filter = std::make_unique<BloomFilter>(params);
         const auto & value = const_value.get<String>();
-        token_extractor->stringToBloomFilter(value.data(), value.size(), *out.bloom_filter);
+        token_extractor->substringToBloomFilter(value.data(), value.size(), *out.bloom_filter, false, true);
         return true;
     }
     else if (function_name == "multiSearchAny"
@@ -596,7 +596,15 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
 
             bloom_filters.back().emplace_back(params);
             const auto & value = element.get<String>();
-            token_extractor->stringToBloomFilter(value.data(), value.size(), bloom_filters.back().back());
+
+            if (function_name == "multiSearchAny")
+            {
+                token_extractor->substringToBloomFilter(value.data(), value.size(), bloom_filters.back().back(), false, false);
+            }
+            else
+            {
+                token_extractor->stringToBloomFilter(value.data(), value.size(), bloom_filters.back().back());
+            }
         }
         out.set_bloom_filters = std::move(bloom_filters);
         return true;
@@ -625,12 +633,12 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
             for (const auto & alternative : alternatives)
             {
                 bloom_filters.back().emplace_back(params);
-                token_extractor->stringToBloomFilter(alternative.data(), alternative.size(), bloom_filters.back().back());
+                token_extractor->substringToBloomFilter(alternative.data(), alternative.size(), bloom_filters.back().back(), false, false);
             }
             out.set_bloom_filters = std::move(bloom_filters);
         }
         else
-           token_extractor->stringToBloomFilter(required_substring.data(), required_substring.size(), *out.bloom_filter);
+           token_extractor->substringToBloomFilter(required_substring.data(), required_substring.size(), *out.bloom_filter, false, false);
 
         return true;
     }

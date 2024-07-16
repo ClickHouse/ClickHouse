@@ -3,6 +3,7 @@
 #include <Common/TraceSender.h>
 
 
+// clang-format off
 /// Available events. Add something here as you wish.
 /// If the event is generic (i.e. not server specific)
 /// it should be also added to src/Coordination/KeeperConstant.cpp
@@ -14,6 +15,7 @@
     M(QueriesWithSubqueries, "Count queries with all subqueries", ValueType::Number) \
     M(SelectQueriesWithSubqueries, "Count SELECT queries with all subqueries", ValueType::Number) \
     M(InsertQueriesWithSubqueries, "Count INSERT queries with all subqueries", ValueType::Number) \
+    M(SelectQueriesWithPrimaryKeyUsage, "Count SELECT queries which use the primary key to evaluate the WHERE condition", ValueType::Number) \
     M(AsyncInsertQuery, "Same as InsertQuery, but only for asynchronous INSERT queries.", ValueType::Number) \
     M(AsyncInsertBytes, "Data size in bytes of asynchronous INSERT queries.", ValueType::Bytes) \
     M(AsyncInsertRows, "Number of rows inserted by asynchronous INSERT queries.", ValueType::Number) \
@@ -195,6 +197,8 @@
     M(SelectedMarks, "Number of marks (index granules) selected to read from a MergeTree table.", ValueType::Number) \
     M(SelectedRows, "Number of rows SELECTed from all tables.", ValueType::Number) \
     M(SelectedBytes, "Number of bytes (uncompressed; for columns as they stored in memory) SELECTed from all tables.", ValueType::Bytes) \
+    M(RowsReadByMainReader, "Number of rows read from MergeTree tables by the main reader (after PREWHERE step).", ValueType::Number) \
+    M(RowsReadByPrewhereReaders, "Number of rows read from MergeTree tables (in total) by prewhere readers.", ValueType::Number) \
     \
     M(WaitMarksLoadMicroseconds, "Time spent loading marks", ValueType::Microseconds) \
     M(BackgroundLoadingMarksTasks, "Number of background tasks for loading marks", ValueType::Number) \
@@ -234,7 +238,12 @@
     \
     M(CannotRemoveEphemeralNode, "Number of times an error happened while trying to remove ephemeral node. This is not an issue, because our implementation of ZooKeeper library guarantee that the session will expire and the node will be removed.", ValueType::Number) \
     \
-    M(RegexpCreated, "Compiled regular expressions. Identical regular expressions compiled just once and cached forever.", ValueType::Number) \
+    M(RegexpWithMultipleNeedlesCreated, "Regular expressions with multiple needles (VectorScan library) compiled.", ValueType::Number) \
+    M(RegexpWithMultipleNeedlesGlobalCacheHit, "Number of times we fetched compiled regular expression with multiple needles (VectorScan library) from the global cache.", ValueType::Number) \
+    M(RegexpWithMultipleNeedlesGlobalCacheMiss, "Number of times we failed to fetch compiled regular expression with multiple needles (VectorScan library) from the global cache.", ValueType::Number) \
+    M(RegexpLocalCacheHit, "Number of times we fetched compiled regular expression from a local cache.", ValueType::Number) \
+    M(RegexpLocalCacheMiss, "Number of times we failed to fetch compiled regular expression from a local cache.", ValueType::Number) \
+    \
     M(ContextLock, "Number of times the lock of Context was acquired or tried to acquire. This is global lock.", ValueType::Number) \
     M(ContextLockWaitMicroseconds, "Context lock wait time in microseconds", ValueType::Microseconds) \
     \
@@ -360,6 +369,7 @@ The server successfully detected this situation and will download merged part fr
     M(QueryProfilerSignalOverruns, "Number of times we drop processing of a query profiler signal due to overrun plus the number of signals that OS has not delivered due to overrun.", ValueType::Number) \
     M(QueryProfilerConcurrencyOverruns, "Number of times we drop processing of a query profiler signal due to too many concurrent query profilers in other threads, which may indicate overload.", ValueType::Number) \
     M(QueryProfilerRuns, "Number of times QueryProfiler had been run.", ValueType::Number) \
+    M(QueryProfilerErrors, "Invalid memory accesses during asynchronous stack unwinding.", ValueType::Number) \
     \
     M(CreatedLogEntryForMerge, "Successfully created log entry to merge parts in ReplicatedMergeTree.", ValueType::Number) \
     M(NotCreatedLogEntryForMerge, "Log entry to merge parts in ReplicatedMergeTree is not created due to concurrent log update by another replica.", ValueType::Number) \
@@ -416,6 +426,13 @@ The server successfully detected this situation and will download merged part fr
     M(DiskS3PutObject, "Number of DiskS3 API PutObject calls.", ValueType::Number) \
     M(DiskS3GetObject, "Number of DiskS3 API GetObject calls.", ValueType::Number) \
     \
+    M(DiskPlainRewritableAzureDirectoryCreated, "Number of directories created by the 'plain_rewritable' metadata storage for AzureObjectStorage.", ValueType::Number) \
+    M(DiskPlainRewritableAzureDirectoryRemoved, "Number of directories removed by the 'plain_rewritable' metadata storage for AzureObjectStorage.", ValueType::Number) \
+    M(DiskPlainRewritableLocalDirectoryCreated, "Number of directories created by the 'plain_rewritable' metadata storage for LocalObjectStorage.", ValueType::Number) \
+    M(DiskPlainRewritableLocalDirectoryRemoved, "Number of directories removed by the 'plain_rewritable' metadata storage for LocalObjectStorage.", ValueType::Number) \
+    M(DiskPlainRewritableS3DirectoryCreated, "Number of directories created by the 'plain_rewritable' metadata storage for S3ObjectStorage.", ValueType::Number) \
+    M(DiskPlainRewritableS3DirectoryRemoved, "Number of directories removed by the 'plain_rewritable' metadata storage for S3ObjectStorage.", ValueType::Number) \
+    \
     M(S3Clients, "Number of created S3 clients.", ValueType::Number) \
     M(TinyS3Clients, "Number of S3 clients copies which reuse an existing auth provider from another client.", ValueType::Number) \
     \
@@ -435,14 +452,18 @@ The server successfully detected this situation and will download merged part fr
     M(QueryMemoryLimitExceeded, "Number of times when memory limit exceeded for query.", ValueType::Number) \
     \
     M(AzureGetObject, "Number of Azure API GetObject calls.", ValueType::Number) \
-    M(AzureUploadPart, "Number of Azure blob storage API UploadPart calls", ValueType::Number) \
+    M(AzureUpload, "Number of Azure blob storage API Upload calls", ValueType::Number) \
+    M(AzureStageBlock, "Number of Azure blob storage API StageBlock calls", ValueType::Number) \
+    M(AzureCommitBlockList, "Number of Azure blob storage API CommitBlockList calls", ValueType::Number) \
     M(AzureCopyObject, "Number of Azure blob storage API CopyObject calls", ValueType::Number) \
     M(AzureDeleteObjects, "Number of Azure blob storage API DeleteObject(s) calls.", ValueType::Number) \
     M(AzureListObjects, "Number of Azure blob storage API ListObjects calls.", ValueType::Number) \
     M(AzureGetProperties, "Number of Azure blob storage API GetProperties calls.", ValueType::Number) \
     \
     M(DiskAzureGetObject, "Number of Disk Azure API GetObject calls.", ValueType::Number) \
-    M(DiskAzureUploadPart, "Number of Disk Azure blob storage API UploadPart calls", ValueType::Number) \
+    M(DiskAzureUpload, "Number of Disk Azure blob storage API Upload calls", ValueType::Number) \
+    M(DiskAzureStageBlock, "Number of Disk Azure blob storage API StageBlock calls", ValueType::Number) \
+    M(DiskAzureCommitBlockList, "Number of Disk Azure blob storage API CommitBlockList calls", ValueType::Number) \
     M(DiskAzureCopyObject, "Number of Disk Azure blob storage API CopyObject calls", ValueType::Number) \
     M(DiskAzureListObjects, "Number of Disk Azure blob storage API ListObjects calls.", ValueType::Number) \
     M(DiskAzureDeleteObjects, "Number of Azure blob storage API DeleteObject(s) calls.", ValueType::Number) \
@@ -487,6 +508,7 @@ The server successfully detected this situation and will download merged part fr
     M(FileSegmentHolderCompleteMicroseconds, "File segments holder complete() time", ValueType::Microseconds) \
     M(FileSegmentFailToIncreasePriority, "Number of times the priority was not increased due to a high contention on the cache lock", ValueType::Number) \
     M(FilesystemCacheFailToReserveSpaceBecauseOfLockContention, "Number of times space reservation was skipped due to a high contention on the cache lock", ValueType::Number) \
+    M(FilesystemCacheFailToReserveSpaceBecauseOfCacheResize, "Number of times space reservation was skipped due to the cache is being resized", ValueType::Number) \
     M(FilesystemCacheHoldFileSegments, "Filesystem cache file segments count, which were hold", ValueType::Number) \
     M(FilesystemCacheUnusedHoldFileSegments, "Filesystem cache file segments count, which were hold, but not used (because of seek or LIMIT n, etc)", ValueType::Number) \
     M(FilesystemCacheFreeSpaceKeepingThreadRun, "Number of times background thread executed free space keeping job", ValueType::Number) \
@@ -547,6 +569,7 @@ The server successfully detected this situation and will download merged part fr
     M(AggregationPreallocatedElementsInHashTables, "How many elements were preallocated in hash tables for aggregation.", ValueType::Number) \
     M(AggregationHashTablesInitializedAsTwoLevel, "How many hash tables were inited as two-level for aggregation.", ValueType::Number) \
     M(AggregationOptimizedEqualRangesOfKeys, "For how many blocks optimization of equal ranges of keys was applied", ValueType::Number) \
+    M(HashJoinPreallocatedElementsInHashTables, "How many elements were preallocated in hash tables for hash join.", ValueType::Number) \
     \
     M(MetadataFromKeeperCacheHit, "Number of times an object storage metadata request was answered from cache without making request to Keeper", ValueType::Number) \
     M(MetadataFromKeeperCacheMiss, "Number of times an object storage metadata request had to be answered from Keeper", ValueType::Number) \
@@ -599,6 +622,13 @@ The server successfully detected this situation and will download merged part fr
     M(KeeperPacketsReceived, "Packets received by keeper server", ValueType::Number) \
     M(KeeperRequestTotal, "Total requests number on keeper server", ValueType::Number) \
     M(KeeperLatency, "Keeper latency", ValueType::Milliseconds) \
+    M(KeeperTotalElapsedMicroseconds, "Keeper total latency for a single request", ValueType::Milliseconds) \
+    M(KeeperProcessElapsedMicroseconds, "Keeper commit latency for a single request", ValueType::Milliseconds) \
+    M(KeeperPreprocessElapsedMicroseconds, "Keeper preprocessing latency for a single reuquest", ValueType::Milliseconds)\
+    M(KeeperStorageLockWaitMicroseconds, "Time spent waiting for acquiring Keeper storage lock", ValueType::Milliseconds) \
+    M(KeeperCommitWaitElapsedMicroseconds, "Time spent waiting for certain log to be committed", ValueType::Milliseconds) \
+    M(KeeperBatchMaxCount, "Number of times the size of batch was limited by the amount", ValueType::Number) \
+    M(KeeperBatchMaxTotalSize, "Number of times the size of batch was limited by the total bytes size", ValueType::Number) \
     M(KeeperCommits, "Number of successful commits", ValueType::Number) \
     M(KeeperCommitsFailed, "Number of failed commits", ValueType::Number) \
     M(KeeperSnapshotCreations, "Number of snapshots creations", ValueType::Number) \
@@ -625,13 +655,16 @@ The server successfully detected this situation and will download merged part fr
     M(S3QueueSetFileProcessingMicroseconds, "Time spent to set file as processing", ValueType::Microseconds) \
     M(S3QueueSetFileProcessedMicroseconds, "Time spent to set file as processed", ValueType::Microseconds) \
     M(S3QueueSetFileFailedMicroseconds, "Time spent to set file as failed", ValueType::Microseconds) \
-    M(S3QueueCleanupMaxSetSizeOrTTLMicroseconds, "Time spent to set file as failed", ValueType::Microseconds) \
-    M(S3QueuePullMicroseconds, "Time spent to read file data", ValueType::Microseconds) \
-    M(S3QueueLockLocalFileStatusesMicroseconds, "Time spent to lock local file statuses", ValueType::Microseconds) \
+    M(ObjectStorageQueueFailedFiles, "Number of files which failed to be processed", ValueType::Number)\
+    M(ObjectStorageQueueProcessedFiles, "Number of files which were processed", ValueType::Number)\
+    M(ObjectStorageQueueCleanupMaxSetSizeOrTTLMicroseconds, "Time spent to set file as failed", ValueType::Microseconds) \
+    M(ObjectStorageQueuePullMicroseconds, "Time spent to read file data", ValueType::Microseconds) \
+    M(ObjectStorageQueueLockLocalFileStatusesMicroseconds, "Time spent to lock local file statuses", ValueType::Microseconds) \
     \
     M(ServerStartupMilliseconds, "Time elapsed from starting server to listening to sockets in milliseconds", ValueType::Milliseconds) \
     M(IOUringSQEsSubmitted, "Total number of io_uring SQEs submitted", ValueType::Number) \
-    M(IOUringSQEsResubmits, "Total number of io_uring SQE resubmits performed", ValueType::Number) \
+    M(IOUringSQEsResubmitsAsync, "Total number of asynchronous io_uring SQE resubmits performed", ValueType::Number) \
+    M(IOUringSQEsResubmitsSync, "Total number of synchronous io_uring SQE resubmits performed", ValueType::Number) \
     M(IOUringCQEsCompleted, "Total number of successfully completed io_uring CQEs", ValueType::Number) \
     M(IOUringCQEsFailed, "Total number of completed io_uring CQEs with failures", ValueType::Number) \
     \
@@ -741,6 +774,10 @@ The server successfully detected this situation and will download merged part fr
     \
     M(ReadWriteBufferFromHTTPRequestsSent, "Number of HTTP requests sent by ReadWriteBufferFromHTTP", ValueType::Number) \
     M(ReadWriteBufferFromHTTPBytes, "Total size of payload bytes received and sent by ReadWriteBufferFromHTTP. Doesn't include HTTP headers.", ValueType::Bytes) \
+    \
+    M(GWPAsanAllocateSuccess, "Number of successful allocations done by GWPAsan", ValueType::Number) \
+    M(GWPAsanAllocateFailed, "Number of failed allocations done by GWPAsan (i.e. filled pool)", ValueType::Number) \
+    M(GWPAsanFree, "Number of free operations done by GWPAsan", ValueType::Number) \
 
 
 #ifdef APPLY_FOR_EXTERNAL_EVENTS

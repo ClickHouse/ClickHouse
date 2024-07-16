@@ -559,6 +559,54 @@ struct CopyFileObjectStorageOperation final : public IDiskObjectStorageOperation
     }
 };
 
+struct TruncateFileObjectStorageOperation final : public IDiskObjectStorageOperation
+{
+    std::string path;
+    size_t size;
+
+    TruncateFileOperationOutcomePtr truncate_outcome;
+
+    TruncateFileObjectStorageOperation(
+        IObjectStorage & object_storage_,
+        IMetadataStorage & metadata_storage_,
+        const std::string & path_,
+        size_t size_)
+        : IDiskObjectStorageOperation(object_storage_, metadata_storage_)
+        , path(path_)
+        , size(size_)
+    {}
+
+    std::string getInfoForLog() const override
+    {
+        return fmt::format("TruncateFileObjectStorageOperation (path: {}, size: {})", path, size);
+    }
+
+    void execute(MetadataTransactionPtr tx) override
+    {
+        if (metadata_storage.exists(path))
+        {
+            if (!metadata_storage.isFile(path))
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Path {} is not a file", path);
+
+            truncate_outcome = tx->truncateFile(path, size);
+        }
+    }
+
+    void undo() override
+    {
+
+    }
+
+    void finalize() override
+    {
+        if (!truncate_outcome)
+            return;
+
+        if (!truncate_outcome->objects_to_remove.empty())
+            object_storage.removeObjectsIfExist(truncate_outcome->objects_to_remove);
+    }
+};
+
 }
 
 void DiskObjectStorageTransaction::createDirectory(const std::string & path)
@@ -596,6 +644,13 @@ void DiskObjectStorageTransaction::moveFile(const String & from_path, const Stri
         {
             tx->moveFile(from_path, to_path);
         }));
+}
+
+void DiskObjectStorageTransaction::truncateFile(const String & path, size_t size)
+{
+    operations_to_execute.emplace_back(
+        std::make_unique<TruncateFileObjectStorageOperation>(object_storage, metadata_storage, path, size)
+    );
 }
 
 void DiskObjectStorageTransaction::replaceFile(const std::string & from_path, const std::string & to_path)
