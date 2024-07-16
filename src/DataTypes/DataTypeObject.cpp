@@ -15,6 +15,8 @@
 #include <Formats/JSONExtractTree.h>
 #include <Interpreters/Context.h>
 
+#include <Core/Settings.h>
+
 #if USE_SIMDJSON
 #include <Common/JSONParsers/SimdJSONParser.h>
 #endif
@@ -157,7 +159,7 @@ String DataTypeObject::doGetName() const
     for (const auto & path : sorted_typed_paths)
     {
         write_separator();
-        out << path << " " << typed_paths.at(path)->getName();
+        out << backQuoteIfNeed(path) << " " << typed_paths.at(path)->getName();
     }
 
     std::vector<String> sorted_skip_paths;
