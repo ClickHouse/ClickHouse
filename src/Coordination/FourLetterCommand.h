@@ -2,8 +2,11 @@
 
 #include "config.h"
 
+#include <atomic>
+#include <memory>
 #include <unordered_map>
 #include <string>
+#include <vector>
 #include <boost/noncopyable.hpp>
 
 namespace DB
