@@ -18,6 +18,7 @@ def test_xml_full_conf():
         "configs/config.d/more_clusters.xml",
         "configs/config.d/part_log.xml",
         "configs/config.d/path.xml",
+        "configs/config.d/query_log_metric.xml",
         "configs/config.d/query_masking_rules.xml",
         "configs/config.d/tcp_with_proxy.xml",
         "configs/config.d/text_log.xml",

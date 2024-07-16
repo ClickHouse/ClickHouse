@@ -22,6 +22,7 @@ system_logs = [
     ("system.trace_log", 1),
     ("system.metric_log", 1),
     ("system.error_log", 1),
+    ("system.query_log_metric", 1),
 ]
 
 
