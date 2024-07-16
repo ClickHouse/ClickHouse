@@ -544,7 +544,7 @@ void QueryPipeline::complete(std::shared_ptr<IOutputFormat> format)
     extremes = nullptr;
 
     initRowsBeforeLimit(format.get());
-    for (const auto context : resources.interpreter_context)
+    for (const auto & context : resources.interpreter_context)
     {
         if (context->getSettingsRef().rows_before_aggregation)
         {
