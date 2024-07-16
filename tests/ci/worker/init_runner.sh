@@ -50,7 +50,7 @@ set -uo pipefail
 # set accordingly to a runner role #
 ####################################
 
-echo "Running init script v1"
+echo "Running init v1"
 export DEBIAN_FRONTEND=noninteractive
 export RUNNER_HOME=/home/ubuntu/actions-runner
 
