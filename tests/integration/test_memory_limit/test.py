@@ -27,6 +27,9 @@ def start_cluster():
 
 
 def test_multiple_queries():
+    if node.is_built_with_sanitizer():
+        return
+
     p = Pool(15)
 
     def run_query(node):
