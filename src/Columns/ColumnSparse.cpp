@@ -4,6 +4,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnVector.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/SipHash.h>
 #include <Common/WeakHash.h>
@@ -684,13 +685,26 @@ void ColumnSparse::updateWeakHash32(WeakHash32 & hash) const
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of WeakHash32 does not match size of column: "
         "column size is {}, hash size is {}", _size, hash.getData().size());
 
-    auto offset_it = begin();
+    size_t values_size = values->size();
+    WeakHash32 values_hash(values_size);
+
     auto & hash_data = hash.getData();
+    auto & values_hash_data = values_hash.getData();
+    const auto & offsets_data = getOffsetsData();
+
+    if (getNumberOfDefaultRows() > 0)
+        values_hash_data[0] = hash_data[getFirstDefaultValueIndex()];
+
+    for (size_t i = 0; i < values_size; ++i)
+        values_hash_data[i + 1] = hash_data[offsets_data[i]];
+
+    values->updateWeakHash32(values_hash);
+
+    auto offset_it = begin();
     for (size_t i = 0; i < _size; ++i, ++offset_it)
     {
         size_t value_index = offset_it.getValueIndex();
-        auto data_ref = values->getDataAt(value_index);
-        hash_data[i] = ::updateWeakHash32(reinterpret_cast<const UInt8 *>(data_ref.data), data_ref.size, hash_data[i]);
+        hash_data[i] = values_hash_data[value_index];
     }
 }
 
@@ -805,6 +819,24 @@ size_t ColumnSparse::getValueIndex(size_t n) const
         return 0;
 
     return it - offsets_data.begin() + 1;
+}
+
+size_t ColumnSparse::getFirstDefaultValueIndex() const
+{
+    if (getNumberOfDefaultRows() == 0)
+        return size();
+
+    const auto & offsets_data = getOffsetsData();
+    size_t off_size = offsets_data.size();
+
+    if (off_size == 0 || offsets_data[0] > 0)
+        return 0;
+
+    size_t idx = 0;
+    while (idx + 1 < off_size && offsets_data[idx] + 1 == offsets_data[idx + 1])
+        ++idx;
+
+    return offsets_data[idx] + 1;
 }
 
 ColumnSparse::Iterator ColumnSparse::getIterator(size_t n) const

@@ -173,6 +173,9 @@ public:
     /// O(log(offsets.size())) complexity,
     size_t getValueIndex(size_t n) const;
 
+    /// Returns an index of the first default value, or size() if there is no defaults.
+    size_t getFirstDefaultValueIndex() const;
+
     const IColumn & getValuesColumn() const { return *values; }
     IColumn & getValuesColumn() { return *values; }
 
