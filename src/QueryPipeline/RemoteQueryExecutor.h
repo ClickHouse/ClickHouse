@@ -183,7 +183,7 @@ public:
     ReadResult read();
 
     /// Async variant of read. Returns ready block or file descriptor which may be used for polling.
-    ReadResult readAsync();
+    ReadResult readAsync(bool check_packet_type_only = false);
 
     /// Receive all remain packets and finish query.
     /// It should be cancelled after read returned empty block.
@@ -302,6 +302,8 @@ private:
     /** Got duplicated uuids from replica
       */
     bool got_duplicated_part_uuids = false;
+
+    bool has_postponed_packet = false;
 
     /// Parts uuids, collected from remote replicas
     std::vector<UUID> duplicated_part_uuids;

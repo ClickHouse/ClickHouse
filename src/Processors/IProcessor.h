@@ -221,6 +221,8 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'schedule' is not implemented for {} processor", getName());
     }
 
+    virtual void asyncJobReady() {}
+
     /** You must call this method if 'prepare' returned ExpandPipeline.
       * This method cannot access any port, but it can create new ports for current processor.
       *
