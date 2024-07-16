@@ -5,6 +5,7 @@
 #include <Processors/ISimpleTransform.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Processors/Transforms/finalizeChunk.h>
+#include "Columns/IColumn.h"
 
 namespace DB
 {
@@ -63,6 +64,7 @@ private:
     SortDescriptionWithPositions group_by_description;
     bool group_by_key = false;
     Block group_by_block;
+    EqualRanges equal_ranges;
     ColumnRawPtrs key_columns_raw;
 
     Aggregator::AggregateColumns aggregate_columns;
