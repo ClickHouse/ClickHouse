@@ -80,7 +80,7 @@ public:
     explicit FileRepresentation(const std::string& filename)
     {
         number_representation = 0;
-        for (auto elem : filename) 
+        for (auto elem : filename)
         {
             char converted_number;
             auto it = alphabet.find(elem);
@@ -88,7 +88,7 @@ public:
             {
                 converted_number = it;
             }
-            else 
+            else
             {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "S3 doesn't support symbol ");
             }
@@ -96,7 +96,7 @@ public:
         }
     }
 
-    FileRepresentation& operator*=(float value) 
+    FileRepresentation& operator*=(float value)
     {
         boost::multiprecision::cpp_dec_float_100 float_representation(number_representation);
         float_representation *= value;
@@ -133,7 +133,7 @@ public:
             int token = static_cast<int>(current % alphabet.size());
             if (token < 0 || token >= static_cast<int>(alphabet.size()))
             {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Error decoding filename");   
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Error decoding filename");
             }
             answer.push_back(alphabet[token]);
             current /= alphabet.size();
@@ -252,17 +252,17 @@ public:
     }
 
 private:
-    class QueryCache 
+    class QueryCache
     {
     public:
         std::vector<Aws::S3::Model::Object> getBatchFrom(const std::string& filename_after, size_t count) const
         {
             std::vector<Aws::S3::Model::Object> result;
             result.reserve(count);
-            for (auto it = std::upper_bound(extracted_keys.begin(), extracted_keys.end(), filename_after); it != extracted_keys.end(); ++it) 
+            for (auto it = std::upper_bound(extracted_keys.begin(), extracted_keys.end(), filename_after); it != extracted_keys.end(); ++it)
             {
                 result.push_back(key_to_object.at(*it));
-                if (result.size() == count) 
+                if (result.size() == count)
                 {
                     break;
                 }
@@ -270,8 +270,8 @@ private:
             return result;
         }
 
-        void insertObjects(const std::vector<Aws::S3::Model::Object>& objects) 
-        {                
+        void insertObjects(const std::vector<Aws::S3::Model::Object>& objects)
+        {
             for (const auto& object : objects)
             {
                 queue_.push(object);
@@ -280,7 +280,8 @@ private:
 
         void build()
         {
-            while (!queue_.empty()) {
+            while (!queue_.empty())
+            {
                 Aws::S3::Model::Object object;
                 queue_.pop(object);
                 extracted_keys.push_back(object.GetKey());
@@ -303,13 +304,13 @@ private:
     };
 
     void RunSubrequest(
-        const FileArithmetics::FileRepresentation& start_file, 
+        const FileArithmetics::FileRepresentation& start_file,
         const FileArithmetics::FileRepresentation& end_file)
     {
         S3::ListObjectsV2Request current_request;
         current_request.SetBucket(bucket);
         current_request.SetPrefix(path_prefix);
-        
+
         std::string file_iterator = path_prefix + start_file.toString();
         current_request.SetStartAfter(file_iterator);
 
@@ -321,22 +322,27 @@ private:
             {
                 current_request.SetMaxKeys(1);
                 first_request = false;
-            } else {
+            }
+            else
+            {
                 current_request.SetMaxKeys(static_cast<int>(max_list_size));
             }
             S3::Model::ListObjectsV2Outcome outcome = client->ListObjectsV2(current_request);
 
-            if (outcome.IsSuccess()) {
+            if (outcome.IsSuccess())
+            {
                 const auto& result = outcome.GetResult();
-                cache.insertObjects(result.GetContents());            
-                if (!result.GetIsTruncated() || 
-                    result.GetContents().empty() || 
-                    end_file <= FileArithmetics::FileRepresentation(result.GetContents().back().GetKey().substr(path_prefix.size())))
+                cache.insertObjects(result.GetContents());
+                if (!result.GetIsTruncated()
+                    || result.GetContents().empty()
+                    || end_file <= FileArithmetics::FileRepresentation(result.GetContents().back().GetKey().substr(path_prefix.size())))
                 {
                     break;
                 }
                 current_request.SetStartAfter(result.GetContents().back().GetKey());
-            } else {
+            }
+            else
+            {
                 throw S3Exception(outcome.GetError().GetErrorType(),
                     "Could not list objects in bucket {} with prefix {}, S3 exception: {}, message: {}",
                     quoteString(current_request.GetBucket()), quoteString(current_request.GetPrefix()),
@@ -400,7 +406,8 @@ private:
                 batch.emplace_back(std::make_shared<RelativePathWithMetadata>(object.GetKey(), std::move(metadata)));
             }
             request->SetStartAfter(objects.back().GetKey());
-            if (use_parallel_listing && outcome.GetResult().GetIsTruncated() && cache_builded) {
+            if (use_parallel_listing && outcome.GetResult().GetIsTruncated() && cache_builded)
+            {
                 cache.clear();
                 fillCache(
                     objects[0].GetKey(),
@@ -428,10 +435,10 @@ private:
     std::string bucket;
     std::string path_prefix;
     size_t max_list_size;
-    
+
     bool use_parallel_listing;
     int32_t num_parallel_requests;
-    float multiplication_length; 
+    float multiplication_length;
 };
 
 }
@@ -566,14 +573,15 @@ ObjectStorageIteratorPtr S3ObjectStorage::iterate(const std::string & path_prefi
     auto settings_ptr = s3_settings.get();
     if (!max_keys)
         max_keys = settings_ptr->list_object_keys_size;
+
     return std::make_shared<S3IteratorAsync>(
         uri.bucket,
-        path_prefix, 
-        client.get(), 
-        max_keys, 
-        settings_ptr->use_parallel_listing, 
-        settings_ptr->num_workers, 
-        settings_ptr->num_parallel_requests, 
+        path_prefix,
+        client.get(),
+        max_keys,
+        settings_ptr->use_parallel_listing,
+        settings_ptr->num_workers,
+        settings_ptr->num_parallel_requests,
         settings_ptr->multiplication_length);
 }
 
