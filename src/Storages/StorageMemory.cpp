@@ -1,5 +1,5 @@
-#include <cassert>
 #include <Common/Exception.h>
+#include <Core/Settings.h>
 
 #include <boost/noncopyable.hpp>
 #include <Interpreters/MutationsInterpreter.h>
@@ -36,7 +36,6 @@
 #include <Disks/IO/createReadBufferFromFileBase.h>
 #include <Disks/TemporaryFileOnDisk.h>
 #include <IO/copyData.h>
-
 
 namespace DB
 {

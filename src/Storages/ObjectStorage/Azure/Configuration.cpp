@@ -14,6 +14,7 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <azure/identity/managed_identity_credential.hpp>
 #include <azure/identity/workload_identity_credential.hpp>
+#include <Core/Settings.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
 

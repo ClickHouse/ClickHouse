@@ -15,6 +15,7 @@
 #include <Common/quoteString.h>
 #include <Common/Exception.h>
 #include <Core/ColumnsWithTypeAndName.h>
+#include <Core/Settings.h>
 #include <Interpreters/JoinUtils.h>
 #include <Formats/NativeWriter.h>
 

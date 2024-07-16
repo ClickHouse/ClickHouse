@@ -84,6 +84,8 @@
 #include <Core/ColumnNumbers.h>
 #include <Core/Field.h>
 #include <Core/ProtocolDefines.h>
+#include <Core/Settings.h>
+#include <Core/ServerSettings.h>
 #include <Interpreters/Aggregator.h>
 #include <Interpreters/HashTablesStatistics.h>
 #include <Interpreters/IJoin.h>

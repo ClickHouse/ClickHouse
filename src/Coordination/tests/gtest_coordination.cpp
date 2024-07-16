@@ -7,6 +7,7 @@
 #include <filesystem>
 #include <thread>
 #include <Coordination/Changelog.h>
+#include <Coordination/CoordinationSettings.h>
 #include <Coordination/InMemoryLogStore.h>
 #include <Coordination/KeeperContext.h>
 #include <Coordination/KeeperConstants.h>

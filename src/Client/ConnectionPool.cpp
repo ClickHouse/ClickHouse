@@ -1,4 +1,5 @@
 #include <Client/ConnectionPool.h>
+#include <Core/Settings.h>
 
 #include <boost/functional/hash.hpp>
 
@@ -83,6 +84,17 @@ ConnectionPoolFactory & ConnectionPoolFactory::instance()
 {
     static ConnectionPoolFactory ret;
     return ret;
+}
+
+IConnectionPool::Entry ConnectionPool::get(const DB::ConnectionTimeouts& timeouts, const DB::Settings& settings,
+        bool force_connected)
+{
+    Entry entry = Base::get(settings.connection_pool_max_wait_ms.totalMilliseconds());
+
+    if (force_connected)
+        entry->forceConnected(timeouts);
+
+    return entry;
 }
 
 }

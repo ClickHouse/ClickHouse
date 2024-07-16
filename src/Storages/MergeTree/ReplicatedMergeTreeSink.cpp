@@ -9,8 +9,10 @@
 #include <Common/SipHash.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ThreadFuzzer.h>
+#include <Core/Settings.h>
 #include <Storages/MergeTree/MergeAlgorithm.h>
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/AsyncBlockIDsCache.h>
 #include <DataTypes/ObjectUtils.h>
 #include <Core/Block.h>
@@ -572,6 +574,16 @@ bool ReplicatedMergeTreeSinkImpl<false>::writeExistingPart(MergeTreeData::Mutabl
         PartLog::addNewPart(storage.getContext(), PartLog::PartLogEntry(part, watch.elapsed(), profile_events_scope.getSnapshot()), ExecutionStatus::fromCurrentException("", true));
         throw;
     }
+}
+
+template<bool async_insert>
+bool ReplicatedMergeTreeSinkImpl<async_insert>::lastBlockIsDuplicate() const
+{
+    /// If MV is responsible for deduplication, block is not considered duplicating.
+    if (context->getSettingsRef().deduplicate_blocks_in_dependent_materialized_views)
+        return false;
+
+    return last_block_is_duplicate;
 }
 
 template<bool async_insert>

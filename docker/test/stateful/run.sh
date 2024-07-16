@@ -25,7 +25,7 @@ source /utils.lib
 azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --silent --inMemoryPersistence &
 
 ./setup_minio.sh stateful
-./mc admin trace clickminio > /test_output/rubbish.log &
+./mc admin trace clickminio > /test_output/minio.log &
 MC_ADMIN_PID=$!
 
 config_logs_export_cluster /etc/clickhouse-server/config.d/system_logs_export.yaml

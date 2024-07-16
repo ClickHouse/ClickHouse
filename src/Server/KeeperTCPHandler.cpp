@@ -3,6 +3,7 @@
 #if USE_NURAFT
 
 #    include <mutex>
+#    include <Coordination/CoordinationSettings.h>
 #    include <Coordination/FourLetterCommand.h>
 #    include <Core/Types.h>
 #    include <IO/CompressionMethod.h>

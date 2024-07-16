@@ -17,6 +17,7 @@
 #include <Common/PoolId.h>
 #include <Common/atomicRename.h>
 #include <Common/filesystemHelpers.h>
+#include <Core/Settings.h>
 
 namespace fs = std::filesystem;
 

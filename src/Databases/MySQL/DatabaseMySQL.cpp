@@ -30,6 +30,7 @@
 #    include <Common/parseAddress.h>
 #    include <Common/parseRemoteDescription.h>
 #    include <Common/setThreadName.h>
+#    include <Core/Settings.h>
 #    include <filesystem>
 #    include <Common/filesystemHelpers.h>
 #    include <Parsers/ASTIdentifier.h>

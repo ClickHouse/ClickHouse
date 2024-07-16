@@ -49,14 +49,15 @@ class GHActions:
 class Shell:
     @classmethod
     def run_strict(cls, command):
-        subprocess.run(
-            command + " 2>&1",
+        res = subprocess.run(
+            command,
             shell=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
             check=True,
         )
+        return res.stdout.strip()
 
     @classmethod
     def run(cls, command):

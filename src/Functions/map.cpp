@@ -10,6 +10,7 @@
 #include <Interpreters/castColumn.h>
 #include <Interpreters/Context.h>
 #include <Common/HashTable/HashSet.h>
+#include <Core/Settings.h>
 
 
 namespace DB

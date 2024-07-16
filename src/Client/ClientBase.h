@@ -10,6 +10,7 @@
 #include <Common/Stopwatch.h>
 #include <Common/DNSResolver.h>
 #include <Core/ExternalTable.h>
+#include <Core/Settings.h>
 #include <Poco/Util/Application.h>
 #include <Interpreters/Context.h>
 #include <Client/Suggest.h>

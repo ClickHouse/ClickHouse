@@ -4,6 +4,7 @@
 #include <base/errnoToString.h>
 #include <Common/CurrentThread.h>
 #include <Common/MemoryTracker.h>
+#include <Core/Settings.h>
 #include <Daemon/BaseDaemon.h>
 #include <Daemon/SentryWriter.h>
 #include <Common/GWPAsan.h>

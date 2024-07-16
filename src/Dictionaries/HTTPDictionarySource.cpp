@@ -1,12 +1,13 @@
 #include "HTTPDictionarySource.h"
+#include <Core/ServerSettings.h>
 #include <Formats/formatBlock.h>
 #include <IO/ConnectionTimeouts.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/WriteBufferFromOStream.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
-#include <Processors/Formats/IInputFormat.h>
 #include <Interpreters/Context.h>
+#include <Processors/Formats/IInputFormat.h>
 #include <Storages/ExternalDataSourceConfiguration.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Common/logger_useful.h>

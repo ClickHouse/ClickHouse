@@ -1,5 +1,7 @@
-#include <mutex>
 #include <Backups/WithRetries.h>
+#include <Core/Settings.h>
+
+#include <mutex>
 
 namespace DB
 {

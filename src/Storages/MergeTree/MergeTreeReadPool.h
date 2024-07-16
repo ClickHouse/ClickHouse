@@ -64,12 +64,7 @@ public:
         size_t min_concurrency = 1;
 
         /// Constants above is just an example.
-        explicit BackoffSettings(const Settings & settings)
-            : min_read_latency_ms(settings.read_backoff_min_latency_ms.totalMilliseconds()),
-            max_throughput(settings.read_backoff_max_throughput),
-            min_interval_between_events_ms(settings.read_backoff_min_interval_between_events_ms.totalMilliseconds()),
-            min_events(settings.read_backoff_min_events),
-            min_concurrency(settings.read_backoff_min_concurrency) {}
+        explicit BackoffSettings(const Settings & settings);
 
         BackoffSettings() : min_read_latency_ms(0) {}
     };

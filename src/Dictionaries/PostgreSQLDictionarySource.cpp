@@ -2,6 +2,7 @@
 
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Core/QualifiedTableName.h>
+#include <Core/Settings.h>
 #include "DictionarySourceFactory.h"
 #include "registerDictionaries.h"
 

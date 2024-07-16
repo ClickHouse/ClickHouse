@@ -1,5 +1,6 @@
 #include <Server/HTTP/sendExceptionToHTTPClient.h>
 
+#include <IO/WriteHelpers.h>
 #include <Server/HTTP/HTTPServerRequest.h>
 #include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
 #include <Server/HTTP/exceptionCodeToHTTPStatus.h>

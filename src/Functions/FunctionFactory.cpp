@@ -4,6 +4,7 @@
 
 #include <Common/Exception.h>
 #include <Common/CurrentThread.h>
+#include <Core/Settings.h>
 
 #include <Poco/String.h>
 

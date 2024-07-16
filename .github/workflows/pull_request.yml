@@ -72,7 +72,7 @@ jobs:
   BuildDockers:
     needs: [RunConfig]
     if: ${{ !failure() && !cancelled() && toJson(fromJson(needs.RunConfig.outputs.data).docker_data.missing_multi) != '[]' }}
-    uses: ./.github/workflows/reusable_docker.yml
+    uses: ./.github/workflows/docker_test_images.yml
     with:
       data: ${{ needs.RunConfig.outputs.data }}
   StyleCheck:

@@ -1,5 +1,7 @@
 #include <Planner/PlannerSorting.h>
 
+#include <Core/Settings.h>
+
 #include <Common/FieldVisitorsAccurateComparison.h>
 
 #include <DataTypes/DataTypeInterval.h>

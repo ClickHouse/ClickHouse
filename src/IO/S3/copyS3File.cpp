@@ -290,9 +290,9 @@ namespace
             if (!total_size)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Chosen multipart upload for an empty file. This must not happen");
 
-            auto max_part_number = request_settings.max_part_number;
-            auto min_upload_part_size = request_settings.min_upload_part_size;
-            auto max_upload_part_size = request_settings.max_upload_part_size;
+            UInt64 max_part_number = request_settings.max_part_number;
+            UInt64 min_upload_part_size = request_settings.min_upload_part_size;
+            UInt64 max_upload_part_size = request_settings.max_upload_part_size;
 
             if (!max_part_number)
                 throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "max_part_number must not be 0");

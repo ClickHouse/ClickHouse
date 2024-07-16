@@ -9,6 +9,7 @@
 
 #include <Columns/ColumnString.h>
 #include <Core/SortDescription.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeString.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>

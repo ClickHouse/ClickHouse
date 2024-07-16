@@ -11,7 +11,6 @@
 #include <Common/Exception.h>
 #include <functional>
 #include <Coordination/KeeperServer.h>
-#include <Coordination/CoordinationSettings.h>
 #include <Coordination/Keeper4LWInfo.h>
 #include <Coordination/KeeperConnectionStats.h>
 #include <Coordination/KeeperSnapshotManagerS3.h>

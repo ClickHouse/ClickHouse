@@ -7,6 +7,7 @@
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/ProfileEvents.h>
 #include <Common/assert_cast.h>
+#include <Core/Settings.h>
 #include <base/sleep.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>

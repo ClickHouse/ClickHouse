@@ -1,14 +1,15 @@
 #pragma once
 
-#include <unordered_map>
-#include <unordered_set>
-#include <mutex>
 #include <IO/Progress.h>
 #include <Interpreters/Context.h>
 #include <base/types.h>
 #include <Common/Stopwatch.h>
 #include <Common/EventRateMeter.h>
 
+#include <iostream>
+#include <mutex>
+#include <unordered_map>
+#include <unordered_set>
 
 namespace DB
 {

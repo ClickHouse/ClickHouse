@@ -1,5 +1,7 @@
 #include <Planner/PlannerJoinTree.h>
 
+#include <Core/Settings.h>
+
 #include <Common/scope_guard_safe.h>
 
 #include <Columns/ColumnAggregateFunction.h>

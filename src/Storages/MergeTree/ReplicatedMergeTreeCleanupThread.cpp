@@ -1,13 +1,14 @@
+#include <Interpreters/Context.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeCleanupThread.h>
 #include <Storages/StorageReplicatedMergeTree.h>
-#include <Poco/Timestamp.h>
-#include <Interpreters/Context.h>
 #include <Common/ZooKeeper/KeeperException.h>
 
 #include <random>
 #include <unordered_set>
 
 #include <base/sort.h>
+#include <Poco/Timestamp.h>
 
 
 namespace DB

@@ -1,4 +1,5 @@
 #include <Common/typeid_cast.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
 #include <Columns/ColumnArray.h>

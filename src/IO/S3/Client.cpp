@@ -23,9 +23,10 @@
 #include <Interpreters/Context.h>
 
 #include <Common/assert_cast.h>
-
 #include <Common/logger_useful.h>
 #include <Common/ProxyConfigurationResolverProvider.h>
+
+#include <Core/Settings.h>
 
 #include <base/sleep.h>
 

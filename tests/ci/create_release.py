@@ -14,6 +14,7 @@ from ssh import SSHAgent
 from env_helper import GITHUB_REPOSITORY, S3_BUILDS_BUCKET
 from s3_helper import S3Helper
 from autoscale_runners_lambda.lambda_shared.pr import Labels
+from ci_utils import Shell
 from version_helper import (
     FILE_WITH_VERSION_PATH,
     GENERATED_CONTRIBUTORS,
@@ -65,6 +66,8 @@ class ReleaseInfo:
     commit_sha: str
     # lts or stable
     codename: str
+    previous_release_tag: str
+    previous_release_sha: str
 
     @staticmethod
     def from_file(file_path: str) -> "ReleaseInfo":
@@ -79,6 +82,8 @@ class ReleaseInfo:
         version = None
         release_branch = None
         release_tag = None
+        previous_release_tag = None
+        previous_release_sha = None
         codename = None
         assert release_type in ("patch", "new")
         if release_type == "new":
@@ -101,6 +106,11 @@ class ReleaseInfo:
                 codename = (
                     VersionType.STABLE
                 )  # dummy value (artifactory won't be updated for new release)
+                previous_release_tag = expected_prev_tag
+                previous_release_sha = Shell.run_strict(
+                    f"git rev-parse {previous_release_tag}"
+                )
+                assert previous_release_sha
         if release_type == "patch":
             with checkout(commit_ref):
                 _, commit_sha = ShellRunner.run(f"git rev-parse {commit_ref}")
@@ -118,9 +128,10 @@ class ReleaseInfo:
             )
             if version.patch == 1:
                 expected_version = copy(version)
+                previous_release_tag = f"v{version.major}.{version.minor}.1.1-new"
                 expected_version.bump()
                 expected_tag_prefix = (
-                    f"v{expected_version.major}.{expected_version.minor}-"
+                    f"v{expected_version.major}.{expected_version.minor}."
                 )
                 expected_tag_suffix = "-new"
             else:
@@ -128,6 +139,7 @@ class ReleaseInfo:
                     f"v{version.major}.{version.minor}.{version.patch-1}."
                 )
                 expected_tag_suffix = f"-{version.get_stable_release_type()}"
+                previous_release_tag = git.latest_tag
             if git.latest_tag.startswith(
                 expected_tag_prefix
             ) and git.latest_tag.endswith(expected_tag_suffix):
@@ -137,8 +149,15 @@ class ReleaseInfo:
                     False
                 ), f"BUG: Unexpected latest tag [{git.latest_tag}] expected [{expected_tag_prefix}*{expected_tag_suffix}]"
 
+            previous_release_sha = Shell.run_strict(
+                f"git rev-parse {previous_release_tag}"
+            )
+            assert previous_release_sha
+
         assert (
             release_branch
+            and previous_release_tag
+            and previous_release_sha
             and commit_sha
             and release_tag
             and version
@@ -150,6 +169,8 @@ class ReleaseInfo:
             release_tag=release_tag,
             version=version.string,
             codename=codename,
+            previous_release_tag=previous_release_tag,
+            previous_release_sha=previous_release_sha,
         )
         with open(outfile, "w", encoding="utf-8") as f:
             print(json.dumps(dataclasses.asdict(res), indent=2), file=f)
@@ -618,6 +639,8 @@ sudo apt install --yes --no-install-recommends python3-dev python3-pip gh unzip
 sudo apt install --yes python3-boto3
 sudo apt install --yes python3-github
 sudo apt install --yes python3-unidiff
+sudo apt install --yes python3-tqdm # cloud changelog
+sudo apt install --yes python3-thefuzz # cloud changelog
 sudo apt install --yes s3fs
 
 ### INSTALL AWS CLI
