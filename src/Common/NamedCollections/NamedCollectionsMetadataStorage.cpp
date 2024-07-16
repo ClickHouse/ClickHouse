@@ -155,7 +155,7 @@ public:
 
     void remove(const std::string & path) override
     {
-        if (!removeIfExists(getPath(path)))
+        if (!removeIfExists(path))
         {
             throw Exception(
                 ErrorCodes::NAMED_COLLECTION_DOESNT_EXIST,
