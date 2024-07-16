@@ -9,6 +9,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Common/Config/ConfigHelper.h>
 #include <Common/quoteString.h>
+#include <Core/Settings.h>
 #include <QueryPipeline/Pipe.h>
 #include <IO/Operators.h>
 #include <Dictionaries/getDictionaryConfigurationFromAST.h>
