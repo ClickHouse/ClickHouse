@@ -6,6 +6,7 @@
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/StorageID.h>
 #include <Parsers/ASTFunction.h>
+#include <Processors/QueryPlan/ConvertingActions.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/ISourceStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
@@ -77,8 +78,8 @@ std::unique_ptr<QueryPlan> createLocalPlanForParallelReplicas(
             analyzed_result_ptr = analyzed_merge_tree->getAnalyzedResult();
     }
 
-    MergeTreeAllRangesCallback all_ranges_cb
-        = [coordinator](InitialAllRangesAnnouncement announcement) { coordinator->handleInitialAllRangesAnnouncement(announcement); };
+    MergeTreeAllRangesCallback all_ranges_cb = [coordinator](InitialAllRangesAnnouncement announcement)
+    { coordinator->handleInitialAllRangesAnnouncement(std::move(announcement)); };
 
     MergeTreeReadTaskCallback read_task_cb = [coordinator](ParallelReadRequest req) -> std::optional<ParallelReadResponse>
     { return coordinator->handleRequest(std::move(req)); };
