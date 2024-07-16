@@ -7,6 +7,7 @@
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/Utils.h>
+#include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <DataTypes/DataTypesNumber.h>
 

@@ -16,12 +16,13 @@
 #include <Common/logger_useful.h>
 #include <Common/checkStackSize.h>
 #include <Core/QueryProcessingStage.h>
+#include <Core/Settings.h>
 #include <Client/ConnectionPool.h>
 #include <Client/ConnectionPoolWithFailover.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Parsers/ASTFunction.h>
 
-#include <boost/algorithm/string/join.hpp>
+#include <fmt/format.h>
 
 namespace DB
 {
@@ -390,15 +391,11 @@ ReadFromParallelRemoteReplicasStep::ReadFromParallelRemoteReplicasStep(
     std::vector<String> replicas;
     replicas.reserve(cluster->getShardsAddresses().front().size());
 
-    bool first_local = false;
     for (const auto & addr : cluster->getShardsAddresses().front())
     {
         /// skip first local
-        if (exclude_local_replica && addr.is_local && !first_local)
-        {
-            first_local = true;
+        if (exclude_local_replica && addr.is_local)
             continue;
-        }
 
         /// replace hostname with replica name if the hostname started with replica namespace,
         /// it makes description shorter and more readable
@@ -408,7 +405,7 @@ ReadFromParallelRemoteReplicasStep::ReadFromParallelRemoteReplicasStep(
             replicas.push_back(fmt::format("{}", addr.host_name));
     }
 
-    auto description = fmt::format("Query: {} Replicas: ", formattedAST(query_ast)) + boost::algorithm::join(replicas, ", ");
+    auto description = fmt::format("Query: {} Replicas: {}", formattedAST(query_ast), fmt::join(replicas, ", "));
     setStepDescription(std::move(description));
 }
 
@@ -456,27 +453,28 @@ void ReadFromParallelRemoteReplicasStep::initializePipeline(QueryPipelineBuilder
 
     std::vector<ConnectionPoolPtr> pools_to_use;
     pools_to_use.reserve(shuffled_pool.size());
-    if (exclude_local_replica)
+    for (const auto & pool : shuffled_pool)
     {
-        std::vector<size_t> local_addr_possitions;
-        for (auto & pool : shuffled_pool)
+        if (exclude_local_replica)
         {
             const auto & hostname = pool.pool->getHost();
             auto it = std::find_if(
                 begin(shard.local_addresses),
                 end(shard.local_addresses),
                 [&hostname](const Cluster::Address & local_addr) { return hostname == local_addr.host_name; });
-            if (it != shard.local_addresses.end())
-            {
-                pool.pool.reset();
-            }
+            if (it == shard.local_addresses.end())
+                pools_to_use.push_back(pool.pool);
+        }
+        else
+        {
+            pools_to_use.push_back(pool.pool);
         }
     }
-    for (const auto & pool : shuffled_pool)
-    {
-        if (pool.pool)
-            pools_to_use.push_back(pool.pool);
-    }
+
+    pools_to_use.resize(std::min(pools_to_use.size(), all_replicas_count));
+    // if local plan is used for local replica, we should exclude one remote replica
+    if (exclude_local_replica && !pools_to_use.empty())
+        pools_to_use.resize(all_replicas_count - 1);
 
     LOG_DEBUG(
         getLogger("ReadFromParallelRemoteReplicasStep"),
@@ -484,24 +482,16 @@ void ReadFromParallelRemoteReplicasStep::initializePipeline(QueryPipelineBuilder
         pools_to_use.size(),
         shuffled_pool.size());
 
-    if (pools_to_use.size() > all_replicas_count)
-        pools_to_use.resize(all_replicas_count);
-
-    if (exclude_local_replica && !pools_to_use.empty())
-        pools_to_use.resize(all_replicas_count - 1);
-
     if (pools_to_use.empty())
         return;
 
-    {
-        String pool_addresses;
-        for (const auto & pool : pools_to_use)
-            pool_addresses += pool->getAddress() + ";";
+    std::vector<std::string_view> addresses;
+    addresses.reserve(pools_to_use.size());
+    for (const auto & pool : pools_to_use)
+        addresses.emplace_back(pool->getAddress());
+    LOG_DEBUG(getLogger("ReadFromParallelRemoteReplicasStep"), "Addresses to use: {}", fmt::join(addresses, ", "));
 
-        LOG_DEBUG(getLogger("ReadFromParallelRemoteReplicasStep"), "Addresses to use: {}", pool_addresses);
-    }
-
-    /// local replicas has number 0
+    /// when using local plan for local replica, local replica has 0 number
     size_t offset = (exclude_local_replica ? 1 : 0);
     for (size_t i = 0 + offset; i < all_replicas_count; ++i)
     {

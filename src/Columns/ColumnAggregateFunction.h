@@ -145,7 +145,14 @@ public:
 
     void insertData(const char * pos, size_t length) override;
 
+#if !defined(ABORT_ON_LOGICAL_ERROR)
     void insertFrom(const IColumn & from, size_t n) override;
+#else
+    using IColumn::insertFrom;
+
+    void doInsertFrom(const IColumn & from, size_t n) override;
+#endif
+
 
     void insertFrom(ConstAggregateDataPtr place);
 
@@ -182,7 +189,11 @@ public:
 
     void protect() override;
 
+#if !defined(ABORT_ON_LOGICAL_ERROR)
     void insertRangeFrom(const IColumn & from, size_t start, size_t length) override;
+#else
+    void doInsertRangeFrom(const IColumn & from, size_t start, size_t length) override;
+#endif
 
     void popBack(size_t n) override;
 
@@ -201,7 +212,11 @@ public:
 
     MutableColumns scatter(ColumnIndex num_columns, const Selector & selector) const override;
 
+#if !defined(ABORT_ON_LOGICAL_ERROR)
     int compareAt(size_t, size_t, const IColumn &, int) const override
+#else
+    int doCompareAt(size_t, size_t, const IColumn &, int) const override
+#endif
     {
         return 0;
     }

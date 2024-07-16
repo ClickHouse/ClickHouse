@@ -444,6 +444,9 @@ void DefaultCoordinator::doHandleInitialAllRangesAnnouncement(InitialAllRangesAn
             ErrorCodes::LOGICAL_ERROR, "Replica number ({}) is bigger than total replicas count ({})", replica_num, stats.size());
 
     ++stats[replica_num].number_of_requests;
+
+    if (replica_status[replica_num].is_announcement_received)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Duplicate announcement received for replica number {}", replica_num);
     replica_status[replica_num].is_announcement_received = true;
 
     LOG_DEBUG(log, "Sent initial requests: {} Replicas count: {}", sent_initial_requests, replicas_count);
@@ -860,9 +863,6 @@ void InOrderCoordinator<mode>::doHandleInitialAllRangesAnnouncement(InitialAllRa
 
     ++stats[announcement.replica_num].number_of_requests;
 
-    if (state_initialized)
-        return;
-
     size_t new_rows_to_read = 0;
 
     /// To get rid of duplicates
@@ -871,12 +871,15 @@ void InOrderCoordinator<mode>::doHandleInitialAllRangesAnnouncement(InitialAllRa
         auto the_same_it = std::find_if(all_parts_to_read.begin(), all_parts_to_read.end(),
             [&part] (const Part & other) { return other.description.info == part.info; });
 
-        /// We have the same part - add the info about presence on current replica to it
+        /// We have the same part - add the info about presence on the corresponding replica to it
         if (the_same_it != all_parts_to_read.end())
         {
             the_same_it->replicas.insert(announcement.replica_num);
             continue;
         }
+
+        if (state_initialized)
+            continue;
 
         auto covering_or_the_same_it = std::find_if(all_parts_to_read.begin(), all_parts_to_read.end(),
             [&part] (const Part & other) { return other.description.info.contains(part.info) ||  part.info.contains(other.description.info); });
@@ -915,7 +918,7 @@ ParallelReadResponse InOrderCoordinator<mode>::handleRequest(ParallelReadRequest
             "Replica {} decided to read in {} mode, not in {}. This is a bug",
             request.replica_num, magic_enum::enum_name(request.mode), magic_enum::enum_name(mode));
 
-    LOG_TRACE(log, "Got request from replica {}, data {}", request.replica_num, request.describe());
+    LOG_TRACE(log, "Got read request: {}", request.describe());
 
     ParallelReadResponse response;
     response.description = request.description;

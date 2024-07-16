@@ -44,9 +44,7 @@ void ParallelReadRequest::serialize(WriteBuffer & out) const
 
 String ParallelReadRequest::describe() const
 {
-    String result;
-    result += fmt::format("replica_num: {} \n", replica_num);
-    result += fmt::format("min_num_of_marks: {} \n", min_number_of_marks);
+    String result = fmt::format("replica_num {}, min_num_of_marks {}, ", replica_num, min_number_of_marks);
     result += description.describe();
     return result;
 }

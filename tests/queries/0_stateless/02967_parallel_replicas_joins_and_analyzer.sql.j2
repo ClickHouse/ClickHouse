@@ -10,6 +10,8 @@ insert into tab1 select number, number, number from numbers(16);
 insert into tab2 select number * 2, number * 2 from numbers(8);
 insert into tab3 select number * 4, number * 4 from numbers(4);
 
+set parallel_replicas_local_plan=1;
+
 {% for use_global_in in [0, 1] -%}
 
 -- { echoOn }
