@@ -25,6 +25,8 @@ function(add_contrib cmake_folder)
         endif()
 
         file(GLOB contrib_files "${base_folder}/*")
+        # remove .git from contrib_files
+        list(FILTER contrib_files EXCLUDE REGEX ".*\\.git.*")
         if (NOT contrib_files)
             # Checking out *all* submodules takes > 5 min. Therefore, the smoke build ("FastTest") in CI initializes only the set of
             # submodules minimally needed for a build and we cannot assume here that all submodules are populated.
