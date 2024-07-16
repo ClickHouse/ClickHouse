@@ -86,7 +86,7 @@ Returns the fully qualified domain name of the ClickHouse server.
 fqdn();
 ```
 
-Aliases: `fullHostName`, 'FQDN'. 
+Aliases: `fullHostName`, `FQDN`. 
 
 **Returned value**
 
