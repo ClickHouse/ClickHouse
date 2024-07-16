@@ -53,6 +53,8 @@ public:
     /// getMacro may return different values on different shards/replicas, so it's not constant for distributed query
     bool isSuitableForConstantFolding() const override { return !is_distributed; }
 
+    bool isServerConstant() const override { return true; }
+
     size_t getNumberOfArguments() const override
     {
         return 1;

@@ -15,7 +15,7 @@ You have four options for getting up and running with ClickHouse:
 
 - **[ClickHouse Cloud](https://clickhouse.com/cloud/):** The official ClickHouse as a service, - built by, maintained and supported by the creators of ClickHouse
 - **[Quick Install](#quick-install):** an easy-to-download binary for testing and developing with ClickHouse
-- **[Production Deployments](#available-installation-options):** ClickHouse can run on any Linux, FreeBSD, or macOS with x86-64, ARM, or PowerPC64LE CPU architecture
+- **[Production Deployments](#available-installation-options):** ClickHouse can run on any Linux, FreeBSD, or macOS with x86-64, modern ARM (ARMv8.2-A up), or PowerPC64LE CPU architecture
 - **[Docker Image](https://hub.docker.com/r/clickhouse/clickhouse-server/):** use the official Docker image in Docker Hub
 
 ## ClickHouse Cloud
