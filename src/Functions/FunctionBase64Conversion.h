@@ -202,7 +202,7 @@ public:
             {"value", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String or FixedString"}
         };
 
-        validateFunctionArgumentTypes(*this, arguments, mandatory_arguments);
+        validateFunctionArguments(*this, arguments, mandatory_arguments);
 
         return std::make_shared<DataTypeString>();
     }

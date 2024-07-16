@@ -172,14 +172,10 @@ class TestCIOptions(unittest.TestCase):
             job: CI.JobConfig(runner_type=CI.Runners.STYLE_CHECKER)
             for job in _TEST_JOB_LIST
         }
-        jobs_configs[
-            "fuzzers"
-        ].run_by_label = (
+        jobs_configs["fuzzers"].run_by_label = (
             "TEST_LABEL"  # check "fuzzers" appears in the result due to the label
         )
-        jobs_configs[
-            "Integration tests (asan)"
-        ].release_only = (
+        jobs_configs["Integration tests (asan)"].release_only = (
             True  # still must be included as it's set with include keywords
         )
         filtered_jobs = list(
@@ -311,9 +307,9 @@ class TestCIOptions(unittest.TestCase):
             job: CI.JobConfig(runner_type=CI.Runners.STYLE_CHECKER)
             for job in _TEST_JOB_LIST
         }
-        jobs_configs[
-            "fuzzers"
-        ].run_by_label = "TEST_LABEL"  # check "fuzzers" does not appears in the result
+        jobs_configs["fuzzers"].run_by_label = (
+            "TEST_LABEL"  # check "fuzzers" does not appears in the result
+        )
         jobs_configs["Integration tests (asan)"].release_only = True
         filtered_jobs = list(
             ci_options.apply(

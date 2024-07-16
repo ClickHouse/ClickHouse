@@ -10,6 +10,7 @@
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/IAST.h>
+#include <Core/Settings.h>
 
 
 namespace DB

@@ -185,7 +185,7 @@ def main():
     build_path.mkdir(parents=True, exist_ok=True)
 
     if validate_bugfix_check:
-        download_last_release(build_path)
+        download_last_release(build_path, debug=True)
     else:
         download_all_deb_packages(check_name, reports_path, build_path)
 

@@ -60,14 +60,7 @@ public:
     bool writeExistingPart(MergeTreeData::MutableDataPartPtr & part);
 
     /// For proper deduplication in MaterializedViews
-    bool lastBlockIsDuplicate() const override
-    {
-        /// If MV is responsible for deduplication, block is not considered duplicating.
-        if (context->getSettingsRef().deduplicate_blocks_in_dependent_materialized_views)
-            return false;
-
-        return last_block_is_duplicate;
-    }
+    bool lastBlockIsDuplicate() const override;
 
     struct DelayedChunk;
 private:
