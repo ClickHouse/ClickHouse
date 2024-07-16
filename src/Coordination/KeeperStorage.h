@@ -19,12 +19,12 @@ namespace DB
 class KeeperContext;
 using KeeperContextPtr = std::shared_ptr<KeeperContext>;
 
-/// struct KeeperStorageRequestProcessor;
-/// using KeeperStorageRequestProcessorPtr = std::shared_ptr<KeeperStorageRequestProcessor>;
 using ResponseCallback = std::function<void(const Coordination::ZooKeeperResponsePtr &)>;
 using ChildrenSet = absl::flat_hash_set<StringRef, StringRefHash>;
 using SessionAndTimeout = std::unordered_map<int64_t, int64_t>;
 
+/// KeeperRocksNodeInfo is used in RocksDB keeper.
+/// It is serialized directly as POD to RocksDB.
 struct KeeperRocksNodeInfo
 {
     int64_t czxid{0};
@@ -144,7 +144,8 @@ struct KeeperRocksNodeInfo
     void copyStats(const Coordination::Stat & stat);
 };
 
-struct KeeperRocksNode:KeeperRocksNodeInfo
+/// KeeperRocksNode is the memory structure used by RocksDB
+struct KeeperRocksNode : public KeeperRocksNodeInfo
 {
 #if USE_ROCKSDB
     friend struct RocksDBContainer<KeeperRocksNode>;

@@ -196,6 +196,7 @@ public:
                 rocksdb_dir, status.ToString());
         }
         rocksdb_ptr = std::unique_ptr<rocksdb::DB>(db);
+        write_options.disableWAL = true;
         initialized = true;
     }
 
@@ -312,9 +313,6 @@ public:
         }
         else if (status.IsNotFound())
         {
-            rocksdb::WriteOptions write_options;
-            write_options.disableWAL = true;
-
             status = rocksdb_ptr->Put(write_options, encoded_key, value.getEncodedString());
             if (status.ok())
             {
@@ -337,9 +335,6 @@ public:
             increase_counter = true;
         else if (!status.ok())
             throw Exception(ErrorCodes::ROCKSDB_ERROR, "Got rocksdb error during get. The error message is {}.", status.ToString());
-
-        rocksdb::WriteOptions write_options;
-        write_options.disableWAL = true;
 
         status = rocksdb_ptr->Put(write_options, encoded_key, value.getEncodedString());
         if (status.ok())
@@ -366,9 +361,6 @@ public:
     {
         /// storage->removeDigest(value, key);
         const std::string & encoded_key = getEncodedKey(key);
-
-        rocksdb::WriteOptions write_options;
-        write_options.disableWAL = true;
 
         auto status = rocksdb_ptr->Delete(write_options, encoded_key);
         if (status.IsNotFound())
@@ -453,6 +445,7 @@ private:
     String rocksdb_dir;
 
     std::unique_ptr<rocksdb::DB> rocksdb_ptr;
+    rocksdb::WriteOptions write_options;
 
     const rocksdb::Snapshot * snapshot;
 

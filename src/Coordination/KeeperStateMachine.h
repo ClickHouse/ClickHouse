@@ -114,8 +114,6 @@ protected:
     nuraft::ptr<nuraft::buffer> latest_snapshot_buf = nullptr;
 
     CoordinationSettingsPtr coordination_settings;
-    /// Main state machine logic
-    /// KeeperStoragePtr storage TSA_PT_GUARDED_BY(storage_and_responses_lock);
 
     /// Save/Load and Serialize/Deserialize logic for snapshots.
     /// Put processed responses into this queue
