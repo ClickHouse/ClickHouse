@@ -379,7 +379,6 @@ void MergeTreePrefetchedReadPool::fillPerThreadTasks(size_t threads, size_t sum_
     for (const auto & part : per_part_statistics)
         total_size_approx += part.sum_marks * part.approx_size_of_mark;
 
-    size_t min_prefetch_step_marks = pool_settings.min_marks_for_concurrent_read;
     for (size_t i = 0; i < per_part_infos.size(); ++i)
     {
         auto & part_stat = per_part_statistics[i];
@@ -411,11 +410,10 @@ void MergeTreePrefetchedReadPool::fillPerThreadTasks(size_t threads, size_t sum_
 
     LOG_DEBUG(
         log,
-        "Sum marks: {}, threads: {}, min_marks_per_thread: {}, min prefetch step marks: {}, prefetches limit: {}, total_size_approx: {}",
+        "Sum marks: {}, threads: {}, min_marks_per_thread: {}, prefetches limit: {}, total_size_approx: {}",
         sum_marks,
         threads,
         min_marks_per_thread,
-        min_prefetch_step_marks,
         settings.filesystem_prefetches_limit,
         total_size_approx);
 
