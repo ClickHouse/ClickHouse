@@ -629,9 +629,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
     auto default_compression_codec = storage_settings->default_compression_codec.toString();
 
-    if(!default_compression_codec.empty())
-        columns.setDefaultCompressionCodec(default_compression_codec);
-
     metadata.setColumns(columns);
     metadata.setComment(args.comment);
 
