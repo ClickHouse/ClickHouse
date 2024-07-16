@@ -42,7 +42,6 @@ public:
     void work() override;
 
     void consume(Chunk chunk);
-    
     void setRowsBeforeAggregationCounter(RowsBeforeStepCounterPtr counter) override { rows_before_aggregation.swap(counter); }
 
 private:
