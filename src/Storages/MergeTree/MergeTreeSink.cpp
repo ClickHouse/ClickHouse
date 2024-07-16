@@ -3,6 +3,7 @@
 #include <Interpreters/PartLog.h>
 #include <DataTypes/ObjectUtils.h>
 #include <Common/ProfileEventsScope.h>
+#include <Core/Settings.h>
 
 namespace ProfileEvents
 {
@@ -52,6 +53,10 @@ void MergeTreeSink::onStart()
 void MergeTreeSink::onFinish()
 {
     finishDelayedChunk();
+}
+
+void MergeTreeSink::onCancel()
+{
 }
 
 void MergeTreeSink::consume(Chunk chunk)

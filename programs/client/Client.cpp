@@ -24,9 +24,8 @@
 #include <Common/TerminalSize.h>
 #include <Common/config_version.h>
 #include <Common/formatReadable.h>
-
+#include <Core/Settings.h>
 #include <Columns/ColumnString.h>
-#include <Poco/Util/Application.h>
 
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
@@ -48,6 +47,8 @@
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <Formats/registerFormats.h>
 #include <Formats/FormatFactory.h>
+
+#include <Poco/Util/Application.h>
 
 namespace fs = std::filesystem;
 using namespace std::literals;
@@ -248,6 +249,10 @@ std::vector<String> Client::loadWarningMessages()
     }
 }
 
+Poco::Util::LayeredConfiguration & Client::getClientConfiguration()
+{
+    return config();
+}
 
 void Client::initialize(Poco::Util::Application & self)
 {
@@ -697,9 +702,7 @@ bool Client::processWithFuzzing(const String & full_query)
         const char * begin = full_query.data();
         orig_ast = parseQuery(begin, begin + full_query.size(),
             global_context->getSettingsRef(),
-            /*allow_multi_statements=*/ true,
-            /*is_interactive=*/ is_interactive,
-            /*ignore_error=*/ ignore_error);
+            /*allow_multi_statements=*/ true);
     }
     catch (const Exception & e)
     {
@@ -1115,6 +1118,7 @@ void Client::processOptions(const OptionsDescription & options_description,
         if (!options["user"].defaulted())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "User and JWT flags can't be specified together");
         config().setString("jwt", options["jwt"].as<std::string>());
+        config().setString("user", "");
     }
     if (options.count("accept-invalid-certificate"))
     {

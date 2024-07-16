@@ -25,6 +25,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/checkStackSize.h>
 #include <Core/ServerSettings.h>
+#include <Core/Settings.h>
 #include <QueryPipeline/Pipe.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
@@ -161,6 +162,7 @@ StorageMaterializedView::StorageMaterializedView(
         manual_create_query->setDatabase(getStorageID().database_name);
         manual_create_query->setTable(generateInnerTableName(getStorageID()));
         manual_create_query->uuid = query.to_inner_uuid;
+        manual_create_query->has_uuid = query.to_inner_uuid != UUIDHelpers::Nil;
 
         auto new_columns_list = std::make_shared<ASTColumns>();
         new_columns_list->set(new_columns_list->columns, query.columns_list->columns->ptr());
