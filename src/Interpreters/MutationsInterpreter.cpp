@@ -344,11 +344,6 @@ bool MutationsInterpreter::Source::hasProjection(const String & name) const
     return part && part->hasProjection(name);
 }
 
-bool MutationsInterpreter::Source::hasProjection() const
-{
-    return part && part->hasProjection();
-}
-
 bool MutationsInterpreter::Source::hasBrokenProjection(const String & name) const
 {
     return part && part->hasBrokenProjection(name);

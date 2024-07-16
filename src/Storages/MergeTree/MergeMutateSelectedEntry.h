@@ -3,7 +3,6 @@
 #include <Storages/MergeTree/FutureMergedMutatedPart.h>
 #include <Storages/MutationCommands.h>
 
-
 namespace DB
 {
 

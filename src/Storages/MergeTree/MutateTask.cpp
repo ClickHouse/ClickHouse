@@ -662,7 +662,7 @@ static NameSet collectFilesToSkip(
     const std::set<ProjectionDescriptionRawPtr> & projections_to_recalc,
     const std::set<ColumnStatisticsPtr> & stats_to_recalc,
     const StorageMetadataPtr & metadata_snapshot,
-    bool lightweight_delete_mode)
+    bool skip_all_projections)
 {
     NameSet files_to_skip = source_part->getFileNamesWithoutChecksums();
 
@@ -686,7 +686,7 @@ static NameSet collectFilesToSkip(
         }
     }
 
-    if (lightweight_delete_mode)
+    if (skip_all_projections)
     {
         for (const auto & projection : metadata_snapshot->getProjections())
             files_to_skip.insert(projection.getDirectoryName());
@@ -2211,6 +2211,8 @@ bool MutateTask::prepare()
 
     ctx->stage_progress = std::make_unique<MergeStageProgress>(1.0);
 
+    bool lightweight_delete_mode = false;
+
     if (!ctx->for_interpreter.empty())
     {
         /// Always disable filtering in mutations: we want to read and write all rows because for updates we rewrite only some of the
@@ -2228,6 +2230,16 @@ bool MutateTask::prepare()
         ctx->mutating_pipeline_builder = ctx->interpreter->execute();
         ctx->updated_header = ctx->interpreter->getUpdatedHeader();
         ctx->progress_callback = MergeProgressCallback((*ctx->mutate_entry)->ptr(), ctx->watch_prev_elapsed, *ctx->stage_progress);
+
+        lightweight_delete_mode = ctx->updated_header.has(RowExistsColumn::name);
+        /// If under the condition of lightweight delete mode with rebuild option, add projections again here as we can only know
+        /// the condition as early as from here.
+        if (lightweight_delete_mode 
+            && ctx->data->getSettings()->lightweight_mutation_projection_mode == LightweightMutationProjectionMode::REBUILD)
+        {
+            for (const auto & projection : ctx->metadata_snapshot->getProjections())
+                ctx->materialized_projections.insert(projection.name);
+        }
     }
 
     auto single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + ctx->future_part->name, ctx->space_reservation->getDisk(), 0);
@@ -2269,7 +2281,6 @@ bool MutateTask::prepare()
     if (ctx->mutating_pipeline_builder.initialized())
         ctx->execute_ttl_type = MutationHelpers::shouldExecuteTTL(ctx->metadata_snapshot, ctx->interpreter->getColumnDependencies());
 
-    bool lightweight_delete_mode = ctx->updated_header.has(RowExistsColumn::name);
     if (ctx->data->getSettings()->exclude_deleted_rows_for_part_size_in_merge && lightweight_delete_mode)
     {
         /// This mutation contains lightweight delete and we need to count the deleted rows,
@@ -2307,7 +2318,10 @@ bool MutateTask::prepare()
             ctx->context,
             ctx->materialized_indices);
 
-        if (!lightweight_delete_mode)
+        bool lightweight_delete_projection_drop = lightweight_delete_mode
+            && ctx->data->getSettings()->lightweight_mutation_projection_mode == LightweightMutationProjectionMode::DROP;
+        /// Under lightweight delete mode, if option is drop, projections_to_recalc should be empty.
+        if (!lightweight_delete_projection_drop)
         {
             ctx->projections_to_recalc = MutationHelpers::getProjectionsToRecalculate(
                 ctx->source_part,
@@ -2326,7 +2340,7 @@ bool MutateTask::prepare()
             ctx->projections_to_recalc,
             ctx->stats_to_recalc,
             ctx->metadata_snapshot,
-            lightweight_delete_mode);
+            lightweight_delete_projection_drop);
 
         ctx->files_to_rename = MutationHelpers::collectFilesForRenames(
             ctx->source_part,

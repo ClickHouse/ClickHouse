@@ -13,24 +13,42 @@ SETTINGS min_bytes_for_wide_part = 10485760;
 
 INSERT INTO users VALUES (1231, 'John', 33);
 
+-- testing throw default mode
 ALTER TABLE users MODIFY SETTING lightweight_mutation_projection_mode = 'throw';
 
 DELETE FROM users WHERE uid = 1231;  -- { serverError NOT_IMPLEMENTED }
 
+-- testing drop mode
 ALTER TABLE users MODIFY SETTING lightweight_mutation_projection_mode = 'drop';
 
 DELETE FROM users WHERE uid = 1231;
+
+SELECT * FROM users ORDER BY uid;
 
 SYSTEM FLUSH LOGS;
 
 -- expecting no projection
 SELECT
-    name,
-    `table`
+    name
 FROM system.projection_parts
 WHERE (database = currentDatabase()) AND (`table` = 'users') AND (active = 1);
 
+-- testing rebuild mode
+INSERT INTO users VALUES (6666, 'Ksenia', 48), (8888, 'Alice', 50);
+
+ALTER TABLE users MODIFY SETTING lightweight_mutation_projection_mode = 'rebuild';
+
+DELETE FROM users WHERE uid = 6666;
+
 SELECT * FROM users ORDER BY uid;
+
+SYSTEM FLUSH LOGS;
+
+-- expecting projection p1, p2 in 2 parts
+SELECT
+    name
+FROM system.projection_parts
+WHERE (database = currentDatabase()) AND (`table` = 'users') AND (active = 1);
 
 DROP TABLE users;
 
@@ -47,23 +65,41 @@ SETTINGS min_bytes_for_wide_part = 0;
 
 INSERT INTO users VALUES (1231, 'John', 33);
 
+-- testing throw default mode
 ALTER TABLE users MODIFY SETTING lightweight_mutation_projection_mode = 'throw';
 
 DELETE FROM users WHERE uid = 1231;  -- { serverError NOT_IMPLEMENTED }
 
+-- testing drop mode
 ALTER TABLE users MODIFY SETTING lightweight_mutation_projection_mode = 'drop';
 
 DELETE FROM users WHERE uid = 1231;
+
+SELECT * FROM users ORDER BY uid;
 
 SYSTEM FLUSH LOGS;
 
 -- expecting no projection
 SELECT
-    name,
-    `table`
+    name
 FROM system.projection_parts
 WHERE (database = currentDatabase()) AND (`table` = 'users') AND (active = 1);
 
-SELECT * FROM users ORDER BY uid;
+-- -- testing rebuild mode
+-- INSERT INTO users VALUES (6666, 'Ksenia', 48), (8888, 'Alice', 50);
+
+-- ALTER TABLE users MODIFY SETTING lightweight_mutation_projection_mode = 'rebuild';
+
+-- DELETE FROM users WHERE uid = 6666;
+
+-- SELECT * FROM users ORDER BY uid;
+
+-- SYSTEM FLUSH LOGS;
+
+-- -- expecting projection p1, p2 in 2 parts
+-- SELECT
+--     name
+-- FROM system.projection_parts
+-- WHERE (database = currentDatabase()) AND (`table` = 'users') AND (active = 1);
 
 DROP TABLE users;
