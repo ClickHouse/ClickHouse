@@ -11,10 +11,6 @@ stage=${stage:-}
 # Compiler version, normally set by Dockerfile
 export LLVM_VERSION=${LLVM_VERSION:-18}
 
-# For some reason it is needed for tests with 'expect' but I don't know, why
-groupadd --system --gid 1000 clickhouse
-useradd --system --gid 1000 --uid 1000 clickhouse
-
 # A variable to pass additional flags to CMake.
 # Here we explicitly default it to nothing so that bash doesn't complain about
 # it being undefined. Also read it as array so that we can pass an empty list
