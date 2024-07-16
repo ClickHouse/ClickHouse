@@ -29,14 +29,20 @@ select 'parts';
 select type, has_watch, op_num, replace(path, toString(serverUUID()), '<uuid>'), is_ephemeral, is_sequential, if(startsWith(path, '/clickhouse/sessions'), 1, version), requests_size, request_idx, error, watch_type,
        watch_state, path_created, stat_version, stat_cversion, stat_dataLength, stat_numChildren
 from system.zookeeper_log
-where (session_id, xid) in (select session_id, xid from system.zookeeper_log where path='/test/01158/' || currentDatabase() || '/rmt/replicas/1/parts/all_0_0_0')
+where (session_id, xid) in (
+    select session_id, xid from system.zookeeper_log where path='/test/01158/' || currentDatabase() || '/rmt/replicas/1/parts/all_0_0_0'
+    and (query_id='' or query_id in (select query_id from system.query_log where current_database=currentDatabase() and event_date>=yesterday()))
+)
 order by xid, type, request_idx;
 
 select 'blocks';
 select type, has_watch, op_num, path, is_ephemeral, is_sequential, version, requests_size, request_idx, error, watch_type,
        watch_state, path_created, stat_version, stat_cversion, stat_dataLength, stat_numChildren
 from system.zookeeper_log
-where (session_id, xid) in (select session_id, xid from system.zookeeper_log where path like '/test/01158/' || currentDatabase() || '/rmt/blocks/%' and op_num not in (1, 12, 500))
+where (session_id, xid) in (
+    select session_id, xid from system.zookeeper_log where path like '/test/01158/' || currentDatabase() || '/rmt/blocks/%' and op_num not in (1, 12, 500)
+    and (query_id='' or query_id in (select query_id from system.query_log where current_database=currentDatabase() and event_date>=yesterday()))
+)
 order by xid, type, request_idx;
 
 drop table rmt sync;

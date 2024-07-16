@@ -197,7 +197,9 @@ def test_partition_by_string_column(started_cluster):
         started_cluster, bucket, "test_foo/bar.csv"
     )
     assert '3,"йцук"\n' == get_s3_file_content(started_cluster, bucket, "test_йцук.csv")
-    assert '78,"你好"\n' == get_s3_file_content(started_cluster, bucket, "test_你好.csv")
+    assert '78,"你好"\n' == get_s3_file_content(
+        started_cluster, bucket, "test_你好.csv"
+    )
 
 
 def test_partition_by_const_column(started_cluster):
@@ -2195,6 +2197,12 @@ def test_filtering_by_file_or_path(started_cluster):
     )
 
     assert int(result) == 1
+
+    assert 0 == int(
+        instance.query(
+            f"select count() from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_filter*.tsv') where _file = 'kek'"
+        )
+    )
 
 
 def test_union_schema_inference_mode(started_cluster):

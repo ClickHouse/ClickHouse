@@ -34,7 +34,6 @@ size_t tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Nodes &)
     auto * parent_expr = typeid_cast<ExpressionStep *>(parent.get());
     auto * parent_filter = typeid_cast<FilterStep *>(parent.get());
     auto * child_expr = typeid_cast<ExpressionStep *>(child.get());
-    auto * child_filter = typeid_cast<FilterStep *>(child.get());
 
     if (parent_expr && child_expr)
     {
@@ -76,7 +75,23 @@ size_t tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Nodes &)
         parent_node->children.swap(child_node->children);
         return 1;
     }
-    else if (parent_filter && child_filter)
+
+    return 0;
+}
+size_t tryMergeFilters(QueryPlan::Node * parent_node, QueryPlan::Nodes &)
+{
+    if (parent_node->children.size() != 1)
+        return false;
+
+    QueryPlan::Node * child_node = parent_node->children.front();
+
+    auto & parent = parent_node->step;
+    auto & child = child_node->step;
+
+    auto * parent_filter = typeid_cast<FilterStep *>(parent.get());
+    auto * child_filter = typeid_cast<FilterStep *>(child.get());
+
+    if (parent_filter && child_filter)
     {
         const auto & child_actions = child_filter->getExpression();
         const auto & parent_actions = parent_filter->getExpression();

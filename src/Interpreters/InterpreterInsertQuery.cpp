@@ -5,6 +5,7 @@
 #include <Access/EnabledQuota.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Columns/ColumnNullable.h>
+#include <Core/Settings.h>
 #include <Processors/Transforms/buildPushingToViewsChain.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -626,11 +627,16 @@ BlockIO InterpreterInsertQuery::execute()
         {
             bool table_prefers_large_blocks = table->prefersLargeBlocks();
 
+            size_t threads = presink_chains.size();
+
+            pipeline.resize(1);
+
             pipeline.addTransform(std::make_shared<PlanSquashingTransform>(
                     header,
                     table_prefers_large_blocks ? settings.min_insert_block_size_rows : settings.max_block_size,
-                    table_prefers_large_blocks ? settings.min_insert_block_size_bytes : 0ULL,
-                    presink_chains.size()));
+                    table_prefers_large_blocks ? settings.min_insert_block_size_bytes : 0ULL));
+
+            pipeline.resize(threads);
 
             pipeline.addSimpleTransform([&](const Block & in_header) -> ProcessorPtr
             {
@@ -700,8 +706,7 @@ BlockIO InterpreterInsertQuery::execute()
             auto balancing = std::make_shared<PlanSquashingTransform>(
                     chain.getInputHeader(),
                     table_prefers_large_blocks ? settings.min_insert_block_size_rows : settings.max_block_size,
-                    table_prefers_large_blocks ? settings.min_insert_block_size_bytes : 0ULL,
-                    presink_chains.size());
+                    table_prefers_large_blocks ? settings.min_insert_block_size_bytes : 0ULL);
 
             chain.addSource(std::move(balancing));
         }

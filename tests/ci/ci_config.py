@@ -13,6 +13,9 @@ class CI:
     each config item in the below dicts should be an instance of JobConfig class or inherited from it
     """
 
+    MAX_TOTAL_FAILURES_BEFORE_BLOCKING_CI = 5
+    MAX_TOTAL_FAILURES_PER_JOB_BEFORE_BLOCKING_CI = 2
+
     # reimport types to CI class so that they visible as CI.* and mypy is happy
     # pylint:disable=useless-import-alias,reimported,import-outside-toplevel
     from ci_definitions import BuildConfig as BuildConfig
@@ -311,42 +314,42 @@ class CI:
             random_bucket="parrepl_with_sanitizer",
         ),
         JobNames.STATELESS_TEST_ASAN: CommonJobConfigs.STATELESS_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_ASAN], num_batches=4
+            required_builds=[BuildNames.PACKAGE_ASAN], num_batches=2
         ),
         JobNames.STATELESS_TEST_TSAN: CommonJobConfigs.STATELESS_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_TSAN], num_batches=5
+            required_builds=[BuildNames.PACKAGE_TSAN], num_batches=2
         ),
         JobNames.STATELESS_TEST_MSAN: CommonJobConfigs.STATELESS_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_MSAN], num_batches=6
+            required_builds=[BuildNames.PACKAGE_MSAN], num_batches=3
         ),
         JobNames.STATELESS_TEST_UBSAN: CommonJobConfigs.STATELESS_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_UBSAN], num_batches=2
+            required_builds=[BuildNames.PACKAGE_UBSAN], num_batches=1
         ),
         JobNames.STATELESS_TEST_DEBUG: CommonJobConfigs.STATELESS_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_DEBUG], num_batches=5
+            required_builds=[BuildNames.PACKAGE_DEBUG], num_batches=2
         ),
         JobNames.STATELESS_TEST_RELEASE: CommonJobConfigs.STATELESS_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_RELEASE],
         ),
         JobNames.STATELESS_TEST_RELEASE_COVERAGE: CommonJobConfigs.STATELESS_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_RELEASE_COVERAGE], num_batches=6
+            required_builds=[BuildNames.PACKAGE_RELEASE_COVERAGE], num_batches=5
         ),
         JobNames.STATELESS_TEST_AARCH64: CommonJobConfigs.STATELESS_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_AARCH64],
             runner_type=Runners.FUNC_TESTER_ARM,
         ),
         JobNames.STATELESS_TEST_OLD_ANALYZER_S3_REPLICATED_RELEASE: CommonJobConfigs.STATELESS_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_RELEASE], num_batches=4
+            required_builds=[BuildNames.PACKAGE_RELEASE], num_batches=3
         ),
         JobNames.STATELESS_TEST_S3_DEBUG: CommonJobConfigs.STATELESS_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_DEBUG], num_batches=6
+            required_builds=[BuildNames.PACKAGE_DEBUG], num_batches=2
         ),
         JobNames.STATELESS_TEST_AZURE_ASAN: CommonJobConfigs.STATELESS_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_ASAN], num_batches=4, release_only=True
+            required_builds=[BuildNames.PACKAGE_ASAN], num_batches=2, release_only=True
         ),
         JobNames.STATELESS_TEST_S3_TSAN: CommonJobConfigs.STATELESS_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_TSAN],
-            num_batches=5,
+            num_batches=3,
         ),
         JobNames.STRESS_TEST_DEBUG: CommonJobConfigs.STRESS_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_DEBUG],
@@ -410,7 +413,9 @@ class CI:
             release_only=True,
         ),
         JobNames.INTEGRATION_TEST_FLAKY: CommonJobConfigs.INTEGRATION_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_ASAN], pr_only=True
+            required_builds=[BuildNames.PACKAGE_ASAN],
+            pr_only=True,
+            reference_job_name=JobNames.INTEGRATION_TEST_TSAN,
         ),
         JobNames.COMPATIBILITY_TEST: CommonJobConfigs.COMPATIBILITY_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_RELEASE],
@@ -452,7 +457,10 @@ class CI:
             required_builds=[BuildNames.PACKAGE_UBSAN],
         ),
         JobNames.STATELESS_TEST_FLAKY_ASAN: CommonJobConfigs.STATELESS_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_ASAN], pr_only=True, timeout=3600
+            required_builds=[BuildNames.PACKAGE_ASAN],
+            pr_only=True,
+            timeout=3600,
+            reference_job_name=JobNames.STATELESS_TEST_RELEASE,
         ),
         JobNames.JEPSEN_KEEPER: JobConfig(
             required_builds=[BuildNames.BINARY_RELEASE],
@@ -637,7 +645,7 @@ class CI:
 
     @classmethod
     def is_test_job(cls, job: str) -> bool:
-        return not cls.is_build_job(job) and job != cls.JobNames.STYLE_CHECK
+        return not cls.is_build_job(job)
 
     @classmethod
     def is_docs_job(cls, job: str) -> bool:

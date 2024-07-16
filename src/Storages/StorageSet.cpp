@@ -1,3 +1,4 @@
+#include <Storages/SetSettings.h>
 #include <Storages/StorageSet.h>
 #include <Storages/StorageFactory.h>
 #include <Compression/CompressedReadBuffer.h>
@@ -97,8 +98,7 @@ void SetOrJoinSink::onFinish()
     if (persistent)
     {
         backup_stream.flush();
-        compressed_backup_buf.next();
-        backup_buf->next();
+        compressed_backup_buf.finalize();
         backup_buf->finalize();
 
         table.disk->replaceFile(fs::path(backup_tmp_path) / backup_file_name, fs::path(backup_path) / backup_file_name);

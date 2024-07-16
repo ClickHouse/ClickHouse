@@ -357,7 +357,7 @@ Number of currently running inserts to Kafka
 
 Number of alive connections
 
-### KeeperOutstandingRequets
+### KeeperOutstandingRequests
 
 Number of outstanding requests
 

@@ -43,7 +43,7 @@ public:
             {"precision", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeInteger), &isColumnConst, "const Integer"}
         };
 
-        validateFunctionArgumentTypes(*this, arguments, mandatory_args, {});
+        validateFunctionArguments(*this, arguments, mandatory_args, {});
 
         return std::make_shared<DataTypeString>();
     }
