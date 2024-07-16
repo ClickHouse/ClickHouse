@@ -44,6 +44,13 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
 
+
+namespace CurrentMetrics
+{
+    extern const Metric TemporaryFilesForMerge;
+}
+
+
 namespace DB
 {
 
@@ -326,7 +333,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
     ctx->compression_codec = global_ctx->data->getCompressionCodecForPart(
         global_ctx->merge_list_element_ptr->total_size_bytes_compressed, global_ctx->new_data_part->ttl_infos, global_ctx->time_of_merge);
 
-    ctx->tmp_disk = std::make_unique<TemporaryDataOnDisk>(global_ctx->context->getTempDataOnDisk());
+    ctx->tmp_disk = global_ctx->context->getTempDataOnDisk()->childScope(CurrentMetrics::TemporaryFilesForMerge);
 
     switch (global_ctx->chosen_merge_algorithm)
     {
@@ -340,8 +347,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
         }
         case MergeAlgorithm::Vertical:
         {
-            ctx->rows_sources_uncompressed_write_buf = ctx->tmp_disk->createRawStream();
-            ctx->rows_sources_write_buf = std::make_unique<CompressedWriteBuffer>(*ctx->rows_sources_uncompressed_write_buf);
+            ctx->rows_sources_write_buf = std::make_unique<TemporaryDataBuffer>(ctx->tmp_disk.get());
 
             std::map<String, UInt64> local_merged_column_to_size;
             for (const auto & part : global_ctx->future_part->parts)
@@ -455,7 +461,6 @@ MergeTask::StageRuntimeContextPtr MergeTask::ExecuteAndFinalizeHorizontalPart::g
     auto new_ctx = std::make_shared<VerticalMergeRuntimeContext>();
 
     new_ctx->rows_sources_write_buf = std::move(ctx->rows_sources_write_buf);
-    new_ctx->rows_sources_uncompressed_write_buf = std::move(ctx->rows_sources_uncompressed_write_buf);
     new_ctx->column_sizes = std::move(ctx->column_sizes);
     new_ctx->compression_codec = std::move(ctx->compression_codec);
     new_ctx->tmp_disk = std::move(ctx->tmp_disk);
@@ -550,8 +555,6 @@ bool MergeTask::VerticalMergeStage::prepareVerticalMergeForAllColumns() const
 
     /// Ensure data has written to disk.
     ctx->rows_sources_write_buf->finalize();
-    ctx->rows_sources_uncompressed_write_buf->finalize();
-    ctx->rows_sources_uncompressed_write_buf->finalize();
 
     size_t rows_sources_count = ctx->rows_sources_write_buf->count();
     /// In special case, when there is only one source part, and no rows were skipped, we may have
@@ -564,29 +567,7 @@ bool MergeTask::VerticalMergeStage::prepareVerticalMergeForAllColumns() const
                         "of bytes written to rows_sources file ({}). It is a bug.",
                         sum_input_rows_exact, input_rows_filtered, rows_sources_count);
 
-    /// TemporaryDataOnDisk::createRawStream returns WriteBufferFromFile implementing IReadableWriteBuffer
-    /// and we expect to get ReadBufferFromFile here.
-    /// So, it's relatively safe to use dynamic_cast here and downcast to ReadBufferFromFile.
-    auto * wbuf_readable = dynamic_cast<IReadableWriteBuffer *>(ctx->rows_sources_uncompressed_write_buf.get());
-    std::unique_ptr<ReadBuffer> reread_buf = wbuf_readable ? wbuf_readable->tryGetReadBuffer() : nullptr;
-    if (!reread_buf)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot read temporary file {}", ctx->rows_sources_uncompressed_write_buf->getFileName());
-
-    auto * reread_buffer_raw = dynamic_cast<ReadBufferFromFileBase *>(reread_buf.get());
-    if (!reread_buffer_raw)
-    {
-        const auto & reread_buf_ref = *reread_buf;
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected ReadBufferFromFileBase, but got {}", demangle(typeid(reread_buf_ref).name()));
-    }
-    /// Move ownership from std::unique_ptr<ReadBuffer> to std::unique_ptr<ReadBufferFromFile> for CompressedReadBufferFromFile.
-    /// First, release ownership from unique_ptr to base type.
-    reread_buf.release(); /// NOLINT(bugprone-unused-return-value,hicpp-ignored-remove-result): we already have the pointer value in `reread_buffer_raw`
-
-    /// Then, move ownership to unique_ptr to concrete type.
-    std::unique_ptr<ReadBufferFromFileBase> reread_buffer_from_file(reread_buffer_raw);
-
-    /// CompressedReadBufferFromFile expects std::unique_ptr<ReadBufferFromFile> as argument.
-    ctx->rows_sources_read_buf = std::make_unique<CompressedReadBufferFromFile>(std::move(reread_buffer_from_file));
+    ctx->rows_sources_read_buf = ctx->rows_sources_write_buf->read();
     ctx->it_name_and_type = global_ctx->gathering_columns.cbegin();
 
     const auto & settings = global_ctx->context->getSettingsRef();
@@ -655,7 +636,8 @@ void MergeTask::VerticalMergeStage::prepareVerticalMergeForOneColumn() const
         pipe = createPipeForReadingOneColumn(column_name);
     }
 
-    ctx->rows_sources_read_buf->seek(0, 0);
+    /// Read from the beginning of the file
+    ctx->rows_sources_read_buf = ctx->rows_sources_write_buf->read();
     bool is_result_sparse = global_ctx->new_data_part->getSerialization(column_name)->getKind() == ISerialization::Kind::SPARSE;
 
     const auto data_settings = global_ctx->data->getSettings();

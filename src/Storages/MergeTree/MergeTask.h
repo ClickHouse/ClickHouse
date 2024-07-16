@@ -206,13 +206,12 @@ private:
     /// Proper initialization is responsibility of the author
     struct ExecuteAndFinalizeHorizontalPartRuntimeContext : public IStageRuntimeContext
     {
-        TemporaryDataOnDiskPtr tmp_disk{nullptr};
+        TemporaryDataOnDiskScopePtr tmp_disk{nullptr};
         bool need_remove_expired_values{false};
         bool force_ttl{false};
         CompressionCodecPtr compression_codec{nullptr};
         size_t sum_input_rows_upper_bound{0};
-        std::unique_ptr<WriteBufferFromFileBase> rows_sources_uncompressed_write_buf{nullptr};
-        std::unique_ptr<WriteBuffer> rows_sources_write_buf{nullptr};
+        std::unique_ptr<TemporaryDataBuffer> rows_sources_write_buf{nullptr};
         std::optional<ColumnSizeEstimator> column_sizes{};
 
         size_t initial_reservation{0};
@@ -273,11 +272,10 @@ private:
     struct VerticalMergeRuntimeContext : public IStageRuntimeContext
     {
         /// Begin dependencies from previous stage
-        std::unique_ptr<WriteBufferFromFileBase> rows_sources_uncompressed_write_buf{nullptr};
-        std::unique_ptr<WriteBuffer> rows_sources_write_buf{nullptr};
         std::optional<ColumnSizeEstimator> column_sizes;
         CompressionCodecPtr compression_codec;
-        TemporaryDataOnDiskPtr tmp_disk{nullptr};
+        TemporaryDataOnDiskScopePtr tmp_disk{nullptr};
+        std::unique_ptr<TemporaryDataBuffer> rows_sources_write_buf{nullptr};
         std::list<DB::NameAndTypePair>::const_iterator it_name_and_type;
         bool read_with_direct_io{false};
         bool need_sync{false};
@@ -300,7 +298,7 @@ private:
         size_t column_elems_written{0};
         QueryPipeline column_parts_pipeline;
         std::unique_ptr<PullingPipelineExecutor> executor;
-        std::unique_ptr<CompressedReadBufferFromFile> rows_sources_read_buf{nullptr};
+        std::unique_ptr<ReadBuffer> rows_sources_read_buf{nullptr};
     };
 
     using VerticalMergeRuntimeContextPtr = std::shared_ptr<VerticalMergeRuntimeContext>;
