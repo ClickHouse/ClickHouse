@@ -25,6 +25,7 @@
 #endif
 
 using namespace DB;
+namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -69,7 +70,7 @@ uint64_t readMetricFromStatFile(ReadBufferFromFile & buf, const std::string & ke
 
 struct CgroupsV1Reader : ICgroupsReader
 {
-    explicit CgroupsV1Reader(const std::filesystem::path & stat_file_dir) : buf(stat_file_dir / "memory.stat") { }
+    explicit CgroupsV1Reader(const fs::path & stat_file_dir) : buf(stat_file_dir / "memory.stat") { }
 
     uint64_t readMemoryUsage() override
     {
@@ -85,7 +86,7 @@ private:
 
 struct CgroupsV2Reader : ICgroupsReader
 {
-    explicit CgroupsV2Reader(const std::filesystem::path & stat_file_dir)
+    explicit CgroupsV2Reader(const fs::path & stat_file_dir)
         : current_buf(stat_file_dir / "memory.current"), stat_buf(stat_file_dir / "memory.stat")
     {
     }
@@ -129,8 +130,9 @@ std::optional<std::string> getCgroupsV2Path()
     if (!cgroupsV2MemoryControllerEnabled())
         return {};
 
-    String cgroup = cgroupV2OfProcess();
-    auto current_cgroup = cgroup.empty() ? default_cgroups_mount : (default_cgroups_mount / cgroup);
+    fs::path current_cgroup = cgroupV2PathOfProcess();
+    if (current_cgroup.empty())
+        return {};
 
     /// Return the bottom-most nested current memory file. If there is no such file at the current
     /// level, try again at the parent level as memory settings are inherited.
@@ -138,7 +140,7 @@ std::optional<std::string> getCgroupsV2Path()
     {
         const auto current_path = current_cgroup / "memory.current";
         const auto stat_path = current_cgroup / "memory.stat";
-        if (std::filesystem::exists(current_path) && std::filesystem::exists(stat_path))
+        if (fs::exists(current_path) && fs::exists(stat_path))
             return {current_cgroup};
         current_cgroup = current_cgroup.parent_path();
     }
@@ -148,7 +150,7 @@ std::optional<std::string> getCgroupsV2Path()
 std::optional<std::string> getCgroupsV1Path()
 {
     auto path = default_cgroups_mount / "memory/memory.stat";
-    if (!std::filesystem::exists(path))
+    if (!fs::exists(path))
         return {};
     return {default_cgroups_mount / "memory"};
 }
