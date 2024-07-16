@@ -361,9 +361,11 @@ def clickhouse_execute_json(
 def stop_tests():
     # send signal to all processes in group to avoid hung check triggering
     # (to avoid terminating clickhouse-test itself, the signal should be ignored)
+    print("Sending signals")
     signal.signal(signal.SIGTERM, signal.SIG_IGN)
     os.killpg(os.getpgid(os.getpid()), signal.SIGTERM)
     signal.signal(signal.SIGTERM, signal.SIG_DFL)
+    print("Sending signals DONE")
 
 
 def get_db_engine(args, database_name):
@@ -709,9 +711,9 @@ def get_localzone():
 
 class SettingsRandomizer:
     settings = {
-        "max_insert_threads": lambda: 32
-        if random.random() < 0.03
-        else random.randint(1, 3),
+        "max_insert_threads": lambda: (
+            12 if random.random() < 0.03 else random.randint(1, 3)
+        ),
         "group_by_two_level_threshold": threshold_generator(0.2, 0.2, 1, 1000000),
         "group_by_two_level_threshold_bytes": threshold_generator(
             0.2, 0.2, 1, 50000000
@@ -727,7 +729,7 @@ class SettingsRandomizer:
         "prefer_localhost_replica": lambda: random.randint(0, 1),
         "max_block_size": lambda: random.randint(8000, 100000),
         "max_joined_block_size_rows": lambda: random.randint(8000, 100000),
-        "max_threads": lambda: 64 if random.random() < 0.03 else random.randint(1, 3),
+        "max_threads": lambda: 32 if random.random() < 0.03 else random.randint(1, 3),
         "optimize_append_index": lambda: random.randint(0, 1),
         "optimize_if_chain_to_multiif": lambda: random.randint(0, 1),
         "optimize_if_transform_strings_to_enum": lambda: random.randint(0, 1),
@@ -1748,7 +1750,7 @@ class TestCase:
             return TestResult(
                 self.name,
                 TestStatus.FAIL,
-                FailureReason.INTERNAL_QUERY_FAIL,
+                FailureReason.TIMEOUT,
                 total_time,
                 self.add_info_about_settings(
                     self.get_description_from_exception_info(sys.exc_info())
@@ -2187,11 +2189,26 @@ def run_tests_array(all_tests_with_params: Tuple[List[str], int, TestSuite, bool
                 sys.stdout.flush()
 
             while True:
-                test_result = test_case.run(
-                    args, test_suite, client_options, server_logs_level
-                )
-                test_result = test_case.process_result(test_result, MESSAGES)
-                if not test_result.need_retry:
+                # This is the upper level timeout
+                # It helps with completely frozen processes, like in case of gdb errors
+                def timeout_handler(signum, frame):
+                    raise TimeoutError("Test execution timed out")
+
+                signal.signal(signal.SIGALRM, timeout_handler)
+                signal.alarm(int(args.timeout * 1.1))
+                test_result = None
+                try:
+                    test_result = test_case.run(
+                        args, test_suite, client_options, server_logs_level
+                    )
+                    test_result = test_case.process_result(test_result, MESSAGES)
+                    break
+                except TimeoutError:
+                    break
+                finally:
+                    signal.alarm(0)
+
+                if not test_result or not test_result.need_retry:
                     break
                 restarted_tests.append(test_result)
 
@@ -2211,7 +2228,9 @@ def run_tests_array(all_tests_with_params: Tuple[List[str], int, TestSuite, bool
                 failures_total += 1
                 failures_chain += 1
                 if test_result.reason == FailureReason.SERVER_DIED:
+                    stop_tests()
                     server_died.set()
+                    raise ServerDied("Server died")
             elif test_result.status == TestStatus.SKIPPED:
                 skipped_total += 1
 
@@ -2448,6 +2467,10 @@ def override_envs(*args_, **kwargs):
     run_tests_array(*args_, **kwargs)
 
 
+def run_tests_process(*args, **kwargs):
+    return run_tests_array(*args, **kwargs)
+
+
 def do_run_tests(jobs, test_suite: TestSuite):
     if jobs > 1 and len(test_suite.parallel_tests) > 0:
         print(
@@ -2471,39 +2494,70 @@ def do_run_tests(jobs, test_suite: TestSuite):
         # of failures will be nearly the same for all tests from the group.
         random.shuffle(test_suite.parallel_tests)
 
-        batch_size = max(1, len(test_suite.parallel_tests) // jobs)
+        batch_size = max(1, (len(test_suite.parallel_tests) // jobs) + 1)
         parallel_tests_array = []
         for job in range(jobs):
             range_ = job * batch_size, job * batch_size + batch_size
             batch = test_suite.parallel_tests[range_[0] : range_[1]]
             parallel_tests_array.append((batch, batch_size, test_suite, True))
 
-        try:
-            with multiprocessing.Pool(processes=jobs + 1) as pool:
-                future = pool.map_async(run_tests_array, parallel_tests_array)
+        processes = []
 
-                if args.run_sequential_tests_in_parallel:
-                    # Run parallel tests and sequential tests at the same time
-                    # Sequential tests will use different ClickHouse instance
-                    # In this process we can safely override values in `args` and `os.environ`
-                    future_seq = pool.map_async(
-                        override_envs,
-                        [
-                            (
-                                test_suite.sequential_tests,
-                                len(test_suite.sequential_tests),
-                                test_suite,
-                                False,
-                            )
-                        ],
-                    )
-                    future_seq.wait()
+        for test_batch in parallel_tests_array:
+            process = multiprocessing.Process(
+                target=run_tests_process, args=(test_batch,)
+            )
+            processes.append(process)
+            process.start()
 
-                future.wait()
-        finally:
-            pool.terminate()
-            pool.close()
-            pool.join()
+        if args.run_sequential_tests_in_parallel:
+            # Run parallel tests and sequential tests at the same time
+            # Sequential tests will use different ClickHouse instance
+            # In this process we can safely override values in `args` and `os.environ`
+            process = multiprocessing.Process(
+                target=override_envs,
+                args=(
+                    (
+                        test_suite.sequential_tests,
+                        len(test_suite.sequential_tests),
+                        test_suite,
+                        False,
+                    ),
+                ),
+            )
+            processes.append(process)
+            process.start()
+
+        while processes:
+            sys.stdout.flush()
+            # Periodically check the server for hangs
+            # and stop all processes in this case
+            try:
+                clickhouse_execute(
+                    args,
+                    query="SELECT 1 /*hang up check*/",
+                    max_http_retries=5,
+                    timeout=20,
+                )
+            except Exception:
+                print("Hang up check failed")
+                server_died.set()
+
+            if server_died.is_set():
+                print("Server died, terminating all processes...")
+                kill_gdb_if_any()
+                # Wait for test results
+                sleep(args.timeout)
+                for p in processes:
+                    if p.is_alive():
+                        p.terminate()
+                break
+
+            for p in processes[:]:
+                if not p.is_alive():
+                    processes.remove(p)
+
+            sleep(5)
 
         if not args.run_sequential_tests_in_parallel:
             run_tests_array(
@@ -3354,6 +3408,14 @@ def parse_args():
     return parser.parse_args()
 
 
+class Terminated(KeyboardInterrupt):
+    pass
+
+
+def signal_handler(sig, frame):
+    raise Terminated(f"Terminated with {sig} signal")
+
+
 if __name__ == "__main__":
     stop_time = None
     exit_code = multiprocessing.Value("i", 0)
@@ -3365,6 +3427,9 @@ if __name__ == "__main__":
     # infinite tests processes left
     # (new process group is required to avoid killing some parent processes)
     os.setpgid(0, 0)
+    signal.signal(signal.SIGTERM, signal_handler)
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGHUP, signal_handler)
 
     try:
         args = parse_args()
