@@ -155,6 +155,7 @@ public:
 
     void remove(const std::string & path) override
     {
+        LOG_TEST(getLogger("LocalStorage::remove"), "Path is {}, passing {} to removeIfExists", path, getPath(path));
         if (!removeIfExists(getPath(path)))
         {
             throw Exception(
@@ -165,6 +166,7 @@ public:
 
     bool removeIfExists(const std::string & path) override
     {
+        LOG_TEST(getLogger("LocalStorage::removeIfExists"), "Path is {}, removing {}", path, getPath(path));
         return fs::remove(getPath(path));
     }
 
