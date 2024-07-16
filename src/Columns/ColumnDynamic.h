@@ -334,7 +334,8 @@ public:
     const ColumnVariant & getVariantColumn() const { return assert_cast<const ColumnVariant &>(*variant_column); }
     ColumnVariant & getVariantColumn() { return assert_cast<ColumnVariant &>(*variant_column); }
 
-    bool addNewVariant(const DataTypePtr & new_variant);
+    bool addNewVariant(const DataTypePtr & new_variant) { return addNewVariant(new_variant, new_variant->getName()); }
+    bool addNewVariant(const DataTypePtr & new_variant, const String & variant_name);
     void addStringVariant();
 
     bool hasDynamicStructure() const override { return true; }

@@ -57,10 +57,10 @@ ColumnDynamic::MutablePtr ColumnDynamic::create(MutableColumnPtr variant_column,
     return create(std::move(variant_column), variant_info, max_dynamic_types_, statistics_);
 }
 
-bool ColumnDynamic::addNewVariant(const DB::DataTypePtr & new_variant)
+bool ColumnDynamic::addNewVariant(const DataTypePtr & new_variant, const String & variant_name)
 {
     /// Check if we already have such variant.
-    if (variant_info.variant_name_to_discriminator.contains(new_variant->getName()))
+    if (variant_info.variant_name_to_discriminator.contains(variant_name))
         return true;
 
     /// Check if we reached maximum number of variants.
@@ -75,7 +75,7 @@ bool ColumnDynamic::addNewVariant(const DB::DataTypePtr & new_variant)
     }
 
     /// If we have (max_dynamic_types - 1) number of variants and don't have String variant, we can add only String variant.
-    if (variant_info.variant_names.size() == max_dynamic_types - 1 && new_variant->getName() != "String" && !variant_info.variant_name_to_discriminator.contains("String"))
+    if (variant_info.variant_names.size() == max_dynamic_types - 1 && variant_name != "String" && !variant_info.variant_name_to_discriminator.contains("String"))
         return false;
 
     const DataTypes & current_variants = assert_cast<const DataTypeVariant &>(*variant_info.variant_type).getVariants();

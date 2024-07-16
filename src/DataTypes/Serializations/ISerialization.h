@@ -447,6 +447,9 @@ public:
     static size_t getArrayLevel(const SubstreamPath & path);
     static bool hasSubcolumnForPath(const SubstreamPath & path, size_t prefix_len);
     static SubstreamData createFromPath(const SubstreamPath & path, size_t prefix_len);
+
+    /// Returns true if subcolumn doesn't actually stores any data in column and doen'st require a separate stream
+    /// for writing/reading data. For example, it's a null-map subcolumn of Variant type (it's always constructed from discriminators);.
     static bool isFictitiousSubcolumn(const SubstreamPath & path, size_t prefix_len);
 
 protected:

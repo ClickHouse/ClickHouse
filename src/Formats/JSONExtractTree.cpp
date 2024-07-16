@@ -1384,9 +1384,9 @@ public:
                 jsonElementToString<JSONParser>(element, format_settings));
         }
 
-        if (column_dynamic.addNewVariant(element_type))
+        auto element_type_name = element_type->getName();
+        if (column_dynamic.addNewVariant(element_type, element_type_name))
         {
-            auto element_type_name = element_type->getName();
             auto it = json_extract_nodes_cache.find(element_type_name);
             if (it == json_extract_nodes_cache.end())
                 it = json_extract_nodes_cache.emplace(element_type_name, buildJSONExtractTree<JSONParser>(element_type, "Dynamic inference")).first;
