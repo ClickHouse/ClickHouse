@@ -1,6 +1,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnArray.h>

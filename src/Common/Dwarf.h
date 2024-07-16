@@ -126,7 +126,7 @@ public:
         std::string_view name;
     };
 
-    enum class LocationInfoMode
+    enum class LocationInfoMode : uint8_t
     {
         // Don't resolve location info.
         DISABLED,

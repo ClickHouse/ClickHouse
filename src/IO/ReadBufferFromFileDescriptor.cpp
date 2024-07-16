@@ -173,7 +173,7 @@ off_t ReadBufferFromFileDescriptor::seek(off_t offset, int whence)
     if (new_pos + (working_buffer.end() - pos) == file_offset_of_buffer_end)
         return new_pos;
 
-    if (file_offset_of_buffer_end - working_buffer.size() <= static_cast<size_t>(new_pos)
+    if (file_offset_of_buffer_end - working_buffer.size() <= new_pos
         && new_pos <= file_offset_of_buffer_end)
     {
         /// Position is still inside the buffer.

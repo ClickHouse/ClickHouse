@@ -18,6 +18,7 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
     extern const int CANNOT_READ_ALL_DATA;
     extern const int LOGICAL_ERROR;
+    extern const int TYPE_MISMATCH;
 }
 
 namespace
@@ -45,6 +46,15 @@ JSONEachRowRowInputFormat::JSONEachRowRowInputFormat(
 {
     const auto & header = getPort().getHeader();
     name_map = header.getNamesToIndexesMap();
+    if (format_settings_.json.ignore_key_case)
+    {
+        for (auto & it : name_map)
+        {
+            StringRef key = it.first;
+            String lower_case_key = transformFieldNameToLowerCase(key);
+            lower_case_name_map[lower_case_key] = key;
+        }
+    }
     if (format_settings_.import_nested_json)
     {
         for (size_t i = 0; i != header.columns(); ++i)
@@ -132,6 +142,7 @@ void JSONEachRowRowInputFormat::readField(size_t index, MutableColumns & columns
         throw Exception(ErrorCodes::INCORRECT_DATA, "Duplicate field found while parsing JSONEachRow format: {}", columnName(index));
 
     seen_columns[index] = true;
+    seen_columns_count++;
     const auto & type = getPort().getHeader().getByPosition(index).type;
     const auto & serialization = serializations[index];
     read_columns[index] = JSONUtils::readField(*in, *columns[index], type, serialization, columnName(index), format_settings, yield_strings);
@@ -161,7 +172,23 @@ void JSONEachRowRowInputFormat::readJSONObject(MutableColumns & columns)
     for (size_t key_index = 0; advanceToNextKey(key_index); ++key_index)
     {
         StringRef name_ref = readColumnName(*in);
-        const size_t column_index = columnIndex(name_ref, key_index);
+        if (seen_columns_count >= total_columns && format_settings.json.ignore_unnecessary_fields)
+        {
+            // Keep parsing the remaining fields in case of the json is invalid.
+            // But not look up the name in the name_map since the cost cannot be ignored
+            JSONUtils::skipColon(*in);
+            skipUnknownField(name_ref);
+            continue;
+        }
+        size_t column_index = 0;
+        if (format_settings.json.ignore_key_case)
+        {
+            String lower_case_name = transformFieldNameToLowerCase(name_ref);
+            StringRef field_name_ref = lower_case_name_map[lower_case_name];
+            column_index = columnIndex(field_name_ref, key_index);
+        }
+        else
+            column_index = columnIndex(name_ref, key_index);
 
         if (unlikely(ssize_t(column_index) < 0))
         {
@@ -210,6 +237,8 @@ bool JSONEachRowRowInputFormat::readRow(MutableColumns & columns, RowReadExtensi
         return false;
 
     size_t num_columns = columns.size();
+    total_columns = num_columns;
+    seen_columns_count = 0;
 
     read_columns.assign(num_columns, false);
     seen_columns.assign(num_columns, false);
@@ -222,7 +251,14 @@ bool JSONEachRowRowInputFormat::readRow(MutableColumns & columns, RowReadExtensi
     /// Fill non-visited columns with the default values.
     for (size_t i = 0; i < num_columns; ++i)
         if (!seen_columns[i])
-            header.getByPosition(i).type->insertDefaultInto(*columns[i]);
+        {
+            const auto & type = header.getByPosition(i).type;
+            if (format_settings.force_null_for_omitted_fields && !isNullableOrLowCardinalityNullable(type))
+                throw Exception(ErrorCodes::TYPE_MISMATCH, "Cannot insert NULL value into a column `{}` of type '{}'", columnName(i), type->getName());
+            else
+                type->insertDefaultInto(*columns[i]);
+        }
+
 
     /// Return info about defaults set.
     /// If defaults_for_omitted_fields is set to 0, we should just leave already inserted defaults.

@@ -134,7 +134,7 @@ DistributedSink::DistributedSink(
 }
 
 
-void DistributedSink::consume(Chunk chunk)
+void DistributedSink::consume(Chunk & chunk)
 {
     if (is_first_chunk)
     {
@@ -142,7 +142,7 @@ void DistributedSink::consume(Chunk chunk)
         is_first_chunk = false;
     }
 
-    auto ordinary_block = getHeader().cloneWithColumns(chunk.detachColumns());
+    auto ordinary_block = getHeader().cloneWithColumns(chunk.getColumns());
 
     if (insert_sync)
         writeSync(ordinary_block);
@@ -173,7 +173,10 @@ void DistributedSink::writeAsync(const Block & block)
     else
     {
         if (storage.getShardingKeyExpr() && (cluster->getShardsInfo().size() > 1))
-            return writeSplitAsync(block);
+        {
+            writeSplitAsync(block);
+            return;
+        }
 
         writeAsyncImpl(block);
         ++inserted_blocks;
@@ -417,7 +420,13 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
                 /// to resolve tables (in InterpreterInsertQuery::getTable())
                 auto copy_query_ast = query_ast->clone();
 
-                InterpreterInsertQuery interp(copy_query_ast, job.local_context, allow_materialized);
+                InterpreterInsertQuery interp(
+                    copy_query_ast,
+                    job.local_context,
+                    allow_materialized,
+                    /* no_squash */ false,
+                    /* no_destination */ false,
+                    /* async_isnert */ false);
                 auto block_io = interp.execute();
 
                 job.pipeline = std::move(block_io.pipeline);
@@ -436,6 +445,10 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
 
 void DistributedSink::writeSync(const Block & block)
 {
+    std::lock_guard lock(execution_mutex);
+    if (isCancelled())
+        return;
+
     OpenTelemetry::SpanHolder span(__PRETTY_FUNCTION__);
 
     const Settings & settings = context->getSettingsRef();
@@ -537,6 +550,10 @@ void DistributedSink::onFinish()
         LOG_DEBUG(log, "It took {} sec. to insert {} blocks, {} rows per second. {}", elapsed, inserted_blocks, inserted_rows / elapsed, getCurrentStateDescription());
     };
 
+    std::lock_guard lock(execution_mutex);
+    if (isCancelled())
+        return;
+
     /// Pool finished means that some exception had been thrown before,
     /// and scheduling new jobs will return "Cannot schedule a task" error.
     if (insert_sync && pool && !pool->finished())
@@ -587,6 +604,7 @@ void DistributedSink::onFinish()
 
 void DistributedSink::onCancel()
 {
+    std::lock_guard lock(execution_mutex);
     if (pool && !pool->finished())
     {
         try
@@ -703,7 +721,13 @@ void DistributedSink::writeToLocal(const Cluster::ShardInfo & shard_info, const 
 
     try
     {
-        InterpreterInsertQuery interp(query_ast, context, allow_materialized);
+        InterpreterInsertQuery interp(
+            query_ast,
+            context,
+            allow_materialized,
+            /* no_squash */ false,
+            /* no_destination */ false,
+            /* async_isnert */ false);
 
         auto block_io = interp.execute();
         PushingPipelineExecutor executor(block_io.pipeline);

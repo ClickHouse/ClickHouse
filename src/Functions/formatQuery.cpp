@@ -20,13 +20,13 @@ namespace ErrorCodes
 namespace
 {
 
-enum class OutputFormatting
+enum class OutputFormatting : uint8_t
 {
     SingleLine,
     MultiLine
 };
 
-enum class ErrorHandling
+enum class ErrorHandling : uint8_t
 {
     Exception,
     Null
@@ -54,7 +54,7 @@ public:
         FunctionArgumentDescriptors args{
             {"query", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"}
         };
-        validateFunctionArgumentTypes(*this, arguments, args);
+        validateFunctionArguments(*this, arguments, args);
 
         DataTypePtr string_type = std::make_shared<DataTypeString>();
         if (error_handling == ErrorHandling::Null)

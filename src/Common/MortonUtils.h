@@ -100,9 +100,9 @@ void intervalBinaryPartition(UInt64 first, UInt64 last, F && callback)
     chassert(split >= first);
     chassert(split <= last);
 
-    intervalBinaryPartition(first, split, std::forward<F>(callback));
+    intervalBinaryPartition(first, split, callback);
     if (split < last)
-        intervalBinaryPartition(split + 1, last, std::forward<F>(callback));
+        intervalBinaryPartition(split + 1, last, callback);
 }
 
 

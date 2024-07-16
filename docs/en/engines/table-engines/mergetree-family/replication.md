@@ -10,7 +10,7 @@ sidebar_label: Data Replication
 In ClickHouse Cloud replication is managed for you. Please create your tables without adding arguments.  For example, in the text below you would replace:
 
 ```sql
-ENGINE = ReplicatedReplacingMergeTree(
+ENGINE = ReplicatedMergeTree(
     '/clickhouse/tables/{shard}/table_name',
     '{replica}',
     ver
@@ -20,7 +20,7 @@ ENGINE = ReplicatedReplacingMergeTree(
 with:
 
 ```sql
-ENGINE = ReplicatedReplacingMergeTree
+ENGINE = ReplicatedMergeTree
 ```
 :::
 
@@ -113,7 +113,7 @@ You can specify any existing ZooKeeper cluster and the system will use a directo
 
 If ZooKeeper is not set in the config file, you can’t create replicated tables, and any existing replicated tables will be read-only.
 
-ZooKeeper is not used in `SELECT` queries because replication does not affect the performance of `SELECT` and queries run just as fast as they do for non-replicated tables. When querying distributed replicated tables, ClickHouse behavior is controlled by the settings [max_replica_delay_for_distributed_queries](/docs/en/operations/settings/settings.md/#settings-max_replica_delay_for_distributed_queries) and [fallback_to_stale_replicas_for_distributed_queries](/docs/en/operations/settings/settings.md/#settings-fallback_to_stale_replicas_for_distributed_queries).
+ZooKeeper is not used in `SELECT` queries because replication does not affect the performance of `SELECT` and queries run just as fast as they do for non-replicated tables. When querying distributed replicated tables, ClickHouse behavior is controlled by the settings [max_replica_delay_for_distributed_queries](/docs/en/operations/settings/settings.md/#max_replica_delay_for_distributed_queries) and [fallback_to_stale_replicas_for_distributed_queries](/docs/en/operations/settings/settings.md/#fallback_to_stale_replicas_for_distributed_queries).
 
 For each `INSERT` query, approximately ten entries are added to ZooKeeper through several transactions. (To be more precise, this is for each inserted block of data; an INSERT query contains one block or one block per `max_insert_block_size = 1048576` rows.) This leads to slightly longer latencies for `INSERT` compared to non-replicated tables. But if you follow the recommendations to insert data in batches of no more than one `INSERT` per second, it does not create any problems. The entire ClickHouse cluster used for coordinating one ZooKeeper cluster has a total of several hundred `INSERTs` per second. The throughput on data inserts (the number of rows per second) is just as high as for non-replicated data.
 
@@ -140,11 +140,11 @@ The system monitors data synchronicity on replicas and is able to recover after 
 :::note
 In ClickHouse Cloud replication is managed for you. Please create your tables without adding arguments.  For example, in the text below you would replace:
 ```
-ENGINE = ReplicatedReplacingMergeTree('/clickhouse/tables/{shard}/table_name', '{replica}', ver)
+ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/table_name', '{replica}', ver)
 ```
 with:
 ```
-ENGINE = ReplicatedReplacingMergeTree
+ENGINE = ReplicatedMergeTree
 ```
 :::
 
@@ -177,7 +177,7 @@ CREATE TABLE table_name
     CounterID UInt32,
     UserID UInt32,
     ver UInt16
-) ENGINE = ReplicatedReplacingMergeTree('/clickhouse/tables/{shard}/table_name', '{replica}', ver)
+) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/table_name', '{replica}', ver)
 PARTITION BY toYYYYMM(EventDate)
 ORDER BY (CounterID, EventDate, intHash32(UserID))
 SAMPLE BY intHash32(UserID);
@@ -304,10 +304,10 @@ We use the term `MergeTree` to refer to all table engines in the `MergeTree fami
 
 If you had a `MergeTree` table that was manually replicated, you can convert it to a replicated table. You might need to do this if you have already collected a large amount of data in a `MergeTree` table and now you want to enable replication.
 
-`MergeTree` table can be automatically converted on server restart if `convert_to_replicated` flag is set at the table's data directory (`/var/lib/clickhouse/store/xxx/xxxyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy/` for `Atomic` database).
+`MergeTree` table can be automatically converted on server restart if `convert_to_replicated` flag is set at the table's data directory (`/store/xxx/xxxyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy/` for `Atomic` database).
 Create empty `convert_to_replicated` file and the table will be loaded as replicated on next server restart.
 
-This query can be used to get the table's data path.
+This query can be used to get the table's data path. If table has many data paths, you have to use the first one.
 
 ```sql
 SELECT data_paths FROM system.tables WHERE table = 'table_name' AND database = 'database_name';

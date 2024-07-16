@@ -667,8 +667,6 @@ public:
             case Types::AggregateFunctionState: return f(field.template get<AggregateFunctionStateData>());
             case Types::CustomType: return f(field.template get<CustomType>());
         }
-
-        UNREACHABLE();
     }
 
     String dump() const;
@@ -855,13 +853,13 @@ template <> struct Field::EnumToType<Field::Types::AggregateFunctionState> { usi
 template <> struct Field::EnumToType<Field::Types::CustomType> { using Type = CustomType; };
 template <> struct Field::EnumToType<Field::Types::Bool> { using Type = UInt64; };
 
-inline constexpr bool isInt64OrUInt64FieldType(Field::Types::Which t)
+constexpr bool isInt64OrUInt64FieldType(Field::Types::Which t)
 {
     return t == Field::Types::Int64
         || t == Field::Types::UInt64;
 }
 
-inline constexpr bool isInt64OrUInt64orBoolFieldType(Field::Types::Which t)
+constexpr bool isInt64OrUInt64orBoolFieldType(Field::Types::Which t)
 {
     return t == Field::Types::Int64
         || t == Field::Types::UInt64
@@ -898,11 +896,13 @@ NearestFieldType<std::decay_t<T>> & Field::get()
 template <typename T>
 auto & Field::safeGet()
 {
-    const Types::Which requested = TypeToEnum<NearestFieldType<std::decay_t<T>>>::value;
+    const Types::Which target = TypeToEnum<NearestFieldType<std::decay_t<T>>>::value;
 
-    if (which != requested)
+    /// We allow converting int64 <-> uint64, int64 <-> bool, uint64 <-> bool in safeGet().
+    if (target != which
+           && (!isInt64OrUInt64orBoolFieldType(target) || !isInt64OrUInt64orBoolFieldType(which)))
         throw Exception(ErrorCodes::BAD_GET,
-            "Bad get: has {}, requested {}", getTypeName(), requested);
+            "Bad get: has {}, requested {}", getTypeName(), target);
 
     return get<T>();
 }
@@ -1038,7 +1038,7 @@ struct fmt::formatter<DB::Field>
     }
 
     template <typename FormatContext>
-    auto format(const DB::Field & x, FormatContext & ctx)
+    auto format(const DB::Field & x, FormatContext & ctx) const
     {
         return fmt::format_to(ctx.out(), "{}", toString(x));
     }

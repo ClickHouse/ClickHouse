@@ -7,15 +7,12 @@
 #include <boost/geometry/geometries/polygon.hpp>
 
 #include <Columns/ColumnArray.h>
-#include <Columns/ColumnFixedString.h>
-#include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/ObjectPool.h>
 #include <Common/ProfileEvents.h>
 #include <base/arithmeticOverflow.h>
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/WriteHelpers.h>
@@ -37,7 +34,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
     extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
@@ -87,7 +84,7 @@ public:
     {
         if (arguments.size() < 2)
         {
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} requires at least 2 arguments", getName());
+            throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION, "Function {} requires at least 2 arguments", getName());
         }
 
         /** We allow function invocation in one of the following forms:

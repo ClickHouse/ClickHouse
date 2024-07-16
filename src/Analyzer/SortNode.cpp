@@ -71,7 +71,7 @@ void SortNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, si
     }
 }
 
-bool SortNode::isEqualImpl(const IQueryTreeNode & rhs) const
+bool SortNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
 {
     const auto & rhs_typed = assert_cast<const SortNode &>(rhs);
     if (sort_direction != rhs_typed.sort_direction ||
@@ -89,7 +89,7 @@ bool SortNode::isEqualImpl(const IQueryTreeNode & rhs) const
     return collator->getLocale() == rhs_typed.collator->getLocale();
 }
 
-void SortNode::updateTreeHashImpl(HashState & hash_state) const
+void SortNode::updateTreeHashImpl(HashState & hash_state, CompareOptions) const
 {
     hash_state.update(sort_direction);
     /// use some determined value if `nulls_sort_direction` is `nullopt`

@@ -43,16 +43,16 @@ Alter	ALTER TABLE sqllt.table UPDATE i = i + 1 WHERE 1;
 Alter	ALTER TABLE sqllt.table DELETE WHERE i > 65535;
 Select	-- not done, seems to hard, so I\'ve skipped queries of ALTER-X, where X is:\n-- PARTITION\n-- ORDER BY\n-- SAMPLE BY\n-- INDEX\n-- CONSTRAINT\n-- TTL\n-- USER\n-- QUOTA\n-- ROLE\n-- ROW POLICY\n-- SETTINGS PROFILE\n\nSELECT \'SYSTEM queries\';
 System	SYSTEM FLUSH LOGS;
-System	SYSTEM STOP MERGES sqllt.table
-System	SYSTEM START MERGES sqllt.table
-System	SYSTEM STOP TTL MERGES sqllt.table
-System	SYSTEM START TTL MERGES sqllt.table
-System	SYSTEM STOP MOVES sqllt.table
-System	SYSTEM START MOVES sqllt.table
-System	SYSTEM STOP FETCHES sqllt.table
-System	SYSTEM START FETCHES sqllt.table
-System	SYSTEM STOP REPLICATED SENDS sqllt.table
-System	SYSTEM START REPLICATED SENDS sqllt.table
+System	SYSTEM STOP MERGES sqllt.table;
+System	SYSTEM START MERGES sqllt.table;
+System	SYSTEM STOP TTL MERGES sqllt.table;
+System	SYSTEM START TTL MERGES sqllt.table;
+System	SYSTEM STOP MOVES sqllt.table;
+System	SYSTEM START MOVES sqllt.table;
+System	SYSTEM STOP FETCHES sqllt.table;
+System	SYSTEM START FETCHES sqllt.table;
+System	SYSTEM STOP REPLICATED SENDS sqllt.table;
+System	SYSTEM START REPLICATED SENDS sqllt.table;
 Select	-- SYSTEM RELOAD DICTIONARY sqllt.dictionary; -- temporary out of order: Code: 210, Connection refused (localhost:9001) (version 21.3.1.1)\n-- DROP REPLICA\n-- haha, no\n-- SYSTEM KILL;\n-- SYSTEM SHUTDOWN;\n\n-- Since we don\'t really care about the actual output, suppress it with `FORMAT Null`.\nSELECT \'SHOW queries\';
 Show	SHOW CREATE TABLE sqllt.table FORMAT Null;
 Show	SHOW CREATE DICTIONARY sqllt.dictionary FORMAT Null;

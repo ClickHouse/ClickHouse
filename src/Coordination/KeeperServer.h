@@ -128,7 +128,13 @@ public:
 
     int getServerID() const { return server_id; }
 
-    enum class ConfigUpdateState { Accepted, Declined, WaitBeforeChangingLeader };
+    enum class ConfigUpdateState : uint8_t
+    {
+        Accepted,
+        Declined,
+        WaitBeforeChangingLeader
+    };
+
     ConfigUpdateState applyConfigUpdate(
         const ClusterUpdateAction& action,
         bool last_command_was_leader_change = false);
