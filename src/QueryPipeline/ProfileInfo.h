@@ -40,8 +40,8 @@ struct ProfileInfo
 
     /// Binary serialization and deserialization of main fields.
     /// Writes only main fields i.e. fields that required by internal transmission protocol.
-    void read(ReadBuffer & in);
-    void write(WriteBuffer & out) const;
+    void read(ReadBuffer & in, UInt64 server_revision);
+    void write(WriteBuffer & out, UInt64 client_revision) const;
 
     /// Sets main fields from other object (see methods above).
     /// If skip_block_size_info if true, then rows, bytes and block fields are ignored.

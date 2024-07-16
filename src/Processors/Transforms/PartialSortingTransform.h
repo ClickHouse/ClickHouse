@@ -20,7 +20,7 @@ public:
 
     String getName() const override { return "PartialSortingTransform"; }
 
-    void setRowsBeforeLimitCounter(RowsBeforeLimitCounterPtr counter) override { read_rows.swap(counter); }
+    void setRowsBeforeLimitCounter(RowsBeforeStepCounterPtr counter) override { read_rows.swap(counter); }
 
 protected:
     void transform(Chunk & chunk) override;
@@ -29,7 +29,7 @@ private:
     const SortDescription description;
     SortDescriptionWithPositions description_with_positions;
     const UInt64 limit;
-    RowsBeforeLimitCounterPtr read_rows;
+    RowsBeforeStepCounterPtr read_rows;
 
     Columns sort_description_threshold_columns;
 

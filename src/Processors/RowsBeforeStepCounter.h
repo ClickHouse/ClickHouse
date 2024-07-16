@@ -5,7 +5,7 @@
 namespace DB
 {
 
-/// This class helps to calculate rows_before_limit_at_least and rows_before_aggregation_at_least.
+/// This class helps to calculate rows_before_limit_at_least and rows_before_aggregation.
 class RowsBeforeStepCounter
 {
 public:
@@ -31,6 +31,6 @@ private:
     std::atomic_bool has_applied_step = false;
 };
 
-using RowsBeforeLimitCounterPtr = std::shared_ptr<RowsBeforeStepCounter>;
+using RowsBeforeStepCounterPtr = std::shared_ptr<RowsBeforeStepCounter>;
 
 }

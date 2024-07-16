@@ -39,17 +39,17 @@ public:
     virtual void setRowsBeforeLimit(size_t /*rows_before_limit*/) { }
 
     /// Counter to calculate rows_before_limit_at_least in processors pipeline.
-    void setRowsBeforeLimitCounter(RowsBeforeLimitCounterPtr counter) override { rows_before_limit_counter.swap(counter); }
+    void setRowsBeforeLimitCounter(RowsBeforeStepCounterPtr counter) override { rows_before_limit_counter.swap(counter); }
 
-    /// Value for rows_before_aggregation_at_least field.
-    virtual void setRowsBeforeAggregation(size_t /*rows_before_limit*/) { }
+    /// Value for rows_before_aggregation field.
+    virtual void setRowsBeforeAggregation(size_t /*rows_before_aggregation*/) { }
 
-    /// Counter to calculate rows_before_aggregation_at_least in processors pipeline.
-    void setRowsBeforeAggregationCounter(RowsBeforeLimitCounterPtr counter) override { rows_before_aggregation_counter.swap(counter); }
+    /// Counter to calculate rows_before_aggregation in processors pipeline.
+    void setRowsBeforeAggregationCounter(RowsBeforeStepCounterPtr counter) override { rows_before_aggregation_counter.swap(counter); }
 
     /// Notify about progress. Method could be called from different threads.
     /// Passed value are delta, that must be summarized.
-    virtual void onProgress(const Progress & /*progress*/) {}
+    virtual void onProgress(const Progress & /*progress*/) { }
 
     /// Content-Type to set when sending HTTP response.
     virtual std::string getContentType() const { return "text/plain; charset=UTF-8"; }
@@ -192,8 +192,8 @@ protected:
     bool need_write_prefix  = true;
     bool need_write_suffix = true;
 
-    RowsBeforeLimitCounterPtr rows_before_limit_counter;
-    RowsBeforeAggregationCounterPtr rows_before_aggregation_counter;
+    RowsBeforeStepCounterPtr rows_before_limit_counter;
+    RowsBeforeStepCounterPtr rows_before_aggregation_counter;
     Statistics statistics;
 
 private:

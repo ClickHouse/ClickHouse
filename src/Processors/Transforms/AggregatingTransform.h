@@ -169,10 +169,7 @@ public:
     Status prepare() override;
     void work() override;
     Processors expandPipeline() override;
-    void setRowsBeforeAggregationCounter(RowsBeforeAggregationCounterPtr counter) override
-    {
-        rows_before_aggregation_at_least.swap(counter);
-    }
+    void setRowsBeforeAggregationCounter(RowsBeforeStepCounterPtr counter) override { rows_before_aggregation.swap(counter); }
 
 protected:
     void consume(Chunk chunk);
@@ -216,7 +213,7 @@ private:
 
     bool is_consume_started = false;
 
-    RowsBeforeAggregationCounterPtr rows_before_aggregation_at_least;
+    RowsBeforeStepCounterPtr rows_before_aggregation;
 
     void initGenerate();
 };

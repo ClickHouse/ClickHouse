@@ -50,8 +50,6 @@ RemoteSource::RemoteSource(RemoteQueryExecutorPtr executor, bool add_aggregation
             {
                 if (info.hasAppliedAggregation())
                     rows_before_aggregation->add(info.getRowsBeforeAggregation());
-                else
-                    manually_add_rows_before_aggregation_counter = true; /// Remote subquery doesn't contain a group by
             }
         });
 }
@@ -171,8 +169,6 @@ std::optional<Chunk> RemoteSource::tryGenerate()
     {
         if (manually_add_rows_before_limit_counter)
             rows_before_limit->add(rows);
-        if (manually_add_rows_before_aggregation_counter)
-            rows_before_aggregation->add(rows);
         query_executor->finish();
         return {};
     }

@@ -224,9 +224,9 @@ void XMLRowOutputFormat::writeRowsBeforeAggregationAtLeast()
 {
     if (statistics.applied_aggregation)
     {
-        writeCString("\t<rows_before_aggregation_at_least>", *ostr);
+        writeCString("\t<rows_before_aggregation>", *ostr);
         writeIntText(statistics.rows_before_aggregation, *ostr);
-        writeCString("</rows_before_aggregation_at_least>\n", *ostr);
+        writeCString("</rows_before_aggregation>\n", *ostr);
     }
 }
 

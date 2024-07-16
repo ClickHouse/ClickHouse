@@ -507,7 +507,7 @@ namespace JSONUtils
         if (applied_aggregation)
         {
             writeFieldDelimiter(out, 2);
-            writeTitle("rows_before_aggregation_at_least", out, 1, " ");
+            writeTitle("rows_before_aggregation", out, 1, " ");
             writeIntText(rows_before_aggregation, out);
         }
         if (write_statistics)

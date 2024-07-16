@@ -1212,7 +1212,7 @@ void TCPHandler::sendMergeTreeReadTaskRequestAssumeLocked(ParallelReadRequest re
 void TCPHandler::sendProfileInfo(const ProfileInfo & info)
 {
     writeVarUInt(Protocol::Server::ProfileInfo, *out);
-    info.write(*out);
+    info.write(*out, client_tcp_protocol_version);
     out->next();
 }
 

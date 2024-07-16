@@ -15,6 +15,7 @@
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Sources/RemoteSource.h>
 #include <Processors/Sources/SourceFromChunks.h>
+#include <Processors/Transforms/AggregatingInOrderTransform.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Processors/Transforms/CountingTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
@@ -140,7 +141,7 @@ static void checkCompleted(Processors & processors)
 
 static void initRowsBeforeLimit(IOutputFormat * output_format)
 {
-    RowsBeforeLimitCounterPtr rows_before_limit_at_least;
+    RowsBeforeStepCounterPtr rows_before_limit_at_least;
     std::vector<IProcessor *> processors;
     std::map<LimitTransform *, std::vector<size_t>> limit_candidates;
     std::unordered_set<IProcessor *> visited;
@@ -280,20 +281,20 @@ static void initRowsBeforeAggregation(std::shared_ptr<Processors> processors, IO
 
     if (!processors->empty())
     {
-        RowsBeforeAggregationCounterPtr rows_before_aggregation_at_least = std::make_shared<RowsBeforeStepCounter>();
+        RowsBeforeStepCounterPtr rows_before_aggregation = std::make_shared<RowsBeforeStepCounter>();
         for (auto processor : *processors)
         {
-            if (auto transform = std::dynamic_pointer_cast<AggregatingTransform>(processor))
+            if (typeid_cast<AggregatingTransform *>(processor.get()) || typeid_cast<AggregatingInOrderTransform *>(processor.get()))
             {
-                transform->setRowsBeforeAggregationCounter(rows_before_aggregation_at_least);
+                processor->setRowsBeforeAggregationCounter(rows_before_aggregation);
                 has_aggregation = true;
             }
             if (typeid_cast<RemoteSource *>(processor.get()) || typeid_cast<DelayedSource *>(processor.get()))
-                processor->setRowsBeforeAggregationCounter(rows_before_aggregation_at_least);
+                processor->setRowsBeforeAggregationCounter(rows_before_aggregation);
         }
         if (has_aggregation)
-            rows_before_aggregation_at_least->add(0);
-        output_format->setRowsBeforeAggregationCounter(rows_before_aggregation_at_least);
+            rows_before_aggregation->add(0);
+        output_format->setRowsBeforeAggregationCounter(rows_before_aggregation);
     }
 }
 
