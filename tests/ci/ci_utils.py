@@ -1,9 +1,16 @@
 import os
 import re
 import subprocess
+import time
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Iterator, List, Union, Optional, Tuple
+from typing import Any, Iterator, List, Union, Optional, Sequence
+
+import requests
+
+
+class Envs:
+    GITHUB_REPOSITORY = os.getenv("GITHUB_REPOSITORY", "ClickHouse/ClickHouse")
 
 
 LABEL_CATEGORIES = {
@@ -80,6 +87,62 @@ class GHActions:
             print(line)
         print("::endgroup::")
 
+    @staticmethod
+    def get_commit_status_by_name(
+        token: str, commit_sha: str, status_name: Union[str, Sequence]
+    ) -> Optional[str]:
+        assert len(token) == 40
+        assert len(commit_sha) == 40
+        assert is_hex(commit_sha)
+        assert not is_hex(token)
+        url = f"https://api.github.com/repos/{Envs.GITHUB_REPOSITORY}/commits/{commit_sha}/statuses?per_page={200}"
+        headers = {
+            "Authorization": f"token {token}",
+            "Accept": "application/vnd.github.v3+json",
+        }
+        response = requests.get(url, headers=headers, timeout=5)
+
+        if isinstance(status_name, str):
+            status_name = (status_name,)
+        if response.status_code == 200:
+            assert "next" not in response.links, "Response truncated"
+            statuses = response.json()
+            for status in statuses:
+                if status["context"] in status_name:
+                    return status["state"]
+        return None
+
+    @staticmethod
+    def check_wf_completed(token: str, commit_sha: str) -> bool:
+        headers = {
+            "Authorization": f"token {token}",
+            "Accept": "application/vnd.github.v3+json",
+        }
+        url = f"https://api.github.com/repos/{Envs.GITHUB_REPOSITORY}/commits/{commit_sha}/check-runs?per_page={100}"
+
+        for i in range(3):
+            try:
+                response = requests.get(url, headers=headers, timeout=5)
+                response.raise_for_status()
+                # assert "next" not in response.links, "Response truncated"
+
+                data = response.json()
+                assert data["check_runs"], "?"
+
+                for check in data["check_runs"]:
+                    if check["status"] != "completed":
+                        print(
+                            f"   Check workflow status: Check not completed [{check['name']}]"
+                        )
+                        return False
+                else:
+                    return True
+            except Exception as e:
+                print(f"ERROR: exception {e}")
+                time.sleep(1)
+
+        return False
+
 
 class Shell:
     @classmethod
@@ -108,15 +171,18 @@ class Shell:
         )
         if result.returncode == 0:
             res = result.stdout
-        elif check:
-            print(f"ERROR: stdout {result.stdout}, stderr {result.stderr}")
-            assert result.returncode == 0
+        else:
+            print(
+                f"ERROR: stdout {result.stdout.strip()}, stderr {result.stderr.strip()}"
+            )
+            if check:
+                assert result.returncode == 0
         return res.strip()
 
     @classmethod
     def check(cls, command):
         result = subprocess.run(
-            command + " 2>&1",
+            command,
             shell=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
