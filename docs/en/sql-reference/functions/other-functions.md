@@ -76,7 +76,7 @@ WHERE macro = 'test';
 └───────┴──────────────┘
 ```
 
-## FQDN
+## fqdn
 
 Returns the fully qualified domain name of the ClickHouse server.
 
