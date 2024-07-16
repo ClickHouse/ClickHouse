@@ -24,6 +24,7 @@
 
 #include <Common/assert_cast.h>
 #include <Common/logger_useful.h>
+#include <Common/CurrentMetrics.h>
 #include <Common/ProxyConfigurationResolverProvider.h>
 
 #include <Core/Settings.h>
@@ -41,6 +42,11 @@ namespace ProfileEvents
 
     extern const Event S3Clients;
     extern const Event TinyS3Clients;
+}
+
+namespace CurrentMetrics
+{
+    extern const Metric S3DiskNoKeyErrors;
 }
 
 namespace DB
@@ -379,10 +385,10 @@ Model::HeadObjectOutcome Client::HeadObject(HeadObjectRequest & request) const
 
     request.overrideURI(std::move(*bucket_uri));
 
-    /// The next call is NOT a recurcive call
-    /// This is a virtuall call Aws::S3::S3Client::HeadObject(const Model::HeadObjectRequest&)
-    return enrichErrorMessage(
-        HeadObject(static_cast<const Model::HeadObjectRequest&>(request)));
+    if (isClientForDisk())
+        CurrentMetrics::add(CurrentMetrics::S3DiskNoKeyErrors);
+
+    return enrichErrorMessage(std::move(result));
 }
 
 /// For each request, we wrap the request functions from Aws::S3::Client with doRequest
@@ -402,8 +408,11 @@ Model::ListObjectsOutcome Client::ListObjects(ListObjectsRequest & request) cons
 
 Model::GetObjectOutcome Client::GetObject(GetObjectRequest & request) const
 {
-    return enrichErrorMessage(
-        doRequest(request, [this](const Model::GetObjectRequest & req) { return GetObject(req); }));
+    auto resp = doRequest(request, [this](const Model::GetObjectRequest & req) { return GetObject(req); });
+    if (!resp.IsSuccess() && isClientForDisk())
+        CurrentMetrics::add(CurrentMetrics::S3DiskNoKeyErrors);
+
+    return enrichErrorMessage(std::move(resp));
 }
 
 Model::AbortMultipartUploadOutcome Client::AbortMultipartUpload(AbortMultipartUploadRequest & request) const
