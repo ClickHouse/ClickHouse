@@ -2,6 +2,7 @@
 #include <Formats/FormatFactory.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Common/isValidUTF8.h>
+#include <Core/Settings.h>
 #include <Storages/ObjectStorage/Utils.h>
 
 namespace DB
@@ -50,54 +51,56 @@ void StorageObjectStorageSink::consume(Chunk chunk)
 void StorageObjectStorageSink::onCancel()
 {
     std::lock_guard lock(cancel_mutex);
-    finalize();
+    cancelBuffers();
+    releaseBuffers();
     cancelled = true;
 }
 
-void StorageObjectStorageSink::onException(std::exception_ptr exception)
+void StorageObjectStorageSink::onException(std::exception_ptr)
 {
     std::lock_guard lock(cancel_mutex);
-    try
-    {
-        std::rethrow_exception(exception);
-    }
-    catch (...)
-    {
-        /// An exception context is needed to proper delete write buffers without finalization.
-        release();
-    }
+    cancelBuffers();
+    releaseBuffers();
 }
 
 void StorageObjectStorageSink::onFinish()
 {
     std::lock_guard lock(cancel_mutex);
-    finalize();
+    finalizeBuffers();
 }
 
-void StorageObjectStorageSink::finalize()
+void StorageObjectStorageSink::finalizeBuffers()
 {
     if (!writer)
         return;
 
     try
     {
-        writer->finalize();
         writer->flush();
+        writer->finalize();
     }
     catch (...)
     {
         /// Stop ParallelFormattingOutputFormat correctly.
-        release();
+        releaseBuffers();
         throw;
     }
 
     write_buf->finalize();
 }
 
-void StorageObjectStorageSink::release()
+void StorageObjectStorageSink::releaseBuffers()
 {
     writer.reset();
     write_buf.reset();
+}
+
+void StorageObjectStorageSink::cancelBuffers()
+{
+    if (writer)
+        writer->cancel();
+    if (write_buf)
+        write_buf->cancel();
 }
 
 PartitionedStorageObjectStorageSink::PartitionedStorageObjectStorageSink(

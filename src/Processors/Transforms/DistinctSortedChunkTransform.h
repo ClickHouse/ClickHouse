@@ -5,6 +5,7 @@
 #include <Core/SortDescription.h>
 #include <Interpreters/SetVariants.h>
 #include <Processors/ISimpleTransform.h>
+#include <QueryPipeline/SizeLimits.h>
 
 namespace DB
 {

@@ -783,7 +783,7 @@ void AggregatingTransform::initGenerate()
                             {
                                 /// Just a reasonable constant, matches default value for the setting `preferred_block_size_bytes`
                                 static constexpr size_t oneMB = 1024 * 1024;
-                                return std::make_shared<SimpleSquashingTransform>(header, params->params.max_block_size, oneMB);
+                                return std::make_shared<SimpleSquashingChunksTransform>(header, params->params.max_block_size, oneMB);
                             });
                     }
                     /// AggregatingTransform::expandPipeline expects single output port.

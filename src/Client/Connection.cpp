@@ -1,3 +1,4 @@
+#include <cstddef>
 #include <memory>
 #include <Poco/Net/NetException.h>
 #include <Core/Defines.h>
@@ -37,6 +38,7 @@
 #include <Common/FailPoint.h>
 
 #include <Common/config_version.h>
+#include <Core/Types.h>
 #include "config.h"
 
 #if USE_SSL
@@ -68,12 +70,23 @@ namespace ErrorCodes
     extern const int EMPTY_DATA_PASSED;
 }
 
-Connection::~Connection() = default;
+Connection::~Connection()
+{
+    try{
+        if (connected)
+            Connection::disconnect();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+}
 
 Connection::Connection(const String & host_, UInt16 port_,
     const String & default_database_,
     const String & user_, const String & password_,
     [[maybe_unused]] const SSHKey & ssh_private_key_,
+    const String & jwt_,
     const String & quota_key_,
     const String & cluster_,
     const String & cluster_secret_,
@@ -86,6 +99,7 @@ Connection::Connection(const String & host_, UInt16 port_,
     , ssh_private_key(ssh_private_key_)
 #endif
     , quota_key(quota_key_)
+    , jwt(jwt_)
     , cluster(cluster_)
     , cluster_secret(cluster_secret_)
     , client_name(client_name_)
@@ -257,13 +271,31 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
 
 void Connection::disconnect()
 {
-    maybe_compressed_out = nullptr;
     in = nullptr;
     last_input_packet_type.reset();
     std::exception_ptr finalize_exception;
+
     try
     {
-        // finalize() can write to socket and throw an exception.
+        // finalize() can write and throw an exception.
+        if (maybe_compressed_out)
+            maybe_compressed_out->finalize();
+    }
+    catch (...)
+    {
+        /// Don't throw an exception here, it will leave Connection in invalid state.
+        finalize_exception = std::current_exception();
+
+        if (out)
+        {
+            out->cancel();
+            out = nullptr;
+        }
+    }
+    maybe_compressed_out = nullptr;
+
+    try
+    {
         if (out)
             out->finalize();
     }
@@ -276,6 +308,7 @@ void Connection::disconnect()
 
     if (socket)
         socket->close();
+
     socket = nullptr;
     connected = false;
     nonce.reset();
@@ -341,6 +374,11 @@ void Connection::sendHello()
         performHandshakeForSSHAuth();
     }
 #endif
+    else if (!jwt.empty())
+    {
+        writeStringBinary(EncodedUserInfo::JWT_AUTHENTICAION_MARKER, *out);
+        writeStringBinary(jwt, *out);
+    }
     else
     {
         writeStringBinary(user, *out);
@@ -767,6 +805,8 @@ void Connection::sendQuery(
     }
 
     maybe_compressed_in.reset();
+    if (maybe_compressed_out && maybe_compressed_out != out)
+        maybe_compressed_out->cancel();
     maybe_compressed_out.reset();
     block_in.reset();
     block_logs_in.reset();
@@ -1310,6 +1350,7 @@ ServerConnectionPtr Connection::createConnection(const ConnectionParameters & pa
         parameters.user,
         parameters.password,
         parameters.ssh_private_key,
+        parameters.jwt,
         parameters.quota_key,
         "", /* cluster */
         "", /* cluster_secret */

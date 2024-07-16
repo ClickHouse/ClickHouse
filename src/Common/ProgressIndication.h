@@ -1,14 +1,15 @@
 #pragma once
 
-#include <unordered_map>
-#include <unordered_set>
-#include <mutex>
 #include <IO/Progress.h>
 #include <Interpreters/Context.h>
 #include <base/types.h>
 #include <Common/Stopwatch.h>
 #include <Common/EventRateMeter.h>
 
+#include <iostream>
+#include <mutex>
+#include <unordered_map>
+#include <unordered_set>
 
 namespace DB
 {
@@ -32,6 +33,19 @@ using HostToTimesMap = std::unordered_map<String, ThreadEventData>;
 class ProgressIndication
 {
 public:
+
+    explicit ProgressIndication
+    (
+        std::ostream & output_stream_ = std::cout,
+        int in_fd_ = STDIN_FILENO,
+        int err_fd_ = STDERR_FILENO
+    )
+        : output_stream(output_stream_),
+        in_fd(in_fd_),
+        err_fd(err_fd_)
+    {
+    }
+
     /// Write progress bar.
     void writeProgress(WriteBufferFromFileDescriptor & message);
     void clearProgressOutput(WriteBufferFromFileDescriptor & message);
@@ -103,6 +117,10 @@ private:
     /// - hosts_data/cpu_usage_meter (guarded with profile_events_mutex)
     mutable std::mutex profile_events_mutex;
     mutable std::mutex progress_mutex;
+
+    std::ostream & output_stream;
+    int in_fd;
+    int err_fd;
 };
 
 }

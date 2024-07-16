@@ -24,6 +24,7 @@
 #include <Parsers/queryToString.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/PartMetadataManagerOrdinary.h>
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/MergeTree/Backup.h>
@@ -373,6 +374,12 @@ void IMergeTreeDataPart::unloadIndex()
     std::scoped_lock lock(index_mutex);
     index = std::make_shared<Columns>();
     index_loaded = false;
+}
+
+bool IMergeTreeDataPart::isIndexLoaded() const
+{
+    std::scoped_lock lock(index_mutex);
+    return index_loaded;
 }
 
 void IMergeTreeDataPart::setName(const String & new_name)
@@ -1307,6 +1314,17 @@ void IMergeTreeDataPart::loadRowsCount()
         auto buf = metadata_manager->read("count.txt");
         readIntText(rows_count, *buf);
         assertEOF(*buf);
+
+        if (!index_granularity.empty() && rows_count < index_granularity.getTotalRows() && index_granularity_info.fixed_index_granularity)
+        {
+            /// Adjust last granule size to match the number of rows in the part in case of fixed index_granularity.
+            index_granularity.popMark();
+            index_granularity.appendMark(rows_count % index_granularity_info.fixed_index_granularity);
+            if (rows_count != index_granularity.getTotalRows())
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Index granularity total rows in part {} does not match rows_count: {}, instead of {}",
+                    name, index_granularity.getTotalRows(), rows_count);
+        }
     };
 
     if (index_granularity.empty())
@@ -1577,7 +1595,7 @@ void IMergeTreeDataPart::loadColumns(bool require)
             if (getFileNameForColumn(column))
                 loaded_columns.push_back(column);
 
-        if (columns.empty())
+        if (loaded_columns.empty())
             throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART, "No columns in part {}", name);
 
         if (!is_readonly_storage)
