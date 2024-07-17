@@ -75,7 +75,7 @@ private:
             ParserNestedTable nested_parser;
             return nested_parser.parse(pos, node, expected);
         }
-        else if (type_name == "AggregateFunction")
+        else if (type_name == "AggregateFunction" || type_name == "SimpleAggregateFunction")
         {
             ParserFunction function_parser;
             ParserIdentifier identifier_parser;
