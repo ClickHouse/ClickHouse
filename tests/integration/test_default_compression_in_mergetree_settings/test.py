@@ -6,7 +6,11 @@ from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 
-node = cluster.add_instance("node", with_zookeeper=True, main_configs=["configs/encryption_codec.xml", "configs/default_compression.xml"])
+node = cluster.add_instance(
+    "node",
+    with_zookeeper=True,
+    main_configs=["configs/encryption_codec.xml", "configs/default_compression.xml"],
+)
 
 
 @pytest.fixture(scope="module")
@@ -40,7 +44,7 @@ CODECS_MAPPING = {
 
 def test_default_compression_codec_in_mergetree_settings(start_cluster):
     node.query(
-    """
+        """
     CREATE TABLE compression_table (
         key UInt64,
         column_ok Nullable(UInt64) CODEC(Delta, LZ4),
@@ -58,9 +62,7 @@ def test_default_compression_codec_in_mergetree_settings(start_cluster):
     node.query("INSERT INTO compression_table VALUES (1, 1, [[77]], 32)")
 
     assert (
-        get_compression_codec_byte(
-            node, "compression_table", "1_0_0_0", "column_ok"
-        )
+        get_compression_codec_byte(node, "compression_table", "1_0_0_0", "column_ok")
         == CODECS_MAPPING["Multiple"]
     )
     assert (
@@ -71,9 +73,7 @@ def test_default_compression_codec_in_mergetree_settings(start_cluster):
     )
 
     assert (
-        get_compression_codec_byte(
-            node, "compression_table", "1_0_0_0", "column_array"
-        )
+        get_compression_codec_byte(node, "compression_table", "1_0_0_0", "column_array")
         == CODECS_MAPPING["Multiple"]
     )
     assert (
@@ -103,26 +103,22 @@ def test_default_compression_codec_in_mergetree_settings(start_cluster):
     )
 
     assert (
-        get_compression_codec_byte(
-            node, "compression_table", "1_0_0_0", "key"
-        )
+        get_compression_codec_byte(node, "compression_table", "1_0_0_0", "key")
         == CODECS_MAPPING["ZSTD"]
     )
 
     # Modify the default compression codec and check if newly added records use it
-    node.query("ALTER TABLE compression_table MODIFY SETTING default_compression_codec = 'AES_128_GCM_SIV'")
+    node.query(
+        "ALTER TABLE compression_table MODIFY SETTING default_compression_codec = 'AES_128_GCM_SIV'"
+    )
     node.query("INSERT INTO compression_table VALUES (2, 1, [[77]], 32)")
 
     assert (
-        get_compression_codec_byte(
-            node, "compression_table", "1_0_0_0", "key"
-        )
+        get_compression_codec_byte(node, "compression_table", "1_0_0_0", "key")
         == CODECS_MAPPING["ZSTD"]
     )
 
     assert (
-        get_compression_codec_byte(
-            node, "compression_table", "2_0_0_0", "key"
-        )
+        get_compression_codec_byte(node, "compression_table", "2_0_0_0", "key")
         == CODECS_MAPPING["AES_128_GCM_SIV"]
     )
