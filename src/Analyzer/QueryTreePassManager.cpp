@@ -62,7 +62,7 @@ namespace ErrorCodes
 namespace
 {
 
-#if defined(ABORT_ON_LOGICAL_ERROR)
+#if defined(DEBUG_OR_SANITIZER_BUILD)
 
 /** This visitor checks if Query Tree structure is valid after each pass
   * in debug build.
@@ -183,7 +183,7 @@ void QueryTreePassManager::run(QueryTreeNodePtr query_tree_node)
     for (size_t i = 0; i < passes_size; ++i)
     {
         passes[i]->run(query_tree_node, current_context);
-#if defined(ABORT_ON_LOGICAL_ERROR)
+#if defined(DEBUG_OR_SANITIZER_BUILD)
         ValidationChecker(passes[i]->getName()).visit(query_tree_node);
 #endif
     }
@@ -208,7 +208,7 @@ void QueryTreePassManager::run(QueryTreeNodePtr query_tree_node, size_t up_to_pa
     for (size_t i = 0; i < up_to_pass_index; ++i)
     {
         passes[i]->run(query_tree_node, current_context);
-#if defined(ABORT_ON_LOGICAL_ERROR)
+#if defined(DEBUG_OR_SANITIZER_BUILD)
         ValidationChecker(passes[i]->getName()).visit(query_tree_node);
 #endif
     }

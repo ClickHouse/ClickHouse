@@ -26,7 +26,7 @@ public:
     size_t byteSize() const override { return 0; }
     size_t byteSizeAt(size_t) const override { return 0; }
     size_t allocatedBytes() const override { return 0; }
-#if !defined(ABORT_ON_LOGICAL_ERROR)
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
     int compareAt(size_t, size_t, const IColumn &, int) const override { return 0; }
 #else
     int doCompareAt(size_t, size_t, const IColumn &, int) const override { return 0; }
@@ -71,7 +71,7 @@ public:
     {
     }
 
-#if !defined(ABORT_ON_LOGICAL_ERROR)
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
     void insertFrom(const IColumn &, size_t) override
 #else
     void doInsertFrom(const IColumn &, size_t) override
@@ -80,7 +80,7 @@ public:
         ++s;
     }
 
-#if !defined(ABORT_ON_LOGICAL_ERROR)
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
     void insertRangeFrom(const IColumn & /*src*/, size_t /*start*/, size_t length) override
 #else
     void doInsertRangeFrom(const IColumn & /*src*/, size_t /*start*/, size_t length) override
