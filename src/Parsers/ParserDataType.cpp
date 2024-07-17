@@ -3,7 +3,6 @@
 #include <boost/algorithm/string/case_conv.hpp>
 #include <Parsers/ASTDataType.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
@@ -80,9 +79,9 @@ private:
             ParserFunction function_parser;
             ParserIdentifier identifier_parser;
             ParserAllCollectionsOfLiterals literal_parser(false);
-            return literal_parser.parse(pos, node, expected)
-                || identifier_parser.parse(pos, node, expected)
-                || function_parser.parse(pos, node, expected);
+            return function_parser.parse(pos, node, expected)
+                || literal_parser.parse(pos, node, expected)
+                || identifier_parser.parse(pos, node, expected);
         }
         else
         {
