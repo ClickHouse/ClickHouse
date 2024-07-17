@@ -1306,6 +1306,10 @@ void BaseDaemon::setupWatchdog()
         int status = 0;
         do
         {
+            // Close log files to prevent keeping descriptors of unlinked rotated files.
+            // On next log write files will be reopened.
+            closeLogs(logger());
+
             if (-1 != waitpid(pid, &status, WUNTRACED | WCONTINUED) || errno == ECHILD)
             {
                 if (WIFSTOPPED(status))
