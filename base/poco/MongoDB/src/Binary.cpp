@@ -82,7 +82,7 @@ UUID Binary::uuid() const
 		uuid.copyFrom((const char*) _buffer.begin());
 		return uuid;
 	}
-	throw BadCastException("Invalid subtype");
+	throw BadCastException("Invalid subtype: " + std::to_string(_subtype) + ", size: " + std::to_string(_buffer.size()));
 }
 
 
