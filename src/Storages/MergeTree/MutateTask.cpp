@@ -2238,7 +2238,12 @@ bool MutateTask::prepare()
             && ctx->data->getSettings()->lightweight_mutation_projection_mode == LightweightMutationProjectionMode::REBUILD)
         {
             for (const auto & projection : ctx->metadata_snapshot->getProjections())
+            {
+                if (!ctx->source_part->hasProjection(projection.name))
+                    continue;
+
                 ctx->materialized_projections.insert(projection.name);
+            }
         }
     }
 

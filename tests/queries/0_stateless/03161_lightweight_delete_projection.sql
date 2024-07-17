@@ -44,7 +44,7 @@ SELECT * FROM users ORDER BY uid;
 
 SYSTEM FLUSH LOGS;
 
--- expecting projection p1, p2 in 2 parts
+-- expecting projection p1, p2
 SELECT
     name
 FROM system.projection_parts
@@ -85,21 +85,22 @@ SELECT
 FROM system.projection_parts
 WHERE (database = currentDatabase()) AND (`table` = 'users') AND (active = 1);
 
--- -- testing rebuild mode
--- INSERT INTO users VALUES (6666, 'Ksenia', 48), (8888, 'Alice', 50);
+-- testing rebuild mode
+INSERT INTO users VALUES (6666, 'Ksenia', 48), (8888, 'Alice', 50);
 
--- ALTER TABLE users MODIFY SETTING lightweight_mutation_projection_mode = 'rebuild';
+ALTER TABLE users MODIFY SETTING lightweight_mutation_projection_mode = 'rebuild';
 
--- DELETE FROM users WHERE uid = 6666;
+DELETE FROM users WHERE uid = 6666;
 
--- SELECT * FROM users ORDER BY uid;
+SELECT * FROM users ORDER BY uid;
 
--- SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS;
 
--- -- expecting projection p1, p2 in 2 parts
--- SELECT
---     name
--- FROM system.projection_parts
--- WHERE (database = currentDatabase()) AND (`table` = 'users') AND (active = 1);
+-- expecting projection p1, p2
+SELECT
+    name
+FROM system.projection_parts
+WHERE (database = currentDatabase()) AND (`table` = 'users') AND (active = 1);
+
 
 DROP TABLE users;
