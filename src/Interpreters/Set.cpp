@@ -6,6 +6,7 @@
 #include <Columns/ColumnTuple.h>
 
 #include <Common/typeid_cast.h>
+#include <DataTypes/IDataType.h>
 
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -278,6 +279,16 @@ void Set::checkIsCreated() const
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to use set before it has been built.");
 }
 
+ColumnPtr returnIfEquals(const ColumnPtr & lhs, const ColumnPtr & rhs)
+{
+    if (rhs->size() != lhs->size())
+        return nullptr;
+    for (size_t i = 0; i < lhs->size(); i++)
+        if (lhs->getDataAt(i) != rhs->getDataAt(i))
+            return nullptr;
+    return lhs;
+}
+
 ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) const
 {
     size_t num_key_columns = columns.size();
@@ -331,7 +342,13 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
             result = castColumnAccurate(column_to_cast, data_types[i], cast_cache.get());
         }
 
-        materialized_columns.emplace_back() = result;
+        ColumnPtr col_to_emplace; /// If we cast DateTime64 column to other type, we lose its precision. if we have this case, we should not let this cast happen
+        if (returnIfEquals(column_before_cast.column, result) == nullptr && isDateTime64(column_before_cast.column->getDataType()))
+            col_to_emplace = column_before_cast.column;
+        else
+            col_to_emplace = result;
+
+        materialized_columns.emplace_back() = col_to_emplace;
         key_columns.emplace_back() = materialized_columns.back().get();
     }
 
