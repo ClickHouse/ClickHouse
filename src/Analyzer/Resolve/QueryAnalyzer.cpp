@@ -2919,6 +2919,17 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
             resolveExpressionNode(in_second_argument, scope, false /*allow_lambda_expression*/, true /*allow_table_expression*/);
         }
+
+        /// Edge case when the first argument of IN is scalar subquery.
+        auto & in_first_argument = function_in_arguments_nodes[0];
+        auto first_argument_type = in_first_argument->getNodeType();
+        if (first_argument_type == QueryTreeNodeType::QUERY || first_argument_type == QueryTreeNodeType::UNION)
+        {
+            IdentifierResolveScope subquery_scope(in_first_argument, &scope /*parent_scope*/);
+            subquery_scope.subquery_depth = scope.subquery_depth + 1;
+
+            evaluateScalarSubqueryIfNeeded(in_first_argument, subquery_scope);
+        }
     }
 
     /// Initialize function argument columns
