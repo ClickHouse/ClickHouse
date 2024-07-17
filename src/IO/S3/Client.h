@@ -63,10 +63,10 @@ struct ClientCache
 
     void clearCache();
 
-    std::mutex region_cache_mutex;
+    mutable std::mutex region_cache_mutex;
     std::unordered_map<std::string, std::string> region_for_bucket_cache TSA_GUARDED_BY(region_cache_mutex);
 
-    std::mutex uri_cache_mutex;
+    mutable std::mutex uri_cache_mutex;
     std::unordered_map<std::string, URI> uri_for_bucket_cache TSA_GUARDED_BY(uri_cache_mutex);
 };
 
