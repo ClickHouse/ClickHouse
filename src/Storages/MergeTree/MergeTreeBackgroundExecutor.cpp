@@ -155,7 +155,7 @@ void printExceptionWithRespectToAbort(LoggerPtr log, const String & query_id)
     {
         std::rethrow_exception(ex);
     }
-    catch (const TestException &)
+    catch (const TestException &) // NOLINT
     {
         /// Exception from a unit test, ignore it.
     }
