@@ -9,6 +9,7 @@
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Disks/DiskLocal.h>
+#include <Core/Settings.h>
 #include <Formats/ReadSchemaUtils.h>
 #include <Formats/registerFormats.h>
 #include <IO/ReadBuffer.h>
@@ -1311,9 +1312,9 @@ void removeRecursive(Coordination::ZooKeeper & zookeeper, const std::string & pa
     while (!children_span.empty())
     {
         Coordination::Requests ops;
-        for (size_t i = 0; i < 1000 && !children.empty(); ++i)
+        for (size_t i = 0; i < 1000 && !children_span.empty(); ++i)
         {
-            removeRecursive(zookeeper, fs::path(path) / children.back());
+            removeRecursive(zookeeper, fs::path(path) / children_span.back());
             ops.emplace_back(zkutil::makeRemoveRequest(fs::path(path) / children_span.back(), -1));
             children_span = children_span.subspan(0, children_span.size() - 1);
         }
