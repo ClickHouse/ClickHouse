@@ -14,22 +14,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-namespace
-{
-
-const ChunksToSquash * getInfoFromChunk(const Chunk & chunk)
-{
-    const auto & info = chunk.getChunkInfo();
-    const auto * agg_info = typeid_cast<const ChunksToSquash *>(info.get());
-
-    if (!agg_info)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "There is no ChunksToSquash in ChunkInfoPtr");
-
-    return agg_info;
-}
-
-}
-
 Squashing::Squashing(Block header_, size_t min_block_size_rows_, size_t min_block_size_bytes_)
     : min_block_size_rows(min_block_size_rows_)
     , min_block_size_bytes(min_block_size_bytes_)
