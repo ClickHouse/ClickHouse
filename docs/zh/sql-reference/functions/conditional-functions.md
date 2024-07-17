@@ -82,14 +82,14 @@ FROM LEFT_RIGHT
 SELECT
     left,
     right,
-    if(left < right, 'left is smaller than right', 'right is greater or equal than left') AS is_smaller
+    if(left < right, 'left is smaller than right', 'right is smaller or equal than left') AS is_smaller
 FROM LEFT_RIGHT
 WHERE isNotNull(left) AND isNotNull(right)
 
 ┌─left─┬─right─┬─is_smaller──────────────────────────┐
 │    1 │     3 │ left is smaller than right          │
-│    2 │     2 │ right is greater or equal than left │
-│    3 │     1 │ right is greater or equal than left │
+│    2 │     2 │ right is smaller or equal than left │
+│    3 │     1 │ right is smaller or equal than left │
 └──────┴───────┴─────────────────────────────────────┘
 ```
 
