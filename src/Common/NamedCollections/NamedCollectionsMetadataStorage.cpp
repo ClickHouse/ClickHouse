@@ -169,9 +169,13 @@ public:
     }
 
 private:
-    std::string getPath(const std::string & path) const
+    std::string getPath(const std::string & file_name) const
     {
-        return fs::path(root_path) / path;
+        const auto file_name_as_path = fs::path(file_name);
+        if (file_name_as_path.is_absolute())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Filename {} cannot be an absolute path!", file_name);
+
+        return fs::path(root_path) / file_name_as_path;
     }
 
     /// Delete .tmp files. They could be left undeleted in case of
@@ -320,9 +324,13 @@ private:
         return zookeeper_client;
     }
 
-    std::string getPath(const std::string & path) const
+    std::string getPath(const std::string & file_name) const
     {
-        return fs::path(root_path) / path;
+        const auto file_name_as_path = fs::path(file_name);
+        if (file_name_as_path.is_absolute())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Filename {} cannot be an absolute path!", file_name);
+
+        return fs::path(root_path) / file_name_as_path;
     }
 };
 
