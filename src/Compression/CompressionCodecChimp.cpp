@@ -54,7 +54,7 @@ private:
 namespace LeadingZero
 {
     static const auto BIT_LENGTH = 3;
-    static const short round[64] =
+    static const short round[65] =
     {
         0, 0, 0, 0, 0, 0, 0, 0,
         8, 8, 8, 8, 12, 12, 12, 12,
@@ -63,9 +63,9 @@ namespace LeadingZero
         24, 24, 24, 24, 24, 24, 24, 24,
         24, 24, 24, 24, 24, 24, 24, 24,
         24, 24, 24, 24, 24, 24, 24, 24,
-        24, 24, 24, 24, 24, 24, 24, 24
+        24, 24, 24, 24, 24, 24, 24, 24, 24
     };
-    static const short binaryRepresentation[64] =
+    static const short binaryRepresentation[65] =
     {
         0, 0, 0, 0, 0, 0, 0, 0,
         1, 1, 1, 1, 2, 2, 2, 2,
@@ -74,7 +74,7 @@ namespace LeadingZero
         7, 7, 7, 7, 7, 7, 7, 7,
         7, 7, 7, 7, 7, 7, 7, 7,
         7, 7, 7, 7, 7, 7, 7, 7,
-        7, 7, 7, 7, 7, 7, 7, 7
+        7, 7, 7, 7, 7, 7, 7, 7, 7
     };
     static const short reverseBinaryRepresentation[8] = {0, 8, 12, 16, 18, 20, 22, 24};
 }
