@@ -19,14 +19,6 @@ Chunk::Chunk(DB::Columns columns_, UInt64 num_rows_) : columns(std::move(columns
     checkNumRowsIsConsistent();
 }
 
-Chunk::Chunk(Columns columns_, UInt64 num_rows_, ChunkInfoPtr chunk_info_)
-    : columns(std::move(columns_))
-    , num_rows(num_rows_)
-    , chunk_info(std::move(chunk_info_))
-{
-    checkNumRowsIsConsistent();
-}
-
 static Columns unmuteColumns(MutableColumns && mutable_columns)
 {
     Columns columns;
@@ -43,17 +35,11 @@ Chunk::Chunk(MutableColumns columns_, UInt64 num_rows_)
     checkNumRowsIsConsistent();
 }
 
-Chunk::Chunk(MutableColumns columns_, UInt64 num_rows_, ChunkInfoPtr chunk_info_)
-    : columns(unmuteColumns(std::move(columns_)))
-    , num_rows(num_rows_)
-    , chunk_info(std::move(chunk_info_))
-{
-    checkNumRowsIsConsistent();
-}
-
 Chunk Chunk::clone() const
 {
-    return Chunk(getColumns(), getNumRows(), chunk_info);
+    auto tmp = Chunk(getColumns(), getNumRows());
+    tmp.setChunkInfos(chunk_infos.clone());
+    return tmp;
 }
 
 void Chunk::setColumns(Columns columns_, UInt64 num_rows_)
