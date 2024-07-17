@@ -52,8 +52,8 @@ FILES_OVERHEAD = 1
 FILES_OVERHEAD_PER_COLUMN = 2  # Data and mark files
 FILES_OVERHEAD_DEFAULT_COMPRESSION_CODEC = 1
 FILES_OVERHEAD_METADATA_VERSION = 1
-FILES_OVERHEAD_MINMAX_INDEX = 2 # Data and mark files
-FILES_OVERHEAD_OTHER_FILES = 6 # checksums.txt, columns.txt, count.txt, minmax_dt.idx, partition.dat, primary.cidx
+FILES_OVERHEAD_MINMAX_INDEX = 2  # Data and mark files
+FILES_OVERHEAD_OTHER_FILES = 6  # checksums.txt, columns.txt, count.txt, minmax_dt.idx, partition.dat, primary.cidx
 FILES_OVERHEAD_PER_PART_WIDE = (
     FILES_OVERHEAD_PER_COLUMN * 3
     + FILES_OVERHEAD_MINMAX_INDEX

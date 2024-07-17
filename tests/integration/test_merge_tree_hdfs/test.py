@@ -50,8 +50,8 @@ FILES_OVERHEAD = 1
 FILES_OVERHEAD_PER_COLUMN = 2  # Data and mark files
 FILES_OVERHEAD_DEFAULT_COMPRESSION_CODEC = 1
 FILES_OVERHEAD_METADATA_VERSION = 1
-FILES_OVERHEAD_MINMAX_INDEX = 2 # Data and mark files
-FILES_OVERHEAD_OTHER_FILES = 6 # checksums.txt, columns.txt, count.txt, minmax_dt.idx, partition.dat, primary.cidx
+FILES_OVERHEAD_MINMAX_INDEX = 2  # Data and mark files
+FILES_OVERHEAD_OTHER_FILES = 6  # checksums.txt, columns.txt, count.txt, minmax_dt.idx, partition.dat, primary.cidx
 FILES_OVERHEAD_PER_PART_WIDE = (
     FILES_OVERHEAD_PER_COLUMN * 3
     + FILES_OVERHEAD_MINMAX_INDEX
@@ -369,8 +369,7 @@ def test_move_replace_partition_to_another_table(cluster):
         print("Object in HDFS after move", obj)
     wait_for_delete_hdfs_objects(
         cluster,
-        FILES_OVERHEAD * 2
-        + FILES_OVERHEAD_PER_PART_WIDE * 4,
+        FILES_OVERHEAD * 2 + FILES_OVERHEAD_PER_PART_WIDE * 4,
     )
 
     # Add new partitions to source table, but with different values and replace them from copied table.
@@ -391,8 +390,7 @@ def test_move_replace_partition_to_another_table(cluster):
 
     wait_for_delete_hdfs_objects(
         cluster,
-        FILES_OVERHEAD * 2
-        + FILES_OVERHEAD_PER_PART_WIDE * 6,
+        FILES_OVERHEAD * 2 + FILES_OVERHEAD_PER_PART_WIDE * 6,
     )
 
     node.query("ALTER TABLE hdfs_test REPLACE PARTITION '2020-01-03' FROM hdfs_clone")
@@ -422,6 +420,5 @@ def test_move_replace_partition_to_another_table(cluster):
 
     wait_for_delete_hdfs_objects(
         cluster,
-        FILES_OVERHEAD
-        + FILES_OVERHEAD_PER_PART_WIDE * 4,
+        FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 4,
     )
