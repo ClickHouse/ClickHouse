@@ -59,6 +59,8 @@ At a minimum, the following information should be added (but add more as needed)
 - [ ] <!---ci_exclude_tsan|msan|ubsan|coverage--> Exclude: All with TSAN, MSAN, UBSAN, Coverage
 - [ ] <!---ci_exclude_aarch64|release|debug--> Exclude: All with aarch64, release, debug
 ---
+- [ ] <!---ci_include_fuzzer--> Run only libFuzzer related jobs
+---
 - [ ] <!---do_not_test--> Do not test
 - [ ] <!---woolen_wolfdog--> Woolen Wolfdog
 - [ ] <!---upload_all--> Upload binaries for special builds
