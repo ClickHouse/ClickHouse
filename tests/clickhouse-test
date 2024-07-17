@@ -3386,13 +3386,13 @@ def parse_args():
     parser.add_argument(
         "--replace-replicated-with-shared",
         action="store_true",
-        default=os.environ.get("USE_META_IN_KEEPER_FOR_MERGE_TREE", False),
+        default=os.environ.get("REPLACE_RMT_WITH_SMT", False),
         help="Replace ReplicatedMergeTree engine with SharedMergeTree",
     )
     parser.add_argument(
         "--replace-non-replicated-with-shared",
         action="store_true",
-        default=False,
+        default=os.environ.get("REPLACE_MT_WITH_SMT", False),
         help="Replace ordinary MergeTree engine with SharedMergeTree",
     )
 
