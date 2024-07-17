@@ -26,6 +26,7 @@ class CIBuddy:
         self.pr_number = pr_info.number
         self.head_ref = pr_info.head_ref
         self.commit_url = pr_info.commit_html_url
+        self.sha = pr_info.sha[:10]
 
     @staticmethod
     def _get_webhooks():
@@ -69,8 +70,10 @@ class CIBuddy:
         line_err = f":red_circle:    *Error: {error_description}*\n\n"
         line_ghr = f"   *Runner:*    `{instance_type}`, `{instance_id}`\n"
         line_job = f"   *Job:*          `{job_name}`\n"
-        line_pr_ = f"   *PR:*           <https://github.com/{self.repo}/pull/{self.pr_number}|#{self.pr_number}>\n"
-        line_br_ = f"   *Branch:*    `{self.head_ref}`, <{self.commit_url}|commit>\n"
+        line_pr_ = f"   *PR:*           <https://github.com/{self.repo}/pull/{self.pr_number}|#{self.pr_number}>, <{self.commit_url}|{self.sha}>\n"
+        line_br_ = (
+            f"   *Branch:*    `{self.head_ref}`, <{self.commit_url}|{self.sha}>\n"
+        )
         message = line_err
         message += line_job
         if with_instance_info:
@@ -85,4 +88,4 @@ class CIBuddy:
 if __name__ == "__main__":
     # test
     buddy = CIBuddy(dry_run=True)
-    buddy.post_error("Out of memory")
+    buddy.post_error("TEst")
