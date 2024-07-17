@@ -498,6 +498,8 @@ Default: 0.9
 Interval in seconds during which the server's maximum allowed memory consumption is adjusted by the corresponding threshold in cgroups. (see
 settings `cgroup_memory_watcher_hard_limit_ratio` and `cgroup_memory_watcher_soft_limit_ratio`).
 
+To disable the cgroup observer, set this value to `0`.
+
 Type: UInt64
 
 Default: 15
@@ -1463,6 +1465,9 @@ Keys:
 - `size` – Size of the file. Applies to `log` and `errorlog`. Once the file reaches `size`, ClickHouse archives and renames it, and creates a new log file in its place.
 - `count` – The number of archived log files that ClickHouse stores.
 - `console` – Send `log` and `errorlog` to the console instead of file. To enable, set to `1` or `true`.
+- `console_log_level` – Logging level for console. Default to `level`.
+- `use_syslog` - Log to syslog as well.
+- `syslog_level` - Logging level for logging to syslog.
 - `stream_compress` – Compress `log` and `errorlog` with `lz4` stream compression. To enable, set to `1` or `true`.
 - `formatting` – Specify log format to be printed in console log (currently only `json` supported).
 
