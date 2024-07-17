@@ -8,7 +8,7 @@
 namespace DB
 {
 
-std::unique_ptr<QueryPlan> createLocalPlanForParallelReplicas(
+std::pair<std::unique_ptr<QueryPlan>, bool> createLocalPlanForParallelReplicas(
     const ASTPtr & query_ast,
     const Block & header,
     ContextPtr context,

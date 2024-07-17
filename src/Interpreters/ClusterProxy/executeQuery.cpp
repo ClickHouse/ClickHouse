@@ -528,13 +528,19 @@ void executeQueryWithParallelReplicas(
     /// do not build local plan for distributed queries for now (address it later)
     if (settings.allow_experimental_analyzer && settings.parallel_replicas_local_plan && !shard_num)
     {
-        auto local_plan = createLocalPlanForParallelReplicas(
+        auto [local_plan, with_parallel_replicas] = createLocalPlanForParallelReplicas(
             query_ast,
             header,
             new_context,
             processed_stage,
             coordinator,
             std::move(analyzed_read_from_merge_tree));
+
+        if (!with_parallel_replicas)
+        {
+            query_plan = std::move(*local_plan);
+            return;
+        }
 
         auto read_from_remote = std::make_unique<ReadFromParallelRemoteReplicasStep>(
             query_ast,

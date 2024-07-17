@@ -21,9 +21,7 @@
 namespace DB
 {
 
-void addConvertingActions(QueryPlan & plan, const Block & header, bool has_missing_objects);
-
-std::unique_ptr<QueryPlan> createLocalPlanForParallelReplicas(
+std::pair<std::unique_ptr<QueryPlan>, bool> createLocalPlanForParallelReplicas(
     const ASTPtr & query_ast,
     const Block & header,
     ContextPtr context,
@@ -68,7 +66,9 @@ std::unique_ptr<QueryPlan> createLocalPlanForParallelReplicas(
             node = nullptr;
     }
 
-    chassert(reading);
+    if (!reading)
+        /// it can happened if merge tree table is empty, - it'll be replaced with ReadFromPreparedSource
+        return {std::move(query_plan), false};
 
     ReadFromMergeTree::AnalysisResultPtr analyzed_result_ptr;
     if (analyzed_read_from_merge_tree.get())
@@ -89,7 +89,8 @@ std::unique_ptr<QueryPlan> createLocalPlanForParallelReplicas(
     node->step = std::move(read_from_merge_tree_parallel_replicas);
 
     addConvertingActions(*query_plan, header, /*has_missing_objects=*/false);
-    return query_plan;
+
+    return {std::move(query_plan), true};
 }
 
 }
