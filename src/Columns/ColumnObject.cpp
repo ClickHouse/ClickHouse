@@ -1101,4 +1101,10 @@ void ColumnObject::finalize()
     checkObjectHasNoAmbiguosPaths(getKeys());
 }
 
+void ColumnObject::updateHashFast(SipHash & hash) const
+{
+    for (const auto & entry : subcolumns)
+        for (auto & part : entry->data.data)
+            part->updateHashFast(hash);
+}
 }
