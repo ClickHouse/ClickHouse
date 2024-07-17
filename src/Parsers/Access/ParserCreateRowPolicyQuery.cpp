@@ -23,7 +23,7 @@ namespace
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            if (!ParserKeyword{"RENAME TO"}.ignore(pos, expected))
+            if (!ParserKeyword{Keyword::RENAME_TO}.ignore(pos, expected))
                 return false;
 
             return parseIdentifierOrStringLiteral(pos, expected, new_short_name);
@@ -34,16 +34,16 @@ namespace
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            if (!ParserKeyword{"AS"}.ignore(pos, expected))
+            if (!ParserKeyword{Keyword::AS}.ignore(pos, expected))
                 return false;
 
-            if (ParserKeyword{"RESTRICTIVE"}.ignore(pos, expected))
+            if (ParserKeyword{Keyword::RESTRICTIVE}.ignore(pos, expected))
             {
                 is_restrictive = true;
                 return true;
             }
 
-            if (!ParserKeyword{"PERMISSIVE"}.ignore(pos, expected))
+            if (!ParserKeyword{Keyword::PERMISSIVE}.ignore(pos, expected))
                 return false;
 
             is_restrictive = false;
@@ -55,7 +55,7 @@ namespace
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            if (ParserKeyword("NONE").ignore(pos, expected))
+            if (ParserKeyword(Keyword::NONE).ignore(pos, expected))
             {
                 expr = nullptr;
                 return true;
@@ -89,7 +89,7 @@ namespace
 
         auto parse_command = [&]
         {
-            if (ParserKeyword{"ALL"}.ignore(pos, expected))
+            if (ParserKeyword{Keyword::ALL}.ignore(pos, expected))
             {
                 addAllCommands(res_commands);
                 return true;
@@ -98,7 +98,7 @@ namespace
             for (auto filter_type : collections::range(RowPolicyFilterType::MAX))
             {
                 std::string_view command = RowPolicyFilterTypeInfo::get(filter_type).command;
-                if (ParserKeyword{command.data()}.ignore(pos, expected))
+                if (ParserKeyword::createDeprecated(command.data()).ignore(pos, expected))
                 {
                     res_commands.emplace(command);
                     return true;
@@ -125,7 +125,7 @@ namespace
         {
             boost::container::flat_set<std::string_view> commands;
 
-            if (ParserKeyword{"FOR"}.ignore(pos, expected))
+            if (ParserKeyword{Keyword::FOR}.ignore(pos, expected))
             {
                 if (!parseCommands(pos, expected, commands))
                     return false;
@@ -135,12 +135,12 @@ namespace
 
             std::optional<ASTPtr> filter;
             std::optional<ASTPtr> check;
-            if (ParserKeyword{"USING"}.ignore(pos, expected))
+            if (ParserKeyword{Keyword::USING}.ignore(pos, expected))
             {
                 if (!parseFilterExpression(pos, expected, filter.emplace()))
                     return false;
             }
-            if (ParserKeyword{"WITH CHECK"}.ignore(pos, expected))
+            if (ParserKeyword{Keyword::WITH_CHECK}.ignore(pos, expected))
             {
                 if (!parseFilterExpression(pos, expected, check.emplace()))
                     return false;
@@ -179,7 +179,7 @@ namespace
         return IParserBase::wrapParseImpl(pos, [&]
         {
             ASTPtr ast;
-            if (!ParserKeyword{"TO"}.ignore(pos, expected))
+            if (!ParserKeyword{Keyword::TO}.ignore(pos, expected))
                 return false;
 
             ParserRolesOrUsersSet roles_p;
@@ -196,7 +196,7 @@ namespace
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            return ParserKeyword{"ON"}.ignore(pos, expected) && ASTQueryWithOnCluster::parse(pos, cluster, expected);
+            return ParserKeyword{Keyword::ON}.ignore(pos, expected) && ASTQueryWithOnCluster::parse(pos, cluster, expected);
         });
     }
 }
@@ -207,14 +207,14 @@ bool ParserCreateRowPolicyQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
     bool alter = false;
     if (attach_mode)
     {
-        if (!ParserKeyword{"ATTACH POLICY"}.ignore(pos, expected) && !ParserKeyword{"ATTACH ROW POLICY"}.ignore(pos, expected))
+        if (!ParserKeyword{Keyword::ATTACH_POLICY}.ignore(pos, expected) && !ParserKeyword{Keyword::ATTACH_ROW_POLICY}.ignore(pos, expected))
             return false;
     }
     else
     {
-        if (ParserKeyword{"ALTER POLICY"}.ignore(pos, expected) || ParserKeyword{"ALTER ROW POLICY"}.ignore(pos, expected))
+        if (ParserKeyword{Keyword::ALTER_POLICY}.ignore(pos, expected) || ParserKeyword{Keyword::ALTER_ROW_POLICY}.ignore(pos, expected))
             alter = true;
-        else if (!ParserKeyword{"CREATE POLICY"}.ignore(pos, expected) && !ParserKeyword{"CREATE ROW POLICY"}.ignore(pos, expected))
+        else if (!ParserKeyword{Keyword::CREATE_POLICY}.ignore(pos, expected) && !ParserKeyword{Keyword::CREATE_ROW_POLICY}.ignore(pos, expected))
             return false;
     }
 
@@ -223,14 +223,14 @@ bool ParserCreateRowPolicyQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
     bool or_replace = false;
     if (alter)
     {
-        if (ParserKeyword{"IF EXISTS"}.ignore(pos, expected))
+        if (ParserKeyword{Keyword::IF_EXISTS}.ignore(pos, expected))
             if_exists = true;
     }
     else
     {
-        if (ParserKeyword{"IF NOT EXISTS"}.ignore(pos, expected))
+        if (ParserKeyword{Keyword::IF_NOT_EXISTS}.ignore(pos, expected))
             if_not_exists = true;
-        else if (ParserKeyword{"OR REPLACE"}.ignore(pos, expected))
+        else if (ParserKeyword{Keyword::OR_REPLACE}.ignore(pos, expected))
             or_replace = true;
     }
 
@@ -273,7 +273,7 @@ bool ParserCreateRowPolicyQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
         if (cluster.empty() && parseOnCluster(pos, expected, cluster))
             continue;
 
-        if (storage_name.empty() && ParserKeyword{"IN"}.ignore(pos, expected) && parseAccessStorageName(pos, expected, storage_name))
+        if (storage_name.empty() && ParserKeyword{Keyword::IN}.ignore(pos, expected) && parseAccessStorageName(pos, expected, storage_name))
             continue;
 
         break;

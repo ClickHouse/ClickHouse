@@ -34,7 +34,7 @@ QUERY id: 0
                   COLUMN id: 9, column_name: b, result_type: Float64, source_id: 10
             CONSTANT id: 14, constant_value: UInt64_2, constant_value_type: UInt8
   JOIN TREE
-    QUERY id: 10, is_subquery: 1
+    QUERY id: 10, alias: __table1, is_subquery: 1
       PROJECTION COLUMNS
         b Float64
       PROJECTION
@@ -45,7 +45,7 @@ QUERY id: 0
                 COLUMN id: 18, column_name: x, result_type: Float64, source_id: 19
                 CONSTANT id: 20, constant_value: UInt64_1, constant_value_type: UInt8
       JOIN TREE
-        QUERY id: 19, is_subquery: 1
+        QUERY id: 19, alias: __table2, is_subquery: 1
           PROJECTION COLUMNS
             x Float64
             quantile(0.9)(b) Float64
@@ -76,7 +76,7 @@ QUERY id: 0
                           COLUMN id: 29, column_name: b, result_type: Int32, source_id: 30
                     CONSTANT id: 34, constant_value: UInt64_2, constant_value_type: UInt8
           JOIN TREE
-            TABLE id: 30, table_name: default.fuse_tbl
+            TABLE id: 30, alias: __table3, table_name: default.fuse_tbl
       GROUP BY
         LIST id: 35, nodes: 1
           COLUMN id: 18, column_name: x, result_type: Float64, source_id: 19

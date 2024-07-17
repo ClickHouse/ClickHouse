@@ -19,7 +19,7 @@
             toInt256(number) as d,
             toString(number) as f,
             toFixedString(f, 20) as g
-        FROM numbers_mt(200000000)
+        FROM numbers_mt(100000000)
         SETTINGS max_threads = 8
         FORMAT Null
     </query>
@@ -38,7 +38,7 @@
             toInt256(number) as d,
             toString(number) as f,
             toFixedString(f, 20) as g
-        FROM numbers_mt(200000000)
+        FROM numbers_mt(100000000)
         SETTINGS max_threads = 8
         FORMAT Null
     </query>
@@ -57,7 +57,7 @@
             toInt256(number) as d,
             toString(number) as f,
             toFixedString(f, 20) as g
-        FROM numbers_mt(200000000)
+        FROM numbers_mt(100000000)
         SETTINGS max_threads = 8
         FORMAT Null
     </query>
@@ -76,7 +76,7 @@
             toInt256(number) as d,
             toString(number) as f,
             toFixedString(f, 20) as g
-        FROM numbers_mt(200000000)
+        FROM numbers_mt(100000000)
         SETTINGS max_threads = 8
         FORMAT Null
     </query>
@@ -95,7 +95,7 @@
             toInt256(number) as d,
             toString(number) as f,
             toFixedString(f, 20) as g
-        FROM numbers_mt(10000000)
+        FROM numbers_mt(5000000)
         SETTINGS max_threads = 8
         FORMAT Null
     </query>
@@ -115,7 +115,7 @@
             toInt256(number) as d,
             toString(number) as f,
             toFixedString(f, 20) as g
-        FROM numbers_mt(200000000)
+        FROM numbers_mt(100000000)
         SETTINGS max_threads = 8
         FORMAT Null
     </query>
@@ -134,7 +134,7 @@
             toInt256(number) as d,
             toString(number) as f,
             toFixedString(f, 20) as g
-        FROM numbers_mt(200000000)
+        FROM numbers_mt(100000000)
         SETTINGS max_threads = 8
         FORMAT Null
     </query>
@@ -153,7 +153,7 @@
             toInt256(number) as d,
             toString(number) as f,
             toFixedString(f, 20) as g
-        FROM numbers_mt(200000000)
+        FROM numbers_mt(100000000)
         SETTINGS max_threads = 8
         FORMAT Null
     </query>
@@ -172,7 +172,7 @@
             toInt256(number) as d,
             toString(number) as f,
             toFixedString(f, 20) as g
-        FROM numbers_mt(200000000)
+        FROM numbers_mt(100000000)
         SETTINGS max_threads = 8
         FORMAT Null
     </query>
@@ -191,7 +191,7 @@
             toInt256(number) as d,
             toString(number) as f,
             toFixedString(f, 20) as g
-        FROM numbers_mt(100000000)
+        FROM numbers_mt(50000000)
         SETTINGS max_threads = 8
         FORMAT Null
     </query>
@@ -210,7 +210,7 @@
             toInt256(number) as d,
             toString(number) as f,
             toFixedString(f, 20) as g
-        FROM numbers_mt(10000000)
+        FROM numbers_mt(5000000)
         SETTINGS max_threads = 8
         FORMAT Null
     </query>
@@ -230,7 +230,7 @@
             toInt256(number) as d,
             toString(number) as f,
             toFixedString(f, 20) as g
-        FROM numbers_mt(20000000)
+        FROM numbers_mt(10000000)
         SETTINGS max_threads = 8
         FORMAT Null
     </query>
@@ -249,7 +249,7 @@
             toInt256(number) as d,
             toString(number) as f,
             toFixedString(f, 20) as g
-        FROM numbers_mt(100000000)
+        FROM numbers_mt(50000000)
         SETTINGS max_threads = 8
         FORMAT Null
     </query>

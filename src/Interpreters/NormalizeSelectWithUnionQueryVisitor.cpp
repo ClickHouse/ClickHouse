@@ -28,7 +28,7 @@ void NormalizeSelectWithUnionQueryMatcher::getSelectsFromUnionListNode(ASTPtr as
 
 void NormalizeSelectWithUnionQueryMatcher::visit(ASTPtr & ast, Data & data)
 {
-    if (auto * select_union = ast->as<ASTSelectWithUnionQuery>())
+    if (auto * select_union = ast->as<ASTSelectWithUnionQuery>(); select_union && !select_union->is_normalized)
     {
         /// The rewrite of ASTSelectWithUnionQuery may strip the format info, so
         /// we need to keep and restore it.

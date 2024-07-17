@@ -4,6 +4,7 @@
 #include <Columns/ColumnSet.h>
 #include <Common/typeid_cast.h>
 #include <Core/Block.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/FieldToDataType.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -24,6 +25,7 @@
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <TableFunctions/TableFunctionFactory.h>
+
 #include <unordered_map>
 
 
@@ -73,7 +75,7 @@ std::optional<EvaluateConstantExpressionResult> evaluateConstantExpressionImpl(c
     /// already normalized on initiator node, or not normalized and should remain unnormalized for
     /// compatibility.
     if (context->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY && context->getSettingsRef().normalize_function_names)
-        FunctionNameNormalizer().visit(ast.get());
+        FunctionNameNormalizer::visit(ast.get());
 
     auto syntax_result = TreeRewriter(context, no_throw).analyze(ast, source_columns);
     if (!syntax_result)
@@ -106,7 +108,7 @@ std::optional<EvaluateConstantExpressionResult> evaluateConstantExpressionImpl(c
 
     if (result_column->empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "Logical error: empty result column after evaluation "
+                        "Empty result column after evaluation "
                         "of constant expression for IN, VALUES, or LIMIT, or aggregate function parameter, or a table function argument");
 
     /// Expressions like rand() or now() are not constant
@@ -661,7 +663,7 @@ namespace
         const ActionsDAG::NodeRawConstPtrs & target_expr,
         ConjunctionMap && conjunction)
     {
-        auto columns = ActionsDAG::evaluatePartialResult(conjunction, target_expr, false);
+        auto columns = ActionsDAG::evaluatePartialResult(conjunction, target_expr, /* input_rows_count= */ 1, /* throw_on_error= */ false);
         for (const auto & column : columns)
             if (!column.column)
                 return {};

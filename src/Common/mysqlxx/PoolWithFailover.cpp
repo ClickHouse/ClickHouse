@@ -2,7 +2,9 @@
 #include <ctime>
 #include <random>
 #include <thread>
+#include <pcg_random.hpp>
 #include <mysqlxx/PoolWithFailover.h>
+#include <Common/randomSeed.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 
@@ -44,10 +46,7 @@ PoolWithFailover::PoolWithFailover(
         /// PoolWithFailover objects are stored in a cache inside PoolFactory.
         /// This cache is reset by ExternalDictionariesLoader after every SYSTEM RELOAD DICTIONAR{Y|IES}
         /// which triggers massive re-constructing of connection pools.
-        /// The state of PRNGs like std::mt19937 is considered to be quite heavy
-        /// thus here we attempt to optimize its construction.
-        static thread_local std::mt19937 rnd_generator(static_cast<uint_fast32_t>(
-                std::hash<std::thread::id>{}(std::this_thread::get_id()) + std::clock()));
+        static thread_local pcg64_fast rnd_generator(randomSeed());
         for (auto & [_, replicas] : replicas_by_priority)
         {
             if (replicas.size() > 1)

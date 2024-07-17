@@ -2,28 +2,32 @@ Expression ((Project names + (Projection + )))
 Header: t1.id UInt64
         t1.value String
         t2.value String
-Actions: INPUT : 0 -> id_0 UInt64 : 0
-         INPUT : 1 -> value_1 String : 1
-         INPUT : 2 -> value_2 String : 2
-         ALIAS id_0 :: 0 -> t1.id UInt64 : 3
-         ALIAS value_1 :: 1 -> t1.value String : 0
-         ALIAS value_2 :: 2 -> t2.value String : 1
+Actions: INPUT : 0 -> __table1.id UInt64 : 0
+         INPUT : 1 -> __table1.value String : 1
+         INPUT : 2 -> __table2.value String : 2
+         ALIAS __table1.id :: 0 -> t1.id UInt64 : 3
+         ALIAS __table1.value :: 1 -> t1.value String : 0
+         ALIAS __table2.value :: 2 -> t2.value String : 1
 Positions: 3 0 1
   FilledJoin (Filled JOIN)
-  Header: id_0 UInt64
-          value_1 String
-          value_2 String
+  Header: __table1.id UInt64
+          __table1.value String
+          __table2.value String
+  Type: INNER
+  Strictness: ALL
+  Algorithm: HashJoin
+  Clauses: [(__table1.id) = (id)]
     Filter (( + (JOIN actions + Change column names to column identifiers)))
-    Header: id_0 UInt64
-            value_1 String
-    Filter column: equals(id_0, 0_UInt8) (removed)
+    Header: __table1.id UInt64
+            __table1.value String
+    Filter column: equals(__table1.id, 0_UInt8) (removed)
     Actions: INPUT : 0 -> id UInt64 : 0
              INPUT : 1 -> value String : 1
              COLUMN Const(UInt8) -> 0_UInt8 UInt8 : 2
-             ALIAS id :: 0 -> id_0 UInt64 : 3
-             ALIAS value :: 1 -> value_1 String : 0
-             FUNCTION equals(id_0 : 3, 0_UInt8 :: 2) -> equals(id_0, 0_UInt8) UInt8 : 1
-    Positions: 1 3 0
+             ALIAS id : 0 -> __table1.id UInt64 : 3
+             ALIAS value :: 1 -> __table1.value String : 4
+             FUNCTION equals(id :: 0, 0_UInt8 :: 2) -> equals(__table1.id, 0_UInt8) UInt8 : 1
+    Positions: 1 3 4
       ReadFromMergeTree (default.test_table)
       Header: id UInt64
               value String

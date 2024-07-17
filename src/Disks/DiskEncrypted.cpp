@@ -324,7 +324,13 @@ ReservationPtr DiskEncrypted::reserve(UInt64 bytes)
 }
 
 
-void DiskEncrypted::copyDirectoryContent(const String & from_dir, const std::shared_ptr<IDisk> & to_disk, const String & to_dir, const ReadSettings & read_settings, const WriteSettings & write_settings)
+void DiskEncrypted::copyDirectoryContent(
+    const String & from_dir,
+    const std::shared_ptr<IDisk> & to_disk,
+    const String & to_dir,
+    const ReadSettings & read_settings,
+    const WriteSettings & write_settings,
+    const std::function<void()> & cancellation_hook)
 {
     /// Check if we can copy the file without deciphering.
     if (isSameDiskType(*this, *to_disk))
@@ -340,14 +346,14 @@ void DiskEncrypted::copyDirectoryContent(const String & from_dir, const std::sha
                 auto wrapped_from_path = wrappedPath(from_dir);
                 auto to_delegate = to_disk_enc->delegate;
                 auto wrapped_to_path = to_disk_enc->wrappedPath(to_dir);
-                delegate->copyDirectoryContent(wrapped_from_path, to_delegate, wrapped_to_path, read_settings, write_settings);
+                delegate->copyDirectoryContent(wrapped_from_path, to_delegate, wrapped_to_path, read_settings, write_settings, cancellation_hook);
                 return;
             }
         }
     }
 
     /// Copy the file through buffers with deciphering.
-    IDisk::copyDirectoryContent(from_dir, to_disk, to_dir, read_settings, write_settings);
+    IDisk::copyDirectoryContent(from_dir, to_disk, to_dir, read_settings, write_settings, cancellation_hook);
 }
 
 std::unique_ptr<ReadBufferFromFileBase> DiskEncrypted::readFile(
@@ -449,7 +455,8 @@ void registerDiskEncrypted(DiskFactory & factory, bool global_skip_access_check)
         const Poco::Util::AbstractConfiguration & config,
         const String & config_prefix,
         ContextPtr context,
-        const DisksMap & map) -> DiskPtr
+        const DisksMap & map,
+        bool, bool) -> DiskPtr
     {
         bool skip_access_check = global_skip_access_check || config.getBool(config_prefix + ".skip_access_check", false);
         DiskPtr disk = std::make_shared<DiskEncrypted>(name, config, config_prefix, map);

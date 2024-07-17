@@ -33,7 +33,7 @@ public:
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
         const String & comment,
-        bool attach,
+        LoadingStrictnessLevel mode,
         ContextMutablePtr context_);
 
     ~StorageStripeLog() override;
@@ -53,7 +53,7 @@ public:
 
     void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
 
-    DataValidationTasksPtr getCheckTaskList(const ASTPtr & query, ContextPtr context) override;
+    DataValidationTasksPtr getCheckTaskList(const CheckTaskFilter & check_task_filter, ContextPtr context) override;
     std::optional<CheckResult> checkDataNext(DataValidationTasksPtr & check_task_list) override;
 
     bool storesDataOnDisk() const override { return true; }
@@ -123,7 +123,7 @@ private:
 
     mutable std::shared_timed_mutex rwlock;
 
-    Poco::Logger * log;
+    LoggerPtr log;
 };
 
 }

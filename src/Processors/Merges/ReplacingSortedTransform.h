@@ -20,7 +20,7 @@ public:
         WriteBuffer * out_row_sources_buf_ = nullptr,
         bool use_average_block_sizes = false,
         bool cleanup = false,
-        size_t * cleanedup_rows_count = nullptr)
+        bool enable_vertical_final = false)
         : IMergingTransform(
             num_inputs, header, header, /*have_all_inputs_=*/ true, /*limit_hint_=*/ 0, /*always_read_till_end_=*/ false,
             header,
@@ -33,7 +33,7 @@ public:
             out_row_sources_buf_,
             use_average_block_sizes,
             cleanup,
-            cleanedup_rows_count)
+            enable_vertical_final)
     {
     }
 

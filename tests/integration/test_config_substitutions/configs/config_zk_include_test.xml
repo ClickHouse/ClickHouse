@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<clickhouse>
+  <background_pool_size>44</background_pool_size>
+  <merge_tree>
+    <include from_zk="/merge_max_block_size" merge="true"/>
+    <merge_max_block_size>99</merge_max_block_size>
+    <min_bytes_for_wide_part>1</min_bytes_for_wide_part>
+    <min_rows_for_wide_part>1111</min_rows_for_wide_part>
+  </merge_tree>
+
+  <include from_zk="/min_bytes_for_wide_part" merge="true"/>
+ </clickhouse>

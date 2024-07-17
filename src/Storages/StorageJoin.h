@@ -85,7 +85,7 @@ public:
 
     const Names & getKeyNames() const { return key_names; }
 
-    bool supportsTrivialCountOptimization() const override { return true; }
+    bool supportsTrivialCountOptimization(const StorageSnapshotPtr &, ContextPtr) const override { return true; }
 
 private:
     Block sample_block;

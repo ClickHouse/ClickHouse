@@ -39,6 +39,13 @@ struct FieldRef : public Field
 };
 
 /** Range with open or closed ends; possibly unbounded.
+ */
+struct Range;
+/** A serious of range who can overlap or non-overlap.
+ */
+using Ranges = std::vector<Range>;
+
+/** Range with open or closed ends; possibly unbounded.
   */
 struct Range
 {
@@ -79,11 +86,36 @@ public:
     /// x is to the right
     bool leftThan(const FieldRef & x) const;
 
+    /// completely right than x
+    bool rightThan(const Range & x) const;
+    /// completely left than x
+    bool leftThan(const Range & x) const;
+
+    /// range like [1, 2]
+    bool fullBounded() const;
+    /// (-inf, +inf)
+    bool isInfinite() const;
+
+    bool isBlank() const;
+
     bool intersectsRange(const Range & r) const;
 
     bool containsRange(const Range & r) const;
 
+    /// Invert left and right
     void invert();
+
+    /// Invert the range.
+    /// Example:
+    ///     [1, 3] -> (-inf, 1), (3, +inf)
+    Ranges invertRange() const;
+
+    std::optional<Range> intersectWith(const Range & r) const;
+    std::optional<Range> unionWith(const Range & r) const;
+
+    /// If near by r, they can be combined to a continuous range.
+    /// TODO If field is integer, case like [2, 3], [4, 5] is excluded.
+    bool nearByWith(const Range & r) const;
 
     String toString() const;
 };

@@ -11,7 +11,7 @@ This is for the case when you have Linux machine and want to use it to build `cl
 
 The cross-build for RISC-V 64 is based on the [Build instructions](../development/build.md), follow them first.
 
-## Install Clang-16
+## Install Clang-18
 
 Follow the instructions from https://apt.llvm.org/ for your Ubuntu or Debian setup or do
 ```
@@ -23,7 +23,7 @@ sudo bash -c "$(wget -O - https://apt.llvm.org/llvm.sh)"
 ``` bash
 cd ClickHouse
 mkdir build-riscv64
-CC=clang-16 CXX=clang++-16 cmake . -Bbuild-riscv64 -G Ninja -DCMAKE_TOOLCHAIN_FILE=cmake/linux/toolchain-riscv64.cmake -DGLIBC_COMPATIBILITY=OFF -DENABLE_LDAP=OFF  -DOPENSSL_NO_ASM=ON -DENABLE_JEMALLOC=ON -DENABLE_PARQUET=OFF -DENABLE_GRPC=OFF -DENABLE_HDFS=OFF -DENABLE_MYSQL=OFF
+CC=clang-18 CXX=clang++-18 cmake . -Bbuild-riscv64 -G Ninja -DCMAKE_TOOLCHAIN_FILE=cmake/linux/toolchain-riscv64.cmake -DGLIBC_COMPATIBILITY=OFF -DENABLE_LDAP=OFF  -DOPENSSL_NO_ASM=ON -DENABLE_JEMALLOC=ON -DENABLE_PARQUET=OFF -DENABLE_GRPC=OFF -DENABLE_HDFS=OFF -DENABLE_MYSQL=OFF
 ninja -C build-riscv64
 ```
 

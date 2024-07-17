@@ -3,44 +3,44 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Storages/System/StorageSystemClusters.h>
 #include <Databases/DatabaseReplicated.h>
 
 namespace DB
 {
 
-NamesAndTypesList StorageSystemClusters::getNamesAndTypes()
+ColumnsDescription StorageSystemClusters::getColumnsDescription()
 {
-    return
+    auto description = ColumnsDescription
     {
-        {"cluster", std::make_shared<DataTypeString>()},
-        {"shard_num", std::make_shared<DataTypeUInt32>()},
-        {"shard_weight", std::make_shared<DataTypeUInt32>()},
-        {"internal_replication", std::make_shared<DataTypeUInt8>()},
-        {"replica_num", std::make_shared<DataTypeUInt32>()},
-        {"host_name", std::make_shared<DataTypeString>()},
-        {"host_address", std::make_shared<DataTypeString>()},
-        {"port", std::make_shared<DataTypeUInt16>()},
-        {"is_local", std::make_shared<DataTypeUInt8>()},
-        {"user", std::make_shared<DataTypeString>()},
-        {"default_database", std::make_shared<DataTypeString>()},
-        {"errors_count", std::make_shared<DataTypeUInt32>()},
-        {"slowdowns_count", std::make_shared<DataTypeUInt32>()},
-        {"estimated_recovery_time", std::make_shared<DataTypeUInt32>()},
-        {"database_shard_name", std::make_shared<DataTypeString>()},
-        {"database_replica_name", std::make_shared<DataTypeString>()},
-        {"is_active", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>())},
+        {"cluster", std::make_shared<DataTypeString>(), "The cluster name."},
+        {"shard_num", std::make_shared<DataTypeUInt32>(), "The shard number in the cluster, starting from 1."},
+        {"shard_weight", std::make_shared<DataTypeUInt32>(), "The relative weight of the shard when writing data."},
+        {"internal_replication", std::make_shared<DataTypeUInt8>(), "Flag that indicates whether this host is a part on ensemble which can replicate the data on its own."},
+        {"replica_num", std::make_shared<DataTypeUInt32>(), "The replica number in the shard, starting from 1."},
+        {"host_name", std::make_shared<DataTypeString>(), "The host name, as specified in the config."},
+        {"host_address", std::make_shared<DataTypeString>(), "The host IP address obtained from DNS."},
+        {"port", std::make_shared<DataTypeUInt16>(), "The port to use for connecting to the server."},
+        {"is_local", std::make_shared<DataTypeUInt8>(), "Flag that indicates whether the host is local."},
+        {"user", std::make_shared<DataTypeString>(), "The name of the user for connecting to the server."},
+        {"default_database", std::make_shared<DataTypeString>(), "The default database name."},
+        {"errors_count", std::make_shared<DataTypeUInt32>(), "The number of times this host failed to reach replica."},
+        {"slowdowns_count", std::make_shared<DataTypeUInt32>(), "The number of slowdowns that led to changing replica when establishing a connection with hedged requests."},
+        {"estimated_recovery_time", std::make_shared<DataTypeUInt32>(), "Seconds remaining until the replica error count is zeroed and it is considered to be back to normal."},
+        {"database_shard_name", std::make_shared<DataTypeString>(), "The name of the `Replicated` database shard (for clusters that belong to a `Replicated` database)."},
+        {"database_replica_name", std::make_shared<DataTypeString>(), "The name of the `Replicated` database replica (for clusters that belong to a `Replicated` database)."},
+        {"is_active", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>()), "The status of the Replicated database replica (for clusters that belong to a Replicated database): 1 means 'replica is online', 0 means 'replica is offline', NULL means 'unknown'."},
     };
-}
 
-NamesAndAliases StorageSystemClusters::getNamesAndAliases()
-{
-    return {
+    description.setAliases({
         {"name", std::make_shared<DataTypeString>(), "cluster"},
-    };
+    });
+
+    return description;
 }
 
-void StorageSystemClusters::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
+void StorageSystemClusters::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
     for (const auto & name_and_cluster : context->getClusters())
         writeCluster(res_columns, name_and_cluster, {});
@@ -53,6 +53,10 @@ void StorageSystemClusters::fillData(MutableColumns & res_columns, ContextPtr co
 
             if (auto database_cluster = replicated->tryGetCluster())
                 writeCluster(res_columns, {name_and_database.first, database_cluster},
+                             replicated->tryGetAreReplicasActive(database_cluster));
+
+            if (auto database_cluster = replicated->tryGetAllGroupsCluster())
+                writeCluster(res_columns, {DatabaseReplicated::ALL_GROUPS_CLUSTER_PREFIX + name_and_database.first, database_cluster},
                              replicated->tryGetAreReplicasActive(database_cluster));
         }
     }

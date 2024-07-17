@@ -14,6 +14,7 @@ SET max_memory_usage='4Mi';
     'FLAT(INITIAL_ARRAY_SIZE 3_000_000 MAX_ARRAY_SIZE 3_000_000)',
     'HASHED()',
     'HASHED_ARRAY()',
+    'HASHED_ARRAY(SHARDS 2)',
     'SPARSE_HASHED()',
     'SPARSE_HASHED(SHARDS 2 /* shards are special, they use threads */)',
 ] %}

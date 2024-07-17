@@ -55,3 +55,34 @@ def test_s3_table_functions(started_cluster):
         )
         == "1000000\n"
     )
+
+
+def test_s3_table_functions_line_as_string(started_cluster):
+    node.query(
+        """
+            INSERT INTO FUNCTION s3
+                (
+                    'minio://data/test_file_line_as_string.tsv.gz', 'minio', 'minio123'
+                )
+            SELECT * FROM numbers(1000000);
+        """
+    )
+
+    assert (
+        node.query(
+            """
+            SELECT _file FROM s3
+            (
+                'minio://data/*as_string.tsv.gz', 'minio', 'minio123', 'LineAsString'
+            ) LIMIT 1;
+        """
+        )
+        == node.query(
+            """
+            SELECT _file FROM s3
+            (
+                'http://minio1:9001/root/data/*as_string.tsv.gz', 'minio', 'minio123', 'LineAsString'
+            ) LIMIT 1;
+        """
+        )
+    )

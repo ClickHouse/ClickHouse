@@ -1,5 +1,4 @@
 #include <Storages/MergeTree/MergeTreeDataPartBuilder.h>
-#include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 #include <Storages/MergeTree/MergeTreeDataPartWide.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
@@ -64,8 +63,6 @@ std::shared_ptr<IMergeTreeDataPart> MergeTreeDataPartBuilder::build()
             return std::make_shared<MergeTreeDataPartWide>(data, name, *part_info, part_storage, parent_part);
         case PartType::Compact:
             return std::make_shared<MergeTreeDataPartCompact>(data, name, *part_info, part_storage, parent_part);
-        case PartType::InMemory:
-            return std::make_shared<MergeTreeDataPartInMemory>(data, name, *part_info, part_storage, parent_part);
         default:
             throw Exception(ErrorCodes::UNKNOWN_PART_TYPE,
                 "Unknown type of part {}", part_storage->getRelativePath());

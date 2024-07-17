@@ -45,11 +45,13 @@ query_id=$$-$RANDOM-$SECONDS
 ${CLICKHOUSE_CLIENT} --user=test_01541 --max_block_size=1 --format Null --query_id $query_id -q 'SELECT sleepEachRow(1) FROM numbers(600)' &
 # trap
 sleep_query_pid=$!
+# Shellcheck wrongly process "trap" https://www.shellcheck.net/wiki/SC2317
+# shellcheck disable=SC2317
 function cleanup()
 {
     echo 'KILL sleep'
     # if the timeout will not be enough, it will trigger "No such process" error/message
-    kill $sleep_query_pid
+    kill "$sleep_query_pid"
     # waiting for a query to finish
     while ${CLICKHOUSE_CLIENT} -q "SELECT query_id FROM system.processes WHERE query_id = '$query_id'" | grep -xq "$query_id"; do
         sleep 0.1

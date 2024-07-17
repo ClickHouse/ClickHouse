@@ -21,6 +21,7 @@
 #include <Common/parseRemoteDescription.h>
 #include <Common/quoteString.h>
 #include <Common/logger_useful.h>
+#include <Core/Settings.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Databases/MySQL/FetchTablesColumnsList.h>
 
@@ -55,7 +56,7 @@ StorageMySQL::StorageMySQL(
     , on_duplicate_clause{on_duplicate_clause_}
     , mysql_settings(mysql_settings_)
     , pool(std::make_shared<mysqlxx::PoolWithFailover>(pool_))
-    , log(&Poco::Logger::get("StorageMySQL (" + table_id_.table_name + ")"))
+    , log(getLogger("StorageMySQL (" + table_id_.table_name + ")"))
 {
     StorageInMemoryMetadata storage_metadata;
 

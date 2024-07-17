@@ -29,7 +29,7 @@ static void deserializeAndInsert(StringRef str, IColumn & data_to)
     if constexpr (is_plain_column)
         data_to.insertData(str.data, str.size);
     else
-        data_to.deserializeAndInsertFromArena(str.data);
+        std::ignore = data_to.deserializeAndInsertFromArena(str.data);
 }
 
 }

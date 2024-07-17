@@ -11,7 +11,7 @@ N.B. `SHOW CREATE (TABLE|DATABASE|USER)` hides secrets unless
 is turned on,
 [`format_display_secrets_in_show_and_select` format setting](../../operations/settings/formats#format_display_secrets_in_show_and_select)
 is turned on and user has
-[`displaySecretsInShowAndSelect`](grant.md#grant-display-secrets) privilege.
+[`displaySecretsInShowAndSelect`](grant.md#display-secrets) privilege.
 
 ## SHOW CREATE TABLE | DICTIONARY | VIEW | DATABASE
 
@@ -207,7 +207,7 @@ The optional keyword `FULL` causes the output to include the collation, comment 
 
 The statement produces a result table with the following structure:
 - `field` - The name of the column (String)
-- `type` - The column data type. If setting `[use_mysql_types_in_show_columns](../../operations/settings/settings.md#use_mysql_types_in_show_columns) = 1` (default: 0), then the equivalent type name in MySQL is shown. (String)
+- `type` - The column data type. If the query was made through the MySQL wire protocol, then the equivalent type name in MySQL is shown. (String)
 - `null` - `YES` if the column data type is Nullable, `NO` otherwise (String)
 - `key` - `PRI` if the column is part of the primary key, `SOR` if the column is part of the sorting key, empty otherwise (String)
 - `default` - Default expression of the column if it is of type `ALIAS`, `DEFAULT`, or `MATERIALIZED`, otherwise `NULL`. (Nullable(String))
@@ -466,7 +466,7 @@ SHOW [CURRENT] QUOTA
 ```
 ## SHOW ACCESS
 
-Shows all [users](../../guides/sre/user-management/index.md#user-account-management), [roles](../../guides/sre/user-management/index.md#role-management), [profiles](../../guides/sre/user-management/index.md#settings-profiles-management), etc. and all their [grants](../../sql-reference/statements/grant.md#grant-privileges).
+Shows all [users](../../guides/sre/user-management/index.md#user-account-management), [roles](../../guides/sre/user-management/index.md#role-management), [profiles](../../guides/sre/user-management/index.md#settings-profiles-management), etc. and all their [grants](../../sql-reference/statements/grant.md#privileges).
 
 **Syntax**
 

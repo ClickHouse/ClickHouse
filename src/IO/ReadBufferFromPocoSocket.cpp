@@ -83,21 +83,24 @@ bool ReadBufferFromPocoSocket::nextImpl()
     }
     catch (const Poco::Net::NetException & e)
     {
-        throw NetException(ErrorCodes::NETWORK_ERROR, "{}, while reading from socket ({})", e.displayText(), peer_address.toString());
+        throw NetException(ErrorCodes::NETWORK_ERROR, "{}, while reading from socket (peer: {}, local: {})", e.displayText(), peer_address.toString(), socket.address().toString());
     }
     catch (const Poco::TimeoutException &)
     {
-        throw NetException(ErrorCodes::SOCKET_TIMEOUT, "Timeout exceeded while reading from socket ({}, {} ms)",
-            peer_address.toString(),
+        throw NetException(ErrorCodes::SOCKET_TIMEOUT, "Timeout exceeded while reading from socket (peer: {}, local: {}, {} ms)",
+            peer_address.toString(), socket.address().toString(),
             socket.impl()->getReceiveTimeout().totalMilliseconds());
     }
     catch (const Poco::IOException & e)
     {
-        throw NetException(ErrorCodes::NETWORK_ERROR, "{}, while reading from socket ({})", e.displayText(), peer_address.toString());
+        throw NetException(ErrorCodes::NETWORK_ERROR, "{}, while reading from socket (peer: {}, local: {})", e.displayText(), peer_address.toString(), socket.address().toString());
     }
 
     if (bytes_read < 0)
-        throw NetException(ErrorCodes::CANNOT_READ_FROM_SOCKET, "Cannot read from socket ({})", peer_address.toString());
+        throw NetException(ErrorCodes::CANNOT_READ_FROM_SOCKET, "Cannot read from socket (peer: {}, local: {})", peer_address.toString(), socket.address().toString());
+
+    if (read_event != ProfileEvents::end())
+        ProfileEvents::increment(read_event, bytes_read);
 
     if (bytes_read)
         working_buffer.resize(bytes_read);
@@ -111,8 +114,15 @@ ReadBufferFromPocoSocket::ReadBufferFromPocoSocket(Poco::Net::Socket & socket_, 
     : BufferWithOwnMemory<ReadBuffer>(buf_size)
     , socket(socket_)
     , peer_address(socket.peerAddress())
+    , read_event(ProfileEvents::end())
     , socket_description("socket (" + peer_address.toString() + ")")
 {
+}
+
+ReadBufferFromPocoSocket::ReadBufferFromPocoSocket(Poco::Net::Socket & socket_, const ProfileEvents::Event & read_event_, size_t buf_size)
+    : ReadBufferFromPocoSocket(socket_, buf_size)
+{
+    read_event = read_event_;
 }
 
 bool ReadBufferFromPocoSocket::poll(size_t timeout_microseconds) const

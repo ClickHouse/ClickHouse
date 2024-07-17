@@ -3,6 +3,7 @@
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/Types.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/NumberTraits.h>
@@ -15,6 +16,7 @@
 #include <Common/Exception.h>
 #include <Common/NaNUtils.h>
 #include <Common/register_objects.h>
+#include <base/range.h>
 
 #include <algorithm>
 #include <iterator>
@@ -44,7 +46,7 @@ class FunctionWidthBucket : public IFunction
         {
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
-                "Logical error in function {}: argument {} has unexpected type or size!",
+                "Logical error in function {}: argument {} has unexpected type or size.",
                 getName(),
                 argument_index);
         }
@@ -157,7 +159,7 @@ class FunctionWidthBucket : public IFunction
         if (are_all_const_cols)
         {
             throw Exception(
-                ErrorCodes::LOGICAL_ERROR, "Logical error in function {}: unexpected combination of argument types!", getName());
+                ErrorCodes::LOGICAL_ERROR, "Logical error in function {}: unexpected combination of argument types.", getName());
         }
 
         auto result_column = ColumnVector<ResultType>::create();

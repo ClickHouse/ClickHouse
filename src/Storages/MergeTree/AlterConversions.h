@@ -35,6 +35,8 @@ public:
     /// Get column old name before rename (lookup by key in rename_map)
     std::string getColumnOldName(const std::string & new_name) const;
 
+    static bool supportsMutationCommandType(MutationCommand::Type);
+
 private:
     /// Rename map new_name -> old_name.
     std::vector<RenamePair> rename_map;

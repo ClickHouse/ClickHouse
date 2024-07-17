@@ -13,6 +13,5 @@ slug: /zh/operations/system-tables/storage_policies
 -   `disks` ([Array(String)](../../sql-reference/data-types/array.md)) — 存储策略中定义的磁盘名。
 -   `max_data_part_size` ([UInt64](../../sql-reference/data-types/int-uint.md)) — 可以存储在卷磁盘上数据部分的最大大小 (0 - 不限制)。
 -   `move_factor` ([Float64](../../sql-reference/data-types/float.md)) — 磁盘空闲的比率。当比率超过配置的值，ClickHouse 将把数据向下一个卷移动。
--   `prefer_not_to_merge` ([UInt8](../../sql-reference/data-types/int-uint.md)) — 设置中 `prefer_not_to_merge` 的值. 当这个设置启用时，不允许在此卷上合并数据。这将允许控制 ClickHouse 如何与运行速度较慢的磁盘一起工作。
 
 如果存储策略包含多个卷，则每个卷的信息将在表中作为单独一行存储。

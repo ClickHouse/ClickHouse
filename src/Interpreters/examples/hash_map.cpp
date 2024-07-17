@@ -15,7 +15,6 @@
 #include <IO/ReadBufferFromFile.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Common/HashTable/HashMap.h>
-#include <Common/HashTable/PackedHashMap.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -82,10 +81,11 @@ int main(int argc, char ** argv)
     std::vector<Key> data(n);
     Value value;
 
+    NullsAction action = NullsAction::EMPTY;
     AggregateFunctionProperties properties;
-    AggregateFunctionPtr func_count = factory.get("count", data_types_empty, {}, properties);
-    AggregateFunctionPtr func_avg = factory.get("avg", data_types_uint64, {}, properties);
-    AggregateFunctionPtr func_uniq = factory.get("uniq", data_types_uint64, {}, properties);
+    AggregateFunctionPtr func_count = factory.get("count", action, data_types_empty, {}, properties);
+    AggregateFunctionPtr func_avg = factory.get("avg", action, data_types_uint64, {}, properties);
+    AggregateFunctionPtr func_uniq = factory.get("uniq", action, data_types_uint64, {}, properties);
 
     #define INIT \
     { \

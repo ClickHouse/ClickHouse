@@ -5,6 +5,7 @@
 #include <Columns/ColumnArray.h>
 #include <Common/typeid_cast.h>
 #include <Core/Field.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <IO/ReadHelpers.h>
@@ -23,11 +24,12 @@ namespace ErrorCodes
     extern const int INCORRECT_NUMBER_OF_COLUMNS;
     extern const int INCORRECT_QUERY;
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
 template <typename Distance>
 AnnoyIndexWithSerialization<Distance>::AnnoyIndexWithSerialization(size_t dimensions)
-    : Base::AnnoyIndex(dimensions)
+    : Base::AnnoyIndex(static_cast<int>(dimensions))
 {
 }
 
@@ -229,7 +231,7 @@ MergeTreeIndexConditionAnnoy::MergeTreeIndexConditionAnnoy(
     ContextPtr context)
     : ann_condition(query, context)
     , distance_function(distance_function_)
-    , search_k(context->getSettings().annoy_index_search_k_nodes)
+    , search_k(context->getSettingsRef().annoy_index_search_k_nodes)
 {}
 
 bool MergeTreeIndexConditionAnnoy::mayBeTrueOnGranule(MergeTreeIndexGranulePtr /*idx_granule*/) const
@@ -330,6 +332,11 @@ MergeTreeIndexConditionPtr MergeTreeIndexAnnoy::createIndexCondition(const Selec
 {
     return std::make_shared<MergeTreeIndexConditionAnnoy>(index, query, distance_function, context);
 };
+
+MergeTreeIndexConditionPtr MergeTreeIndexAnnoy::createIndexCondition(const ActionsDAGPtr &, ContextPtr) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "MergeTreeIndexAnnoy cannot be created with ActionsDAG");
+}
 
 MergeTreeIndexPtr annoyIndexCreator(const IndexDescription & index)
 {

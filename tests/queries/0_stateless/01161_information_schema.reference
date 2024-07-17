@@ -2,24 +2,28 @@ COLUMNS
 KEY_COLUMN_USAGE
 REFERENTIAL_CONSTRAINTS
 SCHEMATA
+STATISTICS
 TABLES
 VIEWS
 columns
 key_column_usage
 referential_constraints
 schemata
+statistics
 tables
 views
 COLUMNS
 KEY_COLUMN_USAGE
 REFERENTIAL_CONSTRAINTS
 SCHEMATA
+STATISTICS
 TABLES
 VIEWS
 columns
 key_column_usage
 referential_constraints
 schemata
+statistics
 tables
 views
 -- information_schema.schemata
@@ -53,5 +57,6 @@ def	default	PRIMARY	def	default	kcu1	i	1	\N	\N	\N	\N	def	default	PRIMARY	def	def
 def	default	PRIMARY	def	default	kcu2	d	1	\N	\N	\N	\N	def	default	PRIMARY	def	default	kcu2	d	1	\N	\N	\N	\N
 def	default	PRIMARY	def	default	kcu2	u	1	\N	\N	\N	\N	def	default	PRIMARY	def	default	kcu2	u	1	\N	\N	\N	\N
 -- information_schema.referential_constraints
+-- information_schema.statistics
 1
 1

@@ -6,11 +6,14 @@
 #include <Parsers/IParser.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Common/SettingsChanges.h>
+#include <Common/callOnce.h>
 
 #include <atomic>
 #include <functional>
 #include <optional>
 #include <vector>
+
+#include <boost/noncopyable.hpp>
 
 
 namespace Poco { class Logger; }
@@ -21,7 +24,7 @@ namespace DB
 struct User;
 class Credentials;
 class ExternalAuthenticators;
-enum class AuthenticationType;
+enum class AuthenticationType : uint8_t;
 class BackupEntriesCollector;
 class RestorerFromBackup;
 
@@ -30,7 +33,7 @@ struct AuthResult
 {
     UUID user_id;
     /// Session settings received from authentication server (if any)
-    SettingsChanges settings;
+    SettingsChanges settings{};
 };
 
 /// Contains entities, i.e. instances of classes derived from IAccessEntity.
@@ -40,6 +43,11 @@ class IAccessStorage : public boost::noncopyable
 public:
     explicit IAccessStorage(const String & storage_name_) : storage_name(storage_name_) {}
     virtual ~IAccessStorage() = default;
+
+    /// If the AccessStorage has to do some complicated work when destroying - do it in advance.
+    /// For example, if the AccessStorage contains any threads for background work - ask them to complete and wait for completion.
+    /// By default, does nothing.
+    virtual void shutdown() {}
 
     /// Returns the name of this storage.
     const String & getStorageName() const { return storage_name; }
@@ -225,9 +233,9 @@ protected:
         SettingsChanges & settings) const;
     virtual bool isAddressAllowed(const User & user, const Poco::Net::IPAddress & address) const;
     static UUID generateRandomID();
-    Poco::Logger * getLogger() const;
+    LoggerPtr getLogger() const;
     static String formatEntityTypeWithName(AccessEntityType type, const String & name) { return AccessEntityTypeInfo::get(type).formatEntityNameWithType(name); }
-    static void clearConflictsInEntitiesList(std::vector<std::pair<UUID, AccessEntityPtr>> & entities, const Poco::Logger * log_);
+    static void clearConflictsInEntitiesList(std::vector<std::pair<UUID, AccessEntityPtr>> & entities, LoggerPtr log_);
     [[noreturn]] void throwNotFound(const UUID & id) const;
     [[noreturn]] void throwNotFound(AccessEntityType type, const String & name) const;
     [[noreturn]] static void throwBadCast(const UUID & id, AccessEntityType type, const String & name, AccessEntityType required_type);
@@ -246,7 +254,9 @@ protected:
 
 private:
     const String storage_name;
-    mutable std::atomic<Poco::Logger *> log = nullptr;
+
+    mutable OnceFlag log_initialized;
+    mutable LoggerPtr log = nullptr;
 };
 
 

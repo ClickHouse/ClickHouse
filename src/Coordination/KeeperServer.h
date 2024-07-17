@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Coordination/CoordinationSettings.h>
 #include <Coordination/InMemoryLogStore.h>
 #include <Coordination/KeeperStateMachine.h>
 #include <Coordination/KeeperStateManager.h>
@@ -17,12 +16,13 @@ namespace DB
 
 using RaftAppendResult = nuraft::ptr<nuraft::cmd_result<nuraft::ptr<nuraft::buffer>>>;
 
+struct KeeperConfigurationAndSettings;
+using KeeperConfigurationAndSettingsPtr = std::shared_ptr<KeeperConfigurationAndSettings>;
+
 class KeeperServer
 {
 private:
     const int server_id;
-
-    CoordinationSettingsPtr coordination_settings;
 
     nuraft::ptr<KeeperStateMachine> state_machine;
 
@@ -44,9 +44,11 @@ private:
     std::condition_variable initialized_cv;
     std::atomic<bool> initial_batch_committed = false;
 
+    std::atomic<uint64_t> last_log_idx_on_disk = 0;
+
     nuraft::ptr<nuraft::cluster_config> last_local_config;
 
-    Poco::Logger * log;
+    LoggerPtr log;
 
     /// Callback func which is called by NuRaft on all internal events.
     /// Used to determine the moment when raft is ready to server new requests
@@ -64,7 +66,7 @@ private:
 
     std::atomic_bool is_recovering = false;
 
-    std::shared_ptr<KeeperContext> keeper_context;
+    KeeperContextPtr keeper_context;
 
     const bool create_snapshot_on_exit;
     const bool enable_reconfiguration;
@@ -108,6 +110,8 @@ public:
 
     bool isLeaderAlive() const;
 
+    bool isExceedingMemorySoftLimit() const;
+
     Keeper4LWInfo getPartiallyFilled4LWInfo() const;
 
     /// @return follower count if node is not leader return 0
@@ -126,7 +130,16 @@ public:
 
     int getServerID() const { return server_id; }
 
-    bool applyConfigUpdate(const ClusterUpdateAction& action);
+    enum class ConfigUpdateState : uint8_t
+    {
+        Accepted,
+        Declined,
+        WaitBeforeChangingLeader
+    };
+
+    ConfigUpdateState applyConfigUpdate(
+        const ClusterUpdateAction& action,
+        bool last_command_was_leader_change = false);
 
     // TODO (myrrc) these functions should be removed once "reconfig" is stabilized
     void applyConfigUpdateWithReconfigDisabled(const ClusterUpdateAction& action);
@@ -138,6 +151,8 @@ public:
     KeeperLogInfo getKeeperLogInfo();
 
     bool requestLeader();
+
+    void yieldLeadership();
 
     void recalculateStorageStats();
 };

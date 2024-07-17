@@ -1,4 +1,6 @@
 #pragma once
+
+#include <Core/Joins.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/Transforms/CreateSetAndFilterOnTheFlyTransform.h>
 
@@ -54,7 +56,7 @@ private:
 
     JoinTableSide position;
 
-    Poco::Logger * log = &Poco::Logger::get("CreateSetAndFilterOnTheFlyStep");
+    LoggerPtr log = getLogger("CreateSetAndFilterOnTheFlyStep");
 };
 
 }

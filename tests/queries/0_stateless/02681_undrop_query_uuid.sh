@@ -13,7 +13,7 @@ ${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode=none -q "create table 02681_u
 ${CLICKHOUSE_CLIENT} -q "insert into 02681_undrop_uuid values (1),(2),(3);"
 ${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode=none -q "drop table 02681_undrop_uuid on cluster test_shard_localhost settings database_atomic_wait_for_drop_and_detach_synchronously = 0;"
 ${CLICKHOUSE_CLIENT} -q "select table from system.dropped_tables where table = '02681_undrop_uuid' limit 1;"
-${CLICKHOUSE_CLIENT} -q "undrop table 02681_undrop_uuid UUID '$uuid2' settings allow_experimental_undrop_table_query = 1;" 2>&1| grep -Faq "UNKNOWN_TABLE" && echo OK
-${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode=none -q "undrop table 02681_undrop_uuid UUID '$uuid' on cluster test_shard_localhost settings allow_experimental_undrop_table_query = 1;"
+${CLICKHOUSE_CLIENT} -q "undrop table 02681_undrop_uuid UUID '$uuid2';" 2>&1| grep -Faq "UNKNOWN_TABLE" && echo OK
+${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode=none -q "undrop table 02681_undrop_uuid UUID '$uuid' on cluster test_shard_localhost;"
 ${CLICKHOUSE_CLIENT} -q "select * from 02681_undrop_uuid order by id;"
 ${CLICKHOUSE_CLIENT} -q "drop table 02681_undrop_uuid sync;"

@@ -50,6 +50,8 @@ public:
 
     QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings & settings) override;
 
+    /// Append processors from the current step to the query pipeline.
+    /// Step always has a single input stream, so we implement updatePipeline over this function.
     virtual void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) = 0;
 
     const TransformTraits & getTransformTraits() const { return transform_traits; }

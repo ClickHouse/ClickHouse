@@ -16,7 +16,7 @@ DROP TABLE IF EXISTS wv;
 
 CREATE TABLE dst(count UInt64) Engine=MergeTree ORDER BY tuple();
 CREATE TABLE mt(a Int32) ENGINE=MergeTree ORDER BY tuple();
-CREATE WINDOW VIEW wv TO dst AS SELECT count(a) AS count FROM mt GROUP BY tumble(now('US/Samoa'), INTERVAL '5' SECOND, 'US/Samoa') AS wid;
+CREATE WINDOW VIEW wv TO dst AS SELECT count(a) AS count FROM mt GROUP BY tumble(now('US/Samoa'), INTERVAL '10' SECOND, 'US/Samoa') AS wid;
 
 INSERT INTO mt VALUES (1);
 EOF

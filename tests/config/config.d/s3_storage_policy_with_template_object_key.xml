@@ -1,0 +1,32 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <s3>
+                <type>s3</type>
+                <endpoint>http://localhost:11111/test/</endpoint>
+                <access_key_id>clickhouse</access_key_id>
+                <secret_access_key>clickhouse</secret_access_key>
+                <key_compatibility_prefix>test</key_compatibility_prefix>
+                <!--key_template should not be used without enabled storage_metadata_write_full_object_key-->
+                <key_template>[a-z]{3}-first-random-part/new-style-prefix/[a-z]{3}/[a-z]{29}</key_template>
+            </s3>
+            <cached_s3>
+                <type>cache</type>
+                <max_size>1Gi</max_size>
+                <path>cached_s3/</path>
+                <disk>s3</disk>
+            </cached_s3>
+        </disks>
+        <policies>
+            <s3>
+                <volumes>
+                    <main><disk>cached_s3</disk></main>
+                </volumes>
+            </s3>
+        </policies>
+    </storage_configuration>
+    <merge_tree>
+        <storage_policy>s3</storage_policy>
+    </merge_tree>
+    <temporary_data_in_cache>cached_s3</temporary_data_in_cache>
+</clickhouse>

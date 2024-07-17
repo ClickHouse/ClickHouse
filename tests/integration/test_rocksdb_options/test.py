@@ -149,6 +149,31 @@ def test_invalid_column_family_options(start_cluster):
     node.restart_clickhouse()
 
 
+def test_invalid_block_based_table_options(start_cluster):
+    node.exec_in_container(
+        [
+            "bash",
+            "-c",
+            "sed -i 's/block_size/no_such_block_based_table_options/g' /etc/clickhouse-server/config.d/rocksdb.xml",
+        ]
+    )
+    node.restart_clickhouse()
+    with pytest.raises(QueryRuntimeException):
+        node.query(
+            """
+        CREATE TABLE test (key UInt64, value String) Engine=EmbeddedRocksDB PRIMARY KEY(key);
+        """
+        )
+    node.exec_in_container(
+        [
+            "bash",
+            "-c",
+            "sed -i 's/no_such_block_based_table_options/block_size/g' /etc/clickhouse-server/config.d/rocksdb.xml",
+        ]
+    )
+    node.restart_clickhouse()
+
+
 def test_table_valid_column_family_options(start_cluster):
     node.query(
         """
@@ -178,6 +203,31 @@ def test_table_invalid_column_family_options(start_cluster):
             "bash",
             "-c",
             "sed -i 's/no_such_table_column_family_option/max_bytes_for_level_base/g' /etc/clickhouse-server/config.d/rocksdb.xml",
+        ]
+    )
+    node.restart_clickhouse()
+
+
+def test_table_invalid_block_based_table_options(start_cluster):
+    node.exec_in_container(
+        [
+            "bash",
+            "-c",
+            "sed -i 's/format_version/no_such_table_block_based_table_options/g' /etc/clickhouse-server/config.d/rocksdb.xml",
+        ]
+    )
+    node.restart_clickhouse()
+    with pytest.raises(QueryRuntimeException):
+        node.query(
+            """
+        CREATE TABLE test (key UInt64, value String) Engine=EmbeddedRocksDB PRIMARY KEY(key);
+        """
+        )
+    node.exec_in_container(
+        [
+            "bash",
+            "-c",
+            "sed -i 's/no_such_table_block_based_table_options/format_version/g' /etc/clickhouse-server/config.d/rocksdb.xml",
         ]
     )
     node.restart_clickhouse()

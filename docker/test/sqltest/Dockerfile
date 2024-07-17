@@ -11,11 +11,11 @@ RUN apt-get update --yes \
             python3-dev \
             python3-pip \
             sudo \
-    && apt-get clean
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
-RUN pip3 install \
-    pyyaml \
-    clickhouse-driver
+COPY requirements.txt /
+RUN pip3 install --no-cache-dir -r /requirements.txt
 
 ARG sqltest_repo="https://github.com/elliotchance/sqltest/"
 

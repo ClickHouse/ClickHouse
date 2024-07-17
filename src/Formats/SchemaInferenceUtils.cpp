@@ -17,6 +17,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/parseDateTimeBestEffort.h>
 #include <IO/PeekableReadBuffer.h>
+#include <IO/readFloatText.h>
 
 #include <Core/Block.h>
 #include <Common/assert_cast.h>
@@ -135,7 +136,7 @@ namespace
 
         bool empty() const { return paths.empty(); }
 
-        DataTypePtr finalize() const
+        DataTypePtr finalize(bool use_string_type_for_ambiguous_paths = false) const
         {
             if (paths.empty())
                 throw Exception(ErrorCodes::ONLY_NULLS_WHILE_READING_SCHEMA, "Cannot infer named Tuple from JSON object because object is empty");
@@ -166,7 +167,7 @@ namespace
                 current_node->leaf_type = type;
             }
 
-            return root_node.getType();
+            return root_node.getType(use_string_type_for_ambiguous_paths);
         }
 
     private:
@@ -179,19 +180,8 @@ namespace
             /// Store path to this node for better exception message in case of ambiguous paths.
             String path;
 
-            DataTypePtr getType() const
+            DataTypePtr getType(bool use_string_type_for_ambiguous_paths) const
             {
-                /// Check if we have ambiguous paths.
-                /// For example:
-                /// 'a.b.c' : Int32 and 'a.b' : String
-                /// Also check if leaf type is Nothing, because the next situation is possible:
-                /// {"a" : {"b" : null}} -> 'a.b' : Nullable(Nothing)
-                /// {"a" : {"b" : {"c" : 42}}} -> 'a.b.c' : Int32
-                /// And after merge we will have ambiguous paths 'a.b.c' : Int32 and 'a.b' : Nullable(Nothing),
-                /// but it's a valid case and we should ignore path 'a.b'.
-                if (leaf_type && !isNothing(removeNullable(leaf_type)) && !nodes.empty())
-                    throw Exception(ErrorCodes::INCORRECT_DATA, "JSON objects have ambiguous paths: '{}' with type {} and '{}'", path, leaf_type->getName(), nodes.begin()->second.path);
-
                 if (nodes.empty())
                     return leaf_type;
 
@@ -202,28 +192,38 @@ namespace
                 for (const auto & [name, node] : nodes)
                 {
                     node_names.push_back(name);
-                    node_types.push_back(node.getType());
+                    node_types.push_back(node.getType(use_string_type_for_ambiguous_paths));
                 }
 
-                return std::make_shared<DataTypeTuple>(std::move(node_types), std::move(node_names));
+                auto tuple_type = std::make_shared<DataTypeTuple>(std::move(node_types), std::move(node_names));
+
+                /// Check if we have ambiguous paths.
+                /// For example:
+                /// 'a.b.c' : Int32 and 'a.b' : String
+                /// Also check if leaf type is Nothing, because the next situation is possible:
+                /// {"a" : {"b" : null}} -> 'a.b' : Nullable(Nothing)
+                /// {"a" : {"b" : {"c" : 42}}} -> 'a.b.c' : Int32
+                /// And after merge we will have ambiguous paths 'a.b.c' : Int32 and 'a.b' : Nullable(Nothing),
+                /// but it's a valid case and we should ignore path 'a.b'.
+                if (leaf_type && !isNothing(removeNullable(leaf_type)) && !nodes.empty())
+                {
+                    if (use_string_type_for_ambiguous_paths)
+                        return std::make_shared<DataTypeString>();
+
+                    throw Exception(
+                        ErrorCodes::INCORRECT_DATA,
+                        "JSON objects have ambiguous data: in some objects path '{}' has type '{}' and in some - '{}'. You can enable setting "
+                        "input_format_json_use_string_type_for_ambiguous_paths_in_named_tuples_inference_from_objects to use String type "
+                        "for path '{}'",
+                        path, leaf_type->getName(), tuple_type->getName(), path);
+                }
+
+                return tuple_type;
             }
         };
 
         Paths paths;
     };
-
-    bool checkIfTypesAreEqual(const DataTypes & types)
-    {
-        if (types.empty())
-            return true;
-
-        for (size_t i = 1; i < types.size(); ++i)
-        {
-            if (!types[0]->equals(*types[i]))
-                return false;
-        }
-        return true;
-    }
 
     void updateTypeIndexes(DataTypes & data_types, TypeIndexesSet & type_indexes)
     {
@@ -259,24 +259,31 @@ namespace
         type_indexes.erase(TypeIndex::Nothing);
     }
 
-    /// If we have both Int64 and UInt64, convert all Int64 to UInt64,
+    /// If we have both Int64 and UInt64, convert all not-negative Int64 to UInt64,
     /// because UInt64 is inferred only in case of Int64 overflow.
-    void transformIntegers(DataTypes & data_types, TypeIndexesSet & type_indexes)
+    void transformIntegers(DataTypes & data_types, TypeIndexesSet & type_indexes, JSONInferenceInfo * json_info)
     {
         if (!type_indexes.contains(TypeIndex::Int64) || !type_indexes.contains(TypeIndex::UInt64))
             return;
 
+        bool have_negative_integers = false;
         for (auto & type : data_types)
         {
             if (WhichDataType(type).isInt64())
-                type = std::make_shared<DataTypeUInt64>();
+            {
+                bool is_negative = json_info && json_info->negative_integers.contains(type.get());
+                have_negative_integers |= is_negative;
+                if (!is_negative)
+                    type = std::make_shared<DataTypeUInt64>();
+            }
         }
 
-        type_indexes.erase(TypeIndex::Int64);
+        if (!have_negative_integers)
+            type_indexes.erase(TypeIndex::Int64);
     }
 
     /// If we have both Int64 and Float64 types, convert all Int64 to Float64.
-    void transformIntegersAndFloatsToFloats(DataTypes & data_types, TypeIndexesSet & type_indexes)
+    void transformIntegersAndFloatsToFloats(DataTypes & data_types, TypeIndexesSet & type_indexes, JSONInferenceInfo * json_info)
     {
         bool have_floats = type_indexes.contains(TypeIndex::Float64);
         bool have_integers = type_indexes.contains(TypeIndex::Int64) || type_indexes.contains(TypeIndex::UInt64);
@@ -287,7 +294,12 @@ namespace
         {
             WhichDataType which(type);
             if (which.isInt64() || which.isUInt64())
-                type = std::make_shared<DataTypeFloat64>();
+            {
+                auto new_type = std::make_shared<DataTypeFloat64>();
+                if (json_info && json_info->numbers_parsed_from_json_strings.erase(type.get()))
+                    json_info->numbers_parsed_from_json_strings.insert(new_type.get());
+                type = new_type;
+            }
         }
 
         type_indexes.erase(TypeIndex::Int64);
@@ -372,6 +384,22 @@ namespace
                 else
                     type = std::make_shared<DataTypeFloat64>();
             }
+        }
+
+        type_indexes.erase(TypeIndex::UInt8);
+    }
+
+    /// If we have Bool and String types convert all numbers to String.
+    /// It's applied only when setting input_format_json_read_bools_as_strings is enabled.
+    void transformJSONBoolsAndStringsToString(DataTypes & data_types, TypeIndexesSet & type_indexes)
+    {
+        if (!type_indexes.contains(TypeIndex::String) || !type_indexes.contains(TypeIndex::UInt8))
+            return;
+
+        for (auto & type : data_types)
+        {
+            if (isBool(type))
+                type = std::make_shared<DataTypeString>();
         }
 
         type_indexes.erase(TypeIndex::UInt8);
@@ -547,6 +575,54 @@ namespace
         }
     }
 
+    void mergeNamedTuples(DataTypes & data_types, TypeIndexesSet & type_indexes, const FormatSettings & settings, JSONInferenceInfo * json_info)
+    {
+        if (!type_indexes.contains(TypeIndex::Tuple))
+            return;
+
+        /// Collect all names and their types from all named tuples.
+        std::unordered_map<String, DataTypes> names_to_types;
+        /// Try to save original order of element names.
+        Names element_names;
+        for (auto & type : data_types)
+        {
+            const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get());
+            if (tuple_type && tuple_type->haveExplicitNames())
+            {
+                const auto & elements = tuple_type->getElements();
+                const auto & names = tuple_type->getElementNames();
+                for (size_t i = 0; i != elements.size(); ++i)
+                {
+                    if (!names_to_types.contains(names[i]))
+                        element_names.push_back(names[i]);
+                    names_to_types[names[i]].push_back(elements[i]);
+                }
+            }
+        }
+
+        /// Try to find common type for each tuple element with the same name.
+        DataTypes element_types;
+        element_types.reserve(names_to_types.size());
+        for (const auto & name : element_names)
+        {
+            auto & types = names_to_types[name];
+            transformInferredTypesIfNeededImpl<true>(types, settings, json_info);
+            /// If some element have different types in different tuples, we can't do anything
+            if (!checkIfTypesAreEqual(types))
+                return;
+            element_types.push_back(types.front());
+        }
+
+        DataTypePtr result_tuple = std::make_shared<DataTypeTuple>(element_types, element_names);
+
+        for (auto & type : data_types)
+        {
+            const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get());
+            if (tuple_type && tuple_type->haveExplicitNames())
+                type = result_tuple;
+        }
+    }
+
     template <bool is_json>
     void transformInferredTypesIfNeededImpl(DataTypes & types, const FormatSettings & settings, JSONInferenceInfo * json_info)
     {
@@ -558,9 +634,9 @@ namespace
             if (settings.try_infer_integers)
             {
                 /// Transform Int64 to UInt64 if needed.
-                transformIntegers(data_types, type_indexes);
+                transformIntegers(data_types, type_indexes, json_info);
                 /// Transform integers to floats if needed.
-                transformIntegersAndFloatsToFloats(data_types, type_indexes);
+                transformIntegersAndFloatsToFloats(data_types, type_indexes, json_info);
             }
 
             /// Transform Date to DateTime or both to String if needed.
@@ -579,6 +655,10 @@ namespace
             /// Convert Bool to number (Int64/Float64) if needed.
             if (settings.json.read_bools_as_numbers)
                 transformBoolsAndNumbersToNumbers(data_types, type_indexes);
+
+            /// Convert Bool to String if needed.
+            if (settings.json.read_bools_as_strings)
+                transformJSONBoolsAndStringsToString(data_types, type_indexes);
 
             if (settings.json.try_infer_objects_as_tuples)
                 mergeJSONPaths(data_types, type_indexes, settings, json_info);
@@ -604,6 +684,9 @@ namespace
 
             if (settings.json.read_objects_as_strings)
                 transformMapsAndStringsToStrings(data_types, type_indexes);
+
+            if (json_info && json_info->allow_merging_named_tuples)
+                mergeNamedTuples(data_types, type_indexes, settings, json_info);
         };
 
         transformTypesRecursively(types, transform_simple_types, transform_complex_types);
@@ -794,52 +877,51 @@ namespace
         return std::make_shared<DataTypeTuple>(nested_types);
     }
 
-    DataTypePtr tryInferNumber(ReadBuffer & buf, const FormatSettings & settings)
+    template <bool is_json>
+    bool tryReadFloat(Float64 & value, ReadBuffer & buf, const FormatSettings & settings, bool & has_fractional)
+    {
+        if (is_json || settings.try_infer_exponent_floats)
+            return tryReadFloatTextExt(value, buf, has_fractional);
+        return tryReadFloatTextExtNoExponent(value, buf, has_fractional);
+    }
+
+    template <bool is_json>
+    DataTypePtr tryInferNumber(ReadBuffer & buf, const FormatSettings & settings, JSONInferenceInfo * json_info)
     {
         if (buf.eof())
             return nullptr;
 
         Float64 tmp_float;
+        bool has_fractional;
         if (settings.try_infer_integers)
         {
             /// If we read from String, we can do it in a more efficient way.
             if (auto * string_buf = dynamic_cast<ReadBufferFromString *>(&buf))
             {
                 /// Remember the pointer to the start of the number to rollback to it.
-                char * number_start = buf.position();
-                Int64 tmp_int;
-                bool read_int = tryReadIntText(tmp_int, buf);
-                /// If we reached eof, it cannot be float (it requires no less data than integer)
-                if (buf.eof())
-                    return read_int ? std::make_shared<DataTypeInt64>() : nullptr;
-
-                char * int_end = buf.position();
                 /// We can safely get back to the start of the number, because we read from a string and we didn't reach eof.
-                buf.position() = number_start;
+                char * number_start = buf.position();
 
-                bool read_uint = false;
-                char * uint_end = nullptr;
-                /// In case of Int64 overflow we can try to infer UInt64.
-                if (!read_int)
-                {
-                    UInt64 tmp_uint;
-                    read_uint = tryReadIntText(tmp_uint, buf);
-                    /// If we reached eof, it cannot be float (it requires no less data than integer)
-                    if (buf.eof())
-                        return read_uint ? std::make_shared<DataTypeUInt64>() : nullptr;
-
-                    uint_end = buf.position();
-                    buf.position() = number_start;
-                }
-
-                if (tryReadFloatText(tmp_float, buf))
-                {
-                    if (read_int && buf.position() == int_end)
-                        return std::make_shared<DataTypeInt64>();
-                    if (read_uint && buf.position() == uint_end)
-                        return std::make_shared<DataTypeUInt64>();
+                /// NOTE: it may break parsing of tryReadFloat() != tryReadIntText() + parsing of '.'/'e'
+                /// But, for now it is true
+                if (tryReadFloat<is_json>(tmp_float, buf, settings, has_fractional) && has_fractional)
                     return std::make_shared<DataTypeFloat64>();
+
+                Int64 tmp_int;
+                buf.position() = number_start;
+                if (tryReadIntText(tmp_int, buf))
+                {
+                    auto type = std::make_shared<DataTypeInt64>();
+                    if (json_info && tmp_int < 0)
+                        json_info->negative_integers.insert(type.get());
+                    return type;
                 }
+
+                /// In case of Int64 overflow we can try to infer UInt64.
+                UInt64 tmp_uint;
+                buf.position() = number_start;
+                if (tryReadIntText(tmp_uint, buf))
+                    return std::make_shared<DataTypeUInt64>();
 
                 return nullptr;
             }
@@ -849,36 +931,27 @@ namespace
             /// and then as float.
             PeekableReadBuffer peekable_buf(buf);
             PeekableReadBufferCheckpoint checkpoint(peekable_buf);
-            Int64 tmp_int;
-            bool read_int = tryReadIntText(tmp_int, peekable_buf);
-            auto * int_end = peekable_buf.position();
-            peekable_buf.rollbackToCheckpoint(true);
 
-            bool read_uint = false;
-            char * uint_end = nullptr;
-            /// In case of Int64 overflow we can try to infer UInt64.
-            if (!read_int)
-            {
-                PeekableReadBufferCheckpoint new_checkpoint(peekable_buf);
-                UInt64 tmp_uint;
-                read_uint = tryReadIntText(tmp_uint, peekable_buf);
-                uint_end = peekable_buf.position();
-                peekable_buf.rollbackToCheckpoint(true);
-            }
-
-            if (tryReadFloatText(tmp_float, peekable_buf))
-            {
-                /// Float parsing reads no fewer bytes than integer parsing,
-                /// so position of the buffer is either the same, or further.
-                /// If it's the same, then it's integer.
-                if (read_int && peekable_buf.position() == int_end)
-                    return std::make_shared<DataTypeInt64>();
-                if (read_uint && peekable_buf.position() == uint_end)
-                    return std::make_shared<DataTypeUInt64>();
+            if (tryReadFloat<is_json>(tmp_float, peekable_buf, settings, has_fractional) && has_fractional)
                 return std::make_shared<DataTypeFloat64>();
+            peekable_buf.rollbackToCheckpoint(/* drop= */ false);
+
+            Int64 tmp_int;
+            if (tryReadIntText(tmp_int, peekable_buf))
+            {
+                auto type = std::make_shared<DataTypeInt64>();
+                if (json_info && tmp_int < 0)
+                    json_info->negative_integers.insert(type.get());
+                return type;
             }
+            peekable_buf.rollbackToCheckpoint(/* drop= */ true);
+
+            /// In case of Int64 overflow we can try to infer UInt64.
+            UInt64 tmp_uint;
+            if (tryReadIntText(tmp_uint, peekable_buf))
+                return std::make_shared<DataTypeUInt64>();
         }
-        else if (tryReadFloatText(tmp_float, buf))
+        else if (tryReadFloat<is_json>(tmp_float, buf, settings, has_fractional))
         {
             return std::make_shared<DataTypeFloat64>();
         }
@@ -888,14 +961,50 @@ namespace
     }
 
     template <bool is_json>
+    DataTypePtr tryInferNumberFromStringImpl(std::string_view field, const FormatSettings & settings, JSONInferenceInfo * json_inference_info = nullptr)
+    {
+        ReadBufferFromString buf(field);
+
+        if (settings.try_infer_integers)
+        {
+            Int64 tmp_int;
+            if (tryReadIntText(tmp_int, buf) && buf.eof())
+            {
+                auto type = std::make_shared<DataTypeInt64>();
+                if (json_inference_info && tmp_int < 0)
+                    json_inference_info->negative_integers.insert(type.get());
+                return type;
+            }
+
+            /// We can safely get back to the start of buffer, because we read from a string and we didn't reach eof.
+            buf.position() = buf.buffer().begin();
+
+            /// In case of Int64 overflow, try to infer UInt64
+            UInt64 tmp_uint;
+            if (tryReadIntText(tmp_uint, buf) && buf.eof())
+                return std::make_shared<DataTypeUInt64>();
+        }
+
+        /// We can safely get back to the start of buffer, because we read from a string and we didn't reach eof.
+        buf.position() = buf.buffer().begin();
+
+        Float64 tmp;
+        bool has_fractional;
+        if (tryReadFloat<is_json>(tmp, buf, settings, has_fractional) && buf.eof())
+            return std::make_shared<DataTypeFloat64>();
+
+        return nullptr;
+    }
+
+    template <bool is_json>
     DataTypePtr tryInferString(ReadBuffer & buf, const FormatSettings & settings, JSONInferenceInfo * json_info)
     {
         String field;
         bool ok = true;
         if constexpr (is_json)
-            ok = tryReadJSONStringInto(field, buf);
+            ok = tryReadJSONStringInto(field, buf, settings.json);
         else
-            ok = tryReadQuotedStringInto(field, buf);
+            ok = tryReadQuotedString(field, buf);
 
         if (!ok)
             return nullptr;
@@ -916,7 +1025,7 @@ namespace
         {
             if (settings.json.try_infer_numbers_from_strings)
             {
-                if (auto number_type = tryInferNumberFromString(field, settings))
+                if (auto number_type = tryInferNumberFromStringImpl<true>(field, settings, json_info))
                 {
                     json_info->numbers_parsed_from_json_strings.insert(number_type.get());
                     return number_type;
@@ -931,7 +1040,7 @@ namespace
     {
         if (depth > settings.max_parser_depth)
             throw Exception(ErrorCodes::TOO_DEEP_RECURSION,
-                            "Maximum parse depth ({}) exceeded. Consider raising max_parser_depth setting.", settings.max_parser_depth);
+                "Maximum parse depth ({}) exceeded. Consider raising max_parser_depth setting.", settings.max_parser_depth);
 
         assertChar('{', buf);
         skipWhitespaceIfAny(buf);
@@ -948,7 +1057,7 @@ namespace
                 first = false;
 
             String key;
-            if (!tryReadJSONStringInto(key, buf))
+            if (!tryReadJSONStringInto(key, buf, settings.json))
                 return false;
 
             skipWhitespaceIfAny(buf);
@@ -1099,7 +1208,7 @@ namespace
             return nullptr;
 
         auto key_type = removeNullable(key_types.back());
-        if (!DataTypeMap::checkKeyType(key_type))
+        if (!DataTypeMap::isValidKeyType(key_type))
             return nullptr;
 
         return std::make_shared<DataTypeMap>(key_type, value_types.back());
@@ -1159,8 +1268,21 @@ namespace
         }
 
         /// Number
-        return tryInferNumber(buf, settings);
+        return tryInferNumber<is_json>(buf, settings, json_info);
     }
+}
+
+bool checkIfTypesAreEqual(const DataTypes & types)
+{
+    if (types.empty())
+        return true;
+
+    for (size_t i = 1; i < types.size(); ++i)
+    {
+        if (!types[0]->equals(*types[i]))
+            return false;
+    }
+    return true;
 }
 
 void transformInferredTypesIfNeeded(DataTypePtr & first, DataTypePtr & second, const FormatSettings & settings)
@@ -1178,6 +1300,18 @@ void transformInferredJSONTypesIfNeeded(
     transformInferredTypesIfNeededImpl<true>(types, settings, json_info);
     first = std::move(types[0]);
     second = std::move(types[1]);
+}
+
+void transformInferredJSONTypesIfNeeded(DataTypes & types, const FormatSettings & settings, JSONInferenceInfo * json_info)
+{
+    transformInferredTypesIfNeededImpl<true>(types, settings, json_info);
+}
+
+void transformInferredJSONTypesFromDifferentFilesIfNeeded(DataTypePtr & first, DataTypePtr & second, const FormatSettings & settings)
+{
+    JSONInferenceInfo json_info;
+    json_info.allow_merging_named_tuples = true;
+    transformInferredJSONTypesIfNeeded(first, second, settings, &json_info);
 }
 
 void transformFinalInferredJSONTypeIfNeededImpl(DataTypePtr & data_type, const FormatSettings & settings, JSONInferenceInfo * json_info, bool remain_nothing_types = false)
@@ -1208,7 +1342,7 @@ void transformFinalInferredJSONTypeIfNeededImpl(DataTypePtr & data_type, const F
             return;
         }
 
-        data_type = json_paths->finalize();
+        data_type = json_paths->finalize(settings.json.use_string_type_for_ambiguous_paths_in_named_tuples_inference_from_objects);
         transformFinalInferredJSONTypeIfNeededImpl(data_type, settings, json_info, remain_nothing_types);
         return;
     }
@@ -1247,11 +1381,22 @@ void transformFinalInferredJSONTypeIfNeededImpl(DataTypePtr & data_type, const F
             return;
         }
 
+        /// First, try to transform nested types without final transformations to see if there is a common type.
+        auto nested_types_copy = nested_types;
+        transformInferredTypesIfNeededImpl<true>(nested_types_copy, settings, json_info);
+        if (checkIfTypesAreEqual(nested_types_copy))
+        {
+            data_type = std::make_shared<DataTypeArray>(nested_types_copy.back());
+            transformFinalInferredJSONTypeIfNeededImpl(data_type, settings, json_info);
+            return;
+        }
+
+        /// Apply final transformation to nested types, and then try to find common type.
         for (auto & nested_type : nested_types)
             /// Don't change Nothing to String in nested types here, because we are not sure yet if it's Array or actual Tuple
             transformFinalInferredJSONTypeIfNeededImpl(nested_type, settings, json_info, /*remain_nothing_types=*/ true);
 
-        auto nested_types_copy = nested_types;
+        nested_types_copy = nested_types;
         transformInferredTypesIfNeededImpl<true>(nested_types_copy, settings, json_info);
         if (checkIfTypesAreEqual(nested_types_copy))
         {
@@ -1280,31 +1425,13 @@ void transformFinalInferredJSONTypeIfNeeded(DataTypePtr & data_type, const Forma
 
 DataTypePtr tryInferNumberFromString(std::string_view field, const FormatSettings & settings)
 {
-    ReadBufferFromString buf(field);
+    return tryInferNumberFromStringImpl<false>(field, settings);
+}
 
-    if (settings.try_infer_integers)
-    {
-        Int64 tmp_int;
-        if (tryReadIntText(tmp_int, buf) && buf.eof())
-            return std::make_shared<DataTypeInt64>();
+DataTypePtr tryInferJSONNumberFromString(std::string_view field, const FormatSettings & settings, JSONInferenceInfo * json_info)
+{
+    return tryInferNumberFromStringImpl<false>(field, settings, json_info);
 
-        /// We can safely get back to the start of buffer, because we read from a string and we didn't reach eof.
-        buf.position() = buf.buffer().begin();
-
-        /// In case of Int64 overflow, try to infer UInt64
-        UInt64 tmp_uint;
-        if (tryReadIntText(tmp_uint, buf) && buf.eof())
-            return std::make_shared<DataTypeUInt64>();
-    }
-
-    /// We can safely get back to the start of buffer, because we read from a string and we didn't reach eof.
-    buf.position() = buf.buffer().begin();
-
-    Float64 tmp;
-    if (tryReadFloatText(tmp, buf) && buf.eof())
-        return std::make_shared<DataTypeFloat64>();
-
-    return nullptr;
 }
 
 DataTypePtr tryInferDateOrDateTimeFromString(std::string_view field, const FormatSettings & settings)
@@ -1381,7 +1508,6 @@ DataTypePtr makeNullableRecursively(DataTypePtr type)
             return std::make_shared<DataTypeTuple>(std::move(nested_types), tuple_type->getElementNames());
 
         return std::make_shared<DataTypeTuple>(std::move(nested_types));
-
     }
 
     if (which.isMap())

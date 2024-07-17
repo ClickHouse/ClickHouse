@@ -37,7 +37,7 @@ using DictionaryHierarchicalParentToChildIndexPtr = std::shared_ptr<DictionaryHi
   *
   * Complex is for dictionaries that support any combination of key columns.
   */
-enum class DictionaryKeyType
+enum class DictionaryKeyType : uint8_t
 {
     Simple,
     Complex
@@ -46,7 +46,7 @@ enum class DictionaryKeyType
 /** DictionarySpecialKeyType provides IDictionary client information about
   * which special key type is supported by dictionary.
   */
-enum class DictionarySpecialKeyType
+enum class DictionarySpecialKeyType : uint8_t
 {
     None,
     Range
@@ -69,17 +69,19 @@ public:
         return dictionary_id.getNameForLogs();
     }
 
+    /// Returns fully qualified unquoted dictionary name
+    std::string getQualifiedName() const
+    {
+        std::lock_guard lock{mutex};
+        if (dictionary_id.database_name.empty())
+            return dictionary_id.table_name;
+        return dictionary_id.database_name + "." + dictionary_id.table_name;
+    }
+
     StorageID getDictionaryID() const
     {
         std::lock_guard lock{mutex};
         return dictionary_id;
-    }
-
-    void updateDictionaryName(const StorageID & new_name) const
-    {
-        std::lock_guard lock{mutex};
-        assert(new_name.uuid == dictionary_id.uuid && dictionary_id.uuid != UUIDHelpers::Nil);
-        dictionary_id = new_name;
     }
 
     std::string getLoadableName() const final
@@ -109,6 +111,9 @@ public:
 
     virtual size_t getQueryCount() const = 0;
 
+    /// The percentage of time a lookup successfully found an entry.
+    /// When there were no lookups, it returns zero (instead of NaN).
+    /// The value is calculated non atomically and can be slightly off in the presence of concurrent lookups.
     virtual double getFoundRate() const = 0;
 
     virtual double getHitRate() const = 0;
@@ -167,29 +172,38 @@ public:
     /** Subclass must validate key columns and keys types
       * and return column representation of dictionary attribute.
       *
-      * Parameter default_values_column must be used to provide default values
-      * for keys that are not in dictionary. If null pointer is passed,
-      * then default attribute value must be used.
+      * Parameter default_or_filter is std::variant type, so either a column of
+      * default values is passed or a filter used in short circuit case, Filter's
+      * 1 represents to be filled later on by lazy execution, and 0 means we have
+      * the value right now.
       */
+    using RefDefault = std::reference_wrapper<const ColumnPtr>;
+    using RefFilter = std::reference_wrapper<IColumn::Filter>;
+    using DefaultOrFilter = std::variant<RefDefault, RefFilter>;
     virtual ColumnPtr getColumn(
-        const std::string & attribute_name,
-        const DataTypePtr & result_type,
-        const Columns & key_columns,
-        const DataTypes & key_types,
-        const ColumnPtr & default_values_column) const = 0;
+        const std::string & attribute_name [[maybe_unused]],
+        const DataTypePtr & attribute_type [[maybe_unused]],
+        const Columns & key_columns [[maybe_unused]],
+        const DataTypes & key_types [[maybe_unused]],
+        DefaultOrFilter default_or_filter [[maybe_unused]]) const = 0;
 
     /** Get multiple columns from dictionary.
       *
       * Default implementation just calls getColumn multiple times.
       * Subclasses can provide custom more efficient implementation.
       */
+    using RefDefaults = std::reference_wrapper<const Columns>;
+    using DefaultsOrFilter = std::variant<RefDefaults, RefFilter>;
     virtual Columns getColumns(
         const Strings & attribute_names,
-        const DataTypes & result_types,
+        const DataTypes & attribute_types,
         const Columns & key_columns,
         const DataTypes & key_types,
-        const Columns & default_values_columns) const
+        DefaultsOrFilter defaults_or_filter) const
     {
+        bool is_short_circuit = std::holds_alternative<RefFilter>(defaults_or_filter);
+        assert(is_short_circuit || std::holds_alternative<RefDefaults>(defaults_or_filter));
+
         size_t attribute_names_size = attribute_names.size();
 
         Columns result;
@@ -198,10 +212,11 @@ public:
         for (size_t i = 0; i < attribute_names_size; ++i)
         {
             const auto & attribute_name = attribute_names[i];
-            const auto & result_type = result_types[i];
-            const auto & default_values_column = default_values_columns[i];
+            const auto & attribute_type = attribute_types[i];
 
-            result.emplace_back(getColumn(attribute_name, result_type, key_columns, key_types, default_values_column));
+            DefaultOrFilter var = is_short_circuit ? DefaultOrFilter{std::get<RefFilter>(defaults_or_filter).get()} :
+                                                     std::get<RefDefaults>(defaults_or_filter).get()[i];
+            result.emplace_back(getColumn(attribute_name, attribute_type, key_columns, key_types, var));
         }
 
         return result;
@@ -326,12 +341,6 @@ public:
         return std::static_pointer_cast<const IDictionary>(IExternalLoadable::shared_from_this());
     }
 
-    void setDictionaryComment(String new_comment)
-    {
-        std::lock_guard lock{mutex};
-        dictionary_comment = std::move(new_comment);
-    }
-
     String getDictionaryComment() const
     {
         std::lock_guard lock{mutex};
@@ -439,9 +448,26 @@ public:
         return sample_block;
     }
 
+    /// Internally called by ExternalDictionariesLoader.
+    /// In order to update the dictionary ID change its configuration first and then call ExternalDictionariesLoader::reloadConfig().
+    void updateDictionaryID(const StorageID & new_dictionary_id)
+    {
+        std::lock_guard lock{mutex};
+        assert((new_dictionary_id.uuid == dictionary_id.uuid) && (dictionary_id.uuid != UUIDHelpers::Nil));
+        dictionary_id = new_dictionary_id;
+    }
+
+    /// Internally called by ExternalDictionariesLoader.
+    /// In order to update the dictionary comment change its configuration first and then call ExternalDictionariesLoader::reloadConfig().
+    void updateDictionaryComment(const String & new_dictionary_comment)
+    {
+        std::lock_guard lock{mutex};
+        dictionary_comment = new_dictionary_comment;
+    }
+
 private:
     mutable std::mutex mutex;
-    mutable StorageID dictionary_id TSA_GUARDED_BY(mutex);
+    StorageID dictionary_id TSA_GUARDED_BY(mutex);
     String dictionary_comment TSA_GUARDED_BY(mutex);
 };
 

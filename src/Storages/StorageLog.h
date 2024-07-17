@@ -40,7 +40,7 @@ public:
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
         const String & comment,
-        bool attach,
+        LoadingStrictnessLevel mode,
         ContextMutablePtr context_);
 
     ~StorageLog() override;
@@ -59,7 +59,7 @@ public:
 
     void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
 
-    DataValidationTasksPtr getCheckTaskList(const ASTPtr & query, ContextPtr context) override;
+    DataValidationTasksPtr getCheckTaskList(const CheckTaskFilter & check_task_filter, ContextPtr context) override;
     std::optional<CheckResult> checkDataNext(DataValidationTasksPtr & check_task_list) override;
 
     void truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &) override;
@@ -132,6 +132,9 @@ private:
     std::vector<DataFile> data_files;
     size_t num_data_files = 0;
     std::map<String, DataFile *> data_files_by_names;
+
+    /// The same as metadata->columns but after call of Nested::collect().
+    ColumnsDescription columns_with_collected_nested;
 
     /// The Log engine uses the marks file, and the TinyLog engine doesn't.
     const bool use_marks_file;

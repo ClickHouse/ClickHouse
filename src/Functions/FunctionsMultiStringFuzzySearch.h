@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/Settings.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
@@ -60,7 +61,7 @@ public:
         if (!isString(arguments[0]))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", arguments[0]->getName(), getName());
 
-        if (!isUnsignedInteger(arguments[1]))
+        if (!isUInt(arguments[1]))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", arguments[1]->getName(), getName());
 
         const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[2].get());

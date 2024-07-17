@@ -24,7 +24,7 @@ RabbitMQConsumer::RabbitMQConsumer(
         std::vector<String> & queues_,
         size_t channel_id_base_,
         const String & channel_base_,
-        Poco::Logger * log_,
+        LoggerPtr log_,
         uint32_t queue_size_)
         : event_handler(event_handler_)
         , queues(queues_)
@@ -94,17 +94,31 @@ void RabbitMQConsumer::subscribe()
 bool RabbitMQConsumer::ackMessages(const CommitInfo & commit_info)
 {
     if (state != State::OK)
+    {
+        LOG_TEST(log, "State is {}, will not ack messages", magic_enum::enum_name(state.load(std::memory_order_relaxed)));
         return false;
-
-    /// Nothing to ack.
-    if (!commit_info.delivery_tag)
-        return false;
+    }
 
     /// Do not send ack to server if message's channel is not the same as
     /// current running channel because delivery tags are scoped per channel,
     /// so if channel fails, all previous delivery tags become invalid.
     if (commit_info.channel_id != channel_id)
+    {
+        LOG_TEST(log, "Channel ID changed {} -> {}, will not ack messages", commit_info.channel_id, channel_id);
         return false;
+    }
+
+    for (const auto & delivery_tag : commit_info.failed_delivery_tags)
+    {
+        if (consumer_channel->reject(delivery_tag))
+            LOG_TRACE(
+                log, "Consumer rejected message with deliveryTag {} on channel {}",
+                delivery_tag, channel_id);
+        else
+            LOG_WARNING(
+                log, "Failed to reject message with deliveryTag {} on channel {}",
+                delivery_tag, channel_id);
+    }
 
     /// Duplicate ack?
     if (commit_info.delivery_tag > last_commited_delivery_tag
@@ -119,15 +133,51 @@ bool RabbitMQConsumer::ackMessages(const CommitInfo & commit_info)
         return true;
     }
 
+    if (commit_info.delivery_tag)
+    {
+        LOG_ERROR(
+            log,
+            "Did not commit messages for {}:{}, (current commit point {}:{})",
+            commit_info.channel_id, commit_info.delivery_tag,
+            channel_id, last_commited_delivery_tag);
+    }
+
+    return false;
+}
+
+bool RabbitMQConsumer::nackMessages(const CommitInfo & commit_info)
+{
+    if (state != State::OK)
+    {
+        LOG_TEST(log, "State is {}, will not nack messages", magic_enum::enum_name(state.load(std::memory_order_relaxed)));
+        return false;
+    }
+
+    /// Nothing to nack.
+    if (!commit_info.delivery_tag || commit_info.delivery_tag <= last_commited_delivery_tag)
+    {
+        LOG_TEST(log, "Delivery tag is {}, last committed delivery tag: {}, Will not nack messages",
+                 commit_info.delivery_tag, last_commited_delivery_tag);
+        return false;
+    }
+
+    if (consumer_channel->reject(commit_info.delivery_tag, AMQP::multiple))
+    {
+        LOG_TRACE(
+            log, "Consumer rejected messages with deliveryTags from {} to {} on channel {}",
+            last_commited_delivery_tag, commit_info.delivery_tag, channel_id);
+
+        return true;
+    }
+
     LOG_ERROR(
         log,
-        "Did not commit messages for {}:{}, (current commit point {}:{})",
+        "Failed to reject messages for {}:{}, (current commit point {}:{})",
         commit_info.channel_id, commit_info.delivery_tag,
         channel_id, last_commited_delivery_tag);
 
     return false;
 }
-
 
 void RabbitMQConsumer::updateChannel(RabbitMQConnection & connection)
 {
@@ -161,8 +211,14 @@ void RabbitMQConsumer::updateChannel(RabbitMQConnection & connection)
 
     consumer_channel->onError([&](const char * message)
     {
-        LOG_ERROR(log, "Channel {} in an error state: {}", channel_id, message);
-        state = State::ERROR;
+        LOG_ERROR(
+            log, "Channel {} received an error: {} (usable: {}, connected: {})",
+            channel_id, message, consumer_channel->usable(), consumer_channel->connected());
+
+        if (!consumer_channel->usable() || !consumer_channel->connected())
+        {
+            state = State::ERROR;
+        }
     });
 }
 

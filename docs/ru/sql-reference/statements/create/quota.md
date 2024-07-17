@@ -20,7 +20,7 @@ CREATE QUOTA [IF NOT EXISTS | OR REPLACE] name [ON CLUSTER cluster_name]
 ```
 Ключи `user_name`, `ip_address`, `client_key`, `client_key, user_name` и `client_key, ip_address` соответствуют полям таблицы [system.quotas](../../../operations/system-tables/quotas.md).
 
-Параметры `queries`, `query_selects`, `query_inserts`, `errors`, `result_rows`, `result_bytes`, `read_rows`, `read_bytes`, `execution_time` соответствуют полям таблицы [system.quotas_usage](../../../operations/system-tables/quotas_usage.md).
+Параметры `queries`, `query_selects`, `query_inserts`, `errors`, `result_rows`, `result_bytes`, `read_rows`, `read_bytes`, `execution_time`, `failed_sequential_authentications` соответствуют полям таблицы [system.quotas_usage](../../../operations/system-tables/quotas_usage.md).
 
 В секции `ON CLUSTER` можно указать кластеры, на которых создается квота, см. [Распределенные DDL запросы](../../../sql-reference/distributed-ddl.md).
 

@@ -16,7 +16,7 @@ export LLVM_VERSION=${LLVM_VERSION:-17}
 # it being undefined. Also read it as array so that we can pass an empty list
 # of additional variable to cmake properly, and it doesn't generate an extra
 # empty parameter.
-# Read it as CMAKE_FLAGS to not lose exported FASTTEST_CMAKE_FLAGS on subsequential launch
+# Read it as CMAKE_FLAGS to not lose exported FASTTEST_CMAKE_FLAGS on subsequent launch
 read -ra CMAKE_FLAGS <<< "${FASTTEST_CMAKE_FLAGS:-}"
 
 # Run only matching tests.
@@ -84,6 +84,8 @@ function start_server
     echo "ClickHouse server pid '$server_pid' started and responded"
 }
 
+export -f start_server
+
 function clone_root
 {
     [ "$UID" -eq 0 ] && git config --global --add safe.directory "$FASTTEST_SOURCE"
@@ -150,6 +152,7 @@ function clone_submodules
             contrib/c-ares
             contrib/morton-nd
             contrib/xxHash
+            contrib/expected
             contrib/simdjson
             contrib/liburing
             contrib/libfiu
@@ -159,10 +162,17 @@ function clone_submodules
 
         git submodule sync
         git submodule init
-        # --jobs does not work as fast as real parallel running
-        printf '%s\0' "${SUBMODULES_TO_UPDATE[@]}" | \
-            xargs --max-procs=100 --null --no-run-if-empty --max-args=1 \
-              git submodule update --depth 1 --single-branch
+
+        # Network is unreliable
+        for _ in {1..10}
+        do
+            # --jobs does not work as fast as real parallel running
+            printf '%s\0' "${SUBMODULES_TO_UPDATE[@]}" | \
+                xargs --max-procs=100 --null --no-run-if-empty --max-args=1 \
+                  git submodule update --depth 1 --single-branch && break
+            sleep 1
+        done
+
         git submodule foreach git reset --hard
         git submodule foreach git checkout @ -f
         git submodule foreach git clean -xfd
@@ -197,7 +207,7 @@ function run_cmake
 
     (
         cd "$FASTTEST_BUILD"
-        cmake "$FASTTEST_SOURCE" -DCMAKE_CXX_COMPILER="clang++-${LLVM_VERSION}" -DCMAKE_C_COMPILER="clang-${LLVM_VERSION}" "${CMAKE_LIBS_CONFIG[@]}" "${CMAKE_FLAGS[@]}" 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/cmake_log.txt"
+        cmake "$FASTTEST_SOURCE" -DCMAKE_CXX_COMPILER="clang++-${LLVM_VERSION}" -DCMAKE_C_COMPILER="clang-${LLVM_VERSION}" -DCMAKE_TOOLCHAIN_FILE="${FASTTEST_SOURCE}/cmake/linux/toolchain-x86_64-musl.cmake" "${CMAKE_LIBS_CONFIG[@]}" "${CMAKE_FLAGS[@]}" 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/cmake_log.txt"
     )
 }
 
@@ -206,16 +216,26 @@ function build
     (
         cd "$FASTTEST_BUILD"
         TIMEFORMAT=$'\nreal\t%3R\nuser\t%3U\nsys\t%3S'
-        ( time ninja clickhouse-bundle) |& ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/build_log.txt"
+        ( time ninja clickhouse-bundle clickhouse-stripped) |& ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/build_log.txt"
         BUILD_SECONDS_ELAPSED=$(awk '/^....-..-.. ..:..:.. real\t[0-9]/ {print $4}' < "$FASTTEST_OUTPUT/build_log.txt")
         echo "build_clickhouse_fasttest_binary: [ OK ] $BUILD_SECONDS_ELAPSED sec." \
           | ts '%Y-%m-%d %H:%M:%S' \
           | tee "$FASTTEST_OUTPUT/test_result.txt"
+
+        (
+            # This query should fail, and print stacktrace with proper symbol names (even on a stripped binary)
+            clickhouse_output=$(programs/clickhouse-stripped --stacktrace -q 'select' 2>&1 || :)
+            if [[ $clickhouse_output =~ DB::LocalServer::main ]]; then
+                echo "stripped_clickhouse_shows_symbols_names: [ OK ] 0 sec."
+            else
+                echo -e "stripped_clickhouse_shows_symbols_names: [ FAIL ] 0 sec. - clickhouse output:\n\n$clickhouse_output\n"
+            fi
+        ) | ts '%Y-%m-%d %H:%M:%S' | tee -a "$FASTTEST_OUTPUT/test_result.txt"
+
         if [ "$COPY_CLICKHOUSE_BINARY_TO_OUTPUT" -eq "1" ]; then
             mkdir -p "$FASTTEST_OUTPUT/binaries/"
             cp programs/clickhouse "$FASTTEST_OUTPUT/binaries/clickhouse"
 
-            strip programs/clickhouse -o programs/clickhouse-stripped
             zstd --threads=0 programs/clickhouse-stripped -o "$FASTTEST_OUTPUT/binaries/clickhouse-stripped.zst"
         fi
         ccache_status
@@ -236,6 +256,19 @@ function configure
     rm -f "$FASTTEST_DATA/config.d/secure_ports.xml"
 }
 
+function timeout_with_logging() {
+    local exit_code=0
+
+    timeout -s TERM --preserve-status "${@}" || exit_code="${?}"
+
+    if [[ "${exit_code}" -eq "124" ]]
+    then
+      echo "The command 'timeout ${*}' has been killed by timeout"
+    fi
+
+    return $exit_code
+}
+
 function run_tests
 {
     clickhouse-server --version
@@ -250,6 +283,11 @@ function run_tests
     if [[ $NPROC == 0 ]]; then
       NPROC=1
     fi
+
+    export CLICKHOUSE_CONFIG_DIR=$FASTTEST_DATA
+    export CLICKHOUSE_CONFIG="$FASTTEST_DATA/config.xml"
+    export CLICKHOUSE_USER_FILES="$FASTTEST_DATA/user_files"
+    export CLICKHOUSE_SCHEMA_FILES="$FASTTEST_DATA/format_schemas"
 
     local test_opts=(
         --hung-check
@@ -274,6 +312,8 @@ function run_tests
     clickhouse stop --pid-path "$FASTTEST_DATA"
 }
 
+export -f run_tests
+
 case "$stage" in
 "")
     ls -la
@@ -297,7 +337,7 @@ case "$stage" in
     configure 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/install_log.txt"
     ;&
 "run_tests")
-    run_tests
+    timeout_with_logging 35m bash -c run_tests ||:
     /process_functional_tests_result.py --in-results-dir "$FASTTEST_OUTPUT/" \
         --out-results-file "$FASTTEST_OUTPUT/test_results.tsv" \
         --out-status-file "$FASTTEST_OUTPUT/check_status.tsv" || echo -e "failure\tCannot parse results" > "$FASTTEST_OUTPUT/check_status.tsv"

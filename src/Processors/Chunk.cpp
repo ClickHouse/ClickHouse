@@ -20,7 +20,9 @@ Chunk::Chunk(DB::Columns columns_, UInt64 num_rows_) : columns(std::move(columns
 }
 
 Chunk::Chunk(Columns columns_, UInt64 num_rows_, ChunkInfoPtr chunk_info_)
-    : columns(std::move(columns_)), num_rows(num_rows_), chunk_info(std::move(chunk_info_))
+    : columns(std::move(columns_))
+    , num_rows(num_rows_)
+    , chunk_info(std::move(chunk_info_))
 {
     checkNumRowsIsConsistent();
 }
@@ -42,7 +44,9 @@ Chunk::Chunk(MutableColumns columns_, UInt64 num_rows_)
 }
 
 Chunk::Chunk(MutableColumns columns_, UInt64 num_rows_, ChunkInfoPtr chunk_info_)
-    : columns(unmuteColumns(std::move(columns_))), num_rows(num_rows_), chunk_info(std::move(chunk_info_))
+    : columns(unmuteColumns(std::move(columns_)))
+    , num_rows(num_rows_)
+    , chunk_info(std::move(chunk_info_))
 {
     checkNumRowsIsConsistent();
 }
@@ -73,7 +77,7 @@ void Chunk::checkNumRowsIsConsistent()
         auto & column = columns[i];
         if (column->size() != num_rows)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid number of rows in Chunk column {}: expected {}, got {}",
-                            column->getName()+ " position " + toString(i), toString(num_rows), toString(column->size()));
+                            column->getName() + " position " + toString(i), toString(num_rows), toString(column->size()));
     }
 }
 
@@ -121,7 +125,7 @@ void Chunk::addColumn(size_t position, ColumnPtr column)
     if (position >= columns.size())
         throw Exception(ErrorCodes::POSITION_OUT_OF_BOUND,
                         "Position {} out of bound in Chunk::addColumn(), max position = {}",
-                        position, columns.size() - 1);
+                        position, !columns.empty() ? columns.size() - 1 : 0);
     if (empty())
         num_rows = column->size();
     else if (column->size() != num_rows)
@@ -139,7 +143,7 @@ void Chunk::erase(size_t position)
 
     if (position >= columns.size())
         throw Exception(ErrorCodes::POSITION_OUT_OF_BOUND, "Position {} out of bound in Chunk::erase(), max position = {}",
-                        toString(position), toString(columns.size() - 1));
+                        toString(position), toString(!columns.empty() ? columns.size() - 1 : 0));
 
     columns.erase(columns.begin() + position);
 }

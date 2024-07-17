@@ -7,9 +7,10 @@
 #include <Parsers/ASTLiteral.h>
 #include <Common/typeid_cast.h>
 #include <Poco/String.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <IO/WriteHelpers.h>
 #include <Core/Defines.h>
+#include <Core/Settings.h>
 #include <Common/CurrentThread.h>
 #include <Interpreters/Context.h>
 
@@ -56,13 +57,14 @@ DataTypePtr DataTypeFactory::getImpl(const String & full_name) const
     {
         String out_err;
         const char * start = full_name.data();
-        ast = tryParseQuery(parser, start, start + full_name.size(), out_err, false, "data type", false, DBMS_DEFAULT_MAX_QUERY_SIZE, data_type_max_parse_depth);
+        ast = tryParseQuery(parser, start, start + full_name.size(), out_err, false, "data type", false,
+            DBMS_DEFAULT_MAX_QUERY_SIZE, data_type_max_parse_depth, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS, true);
         if (!ast)
             return nullptr;
     }
     else
     {
-        ast = parseQuery(parser, full_name.data(), full_name.data() + full_name.size(), "data type", false, data_type_max_parse_depth);
+        ast = parseQuery(parser, full_name.data(), full_name.data() + full_name.size(), "data type", false, data_type_max_parse_depth, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
     }
 
     return getImpl<nullptr_on_error>(ast);
@@ -290,6 +292,8 @@ DataTypeFactory::DataTypeFactory()
     registerDataTypeDomainGeo(*this);
     registerDataTypeMap(*this);
     registerDataTypeObject(*this);
+    registerDataTypeVariant(*this);
+    registerDataTypeDynamic(*this);
 }
 
 DataTypeFactory & DataTypeFactory::instance()

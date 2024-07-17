@@ -14,7 +14,7 @@ function insert {
     offset=500
     while true;
     do
-        ${CLICKHOUSE_CLIENT} -q "INSERT INTO test_race_condition_landing SELECT number, toString(number), toString(number) from system.numbers limit $i, $offset"
+        ${CLICKHOUSE_CLIENT} -q "INSERT INTO test_race_condition_landing SELECT number, toString(number), toString(number) from system.numbers limit $i, $offset settings ignore_materialized_views_with_dropped_target_table=1"
         i=$(( $i + $RANDOM % 100 + 400 ))
     done
 }
@@ -38,11 +38,11 @@ ${CLICKHOUSE_CLIENT} -q "CREATE TABLE test_race_condition_landing (number Int64,
 export -f drop_mv;
 export -f insert;
 
-TIMEOUT=55
+TIMEOUT=50
 
 for i in {1..4}
 do
-    timeout $TIMEOUT bash -c drop_mv $i &
+    timeout $TIMEOUT bash -c "drop_mv $i" &
 done
 
 for i in {1..4}

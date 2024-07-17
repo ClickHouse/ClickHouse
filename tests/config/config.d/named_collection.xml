@@ -37,5 +37,17 @@
             <access_key_id>test</access_key_id>
             <secret_access_key>testtest</secret_access_key>
         </s3_conn_db>
+        <cache_collection>
+            <max_size>1Mi</max_size>
+            <path>collection</path>
+        </cache_collection>
+        <url_override1>
+            <url overridable="0">http://127.0.0.1:8123?query=select+1</url>
+            <format overridable="1">RawBLOB</format>
+        </url_override1>
+        <url_override2>
+            <url>http://127.0.0.1:8123?query=select+1</url>
+            <format>RawBLOB</format>
+        </url_override2>
     </named_collections>
 </clickhouse>

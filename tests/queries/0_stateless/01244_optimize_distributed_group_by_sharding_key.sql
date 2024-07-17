@@ -4,6 +4,9 @@
 
 set optimize_distributed_group_by_sharding_key=1;
 
+-- Some queries in this test require sorting after aggregation.
+set max_bytes_before_external_group_by = 0;
+
 drop table if exists dist_01247;
 drop table if exists data_01247;
 
@@ -39,7 +42,7 @@ select 'GROUP BY number ORDER BY number DESC';
 select count(), * from dist_01247 group by number order by number desc;
 
 select 'GROUP BY toString(number)';
-select count(), * from dist_01247 group by toString(number);
+select count(), any(number) from dist_01247 group by toString(number);
 
 select 'GROUP BY number%2';
 select count(), any(number) from dist_01247 group by number%2;
@@ -66,7 +69,7 @@ select count(), * from dist_01247 group by number limit 1 offset 1;
 select 'OFFSET distributed_push_down_limit=0';
 select count(), * from dist_01247 group by number offset 1 settings distributed_push_down_limit=0;
 select 'OFFSET distributed_push_down_limit=1';
-select count(), * from dist_01247 group by number offset 1 settings distributed_push_down_limit=1;
+select count(), * from dist_01247 group by number order by count(), number offset 1 settings distributed_push_down_limit=1;
 -- this will emulate different data on for different shards
 select 'WHERE LIMIT OFFSET';
 select count(), * from dist_01247 where number = _shard_num-1 group by number order by number limit 1 offset 1;

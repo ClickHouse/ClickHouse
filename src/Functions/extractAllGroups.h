@@ -25,7 +25,7 @@ namespace ErrorCodes
 }
 
 
-enum class ExtractAllGroupsResultKind
+enum class ExtractAllGroupsResultKind : uint8_t
 {
     VERTICAL,
     HORIZONTAL
@@ -71,10 +71,10 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors args{
-            {"haystack", &isStringOrFixedString<IDataType>, nullptr, "const String or const FixedString"},
-            {"needle", &isStringOrFixedString<IDataType>, isColumnConst, "const String or const FixedString"},
+            {"haystack", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "const String or const FixedString"},
+            {"needle", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), isColumnConst, "const String or const FixedString"},
         };
-        validateFunctionArgumentTypes(*this, arguments, args);
+        validateFunctionArguments(*this, arguments, args);
 
         /// Two-dimensional array of strings, each `row` of top array represents matching groups.
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()));

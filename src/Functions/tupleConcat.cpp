@@ -4,6 +4,8 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 
+#include <base/range.h>
+
 namespace DB
 {
 namespace ErrorCodes
@@ -59,7 +61,7 @@ public:
         return std::make_shared<DataTypeTuple>(tuple_arg_types);
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const size_t num_arguments = arguments.size();
         Columns columns;
@@ -89,6 +91,9 @@ public:
             for (const auto & inner_col : tuple_col->getColumns())
                 columns.push_back(inner_col);
         }
+
+        if (columns.empty())
+            return ColumnTuple::create(input_rows_count);
 
         return ColumnTuple::create(columns);
     }

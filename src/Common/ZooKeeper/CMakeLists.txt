@@ -10,9 +10,8 @@ target_compile_definitions (clickhouse_common_zookeeper PRIVATE -DZOOKEEPER_LOG)
 target_link_libraries (clickhouse_common_zookeeper
     PUBLIC
         clickhouse_common_io
+        clickhouse_compression
         common
-    PRIVATE
-        string_utils
 )
 
 # for examples -- no logging (to avoid extra dependencies)
@@ -20,9 +19,8 @@ add_library(clickhouse_common_zookeeper_no_log ${clickhouse_common_zookeeper_hea
 target_link_libraries (clickhouse_common_zookeeper_no_log
     PUBLIC
         clickhouse_common_io
+        clickhouse_compression
         common
-    PRIVATE
-        string_utils
 )
 if (ENABLE_EXAMPLES)
     add_subdirectory(examples)

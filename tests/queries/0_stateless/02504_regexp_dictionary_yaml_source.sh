@@ -1,12 +1,9 @@
 #!/usr/bin/env bash
-
 # Tags: use-vectorscan, no-fasttest, no-parallel
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
-
-USER_FILES_PATH=$(clickhouse-client --query "select _path,_file from file('nonexist.txt', 'CSV', 'val1 char')" 2>&1 | grep Exception | awk '{gsub("/nonexist.txt","",$9); print $9}')
 
 mkdir -p $USER_FILES_PATH/test_02504
 
@@ -77,7 +74,7 @@ system reload dictionary regexp_dict1; -- { serverError 489 }
 "
 
 cat > "$yaml" <<EOL
-- regexp: 
+- regexp:
   name: 'TencentOS'
   version: '\1'
 EOL

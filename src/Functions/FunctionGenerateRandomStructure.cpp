@@ -8,6 +8,7 @@
 #include <Interpreters/Context.h>
 #include <Common/randomSeed.h>
 #include <Common/FunctionDocumentation.h>
+#include <Core/Settings.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromVector.h>
 
@@ -354,6 +355,11 @@ namespace
     }
 }
 
+    FunctionPtr FunctionGenerateRandomStructure::create(DB::ContextPtr context)
+    {
+        return std::make_shared<FunctionGenerateRandomStructure>(context->getSettingsRef().allow_suspicious_low_cardinality_types.value);
+    }
+
 DataTypePtr FunctionGenerateRandomStructure::getReturnTypeImpl(const DataTypes & arguments) const
 {
     if (arguments.size() > 2)
@@ -365,7 +371,7 @@ DataTypePtr FunctionGenerateRandomStructure::getReturnTypeImpl(const DataTypes &
 
     for (size_t i = 0; i != arguments.size(); ++i)
     {
-        if (!isUnsignedInteger(arguments[i]) && !arguments[i]->onlyNull())
+        if (!isUInt(arguments[i]) && !arguments[i]->onlyNull())
         {
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,

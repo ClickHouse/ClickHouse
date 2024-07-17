@@ -1,6 +1,7 @@
 #include <AggregateFunctions/QuantileTDigest.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/ReadBufferFromString.h>
+#include <iostream>
 
 int main(int, char **)
 {

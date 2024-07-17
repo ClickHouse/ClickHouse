@@ -1,5 +1,6 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnMap.h>
+#include <Core/Settings.h>
 
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
@@ -43,11 +44,11 @@ class ExtractKeyValuePairs : public IFunction
             builder.withQuotingCharacter(parsed_arguments.quoting_character.value());
         }
 
-        bool is_number_of_pairs_unlimited = context->getSettingsRef().extract_kvp_max_pairs_per_row == 0;
+        bool is_number_of_pairs_unlimited = context->getSettingsRef().extract_key_value_pairs_max_pairs_per_row == 0;
 
         if (!is_number_of_pairs_unlimited)
         {
-            builder.withMaxNumberOfPairs(context->getSettingsRef().extract_kvp_max_pairs_per_row);
+            builder.withMaxNumberOfPairs(context->getSettingsRef().extract_key_value_pairs_max_pairs_per_row);
         }
 
         return builder.build();

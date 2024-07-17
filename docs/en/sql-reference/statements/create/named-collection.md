@@ -3,6 +3,10 @@ slug: /en/sql-reference/statements/create/named-collection
 sidebar_label: NAMED COLLECTION
 ---
 
+import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
+
+<CloudNotSupportedBadge />
+
 # CREATE NAMED COLLECTION
 
 Creates a new named collection.
@@ -11,16 +15,16 @@ Creates a new named collection.
 
 ```sql
 CREATE NAMED COLLECTION [IF NOT EXISTS] name [ON CLUSTER cluster] AS
-key_name1 = 'some value',
-key_name2 = 'some value',
-key_name3 = 'some value',
+key_name1 = 'some value' [[NOT] OVERRIDABLE],
+key_name2 = 'some value' [[NOT] OVERRIDABLE],
+key_name3 = 'some value' [[NOT] OVERRIDABLE],
 ...
 ```
 
 **Example**
 
 ```sql
-CREATE NAMED COLLECTION foobar AS a = '1', b = '2';
+CREATE NAMED COLLECTION foobar AS a = '1', b = '2' OVERRIDABLE;
 ```
 
 **Related statements**

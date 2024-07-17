@@ -1,4 +1,7 @@
 <test>
+    <settings>
+        <allow_suspicious_primary_key>1</allow_suspicious_primary_key>
+    </settings>
     <create_query>
         CREATE TABLE bench
         ENGINE = AggregatingMergeTree()

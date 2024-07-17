@@ -29,7 +29,7 @@ CREATE TABLE default.sqlite_table3\n(\n    `col1` String,\n    `col2` Int32\n)\n
 not a null	2
 	3
 	4
-line6	6
+line\'6	6
 	7
 test table function
 line1	1

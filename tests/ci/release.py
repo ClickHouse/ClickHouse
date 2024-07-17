@@ -7,22 +7,30 @@ The `gh` CLI preferred over the PyGithub to have an easy way to rollback bad
 release in command line by simple execution giving rollback commands
 
 On another hand, PyGithub is used for convenient getting commit's status from API
+
+To run this script on a freshly installed Ubuntu 22.04 system, it is enough to do the following commands:
+
+sudo apt install pip
+pip install requests boto3 github PyGithub
+sudo snap install gh
+gh auth login
 """
 
 
-from contextlib import contextmanager
-from typing import Any, Iterator, List, Literal, Optional
 import argparse
 import json
 import logging
 import subprocess
+from contextlib import contextmanager
+from typing import Any, Final, Iterator, List, Optional, Tuple
 
-from git_helper import commit, release_branch
+from git_helper import Git, commit, release_branch
+from lambda_shared_package.lambda_shared.pr import Labels
+from report import SUCCESS
 from version_helper import (
     FILE_WITH_VERSION_PATH,
     GENERATED_CONTRIBUTORS,
     ClickHouseVersion,
-    Git,
     VersionType,
     get_abs_path,
     get_version_from_repo,
@@ -54,15 +62,16 @@ class Repo:
         elif protocol == "origin":
             self._url = protocol
         else:
-            raise Exception(f"protocol must be in {self.VALID}")
+            raise ValueError(f"protocol must be in {self.VALID}")
 
     def __str__(self):
         return self._repo
 
 
 class Release:
-    BIG = ("major", "minor")
-    SMALL = ("patch",)
+    NEW = "new"  # type: Final
+    PATCH = "patch"  # type: Final
+    VALID_TYPE = (NEW, PATCH)  # type: Final[Tuple[str, str]]
     CMAKE_PATH = get_abs_path(FILE_WITH_VERSION_PATH)
     CONTRIBUTORS_PATH = get_abs_path(GENERATED_CONTRIBUTORS)
 
@@ -70,7 +79,7 @@ class Release:
         self,
         repo: Repo,
         release_commit: str,
-        release_type: Literal["major", "minor", "patch"],
+        release_type: str,
         dry_run: bool,
         with_stderr: bool,
     ):
@@ -79,12 +88,13 @@ class Release:
         self.release_commit = release_commit
         self.dry_run = dry_run
         self.with_stderr = with_stderr
-        assert release_type in self.BIG + self.SMALL
+        assert release_type in self.VALID_TYPE
         self.release_type = release_type
         self._git = Git()
         self._version = get_version_from_repo(git=self._git)
         self.release_version = self.version
         self._release_branch = ""
+        self._version_new_tag = None  # type: Optional[ClickHouseVersion]
         self._rollback_stack = []  # type: List[str]
 
     def run(
@@ -122,7 +132,7 @@ class Release:
         self.version = get_version_from_repo(git=self._git)
 
     def get_stable_release_type(self) -> str:
-        if self.version.minor % 5 == 3:  # our 3 and 8 are LTS
+        if self.version.is_lts:
             return VersionType.LTS
         return VersionType.STABLE
 
@@ -142,8 +152,8 @@ class Release:
 
             for status in statuses:
                 if status["context"] == RELEASE_READY_STATUS:
-                    if not status["state"] == "success":
-                        raise Exception(
+                    if not status["state"] == SUCCESS:
+                        raise ValueError(
                             f"the status {RELEASE_READY_STATUS} is {status['state']}"
                             ", not success"
                         )
@@ -152,7 +162,7 @@ class Release:
 
             page += 1
 
-        raise Exception(
+        raise KeyError(
             f"the status {RELEASE_READY_STATUS} "
             f"is not found for commit {self.release_commit}"
         )
@@ -171,7 +181,8 @@ class Release:
             )
             raise
 
-        self.check_commit_release_ready()
+        if self.release_type == self.PATCH:
+            self.check_commit_release_ready()
 
     def do(
         self, check_dirty: bool, check_run_from_master: bool, check_branch: bool
@@ -187,26 +198,17 @@ class Release:
                 raise
 
         if check_run_from_master and self._git.branch != "master":
-            raise Exception("the script must be launched only from master")
+            raise RuntimeError("the script must be launched only from master")
 
         self.set_release_info()
 
         if check_branch:
             self.check_branch()
 
-        if self.release_type in self.BIG:
-            if self._version.minor >= 12 and self.release_type != "major":
-                raise ValueError(
-                    "The release type must be 'major' for minor versions>=12"
-                )
-            if self._version.minor < 12 and self.release_type == "major":
-                raise ValueError(
-                    "The release type must be 'minor' for minor versions<12"
-                )
-
+        if self.release_type == self.NEW:
             with self._checkout(self.release_commit, True):
                 # Checkout to the commit, it will provide the correct current version
-                with self.testing():
+                with self.new_release():
                     with self.create_release_branch():
                         logging.info(
                             "Publishing release %s from commit %s is done",
@@ -214,9 +216,9 @@ class Release:
                             self.release_commit,
                         )
 
-        elif self.release_type in self.SMALL:
+        elif self.release_type == self.PATCH:
             with self._checkout(self.release_commit, True):
-                with self.stable():
+                with self.patch_release():
                     logging.info(
                         "Publishing release %s from commit %s is done",
                         self.release_version.describe,
@@ -237,22 +239,19 @@ class Release:
     def check_no_tags_after(self):
         tags_after_commit = self.run(f"git tag --contains={self.release_commit}")
         if tags_after_commit:
-            raise Exception(
+            raise RuntimeError(
                 f"Commit {self.release_commit} belongs to following tags:\n"
                 f"{tags_after_commit}\nChoose another commit"
             )
 
     def check_branch(self):
         branch = self.release_branch
-        if self.release_type in self.BIG:
+        if self.release_type == self.NEW:
             # Commit to spin up the release must belong to a main branch
             branch = "master"
-        elif self.release_type not in self.SMALL:
+        elif self.release_type != self.PATCH:
             raise (
-                ValueError(
-                    f"release_type {self.release_type} neither in {self.BIG} nor "
-                    f"in {self.SMALL}"
-                )
+                ValueError(f"release_type {self.release_type} not in {self.VALID_TYPE}")
             )
 
         # Prefetch the branch to have it updated
@@ -264,7 +263,7 @@ class Release:
             )
         output = self.run(f"git branch --contains={self.release_commit} {branch}")
         if branch not in output:
-            raise Exception(
+            raise RuntimeError(
                 f"commit {self.release_commit} must belong to {branch} "
                 f"for {self.release_type} release"
             )
@@ -297,6 +296,14 @@ class Release:
         )
 
     @property
+    def bump_part(self) -> ClickHouseVersion.PART_TYPE:
+        if self.release_type == Release.NEW:
+            if self._version.minor >= 12:
+                return "major"
+            return "minor"
+        return "patch"
+
+    @property
     def has_rollback(self) -> bool:
         return bool(self._rollback_stack)
 
@@ -323,19 +330,25 @@ class Release:
         self.check_no_tags_after()
         # Create release branch
         self.read_version()
-        with self._create_branch(self.release_branch, self.release_commit):
-            with self._checkout(self.release_branch, True):
-                with self._bump_release_branch():
-                    yield
+        assert self._version_new_tag is not None
+        with self._create_tag(
+            self._version_new_tag.describe,
+            self.release_commit,
+            f"Initial commit for release {self._version_new_tag.major}.{self._version_new_tag.minor}",
+        ):
+            with self._create_branch(self.release_branch, self.release_commit):
+                with self._checkout(self.release_branch, True):
+                    with self._bump_release_branch():
+                        yield
 
     @contextmanager
-    def stable(self):
+    def patch_release(self):
         self.check_no_tags_after()
         self.read_version()
         version_type = self.get_stable_release_type()
         self.version.with_description(version_type)
         with self._create_gh_release(False):
-            self.version = self.version.update(self.release_type)
+            self.version = self.version.update(self.bump_part)
             self.version.with_description(version_type)
             self._update_cmake_contributors(self.version)
             # Checking out the commit of the branch and not the branch itself,
@@ -355,14 +368,14 @@ class Release:
                     yield
 
     @contextmanager
-    def testing(self):
+    def new_release(self):
         # Create branch for a version bump
         self.read_version()
-        self.version = self.version.update(self.release_type)
+        self.version = self.version.update(self.bump_part)
         helper_branch = f"{self.version.major}.{self.version.minor}-prepare"
         with self._create_branch(helper_branch, self.release_commit):
             with self._checkout(helper_branch, True):
-                with self._bump_testing_version(helper_branch):
+                with self._bump_version_in_master(helper_branch):
                     yield
 
     @property
@@ -401,11 +414,11 @@ class Release:
     def _bump_release_branch(self):
         # Update only git, original version stays the same
         self._git.update()
-        new_version = self.version.patch_update()
+        new_version = self.version.copy()
         version_type = self.get_stable_release_type()
-        pr_labels = "--label release"
+        pr_labels = f"--label {Labels.RELEASE}"
         if version_type == VersionType.LTS:
-            pr_labels += " --label release-lts"
+            pr_labels += f" --label {Labels.RELEASE_LTS}"
         new_version.with_description(version_type)
         self._update_cmake_contributors(new_version)
         self._commit_cmake_contributors(new_version)
@@ -427,17 +440,23 @@ class Release:
                         "changes with it.'",
                         dry_run=self.dry_run,
                     )
-                    with self._create_gh_release(False):
-                        # Here the release branch part is done
-                        yield
+                    # Here the release branch part is done.
+                    # We don't create a release itself automatically to have a
+                    # safe window to backport possible bug fixes.
+                    yield
 
     @contextmanager
-    def _bump_testing_version(self, helper_branch: str) -> Iterator[None]:
+    def _bump_version_in_master(self, helper_branch: str) -> Iterator[None]:
         self.read_version()
-        self.version = self.version.update(self.release_type)
+        self.version = self.version.update(self.bump_part)
         self.version.with_description(VersionType.TESTING)
         self._update_cmake_contributors(self.version)
         self._commit_cmake_contributors(self.version)
+        # Create a version-new tag
+        self._version_new_tag = self.version.copy()
+        self._version_new_tag.tweak = 1
+        self._version_new_tag.with_description(VersionType.NEW)
+
         with self._push(helper_branch):
             body_file = get_abs_path(".github/PULL_REQUEST_TEMPLATE.md")
             # The following command is rolled back by deleting branch in self._push
@@ -447,15 +466,15 @@ class Release:
                 "--label 'do not test' --assignee @me",
                 dry_run=self.dry_run,
             )
-            # Here the testing part is done
+            # Here the new release part is done
             yield
 
     @contextmanager
     def _checkout(self, ref: str, with_checkout_back: bool = False) -> Iterator[None]:
+        self._git.update()
         orig_ref = self._git.branch or self._git.sha
-        need_rollback = False
+        rollback_cmd = ""
         if ref not in (self._git.branch, self._git.sha):
-            need_rollback = True
             self.run(f"git checkout {ref}")
             # checkout is not put into rollback_stack intentionally
             rollback_cmd = f"git checkout {orig_ref}"
@@ -467,9 +486,9 @@ class Release:
             logging.warning("Rolling back checked out %s for %s", ref, orig_ref)
             self.run(f"git reset --hard; git checkout -f {orig_ref}")
             raise
-        else:
-            if with_checkout_back and need_rollback:
-                self.run(rollback_cmd)
+        # Normal flow when we need to checkout back
+        if with_checkout_back and rollback_cmd:
+            self.run(rollback_cmd)
 
     @contextmanager
     def _create_branch(self, name: str, start_point: str = "") -> Iterator[None]:
@@ -504,9 +523,9 @@ class Release:
 
     @contextmanager
     def _create_gh_release(self, as_prerelease: bool) -> Iterator[None]:
-        with self._create_tag():
+        tag = self.release_version.describe
+        with self._create_tag(tag, self.release_commit):
             # Preserve tag if version is changed
-            tag = self.release_version.describe
             prerelease = ""
             if as_prerelease:
                 prerelease = "--prerelease"
@@ -528,13 +547,13 @@ class Release:
                 raise
 
     @contextmanager
-    def _create_tag(self):
-        tag = self.release_version.describe
-        self.run(
-            f"git tag -a -m 'Release {tag}' '{tag}' {self.release_commit}",
-            dry_run=self.dry_run,
-        )
-        rollback_cmd = f"{self.dry_run_prefix}git tag -d '{tag}'"
+    def _create_tag(
+        self, tag: str, commit: str, tag_message: str = ""
+    ) -> Iterator[None]:
+        tag_message = tag_message or f"Release {tag}"
+        # Create tag even in dry-run
+        self.run(f"git tag -a -m '{tag_message}' '{tag}' {commit}")
+        rollback_cmd = f"git tag -d '{tag}'"
         self._rollback_stack.append(rollback_cmd)
         try:
             with self._push(tag):
@@ -598,10 +617,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--type",
         required=True,
-        choices=Release.BIG + Release.SMALL,
+        choices=Release.VALID_TYPE,
         dest="release_type",
         help="a release type to bump the major.minor.patch version part, "
-        "new branch is created only for 'major' and 'minor'",
+        "new branch is created only for the value 'new'",
     )
     parser.add_argument("--with-release-branch", default=True, help=argparse.SUPPRESS)
     parser.add_argument("--check-dirty", default=True, help=argparse.SUPPRESS)
@@ -627,7 +646,7 @@ def parse_args() -> argparse.Namespace:
         action="store_false",
         default=argparse.SUPPRESS,
         help="(debug or development only, dangerous) if set, skip the branch check for "
-        "a run. By default, 'major' and 'minor' types work only for master, and 'patch' "
+        "a run. By default, 'new' type work only for master, and 'patch' "
         "works only for a release branches, that name "
         "should be the same as '$MAJOR.$MINOR' version, e.g. 22.2",
     )

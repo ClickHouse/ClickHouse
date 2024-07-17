@@ -7,23 +7,23 @@
 #include <Formats/NativeReader.h>
 #include <Processors/ISource.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/Cluster.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ConnectionTimeouts.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Disks/IDisk.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/SipHash.h>
 #include <Common/quoteString.h>
-#include <base/hex.h>
+#include <Common/ProfileEvents.h>
 #include <Common/ActionBlocker.h>
 #include <Common/formatReadable.h>
 #include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
 #include <Compression/CheckingCompressedReadBuffer.h>
 #include <IO/Operators.h>
+#include <base/hex.h>
 #include <boost/algorithm/string/find_iterator.hpp>
 #include <boost/algorithm/string/finder.hpp>
 #include <boost/range/adaptor/indexed.hpp>
@@ -37,6 +37,11 @@ namespace CurrentMetrics
     extern const Metric BrokenDistributedFilesToInsert;
     extern const Metric DistributedBytesToInsert;
     extern const Metric BrokenDistributedBytesToInsert;
+}
+
+namespace ProfileEvents
+{
+    extern const Event DistributedAsyncInsertionFailures;
 }
 
 namespace fs = std::filesystem;
@@ -55,7 +60,7 @@ namespace
 {
 
 template <typename PoolFactory>
-ConnectionPoolPtrs createPoolsForAddresses(const std::string & name, PoolFactory && factory, const Cluster::ShardsInfo & shards_info, Poco::Logger * log)
+ConnectionPoolPtrs createPoolsForAddresses(const Cluster::Addresses & addresses, PoolFactory && factory, LoggerPtr log)
 {
     ConnectionPoolPtrs pools;
 
@@ -76,30 +81,8 @@ ConnectionPoolPtrs createPoolsForAddresses(const std::string & name, PoolFactory
         }
     };
 
-    for (auto it = boost::make_split_iterator(name, boost::first_finder(",")); it != decltype(it){}; ++it)
-    {
-        const std::string & dirname = boost::copy_range<std::string>(*it);
-        Cluster::Address address = Cluster::Address::fromFullString(dirname);
-        if (address.shard_index && dirname.ends_with("_all_replicas"))
-        {
-            if (address.shard_index > shards_info.size())
-            {
-                LOG_ERROR(log, "No shard with shard_index={} ({})", address.shard_index, name);
-                continue;
-            }
-
-            const auto & shard_info = shards_info[address.shard_index - 1];
-            size_t replicas = shard_info.per_replica_pools.size();
-
-            for (size_t replica_index = 1; replica_index <= replicas; ++replica_index)
-            {
-                address.replica_index = static_cast<UInt32>(replica_index);
-                make_connection(address);
-            }
-        }
-        else
-            make_connection(address);
-    }
+    for (const auto & address : addresses)
+        make_connection(address);
 
     return pools;
 }
@@ -118,7 +101,7 @@ DistributedAsyncInsertDirectoryQueue::DistributedAsyncInsertDirectoryQueue(
     StorageDistributed & storage_,
     const DiskPtr & disk_,
     const std::string & relative_path_,
-    ConnectionPoolPtr pool_,
+    ConnectionPoolWithFailoverPtr pool_,
     ActionBlocker & monitor_blocker_,
     BackgroundSchedulePool & bg_pool)
     : storage(storage_)
@@ -138,7 +121,7 @@ DistributedAsyncInsertDirectoryQueue::DistributedAsyncInsertDirectoryQueue(
     , default_sleep_time(storage.getDistributedSettingsRef().background_insert_sleep_time_ms.totalMilliseconds())
     , sleep_time(default_sleep_time)
     , max_sleep_time(storage.getDistributedSettingsRef().background_insert_max_sleep_time_ms.totalMilliseconds())
-    , log(&Poco::Logger::get(getLoggerName()))
+    , log(getLogger(getLoggerName()))
     , monitor_blocker(monitor_blocker_)
     , metric_pending_bytes(CurrentMetrics::DistributedBytesToInsert, 0)
     , metric_pending_files(CurrentMetrics::DistributedFilesToInsert, 0)
@@ -163,7 +146,7 @@ DistributedAsyncInsertDirectoryQueue::~DistributedAsyncInsertDirectoryQueue()
     }
 }
 
-void DistributedAsyncInsertDirectoryQueue::flushAllData()
+void DistributedAsyncInsertDirectoryQueue::flushAllData(const SettingsChanges & settings_changes)
 {
     if (pending_files.isFinished())
         return;
@@ -171,7 +154,7 @@ void DistributedAsyncInsertDirectoryQueue::flushAllData()
     std::lock_guard lock{mutex};
     if (!hasPendingFiles())
         return;
-    processFiles();
+    processFiles(settings_changes);
 }
 
 void DistributedAsyncInsertDirectoryQueue::shutdownAndDropAllData()
@@ -218,6 +201,15 @@ void DistributedAsyncInsertDirectoryQueue::run()
                 /// No errors while processing existing files.
                 /// Let's see maybe there are more files to process.
                 do_sleep = false;
+
+                const auto now = std::chrono::system_clock::now();
+                if (now - last_decrease_time > decrease_error_count_period)
+                {
+                    std::lock_guard status_lock(status_mutex);
+
+                    status.error_count /= 2;
+                    last_decrease_time = now;
+                }
             }
             catch (...)
             {
@@ -236,15 +228,6 @@ void DistributedAsyncInsertDirectoryQueue::run()
         else
             LOG_TEST(LogFrequencyLimiter(log, 30), "Skipping send data over distributed table.");
 
-        const auto now = std::chrono::system_clock::now();
-        if (now - last_decrease_time > decrease_error_count_period)
-        {
-            std::lock_guard status_lock(status_mutex);
-
-            status.error_count /= 2;
-            last_decrease_time = now;
-        }
-
         if (do_sleep)
             break;
     }
@@ -254,33 +237,13 @@ void DistributedAsyncInsertDirectoryQueue::run()
 }
 
 
-ConnectionPoolPtr DistributedAsyncInsertDirectoryQueue::createPool(const std::string & name, const StorageDistributed & storage)
+ConnectionPoolWithFailoverPtr DistributedAsyncInsertDirectoryQueue::createPool(const Cluster::Addresses & addresses, const StorageDistributed & storage)
 {
-    const auto pool_factory = [&storage, &name] (const Cluster::Address & address) -> ConnectionPoolPtr
+    const auto pool_factory = [&storage] (const Cluster::Address & address) -> ConnectionPoolPtr
     {
         const auto & cluster = storage.getCluster();
         const auto & shards_info = cluster->getShardsInfo();
         const auto & shards_addresses = cluster->getShardsAddresses();
-
-        /// Check new format shard{shard_index}_replica{replica_index}
-        /// (shard_index and replica_index starts from 1).
-        if (address.shard_index != 0)
-        {
-            if (!address.replica_index)
-                throw Exception(ErrorCodes::INCORRECT_FILE_NAME,
-                    "Wrong replica_index={} ({})", address.replica_index, name);
-
-            if (address.shard_index > shards_info.size())
-                throw Exception(ErrorCodes::INCORRECT_FILE_NAME,
-                    "No shard with shard_index={} ({})", address.shard_index, name);
-
-            const auto & shard_info = shards_info[address.shard_index - 1];
-            if (address.replica_index > shard_info.per_replica_pools.size())
-                throw Exception(ErrorCodes::INCORRECT_FILE_NAME,
-                    "No shard with replica_index={} ({})", address.replica_index, name);
-
-            return shard_info.per_replica_pools[address.replica_index - 1];
-        }
 
         /// Existing connections pool have a higher priority.
         for (size_t shard_index = 0; shard_index < shards_info.size(); ++shard_index)
@@ -318,10 +281,10 @@ ConnectionPoolPtr DistributedAsyncInsertDirectoryQueue::createPool(const std::st
             address.secure);
     };
 
-    auto pools = createPoolsForAddresses(name, pool_factory, storage.getCluster()->getShardsInfo(), storage.log);
+    auto pools = createPoolsForAddresses(addresses, pool_factory, storage.log);
 
     const auto settings = storage.getContext()->getSettings();
-    return pools.size() == 1 ? pools.front() : std::make_shared<ConnectionPoolWithFailover>(pools,
+    return std::make_shared<ConnectionPoolWithFailover>(std::move(pools),
         settings.load_balancing,
         settings.distributed_replica_error_half_life.totalSeconds(),
         settings.distributed_replica_error_cap);
@@ -399,19 +362,19 @@ void DistributedAsyncInsertDirectoryQueue::initializeFilesFromDisk()
         status.broken_bytes_count = broken_bytes_count;
     }
 }
-void DistributedAsyncInsertDirectoryQueue::processFiles()
+void DistributedAsyncInsertDirectoryQueue::processFiles(const SettingsChanges & settings_changes)
 try
 {
     if (should_batch_inserts)
-        processFilesWithBatching();
+        processFilesWithBatching(settings_changes);
     else
     {
         /// Process unprocessed file.
         if (!current_file.empty())
-            processFile(current_file);
+            processFile(current_file, settings_changes);
 
         while (!pending_files.isFinished() && pending_files.tryPop(current_file))
-            processFile(current_file);
+            processFile(current_file, settings_changes);
     }
 
     std::lock_guard status_lock(status_mutex);
@@ -419,6 +382,8 @@ try
 }
 catch (...)
 {
+    ProfileEvents::increment(ProfileEvents::DistributedAsyncInsertionFailures);
+
     std::lock_guard status_lock(status_mutex);
 
     ++status.error_count;
@@ -428,7 +393,7 @@ catch (...)
     throw;
 }
 
-void DistributedAsyncInsertDirectoryQueue::processFile(std::string & file_path)
+void DistributedAsyncInsertDirectoryQueue::processFile(std::string & file_path, const SettingsChanges & settings_changes)
 {
     OpenTelemetry::TracingContextHolderPtr thread_trace_context;
 
@@ -443,8 +408,13 @@ void DistributedAsyncInsertDirectoryQueue::processFile(std::string & file_path)
             __PRETTY_FUNCTION__,
             storage.getContext()->getOpenTelemetrySpanLog());
 
-        auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(distributed_header.insert_settings);
-        auto connection = pool->get(timeouts, &distributed_header.insert_settings);
+        Settings insert_settings = distributed_header.insert_settings;
+        insert_settings.applyChanges(settings_changes);
+
+        auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(insert_settings);
+        auto result = pool->getManyCheckedForInsert(timeouts, insert_settings, PoolMode::GET_ONE, storage.remote_storage.getQualifiedName());
+        auto connection = std::move(result.front().entry);
+
         LOG_DEBUG(log, "Sending `{}` to {} ({} rows, {} bytes)",
             file_path,
             connection->getDescription(),
@@ -453,7 +423,7 @@ void DistributedAsyncInsertDirectoryQueue::processFile(std::string & file_path)
 
         RemoteInserter remote{*connection, timeouts,
             distributed_header.insert_query,
-            distributed_header.insert_settings,
+            insert_settings,
             distributed_header.client_info};
         bool compression_expected = connection->getCompression() == Protocol::Compression::Enable;
         writeRemoteConvert(distributed_header, remote, compression_expected, in, log);
@@ -550,7 +520,7 @@ DistributedAsyncInsertDirectoryQueue::Status DistributedAsyncInsertDirectoryQueu
     return current_status;
 }
 
-void DistributedAsyncInsertDirectoryQueue::processFilesWithBatching()
+void DistributedAsyncInsertDirectoryQueue::processFilesWithBatching(const SettingsChanges & settings_changes)
 {
     /// Possibly, we failed to send a batch on the previous iteration. Try to send exactly the same batch.
     if (fs::exists(current_batch_file_path))
@@ -559,7 +529,16 @@ void DistributedAsyncInsertDirectoryQueue::processFilesWithBatching()
 
         DistributedAsyncInsertBatch batch(*this);
         batch.deserialize();
-        batch.send();
+
+        /// In case of recovery it is possible that some of files will be
+        /// missing, if server had been restarted abnormally
+        /// (between unlink(*.bin) and unlink(current_batch.txt)).
+        ///
+        /// But current_batch_file_path should be removed anyway, since if some
+        /// file was missing, then the batch is not complete and there is no
+        /// point in trying to pretend that it will not break deduplication.
+        if (batch.valid())
+            batch.send(settings_changes);
 
         auto dir_sync_guard = getDirectorySyncGuard(relative_path);
         fs::remove(current_batch_file_path);
@@ -575,7 +554,7 @@ void DistributedAsyncInsertDirectoryQueue::processFilesWithBatching()
         {
             if (!fs::exists(file_path))
             {
-                LOG_WARNING(log, "File {} does not exists, likely due to current_batch.txt processing", file_path);
+                LOG_WARNING(log, "File {} does not exist, likely due to current_batch.txt processing", file_path);
                 continue;
             }
 
@@ -641,14 +620,14 @@ void DistributedAsyncInsertDirectoryQueue::processFilesWithBatching()
 
             if (batch.isEnoughSize())
             {
-                batch.send();
+                batch.send(settings_changes);
             }
         }
 
         for (auto & kv : header_to_batch)
         {
             DistributedAsyncInsertBatch & batch = kv.second;
-            batch.send();
+            batch.send(settings_changes);
         }
     }
     catch (...)

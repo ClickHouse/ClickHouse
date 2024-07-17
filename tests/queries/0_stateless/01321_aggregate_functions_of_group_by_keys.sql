@@ -1,5 +1,4 @@
 set optimize_aggregators_of_group_by_keys = 1;
-set optimize_move_functions_out_of_any = 0;
 
 SELECT min(number % 2) AS a, max(number % 3) AS b FROM numbers(10000000) GROUP BY number % 2, number % 3 ORDER BY a, b;
 SELECT any(number % 2) AS a, anyLast(number % 3) AS b FROM numbers(10000000) GROUP BY number % 2, number % 3 ORDER BY a, b;
