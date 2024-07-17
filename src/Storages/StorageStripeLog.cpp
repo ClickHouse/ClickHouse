@@ -228,9 +228,9 @@ public:
         }
     }
 
-    void consume(Chunk chunk) override
+    void consume(Chunk & chunk) override
     {
-        block_out->write(getHeader().cloneWithColumns(chunk.detachColumns()));
+        block_out->write(getHeader().cloneWithColumns(chunk.getColumns()));
     }
 
     void onFinish() override
