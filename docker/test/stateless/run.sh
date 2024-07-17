@@ -12,7 +12,7 @@ MAX_RUN_TIME=$((MAX_RUN_TIME == 0 ? 7200 : MAX_RUN_TIME))
 USE_DATABASE_REPLICATED=${USE_DATABASE_REPLICATED:=0}
 USE_SHARED_CATALOG=${USE_SHARED_CATALOG:=0}
 
-RUN_SEQUENTIAL_TESTS_IN_PARALLEL=1
+RUN_SEQUENTIAL_TESTS_IN_PARALLEL=0
 
 if [[ "$USE_DATABASE_REPLICATED" -eq 1 ]] || [[ "$USE_SHARED_CATALOG" -eq 1 ]]; then
   RUN_SEQUENTIAL_TESTS_IN_PARALLEL=0
@@ -54,6 +54,9 @@ source /utils.lib
 /usr/share/clickhouse-test/config/install.sh
 
 ./setup_minio.sh stateless
+./mc admin trace clickminio > /test_output/minio.log &
+MC_ADMIN_PID=$!
+
 ./setup_hdfs_minicluster.sh
 
 config_logs_export_cluster /etc/clickhouse-server/config.d/system_logs_export.yaml
@@ -382,6 +385,9 @@ fi
 if [[ "$USE_SHARED_CATALOG" -eq 1 ]]; then
     sudo clickhouse stop --pid-path /var/run/clickhouse-server1 ||:
 fi
+
+# Kill minio admin client to stop collecting logs
+kill $MC_ADMIN_PID
 
 rg -Fa "<Fatal>" /var/log/clickhouse-server/clickhouse-server.log ||:
 rg -A50 -Fa "============" /var/log/clickhouse-server/stderr.log ||:

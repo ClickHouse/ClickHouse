@@ -81,6 +81,7 @@
 #include <Common/config_version.h>
 #include "config.h"
 
+
 namespace fs = std::filesystem;
 using namespace std::literals;
 
@@ -2533,12 +2534,12 @@ void ClientBase::runInteractive()
         word_break_characters,
         highlight_callback);
 #else
+    (void)word_break_characters;
     LineReader lr(
         history_file,
         getClientConfiguration().has("multiline"),
         query_extenders,
-        query_delimiters,
-        word_break_characters);
+        query_delimiters);
 #endif
 
     static const std::initializer_list<std::pair<String, String>> backslash_aliases =

@@ -20,11 +20,12 @@
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/ProfileEvents.h>
 
+#include <Coordination/CoordinationSettings.h>
 #include <Coordination/KeeperCommon.h>
 #include <Coordination/KeeperConstants.h>
+#include <Coordination/KeeperDispatcher.h>
 #include <Coordination/KeeperReconfiguration.h>
 #include <Coordination/KeeperStorage.h>
-#include <Coordination/KeeperDispatcher.h>
 
 #include <functional>
 #include <base/defines.h>

@@ -711,9 +711,9 @@ def get_localzone():
 
 class SettingsRandomizer:
     settings = {
-        "max_insert_threads": lambda: 12
-        if random.random() < 0.03
-        else random.randint(1, 3),
+        "max_insert_threads": lambda: (
+            12 if random.random() < 0.03 else random.randint(1, 3)
+        ),
         "group_by_two_level_threshold": threshold_generator(0.2, 0.2, 1, 1000000),
         "group_by_two_level_threshold_bytes": threshold_generator(
             0.2, 0.2, 1, 50000000
@@ -3386,13 +3386,13 @@ def parse_args():
     parser.add_argument(
         "--replace-replicated-with-shared",
         action="store_true",
-        default=os.environ.get("USE_META_IN_KEEPER_FOR_MERGE_TREE", False),
+        default=os.environ.get("REPLACE_RMT_WITH_SMT", False),
         help="Replace ReplicatedMergeTree engine with SharedMergeTree",
     )
     parser.add_argument(
         "--replace-non-replicated-with-shared",
         action="store_true",
-        default=False,
+        default=os.environ.get("REPLACE_MT_WITH_SMT", False),
         help="Replace ordinary MergeTree engine with SharedMergeTree",
     )
 
