@@ -51,7 +51,6 @@
 #include <Interpreters/SessionTracker.h>
 #include <Core/ServerSettings.h>
 #include <Interpreters/PreparedSets.h>
-#include <Core/Settings.h>
 #include <Core/SettingsQuirks.h>
 #include <Access/AccessControl.h>
 #include <Access/ContextAccess.h>
