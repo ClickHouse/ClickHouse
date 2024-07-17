@@ -467,7 +467,7 @@ LOCALTIME
 LOCALTIMESTAMP
 LONGLONG
 LOONGARCH
-Lemir
+Lemire
 Levenshtein
 Liao
 LibFuzzer
@@ -761,6 +761,7 @@ QueryCacheMisses
 QueryPreempted
 QueryThread
 QuickAssist
+QuickSight
 QuoteMeta
 RBAC
 RClickHouse
@@ -1319,6 +1320,12 @@ cfg
 cgroup
 cgroups
 chadmin
+changeDay
+changeHour
+changeMinute
+changeMonth
+changeSecond
+changeYear
 changelog
 changelogs
 charset
@@ -1900,11 +1907,13 @@ kurtosis
 kurtpop
 kurtsamp
 laion
+lagInFrame
 lang
 laravel
 largestTriangleThreeBuckets
 latencies
 ldap
+leadInFrame
 leftPad
 leftPadUTF
 leftUTF
@@ -2192,6 +2201,8 @@ parseReadableSizeOrZero
 parseTimeDelta
 parseable
 parsers
+partitionId
+partitionID
 pathFull
 pclmulqdq
 pcre

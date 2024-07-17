@@ -1,3 +1,4 @@
+#include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
 #include <Storages/ObjectStorage/Azure/Configuration.h>
 #include <Storages/ObjectStorage/HDFS/Configuration.h>

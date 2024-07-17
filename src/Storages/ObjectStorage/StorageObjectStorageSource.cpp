@@ -14,6 +14,7 @@
 #include <Storages/VirtualColumnUtils.h>
 #include "Common/logger_useful.h"
 #include <Common/parseGlobs.h>
+#include <Core/Settings.h>
 
 namespace fs = std::filesystem;
 
@@ -459,11 +460,15 @@ std::unique_ptr<ReadBuffer> StorageObjectStorageSource::createReadBuffer(
     const auto & object_size = object_info.metadata->size_bytes;
 
     auto read_settings = context_->getReadSettings().adjustBufferSize(object_size);
+
+    LOG_DEBUG(&Poco::Logger::get("Threadpool"), "Method threadpool: {}", read_settings.remote_fs_method == RemoteFSReadMethod::threadpool);
+
     read_settings.enable_filesystem_cache = false;
     /// FIXME: Changing this setting to default value breaks something around parquet reading
     read_settings.remote_read_min_bytes_for_seek = read_settings.remote_fs_buffer_size;
 
-    const bool object_too_small = object_size <= 2 * context_->getSettings().max_download_buffer_size;
+    const bool object_too_small = object_size <= 2 * context_->getSettingsRef().max_download_buffer_size;
+
     const bool use_prefetch = object_too_small && read_settings.remote_fs_method == RemoteFSReadMethod::threadpool;
     read_settings.remote_fs_method = use_prefetch ? RemoteFSReadMethod::threadpool : RemoteFSReadMethod::read;
     /// User's object may change, don't cache it.
@@ -476,7 +481,7 @@ std::unique_ptr<ReadBuffer> StorageObjectStorageSource::createReadBuffer(
     {
         LOG_TRACE(log, "Downloading object of size {} with initial prefetch", object_size);
 
-        LOG_DEBUG(&Poco::Logger::get("Read"), "Path: {}, object size: {}", object_info.getPath(), object_size);
+        LOG_DEBUG(&Poco::Logger::get("Read objects"), "Path: {}, object size: {}", object_info.getPath(), object_size);
 
         auto async_reader = object_storage->readObjects(
             StoredObjects{StoredObject{object_info.getPath(), /* local_path */ "", object_size}}, read_settings);
@@ -490,6 +495,8 @@ std::unique_ptr<ReadBuffer> StorageObjectStorageSource::createReadBuffer(
     else
     {
         /// FIXME: this is inconsistent that readObject always reads synchronously ignoring read_method setting.
+        LOG_DEBUG(&Poco::Logger::get("Read object"), "Path: {}, object size: {}", object_info.getPath(), object_size);
+
         return object_storage->readObject(StoredObject(object_info.getPath(), "", object_size), read_settings);
     }
 }
