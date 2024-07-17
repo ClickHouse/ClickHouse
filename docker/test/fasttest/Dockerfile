@@ -28,7 +28,7 @@ RUN apt-get update \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/* \
     && groupadd --system --gid 1000 clickhouse \
-    && useradd --system --gid 1000 --uid 1000 clickhouse
+    && useradd --system --gid 1000 --uid 1000 -m clickhouse
 # ^ For some reason, groupadd and useradd are needed for tests with 'expect', but I don't know, why.
 
 COPY requirements.txt /
