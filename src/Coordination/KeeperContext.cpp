@@ -3,6 +3,7 @@
 
 #include <Coordination/KeeperContext.h>
 
+#include <Coordination/CoordinationSettings.h>
 #include <Coordination/Defines.h>
 #include <Disks/DiskLocal.h>
 #include <Interpreters/Context.h>

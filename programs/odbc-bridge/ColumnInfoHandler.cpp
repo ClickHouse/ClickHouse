@@ -2,6 +2,7 @@
 
 #if USE_ODBC
 
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>

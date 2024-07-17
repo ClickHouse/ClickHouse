@@ -1,5 +1,5 @@
-#include <cassert>
 #include <Common/Exception.h>
+#include <Core/Settings.h>
 
 #include <boost/noncopyable.hpp>
 #include <Interpreters/MutationsInterpreter.h>
@@ -37,7 +37,6 @@
 #include <Disks/TemporaryFileOnDisk.h>
 #include <IO/copyData.h>
 
-
 namespace DB
 {
 
@@ -63,7 +62,7 @@ public:
 
     String getName() const override { return "MemorySink"; }
 
-    void consume(Chunk chunk) override
+    void consume(Chunk & chunk) override
     {
         auto block = getHeader().cloneWithColumns(chunk.getColumns());
         storage_snapshot->metadata->check(block, true);
