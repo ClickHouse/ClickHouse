@@ -173,7 +173,7 @@ private:
     {
         const auto file_name_as_path = fs::path(file_name);
         if (file_name_as_path.is_absolute())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Filename {} cannot be an absolute path!", file_name);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Filename {} cannot be an absolute path", file_name);
 
         return fs::path(root_path) / file_name_as_path;
     }
@@ -328,7 +328,7 @@ private:
     {
         const auto file_name_as_path = fs::path(file_name);
         if (file_name_as_path.is_absolute())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Filename {} cannot be an absolute path!", file_name);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Filename {} cannot be an absolute path", file_name);
 
         return fs::path(root_path) / file_name_as_path;
     }
