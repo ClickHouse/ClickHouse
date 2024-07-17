@@ -99,7 +99,7 @@ def set_capacity(
             continue
         raise ValueError("Queue status is not in ['in_progress', 'queued']")
 
-    #scale_down, scale_up = get_scales(runner_type)
+    # scale_down, scale_up = get_scales(runner_type)
     _, scale_up = get_scales(runner_type)
     # With lyfecycle hooks some instances are actually free because some of
     # them are in 'Terminating:Wait' state
