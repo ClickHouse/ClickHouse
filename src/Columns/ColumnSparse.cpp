@@ -678,26 +678,13 @@ void ColumnSparse::updateHashWithValue(size_t n, SipHash & hash) const
     values->updateHashWithValue(getValueIndex(n), hash);
 }
 
-void ColumnSparse::updateWeakHash32(WeakHash32 & hash) const
+WeakHash32 ColumnSparse::getWeakHash32() const
 {
-    if (hash.getData().size() != _size)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of WeakHash32 does not match size of column: "
-        "column size is {}, hash size is {}", _size, hash.getData().size());
-
-    size_t values_size = values->size();
-    WeakHash32 values_hash(values_size);
+    WeakHash32 values_hash = values->getWeakHash32();
+    WeakHash32 hash(size());
 
     auto & hash_data = hash.getData();
     auto & values_hash_data = values_hash.getData();
-    const auto & offsets_data = getOffsetsData();
-
-    if (getNumberOfDefaultRows() > 0)
-        values_hash_data[0] = hash_data[getFirstDefaultValueIndex()];
-
-    for (size_t i = 0; i + 1 < values_size; ++i)
-        values_hash_data[i + 1] = hash_data[offsets_data[i]];
-
-    values->updateWeakHash32(values_hash);
 
     auto offset_it = begin();
     for (size_t i = 0; i < _size; ++i, ++offset_it)
@@ -705,6 +692,8 @@ void ColumnSparse::updateWeakHash32(WeakHash32 & hash) const
         size_t value_index = offset_it.getValueIndex();
         hash_data[i] = values_hash_data[value_index];
     }
+
+    return hash;
 }
 
 void ColumnSparse::updateHashFast(SipHash & hash) const
