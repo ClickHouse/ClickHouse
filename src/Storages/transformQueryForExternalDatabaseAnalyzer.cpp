@@ -71,8 +71,7 @@ ASTPtr getASTForExternalDatabaseFromQueryTree(const QueryTreeNodePtr & query_tre
     {
         if (join_node->getStrictness() != JoinStrictness::All)
             allow_where = false;
-
-        if (join_node->getKind() == JoinKind::Left)
+        else if (join_node->getKind() == JoinKind::Left)
             allow_where = join_node->getLeftTableExpression()->isEqual(*table_expression);
         else if (join_node->getKind() == JoinKind::Right)
             allow_where = join_node->getRightTableExpression()->isEqual(*table_expression);
