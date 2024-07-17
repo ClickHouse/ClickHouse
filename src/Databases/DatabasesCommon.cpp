@@ -164,7 +164,7 @@ ASTPtr getCreateQueryFromStorage(const StoragePtr & storage, const ASTPtr & ast_
                 if (!parser.parse(pos, ast_type, expected))
                 {
                     if (throw_on_error)
-                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot parser metadata of {}.{}",
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot parse metadata of {}.{}",
                                         backQuote(table_id.database_name), backQuote(table_id.table_name));
                     else
                         return nullptr;
