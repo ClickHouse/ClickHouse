@@ -37,6 +37,14 @@ std::optional<Float64> StatisticsUtils::tryConvertToFloat64(const Field & field)
             return field.get<UInt64>();
         case Field::Types::Float64:
             return field.get<Float64>();
+        case Field::Types::Int128:
+            return field.get<Int128>();
+        case Field::Types::UInt128:
+            return field.get<UInt128>();
+        case Field::Types::Int256:
+            return field.get<Int256>();
+        case Field::Types::UInt256:
+            return field.get<UInt256>();
         default:
             return {};
     }
