@@ -1,5 +1,7 @@
 #pragma once
 
+#include <string>
+#include "Disks/ObjectStorages/StoredObject.h"
 #include "config.h"
 
 #if USE_CEPH
@@ -8,7 +10,6 @@
 #include <IO/Ceph/RadosIO.h>
 #include <Disks/ObjectStorages/Ceph/CephUtils.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
-#include <Storages/StorageCephSettings.h>
 #include <Common/MultiVersion.h>
 #include <Common/ObjectStorageKeyGenerator.h>
 
@@ -16,20 +17,43 @@
 namespace DB
 {
 
+/// The maximum size of object in rados is 4GB, therefore we need to split large objects into multiple objects
+/// Ceph project provides `libradostriper`, nevertheless, it doesn't fit well to ClickHouse. Here we implement
+/// a simple striper logic:
+/// - Each object has a suffix `.#N` where N is a sequence number of the object in the stripe
+/// - The first object in the stripe has a suffix `.#0` and all attributes are stored in this object
+/// - The first object has special atributes to store the total number of objects in the stripe and the
+///   size and mtime of the big object
+namespace RadosStriper
+{
+    static constexpr const char * const XATTR_OBJECT_COUNT = "clickhouse.striper.object_count";
+    static constexpr const char * const XATTR_OBJECT_SIZE = "clickhouse.striper.object_size";
+    static constexpr const char * const XATTR_OBJECT_MTIME = "clickhouse.striper.object_mtime";
+    static constexpr const char * const STRIP_SUFFIX = "clickhouse.strip";
+
+    inline String getStripedObjectName(const String & object_id, size_t object_seq)
+    {
+        return fmt::format("{}.{}.{}", object_id, STRIP_SUFFIX, object_seq);
+    }
+
+    inline bool isRegularObject(const String & object_name) { return !object_name.contains(STRIP_SUFFIX); }
+
+    inline bool isFirstObjectInStripe(const std::shared_ptr<Ceph::RadosIO> io, const String & object_name)
+    {
+        return io->getAttributeIfExists(object_name, XATTR_OBJECT_COUNT).value.has_value();
+    }
+}
+
 struct CephObjectStorageSettings
 {
     CephObjectStorageSettings() = default;
 
     CephObjectStorageSettings(
         const CephOptions & global_options_,
-        uint64_t min_bytes_for_seek_,
-        int32_t list_object_keys_size_,
-        int32_t objects_chunk_size_to_delete_,
+        size_t max_object_size_,
         bool read_only_)
         : global_options(global_options_)
-        , min_bytes_for_seek(min_bytes_for_seek_)
-        , list_object_keys_size(list_object_keys_size_)
-        , objects_chunk_size_to_delete(objects_chunk_size_to_delete_)
+        , max_object_size(max_object_size_)
         , read_only(read_only_)
     {}
 
@@ -41,16 +65,12 @@ struct CephObjectStorageSettings
         if (config.has(config_prefix + ".options"))
             global_options.loadFromConfig(config, config_prefix + ".options");
         global_options.validate();
-        min_bytes_for_seek = config.getUInt64(config_prefix + ".min_bytes_for_seek", min_bytes_for_seek);
-        list_object_keys_size = config.getInt(config_prefix + ".list_object_keys_size", list_object_keys_size);
-        objects_chunk_size_to_delete = config.getInt(config_prefix + ".objects_chunk_size_to_delete", objects_chunk_size_to_delete);
+        max_object_size = config.getUInt64(config_prefix + ".max_object_size", max_object_size);
         read_only = config.getBool(config_prefix + ".read_only", read_only);
     }
 
-    uint64_t min_bytes_for_seek;
-    int32_t list_object_keys_size;
-    int32_t objects_chunk_size_to_delete;
-    bool read_only;
+    uint64_t max_object_size = 0;
+    bool read_only = false;
 };
 
 /// Rados cluster include many pool (equivalent to S3 bucket). In each pool, we can have many namespace.
@@ -70,7 +90,6 @@ private:
         : endpoint(endpoint_)
         , disk_name(disk_name_)
         , rados(std::move(rados_))
-        , ceph_settings(std::move(ceph_settings_))
         , log(getLogger(logger_name))
         , for_disk_ceph(for_disk_ceph_)
     {
@@ -78,6 +97,12 @@ private:
         if (for_disk_ceph && (endpoint.nspace.empty() || endpoint.nspace == LIBRADOS_ALL_NSPACES))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "CephObjectStorage: namespace cannot be empty if it's created for disk");
         io_impl = std::make_unique<Ceph::RadosIO>(rados, endpoint.pool, endpoint.nspace);
+        /// Get max object size from cluster
+        String val;
+        size_t rados_max_osd_object_size = io_impl->getMaxObjectSize();
+        if (ceph_settings_->max_object_size == 0 || ceph_settings_->max_object_size > rados_max_osd_object_size)
+            ceph_settings_->max_object_size = rados_max_osd_object_size;
+        ceph_settings.set(std::move(ceph_settings_));
     }
 
 public:
@@ -152,6 +177,8 @@ public:
         ContextPtr context,
         const ApplyNewSettingsOptions & options) override;
 
+    WriteSettings patchSettings(const WriteSettings & write_settings) const override;
+
     std::string getObjectsNamespace() const override { return endpoint.pool; }
 
     bool isRemote() const override { return true; }
@@ -173,6 +200,14 @@ private:
 
     void removeObjectImpl(const StoredObject & object, bool if_exists);
     void removeObjectsImpl(const StoredObjects & objects, bool if_exists);
+
+    std::unique_ptr<ReadBufferFromFileBase> readObjectsImpl( /// NOLINT
+        const StoredObjects & objects,
+        const ReadSettings & read_settings = ReadSettings{},
+        std::optional<size_t> read_hint = {},
+        std::optional<size_t> file_size = {}) const;
+
+    StoredObjects getRadosObjects(const StoredObjects & objects, bool if_exists, bool with_size) const;
 
     const CephEndpoint endpoint;
 

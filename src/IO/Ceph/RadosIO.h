@@ -20,6 +20,13 @@ namespace Ceph
 
 using RadosIterator = librados::NObjectIterator;
 
+struct GetRadosObjectAttributeResult
+{
+    bool object_exists;
+    std::optional<String> value;
+};
+
+
 /// Implement detail of Ceph rados IO. Do not print any sensitive information in logs
 /// TODO: add connection pool
 class RadosIO
@@ -36,6 +43,8 @@ public:
 
     void assertConnected() const;
 
+    size_t getMaxObjectSize() const;
+
     RadosIterator begin() { return io_ctx.nobjects_begin(); }
 
     const RadosIterator & end() const { return io_ctx.nobjects_end(); }
@@ -50,7 +59,11 @@ public:
 
     void stat(const String & oid, uint64_t * size, struct timespec * mtime);
 
+    GetRadosObjectAttributeResult tryGetAttribute(const String & oid, const String & attr, bool if_exists, std::optional<Exception> * exception = nullptr);
+
     String getAttribute(const String & oid, const String & attr);
+
+    GetRadosObjectAttributeResult getAttributeIfExists(const String & oid, const String & attr);
 
     void setAttribute(const String & oid, const String & attr, const String & value);
 
@@ -64,7 +77,11 @@ public:
 
     bool exists(const String & oid);
 
+    void create(const String & oid, bool if_not_exists = false);
+
     void remove(const String & oid, bool if_exists = false);
+
+    void remove(const std::vector<String> & oids);
 
     void sync() {}
 

@@ -41,6 +41,10 @@ public:
     std::string getFileName() const override { return object_id; }
 
 private:
+    static String getObjectName(const String & object_id, size_t object_seq)
+    {
+        return fmt::format("{}.#{}", object_id, object_seq);
+    }
     void initialize();
     size_t writeImpl(const char * begin, size_t len);
     void setObjectAttributes();

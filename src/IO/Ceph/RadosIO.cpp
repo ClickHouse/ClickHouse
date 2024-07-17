@@ -1,5 +1,8 @@
 #include "RadosIO.h"
+#include <memory>
 #include <buffer_fwd.h>
+#include <librados.hpp>
+#include "Common/logger_useful.h"
 
 #if USE_CEPH
 
@@ -68,6 +71,18 @@ void RadosIO::assertConnected() const
 {
     if (!connected)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "RadosRadosIO is not connected");
+}
+
+size_t RadosIO::getMaxObjectSize() const
+{
+    assertConnected();
+    String val;
+    if (auto ec = rados->conf_get("osd_max_object_size", val); ec < 0)
+        throw Exception(ErrorCodes::CEPH_ERROR, "Cannot get max object size. Error: {}", strerror(-ec));
+    if (val.empty())
+        throw Exception(ErrorCodes::CEPH_ERROR, "Cannot get max object size. Empty value");
+    LOG_DEBUG(getLogger("RadosIO"), "Max object size: {}", val);
+    return std::stoull(val);
 }
 
 size_t RadosIO::read(const String & oid, char * data, size_t length, uint64_t offset)
@@ -143,18 +158,78 @@ void RadosIO::remove(const String & oid, bool if_exists)
         throw Exception(ErrorCodes::CEPH_ERROR, "Cannot remove object `{}:{}`. Error: {}", pool, oid, strerror(-ec));
 }
 
-String RadosIO::getAttribute(const String & oid, const String & attr)
+void RadosIO::remove(const std::vector<String> & oids)
+{
+    assertConnected();
+    std::vector<std::unique_ptr<librados::AioCompletion>> completions;
+    for (const auto & oid : oids)
+    {
+        auto completion = std::unique_ptr<librados::AioCompletion>(librados::Rados::aio_create_completion());
+        if (auto ec = io_ctx.aio_remove(oid, completion.get()); ec < 0)
+        {
+            for (auto & c : completions)
+                c->wait_for_complete(); /// No checking of return code, because we already have an error
+            throw Exception(ErrorCodes::CEPH_ERROR, "Cannot remove object `{}:{}`. Error: {}", pool, oid, strerror(-ec));
+        }
+    }
+    std::optional<Exception> exception;
+    for (auto & c : completions)
+    {
+        if (auto ec = c->wait_for_complete(); ec < 0 && ec != -ENOENT)
+            if (!exception)
+                exception.emplace(Exception(ErrorCodes::CEPH_ERROR, "Cannot remove objects. Error: {}", strerror(-ec)));
+    }
+    if (exception)
+        throw std::move(*exception);
+}
+
+void RadosIO::create(const String & oid, bool if_not_exists)
+{
+    assertConnected();
+    if (auto ec = io_ctx.create(oid, !if_not_exists); ec < 0 && (!if_not_exists || ec != -EEXIST))
+        throw Exception(ErrorCodes::CEPH_ERROR, "Cannot remove object `{}:{}`. Error: {}", pool, oid, strerror(-ec));
+}
+
+GetRadosObjectAttributeResult RadosIO::tryGetAttribute(const String & oid, const String & attr, bool if_exists, std::optional<Exception> * exception)
 {
     assertConnected();
     String res;
     ceph::bufferlist bl = ceph::bufferlist::static_from_string(res);
     if (auto ec = io_ctx.getxattr(oid, attr.c_str(), bl); ec < 0)
-        throw Exception(ErrorCodes::CEPH_ERROR, "Cannot get attribute `{}` for object `{}:{}`. Error: {}", attr, pool, oid, strerror(-ec));
+    {
+        if (if_exists)
+        {
+            if (ec == -ENOENT)
+                return GetRadosObjectAttributeResult{.object_exists = false, .value = {}}; /// Object doesn't exist
+            if (ec == -ENODATA)
+                return GetRadosObjectAttributeResult{.object_exists = true, .value = {}}; /// Object exists, but attribute is not set
+        }
+        if (exception)
+            exception->emplace(Exception(ErrorCodes::CEPH_ERROR, "Cannot get attribute `{}` for object `{}:{}`. Error: {}", attr, pool, oid, strerror(-ec)));
+    }
     if (!bl.is_provided_buffer(res.data()))
     {
         res.resize(bl.length());
         bl.begin().copy(bl.length(), res.data());
     }
+    return GetRadosObjectAttributeResult{.object_exists = true, .value = std::move(res)};
+}
+
+String RadosIO::getAttribute(const String & oid, const String & attr)
+{
+    std::optional<Exception> exception;
+    auto res = tryGetAttribute(oid, attr, false, &exception);
+    if (exception)
+        throw std::move(*exception);
+    return std::move(*res.value);
+}
+
+GetRadosObjectAttributeResult RadosIO::getAttributeIfExists(const String & oid, const String & attr)
+{
+    std::optional<Exception> exception;
+    auto res = tryGetAttribute(oid, attr, true, &exception);
+    if (exception)
+        throw std::move(*exception);
     return res;
 }
 
@@ -223,9 +298,10 @@ ObjectMetadata RadosIO::getMetadata(const String & oid)
 {
     assertConnected();
     std::optional<Exception> exception;
-    if (auto metadata = tryGetMetadata(oid, &exception))
-        return *metadata;
-    throw std::move(*exception);
+    auto res = tryGetMetadata(oid, &exception);
+    if (exception)
+        throw std::move(*exception);
+    return std::move(*res);
 
 }
 
