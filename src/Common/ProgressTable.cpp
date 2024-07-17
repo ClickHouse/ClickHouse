@@ -1,4 +1,7 @@
 #include "ProgressTable.h"
+#include "Common/AllocatorWithMemoryTracking.h"
+#include "Common/ProfileEvents.h"
+#include "base/defines.h"
 
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
@@ -12,6 +15,7 @@
 
 #include <format>
 #include <numeric>
+#include <unordered_map>
 
 namespace DB
 {
@@ -49,18 +53,22 @@ std::string formatReadableValue(ProfileEvents::ValueType value_type, double valu
     }
 }
 
-auto createEventToValueTypeMap()
+const std::unordered_map<std::string_view, ProfileEvents::Event> & getEventNameToEvent()
 {
-    std::unordered_map<std::string_view, ProfileEvents::ValueType> event_to_value_type;
+    /// TODO: MemoryTracker::USAGE_EVENT_NAME and PEAK_USAGE_EVENT_NAME
+    static std::unordered_map<std::string_view, ProfileEvents::Event> event_name_to_event;
+
+    if (!event_name_to_event.empty())
+        return event_name_to_event;
+
     for (ProfileEvents::Event event = ProfileEvents::Event(0); event < ProfileEvents::end(); ++event)
     {
-        std::string_view name = ProfileEvents::getName(event);
-        ProfileEvents::ValueType value_type = getValueType(event);
-        event_to_value_type[name] = value_type;
+        event_name_to_event.emplace(ProfileEvents::getName(event), event);
     }
-    event_to_value_type[MemoryTracker::USAGE_EVENT_NAME] = ProfileEvents::ValueType::Bytes;
-    return event_to_value_type;
+
+    return event_name_to_event;
 }
+
 
 std::string_view setColorForProgress(double progress, double max_progress)
 {
@@ -95,6 +103,11 @@ std::string_view setColorForProgress(double progress, double max_progress)
     return colors[7];
 }
 
+std::string_view setColorForDocumentation()
+{
+    return "\033[90m"; /// Light grey
+}
+
 template <typename Out>
 void writeWithWidth(Out & out, std::string_view s, size_t width)
 {
@@ -104,13 +117,22 @@ void writeWithWidth(Out & out, std::string_view s, size_t width)
         out << s << std::string(width - s.size(), ' ');
 }
 
+template <typename Out>
+void writeWithWidthStrict(Out & out, std::string_view s, size_t width)
+{
+    chassert(width != 0);
+    if (s.size() > width)
+        out << s.substr(0, width - 1) << "…";
+    else
+        out << s;
 }
 
-const std::unordered_map<std::string_view, ProfileEvents::ValueType> ProgressTable::event_to_value_type = createEventToValueTypeMap();
+}
 
 void ProgressTable::writeTable(WriteBufferFromFileDescriptor & message)
 {
     std::lock_guard lock{mutex};
+    const auto & event_name_to_event = getEventNameToEvent();
 
     size_t terminal_width = getTerminalWidth();
     if (terminal_width < column_event_name_width + COLUMN_VALUE_WIDTH + COLUMN_PROGRESS_WIDTH)
@@ -124,6 +146,7 @@ void ProgressTable::writeTable(WriteBufferFromFileDescriptor & message)
     writeWithWidth(message, COLUMN_EVENT_NAME, column_event_name_width);
     writeWithWidth(message, COLUMN_VALUE, COLUMN_VALUE_WIDTH);
     writeWithWidth(message, COLUMN_PROGRESS, COLUMN_PROGRESS_WIDTH);
+    writeWithWidth(message, COLUMN_DOCUMENTATION_NAME, COLUMN_DOCUMENTATION_WIDTH);
     message << CLEAR_TO_END_OF_LINE;
 
     double elapsed_sec = watch.elapsedSeconds();
@@ -134,7 +157,7 @@ void ProgressTable::writeTable(WriteBufferFromFileDescriptor & message)
         writeWithWidth(message, name, column_event_name_width);
 
         auto value = per_host_info.getSummaryValue();
-        auto value_type = event_to_value_type.at(name);
+        auto value_type = getValueType(event_name_to_event.at(name));
         writeWithWidth(message, formatReadableValue(value_type, value), COLUMN_VALUE_WIDTH);
 
         /// Get the maximum progress before it is updated in getSummaryProgress.
@@ -143,6 +166,11 @@ void ProgressTable::writeTable(WriteBufferFromFileDescriptor & message)
         message << setColorForProgress(progress, max_progress);
 
         writeWithWidth(message, formatReadableValue(value_type, progress) + " / s", COLUMN_PROGRESS_WIDTH);
+
+        message << setColorForDocumentation();
+        const auto * doc = getDocumentation(event_name_to_event.at(name));
+        writeWithWidthStrict(message, doc, COLUMN_DOCUMENTATION_WIDTH);
+
         message << RESET_COLOR;
         message << CLEAR_TO_END_OF_LINE;
     }
@@ -154,6 +182,7 @@ void ProgressTable::writeTable(WriteBufferFromFileDescriptor & message)
 void ProgressTable::writeFinalTable()
 {
     std::lock_guard lock{mutex};
+    const auto & event_name_to_event = getEventNameToEvent();
 
     size_t terminal_width = getTerminalWidth();
     if (terminal_width < column_event_name_width + COLUMN_VALUE_WIDTH)
@@ -172,7 +201,7 @@ void ProgressTable::writeFinalTable()
         writeWithWidth(std::cout, name, column_event_name_width);
 
         auto value = per_host_info.getSummaryValue();
-        auto value_type = event_to_value_type.at(name);
+        auto value_type = getValueType(event_name_to_event.at(name));
         writeWithWidth(std::cout, formatReadableValue(value_type, value), COLUMN_VALUE_WIDTH);
     }
 }
@@ -189,6 +218,7 @@ void ProgressTable::updateTable(const Block & block)
     size_t max_event_name_width = COLUMN_EVENT_NAME.size();
 
     std::lock_guard lock{mutex};
+    const auto & event_name_to_event = getEventNameToEvent();
     for (size_t row_num = 0, rows = block.rows(); row_num < rows; ++row_num)
     {
         auto thread_id = array_thread_id[row_num];
@@ -205,7 +235,7 @@ void ProgressTable::updateTable(const Block & block)
         auto type = static_cast<ProfileEvents::Type>(array_type[row_num]);
 
         /// Got unexpected event name.
-        if (!event_to_value_type.contains(name))
+        if (!event_name_to_event.contains(name))
             continue;
 
         /// Store non-zero values.

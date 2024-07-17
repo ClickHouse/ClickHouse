@@ -93,14 +93,13 @@ private:
 
     size_t column_event_name_width = 20;
 
-    /// The value type for each profile event for a readable output.
-    static const std::unordered_map<std::string_view, ProfileEvents::ValueType> event_to_value_type;
-
     static constexpr std::string_view COLUMN_EVENT_NAME = "Event name";
     static constexpr std::string_view COLUMN_VALUE = "Value";
     static constexpr std::string_view COLUMN_PROGRESS = "Progress";
+    static constexpr std::string_view COLUMN_DOCUMENTATION_NAME = "Documentation";
     static constexpr size_t COLUMN_VALUE_WIDTH = 20;
     static constexpr size_t COLUMN_PROGRESS_WIDTH = 20;
+    static constexpr size_t COLUMN_DOCUMENTATION_WIDTH = 100;
 };
 
 }
