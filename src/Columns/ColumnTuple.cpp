@@ -201,6 +201,7 @@ bool ColumnTuple::tryInsert(const Field & x)
             return false;
         }
     }
+    ++column_length;
 
     return true;
 }
@@ -236,6 +237,7 @@ void ColumnTuple::doInsertManyFrom(const IColumn & src, size_t position, size_t 
 
     for (size_t i = 0; i < tuple_size; ++i)
         columns[i]->insertManyFrom(*src_tuple.columns[i], position, length);
+    column_length += length;
 }
 
 void ColumnTuple::insertDefault()
