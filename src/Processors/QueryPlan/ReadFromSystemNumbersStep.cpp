@@ -35,18 +35,33 @@ inline void iotaWithStepOptimized(T * begin, size_t count, T first_value, T step
         iotaWithStep(begin, count, first_value, step);
 }
 
+/// The range is defined as [start, end)
+UInt64 itemCountInRange(UInt64 start, UInt64 end, UInt64 step)
+{
+    const auto range_count = end - start;
+    if (step == 1)
+        return range_count;
+
+    return (range_count - 1) / step + 1;
+}
+
 class NumbersSource : public ISource
 {
 public:
-    NumbersSource(UInt64 block_size_, UInt64 offset_, std::optional<UInt64> limit_, UInt64 chunk_step_, const std::string & column_name, UInt64 step_)
+    NumbersSource(
+        UInt64 block_size_,
+        UInt64 offset_,
+        std::optional<UInt64> end_,
+        const std::string & column_name,
+        UInt64 step_in_chunk_,
+        UInt64 step_between_chunks_)
         : ISource(createHeader(column_name))
         , block_size(block_size_)
         , next(offset_)
-        , chunk_step(chunk_step_)
-        , step(step_)
+        , end(end_)
+        , step_in_chunk(step_in_chunk_)
+        , step_between_chunks(step_between_chunks_)
     {
-        if (limit_.has_value())
-            end = limit_.value() + offset_;
     }
     String getName() const override { return "Numbers"; }
 
@@ -63,7 +78,10 @@ protected:
         {
             if (end.value() <= next)
                 return {};
-            real_block_size = std::min(block_size, end.value() - next);
+
+            auto max_items_to_generate = itemCountInRange(next, *end, step_in_chunk);
+
+            real_block_size = std::min(block_size, max_items_to_generate);
         }
         auto column = ColumnUInt64::create(real_block_size);
         ColumnUInt64::Container & vec = column->getData();
@@ -73,21 +91,20 @@ protected:
 
         UInt64 * current_end = &vec[real_block_size];
 
-        iotaWithStepOptimized(pos, static_cast<size_t>(current_end - pos), curr, step);
+        iotaWithStepOptimized(pos, static_cast<size_t>(current_end - pos), curr, step_in_chunk);
 
-        next += chunk_step;
+        next += step_between_chunks;
 
         progress(column->size(), column->byteSize());
-
         return {Columns{std::move(column)}, real_block_size};
     }
 
 private:
     UInt64 block_size;
     UInt64 next;
-    UInt64 chunk_step;
     std::optional<UInt64> end; /// not included
-    UInt64 step;
+    UInt64 step_in_chunk;
+    UInt64 step_between_chunks;
 };
 
 struct RangeWithStep
@@ -550,39 +567,45 @@ Pipe ReadFromSystemNumbersStep::makePipe()
         return pipe;
     }
 
+    const auto end = std::invoke(
+        [&]() -> std::optional<UInt64>
+        {
+            if (numbers_storage.limit.has_value())
+                return *(numbers_storage.limit) + numbers_storage.offset;
+            return {};
+        });
+
     /// Fall back to NumbersSource
+    /// Range in a single block
+    const auto block_range = max_block_size * numbers_storage.step;
+    /// Step between chunks in a single source.
+    /// It is bigger than block_range in case of multiple threads, because we have to account for other sources as well.
+    const auto step_between_chunks = num_streams * block_range;
     for (size_t i = 0; i < num_streams; ++i)
     {
+        const auto source_offset = i * block_range;
+        if (numbers_storage.limit.has_value() && *numbers_storage.limit < source_offset)
+            break;
+
+        const auto source_start = numbers_storage.offset + source_offset;
+
         auto source = std::make_shared<NumbersSource>(
             max_block_size,
-            numbers_storage.offset + i * max_block_size * numbers_storage.step,
-            numbers_storage.limit,
-            num_streams * max_block_size * numbers_storage.step,
+            source_start,
+            end,
             numbers_storage.column_name,
-            numbers_storage.step);
+            numbers_storage.step,
+            step_between_chunks);
 
         if (numbers_storage.limit && i == 0)
         {
-            auto rows_appr = (*numbers_storage.limit - 1) / numbers_storage.step + 1;
+            auto rows_appr = itemCountInRange(numbers_storage.offset, *numbers_storage.limit, numbers_storage.step);
             if (limit > 0 && limit < rows_appr)
                 rows_appr = limit;
             source->addTotalRowsApprox(rows_appr);
         }
 
         pipe.addSource(std::move(source));
-    }
-
-    if (numbers_storage.limit)
-    {
-        size_t i = 0;
-        auto storage_limit = (*numbers_storage.limit - 1) / numbers_storage.step + 1;
-        /// This formula is how to split 'limit' elements to 'num_streams' chunks almost uniformly.
-        pipe.addSimpleTransform(
-            [&](const Block & header)
-            {
-                ++i;
-                return std::make_shared<LimitTransform>(header, storage_limit * i / num_streams - storage_limit * (i - 1) / num_streams, 0);
-            });
     }
 
     return pipe;
