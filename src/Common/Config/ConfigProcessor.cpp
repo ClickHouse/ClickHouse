@@ -18,7 +18,7 @@
 #include <Poco/NumberParser.h>
 #include <Common/ZooKeeper/ZooKeeperNodeCache.h>
 #include <Common/ZooKeeper/KeeperException.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/Exception.h>
 #include <Common/XMLUtils.h>
 #include <Common/logger_useful.h>
@@ -316,7 +316,6 @@ void ConfigProcessor::mergeRecursive(XMLDocumentPtr config, Node * config_root, 
                 }
                 else if (replace)
                 {
-                    with_element.removeAttribute("replace");
                     NodePtr new_node = config->importNode(with_node, true);
                     config_root->replaceChild(new_node, config_node);
                 }
@@ -427,6 +426,8 @@ void ConfigProcessor::doIncludesRecursive(
 
     /// Replace the original contents, not add to it.
     bool replace = attributes->getNamedItem("replace");
+    /// Merge with the original contents
+    bool merge = attributes->getNamedItem("merge");
 
     bool included_something = false;
 
@@ -450,7 +451,6 @@ void ConfigProcessor::doIncludesRecursive(
         }
         else
         {
-            /// Replace the whole node not just contents.
             if (node->nodeName() == "include")
             {
                 const NodeListPtr children = node_to_include->childNodes();
@@ -458,8 +458,18 @@ void ConfigProcessor::doIncludesRecursive(
                 for (Node * child = children->item(0); child; child = next_child)
                 {
                     next_child = child->nextSibling();
-                    NodePtr new_node = config->importNode(child, true);
-                    node->parentNode()->insertBefore(new_node, node);
+
+                    /// Recursively replace existing nodes in merge mode
+                    if (merge)
+                    {
+                        NodePtr new_node = config->importNode(child->parentNode(), true);
+                        mergeRecursive(config, node->parentNode(), new_node);
+                    }
+                    else  /// Append to existing node by default
+                    {
+                        NodePtr new_node = config->importNode(child, true);
+                        node->parentNode()->insertBefore(new_node, node);
+                    }
                 }
 
                 node->parentNode()->removeChild(node);
@@ -720,8 +730,20 @@ XMLDocumentPtr ConfigProcessor::processConfig(
         {
             LOG_DEBUG(log, "Including configuration file '{}'.", include_from_path);
 
+            fs::path p(include_from_path);
+            std::string extension = p.extension();
+            boost::algorithm::to_lower(extension);
+
+            if (extension == ".yaml" || extension == ".yml")
+            {
+                include_from = YAMLParser::parse(include_from_path);
+            }
+            else
+            {
+                include_from = dom_parser.parse(include_from_path);
+            }
+
             contributing_files.push_back(include_from_path);
-            include_from = dom_parser.parse(include_from_path);
         }
 
         doIncludesRecursive(config, include_from, getRootNode(config.get()), zk_node_cache, zk_changed_event, contributing_zk_paths);
@@ -777,9 +799,9 @@ ConfigProcessor::LoadedConfig ConfigProcessor::loadConfig(bool allow_zk_includes
 }
 
 ConfigProcessor::LoadedConfig ConfigProcessor::loadConfigWithZooKeeperIncludes(
-        zkutil::ZooKeeperNodeCache & zk_node_cache,
-        const zkutil::EventPtr & zk_changed_event,
-        bool fallback_to_preprocessed)
+    zkutil::ZooKeeperNodeCache & zk_node_cache,
+    const zkutil::EventPtr & zk_changed_event,
+    bool fallback_to_preprocessed)
 {
     XMLDocumentPtr config_xml;
     bool has_zk_includes;

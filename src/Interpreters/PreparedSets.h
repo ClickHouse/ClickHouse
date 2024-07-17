@@ -108,6 +108,8 @@ public:
         QueryTreeNodePtr query_tree_,
         const Settings & settings);
 
+    ~FutureSetFromSubquery() override;
+
     SetPtr get() const override;
     DataTypes getTypes() const override;
     SetPtr buildOrderedSetInplace(const ContextPtr & context) override;

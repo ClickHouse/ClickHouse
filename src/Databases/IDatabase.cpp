@@ -1,11 +1,12 @@
 #include <memory>
 #include <Databases/IDatabase.h>
-#include <Storages/IStorage.h>
-#include <Parsers/ASTCreateQuery.h>
-#include <Common/quoteString.h>
 #include <Interpreters/DatabaseCatalog.h>
-#include <Common/NamePrompter.h>
+#include <Interpreters/TableNameHints.h>
+#include <Parsers/ASTCreateQuery.h>
+#include <Storages/IStorage.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/NamePrompter.h>
+#include <Common/quoteString.h>
 
 
 namespace CurrentMetrics

@@ -22,7 +22,7 @@ void protectMemoryRegion(void * addr, size_t len, int prot)
 }
 #endif
 
-size_t byte_size(size_t num_elements, size_t element_size)
+ALWAYS_INLINE size_t byte_size(size_t num_elements, size_t element_size)
 {
     size_t amount;
     if (__builtin_mul_overflow(num_elements, element_size, &amount))
@@ -30,7 +30,7 @@ size_t byte_size(size_t num_elements, size_t element_size)
     return amount;
 }
 
-size_t minimum_memory_for_elements(size_t num_elements, size_t element_size, size_t pad_left, size_t pad_right)
+ALWAYS_INLINE size_t minimum_memory_for_elements(size_t num_elements, size_t element_size, size_t pad_left, size_t pad_right)
 {
     size_t amount;
     if (__builtin_add_overflow(byte_size(num_elements, element_size), pad_left + pad_right, &amount))

@@ -28,7 +28,7 @@ constexpr char str_false[6] = "false";
 const ColumnUInt8 * checkAndGetSerializeColumnType(const IColumn & column)
 {
     const auto * col = checkAndGetColumn<ColumnUInt8>(&column);
-    if (!checkAndGetColumn<ColumnUInt8>(&column))
+    if (!col)
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Bool type can only serialize columns of type UInt8.{}", column.getName());
     return col;
 }
@@ -36,7 +36,7 @@ const ColumnUInt8 * checkAndGetSerializeColumnType(const IColumn & column)
 ColumnUInt8 * checkAndGetDeserializeColumnType(IColumn & column)
 {
     auto * col =  typeid_cast<ColumnUInt8 *>(&column);
-    if (!checkAndGetColumn<ColumnUInt8>(&column))
+    if (!col)
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Bool type can only deserialize columns of type UInt8.{}",
                         column.getName());
     return col;
@@ -194,12 +194,12 @@ ReturnType deserializeImpl(
         buf.dropCheckpoint();
         if (buf.hasUnreadData())
         {
+            restore_column_if_needed();
             if constexpr (throw_exception)
                 throw Exception(
                     ErrorCodes::CANNOT_PARSE_BOOL,
                     "Cannot continue parsing after parsed bool value because it will result in the loss of some data. It may happen if "
                     "bool_true_representation or bool_false_representation contains some delimiters of input format");
-            restore_column_if_needed();
             return ReturnType(false);
         }
         return ReturnType(true);
@@ -242,8 +242,10 @@ void SerializationBool::deserializeTextEscaped(IColumn & column, ReadBuffer & is
 {
     if (istr.eof())
         throw Exception(ErrorCodes::CANNOT_PARSE_BOOL, "Expected boolean value but get EOF.");
-
-    deserializeImpl(column, istr, settings, [](ReadBuffer & buf){ return buf.eof() || *buf.position() == '\t' || *buf.position() == '\n'; });
+    if (settings.tsv.crlf_end_of_line_input)
+        deserializeImpl(column, istr, settings, [](ReadBuffer & buf){ return buf.eof() || *buf.position() == '\t' || *buf.position() == '\n' || *buf.position() == '\r'; });
+    else
+        deserializeImpl(column, istr, settings, [](ReadBuffer & buf){ return buf.eof() || *buf.position() == '\t' || *buf.position() == '\n'; });
 }
 
 bool SerializationBool::tryDeserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const

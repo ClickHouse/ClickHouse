@@ -479,7 +479,7 @@ ASTPtr StorageMaterializedPostgreSQL::getCreateNestedTableQuery(
                     ASTPtr result;
 
                     Tokens tokens(attr.attr_def.data(), attr.attr_def.data() + attr.attr_def.size());
-                    IParser::Pos pos(tokens, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+                    IParser::Pos pos(tokens, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
                     if (!expr_parser.parse(pos, result, expected))
                     {
                         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failed to parse default expression: {}", attr.attr_def);
@@ -592,7 +592,8 @@ void registerStorageMaterializedPostgreSQL(StorageFactory & factory)
         auto configuration = StoragePostgreSQL::getConfiguration(args.engine_args, args.getContext());
         auto connection_info = postgres::formatConnectionString(
             configuration.database, configuration.host, configuration.port,
-            configuration.username, configuration.password);
+            configuration.username, configuration.password,
+            args.getContext()->getSettingsRef().postgresql_connection_attempt_timeout);
 
         bool has_settings = args.storage_def->settings;
         auto postgresql_replication_settings = std::make_unique<MaterializedPostgreSQLSettings>();

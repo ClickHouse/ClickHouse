@@ -8,13 +8,13 @@ node1 = cluster.add_instance(
     "node1",
     main_configs=["configs/clusters.xml"],
     with_zookeeper=True,
-    allow_analyzer=False,
+    use_old_analyzer=True,
 )
 node2 = cluster.add_instance(
     "node2",
     main_configs=["configs/clusters.xml"],
     with_zookeeper=True,
-    allow_analyzer=False,
+    use_old_analyzer=True,
 )
 
 

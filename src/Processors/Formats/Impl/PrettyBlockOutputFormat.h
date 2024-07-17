@@ -48,7 +48,7 @@ protected:
 
     void writeValueWithPadding(
         const IColumn & column, const ISerialization & serialization, size_t row_num,
-        size_t value_width, size_t pad_to_width, bool align_right);
+        size_t value_width, size_t pad_to_width, size_t cut_to_width, bool align_right, bool is_number);
 
     void resetFormatterImpl() override
     {
@@ -74,7 +74,8 @@ void registerPrettyFormatWithNoEscapesAndMonoBlock(FormatFactory & factory, cons
             const Block & sample,
             const FormatSettings & format_settings)
         {
-            bool color = !no_escapes && format_settings.pretty.color.valueOr(format_settings.is_writing_to_terminal);
+            bool color = !no_escapes
+                    && (format_settings.pretty.color == 1 || (format_settings.pretty.color == 2 && format_settings.is_writing_to_terminal));
             return std::make_shared<OutputFormat>(buf, sample, format_settings, mono_block, color);
         });
         if (!mono_block)

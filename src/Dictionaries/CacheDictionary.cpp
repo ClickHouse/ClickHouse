@@ -9,7 +9,7 @@
 #include <Common/ProfilingScopedRWLock.h>
 
 #include <Dictionaries/DictionarySource.h>
-#include <Dictionaries/DictionarySourceHelpers.h>
+#include <Dictionaries/DictionaryPipelineExecutor.h>
 #include <Dictionaries/HierarchyDictionariesUtils.h>
 
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -308,7 +308,7 @@ ColumnUInt8::Ptr CacheDictionary<dictionary_key_type>::hasKeys(const Columns & k
         /// Write lock on storage
         const ProfilingScopedWriteRWLock write_lock{rw_lock, ProfileEvents::DictCacheLockWriteNs};
 
-        result_of_fetch_from_storage = cache_storage_ptr->fetchColumnsForKeys(keys, request);
+        result_of_fetch_from_storage = cache_storage_ptr->fetchColumnsForKeys(keys, request, /*default_mask*/ nullptr);
     }
 
     size_t found_keys_size = result_of_fetch_from_storage.found_keys_size;
@@ -423,7 +423,7 @@ MutableColumns CacheDictionary<dictionary_key_type>::aggregateColumnsInOrderOfKe
     const DictionaryStorageFetchRequest & request,
     const MutableColumns & fetched_columns,
     const PaddedPODArray<KeyState> & key_index_to_state,
-    IColumn::Filter * const default_mask) const
+    IColumn::Filter * default_mask) const
 {
     MutableColumns aggregated_columns = request.makeAttributesResultColumns();
 
@@ -450,7 +450,10 @@ MutableColumns CacheDictionary<dictionary_key_type>::aggregateColumnsInOrderOfKe
             if (default_mask)
             {
                 if (state.isDefault())
+                {
                     (*default_mask)[key_index] = 1;
+                    aggregated_column->insertDefault();
+                }
                 else
                 {
                     (*default_mask)[key_index] = 0;
@@ -473,7 +476,7 @@ MutableColumns CacheDictionary<dictionary_key_type>::aggregateColumns(
         const PaddedPODArray<KeyState> & key_index_to_fetched_columns_from_storage_result,
         const MutableColumns & fetched_columns_during_update,
         const HashMap<KeyType, size_t> & found_keys_to_fetched_columns_during_update_index,
-        IColumn::Filter * const default_mask) const
+        IColumn::Filter * default_mask) const
 {
     /**
     * Aggregation of columns fetched from storage and from source during update.
@@ -508,7 +511,10 @@ MutableColumns CacheDictionary<dictionary_key_type>::aggregateColumns(
                 if (default_mask)
                 {
                     if (key_state_from_storage.isDefault())
+                    {
                         (*default_mask)[key_index] = 1;
+                        aggregated_column->insertDefault();
+                    }
                     else
                     {
                         (*default_mask)[key_index] = 0;
@@ -536,7 +542,10 @@ MutableColumns CacheDictionary<dictionary_key_type>::aggregateColumns(
             }
 
             if (default_mask)
+            {
+                aggregated_column->insertDefault(); /// Any default is ok
                 (*default_mask)[key_index] = 1;
+            }
             else
             {
                 /// Insert default value

@@ -7,6 +7,7 @@
 #include <DataTypes/DataTypeFactory.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <AggregateFunctions/IAggregateFunction.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -162,6 +163,19 @@ static std::pair<DataTypePtr, DataTypeCustomDescPtr> create(const ASTPtr & argum
     DataTypeCustomNamePtr custom_name = std::make_unique<DataTypeCustomSimpleAggregateFunction>(function, argument_types, params_row);
 
     return std::make_pair(storage_type, std::make_unique<DataTypeCustomDesc>(std::move(custom_name), nullptr));
+}
+
+String DataTypeCustomSimpleAggregateFunction::getFunctionName() const
+{
+    return function->getName();
+}
+
+DataTypePtr createSimpleAggregateFunctionType(const AggregateFunctionPtr & function, const DataTypes & argument_types, const Array & parameters)
+{
+    auto custom_desc = std::make_unique<DataTypeCustomDesc>(
+        std::make_unique<DataTypeCustomSimpleAggregateFunction>(function, argument_types, parameters));
+
+    return DataTypeFactory::instance().getCustom(std::move(custom_desc));
 }
 
 void registerDataTypeDomainSimpleAggregateFunction(DataTypeFactory & factory)

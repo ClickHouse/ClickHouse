@@ -5,7 +5,6 @@
 #if USE_ODBC
 
 #include <Interpreters/Context_fwd.h>
-#include <Interpreters/Context.h>
 #include <Server/HTTP/HTTPRequestHandler.h>
 #include <Poco/Logger.h>
 

@@ -2,6 +2,7 @@
 
 #if USE_ODBC
 
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
@@ -12,6 +13,7 @@
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>
 #include <Poco/NumberParser.h>
+#include <Interpreters/Context.h>
 #include <Common/logger_useful.h>
 #include <Common/BridgeProtocolVersion.h>
 #include <Common/quoteString.h>

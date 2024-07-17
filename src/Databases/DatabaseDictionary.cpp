@@ -10,6 +10,7 @@
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/IAST.h>
+#include <Core/Settings.h>
 
 
 namespace DB
@@ -80,7 +81,7 @@ StoragePtr DatabaseDictionary::tryGetTable(const String & table_name, ContextPtr
     return createStorageDictionary(getDatabaseName(), load_result, getContext());
 }
 
-DatabaseTablesIteratorPtr DatabaseDictionary::getTablesIterator(ContextPtr, const FilterByNameFunction & filter_by_table_name) const
+DatabaseTablesIteratorPtr DatabaseDictionary::getTablesIterator(ContextPtr, const FilterByNameFunction & filter_by_table_name, bool /* skip_not_loaded */) const
 {
     return std::make_unique<DatabaseTablesSnapshotIterator>(listTables(filter_by_table_name), getDatabaseName());
 }
@@ -115,7 +116,7 @@ ASTPtr DatabaseDictionary::getCreateTableQueryImpl(const String & table_name, Co
     const char * pos = query.data();
     std::string error_message;
     auto ast = tryParseQuery(parser, pos, pos + query.size(), error_message,
-            /* hilite = */ false, "", /* allow_multi_statements = */ false, 0, settings.max_parser_depth);
+        /* hilite = */ false, "", /* allow_multi_statements = */ false, 0, settings.max_parser_depth, settings.max_parser_backtracks, true);
 
     if (!ast && throw_on_error)
         throw Exception::createDeprecated(error_message, ErrorCodes::SYNTAX_ERROR);
@@ -134,7 +135,7 @@ ASTPtr DatabaseDictionary::getCreateDatabaseQuery() const
     }
     auto settings = getContext()->getSettingsRef();
     ParserCreateQuery parser;
-    return parseQuery(parser, query.data(), query.data() + query.size(), "", 0, settings.max_parser_depth);
+    return parseQuery(parser, query.data(), query.data() + query.size(), "", 0, settings.max_parser_depth, settings.max_parser_backtracks);
 }
 
 void DatabaseDictionary::shutdown()

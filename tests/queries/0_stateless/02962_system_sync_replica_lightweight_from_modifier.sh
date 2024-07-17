@@ -14,7 +14,7 @@ export REPLICAS_TO_DROP
 
 for i in $(seq $TOTAL_REPLICAS); do
     $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS test_table_$i"
-    $CLICKHOUSE_CLIENT --query "CREATE TABLE test_table_$i (key UInt64, value UInt8) ENGINE = ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/test_table', '$i') ORDER BY key"
+    $CLICKHOUSE_CLIENT --query "CREATE TABLE test_table_$i (key UInt64, value UInt8) ENGINE = ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/test_table', '$i') ORDER BY key SETTINGS old_parts_lifetime=1"
 done
 
 function insert_thread() {
@@ -35,7 +35,7 @@ function sync_and_drop_replicas() {
         done
 
         for i in $(seq $REPLICAS_TO_DROP); do
-            $CLICKHOUSE_CLIENT --query "CREATE TABLE test_table_$i (key UInt64, value UInt8) ENGINE = ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/test_table', '$i') ORDER BY key"
+            $CLICKHOUSE_CLIENT --query "CREATE TABLE test_table_$i (key UInt64, value UInt8) ENGINE = ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/test_table', '$i') ORDER BY key SETTINGS old_parts_lifetime=1"
         done
     done
 }
@@ -62,7 +62,7 @@ export -f sync_and_drop_replicas
 export -f optimize_thread
 export -f mutations_thread
 
-TIMEOUT=60
+TIMEOUT=30
 
 timeout $TIMEOUT bash -c insert_thread 2> /dev/null &
 timeout $TIMEOUT bash -c sync_and_drop_replicas 2> /dev/null &

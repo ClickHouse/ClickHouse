@@ -478,7 +478,7 @@ static void createInformationSchemaView(ContextMutablePtr context, IDatabase & d
         ParserCreateQuery parser;
         ASTPtr ast = parseQuery(parser, query.data(), query.data() + query.size(),
                                 "Attach query from embedded resource " + metadata_resource_name,
-                                DBMS_DEFAULT_MAX_QUERY_SIZE, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+                                DBMS_DEFAULT_MAX_QUERY_SIZE, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
 
         auto & ast_create = ast->as<ASTCreateQuery &>();
         assert(view_name == ast_create.getTable());

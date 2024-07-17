@@ -101,7 +101,7 @@ ColumnsDescription PartLogElement::getColumnsDescription()
             "Can have one of the following values: "
             "NewPart — Inserting of a new data part, "
             "MergeParts — Merging of data parts, "
-            "DownloadParts — Downloading a data part, "
+            "DownloadPart — Downloading a data part, "
             "RemovePart — Removing or detaching a data part using DETACH PARTITION, "
             "MutatePart — Mutating of a data part, "
             "MovePart — Moving the data part from the one disk to another one."},

@@ -68,6 +68,9 @@ public:
     /// For backward compatibility with config settings
     CompressionCodecPtr get(const String & family_name, std::optional<int> level) const;
 
+    /// Get codec by name with optional params. Example: LZ4, ZSTD(3)
+    CompressionCodecPtr get(const String & compression_codec) const;
+
     /// Register codec with parameters and column type
     void registerCompressionCodecWithType(const String & family_name, std::optional<uint8_t> byte_code, CreatorWithType creator);
     /// Register codec with parameters

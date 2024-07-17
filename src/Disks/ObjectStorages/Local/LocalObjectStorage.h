@@ -58,6 +58,10 @@ public:
 
     ObjectMetadata getObjectMetadata(const std::string & path) const override;
 
+    void listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const override;
+
+    bool existsOrHasAnyChild(const std::string & path) const override;
+
     void copyObject( /// NOLINT
         const StoredObject & object_from,
         const StoredObject & object_to,
@@ -68,11 +72,6 @@ public:
     void shutdown() override;
 
     void startup() override;
-
-    void applyNewSettings(
-        const Poco::Util::AbstractConfiguration & config,
-        const std::string & config_prefix,
-        ContextPtr context) override;
 
     String getObjectsNamespace() const override { return ""; }
 

@@ -4,6 +4,7 @@
 
 #include <Common/Exception.h>
 #include <Common/CurrentThread.h>
+#include <Core/Settings.h>
 
 #include <Poco/String.h>
 
@@ -47,6 +48,18 @@ void FunctionFactory::registerFunction(
                 name);
         case_insensitive_name_mapping[function_name_lowercase] = name;
     }
+}
+
+void FunctionFactory::registerFunction(
+    const std::string & name,
+    FunctionSimpleCreator creator,
+    FunctionDocumentation doc,
+    CaseSensitiveness case_sensitiveness)
+{
+    registerFunction(name, [my_creator = std::move(creator)](ContextPtr context)
+    {
+        return std::make_unique<FunctionToOverloadResolverAdaptor>(my_creator(context));
+    }, std::move(doc), std::move(case_sensitiveness));
 }
 
 

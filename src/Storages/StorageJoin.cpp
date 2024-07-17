@@ -2,7 +2,7 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageSet.h>
 #include <Storages/TableLockHolder.h>
-#include <Interpreters/HashJoin.h>
+#include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTIdentifier_fwd.h>
@@ -15,7 +15,9 @@
 #include <Common/quoteString.h>
 #include <Common/Exception.h>
 #include <Core/ColumnsWithTypeAndName.h>
+#include <Core/Settings.h>
 #include <Interpreters/JoinUtils.h>
+#include <Formats/NativeWriter.h>
 
 #include <Compression/CompressedWriteBuffer.h>
 #include <Processors/ISource.h>
@@ -24,6 +26,7 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Poco/String.h>
 #include <filesystem>
+
 
 namespace fs = std::filesystem;
 
@@ -393,10 +396,13 @@ void registerStorageJoin(StorageFactory & factory)
             else if (kind_str == "full")
             {
                 if (strictness == JoinStrictness::Any)
-                    strictness = JoinStrictness::RightAny;
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ANY FULL JOINs are not implemented");
                 kind = JoinKind::Full;
             }
         }
+
+        if ((strictness == JoinStrictness::Semi || strictness == JoinStrictness::Anti) && (kind != JoinKind::Left && kind != JoinKind::Right))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, " SEMI|ANTI JOIN should be LEFT or RIGHT");
 
         if (kind == JoinKind::Comma)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second parameter of storage Join must be LEFT or INNER or RIGHT or FULL (without quotes).");

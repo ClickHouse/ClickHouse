@@ -5,7 +5,15 @@ FROM ubuntu:22.04
 ARG apt_archive="http://archive.ubuntu.com"
 RUN sed -i "s|http://archive.ubuntu.com|$apt_archive|g" /etc/apt/sources.list
 
-ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=17
+# FIXME: rebuild for clang 18.1.3, that contains a workaround [1] for
+# sanitizers issue [2]:
+#
+# $ git tag --contains  c2a57034eff048cd36c563c8e0051db3a70991b3 | tail -1
+# llvmorg-18.1.3
+#
+#  [1]: https://github.com/llvm/llvm-project/commit/c2a57034eff048cd36c563c8e0051db3a70991b3
+#  [2]: https://github.com/ClickHouse/ClickHouse/issues/64086
+ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=18
 
 RUN apt-get update \
     && apt-get install \
@@ -26,6 +34,8 @@ RUN apt-get update \
     && export CODENAME="$(lsb_release --codename --short | tr 'A-Z' 'a-z')" \
     && echo "deb https://apt.llvm.org/${CODENAME}/ llvm-toolchain-${CODENAME}-${LLVM_VERSION} main" >> \
         /etc/apt/sources.list \
+    && apt-get update \
+    && apt-get install --yes --no-install-recommends --verbose-versions llvm-${LLVM_VERSION} \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 

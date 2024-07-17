@@ -7,6 +7,12 @@
             <disk2>
                 <path>/var/lib/clickhouse2/</path>
             </disk2>
+            <disk3>
+                <type>s3_plain_rewritable</type>
+                <endpoint>http://minio1:9001/root/data/</endpoint>
+                <access_key_id>minio</access_key_id>
+                <secret_access_key>minio123</secret_access_key>
+            </disk3>
         </disks>
         <policies>
             <policy1>
@@ -23,6 +29,13 @@
                     </volume1>
                 </volumes>
             </policy2>
+            <s3_plain_rewritable>
+                <volumes>
+                    <volume1>
+                        <disk>disk3</disk>
+                    </volume1>
+                </volumes>
+            </s3_plain_rewritable>
         </policies>
     </storage_configuration>
 </clickhouse>

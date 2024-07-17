@@ -3,19 +3,16 @@
 #include <Core/ColumnNumbers.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/Field.h>
-#include <Core/ValuesWithType.h>
-#include <Core/Names.h>
 #include <Core/IResolvedFunction.h>
-#include <Common/Exception.h>
+#include <Core/Names.h>
+#include <Core/ValuesWithType.h>
 #include <DataTypes/IDataType.h>
+#include <Functions/FunctionHelpers.h>
+#include <Common/Exception.h>
 
 #include "config.h"
 
 #include <memory>
-
-#if USE_EMBEDDED_COMPILER
-#    include <Core/ValuesWithType.h>
-#endif
 
 /// This file contains user interface for functions.
 
@@ -137,8 +134,12 @@ public:
     ~IFunctionBase() override = default;
 
     virtual ColumnPtr execute( /// NOLINT
-        const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run = false) const
+        const ColumnsWithTypeAndName & arguments,
+        const DataTypePtr & result_type,
+        size_t input_rows_count,
+        bool dry_run = false) const
     {
+        checkFunctionArgumentSizes(arguments, input_rows_count);
         return prepare(arguments)->execute(arguments, result_type, input_rows_count, dry_run);
     }
 
@@ -228,6 +229,17 @@ public:
     virtual bool isDeterministic() const { return true; }
 
     virtual bool isDeterministicInScopeOfQuery() const { return true; }
+
+    /** This is a special flags for functions which return constant value for the server,
+      * but the result could be different for different servers in distributed query.
+      *
+      * This functions can't support constant folding on the initiator, but can on the follower.
+      * We can't apply some optimizations as well (e.g. can't remove constant result from GROUP BY key).
+      * So, it is convenient to have a special flag for them.
+      *
+      * Examples are: "__getScalar" and every function from serverConstants.cpp
+      */
+    virtual bool isServerConstant() const { return false; }
 
     /** Lets you know if the function is monotonic in a range of values.
       * This is used to work with the index in a sorted chunk of data.
@@ -487,6 +499,7 @@ public:
     virtual bool isInjective(const ColumnsWithTypeAndName & /*sample_columns*/) const { return false; }
     virtual bool isDeterministic() const { return true; }
     virtual bool isDeterministicInScopeOfQuery() const { return true; }
+    virtual bool isServerConstant() const { return false; }
     virtual bool isStateful() const { return false; }
 
     using ShortCircuitSettings = IFunctionBase::ShortCircuitSettings;

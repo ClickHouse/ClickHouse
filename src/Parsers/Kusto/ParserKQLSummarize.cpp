@@ -192,10 +192,10 @@ bool ParserKQLSummarize::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             expr_columns = expr_columns + "," + expr_aggregation;
     }
 
-    String converted_columns = getExprFromToken(expr_columns, pos.max_depth);
+    String converted_columns = getExprFromToken(expr_columns, pos.max_depth, pos.max_backtracks);
 
-    Tokens token_converted_columns(converted_columns.c_str(), converted_columns.c_str() + converted_columns.size());
-    IParser::Pos pos_converted_columns(token_converted_columns, pos.max_depth);
+    Tokens token_converted_columns(converted_columns.data(), converted_columns.data() + converted_columns.size(), 0, true);
+    IParser::Pos pos_converted_columns(token_converted_columns, pos.max_depth, pos.max_backtracks);
 
     if (!ParserNotEmptyExpressionList(true).parse(pos_converted_columns, select_expression_list, expected))
         return false;
@@ -204,10 +204,10 @@ bool ParserKQLSummarize::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
     if (groupby)
     {
-        String converted_groupby = getExprFromToken(expr_groupby, pos.max_depth);
+        String converted_groupby = getExprFromToken(expr_groupby, pos.max_depth, pos.max_backtracks);
 
-        Tokens token_converted_groupby(converted_groupby.c_str(), converted_groupby.c_str() + converted_groupby.size());
-        IParser::Pos postoken_converted_groupby(token_converted_groupby, pos.max_depth);
+        Tokens token_converted_groupby(converted_groupby.data(), converted_groupby.data() + converted_groupby.size(), 0, true);
+        IParser::Pos postoken_converted_groupby(token_converted_groupby, pos.max_depth, pos.max_backtracks);
 
         if (!ParserNotEmptyExpressionList(false).parse(postoken_converted_groupby, group_expression_list, expected))
             return false;

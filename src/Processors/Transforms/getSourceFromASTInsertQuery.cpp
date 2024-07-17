@@ -1,5 +1,6 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterSetQuery.h>
 #include <IO/ConcatReadBuffer.h>
 #include <IO/ReadBufferFromMemory.h>
@@ -13,7 +14,8 @@
 #include <QueryPipeline/Pipe.h>
 #include <Processors/Formats/IInputFormat.h>
 #include "IO/CompressionMethod.h"
-#include "Parsers/ASTLiteral.h"
+#include <Core/Settings.h>
+#include <Parsers/ASTLiteral.h>
 
 
 namespace DB

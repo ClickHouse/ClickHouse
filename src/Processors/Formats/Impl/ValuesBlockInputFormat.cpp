@@ -10,6 +10,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/checkStackSize.h>
 #include <Common/logger_useful.h>
+#include <Core/Settings.h>
 #include <Parsers/ASTLiteral.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -194,7 +195,7 @@ void ValuesBlockInputFormat::readUntilTheEndOfRowAndReTokenize(size_t current_co
     auto * row_end = buf->position();
     buf->rollbackToCheckpoint();
     tokens.emplace(buf->position(), row_end);
-    token_iterator.emplace(*tokens, static_cast<unsigned>(context->getSettingsRef().max_parser_depth));
+    token_iterator.emplace(*tokens, static_cast<unsigned>(context->getSettingsRef().max_parser_depth), static_cast<unsigned>(context->getSettingsRef().max_parser_backtracks));
     auto const & first = (*token_iterator).get();
     if (first.isError() || first.isEnd())
     {
@@ -418,7 +419,7 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
     {
         Expected expected;
         /// Keep a copy to the start of the column tokens to use if later if necessary
-        ti_start = IParser::Pos(*token_iterator, static_cast<unsigned>(settings.max_parser_depth));
+        ti_start = IParser::Pos(*token_iterator, static_cast<unsigned>(settings.max_parser_depth), static_cast<unsigned>(settings.max_parser_backtracks));
 
         parsed = parser.parse(*token_iterator, ast, expected);
 
@@ -572,9 +573,16 @@ bool ValuesBlockInputFormat::checkDelimiterAfterValue(size_t column_idx)
     skipWhitespaceIfAny(*buf);
 
     if (likely(column_idx + 1 != num_columns))
+    {
         return checkChar(',', *buf);
+    }
     else
+    {
+        /// Optional trailing comma.
+        if (checkChar(',', *buf))
+            skipWhitespaceIfAny(*buf);
         return checkChar(')', *buf);
+    }
 }
 
 bool ValuesBlockInputFormat::shouldDeduceNewTemplate(size_t column_idx)

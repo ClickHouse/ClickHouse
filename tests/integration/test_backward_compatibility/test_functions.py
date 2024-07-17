@@ -9,13 +9,12 @@ from helpers.cluster import ClickHouseCluster, CLICKHOUSE_CI_MIN_TESTED_VERSION
 from helpers.client import QueryRuntimeException
 
 cluster = ClickHouseCluster(__file__)
-upstream = cluster.add_instance("upstream", allow_analyzer=False)
+upstream = cluster.add_instance("upstream", use_old_analyzer=True)
 backward = cluster.add_instance(
     "backward",
     image="clickhouse/clickhouse-server",
     tag=CLICKHOUSE_CI_MIN_TESTED_VERSION,
     with_installed_binary=True,
-    allow_analyzer=False,
 )
 
 
@@ -90,7 +89,7 @@ def test_aggregate_states(start_cluster):
                 logging.info("Skipping %s", aggregate_function)
                 skipped += 1
                 continue
-            logging.exception("Failed %s", function)
+            logging.exception("Failed %s", aggregate_function)
             failed += 1
             continue
 
@@ -131,10 +130,13 @@ def test_string_functions(start_cluster):
     functions = map(lambda x: x.strip(), functions)
 
     excludes = [
+        # The argument of this function is not a seed, but an arbitrary expression needed for bypassing common subexpression elimination.
         "rand",
         "rand64",
         "randConstant",
+        "randCanonical",
         "generateUUIDv4",
+        "generateULID",
         # Syntax error otherwise
         "position",
         "substring",
@@ -154,6 +156,18 @@ def test_string_functions(start_cluster):
         "tryBase64Decode",
         # Removed in 23.9
         "meiliMatch",
+        # These functions require more than one argument.
+        "parseDateTimeInJodaSyntaxOrZero",
+        "parseDateTimeInJodaSyntaxOrNull",
+        "parseDateTimeOrNull",
+        "parseDateTimeOrZero",
+        "parseDateTime",
+        # The argument is effectively a disk name (and we don't have one with name foo)
+        "filesystemUnreserved",
+        "filesystemCapacity",
+        "filesystemAvailable",
+        # Exclude it for now. Looks like the result depends on the build type.
+        "farmHash64",
     ]
     functions = filter(lambda x: x not in excludes, functions)
 
@@ -206,6 +220,9 @@ def test_string_functions(start_cluster):
                 # Function X takes exactly one parameter:
                 # The function 'X' can only be used as a window function
                 "BAD_ARGUMENTS",
+                # String foo is obviously not a valid IP address.
+                "CANNOT_PARSE_IPV4",
+                "CANNOT_PARSE_IPV6",
             ]
             if any(map(lambda x: x in error_message, allowed_errors)):
                 logging.info("Skipping %s", function)

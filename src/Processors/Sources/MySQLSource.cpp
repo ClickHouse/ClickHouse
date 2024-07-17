@@ -2,7 +2,9 @@
 
 #if USE_MYSQL
 #include <vector>
+
 #include <Core/MySQL/MySQLReplication.h>
+#include <Core/Settings.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
@@ -241,8 +243,7 @@ namespace
                 ReadBufferFromString in(value);
                 time_t time = 0;
                 readDateTimeText(time, in, assert_cast<const DataTypeDateTime &>(data_type).getTimeZone());
-                if (time < 0)
-                    time = 0;
+                time = std::max<time_t>(time, 0);
                 assert_cast<ColumnUInt32 &>(column).insertValue(static_cast<UInt32>(time));
                 read_bytes_size += 4;
                 break;
@@ -275,7 +276,6 @@ namespace
                 /// 8 bytes for double-precision X coordinate
                 /// 8 bytes for double-precision Y coordinate
                 ReadBufferFromMemory payload(value.data(), value.size());
-                String val;
                 payload.ignore(4);
 
                 UInt8 endian;

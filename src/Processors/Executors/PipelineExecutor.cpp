@@ -12,6 +12,7 @@
 #include <Common/scope_guard_safe.h>
 #include <Common/Exception.h>
 #include <Common/OpenTelemetryTraceContext.h>
+#include <Core/Settings.h>
 
 #ifndef NDEBUG
     #include <Common/Stopwatch.h>
@@ -100,8 +101,7 @@ void PipelineExecutor::finish()
 void PipelineExecutor::execute(size_t num_threads, bool concurrency_control)
 {
     checkTimeLimit();
-    if (num_threads < 1)
-        num_threads = 1;
+    num_threads = std::max<size_t>(num_threads, 1);
 
     OpenTelemetry::SpanHolder span("PipelineExecutor::execute()");
     span.addAttribute("clickhouse.thread_num", num_threads);

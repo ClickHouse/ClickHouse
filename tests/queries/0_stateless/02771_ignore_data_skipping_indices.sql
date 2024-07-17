@@ -16,11 +16,11 @@ ORDER BY key;
 INSERT INTO data_02771 VALUES (1, 2, 3);
 
 SELECT * FROM data_02771;
-SELECT * FROM data_02771 SETTINGS ignore_data_skipping_indices=''; -- { serverError 6 }
+SELECT * FROM data_02771 SETTINGS ignore_data_skipping_indices=''; -- { serverError CANNOT_PARSE_TEXT }
 SELECT * FROM data_02771 SETTINGS ignore_data_skipping_indices='x_idx';
 SELECT * FROM data_02771 SETTINGS ignore_data_skipping_indices='na_idx';
 
-SELECT * FROM data_02771 WHERE x = 1 AND y = 1 SETTINGS ignore_data_skipping_indices='xy_idx',force_data_skipping_indices='xy_idx' ; -- { serverError 277 }
+SELECT * FROM data_02771 WHERE x = 1 AND y = 1 SETTINGS ignore_data_skipping_indices='xy_idx',force_data_skipping_indices='xy_idx' ; -- { serverError INDEX_NOT_USED }
 SELECT * FROM data_02771 WHERE x = 1 AND y = 2 SETTINGS ignore_data_skipping_indices='xy_idx';
 
 SET allow_experimental_analyzer = 0;

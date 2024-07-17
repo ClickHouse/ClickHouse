@@ -8,6 +8,7 @@
 #include <base/getFQDNOrHostName.h>
 #include <Poco/Net/TCPServerConnection.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/ProfileEvents.h>
 #include "IO/ReadBufferFromString.h"
 #include "IServer.h"
 
@@ -45,6 +46,8 @@ public:
         uint32_t connection_id_,
         const ProfileEvents::Event & read_event_ = ProfileEvents::end(),
         const ProfileEvents::Event & write_event_ = ProfileEvents::end());
+
+    ~MySQLHandler() override;
 
     void run() final;
 

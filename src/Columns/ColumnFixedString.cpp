@@ -5,6 +5,7 @@
 #include <IO/WriteHelpers.h>
 #include <Common/Arena.h>
 #include <Common/HashTable/Hash.h>
+#include <Common/HashTable/StringHashSet.h>
 #include <Common/SipHash.h>
 #include <Common/WeakHash.h>
 #include <Common/assert_cast.h>
@@ -73,7 +74,11 @@ bool ColumnFixedString::tryInsert(const Field & x)
     return true;
 }
 
+#if !defined(ABORT_ON_LOGICAL_ERROR)
 void ColumnFixedString::insertFrom(const IColumn & src_, size_t index)
+#else
+void ColumnFixedString::doInsertFrom(const IColumn & src_, size_t index)
+#endif
 {
     const ColumnFixedString & src = assert_cast<const ColumnFixedString &>(src_);
 
@@ -83,6 +88,24 @@ void ColumnFixedString::insertFrom(const IColumn & src_, size_t index)
     size_t old_size = chars.size();
     chars.resize(old_size + n);
     memcpySmallAllowReadWriteOverflow15(chars.data() + old_size, &src.chars[n * index], n);
+}
+
+#if !defined(ABORT_ON_LOGICAL_ERROR)
+void ColumnFixedString::insertManyFrom(const IColumn & src, size_t position, size_t length)
+#else
+void ColumnFixedString::doInsertManyFrom(const IColumn & src, size_t position, size_t length)
+#endif
+{
+    const ColumnFixedString & src_concrete = assert_cast<const ColumnFixedString &>(src);
+    if (n != src_concrete.getN())
+        throw Exception(ErrorCodes::SIZE_OF_FIXED_STRING_DOESNT_MATCH, "Size of FixedString doesn't match");
+
+    const size_t old_size = chars.size();
+    const size_t new_size = old_size + n * length;
+    chars.resize(new_size);
+
+    for (size_t offset = old_size; offset < new_size; offset += n)
+        memcpySmallAllowReadWriteOverflow15(&chars[offset], &src_concrete.chars[n * position], n);
 }
 
 void ColumnFixedString::insertData(const char * pos, size_t length)
@@ -186,7 +209,29 @@ void ColumnFixedString::updatePermutation(IColumn::PermutationSortDirection dire
         updatePermutationImpl(limit, res, equal_ranges, ComparatorDescendingStable(*this), comparator_equal, DefaultSort(), DefaultPartialSort());
 }
 
+size_t ColumnFixedString::estimateCardinalityInPermutedRange(const Permutation & permutation, const EqualRange & equal_range) const
+{
+    const size_t range_size = equal_range.size();
+    if (range_size <= 1)
+        return range_size;
+
+    /// TODO use sampling if the range is too large (e.g. 16k elements, but configurable)
+    StringHashSet elements;
+    bool inserted = false;
+    for (size_t i = equal_range.from; i < equal_range.to; ++i)
+    {
+        size_t permuted_i = permutation[i];
+        StringRef value = getDataAt(permuted_i);
+        elements.emplace(value, inserted);
+    }
+    return elements.size();
+}
+
+#if !defined(ABORT_ON_LOGICAL_ERROR)
 void ColumnFixedString::insertRangeFrom(const IColumn & src, size_t start, size_t length)
+#else
+void ColumnFixedString::doInsertRangeFrom(const IColumn & src, size_t start, size_t length)
+#endif
 {
     const ColumnFixedString & src_concrete = assert_cast<const ColumnFixedString &>(src);
     chassert(this->n == src_concrete.n);

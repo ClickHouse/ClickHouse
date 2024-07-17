@@ -7,6 +7,9 @@
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/QueryNode.h>
+#include <Analyzer/Utils.h>
+
+#include <Core/Settings.h>
 
 namespace DB
 {
@@ -29,7 +32,8 @@ NamesAndTypes extractProjectionColumnsForGroupBy(const QueryNode * query_node)
         return {};
 
     NamesAndTypes result;
-    for (const auto & group_by_ele : query_node->getGroupByNode()->getChildren())
+    const auto & group_by_elements = query_node->getGroupByNode()->getChildren();
+    for (const auto & group_by_element : group_by_elements)
     {
         const auto & projection_columns = query_node->getProjectionColumns();
         const auto & projection_nodes = query_node->getProjection().getNodes();
@@ -38,10 +42,18 @@ NamesAndTypes extractProjectionColumnsForGroupBy(const QueryNode * query_node)
 
         for (size_t i = 0; i < projection_columns.size(); i++)
         {
-            if (projection_nodes[i]->isEqual(*group_by_ele))
+            if (projection_nodes[i]->isEqual(*group_by_element))
+            {
                 result.push_back(projection_columns[i]);
+                break;
+            }
         }
     }
+    /// If some group by keys are not matched, we cannot apply optimization,
+    /// because prefix of group by keys may not be unique.
+    if (result.size() != group_by_elements.size())
+        return {};
+
     return result;
 }
 
@@ -175,11 +187,8 @@ public:
         /// Replace uniq of initial query to count
         if (match_subquery_with_distinct() || match_subquery_with_group_by())
         {
-            AggregateFunctionProperties properties;
-            auto aggregate_function = AggregateFunctionFactory::instance().get("count", NullsAction::EMPTY, {}, {}, properties);
-
             function_node->getArguments().getNodes().clear();
-            function_node->resolveAsAggregateFunction(std::move(aggregate_function));
+            resolveAggregateFunctionNodeByName(*function_node, "count");
         }
     }
 };

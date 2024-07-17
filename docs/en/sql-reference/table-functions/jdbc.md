@@ -6,6 +6,11 @@ sidebar_label: jdbc
 
 # jdbc
 
+:::note
+clickhouse-jdbc-bridge contains experimental codes and is no longer supported. It may contain reliability issues and security vulnerabilities. Use it at your own risk. 
+ClickHouse recommend using built-in table functions in ClickHouse which provide a better alternative for ad-hoc querying scenarios (Postgres, MySQL, MongoDB, etc).
+:::
+
 `jdbc(datasource, schema, table)` - returns table that is connected via JDBC driver.
 
 This table function requires separate [clickhouse-jdbc-bridge](https://github.com/ClickHouse/clickhouse-jdbc-bridge) program to be running.

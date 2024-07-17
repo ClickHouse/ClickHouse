@@ -1,7 +1,6 @@
 import os
-import pytest
-import shutil
 import time
+import pytest
 from helpers.cluster import ClickHouseCluster
 
 # Tests that sizes of in-memory caches (mark / uncompressed / index mark / index uncompressed / mmapped file / query cache) can be changed
@@ -95,15 +94,16 @@ CONFIG_DIR = os.path.join(SCRIPT_DIR, "configs")
 
 
 def test_query_cache_size_is_runtime_configurable(start_cluster):
-    # the inital config specifies the maximum query cache size as 2, run 3 queries, expect 2 cache entries
+    # the initial config specifies the maximum query cache size as 2, run 3 queries, expect 2 cache entries
     node.query("SYSTEM DROP QUERY CACHE")
     node.query("SELECT 1 SETTINGS use_query_cache = 1, query_cache_ttl = 1")
     node.query("SELECT 2 SETTINGS use_query_cache = 1, query_cache_ttl = 1")
     node.query("SELECT 3 SETTINGS use_query_cache = 1, query_cache_ttl = 1")
 
-    time.sleep(2.0)
+    time.sleep(2)
+    node.query("SYSTEM RELOAD ASYNCHRONOUS METRICS")
     res = node.query(
-        "SELECT value FROM system.asynchronous_metrics WHERE metric = 'QueryCacheEntries'"
+        "SELECT value FROM system.asynchronous_metrics WHERE metric = 'QueryCacheEntries'",
     )
     assert res == "2\n"
 
@@ -116,9 +116,10 @@ def test_query_cache_size_is_runtime_configurable(start_cluster):
     node.query("SYSTEM RELOAD CONFIG")
 
     # check that eviction worked as expected
-    time.sleep(2.0)
+    time.sleep(2)
+    node.query("SYSTEM RELOAD ASYNCHRONOUS METRICS")
     res = node.query(
-        "SELECT value FROM system.asynchronous_metrics WHERE metric = 'QueryCacheEntries'"
+        "SELECT value FROM system.asynchronous_metrics WHERE metric = 'QueryCacheEntries'",
     )
     assert (
         res == "2\n"
@@ -131,9 +132,11 @@ def test_query_cache_size_is_runtime_configurable(start_cluster):
     # check that the new query cache maximum size is respected when more queries run
     node.query("SELECT 4 SETTINGS use_query_cache = 1, query_cache_ttl = 1")
     node.query("SELECT 5 SETTINGS use_query_cache = 1, query_cache_ttl = 1")
-    time.sleep(2.0)
+
+    time.sleep(2)
+    node.query("SYSTEM RELOAD ASYNCHRONOUS METRICS")
     res = node.query(
-        "SELECT value FROM system.asynchronous_metrics WHERE metric = 'QueryCacheEntries'"
+        "SELECT value FROM system.asynchronous_metrics WHERE metric = 'QueryCacheEntries'",
     )
     assert res == "1\n"
 

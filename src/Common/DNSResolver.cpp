@@ -297,7 +297,7 @@ void DNSResolver::setDisableCacheFlag(bool is_disabled)
     impl->disable_cache = is_disabled;
 }
 
-void DNSResolver::setCacheMaxEntries(const UInt64 cache_max_entries)
+void DNSResolver::setCacheMaxEntries(UInt64 cache_max_entries)
 {
     impl->cache_address.setMaxSizeInBytes(cache_max_entries);
     impl->cache_host.setMaxSizeInBytes(cache_max_entries);

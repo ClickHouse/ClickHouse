@@ -5,6 +5,8 @@
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
+#include <Analyzer/Utils.h>
+#include <Core/Settings.h>
 #include <Functions/FunctionFactory.h>
 
 namespace DB
@@ -72,50 +74,35 @@ public:
 
         const auto lhs = std::make_shared<FunctionNode>("sum");
         lhs->getArguments().getNodes().push_back(func_plus_minus_nodes[column_id]);
-        resolveAsAggregateFunctionNode(*lhs, column_type);
+        resolveAggregateFunctionNodeByName(*lhs, lhs->getFunctionName());
 
         const auto rhs_count = std::make_shared<FunctionNode>("count");
         rhs_count->getArguments().getNodes().push_back(func_plus_minus_nodes[column_id]);
-        resolveAsAggregateFunctionNode(*rhs_count, column_type);
+        resolveAggregateFunctionNodeByName(*rhs_count, rhs_count->getFunctionName());
 
         const auto rhs = std::make_shared<FunctionNode>("multiply");
         rhs->getArguments().getNodes().push_back(func_plus_minus_nodes[literal_id]);
         rhs->getArguments().getNodes().push_back(rhs_count);
-        resolveOrdinaryFunctionNode(*rhs, rhs->getFunctionName());
+        resolveOrdinaryFunctionNodeByName(*rhs, rhs->getFunctionName(), getContext());
 
-        const auto new_node = std::make_shared<FunctionNode>(Poco::toLower(func_plus_minus_node->getFunctionName()));
+        auto new_node = std::make_shared<FunctionNode>(Poco::toLower(func_plus_minus_node->getFunctionName()));
         if (column_id == 0)
             new_node->getArguments().getNodes() = {lhs, rhs};
         else if (column_id == 1)
             new_node->getArguments().getNodes() = {rhs, lhs};
-        resolveOrdinaryFunctionNode(*new_node, new_node->getFunctionName());
+
+        resolveOrdinaryFunctionNodeByName(*new_node, new_node->getFunctionName(), getContext());
 
         if (!new_node)
             return;
 
-        node = new_node;
+        QueryTreeNodePtr res = std::move(new_node);
 
+        if (!res->getResultType()->equals(*function_node->getResultType()))
+            res = createCastFunction(res, function_node->getResultType(), getContext());
+
+        node = std::move(res);
     }
-
-private:
-    void resolveOrdinaryFunctionNode(FunctionNode & function_node, const String & function_name) const
-    {
-        const auto function = FunctionFactory::instance().get(function_name, getContext());
-        function_node.resolveAsFunction(function->build(function_node.getArgumentColumns()));
-    }
-
-    static inline void resolveAsAggregateFunctionNode(FunctionNode & function_node, const DataTypePtr & argument_type)
-    {
-        AggregateFunctionProperties properties;
-        const auto aggregate_function = AggregateFunctionFactory::instance().get(function_node.getFunctionName(),
-            NullsAction::EMPTY,
-            {argument_type},
-            {},
-            properties);
-
-        function_node.resolveAsAggregateFunction(aggregate_function);
-    }
-
 };
 
 }

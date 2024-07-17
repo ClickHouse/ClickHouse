@@ -51,7 +51,7 @@ public:
             {
                 /// We allow to not hide type of the disk, e.g. disk(type = s3, ...)
                 /// and also nested disk, e.g. disk = 'disk_name'
-                return arg_name != "type" && arg_name != "disk";
+                return arg_name != "type" && arg_name != "disk" && arg_name != "name" ;
             };
 
             for (const auto & arg : disk_function_args)

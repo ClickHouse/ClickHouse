@@ -95,7 +95,7 @@ void IMergeTreeReader::fillVirtualColumns(Columns & columns, size_t rows) const
                 it->name, it->type->getName(), virtual_column->type->getName());
         }
 
-        if (it->name == "_part_offset")
+        if (MergeTreeRangeReader::virtuals_to_fill.contains(it->name))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Virtual column {} must be filled by range reader", it->name);
 
         Field field;
@@ -264,7 +264,8 @@ void IMergeTreeReader::performRequiredConversions(Columns & res_columns) const
         /// Move columns from block.
         name_and_type = requested_columns.begin();
         for (size_t pos = 0; pos < num_columns; ++pos, ++name_and_type)
-            res_columns[pos] = std::move(copy_block.getByName(name_and_type->name).column);
+            if (copy_block.has(name_and_type->name))
+                res_columns[pos] = std::move(copy_block.getByName(name_and_type->name).column);
     }
     catch (Exception & e)
     {

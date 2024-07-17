@@ -1,14 +1,15 @@
 #include "MainHandler.h"
 
 #include "validateODBCConnectionString.h"
-#include "ODBCBlockInputStream.h"
-#include "ODBCBlockOutputStream.h"
+#include "ODBCSource.h"
+#include "ODBCSink.h"
 #include "getIdentifierQuote.h"
 #include <DataTypes/DataTypeFactory.h>
 #include <Formats/FormatFactory.h>
 #include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
+#include <Core/Settings.h>
 #include <IO/ReadBufferFromIStream.h>
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>

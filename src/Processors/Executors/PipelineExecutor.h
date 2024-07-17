@@ -5,7 +5,9 @@
 #include <Common/EventCounter.h>
 #include <Common/ThreadPool_fwd.h>
 #include <Common/ConcurrencyControl.h>
+#include <Common/AllocatorWithMemoryTracking.h>
 
+#include <deque>
 #include <queue>
 #include <mutex>
 #include <memory>
@@ -90,7 +92,10 @@ private:
 
     ReadProgressCallbackPtr read_progress_callback;
 
-    using Queue = std::queue<ExecutingGraph::Node *>;
+    /// This queue can grow a lot and lead to OOM. That is why we use non-default
+    /// allocator for container which throws exceptions in operator new
+    using DequeWithMemoryTracker = std::deque<ExecutingGraph::Node *, AllocatorWithMemoryTracking<ExecutingGraph::Node *>>;
+    using Queue = std::queue<ExecutingGraph::Node *, DequeWithMemoryTracker>;
 
     void initializeExecution(size_t num_threads, bool concurrency_control); /// Initialize executor contexts and task_queue.
     void finalizeExecution(); /// Check all processors are finished.

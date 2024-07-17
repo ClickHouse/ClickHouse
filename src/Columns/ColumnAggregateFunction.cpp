@@ -1,7 +1,13 @@
 #include <Columns/ColumnAggregateFunction.h>
 
+#include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/MaskOperations.h>
+#include <IO/Operators.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/WriteBufferFromArena.h>
+#include <IO/WriteBufferFromString.h>
+#include <Processors/Transforms/ColumnGathererTransform.h>
 #include <Common/AlignedBuffer.h>
 #include <Common/Arena.h>
 #include <Common/FieldVisitorToString.h>
@@ -11,10 +17,6 @@
 #include <Common/assert_cast.h>
 #include <Common/iota.h>
 #include <Common/typeid_cast.h>
-#include <IO/Operators.h>
-#include <IO/WriteBufferFromArena.h>
-#include <IO/WriteBufferFromString.h>
-#include <Processors/Transforms/ColumnGathererTransform.h>
 
 
 namespace DB
@@ -107,6 +109,11 @@ ConstArenas concatArenas(const ConstArenas & array, ConstArenaPtr arena)
     return result;
 }
 
+}
+
+std::string ColumnAggregateFunction::getName() const
+{
+    return "AggregateFunction(" + func->getName() + ")";
 }
 
 MutableColumnPtr ColumnAggregateFunction::convertToValues(MutableColumnPtr column)
@@ -260,7 +267,11 @@ bool ColumnAggregateFunction::structureEquals(const IColumn & to) const
 }
 
 
+#if !defined(ABORT_ON_LOGICAL_ERROR)
 void ColumnAggregateFunction::insertRangeFrom(const IColumn & from, size_t start, size_t length)
+#else
+void ColumnAggregateFunction::doInsertRangeFrom(const IColumn & from, size_t start, size_t length)
+#endif
 {
     const ColumnAggregateFunction & from_concrete = assert_cast<const ColumnAggregateFunction &>(from);
 
@@ -455,7 +466,11 @@ void ColumnAggregateFunction::insertFromWithOwnership(const IColumn & from, size
     insertMergeFrom(from, n);
 }
 
+#if !defined(ABORT_ON_LOGICAL_ERROR)
 void ColumnAggregateFunction::insertFrom(const IColumn & from, size_t n)
+#else
+void ColumnAggregateFunction::doInsertFrom(const IColumn & from, size_t n)
+#endif
 {
     insertRangeFrom(from, n, 1);
 }

@@ -1,9 +1,39 @@
 #include <IO/WriteBufferFromFile.h>
+#include <Common/CurrentThread.h>
 #include <Common/HostResolvePool.h>
-#include <base/sleep.h>
+#include <base/defines.h>
 
-#include <thread>
 #include <gtest/gtest.h>
+
+#include <optional>
+#include <chrono>
+#include <thread>
+
+
+using namespace std::literals::chrono_literals;
+
+
+auto now()
+{
+    return std::chrono::steady_clock::now();
+}
+
+void sleep_until(auto time_point)
+{
+    std::this_thread::sleep_until(time_point);
+}
+
+void sleep_for(auto duration)
+{
+    std::this_thread::sleep_for(duration);
+}
+
+size_t toMilliseconds(auto duration)
+{
+   return std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
+}
+
+const auto epsilon = 500us;
 
 class ResolvePoolMock : public DB::HostResolver
 {
@@ -28,8 +58,9 @@ protected:
         DB::CurrentThread::getProfileEvents().reset();
 
         ASSERT_EQ(0, CurrentMetrics::get(metrics.active_count));
+        ASSERT_EQ(0, CurrentMetrics::get(metrics.banned_count));
 
-        addresses = std::set<String>{"127.0.0.1", "127.0.0.2", "127.0.0.3"};
+        addresses = std::multiset<String>{"127.0.0.1", "127.0.0.2", "127.0.0.3"};
         // Code here will be called immediately after the constructor (right
         // before each test).
     }
@@ -57,7 +88,7 @@ protected:
     }
 
     DB::HostResolverMetrics metrics = DB::HostResolver::getMetrics();
-    std::set<String> addresses;
+    std::multiset<String> addresses;
 };
 
 TEST_F(ResolvePoolTest, CanResolve)
@@ -159,7 +190,7 @@ TEST_F(ResolvePoolTest, CanMerge)
     ASSERT_EQ(addresses.size(), DB::CurrentThread::getProfileEvents()[metrics.discovered]);
 
     auto old_addresses = addresses;
-    addresses = std::set<String>{"127.0.0.4", "127.0.0.5"};
+    addresses = std::multiset<String>{"127.0.0.4", "127.0.0.5"};
 
 
     resolver->update();
@@ -228,6 +259,7 @@ TEST_F(ResolvePoolTest, CanFail)
 
     ASSERT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.failed]);
     ASSERT_EQ(addresses.size(), CurrentMetrics::get(metrics.active_count));
+    ASSERT_EQ(1, CurrentMetrics::get(metrics.banned_count));
     ASSERT_EQ(addresses.size(), DB::CurrentThread::getProfileEvents()[metrics.discovered]);
 
     for (size_t i = 0; i < 1000; ++i)
@@ -242,28 +274,34 @@ TEST_F(ResolvePoolTest, CanFail)
 TEST_F(ResolvePoolTest, CanFailAndHeal)
 {
     auto resolver = make_resolver();
+    ASSERT_EQ(0, CurrentMetrics::get(metrics.banned_count));
 
     auto failed_addr = resolver->resolve();
     failed_addr.setFail();
+    ASSERT_EQ(1, CurrentMetrics::get(metrics.banned_count));
 
     while (true)
     {
         auto next_addr = resolver->resolve();
         if (*failed_addr == *next_addr)
+        {
+            ASSERT_EQ(0, CurrentMetrics::get(metrics.banned_count));
             break;
+        }
     }
 }
 
 
 TEST_F(ResolvePoolTest, CanExpire)
 {
-    auto resolver = make_resolver();
+    auto history = 5ms;
+    auto resolver = make_resolver(toMilliseconds(history));
 
     auto expired_addr = resolver->resolve();
     ASSERT_TRUE(addresses.contains(*expired_addr));
-
     addresses.erase(*expired_addr);
-    sleepForSeconds(1);
+
+    sleep_for(history + epsilon);
 
     for (size_t i = 0; i < 1000; ++i)
     {
@@ -275,4 +313,140 @@ TEST_F(ResolvePoolTest, CanExpire)
 
     ASSERT_EQ(addresses.size() + 1, DB::CurrentThread::getProfileEvents()[metrics.discovered]);
     ASSERT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.expired]);
+}
+
+
+TEST_F(ResolvePoolTest, DuplicatesInAddresses)
+{
+    auto resolver = make_resolver();
+
+    size_t unuque_addresses = addresses.size();
+
+    ASSERT_EQ(3, unuque_addresses);
+    ASSERT_EQ(3, DB::CurrentThread::getProfileEvents()[metrics.discovered]);
+
+    ASSERT_TRUE(!addresses.empty());
+    addresses.insert(*addresses.begin());
+    addresses.insert(*addresses.begin());
+
+    size_t total_addresses = addresses.size();
+
+    ASSERT_EQ(addresses.count(*addresses.begin()), 3);
+    ASSERT_EQ(unuque_addresses + 2, total_addresses);
+
+    resolver->update();
+    ASSERT_EQ(3, DB::CurrentThread::getProfileEvents()[metrics.discovered]);
+}
+
+void check_no_failed_address(size_t iteration, auto & resolver, auto & addresses, auto & failed_addr, auto & metrics, auto deadline)
+{
+    ASSERT_EQ(iteration, DB::CurrentThread::getProfileEvents()[metrics.failed]);
+    for (size_t i = 0; i < 100; ++i)
+    {
+        auto next_addr = resolver->resolve();
+
+        if (now() > deadline)
+        {
+            ASSERT_NE(i, 0);
+            break;
+        }
+
+        ASSERT_TRUE(addresses.contains(*next_addr));
+        ASSERT_NE(*next_addr, *failed_addr);
+    }
+}
+
+TEST_F(ResolvePoolTest, BannedForConsiquenceFail)
+{
+    auto history = 5ms;
+    auto resolver = make_resolver(toMilliseconds(history));
+
+    auto failed_addr = resolver->resolve();
+    ASSERT_TRUE(addresses.contains(*failed_addr));
+
+    auto start_at = now();
+
+    failed_addr.setFail();
+    ASSERT_EQ(3, CurrentMetrics::get(metrics.active_count));
+    ASSERT_EQ(1, CurrentMetrics::get(metrics.banned_count));
+    check_no_failed_address(1, resolver, addresses, failed_addr, metrics, start_at + history - epsilon);
+
+    sleep_until(start_at + history + epsilon);
+    start_at = now();
+
+    resolver->update();
+    ASSERT_EQ(3, CurrentMetrics::get(metrics.active_count));
+    ASSERT_EQ(0, CurrentMetrics::get(metrics.banned_count));
+
+    failed_addr.setFail();
+    check_no_failed_address(2, resolver, addresses, failed_addr, metrics, start_at + history - epsilon);
+
+    sleep_until(start_at + history + epsilon);
+    start_at = now();
+
+    resolver->update();
+    ASSERT_EQ(3, CurrentMetrics::get(metrics.active_count));
+    ASSERT_EQ(1, CurrentMetrics::get(metrics.banned_count));
+
+    // ip still banned adter history_ms + update, because it was his second consiquent fail
+    check_no_failed_address(2, resolver, addresses, failed_addr, metrics, start_at + history - epsilon);
+}
+
+TEST_F(ResolvePoolTest, NoAditionalBannForConcurrentFail)
+{
+    auto history = 5ms;
+    auto resolver = make_resolver(toMilliseconds(history));
+
+    auto failed_addr = resolver->resolve();
+    ASSERT_TRUE(addresses.contains(*failed_addr));
+
+    auto start_at = now();
+
+    failed_addr.setFail();
+    failed_addr.setFail();
+    failed_addr.setFail();
+
+    ASSERT_EQ(3, CurrentMetrics::get(metrics.active_count));
+    ASSERT_EQ(1, CurrentMetrics::get(metrics.banned_count));
+    check_no_failed_address(3, resolver, addresses, failed_addr, metrics, start_at + history - epsilon);
+
+    sleep_until(start_at + history + epsilon);
+
+    resolver->update();
+    // ip is cleared after just 1 history_ms interval.
+    ASSERT_EQ(3, CurrentMetrics::get(metrics.active_count));
+    ASSERT_EQ(0, CurrentMetrics::get(metrics.banned_count));
+}
+
+TEST_F(ResolvePoolTest, StillBannedAfterSuccess)
+{
+    auto history = 5ms;
+    auto resolver = make_resolver(toMilliseconds(history));
+
+    auto failed_addr = resolver->resolve();
+    ASSERT_TRUE(addresses.contains(*failed_addr));
+
+    std::optional<decltype(resolver->resolve())> again_addr;
+    while (true)
+    {
+        auto addr = resolver->resolve();
+        if (*addr == *failed_addr)
+        {
+            again_addr.emplace(std::move(addr));
+            break;
+        }
+    }
+    chassert(again_addr);
+
+    auto start_at = now();
+    failed_addr.setFail();
+
+    ASSERT_EQ(3, CurrentMetrics::get(metrics.active_count));
+    ASSERT_EQ(1, CurrentMetrics::get(metrics.banned_count));
+    check_no_failed_address(1, resolver, addresses, failed_addr, metrics, start_at + history - epsilon);
+
+    again_addr = std::nullopt; // success;
+
+    ASSERT_EQ(3, CurrentMetrics::get(metrics.active_count));
+    ASSERT_EQ(1, CurrentMetrics::get(metrics.banned_count));
 }

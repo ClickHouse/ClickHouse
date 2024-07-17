@@ -93,7 +93,7 @@ void TCPServerDispatcher::release()
 
 void TCPServerDispatcher::run()
 {
-	AutoPtr<TCPServerDispatcher> guard(this, true); // ensure object stays alive
+	AutoPtr<TCPServerDispatcher> guard(this); // ensure object stays alive
 
 	int idleTime = (int) _pParams->getThreadIdleTime().totalMilliseconds();
 
@@ -149,11 +149,13 @@ void TCPServerDispatcher::enqueue(const StreamSocket& socket)
 		{
 			try
 			{
+                this->duplicate();
 				_threadPool.startWithPriority(_pParams->getThreadPriority(), *this, threadName);
 				++_currentThreads;
 			}
 			catch (Poco::Exception& exc)
 			{
+                this->release();
 				++_refusedConnections;
 				std::cerr << "Got exception while starting thread for connection. Error code: "
 						  << exc.code() << ", message: '" << exc.displayText() << "'" << std::endl;
