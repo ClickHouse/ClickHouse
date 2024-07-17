@@ -18,7 +18,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int LOGICAL_ERROR;
+    // extern const int LOGICAL_ERROR;
 }
 
 namespace ACMEClient
@@ -41,7 +41,7 @@ ACMEClient & ACMEClient::instance()
     return instance;
 }
 
-void ACMEClient::reload(const Poco::Util::AbstractConfiguration & )
+void ACMEClient::reload(const Poco::Util::AbstractConfiguration &)
 try
 {
     if (!client)
