@@ -17,38 +17,6 @@ namespace ErrorCodes
 namespace
 {
 
-Chunk squashImpl(std::vector<Chunk> & input_chunks)
-{
-    Chunk accumulated_chunk;
-    std::vector<IColumn::MutablePtr> mutable_columns = {};
-    size_t rows = 0;
-    for (const Chunk & chunk : input_chunks)
-        rows += chunk.getNumRows();
-
-    {
-        auto & first_chunk = input_chunks[0];
-        Columns columns = first_chunk.detachColumns();
-        for (auto & column : columns)
-        {
-            mutable_columns.push_back(IColumn::mutate(std::move(column)));
-            mutable_columns.back()->reserve(rows);
-        }
-    }
-
-    for (size_t i = 1; i < input_chunks.size(); ++i) // We've already processed the first chunk above
-    {
-        Columns columns = input_chunks[i].detachColumns();
-        for (size_t j = 0, size = mutable_columns.size(); j < size; ++j)
-        {
-            const auto source_column = columns[j];
-
-            mutable_columns[j]->insertRangeFrom(*source_column, 0, source_column->size());
-        }
-    }
-    accumulated_chunk.setColumns(std::move(mutable_columns), rows);
-    return accumulated_chunk;
-}
-
 const ChunksToSquash * getInfoFromChunk(const Chunk & chunk)
 {
     const auto & info = chunk.getChunkInfo();
