@@ -1,4 +1,4 @@
--- Tags: no-random-settings, no-s3-storage
+-- Tags: no-random-settings, no-object-storage
 
 SET allow_experimental_dynamic_type = 1;
 DROP TABLE IF EXISTS test_dynamic;
