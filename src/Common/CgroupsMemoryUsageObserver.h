@@ -14,6 +14,8 @@ struct ICgroupsReader
     virtual ~ICgroupsReader() = default;
 
     virtual uint64_t readMemoryUsage() = 0;
+
+    virtual std::string dumpAllStats() = 0;
 };
 
 /// Does two things:
