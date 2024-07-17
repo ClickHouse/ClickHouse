@@ -23,9 +23,9 @@ select * from cluster(test_cluster_two_shards, currentDatabase(), test) where i 
 
 select max(i) from cluster(test_cluster_two_shards, currentDatabase(), test) where i < 20 FORMAT JSONCompact;
 
-select * from (select * from cluster(test_cluster_two_shards, currentDatabase(), test) where i < 10) group by i limit 10 FORMAT JSONCompact;
+select * from (select * from cluster(test_cluster_two_shards, currentDatabase(), test) where i < 10) group by i order by i limit 10 FORMAT JSONCompact;
 set prefer_localhost_replica = 0;
-select * from (select * from cluster(test_cluster_two_shards, currentDatabase(), test) where i < 10) group by i limit 10 FORMAT JSONCompact;
+select * from (select * from cluster(test_cluster_two_shards, currentDatabase(), test) where i < 10) group by i order by i limit 10 FORMAT JSONCompact;
 
 drop table if exists test;
 
