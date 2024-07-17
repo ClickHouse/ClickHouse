@@ -90,10 +90,7 @@ ISource::Status RemoteSource::prepare()
 void RemoteSource::work()
 {
     if (async_immediate_work.exchange(false))
-    {
-        LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "async_immediate_work was true");
         return;
-    }
 
     /// Connection drain is a heavy operation that may take a long time.
     /// Therefore we move connection drain from prepare() to work(), and drain multiple connections in parallel.
@@ -114,13 +111,11 @@ void RemoteSource::asyncJobReady()
     if (!was_query_sent)
         return;
 
-    auto res = query_executor->readAsync(/*probe=*/true);
+    auto res = query_executor->readAsync(/*check_packet_type_only=*/true);
     if (res.type == RemoteQueryExecutor::ReadResult::Type::ParallelReplicasToken)
     {
-        LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "async_immediate_work is {}", async_immediate_work);
         work();
         async_immediate_work = true;
-        LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "async_immediate_work is true");
     }
 }
 

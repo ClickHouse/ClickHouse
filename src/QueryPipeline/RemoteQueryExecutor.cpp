@@ -486,10 +486,7 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAsync(bool check_packet
     {
         std::lock_guard lock(was_cancelled_mutex);
         if (was_cancelled)
-        {
-            LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "was_cancelled");
             return ReadResult(Block());
-        }
 
         if (has_postponed_packet)
         {
@@ -520,17 +517,12 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAsync(bool check_packet
 
         /// Check if packet is not ready yet.
         if (read_context->isInProgress())
-        {
-            LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "read_context still in progress");
             return ReadResult(read_context->getFileDescriptor());
-        }
-
-        const auto packet_type = read_context->getPacketType();
-        LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "Packet type: {}", packet_type);
 
         if (check_packet_type_only)
         {
             has_postponed_packet = true;
+            const auto packet_type = read_context->getPacketType();
             if (packet_type == Protocol::Server::MergeTreeReadTaskRequest
                 || packet_type == Protocol::Server::MergeTreeAllRangesAnnouncement)
             {
