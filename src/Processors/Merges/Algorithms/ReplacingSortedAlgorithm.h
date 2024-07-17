@@ -3,6 +3,7 @@
 #include <Processors/Merges/Algorithms/MergedData.h>
 #include <Processors/Transforms/ColumnGathererTransform.h>
 #include <Processors/Merges/Algorithms/RowRef.h>
+#include <Processors/Chunk.h>
 
 namespace Poco
 {
@@ -14,11 +15,13 @@ namespace DB
 
 /** Use in skipping final to keep list of indices of selected row after merging final
   */
-struct ChunkSelectFinalIndices : public ChunkInfo
+struct ChunkSelectFinalIndices : public ChunkInfoCloneable<ChunkSelectFinalIndices>
 {
+    explicit ChunkSelectFinalIndices(MutableColumnPtr select_final_indices_);
+    ChunkSelectFinalIndices(const ChunkSelectFinalIndices & other) = default;
+
     const ColumnPtr column_holder;
     const ColumnUInt64 * select_final_indices = nullptr;
-    explicit ChunkSelectFinalIndices(MutableColumnPtr select_final_indices_);
 };
 
 /** Merges several sorted inputs into one.
