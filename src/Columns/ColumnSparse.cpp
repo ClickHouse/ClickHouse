@@ -809,24 +809,6 @@ size_t ColumnSparse::getValueIndex(size_t n) const
     return it - offsets_data.begin() + 1;
 }
 
-size_t ColumnSparse::getFirstDefaultValueIndex() const
-{
-    if (getNumberOfDefaultRows() == 0)
-        return size();
-
-    const auto & offsets_data = getOffsetsData();
-    size_t off_size = offsets_data.size();
-
-    if (off_size == 0 || offsets_data[0] > 0)
-        return 0;
-
-    size_t idx = 0;
-    while (idx + 1 < off_size && offsets_data[idx] + 1 == offsets_data[idx + 1])
-        ++idx;
-
-    return offsets_data[idx] + 1;
-}
-
 ColumnSparse::Iterator ColumnSparse::getIterator(size_t n) const
 {
     const auto & offsets_data = getOffsetsData();

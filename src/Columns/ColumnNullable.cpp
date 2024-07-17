@@ -65,7 +65,7 @@ WeakHash32 ColumnNullable::getWeakHash32() const
     const auto & null_map_data = getNullMapData();
     auto & hash_data = hash.getData();
 
-    /// Use defualt for nulls.
+    /// Use default for nulls.
     for (size_t row = 0; row < s; ++row)
         if (null_map_data[row])
             hash_data[row] = WeakHash32::kDefaultInitialValue;
