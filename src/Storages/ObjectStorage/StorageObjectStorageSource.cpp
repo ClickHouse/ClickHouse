@@ -388,7 +388,12 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         else
         {
             compression_method = chooseCompressionMethod(object_info->getFileName(), configuration->compression_method);
+            LOG_DEBUG(&Poco::Logger::get("Info relative path"), "Info: {}", object_info->relative_path);
             read_buf = createReadBuffer(*object_info, object_storage, context_, log);
+            auto new_read_buf = createReadBuffer(*object_info, object_storage, context_, log);
+            std::string answer(1000, ' ');
+            size_t read_bytes = new_read_buf->read(answer.data(), 1000);
+            LOG_DEBUG(&Poco::Logger::get("Read buffer"), "Read bytes: {}, string: {}", read_bytes, answer.substr(0, read_bytes));
         }
 
         auto input_format = FormatFactory::instance().getInput(
@@ -470,6 +475,8 @@ std::unique_ptr<ReadBuffer> StorageObjectStorageSource::createReadBuffer(
     if (use_prefetch)
     {
         LOG_TRACE(log, "Downloading object of size {} with initial prefetch", object_size);
+
+        LOG_DEBUG(&Poco::Logger::get("Read"), "Path: {}, object size: {}", object_info.getPath(), object_size);
 
         auto async_reader = object_storage->readObjects(
             StoredObjects{StoredObject{object_info.getPath(), /* local_path */ "", object_size}}, read_settings);
