@@ -399,6 +399,18 @@ try
 
     registerDisks(/*global_skip_access_check=*/false);
 
+    auto cgroups_memory_observer_wait_time = config().getUInt64("keeper_server.cgroups_memory_observer_wait_time", 15);
+    try
+    {
+        auto cgroups_reader = createCgroupsReader();
+        global_context->setCgroupsReader(createCgroupsReader());
+    }
+    catch (...)
+    {
+        if (cgroups_memory_observer_wait_time != 0)
+            tryLogCurrentException(log, "Failed to create cgroups reader");
+    }
+
     /// This object will periodically calculate some metrics.
     KeeperAsynchronousMetrics async_metrics(
         global_context,
@@ -622,21 +634,19 @@ try
     main_config_reloader->start();
 
     std::optional<CgroupsMemoryUsageObserver> cgroups_memory_usage_observer;
-    try
+    if (cgroups_memory_observer_wait_time != 0)
     {
-        auto wait_time = config().getUInt64("keeper_server.cgroups_memory_observer_wait_time", 15);
-        if (wait_time != 0)
+        auto cgroups_reader = global_context->getCgroupsReader();
+        if (cgroups_reader)
         {
-            cgroups_memory_usage_observer.emplace(std::chrono::seconds(wait_time));
+            cgroups_memory_usage_observer.emplace(std::chrono::seconds(cgroups_memory_observer_wait_time), global_context->getCgroupsReader());
             /// Not calling cgroups_memory_usage_observer->setLimits() here (as for the normal ClickHouse server) because Keeper controls
             /// its memory usage by other means (via setting 'max_memory_usage_soft_limit').
             cgroups_memory_usage_observer->setOnMemoryAmountAvailableChangedFn([&]() { main_config_reloader->reload(); });
             cgroups_memory_usage_observer->startThread();
         }
-    }
-    catch (Exception &)
-    {
-        tryLogCurrentException(log, "Disabling cgroup memory observer because of an error during initialization");
+        else
+            LOG_ERROR(log, "Disabling cgroup memory observer because of an error during initialization of cgroups reader");
     }
 
 

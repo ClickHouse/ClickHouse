@@ -26,7 +26,6 @@
 #endif
 
 #include <atomic>
-#include <cmath>
 #include <random>
 #include <cstdlib>
 #include <string>
@@ -123,7 +122,7 @@ static constexpr size_t log_peak_memory_usage_every = 1ULL << 30;
 MemoryTracker total_memory_tracker(nullptr, VariableContext::Global);
 MemoryTracker background_memory_tracker(&total_memory_tracker, VariableContext::User, false);
 
-std::atomic<Int64> MemoryTracker::free_memory_in_allocator_arenas;
+std::atomic<bool> MemoryTracker::has_free_memory_in_allocator_arenas;
 
 MemoryTracker::MemoryTracker(VariableContext level_) : parent(&total_memory_tracker), level(level_) {}
 MemoryTracker::MemoryTracker(MemoryTracker * parent_, VariableContext level_) : parent(parent_), level(level_) {}
@@ -204,7 +203,7 @@ void MemoryTracker::debugLogBigAllocationWithoutCheck(Int64 size [[maybe_unused]
     LOG_TEST(getLogger("MemoryTracker"), "Too big allocation ({} bytes) without checking memory limits, "
                                                    "it may lead to OOM. Stack trace: {}", size, StackTrace().toString());
 #else
-    return;     /// Avoid trash logging in release builds
+    /// Avoid trash logging in release builds
 #endif
 }
 
@@ -294,33 +293,18 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceed
         }
     }
 
-    Int64 limit_to_check = current_hard_limit;
-
 #if USE_JEMALLOC
-    if (level == VariableContext::Global && allow_use_jemalloc_memory.load(std::memory_order_relaxed))
+    if (level == VariableContext::Global && will_be > soft_limit.load(std::memory_order_relaxed)
+        && has_free_memory_in_allocator_arenas.exchange(false))
     {
-        /// Jemalloc arenas may keep some extra memory.
-        /// This memory was substucted from RSS to decrease memory drift.
-        /// In case memory is close to limit, try to pugre the arenas.
-        /// This is needed to avoid OOM, because some allocations are directly done with mmap.
-        Int64 current_free_memory_in_allocator_arenas = free_memory_in_allocator_arenas.load(std::memory_order_relaxed);
-
-        if (current_free_memory_in_allocator_arenas > 0 && current_hard_limit && current_free_memory_in_allocator_arenas + will_be > current_hard_limit)
-        {
-            if (free_memory_in_allocator_arenas.exchange(-current_free_memory_in_allocator_arenas) > 0)
-            {
-                Stopwatch watch;
-                mallctl("arena." STRINGIFY(MALLCTL_ARENAS_ALL) ".purge", nullptr, nullptr, nullptr, 0);
-                ProfileEvents::increment(ProfileEvents::MemoryAllocatorPurge);
-                ProfileEvents::increment(ProfileEvents::MemoryAllocatorPurgeTimeMicroseconds, watch.elapsedMicroseconds());
-            }
-        }
-
-        limit_to_check += abs(current_free_memory_in_allocator_arenas);
+        Stopwatch watch;
+        mallctl("arena." STRINGIFY(MALLCTL_ARENAS_ALL) ".purge", nullptr, nullptr, nullptr, 0);
+        ProfileEvents::increment(ProfileEvents::MemoryAllocatorPurge);
+        ProfileEvents::increment(ProfileEvents::MemoryAllocatorPurgeTimeMicroseconds, watch.elapsedMicroseconds());
     }
 #endif
 
-    if (unlikely(current_hard_limit && will_be > limit_to_check))
+    if (unlikely(current_hard_limit && will_be > current_hard_limit))
     {
         if (memoryTrackerCanThrow(level, false) && throw_if_memory_exceeded)
         {
@@ -526,11 +510,11 @@ void MemoryTracker::reset()
 }
 
 
-void MemoryTracker::setRSS(Int64 rss_, Int64 free_memory_in_allocator_arenas_)
+void MemoryTracker::setRSS(Int64 rss_, bool has_free_memory_in_allocator_arenas_)
 {
     Int64 new_amount = rss_;
     total_memory_tracker.amount.store(new_amount, std::memory_order_relaxed);
-    free_memory_in_allocator_arenas.store(free_memory_in_allocator_arenas_, std::memory_order_relaxed);
+    has_free_memory_in_allocator_arenas.store(has_free_memory_in_allocator_arenas_, std::memory_order_relaxed);
 
     auto metric_loaded = total_memory_tracker.metric.load(std::memory_order_relaxed);
     if (metric_loaded != CurrentMetrics::end())

@@ -150,6 +150,7 @@ class ServerType;
 template <class Queue>
 class MergeTreeBackgroundExecutor;
 class AsyncLoader;
+struct ICgroupsReader;
 
 struct TemporaryTableHolder;
 using TemporaryTablesMapping = std::map<String, std::shared_ptr<TemporaryTableHolder>>;
@@ -1343,6 +1344,9 @@ public:
     PreparedSetsCachePtr getPreparedSetsCache() const;
 
     const ServerSettings & getServerSettings() const;
+
+    void setCgroupsReader(std::shared_ptr<ICgroupsReader> cgroups_reader_);
+    std::shared_ptr<ICgroupsReader> getCgroupsReader() const;
 
 private:
     std::shared_ptr<const SettingsConstraintsAndProfileIDs> getSettingsConstraintsAndCurrentProfilesWithLock() const;

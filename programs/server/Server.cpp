@@ -897,6 +897,17 @@ try
         LOG_INFO(log, "Background threads finished in {} ms", watch.elapsedMilliseconds());
     });
 
+    try
+    {
+        auto cgroups_reader = createCgroupsReader();
+        global_context->setCgroupsReader(createCgroupsReader());
+    }
+    catch (...)
+    {
+        if (server_settings.cgroups_memory_usage_observer_wait_time != 0)
+            tryLogCurrentException(log, "Failed to create cgroups reader");
+    }
+
     /// This object will periodically calculate some metrics.
     ServerAsynchronousMetrics async_metrics(
         global_context,
@@ -1456,15 +1467,13 @@ try
     }
 
     std::optional<CgroupsMemoryUsageObserver> cgroups_memory_usage_observer;
-    try
+    if (auto wait_time = server_settings.cgroups_memory_usage_observer_wait_time; wait_time != 0)
     {
-        auto wait_time = server_settings.cgroups_memory_usage_observer_wait_time;
-        if (wait_time != 0)
-            cgroups_memory_usage_observer.emplace(std::chrono::seconds(wait_time));
-    }
-    catch (Exception &)
-    {
-        tryLogCurrentException(log, "Disabling cgroup memory observer because of an error during initialization");
+        auto cgroups_reader = global_context->getCgroupsReader();
+        if (cgroups_reader)
+            cgroups_memory_usage_observer.emplace(std::chrono::seconds(wait_time), std::move(cgroups_reader));
+        else
+            LOG_ERROR(log, "Disabling cgroup memory observer because of an error during initialization of cgroups reader");
     }
 
     std::string cert_path = config().getString("openSSL.server.certificateFile", "");
@@ -1531,15 +1540,6 @@ try
             total_memory_tracker.setHardLimit(max_server_memory_usage);
             total_memory_tracker.setDescription("(total)");
             total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
-
-            if (cgroups_memory_usage_observer)
-            {
-                double hard_limit_ratio = new_server_settings.cgroup_memory_watcher_hard_limit_ratio;
-                double soft_limit_ratio = new_server_settings.cgroup_memory_watcher_soft_limit_ratio;
-                cgroups_memory_usage_observer->setMemoryUsageLimits(
-                    static_cast<uint64_t>(max_server_memory_usage * hard_limit_ratio),
-                    static_cast<uint64_t>(max_server_memory_usage * soft_limit_ratio));
-            }
 
             size_t merges_mutations_memory_usage_soft_limit = new_server_settings.merges_mutations_memory_usage_soft_limit;
 

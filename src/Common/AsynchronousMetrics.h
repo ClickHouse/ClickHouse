@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/CgroupsMemoryUsageObserver.h>
 #include <Common/MemoryStatisticsOS.h>
 #include <Common/ThreadPool.h>
 #include <Common/Stopwatch.h>
@@ -68,7 +69,8 @@ public:
 
     AsynchronousMetrics(
         unsigned update_period_seconds,
-        const ProtocolServerMetricsFunc & protocol_server_metrics_func_);
+        const ProtocolServerMetricsFunc & protocol_server_metrics_func_,
+        std::shared_ptr<ICgroupsReader> cgroups_reader_);
 
     virtual ~AsynchronousMetrics();
 
@@ -91,6 +93,7 @@ private:
     virtual void logImpl(AsynchronousMetricValues &) {}
 
     ProtocolServerMetricsFunc protocol_server_metrics_func;
+    std::shared_ptr<ICgroupsReader> cgroups_reader;
 
     std::unique_ptr<ThreadFromGlobalPool> thread;
 

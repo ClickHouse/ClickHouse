@@ -5,6 +5,7 @@
 #include <Poco/UUID.h>
 #include <Poco/Util/Application.h>
 #include <Common/AsyncLoader.h>
+#include <Common/CgroupsMemoryUsageObserver.h>
 #include <Common/PoolId.h>
 #include <Common/SensitiveDataMasker.h>
 #include <Common/Macros.h>
@@ -404,6 +405,8 @@ struct ContextSharedPart : boost::noncopyable
     ConfigurationPtr clusters_config TSA_GUARDED_BY(clusters_mutex);                        /// Stores updated configs
     std::unique_ptr<ClusterDiscovery> cluster_discovery TSA_GUARDED_BY(clusters_mutex);
     size_t clusters_version TSA_GUARDED_BY(clusters_mutex) = 0;
+
+    std::shared_ptr<ICgroupsReader> cgroups_reader;
 
     /// No lock required for async_insert_queue modified only during initialization
     std::shared_ptr<AsynchronousInsertQueue> async_insert_queue;
@@ -5633,6 +5636,16 @@ void Context::setClientProtocolVersion(UInt64 version)
 const ServerSettings & Context::getServerSettings() const
 {
     return shared->server_settings;
+}
+
+void Context::setCgroupsReader(std::shared_ptr<ICgroupsReader> cgroups_reader_)
+{
+    shared->cgroups_reader = std::move(cgroups_reader_);
+}
+
+std::shared_ptr<ICgroupsReader> Context::getCgroupsReader() const
+{
+    return shared->cgroups_reader;
 }
 
 uint64_t HTTPContext::getMaxHstsAge() const

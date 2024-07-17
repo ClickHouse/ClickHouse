@@ -17,13 +17,6 @@
 #include <memory>
 #include <optional>
 
-#include "config.h"
-#if USE_JEMALLOC
-#    include <jemalloc/jemalloc.h>
-#define STRINGIFY_HELPER(x) #x
-#define STRINGIFY(x) STRINGIFY_HELPER(x)
-#endif
-
 using namespace DB;
 namespace fs = std::filesystem;
 
@@ -155,15 +148,21 @@ std::optional<std::string> getCgroupsV1Path()
     return {default_cgroups_mount / "memory"};
 }
 
-std::pair<std::string, CgroupsMemoryUsageObserver::CgroupsVersion> getCgroupsPath()
+enum class CgroupsVersion : uint8_t
+{
+    V1,
+    V2
+};
+
+std::pair<std::string, CgroupsVersion> getCgroupsPath()
 {
     auto v2_path = getCgroupsV2Path();
     if (v2_path.has_value())
-        return {*v2_path, CgroupsMemoryUsageObserver::CgroupsVersion::V2};
+        return {*v2_path, CgroupsVersion::V2};
 
     auto v1_path = getCgroupsV1Path();
     if (v1_path.has_value())
-        return {*v1_path, CgroupsMemoryUsageObserver::CgroupsVersion::V1};
+        return {*v1_path, CgroupsVersion::V1};
 
     throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Cannot find cgroups v1 or v2 current memory file");
 }
@@ -173,79 +172,34 @@ std::pair<std::string, CgroupsMemoryUsageObserver::CgroupsVersion> getCgroupsPat
 namespace DB
 {
 
-CgroupsMemoryUsageObserver::CgroupsMemoryUsageObserver(std::chrono::seconds wait_time_)
-    : log(getLogger("CgroupsMemoryUsageObserver")), wait_time(wait_time_)
+std::shared_ptr<ICgroupsReader> createCgroupsReader()
 {
     const auto [cgroup_path, version] = getCgroupsPath();
+    LOG_INFO(
+        getLogger("CgroupsReader"),
+        "Will create cgroup reader from '{}' (cgroups version: {})",
+        cgroup_path,
+        (version == CgroupsVersion::V1) ? "v1" : "v2");
 
     if (version == CgroupsVersion::V2)
-        cgroup_reader = std::make_unique<CgroupsV2Reader>(cgroup_path);
+        return std::make_shared<CgroupsV2Reader>(cgroup_path);
     else
-        cgroup_reader = std::make_unique<CgroupsV1Reader>(cgroup_path);
+    {
+        chassert(version == CgroupsVersion::V1);
+        return std::make_shared<CgroupsV1Reader>(cgroup_path);
+    }
 
-    LOG_INFO(
-        log,
-        "Will read the current memory usage from '{}' (cgroups version: {}), wait time is {} sec",
-        cgroup_path,
-        (version == CgroupsVersion::V1) ? "v1" : "v2",
-        wait_time.count());
+}
+
+CgroupsMemoryUsageObserver::CgroupsMemoryUsageObserver(std::chrono::seconds wait_time_, std::shared_ptr<ICgroupsReader> cgroups_reader_)
+    : log(getLogger("CgroupsMemoryUsageObserver")), wait_time(wait_time_), cgroups_reader(std::move(cgroups_reader_))
+{
+    cgroups_reader = createCgroupsReader();
 }
 
 CgroupsMemoryUsageObserver::~CgroupsMemoryUsageObserver()
 {
     stopThread();
-}
-
-void CgroupsMemoryUsageObserver::setMemoryUsageLimits(uint64_t hard_limit_, uint64_t soft_limit_)
-{
-    std::lock_guard<std::mutex> limit_lock(limit_mutex);
-
-    if (hard_limit_ == hard_limit && soft_limit_ == soft_limit)
-        return;
-
-    hard_limit = hard_limit_;
-    soft_limit = soft_limit_;
-
-    on_hard_limit = [this, hard_limit_](bool up)
-    {
-        if (up)
-        {
-            LOG_WARNING(log, "Exceeded hard memory limit ({})", ReadableSize(hard_limit_));
-
-            /// Update current usage in memory tracker. Also reset free_memory_in_allocator_arenas to zero though we don't know if they are
-            /// really zero. Trying to avoid OOM ...
-            MemoryTracker::setRSS(hard_limit_, 0);
-        }
-        else
-        {
-            LOG_INFO(log, "Dropped below hard memory limit ({})", ReadableSize(hard_limit_));
-        }
-    };
-
-    on_soft_limit = [this, soft_limit_](bool up)
-    {
-        if (up)
-        {
-            LOG_WARNING(log, "Exceeded soft memory limit ({})", ReadableSize(soft_limit_));
-
-#    if USE_JEMALLOC
-            LOG_INFO(log, "Purging jemalloc arenas");
-            mallctl("arena." STRINGIFY(MALLCTL_ARENAS_ALL) ".purge", nullptr, nullptr, nullptr, 0);
-#    endif
-            /// Reset current usage in memory tracker. Expect zero for free_memory_in_allocator_arenas as we just purged them.
-            uint64_t memory_usage = cgroup_reader->readMemoryUsage();
-            LOG_TRACE(log, "Read current memory usage {} bytes ({}) from cgroups", memory_usage, ReadableSize(memory_usage));
-            MemoryTracker::setRSS(memory_usage, 0);
-
-            LOG_INFO(log, "Purged jemalloc arenas. Current memory usage is {}", ReadableSize(memory_usage));
-        }
-        else
-        {
-            LOG_INFO(log, "Dropped below soft memory limit ({})", ReadableSize(soft_limit_));
-        }
-    };
-
-    LOG_INFO(log, "Set new limits, soft limit: {}, hard limit: {}", ReadableSize(soft_limit_), ReadableSize(hard_limit_));
 }
 
 void CgroupsMemoryUsageObserver::setOnMemoryAmountAvailableChangedFn(OnMemoryAmountAvailableChangedFn on_memory_amount_available_changed_)
@@ -300,35 +254,6 @@ void CgroupsMemoryUsageObserver::runThread()
                 last_available_memory_amount = available_memory_amount;
                 std::lock_guard<std::mutex> memory_amount_available_changed_lock(memory_amount_available_changed_mutex);
                 on_memory_amount_available_changed();
-            }
-
-            std::lock_guard<std::mutex> limit_lock(limit_mutex);
-            if (soft_limit > 0 && hard_limit > 0)
-            {
-                uint64_t memory_usage = cgroup_reader->readMemoryUsage();
-                LOG_TRACE(log, "Read current memory usage {} bytes ({}) from cgroups", memory_usage, ReadableSize(memory_usage));
-                if (memory_usage > hard_limit)
-                {
-                    if (last_memory_usage <= hard_limit)
-                        on_hard_limit(true);
-                }
-                else
-                {
-                    if (last_memory_usage > hard_limit)
-                        on_hard_limit(false);
-                }
-
-                if (memory_usage > soft_limit)
-                {
-                    if (last_memory_usage <= soft_limit)
-                        on_soft_limit(true);
-                }
-                else
-                {
-                    if (last_memory_usage > soft_limit)
-                        on_soft_limit(false);
-                }
-                last_memory_usage = memory_usage;
             }
         }
         catch (...)

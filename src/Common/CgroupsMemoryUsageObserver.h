@@ -16,6 +16,8 @@ struct ICgroupsReader
     virtual uint64_t readMemoryUsage() = 0;
 };
 
+std::shared_ptr<ICgroupsReader> createCgroupsReader();
+
 /// Does two things:
 /// 1. Periodically reads the memory usage of the process from Linux cgroups.
 ///    You can specify soft or hard memory limits:
@@ -35,19 +37,11 @@ struct ICgroupsReader
 class CgroupsMemoryUsageObserver
 {
 public:
-    using OnMemoryLimitFn = std::function<void(bool)>;
     using OnMemoryAmountAvailableChangedFn = std::function<void()>;
 
-    enum class CgroupsVersion : uint8_t
-    {
-        V1,
-        V2
-    };
-
-    explicit CgroupsMemoryUsageObserver(std::chrono::seconds wait_time_);
+    explicit CgroupsMemoryUsageObserver(std::chrono::seconds wait_time_, std::shared_ptr<ICgroupsReader> cgroups_reader_);
     ~CgroupsMemoryUsageObserver();
 
-    void setMemoryUsageLimits(uint64_t hard_limit_, uint64_t soft_limit_);
     void setOnMemoryAmountAvailableChangedFn(OnMemoryAmountAvailableChangedFn on_memory_amount_available_changed_);
 
     void startThread();
@@ -58,22 +52,17 @@ private:
     const std::chrono::seconds wait_time;
 
     std::mutex limit_mutex;
-    size_t hard_limit TSA_GUARDED_BY(limit_mutex) = 0;
-    size_t soft_limit TSA_GUARDED_BY(limit_mutex) = 0;
-    OnMemoryLimitFn on_hard_limit TSA_GUARDED_BY(limit_mutex);
-    OnMemoryLimitFn on_soft_limit TSA_GUARDED_BY(limit_mutex);
 
     std::mutex memory_amount_available_changed_mutex;
     OnMemoryAmountAvailableChangedFn on_memory_amount_available_changed TSA_GUARDED_BY(memory_amount_available_changed_mutex);
 
-    uint64_t last_memory_usage = 0;        /// how much memory does the process use
     uint64_t last_available_memory_amount; /// how much memory can the process use
 
     void stopThread();
 
     void runThread();
 
-    std::unique_ptr<ICgroupsReader> cgroup_reader;
+    std::shared_ptr<ICgroupsReader> cgroups_reader;
 
     std::mutex thread_mutex;
     std::condition_variable cond;

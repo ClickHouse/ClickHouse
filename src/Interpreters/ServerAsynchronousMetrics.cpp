@@ -57,7 +57,7 @@ ServerAsynchronousMetrics::ServerAsynchronousMetrics(
     unsigned heavy_metrics_update_period_seconds,
     const ProtocolServerMetricsFunc & protocol_server_metrics_func_)
     : WithContext(global_context_)
-    , AsynchronousMetrics(update_period_seconds, protocol_server_metrics_func_)
+    , AsynchronousMetrics(update_period_seconds, protocol_server_metrics_func_, getContext()->getCgroupsReader())
     , heavy_metric_update_period(heavy_metrics_update_period_seconds)
 {
     /// sanity check

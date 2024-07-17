@@ -59,7 +59,7 @@ private:
     std::atomic<Int64> profiler_limit {0};
     std::atomic_bool allow_use_jemalloc_memory {true};
 
-    static std::atomic<Int64> free_memory_in_allocator_arenas;
+    static std::atomic<bool> has_free_memory_in_allocator_arenas;
 
     Int64 profiler_step = 0;
 
@@ -252,7 +252,7 @@ public:
     /// Reset current counter to an RSS value.
     /// Jemalloc may have pre-allocated arenas, they are accounted in RSS.
     /// We can free this arenas in case of exception to avoid OOM.
-    static void setRSS(Int64 rss_, Int64 free_memory_in_allocator_arenas_);
+    static void setRSS(Int64 rss_, bool has_free_memory_in_allocator_arenas_);
 
     /// Prints info about peak memory consumption into log.
     void logPeakMemoryUsage();

@@ -57,10 +57,12 @@ static std::unique_ptr<ReadBufferFromFilePRead> openFileIfExists(const std::stri
 
 AsynchronousMetrics::AsynchronousMetrics(
     unsigned update_period_seconds,
-    const ProtocolServerMetricsFunc & protocol_server_metrics_func_)
+    const ProtocolServerMetricsFunc & protocol_server_metrics_func_,
+    std::shared_ptr<ICgroupsReader> cgroups_reader_)
     : update_period(update_period_seconds)
     , log(getLogger("AsynchronousMetrics"))
     , protocol_server_metrics_func(protocol_server_metrics_func_)
+    , cgroups_reader(std::move(cgroups_reader_))
 {
 #if defined(OS_LINUX)
     openFileIfExists("/proc/meminfo", meminfo);
@@ -669,6 +671,13 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
             free_memory_in_allocator_arenas = je_malloc_pdirty * getPageSize();
 #endif
 
+            if (cgroups_reader != nullptr)
+            {
+                rss = cgroups_reader->readMemoryUsage();
+                new_values["CgroupsMemoryUsage"] = { rss,
+                    "The amount of physical memory used by the server process, reported by cgroups." };
+            }
+
             Int64 difference = rss - amount;
 
             /// Log only if difference is high. This is for convenience. The threshold is arbitrary.
@@ -681,7 +690,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
                     ReadableSize(rss),
                     ReadableSize(difference));
 
-            MemoryTracker::setRSS(rss, free_memory_in_allocator_arenas);
+            MemoryTracker::setRSS(rss, /*has_free_memory_in_allocator_arenas_=*/free_memory_in_allocator_arenas > 0);
         }
     }
 
