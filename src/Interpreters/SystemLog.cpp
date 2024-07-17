@@ -544,13 +544,7 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
         insert_context->makeQueryContext();
         addSettingsForQuery(insert_context, IAST::QueryKind::Insert);
 
-        InterpreterInsertQuery interpreter(
-            query_ptr,
-            insert_context,
-            /* allow_materialized */ false,
-            /* no_squash */ false,
-            /* no_destination */ false,
-            /* async_isnert */ false);
+        InterpreterInsertQuery interpreter(query_ptr, insert_context);
         BlockIO io = interpreter.execute();
 
         PushingPipelineExecutor executor(io.pipeline);

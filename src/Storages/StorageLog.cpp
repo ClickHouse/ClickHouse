@@ -1,6 +1,5 @@
 #include <Storages/StorageLog.h>
 #include <Storages/StorageFactory.h>
-#include <Storages/StorageLogSettings.h>
 
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
@@ -23,6 +22,7 @@
 #include <DataTypes/NestedUtils.h>
 
 #include <Interpreters/Context.h>
+#include "StorageLogSettings.h"
 #include <Processors/Sources/NullSource.h>
 #include <Processors/ISource.h>
 #include <QueryPipeline/Pipe.h>
@@ -342,7 +342,7 @@ public:
         }
     }
 
-    void consume(Chunk & chunk) override;
+    void consume(Chunk chunk) override;
     void onFinish() override;
 
 private:
@@ -399,9 +399,9 @@ private:
 };
 
 
-void LogSink::consume(Chunk & chunk)
+void LogSink::consume(Chunk chunk)
 {
-    auto block = getHeader().cloneWithColumns(chunk.getColumns());
+    auto block = getHeader().cloneWithColumns(chunk.detachColumns());
     metadata_snapshot->check(block, true);
 
     for (auto & stream : streams | boost::adaptors::map_values)
