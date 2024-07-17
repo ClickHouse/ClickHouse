@@ -24,8 +24,10 @@ constexpr UInt64 THREAD_GROUP_ID = 0;
 constexpr std::string_view CLEAR_TO_END_OF_LINE = "\033[K";
 constexpr std::string_view CLEAR_TO_END_OF_SCREEN = "\033[0J";
 constexpr std::string_view RESET_COLOR = "\033[0m";
+constexpr std::string_view HIDE_CURSOR = "\033[?25l";
+constexpr std::string_view SHOW_CURSOR = "\033[?25h";
 
-std::string MoveUpNLines(size_t N)
+std::string moveUpNLines(size_t N)
 {
     return std::format("\033[{}A", N);
 }
@@ -117,6 +119,7 @@ void ProgressTable::writeTable(WriteBufferFromFileDescriptor & message)
     if (metrics.empty())
         return;
 
+    message << HIDE_CURSOR;
     message << "\n";
     writeWithWidth(message, COLUMN_EVENT_NAME, column_event_name_width);
     writeWithWidth(message, COLUMN_VALUE, COLUMN_VALUE_WIDTH);
@@ -144,7 +147,7 @@ void ProgressTable::writeTable(WriteBufferFromFileDescriptor & message)
         message << CLEAR_TO_END_OF_LINE;
     }
 
-    message << MoveUpNLines(tableSize());
+    message << moveUpNLines(tableSize());
     message.next();
 }
 
@@ -232,6 +235,7 @@ void ProgressTable::updateTable(const Block & block)
 void ProgressTable::clearTableOutput(WriteBufferFromFileDescriptor & message)
 {
     message << CLEAR_TO_END_OF_SCREEN;
+    message << SHOW_CURSOR;
     message.next();
 }
 
