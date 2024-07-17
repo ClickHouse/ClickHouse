@@ -16,16 +16,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int DICTIONARIES_WAS_NOT_LOADED;
-    extern const int FUNCTION_NOT_ALLOWED;
-    extern const int NOT_IMPLEMENTED;
-    extern const int SUPPORT_IS_DISABLED;
-    extern const int ACCESS_DENIED;
-    extern const int DEPRECATED_FUNCTION;
-};
-
 enum class FunctionOrigin : int8_t
 {
     SYSTEM = 0,
