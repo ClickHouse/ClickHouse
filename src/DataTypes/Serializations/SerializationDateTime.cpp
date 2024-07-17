@@ -180,7 +180,7 @@ void SerializationDateTime::serializeTextJSON(const IColumn & column, size_t row
     writeChar('"', ostr);
 }
 
-void SerializationDateTime::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+void SerializationDateTime::deserializeTextNoEmptyCheckJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     time_t x = 0;
     if (checkChar('"', istr))
@@ -196,7 +196,7 @@ void SerializationDateTime::deserializeTextJSON(IColumn & column, ReadBuffer & i
     assert_cast<ColumnType &>(column).getData().push_back(static_cast<UInt32>(x));
 }
 
-bool SerializationDateTime::tryDeserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+bool SerializationDateTime::tryDeserializeTextNoEmptyCheckJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     time_t x = 0;
     if (checkChar('"', istr))

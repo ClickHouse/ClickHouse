@@ -15,7 +15,7 @@ namespace DB
 
 SerializationDateTime64::SerializationDateTime64(
     UInt32 scale_, const TimezoneMixin & time_zone_)
-    : SerializationDecimalBase<DateTime64>(DecimalUtils::max_precision<DateTime64>, scale_)
+    : SerializationAsStringNonTrivialJSON<SerializationDecimalBase<DateTime64>>(DecimalUtils::max_precision<DateTime64>, scale_)
     , TimezoneMixin(time_zone_)
 {
 }
@@ -170,7 +170,7 @@ void SerializationDateTime64::serializeTextJSON(const IColumn & column, size_t r
     writeChar('"', ostr);
 }
 
-void SerializationDateTime64::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+void SerializationDateTime64::deserializeTextNoEmptyCheckJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     DateTime64 x = 0;
     if (checkChar('"', istr))
@@ -185,7 +185,7 @@ void SerializationDateTime64::deserializeTextJSON(IColumn & column, ReadBuffer &
     assert_cast<ColumnType &>(column).getData().push_back(x);
 }
 
-bool SerializationDateTime64::tryDeserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+bool SerializationDateTime64::tryDeserializeTextNoEmptyCheckJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     DateTime64 x = 0;
     if (checkChar('"', istr))

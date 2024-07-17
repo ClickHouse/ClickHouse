@@ -1137,6 +1137,23 @@ template void readCSVStringInto<String, false, false>(String & s, ReadBuffer & b
 template void readCSVStringInto<String, true, false>(String & s, ReadBuffer & buf, const FormatSettings::CSV & settings);
 template void readCSVStringInto<PaddedPODArray<UInt8>, false, false>(PaddedPODArray<UInt8> & s, ReadBuffer & buf, const FormatSettings::CSV & settings);
 
+bool tryMatchEmptyString(ReadBuffer & buf)
+{
+    if (buf.eof() || *buf.position() != '"')
+        return false;
+
+    ++buf.position();
+
+    if (buf.eof() || *buf.position() != '"')
+    {
+        --buf.position();
+        return false;
+    }
+
+    ++buf.position();
+
+    return true;
+}
 
 template <typename Vector, typename ReturnType>
 ReturnType readJSONStringInto(Vector & s, ReadBuffer & buf, const FormatSettings::JSON & settings)

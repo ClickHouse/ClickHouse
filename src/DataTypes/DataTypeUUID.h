@@ -42,6 +42,7 @@ public:
     size_t getSizeOfValueInMemory() const override { return sizeof(UUID); }
     bool isCategorial() const override { return true; }
     bool canBeInsideLowCardinality() const override { return true; }
+    bool isNonTriviallySerializedAsStringJSON() const override { return true; }
 
     SerializationPtr doGetDefaultSerialization() const override;
 };

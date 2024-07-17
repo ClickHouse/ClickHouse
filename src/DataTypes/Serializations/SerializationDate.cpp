@@ -85,7 +85,7 @@ void SerializationDate::serializeTextJSON(const IColumn & column, size_t row_num
     writeChar('"', ostr);
 }
 
-void SerializationDate::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
+void SerializationDate::deserializeTextNoEmptyCheckJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
     DayNum x;
     assertChar('"', istr);
@@ -94,7 +94,7 @@ void SerializationDate::deserializeTextJSON(IColumn & column, ReadBuffer & istr,
     assert_cast<ColumnUInt16 &>(column).getData().push_back(x);
 }
 
-bool SerializationDate::tryDeserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
+bool SerializationDate::tryDeserializeTextNoEmptyCheckJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
     DayNum x;
     if (!checkChar('"', istr) || !tryReadDateText(x, istr, time_zone) || !checkChar('"', istr))

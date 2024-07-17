@@ -94,7 +94,7 @@ void SerializationUUID::serializeTextJSON(const IColumn & column, size_t row_num
     writeChar('"', ostr);
 }
 
-void SerializationUUID::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
+void SerializationUUID::deserializeTextNoEmptyCheckJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
     UUID x;
     assertChar('"', istr);
@@ -103,7 +103,7 @@ void SerializationUUID::deserializeTextJSON(IColumn & column, ReadBuffer & istr,
     assert_cast<ColumnUUID &>(column).getData().push_back(x);
 }
 
-bool SerializationUUID::tryDeserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
+bool SerializationUUID::tryDeserializeTextNoEmptyCheckJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
     UUID x;
     if (!checkChar('"', istr) || !tryReadText(x, istr) || !checkChar('"', istr))

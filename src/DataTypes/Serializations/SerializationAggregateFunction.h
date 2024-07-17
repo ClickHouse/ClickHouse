@@ -3,12 +3,13 @@
 #include <AggregateFunctions/IAggregateFunction_fwd.h>
 
 #include <DataTypes/Serializations/ISerialization.h>
+#include <DataTypes/Serializations/SerializationAsStringNonTrivialJSON.h>
 
 
 namespace DB
 {
 
-class SerializationAggregateFunction final : public ISerialization
+class SerializationAggregateFunction final : public SerializationAsStringNonTrivialJSON<ISerialization>
 {
 private:
     AggregateFunctionPtr function;
@@ -37,7 +38,7 @@ public:
     void deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
 
     void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
-    void deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
+    void deserializeTextNoEmptyCheckJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
     void serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;

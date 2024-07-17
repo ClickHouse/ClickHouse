@@ -398,11 +398,19 @@ public:
     virtual void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const = 0;
     virtual void deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const = 0;
     virtual bool tryDeserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const;
+    /// The following two methods are implemented only for non-numeric non-string simple data types.
+    virtual void deserializeTextNoEmptyCheckJSON(IColumn & /*column*/, ReadBuffer & /*istr*/, const FormatSettings &) const
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method deserializeTextNoEmptyCheckJSON is not supported");
+    }
+    virtual bool tryDeserializeTextNoEmptyCheckJSON(IColumn & /*column*/, ReadBuffer & /*istr*/, const FormatSettings &) const
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method tryDeserializeTextNoEmptyCheckJSON is not supported");
+    }
     virtual void serializeTextJSONPretty(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings, size_t /*indent*/) const
     {
         serializeTextJSON(column, row_num, ostr, settings);
     }
-
 
     /** Text serialization for putting into the XML format.
       */

@@ -286,11 +286,33 @@ namespace JSONUtils
                 return true;
             }
 
-            if (as_nullable)
-                return SerializationNullable::deserializeNullAsDefaultOrNestedTextJSON(column, in, format_settings, serialization);
+            if (format_settings.json.empty_as_default && type->isNonTriviallySerializedAsStringJSON())
+            {
+                /// We have a non-numeric non-string data type at the top level.
+                /// At first glance, it looks like we sort of duplicate the work done in
+                /// SerializationAsStringNonTrivialJSON. Actually we need to proceed as
+                /// done here because we want to return false if we inserted a default
+                /// value on purpose, which the ISerialization interface does not allow for.
+                if (tryMatchEmptyString(in))
+                {
+                    column.insertDefault();
+                    return false;
+                }
 
-            serialization->deserializeTextJSON(column, in, format_settings);
-            return true;
+                if (as_nullable)
+                    return SerializationNullable::deserializeNullAsDefaultOrNestedTextNoEmptyCheckJSON(column, in, format_settings, serialization);
+
+                serialization->deserializeTextNoEmptyCheckJSON(column, in, format_settings);
+                return true;
+            }
+            else
+            {
+                if (as_nullable)
+                    return SerializationNullable::deserializeNullAsDefaultOrNestedTextJSON(column, in, format_settings, serialization);
+
+                serialization->deserializeTextJSON(column, in, format_settings);
+                return true;
+            }
         }
         catch (Exception & e)
         {
