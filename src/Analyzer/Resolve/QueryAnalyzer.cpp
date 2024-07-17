@@ -3835,6 +3835,10 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
                 node->convertToNullable();
                 break;
             }
+
+            /// Check parent scopes until find current query scope.
+            if (scope_ptr->scope_node->getNodeType() == QueryTreeNodeType::QUERY)
+                break;
         }
     }
 
