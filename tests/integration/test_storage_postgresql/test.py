@@ -871,7 +871,7 @@ def test_filter_pushdown(started_cluster):
         )
         assert result1 == result2
 
-    for kind in ["INNER", "LEFT", "RIGHT", "FULL"]:
+    for kind in ["INNER", "LEFT", "RIGHT", "FULL", "ANY LEFT", "SEMI RIGHT"]:
         for value in [0, 10]:
             compare_results(
                 "SELECT * FROM ch_table {kind} JOIN {pg_table} as p ON ch_table.pg_id = p.id WHERE value = {value} ORDER BY ALL",
