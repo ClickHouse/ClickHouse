@@ -65,6 +65,11 @@ struct JemallocMibCache
         return value;
     }
 
+    void run()
+    {
+        mallctlbymib(mib, mib_length, nullptr, nullptr, nullptr, 0);
+    }
+
 private:
     static constexpr size_t max_mib_length = 4;
     size_t mib[max_mib_length];

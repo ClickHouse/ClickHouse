@@ -57,6 +57,8 @@ private:
     std::atomic<Int64> hard_limit {0};
     std::atomic<Int64> profiler_limit {0};
 
+    std::atomic<Int64> rss{0};
+
     Int64 profiler_step = 0;
 
     /// To test exception safety of calling code, memory tracker throws an exception on each memory allocation with specified probability.
@@ -237,10 +239,8 @@ public:
     /// Reset the accumulated data.
     void reset();
 
-    /// Reset current counter to an RSS value.
-    /// Jemalloc may have pre-allocated arenas, they are accounted in RSS.
-    /// We can free this arenas in case of exception to avoid OOM.
-    static void setRSS(Int64 rss_);
+    /// update values based on external information (e.g. jemalloc's stat)
+    static void updateValues(Int64 rss_, Int64 allocated_);
 
     /// Prints info about peak memory consumption into log.
     void logPeakMemoryUsage();

@@ -3,11 +3,23 @@
 #include <Common/Jemalloc.h>
 #include <Common/MemoryTracker.h>
 #include <Common/formatReadable.h>
+#include <Common/ProfileEvents.h>
+
+namespace ProfileEvents
+{
+    extern const Event MemoryAllocatorPurge;
+    extern const Event MemoryAllocatorPurgeTimeMicroseconds;
+    extern const Event MemoryWorkerRun;
+    extern const Event MemoryWorkerRunElapsedMicroseconds;
+}
 
 namespace DB
 {
 
 #if USE_JEMALLOC
+#define STRINGIFY_HELPER(x) #x
+#define STRINGIFY(x) STRINGIFY_HELPER(x)
+
 MemoryWorker::MemoryWorker(uint64_t period_ms_)
     : period_ms(period_ms_)
 {
@@ -30,6 +42,8 @@ void MemoryWorker::backgroundThread()
 {
     JemallocMibCache<uint64_t> epoch_mib("epoch");
     JemallocMibCache<size_t> resident_mib("stats.resident");
+    JemallocMibCache<size_t> allocated_mib("stats.allocated");
+    JemallocMibCache<size_t> purge_mib("arena." STRINGIFY(MALLCTL_ARENAS_ALL) ".purge");
     std::unique_lock lock(mutex);
     while (true)
     {
@@ -37,11 +51,20 @@ void MemoryWorker::backgroundThread()
         if (shutdown)
             return;
 
+        Stopwatch total_watch;
         epoch_mib.setValue(0);
         Int64 resident = resident_mib.getValue();
-        MemoryTracker::setRSS(resident);
         if (resident > total_memory_tracker.getHardLimit())
-            purgeJemallocArenas();
+        {
+            Stopwatch purge_watch;
+            purge_mib.run();
+            ProfileEvents::increment(ProfileEvents::MemoryAllocatorPurge);
+            ProfileEvents::increment(ProfileEvents::MemoryAllocatorPurgeTimeMicroseconds, purge_watch.elapsedMicroseconds());
+        }
+
+        MemoryTracker::updateValues(resident, allocated_mib.getValue());
+        ProfileEvents::increment(ProfileEvents::MemoryWorkerRun);
+        ProfileEvents::increment(ProfileEvents::MemoryWorkerRunElapsedMicroseconds, total_watch.elapsedMicroseconds());
     }
 }
 #endif

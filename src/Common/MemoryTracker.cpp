@@ -242,6 +242,7 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceed
       * So, we allow over-allocations.
       */
     Int64 will_be = size ? size + amount.fetch_add(size, std::memory_order_relaxed) : amount.load(std::memory_order_relaxed);
+    Int64 will_be_rss = size + rss.load(std::memory_order_relaxed);
 
     auto metric_loaded = metric.load(std::memory_order_relaxed);
     if (metric_loaded != CurrentMetrics::end() && size)
@@ -290,7 +291,7 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceed
         }
     }
 
-    if (unlikely(current_hard_limit && will_be > current_hard_limit))
+    if (unlikely(current_hard_limit && (will_be > current_hard_limit || will_be_rss > current_hard_limit)))
     {
         if (memoryTrackerCanThrow(level, false) && throw_if_memory_exceeded)
         {
@@ -310,12 +311,13 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceed
                 throw DB::Exception(
                                     DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED,
                                     "Memory limit{}{} exceeded: "
-                                    "would use {} (attempt to allocate chunk of {} bytes), maximum: {}."
+                                    "would use {} (attempt to allocate chunk of {} bytes), current RSS {}, maximum: {}."
                                     "{}{}",
                                     description ? " " : "",
                                     description ? description : "",
                                     formatReadableSizeWithBinarySuffix(will_be),
                                     size,
+                                    formatReadableSizeWithBinarySuffix(rss.load(std::memory_order_relaxed)),
                                     formatReadableSizeWithBinarySuffix(current_hard_limit),
                                     overcommit_result == OvercommitResult::NONE ? "" : " OvercommitTracker decision: ",
                                     toDescription(overcommit_result));
@@ -496,17 +498,18 @@ void MemoryTracker::reset()
 }
 
 
-void MemoryTracker::setRSS(Int64 rss_)
+void MemoryTracker::updateValues(Int64 rss_, Int64 allocated_)
 {
-    Int64 new_amount = rss_;
+    Int64 new_amount = allocated_;
     total_memory_tracker.amount.store(new_amount, std::memory_order_relaxed);
+    total_memory_tracker.rss.store(rss_, std::memory_order_relaxed);
 
     auto metric_loaded = total_memory_tracker.metric.load(std::memory_order_relaxed);
     if (metric_loaded != CurrentMetrics::end())
         CurrentMetrics::set(metric_loaded, new_amount);
 
     bool log_memory_usage = true;
-    total_memory_tracker.updatePeak(rss_, log_memory_usage);
+    total_memory_tracker.updatePeak(new_amount, log_memory_usage);
 }
 
 
