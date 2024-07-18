@@ -28,6 +28,8 @@ private:
 #else
 class MemoryWorker
 {
+public:
+    explicit MemoryWorker(uint64_t /*period_ms_*/) {}
 };
 #endif
 
