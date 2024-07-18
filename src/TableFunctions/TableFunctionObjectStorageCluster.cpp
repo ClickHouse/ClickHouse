@@ -67,37 +67,34 @@ void registerTableFunctionObjectStorageCluster(TableFunctionFactory & factory)
 {
 #if USE_AWS_S3
     factory.registerFunction<TableFunctionS3Cluster>(
-    {
-        .documentation = {
+        {
             .description=R"(The table function can be used to read the data stored on S3 in parallel for many nodes in a specified cluster.)",
-            .examples{{"s3Cluster", "SELECT * FROM  s3Cluster(cluster, url, format, structure)", ""}}},
-            .allow_readonly = false
-        }
+            .examples{{"s3Cluster", "SELECT * FROM  s3Cluster(cluster, url, format, structure)", ""}}
+        },
+        {.allow_readonly = false}
     );
 #endif
 
 #if USE_AZURE_BLOB_STORAGE
     factory.registerFunction<TableFunctionAzureBlobCluster>(
-    {
-        .documentation = {
+        {
             .description=R"(The table function can be used to read the data stored on Azure Blob Storage in parallel for many nodes in a specified cluster.)",
             .examples{{
                 "azureBlobStorageCluster",
                 "SELECT * FROM  azureBlobStorageCluster(cluster, connection_string|storage_account_url, container_name, blobpath, "
-                "[account_name, account_key, format, compression, structure])", ""}}},
-            .allow_readonly = false
-        }
+                "[account_name, account_key, format, compression, structure])", ""}}
+        },
+        {.allow_readonly = false}
     );
 #endif
 
 #if USE_HDFS
     factory.registerFunction<TableFunctionHDFSCluster>(
-    {
-        .documentation = {
+        {
             .description=R"(The table function can be used to read the data stored on HDFS in parallel for many nodes in a specified cluster.)",
-            .examples{{"HDFSCluster", "SELECT * FROM HDFSCluster(cluster_name, uri, format)", ""}}},
-            .allow_readonly = false
-        }
+            .examples{{"HDFSCluster", "SELECT * FROM HDFSCluster(cluster_name, uri, format)", ""}}
+        },
+        {.allow_readonly = false}
     );
 #endif
 

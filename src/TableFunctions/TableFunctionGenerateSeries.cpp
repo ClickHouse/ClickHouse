@@ -111,8 +111,8 @@ UInt64 TableFunctionGenerateSeries<alias_num>::evaluateArgument(ContextPtr conte
 
 void registerTableFunctionGenerateSeries(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionGenerateSeries<0>>({.documentation = {}, .allow_readonly = true});
-    factory.registerFunction<TableFunctionGenerateSeries<1>>({.documentation = {}, .allow_readonly = true});
+    factory.registerFunction<TableFunctionGenerateSeries<0>>({}, {.allow_readonly = true});
+    factory.registerFunction<TableFunctionGenerateSeries<1>>({}, {.allow_readonly = true});
 }
 
 }

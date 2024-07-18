@@ -69,7 +69,7 @@ StoragePtr TableFunctionView::executeImpl(
 
 void registerTableFunctionView(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionView>({.documentation = {}, .allow_readonly = true});
+    factory.registerFunction<TableFunctionView>({}, {.allow_readonly = true});
 }
 
 }
