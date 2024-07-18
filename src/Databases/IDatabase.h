@@ -5,20 +5,21 @@
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/executeQuery.h>
 #include <Parsers/IAST_fwd.h>
+#include <QueryPipeline/BlockIO.h>
 #include <Storages/IStorage_fwd.h>
 #include <base/types.h>
-#include <Common/Exception.h>
 #include <Common/AsyncLoader.h>
+#include <Common/Exception.h>
 #include <Common/PoolId.h>
 #include <Common/ThreadPool_fwd.h>
-#include <QueryPipeline/BlockIO.h>
 
 #include <ctime>
 #include <functional>
+#include <map>
 #include <memory>
 #include <mutex>
+#include <stdexcept>
 #include <vector>
-#include <map>
 
 
 namespace DB
@@ -109,6 +110,57 @@ public:
 };
 
 using DatabaseTablesIteratorPtr = std::unique_ptr<IDatabaseTablesIterator>;
+
+struct SnapshotDetachedTable final
+{
+    String database;
+    String table;
+    UUID uuid = UUIDHelpers::Nil;
+    String metadata_path;
+    bool is_permanently{};
+};
+
+class DatabaseDetachedTablesSnapshotIterator
+{
+private:
+    SnapshotDetachedTables snapshot;
+    SnapshotDetachedTables::iterator it;
+
+protected:
+    DatabaseDetachedTablesSnapshotIterator(DatabaseDetachedTablesSnapshotIterator && other) noexcept
+    {
+        size_t idx = std::distance(other.snapshot.begin(), other.it);
+        std::swap(snapshot, other.snapshot);
+        other.it = other.snapshot.end();
+        it = snapshot.begin();
+        std::advance(it, idx);
+    }
+
+public:
+    explicit DatabaseDetachedTablesSnapshotIterator(const SnapshotDetachedTables & tables_) : snapshot(tables_), it(snapshot.begin())
+    {
+    }
+
+    explicit DatabaseDetachedTablesSnapshotIterator(SnapshotDetachedTables && tables_) : snapshot(std::move(tables_)), it(snapshot.begin())
+    {
+    }
+
+    void next() { ++it; }
+
+    bool isValid() const { return it != snapshot.end(); }
+
+    String database() const { return it->second.database; }
+
+    String table() const { return it->second.table; }
+
+    UUID uuid() const { return it->second.uuid; }
+
+    String metadataPath() const { return it->second.metadata_path; }
+
+    bool isPermanently() const { return it->second.is_permanently; }
+};
+
+using DatabaseDetachedTablesSnapshotIteratorPtr = std::unique_ptr<DatabaseDetachedTablesSnapshotIterator>;
 
 
 /** Database engine.
@@ -231,6 +283,12 @@ public:
     /// It is possible to have "hidden" tables that are not visible when passing through, but are visible if you get them by name using the functions above.
     /// Wait for all tables to be loaded and started up. If `skip_not_loaded` is true, then not yet loaded or not yet started up (at the moment of iterator creation) tables are excluded.
     virtual DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name = {}, bool skip_not_loaded = false) const = 0; /// NOLINT
+
+    virtual DatabaseDetachedTablesSnapshotIteratorPtr getDetachedTablesIterator(
+        ContextPtr /*context*/, const FilterByNameFunction & /*filter_by_table_name = {}*/, bool /*skip_not_loaded = false*/) const
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get detached tables for Database{}", getEngineName());
+    }
 
     /// Returns list of table names.
     virtual Strings getAllTableNames(ContextPtr context) const

@@ -17,6 +17,7 @@
 #include <Common/StringUtils.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
+#include <Core/Settings.h>
 
 
 namespace DB

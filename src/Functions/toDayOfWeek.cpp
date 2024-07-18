@@ -13,7 +13,7 @@ REGISTER_FUNCTION(ToDayOfWeek)
     factory.registerFunction<FunctionToDayOfWeek>();
 
     /// MySQL compatibility alias.
-    factory.registerAlias("DAYOFWEEK", "toDayOfWeek", FunctionFactory::CaseInsensitive);
+    factory.registerAlias("DAYOFWEEK", "toDayOfWeek", FunctionFactory::Case::Insensitive);
 }
 
 }
