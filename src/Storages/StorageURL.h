@@ -193,6 +193,8 @@ public:
 
     Chunk generate() override;
 
+    void onFinish() override { shared_pool->finishStream(); }
+
     static void setCredentials(Poco::Net::HTTPBasicCredentials & credentials, const Poco::URI & request_uri);
 
     static std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> getFirstAvailableURIAndReadBuffer(

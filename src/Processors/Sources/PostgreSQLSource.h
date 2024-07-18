@@ -46,7 +46,7 @@ protected:
 
     void onStart();
     Chunk generate() override;
-    void onFinish();
+    void onFinish() override;
 
 private:
     void init(const Block & sample_block);

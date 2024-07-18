@@ -248,7 +248,6 @@ Chunk StorageObjectStorageSource::generate()
         reader_future = createReaderAsync();
     }
 
-    shared_pool->finishStream();
     return {};
 }
 

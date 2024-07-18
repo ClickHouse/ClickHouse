@@ -273,6 +273,8 @@ private:
 
     Chunk generate() override;
 
+    void onFinish() override { shared_pool->finishStream(); }
+
     void addNumRowsToCache(const String & path, size_t num_rows) const;
 
     std::optional<size_t> tryGetNumRowsFromCache(const String & path, time_t last_mod_time) const;

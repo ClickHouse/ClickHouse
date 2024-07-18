@@ -1293,10 +1293,7 @@ Chunk StorageFileSource::generate()
                     {
                         auto archive = files_iterator->next();
                         if (archive.empty())
-                        {
-                            shared_pool->finishStream();
                             return {};
-                        }
 
                         auto file_stat = getFileStat(archive, storage->use_table_fd, storage->table_fd, storage->getName());
                         if (getContext()->getSettingsRef().engine_file_skip_empty_files && file_stat.st_size == 0)
@@ -1324,10 +1321,7 @@ Chunk StorageFileSource::generate()
                             {
                                 auto archive = files_iterator->next();
                                 if (archive.empty())
-                                {
-                                    shared_pool->finishStream();
                                     return {};
-                                }
 
                                 current_archive_stat = getFileStat(archive, storage->use_table_fd, storage->table_fd, storage->getName());
                                 if (getContext()->getSettingsRef().engine_file_skip_empty_files && current_archive_stat.st_size == 0)
@@ -1373,10 +1367,7 @@ Chunk StorageFileSource::generate()
                 {
                     current_path = files_iterator->next();
                     if (current_path.empty())
-                    {
-                        shared_pool->finishStream();
                         return {};
-                    }
                 }
 
                 /// Special case for distributed format. Defaults are not needed here.

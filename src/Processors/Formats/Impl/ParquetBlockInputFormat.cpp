@@ -393,8 +393,6 @@ ParquetBlockInputFormat::ParquetBlockInputFormat(
             CurrentMetrics::ParquetDecoderThreads,
             CurrentMetrics::ParquetDecoderThreadsActive,
             CurrentMetrics::ParquetDecoderThreadsScheduled);
-
-        shared_pool->acquireThreads(max_decoding_threads);
     }
     else if (max_decoding_threads > 1)
     {
@@ -411,6 +409,9 @@ ParquetBlockInputFormat::~ParquetBlockInputFormat()
     is_stopped = true;
     if (task_tracker)
         task_tracker->safeWaitAll();
+
+    if (shared_pool)
+        shared_pool->releaseThreads(additional_parsing_threads);
 }
 
 void ParquetBlockInputFormat::initializeIfNeeded()
@@ -705,16 +706,12 @@ void ParquetBlockInputFormat::scheduleMoreWorkIfNeeded(std::optional<size_t> row
     {
         if (shared_pool)
         {
-            /// adjust `max_decoding_threads`
             size_t num_remaining_tasks = row_group_batches.size() - row_group_batches_completed;
-            if (num_remaining_tasks < max_decoding_threads)
+            if (num_remaining_tasks > max_decoding_threads)
             {
-                shared_pool->releaseThreads(max_decoding_threads - num_remaining_tasks);
-                max_decoding_threads = num_remaining_tasks;
-            }
-            else
-            {
-                max_decoding_threads += shared_pool->tryAcquireFreeThreads(num_remaining_tasks);
+                size_t free_threads = shared_pool->tryAcquireThreads(num_remaining_tasks);
+                additional_parsing_threads += free_threads;
+                max_decoding_threads += free_threads;
             }
         }
 

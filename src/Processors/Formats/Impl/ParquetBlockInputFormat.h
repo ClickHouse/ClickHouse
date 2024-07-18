@@ -256,6 +256,7 @@ private:
     size_t max_decoding_threads;
     size_t min_bytes_for_seek;
     const size_t max_pending_chunks_per_row_group_batch = 2;
+    size_t additional_parsing_threads = 0;
 
     /// RandomAccessFile is thread safe, so we share it among threads.
     /// FileReader is not, so each thread creates its own.

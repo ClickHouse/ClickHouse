@@ -405,10 +405,7 @@ Chunk StorageURLSource::generate()
         }
 
         if (!reader && !initialize())
-        {
-            shared_pool->finishStream();
             return {};
-        }
 
         Chunk chunk;
         if (reader->pull(chunk))

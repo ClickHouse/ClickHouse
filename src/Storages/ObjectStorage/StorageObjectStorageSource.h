@@ -51,6 +51,8 @@ public:
 
     Chunk generate() override;
 
+    void onFinish() override { shared_pool->finishStream(); }
+
     static std::shared_ptr<IIterator> createFileIterator(
         ConfigurationPtr configuration,
         ObjectStoragePtr object_storage,

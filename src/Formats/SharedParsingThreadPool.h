@@ -20,7 +20,7 @@ public:
     {
         threads_per_stream = std::max(1ul, max_threads / std::max(num_streams, 1ul));
         max_threads = std::max(max_threads, threads_per_stream * num_streams);
-        num_threads = max_threads;
+        free_threads = max_threads - threads_per_stream * num_streams;
     }
 
     size_t getThreadsPerStream() const
@@ -31,35 +31,25 @@ public:
     void finishStream()
     {
         std::lock_guard lock(mutex);
-        if (num_streams > 0)
-            num_streams--;
-    }
-
-    void acquireThreads(size_t threads_to_acquire)
-    {
-        std::lock_guard guard(mutex);
-        chassert(num_threads >= threads_to_acquire);
-        num_threads -= threads_to_acquire;
+        chassert(num_streams > 0);
+        chassert(free_threads + threads_per_stream <= max_threads);
+        num_streams--;
+        free_threads += threads_per_stream;
     }
 
     void releaseThreads(size_t threads_to_release)
     {
         std::lock_guard guard(mutex);
-        chassert(num_threads + threads_to_release <= max_threads);
-        num_threads += threads_to_release;
+        chassert(free_threads + threads_to_release <= max_threads);
+        free_threads += threads_to_release;
     }
 
-    size_t tryAcquireFreeThreads(size_t max_threads_to_acquire)
+    size_t tryAcquireThreads(size_t max_threads_to_acquire)
     {
         std::lock_guard lock(mutex);
-        if (num_streams * threads_per_stream < num_threads)
-        {
-            size_t acquired_threads = std::min(num_threads - num_streams * threads_per_stream, max_threads_to_acquire);
-            num_threads -= acquired_threads;
-            return acquired_threads;
-        }
-
-        return 0;
+        size_t acquired_threads = std::min(free_threads, max_threads_to_acquire);
+        free_threads -= acquired_threads;
+        return acquired_threads;
     }
 
     std::shared_ptr<ThreadPool> getOrSetPool(
@@ -85,7 +75,7 @@ private:
     size_t max_threads;
     size_t threads_per_stream;
 
-    size_t num_threads;
+    size_t free_threads;
     size_t num_streams;
 
     std::shared_ptr<ThreadPool> pool;
