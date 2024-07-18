@@ -5,11 +5,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int UNKNOWN_FILE_SIZE;
-}
-
 ReadBufferFromFileBase::ReadBufferFromFileBase() : BufferWithOwnMemory<SeekableReadBuffer>(0)
 {
 }
