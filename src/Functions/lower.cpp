@@ -19,7 +19,7 @@ using FunctionLower = FunctionStringToString<LowerUpperImpl<'A', 'Z'>, NameLower
 
 REGISTER_FUNCTION(Lower)
 {
-    factory.registerFunction<FunctionLower>({}, FunctionFactory::Case::Insensitive);
+    factory.registerFunction<FunctionLower>({}, {}, FunctionFactory::Case::Insensitive);
     factory.registerAlias("lcase", NameLower::name, FunctionFactory::Case::Insensitive);
 }
 

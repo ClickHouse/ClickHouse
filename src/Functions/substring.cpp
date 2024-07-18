@@ -201,7 +201,7 @@ public:
 
 REGISTER_FUNCTION(Substring)
 {
-    factory.registerFunction<FunctionSubstring<false>>({}, FunctionFactory::Case::Insensitive);
+    factory.registerFunction<FunctionSubstring<false>>({}, {}, FunctionFactory::Case::Insensitive);
     factory.registerAlias("substr", "substring", FunctionFactory::Case::Insensitive); // MySQL alias
     factory.registerAlias("mid", "substring", FunctionFactory::Case::Insensitive); /// MySQL alias
     factory.registerAlias("byteSlice", "substring", FunctionFactory::Case::Insensitive); /// resembles PostgreSQL's get_byte function, similar to ClickHouse's bitSlice

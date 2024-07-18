@@ -16,6 +16,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 enum class FunctionOrigin : int8_t
 {
     SYSTEM = 0,
@@ -67,13 +72,15 @@ namespace
             }
             else
             {
-                auto documentation = factory.getDocumentation(name);
-                res_columns[6]->insert(documentation.description);
-                res_columns[7]->insert(documentation.syntax);
-                res_columns[8]->insert(documentation.argumentsAsString());
-                res_columns[9]->insert(documentation.returned_value);
-                res_columns[10]->insert(documentation.examplesAsString());
-                res_columns[11]->insert(documentation.categoriesAsString());
+                auto documentation = factory.tryGetDocumentation(name);
+                if (!documentation)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Function {} not found in FunctionFactory", name);
+                res_columns[6]->insert(documentation->description);
+                res_columns[7]->insert(documentation->syntax);
+                res_columns[8]->insert(documentation->argumentsAsString());
+                res_columns[9]->insert(documentation->returned_value);
+                res_columns[10]->insert(documentation->examplesAsString());
+                res_columns[11]->insert(documentation->categoriesAsString());
             }
         }
         else

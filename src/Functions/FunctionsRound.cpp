@@ -7,11 +7,11 @@ namespace DB
 
 REGISTER_FUNCTION(Round)
 {
-    factory.registerFunction<FunctionRound>({}, FunctionFactory::Case::Insensitive);
-    factory.registerFunction<FunctionRoundBankers>({}, FunctionFactory::Case::Sensitive);
-    factory.registerFunction<FunctionFloor>({}, FunctionFactory::Case::Insensitive);
-    factory.registerFunction<FunctionCeil>({}, FunctionFactory::Case::Insensitive);
-    factory.registerFunction<FunctionTrunc>({}, FunctionFactory::Case::Insensitive);
+    factory.registerFunction<FunctionRound>({}, {}, FunctionFactory::Case::Insensitive);
+    factory.registerFunction<FunctionRoundBankers>({}, {}, FunctionFactory::Case::Sensitive);
+    factory.registerFunction<FunctionFloor>({}, {}, FunctionFactory::Case::Insensitive);
+    factory.registerFunction<FunctionCeil>({}, {}, FunctionFactory::Case::Insensitive);
+    factory.registerFunction<FunctionTrunc>({}, {}, FunctionFactory::Case::Insensitive);
     factory.registerFunction<FunctionRoundDown>();
 
     /// Compatibility aliases.
