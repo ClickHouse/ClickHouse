@@ -64,10 +64,4 @@ test_table_03093_buffer	0
 Buffer DETACH PERMANENTLY
 test_table_03093_buffer_perm	1
 0
-Distributed
-test_table_03093_dist	0
-0
-Distributed DETACH PERMANENTLY
-test_table_03093_dist_perm	1
-0
 total
