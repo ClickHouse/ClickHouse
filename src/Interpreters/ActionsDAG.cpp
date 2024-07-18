@@ -3150,7 +3150,6 @@ const ActionsDAG::Node * FindOriginalNodeForOutputName::find(const String & outp
 }
 
 FindAliasForInputName::FindAliasForInputName(const ActionsDAG & actions_)
-    //: actions(actions_)
 {
     const auto & actions_outputs = actions_.getOutputs();
     for (const auto * output_node : actions_outputs)

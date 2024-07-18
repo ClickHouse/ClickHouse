@@ -2,11 +2,6 @@
 
 #include <Interpreters/Context_fwd.h>
 
-#include <memory>
-#include <string>
-#include <unordered_map>
-
-
 namespace DB
 {
 
@@ -15,7 +10,6 @@ class NamesAndTypesList;
 class ColumnsDescription;
 
 class ActionsDAG;
-using ActionsDAGPtr = std::unique_ptr<ActionsDAG>;
 
 /** Adds three types of columns into block
   * 1. Columns, that are missed inside request, but present in table without defaults (missed columns)

@@ -38,9 +38,6 @@ using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 class ArrayJoinAction;
 using ArrayJoinActionPtr = std::shared_ptr<ArrayJoinAction>;
 
-class ActionsDAG;
-using ActionsDAGPtr = std::unique_ptr<ActionsDAG>;
-
 /// Create columns in block or return false if not possible
 bool sanitizeBlock(Block & block, bool throw_if_cannot_create_column = false);
 

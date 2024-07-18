@@ -14,7 +14,6 @@ namespace DB
 class ASTFunction;
 
 class ActionsDAG;
-using ActionsDAGPtr = std::unique_ptr<ActionsDAG>;
 
 struct WindowFunctionDescription
 {

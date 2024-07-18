@@ -501,7 +501,6 @@ public:
     const ActionsDAG::Node * find(const String & name);
 
 private:
-    //const ActionsDAG & actions;
     NameToNodeIndex index;
 };
 
