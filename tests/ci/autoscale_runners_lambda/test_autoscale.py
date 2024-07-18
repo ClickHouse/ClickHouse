@@ -97,19 +97,34 @@ class TestSetCapacity(unittest.TestCase):
             ),
             TestCase("lower-min", 10, 5, 20, [Queue("queued", 5, "lower-min")], 10),
             # Decrease capacity
-            TestCase("w/reserve", 1, 13, 20, [Queue("queued", 5, "w/reserve")], 5),
+            # FIXME: Tests changed for lambda that can only scale up
+            # TestCase("w/reserve", 1, 13, 20, [Queue("queued", 5, "w/reserve")], 5),
+            TestCase("w/reserve", 1, 13, 20, [Queue("queued", 5, "w/reserve")], -1),
+            # TestCase(
+            #     "style-checker", 1, 13, 20, [Queue("queued", 5, "style-checker")], 5
+            # ),
             TestCase(
-                "style-checker", 1, 13, 20, [Queue("queued", 5, "style-checker")], 5
+                "style-checker", 1, 13, 20, [Queue("queued", 5, "style-checker")], -1
             ),
-            TestCase("w/reserve", 1, 23, 20, [Queue("queued", 17, "w/reserve")], 17),
-            TestCase("decrease", 1, 13, 20, [Queue("in_progress", 3, "decrease")], 3),
+            # TestCase("w/reserve", 1, 23, 20, [Queue("queued", 17, "w/reserve")], 17),
+            TestCase("w/reserve", 1, 23, 20, [Queue("queued", 17, "w/reserve")], -1),
+            # TestCase("decrease", 1, 13, 20, [Queue("in_progress", 3, "decrease")], 3),
+            TestCase("decrease", 1, 13, 20, [Queue("in_progress", 3, "decrease")], -1),
+            # TestCase(
+            #     "style-checker",
+            #     1,
+            #     13,
+            #     20,
+            #     [Queue("in_progress", 5, "style-checker")],
+            #     5,
+            # ),
             TestCase(
                 "style-checker",
                 1,
                 13,
                 20,
                 [Queue("in_progress", 5, "style-checker")],
-                5,
+                -1,
             ),
         )
         for t in test_cases:
