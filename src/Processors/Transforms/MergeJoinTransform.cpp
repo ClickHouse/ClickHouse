@@ -301,7 +301,11 @@ bool JoinKeyRow::asofMatch(const FullMergeJoinCursor & cursor, ASOFJoinInequalit
     if (isNullAt(*asof_row, 0) || isNullAt(*cursor.getAsofColumn(), cursor->getRow()))
         return false;
 
-    int cmp = cursor.getAsofColumn()->compareAt(cursor->getRow(), 0, *asof_row, 1);
+    int cmp = 0;
+    if (const auto * nullable_column = checkAndGetColumn<ColumnNullable>(cursor.getAsofColumn()))
+        cmp = nullable_column->getNestedColumn().compareAt(cursor->getRow(), 0, *asof_row, 1);
+    else
+        cmp = cursor.getAsofColumn()->compareAt(cursor->getRow(), 0, *asof_row, 1);
 
     return (asof_inequality == ASOFJoinInequality::Less && cmp < 0)
         || (asof_inequality == ASOFJoinInequality::LessOrEquals && cmp <= 0)
