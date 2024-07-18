@@ -17,6 +17,7 @@
 #include <QueryPipeline/Pipe.h>
 #include <Processors/Sources/MongoDBSource.h>
 #include <Processors/Sinks/SinkToStorage.h>
+#include <unordered_set>
 
 #include <DataTypes/DataTypeArray.h>
 
@@ -106,12 +107,12 @@ public:
 
     String getName() const override { return "StorageMongoDBSink"; }
 
-    void consume(Chunk & chunk) override
+    void consume(Chunk chunk) override
     {
         Poco::MongoDB::Database db(db_name);
         Poco::MongoDB::Document::Vector documents;
 
-        auto block = getHeader().cloneWithColumns(chunk.getColumns());
+        auto block = getHeader().cloneWithColumns(chunk.detachColumns());
 
         size_t num_rows = block.rows();
         size_t num_cols = block.columns();
@@ -191,7 +192,7 @@ private:
         else if (which.isFloat32())
             document.add(name, static_cast<Float64>(column.getFloat32(idx)));
         else if (which.isFloat64())
-            document.add(name, column.getFloat64(idx));
+            document.add(name, static_cast<Float64>(column.getFloat64(idx)));
         else if (which.isDate())
             document.add(name, Poco::Timestamp(DateLUT::instance().fromDayNum(DayNum(column.getUInt(idx))) * 1000000));
         else if (which.isDateTime())

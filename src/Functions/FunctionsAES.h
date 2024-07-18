@@ -42,13 +42,13 @@ StringRef foldEncryptionKeyInMySQLCompatitableMode(size_t cipher_key_size, Strin
 
 const EVP_CIPHER * getCipherByName(StringRef name);
 
-enum class CompatibilityMode : uint8_t
+enum class CompatibilityMode
 {
     MySQL,
     OpenSSL
 };
 
-enum class CipherMode : uint8_t
+enum class CipherMode
 {
     MySQLCompatibility,   // with key folding
     OpenSSLCompatibility, // just as regular openssl's enc application does (AEAD modes, like GCM and CCM are not supported)
@@ -59,7 +59,7 @@ enum class CipherMode : uint8_t
 template <CipherMode mode>
 struct KeyHolder
 {
-    StringRef setKey(size_t cipher_key_size, StringRef key) const
+    inline StringRef setKey(size_t cipher_key_size, StringRef key) const
     {
         if (key.size != cipher_key_size)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid key size: {} expected {}", key.size, cipher_key_size);
@@ -71,7 +71,7 @@ struct KeyHolder
 template <>
 struct KeyHolder<CipherMode::MySQLCompatibility>
 {
-    StringRef setKey(size_t cipher_key_size, StringRef key)
+    inline StringRef setKey(size_t cipher_key_size, StringRef key)
     {
         if (key.size < cipher_key_size)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid key size: {} expected {}", key.size, cipher_key_size);
@@ -165,7 +165,7 @@ private:
             });
         }
 
-        validateFunctionArguments(*this, arguments,
+        validateFunctionArgumentTypes(*this, arguments,
             FunctionArgumentDescriptors{
                 {"mode", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), isColumnConst, "encryption mode string"},
                 {"input", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), {}, "plaintext"},
@@ -438,7 +438,7 @@ private:
             });
         }
 
-        validateFunctionArguments(*this, arguments,
+        validateFunctionArgumentTypes(*this, arguments,
             FunctionArgumentDescriptors{
                 {"mode", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), isColumnConst, "decryption mode string"},
                 {"input", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), {}, "ciphertext"},

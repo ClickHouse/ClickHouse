@@ -9,7 +9,7 @@ class IDisk;
 using DiskPtr = std::shared_ptr<IDisk>;
 class SeekableReadBuffer;
 class WriteBuffer;
-enum class WriteMode : uint8_t;
+enum class WriteMode;
 struct WriteSettings;
 struct ReadSettings;
 

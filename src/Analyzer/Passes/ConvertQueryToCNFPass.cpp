@@ -10,8 +10,6 @@
 #include <Analyzer/Utils.h>
 #include <Analyzer/HashUtils.h>
 
-#include <Core/Settings.h>
-
 #include <Storages/IStorage.h>
 
 #include <Functions/FunctionFactory.h>
@@ -98,23 +96,6 @@ bool checkIfGroupAlwaysTrueGraph(const Analyzer::CNF::OrGroup & group, const Com
         }
     }
 
-    return false;
-}
-
-bool checkIfGroupAlwaysTrueAtoms(const Analyzer::CNF::OrGroup & group)
-{
-    /// Filters out groups containing mutually exclusive atoms,
-    /// since these groups are always True
-
-    for (const auto & atom : group)
-    {
-        auto negated(atom);
-        negated.negative = !atom.negative;
-        if (group.contains(negated))
-        {
-            return true;
-        }
-    }
     return false;
 }
 
@@ -663,8 +644,7 @@ void optimizeWithConstraints(Analyzer::CNF & cnf, const QueryTreeNodes & table_e
         cnf.filterAlwaysTrueGroups([&](const auto & group)
            {
                /// remove always true groups from CNF
-               return !checkIfGroupAlwaysTrueFullMatch(group, query_tree_constraints)
-                   && !checkIfGroupAlwaysTrueGraph(group, compare_graph) && !checkIfGroupAlwaysTrueAtoms(group);
+               return !checkIfGroupAlwaysTrueFullMatch(group, query_tree_constraints) && !checkIfGroupAlwaysTrueGraph(group, compare_graph);
            })
            .filterAlwaysFalseAtoms([&](const Analyzer::CNF::AtomicFormula & atom)
            {

@@ -46,7 +46,7 @@ public:
         FunctionArgumentDescriptors optional_args{
             {"time", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"}
         };
-        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
+        validateFunctionArgumentTypes(*this, arguments, mandatory_args, optional_args);
 
         return std::make_shared<DataTypeDateTime64>(DATETIME_SCALE);
     }

@@ -1,6 +1,5 @@
 #include <Storages/ReadInOrderOptimizer.h>
 
-#include <Core/Settings.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>

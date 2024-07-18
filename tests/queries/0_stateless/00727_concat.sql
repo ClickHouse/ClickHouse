@@ -93,6 +93,4 @@ SELECT concat(materialize(NULL :: Nullable(UInt64)));
 
 SELECT CONCAT('Testing the ', 'alias');
 
-SELECT '-- Empty argument tests';
-SELECT concat();
-select toTypeName(concat());
+SELECT concat();  -- { serverError 42 }
