@@ -201,7 +201,7 @@ SELECT count(table) FROM system.detached_tables WHERE database='test_db';
 
 SELECT 'Distributed';
 CREATE TABLE test_db.test_table_03093_for_dist (key UInt64) ENGINE=MergeTree ORDER BY key;
-CREATE TABLE test_db.test_table_03093_dist AS test_db.test_table_03093_for_dist Engine=Distributed('test_cluster_two_shards', test_db, 'test_table_03093_for_dist', key);
+CREATE TABLE test_db.test_table_03093_dist AS test_db.test_table_03093_for_dist Engine=Distributed('test_cluster_two_shards', test_db, 'test_table_03093_dist', key);
 INSERT INTO test_db.test_table_03093_dist SELECT toUInt64(number) FROM system.numbers LIMIT 6;
 DETACH TABLE test_db.test_table_03093_dist;
 SELECT table, is_permanently FROM system.detached_tables WHERE database='test_db' FORMAT TabSeparated;
@@ -211,7 +211,7 @@ DROP TABLE test_db.test_table_03093_for_dist SYNC;
 
 SELECT 'Distributed DETACH PERMANENTLY';
 CREATE TABLE test_db.test_table_03093_for_dist_perm (key UInt64) ENGINE=MergeTree ORDER BY key;
-CREATE TABLE test_db.test_table_03093_dist_perm AS test_db.test_table_03093_for_dist_perm Engine=Distributed('test_cluster_two_shards', test_db, 'test_table_03093_for_dist_perm', key);
+CREATE TABLE test_db.test_table_03093_dist_perm AS test_db.test_table_03093_for_dist_perm Engine=Distributed('test_cluster_two_shards', test_db, 'test_table_03093_dist_perm', key);
 INSERT INTO test_db.test_table_03093_dist_perm SELECT toUInt64(number) FROM system.numbers LIMIT 6;
 DETACH TABLE test_db.test_table_03093_dist_perm PERMANENTLY;
 SELECT table, is_permanently FROM system.detached_tables WHERE database='test_db' FORMAT TabSeparated;
