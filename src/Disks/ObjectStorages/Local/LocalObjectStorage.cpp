@@ -9,6 +9,7 @@
 #include <IO/WriteBufferFromFile.h>
 #include <IO/copyData.h>
 #include <Interpreters/Context.h>
+#include <Poco/Logger.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
@@ -58,27 +59,28 @@ std::unique_ptr<ReadBufferFromFileBase> LocalObjectStorage::readObjects( /// NOL
 
         std::string answer(1000, ' ');
         size_t read_bytes = reader->read(answer.data(), 1000);
-        LOG_DEBUG(&Poco::Logger::get("ReadBufferFromFileBase 00"), "Read bytes: {}, string: {}", read_bytes, answer.substr(0, read_bytes));
+        LOG_DEBUG(&Poco::Logger::get("ReadBufferFromFileBase"), "Read bytes: {}, string: {}", read_bytes, answer.substr(0, read_bytes));
 
         return createReadBufferFromFileBase(object.remote_path, modified_settings, read_hint, file_size);
     };
 
+    LOG_DEBUG(&Poco::Logger::get("Method"), "Method read: {}", read_settings.remote_fs_method == RemoteFSReadMethod::read);
     switch (read_settings.remote_fs_method)
     {
         case RemoteFSReadMethod::read:
         {
-            auto impl2 = std::make_unique<ReadBufferFromRemoteFSGather>(
-                std::move(read_buffer_creator),
-                objects,
-                "file:",
-                modified_settings,
-                global_context->getFilesystemCacheLog(),
-                /* use_external_buffer */ true);
+            // auto impl2 = std::make_unique<ReadBufferFromRemoteFSGather>(
+            //     std::move(read_buffer_creator),
+            //     objects,
+            //     "file:",
+            //     modified_settings,
+            //     global_context->getFilesystemCacheLog(),
+            //     /* use_external_buffer */ true);
 
-            std::string answer(1000, ' ');
-            size_t read_bytes = impl2->read(answer.data(), 1000);
-            LOG_DEBUG(
-                &Poco::Logger::get("ReadBufferFromRemoteFSGather"), "Read bytes: {}, string: {}", read_bytes, answer.substr(0, read_bytes));
+            // std::string answer(1000, ' ');
+            // size_t read_bytes = impl2->read(answer.data(), 1000);
+            // LOG_DEBUG(
+            //     &Poco::Logger::get("ReadBufferFromRemoteFSGather"), "Read bytes: {}, string: {}", read_bytes, answer.substr(0, read_bytes));
 
             return std::make_unique<ReadBufferFromRemoteFSGather>(
                 std::move(read_buffer_creator), objects, "file:", modified_settings,
@@ -86,54 +88,56 @@ std::unique_ptr<ReadBufferFromFileBase> LocalObjectStorage::readObjects( /// NOL
         }
         case RemoteFSReadMethod::threadpool:
         {
-            LOG_DEBUG(&Poco::Logger::get("Threadpool"), "Threadpool");
+            // LOG_DEBUG(&Poco::Logger::get("Threadpool"), "Threadpool");
             auto impl = std::make_unique<ReadBufferFromRemoteFSGather>(
                 std::move(read_buffer_creator), objects, "file:", modified_settings,
                 global_context->getFilesystemCacheLog(), /* use_external_buffer */true);
 
-            auto impl2 = std::make_unique<ReadBufferFromRemoteFSGather>(
-                std::move(read_buffer_creator),
-                objects,
-                "file:",
-                modified_settings,
-                global_context->getFilesystemCacheLog(),
-                /* use_external_buffer */ true);
+            // auto impl2 = std::make_unique<ReadBufferFromRemoteFSGather>(
+            //     std::move(read_buffer_creator),
+            //     objects,
+            //     "file:",
+            //     modified_settings,
+            //     global_context->getFilesystemCacheLog(),
+            //     /* use_external_buffer */ true);
 
-            std::string answer(1000, ' ');
-            size_t read_bytes = impl2->read(answer.data(), 1000);
-            LOG_DEBUG(
-                &Poco::Logger::get("ReadBufferFromRemoteFSGather"), "Read bytes: {}, string: {}", read_bytes, answer.substr(0, read_bytes));
+            // std::string answer(1000, ' ');
+            // size_t read_bytes = impl2->read(answer.data(), 1000);
+            // LOG_DEBUG(
+            //     &Poco::Logger::get("ReadBufferFromRemoteFSGather"), "Read bytes: {}, string: {}", read_bytes, answer.substr(0, read_bytes));
 
-            auto impl3 = std::make_unique<ReadBufferFromRemoteFSGather>(
-                std::move(read_buffer_creator),
-                objects,
-                "file:",
-                modified_settings,
-                global_context->getFilesystemCacheLog(),
-                /* use_external_buffer */ true);
+            // auto impl3 = std::make_unique<ReadBufferFromRemoteFSGather>(
+            //     std::move(read_buffer_creator),
+            //     objects,
+            //     "file:",
+            //     modified_settings,
+            //     global_context->getFilesystemCacheLog(),
+            //     /* use_external_buffer */ true);
 
+
+            // auto & reader2 = global_context->getThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER);
+
+            // auto async_reader = std::make_unique<AsynchronousBoundedReadBuffer>(
+            //     std::move(impl3),
+            //     reader2,
+            //     read_settings,
+            //     global_context->getAsyncReadCounters(),
+            //     global_context->getFilesystemReadPrefetchesLog());
+
+            // answer = std::string(1000, ' ');
+            // read_bytes = async_reader->read(answer.data(), 1000);
+            // LOG_DEBUG(
+            //     &Poco::Logger::get("AsynchronousBoundedReadBuffer"),
+            //     "Read bytes: {}, string: {}",
+            //     read_bytes,
+            //     answer.substr(0, read_bytes));
 
             auto & reader = global_context->getThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER);
 
-            auto async_reader = std::make_unique<AsynchronousBoundedReadBuffer>(
-                std::move(impl3),
+            return std::make_unique<AsynchronousBoundedReadBuffer>(
+                std::move(impl),
                 reader,
                 read_settings,
-                global_context->getAsyncReadCounters(),
-                global_context->getFilesystemReadPrefetchesLog());
-
-            answer = std::string(1000, ' ');
-            read_bytes = async_reader->read(answer.data(), 1000);
-            LOG_DEBUG(
-                &Poco::Logger::get("AsynchronousBoundedReadBuffer"),
-                "Read bytes: {}, string: {}",
-                read_bytes,
-                answer.substr(0, read_bytes));
-
-            // reader = global_context->getThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER);
-
-            return std::make_unique<AsynchronousBoundedReadBuffer>(
-                std::move(impl), reader, read_settings,
                 global_context->getAsyncReadCounters(),
                 global_context->getFilesystemReadPrefetchesLog());
         }

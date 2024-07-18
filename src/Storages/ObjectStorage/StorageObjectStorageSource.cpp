@@ -461,6 +461,8 @@ std::unique_ptr<ReadBuffer> StorageObjectStorageSource::createReadBuffer(
 
     auto read_settings = context_->getReadSettings().adjustBufferSize(object_size);
 
+    read_settings.remote_fs_method = RemoteFSReadMethod::read;
+
     LOG_DEBUG(&Poco::Logger::get("Threadpool"), "Method threadpool: {}", read_settings.remote_fs_method == RemoteFSReadMethod::threadpool);
 
     read_settings.enable_filesystem_cache = false;
@@ -477,28 +479,28 @@ std::unique_ptr<ReadBuffer> StorageObjectStorageSource::createReadBuffer(
     // Create a read buffer that will prefetch the first ~1 MB of the file.
     // When reading lots of tiny files, this prefetching almost doubles the throughput.
     // For bigger files, parallel reading is more useful.
-    if (use_prefetch)
-    {
-        LOG_TRACE(log, "Downloading object of size {} with initial prefetch", object_size);
+    // if (use_prefetch)
+    // {
+    LOG_TRACE(log, "Downloading object of size {} with initial prefetch", object_size);
 
-        LOG_DEBUG(&Poco::Logger::get("Read objects"), "Path: {}, object size: {}", object_info.getPath(), object_size);
+    LOG_DEBUG(&Poco::Logger::get("Read objects"), "Path: {}, object size: {}", object_info.getPath(), object_size);
 
-        auto async_reader = object_storage->readObjects(
-            StoredObjects{StoredObject{object_info.getPath(), /* local_path */ "", object_size}}, read_settings);
+    auto async_reader
+        = object_storage->readObjects(StoredObjects{StoredObject{object_info.getPath(), /* local_path */ "", object_size}}, read_settings);
 
-        async_reader->setReadUntilEnd();
-        if (read_settings.remote_fs_prefetch)
-            async_reader->prefetch(DEFAULT_PREFETCH_PRIORITY);
+    async_reader->setReadUntilEnd();
+    if (read_settings.remote_fs_prefetch)
+        async_reader->prefetch(DEFAULT_PREFETCH_PRIORITY);
 
-        return async_reader;
-    }
-    else
-    {
-        /// FIXME: this is inconsistent that readObject always reads synchronously ignoring read_method setting.
-        LOG_DEBUG(&Poco::Logger::get("Read object"), "Path: {}, object size: {}", object_info.getPath(), object_size);
+    return async_reader;
+    // }
+    // else
+    // {
+    //     /// FIXME: this is inconsistent that readObject always reads synchronously ignoring read_method setting.
+    //     LOG_DEBUG(&Poco::Logger::get("Read object"), "Path: {}, object size: {}", object_info.getPath(), object_size);
 
-        return object_storage->readObject(StoredObject(object_info.getPath(), "", object_size), read_settings);
-    }
+    //     return object_storage->readObject(StoredObject(object_info.getPath(), "", object_size), read_settings);
+    // }
 }
 
 StorageObjectStorageSource::IIterator::IIterator(const std::string & logger_name_)
