@@ -18,28 +18,20 @@ struct ICgroupsReader
 
 std::shared_ptr<ICgroupsReader> createCgroupsReader();
 
-/// Does two things:
-/// 1. Periodically reads the memory usage of the process from Linux cgroups.
-///    You can specify soft or hard memory limits:
-///    - When the soft memory limit is hit, drop jemalloc cache.
-///    - When the hard memory limit is hit, update MemoryTracking metric to throw memory exceptions faster.
-///    The goal of this is to avoid that the process hits the maximum allowed memory limit at which there is a good
-///    chance that the Limux OOM killer terminates it. All of this is done is because internal memory tracking in
-///    ClickHouse can unfortunately under-estimate the actually used memory.
-/// 2. Periodically reads the the maximum memory available to the process (which can change due to cgroups settings).
-///    You can specify a callback to react on changes. The callback typically reloads the configuration, i.e. Server
-///    or Keeper configuration file. This reloads settings 'max_server_memory_usage' (Server) and 'max_memory_usage_soft_limit'
-///    (Keeper) from which various other internal limits are calculated, including the soft and hard limits for (1.).
-///    The goal of this is to provide elasticity when the container is scaled-up/scaled-down. The mechanism (polling
-///    cgroups) is quite implicit, unfortunately there is currently no better way to communicate memory threshold changes
-///    to the database.
+///  Periodically reads the the maximum memory available to the process (which can change due to cgroups settings).
+///  You can specify a callback to react on changes. The callback typically reloads the configuration, i.e. Server
+///  or Keeper configuration file. This reloads settings 'max_server_memory_usage' (Server) and 'max_memory_usage_soft_limit'
+///  (Keeper) from which various other internal limits are calculated, including the soft and hard limits for (1.).
+///  The goal of this is to provide elasticity when the container is scaled-up/scaled-down. The mechanism (polling
+///  cgroups) is quite implicit, unfortunately there is currently no better way to communicate memory threshold changes
+///  to the database.
 #if defined(OS_LINUX)
 class CgroupsMemoryUsageObserver
 {
 public:
     using OnMemoryAmountAvailableChangedFn = std::function<void()>;
 
-    explicit CgroupsMemoryUsageObserver(std::chrono::seconds wait_time_, std::shared_ptr<ICgroupsReader> cgroups_reader_);
+    explicit CgroupsMemoryUsageObserver(std::chrono::seconds wait_time_);
     ~CgroupsMemoryUsageObserver();
 
     void setOnMemoryAmountAvailableChangedFn(OnMemoryAmountAvailableChangedFn on_memory_amount_available_changed_);

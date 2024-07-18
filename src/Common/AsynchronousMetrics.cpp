@@ -4,6 +4,7 @@
 #include <Common/setThreadName.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/filesystemHelpers.h>
+#include <Common/Jemalloc.h>
 #include <Common/logger_useful.h>
 #include <IO/UncompressedCache.h>
 #include <IO/MMappedFileCache.h>
@@ -57,12 +58,10 @@ static std::unique_ptr<ReadBufferFromFilePRead> openFileIfExists(const std::stri
 
 AsynchronousMetrics::AsynchronousMetrics(
     unsigned update_period_seconds,
-    const ProtocolServerMetricsFunc & protocol_server_metrics_func_,
-    std::shared_ptr<ICgroupsReader> cgroups_reader_)
+    const ProtocolServerMetricsFunc & protocol_server_metrics_func_)
     : update_period(update_period_seconds)
     , log(getLogger("AsynchronousMetrics"))
     , protocol_server_metrics_func(protocol_server_metrics_func_)
-    , cgroups_reader(std::move(cgroups_reader_))
 {
 #if defined(OS_LINUX)
     openFileIfExists("/proc/meminfo", meminfo);
@@ -378,23 +377,13 @@ void AsynchronousMetrics::run()
 namespace
 {
 
-uint64_t updateJemallocEpoch()
-{
-    uint64_t value = 0;
-    size_t size = sizeof(value);
-    mallctl("epoch", &value, &size, &value, size);
-    return value;
-}
-
 template <typename Value>
 Value saveJemallocMetricImpl(
     AsynchronousMetricValues & values,
     const std::string & jemalloc_full_name,
     const std::string & clickhouse_full_name)
 {
-    Value value{};
-    size_t size = sizeof(value);
-    mallctl(jemalloc_full_name.c_str(), &value, &size, nullptr, 0);
+    auto value = getJemallocValue<Value>(jemalloc_full_name.c_str());
     values[clickhouse_full_name] = AsynchronousMetricValue(value, "An internal metric of the low-level memory allocator (jemalloc). See https://jemalloc.net/jemalloc.3.html");
     return value;
 }
@@ -604,7 +593,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
     // 'epoch' is a special mallctl -- it updates the statistics. Without it, all
     // the following calls will return stale values. It increments and returns
     // the current epoch number, which might be useful to log as a sanity check.
-    auto epoch = updateJemallocEpoch();
+    auto epoch = getJemallocValue<uint64_t>("epoch");
     new_values["jemalloc.epoch"] = { epoch, "An internal incremental update number of the statistics of jemalloc (Jason Evans' memory allocator), used in all other `jemalloc` metrics." };
 
     // Collect the statistics themselves.

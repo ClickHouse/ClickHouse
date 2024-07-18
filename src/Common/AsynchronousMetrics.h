@@ -69,8 +69,7 @@ public:
 
     AsynchronousMetrics(
         unsigned update_period_seconds,
-        const ProtocolServerMetricsFunc & protocol_server_metrics_func_,
-        std::shared_ptr<ICgroupsReader> cgroups_reader_);
+        const ProtocolServerMetricsFunc & protocol_server_metrics_func_);
 
     virtual ~AsynchronousMetrics();
 

@@ -13,7 +13,6 @@ node = cluster.add_instance(
         "configs/async_metrics_no.xml",
     ],
     mem_limit="4g",
-    env_variables={"MALLOC_CONF": "dirty_decay_ms:0"},
 )
 
 

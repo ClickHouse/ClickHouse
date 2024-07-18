@@ -108,8 +108,6 @@ void AllocationTrace::onFreeImpl(void * ptr, size_t size) const
 namespace ProfileEvents
 {
     extern const Event QueryMemoryLimitExceeded;
-    extern const Event MemoryAllocatorPurge;
-    extern const Event MemoryAllocatorPurgeTimeMicroseconds;
 }
 
 using namespace std::chrono_literals;
@@ -118,8 +116,6 @@ static constexpr size_t log_peak_memory_usage_every = 1ULL << 30;
 
 MemoryTracker total_memory_tracker(nullptr, VariableContext::Global);
 MemoryTracker background_memory_tracker(&total_memory_tracker, VariableContext::User, false);
-
-std::atomic<bool> MemoryTracker::has_free_memory_in_allocator_arenas;
 
 MemoryTracker::MemoryTracker(VariableContext level_) : parent(&total_memory_tracker), level(level_) {}
 MemoryTracker::MemoryTracker(MemoryTracker * parent_, VariableContext level_) : parent(parent_), level(level_) {}
@@ -500,12 +496,10 @@ void MemoryTracker::reset()
 }
 
 
-void MemoryTracker::setRSS(Int64 rss_, bool has_free_memory_in_allocator_arenas_)
+void MemoryTracker::setRSS(Int64 rss_)
 {
     Int64 new_amount = rss_;
-    if (rss_)
-        total_memory_tracker.amount.store(new_amount, std::memory_order_relaxed);
-    has_free_memory_in_allocator_arenas.store(has_free_memory_in_allocator_arenas_, std::memory_order_relaxed);
+    total_memory_tracker.amount.store(new_amount, std::memory_order_relaxed);
 
     auto metric_loaded = total_memory_tracker.metric.load(std::memory_order_relaxed);
     if (metric_loaded != CurrentMetrics::end())

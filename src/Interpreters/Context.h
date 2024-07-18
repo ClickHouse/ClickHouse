@@ -1344,9 +1344,6 @@ public:
 
     const ServerSettings & getServerSettings() const;
 
-    void setCgroupsReader(std::shared_ptr<ICgroupsReader> cgroups_reader_);
-    std::shared_ptr<ICgroupsReader> getCgroupsReader() const;
-
 private:
     std::shared_ptr<const SettingsConstraintsAndProfileIDs> getSettingsConstraintsAndCurrentProfilesWithLock() const;
 

@@ -56,9 +56,6 @@ private:
     std::atomic<Int64> soft_limit {0};
     std::atomic<Int64> hard_limit {0};
     std::atomic<Int64> profiler_limit {0};
-    std::atomic_bool allow_use_jemalloc_memory {true};
-
-    static std::atomic<bool> has_free_memory_in_allocator_arenas;
 
     Int64 profiler_step = 0;
 
@@ -153,14 +150,6 @@ public:
     {
         return soft_limit.load(std::memory_order_relaxed);
     }
-    void setAllowUseJemallocMemory(bool value)
-    {
-        allow_use_jemalloc_memory.store(value, std::memory_order_relaxed);
-    }
-    bool getAllowUseJemallocMmemory() const
-    {
-        return allow_use_jemalloc_memory.load(std::memory_order_relaxed);
-    }
 
     /** Set limit if it was not set.
       * Otherwise, set limit to new value, if new value is greater than previous limit.
@@ -251,7 +240,7 @@ public:
     /// Reset current counter to an RSS value.
     /// Jemalloc may have pre-allocated arenas, they are accounted in RSS.
     /// We can free this arenas in case of exception to avoid OOM.
-    static void setRSS(Int64 rss_, bool has_free_memory_in_allocator_arenas_);
+    static void setRSS(Int64 rss_);
 
     /// Prints info about peak memory consumption into log.
     void logPeakMemoryUsage();

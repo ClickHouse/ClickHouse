@@ -11,7 +11,6 @@
 #include <Poco/Util/HelpFormatter.h>
 #include <Poco/Environment.h>
 #include <Poco/Config.h>
-#include <Common/Jemalloc.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/logger_useful.h>
 #include <base/phdr_cache.h>
@@ -24,6 +23,7 @@
 #include <base/safeExit.h>
 #include <Common/PoolId.h>
 #include <Common/MemoryTracker.h>
+#include <Common/MemoryWorker.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/DNSResolver.h>
 #include <Common/CgroupsMemoryUsageObserver.h>
@@ -109,6 +109,8 @@
 #include <Core/ServerSettings.h>
 #include <filesystem>
 #include <unordered_set>
+
+#include <Common/Jemalloc.h>
 
 #include "config.h"
 #include <Common/config_version.h>
@@ -591,29 +593,6 @@ void sanityChecks(Server & server)
     }
 }
 
-[[noreturn]] void backgroundMemoryThread()
-{
-    std::mutex mutex;
-    std::condition_variable cv;
-
-    std::unique_lock lock(mutex);
-    while (true)
-    {
-        cv.wait_for(lock, std::chrono::microseconds(200));
-        uint64_t epoch = 0;
-        mallctl("epoch", nullptr, nullptr, &epoch, sizeof(epoch));
-        auto maybe_resident = getJemallocValue<size_t>("stats.resident");
-        if (!maybe_resident.has_value())
-            continue;
-
-        Int64 resident = *maybe_resident;
-        //LOG_INFO(getLogger("JEmalloc"), "Resident {}", ReadableSize(resident));
-        MemoryTracker::setRSS(resident, false);
-        if (resident > total_memory_tracker.getHardLimit())
-            purgeJemallocArenas();
-    }
-}
-
 }
 
 void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, ContextMutablePtr context, Poco::Logger * log)
@@ -905,11 +884,6 @@ try
             total_memory_tracker.setSampleMaxAllocationSize(server_settings.total_memory_profiler_sample_max_allocation_size);
     }
 
-    ThreadFromGlobalPool background_memory_thread([]
-    {
-        backgroundMemoryThread();
-    });
-
     Poco::ThreadPool server_pool(
         /* minCapacity */3,
         /* maxCapacity */server_settings.max_connections,
@@ -930,16 +904,7 @@ try
         LOG_INFO(log, "Background threads finished in {} ms", watch.elapsedMilliseconds());
     });
 
-    try
-    {
-        auto cgroups_reader = createCgroupsReader();
-        global_context->setCgroupsReader(createCgroupsReader());
-    }
-    catch (...)
-    {
-        if (server_settings.cgroups_memory_usage_observer_wait_time != 0)
-            tryLogCurrentException(log, "Failed to create cgroups reader");
-    }
+    MemoryWorker memory_worker(global_context->getServerSettings().memory_worker_period_ms);
 
     /// This object will periodically calculate some metrics.
     ServerAsynchronousMetrics async_metrics(
@@ -1500,13 +1465,15 @@ try
     }
 
     std::optional<CgroupsMemoryUsageObserver> cgroups_memory_usage_observer;
-    if (auto wait_time = server_settings.cgroups_memory_usage_observer_wait_time; wait_time != 0)
+    try
     {
-        auto cgroups_reader = global_context->getCgroupsReader();
-        if (cgroups_reader)
-            cgroups_memory_usage_observer.emplace(std::chrono::seconds(wait_time), std::move(cgroups_reader));
-        else
-            LOG_ERROR(log, "Disabling cgroup memory observer because of an error during initialization of cgroups reader");
+        auto wait_time = server_settings.cgroups_memory_usage_observer_wait_time;
+        if (wait_time != 0)
+            cgroups_memory_usage_observer.emplace(std::chrono::seconds(wait_time));
+    }
+    catch (Exception &)
+    {
+        tryLogCurrentException(log, "Disabling cgroup memory observer because of an error during initialization");
     }
 
     std::string cert_path = config().getString("openSSL.server.certificateFile", "");
@@ -1601,8 +1568,6 @@ try
             background_memory_tracker.setSoftLimit(merges_mutations_memory_usage_soft_limit);
             background_memory_tracker.setDescription("(background)");
             background_memory_tracker.setMetric(CurrentMetrics::MergesMutationsMemoryTracking);
-
-            total_memory_tracker.setAllowUseJemallocMemory(new_server_settings.allow_use_jemalloc_memory);
 
             auto * global_overcommit_tracker = global_context->getGlobalOvercommitTracker();
             total_memory_tracker.setOvercommitTracker(global_overcommit_tracker);

@@ -28,27 +28,45 @@ void setJemallocValue(const char * name, T value)
 {
     T old_value;
     size_t old_value_size = sizeof(T);
-    if (mallctl(name, &old_value, &old_value_size, reinterpret_cast<void*>(&value), sizeof(T)))
-    {
-        LOG_WARNING(getLogger("Jemalloc"), "mallctl for {} failed", name);
-        return;
-    }
-
+    mallctl(name, &old_value, &old_value_size, reinterpret_cast<void*>(&value), sizeof(T));
     LOG_INFO(getLogger("Jemalloc"), "Value for {} set to {} (from {})", name, value, old_value);
 }
 
 template <typename T>
-std::optional<T> getJemallocValue(const char * name)
+T getJemallocValue(const char * name)
 {
     T value;
     size_t value_size = sizeof(T);
-    if (mallctl(name, &value, &value_size, nullptr, 0))
-    {
-        LOG_WARNING(getLogger("Jemalloc"), "mallctl for {} failed", name);
-        return std::nullopt;
-    }
+    mallctl(name, &value, &value_size, nullptr, 0);
     return value;
 }
+
+template <typename T>
+struct JemallocMibCache
+{
+    explicit JemallocMibCache(const char * name)
+    {
+        mallctlnametomib(name, mib, &mib_length);
+    }
+
+    void setValue(T value)
+    {
+        mallctlbymib(mib, mib_length, nullptr, nullptr, reinterpret_cast<void*>(&value), sizeof(T));
+    }
+
+    T getValue()
+    {
+        T value;
+        size_t value_size = sizeof(T);
+        mallctlbymib(mib, mib_length, &value, &value_size, nullptr, 0);
+        return value;
+    }
+
+private:
+    static constexpr size_t max_mib_length = 4;
+    size_t mib[max_mib_length];
+    size_t mib_length = max_mib_length;
+};
 
 }
 

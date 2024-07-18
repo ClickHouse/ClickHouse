@@ -191,11 +191,9 @@ std::shared_ptr<ICgroupsReader> createCgroupsReader()
 
 }
 
-CgroupsMemoryUsageObserver::CgroupsMemoryUsageObserver(std::chrono::seconds wait_time_, std::shared_ptr<ICgroupsReader> cgroups_reader_)
-    : log(getLogger("CgroupsMemoryUsageObserver")), wait_time(wait_time_), cgroups_reader(std::move(cgroups_reader_))
-{
-    cgroups_reader = createCgroupsReader();
-}
+CgroupsMemoryUsageObserver::CgroupsMemoryUsageObserver(std::chrono::seconds wait_time_)
+    : log(getLogger("CgroupsMemoryUsageObserver")), wait_time(wait_time_), cgroups_reader(createCgroupsReader())
+{}
 
 CgroupsMemoryUsageObserver::~CgroupsMemoryUsageObserver()
 {

@@ -11,6 +11,7 @@
 #include <Core/ServerUUID.h>
 #include <Common/logger_useful.h>
 #include <Common/CgroupsMemoryUsageObserver.h>
+#include <Common/MemoryWorker.h>
 #include <Common/ErrorHandlers.h>
 #include <Common/assertProcessUserMatchesDataOwner.h>
 #include <Common/makeSocketAddress.h>
@@ -371,6 +372,8 @@ try
         LOG_INFO(log, "Background threads finished in {} ms", watch.elapsedMilliseconds());
     });
 
+    MemoryWorker memory_worker(config().getUInt64("memory_worker_period_ms", 100));
+
     static ServerErrorHandler error_handler;
     Poco::ErrorHandler::set(&error_handler);
 
@@ -398,18 +401,6 @@ try
         global_context->setMacros(std::make_unique<Macros>(config(), "macros", log));
 
     registerDisks(/*global_skip_access_check=*/false);
-
-    auto cgroups_memory_observer_wait_time = config().getUInt64("keeper_server.cgroups_memory_observer_wait_time", 15);
-    try
-    {
-        auto cgroups_reader = createCgroupsReader();
-        global_context->setCgroupsReader(createCgroupsReader());
-    }
-    catch (...)
-    {
-        if (cgroups_memory_observer_wait_time != 0)
-            tryLogCurrentException(log, "Failed to create cgroups reader");
-    }
 
     /// This object will periodically calculate some metrics.
     KeeperAsynchronousMetrics async_metrics(
@@ -634,21 +625,22 @@ try
     main_config_reloader->start();
 
     std::optional<CgroupsMemoryUsageObserver> cgroups_memory_usage_observer;
-    if (cgroups_memory_observer_wait_time != 0)
+    try
     {
-        auto cgroups_reader = global_context->getCgroupsReader();
-        if (cgroups_reader)
+        auto wait_time = config().getUInt64("keeper_server.cgroups_memory_observer_wait_time", 15);
+        if (wait_time != 0)
         {
-            cgroups_memory_usage_observer.emplace(std::chrono::seconds(cgroups_memory_observer_wait_time), global_context->getCgroupsReader());
+            cgroups_memory_usage_observer.emplace(std::chrono::seconds(wait_time));
             /// Not calling cgroups_memory_usage_observer->setLimits() here (as for the normal ClickHouse server) because Keeper controls
             /// its memory usage by other means (via setting 'max_memory_usage_soft_limit').
             cgroups_memory_usage_observer->setOnMemoryAmountAvailableChangedFn([&]() { main_config_reloader->reload(); });
             cgroups_memory_usage_observer->startThread();
         }
-        else
-            LOG_ERROR(log, "Disabling cgroup memory observer because of an error during initialization of cgroups reader");
     }
-
+    catch (Exception &)
+    {
+        tryLogCurrentException(log, "Disabling cgroup memory observer because of an error during initialization");
+    }
 
     LOG_INFO(log, "Ready for connections.");
 
