@@ -88,15 +88,15 @@ public:
 
                 auto column_identifier = planner_context->getGlobalPlannerContext()->createColumnIdentifier(node);
 
-                ActionsDAGPtr alias_column_actions_dag = std::make_unique<ActionsDAG>();
+                ActionsDAG alias_column_actions_dag;
                 PlannerActionsVisitor actions_visitor(planner_context, false);
-                auto outputs = actions_visitor.visit(*alias_column_actions_dag, column_node->getExpression());
+                auto outputs = actions_visitor.visit(alias_column_actions_dag, column_node->getExpression());
                 if (outputs.size() != 1)
                     throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Expected single output in actions dag for alias column {}. Actual {}", column_node->dumpTree(), outputs.size());
                 const auto & column_name = column_node->getColumnName();
-                const auto & alias_node = alias_column_actions_dag->addAlias(*outputs[0], column_name);
-                alias_column_actions_dag->addOrReplaceInOutputs(alias_node);
+                const auto & alias_node = alias_column_actions_dag.addAlias(*outputs[0], column_name);
+                alias_column_actions_dag.addOrReplaceInOutputs(alias_node);
                 table_expression_data.addAliasColumn(column_node->getColumn(), column_identifier, std::move(alias_column_actions_dag), select_added_columns);
             }
 

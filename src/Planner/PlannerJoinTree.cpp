@@ -591,16 +591,16 @@ UInt64 mainQueryNodeBlockSizeByLimit(const SelectQueryInfo & select_query_info)
 }
 
 std::unique_ptr<ExpressionStep> createComputeAliasColumnsStep(
-    const std::unordered_map<std::string, ActionsDAGPtr> & alias_column_expressions, const DataStream & current_data_stream)
+    std::unordered_map<std::string, ActionsDAG> & alias_column_expressions, const DataStream & current_data_stream)
 {
     ActionsDAG merged_alias_columns_actions_dag(current_data_stream.header.getColumnsWithTypeAndName());
     ActionsDAG::NodeRawConstPtrs action_dag_outputs = merged_alias_columns_actions_dag.getInputs();
 
-    for (const auto & [column_name, alias_column_actions_dag] : alias_column_expressions)
+    for (auto & [column_name, alias_column_actions_dag] : alias_column_expressions)
     {
-        const auto & current_outputs = alias_column_actions_dag->getOutputs();
+        const auto & current_outputs = alias_column_actions_dag.getOutputs();
         action_dag_outputs.insert(action_dag_outputs.end(), current_outputs.begin(), current_outputs.end());
-        merged_alias_columns_actions_dag.mergeNodes(std::move(*alias_column_actions_dag));
+        merged_alias_columns_actions_dag.mergeNodes(std::move(alias_column_actions_dag));
     }
 
     for (const auto * output_node : action_dag_outputs)
@@ -996,7 +996,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     }
                 }
 
-                const auto & alias_column_expressions = table_expression_data.getAliasColumnExpressions();
+                auto & alias_column_expressions = table_expression_data.getAliasColumnExpressions();
                 if (!alias_column_expressions.empty() && query_plan.isInitialized() && from_stage == QueryProcessingStage::FetchColumns)
                 {
                     auto alias_column_step = createComputeAliasColumnsStep(alias_column_expressions, query_plan.getCurrentDataStream());
@@ -1085,7 +1085,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
             query_plan = std::move(subquery_planner).extractQueryPlan();
         }
 
-        const auto & alias_column_expressions = table_expression_data.getAliasColumnExpressions();
+        auto & alias_column_expressions = table_expression_data.getAliasColumnExpressions();
         if (!alias_column_expressions.empty() && query_plan.isInitialized() && from_stage == QueryProcessingStage::FetchColumns)
         {
             auto alias_column_step = createComputeAliasColumnsStep(alias_column_expressions, query_plan.getCurrentDataStream());

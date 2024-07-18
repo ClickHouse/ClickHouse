@@ -73,7 +73,7 @@ public:
     }
 
     /// Add alias column
-    void addAliasColumn(const NameAndTypePair & column, const ColumnIdentifier & column_identifier, ActionsDAGPtr actions_dag, bool is_selected_column = true)
+    void addAliasColumn(const NameAndTypePair & column, const ColumnIdentifier & column_identifier, ActionsDAG actions_dag, bool is_selected_column = true)
     {
         alias_column_expressions.emplace(column.name, std::move(actions_dag));
         addColumnImpl(column, column_identifier, is_selected_column);
@@ -94,7 +94,7 @@ public:
     }
 
     /// Get ALIAS columns names mapped to expressions
-    const std::unordered_map<std::string, ActionsDAGPtr> & getAliasColumnExpressions() const
+    std::unordered_map<std::string, ActionsDAG> & getAliasColumnExpressions()
     {
         return alias_column_expressions;
     }
@@ -277,7 +277,7 @@ private:
     NameSet selected_column_names_set;
 
     /// Expression to calculate ALIAS columns
-    std::unordered_map<std::string, ActionsDAGPtr> alias_column_expressions;
+    std::unordered_map<std::string, ActionsDAG> alias_column_expressions;
 
     /// Valid for table, table function, array join, query, union nodes
     ColumnNameToColumn column_name_to_column;
