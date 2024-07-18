@@ -5001,13 +5001,6 @@ void Context::setConnectionClientVersion(UInt64 client_version_major, UInt64 cli
     client_info.connection_tcp_protocol_version = client_tcp_protocol_version;
 }
 
-void Context::setReplicaInfo(bool collaborate_with_initiator, size_t all_replicas_count, size_t number_of_current_replica)
-{
-    client_info.collaborate_with_initiator = collaborate_with_initiator;
-    client_info.count_participating_replicas = all_replicas_count;
-    client_info.number_of_current_replica = number_of_current_replica;
-}
-
 void Context::increaseDistributedDepth()
 {
     ++client_info.distributed_depth;

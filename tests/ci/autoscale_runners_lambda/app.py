@@ -99,7 +99,8 @@ def set_capacity(
             continue
         raise ValueError("Queue status is not in ['in_progress', 'queued']")
 
-    scale_down, scale_up = get_scales(runner_type)
+    # scale_down, scale_up = get_scales(runner_type)
+    _, scale_up = get_scales(runner_type)
     # With lyfecycle hooks some instances are actually free because some of
     # them are in 'Terminating:Wait' state
     effective_capacity = max(
@@ -110,7 +111,7 @@ def set_capacity(
     # How much nodes are free (positive) or need to be added (negative)
     capacity_reserve = effective_capacity - running - queued
     stop = False
-    if capacity_reserve < 0:
+    if capacity_reserve <= 0:
         # This part is about scaling up
         capacity_deficit = -capacity_reserve
         # It looks that we are still OK, since no queued jobs exist
@@ -158,41 +159,43 @@ def set_capacity(
             )
         return
 
-    # Now we will calculate if we need to scale down
-    stop = stop or asg["DesiredCapacity"] == asg["MinSize"]
-    new_capacity = asg["DesiredCapacity"] - (capacity_reserve // scale_down)
-    new_capacity = max(new_capacity, asg["MinSize"])
-    new_capacity = min(new_capacity, asg["MaxSize"])
-    stop = stop or asg["DesiredCapacity"] == new_capacity
-    if stop:
-        logging.info(
-            "Do not decrease ASG %s capacity, current capacity=%s, effective "
-            "capacity=%s, minimum capacity=%s, running jobs=%s, queue size=%s",
-            asg["AutoScalingGroupName"],
-            asg["DesiredCapacity"],
-            effective_capacity,
-            asg["MinSize"],
-            running,
-            queued,
-        )
-        return
-
-    logging.info(
-        "The ASG %s capacity will be decreased to %s, current capacity=%s, effective "
-        "capacity=%s, minimum capacity=%s, running jobs=%s, queue size=%s",
-        asg["AutoScalingGroupName"],
-        new_capacity,
-        asg["DesiredCapacity"],
-        effective_capacity,
-        asg["MinSize"],
-        running,
-        queued,
-    )
-    if not dry_run:
-        client.set_desired_capacity(
-            AutoScalingGroupName=asg["AutoScalingGroupName"],
-            DesiredCapacity=new_capacity,
-        )
+    # FIXME: try decreasing capacity from runners that finished their jobs and have no job assigned
+    #   IMPORTANT: Runner init script must be of version that supports ASG decrease
+    # # Now we will calculate if we need to scale down
+    # stop = stop or asg["DesiredCapacity"] == asg["MinSize"]
+    # new_capacity = asg["DesiredCapacity"] - (capacity_reserve // scale_down)
+    # new_capacity = max(new_capacity, asg["MinSize"])
+    # new_capacity = min(new_capacity, asg["MaxSize"])
+    # stop = stop or asg["DesiredCapacity"] == new_capacity
+    # if stop:
+    #     logging.info(
+    #         "Do not decrease ASG %s capacity, current capacity=%s, effective "
+    #         "capacity=%s, minimum capacity=%s, running jobs=%s, queue size=%s",
+    #         asg["AutoScalingGroupName"],
+    #         asg["DesiredCapacity"],
+    #         effective_capacity,
+    #         asg["MinSize"],
+    #         running,
+    #         queued,
+    #     )
+    #     return
+    #
+    # logging.info(
+    #     "The ASG %s capacity will be decreased to %s, current capacity=%s, effective "
+    #     "capacity=%s, minimum capacity=%s, running jobs=%s, queue size=%s",
+    #     asg["AutoScalingGroupName"],
+    #     new_capacity,
+    #     asg["DesiredCapacity"],
+    #     effective_capacity,
+    #     asg["MinSize"],
+    #     running,
+    #     queued,
+    # )
+    # if not dry_run:
+    #     client.set_desired_capacity(
+    #         AutoScalingGroupName=asg["AutoScalingGroupName"],
+    #         DesiredCapacity=new_capacity,
+    #     )
 
 
 def main(dry_run: bool = True) -> None:
