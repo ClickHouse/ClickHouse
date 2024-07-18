@@ -46,7 +46,7 @@ std::string formatReadableValue(ProfileEvents::ValueType value_type, double valu
     switch (value_type)
     {
         case ProfileEvents::ValueType::Number:
-            return formatReadableQuantity(value);
+            return formatReadableQuantity(value, /*precision*/ std::floor(value) == value && fabs(value) < 1000 ? 0 : 2);
         case ProfileEvents::ValueType::Bytes:
             return formatReadableSizeWithDecimalSuffix(value);
         case ProfileEvents::ValueType::Nanoseconds:
@@ -77,47 +77,39 @@ const std::unordered_map<std::string_view, ProfileEvents::Event> & getEventNameT
 
 std::string_view setColorForProgress(double progress, double max_progress)
 {
-    constexpr std::string_view colors[] = {
-        "",
+    constexpr std::array<std::string_view, 5> colors = {
+        "\033[38;5;236m", /// Dark Grey
+        "\033[38;5;250m", /// Light Grey
         "\033[38;5;34m", /// Green
-        "\033[38;5;154m", /// Yellow-green
-        "\033[38;5;220m", /// Yellow
-        "\033[38;5;214m", /// Yellow-orange
-        "\033[38;5;208m", /// Orange
-        "\033[38;5;202m", /// Orange-red
-        "\033[38;5;160m", /// Red
+        "\033[38;5;226m", /// Yellow
+        "\033[1;33m", /// Bold
     };
 
-    static const double fractions[] = {
-        0.0,
-        0.2,
-        0.4,
-        0.5,
-        0.7,
-        0.9,
-        1.0,
+    constexpr std::array<double, 4> fractions = {
+        0.05,
+        0.20,
+        0.80,
+        0.95,
     };
 
     if (max_progress == 0)
-        return colors[7];
+        return colors.front();
 
-    const double fraction = progress / max_progress;
-    for (size_t i = 0; i < 7; ++i)
-        if (fraction <= fractions[i])
-            return colors[i];
-    return colors[7];
+    auto fraction = progress / max_progress;
+    auto dist = std::upper_bound(fractions.begin(), fractions.end(), fraction) - fractions.begin();
+    return colors[dist];
 }
 
 std::string_view setColorForBytesBasedMetricsProgress(double progress)
 {
     constexpr std::array<std::string_view, 7> colors = {
-        "\033[90m", /// Dark Grey
-        "\033[37m", /// Light Grey
-        "\033[32m", /// Green
-        "\033[33m", /// Yellow
+        "\033[38;5;236m", /// Dark Grey
+        "\033[38;5;250m", /// Light Grey
+        "\033[38;5;34m", /// Green
+        "\033[38;5;226m", /// Yellow
         "\033[38;5;208m", /// Orange
         "\033[1;33m", /// Bold
-        "\033[38;5;160m", /// Red
+        "\033[38;5;160m", /// Red: correspondes to >= 1T/s. Not realistic, unless there is a bug.
     };
 
     /// Bytes.
@@ -153,11 +145,11 @@ std::string_view setColorForTimeBasedMetricsProgress(ProfileEvents::ValueType va
     }(value_type);
 
     constexpr std::array<std::string_view, 5> colors = {
-        "\033[90m", /// Dark Grey
-        "\033[37m", /// Light Grey
-        "\033[32m", /// Green
-        "\033[33m", /// Yellow
-        "\033[1;33m" /// Bold Yellow
+        "\033[38;5;236m", /// Dark Grey
+        "\033[38;5;250m", /// Light Grey
+        "\033[38;5;34m", /// Green
+        "\033[38;5;226m", /// Yellow
+        "\033[1;33m" /// Bold
     };
 
     const std::array<double, 4> thresholds = {0.001 * units, 0.01 * units, 0.1 * units, 1.0 * units};
@@ -168,7 +160,7 @@ std::string_view setColorForTimeBasedMetricsProgress(ProfileEvents::ValueType va
 
 std::string_view setColorForDocumentation()
 {
-    return "\033[90m"; /// Dark Grey
+    return "\033[38;5;236m"; /// Dark Grey
 }
 
 template <typename Out>
@@ -235,13 +227,15 @@ void ProgressTable::writeTable(WriteBufferFromFileDescriptor & message)
                 message << setColorForBytesBasedMetricsProgress(progress);
                 break;
             case ProfileEvents::ValueType::Milliseconds:
+                [[fallthrough]];
             case ProfileEvents::ValueType::Microseconds:
+                [[fallthrough]];
             case ProfileEvents::ValueType::Nanoseconds:
                 message << setColorForTimeBasedMetricsProgress(value_type, progress);
                 break;
         }
 
-        writeWithWidth(message, formatReadableValue(value_type, progress) + " / s", COLUMN_PROGRESS_WIDTH);
+        writeWithWidth(message, formatReadableValue(value_type, progress) + "/s", COLUMN_PROGRESS_WIDTH);
 
         message << setColorForDocumentation();
         const auto * doc = getDocumentation(event_name_to_event.at(name));
