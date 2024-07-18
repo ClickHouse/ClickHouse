@@ -2,7 +2,6 @@
 
 #include <atomic>
 #include <chrono>
-#include <optional>
 #include <base/types.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/VariableContext.h>

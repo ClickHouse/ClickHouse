@@ -447,9 +447,12 @@ void checkForUsersNotInMainConfig(
     }
 }
 
+namespace
+{
+
 /// Unused in other builds
 #if defined(OS_LINUX)
-static String readLine(const String & path)
+String readLine(const String & path)
 {
     ReadBufferFromFile in(path);
     String contents;
@@ -457,7 +460,7 @@ static String readLine(const String & path)
     return contents;
 }
 
-static int readNumber(const String & path)
+int readNumber(const String & path)
 {
     ReadBufferFromFile in(path);
     int result;
@@ -467,7 +470,7 @@ static int readNumber(const String & path)
 
 #endif
 
-static void sanityChecks(Server & server)
+void sanityChecks(Server & server)
 {
     std::string data_path = getCanonicalPath(server.config().getString("path", DBMS_DEFAULT_PATH));
     std::string logs_path = server.config().getString("logger.log", "");
@@ -586,6 +589,31 @@ static void sanityChecks(Server & server)
             " But the feature of 'zero-copy replication' is under development and is not ready for production."
             " The usage of this feature can lead to data corruption and loss. The setting should be disabled in production.");
     }
+}
+
+[[noreturn]] void backgroundMemoryThread()
+{
+    std::mutex mutex;
+    std::condition_variable cv;
+
+    std::unique_lock lock(mutex);
+    while (true)
+    {
+        cv.wait_for(lock, std::chrono::microseconds(200));
+        uint64_t epoch = 0;
+        mallctl("epoch", nullptr, nullptr, &epoch, sizeof(epoch));
+        auto maybe_resident = getJemallocValue<size_t>("stats.resident");
+        if (!maybe_resident.has_value())
+            continue;
+
+        Int64 resident = *maybe_resident;
+        //LOG_INFO(getLogger("JEmalloc"), "Resident {}", ReadableSize(resident));
+        MemoryTracker::setRSS(resident, false);
+        if (resident > total_memory_tracker.getHardLimit())
+            purgeJemallocArenas();
+    }
+}
+
 }
 
 void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, ContextMutablePtr context, Poco::Logger * log)
@@ -876,6 +904,11 @@ try
         if (server_settings.total_memory_profiler_sample_max_allocation_size)
             total_memory_tracker.setSampleMaxAllocationSize(server_settings.total_memory_profiler_sample_max_allocation_size);
     }
+
+    ThreadFromGlobalPool background_memory_thread([]
+    {
+        backgroundMemoryThread();
+    });
 
     Poco::ThreadPool server_pool(
         /* minCapacity */3,

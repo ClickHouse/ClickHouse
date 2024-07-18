@@ -649,49 +649,6 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
             "The amount of virtual memory mapped for the use of stack and for the allocated memory, in bytes."
             " It is unspecified whether it includes the per-thread stacks and most of the allocated memory, that is allocated with the 'mmap' system call."
             " This metric exists only for completeness reasons. I recommend to use the `MemoryResident` metric for monitoring."};
-
-        /// We must update the value of total_memory_tracker periodically.
-        /// Otherwise it might be calculated incorrectly - it can include a "drift" of memory amount.
-        /// See https://github.com/ClickHouse/ClickHouse/issues/10293
-        {
-            Int64 amount = total_memory_tracker.get();
-            Int64 peak = total_memory_tracker.getPeak();
-            Int64 rss = data.resident;
-            Int64 free_memory_in_allocator_arenas = 0;
-
-#if USE_JEMALLOC
-            /// According to jemalloc man, pdirty is:
-            ///
-            ///     Number of pages within unused extents that are potentially
-            ///     dirty, and for which madvise() or similar has not been called.
-            ///
-            /// So they will be subtracted from RSS to make accounting more
-            /// accurate, since those pages are not really RSS but a memory
-            /// that can be used at anytime via jemalloc.
-            free_memory_in_allocator_arenas = je_malloc_pdirty * getPageSize();
-#endif
-
-            if (cgroups_reader != nullptr)
-            {
-                rss = cgroups_reader->readMemoryUsage();
-                new_values["CgroupsMemoryUsage"] = { rss,
-                    "The amount of physical memory used by the server process, reported by cgroups." };
-            }
-
-            Int64 difference = rss - amount;
-
-            /// Log only if difference is high. This is for convenience. The threshold is arbitrary.
-            if (difference >= 1048576 || difference <= -1048576)
-                LOG_TRACE(log,
-                    "MemoryTracking: was {}, peak {}, free memory in arenas {}, will set to {} (RSS), difference: {}",
-                    ReadableSize(amount),
-                    ReadableSize(peak),
-                    ReadableSize(free_memory_in_allocator_arenas),
-                    ReadableSize(rss),
-                    ReadableSize(difference));
-
-            MemoryTracker::setRSS(rss, /*has_free_memory_in_allocator_arenas_=*/free_memory_in_allocator_arenas > 0);
-        }
     }
 
     {
