@@ -88,7 +88,7 @@ SerializationPtr IMergeTreeDataPartWriter::getSerialization(const String & colum
 
 ASTPtr IMergeTreeDataPartWriter::getCodecDescOrDefault(const String & column_name, CompressionCodecPtr default_codec) const
 {
-    auto get_codec_or_default = [&](const auto & column_desc)
+    auto get_codec_or_default = [this, &default_codec](const auto & column_desc)
     {
         if (column_desc.codec)
             return column_desc.codec;
