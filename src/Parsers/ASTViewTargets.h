@@ -9,15 +9,20 @@ namespace DB
 class ASTStorage;
 enum class Keyword : size_t;
 
-/// Information about the target table for a materialized view or a window view.
+/// Information about target tables (external or inner) of a materialized view or a window view.
+/// See ASTViewTargets for more details.
 struct ViewTarget
 {
     enum Kind
     {
-        /// Target table for a materialized view or a window view.
+        /// If `kind == ViewTarget::To` then `ViewTarget` contains information about the "TO" table of a materialized view or a window view:
+        ///     CREATE MATERIALIZED VIEW db.mv_name {TO [db.]to_target | ENGINE to_engine} AS SELECT ...
+        /// or
+        ///     CREATE WINDOW VIEW db.wv_name {TO [db.]to_target | ENGINE to_engine} AS SELECT ...
         To,
 
-        /// Table with intermediate results for a window view.
+        /// If `kind == ViewTarget::Inner` then `ViewTarget` contains information about the "INNER" table of a window view:
+        ///     CREATE WINDOW VIEW db.wv_name {INNER ENGINE inner_engine} AS SELECT ...
         Inner,
     };
 
@@ -42,7 +47,15 @@ std::string_view toString(ViewTarget::Kind kind);
 void parseFromString(ViewTarget::Kind & out, std::string_view str);
 
 
-/// Information about all the target tables for a view.
+/// Information about all target tables (external or inner) of a view.
+///
+/// For example, for a materialized view:
+///     CREATE MATERIALIZED VIEW db.mv_name [TO [db.]to_target | ENGINE to_engine] AS SELECT ...
+/// this class contains information about the "TO" table: its name and database (if it's external), its UUID and engine (if it's inner).
+///
+/// For a window view:
+///     CREATE WINDOW VIEW db.wv_name [TO [db.]to_target | ENGINE to_engine] [INNER ENGINE inner_engine] AS SELECT ...
+/// this class contains information about both the "TO" table and the "INNER" table.
 class ASTViewTargets : public IAST
 {
 public:

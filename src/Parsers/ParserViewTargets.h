@@ -7,7 +7,12 @@
 namespace DB
 {
 
-/// Parses information about target views of a table.
+/// Parses information about target tables (external or inner) of a materialized view or a window view.
+/// The function parses one or multiple parts of a CREATE query looking like this:
+///     TO db.table_name
+///     TO INNER UUID 'XXX'
+///     {ENGINE / INNER ENGINE} TableEngine(arguments) [ORDER BY ...] [SETTINGS ...]
+/// Returns ASTViewTargets if succeeded.
 class ParserViewTargets : public IParserBase
 {
 public:
