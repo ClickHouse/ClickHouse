@@ -8,7 +8,6 @@
 #include <Dictionaries/DictionarySourceHelpers.h>
 
 #include <Common/logger_useful.h>
-#include <Core/Settings.h>
 
 #include <numeric>
 

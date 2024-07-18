@@ -23,9 +23,8 @@
 #include <Common/quoteString.h>
 #include <Common/escapeForFileName.h>
 #include <base/insertAtEnd.h>
-#include <Core/Settings.h>
-
 #include <boost/algorithm/string/join.hpp>
+
 #include <boost/range/adaptor/map.hpp>
 
 #include <filesystem>
@@ -439,7 +438,7 @@ void RestorerFromBackup::findTableInBackupImpl(const QualifiedTableName & table_
     String create_table_query_str = serializeAST(*create_table_query);
 
     bool is_predefined_table = DatabaseCatalog::instance().isPredefinedTable(StorageID{table_name.database, table_name.table});
-    auto table_dependencies = getDependenciesFromCreateQuery(context, table_name, create_table_query, context->getCurrentDatabase());
+    auto table_dependencies = getDependenciesFromCreateQuery(context, table_name, create_table_query);
     bool table_has_data = backup->hasFiles(data_path_in_backup);
 
     std::lock_guard lock{mutex};

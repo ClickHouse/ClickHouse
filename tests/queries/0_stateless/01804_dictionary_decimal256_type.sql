@@ -25,8 +25,6 @@ LAYOUT(FLAT());
 SELECT 'Flat dictionary';
 SELECT dictGet('flat_dictionary', 'decimal_value', toUInt64(1));
 
-DROP DICTIONARY flat_dictionary;
-
 DROP DICTIONARY IF EXISTS hashed_dictionary;
 CREATE DICTIONARY hashed_dictionary
 (

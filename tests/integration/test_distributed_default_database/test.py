@@ -5,7 +5,6 @@ in this test we write into per-node tables and read from the distributed table.
 The default database in the distributed table definition is left empty on purpose to test
 default database deduction.
 """
-
 import pytest
 
 from helpers.client import QueryRuntimeException

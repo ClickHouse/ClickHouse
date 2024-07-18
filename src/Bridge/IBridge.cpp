@@ -8,7 +8,6 @@
 #include <Common/SensitiveDataMasker.h>
 #include <Common/StringUtils.h>
 #include <Common/logger_useful.h>
-#include <Core/Settings.h>
 #include <Formats/registerFormats.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>

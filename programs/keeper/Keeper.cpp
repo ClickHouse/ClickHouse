@@ -27,8 +27,6 @@
 #include <sys/stat.h>
 #include <pwd.h>
 
-#include <Common/Jemalloc.h>
-
 #include <Interpreters/Context.h>
 
 #include <Coordination/FourLetterCommand.h>
@@ -76,6 +74,16 @@ int mainEntryClickHouseKeeper(int argc, char ** argv)
         return code ? code : 1;
     }
 }
+
+#ifdef CLICKHOUSE_KEEPER_STANDALONE_BUILD
+
+// Weak symbols don't work correctly on Darwin
+// so we have a stub implementation to avoid linker errors
+void collectCrashLog(
+    Int32, UInt64, const String &, const StackTrace &)
+{}
+
+#endif
 
 namespace DB
 {
@@ -264,43 +272,11 @@ HTTPContextPtr httpContext()
     return std::make_shared<KeeperHTTPContext>(Context::getGlobalContextInstance());
 }
 
-String getKeeperPath(Poco::Util::LayeredConfiguration & config)
-{
-    String path;
-    if (config.has("keeper_server.storage_path"))
-    {
-        path = config.getString("keeper_server.storage_path");
-    }
-    else if (config.has("keeper_server.log_storage_path"))
-    {
-        path = std::filesystem::path(config.getString("keeper_server.log_storage_path")).parent_path();
-    }
-    else if (config.has("keeper_server.snapshot_storage_path"))
-    {
-        path = std::filesystem::path(config.getString("keeper_server.snapshot_storage_path")).parent_path();
-    }
-    else if (std::filesystem::is_directory(std::filesystem::path{config.getString("path", DBMS_DEFAULT_PATH)} / "coordination"))
-    {
-        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG,
-                        "By default 'keeper_server.storage_path' could be assigned to {}, but the directory {} already exists. Please specify 'keeper_server.storage_path' in the keeper configuration explicitly",
-                        KEEPER_DEFAULT_PATH, String{std::filesystem::path{config.getString("path", DBMS_DEFAULT_PATH)} / "coordination"});
-    }
-    else
-    {
-        path = KEEPER_DEFAULT_PATH;
-    }
-    return path;
-}
-
-
 }
 
 int Keeper::main(const std::vector<std::string> & /*args*/)
 try
 {
-#if USE_JEMALLOC
-    setJemallocBackgroundThreads(true);
-#endif
     Poco::Logger * log = &logger();
 
     UseSSL use_ssl;
@@ -345,7 +321,31 @@ try
 
     updateMemorySoftLimitInConfig(config());
 
-    std::string path = getKeeperPath(config());
+    std::string path;
+
+    if (config().has("keeper_server.storage_path"))
+    {
+        path = config().getString("keeper_server.storage_path");
+    }
+    else if (config().has("keeper_server.log_storage_path"))
+    {
+        path = std::filesystem::path(config().getString("keeper_server.log_storage_path")).parent_path();
+    }
+    else if (config().has("keeper_server.snapshot_storage_path"))
+    {
+        path = std::filesystem::path(config().getString("keeper_server.snapshot_storage_path")).parent_path();
+    }
+    else if (std::filesystem::is_directory(std::filesystem::path{config().getString("path", DBMS_DEFAULT_PATH)} / "coordination"))
+    {
+        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG,
+                        "By default 'keeper_server.storage_path' could be assigned to {}, but the directory {} already exists. Please specify 'keeper_server.storage_path' in the keeper configuration explicitly",
+                        KEEPER_DEFAULT_PATH, String{std::filesystem::path{config().getString("path", DBMS_DEFAULT_PATH)} / "coordination"});
+    }
+    else
+    {
+        path = KEEPER_DEFAULT_PATH;
+    }
+
     std::filesystem::create_directories(path);
 
     /// Check that the process user id matches the owner of the data.
@@ -355,7 +355,10 @@ try
 
     std::string include_from_path = config().getString("include_from", "/etc/metrika.xml");
 
-    PlacementInfo::PlacementInfo::instance().initialize(config());
+    if (config().has(DB::PlacementInfo::PLACEMENT_CONFIG_PREFIX))
+    {
+        PlacementInfo::PlacementInfo::instance().initialize(config());
+    }
 
     GlobalThreadPool::initialize(
         /// We need to have sufficient amount of threads for connections + nuraft workers + keeper workers, 1000 is an estimation
@@ -559,7 +562,7 @@ try
     auto main_config_reloader = std::make_unique<ConfigReloader>(
         config_path,
         extra_paths,
-        getKeeperPath(config()),
+        config().getString("path", KEEPER_DEFAULT_PATH),
         std::move(unused_cache),
         unused_event,
         [&](ConfigurationPtr config, bool /* initial_loading */)
@@ -574,7 +577,8 @@ try
 #if USE_SSL
             CertificateReloader::instance().tryLoad(*config);
 #endif
-        });
+        },
+        /* already_loaded = */ false);  /// Reload it right now (initial loading)
 
     SCOPE_EXIT({
         LOG_INFO(log, "Shutting down.");

@@ -6,7 +6,7 @@ SELECT 02126_function(1);
 DROP FUNCTION 02126_function;
 
 CREATE FUNCTION 02126_function AS () -> x;
-SELECT 02126_function(); --{ serverError UNKNOWN_IDENTIFIER }
+SELECT 02126_function(); --{ serverError 47 }
 DROP FUNCTION 02126_function;
 
 CREATE FUNCTION 02126_function AS () -> 5;

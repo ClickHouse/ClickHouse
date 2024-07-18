@@ -1,6 +1,5 @@
 #include <Storages/MergeTree/IMergedBlockOutputStream.h>
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/IMergeTreeDataPartWriter.h>
 #include <Common/logger_useful.h>
 
@@ -8,21 +7,20 @@ namespace DB
 {
 
 IMergedBlockOutputStream::IMergedBlockOutputStream(
-    const MergeTreeSettingsPtr & storage_settings_,
-    MutableDataPartStoragePtr data_part_storage_,
+    const MergeTreeMutableDataPartPtr & data_part,
     const StorageMetadataPtr & metadata_snapshot_,
     const NamesAndTypesList & columns_list,
     bool reset_columns_)
-    : storage_settings(storage_settings_)
+    : storage(data_part->storage)
     , metadata_snapshot(metadata_snapshot_)
-    , data_part_storage(data_part_storage_)
+    , data_part_storage(data_part->getDataPartStoragePtr())
     , reset_columns(reset_columns_)
 {
     if (reset_columns)
     {
         SerializationInfo::Settings info_settings =
         {
-            .ratio_of_defaults_for_sparse = storage_settings->ratio_of_defaults_for_sparse_serialization,
+            .ratio_of_defaults_for_sparse = storage.getSettings()->ratio_of_defaults_for_sparse_serialization,
             .choose_kind = false,
         };
 
@@ -44,7 +42,7 @@ NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
         return {};
 
     for (const auto & column : empty_columns)
-        LOG_TRACE(data_part->storage.log, "Skipping expired/empty column {} for part {}", column, data_part->name);
+        LOG_TRACE(storage.log, "Skipping expired/empty column {} for part {}", column, data_part->name);
 
     /// Collect counts for shared streams of different columns. As an example, Nested columns have shared stream with array sizes.
     std::map<String, size_t> stream_counts;
@@ -93,7 +91,7 @@ NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
         }
         else /// If we have no file in checksums it doesn't exist on disk
         {
-            LOG_TRACE(data_part->storage.log, "Files {} doesn't exist in checksums so it doesn't exist on disk, will not try to remove it", *itr);
+            LOG_TRACE(storage.log, "Files {} doesn't exist in checksums so it doesn't exist on disk, will not try to remove it", *itr);
             itr = remove_files.erase(itr);
         }
     }

@@ -2,8 +2,6 @@
 
 #include <Common/typeid_cast.h>
 
-#include <Core/Settings.h>
-
 #include <Interpreters/Context.h>
 #include <Interpreters/StorageID.h>
 

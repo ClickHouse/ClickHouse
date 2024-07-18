@@ -18,7 +18,7 @@ from collections import defaultdict
 from itertools import chain
 from typing import Any, Dict
 
-from env_helper import IS_CI
+from env_helper import CI
 from integration_test_images import IMAGES
 
 MAX_RETRY = 1
@@ -434,14 +434,7 @@ class ClickhouseIntegrationTestsRunner:
             "Getting all tests to the file %s with cmd: \n%s", out_file_full, cmd
         )
         with open(out_file_full, "wb") as ofd:
-            try:
-                subprocess.check_call(cmd, shell=True, stdout=ofd, stderr=ofd)
-            except subprocess.CalledProcessError as ex:
-                print("ERROR: Setting test plan failed. Output:")
-                with open(out_file_full, "r", encoding="utf-8") as file:
-                    for line in file:
-                        print("    " + line, end="")
-                raise ex
+            subprocess.check_call(cmd, shell=True, stdout=ofd, stderr=ofd)
 
         all_tests = set()
         with open(out_file_full, "r", encoding="utf-8") as all_tests_fd:
@@ -1011,7 +1004,7 @@ def run():
 
     logging.info("Running tests")
 
-    if IS_CI:
+    if CI:
         # Avoid overlaps with previous runs
         logging.info("Clearing dmesg before run")
         subprocess.check_call("sudo -E dmesg --clear", shell=True)
@@ -1019,7 +1012,7 @@ def run():
     state, description, test_results, _ = runner.run_impl(repo_path, build_path)
     logging.info("Tests finished")
 
-    if IS_CI:
+    if CI:
         # Dump dmesg (to capture possible OOMs)
         logging.info("Dumping dmesg")
         subprocess.check_call("sudo -E dmesg -T", shell=True)

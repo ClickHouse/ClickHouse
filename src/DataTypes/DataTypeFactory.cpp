@@ -10,7 +10,6 @@
 #include <Common/StringUtils.h>
 #include <IO/WriteHelpers.h>
 #include <Core/Defines.h>
-#include <Core/Settings.h>
 #include <Common/CurrentThread.h>
 #include <Interpreters/Context.h>
 

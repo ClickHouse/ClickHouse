@@ -5,7 +5,6 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
-#include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeDate.h>
@@ -136,9 +135,6 @@ ColumnsDescription QueryLogElement::getColumnsDescription()
         {"used_table_functions", array_low_cardinality_string, "Canonical names of table functions, which were used during query execution."},
 
         {"used_row_policies", array_low_cardinality_string, "The list of row policies names that were used during query execution."},
-
-        {"used_privileges", array_low_cardinality_string, "Privileges which were successfully checked during query execution."},
-        {"missing_privileges", array_low_cardinality_string, "Privileges that are missing during query execution."},
 
         {"transaction_id", getTransactionIDDataType(), "The identifier of the transaction in scope of which this query was executed."},
 
@@ -271,8 +267,6 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
         auto & column_storage_factory_objects = typeid_cast<ColumnArray &>(*columns[i++]);
         auto & column_table_function_factory_objects = typeid_cast<ColumnArray &>(*columns[i++]);
         auto & column_row_policies_names = typeid_cast<ColumnArray &>(*columns[i++]);
-        auto & column_used_privileges = typeid_cast<ColumnArray &>(*columns[i++]);
-        auto & column_missing_privileges = typeid_cast<ColumnArray &>(*columns[i++]);
 
         auto fill_column = [](const auto & data, ColumnArray & column)
         {
@@ -296,8 +290,6 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
         fill_column(used_storages, column_storage_factory_objects);
         fill_column(used_table_functions, column_table_function_factory_objects);
         fill_column(used_row_policies, column_row_policies_names);
-        fill_column(used_privileges, column_used_privileges);
-        fill_column(missing_privileges, column_missing_privileges);
     }
 
     columns[i++]->insert(Tuple{tid.start_csn, tid.local_tid, tid.host_id});

@@ -47,11 +47,6 @@ public:
         }
     }
 
-    void cancelImpl() noexcept override
-    {
-        out->cancel();
-    }
-
     WriteBuffer * getNestedBuffer() { return out; }
 
 protected:

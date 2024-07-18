@@ -4,7 +4,6 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnsCommon.h>
-#include <Core/Settings.h>
 #include <Common/ErrorCodes.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/WriteHelpers.h>

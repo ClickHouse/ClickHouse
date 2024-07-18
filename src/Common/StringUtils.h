@@ -140,18 +140,6 @@ inline bool isPrintableASCII(char c)
     return uc >= 32 && uc <= 126;   /// 127 is ASCII DEL.
 }
 
-inline bool isCSIParameterByte(char c)
-{
-    uint8_t uc = c;
-    return uc >= 0x30 && uc <= 0x3F; /// ASCII 0–9:;<=>?
-}
-
-inline bool isCSIIntermediateByte(char c)
-{
-    uint8_t uc = c;
-    return uc >= 0x20 && uc <= 0x2F; /// ASCII !"#$%&'()*+,-./
-}
-
 inline bool isCSIFinalByte(char c)
 {
     uint8_t uc = c;
