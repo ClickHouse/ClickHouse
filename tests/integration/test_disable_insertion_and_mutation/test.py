@@ -37,29 +37,25 @@ def started_cluster():
 def test_disable_insertion_and_mutation(started_cluster):
     writing_node.query("""CREATE TABLE my_table on cluster default (key UInt64, value String) ENGINE=ReplicatedMergeTree('/clickhouse/tables/{shard}/default.my_table', '{replica}') ORDER BY key partition by (key % 5) """)
 
-    assert (
-        "QUERY_IS_PROHIBITED"
-        in reading_node.query_and_get_error("INSERT INTO my_table VALUES (1, 'hello')")
+    assert "QUERY_IS_PROHIBITED" in reading_node.query_and_get_error(
+        "INSERT INTO my_table VALUES (1, 'hello')"
     )
 
-    assert (
-        "QUERY_IS_PROHIBITED"
-        in reading_node.query_and_get_error("INSERT INTO my_table SETTINGS async_insert = 1 VALUES (1, 'hello')")
+    assert "QUERY_IS_PROHIBITED" in reading_node.query_and_get_error(
+        "INSERT INTO my_table SETTINGS async_insert = 1 VALUES (1, 'hello')"
     )
 
-    assert (
-        "QUERY_IS_PROHIBITED"
-        in reading_node.query_and_get_error("ALTER TABLE my_table delete where 1")
+    assert "QUERY_IS_PROHIBITED" in reading_node.query_and_get_error(
+        "ALTER TABLE my_table delete where 1"
+    )
+    
+
+    assert "QUERY_IS_PROHIBITED" in reading_node.query_and_get_error(
+        "ALTER table my_table update key = 1 where 1"
     )
 
-    assert (
-        "QUERY_IS_PROHIBITED"
-        in reading_node.query_and_get_error("ALTER table my_table update key = 1 where 1")
-    )
-
-    assert (
-        "QUERY_IS_PROHIBITED"
-        in reading_node.query_and_get_error("ALTER TABLE my_table drop partition 0")
+    assert "QUERY_IS_PROHIBITED" in reading_node.query_and_get_error(
+        "ALTER TABLE my_table drop partition 0"
     )
 
     reading_node.query("SELECT * from my_table");
@@ -73,12 +69,10 @@ def test_disable_insertion_and_mutation(started_cluster):
 
     reading_node.query("ALter Table my_table MODIFY COLUMN new_column String")
 
-    assert(
-        "new_column\tString"
-        in reading_node.query("DESC my_table")
+    assert "new_column\tString" in reading_node.query(
+        "DESC my_table"
     )
 
-    assert(
-        "new_column\tString"
-        in writing_node.query("DESC my_table")
+    assert "new_column\tString" in writing_node.query(
+        "DESC my_table"
     )

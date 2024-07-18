@@ -49,7 +49,6 @@ namespace ProfileEvents
 {
     extern const Event InsertQueriesWithSubqueries;
     extern const Event QueriesWithSubqueries;
-    extern const int QUERY_IS_PROHIBITED;
 }
 
 namespace DB
