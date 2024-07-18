@@ -1,21 +1,21 @@
-#include "ReadBufferFromCeph.h"
-#include <memory>
-#include <optional>
-#include "Common/logger_useful.h"
+#include "ReadBufferFromRados.h"
 
 #if USE_CEPH
 
-#include <IO/Ceph/RadosIO.h>
+#include <memory>
+#include <optional>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/Exception.h>
 #include <Common/Scheduler/ResourceGuard.h>
 #include <Common/Throttler.h>
 #include <Common/safe_cast.h>
+#include <Common/logger_useful.h>
+#include <IO/Ceph/RadosIOContext.h>
 
 namespace ProfileEvents
 {
-extern const Event ReadBufferFromCephMicroseconds;
-extern const Event ReadBufferFromCephBytes;
+extern const Event ReadBufferFromRadosMicroseconds;
+extern const Event ReadBufferFromRadosBytes;
 extern const Event RemoteReadThrottlerBytes;
 extern const Event RemoteReadThrottlerSleepMicroseconds;
 }
@@ -30,9 +30,9 @@ extern const int CANNOT_SEEK_THROUGH_FILE;
 extern const int SEEK_POSITION_OUT_OF_BOUND;
 }
 
-struct ReadBufferFromCeph::Impl : public BufferWithOwnMemory<SeekableReadBuffer>
+struct ReadBufferFromRados::Impl : public BufferWithOwnMemory<SeekableReadBuffer>
 {
-    std::shared_ptr<Ceph::RadosIO> io;
+    std::shared_ptr<RadosIOContext> io_ctx;
     String object_id;
     ReadSettings read_settings;
 
@@ -41,23 +41,23 @@ struct ReadBufferFromCeph::Impl : public BufferWithOwnMemory<SeekableReadBuffer>
 
     std::optional<size_t> file_size;
 
-    LoggerPtr log = getLogger("ReadBufferFromCeph::Impl");
+    LoggerPtr log = getLogger("ReadBufferFromRados::Impl");
 
     Impl(
-        std::shared_ptr<Ceph::RadosIO> io_,
+        std::shared_ptr<RadosIOContext> io_ctx_,
         const String & object_id_,
         const ReadSettings & read_settings_,
         size_t offset_,
         size_t read_until_position_,
         bool use_external_buffer_)
         : BufferWithOwnMemory<SeekableReadBuffer>(use_external_buffer_ ? 0 : read_settings_.remote_fs_buffer_size)
-        , io(std::move(io_))
+        , io_ctx(std::move(io_ctx_))
         , object_id(object_id_)
         , read_settings(read_settings_)
         , file_offset(offset_)
         , read_until_position(read_until_position_)
     {
-        io->connect();
+        io_ctx->connect();
     }
 
     size_t readImpl(char * to, size_t len, off_t begin) const
@@ -66,8 +66,8 @@ struct ReadBufferFromCeph::Impl : public BufferWithOwnMemory<SeekableReadBuffer>
         size_t bytes_read = 0;
         try
         {
-            ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ReadBufferFromCephMicroseconds);
-            bytes_read = io->read(object_id, to, len, begin);
+            ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ReadBufferFromRadosMicroseconds);
+            bytes_read = io_ctx->read(object_id, to, len, begin);
             if (read_settings.remote_throttler && bytes_read)
                 read_settings.remote_throttler->add(
                     bytes_read, ProfileEvents::RemoteReadThrottlerBytes, ProfileEvents::RemoteReadThrottlerSleepMicroseconds);
@@ -79,7 +79,7 @@ struct ReadBufferFromCeph::Impl : public BufferWithOwnMemory<SeekableReadBuffer>
         }
 
         read_settings.resource_link.adjust(len, bytes_read);
-        ProfileEvents::increment(ProfileEvents::ReadBufferFromCephBytes, bytes_read);
+        ProfileEvents::increment(ProfileEvents::ReadBufferFromRadosBytes, bytes_read);
         return bytes_read;
     }
 
@@ -88,7 +88,7 @@ struct ReadBufferFromCeph::Impl : public BufferWithOwnMemory<SeekableReadBuffer>
         if (file_size)
             return *file_size;
         size_t psize;
-        io->stat(object_id, &psize, nullptr);
+        io_ctx->stat(object_id, &psize, nullptr);
         file_size = psize;
         return psize;
     }
@@ -172,7 +172,7 @@ struct ReadBufferFromCeph::Impl : public BufferWithOwnMemory<SeekableReadBuffer>
     }
 };
 
-ReadBufferFromCeph::ReadBufferFromCeph(
+ReadBufferFromRados::ReadBufferFromRados(
     std::shared_ptr<librados::Rados> rados_,
     const String & pool,
     const String & nspace,
@@ -184,13 +184,13 @@ ReadBufferFromCeph::ReadBufferFromCeph(
     std::optional<size_t> file_size_)
     : ReadBufferFromFileBase(read_settings_.remote_fs_buffer_size, nullptr, 0, file_size_), use_external_buffer(use_external_buffer_)
 {
-    auto io = std::make_shared<Ceph::RadosIO>(rados_, pool, nspace);
-    impl = std::make_unique<ReadBufferFromCeph::Impl>(
+    auto io = std::make_shared<RadosIOContext>(rados_, pool, nspace);
+    impl = std::make_unique<ReadBufferFromRados::Impl>(
         std::move(io), object_id_, read_settings_, offset_, read_until_position_, use_external_buffer);
 }
 
-ReadBufferFromCeph::ReadBufferFromCeph(
-    std::shared_ptr<Ceph::RadosIO> io_,
+ReadBufferFromRados::ReadBufferFromRados(
+    std::shared_ptr<RadosIOContext> io_,
     const String & object_id_,
     const ReadSettings & read_settings_,
     bool use_external_buffer_,
@@ -198,25 +198,25 @@ ReadBufferFromCeph::ReadBufferFromCeph(
     size_t read_until_position_,
     std::optional<size_t> file_size_)
     : ReadBufferFromFileBase(read_settings_.remote_fs_buffer_size, nullptr, 0, file_size_)
-    , impl(std::make_unique<ReadBufferFromCeph::Impl>(
+    , impl(std::make_unique<ReadBufferFromRados::Impl>(
           std::move(io_), object_id_, read_settings_, offset_, read_until_position_, use_external_buffer_))
     , use_external_buffer(use_external_buffer_)
 {
 }
 
-ReadBufferFromCeph::~ReadBufferFromCeph() = default;
+ReadBufferFromRados::~ReadBufferFromRados() = default;
 
-void ReadBufferFromCeph::setReadUntilPosition(size_t position)
+void ReadBufferFromRados::setReadUntilPosition(size_t position)
 {
     impl->setReadUntilPosition(position);
 }
 
-void ReadBufferFromCeph::setReadUntilEnd()
+void ReadBufferFromRados::setReadUntilEnd()
 {
     impl->setReadUntilEnd();
 }
 
-bool ReadBufferFromCeph::nextImpl()
+bool ReadBufferFromRados::nextImpl()
 {
     if (use_external_buffer)
     {
@@ -238,7 +238,7 @@ bool ReadBufferFromCeph::nextImpl()
     return result;
 }
 
-off_t ReadBufferFromCeph::seek(off_t offset_, int whence)
+off_t ReadBufferFromRados::seek(off_t offset_, int whence)
 {
     if (whence != SEEK_SET)
         throw Exception(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, "Only SEEK_SET mode is allowed.");
@@ -260,29 +260,29 @@ off_t ReadBufferFromCeph::seek(off_t offset_, int whence)
     return impl->getPosition();
 }
 
-size_t ReadBufferFromCeph::getFileSize()
+size_t ReadBufferFromRados::getFileSize()
 {
     if (file_size)
         return *file_size;
     return impl->getFileSize();
 }
 
-off_t ReadBufferFromCeph::getPosition()
+off_t ReadBufferFromRados::getPosition()
 {
     return impl->getPosition() - available();
 }
 
-size_t ReadBufferFromCeph::getFileOffsetOfBufferEnd() const
+size_t ReadBufferFromRados::getFileOffsetOfBufferEnd() const
 {
     return impl->getPosition();
 }
 
-String ReadBufferFromCeph::getFileName() const
+String ReadBufferFromRados::getFileName() const
 {
     return impl->object_id;
 }
 
-size_t ReadBufferFromCeph::readBigAt(char * to, size_t n, size_t range_begin, const std::function<bool(size_t)> & progress_callback) const
+size_t ReadBufferFromRados::readBigAt(char * to, size_t n, size_t range_begin, const std::function<bool(size_t)> & progress_callback) const
 {
     return impl->readBigAt(to, n, range_begin, progress_callback);
 }

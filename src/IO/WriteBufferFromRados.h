@@ -1,36 +1,39 @@
 #pragma once
+#include <config.h>
 
-#include "Common/BufferAllocationPolicy.h"
-#include "Common/ThreadPoolTaskTracker.h"
-#include "Disks/ObjectStorages/Ceph/CephObjectStorage.h"
-#include "Disks/ObjectStorages/IObjectStorage.h"
-#include "IO/Ceph/RadosIO.h"
-#include "IO/WriteBufferFromFileBase.h"
-#include "IO/WriteSettings.h"
+#if USE_CEPH
+
+#include <Disks/ObjectStorages/IObjectStorage.h>
+#include <IO/Ceph/RadosIOContext.h>
+#include <IO/WriteSettings.h>
+#include <Common/BufferAllocationPolicy.h>
+#include <Common/ThreadPoolTaskTracker.h>
+
 namespace DB
 {
 
-/// Write buffer to multiple objects in Rados
-class StriperWriteBufferFromRados : public WriteBufferFromFileBase
+/// Write data to Rados, if data exceeds max_chunk_size, it will be split into multiple chunk
+/// Each chunk is a physical object in Rados. The HEAD chunk contains metadata about the ClickHouse
+/// object. Method names are similar to WriteBufferFromS3 (using `part` instead of `chunk`).
+class WriteBufferFromRados : public WriteBufferFromFileBase
 {
 public:
-    StriperWriteBufferFromRados(
-        std::shared_ptr<Ceph::RadosIO> impl_,
+    WriteBufferFromRados(
+        std::shared_ptr<RadosIOContext> io_ctx_,
         const String & object_id_,
         size_t buf_size_,
-        size_t max_object_size_,
+        size_t max_chunk_size_,
         const WriteSettings & write_settings_,
         std::optional<std::map<String, String>> object_metadata_ = std::nullopt,
         ThreadPoolCallbackRunnerUnsafe<void> schedule_ = {});
 
-    ~StriperWriteBufferFromRados() override;
+    ~WriteBufferFromRados() override;
     void nextImpl() override;
     void preFinalize() override;
     std::string getFileName() const override { return object_id; }
     void sync() override { next(); }
 
 private:
-    /// Receives response from the server after sending all data.
     void finalizeImpl() override;
 
     String getVerboseLogDetails() const;
@@ -47,10 +50,10 @@ private:
     void writePart(PartData && data);
     void writeMultipartUpload();
 
-    std::shared_ptr<Ceph::RadosIO> impl;
+    std::shared_ptr<RadosIOContext> io_ctx;
     String object_id;
-    size_t object_seq = 0;
-    size_t max_object_size;
+    size_t chunk_count = 0;
+    size_t max_chunk_size;
     WriteSettings write_settings;
     const std::optional<std::map<String, String>> object_metadata;
     LoggerPtr log = getLogger("StripperWriteBufferFromRados");
@@ -78,3 +81,5 @@ private:
 };
 
 }
+
+#endif

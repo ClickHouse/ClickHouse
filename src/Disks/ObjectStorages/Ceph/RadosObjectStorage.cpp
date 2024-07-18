@@ -1,53 +1,41 @@
-#include "CephObjectStorage.h"
+#include "RadosObjectStorage.h"
 #include <cstring>
 #include <ctime>
 #include <memory>
 #include <string>
 #include <fcntl.h>
 
-#include <IO/Ceph/RadosIO.h>
-#include "Common/Exception.h"
-#include "Common/ObjectStorageKey.h"
-#include "Common/getRandomASCIIString.h"
-#include "Core/Defines.h"
-#include "Disks/ObjectStorages/Ceph/CephUtils.h"
-#include "Disks/ObjectStorages/IObjectStorage.h"
-#include "Disks/ObjectStorages/StoredObject.h"
-#include "IO/Ceph/StriperWriteBufferFromRados.h"
-#include "IO/WriteSettings.h"
-
 #if USE_CEPH
 
-#    include <Disks/ObjectStorages/ObjectStorageIteratorAsync.h>
-#    include <IO/S3Common.h>
-
-#    include <Disks/IO/AsynchronousBoundedReadBuffer.h>
-#    include <Disks/IO/ReadBufferFromRemoteFSGather.h>
-#    include <Disks/IO/ThreadPoolRemoteFSReader.h>
-#    include <IO/ReadBufferFromCeph.h>
-#    include <IO/WriteBufferFromCeph.h>
-#    include <Interpreters/Context.h>
-#    include <Common/Macros.h>
-#    include <Common/MultiVersion.h>
-#    include <Common/ProfileEvents.h>
-#    include <Common/StringUtils.h>
-#    include <Common/logger_useful.h>
-#    include <Common/threadPoolCallbackRunner.h>
-
-
-namespace ProfileEvents
-{
-extern const Event S3DeleteObjects;
-extern const Event S3ListObjects;
-extern const Event DiskS3DeleteObjects;
-extern const Event DiskS3ListObjects;
-}
+#include <Core/Defines.h>
+#include <Disks/IO/AsynchronousBoundedReadBuffer.h>
+#include <Disks/IO/ReadBufferFromRemoteFSGather.h>
+#include <Disks/IO/ThreadPoolRemoteFSReader.h>
+#include <Disks/ObjectStorages/Ceph/CephUtils.h>
+#include <Disks/ObjectStorages/IObjectStorage.h>
+#include <Disks/ObjectStorages/ObjectStorageIteratorAsync.h>
+#include <Disks/ObjectStorages/StoredObject.h>
+#include <IO/Ceph/RadosIOContext.h>
+#include <IO/ReadBufferFromRados.h>
+#include <IO/S3Common.h>
+#include <IO/WriteBufferFromRados.h>
+#include <IO/WriteSettings.h>
+#include <Interpreters/Context.h>
+#include <Common/Exception.h>
+#include <Common/Macros.h>
+#include <Common/MultiVersion.h>
+#include <Common/ObjectStorageKey.h>
+#include <Common/ProfileEvents.h>
+#include <Common/StringUtils.h>
+#include <Common/getRandomASCIIString.h>
+#include <Common/logger_useful.h>
+#include <Common/threadPoolCallbackRunner.h>
 
 namespace CurrentMetrics
 {
-extern const Metric ObjectStorageS3Threads;
-extern const Metric ObjectStorageS3ThreadsActive;
-extern const Metric ObjectStorageS3ThreadsScheduled;
+    extern const Metric ObjectStorageRadosThreads;
+    extern const Metric ObjectStorageRadosThreadsActive;
+    extern const Metric ObjectStorageRadosThreadsScheduled;
 }
 
 
@@ -65,21 +53,21 @@ extern const int CEPH_ERROR;
 namespace
 {
 
-class CephIteratorAsync final : public IObjectStorageIteratorAsync
+class RadosIteratorAsync final : public IObjectStorageIteratorAsync
 {
 public:
-    CephIteratorAsync(
-        std::shared_ptr<Ceph::RadosIO> io_impl_,
-        Ceph::RadosIterator begin_,
-        Ceph::RadosIterator end_,
+    RadosIteratorAsync(
+        std::shared_ptr<RadosIOContext> io_ctx_,
+        RadosIterator begin_,
+        RadosIterator end_,
         const String & prefix_,
         size_t max_list_size_)
         : IObjectStorageIteratorAsync(
-              CurrentMetrics::ObjectStorageS3Threads,
-              CurrentMetrics::ObjectStorageS3ThreadsActive,
-              CurrentMetrics::ObjectStorageS3ThreadsScheduled,
+              CurrentMetrics::ObjectStorageRadosThreads,
+              CurrentMetrics::ObjectStorageRadosThreadsActive,
+              CurrentMetrics::ObjectStorageRadosThreadsScheduled,
               "ListObjectCephAsync")
-        , io_impl(std::move(io_impl_))
+        , io_ctx(std::move(io_ctx_))
         , current(begin_)
         , end(end_)
         , prefix(prefix_)
@@ -87,7 +75,7 @@ public:
     {
     }
 
-    ~CephIteratorAsync() override = default;
+    ~RadosIteratorAsync() override = default;
 
 private:
     bool getBatchAndCheckNext(RelativePathsWithMetadata & batch) override
@@ -96,17 +84,17 @@ private:
         while (current != end && count < max_list_size)
         {
             auto object_id = current->get_oid();
-            if (!RadosStriper::isRegularObject(object_id) || !RadosStriper::isFirstObjectInStripe(io_impl, object_id)
+            if (!RadosStriper::isOrdinaryObject(object_id) || !RadosStriper::isFirstChunkInObject(io_ctx, object_id)
                 || !object_id.starts_with(prefix))
                 continue;
-            batch.emplace_back(std::make_shared<RelativePathWithMetadata>(object_id, io_impl->getMetadata(object_id)));
+            batch.emplace_back(std::make_shared<RelativePathWithMetadata>(object_id, io_ctx->getMetadata(object_id)));
             ++current;
             ++count;
         }
         return true;
     }
 
-    std::shared_ptr<Ceph::RadosIO> io_impl;
+    std::shared_ptr<RadosIOContext> io_ctx;
     librados::NObjectIterator current;
     const librados::NObjectIterator end;
     const String prefix;
@@ -115,13 +103,13 @@ private:
 
 }
 
-bool CephObjectStorage::exists(const StoredObject & object) const
+bool RadosObjectStorage::exists(const StoredObject & object) const
 {
-    auto get_attribute_result = io_impl->getAttributeIfExists(object.remote_path, RadosStriper::XATTR_OBJECT_COUNT);
+    auto get_attribute_result = io_ctx->getAttributeIfExists(object.remote_path, RadosStriper::XATTR_OBJECT_CHUNK_COUNT);
     return get_attribute_result.object_exists;
 }
 
-std::unique_ptr<ReadBufferFromFileBase> CephObjectStorage::readObjects( /// NOLINT
+std::unique_ptr<ReadBufferFromFileBase> RadosObjectStorage::readObjects( /// NOLINT
     const StoredObjects & objects,
     const ReadSettings & read_settings,
     std::optional<size_t>,
@@ -135,7 +123,7 @@ std::unique_ptr<ReadBufferFromFileBase> CephObjectStorage::readObjects( /// NOLI
     return readObjectsImpl(rados_objects_to_read, read_settings);
 }
 
-std::unique_ptr<ReadBufferFromFileBase> CephObjectStorage::readObject( /// NOLINT
+std::unique_ptr<ReadBufferFromFileBase> RadosObjectStorage::readObject( /// NOLINT
     const StoredObject & object,
     const ReadSettings & read_settings,
     std::optional<size_t>,
@@ -144,7 +132,7 @@ std::unique_ptr<ReadBufferFromFileBase> CephObjectStorage::readObject( /// NOLIN
     return readObjects({object}, read_settings);
 }
 
-std::unique_ptr<WriteBufferFromFileBase> CephObjectStorage::writeObject( /// NOLINT
+std::unique_ptr<WriteBufferFromFileBase> RadosObjectStorage::writeObject( /// NOLINT
     const StoredObject & object,
     WriteMode mode,
     std::optional<ObjectAttributes> attributes,
@@ -160,30 +148,30 @@ std::unique_ptr<WriteBufferFromFileBase> CephObjectStorage::writeObject( /// NOL
         scheduler = threadPoolCallbackRunnerUnsafe<void>(getThreadPoolWriter(), "VFSWrite");
 
     WriteSettings disk_write_settings = patchSettings(write_settings);
-    return std::make_unique<StriperWriteBufferFromRados>(
-        io_impl, object.remote_path, buf_size, ceph_settings.get()->max_object_size, patchSettings(write_settings), attributes, scheduler);
+    return std::make_unique<WriteBufferFromRados>(
+        io_ctx, object.remote_path, buf_size, ceph_settings.get()->osd_max_object_size, patchSettings(write_settings), attributes, scheduler);
 }
 
-ObjectStorageIteratorPtr CephObjectStorage::iterate(const std::string & path_prefix, size_t max_keys) const
+ObjectStorageIteratorPtr RadosObjectStorage::iterate(const std::string & path_prefix, size_t max_keys) const
 {
-    return std::make_shared<CephIteratorAsync>(io_impl, io_impl->begin(), io_impl->end(), path_prefix, max_keys);
+    return std::make_shared<RadosIteratorAsync>(io_ctx, io_ctx->begin(), io_ctx->end(), path_prefix, max_keys);
 }
 
-void CephObjectStorage::listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const
+void RadosObjectStorage::listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const
 {
     size_t count = 0;
-    for (auto it = io_impl->begin(); it != io_impl->end() && count < max_keys; ++it)
+    for (auto it = io_ctx->begin(); it != io_ctx->end() && count < max_keys; ++it)
     {
         auto object_id = it->get_oid();
-        if (!RadosStriper::isRegularObject(object_id) || !RadosStriper::isFirstObjectInStripe(io_impl, object_id)
+        if (!RadosStriper::isOrdinaryObject(object_id) || !RadosStriper::isFirstChunkInObject(io_ctx, object_id)
             || !object_id.starts_with(path))
             continue;
-        children.emplace_back(std::make_shared<RelativePathWithMetadata>(object_id, io_impl->getMetadata(object_id)));
+        children.emplace_back(std::make_shared<RelativePathWithMetadata>(object_id, io_ctx->getMetadata(object_id)));
         ++count;
     }
 }
 
-void CephObjectStorage::removeObjectImpl(const StoredObject & object, bool if_exists)
+void RadosObjectStorage::removeObjectImpl(const StoredObject & object, bool if_exists)
 {
     auto rados_objects = getRadosObjects({object}, if_exists, false);
 
@@ -195,49 +183,54 @@ void CephObjectStorage::removeObjectImpl(const StoredObject & object, bool if_ex
     /// Except for the HEAD object, remove only if it exists. Non-head objects can be missing
     /// because of many reasons, e.g. crash on write, crash on remove
     if (!names.empty())
-        io_impl->remove(names);
+        io_ctx->remove(names);
 
     /// The head object
-    io_impl->remove(object.remote_path, if_exists);
+    io_ctx->remove(object.remote_path, if_exists);
 }
 
-void CephObjectStorage::removeObjectsImpl(const StoredObjects & objects, bool if_exists)
+void RadosObjectStorage::removeObjectsImpl(const StoredObjects & objects, bool if_exists)
 {
     for (const auto & object : objects)
         removeObjectImpl(object, if_exists);
 }
 
-void CephObjectStorage::removeObject(const StoredObject & object)
+void RadosObjectStorage::removeObject(const StoredObject & object)
 {
     removeObjectImpl(object, false);
 }
 
-void CephObjectStorage::removeObjectIfExists(const StoredObject & object)
+void RadosObjectStorage::removeObjectIfExists(const StoredObject & object)
 {
     removeObjectImpl(object, true);
 }
 
-void CephObjectStorage::removeObjects(const StoredObjects & objects)
+void RadosObjectStorage::removeObjects(const StoredObjects & objects)
 {
     removeObjectsImpl(objects, false);
 }
 
-void CephObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
+void RadosObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
 {
     removeObjectsImpl(objects, true);
 }
 
-std::optional<ObjectMetadata> CephObjectStorage::tryGetObjectMetadata(const std::string & path) const
+std::optional<ObjectMetadata> RadosObjectStorage::tryGetObjectMetadata(const std::string & path) const
 {
-    return io_impl->tryGetMetadata(path);
+    auto res = io_ctx->tryGetMetadata(path);
+    if (res)
+        RadosStriper::patchStriperAtrributes(*res);
+    return res;
 }
 
-ObjectMetadata CephObjectStorage::getObjectMetadata(const std::string & path) const
+ObjectMetadata RadosObjectStorage::getObjectMetadata(const std::string & path) const
 {
-    return io_impl->getMetadata(path);
+    auto res = io_ctx->getMetadata(path);
+    RadosStriper::patchStriperAtrributes(res);
+    return res;
 }
 
-void CephObjectStorage::copyObject( // NOLINT
+void RadosObjectStorage::copyObject( // NOLINT
     const StoredObject & object_from,
     const StoredObject & object_to,
     const ReadSettings & read_settings,
@@ -251,33 +244,30 @@ void CephObjectStorage::copyObject( // NOLINT
     out->finalize();
 }
 
-void CephObjectStorage::setNewSettings(std::unique_ptr<CephObjectStorageSettings> && ceph_settings_)
+void RadosObjectStorage::setNewSettings(std::unique_ptr<RadosObjectStorageSettings> && ceph_settings_)
 {
-    size_t rados_max_osd_object_size = io_impl->getMaxObjectSize();
-    if (ceph_settings_->max_object_size == 0 || ceph_settings_->max_object_size > rados_max_osd_object_size)
-        ceph_settings_->max_object_size = rados_max_osd_object_size;
     ceph_settings.set(std::move(ceph_settings_));
 }
 
-void CephObjectStorage::shutdown()
+void RadosObjectStorage::shutdown()
 {
-    io_impl->close();
+    io_ctx->close();
     rados->shutdown();
 }
 
-void CephObjectStorage::startup()
+void RadosObjectStorage::startup()
 {
     rados->connect();
-    io_impl->connect();
+    io_ctx->connect();
 }
 
-void CephObjectStorage::applyNewSettings(
+void RadosObjectStorage::applyNewSettings(
     const Poco::Util::AbstractConfiguration & config,
     const std::string & config_prefix,
     ContextPtr /*context*/,
     const ApplyNewSettingsOptions & options)
 {
-    auto modified_settings = std::make_unique<CephObjectStorageSettings>();
+    auto modified_settings = std::make_unique<RadosObjectStorageSettings>();
     modified_settings->loadFromConfig(config, config_prefix);
 
     auto current_settings = ceph_settings.get();
@@ -290,14 +280,14 @@ void CephObjectStorage::applyNewSettings(
             if (auto ec = new_rados->conf_set(key.c_str(), value.c_str()); ec < 0)
                 throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Failed to set Ceph option: {}. Error: {}", key, strerror(-ec));
         }
-        auto new_io = std::make_shared<Ceph::RadosIO>(new_rados, endpoint.pool, endpoint.nspace);
+        auto new_io_ctx = std::make_shared<RadosIOContext>(new_rados, endpoint.pool, endpoint.nspace);
         std::atomic_store(&rados, new_rados);
-        std::atomic_store(&io_impl, new_io);
+        std::atomic_store(&io_ctx, new_io_ctx);
     }
     ceph_settings.set(std::move(modified_settings));
 }
 
-WriteSettings CephObjectStorage::patchSettings(const WriteSettings & write_settings) const
+WriteSettings RadosObjectStorage::patchSettings(const WriteSettings & write_settings) const
 {
     auto modified_settings = write_settings;
     /// Ceph does not support cache on write operations, because a ClickHouse object can be written to multiple Ceph objects.
@@ -305,27 +295,27 @@ WriteSettings CephObjectStorage::patchSettings(const WriteSettings & write_setti
     return modified_settings;
 }
 
-std::unique_ptr<IObjectStorage> CephObjectStorage::cloneObjectStorage(
+std::unique_ptr<IObjectStorage> RadosObjectStorage::cloneObjectStorage(
     const std::string & new_namespace,
     const Poco::Util::AbstractConfiguration & /*config*/,
     const std::string & /*config_prefix*/,
     ContextPtr /*context*/)
 {
-    auto new_ceph_settings = std::make_unique<CephObjectStorageSettings>(*ceph_settings.get());
-    CephEndpoint new_endpoint;
+    auto new_ceph_settings = std::make_unique<RadosObjectStorageSettings>(*ceph_settings.get());
+    RadosEndpoint new_endpoint;
     new_endpoint.mon_hosts = endpoint.mon_hosts;
     new_endpoint.pool = new_namespace;
 
-    return std::make_unique<CephObjectStorage>(rados, std::move(new_ceph_settings), new_endpoint, disk_name, for_disk_ceph);
+    return std::make_unique<RadosObjectStorage>(rados, std::move(new_ceph_settings), new_endpoint, disk_name, for_disk_ceph);
 }
 
-ObjectStorageKey CephObjectStorage::generateObjectKeyForPath(const std::string & /*path*/) const
+ObjectStorageKey RadosObjectStorage::generateObjectKeyForPath(const std::string & /*path*/) const
 {
     constexpr size_t key_name_total_size = 32;
     return ObjectStorageKey::createAsRelative(endpoint.nspace, getRandomASCIIString(key_name_total_size));
 }
 
-std::unique_ptr<ReadBufferFromFileBase> CephObjectStorage::readObjectsImpl( /// NOLINT
+std::unique_ptr<ReadBufferFromFileBase> RadosObjectStorage::readObjectsImpl( /// NOLINT
     const StoredObjects & objects,
     const ReadSettings & read_settings,
     std::optional<size_t>,
@@ -337,8 +327,8 @@ std::unique_ptr<ReadBufferFromFileBase> CephObjectStorage::readObjectsImpl( /// 
 
     auto read_buffer_creator = [this, disk_read_settings](bool, const StoredObject & object_) -> std::unique_ptr<ReadBufferFromFileBase>
     {
-        return std::make_unique<ReadBufferFromCeph>(
-            io_impl,
+        return std::make_unique<ReadBufferFromRados>(
+            io_ctx,
             object_.remote_path,
             disk_read_settings,
             /* use_external_buffer */ true);
@@ -375,28 +365,30 @@ std::unique_ptr<ReadBufferFromFileBase> CephObjectStorage::readObjectsImpl( /// 
     }
 }
 
-StoredObjects CephObjectStorage::getRadosObjects(const StoredObjects & objects, bool if_exists, bool with_size) const
+StoredObjects RadosObjectStorage::getRadosObjects(const StoredObjects & objects, bool if_exists, bool with_size) const
 {
     StoredObjects rados_objects;
     for (const auto & object : objects)
     {
-        auto get_attribute_result = io_impl->getAttributeIfExists(object.remote_path, RadosStriper::XATTR_OBJECT_COUNT);
+        auto get_attribute_result = io_ctx->getAttributeIfExists(object.remote_path, RadosStriper::XATTR_OBJECT_CHUNK_COUNT);
         if (!if_exists && !get_attribute_result.object_exists)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Object {} does not exist", object.remote_path);
+
         rados_objects.push_back(object);
+
         if (!get_attribute_result.value)
             continue;
 
         /// Need to recalculate the size of the objects
         if (with_size)
-            io_impl->stat(rados_objects.back().remote_path, &rados_objects.back().bytes_size, nullptr);
+            io_ctx->stat(rados_objects.back().remote_path, &rados_objects.back().bytes_size, nullptr);
         auto stripe_count = std::stoull(*get_attribute_result.value);
         for (size_t i = 1; i < stripe_count; ++i)
         {
             rados_objects.emplace_back();
-            rados_objects.back().remote_path = RadosStriper::getStripedObjectName(object.remote_path, i);
+            rados_objects.back().remote_path = RadosStriper::getChunkName(object.remote_path, i);
             if (with_size)
-                io_impl->stat(rados_objects.back().remote_path, &rados_objects.back().bytes_size, nullptr);
+                io_ctx->stat(rados_objects.back().remote_path, &rados_objects.back().bytes_size, nullptr);
         }
     }
     return rados_objects;

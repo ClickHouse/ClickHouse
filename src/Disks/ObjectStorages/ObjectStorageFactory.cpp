@@ -4,7 +4,7 @@
 
 #if USE_CEPH
 #include <Disks/ObjectStorages/ObjectStorageFactory.h>
-#include <Disks/ObjectStorages/Ceph/CephObjectStorage.h>
+#include <Disks/ObjectStorages/Ceph/RadosObjectStorage.h>
 #endif
 #if USE_AWS_S3
 #include <Disks/ObjectStorages/S3/DiskS3Utils.h>
@@ -352,7 +352,7 @@ void registerCephObjectStorage(ObjectStorageFactory & factory)
         const ContextPtr & /*context*/,
         bool /* skip_access_check */) -> ObjectStoragePtr
     {
-        auto settings = std::make_unique<CephObjectStorageSettings>();
+        auto settings = std::make_unique<RadosObjectStorageSettings>();
         settings->loadFromConfig(config, config_prefix);
         auto rados = std::make_shared<librados::Rados>();
         rados->init(settings->global_options.user.c_str());
@@ -361,11 +361,11 @@ void registerCephObjectStorage(ObjectStorageFactory & factory)
             if (auto ec = rados->conf_set(key.c_str(), value.c_str()); ec < 0)
                 throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Failed to set Ceph option: {}. Error: {}", key, strerror(-ec));
         }
-        CephEndpoint endpoint;
+        RadosEndpoint endpoint;
         endpoint.mon_hosts = settings->global_options["mon_host"]; /// Redundant
         endpoint.pool = config.getString(config_prefix + ".pool");
         endpoint.nspace = config.getString(config_prefix + ".namespace");
-        return createObjectStorage<CephObjectStorage>(ObjectStorageType::Ceph, config, config_prefix, std::move(rados), std::move(settings), endpoint, name);
+        return createObjectStorage<RadosObjectStorage>(ObjectStorageType::Ceph, config, config_prefix, std::move(rados), std::move(settings), endpoint, name);
     };
     factory.registerObjectStorageType("ceph", creator);
     factory.registerObjectStorageType("rados", creator);

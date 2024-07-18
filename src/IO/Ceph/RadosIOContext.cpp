@@ -1,13 +1,11 @@
-#include "RadosIO.h"
-#include <memory>
-#include <buffer_fwd.h>
-#include <librados.hpp>
-#include "Common/logger_useful.h"
+#include "RadosIOContext.h"
 
 #if USE_CEPH
 
+#include <librados.hpp>
 #include <cstring>
 #include <fmt/format.h>
+#include "Common/logger_useful.h"
 #include <Common/safe_cast.h>
 #include <Common/Exception.h>
 
@@ -20,34 +18,31 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-namespace Ceph
-{
-
-RadosIO::RadosIO(std::shared_ptr<librados::Rados> rados_, const String & pool_, const String & ns_, bool connect_)
+RadosIOContext::RadosIOContext(std::shared_ptr<librados::Rados> rados_, const String & pool_, const String & ns_, bool connect_)
     : rados(std::move(rados_)), pool(pool_), ns(ns_)
 {
     if (connect_)
         connect();
 }
 
-RadosIO::RadosIO(librados::IoCtx io_ctx_)
+RadosIOContext::RadosIOContext(librados::IoCtx io_ctx_)
     : io_ctx(std::move(io_ctx_))
 {
     if (!io_ctx_.is_valid())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "RadosIO: io_ctx is not valid");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "RadosIOContext: io_ctx is not valid");
     connected = true;
 }
 
-void RadosIO::connect()
+void RadosIOContext::connect()
 {
     if (connected)
         return;
 
     if (!rados)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "RadosIO: rados is nullptr");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "RadosIOContext: rados is nullptr");
 
     if (auto ec = rados->connect(); ec != 0 && ec != -EISCONN)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "RadosIO: rados cluster is not connected yet");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "RadosIOContext: rados cluster is not connected yet");
 
     if (auto ec = rados->ioctx_create(pool.c_str(), io_ctx); ec < 0)
         throw Exception(ErrorCodes::CEPH_ERROR, "Cannot create io_ctx for pool `{}`. Error: {}", pool, strerror(-ec));
@@ -58,7 +53,7 @@ void RadosIO::connect()
     connected = true;
 }
 
-void RadosIO::close()
+void RadosIOContext::close()
 {
     if (!connected)
         return;
@@ -67,13 +62,13 @@ void RadosIO::close()
     connected = false;
 }
 
-void RadosIO::assertConnected() const
+void RadosIOContext::assertConnected() const
 {
     if (!connected)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "RadosRadosIO is not connected");
 }
 
-size_t RadosIO::getMaxObjectSize() const
+size_t RadosIOContext::getMaxObjectSize() const
 {
     assertConnected();
     String val;
@@ -81,11 +76,11 @@ size_t RadosIO::getMaxObjectSize() const
         throw Exception(ErrorCodes::CEPH_ERROR, "Cannot get max object size. Error: {}", strerror(-ec));
     if (val.empty())
         throw Exception(ErrorCodes::CEPH_ERROR, "Cannot get max object size. Empty value");
-    LOG_DEBUG(getLogger("RadosIO"), "Max object size: {}", val);
+    LOG_DEBUG(getLogger("RadosIOContext"), "Max object size: {}", val);
     return std::stoull(val);
 }
 
-size_t RadosIO::read(const String & oid, char * data, size_t length, uint64_t offset)
+size_t RadosIOContext::read(const String & oid, char * data, size_t length, uint64_t offset)
 {
     assertConnected();
     ceph::bufferlist bl = ceph::bufferlist::static_from_mem(data, length);
@@ -108,7 +103,7 @@ size_t RadosIO::read(const String & oid, char * data, size_t length, uint64_t of
     return bytes_read;
 }
 
-size_t RadosIO::writeFull(const String & oid, const char * data, size_t length)
+size_t RadosIOContext::writeFull(const String & oid, const char * data, size_t length)
 {
     assertConnected();
     ceph::bufferlist bl;
@@ -118,7 +113,7 @@ size_t RadosIO::writeFull(const String & oid, const char * data, size_t length)
     return length;
 }
 
-size_t RadosIO::write(const String & oid, const char * data, size_t length, uint64_t offset)
+size_t RadosIOContext::write(const String & oid, const char * data, size_t length, uint64_t offset)
 {
     assertConnected();
     ceph::bufferlist bl;
@@ -128,7 +123,7 @@ size_t RadosIO::write(const String & oid, const char * data, size_t length, uint
     return length;
 }
 
-size_t RadosIO::append(const String & oid, const char * data, size_t length)
+size_t RadosIOContext::append(const String & oid, const char * data, size_t length)
 {
     assertConnected();
     ceph::bufferlist bl;
@@ -138,27 +133,27 @@ size_t RadosIO::append(const String & oid, const char * data, size_t length)
     return length;
 }
 
-void RadosIO::stat(const String & oid, uint64_t * size, struct timespec * mtime)
+void RadosIOContext::stat(const String & oid, uint64_t * size, struct timespec * mtime)
 {
     assertConnected();
     if (auto ec = io_ctx.stat2(oid, size, mtime); ec < 0)
         throw Exception(ErrorCodes::CEPH_ERROR, "Cannot get object `{}:{}` stats. Error: {}", pool, oid, strerror(-ec));
 }
 
-bool RadosIO::exists(const String & oid)
+bool RadosIOContext::exists(const String & oid)
 {
     assertConnected();
     return io_ctx.stat2(oid, nullptr, nullptr) == 0;
 }
 
-void RadosIO::remove(const String & oid, bool if_exists)
+void RadosIOContext::remove(const String & oid, bool if_exists)
 {
     assertConnected();
     if (auto ec = io_ctx.remove(oid); ec < 0 && (!if_exists || ec != -ENOENT))
         throw Exception(ErrorCodes::CEPH_ERROR, "Cannot remove object `{}:{}`. Error: {}", pool, oid, strerror(-ec));
 }
 
-void RadosIO::remove(const std::vector<String> & oids)
+void RadosIOContext::remove(const std::vector<String> & oids)
 {
     assertConnected();
     std::vector<std::unique_ptr<librados::AioCompletion>> completions;
@@ -183,14 +178,14 @@ void RadosIO::remove(const std::vector<String> & oids)
         throw std::move(*exception);
 }
 
-void RadosIO::create(const String & oid, bool if_not_exists)
+void RadosIOContext::create(const String & oid, bool if_not_exists)
 {
     assertConnected();
     if (auto ec = io_ctx.create(oid, !if_not_exists); ec < 0 && (!if_not_exists || ec != -EEXIST))
         throw Exception(ErrorCodes::CEPH_ERROR, "Cannot remove object `{}:{}`. Error: {}", pool, oid, strerror(-ec));
 }
 
-GetRadosObjectAttributeResult RadosIO::tryGetAttribute(const String & oid, const String & attr, bool if_exists, std::optional<Exception> * exception)
+GetRadosObjectAttributeResult RadosIOContext::tryGetAttribute(const String & oid, const String & attr, bool if_exists, std::optional<Exception> * exception)
 {
     assertConnected();
     String res;
@@ -215,7 +210,7 @@ GetRadosObjectAttributeResult RadosIO::tryGetAttribute(const String & oid, const
     return GetRadosObjectAttributeResult{.object_exists = true, .value = std::move(res)};
 }
 
-String RadosIO::getAttribute(const String & oid, const String & attr)
+String RadosIOContext::getAttribute(const String & oid, const String & attr)
 {
     std::optional<Exception> exception;
     auto res = tryGetAttribute(oid, attr, false, &exception);
@@ -224,7 +219,7 @@ String RadosIO::getAttribute(const String & oid, const String & attr)
     return std::move(*res.value);
 }
 
-GetRadosObjectAttributeResult RadosIO::getAttributeIfExists(const String & oid, const String & attr)
+GetRadosObjectAttributeResult RadosIOContext::getAttributeIfExists(const String & oid, const String & attr)
 {
     std::optional<Exception> exception;
     auto res = tryGetAttribute(oid, attr, true, &exception);
@@ -233,7 +228,7 @@ GetRadosObjectAttributeResult RadosIO::getAttributeIfExists(const String & oid, 
     return res;
 }
 
-void RadosIO::setAttribute(const String & oid, const String & attr, const String & value)
+void RadosIOContext::setAttribute(const String & oid, const String & attr, const String & value)
 {
     assertConnected();
     ceph::bufferlist bl;
@@ -242,7 +237,7 @@ void RadosIO::setAttribute(const String & oid, const String & attr, const String
         throw Exception(ErrorCodes::CEPH_ERROR, "Cannot set attribute `{}` for object `{}:{}`. Error: {}", attr, pool, oid, strerror(-ec));
 }
 
-void RadosIO::getAttributes(const String & oid, std::map<String, String> & attrs)
+void RadosIOContext::getAttributes(const String & oid, std::map<String, String> & attrs)
 {
     assertConnected();
     std::map<std::string, ceph::bufferlist> xattrs;
@@ -255,7 +250,7 @@ void RadosIO::getAttributes(const String & oid, std::map<String, String> & attrs
     }
 }
 
-void RadosIO::setAttributes(const String & oid, const std::map<String, String> & attrs)
+void RadosIOContext::setAttributes(const String & oid, const std::map<String, String> & attrs)
 {
     assertConnected();
     librados::ObjectWriteOperation ops;
@@ -269,7 +264,7 @@ void RadosIO::setAttributes(const String & oid, const std::map<String, String> &
         throw Exception(ErrorCodes::CEPH_ERROR, "Cannot set attributes for object `{}:{}`. Error: {}", pool, oid, strerror(-ec));
 }
 
-std::optional<ObjectMetadata> RadosIO::tryGetMetadata(const String & oid, std::optional<Exception> * exception)
+std::optional<ObjectMetadata> RadosIOContext::tryGetMetadata(const String & oid, std::optional<Exception> * exception)
 {
     assertConnected();
     std::map<std::string, ceph::bufferlist> xattrs;
@@ -294,7 +289,7 @@ std::optional<ObjectMetadata> RadosIO::tryGetMetadata(const String & oid, std::o
     return std::move(metadata);
 }
 
-ObjectMetadata RadosIO::getMetadata(const String & oid)
+ObjectMetadata RadosIOContext::getMetadata(const String & oid)
 {
     assertConnected();
     std::optional<Exception> exception;
@@ -307,5 +302,4 @@ ObjectMetadata RadosIO::getMetadata(const String & oid)
 
 }
 
-}
 #endif

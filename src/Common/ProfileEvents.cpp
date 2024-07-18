@@ -474,13 +474,13 @@ The server successfully detected this situation and will download merged part fr
     M(ReadBufferFromAzureBytes, "Bytes read from Azure.") \
     M(ReadBufferFromAzureRequestsErrors, "Number of exceptions while reading from Azure") \
     \
-    M(ReadBufferFromCephMicroseconds, "Time spent on reading from Ceph RADOS.") \
+    M(ReadBufferFromRadosMicroseconds, "Time spent on reading from Ceph RADOS.") \
     M(ReadBufferFromCephInitMicroseconds, "Time spent initializing connection to Ceph RADOS.") \
-    M(ReadBufferFromCephBytes, "Bytes read from Ceph RADOS.") \
+    M(ReadBufferFromRadosBytes, "Bytes read from Ceph RADOS.") \
     M(ReadBufferFromCephRequestsErrors, "Number of exceptions while reading from Ceph RADOS") \
       \
-    M(WriteBufferFromCephMicroseconds, "Time spent on writing to Ceph.") \
-    M(WriteBufferFromCephBytes, "Bytes written to Ceph.") \
+    M(WriteBufferFromRadosMicroseconds, "Time spent on writing to Ceph.") \
+    M(WriteBufferFromRadosBytes, "Bytes written to Ceph.") \
     M(WriteBufferFromCephRequestsErrors, "Number of exceptions while writing to Ceph.") \
     \
     M(CachedReadBufferReadFromCacheHits, "Number of times the read from filesystem cache hit the cache.") \

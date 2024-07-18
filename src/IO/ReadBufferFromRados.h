@@ -1,27 +1,26 @@
 #pragma once
 
-#include "config.h"
+#include <config.h>
 
 #if USE_CEPH
 
-#include <IO/Ceph/RadosIO.h>
-#include <IO/ReadBuffer.h>
-#include <IO/BufferWithOwnMemory.h>
-#include <string>
 #include <memory>
-#include <base/types.h>
-#include <Interpreters/Context.h>
+#include <IO/BufferWithOwnMemory.h>
+#include <IO/Ceph/RadosIOContext.h>
+#include <IO/ReadBuffer.h>
 #include <IO/ReadBufferFromFileBase.h>
+#include <Interpreters/Context.h>
+#include <base/types.h>
 
 
 namespace DB
 {
 /// Accepts a pool and an object id, opens and read the object
-class ReadBufferFromCeph : public ReadBufferFromFileBase
+class ReadBufferFromRados : public ReadBufferFromFileBase
 {
 struct Impl;
 public:
-    ReadBufferFromCeph(
+    ReadBufferFromRados(
         std::shared_ptr<librados::Rados> rados_,
         const String & pool,
         const String & nspace,
@@ -32,8 +31,8 @@ public:
         size_t read_until_position_ = 0,
         std::optional<size_t> file_size_ = std::nullopt);
 
-    ReadBufferFromCeph(
-        std::shared_ptr<Ceph::RadosIO> io_,
+    ReadBufferFromRados(
+        std::shared_ptr<RadosIOContext> io_ctx_,
         const String & object_id_,
         const ReadSettings & read_settings_,
         bool use_external_buffer_ = false,
@@ -41,7 +40,7 @@ public:
         size_t read_until_position_ = 0,
         std::optional<size_t> file_size_ = std::nullopt);
 
-    ~ReadBufferFromCeph() override;
+    ~ReadBufferFromRados() override;
 
     size_t getFileSize() override;
     String getFileName() const override;

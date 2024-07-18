@@ -11,7 +11,7 @@
 namespace DB
 {
 
-struct CephEndpoint
+struct RadosEndpoint
 {
     String mon_hosts;
     String pool;
@@ -19,11 +19,11 @@ struct CephEndpoint
     String snapshot;
 };
 
-struct CephOptions : public std::map<String, String>
+struct RadosOptions : public std::map<String, String>
 {
     /// Other information, including authentication, is stored in the options map
     String user;
-    CephOptions() { resetToDefaultOptions(); }
+    RadosOptions() { resetToDefaultOptions(); }
     void resetToDefaultOptions();
     void loadFromConfig(const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
     void validate();

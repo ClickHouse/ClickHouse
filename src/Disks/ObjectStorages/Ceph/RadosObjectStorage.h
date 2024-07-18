@@ -7,7 +7,7 @@
 #if USE_CEPH
 
 #include <memory>
-#include <IO/Ceph/RadosIO.h>
+#include <IO/Ceph/RadosIOContext.h>
 #include <Disks/ObjectStorages/Ceph/CephUtils.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Common/MultiVersion.h>
@@ -17,47 +17,60 @@
 namespace DB
 {
 
-/// The maximum size of object in rados is 4GB, therefore we need to split large objects into multiple objects
+/// The maximum size of object in rados is 4GB, therefore we need to split large objects into multiple rados objects
 /// Ceph project provides `libradostriper`, nevertheless, it doesn't fit well to ClickHouse. Here we implement
 /// a simple striper logic:
-/// - Each object has a suffix `.#N` where N is a sequence number of the object in the stripe
-/// - The first object in the stripe has a suffix `.#0` and all attributes are stored in this object
-/// - The first object has special atributes to store the total number of objects in the stripe and the
-///   size and mtime of the big object
+/// - A ClickHouse object may or may not be split to smaller physical object on rados (chunk), depending on if its size
+///   fit a rados object
+/// - Each chunk has same name with ClickHouse object, with the first (HEAD) chunk has exactly same name and subsequent
+///   chunk has suffix `.clickhouse.chunk.N` at the end, with N is the chunk sequence.
+/// - The HEAD chunk has special attributes to store the total number of objects in the stripe and the size and mtime of
+///   the ClickHouse object.
 namespace RadosStriper
 {
-    static constexpr const char * const XATTR_OBJECT_COUNT = "clickhouse.striper.object_count";
+    static constexpr const char * const XATTR_OBJECT_CHUNK_COUNT = "clickhouse.striper.object_chunk_count";
     static constexpr const char * const XATTR_OBJECT_SIZE = "clickhouse.striper.object_size";
     static constexpr const char * const XATTR_OBJECT_MTIME = "clickhouse.striper.object_mtime";
-    static constexpr const char * const STRIP_SUFFIX = "clickhouse.strip";
+    static constexpr const char * const CHUNK_SUFFIX = "clickhouse.chunk";
 
-    inline String getStripedObjectName(const String & object_id, size_t object_seq)
+    inline String getChunkName(const String & object_id, size_t chunk_seq)
     {
-        return fmt::format("{}.{}.{}", object_id, STRIP_SUFFIX, object_seq);
+        return fmt::format("{}.{}.{}", object_id, CHUNK_SUFFIX, chunk_seq);
     }
 
-    inline bool isRegularObject(const String & object_name) { return !object_name.contains(STRIP_SUFFIX); }
+    inline bool isOrdinaryObject(const String & object_name) { return !object_name.contains(CHUNK_SUFFIX); }
 
-    inline bool isFirstObjectInStripe(const std::shared_ptr<Ceph::RadosIO> io, const String & object_name)
+    inline bool isFirstChunkInObject(const std::shared_ptr<RadosIOContext> io, const String & object_name)
     {
-        return io->getAttributeIfExists(object_name, XATTR_OBJECT_COUNT).value.has_value();
+        return io->getAttributeIfExists(object_name, XATTR_OBJECT_CHUNK_COUNT).value.has_value();
+    }
+
+    inline void patchStriperAtrributes(ObjectMetadata & metadata)
+    {
+        if (metadata.attributes.contains(RadosStriper::XATTR_OBJECT_SIZE))
+            metadata.size_bytes = std::stoull(metadata.attributes.at(RadosStriper::XATTR_OBJECT_SIZE));
+        if (metadata.attributes.contains(RadosStriper::XATTR_OBJECT_MTIME))
+            metadata.last_modified = std::stoull(metadata.attributes.at(RadosStriper::XATTR_OBJECT_MTIME));
+        metadata.attributes.erase(XATTR_OBJECT_CHUNK_COUNT);
+        metadata.attributes.erase(XATTR_OBJECT_SIZE);
+        metadata.attributes.erase(XATTR_OBJECT_MTIME);
     }
 }
 
-struct CephObjectStorageSettings
+struct RadosObjectStorageSettings
 {
-    CephObjectStorageSettings() = default;
+    RadosObjectStorageSettings() = default;
 
-    CephObjectStorageSettings(
-        const CephOptions & global_options_,
+    RadosObjectStorageSettings(
+        const RadosOptions & global_options_,
         size_t max_object_size_,
         bool read_only_)
         : global_options(global_options_)
-        , max_object_size(max_object_size_)
+        , osd_max_object_size(max_object_size_)
         , read_only(read_only_)
     {}
 
-    CephOptions global_options;
+    RadosOptions global_options;
 
     void loadFromConfig(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix)
     {
@@ -65,60 +78,55 @@ struct CephObjectStorageSettings
         if (config.has(config_prefix + ".options"))
             global_options.loadFromConfig(config, config_prefix + ".options");
         global_options.validate();
-        max_object_size = config.getUInt64(config_prefix + ".max_object_size", max_object_size);
+        osd_max_object_size = config.getUInt64(config_prefix + ".osd_max_object_size");
         read_only = config.getBool(config_prefix + ".read_only", read_only);
     }
 
-    uint64_t max_object_size = 0;
+    uint64_t osd_max_object_size = 128 * 1024 * 1024; /// 128M - default ceph setting value
     bool read_only = false;
 };
 
 /// Rados cluster include many pool (equivalent to S3 bucket). In each pool, we can have many namespace.
-/// CephObjectStorage associated with a pool and a namespace. The object name will have namespace as prefix.
-/// listObject and iterate with prefix implementation is sub-par, so we cannot use CephObjectStorage with plain
-/// metadata type.
-class CephObjectStorage : public IObjectStorage
+/// RadosObjectStorage associated with a pool and a namespace. The object name will have namespace as prefix.
+/// listObject and iterate with prefix implementation is sub-par, so we cannot use RadosObjectStorage with plain
+/// metadata type yet.
+class RadosObjectStorage : public IObjectStorage
 {
 private:
-    CephObjectStorage(
+    RadosObjectStorage(
         const char * logger_name,
         std::shared_ptr<librados::Rados> rados_,
-        std::unique_ptr<CephObjectStorageSettings> ceph_settings_,
-        CephEndpoint endpoint_,
+        std::unique_ptr<RadosObjectStorageSettings> ceph_settings_,
+        RadosEndpoint endpoint_,
         const String & disk_name_,
         bool for_disk_ceph_ = true)
         : endpoint(endpoint_)
         , disk_name(disk_name_)
         , rados(std::move(rados_))
+        , ceph_settings(std::move(ceph_settings_))
         , log(getLogger(logger_name))
         , for_disk_ceph(for_disk_ceph_)
     {
         /// Not allow using empty namespace if this is for disk
         if (for_disk_ceph && (endpoint.nspace.empty() || endpoint.nspace == LIBRADOS_ALL_NSPACES))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "CephObjectStorage: namespace cannot be empty if it's created for disk");
-        io_impl = std::make_unique<Ceph::RadosIO>(rados, endpoint.pool, endpoint.nspace);
-        /// Get max object size from cluster
-        String val;
-        size_t rados_max_osd_object_size = io_impl->getMaxObjectSize();
-        if (ceph_settings_->max_object_size == 0 || ceph_settings_->max_object_size > rados_max_osd_object_size)
-            ceph_settings_->max_object_size = rados_max_osd_object_size;
-        ceph_settings.set(std::move(ceph_settings_));
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "RadosObjectStorage: namespace cannot be empty if it's created for disk");
+        io_ctx = std::make_unique<RadosIOContext>(rados, endpoint.pool, endpoint.nspace);
     }
 
 public:
     template <class ...Args>
-    explicit CephObjectStorage(std::shared_ptr<librados::Rados> rados_, Args && ...args)
-        : CephObjectStorage("CephObjectStorage", std::move(rados_), std::forward<Args>(args)...)
+    explicit RadosObjectStorage(std::shared_ptr<librados::Rados> rados_, Args && ...args)
+        : RadosObjectStorage("RadosObjectStorage", std::move(rados_), std::forward<Args>(args)...)
     {
     }
 
-    ~CephObjectStorage() override = default;
+    ~RadosObjectStorage() override = default;
 
     String getCommonKeyPrefix() const override { return endpoint.nspace; }
 
     String getDescription() const override { return endpoint.mon_hosts + "/" + endpoint.pool; }
 
-    std::string getName() const override { return "CephObjectStorage"; }
+    std::string getName() const override { return "RadosObjectStorage"; }
 
     ObjectStorageType getType() const override { return ObjectStorageType::Ceph; }
 
@@ -196,7 +204,7 @@ public:
     bool isReadOnly() const override { return ceph_settings.get()->read_only; }
 
 private:
-    void setNewSettings(std::unique_ptr<CephObjectStorageSettings> && ceph_settings_);
+    void setNewSettings(std::unique_ptr<RadosObjectStorageSettings> && ceph_settings_);
 
     void removeObjectImpl(const StoredObject & object, bool if_exists);
     void removeObjectsImpl(const StoredObjects & objects, bool if_exists);
@@ -209,13 +217,13 @@ private:
 
     StoredObjects getRadosObjects(const StoredObjects & objects, bool if_exists, bool with_size) const;
 
-    const CephEndpoint endpoint;
+    const RadosEndpoint endpoint;
 
     std::string disk_name;
 
     std::shared_ptr<librados::Rados> rados;
-    MultiVersion<CephObjectStorageSettings> ceph_settings;
-    std::shared_ptr<Ceph::RadosIO> io_impl;
+    MultiVersion<RadosObjectStorageSettings> ceph_settings;
+    std::shared_ptr<RadosIOContext> io_ctx;
 
     LoggerPtr log;
 

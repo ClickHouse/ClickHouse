@@ -11,7 +11,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-void CephOptions::loadFromConfig(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
+void RadosOptions::loadFromConfig(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
 {
     resetToDefaultOptions();
     Strings keys;
@@ -20,19 +20,19 @@ void CephOptions::loadFromConfig(const Poco::Util::AbstractConfiguration & confi
         (*this)[key] = config.getRawString(config_prefix + "." + key);
 }
 
-void CephOptions::resetToDefaultOptions()
+void RadosOptions::resetToDefaultOptions()
 {
     clear();
     /// TODO: Ceph has many options, we can have a default set of options here.
 }
 
-void CephOptions::validate()
+void RadosOptions::validate()
 {
     /// Auth: either we have: (1) user and key or keyfile, or (2) keyring
     bool has_user_based_auth = !user.empty() && (count("key") || count("keyfile"));
     bool has_keyring_based_auth = count("keyring");
     if (!has_user_based_auth && !has_keyring_based_auth)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "CephOptions: either user + key/keyfile or keyring must be specified");
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "RadosOptions: either user + key/keyfile or keyring must be specified");
 }
 }
 

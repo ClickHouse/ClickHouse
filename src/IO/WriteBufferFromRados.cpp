@@ -1,32 +1,26 @@
-#include "Disks/ObjectStorages/Ceph/CephObjectStorage.h"
-#include "config.h"
+#include <config.h>
 
-#if USE_AWS_S3
+#if USE_CEPH
 
-#include "StriperWriteBufferFromRados.h"
-
-#include <Common/ThreadPoolTaskTracker.h>
-#include <Common/logger_useful.h>
-#include <Common/ProfileEvents.h>
-#include <Common/Throttler.h>
-#include <Interpreters/Cache/FileCache.h>
-
-#include <Common/Scheduler/ResourceGuard.h>
-#include <IO/WriteHelpers.h>
-#include <IO/S3Common.h>
-#include <IO/S3/Requests.h>
-#include <IO/S3/getObjectInfo.h>
-#include <IO/S3/BlobStorageLogWriter.h>
+#include "WriteBufferFromRados.h"
 
 #include <utility>
+#include <IO/WriteHelpers.h>
+#include <Interpreters/Cache/FileCache.h>
+#include <Common/ProfileEvents.h>
+#include <Common/Scheduler/ResourceGuard.h>
+#include <Common/ThreadPoolTaskTracker.h>
+#include <Common/Throttler.h>
+#include <Common/logger_useful.h>
+#include <Disks/ObjectStorages/Ceph/RadosObjectStorage.h>
 
 
 namespace ProfileEvents
 {
-    extern const Event WriteBufferFromCephBytes;
-    extern const Event WriteBufferFromCephMicroseconds;
-    extern const Event RemoteWriteThrottlerBytes;
-    extern const Event RemoteWriteThrottlerSleepMicroseconds;
+extern const Event WriteBufferFromRadosBytes;
+extern const Event WriteBufferFromRadosMicroseconds;
+extern const Event RemoteWriteThrottlerBytes;
+extern const Event RemoteWriteThrottlerSleepMicroseconds;
 }
 
 namespace DB
@@ -34,20 +28,17 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int CEPH_ERROR;
-    extern const int INVALID_CONFIG_PARAMETER;
-    extern const int LOGICAL_ERROR;
+extern const int CEPH_ERROR;
+extern const int INVALID_CONFIG_PARAMETER;
+extern const int LOGICAL_ERROR;
 }
 
-struct StriperWriteBufferFromRados::PartData
+struct WriteBufferFromRados::PartData
 {
     Memory<> memory;
     size_t data_size = 0;
 
-    bool isEmpty() const
-    {
-        return data_size == 0;
-    }
+    bool isEmpty() const { return data_size == 0; }
 };
 
 BufferAllocationPolicyPtr createBufferAllocationPolicy(size_t max_object_size)
@@ -58,38 +49,32 @@ BufferAllocationPolicyPtr createBufferAllocationPolicy(size_t max_object_size)
 }
 
 
-StriperWriteBufferFromRados::StriperWriteBufferFromRados(
-    std::shared_ptr<Ceph::RadosIO> impl_,
+WriteBufferFromRados::WriteBufferFromRados(
+    std::shared_ptr<RadosIOContext> io_ctx_,
     const String & object_id_,
     size_t buf_size_,
-    size_t max_object_size_,
+    size_t max_chunk_size_,
     const WriteSettings & write_settings_,
     std::optional<std::map<String, String>> object_metadata_,
     ThreadPoolCallbackRunnerUnsafe<void> schedule_)
     : WriteBufferFromFileBase(buf_size_, nullptr, 0)
-    , impl(std::move(impl_))
+    , io_ctx(std::move(io_ctx_))
     , object_id(object_id_)
-    , max_object_size(max_object_size_)
+    , max_chunk_size(max_chunk_size_)
     , write_settings(write_settings_)
     , object_metadata(std::move(object_metadata_))
-    , buffer_allocation_policy(createBufferAllocationPolicy(max_object_size))
-    , task_tracker(
-          std::make_unique<TaskTracker>(
-              std::move(schedule_),
-              1,
-              limitedLog))
+    , buffer_allocation_policy(createBufferAllocationPolicy(max_chunk_size))
+    , task_tracker(std::make_unique<TaskTracker>(std::move(schedule_), 1, limitedLog))
 {
-    LOG_TRACE(limitedLog, "Create StriperWriteBufferFromRados, {}", getShortLogDetails());
+    LOG_TRACE(limitedLog, "Create WriteBufferFromRados, {}", getShortLogDetails());
 
     allocateBuffer();
 }
 
-void StriperWriteBufferFromRados::nextImpl()
+void WriteBufferFromRados::nextImpl()
 {
     if (is_prefinalized)
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Cannot write to prefinalized buffer for Rados");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot write to prefinalized buffer for Rados");
 
     /// Make sense to call waitIfAny before adding new async task to check if there is an exception
     /// The faster the exception is propagated the lesser time is spent for cancellation
@@ -107,19 +92,17 @@ void StriperWriteBufferFromRados::nextImpl()
     detachBuffer();
 
     if (detached_part_data.size() > 1)
-    {
         writeMultipartUpload();
-    }
 
     allocateBuffer();
 }
 
-void StriperWriteBufferFromRados::preFinalize()
+void WriteBufferFromRados::preFinalize()
 {
     if (is_prefinalized)
         return;
 
-    LOG_TEST(log, "preFinalize StriperWriteBufferFromRados. {}", getShortLogDetails());
+    LOG_TEST(limitedLog, "preFinalize WriteBufferFromRados. {}", getShortLogDetails());
 
     /// This function should not be run again if an exception has occurred
     is_prefinalized = true;
@@ -132,9 +115,9 @@ void StriperWriteBufferFromRados::preFinalize()
     writeMultipartUpload();
 }
 
-void StriperWriteBufferFromRados::finalizeImpl()
+void WriteBufferFromRados::finalizeImpl()
 {
-    LOG_TRACE(log, "finalizeImpl StriperWriteBufferFromRados. {}.", getShortLogDetails());
+    LOG_TRACE(limitedLog, "finalizeImpl WriteBufferFromRados. {}.", getShortLogDetails());
 
     if (!is_prefinalized)
         preFinalize();
@@ -144,39 +127,51 @@ void StriperWriteBufferFromRados::finalizeImpl()
 
     task_tracker->waitAll();
 
-    /// If object has multiple parts, we need to update the metadata in HEAD object
-    if (object_seq > 1)
+    /// If object has multiple chunks, we need to update the metadata in HEAD object
+    if (chunk_count > 1)
     {
         std::map<String, String> metadata;
-        metadata[RadosStriper::XATTR_OBJECT_COUNT] = std::to_string(object_seq);
+        metadata[RadosStriper::XATTR_OBJECT_CHUNK_COUNT] = std::to_string(chunk_count);
         metadata[RadosStriper::XATTR_OBJECT_SIZE] = std::to_string(total_size);
         metadata[RadosStriper::XATTR_OBJECT_MTIME] = std::to_string(time(nullptr));
         if (object_metadata)
             metadata.insert(object_metadata->begin(), object_metadata->end());
-        impl->setAttributes(object_id, metadata);
+        io_ctx->setAttributes(object_id, metadata);
+    }
+    else if (object_metadata)
+    {
+        io_ctx->setAttributes(object_id, *object_metadata);
     }
 }
 
-String StriperWriteBufferFromRados::getVerboseLogDetails() const
+String WriteBufferFromRados::getVerboseLogDetails() const
 {
-    return fmt::format("Details: object {}, total size {}, count {}, hidden_size {}, offset {}, with pool: {}, prefinalized {}, finalized {}",
-                       object_id, total_size, count(), hidden_size, offset(), task_tracker->isAsync(), is_prefinalized, finalized);
+    return fmt::format(
+        "Details: object {}, total size {}, count {}, hidden_size {}, offset {}, with pool: {}, prefinalized {}, finalized {}",
+        object_id,
+        total_size,
+        count(),
+        hidden_size,
+        offset(),
+        task_tracker->isAsync(),
+        is_prefinalized,
+        finalized);
 }
 
-String StriperWriteBufferFromRados::getShortLogDetails() const
+String WriteBufferFromRados::getShortLogDetails() const
 {
     return fmt::format("Details: Object {}", object_id);
 }
 
-StriperWriteBufferFromRados::~StriperWriteBufferFromRados()
+WriteBufferFromRados::~WriteBufferFromRados()
 {
-    LOG_TRACE(limitedLog, "Close StriperWriteBufferFromRados. {}.", getShortLogDetails());
+    LOG_TRACE(limitedLog, "Close WriteBufferFromRados. {}.", getShortLogDetails());
 
     if (canceled)
     {
         LOG_INFO(
             log,
-            "StriperWriteBufferFromRados was canceled."
+            "WriteBufferFromRados was canceled."
             "The file might not be written to Rados. "
             "{}.",
             getVerboseLogDetails());
@@ -188,7 +183,7 @@ StriperWriteBufferFromRados::~StriperWriteBufferFromRados()
     {
         LOG_INFO(
             log,
-            "StriperWriteBufferFromRados is not finalized in destructor. "
+            "WriteBufferFromRados is not finalized in destructor. "
             "The file might not be written to Rados. "
             "{}.",
             getVerboseLogDetails());
@@ -197,10 +192,11 @@ StriperWriteBufferFromRados::~StriperWriteBufferFromRados()
     task_tracker->safeWaitAll();
 }
 
-void StriperWriteBufferFromRados::hidePartialData()
+void WriteBufferFromRados::hidePartialData()
 {
     if (write_settings.remote_throttler)
-            write_settings.remote_throttler->add(offset(), ProfileEvents::RemoteWriteThrottlerBytes, ProfileEvents::RemoteWriteThrottlerSleepMicroseconds);
+        write_settings.remote_throttler->add(
+            offset(), ProfileEvents::RemoteWriteThrottlerBytes, ProfileEvents::RemoteWriteThrottlerSleepMicroseconds);
 
     chassert(memory.size() >= hidden_size + offset());
 
@@ -212,7 +208,7 @@ void StriperWriteBufferFromRados::hidePartialData()
     chassert(offset() == 0);
 }
 
-void StriperWriteBufferFromRados::reallocateFirstBuffer()
+void WriteBufferFromRados::reallocateFirstBuffer()
 {
     chassert(offset() == 0);
 
@@ -231,7 +227,7 @@ void StriperWriteBufferFromRados::reallocateFirstBuffer()
     chassert(offset() == 0);
 }
 
-void StriperWriteBufferFromRados::detachBuffer()
+void WriteBufferFromRados::detachBuffer()
 {
     size_t data_size = size_t(position() - memory.data());
     chassert(data_size == hidden_size);
@@ -245,7 +241,7 @@ void StriperWriteBufferFromRados::detachBuffer()
     detached_part_data.push_back({std::move(buf), data_size});
 }
 
-void StriperWriteBufferFromRados::allocateBuffer()
+void WriteBufferFromRados::allocateBuffer()
 {
     buffer_allocation_policy->nextBuffer();
     chassert(0 == hidden_size);
@@ -260,7 +256,7 @@ void StriperWriteBufferFromRados::allocateBuffer()
     WriteBuffer::set(memory.data(), memory.size());
 }
 
-void StriperWriteBufferFromRados::allocateFirstBuffer()
+void WriteBufferFromRados::allocateFirstBuffer()
 {
     const auto max_first_buffer = buffer_allocation_policy->getBufferSize();
     const auto size = std::min(size_t(DBMS_DEFAULT_BUFFER_SIZE), max_first_buffer);
@@ -268,12 +264,12 @@ void StriperWriteBufferFromRados::allocateFirstBuffer()
     WriteBuffer::set(memory.data(), memory.size());
 }
 
-void StriperWriteBufferFromRados::setFakeBufferWhenPreFinalized()
+void WriteBufferFromRados::setFakeBufferWhenPreFinalized()
 {
     WriteBuffer::set(fake_buffer_when_prefinalized, sizeof(fake_buffer_when_prefinalized));
 }
 
-void StriperWriteBufferFromRados::writeMultipartUpload()
+void WriteBufferFromRados::writeMultipartUpload()
 {
     while (!detached_part_data.empty())
     {
@@ -282,49 +278,49 @@ void StriperWriteBufferFromRados::writeMultipartUpload()
     }
 }
 
-void StriperWriteBufferFromRados::writePart(StriperWriteBufferFromRados::PartData && data)
+void WriteBufferFromRados::writePart(WriteBufferFromRados::PartData && data)
 {
     if (data.data_size == 0)
     {
-        LOG_TEST(log, "Skipping writing part as empty {}", getShortLogDetails());
+        LOG_TEST(limitedLog, "Skipping writing part as empty {}", getShortLogDetails());
         return;
     }
 
-    LOG_TEST(log, "writePart {}, part size {}, part number {}", getShortLogDetails(), data.data_size, object_seq);
+    LOG_TEST(limitedLog, "writePart {}, part size {}, part number {}", getShortLogDetails(), data.data_size, chunk_count);
 
-    if (data.data_size > max_object_size)
+    if (data.data_size > max_chunk_size)
     {
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "Part size exceeded max_upload_part_size. {}, part number {}, part size {}, max_upload_part_size {}",
             getShortLogDetails(),
-            object_seq,
+            chunk_count,
             data.data_size,
-            max_object_size
-            );
+            max_chunk_size);
     }
 
-    String rados_object_name = object_seq == 0 ? object_id : RadosStriper::getStripedObjectName(object_id, object_seq);
-    if (object_seq == 0)
-        /// This is the head object, we create it first because we need it exists to store metadata
-        impl->create(rados_object_name, true);
+    String rados_object_name = chunk_count == 0 ? object_id : RadosStriper::getChunkName(object_id, chunk_count);
+    /// This is the head chunk, we create it first because we need it exists to store metadata.
+    /// Otherwise update the stripe count in HEAD chunk
+    if (chunk_count == 0)
+        io_ctx->create(rados_object_name, true);
     else
-        /// update the stripe count in HEAD object
-        impl->setAttribute(object_id, RadosStriper::XATTR_OBJECT_COUNT, std::to_string(object_seq+1));
-    object_seq++;
+        io_ctx->setAttribute(object_id, RadosStriper::XATTR_OBJECT_CHUNK_COUNT, std::to_string(chunk_count + 1));
+    chunk_count++;
 
-    auto upload_worker = [this, content = std::make_shared<PartData>(std::move(data)), object_name = std::move(rados_object_name)] ()
+    auto upload_worker = [this, content = std::make_shared<PartData>(std::move(data)), object_name = std::move(rados_object_name)]()
     {
         ResourceGuard rlock(write_settings.resource_link, content->data_size);
         size_t len = content->data_size;
         try
         {
-            ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::WriteBufferFromCephMicroseconds);
+            ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::WriteBufferFromRadosMicroseconds);
             /// O_CREATE | O_TRUNC
-            impl->writeFull(object_name, content->memory.data(), len);
+            io_ctx->writeFull(object_name, content->memory.data(), len);
 
             if (write_settings.remote_throttler)
-                write_settings.remote_throttler->add(len, ProfileEvents::RemoteWriteThrottlerBytes, ProfileEvents::RemoteWriteThrottlerSleepMicroseconds);
+                write_settings.remote_throttler->add(
+                    len, ProfileEvents::RemoteWriteThrottlerBytes, ProfileEvents::RemoteWriteThrottlerSleepMicroseconds);
         }
         catch (...)
         {
@@ -334,7 +330,7 @@ void StriperWriteBufferFromRados::writePart(StriperWriteBufferFromRados::PartDat
         rlock.unlock();
 
         write_settings.resource_link.adjust(len, len);
-        ProfileEvents::increment(ProfileEvents::WriteBufferFromCephBytes, len);
+        ProfileEvents::increment(ProfileEvents::WriteBufferFromRadosBytes, len);
     };
 
     task_tracker->add(std::move(upload_worker));

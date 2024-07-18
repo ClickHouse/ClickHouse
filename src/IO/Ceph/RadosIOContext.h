@@ -15,8 +15,6 @@
 
 namespace DB
 {
-namespace Ceph
-{
 
 using RadosIterator = librados::NObjectIterator;
 
@@ -28,14 +26,13 @@ struct GetRadosObjectAttributeResult
 
 
 /// Implement detail of Ceph rados IO. Do not print any sensitive information in logs
-/// TODO: add connection pool
-class RadosIO
+class RadosIOContext
 {
 public:
-    RadosIO(std::shared_ptr<librados::Rados> rados_, const String & pool_, const String & ns_ = "", bool connect_ = true);
-    explicit RadosIO(librados::IoCtx io_ctx_);
-    RadosIO(const RadosIO &) = delete;
-    RadosIO(RadosIO &&) = default;
+    RadosIOContext(std::shared_ptr<librados::Rados> rados_, const String & pool_, const String & ns_ = "", bool connect_ = true);
+    explicit RadosIOContext(librados::IoCtx io_ctx_);
+    RadosIOContext(const RadosIOContext &) = delete;
+    RadosIOContext(RadosIOContext &&) = default;
 
     void connect();
 
@@ -94,8 +91,6 @@ private:
     String ns;
     bool connected{false};
 };
-
-}
 
 }
 

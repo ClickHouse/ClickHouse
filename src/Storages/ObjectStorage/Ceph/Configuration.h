@@ -9,17 +9,17 @@
 namespace DB
 {
 
-class StorageCephConfiguration : public StorageObjectStorage::Configuration
+class StorageRadosConfiguration : public StorageObjectStorage::Configuration
 {
 public:
     using ConfigurationPtr = StorageObjectStorage::ConfigurationPtr;
 
-    static constexpr auto type_name = "ceph";
-    static constexpr auto engine_name = "Ceph";
+    static constexpr auto type_name = "rados";
+    static constexpr auto engine_name = "Rados";
     static constexpr auto namespace_name = "pool";
 
-    StorageCephConfiguration() = default;
-    StorageCephConfiguration(const StorageCephConfiguration & other);
+    StorageRadosConfiguration() = default;
+    StorageRadosConfiguration(const StorageRadosConfiguration & other);
 
     std::string getTypeName() const override { return type_name; }
     std::string getEngineName() const override { return engine_name; }
@@ -40,7 +40,7 @@ public:
 
     void check(ContextPtr context) const override;
     void validateNamespace(const String & name) const override;
-    ConfigurationPtr clone() override { return std::make_shared<StorageCephConfiguration>(*this); }
+    ConfigurationPtr clone() override { return std::make_shared<StorageRadosConfiguration>(*this); }
     bool isStaticConfiguration() const override { return static_configuration; }
 
     ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly) override;
@@ -55,7 +55,7 @@ private:
     void fromNamedCollection(const NamedCollection & collection, ContextPtr context) override;
     void fromAST(ASTs & args, ContextPtr context, bool with_structure) override;
 
-    CephEndpoint endpoint;
+    RadosEndpoint endpoint;
     String path;
     std::vector<String> paths;
 

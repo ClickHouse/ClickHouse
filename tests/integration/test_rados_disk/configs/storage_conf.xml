@@ -7,7 +7,7 @@
                 <user>admin</user>
                 <pool>clickhouse</pool>
                 <namespace>integration_test</namespace>
-                <max_object_size>2097152</max_object_size>
+                <osd_max_object_size>2097152</osd_max_object_size>
                 <options>
                     <mon_host>ceph1:3300</mon_host>
                     <key>AQBbAI1miwfiCRAAySWvPQPgLjjA3EsRJEcBSw==</key>
@@ -19,7 +19,7 @@
                 <type>cache</type>
                 <disk>ceph0</disk>
                 <path>/var/lib/clickhouse/ceph_cache/</path>
-                <max_size>1Gi</max_size>
+                <max_size>1Mi</max_size>
             </ceph0_cache>
         </disks>
         <policies>
