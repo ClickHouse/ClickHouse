@@ -4,45 +4,46 @@
 
 #include <Backups/IRestoreCoordination.h>
 #include <Backups/RestorerFromBackup.h>
+#include <Core/ServerSettings.h>
+#include <Core/Settings.h>
+#include <Databases/DDLDependencyVisitor.h>
+#include <Databases/DatabaseFactory.h>
+#include <Databases/DatabaseReplicated.h>
+#include <Databases/DatabaseReplicatedWorker.h>
+#include <Databases/TablesDependencyGraph.h>
+#include <IO/ReadBufferFromFile.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
+#include <IO/SharedThreadPools.h>
+#include <IO/WriteHelpers.h>
+#include <Interpreters/Cluster.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/DDLTask.h>
+#include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/InterpreterCreateQuery.h>
+#include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/executeDDLQueryOnCluster.h>
+#include <Interpreters/executeQuery.h>
+#include <Parsers/ASTAlterQuery.h>
+#include <Parsers/ASTDeleteQuery.h>
+#include <Parsers/ASTDropQuery.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ParserCreateQuery.h>
+#include <Parsers/formatAST.h>
+#include <Parsers/parseQuery.h>
+#include <Parsers/queryToString.h>
+#include <Storages/AlterCommands.h>
+#include <Storages/StorageKeeperMap.h>
 #include <base/chrono_io.h>
 #include <base/getFQDNOrHostName.h>
 #include <Common/Exception.h>
 #include <Common/Macros.h>
 #include <Common/OpenTelemetryTraceContext.h>
+#include <Common/PoolId.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
-#include <Common/PoolId.h>
-#include <Core/ServerSettings.h>
-#include <Core/Settings.h>
-#include <Databases/DatabaseFactory.h>
-#include <Databases/DatabaseReplicated.h>
-#include <Databases/DatabaseReplicatedWorker.h>
-#include <Databases/DDLDependencyVisitor.h>
-#include <Databases/TablesDependencyGraph.h>
-#include <Interpreters/Cluster.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/DDLTask.h>
-#include <Interpreters/evaluateConstantExpression.h>
-#include <Interpreters/executeDDLQueryOnCluster.h>
-#include <Interpreters/executeQuery.h>
-#include <Interpreters/InterpreterCreateQuery.h>
-#include <IO/ReadBufferFromFile.h>
-#include <IO/ReadBufferFromString.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
-#include <IO/SharedThreadPools.h>
-#include <Parsers/ASTAlterQuery.h>
-#include <Parsers/ASTDropQuery.h>
-#include <Parsers/ASTFunction.h>
-#include <Parsers/ASTDeleteQuery.h>
-#include <Parsers/formatAST.h>
-#include <Parsers/parseQuery.h>
-#include <Parsers/ParserCreateQuery.h>
-#include <Parsers/queryToString.h>
-#include <Storages/StorageKeeperMap.h>
-#include <Storages/AlterCommands.h>
+#include "Databases/IDatabase.h"
 
 namespace DB
 {
@@ -1443,6 +1444,12 @@ void DatabaseReplicated::dropTable(ContextPtr local_context, const String & tabl
     tables_metadata_digest = new_digest;
 
     assert(checkDigestValid(local_context));
+}
+
+void DatabaseReplicated::dropDetachedTable(ContextPtr /*local_context*/, const String & /*table_name*/, const bool /*sync*/)
+{
+    // todo firstly need to fix https://github.com/ClickHouse/ClickHouse/pull/66092
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "There is no DROP DETACHED TABLE query for Database{}", getEngineName());
 }
 
 void DatabaseReplicated::renameTable(ContextPtr local_context, const String & table_name, IDatabase & to_database,

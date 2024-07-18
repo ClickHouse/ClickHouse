@@ -152,7 +152,7 @@ def test_drop_replicated_table(start_cluster):
 
 def test_drop_table_in_replicated_db(start_cluster):
     replica1.query(
-        f"CREATE DATABASE IF NOT EXISTS repl_db ON CLUSTER test_cluster ENGINE=Replicated('/clickhouse/tables/test_replicated_table', shard1, '{{replica}}');"
+        f"CREATE DATABASE IF NOT EXISTS repl_db ON CLUSTER test_cluster ENGINE=Replicated('/clickhouse/replicated_db', shard1, '{{replica}}');"
     )
 
     replica1.query_with_retry(
@@ -171,23 +171,30 @@ def test_drop_table_in_replicated_db(start_cluster):
     )
     replica1.query("SYSTEM SYNC REPLICA repl_db.test_replicated_table;", timeout=20)
 
+    table_uuid = replica1.query("SELECT uuid FROM system.tables WHERE table='test_replicated_table';", timeout=20).rstrip("\n")
+
     replica1.query("DETACH TABLE repl_db.test_replicated_table PERMANENTLY;")
+
+    detached_table_uuid = replica1.query("SELECT uuid FROM system.detached_tables WHERE table='test_replicated_table';", timeout=20).rstrip("\n")
+
+    assert table_uuid == detached_table_uuid
 
     zk = cluster.get_kazoo_client("zoo1")
 
-    replica_path = "/clickhouse/tables/{table_name}/replicas/{shard}|{replica}".format(
-        table_name="test_replicated_table", shard="shard1", replica=replica1.name
+    replica_path = "/clickhouse/tables/{table_uuid}/{shard}/replicas/{replica}".format(
+        table_uuid=table_uuid, shard="shard1", replica=replica1.name
     )
 
     exists_replica = check_exists(zk, replica_path)
     assert exists_replica != None
 
-    replica1.query(
-        "SET allow_experimental_drop_detached_table=1; DROP DETACHED TABLE repl_db.test_replicated_table SYNC;"
-    )
+    # firstly need to fix https://github.com/ClickHouse/ClickHouse/pull/66092
+    # replica1.query(
+    #     "SET allow_experimental_drop_detached_table=1; DROP DETACHED TABLE repl_db.test_replicated_table SYNC;"
+    # )
 
-    exists_replica = check_exists(zk, replica_path)
-    assert exists_replica == None
+    # exists_replica = check_exists(zk, replica_path)
+    # assert exists_replica == None
 
 
 def test_drop_s3_table(start_cluster):

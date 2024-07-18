@@ -189,10 +189,13 @@ void DatabaseAtomic::dropDetachedTable(ContextPtr local_context, const String & 
     const String table_metadata_path = getObjectMetadataPath(table_name);
     const UUID uuid_table = getTableUUIDFromDetachedMetadata(local_context, table_metadata_path);
     const StorageID storage_id{getDatabaseName(), table_name, uuid_table};
-    const String table_metadata_path_drop = DatabaseCatalog::instance().getPathForDroppedMetadata(storage_id);
+    String table_metadata_path_drop;
 
     {
         std::lock_guard lock(mutex);
+        table_metadata_path_drop = DatabaseCatalog::instance().getPathForDroppedMetadata(storage_id);
+
+        fs::create_directory(fs::path(table_metadata_path_drop).parent_path());
 
         auto txn = local_context->getZooKeeperMetadataTransaction();
         if (txn && !local_context->isInternalSubquery())
@@ -208,6 +211,18 @@ void DatabaseAtomic::dropDetachedTable(ContextPtr local_context, const String & 
     {
         LOG_TRACE(log, "Remove symlink for {}", table_name);
         tryRemoveSymlink(table_name);
+    }
+
+    {
+        std::lock_guard lock(mutex);
+        detached_tables.erase(uuid_table);
+        permanently_detached_tables.erase(
+            std::remove_if(
+                permanently_detached_tables.begin(),
+                permanently_detached_tables.end(),
+                [&table_name](const auto & permanently_detached_table_name) { return permanently_detached_table_name == table_name; }),
+            permanently_detached_tables.end());
+        snapshot_detached_tables.erase(table_name);
     }
 
     LOG_TRACE(log, "Table {} ready for remove.", table_name);
