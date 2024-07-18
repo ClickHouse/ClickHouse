@@ -20,6 +20,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 namespace
 {
 
@@ -72,7 +77,7 @@ const std::unordered_map<std::string_view, ProfileEvents::Event> & getEventNameT
 
 std::string_view setColorForProgress(double progress, double max_progress)
 {
-    static const std::string_view colors[] = {
+    constexpr std::string_view colors[] = {
         "",
         "\033[38;5;34m", /// Green
         "\033[38;5;154m", /// Yellow-green
@@ -103,8 +108,35 @@ std::string_view setColorForProgress(double progress, double max_progress)
     return colors[7];
 }
 
-std::string_view setProgressForTimeBasedMetrics(ProfileEvents::ValueType value_type, double progress)
+std::string_view setColorForBytesBasedMetricsProgress(double progress)
 {
+    constexpr std::array<std::string_view, 7> colors = {
+        "\033[90m", /// Dark Grey
+        "\033[37m", /// Light Grey
+        "\033[32m", /// Green
+        "\033[33m", /// Yellow
+        "\033[38;5;208m", /// Orange
+        "\033[1;33m", /// Bold
+        "\033[38;5;160m", /// Red
+    };
+
+    /// Bytes.
+    constexpr std::array<unsigned long long, 6> thresholds = {
+        1LL << 20,
+        100LL << 20,
+        1'000LL << 20,
+        10'000LL << 20,
+        100'000LL << 20,
+        1'000'000LL << 20,
+    };
+
+    auto dist = std::upper_bound(thresholds.begin(), thresholds.end(), progress) - thresholds.begin();
+    return colors[dist];
+}
+
+std::string_view setColorForTimeBasedMetricsProgress(ProfileEvents::ValueType value_type, double progress)
+{
+    /// Time units in a second.
     auto units = [](ProfileEvents::ValueType t) -> double
     {
         switch (t)
@@ -116,7 +148,7 @@ std::string_view setProgressForTimeBasedMetrics(ProfileEvents::ValueType value_t
             case ProfileEvents::ValueType::Nanoseconds:
                 return 1e9;
             default:
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong value_type");
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong value type, expecting time units");
         }
     }(value_type);
 
@@ -200,12 +232,12 @@ void ProgressTable::writeTable(WriteBufferFromFileDescriptor & message)
                 message << setColorForProgress(progress, max_progress);
                 break;
             case ProfileEvents::ValueType::Bytes:
-                message << setColorForProgress(progress, max_progress);
+                message << setColorForBytesBasedMetricsProgress(progress);
                 break;
             case ProfileEvents::ValueType::Milliseconds:
             case ProfileEvents::ValueType::Microseconds:
             case ProfileEvents::ValueType::Nanoseconds:
-                message << setProgressForTimeBasedMetrics(value_type, progress);
+                message << setColorForTimeBasedMetricsProgress(value_type, progress);
                 break;
         }
 
