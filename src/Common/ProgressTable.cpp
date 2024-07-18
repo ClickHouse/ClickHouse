@@ -103,9 +103,40 @@ std::string_view setColorForProgress(double progress, double max_progress)
     return colors[7];
 }
 
+std::string_view setProgressForTimeBasedMetrics(ProfileEvents::ValueType value_type, double progress)
+{
+    auto units = [](ProfileEvents::ValueType t) -> double
+    {
+        switch (t)
+        {
+            case ProfileEvents::ValueType::Milliseconds:
+                return 1e3;
+            case ProfileEvents::ValueType::Microseconds:
+                return 1e6;
+            case ProfileEvents::ValueType::Nanoseconds:
+                return 1e9;
+            default:
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong value_type");
+        }
+    }(value_type);
+
+    constexpr std::array<std::string_view, 5> colors = {
+        "\033[90m", /// Dark Grey
+        "\033[37m", /// Light Grey
+        "\033[32m", /// Green
+        "\033[33m", /// Yellow
+        "\033[1;33m" /// Bold Yellow
+    };
+
+    const std::array<double, 4> thresholds = {0.001 * units, 0.01 * units, 0.1 * units, 1.0 * units};
+
+    auto dist = std::upper_bound(thresholds.begin(), thresholds.end(), progress) - thresholds.begin();
+    return colors[dist];
+}
+
 std::string_view setColorForDocumentation()
 {
-    return "\033[90m"; /// Light grey
+    return "\033[90m"; /// Dark Grey
 }
 
 template <typename Out>
@@ -163,7 +194,20 @@ void ProgressTable::writeTable(WriteBufferFromFileDescriptor & message)
         /// Get the maximum progress before it is updated in getSummaryProgress.
         auto max_progress = per_host_info.getMaxProgress();
         auto progress = per_host_info.getSummaryProgress(elapsed_sec);
-        message << setColorForProgress(progress, max_progress);
+        switch (value_type)
+        {
+            case ProfileEvents::ValueType::Number:
+                message << setColorForProgress(progress, max_progress);
+                break;
+            case ProfileEvents::ValueType::Bytes:
+                message << setColorForProgress(progress, max_progress);
+                break;
+            case ProfileEvents::ValueType::Milliseconds:
+            case ProfileEvents::ValueType::Microseconds:
+            case ProfileEvents::ValueType::Nanoseconds:
+                message << setProgressForTimeBasedMetrics(value_type, progress);
+                break;
+        }
 
         writeWithWidth(message, formatReadableValue(value_type, progress) + " / s", COLUMN_PROGRESS_WIDTH);
 
