@@ -26,11 +26,9 @@ ReadBufferFromFileBase::ReadBufferFromFileBase(
 
 ReadBufferFromFileBase::~ReadBufferFromFileBase() = default;
 
-size_t ReadBufferFromFileBase::getFileSize()
+std::optional<size_t> ReadBufferFromFileBase::tryGetFileSize()
 {
-    if (file_size)
-        return *file_size;
-    throw Exception(ErrorCodes::UNKNOWN_FILE_SIZE, "Cannot find out file size for read buffer");
+    return file_size;
 }
 
 void ReadBufferFromFileBase::setProgressCallback(ContextPtr context)

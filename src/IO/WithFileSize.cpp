@@ -13,11 +13,19 @@ namespace ErrorCodes
     extern const int UNKNOWN_FILE_SIZE;
 }
 
+size_t WithFileSize::getFileSize()
+{
+    if (auto maybe_size = tryGetFileSize())
+        return *maybe_size;
+
+    throw Exception(ErrorCodes::UNKNOWN_FILE_SIZE, "Cannot find out file size");
+}
+
 template <typename T>
 static std::optional<size_t> tryGetFileSize(T & in)
 {
     if (auto * with_file_size = dynamic_cast<WithFileSize *>(&in))
-        return with_file_size->getFileSize();
+        return with_file_size->tryGetFileSize();
 
     return std::nullopt;
 }

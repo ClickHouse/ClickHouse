@@ -121,15 +121,12 @@ void ReadWriteBufferFromHTTP::prepareRequest(Poco::Net::HTTPRequest & request, s
         credentials.authenticate(request);
 }
 
-size_t ReadWriteBufferFromHTTP::getFileSize()
+std::optional<size_t> ReadWriteBufferFromHTTP::tryGetFileSize()
 {
     if (!file_info)
         file_info = getFileInfo();
 
-    if (file_info->file_size)
-        return *file_info->file_size;
-
-    throw Exception(ErrorCodes::UNKNOWN_FILE_SIZE, "Cannot find out file size for: {}", initial_uri.toString());
+    return file_info->file_size;
 }
 
 bool ReadWriteBufferFromHTTP::supportsReadAt()
