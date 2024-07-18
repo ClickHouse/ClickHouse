@@ -66,6 +66,15 @@ def create_replicated_table(node, table_name):
     )
 
 
+def create_distributed_table(node, table_name):
+    node.query(
+        "CREATE TABLE aux_table_for_dist (key UInt64) ENGINE=MergeTree ORDER BY key"
+    )
+    node.query(
+        f"CREATE TABLE {table_name} AS aux_table_for_dist Engine=Distributed('test_cluster', test_db, '{table_name}', key)"
+    )
+
+
 def create_s3_table(node, table_name):
     node.query_with_retry(
         """
@@ -166,3 +175,28 @@ def test_drop_s3_table(start_cluster):
 
     objects_after = list_objects(cluster, "data/")
     assert len(objects_before) == len(objects_after)
+
+
+def test_drop_distributed_table(start_cluster):
+    test_table_name = "test_dist_table"
+    create_distributed_table(node=replica1, table_name=test_table_name)
+
+    replica1.query(f"DETACH TABLE {test_table_name}")
+
+    assert (
+        "1"
+        == replica1.query(
+            f"SELECT count(table) FROM system.detached_tables WHERE table='{test_table_name}'"
+        ).rstrip()
+    )
+
+    replica1.query(
+        f"SET allow_experimental_drop_detached_table=1; DROP DETACHED TABLE {test_table_name} SYNC;"
+    )
+
+    assert (
+        "0"
+        == replica1.query(
+            f"SELECT count(table) FROM system.detached_tables WHERE table='{test_table_name}'"
+        ).rstrip()
+    )
