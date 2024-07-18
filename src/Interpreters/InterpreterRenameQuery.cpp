@@ -9,6 +9,7 @@
 #include <Interpreters/QueryLog.h>
 #include <Access/Common/AccessRightsElement.h>
 #include <Common/typeid_cast.h>
+#include <Core/Settings.h>
 #include <Databases/DatabaseReplicated.h>
 
 

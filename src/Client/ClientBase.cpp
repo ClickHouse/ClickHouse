@@ -80,6 +80,7 @@
 #include <Common/config_version.h>
 #include "config.h"
 
+
 namespace fs = std::filesystem;
 using namespace std::literals;
 
@@ -2069,9 +2070,18 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
         progress_indication.writeFinalProgress();
         output_stream << std::endl << std::endl;
     }
-    else if (getClientConfiguration().getBool("print-time-to-stderr", false))
+    else
     {
-        error_stream << progress_indication.elapsedSeconds() << "\n";
+        const auto & config = getClientConfiguration();
+        if (config.getBool("print-time-to-stderr", false))
+            error_stream << progress_indication.elapsedSeconds() << "\n";
+
+        const auto & print_memory_mode = config.getString("print-memory-to-stderr", "");
+        auto peak_memeory_usage = std::max<Int64>(progress_indication.getMemoryUsage().peak, 0);
+        if (print_memory_mode == "default")
+            error_stream << peak_memeory_usage << "\n";
+        else if (print_memory_mode == "readable")
+            error_stream << formatReadableSizeWithBinarySuffix(peak_memeory_usage) << "\n";
     }
 
     if (!is_interactive && getClientConfiguration().getBool("print-num-processed-rows", false))
@@ -2565,12 +2575,12 @@ void ClientBase::runInteractive()
         word_break_characters,
         highlight_callback);
 #else
+    (void)word_break_characters;
     LineReader lr(
         history_file,
         getClientConfiguration().has("multiline"),
         query_extenders,
-        query_delimiters,
-        word_break_characters);
+        query_delimiters);
 #endif
 
     static const std::initializer_list<std::pair<String, String>> backslash_aliases =
@@ -3035,6 +3045,7 @@ void ClientBase::init(int argc, char ** argv)
         ("disable_suggestion,A", "Disable loading suggestion data. Note that suggestion data is loaded asynchronously through a second connection to ClickHouse server. Also it is reasonable to disable suggestion if you want to paste a query with TAB characters. Shorthand option -A is for those who get used to mysql client.")
         ("wait_for_suggestions_to_load", "Load suggestion data synchonously.")
         ("time,t", "print query execution time to stderr in non-interactive mode (for benchmarks)")
+        ("memory-usage", po::value<std::string>()->implicit_value("default")->default_value("none"), "print memory usage to stderr in non-interactive mode (for benchmarks). Values: 'none', 'default', 'readable'")
 
         ("echo", "in batch mode, print query before execution")
 
@@ -3120,6 +3131,14 @@ void ClientBase::init(int argc, char ** argv)
     /// Output execution time to stderr in batch mode.
     if (options.count("time"))
         getClientConfiguration().setBool("print-time-to-stderr", true);
+    if (options.count("memory-usage"))
+    {
+        const auto & memory_usage_mode = options["memory-usage"].as<std::string>();
+        if (memory_usage_mode != "none" && memory_usage_mode != "default" && memory_usage_mode != "readable")
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown memory-usage mode: {}", memory_usage_mode);
+        getClientConfiguration().setString("print-memory-to-stderr", memory_usage_mode);
+    }
+
     if (options.count("query"))
         queries = options["query"].as<std::vector<std::string>>();
     if (options.count("query_id"))

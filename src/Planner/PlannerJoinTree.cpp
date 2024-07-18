@@ -1,5 +1,7 @@
 #include <Planner/PlannerJoinTree.h>
 
+#include <Core/Settings.h>
+
 #include <Common/scope_guard_safe.h>
 
 #include <Columns/ColumnAggregateFunction.h>
@@ -647,7 +649,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
         auto table_expression_query_info = select_query_info;
         table_expression_query_info.table_expression = table_expression;
         table_expression_query_info.filter_actions_dag = table_expression_data.getFilterActions();
-        table_expression_query_info.analyzer_can_use_parallel_replicas_on_follower = table_node == planner_context->getGlobalPlannerContext()->parallel_replicas_table;
+        table_expression_query_info.current_table_chosen_for_reading_with_parallel_replicas
+            = table_node == planner_context->getGlobalPlannerContext()->parallel_replicas_table;
 
         size_t max_streams = settings.max_threads;
         size_t max_threads_execute_query = settings.max_threads;
@@ -861,6 +864,15 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
 
                 from_stage = storage->getQueryProcessingStage(
                     query_context, select_query_options.to_stage, storage_snapshot, table_expression_query_info);
+
+                /// It is just a safety check needed until we have a proper sending plan to replicas.
+                /// If we have a non-trivial storage like View it might create its own Planner inside read(), run findTableForParallelReplicas()
+                /// and find some other table that might be used for reading with parallel replicas. It will lead to errors.
+                const bool other_table_already_chosen_for_reading_with_parallel_replicas
+                    = planner_context->getGlobalPlannerContext()->parallel_replicas_table
+                    && !table_expression_query_info.current_table_chosen_for_reading_with_parallel_replicas;
+                if (other_table_already_chosen_for_reading_with_parallel_replicas)
+                    planner_context->getMutableQueryContext()->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
 
                 storage->read(
                     query_plan,
