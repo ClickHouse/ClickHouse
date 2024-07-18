@@ -63,8 +63,7 @@ public:
 
     ~WriteBufferFromVector() override
     {
-        if (!canceled)
-            finalize();
+        finalize();
     }
 
 private:

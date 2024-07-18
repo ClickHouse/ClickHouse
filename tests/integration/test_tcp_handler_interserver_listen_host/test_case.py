@@ -1,5 +1,4 @@
 """Test Interserver responses on configured IP."""
-
 from pathlib import Path
 import pytest
 from helpers.cluster import ClickHouseCluster

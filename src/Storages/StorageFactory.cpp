@@ -4,7 +4,6 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
-#include <Core/Settings.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/StorageID.h>
 

@@ -1,8 +1,7 @@
 #pragma once
 
-#include <Databases/DatabaseOrdinary.h>
 #include <Databases/DatabasesCommon.h>
-#include <Storages/IStorage_fwd.h>
+#include <Databases/DatabaseOrdinary.h>
 
 
 namespace DB

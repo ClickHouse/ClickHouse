@@ -3,11 +3,9 @@
 #include <condition_variable>
 #include <memory>
 #include <optional>
-#include <Analyzer/IQueryTreeNode.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/HashTablesStatistics.h>
-#include <Interpreters/HashJoin/HashJoin.h>
+#include <Interpreters/HashJoin.h>
 #include <Interpreters/IJoin.h>
 #include <base/defines.h>
 #include <base/types.h>
@@ -40,7 +38,6 @@ public:
         std::shared_ptr<TableJoin> table_join_,
         size_t slots_,
         const Block & right_sample_block,
-        const StatsCollectingParams & stats_collecting_params_,
         bool any_take_last_row_ = false);
 
     ~ConcurrentHashJoin() override;
@@ -73,8 +70,6 @@ private:
     std::unique_ptr<ThreadPool> pool;
     std::vector<std::shared_ptr<InternalHashJoin>> hash_joins;
 
-    StatsCollectingParams stats_collecting_params;
-
     std::mutex totals_mutex;
     Block totals;
 
@@ -82,5 +77,4 @@ private:
     Blocks dispatchBlock(const Strings & key_columns_names, const Block & from_block);
 };
 
-UInt64 calculateCacheKey(std::shared_ptr<TableJoin> & table_join, const QueryTreeNodePtr & right_table_expression);
 }

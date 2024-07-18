@@ -974,13 +974,6 @@ Default value: false
 
 - [exclude_deleted_rows_for_part_size_in_merge](#exclude_deleted_rows_for_part_size_in_merge) setting
 
-## use_compact_variant_discriminators_serialization {#use_compact_variant_discriminators_serialization}
-
-Enables compact mode for binary serialization of discriminators in Variant data type.
-This mode allows to use significantly less memory for storing discriminators in parts when there is mostly one variant or a lot of NULL values.
-
-Default value: true
-
 ## merge_workload
 
 Used to regulate how resources are utilized and shared between merges and other workloads. Specified value is used as `workload` setting value for background merges of this table. If not specified (empty string), then server setting `merge_workload` is used instead.
@@ -1030,7 +1023,7 @@ A table with no primary key represents the extreme case of a single equivalence 
 
 The fewer and the larger the equivalence classes are, the higher the degree of freedom when re-shuffling rows.
 
-The heuristics applied to find the best row order within each equivalence class is suggested by D. Lemire, O. Kaser in [Reordering columns for smaller indexes](https://doi.org/10.1016/j.ins.2011.02.002) and based on sorting the rows within each equivalence class by ascending cardinality of the non-primary key columns.
+The heuristics applied to find the best row order within each equivalence class is suggested by D. Lemir, O. Kaser in [Reordering columns for smaller indexes](https://doi.org/10.1016/j.ins.2011.02.002) and based on sorting the rows within each equivalence class by ascending cardinality of the non-primary key columns.
 It performs three steps:
 1. Find all equivalence classes based on the row values in primary key columns.
 2. For each equivalence class, calculate (usually estimate) the cardinalities of the non-primary-key columns.

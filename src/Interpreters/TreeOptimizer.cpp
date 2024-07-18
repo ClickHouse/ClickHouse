@@ -17,6 +17,7 @@
 #include <Interpreters/RewriteCountVariantsVisitor.h>
 #include <Interpreters/ConvertStringsToEnumVisitor.h>
 #include <Interpreters/ConvertFunctionOrLikeVisitor.h>
+#include <Interpreters/RewriteFunctionToSubcolumnVisitor.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/GatherFunctionQuantileVisitor.h>
@@ -563,6 +564,12 @@ void transformIfStringsIntoEnum(ASTPtr & query)
     ConvertStringsToEnumVisitor(convert_data).visit(query);
 }
 
+void optimizeFunctionsToSubcolumns(ASTPtr & query, const StorageMetadataPtr & metadata_snapshot)
+{
+    RewriteFunctionToSubcolumnVisitor::Data data{metadata_snapshot};
+    RewriteFunctionToSubcolumnVisitor(data).visit(query);
+}
+
 void optimizeOrLikeChain(ASTPtr & query)
 {
     ConvertFunctionOrLikeVisitor::Data data = {};
@@ -577,8 +584,7 @@ void TreeOptimizer::optimizeIf(ASTPtr & query, Aliases & aliases, bool if_chain_
         optimizeMultiIfToIf(query);
 
     /// Optimize if with constant condition after constants was substituted instead of scalar subqueries.
-    OptimizeIfWithConstantConditionVisitorData visitor_data(aliases);
-    OptimizeIfWithConstantConditionVisitor(visitor_data).visit(query);
+    OptimizeIfWithConstantConditionVisitor(aliases).visit(query);
 
     if (if_chain_to_multiif)
         OptimizeIfChainsVisitor().visit(query);
@@ -627,6 +633,9 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
     auto * select_query = query->as<ASTSelectQuery>();
     if (!select_query)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Select analyze for not select asts.");
+
+    if (settings.optimize_functions_to_subcolumns && result.storage_snapshot && result.storage->supportsSubcolumns())
+        optimizeFunctionsToSubcolumns(query, result.storage_snapshot->metadata);
 
     /// Move arithmetic operations out of aggregation functions
     if (settings.optimize_arithmetic_operations_in_aggregate_functions)

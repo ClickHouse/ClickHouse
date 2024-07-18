@@ -5,10 +5,6 @@ sidebar_label: "Named collections"
 title: "Named collections"
 ---
 
-import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
-
-<CloudNotSupportedBadge />
-
 Named collections provide a way to store collections of key-value pairs to be
 used to configure integrations with external sources. You can use named collections with
 dictionaries, tables, table functions, and object storage.

@@ -13,8 +13,6 @@
 #include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/PoolId.h>
-#include <Core/ServerSettings.h>
-#include <Core/Settings.h>
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Databases/DatabaseReplicatedWorker.h>
@@ -67,7 +65,6 @@ static constexpr const char * REPLICATED_DATABASE_MARK = "DatabaseReplicated";
 static constexpr const char * DROPPED_MARK = "DROPPED";
 static constexpr const char * BROKEN_TABLES_SUFFIX = "_broken_tables";
 static constexpr const char * BROKEN_REPLICATED_TABLES_SUFFIX = "_broken_replicated_tables";
-static constexpr const char * FIRST_REPLICA_DATABASE_NAME = "first_replica_database_name";
 
 static constexpr size_t METADATA_FILE_BUFFER_SIZE = 32768;
 
@@ -467,13 +464,6 @@ void DatabaseReplicated::tryConnectToZooKeeperAndInitDatabase(LoadingStrictnessL
             is_probably_dropped = true;
             return;
         }
-
-        /// If not exist, create a node with the database name for introspection.
-        /// Technically, the database may have different names on different replicas, but this is not a usual case and we only save the first one
-        auto db_name_path = fs::path(zookeeper_path) / FIRST_REPLICA_DATABASE_NAME;
-        auto error_code = current_zookeeper->trySet(db_name_path, getDatabaseName());
-        if (error_code == Coordination::Error::ZNONODE)
-            current_zookeeper->tryCreate(db_name_path, getDatabaseName(), zkutil::CreateMode::Persistent);
 
         is_readonly = false;
     }
@@ -1390,13 +1380,6 @@ void DatabaseReplicated::drop(ContextPtr context_)
         /// It was the last replica, remove all metadata
         current_zookeeper->tryRemoveRecursive(zookeeper_path);
     }
-}
-
-void DatabaseReplicated::renameDatabase(ContextPtr query_context, const String & new_name)
-{
-    DatabaseAtomic::renameDatabase(query_context, new_name);
-    auto db_name_path = fs::path(zookeeper_path) / FIRST_REPLICA_DATABASE_NAME;
-    getZooKeeper()->set(db_name_path, getDatabaseName());
 }
 
 void DatabaseReplicated::stopReplication()

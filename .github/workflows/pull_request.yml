@@ -72,7 +72,7 @@ jobs:
   BuildDockers:
     needs: [RunConfig]
     if: ${{ !failure() && !cancelled() && toJson(fromJson(needs.RunConfig.outputs.data).docker_data.missing_multi) != '[]' }}
-    uses: ./.github/workflows/docker_test_images.yml
+    uses: ./.github/workflows/reusable_docker.yml
     with:
       data: ${{ needs.RunConfig.outputs.data }}
   StyleCheck:
@@ -172,7 +172,7 @@ jobs:
   ################################# Stage Final #################################
   #
   FinishCheck:
-    if: ${{ !failure() && !cancelled() }}
+    if: ${{ !cancelled() }}
     needs: [RunConfig, BuildDockers, StyleCheck, FastTest, Builds_1, Builds_2, Builds_Report, Tests_1, Tests_2, Tests_3]
     runs-on: [self-hosted, style-checker-aarch64]
     steps:

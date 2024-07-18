@@ -11,7 +11,6 @@
 #include <Parsers/queryToString.h>
 #include <Access/Common/AccessRightsElement.h>
 #include <Access/ContextAccess.h>
-#include <Core/Settings.h>
 #include <Common/Macros.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Databases/DatabaseReplicated.h>

@@ -3,7 +3,9 @@
 
 #include "config.h"
 
-#include <Coordination/CoordinationSettings.h>
+#include <chrono>
+#include <mutex>
+#include <string>
 #include <Coordination/KeeperLogStore.h>
 #include <Coordination/KeeperSnapshotManagerS3.h>
 #include <Coordination/KeeperStateMachine.h>
@@ -27,10 +29,6 @@
 #include <Common/Stopwatch.h>
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
-
-#include <chrono>
-#include <mutex>
-#include <string>
 
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
 #include <fmt/chrono.h>

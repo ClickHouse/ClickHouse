@@ -78,7 +78,7 @@ Upd: сделали по-другому: теперь всё безопасно.
 
 ## LEFT ONLY JOIN
 
-## + Функции makeDate, makeDateTime.
+## Функции makeDate, makeDateTime.
 
 `makeDate(year, month, day)`
 `makeDateTime(year, month, day, hour, minute, second, [timezone])`
@@ -187,13 +187,13 @@ https://clickhouse.com/docs/en/operations/table_engines/external_data/
 
 Не работает, если открыть clickhouse-client в интерактивном режиме и делать несколько запросов.
 
-## Настройка для возможности получить частичный результат при cancel-е.
+## + Настройка для возможности получить частичный результат при cancel-е.
 
 Хотим по Ctrl+C получить те данные, которые успели обработаться.
 
 ## Раскрытие кортежей в функциях высшего порядка.
 
-## + Табличная функция loop.
+## Табличная функция loop.
 
 `SELECT * FROM loop(database, table)`
 

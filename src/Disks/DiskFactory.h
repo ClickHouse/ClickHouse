@@ -42,8 +42,7 @@ public:
         ContextPtr context,
         const DisksMap & map,
         bool attach = false,
-        bool custom_disk = false,
-        const std::unordered_set<String> & skip_types = {}) const;
+        bool custom_disk = false) const;
 
 private:
     using DiskTypeRegistry = std::unordered_map<String, Creator>;

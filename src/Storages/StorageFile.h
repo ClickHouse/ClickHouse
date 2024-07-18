@@ -89,7 +89,6 @@ public:
     bool supportsSubsetOfColumns(const ContextPtr & context) const;
 
     bool supportsSubcolumns() const override { return true; }
-    bool supportsOptimizationToSubcolumns() const override { return false; }
 
     bool supportsDynamicSubcolumns() const override { return true; }
 

@@ -1,7 +1,5 @@
 #include <Formats/ReadSchemaUtils.h>
 
-#include <Core/Settings.h>
-
 #include <IO/ReadBufferFromString.h>
 
 #include <Interpreters/Context.h>

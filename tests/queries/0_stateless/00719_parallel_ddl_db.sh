@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
+# Tags: no-parallel
+
 set -e
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-DB_SUFFIX=${RANDOM}${RANDOM}${RANDOM}${RANDOM}
-${CLICKHOUSE_CLIENT} --query "DROP DATABASE IF EXISTS parallel_ddl_${DB_SUFFIX}"
+${CLICKHOUSE_CLIENT} --query "DROP DATABASE IF EXISTS parallel_ddl"
 
 function query()
 {
@@ -15,8 +16,8 @@ function query()
     while [ $SECONDS -lt "$TIMELIMIT" ] && [ $it -lt 50 ];
     do
         it=$((it+1))
-        ${CLICKHOUSE_CLIENT} --query "CREATE DATABASE IF NOT EXISTS parallel_ddl_${DB_SUFFIX}"
-        ${CLICKHOUSE_CLIENT} --query "DROP DATABASE IF EXISTS parallel_ddl_${DB_SUFFIX}"
+        ${CLICKHOUSE_CLIENT} --query "CREATE DATABASE IF NOT EXISTS parallel_ddl"
+        ${CLICKHOUSE_CLIENT} --query "DROP DATABASE IF EXISTS parallel_ddl"
     done
 }
 
@@ -26,4 +27,4 @@ done
 
 wait
 
-${CLICKHOUSE_CLIENT} --query "DROP DATABASE IF EXISTS parallel_ddl_${DB_SUFFIX}"
+${CLICKHOUSE_CLIENT} --query "DROP DATABASE IF EXISTS parallel_ddl"

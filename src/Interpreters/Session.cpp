@@ -1,6 +1,5 @@
 #include <Interpreters/Session.h>
 
-#include <base/isSharedPtrUnique.h>
 #include <Access/AccessControl.h>
 #include <Access/Credentials.h>
 #include <Access/ContextAccess.h>
@@ -10,7 +9,6 @@
 #include <Common/Exception.h>
 #include <Common/ThreadPool.h>
 #include <Common/setThreadName.h>
-#include <Core/Settings.h>
 #include <Interpreters/SessionTracker.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/SessionLog.h>
@@ -132,7 +130,7 @@ public:
 
             LOG_TRACE(log, "Reuse session from storage with session_id: {}, user_id: {}", key.second, key.first);
 
-            if (!isSharedPtrUnique(session))
+            if (!session.unique())
                 throw Exception(ErrorCodes::SESSION_IS_LOCKED, "Session {} is locked by a concurrent client", session_id);
             return {session, false};
         }
@@ -158,7 +156,7 @@ public:
             return;
         }
 
-        if (!isSharedPtrUnique(it->second))
+        if (!it->second.unique())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot close session {} with refcount {}", session_id, it->second.use_count());
 
         sessions.erase(it);

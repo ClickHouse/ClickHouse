@@ -1,11 +1,11 @@
 #include "IPAddressDictionary.h"
-
+#include <stack>
+#include <charconv>
 #include <Common/assert_cast.h>
 #include <Common/IPv6ToBinary.h>
 #include <Common/memcmpSmall.h>
 #include <Common/typeid_cast.h>
 #include <Common/logger_useful.h>
-#include <Core/Settings.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesDecimal.h>
@@ -22,9 +22,6 @@
 #include <Dictionaries/DictionaryPipelineExecutor.h>
 #include <Dictionaries/DictionaryFactory.h>
 #include <Functions/FunctionHelpers.h>
-
-#include <stack>
-#include <charconv>
 
 
 namespace DB

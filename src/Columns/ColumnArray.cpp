@@ -337,11 +337,7 @@ bool ColumnArray::tryInsert(const Field & x)
     return true;
 }
 
-#if !defined(ABORT_ON_LOGICAL_ERROR)
 void ColumnArray::insertFrom(const IColumn & src_, size_t n)
-#else
-void ColumnArray::doInsertFrom(const IColumn & src_, size_t n)
-#endif
 {
     const ColumnArray & src = assert_cast<const ColumnArray &>(src_);
     size_t size = src.sizeAt(n);
@@ -396,11 +392,7 @@ int ColumnArray::compareAtImpl(size_t n, size_t m, const IColumn & rhs_, int nan
             : 1);
 }
 
-#if !defined(ABORT_ON_LOGICAL_ERROR)
 int ColumnArray::compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const
-#else
-int ColumnArray::doCompareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const
-#endif
 {
     return compareAtImpl(n, m, rhs_, nan_direction_hint);
 }
@@ -543,11 +535,7 @@ void ColumnArray::getExtremes(Field & min, Field & max) const
 }
 
 
-#if !defined(ABORT_ON_LOGICAL_ERROR)
 void ColumnArray::insertRangeFrom(const IColumn & src, size_t start, size_t length)
-#else
-void ColumnArray::doInsertRangeFrom(const IColumn & src, size_t start, size_t length)
-#endif
 {
     if (length == 0)
         return;
