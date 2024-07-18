@@ -221,7 +221,6 @@ private:
                 auto index = it->second.first + j;
                 if (added_indices.insert(index).second)
                 {
-                    [[maybe_unused]] auto aha = file.schema()->Column(index)->path()->ToDotString();
                     required_indices.emplace_back(file.schema()->Column(index)->path()->ToDotString(), index);
                 }
             }
