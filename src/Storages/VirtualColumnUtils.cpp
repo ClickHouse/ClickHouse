@@ -323,7 +323,7 @@ static const ActionsDAG::Node * splitFilterNodeForAllowedInputs(
             {
                 if (const auto * index_hint = typeid_cast<const FunctionIndexHint *>(adaptor->getFunction().get()))
                 {
-                    auto index_hint_dag = std::move(*ActionsDAG::clone(&index_hint->getActions()));
+                    auto index_hint_dag = index_hint->getActions().clone();
                     ActionsDAG::NodeRawConstPtrs atoms;
                     for (const auto & output : index_hint_dag.getOutputs())
                         if (const auto * child_copy = splitFilterNodeForAllowedInputs(output, allowed_inputs, additional_nodes))

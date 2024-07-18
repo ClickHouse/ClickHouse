@@ -663,7 +663,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
             {
                 auto filter_step = std::make_unique<FilterStep>(
                     child.plan.getCurrentDataStream(),
-                    std::move(*ActionsDAG::clone(&filter_info.actions)),
+                    filter_info.actions.clone(),
                     filter_info.column_name,
                     filter_info.do_remove_column);
 
@@ -1241,7 +1241,7 @@ ReadFromMerge::RowPolicyData::RowPolicyData(RowPolicyFilterPtr row_policy_filter
     auto expression_analyzer = ExpressionAnalyzer{expr, syntax_result, local_context};
 
     actions_dag = expression_analyzer.getActionsDAG(false /* add_aliases */, false /* project_result */);
-    filter_actions = std::make_shared<ExpressionActions>(std::move(*ActionsDAG::clone(&actions_dag)),
+    filter_actions = std::make_shared<ExpressionActions>(actions_dag.clone(),
         ExpressionActionsSettings::fromContext(local_context, CompileExpressions::yes));
     const auto & required_columns = filter_actions->getRequiredColumnsWithTypes();
     const auto & sample_block_columns = filter_actions->getSampleBlock().getNamesAndTypesList();
@@ -1279,12 +1279,12 @@ void ReadFromMerge::RowPolicyData::extendNames(Names & names) const
 
 void ReadFromMerge::RowPolicyData::addStorageFilter(SourceStepWithFilter * step) const
 {
-    step->addFilter(ActionsDAG::clone(&actions_dag), filter_column_name);
+    step->addFilter(std::make_unique<ActionsDAG>(actions_dag.clone()), filter_column_name);
 }
 
 void ReadFromMerge::RowPolicyData::addFilterTransform(QueryPlan & plan) const
 {
-    auto filter_step = std::make_unique<FilterStep>(plan.getCurrentDataStream(), std::move(*ActionsDAG::clone(&actions_dag)), filter_column_name, true /* remove filter column */);
+    auto filter_step = std::make_unique<FilterStep>(plan.getCurrentDataStream(), actions_dag.clone(), filter_column_name, true /* remove filter column */);
     plan.addStep(std::move(filter_step));
 }
 

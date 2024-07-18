@@ -101,13 +101,16 @@ void TotalsHavingStep::describeActions(FormatSettings & settings) const
     if (actions_dag)
     {
         bool first = true;
-        auto expression = std::make_shared<ExpressionActions>(std::move(*ActionsDAG::clone(getActions())));
-        for (const auto & action : expression->getActions())
+        if (actions_dag)
         {
-            settings.out << prefix << (first ? "Actions: "
-                                             : "         ");
-            first = false;
-            settings.out << action.toString() << '\n';
+            auto expression = std::make_shared<ExpressionActions>(actions_dag->clone());
+            for (const auto & action : expression->getActions())
+            {
+                settings.out << prefix << (first ? "Actions: "
+                                                : "         ");
+                first = false;
+                settings.out << action.toString() << '\n';
+            }
         }
     }
 }
@@ -118,8 +121,11 @@ void TotalsHavingStep::describeActions(JSONBuilder::JSONMap & map) const
     if (actions_dag)
     {
         map.add("Filter column", filter_column_name);
-        auto expression = std::make_shared<ExpressionActions>(std::move(*ActionsDAG::clone(getActions())));
-        map.add("Expression", expression->toTree());
+        if (actions_dag)
+        {
+            auto expression = std::make_shared<ExpressionActions>(actions_dag->clone());
+            map.add("Expression", expression->toTree());
+        }
     }
 }
 

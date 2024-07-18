@@ -43,7 +43,7 @@ static DAGIndex buildDAGIndex(const ActionsDAG & dag)
 /// Required analysis info from aggregate projection.
 struct AggregateProjectionInfo
 {
-    ActionsDAGPtr before_aggregation;
+    std::optional<ActionsDAG> before_aggregation;
     Names keys;
     AggregateDescriptions aggregates;
 
@@ -78,7 +78,7 @@ static AggregateProjectionInfo getAggregatingProjectionInfo(
 
     AggregateProjectionInfo info;
     info.context = interpreter.getContext();
-    info.before_aggregation = ActionsDAG::clone(&analysis_result.before_aggregation->dag);
+    info.before_aggregation = analysis_result.before_aggregation->dag.clone();
     info.keys = query_analyzer->aggregationKeys().getNames();
     info.aggregates = query_analyzer->aggregates();
 

@@ -43,10 +43,10 @@ namespace
         }
     }
 
-    void logActionsDAG(const String & prefix, const ActionsDAGPtr & actions)
+    void logActionsDAG(const String & prefix, const ActionsDAG & actions)
     {
         if constexpr (debug_logging_enabled)
-            LOG_DEBUG(getLogger("redundantDistinct"), "{} :\n{}", prefix, actions->dumpDAG());
+            LOG_DEBUG(getLogger("redundantDistinct"), "{} :\n{}", prefix, actions.dumpDAG());
     }
 
     using DistinctColumns = std::set<std::string_view>;
@@ -65,19 +65,19 @@ namespace
     }
 
     /// build actions DAG from stack of steps
-    ActionsDAGPtr buildActionsForPlanPath(std::vector<const ActionsDAG *> & dag_stack)
+    std::optional<ActionsDAG> buildActionsForPlanPath(std::vector<const ActionsDAG *> & dag_stack)
     {
         if (dag_stack.empty())
-            return nullptr;
+            return {};
 
-        ActionsDAGPtr path_actions = ActionsDAG::clone(dag_stack.back());
+        ActionsDAG path_actions = dag_stack.back()->clone();
         dag_stack.pop_back();
         while (!dag_stack.empty())
         {
-            ActionsDAGPtr clone = ActionsDAG::clone(dag_stack.back());
+            ActionsDAG clone = dag_stack.back()->clone();
             logActionsDAG("DAG to merge", clone);
             dag_stack.pop_back();
-            path_actions->mergeInplace(std::move(*clone));
+            path_actions.mergeInplace(std::move(clone));
         }
         return path_actions;
     }
@@ -260,15 +260,15 @@ namespace
         if (distinct_columns.size() != inner_distinct_columns.size())
             return false;
 
-        ActionsDAGPtr path_actions;
+        ActionsDAG path_actions;
         if (!dag_stack.empty())
         {
             /// build actions DAG to find original column names
-            path_actions = buildActionsForPlanPath(dag_stack);
+            path_actions = std::move(*buildActionsForPlanPath(dag_stack));
             logActionsDAG("distinct pass: merged DAG", path_actions);
 
             /// compare columns of two DISTINCTs
-            FindOriginalNodeForOutputName original_node_finder(*path_actions);
+            FindOriginalNodeForOutputName original_node_finder(path_actions);
             for (const auto & column : distinct_columns)
             {
                 const auto * alias_node = original_node_finder.find(String(column));

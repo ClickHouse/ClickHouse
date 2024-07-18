@@ -64,7 +64,7 @@ public:
         : projection_analysis_result(std::move(projection_analysis_result_))
     {}
 
-    const ProjectionAnalysisResult & getProjection() const
+    ProjectionAnalysisResult & getProjection()
     {
         return projection_analysis_result;
     }
@@ -74,7 +74,7 @@ public:
         return where_analysis_result.filter_actions != nullptr;
     }
 
-    const FilterAnalysisResult & getWhere() const
+    FilterAnalysisResult & getWhere()
     {
         return where_analysis_result;
     }
@@ -89,7 +89,7 @@ public:
         return !aggregation_analysis_result.aggregation_keys.empty() || !aggregation_analysis_result.aggregate_descriptions.empty();
     }
 
-    const AggregationAnalysisResult & getAggregation() const
+    AggregationAnalysisResult & getAggregation()
     {
         return aggregation_analysis_result;
     }
@@ -104,7 +104,7 @@ public:
         return having_analysis_result.filter_actions != nullptr;
     }
 
-    const FilterAnalysisResult & getHaving() const
+    FilterAnalysisResult & getHaving()
     {
         return having_analysis_result;
     }
@@ -119,7 +119,7 @@ public:
         return !window_analysis_result.window_descriptions.empty();
     }
 
-    const WindowAnalysisResult & getWindow() const
+    WindowAnalysisResult & getWindow()
     {
         return window_analysis_result;
     }
@@ -134,7 +134,7 @@ public:
         return qualify_analysis_result.filter_actions != nullptr;
     }
 
-    const FilterAnalysisResult & getQualify() const
+    FilterAnalysisResult & getQualify()
     {
         return qualify_analysis_result;
     }
@@ -149,7 +149,7 @@ public:
         return sort_analysis_result.before_order_by_actions != nullptr;
     }
 
-    const SortAnalysisResult & getSort() const
+    SortAnalysisResult & getSort()
     {
         return sort_analysis_result;
     }
@@ -164,7 +164,7 @@ public:
         return limit_by_analysis_result.before_limit_by_actions != nullptr;
     }
 
-    const LimitByAnalysisResult & getLimitBy() const
+    LimitByAnalysisResult & getLimitBy()
     {
         return limit_by_analysis_result;
     }

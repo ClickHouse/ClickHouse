@@ -68,9 +68,9 @@ std::shared_ptr<PartitionIdToMaxBlock> getMaxAddedBlocks(ReadFromMergeTree * rea
 void QueryDAG::appendExpression(const ActionsDAG & expression)
 {
     if (dag)
-        dag->mergeInplace(std::move(*ActionsDAG::clone(&expression)));
+        dag->mergeInplace(expression.clone());
     else
-        dag = std::move(*ActionsDAG::clone(&expression));
+        dag = expression.clone();
 }
 
 const ActionsDAG::Node * findInOutputs(ActionsDAG & dag, const std::string & name, bool remove)
@@ -239,7 +239,8 @@ bool analyzeProjectionCandidate(
 
     auto projection_query_info = query_info;
     projection_query_info.prewhere_info = nullptr;
-    projection_query_info.filter_actions_dag = ActionsDAG::clone(dag);
+    if (dag)
+        projection_query_info.filter_actions_dag = std::make_unique<ActionsDAG>(dag->clone());
 
     auto projection_result_ptr = reader.estimateNumMarksToRead(
         std::move(projection_parts),

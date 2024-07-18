@@ -10,18 +10,18 @@
 namespace DB::QueryPlanOptimizations
 {
 /// build actions DAG from stack of steps
-static ActionsDAGPtr buildActionsForPlanPath(std::vector<const ActionsDAG *> & dag_stack)
+static std::optional<ActionsDAG> buildActionsForPlanPath(std::vector<const ActionsDAG *> & dag_stack)
 {
     if (dag_stack.empty())
-        return nullptr;
+        return {};
 
-    ActionsDAGPtr path_actions = ActionsDAG::clone(dag_stack.back());
+    ActionsDAG path_actions = dag_stack.back()->clone();
     dag_stack.pop_back();
     while (!dag_stack.empty())
     {
-        ActionsDAGPtr clone = ActionsDAG::clone(dag_stack.back());
+        ActionsDAG clone = dag_stack.back()->clone();
         dag_stack.pop_back();
-        path_actions->mergeInplace(std::move(*clone));
+        path_actions.mergeInplace(std::move(clone));
     }
     return path_actions;
 }

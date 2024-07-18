@@ -1281,7 +1281,7 @@ QueryPipelineBuilder MutationsInterpreter::addStreamsForLaterStages(const std::v
 
             if (i < stage.filter_column_names.size())
             {
-                auto dag = std::move(*ActionsDAG::clone(&step->actions()->dag));
+                auto dag = step->actions()->dag.clone();
                 if (step->actions()->project_input)
                     dag.appendInputsForUnusedColumns(plan.getCurrentDataStream().header);
                 /// Execute DELETEs.
@@ -1289,7 +1289,7 @@ QueryPipelineBuilder MutationsInterpreter::addStreamsForLaterStages(const std::v
             }
             else
             {
-                auto dag = std::move(*ActionsDAG::clone(&step->actions()->dag));
+                auto dag = step->actions()->dag.clone();
                 if (step->actions()->project_input)
                     dag.appendInputsForUnusedColumns(plan.getCurrentDataStream().header);
                 /// Execute UPDATE or final projection.

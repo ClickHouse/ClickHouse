@@ -1944,10 +1944,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
                 Block before_prewhere_sample = source_header;
                 if (sanitizeBlock(before_prewhere_sample))
                 {
-                    ActionsDAG dag = std::move(*ActionsDAG::clone(&prewhere_dag_and_flags->dag));
-                    ExpressionActions(
-                        std::move(dag),
-                        ExpressionActionsSettings::fromSettings(context->getSettingsRef())).execute(before_prewhere_sample);
+                    prewhere_dag_and_flags->dag.updateHeader(before_prewhere_sample);
                     auto & column_elem = before_prewhere_sample.getByName(query.prewhere()->getColumnName());
                     /// If the filter column is a constant, record it.
                     if (column_elem.column)
@@ -1979,9 +1976,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
                     before_where_sample = source_header;
                 if (sanitizeBlock(before_where_sample))
                 {
-                    ExpressionActions(
-                        std::move(*ActionsDAG::clone(&before_where->dag)),
-                        ExpressionActionsSettings::fromSettings(context->getSettingsRef())).execute(before_where_sample);
+                    before_where->dag.updateHeader(before_where_sample);
 
                     auto & column_elem
                         = before_where_sample.getByName(query.where()->getColumnName());

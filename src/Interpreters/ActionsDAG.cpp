@@ -1246,14 +1246,6 @@ bool ActionsDAG::removeUnusedResult(const std::string & column_name)
     return true;
 }
 
-ActionsDAGPtr ActionsDAG::clone(const ActionsDAG * from)
-{
-    std::unordered_map<const Node *, Node *> old_to_new_nodes;
-    if (from == nullptr)
-        return nullptr;
-    return std::make_unique<ActionsDAG>(from->clone(old_to_new_nodes));
-}
-
 ActionsDAG ActionsDAG::clone() const
 {
     std::unordered_map<const Node *, Node *> old_to_new_nodes;

@@ -333,11 +333,11 @@ public:
 };
 
 void addExpressionStep(QueryPlan & query_plan,
-    const ActionsAndProjectInputsFlagPtr & expression_actions,
+    ActionsAndProjectInputsFlagPtr & expression_actions,
     const std::string & step_description,
     UsefulSets & useful_sets)
 {
-    auto actions = std::move(*ActionsDAG::clone(&expression_actions->dag));
+    auto actions = std::move(expression_actions->dag);
     if (expression_actions->project_input)
         actions.appendInputsForUnusedColumns(query_plan.getCurrentDataStream().header);
 
@@ -348,11 +348,11 @@ void addExpressionStep(QueryPlan & query_plan,
 }
 
 void addFilterStep(QueryPlan & query_plan,
-    const FilterAnalysisResult & filter_analysis_result,
+    FilterAnalysisResult & filter_analysis_result,
     const std::string & step_description,
     UsefulSets & useful_sets)
 {
-    auto actions = std::move(*ActionsDAG::clone(&filter_analysis_result.filter_actions->dag));
+    auto actions = std::move(filter_analysis_result.filter_actions->dag);
     if (filter_analysis_result.filter_actions->project_input)
         actions.appendInputsForUnusedColumns(query_plan.getCurrentDataStream().header);
 
@@ -544,7 +544,7 @@ void addMergingAggregatedStep(QueryPlan & query_plan,
 }
 
 void addTotalsHavingStep(QueryPlan & query_plan,
-    const PlannerExpressionsAnalysisResult & expression_analysis_result,
+    PlannerExpressionsAnalysisResult & expression_analysis_result,
     const QueryAnalysisResult & query_analysis_result,
     const PlannerContextPtr & planner_context,
     const QueryNode & query_node,
@@ -553,14 +553,14 @@ void addTotalsHavingStep(QueryPlan & query_plan,
     const auto & query_context = planner_context->getQueryContext();
     const auto & settings = query_context->getSettingsRef();
 
-    const auto & aggregation_analysis_result = expression_analysis_result.getAggregation();
-    const auto & having_analysis_result = expression_analysis_result.getHaving();
+    auto & aggregation_analysis_result = expression_analysis_result.getAggregation();
+    auto & having_analysis_result = expression_analysis_result.getHaving();
     bool need_finalize = !query_node.isGroupByWithRollup() && !query_node.isGroupByWithCube();
 
     std::optional<ActionsDAG> actions;
     if (having_analysis_result.filter_actions)
     {
-        actions = std::move(*ActionsDAG::clone(&having_analysis_result.filter_actions->dag));
+        actions = std::move(having_analysis_result.filter_actions->dag);
         if (having_analysis_result.filter_actions->project_input)
             actions->appendInputsForUnusedColumns(query_plan.getCurrentDataStream().header);
     }
@@ -886,7 +886,7 @@ bool addPreliminaryLimitOptimizationStepIfNeeded(QueryPlan & query_plan,
   * WINDOW functions.
   */
 void addPreliminarySortOrDistinctOrLimitStepsIfNeeded(QueryPlan & query_plan,
-    const PlannerExpressionsAnalysisResult & expressions_analysis_result,
+    PlannerExpressionsAnalysisResult & expressions_analysis_result,
     const QueryAnalysisResult & query_analysis_result,
     const PlannerContextPtr & planner_context,
     const PlannerQueryProcessingInfo & query_processing_info,
@@ -922,7 +922,7 @@ void addPreliminarySortOrDistinctOrLimitStepsIfNeeded(QueryPlan & query_plan,
 
     if (expressions_analysis_result.hasLimitBy())
     {
-        const auto & limit_by_analysis_result = expressions_analysis_result.getLimitBy();
+        auto & limit_by_analysis_result = expressions_analysis_result.getLimitBy();
         addExpressionStep(query_plan, limit_by_analysis_result.before_limit_by_actions, "Before LIMIT BY", useful_sets);
         addLimitByStep(query_plan, limit_by_analysis_result, query_node);
     }
@@ -1549,7 +1549,7 @@ void Planner::buildPlanForQueryNode()
 
         if (expression_analysis_result.hasAggregation())
         {
-            const auto & aggregation_analysis_result = expression_analysis_result.getAggregation();
+            auto & aggregation_analysis_result = expression_analysis_result.getAggregation();
             if (aggregation_analysis_result.before_aggregation_actions)
                 addExpressionStep(query_plan, aggregation_analysis_result.before_aggregation_actions, "Before GROUP BY", useful_sets);
 
@@ -1568,7 +1568,7 @@ void Planner::buildPlanForQueryNode()
                   * window functions, we can't execute ORDER BY and DISTINCT
                   * now, on shard (first_stage).
                   */
-                const auto & window_analysis_result = expression_analysis_result.getWindow();
+                auto & window_analysis_result = expression_analysis_result.getWindow();
                 if (window_analysis_result.before_window_actions)
                     addExpressionStep(query_plan, window_analysis_result.before_window_actions, "Before WINDOW", useful_sets);
             }
@@ -1578,7 +1578,7 @@ void Planner::buildPlanForQueryNode()
                   * Projection expressions, preliminary DISTINCT and before ORDER BY expressions
                   * now, on shards (first_stage).
                   */
-                const auto & projection_analysis_result = expression_analysis_result.getProjection();
+                auto & projection_analysis_result = expression_analysis_result.getProjection();
                 addExpressionStep(query_plan, projection_analysis_result.projection_actions, "Projection", useful_sets);
 
                 if (query_node.isDistinct())
@@ -1594,7 +1594,7 @@ void Planner::buildPlanForQueryNode()
 
                 if (expression_analysis_result.hasSort())
                 {
-                    const auto & sort_analysis_result = expression_analysis_result.getSort();
+                    auto & sort_analysis_result = expression_analysis_result.getSort();
                     addExpressionStep(query_plan, sort_analysis_result.before_order_by_actions, "Before ORDER BY", useful_sets);
                 }
             }
@@ -1648,7 +1648,7 @@ void Planner::buildPlanForQueryNode()
         {
             if (expression_analysis_result.hasWindow())
             {
-                const auto & window_analysis_result = expression_analysis_result.getWindow();
+                auto & window_analysis_result = expression_analysis_result.getWindow();
                 if (expression_analysis_result.hasAggregation())
                     addExpressionStep(query_plan, window_analysis_result.before_window_actions, "Before window functions", useful_sets);
 
@@ -1658,7 +1658,7 @@ void Planner::buildPlanForQueryNode()
             if (expression_analysis_result.hasQualify())
                 addFilterStep(query_plan, expression_analysis_result.getQualify(), "QUALIFY", useful_sets);
 
-            const auto & projection_analysis_result = expression_analysis_result.getProjection();
+            auto & projection_analysis_result = expression_analysis_result.getProjection();
             addExpressionStep(query_plan, projection_analysis_result.projection_actions, "Projection", useful_sets);
 
             if (query_node.isDistinct())
@@ -1674,7 +1674,7 @@ void Planner::buildPlanForQueryNode()
 
             if (expression_analysis_result.hasSort())
             {
-                const auto & sort_analysis_result = expression_analysis_result.getSort();
+                auto & sort_analysis_result = expression_analysis_result.getSort();
                 addExpressionStep(query_plan, sort_analysis_result.before_order_by_actions, "Before ORDER BY", useful_sets);
             }
         }
@@ -1727,7 +1727,7 @@ void Planner::buildPlanForQueryNode()
 
         if (!query_processing_info.isFromAggregationState() && expression_analysis_result.hasLimitBy())
         {
-            const auto & limit_by_analysis_result = expression_analysis_result.getLimitBy();
+            auto & limit_by_analysis_result = expression_analysis_result.getLimitBy();
             addExpressionStep(query_plan, limit_by_analysis_result.before_limit_by_actions, "Before LIMIT BY", useful_sets);
             addLimitByStep(query_plan, limit_by_analysis_result, query_node);
         }
@@ -1759,7 +1759,7 @@ void Planner::buildPlanForQueryNode()
         /// Project names is not done on shards, because initiator will not find columns in blocks
         if (!query_processing_info.isToAggregationState())
         {
-            const auto & projection_analysis_result = expression_analysis_result.getProjection();
+            auto & projection_analysis_result = expression_analysis_result.getProjection();
             addExpressionStep(query_plan, projection_analysis_result.project_names_actions, "Project names", useful_sets);
         }
 

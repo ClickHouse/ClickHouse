@@ -171,17 +171,17 @@ static void appendFixedColumnsFromFilterExpression(const ActionsDAG::Node & filt
     }
 }
 
-static void appendExpression(ActionsDAGPtr & dag, const ActionsDAG & expression)
+static void appendExpression(std::optional<ActionsDAG> & dag, const ActionsDAG & expression)
 {
     if (dag)
-        dag->mergeInplace(std::move(*ActionsDAG::clone(&expression)));
+        dag->mergeInplace(expression.clone());
     else
-        dag = ActionsDAG::clone(&expression);
+        dag = expression.clone();
 }
 
 /// This function builds a common DAG which is a merge of DAGs from Filter and Expression steps chain.
 /// Additionally, build a set of fixed columns.
-void buildSortingDAG(QueryPlan::Node & node, ActionsDAGPtr & dag, FixedColumns & fixed_columns, size_t & limit)
+void buildSortingDAG(QueryPlan::Node & node, std::optional<ActionsDAG> & dag, FixedColumns & fixed_columns, size_t & limit)
 {
     IQueryPlanStep * step = node.step.get();
     if (auto * reading = typeid_cast<ReadFromMergeTree *>(step))
@@ -330,7 +330,7 @@ void enreachFixedColumns(const ActionsDAG & dag, FixedColumns & fixed_columns)
 
 InputOrderInfoPtr buildInputOrderInfo(
     const FixedColumns & fixed_columns,
-    const ActionsDAGPtr & dag,
+    const std::optional<ActionsDAG> & dag,
     const SortDescription & description,
     const KeyDescription & sorting_key,
     size_t limit)
@@ -507,7 +507,7 @@ struct AggregationInputOrder
 
 AggregationInputOrder buildInputOrderInfo(
     const FixedColumns & fixed_columns,
-    const ActionsDAGPtr & dag,
+    const std::optional<ActionsDAG> & dag,
     const Names & group_by_keys,
     const ActionsDAG & sorting_key_dag,
     const Names & sorting_key_columns)
@@ -693,7 +693,7 @@ AggregationInputOrder buildInputOrderInfo(
 InputOrderInfoPtr buildInputOrderInfo(
     const ReadFromMergeTree * reading,
     const FixedColumns & fixed_columns,
-    const ActionsDAGPtr & dag,
+    const std::optional<ActionsDAG> & dag,
     const SortDescription & description,
     size_t limit)
 {
@@ -709,7 +709,7 @@ InputOrderInfoPtr buildInputOrderInfo(
 InputOrderInfoPtr buildInputOrderInfo(
     ReadFromMerge * merge,
     const FixedColumns & fixed_columns,
-    const ActionsDAGPtr & dag,
+    const std::optional<ActionsDAG> & dag,
     const SortDescription & description,
     size_t limit)
 {
@@ -745,7 +745,7 @@ InputOrderInfoPtr buildInputOrderInfo(
 AggregationInputOrder buildInputOrderInfo(
     ReadFromMergeTree * reading,
     const FixedColumns & fixed_columns,
-    const ActionsDAGPtr & dag,
+    const std::optional<ActionsDAG> & dag,
     const Names & group_by_keys)
 {
     const auto & sorting_key = reading->getStorageMetadata()->getSortingKey();
@@ -760,7 +760,7 @@ AggregationInputOrder buildInputOrderInfo(
 AggregationInputOrder buildInputOrderInfo(
     ReadFromMerge * merge,
     const FixedColumns & fixed_columns,
-    const ActionsDAGPtr & dag,
+    const std::optional<ActionsDAG> & dag,
     const Names & group_by_keys)
 {
     const auto & tables = merge->getSelectedTables();
@@ -801,7 +801,7 @@ InputOrderInfoPtr buildInputOrderInfo(SortingStep & sorting, QueryPlan::Node & n
     const auto & description = sorting.getSortDescription();
     size_t limit = sorting.getLimit();
 
-    ActionsDAGPtr dag;
+    std::optional<ActionsDAG> dag;
     FixedColumns fixed_columns;
     buildSortingDAG(node, dag, fixed_columns, limit);
 
@@ -855,7 +855,7 @@ AggregationInputOrder buildInputOrderInfo(AggregatingStep & aggregating, QueryPl
     const auto & keys = aggregating.getParams().keys;
     size_t limit = 0;
 
-    ActionsDAGPtr dag;
+    std::optional<ActionsDAG> dag;
     FixedColumns fixed_columns;
     buildSortingDAG(node, dag, fixed_columns, limit);
 
@@ -1076,13 +1076,13 @@ size_t tryReuseStorageOrderingForWindowFunctions(QueryPlan::Node * parent_node, 
     for (const auto & actions_dag : window_desc.partition_by_actions)
     {
         order_by_elements_actions.emplace_back(
-            std::make_shared<ExpressionActions>(std::move(*ActionsDAG::clone(actions_dag.get())), ExpressionActionsSettings::fromContext(context, CompileExpressions::yes)));
+            std::make_shared<ExpressionActions>(actions_dag->clone(), ExpressionActionsSettings::fromContext(context, CompileExpressions::yes)));
     }
 
     for (const auto & actions_dag : window_desc.order_by_actions)
     {
         order_by_elements_actions.emplace_back(
-            std::make_shared<ExpressionActions>(std::move(*ActionsDAG::clone(actions_dag.get())), ExpressionActionsSettings::fromContext(context, CompileExpressions::yes)));
+            std::make_shared<ExpressionActions>(actions_dag->clone(), ExpressionActionsSettings::fromContext(context, CompileExpressions::yes)));
     }
 
     auto order_optimizer = std::make_shared<ReadInOrderOptimizer>(

@@ -261,8 +261,6 @@ public:
     void compileExpressions(size_t min_count_to_compile_expression, const std::unordered_set<const Node *> & lazy_executed_nodes = {});
 #endif
 
-    static ActionsDAGPtr clone(const ActionsDAG * from);
-
     ActionsDAG clone(std::unordered_map<const Node *, Node *> & old_to_new_nodes) const;
     ActionsDAG clone() const;
 
@@ -491,7 +489,6 @@ public:
     const ActionsDAG::Node * find(const String & output_name);
 
 private:
-    //const ActionsDAG & actions;
     NameToNodeIndex index;
 };
 
