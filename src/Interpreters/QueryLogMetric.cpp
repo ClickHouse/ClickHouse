@@ -114,8 +114,8 @@ void QueryLogMetric::startQuery(const String & query_id, TimePoint query_start_t
 void QueryLogMetric::finishQuery(const String & query_id)
 {
     std::lock_guard lock(queries_mutex);
-    auto & queries_by_name = queries.get<ByQueryId>();
-    queries_by_name.erase(query_id);
+    auto & queries_by_id = queries.get<ByQueryId>();
+    queries_by_id.erase(query_id);
 }
 
 void QueryLogMetric::threadFunction()

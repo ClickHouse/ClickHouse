@@ -1,7 +1,7 @@
 ---
 slug: /en/operations/system-tables/query_log_metric
 ---
-# metric_log
+# query_log_metric
 
 Contains history of memory and metric values from table `system.events` for individual queries, periodically flushed to disk.
 

@@ -1338,7 +1338,6 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 query_database,
                 query_table,
                 async_insert);
-
             /// Also make possible for caller to log successful query finish and exception during execution.
             auto finish_callback = [elem,
                                     context,
