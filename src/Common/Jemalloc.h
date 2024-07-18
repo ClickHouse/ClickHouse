@@ -41,6 +41,9 @@ T getJemallocValue(const char * name)
     return value;
 }
 
+/// Each mallctl call consists of string name lookup which can be expensive.
+/// This can be avoided by translating name to "Management Information Base" (MIB)
+/// and using it in mallctlbymib calls
 template <typename T>
 struct JemallocMibCache
 {
