@@ -461,7 +461,7 @@ std::unique_ptr<ReadBuffer> StorageObjectStorageSource::createReadBuffer(
 
     auto read_settings = context_->getReadSettings().adjustBufferSize(object_size);
 
-    read_settings.remote_fs_method = RemoteFSReadMethod::read;
+    // read_settings.remote_fs_method = RemoteFSReadMethod::read;
 
     LOG_DEBUG(&Poco::Logger::get("Threadpool"), "Method threadpool: {}", read_settings.remote_fs_method == RemoteFSReadMethod::threadpool);
 
