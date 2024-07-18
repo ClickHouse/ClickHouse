@@ -338,41 +338,39 @@ ClusterPtr DatabaseReplicated::getClusterImpl(bool all_groups) const
     return std::make_shared<Cluster>(getContext()->getSettingsRef(), shards, params);
 }
 
-std::vector<UInt8> DatabaseReplicated::tryGetAreReplicasActive(const ClusterPtr & cluster_) const
+ReplicasInfo DatabaseReplicated::tryGetReplicasInfo(const ClusterPtr & cluster_) const
 {
-    Strings paths;
+    ReplicasInfo res;
+
+    auto zookeeper = getZooKeeper();
     const auto & addresses_with_failover = cluster_->getShardsAddresses();
     const auto & shards_info = cluster_->getShardsInfo();
-    for (size_t shard_index = 0; shard_index < shards_info.size(); ++shard_index)
-    {
-        for (const auto & replica : addresses_with_failover[shard_index])
-        {
-            String full_name = getFullReplicaName(replica.database_shard_name, replica.database_replica_name);
-            paths.emplace_back(fs::path(zookeeper_path) / "replicas" / full_name / "active");
-        }
-    }
 
     try
     {
-        auto current_zookeeper = getZooKeeper();
-        auto res = current_zookeeper->exists(paths);
+        UInt32 max_log_ptr = parse<UInt32>(zookeeper->get(zookeeper_path + "/max_log_ptr"));
 
-        std::vector<UInt8> statuses;
-        statuses.resize(paths.size());
-
-        for (size_t i = 0; i < res.size(); ++i)
-            if (res[i].error == Coordination::Error::ZOK)
-                statuses[i] = 1;
-
-        return statuses;
-    }
-    catch (...)
+        for (size_t shard_index = 0; shard_index < shards_info.size(); ++shard_index)
+        {
+            for (const auto & replica : addresses_with_failover[shard_index])
+            {
+                String full_name = getFullReplicaName(replica.database_shard_name, replica.database_replica_name);
+                UInt32 log_ptr = parse<UInt32>(zookeeper->get(fs::path(zookeeper_path) / "replicas" / full_name / "log_ptr"));
+                bool is_active = zookeeper->exists(fs::path(zookeeper_path) / "replicas" / full_name / "active");
+                res.push_back(ReplicaInfo{
+                    .is_active = is_active,
+                    .replication_lag = max_log_ptr - log_ptr,
+                    .recovery_time = replica.is_local ? ddl_worker->getCurrentInitializationDurationMs() : 0,
+                });
+            }
+        }
+        return res;
+    } catch (...)
     {
         tryLogCurrentException(log);
         return {};
     }
 }
-
 
 void DatabaseReplicated::fillClusterAuthInfo(String collection_name, const Poco::Util::AbstractConfiguration & config_ref)
 {

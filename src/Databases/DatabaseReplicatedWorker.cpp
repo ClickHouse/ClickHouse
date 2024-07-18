@@ -32,6 +32,8 @@ DatabaseReplicatedDDLWorker::DatabaseReplicatedDDLWorker(DatabaseReplicated * db
 
 bool DatabaseReplicatedDDLWorker::initializeMainThread()
 {
+    initialization_duration_timer.emplace();
+
     while (!stop_flag)
     {
         try
@@ -69,6 +71,7 @@ bool DatabaseReplicatedDDLWorker::initializeMainThread()
 
             initializeReplication();
             initialized = true;
+            initialization_duration_timer.reset();
             return true;
         }
         catch (...)
@@ -78,6 +81,7 @@ bool DatabaseReplicatedDDLWorker::initializeMainThread()
         }
     }
 
+    initialization_duration_timer.reset();
     return false;
 }
 
