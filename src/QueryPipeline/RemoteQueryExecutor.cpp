@@ -469,7 +469,7 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::read()
     return restartQueryWithoutDuplicatedUUIDs();
 }
 
-RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAsync(bool check_packet_type_only)
+RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAsync([[maybe_unused]] bool check_packet_type_only)
 {
 #if defined(OS_LINUX)
     if (!read_context || (resent_query && recreate_read_context))
