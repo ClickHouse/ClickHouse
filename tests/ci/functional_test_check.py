@@ -17,9 +17,19 @@ from download_release_packages import download_last_release
 from env_helper import REPO_COPY, REPORT_PATH, TEMP_PATH
 from get_robot_token import get_parameter_from_ssm
 from pr_info import PRInfo
-from report import ERROR, SUCCESS, JobReport, StatusType, TestResults, read_test_results
+from report import (
+    ERROR,
+    SUCCESS,
+    JobReport,
+    StatusType,
+    TestResults,
+    read_test_results,
+    FAILURE,
+)
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
+from ci_config import CI
+from ci_utils import Utils
 
 NO_CHANGES_MSG = "Nothing to run"
 
@@ -351,7 +361,23 @@ def main():
         additional_files=additional_logs,
     ).dump(to_file=args.report_to_file if args.report_to_file else None)
 
+    should_block_ci = False
     if state != SUCCESS:
+        should_block_ci = True
+
+    if state == FAILURE and CI.is_required(check_name):
+        failed_cnt = Utils.get_failed_tests_number(description)
+        print(
+            f"Job status is [{state}] with [{failed_cnt}] failed test cases. status description [{description}]"
+        )
+        if (
+            failed_cnt
+            and failed_cnt <= CI.MAX_TOTAL_FAILURES_PER_JOB_BEFORE_BLOCKING_CI
+        ):
+            print(f"Won't block the CI workflow")
+            should_block_ci = False
+
+    if should_block_ci:
         sys.exit(1)
 
 
