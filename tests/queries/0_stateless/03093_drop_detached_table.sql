@@ -181,11 +181,10 @@ DETACH TABLE test_db.test_table_03093_buffer;
 SELECT table, is_permanently FROM system.detached_tables WHERE database='test_db' FORMAT TabSeparated;
 DROP DETACHED TABLE test_db.test_table_03093_buffer SYNC;
 SELECT count(table) FROM system.detached_tables WHERE database='test_db';
-DROP TABLE test_db.test_table_03093_null_for_buffer SYNC;
 
 SELECT 'Buffer DETACH PERMANENTLY';
-CREATE TABLE test_db.test_table_03093_null_for_buffer (key UInt64) Engine=Null();
-CREATE TABLE test_db.test_table_03093_buffer_perm (key UInt64) Engine=Buffer(test_db, test_table_03093_null_for_buffer,
+CREATE TABLE test_db.test_table_03093_null_for_buffer_perm (key UInt64) Engine=Null();
+CREATE TABLE test_db.test_table_03093_buffer_perm (key UInt64) Engine=Buffer(test_db, test_table_03093_null_for_buffer_perm,
     1,    /* num_layers */
     10e6, /* min_time, placeholder */
     10e6, /* max_time, placeholder */
@@ -199,10 +198,9 @@ DETACH TABLE test_db.test_table_03093_buffer_perm PERMANENTLY;
 SELECT table, is_permanently FROM system.detached_tables WHERE database='test_db' FORMAT TabSeparated;
 DROP DETACHED TABLE test_db.test_table_03093_buffer_perm SYNC;
 SELECT count(table) FROM system.detached_tables WHERE database='test_db';
-DROP TABLE test_db.test_table_03093_null_for_buffer SYNC;
 
 SELECT 'Distributed';
-CREATE TABLE test_db.test_table_03093_for_dist (key UInt64) Engine=TinyLog();
+CREATE TABLE test_db.test_table_03093_for_dist (key UInt64) ENGINE=MergeTree ORDER BY key;
 CREATE TABLE test_db.test_table_03093_dist AS test_db.test_table_03093_for_dist Engine=Distributed('test_cluster_two_shards', test_db, 'test_table_03093_for_dist', key);
 INSERT INTO test_db.test_table_03093_dist SELECT toUInt64(number) FROM system.numbers LIMIT 6;
 DETACH TABLE test_db.test_table_03093_dist;
@@ -212,13 +210,16 @@ SELECT count(table) FROM system.detached_tables WHERE database='test_db';
 DROP TABLE test_db.test_table_03093_for_dist SYNC;
 
 SELECT 'Distributed DETACH PERMANENTLY';
-CREATE TABLE test_db.test_table_03093_for_dist (key UInt64) Engine=TinyLog();
+CREATE TABLE test_db.test_table_03093_for_dist (key UInt64) ENGINE=MergeTree ORDER BY key;
 CREATE TABLE test_db.test_table_03093_dist_perm AS test_db.test_table_03093_for_dist Engine=Distributed('test_cluster_two_shards', test_db, 'test_table_03093_for_dist', key);
 INSERT INTO test_db.test_table_03093_dist_perm SELECT toUInt64(number) FROM system.numbers LIMIT 6;
 DETACH TABLE test_db.test_table_03093_dist_perm PERMANENTLY;
 SELECT table, is_permanently FROM system.detached_tables WHERE database='test_db' FORMAT TabSeparated;
 DROP DETACHED TABLE test_db.test_table_03093_dist_perm SYNC;
-SELECT count(table) FROM system.detached_tables WHERE database='test_db';
+SELECT count(table) FROM system.detached_tables WHERE database='test_db' AND table='test_table_03093_dist_perm';
 DROP TABLE test_db.test_table_03093_for_dist SYNC;
+
+SELECT 'total';
+SELECT table FROM system.detached_tables WHERE database='test_db';
 
 DROP DATABASE test_db;
