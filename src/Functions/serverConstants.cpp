@@ -26,7 +26,6 @@ namespace
     {
     public:
         using FunctionConstantBase<Derived, T, ColumnT>::FunctionConstantBase;
-        bool isServerConstant() const override { return true; }
     };
 
 #if defined(__ELF__) && !defined(OS_FREEBSD)
@@ -147,30 +146,30 @@ namespace
 #if defined(__ELF__) && !defined(OS_FREEBSD)
 REGISTER_FUNCTION(BuildId)
 {
-    factory.registerFunction<FunctionBuildId>();
+    factory.registerFunction<FunctionBuildId>({}, {.is_server_constant = true});
 }
 #endif
 
 REGISTER_FUNCTION(HostName)
 {
-    factory.registerFunction<FunctionHostName>();
+    factory.registerFunction<FunctionHostName>({}, {.is_server_constant = true});
     factory.registerAlias("hostname", "hostName");
 }
 
 REGISTER_FUNCTION(ServerUUID)
 {
-    factory.registerFunction<FunctionServerUUID>();
+    factory.registerFunction<FunctionServerUUID>({}, {.is_server_constant = true});
 }
 
 REGISTER_FUNCTION(TCPPort)
 {
-    factory.registerFunction<FunctionTCPPort>();
+    factory.registerFunction<FunctionTCPPort>({}, {.is_server_constant = true});
 }
 
 REGISTER_FUNCTION(Timezone)
 {
     factory.registerFunction<FunctionTimezone>(
-        FunctionDocumentation{
+        {
         .description=R"(
 Returns the default timezone for current session.
 Used as default timezone for parsing DateTime|DateTime64 without explicitly specified timezone.
@@ -180,14 +179,15 @@ Can be changed with SET timezone = 'New/Tz'
     )",
     .examples{{"timezone", "SELECT timezone();", ""}},
     .categories{"Constant", "Miscellaneous"}
-});
+    },
+    {.is_server_constant = true});
 factory.registerAlias("timeZone", "timezone");
 }
 
 REGISTER_FUNCTION(ServerTimezone)
 {
     factory.registerFunction<FunctionServerTimezone>(
-    FunctionDocumentation{
+    {
         .description=R"(
 Returns the timezone name in which server operates.
 
@@ -195,34 +195,35 @@ Returns the timezone name in which server operates.
     )",
      .examples{{"serverTimezone", "SELECT serverTimezone();", ""}},
      .categories{"Constant", "Miscellaneous"}
-});
+    },
+    {.is_server_constant = true});
     factory.registerAlias("serverTimeZone", "serverTimezone");
 }
 
 REGISTER_FUNCTION(Uptime)
 {
-    factory.registerFunction<FunctionUptime>();
+    factory.registerFunction<FunctionUptime>({}, {.is_server_constant = true});
 }
 
 REGISTER_FUNCTION(Version)
 {
-    factory.registerFunction<FunctionVersion>({}, {}, FunctionFactory::Case::Insensitive);
+    factory.registerFunction<FunctionVersion>({}, {.is_server_constant = true}, FunctionFactory::Case::Insensitive);
 }
 
 REGISTER_FUNCTION(Revision)
 {
-    factory.registerFunction<FunctionRevision>({}, {}, FunctionFactory::Case::Insensitive);
+    factory.registerFunction<FunctionRevision>({}, {.is_server_constant = true}, FunctionFactory::Case::Insensitive);
 }
 
 REGISTER_FUNCTION(ZooKeeperSessionUptime)
 {
-    factory.registerFunction<FunctionZooKeeperSessionUptime>();
+    factory.registerFunction<FunctionZooKeeperSessionUptime>({}, {.is_server_constant = true});
 }
 
 
 REGISTER_FUNCTION(GetOSKernelVersion)
 {
-    factory.registerFunction<FunctionGetOSKernelVersion>();
+    factory.registerFunction<FunctionGetOSKernelVersion>({}, {.is_server_constant = true});
 }
 
 
@@ -237,7 +238,8 @@ Returns the value of `display_name` from config or server FQDN if not set.
 )",
             .examples{{"displayName", "SELECT displayName();", ""}},
             .categories{"Constant", "Miscellaneous"}
-        });
+        },
+        {.is_server_constant = true});
 }
 
 
