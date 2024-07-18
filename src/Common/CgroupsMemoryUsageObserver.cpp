@@ -200,10 +200,7 @@ CgroupsMemoryUsageObserver::CgroupsMemoryUsageObserver(std::chrono::seconds wait
 {
     const auto [cgroup_path, version] = getCgroupsPath();
 
-    if (version == CgroupsVersion::V2)
-        cgroup_reader = std::make_unique<CgroupsV2Reader>(cgroup_path);
-    else
-        cgroup_reader = std::make_unique<CgroupsV1Reader>(cgroup_path);
+    cgroup_reader = createCgroupsReader(version, cgroup_path);
 
     LOG_INFO(
         log,
@@ -365,6 +362,13 @@ void CgroupsMemoryUsageObserver::runThread()
     }
 }
 
+std::unique_ptr<ICgroupsReader> createCgroupsReader(CgroupsMemoryUsageObserver::CgroupsVersion version, const fs::path & cgroup_path)
+{
+    if (version == CgroupsMemoryUsageObserver::CgroupsVersion::V2)
+        return std::make_unique<CgroupsV2Reader>(cgroup_path);
+    else
+        return std::make_unique<CgroupsV1Reader>(cgroup_path);
+}
 }
 
 #endif

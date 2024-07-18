@@ -83,6 +83,9 @@ private:
     bool quit = false;
 };
 
+std::unique_ptr<ICgroupsReader>
+createCgroupsReader(CgroupsMemoryUsageObserver::CgroupsVersion version, const std::filesystem::path & cgroup_path);
+
 #else
 class CgroupsMemoryUsageObserver
 {
