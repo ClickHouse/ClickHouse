@@ -164,7 +164,7 @@ StoragePtr TableFunctionGenerateRandom::executeImpl(const ASTPtr & /*ast_functio
 
 void registerTableFunctionGenerate(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionGenerateRandom>({.documentation = {}, .allow_readonly = true});
+    factory.registerFunction<TableFunctionGenerateRandom>({}, {.allow_readonly = true});
 }
 
 }

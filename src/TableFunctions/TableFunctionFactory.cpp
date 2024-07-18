@@ -88,9 +88,34 @@ bool TableFunctionFactory::isTableFunctionName(const std::string & name) const
     return table_functions.contains(name);
 }
 
+std::optional<FunctionDocumentation> TableFunctionFactory::tryGetDocumentation(const String & name) const
+{
+    return tryGetDocumentationImpl(name);
+}
+
 std::optional<TableFunctionProperties> TableFunctionFactory::tryGetProperties(const String & name) const
 {
     return tryGetPropertiesImpl(name);
+}
+
+std::optional<FunctionDocumentation> TableFunctionFactory::tryGetDocumentationImpl(const String & name_param) const
+{
+    String name = getAliasToOrName(name_param);
+    Value found;
+
+    /// Find by exact match.
+    if (auto it = table_functions.find(name); it != table_functions.end())
+    {
+        found = it->second;
+    }
+
+    if (auto jt = case_insensitive_table_functions.find(Poco::toLower(name)); jt != case_insensitive_table_functions.end())
+        found = jt->second;
+
+    if (found.creator)
+        return found.documentation;
+
+    return {};
 }
 
 std::optional<TableFunctionProperties> TableFunctionFactory::tryGetPropertiesImpl(const String & name_param) const
