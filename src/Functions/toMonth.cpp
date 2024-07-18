@@ -13,7 +13,7 @@ REGISTER_FUNCTION(ToMonth)
 {
     factory.registerFunction<FunctionToMonth>();
     /// MySQL compatibility alias.
-    factory.registerAlias("MONTH", "toMonth", FunctionFactory::CaseInsensitive);
+    factory.registerAlias("MONTH", "toMonth", FunctionFactory::Case::Insensitive);
 }
 
 }
