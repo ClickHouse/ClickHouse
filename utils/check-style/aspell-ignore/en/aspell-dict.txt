@@ -761,6 +761,7 @@ QueryCacheMisses
 QueryPreempted
 QueryThread
 QuickAssist
+QuickSight
 QuoteMeta
 RBAC
 RClickHouse
@@ -1652,6 +1653,7 @@ formated
 formatschema
 formatter
 formatters
+fqdn
 frac
 freezed
 fromDaysSinceYearZero
@@ -2200,6 +2202,8 @@ parseReadableSizeOrZero
 parseTimeDelta
 parseable
 parsers
+partitionId
+partitionID
 pathFull
 pclmulqdq
 pcre

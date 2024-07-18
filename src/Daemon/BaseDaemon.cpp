@@ -4,6 +4,7 @@
 #include <base/errnoToString.h>
 #include <Common/CurrentThread.h>
 #include <Common/MemoryTracker.h>
+#include <Core/Settings.h>
 #include <Daemon/BaseDaemon.h>
 #include <Daemon/SentryWriter.h>
 #include <Common/GWPAsan.h>
@@ -1305,6 +1306,10 @@ void BaseDaemon::setupWatchdog()
         int status = 0;
         do
         {
+            // Close log files to prevent keeping descriptors of unlinked rotated files.
+            // On next log write files will be reopened.
+            closeLogs(logger());
+
             if (-1 != waitpid(pid, &status, WUNTRACED | WCONTINUED) || errno == ECHILD)
             {
                 if (WIFSTOPPED(status))
