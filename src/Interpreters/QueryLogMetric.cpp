@@ -170,9 +170,9 @@ QueryLogMetricElement QueryLogMetric::createLogMetricElement(const String & quer
 
     for (ProfileEvents::Event i = ProfileEvents::Event(0), end = ProfileEvents::end(); i < end; ++i)
     {
-        const auto & value = (*profile_counters)[i];
-        elem.profile_events[i] = new_query_status.last_profile_events[i] - value;
-        new_query_status.last_profile_events[i] = value;
+        const auto & new_value = (*profile_counters)[i];
+        elem.profile_events[i] = new_value - new_query_status.last_profile_events[i];
+        new_query_status.last_profile_events[i] = new_value;
     }
 
     queries.modify(query_status_it, [&](QueryLogMetricStatus & query_status) { query_status = std::move(new_query_status); });
