@@ -1,5 +1,4 @@
 -- Tags: no-fasttest
--- Tests statistics usages in prewhere optimization.
 
 DROP TABLE IF EXISTS tab SYNC;
 
@@ -20,33 +19,6 @@ SETTINGS min_bytes_for_wide_part = 0;
 SHOW CREATE TABLE tab;
 
 INSERT INTO tab select toString(number % 10000), number % 1000, -(number % 100), generateUUIDv4() FROM system.numbers LIMIT 10000;
-
-SELECT 'Test statistics TDigest:';
-
-ALTER TABLE tab ADD STATISTICS b, c TYPE tdigest;
-ALTER TABLE tab MATERIALIZE STATISTICS b, c;
-
-SELECT replaceRegexpAll(explain, '__table1.|_UInt8|_Int8|_UInt16|_String', '')
-FROM (EXPLAIN actions=1 SELECT count(*) FROM tab WHERE b > 0/*9990*/ and c < -98/*100*/)
-WHERE explain LIKE '%Prewhere%' OR explain LIKE '%Filter column%';
-
-SELECT replaceRegexpAll(explain, '__table1.|_UInt8|_Int8|_UInt16|_String', '')
-FROM (EXPLAIN actions=1 SELECT count(*) FROM tab WHERE b = 0/*1000*/ and c < -98/*100*/)
-WHERE explain LIKE '%Prewhere%' OR explain LIKE '%Filter column%';
-
-ALTER TABLE tab DROP STATISTICS b, c;
-
-
-SELECT 'Test statistics Uniq:';
-
-ALTER TABLE tab ADD STATISTICS b TYPE uniq, tdigest;
-ALTER TABLE tab MATERIALIZE STATISTICS b;
-SELECT replaceRegexpAll(explain, '__table1.|_UInt8|_Int8|_UInt16|_String', '')
-FROM (EXPLAIN actions=1 SELECT count(*) FROM tab WHERE c = 0/*1000*/ and b = 0/*10*/)
-WHERE explain LIKE '%Prewhere%' OR explain LIKE '%Filter column%';
-
-ALTER TABLE tab DROP STATISTICS b;
-
 
 SELECT 'Test statistics count_min:';
 
@@ -87,9 +59,9 @@ DROP TABLE IF EXISTS tab2 SYNC;
 SET allow_suspicious_low_cardinality_types=1;
 CREATE TABLE tab2
 (
-    a LowCardinality(Int64) STATISTICS(uniq, tdigest, count_min),
-    b Nullable(Int64) STATISTICS(uniq, tdigest, count_min),
-    c LowCardinality(Nullable(Int64)) STATISTICS(uniq, tdigest, count_min),
+    a LowCardinality(Int64) STATISTICS(count_min),
+    b Nullable(Int64) STATISTICS(count_min),
+    c LowCardinality(Nullable(Int64)) STATISTICS(count_min),
     pk String,
 ) Engine = MergeTree() ORDER BY pk;
 

@@ -1,15 +1,4 @@
 CREATE TABLE default.tab\n(\n    `a` String,\n    `b` UInt64,\n    `c` Int64,\n    `pk` String\n)\nENGINE = MergeTree\nORDER BY pk\nSETTINGS min_bytes_for_wide_part = 0, index_granularity = 8192
-Test statistics TDigest:
-        Prewhere info
-          Prewhere filter
-          Prewhere filter column: and(less(c, -98), greater(b, 0)) (removed)
-        Prewhere info
-          Prewhere filter
-          Prewhere filter column: and(less(c, -98), equals(b, 0)) (removed)
-Test statistics Uniq:
-        Prewhere info
-          Prewhere filter
-          Prewhere filter column: and(equals(b, 0), equals(c, 0)) (removed)
 Test statistics count_min:
         Prewhere info
           Prewhere filter
