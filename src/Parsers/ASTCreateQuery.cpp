@@ -563,6 +563,13 @@ UUID ASTCreateQuery::getTargetInnerUUID(ViewTarget::Kind target_kind) const
     return UUIDHelpers::Nil;
 }
 
+bool ASTCreateQuery::hasInnerUUIDs() const
+{
+    if (targets)
+        return targets->hasInnerUUIDs();
+    return false;
+}
+
 std::shared_ptr<ASTStorage> ASTCreateQuery::getTargetInnerEngine(ViewTarget::Kind target_kind) const
 {
     if (targets)

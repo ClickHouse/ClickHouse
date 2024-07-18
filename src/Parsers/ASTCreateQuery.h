@@ -167,6 +167,7 @@ public:
     StorageID getTargetTableID(ViewTarget::Kind target_kind) const;
     bool hasTargetTableID(ViewTarget::Kind target_kind) const;
     UUID getTargetInnerUUID(ViewTarget::Kind target_kind) const;
+    bool hasInnerUUIDs() const;
     std::shared_ptr<ASTStorage> getTargetInnerEngine(ViewTarget::Kind target_kind) const;
     void setTargetInnerEngine(ViewTarget::Kind target_kind, ASTPtr storage_def);
 

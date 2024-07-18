@@ -1131,7 +1131,7 @@ void InterpreterCreateQuery::assertOrSetUUID(ASTCreateQuery & create, const Data
     }
     else
     {
-        bool has_uuid = (create.uuid != UUIDHelpers::Nil) || (create.targets && create.targets->hasInnerUUIDs());
+        bool has_uuid = (create.uuid != UUIDHelpers::Nil) || create.hasInnerUUIDs();
         if (has_uuid && !is_on_cluster && !internal)
         {
             /// We don't show the following error message either
