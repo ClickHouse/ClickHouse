@@ -1,7 +1,6 @@
 option(ENABLE_S2_GEOMETRY "Enable S2 Geometry" ${ENABLE_LIBRARIES})
 
-# ARCH_S390X broke upstream, it can be re-enabled once https://github.com/google/s2geometry/pull/372 is merged
-if (NOT ENABLE_S2_GEOMETRY OR ARCH_S390X)
+if (NOT ENABLE_S2_GEOMETRY)
     message(STATUS "Not using S2 Geometry")
     return()
 endif()

@@ -7,6 +7,7 @@
 #include <Columns/ColumnSparse.h>
 #include <Common/logger_useful.h>
 #include <Storages/ColumnsDescription.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 
 namespace DB
 {
@@ -433,6 +434,7 @@ void MergeTreeDataPartWriterWide::writeColumn(
     if (inserted)
     {
         ISerialization::SerializeBinaryBulkSettings serialize_settings;
+        serialize_settings.use_compact_variant_discriminators_serialization = settings.use_compact_variant_discriminators_serialization;
         serialize_settings.getter = createStreamGetter(name_and_type, offset_columns);
         serialization->serializeBinaryBulkStatePrefix(column, serialize_settings, it->second);
     }
@@ -441,6 +443,7 @@ void MergeTreeDataPartWriterWide::writeColumn(
     serialize_settings.getter = createStreamGetter(name_and_type, offset_columns);
     serialize_settings.low_cardinality_max_dictionary_size = settings.low_cardinality_max_dictionary_size;
     serialize_settings.low_cardinality_use_single_dictionary_for_part = settings.low_cardinality_use_single_dictionary_for_part;
+    serialize_settings.use_compact_variant_discriminators_serialization = settings.use_compact_variant_discriminators_serialization;
 
     for (const auto & granule : granules)
     {
@@ -630,6 +633,7 @@ void MergeTreeDataPartWriterWide::fillDataChecksums(MergeTreeDataPartChecksums &
     ISerialization::SerializeBinaryBulkSettings serialize_settings;
     serialize_settings.low_cardinality_max_dictionary_size = settings.low_cardinality_max_dictionary_size;
     serialize_settings.low_cardinality_use_single_dictionary_for_part = settings.low_cardinality_use_single_dictionary_for_part;
+    serialize_settings.use_compact_variant_discriminators_serialization = settings.use_compact_variant_discriminators_serialization;
     WrittenOffsetColumns offset_columns;
     if (rows_written_in_last_mark > 0)
     {

@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/IMergeTreeDataPartWriter.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
 
 namespace DB
 {
@@ -72,9 +73,21 @@ IMergeTreeDataPartWriter::IMergeTreeDataPartWriter(
 
 Columns IMergeTreeDataPartWriter::releaseIndexColumns()
 {
-    return Columns(
-        std::make_move_iterator(index_columns.begin()),
-        std::make_move_iterator(index_columns.end()));
+    /// The memory for index was allocated without thread memory tracker.
+    /// We need to deallocate it in shrinkToFit without memory tracker as well.
+    MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
+
+    Columns result;
+    result.reserve(index_columns.size());
+
+    for (auto & column : index_columns)
+    {
+        column->shrinkToFit();
+        result.push_back(std::move(column));
+    }
+
+    index_columns.clear();
+    return result;
 }
 
 SerializationPtr IMergeTreeDataPartWriter::getSerialization(const String & column_name) const
