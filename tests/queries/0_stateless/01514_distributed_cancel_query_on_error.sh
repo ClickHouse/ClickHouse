@@ -15,7 +15,6 @@ opts=(
     "--max_block_size=50"
     "--max_threads=1"
     "--max_distributed_connections=2"
-    "--max_bytes_before_external_group_by=0"
 )
 ${CLICKHOUSE_CLIENT} "${opts[@]}" -q "SELECT groupArray(repeat('a', if(_shard_num == 2, 100000, 1))), number%100000 k from remote('127.{2,3}', system.numbers) GROUP BY k LIMIT 10e6" |& {
     # the query should fail earlier on 127.3 and 127.2 should not even go to the memory limit exceeded error.

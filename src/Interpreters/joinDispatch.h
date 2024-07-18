@@ -3,7 +3,7 @@
 #include <array>
 #include <base/constexpr_helpers.h>
 
-#include <Interpreters/HashJoin/HashJoin.h>
+#include <Interpreters/HashJoin.h>
 
 
 /** Used in implementation of Join to process different data structures.
@@ -113,9 +113,10 @@ inline bool joinDispatch(JoinKind kind, JoinStrictness strictness, std::vector<c
         {
             using MapType = typename MapGetter<KINDS[i], STRICTNESSES[j]>::Map;
             std::vector<const MapType *> v;
-            v.reserve(mapsv.size());
             for (const auto & el : mapsv)
+            {
                 v.push_back(&std::get<MapType>(*el));
+            }
 
             func(
                 std::integral_constant<JoinKind, KINDS[i]>(),

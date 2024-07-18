@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/aggregate-functions/reference/deltasum
-sidebar_position: 129
+sidebar_position: 141
 ---
 
 # deltaSum

@@ -4,14 +4,11 @@
 
 #include <Common/ProfileEvents.h>
 #include <Common/Allocator.h>
-#include <Common/GWPAsan.h>
 
 #include <Common/Exception.h>
 #include <Core/Defines.h>
 
 #include <base/arithmeticOverflow.h>
-
-#include "config.h"
 
 
 namespace ProfileEvents
@@ -44,13 +41,10 @@ struct Memory : boost::noncopyable, Allocator
     char * m_data = nullptr;
     size_t alignment = 0;
 
-    [[maybe_unused]] bool allow_gwp_asan_force_sample{false};
-
     Memory() = default;
 
     /// If alignment != 0, then allocate memory aligned to specified value.
-    explicit Memory(size_t size_, size_t alignment_ = 0, bool allow_gwp_asan_force_sample_ = false)
-        : alignment(alignment_), allow_gwp_asan_force_sample(allow_gwp_asan_force_sample_)
+    explicit Memory(size_t size_, size_t alignment_ = 0) : alignment(alignment_)
     {
         alloc(size_);
     }
@@ -133,11 +127,6 @@ private:
         ProfileEvents::increment(ProfileEvents::IOBufferAllocs);
         ProfileEvents::increment(ProfileEvents::IOBufferAllocBytes, new_capacity);
 
-#if USE_GWP_ASAN
-        if (unlikely(allow_gwp_asan_force_sample && GWPAsan::shouldForceSample()))
-            gwp_asan::getThreadLocals()->NextSampleCounter = 1;
-#endif
-
         m_data = static_cast<char *>(Allocator::alloc(new_capacity, alignment));
         m_capacity = new_capacity;
         m_size = new_size;
@@ -165,7 +154,7 @@ protected:
 public:
     /// If non-nullptr 'existing_memory' is passed, then buffer will not create its own memory and will use existing_memory without ownership.
     explicit BufferWithOwnMemory(size_t size = DBMS_DEFAULT_BUFFER_SIZE, char * existing_memory = nullptr, size_t alignment = 0)
-        : Base(nullptr, 0), memory(existing_memory ? 0 : size, alignment, /*allow_gwp_asan_force_sample_=*/true)
+        : Base(nullptr, 0), memory(existing_memory ? 0 : size, alignment)
     {
         Base::set(existing_memory ? existing_memory : memory.data(), size);
         Base::padded = !existing_memory;
@@ -201,12 +190,6 @@ private:
         const size_t prev_size = Base::position() - memory.data();
         memory.resize(2 * prev_size + 1);
         Base::set(memory.data() + prev_size, memory.size() - prev_size, 0);
-    }
-
-    void finalizeImpl() final
-    {
-        /// there is no need to allocate twice more memory at finalize()
-        /// So make that call no op, do not call here nextImpl()
     }
 };
 

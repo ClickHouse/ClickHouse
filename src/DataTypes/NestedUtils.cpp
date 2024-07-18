@@ -3,7 +3,7 @@
 
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 #include "Columns/IColumn.h"
 
 #include <DataTypes/DataTypeArray.h>
@@ -16,7 +16,6 @@
 #include <Columns/ColumnConst.h>
 
 #include <Parsers/IAST.h>
-#include <Storages/ColumnsDescription.h>
 
 #include <boost/algorithm/string/case_conv.hpp>
 
@@ -166,7 +165,7 @@ NameToDataType getSubcolumnsOfNested(const NamesAndTypesList & names_and_types)
     std::unordered_map<String, NamesAndTypesList> nested;
     for (const auto & name_type : names_and_types)
     {
-        const auto * type_arr = typeid_cast<const DataTypeArray *>(name_type.type.get());
+        const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(name_type.type.get());
 
         /// Ignore true Nested type, but try to unite flatten arrays to Nested type.
         if (!isNested(name_type.type) && type_arr)
@@ -193,11 +192,8 @@ NamesAndTypesList collect(const NamesAndTypesList & names_and_types)
     auto nested_types = getSubcolumnsOfNested(names_and_types);
 
     for (const auto & name_type : names_and_types)
-    {
-        auto split = splitName(name_type.name);
-        if (!isArray(name_type.type) || split.second.empty() || !nested_types.contains(split.first))
+        if (!isArray(name_type.type) || !nested_types.contains(splitName(name_type.name).first))
             res.push_back(name_type);
-    }
 
     for (const auto & name_type : nested_types)
         res.emplace_back(name_type.first, name_type.second);
@@ -293,12 +289,6 @@ Names getAllNestedColumnsForTable(const Block & block, const std::string & table
             names.push_back(name);
     }
     return names;
-}
-
-bool isSubcolumnOfNested(const String & column_name, const ColumnsDescription & columns)
-{
-    auto nested_subcolumn = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column_name);
-    return nested_subcolumn && isNested(nested_subcolumn->getTypeInStorage()) && nested_subcolumn->isSubcolumn() && isArray(nested_subcolumn->type);
 }
 
 }

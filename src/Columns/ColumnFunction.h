@@ -5,7 +5,6 @@
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Columns/IColumn.h>
 
-
 namespace DB
 {
 namespace ErrorCodes
@@ -17,12 +16,12 @@ class IFunctionBase;
 using FunctionBasePtr = std::shared_ptr<const IFunctionBase>;
 
 /** A column containing a lambda expression.
-  * Contains an expression and captured columns, but not input arguments.
+  * Behaves like a constant-column. Contains an expression, but not input or output data.
   */
-class ColumnFunction final : public COWHelper<IColumnHelper<ColumnFunction>, ColumnFunction>
+class ColumnFunction final : public COWHelper<IColumn, ColumnFunction>
 {
 private:
-    friend class COWHelper<IColumnHelper<ColumnFunction>, ColumnFunction>;
+    friend class COWHelper<IColumn, ColumnFunction>;
 
     ColumnFunction(
         size_t size,
@@ -84,33 +83,20 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot insert into {}", getName());
     }
 
-    bool tryInsert(const Field &) override
-    {
-        return false;
-    }
-
     void insertDefault() override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot insert into {}", getName());
     }
 
-#if !defined(ABORT_ON_LOGICAL_ERROR)
     void insertFrom(const IColumn & src, size_t n) override;
-#else
-    void doInsertFrom(const IColumn & src, size_t n) override;
-#endif
-#if !defined(ABORT_ON_LOGICAL_ERROR)
     void insertRangeFrom(const IColumn &, size_t start, size_t length) override;
-#else
-    void doInsertRangeFrom(const IColumn &, size_t start, size_t length) override;
-#endif
 
     void insertData(const char *, size_t) override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot insert into {}", getName());
     }
 
-    StringRef serializeValueIntoArena(size_t, Arena &, char const *&) const override
+    StringRef serializeValueIntoArena(size_t, Arena &, char const *&, const UInt8 *) const override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot serialize from {}", getName());
     }
@@ -145,11 +131,7 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "popBack is not implemented for {}", getName());
     }
 
-#if !defined(ABORT_ON_LOGICAL_ERROR)
     int compareAt(size_t, size_t, const IColumn &, int) const override
-#else
-    int doCompareAt(size_t, size_t, const IColumn &, int) const override
-#endif
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "compareAt is not implemented for {}", getName());
     }
@@ -225,6 +207,8 @@ private:
     bool is_function_compiled;
 
     void appendArgument(const ColumnWithTypeAndName & column);
+
+    void addOffsetsForReplication(const IColumn::Offsets & offsets);
 };
 
 const ColumnFunction * checkAndGetShortCircuitArgument(const ColumnPtr & column);

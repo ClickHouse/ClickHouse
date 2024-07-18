@@ -4,7 +4,6 @@
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/KnownObjectNames.h>
-#include <Core/Settings.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/ASTFunction.h>
 

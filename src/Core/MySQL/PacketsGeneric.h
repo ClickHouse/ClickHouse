@@ -54,9 +54,6 @@ enum Command
     COM_CHANGE_USER = 0x11,
     COM_BINLOG_DUMP = 0x12,
     COM_REGISTER_SLAVE = 0x15,
-    COM_STMT_PREPARE = 0x16,
-    COM_STMT_EXECUTE = 0x17,
-    COM_STMT_CLOSE = 0x19,
     COM_RESET_CONNECTION = 0x1f,
     COM_DAEMON = 0x1d,
     COM_BINLOG_DUMP_GTID = 0x1e
@@ -93,7 +90,7 @@ protected:
     void writePayloadImpl(WriteBuffer & buffer) const override;
 
 public:
-    explicit OKPacket(uint32_t capabilities_);
+    OKPacket(uint32_t capabilities_);
 
     OKPacket(uint8_t header_, uint32_t capabilities_, uint64_t affected_rows_,
              uint32_t status_flags_, int16_t warnings_, String session_state_changes_ = "", String info_ = "");
@@ -180,7 +177,7 @@ protected:
     void readPayloadImpl(ReadBuffer & payload) override;
 
 public:
-    explicit ResponsePacket(UInt32 server_capability_flags_);
+    ResponsePacket(UInt32 server_capability_flags_);
 
     ResponsePacket(UInt32 server_capability_flags_, bool is_handshake_);
 };

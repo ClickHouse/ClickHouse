@@ -45,10 +45,10 @@ namespace
         DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
         {
             auto args = FunctionArgumentDescriptors{
-                {"json", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"},
+                {"json", &isString<IDataType>, nullptr, "String"},
             };
 
-            validateFunctionArguments(*this, arguments, args);
+            validateFunctionArgumentTypes(*this, arguments, args);
             return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>());
         }
 

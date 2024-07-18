@@ -5,7 +5,7 @@
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/Lexer.h>
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 
 namespace DB
 {
@@ -30,11 +30,12 @@ bool ParserJSONPathMemberAccess::parseImpl(Pos & pos, ASTPtr & node, Expected & 
     {
         ++pos;
         // Check the case "$..123abc"
-        if (*(pos->begin) == '.' && pos->type == TokenType::Number)
+        if (pos->type == TokenType::Number)
         {
             return false;
         }
     }
+
     ASTPtr member_name;
 
     if (pos->type == TokenType::Number)[[unlikely]]
@@ -57,10 +58,6 @@ bool ParserJSONPathMemberAccess::parseImpl(Pos & pos, ASTPtr & node, Expected & 
             member_name = std::make_shared<ASTIdentifier>(String(last_begin, pos->end));
             ++pos;
         }
-        else if (pos.isValid() && (pos->type == TokenType::Dot || pos->type == TokenType::OpeningSquareBracket))
-        {
-            member_name = std::make_shared<ASTIdentifier>(String(last_begin, last_end));
-        }
         else if (!pos.isValid() && pos->type == TokenType::EndOfStream)
         {
             member_name = std::make_shared<ASTIdentifier>(String(last_begin, last_end));
@@ -79,6 +76,7 @@ bool ParserJSONPathMemberAccess::parseImpl(Pos & pos, ASTPtr & node, Expected & 
         if (!name_p.parse(pos, member_name, expected))
             return false;
     }
+
     auto member_access = std::make_shared<ASTJSONPathMemberAccess>();
     node = member_access;
     return tryGetIdentifierNameInto(member_name, member_access->member_name);

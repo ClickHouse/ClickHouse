@@ -1,8 +1,6 @@
 #include <Interpreters/InterpreterDeleteQuery.h>
-#include <Interpreters/InterpreterFactory.h>
 
 #include <Access/ContextAccess.h>
-#include <Core/Settings.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Databases/IDatabase.h>
 #include <Interpreters/Context.h>
@@ -16,6 +14,7 @@
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage.h>
 #include <Storages/MutationCommands.h>
+#include <Storages/LightweightDeleteDescription.h>
 
 
 namespace DB
@@ -26,7 +25,6 @@ namespace ErrorCodes
     extern const int TABLE_IS_READ_ONLY;
     extern const int SUPPORT_IS_DISABLED;
     extern const int BAD_ARGUMENTS;
-    extern const int NOT_IMPLEMENTED;
 }
 
 
@@ -37,7 +35,7 @@ InterpreterDeleteQuery::InterpreterDeleteQuery(const ASTPtr & query_ptr_, Contex
 
 BlockIO InterpreterDeleteQuery::execute()
 {
-    FunctionNameNormalizer::visit(query_ptr.get());
+    FunctionNameNormalizer().visit(query_ptr.get());
     const ASTDeleteQuery & delete_query = query_ptr->as<ASTDeleteQuery &>();
     auto table_id = getContext()->resolveStorageID(delete_query, Context::ResolveOrdinary);
 
@@ -62,35 +60,6 @@ BlockIO InterpreterDeleteQuery::execute()
     auto table_lock = table->lockForShare(getContext()->getCurrentQueryId(), getContext()->getSettingsRef().lock_acquire_timeout);
     auto metadata_snapshot = table->getInMemoryMetadataPtr();
 
-    auto lightweightDelete = [&]()
-    {
-        if (!getContext()->getSettingsRef().enable_lightweight_delete)
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                            "Lightweight delete mutate is disabled. "
-                            "Set `enable_lightweight_delete` setting to enable it");
-
-        /// Build "ALTER ... UPDATE _row_exists = 0 WHERE predicate" query
-        String alter_query =
-            "ALTER TABLE " + table->getStorageID().getFullTableName()
-            + (delete_query.cluster.empty() ? "" : " ON CLUSTER " + backQuoteIfNeed(delete_query.cluster))
-            + " UPDATE `_row_exists` = 0 WHERE " + serializeAST(*delete_query.predicate);
-
-        ParserAlterQuery parser;
-        ASTPtr alter_ast = parseQuery(
-            parser,
-            alter_query.data(),
-            alter_query.data() + alter_query.size(),
-            "ALTER query",
-            0,
-            DBMS_DEFAULT_MAX_PARSER_DEPTH,
-            DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
-
-        auto context = Context::createCopy(getContext());
-        context->setSetting("mutations_sync", Field(context->getSettingsRef().lightweight_deletes_sync));
-        InterpreterAlterQuery alter_interpreter(alter_ast, context);
-        return alter_interpreter.execute();
-    };
-
     if (table->supportsDelete())
     {
         /// Convert to MutationCommand
@@ -110,71 +79,35 @@ BlockIO InterpreterDeleteQuery::execute()
     }
     else if (table->supportsLightweightDelete())
     {
-        return lightweightDelete();
+        if (!getContext()->getSettingsRef().enable_lightweight_delete)
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                            "Lightweight delete mutate is disabled. "
+                            "Set `enable_lightweight_delete` setting to enable it");
+
+        /// Build "ALTER ... UPDATE _row_exists = 0 WHERE predicate" query
+        String alter_query =
+            "ALTER TABLE " + table->getStorageID().getFullTableName()
+            + (delete_query.cluster.empty() ? "" : " ON CLUSTER " + backQuoteIfNeed(delete_query.cluster))
+            + " UPDATE `_row_exists` = 0 WHERE " + serializeAST(*delete_query.predicate);
+
+        ParserAlterQuery parser;
+        ASTPtr alter_ast = parseQuery(
+            parser,
+            alter_query.data(),
+            alter_query.data() + alter_query.size(),
+            "ALTER query",
+            0,
+            DBMS_DEFAULT_MAX_PARSER_DEPTH);
+
+        auto context = Context::createCopy(getContext());
+        context->setSetting("mutations_sync", 2);   /// Lightweight delete is always synchronous
+        InterpreterAlterQuery alter_interpreter(alter_ast, context);
+        return alter_interpreter.execute();
     }
     else
     {
-        if (table->hasProjection())
-        {
-            auto context = Context::createCopy(getContext());
-            auto mode = context->getSettingsRef().lightweight_mutation_projection_mode;
-            if (mode == LightweightMutationProjectionMode::THROW)
-            {
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                    "DELETE query is not supported for table {} as it has projections. "
-                    "User should drop all the projections manually before running the query",
-                    table->getStorageID().getFullTableName());
-            }
-            else if (mode == LightweightMutationProjectionMode::DROP)
-            {
-                std::vector<String> all_projections = metadata_snapshot->projections.getAllRegisteredNames();
-
-                context->setSetting("mutations_sync", Field(context->getSettingsRef().lightweight_deletes_sync));
-
-                /// Drop projections first so that lightweight delete can be performed.
-                for (const auto & projection : all_projections)
-                {
-                    String alter_query =
-                        "ALTER TABLE " + table->getStorageID().getFullTableName()
-                        + (delete_query.cluster.empty() ? "" : " ON CLUSTER " + backQuoteIfNeed(delete_query.cluster))
-                        + " DROP PROJECTION IF EXISTS " + projection;
-
-                    ParserAlterQuery parser;
-                    ASTPtr alter_ast = parseQuery(
-                        parser,
-                        alter_query.data(),
-                        alter_query.data() + alter_query.size(),
-                        "ALTER query",
-                        0,
-                        DBMS_DEFAULT_MAX_PARSER_DEPTH,
-                        DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
-
-                    InterpreterAlterQuery alter_interpreter(alter_ast, context);
-                    alter_interpreter.execute();
-                }
-            }
-            else
-            {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Unrecognized lightweight_mutation_projection_mode, only throw and drop are allowed.");
-            }
-
-            return lightweightDelete();
-        }
-
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "DELETE query is not supported for table {}",
-            table->getStorageID().getFullTableName());
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "DELETE query is not supported for table {}", table->getStorageID().getFullTableName());
     }
-}
-
-void registerInterpreterDeleteQuery(InterpreterFactory & factory)
-{
-    auto create_fn = [] (const InterpreterFactory::Arguments & args)
-    {
-        return std::make_unique<InterpreterDeleteQuery>(args.query, args.context);
-    };
-    factory.registerInterpreter("InterpreterDeleteQuery", create_fn);
 }
 
 }

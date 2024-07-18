@@ -1,5 +1,4 @@
 #include <Common/typeid_cast.h>
-#include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
 #include <Columns/ColumnArray.h>
@@ -63,7 +62,6 @@ ArrayJoinAction::ArrayJoinAction(const NameSet & array_joined_columns_, bool arr
     : columns(array_joined_columns_)
     , is_left(array_join_is_left)
     , is_unaligned(context->getSettingsRef().enable_unaligned_array_join)
-    , max_block_size(context->getSettingsRef().max_block_size)
 {
     if (columns.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "No arrays to join");
@@ -95,30 +93,18 @@ void ArrayJoinAction::prepare(ColumnsWithTypeAndName & sample) const
     }
 }
 
-ArrayJoinResultIteratorPtr ArrayJoinAction::execute(Block block)
+void ArrayJoinAction::execute(Block & block)
 {
     if (columns.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "No arrays to join");
 
-    return std::make_unique<ArrayJoinResultIterator>(this, std::move(block));
-}
-
-
-ArrayJoinResultIterator::ArrayJoinResultIterator(const ArrayJoinAction * array_join_, Block block_)
-    : array_join(array_join_), block(std::move(block_)), total_rows(block.rows()), current_row(0)
-{
-    const auto & columns = array_join->columns;
-    bool is_unaligned = array_join->is_unaligned;
-    bool is_left = array_join->is_left;
-    const auto & function_length = array_join->function_length;
-    const auto & function_greatest = array_join->function_greatest;
-    const auto & function_array_resize = array_join->function_array_resize;
-    const auto & function_builder = array_join->function_builder;
-
-    any_array_map_ptr = block.getByName(*columns.begin()).column->convertToFullColumnIfConst();
-    any_array = getArrayJoinColumnRawPtr(any_array_map_ptr);
+    ColumnPtr any_array_map_ptr = block.getByName(*columns.begin()).column->convertToFullColumnIfConst();
+    const auto * any_array = getArrayJoinColumnRawPtr(any_array_map_ptr);
     if (!any_array)
         throw Exception(ErrorCodes::TYPE_MISMATCH, "ARRAY JOIN requires array or map argument");
+
+    /// If LEFT ARRAY JOIN, then we create columns in which empty arrays are replaced by arrays with one element - the default value.
+    std::map<String, ColumnPtr> non_empty_array_columns;
 
     if (is_unaligned)
     {
@@ -174,52 +160,12 @@ ArrayJoinResultIterator::ArrayJoinResultIterator(const ArrayJoinAction * array_j
         if (!any_array)
             throw Exception(ErrorCodes::TYPE_MISMATCH, "ARRAY JOIN requires array or map argument");
     }
-}
-
-bool ArrayJoinResultIterator::hasNext() const
-{
-    return total_rows != 0 && current_row < total_rows;
-}
 
 
-Block ArrayJoinResultIterator::next()
-{
-    if (!hasNext())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "No more elements in ArrayJoinResultIterator.");
-
-    size_t max_block_size = array_join->max_block_size;
-    const auto & offsets = any_array->getOffsets();
-
-    /// Make sure output block rows do not exceed max_block_size.
-    size_t next_row = current_row;
-    for (; next_row < total_rows; ++next_row)
-    {
-        if (offsets[next_row] - offsets[current_row - 1] >= max_block_size)
-            break;
-    }
-    if (next_row == current_row)
-        ++next_row;
-
-    Block res;
     size_t num_columns = block.columns();
-    const auto & columns = array_join->columns;
-    bool is_unaligned = array_join->is_unaligned;
-    bool is_left = array_join->is_left;
-    auto cut_any_col = any_array->cut(current_row, next_row - current_row);
-    const auto * cut_any_array = typeid_cast<const ColumnArray *>(cut_any_col.get());
-
     for (size_t i = 0; i < num_columns; ++i)
     {
-        ColumnWithTypeAndName current = block.safeGetByPosition(i);
-
-        /// Reuse cut_any_col if possible to avoid unnecessary cut.
-        if (!is_unaligned && !is_left && current.name == *columns.begin())
-        {
-            current.column = cut_any_col;
-            current.type = getArrayJoinDataType(current.type);
-        }
-        else
-            current.column = current.column->cut(current_row, next_row - current_row);
+        ColumnWithTypeAndName & current = block.safeGetByPosition(i);
 
         if (columns.contains(current.name))
         {
@@ -228,20 +174,18 @@ Block ArrayJoinResultIterator::next()
                 ColumnPtr array_ptr;
                 if (typeid_cast<const DataTypeArray *>(current.type.get()))
                 {
-                    array_ptr = (is_left && !is_unaligned) ? non_empty_array_columns[current.name]->cut(current_row, next_row - current_row)
-                                                           : current.column;
+                    array_ptr = (is_left && !is_unaligned) ? non_empty_array_columns[current.name] : current.column;
                     array_ptr = array_ptr->convertToFullColumnIfConst();
                 }
                 else
                 {
                     ColumnPtr map_ptr = current.column->convertToFullColumnIfConst();
                     const ColumnMap & map = typeid_cast<const ColumnMap &>(*map_ptr);
-                    array_ptr = (is_left && !is_unaligned) ? non_empty_array_columns[current.name]->cut(current_row, next_row - current_row)
-                                                           : map.getNestedColumnPtr();
+                    array_ptr = (is_left && !is_unaligned) ? non_empty_array_columns[current.name] : map.getNestedColumnPtr();
                 }
 
                 const ColumnArray & array = typeid_cast<const ColumnArray &>(*array_ptr);
-                if (!is_unaligned && !array.hasEqualOffsets(*cut_any_array))
+                if (!is_unaligned && !array.hasEqualOffsets(*any_array))
                     throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH, "Sizes of ARRAY-JOIN-ed arrays do not match");
 
                 current.column = typeid_cast<const ColumnArray &>(*array_ptr).getDataPtr();
@@ -252,14 +196,9 @@ Block ArrayJoinResultIterator::next()
         }
         else
         {
-            current.column = current.column->replicate(cut_any_array->getOffsets());
+            current.column = current.column->replicate(any_array->getOffsets());
         }
-
-        res.insert(std::move(current));
     }
-
-    current_row = next_row;
-    return res;
 }
 
 }

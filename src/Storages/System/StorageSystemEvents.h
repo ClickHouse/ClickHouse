@@ -10,17 +10,19 @@ class Context;
 
 /** Implements `events` system table, which allows you to obtain information for profiling.
   */
-class StorageSystemEvents final : public IStorageSystemOneBlock
+class StorageSystemEvents final : public IStorageSystemOneBlock<StorageSystemEvents>
 {
 public:
     std::string getName() const override { return "SystemEvents"; }
 
-    static ColumnsDescription getColumnsDescription();
+    static NamesAndTypesList getNamesAndTypes();
+
+    static NamesAndAliases getNamesAndAliases();
 
 protected:
     using IStorageSystemOneBlock::IStorageSystemOneBlock;
 
-    void fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const override;
+    void fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo & query_info) const override;
 };
 
 }

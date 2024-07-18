@@ -1,5 +1,4 @@
 #include <Core/ServerUUID.h>
-#include <Interpreters/Context.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadHelpers.h>
@@ -12,24 +11,9 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_CREATE_FILE;
-    extern const int LOGICAL_ERROR;
-}
-
-UUID ServerUUID::get()
-{
-    if (server_uuid == UUIDHelpers::Nil &&
-        (Context::getGlobalContextInstance()->getApplicationType() == Context::ApplicationType::SERVER ||
-         Context::getGlobalContextInstance()->getApplicationType() == Context::ApplicationType::KEEPER))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "ServerUUID is not initialized yet");
-    return server_uuid;
 }
 
 void ServerUUID::load(const fs::path & server_uuid_file, Poco::Logger * log)
-{
-    server_uuid = loadServerUUID(server_uuid_file, log);
-}
-
-UUID loadServerUUID(const fs::path & server_uuid_file, Poco::Logger * log)
 {
     /// Write a uuid file containing a unique uuid if the file doesn't already exist during server start.
 
@@ -41,7 +25,8 @@ UUID loadServerUUID(const fs::path & server_uuid_file, Poco::Logger * log)
             ReadBufferFromFile in(server_uuid_file);
             readUUIDText(uuid, in);
             assertEOF(in);
-            return uuid;
+            server_uuid = uuid;
+            return;
         }
         catch (...)
         {
@@ -59,18 +44,13 @@ UUID loadServerUUID(const fs::path & server_uuid_file, Poco::Logger * log)
         out.write(uuid_str.data(), uuid_str.size());
         out.sync();
         out.finalize();
-        return new_uuid;
+        server_uuid = new_uuid;
     }
     catch (...)
     {
         throw Exception(ErrorCodes::CANNOT_CREATE_FILE, "Caught Exception {} while writing the Server UUID file {}",
                         getCurrentExceptionMessage(false), server_uuid_file.string());
     }
-}
-
-void ServerUUID::setRandomForUnitTests()
-{
-    server_uuid = UUIDHelpers::generateV4();
 }
 
 }

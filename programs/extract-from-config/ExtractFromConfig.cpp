@@ -17,7 +17,8 @@
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/Exception.h>
 #include <Common/parseGlobs.h>
-#include <Common/re2.h>
+
+#include <re2/re2.h>
 
 static void setupLogging(const std::string & log_level)
 {
@@ -91,8 +92,8 @@ static std::vector<std::string> extractFromConfig(
 
         zkutil::validateZooKeeperConfig(*bootstrap_configuration);
 
-        zkutil::ZooKeeperPtr zookeeper = zkutil::ZooKeeper::createWithoutKillingPreviousSessions(
-            *bootstrap_configuration, bootstrap_configuration->has("zookeeper") ? "zookeeper" : "keeper");
+        zkutil::ZooKeeperPtr zookeeper = std::make_shared<zkutil::ZooKeeper>(
+            *bootstrap_configuration, bootstrap_configuration->has("zookeeper") ? "zookeeper" : "keeper", nullptr);
 
         zkutil::ZooKeeperNodeCache zk_node_cache([&] { return zookeeper; });
         config_xml = processor.processConfig(&has_zk_includes, &zk_node_cache);
@@ -109,8 +110,8 @@ static std::vector<std::string> extractFromConfig(
     return {configuration->getString(key)};
 }
 
-#pragma clang diagnostic ignored "-Wunused-function"
-#pragma clang diagnostic ignored "-Wmissing-declarations"
+#pragma GCC diagnostic ignored "-Wunused-function"
+#pragma GCC diagnostic ignored "-Wmissing-declarations"
 
 int mainEntryClickHouseExtractFromConfig(int argc, char ** argv)
 {

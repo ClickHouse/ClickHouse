@@ -20,7 +20,7 @@ MessageQueueSink::MessageQueueSink(
 void MessageQueueSink::onStart()
 {
     LOG_TEST(
-        getLogger("MessageQueueSink"),
+        &Poco::Logger::get("MessageQueueSink"),
         "Executing startup for MessageQueueSink");
 
     initialize();
@@ -40,7 +40,7 @@ void MessageQueueSink::onFinish()
     producer->finish();
 }
 
-void MessageQueueSink::consume(Chunk & chunk)
+void MessageQueueSink::consume(Chunk chunk)
 {
     const auto & columns = chunk.getColumns();
     if (columns.empty())

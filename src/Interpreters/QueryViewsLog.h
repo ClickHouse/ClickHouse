@@ -6,7 +6,7 @@
 
 #include <Columns/IColumn.h>
 #include <Core/Block.h>
-#include <Core/QueryLogElementType.h>
+#include <Core/SettingsEnums.h>
 #include <Core/Types.h>
 #include <Core/UUID.h>
 #include <Core/NamesAndTypes.h>
@@ -14,7 +14,6 @@
 #include <Interpreters/SystemLog.h>
 #include <base/types.h>
 #include <Common/ProfileEvents.h>
-#include <Storages/ColumnsDescription.h>
 
 namespace ProfileEvents
 {
@@ -78,9 +77,10 @@ struct QueryViewsLogElement
 
     static std::string name() { return "QueryLog"; }
 
-    static ColumnsDescription getColumnsDescription();
+    static NamesAndTypesList getNamesAndTypes();
     static NamesAndAliases getNamesAndAliases();
     void appendToBlock(MutableColumns & columns) const;
+    static const char * getCustomColumnList() { return nullptr; }
 };
 
 

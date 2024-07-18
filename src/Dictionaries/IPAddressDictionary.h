@@ -22,18 +22,12 @@ class Arena;
 class IPAddressDictionary final : public IDictionary
 {
 public:
-    struct Configuration
-    {
-        DictionaryLifetime dict_lifetime;
-        bool require_nonempty;
-        bool use_async_executor = false;
-    };
-
     IPAddressDictionary(
         const StorageID & dict_id_,
         const DictionaryStructure & dict_struct_,
         DictionarySourcePtr source_ptr_,
-        Configuration configuration_);
+        const DictionaryLifetime dict_lifetime_, /// NOLINT
+        bool require_nonempty_);
 
     std::string getKeyDescription() const { return key_description; }
 
@@ -41,14 +35,14 @@ public:
 
     size_t getBytesAllocated() const override { return bytes_allocated; }
 
-    size_t getQueryCount() const override { return query_count.load(); }
+    size_t getQueryCount() const override { return query_count.load(std::memory_order_relaxed); }
 
     double getFoundRate() const override
     {
-        size_t queries = query_count.load();
+        size_t queries = query_count.load(std::memory_order_relaxed);
         if (!queries)
             return 0;
-        return std::min(1.0, static_cast<double>(found_count.load()) / queries);
+        return static_cast<double>(found_count.load(std::memory_order_relaxed)) / queries;
     }
 
     double getHitRate() const override { return 1.0; }
@@ -57,14 +51,14 @@ public:
 
     double getLoadFactor() const override { return static_cast<double>(element_count) / bucket_count; }
 
-    std::shared_ptr<IExternalLoadable> clone() const override
+    std::shared_ptr<const IExternalLoadable> clone() const override
     {
-        return std::make_shared<IPAddressDictionary>(getDictionaryID(), dict_struct, source_ptr->clone(), configuration);
+        return std::make_shared<IPAddressDictionary>(getDictionaryID(), dict_struct, source_ptr->clone(), dict_lifetime, require_nonempty);
     }
 
     DictionarySourcePtr getSource() const override { return source_ptr; }
 
-    const DictionaryLifetime & getLifetime() const override { return configuration.dict_lifetime; }
+    const DictionaryLifetime & getLifetime() const override { return dict_lifetime; }
 
     const DictionaryStructure & getStructure() const override { return dict_struct; }
 
@@ -78,11 +72,11 @@ public:
     void convertKeyColumns(Columns & key_columns, DataTypes & key_types) const override;
 
     ColumnPtr getColumn(
-        const std::string & attribute_name,
-        const DataTypePtr & attribute_type,
+        const std::string& attribute_name,
+        const DataTypePtr & result_type,
         const Columns & key_columns,
         const DataTypes & key_types,
-        DefaultOrFilter default_or_filter) const override;
+        const ColumnPtr & default_values_column) const override;
 
     ColumnUInt8::Ptr hasKeys(const Columns & key_columns, const DataTypes & key_types) const override;
 
@@ -179,23 +173,12 @@ private:
         ValueSetter && set_value,
         DefaultValueExtractor & default_value_extractor) const;
 
-    template <typename AttributeType, typename ValueSetter>
-    size_t getItemsByTwoKeyColumnsShortCircuitImpl(
-        const Attribute & attribute,
-        const Columns & key_columns,
-        ValueSetter && set_value,
-        IColumn::Filter & default_mask) const;
-
     template <typename AttributeType,typename ValueSetter, typename DefaultValueExtractor>
     void getItemsImpl(
         const Attribute & attribute,
         const Columns & key_columns,
         ValueSetter && set_value,
         DefaultValueExtractor & default_value_extractor) const;
-
-    template <typename AttributeType, typename ValueSetter>
-    void getItemsShortCircuitImpl(
-        const Attribute & attribute, const Columns & key_columns, ValueSetter && set_value, IColumn::Filter & default_mask) const;
 
     template <typename T>
     void setAttributeValueImpl(Attribute & attribute, const T value); /// NOLINT
@@ -216,7 +199,8 @@ private:
 
     DictionaryStructure dict_struct;
     const DictionarySourcePtr source_ptr;
-    const Configuration configuration;
+    const DictionaryLifetime dict_lifetime;
+    const bool require_nonempty;
     const bool access_to_key_from_attributes;
     const std::string key_description{dict_struct.getKeyDescription()};
 
@@ -245,7 +229,7 @@ private:
     mutable std::atomic<size_t> query_count{0};
     mutable std::atomic<size_t> found_count{0};
 
-    LoggerPtr logger;
+    Poco::Logger * logger;
 };
 
 }

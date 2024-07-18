@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-import "google/protobuf/wrappers.proto";
+import "wrappers.proto";
 
 message Message {
     google.protobuf.StringValue str = 1;

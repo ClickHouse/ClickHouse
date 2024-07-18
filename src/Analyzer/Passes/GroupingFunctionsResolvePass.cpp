@@ -1,7 +1,6 @@
 #include <Analyzer/Passes/GroupingFunctionsResolvePass.h>
 
 #include <Core/ColumnNumbers.h>
-#include <Core/Settings.h>
 
 #include <Functions/grouping.h>
 
@@ -25,7 +24,7 @@ namespace ErrorCodes
 namespace
 {
 
-enum class GroupByKind : uint8_t
+enum class GroupByKind
 {
     ORDINARY,
     ROLLUP,
@@ -147,7 +146,7 @@ void resolveGroupingFunctions(QueryTreeNodePtr & query_node, ContextPtr context)
     if (query_node_typed.hasGroupBy())
     {
         /// It is expected by execution layer that if there are only 1 grouping set it will be removed
-        if (query_node_typed.isGroupByWithGroupingSets() && query_node_typed.getGroupBy().getNodes().size() == 1 && !context->getSettingsRef().group_by_use_nulls)
+        if (query_node_typed.isGroupByWithGroupingSets() && query_node_typed.getGroupBy().getNodes().size() == 1)
         {
             auto grouping_set_list_node = query_node_typed.getGroupBy().getNodes().front();
             auto & grouping_set_list_node_typed = grouping_set_list_node->as<ListNode &>();
@@ -228,20 +227,19 @@ void resolveGroupingFunctions(QueryTreeNodePtr & query_node, ContextPtr context)
     visitor.visit(query_node);
 }
 
-class GroupingFunctionsResolveVisitor : public InDepthQueryTreeVisitorWithContext<GroupingFunctionsResolveVisitor>
+class GroupingFunctionsResolveVisitor : public InDepthQueryTreeVisitor<GroupingFunctionsResolveVisitor>
 {
-    using Base = InDepthQueryTreeVisitorWithContext<GroupingFunctionsResolveVisitor>;
 public:
     explicit GroupingFunctionsResolveVisitor(ContextPtr context_)
-        : Base(std::move(context_))
+        : context(std::move(context_))
     {}
 
-    void enterImpl(QueryTreeNodePtr & node)
+    void visitImpl(QueryTreeNodePtr & node)
     {
         if (node->getNodeType() != QueryTreeNodeType::QUERY)
             return;
 
-        resolveGroupingFunctions(node, getContext());
+        resolveGroupingFunctions(node, context);
     }
 
 private:
@@ -250,10 +248,11 @@ private:
 
 }
 
-void GroupingFunctionsResolvePass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
+void GroupingFunctionsResolvePass::run(QueryTreeNodePtr query_tree_node, ContextPtr context)
 {
     GroupingFunctionsResolveVisitor visitor(std::move(context));
     visitor.visit(query_tree_node);
 }
 
 }
+

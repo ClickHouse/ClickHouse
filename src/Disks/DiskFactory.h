@@ -27,9 +27,7 @@ public:
         const Poco::Util::AbstractConfiguration & config,
         const String & config_prefix,
         ContextPtr context,
-        const DisksMap & map,
-        bool attach,
-        bool custom_disk)>;
+        const DisksMap & map)>;
 
     static DiskFactory & instance();
 
@@ -40,10 +38,7 @@ public:
         const Poco::Util::AbstractConfiguration & config,
         const String & config_prefix,
         ContextPtr context,
-        const DisksMap & map,
-        bool attach = false,
-        bool custom_disk = false,
-        const std::unordered_set<String> & skip_types = {}) const;
+        const DisksMap & map) const;
 
 private:
     using DiskTypeRegistry = std::unordered_map<String, Creator>;

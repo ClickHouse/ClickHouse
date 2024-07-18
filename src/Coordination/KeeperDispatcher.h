@@ -11,6 +11,7 @@
 #include <Common/Exception.h>
 #include <functional>
 #include <Coordination/KeeperServer.h>
+#include <Coordination/CoordinationSettings.h>
 #include <Coordination/Keeper4LWInfo.h>
 #include <Coordination/KeeperConnectionStats.h>
 #include <Coordination/KeeperSnapshotManagerS3.h>
@@ -19,7 +20,7 @@
 
 namespace DB
 {
-using ZooKeeperResponseCallback = std::function<void(const Coordination::ZooKeeperResponsePtr & response, Coordination::ZooKeeperRequestPtr request)>;
+using ZooKeeperResponseCallback = std::function<void(const Coordination::ZooKeeperResponsePtr & response)>;
 
 /// Highlevel wrapper for ClickHouse Keeper.
 /// Process user requests via consensus and return responses.
@@ -37,6 +38,8 @@ private:
 
     /// More than 1k updates is definitely misconfiguration.
     ClusterUpdateQueue cluster_update_queue{1000};
+
+    std::atomic<bool> shutdown_called{false};
 
     mutable std::mutex session_to_response_callback_mutex;
     /// These two maps looks similar, but serves different purposes.
@@ -69,7 +72,7 @@ private:
 
     KeeperConfigurationAndSettingsPtr configuration_and_settings;
 
-    LoggerPtr log;
+    Poco::Logger * log;
 
     /// Counter for new session_id requests.
     std::atomic<int64_t> internal_session_id_counter{0};
@@ -91,7 +94,7 @@ private:
     void clusterUpdateWithReconfigDisabledThread();
     void clusterUpdateThread();
 
-    void setResponse(int64_t session_id, const Coordination::ZooKeeperResponsePtr & response, Coordination::ZooKeeperRequestPtr request = nullptr);
+    void setResponse(int64_t session_id, const Coordination::ZooKeeperResponsePtr & response);
 
     /// Add error responses for requests to responses queue.
     /// Clears requests.
@@ -99,8 +102,7 @@ private:
 
     /// Forcefully wait for result and sets errors if something when wrong.
     /// Clears both arguments
-    nuraft::ptr<nuraft::buffer> forceWaitAndProcessResult(
-        RaftAppendResult & result, KeeperStorage::RequestsForSessions & requests_for_sessions, bool clear_requests_on_success);
+    void forceWaitAndProcessResult(RaftAppendResult & result, KeeperStorage::RequestsForSessions & requests_for_sessions);
 
 public:
     std::mutex read_request_queue_mutex;
@@ -175,11 +177,6 @@ public:
         return server->isObserver();
     }
 
-    bool isExceedingMemorySoftLimit() const
-    {
-        return server->isExceedingMemorySoftLimit();
-    }
-
     uint64_t getLogDirSize() const;
 
     uint64_t getSnapDirSize() const;
@@ -240,15 +237,9 @@ public:
         return server->requestLeader();
     }
 
-    /// Yield leadership and become follower.
-    void yieldLeadership()
-    {
-        server->yieldLeadership();
-    }
-
     void recalculateStorageStats()
     {
-        server->recalculateStorageStats();
+        return server->recalculateStorageStats();
     }
 
     static void cleanResources();

@@ -1,6 +1,6 @@
 ---
 slug: /en/engines/table-engines/integrations/s3queue
-sidebar_position: 181
+sidebar_position: 7
 sidebar_label: S3Queue
 ---
 
@@ -11,24 +11,19 @@ This engine provides integration with [Amazon S3](https://aws.amazon.com/s3/) ec
 
 ``` sql
 CREATE TABLE s3_queue_engine_table (name String, value UInt32)
-    ENGINE = S3Queue(path, [NOSIGN, | aws_access_key_id, aws_secret_access_key,] format, [compression])
+    ENGINE = S3Queue(path [, NOSIGN | aws_access_key_id, aws_secret_access_key,] format, [compression])
     [SETTINGS]
-    [mode = '',]
+    [mode = 'unordered',]
     [after_processing = 'keep',]
     [keeper_path = '',]
     [s3queue_loading_retries = 0,]
-    [s3queue_processing_threads_num = 1,]
-    [s3queue_enable_logging_to_s3queue_log = 0,]
     [s3queue_polling_min_timeout_ms = 1000,]
     [s3queue_polling_max_timeout_ms = 10000,]
     [s3queue_polling_backoff_ms = 0,]
-    [s3queue_tracked_file_ttl_sec = 0,]
     [s3queue_tracked_files_limit = 1000,]
-    [s3queue_cleanup_interval_min_ms = 10000,]
-    [s3queue_cleanup_interval_max_ms = 30000,]
+    [s3queue_tracked_file_ttl_sec = 0,]
+    [s3queue_polling_size = 50,]
 ```
-
-Starting with `24.7` settings without `s3queue_` prefix are also supported.
 
 **Engine parameters**
 
@@ -44,7 +39,7 @@ Starting with `24.7` settings without `s3queue_` prefix are also supported.
 CREATE TABLE s3queue_engine_table (name String, value UInt32)
 ENGINE=S3Queue('https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/*', 'CSV', 'gzip')
 SETTINGS
-    mode = 'unordered';
+    mode = 'ordered';
 ```
 
 Using named collections:
@@ -68,16 +63,16 @@ SETTINGS
     mode = 'ordered';
 ```
 
-## Settings {#settings}
+## Settings {#s3queue-settings}
 
 ### mode {#mode}
 
 Possible values:
 
 - unordered — With unordered mode, the set of all already processed files is tracked with persistent nodes in ZooKeeper.
-- ordered — With ordered mode, the files are processed in lexicographic order. It means that if file named 'BBB' was processed at some point and later on a file named 'AA' is added to the bucket, it will be ignored. Only the max name (in lexicographic sense) of the successfully consumed file, and the names of files that will be retried after unsuccessful loading attempt are being stored in ZooKeeper.
+- ordered — With ordered mode, only the max name of the successfully consumed file, and the names of files that will be retried after unsuccessful loading attempt are being stored in ZooKeeper.
 
-Default value: `ordered` in versions before 24.6. Starting with 24.6 there is no default value, the setting becomes required to be specified manually. For tables created on earlier versions the default value will remain `Ordered` for compatibility.
+Default value: `unordered`.
 
 ### after_processing {#after_processing}
 
@@ -98,7 +93,7 @@ Possible values:
 
 Default value: `/`.
 
-### s3queue_loading_retries {#loading_retries}
+### s3queue_loading_retries {#s3queue_loading_retries}
 
 Retry file loading up to specified number of times. By default, there are no retries.
 Possible values:
@@ -107,19 +102,7 @@ Possible values:
 
 Default value: `0`.
 
-### s3queue_processing_threads_num {#processing_threads_num}
-
-Number of threads to perform processing. Applies only for `Unordered` mode.
-
-Default value: `1`.
-
-### s3queue_enable_logging_to_s3queue_log {#enable_logging_to_s3queue_log}
-
-Enable logging to `system.s3queue_log`.
-
-Default value: `0`.
-
-### s3queue_polling_min_timeout_ms {#polling_min_timeout_ms}
+### s3queue_polling_min_timeout_ms {#s3queue_polling_min_timeout_ms}
 
 Minimal timeout before next polling (in milliseconds).
 
@@ -129,7 +112,7 @@ Possible values:
 
 Default value: `1000`.
 
-### s3queue_polling_max_timeout_ms {#polling_max_timeout_ms}
+### s3queue_polling_max_timeout_ms {#s3queue_polling_max_timeout_ms}
 
 Maximum timeout before next polling (in milliseconds).
 
@@ -139,7 +122,7 @@ Possible values:
 
 Default value: `10000`.
 
-### s3queue_polling_backoff_ms {#polling_backoff_ms}
+### s3queue_polling_backoff_ms {#s3queue_polling_backoff_ms}
 
 Polling backoff (in milliseconds).
 
@@ -149,7 +132,7 @@ Possible values:
 
 Default value: `0`.
 
-### s3queue_tracked_files_limit {#tracked_files_limit}
+### s3queue_tracked_files_limit {#s3queue_tracked_files_limit}
 
 Allows to limit the number of Zookeeper nodes if the 'unordered' mode is used, does nothing for 'ordered' mode.
 If limit reached the oldest processed files will be deleted from ZooKeeper node and processed again.
@@ -160,7 +143,7 @@ Possible values:
 
 Default value: `1000`.
 
-### s3queue_tracked_file_ttl_sec {#tracked_file_ttl_sec}
+### s3queue_tracked_file_ttl_sec {#s3queue_tracked_file_ttl_sec}
 
 Maximum number of seconds to store processed files in ZooKeeper node (store forever by default) for 'unordered' mode, does nothing for 'ordered' mode.
 After the specified number of seconds, the file will be re-imported.
@@ -171,21 +154,18 @@ Possible values:
 
 Default value: `0`.
 
-### s3queue_cleanup_interval_min_ms {#cleanup_interval_min_ms}
+### s3queue_polling_size {#s3queue_polling_size}
 
-For 'Ordered' mode. Defines a minimum boundary for reschedule interval for a background task, which is responsible for maintaining tracked file TTL and maximum tracked files set.
+Maximum files to fetch from S3 with SELECT or in background task.
+Engine takes files for processing from S3 in batches.
+We limit the batch size to increase concurrency if multiple table engines with the same `keeper_path` consume files from the same path.
 
-Default value: `10000`.
+Possible values:
 
-### s3queue_cleanup_interval_max_ms {#cleanup_interval_max_ms}
+- Positive integer.
 
-For 'Ordered' mode. Defines a maximum boundary for reschedule interval for a background task, which is responsible for maintaining tracked file TTL and maximum tracked files set.
+Default value: `50`.
 
-Default value: `30000`.
-
-### s3queue_buckets {#buckets}
-
-For 'Ordered' mode. Available since `24.6`. If there are several replicas of S3Queue table, each working with the same metadata directory in keeper, the value of `s3queue_buckets` needs to be equal to at least the number of replicas. If `s3queue_processing_threads` setting is used as well, it makes sense to increase the value of `s3queue_buckets` setting even further, as it defines the actual parallelism of `S3Queue` processing.
 
 ## S3-related Settings {#s3-settings}
 
@@ -208,7 +188,8 @@ Example:
   CREATE TABLE s3queue_engine_table (name String, value UInt32)
     ENGINE=S3Queue('https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/*', 'CSV', 'gzip')
     SETTINGS
-        mode = 'unordered';
+        mode = 'unordered',
+        keeper_path = '/clickhouse/s3queue/';
 
   CREATE TABLE stats (name String, value UInt32)
     ENGINE = MergeTree() ORDER BY name;
@@ -239,118 +220,6 @@ For more information about virtual columns see [here](../../../engines/table-eng
 
 Constructions with `{}` are similar to the [remote](../../../sql-reference/table-functions/remote.md) table function.
 
-## Limitations {#limitations}
-
-1. Duplicated rows can be as a result of:
-
-- an exception happens during parsing in the middle of file processing and retries are enabled via `s3queue_loading_retries`;
-
-- `S3Queue` is configured on multiple servers pointing to the same path in zookeeper and keeper session expires before one server managed to commit processed file, which could lead to another server taking processing of the file, which could be partially or fully processed by the first server;
-
-- abnormal server termination.
-
-2. `S3Queue` is configured on multiple servers pointing to the same path in zookeeper and `Ordered` mode is used, then `s3queue_loading_retries` will not work. This will be fixed soon.
-
-
-## Introspection {#introspection}
-
-For introspection use `system.s3queue` stateless table and `system.s3queue_log` persistent table.
-
-1. `system.s3queue`. This table is not persistent and shows in-memory state of `S3Queue`: which files are currently being processed, which files are processed or failed.
-
-``` sql
-┌─statement──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│ CREATE TABLE system.s3queue
-(
-    `database` String,
-    `table` String,
-    `file_name` String,
-    `rows_processed` UInt64,
-    `status` String,
-    `processing_start_time` Nullable(DateTime),
-    `processing_end_time` Nullable(DateTime),
-    `ProfileEvents` Map(String, UInt64)
-    `exception` String
-)
-ENGINE = SystemS3Queue
-COMMENT 'Contains in-memory state of S3Queue metadata and currently processed rows per file.' │
-└────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
-```
-
-Example:
-
-``` sql
-
-SELECT *
-FROM system.s3queue
-
-Row 1:
-──────
-zookeeper_path:        /clickhouse/s3queue/25ea5621-ae8c-40c7-96d0-cec959c5ab88/3b3f66a1-9866-4c2e-ba78-b6bfa154207e
-file_name:             wikistat/original/pageviews-20150501-030000.gz
-rows_processed:        5068534
-status:                Processed
-processing_start_time: 2023-10-13 13:09:48
-processing_end_time:   2023-10-13 13:10:31
-ProfileEvents:         {'ZooKeeperTransactions':3,'ZooKeeperGet':2,'ZooKeeperMulti':1,'SelectedRows':5068534,'SelectedBytes':198132283,'ContextLock':1,'S3QueueSetFileProcessingMicroseconds':2480,'S3QueueSetFileProcessedMicroseconds':9985,'S3QueuePullMicroseconds':273776,'LogTest':17}
-exception:
-```
-
-2. `system.s3queue_log`. Persistent table. Has the same information as `system.s3queue`, but for `processed` and `failed` files.
-
-The table has the following structure:
-
-``` sql
-SHOW CREATE TABLE system.s3queue_log
-
-Query id: 0ad619c3-0f2a-4ee4-8b40-c73d86e04314
-
-┌─statement──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│ CREATE TABLE system.s3queue_log
-(
-    `event_date` Date,
-    `event_time` DateTime,
-    `table_uuid` String,
-    `file_name` String,
-    `rows_processed` UInt64,
-    `status` Enum8('Processed' = 0, 'Failed' = 1),
-    `processing_start_time` Nullable(DateTime),
-    `processing_end_time` Nullable(DateTime),
-    `ProfileEvents` Map(String, UInt64),
-    `exception` String
-)
-ENGINE = MergeTree
-PARTITION BY toYYYYMM(event_date)
-ORDER BY (event_date, event_time)
-SETTINGS index_granularity = 8192 │
-└────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
-```
-
-In order to use `system.s3queue_log` define its configuration in server config file:
-
-``` xml
-    <s3queue_log>
-        <database>system</database>
-        <table>s3queue_log</table>
-    </s3queue_log>
-```
-
-Example:
-
-``` sql
-SELECT *
-FROM system.s3queue_log
-
-Row 1:
-──────
-event_date:            2023-10-13
-event_time:            2023-10-13 13:10:12
-table_uuid:
-file_name:             wikistat/original/pageviews-20150501-020000.gz
-rows_processed:        5112621
-status:                Processed
-processing_start_time: 2023-10-13 13:09:48
-processing_end_time:   2023-10-13 13:10:12
-ProfileEvents:         {'ZooKeeperTransactions':3,'ZooKeeperGet':2,'ZooKeeperMulti':1,'SelectedRows':5112621,'SelectedBytes':198577687,'ContextLock':1,'S3QueueSetFileProcessingMicroseconds':1934,'S3QueueSetFileProcessedMicroseconds':17063,'S3QueuePullMicroseconds':5841972,'LogTest':17}
-exception:
-```
+:::note
+If the listing of files contains number ranges with leading zeros, use the construction with braces for each digit separately or use `?`.
+:::

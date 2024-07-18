@@ -89,13 +89,7 @@ def decode(input, output, format_schema, format):
             raise EOFError("Unexpected end of file")
         protoc = os.getenv("PROTOC_BINARY", "protoc")
         with subprocess.Popen(
-            [
-                protoc,
-                "--experimental_editions",
-                "--decode",
-                format_schema.message_type,
-                format_schema.schemaname,
-            ],
+            [protoc, "--decode", format_schema.message_type, format_schema.schemaname],
             cwd=format_schema.schemadir,
             stdin=subprocess.PIPE,
             stdout=output,
@@ -132,13 +126,7 @@ def encode(input, output, format_schema, format):
             msg += line
         protoc = os.getenv("PROTOC_BINARY", "protoc")
         with subprocess.Popen(
-            [
-                protoc,
-                "--experimental_editions",
-                "--encode",
-                format_schema.message_type,
-                format_schema.schemaname,
-            ],
+            [protoc, "--encode", format_schema.message_type, format_schema.schemaname],
             cwd=format_schema.schemadir,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,

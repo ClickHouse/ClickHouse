@@ -1,11 +1,8 @@
 #pragma once
 
 #include <base/types.h>
-#include <boost/container/flat_set.hpp>
-#include <Access/Common/SSLCertificateSubjects.h>
 #include <memory>
 
-#include "config.h"
 
 namespace DB
 {
@@ -44,11 +41,11 @@ class SSLCertificateCredentials
     : public Credentials
 {
 public:
-    explicit SSLCertificateCredentials(const String & user_name_, SSLCertificateSubjects && subjects_);
-    const SSLCertificateSubjects & getSSLCertificateSubjects() const;
+    explicit SSLCertificateCredentials(const String & user_name_, const String & common_name_);
+    const String & getCommonName() const;
 
 private:
-    SSLCertificateSubjects certificate_subjects;
+    String common_name;
 };
 
 class BasicCredentials
@@ -88,39 +85,5 @@ class MySQLNative41Credentials : public CredentialsWithScramble
 {
     using CredentialsWithScramble::CredentialsWithScramble;
 };
-
-#if USE_SSH
-class SshCredentials : public Credentials
-{
-public:
-    SshCredentials(const String & user_name_, const String & signature_, const String & original_)
-        : Credentials(user_name_), signature(signature_), original(original_)
-    {
-        is_ready = true;
-    }
-
-    const String & getSignature() const
-    {
-        if (!isReady())
-        {
-            throwNotReady();
-        }
-        return signature;
-    }
-
-    const String & getOriginal() const
-    {
-        if (!isReady())
-        {
-            throwNotReady();
-        }
-        return original;
-    }
-
-private:
-    String signature;
-    String original;
-};
-#endif
 
 }

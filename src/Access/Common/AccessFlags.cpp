@@ -1,6 +1,7 @@
 #include <Access/Common/AccessFlags.h>
 #include <Access/Common/AccessType.h>
 #include <Common/Exception.h>
+#include <base/types.h>
 #include <boost/algorithm/string/case_conv.hpp>
 #include <boost/algorithm/string/replace.hpp>
 #include <boost/algorithm/string/split.hpp>
@@ -101,8 +102,6 @@ namespace
         const Flags & getTableFlags() const { return all_flags_for_target[TABLE]; }
         const Flags & getColumnFlags() const { return all_flags_for_target[COLUMN]; }
         const Flags & getDictionaryFlags() const { return all_flags_for_target[DICTIONARY]; }
-        const Flags & getTableEngineFlags() const { return all_flags_for_target[TABLE_ENGINE]; }
-        const Flags & getUserNameFlags() const { return all_flags_for_target[USER_NAME]; }
         const Flags & getNamedCollectionFlags() const { return all_flags_for_target[NAMED_COLLECTION]; }
         const Flags & getAllFlagsGrantableOnGlobalLevel() const { return getAllFlags(); }
         const Flags & getAllFlagsGrantableOnGlobalWithParameterLevel() const { return getGlobalWithParameterFlags(); }
@@ -115,15 +114,13 @@ namespace
         {
             UNKNOWN = -2,
             GROUP = -1,
-            GLOBAL = 0,
-            DATABASE = 1,
-            TABLE = 2,
+            GLOBAL,
+            DATABASE,
+            TABLE,
             VIEW = TABLE,
-            COLUMN = 3,
-            DICTIONARY = 4,
-            NAMED_COLLECTION = 5,
-            USER_NAME = 6,
-            TABLE_ENGINE = 7,
+            COLUMN,
+            DICTIONARY,
+            NAMED_COLLECTION,
         };
 
         struct Node;
@@ -303,7 +300,7 @@ namespace
                 collectAllFlags(child.get());
 
             all_flags_grantable_on_table_level = all_flags_for_target[TABLE] | all_flags_for_target[DICTIONARY] | all_flags_for_target[COLUMN];
-            all_flags_grantable_on_global_with_parameter_level = all_flags_for_target[NAMED_COLLECTION] | all_flags_for_target[USER_NAME] | all_flags_for_target[TABLE_ENGINE];
+            all_flags_grantable_on_global_with_parameter_level = all_flags_for_target[NAMED_COLLECTION];
             all_flags_grantable_on_database_level = all_flags_for_target[DATABASE] | all_flags_grantable_on_table_level;
         }
 
@@ -354,7 +351,7 @@ namespace
         std::unordered_map<std::string_view, Flags> keyword_to_flags_map;
         std::vector<Flags> access_type_to_flags_mapping;
         Flags all_flags;
-        Flags all_flags_for_target[static_cast<size_t>(TABLE_ENGINE) + 1];
+        Flags all_flags_for_target[static_cast<size_t>(NAMED_COLLECTION) + 1];
         Flags all_flags_grantable_on_database_level;
         Flags all_flags_grantable_on_table_level;
         Flags all_flags_grantable_on_global_with_parameter_level;
@@ -374,15 +371,7 @@ std::unordered_map<AccessFlags::ParameterType, AccessFlags> AccessFlags::splitIn
     if (named_collection_flags)
         result.emplace(ParameterType::NAMED_COLLECTION, named_collection_flags);
 
-    auto user_flags = AccessFlags::allUserNameFlags() & *this;
-    if (user_flags)
-        result.emplace(ParameterType::USER_NAME, user_flags);
-
-    auto table_engine_flags = AccessFlags::allTableEngineFlags() & *this;
-    if (table_engine_flags)
-        result.emplace(ParameterType::TABLE_ENGINE, table_engine_flags);
-
-    auto other_flags = (~named_collection_flags & ~user_flags & ~table_engine_flags) & *this;
+    auto other_flags = (~AccessFlags::allNamedCollectionFlags()) & *this;
     if (other_flags)
         result.emplace(ParameterType::NONE, other_flags);
 
@@ -397,13 +386,6 @@ AccessFlags::ParameterType AccessFlags::getParameterType() const
     /// All flags refer to NAMED COLLECTION access type.
     if (AccessFlags::allNamedCollectionFlags().contains(*this))
         return AccessFlags::NAMED_COLLECTION;
-
-    if (AccessFlags::allUserNameFlags().contains(*this))
-        return AccessFlags::USER_NAME;
-
-    /// All flags refer to TABLE ENGINE access type.
-    if (AccessFlags::allTableEngineFlags().contains(*this))
-        return AccessFlags::TABLE_ENGINE;
 
     throw Exception(ErrorCodes::MIXED_ACCESS_PARAMETER_TYPES, "Having mixed parameter types: {}", toString());
 }
@@ -423,8 +405,6 @@ AccessFlags AccessFlags::allTableFlags() { return Helper::instance().getTableFla
 AccessFlags AccessFlags::allColumnFlags() { return Helper::instance().getColumnFlags(); }
 AccessFlags AccessFlags::allDictionaryFlags() { return Helper::instance().getDictionaryFlags(); }
 AccessFlags AccessFlags::allNamedCollectionFlags() { return Helper::instance().getNamedCollectionFlags(); }
-AccessFlags AccessFlags::allUserNameFlags() { return Helper::instance().getUserNameFlags(); }
-AccessFlags AccessFlags::allTableEngineFlags() { return Helper::instance().getTableEngineFlags(); }
 AccessFlags AccessFlags::allFlagsGrantableOnGlobalLevel() { return Helper::instance().getAllFlagsGrantableOnGlobalLevel(); }
 AccessFlags AccessFlags::allFlagsGrantableOnGlobalWithParameterLevel() { return Helper::instance().getAllFlagsGrantableOnGlobalWithParameterLevel(); }
 AccessFlags AccessFlags::allFlagsGrantableOnDatabaseLevel() { return Helper::instance().getAllFlagsGrantableOnDatabaseLevel(); }

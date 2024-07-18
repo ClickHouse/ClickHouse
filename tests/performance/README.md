@@ -18,5 +18,5 @@ TODO @akuzm
 
 ```
 pip3 install clickhouse_driver scipy
-../../tests/performance/scripts/perf.py --runs 1 insert_parallel.xml
+../../docker/test/performance-comparison/perf.py --runs 1 insert_parallel.xml
 ```

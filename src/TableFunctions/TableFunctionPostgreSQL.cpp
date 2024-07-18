@@ -1,16 +1,13 @@
-#include "config.h"
+#include <TableFunctions/TableFunctionPostgreSQL.h>
 
 #if USE_LIBPQXX
-
-#include <TableFunctions/ITableFunction.h>
-#include <Core/PostgreSQL/PoolWithFailover.h>
-#include <Core/Settings.h>
-#include <Storages/StoragePostgreSQL.h>
+#include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTFunction.h>
+#include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/Exception.h>
-#include <Common/parseRemoteDescription.h>
 #include "registerTableFunctions.h"
+#include <Common/parseRemoteDescription.h>
 
 
 namespace DB
@@ -21,28 +18,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-namespace
-{
-
-class TableFunctionPostgreSQL : public ITableFunction
-{
-public:
-    static constexpr auto name = "postgresql";
-    std::string getName() const override { return name; }
-
-private:
-    StoragePtr executeImpl(
-            const ASTPtr & ast_function, ContextPtr context,
-            const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const override;
-
-    const char * getStorageTypeName() const override { return "PostgreSQL"; }
-
-    ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
-    void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
-
-    postgres::PoolWithFailoverPtr connection_pool;
-    std::optional<StoragePostgreSQL::Configuration> configuration;
-};
 
 StoragePtr TableFunctionPostgreSQL::executeImpl(const ASTPtr & /*ast_function*/,
         ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, bool /*is_insert_query*/) const
@@ -81,11 +56,8 @@ void TableFunctionPostgreSQL::parseArguments(const ASTPtr & ast_function, Contex
         *configuration,
         settings.postgresql_connection_pool_size,
         settings.postgresql_connection_pool_wait_timeout,
-        settings.postgresql_connection_pool_retries,
-        settings.postgresql_connection_pool_auto_close_connection,
-        settings.postgresql_connection_attempt_timeout);
-}
-
+        POSTGRESQL_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES,
+        settings.postgresql_connection_pool_auto_close_connection);
 }
 
 

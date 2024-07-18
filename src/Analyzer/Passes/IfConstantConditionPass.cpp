@@ -5,7 +5,6 @@
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
-#include <Analyzer/Utils.h>
 
 namespace DB
 {
@@ -13,13 +12,10 @@ namespace DB
 namespace
 {
 
-class IfConstantConditionVisitor : public InDepthQueryTreeVisitorWithContext<IfConstantConditionVisitor>
+class IfConstantConditionVisitor : public InDepthQueryTreeVisitor<IfConstantConditionVisitor>
 {
 public:
-    using Base = InDepthQueryTreeVisitorWithContext<IfConstantConditionVisitor>;
-    using Base::Base;
-
-    void enterImpl(QueryTreeNodePtr & node)
+    static void visitImpl(QueryTreeNodePtr & node)
     {
         auto * function_node = node->as<FunctionNode>();
         if (!function_node || (function_node->getFunctionName() != "if" && function_node->getFunctionName() != "multiIf"))
@@ -44,22 +40,18 @@ public:
         else
             return;
 
-        QueryTreeNodePtr argument_node;
         if (condition_boolean_value)
-            argument_node = function_node->getArguments().getNodes()[1];
+            node = function_node->getArguments().getNodes()[1];
         else
-            argument_node = function_node->getArguments().getNodes()[2];
-
-        if (node->getResultType()->equals(*argument_node->getResultType()))
-            node = argument_node;
+            node = function_node->getArguments().getNodes()[2];
     }
 };
 
 }
 
-void IfConstantConditionPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
+void IfConstantConditionPass::run(QueryTreeNodePtr query_tree_node, ContextPtr)
 {
-    IfConstantConditionVisitor visitor(std::move(context));
+    IfConstantConditionVisitor visitor;
     visitor.visit(query_tree_node);
 }
 

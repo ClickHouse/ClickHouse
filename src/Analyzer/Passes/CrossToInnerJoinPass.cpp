@@ -9,14 +9,11 @@
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/ColumnNode.h>
-#include <Analyzer/Utils.h>
 
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
-#include <Functions/logical.h>
 
 #include <Common/logger_useful.h>
-#include <Core/Settings.h>
 
 
 namespace DB
@@ -63,7 +60,47 @@ const QueryTreeNodePtr & getEquiArgument(const QueryTreeNodePtr & cond, size_t i
     return func->getArguments().getNodes()[index];
 }
 
-bool findInTableExpression(const QueryTreeNodePtr & source, const QueryTreeNodePtr & table_expression)
+
+/// Check that node has only one source and return it.
+/// {_, false} - multiple sources
+/// {nullptr, true} - no sources
+/// {source, true} - single source
+std::pair<const IQueryTreeNode *, bool> getExpressionSource(const QueryTreeNodePtr & node)
+{
+    if (const auto * column = node->as<ColumnNode>())
+    {
+        auto source = column->getColumnSourceOrNull();
+        if (!source)
+            return {nullptr, false};
+        return {source.get(), true};
+    }
+
+    if (const auto * func = node->as<FunctionNode>())
+    {
+        const IQueryTreeNode * source = nullptr;
+        const auto & args = func->getArguments().getNodes();
+        for (const auto & arg : args)
+        {
+            auto [arg_source, is_ok] = getExpressionSource(arg);
+            if (!is_ok)
+                return {nullptr, false};
+
+            if (!source)
+                source = arg_source;
+            else if (arg_source && !source->isEqual(*arg_source))
+                return {nullptr, false};
+        }
+        return {source, true};
+
+    }
+
+    if (node->as<ConstantNode>())
+        return {nullptr, true};
+
+    return {nullptr, false};
+}
+
+bool findInTableExpression(const IQueryTreeNode * source, const QueryTreeNodePtr & table_expression)
 {
     if (!source)
         return true;
@@ -76,6 +113,7 @@ bool findInTableExpression(const QueryTreeNodePtr & source, const QueryTreeNodeP
         return findInTableExpression(source, join_node->getLeftTableExpression())
             || findInTableExpression(source, join_node->getRightTableExpression());
     }
+
 
     return false;
 }
@@ -130,10 +168,10 @@ public:
                 auto left_src = getExpressionSource(lhs_equi_argument);
                 auto right_src = getExpressionSource(rhs_equi_argument);
 
-                if (left_src && right_src)
+                if (left_src.second && right_src.second && left_src.first && right_src.first)
                 {
-                    if ((findInTableExpression(left_src, left_table) && findInTableExpression(right_src, right_table)) ||
-                        (findInTableExpression(left_src, right_table) && findInTableExpression(right_src, left_table)))
+                    if ((findInTableExpression(left_src.first, left_table) && findInTableExpression(right_src.first, right_table)) ||
+                        (findInTableExpression(left_src.first, right_table) && findInTableExpression(right_src.first, left_table)))
                     {
                         can_convert_cross_to_inner = true;
                         continue;
@@ -218,7 +256,7 @@ private:
         for (const auto & node : nodes)
             function_node->getArguments().getNodes().push_back(node);
 
-        const auto & function = createInternalFunctionAndOverloadResolver();
+        const auto & function = FunctionFactory::instance().get("and", getContext());
         function_node->resolveAsFunction(function->build(function_node->getArgumentColumns()));
         return function_node;
     }
@@ -226,7 +264,7 @@ private:
 
 }
 
-void CrossToInnerJoinPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
+void CrossToInnerJoinPass::run(QueryTreeNodePtr query_tree_node, ContextPtr context)
 {
     CrossToInnerJoinVisitor visitor(std::move(context));
     visitor.visit(query_tree_node);

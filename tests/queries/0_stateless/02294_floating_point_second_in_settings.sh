@@ -38,4 +38,4 @@ check_output "${OUTPUT}"
 
 # CHECK system.settings
 echo "TABLE: system.settings"
-echo "SELECT name, value, changed from system.settings where name = 'max_execution_time'" | $CLICKHOUSE_CLIENT_BINARY --max_execution_time 30.5
+echo "SELECT name, value, changed from system.settings where name = 'max_execution_time'" | clickhouse-client --max_execution_time 30.5

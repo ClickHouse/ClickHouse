@@ -53,20 +53,9 @@ namespace DB
 /// Using this block the client can initialize the output formatter and display the prefix of resulting table
 /// beforehand.
 
-namespace EncodedUserInfo
-{
-
-/// Marker for the inter-server secret (passed as the user name)
+/// Marker of the inter-server secret (passed in the user name)
 /// (anyway user cannot be started with a whitespace)
 const char USER_INTERSERVER_MARKER[] = " INTERSERVER SECRET ";
-
-/// Marker for SSH-keys-based authentication (passed as the user name)
-const char SSH_KEY_AUTHENTICAION_MARKER[] = " SSH KEY AUTHENTICATION ";
-
-/// Marker for JSON Web Token authentication
-const char JWT_AUTHENTICAION_MARKER[] = " JWT AUTHENTICATION ";
-
-};
 
 namespace Protocol
 {
@@ -92,16 +81,15 @@ namespace Protocol
                                             /// This is such an inverted logic, where server sends requests
                                             /// And client returns back response
             ProfileEvents = 14,             /// Packet with profile events from server.
-            MergeTreeAllRangesAnnouncement = 15,
+            MergeTreeAllRangesAnnounecement = 15,
             MergeTreeReadTaskRequest = 16,  /// Request from a MergeTree replica to a coordinator
             TimezoneUpdate = 17,            /// Receive server's (session-wide) default timezone
-            SSHChallenge = 18,              /// Return challenge for SSH signature signing
-            MAX = SSHChallenge,
+            MAX = TimezoneUpdate,
 
         };
 
         /// NOTE: If the type of packet argument would be Enum, the comparison packet >= 0 && packet < 10
-        /// would always be true because of compiler optimization. That would lead to out-of-bounds error
+        /// would always be true because of compiler optimisation. That would lead to out-of-bounds error
         /// if the packet is invalid.
         /// See https://www.securecoding.cert.org/confluence/display/cplusplus/INT36-CPP.+Do+not+use+out-of-range+enumeration+values
         inline const char * toString(UInt64 packet)
@@ -122,10 +110,9 @@ namespace Protocol
                 "PartUUIDs",
                 "ReadTaskRequest",
                 "ProfileEvents",
-                "MergeTreeAllRangesAnnouncement",
+                "MergeTreeAllRangesAnnounecement",
                 "MergeTreeReadTaskRequest",
                 "TimezoneUpdate",
-                "SSHChallenge",
             };
             return packet <= MAX
                 ? data[packet]
@@ -163,10 +150,7 @@ namespace Protocol
             IgnoredPartUUIDs = 8,           /// List of unique parts ids to exclude from query processing
             ReadTaskResponse = 9,           /// A filename to read from s3 (used in s3Cluster)
             MergeTreeReadTaskResponse = 10, /// Coordinator's decision with a modified set of mark ranges allowed to read
-
-            SSHChallengeRequest = 11,       /// Request SSH signature challenge
-            SSHChallengeResponse = 12,      /// Reply to SSH signature challenge
-            MAX = SSHChallengeResponse,
+            MAX = MergeTreeReadTaskResponse,
         };
 
         inline const char * toString(UInt64 packet)
@@ -182,9 +166,7 @@ namespace Protocol
                 "Scalar",
                 "IgnoredPartUUIDs",
                 "ReadTaskResponse",
-                "MergeTreeReadTaskResponse",
-                "SSHChallengeRequest",
-                "SSHChallengeResponse"
+                "MergeTreeReadTaskResponse"
             };
             return packet <= MAX
                 ? data[packet]
@@ -193,14 +175,14 @@ namespace Protocol
     }
 
     /// Whether the compression must be used.
-    enum class Compression : uint8_t
+    enum class Compression
     {
         Disable = 0,
         Enable = 1,
     };
 
     /// Whether the ssl must be used.
-    enum class Secure : uint8_t
+    enum class Secure
     {
         Disable = 0,
         Enable = 1,

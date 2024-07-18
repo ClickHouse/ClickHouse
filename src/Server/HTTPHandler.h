@@ -1,19 +1,13 @@
 #pragma once
 
-#include <optional>
-#include <string>
-#include <unordered_map>
 #include <Core/Names.h>
 #include <Server/HTTP/HTMLForm.h>
 #include <Server/HTTP/HTTPRequestHandler.h>
 #include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
-#include <IO/CascadeWriteBuffer.h>
-#include <Compression/CompressedWriteBuffer.h>
-#include <Common/re2.h>
 
-#include "HTTPResponseHeaderWriter.h"
+#include <re2/re2.h>
 
 namespace CurrentMetrics
 {
@@ -36,10 +30,10 @@ using CompiledRegexPtr = std::shared_ptr<const re2::RE2>;
 class HTTPHandler : public HTTPRequestHandler
 {
 public:
-    HTTPHandler(IServer & server_, const std::string & name, const HTTPResponseHeaderSetup & http_response_headers_override_);
-    ~HTTPHandler() override;
+    HTTPHandler(IServer & server_, const std::string & name, const std::optional<String> & content_type_override_);
+    virtual ~HTTPHandler() override;
 
-    void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
+    void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response) override;
 
     /// This method is called right before the query execution.
     virtual void customizeContext(HTTPServerRequest & /* request */, ContextMutablePtr /* context */, ReadBuffer & /* body */) {}
@@ -60,72 +54,43 @@ private:
          * WriteBufferFromHTTPServerResponse out
          */
 
-        /// Holds original response buffer
-        std::shared_ptr<WriteBufferFromHTTPServerResponse> out_holder;
-        /// If HTTP compression is enabled holds compression wrapper over original response buffer
-        std::shared_ptr<WriteBuffer> wrap_compressed_holder;
-        /// Points either to out_holder or to wrap_compressed_holder
-        std::shared_ptr<WriteBuffer> out;
-
-        /// If internal compression is enabled holds compression wrapper over out buffer
-        std::shared_ptr<CompressedWriteBuffer> out_compressed_holder;
-        /// Points to 'out' or to CompressedWriteBuffer(*out)
+        std::shared_ptr<WriteBufferFromHTTPServerResponse> out;
+        /// Points to 'out' or to CompressedWriteBuffer(*out), depending on settings.
         std::shared_ptr<WriteBuffer> out_maybe_compressed;
-
-        /// If output should be delayed holds cascade buffer
-        std::unique_ptr<CascadeWriteBuffer> out_delayed_and_compressed_holder;
-        /// Points to out_maybe_compressed or to CascadeWriteBuffer.
-        WriteBuffer * out_maybe_delayed_and_compressed = nullptr;
+        /// Points to 'out' or to CompressedWriteBuffer(*out) or to CascadeWriteBuffer.
+        std::shared_ptr<WriteBuffer> out_maybe_delayed_and_compressed;
 
         bool finalized = false;
-        bool canceled = false;
 
         bool exception_is_written = false;
-        std::function<void(WriteBuffer &, const String &)> exception_writer;
 
-        bool hasDelayed() const
+        inline bool hasDelayed() const
         {
-            return out_maybe_delayed_and_compressed != out_maybe_compressed.get();
+            return out_maybe_delayed_and_compressed != out_maybe_compressed;
         }
 
-        void finalize()
+        inline void finalize()
         {
             if (finalized)
                 return;
             finalized = true;
 
-            if (out_compressed_holder)
-                out_compressed_holder->finalize();
+            if (out_maybe_delayed_and_compressed)
+                out_maybe_delayed_and_compressed->finalize();
+            if (out_maybe_compressed)
+                out_maybe_compressed->finalize();
             if (out)
                 out->finalize();
         }
 
-        void cancel()
-        {
-            if (canceled)
-                return;
-            canceled = true;
-
-            if (out_compressed_holder)
-                out_compressed_holder->cancel();
-            if (out)
-                out->cancel();
-        }
-
-
-        bool isCanceled() const
-        {
-            return canceled;
-        }
-
-        bool isFinalized() const
+        inline bool isFinalized() const
         {
             return finalized;
         }
     };
 
     IServer & server;
-    LoggerPtr log;
+    Poco::Logger * log;
 
     /// It is the name of the server that will be sent in an http-header X-ClickHouse-Server-Display-Name.
     String server_display_name;
@@ -137,8 +102,8 @@ private:
     /// See settings http_max_fields, http_max_field_name_size, http_max_field_value_size in HTMLForm.
     const Settings & default_settings;
 
-    /// Overrides for response headers.
-    HTTPResponseHeaderSetup http_response_headers_override;
+    /// Overrides Content-Type provided by the format of the response.
+    std::optional<String> content_type_override;
 
     // session is reset at the end of each request/response.
     std::unique_ptr<Session> session;
@@ -163,8 +128,7 @@ private:
         HTMLForm & params,
         HTTPServerResponse & response,
         Output & used_output,
-        std::optional<CurrentThread::QueryScope> & query_scope,
-        const ProfileEvents::Event & write_event);
+        std::optional<CurrentThread::QueryScope> & query_scope);
 
     void trySendExceptionToClient(
         const std::string & s,
@@ -180,12 +144,8 @@ class DynamicQueryHandler : public HTTPHandler
 {
 private:
     std::string param_name;
-
 public:
-    explicit DynamicQueryHandler(
-        IServer & server_,
-        const std::string & param_name_ = "query",
-        const HTTPResponseHeaderSetup & http_response_headers_override_ = std::nullopt);
+    explicit DynamicQueryHandler(IServer & server_, const std::string & param_name_ = "query", const std::optional<String>& content_type_override_ = std::nullopt);
 
     std::string getQuery(HTTPServerRequest & request, HTMLForm & params, ContextMutablePtr context) override;
 
@@ -199,15 +159,11 @@ private:
     std::string predefined_query;
     CompiledRegexPtr url_regex;
     std::unordered_map<String, CompiledRegexPtr> header_name_with_capture_regex;
-
 public:
     PredefinedQueryHandler(
-        IServer & server_,
-        const NameSet & receive_params_,
-        const std::string & predefined_query_,
-        const CompiledRegexPtr & url_regex_,
-        const std::unordered_map<String, CompiledRegexPtr> & header_name_with_regex_,
-        const HTTPResponseHeaderSetup & http_response_headers_override_ = std::nullopt);
+        IServer & server_, const NameSet & receive_params_, const std::string & predefined_query_
+        , const CompiledRegexPtr & url_regex_, const std::unordered_map<String, CompiledRegexPtr> & header_name_with_regex_
+        , const std::optional<std::string> & content_type_override_);
 
     void customizeContext(HTTPServerRequest & request, ContextMutablePtr context, ReadBuffer & body) override;
 

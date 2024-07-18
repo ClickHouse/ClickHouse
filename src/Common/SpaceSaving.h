@@ -96,20 +96,14 @@ public:
 
         void write(WriteBuffer & wb) const
         {
-            if constexpr (std::is_same_v<TKey, StringRef>)
-                writeBinary(key, wb);
-            else
-                writeBinaryLittleEndian(key, wb);
+            writeBinary(key, wb);
             writeVarUInt(count, wb);
             writeVarUInt(error, wb);
         }
 
         void read(ReadBuffer & rb)
         {
-            if constexpr (std::is_same_v<TKey, StringRef>)
-                readBinary(key, rb);
-            else
-                readBinaryLittleEndian(key, rb);
+            readBinary(key, rb);
             readVarUInt(count, rb);
             readVarUInt(error, rb);
         }
@@ -131,12 +125,12 @@ public:
 
     ~SpaceSaving() { destroyElements(); }
 
-    size_t size() const
+    inline size_t size() const
     {
         return counter_list.size();
     }
 
-    size_t capacity() const
+    inline size_t capacity() const
     {
         return m_capacity;
     }
@@ -206,9 +200,6 @@ public:
      */
     void merge(const Self & rhs)
     {
-        if (!rhs.size())
-            return;
-
         UInt64 m1 = 0;
         UInt64 m2 = 0;
 
@@ -330,7 +321,7 @@ protected:
         percolate(ptr);
     }
 
-    // This is equivalent to one step of bubble sort
+    // This is equivallent to one step of bubble sort
     void percolate(Counter * counter)
     {
         while (counter->slot > 0)

@@ -1,8 +1,9 @@
 #pragma once
 
-#include <Common/re2.h>
 #include <string_view>
 #include <vector>
+
+#include <re2_st/re2.h>
 
 namespace DB
 {
@@ -21,8 +22,8 @@ public:
 private:
     bool isSlowOneRepeat(std::string_view regexp);
     bool isSlowTwoRepeats(std::string_view regexp);
-    re2::RE2 searcher_one_repeat;
-    re2::RE2 searcher_two_repeats;
+    re2_st::RE2 searcher_one_repeat;
+    re2_st::RE2 searcher_two_repeats;
 };
 
 }
