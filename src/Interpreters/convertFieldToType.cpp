@@ -356,7 +356,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             for (size_t i = 0; i < src_arr_size; ++i)
             {
                 res[i] = convertFieldToType(src_arr[i], element_type);
-                if (res[i].isNull() && !element_type.isNullable())
+                if (res[i].isNull() && !canContainNull(element_type))
                 {
                     // See the comment for Tuples below.
                     have_unconvertible_element = true;
@@ -384,7 +384,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             {
                 const auto & element_type = *(type_tuple->getElements()[i]);
                 res[i] = convertFieldToType(src_tuple[i], element_type);
-                if (!res[i].isNull() || element_type.isNullable())
+                if (!res[i].isNull() || canContainNull(element_type))
                     continue;
 
                 /*
@@ -433,11 +433,11 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
 
                 updated_entry[0] = convertFieldToType(key, key_type);
 
-                if (updated_entry[0].isNull() && !key_type.isNullable())
+                if (updated_entry[0].isNull() && !canContainNull(key_type))
                     have_unconvertible_element = true;
 
                 updated_entry[1] = convertFieldToType(value, value_type);
-                if (updated_entry[1].isNull() && !value_type.isNullable())
+                if (updated_entry[1].isNull() && !canContainNull(value_type))
                     have_unconvertible_element = true;
 
                 res[i] = updated_entry;
@@ -592,7 +592,7 @@ Field convertFieldToType(const Field & from_value, const IDataType & to_type, co
 Field convertFieldToTypeOrThrow(const Field & from_value, const IDataType & to_type, const IDataType * from_type_hint)
 {
     bool is_null = from_value.isNull();
-    if (is_null && !to_type.isNullable() && !to_type.isLowCardinalityNullable())
+    if (is_null && !canContainNull(to_type))
         throw Exception(ErrorCodes::TYPE_MISMATCH, "Cannot convert NULL to {}", to_type.getName());
 
     Field converted = convertFieldToType(from_value, to_type, from_type_hint);
