@@ -70,7 +70,6 @@ struct StorageSnapshot
 
     CompressionCodecPtr getCodecOrDefault(const String & column_name, CompressionCodecPtr default_codec) const;
     CompressionCodecPtr getCodecOrDefault(const String & column_name) const;
-    ASTPtr getCodecDescOrDefault(const String & column_name, CompressionCodecPtr default_codec) const;
 
     /// Block with ordinary + materialized + aliases + virtuals + subcolumns.
     Block getSampleBlockForColumns(const Names & column_names) const;

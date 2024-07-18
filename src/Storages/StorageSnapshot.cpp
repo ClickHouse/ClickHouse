@@ -168,23 +168,6 @@ CompressionCodecPtr StorageSnapshot::getCodecOrDefault(const String & column_nam
     return getCodecOrDefault(column_name, CompressionCodecFactory::instance().getDefaultCodec());
 }
 
-ASTPtr StorageSnapshot::getCodecDescOrDefault(const String & column_name, CompressionCodecPtr default_codec) const
-{
-    auto get_codec_or_default = [&](const auto & column_desc)
-    {
-        return column_desc.codec ? column_desc.codec : default_codec->getFullCodecDesc();
-    };
-
-    const auto & columns = metadata->getColumns();
-    if (const auto * column_desc = columns.tryGet(column_name))
-        return get_codec_or_default(*column_desc);
-
-    if (const auto * virtual_desc = virtual_columns->tryGetDescription(column_name))
-        return get_codec_or_default(*virtual_desc);
-
-    return default_codec->getFullCodecDesc();
-}
-
 Block StorageSnapshot::getSampleBlockForColumns(const Names & column_names) const
 {
     Block res;
