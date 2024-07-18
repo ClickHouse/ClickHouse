@@ -1,8 +1,5 @@
-// NOLINTBEGIN(clang-analyzer-optin.core.EnumCastOutOfRange)
-
 #include <Poco/ConsoleChannel.h>
 #include <Poco/Logger.h>
-#include <Coordination/CoordinationSettings.h>
 #include <Coordination/KeeperStateMachine.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
@@ -99,5 +96,3 @@ int main(int argc, char *argv[])
 
     return 0;
 }
-
-// NOLINTEND(clang-analyzer-optin.core.EnumCastOutOfRange)

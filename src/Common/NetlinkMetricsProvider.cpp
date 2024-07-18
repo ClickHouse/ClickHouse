@@ -112,7 +112,7 @@ struct NetlinkMessage
 
             if (bytes_sent <= 0)
             {
-                if (bytes_sent < 0 && errno == EAGAIN)
+                if (errno == EAGAIN)
                     continue;
                 else
                     throw ErrnoException(ErrorCodes::NETLINK_ERROR, "Can't send a Netlink command");

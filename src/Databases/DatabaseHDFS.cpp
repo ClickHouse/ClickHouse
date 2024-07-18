@@ -11,11 +11,10 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserCreateQuery.h>
-#include <Storages/ObjectStorage/HDFS/HDFSCommon.h>
+#include <Storages/HDFS/HDFSCommon.h>
 #include <Storages/IStorage.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/re2.h>
-#include <Core/Settings.h>
 
 #include <Poco/URI.h>
 
@@ -226,7 +225,7 @@ std::vector<std::pair<ASTPtr, StoragePtr>> DatabaseHDFS::getTablesForBackup(cons
  * Returns an empty iterator because the database does not have its own tables
  * But only caches them for quick access
  */
-DatabaseTablesIteratorPtr DatabaseHDFS::getTablesIterator(ContextPtr, const FilterByNameFunction &, bool) const
+DatabaseTablesIteratorPtr DatabaseHDFS::getTablesIterator(ContextPtr, const FilterByNameFunction &) const
 {
     return std::make_unique<DatabaseTablesSnapshotIterator>(Tables{}, getDatabaseName());
 }

@@ -72,8 +72,8 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
         DataTypePtr type = DataTypeFactory::instance().get(data_type);
 
         FormatSettings settings;
-        settings.binary.max_binary_string_size = 100;
-        settings.binary.max_binary_string_size = 100;
+        settings.max_binary_string_size = 100;
+        settings.max_binary_array_size = 100;
 
         Field field;
         type->getDefaultSerialization()->deserializeBinary(field, in, settings);

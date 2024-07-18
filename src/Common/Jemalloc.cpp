@@ -2,7 +2,6 @@
 
 #if USE_JEMALLOC
 
-#include <Common/Exception.h>
 #include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
 #include <jemalloc/jemalloc.h>
@@ -46,20 +45,6 @@ void checkJemallocProfilingEnabled()
             "set: MALLOC_CONF=background_thread:true,prof:true");
 }
 
-template <typename T>
-void setJemallocValue(const char * name, T value)
-{
-    T old_value;
-    size_t old_value_size = sizeof(T);
-    if (mallctl(name, &old_value, &old_value_size, reinterpret_cast<void*>(&value), sizeof(T)))
-    {
-        LOG_WARNING(getLogger("Jemalloc"), "mallctl for {} failed", name);
-        return;
-    }
-
-    LOG_INFO(getLogger("Jemalloc"), "Value for {} set to {} (from {})", name, value, old_value);
-}
-
 void setJemallocProfileActive(bool value)
 {
     checkJemallocProfilingEnabled();
@@ -72,7 +57,7 @@ void setJemallocProfileActive(bool value)
         return;
     }
 
-    setJemallocValue("prof.active", value);
+    mallctl("prof.active", nullptr, nullptr, &value, sizeof(bool));
     LOG_TRACE(getLogger("SystemJemalloc"), "Profiling is {}", value ? "enabled" : "disabled");
 }
 
@@ -81,7 +66,7 @@ std::string flushJemallocProfile(const std::string & file_prefix)
     checkJemallocProfilingEnabled();
     char * prefix_buffer;
     size_t prefix_size = sizeof(prefix_buffer);
-    int n = mallctl("opt.prof_prefix", &prefix_buffer, &prefix_size, nullptr, 0); // NOLINT
+    int n = mallctl("opt.prof_prefix", &prefix_buffer, &prefix_size, nullptr, 0);
     if (!n && std::string_view(prefix_buffer) != "jeprof")
     {
         LOG_TRACE(getLogger("SystemJemalloc"), "Flushing memory profile with prefix {}", prefix_buffer);
@@ -94,18 +79,8 @@ std::string flushJemallocProfile(const std::string & file_prefix)
     const auto * profile_dump_path_str = profile_dump_path.c_str();
 
     LOG_TRACE(getLogger("SystemJemalloc"), "Flushing memory profile to {}", profile_dump_path_str);
-    mallctl("prof.dump", nullptr, nullptr, &profile_dump_path_str, sizeof(profile_dump_path_str)); // NOLINT
+    mallctl("prof.dump", nullptr, nullptr, &profile_dump_path_str, sizeof(profile_dump_path_str));
     return profile_dump_path;
-}
-
-void setJemallocBackgroundThreads(bool enabled)
-{
-    setJemallocValue("background_thread", enabled);
-}
-
-void setJemallocMaxBackgroundThreads(size_t max_threads)
-{
-    setJemallocValue("max_background_threads", max_threads);
 }
 
 }

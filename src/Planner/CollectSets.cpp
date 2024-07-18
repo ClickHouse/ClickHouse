@@ -12,7 +12,6 @@
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/TableNode.h>
-#include <Core/Settings.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Planner/Planner.h>
@@ -37,12 +36,6 @@ public:
 
     void visitImpl(const QueryTreeNodePtr & node)
     {
-        if (const auto * constant_node = node->as<ConstantNode>())
-            /// Collect sets from source expression as well.
-            /// Most likely we will not build them, but those sets could be requested during analysis.
-            if (constant_node->hasSourceExpression())
-                collectSets(constant_node->getSourceExpression(), planner_context);
-
         auto * function_node = node->as<FunctionNode>();
         if (!function_node || !isNameOfInFunction(function_node->getFunctionName()))
             return;
@@ -97,7 +90,7 @@ public:
 
             auto subquery_to_execute = in_second_argument;
             if (in_second_argument->as<TableNode>())
-                subquery_to_execute = buildSubqueryToReadColumnsFromTableExpression(subquery_to_execute, planner_context.getQueryContext());
+                subquery_to_execute = buildSubqueryToReadColumnsFromTableExpression(std::move(subquery_to_execute), planner_context.getQueryContext());
 
             sets.addFromSubquery(set_key, std::move(subquery_to_execute), settings);
         }

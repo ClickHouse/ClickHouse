@@ -197,8 +197,7 @@ WriteBufferFromPocoSocket::~WriteBufferFromPocoSocket()
 {
     try
     {
-        if (!canceled)
-            finalize();
+        finalize();
     }
     catch (...)
     {

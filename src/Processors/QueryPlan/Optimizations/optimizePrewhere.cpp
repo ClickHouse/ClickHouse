@@ -1,11 +1,9 @@
-#include <Core/Settings.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
 #include <Storages/StorageDummy.h>
-#include <Storages/StorageMerge.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Functions/FunctionsLogical.h>
 #include <Functions/IFunctionAdaptors.h>
@@ -32,7 +30,7 @@ static void removeFromOutput(ActionsDAG & dag, const std::string name)
 
 void optimizePrewhere(Stack & stack, QueryPlan::Nodes &)
 {
-    if (stack.size() < 2)
+    if (stack.size() < 3)
         return;
 
     auto & frame = stack.back();
@@ -45,9 +43,6 @@ void optimizePrewhere(Stack & stack, QueryPlan::Nodes &)
       */
     auto * source_step_with_filter = dynamic_cast<SourceStepWithFilter *>(frame.node->step.get());
     if (!source_step_with_filter)
-        return;
-
-    if (typeid_cast<ReadFromMerge *>(frame.node->step.get()))
         return;
 
     const auto & storage_snapshot = source_step_with_filter->getStorageSnapshot();
@@ -88,7 +83,7 @@ void optimizePrewhere(Stack & stack, QueryPlan::Nodes &)
     MergeTreeWhereOptimizer where_optimizer{
         std::move(column_compressed_sizes),
         storage_metadata,
-        storage.getConditionSelectivityEstimatorByPredicate(storage_snapshot, source_step_with_filter->getFilterActionsDAG(), context),
+        storage.getConditionEstimatorByPredicate(source_step_with_filter->getQueryInfo(), storage_snapshot, context),
         queried_columns,
         storage.supportedPrewhereColumns(),
         getLogger("QueryPlanOptimizePrewhere")};

@@ -3,14 +3,13 @@
 #include <Server/IServer.h>
 
 #include <Compression/CompressedWriteBuffer.h>
-#include <Core/ServerSettings.h>
 #include <IO/ReadBufferFromIStream.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterserverIOHandler.h>
 #include <Server/HTTP/HTMLForm.h>
 #include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
-#include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
+#include <Common/logger_useful.h>
 
 #include <Poco/Net/HTTPBasicCredentials.h>
 #include <Poco/Util/LayeredConfiguration.h>
@@ -81,6 +80,7 @@ void InterserverIOHTTPHandler::processQuery(HTTPServerRequest & request, HTTPSer
 void InterserverIOHTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event)
 {
     setThreadName("IntersrvHandler");
+    ThreadStatus thread_status;
 
     /// In order to work keep-alive.
     if (request.getVersion() == HTTPServerRequest::HTTP_1_1)

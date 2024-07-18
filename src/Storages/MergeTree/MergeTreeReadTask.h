@@ -23,7 +23,7 @@ using MergeTreeReaderPtr = std::unique_ptr<IMergeTreeReader>;
 using VirtualFields = std::unordered_map<String, Field>;
 
 
-enum class MergeTreeReadType : uint8_t
+enum class MergeTreeReadType
 {
     /// By default, read will use MergeTreeReadPool and return pipe with num_streams outputs.
     /// If num_streams == 1, will read without pool, in order specified in parts.

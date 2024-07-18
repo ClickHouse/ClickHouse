@@ -3,8 +3,6 @@
 #include <Interpreters/InterpreterFactory.h>
 
 #include <Access/Common/AccessRightsElement.h>
-#include <Common/typeid_cast.h>
-#include <Core/Settings.h>
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Databases/IDatabase.h>
@@ -26,6 +24,7 @@
 #include <Storages/MutationCommands.h>
 #include <Storages/PartitionCommands.h>
 #include <Storages/StorageKeeperMap.h>
+#include <Common/typeid_cast.h>
 
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
@@ -57,7 +56,7 @@ InterpreterAlterQuery::InterpreterAlterQuery(const ASTPtr & query_ptr_, ContextP
 
 BlockIO InterpreterAlterQuery::execute()
 {
-    FunctionNameNormalizer::visit(query_ptr.get());
+    FunctionNameNormalizer().visit(query_ptr.get());
     const auto & alter = query_ptr->as<ASTAlterQuery &>();
     if (alter.alter_object == ASTAlterQuery::AlterObjectType::DATABASE)
     {
@@ -132,7 +131,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     if (modify_query)
     {
         // Expand CTE before filling default database
-        ApplyWithSubqueryVisitor::visit(*modify_query);
+        ApplyWithSubqueryVisitor().visit(*modify_query);
     }
 
     /// Add default database to table identifiers that we can encounter in e.g. default expressions, mutation expression, etc.
@@ -176,10 +175,11 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong parameter type in ALTER query");
 
-        if (!getContext()->getSettingsRef().allow_experimental_statistics
-            && (command_ast->type == ASTAlterCommand::ADD_STATISTICS || command_ast->type == ASTAlterCommand::DROP_STATISTICS
-                || command_ast->type == ASTAlterCommand::MATERIALIZE_STATISTICS))
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "Alter table with statistics is now disabled. Turn on allow_experimental_statistics");
+        if (!getContext()->getSettings().allow_experimental_statistic && (
+            command_ast->type == ASTAlterCommand::ADD_STATISTIC ||
+            command_ast->type == ASTAlterCommand::DROP_STATISTIC ||
+            command_ast->type == ASTAlterCommand::MATERIALIZE_STATISTIC))
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Alter table with statistic is now disabled. Turn on allow_experimental_statistic");
     }
 
     if (typeid_cast<DatabaseReplicated *>(database.get()))
@@ -343,24 +343,19 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(const AS
             required_access.emplace_back(AccessType::ALTER_SAMPLE_BY, database, table);
             break;
         }
-        case ASTAlterCommand::ADD_STATISTICS:
+        case ASTAlterCommand::ADD_STATISTIC:
         {
-            required_access.emplace_back(AccessType::ALTER_ADD_STATISTICS, database, table);
+            required_access.emplace_back(AccessType::ALTER_ADD_STATISTIC, database, table);
             break;
         }
-        case ASTAlterCommand::MODIFY_STATISTICS:
+        case ASTAlterCommand::DROP_STATISTIC:
         {
-            required_access.emplace_back(AccessType::ALTER_MODIFY_STATISTICS, database, table);
+            required_access.emplace_back(AccessType::ALTER_DROP_STATISTIC, database, table);
             break;
         }
-        case ASTAlterCommand::DROP_STATISTICS:
+        case ASTAlterCommand::MATERIALIZE_STATISTIC:
         {
-            required_access.emplace_back(AccessType::ALTER_DROP_STATISTICS, database, table);
-            break;
-        }
-        case ASTAlterCommand::MATERIALIZE_STATISTICS:
-        {
-            required_access.emplace_back(AccessType::ALTER_MATERIALIZE_STATISTICS, database, table);
+            required_access.emplace_back(AccessType::ALTER_MATERIALIZE_STATISTIC, database, table);
             break;
         }
         case ASTAlterCommand::ADD_INDEX:

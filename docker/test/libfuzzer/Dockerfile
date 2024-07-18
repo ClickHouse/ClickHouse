@@ -1,4 +1,3 @@
-# docker build -t clickhouse/libfuzzer .
 ARG FROM_TAG=latest
 FROM clickhouse/test-base:$FROM_TAG
 
@@ -30,12 +29,15 @@ RUN apt-get update \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
-COPY requirements.txt /
-RUN pip3 install --no-cache-dir -r /requirements.txt
+RUN pip3 install Jinja2
+
+COPY * /
 
 ENV FUZZER_ARGS="-max_total_time=60"
 
 SHELL ["/bin/bash", "-c"]
+CMD set -o pipefail \
+    && timeout -s 9 1h /run_libfuzzer.py 2>&1 | ts "$(printf '%%Y-%%m-%%d %%H:%%M:%%S\t')" | tee main.log
 
 # docker run --network=host --volume <workspace>:/workspace -e PR_TO_TEST=<> -e SHA_TO_TEST=<> clickhouse/libfuzzer
 

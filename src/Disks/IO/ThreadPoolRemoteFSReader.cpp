@@ -106,7 +106,7 @@ std::future<IAsynchronousReader::Result> ThreadPoolRemoteFSReader::submit(Reques
     }
 
     ProfileEventTimeIncrement<Microseconds> elapsed(ProfileEvents::ThreadpoolReaderSubmit);
-    return scheduleFromThreadPoolUnsafe<Result>(
+    return scheduleFromThreadPool<Result>(
         [request, this]() -> Result { return execute(request, /*seek_performed=*/true); }, *pool, "VFSRead", request.priority);
 }
 

@@ -225,6 +225,19 @@ namespace
         Paths paths;
     };
 
+    bool checkIfTypesAreEqual(const DataTypes & types)
+    {
+        if (types.empty())
+            return true;
+
+        for (size_t i = 1; i < types.size(); ++i)
+        {
+            if (!types[0]->equals(*types[i]))
+                return false;
+        }
+        return true;
+    }
+
     void updateTypeIndexes(DataTypes & data_types, TypeIndexesSet & type_indexes)
     {
         type_indexes.clear();
@@ -259,31 +272,24 @@ namespace
         type_indexes.erase(TypeIndex::Nothing);
     }
 
-    /// If we have both Int64 and UInt64, convert all not-negative Int64 to UInt64,
+    /// If we have both Int64 and UInt64, convert all Int64 to UInt64,
     /// because UInt64 is inferred only in case of Int64 overflow.
-    void transformIntegers(DataTypes & data_types, TypeIndexesSet & type_indexes, JSONInferenceInfo * json_info)
+    void transformIntegers(DataTypes & data_types, TypeIndexesSet & type_indexes)
     {
         if (!type_indexes.contains(TypeIndex::Int64) || !type_indexes.contains(TypeIndex::UInt64))
             return;
 
-        bool have_negative_integers = false;
         for (auto & type : data_types)
         {
             if (WhichDataType(type).isInt64())
-            {
-                bool is_negative = json_info && json_info->negative_integers.contains(type.get());
-                have_negative_integers |= is_negative;
-                if (!is_negative)
-                    type = std::make_shared<DataTypeUInt64>();
-            }
+                type = std::make_shared<DataTypeUInt64>();
         }
 
-        if (!have_negative_integers)
-            type_indexes.erase(TypeIndex::Int64);
+        type_indexes.erase(TypeIndex::Int64);
     }
 
     /// If we have both Int64 and Float64 types, convert all Int64 to Float64.
-    void transformIntegersAndFloatsToFloats(DataTypes & data_types, TypeIndexesSet & type_indexes, JSONInferenceInfo * json_info)
+    void transformIntegersAndFloatsToFloats(DataTypes & data_types, TypeIndexesSet & type_indexes)
     {
         bool have_floats = type_indexes.contains(TypeIndex::Float64);
         bool have_integers = type_indexes.contains(TypeIndex::Int64) || type_indexes.contains(TypeIndex::UInt64);
@@ -294,12 +300,7 @@ namespace
         {
             WhichDataType which(type);
             if (which.isInt64() || which.isUInt64())
-            {
-                auto new_type = std::make_shared<DataTypeFloat64>();
-                if (json_info && json_info->numbers_parsed_from_json_strings.erase(type.get()))
-                    json_info->numbers_parsed_from_json_strings.insert(new_type.get());
-                type = new_type;
-            }
+                type = std::make_shared<DataTypeFloat64>();
         }
 
         type_indexes.erase(TypeIndex::Int64);
@@ -634,9 +635,9 @@ namespace
             if (settings.try_infer_integers)
             {
                 /// Transform Int64 to UInt64 if needed.
-                transformIntegers(data_types, type_indexes, json_info);
+                transformIntegers(data_types, type_indexes);
                 /// Transform integers to floats if needed.
-                transformIntegersAndFloatsToFloats(data_types, type_indexes, json_info);
+                transformIntegersAndFloatsToFloats(data_types, type_indexes);
             }
 
             /// Transform Date to DateTime or both to String if needed.
@@ -878,50 +879,60 @@ namespace
     }
 
     template <bool is_json>
-    bool tryReadFloat(Float64 & value, ReadBuffer & buf, const FormatSettings & settings, bool & has_fractional)
+    bool tryReadFloat(Float64 & value, ReadBuffer & buf, const FormatSettings & settings)
     {
         if (is_json || settings.try_infer_exponent_floats)
-            return tryReadFloatTextExt(value, buf, has_fractional);
-        return tryReadFloatTextExtNoExponent(value, buf, has_fractional);
+            return tryReadFloatText(value, buf);
+        return tryReadFloatTextNoExponent(value, buf);
     }
 
     template <bool is_json>
-    DataTypePtr tryInferNumber(ReadBuffer & buf, const FormatSettings & settings, JSONInferenceInfo * json_info)
+    DataTypePtr tryInferNumber(ReadBuffer & buf, const FormatSettings & settings)
     {
         if (buf.eof())
             return nullptr;
 
         Float64 tmp_float;
-        bool has_fractional;
         if (settings.try_infer_integers)
         {
             /// If we read from String, we can do it in a more efficient way.
             if (auto * string_buf = dynamic_cast<ReadBufferFromString *>(&buf))
             {
                 /// Remember the pointer to the start of the number to rollback to it.
-                /// We can safely get back to the start of the number, because we read from a string and we didn't reach eof.
                 char * number_start = buf.position();
-
-                /// NOTE: it may break parsing of tryReadFloat() != tryReadIntText() + parsing of '.'/'e'
-                /// But, for now it is true
-                if (tryReadFloat<is_json>(tmp_float, buf, settings, has_fractional) && has_fractional)
-                    return std::make_shared<DataTypeFloat64>();
-
                 Int64 tmp_int;
+                bool read_int = tryReadIntText(tmp_int, buf);
+                /// If we reached eof, it cannot be float (it requires no less data than integer)
+                if (buf.eof())
+                    return read_int ? std::make_shared<DataTypeInt64>() : nullptr;
+
+                char * int_end = buf.position();
+                /// We can safely get back to the start of the number, because we read from a string and we didn't reach eof.
                 buf.position() = number_start;
-                if (tryReadIntText(tmp_int, buf))
+
+                bool read_uint = false;
+                char * uint_end = nullptr;
+                /// In case of Int64 overflow we can try to infer UInt64.
+                if (!read_int)
                 {
-                    auto type = std::make_shared<DataTypeInt64>();
-                    if (json_info && tmp_int < 0)
-                        json_info->negative_integers.insert(type.get());
-                    return type;
+                    UInt64 tmp_uint;
+                    read_uint = tryReadIntText(tmp_uint, buf);
+                    /// If we reached eof, it cannot be float (it requires no less data than integer)
+                    if (buf.eof())
+                        return read_uint ? std::make_shared<DataTypeUInt64>() : nullptr;
+
+                    uint_end = buf.position();
+                    buf.position() = number_start;
                 }
 
-                /// In case of Int64 overflow we can try to infer UInt64.
-                UInt64 tmp_uint;
-                buf.position() = number_start;
-                if (tryReadIntText(tmp_uint, buf))
-                    return std::make_shared<DataTypeUInt64>();
+                if (tryReadFloat<is_json>(tmp_float, buf, settings))
+                {
+                    if (read_int && buf.position() == int_end)
+                        return std::make_shared<DataTypeInt64>();
+                    if (read_uint && buf.position() == uint_end)
+                        return std::make_shared<DataTypeUInt64>();
+                    return std::make_shared<DataTypeFloat64>();
+                }
 
                 return nullptr;
             }
@@ -931,27 +942,36 @@ namespace
             /// and then as float.
             PeekableReadBuffer peekable_buf(buf);
             PeekableReadBufferCheckpoint checkpoint(peekable_buf);
-
-            if (tryReadFloat<is_json>(tmp_float, peekable_buf, settings, has_fractional) && has_fractional)
-                return std::make_shared<DataTypeFloat64>();
-            peekable_buf.rollbackToCheckpoint(/* drop= */ false);
-
             Int64 tmp_int;
-            if (tryReadIntText(tmp_int, peekable_buf))
-            {
-                auto type = std::make_shared<DataTypeInt64>();
-                if (json_info && tmp_int < 0)
-                    json_info->negative_integers.insert(type.get());
-                return type;
-            }
-            peekable_buf.rollbackToCheckpoint(/* drop= */ true);
+            bool read_int = tryReadIntText(tmp_int, peekable_buf);
+            auto * int_end = peekable_buf.position();
+            peekable_buf.rollbackToCheckpoint(true);
 
+            bool read_uint = false;
+            char * uint_end = nullptr;
             /// In case of Int64 overflow we can try to infer UInt64.
-            UInt64 tmp_uint;
-            if (tryReadIntText(tmp_uint, peekable_buf))
-                return std::make_shared<DataTypeUInt64>();
+            if (!read_int)
+            {
+                PeekableReadBufferCheckpoint new_checkpoint(peekable_buf);
+                UInt64 tmp_uint;
+                read_uint = tryReadIntText(tmp_uint, peekable_buf);
+                uint_end = peekable_buf.position();
+                peekable_buf.rollbackToCheckpoint(true);
+            }
+
+            if (tryReadFloat<is_json>(tmp_float, peekable_buf, settings))
+            {
+                /// Float parsing reads no fewer bytes than integer parsing,
+                /// so position of the buffer is either the same, or further.
+                /// If it's the same, then it's integer.
+                if (read_int && peekable_buf.position() == int_end)
+                    return std::make_shared<DataTypeInt64>();
+                if (read_uint && peekable_buf.position() == uint_end)
+                    return std::make_shared<DataTypeUInt64>();
+                return std::make_shared<DataTypeFloat64>();
+            }
         }
-        else if (tryReadFloat<is_json>(tmp_float, buf, settings, has_fractional))
+        else if (tryReadFloat<is_json>(tmp_float, buf, settings))
         {
             return std::make_shared<DataTypeFloat64>();
         }
@@ -961,7 +981,7 @@ namespace
     }
 
     template <bool is_json>
-    DataTypePtr tryInferNumberFromStringImpl(std::string_view field, const FormatSettings & settings, JSONInferenceInfo * json_inference_info = nullptr)
+    DataTypePtr tryInferNumberFromStringImpl(std::string_view field, const FormatSettings & settings)
     {
         ReadBufferFromString buf(field);
 
@@ -969,12 +989,7 @@ namespace
         {
             Int64 tmp_int;
             if (tryReadIntText(tmp_int, buf) && buf.eof())
-            {
-                auto type = std::make_shared<DataTypeInt64>();
-                if (json_inference_info && tmp_int < 0)
-                    json_inference_info->negative_integers.insert(type.get());
-                return type;
-            }
+                return std::make_shared<DataTypeInt64>();
 
             /// We can safely get back to the start of buffer, because we read from a string and we didn't reach eof.
             buf.position() = buf.buffer().begin();
@@ -989,8 +1004,7 @@ namespace
         buf.position() = buf.buffer().begin();
 
         Float64 tmp;
-        bool has_fractional;
-        if (tryReadFloat<is_json>(tmp, buf, settings, has_fractional) && buf.eof())
+        if (tryReadFloat<is_json>(tmp, buf, settings) && buf.eof())
             return std::make_shared<DataTypeFloat64>();
 
         return nullptr;
@@ -1002,7 +1016,7 @@ namespace
         String field;
         bool ok = true;
         if constexpr (is_json)
-            ok = tryReadJSONStringInto(field, buf, settings.json);
+            ok = tryReadJSONStringInto(field, buf);
         else
             ok = tryReadQuotedString(field, buf);
 
@@ -1025,7 +1039,7 @@ namespace
         {
             if (settings.json.try_infer_numbers_from_strings)
             {
-                if (auto number_type = tryInferNumberFromStringImpl<true>(field, settings, json_info))
+                if (auto number_type = tryInferNumberFromStringImpl<true>(field, settings))
                 {
                     json_info->numbers_parsed_from_json_strings.insert(number_type.get());
                     return number_type;
@@ -1057,7 +1071,7 @@ namespace
                 first = false;
 
             String key;
-            if (!tryReadJSONStringInto(key, buf, settings.json))
+            if (!tryReadJSONStringInto(key, buf))
                 return false;
 
             skipWhitespaceIfAny(buf);
@@ -1208,7 +1222,7 @@ namespace
             return nullptr;
 
         auto key_type = removeNullable(key_types.back());
-        if (!DataTypeMap::isValidKeyType(key_type))
+        if (!DataTypeMap::checkKeyType(key_type))
             return nullptr;
 
         return std::make_shared<DataTypeMap>(key_type, value_types.back());
@@ -1268,21 +1282,8 @@ namespace
         }
 
         /// Number
-        return tryInferNumber<is_json>(buf, settings, json_info);
+        return tryInferNumber<is_json>(buf, settings);
     }
-}
-
-bool checkIfTypesAreEqual(const DataTypes & types)
-{
-    if (types.empty())
-        return true;
-
-    for (size_t i = 1; i < types.size(); ++i)
-    {
-        if (!types[0]->equals(*types[i]))
-            return false;
-    }
-    return true;
 }
 
 void transformInferredTypesIfNeeded(DataTypePtr & first, DataTypePtr & second, const FormatSettings & settings)
@@ -1300,11 +1301,6 @@ void transformInferredJSONTypesIfNeeded(
     transformInferredTypesIfNeededImpl<true>(types, settings, json_info);
     first = std::move(types[0]);
     second = std::move(types[1]);
-}
-
-void transformInferredJSONTypesIfNeeded(DataTypes & types, const FormatSettings & settings, JSONInferenceInfo * json_info)
-{
-    transformInferredTypesIfNeededImpl<true>(types, settings, json_info);
 }
 
 void transformInferredJSONTypesFromDifferentFilesIfNeeded(DataTypePtr & first, DataTypePtr & second, const FormatSettings & settings)
@@ -1426,12 +1422,6 @@ void transformFinalInferredJSONTypeIfNeeded(DataTypePtr & data_type, const Forma
 DataTypePtr tryInferNumberFromString(std::string_view field, const FormatSettings & settings)
 {
     return tryInferNumberFromStringImpl<false>(field, settings);
-}
-
-DataTypePtr tryInferJSONNumberFromString(std::string_view field, const FormatSettings & settings, JSONInferenceInfo * json_info)
-{
-    return tryInferNumberFromStringImpl<false>(field, settings, json_info);
-
 }
 
 DataTypePtr tryInferDateOrDateTimeFromString(std::string_view field, const FormatSettings & settings)

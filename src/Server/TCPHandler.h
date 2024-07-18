@@ -7,6 +7,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Stopwatch.h>
+#include <Common/ThreadStatus.h>
 #include <Core/Protocol.h>
 #include <Core/QueryProcessingStage.h>
 #include <IO/Progress.h>
@@ -19,7 +20,6 @@
 #include <Formats/NativeReader.h>
 #include <Formats/NativeWriter.h>
 
-#include "Core/Types.h"
 #include "IServer.h"
 #include "Interpreters/AsynchronousInsertQueue.h"
 #include "Server/TCPProtocolStackData.h"
@@ -216,7 +216,7 @@ private:
 
     String default_database;
 
-    bool is_ssh_based_auth = false; /// authentication is via SSH pub-key challenge
+    bool is_ssh_based_auth = false;
     /// For inter-server secret (remote_server.*.secret)
     bool is_interserver_mode = false;
     bool is_interserver_authenticated = false;
@@ -226,13 +226,8 @@ private:
     std::optional<UInt64> nonce;
     String cluster;
 
-    /// `out_mutex` protects `out` (WriteBuffer).
-    /// So it is used for method sendData(), sendProgress(), sendLogs(), etc.
-    std::mutex out_mutex;
-    /// `task_callback_mutex` protects tasks callbacks.
-    /// Inside these callbacks we might also change cancellation status,
-    /// so it also protects cancellation status checks.
     std::mutex task_callback_mutex;
+    std::mutex fatal_error_mutex;
 
     /// At the moment, only one ongoing query in the connection is supported at a time.
     QueryState state;
@@ -253,6 +248,7 @@ private:
     void extractConnectionSettingsFromContext(const ContextPtr & context);
 
     std::unique_ptr<Session> makeSession();
+    String prepareStringForSshValidation(String user, String challenge);
 
     bool receiveProxyHeader();
     void receiveHello();

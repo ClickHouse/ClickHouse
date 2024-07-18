@@ -4,7 +4,7 @@
 #include <Backups/BackupIO.h>
 #include <Backups/IBackupEntry.h>
 #include <Common/ProfileEvents.h>
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <base/hex.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
@@ -23,6 +23,8 @@
 #include <IO/copyData.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <Poco/DOM/DOMParser.h>
+
+#include <ranges>
 
 
 namespace ProfileEvents
@@ -91,7 +93,6 @@ BackupImpl::BackupImpl(
     const std::optional<BackupInfo> & base_backup_info_,
     std::shared_ptr<IBackupReader> reader_,
     const ContextPtr & context_,
-    bool is_internal_backup_,
     bool use_same_s3_credentials_for_base_backup_)
     : backup_info(backup_info_)
     , backup_name_for_logging(backup_info.toStringForLogging())
@@ -100,7 +101,7 @@ BackupImpl::BackupImpl(
     , open_mode(OpenMode::READ)
     , reader(std::move(reader_))
     , context(context_)
-    , is_internal_backup(is_internal_backup_)
+    , is_internal_backup(false)
     , version(INITIAL_BACKUP_VERSION)
     , base_backup_info(base_backup_info_)
     , use_same_s3_credentials_for_base_backup(use_same_s3_credentials_for_base_backup_)
@@ -255,7 +256,6 @@ std::shared_ptr<const IBackup> BackupImpl::getBaseBackupUnlocked() const
         params.backup_info = *base_backup_info;
         params.open_mode = OpenMode::READ;
         params.context = context;
-        params.is_internal_backup = is_internal_backup;
         /// use_same_s3_credentials_for_base_backup should be inherited for base backups
         params.use_same_s3_credentials_for_base_backup = use_same_s3_credentials_for_base_backup;
 

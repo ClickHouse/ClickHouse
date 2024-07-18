@@ -1,5 +1,4 @@
 #include <Common/typeid_cast.h>
-#include <Core/Settings.h>
 #include <IO/WriteHelpers.h>
 
 #include <Storages/IStorage.h>
