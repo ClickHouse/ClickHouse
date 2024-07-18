@@ -21,6 +21,7 @@
 #include <Common/StringUtils.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/NetException.h>
+#include <Common/SignalHandlers.h>
 #include <Common/tryGetFileNameByFileDescriptor.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
@@ -302,7 +303,13 @@ public:
 };
 
 
-ClientBase::~ClientBase() = default;
+ClientBase::~ClientBase()
+{
+    writeSignalIDtoSignalPipe(SignalListener::StopThread);
+    signal_listener_thread.join();
+    HandledSignals::instance().reset();
+}
+
 ClientBase::ClientBase(
     int in_fd_,
     int out_fd_,
@@ -2070,9 +2077,18 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
         progress_indication.writeFinalProgress();
         output_stream << std::endl << std::endl;
     }
-    else if (getClientConfiguration().getBool("print-time-to-stderr", false))
+    else
     {
-        error_stream << progress_indication.elapsedSeconds() << "\n";
+        const auto & config = getClientConfiguration();
+        if (config.getBool("print-time-to-stderr", false))
+            error_stream << progress_indication.elapsedSeconds() << "\n";
+
+        const auto & print_memory_mode = config.getString("print-memory-to-stderr", "");
+        auto peak_memeory_usage = std::max<Int64>(progress_indication.getMemoryUsage().peak, 0);
+        if (print_memory_mode == "default")
+            error_stream << peak_memeory_usage << "\n";
+        else if (print_memory_mode == "readable")
+            error_stream << formatReadableSizeWithBinarySuffix(peak_memeory_usage) << "\n";
     }
 
     if (!is_interactive && getClientConfiguration().getBool("print-num-processed-rows", false))
@@ -3036,6 +3052,7 @@ void ClientBase::init(int argc, char ** argv)
         ("disable_suggestion,A", "Disable loading suggestion data. Note that suggestion data is loaded asynchronously through a second connection to ClickHouse server. Also it is reasonable to disable suggestion if you want to paste a query with TAB characters. Shorthand option -A is for those who get used to mysql client.")
         ("wait_for_suggestions_to_load", "Load suggestion data synchonously.")
         ("time,t", "print query execution time to stderr in non-interactive mode (for benchmarks)")
+        ("memory-usage", po::value<std::string>()->implicit_value("default")->default_value("none"), "print memory usage to stderr in non-interactive mode (for benchmarks). Values: 'none', 'default', 'readable'")
 
         ("echo", "in batch mode, print query before execution")
 
@@ -3062,6 +3079,8 @@ void ClientBase::init(int argc, char ** argv)
         ("max_memory_usage_in_client", po::value<std::string>(), "Set memory limit in client/local server")
 
         ("fuzzer-args", po::value<std::string>(), "Command line arguments for the LLVM's libFuzzer driver. Only relevant if the application is compiled with libFuzzer.")
+
+        ("client_logs_file", po::value<std::string>(), "Path to a file for writing client logs. Currently we only have fatal logs (when the client crashes)")
     ;
 
     addOptions(options_description);
@@ -3121,6 +3140,14 @@ void ClientBase::init(int argc, char ** argv)
     /// Output execution time to stderr in batch mode.
     if (options.count("time"))
         getClientConfiguration().setBool("print-time-to-stderr", true);
+    if (options.count("memory-usage"))
+    {
+        const auto & memory_usage_mode = options["memory-usage"].as<std::string>();
+        if (memory_usage_mode != "none" && memory_usage_mode != "default" && memory_usage_mode != "readable")
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown memory-usage mode: {}", memory_usage_mode);
+        getClientConfiguration().setString("print-memory-to-stderr", memory_usage_mode);
+    }
+
     if (options.count("query"))
         queries = options["query"].as<std::vector<std::string>>();
     if (options.count("query_id"))
@@ -3218,6 +3245,25 @@ void ClientBase::init(int argc, char ** argv)
         total_memory_tracker.setDescription("(total)");
         total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
     }
+
+    /// Print stacktrace in case of crash
+    HandledSignals::instance().setupTerminateHandler();
+    HandledSignals::instance().setupCommonDeadlySignalHandlers();
+    /// We don't setup signal handlers for SIGINT, SIGQUIT, SIGTERM because we don't
+    /// have an option for client to shutdown gracefully.
+
+    fatal_channel_ptr = new Poco::SplitterChannel;
+    fatal_console_channel_ptr = new Poco::ConsoleChannel;
+    fatal_channel_ptr->addChannel(fatal_console_channel_ptr);
+    if (options.count("client_logs_file"))
+    {
+        fatal_file_channel_ptr = new Poco::SimpleFileChannel(options["client_logs_file"].as<std::string>());
+        fatal_channel_ptr->addChannel(fatal_file_channel_ptr);
+    }
+
+    fatal_log = createLogger("ClientBase", fatal_channel_ptr.get(), Poco::Message::PRIO_FATAL);
+    signal_listener = std::make_unique<SignalListener>(nullptr, fatal_log);
+    signal_listener_thread.start(*signal_listener);
 }
 
 }
