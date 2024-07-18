@@ -35,7 +35,9 @@ def started_cluster():
 
 
 def test_disable_insertion_and_mutation(started_cluster):
-    writing_node.query("""CREATE TABLE my_table on cluster default (key UInt64, value String) ENGINE=ReplicatedMergeTree('/clickhouse/tables/{shard}/default.my_table', '{replica}') ORDER BY key partition by (key % 5) """)
+    writing_node.query(
+        """CREATE TABLE my_table on cluster default (key UInt64, value String) ENGINE=ReplicatedMergeTree('/clickhouse/tables/{shard}/default.my_table', '{replica}') ORDER BY key partition by (key % 5) """
+    )
 
     assert "QUERY_IS_PROHIBITED" in reading_node.query_and_get_error(
         "INSERT INTO my_table VALUES (1, 'hello')"
@@ -58,7 +60,7 @@ def test_disable_insertion_and_mutation(started_cluster):
         "ALTER TABLE my_table drop partition 0"
     )
 
-    reading_node.query("SELECT * from my_table");
+    reading_node.query("SELECT * from my_table")
     writing_node.query("INSERT INTO my_table VALUES (1, 'hello')")
     writing_node.query("ALTER TABLE my_table delete where 1")
     writing_node.query("ALTER table my_table update value = 'no hello' where 1")
@@ -69,10 +71,6 @@ def test_disable_insertion_and_mutation(started_cluster):
 
     reading_node.query("ALter Table my_table MODIFY COLUMN new_column String")
 
-    assert "new_column\tString" in reading_node.query(
-        "DESC my_table"
-    )
+    assert "new_column\tString" in reading_node.query("DESC my_table")
 
-    assert "new_column\tString" in writing_node.query(
-        "DESC my_table"
-    )
+    assert "new_column\tString" in writing_node.query("DESC my_table")
