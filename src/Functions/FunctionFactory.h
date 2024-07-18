@@ -23,6 +23,7 @@ struct FunctionFactoryData
 {
     FunctionCreator creator;
     FunctionDocumentation documentation;
+    FunctionProperties properties;
 };
 
 /** Creates function by name.
@@ -36,9 +37,9 @@ public:
     static FunctionFactory & instance();
 
     template <typename Function>
-    void registerFunction(FunctionDocumentation documentation = {}, Case case_sensitiveness = Case::Sensitive)
+    void registerFunction(FunctionDocumentation documentation = {}, FunctionProperties properties = {}, Case case_sensitiveness = Case::Sensitive)
     {
-        registerFunction<Function>(Function::name, std::move(documentation), case_sensitiveness);
+        registerFunction<Function>(Function::name, std::move(documentation), std::move(properties), case_sensitiveness);
     }
 
     /// Register a function by its name.
@@ -47,12 +48,14 @@ public:
         const std::string & name,
         FunctionCreator creator,
         FunctionDocumentation documentation = {},
+        FunctionProperties properties = {},
         Case case_sensitiveness = Case::Sensitive);
 
     void registerFunction(
         const std::string & name,
         FunctionSimpleCreator creator,
         FunctionDocumentation documentation = {},
+        FunctionProperties properties = {},
         Case case_sensitiveness = Case::Sensitive);
 
     bool has(const std::string & name) const;
@@ -71,6 +74,10 @@ public:
     std::vector<std::string> getAllNames() const;
 
     FunctionDocumentation getDocumentation(const std::string & name) const;
+    FunctionProperties getProperties(const std::string & name) const;
+
+    std::optional<FunctionDocumentation> tryGetDocumentation(const std::string & name) const;
+    std::optional<FunctionProperties> tryGetProperties(const std::string & name) const;
 
 private:
     using Functions = std::unordered_map<std::string, Value>;
@@ -84,10 +91,13 @@ private:
     String getFactoryName() const override { return "FunctionFactory"; }
 
     template <typename Function>
-    void registerFunction(const std::string & name, FunctionDocumentation documentation = {}, Case case_sensitiveness = Case::Sensitive)
+    void registerFunction(const std::string & name, FunctionDocumentation documentation = {}, FunctionProperties properties = {}, Case case_sensitiveness = Case::Sensitive)
     {
-        registerFunction(name, &Function::create, std::move(documentation), case_sensitiveness);
+        registerFunction(name, &Function::create, std::move(documentation), std::move(properties), case_sensitiveness);
     }
+
+    std::optional<FunctionDocumentation> tryGetDocumentationImpl(const String & name_param) const;
+    std::optional<FunctionProperties> tryGetPropertiesImpl(const String & name_param) const;
 };
 
 const String & getFunctionCanonicalNameIfAny(const String & name);
