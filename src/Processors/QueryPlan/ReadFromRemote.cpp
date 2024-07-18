@@ -493,7 +493,7 @@ void ReadFromParallelRemoteReplicasStep::initializePipeline(QueryPipelineBuilder
 
     /// when using local plan for local replica, local replica has 0 number
     size_t offset = (exclude_local_replica ? 1 : 0);
-    for (size_t i = 0 + offset; i < pools_to_use.size(); ++i)
+    for (size_t i = 0 + offset; i < max_replicas_to_use; ++i)
     {
         IConnections::ReplicaInfo replica_info{
             /// we should use this number specifically because efficiency of data distribution by consistent hash depends on it.
