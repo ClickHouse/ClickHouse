@@ -257,8 +257,14 @@ JoinKeyRow::JoinKeyRow(const FullMergeJoinCursor & cursor, size_t pos)
         new_col->insertFrom(*col, pos);
         row.push_back(std::move(new_col));
     }
-    if (const auto * asof_column = cursor.getAsofColumn())
+    if (const IColumn * asof_column = cursor.getAsofColumn())
     {
+        if (const auto * nullable_asof_column = checkAndGetColumn<ColumnNullable>(asof_column))
+        {
+            /// We save matched column, and since NULL do not match anything, we can't use it as a key
+            chassert(!nullable_asof_column->isNullAt(pos));
+            asof_column = nullable_asof_column->getNestedColumnPtr().get();
+        }
         auto new_col = asof_column->cloneEmpty();
         new_col->insertFrom(*asof_column, pos);
         row.push_back(std::move(new_col));
@@ -1174,7 +1180,6 @@ IMergingAlgorithm::Status MergeJoinAlgorithm::merge()
     if (!cursors[1]->cursor.isValid() && !cursors[1]->fullyCompleted())
         return Status(1);
 
-
     if (auto result = handleAllJoinState())
         return std::move(*result);
 
@@ -1183,7 +1188,6 @@ IMergingAlgorithm::Status MergeJoinAlgorithm::merge()
 
     if (cursors[0]->fullyCompleted() || cursors[1]->fullyCompleted())
     {
-
         if (!cursors[0]->fullyCompleted() && isLeftOrFull(kind))
             return Status(createBlockWithDefaults(0));
 
