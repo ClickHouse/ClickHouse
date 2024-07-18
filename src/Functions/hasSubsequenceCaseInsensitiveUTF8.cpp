@@ -25,7 +25,7 @@ using FunctionHasSubsequenceCaseInsensitiveUTF8 = HasSubsequenceImpl<NameHasSubs
 
 REGISTER_FUNCTION(hasSubsequenceCaseInsensitiveUTF8)
 {
-    factory.registerFunction<FunctionHasSubsequenceCaseInsensitiveUTF8>({}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionHasSubsequenceCaseInsensitiveUTF8>({}, FunctionFactory::Case::Insensitive);
 }
 
 }

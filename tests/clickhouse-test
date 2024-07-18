@@ -1525,6 +1525,15 @@ class TestCase:
         start_time = args.testcase_start_time
         database = args.testcase_database
 
+        if args.client_log:
+            log_opt = " --client_logs_file=" + args.client_log + " "
+            client_options += log_opt
+            os.environ["CLICKHOUSE_CLIENT_OPT"] = (
+                os.environ["CLICKHOUSE_CLIENT_OPT"]
+                if "CLICKHOUSE_CLIENT_OPT" in os.environ
+                else ""
+            ) + log_opt
+
         # This is for .sh tests
         os.environ["CLICKHOUSE_LOG_COMMENT"] = args.testcase_basename
 
@@ -2994,6 +3003,15 @@ def main(args):
         else:
             print(colored("\nNo queries hung.", args, "green", attrs=["bold"]))
 
+    if args.client_log:
+        if os.path.exists(args.client_log):
+            with open(args.client_log, "rb") as stream:
+                content = stream.read().decode()
+                if len(content):
+                    print("Has fatal logs from client:\n")
+                    print(content)
+            os.remove(args.client_log)
+
     if len(restarted_tests) > 0:
         print("\nSome tests were restarted:\n")
 
@@ -3394,6 +3412,11 @@ def parse_args():
         action="store_true",
         default=os.environ.get("REPLACE_MT_WITH_SMT", False),
         help="Replace ordinary MergeTree engine with SharedMergeTree",
+    )
+    parser.add_argument(
+        "--client-log",
+        default="./client.fatal.log",
+        help="Path to file for fatal logs from client",
     )
 
     parser.add_argument(
