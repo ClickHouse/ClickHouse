@@ -1,6 +1,6 @@
--- Tags: no-random-merge-tree-settings, no-tsan, no-debug, no-s3-storage
+-- Tags: no-random-merge-tree-settings, no-tsan, no-debug, no-object-storage
 -- no-tsan: too slow
--- no-s3-storage: for remote tables we use thread pool even when reading with one stream, so memory consumption is higher
+-- no-object-storage: for remote tables we use thread pool even when reading with one stream, so memory consumption is higher
 
 SET use_uncompressed_cache = 0;
 SET allow_prefetched_read_pool_for_remote_filesystem=0;

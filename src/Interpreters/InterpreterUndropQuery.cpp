@@ -64,7 +64,7 @@ BlockIO InterpreterUndropQuery::executeToTable(ASTUndropQuery & query)
 
     database->checkMetadataFilenameAvailability(table_id.table_name);
 
-    DatabaseCatalog::instance().dequeueDroppedTableCleanup(table_id);
+    DatabaseCatalog::instance().undropTable(table_id);
     return {};
 }
 

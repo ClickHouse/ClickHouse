@@ -1,4 +1,4 @@
--- Tags: no-s3-storage, no-random-merge-tree-settings
+-- Tags: no-object-storage, no-random-merge-tree-settings
 
 DROP TABLE IF EXISTS data_01551;
 
