@@ -16,6 +16,10 @@
 #include <Storages/MergeTree/RPNBuilder.h>
 #include "DataTypes/Serializations/ISerialization.h"
 
+namespace parquet
+{
+    class BloomFilter;
+}
 
 namespace DB
 {
@@ -72,6 +76,9 @@ public:
         const FieldRef * left_keys,
         const FieldRef * right_keys,
         const DataTypes & data_types) const;
+
+    using IndexColumnToColumnBF = std::unordered_map<std::size_t, std::unique_ptr<parquet::BloomFilter>>;
+    bool mayBeTrueOnBloomFilter(const IndexColumnToColumnBF & column_index_to_column_bf, const DataTypes & data_types) const;
 
     /// Checks that the index can not be used
     /// FUNCTION_UNKNOWN will be AND'ed (if any).
@@ -158,6 +165,9 @@ public:
             FUNCTION_NOT_IN_RANGE,
             FUNCTION_IN_SET,
             FUNCTION_NOT_IN_SET,
+//            FUNCTION_HAS,
+//            FUNCTION_HAS_ANY,
+//            FUNCTION_HAS_ALL,
             FUNCTION_IS_NULL,
             FUNCTION_IS_NOT_NULL,
             /// Special for space-filling curves.

@@ -22,13 +22,13 @@ public:
         enum Function
         {
             /// Atoms of a Boolean expression.
-            FUNCTION_EQUALS,
-            FUNCTION_NOT_EQUALS,
-            FUNCTION_HAS,
-            FUNCTION_HAS_ANY,
-            FUNCTION_HAS_ALL,
-            FUNCTION_IN,
-            FUNCTION_NOT_IN,
+            FUNCTION_EQUALS, // in range
+            FUNCTION_NOT_EQUALS, // not in range
+            FUNCTION_HAS, // tbd
+            FUNCTION_HAS_ANY, // tbd
+            FUNCTION_HAS_ALL, // tbd
+            FUNCTION_IN, // in set
+            FUNCTION_NOT_IN, // not in set
             FUNCTION_UNKNOWN, /// Can take any value.
             /// Operators of the logical expression.
             FUNCTION_NOT,
