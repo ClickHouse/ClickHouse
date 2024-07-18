@@ -50,7 +50,6 @@ def test_disable_insertion_and_mutation(started_cluster):
     assert "QUERY_IS_PROHIBITED" in reading_node.query_and_get_error(
         "ALTER TABLE my_table delete where 1"
     )
-    
 
     assert "QUERY_IS_PROHIBITED" in reading_node.query_and_get_error(
         "ALTER table my_table update key = 1 where 1"
