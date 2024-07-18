@@ -15,6 +15,7 @@
 #include <arrow/type_fwd.h>
 #include <boost/algorithm/string/case_conv.hpp>
 #include <Common/Exception.h>
+#include <parquet/metadata.h>
 
 
 namespace arrow
@@ -67,7 +68,10 @@ public:
 
     /// Only collect the required fields' indices. Eg. when just read a field of a struct,
     /// don't need to collect the whole indices in this struct.
-    std::vector<std::pair<std::string, int>> findRequiredIndices(const Block & header, const arrow::Schema & schema)
+    std::vector<std::pair<std::string, int>> findRequiredIndices(
+        const Block & header,
+        const arrow::Schema & schema,
+        const parquet::FileMetaData & file)
     {
         std::vector<std::pair<std::string, int>> required_indices;
         std::unordered_set<int> added_indices;
@@ -79,7 +83,7 @@ public:
             std::string col_name = named_col.name;
             if (ignore_case)
                 boost::to_lower(col_name);
-            findRequiredIndices(col_name, named_col.type, fields_indices, added_indices, required_indices);
+            findRequiredIndices(col_name, named_col.type, fields_indices, added_indices, required_indices, file);
         }
         return required_indices;
     }
@@ -172,7 +176,8 @@ private:
         DataTypePtr data_type,
         const std::unordered_map<std::string, std::pair<int, int>> & field_indices,
         std::unordered_set<int> & added_indices,
-        std::vector<std::pair<std::string, int>> & required_indices)
+        std::vector<std::pair<std::string, int>> & required_indices,
+        const parquet::FileMetaData & file)
     {
         auto nested_type = removeNullable(data_type);
         if (const DB::DataTypeTuple * type_tuple = typeid_cast<const DB::DataTypeTuple *>(nested_type.get()))
@@ -187,20 +192,20 @@ private:
                     if (ignore_case)
                         boost::to_lower(field_name);
                     const auto & field_type = field_types[i];
-                    findRequiredIndices(Nested::concatenateName(name, field_name), field_type, field_indices, added_indices, required_indices);
+                    findRequiredIndices(Nested::concatenateName(name, field_name), field_type, field_indices, added_indices, required_indices, file);
                 }
                 return;
             }
         }
         else if (const auto * type_array = typeid_cast<const DB::DataTypeArray *>(nested_type.get()))
         {
-            findRequiredIndices(name, type_array->getNestedType(), field_indices, added_indices, required_indices);
+            findRequiredIndices(name, type_array->getNestedType(), field_indices, added_indices, required_indices, file);
             return;
         }
         else if (const auto * type_map = typeid_cast<const DB::DataTypeMap *>(nested_type.get()))
         {
-            findRequiredIndices(name, type_map->getKeyType(), field_indices, added_indices, required_indices);
-            findRequiredIndices(name, type_map->getValueType(), field_indices, added_indices, required_indices);
+            findRequiredIndices(name, type_map->getKeyType(), field_indices, added_indices, required_indices, file);
+            findRequiredIndices(name, type_map->getValueType(), field_indices, added_indices, required_indices, file);
             return;
         }
         auto it = field_indices.find(name);
@@ -216,7 +221,8 @@ private:
                 auto index = it->second.first + j;
                 if (added_indices.insert(index).second)
                 {
-                    required_indices.emplace_back(name, index);
+                    [[maybe_unused]] auto aha = file.schema()->Column(index)->path()->ToDotString();
+                    required_indices.emplace_back(file.schema()->Column(index)->path()->ToDotString(), index);
                 }
             }
         }
