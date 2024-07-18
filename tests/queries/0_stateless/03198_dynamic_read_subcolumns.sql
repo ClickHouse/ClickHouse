@@ -1,4 +1,5 @@
--- Tags: no-random-settings, no-s3-storage
+-- Tags: no-random-settings, no-object-storage
+-- Tag no-object-storage: this test relies on the number of opened files in MergeTree that can differ in object storages
 
 SET allow_experimental_dynamic_type = 1;
 DROP TABLE IF EXISTS test_dynamic;
