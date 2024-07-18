@@ -426,8 +426,8 @@ void ReadFromParallelRemoteReplicasStep::initializePipeline(QueryPipelineBuilder
     auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings);
 
     const auto & shard = cluster->getShardsInfo().at(0);
-    size_t all_replicas_count = current_settings.max_parallel_replicas;
-    if (all_replicas_count > shard.getAllNodeCount())
+    size_t max_replicas_to_use = current_settings.max_parallel_replicas;
+    if (max_replicas_to_use > shard.getAllNodeCount())
     {
         LOG_INFO(
             getLogger("ReadFromParallelRemoteReplicasStep"),
@@ -435,11 +435,11 @@ void ReadFromParallelRemoteReplicasStep::initializePipeline(QueryPipelineBuilder
             "Will use the latter number to execute the query.",
             current_settings.max_parallel_replicas,
             shard.getAllNodeCount());
-        all_replicas_count = shard.getAllNodeCount();
+        max_replicas_to_use = shard.getAllNodeCount();
     }
 
     std::vector<ConnectionPoolWithFailover::Base::ShuffledPool> shuffled_pool;
-    if (all_replicas_count < shard.getAllNodeCount())
+    if (max_replicas_to_use < shard.getAllNodeCount())
     {
         shuffled_pool = shard.pool->getShuffledPools(current_settings);
     }
@@ -471,10 +471,10 @@ void ReadFromParallelRemoteReplicasStep::initializePipeline(QueryPipelineBuilder
         }
     }
 
-    pools_to_use.resize(std::min(pools_to_use.size(), all_replicas_count));
+    pools_to_use.resize(std::min(pools_to_use.size(), max_replicas_to_use));
     // if local plan is used for local replica, we should exclude one remote replica
     if (exclude_local_replica && !pools_to_use.empty())
-        pools_to_use.resize(all_replicas_count - 1);
+        pools_to_use.resize(max_replicas_to_use - 1);
 
     LOG_DEBUG(
         getLogger("ReadFromParallelRemoteReplicasStep"),
@@ -493,10 +493,9 @@ void ReadFromParallelRemoteReplicasStep::initializePipeline(QueryPipelineBuilder
 
     /// when using local plan for local replica, local replica has 0 number
     size_t offset = (exclude_local_replica ? 1 : 0);
-    for (size_t i = 0 + offset; i < all_replicas_count; ++i)
+    for (size_t i = 0; i < max_replicas_to_use; ++i)
     {
         IConnections::ReplicaInfo replica_info{
-            .all_replicas_count = all_replicas_count,
             /// we should use this number specifically because efficiency of data distribution by consistent hash depends on it.
             .number_of_current_replica = i,
         };
