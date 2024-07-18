@@ -12,6 +12,7 @@
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Common/logger_useful.h>
+#include <Core/Settings.h>
 
 #if USE_SSL
 #    include <Poco/Net/SecureServerSocket.h>
