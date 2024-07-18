@@ -265,6 +265,16 @@ ASTPtr ASTCreateQuery::clone() const
     return res;
 }
 
+String ASTCreateQuery::getID(char delim) const
+{
+    String res = attach ? "AttachQuery" : "CreateQuery";
+    String database = getDatabase();
+    if (!database.empty())
+        res += (delim + getDatabase());
+    res += (delim + getTable());
+    return res;
+}
+
 void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     frame.need_parens = false;

@@ -90,7 +90,7 @@ If s is empty, the result is 0. If the first character is not an ASCII character
         )",
         .examples{{"ascii", "SELECT ascii('234')", ""}},
         .categories{"String"}
-        }, FunctionFactory::CaseInsensitive);
+        }, FunctionFactory::Case::Insensitive);
 }
 
 }
