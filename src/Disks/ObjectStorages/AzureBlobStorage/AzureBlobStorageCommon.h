@@ -11,7 +11,6 @@
 #include <azure/identity/managed_identity_credential.hpp>
 #include <azure/identity/workload_identity_credential.hpp>
 
-#include <Core/Settings.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Interpreters/Context_fwd.h>
 #include <base/strong_typedef.h>
@@ -20,6 +19,8 @@ namespace fs = std::filesystem;
 
 namespace DB
 {
+
+struct Settings;
 
 namespace AzureBlobStorage
 {
