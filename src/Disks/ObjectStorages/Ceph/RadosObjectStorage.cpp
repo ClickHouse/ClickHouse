@@ -177,7 +177,7 @@ void RadosObjectStorage::removeObjectImpl(const StoredObject & object, bool if_e
 
     /// Removing the HEAD object last
     Strings names;
-    for (ssize_t i = rados_objects.size(); i > 0; --i)
+    for (ssize_t i = rados_objects.size() - 1; i > 0; --i)
         names.push_back(rados_objects[i].remote_path);
 
     /// Except for the HEAD object, remove only if it exists. Non-head objects can be missing
