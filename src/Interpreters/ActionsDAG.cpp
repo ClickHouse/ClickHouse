@@ -1357,8 +1357,15 @@ bool ActionsDAG::hasArrayJoin() const
 bool ActionsDAG::hasStatefulFunctions() const
 {
     for (const auto & node : nodes)
-        if (node.type == ActionType::FUNCTION && node.function_base->isStateful())
-            return true;
+    {
+        if (node.type == ActionType::FUNCTION)
+        {
+            const auto & function_name = node.function_base->getName();
+            auto function_properties = FunctionFactory::instance().getProperties(function_name);
+            if (function_properties.is_stateful)
+                return true;
+        }
+    }
 
     return false;
 }

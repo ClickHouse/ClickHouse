@@ -54,8 +54,6 @@ public:
 
     bool isVariadic() const override { return true; }
 
-    bool isStateful() const override { return true; }
-
     bool isDeterministic() const override { return false; }
 
     bool isDeterministicInScopeOfQuery() const override { return false; }
@@ -216,7 +214,7 @@ public:
 
 REGISTER_FUNCTION(Neighbor)
 {
-    factory.registerFunction<FunctionNeighbor>();
+    factory.registerFunction<FunctionNeighbor>({}, {.is_stateful = true});
 }
 
 }

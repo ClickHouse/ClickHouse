@@ -31,18 +31,15 @@ public:
     bool & is_stateful;
     void visit(ASTFunction & ast_function, ASTPtr &)
     {
-        auto aggregate_function_properties
-            = AggregateFunctionFactory::instance().tryGetProperties(ast_function.name, ast_function.nulls_action);
-
+        auto aggregate_function_properties = AggregateFunctionFactory::instance().tryGetProperties(ast_function.name, ast_function.nulls_action);
         if (aggregate_function_properties && aggregate_function_properties->is_order_dependent)
         {
             is_stateful = true;
             return;
         }
 
-        const auto & function = FunctionFactory::instance().tryGet(ast_function.name, context);
-
-        if (function && function->isStateful())
+        auto function_properties = FunctionFactory::instance().tryGetProperties(ast_function.name);
+        if (function_properties && function_properties->is_stateful)
         {
             is_stateful = true;
             return;

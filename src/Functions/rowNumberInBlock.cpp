@@ -24,11 +24,6 @@ public:
         return name;
     }
 
-    bool isStateful() const override
-    {
-        return true;
-    }
-
     size_t getNumberOfArguments() const override
     {
         return 0;
@@ -66,7 +61,8 @@ public:
 
 REGISTER_FUNCTION(RowNumberInBlock)
 {
-    factory.registerFunction<FunctionRowNumberInBlock>();
+    factory.registerFunction<FunctionRowNumberInBlock>({}, {.is_stateful = true}
+    );
 }
 
 }

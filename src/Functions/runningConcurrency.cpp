@@ -112,11 +112,6 @@ public:
         return std::make_unique<ExecutableFunctionRunningConcurrency<Name, ArgDataType, ConcurrencyDataType>>();
     }
 
-    bool isStateful() const override
-    {
-        return true;
-    }
-
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
 private:
@@ -198,11 +193,6 @@ public:
         return false;
     }
 
-    bool isStateful() const override
-    {
-        return true;
-    }
-
     bool useDefaultImplementationForNulls() const override
     {
         return false;
@@ -216,6 +206,6 @@ struct NameRunningConcurrency
 
 REGISTER_FUNCTION(RunningConcurrency)
 {
-    factory.registerFunction<RunningConcurrencyOverloadResolver<NameRunningConcurrency, DataTypeUInt32>>();
+    factory.registerFunction<RunningConcurrencyOverloadResolver<NameRunningConcurrency, DataTypeUInt32>>({}, {.is_stateful = true});
 }
 }

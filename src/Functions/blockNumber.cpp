@@ -29,11 +29,6 @@ public:
         return name;
     }
 
-    bool isStateful() const override
-    {
-        return true;
-    }
-
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override
     {
         return false;
@@ -70,7 +65,7 @@ public:
 
 REGISTER_FUNCTION(BlockNumber)
 {
-    factory.registerFunction<FunctionBlockNumber>();
+    factory.registerFunction<FunctionBlockNumber>({}, {.is_stateful = true});
 }
 
 }

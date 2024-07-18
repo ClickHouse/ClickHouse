@@ -78,8 +78,6 @@ public:
         return function->getConstantResultForNonConstArguments(arguments_, result_type_);
     }
 
-    bool isStateful() const override { return function->isStateful(); }
-
     bool isInjective(const ColumnsWithTypeAndName & sample_columns) const override { return function->isInjective(sample_columns); }
 
     bool isDeterministic() const override { return function->isDeterministic(); }
@@ -124,7 +122,6 @@ public:
     bool isInjective(const ColumnsWithTypeAndName & columns) const override { return function->isInjective(columns); }
 
     String getName() const override { return function->getName(); }
-    bool isStateful() const override { return function->isStateful(); }
     bool isVariadic() const override { return function->isVariadic(); }
     size_t getNumberOfArguments() const override { return function->getNumberOfArguments(); }
 

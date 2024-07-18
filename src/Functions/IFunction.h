@@ -174,8 +174,6 @@ public:
 
 #endif
 
-    virtual bool isStateful() const { return false; }
-
     /** Should we evaluate this function while constant folding, if arguments are constants?
       * Usually this is true. Notable counterexample is function 'sleep'.
       * If we will call it during query analysis, we will sleep extra amount of time.
@@ -347,9 +345,6 @@ public:
     virtual bool isDeterministicInScopeOfQuery() const { return true; }
     virtual bool isInjective(const ColumnsWithTypeAndName &) const { return false; }
 
-    /// Override and return true if function needs to depend on the state of the data.
-    virtual bool isStateful() const { return false; }
-
     /// Override and return true if function could take different number of arguments.
     virtual bool isVariadic() const { return false; }
 
@@ -500,7 +495,6 @@ public:
     virtual bool isDeterministic() const { return true; }
     virtual bool isDeterministicInScopeOfQuery() const { return true; }
     virtual bool isServerConstant() const { return false; }
-    virtual bool isStateful() const { return false; }
 
     using ShortCircuitSettings = IFunctionBase::ShortCircuitSettings;
     virtual bool isShortCircuit(ShortCircuitSettings & /*settings*/, size_t /*number_of_arguments*/) const { return false; }
@@ -573,6 +567,8 @@ using FunctionPtr = std::shared_ptr<IFunction>;
 
 struct FunctionProperties
 {
+    /// If the function depends on the state of the data.
+    bool is_stateful = false;
 };
 
 }

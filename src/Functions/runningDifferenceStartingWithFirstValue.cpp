@@ -7,7 +7,7 @@ namespace DB
 
 REGISTER_FUNCTION(RunningDifferenceStartingWithFirstValue)
 {
-    factory.registerFunction<FunctionRunningDifferenceImpl<false>>();
+    factory.registerFunction<FunctionRunningDifferenceImpl<false>>({}, {.is_stateful = true});
 }
 
 }
