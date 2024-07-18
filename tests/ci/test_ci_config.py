@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-
+import copy
 import unittest
 import random
 
@@ -416,6 +416,30 @@ class TestCIConfig(unittest.TestCase):
         """
         checks ci.py job configuration
         """
+
+        def _reset_ci_cache_to_wait_all_jobs(ci_cache):
+            # pretend there are pending jobs that we need to wait
+            ci_cache.jobs_to_wait = dict(ci_cache.jobs_to_do)
+            for job, config in ci_cache.jobs_to_wait.items():
+                assert config.batches
+                config.pending_batches = list(config.batches)
+
+                for batch in range(config.num_batches):
+                    record = CiCache.Record(
+                        record_type=CiCache.RecordType.PENDING,
+                        job_name=job,
+                        job_digest=ci_cache.job_digests[job],
+                        batch=batch,
+                        num_batches=config.num_batches,
+                        release_branch=True,
+                    )
+                    for record_t_, records_ in ci_cache.records.items():
+                        if record_t_.value == CiCache.RecordType.PENDING.value:
+                            records_[record.to_str_key()] = record
+                    assert not ci_cache.jobs_to_skip
+            assert ci_cache.jobs_to_wait
+            ci_cache.jobs_to_skip = []
+
         settings = CiSettings()
         settings.no_ci_cache = True
         pr_info = PRInfo(github_event=_TEST_EVENT_JSON)
@@ -431,26 +455,6 @@ class TestCIConfig(unittest.TestCase):
         ci_cache.await_pending_jobs(is_release=pr_info.is_release, dry_run=True)
         assert not ci_cache.jobs_to_skip
         assert not ci_cache.jobs_to_wait
-
-        # pretend there are pending jobs that we need to wait
-        ci_cache.jobs_to_wait = dict(ci_cache.jobs_to_do)
-        for job, config in ci_cache.jobs_to_wait.items():
-            assert not config.pending_batches
-            assert config.batches
-            config.pending_batches = list(config.batches)
-        for job, config in ci_cache.jobs_to_wait.items():
-            for batch in range(config.num_batches):
-                record = CiCache.Record(
-                    record_type=CiCache.RecordType.PENDING,
-                    job_name=job,
-                    job_digest=ci_cache.job_digests[job],
-                    batch=batch,
-                    num_batches=config.num_batches,
-                    release_branch=True,
-                )
-                for record_t_, records_ in ci_cache.records.items():
-                    if record_t_.value == CiCache.RecordType.PENDING.value:
-                        records_[record.to_str_key()] = record
 
         def _test_await_for_batch(
             ci_cache: CiCache, record_type: CiCache.RecordType, batch: int
@@ -477,32 +481,76 @@ class TestCIConfig(unittest.TestCase):
                     and batch < config_.num_batches
                 ):
                     assert batch not in config_.pending_batches
-                else:
-                    assert batch in config_.pending_batches
 
             for _, config_ in ci_cache.jobs_to_do.items():
                 # jobs to do must have batches to run before/after await
                 #  if it's an empty list after await - apparently job has not been removed after await
                 assert config_.batches
 
-        _test_await_for_batch(ci_cache, CiCache.RecordType.SUCCESSFUL, 0)
-        # check all one-batch jobs are in jobs_to_skip
-        for job in all_jobs_in_wf:
-            config = CI.JOB_CONFIGS[job]
-            if config.num_batches == 1:
-                self.assertTrue(job in ci_cache.jobs_to_skip)
-                self.assertTrue(job not in ci_cache.jobs_to_do)
-            else:
-                self.assertTrue(job not in ci_cache.jobs_to_skip)
-                self.assertTrue(job in ci_cache.jobs_to_do)
-
-        _test_await_for_batch(ci_cache, CiCache.RecordType.FAILED, 1)
-        _test_await_for_batch(ci_cache, CiCache.RecordType.SUCCESSFUL, 2)
-
-        self.assertTrue(len(ci_cache.jobs_to_skip) > 0)
-        self.assertTrue(len(ci_cache.jobs_to_do) > 0)
+        _reset_ci_cache_to_wait_all_jobs(ci_cache)
+        _test_await_for_batch(ci_cache, CiCache.RecordType.FAILED, 0)
+        tested = False
+        for job, config in ci_cache.jobs_to_do.items():
+            if config.batches == [0]:
+                tested = True
+                self.assertTrue(
+                    job not in ci_cache.jobs_to_wait,
+                    "Job must be removed from @jobs_to_wait, because its only batch has FAILED cache record",
+                )
         self.assertCountEqual(
-            list(ci_cache.jobs_to_do) + ci_cache.jobs_to_skip, all_jobs_in_wf
+            ci_cache.jobs_to_skip,
+            [],
+            "No jobs must be skipped, since all cache records are of type FAILED",
+        )
+        assert tested
+
+        # reset jobs_to_wait after previous test
+        _reset_ci_cache_to_wait_all_jobs(ci_cache)
+        assert not ci_cache.jobs_to_skip
+
+        # set batch 0 as SUCCESSFUL in ci cache
+        jobs_to_do_prev = list(ci_cache.jobs_to_do)
+        jobs_to_skip_prev = []
+        jobs_to_wait_prev = list(ci_cache.jobs_to_wait)
+        _test_await_for_batch(ci_cache, CiCache.RecordType.SUCCESSFUL, 0)
+        self.assertTrue(len(jobs_to_skip_prev) != len(ci_cache.jobs_to_skip))
+        self.assertTrue(len(jobs_to_wait_prev) > len(ci_cache.jobs_to_wait))
+        self.assertCountEqual(
+            list(ci_cache.jobs_to_do) + ci_cache.jobs_to_skip,
+            jobs_to_do_prev + jobs_to_skip_prev,
+        )
+
+        # set batch 1 as SUCCESSFUL in ci cache
+        jobs_to_do_prev = list(ci_cache.jobs_to_do)
+        jobs_to_skip_prev = list(ci_cache.jobs_to_skip)
+        jobs_to_wait_prev = list(ci_cache.jobs_to_wait)
+        _test_await_for_batch(ci_cache, CiCache.RecordType.SUCCESSFUL, 1)
+        self.assertTrue(len(jobs_to_skip_prev) != len(ci_cache.jobs_to_skip))
+        self.assertTrue(len(jobs_to_wait_prev) > len(ci_cache.jobs_to_wait))
+        self.assertCountEqual(
+            list(ci_cache.jobs_to_do) + ci_cache.jobs_to_skip,
+            jobs_to_do_prev + jobs_to_skip_prev,
+        )
+
+        # set batch 3, 4, 5, 6 as SUCCESSFUL in ci cache
+        jobs_to_do_prev = list(ci_cache.jobs_to_do)
+        jobs_to_skip_prev = list(ci_cache.jobs_to_skip)
+        jobs_to_wait_prev = list(ci_cache.jobs_to_wait)
+        _test_await_for_batch(ci_cache, CiCache.RecordType.SUCCESSFUL, 2)
+        self.assertTrue(ci_cache.jobs_to_do)
+        _test_await_for_batch(ci_cache, CiCache.RecordType.SUCCESSFUL, 3)
+        self.assertTrue(ci_cache.jobs_to_do)
+        _test_await_for_batch(ci_cache, CiCache.RecordType.SUCCESSFUL, 4)
+        self.assertTrue(ci_cache.jobs_to_do)
+        _test_await_for_batch(ci_cache, CiCache.RecordType.SUCCESSFUL, 5)
+        self.assertTrue(
+            not ci_cache.jobs_to_do
+        )  # by this moment there must be no jobs left as batch 5 is currently the maximum
+        self.assertTrue(len(jobs_to_skip_prev) != len(ci_cache.jobs_to_skip))
+        self.assertTrue(len(jobs_to_wait_prev) > len(ci_cache.jobs_to_wait))
+        self.assertCountEqual(
+            list(ci_cache.jobs_to_do) + ci_cache.jobs_to_skip,
+            jobs_to_do_prev + jobs_to_skip_prev,
         )
 
     def test_ci_py_filters_not_affected_jobs_in_prs(self):

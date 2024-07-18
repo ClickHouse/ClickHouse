@@ -3,48 +3,27 @@
 import re
 from typing import Tuple
 
-# Individual trusted contirbutors who are not in any trusted organization.
+# Individual trusted contributors who are not in any trusted organization.
 # Can be changed in runtime: we will append users that we learned to be in
 # a trusted org, to save GitHub API calls.
 TRUSTED_CONTRIBUTORS = {
     e.lower()
     for e in [
-        "achimbab",  # Kakao corp
-        "Algunenano",  # Raúl Marín, ClickHouse, Inc
         "amosbird",
         "azat",  # SEMRush
         "bharatnc",  # Many contributions.
-        "bobrik",  # Seasoned contributor, CloudFlare
         "cwurm",  # ClickHouse, Inc
         "den-crane",  # Documentation contributor
-        "hagen1778",  # Roman Khavronenko, seasoned contributor
-        "hczhcz",
-        "hexiaoting",  # Seasoned contributor
         "ildus",  # adjust, ex-pgpro
-        "javisantana",  # a Spanish ClickHouse enthusiast, ex-Carto
-        "kreuzerkrieg",
-        "nikvas0",
         "nvartolomei",  # Seasoned contributor, CloudFlare
-        "spongedu",  # Seasoned contributor
         "taiyang-li",
         "ucasFL",  # Amos Bird's friend
-        "vdimir",  # ClickHouse, Inc
-        "YiuRULE",
-        "zlobober",  # Developer of YT
-        "ilejn",  # Arenadata, responsible for Kerberized Kafka
         "thomoco",  # ClickHouse, Inc
-        "BoloniniD",  # Seasoned contributor, HSE
         "tonickkozlov",  # Cloudflare
         "tylerhannan",  # ClickHouse, Inc
-        "myrrc",  # Mike Kot, DoubleCloud
-        "thevar1able",  # ClickHouse, Inc
-        "aalexfvk",
-        "MikhailBurdukov",
         "tsolodov",  # ClickHouse, Inc
-        "kitaisreal",
-        "k-morozov",  # Konstantin Morozov, Yandex Cloud
         "justindeguzman",  # ClickHouse, Inc
-        "jrdi",  # ClickHouse contributor, TinyBird
+        "XuJia0210",  # ClickHouse, Inc
     ]
 }
 
