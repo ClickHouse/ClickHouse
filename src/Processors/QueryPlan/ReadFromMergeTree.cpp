@@ -591,10 +591,9 @@ Pipe ReadFromMergeTree::readInOrder(
     /// If parallel replicas enabled, set total rows in progress here only on initiator with local plan
     /// Otherwise rows will counted multiple times
     const UInt64 in_order_limit = query_info.input_order_info ? query_info.input_order_info->limit : 0;
-    const bool parallel_replicas_remote_plan_for_initiator = is_parallel_reading_from_replicas
-        && !context->getSettingsRef().parallel_replicas_local_plan && context->canUseParallelReplicasOnInitiator();
-    const bool parallel_replicas_follower = is_parallel_reading_from_replicas && context->canUseParallelReplicasOnFollower();
-    const bool set_total_rows_approx = !parallel_replicas_follower && !parallel_replicas_remote_plan_for_initiator;
+    const bool parallel_replicas_local_plan_for_initiator = is_parallel_reading_from_replicas
+        && context->getSettingsRef().parallel_replicas_local_plan && context->canUseParallelReplicasOnInitiator();
+    const bool set_total_rows_approx = !is_parallel_reading_from_replicas || parallel_replicas_local_plan_for_initiator;
 
     Pipes pipes;
     for (size_t i = 0; i < parts_with_ranges.size(); ++i)
