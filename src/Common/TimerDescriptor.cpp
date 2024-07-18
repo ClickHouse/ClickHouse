@@ -34,7 +34,8 @@ TimerDescriptor::TimerDescriptor(TimerDescriptor && other) noexcept : timer_fd(o
 
 TimerDescriptor & TimerDescriptor::operator=(DB::TimerDescriptor && other) noexcept
 {
-    std::swap(timer_fd, other.timer_fd);
+    timer_fd = other.timer_fd;
+    other.timer_fd = -1;
     return *this;
 }
 
