@@ -3416,14 +3416,14 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             function_base = function->build(argument_columns);
 
         /// Do not constant fold get scalar functions
-        bool disable_constant_folding = function_name == "__getScalar" || function_name == "shardNum" ||
-            function_name == "shardCount" || function_name == "hostName" || function_name == "tcpPort";
+        // bool disable_constant_folding = function_name == "__getScalar" || function_name == "shardNum" ||
+        //     function_name == "shardCount" || function_name == "hostName" || function_name == "tcpPort";
 
         /** If function is suitable for constant folding try to convert it to constant.
           * Example: SELECT plus(1, 1);
           * Result: SELECT 2;
           */
-        if (function_base->isSuitableForConstantFolding() && !disable_constant_folding)
+        if (function_base->isSuitableForConstantFolding()) // && !disable_constant_folding)
         {
             auto result_type = function_base->getResultType();
             auto executable_function = function_base->prepare(argument_columns);
@@ -3832,6 +3832,10 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
                 node->convertToNullable();
                 break;
             }
+
+            /// Check parent scopes until find current query scope.
+            if (scope_ptr->scope_node->getNodeType() == QueryTreeNodeType::QUERY)
+                break;
         }
     }
 
