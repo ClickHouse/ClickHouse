@@ -219,7 +219,7 @@ std::pair<ColumnString::Ptr, ColumnString::Ptr> EmbeddedRocksDBBulkSink::seriali
     return {std::move(serialized_key_column), std::move(serialized_value_column)};
 }
 
-void EmbeddedRocksDBBulkSink::consume(Chunk chunk_)
+void EmbeddedRocksDBBulkSink::consume(Chunk & chunk_)
 {
     std::vector<Chunk> chunks_to_write = squash(std::move(chunk_));
 
@@ -249,7 +249,10 @@ void EmbeddedRocksDBBulkSink::onFinish()
 {
     /// If there is any data left, write it.
     if (!chunks.empty())
-        consume({});
+    {
+        Chunk empty;
+        consume(empty);
+    }
 }
 
 String EmbeddedRocksDBBulkSink::getTemporarySSTFilePath()
