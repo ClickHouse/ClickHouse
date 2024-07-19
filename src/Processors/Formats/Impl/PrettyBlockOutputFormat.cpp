@@ -505,7 +505,7 @@ void PrettyBlockOutputFormat::writeHeaderWithPadding(
         const size_t back_width = static_cast<size_t>(std::floor((max_widths[col_num] - 1) / 2.0));
         size_t cur_back_width = 0;
         size_t pos = col.name.size()-1;
-        while(cur_back_width < back_width)
+        while (cur_back_width < back_width)
         {
             cur_back_width = UTF8::computeWidth(reinterpret_cast<const UInt8 *>(col.name.data()+pos), col.name.size()-pos, 0);
             --pos;
