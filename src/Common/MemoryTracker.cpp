@@ -34,9 +34,6 @@
 
 namespace
 {
-
-    std::mutex memory_tracker_mutex;
-
     /// MemoryTracker cannot throw MEMORY_LIMIT_EXCEEDED (either configured memory
     /// limit reached or fault injected), in the following cases:
     ///
@@ -624,17 +621,15 @@ bool canEnqueueBackgroundTask()
 void MemoryTracker::updateMemoryCredits()
 {
     static Stopwatch stopwatch;
-    static size_t previous_value = 0;
-    constexpr Int64 local_threshold = 1024 * 1024;   /// The choice is arbitrary (maybe we should decrease it)
-    size_t current_value = amount;
-
-    std::lock_guard<std::mutex> lock(memory_tracker_mutex);  // Lock the mutex here
+    static std::atomic<size_t> previous_value{0}; // Use atomic for previous_value
+    constexpr Int64 local_threshold = 1024 * 1024;   // The choice is arbitrary (maybe we should decrease it)
+    size_t current_value = amount.load(std::memory_order_relaxed); // Use relaxed order for reading
 
     if (current_value > previous_value && current_value - previous_value > local_threshold)
     {
         size_t delta = (current_value - previous_value) * stopwatch.elapsedMicroseconds();
         ProfileEvents::increment(ProfileEvents::MemoryCredits, delta);
-        previous_value = current_value;
+        previous_value.store(current_value, std::memory_order_relaxed); // Use relaxed order for storing
         stopwatch.restart();
     }
 }
