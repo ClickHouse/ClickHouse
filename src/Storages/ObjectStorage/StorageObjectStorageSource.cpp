@@ -1,18 +1,17 @@
 #include "StorageObjectStorageSource.h"
+#include <Storages/VirtualColumnUtils.h>
 #include <Disks/ObjectStorages/ObjectStorageIterator.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Processors/Transforms/AddingDefaultsTransform.h>
+#include <Processors/Sources/ConstChunkGenerator.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/Transforms/ExtractColumnsTransform.h>
+#include <IO/ReadBufferFromFileBase.h>
+#include <IO/Archives/createArchiveReader.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/ReadSchemaUtils.h>
-#include <IO/Archives/createArchiveReader.h>
-#include <IO/ReadBufferFromFileBase.h>
-#include <Processors/Executors/PullingPipelineExecutor.h>
-#include <Processors/Sources/ConstChunkGenerator.h>
-#include <Processors/Transforms/AddingDefaultsTransform.h>
-#include <Processors/Transforms/ExtractColumnsTransform.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
-#include <Storages/Cache/SchemaCache.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
-#include <Storages/VirtualColumnUtils.h>
-#include "Common/logger_useful.h"
+#include <Storages/Cache/SchemaCache.h>
 #include <Common/parseGlobs.h>
 #include <Core/Settings.h>
 
@@ -71,7 +70,6 @@ StorageObjectStorageSource::StorageObjectStorageSource(
     , schema_cache(StorageObjectStorage::getSchemaCache(context_, configuration->getTypeName()))
     , create_reader_scheduler(threadPoolCallbackRunnerUnsafe<ReaderHolder>(*create_reader_pool, "Reader"))
 {
-    LOG_DEBUG(&Poco::Logger::get("Source created"), "Source created");
 }
 
 StorageObjectStorageSource::~StorageObjectStorageSource()
@@ -134,7 +132,6 @@ std::shared_ptr<StorageObjectStorageSource::IIterator> StorageObjectStorageSourc
     {
         ConfigurationPtr copy_configuration = configuration->clone();
         auto filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns);
-
         if (filter_dag)
         {
             auto keys = configuration->getPaths();
@@ -145,19 +142,6 @@ std::shared_ptr<StorageObjectStorageSource::IIterator> StorageObjectStorageSourc
             VirtualColumnUtils::filterByPathOrFile(keys, paths, filter_dag, virtual_columns, local_context);
             copy_configuration->setPaths(keys);
         }
-
-        LOG_DEBUG(&Poco::Logger::get("Conf"), "Keys size: {}", configuration->getPaths().size());
-        for (auto && key : configuration->getPaths())
-        {
-            LOG_DEBUG(&Poco::Logger::get("Conf"), "Current key: {}", key);
-        }
-
-        LOG_DEBUG(&Poco::Logger::get("Copy Conf"), "Keys size: {}", copy_configuration->getPaths().size());
-        for (auto && key : copy_configuration->getPaths())
-        {
-            LOG_DEBUG(&Poco::Logger::get("Copy Conf"), "Current key: {}", key);
-        }
-
 
         iterator = std::make_unique<KeysIterator>(
             object_storage, copy_configuration, virtual_columns, is_archive ? nullptr : read_keys,
@@ -187,11 +171,8 @@ Chunk StorageObjectStorageSource::generate()
 {
     lazyInitialize();
 
-
     while (true)
     {
-        LOG_DEBUG(&Poco::Logger::get("Generating"), "Generating reader: {}", !(!reader));
-
         if (isCancelled() || !reader)
         {
             if (reader)
@@ -199,15 +180,10 @@ Chunk StorageObjectStorageSource::generate()
             break;
         }
 
-        LOG_DEBUG(&Poco::Logger::get("Generating 2"), "Generating 2");
-
         Chunk chunk;
         if (reader->pull(chunk))
         {
-            LOG_DEBUG(&Poco::Logger::get("Generating 3"), "Generating 3");
-
             UInt64 num_rows = chunk.getNumRows();
-            LOG_DEBUG(&Poco::Logger::get("Creating_chunk"), "Chunk size: {}", num_rows);
             total_rows_in_file += num_rows;
 
             size_t chunk_size = 0;
@@ -254,9 +230,6 @@ Chunk StorageObjectStorageSource::generate()
             }
             return chunk;
         }
-
-        LOG_DEBUG(&Poco::Logger::get("Generating 4"), "Generating 4");
-
 
         if (reader.getInputFormat() && getContext()->getSettingsRef().use_cache_for_count_from_files)
             addNumRowsToCache(*reader.getObjectInfo(), total_rows_in_file);
@@ -328,8 +301,6 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     }
     while (query_settings.skip_empty_files && object_info->metadata->size_bytes == 0);
 
-    LOG_DEBUG(&Poco::Logger::get("Unreached point 1"), "");
-
     QueryPipelineBuilder builder;
     std::shared_ptr<ISource> source;
     std::unique_ptr<ReadBuffer> read_buf;
@@ -354,16 +325,10 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         return schema_cache->tryGetNumRows(cache_key, get_last_mod_time);
     };
 
-    LOG_DEBUG(&Poco::Logger::get("Unreached point 2"), "");
-
-
     std::optional<size_t> num_rows_from_cache = need_only_count
         && context_->getSettingsRef().use_cache_for_count_from_files
         ? try_get_num_rows_from_cache()
         : std::nullopt;
-
-    LOG_DEBUG(&Poco::Logger::get("Unreached point 3"), "");
-
 
     if (num_rows_from_cache)
     {
@@ -377,8 +342,6 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     }
     else
     {
-        LOG_DEBUG(&Poco::Logger::get("Unreached point 4"), "");
-
         CompressionMethod compression_method;
         if (const auto * object_info_in_archive = dynamic_cast<const ArchiveIterator::ObjectInfoInArchive *>(object_info.get()))
         {
@@ -389,12 +352,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         else
         {
             compression_method = chooseCompressionMethod(object_info->getFileName(), configuration->compression_method);
-            LOG_DEBUG(&Poco::Logger::get("Info relative path"), "Info: {}", object_info->relative_path);
             read_buf = createReadBuffer(*object_info, object_storage, context_, log);
-            auto new_read_buf = createReadBuffer(*object_info, object_storage, context_, log);
-            std::string answer(1000, ' ');
-            size_t read_bytes = new_read_buf->read(answer.data(), 1000);
-            LOG_DEBUG(&Poco::Logger::get("Read buffer"), "Read bytes: {}, string: {}", read_bytes, answer.substr(0, read_bytes));
         }
 
         auto input_format = FormatFactory::instance().getInput(
@@ -460,17 +418,11 @@ std::unique_ptr<ReadBuffer> StorageObjectStorageSource::createReadBuffer(
     const auto & object_size = object_info.metadata->size_bytes;
 
     auto read_settings = context_->getReadSettings().adjustBufferSize(object_size);
-
-    // read_settings.remote_fs_method = RemoteFSReadMethod::read;
-
-    LOG_DEBUG(&Poco::Logger::get("Threadpool"), "Method threadpool: {}", read_settings.remote_fs_method == RemoteFSReadMethod::threadpool);
-
     read_settings.enable_filesystem_cache = false;
     /// FIXME: Changing this setting to default value breaks something around parquet reading
     read_settings.remote_read_min_bytes_for_seek = read_settings.remote_fs_buffer_size;
 
     const bool object_too_small = object_size <= 2 * context_->getSettingsRef().max_download_buffer_size;
-
     const bool use_prefetch = object_too_small && read_settings.remote_fs_method == RemoteFSReadMethod::threadpool;
     read_settings.remote_fs_method = use_prefetch ? RemoteFSReadMethod::threadpool : RemoteFSReadMethod::read;
     /// User's object may change, don't cache it.
@@ -479,28 +431,24 @@ std::unique_ptr<ReadBuffer> StorageObjectStorageSource::createReadBuffer(
     // Create a read buffer that will prefetch the first ~1 MB of the file.
     // When reading lots of tiny files, this prefetching almost doubles the throughput.
     // For bigger files, parallel reading is more useful.
-    // if (use_prefetch)
-    // {
-    LOG_TRACE(log, "Downloading object of size {} with initial prefetch", object_size);
+    if (use_prefetch)
+    {
+        LOG_TRACE(log, "Downloading object of size {} with initial prefetch", object_size);
 
-    LOG_DEBUG(&Poco::Logger::get("Read objects"), "Path: {}, object size: {}", object_info.getPath(), object_size);
+        auto async_reader = object_storage->readObjects(
+            StoredObjects{StoredObject{object_info.getPath(), /* local_path */ "", object_size}}, read_settings);
 
-    auto async_reader
-        = object_storage->readObjects(StoredObjects{StoredObject{object_info.getPath(), /* local_path */ "", object_size}}, read_settings);
+        async_reader->setReadUntilEnd();
+        if (read_settings.remote_fs_prefetch)
+            async_reader->prefetch(DEFAULT_PREFETCH_PRIORITY);
 
-    async_reader->setReadUntilEnd();
-    if (read_settings.remote_fs_prefetch)
-        async_reader->prefetch(DEFAULT_PREFETCH_PRIORITY);
-
-    return async_reader;
-    // }
-    // else
-    // {
-    //     /// FIXME: this is inconsistent that readObject always reads synchronously ignoring read_method setting.
-    //     LOG_DEBUG(&Poco::Logger::get("Read object"), "Path: {}, object size: {}", object_info.getPath(), object_size);
-
-    //     return object_storage->readObject(StoredObject(object_info.getPath(), "", object_size), read_settings);
-    // }
+        return async_reader;
+    }
+    else
+    {
+        /// FIXME: this is inconsistent that readObject always reads synchronously ignoring read_method setting.
+        return object_storage->readObject(StoredObject(object_info.getPath(), "", object_size), read_settings);
+    }
 }
 
 StorageObjectStorageSource::IIterator::IIterator(const std::string & logger_name_)
@@ -678,18 +626,11 @@ StorageObjectStorageSource::KeysIterator::KeysIterator(
     , keys(configuration->getPaths())
     , ignore_non_existent_files(ignore_non_existent_files_)
 {
-    LOG_DEBUG(&Poco::Logger::get("Keys size"), "Keys size: {}", keys.size());
-    for (auto && key : keys)
-    {
-        LOG_DEBUG(&Poco::Logger::get("Current Key"), "Current key: {}", key);
-    }
     if (read_keys_)
     {
         /// TODO: should we add metadata if we anyway fetch it if file_progress_callback is passed?
-
         for (auto && key : keys)
         {
-            LOG_DEBUG(&Poco::Logger::get("Current Key"), "Current key: {}", key);
             auto object_info = std::make_shared<ObjectInfo>(key);
             read_keys_->emplace_back(object_info);
         }

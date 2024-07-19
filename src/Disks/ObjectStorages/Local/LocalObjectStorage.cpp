@@ -1,18 +1,15 @@
 #include <Disks/ObjectStorages/Local/LocalObjectStorage.h>
 
-#include <exception>
-#include <filesystem>
-#include <stdexcept>
-#include <Disks/IO/AsynchronousBoundedReadBuffer.h>
+#include <Interpreters/Context.h>
+#include <Common/filesystemHelpers.h>
+#include <Common/logger_useful.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Disks/IO/createReadBufferFromFileBase.h>
+#include <Disks/IO/AsynchronousBoundedReadBuffer.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/copyData.h>
-#include <Interpreters/Context.h>
-#include <Poco/Logger.h>
-#include <Common/filesystemHelpers.h>
 #include <Common/getRandomASCIIString.h>
-#include <Common/logger_useful.h>
+#include <filesystem>
 
 namespace fs = std::filesystem;
 
@@ -57,7 +54,6 @@ std::unique_ptr<ReadBufferFromFileBase> LocalObjectStorage::readObjects( /// NOL
     {
         return createReadBufferFromFileBase(object.remote_path, modified_settings, read_hint, file_size);
     };
-
 
     return std::make_unique<ReadBufferFromRemoteFSGather>(
         std::move(read_buffer_creator),
