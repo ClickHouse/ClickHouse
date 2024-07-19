@@ -47,82 +47,80 @@ public:
     void dispatchForColumns(
         const IColumn & col_x, const IColumn & col_y,
         const DateLUTImpl & timezone_x, const DateLUTImpl & timezone_y,
+        size_t input_rows_count,
         ColumnInt64::Container & result) const
     {
         if (const auto * x_vec_16 = checkAndGetColumn<ColumnDate>(&col_x))
-            dispatchForSecondColumn<Transform>(*x_vec_16, col_y, timezone_x, timezone_y, result);
+            dispatchForSecondColumn<Transform>(*x_vec_16, col_y, timezone_x, timezone_y, input_rows_count, result);
         else if (const auto * x_vec_32 = checkAndGetColumn<ColumnDateTime>(&col_x))
-            dispatchForSecondColumn<Transform>(*x_vec_32, col_y, timezone_x, timezone_y, result);
+            dispatchForSecondColumn<Transform>(*x_vec_32, col_y, timezone_x, timezone_y, input_rows_count, result);
         else if (const auto * x_vec_32_s = checkAndGetColumn<ColumnDate32>(&col_x))
-            dispatchForSecondColumn<Transform>(*x_vec_32_s, col_y, timezone_x, timezone_y, result);
+            dispatchForSecondColumn<Transform>(*x_vec_32_s, col_y, timezone_x, timezone_y, input_rows_count, result);
         else if (const auto * x_vec_64 = checkAndGetColumn<ColumnDateTime64>(&col_x))
-            dispatchForSecondColumn<Transform>(*x_vec_64, col_y, timezone_x, timezone_y, result);
+            dispatchForSecondColumn<Transform>(*x_vec_64, col_y, timezone_x, timezone_y, input_rows_count, result);
         else if (const auto * x_const_16 = checkAndGetColumnConst<ColumnDate>(&col_x))
-            dispatchConstForSecondColumn<Transform>(x_const_16->getValue<UInt16>(), col_y, timezone_x, timezone_y, result);
+            dispatchConstForSecondColumn<Transform>(x_const_16->getValue<UInt16>(), col_y, timezone_x, timezone_y, input_rows_count, result);
         else if (const auto * x_const_32 = checkAndGetColumnConst<ColumnDateTime>(&col_x))
-            dispatchConstForSecondColumn<Transform>(x_const_32->getValue<UInt32>(), col_y, timezone_x, timezone_y, result);
+            dispatchConstForSecondColumn<Transform>(x_const_32->getValue<UInt32>(), col_y, timezone_x, timezone_y, input_rows_count, result);
         else if (const auto * x_const_32_s = checkAndGetColumnConst<ColumnDate32>(&col_x))
-            dispatchConstForSecondColumn<Transform>(x_const_32_s->getValue<Int32>(), col_y, timezone_x, timezone_y, result);
+            dispatchConstForSecondColumn<Transform>(x_const_32_s->getValue<Int32>(), col_y, timezone_x, timezone_y, input_rows_count, result);
         else if (const auto * x_const_64 = checkAndGetColumnConst<ColumnDateTime64>(&col_x))
-            dispatchConstForSecondColumn<Transform>(x_const_64->getValue<DecimalField<DateTime64>>(), col_y, timezone_x, timezone_y, result);
+            dispatchConstForSecondColumn<Transform>(x_const_64->getValue<DecimalField<DateTime64>>(), col_y, timezone_x, timezone_y, input_rows_count, result);
         else
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-                "Illegal column for first argument of function {}, must be Date, Date32, DateTime or DateTime64",
-                name);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column for first argument of function {}, must be Date, Date32, DateTime or DateTime64", name);
     }
 
     template <typename Transform, typename LeftColumnType>
     void dispatchForSecondColumn(
         const LeftColumnType & x, const IColumn & col_y,
         const DateLUTImpl & timezone_x, const DateLUTImpl & timezone_y,
+        size_t input_rows_count,
         ColumnInt64::Container & result) const
     {
         if (const auto * y_vec_16 = checkAndGetColumn<ColumnDate>(&col_y))
-            vectorVector<Transform>(x, *y_vec_16, timezone_x, timezone_y, result);
+            vectorVector<Transform>(x, *y_vec_16, timezone_x, timezone_y, input_rows_count, result);
         else if (const auto * y_vec_32 = checkAndGetColumn<ColumnDateTime>(&col_y))
-            vectorVector<Transform>(x, *y_vec_32, timezone_x, timezone_y, result);
+            vectorVector<Transform>(x, *y_vec_32, timezone_x, timezone_y, input_rows_count, result);
         else if (const auto * y_vec_32_s = checkAndGetColumn<ColumnDate32>(&col_y))
-            vectorVector<Transform>(x, *y_vec_32_s, timezone_x, timezone_y, result);
+            vectorVector<Transform>(x, *y_vec_32_s, timezone_x, timezone_y, input_rows_count, result);
         else if (const auto * y_vec_64 = checkAndGetColumn<ColumnDateTime64>(&col_y))
-            vectorVector<Transform>(x, *y_vec_64, timezone_x, timezone_y, result);
+            vectorVector<Transform>(x, *y_vec_64, timezone_x, timezone_y, input_rows_count, result);
         else if (const auto * y_const_16 = checkAndGetColumnConst<ColumnDate>(&col_y))
-            vectorConstant<Transform>(x, y_const_16->getValue<UInt16>(), timezone_x, timezone_y, result);
+            vectorConstant<Transform>(x, y_const_16->getValue<UInt16>(), timezone_x, timezone_y, input_rows_count, result);
         else if (const auto * y_const_32 = checkAndGetColumnConst<ColumnDateTime>(&col_y))
-            vectorConstant<Transform>(x, y_const_32->getValue<UInt32>(), timezone_x, timezone_y, result);
+            vectorConstant<Transform>(x, y_const_32->getValue<UInt32>(), timezone_x, timezone_y, input_rows_count, result);
         else if (const auto * y_const_32_s = checkAndGetColumnConst<ColumnDate32>(&col_y))
-            vectorConstant<Transform>(x, y_const_32_s->getValue<Int32>(), timezone_x, timezone_y, result);
+            vectorConstant<Transform>(x, y_const_32_s->getValue<Int32>(), timezone_x, timezone_y, input_rows_count, result);
         else if (const auto * y_const_64 = checkAndGetColumnConst<ColumnDateTime64>(&col_y))
-            vectorConstant<Transform>(x, y_const_64->getValue<DecimalField<DateTime64>>(), timezone_x, timezone_y, result);
+            vectorConstant<Transform>(x, y_const_64->getValue<DecimalField<DateTime64>>(), timezone_x, timezone_y, input_rows_count, result);
         else
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-                "Illegal column for second argument of function {}, must be Date, Date32, DateTime or DateTime64",
-                name);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column for second argument of function {}, must be Date, Date32, DateTime or DateTime64", name);
     }
 
     template <typename Transform, typename T1>
     void dispatchConstForSecondColumn(
         T1 x, const IColumn & col_y,
         const DateLUTImpl & timezone_x, const DateLUTImpl & timezone_y,
+        size_t input_rows_count,
         ColumnInt64::Container & result) const
     {
         if (const auto * y_vec_16 = checkAndGetColumn<ColumnDate>(&col_y))
-            constantVector<Transform>(x, *y_vec_16, timezone_x, timezone_y, result);
+            constantVector<Transform>(x, *y_vec_16, timezone_x, timezone_y, input_rows_count, result);
         else if (const auto * y_vec_32 = checkAndGetColumn<ColumnDateTime>(&col_y))
-            constantVector<Transform>(x, *y_vec_32, timezone_x, timezone_y, result);
+            constantVector<Transform>(x, *y_vec_32, timezone_x, timezone_y, input_rows_count, result);
         else if (const auto * y_vec_32_s = checkAndGetColumn<ColumnDate32>(&col_y))
-            constantVector<Transform>(x, *y_vec_32_s, timezone_x, timezone_y, result);
+            constantVector<Transform>(x, *y_vec_32_s, timezone_x, timezone_y, input_rows_count, result);
         else if (const auto * y_vec_64 = checkAndGetColumn<ColumnDateTime64>(&col_y))
-            constantVector<Transform>(x, *y_vec_64, timezone_x, timezone_y, result);
+            constantVector<Transform>(x, *y_vec_64, timezone_x, timezone_y, input_rows_count, result);
         else
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-                "Illegal column for second argument of function {}, must be Date, Date32, DateTime or DateTime64",
-                name);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column for second argument of function {}, must be Date, Date32, DateTime or DateTime64", name);
     }
 
     template <typename Transform, typename LeftColumnType, typename RightColumnType>
     void vectorVector(
         const LeftColumnType & x, const RightColumnType & y,
         const DateLUTImpl & timezone_x, const DateLUTImpl & timezone_y,
+        size_t input_rows_count,
         ColumnInt64::Container & result) const
     {
         const auto & x_data = x.getData();
@@ -130,14 +128,15 @@ public:
 
         const auto transform_x = TransformDateTime64<Transform>(getScale(x));
         const auto transform_y = TransformDateTime64<Transform>(getScale(y));
-        for (size_t i = 0, size = x.size(); i < size; ++i)
-                result[i] = calculate(transform_x, transform_y, x_data[i], y_data[i], timezone_x, timezone_y);
+        for (size_t i = 0; i < input_rows_count; ++i)
+            result[i] = calculate(transform_x, transform_y, x_data[i], y_data[i], timezone_x, timezone_y);
     }
 
     template <typename Transform, typename LeftColumnType, typename T2>
     void vectorConstant(
         const LeftColumnType & x, T2 y,
         const DateLUTImpl & timezone_x, const DateLUTImpl & timezone_y,
+        size_t input_rows_count,
         ColumnInt64::Container & result) const
     {
         const auto & x_data = x.getData();
@@ -145,7 +144,7 @@ public:
         const auto transform_y = TransformDateTime64<Transform>(getScale(y));
         const auto y_value = stripDecimalFieldValue(y);
 
-        for (size_t i = 0, size = x.size(); i < size; ++i)
+        for (size_t i = 0; i < input_rows_count; ++i)
             result[i] = calculate(transform_x, transform_y, x_data[i], y_value, timezone_x, timezone_y);
     }
 
@@ -153,6 +152,7 @@ public:
     void constantVector(
         T1 x, const RightColumnType & y,
         const DateLUTImpl & timezone_x, const DateLUTImpl & timezone_y,
+        size_t input_rows_count,
         ColumnInt64::Container & result) const
     {
         const auto & y_data = y.getData();
@@ -160,19 +160,22 @@ public:
         const auto transform_y = TransformDateTime64<Transform>(getScale(y));
         const auto x_value = stripDecimalFieldValue(x);
 
-        for (size_t i = 0, size = y.size(); i < size; ++i)
+        for (size_t i = 0; i < input_rows_count; ++i)
             result[i] = calculate(transform_x, transform_y, x_value, y_data[i], timezone_x, timezone_y);
     }
 
     template <typename TransformX, typename TransformY, typename T1, typename T2>
     Int64 calculate(const TransformX & transform_x, const TransformY & transform_y, T1 x, T2 y, const DateLUTImpl & timezone_x, const DateLUTImpl & timezone_y) const
     {
+        auto res =  static_cast<Int64>(transform_y.execute(y, timezone_y)) - static_cast<Int64>(transform_x.execute(x, timezone_x));
+
         if constexpr (is_diff)
-            return static_cast<Int64>(transform_y.execute(y, timezone_y)) - static_cast<Int64>(transform_x.execute(x, timezone_x));
+        {
+            return res;
+        }
         else
         {
-            auto res = static_cast<Int64>(transform_y.execute(y, timezone_y))
-                - static_cast<Int64>(transform_x.execute(x, timezone_x));
+            /// Adjust res:
             DateTimeComponentsWithFractionalPart a_comp;
             DateTimeComponentsWithFractionalPart b_comp;
             Int64 adjust_value;
@@ -373,27 +376,27 @@ public:
         const auto & timezone_y = extractTimeZoneFromFunctionArguments(arguments, 3, 2);
 
         if (unit == "year" || unit == "years" || unit == "yy" || unit == "yyyy")
-            impl.template dispatchForColumns<ToRelativeYearNumImpl<ResultPrecision::Extended>>(col_x, col_y, timezone_x, timezone_y, col_res->getData());
+            impl.template dispatchForColumns<ToRelativeYearNumImpl<ResultPrecision::Extended>>(col_x, col_y, timezone_x, timezone_y, input_rows_count, col_res->getData());
         else if (unit == "quarter" || unit == "quarters" || unit == "qq" || unit == "q")
-            impl.template dispatchForColumns<ToRelativeQuarterNumImpl<ResultPrecision::Extended>>(col_x, col_y, timezone_x, timezone_y, col_res->getData());
+            impl.template dispatchForColumns<ToRelativeQuarterNumImpl<ResultPrecision::Extended>>(col_x, col_y, timezone_x, timezone_y, input_rows_count, col_res->getData());
         else if (unit == "month" || unit == "months" || unit == "mm" || unit == "m")
-            impl.template dispatchForColumns<ToRelativeMonthNumImpl<ResultPrecision::Extended>>(col_x, col_y, timezone_x, timezone_y, col_res->getData());
+            impl.template dispatchForColumns<ToRelativeMonthNumImpl<ResultPrecision::Extended>>(col_x, col_y, timezone_x, timezone_y, input_rows_count, col_res->getData());
         else if (unit == "week" || unit == "weeks" || unit == "wk" || unit == "ww")
-            impl.template dispatchForColumns<ToRelativeWeekNumImpl<ResultPrecision::Extended>>(col_x, col_y, timezone_x, timezone_y, col_res->getData());
+            impl.template dispatchForColumns<ToRelativeWeekNumImpl<ResultPrecision::Extended>>(col_x, col_y, timezone_x, timezone_y, input_rows_count, col_res->getData());
         else if (unit == "day" || unit == "days" || unit == "dd" || unit == "d")
-            impl.template dispatchForColumns<ToRelativeDayNumImpl<ResultPrecision::Extended>>(col_x, col_y, timezone_x, timezone_y, col_res->getData());
+            impl.template dispatchForColumns<ToRelativeDayNumImpl<ResultPrecision::Extended>>(col_x, col_y, timezone_x, timezone_y, input_rows_count, col_res->getData());
         else if (unit == "hour" || unit == "hours" || unit == "hh" || unit == "h")
-            impl.template dispatchForColumns<ToRelativeHourNumImpl<ResultPrecision::Extended>>(col_x, col_y, timezone_x, timezone_y, col_res->getData());
+            impl.template dispatchForColumns<ToRelativeHourNumImpl<ResultPrecision::Extended>>(col_x, col_y, timezone_x, timezone_y, input_rows_count, col_res->getData());
         else if (unit == "minute" || unit == "minutes" || unit == "mi" || unit == "n")
-            impl.template dispatchForColumns<ToRelativeMinuteNumImpl<ResultPrecision::Extended>>(col_x, col_y, timezone_x, timezone_y, col_res->getData());
+            impl.template dispatchForColumns<ToRelativeMinuteNumImpl<ResultPrecision::Extended>>(col_x, col_y, timezone_x, timezone_y, input_rows_count, col_res->getData());
         else if (unit == "second" || unit == "seconds" || unit == "ss" || unit == "s")
-            impl.template dispatchForColumns<ToRelativeSecondNumImpl<ResultPrecision::Extended>>(col_x, col_y, timezone_x, timezone_y, col_res->getData());
+            impl.template dispatchForColumns<ToRelativeSecondNumImpl<ResultPrecision::Extended>>(col_x, col_y, timezone_x, timezone_y, input_rows_count, col_res->getData());
         else if (unit == "millisecond" || unit == "milliseconds" || unit == "ms")
-            impl.template dispatchForColumns<ToRelativeSubsecondNumImpl<millisecond_multiplier>>(col_x, col_y, timezone_x, timezone_y, col_res->getData());
+            impl.template dispatchForColumns<ToRelativeSubsecondNumImpl<millisecond_multiplier>>(col_x, col_y, timezone_x, timezone_y, input_rows_count, col_res->getData());
         else if (unit == "microsecond" || unit == "microseconds" || unit == "us" || unit == "u")
-            impl.template dispatchForColumns<ToRelativeSubsecondNumImpl<microsecond_multiplier>>(col_x, col_y, timezone_x, timezone_y, col_res->getData());
+            impl.template dispatchForColumns<ToRelativeSubsecondNumImpl<microsecond_multiplier>>(col_x, col_y, timezone_x, timezone_y, input_rows_count, col_res->getData());
         else if (unit == "nanosecond" || unit == "nanoseconds" || unit == "ns")
-            impl.template dispatchForColumns<ToRelativeSubsecondNumImpl<nanosecond_multiplier>>(col_x, col_y, timezone_x, timezone_y, col_res->getData());
+            impl.template dispatchForColumns<ToRelativeSubsecondNumImpl<nanosecond_multiplier>>(col_x, col_y, timezone_x, timezone_y, input_rows_count, col_res->getData());
         else
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function {} does not support '{}' unit", getName(), unit);
 
@@ -440,7 +443,7 @@ public:
 
         auto col_res = ColumnInt64::create(input_rows_count);
 
-        impl.dispatchForColumns<ToRelativeSecondNumImpl<ResultPrecision::Extended>>(col_x, col_y, DateLUT::instance(), DateLUT::instance(), col_res->getData());
+        impl.dispatchForColumns<ToRelativeSecondNumImpl<ResultPrecision::Extended>>(col_x, col_y, DateLUT::instance(), DateLUT::instance(), input_rows_count, col_res->getData());
 
         return col_res;
     }
