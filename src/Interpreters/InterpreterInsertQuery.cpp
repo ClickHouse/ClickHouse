@@ -6,6 +6,7 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Columns/ColumnNullable.h>
 #include <Core/Settings.h>
+#include <Core/ServerSettings.h>
 #include <Processors/Transforms/buildPushingToViewsChain.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -411,10 +412,6 @@ std::pair<std::vector<Chain>, std::vector<Chain>> InterpreterInsertQuery::buildP
     if (!running_group)
         running_group = std::make_shared<ThreadGroup>(getContext());
 
-    if (getContext()->getServerSettings().disable_insertion_and_mutation
-        && query.table_id.database_name != DatabaseCatalog::SYSTEM_DATABASE)
-        throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Insert queries are prohibited");
-
     std::vector<Chain> sink_chains;
     std::vector<Chain> presink_chains;
 
@@ -737,6 +734,9 @@ BlockIO InterpreterInsertQuery::execute()
     const Settings & settings = getContext()->getSettingsRef();
     auto & query = query_ptr->as<ASTInsertQuery &>();
 
+    if (getContext()->getServerSettings().disable_insertion_and_mutation
+        && query.table_id.database_name != DatabaseCatalog::SYSTEM_DATABASE)
+        throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Insert queries are prohibited");
 
     StoragePtr table = getTable(query);
     checkStorageSupportsTransactionsIfNeeded(table, getContext());
