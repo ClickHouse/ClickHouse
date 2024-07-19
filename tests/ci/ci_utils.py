@@ -4,7 +4,7 @@ import subprocess
 import time
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Iterator, List, Union, Optional, Sequence
+from typing import Any, Iterator, List, Union, Optional, Sequence, Tuple
 
 import requests
 
@@ -142,6 +142,16 @@ class GHActions:
 
         return False
 
+    @staticmethod
+    def get_pr_url_by_branch(repo, branch):
+        get_url_cmd = (
+            f"gh pr list --repo {repo} --head {branch} --json url --jq '.[0].url'"
+        )
+        url = Shell.run(get_url_cmd)
+        if not url:
+            print(f"ERROR: PR nor found, branch [{branch}]")
+        return url
+
 
 class Shell:
     @classmethod
@@ -157,7 +167,10 @@ class Shell:
         return res.stdout.strip()
 
     @classmethod
-    def run(cls, command, check=False):
+    def run(cls, command, check=False, dry_run=False):
+        if dry_run:
+            print(f"Dry-ryn. Would run command [{command}]")
+            return ""
         print(f"Run command [{command}]")
         res = ""
         result = subprocess.run(
@@ -177,6 +190,12 @@ class Shell:
             if check:
                 assert result.returncode == 0
         return res.strip()
+
+    @classmethod
+    def run_as_daemon(cls, command):
+        print(f"Run daemon command [{command}]")
+        subprocess.Popen(command.split(" "))  # pylint:disable=consider-using-with
+        return 0, ""
 
     @classmethod
     def check(cls, command):

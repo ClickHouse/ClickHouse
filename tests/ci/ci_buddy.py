@@ -109,6 +109,7 @@ class CIBuddy:
         job_name: str = "",
         with_instance_info: bool = True,
         with_wf_link: bool = True,
+        critical: bool = False,
     ) -> None:
         instance_id, instance_type = "unknown", "unknown"
         if with_instance_info:
@@ -116,7 +117,8 @@ class CIBuddy:
             instance_type = Shell.run("ec2metadata --instance-type") or instance_type
         if not job_name:
             job_name = os.getenv("CHECK_NAME", "unknown")
-        line_err = f":red_circle:    *Error: {error_description}*\n\n"
+        sign = ":red_circle:" if not critical else ":black_circle:"
+        line_err = f"{sign}    *Error: {error_description}*\n\n"
         line_ghr = f"   *Runner:*    `{instance_type}`, `{instance_id}`\n"
         line_job = f"   *Job:*          `{job_name}`\n"
         line_pr_ = f"   *PR:*           <https://github.com/{self.repo}/pull/{self.pr_number}|#{self.pr_number}>, <{self.commit_url}|{self.sha}>\n"

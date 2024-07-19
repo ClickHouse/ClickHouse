@@ -26,9 +26,20 @@ def parse_args():
         help="Post release branch statuses",
     )
     parser.add_argument(
+        "--post-auto-release-complete",
+        action="store_true",
+        help="Post autorelease completion status",
+    )
+    parser.add_argument(
         "--prepare",
         action="store_true",
         help="Prepare autorelease info",
+    )
+    parser.add_argument(
+        "--wf-status",
+        type=str,
+        default="",
+        help="overall workflow status [success|failure]",
     )
     return parser.parse_args(), parser
 
@@ -180,6 +191,22 @@ def main():
                     title=f"Auto Release Status for {release_info.release_branch}",
                     body=release_info.to_dict(),
                 )
+    if args.post_auto_release_complete:
+        assert args.wf_status, "--wf-status Required with --post-auto-release-complete"
+        if args.wf_status != SUCCESS:
+            CIBuddy(dry_run=False).post_job_error(
+                error_description="Autorelease workflow failed",
+                job_name="Autorelease",
+                with_instance_info=False,
+                with_wf_link=True,
+                critical=True,
+            )
+        else:
+            CIBuddy(dry_run=False).post_info(
+                title=f"Autorelease completed",
+                body="",
+                with_wf_link=True,
+            )
     elif args.prepare:
         _prepare(token=args.token or get_best_robot_token())
     else:

@@ -102,7 +102,8 @@ jobs:
       - name: Post Slack Message
         if: ${{ !cancelled() }}
         run: |
-          echo Slack Message
+          cd "$GITHUB_WORKSPACE/tests/ci"
+          python3 auto_release.py --post-auto-release-complete --wf-status ${{ job.status }}
       - name: Clean up
         run: |
           docker ps --quiet | xargs --no-run-if-empty docker kill ||:
