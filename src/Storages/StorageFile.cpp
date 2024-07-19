@@ -53,6 +53,8 @@
 #include <Common/ProfileEvents.h>
 #include <Common/re2.h>
 
+#include <Core/Settings.h>
+
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
@@ -366,12 +368,21 @@ Strings StorageFile::getPathsList(const String & table_path, const String & user
     }
     else if (path.find_first_of("*?{") == std::string::npos)
     {
-        std::error_code error;
-        size_t size = fs::file_size(path, error);
-        if (!error)
-            total_bytes_to_read += size;
+        if (!fs::is_directory(path))
+        {
+            std::error_code error;
+            size_t size = fs::file_size(path, error);
+            if (!error)
+                total_bytes_to_read += size;
 
-        paths.push_back(path);
+            paths.push_back(path);
+        }
+        else
+        {
+            /// We list non-directory files under that directory.
+            paths = listFilesWithRegexpMatching(path / fs::path("*"), total_bytes_to_read);
+            can_be_directory = false;
+        }
     }
     else
     {
@@ -1778,12 +1789,12 @@ public:
 
     String getName() const override { return "StorageFileSink"; }
 
-    void consume(Chunk chunk) override
+    void consume(Chunk & chunk) override
     {
         std::lock_guard cancel_lock(cancel_mutex);
         if (cancelled)
             return;
-        writer->write(getHeader().cloneWithColumns(chunk.detachColumns()));
+        writer->write(getHeader().cloneWithColumns(chunk.getColumns()));
     }
 
     void onCancel() override

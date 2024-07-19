@@ -3,11 +3,12 @@
 #include <Client/ClientBase.h>
 #include <Client/LocalConnection.h>
 
-#include <Common/StatusFile.h>
-#include <Common/InterruptListener.h>
-#include <Loggers/Loggers.h>
+#include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
+#include <Loggers/Loggers.h>
+#include <Common/InterruptListener.h>
+#include <Common/StatusFile.h>
 
 #include <filesystem>
 #include <memory>
@@ -65,6 +66,8 @@ private:
 
     void applyCmdOptions(ContextMutablePtr context);
     void applyCmdSettings(ContextMutablePtr context);
+
+    ServerSettings server_settings;
 
     std::optional<StatusFile> status;
     std::optional<std::filesystem::path> temporary_directory_to_delete;
