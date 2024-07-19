@@ -14,6 +14,7 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Interpreters/Context_fwd.h>
 #include <base/strong_typedef.h>
+#include <filesystem>
 
 namespace fs = std::filesystem;
 
