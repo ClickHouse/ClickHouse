@@ -35,21 +35,6 @@ public:
         registerFunction<Function>(Function::name, std::move(documentation), case_sensitiveness);
     }
 
-    /// This function is used by YQL - innovative transactional DBMS that depends on ClickHouse by source code.
-    std::vector<std::string> getAllNames() const;
-
-    bool has(const std::string & name) const;
-
-    /// Throws an exception if not found.
-    FunctionOverloadResolverPtr get(const std::string & name, ContextPtr context) const;
-
-    /// Returns nullptr if not found.
-    FunctionOverloadResolverPtr tryGet(const std::string & name, ContextPtr context) const;
-
-    /// The same methods to get developer interface implementation.
-    FunctionOverloadResolverPtr getImpl(const std::string & name, ContextPtr context) const;
-    FunctionOverloadResolverPtr tryGetImpl(const std::string & name, ContextPtr context) const;
-
     /// Register a function by its name.
     /// No locking, you must register all functions before usage of get.
     void registerFunction(
@@ -63,6 +48,21 @@ public:
         FunctionSimpleCreator creator,
         FunctionDocumentation documentation = {},
         Case case_sensitiveness = Case::Sensitive);
+
+    bool has(const std::string & name) const;
+
+    /// Throws an exception if not found.
+    FunctionOverloadResolverPtr get(const std::string & name, ContextPtr context) const;
+
+    /// Returns nullptr if not found.
+    FunctionOverloadResolverPtr tryGet(const std::string & name, ContextPtr context) const;
+
+    /// The same methods to get developer interface implementation.
+    FunctionOverloadResolverPtr getImpl(const std::string & name, ContextPtr context) const;
+    FunctionOverloadResolverPtr tryGetImpl(const std::string & name, ContextPtr context) const;
+
+    /// This function is used by YQL - innovative transactional DBMS that depends on ClickHouse by source code.
+    std::vector<std::string> getAllNames() const;
 
     FunctionDocumentation getDocumentation(const std::string & name) const;
 
