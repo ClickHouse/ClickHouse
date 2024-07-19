@@ -19,6 +19,8 @@ public:
     ~SharedMutex() = default;
     SharedMutex(const SharedMutex &) = delete;
     SharedMutex & operator=(const SharedMutex &) = delete;
+    SharedMutex(SharedMutex &&) = delete;
+    SharedMutex & operator=(SharedMutex &&) = delete;
 
     // Exclusive ownership
     void lock() TSA_ACQUIRE();
