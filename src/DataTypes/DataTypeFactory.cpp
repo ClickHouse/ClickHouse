@@ -197,8 +197,7 @@ void DataTypeFactory::registerDataType(const String & family_name, Value creator
 void DataTypeFactory::registerSimpleDataType(const String & name, SimpleCreator creator, Case case_sensitiveness)
 {
     if (creator == nullptr)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "DataTypeFactory: the data type {} has been provided  a null constructor",
-            name);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "DataTypeFactory: the data type {} has been provided  a null constructor", name);
 
     registerDataType(name, [name, creator](const ASTPtr & ast)
     {

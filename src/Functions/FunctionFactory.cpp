@@ -33,14 +33,12 @@ void FunctionFactory::registerFunction(
 
     String function_name_lowercase = Poco::toLower(name);
     if (isAlias(name) || isAlias(function_name_lowercase))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "FunctionFactory: the function name '{}' is already registered as alias",
-                        name);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "FunctionFactory: the function name '{}' is already registered as alias", name);
 
     if (case_sensitiveness == Case::Insensitive)
     {
         if (!case_insensitive_functions.emplace(function_name_lowercase, FunctionFactoryData{creator, documentation}).second)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "FunctionFactory: the case insensitive function name '{}' is not unique",
-                name);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "FunctionFactory: the case insensitive function name '{}' is not unique", name);
         case_insensitive_name_mapping[function_name_lowercase] = name;
     }
 }
