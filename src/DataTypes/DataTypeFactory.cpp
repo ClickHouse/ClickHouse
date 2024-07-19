@@ -267,6 +267,32 @@ const DataTypeFactory::Value * DataTypeFactory::findCreatorByName(const String &
         throw Exception(ErrorCodes::UNKNOWN_TYPE, "Unknown data type family: {}", family_name);
 }
 
+void registerDataTypeNumbers(DataTypeFactory & factory);
+void registerDataTypeDecimal(DataTypeFactory & factory);
+void registerDataTypeDate(DataTypeFactory & factory);
+void registerDataTypeDate32(DataTypeFactory & factory);
+void registerDataTypeDateTime(DataTypeFactory & factory);
+void registerDataTypeString(DataTypeFactory & factory);
+void registerDataTypeFixedString(DataTypeFactory & factory);
+void registerDataTypeEnum(DataTypeFactory & factory);
+void registerDataTypeArray(DataTypeFactory & factory);
+void registerDataTypeTuple(DataTypeFactory & factory);
+void registerDataTypeMap(DataTypeFactory & factory);
+void registerDataTypeNullable(DataTypeFactory & factory);
+void registerDataTypeNothing(DataTypeFactory & factory);
+void registerDataTypeUUID(DataTypeFactory & factory);
+void registerDataTypeIPv4andIPv6(DataTypeFactory & factory);
+void registerDataTypeAggregateFunction(DataTypeFactory & factory);
+void registerDataTypeNested(DataTypeFactory & factory);
+void registerDataTypeInterval(DataTypeFactory & factory);
+void registerDataTypeLowCardinality(DataTypeFactory & factory);
+void registerDataTypeDomainBool(DataTypeFactory & factory);
+void registerDataTypeDomainSimpleAggregateFunction(DataTypeFactory & factory);
+void registerDataTypeDomainGeo(DataTypeFactory & factory);
+void registerDataTypeObject(DataTypeFactory & factory);
+void registerDataTypeVariant(DataTypeFactory & factory);
+void registerDataTypeDynamic(DataTypeFactory & factory);
+
 DataTypeFactory::DataTypeFactory()
 {
     registerDataTypeNumbers(*this);
