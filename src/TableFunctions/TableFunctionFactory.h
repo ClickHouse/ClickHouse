@@ -22,19 +22,8 @@ using TableFunctionCreator = std::function<TableFunctionPtr()>;
 struct TableFunctionFactoryData
 {
     TableFunctionCreator creator;
-    FunctionDocumentation documentation;
-    TableFunctionProperties properties;
-
-    TableFunctionFactoryData() = default;
-    TableFunctionFactoryData(const TableFunctionFactoryData &) = default;
-    TableFunctionFactoryData & operator = (const TableFunctionFactoryData &) = default;
-
-    template <typename Creator>
-        requires (!std::is_same_v<Creator, TableFunctionFactoryData>)
-    TableFunctionFactoryData(Creator creator_, FunctionDocumentation documentation_ = {}, TableFunctionProperties properties_ = {}) /// NOLINT
-        : creator(std::forward<Creator>(creator_)), documentation(std::move(documentation_)), properties(std::move(properties_))
-    {
-    }
+    FunctionDocumentation documentation = {};
+    TableFunctionProperties properties = {};
 };
 
 
