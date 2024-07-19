@@ -7,11 +7,14 @@
 #include <Common/randomSeed.h>
 #include <Common/Config/AbstractConfigurationComparison.h>
 #include <Common/Config/ConfigHelper.h>
+#include <Common/Exception.h>
+#include <Common/logger_useful.h>
 #include <Core/Settings.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Util/Application.h>
+#include <Poco/Logger.h>
 #include <base/range.h>
 #include <base/sort.h>
 #include <boost/range/algorithm_ext/erase.hpp>
@@ -507,6 +510,8 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
         throw Exception(ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG, "There must be either 'node' or 'shard' elements in config");
 
     initMisc();
+    // Handle dynamic replicas
+    handleDynamicReplicas();
 }
 
 
@@ -891,4 +896,42 @@ bool Cluster::maybeCrossReplication() const
     return false;
 }
 
+void Cluster::handleDynamicReplicas()
+{
+    for (size_t i = 0; i < shards_info.size(); ++i)
+    {
+        const auto & shard = shards_info[i];
+        if (!shard.isLocal() && shard.hasRemoteConnections())
+        {
+            reconnectToReplica(i);
+        }
+    }
+}
+
+void Cluster::reconnectToReplica(size_t shard_index)
+{
+    if (shard_index >= shards_info.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Shard index out of bounds");
+
+    const auto & shard = shards_info[shard_index];
+    if (!shard.hasRemoteConnections())
+        return;
+
+    auto & replica_pools = shard.per_replica_pools;
+    for (size_t i = 0; i < replica_pools.size(); ++i)
+    {
+        if (replica_pools[i] == nullptr || !replica_pools[i]->isConnected())
+        {
+            try
+            {
+                // Attempt to reconnect to the replica
+                replica_pools[i]->reconnect();
+            }
+            catch (const Exception & e)
+            {
+                // Handle reconnection failure without logging
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to reconnect to replica (shard {}, replica {}): {}", shard_index, i, e.displayText());
+            }
+        }
+    }
 }

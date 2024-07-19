@@ -126,6 +126,7 @@ DistributedSink::DistributedSink(
     , insert_timeout(insert_timeout_)
     , columns_to_send(columns_to_send_.begin(), columns_to_send_.end())
     , log(getLogger("DistributedSink"))
+    , max_retries(context->getSettingsRef().distributed_query_retries)
 {
     const auto & settings = context->getSettingsRef();
     if (settings.max_distributed_depth && context->getClientInfo().distributed_depth >= settings.max_distributed_depth)
@@ -517,33 +518,41 @@ void DistributedSink::writeSync(const Block & block)
             per_shard_jobs[current_selector[i]].shard_current_block_permutation.push_back(i);
     }
 
-    try
+    size_t attempt = 0;
+    while (attempt < max_retries)
     {
-        /// Run jobs in parallel for each block and wait them
-        finished_jobs_count = 0;
-        for (size_t shard_index : collections::range(start, end))
-            for (JobReplica & job : per_shard_jobs[shard_index].replicas_jobs)
-                pool->scheduleOrThrowOnError(runWritingJob(job, block_to_send, num_shards));
-    }
-    catch (...)
-    {
-        pool->wait();
-        throw;
+        try
+        {
+            /// Run jobs in parallel for each block and wait them
+            finished_jobs_count = 0;
+            for (size_t shard_index : collections::range(start, end))
+                for (JobReplica & job : per_shard_jobs[shard_index].replicas_jobs)
+                    pool->scheduleOrThrowOnError(runWritingJob(job, block_to_send, num_shards));
+
+            waitForJobs();
+
+            inserted_blocks += 1;
+            inserted_rows += block.rows();
+            break; // If successful, exit the retry loop
+        }
+        catch (const Exception & exception)
+        {
+            if (exception.code() == ErrorCodes::NETWORK_ERROR || exception.code() == ErrorCodes::SOCKET_TIMEOUT)
+            {
+                LOG_WARNING(log, "Retrying due to network error. Attempt: " << (attempt + 1));
+                ++attempt;
+            }
+            else
+            {
+                throw;
+            }
+        }
     }
 
-    try
+    if (attempt == max_retries)
     {
-        waitForJobs();
+        throw Exception("Failed to execute query after " + toString(max_retries) + " retries.", ErrorCodes::NETWORK_ERROR);
     }
-    catch (Exception & exception)
-    {
-        exception.addMessage(getCurrentStateDescription());
-        span.addAttribute(exception);
-        throw;
-    }
-
-    inserted_blocks += 1;
-    inserted_rows += block.rows();
 }
 
 

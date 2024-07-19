@@ -273,6 +273,8 @@ public:
     bool areDistributedDDLQueriesAllowed() const { return allow_distributed_ddl_queries; }
 
     const String & getName() const { return name; }
+    void handleDynamicReplicas();
+    void reconnectToReplica(size_t shard_index);
 
 private:
     SlotToShard slot_to_shard;

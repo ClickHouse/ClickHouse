@@ -36,6 +36,9 @@ public:
 
     void setStorageLimits(const std::shared_ptr<const StorageLimitsList> & storage_limits_) override;
 
+    void reconnect();
+    bool isConnectionAlive() const;
+
 protected:
     std::optional<Chunk> tryGenerate() override;
     void onCancel() override;

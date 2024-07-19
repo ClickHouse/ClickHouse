@@ -130,4 +130,14 @@ void IOutputFormat::finalize()
     finalized = true;
 }
 
+void RemoteSource::reconnect()
+{
+    query_executor->reconnect();
+}
+
+bool RemoteSource::isConnectionAlive() const
+{
+    return query_executor->isConnectionAlive();
+}
+
 }

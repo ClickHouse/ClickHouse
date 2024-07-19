@@ -215,6 +215,15 @@ void RemoteSource::onUpdatePorts()
     }
 }
 
+void RemoteSource::reconnect()
+{
+    query_executor->reconnect();
+}
+
+bool RemoteSource::isConnectionAlive() const
+{
+    return query_executor->isConnectionAlive();
+}
 
 RemoteTotalsSource::RemoteTotalsSource(RemoteQueryExecutorPtr executor)
     : ISource(executor->getHeader())

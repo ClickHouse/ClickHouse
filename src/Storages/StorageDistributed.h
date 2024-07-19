@@ -13,6 +13,8 @@
 #include <Interpreters/Cluster.h>
 
 #include <pcg_random.hpp>
+#include <unordered_map>
+#include <mutex>
 
 namespace DB
 {
@@ -142,6 +144,13 @@ public:
     void shutdown(bool is_drop) override;
     void flushAndPrepareForShutdown() override;
     void drop() override;
+
+    // Replica management methods
+    void addReplica(const String & replica_name);
+    void removeReplica(const String & replica_name);
+    void updateReplicaState(const String & replica_name, const ReplicaState & state);
+    void handleReplicaFailover(const String & replica_name);
+    bool isReplicaAvailable(const String & replica_name) const;
 
     bool storesDataOnDisk() const override { return data_volume != nullptr; }
     Strings getDataPaths() const override;
@@ -287,6 +296,20 @@ private:
     // For random shard index generation
     mutable std::mutex rng_mutex;
     pcg64 rng;
+
+    // Replica state management
+    struct ReplicaState
+    {
+        bool is_connected;
+        // Add more state information as needed
+    };
+
+    std::unordered_map<String, ReplicaState> replica_states;
+    mutable std::mutex replica_states_mutex;
+
+    // Private helper methods
+    void initializeReplicaStates();
+    void manageFailover(const String & replica_name);
 };
 
 }

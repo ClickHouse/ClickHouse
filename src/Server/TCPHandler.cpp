@@ -250,8 +250,8 @@ void TCPHandler::runImpl()
 
     extractConnectionSettingsFromContext(server.context());
 
-    socket().setReceiveTimeout(receive_timeout);
-    socket().setSendTimeout(send_timeout);
+    socket().setReceiveTimeout(Poco::Timespan(30, 0));  // Lowered timeout
+    socket().setSendTimeout(Poco::Timespan(30, 0));     // Lowered timeout
     socket().setNoDelay(true);
 
     in = std::make_shared<ReadBufferFromPocoSocket>(socket(), read_event);
@@ -335,6 +335,18 @@ void TCPHandler::runImpl()
         if (!tcp_server.isOpen() || server.isCancelled() || in->eof())
         {
             LOG_TEST(log, "Closing connection (open: {}, cancelled: {}, eof: {})", tcp_server.isOpen(), server.isCancelled(), in->eof());
+            break;
+        }
+
+        // Ping mechanism to detect if the connection is still alive
+        try
+        {
+            writeVarUInt(Protocol::Server::Ping, *out);
+            out->next();
+        }
+        catch (const Exception & e)
+        {
+            LOG_ERROR(log, "Failed to send ping to client: {}", e.message());
             break;
         }
 
@@ -760,6 +772,7 @@ void TCPHandler::runImpl()
             break;
     }
 }
+
 
 
 void TCPHandler::extractConnectionSettingsFromContext(const ContextPtr & context)
@@ -1679,7 +1692,33 @@ bool TCPHandler::receivePacket()
             return false;
 
         default:
-            throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT, "Unknown packet {} from client", toString(packet_type));
+            // Attempt to reconnect to another replica and resend the query if no data has been returned
+            if (state.io.pipeline.empty())
+            {
+                LOG_WARNING(log, "Unknown packet {} from client, attempting to reconnect and resend query", toString(packet_type));
+                try
+                {
+                    // Logic to reconnect to another replica
+                    // This could involve creating a new session, re-authenticating, etc.
+                    session = makeSession();
+                    receiveHello();
+                    sendHello();
+                    if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_ADDENDUM)
+                        receiveAddendum();
+
+                    receiveQuery();
+                    return true;
+                }
+                catch (const Exception & e)
+                {
+                    LOG_ERROR(log, "Failed to reconnect and resend query: {}", e.message());
+                    throw;
+                }
+            }
+            else
+            {
+                throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT, "Unknown packet {} from client", toString(packet_type));
+            }
     }
 }
 

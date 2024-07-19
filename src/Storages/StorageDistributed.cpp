@@ -22,7 +22,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 
 #include <Columns/ColumnConst.h>
-
+#include <Common/logger_useful.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Common/Macros.h>
 #include <Common/ProfileEvents.h>
@@ -370,6 +370,7 @@ StorageDistributed::StorageDistributed(
     }
 
     initializeFromDisk();
+    initializeReplicaStates();
 }
 
 
@@ -403,6 +404,7 @@ StorageDistributed::StorageDistributed(
         std::move(owned_cluster_),
         remote_table_function_ptr_)
 {
+    initializeReplicaStates();
 }
 
 QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
@@ -1988,4 +1990,69 @@ bool StorageDistributed::initializeDiskOnConfigChange(const std::set<String> & n
 
     return true;
 }
+}
+
+
+void StorageDistributed::initializeReplicaStates()
+{
+    std::lock_guard lock(replica_states_mutex);
+    for (const auto & address : getCluster()->getShardsAddresses())
+    {
+        for (const auto & replica : address)
+        {
+            replica_states[replica.readableString()] = {true}; // Initialize all replicas as connected
+        }
+    }
+}
+
+void StorageDistributed::addReplica(const String & replica_name)
+{
+    std::lock_guard lock(replica_states_mutex);
+    replica_states[replica_name] = {true}; // Mark new replica as connected
+}
+
+void StorageDistributed::removeReplica(const String & replica_name)
+{
+    std::lock_guard lock(replica_states_mutex);
+    replica_states.erase(replica_name); // Remove the replica from the list
+}
+
+void StorageDistributed::updateReplicaState(const String & replica_name, const ReplicaState & state)
+{
+    std::lock_guard lock(replica_states_mutex);
+    if (replica_states.find(replica_name) != replica_states.end())
+    {
+        replica_states[replica_name] = state;
+    }
+    else
+    {
+        LOG_WARNING(log, "Trying to update state of unknown replica: {}", replica_name);
+    }
+}
+
+bool StorageDistributed::isReplicaAvailable(const String & replica_name) const
+{
+    std::lock_guard lock(replica_states_mutex);
+    auto it = replica_states.find(replica_name);
+    return it != replica_states.end() && it->second.is_connected;
+}
+
+void StorageDistributed::handleReplicaFailover(const String & replica_name)
+{
+    // Implement failover logic as needed
+    std::lock_guard lock(replica_states_mutex);
+    auto it = replica_states.find(replica_name);
+    if (it != replica_states.end())
+    {
+        // Simulate failover by marking the replica as disconnected
+        it->second.is_connected = false;
+        LOG_INFO(log, "Replica {} marked as disconnected for failover handling", replica_name);
+    }
+}
+
+void StorageDistributed::manageFailover(const String & replica_name)
+{
+    // Implement additional failover handling logic here
+    LOG_INFO(log, "Managing failover for replica {}", replica_name);
+    handleReplicaFailover(replica_name);
 }
