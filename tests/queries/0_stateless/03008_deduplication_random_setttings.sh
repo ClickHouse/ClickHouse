@@ -4,8 +4,6 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-ENGINE="ReplicatedMergeTree"
-
 engine_options=("ReplicatedMergeTree" "MergeTree")
 engine=${engine_options[ $RANDOM % ${#engine_options[@]} ]}
 
@@ -30,7 +28,7 @@ insert_unique_blocks=${insert_unique_blocks_options[ $RANDOM % ${#insert_unique_
 
 THIS_RUN="Test case:"
 THIS_RUN+=" insert_method=$insert_method"
-THIS_RUN+=" engine=$ENGINE"
+THIS_RUN+=" engine=$engine"
 THIS_RUN+=" use_insert_token=$use_insert_token"
 THIS_RUN+=" single_thread=$single_thread"
 THIS_RUN+=" deduplicate_src_table=$deduplicate_src_table"
@@ -40,7 +38,7 @@ THIS_RUN+=" insert_unique_blocks=$insert_unique_blocks"
 $CLICKHOUSE_CLIENT --max_insert_block_size 1  -nmq "
     $(python3 $CURDIR/03008_deduplication.python insert_several_blocks_into_table \
         --insert-method $insert_method \
-        --table-engine $ENGINE \
+        --table-engine $engine \
         --use-insert-token $use_insert_token \
         --single-thread $single_thread \
         --deduplicate-src-table $deduplicate_src_table \
@@ -53,7 +51,7 @@ $CLICKHOUSE_CLIENT --max_insert_block_size 1  -nmq "
 $CLICKHOUSE_CLIENT --max_insert_block_size 1  -nmq "
     $(python3 $CURDIR/03008_deduplication.python mv_generates_several_blocks \
         --insert-method $insert_method \
-        --table-engine $ENGINE \
+        --table-engine $engine \
         --use-insert-token $use_insert_token \
         --single-thread $single_thread \
         --deduplicate-src-table $deduplicate_src_table \
@@ -66,7 +64,7 @@ $CLICKHOUSE_CLIENT --max_insert_block_size 1  -nmq "
 $CLICKHOUSE_CLIENT  --max_insert_block_size 1 -nmq "
     $(python3 $CURDIR/03008_deduplication.python several_mv_into_one_table \
         --insert-method $insert_method \
-        --table-engine $ENGINE \
+        --table-engine $engine \
         --use-insert-token $use_insert_token \
         --single-thread $single_thread \
         --deduplicate-src-table $deduplicate_src_table \
