@@ -8,7 +8,6 @@
 #include <Functions/FunctionFactory.h>
 #include <base/map.h>
 
-
 namespace DB
 {
 
@@ -37,6 +36,7 @@ private:
     size_t getNumberOfArguments() const override { return 0; }
     bool isVariadic() const override { return true; }
     bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForNulls() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & types) const override
@@ -53,9 +53,20 @@ private:
         if (1 == num_arguments)
             return arguments[0].column;
 
-        Columns converted_columns(num_arguments);
+        Columns converted_columns;
+        /// Remove the only null column, not need to compare
         for (size_t arg = 0; arg < num_arguments; ++arg)
-            converted_columns[arg] = castColumn(arguments[arg], result_type)->convertToFullColumnIfConst();
+        {
+            if (arguments[arg].type->onlyNull())
+                continue;
+            auto converted_col = castColumn(arguments[arg], result_type)->convertToFullColumnIfConst();
+            converted_columns.emplace_back(converted_col);
+        }
+
+        if (converted_columns.empty())
+            return arguments[0].column;
+        else if (converted_columns.size() == 1)
+            return converted_columns[0];
 
         auto result_column = result_type->createColumn();
         result_column->reserve(input_rows_count);
@@ -63,17 +74,17 @@ private:
         for (size_t row_num = 0; row_num < input_rows_count; ++row_num)
         {
             size_t best_arg = 0;
-            for (size_t arg = 1; arg < num_arguments; ++arg)
+            for (size_t arg = 1; arg < converted_columns.size(); ++arg)
             {
-                auto cmp_result = converted_columns[arg]->compareAt(row_num, row_num, *converted_columns[best_arg], 1);
-
                 if constexpr (kind == LeastGreatest::Least)
                 {
+                    auto cmp_result = converted_columns[arg]->compareAt(row_num, row_num, *converted_columns[best_arg], 1);
                     if (cmp_result < 0)
                         best_arg = arg;
                 }
                 else
                 {
+                    auto cmp_result = converted_columns[arg]->compareAt(row_num, row_num, *converted_columns[best_arg], -1);
                     if (cmp_result > 0)
                         best_arg = arg;
                 }
@@ -85,7 +96,6 @@ private:
         return result_column;
     }
 };
-
 
 template <LeastGreatest kind, typename SpecializedFunction>
 class LeastGreatestOverloadResolver : public IFunctionOverloadResolver
@@ -103,6 +113,7 @@ public:
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 0; }
     bool isVariadic() const override { return true; }
+    bool useDefaultImplementationForNulls() const override { return false; }
 
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
     {
@@ -111,7 +122,7 @@ public:
             argument_types.push_back(argument.type);
 
         /// More efficient specialization for two numeric arguments.
-        if (arguments.size() == 2 && isNumber(removeNullable(arguments[0].type)) && isNumber(removeNullable(arguments[1].type)))
+         if (arguments.size() == 2 && isNumber(arguments[0].type) && isNumber(arguments[1].type))
             return std::make_unique<FunctionToFunctionBaseAdaptor>(SpecializedFunction::create(context), argument_types, return_type);
 
         return std::make_unique<FunctionToFunctionBaseAdaptor>(
@@ -123,7 +134,7 @@ public:
         if (types.empty())
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} cannot be called without arguments", getName());
 
-        if (types.size() == 2 && isNumber(removeNullable(types[0])) && isNumber(removeNullable(types[1])))
+        if (types.size() == 2 && isNumber(types[0]) && isNumber(types[1]))
             return SpecializedFunction::create(context)->getReturnTypeImpl(types);
 
         return getLeastSupertype(types);
