@@ -18,7 +18,12 @@ namespace DB
 
 using FunctionCreator = std::function<FunctionOverloadResolverPtr(ContextPtr)>;
 using FunctionSimpleCreator = std::function<FunctionPtr(ContextPtr)>;
-using FunctionFactoryData = std::pair<FunctionCreator, FunctionDocumentation>;
+
+struct FunctionFactoryData
+{
+    FunctionCreator creator;
+    FunctionDocumentation documentation;
+};
 
 /** Creates function by name.
   * The provided Context is guaranteed to outlive the created function. Functions may use it for
