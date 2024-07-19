@@ -1,16 +1,11 @@
 #include <Functions/FunctionFactory.h>
-
-#include <Interpreters/Context.h>
-
-#include <Common/Exception.h>
-#include <Common/CurrentThread.h>
-#include <Core/Settings.h>
-
-#include <Poco/String.h>
-
-#include <IO/WriteHelpers.h>
-
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <Common/CurrentThread.h>
+#include <Common/Exception.h>
+#include <Core/Settings.h>
+#include <IO/WriteHelpers.h>
+#include <Interpreters/Context.h>
+#include <Poco/String.h>
 
 
 namespace DB
