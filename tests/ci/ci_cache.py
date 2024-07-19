@@ -737,17 +737,12 @@ class CiCache:
                     if job_name not in required_builds:
                         remove_from_to_do.append(job_name)
 
-        if not required_builds:
-            remove_from_to_do.append(CI.JobNames.BUILD_CHECK)
-
         for job in remove_from_to_do:
             print(f"Filter job [{job}] - not affected by the change")
             if job in self.jobs_to_do:
                 del self.jobs_to_do[job]
             if job in self.jobs_to_wait:
                 del self.jobs_to_wait[job]
-            if job in self.jobs_to_skip:
-                self.jobs_to_skip.remove(job)
 
     def await_pending_jobs(self, is_release: bool, dry_run: bool = False) -> None:
         """
