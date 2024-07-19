@@ -43,6 +43,7 @@
 #include <Functions/IFunction.h>
 #include <Functions/IsOperation.h>
 #include <Functions/castTypeToEither.h>
+#include <Functions/LeastGreatestGeneric.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
 #include <base/TypeList.h>
@@ -790,6 +791,7 @@ class FunctionBinaryArithmetic : public IFunction
     static constexpr bool is_modulo = IsOperation<Op>::modulo;
     static constexpr bool is_int_div = IsOperation<Op>::int_div;
     static constexpr bool is_int_div_or_zero = IsOperation<Op>::int_div_or_zero;
+    static constexpr bool is_compare = IsOperation<Op>::greatest || IsOperation<Op>::least;
 
     ContextPtr context;
     bool check_decimal_overflow = true;
@@ -1328,6 +1330,57 @@ class FunctionBinaryArithmetic : public IFunction
         return function->execute(new_arguments, result_type, input_rows_count);
     }
 
+    ColumnPtr executeComparsion(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
+    {
+        bool args_have_nulls = false;
+        bool args_have_constants = false;
+        for (size_t i = 0; i < arguments.size(); ++i)
+        {
+            if (!args_have_constants)
+                args_have_constants = checkColumnConst<ColumnNullable>(arguments[i].column.get());
+            if (!args_have_nulls)
+            {
+                if (!arguments[i].column->isNullable())
+                    continue;
+                for (size_t j = 0; j < arguments[i].column->size(); ++j)
+                {
+                    if (arguments[i].column->isNullAt(j))
+                    {
+                        args_have_nulls = true;
+                        break;
+                    }
+                }
+            }
+        }
+        if (args_have_nulls || args_have_constants)
+        {
+            if constexpr (IsOperation<Op>::greatest)
+                return FunctionLeastGreatestGeneric<LeastGreatest::Greatest>::create(context)->executeImpl(arguments, result_type, input_rows_count);
+            else
+                return FunctionLeastGreatestGeneric<LeastGreatest::Least>::create(context)->executeImpl(arguments, result_type, input_rows_count);
+        }
+        else
+        {
+            ColumnsWithTypeAndName new_args;
+            new_args.reserve(arguments.size());
+            auto createNewColumn = [&](size_t i) -> void
+            {
+                if (arguments[i].column->isNullable())
+                {
+                    const ColumnNullable * null_col = checkAndGetColumn<ColumnNullable>(arguments[i].column.get());
+                    new_args.emplace_back(ColumnWithTypeAndName(null_col->getNestedColumnPtr(), removeNullable(arguments[i].type), arguments[i].name));
+                }
+                else
+                    new_args.emplace_back(arguments[i]);
+            };
+
+            for (size_t i = 0; i < arguments.size(); ++i)
+                createNewColumn(i);
+
+            return executeImpl2(new_args, removeNullable(result_type), input_rows_count);
+        }
+    }
+
     template <typename T, typename ResultDataType>
     static auto helperGetOrConvert(const auto & col_const, const auto & col)
     {
@@ -1468,7 +1521,7 @@ public:
         /// We shouldn't use default implementation for nulls for the case when operation is divide,
         /// intDiv or modulo and denominator is Nullable(Something), because it may cause division
         /// by zero error (when value is Null we store default value 0 in nested column).
-        return !division_by_nullable;
+        return !division_by_nullable && !is_compare;
     }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & arguments) const override
@@ -2220,6 +2273,11 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
             return executeTupleNumberOperator(arguments, result_type, input_rows_count, function_builder);
         }
 
+        /// Special case when the function is least or greatest
+        if constexpr (is_compare)
+        {
+            return executeComparsion(arguments, result_type, input_rows_count);
+        }
         return executeImpl2(arguments, result_type, input_rows_count);
     }
 
