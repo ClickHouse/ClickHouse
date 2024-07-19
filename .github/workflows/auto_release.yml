@@ -21,8 +21,6 @@ on: # yamllint disable-line rule:truthy
 
 jobs:
   AutoRelease:
-    env:
-      DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run != '' && github.event.inputs.dry_run || true }}
     runs-on: [self-hosted, release-maker]
     steps:
       - name: DebugInfo
@@ -34,6 +32,12 @@ jobs:
           ${{secrets.ROBOT_CLICKHOUSE_SSH_KEY}}
           RCSK
           EOF
+      - name: Set DRY_RUN for schedule
+        if: ${{ github.event_name == 'schedule' }}
+        run: echo "DRY_RUN=true" >> "$GITHUB_ENV"
+      - name: Set DRY_RUN for dispatch
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        run: echo "DRY_RUN=${{ github.event.inputs.dry-run }}" >> "$GITHUB_ENV"
       - name: Check out repository code
         uses: ClickHouse/checkout@v1
         with:

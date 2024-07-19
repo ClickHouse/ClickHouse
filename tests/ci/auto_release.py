@@ -55,7 +55,7 @@ class ReleaseParams:
 class AutoReleaseInfo:
     releases: List[ReleaseParams]
 
-    def add_release(self, release_params: ReleaseParams):
+    def add_release(self, release_params: ReleaseParams) -> None:
         self.releases.append(release_params)
 
     def dump(self):
@@ -133,15 +133,16 @@ def _prepare(token):
             commit_sha = commit
             if commit_ci_status == SUCCESS:
                 break
-            else:
-                print(f"CI status [{commit_ci_status}] - skip")
+
+            print(f"CI status [{commit_ci_status}] - skip")
             commits_to_branch_head += 1
 
-        ready = commit_ci_status == SUCCESS and commit_sha
-        if ready:
+        ready = False
+        if commit_ci_status == SUCCESS and commit_sha:
             print(
                 f"Add release ready info for commit [{commit_sha}] and release branch [{pr.head.ref}]"
             )
+            ready = True
         else:
             print(f"WARNING: No ready commits found for release branch [{pr.head.ref}]")
 

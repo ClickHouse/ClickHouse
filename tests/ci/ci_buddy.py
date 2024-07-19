@@ -62,7 +62,7 @@ class CIBuddy:
             print(f"ERROR: Failed to post message, ex {e}")
 
     def _post_formatted(
-        self, title, body: Union[Dict, str], with_wf_link: bool
+        self, title: str, body: Union[Dict, str], with_wf_link: bool
     ) -> None:
         message = title
         if isinstance(body, dict):
@@ -80,36 +80,36 @@ class CIBuddy:
         self.post(message)
 
     def post_info(
-        self, title, body: Union[Dict, str], with_wf_link: bool = True
+        self, title: str, body: Union[Dict, str], with_wf_link: bool = True
     ) -> None:
         title_extended = f":white_circle:    *{title}*\n\n"
         self._post_formatted(title_extended, body, with_wf_link)
 
     def post_done(
-        self, title, body: Union[Dict, str], with_wf_link: bool = True
+        self, title: str, body: Union[Dict, str], with_wf_link: bool = True
     ) -> None:
         title_extended = f":white_check_mark:    *{title}*\n\n"
         self._post_formatted(title_extended, body, with_wf_link)
 
     def post_warning(
-        self, title, body: Union[Dict, str], with_wf_link: bool = True
+        self, title: str, body: Union[Dict, str], with_wf_link: bool = True
     ) -> None:
         title_extended = f":warning:    *{title}*\n\n"
         self._post_formatted(title_extended, body, with_wf_link)
 
     def post_critical(
-        self, title, body: Union[Dict, str], with_wf_link: bool = True
+        self, title: str, body: Union[Dict, str], with_wf_link: bool = True
     ) -> None:
         title_extended = f":black_circle:    *{title}*\n\n"
         self._post_formatted(title_extended, body, with_wf_link)
 
     def post_job_error(
         self,
-        error_description,
-        job_name="",
-        with_instance_info=True,
+        error_description: str,
+        job_name: str = "",
+        with_instance_info: bool = True,
         with_wf_link: bool = True,
-    ):
+    ) -> None:
         instance_id, instance_type = "unknown", "unknown"
         if with_instance_info:
             instance_id = Shell.run("ec2metadata --instance-id") or instance_id

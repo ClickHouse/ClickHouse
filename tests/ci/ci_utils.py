@@ -90,7 +90,7 @@ class GHActions:
     @staticmethod
     def get_commit_status_by_name(
         token: str, commit_sha: str, status_name: Union[str, Sequence]
-    ) -> Optional[str]:
+    ) -> str:
         assert len(token) == 40
         assert len(commit_sha) == 40
         assert is_hex(commit_sha)
@@ -109,8 +109,8 @@ class GHActions:
             statuses = response.json()
             for status in statuses:
                 if status["context"] in status_name:
-                    return status["state"]
-        return None
+                    return status["state"]  # type: ignore
+        return ""
 
     @staticmethod
     def check_wf_completed(token: str, commit_sha: str) -> bool:
@@ -135,10 +135,9 @@ class GHActions:
                             f"   Check workflow status: Check not completed [{check['name']}]"
                         )
                         return False
-                else:
-                    return True
+                return True
             except Exception as e:
-                print(f"ERROR: exception {e}")
+                print(f"ERROR: exception after attempt [{i}]: {e}")
                 time.sleep(1)
 
         return False
