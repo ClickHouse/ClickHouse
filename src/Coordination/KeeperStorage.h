@@ -202,8 +202,13 @@ public:
         AuthID auth_id;
     };
 
+    struct CloseSessionDelta
+    {
+        int64_t session_id;
+    };
+
     using Operation = std::
-        variant<CreateNodeDelta, RemoveNodeDelta, UpdateNodeDelta, SetACLDelta, AddAuthDelta, ErrorDelta, SubDeltaEnd, FailedMultiDelta>;
+        variant<CreateNodeDelta, RemoveNodeDelta, UpdateNodeDelta, SetACLDelta, AddAuthDelta, ErrorDelta, SubDeltaEnd, FailedMultiDelta, CloseSessionDelta>;
 
     struct Delta
     {
@@ -255,6 +260,10 @@ public:
             if (is_local)
                 return check_auth(storage.session_and_auth[session_id]);
 
+            /// we want to close the session and with that we will remove all the auth related to the session
+            if (closed_sessions.contains(session_id))
+                return false;
+
             if (check_auth(storage.session_and_auth[session_id]))
                 return true;
 
@@ -271,6 +280,7 @@ public:
         std::shared_ptr<Node> tryGetNodeFromStorage(StringRef path) const;
 
         std::unordered_map<int64_t, std::list<const AuthID *>> session_and_auth;
+        std::unordered_set<int64_t> closed_sessions;
 
         struct UncommittedNode
         {
