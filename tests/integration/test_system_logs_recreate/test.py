@@ -26,12 +26,12 @@ def test_system_logs_recreate():
     system_logs = [
         # enabled by default
         "query_log",
+        "query_log_metric",
         "query_thread_log",
         "part_log",
         "trace_log",
         "metric_log",
         "error_log",
-        "query_log_metric",
     ]
 
     node.query("SYSTEM FLUSH LOGS")

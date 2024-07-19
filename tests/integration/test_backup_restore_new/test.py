@@ -1468,6 +1468,7 @@ def test_backup_all(exclude_system_log_tables):
         # See the list of log tables in src/Interpreters/SystemLog.cpp
         log_tables = [
             "query_log",
+            "query_log_metric",
             "query_thread_log",
             "part_log",
             "trace_log",
@@ -1486,7 +1487,6 @@ def test_backup_all(exclude_system_log_tables):
             "asynchronous_insert_log",
             "backup_log",
             "error_log",
-            "query_log_metric",
         ]
         exclude_from_backup += ["system." + table_name for table_name in log_tables]
 

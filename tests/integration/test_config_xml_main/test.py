@@ -18,6 +18,7 @@ def test_xml_main_conf():
         "configs/config.d/more_clusters.yaml",
         "configs/config.d/part_log.yaml",
         "configs/config.d/path.yaml",
+        "configs/config.d/query_metric_log.yaml",
         "configs/config.d/query_masking_rules.yaml",
         "configs/config.d/tcp_with_proxy.yaml",
         "configs/config.d/test_cluster_with_incorrect_pw.yaml",
