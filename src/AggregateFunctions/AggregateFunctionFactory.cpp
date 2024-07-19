@@ -128,7 +128,7 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
     return with_original_arguments;
 }
 
-std::optional<AggregateFunctionWithProperties>
+std::optional<AggregateFunctionFactoryData>
 AggregateFunctionFactory::getAssociatedFunctionByNullsAction(const String & name, NullsAction action) const
 {
     if (action == NullsAction::RESPECT_NULLS)
