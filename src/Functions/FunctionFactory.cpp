@@ -113,13 +113,13 @@ FunctionOverloadResolverPtr FunctionFactory::tryGetImpl(
 
     auto it = functions.find(name);
     if (functions.end() != it)
-        res = it->second.first(context);
+        res = it->second.creator(context);
     else
     {
         name = Poco::toLower(name);
         it = case_insensitive_functions.find(name);
         if (case_insensitive_functions.end() != it)
-            res = it->second.first(context);
+            res = it->second.creator(context);
     }
 
     if (!res)
@@ -155,7 +155,7 @@ FunctionDocumentation FunctionFactory::getDocumentation(const std::string & name
     if (it == functions.end())
         throw Exception(ErrorCodes::UNKNOWN_FUNCTION, "Unknown function {}", name);
 
-    return it->second.second;
+    return it->second.documentation;
 }
 
 }
