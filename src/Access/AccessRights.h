@@ -170,43 +170,43 @@ public:
     std::vector<String> dumpNodes() const;
 
 private:
-    template <bool with_grant_option, bool wildcard = false, typename... Args>
+    template <bool with_grant_option, bool wildcard, typename... Args>
     void grantImpl(const AccessFlags & flags, const Args &... args);
 
-    template <bool with_grant_option, bool wildcard = false>
+    template <bool with_grant_option, bool wildcard>
     void grantImpl(const AccessRightsElement & element);
 
-    template <bool with_grant_option>
+    template <bool with_grant_option, bool wildcard>
     void grantImpl(const AccessRightsElements & elements);
 
-    template <bool with_grant_option, bool wildcard = false>
+    template <bool with_grant_option, bool wildcard>
     void grantImplHelper(const AccessRightsElement & element);
 
-    template <bool grant_option, bool wildcard = false, typename... Args>
+    template <bool grant_option, bool wildcard, typename... Args>
     void revokeImpl(const AccessFlags & flags, const Args &... args);
 
-    template <bool grant_option, bool wildcard = false>
+    template <bool grant_option, bool wildcard>
     void revokeImpl(const AccessRightsElement & element);
 
-    template <bool grant_option>
+    template <bool grant_option, bool wildcard>
     void revokeImpl(const AccessRightsElements & elements);
 
-    template <bool grant_option, bool wildcard = false>
+    template <bool grant_option, bool wildcard>
     void revokeImplHelper(const AccessRightsElement & element);
 
-    template <bool grant_option, bool wildcard = false, typename... Args>
+    template <bool grant_option, bool wildcard, typename... Args>
     bool isGrantedImpl(const AccessFlags & flags, const Args &... args) const;
 
-    template <bool grant_option>
+    template <bool grant_option, bool wildcard>
     bool isGrantedImpl(const AccessRightsElement & element) const;
 
-    template <bool grant_option>
+    template <bool grant_option, bool wildcard>
     bool isGrantedImpl(const AccessRightsElements & elements) const;
 
     template <bool grant_option>
     bool containsImpl(const AccessRights & other) const;
 
-    template <bool grant_option>
+    template <bool grant_option, bool wildcard>
     bool isGrantedImplHelper(const AccessRightsElement & element) const;
 
     struct Node;

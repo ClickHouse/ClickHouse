@@ -82,7 +82,7 @@ struct AccessRightsElement
     /// Resets flags which cannot be granted.
     void eraseNonGrantable();
 
-    bool isEmptyDatabase() const { return database.empty() and !anyDatabase(); }
+    bool isEmptyDatabase() const { return database.empty() and default_database; }
 
     /// If the database is empty, replaces it with `current_database`. Otherwise does nothing.
     void replaceEmptyDatabase(const String & current_database);

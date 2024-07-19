@@ -111,22 +111,25 @@ TEST(AccessRights, GrantWildcard)
     root.revokeWildcard(AccessType::SELECT, "default", "t", "col");
     ASSERT_EQ(root.isGranted(AccessType::SELECT, "default", "t"), false);
     ASSERT_EQ(root.isGrantedWildcard(AccessType::SELECT, "default", "t"), false);
+    ASSERT_EQ(root.isGranted(AccessType::SELECT, "default", "t", "col"), false);
     ASSERT_EQ(root.isGranted(AccessType::SELECT, "default", "t", "col1"), false);
+    ASSERT_EQ(root.isGranted(AccessType::SELECT, "default", "t", "co"), true);
     ASSERT_EQ(root.isGranted(AccessType::SELECT, "default", "t", "test"), true);
     ASSERT_EQ(root.toString(), "GRANT SELECT ON default.t, REVOKE SELECT(col*) ON default.t");
 
     root = {};
     root.grantWildcard(AccessType::ALTER_UPDATE, "prod");
     root.grant(AccessType::ALTER_UPDATE, "prod", "users");
-
     ASSERT_EQ(root.isGranted(AccessType::ALTER_UPDATE, "prod"), true);
     ASSERT_EQ(root.isGranted(AccessType::ALTER_UPDATE, "prod", "users"), true);
     ASSERT_EQ(root.isGranted(AccessType::ALTER_UPDATE, "prod", "orders"), true);
     ASSERT_EQ(root.isGranted(AccessType::SELECT, "prod"), false);
+    ASSERT_EQ(root.toString(), "GRANT ALTER UPDATE ON prod*.*");
 
     root.revoke(AccessType::ALTER_UPDATE, "prod", "users");
     ASSERT_EQ(root.isGranted(AccessType::ALTER_UPDATE, "prod", "users"), false);
     ASSERT_EQ(root.isGranted(AccessType::ALTER_UPDATE, "prod", "orders"), true);
+    ASSERT_EQ(root.toString(), "GRANT ALTER UPDATE ON prod*.*, REVOKE ALTER UPDATE ON prod.users");
 
     root.grantWildcard(AccessType::ALTER_DELETE, "prod");
     root.grant(AccessType::ALTER_DELETE, "prod", "archive");
@@ -139,18 +142,29 @@ TEST(AccessRights, GrantWildcard)
 
     ASSERT_EQ(root.toString(), "GRANT ALTER UPDATE ON prod*.*, REVOKE ALTER UPDATE ON prod.users");
 
+    root = {};
     root.grantWildcard(AccessType::SELECT, "test");
     root.grantWildcard(AccessType::INSERT, "test");
     ASSERT_EQ(root.isGranted(AccessType::SELECT, "test"), true);
     ASSERT_EQ(root.isGranted(AccessType::INSERT, "test"), true);
     ASSERT_EQ(root.isGranted(AccessType::SELECT, "testdata"), true);
     ASSERT_EQ(root.isGranted(AccessType::INSERT, "testdata"), true);
+    ASSERT_EQ(root.toString(), "GRANT SELECT, INSERT ON test*.*");
 
     root.revokeWildcard(AccessType::SELECT, "test");
     ASSERT_EQ(root.isGranted(AccessType::SELECT, "test"), false);
     ASSERT_EQ(root.isGranted(AccessType::INSERT, "test"), true);
     ASSERT_EQ(root.isGranted(AccessType::SELECT, "testdata"), false);
     ASSERT_EQ(root.isGranted(AccessType::INSERT, "testdata"), true);
+    ASSERT_EQ(root.isGrantedWildcard(AccessType::INSERT, "testdata"), true);
+    ASSERT_EQ(root.isGrantedWildcard(AccessType::INSERT, "test"), true);
+    ASSERT_EQ(root.toString(), "GRANT INSERT ON test*.*");
+
+    root = {};
+    root.grant(AccessType::SELECT, "foo");
+    root.grantWildcard(AccessType::SELECT, "foo", "bar");
+    ASSERT_EQ(root.isGrantedWildcard(AccessType::SELECT, "foo"), false);
+    ASSERT_EQ(root.toString(), "GRANT SELECT ON foo.*");
 
     root = {};
     root.grantWildcard(AccessType::ALTER_UPDATE, "");
@@ -192,6 +206,11 @@ TEST(AccessRights, GrantWildcard)
     ASSERT_EQ(root.isGranted(AccessType::SELECT, "db"), false);
     ASSERT_EQ(root.isGranted(AccessType::INSERT, "db"), false);
     ASSERT_EQ(root.isGranted(AccessType::ALTER_UPDATE, "db"), false);
+
+    root = {};
+    root.grant(AccessType::SELECT, "db", "table");
+    root.revoke(AccessType::SELECT, "db", "table", "a");
+    ASSERT_EQ(root.isGranted(AccessType::SELECT, "db", "table", "a"), false);
 }
 
 TEST(AccessRights, Union)

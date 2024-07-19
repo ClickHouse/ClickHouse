@@ -50,5 +50,11 @@ ${CLICKHOUSE_CLIENT} --user $user2 --query "SELECT count() FROM $db.test_table_p
 ${CLICKHOUSE_CLIENT} --user $user3 --query "SELECT count() FROM $db.test_table"
 ${CLICKHOUSE_CLIENT} --user $user3 --query "SELECT count() FROM $db.test_table_another_prefix"
 
+${CLICKHOUSE_CLIENT} --query "REVOKE ALL ON *.* FROM $user1, $user2, $user3"
 
-${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS $user1, $user2, $user3";
+${CLICKHOUSE_CLIENT} --query "GRANT SELECT ON $db.test TO $user1 WITH GRANT OPTION"
+${CLICKHOUSE_CLIENT} --user $user1 --query "GRANT SELECT ON $db.test TO $user1"
+(( $(${CLICKHOUSE_CLIENT} --user $user1 --query "GRANT SELECT ON $db.test* TO $user1" 2>&1 | grep -c "Not enough privileges") >= 1 )) && echo "OK" || echo "UNEXPECTED"
+(( $(${CLICKHOUSE_CLIENT} --user $user1 --query "GRANT SELECT ON $db.test2* TO $user1" 2>&1 | grep -c "Not enough privileges") >= 1 )) && echo "OK" || echo "UNEXPECTED"
+
+${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS $user1, $user2, $user3"
