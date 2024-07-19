@@ -1446,12 +1446,6 @@ void DatabaseReplicated::dropTable(ContextPtr local_context, const String & tabl
     assert(checkDigestValid(local_context));
 }
 
-void DatabaseReplicated::dropDetachedTable(ContextPtr /*local_context*/, const String & /*table_name*/, const bool /*sync*/)
-{
-    // todo firstly need to fix https://github.com/ClickHouse/ClickHouse/pull/66092
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "There is no DROP DETACHED TABLE query for Database{}", getEngineName());
-}
-
 void DatabaseReplicated::renameTable(ContextPtr local_context, const String & table_name, IDatabase & to_database,
                                      const String & to_table_name, bool exchange, bool dictionary)
 {
