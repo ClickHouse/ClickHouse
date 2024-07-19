@@ -13,14 +13,14 @@ $CLICKHOUSE_CLIENT --query "INSERT INTO alter_mt SELECT number, toString(number)
 
 $CLICKHOUSE_CLIENT --function_sleep_max_microseconds_per_block 10000000 --query "SELECT count(distinct concat(value, '_')) FROM alter_mt WHERE not sleepEachRow(2)" &
 
-# to be sure that select took all required locks
+# To be sure that select took all required locks for better test sensitivity, although it isn't guaranteed (then the test will also succeed).
 sleep 2
 
 $CLICKHOUSE_CLIENT --query "ALTER TABLE alter_mt MODIFY COLUMN value UInt64"
 
-$CLICKHOUSE_CLIENT --query "SELECT sum(value) FROM alter_mt"
-
 wait
+
+$CLICKHOUSE_CLIENT --query "SELECT sum(value) FROM alter_mt"
 
 $CLICKHOUSE_CLIENT --query "SHOW CREATE TABLE alter_mt"
 
