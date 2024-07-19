@@ -195,6 +195,12 @@ void HedgedConnections::sendQuery(
             modified_settings.parallel_replica_offset = fd_to_replica_location[replica.packet_receiver->getFileDescriptor()].offset;
         }
 
+        /// FIXME: Remove once we will make `allow_experimental_analyzer` obsolete setting.
+        /// Make the analyzer being set, so it will be effectively applied on the remote server.
+        /// In other words, the initiator always controls whether the analyzer enabled or not for
+        /// all servers involved in the distributed query processing.
+        modified_settings.set("allow_experimental_analyzer", static_cast<bool>(modified_settings.allow_experimental_analyzer));
+
         replica.connection->sendQuery(timeouts, query, /* query_parameters */ {}, query_id, stage, &modified_settings, &client_info, with_pending_data, {});
         replica.change_replica_timeout.setRelative(timeouts.receive_data_timeout);
         replica.packet_receiver->setTimeout(hedged_connections_factory.getConnectionTimeouts().receive_timeout);
