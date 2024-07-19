@@ -393,7 +393,6 @@ ReadFromParallelRemoteReplicasStep::ReadFromParallelRemoteReplicasStep(
 
     for (const auto & addr : cluster->getShardsAddresses().front())
     {
-        /// skip first local
         if (exclude_local_replica && addr.is_local)
             continue;
 
