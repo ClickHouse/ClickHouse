@@ -26,11 +26,6 @@ public:
         return name;
     }
 
-    bool isDeterministic() const override
-    {
-        return false;
-    }
-
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override
     {
         return false;
@@ -56,7 +51,7 @@ public:
 
 REGISTER_FUNCTION(BlockSize)
 {
-    factory.registerFunction<FunctionBlockSize>({}, {.is_deterministic_in_scope_of_query = false});
+    factory.registerFunction<FunctionBlockSize>({}, {.is_deterministic = false, .is_deterministic_in_scope_of_query = false});
 }
 
 }

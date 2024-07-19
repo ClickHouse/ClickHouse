@@ -13,7 +13,7 @@ using FunctionRand = FunctionRandom<UInt32, NameRand>;
 
 REGISTER_FUNCTION(Rand)
 {
-    factory.registerFunction<FunctionRand>({}, {.is_deterministic_in_scope_of_query = false}, FunctionFactory::Case::Insensitive);
+    factory.registerFunction<FunctionRand>({}, {.is_deterministic = false, .is_deterministic_in_scope_of_query = false}, FunctionFactory::Case::Insensitive);
     factory.registerAlias("rand32", NameRand::name);
 }
 

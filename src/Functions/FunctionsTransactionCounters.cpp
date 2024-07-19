@@ -63,9 +63,9 @@ public:
 
 REGISTER_FUNCTION(TransactionCounters)
 {
-    factory.registerFunction<FunctionTransactionID>();
-    factory.registerFunction<FunctionTransactionLatestSnapshot>();
-    factory.registerFunction<FunctionTransactionOldestSnapshot>();
+    factory.registerFunction<FunctionTransactionID>({}, {.is_deterministic = false});
+    factory.registerFunction<FunctionTransactionLatestSnapshot>({}, {.is_deterministic = false});
+    factory.registerFunction<FunctionTransactionOldestSnapshot>({}, {.is_deterministic = false});
 }
 
 }

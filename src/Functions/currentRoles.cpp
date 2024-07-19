@@ -40,7 +40,6 @@ namespace
         {}
 
         size_t getNumberOfArguments() const override { return 0; }
-        bool isDeterministic() const override { return false; }
 
         DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
         {
@@ -91,9 +90,9 @@ namespace
 
 REGISTER_FUNCTION(CurrentRoles)
 {
-    factory.registerFunction<FunctionCurrentRoles<Kind::CURRENT_ROLES>>();
-    factory.registerFunction<FunctionCurrentRoles<Kind::ENABLED_ROLES>>();
-    factory.registerFunction<FunctionCurrentRoles<Kind::DEFAULT_ROLES>>();
+    factory.registerFunction<FunctionCurrentRoles<Kind::CURRENT_ROLES>>({}, {.is_deterministic = false});
+    factory.registerFunction<FunctionCurrentRoles<Kind::ENABLED_ROLES>>({}, {.is_deterministic = false});
+    factory.registerFunction<FunctionCurrentRoles<Kind::DEFAULT_ROLES>>({}, {.is_deterministic = false});
 }
 
 }

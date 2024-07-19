@@ -24,7 +24,6 @@ public:
     size_t getNumberOfArguments() const override { return 0; }
 
     bool isVariadic() const override { return true; }
-    bool isDeterministic() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const  override { return {0, 1}; }
     bool useDefaultImplementationForConstants() const override { return false; }

@@ -446,7 +446,7 @@ The function returns a value of type String.
             },
             .categories{"Random"}
         },
-        {.is_deterministic_in_scope_of_query = false}
+        {.is_deterministic = false, .is_deterministic_in_scope_of_query = false}
         );
 }
 

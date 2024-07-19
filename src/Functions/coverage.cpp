@@ -57,11 +57,6 @@ public:
         return 0;
     }
 
-    bool isDeterministic() const override
-    {
-        return false;
-    }
-
     DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
     {
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>());
@@ -123,7 +118,8 @@ See https://clang.llvm.org/docs/SanitizerCoverage.html for more information.
             .examples{
                 {"functions", "SELECT DISTINCT demangle(addressToSymbol(arrayJoin(coverageCurrent())))", ""}},
             .categories{"Introspection"}
-        });
+        },
+    {.is_deterministic = false});
 
     factory.registerFunction("coverageCumulative", [](ContextPtr){ return std::make_shared<FunctionCoverage>(Kind::Cumulative); },
         FunctionDocumentation
@@ -139,7 +135,8 @@ In contrast to `coverageCurrent` it cannot be reset with the `SYSTEM RESET COVER
 See the `coverageCurrent` function for the details.
 )",
             .categories{"Introspection"}
-        });
+        },
+        {.is_deterministic = false});
 
     factory.registerFunction("coverageAll", [](ContextPtr){ return std::make_shared<FunctionCoverage>(Kind::All); },
         FunctionDocumentation
@@ -155,7 +152,8 @@ You can use this function, and the `coverage` function to compare and calculate 
 See the `coverageCurrent` function for the details.
 )",
             .categories{"Introspection"}
-        });
+        },
+        {.is_deterministic = false});
 }
 
 }

@@ -22,8 +22,6 @@ public:
         return name;
     }
 
-    bool isDeterministic() const override { return false; }
-
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     size_t getNumberOfArguments() const override
@@ -46,7 +44,7 @@ public:
 
 REGISTER_FUNCTION(FQDN)
 {
-    factory.registerFunction<FunctionFQDN>({}, {}, FunctionFactory::Case::Insensitive);
+    factory.registerFunction<FunctionFQDN>({}, {.is_deterministic = false}, FunctionFactory::Case::Insensitive);
     factory.registerAlias("fullHostName", "FQDN");
 }
 

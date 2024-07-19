@@ -78,8 +78,6 @@ public:
         return arguments[0].type;
     }
 
-    bool isDeterministic() const override { return false; }
-
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         auto col_in_untyped = arguments[0].column;
@@ -183,6 +181,6 @@ public:
 
 REGISTER_FUNCTION(FuzzBits)
 {
-    factory.registerFunction<FunctionFuzzBits>({}, {.is_deterministic_in_scope_of_query = false});
+    factory.registerFunction<FunctionFuzzBits>({}, {.is_deterministic = false, .is_deterministic_in_scope_of_query = false});
 }
 }

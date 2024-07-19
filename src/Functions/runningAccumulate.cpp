@@ -59,11 +59,6 @@ public:
 
     size_t getNumberOfArguments() const override { return 0; }
 
-    bool isDeterministic() const override
-    {
-        return false;
-    }
-
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -144,7 +139,7 @@ public:
 
 REGISTER_FUNCTION(RunningAccumulate)
 {
-    factory.registerFunction<FunctionRunningAccumulate>({}, {.is_deterministic_in_scope_of_query = false, .is_stateful = true});
+    factory.registerFunction<FunctionRunningAccumulate>({}, {.is_deterministic = false, .is_deterministic_in_scope_of_query = false, .is_stateful = true});
 }
 
 }

@@ -51,8 +51,6 @@ public:
         return std::make_shared<DataTypeFixedString>(n);
     }
 
-    bool isDeterministic() const override { return false; }
-
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const size_t n = assert_cast<const ColumnConst &>(*arguments[0].column).getValue<UInt64>();
@@ -107,7 +105,7 @@ private:
 
 REGISTER_FUNCTION(RandomFixedString)
 {
-    factory.registerFunction<FunctionRandomFixedString>({}, {.is_deterministic_in_scope_of_query = false});
+    factory.registerFunction<FunctionRandomFixedString>({}, {.is_deterministic = false, .is_deterministic_in_scope_of_query = false});
 }
 
 }

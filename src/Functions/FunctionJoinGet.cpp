@@ -101,7 +101,6 @@ public:
 
     explicit JoinGetOverloadResolver(ContextPtr context_) : WithContext(context_) {}
 
-    bool isDeterministic() const override { return false; }
     String getName() const override { return name; }
 
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &) const override;
@@ -201,9 +200,9 @@ FunctionBasePtr JoinGetOverloadResolver<or_null>::buildImpl(const ColumnsWithTyp
 REGISTER_FUNCTION(JoinGet)
 {
     // joinGet
-    factory.registerFunction<JoinGetOverloadResolver<false>>();
+    factory.registerFunction<JoinGetOverloadResolver<false>>({}, {.is_deterministic = false});
     // joinGetOrNull
-    factory.registerFunction<JoinGetOverloadResolver<true>>();
+    factory.registerFunction<JoinGetOverloadResolver<true>>({}, {.is_deterministic = false});
 }
 
 }

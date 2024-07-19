@@ -228,8 +228,11 @@ bool isExpressionActionsDeterministic(const ExpressionActionsPtr & actions)
     {
         if (action.node->type != ActionsDAG::ActionType::FUNCTION)
             continue;
-        if (!action.node->function_base->isDeterministic())
+        const auto & function_name = action.node->function_base->getName();
+        auto function_properties = FunctionFactory::instance().getProperties(function_name);
+        if (!function_properties.is_deterministic)
             return false;
+
     }
     return true;
 }

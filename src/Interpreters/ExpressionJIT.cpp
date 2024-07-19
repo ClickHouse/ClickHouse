@@ -188,15 +188,6 @@ public:
         return std::make_unique<LLVMExecutableFunction>(name, compiled_function_holder);
     }
 
-    bool isDeterministic() const override
-    {
-        for (const auto & f : nested_functions)
-            if (!f->isDeterministic())
-                return false;
-
-        return true;
-    }
-
     bool isSuitableForConstantFolding() const override
     {
         for (const auto & f : nested_functions)

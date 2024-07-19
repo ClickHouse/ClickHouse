@@ -44,7 +44,6 @@ public:
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-    bool isDeterministic() const override { return false; }
     bool useDefaultImplementationForNulls() const override { return false; }
     size_t getNumberOfArguments() const override { return 0; }
 
@@ -176,7 +175,7 @@ public:
 
 REGISTER_FUNCTION(CatBoostEvaluate)
 {
-    factory.registerFunction<FunctionCatBoostEvaluate>();
+    factory.registerFunction<FunctionCatBoostEvaluate>({}, {.is_deterministic = false});
 }
 
 }

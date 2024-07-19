@@ -54,7 +54,7 @@ Non-deterministic. Return type is Float64.
         )",
         .examples{{"randCanonical", "SELECT randCanonical()", ""}},
         .categories{"Mathematical"}},
-        {.is_deterministic_in_scope_of_query = false}
+        {.is_deterministic = false, .is_deterministic_in_scope_of_query = false}
     );
 }
 

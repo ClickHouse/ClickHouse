@@ -168,8 +168,6 @@ public:
 
     bool isVariadic() const override { return true; }
 
-    bool isDeterministic() const override { return false; }
-
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     bool useDefaultImplementationForConstants() const final { return true; }
@@ -348,8 +346,6 @@ public:
         else
             return {0, 1};
     }
-
-    bool isDeterministic() const override { return false; }
 
     bool isInjective(const ColumnsWithTypeAndName & sample_columns) const override
     {
@@ -802,8 +798,6 @@ private:
 
     bool useDefaultImplementationForConstants() const final { return true; }
 
-    bool isDeterministic() const override { return false; }
-
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const final { return {0, 1}; }
@@ -943,8 +937,6 @@ private:
     bool useDefaultImplementationForConstants() const override { return true; }
 
     bool useDefaultImplementationForNulls() const override { return false; }
-
-    bool isDeterministic() const override { return false; }
 
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0, 1}; }
 
@@ -1103,7 +1095,6 @@ private:
 
     bool useDefaultImplementationForConstants() const final { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const final { return {0}; }
-    bool isDeterministic() const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -1174,8 +1165,6 @@ private:
 
         return std::make_shared<DataTypeUInt8>();
     }
-
-    bool isDeterministic() const override { return false; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
@@ -1308,8 +1297,6 @@ public:
     bool isVariadic() const override { return Strategy::is_variadic; }
 
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0, 2}; }
-
-    bool isDeterministic() const override { return false; }
 
     explicit FunctionDictGetDescendantsOverloadResolverImpl(ContextPtr context)
         : dictionary_helper(std::make_shared<FunctionDictHelper>(std::move(context)))

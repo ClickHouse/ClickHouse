@@ -318,7 +318,10 @@ const ActionsDAG::Node & ActionsDAG::addFunctionImpl(
     node.function_base = function_base;
     node.result_type = result_type;
     node.function = node.function_base->prepare(arguments);
-    node.is_deterministic = node.function_base->isDeterministic();
+
+    const auto & function_name = node.function_base->getName();
+    auto function_properties = FunctionFactory::instance().getProperties(function_name);
+    node.is_deterministic = function_properties.is_deterministic;
 
     /// If all arguments are constants, and function is suitable to be executed in 'prepare' stage - execute function.
     if (node.function_base->isSuitableForConstantFolding())

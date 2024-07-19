@@ -51,7 +51,6 @@ namespace
         {}
 
         size_t getNumberOfArguments() const override { return 0; }
-        bool isDeterministic() const override { return false; }
 
         DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
         {
@@ -98,9 +97,9 @@ namespace
 
 REGISTER_FUNCTION(Profiles)
 {
-    factory.registerFunction("currentProfiles", [](ContextPtr context){ return std::make_shared<FunctionProfiles>(context, Kind::currentProfiles); });
-    factory.registerFunction("enabledProfiles", [](ContextPtr context){ return std::make_shared<FunctionProfiles>(context, Kind::enabledProfiles); });
-    factory.registerFunction("defaultProfiles", [](ContextPtr context){ return std::make_shared<FunctionProfiles>(context, Kind::defaultProfiles); });
+    factory.registerFunction("currentProfiles", [](ContextPtr context){ return std::make_shared<FunctionProfiles>(context, Kind::currentProfiles); }, {}, {.is_deterministic = false});
+    factory.registerFunction("enabledProfiles", [](ContextPtr context){ return std::make_shared<FunctionProfiles>(context, Kind::enabledProfiles); }, {}, {.is_deterministic = false});
+    factory.registerFunction("defaultProfiles", [](ContextPtr context){ return std::make_shared<FunctionProfiles>(context, Kind::defaultProfiles); }, {}, {.is_deterministic = false});
 }
 
 }

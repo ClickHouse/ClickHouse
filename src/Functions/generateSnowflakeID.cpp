@@ -155,7 +155,6 @@ public:
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 0; }
-    bool isDeterministic() const override { return false; }
     bool useDefaultImplementationForNulls() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     bool isVariadic() const override { return true; }
@@ -224,7 +223,7 @@ REGISTER_FUNCTION(GenerateSnowflakeID)
     FunctionDocumentation::Examples examples = {{"no_arguments", "SELECT generateSnowflakeID()", "7201148511606784000"}, {"with_machine_id", "SELECT generateSnowflakeID(1)", "7201148511606784001"}, {"with_expression_and_machine_id", "SELECT generateSnowflakeID('some_expression', 1)", "7201148511606784002"}};
     FunctionDocumentation::Categories categories = {"Snowflake ID"};
 
-    factory.registerFunction<FunctionGenerateSnowflakeID>({description, syntax, arguments, returned_value, examples, categories}, {.is_deterministic_in_scope_of_query = false});
+    factory.registerFunction<FunctionGenerateSnowflakeID>({description, syntax, arguments, returned_value, examples, categories}, {.is_deterministic = false, .is_deterministic_in_scope_of_query = false});
 }
 
 }

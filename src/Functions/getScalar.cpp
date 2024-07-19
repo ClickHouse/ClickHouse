@@ -103,8 +103,6 @@ public:
         return name;
     }
 
-    bool isDeterministic() const override { return false; }
-
     bool isSuitableForConstantFolding() const override { return !is_distributed; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
@@ -150,7 +148,7 @@ struct GetShardCount
 
 REGISTER_FUNCTION(GetScalar)
 {
-    factory.registerFunction<FunctionGetScalar>({}, {.is_server_constant = true});
+    factory.registerFunction<FunctionGetScalar>({}, {.is_deterministic = false, .is_server_constant = true});
     factory.registerFunction<FunctionGetSpecialScalar<GetShardNum>>({}, {.is_server_constant = true});
     factory.registerFunction<FunctionGetSpecialScalar<GetShardCount>>({}, {.is_server_constant = true});
 }

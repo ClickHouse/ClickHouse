@@ -52,8 +52,6 @@ public:
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
     }
 
-    bool isDeterministic() const override { return false; }
-
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
@@ -80,7 +78,7 @@ Requires a boolean parameter, but it is ignored actually. It is required just fo
              {"common", "SELECT current_schemas(true);", "['default']"}
         }
         },
-        {},
+        {.is_deterministic = false},
         FunctionFactory::Case::Insensitive);
     factory.registerAlias("current_schemas", FunctionCurrentSchemas::name, FunctionFactory::Case::Insensitive);
 

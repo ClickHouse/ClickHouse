@@ -89,11 +89,6 @@ public:
         return std::make_unique<ExecutableFunctionNow64>(time_value);
     }
 
-    bool isDeterministic() const override
-    {
-        return false;
-    }
-
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override
     {
         return false;
@@ -111,8 +106,6 @@ public:
     static constexpr auto name = "now64";
 
     String getName() const override { return name; }
-
-    bool isDeterministic() const override { return false; }
 
     bool isVariadic() const override { return true; }
 
@@ -170,7 +163,7 @@ private:
 
 REGISTER_FUNCTION(Now64)
 {
-    factory.registerFunction<Now64OverloadResolver>({}, {}, FunctionFactory::Case::Insensitive);
+    factory.registerFunction<Now64OverloadResolver>({}, {.is_deterministic = false}, FunctionFactory::Case::Insensitive);
 }
 
 }

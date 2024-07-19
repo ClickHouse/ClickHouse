@@ -58,7 +58,6 @@ public:
         return std::make_unique<ExecutableFunctionUTCTimestamp>(time_value);
     }
 
-    bool isDeterministic() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
 private:
@@ -73,8 +72,6 @@ public:
     static constexpr auto name = "UTCTimestamp";
 
     String getName() const override { return name; }
-
-    bool isDeterministic() const override { return false; }
 
     bool isVariadic() const override { return false; }
 
@@ -117,7 +114,9 @@ Example:
 )",
     .examples{
         {"typical", "SELECT UTCTimestamp();", ""}},
-    .categories{"Dates and Times"}}, {}, FunctionFactory::Case::Insensitive);
+    .categories{"Dates and Times"}},
+    {.is_deterministic = false},
+    FunctionFactory::Case::Insensitive);
     factory.registerAlias("UTC_timestamp", UTCTimestampOverloadResolver::name, FunctionFactory::Case::Insensitive);
 }
 

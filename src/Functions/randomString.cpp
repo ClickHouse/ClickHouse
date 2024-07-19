@@ -54,8 +54,6 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    bool isDeterministic() const override { return false; }
-
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         auto col_to = ColumnString::create();
@@ -125,7 +123,7 @@ private:
 
 REGISTER_FUNCTION(RandomString)
 {
-    factory.registerFunction<FunctionRandomString>({}, {.is_deterministic_in_scope_of_query = false});
+    factory.registerFunction<FunctionRandomString>({}, {.is_deterministic = false, .is_deterministic_in_scope_of_query = false});
 }
 
 }

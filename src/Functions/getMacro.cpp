@@ -46,8 +46,6 @@ public:
         return name;
     }
 
-    bool isDeterministic() const override { return false; }
-
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     /// getMacro may return different values on different shards/replicas, so it's not constant for distributed query
@@ -81,7 +79,7 @@ public:
 
 REGISTER_FUNCTION(GetMacro)
 {
-    factory.registerFunction<FunctionGetMacro>({}, {.is_server_constant = true});
+    factory.registerFunction<FunctionGetMacro>({}, {.is_deterministic = false, .is_server_constant = true});
 }
 
 }

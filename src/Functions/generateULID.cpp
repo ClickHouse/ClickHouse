@@ -37,7 +37,6 @@ public:
     size_t getNumberOfArguments() const override { return 0; }
 
     bool isVariadic() const override { return true; }
-    bool isDeterministic() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -85,7 +84,7 @@ The function returns a value of type FixedString(26).
             {"multiple", "SELECT generateULID(1), generateULID(2)", ""}},
         .categories{"ULID"}
     },
-    {.is_deterministic_in_scope_of_query = false});
+    {.is_deterministic = false, .is_deterministic_in_scope_of_query = false});
 }
 
 }

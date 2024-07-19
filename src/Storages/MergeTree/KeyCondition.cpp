@@ -1090,7 +1090,12 @@ bool KeyCondition::canConstantBeWrappedByFunctions(
         out_key_column_num,
         out_key_column_type,
         transform_functions,
-        [](const IFunctionBase & func, const IDataType &) { return func.isDeterministic(); });
+        [](const IFunctionBase & func, const IDataType &)
+        {
+            const auto & func_name = func.getName();
+            auto func_properties = FunctionFactory::instance().getProperties(func_name);
+            return func_properties.is_deterministic;
+        });
 
     if (!can_transform_constant)
         return false;
@@ -1345,8 +1350,6 @@ public:
         else
             return func->prepare(arguments)->execute(arguments, result_type, input_rows_count, dry_run);
     }
-
-    bool isDeterministic() const override { return func->isDeterministic(); }
 
     bool hasInformationAboutMonotonicity() const override { return func->hasInformationAboutMonotonicity(); }
 
@@ -1713,7 +1716,9 @@ bool KeyCondition::canSetValuesBeWrappedByFunctions(
         out_functions_chain,
         [](const IFunctionBase & func, const IDataType &)
         {
-            return func.isDeterministic();
+            const auto & func_name = func.getName();
+            auto func_properties = FunctionFactory::instance().getProperties(func_name);
+            return func_properties.is_deterministic;
         });
 }
 

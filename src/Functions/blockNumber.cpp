@@ -39,11 +39,6 @@ public:
         return 0;
     }
 
-    bool isDeterministic() const override
-    {
-        return false;
-    }
-
     DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
     {
         return std::make_shared<DataTypeUInt64>();
@@ -60,7 +55,7 @@ public:
 
 REGISTER_FUNCTION(BlockNumber)
 {
-    factory.registerFunction<FunctionBlockNumber>({}, {.is_deterministic_in_scope_of_query = false, .is_stateful = true});
+    factory.registerFunction<FunctionBlockNumber>({}, {.is_deterministic = false, .is_deterministic_in_scope_of_query = false, .is_stateful = true});
 }
 
 }

@@ -2,6 +2,7 @@
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Core/Settings.h>
+#include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
@@ -71,7 +72,9 @@ void checkTTLExpression(const ExpressionActionsPtr & ttl_expression, const Strin
             if (action.node->type == ActionsDAG::ActionType::FUNCTION)
             {
                 const IFunctionBase & func = *action.node->function_base;
-                if (!func.isDeterministic())
+                const auto & func_name = func.getName();
+                auto func_properties = FunctionFactory::instance().getProperties(func_name);
+                if (!func_properties.is_deterministic)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
                                     "TTL expression cannot contain non-deterministic functions, but contains function {}",
                                     func.getName());

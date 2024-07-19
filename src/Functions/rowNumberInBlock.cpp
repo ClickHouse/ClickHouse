@@ -29,11 +29,6 @@ public:
         return 0;
     }
 
-    bool isDeterministic() const override
-    {
-        return false;
-    }
-
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
@@ -56,7 +51,7 @@ public:
 
 REGISTER_FUNCTION(RowNumberInBlock)
 {
-    factory.registerFunction<FunctionRowNumberInBlock>({}, {.is_deterministic_in_scope_of_query = false, .is_stateful = true}
+    factory.registerFunction<FunctionRowNumberInBlock>({}, {.is_deterministic = false, .is_deterministic_in_scope_of_query = false, .is_stateful = true}
     );
 }
 

@@ -61,11 +61,6 @@ public:
         return std::make_unique<ExecutableFunctionNow>(time_value);
     }
 
-    bool isDeterministic() const override
-    {
-        return false;
-    }
-
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override
     {
         return false;
@@ -83,8 +78,6 @@ public:
     static constexpr auto name = "now";
 
     String getName() const override { return name; }
-
-    bool isDeterministic() const override { return false; }
 
     bool isVariadic() const override { return true; }
 
@@ -138,7 +131,7 @@ private:
 
 REGISTER_FUNCTION(Now)
 {
-    factory.registerFunction<NowOverloadResolver>({}, {}, FunctionFactory::Case::Insensitive);
+    factory.registerFunction<NowOverloadResolver>({}, {.is_deterministic = false}, FunctionFactory::Case::Insensitive);
     factory.registerAlias("current_timestamp", NowOverloadResolver::name, FunctionFactory::Case::Insensitive);
 }
 

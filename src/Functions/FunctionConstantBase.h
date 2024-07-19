@@ -34,8 +34,6 @@ public:
         return std::make_shared<ColumnT>();
     }
 
-    bool isDeterministic() const override { return false; }
-
     /// Some functions may return different values on different shards/replicas, so it's not constant for distributed query
     bool isSuitableForConstantFolding() const override { return !is_distributed; }
 

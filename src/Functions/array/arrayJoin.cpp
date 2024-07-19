@@ -38,12 +38,6 @@ public:
         return 1;
     }
 
-    /** It could return many different values for single argument. */
-    bool isDeterministic() const override
-    {
-        return false;
-    }
-
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
@@ -71,7 +65,7 @@ public:
 
 REGISTER_FUNCTION(ArrayJoin)
 {
-    factory.registerFunction<FunctionArrayJoin>({}, {.is_deterministic_in_scope_of_query = false});
+    factory.registerFunction<FunctionArrayJoin>({}, {.is_deterministic = false, .is_deterministic_in_scope_of_query = false});
 }
 
 }

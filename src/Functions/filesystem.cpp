@@ -59,7 +59,6 @@ public:
     bool isVariadic() const override { return true; }
 
     size_t getNumberOfArguments() const override { return 0; }
-    bool isDeterministic() const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -114,9 +113,9 @@ private:
 
 REGISTER_FUNCTION(Filesystem)
 {
-    factory.registerFunction<FilesystemImpl<FilesystemAvailable>>();
-    factory.registerFunction<FilesystemImpl<FilesystemCapacity>>();
-    factory.registerFunction<FilesystemImpl<FilesystemUnreserved>>();
+    factory.registerFunction<FilesystemImpl<FilesystemAvailable>>({}, {.is_deterministic = false});
+    factory.registerFunction<FilesystemImpl<FilesystemCapacity>>({}, {.is_deterministic = false});
+    factory.registerFunction<FilesystemImpl<FilesystemUnreserved>>({}, {.is_deterministic = false});
 }
 
 }
