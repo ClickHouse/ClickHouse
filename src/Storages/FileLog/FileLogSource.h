@@ -28,7 +28,7 @@ public:
 
     bool noRecords() { return !consumer || consumer->noRecords(); }
 
-    void onFinish() override;
+    void close();
 
     ~FileLogSource() override;
 

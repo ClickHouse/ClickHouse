@@ -49,7 +49,7 @@ FileLogSource::~FileLogSource()
     try
     {
         if (!finished)
-            onFinish();
+            close();
     }
     catch (...)
     {
@@ -57,7 +57,7 @@ FileLogSource::~FileLogSource()
     }
 }
 
-void FileLogSource::onFinish()
+void FileLogSource::close()
 {
     storage.closeFilesAndStoreMeta(start, end);
     storage.reduceStreams();
@@ -71,6 +71,9 @@ Chunk FileLogSource::generate()
 
     if (!consumer || consumer->noRecords())
     {
+        /// There is no onFinish for ISource, we call it
+        /// when no records return to close files
+        close();
         return {};
     }
 
@@ -160,6 +163,7 @@ Chunk FileLogSource::generate()
 
     if (total_rows == 0)
     {
+        close();
         return {};
     }
 
