@@ -44,6 +44,7 @@ IMergeTreeReader::IMergeTreeReader(
     , alter_conversions(data_part_info_for_read->getAlterConversions())
     /// For wide parts convert plain arrays of Nested to subcolumns
     /// to allow to use shared offset column from cache.
+    , original_requested_columns(columns_)
     , requested_columns(data_part_info_for_read->isWidePart()
         ? Nested::convertToSubcolumns(columns_)
         : columns_)
@@ -139,7 +140,7 @@ void IMergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns
 {
     try
     {
-        size_t num_columns = requested_columns.size();
+        size_t num_columns = original_requested_columns.size();
 
         if (res_columns.size() != num_columns)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "invalid number of columns passed to MergeTreeReader::fillMissingColumns. "
@@ -151,7 +152,7 @@ void IMergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns
         /// Convert columns list to block. And convert subcolumns to full columns.
         /// TODO: rewrite with columns interface. It will be possible after changes in ExpressionActions.
 
-        auto it = requested_columns.begin();
+        auto it = original_requested_columns.begin();
         for (size_t pos = 0; pos < num_columns; ++pos, ++it)
         {
             auto name_in_storage = it->getNameInStorage();
@@ -178,7 +179,7 @@ void IMergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns
         }
 
         /// Move columns from block.
-        it = requested_columns.begin();
+        it = original_requested_columns.begin();
         for (size_t pos = 0; pos < num_columns; ++pos, ++it)
         {
             auto name_in_storage = it->getNameInStorage();

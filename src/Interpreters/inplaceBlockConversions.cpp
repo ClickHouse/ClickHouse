@@ -283,6 +283,9 @@ static ColumnPtr createColumnWithDefaultValue(const IDataType & data_type, const
 {
     auto column = data_type.createColumnConstWithDefaultValue(num_rows);
 
+    /// We must turn a constant column into a full column because the interpreter could infer
+    /// that it is constant everywhere but in some blocks (from other parts) it can be a full column.
+
     if (subcolumn_name.empty())
         return column->convertToFullColumnIfConst();
 
@@ -291,6 +294,35 @@ static ColumnPtr createColumnWithDefaultValue(const IDataType & data_type, const
     column = data_type.getSubcolumn(subcolumn_name, column);
 
     return ColumnConst::create(std::move(column), num_rows)->convertToFullColumnIfConst();
+}
+
+static bool hasDefault(const StorageMetadataPtr & metadata_snapshot, const NameAndTypePair & column)
+{
+    if (!metadata_snapshot)
+        return false;
+
+    const auto & columns = metadata_snapshot->getColumns();
+    if (columns.has(column.name))
+        return columns.hasDefault(column.name);
+
+    auto name_in_storage = column.getNameInStorage();
+    return columns.hasDefault(name_in_storage);
+}
+
+static String removeTupleElementsFromSubcolumn(String subcolumn_name, const Names & tuple_elements)
+{
+    subcolumn_name += ".";
+    for (const auto & elem : tuple_elements)
+    {
+        auto pos = subcolumn_name.find(elem + ".");
+        if (pos != std::string::npos)
+            subcolumn_name.erase(pos, elem.size());
+    }
+
+    if (subcolumn_name.ends_with("."))
+        subcolumn_name.pop_back();
+
+    return subcolumn_name;
 }
 
 void fillMissingColumns(
@@ -321,10 +353,8 @@ void fillMissingColumns(
         if (res_columns[i] && partially_read_columns.contains(requested_column->name))
             res_columns[i] = nullptr;
 
-        if (res_columns[i])
-            continue;
-
-        if (metadata_snapshot && metadata_snapshot->getColumns().hasDefault(requested_column->getNameInStorage()))
+        /// Nothing to fill or default should be filled in evaluateMissingDefaults
+        if (res_columns[i] || hasDefault(metadata_snapshot, *requested_column))
             continue;
 
         std::vector<ColumnPtr> current_offsets;
@@ -365,19 +395,30 @@ void fillMissingColumns(
 
         if (!current_offsets.empty())
         {
+
+            Names tuple_elements;
+            auto serialization = IDataType::getSerialization(*requested_column);
+
+            IDataType::forEachSubcolumn([&](const auto & path, const auto &, const auto &)
+            {
+                if (path.back().type == ISerialization::Substream::TupleElement)
+                    tuple_elements.push_back(path.back().name_of_substream);
+            }, ISerialization::SubstreamData(serialization));
+
             size_t num_empty_dimensions = num_dimensions - current_offsets.size();
-            auto scalar_type = createArrayOfType(getBaseTypeOfArray(requested_column->getTypeInStorage()), num_empty_dimensions);
+            auto base_type = getBaseTypeOfArray(requested_column->getTypeInStorage(), tuple_elements);
+            auto scalar_type = createArrayOfType(base_type, num_empty_dimensions);
 
             size_t data_size = assert_cast<const ColumnUInt64 &>(*current_offsets.back()).getData().back();
-            res_columns[i] = createColumnWithDefaultValue(*scalar_type, requested_column->getSubcolumnName(), data_size);
+            auto subcolumn_name = removeTupleElementsFromSubcolumn(requested_column->getSubcolumnName(), tuple_elements);
+
+            res_columns[i] = createColumnWithDefaultValue(*scalar_type, subcolumn_name, data_size);
 
             for (auto it = current_offsets.rbegin(); it != current_offsets.rend(); ++it)
                 res_columns[i] = ColumnArray::create(res_columns[i], *it);
         }
         else
         {
-            /// We must turn a constant column into a full column because the interpreter could infer
-            /// that it is constant everywhere but in some blocks (from other parts) it can be a full column.
             res_columns[i] = createColumnWithDefaultValue(*requested_column->getTypeInStorage(), requested_column->getSubcolumnName(), num_rows);
         }
     }

@@ -195,7 +195,7 @@ public:
         /// Types of substreams that can have arbitrary name.
         static const std::set<Type> named_types;
 
-        Type type;
+        Type type = Type::Regular;
 
         /// The name of a variant element type.
         String variant_element_name;
@@ -212,6 +212,7 @@ public:
         /// Flag, that may help to traverse substream paths.
         mutable bool visited = false;
 
+        Substream() = default;
         Substream(Type type_) : type(type_) {} /// NOLINT
         String toString() const;
     };
