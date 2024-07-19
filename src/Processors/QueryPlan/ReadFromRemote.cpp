@@ -491,16 +491,17 @@ void ReadFromParallelRemoteReplicasStep::initializePipeline(QueryPipelineBuilder
         addresses.emplace_back(pool->getAddress());
     LOG_DEBUG(getLogger("ReadFromParallelRemoteReplicasStep"), "Addresses to use: {}", fmt::join(addresses, ", "));
 
-    /// when using local plan for local replica, local replica has 0 number
-    size_t offset = (exclude_local_replica ? 1 : 0);
-    for (size_t i = 0 + offset; i < max_replicas_to_use; ++i)
+    /// when using local plan for local replica, 0 is assigned to local replica as replica num, - in this case, starting from 1 here
+    size_t replica_num = (exclude_local_replica ? 1 : 0);
+    for (const auto & pool : pools_to_use)
     {
         IConnections::ReplicaInfo replica_info{
             /// we should use this number specifically because efficiency of data distribution by consistent hash depends on it.
-            .number_of_current_replica = i,
+            .number_of_current_replica = replica_num,
         };
+        ++replica_num;
 
-        addPipeForSingeReplica(pipes, pools_to_use[i - offset], replica_info);
+        addPipeForSingeReplica(pipes, pool, replica_info);
     }
 
     auto pipe = Pipe::unitePipes(std::move(pipes));
