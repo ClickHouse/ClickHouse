@@ -116,8 +116,7 @@ Function that converts ClickHouse table structure to CapnProto format schema
 "}"},
             },
             .categories{"Other"}
-        },
-        FunctionFactory::CaseSensitive);
+        });
 }
 
 
@@ -138,8 +137,7 @@ Function that converts ClickHouse table structure to Protobuf format schema
 "}"},
             },
             .categories{"Other"}
-        },
-        FunctionFactory::CaseSensitive);
+        });
 }
 
 }
