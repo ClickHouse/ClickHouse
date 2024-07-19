@@ -73,7 +73,6 @@ private:
     using TableFunctions = std::unordered_map<std::string, Value>;
 
     const TableFunctions & getMap() const override { return table_functions; }
-
     const TableFunctions & getCaseInsensitiveMap() const override { return case_insensitive_table_functions; }
 
     String getFactoryName() const override { return "TableFunctionFactory"; }
