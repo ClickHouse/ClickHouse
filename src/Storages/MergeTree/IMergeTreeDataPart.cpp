@@ -739,9 +739,24 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
     }
     catch (...)
     {
-        /// Don't scare people with broken part error
+        /// Don't scare people with broken part error if it's retryable.
         if (!isRetryableException(std::current_exception()))
+        {
             LOG_ERROR(storage.log, "Part {} is broken and needs manual correction", getDataPartStorage().getFullPath());
+
+            if (Exception * e = exception_cast<Exception *>(std::current_exception()))
+            {
+                /// Probably there is something wrong with files of this part.
+                /// So it can be helpful to add to the error message some information about those files.
+                String files_in_part;
+                for (auto it = getDataPartStorage().iterate(); it->isValid(); it->next())
+                    files_in_part += fmt::format("{}{} ({} bytes)", (files_in_part.empty() ? "" : ", "), it->name(), getDataPartStorage().getFileSize(it->name()));
+                if (!files_in_part.empty())
+                    e->addMessage("Part contains files: {}", files_in_part);
+                if (isEmpty())
+                    e->addMessage("Part is empty");
+            }
+        }
 
         // There could be conditions that data part to be loaded is broken, but some of meta infos are already written
         // into metadata before exception, need to clean them all.

@@ -5634,9 +5634,11 @@ void MergeTreeData::restorePartFromBackup(std::shared_ptr<RestoredPartsHolder> r
     String part_name = part_info.getPartNameAndCheckFormat(format_version);
     auto backup = restored_parts_holder->getBackup();
 
+    /// Find all files of this part in the backup.
+    Strings filenames = backup->listFiles(part_path_in_backup, /* recursive= */ true);
+
     /// Calculate the total size of the part.
     UInt64 total_size_of_part = 0;
-    Strings filenames = backup->listFiles(part_path_in_backup, /* recursive= */ true);
     fs::path part_path_in_backup_fs = part_path_in_backup;
     for (const String & filename : filenames)
         total_size_of_part += backup->getFileSize(part_path_in_backup_fs / filename);
