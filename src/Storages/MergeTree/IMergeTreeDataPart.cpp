@@ -652,15 +652,12 @@ size_t IMergeTreeDataPart::getFileSizeOrZero(const String & file_name) const
     return checksum->second.file_size;
 }
 
-String IMergeTreeDataPart::getColumnNameWithMinimumCompressedSize(bool with_subcolumns) const
+String IMergeTreeDataPart::getColumnNameWithMinimumCompressedSize(const NamesAndTypesList & available_columns) const
 {
-    auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns(with_subcolumns);
-    auto columns_list = columns_description.get(options);
-
     std::optional<std::string> minimum_size_column;
     UInt64 minimum_size = std::numeric_limits<UInt64>::max();
 
-    for (const auto & column : columns_list)
+    for (const auto & column : available_columns)
     {
         if (!hasColumnFiles(column))
             continue;
@@ -2340,21 +2337,26 @@ String IMergeTreeDataPart::getUniqueId() const
     return getDataPartStorage().getUniqueId();
 }
 
+UInt128 IMergeTreeDataPart::getPartBlockIDHash() const
+{
+    SipHash hash;
+    checksums.computeTotalChecksumDataOnly(hash);
+    return hash.get128();
+}
+
 String IMergeTreeDataPart::getZeroLevelPartBlockID(std::string_view token) const
 {
     if (info.level != 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to get block id for non zero level part {}", name);
 
-    SipHash hash;
     if (token.empty())
     {
-        checksums.computeTotalChecksumDataOnly(hash);
-    }
-    else
-    {
-        hash.update(token.data(), token.size());
+        const auto hash_value = getPartBlockIDHash();
+        return info.partition_id + "_" + toString(hash_value.items[0]) + "_" + toString(hash_value.items[1]);
     }
 
+    SipHash hash;
+    hash.update(token.data(), token.size());
     const auto hash_value = hash.get128();
     return info.partition_id + "_" + toString(hash_value.items[0]) + "_" + toString(hash_value.items[1]);
 }

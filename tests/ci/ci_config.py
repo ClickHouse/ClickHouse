@@ -32,6 +32,9 @@ class CI:
     from ci_definitions import MQ_JOBS as MQ_JOBS
     from ci_definitions import WorkflowStages as WorkflowStages
     from ci_definitions import Runners as Runners
+    from ci_definitions import Labels as Labels
+    from ci_definitions import TRUSTED_CONTRIBUTORS as TRUSTED_CONTRIBUTORS
+    from ci_utils import CATEGORY_TO_LABEL as CATEGORY_TO_LABEL
 
     # Jobs that run for doc related updates
     _DOCS_CHECK_JOBS = [JobNames.DOCS_CHECK, JobNames.STYLE_CHECK]
@@ -415,7 +418,8 @@ class CI:
         JobNames.INTEGRATION_TEST_FLAKY: CommonJobConfigs.INTEGRATION_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_ASAN],
             pr_only=True,
-            reference_job_name=JobNames.INTEGRATION_TEST_TSAN,
+            # TODO: approach with reference job names does not work because digest may not be calculated if job skipped in wf
+            # reference_job_name=JobNames.INTEGRATION_TEST_TSAN,
         ),
         JobNames.COMPATIBILITY_TEST: CommonJobConfigs.COMPATIBILITY_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_RELEASE],
@@ -460,7 +464,8 @@ class CI:
             required_builds=[BuildNames.PACKAGE_ASAN],
             pr_only=True,
             timeout=3600,
-            reference_job_name=JobNames.STATELESS_TEST_RELEASE,
+            # TODO: approach with reference job names does not work because digest may not be calculated if job skipped in wf
+            # reference_job_name=JobNames.STATELESS_TEST_RELEASE,
         ),
         JobNames.JEPSEN_KEEPER: JobConfig(
             required_builds=[BuildNames.BINARY_RELEASE],
