@@ -14,8 +14,6 @@
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/RowOrderOptimizer.h>
-#include "Common/Logger.h"
-#include "Common/logger_useful.h"
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/Exception.h>
 #include <Common/HashTable/HashMap.h>
@@ -186,8 +184,6 @@ void updateTTL(
 
 void MergeTreeDataWriter::TemporaryPart::cancel()
 {
-    LOG_INFO(getLogger("MergeTreeDataWriter"), "TemporaryPart cancel");
-
     try
     {
         /// An exception context is needed to proper delete write buffers without finalization

@@ -3,7 +3,6 @@
 #include <QueryPipeline/QueryPipeline.h>
 #include <QueryPipeline/ReadProgressCallback.h>
 #include <Poco/Event.h>
-#include "Common/Logger.h"
 #include <Common/setThreadName.h>
 #include <Common/ThreadPool.h>
 #include <Common/scope_guard_safe.h>

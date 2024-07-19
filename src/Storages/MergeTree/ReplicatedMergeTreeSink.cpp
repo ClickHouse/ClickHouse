@@ -4,7 +4,6 @@
 #include <Storages/MergeTree/InsertBlockInfo.h>
 #include <Interpreters/PartLog.h>
 #include <Common/Exception.h>
-#include <Common/StackTrace.h>
 #include <Common/FailPoint.h>
 #include <Common/ProfileEventsScope.h>
 #include <Common/SipHash.h>
