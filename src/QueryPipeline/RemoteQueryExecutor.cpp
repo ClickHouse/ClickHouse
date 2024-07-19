@@ -936,4 +936,41 @@ bool RemoteQueryExecutor::needToSkipUnavailableShard() const
     return context->getSettingsRef().skip_unavailable_shards && (0 == connections->size());
 }
 
+bool  RemoteQueryExecutor::processParallelReplicaPacketIfAny()
+{
+#if defined(OS_LINUX)
+    if (!read_context || (resent_query && recreate_read_context))
+    {
+        std::lock_guard lock(was_cancelled_mutex);
+        if (was_cancelled)
+            return false;
+
+        read_context = std::make_unique<ReadContext>(*this);
+        recreate_read_context = false;
+    }
+
+    {
+        std::lock_guard lock(was_cancelled_mutex);
+        if (was_cancelled)
+            return false;
+
+        chassert(!has_postponed_packet);
+
+        read_context->resume();
+        if (read_context->isInProgress()) // <- nothing to process
+            return false;
+
+        const auto packet_type = read_context->getPacketType();
+        if (packet_type == Protocol::Server::MergeTreeReadTaskRequest || packet_type == Protocol::Server::MergeTreeAllRangesAnnouncement)
+        {
+            processPacket(read_context->getPacket());
+            return true;
+        }
+
+        has_postponed_packet = true;
+        return false;
+    }
+#endif
+}
+
 }

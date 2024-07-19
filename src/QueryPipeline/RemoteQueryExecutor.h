@@ -222,6 +222,9 @@ public:
 
     bool isReplicaUnavailable() const { return extension && extension->parallel_reading_coordinator && connections->size() == 0; }
 
+    /// return true if parallel replica packet was processed
+    bool processParallelReplicaPacketIfAny();
+
 private:
     RemoteQueryExecutor(
         const String & query_,

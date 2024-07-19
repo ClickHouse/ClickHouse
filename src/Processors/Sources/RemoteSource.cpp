@@ -89,9 +89,6 @@ ISource::Status RemoteSource::prepare()
 
 void RemoteSource::work()
 {
-    if (async_immediate_work.exchange(false))
-        return;
-
     /// Connection drain is a heavy operation that may take a long time.
     /// Therefore we move connection drain from prepare() to work(), and drain multiple connections in parallel.
     /// See issue: https://github.com/ClickHouse/ClickHouse/issues/60844
@@ -101,6 +98,13 @@ void RemoteSource::work()
         executor_finished = true;
         return;
     }
+
+    if (preprocessed_packet)
+    {
+        preprocessed_packet = false;
+        return;
+    }
+
     ISource::work();
 }
 
@@ -111,12 +115,7 @@ void RemoteSource::onAsyncJobReady()
     if (!was_query_sent)
         return;
 
-    auto res = query_executor->readAsync(/*check_packet_type_only=*/true);
-    if (res.type == RemoteQueryExecutor::ReadResult::Type::ParallelReplicasToken)
-    {
-        work();
-        async_immediate_work = true;
-    }
+    preprocessed_packet = query_executor->processParallelReplicaPacketIfAny();
 }
 
 std::optional<Chunk> RemoteSource::tryGenerate()
