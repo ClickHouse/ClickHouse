@@ -32,7 +32,7 @@ public:
 
     int schedule() override { return fd; }
 
-    void asyncJobReady() override;
+    void onAsyncJobReady() override;
 
     void setStorageLimits(const std::shared_ptr<const StorageLimitsList> & storage_limits_) override;
 

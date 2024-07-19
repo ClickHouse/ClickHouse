@@ -104,7 +104,7 @@ void RemoteSource::work()
     ISource::work();
 }
 
-void RemoteSource::asyncJobReady()
+void RemoteSource::onAsyncJobReady()
 {
     chassert(async_read);
 
