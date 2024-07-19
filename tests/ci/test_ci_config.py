@@ -295,6 +295,13 @@ class TestCIConfig(unittest.TestCase):
                     continue
                 expected_jobs_to_do.append(job)
         for job, config in CI.JOB_CONFIGS.items():
+            if (
+                CI.is_build_job(job)
+                and not config.run_by_label
+                and job not in expected_jobs_to_do
+            ):
+                # expected to run all builds jobs
+                expected_jobs_to_do.append(job)
             if not any(
                 keyword in normalize_string(job)
                 for keyword in settings.include_keywords
