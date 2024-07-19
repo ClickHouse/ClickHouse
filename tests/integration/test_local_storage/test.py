@@ -131,7 +131,9 @@ def test_local_engine(started_cluster):
 def test_table_function(started_cluster):
     node = started_cluster.instances["test_local_storage"]
 
-    node.copy_file_to_container("test_local_storage/files/example2.csv", "/data/example2.csv")
+    node.copy_file_to_container(
+        "test_local_storage/files/example2.csv", "/data/example2.csv"
+    )
 
     result = node.query(
         """
