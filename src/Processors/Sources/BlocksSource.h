@@ -43,7 +43,10 @@ protected:
         info->bucket_num = res.info.bucket_num;
         info->is_overflows = res.info.is_overflows;
 
-        return Chunk(res.getColumns(), res.rows(), std::move(info));
+        auto chunk = Chunk(res.getColumns(), res.rows());
+        chunk.getChunkInfos().add(std::move(info));
+
+        return chunk;
     }
 
 private:

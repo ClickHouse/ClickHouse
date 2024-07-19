@@ -13,7 +13,6 @@ from git_helper import Git, GIT_PREFIX
 from ssh import SSHAgent
 from env_helper import GITHUB_REPOSITORY, S3_BUILDS_BUCKET
 from s3_helper import S3Helper
-from autoscale_runners_lambda.lambda_shared.pr import Labels
 from ci_utils import Shell
 from version_helper import (
     FILE_WITH_VERSION_PATH,
@@ -220,9 +219,9 @@ class ReleaseInfo:
         )
         with checkout(self.release_branch):
             with checkout_new(new_release_branch):
-                pr_labels = f"--label {Labels.RELEASE}"
+                pr_labels = f"--label {CI.Labels.RELEASE}"
                 if stable_release_type == VersionType.LTS:
-                    pr_labels += f" --label {Labels.RELEASE_LTS}"
+                    pr_labels += f" --label {CI.Labels.RELEASE_LTS}"
                 cmd_push_branch = (
                     f"{GIT_PREFIX} push --set-upstream origin {new_release_branch}"
                 )
