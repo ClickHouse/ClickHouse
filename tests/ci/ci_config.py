@@ -317,19 +317,19 @@ class CI:
             random_bucket="parrepl_with_sanitizer",
         ),
         JobNames.STATELESS_TEST_ASAN: CommonJobConfigs.STATELESS_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_ASAN], num_batches=4
+            required_builds=[BuildNames.PACKAGE_ASAN], num_batches=2
         ),
         JobNames.STATELESS_TEST_TSAN: CommonJobConfigs.STATELESS_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_TSAN], num_batches=5
+            required_builds=[BuildNames.PACKAGE_TSAN], num_batches=4
         ),
         JobNames.STATELESS_TEST_MSAN: CommonJobConfigs.STATELESS_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_MSAN], num_batches=6
+            required_builds=[BuildNames.PACKAGE_MSAN], num_batches=4
         ),
         JobNames.STATELESS_TEST_UBSAN: CommonJobConfigs.STATELESS_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_UBSAN], num_batches=2
         ),
         JobNames.STATELESS_TEST_DEBUG: CommonJobConfigs.STATELESS_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_DEBUG], num_batches=5
+            required_builds=[BuildNames.PACKAGE_DEBUG], num_batches=2
         ),
         JobNames.STATELESS_TEST_RELEASE: CommonJobConfigs.STATELESS_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_RELEASE],
@@ -345,14 +345,14 @@ class CI:
             required_builds=[BuildNames.PACKAGE_RELEASE], num_batches=4
         ),
         JobNames.STATELESS_TEST_S3_DEBUG: CommonJobConfigs.STATELESS_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_DEBUG], num_batches=6
+            required_builds=[BuildNames.PACKAGE_DEBUG], num_batches=2
         ),
         JobNames.STATELESS_TEST_AZURE_ASAN: CommonJobConfigs.STATELESS_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_ASAN], num_batches=4, release_only=True
+            required_builds=[BuildNames.PACKAGE_ASAN], num_batches=3, release_only=True
         ),
         JobNames.STATELESS_TEST_S3_TSAN: CommonJobConfigs.STATELESS_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_TSAN],
-            num_batches=5,
+            num_batches=4,
         ),
         JobNames.STRESS_TEST_DEBUG: CommonJobConfigs.STRESS_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_DEBUG],
