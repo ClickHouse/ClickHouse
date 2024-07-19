@@ -2483,7 +2483,7 @@ def do_run_tests(jobs, test_suite: TestSuite):
         parallel_tests.extend(test_suite.parallel_tests)
 
         processes = []
-        for job in range(jobs):
+        for _ in range(jobs):
             process = multiprocessing.Process(
                 target=run_tests_process,
                 args=((parallel_tests, batch_size, test_suite, True),),
