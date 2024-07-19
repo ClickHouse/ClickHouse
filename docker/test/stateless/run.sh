@@ -6,8 +6,8 @@ source /setup_export_logs.sh
 # fail on errors, verbose and export all env variables
 set -e -x -a
 
-MAX_RUN_TIME=${MAX_RUN_TIME:-7200}
-MAX_RUN_TIME=$((MAX_RUN_TIME == 0 ? 7200 : MAX_RUN_TIME))
+MAX_RUN_TIME=${MAX_RUN_TIME:-9000}
+MAX_RUN_TIME=$((MAX_RUN_TIME == 0 ? 9000 : MAX_RUN_TIME))
 
 USE_DATABASE_REPLICATED=${USE_DATABASE_REPLICATED:=0}
 USE_SHARED_CATALOG=${USE_SHARED_CATALOG:=0}
