@@ -1,14 +1,20 @@
 compact part
 testing throw default mode
 testing drop mode
+all_1_1_0_2
 testing rebuild mode
 8888	Alice	50
-p1
-p2
+all_1_1_0_4
+all_3_3_0_4
+p1	all_3_3_0_4
+p2	all_3_3_0_4
 wide part
 testing throw default mode
 testing drop mode
+all_1_1_0_2
 testing rebuild mode
 8888	Alice	50
-p1
-p2
+all_1_1_0_4
+all_3_3_0_4
+p1	all_3_3_0_4
+p2	all_3_3_0_4

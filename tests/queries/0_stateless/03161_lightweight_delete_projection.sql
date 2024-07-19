@@ -32,9 +32,15 @@ SELECT * FROM users ORDER BY uid;
 
 SYSTEM FLUSH LOGS;
 
--- expecting no projection
+-- all_1_1_0_2
 SELECT
     name
+FROM system.parts
+WHERE (database = currentDatabase()) AND (`table` = 'users') AND (active = 1);
+
+-- expecting no projection
+SELECT
+    name, parent_name
 FROM system.projection_parts
 WHERE (database = currentDatabase()) AND (`table` = 'users') AND (active = 1);
 
@@ -49,9 +55,15 @@ SELECT * FROM users ORDER BY uid;
 
 SYSTEM FLUSH LOGS;
 
--- expecting projection p1, p2
+-- all_1_1_0_4, all_3_3_0_4
 SELECT
     name
+FROM system.parts
+WHERE (database = currentDatabase()) AND (`table` = 'users') AND (active = 1);
+
+-- expecting projection p1, p2
+SELECT
+    name, parent_name
 FROM system.projection_parts
 WHERE (database = currentDatabase()) AND (`table` = 'users') AND (active = 1);
 
@@ -84,9 +96,15 @@ SELECT * FROM users ORDER BY uid;
 
 SYSTEM FLUSH LOGS;
 
--- expecting no projection
+-- all_1_1_0_2
 SELECT
     name
+FROM system.parts
+WHERE (database = currentDatabase()) AND (`table` = 'users') AND (active = 1);
+
+-- expecting no projection
+SELECT
+    name, parent_name
 FROM system.projection_parts
 WHERE (database = currentDatabase()) AND (`table` = 'users') AND (active = 1);
 
@@ -101,9 +119,15 @@ SELECT * FROM users ORDER BY uid;
 
 SYSTEM FLUSH LOGS;
 
--- expecting projection p1, p2
+-- all_1_1_0_4, all_3_3_0_4
 SELECT
     name
+FROM system.parts
+WHERE (database = currentDatabase()) AND (`table` = 'users') AND (active = 1);
+
+-- expecting projection p1, p2
+SELECT
+    name, parent_name
 FROM system.projection_parts
 WHERE (database = currentDatabase()) AND (`table` = 'users') AND (active = 1);
 
