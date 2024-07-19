@@ -7,8 +7,10 @@ env:
 concurrency:
   group: release
 on: # yamllint disable-line rule:truthy
-  # schedule:
-  #   - cron: '0 10-16 * * 1-5'
+  # Workflow uses a test bucket for packages and dry run mode (no real releases)
+  schedule:
+    - cron: '0 9 * * *'
+    - cron: '0 15 * * *'
   workflow_dispatch:
     inputs:
       dry-run:
@@ -19,6 +21,8 @@ on: # yamllint disable-line rule:truthy
 
 jobs:
   AutoRelease:
+    env:
+      DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run != '' && github.event.inputs.dry_run || true }}
     runs-on: [self-hosted, release-maker]
     steps:
       - name: DebugInfo
@@ -57,7 +61,7 @@ jobs:
         with:
           ref: ${{ fromJson(env.AUTO_RELEASE_PARAMS).releases[0].commit_sha }}
           type: patch
-          dry-run: ${{ inputs.dry-run }}
+          dry-run: ${{ env.DRY_RUN }}
           token: ${{secrets.ROBOT_CLICKHOUSE_COMMIT_TOKEN}}
       - name: Release ${{ fromJson(env.AUTO_RELEASE_PARAMS).releases[1].release_branch }}
         if: ${{ fromJson(env.AUTO_RELEASE_PARAMS).releases[0] && fromJson(env.AUTO_RELEASE_PARAMS).releases[1].ready }}
@@ -65,7 +69,7 @@ jobs:
         with:
           ref: ${{ fromJson(env.AUTO_RELEASE_PARAMS).releases[1].commit_sha }}
           type: patch
-          dry-run: ${{ inputs.dry-run }}
+          dry-run: ${{ env.DRY_RUN }}
           token: ${{secrets.ROBOT_CLICKHOUSE_COMMIT_TOKEN}}
       - name: Release ${{ fromJson(env.AUTO_RELEASE_PARAMS).releases[2].release_branch }}
         if: ${{ fromJson(env.AUTO_RELEASE_PARAMS).releases[2] && fromJson(env.AUTO_RELEASE_PARAMS).releases[2].ready }}
@@ -73,7 +77,7 @@ jobs:
         with:
           ref: ${{ fromJson(env.AUTO_RELEASE_PARAMS).releases[2].commit_sha }}
           type: patch
-          dry-run: ${{ inputs.dry-run }}
+          dry-run: ${{ env.DRY_RUN }}
           token: ${{secrets.ROBOT_CLICKHOUSE_COMMIT_TOKEN}}
       - name: Release ${{ fromJson(env.AUTO_RELEASE_PARAMS).releases[3].release_branch }}
         if: ${{ fromJson(env.AUTO_RELEASE_PARAMS).releases[3] && fromJson(env.AUTO_RELEASE_PARAMS).releases[3].ready }}
@@ -81,7 +85,7 @@ jobs:
         with:
           ref: ${{ fromJson(env.AUTO_RELEASE_PARAMS).releases[3].commit_sha }}
           type: patch
-          dry-run: ${{ inputs.dry-run }}
+          dry-run: ${{ env.DRY_RUN }}
           token: ${{secrets.ROBOT_CLICKHOUSE_COMMIT_TOKEN}}
       - name: Release ${{ fromJson(env.AUTO_RELEASE_PARAMS).releases[4].release_branch }}
         if: ${{ fromJson(env.AUTO_RELEASE_PARAMS).releases[4] && fromJson(env.AUTO_RELEASE_PARAMS).releases[4].ready }}
@@ -89,7 +93,7 @@ jobs:
         with:
           ref: ${{ fromJson(env.AUTO_RELEASE_PARAMS).releases[4].commit_sha }}
           type: patch
-          dry-run: ${{ inputs.dry-run }}
+          dry-run: ${{ env.DRY_RUN }}
           token: ${{secrets.ROBOT_CLICKHOUSE_COMMIT_TOKEN}}
       - name: Post Slack Message
         if: ${{ !cancelled() }}
