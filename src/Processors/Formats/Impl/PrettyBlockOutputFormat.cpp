@@ -448,7 +448,7 @@ void PrettyBlockOutputFormat::writeValueWithPadding(
     if (cut_to_width && value_width > cut_to_width)
     {
         serialized_value.resize(UTF8::computeBytesBeforeWidth(
-            reinterpret_cast<const UInt8 *>(serialized_value.data()), serialized_value.size(), 0, 1 + cut_to_width));
+            reinterpret_cast<const UInt8 *>(serialized_value.data()), serialized_value.size(), 0, 1 + format_settings.pretty.max_value_width));
 
         const char * ellipsis = format_settings.pretty.charset == FormatSettings::Pretty::Charset::UTF8 ? "⋯" : "~";
         if (color)
@@ -460,7 +460,7 @@ void PrettyBlockOutputFormat::writeValueWithPadding(
         else
             serialized_value += ellipsis;
 
-        value_width = cut_to_width;
+        value_width = format_settings.pretty.max_value_width;
     }
     else
         serialized_value += ' ';
