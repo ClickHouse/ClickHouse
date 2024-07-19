@@ -247,6 +247,9 @@ BASE_HEADERS = ["Test name", "Test status"]
 # should not be in TEMP directory or any directory that may be cleaned during the job execution
 JOB_REPORT_FILE = Path(GITHUB_WORKSPACE) / "job_report.json"
 
+JOB_STARTED_TEST_NAME = "STARTED"
+JOB_FINISHED_TEST_NAME = "COMPLETED"
+
 
 @dataclass
 class TestResult:
@@ -304,14 +307,19 @@ class JobReport:
     exit_code: int = -1
 
     @staticmethod
-    def create_pre_report() -> "JobReport":
+    def get_start_time_from_current():
+        return datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+
+    @classmethod
+    def create_pre_report(cls, status: str, job_skipped: bool) -> "JobReport":
         return JobReport(
-            status=ERROR,
+            status=status,
             description="",
             test_results=[],
-            start_time=datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"),
+            start_time=cls.get_start_time_from_current(),
             duration=0.0,
             additional_files=[],
+            job_skipped=job_skipped,
             pre_report=True,
         )
 
