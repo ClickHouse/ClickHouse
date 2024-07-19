@@ -2731,8 +2731,7 @@ void Server::createInterserverServers(
 
 void Server::stopServers(
     std::vector<ProtocolServerAdapter> & servers,
-    const ServerType & server_type
-) const
+    const ServerType & server_type) const
 {
     LoggerRawPtr log = &logger();
 

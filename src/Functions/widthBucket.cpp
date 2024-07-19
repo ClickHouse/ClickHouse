@@ -287,7 +287,7 @@ Result:
         .categories{"Mathematical"},
     });
 
-    factory.registerAlias("width_bucket", "widthBucket", FunctionFactory::CaseInsensitive);
+    factory.registerAlias("width_bucket", "widthBucket", FunctionFactory::Case::Insensitive);
 }
 
 }
