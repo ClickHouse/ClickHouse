@@ -50,7 +50,7 @@ set -uo pipefail
 # set accordingly to a runner role #
 ####################################
 
-echo "Running init script"
+echo "Running init v1"
 export DEBIAN_FRONTEND=noninteractive
 export RUNNER_HOME=/home/ubuntu/actions-runner
 
@@ -90,7 +90,6 @@ terminate_delayed() {
     # IF `sleep` IS CHANGED, CHANGE ANOTHER VALUE IN `pgrep`
     sleep=13.14159265358979323846
     echo "Going to terminate the runner's instance in $sleep seconds"
-    INSTANCE_ID=$(ec2metadata --instance-id)
     # We execute it with `at` to not have it as an orphan process, but launched independently
     # GH Runners kill all remain processes
     echo "sleep '$sleep'; aws ec2 terminate-instances --instance-ids $INSTANCE_ID" | at now || \
@@ -111,8 +110,14 @@ declare -f terminate_delayed >> /tmp/actions-hooks/common.sh
 terminate_and_exit() {
     # Terminate instance and exit from the script instantly
     echo "Going to terminate the runner's instance"
-    INSTANCE_ID=$(ec2metadata --instance-id)
     aws ec2 terminate-instances --instance-ids "$INSTANCE_ID"
+    exit 0
+}
+
+terminate_decrease_and_exit() {
+    # Terminate instance and exit from the script instantly
+    echo "Going to terminate the runner's instance and decrease asg capacity"
+    aws autoscaling terminate-instance-in-auto-scaling-group --instance-id "$INSTANCE_ID" --should-decrement-desired-capacity
     exit 0
 }
 
@@ -324,7 +329,7 @@ while true; do
                 sudo -u ubuntu ./config.sh remove --token "$(get_runner_token)" \
                     || continue
                 echo "Runner didn't launch or have assigned jobs after ${RUNNER_AGE} seconds, shutting down"
-                terminate_and_exit
+                terminate_decrease_and_exit
             fi
         fi
     else

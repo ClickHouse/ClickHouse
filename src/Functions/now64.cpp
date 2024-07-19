@@ -170,7 +170,7 @@ private:
 
 REGISTER_FUNCTION(Now64)
 {
-    factory.registerFunction<Now64OverloadResolver>({}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<Now64OverloadResolver>({}, FunctionFactory::Case::Insensitive);
 }
 
 }
