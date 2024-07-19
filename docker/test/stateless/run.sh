@@ -224,7 +224,7 @@ function run_tests()
     else
         # All other configurations are OK.
         ADDITIONAL_OPTIONS+=('--jobs')
-        ADDITIONAL_OPTIONS+=('7')
+        ADDITIONAL_OPTIONS+=('8')
     fi
 
     if [[ -n "$RUN_BY_HASH_NUM" ]] && [[ -n "$RUN_BY_HASH_TOTAL" ]]; then
