@@ -59,7 +59,7 @@
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/ProcessorsProfileLog.h>
 #include <Interpreters/QueryLog.h>
-#include <Interpreters/QueryLogMetric.h>
+#include <Interpreters/QueryMetricLog.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Interpreters/SelectIntersectExceptQueryVisitor.h>
 #include <Interpreters/SelectQueryOptions.h>
@@ -374,12 +374,12 @@ QueryLogElement logQueryStart(
         }
     }
 
-    if (auto query_log_metric = context->getQueryLogMetric(); query_log_metric && !internal)
+    if (auto query_metric_log = context->getQueryMetricLog(); query_metric_log && !internal)
     {
-        auto interval_milliseconds = context->getSettingsRef().query_log_metric_interval;
+        auto interval_milliseconds = context->getSettingsRef().query_metric_log_interval;
         if (interval_milliseconds == 0)
-            interval_milliseconds = context->getConfigRef().getUInt64("query_log_metric.collect_interval_milliseconds", 1000);
-        query_log_metric->startQuery(elem.client_info.current_query_id, query_start_time, interval_milliseconds);
+            interval_milliseconds = context->getConfigRef().getUInt64("query_metric_log.collect_interval_milliseconds", 1000);
+        query_metric_log->startQuery(elem.client_info.current_query_id, query_start_time, interval_milliseconds);
     }
 
     return elem;
@@ -514,8 +514,8 @@ void logQueryFinish(
         query_span->finish();
     }
 
-    if (auto query_log_metric = context->getQueryLogMetric(); query_log_metric && !internal)
-        query_log_metric->finishQuery(elem.client_info.current_query_id);
+    if (auto query_metric_log = context->getQueryMetricLog(); query_metric_log && !internal)
+        query_metric_log->finishQuery(elem.client_info.current_query_id);
 }
 
 void logQueryException(
@@ -585,8 +585,8 @@ void logQueryException(
         query_span->finish();
     }
 
-    if (auto query_log_metric = context->getQueryLogMetric(); query_log_metric && !internal)
-            query_log_metric->finishQuery(elem.client_info.current_query_id);
+    if (auto query_metric_log = context->getQueryMetricLog(); query_metric_log && !internal)
+            query_metric_log->finishQuery(elem.client_info.current_query_id);
 }
 
 void logExceptionBeforeStart(
@@ -684,8 +684,8 @@ void logExceptionBeforeStart(
         }
     }
 
-    if (auto query_log_metric = context->getQueryLogMetric(); query_log_metric)
-            query_log_metric->finishQuery(elem.client_info.current_query_id);
+    if (auto query_metric_log = context->getQueryMetricLog(); query_metric_log)
+            query_metric_log->finishQuery(elem.client_info.current_query_id);
 }
 
 void validateAnalyzerSettings(ASTPtr ast, bool context_value)

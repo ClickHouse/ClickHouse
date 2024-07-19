@@ -743,10 +743,10 @@ error_log:
     flush_interval_milliseconds: 7500
     collect_interval_milliseconds: 1000
 
-# Query log metric contains history of memory and metric values from table system.events for individual queries, periodically flushed to disk.
-query_log_metric:
+# Query metric log contains history of memory and metric values from table system.events for individual queries, periodically flushed to disk.
+query_metric_log:
     database: system
-    table: query_log_metric
+    table: query_metric_log
     flush_interval_milliseconds: 7500
     collect_interval_milliseconds: 1000
 

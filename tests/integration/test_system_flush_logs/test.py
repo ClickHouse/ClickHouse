@@ -17,7 +17,7 @@ system_logs = [
     ("system.text_log", 0),
     # enabled by default
     ("system.query_log", 1),
-    ("system.query_log_metric", 1),
+    ("system.query_metric_log", 1),
     ("system.query_thread_log", 1),
     ("system.part_log", 1),
     ("system.trace_log", 1),

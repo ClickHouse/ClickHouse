@@ -8,9 +8,9 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 readonly query_prefix=$CLICKHOUSE_DATABASE
 
 $CLICKHOUSE_CLIENT --query-id="${query_prefix}_1000" -q "SELECT sleep(3) + sleep(2) FORMAT Null" &
-$CLICKHOUSE_CLIENT --query-id="${query_prefix}_1234" -q "SELECT sleep(3) + sleep(2) SETTINGS query_log_metric_interval=1234 FORMAT Null" &
-$CLICKHOUSE_CLIENT --query-id="${query_prefix}_123" -q "SELECT sleep(3) + sleep(2) SETTINGS query_log_metric_interval=123 FORMAT Null" &
-$CLICKHOUSE_CLIENT --query-id="${query_prefix}_47" -q "SELECT sleep(3) + sleep(2) SETTINGS query_log_metric_interval=47 FORMAT Null" &
+$CLICKHOUSE_CLIENT --query-id="${query_prefix}_1234" -q "SELECT sleep(3) + sleep(2) SETTINGS query_metric_log_interval=1234 FORMAT Null" &
+$CLICKHOUSE_CLIENT --query-id="${query_prefix}_123" -q "SELECT sleep(3) + sleep(2) SETTINGS query_metric_log_interval=123 FORMAT Null" &
+$CLICKHOUSE_CLIENT --query-id="${query_prefix}_47" -q "SELECT sleep(3) + sleep(2) SETTINGS query_metric_log_interval=47 FORMAT Null" &
 
 wait
 
@@ -25,7 +25,7 @@ function check_log()
             event_time_microseconds,
             first_value(event_time_microseconds) OVER (ORDER BY event_time_microseconds ROWS BETWEEN 1 PRECEDING AND 0 FOLLOWING) as prev,
             dateDiff('ms', prev, event_time_microseconds) AS diff
-        FROM system.query_log_metric
+        FROM system.query_metric_log
         WHERE query_id = '${query_prefix}_${interval}'
         ORDER BY event_time_microseconds
         OFFSET 1

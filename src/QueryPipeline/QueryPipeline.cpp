@@ -545,7 +545,7 @@ void QueryPipeline::setProgressCallback(const ProgressCallback & callback)
     {
         // Performance counters need to be updated from the same thread the query is being executed
         // on because most info is taken using getrusage with RUSAGE_THREAD. Ideally, we would only
-        // update the counters once we're close to the interval at which the query log metric data
+        // update the counters once we're close to the interval at which the query metric log data
         // needs to be collected. However, since the progress callback is called not very
         // frequently, we'd rather update them as needed. Using the
         // updatePerformanceCountersIfNeeded instead of just updatePerformanceCounters we make sure
@@ -553,7 +553,7 @@ void QueryPipeline::setProgressCallback(const ProgressCallback & callback)
         auto context = CurrentThread::getQueryContext();
         if (context)
         {
-            if (auto query_log_metric = context->getQueryLogMetric())
+            if (auto query_metric_log = context->getQueryMetricLog())
                 CurrentThread::updatePerformanceCountersIfNeeded();
         }
 

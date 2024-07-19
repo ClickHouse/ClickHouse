@@ -10,7 +10,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/QueryLogMetric.h>
+#include <Interpreters/QueryMetricLog.h>
 #include <Interpreters/PeriodicLog.h>
 #include <Interpreters/ProcessList.h>
 #include <Parsers/ExpressionElementParsers.h>
@@ -30,7 +30,7 @@ namespace DB
 
 const auto memory_metrics = std::array{CurrentMetrics::MemoryTracking, CurrentMetrics::MergesMutationsMemoryTracking};
 
-ColumnsDescription QueryLogMetricElement::getColumnsDescription()
+ColumnsDescription QueryMetricLogElement::getColumnsDescription()
 {
     ColumnsDescription result;
     ParserCodec codec_parser;
@@ -72,7 +72,7 @@ ColumnsDescription QueryLogMetricElement::getColumnsDescription()
     return result;
 }
 
-void QueryLogMetricElement::appendToBlock(MutableColumns & columns) const
+void QueryMetricLogElement::appendToBlock(MutableColumns & columns) const
 {
     size_t column_idx = 0;
 
@@ -88,9 +88,9 @@ void QueryLogMetricElement::appendToBlock(MutableColumns & columns) const
         columns[column_idx++]->insert(profile_events[i]);
 }
 
-void QueryLogMetric::startQuery(const String & query_id, TimePoint query_start_time, UInt64 interval_milliseconds)
+void QueryMetricLog::startQuery(const String & query_id, TimePoint query_start_time, UInt64 interval_milliseconds)
 {
-    QueryLogMetricStatus status;
+    QueryMetricLogStatus status;
     status.query_id = query_id;
     status.interval_milliseconds = interval_milliseconds;
     status.next_collect_time = query_start_time + std::chrono::milliseconds(interval_milliseconds);
@@ -111,16 +111,16 @@ void QueryLogMetric::startQuery(const String & query_id, TimePoint query_start_t
     }
 }
 
-void QueryLogMetric::finishQuery(const String & query_id)
+void QueryMetricLog::finishQuery(const String & query_id)
 {
     std::lock_guard lock(queries_mutex);
     auto & queries_by_id = queries.get<ByQueryId>();
     queries_by_id.erase(query_id);
 }
 
-void QueryLogMetric::threadFunction()
+void QueryMetricLog::threadFunction()
 {
-    setThreadName("QueryLogMetric");
+    setThreadName("QueryMetricLog");
     auto desired_timepoint = std::chrono::system_clock::now();
     while (!is_shutdown_metric_thread)
     {
@@ -152,18 +152,18 @@ void QueryLogMetric::threadFunction()
     }
 }
 
-QueryLogMetricElement QueryLogMetric::createLogMetricElement(const String & query_id, std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters, PeriodicLog<QueryLogMetricElement>::TimePoint current_time)
+QueryMetricLogElement QueryMetricLog::createLogMetricElement(const String & query_id, std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters, PeriodicLog<QueryMetricLogElement>::TimePoint current_time)
 {
     auto query_status_it = queries.find(query_id);
 
-    QueryLogMetricElement elem;
+    QueryMetricLogElement elem;
     elem.event_time = timeInSeconds(current_time);
     elem.event_time_microseconds = timeInMicroseconds(current_time);
     elem.query_id = query_status_it->query_id;
     elem.memory = CurrentMetrics::values[CurrentMetrics::MemoryTracking];
     elem.background_memory = CurrentMetrics::values[CurrentMetrics::MergesMutationsMemoryTracking];
 
-    // We copy the QueryLogMetricStatus and update the queries in a final step because updating the multi-index set
+    // We copy the QueryMetricLogStatus and update the queries in a final step because updating the multi-index set
     // for every profile event doesn't seem a good idea.
     auto new_query_status = *query_status_it;
     new_query_status.next_collect_time += std::chrono::milliseconds(new_query_status.interval_milliseconds);
@@ -175,12 +175,12 @@ QueryLogMetricElement QueryLogMetric::createLogMetricElement(const String & quer
         new_query_status.last_profile_events[i] = new_value;
     }
 
-    queries.modify(query_status_it, [&](QueryLogMetricStatus & query_status) { query_status = std::move(new_query_status); });
+    queries.modify(query_status_it, [&](QueryMetricLogStatus & query_status) { query_status = std::move(new_query_status); });
 
     return elem;
 }
 
-void QueryLogMetric::stepFunction(TimePoint current_time)
+void QueryMetricLog::stepFunction(TimePoint current_time)
 {
     static const auto & process_list = context->getProcessList();
 

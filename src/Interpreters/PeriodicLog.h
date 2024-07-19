@@ -9,7 +9,7 @@
 #define SYSTEM_PERIODIC_LOG_ELEMENTS(M) \
     M(ErrorLogElement) \
     M(MetricLogElement) \
-    M(QueryLogMetricElement)
+    M(QueryMetricLogElement)
 
 namespace DB
 {

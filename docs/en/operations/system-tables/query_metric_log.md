@@ -1,11 +1,11 @@
 ---
-slug: /en/operations/system-tables/query_log_metric
+slug: /en/operations/system-tables/query_metric_log
 ---
-# query_log_metric
+# query_metric_log
 
 Contains history of memory and metric values from table `system.events` for individual queries, periodically flushed to disk.
 
-Once a query starts, data is collected at periodic intervals of `query_log_metric_interval` milliseconds (which is set to 1000
+Once a query starts, data is collected at periodic intervals of `query_metric_log_interval` milliseconds (which is set to 1000
 by default) and when the query finishes.
 
 Columns:
@@ -18,7 +18,7 @@ Columns:
 **Example**
 
 ``` sql
-SELECT * FROM system.query_log_metric LIMIT 1 FORMAT Vertical;
+SELECT * FROM system.query_metric_log LIMIT 1 FORMAT Vertical;
 ```
 
 ``` text
@@ -40,8 +40,8 @@ ProfileEvent_FailedSelectQuery:                                  0
 
 **See also**
 
-- [query_log_metric setting](../../operations/server-configuration-parameters/settings.md#query_log_metric) — Enabling and disabling the setting.
-- [query_log_metric_interval](../../operations/settings/settings.md#query_log_metric_interval)
+- [query_metric_log setting](../../operations/server-configuration-parameters/settings.md#query_metric_log) — Enabling and disabling the setting.
+- [query_metric_log_interval](../../operations/settings/settings.md#query_metric_log_interval)
 - [system.asynchronous_metrics](../../operations/system-tables/asynchronous_metrics.md) — Contains periodically calculated metrics.
 - [system.events](../../operations/system-tables/events.md#system_tables-events) — Contains a number of events that occurred.
 - [system.metrics](../../operations/system-tables/metrics.md) — Contains instantly calculated metrics.
