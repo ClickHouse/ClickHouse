@@ -32,6 +32,9 @@ class CI:
     from ci_definitions import MQ_JOBS as MQ_JOBS
     from ci_definitions import WorkflowStages as WorkflowStages
     from ci_definitions import Runners as Runners
+    from ci_definitions import Labels as Labels
+    from ci_definitions import TRUSTED_CONTRIBUTORS as TRUSTED_CONTRIBUTORS
+    from ci_utils import CATEGORY_TO_LABEL as CATEGORY_TO_LABEL
 
     # Jobs that run for doc related updates
     _DOCS_CHECK_JOBS = [JobNames.DOCS_CHECK, JobNames.STYLE_CHECK]
@@ -45,23 +48,13 @@ class CI:
                 JobNames.INTEGRATION_TEST_ARM,
             ]
         ),
-        Tags.CI_SET_REQUIRED: LabelConfig(run_jobs=REQUIRED_CHECKS),
+        Tags.CI_SET_REQUIRED: LabelConfig(
+            run_jobs=REQUIRED_CHECKS
+            + [build for build in BuildNames if build != BuildNames.FUZZERS]
+        ),
         Tags.CI_SET_BUILDS: LabelConfig(
             run_jobs=[JobNames.STYLE_CHECK, JobNames.BUILD_CHECK]
             + [build for build in BuildNames if build != BuildNames.FUZZERS]
-        ),
-        Tags.CI_SET_NON_REQUIRED: LabelConfig(
-            run_jobs=[job for job in JobNames if job not in REQUIRED_CHECKS]
-        ),
-        Tags.CI_SET_OLD_ANALYZER: LabelConfig(
-            run_jobs=[
-                JobNames.STYLE_CHECK,
-                JobNames.FAST_TEST,
-                BuildNames.PACKAGE_RELEASE,
-                BuildNames.PACKAGE_ASAN,
-                JobNames.STATELESS_TEST_OLD_ANALYZER_S3_REPLICATED_RELEASE,
-                JobNames.INTEGRATION_TEST_ASAN_OLD_ANALYZER,
-            ]
         ),
         Tags.CI_SET_SYNC: LabelConfig(
             run_jobs=[
