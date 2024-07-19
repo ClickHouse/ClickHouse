@@ -65,6 +65,7 @@
 #include <Analyzer/Resolve/ReplaceColumnsVisitor.h>
 #include <Poco/Logger.h>
 #include "Common/logger_useful.h"
+#include "Analyzer/Resolve/IdentifierLookup.h"
 
 #include <Planner/PlannerActionsVisitor.h>
 
@@ -1091,7 +1092,7 @@ std::string QueryAnalyzer::rewriteAggregateFunctionNameIfNeeded(
   *
   * 5. If identifier is compound and identifier lookup is in expression context, use `tryResolveIdentifierFromCompoundExpression`.
   */
-QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromAliases(const IdentifierLookup & identifier_lookup,
+IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromAliases(const IdentifierLookup & identifier_lookup,
     IdentifierResolveScope & scope,
     IdentifierResolveSettings identifier_resolve_settings)
 {
@@ -1125,53 +1126,60 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromAliases(const Identifier
 
     auto node_type = alias_node->getNodeType();
 
-    /// Resolve expression if necessary
-    if (node_type == QueryTreeNodeType::IDENTIFIER)
+    if (identifier_resolve_settings.allow_to_resolve_result_node)
     {
-        scope.pushExpressionNode(alias_node);
-
-        auto & alias_identifier_node = alias_node->as<IdentifierNode &>();
-        auto identifier = alias_identifier_node.getIdentifier();
-        auto lookup_result = tryResolveIdentifier(IdentifierLookup{identifier, identifier_lookup.lookup_context}, scope, identifier_resolve_settings);
-        if (!lookup_result.resolved_identifier)
+        /// Resolve expression if necessary
+        if (node_type == QueryTreeNodeType::IDENTIFIER)
         {
-            std::unordered_set<Identifier> valid_identifiers;
-            IdentifierResolver::collectScopeWithParentScopesValidIdentifiersForTypoCorrection(identifier, scope, true, false, false, valid_identifiers);
-            auto hints = IdentifierResolver::collectIdentifierTypoHints(identifier, valid_identifiers);
+            scope.pushExpressionNode(alias_node);
 
-            throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Unknown {} identifier '{}'. In scope {}{}",
-                toStringLowercase(identifier_lookup.lookup_context),
-                identifier.getFullName(),
-                scope.scope_node->formatASTForErrorMessage(),
-                getHintsErrorMessageSuffix(hints));
+            auto & alias_identifier_node = alias_node->as<IdentifierNode &>();
+            auto identifier = alias_identifier_node.getIdentifier();
+            auto lookup_result = tryResolveIdentifier(IdentifierLookup{identifier, identifier_lookup.lookup_context}, scope, identifier_resolve_settings);
+            if (!lookup_result.resolved_identifier)
+            {
+                std::unordered_set<Identifier> valid_identifiers;
+                IdentifierResolver::collectScopeWithParentScopesValidIdentifiersForTypoCorrection(identifier, scope, true, false, false, valid_identifiers);
+                auto hints = IdentifierResolver::collectIdentifierTypoHints(identifier, valid_identifiers);
+
+                throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Unknown {} identifier '{}'. In scope {}{}",
+                    toStringLowercase(identifier_lookup.lookup_context),
+                    identifier.getFullName(),
+                    scope.scope_node->formatASTForErrorMessage(),
+                    getHintsErrorMessageSuffix(hints));
+            }
+
+            alias_node = lookup_result.resolved_identifier;
+            scope.popExpressionNode();
         }
-
-        alias_node = lookup_result.resolved_identifier;
-        scope.popExpressionNode();
-    }
-    else if (node_type == QueryTreeNodeType::FUNCTION)
-    {
-        LOG_DEBUG(&Poco::Logger::get("resolveFromAliases"), "Scope for ALIAS ({}) -> FUNCTION:\n{}", identifier_lookup.dump(), scope.dump());
-        LOG_DEBUG(&Poco::Logger::get("resolveFromAliases"), "Expression:\n{}", alias_node->dumpTree());
-        resolveExpressionNode(alias_node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
-    }
-    else if (node_type == QueryTreeNodeType::QUERY || node_type == QueryTreeNodeType::UNION)
-    {
-        if (identifier_resolve_settings.allow_to_resolve_subquery_during_identifier_resolution)
-            resolveExpressionNode(alias_node, scope, false /*allow_lambda_expression*/, identifier_lookup.isTableExpressionLookup() /*allow_table_expression*/);
+        else if (node_type == QueryTreeNodeType::FUNCTION)
+        {
+            LOG_DEBUG(&Poco::Logger::get("resolveFromAliases"), "Scope for ALIAS ({}) -> FUNCTION:\n{}", identifier_lookup.dump(), scope.dump());
+            LOG_DEBUG(&Poco::Logger::get("resolveFromAliases"), "Expression:\n{}", alias_node->dumpTree());
+            resolveExpressionNode(alias_node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+        }
+        else if (node_type == QueryTreeNodeType::QUERY || node_type == QueryTreeNodeType::UNION)
+        {
+            if (identifier_resolve_settings.allow_to_resolve_subquery_during_identifier_resolution)
+                resolveExpressionNode(alias_node, scope, false /*allow_lambda_expression*/, identifier_lookup.isTableExpressionLookup() /*allow_table_expression*/);
+        }
     }
 
     if (identifier_lookup.identifier.isCompound() && alias_node)
     {
         if (identifier_lookup.isExpressionLookup())
         {
-            return identifier_resolver.tryResolveIdentifierFromCompoundExpression(
+            if (auto resolved_identifier = identifier_resolver.tryResolveIdentifierFromCompoundExpression(
                 identifier_lookup.identifier,
                 1 /*identifier_bind_size*/,
                 alias_node,
                 {} /* compound_expression_source */,
                 scope,
-                identifier_resolve_settings.allow_to_check_join_tree /* can_be_not_found */);
+                identifier_resolve_settings.allow_to_check_join_tree /* can_be_not_found */))
+            {
+                return { .resolved_identifier = resolved_identifier, .scope = &scope, .resolve_place = IdentifierResolvePlace::ALIASES };
+            }
+            return {};
         }
         else if (identifier_lookup.isFunctionLookup() || identifier_lookup.isTableExpressionLookup())
         {
@@ -1183,7 +1191,7 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromAliases(const Identifier
         }
     }
 
-    return alias_node;
+    return { .resolved_identifier = alias_node, .scope = &scope, .resolve_place = IdentifierResolvePlace::ALIASES };
 }
 
 /** Try resolve identifier in current scope parent scopes.
@@ -1193,34 +1201,30 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromAliases(const Identifier
   * If initial scope is expression. Then try to resolve identifier in parent scopes until query scope is hit.
   * For query scope resolve strategy is same as if initial scope if query.
   */
-IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierInParentScopes(const IdentifierLookup & identifier_lookup, IdentifierResolveScope & scope)
+IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierInParentScopes(const IdentifierLookup & identifier_lookup, IdentifierResolveScope & scope, const IdentifierResolveSettings identifier_resolve_settings)
 {
-    bool initial_scope_is_query = scope.scope_node->getNodeType() == QueryTreeNodeType::QUERY;
-    bool initial_scope_is_expression = !initial_scope_is_query;
+    if (!scope.parent_scope)
+        return {};
 
-    IdentifierResolveSettings identifier_resolve_settings;
-    identifier_resolve_settings.allow_to_check_parent_scopes = false;
-    identifier_resolve_settings.allow_to_check_database_catalog = false;
+    auto new_resolve_setting = identifier_resolve_settings.forbidResultNodeResolve();
+    new_resolve_setting.allow_to_check_database_catalog = false;
 
-    IdentifierResolveScope * scope_to_check = scope.parent_scope;
+    /** Nested subqueries cannot access outer subqueries table expressions from JOIN tree because
+      * that can prevent resolution of table expression from CTE.
+      *
+      * Example: WITH a AS (SELECT number FROM numbers(1)), b AS (SELECT number FROM a) SELECT * FROM a as l, b as r;
+      */
+    if (identifier_lookup.isTableExpressionLookup())
+        new_resolve_setting.allow_to_check_join_tree = false;
 
-    if (initial_scope_is_expression)
-    {
-        while (scope_to_check != nullptr)
-        {
-            auto resolve_result = tryResolveIdentifier(identifier_lookup, *scope_to_check, identifier_resolve_settings);
-            if (resolve_result.resolved_identifier)
-                return resolve_result;
+    new_resolve_setting.allow_to_check_database_catalog = false;
+    auto resolve_result = tryResolveIdentifier(identifier_lookup, *scope.parent_scope, new_resolve_setting);
+    auto & resolved_identifier = resolve_result.resolved_identifier;
 
-            bool scope_was_query = scope_to_check->scope_node->getNodeType() == QueryTreeNodeType::QUERY;
-            scope_to_check = scope_to_check->parent_scope;
+    if (!resolved_identifier)
+        return {};
 
-            if (scope_was_query)
-                break;
-        }
-    }
-
-    if (!scope.context->getSettingsRef().enable_global_with_statement)
+    if (!scope.context->getSettingsRef().enable_global_with_statement && (resolve_result.isResolvedFromAliases() || resolve_result.isResolvedFromCTEs()))
         return {};
 
     QueryTreeNodePtr expected_source;
@@ -1230,91 +1234,66 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierInParentScopes(const 
         expected_source = query_node->getJoinTree();
     }
 
-    if (expected_source)
-        LOG_DEBUG(&Poco::Logger::get("resolveInParentScope"), "Expected source:\n{}", expected_source->dumpTree());
-
-    /** Nested subqueries cannot access outer subqueries table expressions from JOIN tree because
-      * that can prevent resolution of table expression from CTE.
-      *
-      * Example: WITH a AS (SELECT number FROM numbers(1)), b AS (SELECT number FROM a) SELECT * FROM a as l, b as r;
-      */
+    /** From parent scopes we can resolve table identifiers only as CTE.
+        * Example: SELECT (SELECT 1 FROM a) FROM test_table AS a;
+        *
+        * During child scope table identifier resolve a, table node test_table with alias a from parent scope
+        * is invalid.
+        */
     if (identifier_lookup.isTableExpressionLookup())
-        identifier_resolve_settings.allow_to_check_join_tree = false;
-
-    while (scope_to_check != nullptr)
     {
-        LOG_DEBUG(&Poco::Logger::get("resolveInParentScope"), "Looking for '{}' in SCOPE:\n{}", identifier_lookup.dump(), scope.dump());
+        auto * subquery_node = resolved_identifier->as<QueryNode>();
+        auto * union_node = resolved_identifier->as<UnionNode>();
 
-        auto lookup_result = tryResolveIdentifier(identifier_lookup, *scope_to_check, identifier_resolve_settings);
-        auto & resolved_identifier = lookup_result.resolved_identifier;
+        bool is_cte = (subquery_node && subquery_node->isCTE()) || (union_node && union_node->isCTE());
+        bool is_table_from_expression_arguments = resolve_result.resolve_place == IdentifierResolvePlace::EXPRESSION_ARGUMENTS &&
+            resolved_identifier->getNodeType() == QueryTreeNodeType::TABLE;
+        bool is_valid_table_expression = is_cte || is_table_from_expression_arguments;
 
-        scope_to_check = scope_to_check->parent_scope;
 
-        if (resolved_identifier)
+        if (!is_valid_table_expression)
+            return {};
+        return resolve_result;
+    }
+    if (identifier_lookup.isFunctionLookup())
+        return resolve_result;
+
+    // Resolve referenced expression
+    if (identifier_lookup.isExpressionLookup() && identifier_resolve_settings.allow_to_resolve_result_node)
+        resolveExpressionNode(resolved_identifier, scope, false, false);
+
+    bool dependent_column = false;
+    QueryTreeNodes nodes_to_process = { resolved_identifier };
+    while (!nodes_to_process.empty())
+    {
+        auto current = nodes_to_process.back();
+        nodes_to_process.pop_back();
+        if (auto * current_column = current->as<ColumnNode>())
         {
-            /** From parent scopes we can resolve table identifiers only as CTE.
-              * Example: SELECT (SELECT 1 FROM a) FROM test_table AS a;
-              *
-              * During child scope table identifier resolve a, table node test_table with alias a from parent scope
-              * is invalid.
-              */
-            if (identifier_lookup.isTableExpressionLookup())
+            if (current_column->getColumnSource() != expected_source)
             {
-                auto * subquery_node = resolved_identifier->as<QueryNode>();
-                auto * union_node = resolved_identifier->as<UnionNode>();
-
-                bool is_cte = (subquery_node && subquery_node->isCTE()) || (union_node && union_node->isCTE());
-                bool is_table_from_expression_arguments = lookup_result.resolve_place == IdentifierResolvePlace::EXPRESSION_ARGUMENTS &&
-                    resolved_identifier->getNodeType() == QueryTreeNodeType::TABLE;
-                bool is_valid_table_expression = is_cte || is_table_from_expression_arguments;
-
-
-                if (!is_valid_table_expression)
-                    continue;
-                return lookup_result;
+                LOG_DEBUG(&Poco::Logger::get("resolveInParentScope"), "Found dependency for'{}' with source:\n{}", identifier_lookup.dump(), current_column->getColumnSource()->dumpTree());
+                dependent_column = true;
+                break;
             }
+        }
 
-            if (identifier_lookup.isExpressionLookup())
-                resolveExpressionNode(resolved_identifier, scope, false, false);
-
-            bool dependent_column = false;
-            QueryTreeNodes nodes_to_process = { resolved_identifier };
-            while (!nodes_to_process.empty())
-            {
-                auto current = nodes_to_process.back();
-                nodes_to_process.pop_back();
-                if (auto * current_column = current->as<ColumnNode>())
-                {
-                    if (current_column->getColumnSource() != expected_source)
-                    {
-                        LOG_DEBUG(&Poco::Logger::get("resolveInParentScope"), "Found dependency for'{}' with source:\n{}", identifier_lookup.dump(), current_column->getColumnSource()->dumpTree());
-                        dependent_column = true;
-                        break;
-                    }
-                }
-
-                for (const auto & child : current->getChildren())
-                {
-                    if (child)
-                        nodes_to_process.push_back(child);
-                }
-            }
-
-            if (!dependent_column)
-                return lookup_result;
-
-            LOG_DEBUG(&Poco::Logger::get("resolveInParentScope"), "Node:\n{}", resolved_identifier->dumpTree());
-
-            throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                "Resolve identifier '{}' from parent scope only supported for constants and CTE. Actual {} node type {}. In scope {}",
-                identifier_lookup.identifier.getFullName(),
-                resolved_identifier->formatASTForErrorMessage(),
-                resolved_identifier->getNodeTypeName(),
-                scope.scope_node->formatASTForErrorMessage());
+        for (const auto & child : current->getChildren())
+        {
+            if (child)
+                nodes_to_process.push_back(child);
         }
     }
 
-    return {};
+    if (!dependent_column)
+        return resolve_result;
+
+    throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+        "Resolve identifier '{}' from parent scope only supported for constants and CTE. Actual {} node type {}. In scope {}",
+        identifier_lookup.identifier.getFullName(),
+        resolved_identifier->formatASTForErrorMessage(),
+        resolved_identifier->getNodeTypeName(),
+        scope.scope_node->formatASTForErrorMessage());
 }
 
 /** Resolve identifier in scope.
@@ -1382,9 +1361,7 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
     /// Resolve identifier from current scope
 
     IdentifierResolveResult resolve_result;
-    resolve_result.resolved_identifier = identifier_resolver.tryResolveIdentifierFromExpressionArguments(identifier_lookup, scope);
-    if (resolve_result.resolved_identifier)
-        resolve_result.resolve_place = IdentifierResolvePlace::EXPRESSION_ARGUMENTS;
+    resolve_result = identifier_resolver.tryResolveIdentifierFromExpressionArguments(identifier_lookup, scope);
 
     if (!resolve_result.resolved_identifier)
     {
@@ -1410,34 +1387,21 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
         {
             if (identifier_resolve_settings.allow_to_check_join_tree)
             {
-                resolve_result.resolved_identifier = identifier_resolver.tryResolveIdentifierFromJoinTree(identifier_lookup, scope);
-
-                if (resolve_result.resolved_identifier)
-                    resolve_result.resolve_place = IdentifierResolvePlace::JOIN_TREE;
+                resolve_result = identifier_resolver.tryResolveIdentifierFromJoinTree(identifier_lookup, scope);
             }
 
             if (!resolve_result.resolved_identifier)
             {
-                resolve_result.resolved_identifier = tryResolveIdentifierFromAliases(identifier_lookup, scope, identifier_resolve_settings);
-
-                if (resolve_result.resolved_identifier)
-                    resolve_result.resolve_place = IdentifierResolvePlace::ALIASES;
+                resolve_result = tryResolveIdentifierFromAliases(identifier_lookup, scope, identifier_resolve_settings);
             }
         }
         else
         {
-            resolve_result.resolved_identifier = tryResolveIdentifierFromAliases(identifier_lookup, scope, identifier_resolve_settings);
+            resolve_result = tryResolveIdentifierFromAliases(identifier_lookup, scope, identifier_resolve_settings);
 
-            if (resolve_result.resolved_identifier)
+            if (!resolve_result.resolved_identifier && identifier_resolve_settings.allow_to_check_join_tree)
             {
-                resolve_result.resolve_place = IdentifierResolvePlace::ALIASES;
-            }
-            else if (identifier_resolve_settings.allow_to_check_join_tree)
-            {
-                resolve_result.resolved_identifier = identifier_resolver.tryResolveIdentifierFromJoinTree(identifier_lookup, scope);
-
-                if (resolve_result.resolved_identifier)
-                    resolve_result.resolve_place = IdentifierResolvePlace::JOIN_TREE;
+                resolve_result = identifier_resolver.tryResolveIdentifierFromJoinTree(identifier_lookup, scope);
             }
         }
 
@@ -1457,75 +1421,40 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
         }
     }
 
-    if (!resolve_result.resolved_identifier)
+    if (!resolve_result.resolved_identifier && identifier_lookup.isTableExpressionLookup())
     {
         auto full_name = identifier_lookup.identifier.getFullName();
-        if (identifier_lookup.isTableExpressionLookup())
+        auto cte_query_node_it = scope.cte_name_to_query_node.find(full_name);
+
+        /// CTE may reference table expressions with the same name, e.g.:
+        ///
+        /// WITH test1 AS (SELECT * FROM test1) SELECT * FROM test1;
+        ///
+        /// Since we don't support recursive CTEs, `test1` identifier inside of CTE
+        /// references to table <default database name>.test1.
+        /// This means that the example above is equivalent to the following query:
+        ///
+        /// SELECT * FROM test1;
+        ///
+        /// To accomplish this behaviour it's not allowed to resolve identifiers to
+        /// CTE that is being resolved.
+        if (cte_query_node_it != scope.cte_name_to_query_node.end()
+            && !ctes_in_resolve_process.contains(full_name))
         {
-            auto cte_query_node_it = scope.cte_name_to_query_node.find(full_name);
-
-            /// CTE may reference table expressions with the same name, e.g.:
-            ///
-            /// WITH test1 AS (SELECT * FROM test1) SELECT * FROM test1;
-            ///
-            /// Since we don't support recursive CTEs, `test1` identifier inside of CTE
-            /// references to table <default database name>.test1.
-            /// This means that the example above is equivalent to the following query:
-            ///
-            /// SELECT * FROM test1;
-            ///
-            /// To accomplish this behaviour it's not allowed to resolve identifiers to
-            /// CTE that is being resolved.
-            if (cte_query_node_it != scope.cte_name_to_query_node.end()
-                && !ctes_in_resolve_process.contains(full_name))
-            {
-                resolve_result.resolved_identifier = cte_query_node_it->second;
-                resolve_result.resolve_place = IdentifierResolvePlace::CTE;
-            }
+            resolve_result = { .resolved_identifier = cte_query_node_it->second, .scope = &scope, .resolve_place = IdentifierResolvePlace::CTE };
         }
-        else if (identifier_lookup.isFunctionLookup())
-        {
-            auto cte_lambda_node_it = scope.cte_name_to_lambda.find(full_name);
-
-            if (cte_lambda_node_it != scope.cte_name_to_lambda.end())
-            {
-                resolve_result.resolved_identifier = cte_lambda_node_it->second->clone();
-                resolve_result.resolve_place = IdentifierResolvePlace::CTE;
-            }
-        }
-        else if (identifier_lookup.isExpressionLookup())
-        {
-            auto cte_expression_node_it = scope.cte_name_to_expression.find(full_name);
-
-            if (cte_expression_node_it != scope.cte_name_to_expression.end())
-            {
-                auto resolved_node = cte_expression_node_it->second->clone();
-                resolveExpressionNode(resolved_node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
-
-                resolve_result.resolved_identifier = resolved_node;
-                resolve_result.resolve_place = IdentifierResolvePlace::CTE;
-            }
-        }
-    }
-
-    /// Try to resolve identifier from parent scopes
-
-    if (!resolve_result.resolved_identifier && identifier_resolve_settings.allow_to_check_parent_scopes)
-    {
-        resolve_result = tryResolveIdentifierInParentScopes(identifier_lookup, scope);
-
-        if (resolve_result.resolved_identifier)
-            resolve_result.resolved_from_parent_scopes = true;
     }
 
     /// Try to resolve table identifier from database catalog
-
     if (!resolve_result.resolved_identifier && identifier_resolve_settings.allow_to_check_database_catalog && identifier_lookup.isTableExpressionLookup())
     {
-        resolve_result.resolved_identifier = IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(identifier_lookup.identifier, scope.context);
+        resolve_result = IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(identifier_lookup.identifier, scope);
+    }
 
-        if (resolve_result.resolved_identifier)
-            resolve_result.resolve_place = IdentifierResolvePlace::DATABASE_CATALOG;
+    /// Try to resolve identifier from parent scopes
+    if (!resolve_result.resolved_identifier)
+    {
+        resolve_result = tryResolveIdentifierInParentScopes(identifier_lookup, scope, identifier_resolve_settings);
     }
 
     bool was_cyclic_identifier_resolve = it->second.cyclic_identifier_resolve;
@@ -2772,7 +2701,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             }
             else
             {
-                auto table_node = IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(identifier, scope.context);
+                auto table_node = IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(identifier, scope).resolved_identifier;
                 if (!table_node)
                     throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                         "Function {} first argument expected table identifier '{}'. In scope {}",
@@ -5123,7 +5052,7 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
 
             IdentifierLookup identifier_lookup{identifier_node->getIdentifier(), IdentifierLookupContext::EXPRESSION};
             if (!result_left_table_expression)
-                result_left_table_expression = identifier_resolver.tryResolveIdentifierFromJoinTreeNode(identifier_lookup, join_node_typed.getLeftTableExpression(), scope);
+                result_left_table_expression = identifier_resolver.tryResolveIdentifierFromJoinTreeNode(identifier_lookup, join_node_typed.getLeftTableExpression(), scope).resolved_identifier;
 
             /** Here we may try to resolve identifier from projection in case it's not resolved from left table expression
               * and analyzer_compatibility_join_using_top_level_identifier is disabled.
@@ -5167,7 +5096,7 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
                     identifier_full_name,
                     scope.scope_node->formatASTForErrorMessage());
 
-            auto result_right_table_expression = identifier_resolver.tryResolveIdentifierFromJoinTreeNode(identifier_lookup, join_node_typed.getRightTableExpression(), scope);
+            auto result_right_table_expression = identifier_resolver.tryResolveIdentifierFromJoinTreeNode(identifier_lookup, join_node_typed.getRightTableExpression(), scope).resolved_identifier;
             if (!result_right_table_expression)
                 throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
                     "JOIN {} using identifier '{}' cannot be resolved from right table expression. In scope {}",
@@ -5353,6 +5282,9 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     /// Initialize aliases in query node scope
     QueryExpressionsAliasVisitor visitor(scope.aliases);
 
+    if (query_node_typed.hasWith())
+        visitor.visit(query_node_typed.getWithNode());
+
     if (!query_node_typed.getProjection().getNodes().empty())
         visitor.visit(query_node_typed.getProjectionNode());
 
@@ -5405,46 +5337,16 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
         auto * union_node = node->as<UnionNode>();
 
         bool subquery_is_cte = (subquery_node && subquery_node->isCTE()) || (union_node && union_node->isCTE());
-        if (subquery_is_cte)
-        {
-            const auto & cte_name = subquery_node ? subquery_node->getCTEName() : union_node->getCTEName();
+        if (!subquery_is_cte)
+            continue;
+        const auto & cte_name = subquery_node ? subquery_node->getCTEName() : union_node->getCTEName();
 
-            auto [_, inserted] = scope.cte_name_to_query_node.emplace(cte_name, node);
-            if (!inserted)
-                throw Exception(ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS,
-                    "CTE with name {} already exists. In scope {}",
-                    cte_name,
-                    scope.scope_node->formatASTForErrorMessage());
-        }
-        else
-        {
-            const auto & node_alias = node->getAlias();
-            if (node_alias.empty())
-                throw Exception(ErrorCodes::ALIAS_REQUIRED,
-                    "Scalar expression in WITH clause does not have an alias {}. In scope {}",
-                    node->formatASTForErrorMessage(),
-                    scope.scope_node->formatASTForErrorMessage());
-
-
-            if (node->as<LambdaNode>())
-            {
-                auto [_, inserted] = scope.cte_name_to_lambda.emplace(node_alias, node);
-                if (!inserted)
-                    throw Exception(ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS,
-                        "Lambda with name {} already exists. In scope {}",
-                        node->getAlias(),
-                        scope.scope_node->formatASTForErrorMessage());
-            }
-            else
-            {
-                auto [_, inserted] = scope.cte_name_to_expression.emplace(node_alias, node);
-                if (!inserted)
-                    throw Exception(ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS,
-                        "Expression with name {} already exists. In scope {}",
-                        node->getAlias(),
-                        scope.scope_node->formatASTForErrorMessage());
-            }
-        }
+        auto [_, inserted] = scope.cte_name_to_query_node.emplace(cte_name, node);
+        if (!inserted)
+            throw Exception(ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS,
+                "CTE with name {} already exists. In scope {}",
+                cte_name,
+                scope.scope_node->formatASTForErrorMessage());
     }
 
     /** WITH section can be safely removed, because WITH section only can provide aliases to query expressions

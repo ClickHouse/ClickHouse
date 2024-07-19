@@ -86,7 +86,7 @@ public:
 
     /// Resolve identifier functions
 
-    static QueryTreeNodePtr tryResolveTableIdentifierFromDatabaseCatalog(const Identifier & table_identifier, ContextPtr context);
+    static IdentifierResolveResult tryResolveTableIdentifierFromDatabaseCatalog(const Identifier & table_identifier, IdentifierResolveScope & scope);
 
     QueryTreeNodePtr tryResolveIdentifierFromCompoundExpression(const Identifier & expression_identifier,
         size_t identifier_bind_size,
@@ -95,7 +95,7 @@ public:
         IdentifierResolveScope & scope,
         bool can_be_not_found = false);
 
-    QueryTreeNodePtr tryResolveIdentifierFromExpressionArguments(const IdentifierLookup & identifier_lookup, IdentifierResolveScope & scope);
+    IdentifierResolveResult tryResolveIdentifierFromExpressionArguments(const IdentifierLookup & identifier_lookup, IdentifierResolveScope & scope);
 
     static bool tryBindIdentifierToAliases(const IdentifierLookup & identifier_lookup, const IdentifierResolveScope & scope);
 
@@ -109,11 +109,11 @@ public:
         const QueryTreeNodePtr & table_expression_node,
         const IdentifierResolveScope & scope);
 
-    QueryTreeNodePtr tryResolveIdentifierFromTableExpression(const IdentifierLookup & identifier_lookup,
+    IdentifierResolveResult tryResolveIdentifierFromTableExpression(const IdentifierLookup & identifier_lookup,
         const QueryTreeNodePtr & table_expression_node,
         IdentifierResolveScope & scope);
 
-    QueryTreeNodePtr tryResolveIdentifierFromJoin(const IdentifierLookup & identifier_lookup,
+    IdentifierResolveResult tryResolveIdentifierFromJoin(const IdentifierLookup & identifier_lookup,
         const QueryTreeNodePtr & table_expression_node,
         IdentifierResolveScope & scope);
 
@@ -127,18 +127,18 @@ public:
         const QueryTreeNodePtr & table_expression_node,
         IdentifierResolveScope & scope);
 
-    QueryTreeNodePtr tryResolveIdentifierFromArrayJoin(const IdentifierLookup & identifier_lookup,
+    IdentifierResolveResult tryResolveIdentifierFromArrayJoin(const IdentifierLookup & identifier_lookup,
         const QueryTreeNodePtr & table_expression_node,
         IdentifierResolveScope & scope);
 
-    QueryTreeNodePtr tryResolveIdentifierFromJoinTreeNode(const IdentifierLookup & identifier_lookup,
+    IdentifierResolveResult tryResolveIdentifierFromJoinTreeNode(const IdentifierLookup & identifier_lookup,
         const QueryTreeNodePtr & join_tree_node,
         IdentifierResolveScope & scope);
 
-    QueryTreeNodePtr tryResolveIdentifierFromJoinTree(const IdentifierLookup & identifier_lookup,
+    IdentifierResolveResult tryResolveIdentifierFromJoinTree(const IdentifierLookup & identifier_lookup,
         IdentifierResolveScope & scope);
 
-    QueryTreeNodePtr tryResolveIdentifierFromStorage(
+    IdentifierResolveResult tryResolveIdentifierFromStorage(
         const Identifier & identifier,
         const QueryTreeNodePtr & table_expression_node,
         const AnalysisTableExpressionData & table_expression_data,

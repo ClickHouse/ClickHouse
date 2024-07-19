@@ -110,22 +110,17 @@ inline const char * toString(IdentifierResolvePlace resolved_identifier_place)
     }
 }
 
+struct IdentifierResolveScope;
+
 struct IdentifierResolveResult
 {
-    IdentifierResolveResult() = default;
-
     QueryTreeNodePtr resolved_identifier;
+    IdentifierResolveScope * scope = nullptr;
     IdentifierResolvePlace resolve_place = IdentifierResolvePlace::NONE;
-    bool resolved_from_parent_scopes = false;
 
     [[maybe_unused]] bool isResolved() const
     {
         return resolve_place != IdentifierResolvePlace::NONE;
-    }
-
-    [[maybe_unused]] bool isResolvedFromParentScopes() const
-    {
-        return resolved_from_parent_scopes;
     }
 
     [[maybe_unused]] bool isResolvedFromExpressionArguments() const
@@ -156,7 +151,7 @@ struct IdentifierResolveResult
             return;
         }
 
-        buffer << resolved_identifier->formatASTForErrorMessage() << " place " << toString(resolve_place) << " resolved from parent scopes " << resolved_from_parent_scopes;
+        buffer << resolved_identifier->formatASTForErrorMessage() << " place " << toString(resolve_place);
     }
 
     [[maybe_unused]] String dump() const
@@ -190,6 +185,15 @@ struct IdentifierResolveSettings
 
     /// Allow to resolve subquery during identifier resolution
     bool allow_to_resolve_subquery_during_identifier_resolution = true;
+
+    bool allow_to_resolve_result_node = true;
+
+    IdentifierResolveSettings forbidResultNodeResolve() const
+    {
+        IdentifierResolveSettings temp = *this;
+        temp.allow_to_resolve_result_node = false;
+        return temp;
+    }
 };
 
 }
