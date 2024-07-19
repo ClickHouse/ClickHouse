@@ -36,6 +36,8 @@ private:
 
     alignas(64) std::atomic<UInt64> state;
     std::atomic<UInt32> waiters;
+    /// Is set while the lock is held in exclusive mode only to facilitate debugging
+    std::atomic<UInt64> writer_thread_id;
 };
 
 }

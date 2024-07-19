@@ -1,4 +1,5 @@
 #include <Common/SharedMutex.h>
+#include <base/getThreadId.h>
 
 #ifdef OS_LINUX /// Because of futex
 
@@ -12,6 +13,7 @@ namespace DB
 SharedMutex::SharedMutex()
     : state(0)
     , waiters(0)
+    , writer_thread_id(0)
 {}
 
 void SharedMutex::lock()
@@ -32,16 +34,22 @@ void SharedMutex::lock()
     value |= writers;
     while (value & readers)
         futexWaitLowerFetch(state, value);
+
+    writer_thread_id.store(getThreadId());
 }
 
 bool SharedMutex::try_lock()
 {
     UInt64 value = 0;
-    return state.compare_exchange_strong(value, writers);
+    bool success = state.compare_exchange_strong(value, writers);
+    if (success)
+        writer_thread_id.store(getThreadId());
+    return success;
 }
 
 void SharedMutex::unlock()
 {
+    writer_thread_id.store(0);
     state.store(0);
     if (waiters)
         futexWakeUpperAll(state);
