@@ -26,8 +26,7 @@ void TableFunctionFactory::registerFunction(
 
     if (case_sensitiveness == Case::Insensitive
         && !case_insensitive_table_functions.emplace(Poco::toLower(name), value).second)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "TableFunctionFactory: "
-                        "the case insensitive table function name '{}' is not unique", name);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "TableFunctionFactory: the case insensitive table function name '{}' is not unique", name);
 
     KnownTableFunctionNames::instance().add(name, (case_sensitiveness == Case::Insensitive));
 }
@@ -103,11 +102,8 @@ std::optional<FunctionDocumentation> TableFunctionFactory::tryGetDocumentationIm
     String name = getAliasToOrName(name_param);
     Value found;
 
-    /// Find by exact match.
     if (auto it = table_functions.find(name); it != table_functions.end())
-    {
         found = it->second;
-    }
 
     if (auto jt = case_insensitive_table_functions.find(Poco::toLower(name)); jt != case_insensitive_table_functions.end())
         found = jt->second;
@@ -123,11 +119,8 @@ std::optional<TableFunctionProperties> TableFunctionFactory::tryGetPropertiesImp
     String name = getAliasToOrName(name_param);
     Value found;
 
-    /// Find by exact match.
     if (auto it = table_functions.find(name); it != table_functions.end())
-    {
         found = it->second;
-    }
 
     if (auto jt = case_insensitive_table_functions.find(Poco::toLower(name)); jt != case_insensitive_table_functions.end())
         found = jt->second;

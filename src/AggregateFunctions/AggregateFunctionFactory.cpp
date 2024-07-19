@@ -36,15 +36,13 @@ void AggregateFunctionFactory::registerFunction(const String & name, Value creat
             "the aggregate function {} has been provided  a null constructor", name);
 
     if (!aggregate_functions.emplace(name, creator_with_properties).second)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "AggregateFunctionFactory: the aggregate function name '{}' is not unique",
-            name);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "AggregateFunctionFactory: the aggregate function name '{}' is not unique", name);
 
     if (case_sensitiveness == Case::Insensitive)
     {
         auto key = Poco::toLower(name);
         if (!case_insensitive_aggregate_functions.emplace(key, creator_with_properties).second)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "AggregateFunctionFactory: "
-                "the case insensitive aggregate function name '{}' is not unique", name);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "AggregateFunctionFactory: the case insensitive aggregate function name '{}' is not unique", name);
         case_insensitive_name_mapping[key] = name;
     }
 }
@@ -58,12 +56,10 @@ void AggregateFunctionFactory::registerNullsActionTransformation(const String & 
         throw Exception(ErrorCodes::LOGICAL_ERROR, "registerNullsActionTransformation: Target aggregation '{}' not found", target_respect_nulls);
 
     if (!respect_nulls.emplace(source_ignores_nulls, target_respect_nulls).second)
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR, "registerNullsActionTransformation: Assignment from '{}' is not unique", source_ignores_nulls);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "registerNullsActionTransformation: Assignment from '{}' is not unique", source_ignores_nulls);
 
     if (!ignore_nulls.emplace(target_respect_nulls, source_ignores_nulls).second)
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR, "registerNullsActionTransformation: Assignment from '{}' is not unique", target_respect_nulls);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "registerNullsActionTransformation: Assignment from '{}' is not unique", target_respect_nulls);
 }
 
 static DataTypes convertLowCardinalityTypesToNested(const DataTypes & types)
@@ -101,8 +97,7 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
     {
         AggregateFunctionCombinatorPtr combinator = AggregateFunctionCombinatorFactory::instance().tryFindSuffix("Null");
         if (!combinator)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find aggregate function combinator "
-                            "to apply a function to Nullable arguments.");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find aggregate function combinator to apply a function to Nullable arguments.");
 
         DataTypes nested_types = combinator->transformArguments(types_without_low_cardinality);
         Array nested_parameters = combinator->transformParameters(parameters);
@@ -138,8 +133,7 @@ AggregateFunctionFactory::getAssociatedFunctionByNullsAction(const String & name
         else if (auto associated_it = aggregate_functions.find(it->second); associated_it != aggregate_functions.end())
             return {associated_it->second};
         else
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR, "Unable to find the function {} (equivalent to '{} RESPECT NULLS')", it->second, name);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unable to find the function {} (equivalent to '{} RESPECT NULLS')", it->second, name);
     }
 
     if (action == NullsAction::IGNORE_NULLS)
@@ -149,8 +143,7 @@ AggregateFunctionFactory::getAssociatedFunctionByNullsAction(const String & name
             if (auto associated_it = aggregate_functions.find(it->second); associated_it != aggregate_functions.end())
                 return {associated_it->second};
             else
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR, "Unable to find the function {} (equivalent to '{} IGNORE NULLS')", it->second, name);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unable to find the function {} (equivalent to '{} IGNORE NULLS')", it->second, name);
         }
         /// We don't throw for IGNORE NULLS of other functions because that's the default in CH
     }
@@ -172,11 +165,8 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
     bool is_case_insensitive = false;
     Value found;
 
-    /// Find by exact match.
     if (auto it = aggregate_functions.find(name); it != aggregate_functions.end())
-    {
         found = it->second;
-    }
 
     if (!found.creator)
     {
@@ -220,9 +210,7 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
         const std::string & combinator_name = combinator->getName();
 
         if (combinator->isForInternalUsageOnly())
-            throw Exception(ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION,
-                "Aggregate function combinator '{}' is only for internal usage",
-                combinator_name);
+            throw Exception(ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION,"Aggregate function combinator '{}' is only for internal usage", combinator_name);
 
         if (query_context && query_context->getSettingsRef().log_queries)
             query_context->addQueryFactoriesInfo(Context::QueryLogFactories::AggregateFunctionCombinator, combinator_name);
@@ -238,9 +226,7 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
 
         if (!combinator->supportsNesting() && nested_name.ends_with(combinator_name))
         {
-            throw Exception(ErrorCodes::ILLEGAL_AGGREGATION,
-                "Nested identical combinator '{}' is not supported",
-                combinator_name);
+            throw Exception(ErrorCodes::ILLEGAL_AGGREGATION, "Nested identical combinator '{}' is not supported", combinator_name);
         }
 
         DataTypes nested_types = combinator->transformArguments(argument_types);
@@ -257,8 +243,7 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
 
     auto hints = this->getHints(name);
     if (!hints.empty())
-        throw Exception(ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION,
-                        "Unknown aggregate function {}{}. Maybe you meant: {}", name, extra_info, toString(hints));
+        throw Exception(ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION, "Unknown aggregate function {}{}. Maybe you meant: {}", name, extra_info, toString(hints));
     else
         throw Exception(ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION, "Unknown aggregate function {}{}", name, extra_info);
 }
@@ -275,11 +260,8 @@ std::optional<AggregateFunctionProperties> AggregateFunctionFactory::tryGetPrope
         String lower_case_name;
         bool is_case_insensitive = false;
 
-        /// Find by exact match.
         if (auto it = aggregate_functions.find(name); it != aggregate_functions.end())
-        {
             found = it->second;
-        }
 
         if (!found.creator)
         {
