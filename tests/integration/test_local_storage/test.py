@@ -68,8 +68,6 @@ def test_local_engine(started_cluster):
         """
     )
 
-    print("Error got", error_got)
-
     node.query(
         """
             SET engine_file_truncate_on_insert = 1;
@@ -131,15 +129,9 @@ def test_local_engine(started_cluster):
 
 
 def test_table_function(started_cluster):
-    with open("/tmp/example.csv", "w") as f:
-        f.write(
-            """id,data
-1,Str1
-2,Str2"""
-        )
     node = started_cluster.instances["test_local_storage"]
 
-    node.copy_file_to_container("/tmp/example.csv", "/data/example2.csv")
+    node.copy_file_to_container("test_local_storage/files/example2.csv", "/data/example2.csv")
 
     result = node.query(
         """
