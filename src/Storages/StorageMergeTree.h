@@ -17,7 +17,6 @@
 
 #include <Disks/StoragePolicy.h>
 #include <Common/SimpleIncrement.h>
-#include "Storages/MutationCommands.h"
 
 
 namespace DB
@@ -150,8 +149,8 @@ private:
     std::map<UInt64, MergeTreeMutationEntry> current_mutations_by_version;
 
     /// Unfinished mutations that are required for AlterConversions.
-    Int64 data_mutations_to_apply = 0;
-    Int64 metadata_mutations_to_apply = 0;
+    Int64 num_data_mutations_to_apply = 0;
+    Int64 num_metadata_mutations_to_apply = 0;
 
     std::atomic<bool> shutdown_called {false};
     std::atomic<bool> flush_called {false};
@@ -314,7 +313,7 @@ private:
     struct MutationsSnapshot : public IMutationsSnapshot
     {
         MutationsSnapshot() = default;
-        explicit MutationsSnapshot(Params params_) : IMutationsSnapshot(std::move(params_)) {}
+        MutationsSnapshot(Params params_, Info info_) : IMutationsSnapshot(std::move(params_), std::move(info_)) {}
 
         using MutationsByVersion = std::map<UInt64, std::shared_ptr<const MutationCommands>>;
         MutationsByVersion mutations_by_version;

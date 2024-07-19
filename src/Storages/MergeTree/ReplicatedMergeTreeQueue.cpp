@@ -14,8 +14,6 @@
 #include <base/defines.h>
 #include <Parsers/formatAST.h>
 #include <base/sort.h>
-#include <algorithm>
-#include <mutex>
 #include <ranges>
 #include <Poco/Timestamp.h>
 
@@ -952,7 +950,7 @@ int32_t ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper
                 {
                     const auto commands = entry.commands;
                     it = mutations_by_znode.erase(it);
-                    decrementMutationsCounters(data_mutations_to_apply, metadata_mutations_to_apply, commands, state_lock);
+                    decrementMutationsCounters(num_data_mutations_to_apply, num_metadata_mutations_to_apply, commands, state_lock);
                 }
                 else
                     it = mutations_by_znode.erase(it);
@@ -1002,7 +1000,7 @@ int32_t ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper
             for (const ReplicatedMergeTreeMutationEntryPtr & entry : new_mutations)
             {
                 auto & mutation = mutations_by_znode.emplace(entry->znode_name, MutationStatus(entry, format_version)).first->second;
-                incrementMutationsCounters(data_mutations_to_apply, metadata_mutations_to_apply, entry->commands, lock);
+                incrementMutationsCounters(num_data_mutations_to_apply, num_metadata_mutations_to_apply, entry->commands, lock);
 
                 NOEXCEPT_SCOPE({
                     for (const auto & pair : entry->block_numbers)
@@ -1913,7 +1911,7 @@ MutationCommands ReplicatedMergeTreeQueue::MutationsSnapshot::getAlterMutationCo
 
     MutationCommands result;
 
-    bool seen_all_data_mutations = !params.need_data_mutations;
+    bool seen_all_data_mutations = !hasDataMutations();
     bool seen_all_metadata_mutations = part_metadata_version >= params.metadata_version;
 
     if (seen_all_data_mutations && seen_all_metadata_mutations)
@@ -1940,9 +1938,9 @@ MutationCommands ReplicatedMergeTreeQueue::MutationsSnapshot::getAlterMutationCo
 
         auto alter_version = entry->alter_version;
 
-        if (!seen_all_metadata_mutations && alter_version != -1)
+        if (alter_version != -1)
         {
-            if (alter_version > params.metadata_version)
+            if (seen_all_metadata_mutations || alter_version > params.metadata_version)
                 continue;
 
             /// We take commands with bigger metadata version
@@ -1965,11 +1963,17 @@ MutationCommands ReplicatedMergeTreeQueue::MutationsSnapshot::getAlterMutationCo
 
 MergeTreeData::MutationsSnapshotPtr ReplicatedMergeTreeQueue::getMutationsSnapshot(const MutationsSnapshot::Params & params) const
 {
-    auto res = std::make_shared<MutationsSnapshot>(params);
-
     std::lock_guard lock(state_mutex);
 
-    bool need_data_mutations = params.need_data_mutations && data_mutations_to_apply > 0;
+    MutationsSnapshot::Info info
+    {
+        .num_data_mutations = num_data_mutations_to_apply,
+        .num_metadata_mutations = num_metadata_mutations_to_apply,
+    };
+
+    auto res = std::make_shared<MutationsSnapshot>(params, std::move(info));
+
+    bool need_data_mutations = res->hasDataMutations();
     bool need_metatadata_mutations = params.min_part_metadata_version < params.metadata_version;
 
     if (!need_data_mutations && !need_metatadata_mutations)
@@ -2000,14 +2004,16 @@ MergeTreeData::MutationsSnapshotPtr ReplicatedMergeTreeQueue::getMutationsSnapsh
 
             auto alter_version = status->entry->alter_version;
 
-            if (!seen_all_metadata_mutations && alter_version != -1)
+            if (alter_version != -1)
             {
-                if (alter_version > params.metadata_version)
+                if (seen_all_metadata_mutations || alter_version > params.metadata_version)
                     continue;
 
                 /// We take commands with bigger metadata version
                 if (alter_version > params.min_part_metadata_version)
                 {
+                    /// Copy a pointer to the whole entry to avoid extracting and copying commands.
+                    /// Required commands will be copied later only for specific parts.
                     if (std::ranges::any_of(status->entry->commands, is_supported_command))
                         in_partition.emplace(mutation_version, status->entry);
                 }
@@ -2020,6 +2026,8 @@ MergeTreeData::MutationsSnapshotPtr ReplicatedMergeTreeQueue::getMutationsSnapsh
             {
                 if (!status->is_done)
                 {
+                    /// Copy a pointer to the whole entry to avoid extracting and copying commands.
+                    /// Required commands will be copied later only for specific parts.
                     if (std::ranges::any_of(status->entry->commands, is_supported_command))
                         in_partition.emplace(mutation_version, status->entry);
                 }
@@ -2114,7 +2122,7 @@ bool ReplicatedMergeTreeQueue::tryFinalizeMutations(zkutil::ZooKeeperPtr zookeep
                     mutation.parts_to_do.clear();
                 }
 
-                decrementMutationsCounters(data_mutations_to_apply, metadata_mutations_to_apply, mutation.entry->commands, lock);
+                decrementMutationsCounters(num_data_mutations_to_apply, num_metadata_mutations_to_apply, mutation.entry->commands, lock);
             }
             else if (mutation.parts_to_do.size() == 0)
             {
@@ -2171,7 +2179,7 @@ bool ReplicatedMergeTreeQueue::tryFinalizeMutations(zkutil::ZooKeeperPtr zookeep
                     LOG_TRACE(log, "Finishing data alter with version {} for entry {}", entry->alter_version, entry->znode_name);
                     alter_sequence.finishDataAlter(entry->alter_version, lock);
                 }
-                decrementMutationsCounters(data_mutations_to_apply, metadata_mutations_to_apply, entry->commands, lock);
+                decrementMutationsCounters(num_data_mutations_to_apply, num_metadata_mutations_to_apply, entry->commands, lock);
             }
         }
     }

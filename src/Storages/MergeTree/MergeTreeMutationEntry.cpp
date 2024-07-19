@@ -6,7 +6,6 @@
 #include <IO/ReadBufferFromString.h>
 #include <Interpreters/TransactionLog.h>
 #include <Backups/BackupEntryFromMemory.h>
-#include "Storages/MutationCommands.h"
 
 #include <utility>
 

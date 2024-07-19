@@ -14,7 +14,6 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Common/logger_useful.h>
-#include "Storages/MergeTree/AlterConversions.h"
 #include <Processors/Merges/Algorithms/MergeTreePartLevelInfo.h>
 
 namespace DB
@@ -65,7 +64,7 @@ private:
     /// Data part will not be removed if the pointer owns it
     MergeTreeData::DataPartPtr data_part;
 
-    /// TODO: comment.
+    /// Alter and mutation commands that are required to be applied to the part on-fly.
     AlterConversionsPtr alter_conversions;
 
     /// Columns we have to read (each Block from read will contain them)

@@ -6,7 +6,6 @@
 #include <Interpreters/Context.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/MutationCommands.h>
-#include "Storages/MergeTree/AlterConversions.h"
 
 
 namespace DB

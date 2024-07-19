@@ -154,8 +154,8 @@ private:
     std::map<String, MutationStatus> mutations_by_znode;
 
     /// Unfinished mutations that are required for AlterConversions.
-    Int64 data_mutations_to_apply = 0;
-    Int64 metadata_mutations_to_apply = 0;
+    Int64 num_data_mutations_to_apply = 0;
+    Int64 num_metadata_mutations_to_apply = 0;
 
     /// Partition -> (block_number -> MutationStatus)
     std::unordered_map<String, std::map<Int64, MutationStatus *>> mutations_by_partition;
@@ -415,8 +415,9 @@ public:
 
     struct MutationsSnapshot : public MergeTreeData::IMutationsSnapshot
     {
+    public:
         MutationsSnapshot() = default;
-        explicit MutationsSnapshot(Params params_) : IMutationsSnapshot(std::move(params_)) {}
+        MutationsSnapshot(Params params_, Info info_) : IMutationsSnapshot(std::move(params_), std::move(info_)) {}
 
         using Params = MergeTreeData::IMutationsSnapshot::Params;
         using MutationsByPartititon = std::unordered_map<String, std::map<Int64, ReplicatedMergeTreeMutationEntryPtr>>;

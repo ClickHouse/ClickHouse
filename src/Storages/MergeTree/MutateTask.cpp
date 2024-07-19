@@ -33,7 +33,6 @@
 #include <DataTypes/DataTypeVariant.h>
 #include <boost/algorithm/string/replace.hpp>
 #include <Common/ProfileEventsScope.h>
-#include "Storages/MergeTree/AlterConversions.h"
 #include <Core/ColumnsWithTypeAndName.h>
 
 

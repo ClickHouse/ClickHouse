@@ -34,7 +34,6 @@
 #include <Interpreters/PartLog.h>
 #include <Poco/Timestamp.h>
 #include <Common/threadPoolCallbackRunner.h>
-#include "Storages/ProjectionsDescription.h"
 
 #include <boost/multi_index_container.hpp>
 #include <boost/multi_index/ordered_index.hpp>
@@ -444,10 +443,14 @@ public:
 
     bool areAsynchronousInsertsEnabled() const override;
 
-    bool supportsTrivialCountOptimization(const StorageSnapshotPtr &, ContextPtr) const override;
+    bool supportsTrivialCountOptimization(const StorageSnapshotPtr & storage_snapshot, ContextPtr) const override;
 
+    /// A snapshot of pending mutations that weren't applied to some of the parts yet
+    /// and should be applied on the fly (i.e. when reading from the part).
+    /// Mutations not supported by AlterConversions (supportsMutationCommandType()) can be omitted.
     struct IMutationsSnapshot
     {
+        /// Contains info that doesn't depend on state of mutations.
         struct Params
         {
             Int64 metadata_version = -1;
@@ -455,18 +458,25 @@ public:
             bool need_data_mutations = false;
         };
 
+        /// Contains info that depends on state of mutations.
+        struct Info
+        {
+            Int64 num_data_mutations = 0;
+            Int64 num_metadata_mutations = 0;
+        };
+
         Params params;
+        Info info;
 
         IMutationsSnapshot() = default;
-        explicit IMutationsSnapshot(Params params_) : params(std::move(params_)) {}
+        IMutationsSnapshot(Params params_, Info info_): params(std::move(params_)), info(std::move(info_)) {}
 
-        /// Return pending mutations that weren't applied to `part` yet and should be applied on the fly
-        /// (i.e. when reading from the part). Mutations not supported by AlterConversions
-        /// (supportsMutationCommandType()) can be omitted.
-        ///
-        /// @return list of mutations, in *reverse* order (newest to oldest)
+        /// Returns mutation commands that are required to be applied to the `part`.
+        /// @return list of mutation commands, in *reverse* order (newest to oldest)
         virtual MutationCommands getAlterMutationCommandsForPart(const DataPartPtr & part) const = 0;
         virtual std::shared_ptr<IMutationsSnapshot> cloneEmpty() const = 0;
+        bool hasDataMutations() const { return params.need_data_mutations && info.num_data_mutations > 0; }
+
         virtual ~IMutationsSnapshot() = default;
     };
 
@@ -956,10 +966,10 @@ public:
 
     Disks getDisks() const { return getStoragePolicy()->getDisks(); }
 
-    /// TODO: comment
+    /// Returns a snapshot of mutations that probably will be applied on the fly to parts during reading.
     virtual MutationsSnapshotPtr getMutationsSnapshot(const IMutationsSnapshot::Params & params) const = 0;
 
-    /// TODO: comment
+    /// Returns the minimum version of metadata among parts.
     static Int64 getMinMetadataVersion(const DataPartsVector & parts);
 
     /// Return alter conversions for part which must be applied on fly.
@@ -1761,14 +1771,14 @@ struct CurrentlySubmergingEmergingTagger
 /// Look at MutationCommands if it contains mutations for AlterConversions, update the counter.
 /// Return true if the counter had been updated
 void incrementMutationsCounters(
-    Int64 & data_mutations_to_apply,
-    Int64 & metadata_mutations_to_apply,
+    Int64 & num_data_mutations_to_apply,
+    Int64 & num_metadata_mutations_to_apply,
     const MutationCommands & commands,
     std::lock_guard<std::mutex> & lock);
 
 void decrementMutationsCounters(
-    Int64 & data_mutations_to_apply,
-    Int64 & metadata_mutations_to_apply,
+    Int64 & num_data_mutations_to_apply,
+    Int64 & num_metadata_mutations_to_apply,
     const MutationCommands & commands,
     std::lock_guard<std::mutex> & lock);
 

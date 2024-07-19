@@ -4,7 +4,6 @@
 #include <memory>
 
 #include <Common/filesystemHelpers.h>
-#include "Storages/MergeTree/AlterConversions.h"
 
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedReadBufferFromFile.h>

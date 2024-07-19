@@ -896,9 +896,6 @@ ReadFromMergeTree::AnalysisResultPtr MergeTreeDataSelectExecutor::estimateNumMar
         return std::make_shared<ReadFromMergeTree::AnalysisResult>();
 
     std::optional<ReadFromMergeTree::Indexes> indexes;
-    /// NOTE: We don't need mutations snapshot because the returned analysis_result is only used for:
-    /// 1. estimate the number of rows to read;
-    /// 2. projection reading, which doesn't have alter conversions.
     return ReadFromMergeTree::selectRangesToRead(
         std::move(parts),
         metadata_snapshot,

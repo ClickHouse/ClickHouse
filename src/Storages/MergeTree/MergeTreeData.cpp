@@ -8444,9 +8444,10 @@ void MergeTreeData::updateObjectColumns(const DataPartPtr & part, const DataPart
     DB::updateObjectColumns(object_columns, columns, part->getColumns());
 }
 
-bool MergeTreeData::supportsTrivialCountOptimization(const StorageSnapshotPtr &, ContextPtr) const
+bool MergeTreeData::supportsTrivialCountOptimization(const StorageSnapshotPtr & storage_snapshot, ContextPtr) const
 {
-    return !hasLightweightDeletedMask();
+    const auto & snapshot_data = assert_cast<const MergeTreeData::SnapshotData &>(*storage_snapshot->data);
+    return !hasLightweightDeletedMask() && !snapshot_data.mutations_snapshot->hasDataMutations();
 }
 
 Int64 MergeTreeData::getMinMetadataVersion(const DataPartsVector & parts)
@@ -8698,16 +8699,16 @@ void MergeTreeData::verifySortingKey(const KeyDescription & sorting_key)
 }
 
 static void updateMutationsCounters(
-    Int64 & data_mutations_to_apply,
-    Int64 & metadata_mutations_to_apply,
+    Int64 & num_data_mutations_to_apply,
+    Int64 & num_metadata_mutations_to_apply,
     const MutationCommands & commands,
     Int64 increment)
 {
-    if (data_mutations_to_apply < 0)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "On-fly data mutations counter is negative ({})", data_mutations_to_apply);
+    if (num_data_mutations_to_apply < 0)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "On-fly data mutations counter is negative ({})", num_data_mutations_to_apply);
 
-    if (metadata_mutations_to_apply < 0)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "On-fly metadata mutations counter is negative ({})", metadata_mutations_to_apply);
+    if (num_metadata_mutations_to_apply < 0)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "On-fly metadata mutations counter is negative ({})", num_metadata_mutations_to_apply);
 
     bool has_data_mutation = false;
     bool has_metadata_mutation = false;
@@ -8716,40 +8717,40 @@ static void updateMutationsCounters(
     {
         if (!has_data_mutation && AlterConversions::isSupportedDataMutation(command.type))
         {
-            data_mutations_to_apply += increment;
+            num_data_mutations_to_apply += increment;
             has_data_mutation = true;
 
-            if (data_mutations_to_apply < 0)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "On-fly data mutations counter is negative ({})", data_mutations_to_apply);
+            if (num_data_mutations_to_apply < 0)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "On-fly data mutations counter is negative ({})", num_data_mutations_to_apply);
         }
 
         if (!has_metadata_mutation && AlterConversions::isSupportedMetadataMutation(command.type))
         {
-            metadata_mutations_to_apply += increment;
+            num_metadata_mutations_to_apply += increment;
             has_metadata_mutation = true;
 
-            if (metadata_mutations_to_apply < 0)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "On-fly metadata mutations counter is negative ({})", metadata_mutations_to_apply);
+            if (num_metadata_mutations_to_apply < 0)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "On-fly metadata mutations counter is negative ({})", num_metadata_mutations_to_apply);
         }
     }
 }
 
 void incrementMutationsCounters(
-    Int64 & data_mutations_to_apply,
-    Int64 & metadata_mutations_to_apply,
+    Int64 & num_data_mutations_to_apply,
+    Int64 & num_metadata_mutations_to_apply,
     const MutationCommands & commands,
     std::lock_guard<std::mutex> & /*lock*/)
 {
-    return updateMutationsCounters(data_mutations_to_apply, metadata_mutations_to_apply, commands, 1);
+    return updateMutationsCounters(num_data_mutations_to_apply, num_metadata_mutations_to_apply, commands, 1);
 }
 
 void decrementMutationsCounters(
-    Int64 & data_mutations_to_apply,
-    Int64 & metadata_mutations_to_apply,
+    Int64 & num_data_mutations_to_apply,
+    Int64 & num_metadata_mutations_to_apply,
     const MutationCommands & commands,
     std::lock_guard<std::mutex> & /*lock*/)
 {
-    return updateMutationsCounters(data_mutations_to_apply, metadata_mutations_to_apply, commands, -1);
+    return updateMutationsCounters(num_data_mutations_to_apply, num_metadata_mutations_to_apply, commands, -1);
 }
 
 }
