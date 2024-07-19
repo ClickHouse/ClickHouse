@@ -2187,7 +2187,7 @@ def run_tests_array(all_tests_with_params: Tuple[List[str], int, TestSuite, bool
             description = ""
             test_case_name = removesuffix(test_case.name, ".gen", ".sql") + ": "
 
-            if is_concurrent or args.run_sequential_tests_in_parallel:
+            if is_concurrent:
                 description = f"{test_case_name:72}"
             else:
                 sys.stdout.flush()
@@ -2447,35 +2447,6 @@ def extract_key(key: str) -> str:
     )[1]
 
 
-def override_envs(*args_, **kwargs):
-    global args
-    args.client += " --port 19000"
-    args.http_port = 18123
-    args.https_port = 18443
-
-    updated_env = {
-        "CLICKHOUSE_CONFIG": "/etc/clickhouse-server3/config.xml",
-        "CLICKHOUSE_CONFIG_DIR": "/etc/clickhouse-server3",
-        "CLICKHOUSE_CONFIG_GREP": "/etc/clickhouse-server3/preprocessed/config.xml",
-        "CLICKHOUSE_USER_FILES": "/var/lib/clickhouse3/user_files",
-        "CLICKHOUSE_SCHEMA_FILES": "/var/lib/clickhouse3/format_schemas",
-        "CLICKHOUSE_PATH": "/var/lib/clickhouse3",
-        "CLICKHOUSE_PORT_TCP": "19000",
-        "CLICKHOUSE_PORT_TCP_SECURE": "19440",
-        "CLICKHOUSE_PORT_TCP_WITH_PROXY": "19010",
-        "CLICKHOUSE_PORT_HTTP": "18123",
-        "CLICKHOUSE_PORT_HTTPS": "18443",
-        "CLICKHOUSE_PORT_INTERSERVER": "19009",
-        "CLICKHOUSE_PORT_KEEPER": "19181",
-        "CLICKHOUSE_PORT_PROMTHEUS_PORT": "19988",
-        "CLICKHOUSE_PORT_MYSQL": "19004",
-        "CLICKHOUSE_PORT_POSTGRESQL": "19005",
-    }
-    os.environ.update(updated_env)
-
-    run_tests_array(*args_, **kwargs)
-
-
 def run_tests_process(*args, **kwargs):
     return run_tests_array(*args, **kwargs)
 
@@ -2519,24 +2490,6 @@ def do_run_tests(jobs, test_suite: TestSuite):
             processes.append(process)
             process.start()
 
-        if args.run_sequential_tests_in_parallel:
-            # Run parallel tests and sequential tests at the same time
-            # Sequential tests will use different ClickHouse instance
-            # In this process we can safely override values in `args` and `os.environ`
-            process = multiprocessing.Process(
-                target=override_envs,
-                args=(
-                    (
-                        test_suite.sequential_tests,
-                        len(test_suite.sequential_tests),
-                        test_suite,
-                        False,
-                    ),
-                ),
-            )
-            processes.append(process)
-            process.start()
-
         while processes:
             sys.stdout.flush()
             # Periodically check the server for hangs
@@ -2568,15 +2521,15 @@ def do_run_tests(jobs, test_suite: TestSuite):
 
             sleep(5)
 
-        if not args.run_sequential_tests_in_parallel:
-            run_tests_array(
-                (
-                    test_suite.sequential_tests,
-                    len(test_suite.sequential_tests),
-                    test_suite,
-                    False,
-                )
+        run_tests_array(
+            (
+                test_suite.sequential_tests,
+                len(test_suite.sequential_tests),
+                test_suite,
+                False,
             )
+        )
+
         return len(test_suite.sequential_tests) + len(test_suite.parallel_tests)
     else:
         num_tests = len(test_suite.all_tests)
@@ -3417,15 +3370,6 @@ def parse_args():
         "--client-log",
         default="./client.fatal.log",
         help="Path to file for fatal logs from client",
-    )
-
-    parser.add_argument(
-        "--run-sequential-tests-in-parallel",
-        action="store_true",
-        default=False,
-        help="If `true`, tests with the tag `no-parallel` will run on a "
-        "separate ClickHouse instance in parallel with other tests. "
-        "This is used in CI to make test jobs run faster.",
     )
 
     return parser.parse_args()
