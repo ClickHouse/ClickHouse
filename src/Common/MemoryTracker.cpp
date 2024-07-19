@@ -620,14 +620,15 @@ bool canEnqueueBackgroundTask()
 
 void MemoryTracker::updateMemoryCredits()
 {
-    static Stopwatch stopwatch;
+    static thread_local Stopwatch stopwatch;
     static std::atomic<size_t> previous_value{0}; // Use atomic for previous_value
-    constexpr Int64 local_threshold = 1024 * 1024;   // The choice is arbitrary (maybe we should decrease it)
+    constexpr Int64 local_threshold = 1024 * 1024; // The choice is arbitrary (maybe we should decrease it)
     size_t current_value = amount.load(std::memory_order_relaxed); // Use relaxed order for reading
 
-    if (current_value > previous_value && current_value - previous_value > local_threshold)
+    if (current_value > previous_value.load(std::memory_order_relaxed) &&
+        current_value - previous_value.load(std::memory_order_relaxed) > local_threshold)
     {
-        size_t delta = (current_value - previous_value) * stopwatch.elapsedMicroseconds();
+        size_t delta = (current_value - previous_value.load(std::memory_order_relaxed)) * stopwatch.elapsedMicroseconds();
         ProfileEvents::increment(ProfileEvents::MemoryCredits, delta);
         previous_value.store(current_value, std::memory_order_relaxed); // Use relaxed order for storing
         stopwatch.restart();
