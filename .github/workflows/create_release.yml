@@ -39,6 +39,6 @@ jobs:
         uses: ./.github/actions/release
         with:
           ref: ${{ inputs.ref }}
-          type: inputs.type
+          type: ${{ inputs.type }}
           dry-run: ${{ inputs.dry-run }}
           token: ${{secrets.ROBOT_CLICKHOUSE_COMMIT_TOKEN}}
