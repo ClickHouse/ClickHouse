@@ -105,7 +105,6 @@ private:
     AggregateFunctions case_insensitive_aggregate_functions;
 
     const AggregateFunctions & getMap() const override { return aggregate_functions; }
-
     const AggregateFunctions & getCaseInsensitiveMap() const override { return case_insensitive_aggregate_functions; }
 
     String getFactoryName() const override { return "AggregateFunctionFactory"; }

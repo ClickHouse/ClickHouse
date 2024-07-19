@@ -73,7 +73,6 @@ private:
     Functions case_insensitive_functions;
 
     const Functions & getMap() const override { return functions; }
-
     const Functions & getCaseInsensitiveMap() const override { return case_insensitive_functions; }
 
     String getFactoryName() const override { return "FunctionFactory"; }
