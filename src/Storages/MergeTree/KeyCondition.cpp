@@ -49,6 +49,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int BAD_TYPE_OF_FIELD;
+    extern const int BAD_ARGUMENTS;
 }
 
 /// Returns the prefix of like_pattern before the first wildcard, e.g. 'Hello\_World% ...' --> 'Hello\_World'
