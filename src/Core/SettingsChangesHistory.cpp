@@ -78,7 +78,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
               {"azure_sdk_retry_max_backoff_ms", 1000, 1000, "Maximal backoff between retries in azure sdk"},
               {"ignore_on_cluster_for_replicated_named_collections_queries", false, false, "Ignore ON CLUSTER clause for replicated named collections management queries."},
               {"postgresql_connection_attempt_timeout", 2, 2, "Allow to control 'connect_timeout' parameter of PostgreSQL connection."},
-              {"postgresql_connection_pool_retries", 2, 2, "Allow to control the number of retries in PostgreSQL connection pool."}
+              {"postgresql_connection_pool_retries", 2, 2, "Allow to control the number of retries in PostgreSQL connection pool."},
               {"output_format_pretty_max_column_name_width", 0, 100, "Truncate column name in middle"},
               {"output_format_pretty_max_column_name_width_histeresis", 0, 10, "Truncate column name in middle"},
               }},
