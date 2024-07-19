@@ -2441,7 +2441,7 @@ void NO_INLINE Aggregator::mergeDataImpl(
         for (size_t bucket_idx = 0; bucket_idx < Table::BUCKET_NUM; ++bucket_idx)
         {
             auto begin = table_src.getIteratorWithOffsetAndLimit(bucket_idx * Table::BUCKET_SIZE, Table::BUCKET_SIZE);
-            auto end = table_dst.getIteratorWithOffset((bucket_idx + 1) * Table::BUCKET_SIZE);
+            auto end = table_src.getIteratorWithOffset((bucket_idx + 1) * Table::BUCKET_SIZE);
             auto task = [group = CurrentThread::getGroup(), &merge_bucket, begin, end] { merge_bucket(begin, end, group); };
             thread_pool->scheduleOrThrowOnError(task);
         }
