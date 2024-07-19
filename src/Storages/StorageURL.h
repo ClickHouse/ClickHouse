@@ -253,7 +253,7 @@ public:
     ~StorageURLSink() override;
 
     std::string getName() const override { return "StorageURLSink"; }
-    void consume(Chunk chunk) override;
+    void consume(Chunk & chunk) override;
     void onFinish() override;
 
 private:

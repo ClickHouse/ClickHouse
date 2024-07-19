@@ -1796,11 +1796,11 @@ public:
 
     String getName() const override { return "StorageFileSink"; }
 
-    void consume(Chunk chunk) override
+    void consume(Chunk & chunk) override
     {
         if (isCancelled())
             return;
-        writer->write(getHeader().cloneWithColumns(chunk.detachColumns()));
+        writer->write(getHeader().cloneWithColumns(chunk.getColumns()));
     }
 
     void onFinish() override

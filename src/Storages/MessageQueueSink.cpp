@@ -41,7 +41,7 @@ void MessageQueueSink::onFinish()
     producer->finish();
 }
 
-void MessageQueueSink::consume(Chunk chunk)
+void MessageQueueSink::consume(Chunk & chunk)
 {
     const auto & columns = chunk.getColumns();
     if (columns.empty())

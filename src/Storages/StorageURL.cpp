@@ -567,11 +567,11 @@ StorageURLSink::StorageURLSink(
 }
 
 
-void StorageURLSink::consume(Chunk chunk)
+void StorageURLSink::consume(Chunk & chunk)
 {
     if (isCancelled())
         return;
-    writer->write(getHeader().cloneWithColumns(chunk.detachColumns()));
+    writer->write(getHeader().cloneWithColumns(chunk.getColumns()));
 }
 
 void StorageURLSink::onFinish()
