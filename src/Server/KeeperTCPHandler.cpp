@@ -2,33 +2,37 @@
 
 #if USE_NURAFT
 
-#include <Common/ZooKeeper/ZooKeeperIO.h>
-#include <Core/Types.h>
-#include <IO/WriteBufferFromPocoSocket.h>
-#include <IO/ReadBufferFromPocoSocket.h>
-#include <Poco/Net/NetException.h>
-#include <Common/CurrentThread.h>
-#include <Common/Stopwatch.h>
-#include <Common/NetException.h>
-#include <Common/setThreadName.h>
-#include <Common/logger_useful.h>
-#include <base/defines.h>
-#include <chrono>
-#include <Common/PipeFDs.h>
-#include <Poco/Util/AbstractConfiguration.h>
-#include <IO/ReadBufferFromFileDescriptor.h>
-#include <queue>
-#include <mutex>
-#include <Coordination/FourLetterCommand.h>
-#include <IO/CompressionMethod.h>
-#include <base/hex.h>
+#    include <mutex>
+#    include <Coordination/CoordinationSettings.h>
+#    include <Coordination/FourLetterCommand.h>
+#    include <Core/Types.h>
+#    include <IO/CompressionMethod.h>
+#    include <IO/ReadBufferFromFileDescriptor.h>
+#    include <IO/ReadBufferFromPocoSocket.h>
+#    include <IO/WriteBufferFromPocoSocket.h>
+#    include <base/defines.h>
+#    include <base/hex.h>
+#    include <Poco/Net/NetException.h>
+#    include <Poco/Util/AbstractConfiguration.h>
+#    include <Common/CurrentThread.h>
+#    include <Common/NetException.h>
+#    include <Common/PipeFDs.h>
+#    include <Common/Stopwatch.h>
+#    include <Common/ZooKeeper/ZooKeeperIO.h>
+#    include <Common/logger_useful.h>
+#    include <Common/setThreadName.h>
 
 
-#ifdef POCO_HAVE_FD_EPOLL
-    #include <sys/epoll.h>
-#else
-    #include <poll.h>
-#endif
+#    ifdef POCO_HAVE_FD_EPOLL
+#        include <sys/epoll.h>
+#    else
+#        include <poll.h>
+#    endif
+
+namespace ProfileEvents
+{
+    extern const Event KeeperTotalElapsedMicroseconds;
+}
 
 
 namespace DB
@@ -397,13 +401,11 @@ void KeeperTCPHandler::runImpl()
     }
 
     auto response_fd = poll_wrapper->getResponseFD();
-    auto response_callback = [responses_ = this->responses, response_fd](const Coordination::ZooKeeperResponsePtr & response)
+    auto response_callback = [my_responses = this->responses,
+                              response_fd](const Coordination::ZooKeeperResponsePtr & response, Coordination::ZooKeeperRequestPtr request)
     {
-        if (!responses_->push(response))
-            throw Exception(ErrorCodes::SYSTEM_ERROR,
-                "Could not push response with xid {} and zxid {}",
-                response->xid,
-                response->zxid);
+        if (!my_responses->push(RequestWithResponse{response, std::move(request)}))
+            throw Exception(ErrorCodes::SYSTEM_ERROR, "Could not push response with xid {} and zxid {}", response->xid, response->zxid);
 
         UInt8 single_byte = 1;
         [[maybe_unused]] ssize_t result = write(response_fd, &single_byte, sizeof(single_byte));
@@ -411,12 +413,12 @@ void KeeperTCPHandler::runImpl()
     keeper_dispatcher->registerSession(session_id, response_callback);
 
     Stopwatch logging_stopwatch;
+    auto operation_max_ms = keeper_dispatcher->getKeeperContext()->getCoordinationSettings()->log_slow_connection_operation_threshold_ms;
     auto log_long_operation = [&](const String & operation)
     {
-        constexpr UInt64 operation_max_ms = 500;
         auto elapsed_ms = logging_stopwatch.elapsedMilliseconds();
         if (operation_max_ms < elapsed_ms)
-            LOG_TEST(log, "{} for session {} took {} ms", operation, session_id, elapsed_ms);
+            LOG_INFO(log, "{} for session {} took {} ms", operation, session_id, elapsed_ms);
         logging_stopwatch.restart();
     };
 
@@ -467,19 +469,20 @@ void KeeperTCPHandler::runImpl()
             /// became inconsistent and race condition is possible.
             while (result.responses_count != 0)
             {
-                Coordination::ZooKeeperResponsePtr response;
+                RequestWithResponse request_with_response;
 
-                if (!responses->tryPop(response))
+                if (!responses->tryPop(request_with_response))
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "We must have ready response, but queue is empty. It's a bug.");
                 log_long_operation("Waiting for response to be ready");
 
+                auto & response = request_with_response.response;
                 if (response->xid == close_xid)
                 {
                     LOG_DEBUG(log, "Session #{} successfully closed", session_id);
                     return;
                 }
 
-                updateStats(response);
+                updateStats(response, request_with_response.request);
                 packageSent();
 
                 response->write(getWriteBuffer());
@@ -606,16 +609,29 @@ void KeeperTCPHandler::packageReceived()
     keeper_dispatcher->incrementPacketsReceived();
 }
 
-void KeeperTCPHandler::updateStats(Coordination::ZooKeeperResponsePtr & response)
+void KeeperTCPHandler::updateStats(Coordination::ZooKeeperResponsePtr & response, const Coordination::ZooKeeperRequestPtr & request)
 {
     /// update statistics ignoring watch response and heartbeat.
     if (response->xid != Coordination::WATCH_XID && response->getOpNum() != Coordination::OpNum::Heartbeat)
     {
-        Int64 elapsed = (Poco::Timestamp() - operations[response->xid]) / 1000;
-        conn_stats.updateLatency(elapsed);
+        Int64 elapsed = (Poco::Timestamp() - operations[response->xid]);
+        ProfileEvents::increment(ProfileEvents::KeeperTotalElapsedMicroseconds, elapsed);
+        Int64 elapsed_ms = elapsed / 1000;
+
+        if (request && elapsed_ms > static_cast<Int64>(keeper_dispatcher->getKeeperContext()->getCoordinationSettings()->log_slow_total_threshold_ms))
+        {
+            LOG_INFO(
+                log,
+                "Total time to process a request in session {} took too long ({}ms).\nRequest info: {}",
+                session_id,
+                elapsed_ms,
+                request->toString(/*short_format=*/true));
+        }
+
+        conn_stats.updateLatency(elapsed_ms);
 
         operations.erase(response->xid);
-        keeper_dispatcher->updateKeeperStatLatency(elapsed);
+        keeper_dispatcher->updateKeeperStatLatency(elapsed_ms);
 
         last_op.set(std::make_unique<LastOp>(LastOp{
             .name = Coordination::toString(response->getOpNum()),

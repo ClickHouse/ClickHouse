@@ -4,9 +4,9 @@
 #include <Functions/FunctionHelpers.h>
 #include <Core/ServerUUID.h>
 #include <Common/Logger.h>
+#include <Common/ErrorCodes.h>
 #include <Common/logger_useful.h>
 #include "base/types.h"
-
 
 namespace DB
 {
@@ -96,10 +96,11 @@ struct SnowflakeIdRange
 /// 1. calculate Snowflake ID by current timestamp (`now`)
 /// 2. `begin = max(available, now)`
 /// 3. Calculate `end = begin + input_rows_count` handling `machine_seq_num` overflow
-SnowflakeIdRange getRangeOfAvailableIds(const SnowflakeId & available, size_t input_rows_count)
+SnowflakeIdRange getRangeOfAvailableIds(const SnowflakeId & available, uint64_t machine_id, size_t input_rows_count)
+
 {
     /// 1. `now`
-    SnowflakeId begin = {.timestamp = getTimestamp(), .machine_id = getMachineId(), .machine_seq_num = 0};
+    SnowflakeId begin = {.timestamp = getTimestamp(), .machine_id = machine_id, .machine_seq_num = 0};
 
     /// 2. `begin`
     if (begin.timestamp <= available.timestamp)
@@ -128,13 +129,13 @@ struct Data
     /// Guarantee counter monotonicity within one timestamp across all threads generating Snowflake IDs simultaneously.
     static inline std::atomic<uint64_t> lowest_available_snowflake_id = 0;
 
-    SnowflakeId reserveRange(size_t input_rows_count)
+    SnowflakeId reserveRange(uint64_t machine_id, size_t input_rows_count)
     {
         uint64_t available_snowflake_id = lowest_available_snowflake_id.load();
         SnowflakeIdRange range;
         do
         {
-            range = getRangeOfAvailableIds(toSnowflakeId(available_snowflake_id), input_rows_count);
+            range = getRangeOfAvailableIds(toSnowflakeId(available_snowflake_id), machine_id, input_rows_count);
         }
         while (!lowest_available_snowflake_id.compare_exchange_weak(available_snowflake_id, fromSnowflakeId(range.end)));
         /// CAS failed --> another thread updated `lowest_available_snowflake_id` and we re-try
@@ -165,24 +166,32 @@ public:
     {
         FunctionArgumentDescriptors mandatory_args;
         FunctionArgumentDescriptors optional_args{
-            {"expr", nullptr, nullptr, "Arbitrary expression"}
+            {"expr", nullptr, nullptr, "Arbitrary expression"},
+            {"machine_id", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeUInt), static_cast<FunctionArgumentDescriptor::ColumnValidator>(&isColumnConst), "const UInt*"}
         };
-        validateFunctionArgumentTypes(*this, arguments, mandatory_args, optional_args);
+        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
 
         return std::make_shared<DataTypeUInt64>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & /*arguments*/, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         auto col_res = ColumnVector<UInt64>::create();
         typename ColumnVector<UInt64>::Container & vec_to = col_res->getData();
 
-        if (input_rows_count != 0)
+        if (input_rows_count > 0)
         {
             vec_to.resize(input_rows_count);
 
+            uint64_t machine_id = getMachineId();
+            if (arguments.size() == 2)
+            {
+                machine_id = arguments[1].column->getUInt(0);
+                machine_id &= (1ull << machine_id_bits_count) - 1;
+            }
+
             Data data;
-            SnowflakeId snowflake_id = data.reserveRange(input_rows_count); /// returns begin of available snowflake ids range
+            SnowflakeId snowflake_id = data.reserveRange(machine_id, input_rows_count);
 
             for (UInt64 & to_row : vec_to)
             {
@@ -208,10 +217,13 @@ public:
 REGISTER_FUNCTION(GenerateSnowflakeID)
 {
     FunctionDocumentation::Description description = R"(Generates a Snowflake ID. The generated Snowflake ID contains the current Unix timestamp in milliseconds (41 + 1 top zero bits), followed by a machine id (10 bits), and a counter (12 bits) to distinguish IDs within a millisecond. For any given timestamp (unix_ts_ms), the counter starts at 0 and is incremented by 1 for each new Snowflake ID until the timestamp changes. In case the counter overflows, the timestamp field is incremented by 1 and the counter is reset to 0. Function generateSnowflakeID guarantees that the counter field within a timestamp increments monotonically across all function invocations in concurrently running threads and queries.)";
-    FunctionDocumentation::Syntax syntax = "generateSnowflakeID([expression])";
-    FunctionDocumentation::Arguments arguments = {{"expression", "The expression is used to bypass common subexpression elimination if the function is called multiple times in a query but otherwise ignored. Optional."}};
+    FunctionDocumentation::Syntax syntax = "generateSnowflakeID([expression, [machine_id]])";
+    FunctionDocumentation::Arguments arguments = {
+        {"expression", "The expression is used to bypass common subexpression elimination if the function is called multiple times in a query but otherwise ignored. Optional."},
+        {"machine_id", "A machine ID, the lowest 10 bits are used. Optional."}
+    };
     FunctionDocumentation::ReturnedValue returned_value = "A value of type UInt64";
-    FunctionDocumentation::Examples examples = {{"single", "SELECT generateSnowflakeID()", "7201148511606784000"}, {"multiple", "SELECT generateSnowflakeID(1), generateSnowflakeID(2)", ""}};
+    FunctionDocumentation::Examples examples = {{"no_arguments", "SELECT generateSnowflakeID()", "7201148511606784000"}, {"with_machine_id", "SELECT generateSnowflakeID(1)", "7201148511606784001"}, {"with_expression_and_machine_id", "SELECT generateSnowflakeID('some_expression', 1)", "7201148511606784002"}};
     FunctionDocumentation::Categories categories = {"Snowflake ID"};
 
     factory.registerFunction<FunctionGenerateSnowflakeID>({description, syntax, arguments, returned_value, examples, categories});

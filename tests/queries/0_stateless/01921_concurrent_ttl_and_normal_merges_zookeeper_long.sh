@@ -50,7 +50,7 @@ function insert_thread
 export -f insert_thread;
 export -f optimize_thread;
 
-TIMEOUT=30
+TIMEOUT=20
 
 timeout $TIMEOUT bash -c insert_thread 2> /dev/null &
 timeout $TIMEOUT bash -c insert_thread 2> /dev/null &

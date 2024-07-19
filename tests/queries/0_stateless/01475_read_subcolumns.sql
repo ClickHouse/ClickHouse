@@ -1,4 +1,4 @@
--- Tags: no-s3-storage, no-random-settings
+-- Tags: no-object-storage, no-random-settings, no-parallel
 
 SET use_uncompressed_cache = 0;
 

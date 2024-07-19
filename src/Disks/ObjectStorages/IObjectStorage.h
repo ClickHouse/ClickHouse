@@ -75,6 +75,7 @@ struct RelativePathWithMetadata
     virtual std::string getPath() const { return relative_path; }
     virtual bool isArchive() const { return false; }
     virtual std::string getPathToArchive() const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not an archive"); }
+    virtual size_t fileSizeInArchive() const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not an archive"); }
 };
 
 struct ObjectKeyWithMetadata
@@ -260,7 +261,7 @@ public:
     virtual void setKeysGenerator(ObjectStorageKeysGeneratorPtr) { }
 
 #if USE_AZURE_BLOB_STORAGE
-    virtual std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> getAzureBlobStorageClient()
+    virtual std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> getAzureBlobStorageClient() const
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "This function is only implemented for AzureBlobStorage");
     }
