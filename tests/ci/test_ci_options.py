@@ -197,6 +197,10 @@ class TestCIOptions(unittest.TestCase):
                 "package_debug",
                 "package_msan",
                 "package_ubsan",
+                "package_aarch64",
+                "package_release_coverage",
+                "package_tsan",
+                "binary_release",
                 "Stateless tests (asan)",
                 "Stateless tests (azure, asan)",
                 "Stateless tests flaky check (asan)",
@@ -276,6 +280,7 @@ class TestCIOptions(unittest.TestCase):
             filtered_jobs,
             [
                 "Style check",
+                "fuzzers",
             ],
         )
 
@@ -291,9 +296,7 @@ class TestCIOptions(unittest.TestCase):
         )
         self.assertCountEqual(
             filtered_jobs,
-            [
-                "Style check",
-            ],
+            ["Style check", "fuzzers"],
         )
 
     def test_options_applied_4(self):
@@ -329,5 +332,12 @@ class TestCIOptions(unittest.TestCase):
                 "Stateless tests (release, old analyzer, s3, DatabaseReplicated)",
                 "package_asan",
                 "fuzzers",
+                "package_aarch64",
+                "package_release_coverage",
+                "package_debug",
+                "package_tsan",
+                "package_msan",
+                "package_ubsan",
+                "binary_release",
             ],
         )
