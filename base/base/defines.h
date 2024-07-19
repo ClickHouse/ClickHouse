@@ -96,10 +96,6 @@
 #    endif
 #endif
 
-#if !defined(ABORT_ON_LOGICAL_ERROR) && defined(DEBUG_OR_SANITIZER_BUILD)
-#    define ABORT_ON_LOGICAL_ERROR
-#endif
-
 /// chassert(x) is similar to assert(x), but:
 ///     - works in builds with sanitizers, not only in debug builds
 ///     - tries to print failed assertion into server log
@@ -108,7 +104,7 @@
 /// Also it makes sense to call abort() instead of __builtin_unreachable() in debug builds,
 /// because SIGABRT is easier to debug than SIGTRAP (the second one makes gdb crazy)
 #if !defined(chassert)
-    #if defined(ABORT_ON_LOGICAL_ERROR)
+#    if defined(DEBUG_OR_SANITIZER_BUILD)
         // clang-format off
         #include <base/types.h>
         namespace DB
