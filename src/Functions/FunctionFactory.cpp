@@ -139,8 +139,7 @@ FunctionOverloadResolverPtr FunctionFactory::tryGet(
     const std::string & name,
     ContextPtr context) const
 {
-    auto impl = tryGetImpl(name, context);
-    return impl ? std::move(impl) : nullptr;
+    return tryGetImpl(name, context);
 }
 
 FunctionFactory & FunctionFactory::instance()
