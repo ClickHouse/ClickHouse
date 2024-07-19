@@ -469,7 +469,7 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::read()
     return restartQueryWithoutDuplicatedUUIDs();
 }
 
-RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAsync([[maybe_unused]] bool check_packet_type_only)
+RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAsync()
 {
 #if defined(OS_LINUX)
     if (!read_context || (resent_query && recreate_read_context))
@@ -518,18 +518,6 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAsync([[maybe_unused]] 
         /// Check if packet is not ready yet.
         if (read_context->isInProgress())
             return ReadResult(read_context->getFileDescriptor());
-
-        if (check_packet_type_only)
-        {
-            has_postponed_packet = true;
-            const auto packet_type = read_context->getPacketType();
-            if (packet_type == Protocol::Server::MergeTreeReadTaskRequest
-                || packet_type == Protocol::Server::MergeTreeAllRangesAnnouncement)
-            {
-                return ReadResult(ReadResult::Type::ParallelReplicasToken);
-            }
-            return ReadResult(ReadResult::Type::Nothing);
-        }
 
         auto read_result = processPacket(read_context->getPacket());
         if (read_result.getType() == ReadResult::Type::Data || read_result.getType() == ReadResult::Type::ParallelReplicasToken)
