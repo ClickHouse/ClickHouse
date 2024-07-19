@@ -43,3 +43,5 @@ SELECT count() FROM XXXX WHERE indexHint(p = 1.) SETTINGS optimize_use_implicit_
 SELECT count() FROM XXXX WHERE indexHint(p = 1.) SETTINGS optimize_use_implicit_projections = 1, allow_experimental_analyzer=1;
 
 drop table XXXX;
+
+select count() GROUP BY CAST(indexHint(toLowCardinality(9)), 'String');
