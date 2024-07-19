@@ -165,11 +165,6 @@ public:
         return false;
     }
 
-    bool isDeterministicInScopeOfQuery() const override
-    {
-        return false;
-    }
-
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     bool useDefaultImplementationForNulls() const override { return false; }

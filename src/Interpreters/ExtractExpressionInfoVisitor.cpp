@@ -50,7 +50,7 @@ void ExpressionInfoMatcher::visit(const ASTFunction & ast_function, const ASTPtr
             if (function_properties.is_stateful)
                 data.is_stateful_function = true;
 
-            if (!function->isDeterministicInScopeOfQuery())
+            if (!function_properties.is_deterministic_in_scope_of_query)
                 data.is_deterministic_function = false;
         }
     }

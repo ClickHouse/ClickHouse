@@ -13,7 +13,7 @@ using FunctionRand64 = FunctionRandom<UInt64, NameRand64>;
 
 REGISTER_FUNCTION(Rand64)
 {
-    factory.registerFunction<FunctionRand64>();
+    factory.registerFunction<FunctionRand64>({}, {.is_deterministic_in_scope_of_query = false});
 }
 
 }

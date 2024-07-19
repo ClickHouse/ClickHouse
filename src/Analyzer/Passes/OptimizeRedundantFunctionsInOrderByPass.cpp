@@ -1,6 +1,7 @@
 #include <Analyzer/Passes/OptimizeRedundantFunctionsInOrderByPass.h>
 
 #include <Functions/IFunction.h>
+#include <Functions/FunctionFactory.h>
 
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
@@ -101,7 +102,11 @@ private:
                     if (function_arguments.empty())
                         return false;
                     const auto & function_base = function_node->getFunction();
-                    if (!function_base || !function_base->isDeterministicInScopeOfQuery())
+                    if (!function_base)
+                        return false;
+                    const auto & function_name = function_base->getName();
+                    auto function_properties = FunctionFactory::instance().getProperties(function_name);
+                    if (!function_properties.is_deterministic_in_scope_of_query)
                         return false;
 
                     // Process arguments in order

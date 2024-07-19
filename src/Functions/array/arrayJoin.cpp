@@ -44,11 +44,6 @@ public:
         return false;
     }
 
-    bool isDeterministicInScopeOfQuery() const override
-    {
-        return false;
-    }
-
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
@@ -76,7 +71,7 @@ public:
 
 REGISTER_FUNCTION(ArrayJoin)
 {
-    factory.registerFunction<FunctionArrayJoin>();
+    factory.registerFunction<FunctionArrayJoin>({}, {.is_deterministic_in_scope_of_query = false});
 }
 
 }

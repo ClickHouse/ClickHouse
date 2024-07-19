@@ -15,6 +15,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionsComparison.h>
+#include <Functions/FunctionFactory.h>
 #include <DataTypes/Native.h>
 #include <Functions/IFunctionAdaptors.h>
 
@@ -191,15 +192,6 @@ public:
     {
         for (const auto & f : nested_functions)
             if (!f->isDeterministic())
-                return false;
-
-        return true;
-    }
-
-    bool isDeterministicInScopeOfQuery() const override
-    {
-        for (const auto & f : nested_functions)
-            if (!f->isDeterministicInScopeOfQuery())
                 return false;
 
         return true;

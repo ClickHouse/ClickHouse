@@ -8,6 +8,7 @@
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/QueryNode.h>
+#include <Functions/FunctionFactory.h>
 #include <Core/Settings.h>
 
 namespace DB
@@ -75,7 +76,9 @@ private:
 
         std::vector<NodeWithInfo> candidates;
         auto & function_arguments = function->getArguments().getNodes();
-        bool is_deterministic = function->getFunctionOrThrow()->isDeterministicInScopeOfQuery();
+        const auto & function_name = function->getFunctionOrThrow()->getName();
+        auto function_properties = FunctionFactory::instance().getProperties(function_name);
+        bool is_deterministic = function_properties.is_deterministic_in_scope_of_query;
         for (auto it = function_arguments.rbegin(); it != function_arguments.rend(); ++it)
             candidates.push_back({ *it, is_deterministic });
 
@@ -100,8 +103,11 @@ private:
 
                     if (!found)
                     {
-                        bool is_deterministic_function = parents_are_only_deterministic &&
-                            func->getFunctionOrThrow()->isDeterministicInScopeOfQuery();
+                        const auto & func_name = func->getFunctionOrThrow()->getName();
+                        auto func_properties = FunctionFactory::instance().getProperties(func_name);
+                        bool func_is_determinstic = func_properties.is_deterministic_in_scope_of_query;
+
+                        bool is_deterministic_function = parents_are_only_deterministic && func_is_determinstic;
                         for (auto it = arguments.rbegin(); it != arguments.rend(); ++it)
                             candidates.push_back({ *it, is_deterministic_function });
                     }

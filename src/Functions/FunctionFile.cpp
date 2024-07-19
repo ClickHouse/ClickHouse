@@ -39,7 +39,6 @@ public:
     size_t getNumberOfArguments() const override { return 0; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     bool isDeterministic() const override { return false; }
-    bool isDeterministicInScopeOfQuery() const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -162,7 +161,7 @@ public:
 
 REGISTER_FUNCTION(File)
 {
-    factory.registerFunction<FunctionFile>();
+    factory.registerFunction<FunctionFile>({}, {.is_deterministic_in_scope_of_query = false});
 }
 
 }

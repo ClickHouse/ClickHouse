@@ -226,8 +226,6 @@ public:
 
     virtual bool isDeterministic() const { return true; }
 
-    virtual bool isDeterministicInScopeOfQuery() const { return true; }
-
     /** Lets you know if the function is monotonic in a range of values.
       * This is used to work with the index in a sorted chunk of data.
       * And allows to use the index not only when it is written, for example `date >= const`, but also, for example, `toMonth(date) >= 11`.
@@ -331,7 +329,6 @@ public:
     /// TODO: This method should not be duplicated here and in IFunctionBase
     /// See the comment for the same method in IFunctionBase
     virtual bool isDeterministic() const { return true; }
-    virtual bool isDeterministicInScopeOfQuery() const { return true; }
     virtual bool isInjective(const ColumnsWithTypeAndName &) const { return false; }
 
     /// Override and return true if function could take different number of arguments.
@@ -482,7 +479,6 @@ public:
     virtual ColumnPtr getConstantResultForNonConstArguments(const ColumnsWithTypeAndName & /*arguments*/, const DataTypePtr & /*result_type*/) const { return nullptr; }
     virtual bool isInjective(const ColumnsWithTypeAndName & /*sample_columns*/) const { return false; }
     virtual bool isDeterministic() const { return true; }
-    virtual bool isDeterministicInScopeOfQuery() const { return true; }
 
     using ShortCircuitSettings = IFunctionBase::ShortCircuitSettings;
     virtual bool isShortCircuit(ShortCircuitSettings & /*settings*/, size_t /*number_of_arguments*/) const { return false; }
@@ -555,6 +551,10 @@ using FunctionPtr = std::shared_ptr<IFunction>;
 
 struct FunctionProperties
 {
+     /// Sometimes, functions are deterministic in the scope of a single query (even for distributed queries) but not deterministic it general.
+     /// Example: now() and functions that work with periodically updated dictionaries.
+    bool is_deterministic_in_scope_of_query = true;
+
     /// The function returns a constant value depending the current server. Another server may generate another result which is also
     /// constant in the scope of this single server. In a distributed query, we can't apply constant folding for such functions on the
     /// initiator, but we on followers. We also can't apply some optimizations, e.g. remove constant result from GROUP BY key.

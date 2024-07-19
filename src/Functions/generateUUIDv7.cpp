@@ -138,7 +138,6 @@ public:
     String getName() const final {  return name; }
     size_t getNumberOfArguments() const final { return 0; }
     bool isDeterministic() const override { return false; }
-    bool isDeterministicInScopeOfQuery() const final { return false; }
     bool useDefaultImplementationForNulls() const final { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const final { return false; }
     bool isVariadic() const final { return true; }
@@ -220,7 +219,7 @@ REGISTER_FUNCTION(GenerateUUIDv7)
     FunctionDocumentation::Examples examples = {{"single", "SELECT generateUUIDv7()", ""}, {"multiple", "SELECT generateUUIDv7(1), generateUUIDv7(2)", ""}};
     FunctionDocumentation::Categories categories = {"UUID"};
 
-    factory.registerFunction<FunctionGenerateUUIDv7Base>({description, syntax, arguments, returned_value, examples, categories});
+    factory.registerFunction<FunctionGenerateUUIDv7Base>({description, syntax, arguments, returned_value, examples, categories}, {.is_deterministic_in_scope_of_query = false});
 }
 
 }

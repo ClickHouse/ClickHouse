@@ -1,6 +1,7 @@
 #include <Analyzer/Passes/AggregateFunctionOfGroupByKeysPass.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <Functions/FunctionFactory.h>
 
 #include <Analyzer/ArrayJoinNode.h>
 #include <Analyzer/ColumnNode.h>
@@ -151,8 +152,11 @@ private:
 
                     if (!found)
                     {
-                        bool is_deterministic_function = parents_are_only_deterministic &&
-                            func->getFunctionOrThrow()->isDeterministicInScopeOfQuery();
+                        const auto & func_name = func->getFunctionOrThrow()->getName();
+                        auto func_properties = FunctionFactory::instance().getProperties(func_name);
+                        bool func_is_determinstic = func_properties.is_deterministic_in_scope_of_query;
+
+                        bool is_deterministic_function = parents_are_only_deterministic && func_is_determinstic;
                         for (auto it = arguments.rbegin(); it != arguments.rend(); ++it)
                             candidates.push_back({ *it, is_deterministic_function });
                     }

@@ -445,7 +445,9 @@ The function returns a value of type String.
                 {"with specified seed", "SELECT generateRandomStructure(1, 42)", "c1 UInt128"},
             },
             .categories{"Random"}
-        });
+        },
+        {.is_deterministic_in_scope_of_query = false}
+        );
 }
 
 }

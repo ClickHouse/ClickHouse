@@ -55,7 +55,6 @@ public:
     }
 
     bool isDeterministic() const override { return false; }
-    bool isDeterministicInScopeOfQuery() const override { return false; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
@@ -126,7 +125,7 @@ private:
 
 REGISTER_FUNCTION(RandomString)
 {
-    factory.registerFunction<FunctionRandomString>();
+    factory.registerFunction<FunctionRandomString>({}, {.is_deterministic_in_scope_of_query = false});
 }
 
 }

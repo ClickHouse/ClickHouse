@@ -97,7 +97,9 @@ public:
         /// It makes sense to execute functions which are deterministic
         /// in scope of query because they are usually constant expressions.
         auto builder = FunctionFactory::instance().get(function.name, data.context);
-        if (builder->isDeterministic() || !builder->isDeterministicInScopeOfQuery())
+        const auto & function_name = builder->getName();
+        auto function_properties = FunctionFactory::instance().getProperties(function_name);
+        if (builder->isDeterministic() || !function_properties.is_deterministic_in_scope_of_query)
             return;
 
         Field field;

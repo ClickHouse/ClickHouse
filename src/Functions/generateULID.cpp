@@ -38,7 +38,6 @@ public:
 
     bool isVariadic() const override { return true; }
     bool isDeterministic() const override { return false; }
-    bool isDeterministicInScopeOfQuery() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -85,7 +84,8 @@ The function returns a value of type FixedString(26).
             {"ulid", "SELECT generateULID()", ""},
             {"multiple", "SELECT generateULID(1), generateULID(2)", ""}},
         .categories{"ULID"}
-    });
+    },
+    {.is_deterministic_in_scope_of_query = false});
 }
 
 }

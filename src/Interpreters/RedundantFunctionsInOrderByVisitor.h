@@ -70,10 +70,13 @@ public:
         }
 
         const auto function = FunctionFactory::instance().tryGet(ast_function.name, data.context);
-        if (!function || !function->isDeterministicInScopeOfQuery())
-        {
+        if (!function)
             data.preventErase();
-        }
+
+        const auto & function_name = function->getName();
+        auto function_properties = FunctionFactory::instance().getProperties(function_name);
+        if (!function_properties.is_deterministic_in_scope_of_query)
+            data.preventErase();
     }
 
     static bool needChildVisit(const ASTPtr & node, const ASTPtr &)

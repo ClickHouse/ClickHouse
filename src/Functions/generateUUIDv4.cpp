@@ -21,7 +21,6 @@ public:
 
     size_t getNumberOfArguments() const override { return 0; }
     bool isDeterministic() const override { return false; }
-    bool isDeterministicInScopeOfQuery() const override { return false; }
     bool useDefaultImplementationForNulls() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     bool isVariadic() const override { return true; }
@@ -93,7 +92,7 @@ private:
 
 REGISTER_FUNCTION(GenerateUUIDv4)
 {
-    factory.registerFunction<FunctionGenerateUUIDv4>();
+    factory.registerFunction<FunctionGenerateUUIDv4>({}, {.is_deterministic_in_scope_of_query = false});
 }
 
 }

@@ -1348,8 +1348,6 @@ public:
 
     bool isDeterministic() const override { return func->isDeterministic(); }
 
-    bool isDeterministicInScopeOfQuery() const override { return func->isDeterministicInScopeOfQuery(); }
-
     bool hasInformationAboutMonotonicity() const override { return func->hasInformationAboutMonotonicity(); }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & arguments) const override { return func->isSuitableForShortCircuitArgumentsExecution(arguments); }
@@ -1418,7 +1416,12 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctions(
             arguments.push_back({ nullptr, key_column_type, "" });
         auto func = func_builder->build(arguments);
 
-        if (!func || !func->isDeterministicInScopeOfQuery() || (!assume_function_monotonicity && !func->hasInformationAboutMonotonicity()))
+        if (!func)
+            return false;
+
+        const auto & func_name = func->getName();
+        auto func_properties = FunctionFactory::instance().getProperties(func_name);
+        if (!func_properties.is_deterministic_in_scope_of_query || (!assume_function_monotonicity && !func->hasInformationAboutMonotonicity()))
             return false;
 
         key_column_type = func->getResultType();
