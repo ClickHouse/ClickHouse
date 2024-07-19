@@ -49,6 +49,8 @@
 #include <base/bit_cast.h>
 #include <base/unaligned.h>
 
+#include <algorithm>
+
 namespace DB
 {
 
@@ -75,17 +77,29 @@ namespace impl
         ColumnPtr key0;
         ColumnPtr key1;
         bool is_const;
+        const ColumnArray::Offsets * offsets{};
 
         size_t size() const
         {
             assert(key0 && key1);
             assert(key0->size() == key1->size());
+            assert(offsets == nullptr || offsets->size() == key0->size());
+            if (offsets != nullptr)
+                return offsets->back();
             return key0->size();
         }
         SipHashKey getKey(size_t i) const
         {
             if (is_const)
                 i = 0;
+            if (offsets != nullptr)
+            {
+                const auto *const begin = offsets->begin();
+                const auto * upper = std::upper_bound(begin, offsets->end(), i);
+                if (upper == offsets->end())
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "offset {} not found in function SipHashKeyColumns::getKey", i);
+                i = upper - begin;
+            }
             const auto & key0data = assert_cast<const ColumnUInt64 &>(*key0).getData();
             const auto & key1data = assert_cast<const ColumnUInt64 &>(*key1).getData();
             return {key0data[i], key1data[i]};
@@ -1112,7 +1126,15 @@ private:
 
             typename ColumnVector<ToType>::Container vec_temp(nested_size);
             bool nested_is_first = true;
-            executeForArgument(key_cols, nested_type, nested_column, vec_temp, nested_is_first);
+
+            if constexpr (Keyed)
+            {
+                KeyColumnsType key_cols_tmp{key_cols};
+                key_cols_tmp.offsets = &offsets;
+                executeForArgument(key_cols_tmp, nested_type, nested_column, vec_temp, nested_is_first);
+            }
+            else
+                executeForArgument(key_cols, nested_type, nested_column, vec_temp, nested_is_first);
 
             const size_t size = offsets.size();
 
@@ -1162,7 +1184,7 @@ private:
 
         if (icolumn->size() != vec_to.size())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Argument column '{}' size {} doesn't match result column size {} of function {}",
-                    icolumn->getName(), icolumn->size(), vec_to.size(), getName());
+                icolumn->getName(), icolumn->size(), vec_to.size(), getName());
 
         if constexpr (Keyed)
             if (key_cols.size() != vec_to.size() && key_cols.size() != 1)
@@ -1201,6 +1223,9 @@ private:
         else executeGeneric<first>(key_cols, icolumn, vec_to);
     }
 
+    /// Return a fixed random-looking magic number when input is empty.
+    static constexpr auto filler = 0xe28dbde7fe22e41c;
+
     void executeForArgument(const KeyColumnsType & key_cols, const IDataType * type, const IColumn * column, typename ColumnVector<ToType>::Container & vec_to, bool & is_first) const
     {
         /// Flattening of tuples.
@@ -1209,6 +1234,11 @@ private:
             const auto & tuple_columns = tuple->getColumns();
             const DataTypes & tuple_types = typeid_cast<const DataTypeTuple &>(*type).getElements();
             size_t tuple_size = tuple_columns.size();
+
+            if (0 == tuple_size && is_first)
+                for (auto & hash : vec_to)
+                    hash = static_cast<ToType>(filler);
+
             for (size_t i = 0; i < tuple_size; ++i)
                 executeForArgument(key_cols, tuple_types[i].get(), tuple_columns[i].get(), vec_to, is_first);
         }
@@ -1217,6 +1247,11 @@ private:
             const auto & tuple_columns = tuple_const->getColumns();
             const DataTypes & tuple_types = typeid_cast<const DataTypeTuple &>(*type).getElements();
             size_t tuple_size = tuple_columns.size();
+
+            if (0 == tuple_size && is_first)
+                for (auto & hash : vec_to)
+                    hash = static_cast<ToType>(filler);
+
             for (size_t i = 0; i < tuple_size; ++i)
             {
                 auto tmp = ColumnConst::create(tuple_columns[i], column->size());
@@ -1278,10 +1313,7 @@ public:
             constexpr size_t first_data_argument = Keyed;
 
             if (arguments.size() <= first_data_argument)
-            {
-                /// Return a fixed random-looking magic number when input is empty
-                vec_to.assign(input_rows_count, static_cast<ToType>(0xe28dbde7fe22e41c));
-            }
+                vec_to.assign(input_rows_count, static_cast<ToType>(filler));
 
             KeyColumnsType key_cols{};
             if constexpr (Keyed)

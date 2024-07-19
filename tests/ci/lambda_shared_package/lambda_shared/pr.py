@@ -3,53 +3,34 @@
 import re
 from typing import Tuple
 
-# Individual trusted contirbutors who are not in any trusted organization.
+# Individual trusted contributors who are not in any trusted organization.
 # Can be changed in runtime: we will append users that we learned to be in
 # a trusted org, to save GitHub API calls.
 TRUSTED_CONTRIBUTORS = {
     e.lower()
     for e in [
-        "achimbab",  # Kakao corp
-        "Algunenano",  # Raúl Marín, ClickHouse, Inc
         "amosbird",
         "azat",  # SEMRush
         "bharatnc",  # Many contributions.
-        "bobrik",  # Seasoned contributor, CloudFlare
         "cwurm",  # ClickHouse, Inc
         "den-crane",  # Documentation contributor
-        "hagen1778",  # Roman Khavronenko, seasoned contributor
-        "hczhcz",
-        "hexiaoting",  # Seasoned contributor
         "ildus",  # adjust, ex-pgpro
-        "javisantana",  # a Spanish ClickHouse enthusiast, ex-Carto
-        "kreuzerkrieg",
-        "nikvas0",
         "nvartolomei",  # Seasoned contributor, CloudFlare
-        "spongedu",  # Seasoned contributor
         "taiyang-li",
         "ucasFL",  # Amos Bird's friend
-        "vdimir",  # ClickHouse, Inc
-        "YiuRULE",
-        "zlobober",  # Developer of YT
-        "ilejn",  # Arenadata, responsible for Kerberized Kafka
         "thomoco",  # ClickHouse, Inc
-        "BoloniniD",  # Seasoned contributor, HSE
         "tonickkozlov",  # Cloudflare
         "tylerhannan",  # ClickHouse, Inc
-        "myrrc",  # Mike Kot, DoubleCloud
-        "thevar1able",  # ClickHouse, Inc
-        "aalexfvk",
-        "MikhailBurdukov",
         "tsolodov",  # ClickHouse, Inc
-        "kitaisreal",
-        "k-morozov",  # Konstantin Morozov, Yandex Cloud
         "justindeguzman",  # ClickHouse, Inc
-        "jrdi",  # ClickHouse contributor, TinyBird
+        "XuJia0210",  # ClickHouse, Inc
     ]
 }
 
 
 class Labels:
+    PR_BUGFIX = "pr-bugfix"
+    PR_CRITICAL_BUGFIX = "pr-critical-bugfix"
     CAN_BE_TESTED = "can be tested"
     DO_NOT_TEST = "do not test"
     MUST_BACKPORT = "pr-must-backport"
@@ -68,8 +49,8 @@ class Labels:
     RELEASE_LTS = "release-lts"
     SUBMODULE_CHANGED = "submodule changed"
 
-    # pr-bugfix autoport can lead to issues in releases, let's do ci fixes only
-    AUTO_BACKPORT = {"pr-ci"}
+    # automatic backport for critical bug fixes
+    AUTO_BACKPORT = {"pr-critical-bugfix"}
 
 
 # Descriptions are used in .github/PULL_REQUEST_TEMPLATE.md, keep comments there
@@ -84,6 +65,7 @@ LABEL_CATEGORIES = {
         "Bug Fix (user-visible misbehaviour in official stable or prestable release)",
         "Bug Fix (user-visible misbehavior in official stable or prestable release)",
     ],
+    "pr-critical-bugfix": ["Critical Bug Fix (crash, LOGICAL_ERROR, data loss, RBAC)"],
     "pr-build": [
         "Build/Testing/Packaging Improvement",
         "Build Improvement",

@@ -5,6 +5,7 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 
 #include <Common/logger_useful.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/FunctionsLogical.h>
@@ -25,8 +26,7 @@ namespace QueryPlanOptimizations
 
 bool canUseProjectionForReadingStep(ReadFromMergeTree * reading)
 {
-    /// Probably some projection already was applied.
-    if (reading->hasAnalyzedResult())
+    if (reading->getAnalyzedResult() && reading->getAnalyzedResult()->readFromProjection())
         return false;
 
     if (reading->isQueryWithFinal())

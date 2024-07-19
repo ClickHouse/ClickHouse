@@ -3,15 +3,14 @@
 
 #include "config.h"
 
-#include <chrono>
-#include <mutex>
-#include <string>
+#include <Coordination/CoordinationSettings.h>
 #include <Coordination/KeeperLogStore.h>
+#include <Coordination/KeeperSnapshotManagerS3.h>
 #include <Coordination/KeeperStateMachine.h>
 #include <Coordination/KeeperStateManager.h>
-#include <Coordination/KeeperSnapshotManagerS3.h>
 #include <Coordination/LoggerWrapper.h>
 #include <Coordination/WriteBufferFromNuraftBuffer.h>
+#include <Disks/DiskLocal.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <boost/algorithm/string.hpp>
@@ -27,7 +26,11 @@
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/Stopwatch.h>
 #include <Common/getMultipleKeysFromConfig.h>
-#include <Disks/DiskLocal.h>
+#include <Common/getNumberOfPhysicalCPUCores.h>
+
+#include <chrono>
+#include <mutex>
+#include <string>
 
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
 #include <fmt/chrono.h>
@@ -364,6 +367,8 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
     {
         LockMemoryExceptionInThread::removeUniqueLock();
     };
+
+    asio_opts.thread_pool_size_ = getNumberOfPhysicalCPUCores();
 
     if (state_manager->isSecure())
     {
@@ -990,7 +995,7 @@ KeeperServer::ConfigUpdateState KeeperServer::applyConfigUpdate(
         raft_instance->set_priority(update->id, update->priority, /*broadcast on live leader*/true);
         return Accepted;
     }
-    UNREACHABLE();
+    std::unreachable();
 }
 
 ClusterUpdateActions KeeperServer::getRaftConfigurationDiff(const Poco::Util::AbstractConfiguration & config)

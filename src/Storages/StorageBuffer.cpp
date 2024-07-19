@@ -38,6 +38,7 @@
 #include <Common/quoteString.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Common/typeid_cast.h>
+#include <Core/Settings.h>
 
 
 namespace ProfileEvents
@@ -302,6 +303,8 @@ void StorageBuffer::read(
                 auto src_table_query_info = query_info;
                 if (src_table_query_info.prewhere_info)
                 {
+                    src_table_query_info.prewhere_info = src_table_query_info.prewhere_info->clone();
+
                     auto actions_dag = ActionsDAG::makeConvertingActions(
                             header_after_adding_defaults.getColumnsWithTypeAndName(),
                             header.getColumnsWithTypeAndName(),
@@ -605,7 +608,7 @@ public:
 
     String getName() const override { return "BufferSink"; }
 
-    void consume(Chunk chunk) override
+    void consume(Chunk & chunk) override
     {
         size_t rows = chunk.getNumRows();
         if (!rows)
@@ -1018,7 +1021,13 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
     auto insert_context = Context::createCopy(getContext());
     insert_context->makeQueryContext();
 
-    InterpreterInsertQuery interpreter{insert, insert_context, allow_materialized};
+    InterpreterInsertQuery interpreter(
+        insert,
+        insert_context,
+        allow_materialized,
+        /* no_squash */ false,
+        /* no_destination */ false,
+        /* async_isnert */ false);
 
     auto block_io = interpreter.execute();
     PushingPipelineExecutor executor(block_io.pipeline);

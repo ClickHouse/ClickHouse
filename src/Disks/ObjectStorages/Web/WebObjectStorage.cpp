@@ -3,6 +3,8 @@
 #include <Common/logger_useful.h>
 #include <Common/escapeForFileName.h>
 
+#include <Core/ServerSettings.h>
+
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -341,11 +343,6 @@ void WebObjectStorage::shutdown()
 }
 
 void WebObjectStorage::startup()
-{
-}
-
-void WebObjectStorage::applyNewSettings(
-    const Poco::Util::AbstractConfiguration & /* config */, const std::string & /* config_prefix */, ContextPtr /* context */)
 {
 }
 

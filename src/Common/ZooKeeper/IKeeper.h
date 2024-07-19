@@ -491,12 +491,12 @@ public:
         incrementErrorMetrics(code);
     }
 
-    inline static Exception createDeprecated(const std::string & msg, Error code_)
+    static Exception createDeprecated(const std::string & msg, Error code_)
     {
         return Exception(msg, code_, 0);
     }
 
-    inline static Exception fromPath(Error code_, const std::string & path)
+    static Exception fromPath(Error code_, const std::string & path)
     {
         return Exception(code_, "Coordination error: {}, path {}", errorMessage(code_), path);
     }
@@ -504,7 +504,7 @@ public:
     /// Message must be a compile-time constant
     template <typename T>
     requires std::is_convertible_v<T, String>
-    inline static Exception fromMessage(Error code_, T && message)
+    static Exception fromMessage(Error code_, T && message)
     {
         return Exception(std::forward<T>(message), code_);
     }
@@ -558,6 +558,8 @@ public:
 
     /// Useful to check owner of ephemeral node.
     virtual int64_t getSessionID() const = 0;
+
+    virtual String tryGetAvailabilityZone() { return ""; }
 
     /// If the method will throw an exception, callbacks won't be called.
     ///
@@ -635,10 +637,6 @@ public:
 
     virtual const DB::KeeperFeatureFlags * getKeeperFeatureFlags() const { return nullptr; }
 
-    /// A ZooKeeper session can have an optional deadline set on it.
-    /// After it has been reached, the session needs to be finalized.
-    virtual bool hasReachedDeadline() const = 0;
-
     /// Expire session and finish all pending requests
     virtual void finalize(const String & reason) = 0;
 };
@@ -647,7 +645,7 @@ public:
 
 template <> struct fmt::formatter<Coordination::Error> : fmt::formatter<std::string_view>
 {
-    constexpr auto format(Coordination::Error code, auto & ctx)
+    constexpr auto format(Coordination::Error code, auto & ctx) const
     {
         return formatter<string_view>::format(Coordination::errorMessage(code), ctx);
     }

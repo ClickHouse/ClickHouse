@@ -23,16 +23,13 @@
 #include <Interpreters/Context.h>
 
 #include <Common/assert_cast.h>
-
 #include <Common/logger_useful.h>
 #include <Common/ProxyConfigurationResolverProvider.h>
 
+#include <Core/Settings.h>
+
 #include <base/sleep.h>
 
-
-#ifdef ADDRESS_SANITIZER
-#include <sanitizer/lsan_interface.h>
-#endif
 
 namespace ProfileEvents
 {
@@ -828,6 +825,17 @@ void Client::updateURIForBucket(const std::string & bucket, S3::URI new_uri) con
     cache->uri_for_bucket_cache.emplace(bucket, std::move(new_uri));
 }
 
+ClientCache::ClientCache(const ClientCache & other)
+{
+    {
+        std::lock_guard lock(other.region_cache_mutex);
+        region_for_bucket_cache = other.region_for_bucket_cache;
+    }
+    {
+        std::lock_guard lock(other.uri_cache_mutex);
+        uri_for_bucket_cache = other.uri_for_bucket_cache;
+    }
+}
 
 void ClientCache::clearCache()
 {
@@ -880,14 +888,7 @@ void ClientCacheRegistry::clearCacheForAll()
 ClientFactory::ClientFactory()
 {
     aws_options = Aws::SDKOptions{};
-    {
-#ifdef ADDRESS_SANITIZER
-        /// Leak sanitizer (part of address sanitizer) thinks that memory in OpenSSL (called by AWS SDK) is allocated but not
-        /// released. Actually, the memory is released at the end of the program (ClientFactory is a singleton, see the dtor).
-        __lsan::ScopedDisabler lsan_disabler;
-#endif
-        Aws::InitAPI(aws_options);
-    }
+    Aws::InitAPI(aws_options);
     Aws::Utils::Logging::InitializeAWSLogging(std::make_shared<AWSLogger>(false));
     Aws::Http::SetHttpClientFactory(std::make_shared<PocoHTTPClientFactory>());
 }

@@ -29,6 +29,7 @@
 #include <Storages/Kafka/KafkaSource.h>
 #include <Storages/MessageQueueSink.h>
 #include <Storages/NamedCollectionsHelpers.h>
+#include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMaterializedView.h>
 #include <base/getFQDNOrHostName.h>
@@ -1098,7 +1099,13 @@ bool StorageKafka::streamToViews()
 
     // Create a stream for each consumer and join them in a union stream
     // Only insert into dependent views and expect that input blocks contain virtual columns
-    InterpreterInsertQuery interpreter(insert, kafka_context, false, true, true);
+    InterpreterInsertQuery interpreter(
+        insert,
+        kafka_context,
+        /* allow_materialized */ false,
+        /* no_squash */ true,
+        /* no_destination */ true,
+        /* async_isnert */ false);
     auto block_io = interpreter.execute();
 
     // Create a stream for each consumer and join them in a union stream
