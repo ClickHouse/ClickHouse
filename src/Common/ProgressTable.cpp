@@ -109,7 +109,7 @@ std::string_view setColorForBytesBasedMetricsProgress(double progress)
         "\033[38;5;226m", /// Yellow
         "\033[38;5;208m", /// Orange
         "\033[1;33m", /// Bold
-        "\033[38;5;160m", /// Red: correspondes to >= 1T/s. Not realistic, unless there is a bug.
+        "\033[38;5;160m", /// Red: corresponds to >= 1T/s. Not realistic, unless there is a bug.
     };
 
     /// Bytes.
@@ -156,6 +156,11 @@ std::string_view setColorForTimeBasedMetricsProgress(ProfileEvents::ValueType va
 
     auto dist = std::upper_bound(thresholds.begin(), thresholds.end(), progress) - thresholds.begin();
     return colors[dist];
+}
+
+std::string_view setColorForStaleMetrics()
+{
+    return "\033[38;5;236m"; /// Dark Grey
 }
 
 std::string_view setColorForDocumentation()
@@ -209,6 +214,8 @@ void ProgressTable::writeTable(WriteBufferFromFileDescriptor & message)
     for (auto & [name, per_host_info] : metrics)
     {
         message << "\n";
+        if (per_host_info.isStale(elapsed_sec))
+            message << setColorForStaleMetrics();
         writeWithWidth(message, name, column_event_name_width);
 
         auto value = per_host_info.getSummaryValue();
@@ -380,6 +387,13 @@ void ProgressTable::MetricInfo::updateValue(Int64 new_value, double new_time)
 
     if (new_snapshot.time - cur_shapshot.time >= 0.5)
         prev_shapshot = std::exchange(cur_shapshot, new_snapshot);
+
+    update_time = new_time;
+}
+
+bool ProgressTable::MetricInfo::isStale(double now) const
+{
+    return update_time != 0 && now - update_time >= 5.0;
 }
 
 double ProgressTable::MetricInfo::calculateProgress(double time_now) const
@@ -437,4 +451,8 @@ double ProgressTable::MetricInfoPerHost::getMaxProgress() const
     return max_progress;
 }
 
+bool ProgressTable::MetricInfoPerHost::isStale(double now) const
+{
+    return std::all_of(host_to_metric.cbegin(), host_to_metric.cend(), [&now](const auto & p) { return p.second.isStale(now); });
+}
 }

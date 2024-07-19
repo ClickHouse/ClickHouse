@@ -40,6 +40,7 @@ private:
         void updateValue(Int64 new_value, double new_time);
         double calculateProgress(double time_now) const;
         double getValue() const;
+        bool isStale(double now) const;
 
     private:
         const ProfileEvents::Type type;
@@ -58,6 +59,8 @@ private:
         Snapshot prev_shapshot;
         Snapshot cur_shapshot;
         Snapshot new_snapshot;
+
+        double update_time = 0.0;
     };
 
     class MetricInfoPerHost
@@ -69,6 +72,7 @@ private:
         double getSummaryValue();
         double getSummaryProgress(double time_now);
         double getMaxProgress() const;
+        bool isStale(double now) const;
 
     private:
         std::unordered_map<HostName, MetricInfo> host_to_metric;
