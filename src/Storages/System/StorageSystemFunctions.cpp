@@ -35,62 +35,64 @@ namespace
         MutableColumns & res_columns,
         const String & name,
         UInt64 is_aggregate,
+        UInt64 is_deterministic,
         const String & create_query,
         FunctionOrigin function_origin,
         const Factory & factory)
     {
         res_columns[0]->insert(name);
         res_columns[1]->insert(is_aggregate);
+        res_columns[2]->insert(is_deterministic);
 
         if constexpr (std::is_same_v<Factory, UserDefinedSQLFunctionFactory> || std::is_same_v<Factory, UserDefinedExecutableFunctionFactory>)
         {
-            res_columns[2]->insert(false);
-            res_columns[3]->insertDefault();
+            res_columns[3]->insert(false);
+            res_columns[4]->insertDefault();
         }
         else
         {
-            res_columns[2]->insert(factory.isCaseInsensitive(name));
+            res_columns[3]->insert(factory.isCaseInsensitive(name));
             if (factory.isAlias(name))
-                res_columns[3]->insert(factory.aliasTo(name));
+                res_columns[4]->insert(factory.aliasTo(name));
             else
-                res_columns[3]->insertDefault();
+                res_columns[4]->insertDefault();
         }
 
-        res_columns[4]->insert(create_query);
-        res_columns[5]->insert(static_cast<Int8>(function_origin));
+        res_columns[5]->insert(create_query);
+        res_columns[6]->insert(static_cast<Int8>(function_origin));
 
         if constexpr (std::is_same_v<Factory, FunctionFactory>)
         {
             if (factory.isAlias(name))
             {
-                res_columns[6]->insertDefault();
                 res_columns[7]->insertDefault();
                 res_columns[8]->insertDefault();
                 res_columns[9]->insertDefault();
                 res_columns[10]->insertDefault();
                 res_columns[11]->insertDefault();
+                res_columns[12]->insertDefault();
             }
             else
             {
                 auto documentation = factory.tryGetDocumentation(name);
                 if (!documentation)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Function {} not found in FunctionFactory", name);
-                res_columns[6]->insert(documentation->description);
-                res_columns[7]->insert(documentation->syntax);
-                res_columns[8]->insert(documentation->argumentsAsString());
-                res_columns[9]->insert(documentation->returned_value);
-                res_columns[10]->insert(documentation->examplesAsString());
-                res_columns[11]->insert(documentation->categoriesAsString());
+                res_columns[7]->insert(documentation->description);
+                res_columns[8]->insert(documentation->syntax);
+                res_columns[9]->insert(documentation->argumentsAsString());
+                res_columns[10]->insert(documentation->returned_value);
+                res_columns[11]->insert(documentation->examplesAsString());
+                res_columns[12]->insert(documentation->categoriesAsString());
             }
         }
         else
         {
-            res_columns[6]->insertDefault();
             res_columns[7]->insertDefault();
             res_columns[8]->insertDefault();
             res_columns[9]->insertDefault();
             res_columns[10]->insertDefault();
             res_columns[11]->insertDefault();
+            res_columns[12]->insertDefault();
         }
     }
 }
@@ -111,6 +113,7 @@ ColumnsDescription StorageSystemFunctions::getColumnsDescription()
     {
         {"name", std::make_shared<DataTypeString>(), "The name of the function."},
         {"is_aggregate", std::make_shared<DataTypeUInt8>(), "Whether the function is an aggregate function."},
+        {"is_deterministic", std::make_shared<DataTypeUInt8>(), "Whether the function is deterministic."},
         {"case_insensitive", std::make_shared<DataTypeUInt8>(), "Whether the function name can be used case-insensitively."},
         {"alias_to", std::make_shared<DataTypeString>(), "The original function name, if the function name is an alias."},
         {"create_query", std::make_shared<DataTypeString>(), "Obsolete."},
@@ -130,14 +133,17 @@ void StorageSystemFunctions::fillData(MutableColumns & res_columns, ContextPtr c
     const auto & function_names = functions_factory.getAllRegisteredNames();
     for (const auto & function_name : function_names)
     {
-        fillRow(res_columns, function_name, 0, "", FunctionOrigin::SYSTEM, functions_factory);
+        FunctionProperties properties = functions_factory.getProperties(function_name);
+        UInt64 is_deterministic = properties.is_deterministic;
+
+        fillRow(res_columns, function_name, 0, is_deterministic, "", FunctionOrigin::SYSTEM, functions_factory);
     }
 
     const auto & aggregate_functions_factory = AggregateFunctionFactory::instance();
     const auto & aggregate_function_names = aggregate_functions_factory.getAllRegisteredNames();
     for (const auto & function_name : aggregate_function_names)
     {
-        fillRow(res_columns, function_name, 1, "", FunctionOrigin::SYSTEM, aggregate_functions_factory);
+        fillRow(res_columns, function_name, 1, 1, "", FunctionOrigin::SYSTEM, aggregate_functions_factory);
     }
 
     const auto & user_defined_sql_functions_factory = UserDefinedSQLFunctionFactory::instance();
@@ -145,14 +151,14 @@ void StorageSystemFunctions::fillData(MutableColumns & res_columns, ContextPtr c
     for (const auto & function_name : user_defined_sql_functions_names)
     {
         auto create_query = queryToString(user_defined_sql_functions_factory.get(function_name));
-        fillRow(res_columns, function_name, 0, create_query, FunctionOrigin::SQL_USER_DEFINED, user_defined_sql_functions_factory);
+        fillRow(res_columns, function_name, 0, 0, create_query, FunctionOrigin::SQL_USER_DEFINED, user_defined_sql_functions_factory);
     }
 
     const auto & user_defined_executable_functions_factory = UserDefinedExecutableFunctionFactory::instance();
     const auto & user_defined_executable_functions_names = user_defined_executable_functions_factory.getRegisteredNames(context); /// NOLINT(readability-static-accessed-through-instance)
     for (const auto & function_name : user_defined_executable_functions_names)
     {
-        fillRow(res_columns, function_name, 0, "", FunctionOrigin::EXECUTABLE_USER_DEFINED, user_defined_executable_functions_factory);
+        fillRow(res_columns, function_name, 0, 0, "", FunctionOrigin::EXECUTABLE_USER_DEFINED, user_defined_executable_functions_factory);
     }
 }
 
