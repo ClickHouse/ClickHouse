@@ -125,12 +125,6 @@ public:
         , num_streams(num_streams_)
         , distributed_processing(distributed_processing_)
     {
-        LOG_DEBUG(&Poco::Logger::get("Read step created"), "Read step created");
-        LOG_DEBUG(&Poco::Logger::get("Conf"), "Keys size: {}", configuration->getPaths().size());
-        for (auto && key : configuration->getPaths())
-        {
-            LOG_DEBUG(&Poco::Logger::get("Conf"), "Current key: {}", key);
-        }
     }
 
     std::string getName() const override { return name; }

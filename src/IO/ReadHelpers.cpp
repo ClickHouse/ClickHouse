@@ -80,7 +80,6 @@ UUID parseUUID(std::span<const UInt8> src)
     return uuid;
 }
 
-
 void NO_INLINE throwAtAssertionFailed(const char * s, ReadBuffer & buf)
 {
     WriteBufferFromOwnString out;
@@ -89,14 +88,11 @@ void NO_INLINE throwAtAssertionFailed(const char * s, ReadBuffer & buf)
     if (buf.eof())
         out << " at end of stream.";
     else
-        out << " before: " << quote << String(buf.position(), std::min(static_cast<ptrdiff_t>(1000), buf.buffer().end() - buf.position()));
+        out << " before: " << quote << String(buf.position(), std::min(SHOW_CHARS_ON_SYNTAX_ERROR, buf.buffer().end() - buf.position()));
 
-    throw Exception(
-        ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED,
-        "Cannot parse input: expected {} {}",
-        out.str(),
-        buf.buffer().end() - buf.position());
+    throw Exception(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED, "Cannot parse input: expected {}", out.str());
 }
+
 
 bool checkString(const char * s, ReadBuffer & buf)
 {
