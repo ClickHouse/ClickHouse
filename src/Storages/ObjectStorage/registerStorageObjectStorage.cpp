@@ -10,8 +10,6 @@
 namespace DB
 {
 
-#if USE_AWS_S3 || USE_AZURE_BLOB_STORAGE || USE_HDFS
-
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
@@ -70,8 +68,6 @@ static std::shared_ptr<StorageObjectStorage> createStorageObjectStorage(
         /* distributed_processing */ false,
         partition_by);
 }
-
-#endif
 
 #if USE_AZURE_BLOB_STORAGE
 void registerStorageAzure(StorageFactory & factory)
