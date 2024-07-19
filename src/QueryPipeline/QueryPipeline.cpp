@@ -549,7 +549,7 @@ void QueryPipeline::setProgressCallback(const ProgressCallback & callback)
         // needs to be collected. However, since the progress callback is called not very
         // frequently, we'd rather update them as needed. Using the
         // updatePerformanceCountersIfNeeded instead of just updatePerformanceCounters we make sure
-        // that we update them with a sufficiently frequent interval.
+        // that we don't update them too frequently.
         auto context = CurrentThread::getQueryContext();
         if (context)
         {
