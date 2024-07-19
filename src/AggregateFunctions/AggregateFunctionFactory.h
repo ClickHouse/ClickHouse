@@ -52,6 +52,7 @@ struct AggregateFunctionFactoryData
   */
 class AggregateFunctionFactory final : private boost::noncopyable, public IFactoryWithAliases<AggregateFunctionFactoryData>
 {
+    using Base = IFactoryWithAliases<AggregateFunctionFactoryData>;
 public:
     static AggregateFunctionFactory & instance();
 
@@ -94,6 +95,7 @@ private:
     using ActionMap = std::unordered_map<String, String>;
 
     AggregateFunctions aggregate_functions;
+    AggregateFunctions case_insensitive_aggregate_functions;
     /// Mapping from functions with `RESPECT NULLS` modifier to actual aggregate function names
     /// Example: `any(x) RESPECT NULLS` should be executed as function `any_respect_nulls`
     ActionMap respect_nulls;
@@ -101,14 +103,10 @@ private:
     ActionMap ignore_nulls;
     std::optional<AggregateFunctionFactoryData> getAssociatedFunctionByNullsAction(const String & name, NullsAction action) const;
 
-    /// Case insensitive aggregate functions will be additionally added here with lowercased name.
-    AggregateFunctions case_insensitive_aggregate_functions;
-
-    const AggregateFunctions & getMap() const override { return aggregate_functions; }
-    const AggregateFunctions & getCaseInsensitiveMap() const override { return case_insensitive_aggregate_functions; }
+    const Base::OriginalNameMap & getOriginalNameMap() const override { return aggregate_functions; }
+    const Base::OriginalNameMap & getOriginalCaseInsensitiveNameMap() const override { return case_insensitive_aggregate_functions; }
 
     String getFactoryName() const override { return "AggregateFunctionFactory"; }
-
 };
 
 struct AggregateUtils

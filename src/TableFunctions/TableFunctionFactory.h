@@ -21,8 +21,8 @@ using TableFunctionCreator = std::function<TableFunctionPtr()>;
 struct TableFunctionFactoryData
 {
     TableFunctionCreator creator;
-    TableFunctionProperties properties;
 
+    TableFunctionProperties properties;
     TableFunctionFactoryData() = default;
     TableFunctionFactoryData(const TableFunctionFactoryData &) = default;
     TableFunctionFactoryData & operator = (const TableFunctionFactoryData &) = default;
@@ -40,6 +40,7 @@ struct TableFunctionFactoryData
   */
 class TableFunctionFactory final: private boost::noncopyable, public IFactoryWithAliases<TableFunctionFactoryData>
 {
+    using Base = IFactoryWithAliases<TableFunctionFactoryData>;
 public:
     static TableFunctionFactory & instance();
 
@@ -72,15 +73,15 @@ public:
 private:
     using TableFunctions = std::unordered_map<std::string, Value>;
 
-    const TableFunctions & getMap() const override { return table_functions; }
-    const TableFunctions & getCaseInsensitiveMap() const override { return case_insensitive_table_functions; }
+    TableFunctions table_functions;
+    TableFunctions case_insensitive_table_functions;
+
+    const Base::OriginalNameMap & getOriginalNameMap() const override { return table_functions; }
+    const Base::OriginalNameMap & getOriginalCaseInsensitiveNameMap() const override { return case_insensitive_table_functions; }
 
     String getFactoryName() const override { return "TableFunctionFactory"; }
 
     std::optional<TableFunctionProperties> tryGetPropertiesImpl(const String & name) const;
-
-    TableFunctions table_functions;
-    TableFunctions case_insensitive_table_functions;
 };
 
 }

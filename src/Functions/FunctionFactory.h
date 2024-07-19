@@ -31,6 +31,7 @@ struct FunctionFactoryData
   */
 class FunctionFactory : private boost::noncopyable, public IFactoryWithAliases<FunctionFactoryData>
 {
+    using Base = IFactoryWithAliases<FunctionFactoryData>;
 public:
     static FunctionFactory & instance();
 
@@ -77,8 +78,8 @@ private:
     Functions functions;
     Functions case_insensitive_functions;
 
-    const Functions & getMap() const override { return functions; }
-    const Functions & getCaseInsensitiveMap() const override { return case_insensitive_functions; }
+    const Base::OriginalNameMap & getOriginalNameMap() const override { return functions; }
+    const Base::OriginalNameMap & getOriginalCaseInsensitiveNameMap() const override { return case_insensitive_functions; }
 
     String getFactoryName() const override { return "FunctionFactory"; }
 

@@ -252,7 +252,7 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
 
 
     String extra_info;
-    if (FunctionFactory::instance().hasNameOrAlias(name))
+    if (FunctionFactory::instance().isNameOrAlias(name))
         extra_info = ". There is an ordinary function with the same name, but aggregate function is expected here";
 
     auto hints = this->getHints(name);
