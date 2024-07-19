@@ -142,12 +142,6 @@ FunctionOverloadResolverPtr FunctionFactory::tryGet(
     return tryGetImpl(name, context);
 }
 
-FunctionFactory & FunctionFactory::instance()
-{
-    static FunctionFactory ret;
-    return ret;
-}
-
 FunctionDocumentation FunctionFactory::getDocumentation(const std::string & name) const
 {
     auto it = functions.find(name);
@@ -155,6 +149,12 @@ FunctionDocumentation FunctionFactory::getDocumentation(const std::string & name
         throw Exception(ErrorCodes::UNKNOWN_FUNCTION, "Unknown function {}", name);
 
     return it->second.documentation;
+}
+
+FunctionFactory & FunctionFactory::instance()
+{
+    static FunctionFactory ret;
+    return ret;
 }
 
 }
