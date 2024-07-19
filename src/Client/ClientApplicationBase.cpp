@@ -6,6 +6,7 @@
 #include <Common/clearPasswordFromCommandLine.h>
 #include <Common/TerminalSize.h>
 #include <Common/Exception.h>
+#include <Common/SignalHandlers.h>
 
 #include <Common/config_version.h>
 #include "config.h"
@@ -51,7 +52,20 @@ void interruptSignalHandler(int signum)
         safeExit(128 + signum);
 }
 
-ClientApplicationBase::~ClientApplicationBase() = default;
+ClientApplicationBase::~ClientApplicationBase()
+{
+    try
+    {
+        writeSignalIDtoSignalPipe(SignalListener::StopThread);
+        signal_listener_thread.join();
+        HandledSignals::instance().reset();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+}
+
 ClientApplicationBase::ClientApplicationBase() : ClientBase(STDIN_FILENO, STDOUT_FILENO, STDERR_FILENO, std::cin, std::cout, std::cerr) {}
 
 ClientApplicationBase & ClientApplicationBase::getInstance()

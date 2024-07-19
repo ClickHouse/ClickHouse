@@ -6,6 +6,10 @@
 #include <Client/Suggest.h>
 #include <Common/NamePrompter.h>
 #include <Common/QueryFuzzer.h>
+#include <Poco/ConsoleChannel.h>
+#include <Poco/SimpleFileChannel.h>
+#include <Poco/SplitterChannel.h>
+
 #include <boost/program_options.hpp>
 
 #include <vector>
@@ -48,6 +52,13 @@ private:
     void parseAndCheckOptions(OptionsDescription & options_description, po::variables_map & options, Arguments & arguments);
 
     std::vector<String> cmd_options;
+
+    LoggerPtr fatal_log;
+    Poco::AutoPtr<Poco::SplitterChannel> fatal_channel_ptr;
+    Poco::AutoPtr<Poco::Channel> fatal_console_channel_ptr;
+    Poco::AutoPtr<Poco::Channel> fatal_file_channel_ptr;
+    Poco::Thread signal_listener_thread;
+    std::unique_ptr<Poco::Runnable> signal_listener;
 };
 
 
