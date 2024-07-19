@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 #include <Access/AccessRights.h>
-#include <Access/AccessRights.cpp>
+#include <Access/AccessRights.cpp>  // NOLINT(bugprone-suspicious-include)
 #include <IO/WriteBufferFromString.h>
 
 #include <list>
