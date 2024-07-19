@@ -15,7 +15,7 @@ from env_helper import (
     GITHUB_SERVER_URL,
     GITHUB_UPSTREAM_REPOSITORY,
 )
-from lambda_shared_package.lambda_shared.pr import Labels
+from ci_config import Labels
 from get_robot_token import get_best_robot_token
 from github_helper import GitHub
 
