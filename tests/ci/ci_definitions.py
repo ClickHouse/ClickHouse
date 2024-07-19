@@ -102,8 +102,6 @@ class Tags(metaclass=WithIter):
     CI_SET_ARM = "ci_set_arm"
     CI_SET_REQUIRED = "ci_set_required"
     CI_SET_BUILDS = "ci_set_builds"
-    CI_SET_NON_REQUIRED = "ci_set_non_required"
-    CI_SET_OLD_ANALYZER = "ci_set_old_analyzer"
 
     libFuzzer = "libFuzzer"
 
