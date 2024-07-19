@@ -126,10 +126,10 @@ ExternalLoader::LoadableMutablePtr ExternalUserDefinedExecutableFunctionsLoader:
     const std::string & key_in_config,
     const std::string &) const
 {
-    if (FunctionFactory::instance().hasNameOrAlias(name))
+    if (FunctionFactory::instance().isNameOrAlias(name))
         throw Exception(ErrorCodes::FUNCTION_ALREADY_EXISTS, "The function '{}' already exists", name);
 
-    if (AggregateFunctionFactory::instance().hasNameOrAlias(name))
+    if (AggregateFunctionFactory::instance().isNameOrAlias(name))
         throw Exception(ErrorCodes::FUNCTION_ALREADY_EXISTS, "The aggregate function '{}' already exists", name);
 
     String type = config.getString(key_in_config + ".type");

@@ -100,10 +100,10 @@ UserDefinedSQLFunctionFactory & UserDefinedSQLFunctionFactory::instance()
 
 void UserDefinedSQLFunctionFactory::checkCanBeRegistered(const ContextPtr & context, const String & function_name, const IAST & create_function_query)
 {
-    if (FunctionFactory::instance().hasNameOrAlias(function_name))
+    if (FunctionFactory::instance().isNameOrAlias(function_name))
         throw Exception(ErrorCodes::FUNCTION_ALREADY_EXISTS, "The function '{}' already exists", function_name);
 
-    if (AggregateFunctionFactory::instance().hasNameOrAlias(function_name))
+    if (AggregateFunctionFactory::instance().isNameOrAlias(function_name))
         throw Exception(ErrorCodes::FUNCTION_ALREADY_EXISTS, "The aggregate function '{}' already exists", function_name);
 
     if (UserDefinedExecutableFunctionFactory::instance().has(function_name, context)) /// NOLINT(readability-static-accessed-through-instance)
@@ -114,8 +114,8 @@ void UserDefinedSQLFunctionFactory::checkCanBeRegistered(const ContextPtr & cont
 
 void UserDefinedSQLFunctionFactory::checkCanBeUnregistered(const ContextPtr & context, const String & function_name)
 {
-    if (FunctionFactory::instance().hasNameOrAlias(function_name) ||
-        AggregateFunctionFactory::instance().hasNameOrAlias(function_name))
+    if (FunctionFactory::instance().isNameOrAlias(function_name) ||
+        AggregateFunctionFactory::instance().isNameOrAlias(function_name))
         throw Exception(ErrorCodes::CANNOT_DROP_FUNCTION, "Cannot drop system function '{}'", function_name);
 
     if (UserDefinedExecutableFunctionFactory::instance().has(function_name, context)) /// NOLINT(readability-static-accessed-through-instance)

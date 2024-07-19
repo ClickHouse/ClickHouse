@@ -236,7 +236,7 @@ const DataTypeFactory::Value * DataTypeFactory::findCreatorByName(const String &
     if (CurrentThread::isInitialized())
         query_context = CurrentThread::get().getQueryContext();
     {
-        DataTypesDictionary::const_iterator it = data_types.find(family_name);
+        auto it = data_types.find(family_name);
         if (data_types.end() != it)
         {
             if (query_context && query_context->getSettingsRef().log_queries)
@@ -248,7 +248,7 @@ const DataTypeFactory::Value * DataTypeFactory::findCreatorByName(const String &
     String family_name_lowercase = Poco::toLower(family_name);
 
     {
-        DataTypesDictionary::const_iterator it = case_insensitive_data_types.find(family_name_lowercase);
+        auto it = case_insensitive_data_types.find(family_name_lowercase);
         if (case_insensitive_data_types.end() != it)
         {
             if (query_context && query_context->getSettingsRef().log_queries)

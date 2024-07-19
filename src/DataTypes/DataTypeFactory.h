@@ -4,10 +4,8 @@
 #include <Common/IFactoryWithAliases.h>
 #include <DataTypes/DataTypeCustom.h>
 
-
 #include <functional>
 #include <memory>
-#include <unordered_map>
 
 
 namespace DB
@@ -21,9 +19,9 @@ using DataTypePtr = std::shared_ptr<const IDataType>;
   */
 class DataTypeFactory final : private boost::noncopyable, public IFactoryWithAliases<std::function<DataTypePtr(const ASTPtr & parameters)>>
 {
+    using Base = IFactoryWithAliases<std::function<DataTypePtr(const ASTPtr & parameters)>>;
 private:
     using SimpleCreator = std::function<DataTypePtr()>;
-    using DataTypesDictionary = std::unordered_map<String, Value>;
     using CreatorWithCustom = std::function<std::pair<DataTypePtr, DataTypeCustomDescPtr>(const ASTPtr & parameters)>;
     using SimpleCreatorWithCustom = std::function<std::pair<DataTypePtr,DataTypeCustomDescPtr>()>;
 
@@ -62,15 +60,15 @@ private:
     template <bool nullptr_on_error>
     const Value * findCreatorByName(const String & family_name) const;
 
-    DataTypesDictionary data_types;
+    using DataTypesDictionary = std::unordered_map<String, Value>;
 
-    /// Case insensitive data types will be additionally added here with lowercased name.
+    DataTypesDictionary data_types;
     DataTypesDictionary case_insensitive_data_types;
 
     DataTypeFactory();
 
-    const DataTypesDictionary & getMap() const override { return data_types; }
-    const DataTypesDictionary & getCaseInsensitiveMap() const override { return case_insensitive_data_types; }
+    const Base::OriginalNameMap & getOriginalNameMap() const override { return data_types; }
+    const Base::OriginalNameMap & getOriginalCaseInsensitiveNameMap() const override { return case_insensitive_data_types; }
 
     String getFactoryName() const override { return "DataTypeFactory"; }
 };

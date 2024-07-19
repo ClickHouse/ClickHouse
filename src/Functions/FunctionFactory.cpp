@@ -66,7 +66,7 @@ FunctionOverloadResolverPtr FunctionFactory::getImpl(
     if (!res)
     {
         String extra_info;
-        if (AggregateFunctionFactory::instance().hasNameOrAlias(name))
+        if (AggregateFunctionFactory::instance().isNameOrAlias(name))
             extra_info = ". There is an aggregate function with the same name, but ordinary function is expected here";
 
         auto hints = this->getHints(name);
