@@ -478,7 +478,7 @@ static DataTypePtr createJSON(const ASTPtr & arguments)
 void registerDataTypeJSON(DataTypeFactory & factory)
 {
     if (!Context::getGlobalContextInstance()->getSettingsRef().use_json_alias_for_old_object_type)
-        factory.registerDataType("JSON", createJSON, DataTypeFactory::CaseInsensitive);
+        factory.registerDataType("JSON", createJSON, DataTypeFactory::Case::Insensitive);
 }
 
 }

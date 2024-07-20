@@ -96,7 +96,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & data_types) const override
     {
-        if (data_types.size() != 1 )
+        if (data_types.size() != 1)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} requires single argument with type JSON", getName());
 
         if (data_types[0]->getTypeId() != TypeIndex::Object)
@@ -152,7 +152,7 @@ private:
                 for (const auto & path : dynamic_paths)
                 {
                     /// Don't include path if it contains NULL, because we consider
-                    /// it to be equivalent to the absense of this path in this row.
+                    /// it to be equivalent to the absence of this path in this row.
                     if (!dynamic_path_columns.at(path)->isNullAt(i))
                         data.insertData(path.data(), path.size());
                 }
