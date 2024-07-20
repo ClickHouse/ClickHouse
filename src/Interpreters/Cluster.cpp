@@ -18,6 +18,8 @@
 #include <base/range.h>
 #include <base/sort.h>
 #include <boost/range/algorithm_ext/erase.hpp>
+#include <Client/ConnectionPoolWithFailover.h>
+#include <Client/ConnectionEstablisher.h>
 
 #include <span>
 #include <pcg_random.hpp>
@@ -908,30 +910,70 @@ void Cluster::handleDynamicReplicas()
     }
 }
 
+
+// Check if a connection pool is alive
+bool Cluster::isConnectionAlive(const ConnectionPoolWithFailover::Ptr & pool)
+{
+    try
+    {
+        ConnectionTimeouts timeouts;
+        std::string fail_message;
+        auto result = pool->tryGetEntry(timeouts, fail_message, settings);
+        return result.entry->isConnected();
+    }
+    catch (...)
+    {
+        return false;
+    }
+}
+
+// Reconnect a connection pool
+void Cluster::reconnect(ConnectionPoolWithFailover::Ptr & pool, const Address & address)
+{
+    try
+    {
+        ConnectionTimeouts timeouts;
+        std::string fail_message;
+        pool = ConnectionPoolFactory::instance().get(
+            static_cast<unsigned>(settings.distributed_connections_pool_size),
+            address.host_name,
+            address.port,
+            address.default_database,
+            address.user,
+            address.password,
+            address.quota_key,
+            address.cluster,
+            address.cluster_secret,
+            "server",
+            address.compression,
+            address.secure,
+            address.priority
+        );
+        pool->tryGetEntry(timeouts, fail_message, settings); // Initialize connection
+    }
+    catch (const Exception & e)
+    {
+        throw Exception("Failed to reconnect to replica: " + e.displayText(), ErrorCodes::LOGICAL_ERROR);
+    }
+}
+
 void Cluster::reconnectToReplica(size_t shard_index)
 {
     if (shard_index >= shards_info.size())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Shard index out of bounds");
 
-    const auto & shard = shards_info[shard_index];
+    auto & shard = shards_info[shard_index];
     if (!shard.hasRemoteConnections())
         return;
 
     auto & replica_pools = shard.per_replica_pools;
     for (size_t i = 0; i < replica_pools.size(); ++i)
     {
-        if (replica_pools[i] == nullptr || !replica_pools[i]->isConnected())
+        if (replica_pools[i] == nullptr || !isConnectionAlive(replica_pools[i]))
         {
-            try
-            {
-                // Attempt to reconnect to the replica
-                replica_pools[i]->reconnect();
-            }
-            catch (const Exception & e)
-            {
-                // Handle reconnection failure without logging
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to reconnect to replica (shard {}, replica {}): {}", shard_index, i, e.displayText());
-            }
+            reconnect(replica_pools[i], shard.local_addresses[i]);
         }
     }
+}
+
 }
