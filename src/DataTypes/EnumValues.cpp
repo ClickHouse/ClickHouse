@@ -1,6 +1,9 @@
 #include <DataTypes/EnumValues.h>
 #include <boost/algorithm/string.hpp>
 #include <base/sort.h>
+#include "Core/Names.h"
+#include <Common/CurrentThread.h>
+#include <Interpreters/Context.h>
 
 
 namespace DB
@@ -52,7 +55,23 @@ void EnumValues<T>::fillMaps()
 template <typename T>
 T EnumValues<T>::getValue(StringRef field_name, bool try_treat_as_id) const
 {
-    const auto it = name_to_value_map.find(field_name);
+    ContextPtr query_context;
+    if (CurrentThread::isInitialized())
+    {
+        query_context = CurrentThread::get().getGlobalContext();
+    }
+
+    auto it = name_to_value_map.find(field_name);
+    if (!it && query_context && query_context->getSettingsRef().cast_keys_to_string_from_json)
+    {
+        for (const auto& item : name_to_value_map)
+        {
+            if (item.getValue().second == std::stoi(field_name.toString()))
+            {
+                it = name_to_value_map.find(item.getKey());
+            }
+        }
+    }
     if (!it)
     {
         /// It is used in CSV and TSV input formats. If we fail to find given string in
