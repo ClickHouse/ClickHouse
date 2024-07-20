@@ -814,6 +814,8 @@ bool FileCache::tryReserve(
     /// ok compared to the number of cases this check will help.
     if (cache_is_being_resized.load(std::memory_order_relaxed))
     {
+        LOG_DEBUG(log, "Cache is being resized, space reservation failed (while reserving for {}:{})",
+                  file_segment.key(), file_segment.offset());
         ProfileEvents::increment(ProfileEvents::FilesystemCacheFailToReserveSpaceBecauseOfCacheResize);
         return false;
     }
@@ -821,6 +823,8 @@ bool FileCache::tryReserve(
     auto cache_lock = tryLockCache(std::chrono::milliseconds(lock_wait_timeout_milliseconds));
     if (!cache_lock)
     {
+        LOG_DEBUG(log, "Cache lock is unsuccessful, space reservation failed (while reserving for {}:{})",
+                  file_segment.key(), file_segment.offset());
         ProfileEvents::increment(ProfileEvents::FilesystemCacheFailToReserveSpaceBecauseOfLockContention);
         return false;
     }
@@ -842,9 +846,9 @@ bool FileCache::tryReserve(
         const bool query_limit_exceeded = query_priority->getSize(cache_lock) + size > query_priority->getSizeLimit(cache_lock);
         if (query_limit_exceeded && !query_context->recacheOnFileCacheQueryLimitExceeded())
         {
-            LOG_TEST(log, "Query limit exceeded, space reservation failed, "
-                     "recache_on_query_limit_exceeded is disabled (while reserving for {}:{})",
-                     file_segment.key(), file_segment.offset());
+            LOG_DEBUG(log, "Query limit exceeded, space reservation failed, "
+                           "recache_on_query_limit_exceeded is disabled (while reserving for {}:{})",
+                      file_segment.key(), file_segment.offset());
             return false;
         }
 
@@ -875,6 +879,9 @@ bool FileCache::tryReserve(
         if (!query_priority->collectCandidatesForEviction(
                 size, required_elements_num, reserve_stat, eviction_candidates, {}, user.user_id, cache_lock))
         {
+            LOG_DEBUG(log, "Collection candidates for eviction from per query cache is unsuccessful, "
+                           "space reservation failed (while reserving for {}:{})",
+                      file_segment.key(), file_segment.offset());
             return false;
         }
 
@@ -889,6 +896,9 @@ bool FileCache::tryReserve(
     if (!main_priority->collectCandidatesForEviction(
             size, required_elements_num, reserve_stat, eviction_candidates, queue_iterator, user.user_id, cache_lock))
     {
+        LOG_DEBUG(log, "Collection candidates for eviction from cache is unsuccessful, "
+                       "space reservation failed (while reserving for {}:{})",
+                  file_segment.key(), file_segment.offset());
         return false;
     }
 
