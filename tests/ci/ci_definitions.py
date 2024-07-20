@@ -7,6 +7,53 @@ from ci_utils import WithIter
 from integration_test_images import IMAGES
 
 
+class Labels:
+    PR_BUGFIX = "pr-bugfix"
+    PR_CRITICAL_BUGFIX = "pr-critical-bugfix"
+    CAN_BE_TESTED = "can be tested"
+    DO_NOT_TEST = "do not test"
+    MUST_BACKPORT = "pr-must-backport"
+    MUST_BACKPORT_CLOUD = "pr-must-backport-cloud"
+    JEPSEN_TEST = "jepsen-test"
+    SKIP_MERGEABLE_CHECK = "skip mergeable check"
+    PR_BACKPORT = "pr-backport"
+    PR_BACKPORTS_CREATED = "pr-backports-created"
+    PR_BACKPORTS_CREATED_CLOUD = "pr-backports-created-cloud"
+    PR_CHERRYPICK = "pr-cherrypick"
+    PR_CI = "pr-ci"
+    PR_FEATURE = "pr-feature"
+    PR_SYNCED_TO_CLOUD = "pr-synced-to-cloud"
+    PR_SYNC_UPSTREAM = "pr-sync-upstream"
+    RELEASE = "release"
+    RELEASE_LTS = "release-lts"
+    SUBMODULE_CHANGED = "submodule changed"
+
+    # automatic backport for critical bug fixes
+    AUTO_BACKPORT = {"pr-critical-bugfix"}
+
+
+TRUSTED_CONTRIBUTORS = {
+    e.lower()
+    for e in [
+        "amosbird",
+        "azat",  # SEMRush
+        "bharatnc",  # Many contributions.
+        "cwurm",  # ClickHouse, Inc
+        "den-crane",  # Documentation contributor
+        "ildus",  # adjust, ex-pgpro
+        "nvartolomei",  # Seasoned contributor, CloudFlare
+        "taiyang-li",
+        "ucasFL",  # Amos Bird's friend
+        "thomoco",  # ClickHouse, Inc
+        "tonickkozlov",  # Cloudflare
+        "tylerhannan",  # ClickHouse, Inc
+        "tsolodov",  # ClickHouse, Inc
+        "justindeguzman",  # ClickHouse, Inc
+        "XuJia0210",  # ClickHouse, Inc
+    ]
+}
+
+
 class WorkflowStages(metaclass=WithIter):
     """
     Stages of GitHUb actions workflow
@@ -55,8 +102,6 @@ class Tags(metaclass=WithIter):
     CI_SET_ARM = "ci_set_arm"
     CI_SET_REQUIRED = "ci_set_required"
     CI_SET_BUILDS = "ci_set_builds"
-    CI_SET_NON_REQUIRED = "ci_set_non_required"
-    CI_SET_OLD_ANALYZER = "ci_set_old_analyzer"
 
     libFuzzer = "libFuzzer"
 

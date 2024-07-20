@@ -45,16 +45,17 @@ int mainEntryClickHouseKeeperConverter(int argc, char ** argv)
         keeper_context->setDigestEnabled(true);
         keeper_context->setSnapshotDisk(std::make_shared<DiskLocal>("Keeper-snapshots", options["output-dir"].as<std::string>()));
 
-        DB::KeeperStorage storage(/* tick_time_ms */ 500, /* superdigest */ "", keeper_context, /* initialize_system_nodes */ false);
+        /// TODO(hanfei): support rocksdb here
+        DB::KeeperMemoryStorage storage(/* tick_time_ms */ 500, /* superdigest */ "", keeper_context, /* initialize_system_nodes */ false);
 
         DB::deserializeKeeperStorageFromSnapshotsDir(storage, options["zookeeper-snapshots-dir"].as<std::string>(), logger);
         storage.initializeSystemNodes();
 
         DB::deserializeLogsAndApplyToStorage(storage, options["zookeeper-logs-dir"].as<std::string>(), logger);
         DB::SnapshotMetadataPtr snapshot_meta = std::make_shared<DB::SnapshotMetadata>(storage.getZXID(), 1, std::make_shared<nuraft::cluster_config>());
-        DB::KeeperStorageSnapshot snapshot(&storage, snapshot_meta);
+        DB::KeeperStorageSnapshot<DB::KeeperMemoryStorage> snapshot(&storage, snapshot_meta);
 
-        DB::KeeperSnapshotManager manager(1, keeper_context);
+        DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> manager(1, keeper_context);
         auto snp = manager.serializeSnapshotToBuffer(snapshot);
         auto file_info = manager.serializeSnapshotBufferToDisk(*snp, storage.getZXID());
         std::cout << "Snapshot serialized to path:" << fs::path(file_info->disk->getPath()) / file_info->path << std::endl;

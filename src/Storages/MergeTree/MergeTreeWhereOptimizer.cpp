@@ -233,7 +233,7 @@ static bool isConditionGood(const RPNBuilderTreeNode & condition, const NameSet 
     else if (type == Field::Types::Float64)
     {
         const auto value = output_value.get<Float64>();
-        return value < threshold || threshold < value;
+        return value < -threshold || threshold < value;
     }
 
     return false;

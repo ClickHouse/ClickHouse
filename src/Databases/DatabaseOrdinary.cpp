@@ -189,7 +189,7 @@ void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTables
     size_t prev_tables_count = metadata.parsed_tables.size();
     size_t prev_total_dictionaries = metadata.total_dictionaries;
 
-    auto process_metadata = [&metadata, is_startup, this](const String & file_name)
+    auto process_metadata = [&metadata, is_startup, local_context, this](const String & file_name)
     {
         fs::path path(getMetadataPath());
         fs::path file_path(file_name);
@@ -197,7 +197,7 @@ void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTables
 
         try
         {
-            auto ast = parseQueryFromMetadata(log, getContext(), full_path.string(), /*throw_on_error*/ true, /*remove_empty*/ false);
+            auto ast = parseQueryFromMetadata(log, local_context, full_path.string(), /*throw_on_error*/ true, /*remove_empty*/ false);
             if (ast)
             {
                 FunctionNameNormalizer::visit(ast.get());
@@ -226,8 +226,23 @@ void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTables
                 if (fs::exists(full_path.string() + detached_suffix))
                 {
                     const std::string table_name = unescapeForFileName(file_name.substr(0, file_name.size() - 4));
-                    permanently_detached_tables.push_back(table_name);
                     LOG_DEBUG(log, "Skipping permanently detached table {}.", backQuote(table_name));
+
+                    std::lock_guard lock(mutex);
+                    permanently_detached_tables.push_back(table_name);
+
+                    const auto detached_table_name = create_query->getTable();
+
+                    snapshot_detached_tables.emplace(
+                        detached_table_name,
+                        SnapshotDetachedTable{
+                            .database = create_query->getDatabase(),
+                            .table = detached_table_name,
+                            .uuid = create_query->uuid,
+                            .metadata_path = getObjectMetadataPath(detached_table_name),
+                            .is_permanently = true});
+
+                    LOG_TRACE(log, "Add permanently detached table {} to system.detached_tables", detached_table_name);
                     return;
                 }
 
@@ -487,6 +502,12 @@ DatabaseTablesIteratorPtr DatabaseOrdinary::getTablesIterator(ContextPtr local_c
         waitLoad(currentPoolOr(TablesLoaderForegroundPoolId), tasks_to_wait);
     }
     return DatabaseWithOwnTablesBase::getTablesIterator(local_context, filter_by_table_name, skip_not_loaded);
+}
+
+DatabaseDetachedTablesSnapshotIteratorPtr DatabaseOrdinary::getDetachedTablesIterator(
+    ContextPtr local_context, const DatabaseOnDisk::FilterByNameFunction & filter_by_table_name, bool skip_not_loaded) const
+{
+    return DatabaseWithOwnTablesBase::getDetachedTablesIterator(local_context, filter_by_table_name, skip_not_loaded);
 }
 
 Strings DatabaseOrdinary::getAllTableNames(ContextPtr) const
