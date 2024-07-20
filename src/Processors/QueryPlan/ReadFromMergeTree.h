@@ -128,8 +128,8 @@ public:
 
     std::unique_ptr<ReadFromMergeTree> createLocalParallelReplicasReadingStep(
         AnalysisResultPtr analyzed_result_ptr_,
-        std::optional<MergeTreeAllRangesCallback> all_ranges_callback_,
-        std::optional<MergeTreeReadTaskCallback> read_task_callback_);
+        MergeTreeAllRangesCallback all_ranges_callback_,
+        MergeTreeReadTaskCallback read_task_callback_);
 
     static constexpr auto name = "ReadFromMergeTree";
     String getName() const override { return name; }

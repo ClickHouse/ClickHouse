@@ -303,8 +303,15 @@ ReadFromMergeTree::ReadFromMergeTree(
 {
     if (is_parallel_reading_from_replicas)
     {
-        all_ranges_callback = all_ranges_callback_.value_or(context->getMergeTreeAllRangesCallback());
-        read_task_callback = read_task_callback_.value_or(context->getMergeTreeReadTaskCallback());
+        if (all_ranges_callback_.has_value())
+            all_ranges_callback = all_ranges_callback_.value();
+        else
+            all_ranges_callback = context->getMergeTreeAllRangesCallback();
+
+        if (read_task_callback_.has_value())
+            read_task_callback = read_task_callback_.value();
+        else
+            read_task_callback = context->getMergeTreeReadTaskCallback();
     }
 
     const auto & settings = context->getSettingsRef();
@@ -340,8 +347,8 @@ ReadFromMergeTree::ReadFromMergeTree(
 
 std::unique_ptr<ReadFromMergeTree> ReadFromMergeTree::createLocalParallelReplicasReadingStep(
     AnalysisResultPtr analyzed_result_ptr_,
-    std::optional<MergeTreeAllRangesCallback> all_ranges_callback_,
-    std::optional<MergeTreeReadTaskCallback> read_task_callback_)
+    MergeTreeAllRangesCallback all_ranges_callback_,
+    MergeTreeReadTaskCallback read_task_callback_)
 {
     const auto number_of_local_replica = 0;
     const bool enable_parallel_reading = true;
