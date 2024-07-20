@@ -13,7 +13,7 @@ name: Build docker images
         default: false
 jobs:
   DockerBuildAarch64:
-    runs-on: [self-hosted, style-checker-aarch64]
+    runs-on: [self-hosted, func-tester-aarch64]
     if: |
       !failure() && !cancelled() && toJson(fromJson(inputs.data).docker_data.missing_aarch64) != '[]'
     steps:
@@ -28,7 +28,7 @@ jobs:
             --image-tags '${{ toJson(fromJson(inputs.data).docker_data.images) }}' \
             --missing-images '${{ toJson(fromJson(inputs.data).docker_data.missing_aarch64) }}'
   DockerBuildAmd64:
-    runs-on: [self-hosted, style-checker]
+    runs-on: [self-hosted, builder]
     if: |
       !failure() && !cancelled() && toJson(fromJson(inputs.data).docker_data.missing_amd64) != '[]'
     steps:
