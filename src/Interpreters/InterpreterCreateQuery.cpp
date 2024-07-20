@@ -1384,7 +1384,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
         if (create.targets)
         {
-            for (auto inner_table_engine : create.targets->getInnerEngines())
+            for (const auto & inner_table_engine : create.targets->getInnerEngines())
             {
                 if (isReplicated(*inner_table_engine))
                     is_storage_replicated = true;

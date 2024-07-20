@@ -734,7 +734,7 @@ void DatabaseReplicated::checkQueryValid(const ASTPtr & query, ContextPtr query_
 
             if (create->targets)
             {
-                for (auto inner_table_engine : create->targets->getInnerEngines())
+                for (const auto & inner_table_engine : create->targets->getInnerEngines())
                     checkTableEngine(*create, *inner_table_engine, query_context);
             }
         }

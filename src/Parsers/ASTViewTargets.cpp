@@ -43,7 +43,7 @@ std::vector<ViewTarget::Kind> ASTViewTargets::getKinds() const
 {
     std::vector<ViewTarget::Kind> kinds;
     kinds.reserve(targets.size());
-    for (auto & target : targets)
+    for (const auto & target : targets)
         kinds.push_back(target.kind);
     return kinds;
 }
@@ -121,7 +121,7 @@ void ASTViewTargets::resetInnerUUIDs()
 
 bool ASTViewTargets::hasInnerUUIDs() const
 {
-    for (auto & target : targets)
+    for (const auto & target : targets)
     {
         if (target.inner_uuid != UUIDHelpers::Nil)
             return true;
