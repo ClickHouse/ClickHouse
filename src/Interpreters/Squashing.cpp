@@ -134,7 +134,7 @@ Chunk Squashing::squash(std::vector<Chunk> && input_chunks, Chunk::ChunkInfoColl
     Chunk result;
     result.setColumns(std::move(mutable_columns), rows);
     result.setChunkInfos(infos);
-    result.getChunkInfos().append(std::move(input_chunks.back().getChunkInfos()));
+    result.getChunkInfos().appendIfUniq(std::move(input_chunks.back().getChunkInfos()));
 
     chassert(result);
     return result;
