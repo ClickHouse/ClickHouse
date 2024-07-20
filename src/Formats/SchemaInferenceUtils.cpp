@@ -780,11 +780,18 @@ namespace
 
         /// Check if it's just a number, and if so, don't try to infer DateTime from it,
         /// because we can interpret this number as a timestamp and it will lead to
-        /// inferring DateTime instead of simple Int64/Float64 in some cases.
+        /// inferring DateTime instead of simple Int64 in some cases.
         if (std::all_of(field.begin(), field.end(), isNumericASCII))
             return false;
 
         ReadBufferFromString buf(field);
+        Float64 tmp_float;
+        /// Check if it's a float value, and if so, don't try to infer DateTime from it,
+        /// because it will lead to inferring DateTime instead of simple Float64 in some cases.
+        if (tryReadFloatText(tmp_float, buf) && buf.eof())
+            return false;
+
+        buf.seek(0, SEEK_SET); /// Return position to the beginning
         DateTime64 tmp;
         switch (settings.date_time_input_format)
         {

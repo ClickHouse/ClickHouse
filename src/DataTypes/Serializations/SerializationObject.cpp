@@ -599,7 +599,7 @@ void SerializationObject::deserializeBinary(IColumn & col, ReadBuffer & istr, co
                     if (typed_column->size() > prev_size)
                     {
                         if (!settings.json.type_json_skip_duplicated_paths)
-                            throw Exception(ErrorCodes::INCORRECT_DATA, "Found duplicated path during binary deserialization of Object type: {}", path);
+                            throw Exception(ErrorCodes::INCORRECT_DATA, "Found duplicated path during binary deserialization of JSON type: {}. You can enable setting type_json_skip_duplicated_paths to skip duplicated paths during insert", path);
                     }
                     else
                     {
@@ -613,7 +613,7 @@ void SerializationObject::deserializeBinary(IColumn & col, ReadBuffer & istr, co
                     if (dynamic_it->second->size() > prev_size)
                     {
                         if (!settings.json.type_json_skip_duplicated_paths)
-                            throw Exception(ErrorCodes::INCORRECT_DATA, "Found duplicated path during binary deserialization of Object type: {}", path);
+                            throw Exception(ErrorCodes::INCORRECT_DATA, "Found duplicated path during binary deserialization of JSON type: {}. You can enable setting type_json_skip_duplicated_paths to skip duplicated paths during insert", path);
                     }
 
                     dynamic_serialization->deserializeBinary(*dynamic_it->second, istr, settings);
@@ -648,7 +648,7 @@ void SerializationObject::deserializeBinary(IColumn & col, ReadBuffer & istr, co
             if (i != 0 && path == paths_and_values_for_shared_data[i - 1].first)
             {
                 if (!settings.json.type_json_skip_duplicated_paths)
-                    throw Exception(ErrorCodes::INCORRECT_DATA, "Found duplicated path during binary deserialization of Object type: {}", path);
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Found duplicated path during binary deserialization of JSON type: {}. You can enable setting type_json_skip_duplicated_paths to skip duplicated paths during insert", path);
             }
             else
             {

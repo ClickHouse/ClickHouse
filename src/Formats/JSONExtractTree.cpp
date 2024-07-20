@@ -1629,7 +1629,7 @@ public:
             {
                 if (!format_settings.json.type_json_skip_duplicated_paths)
                 {
-                    error = fmt::format("Duplicate path found during parsing JSON object: {}", path);
+                    error = fmt::format("Duplicate path found during parsing JSON object: {}. You can enable setting type_json_skip_duplicated_paths to skip duplicated paths during insert", path);
                     SerializationObject::restoreColumnObject(column_object, prev_size);
                     return false;
                 }
@@ -1697,7 +1697,7 @@ private:
             {
                 if (!format_settings.json.type_json_skip_duplicated_paths)
                 {
-                    error = fmt::format("Duplicate path found during parsing JSON object: {}", current_path);
+                    error = fmt::format("Duplicate path found during parsing JSON object: {}. You can enable setting type_json_skip_duplicated_paths to skip duplicated paths during insert", current_path);
                     return false;
                 }
             }
@@ -1715,7 +1715,7 @@ private:
             {
                 if (!format_settings.json.type_json_skip_duplicated_paths)
                 {
-                    error = fmt::format("Duplicate path found during parsing JSON object: {}", current_path);
+                    error = fmt::format("Duplicate path found during parsing JSON object: {}. You can enable setting type_json_skip_duplicated_paths to skip duplicated paths during insert", current_path);
                     return false;
                 }
             }
