@@ -61,6 +61,8 @@ namespace ErrorCodes
     extern const int TIMEOUT_EXCEEDED;
     extern const int TOO_LARGE_DISTRIBUTED_DEPTH;
     extern const int ABORTED;
+    extern const int SOCKET_TIMEOUT;
+    extern const int NETWORK_ERROR;
 }
 
 static Block adoptBlock(const Block & header, const Block & block, LoggerPtr log)

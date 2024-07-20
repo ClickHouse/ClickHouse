@@ -27,6 +27,7 @@
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/TotalsHavingTransform.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
+
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 
@@ -577,24 +578,11 @@ void QueryPipeline::setLimitsAndQuota(const StreamLocalLimits & limits, std::sha
 
     handleFailover();
 
-    try
-    {
-        auto transform = std::make_shared<LimitsCheckingTransform>(output->getHeader(), limits);
-        transform->setQuota(quota_);
-        connect(*output, transform->getInputPort());
-        output = &transform->getOutputPort();
-        processors->emplace_back(std::move(transform));
-    }
-    catch (const Exception & e)
-    {
-        handleFailover();
-        // Retry the operation after failover
-        auto transform = std::make_shared<LimitsCheckingTransform>(output->getHeader(), limits);
-        transform->setQuota(quota_);
-        connect(*output, transform->getInputPort());
-        output = &transform->getOutputPort();
-        processors->emplace_back(std::move(transform));
-    }
+    auto transform = std::make_shared<LimitsCheckingTransform>(output->getHeader(), limits);
+    transform->setQuota(quota_);
+    connect(*output, transform->getInputPort());
+    output = &transform->getOutputPort();
+    processors->emplace_back(std::move(transform));
 }
 
 bool QueryPipeline::tryGetResultRowsAndBytes(UInt64 & result_rows, UInt64 & result_bytes) const
@@ -606,59 +594,35 @@ bool QueryPipeline::tryGetResultRowsAndBytes(UInt64 & result_rows, UInt64 & resu
     result_bytes = output_format->getResultBytes();
     return true;
 }
+
 void QueryPipeline::writeResultIntoQueryCache(std::shared_ptr<QueryCache::Writer> query_cache_writer)
 {
     handleFailover();
 
     assert(pulling());
 
-    try
+    /// Attach a special transform to all output ports (result + possibly totals/extremes). The only purpose of the transform is
+    /// to write each chunk into the query cache. All transforms hold a refcounted reference to the same query cache writer object.
+    /// This ensures that all transforms write to the single same cache entry. The writer object synchronizes internally, the
+    /// expensive stuff like cloning chunks happens outside lock scopes).
+
+    auto add_stream_in_query_cache_transform = [&](OutputPort *& out_port, QueryCache::Writer::ChunkType chunk_type)
     {
-        /// Attach a special transform to all output ports (result + possibly totals/extremes). The only purpose of the transform is
-        /// to write each chunk into the query cache. All transforms hold a refcounted reference to the same query cache writer object.
-        /// This ensures that all transforms write to the single same cache entry. The writer object synchronizes internally, the
-        /// expensive stuff like cloning chunks happens outside lock scopes).
+        if (!out_port)
+            return;
 
-        auto add_stream_in_query_cache_transform = [&](OutputPort *& out_port, QueryCache::Writer::ChunkType chunk_type)
-        {
-            if (!out_port)
-                return;
+        auto transform = std::make_shared<StreamInQueryCacheTransform>(out_port->getHeader(), query_cache_writer, chunk_type);
+        connect(*out_port, transform->getInputPort());
+        out_port = &transform->getOutputPort();
+        processors->emplace_back(std::move(transform));
+    };
 
-            auto transform = std::make_shared<StreamInQueryCacheTransform>(out_port->getHeader(), query_cache_writer, chunk_type);
-            connect(*out_port, transform->getInputPort());
-            out_port = &transform->getOutputPort();
-            processors->emplace_back(std::move(transform));
-        };
+    using enum QueryCache::Writer::ChunkType;
 
-        using enum QueryCache::Writer::ChunkType;
-
-        add_stream_in_query_cache_transform(output, Result);
-        add_stream_in_query_cache_transform(totals, Totals);
-        add_stream_in_query_cache_transform(extremes, Extremes);
-    }
-    catch (const Exception & e)
-    {
-        handleFailover();
-        // Retry the operation after failover
-        auto add_stream_in_query_cache_transform = [&](OutputPort *& out_port, QueryCache::Writer::ChunkType chunk_type)
-        {
-            if (!out_port)
-                return;
-
-            auto transform = std::make_shared<StreamInQueryCacheTransform>(out_port->getHeader(), query_cache_writer, chunk_type);
-            connect(*out_port, transform->getInputPort());
-            out_port = &transform->getOutputPort();
-            processors->emplace_back(std::move(transform));
-        };
-
-        using enum QueryCache::Writer::ChunkType;
-
-        add_stream_in_query_cache_transform(output, Result);
-        add_stream_in_query_cache_transform(totals, Totals);
-        add_stream_in_query_cache_transform(extremes, Extremes);
-    }
+    add_stream_in_query_cache_transform(output, Result);
+    add_stream_in_query_cache_transform(totals, Totals);
+    add_stream_in_query_cache_transform(extremes, Extremes);
 }
-
 
 void QueryPipeline::finalizeWriteInQueryCache()
 {
@@ -679,38 +643,21 @@ void QueryPipeline::readFromQueryCache(
 {
     handleFailover();
 
-    try
-    {
-        auto add_stream_from_query_cache_source = [&](OutputPort *& out_port, std::unique_ptr<SourceFromChunks> source_)
-        {
-            if (!source_)
-                return;
-            out_port = &source_->getPort();
-            processors->emplace_back(std::shared_ptr<SourceFromChunks>(std::move(source_)));
-        };
+    /// Construct the pipeline from the input source processors. The processors are provided by the query cache to produce chunks of a
+    /// previous query result.
 
-        add_stream_from_query_cache_source(output, std::move(source));
-        add_stream_from_query_cache_source(totals, std::move(source_totals));
-        add_stream_from_query_cache_source(extremes, std::move(source_extremes));
-    }
-    catch (const Exception & e)
+    auto add_stream_from_query_cache_source = [&](OutputPort *& out_port, std::unique_ptr<SourceFromChunks> source_)
     {
-        handleFailover();
-        // Retry the operation after failover
-        auto add_stream_from_query_cache_source = [&](OutputPort *& out_port, std::unique_ptr<SourceFromChunks> source_)
-        {
-            if (!source_)
-                return;
-            out_port = &source_->getPort();
-            processors->emplace_back(std::shared_ptr<SourceFromChunks>(std::move(source_)));
-        };
+        if (!source_)
+            return;
+        out_port = &source_->getPort();
+        processors->emplace_back(std::shared_ptr<SourceFromChunks>(std::move(source_)));
+    };
 
-        add_stream_from_query_cache_source(output, std::move(source));
-        add_stream_from_query_cache_source(totals, std::move(source_totals));
-        add_stream_from_query_cache_source(extremes, std::move(source_extremes));
-    }
+    add_stream_from_query_cache_source(output, std::move(source));
+    add_stream_from_query_cache_source(totals, std::move(source_totals));
+    add_stream_from_query_cache_source(extremes, std::move(source_extremes));
 }
-
 
 void QueryPipeline::addStorageHolder(StoragePtr storage)
 {
@@ -750,32 +697,15 @@ void QueryPipeline::convertStructureTo(const ColumnsWithTypeAndName & columns)
 
     handleFailover();
 
-    try
-    {
-        auto converting = ActionsDAG::makeConvertingActions(
-            output->getHeader().getColumnsWithTypeAndName(),
-            columns,
-            ActionsDAG::MatchColumnsMode::Position);
+    auto converting = ActionsDAG::makeConvertingActions(
+        output->getHeader().getColumnsWithTypeAndName(),
+        columns,
+        ActionsDAG::MatchColumnsMode::Position);
 
-        auto actions = std::make_shared<ExpressionActions>(std::move(converting));
-        addExpression(output, actions, *processors);
-        addExpression(totals, actions, *processors);
-        addExpression(extremes, actions, *processors);
-    }
-    catch (const Exception & e)
-    {
-        handleFailover();
-        // Retry the operation after failover
-        auto converting = ActionsDAG::makeConvertingActions(
-            output->getHeader().getColumnsWithTypeAndName(),
-            columns,
-            ActionsDAG::MatchColumnsMode::Position);
-
-        auto actions = std::make_shared<ExpressionActions>(std::move(converting));
-        addExpression(output, actions, *processors);
-        addExpression(totals, actions, *processors);
-        addExpression(extremes, actions, *processors);
-    }
+    auto actions = std::make_shared<ExpressionActions>(std::move(converting));
+    addExpression(output, actions, *processors);
+    addExpression(totals, actions, *processors);
+    addExpression(extremes, actions, *processors);
 }
 
 
@@ -803,27 +733,20 @@ void QueryPipeline::handleFailover()
 
 void QueryPipeline::reconnect()
 {
-    try
+    for (auto & processor : *processors)
     {
-        for (auto & processor : *processors)
+        if (auto * source = dynamic_cast<RemoteSource *>(&*processor))
         {
-            if (auto * source = dynamic_cast<RemoteSource *>(&*processor))
-            {
-                source->reconnect();
-            }
-            else if (auto * sink = dynamic_cast<SinkToStorage *>(&*processor))
-            {
-                sink->reconnect();
-            }
-            else if (auto * format = dynamic_cast<IOutputFormat *>(&*processor))
-            {
-                format->reconnect();
-            }
+            source->reconnect();
         }
-    }
-    catch (const Exception & e)
-    {
-        throw;
+        else if (auto * sink = dynamic_cast<SinkToStorage *>(&*processor))
+        {
+            sink->reconnect();
+        }
+        else if (auto * format = dynamic_cast<IOutputFormat *>(&*processor))
+        {
+            format->reconnect();
+        }
     }
 }
 
@@ -831,42 +754,35 @@ bool QueryPipeline::isConnectionAlive()
 {
     bool connection_status = true;
 
-    try
+    for (const auto & processor : *processors)
     {
-        for (const auto & processor : *processors)
+        if (const auto * source = dynamic_cast<const RemoteSource *>(&*processor))
         {
-            if (const auto * source = dynamic_cast<const RemoteSource *>(&*processor))
+            if (!source->isConnectionAlive())
             {
-                if (!source->isConnectionAlive())
-                {
-                    connection_status = false;
-                    break;
-                }
-            }
-            else if (const auto * sink = dynamic_cast<const SinkToStorage *>(&*processor))
-            {
-                if (!sink->isConnectionAlive())
-                {
-                    connection_status = false;
-                    break;
-                }
-            }
-            else if (const auto * format = dynamic_cast<const IOutputFormat *>(&*processor))
-            {
-                if (!format->isConnectionAlive())
-                {
-                    connection_status = false;
-                    break;
-                }
+                connection_status = false;
+                break;
             }
         }
-    }
-    catch (const Exception & e)
-    {
-        connection_status = false;
+        else if (const auto * sink = dynamic_cast<const SinkToStorage *>(&*processor))
+        {
+            if (!sink->isConnectionAlive())
+            {
+                connection_status = false;
+                break;
+            }
+        }
+        else if (const auto * format = dynamic_cast<const IOutputFormat *>(&*processor))
+        {
+            if (!format->isConnectionAlive())
+            {
+                connection_status = false;
+                break;
+            }
+        }
     }
 
     return connection_status;
 }
 
-
+}

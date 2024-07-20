@@ -774,7 +774,6 @@ void TCPHandler::runImpl()
 }
 
 
-
 void TCPHandler::extractConnectionSettingsFromContext(const ContextPtr & context)
 {
     const auto & settings = context->getSettingsRef();
