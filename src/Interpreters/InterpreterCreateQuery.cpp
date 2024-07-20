@@ -1298,7 +1298,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
             }
         }
         if (!projection_support)
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                 "Projection is only supported in (Replictaed)MergeTree. Consider drop or rebuild option of deduplicate_merge_projection_mode.");
     }
 

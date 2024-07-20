@@ -43,10 +43,6 @@ BlockIO InterpreterOptimizeQuery::execute()
     auto metadata_snapshot = table->getInMemoryMetadataPtr();
     auto storage_snapshot = table->getStorageSnapshot(metadata_snapshot, getContext());
 
-    /// Don't allow OPTIMIZE DEDUPLICATE for all engines with projections.
-    if (ast.deduplicate && !metadata_snapshot->projections.empty())
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "DEDUPLICATE with projections are not supported yet");
-
     // Empty list of names means we deduplicate by all columns, but user can explicitly state which columns to use.
     Names column_names;
     if (ast.deduplicate_by_columns)

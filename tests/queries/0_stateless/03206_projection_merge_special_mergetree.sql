@@ -4,14 +4,14 @@ CREATE TABLE tp (
     type Int32,
     eventcnt UInt64,
     PROJECTION p (select sum(eventcnt), type group by type)
-) engine = ReplacingMergeTree order by type;  -- { serverError SUPPORT_IS_DISABLED }
+) engine = ReplacingMergeTree order by type;  -- { serverError NOT_IMPLEMENTED }
 
 CREATE TABLE tp (
     type Int32,
     eventcnt UInt64,
     PROJECTION p (select sum(eventcnt), type group by type)
 ) engine = ReplacingMergeTree order by type
-SETTINGS deduplicate_merge_projection_mode = 'throw';  -- { serverError SUPPORT_IS_DISABLED }
+SETTINGS deduplicate_merge_projection_mode = 'throw';  -- { serverError NOT_IMPLEMENTED }
 
 CREATE TABLE tp (
     type Int32,
@@ -19,6 +19,10 @@ CREATE TABLE tp (
     PROJECTION p (select sum(eventcnt), type group by type)
 ) engine = ReplacingMergeTree order by type
 SETTINGS deduplicate_merge_projection_mode = 'drop';
+
+ALTER TABLE tp MODIFY SETTING deduplicate_merge_projection_mode = 'throw';
+
+OPTIMIZE TABLE tp DEDUPLICATE;  -- { serverError NOT_IMPLEMENTED }
 
 DROP TABLE tp;
 
@@ -29,13 +33,8 @@ CREATE TABLE tp (
 ) engine = ReplacingMergeTree order by type
 SETTINGS deduplicate_merge_projection_mode = 'rebuild';
 
+ALTER TABLE tp MODIFY SETTING deduplicate_merge_projection_mode = 'throw';
+
+OPTIMIZE TABLE tp DEDUPLICATE;  -- { serverError NOT_IMPLEMENTED }
+
 DROP TABLE tp;
-
-
--- don't allow OPTIMIZE DEDUPLICATE for all engines with projections
-CREATE TABLE test (
-    a INT PRIMARY KEY,
-    PROJECTION p (SELECT * ORDER BY a)
-) engine = MergeTree;
-
-OPTIMIZE TABLE test DEDUPLICATE;  -- { serverError NOT_IMPLEMENTED }
