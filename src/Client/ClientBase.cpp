@@ -518,7 +518,7 @@ void ClientBase::onData(Block & block, ASTPtr parsed_query)
     if (need_render_progress_table && tty_buf)
     {
         if (!need_render_progress && select_into_file && !select_into_file_and_stdout)
-            std::cerr << "\r";
+            error_stream << "\r";
         progress_table.writeTable(*tty_buf);
     }
 }
