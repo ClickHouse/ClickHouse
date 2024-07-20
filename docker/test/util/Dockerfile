@@ -5,16 +5,9 @@ FROM ubuntu:22.04
 ARG apt_archive="http://archive.ubuntu.com"
 RUN sed -i "s|http://archive.ubuntu.com|$apt_archive|g" /etc/apt/sources.list
 
-# FIXME: rebuild for clang 18.1.3, that contains a workaround [1] for
-# sanitizers issue [2]:
-#
-# $ git tag --contains  c2a57034eff048cd36c563c8e0051db3a70991b3 | tail -1
-# llvmorg-18.1.3
-#
-#  [1]: https://github.com/llvm/llvm-project/commit/c2a57034eff048cd36c563c8e0051db3a70991b3
-#  [2]: https://github.com/ClickHouse/ClickHouse/issues/64086
-ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=18
+ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=18 LLVM_COMMIT=3b5b5c1ec4a3095ab096dd780e84d7ab81f3d7ff
 
+# initial packages
 RUN apt-get update \
     && apt-get install \
         sudo \
@@ -27,33 +20,9 @@ RUN apt-get update \
         iputils-ping \
         lsb-release \
         wget \
-        --yes --no-install-recommends --verbose-versions \
-    && export LLVM_PUBKEY_HASH="bda960a8da687a275a2078d43c111d66b1c6a893a3275271beedf266c1ff4a0cdecb429c7a5cccf9f486ea7aa43fd27f" \
-    && wget -nv -O /tmp/llvm-snapshot.gpg.key https://apt.llvm.org/llvm-snapshot.gpg.key \
-    && echo "${LLVM_PUBKEY_HASH} /tmp/llvm-snapshot.gpg.key" | sha384sum -c \
-    && apt-key add /tmp/llvm-snapshot.gpg.key \
-    && export CODENAME="$(lsb_release --codename --short | tr 'A-Z' 'a-z')" \
-    && echo "deb https://apt.llvm.org/${CODENAME}/ llvm-toolchain-${CODENAME}-${LLVM_VERSION} main" >> \
-        /etc/apt/sources.list \
-    && apt-get update \
-    && apt-get install --yes --no-install-recommends --verbose-versions llvm-${LLVM_VERSION} \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
-
-# Install cmake 3.20+ for Rust support
-# Used https://askubuntu.com/a/1157132 as reference
-RUN curl -s https://apt.kitware.com/keys/kitware-archive-latest.asc | \
-        gpg --dearmor - > /etc/apt/trusted.gpg.d/kitware.gpg && \
-    echo "deb https://apt.kitware.com/ubuntu/ $(lsb_release -cs) main" >> /etc/apt/sources.list
-
-# initial packages
-RUN apt-get update \
-    && apt-get install \
         bash \
         bsdmainutils \
-        build-essential \
         gdb \
-        git \
         gperf \
         moreutils \
         nasm \
@@ -61,8 +30,30 @@ RUN apt-get update \
         rename \
         software-properties-common \
         tzdata \
-        --yes --no-install-recommends \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
+        git \
+        ninja-build \
+        clang \
+        --yes --no-install-recommends --verbose-versions \
+        && apt-get clean && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
+
+# Install cmake 3.20+ for Rust support
+# Used https://askubuntu.com/a/1157132 as reference
+RUN curl -s https://apt.kitware.com/keys/kitware-archive-latest.asc | gpg --dearmor - > /etc/apt/trusted.gpg.d/kitware.gpg \
+    && echo "deb https://apt.kitware.com/ubuntu/ $(lsb_release -cs) main" >> /etc/apt/sources.list \
+    && apt-get update && apt-get install --yes cmake \
+    && apt-get clean && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
+
+# Install LLVM by compiling from sources, using a particular commit.
+# This is more robust. See https://github.com/llvm/llvm-project/issues/99453
+# Feel free to update LLVM_COMMIT if desired.
+
+RUN git clone --no-checkout https://github.com/llvm/llvm-project \
+    && cd llvm-project && git checkout ${LLVM_COMMIT} && cd .. \
+    && mkdir llvm-build && cd llvm-build \
+    && CC=clang-14 CXX=clang++-14 cmake -GNinja -DCMAKE_BUILD_TYPE:STRING=Release -DLLVM_VERSION_SUFFIX=${LLVM_VERSION} -DLLVM_ENABLE_ZLIB=1 -DLLVM_ENABLE_PROJECTS=all -DLLVM_TARGETS_TO_BUILD=all ../llvm-project/llvm \
+    && ninja && ninja install \
+    && cd .. && rm -rf llvm-project llvm-build \
+    && apt-get remove --yes gcc clang \
+    && apt-get clean && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
 COPY process_functional_tests_result.py /
