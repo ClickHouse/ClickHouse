@@ -46,7 +46,7 @@ RUN apt-get update \
 RUN curl -s https://apt.kitware.com/keys/kitware-archive-latest.asc | gpg --dearmor - > /etc/apt/trusted.gpg.d/kitware.gpg \
     && echo "deb https://apt.kitware.com/ubuntu/ $(lsb_release -cs) main" >> /etc/apt/sources.list \
     && apt-get update && apt-get install --yes cmake \
-    && apt-get clean && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
+    && apt-get clean && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/* \
     && git clone --no-checkout https://github.com/llvm/llvm-project \
     && cd llvm-project && git checkout ${LLVM_COMMIT} && cd .. \
     && mkdir llvm-build && cd llvm-build \
