@@ -34,10 +34,11 @@ enum SnapshotVersion : uint8_t
 static constexpr auto CURRENT_SNAPSHOT_VERSION = SnapshotVersion::V6;
 
 /// What is stored in binary snapshot
+template<typename Storage>
 struct SnapshotDeserializationResult
 {
     /// Storage
-    KeeperStoragePtr storage;
+    std::unique_ptr<Storage> storage;
     /// Snapshot metadata (up_to_log_idx and so on)
     SnapshotMetadataPtr snapshot_meta;
     /// Cluster config
@@ -52,21 +53,31 @@ struct SnapshotDeserializationResult
 ///
 /// This representation of snapshot have to be serialized into NuRaft
 /// buffer and send over network or saved to file.
+template<typename Storage>
 struct KeeperStorageSnapshot
 {
+#if USE_ROCKSDB
+    static constexpr bool use_rocksdb = std::is_same_v<Storage, KeeperRocksStorage>;
+#else
+    static constexpr bool use_rocksdb = false;
+#endif
+
 public:
-    KeeperStorageSnapshot(KeeperStorage * storage_, uint64_t up_to_log_idx_, const ClusterConfigPtr & cluster_config_ = nullptr);
+    KeeperStorageSnapshot(Storage * storage_, uint64_t up_to_log_idx_, const ClusterConfigPtr & cluster_config_ = nullptr);
 
     KeeperStorageSnapshot(
-        KeeperStorage * storage_, const SnapshotMetadataPtr & snapshot_meta_, const ClusterConfigPtr & cluster_config_ = nullptr);
+        Storage * storage_, const SnapshotMetadataPtr & snapshot_meta_, const ClusterConfigPtr & cluster_config_ = nullptr);
+
+    KeeperStorageSnapshot(const KeeperStorageSnapshot<Storage>&) = delete;
+    KeeperStorageSnapshot(KeeperStorageSnapshot<Storage>&&) = default;
 
     ~KeeperStorageSnapshot();
 
-    static void serialize(const KeeperStorageSnapshot & snapshot, WriteBuffer & out, KeeperContextPtr keeper_context);
+    static void serialize(const KeeperStorageSnapshot<Storage> & snapshot, WriteBuffer & out, KeeperContextPtr keeper_context);
 
-    static void deserialize(SnapshotDeserializationResult & deserialization_result, ReadBuffer & in, KeeperContextPtr keeper_context);
+    static void deserialize(SnapshotDeserializationResult<Storage> & deserialization_result, ReadBuffer & in, KeeperContextPtr keeper_context);
 
-    KeeperStorage * storage;
+    Storage * storage;
 
     SnapshotVersion version = CURRENT_SNAPSHOT_VERSION;
     /// Snapshot metadata
@@ -77,11 +88,11 @@ public:
     /// so we have for loop for (i = 0; i < snapshot_container_size; ++i) { doSmth(begin + i); }
     size_t snapshot_container_size;
     /// Iterator to the start of the storage
-    KeeperStorage::Container::const_iterator begin;
+    Storage::Container::const_iterator begin;
     /// Active sessions and their timeouts
     SessionAndTimeout session_and_timeout;
     /// Sessions credentials
-    KeeperStorage::SessionAndAuth session_and_auth;
+    Storage::SessionAndAuth session_and_auth;
     /// ACLs cache for better performance. Without we cannot deserialize storage.
     std::unordered_map<uint64_t, Coordination::ACLs> acl_map;
     /// Cluster config from snapshot, can be empty
@@ -105,14 +116,16 @@ struct SnapshotFileInfo
 };
 
 using SnapshotFileInfoPtr = std::shared_ptr<SnapshotFileInfo>;
-
-using KeeperStorageSnapshotPtr = std::shared_ptr<KeeperStorageSnapshot>;
-using CreateSnapshotCallback = std::function<std::shared_ptr<SnapshotFileInfo>(KeeperStorageSnapshotPtr &&, bool)>;
-
-using SnapshotMetaAndStorage = std::pair<SnapshotMetadataPtr, KeeperStoragePtr>;
+#if USE_ROCKSDB
+using KeeperStorageSnapshotPtr = std::variant<std::shared_ptr<KeeperStorageSnapshot<KeeperMemoryStorage>>, std::shared_ptr<KeeperStorageSnapshot<KeeperRocksStorage>>>;
+#else
+using KeeperStorageSnapshotPtr = std::variant<std::shared_ptr<KeeperStorageSnapshot<KeeperMemoryStorage>>>;
+#endif
+using CreateSnapshotCallback = std::function<SnapshotFileInfoPtr(KeeperStorageSnapshotPtr &&, bool)>;
 
 /// Class responsible for snapshots serialization and deserialization. Each snapshot
 /// has it's path on disk and log index.
+template<typename Storage>
 class KeeperSnapshotManager
 {
 public:
@@ -124,18 +137,18 @@ public:
         size_t storage_tick_time_ = 500);
 
     /// Restore storage from latest available snapshot
-    SnapshotDeserializationResult restoreFromLatestSnapshot();
+    SnapshotDeserializationResult<Storage> restoreFromLatestSnapshot();
 
     /// Compress snapshot and serialize it to buffer
-    nuraft::ptr<nuraft::buffer> serializeSnapshotToBuffer(const KeeperStorageSnapshot & snapshot) const;
+    nuraft::ptr<nuraft::buffer> serializeSnapshotToBuffer(const KeeperStorageSnapshot<Storage> & snapshot) const;
 
     /// Serialize already compressed snapshot to disk (return path)
     SnapshotFileInfoPtr serializeSnapshotBufferToDisk(nuraft::buffer & buffer, uint64_t up_to_log_idx);
 
     /// Serialize snapshot directly to disk
-    SnapshotFileInfoPtr serializeSnapshotToDisk(const KeeperStorageSnapshot & snapshot);
+    SnapshotFileInfoPtr serializeSnapshotToDisk(const KeeperStorageSnapshot<Storage> & snapshot);
 
-    SnapshotDeserializationResult deserializeSnapshotFromBuffer(nuraft::ptr<nuraft::buffer> buffer) const;
+    SnapshotDeserializationResult<Storage> deserializeSnapshotFromBuffer(nuraft::ptr<nuraft::buffer> buffer) const;
 
     /// Deserialize snapshot with log index up_to_log_idx from disk into compressed nuraft buffer.
     nuraft::ptr<nuraft::buffer> deserializeSnapshotBufferFromDisk(uint64_t up_to_log_idx) const;
