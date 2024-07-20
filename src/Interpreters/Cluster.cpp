@@ -910,9 +910,7 @@ void Cluster::handleDynamicReplicas()
     }
 }
 
-
-// Check if a connection pool is alive
-bool Cluster::isConnectionAlive(const ConnectionPoolWithFailover::Ptr & pool)
+bool Cluster::isConnectionAlive(const std::shared_ptr<ConnectionPoolWithFailover> & pool)
 {
     try
     {
@@ -927,8 +925,7 @@ bool Cluster::isConnectionAlive(const ConnectionPoolWithFailover::Ptr & pool)
     }
 }
 
-// Reconnect a connection pool
-void Cluster::reconnect(ConnectionPoolWithFailover::Ptr & pool, const Address & address)
+void Cluster::reconnect(std::shared_ptr<ConnectionPoolWithFailover> & pool, const Address & address)
 {
     try
     {

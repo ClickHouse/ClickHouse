@@ -274,8 +274,8 @@ public:
 
     const String & getName() const { return name; }
     void handleDynamicReplicas();
-    bool isConnectionAlive(const ConnectionPoolWithFailover::Ptr & pool);
-     void reconnect(ConnectionPoolWithFailover::Ptr & pool, const Address & address);
+    bool isConnectionAlive(const std::shared_ptr<ConnectionPoolWithFailover> & pool);
+    void reconnect(std::shared_ptr<ConnectionPoolWithFailover> & pool, const Address & address);
     void reconnectToReplica(size_t shard_index);
 
 private:
