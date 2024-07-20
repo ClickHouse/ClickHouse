@@ -9,7 +9,7 @@ ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS nbagames"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS nbagames_string"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS nbagames_from_string"
 
-${CLICKHOUSE_CLIENT} -q "CREATE TABLE nbagames (data JSON) ENGINE = MergeTree ORDER BY tuple()" --allow_experimental_object_type 1
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE nbagames (data Object('json')) ENGINE = MergeTree ORDER BY tuple()" --allow_experimental_object_type 1
 
 cat $CUR_DIR/data_json/nbagames_sample.json | ${CLICKHOUSE_CLIENT} -q "INSERT INTO nbagames FORMAT JSONAsObject"
 

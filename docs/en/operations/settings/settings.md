@@ -5608,3 +5608,10 @@ Default value: `10000000`.
 Minimal size of block to compress in CROSS JOIN. Zero value means - disable this threshold. This block is compressed when any of the two thresholds (by rows or by bytes) are reached.
 
 Default value: `1GiB`.
+
+## use_json_alias_for_old_object_type
+
+When enabled, `JSON` data type alias will be used to create an old [Object('json')](../../sql-reference/data-types/ob) type instead of the new [JSON](../../sql-reference/data-types/json.md) type.
+This setting requires server restart to take effect when changed.
+
+Default value: `false`.

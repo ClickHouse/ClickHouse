@@ -28,7 +28,7 @@ SELECT `t`.`1`.`1`, `t`.`1`.`2`, `t`.`2` FROM t_tuple_numeric;
 DROP TABLE t_tuple_numeric;
 
 SET allow_experimental_object_type = 1;
-CREATE TABLE t_tuple_numeric (t JSON) ENGINE = Memory;
+CREATE TABLE t_tuple_numeric (t Object('json')) ENGINE = Memory;
 INSERT INTO t_tuple_numeric FORMAT JSONEachRow {"t":{"1":{"2":2,"3":3},"4":4}}
 
 SELECT toTypeName(t) FROM t_tuple_numeric LIMIT 1;

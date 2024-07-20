@@ -101,14 +101,15 @@ public:
     ColumnPtr replicate(const Offsets & replicate_offsets) const override;
     MutableColumns scatter(ColumnIndex num_columns, const Selector & selector) const override;
 
+    void getPermutation(PermutationSortDirection, PermutationSortStability, size_t, int, Permutation &) const override;
+    void updatePermutation(PermutationSortDirection, PermutationSortStability, size_t, int, Permutation &, EqualRanges &) const override {}
+
     /// Values of ColumnObject are not comparable.
 #if !defined(ABORT_ON_LOGICAL_ERROR)
     int compareAt(size_t, size_t, const IColumn &, int) const override { return 0; }
 #else
     int doCompareAt(size_t, size_t, const IColumn &, int) const override { return 0; }
 #endif
-    void getPermutation(PermutationSortDirection, PermutationSortStability, size_t, int, Permutation &) const override;
-    void updatePermutation(PermutationSortDirection, PermutationSortStability, size_t, int, Permutation &, EqualRanges &) const override {}
     void getExtremes(Field & min, Field & max) const override
     {
         min = Object();

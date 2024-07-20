@@ -14,9 +14,7 @@
 #include <Parsers/ASTNameTypePair.h>
 #include <Formats/JSONExtractTree.h>
 #include <Interpreters/Context.h>
-
 #include <Core/Settings.h>
-
 #if USE_SIMDJSON
 #include <Common/JSONParsers/SimdJSONParser.h>
 #endif
@@ -480,7 +478,7 @@ static DataTypePtr createJSON(const ASTPtr & arguments)
 void registerDataTypeJSON(DataTypeFactory & factory)
 {
     if (!Context::getGlobalContextInstance()->getSettingsRef().use_json_alias_for_old_object_type)
-        factory.registerDataType("JSON", createJSON);
+        factory.registerDataType("JSON", createJSON, DataTypeFactory::CaseInsensitive);
 }
 
 }

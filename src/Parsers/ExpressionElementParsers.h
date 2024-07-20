@@ -56,6 +56,7 @@ protected:
  *  There is also special delimiters `.:` and `.^` for JSON type subcolumns. In case of special delimiter
  *  the next identifier part after it will include special delimiter and be back quoted always: json.a.b.:UInt32 -> ['json', 'a', 'b', ':`UInt32`'].
  *  It's needed to distinguish identifiers json.a.b.:UInt32 and json.a.b.`:UInt32`.
+ *  There is also a special syntax sugar for reading JSON subcolumns of type Array(JSON): json.a.b[][].c -> json.a.b.:Array(Array(JSON)).c
   */
 class ParserCompoundIdentifier : public IParserBase
 {

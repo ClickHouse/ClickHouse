@@ -1,0 +1,88 @@
+MergeTree compact + horizontal merge
+test
+Dynamic paths
+300000	c
+150000	d
+Shared data paths
+Dynamic paths
+300000	c
+Shared data paths
+150000	d
+Dynamic paths
+600000	f
+300000	c
+150000	e
+Shared data paths
+150000	d
+Dynamic paths
+600000	f
+Shared data paths
+300000	c
+150000	d
+150000	e
+MergeTree wide + horizontal merge
+test
+Dynamic paths
+300000	c
+150000	d
+Shared data paths
+Dynamic paths
+300000	c
+Shared data paths
+150000	d
+Dynamic paths
+600000	f
+300000	c
+150000	e
+Shared data paths
+150000	d
+Dynamic paths
+600000	f
+Shared data paths
+300000	c
+150000	d
+150000	e
+MergeTree compact + vertical merge
+test
+Dynamic paths
+300000	c
+150000	d
+Shared data paths
+Dynamic paths
+300000	c
+Shared data paths
+150000	d
+Dynamic paths
+600000	f
+300000	c
+150000	e
+Shared data paths
+150000	d
+Dynamic paths
+600000	f
+Shared data paths
+300000	c
+150000	d
+150000	e
+MergeTree wide + vertical merge
+test
+Dynamic paths
+300000	c
+150000	d
+Shared data paths
+Dynamic paths
+300000	c
+Shared data paths
+150000	d
+Dynamic paths
+600000	f
+300000	c
+150000	e
+Shared data paths
+150000	d
+Dynamic paths
+600000	f
+Shared data paths
+300000	c
+150000	d
+150000	e

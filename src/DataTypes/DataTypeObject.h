@@ -24,7 +24,7 @@ public:
     };
 
     /// Don't change these constants, it can break backward compatibility.
-    static constexpr size_t DEFAULT_MAX_SEPARATELY_STORED_PATHS = 1000;
+    static constexpr size_t DEFAULT_MAX_SEPARATELY_STORED_PATHS = 1024;
     static constexpr size_t NESTED_OBJECT_MAX_DYNAMIC_PATHS_REDUCE_FACTOR = 4;
     static constexpr size_t NESTED_OBJECT_MAX_DYNAMIC_TYPES_REDUCE_FACTOR = 2;
 
@@ -44,10 +44,7 @@ public:
 
     MutableColumnPtr createColumn() const override;
 
-    Field getDefault() const override
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getDefault() is not implemented for data type {}", getName());
-    }
+    Field getDefault() const override { return Object(); }
 
     bool isParametric() const override { return true; }
     bool canBeInsideNullable() const override { return false; }

@@ -1,0 +1,100 @@
+MergeTree compact
+test
+Dynamic paths
+100000	a
+90000	b
+80000	c
+70000	d
+60000	e
+Shared data paths
+Dynamic paths
+100000	a
+90000	b
+80000	c
+Shared data paths
+70000	d
+60000	e
+Dynamic paths
+200000	f
+100000	a
+90000	b
+80000	c
+Shared data paths
+70000	d
+60000	e
+Dynamic paths
+200000	f
+100000	a
+90000	b
+Shared data paths
+80000	c
+70000	d
+60000	e
+Dynamic paths
+200000	f
+100000	a
+90000	b
+10000	g
+Shared data paths
+80000	c
+70000	d
+60000	e
+Dynamic paths
+200000	f
+100000	a
+90000	b
+Shared data paths
+80000	c
+70000	d
+60000	e
+10000	g
+MergeTree wide
+test
+Dynamic paths
+100000	a
+90000	b
+80000	c
+70000	d
+60000	e
+Shared data paths
+Dynamic paths
+100000	a
+90000	b
+80000	c
+Shared data paths
+70000	d
+60000	e
+Dynamic paths
+200000	f
+100000	a
+90000	b
+80000	c
+Shared data paths
+70000	d
+60000	e
+Dynamic paths
+200000	f
+100000	a
+90000	b
+Shared data paths
+80000	c
+70000	d
+60000	e
+Dynamic paths
+200000	f
+100000	a
+90000	b
+10000	g
+Shared data paths
+80000	c
+70000	d
+60000	e
+Dynamic paths
+200000	f
+100000	a
+90000	b
+Shared data paths
+80000	c
+70000	d
+60000	e
+10000	g

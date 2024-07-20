@@ -1510,7 +1510,7 @@ private:
             }
             case ElementType::OBJECT:
             {
-                return getObjectType();
+                return std::make_shared<DataTypeObject>(DataTypeObject::SchemaFormat::JSON, max_dynamic_paths_for_object, max_dynamic_types_for_object);
             }
         }
     }
@@ -1546,12 +1546,6 @@ private:
     {
         static const DataTypePtr float64_type = std::make_shared<DataTypeFloat64>();
         return float64_type;
-    }
-
-    const DataTypePtr & getObjectType() const
-    {
-        static const DataTypePtr object_type = std::make_shared<DataTypeObject>(DataTypeObject::SchemaFormat::JSON, max_dynamic_paths_for_object, max_dynamic_types_for_object);
-        return object_type;
     }
 
     const DataTypePtr & getNullType() const

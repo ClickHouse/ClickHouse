@@ -424,7 +424,7 @@ void ColumnObject::insertRangeFrom(const IColumn & src, size_t start, size_t len
 void ColumnObject::doInsertRangeFrom(const IColumn & src, size_t start, size_t length)
 #endif
 {
-    /// TODO: try to parallelize doInsertRangeFrom over typed/dynamic paths.
+    /// TODO: try to parallelize doInsertRangeFrom over typed/dynamic paths if it makes sense.
     const auto & src_object_column = assert_cast<const ColumnObject &>(src);
 
     /// First, insert typed paths, they must be the same for both columns.

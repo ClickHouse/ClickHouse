@@ -9,7 +9,7 @@ DROP TABLE IF EXISTS t_json_5;
 DROP TABLE IF EXISTS t_json_str_5;
 
 CREATE TABLE t_json_str_5 (data String) ENGINE = MergeTree ORDER BY tuple();
-CREATE TABLE t_json_5 (data JSON) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE t_json_5 (data Object('json')) ENGINE = MergeTree ORDER BY tuple();
 
 INSERT INTO t_json_str_5 FORMAT JSONAsString {"k1": 1, "k2": {"k4": [22, 33]}}, {"k1": 2, "k2": {"k3": "qqq", "k4": [44]}}
 ;

@@ -99,7 +99,7 @@ REGISTER_FUNCTION(JSONEmpty)
 {
     factory.registerFunction<FunctionJSONEmpty>(FunctionDocumentation{
         .description = R"(
-Checks whether thee input JSON object is empty.
+Checks whether the input JSON object is empty.
 )",
         .syntax = {"JSONEmpty(json)"},
         .arguments = {{"json", "JSON column"}},

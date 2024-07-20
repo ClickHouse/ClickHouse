@@ -19,7 +19,7 @@ To declare a column of `JSON` type, use the following syntax:
 <column_name> JSON(max_dynamic_paths=N, max_dynamic_types=M, some.path TypeName, SKIP path.to.skip, SKIP REGEXP 'paths_regexp')
 ```
 Where:
-- `max_dynamic_paths` is an optional parameter indicating how many paths can be stored separately as subcolumns across single block of data that is stored separately (for example across single data part for MergeTree table). If this limit is exceeded, all other paths will be stored together in a single structure. Default value of `max_dynamic_paths` is `1000`.
+- `max_dynamic_paths` is an optional parameter indicating how many paths can be stored separately as subcolumns across single block of data that is stored separately (for example across single data part for MergeTree table). If this limit is exceeded, all other paths will be stored together in a single structure. Default value of `max_dynamic_paths` is `1024`.
 - `max_dynamic_types` is an optional parameter between `1` and `255` indicating how many different data types can be stored inside a single path column with type `Dynamic` across single block of data that is stored separately (for example across single data part for MergeTree table). If this limit is exceeded, all new types will be converted to type `String`. Default value of `max_dynamic_types` is `32`.
 - `some.path TypeName` is an optional type hint for particular path in the JSON. Such paths will be always stored as subcolumns with specified type.
 - `SKIP path.to.skip` is an optional hint for particular path that should be skipped during JSON parsing. Such paths will never be stored in the JSON column. If specified path is a nested JSON object, the whole nested object will be skipped.
@@ -267,18 +267,18 @@ JSON paths that contains an array of objects are parsed as type `Array(JSON)` an
 ```sql
 CREATE TABLE test (json JSON) ENGINE = Memory;
 INSERT INTO test VALUES
-('{"a" : {"b" : [{"c" : 42, "d" : "Hello", "f" : {"g" : 42.42}}, {"c" : 43}, {"e" : [1, 2, 3], "d" : "My", "f" : {"g" : 43.43, "h" : "2020-01-01"}}]}}'),
+('{"a" : {"b" : [{"c" : 42, "d" : "Hello", "f" : [[{"g" : 42.42}]], "k" : {"j" : 1000}}, {"c" : 43}, {"e" : [1, 2, 3], "d" : "My", "f" : [[{"g" : 43.43, "h" : "2020-01-01"}]],  "k" : {"j" : 2000}}]}}'),
 ('{"a" : {"b" : [1, 2, 3]}}'),
-('{"a" : {"b" : [{"c" : 44, "f" : {"h" : "2020-01-02"}}, {"e" : [4, 5, 6], "d" : "World", "f" : {"g" : 44.44}}]}}');
+('{"a" : {"b" : [{"c" : 44, "f" : [[{"h" : "2020-01-02"}]]}, {"e" : [4, 5, 6], "d" : "World", "f" : [[{"g" : 44.44}]],  "k" : {"j" : 3000}}]}}');
 SELECT json FROM test;
 ```
 
-```text
-┌─json──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│ {"a":{"b":[{"c":"42","d":"Hello","f":{"g":42.42}},{"c":"43"},{"d":"My","e":["1","2","3"],"f":{"g":43.43,"h":"2020-01-01"}}]}} │
-│ {"a":{"b":["1","2","3"]}}                                                                                                     │
-│ {"a":{"b":[{"c":"44","f":{"h":"2020-01-02"}},{"d":"World","e":["4","5","6"],"f":{"g":44.44}}]}}                               │
-└───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```text3
+┌─json────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ {"a":{"b":[{"c":"42","d":"Hello","f":[[{"g":42.42}]],"k":{"j":"1000"}},{"c":"43"},{"d":"My","e":["1","2","3"],"f":[[{"g":43.43,"h":"2020-01-01"}]],"k":{"j":"2000"}}]}} │
+│ {"a":{"b":["1","2","3"]}}                                                                                                                                               │
+│ {"a":{"b":[{"c":"44","f":[[{"h":"2020-01-02"}]]},{"d":"World","e":["4","5","6"],"f":[[{"g":44.44}]],"k":{"j":"3000"}}]}}                                                │
+└─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ```sql
@@ -286,55 +286,87 @@ SELECT json.a.b, dynamicType(json.a.b) FROM test;
 ```
 
 ```text
-┌─json.a.b────────────────────────────────────────────────────────────────────────────────────────────────────────────────┬─dynamicType(json.a.b)───────────────────────────────────┐
-│ ['{"c":"42","d":"Hello","f":{"g":42.42}}','{"c":"43"}','{"d":"My","e":["1","2","3"],"f":{"g":43.43,"h":"2020-01-01"}}'] │ Array(JSON(max_dynamic_types=8, max_dynamic_paths=125)) │
-│ [1,2,3]                                                                                                                 │ Array(Nullable(Int64))                                  │
-│ ['{"c":"44","f":{"h":"2020-01-02"}}','{"d":"World","e":["4","5","6"],"f":{"g":44.44}}']                                 │ Array(JSON(max_dynamic_types=8, max_dynamic_paths=125)) │
-└─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┴─────────────────────────────────────────────────────────┘
+┌─json.a.b──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┬─dynamicType(json.a.b)────────────────────────────────────┐
+│ ['{"c":"42","d":"Hello","f":[[{"g":42.42}]],"k":{"j":"1000"}}','{"c":"43"}','{"d":"My","e":["1","2","3"],"f":[[{"g":43.43,"h":"2020-01-01"}]],"k":{"j":"2000"}}'] │ Array(JSON(max_dynamic_types=16, max_dynamic_paths=256)) │
+│ [1,2,3]                                                                                                                                                           │ Array(Nullable(Int64))                                   │
+│ ['{"c":"44","f":[[{"h":"2020-01-02"}]]}','{"d":"World","e":["4","5","6"],"f":[[{"g":44.44}]],"k":{"j":"3000"}}']                                                  │ Array(JSON(max_dynamic_types=16, max_dynamic_paths=256)) │
+└───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┴──────────────────────────────────────────────────────────┘
 ```
 
 As you can notice, the `max_dynamic_types/max_dynamic_paths` parameters of the nested `JSON` type were reduced compared to the default values. It's needed to avoid number of subcolumns to grow  uncontrolled on nested arrays of JSON objects.
 
-Let's try to read subcolumns of this nested `JSON` column:
+Let's try to read subcolumns from this nested `JSON` column:
 
 ```sql
-SELECT json.a.b.:`Array(JSON)`.c, json.a.b.:`Array(JSON)`.f.g, json.a.b.:`Array(JSON)`.f.g FROM test; 
+SELECT json.a.b.:`Array(JSON)`.c, json.a.b.:`Array(JSON)`.f, json.a.b.:`Array(JSON)`.d FROM test; 
 ```
 
 ```text
-┌─json.a.b.:`Array(JSON)`.c─┬─json.a.b.:`Array(JSON)`.f.g─┬─json.a.b.:`Array(JSON)`.f.g─┐
-│ [42,43,NULL]              │ [42.42,NULL,43.43]          │ [42.42,NULL,43.43]          │
-│ []                        │ []                          │ []                          │
-│ [44,NULL]                 │ [NULL,44.44]                │ [NULL,44.44]                │
-└───────────────────────────┴─────────────────────────────┴─────────────────────────────┘
+┌─json.a.b.:`Array(JSON)`.c─┬─json.a.b.:`Array(JSON)`.f───────────────────────────────────┬─json.a.b.:`Array(JSON)`.d─┐
+│ [42,43,NULL]              │ [[['{"g":42.42}']],NULL,[['{"g":43.43,"h":"2020-01-01"}']]] │ ['Hello',NULL,'My']       │
+│ []                        │ []                                                          │ []                        │
+│ [44,NULL]                 │ [[['{"h":"2020-01-02"}']],[['{"g":44.44}']]]                │ [NULL,'World']            │
+└───────────────────────────┴─────────────────────────────────────────────────────────────┴───────────────────────────┘
 ```
 
-We can also read subcolumns of `Dynamic` columns:
+We can avoid writing `Array(JSON)` subcolumn name using special syntax:
 
 ```sql
-SELECT json.a.b.:`Array(JSON)`.f.h.:Date FROM test;
+SELECT json.a.b[].c, json.a.b[].f, json.a.b[].d FROM test;
 ```
 
 ```text
-┌─json.a.b.:`Array(JSON)`.f.h.:`Date`─┐
-│ [NULL,NULL,'2020-01-01']            │
-│ []                                  │
-│ ['2020-01-02',NULL]                 │
-└─────────────────────────────────────┘
+┌─json.a.b.:`Array(JSON)`.c─┬─json.a.b.:`Array(JSON)`.f───────────────────────────────────┬─json.a.b.:`Array(JSON)`.d─┐
+│ [42,43,NULL]              │ [[['{"g":42.42}']],NULL,[['{"g":43.43,"h":"2020-01-01"}']]] │ ['Hello',NULL,'My']       │
+│ []                        │ []                                                          │ []                        │
+│ [44,NULL]                 │ [[['{"h":"2020-01-02"}']],[['{"g":44.44}']]]                │ [NULL,'World']            │
+└───────────────────────────┴─────────────────────────────────────────────────────────────┴───────────────────────────┘
+```
+
+The number of `[]` after path indicates the array level. `json.path[][]` will be transformed to `json.path.:Array(Array(JSON))`
+
+Let's check the paths and types inside our `Array(JSON)`:
+
+```sql
+SELECT DISTINCT arrayJoin(JSONAllPathsWithTypes(arrayJoin(json.a.b[]))) FROM test;
+```
+
+```text
+┌─arrayJoin(JSONAllPathsWithTypes(arrayJoin(json.a.b.:`Array(JSON)`)))──┐
+│ ('c','Int64')                                                         │
+│ ('d','String')                                                        │
+│ ('f','Array(Array(JSON(max_dynamic_types=8, max_dynamic_paths=64)))') │
+│ ('k.j','Int64')                                                       │
+│ ('e','Array(Nullable(Int64))')                                        │
+└───────────────────────────────────────────────────────────────────────┘
+```
+
+Let's read subcolumns from `Array(JSON)` column:
+
+```sql
+SELECT json.a.b[].c.:Int64, json.a.b[].f[][].g.:Float64, json.a.b[].f[][].h.:Date FROM test;
+```
+
+```text
+┌─json.a.b.:`Array(JSON)`.c.:`Int64`─┬─json.a.b.:`Array(JSON)`.f.:`Array(Array(JSON))`.g.:`Float64`─┬─json.a.b.:`Array(JSON)`.f.:`Array(Array(JSON))`.h.:`Date`─┐
+│ [42,43,NULL]                       │ [[[42.42]],[],[[43.43]]]                                     │ [[[NULL]],[],[['2020-01-01']]]                            │
+│ []                                 │ []                                                           │ []                                                        │
+│ [44,NULL]                          │ [[[NULL]],[[44.44]]]                                         │ [[['2020-01-02']],[[NULL]]]                               │
+└────────────────────────────────────┴──────────────────────────────────────────────────────────────┴───────────────────────────────────────────────────────────┘
 ```
 
 We can also read sub-object subcolumns from nested `JSON` column:
 
 ```sql
-SELECT json.a.b.:`Array(JSON)`.^f FROM test
+SELECT json.a.b[].^k FROM test
 ```
 
 ```text
-┌─json.a.b.:`Array(JSON)`.^`f`────────────────────────┐
-│ ['{"g":42.42}','{}','{"g":43.43,"h":"2020-01-01"}'] │
-│ []                                                  │
-│ ['{"h":"2020-01-02"}','{"g":44.44}']                │
-└─────────────────────────────────────────────────────┘
+┌─json.a.b.:`Array(JSON)`.^`k`─────────┐
+│ ['{"j":"1000"}','{}','{"j":"2000"}'] │
+│ []                                   │
+│ ['{}','{"j":"3000"}']                │
+└──────────────────────────────────────┘
 ```
 
 ## Reading JSON type from the data
@@ -386,7 +418,7 @@ SELECT json FROM format(TSV, 'json JSON(a.b.c UInt32, SKIP a.b.d, SKIP REGEXP \'
 
 ## Reaching the limit of dynamic paths inside JSON
 
-`JSON` data type can store only limited number of paths as separate subcolumns inside. By default, this limit is 1000, but you can change it in type declaration using parameter `max_dynamic_paths`.
+`JSON` data type can store only limited number of paths as separate subcolumns inside. By default, this limit is 1024, but you can change it in type declaration using parameter `max_dynamic_paths`.
 When the limit is reached, all new paths inserted to `JSON` column will be stored in a single shared data structure. It's still possible to read such paths as subcolumns, but it will require reading the whole
 shared data structure to extract the values of this path. This limit is needed to avoid the enormous number of different subcolumns that can make the table unusable.
 
@@ -470,7 +502,9 @@ SELECT count(), dynamicType(d), _part FROM test GROUP BY _part, dynamicType(d) O
 
 As we can see, ClickHouse kept the most frequent paths `a`, `b` and `c` and moved paths `e` and `d` to shared data structure.
 
+## Introspection functions
 
+There are several functions that can help to inspect the content of the JSON column: [JSONAllPaths](../functions/json-functions.md#jsonallpaths), [JSONAllPathsWithTypes](../functions/json-functions.md#jsonallpathswithtypes), [JSONDynamicPaths](../functions/json-functions.md#jsondynamicpaths), [JSONDynamicPathsWithTypes](../functions/json-functions.md#jsondynamicpathswithtypes), [JSONSharedDataPaths](../functions/json-functions.md#jsonshareddatapaths), [JSONSharedDataPathsWithTypes](../functions/json-functions.md#jsonshareddatapathswithtypes).
 
 ## Tips for better usage of the JSON type
 

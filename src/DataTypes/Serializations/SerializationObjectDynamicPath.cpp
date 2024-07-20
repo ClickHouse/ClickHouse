@@ -147,6 +147,18 @@ void SerializationObjectDynamicPath::deserializeBinaryBulkWithMultipleStreams(
         settings.path.pop_back();
     }
     /// Otherwise, read the whole shared data column and extract requested path from it.
+    /// TODO: We can read several subcolumns of the same path located in the shared data
+    ///       and right now we extract the whole path column from shared data every time
+    ///       and then extract the requested subcolumns. We can optimize it and use substreams
+    ///       cache here to avoid extracting the same path from shared data several times.
+    ///
+    /// TODO: We can change the serialization of shared data to optimize reading paths from it.
+    ///       Right now we cannot know if shared data contains our path in current range or not,
+    ///       but we can change the serialization and write the list of all paths stored in shared
+    ///       data before each granule, and then replace the column that stores paths with column
+    ///       with indexes in this list. It can also reduce the storage, because we will store
+    ///       each path only once and can replace UInt64 string offset column with indexes column
+    ///       that can have smaller type depending on the number of paths in the list.
     else
     {
         settings.path.push_back(Substream::ObjectSharedData);
