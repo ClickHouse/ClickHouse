@@ -874,7 +874,9 @@ void DiskObjectStorageTransaction::writeFileUsingBlobWritingFunction(
     /// Create metadata (see create_metadata_callback in DiskObjectStorageTransaction::writeFile()).
     if (mode == WriteMode::Rewrite)
     {
-        if (!object_storage.isWriteOnce() && metadata_storage.exists(path))
+        /// Otherwise we will produce lost blobs which nobody points to
+        /// WriteOnce storages are not affected by the issue
+        if (!object_storage.isPlain() && metadata_storage.exists(path))
             object_storage.removeObjectsIfExist(metadata_storage.getStorageObjects(path));
 
         metadata_transaction->createMetadataFile(path, std::move(object_key), object_size);
