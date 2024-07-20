@@ -2168,7 +2168,10 @@ def run_tests_array(all_tests_with_params: Tuple[List[str], int, TestSuite, bool
 
     while True:
         if all_tests:
-            case = all_tests.pop(0)
+            try:
+                case = all_tests.pop(0)
+            except IndexError:
+                break
         else:
             break
 
@@ -2474,18 +2477,16 @@ def do_run_tests(jobs, test_suite: TestSuite):
         # of failures will be nearly the same for all tests from the group.
         random.shuffle(test_suite.parallel_tests)
 
-        batch_size = max(1, (len(test_suite.parallel_tests) // jobs) + 1)
-        parallel_tests_array = []
-        for job in range(jobs):
-            range_ = job * batch_size, job * batch_size + batch_size
-            batch = test_suite.parallel_tests[range_[0] : range_[1]]
-            parallel_tests_array.append((batch, batch_size, test_suite, True))
+        batch_size = len(test_suite.parallel_tests) // jobs
+        manager = multiprocessing.Manager()
+        parallel_tests = manager.list()
+        parallel_tests.extend(test_suite.parallel_tests)
 
         processes = []
-
-        for test_batch in parallel_tests_array:
+        for _ in range(jobs):
             process = multiprocessing.Process(
-                target=run_tests_process, args=(test_batch,)
+                target=run_tests_process,
+                args=((parallel_tests, batch_size, test_suite, True),),
             )
             processes.append(process)
             process.start()
