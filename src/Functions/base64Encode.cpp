@@ -17,7 +17,7 @@ REGISTER_FUNCTION(Base64Encode)
     factory.registerFunction<FunctionBase64Conversion<Base64Encode<Base64Variant::Normal>>>({description, syntax, arguments, returned_value, examples, categories});
 
     /// MySQL compatibility alias.
-    factory.registerAlias("TO_BASE64", "base64Encode", FunctionFactory::CaseInsensitive);
+    factory.registerAlias("TO_BASE64", "base64Encode", FunctionFactory::Case::Insensitive);
 }
 }
 

@@ -4,6 +4,9 @@
 source /setup_export_logs.sh
 set -e -x
 
+MAX_RUN_TIME=${MAX_RUN_TIME:-3600}
+MAX_RUN_TIME=$((MAX_RUN_TIME == 0 ? 3600 : MAX_RUN_TIME))
+
 # Choose random timezone for this test run
 TZ="$(rg -v '#' /usr/share/zoneinfo/zone.tab | awk '{print $3}' | shuf | head -n1)"
 echo "Choosen random timezone $TZ"
@@ -23,7 +26,10 @@ source /utils.lib
 /usr/share/clickhouse-test/config/install.sh
 
 azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --silent --inMemoryPersistence &
+
 ./setup_minio.sh stateful
+./mc admin trace clickminio > /test_output/minio.log &
+MC_ADMIN_PID=$!
 
 config_logs_export_cluster /etc/clickhouse-server/config.d/system_logs_export.yaml
 
@@ -239,7 +245,22 @@ function run_tests()
 }
 
 export -f run_tests
-timeout "$MAX_RUN_TIME" bash -c run_tests ||:
+
+function timeout_with_logging() {
+    local exit_code=0
+
+    timeout -s TERM --preserve-status "${@}" || exit_code="${?}"
+
+    if [[ "${exit_code}" -eq "124" ]]
+    then
+      echo "The command 'timeout ${*}' has been killed by timeout"
+    fi
+
+    return $exit_code
+}
+
+TIMEOUT=$((MAX_RUN_TIME - 700))
+timeout_with_logging "$TIMEOUT" bash -c run_tests ||:
 
 echo "Files in current directory"
 ls -la ./
@@ -254,6 +275,8 @@ if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]
     sudo clickhouse stop --pid-path /var/run/clickhouse-server2 ||:
 fi
 
+# Kill minio admin client to stop collecting logs
+kill $MC_ADMIN_PID
 rg -Fa "<Fatal>" /var/log/clickhouse-server/clickhouse-server.log ||:
 
 zstd --threads=0 < /var/log/clickhouse-server/clickhouse-server.log > /test_output/clickhouse-server.log.zst ||:
