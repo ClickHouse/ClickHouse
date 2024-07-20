@@ -40,12 +40,12 @@ StorageObjectStorageSink::StorageObjectStorageSink(
         configuration->format, *write_buf, sample_block, context, format_settings_);
 }
 
-void StorageObjectStorageSink::consume(Chunk chunk)
+void StorageObjectStorageSink::consume(Chunk & chunk)
 {
     std::lock_guard lock(cancel_mutex);
     if (cancelled)
         return;
-    writer->write(getHeader().cloneWithColumns(chunk.detachColumns()));
+    writer->write(getHeader().cloneWithColumns(chunk.getColumns()));
 }
 
 void StorageObjectStorageSink::onCancel()
