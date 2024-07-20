@@ -371,7 +371,8 @@ public:
 
         Node * child;
         if constexpr (sizeof...(Args) == 0)
-            child = &getLeaf(name, next_level, wildcard);
+            /// In order to grant/revoke a wildcard grant we need to update flags on the leaf's parent and not the actual leaf.
+            child = &getLeaf(name, next_level, /* return_parent_node= */ wildcard);
         else
             child = &getLeaf(name, next_level);
 
@@ -407,7 +408,8 @@ public:
 
         Node * child;
         if constexpr (sizeof...(Args) == 0)
-            child = &getLeaf(name, next_level, wildcard);
+            /// In order to grant/revoke a wildcard grant we need to update flags on the leaf's parent and not the actual leaf.
+            child = &getLeaf(name, next_level, /* return_parent_node= */ wildcard);
         else
             child = &getLeaf(name, next_level);
 
@@ -443,6 +445,16 @@ public:
 
         if constexpr (sizeof...(Args) == 0 && wildcard)
         {
+            /// We need to check the closest parent's flags
+            ///
+            /// Example: GRANT SELECT ON foo*, REVOKE SELECT ON foo
+            /// isGranted(SELECT, "foo") == false
+            /// isGrantedWildcard(SELECT, "foo") == true
+            /// isGrantedWildcard(SELECT, "foobar") == true
+            ///
+            ///                 "foo" (SELECT)
+            ///                /             \
+            ///     "" (leaf, USAGE)        "bar" (SELECT)
             const auto & [node, _] = tryGetLeafOrPrefix(name, /* return_parent_node= */ true);
             return node.flags.contains(flags_to_check);
         }
@@ -505,6 +517,7 @@ public:
     {
         Node tmp_node = *this;
         tmp_node.makeIntersection(other);
+        /// If we get the same node after the intersection, our node is fully covered by the given one.
         return tmp_node == other;
     }
 
@@ -815,16 +828,16 @@ private:
                 }
             }
 
-            if (revokes)
+            if (node && revokes)
                 res.push_back(ProtoElement{revokes, new_full_name, false, true, node->wildcard_grant});
 
-            if (revokes_go)
+            if (node_go && revokes_go)
                 res.push_back(ProtoElement{revokes_go, new_full_name, true, true, node_go->wildcard_grant});
 
-            if (grants)
+            if (node && grants)
                 res.push_back(ProtoElement{grants, new_full_name, false, false, node->wildcard_grant});
 
-            if (grants_go)
+            if (node_go && grants_go)
                 res.push_back(ProtoElement{grants_go, new_full_name, true, false, node_go->wildcard_grant});
         }
 
@@ -1024,6 +1037,7 @@ private:
         }
 
         result.flags = flags & rhs.flags;
+        /// This will produce more wildcard grants than expected, but all of them will be trivial and will be reduced by the `optimizeChildren`
         result.wildcard_grant = wildcard_grant || rhs.wildcard_grant;
     }
 
