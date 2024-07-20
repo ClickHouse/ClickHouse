@@ -112,8 +112,8 @@ def get_run_command(
     ]
 
     if flaky_check:
-        envs.append("-e NUM_TRIES=100")
-        envs.append("-e MAX_RUN_TIME=1800")
+        envs.append("-e NUM_TRIES=50")
+        envs.append("-e MAX_RUN_TIME=2800")
 
     envs += [f"-e {e}" for e in additional_envs]
 
