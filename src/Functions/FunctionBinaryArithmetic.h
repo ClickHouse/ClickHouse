@@ -1334,17 +1334,17 @@ class FunctionBinaryArithmetic : public IFunction
     {
         bool args_have_nulls = false;
         bool args_have_constants = false;
-        for (size_t i = 0; i < arguments.size(); ++i)
+        for (const auto & arg : arguments)
         {
             if (!args_have_constants)
-                args_have_constants = checkColumnConst<ColumnNullable>(arguments[i].column.get());
+                args_have_constants = checkColumnConst<ColumnNullable>(arg.column.get());
             if (!args_have_nulls)
             {
-                if (!arguments[i].column->isNullable())
+                if (!arg.column->isNullable())
                     continue;
-                for (size_t j = 0; j < arguments[i].column->size(); ++j)
+                for (size_t j = 0; j < arg.column->size(); ++j)
                 {
-                    if (arguments[i].column->isNullAt(j))
+                    if (arg.column->isNullAt(j))
                     {
                         args_have_nulls = true;
                         break;
@@ -1377,7 +1377,9 @@ class FunctionBinaryArithmetic : public IFunction
             for (size_t i = 0; i < arguments.size(); ++i)
                 createNewColumn(i);
 
-            return executeImpl2(new_args, removeNullable(result_type), input_rows_count);
+            auto res = executeImpl2(new_args, removeNullable(result_type), input_rows_count);
+            auto null_map = ColumnUInt8::create(res->size(), 0);
+            return ColumnNullable::create(std::move(res), std::move(null_map));
         }
     }
 
@@ -1533,7 +1535,10 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        return getReturnTypeImplStatic(arguments, context);
+        auto return_type = getReturnTypeImplStatic(arguments, context);
+        if constexpr (is_compare)
+            return makeNullable(return_type);
+        return return_type;
     }
 
     static DataTypePtr getReturnTypeImplStatic(const DataTypes & arguments, ContextPtr context)
