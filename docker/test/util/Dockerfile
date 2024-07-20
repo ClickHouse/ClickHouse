@@ -38,16 +38,16 @@ RUN apt-get update \
 
 # Install cmake 3.20+ for Rust support
 # Used https://askubuntu.com/a/1157132 as reference
-RUN curl -s https://apt.kitware.com/keys/kitware-archive-latest.asc | gpg --dearmor - > /etc/apt/trusted.gpg.d/kitware.gpg \
-    && echo "deb https://apt.kitware.com/ubuntu/ $(lsb_release -cs) main" >> /etc/apt/sources.list \
-    && apt-get update && apt-get install --yes cmake \
-    && apt-get clean && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
 # Install LLVM by compiling from sources, using a particular commit.
 # This is more robust. See https://github.com/llvm/llvm-project/issues/99453
 # Feel free to update LLVM_COMMIT if desired.
 
-RUN git clone --no-checkout https://github.com/llvm/llvm-project \
+RUN curl -s https://apt.kitware.com/keys/kitware-archive-latest.asc | gpg --dearmor - > /etc/apt/trusted.gpg.d/kitware.gpg \
+    && echo "deb https://apt.kitware.com/ubuntu/ $(lsb_release -cs) main" >> /etc/apt/sources.list \
+    && apt-get update && apt-get install --yes cmake \
+    && apt-get clean && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
+    && git clone --no-checkout https://github.com/llvm/llvm-project \
     && cd llvm-project && git checkout ${LLVM_COMMIT} && cd .. \
     && mkdir llvm-build && cd llvm-build \
     && CC=clang-14 CXX=clang++-14 cmake -GNinja -DCMAKE_BUILD_TYPE:STRING=Release -DLLVM_VERSION_SUFFIX=${LLVM_VERSION} -DLLVM_ENABLE_ZLIB=1 -DLLVM_ENABLE_PROJECTS=all -DLLVM_TARGETS_TO_BUILD=all ../llvm-project/llvm \
