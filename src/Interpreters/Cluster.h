@@ -273,10 +273,11 @@ public:
     bool areDistributedDDLQueriesAllowed() const { return allow_distributed_ddl_queries; }
 
     const String & getName() const { return name; }
-    void handleDynamicReplicas();
-    bool isConnectionAlive(const std::shared_ptr<ConnectionPoolWithFailover> & pool);
-    void reconnect(std::shared_ptr<ConnectionPoolWithFailover> & pool, const Address & address);
-    void reconnectToReplica(size_t shard_index);
+    void handleDynamicReplicas(const Settings & settings);
+    void reconnectToReplica(size_t shard_index, const Settings & settings);
+    bool isConnectionAlive(const std::shared_ptr<ConnectionPoolWithFailover> & pool, const Settings & settings);
+    void reconnect(std::shared_ptr<ConnectionPoolWithFailover> & pool, const Address & address, const Settings & settings);
+
 
 private:
     SlotToShard slot_to_shard;

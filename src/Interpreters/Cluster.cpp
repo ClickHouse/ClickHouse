@@ -513,7 +513,7 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
 
     initMisc();
     // Handle dynamic replicas
-    handleDynamicReplicas();
+    handleDynamicReplicas(settings);
 }
 
 
@@ -898,78 +898,67 @@ bool Cluster::maybeCrossReplication() const
     return false;
 }
 
-void Cluster::handleDynamicReplicas()
+void Cluster::handleDynamicReplicas(const Settings & settings)
 {
     for (size_t i = 0; i < shards_info.size(); ++i)
     {
         const auto & shard = shards_info[i];
         if (!shard.isLocal() && shard.hasRemoteConnections())
         {
-            reconnectToReplica(i);
+            reconnectToReplica(i, settings);
         }
     }
 }
 
-bool Cluster::isConnectionAlive(const std::shared_ptr<ConnectionPoolWithFailover> & pool)
+bool Cluster::isConnectionAlive(const std::shared_ptr<ConnectionPoolWithFailover> & pool, const Settings & settings)
 {
     try
     {
         ConnectionTimeouts timeouts;
         std::string fail_message;
-        auto result = pool->tryGetEntry(timeouts, fail_message, settings);
+        auto result = pool->getEntryWithSettings(timeouts, fail_message, settings); // Initialize connection
         return result.entry->isConnected();
     }
-    catch (...)
+    catch (const DB::Exception &)
     {
-        return false;
+        // Log the error
+        LOG_ERROR(&Poco::Logger::get("Cluster"), "Failed to check if connection is alive");
+        throw; // Rethrow the current exception
     }
 }
 
-void Cluster::reconnect(std::shared_ptr<ConnectionPoolWithFailover> & pool, const Address & address)
+void Cluster::reconnect(std::shared_ptr<ConnectionPoolWithFailover> & pool, const Address & address, const Settings & settings)
 {
     try
     {
+        pool = std::make_shared<ConnectionPoolWithFailover>(
+            ConnectionPoolPtrs{ConnectionPoolFactory::instance().get(
+                static_cast<unsigned>(settings.distributed_connections_pool_size),
+                address.host_name,
+                address.port,
+                address.default_database,
+                address.user,
+                address.password,
+                address.quota_key,
+                address.cluster,
+                address.cluster_secret,
+                "server",
+                address.compression,
+                address.secure,
+                address.priority)},
+            settings.load_balancing,
+            settings.distributed_replica_error_half_life.totalSeconds(),
+            settings.distributed_replica_error_cap
+        );
         ConnectionTimeouts timeouts;
         std::string fail_message;
-        pool = ConnectionPoolFactory::instance().get(
-            static_cast<unsigned>(settings.distributed_connections_pool_size),
-            address.host_name,
-            address.port,
-            address.default_database,
-            address.user,
-            address.password,
-            address.quota_key,
-            address.cluster,
-            address.cluster_secret,
-            "server",
-            address.compression,
-            address.secure,
-            address.priority
-        );
-        pool->tryGetEntry(timeouts, fail_message, settings); // Initialize connection
+        pool->getEntryWithSettings(timeouts, fail_message, settings); // Initialize connection
     }
-    catch (const Exception & e)
+    catch (const DB::Exception &)
     {
-        throw Exception("Failed to reconnect to replica: " + e.displayText(), ErrorCodes::LOGICAL_ERROR);
-    }
-}
-
-void Cluster::reconnectToReplica(size_t shard_index)
-{
-    if (shard_index >= shards_info.size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Shard index out of bounds");
-
-    auto & shard = shards_info[shard_index];
-    if (!shard.hasRemoteConnections())
-        return;
-
-    auto & replica_pools = shard.per_replica_pools;
-    for (size_t i = 0; i < replica_pools.size(); ++i)
-    {
-        if (replica_pools[i] == nullptr || !isConnectionAlive(replica_pools[i]))
-        {
-            reconnect(replica_pools[i], shard.local_addresses[i]);
-        }
+        // Log the error
+        LOG_ERROR(&Poco::Logger::get("Cluster"), "Failed to reconnect to replica");
+        throw; // Rethrow the current exception
     }
 }
 

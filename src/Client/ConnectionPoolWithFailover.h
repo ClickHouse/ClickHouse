@@ -107,6 +107,11 @@ public:
 
     size_t getPoolSize() const { return Base::getPoolSize(); }
 
+    TryResult getEntryWithSettings(const ConnectionTimeouts & timeouts, std::string & fail_message, const Settings & settings)
+    {
+        return tryGetEntry(nullptr, timeouts, fail_message, settings);
+    }
+
 private:
     /// Get the values of relevant settings and call Base::getMany()
     std::vector<TryResult> getManyImpl(
