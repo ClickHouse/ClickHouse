@@ -1297,7 +1297,7 @@ def main() -> int:
                 error_description = f"Out Of Memory, exit_code {job_report.exit_code}"
             else:
                 error_description = f"Unknown, exit_code {job_report.exit_code}"
-            CIBuddy().post_error(
+            CIBuddy().post_job_error(
                 error_description + f" after {int(job_report.duration)}s",
                 job_name=_get_ext_check_name(args.job_name),
             )
