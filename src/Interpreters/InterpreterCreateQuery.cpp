@@ -1606,7 +1606,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         UInt64 table_count = CurrentMetrics::get(CurrentMetrics::AttachedTable);
         if (table_count >= table_num_limit)
             throw Exception(ErrorCodes::TOO_MANY_TABLES,
-                            "Too many tables in the Clickhouse. "
+                            "Too many tables. "
                             "The limit (setting 'max_table_num_to_throw') is set to {}, current number of tables is {}",
                             table_num_limit, table_count);
     }
