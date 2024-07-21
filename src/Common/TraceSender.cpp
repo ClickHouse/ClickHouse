@@ -23,8 +23,15 @@ namespace DB
 
 LazyPipeFDs TraceSender::pipe;
 
+static thread_local bool inside_send = false;
 void TraceSender::send(TraceType trace_type, const StackTrace & stack_trace, Extras extras)
 {
+    DENY_ALLOCATIONS_IN_SCOPE;
+
+    if (unlikely(inside_send))
+        abort(); /// The method shouldn't be called recursively or throw exceptions.
+    inside_send = true;
+
     constexpr size_t buf_size = sizeof(char) /// TraceCollector stop flag
         + sizeof(UInt8)                      /// String size
         + QUERY_ID_MAX_LEN                   /// Maximum query_id length
@@ -80,6 +87,8 @@ void TraceSender::send(TraceType trace_type, const StackTrace & stack_trace, Ext
     writePODBinary(extras.increment, out);
 
     out.next();
+
+    inside_send = false;
 }
 
 }
