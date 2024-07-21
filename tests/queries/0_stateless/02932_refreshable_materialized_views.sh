@@ -2,8 +2,6 @@
 # Tags: atomic-database
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-# reset --log_comment
-CLICKHOUSE_LOG_COMMENT=
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
@@ -172,13 +170,13 @@ $CLICKHOUSE_CLIENT -nq "
     drop table b;
     create materialized view c refresh every 1 second (x Int64) engine Memory empty as select * from src;
     drop table src;"
-while [ "`$CLICKHOUSE_CLIENT -nq "select last_refresh_result from refreshes -- $LINENO" | xargs`" != 'Exception' ]
+while [ "`$CLICKHOUSE_CLIENT -nq "select last_refresh_result from refreshes where view = 'c' -- $LINENO" | xargs`" != 'Exception' ]
 do
     sleep 0.1
 done
 # Check exception, create src, expect successful refresh.
 $CLICKHOUSE_CLIENT -nq "
-    select '<19: exception>', exception ilike '%UNKNOWN_TABLE%' from refreshes;
+    select '<19: exception>', exception ilike '%UNKNOWN_TABLE%' ? '1' : exception from refreshes where view = 'c';
     create table src (x Int64) engine Memory as select 1;
     system refresh view c;"
 while [ "`$CLICKHOUSE_CLIENT -nq "select last_refresh_result from refreshes -- $LINENO" | xargs`" != 'Finished' ]
