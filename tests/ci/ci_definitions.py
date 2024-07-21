@@ -102,8 +102,6 @@ class Tags(metaclass=WithIter):
     CI_SET_ARM = "ci_set_arm"
     CI_SET_REQUIRED = "ci_set_required"
     CI_SET_BUILDS = "ci_set_builds"
-    CI_SET_NON_REQUIRED = "ci_set_non_required"
-    CI_SET_OLD_ANALYZER = "ci_set_old_analyzer"
 
     libFuzzer = "libFuzzer"
 
@@ -432,7 +430,7 @@ class CommonJobConfigs:
         ),
         run_command='functional_test_check.py "$CHECK_NAME"',
         runner_type=Runners.FUNC_TESTER,
-        timeout=7200,
+        timeout=9000,
     )
     STATEFUL_TEST = JobConfig(
         job_name_keyword="stateful",

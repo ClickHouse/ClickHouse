@@ -2213,6 +2213,7 @@ try
         CannotAllocateThreadFaultInjector::setFaultProbability(server_settings.cannot_allocate_thread_fault_injection_probability);
 
 #if USE_GWP_ASAN
+        GWPAsan::initFinished();
         GWPAsan::setForceSampleProbability(server_settings.gwp_asan_force_sample_probability);
 #endif
 
