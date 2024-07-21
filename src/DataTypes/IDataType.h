@@ -328,7 +328,7 @@ public:
     /// Updates avg_value_size_hint for newly read column. Uses to optimize deserialization. Zero expected for first column.
     static void updateAvgValueSizeHint(const IColumn & column, double & avg_value_size_hint);
 
-    /// non-numeric non-string data type serialized as JSON string
+    /// Checks if this is a non-numeric non-string type which is serialized as a JSON string.
     virtual bool isNonTriviallySerializedAsStringJSON() const { return false; }
 
 protected:
