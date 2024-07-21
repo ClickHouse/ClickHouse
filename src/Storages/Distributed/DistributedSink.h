@@ -98,7 +98,6 @@ private:
     ClusterPtr cluster;
     size_t inserted_blocks = 0;
     size_t inserted_rows = 0;
-    size_t max_retries;
 
     bool insert_sync;
     bool random_shard_insert;
@@ -114,6 +113,7 @@ private:
     std::optional<ThreadPool> pool;
     ThrottlerPtr throttler;
 
+    size_t max_retries;
     std::mutex execution_mutex;
 
     struct JobReplica

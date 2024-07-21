@@ -448,7 +448,6 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
     };
 }
 
-
 void DistributedSink::writeSync(const Block & block)
 {
     std::lock_guard lock(execution_mutex);
@@ -551,7 +550,7 @@ void DistributedSink::writeSync(const Block & block)
 
     if (attempt == max_retries)
     {
-        throw Exception("Failed to execute query after " + toString(max_retries) + " retries.", ErrorCodes::NETWORK_ERROR);
+        throw;
     }
 }
 
