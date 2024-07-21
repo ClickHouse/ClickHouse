@@ -34,6 +34,21 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 struct TreeRewriterResult;
 using TreeRewriterResultPtr = std::shared_ptr<const TreeRewriterResult>;
 
+struct ReplicaState
+{
+    Connection *connection = nullptr;
+    ConnectionPool::Entry pool_entry;
+    bool is_connected = false;
+    bool has_error = false;
+    std::string last_error_message;
+    uint64_t replication_lag = 0;
+    uint64_t last_updated_timestamp = 0;
+    uint64_t query_count = 0;
+    uint64_t bytes_sent = 0;
+    uint64_t bytes_received = 0;
+};
+
+
 /** A distributed table that resides on multiple servers.
   * Uses data from the specified database and tables on each server.
   *
@@ -297,12 +312,6 @@ private:
     mutable std::mutex rng_mutex;
     pcg64 rng;
 
-    // Replica state management
-    struct ReplicaState
-    {
-        bool is_connected;
-        // Add more state information as needed
-    };
 
     std::unordered_map<String, ReplicaState> replica_states;
     mutable std::mutex replica_states_mutex;

@@ -1990,8 +1990,6 @@ bool StorageDistributed::initializeDiskOnConfigChange(const std::set<String> & n
 
     return true;
 }
-}
-
 
 void StorageDistributed::initializeReplicaStates()
 {
@@ -2000,7 +1998,9 @@ void StorageDistributed::initializeReplicaStates()
     {
         for (const auto & replica : address)
         {
-            replica_states[replica.readableString()] = {true}; // Initialize all replicas as connected
+            ReplicaState state;
+            state.is_connected = true; // Initialize all replicas as connected
+            replica_states[replica.readableString()] = state;
         }
     }
 }
@@ -2008,7 +2008,9 @@ void StorageDistributed::initializeReplicaStates()
 void StorageDistributed::addReplica(const String & replica_name)
 {
     std::lock_guard lock(replica_states_mutex);
-    replica_states[replica_name] = {true}; // Mark new replica as connected
+    ReplicaState state;
+    state.is_connected = true; // Mark new replica as connected
+    replica_states[replica_name] = state;
 }
 
 void StorageDistributed::removeReplica(const String & replica_name)
@@ -2046,6 +2048,8 @@ void StorageDistributed::handleReplicaFailover(const String & replica_name)
     {
         // Simulate failover by marking the replica as disconnected
         it->second.is_connected = false;
+        it->second.has_error = true;
+        it->second.last_error_message = "Simulated failover";
         LOG_INFO(log, "Replica {} marked as disconnected for failover handling", replica_name);
     }
 }
@@ -2055,4 +2059,6 @@ void StorageDistributed::manageFailover(const String & replica_name)
     // Implement additional failover handling logic here
     LOG_INFO(log, "Managing failover for replica {}", replica_name);
     handleReplicaFailover(replica_name);
+}
+
 }
