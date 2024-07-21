@@ -1292,6 +1292,7 @@ def main() -> int:
                     pass
             if Utils.is_killed_with_oom():
                 print("WARNING: OOM while job execution")
+                print(subprocess.run("sudo dmesg -T", check=False))
                 error_description = f"Out Of Memory, exit_code {job_report.exit_code}"
             else:
                 error_description = f"Unknown, exit_code {job_report.exit_code}"
