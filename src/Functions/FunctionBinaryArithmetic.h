@@ -1378,8 +1378,13 @@ class FunctionBinaryArithmetic : public IFunction
                 createNewColumn(i);
 
             auto res = executeImpl2(new_args, removeNullable(result_type), input_rows_count);
-            auto null_map = ColumnUInt8::create(res->size(), 0);
-            return ColumnNullable::create(std::move(res), std::move(null_map));
+            if (!result_type->isNullable())
+                return res;
+            else
+            {
+                auto null_map = ColumnUInt8::create(res->size(), 0);
+                return ColumnNullable::create(std::move(res), std::move(null_map));
+            }
         }
     }
 
@@ -1537,7 +1542,13 @@ public:
     {
         auto return_type = getReturnTypeImplStatic(arguments, context);
         if constexpr (is_compare)
-            return makeNullable(return_type);
+        {
+            for (size_t i = 0; i < arguments.size(); ++i)
+            {
+                if (arguments[i]->isNullable())
+                    return makeNullable(return_type);
+            }
+        }
         return return_type;
     }
 
