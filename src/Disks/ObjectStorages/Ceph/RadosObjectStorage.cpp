@@ -149,7 +149,7 @@ std::unique_ptr<WriteBufferFromFileBase> RadosObjectStorage::writeObject( /// NO
 
     WriteSettings disk_write_settings = patchSettings(write_settings);
     return std::make_unique<WriteBufferFromRados>(
-        io_ctx, object.remote_path, buf_size, ceph_settings.get()->osd_max_object_size, patchSettings(write_settings), attributes, scheduler);
+        io_ctx, object.remote_path, buf_size, ceph_settings.get()->osd_settings, patchSettings(write_settings), attributes, scheduler);
 }
 
 ObjectStorageIteratorPtr RadosObjectStorage::iterate(const std::string & path_prefix, size_t max_keys) const

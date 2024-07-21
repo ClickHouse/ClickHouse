@@ -53,17 +53,17 @@ WriteBufferFromRados::WriteBufferFromRados(
     std::shared_ptr<RadosIOContext> io_ctx_,
     const String & object_id_,
     size_t buf_size_,
-    size_t max_chunk_size_,
+    const OSDSettings & osd_settings_,
     const WriteSettings & write_settings_,
     std::optional<std::map<String, String>> object_metadata_,
     ThreadPoolCallbackRunnerUnsafe<void> schedule_)
     : WriteBufferFromFileBase(buf_size_, nullptr, 0)
     , io_ctx(std::move(io_ctx_))
     , object_id(object_id_)
-    , max_chunk_size(max_chunk_size_)
+    , osd_settings(osd_settings_)
     , write_settings(write_settings_)
     , object_metadata(std::move(object_metadata_))
-    , buffer_allocation_policy(createBufferAllocationPolicy(max_chunk_size))
+    , buffer_allocation_policy(createBufferAllocationPolicy(osd_settings.osd_max_object_size))
     , task_tracker(std::make_unique<TaskTracker>(std::move(schedule_), 1, limitedLog))
 {
     LOG_TRACE(limitedLog, "Create WriteBufferFromRados, {}", getShortLogDetails());
@@ -142,6 +142,8 @@ void WriteBufferFromRados::finalizeImpl()
     {
         io_ctx->setAttributes(object_id, *object_metadata);
     }
+
+    multipart_upload_finished = true;
 }
 
 String WriteBufferFromRados::getVerboseLogDetails() const
@@ -190,6 +192,12 @@ WriteBufferFromRados::~WriteBufferFromRados()
     }
 
     task_tracker->safeWaitAll();
+
+    if (chunk_count > 0 && !multipart_upload_finished)
+    {
+        LOG_WARNING(log, "Multipart upload hasn't finished, will abort all chunks. {}", getVerboseLogDetails());
+        tryToAbortMultipartUpload();
+    }
 }
 
 void WriteBufferFromRados::hidePartialData()
@@ -288,7 +296,7 @@ void WriteBufferFromRados::writePart(WriteBufferFromRados::PartData && data)
 
     LOG_TEST(limitedLog, "writePart {}, part size {}, part number {}", getShortLogDetails(), data.data_size, chunk_count);
 
-    if (data.data_size > max_chunk_size)
+    if (data.data_size > osd_settings.osd_max_object_size)
     {
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
@@ -296,7 +304,7 @@ void WriteBufferFromRados::writePart(WriteBufferFromRados::PartData && data)
             getShortLogDetails(),
             chunk_count,
             data.data_size,
-            max_chunk_size);
+            osd_settings.osd_max_object_size);
     }
 
     String rados_object_name = chunk_count == 0 ? object_id : RadosStriper::getChunkName(object_id, chunk_count);
@@ -315,9 +323,20 @@ void WriteBufferFromRados::writePart(WriteBufferFromRados::PartData && data)
         try
         {
             ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::WriteBufferFromRadosMicroseconds);
-            /// O_CREATE | O_TRUNC
-            io_ctx->writeFull(object_name, content->memory.data(), len);
-
+            bool first_write = true;
+            size_t written_bytes = 0;
+            while (written_bytes < len)
+            {
+                size_t write_len = std::min(len - written_bytes, osd_settings.osd_max_write_size);
+                if (first_write)
+                {
+                    io_ctx->writeFull(object_name, content->memory.data() + written_bytes, write_len);
+                    first_write = false;
+                }
+                else
+                    io_ctx->append(object_name, content->memory.data() + written_bytes, write_len);
+                written_bytes += write_len;
+            }
             if (write_settings.remote_throttler)
                 write_settings.remote_throttler->add(
                     len, ProfileEvents::RemoteWriteThrottlerBytes, ProfileEvents::RemoteWriteThrottlerSleepMicroseconds);
@@ -334,6 +353,25 @@ void WriteBufferFromRados::writePart(WriteBufferFromRados::PartData && data)
     };
 
     task_tracker->add(std::move(upload_worker));
+}
+
+void WriteBufferFromRados::tryToAbortMultipartUpload()
+{
+    try
+    {
+        task_tracker->safeWaitAll();
+        Strings chunk_names;
+        for (size_t i = 1; i < chunk_count; ++i)
+            chunk_names.push_back(RadosStriper::getChunkName(object_id, i));
+        io_ctx->remove(chunk_names);
+        /// The HEAD chunk
+        io_ctx->remove(object_id, true);
+    }
+    catch (...)
+    {
+        LOG_ERROR(log, "Multipart upload hasn't aborted. {}", getVerboseLogDetails());
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
 }
 
 }

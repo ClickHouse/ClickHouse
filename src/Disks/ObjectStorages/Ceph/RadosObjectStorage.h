@@ -57,16 +57,20 @@ namespace RadosStriper
     }
 }
 
+struct OSDSettings
+{
+    UInt64 osd_max_object_size = 128 * 1024 * 1024; /// 128M - default ceph setting value
+    UInt64 osd_max_write_size = 90 * 1024 * 1024; /// 90M - default ceph setting value
+};
+
 struct RadosObjectStorageSettings
 {
     RadosObjectStorageSettings() = default;
 
     RadosObjectStorageSettings(
         const RadosOptions & global_options_,
-        size_t max_object_size_,
         bool read_only_)
         : global_options(global_options_)
-        , osd_max_object_size(max_object_size_)
         , read_only(read_only_)
     {}
 
@@ -78,11 +82,14 @@ struct RadosObjectStorageSettings
         if (config.has(config_prefix + ".options"))
             global_options.loadFromConfig(config, config_prefix + ".options");
         global_options.validate();
-        osd_max_object_size = config.getUInt64(config_prefix + ".osd_max_object_size");
+        if (global_options.contains("osd_max_object_size"))
+            osd_settings.osd_max_object_size = std::stoull(global_options.at("osd_max_object_size"));
+        if (global_options.contains("osd_max_write_size"))
+            osd_settings.osd_max_write_size = std::stoull(global_options.at("osd_max_write_size")) * 1024 * 1024;
         read_only = config.getBool(config_prefix + ".read_only", read_only);
     }
 
-    uint64_t osd_max_object_size = 128 * 1024 * 1024; /// 128M - default ceph setting value
+    OSDSettings osd_settings;
     bool read_only = false;
 };
 

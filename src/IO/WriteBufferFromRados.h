@@ -3,6 +3,7 @@
 
 #if USE_CEPH
 
+#include <Disks/ObjectStorages/Ceph/RadosObjectStorage.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <IO/Ceph/RadosIOContext.h>
 #include <IO/WriteSettings.h>
@@ -22,7 +23,7 @@ public:
         std::shared_ptr<RadosIOContext> io_ctx_,
         const String & object_id_,
         size_t buf_size_,
-        size_t max_chunk_size_,
+        const OSDSettings & osd_settings_,
         const WriteSettings & write_settings_,
         std::optional<std::map<String, String>> object_metadata_ = std::nullopt,
         ThreadPoolCallbackRunnerUnsafe<void> schedule_ = {});
@@ -49,18 +50,21 @@ private:
 
     void writePart(PartData && data);
     void writeMultipartUpload();
+    void tryToAbortMultipartUpload();
 
     std::shared_ptr<RadosIOContext> io_ctx;
     String object_id;
     size_t chunk_count = 0;
-    size_t max_chunk_size;
+    OSDSettings osd_settings;
     WriteSettings write_settings;
     const std::optional<std::map<String, String>> object_metadata;
-    LoggerPtr log = getLogger("StripperWriteBufferFromRados");
+    LoggerPtr log = getLogger("WriteBufferFromRados");
     LogSeriesLimiterPtr limitedLog = std::make_shared<LogSeriesLimiter>(log, 1, 5);
 
     BufferAllocationPolicyPtr buffer_allocation_policy;
 
+    /// Track that multipart upload is finished
+    bool multipart_upload_finished = false;
     /// Track that prefinalize() is called only once
     bool is_prefinalized = false;
 
