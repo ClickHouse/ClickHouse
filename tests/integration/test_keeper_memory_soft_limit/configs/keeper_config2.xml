@@ -16,7 +16,7 @@
             <value>az-zoo2</value>
             <enable_auto_detection_on_cloud>1</enable_auto_detection_on_cloud>
         </availability_zone>
-        <max_memory_usage_soft_limit>20000000</max_memory_usage_soft_limit>
+        <max_memory_usage_soft_limit>200000000</max_memory_usage_soft_limit>
 
         <coordination_settings>
             <operation_timeout_ms>10000</operation_timeout_ms>

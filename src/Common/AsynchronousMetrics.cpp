@@ -638,6 +638,10 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
             "The amount of virtual memory mapped for the use of stack and for the allocated memory, in bytes."
             " It is unspecified whether it includes the per-thread stacks and most of the allocated memory, that is allocated with the 'mmap' system call."
             " This metric exists only for completeness reasons. I recommend to use the `MemoryResident` metric for monitoring."};
+
+#if !USE_JEMALLOC
+        MemoryTracker::updateValues(data.resident, data.resident, /*force_update=*/true);
+#endif
     }
 
     {

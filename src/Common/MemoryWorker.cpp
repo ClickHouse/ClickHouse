@@ -44,6 +44,7 @@ void MemoryWorker::backgroundThread()
     JemallocMibCache<size_t> resident_mib("stats.resident");
     JemallocMibCache<size_t> allocated_mib("stats.allocated");
     JemallocMibCache<size_t> purge_mib("arena." STRINGIFY(MALLCTL_ARENAS_ALL) ".purge");
+    bool first_run = false;
     std::unique_lock lock(mutex);
     while (true)
     {
@@ -62,9 +63,13 @@ void MemoryWorker::backgroundThread()
             ProfileEvents::increment(ProfileEvents::MemoryAllocatorPurgeTimeMicroseconds, purge_watch.elapsedMicroseconds());
         }
 
-        MemoryTracker::updateValues(resident, allocated_mib.getValue());
+        /// force update the allocated stat from jemalloc for the first run to cover the allocations we missed
+        /// during initialization
+        MemoryTracker::updateValues(resident, allocated_mib.getValue(), first_run);
         ProfileEvents::increment(ProfileEvents::MemoryWorkerRun);
         ProfileEvents::increment(ProfileEvents::MemoryWorkerRunElapsedMicroseconds, total_watch.elapsedMicroseconds());
+
+        first_run = false;
     }
 }
 #endif

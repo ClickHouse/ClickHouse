@@ -221,6 +221,7 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceed
         {
             /// For global memory tracker always update memory usage.
             amount.fetch_add(size, std::memory_order_relaxed);
+            rss.fetch_add(size, std::memory_order_relaxed);
 
             auto metric_loaded = metric.load(std::memory_order_relaxed);
             if (metric_loaded != CurrentMetrics::end())
@@ -242,7 +243,7 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceed
       * So, we allow over-allocations.
       */
     Int64 will_be = size ? size + amount.fetch_add(size, std::memory_order_relaxed) : amount.load(std::memory_order_relaxed);
-    Int64 will_be_rss = size + rss.load(std::memory_order_relaxed);
+    Int64 will_be_rss = size ? size + rss.fetch_add(size, std::memory_order_relaxed) : rss.load(std::memory_order_relaxed);
 
     auto metric_loaded = metric.load(std::memory_order_relaxed);
     if (metric_loaded != CurrentMetrics::end() && size)
@@ -269,6 +270,7 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceed
         {
             /// Revert
             amount.fetch_sub(size, std::memory_order_relaxed);
+            rss.fetch_sub(size, std::memory_order_relaxed);
 
             /// Prevent recursion. Exception::ctor -> std::string -> new[] -> MemoryTracker::alloc
             MemoryTrackerBlockerInThread untrack_lock(VariableContext::Global);
@@ -291,7 +293,8 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceed
         }
     }
 
-    if (unlikely(current_hard_limit && (will_be > current_hard_limit || will_be_rss > current_hard_limit)))
+    if (unlikely(
+            current_hard_limit && (will_be > current_hard_limit || (level == VariableContext::Global && will_be_rss > current_hard_limit))))
     {
         if (memoryTrackerCanThrow(level, false) && throw_if_memory_exceeded)
         {
@@ -303,6 +306,7 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceed
             {
                 /// Revert
                 amount.fetch_sub(size, std::memory_order_relaxed);
+                rss.fetch_sub(size, std::memory_order_relaxed);
 
                 /// Prevent recursion. Exception::ctor -> std::string -> new[] -> MemoryTracker::alloc
                 MemoryTrackerBlockerInThread untrack_lock(VariableContext::Global);
@@ -411,6 +415,7 @@ AllocationTrace MemoryTracker::free(Int64 size, double _sample_probability)
         {
             /// For global memory tracker always update memory usage.
             amount.fetch_sub(size, std::memory_order_relaxed);
+            rss.fetch_sub(size, std::memory_order_relaxed);
             auto metric_loaded = metric.load(std::memory_order_relaxed);
             if (metric_loaded != CurrentMetrics::end())
                 CurrentMetrics::sub(metric_loaded, size);
@@ -424,7 +429,12 @@ AllocationTrace MemoryTracker::free(Int64 size, double _sample_probability)
     }
 
     Int64 accounted_size = size;
-    if (level == VariableContext::Thread || level == VariableContext::Global)
+    if (level == VariableContext::Global)
+    {
+        amount.fetch_sub(accounted_size, std::memory_order_relaxed);
+        rss.fetch_sub(accounted_size, std::memory_order_relaxed);
+    }
+    else if (level == VariableContext::Thread)
     {
         /// Could become negative if memory allocated in this thread is freed in another one
         amount.fetch_sub(accounted_size, std::memory_order_relaxed);
@@ -498,11 +508,20 @@ void MemoryTracker::reset()
 }
 
 
-void MemoryTracker::updateValues(Int64 rss_, Int64 allocated_)
+void MemoryTracker::updateValues(Int64 rss_, Int64 allocated_, bool force_update)
 {
-    Int64 new_amount = allocated_;
-    total_memory_tracker.amount.store(new_amount, std::memory_order_relaxed);
     total_memory_tracker.rss.store(rss_, std::memory_order_relaxed);
+
+    if (likely(!force_update && total_memory_tracker.amount.load(std::memory_order_relaxed) >= 0))
+        return;
+
+    Int64 new_amount = allocated_;
+    LOG_INFO(
+        getLogger("MemoryTracker"),
+        "Correcting the value of global memory tracker from {} to {}",
+        ReadableSize(total_memory_tracker.amount.load(std::memory_order_relaxed)),
+        ReadableSize(allocated_));
+    total_memory_tracker.amount.store(new_amount, std::memory_order_relaxed);
 
     auto metric_loaded = total_memory_tracker.metric.load(std::memory_order_relaxed);
     if (metric_loaded != CurrentMetrics::end())
