@@ -70,9 +70,7 @@ static Block adoptBlock(const Block & header, const Block & block, LoggerPtr log
     if (blocksHaveEqualStructure(header, block))
         return block;
 
-    LOG_WARNING(log,
-        "Structure does not match (remote: {}, local: {}), implicit conversion will be done.",
-        header.dumpStructure(), block.dumpStructure());
+    LOG_WARNING(log, "Structure does not match (remote: {}, local: {}), implicit conversion will be done.", header.dumpStructure(), block.dumpStructure());
 
     auto converting_dag = ActionsDAG::makeConvertingActions(
         block.cloneEmpty().getColumnsWithTypeAndName(),
@@ -127,8 +125,8 @@ DistributedSink::DistributedSink(
     , allow_materialized(context->getSettingsRef().insert_allow_materialized_columns)
     , insert_timeout(insert_timeout_)
     , columns_to_send(columns_to_send_.begin(), columns_to_send_.end())
-    , log(getLogger("DistributedSink"))
     , max_retries(context->getSettingsRef().distributed_query_retries)
+    , log(getLogger("DistributedSink"))
 {
     const auto & settings = context->getSettingsRef();
     if (settings.max_distributed_depth && context->getClientInfo().distributed_depth >= settings.max_distributed_depth)
@@ -541,7 +539,7 @@ void DistributedSink::writeSync(const Block & block)
         {
             if (exception.code() == ErrorCodes::NETWORK_ERROR || exception.code() == ErrorCodes::SOCKET_TIMEOUT)
             {
-                LOG_WARNING(log, "Retrying due to network error. Attempt: " << (attempt + 1));
+                LOG_WARNING(log, "Retrying due to network error. Attempt: {}", attempt + 1);
                 ++attempt;
             }
             else
