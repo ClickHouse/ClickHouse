@@ -638,7 +638,7 @@ class CiCache:
         pushes pending records for all jobs that supposed to be run
         """
         for job, job_config in self.jobs_to_do.items():
-            if not job_config.has_digest():
+            if not job_config.has_digest() or job_config.disable_await:
                 continue
             pending_state = PendingState(time.time(), run_url=GITHUB_RUN_URL)
             assert job_config.batches
@@ -708,7 +708,7 @@ class CiCache:
         Filter is to be applied in PRs to remove jobs that are not affected by the change
         :return:
         """
-        remove_from_to_do = []
+        remove_from_workflow = []
         required_builds = []
         has_test_jobs_to_skip = False
         for job_name, job_config in self.jobs_to_do.items():
@@ -723,26 +723,41 @@ class CiCache:
                     job=reference_name,
                     job_config=reference_config,
                 ):
-                    remove_from_to_do.append(job_name)
+                    remove_from_workflow.append(job_name)
                     has_test_jobs_to_skip = True
                 else:
                     required_builds += (
                         job_config.required_builds if job_config.required_builds else []
                     )
         if has_test_jobs_to_skip:
-            # If there are tests to skip, it means build digest has not been changed.
+            # If there are tests to skip, it means builds are not affected as well.
             # No need to test builds. Let's keep all builds required for test jobs and skip the others
             for job_name, job_config in self.jobs_to_do.items():
                 if CI.is_build_job(job_name):
                     if job_name not in required_builds:
-                        remove_from_to_do.append(job_name)
+                        remove_from_workflow.append(job_name)
 
-        for job in remove_from_to_do:
+        for job in remove_from_workflow:
             print(f"Filter job [{job}] - not affected by the change")
             if job in self.jobs_to_do:
                 del self.jobs_to_do[job]
             if job in self.jobs_to_wait:
                 del self.jobs_to_wait[job]
+            if job in self.jobs_to_skip:
+                self.jobs_to_skip.remove(job)
+
+        # special handling for the special job: BUILD_CHECK
+        has_builds = False
+        for job in list(self.jobs_to_do) + self.jobs_to_skip:
+            if CI.is_build_job(job):
+                has_builds = True
+                break
+        if not has_builds:
+            if CI.JobNames.BUILD_CHECK in self.jobs_to_do:
+                print(
+                    f"Filter job [{CI.JobNames.BUILD_CHECK}] - no builds are required in the workflow"
+                )
+                del self.jobs_to_do[CI.JobNames.BUILD_CHECK]
 
     def await_pending_jobs(self, is_release: bool, dry_run: bool = False) -> None:
         """
