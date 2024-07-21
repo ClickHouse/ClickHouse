@@ -1,4 +1,5 @@
 #include "Binary.h"
+#include <boost/beast/core/detail/base64.hpp>
 
 namespace DB
 {
@@ -41,12 +42,10 @@ Binary::~Binary()
 
 std::string Binary::toString() const
 {
-    std::ostringstream oss;
-    Poco::Base64Encoder encoder(oss);
-    Poco::MemoryInputStream mis(reinterpret_cast<const char *>(buffer.begin()), buffer.size());
-    Poco::StreamCopier::copyStream(mis, encoder);
-    encoder.close();
-    return oss.str();
+    size_t encoded_size_ = encoded_size(buffer.size());
+    std::string result(encoded_size);
+    assert(encode(result.data(), reinterpret_cast<const char *>(buffer.begin()), buffer.size()) == encoded_size_);
+    return result;
 }
 
 

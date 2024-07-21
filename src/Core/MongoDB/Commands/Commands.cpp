@@ -207,7 +207,7 @@ static std::string getQueryResult(std::string && query, ContextMutablePtr contex
     return writer.str();
 }
 
-// TODO make Find use the same funcion
+// TODO make Find use the same function
 BSON::Document::Ptr launchQuery(std::string && query, ContextMutablePtr context, const std::string & db_name, const std::string & coll_name)
 {
     auto result = getQueryResult(std::move(query), context);

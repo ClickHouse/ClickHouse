@@ -249,50 +249,40 @@ void OpMsgMessage::read(ReadBuffer & reader)
 {
     LoggerPtr log = getLogger("OpMsgMessage::read");
     Int32 remaining_size = header.getContentLength();
-    LOG_DEBUG(log, "remaining_size: {}", remaining_size);
     UInt8 payload_type{0xFF};
 
     readIntBinary(flags, reader);
-    LOG_DEBUG(log, "flags: {}", flags);
     // reader >> _flags;
     // reader >> payloadType;
     readIntBinary(payload_type, reader);
-    LOG_DEBUG(log, "payload_type: {}", static_cast<Int32>(payload_type));
     assert(payload_type == PAYLOAD_TYPE_0);
     body = BSON::BSONReader(reader).read<BSON::Document::Ptr>();
-    LOG_DEBUG(log, "body: {}", body->toString());
     // body.read(reader);
 
     remaining_size -= sizeof(flags) + sizeof(payload_type) + body->getLength(); // read and write of the same size ?
-    LOG_DEBUG(log, "remaining size {}", remaining_size);
     while (remaining_size > 0)
     {
         // NOTE: Not tested yet with database, because it returns everything in the body.
         // Does MongoDB ever return documents as Payload type 1?
         readIntBinary(payload_type, reader);
-        LOG_DEBUG(log, "payload_type: {}", static_cast<Int32>(payload_type));
         remaining_size -= sizeof(payload_type);
         // reader >> payload_type;
         if (remaining_size == 0)
             break;
-        LOG_DEBUG(log, "Has Kind1 body");
         assert(payload_type == PAYLOAD_TYPE_1);
 
         Int32 section_size{0};
         readIntBinary(section_size, reader);
         remaining_size -= section_size;
-        LOG_DEBUG(log, "sections_size: {}", section_size);
         // reader >> sectionSize;
         assert(section_size > 0);
         readNullTerminated(command_name, reader);
-        LOG_DEBUG(log, "command_name: {}", command_name);
         //reader.readCString(identifier);
 
         // Loop to read documents from this section.
         while (section_size > 0)
         {
             BSON::Document::Ptr doc = BSON::BSONReader(reader).read<BSON::Document::Ptr>();
-            LOG_DEBUG(log, "new doc: {}", doc->toString());
             documents.push_back(doc);
             section_size -= doc->getLength();
         }
@@ -322,13 +312,13 @@ const std::string & commandIdentifier(const std::string & command)
 {
     // Names of identifiers for commands that send bulk documents in the request
     // The identifier is set in the section type 1.
-    static std::map<std::string, std::string> identifiers{
-        {OpMsgMessage::CMD_INSERT, "documents"},
-        {OpMsgMessage::CMD_DELETE, "deletes"},
-        {OpMsgMessage::CMD_UPDATE, "updates"},
+    static std::map<std::string, std::string> identifiers {
+        {{OpMsgMessage::CMD_INSERT, "documents"},
+         {OpMsgMessage::CMD_DELETE, "deletes"},
+         {OpMsgMessage::CMD_UPDATE, "updates"},
 
-        // Not sure if create index can send document section
-        {OpMsgMessage::CMD_CREATE_INDEXES, "indexes"}};
+         // Not sure if create index can send document section
+         {OpMsgMessage::CMD_CREATE_INDEXES, "indexes"}}};
 
     const auto i = identifiers.find(command);
     if (i != identifiers.end())

@@ -139,7 +139,6 @@ struct ElementTraits<std::string>
     static std::string toString(const std::string & value)
     {
         WriteBufferFromOwnString writer;
-        std::ostringstream oss;
 
         writeChar('\'', writer);
 

@@ -324,8 +324,6 @@ namespace ProfileEvents
     extern const Event InterfaceMySQLReceiveBytes;
     extern const Event InterfacePostgreSQLSendBytes;
     extern const Event InterfacePostgreSQLReceiveBytes;
-    extern const Event InterfaceMongoDBSendBytes;
-    extern const Event InterfaceMongoDBReceiveBytes;
 }
 
 namespace fs = std::filesystem;

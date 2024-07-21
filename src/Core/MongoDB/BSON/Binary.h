@@ -146,7 +146,7 @@ inline void BSONWriter::write<Binary::Ptr>(const Binary::Ptr & from)
 template <>
 inline Int32 BSONWriter::getLength<Binary::Ptr>(const Binary::Ptr & from)
 {
-    return static_cast<Int32>(sizeof(Int32) + +sizeof(from->getSubtype()) + from->getBuffer().size());
+    return static_cast<Int32>(sizeof(Int32) + sizeof(from->getSubtype()) + from->getBuffer().size());
 }
 
 

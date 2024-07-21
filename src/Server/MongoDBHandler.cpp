@@ -165,4 +165,4 @@ void MongoDBHandler::run()
     out->finalize();
 }
 
-} // namespace DB
+}

@@ -178,7 +178,7 @@ void QueryBuilder::handleGroup(BSON::Document::Ptr group)
     else
     {
         _id = group->take(_id_str);
-        // no groupping
+        // no grouping
         if (_id->getType() != BSON::ElementTraits<BSON::NullValue>::TypeId)
             throw Poco::LogicException(fmt::format("Incorrect _id field with value: {}", _id->toString()));
     }
@@ -294,7 +294,7 @@ void QueryBuilder::handleCount(const std::string & new_col_name)
 
 std::string QueryBuilder::buildSelect() &&
 {
-    // add only groupping columns
+    // add only grouping columns
     if (has_group_operations)
     {
         proj_map.resetStatuses();

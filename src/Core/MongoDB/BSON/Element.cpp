@@ -69,7 +69,7 @@ UInt8 Element::typeIdFromString(const std::string & type)
         return ElementTraits<Int64>::TypeId;
     else if (type == "UInt64")
     {
-        LOG_WARNING(getLogger("MongoDB::typeIdFromString"), "Conveting UInt64 to Int64");
+        LOG_WARNING(getLogger("MongoDB::typeIdFromString"), "Converting UInt64 to Int64");
         return ElementTraits<Int64>::TypeId;
     }
     else if (type == "Float64")

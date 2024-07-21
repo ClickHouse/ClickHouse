@@ -116,7 +116,6 @@ inline void removeDollarFromName(std::string & name)
 
 std::string makeExpression(BSON::Element::Ptr elem);
 
-// TODO make Find use the same funcion
 BSON::Document::Ptr
 launchQuery(std::string && query, ContextMutablePtr context, const std::string & db_name, const std::string & coll_name);
 
