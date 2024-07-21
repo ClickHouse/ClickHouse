@@ -21,7 +21,8 @@ def started_cluster():
 
 
 def test_table_db_limit(started_cluster):
-    for i in range(10):
+    # By the way, default database already exists.
+    for i in range(9):
         node.query("create database db{}".format(i))
 
     with pytest.raises(QueryRuntimeException) as exp_info:

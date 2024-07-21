@@ -146,21 +146,21 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
     }
 
     auto db_num_limit = getContext()->getGlobalContext()->getServerSettings().max_database_num_to_throw;
-    if (db_num_limit > 0)
+    if (db_num_limit > 0 && !internal)
     {
         size_t db_count = DatabaseCatalog::instance().getDatabases().size();
-        std::vector<String> system_databases = {
+        std::initializer_list<std::string_view> system_databases =
+        {
             DatabaseCatalog::TEMPORARY_DATABASE,
             DatabaseCatalog::SYSTEM_DATABASE,
             DatabaseCatalog::INFORMATION_SCHEMA,
             DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE,
-            DatabaseCatalog::DEFAULT_DATABASE
         };
 
         for (const auto & system_database : system_databases)
         {
-            if (db_count > 0 && DatabaseCatalog::instance().isDatabaseExist(system_database))
-                db_count--;
+            if (db_count > 0 && DatabaseCatalog::instance().isDatabaseExist(std::string(system_database)))
+                --db_count;
         }
 
         if (db_count >= db_num_limit)
@@ -1600,7 +1600,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     }
 
     UInt64 table_num_limit = getContext()->getGlobalContext()->getServerSettings().max_table_num_to_throw;
-    if (table_num_limit > 0 && create.getDatabase() != DatabaseCatalog::SYSTEM_DATABASE)
+    if (table_num_limit > 0 && !internal)
     {
         UInt64 table_count = CurrentMetrics::get(CurrentMetrics::AttachedTable);
         if (table_count >= table_num_limit)
