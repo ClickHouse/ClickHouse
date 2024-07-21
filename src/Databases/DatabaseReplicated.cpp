@@ -776,18 +776,6 @@ void DatabaseReplicated::checkQueryValid(const ASTPtr & query, ContextPtr query_
             bool maybe_replica_macros = info.expanded_other;
             bool enable_functional_tests_helper = getContext()->getConfigRef().has("_functional_tests_helper_database_replicated_replace_args_macros");
 
-            if (!enable_functional_tests_helper)
-            {
-                if (query_context->getSettingsRef().database_replicated_allow_replicated_engine_arguments)
-                    LOG_WARNING(log, "It's not recommended to explicitly specify zookeeper_path and replica_name in ReplicatedMergeTree arguments");
-                else
-                    throw Exception(ErrorCodes::INCORRECT_QUERY,
-                                    "It's not allowed to specify explicit zookeeper_path and replica_name "
-                                    "for ReplicatedMergeTree arguments in Replicated database. If you really want to "
-                                    "specify them explicitly, enable setting "
-                                    "database_replicated_allow_replicated_engine_arguments.");
-            }
-
             if (maybe_shard_macros && maybe_replica_macros)
                 return;
 
@@ -800,7 +788,8 @@ void DatabaseReplicated::checkQueryValid(const ASTPtr & query, ContextPtr query_
                 return;
             }
 
-            throw Exception(ErrorCodes::INCORRECT_QUERY,
+            if (query_context->getSettingsRef().database_replicated_allow_replicated_engine_arguments == 0)
+                throw Exception(ErrorCodes::INCORRECT_QUERY,
                             "Explicit zookeeper_path and replica_name are specified in ReplicatedMergeTree arguments. "
                             "If you really want to specify it explicitly, then you should use some macros "
                             "to distinguish different shards and replicas");
@@ -1020,6 +1009,9 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         query_context->setSetting("enable_zstd_qat_codec", 1);
         query_context->setSetting("allow_create_index_without_type", 1);
         query_context->setSetting("allow_experimental_s3queue", 1);
+
+        query_context->setSetting("database_replicated_allow_explicit_uuid", 3);
+        query_context->setSetting("database_replicated_allow_replicated_engine_arguments", 3);
 
         auto txn = std::make_shared<ZooKeeperMetadataTransaction>(current_zookeeper, zookeeper_path, false, "");
         query_context->initZooKeeperMetadataTransaction(txn);
