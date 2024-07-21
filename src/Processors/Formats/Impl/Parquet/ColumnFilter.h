@@ -1,8 +1,27 @@
 #pragma once
 #include <base/types.h>
+#include <boost/dynamic_bitset.hpp>
 
 namespace DB
 {
+
+class RowSet
+{
+public:
+    explicit RowSet(size_t max_rows_) : max_rows(max_rows_) { bitset.resize(max_rows, true); }
+
+    void set(size_t i, bool value) { bitset.set(i, value); }
+    bool get(size_t i) { return bitset.test(i); }
+    size_t totalRows() const { return max_rows; }
+    bool none() const { return bitset.none(); }
+    bool all() const { return bitset.all(); }
+    bool any() const { return bitset.any(); }
+
+private:
+    size_t max_rows = 0;
+    boost::dynamic_bitset<> bitset;
+};
+
 class ColumnFilter;
 using ColumnFilterPtr = std::shared_ptr<ColumnFilter>;
 
@@ -33,6 +52,7 @@ public:
     virtual bool testInt64Range(Int64, Int64) { return true; }
     virtual bool testFloat32Range(Float32, Float32) { return true; }
     virtual bool testFloat64Range(Float64, Float64) { return true; }
+    virtual void testInt64Values(RowSet& /*row_set*/, size_t /*offset*/, size_t /*len*/, const Int64 * /*data*/) { }
 };
 
 class AlwaysTrueFilter : public ColumnFilter
@@ -65,6 +85,9 @@ public:
     bool testInt64Range(Int64 int64, Int64 int641) override { return ColumnFilter::testInt64Range(int64, int641); }
     bool testFloat32Range(Float32 float32, Float32 float321) override { return ColumnFilter::testFloat32Range(float32, float321); }
     bool testFloat64Range(Float64 float64, Float64 float641) override { return ColumnFilter::testFloat64Range(float64, float641); }
+    void testInt64Values(RowSet& row_set, size_t offset, size_t len, const Int64 * data) override;
+
+
 
 private:
     Int64 max = INT64_MAX;
