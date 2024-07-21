@@ -789,36 +789,26 @@ void ColumnVariant::updateHashWithValue(size_t n, SipHash & hash) const
         variants[localDiscriminatorByGlobal(global_discr)]->updateHashWithValue(offsetAt(n), hash);
 }
 
-void ColumnVariant::updateWeakHash32(WeakHash32 & hash) const
+WeakHash32 ColumnVariant::getWeakHash32() const
 {
     auto s = size();
 
-    if (hash.getData().size() != s)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of WeakHash32 does not match size of column: "
-                                                   "column size is {}, hash size is {}", std::to_string(s), std::to_string(hash.getData().size()));
-
     /// If we have only NULLs, keep hash unchanged.
     if (hasOnlyNulls())
-        return;
+        return WeakHash32(s);
 
     /// Optimization for case when there is only 1 non-empty variant and no NULLs.
     /// In this case we can just calculate weak hash for this variant.
     if (auto non_empty_local_discr = getLocalDiscriminatorOfOneNoneEmptyVariantNoNulls())
-    {
-        variants[*non_empty_local_discr]->updateWeakHash32(hash);
-        return;
-    }
+        return variants[*non_empty_local_discr]->getWeakHash32();
 
     /// Calculate weak hash for all variants.
     std::vector<WeakHash32> nested_hashes;
     for (const auto & variant : variants)
-    {
-        WeakHash32 nested_hash(variant->size());
-        variant->updateWeakHash32(nested_hash);
-        nested_hashes.emplace_back(std::move(nested_hash));
-    }
+        nested_hashes.emplace_back(variant->getWeakHash32());
 
     /// For each row hash is a hash of corresponding row from corresponding variant.
+    WeakHash32 hash(s);
     auto & hash_data = hash.getData();
     const auto & local_discriminators_data = getLocalDiscriminators();
     const auto & offsets_data = getOffsets();
@@ -827,11 +817,10 @@ void ColumnVariant::updateWeakHash32(WeakHash32 & hash) const
         Discriminator discr = local_discriminators_data[i];
         /// Update hash only for non-NULL values
         if (discr != NULL_DISCRIMINATOR)
-        {
-            auto nested_hash = nested_hashes[local_discriminators_data[i]].getData()[offsets_data[i]];
-            hash_data[i] = static_cast<UInt32>(hashCRC32(nested_hash, hash_data[i]));
-        }
+            hash_data[i] = nested_hashes[discr].getData()[offsets_data[i]];
     }
+
+    return hash;
 }
 
 void ColumnVariant::updateHashFast(SipHash & hash) const

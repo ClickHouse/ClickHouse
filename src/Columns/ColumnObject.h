@@ -5,6 +5,7 @@
 #include <Core/Names.h>
 #include <DataTypes/Serializations/SubcolumnsTree.h>
 #include <Common/PODArray.h>
+#include <Common/WeakHash.h>
 
 #include <DataTypes/IDataType.h>
 
@@ -252,7 +253,7 @@ public:
     const char * deserializeAndInsertFromArena(const char *) override { throwMustBeConcrete(); }
     const char * skipSerializedInArena(const char *) const override { throwMustBeConcrete(); }
     void updateHashWithValue(size_t, SipHash &) const override { throwMustBeConcrete(); }
-    void updateWeakHash32(WeakHash32 &) const override { throwMustBeConcrete(); }
+    WeakHash32 getWeakHash32() const override { throwMustBeConcrete(); }
     void updateHashFast(SipHash & hash) const override;
     void expand(const Filter &, bool) override { throwMustBeConcrete(); }
     bool hasEqualValues() const override { throwMustBeConcrete(); }
