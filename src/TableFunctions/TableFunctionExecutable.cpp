@@ -170,7 +170,14 @@ StoragePtr TableFunctionExecutable::executeImpl(const ASTPtr & /*ast_function*/,
     if (settings_query != nullptr)
         settings.applyChanges(settings_query->as<ASTSetQuery>()->changes);
 
-    auto storage = std::make_shared<StorageExecutable>(storage_id, format, settings, input_queries, getActualTableStructure(context, is_insert_query), ConstraintsDescription{});
+    auto storage = std::make_shared<StorageExecutable>(
+        storage_id,
+        format,
+        settings,
+        input_queries,
+        getActualTableStructure(context, is_insert_query),
+        ConstraintsDescription{},
+        /* comment = */ "");
     storage->startup();
     return storage;
 }
