@@ -182,10 +182,11 @@ class Shell:
             check=False,
         )
         if result.returncode == 0:
+            print(f"stdout: {result.stdout.strip()}")
             res = result.stdout
         else:
             print(
-                f"ERROR: stdout {result.stdout.strip()}, stderr {result.stderr.strip()}"
+                f"ERROR: stdout: {result.stdout.strip()}, stderr: {result.stderr.strip()}"
             )
             if check:
                 assert result.returncode == 0
