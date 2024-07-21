@@ -20,7 +20,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int THERE_IS_NO_COLUMN;
-    extern const int NOT_IMPLEMENTED;
 }
 
 
