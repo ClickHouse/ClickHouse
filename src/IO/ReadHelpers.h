@@ -456,13 +456,14 @@ ReturnType readIntTextImpl(T & x, ReadBuffer & buf)
     }
 
 end:
-    if (has_sign && !has_number)
+    if (!has_number)
     {
-        if constexpr (throw_exception)
-            throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER,
-                "Cannot parse number with a sign character but without any numeric character");
-        else
+        if constexpr (!throw_exception)
             return ReturnType(false);
+        if (has_sign)
+            throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER, "Cannot parse number with a sign character but without any numeric character");
+        else
+            throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER, "Cannot parse number without any numeric and sign character");
     }
     x = res;
     if constexpr (is_signed_v<T>)

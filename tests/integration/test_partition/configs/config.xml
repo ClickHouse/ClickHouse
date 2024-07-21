@@ -1,0 +1,31 @@
+<clickhouse>
+    <zookeeper>
+        <node index="1">
+            <host>localhost</host>
+            <port>9181</port>
+        </node>
+    </zookeeper>
+    <merge_tree>
+        <allow_remote_fs_zero_copy_replication>true</allow_remote_fs_zero_copy_replication>
+    </merge_tree>
+    <storage_configuration>
+        <disks>
+            <s3>
+                <type>s3</type>
+                <endpoint>http://minio1:9001/root/old-style-prefix/with-several-section/</endpoint>
+                <access_key_id>minio</access_key_id>
+                <secret_access_key>minio123</secret_access_key>
+            </s3>
+        </disks>
+
+        <policies>
+            <s3>
+                <volumes>
+                    <main>
+                        <disk>s3</disk>
+                    </main>
+                </volumes>
+            </s3>
+        </policies>
+    </storage_configuration>
+</clickhouse>

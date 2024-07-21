@@ -95,6 +95,7 @@ std::optional<MergeTreePartInfo> MergeTreePartInfo::tryParsePartName(
     Int64 max_block_num = 0;
     UInt32 level = 0;
     UInt32 mutation = 0;
+    UInt32 try_n = 0;
 
     if (!tryReadIntText(min_block_num, in)
         || !checkChar('_', in)
@@ -108,15 +109,24 @@ std::optional<MergeTreePartInfo> MergeTreePartInfo::tryParsePartName(
     /// Sanity check
     if (min_block_num > max_block_num)
         return std::nullopt;
-
+    /// Mutation number or/and _tryN suffix
     if (!in.eof())
     {
-        if (!checkChar('_', in)
-            || !tryReadIntText(mutation, in)
-            || !in.eof())
-        {
+        if (!checkChar('_', in))
             return std::nullopt;
+        if (tryReadIntText(mutation, in))
+        {
+            if (!in.eof())
+                if (!checkChar('_', in)
+                    || !checkString("try", in)
+                    || !tryReadIntText(try_n, in)
+                    || !in.eof())
+                    return std::nullopt;
         }
+        else if (!checkString("try", in)
+            || !tryReadIntText(try_n, in)
+            || !in.eof())
+                return std::nullopt;
     }
 
     MergeTreePartInfo part_info;

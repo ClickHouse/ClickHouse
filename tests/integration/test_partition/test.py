@@ -10,8 +10,10 @@ cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
     "instance",
     main_configs=[
-        "configs/testkeeper.xml",
+        "configs/config.xml",
     ],
+    with_minio=True,
+    with_zookeeper=True,
 )
 q = instance.query
 path_to_data = "/var/lib/clickhouse/"
@@ -298,6 +300,7 @@ def test_attach_check_all_parts(attach_check_all_parts_table):
 def drop_detached_parts_table(started_cluster):
     q("SYSTEM STOP MERGES")
     q("DROP TABLE IF EXISTS test.drop_detached")
+    q("DROP TABLE IF EXISTS test.drop_detached_zerocopy")
     q(
         "CREATE TABLE test.drop_detached (n UInt64) ENGINE = MergeTree() PARTITION BY intDiv(n, 8) ORDER BY n SETTINGS compress_marks=false, compress_primary_key=false, ratio_of_defaults_for_sparse_serialization=1"
     )
@@ -307,10 +310,14 @@ def drop_detached_parts_table(started_cluster):
     q(
         "INSERT INTO test.drop_detached SELECT number FROM system.numbers WHERE number % 2 = 1 LIMIT 8"
     )
+    q(
+        "CREATE TABLE test.drop_detached_zerocopy (n UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/drop_detached_zerocopy', '1') PARTITION BY intDiv(n, 8) ORDER BY n SETTINGS storage_policy='s3'"
+    )
 
     yield
 
     q("DROP TABLE test.drop_detached")
+    q("DROP TABLE test.drop_detached_zerocopy")
     q("SYSTEM START MERGES")
 
 
@@ -366,6 +373,44 @@ def test_drop_detached_parts(drop_detached_parts_table):
         "SElECT name FROM system.detached_parts WHERE table='drop_detached' AND database='test' ORDER BY name"
     )
     assert TSV(detached) == TSV("0_3_3_0\nattaching_0_6_6_0\ndeleting_0_7_7_0")
+
+    # Test with zerocopy and tryN suffix
+    path_to_detached = (
+        path_to_data + "disks/s3/data/test/drop_detached_zerocopy/detached/"
+    )
+    instance.exec_in_container(["mkdir", "{}".format(path_to_detached + "0_1_1_0")])
+    instance.exec_in_container(
+        ["mkdir", "{}".format(path_to_detached + "0_2_2_0_try1")]
+    )
+    instance.exec_in_container(
+        ["mkdir", "{}".format(path_to_detached + "0_3_3_0_try10")]
+    )
+    instance.exec_in_container(
+        ["mkdir", "{}".format(path_to_detached + "clone_0_4_4_0_try1")]
+    )
+    instance.exec_in_container(
+        ["mkdir", "{}".format(path_to_detached + "clone_0_5_5_0_1_try1")]
+    )
+    q(
+        "ALTER TABLE test.drop_detached_zerocopy DROP DETACHED PART '0_1_1_0'",
+        settings=s,
+    )
+    q(
+        "ALTER TABLE test.drop_detached_zerocopy DROP DETACHED PART '0_2_2_0_try1'",
+        settings=s,
+    )
+    q(
+        "ALTER TABLE test.drop_detached_zerocopy DROP DETACHED PART '0_3_3_0_try10'",
+        settings=s,
+    )
+    q(
+        "ALTER TABLE test.drop_detached_zerocopy DROP DETACHED PART 'clone_0_4_4_0_try1'",
+        settings=s,
+    )
+    q(
+        "ALTER TABLE test.drop_detached_zerocopy DROP DETACHED PART 'clone_0_5_5_0_1_try1'",
+        settings=s,
+    )
 
 
 def test_system_detached_parts(drop_detached_parts_table):
