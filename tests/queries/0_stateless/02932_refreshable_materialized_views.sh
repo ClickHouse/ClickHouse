@@ -132,7 +132,7 @@ while [ "`$CLICKHOUSE_CLIENT -nq "select status, next_refresh_time from refreshe
 do
     sleep 0.1
 done
-sleep 1
+
 $CLICKHOUSE_CLIENT -nq "
     select '<14: waiting for next cycle>', view, status, remaining_dependencies, next_refresh_time from refreshes;
     truncate src;
@@ -222,22 +222,27 @@ done
 $CLICKHOUSE_CLIENT -nq "
     rename table e to f;
     select '<24: rename during refresh>', * from f;
-    select '<25: rename during refresh>', view, status from refreshes;
+    select '<25: rename during refresh>', view, status from refreshes where view = 'f';
     alter table f modify refresh after 10 year;"
-sleep 2 # make it likely that at least one row was processed
+
 # Cancel.
 $CLICKHOUSE_CLIENT -nq "
     system cancel view f;"
-while [ "`$CLICKHOUSE_CLIENT -nq "select last_refresh_result from refreshes -- $LINENO" | xargs`" != 'Cancelled' ]
+while [ "`$CLICKHOUSE_CLIENT -nq "select last_refresh_result from refreshes where view = 'f' -- $LINENO" | xargs`" != 'Cancelled' ]
 do
     sleep 0.1
 done
+
+while [ "`$CLICKHOUSE_CLIENT -nq "select status from refreshes where view = 'f' -- $LINENO" | xargs`" = 'Running' ]
+do
+    sleep 0.1
+done
+
 # Check that another refresh doesn't immediately start after the cancelled one.
-sleep 1
 $CLICKHOUSE_CLIENT -nq "
-    select '<27: cancelled>', view, status from refreshes;
+    select '<27: cancelled>', view, status from refreshes where view = 'f';
     system refresh view f;"
-while [ "`$CLICKHOUSE_CLIENT -nq "select status from refreshes -- $LINENO" | xargs`" != 'Running' ]
+while [ "`$CLICKHOUSE_CLIENT -nq "select status from refreshes where view = 'f' -- $LINENO" | xargs`" != 'Running' ]
 do
     sleep 0.1
 done
