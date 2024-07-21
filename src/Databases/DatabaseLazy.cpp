@@ -195,7 +195,7 @@ void DatabaseLazy::attachTable(ContextPtr /* context_ */, const String & table_n
         snapshot_detached_tables.erase(table_name);
     }
 
-    CurrentMetrics::add(CurrentMetrics::AttachedTable, 1);
+    CurrentMetrics::add(CurrentMetrics::AttachedTable);
 }
 
 StoragePtr DatabaseLazy::detachTable(ContextPtr /* context */, const String & table_name)
@@ -221,7 +221,7 @@ StoragePtr DatabaseLazy::detachTable(ContextPtr /* context */, const String & ta
                 .metadata_path = getObjectMetadataPath(table_name),
                 .is_permanently = false});
 
-        CurrentMetrics::sub(CurrentMetrics::AttachedTable, 1);
+        CurrentMetrics::sub(CurrentMetrics::AttachedTable);
     }
     return res;
 }
