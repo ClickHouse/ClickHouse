@@ -624,7 +624,10 @@ class TestCIConfig(unittest.TestCase):
             + MOCK_AFFECTED_JOBS
             + MOCK_REQUIRED_BUILDS
         )
-        self.assertTrue(CI.JobNames.BUILD_CHECK not in ci_cache.jobs_to_wait, "We must never await on Builds Report")
+        self.assertTrue(
+            CI.JobNames.BUILD_CHECK not in ci_cache.jobs_to_wait,
+            "We must never await on Builds Report",
+        )
         self.assertCountEqual(
             list(ci_cache.jobs_to_wait),
             MOCK_REQUIRED_BUILDS,
