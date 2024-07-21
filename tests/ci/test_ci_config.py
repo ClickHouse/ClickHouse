@@ -652,7 +652,7 @@ class TestCIConfig(unittest.TestCase):
         assert not ci_cache.jobs_to_skip
 
         MOCK_AFFECTED_JOBS = [
-            CI.JobNames.DOCS_CHECK,
+            CI.JobNames.FAST_TEST,
         ]
         MOCK_REQUIRED_BUILDS = []
 
