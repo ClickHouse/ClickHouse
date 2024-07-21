@@ -1543,9 +1543,9 @@ public:
         auto return_type = getReturnTypeImplStatic(arguments, context);
         if constexpr (is_compare)
         {
-            for (size_t i = 0; i < arguments.size(); ++i)
+            for (const auto & arg : arguments)
             {
-                if (arguments[i]->isNullable())
+                if (arg->isNullable())
                     return makeNullable(return_type);
             }
         }
