@@ -26,6 +26,7 @@ RUN apt-get update \
         gperf \
         moreutils \
         nasm \
+        xz \
         pigz \
         rename \
         software-properties-common \
