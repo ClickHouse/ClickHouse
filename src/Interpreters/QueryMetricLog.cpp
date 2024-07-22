@@ -24,6 +24,11 @@ namespace CurrentMetrics
     extern const Metric MergesMutationsMemoryTracking;
 }
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 namespace DB
 {
 
@@ -206,8 +211,11 @@ void QueryMetricLog::stepFunction(TimePoint current_time)
             break;
 
         const auto query_info = process_list.getQueryInfo(query_status.query_id, false, true, false);
+
+        // The query info should always be found because whenever a query ends, finishQuery is
+        // called and the query is removed from the list
         if (!query_info)
-            continue;
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Query info not found: {}", query_status.query_id);
 
         auto elem = createLogMetricElement(query_status.query_id, query_info->profile_counters, current_time);
         add(std::move(elem));
