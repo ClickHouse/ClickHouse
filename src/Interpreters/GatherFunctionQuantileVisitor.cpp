@@ -62,10 +62,8 @@ void GatherFunctionQuantileData::FuseQuantileAggregatesData::addFuncNode(ASTPtr 
 
     const auto & arguments = func->arguments->children;
 
-
     bool need_two_args = func->name == "quantileDeterministic" || func->name == "quantileExactWeighted"
-        || func->name == "quantileTimingWeighted"
-        || func->name == "quantileTDigestWeighted" || func->name == "quantileBFloat16Weighted";
+        || func->name == "quantileTimingWeighted" || func->name == "quantileTDigestWeighted" || func->name == "quantileBFloat16Weighted";
 
     if (arguments.size() != (need_two_args ? 2 : 1))
         return;
