@@ -117,12 +117,14 @@ public:
 
     void setMaxCount(size_t max_count_) override
     {
+        LOG_TRACE(getLogger("QueryCache"), "TTLCachePolicy::setMaxCount (max_count: {}, count(): {})", max_count_, count()); /// TODO: Remove once #66887 is fixed
         /// lazy behavior: the cache only shrinks upon the next insert
         max_count = max_count_;
     }
 
     void setMaxSizeInBytes(size_t max_size_in_bytes_) override
     {
+        LOG_TRACE(getLogger("QueryCache"), "TTLCachePolicy::setMaxSizeInBytes (max_size_in_bytes: {})", max_size_in_bytes_); /// TODO: Remove once #66887 is fixed
         /// lazy behavior: the cache only shrinks upon the next insert
         max_size_in_bytes = max_size_in_bytes_;
     }
@@ -135,6 +137,7 @@ public:
 
     void remove(const Key & key) override
     {
+        LOG_TRACE(getLogger("QueryCache"), "TTLCachePolicy::remove (count(): {})", count()); /// TODO: Remove once #66887 is fixed
         auto it = cache.find(key);
         if (it == cache.end())
             return;
@@ -147,6 +150,7 @@ public:
 
     MappedPtr get(const Key & key) override
     {
+        LOG_TRACE(getLogger("QueryCache"), "TTLCachePolicy::get (count(): {})", count()); /// TODO: Remove once #66887 is fixed
         auto it = cache.find(key);
         if (it == cache.end())
             return {};
@@ -155,6 +159,7 @@ public:
 
     std::optional<KeyMapped> getWithKey(const Key & key) override
     {
+        LOG_TRACE(getLogger("QueryCache"), "TTLCachePolicy::getWithKey (count(): {})", count()); /// TODO: Remove once #66887 is fixed
         auto it = cache.find(key);
         if (it == cache.end())
             return std::nullopt;
@@ -164,6 +169,7 @@ public:
     /// Evicts on a best-effort basis. If there are too many non-stale entries, the new entry may not be cached at all!
     void set(const Key & key, const MappedPtr & mapped) override
     {
+        LOG_TRACE(getLogger("QueryCache"), "TTLCachePolicy::set (count(): {})", count()); /// TODO: Remove once #66887 is fixed
         chassert(mapped.get());
 
         const size_t entry_size_in_bytes = weight_function(*mapped);
@@ -192,6 +198,7 @@ public:
                     if (it->first.user_id.has_value())
                         Base::user_quotas->decreaseActual(*it->first.user_id, sz);
                     it = cache.erase(it);
+                    LOG_TRACE(getLogger("QueryCache"), "TTLCachePolicy evicted an entry (count(): {})", count()); /// TODO: Remove once #66887 is fixed
                     size_in_bytes -= sz;
                 }
                 else
@@ -207,6 +214,7 @@ public:
                 if (it->first.user_id.has_value())
                     Base::user_quotas->decreaseActual(*it->first.user_id, sz);
                 cache.erase(it); // stupid bug: (*) doesn't replace existing entries (likely due to custom hash function), need to erase explicitly
+                LOG_TRACE(getLogger("QueryCache"), "TTLCachePolicy replaced an entry (count(): {})", count()); /// TODO: Remove once #66887 is fixed
                 size_in_bytes -= sz;
             }
 
@@ -215,6 +223,7 @@ public:
             if (key.user_id.has_value())
                 Base::user_quotas->increaseActual(*key.user_id, entry_size_in_bytes);
         }
+        LOG_TRACE(getLogger("QueryCache"), "TTLCachePolicy::set done (count(): {})", count()); /// TODO: Remove once #66887 is fixed
     }
 
     std::vector<KeyMapped> dump() const override

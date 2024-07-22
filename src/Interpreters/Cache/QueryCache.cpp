@@ -462,7 +462,8 @@ void QueryCache::Writer::finalizeWrite()
 
     cache.set(key, query_result);
 
-    LOG_TRACE(logger, "Stored query result of query {}", doubleQuoteString(key.query_string));
+    /// LOG_TRACE(logger, "Stored query result of query {}", doubleQuoteString(key.query_string));
+    LOG_TRACE(logger, "Stored query result of query {} (cache.count(): {})", doubleQuoteString(key.query_string), cache.count()); /// TODO: Remove once #66887 is fixed
 
     was_finalized = true;
 }
@@ -493,7 +494,8 @@ QueryCache::Reader::Reader(Cache & cache_, const Key & key, const std::lock_guar
 
     if (!entry.has_value())
     {
-        LOG_TRACE(logger, "No query result found for query {}", doubleQuoteString(key.query_string));
+        /// LOG_TRACE(logger, "No query result found for query {}", doubleQuoteString(key.query_string));
+        LOG_TRACE(logger, "No query result found for query {} (cache.count(): {})", doubleQuoteString(key.query_string), cache_.count()); /// TODO: Remove once #66887 is fixed
         return;
     }
 
@@ -614,6 +616,7 @@ QueryCache::Writer QueryCache::createWriter(const Key & key, std::chrono::millis
 
 void QueryCache::clear()
 {
+    LOG_TRACE(getLogger("QueryCache"), "Clearing query cache (cache.count(): {})", cache.count());
     cache.clear();
     std::lock_guard lock(mutex);
     times_executed.clear();
@@ -626,7 +629,8 @@ size_t QueryCache::sizeInBytes() const
 
 size_t QueryCache::count() const
 {
-    return cache.count();
+    size_t count = cache.count();
+    return count;
 }
 
 size_t QueryCache::recordQueryRun(const Key & key)
@@ -636,7 +640,10 @@ size_t QueryCache::recordQueryRun(const Key & key)
     // Regularly drop times_executed to avoid DOS-by-unlimited-growth.
     static constexpr auto TIMES_EXECUTED_MAX_SIZE = 10'000uz;
     if (times_executed.size() > TIMES_EXECUTED_MAX_SIZE)
+    {
         times_executed.clear();
+        LOG_TRACE(getLogger("QueryCache"), "Cleared 'times_executed' statistics to prevent unlimited growth");
+    }
     return times;
 }
 

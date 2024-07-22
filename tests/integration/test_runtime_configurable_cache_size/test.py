@@ -101,7 +101,11 @@ def test_query_cache_size_is_runtime_configurable(start_cluster):
     node.query("SELECT 3 SETTINGS use_query_cache = 1, query_cache_ttl = 1")
 
     time.sleep(2)
+    res = node.query("SELECT count(*) FROM system.query_cache") # TODO remove once issue #66887 is resolved
+    assert res == "2\n"
     node.query("SYSTEM RELOAD ASYNCHRONOUS METRICS")
+    res = node.query("SELECT count(*) FROM system.query_cache") # TODO remove once issue #66887 is resolved
+    assert res == "2\n"
     res = node.query(
         "SELECT value FROM system.asynchronous_metrics WHERE metric = 'QueryCacheEntries'",
     )
