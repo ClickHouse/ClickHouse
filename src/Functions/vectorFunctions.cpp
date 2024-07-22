@@ -1576,9 +1576,9 @@ using TupleOrArrayFunctionCosineDistance = TupleOrArrayFunction<CosineDistanceTr
 REGISTER_FUNCTION(VectorFunctions)
 {
     factory.registerFunction<FunctionTuplePlus>();
-    factory.registerAlias("vectorSum", FunctionTuplePlus::name, FunctionFactory::CaseInsensitive);
+    factory.registerAlias("vectorSum", FunctionTuplePlus::name, FunctionFactory::Case::Insensitive);
     factory.registerFunction<FunctionTupleMinus>();
-    factory.registerAlias("vectorDifference", FunctionTupleMinus::name, FunctionFactory::CaseInsensitive);
+    factory.registerAlias("vectorDifference", FunctionTupleMinus::name, FunctionFactory::Case::Insensitive);
     factory.registerFunction<FunctionTupleMultiply>();
     factory.registerFunction<FunctionTupleDivide>();
     factory.registerFunction<FunctionTupleModulo>();
@@ -1652,7 +1652,7 @@ If the types of the first interval (or the interval in the tuple) and the second
     factory.registerFunction<FunctionTupleIntDivOrZeroByNumber>();
 
     factory.registerFunction<TupleOrArrayFunctionDotProduct>();
-    factory.registerAlias("scalarProduct", TupleOrArrayFunctionDotProduct::name, FunctionFactory::CaseInsensitive);
+    factory.registerAlias("scalarProduct", TupleOrArrayFunctionDotProduct::name, FunctionFactory::Case::Insensitive);
 
     factory.registerFunction<TupleOrArrayFunctionL1Norm>();
     factory.registerFunction<TupleOrArrayFunctionL2Norm>();
@@ -1660,11 +1660,11 @@ If the types of the first interval (or the interval in the tuple) and the second
     factory.registerFunction<TupleOrArrayFunctionLinfNorm>();
     factory.registerFunction<TupleOrArrayFunctionLpNorm>();
 
-    factory.registerAlias("normL1", TupleOrArrayFunctionL1Norm::name, FunctionFactory::CaseInsensitive);
-    factory.registerAlias("normL2", TupleOrArrayFunctionL2Norm::name, FunctionFactory::CaseInsensitive);
-    factory.registerAlias("normL2Squared", TupleOrArrayFunctionL2SquaredNorm::name, FunctionFactory::CaseInsensitive);
-    factory.registerAlias("normLinf", TupleOrArrayFunctionLinfNorm::name, FunctionFactory::CaseInsensitive);
-    factory.registerAlias("normLp", FunctionLpNorm::name, FunctionFactory::CaseInsensitive);
+    factory.registerAlias("normL1", TupleOrArrayFunctionL1Norm::name, FunctionFactory::Case::Insensitive);
+    factory.registerAlias("normL2", TupleOrArrayFunctionL2Norm::name, FunctionFactory::Case::Insensitive);
+    factory.registerAlias("normL2Squared", TupleOrArrayFunctionL2SquaredNorm::name, FunctionFactory::Case::Insensitive);
+    factory.registerAlias("normLinf", TupleOrArrayFunctionLinfNorm::name, FunctionFactory::Case::Insensitive);
+    factory.registerAlias("normLp", FunctionLpNorm::name, FunctionFactory::Case::Insensitive);
 
     factory.registerFunction<TupleOrArrayFunctionL1Distance>();
     factory.registerFunction<TupleOrArrayFunctionL2Distance>();
@@ -1672,21 +1672,21 @@ If the types of the first interval (or the interval in the tuple) and the second
     factory.registerFunction<TupleOrArrayFunctionLinfDistance>();
     factory.registerFunction<TupleOrArrayFunctionLpDistance>();
 
-    factory.registerAlias("distanceL1", FunctionL1Distance::name, FunctionFactory::CaseInsensitive);
-    factory.registerAlias("distanceL2", FunctionL2Distance::name, FunctionFactory::CaseInsensitive);
-    factory.registerAlias("distanceL2Squared", FunctionL2SquaredDistance::name, FunctionFactory::CaseInsensitive);
-    factory.registerAlias("distanceLinf", FunctionLinfDistance::name, FunctionFactory::CaseInsensitive);
-    factory.registerAlias("distanceLp", FunctionLpDistance::name, FunctionFactory::CaseInsensitive);
+    factory.registerAlias("distanceL1", FunctionL1Distance::name, FunctionFactory::Case::Insensitive);
+    factory.registerAlias("distanceL2", FunctionL2Distance::name, FunctionFactory::Case::Insensitive);
+    factory.registerAlias("distanceL2Squared", FunctionL2SquaredDistance::name, FunctionFactory::Case::Insensitive);
+    factory.registerAlias("distanceLinf", FunctionLinfDistance::name, FunctionFactory::Case::Insensitive);
+    factory.registerAlias("distanceLp", FunctionLpDistance::name, FunctionFactory::Case::Insensitive);
 
     factory.registerFunction<FunctionL1Normalize>();
     factory.registerFunction<FunctionL2Normalize>();
     factory.registerFunction<FunctionLinfNormalize>();
     factory.registerFunction<FunctionLpNormalize>();
 
-    factory.registerAlias("normalizeL1", FunctionL1Normalize::name, FunctionFactory::CaseInsensitive);
-    factory.registerAlias("normalizeL2", FunctionL2Normalize::name, FunctionFactory::CaseInsensitive);
-    factory.registerAlias("normalizeLinf", FunctionLinfNormalize::name, FunctionFactory::CaseInsensitive);
-    factory.registerAlias("normalizeLp", FunctionLpNormalize::name, FunctionFactory::CaseInsensitive);
+    factory.registerAlias("normalizeL1", FunctionL1Normalize::name, FunctionFactory::Case::Insensitive);
+    factory.registerAlias("normalizeL2", FunctionL2Normalize::name, FunctionFactory::Case::Insensitive);
+    factory.registerAlias("normalizeLinf", FunctionLinfNormalize::name, FunctionFactory::Case::Insensitive);
+    factory.registerAlias("normalizeLp", FunctionLpNormalize::name, FunctionFactory::Case::Insensitive);
 
     factory.registerFunction<TupleOrArrayFunctionCosineDistance>();
 }

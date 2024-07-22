@@ -6,10 +6,16 @@
 #include <Coordination/SessionExpiryQueue.h>
 #include <Coordination/SnapshotableHashTable.h>
 #include <Common/SharedMutex.h>
+#include <Common/Concepts.h>
 
 #include <base/defines.h>
 
 #include <absl/container/flat_hash_set.h>
+
+#include "config.h"
+#if USE_ROCKSDB
+#include <Coordination/RocksDBContainer.h>
+#endif
 
 namespace DB
 {
@@ -17,189 +23,249 @@ namespace DB
 class KeeperContext;
 using KeeperContextPtr = std::shared_ptr<KeeperContext>;
 
-struct KeeperStorageRequestProcessor;
-using KeeperStorageRequestProcessorPtr = std::shared_ptr<KeeperStorageRequestProcessor>;
 using ResponseCallback = std::function<void(const Coordination::ZooKeeperResponsePtr &)>;
 using ChildrenSet = absl::flat_hash_set<StringRef, StringRefHash>;
 using SessionAndTimeout = std::unordered_map<int64_t, int64_t>;
 
-struct KeeperStorageSnapshot;
-
-/// Keeper state machine almost equal to the ZooKeeper's state machine.
-/// Implements all logic of operations, data changes, sessions allocation.
-/// In-memory and not thread safe.
-class KeeperStorage
+struct NodeStats
 {
-public:
-    struct NodeStats
+    int64_t czxid{0};
+    int64_t mzxid{0};
+    int64_t pzxid{0};
+
+    int64_t mtime{0};
+
+    int32_t version{0};
+    int32_t cversion{0};
+    int32_t aversion{0};
+
+    uint32_t data_size{0};
+
+    uint64_t acl_id = 0; /// 0 -- no ACL by default
+                         ///
+    void copyStats(const Coordination::Stat & stat);
+
+    bool isEphemeral() const
     {
-        int64_t czxid{0};
-        int64_t mzxid{0};
-        int64_t pzxid{0};
+        return is_ephemeral_and_ctime.is_ephemeral;
+    }
 
-        int64_t mtime{0};
+    int64_t ephemeralOwner() const
+    {
+        if (isEphemeral())
+            return ephemeral_or_children_data.ephemeral_owner;
 
-        int32_t version{0};
-        int32_t cversion{0};
-        int32_t aversion{0};
+        return 0;
+    }
 
-        uint32_t data_size{0};
+    void setEphemeralOwner(int64_t ephemeral_owner)
+    {
+        is_ephemeral_and_ctime.is_ephemeral = ephemeral_owner != 0;
+        ephemeral_or_children_data.ephemeral_owner = ephemeral_owner;
+    }
 
-        uint64_t acl_id = 0; /// 0 -- no ACL by default
-
-        bool isEphemeral() const
-        {
-            return is_ephemeral_and_ctime.is_ephemeral;
-        }
-
-        int64_t ephemeralOwner() const
-        {
-            if (isEphemeral())
-                return ephemeral_or_children_data.ephemeral_owner;
-
+    int32_t numChildren() const
+    {
+        if (isEphemeral())
             return 0;
-        }
 
-        void setEphemeralOwner(int64_t ephemeral_owner)
-        {
-            is_ephemeral_and_ctime.is_ephemeral = ephemeral_owner != 0;
-            ephemeral_or_children_data.ephemeral_owner = ephemeral_owner;
-        }
+        return ephemeral_or_children_data.children_info.num_children;
+    }
 
-        int32_t numChildren() const
-        {
-            if (isEphemeral())
-                return 0;
+    void setNumChildren(int32_t num_children)
+    {
+        is_ephemeral_and_ctime.is_ephemeral = false;
+        ephemeral_or_children_data.children_info.num_children = num_children;
+    }
 
-            return ephemeral_or_children_data.children_info.num_children;
-        }
+    void increaseNumChildren()
+    {
+        chassert(!isEphemeral());
+        ++ephemeral_or_children_data.children_info.num_children;
+    }
 
-        void setNumChildren(int32_t num_children)
-        {
-            is_ephemeral_and_ctime.is_ephemeral = false;
-            ephemeral_or_children_data.children_info.num_children = num_children;
-        }
+    void decreaseNumChildren()
+    {
+        chassert(!isEphemeral());
+        --ephemeral_or_children_data.children_info.num_children;
+    }
 
-        void increaseNumChildren()
-        {
-            chassert(!isEphemeral());
-            ++ephemeral_or_children_data.children_info.num_children;
-        }
+    int32_t seqNum() const
+    {
+        if (isEphemeral())
+            return 0;
 
-        void decreaseNumChildren()
-        {
-            chassert(!isEphemeral());
-            --ephemeral_or_children_data.children_info.num_children;
-        }
+        return ephemeral_or_children_data.children_info.seq_num;
+    }
 
-        int32_t seqNum() const
-        {
-            if (isEphemeral())
-                return 0;
+    void setSeqNum(int32_t seq_num)
+    {
+        ephemeral_or_children_data.children_info.seq_num = seq_num;
+    }
 
-            return ephemeral_or_children_data.children_info.seq_num;
-        }
+    void increaseSeqNum()
+    {
+        chassert(!isEphemeral());
+        ++ephemeral_or_children_data.children_info.seq_num;
+    }
 
-        void setSeqNum(int32_t seq_num)
-        {
-            ephemeral_or_children_data.children_info.seq_num = seq_num;
-        }
+    int64_t ctime() const
+    {
+        return is_ephemeral_and_ctime.ctime;
+    }
 
-        void increaseSeqNum()
-        {
-            chassert(!isEphemeral());
-            ++ephemeral_or_children_data.children_info.seq_num;
-        }
+    void setCtime(uint64_t ctime)
+    {
+        is_ephemeral_and_ctime.ctime = ctime;
+    }
 
-        int64_t ctime() const
-        {
-            return is_ephemeral_and_ctime.ctime;
-        }
+private:
+    /// as ctime can't be negative because it stores the timestamp when the
+    /// node was created, we can use the MSB for a bool
+    struct
+    {
+        bool is_ephemeral : 1;
+        int64_t ctime : 63;
+    } is_ephemeral_and_ctime{false, 0};
 
-        void setCtime(uint64_t ctime)
-        {
-            is_ephemeral_and_ctime.ctime = ctime;
-        }
-
-    private:
-        /// as ctime can't be negative because it stores the timestamp when the
-        /// node was created, we can use the MSB for a bool
+    /// ephemeral notes cannot have children so a node can set either
+    /// ephemeral_owner OR seq_num + num_children
+    union
+    {
+        int64_t ephemeral_owner;
         struct
         {
-            bool is_ephemeral : 1;
-            int64_t ctime : 63;
-        } is_ephemeral_and_ctime{false, 0};
+            int32_t seq_num;
+            int32_t num_children;
+        } children_info;
+    } ephemeral_or_children_data{0};
+};
 
-        /// ephemeral notes cannot have children so a node can set either
-        /// ephemeral_owner OR seq_num + num_children
-        union
-        {
-            int64_t ephemeral_owner;
-            struct
-            {
-                int32_t seq_num;
-                int32_t num_children;
-            } children_info;
-        } ephemeral_or_children_data{0};
-    };
-
-    /// Node should have as minimal size as possible to reduce memory footprint
-    /// of stored nodes
-    /// New fields should be added to the struct only if it's really necessary
-    struct Node
+/// KeeperRocksNodeInfo is used in RocksDB keeper.
+/// It is serialized directly as POD to RocksDB.
+struct KeeperRocksNodeInfo
+{
+    NodeStats stats;
+    /// dummy interface for test
+    void addChild(StringRef) {}
+    auto getChildren() const
     {
-        NodeStats stats;
-        std::unique_ptr<char[]> data{nullptr};
-        mutable uint64_t cached_digest = 0;
+        return std::vector<int>(stats.numChildren());
+    }
 
-        Node() = default;
+    void copyStats(const Coordination::Stat & stat);
+};
 
-        Node & operator=(const Node & other);
-        Node(const Node & other);
-
-        Node & operator=(Node && other) noexcept;
-        Node(Node && other) noexcept;
-
-        bool empty() const;
-
-        void copyStats(const Coordination::Stat & stat);
-
-        void setResponseStat(Coordination::Stat & response_stat) const;
-
-        /// Object memory size
-        uint64_t sizeInBytes() const;
-
-        void setData(const String & new_data);
-
-        std::string_view getData() const noexcept { return {data.get(), stats.data_size}; }
-
-        void addChild(StringRef child_path);
-
-        void removeChild(StringRef child_path);
-
-        const auto & getChildren() const noexcept { return children; }
-        auto & getChildren() { return children; }
-
-        // Invalidate the calculated digest so it's recalculated again on the next
-        // getDigest call
-        void invalidateDigestCache() const;
-
-        // get the calculated digest of the node
-        UInt64 getDigest(std::string_view path) const;
-
-        // copy only necessary information for preprocessing and digest calculation
-        // (e.g. we don't need to copy list of children)
-        void shallowCopy(const Node & other);
-    private:
-        ChildrenSet children{};
-    };
-
-#if !defined(ADDRESS_SANITIZER) && !defined(MEMORY_SANITIZER)
-    static_assert(
-        sizeof(ListNode<Node>) <= 144,
-        "std::list node containing ListNode<Node> is > 160 bytes (sizeof(ListNode<Node>) + 16 bytes for pointers) which will increase "
-        "memory consumption");
+/// KeeperRocksNode is the memory structure used by RocksDB
+struct KeeperRocksNode : public KeeperRocksNodeInfo
+{
+#if USE_ROCKSDB
+    friend struct RocksDBContainer<KeeperRocksNode>;
 #endif
+    using Meta = KeeperRocksNodeInfo;
+
+    uint64_t size_bytes = 0; // only for compatible, should be deprecated
+
+    uint64_t sizeInBytes() const { return stats.data_size + sizeof(KeeperRocksNodeInfo); }
+
+    void setData(String new_data)
+    {
+        stats.data_size = static_cast<uint32_t>(new_data.size());
+        if (stats.data_size != 0)
+        {
+            data = std::unique_ptr<char[]>(new char[new_data.size()]);
+            memcpy(data.get(), new_data.data(), stats.data_size);
+        }
+    }
+
+    void shallowCopy(const KeeperRocksNode & other)
+    {
+        stats = other.stats;
+        if (stats.data_size != 0)
+        {
+            data = std::unique_ptr<char[]>(new char[stats.data_size]);
+            memcpy(data.get(), other.data.get(), stats.data_size);
+        }
+
+        /// cached_digest = other.cached_digest;
+    }
+    void invalidateDigestCache() const;
+    UInt64 getDigest(std::string_view path) const;
+    String getEncodedString();
+    void decodeFromString(const String & buffer_str);
+    void recalculateSize() {}
+    std::string_view getData() const noexcept { return {data.get(), stats.data_size}; }
+
+    void setResponseStat(Coordination::Stat & response_stat) const;
+
+    void reset()
+    {
+        serialized = false;
+    }
+    bool empty() const
+    {
+        return stats.data_size == 0 && stats.mzxid == 0;
+    }
+    std::unique_ptr<char[]> data{nullptr};
+    mutable UInt64 cached_digest = 0; /// we cached digest for this node.
+private:
+    bool serialized = false;
+};
+
+/// KeeperMemNode should have as minimal size as possible to reduce memory footprint
+/// of stored nodes
+/// New fields should be added to the struct only if it's really necessary
+struct KeeperMemNode
+{
+    NodeStats stats;
+    std::unique_ptr<char[]> data{nullptr};
+    mutable uint64_t cached_digest = 0;
+
+    KeeperMemNode() = default;
+
+    KeeperMemNode & operator=(const KeeperMemNode & other);
+    KeeperMemNode(const KeeperMemNode & other);
+
+    KeeperMemNode & operator=(KeeperMemNode && other) noexcept;
+    KeeperMemNode(KeeperMemNode && other) noexcept;
+
+    bool empty() const;
+
+    void copyStats(const Coordination::Stat & stat);
+
+    void setResponseStat(Coordination::Stat & response_stat) const;
+
+    /// Object memory size
+    uint64_t sizeInBytes() const;
+
+    void setData(const String & new_data);
+
+    std::string_view getData() const noexcept { return {data.get(), stats.data_size}; }
+
+    void addChild(StringRef child_path);
+
+    void removeChild(StringRef child_path);
+
+    const auto & getChildren() const noexcept { return children; }
+    auto & getChildren() { return children; }
+
+    // Invalidate the calculated digest so it's recalculated again on the next
+    // getDigest call
+    void invalidateDigestCache() const;
+
+    // get the calculated digest of the node
+    UInt64 getDigest(std::string_view path) const;
+
+    // copy only necessary information for preprocessing and digest calculation
+    // (e.g. we don't need to copy list of children)
+    void shallowCopy(const KeeperMemNode & other);
+private:
+    ChildrenSet children{};
+};
+
+class KeeperStorageBase
+{
+public:
 
     enum DigestVersion : uint8_t
     {
@@ -210,24 +276,19 @@ public:
         V4 = 4  // 0 is not a valid digest value
     };
 
-    static constexpr auto CURRENT_DIGEST_VERSION = DigestVersion::V4;
-
-    struct ResponseForSession
-    {
-        int64_t session_id;
-        Coordination::ZooKeeperResponsePtr response;
-    };
-    using ResponsesForSessions = std::vector<ResponseForSession>;
-
     struct Digest
     {
         DigestVersion version{DigestVersion::NO_DIGEST};
         uint64_t value{0};
     };
 
-    static bool checkDigest(const Digest & first, const Digest & second);
-
-    static String generateDigest(const String & userdata);
+    struct ResponseForSession
+    {
+        int64_t session_id;
+        Coordination::ZooKeeperResponsePtr response;
+        Coordination::ZooKeeperRequestPtr request = nullptr;
+    };
+    using ResponsesForSessions = std::vector<ResponseForSession>;
 
     struct RequestForSession
     {
@@ -238,6 +299,7 @@ public:
         std::optional<Digest> digest;
         int64_t log_idx{0};
     };
+    using RequestsForSessions = std::vector<RequestForSession>;
 
     struct AuthID
     {
@@ -247,9 +309,6 @@ public:
         bool operator==(const AuthID & other) const { return scheme == other.scheme && id == other.id; }
     };
 
-    using RequestsForSessions = std::vector<RequestForSession>;
-
-    using Container = SnapshotableHashTable<Node>;
     using Ephemerals = std::unordered_map<int64_t, std::unordered_set<std::string>>;
     using SessionAndWatcher = std::unordered_map<int64_t, std::unordered_set<std::string>>;
     using SessionIDs = std::unordered_set<int64_t>;
@@ -258,15 +317,6 @@ public:
     using AuthIDs = std::vector<AuthID>;
     using SessionAndAuth = std::unordered_map<int64_t, AuthIDs>;
     using Watches = std::unordered_map<String /* path, relative of root_path */, SessionIDs>;
-
-    mutable std::shared_mutex storage_mutex;
-
-    SessionAndAuth session_and_auth;
-
-    /// Main hashtable with nodes. Contain all information about data.
-    /// All other structures expect session_and_timeout can be restored from
-    /// container.
-    Container container;
 
     // Applying ZooKeeper request to storage consists of two steps:
     //  - preprocessing which, instead of applying the changes directly to storage,
@@ -295,7 +345,11 @@ public:
 
     struct UpdateNodeStatDelta
     {
-        explicit UpdateNodeStatDelta(const KeeperStorage::Node & node);
+        template <is_any_of<KeeperMemNode, KeeperRocksNode> Node>
+        explicit UpdateNodeStatDelta(const Node & node)
+            : old_stats(node.stats)
+            , new_stats(node.stats)
+        {}
 
         NodeStats old_stats;
         NodeStats new_stats;
@@ -306,6 +360,7 @@ public:
 
     struct UpdateNodeDataDelta
     {
+        
         std::string old_data;
         std::string new_data;
         int32_t version{-1};
@@ -369,6 +424,62 @@ public:
         Operation operation;
     };
 
+    struct Stats
+    {
+        std::atomic<uint64_t> nodes_count = 0;
+        std::atomic<uint64_t> approximate_data_size = 0;
+        std::atomic<uint64_t> total_watches_count = 0;
+        std::atomic<uint64_t> watched_paths_count = 0;
+        std::atomic<uint64_t> sessions_with_watches_count = 0;
+        std::atomic<uint64_t> session_with_ephemeral_nodes_count = 0;
+        std::atomic<uint64_t> total_emphemeral_nodes_count = 0;
+        std::atomic<int64_t> last_zxid = 0;
+    };
+
+    Stats stats;
+
+    static bool checkDigest(const Digest & first, const Digest & second);
+};
+
+
+/// Keeper state machine almost equal to the ZooKeeper's state machine.
+/// Implements all logic of operations, data changes, sessions allocation.
+/// In-memory and not thread safe.
+template<typename Container_>
+class KeeperStorage : public KeeperStorageBase
+{
+public:
+    using Container = Container_;
+    using Node = Container::Node;
+
+#if !defined(ADDRESS_SANITIZER) && !defined(MEMORY_SANITIZER)
+    static_assert(
+        sizeof(ListNode<Node>) <= 144,
+        "std::list node containing ListNode<Node> is > 160 bytes (sizeof(ListNode<Node>) + 16 bytes for pointers) which will increase "
+        "memory consumption");
+#endif
+
+
+#if USE_ROCKSDB
+    static constexpr bool use_rocksdb = std::is_same_v<Container_, RocksDBContainer<KeeperRocksNode>>;
+#else
+    static constexpr bool use_rocksdb = false;
+#endif
+
+    static constexpr auto CURRENT_DIGEST_VERSION = DigestVersion::V4;
+
+    static String generateDigest(const String & userdata);
+
+    int64_t session_id_counter{1};
+
+    SessionAndAuth session_and_auth;
+    mutable std::shared_mutex storage_mutex;
+
+    /// Main hashtable with nodes. Contain all information about data.
+    /// All other structures expect session_and_timeout can be restored from
+    /// container.
+    Container container;
+
     struct UncommittedState
     {
         explicit UncommittedState(KeeperStorage & storage_) : storage(storage_) { }
@@ -428,7 +539,7 @@ public:
 
         mutable std::mutex deltas_mutex;
         std::list<Delta> deltas TSA_GUARDED_BY(deltas_mutex);
-        KeeperStorage & storage;
+        KeeperStorage<Container> & storage;
     };
 
     UncommittedState uncommitted_state{*this};
@@ -461,7 +572,6 @@ public:
     /// Mapping session_id -> set of ephemeral nodes paths
     Ephemerals ephemerals;
 
-    int64_t session_id_counter = 1;
     /// Expiration queue for session, allows to get dead sessions at some point of time
     SessionExpiryQueue session_expiry_queue;
     /// All active sessions with timeout
@@ -573,19 +683,6 @@ public:
     /// Get all dead sessions
     std::vector<int64_t> getDeadSessions() const;
 
-    struct Stats
-    {
-        std::atomic<uint64_t> nodes_count = 0;
-        std::atomic<uint64_t> approximate_data_size = 0;
-        std::atomic<uint64_t> total_watches_count = 0;
-        std::atomic<uint64_t> watched_paths_count = 0;
-        std::atomic<uint64_t> sessions_with_watches_count = 0;
-        std::atomic<uint64_t> session_with_ephemeral_nodes_count = 0;
-        std::atomic<uint64_t> total_emphemeral_nodes_count = 0;
-        std::atomic<int64_t> last_zxid = 0;
-    };
-
-    Stats stats;
 
     void updateStats();
     const Stats & getStorageStats() const;
@@ -618,6 +715,9 @@ private:
     void addDigest(const Node & node, std::string_view path);
 };
 
-using KeeperStoragePtr = std::unique_ptr<KeeperStorage>;
+using KeeperMemoryStorage = KeeperStorage<SnapshotableHashTable<KeeperMemNode>>;
+#if USE_ROCKSDB
+using KeeperRocksStorage = KeeperStorage<RocksDBContainer<KeeperRocksNode>>;
+#endif
 
 }

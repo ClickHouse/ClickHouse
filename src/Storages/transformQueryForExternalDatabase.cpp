@@ -1,5 +1,6 @@
 #include <Common/typeid_cast.h>
 #include <Columns/ColumnConst.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTFunction.h>
@@ -419,7 +420,7 @@ String transformQueryForExternalDatabase(
             throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "No column names for query '{}' to external table '{}.{}'",
                             query_info.query_tree->formatASTForErrorMessage(), database, table);
 
-        auto clone_query = getASTForExternalDatabaseFromQueryTree(query_info.query_tree);
+        auto clone_query = getASTForExternalDatabaseFromQueryTree(query_info.query_tree, query_info.table_expression);
 
         return transformQueryForExternalDatabaseImpl(
             clone_query,
