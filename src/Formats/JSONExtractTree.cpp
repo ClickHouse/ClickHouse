@@ -314,7 +314,7 @@ public:
         }
 
         NumberType value;
-        if (!tryGetNumericValueFromJSONElement<JSONParser, NumberType>(value, element, insert_settings.convert_bool_to_integer || this->is_bool_type,  insert_settings.allow_type_conversion, error))
+        if (!tryGetNumericValueFromJSONElement<JSONParser, NumberType>(value, element, insert_settings.convert_bool_to_integer || this->is_bool_type, insert_settings.allow_type_conversion, error))
         {
             if (error.empty())
                 error = fmt::format("cannot read {} value from JSON element: {}", TypeName<NumberType>, jsonElementToString<JSONParser>(element, format_settings));
