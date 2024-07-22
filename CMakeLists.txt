@@ -360,6 +360,18 @@ endif()
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fstrict-vtable-pointers")
 
+# The point is to increase the chances of a code explicitly marked as supposed
+# to be inlined by the programmer to be actually inlined without increasing the
+# global threshold for inlining. It also makes sense to note that even
+# `always_inline` is still just a hint from clang's perspective. It works for
+# `inline` keyword and `always_inline` attribute, but e.g. class methods that
+# are implicitly `inline` are not considered as having an inline hint.
+#
+# The choice of the threshold is rather intuitive. Searching across the github
+# shows different choices from few thousands to million.
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -mllvm -inlinehint-threshold=10000")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mllvm -inlinehint-threshold=10000")
+
 # We cannot afford to use LTO when compiling unit tests, and it's not enough
 # to only supply -fno-lto at the final linking stage. So we disable it
 # completely.
