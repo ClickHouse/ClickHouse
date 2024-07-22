@@ -198,7 +198,12 @@ bool ParserIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         return false;
 
     if (!type_p.parse(pos, type, expected))
-        return false;
+    {
+        if (name_p.parse(pos, type, expected))
+            type = makeASTFunction(type->as<ASTIdentifier &>().name());
+        else
+            return false;
+    }
 
     if (s_granularity.ignore(pos, expected))
     {

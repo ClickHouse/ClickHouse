@@ -7,8 +7,8 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionListParsers.h>
-#include <Parsers/ParserDataType.h>
 #include <Parsers/parseDatabaseAndTableName.h>
+
 
 namespace DB
 {
@@ -69,7 +69,12 @@ bool ParserCreateIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected 
     if (s_type.ignore(pos, expected))
     {
         if (!type_p.parse(pos, type, expected))
-            return false;
+        {
+            if (ParserIdentifier().parse(pos, type, expected))
+                type = makeASTFunction(type->as<ASTIdentifier &>().name());
+            else
+                return false;
+        }
     }
 
     if (s_granularity.ignore(pos, expected))
