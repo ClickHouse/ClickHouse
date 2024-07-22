@@ -40,16 +40,6 @@ create_table_sql_template = """
     PRIMARY KEY (`id`)) ENGINE=InnoDB;
     """
 
-create_table_sql_nullable_template = """
-    CREATE TABLE `clickhouse`.`{}` (
-        `id`   integer not null,
-        `col1` integer,
-        `col2` decimal(15,10),
-        `col3` varchar(32),
-        `col4` datetime
-        )
-    """
-
 
 def skip_test_msan(instance):
     if instance.is_built_with_memory_sanitizer():
@@ -85,11 +75,6 @@ def create_mysql_db(conn, name):
     with conn.cursor() as cursor:
         cursor.execute("DROP DATABASE IF EXISTS {}".format(name))
         cursor.execute("CREATE DATABASE {} DEFAULT CHARACTER SET 'utf8'".format(name))
-
-
-def create_mysql_nullable_table(conn, table_name):
-    with conn.cursor() as cursor:
-        cursor.execute(create_table_sql_nullable_template.format(table_name))
 
 
 def create_mysql_table(conn, table_name):
@@ -205,46 +190,6 @@ def started_cluster():
         raise ex
     finally:
         cluster.shutdown()
-
-
-def test_mysql_odbc_select_nullable(started_cluster):
-    skip_test_msan(node1)
-    mysql_setup = node1.odbc_drivers["MySQL"]
-
-    table_name = "test_insert_nullable_select"
-    conn = get_mysql_conn()
-    create_mysql_nullable_table(conn, table_name)
-    with conn.cursor() as cursor:
-        cursor.execute(
-            "INSERT INTO clickhouse.{} VALUES(1, 1, 1.23456, 'data1', '2010-01-01 00:00:00');".format(
-                table_name
-            )
-        )
-        cursor.execute(
-            "INSERT INTO clickhouse.{} VALUES(2, NULL, NULL, NULL, NULL);".format(
-                table_name
-            )
-        )
-        conn.commit()
-
-    node1.query(
-        """
-        CREATE TABLE {}(id UInt32, col1 Nullable(UInt32), col2 Nullable(Decimal(15, 10)), col3 Nullable(String), col4 Nullable(DateTime)) ENGINE = ODBC('DSN={}', 'clickhouse', '{}');
-        """.format(
-            table_name, mysql_setup["DSN"], table_name
-        )
-    )
-
-    assert (
-        node1.query(
-            "SELECT id, col1, col2, col3, col4 from {} order by id asc".format(
-                table_name
-            )
-        )
-        == "1\t1\t1.23456\tdata1\t2010-01-01 00:00:00\n2\t\\N\t\\N\t\\N\t\\N\n"
-    )
-    drop_mysql_table(conn, table_name)
-    conn.close()
 
 
 def test_mysql_simple_select_works(started_cluster):

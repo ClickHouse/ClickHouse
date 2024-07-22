@@ -180,7 +180,7 @@ private:
 
 REGISTER_FUNCTION(Coalesce)
 {
-    factory.registerFunction<FunctionCoalesce>({}, FunctionFactory::Case::Insensitive);
+    factory.registerFunction<FunctionCoalesce>({}, FunctionFactory::CaseInsensitive);
 }
 
 }

@@ -554,7 +554,7 @@ static Blocks scatterBlockByHashImpl(const Strings & key_columns_names, const Bl
     for (const auto & key_name : key_columns_names)
     {
         ColumnPtr key_col = materializeColumn(block, key_name);
-        hash.update(key_col->getWeakHash32());
+        key_col->updateWeakHash32(hash);
     }
     auto selector = hashToSelector(hash, sharder);
 

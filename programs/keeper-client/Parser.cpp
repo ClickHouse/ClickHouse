@@ -12,7 +12,8 @@ bool parseKeeperArg(IParser::Pos & pos, Expected & expected, String & result)
         if (!parseIdentifierOrStringLiteral(pos, expected, result))
             return false;
     }
-    else if (pos->type == TokenType::Number)
+
+    while (pos->type != TokenType::Whitespace && pos->type != TokenType::EndOfStream && pos->type != TokenType::Semicolon)
     {
         result.append(pos->begin, pos->end);
         ++pos;
@@ -39,8 +40,8 @@ bool KeeperParser::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     for (const auto & pair : KeeperClient::commands)
         expected.add(pos, pair.first.data());
 
-    for (const auto & four_letter_word_command : four_letter_word_commands)
-        expected.add(pos, four_letter_word_command.data());
+    for (const auto & flwc : four_letter_word_commands)
+        expected.add(pos, flwc.data());
 
     if (pos->type != TokenType::BareWord)
         return false;

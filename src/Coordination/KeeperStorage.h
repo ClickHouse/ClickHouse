@@ -8,384 +8,188 @@
 
 #include <absl/container/flat_hash_set.h>
 
-#include "config.h"
-#if USE_ROCKSDB
-#include <Coordination/RocksDBContainer.h>
-#endif
-
 namespace DB
 {
 
 class KeeperContext;
 using KeeperContextPtr = std::shared_ptr<KeeperContext>;
 
+struct KeeperStorageRequestProcessor;
+using KeeperStorageRequestProcessorPtr = std::shared_ptr<KeeperStorageRequestProcessor>;
 using ResponseCallback = std::function<void(const Coordination::ZooKeeperResponsePtr &)>;
 using ChildrenSet = absl::flat_hash_set<StringRef, StringRefHash>;
 using SessionAndTimeout = std::unordered_map<int64_t, int64_t>;
 
-/// KeeperRocksNodeInfo is used in RocksDB keeper.
-/// It is serialized directly as POD to RocksDB.
-struct KeeperRocksNodeInfo
-{
-    int64_t czxid{0};
-    int64_t mzxid{0};
-    int64_t pzxid{0};
-    uint64_t acl_id = 0; /// 0 -- no ACL by default
-
-    int64_t mtime{0};
-
-    int32_t version{0};
-    int32_t cversion{0};
-    int32_t aversion{0};
-
-    int32_t seq_num = 0;
-    mutable UInt64 digest = 0; /// we cached digest for this node.
-
-    /// as ctime can't be negative because it stores the timestamp when the
-    /// node was created, we can use the MSB for a bool
-    struct
-    {
-        bool is_ephemeral : 1;
-        int64_t ctime : 63;
-    } is_ephemeral_and_ctime{false, 0};
-
-    /// ephemeral notes cannot have children so a node can set either
-    /// ephemeral_owner OR seq_num + num_children
-    union
-    {
-        int64_t ephemeral_owner;
-        struct
-        {
-            int32_t seq_num;
-            int32_t num_children;
-        } children_info;
-    } ephemeral_or_children_data{0};
-
-    bool isEphemeral() const
-    {
-        return is_ephemeral_and_ctime.is_ephemeral;
-    }
-
-    int64_t ephemeralOwner() const
-    {
-        if (isEphemeral())
-            return ephemeral_or_children_data.ephemeral_owner;
-
-        return 0;
-    }
-
-    void setEphemeralOwner(int64_t ephemeral_owner)
-    {
-        is_ephemeral_and_ctime.is_ephemeral = ephemeral_owner != 0;
-        ephemeral_or_children_data.ephemeral_owner = ephemeral_owner;
-    }
-
-    int32_t numChildren() const
-    {
-        if (isEphemeral())
-            return 0;
-
-        return ephemeral_or_children_data.children_info.num_children;
-    }
-
-    void setNumChildren(int32_t num_children)
-    {
-        ephemeral_or_children_data.children_info.num_children = num_children;
-    }
-
-    /// dummy interface for test
-    void addChild(StringRef) {}
-    auto getChildren() const
-    {
-        return std::vector<int>(numChildren());
-    }
-
-    void increaseNumChildren()
-    {
-        chassert(!isEphemeral());
-        ++ephemeral_or_children_data.children_info.num_children;
-    }
-
-    void decreaseNumChildren()
-    {
-        chassert(!isEphemeral());
-        --ephemeral_or_children_data.children_info.num_children;
-    }
-
-    int32_t seqNum() const
-    {
-        if (isEphemeral())
-            return 0;
-
-        return ephemeral_or_children_data.children_info.seq_num;
-    }
-
-    void setSeqNum(int32_t seq_num_)
-    {
-        ephemeral_or_children_data.children_info.seq_num = seq_num_;
-    }
-
-    void increaseSeqNum()
-    {
-        chassert(!isEphemeral());
-        ++ephemeral_or_children_data.children_info.seq_num;
-    }
-
-    int64_t ctime() const
-    {
-        return is_ephemeral_and_ctime.ctime;
-    }
-
-    void setCtime(uint64_t ctime)
-    {
-        is_ephemeral_and_ctime.ctime = ctime;
-    }
-
-    void copyStats(const Coordination::Stat & stat);
-};
-
-/// KeeperRocksNode is the memory structure used by RocksDB
-struct KeeperRocksNode : public KeeperRocksNodeInfo
-{
-#if USE_ROCKSDB
-    friend struct RocksDBContainer<KeeperRocksNode>;
-#endif
-    using Meta = KeeperRocksNodeInfo;
-
-    uint64_t size_bytes = 0; // only for compatible, should be deprecated
-
-    uint64_t sizeInBytes() const { return data_size + sizeof(KeeperRocksNodeInfo); }
-    void setData(String new_data)
-    {
-        data_size = static_cast<uint32_t>(new_data.size());
-        if (data_size != 0)
-        {
-            data = std::unique_ptr<char[]>(new char[new_data.size()]);
-            memcpy(data.get(), new_data.data(), data_size);
-        }
-    }
-
-    void shallowCopy(const KeeperRocksNode & other)
-    {
-        czxid = other.czxid;
-        mzxid = other.mzxid;
-        pzxid = other.pzxid;
-        acl_id = other.acl_id; /// 0 -- no ACL by default
-
-        mtime = other.mtime;
-
-        is_ephemeral_and_ctime = other.is_ephemeral_and_ctime;
-
-        ephemeral_or_children_data = other.ephemeral_or_children_data;
-
-        data_size = other.data_size;
-        if (data_size != 0)
-        {
-            data = std::unique_ptr<char[]>(new char[data_size]);
-            memcpy(data.get(), other.data.get(), data_size);
-        }
-
-        version = other.version;
-        cversion = other.cversion;
-        aversion = other.aversion;
-
-        /// cached_digest = other.cached_digest;
-    }
-    void invalidateDigestCache() const;
-    UInt64 getDigest(std::string_view path) const;
-    String getEncodedString();
-    void decodeFromString(const String & buffer_str);
-    void recalculateSize() {}
-    std::string_view getData() const noexcept { return {data.get(), data_size}; }
-
-    void setResponseStat(Coordination::Stat & response_stat) const
-    {
-        response_stat.czxid = czxid;
-        response_stat.mzxid = mzxid;
-        response_stat.ctime = ctime();
-        response_stat.mtime = mtime;
-        response_stat.version = version;
-        response_stat.cversion = cversion;
-        response_stat.aversion = aversion;
-        response_stat.ephemeralOwner = ephemeralOwner();
-        response_stat.dataLength = static_cast<int32_t>(data_size);
-        response_stat.numChildren = numChildren();
-        response_stat.pzxid = pzxid;
-    }
-
-    void reset()
-    {
-        serialized = false;
-    }
-    bool empty() const
-    {
-        return data_size == 0 && mzxid == 0;
-    }
-    std::unique_ptr<char[]> data{nullptr};
-    uint32_t data_size{0};
-private:
-    bool serialized = false;
-};
-
-/// KeeperMemNode should have as minimal size as possible to reduce memory footprint
-/// of stored nodes
-/// New fields should be added to the struct only if it's really necessary
-struct KeeperMemNode
-{
-    int64_t czxid{0};
-    int64_t mzxid{0};
-    int64_t pzxid{0};
-    uint64_t acl_id = 0; /// 0 -- no ACL by default
-
-    int64_t mtime{0};
-
-    std::unique_ptr<char[]> data{nullptr};
-    uint32_t data_size{0};
-
-    int32_t version{0};
-    int32_t cversion{0};
-    int32_t aversion{0};
-
-    mutable uint64_t cached_digest = 0;
-
-    KeeperMemNode() = default;
-
-    KeeperMemNode & operator=(const KeeperMemNode & other);
-    KeeperMemNode(const KeeperMemNode & other);
-
-    KeeperMemNode & operator=(KeeperMemNode && other) noexcept;
-    KeeperMemNode(KeeperMemNode && other) noexcept;
-
-    bool empty() const;
-
-    bool isEphemeral() const
-    {
-        return is_ephemeral_and_ctime.is_ephemeral;
-    }
-
-    int64_t ephemeralOwner() const
-    {
-        if (isEphemeral())
-            return ephemeral_or_children_data.ephemeral_owner;
-
-        return 0;
-    }
-
-    void setEphemeralOwner(int64_t ephemeral_owner)
-    {
-        is_ephemeral_and_ctime.is_ephemeral = ephemeral_owner != 0;
-        ephemeral_or_children_data.ephemeral_owner = ephemeral_owner;
-    }
-
-    int32_t numChildren() const
-    {
-        if (isEphemeral())
-            return 0;
-
-        return ephemeral_or_children_data.children_info.num_children;
-    }
-
-    void setNumChildren(int32_t num_children)
-    {
-        ephemeral_or_children_data.children_info.num_children = num_children;
-    }
-
-    void increaseNumChildren()
-    {
-        chassert(!isEphemeral());
-        ++ephemeral_or_children_data.children_info.num_children;
-    }
-
-    void decreaseNumChildren()
-    {
-        chassert(!isEphemeral());
-        --ephemeral_or_children_data.children_info.num_children;
-    }
-
-    int32_t seqNum() const
-    {
-        if (isEphemeral())
-            return 0;
-
-        return ephemeral_or_children_data.children_info.seq_num;
-    }
-
-    void setSeqNum(int32_t seq_num)
-    {
-        ephemeral_or_children_data.children_info.seq_num = seq_num;
-    }
-
-    void increaseSeqNum()
-    {
-        chassert(!isEphemeral());
-        ++ephemeral_or_children_data.children_info.seq_num;
-    }
-
-    int64_t ctime() const
-    {
-        return is_ephemeral_and_ctime.ctime;
-    }
-
-    void setCtime(uint64_t ctime)
-    {
-        is_ephemeral_and_ctime.ctime = ctime;
-    }
-
-    void copyStats(const Coordination::Stat & stat);
-
-    void setResponseStat(Coordination::Stat & response_stat) const;
-
-    /// Object memory size
-    uint64_t sizeInBytes() const;
-
-    void setData(const String & new_data);
-
-    std::string_view getData() const noexcept { return {data.get(), data_size}; }
-
-    void addChild(StringRef child_path);
-
-    void removeChild(StringRef child_path);
-
-    const auto & getChildren() const noexcept { return children; }
-    auto & getChildren() { return children; }
-
-    // Invalidate the calculated digest so it's recalculated again on the next
-    // getDigest call
-    void invalidateDigestCache() const;
-
-    // get the calculated digest of the node
-    UInt64 getDigest(std::string_view path) const;
-
-    // copy only necessary information for preprocessing and digest calculation
-    // (e.g. we don't need to copy list of children)
-    void shallowCopy(const KeeperMemNode & other);
-private:
-    /// as ctime can't be negative because it stores the timestamp when the
-    /// node was created, we can use the MSB for a bool
-    struct
-    {
-        bool is_ephemeral : 1;
-        int64_t ctime : 63;
-    } is_ephemeral_and_ctime{false, 0};
-
-    /// ephemeral notes cannot have children so a node can set either
-    /// ephemeral_owner OR seq_num + num_children
-    union
-    {
-        int64_t ephemeral_owner;
-        struct
-        {
-            int32_t seq_num;
-            int32_t num_children;
-        } children_info;
-    } ephemeral_or_children_data{0};
-
-    ChildrenSet children{};
-};
-
-class KeeperStorageBase
+struct KeeperStorageSnapshot;
+
+/// Keeper state machine almost equal to the ZooKeeper's state machine.
+/// Implements all logic of operations, data changes, sessions allocation.
+/// In-memory and not thread safe.
+class KeeperStorage
 {
 public:
+    /// Node should have as minimal size as possible to reduce memory footprint
+    /// of stored nodes
+    /// New fields should be added to the struct only if it's really necessary
+    struct Node
+    {
+        int64_t czxid{0};
+        int64_t mzxid{0};
+        int64_t pzxid{0};
+        uint64_t acl_id = 0; /// 0 -- no ACL by default
+
+        int64_t mtime{0};
+
+        std::unique_ptr<char[]> data{nullptr};
+        uint32_t data_size{0};
+
+        int32_t version{0};
+        int32_t cversion{0};
+        int32_t aversion{0};
+
+        mutable uint64_t cached_digest = 0;
+
+        Node() = default;
+
+        Node & operator=(const Node & other);
+        Node(const Node & other);
+
+        Node & operator=(Node && other) noexcept;
+        Node(Node && other) noexcept;
+
+        bool empty() const;
+
+        bool isEphemeral() const
+        {
+            return is_ephemeral_and_ctime.is_ephemeral;
+        }
+
+        int64_t ephemeralOwner() const
+        {
+            if (isEphemeral())
+                return ephemeral_or_children_data.ephemeral_owner;
+
+            return 0;
+        }
+
+        void setEphemeralOwner(int64_t ephemeral_owner)
+        {
+            is_ephemeral_and_ctime.is_ephemeral = ephemeral_owner != 0;
+            ephemeral_or_children_data.ephemeral_owner = ephemeral_owner;
+        }
+
+        int32_t numChildren() const
+        {
+            if (isEphemeral())
+                return 0;
+
+            return ephemeral_or_children_data.children_info.num_children;
+        }
+
+        void setNumChildren(int32_t num_children)
+        {
+            ephemeral_or_children_data.children_info.num_children = num_children;
+        }
+
+        void increaseNumChildren()
+        {
+            chassert(!isEphemeral());
+            ++ephemeral_or_children_data.children_info.num_children;
+        }
+
+        void decreaseNumChildren()
+        {
+            chassert(!isEphemeral());
+            --ephemeral_or_children_data.children_info.num_children;
+        }
+
+        int32_t seqNum() const
+        {
+            if (isEphemeral())
+                return 0;
+
+            return ephemeral_or_children_data.children_info.seq_num;
+        }
+
+        void setSeqNum(int32_t seq_num)
+        {
+            ephemeral_or_children_data.children_info.seq_num = seq_num;
+        }
+
+        void increaseSeqNum()
+        {
+            chassert(!isEphemeral());
+            ++ephemeral_or_children_data.children_info.seq_num;
+        }
+
+        int64_t ctime() const
+        {
+            return is_ephemeral_and_ctime.ctime;
+        }
+
+        void setCtime(uint64_t ctime)
+        {
+            is_ephemeral_and_ctime.ctime = ctime;
+        }
+
+        void copyStats(const Coordination::Stat & stat);
+
+        void setResponseStat(Coordination::Stat & response_stat) const;
+
+        /// Object memory size
+        uint64_t sizeInBytes() const;
+
+        void setData(const String & new_data);
+
+        std::string_view getData() const noexcept { return {data.get(), data_size}; }
+
+        void addChild(StringRef child_path);
+
+        void removeChild(StringRef child_path);
+
+        const auto & getChildren() const noexcept { return children; }
+        auto & getChildren() { return children; }
+
+        // Invalidate the calculated digest so it's recalculated again on the next
+        // getDigest call
+        void invalidateDigestCache() const;
+
+        // get the calculated digest of the node
+        UInt64 getDigest(std::string_view path) const;
+
+        // copy only necessary information for preprocessing and digest calculation
+        // (e.g. we don't need to copy list of children)
+        void shallowCopy(const Node & other);
+    private:
+        /// as ctime can't be negative because it stores the timestamp when the
+        /// node was created, we can use the MSB for a bool
+        struct
+        {
+            bool is_ephemeral : 1;
+            int64_t ctime : 63;
+        } is_ephemeral_and_ctime{false, 0};
+
+        /// ephemeral notes cannot have children so a node can set either
+        /// ephemeral_owner OR seq_num + num_children
+        union
+        {
+            int64_t ephemeral_owner;
+            struct
+            {
+                int32_t seq_num;
+                int32_t num_children;
+            } children_info;
+        } ephemeral_or_children_data{0};
+
+        ChildrenSet children{};
+    };
+
+#if !defined(ADDRESS_SANITIZER) && !defined(MEMORY_SANITIZER)
+    static_assert(
+        sizeof(ListNode<Node>) <= 144,
+        "std::list node containing ListNode<Node> is > 160 bytes (sizeof(ListNode<Node>) + 16 bytes for pointers) which will increase "
+        "memory consumption");
+#endif
 
     enum DigestVersion : uint8_t
     {
@@ -396,19 +200,24 @@ public:
         V4 = 4  // 0 is not a valid digest value
     };
 
+    static constexpr auto CURRENT_DIGEST_VERSION = DigestVersion::V4;
+
+    struct ResponseForSession
+    {
+        int64_t session_id;
+        Coordination::ZooKeeperResponsePtr response;
+    };
+    using ResponsesForSessions = std::vector<ResponseForSession>;
+
     struct Digest
     {
         DigestVersion version{DigestVersion::NO_DIGEST};
         uint64_t value{0};
     };
 
-    struct ResponseForSession
-    {
-        int64_t session_id;
-        Coordination::ZooKeeperResponsePtr response;
-        Coordination::ZooKeeperRequestPtr request = nullptr;
-    };
-    using ResponsesForSessions = std::vector<ResponseForSession>;
+    static bool checkDigest(const Digest & first, const Digest & second);
+
+    static String generateDigest(const String & userdata);
 
     struct RequestForSession
     {
@@ -419,7 +228,6 @@ public:
         std::optional<Digest> digest;
         int64_t log_idx{0};
     };
-    using RequestsForSessions = std::vector<RequestForSession>;
 
     struct AuthID
     {
@@ -429,6 +237,9 @@ public:
         bool operator==(const AuthID & other) const { return scheme == other.scheme && id == other.id; }
     };
 
+    using RequestsForSessions = std::vector<RequestForSession>;
+
+    using Container = SnapshotableHashTable<Node>;
     using Ephemerals = std::unordered_map<int64_t, std::unordered_set<std::string>>;
     using SessionAndWatcher = std::unordered_map<int64_t, std::unordered_set<std::string>>;
     using SessionIDs = std::unordered_set<int64_t>;
@@ -437,38 +248,6 @@ public:
     using AuthIDs = std::vector<AuthID>;
     using SessionAndAuth = std::unordered_map<int64_t, AuthIDs>;
     using Watches = std::unordered_map<String /* path, relative of root_path */, SessionIDs>;
-
-    static bool checkDigest(const Digest & first, const Digest & second);
-
-};
-
-/// Keeper state machine almost equal to the ZooKeeper's state machine.
-/// Implements all logic of operations, data changes, sessions allocation.
-/// In-memory and not thread safe.
-template<typename Container_>
-class KeeperStorage : public KeeperStorageBase
-{
-public:
-    using Container = Container_;
-    using Node = Container::Node;
-
-#if !defined(ADDRESS_SANITIZER) && !defined(MEMORY_SANITIZER)
-    static_assert(
-        sizeof(ListNode<Node>) <= 144,
-        "std::list node containing ListNode<Node> is > 160 bytes (sizeof(ListNode<Node>) + 16 bytes for pointers) which will increase "
-        "memory consumption");
-#endif
-
-
-#if USE_ROCKSDB
-    static constexpr bool use_rocksdb = std::is_same_v<Container_, RocksDBContainer<KeeperRocksNode>>;
-#else
-    static constexpr bool use_rocksdb = false;
-#endif
-
-    static constexpr auto CURRENT_DIGEST_VERSION = DigestVersion::V4;
-
-    static String generateDigest(const String & userdata);
 
     int64_t session_id_counter{1};
 
@@ -613,7 +392,7 @@ public:
         std::unordered_map<std::string, std::list<const Delta *>, Hash, Equal> deltas_for_path;
 
         std::list<Delta> deltas;
-        KeeperStorage<Container> & storage;
+        KeeperStorage & storage;
     };
 
     UncommittedState uncommitted_state{*this};
@@ -750,16 +529,10 @@ public:
     /// Set of methods for creating snapshots
 
     /// Turn on snapshot mode, so data inside Container is not deleted, but replaced with new version.
-    void enableSnapshotMode(size_t up_to_version)
-    {
-        container.enableSnapshotMode(up_to_version);
-    }
+    void enableSnapshotMode(size_t up_to_version) { container.enableSnapshotMode(up_to_version); }
 
     /// Turn off snapshot mode.
-    void disableSnapshotMode()
-    {
-        container.disableSnapshotMode();
-    }
+    void disableSnapshotMode() { container.disableSnapshotMode(); }
 
     Container::const_iterator getSnapshotIteratorBegin() const { return container.begin(); }
 
@@ -798,9 +571,6 @@ private:
     void addDigest(const Node & node, std::string_view path);
 };
 
-using KeeperMemoryStorage = KeeperStorage<SnapshotableHashTable<KeeperMemNode>>;
-#if USE_ROCKSDB
-using KeeperRocksStorage = KeeperStorage<RocksDBContainer<KeeperRocksNode>>;
-#endif
+using KeeperStoragePtr = std::unique_ptr<KeeperStorage>;
 
 }

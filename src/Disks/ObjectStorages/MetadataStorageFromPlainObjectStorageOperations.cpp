@@ -52,16 +52,11 @@ void MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::execute(std:
 
     [[maybe_unused]] auto result = path_map.emplace(path, std::move(key_prefix));
     chassert(result.second);
-    auto metric = object_storage->getMetadataStorageMetrics().directory_map_size;
-    CurrentMetrics::add(metric, 1);
 
     writeString(path.string(), *buf);
     buf->finalize();
 
     write_finalized = true;
-
-    auto event = object_storage->getMetadataStorageMetrics().directory_created;
-    ProfileEvents::increment(event);
 }
 
 void MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::undo(std::unique_lock<SharedMutex> &)
@@ -70,9 +65,6 @@ void MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::undo(std::un
     if (write_finalized)
     {
         path_map.erase(path);
-        auto metric = object_storage->getMetadataStorageMetrics().directory_map_size;
-        CurrentMetrics::sub(metric, 1);
-
         object_storage->removeObject(StoredObject(object_key.serialize(), path / PREFIX_PATH_FILE_NAME));
     }
     else if (write_created)
@@ -173,15 +165,7 @@ void MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation::execute(std:
     auto object_key = ObjectStorageKey::createAsRelative(key_prefix, PREFIX_PATH_FILE_NAME);
     auto object = StoredObject(object_key.serialize(), path / PREFIX_PATH_FILE_NAME);
     object_storage->removeObject(object);
-
     path_map.erase(path_it);
-    auto metric = object_storage->getMetadataStorageMetrics().directory_map_size;
-    CurrentMetrics::sub(metric, 1);
-
-    removed = true;
-
-    auto event = object_storage->getMetadataStorageMetrics().directory_removed;
-    ProfileEvents::increment(event);
 }
 
 void MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation::undo(std::unique_lock<SharedMutex> &)
@@ -201,8 +185,6 @@ void MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation::undo(std::un
     buf->finalize();
 
     path_map.emplace(path, std::move(key_prefix));
-    auto metric = object_storage->getMetadataStorageMetrics().directory_map_size;
-    CurrentMetrics::add(metric, 1);
 }
 
 }

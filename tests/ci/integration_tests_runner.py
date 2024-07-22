@@ -18,7 +18,7 @@ from collections import defaultdict
 from itertools import chain
 from typing import Any, Dict
 
-from env_helper import IS_CI
+from env_helper import CI
 from integration_test_images import IMAGES
 
 MAX_RETRY = 1
@@ -1011,7 +1011,7 @@ def run():
 
     logging.info("Running tests")
 
-    if IS_CI:
+    if CI:
         # Avoid overlaps with previous runs
         logging.info("Clearing dmesg before run")
         subprocess.check_call("sudo -E dmesg --clear", shell=True)
@@ -1019,7 +1019,7 @@ def run():
     state, description, test_results, _ = runner.run_impl(repo_path, build_path)
     logging.info("Tests finished")
 
-    if IS_CI:
+    if CI:
         # Dump dmesg (to capture possible OOMs)
         logging.info("Dumping dmesg")
         subprocess.check_call("sudo -E dmesg -T", shell=True)

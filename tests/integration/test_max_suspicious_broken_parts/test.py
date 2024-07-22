@@ -25,7 +25,7 @@ def break_part(table, part_name):
         [
             "bash",
             "-c",
-            f"rm /var/lib/clickhouse/data/default/{table}/{part_name}/primary.cidx",
+            f"rm /var/lib/clickhouse/data/default/{table}/{part_name}/columns.txt",
         ]
     )
 

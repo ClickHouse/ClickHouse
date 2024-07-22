@@ -27,7 +27,7 @@ private:
     static constexpr auto space = ' ';
 
     /// Safety threshold against DoS.
-    static void checkRepeatTime(size_t repeat_time)
+    static inline void checkRepeatTime(size_t repeat_time)
     {
         static constexpr auto max_repeat_times = 1'000'000uz;
         if (repeat_time > max_repeat_times)
@@ -48,7 +48,7 @@ public:
             {"n", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isInteger), nullptr, "Integer"}
         };
 
-            validateFunctionArguments(*this, arguments, args);
+        validateFunctionArgumentTypes(*this, arguments, args);
 
         return std::make_shared<DataTypeString>();
     }
@@ -173,7 +173,7 @@ public:
 
 REGISTER_FUNCTION(Space)
 {
-    factory.registerFunction<FunctionSpace>({}, FunctionFactory::Case::Insensitive);
+    factory.registerFunction<FunctionSpace>({}, FunctionFactory::CaseInsensitive);
 }
 
 }

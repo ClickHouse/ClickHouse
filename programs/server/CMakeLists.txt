@@ -14,6 +14,8 @@ set (CLICKHOUSE_SERVER_LINK
         clickhouse_storages_system
         clickhouse_table_functions
 
+    ${LINK_RESOURCE_LIB}
+
     PUBLIC
         daemon
 )

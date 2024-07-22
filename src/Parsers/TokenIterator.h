@@ -21,7 +21,6 @@ class Tokens
 {
 private:
     std::vector<Token> data;
-    size_t max_pos = 0;
     Lexer lexer;
     bool skip_insignificant;
 
@@ -36,16 +35,10 @@ public:
         while (true)
         {
             if (index < data.size())
-            {
-                max_pos = std::max(max_pos, index);
                 return data[index];
-            }
 
             if (!data.empty() && data.back().isEnd())
-            {
-                max_pos = data.size() - 1;
                 return data.back();
-            }
 
             Token token = lexer.nextToken();
 
@@ -58,12 +51,7 @@ public:
     {
         if (data.empty())
             return (*this)[0];
-        return data[max_pos];
-    }
-
-    void reset()
-    {
-        max_pos = 0;
+        return data.back();
     }
 };
 

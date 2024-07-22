@@ -4,12 +4,11 @@
 #include <Common/Priority.h>
 #include <Client/Connection.h>
 #include <IO/ConnectionTimeouts.h>
+#include <Core/Settings.h>
 #include <base/defines.h>
 
 namespace DB
 {
-
-struct Settings;
 
 /** Interface for connection pools.
   *
@@ -103,7 +102,15 @@ public:
 
     Entry get(const ConnectionTimeouts & timeouts, /// NOLINT
               const Settings & settings,
-              bool force_connected) override;
+              bool force_connected = true) override
+    {
+        Entry entry = Base::get(settings.connection_pool_max_wait_ms.totalMilliseconds());
+
+        if (force_connected)
+            entry->forceConnected(timeouts);
+
+        return entry;
+    }
 
     std::string getDescription() const
     {
@@ -116,7 +123,7 @@ protected:
     {
         return std::make_shared<Connection>(
             host, port,
-            default_database, user, password, SSHKey(), /*jwt*/ "", quota_key,
+            default_database, user, password, SSHKey(), quota_key,
             cluster, cluster_secret,
             client_name, compression, secure);
     }

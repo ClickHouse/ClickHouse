@@ -36,8 +36,7 @@ ColumnsDescription StorageSystemZooKeeperConnection::getColumnsDescription()
         /* 9 */ {"xid", std::make_shared<DataTypeInt32>(), "XID of the current session."},
         /* 10*/ {"enabled_feature_flags", std::make_shared<DataTypeArray>(std::move(feature_flags_enum)),
             "Feature flags which are enabled. Only applicable to ClickHouse Keeper."
-        },
-        /* 11*/ {"availability_zone", std::make_shared<DataTypeString>(), "Availability zone"},
+        }
     };
 }
 
@@ -86,7 +85,6 @@ void StorageSystemZooKeeperConnection::fillData(MutableColumns & res_columns, Co
             columns[8]->insert(zookeeper->getClientID());
             columns[9]->insert(zookeeper->getConnectionXid());
             add_enabled_feature_flags(zookeeper);
-            columns[11]->insert(zookeeper->getConnectedHostAvailabilityZone());
         }
     };
 

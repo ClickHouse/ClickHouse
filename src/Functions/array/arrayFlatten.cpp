@@ -123,7 +123,7 @@ private:
 REGISTER_FUNCTION(ArrayFlatten)
 {
     factory.registerFunction<ArrayFlatten>();
-    factory.registerAlias("flatten", "arrayFlatten", FunctionFactory::Case::Insensitive);
+    factory.registerAlias("flatten", "arrayFlatten", FunctionFactory::CaseInsensitive);
 }
 
 }

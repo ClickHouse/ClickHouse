@@ -8,21 +8,14 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/DecimalFunctions.h>
-#include <Core/Settings.h>
 #include <Interpreters/Context.h>
 
-
-/// ------------------------------------------------------------------------------------------------------------------------------
-/// The functions in this file are deprecated and should be removed in favor of functions 'snowflakeIDToDateTime[64]' and
-/// 'dateTime[64]ToSnowflakeID' by summer 2025. Please also mark setting `allow_deprecated_snowflake_conversion_functions` as obsolete then.
-/// ------------------------------------------------------------------------------------------------------------------------------
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
-    extern const int DEPRECATED_FUNCTION;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
@@ -41,19 +34,10 @@ constexpr int time_shift = 22;
 class FunctionDateTimeToSnowflake : public IFunction
 {
 private:
-    const bool allow_deprecated_snowflake_conversion_functions;
+    const char * name;
 
 public:
-    static constexpr auto name = "dateTimeToSnowflake";
-
-    static FunctionPtr create(ContextPtr context)
-    {
-        return std::make_shared<FunctionDateTimeToSnowflake>(context);
-    }
-
-    explicit FunctionDateTimeToSnowflake(ContextPtr context)
-        : allow_deprecated_snowflake_conversion_functions(context->getSettingsRef().allow_deprecated_snowflake_conversion_functions)
-    {}
+    explicit FunctionDateTimeToSnowflake(const char * name_) : name(name_) { }
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 1; }
@@ -65,16 +49,13 @@ public:
         FunctionArgumentDescriptors args{
             {"value", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isDateTime), nullptr, "DateTime"}
         };
-        validateFunctionArguments(*this, arguments, args);
+        validateFunctionArgumentTypes(*this, arguments, args);
 
         return std::make_shared<DataTypeInt64>();
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        if (!allow_deprecated_snowflake_conversion_functions)
-            throw Exception(ErrorCodes::DEPRECATED_FUNCTION, "Function {} is deprecated, to enable it set setting 'allow_deprecated_snowflake_conversion_functions' to 'true'", getName());
-
         const auto & src = arguments[0];
         const auto & src_column = *src.column;
 
@@ -92,20 +73,13 @@ public:
 class FunctionSnowflakeToDateTime : public IFunction
 {
 private:
+    const char * name;
     const bool allow_nonconst_timezone_arguments;
-    const bool allow_deprecated_snowflake_conversion_functions;
 
 public:
-    static constexpr auto name = "snowflakeToDateTime";
-
-    static FunctionPtr create(ContextPtr context)
-    {
-        return std::make_shared<FunctionSnowflakeToDateTime>(context);
-    }
-
-    explicit FunctionSnowflakeToDateTime(ContextPtr context)
-        : allow_nonconst_timezone_arguments(context->getSettingsRef().allow_nonconst_timezone_arguments)
-        , allow_deprecated_snowflake_conversion_functions(context->getSettingsRef().allow_deprecated_snowflake_conversion_functions)
+    explicit FunctionSnowflakeToDateTime(const char * name_, ContextPtr context)
+        : name(name_)
+        , allow_nonconst_timezone_arguments(context->getSettings().allow_nonconst_timezone_arguments)
     {}
 
     String getName() const override { return name; }
@@ -122,7 +96,7 @@ public:
         FunctionArgumentDescriptors optional_args{
             {"time_zone", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"}
         };
-        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
+        validateFunctionArgumentTypes(*this, arguments, mandatory_args, optional_args);
 
         String timezone;
         if (arguments.size() == 2)
@@ -133,9 +107,6 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        if (!allow_deprecated_snowflake_conversion_functions)
-            throw Exception(ErrorCodes::DEPRECATED_FUNCTION, "Function {} is deprecated, to enable it set setting 'allow_deprecated_snowflake_conversion_functions' to 'true'", getName());
-
         const auto & src = arguments[0];
         const auto & src_column = *src.column;
 
@@ -167,19 +138,10 @@ public:
 class FunctionDateTime64ToSnowflake : public IFunction
 {
 private:
-    const bool allow_deprecated_snowflake_conversion_functions;
+    const char * name;
 
 public:
-    static constexpr auto name = "dateTime64ToSnowflake";
-
-    static FunctionPtr create(ContextPtr context)
-    {
-        return std::make_shared<FunctionDateTime64ToSnowflake>(context);
-    }
-
-    explicit FunctionDateTime64ToSnowflake(ContextPtr context)
-        : allow_deprecated_snowflake_conversion_functions(context->getSettingsRef().allow_deprecated_snowflake_conversion_functions)
-    {}
+    explicit FunctionDateTime64ToSnowflake(const char * name_) : name(name_) { }
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 1; }
@@ -191,16 +153,13 @@ public:
         FunctionArgumentDescriptors args{
             {"value", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isDateTime64), nullptr, "DateTime64"}
         };
-        validateFunctionArguments(*this, arguments, args);
+        validateFunctionArgumentTypes(*this, arguments, args);
 
         return std::make_shared<DataTypeInt64>();
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        if (!allow_deprecated_snowflake_conversion_functions)
-            throw Exception(ErrorCodes::DEPRECATED_FUNCTION, "Function {} is deprecated, to enable it set setting 'allow_deprecated_snowflake_conversion_functions' to true", getName());
-
         const auto & src = arguments[0];
 
         const auto & src_column = *src.column;
@@ -226,20 +185,13 @@ public:
 class FunctionSnowflakeToDateTime64 : public IFunction
 {
 private:
+    const char * name;
     const bool allow_nonconst_timezone_arguments;
-    const bool allow_deprecated_snowflake_conversion_functions;
 
 public:
-    static constexpr auto name = "snowflakeToDateTime64";
-
-    static FunctionPtr create(ContextPtr context)
-    {
-        return std::make_shared<FunctionSnowflakeToDateTime64>(context);
-    }
-
-    explicit FunctionSnowflakeToDateTime64(ContextPtr context)
-        : allow_nonconst_timezone_arguments(context->getSettingsRef().allow_nonconst_timezone_arguments)
-        , allow_deprecated_snowflake_conversion_functions(context->getSettingsRef().allow_deprecated_snowflake_conversion_functions)
+    explicit FunctionSnowflakeToDateTime64(const char * name_, ContextPtr context)
+        : name(name_)
+        , allow_nonconst_timezone_arguments(context->getSettings().allow_nonconst_timezone_arguments)
     {}
 
     String getName() const override { return name; }
@@ -256,7 +208,7 @@ public:
         FunctionArgumentDescriptors optional_args{
             {"time_zone", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"}
         };
-        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
+        validateFunctionArgumentTypes(*this, arguments, mandatory_args, optional_args);
 
         String timezone;
         if (arguments.size() == 2)
@@ -267,9 +219,6 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        if (!allow_deprecated_snowflake_conversion_functions)
-            throw Exception(ErrorCodes::DEPRECATED_FUNCTION, "Function {} is deprecated, to enable it set setting 'allow_deprecated_snowflake_conversion_functions' to true", getName());
-
         const auto & src = arguments[0];
         const auto & src_column = *src.column;
 
@@ -297,12 +246,27 @@ public:
 
 }
 
-REGISTER_FUNCTION(LegacySnowflakeConversion)
+REGISTER_FUNCTION(DateTimeToSnowflake)
 {
-    factory.registerFunction<FunctionSnowflakeToDateTime>();
-    factory.registerFunction<FunctionSnowflakeToDateTime64>();
-    factory.registerFunction<FunctionDateTimeToSnowflake>();
-    factory.registerFunction<FunctionDateTime64ToSnowflake>();
+    factory.registerFunction("dateTimeToSnowflake",
+        [](ContextPtr){ return std::make_shared<FunctionDateTimeToSnowflake>("dateTimeToSnowflake"); });
+}
+
+REGISTER_FUNCTION(DateTime64ToSnowflake)
+{
+    factory.registerFunction("dateTime64ToSnowflake",
+        [](ContextPtr){ return std::make_shared<FunctionDateTime64ToSnowflake>("dateTime64ToSnowflake"); });
+}
+
+REGISTER_FUNCTION(SnowflakeToDateTime)
+{
+    factory.registerFunction("snowflakeToDateTime",
+        [](ContextPtr context){ return std::make_shared<FunctionSnowflakeToDateTime>("snowflakeToDateTime", context); });
+}
+REGISTER_FUNCTION(SnowflakeToDateTime64)
+{
+    factory.registerFunction("snowflakeToDateTime64",
+        [](ContextPtr context){ return std::make_shared<FunctionSnowflakeToDateTime64>("snowflakeToDateTime64", context); });
 }
 
 }

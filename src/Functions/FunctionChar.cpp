@@ -116,7 +116,7 @@ private:
 
 REGISTER_FUNCTION(Char)
 {
-    factory.registerFunction<FunctionChar>({}, FunctionFactory::Case::Insensitive);
+    factory.registerFunction<FunctionChar>({}, FunctionFactory::CaseInsensitive);
 }
 
 }

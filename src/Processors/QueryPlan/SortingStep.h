@@ -28,7 +28,6 @@ public:
         TemporaryDataOnDiskScopePtr tmp_data = nullptr;
         size_t min_free_disk_space = 0;
         size_t max_block_bytes = 0;
-        size_t read_in_order_use_buffering = 0;
 
         explicit Settings(const Context & context);
         explicit Settings(size_t max_block_size_);
@@ -81,7 +80,7 @@ public:
 
     const SortDescription & getSortDescription() const { return result_description; }
 
-    void convertToFinishSorting(SortDescription prefix_description, bool use_buffering_);
+    void convertToFinishSorting(SortDescription prefix_description);
 
     Type getType() const { return type; }
     const Settings & getSettings() const { return sort_settings; }
@@ -127,7 +126,6 @@ private:
 
     UInt64 limit;
     bool always_read_till_end = false;
-    bool use_buffering = false;
 
     Settings sort_settings;
 
