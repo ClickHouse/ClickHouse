@@ -132,7 +132,7 @@ def test_restore_table_null(start_cluster):
     assert node3.query("EXISTS replicated2.mysql_schema_inference_engine") == "0\n"
     assert node3.query("EXISTS replicated2.mysql_schema_inference_function") == "0\n"
 
-    node3.query(f"RESTORE DATABASE replicated2 FROM {backup_name} SETTINGS allow_different_database_def=1, allow_different_table_def=1 SETTINGS restore_replace_external_engine_to_null=1, restore_replace_external_table_functions_to_null=1")
+    node3.query(f"RESTORE DATABASE replicated2 FROM {backup_name} SETTINGS allow_different_database_def=1, allow_different_table_def=1 SETTINGS restore_replace_external_engines_to_null=1, restore_replace_external_table_functions_to_null=1")
     node1.query(f"SYSTEM SYNC DATABASE REPLICA replicated2;")
 
     assert node1.query("SELECT count(), sum(id) FROM replicated2.mysql_schema_inference_engine") == "0\t0\n"
