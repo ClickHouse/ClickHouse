@@ -1348,8 +1348,8 @@ class FunctionBinaryArithmetic : public IFunction
                     checkAndGetColumn<ColumnNullable>(arg.column.get());
                 const ColumnPtr & null_map_col = null_col->getNullMapColumnPtr();
                 const NullMap & null_map = assert_cast<const ColumnUInt8 &>(*null_map_col).getData();
-                for (size_t i = 0, size = null_map.size(); i < size; ++i)
-                    args_have_nulls |= null_map[i];
+                for (char8_t i : null_map)
+                    args_have_nulls |= i;
             }
         }
 
