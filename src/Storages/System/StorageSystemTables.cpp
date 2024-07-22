@@ -484,7 +484,8 @@ protected:
                     if (ast_create && !context->getSettingsRef().show_table_uuid_in_table_create_query_if_not_nil)
                     {
                         ast_create->uuid = UUIDHelpers::Nil;
-                        ast_create->to_inner_uuid = UUIDHelpers::Nil;
+                        if (ast_create->targets)
+                            ast_create->targets->resetInnerUUIDs();
                     }
 
                     if (columns_mask[src_index++])
