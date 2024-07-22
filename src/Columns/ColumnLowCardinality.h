@@ -78,14 +78,14 @@ public:
     bool tryInsert(const Field & x) override;
     void insertDefault() override;
 
-#if !defined(ABORT_ON_LOGICAL_ERROR)
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
     void insertFrom(const IColumn & src, size_t n) override;
 #else
     void doInsertFrom(const IColumn & src, size_t n) override;
 #endif
     void insertFromFullColumn(const IColumn & src, size_t n);
 
-#if !defined(ABORT_ON_LOGICAL_ERROR)
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
 #else
     void doInsertRangeFrom(const IColumn & src, size_t start, size_t length) override;
@@ -111,7 +111,7 @@ public:
         getDictionary().updateHashWithValue(getIndexes().getUInt(n), hash);
     }
 
-    void updateWeakHash32(WeakHash32 & hash) const override;
+    WeakHash32 getWeakHash32() const override;
 
     void updateHashFast(SipHash &) const override;
 
@@ -135,7 +135,7 @@ public:
         return ColumnLowCardinality::create(dictionary.getColumnUniquePtr(), getIndexes().index(indexes_, limit));
     }
 
-#if !defined(ABORT_ON_LOGICAL_ERROR)
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
     int compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const override;
 #else
     int doCompareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const override;
@@ -325,7 +325,7 @@ public:
 
         bool containsDefault() const;
 
-        void updateWeakHash(WeakHash32 & hash, WeakHash32 & dict_hash) const;
+        WeakHash32 getWeakHash(const WeakHash32 & dict_hash) const;
 
         void collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const PaddedPODArray<UInt64> & dict_sizes) const;
 

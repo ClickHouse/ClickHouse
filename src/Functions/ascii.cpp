@@ -45,9 +45,7 @@ struct AsciiImpl
         size_t size = data.size() / n;
 
         for (size_t i = 0; i < size; ++i)
-        {
             res[i] = doAscii(data, i * n, n);
-        }
     }
 
     [[noreturn]] static void array(const ColumnString::Offsets & /*offsets*/, PaddedPODArray<ReturnType> & /*res*/)
