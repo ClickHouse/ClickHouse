@@ -490,7 +490,7 @@ private:
 
 REGISTER_FUNCTION(DateDiff)
 {
-    factory.registerFunction<FunctionDateDiff<true>>({}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionDateDiff<true>>({}, FunctionFactory::Case::Insensitive);
     factory.registerAlias("date_diff", FunctionDateDiff<true>::name);
     factory.registerAlias("DATE_DIFF", FunctionDateDiff<true>::name);
     factory.registerAlias("timestampDiff", FunctionDateDiff<true>::name);
@@ -509,12 +509,12 @@ Example:
 )",
     .examples{
         {"typical", "SELECT timeDiff(UTCTimestamp(), now());", ""}},
-    .categories{"Dates and Times"}}, FunctionFactory::CaseInsensitive);
+    .categories{"Dates and Times"}}, FunctionFactory::Case::Insensitive);
 }
 
 REGISTER_FUNCTION(Age)
 {
-    factory.registerFunction<FunctionDateDiff<false>>({}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionDateDiff<false>>({}, FunctionFactory::Case::Insensitive);
 }
 
 }
