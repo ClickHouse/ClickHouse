@@ -240,7 +240,8 @@ public:
     void reset();
 
     /// update values based on external information (e.g. jemalloc's stat)
-    static void updateValues(Int64 rss_, Int64 allocated_, bool force_update);
+    static void updateRSS(Int64 rss_);
+    static void updateAllocated(Int64 allocated_);
 
     /// Prints info about peak memory consumption into log.
     void logPeakMemoryUsage();

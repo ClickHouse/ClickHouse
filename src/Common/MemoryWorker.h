@@ -1,13 +1,14 @@
 #pragma once
 
+#include <Common/CgroupsMemoryUsageObserver.h>
 #include <Common/ThreadPool.h>
-
-#include "config.h"
+#include <Common/Jemalloc.h>
 
 namespace DB
 {
 
-#if USE_JEMALLOC
+struct ICgroupsReader;
+
 /// Correct MemoryTracker based on stats.resident read from jemalloc.
 /// This requires jemalloc built with --enable-stats which we use.
 /// The worker spawns a background thread which moves the jemalloc epoch (updates internal stats),
@@ -19,8 +20,21 @@ class MemoryWorker
 public:
     explicit MemoryWorker(uint64_t period_ms_);
 
+    enum class MemoryUsageSource : uint8_t
+    {
+        None,
+        Cgroups,
+        Jemalloc
+    };
+
+    MemoryUsageSource getSource();
+
+    void start();
+
     ~MemoryWorker();
 private:
+    uint64_t getMemoryUsage();
+
     void backgroundThread();
 
     ThreadFromGlobalPool background_thread;
@@ -29,14 +43,27 @@ private:
     std::condition_variable cv;
     bool shutdown = false;
 
-    std::chrono::milliseconds period_ms;
-};
-#else
-class MemoryWorker
-{
-public:
-    explicit MemoryWorker(uint64_t /*period_ms_*/) {}
-};
+    LoggerPtr log;
+
+    uint64_t period_ms;
+
+    MemoryUsageSource source{MemoryUsageSource::None};
+
+#if defined(OS_LINUX)
+    std::shared_ptr<ICgroupsReader> cgroups_reader;
 #endif
+
+#if USE_JEMALLOC
+    JemallocMibCache<uint64_t> epoch_mib{"epoch"};
+    JemallocMibCache<size_t> resident_mib{"stats.resident"};
+    JemallocMibCache<size_t> allocated_mib{"stats.allocated"};
+
+#define STRINGIFY_HELPER(x) #x
+#define STRINGIFY(x) STRINGIFY_HELPER(x)
+    JemallocMibCache<size_t> purge_mib{"arena." STRINGIFY(MALLCTL_ARENAS_ALL) ".purge"};
+#undef STRINGIFY
+#undef STRINGIFY_HELPER
+#endif
+};
 
 }

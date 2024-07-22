@@ -58,10 +58,14 @@ static std::unique_ptr<ReadBufferFromFilePRead> openFileIfExists(const std::stri
 
 AsynchronousMetrics::AsynchronousMetrics(
     unsigned update_period_seconds,
-    const ProtocolServerMetricsFunc & protocol_server_metrics_func_)
+    const ProtocolServerMetricsFunc & protocol_server_metrics_func_,
+    bool update_jemalloc_epoch_,
+    bool update_rss_)
     : update_period(update_period_seconds)
     , log(getLogger("AsynchronousMetrics"))
     , protocol_server_metrics_func(protocol_server_metrics_func_)
+    , update_jemalloc_epoch(update_jemalloc_epoch_)
+    , update_rss(update_rss_)
 {
 #if defined(OS_LINUX)
     openFileIfExists("/proc/meminfo", meminfo);
@@ -377,6 +381,14 @@ void AsynchronousMetrics::run()
 namespace
 {
 
+uint64_t updateJemallocEpoch()
+{
+    uint64_t value = 0;
+    size_t size = sizeof(value);
+    mallctl("epoch", &value, &size, &value, size);
+    return value;
+}
+
 template <typename Value>
 Value saveJemallocMetricImpl(
     AsynchronousMetricValues & values,
@@ -593,8 +605,11 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
     // 'epoch' is a special mallctl -- it updates the statistics. Without it, all
     // the following calls will return stale values. It increments and returns
     // the current epoch number, which might be useful to log as a sanity check.
-    auto epoch = getJemallocValue<uint64_t>("epoch");
-    new_values["jemalloc.epoch"] = { epoch, "An internal incremental update number of the statistics of jemalloc (Jason Evans' memory allocator), used in all other `jemalloc` metrics." };
+    auto epoch = update_jemalloc_epoch ? updateJemallocEpoch() : getJemallocValue<uint64_t>("epoch");
+    new_values["jemalloc.epoch"]
+        = {epoch,
+           "An internal incremental update number of the statistics of jemalloc (Jason Evans' memory allocator), used in all other "
+           "`jemalloc` metrics."};
 
     // Collect the statistics themselves.
     saveJemallocMetric<size_t>(new_values, "allocated");
@@ -607,10 +622,10 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
     saveJemallocMetric<size_t>(new_values, "background_thread.num_threads");
     saveJemallocMetric<uint64_t>(new_values, "background_thread.num_runs");
     saveJemallocMetric<uint64_t>(new_values, "background_thread.run_intervals");
-    saveJemallocProf<size_t>(new_values, "active");
+    saveJemallocProf<bool>(new_values, "active");
     saveAllArenasMetric<size_t>(new_values, "pactive");
-    [[maybe_unused]] size_t je_malloc_pdirty = saveAllArenasMetric<size_t>(new_values, "pdirty");
-    [[maybe_unused]] size_t je_malloc_pmuzzy = saveAllArenasMetric<size_t>(new_values, "pmuzzy");
+    saveAllArenasMetric<size_t>(new_values, "pdirty");
+    saveAllArenasMetric<size_t>(new_values, "pmuzzy");
     saveAllArenasMetric<size_t>(new_values, "dirty_purged");
     saveAllArenasMetric<size_t>(new_values, "muzzy_purged");
 #endif
@@ -639,9 +654,8 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
             " It is unspecified whether it includes the per-thread stacks and most of the allocated memory, that is allocated with the 'mmap' system call."
             " This metric exists only for completeness reasons. I recommend to use the `MemoryResident` metric for monitoring."};
 
-#if !USE_JEMALLOC
-        MemoryTracker::updateValues(data.resident, data.resident, /*force_update=*/true);
-#endif
+        if (update_rss)
+            MemoryTracker::updateRSS(data.resident);
     }
 
     {

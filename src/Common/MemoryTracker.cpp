@@ -508,13 +508,13 @@ void MemoryTracker::reset()
 }
 
 
-void MemoryTracker::updateValues(Int64 rss_, Int64 allocated_, bool force_update)
+void MemoryTracker::updateRSS(Int64 rss_)
 {
     total_memory_tracker.rss.store(rss_, std::memory_order_relaxed);
+}
 
-    if (likely(!force_update && total_memory_tracker.amount.load(std::memory_order_relaxed) >= 0))
-        return;
-
+void MemoryTracker::updateAllocated(Int64 allocated_)
+{
     Int64 new_amount = allocated_;
     LOG_INFO(
         getLogger("MemoryTracker"),
@@ -530,7 +530,6 @@ void MemoryTracker::updateValues(Int64 rss_, Int64 allocated_, bool force_update
     bool log_memory_usage = true;
     total_memory_tracker.updatePeak(new_amount, log_memory_usage);
 }
-
 
 void MemoryTracker::setSoftLimit(Int64 value)
 {

@@ -3,20 +3,10 @@
 #include <Common/ThreadPool.h>
 
 #include <chrono>
-#include <memory>
 #include <mutex>
 
 namespace DB
 {
-
-struct ICgroupsReader
-{
-    virtual ~ICgroupsReader() = default;
-
-    virtual uint64_t readMemoryUsage() = 0;
-};
-
-std::shared_ptr<ICgroupsReader> createCgroupsReader();
 
 ///  Periodically reads the the maximum memory available to the process (which can change due to cgroups settings).
 ///  You can specify a callback to react on changes. The callback typically reloads the configuration, i.e. Server
@@ -53,8 +43,6 @@ private:
     void stopThread();
 
     void runThread();
-
-    std::shared_ptr<ICgroupsReader> cgroups_reader;
 
     std::mutex thread_mutex;
     std::condition_variable cond;
