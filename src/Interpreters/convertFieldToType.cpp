@@ -384,25 +384,25 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             {
                 const auto & element_type = *(type_tuple->getElements()[i]);
                 res[i] = convertFieldToType(src_tuple[i], element_type);
-                if (!res[i].isNull() || canContainNull(element_type))
-                    continue;
-
-                /*
-                 * Either the source element was Null, or the conversion did not
-                 * succeed, because the source and the requested types of the
-                 * element are compatible, but the value is not convertible
-                 * (e.g. trying to convert -1 from Int8 to UInt8). In these
-                 * cases, consider the whole tuple also compatible but not
-                 * convertible. According to the specification of this function,
-                 * we must return Null in this case.
-                 *
-                 * The following elements might be not even compatible, so it
-                 * makes sense to check them to detect user errors. Remember
-                 * that there is an unconvertible element, and try to process
-                 * the remaining ones. The convertFieldToType for each element
-                 * will throw if it detects incompatibility.
-                 */
-                have_unconvertible_element = true;
+                if (res[i].isNull() && !canContainNull(element_type))
+                {
+                    /*
+                     * Either the source element was Null, or the conversion did not
+                     * succeed, because the source and the requested types of the
+                     * element are compatible, but the value is not convertible
+                     * (e.g. trying to convert -1 from Int8 to UInt8). In these
+                     * cases, consider the whole tuple also compatible but not
+                     * convertible. According to the specification of this function,
+                     * we must return Null in this case.
+                     *
+                     * The following elements might be not even compatible, so it
+                     * makes sense to check them to detect user errors. Remember
+                     * that there is an unconvertible element, and try to process
+                     * the remaining ones. The convertFieldToType for each element
+                     * will throw if it detects incompatibility.
+                     */
+                    have_unconvertible_element = true;
+                }
             }
 
             return have_unconvertible_element ? Field(Null()) : Field(res);
