@@ -46,6 +46,7 @@ struct QuantileExactWeighted
 
     /// When creating, the hash table must be small.
     using Map = HashMapWithStackMemory<UnderlyingType, Weight, Hasher, 4>;
+    using Pair = typename Map::value_type;
 
     Map map;
 
@@ -83,6 +84,25 @@ struct QuantileExactWeighted
         }
     }
 
+    Value getImpl(const Pair * array, size_t size, Float64 position)
+    {
+        size_t lower = static_cast<size_t>(std::floor(position));
+        size_t higher = static_cast<size_t>(std::ceil(position));
+
+        const auto * lower_it = std::lower_bound(array, array + size, lower + 1, [](const Pair & a, size_t b) { return a.second < b; });
+        const auto * higher_it = std::lower_bound(array, array + size, higher + 1, [](const Pair & a, size_t b) { return a.second < b; });
+
+        UnderlyingType lower_key = lower_it->first;
+        UnderlyingType higher_key = higher_it->first;
+
+        if (lower == higher)
+            return static_cast<Value>(lower_key);
+        if (lower_key == higher_key)
+            return static_cast<Value>(lower_key);
+
+        return static_cast<Value>((higher - position) * lower_key + (position - lower) * higher_key);
+    }
+
     /// Get the value of the `level` quantile. The level must be between 0 and 1.
     Value get(Float64 level) const
     {
@@ -92,7 +112,6 @@ struct QuantileExactWeighted
             return std::numeric_limits<Value>::quiet_NaN();
 
         /// Copy the data to a temporary array to get the element you need in order.
-        using Pair = typename Map::value_type;
         std::unique_ptr<Pair[]> array_holder(new Pair[size]);
         Pair * array = array_holder.get();
 
@@ -104,35 +123,17 @@ struct QuantileExactWeighted
         /// but we don't do that for compatibility of serialized data.
 
         size_t i = 0;
-        Float64 sum_weight = 0;
         for (const auto & pair : map)
         {
-            sum_weight += pair.getMapped();
             array[i] = pair.getValue();
             ++i;
         }
 
         ::sort(array, array + size, [](const Pair & a, const Pair & b) { return a.first < b.first; });
-
-        Float64 threshold = std::ceil(sum_weight * level);
-        Float64 accumulated = 0;
-
-        const Pair * it = array;
-        const Pair * end = array + size;
-        while (it < end)
-        {
-            accumulated += it->second;
-
-            if (accumulated >= threshold)
-                break;
-
-            ++it;
-        }
-
-        if (it == end)
-            --it;
-
-        return it->first;
+        std::partial_sum(array, array + size, array, [](UInt64 acc, Pair & p) { return acc + p.second; });
+        Weight max_position = array[size - 1].second - 1;
+        Float64 position = max_position * level;
+        return getImpl(array, size, position);
     }
 
     /// Get the `size` values of `levels` quantiles. Write `size` results starting with `result` address.
@@ -149,51 +150,24 @@ struct QuantileExactWeighted
         }
 
         /// Copy the data to a temporary array to get the element you need in order.
-        using Pair = typename Map::value_type;
         std::unique_ptr<Pair[]> array_holder(new Pair[size]);
         Pair * array = array_holder.get();
 
         size_t i = 0;
-        Float64 sum_weight = 0;
         for (const auto & pair : map)
         {
-            sum_weight += pair.getMapped();
             array[i] = pair.getValue();
             ++i;
         }
 
         ::sort(array, array + size, [](const Pair & a, const Pair & b) { return a.first < b.first; });
+        std::partial_sum(array, array + size, array, [](UInt64 acc, Pair & p) { return acc + p.second; });
+        Weight max_position = array[size - 1].second - 1;
 
-        Float64 accumulated = 0;
-
-        const Pair * it = array;
-        const Pair * end = array + size;
-
-        size_t level_index = 0;
-        Float64 threshold = std::ceil(sum_weight * levels[indices[level_index]]);
-
-        while (it < end)
+        for (size_t j = 0; j < num_levels; ++j)
         {
-            accumulated += it->second;
-
-            while (accumulated >= threshold)
-            {
-                result[indices[level_index]] = it->first;
-                ++level_index;
-
-                if (level_index == num_levels)
-                    return;
-
-                threshold = std::ceil(sum_weight * levels[indices[level_index]]);
-            }
-
-            ++it;
-        }
-
-        while (level_index < num_levels)
-        {
-            result[indices[level_index]] = array[size - 1].first;
-            ++level_index;
+            Float64 position = max_position * levels[indices[j]];
+            result[j] = getImpl(array, size, position);
         }
     }
 
