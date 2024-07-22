@@ -129,10 +129,7 @@ void InitialAllRangesAnnouncement::serialize(WriteBuffer & out) const
 
 String InitialAllRangesAnnouncement::describe()
 {
-    String result;
-    result += description.describe();
-    result += fmt::format("----------\nReceived from {} replica\n", replica_num);
-    return result;
+    return fmt::format("replica {}, mode {}, {}", replica_num, mode, description.describe());
 }
 
 InitialAllRangesAnnouncement InitialAllRangesAnnouncement::deserialize(ReadBuffer & in)

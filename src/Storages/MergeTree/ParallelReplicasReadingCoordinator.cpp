@@ -433,12 +433,11 @@ void DefaultCoordinator::setProgressCallback()
 
 void DefaultCoordinator::doHandleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement)
 {
-    const auto replica_num = announcement.replica_num;
-
-    LOG_DEBUG(log, "Initial request from replica {}: {}", announcement.replica_num, announcement.describe());
+    LOG_DEBUG(log, "Initial request: {}", announcement.describe());
 
     initializeReadingState(std::move(announcement));
 
+    const auto replica_num = announcement.replica_num;
     if (replica_num >= stats.size())
         throw Exception(
             ErrorCodes::LOGICAL_ERROR, "Replica number ({}) is bigger than total replicas count ({})", replica_num, stats.size());
@@ -859,7 +858,7 @@ void InOrderCoordinator<mode>::markReplicaAsUnavailable(size_t replica_number)
 template <CoordinationMode mode>
 void InOrderCoordinator<mode>::doHandleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement)
 {
-    LOG_TRACE(log, "Received an announcement {}", announcement.describe());
+    LOG_TRACE(log, "Received an announcement : {}", announcement.describe());
 
     ++stats[announcement.replica_num].number_of_requests;
 
