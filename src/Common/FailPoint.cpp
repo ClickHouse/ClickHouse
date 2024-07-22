@@ -58,7 +58,7 @@ static struct InitFiu
     PAUSEABLE(dummy_pausable_failpoint) \
     ONCE(execute_query_calling_empty_set_result_func_on_exception) \
     ONCE(receive_timeout_on_table_status_response) \
-    ONCE(keepermap_fail_drop_data) \
+    REGULAR(keepermap_fail_drop_data) \
 
 
 namespace FailPoints

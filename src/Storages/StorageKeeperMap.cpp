@@ -417,6 +417,9 @@ StorageKeeperMap::StorageKeeperMap(
 
             auto code = client->tryCreate(zk_table_path, "", zkutil::CreateMode::Persistent);
 
+            /// A table on the same Keeper path already exists, we just appended our table id to subscribe as a new replica
+            /// We still don't know if the table matches the expected metadata so table_is_valid is not changed
+            /// It will be checked lazily on the first operation
             if (code == Coordination::Error::ZOK)
                 return;
 
@@ -474,6 +477,7 @@ StorageKeeperMap::StorageKeeperMap(
 
 
         table_is_valid = true;
+        /// we are the first table created for the specified Keeper path, i.e. we are the first replica
         return;
     }
 
