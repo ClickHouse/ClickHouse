@@ -52,7 +52,12 @@ function check_replication_consistency()
     check_query_part=$2
 
     # Try to kill some mutations because sometimes tests run too much (it's not guarenteed to kill all mutations, see below)
-    ${CLICKHOUSE_CLIENT} -q "KILL MUTATION WHERE database=currentDatabase() AND table like '$table_name_prefix%'" > /dev/null
+    # Try multiple replicas, because queries are not finished yet, and "global" KILL MUTATION may fail due to another query (like DROP TABLE)
+    readarray -t tables_arr < <(${CLICKHOUSE_CLIENT} -q "SELECT name FROM system.tables WHERE database=currentDatabase() AND name like '$table_name_prefix%'")
+    for t in "${tables_arr[@]}"
+    do
+        ${CLICKHOUSE_CLIENT} -q "KILL MUTATION WHERE database=currentDatabase() AND table='$t'" > /dev/null 2>/dev/null
+    done
 
     # Wait for all queries to finish (query may still be running if thread is killed by timeout)
     num_tries=0
