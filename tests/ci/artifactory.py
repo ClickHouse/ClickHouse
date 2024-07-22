@@ -3,8 +3,13 @@ import time
 from pathlib import Path
 from typing import Optional
 from shutil import copy2
-from create_release import PackageDownloader, ReleaseInfo, ShellRunner
-from ci_utils import WithIter
+from create_release import (
+    PackageDownloader,
+    ReleaseInfo,
+    ReleaseContextManager,
+    ReleaseProgress,
+)
+from ci_utils import WithIter, Shell
 
 
 class MountPointApp(metaclass=WithIter):
@@ -76,19 +81,20 @@ class R2MountPoint:
         )
 
         _TEST_MOUNT_CMD = f"mount | grep -q {self.MOUNT_POINT}"
-        ShellRunner.run(_CLEAN_LOG_FILE_CMD)
-        ShellRunner.run(_UNMOUNT_CMD)
-        ShellRunner.run(_MKDIR_CMD)
-        ShellRunner.run(_MKDIR_FOR_CACHE)
-        ShellRunner.run(self.mount_cmd, async_=self.async_mount)
+        Shell.run(_CLEAN_LOG_FILE_CMD)
+        Shell.run(_UNMOUNT_CMD)
+        Shell.run(_MKDIR_CMD)
+        Shell.run(_MKDIR_FOR_CACHE)
+        # didn't manage to use simple run() and not block or fail
+        Shell.run_as_daemon(self.mount_cmd)
         if self.async_mount:
             time.sleep(3)
-        ShellRunner.run(_TEST_MOUNT_CMD)
+        Shell.run(_TEST_MOUNT_CMD, check=True)
 
     @classmethod
     def teardown(cls):
         print(f"Unmount [{cls.MOUNT_POINT}]")
-        ShellRunner.run(f"umount {cls.MOUNT_POINT}")
+        Shell.run(f"umount {cls.MOUNT_POINT}")
 
 
 class RepoCodenames(metaclass=WithIter):
@@ -124,8 +130,8 @@ class DebianArtifactory:
         cmd = f"{REPREPRO_CMD_PREFIX} includedeb {self.codename} {' '.join(paths)}"
         print("Running export command:")
         print(f"  {cmd}")
-        ShellRunner.run(cmd)
-        ShellRunner.run("sync")
+        Shell.run(cmd, check=True)
+        Shell.run("sync")
 
         if self.codename == RepoCodenames.LTS:
             packages_with_version = [
@@ -137,16 +143,20 @@ class DebianArtifactory:
             cmd = f"{REPREPRO_CMD_PREFIX} copy {RepoCodenames.STABLE} {RepoCodenames.LTS} {' '.join(packages_with_version)}"
             print("Running copy command:")
             print(f"  {cmd}")
-            ShellRunner.run(cmd)
-            ShellRunner.run("sync")
+            Shell.run(cmd, check=True)
+            Shell.run("sync")
 
     def test_packages(self):
-        ShellRunner.run("docker pull ubuntu:latest")
+        Shell.run("docker pull ubuntu:latest")
         print(f"Test packages installation, version [{self.version}]")
-        cmd = f"docker run --rm ubuntu:latest bash -c \"apt update -y; apt install -y sudo gnupg ca-certificates; apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv 8919F6BD2B48D754; echo 'deb {self.repo_url} stable main' | tee /etc/apt/sources.list.d/clickhouse.list; apt update -y; apt-get install -y clickhouse-client={self.version}\""
+        debian_command = f"echo 'deb {self.repo_url} stable main' | tee /etc/apt/sources.list.d/clickhouse.list; apt update -y; apt-get install -y clickhouse-common-static={self.version} clickhouse-client={self.version}"
+        cmd = f'docker run --rm ubuntu:latest bash -c "apt update -y; apt install -y sudo gnupg ca-certificates; apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv 8919F6BD2B48D754; {debian_command}"'
         print("Running test command:")
         print(f"  {cmd}")
-        ShellRunner.run(cmd)
+        Shell.run(cmd, check=True)
+        release_info = ReleaseInfo.from_file()
+        release_info.debian_command = debian_command
+        release_info.dump()
 
 
 def _copy_if_not_exists(src: Path, dst: Path) -> Path:
@@ -202,23 +212,27 @@ class RpmArtifactory:
         for command in commands:
             print("Running command:")
             print(f"    {command}")
-            ShellRunner.run(command)
+            Shell.run(command, check=True)
 
         update_public_key = f"gpg --armor --export {self._SIGN_KEY}"
         pub_key_path = dest_dir / "repodata" / "repomd.xml.key"
         print("Updating repomd.xml.key")
-        pub_key_path.write_text(ShellRunner.run(update_public_key)[1])
+        pub_key_path.write_text(Shell.run(update_public_key, check=True))
         if codename == RepoCodenames.LTS:
             self.export_packages(RepoCodenames.STABLE)
-        ShellRunner.run("sync")
+        Shell.run("sync")
 
     def test_packages(self):
-        ShellRunner.run("docker pull fedora:latest")
+        Shell.run("docker pull fedora:latest")
         print(f"Test package installation, version [{self.version}]")
-        cmd = f'docker run --rm fedora:latest /bin/bash -c "dnf -y install dnf-plugins-core && dnf config-manager --add-repo={self.repo_url} && dnf makecache && dnf -y install clickhouse-client-{self.version}-1"'
+        rpm_command = f"dnf config-manager --add-repo={self.repo_url} && dnf makecache && dnf -y install clickhouse-client-{self.version}-1"
+        cmd = f'docker run --rm fedora:latest /bin/bash -c "dnf -y install dnf-plugins-core && dnf config-manager --add-repo={self.repo_url} && {rpm_command}"'
         print("Running test command:")
         print(f"  {cmd}")
-        ShellRunner.run(cmd)
+        Shell.run(cmd, check=True)
+        release_info = ReleaseInfo.from_file()
+        release_info.rpm_command = rpm_command
+        release_info.dump()
 
 
 class TgzArtifactory:
@@ -256,35 +270,35 @@ class TgzArtifactory:
 
         if codename == RepoCodenames.LTS:
             self.export_packages(RepoCodenames.STABLE)
-        ShellRunner.run("sync")
+        Shell.run("sync")
 
     def test_packages(self):
         tgz_file = "/tmp/tmp.tgz"
         tgz_sha_file = "/tmp/tmp.tgz.sha512"
-        ShellRunner.run(
-            f"curl -o {tgz_file} -f0 {self.repo_url}/stable/clickhouse-client-{self.version}-arm64.tgz"
+        cmd = f"curl -o {tgz_file} -f0 {self.repo_url}/stable/clickhouse-client-{self.version}-arm64.tgz"
+        Shell.run(
+            cmd,
+            check=True,
         )
-        ShellRunner.run(
-            f"curl -o {tgz_sha_file} -f0 {self.repo_url}/stable/clickhouse-client-{self.version}-arm64.tgz.sha512"
+        Shell.run(
+            f"curl -o {tgz_sha_file} -f0 {self.repo_url}/stable/clickhouse-client-{self.version}-arm64.tgz.sha512",
+            check=True,
         )
-        expected_checksum = ShellRunner.run(f"cut -d ' ' -f 1 {tgz_sha_file}")
-        actual_checksum = ShellRunner.run(f"sha512sum {tgz_file} | cut -d ' ' -f 1")
+        expected_checksum = Shell.run(f"cut -d ' ' -f 1 {tgz_sha_file}", check=True)
+        actual_checksum = Shell.run(f"sha512sum {tgz_file} | cut -d ' ' -f 1")
         assert (
             expected_checksum == actual_checksum
         ), f"[{actual_checksum} != {expected_checksum}]"
-        ShellRunner.run("rm /tmp/tmp.tgz*")
+        Shell.run("rm /tmp/tmp.tgz*")
+        release_info = ReleaseInfo.from_file()
+        release_info.tgz_command = cmd
+        release_info.dump()
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
         description="Adds release packages to the repository",
-    )
-    parser.add_argument(
-        "--infile",
-        type=str,
-        required=True,
-        help="input file with release info",
     )
     parser.add_argument(
         "--export-debian",
@@ -328,7 +342,7 @@ if __name__ == "__main__":
     args = parse_args()
     assert args.dry_run
 
-    release_info = ReleaseInfo.from_file(args.infile)
+    release_info = ReleaseInfo.from_file()
     """
     Use S3FS. RCLONE has some errors with r2 remote which I didn't figure out how to resolve:
            ERROR : IO error: NotImplemented: versionId not implemented
@@ -336,20 +350,26 @@ if __name__ == "__main__":
     """
     mp = R2MountPoint(MountPointApp.S3FS, dry_run=args.dry_run)
     if args.export_debian:
-        mp.init()
-        DebianArtifactory(release_info, dry_run=args.dry_run).export_packages()
-        mp.teardown()
+        with ReleaseContextManager(release_progress=ReleaseProgress.EXPORT_DEB) as _:
+            mp.init()
+            DebianArtifactory(release_info, dry_run=args.dry_run).export_packages()
+            mp.teardown()
     if args.export_rpm:
-        mp.init()
-        RpmArtifactory(release_info, dry_run=args.dry_run).export_packages()
-        mp.teardown()
+        with ReleaseContextManager(release_progress=ReleaseProgress.EXPORT_RPM) as _:
+            mp.init()
+            RpmArtifactory(release_info, dry_run=args.dry_run).export_packages()
+            mp.teardown()
     if args.export_tgz:
-        mp.init()
-        TgzArtifactory(release_info, dry_run=args.dry_run).export_packages()
-        mp.teardown()
+        with ReleaseContextManager(release_progress=ReleaseProgress.EXPORT_TGZ) as _:
+            mp.init()
+            TgzArtifactory(release_info, dry_run=args.dry_run).export_packages()
+            mp.teardown()
     if args.test_debian:
-        DebianArtifactory(release_info, dry_run=args.dry_run).test_packages()
+        with ReleaseContextManager(release_progress=ReleaseProgress.TEST_DEB) as _:
+            DebianArtifactory(release_info, dry_run=args.dry_run).test_packages()
     if args.test_tgz:
-        TgzArtifactory(release_info, dry_run=args.dry_run).test_packages()
+        with ReleaseContextManager(release_progress=ReleaseProgress.TEST_TGZ) as _:
+            TgzArtifactory(release_info, dry_run=args.dry_run).test_packages()
     if args.test_rpm:
-        RpmArtifactory(release_info, dry_run=args.dry_run).test_packages()
+        with ReleaseContextManager(release_progress=ReleaseProgress.TEST_RPM) as _:
+            RpmArtifactory(release_info, dry_run=args.dry_run).test_packages()
