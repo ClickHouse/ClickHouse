@@ -114,7 +114,12 @@ void QueryMetricLog::startQuery(const String & query_id, TimePoint query_start_t
     // Wake up the sleeping thread only if the collection for this query needs to wake up sooner
     const auto & queries_by_next_collect_time = queries.get<ByNextCollectTime>();
     if (query_id == queries_by_next_collect_time.begin()->query_id)
+    {
+        std::unique_lock cv_lock(queries_cv_mutex);
+        queries_cv_wakeup = true;
+        cv_lock.unlock();
         queries_cv.notify_all();
+    }
 }
 
 void QueryMetricLog::finishQuery(const String & query_id)
@@ -148,7 +153,10 @@ void QueryMetricLog::threadFunction()
             }
 
             std::unique_lock cv_lock(queries_cv_mutex);
-            queries_cv.wait_until(cv_lock, desired_timepoint);
+            queries_cv.wait_until(cv_lock, desired_timepoint, [this, desired_timepoint] {
+                return queries_cv_wakeup || is_shutdown_metric_thread || desired_timepoint >= std::chrono::system_clock::now();
+            });
+            queries_cv_wakeup = false;
         }
         catch (...)
         {

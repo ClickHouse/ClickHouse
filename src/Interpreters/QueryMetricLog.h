@@ -81,6 +81,7 @@ private:
     std::mutex queries_mutex;
     QuerySet queries;
     std::mutex queries_cv_mutex;
+    bool queries_cv_wakeup = false;
     std::condition_variable queries_cv;
 };
 
