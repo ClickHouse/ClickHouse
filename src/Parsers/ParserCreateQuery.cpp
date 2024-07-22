@@ -179,7 +179,7 @@ bool ParserIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     ParserKeyword s_granularity(Keyword::GRANULARITY);
 
     ParserIdentifier name_p;
-    ParserDataType data_type_p;
+    ParserFunction type_p;
     ParserExpression expression_p;
     ParserUnsignedInteger granularity_p;
 
@@ -197,7 +197,7 @@ bool ParserIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     if (!s_type.ignore(pos, expected))
         return false;
 
-    if (!data_type_p.parse(pos, type, expected))
+    if (!type_p.parse(pos, type, expected))
         return false;
 
     if (s_granularity.ignore(pos, expected))
