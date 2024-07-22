@@ -43,15 +43,10 @@ def started_cluster():
 config = """<clickhouse>
     <openSSL>
         <client>
-            <verificationMode>none</verificationMode>
-
+            <verificationMode>strict</verificationMode>
             <certificateFile>{certificateFile}</certificateFile>
             <privateKeyFile>{privateKeyFile}</privateKeyFile>
             <caConfig>{caConfig}</caConfig>
-
-            <invalidCertificateHandler>
-                <name>AcceptCertificateHandler</name>
-            </invalidCertificateHandler>
         </client>
     </openSSL>
 </clickhouse>"""

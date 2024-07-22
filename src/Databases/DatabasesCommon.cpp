@@ -289,8 +289,8 @@ StoragePtr DatabaseWithOwnTablesBase::detachTableUnlocked(const String & table_n
     tables.erase(it);
     table_storage->is_detached = true;
 
-    if (table_storage->isSystemStorage() == false)
-        CurrentMetrics::sub(getAttachedCounterForStorage(table_storage), 1);
+    if (!table_storage->isSystemStorage() && database_name != DatabaseCatalog::SYSTEM_DATABASE)
+        CurrentMetrics::sub(getAttachedCounterForStorage(table_storage));
 
     auto table_id = table_storage->getStorageID();
     if (table_id.hasUUID())
@@ -334,8 +334,8 @@ void DatabaseWithOwnTablesBase::attachTableUnlocked(const String & table_name, c
     /// non-Atomic database the is_detached is set to true before RENAME.
     table->is_detached = false;
 
-    if (table->isSystemStorage() == false && table_id.database_name != DatabaseCatalog::SYSTEM_DATABASE)
-        CurrentMetrics::add(getAttachedCounterForStorage(table), 1);
+    if (!table->isSystemStorage() && table_id.database_name != DatabaseCatalog::SYSTEM_DATABASE)
+        CurrentMetrics::add(getAttachedCounterForStorage(table));
 }
 
 void DatabaseWithOwnTablesBase::shutdown()
