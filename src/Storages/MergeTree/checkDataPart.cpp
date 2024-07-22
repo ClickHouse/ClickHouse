@@ -42,6 +42,7 @@ namespace ErrorCodes
     extern const int NETWORK_ERROR;
     extern const int SOCKET_TIMEOUT;
     extern const int BROKEN_PROJECTION;
+    extern const int ABORTED;
 }
 
 
@@ -87,7 +88,8 @@ bool isRetryableException(std::exception_ptr exception_ptr)
         return isNotEnoughMemoryErrorCode(e.code())
             || e.code() == ErrorCodes::NETWORK_ERROR
             || e.code() == ErrorCodes::SOCKET_TIMEOUT
-            || e.code() == ErrorCodes::CANNOT_SCHEDULE_TASK;
+            || e.code() == ErrorCodes::CANNOT_SCHEDULE_TASK
+            || e.code() == ErrorCodes::ABORTED;
     }
     catch (const Poco::Net::NetException &)
     {

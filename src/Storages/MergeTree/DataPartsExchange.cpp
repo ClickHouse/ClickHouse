@@ -225,8 +225,7 @@ void Service::processQuery(const HTMLForm & params, ReadBuffer & /*body*/, Write
     }
     catch (const Exception & e)
     {
-        if (e.code() != ErrorCodes::ABORTED
-            && e.code() != ErrorCodes::CANNOT_WRITE_TO_OSTREAM
+        if (e.code() != ErrorCodes::CANNOT_WRITE_TO_OSTREAM
             && !isRetryableException(std::current_exception()))
         {
             report_broken_part();
