@@ -763,7 +763,7 @@ void ColumnObject::get(size_t n, Field & res) const
     }
 }
 
-#if !defined(ABORT_ON_LOGICAL_ERROR)
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
 void ColumnObject::insertFrom(const IColumn & src, size_t n)
 #else
 void ColumnObject::doInsertFrom(const IColumn & src, size_t n)
@@ -772,7 +772,7 @@ void ColumnObject::doInsertFrom(const IColumn & src, size_t n)
     insert(src[n]);
 }
 
-#if !defined(ABORT_ON_LOGICAL_ERROR)
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
 void ColumnObject::insertRangeFrom(const IColumn & src, size_t start, size_t length)
 #else
 void ColumnObject::doInsertRangeFrom(const IColumn & src, size_t start, size_t length)
