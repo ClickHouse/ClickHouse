@@ -31,11 +31,13 @@ void SharedMutex::lock()
             break;
     }
 
+    /// The first step of acquiring the exclusive ownership is finished.
+    /// Now we just wait until all readers release the shared ownership.
+    writer_thread_id.store(getThreadId());
+
     value |= writers;
     while (value & readers)
         futexWaitLowerFetch(state, value);
-
-    writer_thread_id.store(getThreadId());
 }
 
 bool SharedMutex::try_lock()
