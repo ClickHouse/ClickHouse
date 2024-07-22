@@ -16,6 +16,7 @@
 #include <Common/Exception.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/typeid_cast.h>
+#include <Common/KeystrokeInterceptor.h>
 #include <Common/TerminalSize.h>
 #include <Common/clearPasswordFromCommandLine.h>
 #include <Common/StringUtils.h>
@@ -519,7 +520,7 @@ void ClientBase::onData(Block & block, ASTPtr parsed_query)
     {
         if (!need_render_progress && select_into_file && !select_into_file_and_stdout)
             error_stream << "\r";
-        progress_table.writeTable(*tty_buf);
+        progress_table.writeTable(*tty_buf, show_progress_table.load());
     }
 }
 
@@ -925,6 +926,16 @@ void ClientBase::initTTYBuffer(ProgressOption progress_option, ProgressOption pr
     }
 }
 
+void ClientBase::initKeystrokeInterceptor()
+{
+    if (is_interactive && need_render_progress_table)
+    {
+        keystroke_interceptor = std::make_unique<KeystrokeInterceptor>(in_fd);
+        keystroke_interceptor->registerCallback(' ', [this]() { show_progress_table = !show_progress_table; });
+
+    }
+}
+
 void ClientBase::updateSuggest(const ASTPtr & ast)
 {
     std::vector<std::string> new_words;
@@ -1175,6 +1186,9 @@ void ClientBase::receiveResult(ASTPtr parsed_query, Int32 signals_before_stop, b
 
     std::exception_ptr local_format_error;
 
+    if (keystroke_interceptor)
+        keystroke_interceptor->startIntercept();
+
     while (true)
     {
         Stopwatch receive_watch(CLOCK_MONOTONIC_COARSE);
@@ -1229,7 +1243,16 @@ void ClientBase::receiveResult(ASTPtr parsed_query, Int32 signals_before_stop, b
                 local_format_error = std::current_exception();
             connection->sendCancel();
         }
+        catch (...)
+        {
+            if (keystroke_interceptor)
+                keystroke_interceptor->stopIntercept();
+            throw;
+        }
     }
+
+    if (keystroke_interceptor)
+        keystroke_interceptor->stopIntercept();
 
     if (local_format_error)
         std::rethrow_exception(local_format_error);
@@ -1411,7 +1434,7 @@ void ClientBase::onProfileEvents(Block & block)
         if (need_render_progress && tty_buf)
             progress_indication.writeProgress(*tty_buf);
         if (need_render_progress_table && tty_buf)
-            progress_table.writeTable(*tty_buf);
+            progress_table.writeTable(*tty_buf, show_progress_table.load());
 
         if (profile_events.print)
         {

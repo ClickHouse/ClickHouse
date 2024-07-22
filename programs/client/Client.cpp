@@ -345,6 +345,7 @@ try
     adjustSettings();
     initTTYBuffer(toProgressOption(config().getString("progress", "default")),
         toProgressOption(config().getString("progress-table", "default")));
+    initKeystrokeInterceptor();
     ASTAlterCommand::setFormatAlterCommandsWithParentheses(true);
 
     {

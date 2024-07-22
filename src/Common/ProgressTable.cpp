@@ -189,9 +189,17 @@ void writeWithWidthStrict(Out & out, std::string_view s, size_t width)
 
 }
 
-void ProgressTable::writeTable(WriteBufferFromFileDescriptor & message)
+void ProgressTable::writeTable(WriteBufferFromFileDescriptor & message, bool show_table)
 {
     std::lock_guard lock{mutex};
+    if (!show_table)
+    {
+        if (written_first_block)
+        {
+            message << CLEAR_TO_END_OF_SCREEN;
+        }
+        return;
+    }
     const auto & event_name_to_event = getEventNameToEvent();
 
     size_t terminal_width = getTerminalWidth();

@@ -20,7 +20,7 @@ class ProgressTable
 {
 public:
     /// Write progress table with metrics.
-    void writeTable(WriteBufferFromFileDescriptor & message);
+    void writeTable(WriteBufferFromFileDescriptor & message, bool show_table);
     void clearTableOutput(WriteBufferFromFileDescriptor & message);
     void writeFinalTable();
 
