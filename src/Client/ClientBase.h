@@ -6,13 +6,17 @@
 #include <Common/ProgressIndication.h>
 #include <Common/InterruptListener.h>
 #include <Common/ShellCommand.h>
+#include <Common/QueryFuzzer.h>
 #include <Common/Stopwatch.h>
 #include <Common/DNSResolver.h>
 #include <Core/ExternalTable.h>
+#include <Core/Settings.h>
 #include <Poco/Util/Application.h>
+#include <Poco/ConsoleChannel.h>
+#include <Poco/SimpleFileChannel.h>
+#include <Poco/SplitterChannel.h>
 #include <Interpreters/Context.h>
 #include <Client/Suggest.h>
-#include <Client/QueryFuzzer.h>
 #include <boost/program_options.hpp>
 #include <Storages/StorageFile.h>
 #include <Storages/SelectQueryInfo.h>
@@ -211,6 +215,13 @@ protected:
     SharedContextHolder shared_context;
     ContextMutablePtr global_context;
 
+    LoggerPtr fatal_log;
+    Poco::AutoPtr<Poco::SplitterChannel> fatal_channel_ptr;
+    Poco::AutoPtr<Poco::Channel> fatal_console_channel_ptr;
+    Poco::AutoPtr<Poco::Channel> fatal_file_channel_ptr;
+    Poco::Thread signal_listener_thread;
+    std::unique_ptr<Poco::Runnable> signal_listener;
+
     bool is_interactive = false; /// Use either interactive line editing interface or batch mode.
     bool is_multiquery = false;
     bool delayed_interactive = false;
@@ -338,8 +349,8 @@ protected:
     bool allow_repeated_settings = false;
     bool allow_merge_tree_settings = false;
 
-    bool cancelled = false;
-    bool cancelled_printed = false;
+    std::atomic_bool cancelled = false;
+    std::atomic_bool cancelled_printed = false;
 
     /// Unpacked descriptors and streams for the ease of use.
     int in_fd = STDIN_FILENO;

@@ -18,7 +18,6 @@
 #include <Storages/MergeTree/BackgroundJobsAssignee.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeMutationStatus.h>
 #include <Storages/MergeTree/MergeList.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
@@ -65,6 +64,7 @@ using BackupEntries = std::vector<std::pair<String, std::shared_ptr<const IBacku
 class MergeTreeTransaction;
 using MergeTreeTransactionPtr = std::shared_ptr<MergeTreeTransaction>;
 
+struct MergeTreeSettings;
 struct WriteSettings;
 
 /// Auxiliary struct holding information about the future merged or mutated part.
@@ -441,7 +441,7 @@ public:
 
     bool hasProjection() const override;
 
-    bool areAsynchronousInsertsEnabled() const override { return getSettings()->async_insert; }
+    bool areAsynchronousInsertsEnabled() const override;
 
     bool supportsTrivialCountOptimization(const StorageSnapshotPtr &, ContextPtr) const override;
 
@@ -860,12 +860,7 @@ public:
 
     /// Returns true if table can create new parts with adaptive granularity
     /// Has additional constraint in replicated version
-    virtual bool canUseAdaptiveGranularity() const
-    {
-        const auto settings = getSettings();
-        return settings->index_granularity_bytes != 0 &&
-            (settings->enable_mixed_granularity_parts || !has_non_adaptive_index_granularity_parts);
-    }
+    virtual bool canUseAdaptiveGranularity() const;
 
     /// Get constant pointer to storage settings.
     /// Copy this pointer into your scope and you will
@@ -1734,14 +1729,6 @@ struct CurrentlySubmergingEmergingTagger
 
     ~CurrentlySubmergingEmergingTagger();
 };
-
-
-/// TODO: move it somewhere
-[[ maybe_unused ]] static bool needSyncPart(size_t input_rows, size_t input_bytes, const MergeTreeSettings & settings)
-{
-    return ((settings.min_rows_to_fsync_after_merge && input_rows >= settings.min_rows_to_fsync_after_merge)
-        || (settings.min_compressed_bytes_to_fsync_after_merge && input_bytes >= settings.min_compressed_bytes_to_fsync_after_merge));
-}
 
 /// Look at MutationCommands if it contains mutations for AlterConversions, update the counter.
 /// Return true if the counter had been updated

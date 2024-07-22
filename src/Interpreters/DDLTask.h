@@ -3,6 +3,7 @@
 #include <Core/Types.h>
 #include <Interpreters/Cluster.h>
 #include <Common/OpenTelemetryTraceContext.h>
+#include <Common/SettingsChanges.h>
 #include <Common/ZooKeeper/Types.h>
 #include <filesystem>
 

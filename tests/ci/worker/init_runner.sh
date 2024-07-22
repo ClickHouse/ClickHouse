@@ -50,7 +50,7 @@ set -uo pipefail
 # set accordingly to a runner role #
 ####################################
 
-echo "Running init script"
+echo "Running init v1.1"
 export DEBIAN_FRONTEND=noninteractive
 export RUNNER_HOME=/home/ubuntu/actions-runner
 
@@ -66,6 +66,14 @@ bash /usr/local/share/scripts/init-network.sh
 RUNNER_TYPE=$(/usr/local/bin/aws ec2 describe-tags --filters "Name=resource-id,Values=$INSTANCE_ID" --query "Tags[?Key=='github:runner-type'].Value" --output text)
 LABELS="self-hosted,Linux,$(uname -m),$RUNNER_TYPE"
 export LABELS
+echo "Instance Labels: $LABELS"
+
+LIFE_CYCLE=$(curl -s --fail http://169.254.169.254/latest/meta-data/instance-life-cycle)
+export LIFE_CYCLE
+echo "Instance lifecycle: $LIFE_CYCLE"
+
+INSTANCE_TYPE=$(ec2metadata --instance-type)
+echo "Instance type: $INSTANCE_TYPE"
 
 # Refresh CloudWatch agent config
 aws ssm get-parameter --region us-east-1 --name AmazonCloudWatch-github-runners --query 'Parameter.Value' --output text > /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
@@ -90,7 +98,6 @@ terminate_delayed() {
     # IF `sleep` IS CHANGED, CHANGE ANOTHER VALUE IN `pgrep`
     sleep=13.14159265358979323846
     echo "Going to terminate the runner's instance in $sleep seconds"
-    INSTANCE_ID=$(ec2metadata --instance-id)
     # We execute it with `at` to not have it as an orphan process, but launched independently
     # GH Runners kill all remain processes
     echo "sleep '$sleep'; aws ec2 terminate-instances --instance-ids $INSTANCE_ID" | at now || \
@@ -111,18 +118,20 @@ declare -f terminate_delayed >> /tmp/actions-hooks/common.sh
 terminate_and_exit() {
     # Terminate instance and exit from the script instantly
     echo "Going to terminate the runner's instance"
-    INSTANCE_ID=$(ec2metadata --instance-id)
     aws ec2 terminate-instances --instance-ids "$INSTANCE_ID"
+    exit 0
+}
+
+terminate_decrease_and_exit() {
+    # Terminate instance and exit from the script instantly
+    echo "Going to terminate the runner's instance and decrease asg capacity"
+    aws autoscaling terminate-instance-in-auto-scaling-group --instance-id "$INSTANCE_ID" --should-decrement-desired-capacity
     exit 0
 }
 
 declare -f terminate_and_exit >> /tmp/actions-hooks/common.sh
 
 check_spot_instance_is_old() {
-    # This function should be executed ONLY BETWEEN runnings.
-    # It's unsafe to execute while the runner is working!
-    local LIFE_CYCLE
-    LIFE_CYCLE=$(curl -s --fail http://169.254.169.254/latest/meta-data/instance-life-cycle)
     if [ "$LIFE_CYCLE" == "spot" ]; then
         local UPTIME
         UPTIME=$(< /proc/uptime)
@@ -324,7 +333,7 @@ while true; do
                 sudo -u ubuntu ./config.sh remove --token "$(get_runner_token)" \
                     || continue
                 echo "Runner didn't launch or have assigned jobs after ${RUNNER_AGE} seconds, shutting down"
-                terminate_and_exit
+                terminate_decrease_and_exit
             fi
         fi
     else
