@@ -217,7 +217,7 @@ const char * ColumnNullable::skipSerializedInArena(const char * pos) const
     return pos;
 }
 
-#if !defined(ABORT_ON_LOGICAL_ERROR)
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
 void ColumnNullable::insertRangeFrom(const IColumn & src, size_t start, size_t length)
 #else
 void ColumnNullable::doInsertRangeFrom(const IColumn & src, size_t start, size_t length)
@@ -258,7 +258,7 @@ bool ColumnNullable::tryInsert(const Field & x)
     return true;
 }
 
-#if !defined(ABORT_ON_LOGICAL_ERROR)
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
 void ColumnNullable::insertFrom(const IColumn & src, size_t n)
 #else
 void ColumnNullable::doInsertFrom(const IColumn & src, size_t n)
@@ -270,7 +270,7 @@ void ColumnNullable::doInsertFrom(const IColumn & src, size_t n)
 }
 
 
-#if !defined(ABORT_ON_LOGICAL_ERROR)
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
 void ColumnNullable::insertManyFrom(const IColumn & src, size_t position, size_t length)
 #else
 void ColumnNullable::doInsertManyFrom(const IColumn & src, size_t position, size_t length)
@@ -410,7 +410,7 @@ int ColumnNullable::compareAtImpl(size_t n, size_t m, const IColumn & rhs_, int 
     return getNestedColumn().compareAt(n, m, nested_rhs, null_direction_hint);
 }
 
-#if !defined(ABORT_ON_LOGICAL_ERROR)
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
 int ColumnNullable::compareAt(size_t n, size_t m, const IColumn & rhs_, int null_direction_hint) const
 #else
 int ColumnNullable::doCompareAt(size_t n, size_t m, const IColumn & rhs_, int null_direction_hint) const
