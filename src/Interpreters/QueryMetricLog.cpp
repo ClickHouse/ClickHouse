@@ -87,6 +87,16 @@ void QueryMetricLogElement::appendToBlock(MutableColumns & columns) const
         columns[column_idx++]->insert(profile_events[i]);
 }
 
+void QueryMetricLog::stopCollect()
+{
+    bool old_val = false;
+    if (!is_shutdown_metric_thread.compare_exchange_strong(old_val, true))
+        return;
+    queries_cv.notify_all();
+    if (worker_thread)
+        worker_thread->join();
+}
+
 void QueryMetricLog::startQuery(const String & query_id, TimePoint query_start_time, UInt64 interval_milliseconds)
 {
     QueryMetricLogStatus status;
@@ -104,10 +114,7 @@ void QueryMetricLog::startQuery(const String & query_id, TimePoint query_start_t
     // Wake up the sleeping thread only if the collection for this query needs to wake up sooner
     const auto & queries_by_next_collect_time = queries.get<ByNextCollectTime>();
     if (query_id == queries_by_next_collect_time.begin()->query_id)
-    {
-        std::unique_lock cv_lock(queries_cv_mutex);
         queries_cv.notify_all();
-    }
 }
 
 void QueryMetricLog::finishQuery(const String & query_id)

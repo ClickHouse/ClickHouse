@@ -65,6 +65,8 @@ public:
             boost::multi_index::hashed_unique<boost::multi_index::tag<ByQueryId>, boost::multi_index::member<QueryMetricLogStatus, String, &QueryMetricLogStatus::query_id>>,
             boost::multi_index::ordered_non_unique<boost::multi_index::tag<ByNextCollectTime>, boost::multi_index::member<QueryMetricLogStatus, std::chrono::system_clock::time_point, &QueryMetricLogStatus::next_collect_time>>>>;
 
+    void stopCollect() override;
+
     // Both startQuery and finishQuery are called from the thread that executes the query
     void startQuery(const String & query_id, TimePoint query_start_time, UInt64 interval_milliseconds);
     void finishQuery(const String & query_id);

@@ -26,7 +26,7 @@ public:
     void startCollect(ContextPtr context_, const String & thread_name, size_t collect_interval_milliseconds_);
 
     /// Stop background thread
-    void stopCollect();
+    virtual void stopCollect();
 
     void shutdown() final;
 
@@ -36,9 +36,9 @@ protected:
 
     std::atomic<bool> is_shutdown_metric_thread{false};
     ContextPtr context;
+    std::unique_ptr<ThreadFromGlobalPool> worker_thread;
 
 private:
-    std::unique_ptr<ThreadFromGlobalPool> flush_thread;
     size_t collect_interval_milliseconds;
 };
 
