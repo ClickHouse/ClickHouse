@@ -24,7 +24,6 @@ void registerAggregateFunctionsQuantile(AggregateFunctionFactory &);
 void registerAggregateFunctionsQuantileDeterministic(AggregateFunctionFactory &);
 void registerAggregateFunctionsQuantileExact(AggregateFunctionFactory &);
 void registerAggregateFunctionsQuantileExactWeighted(AggregateFunctionFactory &);
-void registerAggregateFunctionsQuantileInterpolatedWeighted(AggregateFunctionFactory &);
 void registerAggregateFunctionsQuantileExactLow(AggregateFunctionFactory &);
 void registerAggregateFunctionsQuantileExactHigh(AggregateFunctionFactory &);
 void registerAggregateFunctionsQuantileExactInclusive(AggregateFunctionFactory &);
