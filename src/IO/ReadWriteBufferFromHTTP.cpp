@@ -688,7 +688,7 @@ std::optional<time_t> ReadWriteBufferFromHTTP::tryGetLastModificationTime()
         {
             file_info = getFileInfo();
         }
-        catch (const HTTPException & e)
+        catch (const HTTPException &)
         {
             return std::nullopt;
         }
