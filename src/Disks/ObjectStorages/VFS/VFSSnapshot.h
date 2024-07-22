@@ -1,6 +1,8 @@
 #pragma once
+#include <Disks/ObjectStorages/IObjectStorage.h>
 #include "AppendLog.h"
 #include "IO/ReadHelpers.h"
+#include "VFSShapshotMetadata.h"
 
 #include <fstream>
 #include <optional>
@@ -12,9 +14,6 @@
 
 namespace DB
 {
-class IObjectStorage;
-class ReadBuffer;
-class WriteBuffer;
 
 /////// START OF TMP
 struct WALItem
@@ -61,6 +60,46 @@ struct VFSSnapshotEntry
 
 using VFSSnapshotEntries = std::vector<VFSSnapshotEntry>;
 
-VFSSnapshotEntries mergeWithWals(WALItems & wal_items, ReadBuffer & read_buffer, WriteBuffer & write_buffer);
+class VFSSnapshotDataBase
+{
+public:
+    VFSSnapshotDataBase() : log(getLogger("VFSSnapshotDataBase(unnamed)")) { }
+    virtual ~VFSSnapshotDataBase() = default;
+
+    /// Apply wal on the current snapshot and returns metadata of the updated one.
+    SnapshotMetadata mergeWithWals(WALItems & wal_items, const SnapshotMetadata & old_snapshot_meta);
+
+private:
+    void writeEntryInSnaphot(const VFSSnapshotEntry & entry, WriteBuffer & write_buffer, VFSSnapshotEntries & entries_to_remove);
+    VFSSnapshotEntries mergeWithWalsImpl(WALItems & wal_items, ReadBuffer & read_buffer, WriteBuffer & write_buffer);
+
+    LoggerPtr log;
+
+protected:
+    /// Methods with storage-specific logic.
+    virtual void removeShapshotEntires(const VFSSnapshotEntries & entires_to_remove) = 0;
+    virtual std::unique_ptr<ReadBuffer> getShapshotReadBuffer(const SnapshotMetadata & snapshot_meta) const = 0;
+    virtual std::pair<std::unique_ptr<WriteBuffer>, String>
+    getShapshotWriteBufferAndSnaphotObject(const SnapshotMetadata & snapshot_meta) const = 0;
+};
+
+class VFSSnapshotDataFromObjectStorage : public VFSSnapshotDataBase
+{
+public:
+    VFSSnapshotDataFromObjectStorage() = delete;
+    VFSSnapshotDataFromObjectStorage(ObjectStoragePtr object_storage_, const String & name_)
+        : object_storage(object_storage_), log(getLogger(fmt::format("VFSSnapshotDataFromObjectStorage({})", name_)))
+    {
+    }
+
+protected:
+    void removeShapshotEntires(const VFSSnapshotEntries & entires_to_remove) override;
+    std::unique_ptr<ReadBuffer> getShapshotReadBuffer(const SnapshotMetadata & snapshot_meta) const override;
+    std::pair<std::unique_ptr<WriteBuffer>, String>
+    getShapshotWriteBufferAndSnaphotObject(const SnapshotMetadata & snapshot_meta) const override;
+
+private:
+    ObjectStoragePtr object_storage;
+};
 
 }

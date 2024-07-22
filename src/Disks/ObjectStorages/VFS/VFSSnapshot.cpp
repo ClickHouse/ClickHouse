@@ -2,6 +2,8 @@
 #include <algorithm>
 #include <iostream>
 #include <Disks/ObjectStorages/IObjectStorage.h>
+#include <IO/ReadBufferFromEmptyFile.h>
+
 #include "IO/ReadBufferFromFileBase.h"
 #include "IO/ReadHelpers.h"
 #include "IO/WriteHelpers.h"
@@ -63,7 +65,8 @@ void VFSSnapshotEntry::serialize(WriteBuffer & buf) const
 }
 
 
-void writeEntryInSnaphot(const VFSSnapshotEntry & entry, WriteBuffer & write_buffer, VFSSnapshotEntries & entries_to_remove)
+void VFSSnapshotDataBase::writeEntryInSnaphot(
+    const VFSSnapshotEntry & entry, WriteBuffer & write_buffer, VFSSnapshotEntries & entries_to_remove)
 {
     if (entry.link_count < 0)
     {
@@ -80,7 +83,24 @@ void writeEntryInSnaphot(const VFSSnapshotEntry & entry, WriteBuffer & write_buf
 }
 
 
-VFSSnapshotEntries mergeWithWals(WALItems & wal_items, ReadBuffer & read_buffer, WriteBuffer & write_buffer)
+SnapshotMetadata VFSSnapshotDataBase::mergeWithWals(WALItems & wal_items, const SnapshotMetadata & old_snapshot_meta)
+{
+    /// For most of object stroges (like s3 or azure) we don't need the object path, it's generated randomly.
+    /// But other ones reqiested to set it manually.
+    std::unique_ptr<ReadBuffer> shapshot_read_buffer = getShapshotReadBuffer(old_snapshot_meta);
+    auto [new_shapshot_write_buffer, new_object_key] = getShapshotWriteBufferAndSnaphotObject(old_snapshot_meta);
+
+    LOG_DEBUG(log, "Going to merge WAL batch(size {}) with snapshot (key {})", wal_items.size(), old_snapshot_meta.object_storage_key);
+    auto entires_to_remove = mergeWithWalsImpl(wal_items, *shapshot_read_buffer, *new_shapshot_write_buffer);
+    SnapshotMetadata new_snaphot_meta(new_object_key);
+
+    LOG_DEBUG(log, "Merge snapshot have finished, going to remove {} from object storage", entires_to_remove.size());
+    removeShapshotEntires(entires_to_remove);
+    return new_snaphot_meta;
+}
+
+
+VFSSnapshotEntries VFSSnapshotDataBase::mergeWithWalsImpl(WALItems & wal_items, ReadBuffer & read_buffer, WriteBuffer & write_buffer)
 {
     VFSSnapshotEntries entries_to_remove;
 
@@ -149,4 +169,40 @@ VFSSnapshotEntries mergeWithWals(WALItems & wal_items, ReadBuffer & read_buffer,
     write_buffer.finalize();
     return entries_to_remove;
 }
+
+std::unique_ptr<ReadBuffer> VFSSnapshotDataFromObjectStorage::getShapshotReadBuffer(const SnapshotMetadata & snapshot_meta) const
+{
+    if (!snapshot_meta.is_initial_snaphot)
+    {
+        StoredObject object(snapshot_meta.object_storage_key, "", snapshot_meta.total_size);
+        // to do read settings.
+        auto res = object_storage->readObject(object, {});
+        return res;
+    }
+    return std::make_unique<ReadBufferFromEmptyFile>();
+}
+
+std::pair<std::unique_ptr<WriteBuffer>, String>
+VFSSnapshotDataFromObjectStorage::getShapshotWriteBufferAndSnaphotObject(const SnapshotMetadata & snapshot_meta) const
+{
+    String new_object_path = fmt::format("/vfs_shapshots/shapshot_{}", snapshot_meta.znode_version + 1);
+    auto new_object_key = object_storage->generateObjectKeyForPath(new_object_path);
+    StoredObject new_object(new_object_key.serialize());
+    std::unique_ptr<WriteBuffer> new_shapshot_write_buffer = object_storage->writeObject(new_object, WriteMode::Rewrite);
+
+    return {std::move(new_shapshot_write_buffer), new_object_key.serialize()};
+}
+
+void VFSSnapshotDataFromObjectStorage::removeShapshotEntires(const VFSSnapshotEntries & entires_to_remove)
+{
+    StoredObjects objects_to_remove;
+    objects_to_remove.reserve(entires_to_remove.size());
+
+    for (const auto & entry : entires_to_remove)
+    {
+        objects_to_remove.emplace_back(entry.remote_path);
+    }
+    object_storage->removeObjectsIfExist(objects_to_remove);
+}
+
 }
