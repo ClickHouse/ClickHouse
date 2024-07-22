@@ -73,9 +73,8 @@ bool ParallelReadBuffer::addReaderToPool()
 
     auto worker = read_workers.emplace_back(std::make_shared<ReadWorker>(input, range_start, size));
 
-    schedule([this, my_worker = std::move(worker)]() mutable { readerThreadFunction(std::move(my_worker)); }, Priority{});
-    /// increase number of workers only after we are sure that the reader was scheduled
     ++active_working_readers;
+    schedule([this, my_worker = std::move(worker)]() mutable { readerThreadFunction(std::move(my_worker)); }, Priority{});
 
     return true;
 }

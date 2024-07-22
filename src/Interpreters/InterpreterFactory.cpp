@@ -60,7 +60,6 @@
 #include <Parsers/ASTExternalDDLQuery.h>
 #include <Common/ProfileEvents.h>
 #include <Common/typeid_cast.h>
-#include <Core/Settings.h>
 
 
 namespace ProfileEvents

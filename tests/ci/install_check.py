@@ -1,21 +1,25 @@
 #!/usr/bin/env python3
 
 import argparse
+
 import logging
-import subprocess
 import sys
+import subprocess
 from pathlib import Path
 from shutil import copy2
 from typing import Dict
 
+
 from build_download_helper import download_builds_filter
+
 from compress_files import compress_fast
-from docker_images_helper import DockerImage, get_docker_image, pull_image
-from env_helper import REPORT_PATH
-from env_helper import TEMP_PATH as TEMP
-from report import FAIL, FAILURE, OK, SUCCESS, JobReport, TestResult, TestResults
+from docker_images_helper import DockerImage, pull_image, get_docker_image
+from env_helper import CI, REPORT_PATH, TEMP_PATH as TEMP
+from report import JobReport, TestResults, TestResult, FAILURE, FAIL, OK, SUCCESS
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
+from ci_utils import set_job_timeout
+
 
 RPM_IMAGE = "clickhouse/install-rpm-test"
 DEB_IMAGE = "clickhouse/install-deb-test"
@@ -251,6 +255,9 @@ def main():
     stopwatch = Stopwatch()
 
     args = parse_args()
+
+    if CI:
+        set_job_timeout()
 
     TEMP_PATH.mkdir(parents=True, exist_ok=True)
     LOGS_PATH.mkdir(parents=True, exist_ok=True)

@@ -908,63 +908,6 @@ def test_mysql_point(started_cluster):
     conn.close()
 
 
-def test_joins(started_cluster):
-    conn = get_mysql_conn(started_cluster, cluster.mysql8_ip)
-    drop_mysql_table(conn, "test_joins_mysql_users")
-    with conn.cursor() as cursor:
-        cursor.execute(
-            "CREATE TABLE clickhouse.test_joins_mysql_users (id INT NOT NULL, name varchar(50) NOT NULL, created TIMESTAMP, PRIMARY KEY (`id`)) ENGINE=InnoDB;"
-        )
-        cursor.execute(
-            f"INSERT INTO clickhouse.test_joins_mysql_users VALUES (469722, 'user@example.com', '2019-08-30 07:55:01')"
-        )
-
-    drop_mysql_table(conn, "test_joins_mysql_tickets")
-    with conn.cursor() as cursor:
-        cursor.execute(
-            "CREATE TABLE clickhouse.test_joins_mysql_tickets (id INT NOT NULL, subject varchar(50), created TIMESTAMP, creator INT NOT NULL, PRIMARY KEY (`id`)) ENGINE=InnoDB;"
-        )
-        cursor.execute(
-            f"INSERT INTO clickhouse.test_joins_mysql_tickets VALUES (281607, 'Feedback', '2024-06-25 12:09:41', 469722)"
-        )
-
-    conn.commit()
-
-    node1.query(
-        """
-        CREATE TABLE test_joins_table_users
-        (
-            `id` Int32,
-            `Name` String,
-            `Created` Nullable(DateTime)
-        )
-        ENGINE = MySQL('mysql80:3306', 'clickhouse', 'test_joins_mysql_users', 'root', 'clickhouse');
-        """
-    )
-
-    node1.query(
-        """
-        CREATE TABLE test_joins_table_tickets
-        (
-            `id` Int32,
-            `Subject` Nullable(String),
-            `Created` Nullable(DateTime),
-            `Creator` Int32
-        )
-        ENGINE = MySQL('mysql80:3306', 'clickhouse', 'test_joins_mysql_tickets', 'root', 'clickhouse');
-        """
-    )
-
-    node1.query(
-        """
-        SELECT test_joins_table_tickets.id, Subject, test_joins_table_tickets.Created, Name
-        FROM test_joins_table_tickets
-        LEFT JOIN test_joins_table_users ON test_joins_table_tickets.Creator = test_joins_table_users.id
-        WHERE test_joins_table_tickets.Created = '2024-06-25 12:09:41'
-        """
-    ) == "281607\tFeedback\t2024-06-25 12:09:41\tuser@example.com\n"
-
-
 if __name__ == "__main__":
     with contextmanager(started_cluster)() as cluster:
         for name, instance in list(cluster.instances.items()):

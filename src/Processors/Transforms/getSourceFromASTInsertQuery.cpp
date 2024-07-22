@@ -14,8 +14,7 @@
 #include <QueryPipeline/Pipe.h>
 #include <Processors/Formats/IInputFormat.h>
 #include "IO/CompressionMethod.h"
-#include <Core/Settings.h>
-#include <Parsers/ASTLiteral.h>
+#include "Parsers/ASTLiteral.h"
 
 
 namespace DB

@@ -21,9 +21,6 @@
 #include <base/sort.h>
 #include <Common/JSONBuilder.h>
 
-#include <absl/container/flat_hash_map.h>
-#include <absl/container/inlined_vector.h>
-
 
 namespace DB
 {
@@ -592,36 +589,8 @@ void ActionsDAG::removeUnusedActions(const std::unordered_set<const Node *> & us
         }
     }
 
-    std::erase_if(nodes, [&](const Node & node) { return !visited_nodes.contains(&node); });
+    nodes.remove_if([&](const Node & node) { return !visited_nodes.contains(&node); });
     std::erase_if(inputs, [&](const Node * node) { return !visited_nodes.contains(node); });
-}
-
-
-void ActionsDAG::removeAliasesForFilter(const std::string & filter_name)
-{
-    const auto & filter_node = findInOutputs(filter_name);
-    std::stack<Node *> stack;
-    stack.push(const_cast<Node *>(&filter_node));
-
-    std::unordered_set<const Node *> visited;
-    visited.insert(stack.top());
-
-    while (!stack.empty())
-    {
-        auto * node = stack.top();
-        stack.pop();
-        for (auto & child : node->children)
-        {
-            while (child->type == ActionType::ALIAS)
-                child = child->children.front();
-
-            if (!visited.contains(child))
-            {
-                stack.push(const_cast<Node *>(child));
-                visited.insert(child);
-            }
-        }
-    }
 }
 
 ActionsDAGPtr ActionsDAG::cloneSubDAG(const NodeRawConstPtrs & outputs, bool remove_aliases)
@@ -739,18 +708,16 @@ static ColumnWithTypeAndName executeActionForPartialResult(const ActionsDAG::Nod
     return res_column;
 }
 
-Block ActionsDAG::updateHeader(const Block & header) const
+Block ActionsDAG::updateHeader(Block header) const
 {
     IntermediateExecutionResult node_to_column;
     std::set<size_t> pos_to_remove;
 
     {
-        using inline_vector = absl::InlinedVector<size_t, 7>; // 64B, holding max 7 size_t elements inlined
-        absl::flat_hash_map<std::string_view, inline_vector> input_positions;
+        std::unordered_map<std::string_view, std::list<size_t>> input_positions;
 
-        /// We insert from last to first in the inlinedVector so it's easier to pop_back matches later
-        for (size_t pos = inputs.size(); pos != 0; pos--)
-            input_positions[inputs[pos - 1]->result_name].emplace_back(pos - 1);
+        for (size_t pos = 0; pos < inputs.size(); ++pos)
+            input_positions[inputs[pos]->result_name].emplace_back(pos);
 
         for (size_t pos = 0; pos < header.columns(); ++pos)
         {
@@ -758,11 +725,10 @@ Block ActionsDAG::updateHeader(const Block & header) const
             auto it = input_positions.find(col.name);
             if (it != input_positions.end() && !it->second.empty())
             {
+                auto & list = it->second;
                 pos_to_remove.insert(pos);
-
-                auto & v = it->second;
-                node_to_column[inputs[v.back()]] = col;
-                v.pop_back();
+                node_to_column[inputs[list.front()]] = col;
+                list.pop_front();
             }
         }
     }
@@ -780,18 +746,18 @@ Block ActionsDAG::updateHeader(const Block & header) const
         throw;
     }
 
+    if (isInputProjected())
+        header.clear();
+    else
+        header.erase(pos_to_remove);
 
     Block res;
-    res.reserve(result_columns.size());
+
     for (auto & col : result_columns)
         res.insert(std::move(col));
 
-    res.reserve(header.columns() - pos_to_remove.size());
-    for (size_t i = 0; i < header.columns(); i++)
-    {
-        if (!pos_to_remove.contains(i))
-            res.insert(header.data[i]);
-    }
+    for (auto && item : header)
+        res.insert(std::move(item));
 
     return res;
 }
@@ -1147,33 +1113,8 @@ void ActionsDAG::project(const NamesWithAliases & projection)
     }
 
     removeUnusedActions();
-}
-
-void ActionsDAG::appendInputsForUnusedColumns(const Block & sample_block)
-{
-    std::unordered_map<std::string_view, std::list<size_t>> names_map;
-    size_t num_columns = sample_block.columns();
-    for (size_t pos = 0; pos < num_columns; ++pos)
-        names_map[sample_block.getByPosition(pos).name].push_back(pos);
-
-    for (const auto * input : inputs)
-    {
-        auto & positions = names_map[input->result_name];
-        if (positions.empty())
-            throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK,
-                            "Not found column {} in block {}", input->result_name, sample_block.dumpStructure());
-
-        positions.pop_front();
-    }
-
-    for (const auto & [_, positions] : names_map)
-    {
-        for (auto pos : positions)
-        {
-            const auto & col = sample_block.getByPosition(pos);
-            addInput(col.name, col.type);
-        }
-    }
+    projectInput();
+    projected_output = true;
 }
 
 bool ActionsDAG::tryRestoreColumn(const std::string & column_name)
@@ -1249,6 +1190,8 @@ bool ActionsDAG::removeUnusedResult(const std::string & column_name)
 ActionsDAGPtr ActionsDAG::clone() const
 {
     auto actions = std::make_shared<ActionsDAG>();
+    actions->project_input = project_input;
+    actions->projected_output = projected_output;
 
     std::unordered_map<const Node *, Node *> copy_map;
 
@@ -1342,6 +1285,9 @@ std::string ActionsDAG::dumpDAG() const
         out << ' ' << map[node];
     out << '\n';
 
+    out << "Project input: " << project_input << '\n';
+    out << "Projected output: " << projected_output << '\n';
+
     return out.str();
 }
 
@@ -1426,7 +1372,7 @@ ActionsDAGPtr ActionsDAG::makeConvertingActions(
 
     FunctionOverloadResolverPtr func_builder_materialize = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionMaterialize>());
 
-    std::unordered_map<std::string_view, std::list<size_t>> inputs;
+    std::map<std::string_view, std::list<size_t>> inputs;
     if (mode == MatchColumnsMode::Name)
     {
         size_t input_nodes_size = actions_dag->inputs.size();
@@ -1542,7 +1488,8 @@ ActionsDAGPtr ActionsDAG::makeConvertingActions(
     }
 
     actions_dag->outputs.swap(projection);
-    actions_dag->removeUnusedActions(false);
+    actions_dag->removeUnusedActions();
+    actions_dag->projectInput();
 
     return actions_dag;
 }
@@ -1600,6 +1547,10 @@ void ActionsDAG::mergeInplace(ActionsDAG && second)
             auto it = first_result.find(input_node->result_name);
             if (it == first_result.end() || it->second.empty())
             {
+                if (first.project_input)
+                    throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
+                                    "Cannot find column {} in ActionsDAG result", input_node->result_name);
+
                 first.inputs.push_back(input_node);
             }
             else
@@ -1635,6 +1586,13 @@ void ActionsDAG::mergeInplace(ActionsDAG && second)
         }
     }
 
+    /// Update output nodes.
+    if (second.project_input)
+    {
+        first.outputs.swap(second.outputs);
+        first.project_input = true;
+    }
+    else
     {
         /// Add not removed result from first actions.
         for (const auto * output_node : first.outputs)
@@ -1650,9 +1608,11 @@ void ActionsDAG::mergeInplace(ActionsDAG && second)
     }
 
     first.nodes.splice(first.nodes.end(), std::move(second.nodes));
+
+    first.projected_output = second.projected_output;
 }
 
-void ActionsDAG::mergeNodes(ActionsDAG && second, NodeRawConstPtrs * out_outputs)
+void ActionsDAG::mergeNodes(ActionsDAG && second)
 {
     std::unordered_map<std::string, const ActionsDAG::Node *> node_name_to_node;
     for (auto & node : nodes)
@@ -1706,12 +1666,6 @@ void ActionsDAG::mergeNodes(ActionsDAG && second, NodeRawConstPtrs * out_outputs
         nodes_to_move_from_second_dag.insert(node);
 
         nodes_to_process.pop_back();
-    }
-
-    if (out_outputs)
-    {
-        for (auto & node : second.getOutputs())
-            out_outputs->push_back(node_name_to_node.at(node->result_name));
     }
 
     if (nodes_to_move_from_second_dag.empty())
@@ -2045,6 +1999,7 @@ ActionsDAG::SplitResult ActionsDAG::splitActionsBeforeArrayJoin(const NameSet & 
     }
 
     auto res = split(split_nodes);
+    res.second->project_input = project_input;
     return res;
 }
 
@@ -2088,6 +2043,7 @@ ActionsDAG::SplitResult ActionsDAG::splitActionsBySortingDescription(const NameS
                 dumpDAG());
 
     auto res = split(split_nodes);
+    res.second->project_input = project_input;
     return res;
 }
 
@@ -2159,6 +2115,7 @@ ActionsDAG::SplitResult ActionsDAG::splitActionsForFilter(const std::string & co
 
     std::unordered_set<const Node *> split_nodes = {node};
     auto res = split(split_nodes);
+    res.second->project_input = project_input;
     return res;
 }
 
@@ -2745,7 +2702,11 @@ void ActionsDAG::removeUnusedConjunctions(NodeRawConstPtrs rejected_conjunctions
 
     std::unordered_set<const Node *> used_inputs;
     for (const auto * input : inputs)
+    {
+        if (removes_filter && input == predicate)
+            continue;
         used_inputs.insert(input);
+    }
 
     removeUnusedActions(used_inputs);
 }
@@ -2952,7 +2913,6 @@ ActionsDAGPtr ActionsDAG::buildFilterActionsDAG(
 
                 FunctionOverloadResolverPtr function_overload_resolver;
 
-                String result_name;
                 if (node->function_base->getName() == "indexHint")
                 {
                     ActionsDAG::NodeRawConstPtrs children;
@@ -2973,11 +2933,6 @@ ActionsDAGPtr ActionsDAG::buildFilterActionsDAG(
                             auto index_hint_function_clone = std::make_shared<FunctionIndexHint>();
                             index_hint_function_clone->setActions(std::move(index_hint_filter_dag));
                             function_overload_resolver = std::make_shared<FunctionToOverloadResolverAdaptor>(std::move(index_hint_function_clone));
-                            /// Keep the unique name like "indexHint(foo)" instead of replacing it
-                            /// with "indexHint()". Otherwise index analysis (which does look at
-                            /// indexHint arguments that we're hiding here) will get confused by the
-                            /// multiple substantially different nodes with the same result name.
-                            result_name = node->result_name;
                         }
                     }
                 }
@@ -2992,7 +2947,7 @@ ActionsDAGPtr ActionsDAG::buildFilterActionsDAG(
                     function_base,
                     std::move(function_children),
                     std::move(arguments),
-                    result_name,
+                    {},
                     node->result_type,
                     all_const);
                 break;

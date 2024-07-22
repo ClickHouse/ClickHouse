@@ -19,7 +19,6 @@
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
-#include <Storages/StorageMerge.h>
 
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ArrayJoinAction.h>
@@ -425,9 +424,6 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
         /// of the grouping sets, we could not push the filter down.
         if (aggregating->isGroupingSets())
         {
-            /// Cannot push down filter if type has been changed.
-            if (aggregating->isGroupByUseNulls())
-                return 0;
 
             const auto & actions = filter->getExpression();
             const auto & filter_node = actions->findInOutputs(filter->getFilterColumnName());
@@ -607,14 +603,6 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
         ///       - Filter - Something
 
         return 3;
-    }
-
-    if (auto * read_from_merge = typeid_cast<ReadFromMerge *>(child.get()))
-    {
-        FilterDAGInfo info{filter->getExpression(), filter->getFilterColumnName(), filter->removesFilterColumn()};
-        read_from_merge->addFilter(std::move(info));
-        std::swap(*parent_node, *child_node);
-        return 1;
     }
 
     return 0;

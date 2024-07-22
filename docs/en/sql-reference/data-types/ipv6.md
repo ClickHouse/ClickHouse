@@ -57,19 +57,6 @@ SELECT toTypeName(from), hex(from) FROM hits LIMIT 1;
 └──────────────────┴──────────────────────────────────┘
 ```
 
-IPv6 addresses can be directly compared to IPv4 addresses:
-
-```sql
-SELECT toIPv4('127.0.0.1') = toIPv6('::ffff:127.0.0.1');
-```
-
-```text
-┌─equals(toIPv4('127.0.0.1'), toIPv6('::ffff:127.0.0.1'))─┐
-│                                                       1 │
-└─────────────────────────────────────────────────────────┘
-```
-
-
 **See Also**
 
 - [Functions for Working with IPv4 and IPv6 Addresses](../functions/ip-address-functions.md)

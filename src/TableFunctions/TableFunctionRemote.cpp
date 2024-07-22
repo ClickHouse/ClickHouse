@@ -17,7 +17,6 @@
 #include <Common/Macros.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Core/Defines.h>
-#include <Core/Settings.h>
 #include <base/range.h>
 #include "registerTableFunctions.h"
 

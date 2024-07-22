@@ -30,8 +30,6 @@
 #include <Planner/TableExpressionData.h>
 #include <Planner/Utils.h>
 
-#include <Core/Settings.h>
-
 
 namespace DB
 {
@@ -62,7 +60,6 @@ String calculateActionNodeNameWithCastIfNeeded(const ConstantNode & constant_nod
 
     if (constant_node.requiresCastCall())
     {
-        /// Projection name for constants is <value>_<type> so for _cast(1, 'String') we will have _cast(1_Uint8, 'String'_String)
         buffer << ", '" << constant_node.getResultType()->getName() << "'_String)";
     }
 
@@ -415,11 +412,11 @@ private:
 class ActionsScopeNode
 {
 public:
-    explicit ActionsScopeNode(ActionsDAG & actions_dag_, QueryTreeNodePtr scope_node_)
-        : actions_dag(actions_dag_)
+    explicit ActionsScopeNode(ActionsDAGPtr actions_dag_, QueryTreeNodePtr scope_node_)
+        : actions_dag(std::move(actions_dag_))
         , scope_node(std::move(scope_node_))
     {
-        for (const auto & node : actions_dag.getNodes())
+        for (const auto & node : actions_dag->getNodes())
             node_name_to_node[node.result_name] = &node;
     }
 
@@ -458,7 +455,7 @@ public:
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "No node with name {}. There are only nodes {}",
                 node_name,
-                actions_dag.dumpNames());
+                actions_dag->dumpNames());
 
         return it->second;
     }
@@ -469,7 +466,7 @@ public:
         if (it != node_name_to_node.end())
             return it->second;
 
-        const auto * node = &actions_dag.addInput(node_name, column_type);
+        const auto * node = &actions_dag->addInput(node_name, column_type);
         node_name_to_node[node->result_name] = node;
 
         return node;
@@ -481,7 +478,7 @@ public:
         if (it != node_name_to_node.end())
             return it->second;
 
-        const auto * node = &actions_dag.addInput(column);
+        const auto * node = &actions_dag->addInput(column);
         node_name_to_node[node->result_name] = node;
 
         return node;
@@ -505,12 +502,12 @@ public:
             if (node_name_to_node.find(dupped_name) != node_name_to_node.end())
                 return dupped_name;
 
-            const auto * node = &actions_dag.addColumn(column);
+            const auto * node = &actions_dag->addColumn(column);
             node_name_to_node[dupped_name] = node;
             return dupped_name;
         }
 
-        const auto * node = &actions_dag.addColumn(column);
+        const auto * node = &actions_dag->addColumn(column);
         node_name_to_node[node->result_name] = node;
 
         return {node_name};
@@ -523,7 +520,7 @@ public:
         if (it != node_name_to_node.end())
             return it->second;
 
-        const auto * node = &actions_dag.addFunction(function, children, node_name);
+        const auto * node = &actions_dag->addFunction(function, children, node_name);
         node_name_to_node[node->result_name] = node;
 
         return node;
@@ -535,7 +532,7 @@ public:
         if (it != node_name_to_node.end())
             return it->second;
 
-        const auto * node = &actions_dag.addArrayJoin(*child, node_name);
+        const auto * node = &actions_dag->addArrayJoin(*child, node_name);
         node_name_to_node[node->result_name] = node;
 
         return node;
@@ -543,15 +540,14 @@ public:
 
 private:
     std::unordered_map<String, const ActionsDAG::Node *> node_name_to_node;
-    ActionsDAG & actions_dag;
+    ActionsDAGPtr actions_dag;
     QueryTreeNodePtr scope_node;
 };
 
 class PlannerActionsVisitorImpl
 {
 public:
-    PlannerActionsVisitorImpl(
-        ActionsDAG & actions_dag,
+    PlannerActionsVisitorImpl(ActionsDAGPtr actions_dag,
         const PlannerContextPtr & planner_context_,
         bool use_column_identifier_as_action_node_name_,
         bool always_use_const_column_for_constant_nodes_);
@@ -617,8 +613,7 @@ private:
     bool always_use_const_column_for_constant_nodes;
 };
 
-PlannerActionsVisitorImpl::PlannerActionsVisitorImpl(
-    ActionsDAG & actions_dag,
+PlannerActionsVisitorImpl::PlannerActionsVisitorImpl(ActionsDAGPtr actions_dag,
     const PlannerContextPtr & planner_context_,
     bool use_column_identifier_as_action_node_name_,
     bool always_use_const_column_for_constant_nodes_)
@@ -627,7 +622,7 @@ PlannerActionsVisitorImpl::PlannerActionsVisitorImpl(
     , use_column_identifier_as_action_node_name(use_column_identifier_as_action_node_name_)
     , always_use_const_column_for_constant_nodes(always_use_const_column_for_constant_nodes_)
 {
-    actions_stack.emplace_back(actions_dag, nullptr);
+    actions_stack.emplace_back(std::move(actions_dag), nullptr);
 }
 
 ActionsDAG::NodeRawConstPtrs PlannerActionsVisitorImpl::visit(QueryTreeNodePtr expression_node)
@@ -782,7 +777,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     }
 
     auto lambda_actions_dag = std::make_shared<ActionsDAG>();
-    actions_stack.emplace_back(*lambda_actions_dag, node);
+    actions_stack.emplace_back(lambda_actions_dag, node);
 
     auto [lambda_expression_node_name, levels] = visitImpl(lambda_node.getExpression());
     lambda_actions_dag->getOutputs().push_back(actions_stack.back().getNodeOrThrow(lambda_expression_node_name));
@@ -910,7 +905,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
 
     for (const auto & argument : function_node.getArguments())
     {
-        auto index_hint_argument_expression_dag_nodes = actions_visitor.visit(*index_hint_actions_dag, argument);
+        auto index_hint_argument_expression_dag_nodes = actions_visitor.visit(index_hint_actions_dag, argument);
 
         for (auto & expression_dag_node : index_hint_argument_expression_dag_nodes)
         {
@@ -1041,7 +1036,7 @@ PlannerActionsVisitor::PlannerActionsVisitor(
     , always_use_const_column_for_constant_nodes(always_use_const_column_for_constant_nodes_)
 {}
 
-ActionsDAG::NodeRawConstPtrs PlannerActionsVisitor::visit(ActionsDAG & actions_dag, QueryTreeNodePtr expression_node)
+ActionsDAG::NodeRawConstPtrs PlannerActionsVisitor::visit(ActionsDAGPtr actions_dag, QueryTreeNodePtr expression_node)
 {
     PlannerActionsVisitorImpl actions_visitor_impl(
         actions_dag, planner_context, use_column_identifier_as_action_node_name, always_use_const_column_for_constant_nodes);

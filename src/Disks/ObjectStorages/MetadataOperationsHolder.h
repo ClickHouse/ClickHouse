@@ -1,7 +1,6 @@
 #pragma once
 
 #include <mutex>
-#include <vector>
 #include <Disks/ObjectStorages/IMetadataOperation.h>
 #include <Disks/ObjectStorages/MetadataStorageTransactionState.h>
 #include <Common/SharedMutex.h>

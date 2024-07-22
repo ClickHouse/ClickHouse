@@ -1,6 +1,5 @@
 #include <Storages/MergeTree/ApproximateNearestNeighborIndexesCommon.h>
 
-#include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -55,7 +54,7 @@ ApproximateNearestNeighborInformation::Metric stringToMetric(std::string_view me
 ApproximateNearestNeighborCondition::ApproximateNearestNeighborCondition(const SelectQueryInfo & query_info, ContextPtr context)
     : block_with_constants(KeyCondition::getBlockWithConstants(query_info.query, query_info.syntax_analyzer_result, context))
     , index_granularity(context->getMergeTreeSettings().index_granularity)
-    , max_limit_for_ann_queries(context->getSettingsRef().max_limit_for_ann_queries)
+    , max_limit_for_ann_queries(context->getSettings().max_limit_for_ann_queries)
     , index_is_useful(checkQueryStructure(query_info))
 {}
 
