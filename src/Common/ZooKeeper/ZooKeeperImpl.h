@@ -8,7 +8,6 @@
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperArgs.h>
-#include <Common/ZooKeeper/ZooKeeper.h>
 #include <Coordination/KeeperConstants.h>
 #include <Coordination/KeeperFeatureFlags.h>
 
@@ -103,12 +102,21 @@ using namespace DB;
 class ZooKeeper final : public IKeeper
 {
 public:
+    struct Node
+    {
+        Poco::Net::SocketAddress address;
+        UInt8 original_index;
+        bool secure;
+    };
+
+    using Nodes = std::vector<Node>;
+
     /** Connection to nodes is performed in order. If you want, shuffle them manually.
       * Operation timeout couldn't be greater than session timeout.
       * Operation timeout applies independently for network read, network write, waiting for events and synchronization.
       */
     ZooKeeper(
-        const zkutil::ShuffleHosts & nodes,
+        const Nodes & nodes,
         const zkutil::ZooKeeperArgs & args_,
         std::shared_ptr<ZooKeeperLog> zk_log_);
 
@@ -122,7 +130,9 @@ public:
     String getConnectedHostPort() const override { return (original_index == -1) ? "" : args.hosts[original_index]; }
     int32_t getConnectionXid() const override { return next_xid.load(); }
 
-    String tryGetAvailabilityZone() override;
+    /// A ZooKeeper session can have an optional deadline set on it.
+    /// After it has been reached, the session needs to be finalized.
+    bool hasReachedDeadline() const override;
 
     /// Useful to check owner of ephemeral node.
     int64_t getSessionID() const override { return session_id; }
@@ -261,6 +271,7 @@ private:
         clock::time_point time;
     };
 
+    std::optional<clock::time_point> client_session_deadline {};
     using RequestsQueue = ConcurrentBoundedQueue<RequestInfo>;
 
     RequestsQueue requests_queue{1024};
@@ -305,7 +316,7 @@ private:
     LoggerPtr log;
 
     void connect(
-        const zkutil::ShuffleHosts & node,
+        const Nodes & node,
         Poco::Timespan connection_timeout);
 
     void sendHandshake();
@@ -335,10 +346,9 @@ private:
 
     void logOperationIfNeeded(const ZooKeeperRequestPtr & request, const ZooKeeperResponsePtr & response = nullptr, bool finalize = false, UInt64 elapsed_microseconds = 0);
 
-    std::optional<String> tryGetSystemZnode(const std::string & path, const std::string & description);
-
     void initFeatureFlags();
 
+    void checkSessionDeadline() const;
 
     CurrentMetrics::Increment active_session_metric_increment{CurrentMetrics::ZooKeeperSession};
     std::shared_ptr<ZooKeeperLog> zk_log;

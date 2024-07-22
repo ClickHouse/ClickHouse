@@ -12,7 +12,6 @@
 #include <Common/FailPoint.h>
 #include <Common/PageCache.h>
 #include <Common/HostResolvePool.h>
-#include <Core/ServerSettings.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Context.h>

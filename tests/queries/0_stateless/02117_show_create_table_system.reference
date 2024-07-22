@@ -286,6 +286,7 @@ CREATE TABLE system.functions
 (
     `name` String,
     `is_aggregate` UInt8,
+    `is_deterministic` Nullable(UInt8),
     `case_insensitive` UInt8,
     `alias_to` String,
     `create_query` String,
@@ -1135,7 +1136,7 @@ CREATE TABLE system.users
     `name` String,
     `id` UUID,
     `storage` String,
-    `auth_type` Enum8('no_password' = 0, 'plaintext_password' = 1, 'sha256_password' = 2, 'double_sha1_password' = 3, 'ldap' = 4, 'kerberos' = 5, 'ssl_certificate' = 6, 'bcrypt_password' = 7, 'ssh_key' = 8, 'http' = 9, 'jwt' = 10),
+    `auth_type` Enum8('no_password' = 0, 'plaintext_password' = 1, 'sha256_password' = 2, 'double_sha1_password' = 3, 'ldap' = 4, 'kerberos' = 5, 'ssl_certificate' = 6, 'bcrypt_password' = 7, 'ssh_key' = 8, 'http' = 9),
     `auth_params` String,
     `host_ip` Array(String),
     `host_names` Array(String),

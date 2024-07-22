@@ -1,7 +1,6 @@
 #include <Storages/IStorage.h>
 
 #include <Common/StringUtils.h>
-#include <Core/Settings.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>

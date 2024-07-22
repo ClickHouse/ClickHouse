@@ -314,7 +314,7 @@ REGISTER_FUNCTION(SubstringIndex)
     factory.registerFunction<FunctionSubstringIndex<false>>(); /// substringIndex
     factory.registerFunction<FunctionSubstringIndex<true>>(); /// substringIndexUTF8
 
-    factory.registerAlias("SUBSTRING_INDEX", "substringIndex", FunctionFactory::Case::Insensitive);
+    factory.registerAlias("SUBSTRING_INDEX", "substringIndex", FunctionFactory::CaseInsensitive);
 }
 
 

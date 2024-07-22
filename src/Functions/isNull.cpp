@@ -112,7 +112,7 @@ private:
 
 REGISTER_FUNCTION(IsNull)
 {
-    factory.registerFunction<FunctionIsNull>({}, FunctionFactory::Case::Insensitive);
+    factory.registerFunction<FunctionIsNull>({}, FunctionFactory::CaseInsensitive);
 }
 
 }

@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/aggregate-functions/reference/singlevalueornull
-sidebar_position: 184
+sidebar_position: 220
 ---
 
 # singleValueOrNull
@@ -16,7 +16,7 @@ singleValueOrNull(x)
 
 **Parameters**
 
-- `x` — Column of any [data type](../../data-types/index.md) (except [Map](../../data-types/map.md), [Array](../../data-types/array.md) or [Tuple](../../data-types/tuple) which cannot be of type [Nullable](../../data-types/nullable.md)).
+- `x` — Column of any [data type](../../data-types/index.md).
 
 **Returned values**
 

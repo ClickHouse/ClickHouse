@@ -173,7 +173,7 @@ bool IDataType::hasDynamicSubcolumns() const
     auto data = SubstreamData(getDefaultSerialization()).withType(getPtr());
     auto callback = [&](const SubstreamPath &, const String &, const SubstreamData & subcolumn_data)
     {
-        has_dynamic_subcolumns |= subcolumn_data.type && subcolumn_data.type->hasDynamicSubcolumnsData();
+        has_dynamic_subcolumns |= subcolumn_data.type->hasDynamicSubcolumnsData();
     };
     forEachSubcolumn(callback, data);
     return has_dynamic_subcolumns;

@@ -22,8 +22,8 @@ namespace DB
 
 REGISTER_FUNCTION(CountMatches)
 {
-    factory.registerFunction<FunctionCountMatches<FunctionCountMatchesCaseSensitive>>();
-    factory.registerFunction<FunctionCountMatches<FunctionCountMatchesCaseInsensitive>>();
+    factory.registerFunction<FunctionCountMatches<FunctionCountMatchesCaseSensitive>>({}, FunctionFactory::CaseSensitive);
+    factory.registerFunction<FunctionCountMatches<FunctionCountMatchesCaseInsensitive>>({}, FunctionFactory::CaseSensitive);
 }
 
 }

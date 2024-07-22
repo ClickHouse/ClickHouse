@@ -1170,10 +1170,6 @@ Data in the VALUES clause of INSERT queries is processed by a separate stream pa
 
 Default value: 262144 (= 256 KiB).
 
-:::note
-`max_query_size` cannot be set within an SQL query (e.g., `SELECT now() SETTINGS max_query_size=10000`) because ClickHouse needs to allocate a buffer to parse the query, and this buffer size is determined by the `max_query_size` setting, which must be configured before the query is executed.
-:::
-
 ## max_parser_depth {#max_parser_depth}
 
 Limits maximum recursion depth in the recursive descent parser. Allows controlling the stack size.
@@ -1358,24 +1354,11 @@ Connection pool size for PostgreSQL table engine and database engine.
 
 Default value: 16
 
-## postgresql_connection_attempt_timeout {#postgresql-connection-attempt-timeout}
-
-Connection timeout in seconds of a single attempt to connect PostgreSQL end-point.
-The value is passed as a `connect_timeout` parameter of the connection URL.
-
-Default value: `2`.
-
 ## postgresql_connection_pool_wait_timeout {#postgresql-connection-pool-wait-timeout}
 
 Connection pool push/pop timeout on empty pool for PostgreSQL table engine and database engine. By default it will block on empty pool.
 
 Default value: 5000
-
-## postgresql_connection_pool_retries {#postgresql-connection-pool-retries}
-
-The maximum number of retries to establish a connection with the PostgreSQL end-point.
-
-Default value: `2`.
 
 ## postgresql_connection_pool_auto_close_connection {#postgresql-connection-pool-auto-close-connection}
 
@@ -2553,7 +2536,7 @@ Possible values:
 - 0 — Optimization disabled.
 - 1 — Optimization enabled.
 
-Default value: `1`.
+Default value: `0`.
 
 ## optimize_trivial_count_query {#optimize-trivial-count-query}
 

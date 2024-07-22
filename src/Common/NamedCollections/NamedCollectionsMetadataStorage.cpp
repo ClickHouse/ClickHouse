@@ -5,7 +5,6 @@
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
-#include <Core/Settings.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteHelpers.h>
@@ -68,7 +67,7 @@ public:
 
     virtual bool removeIfExists(const std::string & path) = 0;
 
-    virtual bool isReplicated() const = 0;
+    virtual bool supportsPeriodicUpdate() const = 0;
 
     virtual bool waitUpdate(size_t /* timeout */) { return false; }
 };
@@ -90,7 +89,7 @@ public:
 
     ~LocalStorage() override = default;
 
-    bool isReplicated() const override { return false; }
+    bool supportsPeriodicUpdate() const override { return false; }
 
     std::vector<std::string> list() const override
     {
@@ -116,32 +115,32 @@ public:
         return elements;
     }
 
-    bool exists(const std::string & file_name) const override
+    bool exists(const std::string & path) const override
     {
-        return fs::exists(getPath(file_name));
+        return fs::exists(getPath(path));
     }
 
-    std::string read(const std::string & file_name) const override
+    std::string read(const std::string & path) const override
     {
-        ReadBufferFromFile in(getPath(file_name));
+        ReadBufferFromFile in(getPath(path));
         std::string data;
         readStringUntilEOF(data, in);
         return data;
     }
 
-    void write(const std::string & file_name, const std::string & data, bool replace) override
+    void write(const std::string & path, const std::string & data, bool replace) override
     {
-        if (!replace && fs::exists(file_name))
+        if (!replace && fs::exists(path))
         {
             throw Exception(
                 ErrorCodes::NAMED_COLLECTION_ALREADY_EXISTS,
                 "Metadata file {} for named collection already exists",
-                file_name);
+                path);
         }
 
         fs::create_directories(root_path);
 
-        auto tmp_path = getPath(file_name + ".tmp");
+        auto tmp_path = getPath(path + ".tmp");
         WriteBufferFromFile out(tmp_path, data.size(), O_WRONLY | O_CREAT | O_EXCL);
         writeString(data, out);
 
@@ -150,32 +149,28 @@ public:
             out.sync();
         out.close();
 
-        fs::rename(tmp_path, getPath(file_name));
+        fs::rename(tmp_path, getPath(path));
     }
 
-    void remove(const std::string & file_name) override
+    void remove(const std::string & path) override
     {
-        if (!removeIfExists(file_name))
+        if (!removeIfExists(getPath(path)))
         {
             throw Exception(
                 ErrorCodes::NAMED_COLLECTION_DOESNT_EXIST,
-                "Cannot remove `{}`, because it doesn't exist", file_name);
+                "Cannot remove `{}`, because it doesn't exist", path);
         }
     }
 
-    bool removeIfExists(const std::string & file_name) override
+    bool removeIfExists(const std::string & path) override
     {
-        return fs::remove(getPath(file_name));
+        return fs::remove(getPath(path));
     }
 
 private:
-    std::string getPath(const std::string & file_name) const
+    std::string getPath(const std::string & path) const
     {
-        const auto file_name_as_path = fs::path(file_name);
-        if (file_name_as_path.is_absolute())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Filename {} cannot be an absolute path", file_name);
-
-        return fs::path(root_path) / file_name_as_path;
+        return fs::path(root_path) / path;
     }
 
     /// Delete .tmp files. They could be left undeleted in case of
@@ -226,7 +221,7 @@ public:
 
     ~ZooKeeperStorage() override = default;
 
-    bool isReplicated() const override { return true; }
+    bool supportsPeriodicUpdate() const override { return true; }
 
     /// Return true if children changed.
     bool waitUpdate(size_t timeout) override
@@ -268,49 +263,49 @@ public:
         return children;
     }
 
-    bool exists(const std::string & file_name) const override
+    bool exists(const std::string & path) const override
     {
-        return getClient()->exists(getPath(file_name));
+        return getClient()->exists(getPath(path));
     }
 
-    std::string read(const std::string & file_name) const override
+    std::string read(const std::string & path) const override
     {
-        return getClient()->get(getPath(file_name));
+        return getClient()->get(getPath(path));
     }
 
-    void write(const std::string & file_name, const std::string & data, bool replace) override
+    void write(const std::string & path, const std::string & data, bool replace) override
     {
         if (replace)
         {
-            getClient()->createOrUpdate(getPath(file_name), data, zkutil::CreateMode::Persistent);
+            getClient()->createOrUpdate(getPath(path), data, zkutil::CreateMode::Persistent);
         }
         else
         {
-            auto code = getClient()->tryCreate(getPath(file_name), data, zkutil::CreateMode::Persistent);
+            auto code = getClient()->tryCreate(getPath(path), data, zkutil::CreateMode::Persistent);
 
             if (code == Coordination::Error::ZNODEEXISTS)
             {
                 throw Exception(
                     ErrorCodes::NAMED_COLLECTION_ALREADY_EXISTS,
                     "Metadata file {} for named collection already exists",
-                    file_name);
+                    path);
             }
         }
     }
 
-    void remove(const std::string & file_name) override
+    void remove(const std::string & path) override
     {
-        getClient()->remove(getPath(file_name));
+        getClient()->remove(getPath(path));
     }
 
-    bool removeIfExists(const std::string & file_name) override
+    bool removeIfExists(const std::string & path) override
     {
-        auto code = getClient()->tryRemove(getPath(file_name));
+        auto code = getClient()->tryRemove(getPath(path));
         if (code == Coordination::Error::ZOK)
             return true;
         if (code == Coordination::Error::ZNONODE)
             return false;
-        throw Coordination::Exception::fromPath(code, getPath(file_name));
+        throw Coordination::Exception::fromPath(code, getPath(path));
     }
 
 private:
@@ -324,13 +319,9 @@ private:
         return zookeeper_client;
     }
 
-    std::string getPath(const std::string & file_name) const
+    std::string getPath(const std::string & path) const
     {
-        const auto file_name_as_path = fs::path(file_name);
-        if (file_name_as_path.is_absolute())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Filename {} cannot be an absolute path", file_name);
-
-        return fs::path(root_path) / file_name_as_path;
+        return fs::path(root_path) / path;
     }
 };
 
@@ -474,14 +465,14 @@ void NamedCollectionsMetadataStorage::writeCreateQuery(const ASTCreateNamedColle
     storage->write(getFileName(query.collection_name), serializeAST(*normalized_query), replace);
 }
 
-bool NamedCollectionsMetadataStorage::isReplicated() const
+bool NamedCollectionsMetadataStorage::supportsPeriodicUpdate() const
 {
-    return storage->isReplicated();
+    return storage->supportsPeriodicUpdate();
 }
 
 bool NamedCollectionsMetadataStorage::waitUpdate()
 {
-    if (!storage->isReplicated())
+    if (!storage->supportsPeriodicUpdate())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Periodic updates are not supported");
 
     const auto & config = Context::getGlobalContextInstance()->getConfigRef();

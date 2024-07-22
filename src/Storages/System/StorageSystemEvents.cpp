@@ -1,5 +1,4 @@
 #include <Common/ProfileEvents.h>
-#include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, zookeeper, no-fasttest, no-parallel
+# Tags: long, zookeeper, no-parallel, no-fasttest
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -76,7 +76,7 @@ export -f insert_thread;
 export -f select_thread;
 
 
-TIMEOUT=20
+TIMEOUT=30
 
 
 # Selects should run successfully

@@ -3,8 +3,6 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
 #include <Core/ProtocolDefines.h>
-#include <Core/Settings.h>
-#include <Core/ServerSettings.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 
@@ -41,7 +39,6 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 #include <Interpreters/Context.h>
-#include <Interpreters/HashTablesStatistics.h>
 #include <Interpreters/StorageID.h>
 
 #include <Storages/ColumnsDescription.h>
@@ -332,16 +329,12 @@ public:
 };
 
 void addExpressionStep(QueryPlan & query_plan,
-    const ActionsAndProjectInputsFlagPtr & expression_actions,
+    const ActionsDAGPtr & expression_actions,
     const std::string & step_description,
     std::vector<ActionsDAGPtr> & result_actions_to_execute)
 {
-    auto actions = expression_actions->dag.clone();
-    if (expression_actions->project_input)
-        actions->appendInputsForUnusedColumns(query_plan.getCurrentDataStream().header);
-
-    result_actions_to_execute.push_back(actions);
-    auto expression_step = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), actions);
+    result_actions_to_execute.push_back(expression_actions);
+    auto expression_step = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), expression_actions);
     expression_step->setStepDescription(step_description);
     query_plan.addStep(std::move(expression_step));
 }
@@ -351,13 +344,9 @@ void addFilterStep(QueryPlan & query_plan,
     const std::string & step_description,
     std::vector<ActionsDAGPtr> & result_actions_to_execute)
 {
-    auto actions = filter_analysis_result.filter_actions->dag.clone();
-    if (filter_analysis_result.filter_actions->project_input)
-        actions->appendInputsForUnusedColumns(query_plan.getCurrentDataStream().header);
-
-    result_actions_to_execute.push_back(actions);
+    result_actions_to_execute.push_back(filter_analysis_result.filter_actions);
     auto where_step = std::make_unique<FilterStep>(query_plan.getCurrentDataStream(),
-        actions,
+        filter_analysis_result.filter_actions,
         filter_analysis_result.filter_column_name,
         filter_analysis_result.remove_filter_column);
     where_step->setStepDescription(step_description);
@@ -373,10 +362,10 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
     const auto & query_context = planner_context->getQueryContext();
     const Settings & settings = query_context->getSettingsRef();
 
-    const auto stats_collecting_params = StatsCollectingParams(
-        calculateCacheKey(select_query_info.query),
+    const auto stats_collecting_params = Aggregator::Params::StatsCollectingParams(
+        select_query_info.query,
         settings.collect_hash_table_stats_during_aggregation,
-        query_context->getServerSettings().max_entries_for_hash_table_stats,
+        settings.max_entries_for_hash_table_stats,
         settings.max_size_to_preallocate_for_aggregation);
 
     auto aggregate_descriptions = aggregation_analysis_result.aggregate_descriptions;
@@ -556,21 +545,14 @@ void addTotalsHavingStep(QueryPlan & query_plan,
     const auto & having_analysis_result = expression_analysis_result.getHaving();
     bool need_finalize = !query_node.isGroupByWithRollup() && !query_node.isGroupByWithCube();
 
-    ActionsDAGPtr actions;
     if (having_analysis_result.filter_actions)
-    {
-        actions = having_analysis_result.filter_actions->dag.clone();
-        if (having_analysis_result.filter_actions->project_input)
-            actions->appendInputsForUnusedColumns(query_plan.getCurrentDataStream().header);
-
-        result_actions_to_execute.push_back(actions);
-    }
+        result_actions_to_execute.push_back(having_analysis_result.filter_actions);
 
     auto totals_having_step = std::make_unique<TotalsHavingStep>(
         query_plan.getCurrentDataStream(),
         aggregation_analysis_result.aggregate_descriptions,
         query_analysis_result.aggregate_overflow_row,
-        actions,
+        having_analysis_result.filter_actions,
         having_analysis_result.filter_column_name,
         having_analysis_result.remove_filter_column,
         settings.totals_mode,
@@ -750,13 +732,12 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
                     /* use_column_identifier_as_action_node_name_, (default value)*/ true,
                     /// Prefer the INPUT to CONSTANT nodes (actions must be non constant)
                     /* always_use_const_column_for_constant_nodes */ false);
-
-                auto expression_to_interpolate_expression_nodes = planner_actions_visitor.visit(*interpolate_actions_dag,
+                auto expression_to_interpolate_expression_nodes = planner_actions_visitor.visit(interpolate_actions_dag,
                     interpolate_node_typed.getExpression());
                 if (expression_to_interpolate_expression_nodes.size() != 1)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expression to interpolate expected to have single action node");
 
-                auto interpolate_expression_nodes = planner_actions_visitor.visit(*interpolate_actions_dag,
+                auto interpolate_expression_nodes = planner_actions_visitor.visit(interpolate_actions_dag,
                     interpolate_node_typed.getInterpolateExpression());
                 if (interpolate_expression_nodes.size() != 1)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Interpolate expression expected to have single action node");

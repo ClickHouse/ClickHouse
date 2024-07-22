@@ -64,6 +64,17 @@ public:
             decrementRefCount();
         }
 
+        Entry & operator= (const Entry & src) /// NOLINT
+        {
+            pool = src.pool;
+            if (data)
+                decrementRefCount();
+            data = src.data;
+            if (data)
+                incrementRefCount();
+            return * this;
+        }
+
         bool isNull() const
         {
             return data == nullptr;

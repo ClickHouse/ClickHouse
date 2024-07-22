@@ -1,6 +1,5 @@
 #include <Storages/System/StorageSystemDetachedParts.h>
 
-#include <Core/Settings.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDateTime.h>

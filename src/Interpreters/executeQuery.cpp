@@ -475,9 +475,10 @@ void logQueryFinish(
 
                     processor_elem.processor_name = processor->getName();
 
-                    processor_elem.elapsed_us = static_cast<UInt64>(processor->getElapsedNs() / 1000U);
-                    processor_elem.input_wait_elapsed_us = static_cast<UInt64>(processor->getInputWaitElapsedNs() / 1000U);
-                    processor_elem.output_wait_elapsed_us = static_cast<UInt64>(processor->getOutputWaitElapsedNs() / 1000U);
+                    /// NOTE: convert this to UInt64
+                    processor_elem.elapsed_us = static_cast<UInt32>(processor->getElapsedUs());
+                    processor_elem.input_wait_elapsed_us = static_cast<UInt32>(processor->getInputWaitElapsedUs());
+                    processor_elem.output_wait_elapsed_us = static_cast<UInt32>(processor->getOutputWaitElapsedUs());
 
                     auto stats = processor->getProcessorDataStats();
                     processor_elem.input_rows = stats.input_rows;

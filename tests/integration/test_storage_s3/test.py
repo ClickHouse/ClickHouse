@@ -197,9 +197,7 @@ def test_partition_by_string_column(started_cluster):
         started_cluster, bucket, "test_foo/bar.csv"
     )
     assert '3,"йцук"\n' == get_s3_file_content(started_cluster, bucket, "test_йцук.csv")
-    assert '78,"你好"\n' == get_s3_file_content(
-        started_cluster, bucket, "test_你好.csv"
-    )
+    assert '78,"你好"\n' == get_s3_file_content(started_cluster, bucket, "test_你好.csv")
 
 
 def test_partition_by_const_column(started_cluster):

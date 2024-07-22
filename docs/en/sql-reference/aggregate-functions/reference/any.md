@@ -1,16 +1,16 @@
 ---
 slug: /en/sql-reference/aggregate-functions/reference/any
-sidebar_position: 102
+sidebar_position: 6
 ---
 
 # any
 
-Selects the first encountered value of a column, ignoring any `NULL` values.
+Selects the first encountered value of a column.
 
 **Syntax**
 
 ```sql
-any(column) [RESPECT NULLS]
+any(column)
 ```
 
 Aliases: `any_value`, [`first_value`](../reference/first_value.md).
@@ -20,9 +20,7 @@ Aliases: `any_value`, [`first_value`](../reference/first_value.md).
 
 **Returned value**
 
-:::note
-Supports the `RESPECT NULLS` modifier after the function name. Using this modifier will ensure the function selects the first value passed, regardless of whether it is `NULL` or not.
-:::
+By default, it ignores NULL values and returns the first NOT NULL value found in the column. Like [`first_value`](../../../sql-reference/aggregate-functions/reference/first_value.md) it supports `RESPECT NULLS`, in which case it will select the first value passed, independently on whether it's NULL or not.
 
 :::note
 The return type of the function is the same as the input, except for LowCardinality which is discarded. This means that given no rows as input it will return the default value of that type (0 for integers, or Null for a Nullable() column). You might use the `-OrNull` [combinator](../../../sql-reference/aggregate-functions/combinators.md) ) to modify this behaviour.

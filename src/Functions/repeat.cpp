@@ -201,7 +201,7 @@ public:
             {"n", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isInteger), nullptr, "Integer"},
         };
 
-        validateFunctionArguments(*this, arguments, args);
+        validateFunctionArgumentTypes(*this, arguments, args);
 
         return std::make_shared<DataTypeString>();
     }
@@ -278,7 +278,7 @@ public:
 
 REGISTER_FUNCTION(Repeat)
 {
-    factory.registerFunction<FunctionRepeat>({}, FunctionFactory::Case::Insensitive);
+    factory.registerFunction<FunctionRepeat>({}, FunctionFactory::CaseInsensitive);
 }
 
 }

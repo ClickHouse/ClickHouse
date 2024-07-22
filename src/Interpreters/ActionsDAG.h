@@ -103,11 +103,13 @@ private:
     NodeRawConstPtrs inputs;
     NodeRawConstPtrs outputs;
 
+    bool project_input = false;
+    bool projected_output = false;
+
 public:
     ActionsDAG() = default;
     ActionsDAG(ActionsDAG &&) = default;
     ActionsDAG(const ActionsDAG &) = delete;
-    ActionsDAG & operator=(ActionsDAG &&) = default;
     ActionsDAG & operator=(const ActionsDAG &) = delete;
     explicit ActionsDAG(const NamesAndTypesList & inputs_);
     explicit ActionsDAG(const ColumnsWithTypeAndName & inputs_);
@@ -166,11 +168,8 @@ public:
     /// Call addAlias several times.
     void addAliases(const NamesWithAliases & aliases);
 
-    /// Add alias actions. Also specify result columns order in outputs.
+    /// Add alias actions and remove unused columns from outputs. Also specify result columns order in outputs.
     void project(const NamesWithAliases & projection);
-
-    /// Add input for every column from sample_block which is not mapped to existing input.
-    void appendInputsForUnusedColumns(const Block & sample_block);
 
     /// If column is not in outputs, try to find it in nodes and insert back into outputs.
     bool tryRestoreColumn(const std::string & column_name);
@@ -179,6 +178,10 @@ public:
     /// If columns is in inputs and has no dependent nodes, remove it from inputs too.
     /// Return true if column was removed from inputs.
     bool removeUnusedResult(const std::string & column_name);
+
+    void projectInput(bool project = true) { project_input = project; }
+    bool isInputProjected() const { return project_input; }
+    bool isOutputProjected() const { return projected_output; }
 
     /// Remove actions that are not needed to compute output nodes
     void removeUnusedActions(bool allow_remove_inputs = true, bool allow_constant_folding = true);
@@ -506,16 +509,5 @@ struct ActionDAGNodes
 {
     ActionsDAG::NodeRawConstPtrs nodes;
 };
-
-/// Helper for query analysis.
-/// If project_input is set, all columns not found in inputs should be removed.
-/// Now, we do it before adding a step to query plan by calling appendInputsForUnusedColumns.
-struct ActionsAndProjectInputsFlag
-{
-    ActionsDAG dag;
-    bool project_input = false;
-};
-
-using ActionsAndProjectInputsFlagPtr = std::shared_ptr<ActionsAndProjectInputsFlag>;
 
 }

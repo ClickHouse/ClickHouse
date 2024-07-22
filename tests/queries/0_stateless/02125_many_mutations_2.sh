@@ -52,7 +52,6 @@ $CLICKHOUSE_CLIENT --multiquery -q "
 select count() from system.mutations where database = currentDatabase() and table = 'many_mutations' and not is_done;
 system start merges many_mutations;
 optimize table many_mutations final SETTINGS optimize_throw_if_noop = 1;
-alter table many_mutations update y = y + 1 where 1 settings mutations_sync=2;
 system flush logs;
 select count() from system.mutations where database = currentDatabase() and table = 'many_mutations' and not is_done;
 select count() from many_mutations;

@@ -178,7 +178,7 @@ REGISTER_FUNCTION(DateTrunc)
     factory.registerFunction<FunctionDateTrunc>();
 
     /// Compatibility alias.
-    factory.registerAlias("DATE_TRUNC", "dateTrunc", FunctionFactory::Case::Insensitive);
+    factory.registerAlias("DATE_TRUNC", "dateTrunc", FunctionFactory::CaseInsensitive);
 }
 
 }

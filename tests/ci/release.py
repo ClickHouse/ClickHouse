@@ -25,7 +25,7 @@ from contextlib import contextmanager
 from typing import Any, Final, Iterator, List, Optional, Tuple
 
 from git_helper import Git, commit, release_branch
-from ci_config import Labels
+from lambda_shared_package.lambda_shared.pr import Labels
 from report import SUCCESS
 from version_helper import (
     FILE_WITH_VERSION_PATH,

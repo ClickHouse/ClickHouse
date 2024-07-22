@@ -160,8 +160,7 @@ class CiSettings:
             else:
                 return False
 
-        # do not exclude builds
-        if self.exclude_keywords and not CI.is_build_job(job):
+        if self.exclude_keywords:
             for keyword in self.exclude_keywords:
                 if keyword in normalize_string(job):
                     print(f"Job [{job}] matches Exclude keyword [{keyword}] - deny")
@@ -169,8 +168,7 @@ class CiSettings:
 
         to_deny = False
         if self.include_keywords:
-            # do not exclude builds
-            if job == CI.JobNames.STYLE_CHECK or CI.is_build_job(job):
+            if job == CI.JobNames.STYLE_CHECK:
                 # never exclude Style Check by include keywords
                 return True
             for keyword in self.include_keywords:

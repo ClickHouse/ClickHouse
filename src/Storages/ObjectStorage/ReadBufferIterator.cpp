@@ -1,7 +1,6 @@
 #include <Storages/ObjectStorage/ReadBufferIterator.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
-#include <Core/Settings.h>
 #include <IO/ReadBufferFromFileBase.h>
 
 

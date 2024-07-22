@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/aggregate-functions/reference/stochasticlogisticregression
-sidebar_position: 193
+sidebar_position: 222
 ---
 
 # stochasticLogisticRegression

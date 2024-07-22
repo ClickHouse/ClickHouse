@@ -68,7 +68,7 @@ void * allocNoTrack(size_t size, size_t alignment)
 {
     void * buf;
 #if USE_GWP_ASAN
-    if (unlikely(GWPAsan::shouldSample()))
+    if (unlikely(GWPAsan::GuardedAlloc.shouldSample()))
     {
         if (void * ptr = GWPAsan::GuardedAlloc.allocate(size, alignment))
         {
@@ -185,7 +185,7 @@ void * Allocator<clear_memory_, populate>::realloc(void * buf, size_t old_size, 
     }
 
 #if USE_GWP_ASAN
-    if (unlikely(GWPAsan::shouldSample()))
+    if (unlikely(GWPAsan::GuardedAlloc.shouldSample()))
     {
         auto trace_alloc = CurrentMemoryTracker::alloc(new_size);
         if (void * ptr = GWPAsan::GuardedAlloc.allocate(new_size, alignment))

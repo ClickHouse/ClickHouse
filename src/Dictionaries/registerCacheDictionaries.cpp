@@ -2,7 +2,6 @@
 #include "CacheDictionaryStorage.h"
 #include "SSDCacheDictionaryStorage.h"
 #include <Common/filesystemHelpers.h>
-#include <Core/Settings.h>
 
 #include <Dictionaries/ClickHouseDictionarySource.h>
 #include <Dictionaries/DictionaryFactory.h>

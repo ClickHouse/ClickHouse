@@ -196,9 +196,7 @@ public:
 
     /// Returns the name of a column with minimum compressed size (as returned by getColumnSize()).
     /// If no checksums are present returns the name of the first physically existing column.
-    /// We pass a list of available columns since the ones available in the current storage snapshot might be smaller
-    /// than the one the table has (e.g a DROP COLUMN happened) and we don't want to get a column not in the snapshot
-    String getColumnNameWithMinimumCompressedSize(const NamesAndTypesList & available_columns) const;
+    String getColumnNameWithMinimumCompressedSize(bool with_subcolumns) const;
 
     bool contains(const IMergeTreeDataPart & other) const { return info.contains(other.info); }
 
@@ -212,7 +210,6 @@ public:
 
     /// Compute part block id for zero level part. Otherwise throws an exception.
     /// If token is not empty, block id is calculated based on it instead of block data
-    UInt128 getPartBlockIDHash() const;
     String getZeroLevelPartBlockID(std::string_view token) const;
 
     void setName(const String & new_name);
@@ -372,7 +369,6 @@ public:
     void setIndex(const Columns & cols_);
     void setIndex(Columns && cols_);
     void unloadIndex();
-    bool isIndexLoaded() const;
 
     /// For data in RAM ('index')
     UInt64 getIndexSizeInBytes() const;
