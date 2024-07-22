@@ -71,7 +71,10 @@ bool ParserCreateIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected 
         if (!type_p.parse(pos, type, expected))
         {
             if (ParserIdentifier().parse(pos, type, expected))
+            {
                 type = makeASTFunction(type->as<ASTIdentifier &>().name());
+                type->as<ASTFunction &>().no_empty_args = true;
+            }
             else
                 return false;
         }
