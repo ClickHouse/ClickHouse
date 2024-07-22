@@ -5,7 +5,7 @@
 #include <Access/AccessControl.h>
 #include <Access/User.h>
 
-#include "Common/Exception.h"
+#include <Common/Exception.h>
 #include <Common/StringUtils.h>
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
@@ -14,9 +14,8 @@
 #include <Common/atomicRename.h>
 #include <Common/PoolId.h>
 #include <Common/logger_useful.h>
+#include <Core/Settings.h>
 #include <Parsers/ASTSetQuery.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
-#include <base/hex.h>
 
 #include <Core/Defines.h>
 #include <Core/SettingsEnums.h>
@@ -34,10 +33,11 @@
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageInMemoryMetadata.h>
-#include <Storages/WindowView/StorageWindowView.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+#include <Storages/WindowView/StorageWindowView.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
@@ -81,12 +81,12 @@
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
 
 #include <TableFunctions/TableFunctionFactory.h>
-#include <DataTypes/DataTypeFixedString.h>
 
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Parsers/QueryParameterVisitor.h>
+
 
 namespace CurrentMetrics
 {
@@ -146,27 +146,27 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
     }
 
     auto db_num_limit = getContext()->getGlobalContext()->getServerSettings().max_database_num_to_throw;
-    if (db_num_limit > 0)
+    if (db_num_limit > 0 && !internal)
     {
         size_t db_count = DatabaseCatalog::instance().getDatabases().size();
-        std::vector<String> system_databases = {
+        std::initializer_list<std::string_view> system_databases =
+        {
             DatabaseCatalog::TEMPORARY_DATABASE,
             DatabaseCatalog::SYSTEM_DATABASE,
             DatabaseCatalog::INFORMATION_SCHEMA,
             DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE,
-            DatabaseCatalog::DEFAULT_DATABASE
         };
 
         for (const auto & system_database : system_databases)
         {
-            if (db_count > 0 && DatabaseCatalog::instance().isDatabaseExist(system_database))
-                db_count--;
+            if (db_count > 0 && DatabaseCatalog::instance().isDatabaseExist(std::string(system_database)))
+                --db_count;
         }
 
         if (db_count >= db_num_limit)
             throw Exception(ErrorCodes::TOO_MANY_DATABASES,
-                            "Too many databases in the Clickhouse. "
-                            "The limit (setting 'max_database_num_to_throw') is set to {}, current number of databases is {}",
+                            "Too many databases. "
+                            "The limit (server configuration parameter `max_database_num_to_throw`) is set to {}, the current number of databases is {}",
                             db_num_limit, db_count);
     }
 
@@ -1600,13 +1600,13 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     }
 
     UInt64 table_num_limit = getContext()->getGlobalContext()->getServerSettings().max_table_num_to_throw;
-    if (table_num_limit > 0 && create.getDatabase() != DatabaseCatalog::SYSTEM_DATABASE)
+    if (table_num_limit > 0 && !internal)
     {
         UInt64 table_count = CurrentMetrics::get(CurrentMetrics::AttachedTable);
         if (table_count >= table_num_limit)
             throw Exception(ErrorCodes::TOO_MANY_TABLES,
-                            "Too many tables in the Clickhouse. "
-                            "The limit (setting 'max_table_num_to_throw') is set to {}, current number of tables is {}",
+                            "Too many tables. "
+                            "The limit (server configuration parameter `max_table_num_to_throw`) is set to {}, the current number of tables is {}",
                             table_num_limit, table_count);
     }
 

@@ -83,9 +83,11 @@ def instance_insert_statement(
             template,
             table_name=table_name,
             count=count,
-            insert_columns="'src_4', 4"
-            if not insert_unique_blocks
-            else "'src_' || toString(number), number",
+            insert_columns=(
+                "'src_4', 4"
+                if not insert_unique_blocks
+                else "'src_' || toString(number), number"
+            ),
             insert_settings=insert_settings,
         )
 

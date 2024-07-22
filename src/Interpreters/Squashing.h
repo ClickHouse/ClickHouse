@@ -49,25 +49,23 @@ public:
     const Block & getHeader() const { return header; }
 
 private:
-    class CurrentSize
+    struct CurrentData
     {
         std::vector<Chunk> chunks = {};
         size_t rows = 0;
         size_t bytes = 0;
 
-    public:
         explicit operator bool () const { return !chunks.empty(); }
         size_t getRows() const { return rows; }
         size_t getBytes() const { return bytes; }
         void add(Chunk && chunk);
-        std::vector<Chunk> extract();
     };
 
     const size_t min_block_size_rows;
     const size_t min_block_size_bytes;
     Block header;
 
-    CurrentSize accumulated;
+    CurrentData accumulated;
 
     static Chunk squash(std::vector<Chunk> && input_chunks, Chunk::ChunkInfoCollection && infos);
 
@@ -75,7 +73,9 @@ private:
     bool isEnoughSize(size_t rows, size_t bytes) const;
     bool isEnoughSize(const Chunk & chunk) const;
 
-    Chunk convertToChunk(std::vector<Chunk> && chunks) const;
+    CurrentData extract();
+
+    Chunk convertToChunk(CurrentData && data) const;
 };
 
 }

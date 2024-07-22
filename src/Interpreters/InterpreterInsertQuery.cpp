@@ -5,6 +5,7 @@
 #include <Access/EnabledQuota.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Columns/ColumnNullable.h>
+#include <Core/Settings.h>
 #include <Processors/Transforms/buildPushingToViewsChain.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -37,6 +38,7 @@
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/WindowView/StorageWindowView.h>
 #include <TableFunctions/TableFunctionFactory.h>
+#include <Common/logger_useful.h>
 #include <Common/ThreadStatus.h>
 #include <Common/checkStackSize.h>
 #include <Common/ProfileEvents.h>
@@ -600,16 +602,15 @@ QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(ASTInsertQuery &
     ///    Otherwise ResizeProcessor them down to 1 stream.
 
     size_t presink_streams_size = std::max<size_t>(settings.max_insert_threads, pipeline.getNumStreams());
+    if (settings.max_insert_threads.changed)
+        presink_streams_size = std::max<size_t>(1, settings.max_insert_threads);
 
     size_t sink_streams_size = table->supportsParallelInsert() ? std::max<size_t>(1, settings.max_insert_threads) : 1;
 
-    if (!settings.parallel_view_processing)
+    size_t views_involved =  table->isView() || !DatabaseCatalog::instance().getDependentViews(table->getStorageID()).empty();
+    if (!settings.parallel_view_processing && views_involved)
     {
-        auto table_id = table->getStorageID();
-        auto views = DatabaseCatalog::instance().getDependentViews(table_id);
-
-        if (table->isView() || !views.empty())
-            sink_streams_size = 1;
+        sink_streams_size = 1;
     }
 
     auto [presink_chains, sink_chains] = buildPreAndSinkChains(
@@ -639,19 +640,11 @@ QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(ASTInsertQuery &
         pipeline.addResources(chain.detachResources());
     pipeline.addChains(std::move(sink_chains));
 
-    if (!settings.parallel_view_processing)
+    if (!settings.parallel_view_processing && views_involved)
     {
         /// Don't use more threads for INSERT than for SELECT to reduce memory consumption.
         if (pipeline.getNumThreads() > num_select_threads)
             pipeline.setMaxThreads(num_select_threads);
-    }
-    else if (pipeline.getNumThreads() < settings.max_threads)
-    {
-        /// It is possible for query to have max_threads=1, due to optimize_trivial_insert_select,
-        /// however in case of parallel_view_processing and multiple views, views can still be processed in parallel.
-        ///
-        /// Note, number of threads will be limited by buildPushingToViewsChain() to max_threads.
-        pipeline.setMaxThreads(settings.max_threads);
     }
 
     pipeline.setSinks([&](const Block & cur_header, QueryPipelineBuilder::StreamType) -> ProcessorPtr
@@ -793,6 +786,8 @@ BlockIO InterpreterInsertQuery::execute()
 
     if (const auto * mv = dynamic_cast<const StorageMaterializedView *>(table.get()))
         res.pipeline.addStorageHolder(mv->getTargetTable());
+
+    LOG_TEST(getLogger("InterpreterInsertQuery"), "Pipeline could use up to {} thread", res.pipeline.getNumThreads());
 
     return res;
 }

@@ -3,6 +3,7 @@
 #include <Storages/StorageMaterializedView.h>
 
 #include <Common/CurrentMetrics.h>
+#include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterDropQuery.h>
