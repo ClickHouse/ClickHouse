@@ -1,12 +1,10 @@
 #pragma once
-
 #include "config.h"
 
 #if USE_AZURE_BLOB_STORAGE
 #include <Backups/BackupIO_Default.h>
 #include <Disks/DiskType.h>
-#include <Interpreters/Context_fwd.h>
-#include <Storages/ObjectStorage/Azure/Configuration.h>
+#include <Disks/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
 
 
 namespace DB
@@ -17,7 +15,8 @@ class BackupReaderAzureBlobStorage : public BackupReaderDefault
 {
 public:
     BackupReaderAzureBlobStorage(
-        const StorageAzureConfiguration & configuration_,
+        const AzureBlobStorage::ConnectionParams & connection_params_,
+        const String & blob_path_,
         bool allow_azure_native_copy,
         const ReadSettings & read_settings_,
         const WriteSettings & write_settings_,
@@ -40,16 +39,18 @@ public:
 private:
     const DataSourceDescription data_source_description;
     std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> client;
-    StorageAzureConfiguration configuration;
+    AzureBlobStorage::ConnectionParams connection_params;
+    String blob_path;
     std::unique_ptr<AzureObjectStorage> object_storage;
-    std::shared_ptr<const AzureObjectStorageSettings> settings;
+    std::shared_ptr<const AzureBlobStorage::RequestSettings> settings;
 };
 
 class BackupWriterAzureBlobStorage : public BackupWriterDefault
 {
 public:
     BackupWriterAzureBlobStorage(
-        const StorageAzureConfiguration & configuration_,
+        const AzureBlobStorage::ConnectionParams & connection_params_,
+        const String & blob_path_,
         bool allow_azure_native_copy,
         const ReadSettings & read_settings_,
         const WriteSettings & write_settings_,
@@ -87,9 +88,10 @@ private:
 
     const DataSourceDescription data_source_description;
     std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> client;
-    StorageAzureConfiguration configuration;
+    AzureBlobStorage::ConnectionParams connection_params;
+    String blob_path;
     std::unique_ptr<AzureObjectStorage> object_storage;
-    std::shared_ptr<const AzureObjectStorageSettings> settings;
+    std::shared_ptr<const AzureBlobStorage::RequestSettings> settings;
 };
 
 }

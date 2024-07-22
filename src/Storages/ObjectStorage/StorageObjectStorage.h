@@ -1,6 +1,7 @@
 #pragma once
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Common/threadPoolCallbackRunner.h>
+#include <Core/SchemaInferenceMode.h>
 #include <Storages/IStorage.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/prepareReadingFromFormat.h>

@@ -1,6 +1,7 @@
 #include <Storages/ObjectStorage/S3/Configuration.h>
 
 #if USE_AWS_S3
+#include <Core/Settings.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/StorageURL.h>

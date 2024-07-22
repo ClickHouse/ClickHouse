@@ -5,6 +5,7 @@
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/quoteString.h>
 #include <Common/setThreadName.h>
+#include <Core/ServerSettings.h>
 #include <Interpreters/AsynchronousInsertLog.h>
 #include <Interpreters/AsynchronousMetricLog.h>
 #include <Interpreters/BackupLog.h>
@@ -356,10 +357,15 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
     if (blob_storage_log)
         logs.emplace_back(blob_storage_log.get());
 
+    bool should_prepare = global_context->getServerSettings().prepare_system_log_tables_on_startup;
     try
     {
         for (auto & log : logs)
+        {
             log->startup();
+            if (should_prepare)
+                log->prepareTable();
+        }
     }
     catch (...)
     {

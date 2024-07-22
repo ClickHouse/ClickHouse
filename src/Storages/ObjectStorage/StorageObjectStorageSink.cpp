@@ -2,6 +2,7 @@
 #include <Formats/FormatFactory.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Common/isValidUTF8.h>
+#include <Core/Settings.h>
 #include <Storages/ObjectStorage/Utils.h>
 
 namespace DB

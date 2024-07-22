@@ -31,8 +31,10 @@ target_link_libraries (arena_with_free_lists PRIVATE dbms)
 clickhouse_add_executable (lru_hash_map_perf lru_hash_map_perf.cpp)
 target_link_libraries (lru_hash_map_perf PRIVATE dbms)
 
-clickhouse_add_executable (thread_creation_latency thread_creation_latency.cpp)
-target_link_libraries (thread_creation_latency PRIVATE clickhouse_common_io)
+if (OS_LINUX)
+    clickhouse_add_executable (thread_creation_latency thread_creation_latency.cpp)
+    target_link_libraries (thread_creation_latency PRIVATE clickhouse_common_io)
+endif()
 
 clickhouse_add_executable (array_cache array_cache.cpp)
 target_link_libraries (array_cache PRIVATE clickhouse_common_io)

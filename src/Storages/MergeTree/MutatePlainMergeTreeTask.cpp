@@ -3,6 +3,7 @@
 #include <Storages/StorageMergeTree.h>
 #include <Interpreters/TransactionLog.h>
 #include <Common/ProfileEventsScope.h>
+#include <Core/Settings.h>
 
 namespace DB
 {
