@@ -4,6 +4,9 @@
 source /setup_export_logs.sh
 set -e -x
 
+MAX_RUN_TIME=${MAX_RUN_TIME:-3600}
+MAX_RUN_TIME=$((MAX_RUN_TIME == 0 ? 3600 : MAX_RUN_TIME))
+
 # Choose random timezone for this test run
 TZ="$(rg -v '#' /usr/share/zoneinfo/zone.tab | awk '{print $3}' | shuf | head -n1)"
 echo "Choosen random timezone $TZ"
@@ -242,7 +245,22 @@ function run_tests()
 }
 
 export -f run_tests
-timeout "$MAX_RUN_TIME" bash -c run_tests ||:
+
+function timeout_with_logging() {
+    local exit_code=0
+
+    timeout -s TERM --preserve-status "${@}" || exit_code="${?}"
+
+    if [[ "${exit_code}" -eq "124" ]]
+    then
+      echo "The command 'timeout ${*}' has been killed by timeout"
+    fi
+
+    return $exit_code
+}
+
+TIMEOUT=$((MAX_RUN_TIME - 700))
+timeout_with_logging "$TIMEOUT" bash -c run_tests ||:
 
 echo "Files in current directory"
 ls -la ./

@@ -32,6 +32,9 @@ class CI:
     from ci_definitions import MQ_JOBS as MQ_JOBS
     from ci_definitions import WorkflowStages as WorkflowStages
     from ci_definitions import Runners as Runners
+    from ci_utils import Envs as Envs
+    from ci_utils import Utils as Utils
+    from ci_utils import GHActions as GHActions
     from ci_definitions import Labels as Labels
     from ci_definitions import TRUSTED_CONTRIBUTORS as TRUSTED_CONTRIBUTORS
     from ci_utils import CATEGORY_TO_LABEL as CATEGORY_TO_LABEL
@@ -48,23 +51,13 @@ class CI:
                 JobNames.INTEGRATION_TEST_ARM,
             ]
         ),
-        Tags.CI_SET_REQUIRED: LabelConfig(run_jobs=REQUIRED_CHECKS),
+        Tags.CI_SET_REQUIRED: LabelConfig(
+            run_jobs=REQUIRED_CHECKS
+            + [build for build in BuildNames if build != BuildNames.FUZZERS]
+        ),
         Tags.CI_SET_BUILDS: LabelConfig(
             run_jobs=[JobNames.STYLE_CHECK, JobNames.BUILD_CHECK]
             + [build for build in BuildNames if build != BuildNames.FUZZERS]
-        ),
-        Tags.CI_SET_NON_REQUIRED: LabelConfig(
-            run_jobs=[job for job in JobNames if job not in REQUIRED_CHECKS]
-        ),
-        Tags.CI_SET_OLD_ANALYZER: LabelConfig(
-            run_jobs=[
-                JobNames.STYLE_CHECK,
-                JobNames.FAST_TEST,
-                BuildNames.PACKAGE_RELEASE,
-                BuildNames.PACKAGE_ASAN,
-                JobNames.STATELESS_TEST_OLD_ANALYZER_S3_REPLICATED_RELEASE,
-                JobNames.INTEGRATION_TEST_ASAN_OLD_ANALYZER,
-            ]
         ),
         Tags.CI_SET_SYNC: LabelConfig(
             run_jobs=[
@@ -320,13 +313,13 @@ class CI:
             required_builds=[BuildNames.PACKAGE_ASAN], num_batches=2
         ),
         JobNames.STATELESS_TEST_TSAN: CommonJobConfigs.STATELESS_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_TSAN], num_batches=2
+            required_builds=[BuildNames.PACKAGE_TSAN], num_batches=4
         ),
         JobNames.STATELESS_TEST_MSAN: CommonJobConfigs.STATELESS_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_MSAN], num_batches=3
+            required_builds=[BuildNames.PACKAGE_MSAN], num_batches=4
         ),
         JobNames.STATELESS_TEST_UBSAN: CommonJobConfigs.STATELESS_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_UBSAN], num_batches=1
+            required_builds=[BuildNames.PACKAGE_UBSAN], num_batches=2
         ),
         JobNames.STATELESS_TEST_DEBUG: CommonJobConfigs.STATELESS_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_DEBUG], num_batches=2
@@ -335,24 +328,24 @@ class CI:
             required_builds=[BuildNames.PACKAGE_RELEASE],
         ),
         JobNames.STATELESS_TEST_RELEASE_COVERAGE: CommonJobConfigs.STATELESS_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_RELEASE_COVERAGE], num_batches=5
+            required_builds=[BuildNames.PACKAGE_RELEASE_COVERAGE], num_batches=6
         ),
         JobNames.STATELESS_TEST_AARCH64: CommonJobConfigs.STATELESS_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_AARCH64],
             runner_type=Runners.FUNC_TESTER_ARM,
         ),
         JobNames.STATELESS_TEST_OLD_ANALYZER_S3_REPLICATED_RELEASE: CommonJobConfigs.STATELESS_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_RELEASE], num_batches=3
+            required_builds=[BuildNames.PACKAGE_RELEASE], num_batches=4
         ),
         JobNames.STATELESS_TEST_S3_DEBUG: CommonJobConfigs.STATELESS_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_DEBUG], num_batches=2
         ),
         JobNames.STATELESS_TEST_AZURE_ASAN: CommonJobConfigs.STATELESS_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_ASAN], num_batches=2, release_only=True
+            required_builds=[BuildNames.PACKAGE_ASAN], num_batches=3, release_only=True
         ),
         JobNames.STATELESS_TEST_S3_TSAN: CommonJobConfigs.STATELESS_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_TSAN],
-            num_batches=3,
+            num_batches=4,
         ),
         JobNames.STRESS_TEST_DEBUG: CommonJobConfigs.STRESS_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_DEBUG],
