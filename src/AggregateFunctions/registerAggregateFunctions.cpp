@@ -125,7 +125,6 @@ void registerAggregateFunctions()
         registerAggregateFunctionsQuantileDeterministic(factory);
         registerAggregateFunctionsQuantileExact(factory);
         registerAggregateFunctionsQuantileExactWeighted(factory);
-        registerAggregateFunctionsQuantileInterpolatedWeighted(factory);
         registerAggregateFunctionsQuantileExactLow(factory);
         registerAggregateFunctionsQuantileExactHigh(factory);
         registerAggregateFunctionsQuantileExactInclusive(factory);
