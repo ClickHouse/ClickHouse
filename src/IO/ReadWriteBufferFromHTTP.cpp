@@ -123,7 +123,16 @@ void ReadWriteBufferFromHTTP::prepareRequest(Poco::Net::HTTPRequest & request, s
 std::optional<size_t> ReadWriteBufferFromHTTP::tryGetFileSize()
 {
     if (!file_info)
-        file_info = getFileInfo();
+    {
+        try
+        {
+            file_info = getFileInfo();
+        }
+        catch (const HTTPException & e)
+        {
+            return std::nullopt;
+        }
+    }
 
     return file_info->file_size;
 }
@@ -679,7 +688,7 @@ std::optional<time_t> ReadWriteBufferFromHTTP::tryGetLastModificationTime()
         {
             file_info = getFileInfo();
         }
-        catch (...)
+        catch (const HTTPException & e)
         {
             return std::nullopt;
         }
@@ -700,7 +709,7 @@ ReadWriteBufferFromHTTP::HTTPFileInfo ReadWriteBufferFromHTTP::getFileInfo()
     {
         getHeadResponse(response);
     }
-    catch (HTTPException & e)
+    catch (const HTTPException & e)
     {
         /// Maybe the web server doesn't support HEAD requests.
         /// E.g. webhdfs reports status 400.
