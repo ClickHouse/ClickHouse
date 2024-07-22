@@ -1343,9 +1343,9 @@ class FunctionBinaryArithmetic : public IFunction
                 if (!arg.column->isNullable())
                     continue;
 
-                const ColumnNullable * null_col = checkAndGetColumn<ColumnNullable>(arg.column.get());
-                if (!null_col)
-                    continue;
+                const ColumnConst * const_col = checkAndGetColumn<ColumnConst>(arg.column.get());
+                const ColumnNullable * null_col = const_col ? checkAndGetColumn<ColumnNullable>(const_col->getDataColumnPtr().get()) :
+                    checkAndGetColumn<ColumnNullable>(arg.column.get());
                 const ColumnPtr & null_map_col = null_col->getNullMapColumnPtr();
                 const NullMap & null_map = assert_cast<const ColumnUInt8 &>(*null_map_col).getData();
                 for (size_t i = 0, size = null_map.size(); i < size; ++i)
