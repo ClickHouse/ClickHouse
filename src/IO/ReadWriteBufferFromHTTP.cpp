@@ -128,7 +128,7 @@ std::optional<size_t> ReadWriteBufferFromHTTP::tryGetFileSize()
         {
             file_info = getFileInfo();
         }
-        catch (const HTTPException & e)
+        catch (const HTTPException &)
         {
             return std::nullopt;
         }
