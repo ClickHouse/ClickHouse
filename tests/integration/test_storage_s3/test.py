@@ -497,6 +497,7 @@ def test_put_get_with_globs(started_cluster):
 def test_multipart(started_cluster, maybe_auth, positive):
     # type: (ClickHouseCluster, str, bool) -> None
 
+    id = uuid.uuid4()
     bucket = (
         started_cluster.minio_bucket
         if not maybe_auth
@@ -519,7 +520,7 @@ def test_multipart(started_cluster, maybe_auth, positive):
 
     assert len(csv_data) > min_part_size_bytes
 
-    filename = "test_multipart.csv"
+    filename = f"{id}/test_multipart.csv"
     put_query = "insert into table function s3('http://{}:{}/{}/{}', {}'CSV', '{}') format CSV".format(
         started_cluster.minio_redirect_host,
         started_cluster.minio_redirect_port,
@@ -691,7 +692,7 @@ def test_s3_glob_many_objects_under_selection(started_cluster):
         def create_files(thread_num):
             for f_num in range(thread_num * 63, thread_num * 63 + 63):
                 path = f"folder1/file{f_num}.csv"
-                query = "insert into table function s3('http://{}:{}/{}/{}', 'CSV', '{}') values {}".format(
+                query = "insert into table function s3('http://{}:{}/{}/{}', 'CSV', '{}') settings s3_truncate_on_insert=1 values {}".format(
                     started_cluster.minio_ip,
                     MINIO_INTERNAL_PORT,
                     bucket,
@@ -704,7 +705,7 @@ def test_s3_glob_many_objects_under_selection(started_cluster):
         jobs.append(threading.Thread(target=create_files, args=(thread_num,)))
         jobs[-1].start()
 
-    query = "insert into table function s3('http://{}:{}/{}/{}', 'CSV', '{}') values {}".format(
+    query = "insert into table function s3('http://{}:{}/{}/{}', 'CSV', '{}') settings s3_truncate_on_insert=1 values {}".format(
         started_cluster.minio_ip,
         MINIO_INTERNAL_PORT,
         bucket,
