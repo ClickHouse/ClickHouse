@@ -2,8 +2,8 @@
 
 SET allow_experimental_object_type = 1;
 
-SELECT '{"a": {"b": 1, "c": 2}}'::JSON AS s;
-SELECT '{"a": {"b": 1, "c": 2}}'::JSON AS s format JSONEachRow;
+SELECT '{"a": {"b": 1, "c": 2}}'::Object('JSON') AS s;
+SELECT '{"a": {"b": 1, "c": 2}}'::Object('JSON') AS s format JSONEachRow;
 
 DROP TABLE IF EXISTS t_json_5;
 DROP TABLE IF EXISTS t_json_str_5;

@@ -96,24 +96,6 @@ function test()
 
 $CH_CLIENT -q "drop table if exists test;"
 
-echo "Memory"
-$CH_CLIENT -q "create table test (id UInt64, json JSON(max_dynamic_paths=2, a.b.c UInt32)) engine=Memory"
-insert
-test
-$CH_CLIENT -q "drop table test;"
-
-echo "MergeTree compact"
-$CH_CLIENT -q "create table test (id UInt64, json JSON(max_dynamic_paths=2, a.b.c UInt32)) engine=MergeTree order by id settings min_rows_for_wide_part=1000000000, min_bytes_for_wide_part=10000000000;"
-echo "No merges"
-$CH_CLIENT -q "system stop merges test"
-insert
-test
-echo "With merges"
-$CH_CLIENT -q "system start merges test"
-test
-$CH_CLIENT -q "drop table test;"
-
-echo "MergeTree wide"
 $CH_CLIENT -q "create table test (id UInt64, json JSON(max_dynamic_paths=2, a.b.c UInt32)) engine=MergeTree order by id settings min_rows_for_wide_part=1, min_bytes_for_wide_part=1;"
 echo "No merges"
 $CH_CLIENT -q "system stop merges test"

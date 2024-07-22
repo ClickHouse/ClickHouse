@@ -113,11 +113,7 @@ public:
 #else
     int doCompareAt(size_t, size_t, const IColumn &, int) const override { return 0; }
 #endif
-    void getExtremes(Field & min, Field & max) const override
-    {
-        min = Object();
-        max = Object();
-    }
+    void getExtremes(Field & min, Field & max) const override;
 
     void reserve(size_t n) override;
     void ensureOwnership() override;

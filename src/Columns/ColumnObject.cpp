@@ -1050,6 +1050,20 @@ bool ColumnObject::isFinalized() const
     return finalized;
 }
 
+void ColumnObject::getExtremes(DB::Field & min, DB::Field & max) const
+{
+    if (size() == 0)
+    {
+        min = Object();
+        max = Object();
+    }
+    else
+    {
+        get(0, min);
+        get(0, max);
+    }
+}
+
 void ColumnObject::takeDynamicStructureFromSourceColumns(const DB::Columns & source_columns)
 {
     if (!empty())
