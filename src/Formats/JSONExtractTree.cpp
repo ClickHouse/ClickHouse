@@ -126,7 +126,7 @@ void jsonElementToString(const typename JSONParser::Element & element, WriteBuff
 
 template <typename JSONParser, typename NumberType>
 bool tryGetNumericValueFromJSONElement(
-    NumberType & value, const typename JSONParser::Element & element, bool convert_bool_to_integer, String & error)
+    NumberType & value, const typename JSONParser::Element & element, bool convert_bool_to_integer, bool allow_type_conversion, String & error)
 {
     switch (element.type())
     {
@@ -138,7 +138,7 @@ bool tryGetNumericValueFromJSONElement(
                 /// But it will be more convenient for user to perform conversion.
                 value = static_cast<NumberType>(element.getDouble());
             }
-            else if (!accurate::convertNumeric<Float64, NumberType, false>(element.getDouble(), value))
+            else if (!allow_type_conversion || !accurate::convertNumeric<Float64, NumberType, false>(element.getDouble(), value))
             {
                 error = fmt::format("cannot convert double value {} to {}", element.getDouble(), TypeName<NumberType>);
                 return false;
@@ -161,7 +161,7 @@ bool tryGetNumericValueFromJSONElement(
         case ElementType::BOOL:
             if constexpr (is_integer<NumberType>)
             {
-                if (convert_bool_to_integer)
+                if (convert_bool_to_integer && allow_type_conversion)
                 {
                     value = static_cast<NumberType>(element.getBool());
                     break;
@@ -169,7 +169,11 @@ bool tryGetNumericValueFromJSONElement(
             }
             error = fmt::format("cannot convert bool value to {}", TypeName<NumberType>);
             return false;
-        case ElementType::STRING: {
+        case ElementType::STRING:
+        {
+            if (!allow_type_conversion)
+                return false;
+
             auto rb = ReadBufferFromMemory{element.getString()};
             if constexpr (std::is_floating_point_v<NumberType>)
             {
@@ -244,8 +248,16 @@ public:
             return false;
         }
 
+        if (is_bool_type && !insert_settings.allow_type_conversion)
+        {
+            if (!element.isBool())
+                return false;
+            assert_cast<ColumnVector<NumberType> &>(column).insertValue(element.getBool());
+            return true;
+        }
+
         NumberType value;
-        if (!tryGetNumericValueFromJSONElement<JSONParser, NumberType>(value, element, insert_settings.convert_bool_to_integer || is_bool_type, error))
+        if (!tryGetNumericValueFromJSONElement<JSONParser, NumberType>(value, element, insert_settings.convert_bool_to_integer || is_bool_type, insert_settings.allow_type_conversion, error))
         {
             if (error.empty())
                 error = fmt::format("cannot read {} value from JSON element: {}", TypeName<NumberType>, jsonElementToString<JSONParser>(element, format_settings));
@@ -292,8 +304,17 @@ public:
             return false;
         }
 
+        if (this->is_bool_type && !insert_settings.allow_type_conversion)
+        {
+            if (!element.isBool())
+                return false;
+            UInt8 value = element.getBool();
+            assert_cast<ColumnLowCardinality &>(column).insertData(reinterpret_cast<const char *>(&value), sizeof(value));
+            return true;
+        }
+
         NumberType value;
-        if (!tryGetNumericValueFromJSONElement<JSONParser, NumberType>(value, element, insert_settings.convert_bool_to_integer || this->is_bool_type, error))
+        if (!tryGetNumericValueFromJSONElement<JSONParser, NumberType>(value, element, insert_settings.convert_bool_to_integer || this->is_bool_type,  insert_settings.allow_type_conversion, error))
         {
             if (error.empty())
                 error = fmt::format("cannot read {} value from JSON element: {}", TypeName<NumberType>, jsonElementToString<JSONParser>(element, format_settings));
@@ -319,7 +340,7 @@ public:
     bool insertResultToColumn(
         IColumn & column,
         const typename JSONParser::Element & element,
-        const JSONExtractInsertSettings &,
+        const JSONExtractInsertSettings & insert_settings,
         const FormatSettings & format_settings,
         String & error) const override
     {
@@ -336,6 +357,9 @@ public:
 
         if (!element.isString())
         {
+            if (!insert_settings.allow_type_conversion)
+                return false;
+
             auto & col_str = assert_cast<ColumnString &>(column);
             auto & chars = col_str.getChars();
             WriteBufferFromVector<ColumnString::Chars> buf(chars, AppendModeTag());
@@ -363,7 +387,7 @@ public:
     bool insertResultToColumn(
         IColumn & column,
         const typename JSONParser::Element & element,
-        const JSONExtractInsertSettings &,
+        const JSONExtractInsertSettings & insert_settings,
         const FormatSettings & format_settings,
         String & error) const override
     {
@@ -381,6 +405,9 @@ public:
 
         if (!element.isString())
         {
+            if (!insert_settings.allow_type_conversion)
+                return false;
+
             auto value = jsonElementToString<JSONParser>(element, format_settings);
             assert_cast<ColumnLowCardinality &>(column).insertData(value.data(), value.size());
         }
@@ -405,7 +432,7 @@ public:
     bool insertResultToColumn(
         IColumn & column,
         const typename JSONParser::Element & element,
-        const JSONExtractInsertSettings &,
+        const JSONExtractInsertSettings & insert_settings,
         const FormatSettings & format_settings,
         String & error) const override
     {
@@ -422,7 +449,11 @@ public:
         }
 
         if (!element.isString())
+        {
+            if (!insert_settings.allow_type_conversion)
+                return false;
             return checkValueSizeAndInsert(column, jsonElementToString<JSONParser>(element, format_settings), error);
+        }
         return checkValueSizeAndInsert(column, element.getString(), error);
     }
 
@@ -453,7 +484,7 @@ public:
     bool insertResultToColumn(
         IColumn & column,
         const typename JSONParser::Element & element,
-        const JSONExtractInsertSettings &,
+        const JSONExtractInsertSettings & insert_settings,
         const FormatSettings & format_settings,
         String & error) const override
     {
@@ -469,7 +500,11 @@ public:
         }
 
         if (!element.isString())
+        {
+            if (!insert_settings.allow_type_conversion)
+                return false;
             return checkValueSizeAndInsert(column, jsonElementToString<JSONParser>(element, format_settings), error);
+        }
         return checkValueSizeAndInsert(column, element.getString(), error);
     }
 
@@ -633,7 +668,7 @@ public:
     bool insertResultToColumn(
         IColumn & column,
         const typename JSONParser::Element & element,
-        const JSONExtractInsertSettings &,
+        const JSONExtractInsertSettings & insert_settings,
         const FormatSettings & format_settings,
         String & error) const override
     {
@@ -652,7 +687,7 @@ public:
                 return false;
             }
         }
-        else if (element.isUInt64())
+        else if (element.isUInt64() && insert_settings.allow_type_conversion)
         {
             value = element.getUInt64();
         }
@@ -715,7 +750,8 @@ public:
             case ElementType::INT64:
                 value = convertToDecimal<DataTypeNumber<Int64>, DataTypeDecimal<DecimalType>>(element.getInt64(), scale);
                 break;
-            case ElementType::STRING: {
+            case ElementType::STRING:
+            {
                 auto rb = ReadBufferFromMemory{element.getString()};
                 if (!SerializationDecimal<DecimalType>::tryReadText(value, rb, DecimalUtils::max_precision<DecimalType>, scale))
                 {
@@ -724,7 +760,8 @@ public:
                 }
                 break;
             }
-            case ElementType::NULL_VALUE: {
+            case ElementType::NULL_VALUE:
+            {
                 if (!format_settings.null_as_default)
                 {
                     error = "cannot convert null to Decimal value";
@@ -759,7 +796,7 @@ public:
     bool insertResultToColumn(
         IColumn & column,
         const typename JSONParser::Element & element,
-        const JSONExtractInsertSettings &,
+        const JSONExtractInsertSettings & insert_settings,
         const FormatSettings & format_settings,
         String & error) const override
     {
@@ -780,6 +817,9 @@ public:
         }
         else
         {
+            if (!insert_settings.allow_type_conversion)
+                return false;
+
             switch (element.type())
             {
                 case ElementType::DOUBLE:
@@ -1373,7 +1413,20 @@ public:
 
         auto & variant_column = column_dynamic.getVariantColumn();
         auto & variant_info = column_dynamic.getVariantInfo();
-        /// First, infer ClickHouse type for this element and add it as a new variant.
+
+        /// First, try to insert element into current variants but with no types conversion.
+        /// We want to avoid inferring the type on each row, so if we can insert this element into
+        /// any existing variant with no types conversion (like Integer -> String, Double -> Integer, etc)
+        /// we will do it and won't try to infer the type.
+        auto it = json_extract_nodes_cache.find(variant_info.variant_name);
+        if (it == json_extract_nodes_cache.end())
+            it = json_extract_nodes_cache.emplace(variant_info.variant_name, buildJSONExtractTree<JSONParser>(variant_info.variant_type, "Dynamic inference")).first;
+        auto insert_settings_with_no_type_conversion = insert_settings;
+        insert_settings_with_no_type_conversion.allow_type_conversion = false;
+        if (it->second->insertResultToColumn(variant_column, element, insert_settings_with_no_type_conversion, format_settings, error))
+            return true;
+
+        /// We couldn't insert element into current variants, infer ClickHouse type for this element and add it as a new variant.
         auto element_type = removeNullable(elementToDataType(element, format_settings));
         if (!checkIfTypeIsComplete(element_type))
         {
@@ -1387,7 +1440,7 @@ public:
         auto element_type_name = element_type->getName();
         if (column_dynamic.addNewVariant(element_type, element_type_name))
         {
-            auto it = json_extract_nodes_cache.find(element_type_name);
+            it = json_extract_nodes_cache.find(element_type_name);
             if (it == json_extract_nodes_cache.end())
                 it = json_extract_nodes_cache.emplace(element_type_name, buildJSONExtractTree<JSONParser>(element_type, "Dynamic inference")).first;
             auto global_discriminator = variant_info.variant_name_to_discriminator.at(element_type_name);
@@ -1399,14 +1452,7 @@ public:
             return true;
         }
 
-        /// We couldn't add new variant. Try to insert element into current variants.
-        auto it = json_extract_nodes_cache.find(variant_info.variant_name);
-        if (it == json_extract_nodes_cache.end())
-            it = json_extract_nodes_cache.emplace(variant_info.variant_name, buildJSONExtractTree<JSONParser>(variant_info.variant_type, "Dynamic inference")).first;
-        if (it->second->insertResultToColumn(variant_column, element, insert_settings, format_settings, error))
-            return true;
-
-        /// We couldn't insert element into any existing variant, add String variant and read value as String.
+        /// We couldn't add a new variant, add String variant and read value as String.
         column_dynamic.addStringVariant();
         auto string_global_discriminator = variant_info.variant_name_to_discriminator.at("String");
         auto & string_column = variant_column.getVariantByGlobalDiscriminator(string_global_discriminator);
@@ -1962,7 +2008,7 @@ template std::unique_ptr<JSONExtractTreeNode<SimdJSONParser>> buildJSONExtractTr
 #if USE_RAPIDJSON
 template void jsonElementToString<RapidJSONParser>(const RapidJSONParser::Element & element, WriteBuffer & buf, const FormatSettings & format_settings);
 template std::unique_ptr<JSONExtractTreeNode<RapidJSONParser>> buildJSONExtractTree<RapidJSONParser>(const DataTypePtr & type, const char * source_for_exception_message);
-template bool tryGetNumericValueFromJSONElement<RapidJSONParser, Float64>(Float64 & value, const RapidJSONParser::Element & element, bool convert_bool_to_integer, String & error);
+template bool tryGetNumericValueFromJSONElement<RapidJSONParser, Float64>(Float64 & value, const RapidJSONParser::Element & element, bool convert_bool_to_integer, bool allow_type_conversion, String & error);
 #else
 template void jsonElementToString<DummyJSONParser>(const DummyJSONParser::Element & element, WriteBuffer & buf, const FormatSettings & format_settings);
 template std::unique_ptr<JSONExtractTreeNode<DummyJSONParser>> buildJSONExtractTree<DummyJSONParser>(const DataTypePtr & type, const char * source_for_exception_message);
