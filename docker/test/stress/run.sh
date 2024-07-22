@@ -21,6 +21,9 @@ source /attach_gdb.lib
 # shellcheck source=../stateless/stress_tests.lib
 source /stress_tests.lib
 
+# shellcheck disable=SC1091
+source /utils.lib
+
 install_packages package_folder
 
 # Thread Fuzzer allows to check more permutations of possible thread scheduling
