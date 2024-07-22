@@ -868,7 +868,7 @@ template <Strategy strategy>
 ReturnType<strategy> deserializeTextJSONImpl(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, const SerializationPtr & nested, bool & is_null)
 {
     auto check_for_null = [](ReadBuffer & buf){ return checkStringByFirstCharacterAndAssertTheRest("null", buf); };
-    auto deserialize_nested = [&nested, &settings](IColumn & nested_column, ReadBuffer & buf)
+    auto deserialize_nested = [&nested, &settings](IColumn & nested_column, ReadBuffer & buf) -> ReturnType<strategy>
     {
         if constexpr (strategy == Strategy::TryDeserialize)
             return nested->tryDeserializeTextJSON(nested_column, buf, settings);

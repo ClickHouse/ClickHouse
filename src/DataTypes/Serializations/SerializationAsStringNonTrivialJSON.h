@@ -12,6 +12,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
 /** Serialization for non-numeric non-string data types serialized as JSON strings
  * For these data types, we support an option, input_format_json_empty_as_default, which, when set to 1,
  * allows for JSON deserialization to treat an encountered empty string as a default value for the specified type.
