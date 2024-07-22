@@ -32,6 +32,7 @@ node2 = cluster.add_instance(
     main_configs=["configs/listen_host.xml", "configs/dns_update_long.xml"],
     with_zookeeper=True,
     ipv6_address="2001:3984:3989::1:1112",
+    ipv4_address="10.5.95.11",
 )
 
 
@@ -39,9 +40,6 @@ node2 = cluster.add_instance(
 def cluster_without_dns_cache_update():
     try:
         cluster.start()
-
-        _fill_nodes([node1, node2], "test_table_drop")
-
         yield cluster
 
     except Exception as ex:
@@ -59,6 +57,8 @@ def test_ip_change_drop_dns_cache(cluster_without_dns_cache_update):
     # In this case we should manually set up the static DNS entries on the source host
     # to exclude resplving addresses automatically added by docker.
     # We use ipv6 for hosts, but resolved DNS entries may contain an unexpected ipv4 address.
+    _fill_nodes([node1, node2], "test_table_drop")
+
     node2.set_hosts([("2001:3984:3989::1:1111", "node1")])
     # drop DNS cache
     node2.query("SYSTEM DROP DNS CACHE")
@@ -96,6 +96,67 @@ def test_ip_change_drop_dns_cache(cluster_without_dns_cache_update):
     node1.query("INSERT INTO test_table_drop VALUES ('2018-10-01', 8)")
     assert node1.query("SELECT count(*) from test_table_drop") == "7\n"
     assert_eq_with_retry(node2, "SELECT count(*) from test_table_drop", "7")
+
+
+def _render_filter_config(allow_ipv4, allow_ipv6):
+    config = f"""
+    <clickhouse>
+        <dns_allow_resolve_names_to_ipv4>{int(allow_ipv4)}</dns_allow_resolve_names_to_ipv4>
+        <dns_allow_resolve_names_to_ipv6>{int(allow_ipv6)}</dns_allow_resolve_names_to_ipv6>
+    </clickhouse>
+    """
+    return config
+
+
+@pytest.mark.parametrize(
+    "allow_ipv4, allow_ipv6",
+    [
+        (True, False),
+        (False, True),
+        (False, False),
+    ],
+)
+def test_dns_resolver_filter(cluster_without_dns_cache_update, allow_ipv4, allow_ipv6):
+    host_ipv6 = node2.ipv6_address
+    host_ipv4 = node2.ipv4_address
+
+    node2.set_hosts(
+        [
+            (host_ipv6, "test_host"),
+            (host_ipv4, "test_host"),
+        ]
+    )
+    node2.replace_config(
+        "/etc/clickhouse-server/config.d/dns_filter.xml",
+        _render_filter_config(allow_ipv4, allow_ipv6),
+    )
+
+    node2.query("SYSTEM DROP DNS CACHE")
+    node2.query("SYSTEM DROP CONNECTIONS CACHE")
+    node2.query("SYSTEM RELOAD CONFIG")
+
+    if not allow_ipv4 and not allow_ipv6:
+        with pytest.raises(QueryRuntimeException):
+            node4.query("SELECT * FROM remote('lost_host', 'system', 'one')")
+    else:
+        node2.query("SELECT * FROM remote('test_host', system, one)")
+        assert (
+            node2.query(
+                "SELECT ip_address FROM system.dns_cache WHERE hostname='test_host'"
+            )
+            == f"{host_ipv4 if allow_ipv4 else host_ipv6}\n"
+        )
+
+    node2.exec_in_container(
+        [
+            "bash",
+            "-c",
+            "rm /etc/clickhouse-server/config.d/dns_filter.xml",
+        ],
+        privileged=True,
+        user="root",
+    )
+    node2.query("SYSTEM RELOAD CONFIG")
 
 
 node3 = cluster.add_instance(
