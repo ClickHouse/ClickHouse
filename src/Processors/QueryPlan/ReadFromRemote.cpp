@@ -21,7 +21,7 @@
 #include <Client/ConnectionPoolWithFailover.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Parsers/ASTFunction.h>
-
+#include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
 #include <boost/algorithm/string/join.hpp>
 
 namespace DB
@@ -429,6 +429,7 @@ void ReadFromParallelRemoteReplicasStep::initializePipeline(QueryPipelineBuilder
     {
         shuffled_pool = shard.pool->getShuffledPools(current_settings);
         shuffled_pool.resize(max_replicas_to_use);
+        coordinator->adjustParticipatingReplicasCount(max_replicas_to_use);
     }
     else
     {
