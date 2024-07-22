@@ -20,12 +20,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int MEMORY_LIMIT_EXCEEDED;
-}
-
-
 /// Lightweight (in terms of logic) stream for reading single part from
 /// MergeTree, used for merges and mutations.
 ///
