@@ -51,10 +51,22 @@ RUN curl -s https://apt.kitware.com/keys/kitware-archive-latest.asc | gpg --dear
     && git clone --no-checkout https://github.com/llvm/llvm-project \
     && cd llvm-project && git checkout ${LLVM_COMMIT} && cd .. \
     && mkdir llvm-build && cd llvm-build \
-    && CC=clang-14 CXX=clang++-14 cmake -GNinja -DCMAKE_BUILD_TYPE:STRING=Release -DLLVM_VERSION_SUFFIX=${LLVM_VERSION} -DLLVM_ENABLE_ZLIB=1 -DLLVM_ENABLE_PROJECTS=all -DLLVM_TARGETS_TO_BUILD=all ../llvm-project/llvm \
+    && CC=clang-14 CXX=clang++-14 cmake -GNinja -DCMAKE_BUILD_TYPE:STRING=Release -DLLVM_ENABLE_ZLIB=1 -DLLVM_ENABLE_PROJECTS=all -DLLVM_TARGETS_TO_BUILD=all ../llvm-project/llvm \
     && ninja && ninja install \
     && cd .. && rm -rf llvm-project llvm-build \
     && apt-get remove --yes gcc clang \
     && apt-get clean && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
+
+# Create symlinks for tools
+RUN ln -f -s /usr/local/bin/clang /usr/local/bin/clang-${LLVM_VERSION} \
+    && ln -f -s /usr/local/bin/clang++ /usr/local/bin/clang++-${LLVM_VERSION} \
+    && ln -f -s /usr/local/bin/ld.lld /usr/local/bin/ld.lld-${LLVM_VERSION} \
+    && ln -f -s /usr/local/bin/llvm-as /usr/local/bin/llvm-as-${LLVM_VERSION} \
+    && ln -f -s /usr/local/bin/llvm-ar /usr/local/bin/llvm-ar-${LLVM_VERSION} \
+    && ln -f -s /usr/local/bin/llvm-ranlib /usr/local/bin/llvm-ranlib-${LLVM_VERSION} \
+    && ln -f -s /usr/local/bin/llvm-nm /usr/local/bin/llvm-nm-${LLVM_VERSION} \
+    && ln -f -s /usr/local/bin/llvm-install-name-tool /usr/local/bin/llvm-install-name-tool-${LLVM_VERSION} \
+    && ln -f -s /usr/local/bin/llvm-objcopy /usr/local/bin/llvm-objcopy-${LLVM_VERSION} \
+    && ln -f -s /usr/local/bin/llvm-strip /usr/local/bin/llvm-strip-${LLVM_VERSION}
 
 COPY process_functional_tests_result.py /
