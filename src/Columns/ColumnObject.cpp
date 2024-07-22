@@ -385,7 +385,7 @@ bool ColumnObject::tryInsert(const Field & x)
     return true;
 }
 
-#if !defined(ABORT_ON_LOGICAL_ERROR)
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
 void ColumnObject::insertFrom(const IColumn & src, size_t n)
 #else
 void ColumnObject::doInsertFrom(const IColumn & src, size_t n)
@@ -418,7 +418,7 @@ void ColumnObject::doInsertFrom(const IColumn & src, size_t n)
     insertFromSharedDataAndFillRemainingDynamicPaths(src_object_column, src_dynamic_paths_for_shared_data, n, 1);
 }
 
-#if !defined(ABORT_ON_LOGICAL_ERROR)
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
 void ColumnObject::insertRangeFrom(const IColumn & src, size_t start, size_t length)
 #else
 void ColumnObject::doInsertRangeFrom(const IColumn & src, size_t start, size_t length)
@@ -747,13 +747,15 @@ void ColumnObject::updateHashWithValue(size_t n, SipHash & hash) const
     shared_data->updateHashWithValue(n, hash);
 }
 
-void ColumnObject::updateWeakHash32(WeakHash32 & hash) const
+WeakHash32 ColumnObject::getWeakHash32() const
 {
+    WeakHash32 hash(size());
     for (const auto & [_, column] : typed_paths)
-        column->updateWeakHash32(hash);
+        hash.update(column->getWeakHash32());
     for (const auto & [_, column] : dynamic_paths)
-        column->updateWeakHash32(hash);
-    shared_data->updateWeakHash32(hash);
+        hash.update(column->getWeakHash32());
+    hash.update(shared_data->getWeakHash32());
+    return hash;
 }
 
 void ColumnObject::updateHashFast(SipHash & hash) const

@@ -917,8 +917,8 @@ TEST_P(SyncAsync, ExceptionOnUploadPart) {
 
 
 TEST_F(WBS3Test, PrefinalizeCalledMultipleTimes) {
-#ifdef ABORT_ON_LOGICAL_ERROR
-    GTEST_SKIP() << "this test trigger LOGICAL_ERROR, runs only if ABORT_ON_LOGICAL_ERROR is not defined";
+#ifdef DEBUG_OR_SANITIZER_BUILD
+    GTEST_SKIP() << "this test trigger LOGICAL_ERROR, runs only if DEBUG_OR_SANITIZER_BUILD is not defined";
 #else
     EXPECT_THROW({
         try {

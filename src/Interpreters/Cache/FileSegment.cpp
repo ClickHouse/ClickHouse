@@ -67,7 +67,7 @@ FileSegment::FileSegment(
     , key_metadata(key_metadata_)
     , queue_iterator(queue_iterator_)
     , cache(cache_)
-#ifdef ABORT_ON_LOGICAL_ERROR
+#ifdef DEBUG_OR_SANITIZER_BUILD
     , log(getLogger(fmt::format("FileSegment({}) : {}", key_.toString(), range().toString())))
 #else
     , log(getLogger("FileSegment"))
@@ -385,9 +385,9 @@ void FileSegment::write(char * from, size_t size, size_t offset_in_file)
 
     try
     {
-#ifdef ABORT_ON_LOGICAL_ERROR
+#ifdef DEBUG_OR_SANITIZER_BUILD
         /// This mutex is only needed to have a valid assertion in assertCacheCorrectness(),
-        /// which is only executed in debug/sanitizer builds (under ABORT_ON_LOGICAL_ERROR).
+        /// which is only executed in debug/sanitizer builds (under DEBUG_OR_SANITIZER_BUILD).
         std::lock_guard lock(write_mutex);
 #endif
 

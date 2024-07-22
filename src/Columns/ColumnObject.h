@@ -5,9 +5,12 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnString.h>
+
 #include <DataTypes/IDataType.h>
 #include <DataTypes/Serializations/SerializationDynamic.h>
 #include <Formats/FormatSettings.h>
+
+#include <Common/WeakHash.h>
 
 namespace DB
 {
@@ -73,7 +76,7 @@ public:
 
     void insert(const Field & x) override;
     bool tryInsert(const Field & x) override;
-#if !defined(ABORT_ON_LOGICAL_ERROR)
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
     void insertFrom(const IColumn & src, size_t n) override;
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
 #else
@@ -91,7 +94,7 @@ public:
     const char * skipSerializedInArena(const char * pos) const override;
 
     void updateHashWithValue(size_t n, SipHash & hash) const override;
-    void updateWeakHash32(WeakHash32 & hash) const override;
+    WeakHash32 getWeakHash32() const override;
     void updateHashFast(SipHash & hash) const override;
 
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
@@ -105,7 +108,7 @@ public:
     void updatePermutation(PermutationSortDirection, PermutationSortStability, size_t, int, Permutation &, EqualRanges &) const override {}
 
     /// Values of ColumnObject are not comparable.
-#if !defined(ABORT_ON_LOGICAL_ERROR)
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
     int compareAt(size_t, size_t, const IColumn &, int) const override { return 0; }
 #else
     int doCompareAt(size_t, size_t, const IColumn &, int) const override { return 0; }

@@ -234,10 +234,10 @@
     M(PartsCommitted, "Deprecated. See PartsActive.") \
     M(PartsPreActive, "The part is in data_parts, but not used for SELECTs.") \
     M(PartsActive, "Active data part, used by current and upcoming SELECTs.") \
-    M(AttachedDatabase, "Active database, used by current and upcoming SELECTs.") \
-    M(AttachedTable, "Active table, used by current and upcoming SELECTs.") \
-    M(AttachedView, "Active view, used by current and upcoming SELECTs.") \
-    M(AttachedDictionary, "Active dictionary, used by current and upcoming SELECTs.") \
+    M(AttachedDatabase, "Active databases.") \
+    M(AttachedTable, "Active tables.") \
+    M(AttachedView, "Active views.") \
+    M(AttachedDictionary, "Active dictionaries.") \
     M(PartsOutdated, "Not active data part, but could be used by only current SELECTs, could be deleted after SELECTs finishes.") \
     M(PartsDeleting, "Not active data part with identity refcounter, it is deleting right now by a cleaner.") \
     M(PartsDeleteOnDestroy, "Part was moved to another disk and should be deleted in own destructor.") \

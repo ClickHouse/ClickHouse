@@ -32,6 +32,9 @@ class CI:
     from ci_definitions import MQ_JOBS as MQ_JOBS
     from ci_definitions import WorkflowStages as WorkflowStages
     from ci_definitions import Runners as Runners
+    from ci_utils import Envs as Envs
+    from ci_utils import Utils as Utils
+    from ci_utils import GHActions as GHActions
     from ci_definitions import Labels as Labels
     from ci_definitions import TRUSTED_CONTRIBUTORS as TRUSTED_CONTRIBUTORS
     from ci_utils import CATEGORY_TO_LABEL as CATEGORY_TO_LABEL

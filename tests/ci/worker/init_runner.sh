@@ -50,7 +50,7 @@ set -uo pipefail
 # set accordingly to a runner role #
 ####################################
 
-echo "Running init v1"
+echo "Running init v1.1"
 export DEBIAN_FRONTEND=noninteractive
 export RUNNER_HOME=/home/ubuntu/actions-runner
 
@@ -66,6 +66,14 @@ bash /usr/local/share/scripts/init-network.sh
 RUNNER_TYPE=$(/usr/local/bin/aws ec2 describe-tags --filters "Name=resource-id,Values=$INSTANCE_ID" --query "Tags[?Key=='github:runner-type'].Value" --output text)
 LABELS="self-hosted,Linux,$(uname -m),$RUNNER_TYPE"
 export LABELS
+echo "Instance Labels: $LABELS"
+
+LIFE_CYCLE=$(curl -s --fail http://169.254.169.254/latest/meta-data/instance-life-cycle)
+export LIFE_CYCLE
+echo "Instance lifecycle: $LIFE_CYCLE"
+
+INSTANCE_TYPE=$(ec2metadata --instance-type)
+echo "Instance type: $INSTANCE_TYPE"
 
 # Refresh CloudWatch agent config
 aws ssm get-parameter --region us-east-1 --name AmazonCloudWatch-github-runners --query 'Parameter.Value' --output text > /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
@@ -124,10 +132,6 @@ terminate_decrease_and_exit() {
 declare -f terminate_and_exit >> /tmp/actions-hooks/common.sh
 
 check_spot_instance_is_old() {
-    # This function should be executed ONLY BETWEEN runnings.
-    # It's unsafe to execute while the runner is working!
-    local LIFE_CYCLE
-    LIFE_CYCLE=$(curl -s --fail http://169.254.169.254/latest/meta-data/instance-life-cycle)
     if [ "$LIFE_CYCLE" == "spot" ]; then
         local UPTIME
         UPTIME=$(< /proc/uptime)
