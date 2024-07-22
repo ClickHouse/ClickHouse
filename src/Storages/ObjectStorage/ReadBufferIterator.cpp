@@ -162,7 +162,9 @@ ReadBufferIterator::Data ReadBufferIterator::next()
         {
             for (const auto & object_info : read_keys)
             {
-                if (auto format_from_file_name = FormatFactory::instance().tryGetFormatFromFileName(object_info->getFileName()))
+                auto format_from_file_name = FormatFactory::instance().tryGetFormatFromFileName(object_info->getFileName());
+                /// Use this format only if we have a schema reader for it.
+                if (format_from_file_name && FormatFactory::instance().checkIfFormatHasAnySchemaReader(*format_from_file_name))
                 {
                     format = format_from_file_name;
                     break;
