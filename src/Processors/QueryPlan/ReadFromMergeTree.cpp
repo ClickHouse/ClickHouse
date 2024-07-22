@@ -384,7 +384,11 @@ Pipe ReadFromMergeTree::readFromPoolParallelReplicas(RangesInDataParts parts_wit
 
     /// We have a special logic for local replica. It has to read less data, because in some cases it should
     /// merge states of aggregate functions or do some other important stuff other than reading from Disk.
-    const auto multiplier = context->getSettingsRef().parallel_replicas_single_task_marks_count_multiplier;
+    auto multiplier = context->getSettingsRef().parallel_replicas_single_task_marks_count_multiplier;
+    // avoid using multiplier if min marks to read is already too big (to avoid overflow)
+    if (pool_settings.min_marks_for_concurrent_read >= std::numeric_limits<Int64>::max())
+        multiplier = 1.0f;
+
     if (auto result = pool_settings.min_marks_for_concurrent_read * multiplier; canConvertTo<size_t>(result))
         pool_settings.min_marks_for_concurrent_read = static_cast<size_t>(result);
     else
@@ -553,7 +557,11 @@ Pipe ReadFromMergeTree::readInOrder(
             .number_of_current_replica = number_of_current_replica.value_or(client_info.number_of_current_replica),
         };
 
-        const auto multiplier = context->getSettingsRef().parallel_replicas_single_task_marks_count_multiplier;
+        auto multiplier = context->getSettingsRef().parallel_replicas_single_task_marks_count_multiplier;
+        // avoid using multiplier if min marks to read is already too big (to avoid overflow)
+        if (pool_settings.min_marks_for_concurrent_read >= std::numeric_limits<Int64>::max())
+            multiplier = 1.0f;
+
         if (auto result = pool_settings.min_marks_for_concurrent_read * multiplier; canConvertTo<size_t>(result))
             pool_settings.min_marks_for_concurrent_read = static_cast<size_t>(result);
         else
