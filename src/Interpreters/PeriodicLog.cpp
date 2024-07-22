@@ -1,3 +1,4 @@
+#include "Common/setThreadName.h"
 #include <Common/SystemLogBase.h>
 #include <Interpreters/ErrorLog.h>
 #include <Interpreters/MetricLog.h>
@@ -8,12 +9,15 @@ namespace DB
 {
 
 template <typename LogElement>
-void PeriodicLog<LogElement>::startCollect(ContextPtr context_, size_t collect_interval_milliseconds_)
+void PeriodicLog<LogElement>::startCollect(ContextPtr context_, const String & thread_name, size_t collect_interval_milliseconds_)
 {
     context = context_;
     collect_interval_milliseconds = collect_interval_milliseconds_;
     is_shutdown_metric_thread = false;
-    flush_thread = std::make_unique<ThreadFromGlobalPool>([this] { threadFunction(); });
+    flush_thread = std::make_unique<ThreadFromGlobalPool>([this, thread_name] {
+        setThreadName(thread_name.c_str());
+        threadFunction();
+    });
 }
 
 template <typename LogElement>

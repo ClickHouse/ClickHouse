@@ -2,7 +2,6 @@
 #include <Common/CurrentThread.h>
 #include <Common/DateLUT.h>
 #include <Common/DateLUTImpl.h>
-#include <Common/setThreadName.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
@@ -120,7 +119,6 @@ void QueryMetricLog::finishQuery(const String & query_id)
 
 void QueryMetricLog::threadFunction()
 {
-    setThreadName("QueryMetricLog");
     auto desired_timepoint = std::chrono::system_clock::now();
     while (!is_shutdown_metric_thread)
     {
