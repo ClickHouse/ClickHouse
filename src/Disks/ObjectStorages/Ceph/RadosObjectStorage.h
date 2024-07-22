@@ -210,6 +210,8 @@ public:
 
     bool isReadOnly() const override { return ceph_settings.get()->read_only; }
 
+    std::shared_ptr<librados::Rados> tryGetRadosClient() const override { return rados; }
+
 private:
     void setNewSettings(std::unique_ptr<RadosObjectStorageSettings> && ceph_settings_);
 

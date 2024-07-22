@@ -5,6 +5,7 @@
 #include <mutex>
 #include <optional>
 #include <filesystem>
+#include <librados.hpp>
 
 #include <Poco/Timestamp.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -275,6 +276,9 @@ public:
     virtual std::shared_ptr<const S3::Client> tryGetS3StorageClient() { return nullptr; }
 #endif
 
+#if USE_CEPH
+    virtual std::shared_ptr<librados::Rados> tryGetRadosClient() const { return nullptr; }
+#endif
 
 private:
     mutable std::mutex throttlers_mutex;

@@ -52,9 +52,9 @@ public:
 
     const std::string & getCacheName() const override { return object_storage->getCacheName(); }
 
-    std::optional<UInt64> getTotalSpace() const override { return {}; }
-    std::optional<UInt64> getAvailableSpace() const override { return {}; }
-    std::optional<UInt64> getUnreservedSpace() const override { return {}; }
+    std::optional<UInt64> getTotalSpace() const override;
+    std::optional<UInt64> getAvailableSpace() const override;
+    std::optional<UInt64> getUnreservedSpace() const override;
 
     UInt64 getKeepingFreeSpace() const override { return 0; }
 
@@ -234,7 +234,7 @@ private:
 
     UInt64 reserved_bytes = 0;
     UInt64 reservation_count = 0;
-    std::mutex reservation_mutex;
+    mutable std::mutex reservation_mutex;
 
     bool tryReserve(UInt64 bytes);
     void sendMoveMetadata(const String & from_path, const String & to_path);

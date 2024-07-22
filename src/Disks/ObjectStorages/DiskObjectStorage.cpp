@@ -640,4 +640,46 @@ DiskObjectStorageReservation::~DiskObjectStorageReservation()
     }
 }
 
+std::optional<UInt64> DiskObjectStorage::getTotalSpace() const
+{
+#if USE_CEPH
+    if (auto client = object_storage->tryGetRadosClient())
+    {
+        librados::cluster_stat_t stats;
+        if (auto ec = client->cluster_stat(stats); ec < 0)
+            LOG_ERROR(log, "Failed to get rados cluster stats: {}", strerror(ec));
+        else
+            return stats.kb * 1024;
+    }
+#endif
+    return {};
+}
+
+std::optional<UInt64> DiskObjectStorage::getAvailableSpace() const
+{
+#if USE_CEPH
+    if (auto client = object_storage->tryGetRadosClient())
+    {
+        librados::cluster_stat_t stats;
+        if (auto ec = client->cluster_stat(stats); ec < 0)
+            LOG_ERROR(log, "Failed to get rados cluster stats: {}", strerror(ec));
+        else
+            return stats.kb_avail * 1024;
+    }
+#endif
+    return {};
+}
+
+std::optional<UInt64> DiskObjectStorage::getUnreservedSpace() const
+{
+#if USE_CEPH
+    auto available_space = getAvailableSpace();
+    if (available_space)
+    {
+        std::lock_guard lock(reservation_mutex);
+        return *available_space - std::min(*available_space, reserved_bytes);
+    }
+#endif
+    return {};
+}
 }
