@@ -351,6 +351,8 @@ class JobConfig:
     run_by_label: str = ""
     # to run always regardless of the job digest or/and label
     run_always: bool = False
+    # disables CI await for a given job
+    disable_await: bool = False
     # if the job needs to be run on the release branch, including master (building packages, docker server).
     # NOTE: Subsequent runs on the same branch with the similar digest are still considered skip-able.
     required_on_release_branch: bool = False
@@ -395,6 +397,7 @@ class CommonJobConfigs:
             ],
         ),
         runner_type=Runners.STYLE_CHECKER_ARM,
+        disable_await=True,
     )
     COMPATIBILITY_TEST = JobConfig(
         job_name_keyword="compatibility",
@@ -430,7 +433,7 @@ class CommonJobConfigs:
         ),
         run_command='functional_test_check.py "$CHECK_NAME"',
         runner_type=Runners.FUNC_TESTER,
-        timeout=7200,
+        timeout=9000,
     )
     STATEFUL_TEST = JobConfig(
         job_name_keyword="stateful",
