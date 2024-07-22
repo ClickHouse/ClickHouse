@@ -1342,16 +1342,16 @@ class FunctionBinaryArithmetic : public IFunction
             {
                 if (!arg.column->isNullable())
                     continue;
-                for (size_t j = 0; j < arg.column->size(); ++j)
-                {
-                    if (arg.column->isNullAt(j))
-                    {
-                        args_have_nulls = true;
-                        break;
-                    }
-                }
+
+                const ColumnNullable * null_col = checkAndGetColumn<ColumnNullable>(arg.column.get());
+                const ColumnPtr & null_map_col = null_col->getNullMapColumnPtr();
+                const NullMap & null_map = assert_cast<const ColumnUInt8 &>(*null_map_col).getData();
+
+                for (size_t i = 0, size = null_map.size(); i < size; ++i)
+                    args_have_nulls |= null_map[i];
             }
         }
+
         if (args_have_nulls || args_have_constants)
         {
             if constexpr (IsOperation<Op>::greatest)
