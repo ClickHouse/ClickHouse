@@ -324,7 +324,20 @@ void InterpreterCreateUserQuery::updateUserFromQuery(User & user, const ASTCreat
     if (query.valid_until)
         valid_until = getValidUntilFromAST(query.valid_until, {});
 
-    updateUserFromQueryImpl(user, query, auth_data, {}, {}, {}, {}, valid_until, query.reset_authentication_methods_to_new, query.replace_authentication_methods, allow_no_password, allow_plaintext_password, true);
+    updateUserFromQueryImpl(
+        user,
+        query,
+        authentication_methods,
+        {},
+        {},
+        {},
+        {},
+        valid_until,
+        query.reset_authentication_methods_to_new,
+        query.replace_authentication_methods,
+        allow_no_password,
+        allow_plaintext_password,
+        true);
 }
 
 void registerInterpreterCreateUserQuery(InterpreterFactory & factory)
