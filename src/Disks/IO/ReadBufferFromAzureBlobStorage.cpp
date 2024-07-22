@@ -253,7 +253,7 @@ void ReadBufferFromAzureBlobStorage::initialize()
     initialized = true;
 }
 
-size_t ReadBufferFromAzureBlobStorage::getFileSize()
+std::optional<size_t> ReadBufferFromAzureBlobStorage::tryGetFileSize()
 {
     if (!blob_client)
         blob_client = std::make_unique<Azure::Storage::Blobs::BlobClient>(blob_container_client->GetBlobClient(path));

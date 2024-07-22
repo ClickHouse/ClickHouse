@@ -72,7 +72,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_SEEK_THROUGH_FILE;
     extern const int SEEK_POSITION_OUT_OF_BOUND;
-    extern const int UNKNOWN_FILE_SIZE;
 }
 
 std::unique_ptr<ReadBuffer> ReadWriteBufferFromHTTP::CallResult::transformToReadBuffer(size_t buf_size) &&
@@ -121,15 +120,21 @@ void ReadWriteBufferFromHTTP::prepareRequest(Poco::Net::HTTPRequest & request, s
         credentials.authenticate(request);
 }
 
-size_t ReadWriteBufferFromHTTP::getFileSize()
+std::optional<size_t> ReadWriteBufferFromHTTP::tryGetFileSize()
 {
     if (!file_info)
-        file_info = getFileInfo();
+    {
+        try
+        {
+            file_info = getFileInfo();
+        }
+        catch (const HTTPException &)
+        {
+            return std::nullopt;
+        }
+    }
 
-    if (file_info->file_size)
-        return *file_info->file_size;
-
-    throw Exception(ErrorCodes::UNKNOWN_FILE_SIZE, "Cannot find out file size for: {}", initial_uri.toString());
+    return file_info->file_size;
 }
 
 bool ReadWriteBufferFromHTTP::supportsReadAt()
@@ -683,7 +688,7 @@ std::optional<time_t> ReadWriteBufferFromHTTP::tryGetLastModificationTime()
         {
             file_info = getFileInfo();
         }
-        catch (...)
+        catch (const HTTPException &)
         {
             return std::nullopt;
         }
@@ -704,7 +709,7 @@ ReadWriteBufferFromHTTP::HTTPFileInfo ReadWriteBufferFromHTTP::getFileInfo()
     {
         getHeadResponse(response);
     }
-    catch (HTTPException & e)
+    catch (const HTTPException & e)
     {
         /// Maybe the web server doesn't support HEAD requests.
         /// E.g. webhdfs reports status 400.
