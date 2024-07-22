@@ -39,7 +39,7 @@ ColumnString::ColumnString(const ColumnString & src)
             last_offset, chars.size());
 }
 
-#if !defined(ABORT_ON_LOGICAL_ERROR)
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
 void ColumnString::insertManyFrom(const IColumn & src, size_t position, size_t length)
 #else
 void ColumnString::doInsertManyFrom(const IColumn & src, size_t position, size_t length)
@@ -132,7 +132,7 @@ WeakHash32 ColumnString::getWeakHash32() const
 }
 
 
-#if !defined(ABORT_ON_LOGICAL_ERROR)
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
 void ColumnString::insertRangeFrom(const IColumn & src, size_t start, size_t length)
 #else
 void ColumnString::doInsertRangeFrom(const IColumn & src, size_t start, size_t length)

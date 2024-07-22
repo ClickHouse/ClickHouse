@@ -74,7 +74,7 @@ bool ColumnFixedString::tryInsert(const Field & x)
     return true;
 }
 
-#if !defined(ABORT_ON_LOGICAL_ERROR)
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
 void ColumnFixedString::insertFrom(const IColumn & src_, size_t index)
 #else
 void ColumnFixedString::doInsertFrom(const IColumn & src_, size_t index)
@@ -90,7 +90,7 @@ void ColumnFixedString::doInsertFrom(const IColumn & src_, size_t index)
     memcpySmallAllowReadWriteOverflow15(chars.data() + old_size, &src.chars[n * index], n);
 }
 
-#if !defined(ABORT_ON_LOGICAL_ERROR)
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
 void ColumnFixedString::insertManyFrom(const IColumn & src, size_t position, size_t length)
 #else
 void ColumnFixedString::doInsertManyFrom(const IColumn & src, size_t position, size_t length)
@@ -225,7 +225,7 @@ size_t ColumnFixedString::estimateCardinalityInPermutedRange(const Permutation &
     return elements.size();
 }
 
-#if !defined(ABORT_ON_LOGICAL_ERROR)
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
 void ColumnFixedString::insertRangeFrom(const IColumn & src, size_t start, size_t length)
 #else
 void ColumnFixedString::doInsertRangeFrom(const IColumn & src, size_t start, size_t length)

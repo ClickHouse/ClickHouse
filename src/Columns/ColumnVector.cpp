@@ -502,7 +502,7 @@ bool ColumnVector<T>::tryInsert(const DB::Field & x)
 }
 
 template <typename T>
-#if !defined(ABORT_ON_LOGICAL_ERROR)
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
 void ColumnVector<T>::insertRangeFrom(const IColumn & src, size_t start, size_t length)
 #else
 void ColumnVector<T>::doInsertRangeFrom(const IColumn & src, size_t start, size_t length)
