@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/data-types/object-data-type
+slug: /en/sql-reference/data-types/object-json
 sidebar_position: 26
 sidebar_label: Object Data Type
 keywords: [object, data type]

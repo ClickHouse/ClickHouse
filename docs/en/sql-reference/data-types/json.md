@@ -2,6 +2,7 @@
 slug: /en/sql-reference/data-types/json
 sidebar_position: 63
 sidebar_label: JSON
+keywords: [json, data type]
 ---
 
 # JSON
