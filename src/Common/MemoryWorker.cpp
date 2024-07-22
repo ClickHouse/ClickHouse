@@ -2,8 +2,9 @@
 
 #include <Common/Jemalloc.h>
 #include <Common/MemoryTracker.h>
-#include <Common/formatReadable.h>
 #include <Common/ProfileEvents.h>
+#include <Common/formatReadable.h>
+#include <Common/logger_useful.h>
 
 namespace ProfileEvents
 {
@@ -23,6 +24,7 @@ namespace DB
 MemoryWorker::MemoryWorker(uint64_t period_ms_)
     : period_ms(period_ms_)
 {
+    LOG_INFO(getLogger("MemoryWorker"), "Starting background memory thread with period of {}ms", period_ms.count());
     background_thread = ThreadFromGlobalPool([this] { backgroundThread(); });
 }
 
@@ -42,9 +44,10 @@ void MemoryWorker::backgroundThread()
 {
     JemallocMibCache<uint64_t> epoch_mib("epoch");
     JemallocMibCache<size_t> resident_mib("stats.resident");
+    JemallocMibCache<size_t> active_mib("stats.active");
     JemallocMibCache<size_t> allocated_mib("stats.allocated");
     JemallocMibCache<size_t> purge_mib("arena." STRINGIFY(MALLCTL_ARENAS_ALL) ".purge");
-    bool first_run = false;
+    bool first_run = true;
     std::unique_lock lock(mutex);
     while (true)
     {
@@ -55,6 +58,11 @@ void MemoryWorker::backgroundThread()
         Stopwatch total_watch;
         epoch_mib.setValue(0);
         Int64 resident = resident_mib.getValue();
+
+        /// force update the allocated stat from jemalloc for the first run to cover the allocations we missed
+        /// during initialization
+        MemoryTracker::updateValues(resident, allocated_mib.getValue(), first_run);
+
         if (resident > total_memory_tracker.getHardLimit())
         {
             Stopwatch purge_watch;
@@ -63,9 +71,6 @@ void MemoryWorker::backgroundThread()
             ProfileEvents::increment(ProfileEvents::MemoryAllocatorPurgeTimeMicroseconds, purge_watch.elapsedMicroseconds());
         }
 
-        /// force update the allocated stat from jemalloc for the first run to cover the allocations we missed
-        /// during initialization
-        MemoryTracker::updateValues(resident, allocated_mib.getValue(), first_run);
         ProfileEvents::increment(ProfileEvents::MemoryWorkerRun);
         ProfileEvents::increment(ProfileEvents::MemoryWorkerRunElapsedMicroseconds, total_watch.elapsedMicroseconds());
 

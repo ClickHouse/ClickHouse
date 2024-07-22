@@ -904,8 +904,6 @@ try
         LOG_INFO(log, "Background threads finished in {} ms", watch.elapsedMilliseconds());
     });
 
-    MemoryWorker memory_worker(global_context->getServerSettings().memory_worker_period_ms);
-
     /// This object will periodically calculate some metrics.
     ServerAsynchronousMetrics async_metrics(
         global_context,
@@ -1197,6 +1195,8 @@ try
     }
 
     FailPointInjection::enableFromGlobalConfig(config());
+
+    MemoryWorker memory_worker(global_context->getServerSettings().memory_worker_period_ms);
 
     int default_oom_score = 0;
 
