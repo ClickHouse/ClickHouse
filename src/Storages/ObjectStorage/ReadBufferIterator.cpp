@@ -1,6 +1,7 @@
 #include <Storages/ObjectStorage/ReadBufferIterator.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
+#include <Core/Settings.h>
 #include <IO/ReadBufferFromFileBase.h>
 
 
@@ -222,7 +223,9 @@ ReadBufferIterator::Data ReadBufferIterator::next()
             {
                 for (auto it = read_keys.begin() + prev_read_keys_size; it != read_keys.end(); ++it)
                 {
-                    if (auto format_from_file_name = FormatFactory::instance().tryGetFormatFromFileName((*it)->getFileName()))
+                    auto format_from_file_name = FormatFactory::instance().tryGetFormatFromFileName((*it)->getFileName());
+                    /// Use this format only if we have a schema reader for it.
+                    if (format_from_file_name && FormatFactory::instance().checkIfFormatHasAnySchemaReader(*format_from_file_name))
                     {
                         format = format_from_file_name;
                         break;
