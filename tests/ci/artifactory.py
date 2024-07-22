@@ -43,7 +43,6 @@ class R2MountPoint:
             self.bucket_name = self._PROD_BUCKET_NAME
 
         self.aux_mount_options = ""
-        self.async_mount = False
         if self.app == MountPointApp.S3FS:
             self.cache_dir = "/home/ubuntu/s3fs_cache"
             # self.aux_mount_options += "-o nomodtime " if self.NOMODTIME else "" not for s3fs
@@ -57,7 +56,6 @@ class R2MountPoint:
             self.mount_cmd = f"s3fs {self.bucket_name} {self.MOUNT_POINT} -o url={self.API_ENDPOINT} -o use_path_request_style -o umask=0000 -o nomultipart -o logfile={self.LOG_FILE} {self.aux_mount_options}"
         elif self.app == MountPointApp.RCLONE:
             # run rclone mount process asynchronously, otherwise subprocess.run(daemonized command) will not return
-            self.async_mount = True
             self.cache_dir = "/home/ubuntu/rclone_cache"
             self.aux_mount_options += "--no-modtime " if self.NOMODTIME else ""
             self.aux_mount_options += "-v " if self.DEBUG else ""  # -vv too verbose
@@ -85,10 +83,12 @@ class R2MountPoint:
         Shell.run(_UNMOUNT_CMD)
         Shell.run(_MKDIR_CMD)
         Shell.run(_MKDIR_FOR_CACHE)
-        # didn't manage to use simple run() and not block or fail
-        Shell.run_as_daemon(self.mount_cmd)
-        if self.async_mount:
-            time.sleep(3)
+        if self.app == MountPointApp.S3FS:
+            Shell.run(self.mount_cmd, check=True)
+        else:
+            # didn't manage to use simple run() and without blocking or failure
+            Shell.run_as_daemon(self.mount_cmd)
+        time.sleep(3)
         Shell.run(_TEST_MOUNT_CMD, check=True)
 
     @classmethod
@@ -107,6 +107,7 @@ class DebianArtifactory:
     _PROD_REPO_URL = "https://packages.clickhouse.com/deb"
 
     def __init__(self, release_info: ReleaseInfo, dry_run: bool):
+        self.release_info = release_info
         self.codename = release_info.codename
         self.version = release_info.version
         if dry_run:
@@ -154,9 +155,8 @@ class DebianArtifactory:
         print("Running test command:")
         print(f"  {cmd}")
         Shell.run(cmd, check=True)
-        release_info = ReleaseInfo.from_file()
-        release_info.debian_command = debian_command
-        release_info.dump()
+        self.release_info.debian_command = debian_command
+        self.release_info.dump()
 
 
 def _copy_if_not_exists(src: Path, dst: Path) -> Path:
@@ -177,6 +177,7 @@ class RpmArtifactory:
     _SIGN_KEY = "885E2BDCF96B0B45ABF058453E4AD4719DDE9A38"
 
     def __init__(self, release_info: ReleaseInfo, dry_run: bool):
+        self.release_info = release_info
         self.codename = release_info.codename
         self.version = release_info.version
         if dry_run:
@@ -230,9 +231,8 @@ class RpmArtifactory:
         print("Running test command:")
         print(f"  {cmd}")
         Shell.run(cmd, check=True)
-        release_info = ReleaseInfo.from_file()
-        release_info.rpm_command = rpm_command
-        release_info.dump()
+        self.release_info.rpm_command = rpm_command
+        self.release_info.dump()
 
 
 class TgzArtifactory:
@@ -240,6 +240,7 @@ class TgzArtifactory:
     _PROD_REPO_URL = "https://packages.clickhouse.com/tgz"
 
     def __init__(self, release_info: ReleaseInfo, dry_run: bool):
+        self.release_info = release_info
         self.codename = release_info.codename
         self.version = release_info.version
         if dry_run:
@@ -290,9 +291,8 @@ class TgzArtifactory:
             expected_checksum == actual_checksum
         ), f"[{actual_checksum} != {expected_checksum}]"
         Shell.run("rm /tmp/tmp.tgz*")
-        release_info = ReleaseInfo.from_file()
-        release_info.tgz_command = cmd
-        release_info.dump()
+        self.release_info.tgz_command = cmd
+        self.release_info.dump()
 
 
 def parse_args() -> argparse.Namespace:
@@ -340,9 +340,7 @@ def parse_args() -> argparse.Namespace:
 
 if __name__ == "__main__":
     args = parse_args()
-    assert args.dry_run
 
-    release_info = ReleaseInfo.from_file()
     """
     Use S3FS. RCLONE has some errors with r2 remote which I didn't figure out how to resolve:
            ERROR : IO error: NotImplemented: versionId not implemented
@@ -350,26 +348,38 @@ if __name__ == "__main__":
     """
     mp = R2MountPoint(MountPointApp.S3FS, dry_run=args.dry_run)
     if args.export_debian:
-        with ReleaseContextManager(release_progress=ReleaseProgress.EXPORT_DEB) as _:
+        with ReleaseContextManager(
+            release_progress=ReleaseProgress.EXPORT_DEB
+        ) as release_info:
             mp.init()
             DebianArtifactory(release_info, dry_run=args.dry_run).export_packages()
             mp.teardown()
     if args.export_rpm:
-        with ReleaseContextManager(release_progress=ReleaseProgress.EXPORT_RPM) as _:
+        with ReleaseContextManager(
+            release_progress=ReleaseProgress.EXPORT_RPM
+        ) as release_info:
             mp.init()
             RpmArtifactory(release_info, dry_run=args.dry_run).export_packages()
             mp.teardown()
     if args.export_tgz:
-        with ReleaseContextManager(release_progress=ReleaseProgress.EXPORT_TGZ) as _:
+        with ReleaseContextManager(
+            release_progress=ReleaseProgress.EXPORT_TGZ
+        ) as release_info:
             mp.init()
             TgzArtifactory(release_info, dry_run=args.dry_run).export_packages()
             mp.teardown()
     if args.test_debian:
-        with ReleaseContextManager(release_progress=ReleaseProgress.TEST_DEB) as _:
+        with ReleaseContextManager(
+            release_progress=ReleaseProgress.TEST_DEB
+        ) as release_info:
             DebianArtifactory(release_info, dry_run=args.dry_run).test_packages()
     if args.test_tgz:
-        with ReleaseContextManager(release_progress=ReleaseProgress.TEST_TGZ) as _:
+        with ReleaseContextManager(
+            release_progress=ReleaseProgress.TEST_TGZ
+        ) as release_info:
             TgzArtifactory(release_info, dry_run=args.dry_run).test_packages()
     if args.test_rpm:
-        with ReleaseContextManager(release_progress=ReleaseProgress.TEST_RPM) as _:
+        with ReleaseContextManager(
+            release_progress=ReleaseProgress.TEST_RPM
+        ) as release_info:
             RpmArtifactory(release_info, dry_run=args.dry_run).test_packages()
