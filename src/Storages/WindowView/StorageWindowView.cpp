@@ -1209,8 +1209,11 @@ StorageWindowView::StorageWindowView(
     setInMemoryMetadata(storage_metadata);
 
     /// If the target table is not set, use inner target table
-    has_inner_target_table = query.to_table_id.empty();
-    if (has_inner_target_table && !query.storage)
+    auto to_table_id = query.getTargetTableID(ViewTarget::To);
+    has_inner_target_table = to_table_id.empty();
+    auto to_table_engine = query.getTargetInnerEngine(ViewTarget::To);
+
+    if (has_inner_target_table && !to_table_engine)
         throw Exception(ErrorCodes::INCORRECT_QUERY,
                         "You must specify where to save results of a WindowView query: "
                         "either ENGINE or an existing table in a TO clause");
@@ -1225,12 +1228,12 @@ StorageWindowView::StorageWindowView(
 
     auto inner_query = initInnerQuery(query.select->list_of_selects->children.at(0)->as<ASTSelectQuery &>(), context_);
 
-    if (query.inner_storage)
-        inner_table_engine = query.inner_storage->clone();
+    if (auto inner_storage = query.getTargetInnerEngine(ViewTarget::Inner))
+        inner_table_engine = inner_storage->clone();
     inner_table_id = StorageID(getStorageID().database_name, generateInnerTableName(getStorageID()));
     inner_fetch_query = generateInnerFetchQuery(inner_table_id);
 
-    target_table_id = has_inner_target_table ? StorageID(table_id_.database_name, generateTargetTableName(table_id_)) : query.to_table_id;
+    target_table_id = has_inner_target_table ? StorageID(table_id_.database_name, generateTargetTableName(table_id_)) : to_table_id;
 
     if (is_proctime)
         next_fire_signal = getWindowUpperBound(now());
@@ -1255,7 +1258,7 @@ StorageWindowView::StorageWindowView(
             new_columns_list->set(new_columns_list->columns, query.columns_list->columns->ptr());
 
             target_create_query->set(target_create_query->columns_list, new_columns_list);
-            target_create_query->set(target_create_query->storage, query.storage->ptr());
+            target_create_query->set(target_create_query->storage, to_table_engine);
 
             InterpreterCreateQuery create_interpreter_(target_create_query, create_context_);
             create_interpreter_.setInternal(true);

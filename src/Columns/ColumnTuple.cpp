@@ -201,11 +201,12 @@ bool ColumnTuple::tryInsert(const Field & x)
             return false;
         }
     }
+    ++column_length;
 
     return true;
 }
 
-#if !defined(ABORT_ON_LOGICAL_ERROR)
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
 void ColumnTuple::insertFrom(const IColumn & src_, size_t n)
 #else
 void ColumnTuple::doInsertFrom(const IColumn & src_, size_t n)
@@ -222,7 +223,7 @@ void ColumnTuple::doInsertFrom(const IColumn & src_, size_t n)
         columns[i]->insertFrom(*src.columns[i], n);
 }
 
-#if !defined(ABORT_ON_LOGICAL_ERROR)
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
 void ColumnTuple::insertManyFrom(const IColumn & src, size_t position, size_t length)
 #else
 void ColumnTuple::doInsertManyFrom(const IColumn & src, size_t position, size_t length)
@@ -236,6 +237,7 @@ void ColumnTuple::doInsertManyFrom(const IColumn & src, size_t position, size_t 
 
     for (size_t i = 0; i < tuple_size; ++i)
         columns[i]->insertManyFrom(*src_tuple.columns[i], position, length);
+    column_length += length;
 }
 
 void ColumnTuple::insertDefault()
@@ -308,16 +310,15 @@ void ColumnTuple::updateHashWithValue(size_t n, SipHash & hash) const
         column->updateHashWithValue(n, hash);
 }
 
-void ColumnTuple::updateWeakHash32(WeakHash32 & hash) const
+WeakHash32 ColumnTuple::getWeakHash32() const
 {
     auto s = size();
-
-    if (hash.getData().size() != s)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of WeakHash32 does not match size of column: "
-                        "column size is {}, hash size is {}", std::to_string(s), std::to_string(hash.getData().size()));
+    WeakHash32 hash(s);
 
     for (const auto & column : columns)
-        column->updateWeakHash32(hash);
+        hash.update(column->getWeakHash32());
+
+    return hash;
 }
 
 void ColumnTuple::updateHashFast(SipHash & hash) const
@@ -326,7 +327,7 @@ void ColumnTuple::updateHashFast(SipHash & hash) const
         column->updateHashFast(hash);
 }
 
-#if !defined(ABORT_ON_LOGICAL_ERROR)
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
 void ColumnTuple::insertRangeFrom(const IColumn & src, size_t start, size_t length)
 #else
 void ColumnTuple::doInsertRangeFrom(const IColumn & src, size_t start, size_t length)
@@ -482,7 +483,7 @@ int ColumnTuple::compareAtImpl(size_t n, size_t m, const IColumn & rhs, int nan_
     return 0;
 }
 
-#if !defined(ABORT_ON_LOGICAL_ERROR)
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
 int ColumnTuple::compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const
 #else
 int ColumnTuple::doCompareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const

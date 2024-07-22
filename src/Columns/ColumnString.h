@@ -142,7 +142,7 @@ public:
         return true;
     }
 
-#if !defined(ABORT_ON_LOGICAL_ERROR)
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
     void insertFrom(const IColumn & src_, size_t n) override
 #else
     void doInsertFrom(const IColumn & src_, size_t n) override
@@ -169,7 +169,7 @@ public:
         }
     }
 
-#if !defined(ABORT_ON_LOGICAL_ERROR)
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
     void insertManyFrom(const IColumn & src, size_t position, size_t length) override;
 #else
     void doInsertManyFrom(const IColumn & src, size_t position, size_t length) override;
@@ -212,7 +212,7 @@ public:
         hash.update(reinterpret_cast<const char *>(&chars[offset]), string_size);
     }
 
-    void updateWeakHash32(WeakHash32 & hash) const override;
+    WeakHash32 getWeakHash32() const override;
 
     void updateHashFast(SipHash & hash) const override
     {
@@ -220,7 +220,7 @@ public:
         hash.update(reinterpret_cast<const char *>(chars.data()), chars.size() * sizeof(chars[0]));
     }
 
-#if !defined(ABORT_ON_LOGICAL_ERROR)
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
 #else
     void doInsertRangeFrom(const IColumn & src, size_t start, size_t length) override;
@@ -250,7 +250,7 @@ public:
             offsets.push_back(offsets.back() + 1);
     }
 
-#if !defined(ABORT_ON_LOGICAL_ERROR)
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
     int compareAt(size_t n, size_t m, const IColumn & rhs_, int /*nan_direction_hint*/) const override
 #else
     int doCompareAt(size_t n, size_t m, const IColumn & rhs_, int /*nan_direction_hint*/) const override
