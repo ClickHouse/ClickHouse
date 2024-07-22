@@ -35,27 +35,27 @@ ASTPtr ASTObjectTypeArgument::clone() const
     return res;
 }
 
-void ASTObjectTypeArgument::formatImpl(const FormatSettings & parameters, FormatState & state, FormatStateStacked frame) const
+void ASTObjectTypeArgument::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     if (path_with_type)
     {
-        path_with_type->formatImpl(parameters, state, frame);
+        path_with_type->formatImpl(settings, state, frame);
     }
     else if (parameter)
     {
-        parameter->formatImpl(parameters, state, frame);
+        parameter->formatImpl(settings, state, frame);
     }
     else if (skip_path)
     {
-        std::string indent_str = parameters.one_line ? "" : std::string(4 * frame.indent, ' ');
-        parameters.ostr << indent_str << "SKIP" << ' ';
-        skip_path->formatImpl(parameters, state, frame);
+        std::string indent_str = settings.one_line ? "" : std::string(4 * frame.indent, ' ');
+        settings.ostr << indent_str << "SKIP" << ' ';
+        skip_path->formatImpl(settings, state, frame);
     }
     else if (skip_path_regexp)
     {
-        std::string indent_str = parameters.one_line ? "" : std::string(4 * frame.indent, ' ');
-        parameters.ostr << indent_str << "SKIP REGEXP" << ' ';
-        skip_path_regexp->formatImpl(parameters, state, frame);
+        std::string indent_str = settings.one_line ? "" : std::string(4 * frame.indent, ' ');
+        settings.ostr << indent_str << "SKIP REGEXP" << ' ';
+        skip_path_regexp->formatImpl(settings, state, frame);
     }
 }
 

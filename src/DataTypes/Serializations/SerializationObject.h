@@ -101,7 +101,7 @@ private:
     {
         String path;
 
-        TypedPathSubcolumnCreator(const String & path_) : path(path_) {}
+        explicit TypedPathSubcolumnCreator(const String & path_) : path(path_) {}
 
         DataTypePtr create(const DataTypePtr & prev) const override { return prev; }
         ColumnPtr create(const ColumnPtr & prev) const override { return prev; }

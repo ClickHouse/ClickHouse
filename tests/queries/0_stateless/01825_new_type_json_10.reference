@@ -1,9 +1,8 @@
 ('a.b','Int64')
 ('a.c','Array(JSON(max_dynamic_types=16, max_dynamic_paths=256))')
-('a.c','Array(Nullable(String))')
+('d','Int64')
 ('e','Array(Nullable(Int64))')
 ('f','Int64')
-('d','Int64')
 {"o":{"a":{"b":"1","c":[{"d":"10","e":["31"]},{"d":"20","e":["63","127"]}]}}}
 {"o":{"a":{"b":"2","c":[]}}}
 {"o":{"a":{"b":"3","c":[{"e":["32"],"f":"20"},{"e":["64","128"],"f":"30"}]}}}

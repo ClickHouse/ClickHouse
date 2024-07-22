@@ -165,6 +165,7 @@ private:
         std::vector<String> sorted_dynamic_and_typed_paths;
         const auto & typed_path_columns = column_object.getTypedPaths();
         const auto & dynamic_path_columns = column_object.getDynamicPaths();
+        sorted_dynamic_and_typed_paths.reserve(typed_path_columns.size() + dynamic_path_columns.size());
         for (const auto & [path, _] : typed_path_columns)
             sorted_dynamic_and_typed_paths.push_back(path);
         for (const auto & [path, _] : dynamic_path_columns)

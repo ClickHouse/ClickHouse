@@ -12,12 +12,12 @@
 ('results.drb','Int64')
 ('results.fg','Int64')
 ('results.fg3','Int64')
-('results.fg3_pct','DateTime64(9)')
+('results.fg3_pct','String')
 ('results.fg3a','Int64')
-('results.fg_pct','DateTime64(9)')
+('results.fg_pct','String')
 ('results.fga','Int64')
 ('results.ft','Int64')
-('results.ft_pct','DateTime64(9)')
+('results.ft_pct','String')
 ('results.fta','Int64')
 ('results.mp','Int64')
 ('results.orb','Int64')
@@ -28,7 +28,6 @@
 ('results.trb','Int64')
 ('score','Int64')
 ('won','Int64')
-('results.fg3_pct','String')
 Boston Celtics	70
 Los Angeles Lakers	64
 Milwaukee Bucks	61
@@ -41,10 +40,10 @@ Atlanta Hawks	55
 ('fg3','Int64')
 ('fg3_pct','String')
 ('fg3a','Int64')
-('fg_pct','DateTime64(9)')
+('fg_pct','String')
 ('fga','Int64')
 ('ft','Int64')
-('ft_pct','DateTime64(9)')
+('ft_pct','String')
 ('fta','Int64')
 ('mp','String')
 ('orb','Int64')
@@ -54,9 +53,6 @@ Atlanta Hawks	55
 ('stl','Int64')
 ('tov','Int64')
 ('trb','Int64')
-('fg3_pct','DateTime64(9)')
-('fg_pct','String')
-('ft_pct','String')
 Larry Bird	10
 Clyde Drexler	4
 Alvin Robertson	3

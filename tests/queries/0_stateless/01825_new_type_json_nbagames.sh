@@ -14,15 +14,15 @@ ${CLICKHOUSE_CLIENT} -q "CREATE TABLE nbagames (data JSON) ENGINE = MergeTree OR
 cat $CUR_DIR/data_json/nbagames_sample.json | ${CLICKHOUSE_CLIENT} -q "INSERT INTO nbagames FORMAT JSONAsObject"
 
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM nbagames WHERE NOT ignore(*)"
-${CLICKHOUSE_CLIENT} -q "SELECT DISTINCT arrayJoin(JSONAllPathsWithTypes(data)) from nbagames"
-${CLICKHOUSE_CLIENT} -q "SELECT DISTINCT arrayJoin(JSONAllPathsWithTypes(arrayJoin(data.teams[]))) from nbagames"
+${CLICKHOUSE_CLIENT} -q "SELECT DISTINCT arrayJoin(JSONAllPathsWithTypes(data)) as path from nbagames order by path"
+${CLICKHOUSE_CLIENT} -q "SELECT DISTINCT arrayJoin(JSONAllPathsWithTypes(arrayJoin(data.teams[]))) as path from nbagames order by path"
 
 ${CLICKHOUSE_CLIENT} -q  \
     "SELECT teams.name.:String AS name, sum(teams.won.:Int64) AS wins FROM nbagames \
     ARRAY JOIN data.teams[] AS teams GROUP BY name \
     ORDER BY wins DESC LIMIT 5;"
 
-${CLICKHOUSE_CLIENT} -q "SELECT DISTINCT arrayJoin(JSONAllPathsWithTypes(arrayJoin(arrayJoin(data.teams[].players[])))) from nbagames"
+${CLICKHOUSE_CLIENT} -q "SELECT DISTINCT arrayJoin(JSONAllPathsWithTypes(arrayJoin(arrayJoin(data.teams[].players[])))) as path from nbagames order by path"
 
 ${CLICKHOUSE_CLIENT} -q \
 "SELECT player, sum(triple_double) AS triple_doubles FROM \

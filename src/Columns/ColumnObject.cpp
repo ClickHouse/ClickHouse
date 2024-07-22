@@ -18,13 +18,13 @@ namespace ErrorCodes
 namespace
 {
 
-static const FormatSettings & getFormatSettings()
+const FormatSettings & getFormatSettings()
 {
     static const FormatSettings settings;
     return settings;
 }
 
-static const std::shared_ptr<SerializationDynamic> & getDynamicSerialization()
+const std::shared_ptr<SerializationDynamic> & getDynamicSerialization()
 {
     static const std::shared_ptr<SerializationDynamic> dynamic_serialization = std::make_shared<SerializationDynamic>();
     return dynamic_serialization;
@@ -394,7 +394,7 @@ void ColumnObject::doInsertFrom(const IColumn & src, size_t n)
     const auto & src_object_column = assert_cast<const ColumnObject &>(src);
 
     /// First, insert typed paths, they must be the same for both columns.
-    for (auto & [path, column] : src_object_column.typed_paths)
+    for (const auto & [path, column] : src_object_column.typed_paths)
         typed_paths[path]->insertFrom(*column, n);
 
     /// Second, insert dynamic paths and extend them if needed.
@@ -428,7 +428,7 @@ void ColumnObject::doInsertRangeFrom(const IColumn & src, size_t start, size_t l
     const auto & src_object_column = assert_cast<const ColumnObject &>(src);
 
     /// First, insert typed paths, they must be the same for both columns.
-    for (auto & [path, column] : src_object_column.typed_paths)
+    for (const auto & [path, column] : src_object_column.typed_paths)
         typed_paths[path]->insertRangeFrom(*column, start, length);
 
     /// Second, insert dynamic paths and extend them if needed.
@@ -898,9 +898,9 @@ void ColumnObject::ensureOwnership()
 size_t ColumnObject::byteSize() const
 {
     size_t size = 0;
-    for (auto & [_, column] : typed_paths)
+    for (const auto & [_, column] : typed_paths)
         size += column->byteSize();
-    for (auto & [_, column] : dynamic_paths)
+    for (const auto & [_, column] : dynamic_paths)
         size += column->byteSize();
     size += shared_data->byteSize();
     return size;
@@ -909,9 +909,9 @@ size_t ColumnObject::byteSize() const
 size_t ColumnObject::byteSizeAt(size_t n) const
 {
     size_t size = 0;
-    for (auto & [_, column] : typed_paths)
+    for (const auto & [_, column] : typed_paths)
         size += column->byteSizeAt(n);
-    for (auto & [_, column] : dynamic_paths)
+    for (const auto & [_, column] : dynamic_paths)
         size += column->byteSizeAt(n);
     size += shared_data->byteSizeAt(n);
     return size;
@@ -920,9 +920,9 @@ size_t ColumnObject::byteSizeAt(size_t n) const
 size_t ColumnObject::allocatedBytes() const
 {
     size_t size = 0;
-    for (auto & [_, column] : typed_paths)
+    for (const auto & [_, column] : typed_paths)
         size += column->allocatedBytes();
-    for (auto & [_, column] : dynamic_paths)
+    for (const auto & [_, column] : dynamic_paths)
         size += column->allocatedBytes();
     size += shared_data->allocatedBytes();
     return size;
@@ -1040,9 +1040,9 @@ void ColumnObject::finalize()
 bool ColumnObject::isFinalized() const
 {
     bool finalized = true;
-    for (auto & [_, column] : typed_paths)
+    for (const auto & [_, column] : typed_paths)
         finalized &= column->isFinalized();
-    for (auto & [_, column] : dynamic_paths)
+    for (const auto & [_, column] : dynamic_paths)
         finalized &= column->isFinalized();
     finalized &= shared_data->isFinalized();
     return finalized;
@@ -1144,8 +1144,8 @@ size_t ColumnObject::findPathLowerBoundInSharedData(StringRef path, const Column
 
         Iterator() = delete;
         Iterator(const ColumnString * data_, size_t index_) : data(data_), index(index_) {}
-        Iterator(const Iterator & rhs) : data(rhs.data), index(rhs.index) {}
-        Iterator & operator=(const Iterator & rhs) { data = rhs.data; index = rhs.index; return *this;  }
+        Iterator(const Iterator & rhs) = default;
+        Iterator & operator=(const Iterator & rhs) = default;
         inline Iterator& operator+=(difference_type rhs) { index += rhs; return *this;}
         inline StringRef operator*() const {return data->getDataAt(index);}
 

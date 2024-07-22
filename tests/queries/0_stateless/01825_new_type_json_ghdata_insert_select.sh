@@ -19,8 +19,8 @@ cat $CUR_DIR/data_json/ghdata_sample.json | ${CLICKHOUSE_CLIENT} -q "INSERT INTO
 ${CLICKHOUSE_CLIENT} -q "INSERT INTO ghdata_2_from_string SELECT data FROM ghdata_2_string"
 
 ${CLICKHOUSE_CLIENT} -q "SELECT \
-    (SELECT groupUniqArrayMap(JSONAllPathsWithTypes(data)), sum(cityHash64(toString(data))) FROM ghdata_2_from_string) = \
-    (SELECT groupUniqArrayMap(JSONAllPathsWithTypes(data)), sum(cityHash64(toString(data))) FROM ghdata_2)"
+    (SELECT mapSort(groupUniqArrayMap(JSONAllPathsWithTypes(data))), sum(cityHash64(toString(data))) FROM ghdata_2_from_string) = \
+    (SELECT mapSort(groupUniqArrayMap(JSONAllPathsWithTypes(data))), sum(cityHash64(toString(data))) FROM ghdata_2)"
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ghdata_2"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ghdata_2_string"

@@ -36,8 +36,8 @@ cat <<EOF | $CLICKHOUSE_CLIENT -q "INSERT INTO t_json_13 FORMAT JSONAsObject"
 }
 EOF
 
-$CLICKHOUSE_CLIENT -q "SELECT DISTINCT arrayJoin(JSONAllPathsWithTypes(obj)) FROM t_json_13;"
-$CLICKHOUSE_CLIENT -q "SELECT DISTINCT arrayJoin(JSONAllPathsWithTypes(arrayJoin(obj.key1[]))) FROM t_json_13;"
+$CLICKHOUSE_CLIENT -q "SELECT DISTINCT arrayJoin(JSONAllPathsWithTypes(obj)) as path FROM t_json_13 order by path;"
+$CLICKHOUSE_CLIENT -q "SELECT DISTINCT arrayJoin(JSONAllPathsWithTypes(arrayJoin(obj.key1[]))) as path FROM t_json_13 order by path;"
 
 $CLICKHOUSE_CLIENT -q "SELECT obj FROM t_json_13 ORDER BY obj.id FORMAT JSONEachRow" --output_format_json_named_tuples_as_objects 1
 $CLICKHOUSE_CLIENT -q "SELECT \

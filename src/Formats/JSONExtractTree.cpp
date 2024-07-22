@@ -1389,7 +1389,7 @@ template <typename JSONParser>
 class DynamicNode : public JSONExtractTreeNode<JSONParser>
 {
 public:
-    DynamicNode(
+    explicit DynamicNode(
         size_t max_dynamic_paths_for_object_ = DataTypeObject::DEFAULT_MAX_SEPARATELY_STORED_PATHS,
         size_t max_dynamic_types_for_object_ = DataTypeDynamic::DEFAULT_MAX_DYNAMIC_TYPES)
         :  max_dynamic_paths_for_object(max_dynamic_paths_for_object_), max_dynamic_types_for_object(max_dynamic_types_for_object_)
@@ -1412,7 +1412,7 @@ public:
         }
 
         auto & variant_column = column_dynamic.getVariantColumn();
-        auto & variant_info = column_dynamic.getVariantInfo();
+        const auto & variant_info = column_dynamic.getVariantInfo();
 
         /// First, try to insert element into current variants but with no types conversion.
         /// We want to avoid inferring the type on each row, so if we can insert this element into
@@ -1486,20 +1486,20 @@ private:
         switch (element.type())
         {
             case ElementType::NULL_VALUE:
-                return getNullType();
+                return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>());
             case ElementType::BOOL:
-                return getBoolType();
+                return DataTypeFactory::instance().get("Bool");
             case ElementType::INT64:
             {
-                auto type = getInt64Type();
+                auto type = std::make_shared<DataTypeInt64>();
                 if (element.getInt64() < 0)
                     json_inference_info.negative_integers.insert(type.get());
                 return type;
             }
             case ElementType::UINT64:
-                return getUInt64Type();
+                return std::make_shared<DataTypeUInt64>();
             case ElementType::DOUBLE:
-                return getFloat64Type();
+                return std::make_shared<DataTypeFloat64>();
             case ElementType::STRING:
             {
                 auto data = element.getString();
@@ -1516,7 +1516,7 @@ private:
                     }
                 }
 
-                return getStringType();
+                return std::make_shared<DataTypeString>();
             }
             case ElementType::ARRAY:
             {
@@ -1527,7 +1527,7 @@ private:
                     types.push_back(elementToDataTypeImpl(value, format_settings, json_inference_info));
 
                 if (types.empty())
-                    return getEmptyArrayType();
+                    return std::make_shared<DataTypeArray>(std::make_shared<DataTypeNothing>());
 
                 if (checkIfTypesAreEqual(types))
                     return std::make_shared<DataTypeArray>(types.back());
@@ -1559,51 +1559,6 @@ private:
                 return std::make_shared<DataTypeObject>(DataTypeObject::SchemaFormat::JSON, max_dynamic_paths_for_object, max_dynamic_types_for_object);
             }
         }
-    }
-
-    /// During schema inference we create shared_ptr to the some data types quite a lot.
-    /// Single creating of such shared_ptr is not expensive, but when it happens on each
-    /// column on each row, it can be noticeable.
-    const DataTypePtr & getBoolType() const
-    {
-        static const DataTypePtr bool_type = DataTypeFactory::instance().get("Bool");
-        return bool_type;
-    }
-
-    const DataTypePtr & getStringType() const
-    {
-        static const DataTypePtr string_type = std::make_shared<DataTypeString>();
-        return string_type;
-    }
-
-    const DataTypePtr & getInt64Type() const
-    {
-        static const DataTypePtr int64_type = std::make_shared<DataTypeInt64>();
-        return int64_type;
-    }
-
-    const DataTypePtr & getUInt64Type() const
-    {
-        static const DataTypePtr uint64_type = std::make_shared<DataTypeUInt64>();
-        return uint64_type;
-    }
-
-    const DataTypePtr & getFloat64Type() const
-    {
-        static const DataTypePtr float64_type = std::make_shared<DataTypeFloat64>();
-        return float64_type;
-    }
-
-    const DataTypePtr & getNullType() const
-    {
-        static const DataTypePtr null_type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>());
-        return null_type;
-    }
-
-    const DataTypePtr & getEmptyArrayType() const
-    {
-        static const DataTypePtr empty_array_type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeNothing>());
-        return empty_array_type;
     }
 
     size_t max_dynamic_paths_for_object;
@@ -1772,7 +1727,7 @@ private:
             }
         }
         /// Try to add a new dynamic path.
-        else if (auto dynamic_column = column_object.tryToAddNewDynamicPath(current_path))
+        else if (auto * dynamic_column = column_object.tryToAddNewDynamicPath(current_path))
         {
             if (!dynamic_node->insertResultToColumn(*dynamic_column, element, insert_settings, format_settings, error))
             {

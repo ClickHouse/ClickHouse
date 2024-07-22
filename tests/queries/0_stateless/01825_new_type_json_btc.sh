@@ -16,9 +16,9 @@ ${CLICKHOUSE_CLIENT} -q "CREATE TABLE btc (data JSON) ENGINE = MergeTree ORDER B
 ${CLICKHOUSE_CLIENT} -q "INSERT INTO btc SELECT * FROM file('${CLICKHOUSE_TEST_UNIQUE_NAME}/btc_transactions.json', 'JSONAsObject')"
 
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM btc WHERE NOT ignore(*)"
-${CLICKHOUSE_CLIENT} -q "SELECT distinct arrayJoin(JSONAllPathsWithTypes(data)) from btc"
-${CLICKHOUSE_CLIENT} -q "SELECT distinct arrayJoin(JSONAllPathsWithTypes(arrayJoin(data.inputs.:\`Array(JSON)\`))) from btc"
-${CLICKHOUSE_CLIENT} -q "SELECT distinct arrayJoin(JSONAllPathsWithTypes(arrayJoin(arrayJoin(data.inputs.:\`Array(JSON)\`.prev_out.spending_outpoints.:\`Array(JSON)\`)))) from btc"
+${CLICKHOUSE_CLIENT} -q "SELECT distinct arrayJoin(JSONAllPathsWithTypes(data)) as path from btc order by path"
+${CLICKHOUSE_CLIENT} -q "SELECT distinct arrayJoin(JSONAllPathsWithTypes(arrayJoin(data.inputs.:\`Array(JSON)\`))) as path from btc order by path"
+${CLICKHOUSE_CLIENT} -q "SELECT distinct arrayJoin(JSONAllPathsWithTypes(arrayJoin(arrayJoin(data.inputs.:\`Array(JSON)\`.prev_out.spending_outpoints.:\`Array(JSON)\`)))) as path from btc order by path"
 
 ${CLICKHOUSE_CLIENT} -q "SELECT avg(data.fee.:Int64), median(data.fee.:Int64) FROM btc"
 

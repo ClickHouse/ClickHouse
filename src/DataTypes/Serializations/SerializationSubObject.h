@@ -67,7 +67,6 @@ private:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Text/binary serialization is not implemented for object sub-object subcolumn");
     }
 
-private:
     String path_prefix;
     std::unordered_map<String, SerializationPtr> typed_paths_serializations;
     SerializationPtr dynamic_serialization;

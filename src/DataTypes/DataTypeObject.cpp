@@ -196,10 +196,29 @@ MutableColumnPtr DataTypeObject::createColumn() const
 namespace
 {
 
+/// It is possible to have nested JSON object inside Dynamic. For example when we have an array of JSON objects.
+/// During type inference in parsing in case of creating nested JSON objects, we reduce max_dynamic_paths/max_dynamic_types by factors
+/// NESTED_OBJECT_MAX_DYNAMIC_PATHS_REDUCE_FACTOR/NESTED_OBJECT_MAX_DYNAMIC_TYPES_REDUCE_FACTOR.
+/// So the type name will actually be JSON(max_dynamic_paths=N, max_dynamic_types=M). But we want the user to be able to query it
+/// using json.array.:`Array(JSON)`.some.path without specifying max_dynamic_paths/max_dynamic_types.
+/// To support it, we do a trick - we replace JSON name in subcolumn to JSON(max_dynamic_paths=N, max_dynamic_types=M), because we know
+/// the exact values of max_dynamic_paths/max_dynamic_types for it.
+void replaceJSONTypeNameIfNeeded(String & type_name, size_t max_dynamic_paths, size_t max_dynamic_types)
+{
+    auto pos = type_name.find("JSON");
+    while (pos != String::npos)
+    {
+        /// Replace only if we don't already have parameters in JSON type declaration.
+        if (pos + 4 == type_name.size() || type_name[pos + 4] != '(')
+            type_name.replace(pos, 4, fmt::format("JSON(max_dynamic_paths={}, max_dynamic_types={})", max_dynamic_paths / DataTypeObject::NESTED_OBJECT_MAX_DYNAMIC_PATHS_REDUCE_FACTOR, std::max(max_dynamic_types / DataTypeObject::NESTED_OBJECT_MAX_DYNAMIC_TYPES_REDUCE_FACTOR, 1lu)));
+        pos = type_name.find("JSON", pos + 4);
+    }
+}
+
 /// JSON subcolumn name with Dynamic type subcolumn looks like this:
 /// "json.some.path.:`Type_name`.some.subcolumn".
 /// We back quoted type name during identifier parsing so we can distinguish type subcolumn and path element ":TypeName".
-std::pair<String, String> splitPathAndDynamicTypeSubcolumn(std::string_view subcolumn_name)
+std::pair<String, String> splitPathAndDynamicTypeSubcolumn(std::string_view subcolumn_name, size_t max_dynamic_paths, size_t max_dynamic_types)
 {
     /// Try to find dynamic type subcolumn in a form .:`Type`.
     auto pos = subcolumn_name.find(".:`");
@@ -211,6 +230,8 @@ std::pair<String, String> splitPathAndDynamicTypeSubcolumn(std::string_view subc
     /// Try to read back quoted type name.
     if (!tryReadBackQuotedString(dynamic_subcolumn, buf))
         return {String(subcolumn_name), ""};
+
+    replaceJSONTypeNameIfNeeded(dynamic_subcolumn, max_dynamic_paths, max_dynamic_types);
 
     /// If there is more data in the buffer - it's subcolumn of a type, append it to the type name.
     if (!buf.eof())
@@ -333,7 +354,7 @@ std::unique_ptr<ISerialization::SubstreamData> DataTypeObject::getDynamicSubcolu
     }
 
     /// Split requested subcolumn to the JSON path and Dynamic type subcolumn.
-    auto [path, path_subcolumn] = splitPathAndDynamicTypeSubcolumn(subcolumn_name);
+    auto [path, path_subcolumn] = splitPathAndDynamicTypeSubcolumn(subcolumn_name, max_dynamic_paths, max_dynamic_types);
     std::unique_ptr<SubstreamData> res;
     if (auto it = typed_paths.find(path); it != typed_paths.end())
     {
@@ -373,18 +394,6 @@ std::unique_ptr<ISerialization::SubstreamData> DataTypeObject::getDynamicSubcolu
     /// Get subcolumn for Dynamic type if needed.
     if (!path_subcolumn.empty())
     {
-        /// It is possible to have nested JSON object inside Dynamic. For example when we have an array of JSON objects.
-        /// During parsing in case of creating nested JSON objects, we reduce max_dynamic_paths/max_dynamic_types by NESTED_OBJECT_REDUCE_FACTOR factor.
-        /// So the type name will actually be JSON(max_dynamic_paths=N, max_dynamic_types=M). But we want the user to be able to query it
-        /// using json.array.:`Array(JSON)`.some.path without specifying max_dynamic_paths/max_dynamic_types.
-        /// To support it, we do a trick - we replace JSON name in subcolumn to JSON(max_dynamic_paths=N, max_dynamic_types=M), because we know
-        /// the exact values of max_dynamic_paths/max_dynamic_types for it.
-        auto pos = path_subcolumn.find("JSON");
-        /// We want to replace JSON keyword only in the first subcolumn part before the first dot.
-        auto first_dot_pos = path_subcolumn.find('.');
-        if (pos != path_subcolumn.npos && (first_dot_pos == path_subcolumn.npos || pos < first_dot_pos))
-            path_subcolumn.replace(pos, 4, fmt::format("JSON(max_dynamic_paths={}, max_dynamic_types={})", max_dynamic_paths / NESTED_OBJECT_MAX_DYNAMIC_PATHS_REDUCE_FACTOR, std::max(max_dynamic_types / NESTED_OBJECT_MAX_DYNAMIC_TYPES_REDUCE_FACTOR, 1lu)));
-
         res = res->type->getSubcolumnData(path_subcolumn, *res, throw_if_null);
         if (!res)
             return nullptr;

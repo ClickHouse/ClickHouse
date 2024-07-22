@@ -48,7 +48,7 @@ bool SerializationObject::shouldSkipPath(const String & path) const
     if (paths_to_skip.contains(path))
         return true;
 
-    auto it = std::lower_bound(sorted_typed_paths.begin(), sorted_typed_paths.end(), path);
+    auto it = std::lower_bound(sorted_paths_to_skip.begin(), sorted_paths_to_skip.end(), path);
     if (it != sorted_paths_to_skip.end() && it != sorted_paths_to_skip.begin() && path.starts_with(*std::prev(it)))
         return true;
 

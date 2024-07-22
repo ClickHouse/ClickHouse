@@ -36,63 +36,6 @@ namespace ErrorCodes
 
 namespace
 {
-    /// During schema inference we create shared_ptr to the some data types quite a lot.
-    /// Single creating of such shared_ptr is not expensive, but when it happens on each
-    /// column on each row, it can be noticeable.
-    const DataTypePtr & getBoolType()
-    {
-        static const DataTypePtr bool_type = DataTypeFactory::instance().get("Bool");
-        return bool_type;
-    }
-
-    const DataTypePtr & getStringType()
-    {
-        static const DataTypePtr string_type = std::make_shared<DataTypeString>();
-        return string_type;
-    }
-
-    const DataTypePtr & getInt64Type()
-    {
-        static const DataTypePtr int64_type = std::make_shared<DataTypeInt64>();
-        return int64_type;
-    }
-
-    const DataTypePtr & getUInt64Type()
-    {
-        static const DataTypePtr uint64_type = std::make_shared<DataTypeUInt64>();
-        return uint64_type;
-    }
-
-    const DataTypePtr & getFloat64Type()
-    {
-        static const DataTypePtr float64_type = std::make_shared<DataTypeFloat64>();
-        return float64_type;
-    }
-
-    const DataTypePtr & getDateType()
-    {
-        static const DataTypePtr date_type = std::make_shared<DataTypeDate>();
-        return date_type;
-    }
-
-    const DataTypePtr & getDateTime64Type()
-    {
-        static const DataTypePtr date_type = std::make_shared<DataTypeDateTime64>(9);
-        return date_type;
-    }
-
-    const DataTypePtr & getNullType()
-    {
-        static const DataTypePtr null_type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>());
-        return null_type;
-    }
-
-    const DataTypePtr & getEmptyArrayType()
-    {
-        static const DataTypePtr empty_array_type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeNothing>());
-        return empty_array_type;
-    }
-
     /// Special data type that represents JSON object as a set of paths and their types.
     /// It supports merging two JSON objects and creating Named Tuple from itself.
     /// It's used only for schema inference of Named Tuples from JSON objects.
@@ -265,7 +208,7 @@ namespace
                 if (leaf_type && !isNothing(removeNullable(leaf_type)) && !nodes.empty())
                 {
                     if (use_string_type_for_ambiguous_paths)
-                        return getStringType();
+                        return std::make_shared<DataTypeString>();
 
                     throw Exception(
                         ErrorCodes::INCORRECT_DATA,
@@ -331,7 +274,7 @@ namespace
                 bool is_negative = json_info && json_info->negative_integers.contains(type.get());
                 have_negative_integers |= is_negative;
                 if (!is_negative)
-                    type = getUInt64Type();
+                    type = std::make_shared<DataTypeUInt64>();
             }
         }
 
@@ -352,7 +295,7 @@ namespace
             WhichDataType which(type);
             if (which.isInt64() || which.isUInt64())
             {
-                auto new_type = getFloat64Type();
+                const auto & new_type = std::make_shared<DataTypeFloat64>();
                 if (json_info && json_info->numbers_parsed_from_json_strings.erase(type.get()))
                     json_info->numbers_parsed_from_json_strings.insert(new_type.get());
                 type = new_type;
@@ -376,7 +319,7 @@ namespace
             for (auto & type : data_types)
             {
                 if (isDate(type) || isDateTime64(type))
-                    type = getStringType();
+                    type = std::make_shared<DataTypeString>();
             }
 
             type_indexes.erase(TypeIndex::Date);
@@ -390,7 +333,7 @@ namespace
             for (auto & type : data_types)
             {
                 if (isDate(type))
-                    type = getDateTime64Type();
+                    type = std::make_shared<DataTypeDateTime64>(9);
             }
 
             type_indexes.erase(TypeIndex::Date);
@@ -412,7 +355,7 @@ namespace
             if (isNumber(type)
                 && (settings.json.read_numbers_as_strings || !json_info
                     || json_info->numbers_parsed_from_json_strings.contains(type.get())))
-                type = getStringType();
+                type = std::make_shared<DataTypeString>();
         }
 
         updateTypeIndexes(data_types, type_indexes);
@@ -435,11 +378,11 @@ namespace
             if (isBool(type))
             {
                 if (have_signed_integers)
-                    type = getInt64Type();
+                    type = std::make_shared<DataTypeInt64>();
                 else if (have_unsigned_integers)
-                    type = getUInt64Type();
+                    type = std::make_shared<DataTypeUInt64>();
                 else
-                    type = getFloat64Type();
+                    type = std::make_shared<DataTypeFloat64>();
             }
         }
 
@@ -456,7 +399,7 @@ namespace
         for (auto & type : data_types)
         {
             if (isBool(type))
-                type = getStringType();
+                type = std::make_shared<DataTypeString>();
         }
 
         type_indexes.erase(TypeIndex::UInt8);
@@ -606,7 +549,7 @@ namespace
         for (auto & type : data_types)
         {
             if (isMap(type))
-                type = getStringType();
+                type = std::make_shared<DataTypeString>();
         }
 
         type_indexes.erase(TypeIndex::Map);
@@ -856,7 +799,7 @@ namespace
 
         /// Empty array has type Array(Nothing)
         if (nested_types.empty())
-            return getEmptyArrayType();
+            return std::make_shared<DataTypeArray>(std::make_shared<DataTypeNothing>());
 
         if (checkIfTypesAreEqual(nested_types))
             return std::make_shared<DataTypeArray>(std::move(nested_types.back()));
@@ -969,13 +912,13 @@ namespace
                 /// NOTE: it may break parsing of tryReadFloat() != tryReadIntText() + parsing of '.'/'e'
                 /// But, for now it is true
                 if (tryReadFloat<is_json>(tmp_float, buf, settings, has_fractional) && has_fractional)
-                    return getFloat64Type();
+                    return std::make_shared<DataTypeFloat64>();
 
                 Int64 tmp_int;
                 buf.position() = number_start;
                 if (tryReadIntText(tmp_int, buf))
                 {
-                    auto type = getInt64Type();
+                    auto type = std::make_shared<DataTypeInt64>();
                     if (json_info && tmp_int < 0)
                         json_info->negative_integers.insert(type.get());
                     return type;
@@ -985,7 +928,7 @@ namespace
                 UInt64 tmp_uint;
                 buf.position() = number_start;
                 if (tryReadIntText(tmp_uint, buf))
-                    return getUInt64Type();
+                    return std::make_shared<DataTypeUInt64>();
 
                 return nullptr;
             }
@@ -997,13 +940,13 @@ namespace
             PeekableReadBufferCheckpoint checkpoint(peekable_buf);
 
             if (tryReadFloat<is_json>(tmp_float, peekable_buf, settings, has_fractional) && has_fractional)
-                return getFloat64Type();
+                return std::make_shared<DataTypeFloat64>();
             peekable_buf.rollbackToCheckpoint(/* drop= */ false);
 
             Int64 tmp_int;
             if (tryReadIntText(tmp_int, peekable_buf))
             {
-                auto type = getInt64Type();
+                auto type = std::make_shared<DataTypeInt64>();
                 if (json_info && tmp_int < 0)
                     json_info->negative_integers.insert(type.get());
                 return type;
@@ -1013,11 +956,11 @@ namespace
             /// In case of Int64 overflow we can try to infer UInt64.
             UInt64 tmp_uint;
             if (tryReadIntText(tmp_uint, peekable_buf))
-                return getUInt64Type();
+                return std::make_shared<DataTypeUInt64>();
         }
         else if (tryReadFloat<is_json>(tmp_float, buf, settings, has_fractional))
         {
-            return getFloat64Type();
+            return std::make_shared<DataTypeFloat64>();
         }
 
         /// This is not a number.
@@ -1034,7 +977,7 @@ namespace
             Int64 tmp_int;
             if (tryReadIntText(tmp_int, buf) && buf.eof())
             {
-                auto type = getInt64Type();
+                auto type = std::make_shared<DataTypeInt64>();
                 if (json_inference_info && tmp_int < 0)
                     json_inference_info->negative_integers.insert(type.get());
                 return type;
@@ -1046,7 +989,7 @@ namespace
             /// In case of Int64 overflow, try to infer UInt64
             UInt64 tmp_uint;
             if (tryReadIntText(tmp_uint, buf) && buf.eof())
-                return getUInt64Type();
+                return std::make_shared<DataTypeUInt64>();
         }
 
         /// We can safely get back to the start of buffer, because we read from a string and we didn't reach eof.
@@ -1055,7 +998,7 @@ namespace
         Float64 tmp;
         bool has_fractional;
         if (tryReadFloat<is_json>(tmp, buf, settings, has_fractional) && buf.eof())
-            return getFloat64Type();
+            return std::make_shared<DataTypeFloat64>();
 
         return nullptr;
     }
@@ -1079,7 +1022,7 @@ namespace
         if constexpr (is_json)
         {
             if (json_info->is_object_key)
-                return getStringType();
+                return std::make_shared<DataTypeString>();
         }
 
         if (auto type = tryInferDateOrDateTimeFromString(field, settings))
@@ -1097,7 +1040,7 @@ namespace
             }
         }
 
-        return getStringType();
+        return std::make_shared<DataTypeString>();
     }
 
     bool tryReadJSONObject(ReadBuffer & buf, const FormatSettings & settings, DataTypeJSONPaths::Paths & paths, const std::vector<String> & path, JSONInferenceInfo * json_info, size_t depth)
@@ -1254,7 +1197,7 @@ namespace
                 return std::make_shared<DataTypeObjectDeprecated>("json", true);
 
             if (settings.json.read_objects_as_strings)
-                return getStringType();
+                return std::make_shared<DataTypeString>();
 
             transformInferredTypesIfNeededImpl<is_json>(value_types, settings, json_info);
             if (!checkIfTypesAreEqual(value_types))
@@ -1320,15 +1263,15 @@ namespace
 
         /// Bool
         if (checkStringCaseInsensitive("true", buf) || checkStringCaseInsensitive("false", buf))
-            return getBoolType();
+            return DataTypeFactory::instance().get("Bool");
 
         /// Null or NaN
         if (checkCharCaseInsensitive('n', buf))
         {
             if (checkStringCaseInsensitive("ull", buf))
-                return getNullType();
+                return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>());
             else if (checkStringCaseInsensitive("an", buf))
-                return getFloat64Type();
+                return std::make_shared<DataTypeFloat64>();
         }
 
         /// Number
@@ -1385,7 +1328,7 @@ void transformFinalInferredJSONTypeIfNeededImpl(DataTypePtr & data_type, const F
 
     if (!remain_nothing_types && isNothing(data_type) && settings.json.infer_incomplete_types_as_strings)
     {
-        data_type = getStringType();
+        data_type = std::make_shared<DataTypeString>();
         return;
     }
 
@@ -1402,7 +1345,7 @@ void transformFinalInferredJSONTypeIfNeededImpl(DataTypePtr & data_type, const F
         /// If all objects were empty, use type String, so these JSON objects will be read as Strings.
         if (json_paths->empty() && settings.json.infer_incomplete_types_as_strings)
         {
-            data_type = getStringType();
+            data_type = std::make_shared<DataTypeString>();
             return;
         }
 
@@ -1424,7 +1367,7 @@ void transformFinalInferredJSONTypeIfNeededImpl(DataTypePtr & data_type, const F
         auto key_type = map_type->getKeyType();
         /// If all inferred Maps are empty, use type String, so these JSON objects will be read as Strings.
         if (isNothing(key_type) && settings.json.infer_incomplete_types_as_strings)
-            key_type = getStringType();
+            key_type = std::make_shared<DataTypeString>();
 
         auto value_type = map_type->getValueType();
 
@@ -1501,10 +1444,10 @@ DataTypePtr tryInferJSONNumberFromString(std::string_view field, const FormatSet
 DataTypePtr tryInferDateOrDateTimeFromString(std::string_view field, const FormatSettings & settings)
 {
     if (settings.try_infer_dates && tryInferDate(field))
-        return getDateType();
+        return std::make_shared<DataTypeDate>();
 
     if (settings.try_infer_datetimes && tryInferDateTime(field, settings))
-        return getDateTime64Type();
+        return std::make_shared<DataTypeDateTime64>(9);
 
     return nullptr;
 }

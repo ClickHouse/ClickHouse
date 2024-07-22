@@ -23,7 +23,7 @@ public:
     static constexpr size_t NESTED_OBJECT_MAX_DYNAMIC_PATHS_REDUCE_FACTOR = 4;
     static constexpr size_t NESTED_OBJECT_MAX_DYNAMIC_TYPES_REDUCE_FACTOR = 2;
 
-    DataTypeObject(
+    explicit DataTypeObject(
         const SchemaFormat & schema_format_,
         const std::unordered_map<String, DataTypePtr> & typed_paths_ = {},
         const std::unordered_set<String> & paths_to_skip_ = {},
