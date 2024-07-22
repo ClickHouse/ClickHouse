@@ -2,7 +2,7 @@
 
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionStringToString.h>
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 
 
 namespace DB
@@ -112,7 +112,7 @@ struct NameSoundex
 REGISTER_FUNCTION(Soundex)
 {
     factory.registerFunction<FunctionStringToString<SoundexImpl, NameSoundex>>(
-        FunctionDocumentation{.description="Returns Soundex code of a string."}, FunctionFactory::Case::Insensitive);
+        FunctionDocumentation{.description="Returns Soundex code of a string."}, FunctionFactory::CaseInsensitive);
 }
 
 

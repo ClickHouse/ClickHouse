@@ -17,25 +17,27 @@ public:
         CurrentMetrics::Metric threads_metric,
         CurrentMetrics::Metric threads_active_metric,
         CurrentMetrics::Metric threads_scheduled_metric,
-        const std::string & thread_name);
-
-    ~IObjectStorageIteratorAsync() override;
-
-    bool isValid() override;
-
-    RelativePathWithMetadataPtr current() override;
-    RelativePathsWithMetadata currentBatch() override;
+        const std::string & thread_name)
+        : list_objects_pool(threads_metric, threads_active_metric, threads_scheduled_metric, 1)
+        , list_objects_scheduler(threadPoolCallbackRunner<BatchAndHasNext>(list_objects_pool, thread_name))
+    {
+    }
 
     void next() override;
     void nextBatch() override;
-
+    bool isValid() override;
+    RelativePathWithMetadata current() override;
+    RelativePathsWithMetadata currentBatch() override;
     size_t getAccumulatedSize() const override;
-    std::optional<RelativePathsWithMetadata> getCurrentBatchAndScheduleNext() override;
+    std::optional<RelativePathsWithMetadata> getCurrrentBatchAndScheduleNext() override;
 
-    void deactivate();
+    ~IObjectStorageIteratorAsync() override
+    {
+        list_objects_pool.wait();
+    }
 
 protected:
-    /// This method fetches the next batch, and returns true if there are more batches after it.
+
     virtual bool getBatchAndCheckNext(RelativePathsWithMetadata & batch) = 0;
 
     struct BatchAndHasNext
@@ -48,12 +50,10 @@ protected:
 
     bool is_initialized{false};
     bool is_finished{false};
-    bool has_next_batch{true};
-    bool deactivated{false};
 
     mutable std::recursive_mutex mutex;
     ThreadPool list_objects_pool;
-    ThreadPoolCallbackRunnerUnsafe<BatchAndHasNext> list_objects_scheduler;
+    ThreadPoolCallbackRunner<BatchAndHasNext> list_objects_scheduler;
     std::future<BatchAndHasNext> outcome_future;
     RelativePathsWithMetadata current_batch;
     RelativePathsWithMetadata::iterator current_batch_iterator;

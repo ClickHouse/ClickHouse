@@ -9,13 +9,13 @@
 #include <fmt/format.h>
 
 
-namespace DB
-{
-
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
 }
+
+namespace DB
+{
 
 /// Helper function to get named collection for table engine.
 /// Table engines have collection name as first argument of ast and other arguments are key-value overrides.
@@ -158,7 +158,7 @@ struct fmt::formatter<DB::NamedCollectionValidateKey<T>>
     }
 
     template <typename FormatContext>
-    auto format(const DB::NamedCollectionValidateKey<T> & elem, FormatContext & context) const
+    auto format(const DB::NamedCollectionValidateKey<T> & elem, FormatContext & context)
     {
         return fmt::format_to(context.out(), "{}", elem.value);
     }

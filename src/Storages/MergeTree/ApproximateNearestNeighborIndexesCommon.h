@@ -29,7 +29,7 @@ struct ApproximateNearestNeighborInformation
     using Embedding = std::vector<float>;
     Embedding reference_vector;
 
-    enum class Metric : uint8_t
+    enum class Metric
     {
         Unknown,
         L2,
@@ -40,7 +40,7 @@ struct ApproximateNearestNeighborInformation
     String column_name;
     UInt64 limit;
 
-    enum class Type : uint8_t
+    enum class Type
     {
         OrderBy,
         Where

@@ -3,10 +3,6 @@ slug: /en/sql-reference/statements/create/named-collection
 sidebar_label: NAMED COLLECTION
 ---
 
-import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
-
-<CloudNotSupportedBadge />
-
 # CREATE NAMED COLLECTION
 
 Creates a new named collection.

@@ -1,9 +1,4 @@
 <clickhouse>
-    <profiles>
-        <default>
-            <ignore_on_cluster_for_replicated_named_collections_queries>0</ignore_on_cluster_for_replicated_named_collections_queries>
-        </default>
-    </profiles>
     <users>
         <default>
             <password></password>

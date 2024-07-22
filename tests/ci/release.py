@@ -7,13 +7,6 @@ The `gh` CLI preferred over the PyGithub to have an easy way to rollback bad
 release in command line by simple execution giving rollback commands
 
 On another hand, PyGithub is used for convenient getting commit's status from API
-
-To run this script on a freshly installed Ubuntu 22.04 system, it is enough to do the following commands:
-
-sudo apt install pip
-pip install requests boto3 github PyGithub
-sudo snap install gh
-gh auth login
 """
 
 
@@ -25,7 +18,6 @@ from contextlib import contextmanager
 from typing import Any, Final, Iterator, List, Optional, Tuple
 
 from git_helper import Git, commit, release_branch
-from ci_config import Labels
 from report import SUCCESS
 from version_helper import (
     FILE_WITH_VERSION_PATH,
@@ -416,9 +408,9 @@ class Release:
         self._git.update()
         new_version = self.version.copy()
         version_type = self.get_stable_release_type()
-        pr_labels = f"--label {Labels.RELEASE}"
+        pr_labels = "--label release"
         if version_type == VersionType.LTS:
-            pr_labels += f" --label {Labels.RELEASE_LTS}"
+            pr_labels += " --label release-lts"
         new_version.with_description(version_type)
         self._update_cmake_contributors(new_version)
         self._commit_cmake_contributors(new_version)
@@ -550,7 +542,7 @@ class Release:
     def _create_tag(
         self, tag: str, commit: str, tag_message: str = ""
     ) -> Iterator[None]:
-        tag_message = tag_message or f"Release {tag}"
+        tag_message = tag_message or "Release {tag}"
         # Create tag even in dry-run
         self.run(f"git tag -a -m '{tag_message}' '{tag}' {commit}")
         rollback_cmd = f"git tag -d '{tag}'"

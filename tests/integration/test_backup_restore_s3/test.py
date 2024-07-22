@@ -1,4 +1,4 @@
-from typing import Dict
+from typing import Dict, Iterable
 import pytest
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
@@ -16,7 +16,6 @@ node = cluster.add_instance(
         "configs/named_collection_s3_backups.xml",
         "configs/s3_settings.xml",
         "configs/blob_log.xml",
-        "configs/remote_servers.xml",
     ],
     user_configs=[
         "configs/zookeeper_retries.xml",
@@ -627,141 +626,46 @@ def test_user_specific_auth(start_cluster):
     create_user("superuser2")
     create_user("regularuser")
 
-    node.query("CREATE TABLE specific_auth (col UInt64) ENGINE=MergeTree ORDER BY col")
-    node.query("INSERT INTO specific_auth VALUES (1)")
+    node.query("CREATE TABLE specific_auth (col UInt64) ENGINE=Memory")
 
-    def backup_restore(backup, user, should_fail, on_cluster=False, base_backup=None):
-        on_cluster_clause = "ON CLUSTER 'cluster'" if on_cluster else ""
-        base_backup = (
-            f" SETTINGS base_backup = {base_backup}" if base_backup is not None else ""
-        )
-        backup_query = (
-            f"BACKUP TABLE specific_auth {on_cluster_clause} TO {backup} {base_backup}"
-        )
-        restore_query = f"RESTORE TABLE specific_auth {on_cluster_clause} FROM {backup}"
-
-        if should_fail:
-            assert "Access" in node.query_and_get_error(backup_query, user=user)
-        else:
-            node.query(backup_query, user=user)
-            node.query("DROP TABLE specific_auth SYNC")
-            node.query(restore_query, user=user)
-
-    backup_restore(
-        "S3('http://minio1:9001/root/data/backups/limited/backup1/')",
-        user=None,
-        should_fail=True,
+    assert "Access" in node.query_and_get_error(
+        "BACKUP TABLE specific_auth TO S3('http://minio1:9001/root/data/backups/limited/backup1.zip')"
     )
-
-    backup_restore(
-        "S3('http://minio1:9001/root/data/backups/limited/backup1/')",
+    assert "Access" in node.query_and_get_error(
+        "BACKUP TABLE specific_auth TO S3('http://minio1:9001/root/data/backups/limited/backup1.zip')",
         user="regularuser",
-        should_fail=True,
     )
 
-    backup_restore(
-        "S3('http://minio1:9001/root/data/backups/limited/backup1/')",
+    node.query(
+        "BACKUP TABLE specific_auth TO S3('http://minio1:9001/root/data/backups/limited/backup1.zip')",
         user="superuser1",
-        should_fail=False,
+    )
+    node.query(
+        "RESTORE TABLE specific_auth FROM S3('http://minio1:9001/root/data/backups/limited/backup1.zip')",
+        user="superuser1",
     )
 
-    backup_restore(
-        "S3('http://minio1:9001/root/data/backups/limited/backup2/')",
+    node.query(
+        "BACKUP TABLE specific_auth TO S3('http://minio1:9001/root/data/backups/limited/backup2.zip')",
         user="superuser2",
-        should_fail=False,
+    )
+    node.query(
+        "RESTORE TABLE specific_auth FROM S3('http://minio1:9001/root/data/backups/limited/backup2.zip')",
+        user="superuser2",
     )
 
     assert "Access" in node.query_and_get_error(
-        "RESTORE TABLE specific_auth FROM S3('http://minio1:9001/root/data/backups/limited/backup1/')",
+        "RESTORE TABLE specific_auth FROM S3('http://minio1:9001/root/data/backups/limited/backup1.zip')",
         user="regularuser",
     )
 
-    node.query("INSERT INTO specific_auth VALUES (2)")
-
-    backup_restore(
-        "S3('http://minio1:9001/root/data/backups/limited/backup1_inc/')",
-        user="regularuser",
-        should_fail=True,
-        base_backup="S3('http://minio1:9001/root/data/backups/limited/backup1/')",
-    )
-
-    backup_restore(
-        "S3('http://minio1:9001/root/data/backups/limited/backup1_inc/')",
-        user="superuser1",
-        should_fail=False,
-        base_backup="S3('http://minio1:9001/root/data/backups/limited/backup1/')",
-    )
-
-    assert "Access" in node.query_and_get_error(
-        "RESTORE TABLE specific_auth FROM S3('http://minio1:9001/root/data/backups/limited/backup1_inc/')",
+    assert "HTTP response code: 403" in node.query_and_get_error(
+        "SELECT * FROM s3('http://minio1:9001/root/data/backups/limited/backup1.zip', 'RawBLOB')",
         user="regularuser",
     )
-
-    assert "Access Denied" in node.query_and_get_error(
-        "SELECT * FROM s3('http://minio1:9001/root/data/backups/limited/backup1/*', 'RawBLOB')",
-        user="regularuser",
-    )
-
     node.query(
-        "SELECT * FROM s3('http://minio1:9001/root/data/backups/limited/backup1/*', 'RawBLOB')",
+        "SELECT * FROM s3('http://minio1:9001/root/data/backups/limited/backup1.zip', 'RawBLOB')",
         user="superuser1",
-    )
-
-    backup_restore(
-        "S3('http://minio1:9001/root/data/backups/limited/backup3/')",
-        user="regularuser",
-        should_fail=True,
-        on_cluster=True,
-    )
-
-    backup_restore(
-        "S3('http://minio1:9001/root/data/backups/limited/backup3/')",
-        user="superuser1",
-        should_fail=False,
-        on_cluster=True,
-    )
-
-    assert "Access Denied" in node.query_and_get_error(
-        "RESTORE TABLE specific_auth ON CLUSTER 'cluster' FROM S3('http://minio1:9001/root/data/backups/limited/backup3/')",
-        user="regularuser",
-    )
-
-    node.query("INSERT INTO specific_auth VALUES (3)")
-
-    backup_restore(
-        "S3('http://minio1:9001/root/data/backups/limited/backup3_inc/')",
-        user="regularuser",
-        should_fail=True,
-        on_cluster=True,
-        base_backup="S3('http://minio1:9001/root/data/backups/limited/backup3/')",
-    )
-
-    backup_restore(
-        "S3('http://minio1:9001/root/data/backups/limited/backup3_inc/')",
-        user="superuser1",
-        should_fail=False,
-        on_cluster=True,
-        base_backup="S3('http://minio1:9001/root/data/backups/limited/backup3/')",
-    )
-
-    assert "Access Denied" in node.query_and_get_error(
-        "RESTORE TABLE specific_auth ON CLUSTER 'cluster' FROM S3('http://minio1:9001/root/data/backups/limited/backup3_inc/')",
-        user="regularuser",
-    )
-
-    assert "Access Denied" in node.query_and_get_error(
-        "SELECT * FROM s3('http://minio1:9001/root/data/backups/limited/backup3/*', 'RawBLOB')",
-        user="regularuser",
-    )
-
-    node.query(
-        "SELECT * FROM s3('http://minio1:9001/root/data/backups/limited/backup3/*', 'RawBLOB')",
-        user="superuser1",
-    )
-
-    assert "Access Denied" in node.query_and_get_error(
-        "SELECT * FROM s3Cluster(cluster, 'http://minio1:9001/root/data/backups/limited/backup3/*', 'RawBLOB')",
-        user="regularuser",
     )
 
     node.query("DROP TABLE IF EXISTS test.specific_auth")

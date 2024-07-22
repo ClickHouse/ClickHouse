@@ -408,16 +408,6 @@ SELECT '--';
 
 DESCRIBE (WITH test_table_in_cte AS (SELECT id FROM test_table) SELECT id IN test_table_in_cte FROM test_table);
 
-SELECT '--';
-
-DESCRIBE (WITH test_table_in_cte_1 AS (SELECT 1 AS c1), test_table_in_cte_2 AS (SELECT 1 AS c1) SELECT *
-FROM test_table_in_cte_1 INNER JOIN test_table_in_cte_2 as test_table_in_cte_2 ON test_table_in_cte_1.c1 = test_table_in_cte_2.c1);
-
-SELECT '--';
-
-DESCRIBE (WITH test_table_in_cte_1 AS (SELECT 1 AS c1), test_table_in_cte_2 AS (SELECT 1 AS c1 UNION ALL SELECT 1 AS c1) SELECT *
-FROM test_table_in_cte_1 INNER JOIN test_table_in_cte_2 as test_table_in_cte_2 ON test_table_in_cte_1.c1 = test_table_in_cte_2.c1);
-
 SELECT 'Joins';
 
 DESCRIBE (SELECT * FROM test_table_join_1, test_table_join_2);

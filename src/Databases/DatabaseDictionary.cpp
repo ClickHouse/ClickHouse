@@ -10,7 +10,6 @@
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/IAST.h>
-#include <Core/Settings.h>
 
 
 namespace DB
@@ -81,7 +80,7 @@ StoragePtr DatabaseDictionary::tryGetTable(const String & table_name, ContextPtr
     return createStorageDictionary(getDatabaseName(), load_result, getContext());
 }
 
-DatabaseTablesIteratorPtr DatabaseDictionary::getTablesIterator(ContextPtr, const FilterByNameFunction & filter_by_table_name, bool /* skip_not_loaded */) const
+DatabaseTablesIteratorPtr DatabaseDictionary::getTablesIterator(ContextPtr, const FilterByNameFunction & filter_by_table_name) const
 {
     return std::make_unique<DatabaseTablesSnapshotIterator>(listTables(filter_by_table_name), getDatabaseName());
 }
@@ -105,7 +104,7 @@ ASTPtr DatabaseDictionary::getCreateTableQueryImpl(const String & table_name, Co
             return {};
         }
 
-        auto names_and_types = StorageDictionary::getNamesAndTypes(ExternalDictionariesLoader::getDictionaryStructure(*load_result.config), false);
+        auto names_and_types = StorageDictionary::getNamesAndTypes(ExternalDictionariesLoader::getDictionaryStructure(*load_result.config));
         buffer << "CREATE TABLE " << backQuoteIfNeed(getDatabaseName()) << '.' << backQuoteIfNeed(table_name) << " (";
         buffer << names_and_types.toNamesAndTypesDescription();
         buffer << ") Engine = Dictionary(" << backQuoteIfNeed(table_name) << ")";

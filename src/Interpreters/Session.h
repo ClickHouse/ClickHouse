@@ -53,10 +53,6 @@ public:
     void authenticate(const String & user_name, const String & password, const Poco::Net::SocketAddress & address);
     void authenticate(const Credentials & credentials_, const Poco::Net::SocketAddress & address_);
 
-    // Verifies whether the user's validity extends beyond the current time.
-    // Throws an exception if the user's validity has expired.
-    void checkIfUserIsStillValid();
-
     /// Writes a row about login failure into session log (if enabled)
     void onAuthenticationFailure(const std::optional<String> & user_name, const Poco::Net::SocketAddress & address_, const Exception & e);
 
@@ -102,7 +98,8 @@ public:
 private:
     std::shared_ptr<SessionLog> getSessionLog() const;
     ContextMutablePtr makeQueryContextImpl(const ClientInfo * client_info_to_copy, ClientInfo * client_info_to_move) const;
-    void recordLoginSuccess(ContextPtr login_context) const;
+    void recordLoginSucess(ContextPtr login_context) const;
+
 
     mutable bool notified_session_log_about_login = false;
     const UUID auth_id;

@@ -42,19 +42,6 @@ Type: UInt32
 Default: 1
 
 
-## auth_use_forwarded_address
-
-Use originating address for authentication for clients connected through proxy.
-
-:::note
-This setting should be used with extra caution since forwarded address can be easily spoofed - server accepting such authentication should not be accessed directly but rather exclusively through a trusted proxy.
-:::
-
-Type: Bool
-
-Default: 0
-
-
 ## background_buffer_flush_schedule_pool_size
 
 The maximum number of threads that will be used for performing flush operations for Buffer-engine tables in the background.
@@ -449,7 +436,7 @@ Default: 0
 Restriction on dropping partitions.
 
 If the size of a [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) table exceeds `max_partition_size_to_drop` (in bytes), you can’t drop a partition using a [DROP PARTITION](../../sql-reference/statements/alter/partition.md#drop-partitionpart) query.
-This setting does not require a restart of the ClickHouse server to apply. Another way to disable the restriction is to create the `<clickhouse-path>/flags/force_drop_table` file.
+This setting does not require a restart of the Clickhouse server to apply. Another way to disable the restriction is to create the `<clickhouse-path>/flags/force_drop_table` file.
 Default value: 50 GB.
 The value 0 means that you can drop partitions without any restrictions.
 
@@ -498,8 +485,6 @@ Default: 0.9
 Interval in seconds during which the server's maximum allowed memory consumption is adjusted by the corresponding threshold in cgroups. (see
 settings `cgroup_memory_watcher_hard_limit_ratio` and `cgroup_memory_watcher_soft_limit_ratio`).
 
-To disable the cgroup observer, set this value to `0`.
-
 Type: UInt64
 
 Default: 15
@@ -525,7 +510,7 @@ See settings `cgroups_memory_usage_observer_wait_time` and `cgroup_memory_watche
 
 Type: Double
 
-Default: 0.9
+Default: 0.95
 
 ## max_table_size_to_drop
 
@@ -533,7 +518,7 @@ Restriction on deleting tables.
 
 If the size of a [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) table exceeds `max_table_size_to_drop` (in bytes), you can’t delete it using a [DROP](../../sql-reference/statements/drop.md) query or [TRUNCATE](../../sql-reference/statements/truncate.md) query.
 
-This setting does not require a restart of the ClickHouse server to apply. Another way to disable the restriction is to create the `<clickhouse-path>/flags/force_drop_table` file.
+This setting does not require a restart of the Clickhouse server to apply. Another way to disable the restriction is to create the `<clickhouse-path>/flags/force_drop_table` file.
 
 Default value: 50 GB.
 The value 0 means that you can delete all tables without any restrictions.
@@ -563,25 +548,6 @@ Default value: 5000
 <max_table_num_to_warn>400</max_table_num_to_warn>
 ```
 
-## max\_view\_num\_to\_warn {#max-view-num-to-warn}
-If the number of attached views exceeds the specified value, clickhouse server will add warning messages to `system.warnings` table.
-Default value: 10000
-
-**Example**
-
-``` xml
-<max_view_num_to_warn>400</max_view_num_to_warn>
-```
-
-## max\_dictionary\_num\_to\_warn {#max-dictionary-num-to-warn}
-If the number of attached dictionaries exceeds the specified value, clickhouse server will add warning messages to `system.warnings` table.
-Default value: 1000
-
-**Example**
-
-``` xml
-<max_dictionary_num_to_warn>400</max_dictionary_num_to_warn>
-```
 
 ## max\_part\_num\_to\_warn {#max-part-num-to-warn}
 If the number of active parts exceeds the specified value, clickhouse server will add warning messages to `system.warnings` table.
@@ -593,22 +559,6 @@ Default value: 100000
 <max_part_num_to_warn>400</max_part_num_to_warn>
 ```
 
-## max\_table\_num\_to\_throw {#max-table-num-to-throw}
-If number of tables is greater than this value, server will throw an exception. 0 means no limitation. View, remote tables, dictionary, system tables are not counted. Only count table in Atomic/Ordinary/Replicated/Lazy database engine.Default value: 0
-
-**Example**
-```xml
-<max_table_num_to_throw>400</max_table_num_to_throw>
-```
-
-## max\_database\_num\_to\_throw {#max-table-num-to-throw}
-If number of _database is greater than this value, server will throw an exception. 0 means no limitation.
-Default value: 0
-
-**Example**
-```xml
-<max_database_num_to_throw>400</max_database_num_to_throw>
-```
 
 ## max_temporary_data_on_disk_size
 
@@ -956,38 +906,6 @@ Or it can be set in hex:
 
 Everything mentioned above can be applied for `aes_256_gcm_siv` (but the key must be 32 bytes long).
 
-## error_log {#error_log}
-
-It is disabled by default.
-
-**Enabling**
-
-To manually turn on error history collection [`system.error_log`](../../operations/system-tables/error_log.md), create `/etc/clickhouse-server/config.d/error_log.xml` with the following content:
-
-``` xml
-<clickhouse>
-    <error_log>
-        <database>system</database>
-        <table>error_log</table>
-        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
-        <collect_interval_milliseconds>1000</collect_interval_milliseconds>
-        <max_size_rows>1048576</max_size_rows>
-        <reserved_size_rows>8192</reserved_size_rows>
-        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
-        <flush_on_crash>false</flush_on_crash>
-    </error_log>
-</clickhouse>
-```
-
-**Disabling**
-
-To disable `error_log` setting, you should create the following file `/etc/clickhouse-server/config.d/disable_error_log.xml` with the following content:
-
-``` xml
-<clickhouse>
-<error_log remove="1" />
-</clickhouse>
-```
 
 ## custom_settings_prefixes {#custom_settings_prefixes}
 
@@ -1256,19 +1174,9 @@ Expired time for HSTS in seconds. The default value is 0 means clickhouse disabl
 <hsts_max_age>600000</hsts_max_age>
 ```
 
-## mlock_executable {#mlock_executable}
-
-Perform mlockall after startup to lower first queries latency and to prevent clickhouse executable from being paged out under high IO load. Enabling this option is recommended but will lead to increased startup time for up to a few seconds.
-Keep in mind that this parameter would not work without "CAP_IPC_LOCK" capability.
-**Example**
-
-``` xml
-<mlock_executable>false</mlock_executable>
-```
-
 ## include_from {#include_from}
 
-The path to the file with substitutions. Both XML and YAML formats are supported.
+The path to the file with substitutions.
 
 For more information, see the section “[Configuration files](../../operations/configuration-files.md#configuration_files)”.
 
@@ -1413,26 +1321,6 @@ Examples:
 <listen_host>127.0.0.1</listen_host>
 ```
 
-## listen_try {#listen_try}
-
-The server will not exit if IPv6 or IPv4 networks are unavailable while trying to listen.
-
-Examples:
-
-``` xml
-<listen_try>0</listen_try>
-```
-
-## listen_reuse_port {#listen_reuse_port}
-
-Allow multiple servers to listen on the same address:port. Requests will be routed to a random server by the operating system. Enabling this setting is not recommended.
-
-Examples:
-
-``` xml
-<listen_reuse_port>0</listen_reuse_port>
-```
-
 ## listen_backlog {#listen_backlog}
 
 Backlog (queue size of pending connections) of the listen socket.
@@ -1465,11 +1353,7 @@ Keys:
 - `size` – Size of the file. Applies to `log` and `errorlog`. Once the file reaches `size`, ClickHouse archives and renames it, and creates a new log file in its place.
 - `count` – The number of archived log files that ClickHouse stores.
 - `console` – Send `log` and `errorlog` to the console instead of file. To enable, set to `1` or `true`.
-- `console_log_level` – Logging level for console. Default to `level`.
-- `use_syslog` - Log to syslog as well.
-- `syslog_level` - Logging level for logging to syslog.
 - `stream_compress` – Compress `log` and `errorlog` with `lz4` stream compression. To enable, set to `1` or `true`.
-- `formatting` – Specify log format to be printed in console log (currently only `json` supported).
 
 Both log and error log file names (only file names, not directories) support date and time format specifiers.
 
@@ -1538,8 +1422,6 @@ Writing to the console can be configured. Config example:
 </logger>
 ```
 
-### syslog
-
 Writing to the syslog is also supported. Config example:
 
 ``` xml
@@ -1563,52 +1445,6 @@ Keys for syslog:
     Default value: `LOG_USER` if `address` is specified, `LOG_DAEMON` otherwise.
 - format – Message format. Possible values: `bsd` and `syslog.`
 
-### Log formats
-
-You can specify the log format that will be outputted in the console log. Currently, only JSON is supported. Here is an example of an output JSON log:
-
-```json
-{
-  "date_time": "1650918987.180175",
-  "thread_name": "#1",
-  "thread_id": "254545",
-  "level": "Trace",
-  "query_id": "",
-  "logger_name": "BaseDaemon",
-  "message": "Received signal 2",
-  "source_file": "../base/daemon/BaseDaemon.cpp; virtual void SignalListener::run()",
-  "source_line": "192"
-}
-```
-To enable JSON logging support, use the following snippet:
-
-```xml
-<logger>
-    <formatting>
-        <type>json</type>
-        <names>
-            <date_time>date_time</date_time>
-            <thread_name>thread_name</thread_name>
-            <thread_id>thread_id</thread_id>
-            <level>level</level>
-            <query_id>query_id</query_id>
-            <logger_name>logger_name</logger_name>
-            <message>message</message>
-            <source_file>source_file</source_file>
-            <source_line>source_line</source_line>
-        </names>
-    </formatting>
-</logger>
-```
-
-**Renaming keys for JSON logs**
-
-Key names can be modified by changing tag values inside the `<names>` tag. For example, to change `DATE_TIME` to `MY_DATE_TIME`, you can use `<date_time>MY_DATE_TIME</date_time>`.
-
-**Omitting keys for JSON logs**
-
-Log properties can be omitted by commenting out the property.  For example, if you do not want your log to print `query_id`, you can comment out the `<query_id>` tag.
-
 ## send_crash_reports {#send_crash_reports}
 
 Settings for opt-in sending crash reports to the ClickHouse core developers team via [Sentry](https://sentry.io).
@@ -1619,7 +1455,6 @@ The server will need access to the public Internet via IPv4 (at the time of writ
 Keys:
 
 - `enabled` – Boolean flag to enable the feature, `false` by default. Set to `true` to allow sending crash reports.
-- `send_logical_errors` – `LOGICAL_ERROR` is like an `assert`, it is a bug in ClickHouse. This boolean flag enables sending this exceptions to sentry (default: `false`).
 - `endpoint` – You can override the Sentry endpoint URL for sending crash reports. It can be either a separate Sentry account or your self-hosted Sentry instance. Use the [Sentry DSN](https://docs.sentry.io/error-reporting/quickstart/?platform=native#configure-the-sdk) syntax.
 - `anonymize` - Avoid attaching the server hostname to the crash report.
 - `http_proxy` - Configure HTTP proxy for sending crash reports.
@@ -1686,7 +1521,7 @@ Restriction on deleting tables.
 
 If the size of a [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) table exceeds `max_table_size_to_drop` (in bytes), you can’t delete it using a [DROP](../../sql-reference/statements/drop.md) query or [TRUNCATE](../../sql-reference/statements/truncate.md) query.
 
-This setting does not require a restart of the ClickHouse server to apply. Another way to disable the restriction is to create the `<clickhouse-path>/flags/force_drop_table` file.
+This setting does not require a restart of the Clickhouse server to apply. Another way to disable the restriction is to create the `<clickhouse-path>/flags/force_drop_table` file.
 
 Default value: 50 GB.
 
@@ -1704,7 +1539,7 @@ Restriction on dropping partitions.
 
 If the size of a [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) table exceeds `max_partition_size_to_drop` (in bytes), you can’t drop a partition using a [DROP PARTITION](../../sql-reference/statements/alter/partition.md#drop-partitionpart) query.
 
-This setting does not require a restart of the ClickHouse server to apply. Another way to disable the restriction is to create the `<clickhouse-path>/flags/force_drop_table` file.
+This setting does not require a restart of the Clickhouse server to apply. Another way to disable the restriction is to create the `<clickhouse-path>/flags/force_drop_table` file.
 
 Default value: 50 GB.
 
@@ -1954,7 +1789,7 @@ For more information, see the MergeTreeSettings.h header file.
 
 ## metric_log {#metric_log}
 
-It is disabled by default.
+It is enabled by default. If it`s not, you can do this manually.
 
 **Enabling**
 
@@ -2962,7 +2797,7 @@ table functions, and dictionaries.
 User wishing to see secrets must also have
 [`format_display_secrets_in_show_and_select` format setting](../settings/formats#format_display_secrets_in_show_and_select)
 turned on and a
-[`displaySecretsInShowAndSelect`](../../sql-reference/statements/grant#display-secrets) privilege.
+[`displaySecretsInShowAndSelect`](../../sql-reference/statements/grant#grant-display-secrets) privilege.
 
 Possible values:
 
@@ -2976,8 +2811,6 @@ Default value: 0.
 Define proxy servers for HTTP and HTTPS requests, currently supported by S3 storage, S3 table functions, and URL functions.
 
 There are three ways to define proxy servers: environment variables, proxy lists, and remote proxy resolvers.
-
-Bypassing proxy servers for specific hosts is also supported with the use of `no_proxy`.
 
 ### Environment variables
 
@@ -3088,29 +2921,6 @@ This also allows a mix of resolver types can be used.
 
 By default, tunneling (i.e, `HTTP CONNECT`) is used to make `HTTPS` requests over `HTTP` proxy. This setting can be used to disable it.
 
-### no_proxy
-By default, all requests will go through the proxy. In order to disable it for specific hosts, the `no_proxy` variable must be set.
-It can be set inside the `<proxy>` clause for list and remote resolvers and as an environment variable for environment resolver. 
-It supports IP addresses, domains, subdomains and `'*'` wildcard for full bypass. Leading dots are stripped just like curl does.
-
-Example:
-
-The below configuration bypasses proxy requests to `clickhouse.cloud` and all of its subdomains (e.g, `auth.clickhouse.cloud`).
-The same applies to GitLab, even though it has a leading dot. Both `gitlab.com` and `about.gitlab.com` would bypass the proxy.
-
-``` xml
-<proxy>
-    <no_proxy>clickhouse.cloud,.gitlab.com</no_proxy>
-    <http>
-        <uri>http://proxy1</uri>
-        <uri>http://proxy2:3128</uri>
-    </http>
-    <https>
-        <uri>http://proxy1:3128</uri>
-    </https>
-</proxy>
-```
-
 ## max_materialized_views_count_for_table {#max_materialized_views_count_for_table}
 
 A limit on the number of materialized views attached to a table.
@@ -3137,21 +2947,3 @@ This setting is only necessary for the migration period and will become obsolete
 Type: Bool
 
 Default: 1
-
-## merge_workload {#merge_workload}
-
-Used to regulate how resources are utilized and shared between merges and other workloads. Specified value is used as `workload` setting value for all background merges. Can be overridden by a merge tree setting.
-
-Default value: "default"
-
-**See Also**
-- [Workload Scheduling](/docs/en/operations/workload-scheduling.md)
-
-## mutation_workload {#mutation_workload}
-
-Used to regulate how resources are utilized and shared between mutations and other workloads. Specified value is used as `workload` setting value for all background mutations. Can be overridden by a merge tree setting.
-
-Default value: "default"
-
-**See Also**
-- [Workload Scheduling](/docs/en/operations/workload-scheduling.md)

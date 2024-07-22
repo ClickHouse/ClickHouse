@@ -9,19 +9,13 @@ namespace DB
 class Client : public ClientBase
 {
 public:
-    Client()
-    {
-        fuzzer = QueryFuzzer(randomSeed(), &std::cout, &std::cerr);
-    }
+    Client() = default;
 
     void initialize(Poco::Util::Application & self) override;
 
     int main(const std::vector<String> & /*args*/) override;
 
 protected:
-
-    Poco::Util::LayeredConfiguration & getClientConfiguration() override;
-
     bool processWithFuzzing(const String & full_query) override;
     std::optional<bool> processFuzzingStep(const String & query_to_execute, const ASTPtr & parsed_query);
 
@@ -31,7 +25,7 @@ protected:
 
     String getName() const override { return "client"; }
 
-    void printHelpMessage(const OptionsDescription & options_description, bool verbose) override;
+    void printHelpMessage(const OptionsDescription & options_description) override;
 
     void addOptions(OptionsDescription & options_description) override;
 

@@ -1,6 +1,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionStringToString.h>
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 
 namespace DB
 {
@@ -60,7 +60,7 @@ using FunctionInitcap = FunctionStringToString<InitcapImpl, NameInitcap>;
 
 REGISTER_FUNCTION(Initcap)
 {
-    factory.registerFunction<FunctionInitcap>({}, FunctionFactory::Case::Insensitive);
+    factory.registerFunction<FunctionInitcap>({}, FunctionFactory::CaseInsensitive);
 }
 
 }

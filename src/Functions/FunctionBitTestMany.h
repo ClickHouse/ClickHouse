@@ -16,7 +16,6 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int PARAMETER_OUT_OF_BOUND;
     extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
 }
 
@@ -147,9 +146,6 @@ private:
                 const auto pos = pos_col_const->getUInt(0);
                 if (pos < 8 * sizeof(ValueType))
                     mask = mask | (ValueType(1) << pos);
-                else
-                    throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND,
-                                   "The bit position argument {} is out of bounds for number", static_cast<UInt64>(pos));
             }
             else
             {
@@ -190,20 +186,13 @@ private:
             for (const auto i : collections::range(0, mask.size()))
                 if (pos[i] < 8 * sizeof(ValueType))
                     mask[i] = mask[i] | (ValueType(1) << pos[i]);
-                else
-                    throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND,
-                                    "The bit position argument {} is out of bounds for number", static_cast<UInt64>(pos[i]));
 
             return true;
         }
         else if (const auto pos_col_const = checkAndGetColumnConst<ColumnVector<PosType>>(pos_col_untyped))
         {
             const auto & pos = pos_col_const->template getValue<PosType>();
-            if (pos >= 8 * sizeof(ValueType))
-                throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND,
-                                "The bit position argument {} is out of bounds for number", static_cast<UInt64>(pos));
-
-            const auto new_mask = ValueType(1) << pos;
+            const auto new_mask = pos < 8 * sizeof(ValueType) ? ValueType(1) << pos : 0;
 
             for (const auto i : collections::range(0, mask.size()))
                 mask[i] = mask[i] | new_mask;

@@ -452,7 +452,7 @@ struct UploadPartFailIngection: InjectionModel
 struct BaseSyncPolicy
 {
     virtual ~BaseSyncPolicy() = default;
-    virtual DB::ThreadPoolCallbackRunnerUnsafe<void> getScheduler() { return {}; }
+    virtual DB::ThreadPoolCallbackRunner<void> getScheduler() { return {}; }
     virtual void execute(size_t) {}
     virtual void setAutoExecute(bool) {}
 
@@ -465,7 +465,7 @@ struct SimpleAsyncTasks : BaseSyncPolicy
     bool auto_execute = false;
     std::deque<std::packaged_task<void()>> queue;
 
-    DB::ThreadPoolCallbackRunnerUnsafe<void> getScheduler() override
+    DB::ThreadPoolCallbackRunner<void> getScheduler() override
     {
         return [this] (std::function<void()> && operation, size_t /*priority*/)
         {
@@ -546,8 +546,8 @@ public:
 
     std::unique_ptr<WriteBufferFromS3> getWriteBuffer(String file_name = "file")
     {
-        S3::RequestSettings request_settings;
-        request_settings.updateFromSettings(settings, /* if_changed */true, /* validate_settings */false);
+        S3Settings::RequestSettings request_settings;
+        request_settings.updateFromSettings(settings);
 
         client->resetCounters();
 

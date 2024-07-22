@@ -48,10 +48,10 @@ public:
     void registerFunction(
         const std::string & name,
         Value value,
-        Case case_sensitiveness = Case::Sensitive);
+        CaseSensitiveness case_sensitiveness = CaseSensitive);
 
     template <typename Function>
-    void registerFunction(TableFunctionProperties properties = {}, Case case_sensitiveness = Case::Sensitive)
+    void registerFunction(TableFunctionProperties properties = {}, CaseSensitiveness case_sensitiveness = CaseSensitive)
     {
         auto creator = []() -> TableFunctionPtr { return std::make_shared<Function>(); };
         registerFunction(Function::name,

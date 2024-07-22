@@ -3,7 +3,6 @@
 #include <Parsers/ASTTransactionControl.h>
 #include <Interpreters/TransactionLog.h>
 #include <Interpreters/Context.h>
-#include <Core/Settings.h>
 
 namespace DB
 {
@@ -34,6 +33,7 @@ BlockIO InterpreterTransactionControlQuery::execute()
         case ASTTransactionControl::SET_SNAPSHOT:
             return executeSetSnapshot(session_context, tcl.snapshot);
     }
+    UNREACHABLE();
 }
 
 BlockIO InterpreterTransactionControlQuery::executeBegin(ContextMutablePtr session_context)

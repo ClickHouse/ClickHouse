@@ -1,6 +1,5 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeTableMetadata.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -34,7 +33,7 @@ static String formattedASTNormalized(const ASTPtr & ast)
     if (!ast)
         return "";
     auto ast_normalized = ast->clone();
-    FunctionNameNormalizer::visit(ast_normalized.get());
+    FunctionNameNormalizer().visit(ast_normalized.get());
     WriteBufferFromOwnString buf;
     formatAST(*ast_normalized, buf, false, true);
     return buf.str();
@@ -44,7 +43,7 @@ ReplicatedMergeTreeTableMetadata::ReplicatedMergeTreeTableMetadata(const MergeTr
 {
     if (data.format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
     {
-        auto minmax_idx_column_names = MergeTreeData::getMinMaxColumnsNames(metadata_snapshot->getPartitionKey());
+        auto minmax_idx_column_names = data.getMinMaxColumnsNames(metadata_snapshot->getPartitionKey());
         date_column = minmax_idx_column_names[data.minmax_idx_date_column_pos];
     }
 

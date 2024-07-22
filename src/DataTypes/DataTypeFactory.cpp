@@ -7,10 +7,9 @@
 #include <Parsers/ASTLiteral.h>
 #include <Common/typeid_cast.h>
 #include <Poco/String.h>
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <IO/WriteHelpers.h>
 #include <Core/Defines.h>
-#include <Core/Settings.h>
 #include <Common/CurrentThread.h>
 #include <Interpreters/Context.h>
 
@@ -175,7 +174,7 @@ DataTypePtr DataTypeFactory::getCustom(DataTypeCustomDescPtr customization) cons
 }
 
 
-void DataTypeFactory::registerDataType(const String & family_name, Value creator, Case case_sensitiveness)
+void DataTypeFactory::registerDataType(const String & family_name, Value creator, CaseSensitiveness case_sensitiveness)
 {
     if (creator == nullptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "DataTypeFactory: the data type family {} has been provided  a null constructor", family_name);
@@ -189,12 +188,12 @@ void DataTypeFactory::registerDataType(const String & family_name, Value creator
         throw Exception(ErrorCodes::LOGICAL_ERROR, "DataTypeFactory: the data type family name '{}' is not unique",
             family_name);
 
-    if (case_sensitiveness == Case::Insensitive
+    if (case_sensitiveness == CaseInsensitive
         && !case_insensitive_data_types.emplace(family_name_lowercase, creator).second)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "DataTypeFactory: the case insensitive data type family name '{}' is not unique", family_name);
 }
 
-void DataTypeFactory::registerSimpleDataType(const String & name, SimpleCreator creator, Case case_sensitiveness)
+void DataTypeFactory::registerSimpleDataType(const String & name, SimpleCreator creator, CaseSensitiveness case_sensitiveness)
 {
     if (creator == nullptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "DataTypeFactory: the data type {} has been provided  a null constructor",
@@ -208,7 +207,7 @@ void DataTypeFactory::registerSimpleDataType(const String & name, SimpleCreator 
     }, case_sensitiveness);
 }
 
-void DataTypeFactory::registerDataTypeCustom(const String & family_name, CreatorWithCustom creator, Case case_sensitiveness)
+void DataTypeFactory::registerDataTypeCustom(const String & family_name, CreatorWithCustom creator, CaseSensitiveness case_sensitiveness)
 {
     registerDataType(family_name, [creator](const ASTPtr & ast)
     {
@@ -219,7 +218,7 @@ void DataTypeFactory::registerDataTypeCustom(const String & family_name, Creator
     }, case_sensitiveness);
 }
 
-void DataTypeFactory::registerSimpleDataTypeCustom(const String & name, SimpleCreatorWithCustom creator, Case case_sensitiveness)
+void DataTypeFactory::registerSimpleDataTypeCustom(const String & name, SimpleCreatorWithCustom creator, CaseSensitiveness case_sensitiveness)
 {
     registerDataTypeCustom(name, [name, creator](const ASTPtr & ast)
     {
@@ -293,7 +292,6 @@ DataTypeFactory::DataTypeFactory()
     registerDataTypeMap(*this);
     registerDataTypeObject(*this);
     registerDataTypeVariant(*this);
-    registerDataTypeDynamic(*this);
 }
 
 DataTypeFactory & DataTypeFactory::instance()

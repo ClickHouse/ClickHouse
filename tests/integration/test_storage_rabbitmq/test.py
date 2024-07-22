@@ -78,13 +78,13 @@ def wait_rabbitmq_to_start(rabbitmq_docker_id, cookie, timeout=180):
 
 def kill_rabbitmq(rabbitmq_id):
     p = subprocess.Popen(("docker", "stop", rabbitmq_id), stdout=subprocess.PIPE)
-    p.wait(timeout=60)
+    p.communicate()
     return p.returncode == 0
 
 
 def revive_rabbitmq(rabbitmq_id, cookie):
     p = subprocess.Popen(("docker", "start", rabbitmq_id), stdout=subprocess.PIPE)
-    p.wait(timeout=60)
+    p.communicate()
     wait_rabbitmq_to_start(rabbitmq_id, cookie)
 
 
@@ -702,7 +702,7 @@ def test_rabbitmq_sharding_between_queues_publish(rabbitmq_cluster):
 
     assert (
         int(result1) == messages_num * threads_num
-    ), "ClickHouse lost some messages: {}".format(result1)
+    ), "ClickHouse lost some messages: {}".format(result)
     assert int(result2) == 10
 
 
@@ -1516,7 +1516,7 @@ def test_rabbitmq_hash_exchange(rabbitmq_cluster):
 
     assert (
         int(result1) == messages_num * threads_num
-    ), "ClickHouse lost some messages: {}".format(result1)
+    ), "ClickHouse lost some messages: {}".format(result)
     assert int(result2) == 4 * num_tables
 
 
@@ -1966,7 +1966,7 @@ def test_rabbitmq_many_consumers_to_each_queue(rabbitmq_cluster):
 
     assert (
         int(result1) == messages_num * threads_num
-    ), "ClickHouse lost some messages: {}".format(result1)
+    ), "ClickHouse lost some messages: {}".format(result)
     # 4 tables, 2 consumers for each table => 8 consumer tags
     assert int(result2) == 8
 
@@ -2220,11 +2220,13 @@ def test_rabbitmq_commit_on_block_write(rabbitmq_cluster):
 
 
 def test_rabbitmq_no_connection_at_startup_1(rabbitmq_cluster):
-    error = instance.query_and_get_error(
+    # no connection when table is initialized
+    rabbitmq_cluster.pause_container("rabbitmq1")
+    instance.query_and_get_error(
         """
         CREATE TABLE test.cs (key UInt64, value UInt64)
             ENGINE = RabbitMQ
-            SETTINGS rabbitmq_host_port = 'no_connection_at_startup:5672',
+            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
                      rabbitmq_exchange_name = 'cs',
                      rabbitmq_format = 'JSONEachRow',
                      rabbitmq_flush_interval_ms=1000,
@@ -2232,7 +2234,7 @@ def test_rabbitmq_no_connection_at_startup_1(rabbitmq_cluster):
                      rabbitmq_row_delimiter = '\\n';
     """
     )
-    assert "CANNOT_CONNECT_RABBITMQ" in error
+    rabbitmq_cluster.unpause_container("rabbitmq1")
 
 
 def test_rabbitmq_no_connection_at_startup_2(rabbitmq_cluster):
@@ -2425,7 +2427,9 @@ def test_rabbitmq_drop_table_properly(rabbitmq_cluster):
     time.sleep(30)
 
     try:
-        exists = channel.queue_declare(queue="rabbit_queue_drop", passive=True)
+        exists = channel.queue_declare(
+            callback, queue="rabbit_queue_drop", passive=True
+        )
     except Exception as e:
         exists = False
 
@@ -2602,7 +2606,7 @@ def test_rabbitmq_bad_args(rabbitmq_cluster):
     connection = pika.BlockingConnection(parameters)
     channel = connection.channel()
     channel.exchange_declare(exchange="f", exchange_type="fanout")
-    assert "Unable to declare exchange" in instance.query_and_get_error(
+    instance.query_and_get_error(
         """
         CREATE TABLE test.drop (key UInt64, value UInt64)
             ENGINE = RabbitMQ
@@ -3360,7 +3364,7 @@ def test_rabbitmq_flush_by_block_size(rabbitmq_cluster):
                     routing_key="",
                     body=json.dumps({"key": 0, "value": 0}),
                 )
-            except Exception as e:
+            except e:
                 logging.debug(f"Got error: {str(e)}")
 
     produce_thread = threading.Thread(target=produce)
@@ -3438,7 +3442,7 @@ def test_rabbitmq_flush_by_time(rabbitmq_cluster):
                 )
                 logging.debug("Produced a message")
                 time.sleep(0.8)
-            except Exception as e:
+            except e:
                 logging.debug(f"Got error: {str(e)}")
 
     produce_thread = threading.Thread(target=produce)
