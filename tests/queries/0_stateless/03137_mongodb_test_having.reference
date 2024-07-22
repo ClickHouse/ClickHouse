@@ -1,0 +1,3 @@
+test> switched to db default
+default> [ { name: 'Mole', c: 40 }, { name: 'John', c: 100 } ]
+default> 
