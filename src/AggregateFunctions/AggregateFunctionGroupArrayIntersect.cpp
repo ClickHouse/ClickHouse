@@ -1,12 +1,12 @@
-#include <cassert>
-#include <memory>
-
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadHelpersArena.h>
 
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDate32.h>
+#include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeString.h>
 
 #include <Columns/ColumnArray.h>
@@ -15,18 +15,14 @@
 #include <Common/HashTable/HashTableKeyHolder.h>
 #include <Common/assert_cast.h>
 
-#include <AggregateFunctions/IAggregateFunction.h>
-#include <AggregateFunctions/KeyHolderHelpers.h>
-
 #include <Core/Field.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <AggregateFunctions/Helpers.h>
 #include <AggregateFunctions/FactoryHelpers.h>
-#include <DataTypes/DataTypeDate.h>
-#include <DataTypes/DataTypeDate32.h>
-#include <DataTypes/DataTypeDateTime.h>
-#include <DataTypes/DataTypeDateTime64.h>
+#include <AggregateFunctions/Helpers.h>
+#include <AggregateFunctions/IAggregateFunction.h>
+
+#include <memory>
 
 
 namespace DB
@@ -240,7 +236,7 @@ public:
                 {
                     const char * begin = nullptr;
                     StringRef serialized = data_column->serializeValueIntoArena(offset + i, *arena, begin);
-                    assert(serialized.data != nullptr);
+                    chassert(serialized.data != nullptr);
                     set.emplace(SerializedKeyHolder{serialized, *arena}, it, inserted);
                 }
             }
@@ -260,7 +256,7 @@ public:
                 {
                     const char * begin = nullptr;
                     StringRef serialized = data_column->serializeValueIntoArena(offset + i, *arena, begin);
-                    assert(serialized.data != nullptr);
+                    chassert(serialized.data != nullptr);
                     it = set.find(serialized);
 
                     if (it != nullptr)
