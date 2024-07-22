@@ -329,19 +329,23 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
 
                 const auto * literal = arguments->children[0]->as<ASTLiteral>();
                 const auto * function = arguments->children[0]->as<ASTFunction>();
+                const auto * subquery = arguments->children[0]->as<ASTSubquery>();
                 bool is_tuple = literal && literal->value.getType() == Field::Types::Tuple;
-                // do not add parentheses for tuple literal, otherwise extra parens will be added `-((3, 7, 3), 1)` -> `-(((3, 7, 3), 1))`
+                /// Do not add parentheses for tuple literal, otherwise extra parens will be added `-((3, 7, 3), 1)` -> `-(((3, 7, 3), 1))`
                 bool literal_need_parens = literal && !is_tuple;
 
-                // negate always requires parentheses, otherwise -(-1) will be printed as --1
-                bool inside_parens = name == "negate" && (literal_need_parens || (function && function->name == "negate"));
+                /// Negate always requires parentheses, otherwise -(-1) will be printed as --1
+                /// Also extra parentheses are needed for subqueries, because NOT can be parsed as a function:
+                /// not(SELECT 1) cannot be parsed, while not((SELECT 1)) can.
+                bool inside_parens = (name == "negate" && (literal_need_parens || (function && function->name == "negate")))
+                    || (subquery && name == "not");
 
                 /// We DO need parentheses around a single literal
                 /// For example, SELECT (NOT 0) + (NOT 0) cannot be transformed into SELECT NOT 0 + NOT 0, since
                 /// this is equal to SELECT NOT (0 + NOT 0)
                 bool outside_parens = frame.need_parens && !inside_parens;
 
-                // do not add extra parentheses for functions inside negate, i.e. -(-toUInt64(-(1)))
+                /// Do not add extra parentheses for functions inside negate, i.e. -(-toUInt64(-(1)))
                 if (inside_parens)
                     nested_need_parens.need_parens = false;
 
