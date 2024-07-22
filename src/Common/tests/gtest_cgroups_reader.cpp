@@ -1,12 +1,13 @@
+#if defined(OS_LINUX)
+
+#include <gtest/gtest.h>
+
 #include <cstdint>
 #include <filesystem>
-#include <stdint.h>
-#include <gtest/gtest.h>
 
 #include <IO/WriteBufferFromFile.h>
 #include <Common/CgroupsMemoryUsageObserver.h>
 #include <Common/filesystemHelpers.h>
-#include "IO/WriteBufferFromFileBase.h"
 
 using namespace DB;
 
@@ -173,3 +174,5 @@ INSTANTIATE_TEST_SUITE_P(
     CgroupsMemoryUsageObserverTests,
     CgroupsMemoryUsageObserverFixture,
     ::testing::Values(CgroupsMemoryUsageObserver::CgroupsVersion::V1, CgroupsMemoryUsageObserver::CgroupsVersion::V2));
+
+#endif
