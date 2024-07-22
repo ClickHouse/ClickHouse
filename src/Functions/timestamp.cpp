@@ -187,7 +187,7 @@ If the second argument 'expr_time' is provided, it adds the specified time to th
             {"timestamp", "SELECT timestamp('2013-12-31 12:00:00')", "2013-12-31 12:00:00.000000"},
             {"timestamp", "SELECT timestamp('2013-12-31 12:00:00', '12:00:00.11')", "2014-01-01 00:00:00.110000"},
         },
-        .categories{"DateTime"}}, FunctionFactory::CaseInsensitive);
+        .categories{"DateTime"}}, FunctionFactory::Case::Insensitive);
 }
 
 }

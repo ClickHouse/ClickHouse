@@ -11,22 +11,17 @@
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/PartLog.h>
 #include <Interpreters/TransactionLog.h>
 #include <Parsers/ASTCheckQuery.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTPartition.h>
-#include <Parsers/ASTSetQuery.h>
 #include <Parsers/formatAST.h>
-#include <Parsers/queryToString.h>
 #include <Planner/Utils.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/QueryPlan.h>
-#include <QueryPipeline/Pipe.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/MergeTree/ActiveDataPartSet.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
@@ -35,19 +30,14 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeSink.h>
-#include <Storages/MergeTree/PartitionPruner.h>
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/PartitionCommands.h>
 #include <Storages/buildQueryTreeForShard.h>
-#include <base/sort.h>
 #include <fmt/core.h>
-#include <Poco/Timestamp.h>
 #include <Common/Exception.h>
 #include <Common/MemoryTracker.h>
 #include <Common/ProfileEventsScope.h>
-#include <Common/ThreadPool.h>
 #include <Common/escapeForFileName.h>
-#include <Common/typeid_cast.h>
 
 
 namespace DB
@@ -1197,7 +1187,6 @@ bool StorageMergeTree::merge(
     task->setCurrentTransaction(MergeTreeTransactionHolder{}, MergeTreeTransactionPtr{txn});
 
     executeHere(task);
-
     return true;
 }
 
@@ -1493,7 +1482,6 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
         scheduled = true;
     }
 
-
     return scheduled;
 }
 
@@ -1600,9 +1588,7 @@ bool StorageMergeTree::optimize(
     if (!partition && final)
     {
         if (cleanup && this->merging_params.mode != MergingParams::Mode::Replacing)
-        {
             throw Exception(ErrorCodes::CANNOT_ASSIGN_OPTIMIZE, "Cannot OPTIMIZE with CLEANUP table: only ReplacingMergeTree can be CLEANUP");
-        }
 
         if (cleanup && !getSettings()->allow_experimental_replacing_merge_with_cleanup)
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Experimental merges with CLEANUP are not allowed");
@@ -1616,15 +1602,15 @@ bool StorageMergeTree::optimize(
         for (const String & partition_id : partition_ids)
         {
             if (!merge(
-                    true,
-                    partition_id,
-                    true,
-                    deduplicate,
-                    deduplicate_by_columns,
-                    cleanup,
-                    txn,
-                    disable_reason,
-                    local_context->getSettingsRef().optimize_skip_merged_partitions))
+                true,
+                partition_id,
+                true,
+                deduplicate,
+                deduplicate_by_columns,
+                cleanup,
+                txn,
+                disable_reason,
+                local_context->getSettingsRef().optimize_skip_merged_partitions))
             {
                 constexpr auto message = "Cannot OPTIMIZE table: {}";
                 if (disable_reason.text.empty())
@@ -1644,15 +1630,15 @@ bool StorageMergeTree::optimize(
             partition_id = getPartitionIDFromQuery(partition, local_context);
 
         if (!merge(
-                true,
-                partition_id,
-                final,
-                deduplicate,
-                deduplicate_by_columns,
-                cleanup,
-                txn,
-                disable_reason,
-                local_context->getSettingsRef().optimize_skip_merged_partitions))
+            true,
+            partition_id,
+            final,
+            deduplicate,
+            deduplicate_by_columns,
+            cleanup,
+            txn,
+            disable_reason,
+            local_context->getSettingsRef().optimize_skip_merged_partitions))
         {
             constexpr auto message = "Cannot OPTIMIZE table: {}";
             if (disable_reason.text.empty())
