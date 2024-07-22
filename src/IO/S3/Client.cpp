@@ -388,7 +388,8 @@ Model::HeadObjectOutcome Client::HeadObject(HeadObjectRequest & request) const
     if (isClientForDisk())
         CurrentMetrics::add(CurrentMetrics::S3DiskNoKeyErrors);
 
-    return enrichErrorMessage(std::move(result));
+    return enrichErrorMessage(
+        HeadObject(static_cast<const Model::HeadObjectRequest&>(request)));
 }
 
 /// For each request, we wrap the request functions from Aws::S3::Client with doRequest
