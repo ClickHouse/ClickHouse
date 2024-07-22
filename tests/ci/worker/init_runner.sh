@@ -72,6 +72,9 @@ LIFE_CYCLE=$(curl -s --fail http://169.254.169.254/latest/meta-data/instance-lif
 export LIFE_CYCLE
 echo "Instance lifecycle: $LIFE_CYCLE"
 
+INSTANCE_TYPE=$(ec2metadata --instance-type)
+echo "Instance type: $INSTANCE_TYPE"
+
 # Refresh CloudWatch agent config
 aws ssm get-parameter --region us-east-1 --name AmazonCloudWatch-github-runners --query 'Parameter.Value' --output text > /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
 systemctl restart amazon-cloudwatch-agent.service
