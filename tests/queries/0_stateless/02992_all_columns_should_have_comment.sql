@@ -3,6 +3,6 @@ SELECT 'Column ' || name || ' from table ' || concat(database, '.', table) || ' 
 FROM system.columns
 WHERE (database = 'system') AND
       (comment = '') AND
-      (table NOT ILIKE '%_log_%') AND
+      (table NOT ILIKE '%\_log\_%') AND
       (table NOT IN ('numbers', 'numbers_mt', 'one', 'generate_series', 'generateSeries', 'coverage_log', 'filesystem_read_prefetches_log')) AND
       (default_kind != 'ALIAS');
