@@ -2,8 +2,10 @@
 
 #if USE_ODBC
 
+#include <Core/Settings.h>
 #include <Server/HTTP/HTMLForm.h>
 #include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
+#include <IO/Operators.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Poco/Net/HTTPServerRequest.h>

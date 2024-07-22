@@ -419,9 +419,6 @@ dbms_target_link_libraries (
         boost::circular_buffer
         boost::heap)
 
-target_include_directories(clickhouse_common_io PUBLIC "${CMAKE_CURRENT_BINARY_DIR}/Core/include") # uses some includes from core
-dbms_target_include_directories(PUBLIC "${CMAKE_CURRENT_BINARY_DIR}/Core/include")
-
 target_link_libraries(clickhouse_common_io PUBLIC
     ch_contrib::miniselect
     ch_contrib::pdqsort)
@@ -605,6 +602,10 @@ endif()
 
 if (TARGET ch_contrib::usearch)
     dbms_target_link_libraries(PUBLIC ch_contrib::usearch)
+endif()
+
+if (TARGET ch_contrib::prometheus_protobufs)
+    dbms_target_link_libraries (PUBLIC ch_contrib::prometheus_protobufs)
 endif()
 
 if (TARGET ch_rust::skim)

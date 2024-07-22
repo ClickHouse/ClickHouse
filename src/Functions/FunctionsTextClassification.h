@@ -2,6 +2,7 @@
 
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>

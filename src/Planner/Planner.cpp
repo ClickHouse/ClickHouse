@@ -3,6 +3,8 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
 #include <Core/ProtocolDefines.h>
+#include <Core/Settings.h>
+#include <Core/ServerSettings.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 
@@ -39,6 +41,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 #include <Interpreters/Context.h>
+#include <Interpreters/HashTablesStatistics.h>
 #include <Interpreters/StorageID.h>
 
 #include <Storages/ColumnsDescription.h>
@@ -370,10 +373,10 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
     const auto & query_context = planner_context->getQueryContext();
     const Settings & settings = query_context->getSettingsRef();
 
-    const auto stats_collecting_params = Aggregator::Params::StatsCollectingParams(
-        select_query_info.query,
+    const auto stats_collecting_params = StatsCollectingParams(
+        calculateCacheKey(select_query_info.query),
         settings.collect_hash_table_stats_during_aggregation,
-        settings.max_entries_for_hash_table_stats,
+        query_context->getServerSettings().max_entries_for_hash_table_stats,
         settings.max_size_to_preallocate_for_aggregation);
 
     auto aggregate_descriptions = aggregation_analysis_result.aggregate_descriptions;
@@ -742,7 +745,12 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
             {
                 auto & interpolate_node_typed = interpolate_node->as<InterpolateNode &>();
 
-                PlannerActionsVisitor planner_actions_visitor(planner_context);
+                PlannerActionsVisitor planner_actions_visitor(
+                    planner_context,
+                    /* use_column_identifier_as_action_node_name_, (default value)*/ true,
+                    /// Prefer the INPUT to CONSTANT nodes (actions must be non constant)
+                    /* always_use_const_column_for_constant_nodes */ false);
+
                 auto expression_to_interpolate_expression_nodes = planner_actions_visitor.visit(*interpolate_actions_dag,
                     interpolate_node_typed.getExpression());
                 if (expression_to_interpolate_expression_nodes.size() != 1)

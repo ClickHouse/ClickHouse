@@ -3,6 +3,7 @@
 #include <Storages/StorageMaterializedView.h>
 
 #include <Common/CurrentMetrics.h>
+#include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterDropQuery.h>
@@ -356,7 +357,7 @@ void RefreshTask::refreshTask()
         stop_requested = true;
         tryLogCurrentException(log,
             "Unexpected exception in refresh scheduling, please investigate. The view will be stopped.");
-#ifdef ABORT_ON_LOGICAL_ERROR
+#ifdef DEBUG_OR_SANITIZER_BUILD
         abortOnFailedAssertion("Unexpected exception in refresh scheduling");
 #endif
     }

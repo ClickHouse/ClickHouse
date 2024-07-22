@@ -8,6 +8,7 @@
 #include <Core/NamesAndTypes.h>
 #include <Core/UUID.h>
 #include <Core/ServerUUID.h>
+#include <Core/Settings.h>
 
 #include <DataTypes/DataTypeString.h>
 
