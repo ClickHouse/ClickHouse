@@ -47,7 +47,7 @@ struct AggregateFunctionGroupArrayIntersectData
 };
 
 
-/// Puts all values to the hash set. Returns an array of unique values. Implemented for numeric types.
+/// Puts all values to the hash set. Returns an array of unique values present in all inputs. Implemented for numeric types.
 template <typename T>
 class AggregateFunctionGroupArrayIntersect
     : public IAggregateFunctionDataHelper<AggregateFunctionGroupArrayIntersectData<T>, AggregateFunctionGroupArrayIntersect<T>>
@@ -154,7 +154,7 @@ public:
         set.reserve(size);
         for (size_t i = 0; i < size; ++i)
         {
-            int key;
+            T key;
             readIntBinary(key, buf);
             set.insert(key);
         }
