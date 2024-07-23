@@ -99,14 +99,14 @@ def test_restart(started_cluster):
 
     assert (
         node.query("SHOW CREATE USER user_restart")
-        == "CREATE USER user_restart VALID UNTIL \\'2010-11-06 05:03:20\\'\n"
+        == "CREATE USER user_restart IDENTIFIED WITH no_password VALID UNTIL \\'2010-11-06 05:03:20\\'\n"
     )
 
     node.restart_clickhouse()
 
     assert (
         node.query("SHOW CREATE USER user_restart")
-        == "CREATE USER user_restart VALID UNTIL \\'2010-11-06 05:03:20\\'\n"
+        == "CREATE USER user_restart IDENTIFIED WITH no_password VALID UNTIL \\'2010-11-06 05:03:20\\'\n"
     )
 
     error = "Authentication failed"
