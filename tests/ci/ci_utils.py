@@ -92,15 +92,30 @@ class GHActions:
         PENDING = "pending"
         SUCCESS = "success"
 
-    @staticmethod
-    def get_workflow_job_result(wf_job_name: str) -> Optional[str]:
+    @classmethod
+    def _get_workflow_results(cls):
         if not Path(Envs.WORKFLOW_RESULT_FILE).exists():
             print(
                 f"ERROR: Failed to get workflow results from file [{Envs.WORKFLOW_RESULT_FILE}]"
             )
-            return None
+            return {}
         with open(Envs.WORKFLOW_RESULT_FILE, "r", encoding="utf-8") as json_file:
-            res = json.load(json_file)
+            try:
+                res = json.load(json_file)
+            except json.JSONDecodeError as e:
+                print(f"ERROR: json decoder exception {e}")
+                return {}
+        return res
+
+    @classmethod
+    def print_workflow_results(cls):
+        res = cls._get_workflow_results()
+        results = [f"{job}: {data['result']}" for job, data in res.items()]
+        cls.print_in_group("Workflow results", results)
+
+    @classmethod
+    def get_workflow_job_result(cls, wf_job_name: str) -> Optional[str]:
+        res = cls._get_workflow_results()
         if wf_job_name in res:
             return res[wf_job_name]["result"]  # type: ignore
         else:
