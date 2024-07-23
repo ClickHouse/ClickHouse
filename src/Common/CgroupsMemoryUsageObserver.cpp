@@ -19,12 +19,6 @@ using namespace DB;
 namespace DB
 {
 
-namespace ErrorCodes
-{
-extern const int FILE_DOESNT_EXIST;
-extern const int INCORRECT_DATA;
-}
-
 CgroupsMemoryUsageObserver::CgroupsMemoryUsageObserver(std::chrono::seconds wait_time_)
     : log(getLogger("CgroupsMemoryUsageObserver")), wait_time(wait_time_)
 {}

@@ -30,7 +30,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int FILE_DOESNT_EXIST;
-    extern const int INCORRECT_DATA;
+    extern const int LOGICAL_ERROR;
 }
 
 #if defined(OS_LINUX)
