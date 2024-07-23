@@ -2117,6 +2117,7 @@ natively
 nats
 nestjs
 netloc
+newjson
 ngram
 ngramDistance
 ngramDistanceCaseInsensitive

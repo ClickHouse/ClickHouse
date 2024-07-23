@@ -955,8 +955,11 @@ void ColumnObject::forEachSubcolumn(DB::IColumn::MutableColumnCallback callback)
 {
     for (auto & [_, column] : typed_paths)
         callback(column);
-    for (auto & [_, column] : dynamic_paths)
+    for (auto & [path, column] : dynamic_paths)
+    {
         callback(column);
+        dynamic_paths_ptrs[path] = assert_cast<ColumnDynamic *>(column.get());
+    }
     callback(shared_data);
 }
 
@@ -967,10 +970,11 @@ void ColumnObject::forEachSubcolumnRecursively(DB::IColumn::RecursiveMutableColu
         callback(*column);
         column->forEachSubcolumnRecursively(callback);
     }
-    for (auto & [_, column] : dynamic_paths_ptrs)
+    for (auto & [path, column] : dynamic_paths)
     {
         callback(*column);
         column->forEachSubcolumnRecursively(callback);
+        dynamic_paths_ptrs[path] = assert_cast<ColumnDynamic *>(column.get());
     }
     callback(*shared_data);
     shared_data->forEachSubcolumnRecursively(callback);

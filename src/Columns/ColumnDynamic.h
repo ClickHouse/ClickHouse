@@ -286,11 +286,13 @@ public:
     void forEachSubcolumn(MutableColumnCallback callback) override
     {
         callback(variant_column);
+        variant_column_ptr = assert_cast<ColumnVariant *>(variant_column.get());
     }
 
     void forEachSubcolumnRecursively(RecursiveMutableColumnCallback callback) override
     {
         callback(*variant_column);
+        variant_column_ptr = assert_cast<ColumnVariant *>(variant_column.get());
         variant_column->forEachSubcolumnRecursively(callback);
     }
 
@@ -364,6 +366,9 @@ private:
     void updateVariantInfoAndExpandVariantColumn(const DataTypePtr & new_variant_type);
 
     WrappedPtr variant_column;
+    /// Store and use pointer to ColumnVariant to avoid virtual calls.
+    /// ColumnDynamic is widely used inside ColumnObject for each path and
+    /// with hundreds of paths these virtual calls are noticeable.
     ColumnVariant * variant_column_ptr;
     /// Store the type of current variant with some additional information.
     VariantInfo variant_info;

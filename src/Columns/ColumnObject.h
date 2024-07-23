@@ -201,6 +201,8 @@ private:
     /// here are Dynamic columns. This set of paths can be extended
     /// during inerts into the column.
     std::unordered_map<String, WrappedPtr> dynamic_paths;
+    /// Store and use pointers to ColumnDynamic to avoid virtual calls.
+    /// With hundreds of dynamic paths these virtual calls are noticeable.
     std::unordered_map<String, ColumnDynamic *> dynamic_paths_ptrs;
     /// Shared storage for all other paths and values. It's filled
     /// when the number of dynamic paths reaches the limit.
