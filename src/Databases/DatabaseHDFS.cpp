@@ -11,11 +11,10 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserCreateQuery.h>
-#include <Storages/ObjectStorage/HDFS/HDFSCommon.h>
+#include <Storages/HDFS/HDFSCommon.h>
 #include <Storages/IStorage.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/re2.h>
-#include <Core/Settings.h>
 
 #include <Poco/URI.h>
 

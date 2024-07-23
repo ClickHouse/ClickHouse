@@ -78,6 +78,7 @@ SeekableReadBufferPtr ReadBufferFromRemoteFSGather::createImplementationBuffer(c
 
     std::unique_ptr<ReadBufferFromFileBase> buf;
 
+#ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD
     if (with_file_cache)
     {
         auto cache_key = settings.remote_fs_cache->createKeyForPath(object_path);
@@ -95,6 +96,7 @@ SeekableReadBufferPtr ReadBufferFromRemoteFSGather::createImplementationBuffer(c
             /* read_until_position */std::nullopt,
             cache_log);
     }
+#endif
 
     /// Can't wrap CachedOnDiskReadBufferFromFile in CachedInMemoryReadBufferFromFile because the
     /// former doesn't support seeks.

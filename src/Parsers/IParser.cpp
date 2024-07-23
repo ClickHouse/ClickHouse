@@ -14,7 +14,10 @@ IParser::Pos & IParser::Pos::operator=(const IParser::Pos & rhs)
 {
     depth = rhs.depth;
     max_depth = rhs.max_depth;
-    backtracks = std::max(backtracks, rhs.backtracks);
+
+    if (rhs.backtracks > backtracks)
+        backtracks = rhs.backtracks;
+
     max_backtracks = rhs.max_backtracks;
 
     if (rhs < *this)

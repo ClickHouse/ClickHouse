@@ -4,7 +4,7 @@
 #include <Functions/HTMLCharacterReference.h>
 #include <base/find_symbols.h>
 #include <base/hex.h>
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 
 
 namespace DB

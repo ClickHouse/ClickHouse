@@ -11,7 +11,7 @@ namespace DB
 {
 class IAST;
 struct Settings;
-enum class UserDefinedSQLObjectType : uint8_t;
+enum class UserDefinedSQLObjectType;
 
 /// Interface for a storage of user-defined SQL objects.
 /// Implementations: UserDefinedSQLObjectsDiskStorage, UserDefinedSQLObjectsZooKeeperStorage

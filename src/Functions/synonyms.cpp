@@ -5,7 +5,6 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
-#include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
@@ -121,7 +120,7 @@ public:
 
 REGISTER_FUNCTION(Synonyms)
 {
-    factory.registerFunction<FunctionSynonyms>({}, FunctionFactory::Case::Insensitive);
+    factory.registerFunction<FunctionSynonyms>({}, FunctionFactory::CaseInsensitive);
 }
 
 }

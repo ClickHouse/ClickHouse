@@ -6,7 +6,7 @@
 	url = https://github.com/facebook/zstd
 [submodule "contrib/lz4"]
 	path = contrib/lz4
-	url = https://github.com/lz4/lz4
+	url = https://github.com/ClickHouse/lz4
 [submodule "contrib/librdkafka"]
 	path = contrib/librdkafka
 	url = https://github.com/ClickHouse/librdkafka
@@ -91,13 +91,13 @@
 [submodule "contrib/aws"]
 	path = contrib/aws
 	url = https://github.com/ClickHouse/aws-sdk-cpp
-[submodule "contrib/aws-c-event-stream"]
+[submodule "aws-c-event-stream"]
 	path = contrib/aws-c-event-stream
 	url = https://github.com/awslabs/aws-c-event-stream
-[submodule "contrib/aws-c-common"]
+[submodule "aws-c-common"]
 	path = contrib/aws-c-common
 	url = https://github.com/awslabs/aws-c-common.git
-[submodule "contrib/aws-checksums"]
+[submodule "aws-checksums"]
 	path = contrib/aws-checksums
 	url = https://github.com/awslabs/aws-checksums
 [submodule "contrib/curl"]
@@ -163,7 +163,7 @@
 	url = https://github.com/xz-mirror/xz
 [submodule "contrib/abseil-cpp"]
 	path = contrib/abseil-cpp
-	url = https://github.com/ClickHouse/abseil-cpp.git
+	url = https://github.com/abseil/abseil-cpp
 [submodule "contrib/dragonbox"]
 	path = contrib/dragonbox
 	url = https://github.com/ClickHouse/dragonbox

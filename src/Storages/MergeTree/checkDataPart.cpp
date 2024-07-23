@@ -6,7 +6,6 @@
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
@@ -220,7 +219,7 @@ static IMergeTreeDataPart::Checksums checkDataPart(
 
                 auto file_name = *stream_name + ".bin";
                 checksums_data.files[file_name] = checksum_compressed_file(data_part_storage, file_name);
-            }, column.type, data_part->getColumnSample(column));
+            });
         }
     }
     else
@@ -251,7 +250,7 @@ static IMergeTreeDataPart::Checksums checkDataPart(
             continue;
         }
 
-        /// Exclude files written by full-text index from check. No correct checksums are available for them currently.
+        /// Exclude files written by inverted index from check. No correct checksums are available for them currently.
         if (isGinFile(file_name))
             continue;
 
