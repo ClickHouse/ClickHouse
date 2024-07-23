@@ -76,7 +76,8 @@
 
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
-
+#include <Interpreters/ReplaceQueryParameterVisitor.h>
+#include <Parsers/QueryParameterVisitor.h>
 
 namespace DB
 {
@@ -644,6 +645,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
     if (!attach && context_->getSettingsRef().flatten_nested)
         res.flattenNested();
 
+
     if (res.getAllPhysical().empty())
         throw Exception(ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED, "Cannot CREATE table without physical columns");
 
@@ -745,6 +747,8 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     }
     else if (create.select)
     {
+        if (create.isParameterizedView())
+            return properties;
 
         Block as_select_sample;
 
@@ -754,10 +758,24 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         }
         else
         {
-            as_select_sample = InterpreterSelectWithUnionQuery::getSampleBlock(create.select->clone(),
-                getContext(),
-                false /* is_subquery */,
-                create.isParameterizedView());
+            /** To get valid sample block we need to prepare query without only_analyze, because we need to execute scalar
+              * subqueries. Otherwise functions that expect only constant arguments will throw error during query analysis,
+              * because the result of scalar subquery is not a constant.
+              *
+              * Example:
+              * CREATE MATERIALIZED VIEW test_mv ENGINE=MergeTree ORDER BY arr
+              * AS
+              * WITH (SELECT '\d[a-z]') AS constant_value
+              * SELECT extractAll(concat(toString(number), 'a'), assumeNotNull(constant_value)) AS arr
+              * FROM test_table;
+              *
+              * For new analyzer this issue does not exists because we always execute scalar subqueries.
+              * We can improve this in new analyzer, and execute scalar subqueries only in contexts when we expect constant
+              * for example: LIMIT, OFFSET, functions parameters, functions constant only arguments.
+              */
+
+            InterpreterSelectWithUnionQuery interpreter(create.select->clone(), getContext(), SelectQueryOptions());
+            as_select_sample = interpreter.getSampleBlock();
         }
 
         properties.columns = ColumnsDescription(as_select_sample.getNamesAndTypesList());
