@@ -50,7 +50,7 @@ TYPES = {
     "UInt32": {"bits": 32, "sign": False, "float": False},
     "Int32": {"bits": 32, "sign": True, "float": False},
     "UInt64": {"bits": 64, "sign": False, "float": False},
-    "Int64": {"bits": 64, "sign": True, "float": False},
+    "Int64": {"bits": 64, "sign": True, "float": False}
     # "Float32" : { "bits" : 32, "sign" : True, "float" : True },
     # "Float64" : { "bits" : 64, "sign" : True, "float" : True }
 }
