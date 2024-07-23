@@ -29,6 +29,8 @@ ALTER TABLE 02581_trips UPDATE description='b' WHERE id::UInt64 IN (SELECT (numb
 SELECT count() from 02581_trips WHERE description = '';
 
 -- Run mutation with non-PK `id2` IN big subquery
+--SELECT count(), _part FROM 02581_trips WHERE id2 IN (SELECT (number*10 + 3)::UInt32 FROM numbers(10000000)) GROUP BY _part ORDER BY _part;
+--EXPLAIN SELECT (), _part FROM 02581_trips WHERE id2 IN (SELECT (number*10 + 3)::UInt32 FROM numbers(10000000));
 ALTER TABLE 02581_trips UPDATE description='c' WHERE id2 IN (SELECT (number*10 + 3)::UInt32 FROM numbers(10000000)) SETTINGS mutations_sync=2;
 SELECT count() from 02581_trips WHERE description = '';
 
@@ -57,6 +59,21 @@ SETTINGS mutations_sync=2;
 SELECT count() from 02581_trips WHERE description = '';
 
 SYSTEM FLUSH LOGS;
-SELECT DISTINCT peak_memory_usage < 2000000000 ? 'Ok' : toString(tuple(*)) FROM system.part_log WHERE database = currentDatabase() AND event_date >= yesterday() AND table = '02581_trips' AND event_type = 'MutatePart';
+-- Check that in every mutation there were parts where selected rows count then the size of big sets which will mean that sets were shared
+-- Also check that there was at least one part that read more rows then the size of set which will mean that the 
+WITH 10000000 AS rows_in_set
+SELECT
+    mutation_version,
+    countIf(read_rows >= rows_in_set) >= 1 as has_parts_for_which_set_was_built,
+    countIf(read_rows <= rows_in_set) >= 1 as has_parts_that_shared_set
+FROM
+(
+    SELECT
+        CAST(splitByChar('_', part_name)[5], 'UInt64') AS mutation_version,
+        read_rows
+    FROM system.part_log
+    WHERE database = currentDatabase() and (event_date >= yesterday()) AND (`table` = '02581_trips') AND (event_type = 'MutatePart')
+)
+GROUP BY mutation_version ORDER BY mutation_version FORMAT TSVWithNames;
 
 DROP TABLE 02581_trips;
