@@ -234,7 +234,7 @@ public:
      * Example, scheduling tasks for remote workers (file descriptor in this case is a socket)
      * When the remote worker asks for the next task, doing it in onAsyncJobReady() we can provide it immediately.
      * Otherwise, the returning of the next task for the remote worker can be delayed by current work done in the pipeline
-     * i.e. processor->work(), which will create unnecessary latency in query processing by remote workers   Not Committed Yet
+     * (by other processors), which will create unnecessary latency in query processing by remote workers
      */
     virtual void onAsyncJobReady() {}
 
