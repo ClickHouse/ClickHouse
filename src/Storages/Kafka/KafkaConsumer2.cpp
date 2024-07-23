@@ -173,29 +173,6 @@ void KafkaConsumer2::pollEvents()
     }
 };
 
-KafkaConsumer2::TopicPartitionCounts KafkaConsumer2::getPartitionCounts() const
-{
-    TopicPartitionCounts result;
-    try
-    {
-        auto metadata = consumer->get_metadata();
-        auto topic_metadatas = metadata.get_topics();
-
-        for (auto & topic_metadata : topic_metadatas)
-        {
-            if (const auto it = std::find(topics.begin(), topics.end(), topic_metadata.get_name()); it != topics.end())
-            {
-                result.push_back({topic_metadata.get_name(), topic_metadata.get_partitions().size()});
-            }
-        }
-    }
-    catch (cppkafka::HandleException & e)
-    {
-        chassert(e.what() != nullptr);
-    }
-    return result;
-}
-
 bool KafkaConsumer2::polledDataUnusable(const TopicPartition & topic_partition) const
 {
     const auto different_topic_partition = current == messages.end()

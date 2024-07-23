@@ -34,9 +34,21 @@ struct StorageKafkaInterceptors;
 
 using KafkaConsumer2Ptr = std::shared_ptr<KafkaConsumer2>;
 
-/** Implements a Kafka queue table engine that can be used as a persistent queue / buffer,
-  * or as a basic building block for creating pipelines with a continuous insertion / ETL.
-  */
+/// Implements a Kafka queue table engine that can be used as a persistent queue / buffer,
+/// or as a basic building block for creating pipelines with a continuous insertion / ETL.
+///
+/// It is similar to the already existing StorageKafka, it instead of storing the offsets
+/// in Kafka, its main source of information about offsets is Keeper. On top of the
+/// offsets, it also stores the number of messages (intent size) it tried to insert from
+/// each topic. By storing the intent sizes it possible to retry the same batch of
+/// messages in case of any errors and giving deduplication a chance to deduplicate
+/// blocks.
+///
+/// To not complicate things too much, the current implementation makes sure to fetch
+/// messages only from a single topic-partition on a single thread at a time by
+/// manipulating the queues of librdkafka. By pulling from multiple topic-partitions
+/// the order of messages are not guaranteed, therefore they would have different
+/// hashes for deduplication.
 class StorageKafka2 final : public IStorage, WithContext
 {
     using StorageKafkaInterceptors = StorageKafkaInterceptors<StorageKafka2>;
@@ -97,7 +109,7 @@ private:
 
     struct ConsumerAndAssignmentInfo
     {
-        KafkaConsumer2Ptr consumer; /// available consumers
+        KafkaConsumer2Ptr consumer;
         size_t consume_from_topic_partition_index{0};
         TopicPartitions topic_partitions{};
         zkutil::ZooKeeperPtr keeper;
@@ -204,7 +216,7 @@ private:
     void createReplica();
     void dropReplica();
 
-    // Takes lock over topic partitions and set's the committed offset in topic_partitions
+    // Takes lock over topic partitions and sets the committed offset in topic_partitions.
     std::optional<TopicPartitionLocks> lockTopicPartitions(zkutil::ZooKeeper & keeper_to_use, const TopicPartitions & topic_partitions);
     void saveCommittedOffset(zkutil::ZooKeeper & keeper_to_use, const TopicPartition & topic_partition);
     void saveIntent(zkutil::ZooKeeper & keeper_to_use, const TopicPartition & topic_partition, int64_t intent);

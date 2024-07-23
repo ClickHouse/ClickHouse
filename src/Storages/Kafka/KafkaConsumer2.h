@@ -81,9 +81,9 @@ public:
 
     ~KafkaConsumer2();
 
+    // Poll only the main consumer queue without any topic-partition queues. This is useful to get notified about events, such as rebalance,
+    // new assignment, etc..
     void pollEvents();
-
-    TopicPartitionCounts getPartitionCounts() const;
 
     auto pollTimeout() const { return poll_timeout; }
 
@@ -96,12 +96,11 @@ public:
     TopicPartitions const * getKafkaAssignment() const;
 
     // As the main source of offsets is not Kafka, the offsets needs to be pushed to the consumer from outside
+    // Returns true if it received new assignment and internal state should be updated by updateOffsets
     bool needsOffsetUpdate() const { return needs_offset_update; }
-
-    // Returns true if it received new assignment and could update the internal state accordingly, false otherwise
     void updateOffsets(const TopicPartitions & topic_partitions);
 
-    /// Polls batch of messages from Kafka and returns read buffer containing the next message or
+    /// Polls batch of messages from the given topic-partition and returns read buffer containing the next message or
     /// nullptr when there are no messages to process.
     ReadBufferPtr consume(const TopicPartition & topic_partition, const std::optional<int64_t> & message_count);
 
