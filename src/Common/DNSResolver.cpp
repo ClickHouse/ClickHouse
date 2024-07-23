@@ -203,7 +203,7 @@ struct DNSResolver::AddressFilter
 
     AddressFilter() : settings(std::make_unique<DNSFilterSettings>()) {}
 
-    void performAddressFiltering(DNSResolver::IPAddresses & addresses)
+    void performAddressFiltering(DNSResolver::IPAddresses & addresses) const
     {
         const auto current_settings = settings.get();
         bool dns_resolve_ipv4 = current_settings->dns_allow_resolve_names_to_ipv4;
