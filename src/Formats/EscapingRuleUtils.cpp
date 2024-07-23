@@ -440,14 +440,13 @@ String getAdditionalFormatInfoByEscapingRule(const FormatSettings & settings, Fo
         case FormatSettings::EscapingRule::CSV:
             result += fmt::format(
                 ", use_best_effort_in_schema_inference={}, bool_true_representation={}, bool_false_representation={},"
-                " null_representation={}, delimiter={}, tuple_delimiter={}, try_infer_numbers_from_strings={}",
+                " null_representation={}, delimiter={}, tuple_delimiter={}",
                 settings.csv.use_best_effort_in_schema_inference,
                 settings.bool_true_representation,
                 settings.bool_false_representation,
                 settings.csv.null_representation,
                 settings.csv.delimiter,
-                settings.csv.tuple_delimiter,
-                settings.csv.try_infer_numbers_from_strings);
+                settings.csv.tuple_delimiter);
             break;
         case FormatSettings::EscapingRule::JSON:
             result += fmt::format(
