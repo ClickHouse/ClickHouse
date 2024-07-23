@@ -935,7 +935,7 @@ Each row is either a metadata object, data object, progress information or stati
 Example:
 
 ```json
-{"meta": [{"name":"id", "type":"UInt32"}, {"name":"name", "type":"String"}]}}
+{"meta": [{"name":"id", "type":"UInt32"}, {"name":"name", "type":"String"}]}
 {"progress":{"read_rows":"8","read_bytes":"168","written_rows":"0","written_bytes":"0","total_rows_to_read":"2","result_rows":"0","result_bytes":"0","elapsed_ns":"0"}}
 {"data":["1", "John Doe"]}
 {"data":["2", "Joe Doe"]}
