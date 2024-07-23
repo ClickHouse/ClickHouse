@@ -1079,7 +1079,7 @@ SELECT parseTimeDelta('1yr2mo')
 
 ## least
 
-Returns the smaller value of a and b.
+Returns the smaller value of a and b, and if one of them is NULL, return the non NULL one.
 
 **Syntax**
 
@@ -1089,7 +1089,7 @@ least(a, b)
 
 ## greatest
 
-Returns the larger value of a and b.
+Returns the larger value of a and b, and if one of them is NULL, return the non NULL one.
 
 **Syntax**
 

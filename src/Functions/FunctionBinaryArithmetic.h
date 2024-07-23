@@ -1330,7 +1330,8 @@ class FunctionBinaryArithmetic : public IFunction
         return function->execute(new_arguments, result_type, input_rows_count);
     }
 
-    ColumnPtr executeComparsion(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
+    /// Execute the comparison when the operation is least or greatest, make the result not null when the input has null values.
+    ColumnPtr executeComparison(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
     {
         bool args_have_nulls = false;
         bool args_have_constants = false;
@@ -1348,7 +1349,7 @@ class FunctionBinaryArithmetic : public IFunction
                     checkAndGetColumn<ColumnNullable>(arg.column.get());
                 const ColumnPtr & null_map_col = null_col->getNullMapColumnPtr();
                 const NullMap & null_map = assert_cast<const ColumnUInt8 &>(*null_map_col).getData();
-                for (char8_t i : null_map)
+                for (uint8_t i : null_map)
                     args_have_nulls |= i;
             }
         }
@@ -1529,6 +1530,8 @@ public:
         /// We shouldn't use default implementation for nulls for the case when operation is divide,
         /// intDiv or modulo and denominator is Nullable(Something), because it may cause division
         /// by zero error (when value is Null we store default value 0 in nested column).
+        /// We also shouldn't use default implementation for nulls for the case when operation is least
+        /// or greatest, because it would return null when the input has null values, and this is incorrect.
         return !division_by_nullable && !is_compare;
     }
 
@@ -1541,16 +1544,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        auto return_type = getReturnTypeImplStatic(arguments, context);
-        if constexpr (is_compare)
-        {
-            for (const auto & arg : arguments)
-            {
-                if (arg->isNullable())
-                    return makeNullable(return_type);
-            }
-        }
-        return return_type;
+        return getReturnTypeImplStatic(arguments, context);
     }
 
     static DataTypePtr getReturnTypeImplStatic(const DataTypes & arguments, ContextPtr context)
@@ -1626,6 +1620,30 @@ public:
                         static_cast<const DataTypeArray &>(*arguments[1]).getNestedType(),
                 };
                 return std::make_shared<DataTypeArray>(getReturnTypeImplStatic(new_arguments, context));
+            }
+        }
+
+        /// Special case when the function is least or greatest.
+        if constexpr (is_compare)
+        {
+            bool args_have_nulls = false;
+            DataTypes new_arguments;
+            new_arguments.reserve(arguments.size());
+            for (const auto & arg : arguments)
+            {
+                if (arg->isNullable())
+                {
+                    args_have_nulls = true;
+                    new_arguments.emplace_back(removeNullable(arg));
+                    break;
+                }
+                else
+                    new_arguments.emplace_back(arg);
+            }
+            if (args_have_nulls)
+            {
+                const DataTypePtr res_type = getReturnTypeImplStatic(new_arguments, context);
+                return makeNullable(res_type);
             }
         }
 
@@ -2290,11 +2308,12 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
             return executeTupleNumberOperator(arguments, result_type, input_rows_count, function_builder);
         }
 
-        /// Special case when the function is least or greatest
+        /// Special case when the function is least or greatest.
         if constexpr (is_compare)
         {
-            return executeComparsion(arguments, result_type, input_rows_count);
+            return executeComparison(arguments, result_type, input_rows_count);
         }
+
         return executeImpl2(arguments, result_type, input_rows_count);
     }
 

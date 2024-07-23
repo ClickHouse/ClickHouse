@@ -1,19 +1,10 @@
 -- Test for least/greatest function: if the input has null values, should not return null
-drop table if exists tab_base_case;
-drop table if exists tab_decimal;
+select greatest(x1, NULL), least(x1, NULL), greatest(x1, toNullable(4)), least(x1,toNullable(4)), greatest(x1, x2), least(x1,x2), greatest(x1, x2, 4), least(x1,x2, 4) from (select materialize(NULL) as x1, materialize(toFloat32(2)) as x2);
+select greatest(x1, NULL), least(x1, NULL), greatest(x1, toNullable(4)), least(x1,toNullable(4)), greatest(x1, x2), least(x1,x2), greatest(x1, x2, 4), least(x1,x2, 4) from (select materialize(1)    as x1, materialize(toFloat32(2)) as x2);
 
-create table tab_base_case(id UInt32, x1 Nullable(Float64), x2 Nullable(Int32)) Engine=MergeTree order by id;
-create table tab_decimal(id UInt32, x1 Nullable(Decimal32(5)), x2 Nullable(Decimal64(5))) Engine=MergeTree order by id;
+select greatest(x1, NULL), least(x1, NULL), greatest(x1, toNullable(4)), least(x1,toNullable(4)), greatest(x1, x2), least(x1,x2), greatest(x1, x2, 4), least(x1,x2, 4) from (select materialize(NULL) as x1, materialize(toDecimal32(2, 5)) as x2);
+select greatest(x1, NULL), least(x1, NULL), greatest(x1, toNullable(4)), least(x1,toNullable(4)), greatest(x1, x2), least(x1,x2), greatest(x1, x2, 4), least(x1,x2, 4) from (select materialize(1)    as x1, materialize(toDecimal32(2, 5)) as x2);
 
-insert into tab_base_case values(1, 2, 3), (2, 3, NULL), (3, NULL, NULL);
-insert into tab_decimal   values(1, 2, 3), (2, 3, NULL), (3, NULL, NULL);
-
-select greatest(x1, x2), greatest(x1, x2, NULL), greatest(x1, x2, 4), greatest(x1, NULL, 4), greatest(x1, NULL, NULL), greatest(NULL, NULL, NULL) from tab_base_case;
-select least(x1, x2),    least(x1, x2, NULL),    least(x1, x2, 4),    least(x1, NULL, 4),    least(x1, NULL, NULL),    least(NULL, NULL, NULL)    from tab_base_case;
-
-select greatest(x1, x2), greatest(x1, x2, NULL), greatest(x1, x2, 4), greatest(x1, NULL, 4), greatest(x1, NULL, NULL), greatest(NULL, NULL, NULL) from tab_decimal;
-select least(x1, x2),    least(x1, x2, NULL),    least(x1, x2, 4),    least(x1, NULL, 4),    least(x1, NULL, NULL),    least(NULL, NULL, NULL)    from tab_decimal;
-select greatest(1, 2, NULL),  least(1, 2, NULL);
-
-drop table tab_base_case;
-drop table tab_decimal;
+select greatest(toNullable(1), 2), least(toNullable(1), 2), greatest(toNullable(1), 2, NULL), least(toNullable(1), 2, NULL);
+select greatest(1, NULL),          least(1, NULL),          greatest(1, 2, NULL),             least(1, 2, NULL);
+select greatest(NULL, NULL, NULL), least(NULL, NULL, NULL);
