@@ -55,10 +55,9 @@ public:
         DROP_PROJECTION,
         MATERIALIZE_PROJECTION,
 
-        ADD_STATISTICS,
-        DROP_STATISTICS,
-        MODIFY_STATISTICS,
-        MATERIALIZE_STATISTICS,
+        ADD_STATISTIC,
+        DROP_STATISTIC,
+        MATERIALIZE_STATISTIC,
 
         DROP_PARTITION,
         DROP_DETACHED_PARTITION,
@@ -136,7 +135,7 @@ public:
      */
     IAST * projection = nullptr;
 
-    IAST * statistics_decl = nullptr;
+    IAST * statistic_decl = nullptr;
 
     /** Used in DROP PARTITION, ATTACH PARTITION FROM, FORGET PARTITION, UPDATE, DELETE queries.
      *  The value or ID of the partition is stored here.
@@ -181,7 +180,7 @@ public:
 
     bool clear_index = false;   /// for CLEAR INDEX (do not drop index from metadata)
 
-    bool clear_statistics = false;   /// for CLEAR STATISTICS (do not drop statistics from metadata)
+    bool clear_statistic = false;   /// for CLEAR STATISTIC (do not drop statistic from metadata)
 
     bool clear_projection = false;   /// for CLEAR PROJECTION (do not drop projection from metadata)
 
@@ -236,7 +235,7 @@ protected:
 class ASTAlterQuery : public ASTQueryWithTableAndOutput, public ASTQueryWithOnCluster
 {
 public:
-    enum class AlterObjectType : uint8_t
+    enum class AlterObjectType
     {
         TABLE,
         DATABASE,

@@ -23,9 +23,6 @@ thread_local ThreadStatus constinit * current_thread = nullptr;
 namespace
 {
 
-/// For aarch64 16K is not enough (likely due to tons of registers)
-constexpr size_t UNWIND_MINSIGSTKSZ = 32 << 10;
-
 /// Alternative stack for signal handling.
 ///
 /// This stack should not be located in the TLS (thread local storage), since:
@@ -53,7 +50,7 @@ struct ThreadStack
         free(data);
     }
 
-    static size_t getSize() { return std::max<size_t>(UNWIND_MINSIGSTKSZ, MINSIGSTKSZ); }
+    static size_t getSize() { return std::max<size_t>(16 << 10, MINSIGSTKSZ); }
     void * getData() const { return data; }
 
 private:
@@ -99,7 +96,7 @@ ThreadStatus::ThreadStatus(bool check_current_thread_on_destruction_)
         stack_t altstack_description{};
         altstack_description.ss_sp = alt_stack.getData();
         altstack_description.ss_flags = 0;
-        altstack_description.ss_size = ThreadStack::getSize();
+        altstack_description.ss_size = alt_stack.getSize();
 
         if (0 != sigaltstack(&altstack_description, nullptr))
         {

@@ -1,7 +1,5 @@
 #include "ODBCBridge.h"
 
-#include <iostream>
-
 int mainEntryClickHouseODBCBridge(int argc, char ** argv)
 {
     DB::ODBCBridge app;

@@ -17,11 +17,11 @@ select toDayOfWeek(x1) from t1;
 select '-------toDayOfYear---------';
 select toDayOfYear(x1) from t1;
 select '-------toHour---------';
-select toHour(x1) from t1; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+select toHour(x1) from t1; -- { serverError 43 }
 select '-------toMinute---------';
-select toMinute(x1) from t1; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+select toMinute(x1) from t1; -- { serverError 43 }
 select '-------toSecond---------';
-select toSecond(x1) from t1; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+select toSecond(x1) from t1; -- { serverError 43 }
 select '-------toStartOfDay---------';
 select toStartOfDay(x1, 'Asia/Istanbul') from t1;
 select '-------toMonday---------';
@@ -45,17 +45,17 @@ select toStartOfQuarter(x1) from t1;
 select '-------toStartOfYear---------';
 select toStartOfYear(x1) from t1;
 select '-------toStartOfSecond---------';
-select toStartOfSecond(x1) from t1; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+select toStartOfSecond(x1) from t1; -- { serverError 43 }
 select '-------toStartOfMinute---------';
-select toStartOfMinute(x1) from t1; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+select toStartOfMinute(x1) from t1; -- { serverError 43 }
 select '-------toStartOfFiveMinutes---------';
-select toStartOfFiveMinutes(x1) from t1; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+select toStartOfFiveMinutes(x1) from t1; -- { serverError 43 }
 select '-------toStartOfTenMinutes---------';
-select toStartOfTenMinutes(x1) from t1; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+select toStartOfTenMinutes(x1) from t1; -- { serverError 43 }
 select '-------toStartOfFifteenMinutes---------';
-select toStartOfFifteenMinutes(x1) from t1; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+select toStartOfFifteenMinutes(x1) from t1; -- { serverError 43 }
 select '-------toStartOfHour---------';
-select toStartOfHour(x1) from t1; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+select toStartOfHour(x1) from t1; -- { serverError 43 }
 select '-------toStartOfISOYear---------';
 select toStartOfISOYear(x1) from t1;
 select '-------toRelativeYearNum---------';
@@ -75,7 +75,7 @@ select toRelativeMinuteNum(x1, 'Asia/Istanbul') from t1;
 select '-------toRelativeSecondNum---------';
 select toRelativeSecondNum(x1, 'Asia/Istanbul') from t1;
 select '-------toTime---------';
-select toTime(x1) from t1; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+select toTime(x1) from t1; -- { serverError 43 }
 select '-------toYYYYMM---------';
 select toYYYYMM(x1) from t1;
 select '-------toYYYYMMDD---------';

@@ -32,3 +32,4 @@
 
   <drop_query>drop table alter_select_{engine}</drop_query>
 </test>
+

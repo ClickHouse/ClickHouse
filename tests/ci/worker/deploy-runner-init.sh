@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
 
-set -e
-
 usage() {
   echo "Usage: $0 ENVIRONMENT" >&2
   echo "Valid values for ENVIRONMENT: staging, production" >&2
@@ -57,7 +55,7 @@ EOF
 
 body() {
   local first_line
-  first_line=$(sed -n '/^# THE SCRIPT START$/{=;q;}' "$SOURCE_SCRIPT")
+  first_line=$(sed -n '/^# THE SCRIPT START$/{=;q}' "$SOURCE_SCRIPT")
   if [ -z "$first_line" ]; then
     echo "The pattern '# THE SCRIPT START' is not found in $SOURCE_SCRIPT" >&2
     exit 1

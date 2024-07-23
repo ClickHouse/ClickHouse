@@ -17,7 +17,7 @@ public:
     String getName() const override { return "PrettyCompactBlockOutputFormat"; }
 
 private:
-    void writeHeader(const Block & block, const Widths & max_widths, const Widths & name_widths, bool write_footer);
+    void writeHeader(const Block & block, const Widths & max_widths, const Widths & name_widths);
     void writeBottom(const Widths & max_widths);
     void writeRow(
         size_t row_num,
