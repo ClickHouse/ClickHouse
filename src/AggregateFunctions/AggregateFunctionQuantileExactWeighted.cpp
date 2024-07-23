@@ -128,6 +128,7 @@ struct QuantileExactWeighted
             std::cout << "array[" << i << "]: " << toString(Field(array[i].first)) << ", " << array[i].second << std::endl;
         std::cout << "position: " << position << std::endl;
         */
+
         size_t lower = static_cast<size_t>(std::floor(position));
         size_t higher = static_cast<size_t>(std::ceil(position));
         // std::cout << "lower: " << lower << ", higher: " << higher << std::endl;
@@ -200,7 +201,7 @@ struct QuantileExactWeighted
         for (size_t j = 0; j < num_levels; ++j)
         {
             Float64 position = max_position * levels[indices[j]];
-            result[j] = getFloatImpl(array, size, position);
+            result[indices[j]] = getFloatImpl(array, size, position);
         }
     }
 };
