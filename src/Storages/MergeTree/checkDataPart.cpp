@@ -211,6 +211,7 @@ static IMergeTreeDataPart::Checksums checkDataPart(
         {
             get_serialization(column)->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
             {
+                /// Skip fictitious subcolumns that don't store any real data.
                 if (ISerialization::isFictitiousSubcolumn(substream_path, substream_path.size()))
                     return;
 

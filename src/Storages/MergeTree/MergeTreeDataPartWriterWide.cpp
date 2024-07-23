@@ -132,6 +132,7 @@ void MergeTreeDataPartWriterWide::addStreams(
     {
         assert(!substream_path.empty());
 
+        /// Don't create streams for fictitious subcolumns that don't store any real data.
         if (ISerialization::isFictitiousSubcolumn(substream_path, substream_path.size()))
             return;
 
@@ -208,6 +209,7 @@ ISerialization::OutputStreamGetter MergeTreeDataPartWriterWide::createStreamGett
 {
     return [&, this] (const ISerialization::SubstreamPath & substream_path) -> WriteBuffer *
     {
+        /// Skip fictitious subcolumns that don't store any real data.
         if (ISerialization::isFictitiousSubcolumn(substream_path, substream_path.size()))
             return nullptr;
 
@@ -373,6 +375,7 @@ StreamsWithMarks MergeTreeDataPartWriterWide::getCurrentMarksForColumn(
         min_compress_block_size = settings.min_compress_block_size;
     getSerialization(name_and_type.name)->enumerateStreams([&] (const ISerialization::SubstreamPath & substream_path)
     {
+       /// Skip fictitious subcolumns that don't store any real data.
        if (ISerialization::isFictitiousSubcolumn(substream_path, substream_path.size()))
            return;
 
@@ -414,6 +417,7 @@ void MergeTreeDataPartWriterWide::writeSingleGranule(
     /// So that instead of the marks pointing to the end of the compressed block, there were marks pointing to the beginning of the next one.
     serialization->enumerateStreams([&] (const ISerialization::SubstreamPath & substream_path)
     {
+        /// Skip fictitious subcolumns that don't store any real data.
         if (ISerialization::isFictitiousSubcolumn(substream_path, substream_path.size()))
             return;
 

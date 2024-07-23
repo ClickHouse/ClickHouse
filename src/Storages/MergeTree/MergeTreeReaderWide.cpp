@@ -213,6 +213,7 @@ void MergeTreeReaderWide::addStreams(
 
     ISerialization::StreamCallback callback = [&] (const ISerialization::SubstreamPath & substream_path)
     {
+        /// Don't create streams for fictitious subcolumns that don't store any real data.
         if (ISerialization::isFictitiousSubcolumn(substream_path, substream_path.size()))
             return;
 
@@ -351,6 +352,7 @@ void MergeTreeReaderWide::prefetchForColumn(
     deserializePrefix(serialization, name_and_type, current_task_last_mark, cache, deserialize_states_cache);
     auto callback = [&](const ISerialization::SubstreamPath & substream_path)
     {
+        /// Skip fictitious subcolumns that don't store any real data.
         if (ISerialization::isFictitiousSubcolumn(substream_path, substream_path.size()))
             return;
 
