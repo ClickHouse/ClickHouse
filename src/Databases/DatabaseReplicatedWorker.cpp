@@ -32,7 +32,8 @@ DatabaseReplicatedDDLWorker::DatabaseReplicatedDDLWorker(DatabaseReplicated * db
 
 bool DatabaseReplicatedDDLWorker::initializeMainThread()
 {
-    initialization_duration_timer.emplace();
+    initialization_duration_timer.restart();
+    initializing.store(true, std::memory_order_release);
 
     while (!stop_flag)
     {
@@ -71,7 +72,7 @@ bool DatabaseReplicatedDDLWorker::initializeMainThread()
 
             initializeReplication();
             initialized = true;
-            initialization_duration_timer.reset();
+            initializing.store(false, std::memory_order_relaxed);
             return true;
         }
         catch (...)
@@ -81,7 +82,7 @@ bool DatabaseReplicatedDDLWorker::initializeMainThread()
         }
     }
 
-    initialization_duration_timer.reset();
+    initializing.store(false, std::memory_order_relaxed);
     return false;
 }
 
@@ -461,6 +462,11 @@ UInt32 DatabaseReplicatedDDLWorker::getLogPointer() const
     ///  - max_id can be equal to log_ptr - 1 due to race condition (when it's updated in zk, but not updated in memory yet)
     ///  - max_id can be greater than log_ptr, because log_ptr is not updated for failed and dummy entries
     return max_id.load();
+}
+
+UInt64 DatabaseReplicatedDDLWorker::getCurrentInitializationDurationMs() const
+{
+    return initializing.load(std::memory_order_acquire) ? initialization_duration_timer.elapsedMilliseconds() : 0;
 }
 
 }

@@ -37,7 +37,7 @@ public:
 
     UInt32 getLogPointer() const;
 
-    UInt64 getCurrentInitializationDurationMs() const { return initialization_duration_timer ? initialization_duration_timer->elapsedMilliseconds() : 0; }
+    UInt64 getCurrentInitializationDurationMs() const;
 private:
     bool initializeMainThread() override;
     void initializeReplication();
@@ -59,7 +59,8 @@ private:
     /// It will remove "active" node when database is detached
     zkutil::EphemeralNodeHolderPtr active_node_holder;
 
-    std::optional<Stopwatch> initialization_duration_timer;
+    Stopwatch initialization_duration_timer;
+    std::atomic<bool> initializing = false;
 };
 
 }
