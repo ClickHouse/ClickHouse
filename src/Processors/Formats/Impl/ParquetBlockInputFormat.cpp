@@ -27,6 +27,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
 #include <Processors/Formats/Impl/Parquet/ParquetRecordReader.h>
+#include <Processors/Formats/Impl/Parquet/ParquetBloomFilterCondition.h>
 
 namespace CurrentMetrics
 {
@@ -240,7 +241,7 @@ static std::optional<Field> decodePlainParquetValueSlow(const std::string & data
     return field;
 }
 
-static KeyCondition::IndexColumnToColumnBF buildColumnIndexToBF(
+static ParquetBloomFilterCondition::IndexColumnToColumnBF buildColumnIndexToBF(
     parquet::BloomFilterReader & bf_reader,
     int row_group,
     const Block & header,
@@ -254,7 +255,7 @@ static KeyCondition::IndexColumnToColumnBF buildColumnIndexToBF(
         return {};
     }
 
-    KeyCondition::IndexColumnToColumnBF index_to_column_bf;
+    ParquetBloomFilterCondition::IndexColumnToColumnBF index_to_column_bf;
 
     for (const auto & [column_name, index] : column_name_to_index)
     {
@@ -505,7 +506,10 @@ void ParquetBlockInputFormat::initializeIfNeeded()
         {
             const auto column_index_to_bf = buildColumnIndexToBF(bf_reader, row_group, getPort().getHeader(), column_name_to_index);
 
-            if (key_condition && !key_condition->mayBeTrueOnBloomFilter(column_index_to_bf, getPort().getHeader().getDataTypes()))
+            // make sure to hold refs instead
+            const auto parquet_bloom_filter_condition = ParquetBloomFilterCondition(key_condition->getRPN(), getPort().getHeader().getDataTypes());
+
+            if (!parquet_bloom_filter_condition.mayBeTrueOnRowGroup(column_index_to_bf))
             {
                 continue;
             }
