@@ -68,6 +68,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
               {"input_format_json_ignore_key_case", false, false, "Ignore json key case while read json field from string."},
               {"allow_experimental_drop_detached_table", true, false, "Enable drop detach table."},
               {"optimize_trivial_insert_select", true, false, "The optimization does not make sense in many cases."},
+              {"dictionary_validate_primary_key_type", false, false, "Validate primary key type for dictionaries. By default id type for simple layouts will be implicitly converted to UInt64."},
               {"collect_hash_table_stats_during_joins", false, true, "New setting."},
               {"max_size_to_preallocate_for_joins", 0, 100'000'000, "New setting."},
               {"input_format_orc_read_use_writer_time_zone", false, false, "Whether use the writer's time zone in ORC stripe for ORC row reader, the default ORC row reader's time zone is GMT."},

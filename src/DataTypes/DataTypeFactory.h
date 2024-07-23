@@ -41,16 +41,16 @@ public:
     DataTypePtr tryGet(const ASTPtr & ast) const;
 
     /// Register a type family by its name.
-    void registerDataType(const String & family_name, Value creator, CaseSensitiveness case_sensitiveness = CaseSensitive);
+    void registerDataType(const String & family_name, Value creator, Case case_sensitiveness = Case::Sensitive);
 
     /// Register a simple data type, that have no parameters.
-    void registerSimpleDataType(const String & name, SimpleCreator creator, CaseSensitiveness case_sensitiveness = CaseSensitive);
+    void registerSimpleDataType(const String & name, SimpleCreator creator, Case case_sensitiveness = Case::Sensitive);
 
     /// Register a customized type family
-    void registerDataTypeCustom(const String & family_name, CreatorWithCustom creator, CaseSensitiveness case_sensitiveness = CaseSensitive);
+    void registerDataTypeCustom(const String & family_name, CreatorWithCustom creator, Case case_sensitiveness = Case::Sensitive);
 
     /// Register a simple customized data type
-    void registerSimpleDataTypeCustom(const String & name, SimpleCreatorWithCustom creator, CaseSensitiveness case_sensitiveness = CaseSensitive);
+    void registerSimpleDataTypeCustom(const String & name, SimpleCreatorWithCustom creator, Case case_sensitiveness = Case::Sensitive);
 
 private:
     template <bool nullptr_on_error>
