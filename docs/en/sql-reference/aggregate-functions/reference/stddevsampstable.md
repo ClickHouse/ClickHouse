@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/aggregate-functions/reference/stddevsampstable
-sidebar_position: 191
+sidebar_position: 31
 ---
 
 # stddevSampStable

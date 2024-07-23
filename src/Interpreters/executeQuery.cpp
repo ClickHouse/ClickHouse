@@ -44,7 +44,6 @@
 #include <Formats/FormatFactory.h>
 #include <Storages/StorageInput.h>
 
-#include <Access/ContextAccess.h>
 #include <Access/EnabledQuota.h>
 #include <Interpreters/ApplyWithGlobalVisitor.h>
 #include <Interpreters/Context.h>
@@ -223,17 +222,6 @@ static void logException(ContextPtr context, QueryLogElement & elem, bool log_er
 }
 
 static void
-addPrivilegesInfoToQueryLogElement(QueryLogElement & element, const ContextPtr context_ptr)
-{
-    const auto & privileges_info = context_ptr->getQueryPrivilegesInfo();
-    {
-        std::lock_guard lock(privileges_info.mutex);
-        element.used_privileges = privileges_info.used_privileges;
-        element.missing_privileges = privileges_info.missing_privileges;
-    }
-}
-
-static void
 addStatusInfoToQueryLogElement(QueryLogElement & element, const QueryStatusInfo & info, const ASTPtr query_ast, const ContextPtr context_ptr)
 {
     const auto time_now = std::chrono::system_clock::now();
@@ -298,7 +286,6 @@ addStatusInfoToQueryLogElement(QueryLogElement & element, const QueryStatusInfo 
     }
 
     element.async_read_counters = context_ptr->getAsyncReadCounters();
-    addPrivilegesInfoToQueryLogElement(element, context_ptr);
 }
 
 
@@ -475,9 +462,10 @@ void logQueryFinish(
 
                     processor_elem.processor_name = processor->getName();
 
-                    processor_elem.elapsed_us = static_cast<UInt64>(processor->getElapsedNs() / 1000U);
-                    processor_elem.input_wait_elapsed_us = static_cast<UInt64>(processor->getInputWaitElapsedNs() / 1000U);
-                    processor_elem.output_wait_elapsed_us = static_cast<UInt64>(processor->getOutputWaitElapsedNs() / 1000U);
+                    /// NOTE: convert this to UInt64
+                    processor_elem.elapsed_us = static_cast<UInt32>(processor->getElapsedUs());
+                    processor_elem.input_wait_elapsed_us = static_cast<UInt32>(processor->getInputWaitElapsedUs());
+                    processor_elem.output_wait_elapsed_us = static_cast<UInt32>(processor->getOutputWaitElapsedUs());
 
                     auto stats = processor->getProcessorDataStats();
                     processor_elem.input_rows = stats.input_rows;
@@ -612,8 +600,6 @@ void logExceptionBeforeStart(
         if (settings.log_formatted_queries)
             elem.formatted_query = queryToString(ast);
     }
-
-    addPrivilegesInfoToQueryLogElement(elem, context);
 
     // We don't calculate databases, tables and columns when the query isn't able to start
 
@@ -1107,15 +1093,6 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             && (ast->as<ASTSelectQuery>() || ast->as<ASTSelectWithUnionQuery>());
         QueryCache::Usage query_cache_usage = QueryCache::Usage::None;
 
-        /// If the query runs with "use_query_cache = 1", we first probe if the query cache already contains the query result (if yes:
-        /// return result from cache). If doesn't, we execute the query normally and write the result into the query cache. Both steps use a
-        /// hash of the AST, the current database and the settings as cache key. Unfortunately, the settings are in some places internally
-        /// modified between steps 1 and 2 (= during query execution) - this is silly but hard to forbid. As a result, the hashes no longer
-        /// match and the cache is rendered ineffective. Therefore make a copy of the settings and use it for steps 1 and 2.
-        std::optional<Settings> settings_copy;
-        if (can_use_query_cache)
-            settings_copy = settings;
-
         if (!async_insert)
         {
             /// If it is a non-internal SELECT, and passive (read) use of the query cache is enabled, and the cache knows the query, then set
@@ -1124,7 +1101,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             {
                 if (can_use_query_cache && settings.enable_reads_from_query_cache)
                 {
-                    QueryCache::Key key(ast, context->getCurrentDatabase(), *settings_copy, context->getUserID(), context->getCurrentRoles());
+                    QueryCache::Key key(ast, context->getCurrentDatabase(), context->getUserID(), context->getCurrentRoles());
                     QueryCache::Reader reader = query_cache->createReader(key);
                     if (reader.hasCacheEntryForKey())
                     {
@@ -1208,9 +1185,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 }
 
                 if (auto * create_interpreter = typeid_cast<InterpreterCreateQuery *>(&*interpreter))
-                {
                     create_interpreter->setIsRestoreFromBackup(flags.distributed_backup_restore);
-                }
 
                 {
                     std::unique_ptr<OpenTelemetry::SpanHolder> span;
@@ -1249,7 +1224,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                             && (!ast_contains_system_tables || system_table_handling == QueryCacheSystemTableHandling::Save))
                         {
                             QueryCache::Key key(
-                                ast, context->getCurrentDatabase(), *settings_copy, res.pipeline.getHeader(),
+                                ast, context->getCurrentDatabase(), res.pipeline.getHeader(),
                                 context->getUserID(), context->getCurrentRoles(),
                                 settings.query_cache_share_between_users,
                                 std::chrono::system_clock::now() + std::chrono::seconds(settings.query_cache_ttl),
@@ -1276,6 +1251,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                             }
                         }
                     }
+
                 }
             }
         }

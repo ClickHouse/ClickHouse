@@ -30,7 +30,6 @@ namespace ProfileEvents
     extern const Event FilesystemCacheFailToReserveSpaceBecauseOfLockContention;
     extern const Event FilesystemCacheFreeSpaceKeepingThreadRun;
     extern const Event FilesystemCacheFreeSpaceKeepingThreadWorkMilliseconds;
-    extern const Event FilesystemCacheFailToReserveSpaceBecauseOfCacheResize;
 }
 
 namespace DB
@@ -814,7 +813,7 @@ bool FileCache::tryReserve(
     /// ok compared to the number of cases this check will help.
     if (cache_is_being_resized.load(std::memory_order_relaxed))
     {
-        ProfileEvents::increment(ProfileEvents::FilesystemCacheFailToReserveSpaceBecauseOfCacheResize);
+        ProfileEvents::increment(ProfileEvents::FilesystemCacheFailToReserveSpaceBecauseOfLockContention);
         return false;
     }
 

@@ -8,8 +8,6 @@
 #include <Analyzer/TableExpressionModifiers.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 
-#include <Core/Settings.h>
-
 namespace DB
 {
 

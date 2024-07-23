@@ -1,5 +1,4 @@
 #include <Common/Arena.h>
-#include <Common/HashTable/StringHashSet.h>
 #include <Common/SipHash.h>
 #include <Common/assert_cast.h>
 #include <Common/WeakHash.h>
@@ -56,21 +55,25 @@ void ColumnNullable::updateHashWithValue(size_t n, SipHash & hash) const
         getNestedColumn().updateHashWithValue(n, hash);
 }
 
-WeakHash32 ColumnNullable::getWeakHash32() const
+void ColumnNullable::updateWeakHash32(WeakHash32 & hash) const
 {
     auto s = size();
 
-    WeakHash32 hash = nested_column->getWeakHash32();
+    if (hash.getData().size() != s)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of WeakHash32 does not match size of column: "
+                        "column size is {}, hash size is {}", std::to_string(s), std::to_string(hash.getData().size()));
+
+    WeakHash32 old_hash = hash;
+    nested_column->updateWeakHash32(hash);
 
     const auto & null_map_data = getNullMapData();
     auto & hash_data = hash.getData();
+    auto & old_hash_data = old_hash.getData();
 
-    /// Use default for nulls.
+    /// Use old data for nulls.
     for (size_t row = 0; row < s; ++row)
         if (null_map_data[row])
-            hash_data[row] = WeakHash32::kDefaultInitialValue;
-
-    return hash;
+            hash_data[row] = old_hash_data[row];
 }
 
 void ColumnNullable::updateHashFast(SipHash & hash) const
@@ -217,11 +220,7 @@ const char * ColumnNullable::skipSerializedInArena(const char * pos) const
     return pos;
 }
 
-#if !defined(ABORT_ON_LOGICAL_ERROR)
 void ColumnNullable::insertRangeFrom(const IColumn & src, size_t start, size_t length)
-#else
-void ColumnNullable::doInsertRangeFrom(const IColumn & src, size_t start, size_t length)
-#endif
 {
     const ColumnNullable & nullable_col = assert_cast<const ColumnNullable &>(src);
     getNullMapColumn().insertRangeFrom(*nullable_col.null_map, start, length);
@@ -258,11 +257,7 @@ bool ColumnNullable::tryInsert(const Field & x)
     return true;
 }
 
-#if !defined(ABORT_ON_LOGICAL_ERROR)
 void ColumnNullable::insertFrom(const IColumn & src, size_t n)
-#else
-void ColumnNullable::doInsertFrom(const IColumn & src, size_t n)
-#endif
 {
     const ColumnNullable & src_concrete = assert_cast<const ColumnNullable &>(src);
     getNestedColumn().insertFrom(src_concrete.getNestedColumn(), n);
@@ -270,11 +265,7 @@ void ColumnNullable::doInsertFrom(const IColumn & src, size_t n)
 }
 
 
-#if !defined(ABORT_ON_LOGICAL_ERROR)
 void ColumnNullable::insertManyFrom(const IColumn & src, size_t position, size_t length)
-#else
-void ColumnNullable::doInsertManyFrom(const IColumn & src, size_t position, size_t length)
-#endif
 {
     const ColumnNullable & src_concrete = assert_cast<const ColumnNullable &>(src);
     getNestedColumn().insertManyFrom(src_concrete.getNestedColumn(), position, length);
@@ -410,11 +401,7 @@ int ColumnNullable::compareAtImpl(size_t n, size_t m, const IColumn & rhs_, int 
     return getNestedColumn().compareAt(n, m, nested_rhs, null_direction_hint);
 }
 
-#if !defined(ABORT_ON_LOGICAL_ERROR)
 int ColumnNullable::compareAt(size_t n, size_t m, const IColumn & rhs_, int null_direction_hint) const
-#else
-int ColumnNullable::doCompareAt(size_t n, size_t m, const IColumn & rhs_, int null_direction_hint) const
-#endif
 {
     return compareAtImpl(n, m, rhs_, null_direction_hint);
 }
@@ -634,7 +621,7 @@ void ColumnNullable::updatePermutationImpl(IColumn::PermutationSortDirection dir
     if (unlikely(stability == PermutationSortStability::Stable))
     {
         for (auto & null_range : null_ranges)
-            ::sort(std::ranges::next(res.begin(), null_range.from), std::ranges::next(res.begin(), null_range.to));
+            ::sort(res.begin() + null_range.first, res.begin() + null_range.second);
     }
 
     if (is_nulls_last || null_ranges.empty())
@@ -671,33 +658,6 @@ void ColumnNullable::updatePermutationWithCollation(const Collator & collator, I
                                             size_t limit, int null_direction_hint, Permutation & res, EqualRanges & equal_ranges) const
 {
     updatePermutationImpl(direction, stability, limit, null_direction_hint, res, equal_ranges, &collator);
-}
-
-
-size_t ColumnNullable::estimateCardinalityInPermutedRange(const Permutation & permutation, const EqualRange & equal_range) const
-{
-    const size_t range_size = equal_range.size();
-    if (range_size <= 1)
-        return range_size;
-
-    /// TODO use sampling if the range is too large (e.g. 16k elements, but configurable)
-    StringHashSet elements;
-    bool has_null = false;
-    bool inserted = false;
-    for (size_t i = equal_range.from; i < equal_range.to; ++i)
-    {
-        size_t permuted_i = permutation[i];
-        if (isNullAt(permuted_i))
-        {
-            has_null = true;
-        }
-        else
-        {
-            StringRef value = getDataAt(permuted_i);
-            elements.emplace(value, inserted);
-        }
-    }
-    return elements.size() + (has_null ? 1 : 0);
 }
 
 void ColumnNullable::reserve(size_t n)

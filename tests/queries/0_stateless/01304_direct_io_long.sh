@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-object-storage-with-slow-build
+# Tags: long, no-s3-storage-with-slow-build
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

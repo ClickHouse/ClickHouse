@@ -566,7 +566,7 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
         out.function = RPNElement::FUNCTION_EQUALS;
         out.bloom_filter = std::make_unique<BloomFilter>(params);
         const auto & value = const_value.get<String>();
-        token_extractor->substringToBloomFilter(value.data(), value.size(), *out.bloom_filter, true, false);
+        token_extractor->stringToBloomFilter(value.data(), value.size(), *out.bloom_filter);
         return true;
     }
     else if (function_name == "endsWith")
@@ -575,7 +575,7 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
         out.function = RPNElement::FUNCTION_EQUALS;
         out.bloom_filter = std::make_unique<BloomFilter>(params);
         const auto & value = const_value.get<String>();
-        token_extractor->substringToBloomFilter(value.data(), value.size(), *out.bloom_filter, false, true);
+        token_extractor->stringToBloomFilter(value.data(), value.size(), *out.bloom_filter);
         return true;
     }
     else if (function_name == "multiSearchAny"
@@ -596,15 +596,7 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
 
             bloom_filters.back().emplace_back(params);
             const auto & value = element.get<String>();
-
-            if (function_name == "multiSearchAny")
-            {
-                token_extractor->substringToBloomFilter(value.data(), value.size(), bloom_filters.back().back(), false, false);
-            }
-            else
-            {
-                token_extractor->stringToBloomFilter(value.data(), value.size(), bloom_filters.back().back());
-            }
+            token_extractor->stringToBloomFilter(value.data(), value.size(), bloom_filters.back().back());
         }
         out.set_bloom_filters = std::move(bloom_filters);
         return true;
@@ -633,12 +625,12 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
             for (const auto & alternative : alternatives)
             {
                 bloom_filters.back().emplace_back(params);
-                token_extractor->substringToBloomFilter(alternative.data(), alternative.size(), bloom_filters.back().back(), false, false);
+                token_extractor->stringToBloomFilter(alternative.data(), alternative.size(), bloom_filters.back().back());
             }
             out.set_bloom_filters = std::move(bloom_filters);
         }
         else
-           token_extractor->substringToBloomFilter(required_substring.data(), required_substring.size(), *out.bloom_filter, false, false);
+           token_extractor->stringToBloomFilter(required_substring.data(), required_substring.size(), *out.bloom_filter);
 
         return true;
     }

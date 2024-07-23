@@ -267,11 +267,7 @@ bool ColumnAggregateFunction::structureEquals(const IColumn & to) const
 }
 
 
-#if !defined(ABORT_ON_LOGICAL_ERROR)
 void ColumnAggregateFunction::insertRangeFrom(const IColumn & from, size_t start, size_t length)
-#else
-void ColumnAggregateFunction::doInsertRangeFrom(const IColumn & from, size_t start, size_t length)
-#endif
 {
     const ColumnAggregateFunction & from_concrete = assert_cast<const ColumnAggregateFunction &>(from);
 
@@ -366,10 +362,13 @@ void ColumnAggregateFunction::updateHashWithValue(size_t n, SipHash & hash) cons
     hash.update(wbuf.str().c_str(), wbuf.str().size());
 }
 
-WeakHash32 ColumnAggregateFunction::getWeakHash32() const
+void ColumnAggregateFunction::updateWeakHash32(WeakHash32 & hash) const
 {
     auto s = data.size();
-    WeakHash32 hash(s);
+    if (hash.getData().size() != data.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of WeakHash32 does not match size of column: "
+                        "column size is {}, hash size is {}", std::to_string(s), hash.getData().size());
+
     auto & hash_data = hash.getData();
 
     std::vector<UInt8> v;
@@ -380,8 +379,6 @@ WeakHash32 ColumnAggregateFunction::getWeakHash32() const
         wbuf.finalize();
         hash_data[i] = ::updateWeakHash32(v.data(), v.size(), hash_data[i]);
     }
-
-    return hash;
 }
 
 void ColumnAggregateFunction::updateHashFast(SipHash & hash) const
@@ -465,11 +462,7 @@ void ColumnAggregateFunction::insertFromWithOwnership(const IColumn & from, size
     insertMergeFrom(from, n);
 }
 
-#if !defined(ABORT_ON_LOGICAL_ERROR)
 void ColumnAggregateFunction::insertFrom(const IColumn & from, size_t n)
-#else
-void ColumnAggregateFunction::doInsertFrom(const IColumn & from, size_t n)
-#endif
 {
     insertRangeFrom(from, n, 1);
 }
