@@ -24,7 +24,7 @@ IInterpreterUnionOrSelectQuery::IInterpreterUnionOrSelectQuery(const ASTPtr & qu
     , options(options_)
     , max_streams(context->getSettingsRef().max_threads)
 {
-    /// FIXME All code here will work with the old analyzer, however for views over  Distributed tables
+    /// FIXME All code here will work with the old analyzer, however for views over Distributed tables
     /// it's possible that new analyzer will be enabled in ::getQueryProcessingStage method
     /// of the underlying storage when all other parts of infrastructure are not ready for it
     /// (built with old analyzer).
