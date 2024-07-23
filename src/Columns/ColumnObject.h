@@ -211,7 +211,7 @@ public:
     bool tryInsert(const Field & field) override;
     void insertDefault() override;
 
-#if !defined(ABORT_ON_LOGICAL_ERROR)
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
     void insertFrom(const IColumn & src, size_t n) override;
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
 #else
@@ -236,7 +236,7 @@ public:
     /// Order of rows in ColumnObject is undefined.
     void getPermutation(PermutationSortDirection, PermutationSortStability, size_t, int, Permutation & res) const override;
     void updatePermutation(PermutationSortDirection, PermutationSortStability, size_t, int, Permutation &, EqualRanges &) const override {}
-#if !defined(ABORT_ON_LOGICAL_ERROR)
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
     int compareAt(size_t, size_t, const IColumn &, int) const override { return 0; }
 #else
     int doCompareAt(size_t, size_t, const IColumn &, int) const override { return 0; }
