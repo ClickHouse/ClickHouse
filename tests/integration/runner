@@ -243,7 +243,9 @@ if __name__ == "__main__":
         "-n", "--parallel", action="store", dest="parallel", help="Parallelism"
     )
 
-    parser.add_argument("--count", action="store", dest="count", help="Repeat count")
+    parser.add_argument(
+        "--count", action="store", type=int, dest="count", help="Repeat count"
+    )
 
     parser.add_argument(
         "--no-random",
@@ -320,7 +322,9 @@ if __name__ == "__main__":
         parallel_args += "--dist=loadfile"
         parallel_args += f" -n {args.parallel}".format()
 
-    repeat_args = f" --count {args.count}" if args.count > 0 else ""
+    repeat_args = (
+        f" --count {args.count}" if args.count is not None and args.count > 0 else ""
+    )
 
     rand_args = ""
     # if not args.no_random:
