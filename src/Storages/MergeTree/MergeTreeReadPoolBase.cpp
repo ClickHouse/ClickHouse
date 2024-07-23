@@ -61,6 +61,9 @@ static size_t calculateMinMarksPerTask(
     const size_t part_marks_count = part.getMarksCount();
     if (part_marks_count && part.data_part->isStoredOnRemoteDisk())
     {
+        /// We assume that most of the time prewhere does it's job good meaning that lion's share of the rows is filtered out.
+        /// Which means in turn that for most of the rows we will read only the columns from prewhere clause.
+        /// So it makes sense to use only them for the estimation.
         const auto & columns = settings.merge_tree_determine_task_size_by_prewhere_columns && prewhere_info
             ? prewhere_info->prewhere_actions->getRequiredColumnsNames()
             : columns_to_read;
@@ -69,6 +72,7 @@ static size_t calculateMinMarksPerTask(
         const auto avg_mark_bytes = std::max<size_t>(part_compressed_bytes / part_marks_count, 1);
         const auto min_bytes_per_task = settings.merge_tree_min_bytes_per_task_for_remote_reading;
         /// We're taking min here because number of tasks shouldn't be too low - it will make task stealing impossible.
+        /// We also create at least two tasks per thread to have something to steal from a slow thread.
         const auto heuristic_min_marks
             = std::min<size_t>(pool_settings.sum_marks / pool_settings.threads / 2, min_bytes_per_task / avg_mark_bytes);
         if (heuristic_min_marks > min_marks_per_task)
