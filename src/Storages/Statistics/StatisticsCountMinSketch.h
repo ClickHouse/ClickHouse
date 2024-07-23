@@ -31,8 +31,8 @@ private:
 };
 
 
-void CountMinSketchValidator(const SingleStatisticsDescription &, DataTypePtr data_type);
-StatisticsPtr CountMinSketchCreator(const SingleStatisticsDescription & stat, DataTypePtr);
+void countMinSketchValidator(const SingleStatisticsDescription &, DataTypePtr data_type);
+StatisticsPtr countMinSketchCreator(const SingleStatisticsDescription & stat, DataTypePtr);
 
 }
 

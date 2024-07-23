@@ -46,7 +46,7 @@ Float64 StatisticsTDigest::estimateLess(const Field & val) const
     auto val_as_float = StatisticsUtils::tryConvertToFloat64(val);
     if (val_as_float)
         return t_digest.getCountLessThan(*val_as_float);
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Statistics 'tdigest' does not support estimate value of type {}", val.getTypeName());
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Statistics 'tdigest' does not support estimating value of type {}", val.getTypeName());
 }
 
 Float64 StatisticsTDigest::estimateEqual(const Field & val) const
@@ -57,7 +57,7 @@ Float64 StatisticsTDigest::estimateEqual(const Field & val) const
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Statistics 'tdigest' does not support estimating value of type {}", val.getTypeName());
 }
 
-void TDigestValidator(const SingleStatisticsDescription &, DataTypePtr data_type)
+void tdigestValidator(const SingleStatisticsDescription &, DataTypePtr data_type)
 {
     data_type = removeNullable(data_type);
     data_type = removeLowCardinalityAndNullable(data_type);
@@ -65,7 +65,7 @@ void TDigestValidator(const SingleStatisticsDescription &, DataTypePtr data_type
         throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "Statistics of type 'tdigest' do not support type {}", data_type->getName());
 }
 
-StatisticsPtr TDigestCreator(const SingleStatisticsDescription & stat, DataTypePtr)
+StatisticsPtr tdigestCreator(const SingleStatisticsDescription & stat, DataTypePtr)
 {
     return std::make_shared<StatisticsTDigest>(stat);
 }

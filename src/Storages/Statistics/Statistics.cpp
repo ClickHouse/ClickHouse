@@ -204,15 +204,15 @@ void MergeTreeStatisticsFactory::registerValidator(StatisticsType stats_type, Va
 
 MergeTreeStatisticsFactory::MergeTreeStatisticsFactory()
 {
-    registerValidator(StatisticsType::TDigest, TDigestValidator);
-    registerCreator(StatisticsType::TDigest, TDigestCreator);
+    registerValidator(StatisticsType::TDigest, tdigestValidator);
+    registerCreator(StatisticsType::TDigest, tdigestCreator);
 
-    registerValidator(StatisticsType::Uniq, UniqValidator);
-    registerCreator(StatisticsType::Uniq, UniqCreator);
+    registerValidator(StatisticsType::Uniq, uniqValidator);
+    registerCreator(StatisticsType::Uniq, uniqCreator);
 
 #if USE_DATASKETCHES
-    registerValidator(StatisticsType::CountMinSketch, CountMinSketchValidator);
-    registerCreator(StatisticsType::CountMinSketch, CountMinSketchCreator);
+    registerValidator(StatisticsType::CountMinSketch, countMinSketchValidator);
+    registerCreator(StatisticsType::CountMinSketch, countMinSketchCreator);
 #endif
 }
 

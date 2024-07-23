@@ -17,13 +17,18 @@ extern const int LOGICAL_ERROR;
 extern const int ILLEGAL_STATISTICS;
 }
 
-/// Constants chosen based on rolling dices, which provides an error tolerance of 0.1% (ε = 0.001) and a confidence level of 99.9% (δ = 0.001).
+/// Constants chosen based on rolling dices.
+/// The values provides:
+///     1. an error tolerance of 0.1% (ε = 0.001)
+///     2. a confidence level of 99.9% (δ = 0.001).
 /// And sketch the size is 152kb.
 static constexpr auto num_hashes = 7uz;
 static constexpr auto num_buckets = 2718uz;
 
 StatisticsCountMinSketch::StatisticsCountMinSketch(const SingleStatisticsDescription & stat_, DataTypePtr data_type_)
-    : IStatistics(stat_), sketch(num_hashes, num_buckets), data_type(data_type_)
+    : IStatistics(stat_)
+    , sketch(num_hashes, num_buckets)
+    , data_type(data_type_)
 {
 }
 
@@ -50,8 +55,7 @@ Float64 StatisticsCountMinSketch::estimateEqual(const Field & val) const
 
 void StatisticsCountMinSketch::update(const ColumnPtr & column)
 {
-    size_t size = column->size();
-    for (size_t row = 0; row < size; ++row)
+    for (size_t row = 0; row < column->size(); ++row)
     {
         if (column->isNullAt(row))
             continue;
@@ -80,16 +84,15 @@ void StatisticsCountMinSketch::deserialize(ReadBuffer & buf)
 }
 
 
-void CountMinSketchValidator(const SingleStatisticsDescription &, DataTypePtr data_type)
+void countMinSketchValidator(const SingleStatisticsDescription &, DataTypePtr data_type)
 {
     data_type = removeNullable(data_type);
     data_type = removeLowCardinalityAndNullable(data_type);
-    /// Data types of Numeric, String family, IPv4, IPv6, Date family, Enum family are supported.
     if (!data_type->isValueRepresentedByNumber() && !isStringOrFixedString(data_type))
         throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "Statistics of type 'count_min' does not support type {}", data_type->getName());
 }
 
-StatisticsPtr CountMinSketchCreator(const SingleStatisticsDescription & stat, DataTypePtr data_type)
+StatisticsPtr countMinSketchCreator(const SingleStatisticsDescription & stat, DataTypePtr data_type)
 {
     return std::make_shared<StatisticsCountMinSketch>(stat, data_type);
 }
