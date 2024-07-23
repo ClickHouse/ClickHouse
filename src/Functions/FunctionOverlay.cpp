@@ -1,14 +1,10 @@
 #include <Columns/ColumnConst.h>
-#include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
-#include <Common/StringUtils.h>
-#include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
-#include <IO/WriteHelpers.h>
-
+#include <Common/StringUtils.h>
 
 namespace DB
 {
