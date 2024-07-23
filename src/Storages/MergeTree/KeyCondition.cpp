@@ -3182,7 +3182,7 @@ bool KeyCondition::mayBeTrueOnBloomFilter(const IndexColumnToColumnBF & column_i
                 continue;
             }
 
-            if (element.key_column >- data_types.size())
+            if (element.key_column >= data_types.size())
             {
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "TODO ARTHUR");
             }
