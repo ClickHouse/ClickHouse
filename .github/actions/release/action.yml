@@ -62,8 +62,8 @@ runs:
       if: ${{ inputs.type == 'patch' }}
       shell: bash
       run: |
-        python3 ./tests/ci/create_release.py --set-progress-started --progress "update ChangeLog"
-        [ "$(git branch --show-current)" != "master" ] && echo "not on the master" && exit 1
+        git checkout master
+        python3 ./tests/ci/create_release.py --set-progress-started --progress "update changelog, docker version, security"
         echo "List versions"
         ./utils/list-versions/list-versions.sh > ./utils/list-versions/version_date.tsv
         echo "Update docker version"
@@ -96,17 +96,13 @@ runs:
           Update version_date.tsv and changelogs after ${{ env.RELEASE_TAG }}
           ### Changelog category (leave one):
           - Not for changelog (changelog entry is not required)
-    - name: Reset changes if Dry-run
-      if: ${{ inputs.dry-run }}
+    - name: Complete previous steps and Restore git state
+      if: ${{ inputs.type == 'patch' }}
       shell: bash
       run: |
-        git reset --hard HEAD
-    - name: Checkout back to GITHUB_REF
-      shell: bash
-      run: |
-        git checkout "$GITHUB_REF_NAME"
-        # set current progress to OK
         python3 ./tests/ci/create_release.py --set-progress-completed
+        git reset --hard HEAD
+        git checkout "$GITHUB_REF_NAME"
     - name: Create GH Release
       shell: bash
       if: ${{ inputs.type == 'patch' }}
@@ -146,24 +142,23 @@ runs:
       if: ${{ inputs.type == 'patch' }}
       shell: bash
       run: |
-        python3 ./tests/ci/create_release.py --set-progress-started --progress "docker server release"
         cd "./tests/ci"
+        python3 ./create_release.py --set-progress-started --progress "docker server release"
         export CHECK_NAME="Docker server image"
         python3 docker_server.py --release-type auto --version ${{ env.RELEASE_TAG }} --check-name "$CHECK_NAME" --sha ${{ env.COMMIT_SHA }} ${{ ! inputs.dry-run && '--push' || '' }}
-        python3 ./tests/ci/create_release.py --set-progress-completed
+        python3 ./create_release.py --set-progress-completed
     - name: Docker clickhouse/clickhouse-keeper building
       if: ${{ inputs.type == 'patch' }}
       shell: bash
       run: |
-        python3 ./tests/ci/create_release.py --set-progress-started --progress "docker keeper release"
         cd "./tests/ci"
+        python3 ./create_release.py --set-progress-started --progress "docker keeper release"
         export CHECK_NAME="Docker keeper image"
         python3 docker_server.py --release-type auto --version ${{ env.RELEASE_TAG }} --check-name "$CHECK_NAME" --sha ${{ env.COMMIT_SHA }} ${{ ! inputs.dry-run && '--push'  || '' }}
-        python3 ./tests/ci/create_release.py --set-progress-completed
-    - name: Set Release progress completed
+        python3 ./create_release.py --set-progress-completed
+    - name: Set current Release progress to Completed with OK
       shell: bash
       run: |
-        # If we here - set completed status, to post proper Slack OK or FAIL message in the next step
         python3 ./tests/ci/create_release.py --set-progress-started --progress "completed"
         python3 ./tests/ci/create_release.py --set-progress-completed
     - name: Post Slack Message
