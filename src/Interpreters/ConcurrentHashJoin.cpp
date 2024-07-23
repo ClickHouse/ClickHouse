@@ -200,7 +200,7 @@ IColumn::Selector ConcurrentHashJoin::selectDispatchBlock(const Strings & key_co
     {
         const auto & key_col = from_block.getByName(key_name).column->convertToFullColumnIfConst();
         const auto & key_col_no_lc = recursiveRemoveLowCardinality(recursiveRemoveSparse(key_col));
-        key_col_no_lc->updateWeakHash32(hash);
+        hash.update(key_col_no_lc->getWeakHash32());
     }
     return hashToSelector(hash, num_shards);
 }
