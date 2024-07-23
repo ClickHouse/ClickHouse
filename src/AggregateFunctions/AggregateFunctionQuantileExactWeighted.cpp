@@ -272,5 +272,6 @@ void registerAggregateFunctionsQuantileExactWeighted(AggregateFunctionFactory & 
 
     factory.registerAlias("quantileInterpolatedWeighted", NameQuantileExactWeighted::name);
     factory.registerAlias("quantilesInterpolatedWeighted", NameQuantilesExactWeighted::name);
+    factory.registerAlias("medianInterpolatedWeighted", NameQuantileExactWeighted::name);
 }
 }
