@@ -1,8 +1,8 @@
-import pytest
 import glob
-import re
-import random
 import os.path
+import pytest
+import random
+import re
 import sys
 import uuid
 from collections import namedtuple
