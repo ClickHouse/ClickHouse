@@ -582,7 +582,7 @@ void executeQueryWithParallelReplicas(
                 "Local replica is not found in '{}' cluster definition, see 'cluster_for_parallel_replicas' setting",
                 new_cluster->getName());
 
-        // resize the pool but keep local replicas in it (and udpate its index)
+        // resize the pool but keep local replicas in it (and update its index)
         chassert(max_replicas_to_use <= pools_to_use.size());
         if (local_replica_index >= max_replicas_to_use)
         {
