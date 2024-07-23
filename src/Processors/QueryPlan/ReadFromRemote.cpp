@@ -16,7 +16,6 @@
 #include <Common/logger_useful.h>
 #include <Common/checkStackSize.h>
 #include <Core/QueryProcessingStage.h>
-#include <Core/Settings.h>
 #include <Client/ConnectionPool.h>
 #include <Client/ConnectionPoolWithFailover.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -387,8 +386,6 @@ ReadFromParallelRemoteReplicasStep::ReadFromParallelRemoteReplicasStep(
     chassert(cluster->getShardCount() == 1);
 
     std::vector<String> description;
-    description.push_back(fmt::format("query: {}", formattedAST(query_ast)));
-
     for (const auto & pool : cluster->getShardsInfo().front().per_replica_pools)
         description.push_back(fmt::format("Replica: {}", pool->getHost()));
 

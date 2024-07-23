@@ -83,7 +83,7 @@ private:
     using BucketsType = typename Impl::BucketsType;
 
     template <typename T>
-    BucketsType checkBucketsRange(T buckets) const
+    inline BucketsType checkBucketsRange(T buckets) const
     {
         if (unlikely(buckets <= 0))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The second argument of function {} (number of buckets) must be positive number", getName());

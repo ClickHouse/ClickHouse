@@ -87,7 +87,7 @@ function insert()
 
 
 
-TIMEOUT=20
+TIMEOUT=30
 
 create_db $TIMEOUT &
 sync_db $TIMEOUT &

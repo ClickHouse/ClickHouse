@@ -23,7 +23,6 @@
 #include <Common/DateLUTImpl.h>
 #include <base/find_symbols.h>
 #include <Core/DecimalFunctions.h>
-#include <Core/Settings.h>
 
 #include <type_traits>
 #include <concepts>
@@ -206,13 +205,13 @@ private:
             return 4;
         }
 
-        /// Casts val from integer to string, then appends result string to buffer.
-        /// Makes sure digits number in result string is no less than min_digits by padding leading '0'.
+        /// Cast content from integer to string, and append result string to buffer.
+        /// Make sure digits number in result string is no less than total_digits by padding leading '0'
         /// Notice: '-' is not counted as digit.
         /// For example:
-        /// val = -123, min_digits = 2 => dest = "-123"
-        /// val = -123, min_digits = 3 => dest = "-123"
-        /// val = -123, min_digits = 4 => dest = "-0123"
+        /// val = -123, total_digits = 2 => dest = "-123"
+        /// val = -123, total_digits = 3 => dest = "-123"
+        /// val = -123, total_digits = 4 => dest = "-0123"
         static size_t writeNumberWithPadding(char * dest, std::integral auto val, size_t min_digits)
         {
             using T = decltype(val);
@@ -227,10 +226,9 @@ private:
                 ++digits;
             }
 
+            /// Possible sign
             size_t pos = 0;
             n = val;
-
-            /// Possible sign
             if constexpr (is_signed_v<T>)
                 if (val < 0)
                 {
@@ -247,17 +245,16 @@ private:
             }
 
             /// Digits
-            size_t digits_written = 0;
             while (w >= 100)
             {
                 w /= 100;
 
                 writeNumber2(dest + pos, n / w);
                 pos += 2;
-                digits_written += 2;
+
                 n = n % w;
             }
-            if (digits_written < digits)
+            if (n)
             {
                 dest[pos] = '0' + n;
                 ++pos;
@@ -783,9 +780,9 @@ public:
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionFormatDateTimeImpl>(context); }
 
     explicit FunctionFormatDateTimeImpl(ContextPtr context)
-        : mysql_M_is_month_name(context->getSettingsRef().formatdatetime_parsedatetime_m_is_month_name)
-        , mysql_f_prints_single_zero(context->getSettingsRef().formatdatetime_f_prints_single_zero)
-        , mysql_format_ckl_without_leading_zeros(context->getSettingsRef().formatdatetime_format_without_leading_zeros)
+        : mysql_M_is_month_name(context->getSettings().formatdatetime_parsedatetime_m_is_month_name)
+        , mysql_f_prints_single_zero(context->getSettings().formatdatetime_f_prints_single_zero)
+        , mysql_format_ckl_without_leading_zeros(context->getSettings().formatdatetime_format_without_leading_zeros)
     {
     }
 

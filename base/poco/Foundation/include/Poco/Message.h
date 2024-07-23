@@ -19,7 +19,6 @@
 
 
 #include <map>
-#include <vector>
 #include "Poco/Foundation.h"
 #include "Poco/Timestamp.h"
 

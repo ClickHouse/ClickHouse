@@ -5,7 +5,6 @@
 #include <Access/EnabledQuota.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Columns/ColumnNullable.h>
-#include <Core/Settings.h>
 #include <Processors/Transforms/buildPushingToViewsChain.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -27,8 +26,7 @@
 #include <Processors/Transforms/CountingTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/MaterializingTransform.h>
-#include <Processors/Transforms/SquashingTransform.h>
-#include <Processors/Transforms/PlanSquashingTransform.h>
+#include <Processors/Transforms/SquashingChunksTransform.h>
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -281,8 +279,6 @@ Chain InterpreterInsertQuery::buildChain(
     std::atomic_uint64_t * elapsed_counter_ms,
     bool check_access)
 {
-    IInterpreter::checkStorageSupportsTransactionsIfNeeded(table, getContext());
-
     ProfileEvents::increment(ProfileEvents::InsertQueriesWithSubqueries);
     ProfileEvents::increment(ProfileEvents::QueriesWithSubqueries);
 
@@ -627,20 +623,9 @@ BlockIO InterpreterInsertQuery::execute()
         {
             bool table_prefers_large_blocks = table->prefersLargeBlocks();
 
-            size_t threads = presink_chains.size();
-
-            pipeline.resize(1);
-
-            pipeline.addTransform(std::make_shared<PlanSquashingTransform>(
-                    header,
-                    table_prefers_large_blocks ? settings.min_insert_block_size_rows : settings.max_block_size,
-                    table_prefers_large_blocks ? settings.min_insert_block_size_bytes : 0ULL));
-
-            pipeline.resize(threads);
-
             pipeline.addSimpleTransform([&](const Block & in_header) -> ProcessorPtr
             {
-                return std::make_shared<ApplySquashingTransform>(
+                return std::make_shared<SimpleSquashingChunksTransform>(
                     in_header,
                     table_prefers_large_blocks ? settings.min_insert_block_size_rows : settings.max_block_size,
                     table_prefers_large_blocks ? settings.min_insert_block_size_bytes : 0ULL);
@@ -696,19 +681,12 @@ BlockIO InterpreterInsertQuery::execute()
         {
             bool table_prefers_large_blocks = table->prefersLargeBlocks();
 
-            auto squashing = std::make_shared<ApplySquashingTransform>(
-                    chain.getInputHeader(),
-                    table_prefers_large_blocks ? settings.min_insert_block_size_rows : settings.max_block_size,
-                    table_prefers_large_blocks ? settings.min_insert_block_size_bytes : 0ULL);
+            auto squashing = std::make_shared<SimpleSquashingChunksTransform>(
+                chain.getInputHeader(),
+                table_prefers_large_blocks ? settings.min_insert_block_size_rows : settings.max_block_size,
+                table_prefers_large_blocks ? settings.min_insert_block_size_bytes : 0ULL);
 
             chain.addSource(std::move(squashing));
-
-            auto balancing = std::make_shared<PlanSquashingTransform>(
-                    chain.getInputHeader(),
-                    table_prefers_large_blocks ? settings.min_insert_block_size_rows : settings.max_block_size,
-                    table_prefers_large_blocks ? settings.min_insert_block_size_bytes : 0ULL);
-
-            chain.addSource(std::move(balancing));
         }
 
         auto context_ptr = getContext();

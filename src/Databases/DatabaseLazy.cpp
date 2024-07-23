@@ -1,7 +1,6 @@
 #include <Databases/DatabaseLazy.h>
 
 #include <base/sort.h>
-#include <base/isSharedPtrUnique.h>
 #include <iomanip>
 #include <filesystem>
 #include <Common/CurrentMetrics.h>
@@ -187,7 +186,6 @@ void DatabaseLazy::attachTable(ContextPtr /* context_ */, const String & table_n
         throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Table {}.{} already exists.", backQuote(database_name), backQuote(table_name));
 
     it->second.expiration_iterator = cache_expiration_queue.emplace(cache_expiration_queue.end(), current_time, table_name);
-
     CurrentMetrics::add(CurrentMetrics::AttachedTable, 1);
 }
 
@@ -204,7 +202,6 @@ StoragePtr DatabaseLazy::detachTable(ContextPtr /* context */, const String & ta
         if (it->second.expiration_iterator != cache_expiration_queue.end())
             cache_expiration_queue.erase(it->second.expiration_iterator);
         tables_cache.erase(it);
-
         CurrentMetrics::sub(CurrentMetrics::AttachedTable, 1);
     }
     return res;
@@ -306,7 +303,7 @@ try
         String table_name = expired_tables.front().table_name;
         auto it = tables_cache.find(table_name);
 
-        if (!it->second.table || isSharedPtrUnique(it->second.table))
+        if (!it->second.table || it->second.table.unique())
         {
             LOG_DEBUG(log, "Drop table {} from cache.", backQuote(it->first));
             it->second.table.reset();

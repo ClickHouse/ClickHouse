@@ -3,9 +3,8 @@
 #include <base/defines.h>
 
 #include <fstream>
-#include <string>
+#include <sstream>
 
-namespace fs = std::filesystem;
 
 bool cgroupsV2Enabled()
 {
@@ -14,11 +13,11 @@ bool cgroupsV2Enabled()
     {
         /// This file exists iff the host has cgroups v2 enabled.
         auto controllers_file = default_cgroups_mount / "cgroup.controllers";
-        if (!fs::exists(controllers_file))
+        if (!std::filesystem::exists(controllers_file))
             return false;
         return true;
     }
-    catch (const fs::filesystem_error &) /// all "underlying OS API errors", typically: permission denied
+    catch (const std::filesystem::filesystem_error &) /// all "underlying OS API errors", typically: permission denied
     {
         return false; /// not logging the exception as most callers fall back to cgroups v1
     }
@@ -34,9 +33,8 @@ bool cgroupsV2MemoryControllerEnabled()
     /// According to https://docs.kernel.org/admin-guide/cgroup-v2.html, file "cgroup.controllers" defines which controllers are available
     /// for the current + child cgroups. The set of available controllers can be restricted from level to level using file
     /// "cgroups.subtree_control". It is therefore sufficient to check the bottom-most nested "cgroup.controllers" file.
-    fs::path cgroup_dir = cgroupV2PathOfProcess();
-    if (cgroup_dir.empty())
-        return false;
+    std::string cgroup = cgroupV2OfProcess();
+    auto cgroup_dir = cgroup.empty() ? default_cgroups_mount : (default_cgroups_mount / cgroup);
     std::ifstream controllers_file(cgroup_dir / "cgroup.controllers");
     if (!controllers_file.is_open())
         return false;
@@ -48,7 +46,7 @@ bool cgroupsV2MemoryControllerEnabled()
 #endif
 }
 
-fs::path cgroupV2PathOfProcess()
+std::string cgroupV2OfProcess()
 {
 #if defined(OS_LINUX)
     chassert(cgroupsV2Enabled());
@@ -56,18 +54,17 @@ fs::path cgroupV2PathOfProcess()
     /// A simpler way to get the membership is:
     std::ifstream cgroup_name_file("/proc/self/cgroup");
     if (!cgroup_name_file.is_open())
-        return {};
+        return "";
     /// With cgroups v2, there will be a *single* line with prefix "0::/"
     /// (see https://docs.kernel.org/admin-guide/cgroup-v2.html)
     std::string cgroup;
     std::getline(cgroup_name_file, cgroup);
     static const std::string v2_prefix = "0::/";
     if (!cgroup.starts_with(v2_prefix))
-        return {};
+        return "";
     cgroup = cgroup.substr(v2_prefix.length());
-    /// Note: The 'root' cgroup can have an empty cgroup name, this is valid
-    return default_cgroups_mount / cgroup;
+    return cgroup;
 #else
-    return {};
+    return "";
 #endif
 }

@@ -61,6 +61,7 @@ def test_big_family(client: KeeperClient):
     )
 
     response = client.find_big_family("/test_big_family", 2)
+
     assert response == TSV(
         [
             ["/test_big_family", "11"],
@@ -86,12 +87,7 @@ def test_find_super_nodes(client: KeeperClient):
     client.cd("/test_find_super_nodes")
 
     response = client.find_super_nodes(4)
-
-    # The order of the response is not guaranteed, so we need to sort it
-    normalized_response = response.strip().split("\n")
-    normalized_response.sort()
-
-    assert TSV(normalized_response) == TSV(
+    assert response == TSV(
         [
             ["/test_find_super_nodes/1", "5"],
             ["/test_find_super_nodes/2", "4"],
@@ -127,7 +123,7 @@ def test_base_commands(client: KeeperClient):
     assert client.get("/test_create_zk_node1") == "testvalue1"
 
     client.create("/123", "1=2")
-    client.create("/123/321", "foo;bar")
+    client.create("/123/321", "'foo;bar'")
     assert client.get("/123") == "1=2"
     assert client.get("/123/321") == "foo;bar"
 

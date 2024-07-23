@@ -24,14 +24,14 @@ private:
     std::unique_ptr<datasketches::update_theta_sketch> sk_update;
     std::unique_ptr<datasketches::theta_union> sk_union;
 
-    datasketches::update_theta_sketch * getSkUpdate()
+    inline datasketches::update_theta_sketch * getSkUpdate()
     {
         if (!sk_update)
             sk_update = std::make_unique<datasketches::update_theta_sketch>(datasketches::update_theta_sketch::builder().build());
         return sk_update.get();
     }
 
-    datasketches::theta_union * getSkUnion()
+    inline datasketches::theta_union * getSkUnion()
     {
         if (!sk_union)
             sk_union = std::make_unique<datasketches::theta_union>(datasketches::theta_union::builder().build());

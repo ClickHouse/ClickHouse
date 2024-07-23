@@ -228,9 +228,9 @@ void Timer::cleanup()
 #endif
 
 template <typename ProfilerImpl>
-QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(
-    [[maybe_unused]] UInt64 thread_id, [[maybe_unused]] int clock_type, [[maybe_unused]] UInt32 period, [[maybe_unused]] int pause_signal_)
-    : log(getLogger("QueryProfiler")), pause_signal(pause_signal_)
+QueryProfilerBase<ProfilerImpl>::QueryProfilerBase([[maybe_unused]] UInt64 thread_id, [[maybe_unused]] int clock_type, [[maybe_unused]] UInt32 period, [[maybe_unused]] int pause_signal_)
+    : log(getLogger("QueryProfiler"))
+    , pause_signal(pause_signal_)
 {
 #if defined(SANITIZER)
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "QueryProfiler disabled because they cannot work under sanitizers");
