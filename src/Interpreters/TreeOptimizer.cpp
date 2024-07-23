@@ -577,7 +577,8 @@ void TreeOptimizer::optimizeIf(ASTPtr & query, Aliases & aliases, bool if_chain_
         optimizeMultiIfToIf(query);
 
     /// Optimize if with constant condition after constants was substituted instead of scalar subqueries.
-    OptimizeIfWithConstantConditionVisitor(aliases).visit(query);
+    OptimizeIfWithConstantConditionVisitorData visitor_data(aliases);
+    OptimizeIfWithConstantConditionVisitor(visitor_data).visit(query);
 
     if (if_chain_to_multiif)
         OptimizeIfChainsVisitor().visit(query);

@@ -15,6 +15,7 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/NetException.h>
 #include <Common/randomDelay.h>

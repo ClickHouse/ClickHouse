@@ -3,11 +3,12 @@
 #include <Client/ClientBase.h>
 #include <Client/LocalConnection.h>
 
-#include <Common/StatusFile.h>
-#include <Common/InterruptListener.h>
-#include <Loggers/Loggers.h>
+#include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
+#include <Loggers/Loggers.h>
+#include <Common/InterruptListener.h>
+#include <Common/StatusFile.h>
 
 #include <filesystem>
 #include <memory>

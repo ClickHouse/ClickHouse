@@ -419,9 +419,6 @@ dbms_target_link_libraries (
         boost::circular_buffer
         boost::heap)
 
-target_include_directories(clickhouse_common_io PUBLIC "${CMAKE_CURRENT_BINARY_DIR}/Core/include") # uses some includes from core
-dbms_target_include_directories(PUBLIC "${CMAKE_CURRENT_BINARY_DIR}/Core/include")
-
 target_link_libraries(clickhouse_common_io PUBLIC
     ch_contrib::miniselect
     ch_contrib::pdqsort)

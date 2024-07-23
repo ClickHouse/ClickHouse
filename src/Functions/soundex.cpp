@@ -112,7 +112,7 @@ struct NameSoundex
 REGISTER_FUNCTION(Soundex)
 {
     factory.registerFunction<FunctionStringToString<SoundexImpl, NameSoundex>>(
-        FunctionDocumentation{.description="Returns Soundex code of a string."}, FunctionFactory::CaseInsensitive);
+        FunctionDocumentation{.description="Returns Soundex code of a string."}, FunctionFactory::Case::Insensitive);
 }
 
 
