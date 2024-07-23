@@ -105,9 +105,6 @@ public:
         }
     }
 
-    void reconnect();
-    bool isConnectionAlive() const;
-
 protected:
     friend class ParallelFormattingOutputFormat;
 

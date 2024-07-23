@@ -17,9 +17,6 @@ public:
     const Block & getHeader() const { return inputs.front().getHeader(); }
     void addTableLock(const TableLockHolder & lock) { table_locks.push_back(lock); }
 
-    void reconnect();
-    bool isConnectionAlive() const;
-
 protected:
     virtual void consume(Chunk & chunk) = 0;
 

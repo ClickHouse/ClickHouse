@@ -19,17 +19,6 @@ void SinkToStorage::onConsume(Chunk chunk)
     cur_chunk = std::move(chunk);
 }
 
-
-void RemoteSource::reconnect()
-{
-    query_executor->reconnect();
-}
-
-bool RemoteSource::isConnectionAlive() const
-{
-    return query_executor->isConnectionAlive();
-}
-
 SinkToStorage::GenerateResult SinkToStorage::onGenerate()
 {
     GenerateResult res;
