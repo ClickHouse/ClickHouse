@@ -3228,7 +3228,7 @@ bool KeyCondition::mayBeTrueOnBloomFilter(const IndexColumnToColumnBF & column_i
         {
             rpn_stack.emplace_back(false, true);
         }
-        else if(element.function == RPNElement::FUNCTION_IN_SET
+        else if (element.function == RPNElement::FUNCTION_IN_SET
                  || element.function == RPNElement::FUNCTION_NOT_IN_SET
                  || element.function == RPNElement::ALWAYS_FALSE)
         {
