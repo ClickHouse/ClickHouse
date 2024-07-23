@@ -618,7 +618,7 @@ KeeperSnapshotManager::KeeperSnapshotManager(
 
             LOG_TRACE(log, "Found {} on {}", snapshot_file, disk->getName());
             size_t snapshot_up_to = getSnapshotPathUpToLogIdx(snapshot_file);
-            auto [_, inserted] = existing_snapshots.insert_or_assign(snapshot_up_to, std::make_shared<SnapshotFileInfo>(snapshot_file, disk));
+            auto [_, inserted] = existing_snapshots.insert_or_assign(snapshot_up_to, SnapshotFileInfo{snapshot_file, disk});
 
             if (!inserted)
                 LOG_WARNING(
@@ -651,7 +651,7 @@ KeeperSnapshotManager::KeeperSnapshotManager(
     moveSnapshotsIfNeeded();
 }
 
-SnapshotFileInfoPtr KeeperSnapshotManager::serializeSnapshotBufferToDisk(nuraft::buffer & buffer, uint64_t up_to_log_idx)
+SnapshotFileInfo KeeperSnapshotManager::serializeSnapshotBufferToDisk(nuraft::buffer & buffer, uint64_t up_to_log_idx)
 {
     ReadBufferFromNuraftBuffer reader(buffer);
 
@@ -672,12 +672,11 @@ SnapshotFileInfoPtr KeeperSnapshotManager::serializeSnapshotBufferToDisk(nuraft:
 
     disk->removeFile(tmp_snapshot_file_name);
 
-    auto snapshot_file_info = std::make_shared<SnapshotFileInfo>(snapshot_file_name, disk);
-    existing_snapshots.emplace(up_to_log_idx, snapshot_file_info);
+    existing_snapshots.emplace(up_to_log_idx, SnapshotFileInfo{snapshot_file_name, disk});
     removeOutdatedSnapshotsIfNeeded();
     moveSnapshotsIfNeeded();
 
-    return snapshot_file_info;
+    return {snapshot_file_name, disk};
 }
 
 nuraft::ptr<nuraft::buffer> KeeperSnapshotManager::deserializeLatestSnapshotBufferFromDisk()
@@ -691,7 +690,7 @@ nuraft::ptr<nuraft::buffer> KeeperSnapshotManager::deserializeLatestSnapshotBuff
         }
         catch (const DB::Exception &)
         {
-            const auto & [path, disk, size] = *latest_itr->second;
+            const auto & [path, disk] = latest_itr->second;
             disk->removeFile(path);
             existing_snapshots.erase(latest_itr->first);
             tryLogCurrentException(__PRETTY_FUNCTION__);
@@ -703,7 +702,7 @@ nuraft::ptr<nuraft::buffer> KeeperSnapshotManager::deserializeLatestSnapshotBuff
 
 nuraft::ptr<nuraft::buffer> KeeperSnapshotManager::deserializeSnapshotBufferFromDisk(uint64_t up_to_log_idx) const
 {
-    const auto & [snapshot_path, snapshot_disk, size] = *existing_snapshots.at(up_to_log_idx);
+    const auto & [snapshot_path, snapshot_disk] = existing_snapshots.at(up_to_log_idx);
     WriteBufferFromNuraftBuffer writer;
     auto reader = snapshot_disk->readFile(snapshot_path);
     copyData(*reader, writer);
@@ -795,18 +794,18 @@ void KeeperSnapshotManager::moveSnapshotsIfNeeded()
     {
         if (idx == latest_snapshot_idx)
         {
-            if (file_info->disk != latest_snapshot_disk)
+            if (file_info.disk != latest_snapshot_disk)
             {
-                moveSnapshotBetweenDisks(file_info->disk, file_info->path, latest_snapshot_disk, file_info->path, keeper_context);
-                file_info->disk = latest_snapshot_disk;
+                moveSnapshotBetweenDisks(file_info.disk, file_info.path, latest_snapshot_disk, file_info.path, keeper_context);
+                file_info.disk = latest_snapshot_disk;
             }
         }
         else
         {
-            if (file_info->disk != disk)
+            if (file_info.disk != disk)
             {
-                moveSnapshotBetweenDisks(file_info->disk, file_info->path, disk, file_info->path, keeper_context);
-                file_info->disk = disk;
+                moveSnapshotBetweenDisks(file_info.disk, file_info.path, disk, file_info.path, keeper_context);
+                file_info.disk = disk;
             }
         }
     }
@@ -818,12 +817,12 @@ void KeeperSnapshotManager::removeSnapshot(uint64_t log_idx)
     auto itr = existing_snapshots.find(log_idx);
     if (itr == existing_snapshots.end())
         throw Exception(ErrorCodes::UNKNOWN_SNAPSHOT, "Unknown snapshot with log index {}", log_idx);
-    const auto & [path, disk, size] = *itr->second;
+    const auto & [path, disk] = itr->second;
     disk->removeFileIfExists(path);
     existing_snapshots.erase(itr);
 }
 
-SnapshotFileInfoPtr KeeperSnapshotManager::serializeSnapshotToDisk(const KeeperStorageSnapshot & snapshot)
+SnapshotFileInfo KeeperSnapshotManager::serializeSnapshotToDisk(const KeeperStorageSnapshot & snapshot)
 {
     auto up_to_log_idx = snapshot.snapshot_meta->get_last_log_idx();
     auto snapshot_file_name = getSnapshotFileName(up_to_log_idx, compress_snapshots_zstd);
@@ -848,8 +847,7 @@ SnapshotFileInfoPtr KeeperSnapshotManager::serializeSnapshotToDisk(const KeeperS
 
     disk->removeFile(tmp_snapshot_file_name);
 
-    auto snapshot_file_info = std::make_shared<SnapshotFileInfo>(snapshot_file_name, disk);
-    existing_snapshots.emplace(up_to_log_idx, snapshot_file_info);
+    existing_snapshots.emplace(up_to_log_idx, SnapshotFileInfo{snapshot_file_name, disk});
 
     try
     {
@@ -861,7 +859,7 @@ SnapshotFileInfoPtr KeeperSnapshotManager::serializeSnapshotToDisk(const KeeperS
         tryLogCurrentException(log, "Failed to cleanup and/or move older snapshots");
     }
 
-    return snapshot_file_info;
+    return {snapshot_file_name, disk};
 }
 
 size_t KeeperSnapshotManager::getLatestSnapshotIndex() const
@@ -871,23 +869,23 @@ size_t KeeperSnapshotManager::getLatestSnapshotIndex() const
     return 0;
 }
 
-SnapshotFileInfoPtr KeeperSnapshotManager::getLatestSnapshotInfo() const
+SnapshotFileInfo KeeperSnapshotManager::getLatestSnapshotInfo() const
 {
     if (!existing_snapshots.empty())
     {
-        const auto & [path, disk, size] = *existing_snapshots.at(getLatestSnapshotIndex());
+        const auto & [path, disk] = existing_snapshots.at(getLatestSnapshotIndex());
 
         try
         {
             if (disk->exists(path))
-                return std::make_shared<SnapshotFileInfo>(path, disk);
+                return {path, disk};
         }
         catch (...)
         {
             tryLogCurrentException(log);
         }
     }
-    return nullptr;
+    return {"", nullptr};
 }
 
 }

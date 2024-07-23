@@ -1,6 +1,5 @@
 #include <Processors/QueryPlan/ReadFromStreamLikeEngine.h>
 
-#include <Core/Settings.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 

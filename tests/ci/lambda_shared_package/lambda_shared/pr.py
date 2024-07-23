@@ -48,37 +48,11 @@ TRUSTED_CONTRIBUTORS = {
     ]
 }
 
-
-class Labels:
-    PR_BUGFIX = "pr-bugfix"
-    PR_CRITICAL_BUGFIX = "pr-critical-bugfix"
-    CAN_BE_TESTED = "can be tested"
-    DO_NOT_TEST = "do not test"
-    MUST_BACKPORT = "pr-must-backport"
-    MUST_BACKPORT_CLOUD = "pr-must-backport-cloud"
-    JEPSEN_TEST = "jepsen-test"
-    SKIP_MERGEABLE_CHECK = "skip mergeable check"
-    PR_BACKPORT = "pr-backport"
-    PR_BACKPORTS_CREATED = "pr-backports-created"
-    PR_BACKPORTS_CREATED_CLOUD = "pr-backports-created-cloud"
-    PR_CHERRYPICK = "pr-cherrypick"
-    PR_CI = "pr-ci"
-    PR_FEATURE = "pr-feature"
-    PR_SYNCED_TO_CLOUD = "pr-synced-to-cloud"
-    PR_SYNC_UPSTREAM = "pr-sync-upstream"
-    RELEASE = "release"
-    RELEASE_LTS = "release-lts"
-    SUBMODULE_CHANGED = "submodule changed"
-
-    # automatic backport for critical bug fixes
-    AUTO_BACKPORT = {"pr-critical-bugfix"}
-
-
 # Descriptions are used in .github/PULL_REQUEST_TEMPLATE.md, keep comments there
 # updated accordingly
 # The following lists are append only, try to avoid editing them
 # They still could be cleaned out after the decent time though.
-LABEL_CATEGORIES = {
+LABELS = {
     "pr-backward-incompatible": ["Backward Incompatible Change"],
     "pr-bugfix": [
         "Bug Fix",
@@ -86,7 +60,6 @@ LABEL_CATEGORIES = {
         "Bug Fix (user-visible misbehaviour in official stable or prestable release)",
         "Bug Fix (user-visible misbehavior in official stable or prestable release)",
     ],
-    "pr-critical-bugfix": ["Critical Bug Fix (crash, LOGICAL_ERROR, data loss, RBAC)"],
     "pr-build": [
         "Build/Testing/Packaging Improvement",
         "Build Improvement",
@@ -108,9 +81,7 @@ LABEL_CATEGORIES = {
     "pr-ci": ["CI Fix or Improvement (changelog entry is not required)"],
 }
 
-CATEGORY_TO_LABEL = {
-    c: lb for lb, categories in LABEL_CATEGORIES.items() for c in categories
-}
+CATEGORY_TO_LABEL = {c: lb for lb, categories in LABELS.items() for c in categories}
 
 
 def check_pr_description(pr_body: str, repo_name: str) -> Tuple[str, str]:
@@ -122,7 +93,7 @@ def check_pr_description(pr_body: str, repo_name: str) -> Tuple[str, str]:
 
     # Check if body contains "Reverts ClickHouse/ClickHouse#36337"
     if [True for line in lines if re.match(rf"\AReverts {repo_name}#[\d]+\Z", line)]:
-        return "", LABEL_CATEGORIES["pr-not-for-changelog"][0]
+        return "", LABELS["pr-not-for-changelog"][0]
 
     category = ""
     entry = ""

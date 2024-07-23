@@ -66,16 +66,16 @@ else()
     message(STATUS "Library bridge mode: OFF")
 endif()
 
+if (ENABLE_CLICKHOUSE_KEEPER)
+    message(STATUS "ClickHouse keeper mode: ON")
+else()
+    message(STATUS "ClickHouse keeper mode: OFF")
+endif()
+
 if (ENABLE_CLICKHOUSE_KEEPER_CONVERTER)
     message(STATUS "ClickHouse keeper-converter mode: ON")
 else()
     message(STATUS "ClickHouse keeper-converter mode: OFF")
-endif()
-
-if (ENABLE_CLICKHOUSE_KEEPER)
-    message(STATUS "ClickHouse Keeper: ON")
-else()
-    message(STATUS "ClickHouse Keeper: OFF")
 endif()
 
 if (ENABLE_CLICKHOUSE_KEEPER_CLIENT)
@@ -131,16 +131,16 @@ add_subdirectory (static-files-disk-uploader)
 add_subdirectory (su)
 add_subdirectory (disks)
 
+if (ENABLE_CLICKHOUSE_KEEPER)
+    add_subdirectory (keeper)
+endif()
+
 if (ENABLE_CLICKHOUSE_KEEPER_CONVERTER)
     add_subdirectory (keeper-converter)
 endif()
 
 if (ENABLE_CLICKHOUSE_KEEPER_CLIENT)
     add_subdirectory (keeper-client)
-endif()
-
-if (ENABLE_CLICKHOUSE_KEEPER)
-    add_subdirectory (keeper)
 endif()
 
 if (ENABLE_CLICKHOUSE_ODBC_BRIDGE)
@@ -162,7 +162,7 @@ if (ARCH_AMD64 AND OS_LINUX AND NOT OS_ANDROID)
     set (HARMFUL_LIB harmful)
 endif ()
 
-target_link_libraries (clickhouse PRIVATE clickhouse_common_io ${HARMFUL_LIB})
+target_link_libraries (clickhouse PRIVATE clickhouse_common_io string_utils ${HARMFUL_LIB})
 target_include_directories (clickhouse PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
 
 if (ENABLE_CLICKHOUSE_KEEPER)

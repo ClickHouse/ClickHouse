@@ -3,7 +3,6 @@
 #if USE_NLP
 
 #include <Columns/ColumnString.h>
-#include <Core/Settings.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
