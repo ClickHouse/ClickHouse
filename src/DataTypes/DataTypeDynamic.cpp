@@ -2,11 +2,9 @@
 #include <DataTypes/Serializations/SerializationDynamic.h>
 #include <DataTypes/Serializations/SerializationDynamicElement.h>
 #include <DataTypes/Serializations/SerializationVariantElement.h>
-#include <DataTypes/Serializations/SerializationVariantElementNullMap.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnVariant.h>
 #include <Core/Field.h>
@@ -71,7 +69,7 @@ static DataTypePtr create(const ASTPtr & arguments)
 
     auto * literal = argument->arguments->children[1]->as<ASTLiteral>();
 
-    if (!literal || literal->value.getType() != Field::Types::UInt64 || literal->value.get<UInt64>() == 0 || literal->value.get<UInt64>() > ColumnVariant::MAX_NESTED_COLUMNS)
+    if (!literal || literal->value.getType() != Field::Types::UInt64 || literal->value.get<UInt64>() == 0 || literal->value.get<UInt64>() > 255)
         throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "'max_types' argument for Dynamic type should be a positive integer between 1 and 255");
 
     return std::make_shared<DataTypeDynamic>(literal->value.get<UInt64>());
@@ -112,58 +110,28 @@ std::unique_ptr<IDataType::SubstreamData> DataTypeDynamic::getDynamicSubcolumnDa
     }
 
     /// Extract nested subcolumn of requested dynamic subcolumn if needed.
-    /// If requested subcolumn is null map, it's processed separately as there is no Nullable type yet.
-    bool is_null_map_subcolumn = subcolumn_nested_name == "null";
-    if (is_null_map_subcolumn)
-    {
-        res->type = std::make_shared<DataTypeUInt8>();
-    }
-    else if (!subcolumn_nested_name.empty())
+    if (!subcolumn_nested_name.empty())
     {
         res = getSubcolumnData(subcolumn_nested_name, *res, throw_if_null);
         if (!res)
             return nullptr;
     }
 
-    res->serialization = std::make_shared<SerializationDynamicElement>(res->serialization, subcolumn_type->getName(), is_null_map_subcolumn);
-    /// Make resulting subcolumn Nullable only if type subcolumn can be inside Nullable or can be LowCardinality(Nullable()).
-    bool make_subcolumn_nullable = subcolumn_type->canBeInsideNullable() || subcolumn_type->lowCardinality();
-    if (!is_null_map_subcolumn && make_subcolumn_nullable)
-        res->type = makeNullableOrLowCardinalityNullableSafe(res->type);
-
+    res->serialization = std::make_shared<SerializationDynamicElement>(res->serialization, subcolumn_type->getName());
+    res->type = makeNullableOrLowCardinalityNullableSafe(res->type);
     if (data.column)
     {
         if (discriminator)
         {
-            /// Provided Dynamic column has subcolumn of this type, we should use VariantSubcolumnCreator/VariantNullMapSubcolumnCreator to
+            /// Provided Dynamic column has subcolumn of this type, we should use VariantSubcolumnCreator to
             /// create full subcolumn from variant according to discriminators.
             const auto & variant_column = assert_cast<const ColumnDynamic &>(*data.column).getVariantColumn();
-            std::unique_ptr<ISerialization::ISubcolumnCreator> creator;
-            if (is_null_map_subcolumn)
-                creator = std::make_unique<SerializationVariantElementNullMap::VariantNullMapSubcolumnCreator>(
-                    variant_column.getLocalDiscriminatorsPtr(),
-                    "",
-                    *discriminator,
-                    variant_column.localDiscriminatorByGlobal(*discriminator));
-            else
-                creator = std::make_unique<SerializationVariantElement::VariantSubcolumnCreator>(
-                    variant_column.getLocalDiscriminatorsPtr(),
-                    "",
-                    *discriminator,
-                    variant_column.localDiscriminatorByGlobal(*discriminator),
-                    make_subcolumn_nullable);
-            res->column = creator->create(res->column);
-        }
-        /// Provided Dynamic column doesn't have subcolumn of this type, just create column filled with default values.
-        else if (is_null_map_subcolumn)
-        {
-            /// Fill null map with 1 when there is no such Dynamic subcolumn.
-            auto column = ColumnUInt8::create();
-            assert_cast<ColumnUInt8 &>(*column).getData().resize_fill(data.column->size(), 1);
-            res->column = std::move(column);
+            auto creator = SerializationVariantElement::VariantSubcolumnCreator(variant_column.getLocalDiscriminatorsPtr(), "", *discriminator, variant_column.localDiscriminatorByGlobal(*discriminator));
+            res->column = creator.create(res->column);
         }
         else
         {
+            /// Provided Dynamic column doesn't have subcolumn of this type, just create column filled with default values.
             auto column = res->type->createColumn();
             column->insertManyDefaults(data.column->size());
             res->column = std::move(column);

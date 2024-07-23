@@ -151,10 +151,7 @@ private:
 
     void sendProfileEvents();
 
-    /// Returns true on executor timeout, meaning a retryable error.
     bool pollImpl();
-
-    bool needSendProgressOrMetrics();
 
     ContextMutablePtr query_context;
     Session session;
@@ -175,5 +172,4 @@ private:
 
     ReadBuffer * in;
 };
-
 }

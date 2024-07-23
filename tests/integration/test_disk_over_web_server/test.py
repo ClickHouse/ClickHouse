@@ -11,13 +11,13 @@ def cluster():
         cluster = ClickHouseCluster(__file__)
         cluster.add_instance(
             "node1",
-            main_configs=["configs/storage_conf.xml", "configs/no_async_load.xml"],
+            main_configs=["configs/storage_conf.xml"],
             with_nginx=True,
             use_old_analyzer=True,
         )
         cluster.add_instance(
             "node2",
-            main_configs=["configs/storage_conf_web.xml", "configs/no_async_load.xml"],
+            main_configs=["configs/storage_conf_web.xml"],
             with_nginx=True,
             stay_alive=True,
             with_zookeeper=True,
@@ -25,7 +25,7 @@ def cluster():
         )
         cluster.add_instance(
             "node3",
-            main_configs=["configs/storage_conf_web.xml", "configs/no_async_load.xml"],
+            main_configs=["configs/storage_conf_web.xml"],
             with_nginx=True,
             with_zookeeper=True,
             use_old_analyzer=True,
@@ -33,7 +33,7 @@ def cluster():
 
         cluster.add_instance(
             "node4",
-            main_configs=["configs/storage_conf.xml", "configs/no_async_load.xml"],
+            main_configs=["configs/storage_conf.xml"],
             with_nginx=True,
             stay_alive=True,
             with_installed_binary=True,
@@ -42,7 +42,7 @@ def cluster():
         )
         cluster.add_instance(
             "node5",
-            main_configs=["configs/storage_conf.xml", "configs/no_async_load.xml"],
+            main_configs=["configs/storage_conf.xml"],
             with_nginx=True,
             use_old_analyzer=True,
         )
@@ -116,7 +116,7 @@ def test_usage(cluster, node_name):
             (id Int32) ENGINE = MergeTree() ORDER BY id
             SETTINGS storage_policy = 'web';
         """.format(
-                i, uuids[i]
+                i, uuids[i], i, i
             )
         )
 
@@ -338,7 +338,7 @@ def test_page_cache(cluster):
             (id Int32) ENGINE = MergeTree() ORDER BY id
             SETTINGS storage_policy = 'web';
         """.format(
-                i, uuids[i]
+                i, uuids[i], i, i
             )
         )
 
@@ -358,6 +358,7 @@ def test_page_cache(cluster):
         node.query("SYSTEM FLUSH LOGS")
 
         def get_profile_events(query_name):
+            print(f"asdqwe {query_name}")
             text = node.query(
                 f"SELECT ProfileEvents.Names, ProfileEvents.Values FROM system.query_log ARRAY JOIN ProfileEvents WHERE query LIKE '% -- {query_name}' AND type = 'QueryFinish'"
             )
@@ -366,6 +367,7 @@ def test_page_cache(cluster):
                 if line == "":
                     continue
                 name, value = line.split("\t")
+                print(f"asdqwe {name} = {int(value)}")
                 res[name] = int(value)
             return res
 

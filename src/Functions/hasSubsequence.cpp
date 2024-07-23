@@ -24,7 +24,7 @@ using FunctionHasSubsequence = HasSubsequenceImpl<NameHasSubsequence, HasSubsequ
 
 REGISTER_FUNCTION(hasSubsequence)
 {
-    factory.registerFunction<FunctionHasSubsequence>({}, FunctionFactory::Case::Insensitive);
+    factory.registerFunction<FunctionHasSubsequence>({}, FunctionFactory::CaseInsensitive);
 }
 
 }

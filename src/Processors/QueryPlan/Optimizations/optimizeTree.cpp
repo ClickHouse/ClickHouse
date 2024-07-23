@@ -115,10 +115,10 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
 
     while (!stack.empty())
     {
-        optimizePrimaryKeyConditionAndLimit(stack);
+        optimizePrimaryKeyCondition(stack);
 
         /// NOTE: optimizePrewhere can modify the stack.
-        /// Prewhere optimization relies on PK optimization (getConditionSelectivityEstimatorByPredicate)
+        /// Prewhere optimization relies on PK optimization (getConditionEstimatorByPredicate)
         if (optimization_settings.optimize_prewhere)
             optimizePrewhere(stack, nodes);
 

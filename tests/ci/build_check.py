@@ -9,9 +9,10 @@ from pathlib import Path
 from typing import Tuple
 
 import docker_images_helper
-from ci_config import CI
+from ci_config import CI_CONFIG, BuildConfig
 from env_helper import REPO_COPY, S3_BUILDS_BUCKET, TEMP_PATH
 from git_helper import Git
+from lambda_shared_package.lambda_shared.pr import Labels
 from pr_info import PRInfo
 from report import FAILURE, SUCCESS, JobReport, StatusType
 from stopwatch import Stopwatch
@@ -26,7 +27,7 @@ IMAGE_NAME = "clickhouse/binary-builder"
 BUILD_LOG_NAME = "build_log.log"
 
 
-def _can_export_binaries(build_config: CI.BuildConfig) -> bool:
+def _can_export_binaries(build_config: BuildConfig) -> bool:
     if build_config.package_type != "deb":
         return False
     if build_config.sanitizer != "":
@@ -37,7 +38,7 @@ def _can_export_binaries(build_config: CI.BuildConfig) -> bool:
 
 
 def get_packager_cmd(
-    build_config: CI.BuildConfig,
+    build_config: BuildConfig,
     packager_path: Path,
     output_path: Path,
     build_version: str,
@@ -107,9 +108,7 @@ def build_clickhouse(
 
 
 def is_release_pr(pr_info: PRInfo) -> bool:
-    return (
-        CI.Labels.RELEASE in pr_info.labels or CI.Labels.RELEASE_LTS in pr_info.labels
-    )
+    return Labels.RELEASE in pr_info.labels or Labels.RELEASE_LTS in pr_info.labels
 
 
 def get_release_or_pr(pr_info: PRInfo, version: ClickHouseVersion) -> Tuple[str, str]:
@@ -148,8 +147,7 @@ def main():
     stopwatch = Stopwatch()
     build_name = args.build_name
 
-    build_config = CI.JOB_CONFIGS[build_name].build_config
-    assert build_config
+    build_config = CI_CONFIG.build_config[build_name]
 
     temp_path = Path(TEMP_PATH)
     temp_path.mkdir(parents=True, exist_ok=True)
