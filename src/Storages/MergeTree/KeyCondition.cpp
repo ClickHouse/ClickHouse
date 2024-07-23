@@ -3240,7 +3240,7 @@ bool KeyCondition::mayBeTrueOnBloomFilter(const IndexColumnToColumnBF & column_i
             bool maybe_true = maybeTrueOnBloomFilter(hashed, column_index_to_column_bf.at(element.key_column), false);
 
             rpn_stack.emplace_back(maybe_true, true);
-            if (element.function == RPNElement::FUNCTION_NOT_IN_RANGE || element.function == RPNElement::FUNCTION_NOT_IN_SET)
+            if (element.function == RPNElement::FUNCTION_NOT_IN_SET)
                 rpn_stack.back() = !rpn_stack.back();
         }
         else
