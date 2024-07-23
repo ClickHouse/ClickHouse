@@ -128,14 +128,10 @@ void ColumnFixedString::updateHashWithValue(size_t index, SipHash & hash) const
     hash.update(reinterpret_cast<const char *>(&chars[n * index]), n);
 }
 
-void ColumnFixedString::updateWeakHash32(WeakHash32 & hash) const
+WeakHash32 ColumnFixedString::getWeakHash32() const
 {
     auto s = size();
-
-    if (hash.getData().size() != s)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of WeakHash32 does not match size of column: "
-                        "column size is {}, "
-                        "hash size is {}", std::to_string(s), std::to_string(hash.getData().size()));
+    WeakHash32 hash(s);
 
     const UInt8 * pos = chars.data();
     UInt32 * hash_data = hash.getData().data();
@@ -147,6 +143,8 @@ void ColumnFixedString::updateWeakHash32(WeakHash32 & hash) const
         pos += n;
         ++hash_data;
     }
+
+    return hash;
 }
 
 void ColumnFixedString::updateHashFast(SipHash & hash) const
