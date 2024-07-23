@@ -16,9 +16,8 @@ class PlainRewritableObjectStorage : public BaseObjectStorage
 {
 public:
     template <class... Args>
-    explicit PlainRewritableObjectStorage(MetadataStorageMetrics && metadata_storage_metrics_, Args &&... args)
+    explicit PlainRewritableObjectStorage(Args &&... args)
         : BaseObjectStorage(std::forward<Args>(args)...)
-        , metadata_storage_metrics(std::move(metadata_storage_metrics_))
         /// A basic key generator is required for checking S3 capabilities,
         /// it will be reset later by metadata storage.
         , key_generator(createObjectStorageKeysGeneratorAsIsWithPrefix(BaseObjectStorage::getCommonKeyPrefix()))
@@ -26,8 +25,6 @@ public:
     }
 
     std::string getName() const override { return "PlainRewritable" + BaseObjectStorage::getName(); }
-
-    const MetadataStorageMetrics & getMetadataStorageMetrics() const override { return metadata_storage_metrics; }
 
     bool isWriteOnce() const override { return false; }
 
@@ -40,7 +37,6 @@ public:
     void setKeysGenerator(ObjectStorageKeysGeneratorPtr gen) override { key_generator = gen; }
 
 private:
-    MetadataStorageMetrics metadata_storage_metrics;
     ObjectStorageKeysGeneratorPtr key_generator;
 };
 

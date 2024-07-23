@@ -53,7 +53,6 @@ public:
         const String & default_database_,
         const String & user_, const String & password_,
         const SSHKey & ssh_private_key_,
-        const String & jwt_,
         const String & quota_key_,
         const String & cluster_,
         const String & cluster_secret_,
@@ -174,7 +173,6 @@ private:
     SSHKey ssh_private_key;
 #endif
     String quota_key;
-    String jwt;
 
     /// For inter-server authorization
     String cluster;
