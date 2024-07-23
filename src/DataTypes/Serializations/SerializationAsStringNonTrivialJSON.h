@@ -50,9 +50,9 @@ public:
            return tryDeserializeTextNoEmptyCheckJSON(column, istr, format_settings);
     }
 
-    virtual void deserializeTextNoEmptyCheckJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override = 0;
+    void deserializeTextNoEmptyCheckJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override = 0;
 
-    virtual bool tryDeserializeTextNoEmptyCheckJSON(IColumn & /*column*/, ReadBuffer & /*istr*/, const FormatSettings &) const override
+    bool tryDeserializeTextNoEmptyCheckJSON(IColumn & /*column*/, ReadBuffer & /*istr*/, const FormatSettings &) const override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method tryDeserializeTextNoEmptyCheckJSON is not supported");
     }
