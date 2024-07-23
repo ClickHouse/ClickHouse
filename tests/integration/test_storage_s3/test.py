@@ -208,8 +208,12 @@ def test_partition_by_string_column(started_cluster):
     assert '1,"foo/bar"\n' == get_s3_file_content(
         started_cluster, bucket, f"{id}/test_foo/bar.csv"
     )
-    assert '3,"йцук"\n' == get_s3_file_content(started_cluster, bucket, f"{id}/test_йцук.csv")
-    assert '78,"你好"\n' == get_s3_file_content(started_cluster, bucket, f"{id}/test_你好.csv")
+    assert '3,"йцук"\n' == get_s3_file_content(
+        started_cluster, bucket, f"{id}/test_йцук.csv"
+    )
+    assert '78,"你好"\n' == get_s3_file_content(
+        started_cluster, bucket, f"{id}/test_你好.csv"
+    )
 
 
 def test_partition_by_const_column(started_cluster):
@@ -895,9 +899,10 @@ def test_storage_s3_get_slow(started_cluster):
 
 
 def test_storage_s3_put_uncompressed(started_cluster):
+    id = uuid.uuid4()
     bucket = started_cluster.minio_bucket
     instance = started_cluster.instances["dummy"]
-    filename = "test_put_uncompressed.bin"
+    filename = f"{id}/test_put_uncompressed.bin"
     name = "test_put_uncompressed"
     data = [
         "'Gloria Thompson',99",
@@ -949,6 +954,7 @@ def test_storage_s3_put_uncompressed(started_cluster):
     r = result.strip().split("\t")
     assert int(r[0]) >= 1, blob_storage_log
     assert all(col == r[0] for col in r), blob_storage_log
+    run_query(instance, f"DROP TABLE {name}")
 
 
 @pytest.mark.parametrize(
