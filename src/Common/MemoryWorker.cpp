@@ -186,9 +186,6 @@ std::shared_ptr<ICgroupsReader> createCgroupsReader()
 }
 #endif
 
-constexpr uint64_t cgroups_memory_usage_tick_ms{50};
-constexpr uint64_t jemalloc_memory_usage_tick_ms{100};
-
 std::string_view sourceToString(MemoryWorker::MemoryUsageSource source)
 {
     switch (source)
@@ -213,6 +210,8 @@ MemoryWorker::MemoryWorker(uint64_t period_ms_)
 #if defined(OS_LINUX)
     try
     {
+        static constexpr uint64_t cgroups_memory_usage_tick_ms{50};
+
         cgroups_reader = createCgroupsReader();
         source = MemoryUsageSource::Cgroups;
         if (period_ms == 0)
@@ -227,6 +226,8 @@ MemoryWorker::MemoryWorker(uint64_t period_ms_)
 #endif
 
 #if USE_JEMALLOC
+    static constexpr uint64_t jemalloc_memory_usage_tick_ms{100};
+
     source = MemoryUsageSource::Jemalloc;
     if (period_ms == 0)
         period_ms = jemalloc_memory_usage_tick_ms;
@@ -270,7 +271,11 @@ uint64_t MemoryWorker::getMemoryUsage()
         case MemoryUsageSource::Cgroups:
             return cgroups_reader->readMemoryUsage();
         case MemoryUsageSource::Jemalloc:
+#if USE_JEMALLOC
             return resident_mib.getValue();
+#else
+            return 0;
+#endif
         case MemoryUsageSource::None:
             throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Trying to fetch memory usage while no memory source can be used");
     }
@@ -279,7 +284,7 @@ uint64_t MemoryWorker::getMemoryUsage()
 void MemoryWorker::backgroundThread()
 {
     std::chrono::milliseconds chrono_period_ms{period_ms};
-    bool first_run = true;
+    [[maybe_unused]] bool first_run = true;
     std::unique_lock lock(mutex);
     while (true)
     {
@@ -289,8 +294,10 @@ void MemoryWorker::backgroundThread()
 
         Stopwatch total_watch;
 
+#if USE_JEMALLOC
         if (source == MemoryUsageSource::Jemalloc)
             epoch_mib.setValue(0);
+#endif
 
         Int64 resident = getMemoryUsage();
         MemoryTracker::updateRSS(resident);
