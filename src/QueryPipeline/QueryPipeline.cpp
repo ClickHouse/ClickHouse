@@ -731,14 +731,6 @@ void QueryPipeline::handleFailover()
     }
 }
 
-void QueryPipeline::handleFailover()
-{
-    if (!isConnectionAlive())
-    {
-        reconnect();
-    }
-}
-
 bool QueryPipeline::isConnectionAlive()
 {
     bool connection_status = true;
