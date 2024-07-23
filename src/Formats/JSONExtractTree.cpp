@@ -1650,7 +1650,7 @@ public:
                 typed_column->insertDefault();
         }
 
-        for (auto & [_, dynamic_column] : column_object.getDynamicPaths())
+        for (auto & [_, dynamic_column] : column_object.getDynamicPathsPtrs())
         {
             if (dynamic_column->size() == prev_size)
                 dynamic_column->insertDefault();
@@ -1689,7 +1689,7 @@ private:
         }
 
         auto & typed_paths = column_object.getTypedPaths();
-        auto & dynamic_paths = column_object.getDynamicPaths();
+        auto & dynamic_paths_ptrs = column_object.getDynamicPathsPtrs();
         /// Check if we have this path in typed paths.
         if (auto typed_it = typed_paths.find(current_path); typed_it != typed_paths.end())
         {
@@ -1709,7 +1709,7 @@ private:
             }
         }
         /// Check if we have this path in dynamic paths.
-        else if (auto dynamic_it = dynamic_paths.find(current_path); dynamic_it != dynamic_paths.end())
+        else if (auto dynamic_it = dynamic_paths_ptrs.find(current_path); dynamic_it != dynamic_paths_ptrs.end())
         {
             /// Check if we already had this path.
             if (dynamic_it->second->size() > current_size)

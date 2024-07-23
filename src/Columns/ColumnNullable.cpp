@@ -706,6 +706,11 @@ void ColumnNullable::reserve(size_t n)
     getNullMapData().reserve(n);
 }
 
+size_t ColumnNullable::capacity() const
+{
+    return getNullMapData().capacity();
+}
+
 void ColumnNullable::shrinkToFit()
 {
     getNestedColumn().shrinkToFit();

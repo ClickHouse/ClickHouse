@@ -314,10 +314,15 @@ std::unique_ptr<ISerialization::SubstreamData> DataTypeObject::getDynamicSubcolu
             }
 
             auto & result_dynamic_columns = result_object_column.getDynamicPaths();
+            auto & result_dynamic_columns_ptrs = result_object_column.getDynamicPathsPtrs();
             for (const auto & [path, column] :  object_column.getDynamicPaths())
             {
                 if (path.starts_with(prefix) && path.size() != prefix.size())
-                    result_dynamic_columns[getSubPath(path, prefix)] = column;
+                {
+                    auto sub_path = getSubPath(path, prefix);
+                    result_dynamic_columns[sub_path] = column;
+                    result_dynamic_columns_ptrs[sub_path] = assert_cast<ColumnDynamic *>(result_dynamic_columns[sub_path].get());
+                }
             }
 
             const auto & shared_data_offsets = object_column.getSharedDataOffsets();

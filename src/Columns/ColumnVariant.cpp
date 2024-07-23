@@ -1251,6 +1251,11 @@ void ColumnVariant::reserve(size_t n)
     offsets->reserve(n);
 }
 
+size_t ColumnVariant::capacity() const
+{
+    return local_discriminators->capacity();
+}
+
 void ColumnVariant::ensureOwnership()
 {
     const size_t num_variants = variants.size();

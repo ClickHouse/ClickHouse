@@ -107,37 +107,37 @@ public:
 
     size_t size() const override
     {
-        return variant_column->size();
+        return variant_column_ptr->size();
     }
 
     Field operator[](size_t n) const override
     {
-        return (*variant_column)[n];
+        return (*variant_column_ptr)[n];
     }
 
     void get(size_t n, Field & res) const override
     {
-        variant_column->get(n, res);
+        variant_column_ptr->get(n, res);
     }
 
     bool isDefaultAt(size_t n) const override
     {
-        return variant_column->isDefaultAt(n);
+        return variant_column_ptr->isDefaultAt(n);
     }
 
     bool isNullAt(size_t n) const override
     {
-        return variant_column->isNullAt(n);
+        return variant_column_ptr->isNullAt(n);
     }
 
     StringRef getDataAt(size_t n) const override
     {
-        return variant_column->getDataAt(n);
+        return variant_column_ptr->getDataAt(n);
     }
 
     void insertData(const char * pos, size_t length) override
     {
-        variant_column->insertData(pos, length);
+        variant_column_ptr->insertData(pos, length);
     }
 
     void insert(const Field & x) override;
@@ -155,17 +155,17 @@ public:
 
     void insertDefault() override
     {
-        variant_column->insertDefault();
+        variant_column_ptr->insertDefault();
     }
 
     void insertManyDefaults(size_t length) override
     {
-        variant_column->insertManyDefaults(length);
+        variant_column_ptr->insertManyDefaults(length);
     }
 
     void popBack(size_t n) override
     {
-        variant_column->popBack(n);
+        variant_column_ptr->popBack(n);
     }
 
     StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
@@ -176,42 +176,42 @@ public:
 
     WeakHash32 getWeakHash32() const override
     {
-        return variant_column->getWeakHash32();
+        return variant_column_ptr->getWeakHash32();
     }
 
     void updateHashFast(SipHash & hash) const override
     {
-        variant_column->updateHashFast(hash);
+        variant_column_ptr->updateHashFast(hash);
     }
 
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override
     {
-        return create(variant_column->filter(filt, result_size_hint), variant_info, max_dynamic_types);
+        return create(variant_column_ptr->filter(filt, result_size_hint), variant_info, max_dynamic_types);
     }
 
     void expand(const Filter & mask, bool inverted) override
     {
-        variant_column->expand(mask, inverted);
+        variant_column_ptr->expand(mask, inverted);
     }
 
     ColumnPtr permute(const Permutation & perm, size_t limit) const override
     {
-        return create(variant_column->permute(perm, limit), variant_info, max_dynamic_types);
+        return create(variant_column_ptr->permute(perm, limit), variant_info, max_dynamic_types);
     }
 
     ColumnPtr index(const IColumn & indexes, size_t limit) const override
     {
-        return create(variant_column->index(indexes, limit), variant_info, max_dynamic_types);
+        return create(variant_column_ptr->index(indexes, limit), variant_info, max_dynamic_types);
     }
 
     ColumnPtr replicate(const Offsets & replicate_offsets) const override
     {
-        return create(variant_column->replicate(replicate_offsets), variant_info, max_dynamic_types);
+        return create(variant_column_ptr->replicate(replicate_offsets), variant_info, max_dynamic_types);
     }
 
     MutableColumns scatter(ColumnIndex num_columns, const Selector & selector) const override
     {
-        MutableColumns scattered_variant_columns = variant_column->scatter(num_columns, selector);
+        MutableColumns scattered_variant_columns = variant_column_ptr->scatter(num_columns, selector);
         MutableColumns scattered_columns;
         scattered_columns.reserve(num_columns);
         for (auto & scattered_variant_column : scattered_variant_columns)
@@ -228,54 +228,59 @@ public:
 
     bool hasEqualValues() const override
     {
-        return variant_column->hasEqualValues();
+        return variant_column_ptr->hasEqualValues();
     }
 
     void getExtremes(Field & min, Field & max) const override
     {
-        variant_column->getExtremes(min, max);
+        variant_column_ptr->getExtremes(min, max);
     }
 
     void getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
                         size_t limit, int nan_direction_hint, IColumn::Permutation & res) const override
     {
-        variant_column->getPermutation(direction, stability, limit, nan_direction_hint, res);
+        variant_column_ptr->getPermutation(direction, stability, limit, nan_direction_hint, res);
     }
 
     void updatePermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
                            size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges & equal_ranges) const override
     {
-        variant_column->updatePermutation(direction, stability, limit, nan_direction_hint, res, equal_ranges);
+        variant_column_ptr->updatePermutation(direction, stability, limit, nan_direction_hint, res, equal_ranges);
     }
 
     void reserve(size_t n) override
     {
-        variant_column->reserve(n);
+        variant_column_ptr->reserve(n);
+    }
+
+    size_t capacity() const override
+    {
+        return variant_column_ptr->capacity();
     }
 
     void ensureOwnership() override
     {
-        variant_column->ensureOwnership();
+        variant_column_ptr->ensureOwnership();
     }
 
     size_t byteSize() const override
     {
-        return variant_column->byteSize();
+        return variant_column_ptr->byteSize();
     }
 
     size_t byteSizeAt(size_t n) const override
     {
-        return variant_column->byteSizeAt(n);
+        return variant_column_ptr->byteSizeAt(n);
     }
 
     size_t allocatedBytes() const override
     {
-        return variant_column->allocatedBytes();
+        return variant_column_ptr->allocatedBytes();
     }
 
     void protect() override
     {
-        variant_column->protect();
+        variant_column_ptr->protect();
     }
 
     void forEachSubcolumn(MutableColumnCallback callback) override
@@ -300,27 +305,27 @@ public:
 
     double getRatioOfDefaultRows(double sample_ratio) const override
     {
-        return variant_column->getRatioOfDefaultRows(sample_ratio);
+        return variant_column_ptr->getRatioOfDefaultRows(sample_ratio);
     }
 
     UInt64 getNumberOfDefaultRows() const override
     {
-        return variant_column->getNumberOfDefaultRows();
+        return variant_column_ptr->getNumberOfDefaultRows();
     }
 
     void getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const override
     {
-        variant_column->getIndicesOfNonDefaultRows(indices, from, limit);
+        variant_column_ptr->getIndicesOfNonDefaultRows(indices, from, limit);
     }
 
     void finalize() override
     {
-        variant_column->finalize();
+        variant_column_ptr->finalize();
     }
 
     bool isFinalized() const override
     {
-        return variant_column->isFinalized();
+        return variant_column_ptr->isFinalized();
     }
 
     /// Apply null map to a nested Variant column.
@@ -332,8 +337,8 @@ public:
     const ColumnPtr & getVariantColumnPtr() const { return variant_column; }
     ColumnPtr & getVariantColumnPtr() { return variant_column; }
 
-    const ColumnVariant & getVariantColumn() const { return assert_cast<const ColumnVariant &>(*variant_column); }
-    ColumnVariant & getVariantColumn() { return assert_cast<ColumnVariant &>(*variant_column); }
+    const ColumnVariant & getVariantColumn() const { return *variant_column_ptr; }
+    ColumnVariant & getVariantColumn() { return *variant_column_ptr; }
 
     bool addNewVariant(const DataTypePtr & new_variant) { return addNewVariant(new_variant, new_variant->getName()); }
     bool addNewVariant(const DataTypePtr & new_variant, const String & variant_name);
@@ -342,9 +347,12 @@ public:
     bool hasDynamicStructure() const override { return true; }
     void takeDynamicStructureFromSourceColumns(const Columns & source_columns) override;
 
+    void setStatistics(const Statistics & statistics_) { statistics = statistics_; }
     const Statistics & getStatistics() const { return statistics; }
 
     size_t getMaxDynamicTypes() const { return max_dynamic_types; }
+
+    void setVariantType(const DataTypePtr & variant_type);
 
 private:
     /// Combine current variant with the other variant and return global discriminators mapping
@@ -356,6 +364,7 @@ private:
     void updateVariantInfoAndExpandVariantColumn(const DataTypePtr & new_variant_type);
 
     WrappedPtr variant_column;
+    ColumnVariant * variant_column_ptr;
     /// Store the type of current variant with some additional information.
     VariantInfo variant_info;
     /// The maximum number of different types that can be stored in this Dynamic column.

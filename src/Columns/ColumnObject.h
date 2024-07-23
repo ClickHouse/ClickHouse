@@ -116,6 +116,7 @@ public:
     void getExtremes(Field & min, Field & max) const override;
 
     void reserve(size_t n) override;
+    size_t capacity() const override;
     void ensureOwnership() override;
     size_t byteSize() const override;
     size_t byteSizeAt(size_t n) const override;
@@ -141,6 +142,9 @@ public:
 
     const std::unordered_map<String, WrappedPtr> & getDynamicPaths() const { return dynamic_paths; }
     std::unordered_map<String, WrappedPtr> & getDynamicPaths() { return dynamic_paths; }
+
+    const std::unordered_map<String, ColumnDynamic *> & getDynamicPathsPtrs() const { return dynamic_paths_ptrs; }
+    std::unordered_map<String, ColumnDynamic *> & getDynamicPathsPtrs() { return dynamic_paths_ptrs; }
 
     const Statistics & getStatistics() const { return statistics; }
 
@@ -173,7 +177,7 @@ public:
 
     /// Try to add new dynamic path. Returns pointer to the new dynamic
     /// path column or nullptr if limit on dynamic paths is reached.
-    IColumn * tryToAddNewDynamicPath(const String & path);
+    ColumnDynamic * tryToAddNewDynamicPath(const String & path);
 
     void setDynamicPaths(const std::vector<String> & paths);
     void setStatistics(const Statistics & statistics_) { statistics = statistics_; }
@@ -197,6 +201,7 @@ private:
     /// here are Dynamic columns. This set of paths can be extended
     /// during inerts into the column.
     std::unordered_map<String, WrappedPtr> dynamic_paths;
+    std::unordered_map<String, ColumnDynamic *> dynamic_paths_ptrs;
     /// Shared storage for all other paths and values. It's filled
     /// when the number of dynamic paths reaches the limit.
     /// It has type Array(Tuple(String, String)) and stores

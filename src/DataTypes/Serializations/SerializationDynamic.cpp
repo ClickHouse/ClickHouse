@@ -279,13 +279,16 @@ void SerializationDynamic::deserializeBinaryBulkWithMultipleStreams(
         return;
 
     auto mutable_column = column->assumeMutable();
+    auto & column_dynamic = assert_cast<ColumnDynamic &>(*mutable_column);
     auto * dynamic_state = checkAndGetState<DeserializeBinaryBulkStateDynamic>(state);
     auto * structure_state = checkAndGetState<DeserializeBinaryBulkStateDynamicStructure>(dynamic_state->structure_state);
 
-    if (mutable_column->empty())
-        mutable_column = ColumnDynamic::create(structure_state->variant_type->createColumn(), structure_state->variant_type, max_dynamic_types, structure_state->statistics);
+    if (column_dynamic.empty())
+    {
+        column_dynamic.setVariantType(structure_state->variant_type);
+        column_dynamic.setStatistics(structure_state->statistics);
+    }
 
-    auto & column_dynamic = assert_cast<ColumnDynamic &>(*mutable_column);
     const auto & variant_info = column_dynamic.getVariantInfo();
     if (!variant_info.variant_type->equals(*structure_state->variant_type))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Mismatch of internal columns of Dynamic. Expected: {}, Got: {}", structure_state->variant_type->getName(), variant_info.variant_type->getName());

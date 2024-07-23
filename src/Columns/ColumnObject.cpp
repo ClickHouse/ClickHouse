@@ -49,8 +49,12 @@ ColumnObject::ColumnObject(
         typed_paths[path] = std::move(column);
 
     dynamic_paths.reserve(dynamic_paths_.size());
+    dynamic_paths_ptrs.reserve(dynamic_paths_.size());
     for (auto & [path, column] : dynamic_paths_)
+    {
         dynamic_paths[path] = std::move(column);
+        dynamic_paths_ptrs[path] = assert_cast<ColumnDynamic *>(dynamic_paths[path].get());
+    }
 }
 
 ColumnObject::ColumnObject(
@@ -161,7 +165,7 @@ Field ColumnObject::operator[](size_t n) const
 
     for (const auto & [path, column] : typed_paths)
         object[path] = (*column)[n];
-    for (const auto & [path, column] : dynamic_paths)
+    for (const auto & [path, column] : dynamic_paths_ptrs)
     {
         /// Output only non-null values from dynamic paths. We cannot distinguish cases when
         /// dynamic path has Null value and when it's absent in the row and consider them equivalent.
@@ -199,7 +203,7 @@ bool ColumnObject::isDefaultAt(size_t n) const
             return false;
     }
 
-    for (const auto & [path, column] : dynamic_paths)
+    for (const auto & [path, column] : dynamic_paths_ptrs)
     {
         if (!column->isDefaultAt(n))
             return false;
@@ -221,15 +225,17 @@ void ColumnObject::insertData(const char *, size_t)
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method insertData is not supported for {}", getName());
 }
 
-IColumn * ColumnObject::tryToAddNewDynamicPath(const String & path)
+ColumnDynamic * ColumnObject::tryToAddNewDynamicPath(const String & path)
 {
     if (dynamic_paths.size() == max_dynamic_paths)
         return nullptr;
 
     auto new_dynamic_column = ColumnDynamic::create(max_dynamic_types);
+    new_dynamic_column->reserve(shared_data->capacity());
     new_dynamic_column->insertManyDefaults(size());
     auto it = dynamic_paths.emplace(path, std::move(new_dynamic_column)).first;
-    return it->second.get();
+    auto it_ptr = dynamic_paths_ptrs.emplace(path, assert_cast<ColumnDynamic *>(it->second.get())).first;
+    return it_ptr->second;
 }
 
 void ColumnObject::setDynamicPaths(const std::vector<String> & paths)
@@ -244,6 +250,7 @@ void ColumnObject::setDynamicPaths(const std::vector<String> & paths)
         if (size)
             new_dynamic_column->insertManyDefaults(size);
         dynamic_paths[path] = std::move(new_dynamic_column);
+        dynamic_paths_ptrs[path] = assert_cast<ColumnDynamic *>(dynamic_paths[path].get());
     }
 }
 
@@ -259,7 +266,7 @@ void ColumnObject::insert(const Field & x)
         {
             typed_it->second->insert(value_field);
         }
-        else if (auto dynamic_it = dynamic_paths.find(path); dynamic_it != dynamic_paths.end())
+        else if (auto dynamic_it = dynamic_paths_ptrs.find(path); dynamic_it != dynamic_paths_ptrs.end())
         {
             dynamic_it->second->insert(value_field);
         }
@@ -291,7 +298,7 @@ void ColumnObject::insert(const Field & x)
             column->insertDefault();
     }
 
-    for (auto & [_, column] : dynamic_paths)
+    for (auto & [_, column] : dynamic_paths_ptrs)
     {
         if (column->size() == current_size)
             column->insertDefault();
@@ -317,7 +324,7 @@ bool ColumnObject::tryInsert(const Field & x)
                 column->popBack(column->size() - prev_size);
         }
 
-        for (auto & [_, column] : dynamic_paths)
+        for (auto & [_, column] : dynamic_paths_ptrs)
         {
             if (column->size() != prev_size)
                 column->popBack(column->size() - prev_size);
@@ -339,7 +346,7 @@ bool ColumnObject::tryInsert(const Field & x)
                 return false;
             }
         }
-        else if (auto dynamic_it = dynamic_paths.find(path); dynamic_it != dynamic_paths.end())
+        else if (auto dynamic_it = dynamic_paths_ptrs.find(path); dynamic_it != dynamic_paths_ptrs.end())
         {
             if (!dynamic_it->second->tryInsert(value_field))
             {
@@ -376,7 +383,7 @@ bool ColumnObject::tryInsert(const Field & x)
             column->insertDefault();
     }
 
-    for (auto & [_, column] : dynamic_paths)
+    for (auto & [_, column] : dynamic_paths_ptrs)
     {
         if (column->size() == prev_size)
             column->insertDefault();
@@ -404,7 +411,7 @@ void ColumnObject::doInsertFrom(const IColumn & src, size_t n)
     for (const auto & [path, column] : src_object_column.dynamic_paths)
     {
         /// Check if we already have such dynamic path.
-        if (auto it = dynamic_paths.find(path); it != dynamic_paths.end())
+        if (auto it = dynamic_paths_ptrs.find(path); it != dynamic_paths_ptrs.end())
             it->second->insertFrom(*column, n);
         /// Try to add a new dynamic path.
         else if (auto * dynamic_path_column = tryToAddNewDynamicPath(path))
@@ -438,7 +445,7 @@ void ColumnObject::doInsertRangeFrom(const IColumn & src, size_t start, size_t l
     for (const auto & [path, column] : src_object_column.dynamic_paths)
     {
         /// Check if we already have such dynamic path.
-        if (auto it = dynamic_paths.find(path); it != dynamic_paths.end())
+        if (auto it = dynamic_paths_ptrs.find(path); it != dynamic_paths_ptrs.end())
             it->second->insertRangeFrom(*column, start, length);
         /// Try to add a new dynamic path.
         else if (auto * dynamic_path_column = tryToAddNewDynamicPath(path))
@@ -484,7 +491,7 @@ void ColumnObject::insertFromSharedDataAndFillRemainingDynamicPaths(const DB::Co
         }
 
         /// Insert default values in all remaining dynamic paths.
-        for (auto & [_, column] : dynamic_paths)
+        for (auto & [_, column] : dynamic_paths_ptrs)
         {
             if (column->size() == current_size)
                 column->insertManyDefaults(length);
@@ -508,7 +515,7 @@ void ColumnObject::insertFromSharedDataAndFillRemainingDynamicPaths(const DB::Co
         {
             auto path = src_shared_data_paths->getDataAt(i);
             /// Check if we have this path in dynamic paths.
-            if (auto it = dynamic_paths.find(path.toString()); it != dynamic_paths.end())
+            if (auto it = dynamic_paths_ptrs.find(path.toString()); it != dynamic_paths_ptrs.end())
             {
                 /// Deserialize binary value into dynamic column from shared data.
                 deserializeValueFromSharedData(src_shared_data_values, i, *it->second);
@@ -541,7 +548,7 @@ void ColumnObject::insertFromSharedDataAndFillRemainingDynamicPaths(const DB::Co
         shared_data_offsets.push_back(shared_data_paths->size());
 
         /// Insert default value in all remaining dynamic paths.
-        for (auto & [_, column] : dynamic_paths)
+        for (auto & [_, column] : dynamic_paths_ptrs)
         {
             if (column->size() == current_size)
                 column->insertDefault();
@@ -576,7 +583,7 @@ void ColumnObject::insertDefault()
 {
     for (auto & [_, column] : typed_paths)
         column->insertDefault();
-    for (auto & [_, column] : dynamic_paths)
+    for (auto & [_, column] : dynamic_paths_ptrs)
         column->insertDefault();
     shared_data->insertDefault();
 }
@@ -585,7 +592,7 @@ void ColumnObject::insertManyDefaults(size_t length)
 {
     for (auto & [_, column] : typed_paths)
         column->insertManyDefaults(length);
-    for (auto & [_, column] : dynamic_paths)
+    for (auto & [_, column] : dynamic_paths_ptrs)
         column->insertManyDefaults(length);
     shared_data->insertManyDefaults(length);
 }
@@ -594,7 +601,7 @@ void ColumnObject::popBack(size_t n)
 {
     for (auto & [_, column] : typed_paths)
         column->popBack(n);
-    for (auto & [_, column] : dynamic_paths)
+    for (auto & [_, column] : dynamic_paths_ptrs)
         column->popBack(n);
     shared_data->popBack(n);
 }
@@ -742,7 +749,7 @@ void ColumnObject::updateHashWithValue(size_t n, SipHash & hash) const
 {
     for (const auto & [_, column] : typed_paths)
         column->updateHashWithValue(n, hash);
-    for (const auto & [_, column] : dynamic_paths)
+    for (const auto & [_, column] : dynamic_paths_ptrs)
         column->updateHashWithValue(n, hash);
     shared_data->updateHashWithValue(n, hash);
 }
@@ -752,7 +759,7 @@ WeakHash32 ColumnObject::getWeakHash32() const
     WeakHash32 hash(size());
     for (const auto & [_, column] : typed_paths)
         hash.update(column->getWeakHash32());
-    for (const auto & [_, column] : dynamic_paths)
+    for (const auto & [_, column] : dynamic_paths_ptrs)
         hash.update(column->getWeakHash32());
     hash.update(shared_data->getWeakHash32());
     return hash;
@@ -762,7 +769,7 @@ void ColumnObject::updateHashFast(SipHash & hash) const
 {
     for (const auto & [_, column] : typed_paths)
         column->updateHashFast(hash);
-    for (const auto & [_, column] : dynamic_paths)
+    for (const auto & [_, column] : dynamic_paths_ptrs)
         column->updateHashFast(hash);
     shared_data->updateHashFast(hash);
 }
@@ -775,8 +782,8 @@ ColumnPtr ColumnObject::filter(const Filter & filt, ssize_t result_size_hint) co
         filtered_typed_paths[path] = column->filter(filt, result_size_hint);
 
     std::unordered_map<String, ColumnPtr> filtered_dynamic_paths;
-    filtered_dynamic_paths.reserve(dynamic_paths.size());
-    for (const auto & [path, column] : dynamic_paths)
+    filtered_dynamic_paths.reserve(dynamic_paths_ptrs.size());
+    for (const auto & [path, column] : dynamic_paths_ptrs)
         filtered_dynamic_paths[path] = column->filter(filt, result_size_hint);
 
     auto filtered_shared_data = shared_data->filter(filt, result_size_hint);
@@ -787,7 +794,7 @@ void ColumnObject::expand(const Filter & mask, bool inverted)
 {
     for (auto & [_, column] : typed_paths)
         column->expand(mask, inverted);
-    for (auto & [_, column] : dynamic_paths)
+    for (auto & [_, column] : dynamic_paths_ptrs)
         column->expand(mask, inverted);
     shared_data->expand(mask, inverted);
 }
@@ -800,8 +807,8 @@ ColumnPtr ColumnObject::permute(const Permutation & perm, size_t limit) const
         permuted_typed_paths[path] = column->permute(perm, limit);
 
     std::unordered_map<String, ColumnPtr> permuted_dynamic_paths;
-    permuted_dynamic_paths.reserve(dynamic_paths.size());
-    for (const auto & [path, column] : dynamic_paths)
+    permuted_dynamic_paths.reserve(dynamic_paths_ptrs.size());
+    for (const auto & [path, column] : dynamic_paths_ptrs)
         permuted_dynamic_paths[path] = column->permute(perm, limit);
 
     auto permuted_shared_data = shared_data->permute(perm, limit);
@@ -816,8 +823,8 @@ ColumnPtr ColumnObject::index(const IColumn & indexes, size_t limit) const
         indexed_typed_paths[path] = column->index(indexes, limit);
 
     std::unordered_map<String, ColumnPtr> indexed_dynamic_paths;
-    indexed_dynamic_paths.reserve(dynamic_paths.size());
-    for (const auto & [path, column] : dynamic_paths)
+    indexed_dynamic_paths.reserve(dynamic_paths_ptrs.size());
+    for (const auto & [path, column] : dynamic_paths_ptrs)
         indexed_dynamic_paths[path] = column->index(indexes, limit);
 
     auto indexed_shared_data = shared_data->index(indexes, limit);
@@ -832,8 +839,8 @@ ColumnPtr ColumnObject::replicate(const Offsets & replicate_offsets) const
         replicated_typed_paths[path] = column->replicate(replicate_offsets);
 
     std::unordered_map<String, ColumnPtr> replicated_dynamic_paths;
-    replicated_dynamic_paths.reserve(dynamic_paths.size());
-    for (const auto & [path, column] : dynamic_paths)
+    replicated_dynamic_paths.reserve(dynamic_paths_ptrs.size());
+    for (const auto & [path, column] : dynamic_paths_ptrs)
         replicated_dynamic_paths[path] = column->replicate(replicate_offsets);
 
     auto replicated_shared_data = shared_data->replicate(replicate_offsets);
@@ -855,9 +862,9 @@ MutableColumns ColumnObject::scatter(ColumnIndex num_columns, const Selector & s
 
     std::vector<std::unordered_map<String, MutableColumnPtr>> scattered_dynamic_paths(num_columns);
     for (auto & dynamic_paths_ : scattered_dynamic_paths)
-        dynamic_paths_.reserve(dynamic_paths.size());
+        dynamic_paths_.reserve(dynamic_paths_ptrs.size());
 
-    for (const auto & [path, column] : dynamic_paths)
+    for (const auto & [path, column] : dynamic_paths_ptrs)
     {
         auto scattered_columns = column->scatter(num_columns, selector);
         for (size_t i = 0; i != num_columns; ++i)
@@ -883,16 +890,21 @@ void ColumnObject::reserve(size_t n)
 {
     for (auto & [_, column] : typed_paths)
         column->reserve(n);
-    for (auto & [_, column] : dynamic_paths)
+    for (auto & [_, column] : dynamic_paths_ptrs)
         column->reserve(n);
     shared_data->reserve(n);
+}
+
+size_t ColumnObject::capacity() const
+{
+    return shared_data->capacity();
 }
 
 void ColumnObject::ensureOwnership()
 {
     for (auto & [_, column] : typed_paths)
         column->ensureOwnership();
-    for (auto & [_, column] : dynamic_paths)
+    for (auto & [_, column] : dynamic_paths_ptrs)
         column->ensureOwnership();
     shared_data->ensureOwnership();
 }
@@ -902,7 +914,7 @@ size_t ColumnObject::byteSize() const
     size_t size = 0;
     for (const auto & [_, column] : typed_paths)
         size += column->byteSize();
-    for (const auto & [_, column] : dynamic_paths)
+    for (const auto & [_, column] : dynamic_paths_ptrs)
         size += column->byteSize();
     size += shared_data->byteSize();
     return size;
@@ -913,7 +925,7 @@ size_t ColumnObject::byteSizeAt(size_t n) const
     size_t size = 0;
     for (const auto & [_, column] : typed_paths)
         size += column->byteSizeAt(n);
-    for (const auto & [_, column] : dynamic_paths)
+    for (const auto & [_, column] : dynamic_paths_ptrs)
         size += column->byteSizeAt(n);
     size += shared_data->byteSizeAt(n);
     return size;
@@ -924,7 +936,7 @@ size_t ColumnObject::allocatedBytes() const
     size_t size = 0;
     for (const auto & [_, column] : typed_paths)
         size += column->allocatedBytes();
-    for (const auto & [_, column] : dynamic_paths)
+    for (const auto & [_, column] : dynamic_paths_ptrs)
         size += column->allocatedBytes();
     size += shared_data->allocatedBytes();
     return size;
@@ -934,7 +946,7 @@ void ColumnObject::protect()
 {
     for (auto & [_, column] : typed_paths)
         column->protect();
-    for (auto & [_, column] : dynamic_paths)
+    for (auto & [_, column] : dynamic_paths_ptrs)
         column->protect();
     shared_data->protect();
 }
@@ -955,7 +967,7 @@ void ColumnObject::forEachSubcolumnRecursively(DB::IColumn::RecursiveMutableColu
         callback(*column);
         column->forEachSubcolumnRecursively(callback);
     }
-    for (auto & [_, column] : dynamic_paths)
+    for (auto & [_, column] : dynamic_paths_ptrs)
     {
         callback(*column);
         column->forEachSubcolumnRecursively(callback);
@@ -994,8 +1006,8 @@ ColumnPtr ColumnObject::compress() const
     }
 
     std::unordered_map<String, ColumnPtr> compressed_dynamic_paths;
-    compressed_dynamic_paths.reserve(dynamic_paths.size());
-    for (const auto & [path, column] : dynamic_paths)
+    compressed_dynamic_paths.reserve(dynamic_paths_ptrs.size());
+    for (const auto & [path, column] : dynamic_paths_ptrs)
     {
         auto compressed_column = column->compress();
         byte_size += compressed_column->byteSize();
@@ -1034,7 +1046,7 @@ void ColumnObject::finalize()
 {
     for (auto & [_, column] : typed_paths)
         column->finalize();
-    for (auto & [_, column] : dynamic_paths)
+    for (auto & [_, column] : dynamic_paths_ptrs)
         column->finalize();
     shared_data->finalize();
 }
@@ -1044,7 +1056,7 @@ bool ColumnObject::isFinalized() const
     bool finalized = true;
     for (const auto & [_, column] : typed_paths)
         finalized &= column->isFinalized();
-    for (const auto & [_, column] : dynamic_paths)
+    for (const auto & [_, column] : dynamic_paths_ptrs)
         finalized &= column->isFinalized();
     finalized &= shared_data->isFinalized();
     return finalized;
@@ -1101,6 +1113,7 @@ void ColumnObject::takeDynamicStructureFromSourceColumns(const DB::Columns & sou
     }
 
     dynamic_paths.clear();
+    dynamic_paths_ptrs.clear();
 
     /// Check if the number of all dynamic paths exceeds the limit.
     if (path_to_total_number_of_non_null_values.size() > max_dynamic_paths)
@@ -1114,13 +1127,19 @@ void ColumnObject::takeDynamicStructureFromSourceColumns(const DB::Columns & sou
 
         /// Fill dynamic_paths with first max_dynamic_paths paths in sorted list.
         for (size_t i = 0; i != max_dynamic_paths; ++i)
+        {
             dynamic_paths[paths_with_sizes[i].second] = ColumnDynamic::create(max_dynamic_types);
+            dynamic_paths_ptrs[paths_with_sizes[i].second] = assert_cast<ColumnDynamic *>(dynamic_paths[paths_with_sizes[i].second].get());
+        }
     }
     /// Use all dynamic paths from all source columns.
     else
     {
         for (const auto & [path, _] : path_to_total_number_of_non_null_values)
+        {
             dynamic_paths[path] = ColumnDynamic::create(max_dynamic_types);
+            dynamic_paths_ptrs[path] = assert_cast<ColumnDynamic *>(dynamic_paths[path].get());
+        }
     }
 
     /// Fill statistics for the merged part.
