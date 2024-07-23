@@ -8,14 +8,14 @@
 namespace DB
 {
 
-enum class VolumeType : uint8_t
+enum class VolumeType
 {
     JBOD,
     SINGLE_DISK,
     UNKNOWN
 };
 
-enum class VolumeLoadBalancing : uint8_t
+enum class VolumeLoadBalancing
 {
     ROUND_ROBIN,
     LEAST_USED,

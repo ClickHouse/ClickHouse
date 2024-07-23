@@ -16,7 +16,6 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 #include <Core/ExternalTable.h>
-#include <Core/Settings.h>
 #include <Poco/Net/MessageHeader.h>
 #include <Parsers/ASTNameTypePair.h>
 #include <Parsers/ParserCreateQuery.h>
@@ -107,9 +106,6 @@ void BaseExternalTable::parseStructureFromTypesField(const std::string & argumen
 
 void BaseExternalTable::initSampleBlock()
 {
-    if (sample_block)
-        return;
-
     const DataTypeFactory & data_type_factory = DataTypeFactory::instance();
 
     for (const auto & elem : structure)

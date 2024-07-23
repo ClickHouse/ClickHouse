@@ -210,8 +210,6 @@ static void * getCallerAddress(const ucontext_t & context)
     return reinterpret_cast<void *>(context.uc_mcontext.__gregs[REG_PC]);
 #elif defined(__s390x__)
     return reinterpret_cast<void *>(context.uc_mcontext.psw.addr);
-#elif defined(__loongarch64)
-    return reinterpret_cast<void *>(context.uc_mcontext.__pc);
 #else
     return nullptr;
 #endif
@@ -545,7 +543,7 @@ std::string StackTrace::toString() const
     return toStringCached(frame_pointers, offset, size);
 }
 
-std::string StackTrace::toString(void * const * frame_pointers_raw, size_t offset, size_t size)
+std::string StackTrace::toString(void ** frame_pointers_raw, size_t offset, size_t size)
 {
     __msan_unpoison(frame_pointers_raw, size * sizeof(*frame_pointers_raw));
 
@@ -560,7 +558,3 @@ void StackTrace::dropCache()
     std::lock_guard lock{stacktrace_cache_mutex};
     cacheInstance().clear();
 }
-
-
-thread_local bool asynchronous_stack_unwinding = false;
-thread_local sigjmp_buf asynchronous_stack_unwinding_signal_jump_buffer;

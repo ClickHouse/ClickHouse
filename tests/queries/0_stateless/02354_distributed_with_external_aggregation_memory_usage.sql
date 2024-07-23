@@ -1,4 +1,4 @@
--- Tags: long, no-tsan, no-msan, no-asan, no-ubsan, no-debug, no-object-storage
+-- Tags: long, no-tsan, no-msan, no-asan, no-ubsan, no-debug, no-s3-storage
 
 DROP TABLE IF EXISTS t_2354_dist_with_external_aggr;
 

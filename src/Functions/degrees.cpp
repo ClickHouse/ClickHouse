@@ -23,7 +23,7 @@ namespace
 
 REGISTER_FUNCTION(Degrees)
 {
-    factory.registerFunction<FunctionDegrees>({}, FunctionFactory::Case::Insensitive);
+    factory.registerFunction<FunctionDegrees>({}, FunctionFactory::CaseInsensitive);
 }
 
 }

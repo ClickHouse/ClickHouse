@@ -5,7 +5,6 @@
 #include <Storages/System/StorageSystemErrors.h>
 #include <Interpreters/Context.h>
 #include <Common/ErrorCodes.h>
-#include <Core/Settings.h>
 
 
 namespace DB
