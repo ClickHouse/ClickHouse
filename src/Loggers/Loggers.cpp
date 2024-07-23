@@ -321,12 +321,7 @@ void Loggers::updateLevels(Poco::Util::AbstractConfiguration & config, Poco::Log
     bool should_log_to_console = isatty(STDIN_FILENO) || isatty(STDERR_FILENO);
     if (config.getBool("logger.console", false)
         || (!config.hasProperty("logger.console") && !is_daemon && should_log_to_console))
-    {
-        auto console_log_level_string = config.getString("logger.console_log_level", log_level_string);
-        auto console_log_level = Poco::Logger::parseLevel(console_log_level_string);
-        max_log_level = std::max(console_log_level, max_log_level);
-        split->setLevel("console", console_log_level);
-    }
+        split->setLevel("console", log_level);
     else
         split->setLevel("console", 0);
 

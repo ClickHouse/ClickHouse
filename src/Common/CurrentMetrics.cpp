@@ -1,7 +1,6 @@
 #include <Common/CurrentMetrics.h>
 
 
-// clang-format off
 /// Available metrics. Add something here as you wish.
 /// If the metric is generic (i.e. not server specific)
 /// it should be also added to src/Coordination/KeeperConstant.cpp
@@ -267,7 +266,7 @@
     M(AsyncInsertCacheSize, "Number of async insert hash id in cache") \
     M(S3Requests, "S3 requests count") \
     M(KeeperAliveConnections, "Number of alive connections") \
-    M(KeeperOutstandingRequests, "Number of outstanding requests") \
+    M(KeeperOutstandingRequets, "Number of outstanding requests") \
     M(ThreadsInOvercommitTracker, "Number of waiting threads inside of OvercommitTracker") \
     M(IOUringPendingEvents, "Number of io_uring SQEs waiting to be submitted") \
     M(IOUringInFlightEvents, "Number of io_uring SQEs in flight") \

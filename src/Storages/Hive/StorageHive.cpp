@@ -321,7 +321,7 @@ public:
 
     Chunk generateChunkFromMetadata()
     {
-        size_t num_rows = std::min(current_file_remained_rows, UInt64(getContext()->getSettingsRef().max_block_size));
+        size_t num_rows = std::min(current_file_remained_rows, UInt64(getContext()->getSettings().max_block_size));
         current_file_remained_rows -= num_rows;
 
         Block source_block;
@@ -964,7 +964,7 @@ HiveFiles StorageHive::collectHiveFiles(
     /// Hive files to collect
     HiveFiles hive_files;
     Int64 hit_parttions_num = 0;
-    Int64 hive_max_query_partitions = context_->getSettingsRef().max_partitions_to_read;
+    Int64 hive_max_query_partitions = context_->getSettings().max_partitions_to_read;
     /// Mutext to protect hive_files, which maybe appended in multiple threads
     std::mutex hive_files_mutex;
     ThreadPool pool{CurrentMetrics::StorageHiveThreads, CurrentMetrics::StorageHiveThreadsActive, CurrentMetrics::StorageHiveThreadsScheduled, max_threads};

@@ -318,7 +318,7 @@ void registerDataTypeEnum(DataTypeFactory & factory)
     factory.registerDataType("Enum", create);
 
     /// MySQL
-    factory.registerAlias("ENUM", "Enum", DataTypeFactory::Case::Insensitive);
+    factory.registerAlias("ENUM", "Enum", DataTypeFactory::CaseInsensitive);
 }
 
 }

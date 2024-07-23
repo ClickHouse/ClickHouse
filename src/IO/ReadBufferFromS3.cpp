@@ -25,6 +25,8 @@ namespace ProfileEvents
     extern const Event ReadBufferFromS3InitMicroseconds;
     extern const Event ReadBufferFromS3Bytes;
     extern const Event ReadBufferFromS3RequestsErrors;
+    extern const Event ReadBufferFromS3ResetSessions;
+    extern const Event ReadBufferFromS3PreservedSessions;
     extern const Event ReadBufferSeekCancelConnection;
     extern const Event S3GetObject;
     extern const Event DiskS3GetObject;

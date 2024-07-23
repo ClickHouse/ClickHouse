@@ -1,4 +1,3 @@
-#include <Core/Settings.h>
 #include <Columns/ColumnConst.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/getLeastSupertype.h>

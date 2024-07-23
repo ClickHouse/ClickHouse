@@ -5,7 +5,7 @@
 #include <Access/AccessControl.h>
 #include <Access/User.h>
 
-#include <Common/Exception.h>
+#include "Common/Exception.h"
 #include <Common/StringUtils.h>
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
@@ -14,8 +14,8 @@
 #include <Common/atomicRename.h>
 #include <Common/PoolId.h>
 #include <Common/logger_useful.h>
-#include <Core/Settings.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <base/hex.h>
 
 #include <Core/Defines.h>
@@ -34,11 +34,10 @@
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 
-#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageInMemoryMetadata.h>
-#include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/WindowView/StorageWindowView.h>
+#include <Storages/StorageReplicatedMergeTree.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
@@ -899,8 +898,6 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     assert(as_database_saved.empty() && as_table_saved.empty());
     std::swap(create.as_database, as_database_saved);
     std::swap(create.as_table, as_table_saved);
-    if (!as_table_saved.empty())
-        create.is_create_empty = false;
 
     return properties;
 }
@@ -1329,8 +1326,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     if (need_add_to_database)
         database = DatabaseCatalog::instance().tryGetDatabase(database_name);
 
-    bool allow_heavy_create = getContext()->getSettingsRef().database_replicated_allow_heavy_create;
-    if (!allow_heavy_create && database && database->getEngineName() == "Replicated" && (create.select || create.is_populate))
+    if (database && database->getEngineName() == "Replicated" && create.select)
     {
         bool is_storage_replicated = false;
         if (create.storage && create.storage->engine)
@@ -1340,12 +1336,11 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
                 is_storage_replicated = true;
         }
 
-        const bool allow_create_select_for_replicated = (create.isView() && !create.is_populate) || create.is_create_empty || !is_storage_replicated;
+        const bool allow_create_select_for_replicated = create.isView() || create.is_create_empty || !is_storage_replicated;
         if (!allow_create_select_for_replicated)
             throw Exception(
                 ErrorCodes::SUPPORT_IS_DISABLED,
-                "CREATE AS SELECT and POPULATE is not supported with Replicated databases. Consider using separate CREATE and INSERT queries. "
-                "Alternatively, you can enable 'database_replicated_allow_heavy_create' setting to allow this operation, use with caution");
+                "CREATE AS SELECT is not supported with Replicated databases. Use separate CREATE and INSERT queries");
     }
 
     if (database && database->shouldReplicateQuery(getContext(), query_ptr))
@@ -1777,13 +1772,8 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create)
         else
             insert->select = create.select->clone();
 
-        return InterpreterInsertQuery(
-            insert,
-            getContext(),
-            getContext()->getSettingsRef().insert_allow_materialized_columns,
-            /* no_squash */ false,
-            /* no_destination */ false,
-            /* async_isnert */ false).execute();
+        return InterpreterInsertQuery(insert, getContext(),
+            getContext()->getSettingsRef().insert_allow_materialized_columns).execute();
     }
 
     return {};

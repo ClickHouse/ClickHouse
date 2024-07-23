@@ -673,7 +673,7 @@ public:
         FunctionArgumentDescriptors optional_args{
             {"N", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeInteger), nullptr, "The number of decimal places to round to"},
         };
-        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
+        validateFunctionArgumentTypes(*this, arguments, mandatory_args, optional_args);
 
         return arguments[0].type;
     }

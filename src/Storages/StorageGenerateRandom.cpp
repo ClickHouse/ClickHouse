@@ -30,7 +30,6 @@
 
 #include <Common/SipHash.h>
 #include <Common/randomSeed.h>
-#include <Core/Settings.h>
 #include <Interpreters/Context.h>
 
 #include <Functions/FunctionFactory.h>
@@ -706,7 +705,7 @@ Pipe StorageGenerateRandom::read(
         }
     }
 
-    UInt64 query_limit = query_info.trivial_limit;
+    UInt64 query_limit = query_info.limit;
     if (query_limit && num_streams * max_block_size > query_limit)
     {
         /// We want to avoid spawning more streams than necessary
@@ -718,7 +717,7 @@ Pipe StorageGenerateRandom::read(
     /// Will create more seed values for each source from initial seed.
     pcg64 generate(random_seed);
 
-    auto shared_state = std::make_shared<GenerateRandomState>(query_info.trivial_limit);
+    auto shared_state = std::make_shared<GenerateRandomState>(query_info.limit);
 
     for (UInt64 i = 0; i < num_streams; ++i)
     {

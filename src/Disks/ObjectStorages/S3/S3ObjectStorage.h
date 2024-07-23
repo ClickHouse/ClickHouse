@@ -67,7 +67,7 @@ private:
     }
 
 public:
-    template <typename... Args>
+    template <class ...Args>
     explicit S3ObjectStorage(std::unique_ptr<S3::Client> && client_, Args && ...args)
         : S3ObjectStorage("S3ObjectStorage", std::move(client_), std::forward<Args>(args)...)
     {

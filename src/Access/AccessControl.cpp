@@ -21,6 +21,7 @@
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/RestorerFromBackup.h>
 #include <Core/Settings.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <base/defines.h>
 #include <IO/Operators.h>
 #include <Common/re2.h>

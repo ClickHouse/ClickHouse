@@ -33,6 +33,10 @@ jobs:
           cd "$GITHUB_WORKSPACE/tests/ci"
           echo "Testing the main ci directory"
           python3 -m unittest discover -s . -p 'test_*.py'
+          for dir in *_lambda/; do
+            echo "Testing $dir"
+            python3 -m unittest discover -s "$dir" -p 'test_*.py'
+          done
       - name: PrepareRunConfig
         id: runconfig
         run: |
@@ -53,7 +57,7 @@ jobs:
   BuildDockers:
     needs: [RunConfig]
     if: ${{ !failure() && !cancelled() }}
-    uses: ./.github/workflows/docker_test_images.yml
+    uses: ./.github/workflows/reusable_docker.yml
     with:
       data: ${{ needs.RunConfig.outputs.data }}
   CompatibilityCheckX86:
@@ -480,7 +484,4 @@ jobs:
       - name: Finish label
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
-          # update mergeable check
-          python3 merge_pr.py --set-ci-status --wf-status ${{ contains(needs.*.result, 'failure') && 'failure' || 'success' }}
-          # update overall ci report
           python3 finish_check.py --wf-status ${{ contains(needs.*.result, 'failure') && 'failure' || 'success' }}

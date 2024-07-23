@@ -124,7 +124,7 @@ which is equal to
 
 #### Default values for from_env and from_zk attributes
 
-It's possible to set the default value and substitute it only if the environment variable or zookeeper node is set using `replace="1"` (must be declared before from_env).
+It's possible to set the default value and substitute it only if the environment variable or zookeeper node is set using `replace="1"`.
 
 With previous example, but `MAX_QUERY_SIZE` is unset:
 
@@ -132,7 +132,7 @@ With previous example, but `MAX_QUERY_SIZE` is unset:
 <clickhouse>
     <profiles>
         <default>
-            <max_query_size replace="1" from_env="MAX_QUERY_SIZE">150000</max_query_size>
+            <max_query_size from_env="MAX_QUERY_SIZE" replace="1">150000</max_query_size>
         </default>
     </profiles>
 </clickhouse>

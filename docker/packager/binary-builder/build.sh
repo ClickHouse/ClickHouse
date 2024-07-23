@@ -111,7 +111,6 @@ fi
 mv ./programs/clickhouse* /output || mv ./programs/*_fuzzer /output
 [ -x ./programs/self-extracting/clickhouse ] && mv ./programs/self-extracting/clickhouse /output
 [ -x ./programs/self-extracting/clickhouse-stripped ] && mv ./programs/self-extracting/clickhouse-stripped /output
-[ -x ./programs/self-extracting/clickhouse-keeper ] && mv ./programs/self-extracting/clickhouse-keeper /output
 mv ./src/unit_tests_dbms /output ||: # may not exist for some binary builds
 mv ./programs/*.dict ./programs/*.options ./programs/*_seed_corpus.zip /output ||: # libFuzzer oss-fuzz compatible infrastructure
 
