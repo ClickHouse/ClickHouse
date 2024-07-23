@@ -1158,7 +1158,7 @@ SELECT jsonMergePatch('{"a":1}', '{"name": "joey"}', '{"name": "tom"}', '{"name"
 
 ### JSONAllPaths
 
-Returns the list of all paths stored in each row in [JSON](../data-types/json.md) column.
+Returns the list of all paths stored in each row in [JSON](../data-types/newjson.md) column.
 
 **Syntax**
 
@@ -1168,7 +1168,7 @@ JSONAllPaths(json)
 
 **Arguments**
 
-- `json` — [JSON](../data-types/json.md).
+- `json` — [JSON](../data-types/newjson.md).
 
 **Returned value**
 
@@ -1192,7 +1192,7 @@ SELECT json, JSONAllPaths(json) FROM test;
 
 ### JSONAllPathsWithTypes
 
-Returns the map of all paths and their data types stored in each row in [JSON](../data-types/json.md) column.
+Returns the map of all paths and their data types stored in each row in [JSON](../data-types/newjson.md) column.
 
 **Syntax**
 
@@ -1202,7 +1202,7 @@ JSONAllPathsWithTypes(json)
 
 **Arguments**
 
-- `json` — [JSON](../data-types/json.md).
+- `json` — [JSON](../data-types/newjson.md).
 
 **Returned value**
 
@@ -1226,7 +1226,7 @@ SELECT json, JSONAllPathsWithTypes(json) FROM test;
 
 ### JSONDynamicPaths
 
-Returns the list of dynamic paths that are stored as separate subcolumns in [JSON](../data-types/json.md) column.
+Returns the list of dynamic paths that are stored as separate subcolumns in [JSON](../data-types/newjson.md) column.
 
 **Syntax**
 
@@ -1236,7 +1236,7 @@ JSONDynamicPaths(json)
 
 **Arguments**
 
-- `json` — [JSON](../data-types/json.md).
+- `json` — [JSON](../data-types/newjson.md).
 
 **Returned value**
 
@@ -1260,7 +1260,7 @@ SELECT json, JSONDynamicPaths(json) FROM test;
 
 ### JSONDynamicPathsWithTypes
 
-Returns the map of dynamic paths that are stored as separate subcolumns and their types in each row in [JSON](../data-types/json.md) column.
+Returns the map of dynamic paths that are stored as separate subcolumns and their types in each row in [JSON](../data-types/newjson.md) column.
 
 **Syntax**
 
@@ -1270,7 +1270,7 @@ JSONAllPathsWithTypes(json)
 
 **Arguments**
 
-- `json` — [JSON](../data-types/json.md).
+- `json` — [JSON](../data-types/newjson.md).
 
 **Returned value**
 
@@ -1294,7 +1294,7 @@ SELECT json, JSONDynamicPathsWithTypes(json) FROM test;
 
 ### JSONSharedDataPaths
 
-Returns the list of paths that are stored in shared data structure in [JSON](../data-types/json.md) column.
+Returns the list of paths that are stored in shared data structure in [JSON](../data-types/newjson.md) column.
 
 **Syntax**
 
@@ -1304,7 +1304,7 @@ JSONSharedDataPaths(json)
 
 **Arguments**
 
-- `json` — [JSON](../data-types/json.md).
+- `json` — [JSON](../data-types/newjson.md).
 
 **Returned value**
 
@@ -1328,7 +1328,7 @@ SELECT json, JSONSharedDataPaths(json) FROM test;
 
 ### JSONSharedDataPathsWithTypes
 
-Returns the map of paths that are stored in shared data structure and their types in each row in [JSON](../data-types/json.md) column.
+Returns the map of paths that are stored in shared data structure and their types in each row in [JSON](../data-types/newjson.md) column.
 
 **Syntax**
 
@@ -1338,7 +1338,7 @@ JSONSharedDataPathsWithTypes(json)
 
 **Arguments**
 
-- `json` — [JSON](../data-types/json.md).
+- `json` — [JSON](../data-types/newjson.md).
 
 **Returned value**
 
@@ -1362,7 +1362,7 @@ SELECT json, JSONSharedDataPathsWithTypes(json) FROM test;
 
 ### JSONEmpty
 
-Checks whether the input [JSON](../data-types/json.md) object is empty.
+Checks whether the input [JSON](../data-types/newjson.md) object is empty.
 
 ``` sql
 JSONEmpty(json)
@@ -1370,7 +1370,7 @@ JSONEmpty(json)
 
 **Arguments**
 
-- `json` — [JSON](../data-types/json.md).
+- `json` — [JSON](../data-types/newjson.md).
 
 **Returned value**
 

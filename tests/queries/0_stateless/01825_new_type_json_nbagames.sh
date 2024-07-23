@@ -24,7 +24,7 @@ ${CLICKHOUSE_CLIENT} -q  \
 
 ${CLICKHOUSE_CLIENT} -q "SELECT DISTINCT arrayJoin(JSONAllPathsWithTypes(arrayJoin(arrayJoin(data.teams[].players[])))) as path from nbagames order by path"
 
-${CLICKHOUSE_CLIENT} -q \
+${CLICKHOUSE_CLIENT} --allow_experimental_analyzer=1 -q \
 "SELECT player, sum(triple_double) AS triple_doubles FROM \
 ( \
     SELECT \

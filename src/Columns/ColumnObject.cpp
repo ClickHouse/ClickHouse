@@ -1052,7 +1052,7 @@ bool ColumnObject::isFinalized() const
 
 void ColumnObject::getExtremes(DB::Field & min, DB::Field & max) const
 {
-    if (size() == 0)
+    if (empty())
     {
         min = Object();
         max = Object();
