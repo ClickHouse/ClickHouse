@@ -1,6 +1,5 @@
 #include "ParquetBlockInputFormat.h"
 #include <boost/algorithm/string/case_conv.hpp>
-#include "ParquetBloomFilterCondition.h"
 
 #if USE_PARQUET
 
@@ -267,7 +266,7 @@ static Field decodePlainParquetValueSlow(const std::string & data, parquet::Type
     return field;
 }
 
-static ParquetBloomFilterCondition::IndexToColumnBF buildColumnIndexToBF(
+static KeyCondition::IndexColumnToColumnBF buildColumnIndexToBF(
     parquet::BloomFilterReader & bf_reader,
     int row_group,
     const Block & header,
@@ -281,20 +280,20 @@ static ParquetBloomFilterCondition::IndexToColumnBF buildColumnIndexToBF(
         return {};
     }
 
-    ParquetBloomFilterCondition::IndexToColumnBF index_to_column_bf;
+    KeyCondition::IndexColumnToColumnBF index_to_column_bf;
 
     for (const auto & [column_name, index] : column_name_to_index)
     {
+        if (!header.has(column_name))
+        {
+            // complex types, not supported for now
+            continue;
+        }
+
         auto bf = rg_bf->GetColumnBloomFilter(index);
 
         if (!bf)
         {
-            continue;
-        }
-
-        if (!header.has(column_name))
-        {
-            // probably a compound type
             continue;
         }
 

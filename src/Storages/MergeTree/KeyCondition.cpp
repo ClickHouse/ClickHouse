@@ -3173,7 +3173,8 @@ bool KeyCondition::mayBeTrueOnBloomFilter(const IndexColumnToColumnBF & column_i
         {
             if (element.range.left != element.range.right)
             {
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "TODO ARTHUR");
+                rpn_stack.emplace_back(true, true);
+                continue;
             }
 
             if (!column_index_to_column_bf.contains(element.key_column))
@@ -3328,32 +3329,6 @@ String KeyCondition::RPNElement::toString(std::string_view column_name, bool pri
             buf << ")";
             return buf.str();
         }
-//        case FUNCTION_HAS:
-//        case FUNCTION_HAS_ANY:
-//        case FUNCTION_HAS_ALL:
-//        {
-//            buf << "(";
-//            print_wrapped_column(buf);
-//            if (function == FUNCTION_HAS)
-//            {
-//                buf << "has ";
-//            }
-//            else if (function == FUNCTION_HAS_ALL)
-//            {
-//                buf << "hasAll ";
-//            }
-//            else
-//            {
-//                buf << "hasAny ";
-//            }
-//
-//            if (!set_index)
-//                buf << "unknown size set";
-//            else
-//                buf << set_index->size() << "-element set";
-//            buf << ")";
-//            return buf.str();
-//        }
         case FUNCTION_IN_RANGE:
         case FUNCTION_NOT_IN_RANGE:
         {

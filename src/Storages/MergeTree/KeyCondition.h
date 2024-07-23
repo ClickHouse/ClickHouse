@@ -166,9 +166,6 @@ public:
             FUNCTION_NOT_IN_RANGE,
             FUNCTION_IN_SET,
             FUNCTION_NOT_IN_SET,
-//            FUNCTION_HAS,
-//            FUNCTION_HAS_ANY,
-//            FUNCTION_HAS_ALL,
             FUNCTION_IS_NULL,
             FUNCTION_IS_NOT_NULL,
             /// Special for space-filling curves.
