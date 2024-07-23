@@ -103,7 +103,7 @@ public:
         getDictionary().updateHashWithValue(getIndexes().getUInt(n), hash);
     }
 
-    void updateWeakHash32(WeakHash32 & hash) const override;
+    WeakHash32 getWeakHash32() const override;
 
     void updateHashFast(SipHash &) const override;
 
@@ -313,7 +313,7 @@ public:
 
         bool containsDefault() const;
 
-        void updateWeakHash(WeakHash32 & hash, WeakHash32 & dict_hash) const;
+        WeakHash32 getWeakHash(const WeakHash32 & dict_hash) const;
 
         void collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const PaddedPODArray<UInt64> & dict_sizes) const;
 
