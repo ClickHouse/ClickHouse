@@ -1393,7 +1393,7 @@ void DatabaseCatalog::removeDetachedPermanentlyFlag(const TableMarkedAsDropped &
     if (!database_ptr)
         return;
 
-    database_ptr->removeDetachedPermanentlyFlag(getContext(), table.table_id.getNameForLogs(), table.metadata_path, true);
+    database_ptr->DatabaseOnDisk::removeDetachedPermanentlyFlag(getContext(), table.table_id.getNameForLogs(), table.metadata_path, true);
 }
 
 void DatabaseCatalog::dropTableFinally(const TableMarkedAsDropped & table)
@@ -1417,11 +1417,8 @@ void DatabaseCatalog::dropTableFinally(const TableMarkedAsDropped & table)
     LOG_INFO(log, "Removing metadata {} of dropped table {}", table.metadata_path, table.table_id.getNameForLogs());
     fs::remove(fs::path(table.metadata_path));
 
-    if (table.table->is_detached)
-    {
-        LOG_DEBUG(log, "Try remove permanently flag for detached table {}", table.table_id.getNameForLogs());
-        removeDetachedPermanentlyFlag(table);
-    }
+    LOG_DEBUG(log, "Try remove permanently flag for detached table {}", table.table_id.getNameForLogs());
+    removeDetachedPermanentlyFlag(table);
 
     removeUUIDMappingFinally(table.table_id.uuid);
     CurrentMetrics::sub(CurrentMetrics::TablesToDropQueueSize, 1);
