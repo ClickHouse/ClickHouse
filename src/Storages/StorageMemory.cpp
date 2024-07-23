@@ -5,7 +5,6 @@
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/getColumnFromBlock.h>
 #include <Interpreters/inplaceBlockConversions.h>
-#include <Storages/AlterCommands.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMemory.h>
 #include <Storages/MemorySettings.h>
@@ -43,7 +42,6 @@ namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int CANNOT_RESTORE_TABLE;
-    extern const int NOT_IMPLEMENTED;
 }
 
 class MemorySink : public SinkToStorage
@@ -79,11 +77,11 @@ public:
             for (const auto & elem : block)
                 compressed_block.insert({ elem.column->compress(), elem.type, elem.name });
 
-            new_blocks.push_back(std::move(compressed_block));
+            new_blocks.emplace_back(compressed_block);
         }
         else
         {
-            new_blocks.push_back(std::move(block));
+            new_blocks.emplace_back(block);
         }
     }
 
@@ -472,21 +470,9 @@ void StorageMemory::restoreDataImpl(const BackupPtr & backup, const String & dat
 
         while (auto block = block_in.read())
         {
-            if (compress)
-            {
-                Block compressed_block;
-                for (const auto & elem : block)
-                    compressed_block.insert({ elem.column->compress(), elem.type, elem.name });
-
-                new_blocks.push_back(std::move(compressed_block));
-            }
-            else
-            {
-                new_blocks.push_back(std::move(block));
-            }
-
-            new_bytes += new_blocks.back().bytes();
-            new_rows += new_blocks.back().rows();
+            new_bytes += block.bytes();
+            new_rows += block.rows();
+            new_blocks.push_back(std::move(block));
         }
     }
 
@@ -501,17 +487,6 @@ void StorageMemory::restoreDataImpl(const BackupPtr & backup, const String & dat
     total_size_rows += new_rows;
 }
 
-void StorageMemory::checkAlterIsPossible(const AlterCommands & commands, ContextPtr) const
-{
-    for (const auto & command : commands)
-    {
-        if (command.type != AlterCommand::Type::ADD_COLUMN && command.type != AlterCommand::Type::MODIFY_COLUMN
-            && command.type != AlterCommand::Type::DROP_COLUMN && command.type != AlterCommand::Type::COMMENT_COLUMN
-            && command.type != AlterCommand::Type::COMMENT_TABLE && command.type != AlterCommand::Type::RENAME_COLUMN)
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter of type '{}' is not supported by storage {}",
-                command.type, getName());
-    }
-}
 
 std::optional<UInt64> StorageMemory::totalRows(const Settings &) const
 {

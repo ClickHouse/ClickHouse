@@ -36,7 +36,10 @@ public:
 
     ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
 
-    std::unordered_set<String> getVirtualsToCheckBeforeUsingStructureHint() const override;
+    std::unordered_set<String> getVirtualsToCheckBeforeUsingStructureHint() const override
+    {
+        return {"_path", "_file"};
+    }
 
 private:
     StoragePtr getStorage(

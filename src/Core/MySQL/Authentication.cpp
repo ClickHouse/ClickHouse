@@ -102,7 +102,7 @@ void Native41::authenticate(
 
 #if USE_SSL
 
-Sha256Password::Sha256Password(RSA & public_key_, RSA & private_key_, LoggerPtr log_)
+Sha256Password::Sha256Password(RSA & public_key_, RSA & private_key_, Poco::Logger * log_)
     : public_key(public_key_), private_key(private_key_), log(log_)
 {
     /** Native authentication sent 20 bytes + '\0' character = 21 bytes.

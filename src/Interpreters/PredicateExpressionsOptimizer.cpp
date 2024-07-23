@@ -53,18 +53,6 @@ bool PredicateExpressionsOptimizer::optimize(ASTSelectQuery & select_query)
     return false;
 }
 
-static bool hasInputTableFunction(const ASTPtr & expr)
-{
-    if (const auto * func = typeid_cast<const ASTFunction *>(expr.get()); func && func->name == "input")
-        return true;
-
-    for (const auto & child : expr->children)
-        if (hasInputTableFunction(child))
-            return true;
-
-    return false;
-}
-
 std::vector<ASTs> PredicateExpressionsOptimizer::extractTablesPredicates(const ASTPtr & where, const ASTPtr & prewhere)
 {
     std::vector<ASTs> tables_predicates(tables_with_columns.size());
@@ -83,11 +71,6 @@ std::vector<ASTs> PredicateExpressionsOptimizer::extractTablesPredicates(const A
         {
             return {};   /// Not optimized when predicate contains stateful function or indeterministic function or window functions
         }
-
-        /// Skip predicate like `... IN (SELECT ... FROM input())` because
-        /// it can be duplicated but we can't execute `input()` twice.
-        if (hasInputTableFunction(predicate_expression))
-            return {};
 
         if (!expression_info.is_array_join)
         {

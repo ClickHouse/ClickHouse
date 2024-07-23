@@ -58,10 +58,12 @@ enum ProgressOption
 ProgressOption toProgressOption(std::string progress);
 std::istream& operator>> (std::istream & in, ProgressOption & progress);
 
+void interruptSignalHandler(int signum);
+
 class InternalTextLogs;
 class WriteBufferFromFileDescriptor;
 
-class ClientBase : public Poco::Util::Application, public IHints<2>
+class ClientBase : public Poco::Util::Application, public IHints<2, ClientBase>
 {
 
 public:
@@ -182,10 +184,7 @@ protected:
     static bool isSyncInsertWithData(const ASTInsertQuery & insert_query, const ContextPtr & context);
     bool processMultiQueryFromFile(const String & file_name);
 
-    /// Adjust some settings after command line options and config had been processed.
-    void adjustSettings();
-
-    void initTTYBuffer(ProgressOption progress);
+    void initTtyBuffer(ProgressOption progress);
 
     /// Should be one of the first, to be destroyed the last,
     /// since other members can use them.
@@ -203,7 +202,6 @@ protected:
     std::optional<Suggest> suggest;
     bool load_suggestions = false;
 
-    std::vector<String> queries; /// Queries passed via '--query'
     std::vector<String> queries_files; /// If not empty, queries will be read from these files
     std::vector<String> interleave_queries_files; /// If not empty, run queries from these files before processing every file from 'queries_files'.
     std::vector<String> cmd_options;
@@ -212,8 +210,6 @@ protected:
     bool stdout_is_a_tty = false; /// stdout is a terminal.
     bool stderr_is_a_tty = false; /// stderr is a terminal.
     uint64_t terminal_width = 0;
-
-    String pager;
 
     String format; /// Query results output format.
     bool select_into_file = false; /// If writing result INTO OUTFILE. It affects progress rendering.
@@ -322,8 +318,7 @@ protected:
 
     bool cancelled = false;
 
-    /// Does log_comment has specified by user?
-    bool has_log_comment = false;
+    bool logging_initialized = false;
 };
 
 }

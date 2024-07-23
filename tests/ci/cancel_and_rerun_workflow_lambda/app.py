@@ -1,24 +1,28 @@
 #!/usr/bin/env python3
 
+from base64 import b64decode
+from collections import namedtuple
+from typing import Any, Dict, List, Optional, Tuple
+from threading import Thread
+from queue import Queue
 import json
 import re
 import time
-from base64 import b64decode
-from collections import namedtuple
-from queue import Queue
-from threading import Thread
-from typing import Any, Dict, List, Optional, Tuple
 
 import requests  # type: ignore
+
 from lambda_shared.pr import CATEGORY_TO_LABEL, check_pr_description
 from lambda_shared.token import get_cached_access_token
 
+
+NEED_RERUN_ON_EDITED = {
+    "PullRequestCI",
+    "DocsCheck",
+}
+
 NEED_RERUN_OR_CANCELL_WORKFLOWS = {
     "BackportPR",
-    "DocsCheck",
-    "MasterCI",
-    "PullRequestCI",
-}
+}.union(NEED_RERUN_ON_EDITED)
 
 MAX_RETRY = 5
 

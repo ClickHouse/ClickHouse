@@ -1,7 +1,6 @@
 use skim::prelude::*;
 use term::terminfo::TermInfo;
 use cxx::{CxxString, CxxVector};
-use std::panic;
 
 #[cxx::bridge]
 mod ffi {
@@ -37,7 +36,7 @@ impl SkimItem for Item {
     }
 }
 
-fn skim_impl(prefix: &CxxString, words: &CxxVector<CxxString>) -> Result<String, String> {
+fn skim(prefix: &CxxString, words: &CxxVector<CxxString>) -> Result<String, String> {
     // Let's check is terminal available. To avoid panic.
     if let Err(err) = TermInfo::from_env() {
         return Err(format!("{}", err));
@@ -89,23 +88,4 @@ fn skim_impl(prefix: &CxxString, words: &CxxVector<CxxString>) -> Result<String,
         return Err("No items had been selected".to_string());
     }
     return Ok(output.selected_items[0].output().to_string());
-}
-
-fn skim(prefix: &CxxString, words: &CxxVector<CxxString>) -> Result<String, String> {
-    let ret = panic::catch_unwind(|| {
-        return skim_impl(prefix, words);
-    });
-    return match ret {
-        Err(err) => {
-            let e = if let Some(s) = err.downcast_ref::<String>() {
-                format!("{}", s)
-            } else if let Some(s) = err.downcast_ref::<&str>() {
-                format!("{}", s)
-            } else {
-                format!("Unknown panic type: {:?}", err.type_id())
-            };
-            Err(format!("Rust panic: {:?}", e))
-        },
-        Ok(res) => res,
-    }
 }

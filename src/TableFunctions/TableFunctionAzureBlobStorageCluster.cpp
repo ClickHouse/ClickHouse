@@ -21,8 +21,9 @@ StoragePtr TableFunctionAzureBlobStorageCluster::executeImpl(
 {
     StoragePtr storage;
     ColumnsDescription columns;
+    bool structure_argument_was_provided = configuration.structure != "auto";
 
-    if (configuration.structure != "auto")
+    if (structure_argument_was_provided)
     {
         columns = parseColumnsListFromString(configuration.structure, context);
     }
@@ -39,7 +40,7 @@ StoragePtr TableFunctionAzureBlobStorageCluster::executeImpl(
         /// On worker node this filename won't contains globs
         storage = std::make_shared<StorageAzureBlob>(
             configuration,
-            std::make_unique<AzureObjectStorage>(table_name, std::move(client), std::move(settings), configuration.container),
+            std::make_unique<AzureObjectStorage>(table_name, std::move(client), std::move(settings)),
             context,
             StorageID(getDatabaseName(), table_name),
             columns,
@@ -54,11 +55,12 @@ StoragePtr TableFunctionAzureBlobStorageCluster::executeImpl(
         storage = std::make_shared<StorageAzureBlobCluster>(
             cluster_name,
             configuration,
-            std::make_unique<AzureObjectStorage>(table_name, std::move(client), std::move(settings), configuration.container),
+            std::make_unique<AzureObjectStorage>(table_name, std::move(client), std::move(settings)),
             StorageID(getDatabaseName(), table_name),
             columns,
             ConstraintsDescription{},
-            context);
+            context,
+            structure_argument_was_provided);
     }
 
     storage->startup();

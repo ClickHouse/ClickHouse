@@ -60,9 +60,9 @@ public:
 
     void createDirectories(const String & path) override
     {
-        auto wrapped_path = wrappedPath(path);
-        /// Delegate disk can have retry logic for recursive directory creation. Let it handle it.
-        delegate->createDirectories(wrapped_path);
+        auto tx = createEncryptedTransaction();
+        tx->createDirectories(path);
+        tx->commit();
     }
 
     void clearDirectory(const String & path) override
@@ -112,13 +112,7 @@ public:
         delegate->listFiles(wrapped_path, file_names);
     }
 
-    void copyDirectoryContent(
-        const String & from_dir,
-        const std::shared_ptr<IDisk> & to_disk,
-        const String & to_dir,
-        const ReadSettings & read_settings,
-        const WriteSettings & write_settings,
-        const std::function<void()> & cancellation_hook) override;
+    void copyDirectoryContent(const String & from_dir, const std::shared_ptr<IDisk> & to_disk, const String & to_dir) override;
 
     std::unique_ptr<ReadBufferFromFileBase> readFile(
         const String & path,

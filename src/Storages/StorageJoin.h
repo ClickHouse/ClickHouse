@@ -85,8 +85,6 @@ public:
 
     const Names & getKeyNames() const { return key_names; }
 
-    bool supportsTrivialCountOptimization() const override { return true; }
-
 private:
     Block sample_block;
     const Names key_names;

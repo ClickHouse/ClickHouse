@@ -6,7 +6,7 @@
 #include <mysql/mysql.h>
 #endif
 
-#include <Common/logger_useful.h>
+#include <Poco/Logger.h>
 
 #include <mysqlxx/Connection.h>
 #include <mysqlxx/Query.h>
@@ -52,7 +52,8 @@ void Query::executeImpl()
 {
     MYSQL* mysql_driver = conn->getDriver();
 
-    LOG_TRACE(getLogger("mysqlxx::Query"), "Running MySQL query using connection {}", mysql_thread_id(mysql_driver));
+    auto & logger = Poco::Logger::get("mysqlxx::Query");
+    logger.trace("Running MySQL query using connection %lu", mysql_thread_id(mysql_driver));
     if (mysql_real_query(mysql_driver, query.data(), query.size()))
     {
         const auto err_no = mysql_errno(mysql_driver);

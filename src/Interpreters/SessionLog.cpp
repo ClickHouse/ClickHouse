@@ -1,6 +1,5 @@
 #include <Interpreters/SessionLog.h>
 
-#include <base/getFQDNOrHostName.h>
 #include <Access/ContextAccess.h>
 #include <Access/User.h>
 #include <Access/EnabledRolesInfo.h>
@@ -67,7 +66,7 @@ SessionLogElement::SessionLogElement(const UUID & auth_id_, Type type_)
     std::tie(event_time, event_time_microseconds) = eventTime();
 }
 
-ColumnsDescription SessionLogElement::getColumnsDescription()
+NamesAndTypesList SessionLogElement::getNamesAndTypes()
 {
     auto event_type = std::make_shared<DataTypeEnum8>(
         DataTypeEnum8::Values
@@ -87,13 +86,11 @@ ColumnsDescription SessionLogElement::getColumnsDescription()
             AUTH_TYPE_NAME_AND_VALUE(AuthType::DOUBLE_SHA1_PASSWORD),
             AUTH_TYPE_NAME_AND_VALUE(AuthType::LDAP),
             AUTH_TYPE_NAME_AND_VALUE(AuthType::KERBEROS),
-            AUTH_TYPE_NAME_AND_VALUE(AuthType::SSH_KEY),
             AUTH_TYPE_NAME_AND_VALUE(AuthType::SSL_CERTIFICATE),
             AUTH_TYPE_NAME_AND_VALUE(AuthType::BCRYPT_PASSWORD),
-            AUTH_TYPE_NAME_AND_VALUE(AuthType::HTTP),
         });
 #undef AUTH_TYPE_NAME_AND_VALUE
-    static_assert(static_cast<int>(AuthenticationType::MAX) == 10);
+    static_assert(static_cast<int>(AuthenticationType::MAX) == 8);
 
     auto interface_type_column = std::make_shared<DataTypeEnum8>(
         DataTypeEnum8::Values
@@ -119,9 +116,8 @@ ColumnsDescription SessionLogElement::getColumnsDescription()
                 std::make_shared<DataTypeString>()
             })));
 
-    return ColumnsDescription
+    return
     {
-        {"hostname", lc_string_datatype},
         {"type", std::move(event_type)},
         {"auth_id", std::make_shared<DataTypeUUID>()},
         {"session_id", std::make_shared<DataTypeString>()},
@@ -158,7 +154,6 @@ void SessionLogElement::appendToBlock(MutableColumns & columns) const
 
     size_t i = 0;
 
-    columns[i++]->insert(getFQDNOrHostName());
     columns[i++]->insert(type);
     columns[i++]->insert(auth_id);
     columns[i++]->insert(session_id);

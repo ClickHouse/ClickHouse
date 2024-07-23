@@ -23,6 +23,6 @@ public:
         return "SystemLicenses";
     }
 
-    static ColumnsDescription getColumnsDescription();
+    static NamesAndTypesList getNamesAndTypes();
 };
 }

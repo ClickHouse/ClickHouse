@@ -69,9 +69,10 @@ bool ReplicatedMergeMutateTaskBase::executeStep()
             else
                 tryLogCurrentException(log, __PRETTY_FUNCTION__);
 
-            /// This exception will be written to the queue element, and it can be looked up using `system.replication_queue` table.
-            /// The thread that performs this action will sleep a few seconds after the exception.
-            /// See `queue.processEntry` function.
+            /** This exception will be written to the queue element, and it can be looked up using `system.replication_queue` table.
+                 * The thread that performs this action will sleep a few seconds after the exception.
+                 * See `queue.processEntry` function.
+                 */
             throw;
         }
         catch (...)
@@ -119,9 +120,6 @@ bool ReplicatedMergeMutateTaskBase::executeStep()
             }
         }
     }
-
-    if (retryable_error)
-        print_exception = false;
 
     if (saved_exception)
         std::rethrow_exception(saved_exception);

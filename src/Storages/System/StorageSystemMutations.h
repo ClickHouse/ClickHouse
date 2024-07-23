@@ -16,7 +16,7 @@ class StorageSystemMutations final : public IStorageSystemOneBlock<StorageSystem
 public:
     String getName() const override { return "SystemMutations"; }
 
-    static ColumnsDescription getColumnsDescription();
+    static NamesAndTypesList getNamesAndTypes();
 
 protected:
     using IStorageSystemOneBlock::IStorageSystemOneBlock;

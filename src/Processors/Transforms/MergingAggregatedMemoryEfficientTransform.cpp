@@ -20,7 +20,35 @@ GroupingAggregatedTransform::GroupingAggregatedTransform(
     , num_inputs(num_inputs_)
     , params(std::move(params_))
     , last_bucket_number(num_inputs, -1)
+    , read_from_input(num_inputs, false)
 {
+}
+
+void GroupingAggregatedTransform::readFromAllInputs()
+{
+    auto in = inputs.begin();
+    read_from_all_inputs = true;
+
+    for (size_t i = 0; i < num_inputs; ++i, ++in)
+    {
+        if (in->isFinished())
+            continue;
+
+        if (read_from_input[i])
+            continue;
+
+        in->setNeeded();
+
+        if (!in->hasData())
+        {
+            read_from_all_inputs = false;
+            continue;
+        }
+
+        auto chunk = in->pull();
+        read_from_input[i] = true;
+        addChunk(std::move(chunk), i);
+    }
 }
 
 void GroupingAggregatedTransform::pushData(Chunks chunks, Int32 bucket, bool is_overflows)
@@ -91,7 +119,7 @@ bool GroupingAggregatedTransform::tryPushOverflowData()
     return true;
 }
 
-IProcessor::Status GroupingAggregatedTransform::prepare(const PortNumbers & updated_input_ports, const PortNumbers &)
+IProcessor::Status GroupingAggregatedTransform::prepare()
 {
     /// Check can output.
     auto & output = outputs.front();
@@ -106,51 +134,19 @@ IProcessor::Status GroupingAggregatedTransform::prepare(const PortNumbers & upda
         return Status::Finished;
     }
 
-    if (!initialized_index_to_input)
+    /// Read first time from each input to understand if we have two-level aggregation.
+    if (!read_from_all_inputs)
     {
-        initialized_index_to_input = true;
-        auto in = inputs.begin();
-        index_to_input.resize(num_inputs);
-
-        for (size_t i = 0; i < num_inputs; ++i, ++in)
-            index_to_input[i] = in;
-    }
-
-    auto need_input = [this](size_t input_num)
-    {
-        if (last_bucket_number[input_num] < current_bucket)
-            return true;
-
-        return expect_several_chunks_for_single_bucket_per_source && last_bucket_number[input_num] == current_bucket;
-    };
-
-    if (!wait_input_ports_numbers.empty())
-    {
-        for (const auto & updated_input_port_number : updated_input_ports)
-        {
-            if (!wait_input_ports_numbers.contains(updated_input_port_number))
-                continue;
-
-            auto & input = index_to_input[updated_input_port_number];
-            if (!input->hasData())
-            {
-                wait_input_ports_numbers.erase(updated_input_port_number);
-                continue;
-            }
-
-            auto chunk = input->pull();
-            addChunk(std::move(chunk), updated_input_port_number);
-
-            if (!input->isFinished() && need_input(updated_input_port_number))
-                continue;
-
-            wait_input_ports_numbers.erase(updated_input_port_number);
-        }
-
-        if (!wait_input_ports_numbers.empty())
+        readFromAllInputs();
+        if (!read_from_all_inputs)
             return Status::NeedData;
     }
 
+    /// Convert single level to two levels if have two-level input.
+    if (has_two_level && !single_level_chunks.empty())
+        return Status::Ready;
+
+    /// Check can push (to avoid data caching).
     if (!output.canPush())
     {
         for (auto & input : inputs)
@@ -159,15 +155,19 @@ IProcessor::Status GroupingAggregatedTransform::prepare(const PortNumbers & upda
         return Status::PortFull;
     }
 
-    /// Convert single level to two levels if have two-level input.
-    if (has_two_level && !single_level_chunks.empty())
-        return Status::Ready;
-
     bool pushed_to_output = false;
 
     /// Output if has data.
     if (has_two_level)
         pushed_to_output = tryPushTwoLevelData();
+
+    auto need_input = [this](size_t input_num)
+    {
+        if (last_bucket_number[input_num] < current_bucket)
+            return true;
+
+        return expect_several_chunks_for_single_bucket_per_source && last_bucket_number[input_num] == current_bucket;
+    };
 
     /// Read next bucket if can.
     for (; ; ++current_bucket)
@@ -190,7 +190,6 @@ IProcessor::Status GroupingAggregatedTransform::prepare(const PortNumbers & upda
 
             if (!in->hasData())
             {
-                wait_input_ports_numbers.insert(input_num);
                 need_data = true;
                 continue;
             }
@@ -198,15 +197,12 @@ IProcessor::Status GroupingAggregatedTransform::prepare(const PortNumbers & upda
             auto chunk = in->pull();
             addChunk(std::move(chunk), input_num);
 
-            if (!in->isFinished() && need_input(input_num))
-            {
-                wait_input_ports_numbers.insert(input_num);
-                need_data = true;
-            }
-        }
+            if (has_two_level && !single_level_chunks.empty())
+                return Status::Ready;
 
-        if (has_two_level && !single_level_chunks.empty())
-            return Status::Ready;
+            if (!in->isFinished() && need_input(input_num))
+                need_data = true;
+        }
 
         if (finished)
         {

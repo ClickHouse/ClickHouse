@@ -91,7 +91,7 @@ void JSONAsStringRowInputFormat::readJSONObject(IColumn & column)
     bool quotes = false;
 
     if (*buf->position() != '{')
-        throw Exception(ErrorCodes::INCORRECT_DATA, "JSON object must begin with '{{'.");
+        throw Exception(ErrorCodes::INCORRECT_DATA, "JSON object must begin with '{'.");
 
     ++buf->position();
     ++balance;

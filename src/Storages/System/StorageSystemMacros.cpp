@@ -6,12 +6,11 @@
 namespace DB
 {
 
-ColumnsDescription StorageSystemMacros::getColumnsDescription()
+NamesAndTypesList StorageSystemMacros::getNamesAndTypes()
 {
-    return ColumnsDescription
-    {
-        {"macro", std::make_shared<DataTypeString>(), "The macro name."},
-        {"substitution", std::make_shared<DataTypeString>(), "The substitution string."},
+    return {
+        {"macro", std::make_shared<DataTypeString>()},
+        {"substitution", std::make_shared<DataTypeString>()},
     };
 }
 

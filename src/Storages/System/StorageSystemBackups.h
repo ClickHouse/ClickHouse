@@ -11,7 +11,7 @@ class StorageSystemBackups final : public IStorageSystemOneBlock<StorageSystemBa
 {
 public:
     std::string getName() const override { return "SystemBackups"; }
-    static ColumnsDescription getColumnsDescription();
+    static NamesAndTypesList getNamesAndTypes();
 
 protected:
     using IStorageSystemOneBlock::IStorageSystemOneBlock;

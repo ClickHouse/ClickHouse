@@ -50,4 +50,3 @@
 #define ENABLE_IPV6
 #define USE_OPENSSL
 #define USE_THREADS_POSIX
-#define USE_ARES

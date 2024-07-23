@@ -8,7 +8,7 @@ QUERY id: 0
     LIST id: 1, nodes: 1
       COLUMN id: 2, column_name: value1, result_type: String, source_id: 3
   JOIN TREE
-    TABLE id: 3, alias: __table1, table_name: default.date_t
+    TABLE id: 3, table_name: default.date_t
   WHERE
     FUNCTION id: 4, function_name: and, function_type: ordinary, result_type: UInt8
       ARGUMENTS
@@ -50,7 +50,7 @@ QUERY id: 0
     LIST id: 1, nodes: 1
       COLUMN id: 2, column_name: value1, result_type: String, source_id: 3
   JOIN TREE
-    TABLE id: 3, alias: __table1, table_name: default.date_t
+    TABLE id: 3, table_name: default.date_t
   WHERE
     FUNCTION id: 4, function_name: and, function_type: ordinary, result_type: UInt8
       ARGUMENTS
@@ -92,7 +92,7 @@ QUERY id: 0
     LIST id: 1, nodes: 1
       COLUMN id: 2, column_name: value1, result_type: String, source_id: 3
   JOIN TREE
-    TABLE id: 3, alias: __table1, table_name: default.date_t
+    TABLE id: 3, table_name: default.date_t
   WHERE
     FUNCTION id: 4, function_name: and, function_type: ordinary, result_type: UInt8
       ARGUMENTS
@@ -126,7 +126,7 @@ QUERY id: 0
     LIST id: 1, nodes: 1
       COLUMN id: 2, column_name: value1, result_type: String, source_id: 3
   JOIN TREE
-    TABLE id: 3, alias: __table1, table_name: default.date_t
+    TABLE id: 3, table_name: default.date_t
   WHERE
     FUNCTION id: 4, function_name: and, function_type: ordinary, result_type: UInt8
       ARGUMENTS
@@ -160,7 +160,7 @@ QUERY id: 0
     LIST id: 1, nodes: 1
       COLUMN id: 2, column_name: value1, result_type: String, source_id: 3
   JOIN TREE
-    TABLE id: 3, alias: __table1, table_name: default.date_t
+    TABLE id: 3, table_name: default.date_t
   WHERE
     FUNCTION id: 4, function_name: and, function_type: ordinary, result_type: UInt8
       ARGUMENTS
@@ -194,7 +194,7 @@ QUERY id: 0
     LIST id: 1, nodes: 1
       COLUMN id: 2, column_name: value1, result_type: String, source_id: 3
   JOIN TREE
-    TABLE id: 3, alias: __table1, table_name: default.date_t
+    TABLE id: 3, table_name: default.date_t
   WHERE
     FUNCTION id: 4, function_name: and, function_type: ordinary, result_type: UInt8
       ARGUMENTS
@@ -228,7 +228,7 @@ QUERY id: 0
     LIST id: 1, nodes: 1
       COLUMN id: 2, column_name: value1, result_type: String, source_id: 3
   JOIN TREE
-    TABLE id: 3, alias: __table1, table_name: default.date_t
+    TABLE id: 3, table_name: default.date_t
   WHERE
     FUNCTION id: 4, function_name: and, function_type: ordinary, result_type: UInt8
       ARGUMENTS
@@ -270,7 +270,7 @@ QUERY id: 0
     LIST id: 1, nodes: 1
       COLUMN id: 2, column_name: value1, result_type: String, source_id: 3
   JOIN TREE
-    TABLE id: 3, alias: __table1, table_name: default.date_t
+    TABLE id: 3, table_name: default.date_t
   WHERE
     FUNCTION id: 4, function_name: and, function_type: ordinary, result_type: UInt8
       ARGUMENTS
@@ -335,7 +335,7 @@ QUERY id: 0
           LIST id: 5, nodes: 1
             COLUMN id: 6, column_name: date1, result_type: Date, source_id: 3
   JOIN TREE
-    TABLE id: 3, alias: __table1, table_name: default.date_t
+    TABLE id: 3, table_name: default.date_t
   WHERE
     FUNCTION id: 7, function_name: and, function_type: ordinary, result_type: UInt8
       ARGUMENTS
@@ -377,7 +377,7 @@ QUERY id: 0
     LIST id: 1, nodes: 1
       COLUMN id: 2, column_name: value1, result_type: String, source_id: 3
   JOIN TREE
-    TABLE id: 3, alias: __table1, table_name: default.date_t
+    TABLE id: 3, table_name: default.date_t
   WHERE
     FUNCTION id: 4, function_name: and, function_type: ordinary, result_type: UInt8
       ARGUMENTS
@@ -412,7 +412,7 @@ QUERY id: 0
     LIST id: 1, nodes: 1
       COLUMN id: 2, column_name: value1, result_type: String, source_id: 3
   JOIN TREE
-    TABLE id: 3, alias: __table1, table_name: default.date_t
+    TABLE id: 3, table_name: default.date_t
   PREWHERE
     FUNCTION id: 4, function_name: and, function_type: ordinary, result_type: UInt8
       ARGUMENTS
@@ -452,7 +452,7 @@ QUERY id: 0
     LIST id: 1, nodes: 1
       COLUMN id: 2, column_name: value1, result_type: String, source_id: 3
   JOIN TREE
-    TABLE id: 3, alias: __table1, table_name: default.date_t
+    TABLE id: 3, table_name: default.date_t
   WHERE
     FUNCTION id: 4, function_name: and, function_type: ordinary, result_type: UInt8
       ARGUMENTS
@@ -492,7 +492,7 @@ QUERY id: 0
     LIST id: 1, nodes: 1
       COLUMN id: 2, column_name: value1, result_type: String, source_id: 3
   JOIN TREE
-    TABLE id: 3, alias: __table1, table_name: default.date_t
+    TABLE id: 3, table_name: default.date_t
   WHERE
     FUNCTION id: 4, function_name: and, function_type: ordinary, result_type: UInt8
       ARGUMENTS
@@ -529,7 +529,7 @@ QUERY id: 0
     LIST id: 1, nodes: 1
       COLUMN id: 2, column_name: value1, result_type: String, source_id: 3
   JOIN TREE
-    TABLE id: 3, alias: __table1, table_name: default.date_t
+    TABLE id: 3, table_name: default.date_t
   WHERE
     FUNCTION id: 4, function_name: and, function_type: ordinary, result_type: UInt8
       ARGUMENTS
@@ -566,7 +566,7 @@ QUERY id: 0
     LIST id: 1, nodes: 1
       COLUMN id: 2, column_name: value1, result_type: String, source_id: 3
   JOIN TREE
-    TABLE id: 3, alias: __table1, table_name: default.date_t
+    TABLE id: 3, table_name: default.date_t
   WHERE
     FUNCTION id: 4, function_name: and, function_type: ordinary, result_type: UInt8
       ARGUMENTS
@@ -608,7 +608,7 @@ QUERY id: 0
     LIST id: 1, nodes: 1
       COLUMN id: 2, column_name: value1, result_type: String, source_id: 3
   JOIN TREE
-    TABLE id: 3, alias: __table1, table_name: default.date_t
+    TABLE id: 3, table_name: default.date_t
   WHERE
     FUNCTION id: 4, function_name: and, function_type: ordinary, result_type: UInt8
       ARGUMENTS
@@ -650,7 +650,7 @@ QUERY id: 0
     LIST id: 1, nodes: 1
       COLUMN id: 2, column_name: value1, result_type: String, source_id: 3
   JOIN TREE
-    TABLE id: 3, alias: __table1, table_name: default.date_t
+    TABLE id: 3, table_name: default.date_t
   WHERE
     FUNCTION id: 4, function_name: and, function_type: ordinary, result_type: UInt8
       ARGUMENTS
@@ -692,7 +692,7 @@ QUERY id: 0
     LIST id: 1, nodes: 1
       COLUMN id: 2, column_name: value1, result_type: String, source_id: 3
   JOIN TREE
-    TABLE id: 3, alias: __table1, table_name: default.date_t
+    TABLE id: 3, table_name: default.date_t
   WHERE
     FUNCTION id: 4, function_name: and, function_type: ordinary, result_type: UInt8
       ARGUMENTS
@@ -726,7 +726,7 @@ QUERY id: 0
     LIST id: 1, nodes: 1
       COLUMN id: 2, column_name: value1, result_type: String, source_id: 3
   JOIN TREE
-    TABLE id: 3, alias: __table1, table_name: default.date_t
+    TABLE id: 3, table_name: default.date_t
   WHERE
     FUNCTION id: 4, function_name: and, function_type: ordinary, result_type: UInt8
       ARGUMENTS
@@ -760,7 +760,7 @@ QUERY id: 0
     LIST id: 1, nodes: 1
       COLUMN id: 2, column_name: value1, result_type: String, source_id: 3
   JOIN TREE
-    TABLE id: 3, alias: __table1, table_name: default.date_t
+    TABLE id: 3, table_name: default.date_t
   WHERE
     FUNCTION id: 4, function_name: and, function_type: ordinary, result_type: UInt8
       ARGUMENTS
@@ -794,7 +794,7 @@ QUERY id: 0
     LIST id: 1, nodes: 1
       COLUMN id: 2, column_name: value1, result_type: String, source_id: 3
   JOIN TREE
-    TABLE id: 3, alias: __table1, table_name: default.date_t
+    TABLE id: 3, table_name: default.date_t
   WHERE
     FUNCTION id: 4, function_name: and, function_type: ordinary, result_type: UInt8
       ARGUMENTS
@@ -828,7 +828,7 @@ QUERY id: 0
     LIST id: 1, nodes: 1
       COLUMN id: 2, column_name: value1, result_type: String, source_id: 3
   JOIN TREE
-    TABLE id: 3, alias: __table1, table_name: default.date_t
+    TABLE id: 3, table_name: default.date_t
   WHERE
     FUNCTION id: 4, function_name: and, function_type: ordinary, result_type: UInt8
       ARGUMENTS
@@ -878,7 +878,7 @@ QUERY id: 0
     LIST id: 1, nodes: 1
       COLUMN id: 2, column_name: value1, result_type: String, source_id: 3
   JOIN TREE
-    TABLE id: 3, alias: __table1, table_name: default.datetime_t
+    TABLE id: 3, table_name: default.datetime_t
   WHERE
     FUNCTION id: 4, function_name: and, function_type: ordinary, result_type: UInt8
       ARGUMENTS
@@ -920,7 +920,7 @@ QUERY id: 0
     LIST id: 1, nodes: 1
       COLUMN id: 2, column_name: value1, result_type: String, source_id: 3
   JOIN TREE
-    TABLE id: 3, alias: __table1, table_name: default.datetime_t
+    TABLE id: 3, table_name: default.datetime_t
   WHERE
     FUNCTION id: 4, function_name: and, function_type: ordinary, result_type: UInt8
       ARGUMENTS
@@ -962,7 +962,7 @@ QUERY id: 0
     LIST id: 1, nodes: 1
       COLUMN id: 2, column_name: value1, result_type: String, source_id: 3
   JOIN TREE
-    TABLE id: 3, alias: __table1, table_name: default.date32_t
+    TABLE id: 3, table_name: default.date32_t
   WHERE
     FUNCTION id: 4, function_name: and, function_type: ordinary, result_type: UInt8
       ARGUMENTS
@@ -1004,7 +1004,7 @@ QUERY id: 0
     LIST id: 1, nodes: 1
       COLUMN id: 2, column_name: value1, result_type: String, source_id: 3
   JOIN TREE
-    TABLE id: 3, alias: __table1, table_name: default.date32_t
+    TABLE id: 3, table_name: default.date32_t
   WHERE
     FUNCTION id: 4, function_name: and, function_type: ordinary, result_type: UInt8
       ARGUMENTS
@@ -1046,7 +1046,7 @@ QUERY id: 0
     LIST id: 1, nodes: 1
       COLUMN id: 2, column_name: value1, result_type: String, source_id: 3
   JOIN TREE
-    TABLE id: 3, alias: __table1, table_name: default.datetime64_t
+    TABLE id: 3, table_name: default.datetime64_t
   WHERE
     FUNCTION id: 4, function_name: and, function_type: ordinary, result_type: UInt8
       ARGUMENTS
@@ -1088,7 +1088,7 @@ QUERY id: 0
     LIST id: 1, nodes: 1
       COLUMN id: 2, column_name: value1, result_type: String, source_id: 3
   JOIN TREE
-    TABLE id: 3, alias: __table1, table_name: default.datetime64_t
+    TABLE id: 3, table_name: default.datetime64_t
   WHERE
     FUNCTION id: 4, function_name: and, function_type: ordinary, result_type: UInt8
       ARGUMENTS

@@ -21,8 +21,9 @@ StoragePtr TableFunctionS3Cluster::executeImpl(
 {
     StoragePtr storage;
     ColumnsDescription columns;
+    bool structure_argument_was_provided = configuration.structure != "auto";
 
-    if (configuration.structure != "auto")
+    if (structure_argument_was_provided)
     {
         columns = parseColumnsListFromString(configuration.structure, context);
     }
@@ -52,7 +53,8 @@ StoragePtr TableFunctionS3Cluster::executeImpl(
             StorageID(getDatabaseName(), table_name),
             columns,
             ConstraintsDescription{},
-            context);
+            context,
+            structure_argument_was_provided);
     }
 
     storage->startup();

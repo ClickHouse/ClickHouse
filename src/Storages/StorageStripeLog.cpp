@@ -52,7 +52,6 @@ namespace ErrorCodes
     extern const int INCORRECT_FILE_NAME;
     extern const int TIMEOUT_EXCEEDED;
     extern const int CANNOT_RESTORE_TABLE;
-    extern const int NOT_IMPLEMENTED;
 }
 
 
@@ -277,7 +276,7 @@ StorageStripeLog::StorageStripeLog(
     , index_file_path(table_path + "index.mrk")
     , file_checker(disk, table_path + "sizes.json")
     , max_compress_block_size(context_->getSettings().max_compress_block_size)
-    , log(getLogger("StorageStripeLog"))
+    , log(&Poco::Logger::get("StorageStripeLog"))
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
@@ -404,22 +403,16 @@ SinkToStoragePtr StorageStripeLog::write(const ASTPtr & /*query*/, const Storage
     return std::make_shared<StripeLogSink>(*this, metadata_snapshot, std::move(lock));
 }
 
-IStorage::DataValidationTasksPtr StorageStripeLog::getCheckTaskList(
-    const std::variant<std::monostate, ASTPtr, String> & check_task_filter, ContextPtr local_context)
-{
-    if (!std::holds_alternative<std::monostate>(check_task_filter))
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "CHECK PART/PARTITION are not supported for {}", getName());
 
+CheckResults StorageStripeLog::checkData(const ASTPtr & /* query */, ContextPtr local_context)
+{
     ReadLock lock{rwlock, getLockTimeout(local_context)};
     if (!lock)
         throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
-    return std::make_unique<DataValidationTasks>(file_checker.getDataValidationTasks(), std::move(lock));
+
+    return file_checker.check();
 }
 
-std::optional<CheckResult> StorageStripeLog::checkDataNext(DataValidationTasksPtr & check_task_list)
-{
-    return file_checker.checkNextEntry(assert_cast<DataValidationTasks *>(check_task_list.get())->file_checker_tasks);
-}
 
 void StorageStripeLog::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &)
 {

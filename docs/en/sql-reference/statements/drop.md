@@ -21,7 +21,6 @@ DROP DATABASE [IF EXISTS] db [ON CLUSTER cluster] [SYNC]
 ## DROP TABLE
 
 Deletes the table.
-In case when `IF EMPTY` clause is specified server will check if table is empty only on replica that received initial query.  
 
 :::tip
 Also see [UNDROP TABLE](/docs/en/sql-reference/statements/undrop.md)
@@ -30,7 +29,7 @@ Also see [UNDROP TABLE](/docs/en/sql-reference/statements/undrop.md)
 Syntax:
 
 ``` sql
-DROP [TEMPORARY] TABLE [IF EXISTS] [IF EMPTY] [db.]name [ON CLUSTER cluster] [SYNC]
+DROP [TEMPORARY] TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster] [SYNC]
 ```
 
 ## DROP DICTIONARY

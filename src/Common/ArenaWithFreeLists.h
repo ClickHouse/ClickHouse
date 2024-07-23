@@ -1,6 +1,5 @@
 #pragma once
 
-#include <mutex>
 #include <Core/Defines.h>
 #if __has_include(<sanitizer/asan_interface.h>) && defined(ADDRESS_SANITIZER)
 #   include <sanitizer/asan_interface.h>

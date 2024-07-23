@@ -1,7 +1,6 @@
 #include <Parsers/ASTRenameQuery.h>
 #include <Databases/IDatabase.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Storages/IStorage.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
@@ -227,15 +226,6 @@ void InterpreterRenameQuery::extendQueryLogElemImpl(QueryLogElement & elem, cons
             elem.query_tables.insert(database + "." + backQuoteIfNeed(element.to.getTable()));
         }
     }
-}
-
-void registerInterpreterRenameQuery(InterpreterFactory & factory)
-{
-    auto create_fn = [] (const InterpreterFactory::Arguments & args)
-    {
-        return std::make_unique<InterpreterRenameQuery>(args.query, args.context);
-    };
-    factory.registerInterpreter("InterpreterRenameQuery", create_fn);
 }
 
 }

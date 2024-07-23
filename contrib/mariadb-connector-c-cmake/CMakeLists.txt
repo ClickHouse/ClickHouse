@@ -1,4 +1,4 @@
-if((OS_LINUX OR OS_DARWIN) AND TARGET OpenSSL::SSL)
+if(OS_LINUX AND TARGET OpenSSL::SSL)
     option(ENABLE_MYSQL "Enable MySQL" ${ENABLE_LIBRARIES})
 else ()
     option(ENABLE_MYSQL "Enable MySQL" FALSE)
@@ -73,7 +73,7 @@ set(HAVE_SYS_TYPES_H 1)
 set(HAVE_SYS_UN_H 1)
 set(HAVE_UNISTD_H 1)
 set(HAVE_UTIME_H 1)
-set(HAVE_UCONTEXT_H 0)
+set(HAVE_UCONTEXT_H 1)
 set(HAVE_ALLOCA 1)
 set(HAVE_DLERROR 0)
 set(HAVE_DLOPEN 0)
@@ -116,13 +116,9 @@ CONFIGURE_FILE(${CC_SOURCE_DIR}/include/ma_config.h.in
 CONFIGURE_FILE(${CC_SOURCE_DIR}/include/mariadb_version.h.in
                ${CC_BINARY_DIR}/include-public/mariadb_version.h)
 
-if (WITH_SSL)
+if(WITH_SSL)
   set(SYSTEM_LIBS ${SYSTEM_LIBS} ${SSL_LIBRARIES})
-endif ()
-
-if (OS_DARWIN)
-  set(SYSTEM_LIBS ${SYSTEM_LIBS} iconv)
-endif ()
+endif()
 
 
 function(REGISTER_PLUGIN)
@@ -231,7 +227,14 @@ ${CC_SOURCE_DIR}/libmariadb/secure/openssl_crypt.c
 ${CC_BINARY_DIR}/libmariadb/ma_client_plugin.c
 )
 
+if(ICONV_INCLUDE_DIR)
+   include_directories(BEFORE ${ICONV_INCLUDE_DIR})
+endif()
 add_definitions(-DLIBICONV_PLUG)
+
+if(WITH_DYNCOL)
+  set(LIBMARIADB_SOURCES ${LIBMARIADB_SOURCES} ${CC_SOURCE_DIR}/libmariadb/mariadb_dyncol.c)
+endif()
 
 set(LIBMARIADB_SOURCES ${LIBMARIADB_SOURCES} ${CC_SOURCE_DIR}/libmariadb/mariadb_async.c ${CC_SOURCE_DIR}/libmariadb/ma_context.c)
 

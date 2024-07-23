@@ -22,8 +22,6 @@ namespace ErrorCodes
     extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
-// NOLINTBEGIN(bugprone-switch-missing-default-case)
-
 #define EXTRACT_VECTOR(INDEX) \
         auto col##INDEX = ColumnUInt64::create(); \
         auto & vec##INDEX = col##INDEX->getData(); \
@@ -264,7 +262,7 @@ public:
 
     static UInt64 shrink(UInt64 ratio, UInt64 value)
     {
-        switch (ratio) // NOLINT(bugprone-switch-missing-default-case)
+        switch (ratio)
         {
             case 1:
                 return value;
@@ -379,8 +377,6 @@ public:
 private:
     ImplementationSelector<IFunction> selector;
 };
-
-// NOLINTEND(bugprone-switch-missing-default-case)
 
 REGISTER_FUNCTION(MortonDecode)
 {

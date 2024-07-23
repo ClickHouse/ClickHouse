@@ -57,7 +57,7 @@ ColumnsDescription getStructureOfRemoteTableInShard(
     }
 
     ColumnsDescription res;
-    auto new_context = ClusterProxy::updateSettingsForCluster(cluster, context, context->getSettingsRef(), table_id);
+    auto new_context = ClusterProxy::updateSettingsForCluster(!cluster.getSecret().empty(), context, context->getSettingsRef(), table_id);
 
     /// Ignore limit for result number of rows (that could be set during handling CSE/CTE),
     /// since this is a service query and should not lead to query failure.
@@ -176,7 +176,7 @@ ColumnsDescriptionByShardNum getExtendedObjectsOfRemoteTables(
     const auto & shards_info = cluster.getShardsInfo();
     auto query = "DESC TABLE " + remote_table_id.getFullTableName();
 
-    auto new_context = ClusterProxy::updateSettingsForCluster(cluster, context, context->getSettingsRef(), remote_table_id);
+    auto new_context = ClusterProxy::updateSettingsForCluster(!cluster.getSecret().empty(), context, context->getSettingsRef(), remote_table_id);
     new_context->setSetting("describe_extend_object_types", true);
 
     /// Expect only needed columns from the result of DESC TABLE.

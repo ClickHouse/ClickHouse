@@ -15,10 +15,6 @@ namespace Poco { class Logger; }
 
 namespace DB
 {
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-}
 
 class Exception;
 
@@ -73,14 +69,13 @@ private:
         return promise.get_future();
     }
 
-    const LoggerPtr log;
+    const Poco::Logger * log;
 
 public:
     IOUringReader(uint32_t entries_);
 
     inline bool isSupported() { return is_supported; }
     std::future<Result> submit(Request request) override;
-    Result execute(Request /* request */) override { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method `execute` not implemented for IOUringReader"); }
 
     void wait() override {}
 

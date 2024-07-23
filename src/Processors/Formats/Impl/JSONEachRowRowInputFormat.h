@@ -32,11 +32,10 @@ public:
     String getName() const override { return "JSONEachRowRowInputFormat"; }
     void resetParser() override;
 
-protected:
+private:
     void readPrefix() override;
     void readSuffix() override;
 
-private:
     bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
     bool allowSyncAfterError() const override { return true; }
     void syncAfterError() override;
@@ -104,7 +103,6 @@ public:
 private:
     NamesAndTypesList readRowAndGetNamesAndDataTypes(bool & eof) override;
     void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) override;
-    void transformTypesFromDifferentFilesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) override;
     void transformFinalTypeIfNeeded(DataTypePtr & type) override;
 
     bool first_row = true;

@@ -32,9 +32,7 @@ public:
         DROP_COMPILED_EXPRESSION_CACHE,
 #endif
         DROP_FILESYSTEM_CACHE,
-        DROP_DISK_METADATA_CACHE,
         DROP_SCHEMA_CACHE,
-        DROP_FORMAT_SCHEMA_CACHE,
 #if USE_AWS_S3
         DROP_S3_CLIENT_CACHE,
 #endif
@@ -56,8 +54,6 @@ public:
         SYNC_DATABASE_REPLICA,
         SYNC_TRANSACTION_LOG,
         SYNC_FILE_CACHE,
-        REPLICA_READY,
-        REPLICA_UNREADY,
         RELOAD_DICTIONARY,
         RELOAD_DICTIONARIES,
         RELOAD_MODEL,
@@ -67,7 +63,6 @@ public:
         RELOAD_EMBEDDED_DICTIONARIES,
         RELOAD_CONFIG,
         RELOAD_USERS,
-        RELOAD_ASYNCHRONOUS_METRICS,
         RESTART_DISK,
         STOP_MERGES,
         START_MERGES,
@@ -94,16 +89,6 @@ public:
         SYNC_FILESYSTEM_CACHE,
         STOP_PULLING_REPLICATION_LOG,
         START_PULLING_REPLICATION_LOG,
-        STOP_CLEANUP,
-        START_CLEANUP,
-        RESET_COVERAGE,
-        REFRESH_VIEW,
-        START_VIEW,
-        START_VIEWS,
-        STOP_VIEW,
-        STOP_VIEWS,
-        CANCEL_VIEW,
-        TEST_VIEW,
         END
     };
 
@@ -139,19 +124,11 @@ public:
 
     String schema_cache_storage;
 
-    String schema_cache_format;
-
     String fail_point_name;
 
     SyncReplicaMode sync_replica_mode = SyncReplicaMode::DEFAULT;
 
-    std::unordered_set<String> src_replicas;
-
     ServerType server_type;
-
-    /// For SYSTEM TEST VIEW <name> (SET FAKE TIME <time> | UNSET FAKE TIME).
-    /// Unix time.
-    std::optional<Int64> fake_time_for_view;
 
     String getID(char) const override { return "SYSTEM query"; }
 

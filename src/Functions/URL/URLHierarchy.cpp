@@ -1,14 +1,12 @@
 #include <Functions/FunctionFactory.h>
-#include <Functions/FunctionTokens.h>
-
+#include <Functions/FunctionsStringArray.h>
 
 namespace DB
 {
-
-namespace
+namespace ErrorCodes
 {
-
-using Pos = const char *;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+}
 
 class URLPathHierarchyImpl
 {
@@ -20,22 +18,31 @@ private:
 
 public:
     static constexpr auto name = "URLPathHierarchy";
+    static String getName() { return name; }
 
     static bool isVariadic() { return false; }
     static size_t getNumberOfArguments() { return 1; }
 
-    static void checkArguments(const IFunction & func, const ColumnsWithTypeAndName & arguments)
+    static void checkArguments(const DataTypes & arguments)
     {
-        FunctionArgumentDescriptors mandatory_args{
-            {"URL", &isString<IDataType>, nullptr, "String"},
-        };
-
-        validateFunctionArgumentTypes(func, arguments, mandatory_args);
+        if (!isString(arguments[0]))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of first argument of function {}. "
+            "Must be String.", arguments[0]->getName(), getName());
     }
 
-    static constexpr auto strings_argument_position = 0uz;
+    void init(const ColumnsWithTypeAndName & /*arguments*/) {}
 
-    void init(const ColumnsWithTypeAndName & /*arguments*/, bool /*max_substrings_includes_remaining_string*/) {}
+    /// Returns the position of the argument that is the column of rows
+    static size_t getStringsArgumentPosition()
+    {
+        return 0;
+    }
+
+    /// Returns the position of the possible max_substrings argument. std::nullopt means max_substrings argument is disabled in current function.
+    static std::optional<size_t> getMaxSubstringsArgumentPosition()
+    {
+        return std::nullopt;
+    }
 
     /// Called for each next string.
     void set(Pos pos_, Pos end_)
@@ -100,9 +107,8 @@ public:
 };
 
 
+struct NameURLPathHierarchy { static constexpr auto name = "URLPathHierarchy"; };
 using FunctionURLPathHierarchy = FunctionTokens<URLPathHierarchyImpl>;
-
-}
 
 REGISTER_FUNCTION(URLPathHierarchy)
 {

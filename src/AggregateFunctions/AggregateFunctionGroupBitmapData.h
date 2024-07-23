@@ -151,12 +151,10 @@ public:
         }
         else if (BitmapKind::Bitmap == kind)
         {
-            std::unique_ptr<RoaringBitmap> bitmap = std::make_unique<RoaringBitmap>(*roaring_bitmap);
-            bitmap->runOptimize();
-            auto size = bitmap->getSizeInBytes();
+            auto size = roaring_bitmap->getSizeInBytes();
             writeVarUInt(size, out);
             std::unique_ptr<char[]> buf(new char[size]);
-            bitmap->write(buf.get());
+            roaring_bitmap->write(buf.get());
             out.write(buf.get(), size);
         }
     }

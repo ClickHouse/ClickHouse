@@ -1,10 +1,12 @@
 #pragma once
-
 #include <Core/UUID.h>
-#include <Common/Logger.h>
 #include <filesystem>
 
 namespace fs = std::filesystem;
+namespace Poco
+{
+    class Logger;
+}
 
 namespace DB
 {
@@ -20,7 +22,5 @@ public:
     /// Loads server UUID from file or creates new one. Should be called on daemon startup.
     static void load(const fs::path & server_uuid_file, Poco::Logger * log);
 };
-
-UUID loadServerUUID(const fs::path & server_uuid_file, Poco::Logger * log);
 
 }

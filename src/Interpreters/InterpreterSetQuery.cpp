@@ -1,5 +1,4 @@
 #include <Interpreters/Context.h>
-#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSetQuery.h>
@@ -92,12 +91,4 @@ void InterpreterSetQuery::applySettingsFromQuery(const ASTPtr & ast, ContextMuta
     }
 }
 
-void registerInterpreterSetQuery(InterpreterFactory & factory)
-{
-    auto create_fn = [] (const InterpreterFactory::Arguments & args)
-    {
-        return std::make_unique<InterpreterSetQuery>(args.query, args.context);
-    };
-    factory.registerInterpreter("InterpreterSetQuery", create_fn);
-}
 }

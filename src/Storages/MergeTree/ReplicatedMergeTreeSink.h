@@ -3,7 +3,7 @@
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <base/types.h>
-#include <Common/ZooKeeper/ZooKeeperRetries.h>
+#include <Storages/MergeTree/ZooKeeperRetries.h>
 #include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
 #include <Storages/MergeTree/AsyncBlockIDsCache.h>
 
@@ -70,10 +70,9 @@ public:
 
     struct DelayedChunk;
 private:
-    std::vector<String> detectConflictsInAsyncBlockIDs(const std::vector<String> & ids);
-
     using BlockIDsType = std::conditional_t<async_insert, std::vector<String>, String>;
 
+    ZooKeeperRetriesInfo zookeeper_retries_info;
     struct QuorumInfo
     {
         String status_path;
@@ -96,7 +95,6 @@ private:
         size_t replicas_num,
         bool writing_existing_part);
 
-
     /// Wait for quorum to be satisfied on path (quorum_path) form part (part_name)
     /// Also checks that replica still alive.
     void waitForQuorum(
@@ -104,7 +102,6 @@ private:
         const std::string & part_name,
         const std::string & quorum_path,
         int is_active_node_version,
-        int host_node_version,
         size_t replicas_num) const;
 
     StorageReplicatedMergeTree & storage;
@@ -128,7 +125,8 @@ private:
     bool last_block_is_duplicate = false;
     UInt64 num_blocks_processed = 0;
 
-    LoggerPtr log;
+    using Logger = Poco::Logger;
+    Poco::Logger * log;
 
     ContextPtr context;
     StorageSnapshotPtr storage_snapshot;

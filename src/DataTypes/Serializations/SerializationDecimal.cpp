@@ -1,11 +1,13 @@
 #include <DataTypes/Serializations/SerializationDecimal.h>
 
 #include <Columns/ColumnVector.h>
+#include <Common/assert_cast.h>
+#include <Common/typeid_cast.h>
+#include <Formats/ProtobufReader.h>
+#include <Formats/ProtobufWriter.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/readDecimalText.h>
-#include <Common/assert_cast.h>
-#include <Common/typeid_cast.h>
 
 namespace DB
 {
@@ -16,19 +18,11 @@ namespace ErrorCodes
 }
 
 template <typename T>
-bool SerializationDecimal<T>::tryReadText(T & x, ReadBuffer & istr, UInt32 precision, UInt32 scale, bool csv)
+bool SerializationDecimal<T>::tryReadText(T & x, ReadBuffer & istr, UInt32 precision, UInt32 scale)
 {
     UInt32 unread_scale = scale;
-    if (csv)
-    {
-        if (!tryReadCSVDecimalText(istr, x, precision, unread_scale))
-            return false;
-    }
-    else
-    {
-        if (!tryReadDecimalText(istr, x, precision, unread_scale))
-            return false;
-    }
+    if (!tryReadDecimalText(istr, x, precision, unread_scale))
+        return false;
 
     if (common::mulOverflow(x.value, DecimalUtils::scaleMultiplier<T>(unread_scale), x.value))
         return false;
@@ -68,31 +62,11 @@ void SerializationDecimal<T>::deserializeText(IColumn & column, ReadBuffer & ist
 }
 
 template <typename T>
-bool SerializationDecimal<T>::tryDeserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings &, bool whole) const
-{
-    T x;
-    if (!tryReadText(x, istr) || (whole && !istr.eof()))
-        return false;
-    assert_cast<ColumnType &>(column).getData().push_back(x);
-    return true;
-}
-
-template <typename T>
 void SerializationDecimal<T>::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
     T x;
     readText(x, istr, true);
     assert_cast<ColumnType &>(column).getData().push_back(x);
-}
-
-template <typename T>
-bool SerializationDecimal<T>::tryDeserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
-{
-    T x;
-    if (!tryReadText(x, istr, true))
-        return false;
-    assert_cast<ColumnType &>(column).getData().push_back(x);
-    return true;
 }
 
 template <typename T>
@@ -114,18 +88,6 @@ void SerializationDecimal<T>::deserializeTextJSON(IColumn & column, ReadBuffer &
     deserializeText(column, istr, settings, false);
     if (have_quotes)
         assertChar('"', istr);
-}
-
-template <typename T>
-bool SerializationDecimal<T>::tryDeserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
-{
-    bool have_quotes = checkChar('"', istr);
-    T x;
-    if (!tryReadText(x, istr) || (have_quotes && !checkChar('"', istr)))
-        return false;
-
-    assert_cast<ColumnType &>(column).getData().push_back(x);
-    return true;
 }
 
 

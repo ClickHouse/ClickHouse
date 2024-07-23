@@ -1,6 +1,7 @@
 # workspace is required to vendor crates for all packages.
 [workspace]
 members = [
+    "BLAKE3",
     "skim",
     "prql",
 ]

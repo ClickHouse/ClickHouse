@@ -44,7 +44,7 @@ AsynchronousReadBufferFromHDFS::AsynchronousReadBufferFromHDFS(
     , prefetch_buffer(settings_.remote_fs_buffer_size)
     , read_until_position(impl->getFileSize())
     , use_prefetch(settings_.remote_fs_prefetch)
-    , log(getLogger("AsynchronousReadBufferFromHDFS"))
+    , log(&Poco::Logger::get("AsynchronousReadBufferFromHDFS"))
 {
     ProfileEvents::increment(ProfileEvents::RemoteFSBuffers);
 }

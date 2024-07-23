@@ -113,7 +113,7 @@ for STORAGE_POLICY in 's3_cache' 'local_cache'; do
     FROM
         system.query_log
     WHERE
-        query LIKE '%SELECT number, toString(number) FROM numbers(5000000)%'
+        query LIKE 'SELECT number, toString(number) FROM numbers(5000000)%'
         AND type = 'QueryFinish'
         AND current_database = currentDatabase()
     ORDER BY

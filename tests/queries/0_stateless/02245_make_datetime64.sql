@@ -82,11 +82,8 @@ select makeDateTime64(1991, 8, 24, 65537, 4, 0);
 select makeDateTime64(1991, 8, 24, 21, 65537, 0);
 select makeDateTime64(1991, 8, 24, 21, 4, 65537);
 
--- bug 58590
-select makeDateTime64(2024, 1, 8, 11, 12, 13, materialize(14));
-
 select makeDateTime64(year, 1, 1, 1, 0, 0, 0, precision, timezone) from (
     select 1984 as year, 5 as precision, 'UTC' as timezone
     union all
     select 1985 as year, 5 as precision, 'UTC' as timezone
-); -- { serverError 44 }
+); -- { serverError 43 }

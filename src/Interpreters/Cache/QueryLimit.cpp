@@ -1,6 +1,5 @@
 #include <Interpreters/Cache/QueryLimit.h>
 #include <Interpreters/Cache/Metadata.h>
-#include <Interpreters/Cache/FileCache.h>
 
 namespace DB
 {
@@ -69,10 +68,9 @@ void FileCacheQueryLimit::QueryContext::add(
     KeyMetadataPtr key_metadata,
     size_t offset,
     size_t size,
-    const FileCache::UserInfo & user,
     const CacheGuard::Lock & lock)
 {
-    auto it = getPriority().add(key_metadata, offset, size, user, lock);
+    auto it = getPriority().add(key_metadata, offset, size, lock);
     auto [_, inserted] = records.emplace(FileCacheKeyAndOffset{key_metadata->key, offset}, it);
     if (!inserted)
     {
@@ -97,7 +95,7 @@ void FileCacheQueryLimit::QueryContext::remove(
     records.erase({key, offset});
 }
 
-IFileCachePriority::IteratorPtr FileCacheQueryLimit::QueryContext::tryGet(
+IFileCachePriority::Iterator FileCacheQueryLimit::QueryContext::tryGet(
     const Key & key,
     size_t offset,
     const CacheGuard::Lock &)
@@ -107,29 +105,6 @@ IFileCachePriority::IteratorPtr FileCacheQueryLimit::QueryContext::tryGet(
         return nullptr;
     return it->second;
 
-}
-
-FileCacheQueryLimit::QueryContextHolder::QueryContextHolder(
-    const String & query_id_,
-    FileCache * cache_,
-    FileCacheQueryLimit * query_limit_,
-    FileCacheQueryLimit::QueryContextPtr context_)
-    : query_id(query_id_)
-    , cache(cache_)
-    , query_limit(query_limit_)
-    , context(context_)
-{
-}
-
-FileCacheQueryLimit::QueryContextHolder::~QueryContextHolder()
-{
-    /// If only the query_map and the current holder hold the context_query,
-    /// the query has been completed and the query_context is released.
-    if (context && context.use_count() == 2)
-    {
-        auto lock = cache->lockCache();
-        query_limit->removeQueryContext(query_id, lock);
-    }
 }
 
 }

@@ -16,7 +16,7 @@ class StorageSystemWarnings final : public IStorageSystemOneBlock<StorageSystemW
 public:
     std::string getName() const override { return "SystemWarnings"; }
 
-    static ColumnsDescription getColumnsDescription();
+    static NamesAndTypesList getNamesAndTypes();
 
 protected:
     using IStorageSystemOneBlock::IStorageSystemOneBlock;

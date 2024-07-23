@@ -191,6 +191,12 @@ PostgreSQLSource<T>::~PostgreSQLSource()
     {
         try
         {
+            if (stream)
+            {
+                tx->conn().cancel_query();
+                stream->close();
+            }
+
             stream.reset();
             tx.reset();
         }
@@ -199,8 +205,7 @@ PostgreSQLSource<T>::~PostgreSQLSource()
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
 
-        if (connection_holder)
-            connection_holder->setBroken();
+        connection_holder->setBroken();
     }
 }
 

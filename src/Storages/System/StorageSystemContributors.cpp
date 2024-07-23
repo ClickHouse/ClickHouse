@@ -9,11 +9,10 @@ extern const char * auto_contributors[];
 
 namespace DB
 {
-ColumnsDescription StorageSystemContributors::getColumnsDescription()
+NamesAndTypesList StorageSystemContributors::getNamesAndTypes()
 {
-    return ColumnsDescription
-    {
-        {"name", std::make_shared<DataTypeString>(), "Contributor (author) name from git log."},
+    return {
+        {"name", std::make_shared<DataTypeString>()},
     };
 }
 

@@ -28,7 +28,6 @@ namespace CurrentMetrics
 {
     extern const Metric ParquetDecoderThreads;
     extern const Metric ParquetDecoderThreadsActive;
-    extern const Metric ParquetDecoderThreadsScheduled;
 }
 
 namespace DB
@@ -378,7 +377,7 @@ ParquetBlockInputFormat::ParquetBlockInputFormat(
     , pending_chunks(PendingChunk::Compare { .row_group_first = format_settings_.parquet.preserve_order })
 {
     if (max_decoding_threads > 1)
-        pool = std::make_unique<ThreadPool>(CurrentMetrics::ParquetDecoderThreads, CurrentMetrics::ParquetDecoderThreadsActive, CurrentMetrics::ParquetDecoderThreadsScheduled, max_decoding_threads);
+        pool = std::make_unique<ThreadPool>(CurrentMetrics::ParquetDecoderThreads, CurrentMetrics::ParquetDecoderThreadsActive, max_decoding_threads);
 }
 
 ParquetBlockInputFormat::~ParquetBlockInputFormat()
@@ -386,6 +385,16 @@ ParquetBlockInputFormat::~ParquetBlockInputFormat()
     is_stopped = true;
     if (pool)
         pool->wait();
+}
+
+void ParquetBlockInputFormat::setQueryInfo(const SelectQueryInfo & query_info, ContextPtr context)
+{
+    /// When analyzer is enabled, query_info.filter_asts is missing sets and maybe some type casts,
+    /// so don't use it. I'm not sure how to support analyzer here: https://github.com/ClickHouse/ClickHouse/issues/53536
+    if (format_settings.parquet.filter_push_down && !context->getSettingsRef().allow_experimental_analyzer)
+        key_condition.emplace(query_info, context, getPort().getHeader().getNames(),
+            std::make_shared<ExpressionActions>(std::make_shared<ActionsDAG>(
+                getPort().getHeader().getColumnsWithTypeAndName())));
 }
 
 void ParquetBlockInputFormat::initializeIfNeeded()
@@ -419,12 +428,10 @@ void ParquetBlockInputFormat::initializeIfNeeded()
         if (skip_row_groups.contains(row_group))
             continue;
 
-        if (format_settings.parquet.filter_push_down && key_condition
-            && !key_condition
-                    ->checkInHyperrectangle(
-                        getHyperrectangleForRowGroup(*metadata, row_group, getPort().getHeader(), format_settings),
-                        getPort().getHeader().getDataTypes())
-                    .can_be_true)
+        if (key_condition.has_value() &&
+            !key_condition->checkInHyperrectangle(
+                getHyperrectangleForRowGroup(*metadata, row_group, getPort().getHeader(), format_settings),
+                getPort().getHeader().getDataTypes()).can_be_true)
             continue;
 
         if (row_group_batches.empty() || row_group_batches.back().total_bytes_compressed >= min_bytes_for_seek)
@@ -494,7 +501,6 @@ void ParquetBlockInputFormat::initializeRowGroupBatchReader(size_t row_group_bat
         "Parquet",
         format_settings.parquet.allow_missing_columns,
         format_settings.null_as_default,
-        format_settings.date_time_overflow_behavior,
         format_settings.parquet.case_insensitive_column_matching);
 }
 
@@ -570,7 +576,7 @@ void ParquetBlockInputFormat::decodeOneChunk(size_t row_group_batch_idx, std::un
 
         // We may be able to schedule more work now, but can't call scheduleMoreWorkIfNeeded() right
         // here because we're running on the same thread pool, so it'll deadlock if thread limit is
-        // reached. Wake up read() instead.
+        // reached. Wake up generate() instead.
         condvar.notify_all();
     };
 
@@ -579,7 +585,7 @@ void ParquetBlockInputFormat::decodeOneChunk(size_t row_group_batch_idx, std::un
 
     auto batch = row_group_batch.record_batch_reader->Next();
     if (!batch.ok())
-        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Error while reading Parquet data: {}", batch.status().ToString());
+        throw ParsingException(ErrorCodes::CANNOT_READ_ALL_DATA, "Error while reading Parquet data: {}", batch.status().ToString());
 
     if (!*batch)
     {
@@ -637,7 +643,7 @@ void ParquetBlockInputFormat::scheduleMoreWorkIfNeeded(std::optional<size_t> row
     }
 }
 
-Chunk ParquetBlockInputFormat::read()
+Chunk ParquetBlockInputFormat::generate()
 {
     initializeIfNeeded();
 
@@ -760,7 +766,7 @@ void registerInputFormatParquet(FormatFactory & factory)
             [](ReadBuffer & buf,
                const Block & sample,
                const FormatSettings & settings,
-               const ReadSettings & read_settings,
+               const ReadSettings& read_settings,
                bool is_remote_fs,
                size_t /* max_download_threads */,
                size_t max_parsing_threads)

@@ -4,7 +4,6 @@
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Client/ConnectionPool.h>
 #include <IO/ReadBufferFromFile.h>
-#include <Interpreters/Cluster.h>
 #include <Disks/IDisk.h>
 #include <atomic>
 #include <mutex>
@@ -28,7 +27,7 @@ using ProcessorPtr = std::shared_ptr<IProcessor>;
 
 class ISource;
 
-/** Queue for async INSERT Into Distributed engine (distributed_foreground_insert=0).
+/** Queue for async INSERT Into Distributed engine (insert_distributed_sync=0).
  *
  * Files are added from two places:
  * - from filesystem at startup (StorageDistributed::startup())
@@ -37,10 +36,12 @@ class ISource;
  * Later, in background, those files will be send to the remote nodes.
  *
  * The behaviour of this queue can be configured via the following settings:
- * - distributed_background_insert_batch
- * - distributed_background_insert_split_batch_on_failure
- * - distributed_background_insert_sleep_time_ms
- * - distributed_background_insert_max_sleep_time_ms
+ * - distributed_directory_monitor_batch_inserts
+ * - distributed_directory_monitor_split_batch_on_failure
+ * - distributed_directory_monitor_sleep_time_ms
+ * - distributed_directory_monitor_max_sleep_time_ms
+ * NOTE: It worth to rename the settings too
+ * ("directory_monitor" in settings looks too internal).
  */
 class DistributedAsyncInsertDirectoryQueue
 {
@@ -57,7 +58,7 @@ public:
 
     ~DistributedAsyncInsertDirectoryQueue();
 
-    static ConnectionPoolPtr createPool(const Cluster::Addresses & addresses, const StorageDistributed & storage);
+    static ConnectionPoolPtr createPool(const std::string & name, const StorageDistributed & storage);
 
     void updatePath(const std::string & new_relative_path);
 
@@ -145,7 +146,7 @@ private:
     const std::chrono::milliseconds max_sleep_time;
     std::chrono::time_point<std::chrono::system_clock> last_decrease_time {std::chrono::system_clock::now()};
     std::mutex mutex;
-    LoggerPtr log;
+    Poco::Logger * log;
     ActionBlocker & monitor_blocker;
 
     BackgroundSchedulePoolTaskHolder task_handle;

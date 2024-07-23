@@ -93,7 +93,7 @@ While ClickHouse can work over NFS, it is not the best idea.
 
 ## Linux Kernel {#linux-kernel}
 
-Don't use an outdated Linux kernel.
+Don’t use an outdated Linux kernel.
 
 ## Network {#network}
 

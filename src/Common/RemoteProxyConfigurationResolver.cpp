@@ -17,19 +17,18 @@ namespace ErrorCodes
 }
 
 RemoteProxyConfigurationResolver::RemoteProxyConfigurationResolver(
-    const RemoteServerConfiguration & remote_server_configuration_,
-    Protocol request_protocol_,
-    bool disable_tunneling_for_https_requests_over_http_proxy_
+    const Poco::URI & endpoint_,
+    String proxy_protocol_,
+    unsigned proxy_port_,
+    unsigned cache_ttl_
 )
-: ProxyConfigurationResolver(request_protocol_, disable_tunneling_for_https_requests_over_http_proxy_), remote_server_configuration(remote_server_configuration_)
+: endpoint(endpoint_), proxy_protocol(std::move(proxy_protocol_)), proxy_port(proxy_port_), cache_ttl(cache_ttl_)
 {
 }
 
 ProxyConfiguration RemoteProxyConfigurationResolver::resolve()
 {
-    auto logger = getLogger("RemoteProxyConfigurationResolver");
-
-    auto & [endpoint, proxy_protocol, proxy_port, cache_ttl_] = remote_server_configuration;
+    auto * logger = &Poco::Logger::get("RemoteProxyConfigurationResolver");
 
     LOG_DEBUG(logger, "Obtain proxy using resolver: {}", endpoint.toString());
 
@@ -40,20 +39,21 @@ ProxyConfiguration RemoteProxyConfigurationResolver::resolve()
     if (cache_ttl.count() && cache_valid && now <= cache_timestamp + cache_ttl && now >= cache_timestamp)
     {
         LOG_DEBUG(logger,
-                  "Use cached proxy: {}://{}:{}. Tunneling: {}",
+                  "Use cached proxy: {}://{}:{}",
                   cached_config.protocol,
                   cached_config.host,
-                  cached_config.port,
-                  cached_config.tunneling);
+                  cached_config.port
+                  );
         return cached_config;
     }
 
     /// 1 second is enough for now.
     /// TODO: Make timeouts configurable.
-    auto timeouts = ConnectionTimeouts()
-        .withConnectionTimeout(1)
-        .withSendTimeout(1)
-        .withReceiveTimeout(1);
+    ConnectionTimeouts timeouts(
+        Poco::Timespan(1000000), /// Connection timeout.
+        Poco::Timespan(1000000), /// Send timeout.
+        Poco::Timespan(1000000)  /// Receive timeout.
+    );
 
     try
     {
@@ -95,16 +95,9 @@ ProxyConfiguration RemoteProxyConfigurationResolver::resolve()
 
         LOG_DEBUG(logger, "Use proxy: {}://{}:{}", proxy_protocol, proxy_host, proxy_port);
 
-        bool use_tunneling_for_https_requests_over_http_proxy = useTunneling(
-            request_protocol,
-            cached_config.protocol,
-            disable_tunneling_for_https_requests_over_http_proxy);
-
         cached_config.protocol = ProxyConfiguration::protocolFromString(proxy_protocol);
         cached_config.host = proxy_host;
         cached_config.port = proxy_port;
-        cached_config.tunneling = use_tunneling_for_https_requests_over_http_proxy;
-        cached_config.original_request_protocol = request_protocol;
         cache_timestamp = std::chrono::system_clock::now();
         cache_valid = true;
 

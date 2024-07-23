@@ -11,7 +11,6 @@ namespace DB
 
 bool ParserRenameQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    ParserKeyword s_rename("RENAME");
     ParserKeyword s_rename_table("RENAME TABLE");
     ParserKeyword s_exchange_tables("EXCHANGE TABLES");
     ParserKeyword s_rename_dictionary("RENAME DICTIONARY");
@@ -25,7 +24,18 @@ bool ParserRenameQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     bool exchange = false;
     bool dictionary = false;
 
-    if (s_rename_database.ignore(pos, expected))
+    if (s_rename_table.ignore(pos, expected))
+        ;
+    else if (s_exchange_tables.ignore(pos, expected))
+        exchange = true;
+    else if (s_rename_dictionary.ignore(pos, expected))
+        dictionary = true;
+    else if (s_exchange_dictionaries.ignore(pos, expected))
+    {
+        exchange = true;
+        dictionary = true;
+    }
+    else if (s_rename_database.ignore(pos, expected))
     {
         ASTPtr from_db;
         ASTPtr to_db;
@@ -57,19 +67,6 @@ bool ParserRenameQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         node = query;
         return true;
     }
-    else if (s_rename_table.ignore(pos, expected))
-        ;
-    else if (s_exchange_tables.ignore(pos, expected))
-        exchange = true;
-    else if (s_rename_dictionary.ignore(pos, expected))
-        dictionary = true;
-    else if (s_exchange_dictionaries.ignore(pos, expected))
-    {
-        exchange = true;
-        dictionary = true;
-    }
-    else if (s_rename.ignore(pos, expected))
-        ;
     else
         return false;
 

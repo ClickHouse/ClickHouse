@@ -13,7 +13,7 @@ REGISTER_FUNCTION(ToMinute)
 {
     factory.registerFunction<FunctionToMinute>();
 
-    /// MySQL compatibility alias.
+    /// MysQL compatibility alias.
     factory.registerAlias("MINUTE", "toMinute", FunctionFactory::CaseInsensitive);
 }
 

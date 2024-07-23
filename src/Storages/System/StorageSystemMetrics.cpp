@@ -1,5 +1,4 @@
 
-#include <Storages/ColumnsDescription.h>
 #include <Common/CurrentMetrics.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -9,20 +8,20 @@
 namespace DB
 {
 
-ColumnsDescription StorageSystemMetrics::getColumnsDescription()
+NamesAndTypesList StorageSystemMetrics::getNamesAndTypes()
 {
-    auto description = ColumnsDescription
-    {
-        {"metric", std::make_shared<DataTypeString>(), "Metric name."},
-        {"value", std::make_shared<DataTypeInt64>(), "Metric value."},
-        {"description", std::make_shared<DataTypeString>(), "Metric description."},
+    return {
+        {"metric", std::make_shared<DataTypeString>()},
+        {"value", std::make_shared<DataTypeInt64>()},
+        {"description", std::make_shared<DataTypeString>()},
     };
+}
 
-    description.setAliases({
+NamesAndAliases StorageSystemMetrics::getNamesAndAliases()
+{
+    return {
         {"name", std::make_shared<DataTypeString>(), "metric"}
-    });
-
-    return description;
+    };
 }
 
 void StorageSystemMetrics::fillData(MutableColumns & res_columns, ContextPtr, const SelectQueryInfo &) const

@@ -20,6 +20,10 @@ class DownloadException(Exception):
     pass
 
 
+class APIException(Exception):
+    pass
+
+
 def get_with_retries(
     url: str,
     retries: int = DOWNLOAD_RETRIES_COUNT,
@@ -103,7 +107,7 @@ def get_gh_api(
             logging.info("Exception '%s' while getting, retry %i", exc, try_cnt)
             time.sleep(sleep)
 
-    raise exc
+    raise APIException("Unable to request data from GH API") from exc
 
 
 def get_build_name_for_check(check_name: str) -> str:
@@ -112,12 +116,10 @@ def get_build_name_for_check(check_name: str) -> str:
 
 def read_build_urls(build_name: str, reports_path: Union[Path, str]) -> List[str]:
     for root, _, files in os.walk(reports_path):
-        for file in files:
-            if file.endswith(f"_{build_name}.json"):
-                logging.info("Found build report json %s", file)
-                with open(
-                    os.path.join(root, file), "r", encoding="utf-8"
-                ) as file_handler:
+        for f in files:
+            if build_name in f:
+                logging.info("Found build report json %s", f)
+                with open(os.path.join(root, f), "r", encoding="utf-8") as file_handler:
                     build_report = json.load(file_handler)
                     return build_report["build_urls"]  # type: ignore
     return []
@@ -223,13 +225,4 @@ def download_performance_build(check_name, reports_path, result_path):
         reports_path,
         result_path,
         lambda x: x.endswith("performance.tar.zst"),
-    )
-
-
-def download_fuzzers(check_name, reports_path, result_path):
-    download_builds_filter(
-        check_name,
-        reports_path,
-        result_path,
-        lambda x: x.endswith(("_fuzzer", ".dict", ".options", "_seed_corpus.zip")),
     )

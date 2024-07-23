@@ -12,7 +12,7 @@
 
 #include <Poco/Environment.h>
 
-#include <Common/config_version.h>
+#include "config_version.h"
 
 
 namespace DB

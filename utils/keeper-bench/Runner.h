@@ -79,7 +79,6 @@ private:
         int32_t session_timeout_ms = Coordination::DEFAULT_SESSION_TIMEOUT_MS;
         int32_t connection_timeout_ms = Coordination::DEFAULT_CONNECTION_TIMEOUT_MS;
         int32_t operation_timeout_ms = Coordination::DEFAULT_OPERATION_TIMEOUT_MS;
-        bool use_compression = false;
 
         size_t sessions = 1;
     };
@@ -90,6 +89,6 @@ private:
     std::unordered_map<size_t, size_t> connections_to_info_map;
 
     void createConnections();
-    std::shared_ptr<Coordination::ZooKeeper> getConnection(const ConnectionInfo & connection_info, size_t connection_info_idx);
+    std::shared_ptr<Coordination::ZooKeeper> getConnection(const ConnectionInfo & connection_info);
     std::vector<std::shared_ptr<Coordination::ZooKeeper>> refreshConnections();
 };

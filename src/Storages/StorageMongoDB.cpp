@@ -101,7 +101,7 @@ public:
         , db_name(db_name_)
         , metadata_snapshot{metadata_snapshot_}
         , connection(connection_)
-        , is_wire_protocol_old(isMongoDBWireProtocolOld(*connection_))
+        , is_wire_protocol_old(isMongoDBWireProtocolOld(*connection_, db_name))
     {
     }
 

@@ -7,7 +7,7 @@
 #include <Coordination/KeeperDispatcher.h>
 #include <IO/WriteBufferFromString.h>
 
-#include <Common/config_version.h>
+#include "config_version.h"
 
 
 namespace DB
@@ -413,19 +413,6 @@ struct FeatureFlagsCommand : public IFourLetterCommand
     String name() override { return "ftfl"; }
     String run() override;
     ~FeatureFlagsCommand() override = default;
-};
-
-/// Yield leadership and become follower.
-struct YieldLeadershipCommand : public IFourLetterCommand
-{
-    explicit YieldLeadershipCommand(KeeperDispatcher & keeper_dispatcher_)
-        : IFourLetterCommand(keeper_dispatcher_)
-    {
-    }
-
-    String name() override { return "ydld"; }
-    String run() override;
-    ~YieldLeadershipCommand() override = default;
 };
 
 #if USE_JEMALLOC

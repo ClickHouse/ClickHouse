@@ -47,13 +47,9 @@ public:
 
     std::unique_lock<std::mutex> lock();
 
-    template <typename T, bool locked = false>
-    void set(const Key & key, const T & value, std::optional<bool> is_overridable);
+    template <typename T, bool locked = false> void set(const Key & key, const T & value);
 
-    template <typename T, bool locked = false>
-    void setOrUpdate(const Key & key, const T & value, std::optional<bool> is_overridable);
-
-    bool isOverridable(const Key & key, bool default_value) const;
+    template <typename T, bool locked = false> void setOrUpdate(const Key & key, const T & value);
 
     template <bool locked = false> void remove(const Key & key);
 

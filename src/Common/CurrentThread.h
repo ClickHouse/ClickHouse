@@ -86,10 +86,6 @@ public:
     static void finalizePerformanceCounters();
 
     /// Returns a non-empty string if the thread is attached to a query
-
-    /// Returns attached query context
-    static ContextPtr getQueryContext();
-
     static std::string_view getQueryId();
 
     /// Initializes query with current thread as master thread in constructor, and detaches it in destructor

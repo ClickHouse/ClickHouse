@@ -7,10 +7,9 @@
 #include <base/getFQDNOrHostName.h>
 #include <unistd.h>
 
-#include <Common/config_version.h>
+#include "config_version.h"
 
 #include <format>
-
 
 namespace DB
 {
@@ -197,7 +196,7 @@ void ClientInfo::setInitialQuery()
     if (client_name.empty())
         client_name = VERSION_NAME;
     else
-        client_name = std::string(VERSION_NAME) + " " + client_name;
+        client_name = (VERSION_NAME " ") + client_name;
 }
 
 bool ClientInfo::clientVersionEquals(const ClientInfo & other, bool compare_patch) const

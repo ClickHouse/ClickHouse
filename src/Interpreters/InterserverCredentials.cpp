@@ -35,7 +35,7 @@ InterserverCredentials::CurrentCredentials InterserverCredentials::parseCredenti
     const Poco::Util::AbstractConfiguration & config,
     const std::string & root_tag)
 {
-    auto log = getLogger("InterserverCredentials");
+    auto * log = &Poco::Logger::get("InterserverCredentials");
     CurrentCredentials store;
     store.emplace_back(current_user_, current_password_);
     if (config.getBool(root_tag + ".allow_empty", false))

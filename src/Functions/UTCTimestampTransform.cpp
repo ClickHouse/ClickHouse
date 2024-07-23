@@ -71,8 +71,8 @@ namespace
         {
             if (arguments.size() != 2)
                 throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {}'s arguments number must be 2.", name);
-            const ColumnWithTypeAndName & arg1 = arguments[0];
-            const ColumnWithTypeAndName & arg2 = arguments[1];
+            ColumnWithTypeAndName arg1 = arguments[0];
+            ColumnWithTypeAndName arg2 = arguments[1];
             const auto * time_zone_const_col = checkAndGetColumnConstData<ColumnString>(arg2.column.get());
             if (!time_zone_const_col)
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of 2nd argument of function {}. Excepted const(String).", arg2.column->getName(), name);

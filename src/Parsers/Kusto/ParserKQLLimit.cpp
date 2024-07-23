@@ -1,13 +1,15 @@
-#include <cstdlib>
-#include <Parsers/ExpressionListParsers.h>
 #include <Parsers/IParserBase.h>
-#include <Parsers/Kusto/ParserKQLLimit.h>
+#include <Parsers/ExpressionListParsers.h>
 #include <Parsers/Kusto/ParserKQLQuery.h>
+#include <Parsers/Kusto/ParserKQLLimit.h>
+#include <Parsers/ParserTablesInSelectQuery.h>
+#include <cstdlib>
+#include <format>
 
 namespace DB
 {
 
-bool ParserKQLLimit::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+bool ParserKQLLimit :: parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ASTPtr limit_length;
 

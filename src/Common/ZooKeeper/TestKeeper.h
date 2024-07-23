@@ -40,9 +40,6 @@ public:
 
     bool isExpired() const override { return expired; }
     bool hasReachedDeadline() const override { return false; }
-    Int8 getConnectedNodeIdx() const override { return 0; }
-    String getConnectedHostPort() const override { return "TestKeeper:0000"; }
-    int32_t getConnectionXid() const override { return 0; }
     int64_t getSessionID() const override { return 0; }
 
 

@@ -117,7 +117,7 @@ private:
 
     Names lowcard_right_keys;
 
-    LoggerPtr log;
+    Poco::Logger * log;
 
     void changeLeftColumns(Block & block, MutableColumns && columns) const;
     void addRightColumns(Block & block, MutableColumns && columns);

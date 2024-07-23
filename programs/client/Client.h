@@ -47,7 +47,7 @@ protected:
 private:
     void printChangedSettings() const;
     void showWarnings();
-    void parseConnectionsCredentials(Poco::Util::AbstractConfiguration & config, const std::string & connection_name);
+    void parseConnectionsCredentials();
     std::vector<String> loadWarningMessages();
 };
 }

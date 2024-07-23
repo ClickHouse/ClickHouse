@@ -8,7 +8,6 @@
 
 #include <chrono>
 #include <memory>
-#include <mutex>
 #include <optional>
 
 namespace Poco::Net { class SocketAddress; }
@@ -119,11 +118,7 @@ private:
 
     SessionTracker::SessionTrackerHandle session_tracker_handle;
 
-    /// Settings received from authentication server during authentication process
-    /// to set when creating a session context
-    SettingsChanges settings_from_auth_server;
-
-    LoggerPtr log = nullptr;
+    Poco::Logger * log = nullptr;
 };
 
 }

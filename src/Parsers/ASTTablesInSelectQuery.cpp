@@ -21,10 +21,10 @@ do \
 while (false)
 
 
-void ASTTableExpression::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
+void ASTTableExpression::updateTreeHashImpl(SipHash & hash_state) const
 {
     hash_state.update(final);
-    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
+    IAST::updateTreeHashImpl(hash_state);
 }
 
 
@@ -42,12 +42,12 @@ ASTPtr ASTTableExpression::clone() const
     return res;
 }
 
-void ASTTableJoin::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
+void ASTTableJoin::updateTreeHashImpl(SipHash & hash_state) const
 {
     hash_state.update(locality);
     hash_state.update(strictness);
     hash_state.update(kind);
-    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
+    IAST::updateTreeHashImpl(hash_state);
 }
 
 ASTPtr ASTTableJoin::clone() const
@@ -61,10 +61,10 @@ ASTPtr ASTTableJoin::clone() const
     return res;
 }
 
-void ASTArrayJoin::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
+void ASTArrayJoin::updateTreeHashImpl(SipHash & hash_state) const
 {
     hash_state.update(kind);
-    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
+    IAST::updateTreeHashImpl(hash_state);
 }
 
 ASTPtr ASTArrayJoin::clone() const
@@ -210,9 +210,6 @@ void ASTTableJoin::formatImplBeforeTable(const FormatSettings & settings, Format
             break;
         case JoinKind::Comma:
             settings.ostr << ",";
-            break;
-        case JoinKind::Paste:
-            settings.ostr << "PASTE JOIN";
             break;
     }
 

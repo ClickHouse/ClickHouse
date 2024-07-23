@@ -9,7 +9,9 @@
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteHelpers.h>
+
 #include <boost/algorithm/string/predicate.hpp>
+#include <cctz/time_zone.h>
 
 #include <cmath>
 
@@ -494,6 +496,13 @@ void SettingFieldTimezone::readBinary(ReadBuffer & in)
     String str;
     readStringBinary(str, in);
     *this = std::move(str);
+}
+
+void SettingFieldTimezone::validateTimezone(const std::string & tz_str)
+{
+    cctz::time_zone validated_tz;
+    if (!tz_str.empty() && !cctz::load_time_zone(tz_str, &validated_tz))
+        throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Invalid time zone: {}", tz_str);
 }
 
 String SettingFieldCustom::toString() const

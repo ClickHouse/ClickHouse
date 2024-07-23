@@ -13,7 +13,7 @@ namespace DB
 class PrettyCompactBlockOutputFormat : public PrettyBlockOutputFormat
 {
 public:
-    PrettyCompactBlockOutputFormat(WriteBuffer & out_, const Block & header, const FormatSettings & format_settings_, bool mono_block_, bool color);
+    PrettyCompactBlockOutputFormat(WriteBuffer & out_, const Block & header, const FormatSettings & format_settings_, bool mono_block_);
     String getName() const override { return "PrettyCompactBlockOutputFormat"; }
 
 private:

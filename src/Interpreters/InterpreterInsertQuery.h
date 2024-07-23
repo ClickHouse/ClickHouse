@@ -37,10 +37,6 @@ public:
 
     StorageID getDatabaseTable() const;
 
-    /// Return explicitly specified column names to insert.
-    /// It not explicit names were specified, return nullopt.
-    std::optional<Names> getInsertColumnNames() const;
-
     Chain buildChain(
         const StoragePtr & table,
         const StorageMetadataPtr & metadata_snapshot,
@@ -58,8 +54,6 @@ public:
     bool supportsTransactions() const override { return true; }
 
     void addBuffer(std::unique_ptr<ReadBuffer> buffer) { owned_buffers.push_back(std::move(buffer)); }
-
-    bool shouldAddSquashingFroStorage(const StoragePtr & table) const;
 
 private:
     Block getSampleBlock(const Names & names, const StoragePtr & table, const StorageMetadataPtr & metadata_snapshot) const;
@@ -83,7 +77,8 @@ private:
         const Block & subsequent_header,
         const StoragePtr & table,
         const StorageMetadataPtr & metadata_snapshot,
-        const Block & query_sample_block);
+        const Block & query_sample_block,
+        ThreadStatusesHolderPtr thread_status_holder);
 };
 
 

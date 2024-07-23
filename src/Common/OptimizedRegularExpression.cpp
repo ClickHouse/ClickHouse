@@ -418,7 +418,7 @@ finish:
         /// this two vals are useless, xxx|xxx cannot be trivial nor prefix.
         bool next_is_trivial = true;
         pos = analyzeImpl(regexp, pos, required_substring, next_is_trivial, next_alternatives);
-        /// For xxx|xxx|xxx, we only combine the alternatives and return a empty required_substring.
+        /// For xxx|xxx|xxx, we only conbine the alternatives and return a empty required_substring.
         if (next_alternatives.empty() || shortest_literal_length(next_alternatives) < required_substring.literal.size())
         {
             global_alternatives.push_back(required_substring);
@@ -441,7 +441,8 @@ finish:
 }
 }
 
-void OptimizedRegularExpression::analyze(
+template <bool thread_safe>
+void OptimizedRegularExpressionImpl<thread_safe>::analyze(
         std::string_view regexp_,
         std::string & required_substring,
         bool & is_trivial,
@@ -463,10 +464,11 @@ catch (...)
     is_trivial = false;
     required_substring_is_prefix = false;
     alternatives.clear();
-    LOG_ERROR(getLogger("OptimizeRegularExpression"), "Analyze RegularExpression failed, got error: {}", DB::getCurrentExceptionMessage(false));
+    LOG_ERROR(&Poco::Logger::get("OptimizeRegularExpression"), "Analyze RegularExpression failed, got error: {}", DB::getCurrentExceptionMessage(false));
 }
 
-OptimizedRegularExpression::OptimizedRegularExpression(const std::string & regexp_, int options)
+template <bool thread_safe>
+OptimizedRegularExpressionImpl<thread_safe>::OptimizedRegularExpressionImpl(const std::string & regexp_, int options)
 {
     std::vector<std::string> alternatives_dummy; /// this vector extracts patterns a,b,c from pattern (a|b|c). for now it's not used.
     analyze(regexp_, required_substring, is_trivial, required_substring_is_prefix, alternatives_dummy);
@@ -484,7 +486,7 @@ OptimizedRegularExpression::OptimizedRegularExpression(const std::string & regex
     if (!is_trivial)
     {
         /// Compile the re2 regular expression.
-        re2::RE2::Options regexp_options;
+        typename RegexType::Options regexp_options;
 
         /// Never write error messages to stderr. It's ignorant to do it from library code.
         regexp_options.set_log_errors(false);
@@ -495,15 +497,7 @@ OptimizedRegularExpression::OptimizedRegularExpression(const std::string & regex
         if (is_dot_nl)
             regexp_options.set_dot_nl(true);
 
-        re2 = std::make_unique<re2::RE2>(regexp_, regexp_options);
-
-        /// Fallback to latin1 to allow matching binary data.
-        if (!re2->ok() && re2->error_code() == re2::RE2::ErrorCode::ErrorBadUTF8)
-        {
-            regexp_options.set_encoding(re2::RE2::Options::EncodingLatin1);
-            re2 = std::make_unique<re2::RE2>(regexp_, regexp_options);
-        }
-
+        re2 = std::make_unique<RegexType>(regexp_, regexp_options);
         if (!re2->ok())
         {
             throw DB::Exception(DB::ErrorCodes::CANNOT_COMPILE_REGEXP,
@@ -533,7 +527,8 @@ OptimizedRegularExpression::OptimizedRegularExpression(const std::string & regex
     }
 }
 
-OptimizedRegularExpression::OptimizedRegularExpression(OptimizedRegularExpression && rhs) noexcept
+template <bool thread_safe>
+OptimizedRegularExpressionImpl<thread_safe>::OptimizedRegularExpressionImpl(OptimizedRegularExpressionImpl && rhs) noexcept
     : is_trivial(rhs.is_trivial)
     , required_substring_is_prefix(rhs.required_substring_is_prefix)
     , is_case_insensitive(rhs.is_case_insensitive)
@@ -550,7 +545,8 @@ OptimizedRegularExpression::OptimizedRegularExpression(OptimizedRegularExpressio
     }
 }
 
-bool OptimizedRegularExpression::match(const char * subject, size_t subject_size) const
+template <bool thread_safe>
+bool OptimizedRegularExpressionImpl<thread_safe>::match(const char * subject, size_t subject_size) const
 {
     const UInt8 * haystack = reinterpret_cast<const UInt8 *>(subject);
     const UInt8 * haystack_end = haystack + subject_size;
@@ -581,12 +577,13 @@ bool OptimizedRegularExpression::match(const char * subject, size_t subject_size
             }
         }
 
-        return re2->Match({subject, subject_size}, 0, subject_size, re2::RE2::UNANCHORED, nullptr, 0);
+        return re2->Match({subject, subject_size}, 0, subject_size, RegexType::UNANCHORED, nullptr, 0);
     }
 }
 
 
-bool OptimizedRegularExpression::match(const char * subject, size_t subject_size, Match & match) const
+template <bool thread_safe>
+bool OptimizedRegularExpressionImpl<thread_safe>::match(const char * subject, size_t subject_size, Match & match) const
 {
     const UInt8 * haystack = reinterpret_cast<const UInt8 *>(subject);
     const UInt8 * haystack_end = haystack + subject_size;
@@ -627,7 +624,7 @@ bool OptimizedRegularExpression::match(const char * subject, size_t subject_size
 
         std::string_view piece;
 
-        if (!re2::RE2::PartialMatch({subject, subject_size}, *re2, &piece))
+        if (!RegexType::PartialMatch({subject, subject_size}, *re2, &piece))
             return false;
         else
         {
@@ -639,7 +636,8 @@ bool OptimizedRegularExpression::match(const char * subject, size_t subject_size
 }
 
 
-unsigned OptimizedRegularExpression::match(const char * subject, size_t subject_size, MatchVec & matches, unsigned limit) const
+template <bool thread_safe>
+unsigned OptimizedRegularExpressionImpl<thread_safe>::match(const char * subject, size_t subject_size, MatchVec & matches, unsigned limit) const
 {
     const UInt8 * haystack = reinterpret_cast<const UInt8 *>(subject);
     const UInt8 * haystack_end = haystack + subject_size;
@@ -697,7 +695,7 @@ unsigned OptimizedRegularExpression::match(const char * subject, size_t subject_
             {subject, subject_size},
             0,
             subject_size,
-            re2::RE2::UNANCHORED,
+            RegexType::UNANCHORED,
             pieces.data(),
             static_cast<int>(pieces.size())))
         {
@@ -723,3 +721,6 @@ unsigned OptimizedRegularExpression::match(const char * subject, size_t subject_
         }
     }
 }
+
+template class OptimizedRegularExpressionImpl<true>;
+template class OptimizedRegularExpressionImpl<false>;

@@ -125,7 +125,7 @@ void GregorianDate::init(ReadBuffer & in)
     assertEOF(in);
 
     if (month_ < 1 || month_ > 12 || day_of_month_ < 1 || day_of_month_ > monthLength(is_leap_year(year_), month_))
-        throw Exception(ErrorCodes::CANNOT_PARSE_DATE, "Invalid date, out of range (year: {}, month: {}, day_of_month: {}).", year_, month_, day_of_month_);
+        throw Exception(ErrorCodes::CANNOT_PARSE_DATE, "Invalid date, out of range (year: {}, month: {}, day_of_month: {}).");
 }
 
 bool GregorianDate::tryInit(ReadBuffer & in)

@@ -21,7 +21,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_STATUS_OF_TRANSACTION;
 }
 
-static void tryWriteEventToSystemLog(LoggerPtr log, ContextPtr context,
+static void tryWriteEventToSystemLog(Poco::Logger * log, ContextPtr context,
                                      TransactionsInfoLogElement::Type type, const TransactionID & tid, CSN csn = Tx::UnknownCSN)
 try
 {
@@ -44,7 +44,7 @@ catch (...)
 
 TransactionLog::TransactionLog()
     : global_context(Context::getGlobalContextInstance())
-    , log(getLogger("TransactionLog"))
+    , log(&Poco::Logger::get("TransactionLog"))
     , zookeeper_path(global_context->getConfigRef().getString("transaction_log.zookeeper_path", "/clickhouse/txn"))
     , zookeeper_path_log(zookeeper_path + "/log")
     , fault_probability_before_commit(global_context->getConfigRef().getDouble("transaction_log.fault_probability_before_commit", 0))
@@ -405,10 +405,22 @@ CSN TransactionLog::commitTransaction(const MergeTreeTransactionPtr & txn, bool 
         String csn_path_created;
         try
         {
-            Coordination::SimpleFaultInjection fault(fault_probability_before_commit, fault_probability_after_commit, "commit");
+            if (unlikely(fault_probability_before_commit > 0.0))
+            {
+                std::bernoulli_distribution fault(fault_probability_before_commit);
+                if (fault(thread_local_rng))
+                    throw Coordination::Exception::fromMessage(Coordination::Error::ZCONNECTIONLOSS, "Fault injected (before commit)");
+            }
 
             /// Commit point
             csn_path_created = current_zookeeper->create(zookeeper_path_log + "/csn-", serializeTID(txn->tid), zkutil::CreateMode::PersistentSequential);
+
+            if (unlikely(fault_probability_after_commit > 0.0))
+            {
+                std::bernoulli_distribution fault(fault_probability_after_commit);
+                if (fault(thread_local_rng))
+                    throw Coordination::Exception::fromMessage(Coordination::Error::ZCONNECTIONLOSS, "Fault injected (after commit)");
+            }
         }
         catch (const Coordination::Exception & e)
         {

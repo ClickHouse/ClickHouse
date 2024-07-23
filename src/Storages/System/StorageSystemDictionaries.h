@@ -14,7 +14,7 @@ class StorageSystemDictionaries final : public IStorageSystemOneBlock<StorageSys
 public:
     std::string getName() const override { return "SystemDictionaries"; }
 
-    static ColumnsDescription getColumnsDescription();
+    static NamesAndTypesList getNamesAndTypes();
 
     NamesAndTypesList getVirtuals() const override;
 

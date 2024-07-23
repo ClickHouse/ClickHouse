@@ -12,7 +12,7 @@ class StorageSystemCurrentRoles final : public IStorageSystemOneBlock<StorageSys
 {
 public:
     std::string getName() const override { return "SystemCurrentRoles"; }
-    static ColumnsDescription getColumnsDescription();
+    static NamesAndTypesList getNamesAndTypes();
 
 protected:
     using IStorageSystemOneBlock::IStorageSystemOneBlock;

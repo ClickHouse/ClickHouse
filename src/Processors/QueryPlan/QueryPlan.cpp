@@ -455,24 +455,16 @@ static void updateDataStreams(QueryPlan::Node & root)
 
         static bool visitTopDownImpl(QueryPlan::Node * /*current_node*/, QueryPlan::Node * /*parent_node*/) { return true; }
 
-        static void visitBottomUpImpl(QueryPlan::Node * current_node, QueryPlan::Node * /*parent_node*/)
+        static void visitBottomUpImpl(QueryPlan::Node * current_node, QueryPlan::Node * parent_node)
         {
-            auto & current_step = *current_node->step;
-            if (!current_step.canUpdateInputStream() || current_node->children.empty())
+            if (!parent_node || parent_node->children.size() != 1)
                 return;
 
-            for (const auto * child : current_node->children)
-            {
-                if (!child->step->hasOutputStream())
-                    return;
-            }
+            if (!current_node->step->hasOutputStream())
+                return;
 
-            DataStreams streams;
-            streams.reserve(current_node->children.size());
-            for (const auto * child : current_node->children)
-                streams.emplace_back(child->step->getOutputStream());
-
-            current_step.updateInputStreams(std::move(streams));
+            if (auto * parent_transform_step = dynamic_cast<ITransformingStep *>(parent_node->step.get()); parent_transform_step)
+                parent_transform_step->updateInputStream(current_node->step->getOutputStream());
         }
     };
 

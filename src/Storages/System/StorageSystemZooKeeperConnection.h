@@ -16,7 +16,7 @@ class StorageSystemZooKeeperConnection final : public IStorageSystemOneBlock<Sto
 public:
     std::string getName() const override { return "SystemZooKeeperConnection"; }
 
-    static ColumnsDescription getColumnsDescription();
+    static NamesAndTypesList getNamesAndTypes();
 
 protected:
     using IStorageSystemOneBlock::IStorageSystemOneBlock;
@@ -25,3 +25,4 @@ protected:
 };
 
 }
+

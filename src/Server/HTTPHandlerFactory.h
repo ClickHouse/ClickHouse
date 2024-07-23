@@ -6,7 +6,6 @@
 #include <Server/HTTPHandlerRequestFilter.h>
 #include <Server/HTTPRequestHandlerFactoryMain.h>
 #include <Common/StringUtils/StringUtils.h>
-#include <Server/PrometheusMetricsWriter.h>
 
 #include <Poco/Util/AbstractConfiguration.h>
 
@@ -26,16 +25,17 @@ class HandlingRuleHTTPHandlerFactory : public HTTPRequestHandlerFactory
 public:
     using Filter = std::function<bool(const HTTPServerRequest &)>;
 
-    using Creator = std::function<std::unique_ptr<TEndpoint>()>;
-    explicit HandlingRuleHTTPHandlerFactory(Creator && creator_)
-        : creator(std::move(creator_))
-    {}
-
-    explicit HandlingRuleHTTPHandlerFactory(IServer & server)
+    template <typename... TArgs>
+    explicit HandlingRuleHTTPHandlerFactory(TArgs &&... args)
     {
-        creator = [&server]() -> std::unique_ptr<TEndpoint> { return std::make_unique<TEndpoint>(server); };
+        creator = [my_args = std::tuple<TArgs...>(std::forward<TArgs>(args) ...)]()
+        {
+            return std::apply([&](auto && ... endpoint_args)
+            {
+                return std::make_unique<TEndpoint>(std::forward<decltype(endpoint_args)>(endpoint_args)...);
+            }, std::move(my_args));
+        };
     }
-
 
     void addFilter(Filter cur_filter)
     {
@@ -131,10 +131,10 @@ createPrometheusHandlerFactory(IServer & server,
     AsynchronousMetrics & async_metrics,
     const std::string & config_prefix);
 
-HTTPRequestHandlerFactoryPtr createPrometheusMainHandlerFactory(
-    IServer & server,
+HTTPRequestHandlerFactoryPtr
+createPrometheusMainHandlerFactory(IServer & server,
     const Poco::Util::AbstractConfiguration & config,
-    PrometheusMetricsWriterPtr metrics_writer,
+    AsynchronousMetrics & async_metrics,
     const std::string & name);
 
 /// @param server - used in handlers to check IServer::isCancelled()

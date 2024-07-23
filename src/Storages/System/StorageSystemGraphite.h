@@ -15,7 +15,7 @@ class StorageSystemGraphite final : public IStorageSystemOneBlock<StorageSystemG
 public:
     std::string getName() const override { return "SystemGraphite"; }
 
-    static ColumnsDescription getColumnsDescription();
+    static NamesAndTypesList getNamesAndTypes();
 
     struct Config
     {

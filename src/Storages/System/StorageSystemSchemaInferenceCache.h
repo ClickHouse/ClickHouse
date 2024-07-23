@@ -11,7 +11,7 @@ class StorageSystemSchemaInferenceCache final : public IStorageSystemOneBlock<St
 public:
     std::string getName() const override { return "SystemSettingsChanges"; }
 
-    static ColumnsDescription getColumnsDescription();
+    static NamesAndTypesList getNamesAndTypes();
 
 protected:
     using IStorageSystemOneBlock::IStorageSystemOneBlock;

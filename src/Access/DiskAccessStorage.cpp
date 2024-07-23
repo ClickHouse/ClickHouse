@@ -47,7 +47,7 @@ namespace
     }
 
 
-    AccessEntityPtr tryReadEntityFile(const String & file_path, LoggerPtr log)
+    AccessEntityPtr tryReadEntityFile(const String & file_path, Poco::Logger & log)
     {
         try
         {
@@ -55,7 +55,7 @@ namespace
         }
         catch (...)
         {
-            tryLogCurrentException(log);
+            tryLogCurrentException(&log);
             return nullptr;
         }
     }
@@ -194,15 +194,24 @@ DiskAccessStorage::DiskAccessStorage(const String & storage_name_, const String 
 
 DiskAccessStorage::~DiskAccessStorage()
 {
-    stopListsWritingThread();
-
     try
     {
-        writeLists();
+        DiskAccessStorage::shutdown();
     }
     catch (...)
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+}
+
+
+void DiskAccessStorage::shutdown()
+{
+    stopListsWritingThread();
+
+    {
+        std::lock_guard lock{mutex};
+        writeLists();
     }
 }
 
@@ -378,7 +387,7 @@ void DiskAccessStorage::reloadAllAndRebuildLists()
             continue;
 
         const auto access_entity_file_path = getEntityFilePath(directory_path, id);
-        auto entity = tryReadEntityFile(access_entity_file_path, getLogger());
+        auto entity = tryReadEntityFile(access_entity_file_path, *getLogger());
         if (!entity)
             continue;
 

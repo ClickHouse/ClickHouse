@@ -350,7 +350,7 @@ struct Adder
 
         if constexpr (Data::is_able_to_parallelize_merge)
         {
-            if (data.set.isSingleLevel() && data.set.worthConvertingToTwoLevel(data.set.size()))
+            if (data.set.isSingleLevel() && data.set.size() > 100'000)
                 data.set.convertToTwoLevel();
         }
     }
@@ -466,7 +466,7 @@ public:
             std::vector<DataSet *> data_vec;
             data_vec.resize(places.size());
 
-            for (size_t i = 0; i < data_vec.size(); ++i)
+            for (unsigned long i = 0; i < data_vec.size(); i++)
                 data_vec[i] = &this->data(places[i]).set;
 
             DataSet::parallelizeMergePrepare(data_vec, thread_pool);

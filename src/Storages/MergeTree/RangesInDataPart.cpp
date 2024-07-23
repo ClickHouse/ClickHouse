@@ -32,7 +32,6 @@ void RangesInDataPartDescription::serialize(WriteBuffer & out) const
 {
     info.serialize(out);
     ranges.serialize(out);
-    writeVarUInt(rows, out);
 }
 
 String RangesInDataPartDescription::describe() const
@@ -46,7 +45,6 @@ void RangesInDataPartDescription::deserialize(ReadBuffer & in)
 {
     info.deserialize(in);
     ranges.deserialize(in);
-    readVarUInt(rows, in);
 }
 
 void RangesInDataPartsDescription::serialize(WriteBuffer & out) const
@@ -84,7 +82,6 @@ RangesInDataPartDescription RangesInDataPart::getDescription() const
     return RangesInDataPartDescription{
         .info = data_part->info,
         .ranges = ranges,
-        .rows = getRowsCount(),
     };
 }
 

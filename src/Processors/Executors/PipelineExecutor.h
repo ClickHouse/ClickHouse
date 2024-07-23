@@ -83,7 +83,7 @@ private:
     std::atomic_bool cancelled = false;
     std::atomic_bool cancelled_reading = false;
 
-    LoggerPtr log = getLogger("PipelineExecutor");
+    Poco::Logger * log = &Poco::Logger::get("PipelineExecutor");
 
     /// Now it's used to check if query was killed.
     QueryStatusPtr process_list_element;

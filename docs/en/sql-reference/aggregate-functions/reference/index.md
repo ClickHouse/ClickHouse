@@ -54,7 +54,6 @@ ClickHouse-specific aggregate functions:
 - [groupArrayMovingAvg](/docs/en/sql-reference/aggregate-functions/reference/grouparraymovingavg.md)
 - [groupArrayMovingSum](/docs/en/sql-reference/aggregate-functions/reference/grouparraymovingsum.md)
 - [groupArraySample](./grouparraysample.md)
-- [groupArraySorted](/docs/en/sql-reference/aggregate-functions/reference/grouparraysorted.md)
 - [groupBitAnd](/docs/en/sql-reference/aggregate-functions/reference/groupbitand.md)
 - [groupBitOr](/docs/en/sql-reference/aggregate-functions/reference/groupbitor.md)
 - [groupBitXor](/docs/en/sql-reference/aggregate-functions/reference/groupbitxor.md)
@@ -89,7 +88,6 @@ ClickHouse-specific aggregate functions:
 - [quantileTDigestWeighted](/docs/en/sql-reference/aggregate-functions/reference/quantiletdigestweighted.md)
 - [quantileBFloat16](/docs/en/sql-reference/aggregate-functions/reference/quantilebfloat16.md#quantilebfloat16)
 - [quantileBFloat16Weighted](/docs/en/sql-reference/aggregate-functions/reference/quantilebfloat16.md#quantilebfloat16weighted)
-- [quantileDD](/docs/en/sql-reference/aggregate-functions/reference/quantileddsketch.md#quantileddsketch)
 - [simpleLinearRegression](/docs/en/sql-reference/aggregate-functions/reference/simplelinearregression.md)
 - [stochasticLinearRegression](/docs/en/sql-reference/aggregate-functions/reference/stochasticlinearregression.md)
 - [stochasticLogisticRegression](/docs/en/sql-reference/aggregate-functions/reference/stochasticlogisticregression.md)
@@ -105,4 +103,4 @@ ClickHouse-specific aggregate functions:
 - [quantileInterpolatedWeighted](./quantileinterpolatedweighted.md)
 - [sparkBar](./sparkbar.md)
 - [sumCount](./sumcount.md)
-- [largestTriangleThreeBuckets](./largestTriangleThreeBuckets.md)
+

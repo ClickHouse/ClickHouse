@@ -148,16 +148,6 @@ def test_string_functions(start_cluster):
         # 22.8 Backward Incompatible Change: Extended range of Date32
         "toDate32OrZero",
         "toDate32OrDefault",
-        # 23.9 changed the base64-handling library from Turbo base64 to aklomp-base64. They differ in the way they deal with base64 values
-        # that are not properly padded by '=', for example below test value v='foo'. (Depending on the specification/context, padding is
-        # mandatory or optional). The former lib produces a value based on implicit padding, the latter lib throws an error.
-        "FROM_BASE64",
-        "base64Decode",
-        # PR #56913 (in v23.11) corrected the way tryBase64Decode() behaved with invalid inputs. Old versions return garbage, new versions
-        # return an empty string (as it was always documented).
-        "tryBase64Decode",
-        # Removed in 23.9
-        "meiliMatch",
     ]
     functions = filter(lambda x: x not in excludes, functions)
 

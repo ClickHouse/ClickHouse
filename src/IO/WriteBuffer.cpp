@@ -17,7 +17,7 @@ WriteBuffer::~WriteBuffer()
         /// However it is suspicious to destroy instance without finalization at the green path
         if (!std::uncaught_exceptions() && std::current_exception() == nullptr)
         {
-            LoggerPtr log = getLogger("WriteBuffer");
+            Poco::Logger * log = &Poco::Logger::get("WriteBuffer");
             LOG_ERROR(
                 log,
                 "WriteBuffer is not finalized when destructor is called. "

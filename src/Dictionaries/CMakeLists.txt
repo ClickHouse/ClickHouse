@@ -9,7 +9,6 @@ if (OMIT_HEAVY_DEBUG_SYMBOLS)
     set_source_files_properties(
         FlatDictionary.cpp
         HashedDictionary.cpp
-        SparseHashedDictionary.cpp
         HashedArrayDictionary.cpp
         CacheDictionary.cpp
         RangeHashedDictionary.cpp

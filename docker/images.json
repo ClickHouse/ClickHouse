@@ -1,7 +1,9 @@
 {
     "docker/packager/binary": {
         "name": "clickhouse/binary-builder",
-        "dependent": []
+        "dependent": [
+            "docker/test/codebrowser"
+        ]
     },
     "docker/test/compatibility/centos": {
         "name": "clickhouse/test-old-centos",
@@ -19,10 +21,6 @@
         "name": "clickhouse/fuzzer",
         "dependent": []
     },
-    "docker/test/libfuzzer": {
-        "name": "clickhouse/libfuzzer",
-        "dependent": []
-    },
     "docker/test/performance-comparison": {
         "name": "clickhouse/performance-comparison",
         "dependent": []
@@ -38,8 +36,7 @@
     "docker/test/stateless": {
         "name": "clickhouse/stateless-test",
         "dependent": [
-            "docker/test/stateful",
-            "docker/test/unit"
+            "docker/test/stateful"
         ]
     },
     "docker/test/stateful": {
@@ -61,7 +58,12 @@
         "name": "clickhouse/upgrade-check",
         "dependent": []
     },
+    "docker/test/codebrowser": {
+        "name": "clickhouse/codebrowser",
+        "dependent": []
+    },
     "docker/test/integration/runner": {
+        "only_amd64": true,
         "name": "clickhouse/integration-tests-runner",
         "dependent": []
     },
@@ -118,14 +120,13 @@
          "name": "clickhouse/test-base",
          "dependent": [
             "docker/test/fuzzer",
-            "docker/test/libfuzzer",
             "docker/test/integration/base",
             "docker/test/keeper-jepsen",
             "docker/test/server-jepsen",
             "docker/test/sqllogic",
             "docker/test/sqltest",
-            "docker/test/clickbench",
-            "docker/test/stateless"
+            "docker/test/stateless",
+            "docker/test/unit"
          ]
     },
     "docker/test/integration/kerberized_hadoop": {
@@ -143,10 +144,6 @@
     },
     "docker/test/server-jepsen": {
         "name": "clickhouse/server-jepsen-test",
-        "dependent": []
-    },
-    "docker/test/clickbench": {
-        "name": "clickhouse/clickbench",
         "dependent": []
     },
     "docker/test/install/deb": {

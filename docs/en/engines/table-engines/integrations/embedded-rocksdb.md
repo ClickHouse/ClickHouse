@@ -8,7 +8,7 @@ sidebar_label: EmbeddedRocksDB
 
 This engine allows integrating ClickHouse with [rocksdb](http://rocksdb.org/).
 
-## Creating a Table {#creating-a-table}
+## Creating a Table {#table_engine-EmbeddedRocksDB-creating-a-table}
 
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -85,11 +85,7 @@ You can also change any [rocksdb options](https://github.com/facebook/rocksdb/wi
 </rocksdb>
 ```
 
-By default trivial approximate count optimization is turned off, which might affect the performance `count()` queries. To enable this
-optimization set up `optimize_trivial_approximate_count_query = 1`. Also, this setting affects `system.tables` for EmbeddedRocksDB engine,
-turn on the settings to see approximate values for `total_rows` and `total_bytes`.
-
-## Supported operations {#supported-operations}
+## Supported operations {#table_engine-EmbeddedRocksDB-supported-operations}
 
 ### Inserts
 
@@ -212,5 +208,5 @@ ORDER BY key ASC
 ```
 
 ### More information on Joins
-- [`join_algorithm` setting](/docs/en/operations/settings/settings.md#join_algorithm)
+- [`join_algorithm` setting](/docs/en/operations/settings/settings.md#settings-join_algorithm)
 - [JOIN clause](/docs/en/sql-reference/statements/select/join.md)

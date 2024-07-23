@@ -290,7 +290,6 @@ DataTypeFactory::DataTypeFactory()
     registerDataTypeDomainGeo(*this);
     registerDataTypeMap(*this);
     registerDataTypeObject(*this);
-    registerDataTypeVariant(*this);
 }
 
 DataTypeFactory & DataTypeFactory::instance()

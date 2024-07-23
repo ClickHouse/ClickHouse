@@ -25,7 +25,7 @@ function run_format_both()
 run_format 'insert into foo settings max_threads=1' |& grep --max-count 2 --only-matching -e "Syntax error (query): failed at position .* (end of query):" -e '^\[.*$'
 
 # compatibility
-run_format 'insert into foo format tsv settings max_threads=1' |& grep --max-count 2 --only-matching -e "NOT_IMPLEMENTED" -e '^\[.*$'
+run_format 'insert into foo format tsv settings max_threads=1' |& grep --max-count 2 --only-matching -e "Can't format ASTInsertQuery with data, since data will be lost." -e '^\[.*$'
 run_format_both 'insert into foo format tsv settings max_threads=1' --allow_settings_after_format_in_insert
 run_format 'insert into foo settings max_threads=1 format tsv settings max_threads=1' --allow_settings_after_format_in_insert |& grep --max-count 2 --only-matching -e "You have SETTINGS before and after FORMAT" -e '^\[.*$'
 

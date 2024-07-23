@@ -1,6 +1,5 @@
 #include "QueryViewsLog.h"
 
-#include<base/getFQDNOrHostName.h>
 #include <Columns/IColumn.h>
 #include <Core/Block.h>
 #include <DataTypes/DataTypeArray.h>
@@ -8,7 +7,6 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeEnum.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeUUID.h>
@@ -19,7 +17,7 @@
 
 namespace DB
 {
-ColumnsDescription QueryViewsLogElement::getColumnsDescription()
+NamesAndTypesList QueryViewsLogElement::getNamesAndTypes()
 {
     auto view_status_datatype = std::make_shared<DataTypeEnum8>(DataTypeEnum8::Values{
         {"QueryStart", static_cast<Int8>(QUERY_START)},
@@ -33,9 +31,7 @@ ColumnsDescription QueryViewsLogElement::getColumnsDescription()
         {"Live", static_cast<Int8>(ViewType::LIVE)},
         {"Window", static_cast<Int8>(ViewType::WINDOW)}});
 
-    return ColumnsDescription
-    {
-        {"hostname", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
+    return {
         {"event_date", std::make_shared<DataTypeDate>()},
         {"event_time", std::make_shared<DataTypeDateTime>()},
         {"event_time_microseconds", std::make_shared<DataTypeDateTime64>(6)},
@@ -58,8 +54,7 @@ ColumnsDescription QueryViewsLogElement::getColumnsDescription()
         {"status", std::move(view_status_datatype)},
         {"exception_code", std::make_shared<DataTypeInt32>()},
         {"exception", std::make_shared<DataTypeString>()},
-        {"stack_trace", std::make_shared<DataTypeString>()}
-    };
+        {"stack_trace", std::make_shared<DataTypeString>()}};
 }
 
 NamesAndAliases QueryViewsLogElement::getNamesAndAliases()
@@ -73,7 +68,6 @@ void QueryViewsLogElement::appendToBlock(MutableColumns & columns) const
 {
     size_t i = 0;
 
-    columns[i++]->insert(getFQDNOrHostName());
     columns[i++]->insert(DateLUT::instance().toDayNum(event_time).toUnderType()); // event_date
     columns[i++]->insert(event_time);
     columns[i++]->insert(event_time_microseconds);

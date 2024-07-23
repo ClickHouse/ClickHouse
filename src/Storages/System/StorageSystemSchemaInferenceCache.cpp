@@ -31,20 +31,16 @@ static String getSchemaString(const ColumnsDescription & columns)
     return buf.str();
 }
 
-ColumnsDescription StorageSystemSchemaInferenceCache::getColumnsDescription()
+NamesAndTypesList StorageSystemSchemaInferenceCache::getNamesAndTypes()
 {
-    return ColumnsDescription
-    {
-        {"storage", std::make_shared<DataTypeString>(), "Storage name: File, URL, S3 or HDFS."},
-        {"source", std::make_shared<DataTypeString>(), "File source."},
-        {"format", std::make_shared<DataTypeString>(), "Format name."},
-        {"additional_format_info", std::make_shared<DataTypeString>(),
-            "Additional information required to identify the schema. For example, format specific settings."
-        },
-        {"registration_time", std::make_shared<DataTypeDateTime>(), "Timestamp when schema was added in cache."},
-        {"schema", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "Cached schema."},
-        {"number_of_rows", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "Number of rows in the file in given format. It's used for caching trivial count() from data files and for caching number of rows from the metadata during schema inference."},
-        {"schema_inference_mode", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "Scheme inference mode."},
+    return {
+        {"storage", std::make_shared<DataTypeString>()},
+        {"source", std::make_shared<DataTypeString>()},
+        {"format", std::make_shared<DataTypeString>()},
+        {"additional_format_info", std::make_shared<DataTypeString>()},
+        {"registration_time", std::make_shared<DataTypeDateTime>()},
+        {"schema", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
+        {"number_of_rows", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>())}
     };
 }
 
@@ -68,7 +64,6 @@ static void fillDataImpl(MutableColumns & res_columns, SchemaCache & schema_cach
             res_columns[6]->insert(*schema_info.num_rows);
         else
             res_columns[6]->insertDefault();
-        res_columns[7]->insert(key.schema_inference_mode);
     }
 }
 

@@ -4,6 +4,9 @@
 #include <Columns/ColumnsNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Parsers/queryNormalization.h>
+#include <base/find_symbols.h>
+#include <Common/StringUtils/StringUtils.h>
+#include <Common/SipHash.h>
 
 
 /** The function returns 64bit hash value that is identical for similar queries.
@@ -36,10 +39,8 @@ struct Impl
         for (size_t i = 0; i < size; ++i)
         {
             ColumnString::Offset curr_src_offset = offsets[i];
-            res_data[i] = normalizedQueryHash(
-                reinterpret_cast<const char *>(&data[prev_src_offset]),
-                reinterpret_cast<const char *>(&data[curr_src_offset - 1]),
-                keep_names);
+            res_data[i] = normalizedQueryHash<keep_names>(
+                reinterpret_cast<const char *>(&data[prev_src_offset]), reinterpret_cast<const char *>(&data[curr_src_offset - 1]));
             prev_src_offset = offsets[i];
         }
     }
@@ -103,3 +104,4 @@ REGISTER_FUNCTION(NormalizedQueryHash)
 }
 
 }
+

@@ -173,10 +173,9 @@ $ echo 'DROP TABLE t' | curl 'http://localhost:8123/' --data-binary @-
 Для отправки сжатого запроса `POST` добавьте заголовок `Content-Encoding: compression_method`.
 Чтобы ClickHouse сжимал ответ, разрешите сжатие настройкой [enable_http_compression](../operations/settings/settings.md#settings-enable_http_compression) и добавьте заголовок `Accept-Encoding: compression_method`. Уровень сжатия данных для всех методов сжатия можно задать с помощью настройки [http_zlib_compression_level](../operations/settings/settings.md#settings-http_zlib_compression_level).
 
-:::note Примечание
-Некоторые HTTP-клиенты могут по умолчанию распаковывать данные (`gzip` и `deflate`) с сервера в фоновом режиме и вы можете получить распакованные данные, даже если правильно используете настройки сжатия.
-:::
-
+    :::note "Примечание"
+    Некоторые HTTP-клиенты могут по умолчанию распаковывать данные (`gzip` и `deflate`) с сервера в фоновом режиме и вы можете получить распакованные данные, даже если правильно используете настройки сжатия.
+    :::
 **Примеры**
 
 ``` bash
@@ -366,7 +365,7 @@ $ curl -v 'http://localhost:8123/predefined_query'
 < X-ClickHouse-Query-Id: 96fe0052-01e6-43ce-b12a-6b7370de6e8a
 < X-ClickHouse-Format: Template
 < X-ClickHouse-Timezone: Asia/Shanghai
-< Keep-Alive: timeout=10
+< Keep-Alive: timeout=3
 < X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0"}
 <
 # HELP "Query" "Number of executing queries"
@@ -426,9 +425,9 @@ $ curl -v 'http://localhost:8123/predefined_query'
 
 В следующем примере определяются настройки [max_threads](../operations/settings/settings.md#settings-max_threads) и `max_final_threads`, а затем запрашивается системная таблица, чтобы проверить, были ли эти параметры успешно установлены.
 
-:::note Предупреждение
-Чтобы сохранить стандартные `handlers` такие как `query`, `play`, `ping`, используйте правило `<defaults/>`.
-:::
+    :::note "Предупреждение"
+    Чтобы сохранить стандартные `handlers` такие как `query`, `play`, `ping`, используйте правило `<defaults/>`.
+    :::
 Пример:
 
 ``` xml
@@ -456,9 +455,9 @@ $ curl -H 'XXX:TEST_HEADER_VALUE' -H 'PARAMS_XXX:max_threads' 'http://localhost:
 max_final_threads   2
 ```
 
-:::note Предупреждение
-В одном `predefined_query_handler` поддерживается только один запрос типа `INSERT`.
-:::
+    :::note "Предупреждение"
+    В одном `predefined_query_handler` поддерживается только один запрос типа `INSERT`.
+    :::
 ### dynamic_query_handler {#dynamic_query_handler}
 
 В `dynamic_query_handler`, запрос пишется в виде параметров HTTP-запроса. Разница в том, что в `predefined_query_handler`, запрос записывается в конфигурационный файл. Вы можете настроить `query_param_name` в `dynamic_query_handler`.
@@ -529,7 +528,7 @@ $ curl -vv  -H 'XXX:xxx' 'http://localhost:8123/hi'
 < Connection: Keep-Alive
 < Content-Type: text/html; charset=UTF-8
 < Transfer-Encoding: chunked
-< Keep-Alive: timeout=10
+< Keep-Alive: timeout=3
 < X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0","elapsed_ns":"662334"}
 <
 * Connection #0 to host localhost left intact
@@ -569,7 +568,7 @@ $ curl -v  -H 'XXX:xxx' 'http://localhost:8123/get_config_static_handler'
 < Connection: Keep-Alive
 < Content-Type: text/plain; charset=UTF-8
 < Transfer-Encoding: chunked
-< Keep-Alive: timeout=10
+< Keep-Alive: timeout=3
 < X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0","elapsed_ns":"662334"}
 <
 * Connection #0 to host localhost left intact
@@ -621,7 +620,7 @@ $ curl -vv -H 'XXX:xxx' 'http://localhost:8123/get_absolute_path_static_handler'
 < Connection: Keep-Alive
 < Content-Type: text/html; charset=UTF-8
 < Transfer-Encoding: chunked
-< Keep-Alive: timeout=10
+< Keep-Alive: timeout=3
 < X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0","elapsed_ns":"662334"}
 <
 <html><body>Absolute Path File</body></html>
@@ -640,7 +639,7 @@ $ curl -vv -H 'XXX:xxx' 'http://localhost:8123/get_relative_path_static_handler'
 < Connection: Keep-Alive
 < Content-Type: text/html; charset=UTF-8
 < Transfer-Encoding: chunked
-< Keep-Alive: timeout=10
+< Keep-Alive: timeout=3
 < X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0","elapsed_ns":"662334"}
 <
 <html><body>Relative Path File</body></html>

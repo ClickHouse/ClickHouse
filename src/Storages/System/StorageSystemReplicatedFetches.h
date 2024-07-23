@@ -15,7 +15,7 @@ class StorageSystemReplicatedFetches final : public IStorageSystemOneBlock<Stora
 public:
     std::string getName() const override { return "SystemReplicatedFetches"; }
 
-    static ColumnsDescription getColumnsDescription();
+    static NamesAndTypesList getNamesAndTypes();
 
 protected:
     using IStorageSystemOneBlock::IStorageSystemOneBlock;

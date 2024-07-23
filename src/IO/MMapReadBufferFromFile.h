@@ -27,8 +27,6 @@ public:
 
     std::string getFileName() const override;
 
-    bool isRegularLocalFile(size_t * out_view_offset) override;
-
 private:
     int fd = -1;
     std::string file_name;

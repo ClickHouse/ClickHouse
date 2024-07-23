@@ -22,6 +22,7 @@ protected:
     GenerateResult onGenerate() override;
     void onFinish() override;
 
+
 private:
     SquashingTransform squashing;
     Chunk cur_chunk;

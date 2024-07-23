@@ -1,4 +1,3 @@
-#include <base/getFQDNOrHostName.h>
 #include <Interpreters/TransactionsInfoLog.h>
 #include <Interpreters/TransactionVersionMetadata.h>
 #include <Interpreters/Context.h>
@@ -9,7 +8,6 @@
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeFactory.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeUUID.h>
@@ -18,7 +16,7 @@
 namespace DB
 {
 
-ColumnsDescription TransactionsInfoLogElement::getColumnsDescription()
+NamesAndTypesList TransactionsInfoLogElement::getNamesAndTypes()
 {
     auto type_enum = std::make_shared<DataTypeEnum8>(
         DataTypeEnum8::Values
@@ -32,9 +30,8 @@ ColumnsDescription TransactionsInfoLogElement::getColumnsDescription()
             {"UnlockPart",      static_cast<Int8>(UNLOCK_PART)},
         });
 
-    return ColumnsDescription
+    return
     {
-        {"hostname", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
         {"type", std::move(type_enum)},
         {"event_date", std::make_shared<DataTypeDate>()},
         {"event_time", std::make_shared<DataTypeDateTime64>(6)},
@@ -72,7 +69,6 @@ void TransactionsInfoLogElement::appendToBlock(MutableColumns & columns) const
     assert(type != UNKNOWN);
     size_t i = 0;
 
-    columns[i++]->insert(getFQDNOrHostName());
     columns[i++]->insert(type);
     auto event_time_seconds = event_time / 1000000;
     columns[i++]->insert(DateLUT::instance().toDayNum(event_time_seconds).toUnderType());
@@ -92,7 +88,7 @@ void TransactionsInfoLogElement::appendToBlock(MutableColumns & columns) const
 }
 
 
-void tryWriteEventToSystemLog(LoggerPtr log,
+void tryWriteEventToSystemLog(Poco::Logger * log,
                               TransactionsInfoLogElement::Type type, const TransactionID & tid,
                               const TransactionInfoContext & context)
 try

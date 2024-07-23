@@ -20,11 +20,12 @@ namespace ErrorCodes
 {
     extern const int CANNOT_RESTORE_FROM_FIELD_DUMP;
     extern const int DECIMAL_OVERFLOW;
+    extern const int INCORRECT_DATA;
 }
 
 inline Field getBinaryValue(UInt8 type, ReadBuffer & buf)
 {
-    switch (static_cast<Field::Types::Which>(type))
+    switch (type)
     {
         case Field::Types::Null:
         {
@@ -133,14 +134,8 @@ inline Field getBinaryValue(UInt8 type, ReadBuffer & buf)
             readBinary(value, buf);
             return bool(value);
         }
-        case Field::Types::Decimal32:
-        case Field::Types::Decimal64:
-        case Field::Types::Decimal128:
-        case Field::Types::Decimal256:
-        case Field::Types::CustomType:
-            return Field();
     }
-    UNREACHABLE();
+    throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown field type {}", std::to_string(type));
 }
 
 void readBinary(Array & x, ReadBuffer & buf)

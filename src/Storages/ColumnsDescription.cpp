@@ -24,21 +24,16 @@
 #include <Interpreters/Context.h>
 #include <Storages/IStorage.h>
 #include <Common/typeid_cast.h>
-#include "Parsers/ASTSetQuery.h"
 #include <Core/Defines.h>
 #include <Compression/CompressionFactory.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/FunctionNameNormalizer.h>
-#include <Storages/BlockNumberColumn.h>
 
 
 namespace DB
 {
-
-CompressionCodecPtr getCompressionCodecDelta(UInt8 delta_bytes_size);
-
 
 namespace ErrorCodes
 {
@@ -54,16 +49,6 @@ ColumnDescription::ColumnDescription(String name_, DataTypePtr type_)
 {
 }
 
-ColumnDescription::ColumnDescription(String name_, DataTypePtr type_, String comment_)
-    : name(std::move(name_)), type(std::move(type_)), comment(comment_)
-{
-}
-
-ColumnDescription::ColumnDescription(String name_, DataTypePtr type_, ASTPtr codec_, String comment_)
-    : name(std::move(name_)), type(std::move(type_)), comment(comment_), codec(codec_)
-{
-}
-
 bool ColumnDescription::operator==(const ColumnDescription & other) const
 {
     auto ast_to_str = [](const ASTPtr & ast) { return ast ? queryToString(ast) : String{}; };
@@ -71,9 +56,8 @@ bool ColumnDescription::operator==(const ColumnDescription & other) const
     return name == other.name
         && type->equals(*other.type)
         && default_desc == other.default_desc
-        && stat == other.stat
+        && comment == other.comment
         && ast_to_str(codec) == ast_to_str(other.codec)
-        && settings == other.settings
         && ast_to_str(ttl) == ast_to_str(other.ttl);
 }
 
@@ -104,24 +88,6 @@ void ColumnDescription::writeText(WriteBuffer & buf) const
     {
         writeChar('\t', buf);
         writeEscapedString(queryToString(codec), buf);
-    }
-
-    if (!settings.empty())
-    {
-        writeChar('\t', buf);
-        DB::writeText("SETTINGS ", buf);
-        DB::writeText("(", buf);
-        ASTSetQuery ast;
-        ast.is_standalone = false;
-        ast.changes = settings;
-        writeEscapedString(queryToString(ast), buf);
-        DB::writeText(")", buf);
-    }
-
-    if (stat)
-    {
-        writeChar('\t', buf);
-        writeEscapedString(queryToString(stat->ast), buf);
     }
 
     if (ttl)
@@ -164,32 +130,16 @@ void ColumnDescription::readText(ReadBuffer & buf)
                 comment = col_ast->comment->as<ASTLiteral &>().value.get<String>();
 
             if (col_ast->codec)
-                codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(col_ast->codec, type, false, true, true, true);
+                codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(col_ast->codec, type, false, true, true);
 
             if (col_ast->ttl)
                 ttl = col_ast->ttl;
-
-            if (col_ast->settings)
-                settings = col_ast->settings->as<ASTSetQuery &>().changes;
         }
         else
             throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Cannot parse column description");
     }
 }
 
-ColumnsDescription::ColumnsDescription(std::initializer_list<ColumnDescription> ordinary)
-{
-    for (auto && elem : ordinary)
-        add(elem);
-}
-
-ColumnsDescription ColumnsDescription::fromNamesAndTypes(NamesAndTypes ordinary)
-{
-    ColumnsDescription result;
-    for (auto & elem : ordinary)
-        result.add(ColumnDescription(std::move(elem.name), std::move(elem.type)));
-    return result;
-}
 
 ColumnsDescription::ColumnsDescription(NamesAndTypesList ordinary)
 {
@@ -202,11 +152,6 @@ ColumnsDescription::ColumnsDescription(NamesAndTypesList ordinary, NamesAndAlias
     for (auto & elem : ordinary)
         add(ColumnDescription(std::move(elem.name), std::move(elem.type)));
 
-    setAliases(std::move(aliases));
-}
-
-void ColumnsDescription::setAliases(NamesAndAliases aliases)
-{
     for (auto & alias : aliases)
     {
         ColumnDescription description(std::move(alias.name), std::move(alias.type));
@@ -708,12 +653,6 @@ bool ColumnsDescription::hasPhysical(const String & column_name) const
         it->default_desc.kind != ColumnDefaultKind::Alias && it->default_desc.kind != ColumnDefaultKind::Ephemeral;
 }
 
-bool ColumnsDescription::hasNotAlias(const String & column_name) const
-{
-    auto it = columns.get<1>().find(column_name);
-    return it != columns.get<1>().end() && it->default_desc.kind != ColumnDefaultKind::Alias;
-}
-
 bool ColumnsDescription::hasAlias(const String & column_name) const
 {
     auto it = columns.get<1>().find(column_name);
@@ -741,14 +680,6 @@ bool ColumnsDescription::hasDefaults() const
         if (column.default_desc.expression)
             return true;
     return false;
-}
-
-bool ColumnsDescription::hasOnlyOrdinary() const
-{
-    for (const auto & column : columns)
-        if (column.default_desc.kind != ColumnDefaultKind::Default)
-            return false;
-    return true;
 }
 
 ColumnDefaults ColumnsDescription::getDefaults() const
@@ -796,13 +727,11 @@ CompressionCodecPtr ColumnsDescription::getCodecOrDefault(const String & column_
 
 CompressionCodecPtr ColumnsDescription::getCodecOrDefault(const String & column_name) const
 {
-    assert (column_name != BlockNumberColumn::name);
     return getCodecOrDefault(column_name, CompressionCodecFactory::instance().getDefaultCodec());
 }
 
 ASTPtr ColumnsDescription::getCodecDescOrDefault(const String & column_name, CompressionCodecPtr default_codec) const
 {
-    assert (column_name != BlockNumberColumn::name);
     const auto it = columns.get<1>().find(column_name);
 
     if (it == columns.get<1>().end() || !it->codec)

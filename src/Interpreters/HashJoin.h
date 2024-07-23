@@ -147,8 +147,7 @@ class HashJoin : public IJoin
 {
 public:
     HashJoin(
-        std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block,
-        bool any_take_last_row_ = false, size_t reserve_num = 0, const String & instance_id_ = "");
+        std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block, bool any_take_last_row_ = false, size_t reserve_num = 0);
 
     ~HashJoin() override;
 
@@ -394,12 +393,8 @@ public:
 
     void debugKeys() const;
 
-    void shrinkStoredBlocksToFit(size_t & total_bytes_in_join);
-
-    void setMaxJoinedBlockRows(size_t value) { max_joined_block_rows = value; }
-
 private:
-    friend class NotJoinedHash;
+    template<bool> friend class NotJoinedHash;
 
     friend class JoinSource;
 
@@ -435,18 +430,7 @@ private:
     /// Left table column names that are sources for required_right_keys columns
     std::vector<String> required_right_keys_sources;
 
-    /// Maximum number of rows in result block. If it is 0, then no limits.
-    size_t max_joined_block_rows = 0;
-
-    /// When tracked memory consumption is more than a threshold, we will shrink to fit stored blocks.
-    bool shrink_blocks = false;
-    Int64 memory_usage_before_adding_blocks = 0;
-
-    /// Identifier to distinguish different HashJoin instances in logs
-    /// Several instances can be created, for example, in GraceHashJoin to handle different buckets
-    String instance_log_id;
-
-    LoggerPtr log;
+    Poco::Logger * log;
 
     /// Should be set via setLock to protect hash table from modification from StorageJoin
     /// If set HashJoin instance is not available for modification (addBlockToJoin)
@@ -457,7 +441,7 @@ private:
     void initRightBlockStructure(Block & saved_block_sample);
 
     template <JoinKind KIND, JoinStrictness STRICTNESS, typename Maps>
-    Block joinBlockImpl(
+    void joinBlockImpl(
         Block & block,
         const Block & block_with_columns_to_add,
         const std::vector<const Maps *> & maps_,

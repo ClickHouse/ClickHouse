@@ -82,13 +82,6 @@ std::string DataTypeMap::doGetName() const
     return s.str();
 }
 
-std::string DataTypeMap::doGetPrettyName(size_t indent) const
-{
-    WriteBufferFromOwnString s;
-    s << "Map(" << key_type->getPrettyName(indent) << ", " << value_type->getPrettyName(indent) << ')';
-    return s.str();
-}
-
 MutableColumnPtr DataTypeMap::createColumn() const
 {
     return ColumnMap::create(nested->createColumn());

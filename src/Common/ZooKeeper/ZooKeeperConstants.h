@@ -38,7 +38,6 @@ enum class OpNum : int32_t
     // CH Keeper specific operations
     FilteredList = 500,
     CheckNotExists = 501,
-    CreateIfNotExists = 502,
 
     SessionID = 997, /// Special internal request
 };
@@ -46,12 +45,10 @@ enum class OpNum : int32_t
 OpNum getOpNum(int32_t raw_op_num);
 
 static constexpr int32_t ZOOKEEPER_PROTOCOL_VERSION = 0;
-static constexpr int32_t ZOOKEEPER_PROTOCOL_VERSION_WITH_COMPRESSION = 10;
 static constexpr int32_t KEEPER_PROTOCOL_VERSION_CONNECTION_REJECT = 42;
 static constexpr int32_t CLIENT_HANDSHAKE_LENGTH = 44;
 static constexpr int32_t CLIENT_HANDSHAKE_LENGTH_WITH_READONLY = 45;
 static constexpr int32_t SERVER_HANDSHAKE_LENGTH = 36;
-static constexpr int32_t SERVER_HANDSHAKE_LENGTH_WITH_READONLY = 37;
 static constexpr int32_t PASSWORD_LENGTH = 16;
 
 /// ZooKeeper has 1 MB node size and serialization limit by default,

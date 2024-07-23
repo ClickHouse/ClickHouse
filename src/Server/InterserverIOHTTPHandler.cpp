@@ -77,7 +77,7 @@ void InterserverIOHTTPHandler::processQuery(HTTPServerRequest & request, HTTPSer
 }
 
 
-void InterserverIOHTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event)
+void InterserverIOHTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response)
 {
     setThreadName("IntersrvHandler");
     ThreadStatus thread_status;
@@ -87,9 +87,10 @@ void InterserverIOHTTPHandler::handleRequest(HTTPServerRequest & request, HTTPSe
         response.setChunkedTransferEncoding(true);
 
     Output used_output;
-    const auto keep_alive_timeout = server.context()->getServerSettings().keep_alive_timeout.totalSeconds();
+    const auto & config = server.config();
+    unsigned keep_alive_timeout = config.getUInt("keep_alive_timeout", 10);
     used_output.out = std::make_shared<WriteBufferFromHTTPServerResponse>(
-        response, request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD, keep_alive_timeout, write_event);
+        response, request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD, keep_alive_timeout);
 
     auto write_response = [&](const std::string & message)
     {

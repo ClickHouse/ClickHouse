@@ -7,8 +7,6 @@
 namespace DB
 {
 
-class FunctionNode;
-
 /// Returns true if node part of root tree, false otherwise
 bool isNodePartOfTree(const IQueryTreeNode * node, const IQueryTreeNode * root);
 
@@ -27,12 +25,6 @@ std::string getGlobalInFunctionNameForLocalInFunctionName(const std::string & fu
 /// Add unique suffix to names of duplicate columns in block
 void makeUniqueColumnNamesInBlock(Block & block);
 
-/// Returns true, if node has type QUERY or UNION
-bool isQueryOrUnionNode(const IQueryTreeNode * node);
-
-/// Returns true, if node has type QUERY or UNION
-bool isQueryOrUnionNode(const QueryTreeNodePtr & node);
-
 /** Build cast function that cast expression into type.
   * If resolve = true, then result cast function is resolved during build, otherwise
   * result cast function is not resolved during build.
@@ -50,13 +42,10 @@ std::optional<bool> tryExtractConstantFromConditionNode(const QueryTreeNodePtr &
   */
 void addTableExpressionOrJoinIntoTablesInSelectQuery(ASTPtr & tables_in_select_query_ast, const QueryTreeNodePtr & table_expression, const IQueryTreeNode::ConvertToASTOptions & convert_to_ast_options);
 
-/// Extract all TableNodes from the query tree.
-QueryTreeNodes extractAllTableReferences(const QueryTreeNodePtr & tree);
+/// Extract table, table function, query, union from join tree
+QueryTreeNodes extractTableExpressions(const QueryTreeNodePtr & join_tree_node);
 
-/// Extract table, table function, query, union from join tree.
-QueryTreeNodes extractTableExpressions(const QueryTreeNodePtr & join_tree_node, bool add_array_join = false);
-
-/// Extract left table expression from join tree.
+/// Extract left table expression from join tree
 QueryTreeNodePtr extractLeftTableExpression(const QueryTreeNodePtr & join_tree_node);
 
 /** Build table expressions stack that consists from table, table function, query, union, join, array join from join tree.
@@ -93,16 +82,5 @@ bool hasFunctionNode(const QueryTreeNodePtr & node, std::string_view function_na
 void replaceColumns(QueryTreeNodePtr & node,
     const QueryTreeNodePtr & table_expression_node,
     const std::unordered_map<std::string, QueryTreeNodePtr> & column_name_to_node);
-
-/** Resolve function node again using it's content.
-  * This function should be called when arguments or parameters are changed.
-  */
-void rerunFunctionResolve(FunctionNode * function_node, ContextPtr context);
-
-/// Just collect all identifiers from query tree
-NameSet collectIdentifiersFullNames(const QueryTreeNodePtr & node);
-
-/// Wrap node into `_CAST` function
-QueryTreeNodePtr createCastFunction(QueryTreeNodePtr node, DataTypePtr result_type, ContextPtr context);
 
 }

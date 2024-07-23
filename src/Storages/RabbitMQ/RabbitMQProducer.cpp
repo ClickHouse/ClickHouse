@@ -31,7 +31,7 @@ RabbitMQProducer::RabbitMQProducer(
     const size_t channel_id_base_,
     const bool persistent_,
     std::atomic<bool> & shutdown_called_,
-    LoggerPtr log_)
+    Poco::Logger * log_)
     : AsynchronousMessageProducer(log_)
     , connection(configuration_, log_)
     , routing_keys(routing_keys_)

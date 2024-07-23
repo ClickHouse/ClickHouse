@@ -17,7 +17,7 @@ class StorageSystemFunctions final : public IStorageSystemOneBlock<StorageSystem
 public:
     std::string getName() const override { return "SystemFunctions"; }
 
-    static ColumnsDescription getColumnsDescription();
+    static NamesAndTypesList getNamesAndTypes();
 
     void backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
     void restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;

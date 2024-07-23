@@ -1,6 +1,3 @@
-# Please do not use 'branch = ...' tags with submodule entries. Such tags make updating submodules a
-# little bit more convenient but they do *not* specify the tracked submodule branch. Thus, they are
-# more confusing than useful.
 [submodule "contrib/zstd"]
 	path = contrib/zstd
 	url = https://github.com/facebook/zstd
@@ -43,6 +40,9 @@
 [submodule "contrib/boost"]
 	path = contrib/boost
 	url = https://github.com/ClickHouse/boost
+[submodule "contrib/base64"]
+	path = contrib/base64
+	url = https://github.com/ClickHouse/Turbo-Base64
 [submodule "contrib/arrow"]
 	path = contrib/arrow
 	url = https://github.com/ClickHouse/arrow
@@ -99,7 +99,7 @@
 	url = https://github.com/awslabs/aws-c-event-stream
 [submodule "aws-c-common"]
 	path = contrib/aws-c-common
-	url = https://github.com/awslabs/aws-c-common.git
+	url = https://github.com/ClickHouse/aws-c-common
 [submodule "aws-checksums"]
 	path = contrib/aws-checksums
 	url = https://github.com/awslabs/aws-checksums
@@ -187,7 +187,7 @@
 	url = https://github.com/ClickHouse/nanodbc
 [submodule "contrib/datasketches-cpp"]
 	path = contrib/datasketches-cpp
-	url = https://github.com/apache/datasketches-cpp
+	url = https://github.com/ClickHouse/datasketches-cpp
 [submodule "contrib/yaml-cpp"]
 	path = contrib/yaml-cpp
 	url = https://github.com/ClickHouse/yaml-cpp
@@ -245,12 +245,6 @@
 [submodule "contrib/idxd-config"]
 	path = contrib/idxd-config
 	url = https://github.com/intel/idxd-config
-[submodule "contrib/QAT-ZSTD-Plugin"]
-	path = contrib/QAT-ZSTD-Plugin
-	url = https://github.com/intel/QAT-ZSTD-Plugin
-[submodule "contrib/qatlib"]
-	path = contrib/qatlib
-	url = https://github.com/intel/qatlib
 [submodule "contrib/wyhash"]
 	path = contrib/wyhash
 	url = https://github.com/wangyi-fudan/wyhash
@@ -266,9 +260,6 @@
 [submodule "contrib/corrosion"]
 	path = contrib/corrosion
 	url = https://github.com/corrosion-rs/corrosion
-[submodule "contrib/libssh"]
-	path = contrib/libssh
-	url = https://github.com/ClickHouse/libssh.git
 [submodule "contrib/morton-nd"]
 	path = contrib/morton-nd
 	url = https://github.com/morton-nd/morton-nd
@@ -357,15 +348,3 @@
 [submodule "contrib/robin-map"]
 	path = contrib/robin-map
 	url = https://github.com/Tessil/robin-map.git
-[submodule "contrib/aklomp-base64"]
-	path = contrib/aklomp-base64
-	url = https://github.com/aklomp/base64.git
-[submodule "contrib/pocketfft"]
-	path = contrib/pocketfft
-	url = https://github.com/mreineck/pocketfft.git
-[submodule "contrib/sqids-cpp"]
-	path = contrib/sqids-cpp
-	url = https://github.com/sqids/sqids-cpp.git
-[submodule "contrib/idna"]
-	path = contrib/idna
-	url = https://github.com/ada-url/idna.git

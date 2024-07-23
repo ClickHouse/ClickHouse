@@ -530,22 +530,11 @@ class TestRunner:
         if self.results is None:
             self.results = dict()
 
-        if self.dbms_name == "ClickHouse" and test_name in [
-            "test/select5.test",
-            "test/evidence/slt_lang_createtrigger.test",
-            "test/evidence/slt_lang_replace.test",
-            "test/evidence/slt_lang_droptrigger.test",
-        ]:
-            logger.info(f"Let's skip test %s for ClickHouse", test_name)
-            return
-
         with self.connection.with_one_test_scope():
             out_stream = io.StringIO()
             self.results[test_name] = out_stream
 
-            parser = test_parser.TestFileParser(
-                stream, test_name, test_file, self.dbms_name
-            )
+            parser = test_parser.TestFileParser(stream, test_name, test_file)
             for status in self.__statuses(parser, out_stream):
                 self.report.update(status)
 

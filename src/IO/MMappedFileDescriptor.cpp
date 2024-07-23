@@ -28,7 +28,7 @@ static size_t getFileSize(int fd)
 {
     struct stat stat_res {};
     if (0 != fstat(fd, &stat_res))
-        throw ErrnoException(ErrorCodes::CANNOT_STAT, "MMappedFileDescriptor: Cannot fstat");
+        throwFromErrno("MMappedFileDescriptor: Cannot fstat.", ErrorCodes::CANNOT_STAT);
 
     off_t file_size = stat_res.st_size;
 
@@ -63,7 +63,8 @@ void MMappedFileDescriptor::set(int fd_, size_t offset_, size_t length_)
 
     void * buf = mmap(nullptr, length, PROT_READ, MAP_PRIVATE, fd, offset);
     if (MAP_FAILED == buf)
-        throw ErrnoException(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "MMappedFileDescriptor: Cannot mmap {}", ReadableSize(length));
+        throwFromErrno(fmt::format("MMappedFileDescriptor: Cannot mmap {}.", ReadableSize(length)),
+            ErrorCodes::CANNOT_ALLOCATE_MEMORY);
 
     data = static_cast<char *>(buf);
 
@@ -87,7 +88,8 @@ void MMappedFileDescriptor::finish()
         return;
 
     if (0 != munmap(data, length))
-        throw ErrnoException(ErrorCodes::CANNOT_MUNMAP, "MMappedFileDescriptor: Cannot munmap {}", ReadableSize(length));
+        throwFromErrno(fmt::format("MMappedFileDescriptor: Cannot munmap {}.", ReadableSize(length)),
+            ErrorCodes::CANNOT_MUNMAP);
 
     length = 0;
 

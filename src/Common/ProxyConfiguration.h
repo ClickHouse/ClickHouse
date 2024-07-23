@@ -1,22 +1,17 @@
 #pragma once
 
 #include <string>
-#include <Common/Exception.h>
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int BAD_ARGUMENTS;
-}
 
 struct ProxyConfiguration
 {
     enum class Protocol
     {
         HTTP,
-        HTTPS
+        HTTPS,
+        ANY
     };
 
     static auto protocolFromString(const std::string & str)
@@ -29,8 +24,10 @@ struct ProxyConfiguration
         {
             return Protocol::HTTPS;
         }
-
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown proxy protocol: {}", str);
+        else
+        {
+            return Protocol::ANY;
+        }
     }
 
     static auto protocolToString(Protocol protocol)
@@ -41,14 +38,14 @@ struct ProxyConfiguration
                 return "http";
             case Protocol::HTTPS:
                 return "https";
+            case Protocol::ANY:
+                return "any";
         }
     }
 
     std::string host;
     Protocol protocol;
     uint16_t port;
-    bool tunneling;
-    Protocol original_request_protocol;
 };
 
 }

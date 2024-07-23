@@ -5,7 +5,8 @@ FROM ubuntu:22.04
 ARG apt_archive="http://archive.ubuntu.com"
 RUN sed -i "s|http://archive.ubuntu.com|$apt_archive|g" /etc/apt/sources.list
 
-ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=17
+# 15.0.2
+ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=16
 
 RUN apt-get update \
     && apt-get install \
@@ -26,10 +27,9 @@ RUN apt-get update \
     && export CODENAME="$(lsb_release --codename --short | tr 'A-Z' 'a-z')" \
     && echo "deb https://apt.llvm.org/${CODENAME}/ llvm-toolchain-${CODENAME}-${LLVM_VERSION} main" >> \
         /etc/apt/sources.list \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
+    && apt-get clean
 
-# Install cmake 3.20+ for Rust support
+# Install cmake 3.20+ for rust support
 # Used https://askubuntu.com/a/1157132 as reference
 RUN curl -s https://apt.kitware.com/keys/kitware-archive-latest.asc | \
         gpg --dearmor - > /etc/apt/trusted.gpg.d/kitware.gpg && \
@@ -60,10 +60,9 @@ RUN apt-get update \
         software-properties-common \
         tzdata \
         --yes --no-install-recommends \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
+    && apt-get clean
 
-# This symlink is required by gcc to find the lld linker
+# This symlink required by gcc to find lld compiler
 RUN ln -s /usr/bin/lld-${LLVM_VERSION} /usr/bin/ld.lld
 # for external_symbolizer_path
 RUN ln -s /usr/bin/llvm-symbolizer-${LLVM_VERSION} /usr/bin/llvm-symbolizer
@@ -107,5 +106,6 @@ RUN arch=${TARGETARCH:-amd64} \
     tar xz -C /tmp \
   && mv "/tmp/sccache-$SCCACHE_VERSION-$rarch-unknown-linux-musl/sccache" /usr/bin \
   && rm "/tmp/sccache-$SCCACHE_VERSION-$rarch-unknown-linux-musl" -r
+
 
 COPY process_functional_tests_result.py /

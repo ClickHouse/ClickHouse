@@ -42,6 +42,8 @@ Poco::Net::StreamSocket StorageMongoDBSocketFactory::createSecureSocket(const st
     Poco::Net::SocketAddress address(host, port);
     Poco::Net::SecureStreamSocket socket;
 
+    socket.setPeerHostName(host);
+
     socket.connect(address, connectTimeout);
 
     return socket;

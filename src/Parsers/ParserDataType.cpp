@@ -116,18 +116,6 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (!type_name_suffix.empty())
         type_name = type_name_upper + " " + type_name_suffix;
 
-    /// skip trailing comma in types, e.g. Tuple(Int, String,)
-    if (pos->type == TokenType::Comma)
-    {
-        Expected test_expected;
-        auto test_pos = pos;
-        ++test_pos;
-        if (ParserToken(TokenType::ClosingRoundBracket).ignore(test_pos, test_expected))
-        { // the end of the type definition was reached and there was a trailing comma
-            ++pos;
-        }
-    }
-
     auto function_node = std::make_shared<ASTFunction>();
     function_node->name = type_name;
     function_node->no_empty_args = true;
@@ -145,9 +133,6 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     if (!args_parser.parse(pos, expr_list_args, expected))
         return false;
-    if (pos->type == TokenType::Comma)
-        // ignore trailing comma inside Nested structures like Tuple(Int, Tuple(Int, String),)
-        ++pos;
     if (pos->type != TokenType::ClosingRoundBracket)
         return false;
     ++pos;

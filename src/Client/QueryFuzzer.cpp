@@ -46,7 +46,6 @@
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
 
-#include <AggregateFunctions/AggregateFunctionFactory.h>
 
 namespace DB
 {
@@ -385,39 +384,6 @@ void QueryFuzzer::fuzzColumnLikeExpressionList(IAST * ast)
     // the generic recursion into IAST.children.
 }
 
-void QueryFuzzer::fuzzNullsAction(NullsAction & action)
-{
-    /// If it's not using actions, then it's a high change it doesn't support it to begin with
-    if ((action == NullsAction::EMPTY) && (fuzz_rand() % 100 == 0))
-    {
-        if (fuzz_rand() % 2 == 0)
-            action = NullsAction::RESPECT_NULLS;
-        else
-            action = NullsAction::IGNORE_NULLS;
-    }
-    else if (fuzz_rand() % 20 == 0)
-    {
-        switch (fuzz_rand() % 3)
-        {
-            case 0:
-            {
-                action = NullsAction::EMPTY;
-                break;
-            }
-            case 1:
-            {
-                action = NullsAction::RESPECT_NULLS;
-                break;
-            }
-            default:
-            {
-                action = NullsAction::IGNORE_NULLS;
-                break;
-            }
-        }
-    }
-}
-
 void QueryFuzzer::fuzzWindowFrame(ASTWindowDefinition & def)
 {
     switch (fuzz_rand() % 40)
@@ -551,9 +517,9 @@ void QueryFuzzer::fuzzCreateQuery(ASTCreateQuery & create)
     SipHash sip_hash;
     sip_hash.update(original_name);
     if (create.columns_list)
-        create.columns_list->updateTreeHash(sip_hash, /*ignore_aliases=*/ true);
+        create.columns_list->updateTreeHash(sip_hash);
     if (create.storage)
-        create.storage->updateTreeHash(sip_hash, /*ignore_aliases=*/ true);
+        create.storage->updateTreeHash(sip_hash);
 
     const auto hash = getSipHash128AsPair(sip_hash);
 
@@ -903,68 +869,6 @@ void QueryFuzzer::notifyQueryFailed(ASTPtr ast)
         remove_fuzzed_table(insert->getTable());
 }
 
-ASTPtr QueryFuzzer::fuzzLiteralUnderExpressionList(ASTPtr child)
-{
-    auto * l = child->as<ASTLiteral>();
-    chassert(l);
-    auto type = l->value.getType();
-    if (type == Field::Types::Which::String && fuzz_rand() % 7 == 0)
-    {
-        String value = l->value.get<String>();
-        child = makeASTFunction(
-            "toFixedString", std::make_shared<ASTLiteral>(value), std::make_shared<ASTLiteral>(static_cast<UInt64>(value.size())));
-    }
-
-    if (fuzz_rand() % 7 == 0)
-        child = makeASTFunction("toNullable", child);
-
-    if (fuzz_rand() % 7 == 0)
-        child = makeASTFunction("toLowCardinality", child);
-
-    if (fuzz_rand() % 7 == 0)
-        child = makeASTFunction("materialize", child);
-
-    return child;
-}
-
-/// Tries to remove the functions added in fuzzLiteralUnderExpressionList
-/// Note that it removes them even if the child is not a literal
-ASTPtr QueryFuzzer::reverseLiteralFuzzing(ASTPtr child)
-{
-    if (auto * function = child.get()->as<ASTFunction>())
-    {
-        std::unordered_set<String> can_be_reverted{"toNullable", "toLowCardinality", "materialize"};
-        if (can_be_reverted.contains(function->name) && function->children.size() == 1)
-        {
-            if (fuzz_rand() % 7 == 0)
-                return function->children[0];
-        }
-    }
-
-    return nullptr;
-}
-
-
-void QueryFuzzer::fuzzExpressionList(ASTExpressionList & expr_list)
-{
-    for (auto & child : expr_list.children)
-    {
-        if (auto * literal = typeid_cast<ASTLiteral *>(child.get()))
-        {
-            if (fuzz_rand() % 13 == 0)
-                child = fuzzLiteralUnderExpressionList(child);
-        }
-        else
-        {
-            auto new_child = reverseLiteralFuzzing(child);
-            if (new_child)
-                child = new_child;
-            else
-                fuzz(child);
-        }
-    }
-}
-
 void QueryFuzzer::fuzz(ASTs & asts)
 {
     for (auto & ast : asts)
@@ -1051,7 +955,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
     }
     else if (auto * expr_list = typeid_cast<ASTExpressionList *>(ast.get()))
     {
-        fuzzExpressionList(*expr_list);
+        fuzz(expr_list->children);
     }
     else if (auto * order_by_element = typeid_cast<ASTOrderByElement *>(ast.get()))
     {
@@ -1061,9 +965,6 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
     {
         fuzzColumnLikeExpressionList(fn->arguments.get());
         fuzzColumnLikeExpressionList(fn->parameters.get());
-
-        if (AggregateUtils::isAggregateFunction(*fn))
-            fuzzNullsAction(fn->nulls_action);
 
         if (fn->is_window_function && fn->window_definition)
         {
@@ -1170,7 +1071,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
     }
     /*
      * The time to fuzz the settings has not yet come.
-     * Apparently we don't have any infrastructure to validate the values of
+     * Apparently we don't have any infractructure to validate the values of
      * the settings, and the first query with max_block_size = -1 breaks
      * because of overflows here and there.
      *//*
@@ -1193,8 +1094,9 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
         // are ASTPtr -- this is redundant ownership, but hides the error if the
         // child field is replaced. Others can be ASTLiteral * or the like, which
         // leads to segfault if the pointed-to AST is replaced.
-        // Replacing children is safe in case of ASTExpressionList (done in fuzzExpressionList). In a more
-        // general case, we can change the value of ASTLiteral, which is what we do here
+        // Replacing children is safe in case of ASTExpressionList. In a more
+        // general case, we can change the value of ASTLiteral, which is what we
+        // do here.
         if (fuzz_rand() % 11 == 0)
         {
             literal->value = fuzzField(literal->value);

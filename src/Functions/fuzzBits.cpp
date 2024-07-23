@@ -84,10 +84,6 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         auto col_in_untyped = arguments[0].column;
-
-        if (input_rows_count == 0)
-            return col_in_untyped;
-
         const double inverse_probability = assert_cast<const ColumnConst &>(*arguments[1].column).getValue<double>();
 
         if (inverse_probability < 0.0 || 1.0 < inverse_probability)

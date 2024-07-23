@@ -1,4 +1,3 @@
-#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterCreateIndexQuery.h>
 
 #include <Access/ContextAccess.h>
@@ -98,15 +97,6 @@ BlockIO InterpreterCreateIndexQuery::execute()
     table->alter(alter_commands, current_context, alter_lock);
 
     return {};
-}
-
-void registerInterpreterCreateIndexQuery(InterpreterFactory & factory)
-{
-    auto create_fn = [] (const InterpreterFactory::Arguments & args)
-    {
-        return std::make_unique<InterpreterCreateIndexQuery>(args.query, args.context);
-    };
-    factory.registerInterpreter("InterpreterCreateIndexQuery", create_fn);
 }
 
 }

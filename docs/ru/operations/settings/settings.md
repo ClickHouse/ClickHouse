@@ -341,10 +341,9 @@ INSERT INTO test VALUES (lower('Hello')), (lower('world')), (lower('INSERT')), (
 -   [CSV](../../interfaces/formats.md#csv)
 -   [TabSeparated](../../interfaces/formats.md#tabseparated)
 
-:::note Примечание
-Когда опция включена, сервер отправляет клиенту расширенные метаданные. Это требует дополнительных вычислительных ресурсов на сервере и может снизить производительность.
-:::
-
+    :::note "Примечание"
+    Когда опция включена, сервер отправляет клиенту расширенные метаданные. Это требует дополнительных вычислительных ресурсов на сервере и может снизить производительность.
+    :::
 Возможные значения:
 
 -   0 — выключена.
@@ -624,8 +623,8 @@ ClickHouse может парсить только базовый формат `Y
 
 Изменяет поведение операций, выполняемых со строгостью `ANY`.
 
-:::warning Внимание
-Настройка применяется только для операций `JOIN`, выполняемых над таблицами с движком [Join](../../engines/table-engines/special/join.md).
+:::warning "Внимание"
+    Настройка применяется только для операций `JOIN`, выполняемых над таблицами с движком [Join](../../engines/table-engines/special/join.md).
 :::
 
 Возможные значения:
@@ -706,9 +705,9 @@ ClickHouse может парсить только базовый формат `Y
 
 Включает устаревшее поведение сервера ClickHouse при выполнении операций `ANY INNER|LEFT JOIN`.
 
-:::note Внимание
-Используйте этот параметр только в целях обратной совместимости, если ваши варианты использования требуют устаревшего поведения `JOIN`.
-:::
+    :::note "Внимание"
+    Используйте этот параметр только в целях обратной совместимости, если ваши варианты использования требуют устаревшего поведения `JOIN`.
+    :::
 Когда включено устаревшее поведение:
 
 -   Результаты операций "t1 ANY LEFT JOIN t2" и "t2 ANY RIGHT JOIN t1" не равны, поскольку ClickHouse использует логику с сопоставлением ключей таблицы "многие к одному слева направо".
@@ -1070,9 +1069,9 @@ SELECT type, query FROM system.query_log WHERE log_comment = 'log_comment test' 
 
 Максимальный размер блоков несжатых данных перед сжатием при записи в таблицу. По умолчанию - 1 048 576 (1 MiB). При уменьшении размера, незначительно уменьшается коэффициент сжатия, незначительно возрастает скорость сжатия и разжатия за счёт кэш-локальности, и уменьшается потребление оперативной памяти.
 
-:::note Предупреждение
-Эта настройка экспертного уровня, не используйте ее, если вы только начинаете работать с Clickhouse.
-:::
+    :::note "Предупреждение"
+    Эта настройка экспертного уровня, не используйте ее, если вы только начинаете работать с Clickhouse.
+    :::
 Не путайте блоки для сжатия (кусок памяти, состоящий из байт) и блоки для обработки запроса (пачка строк из таблицы).
 
 ## min_compress_block_size {#min-compress-block-size}
@@ -1087,9 +1086,9 @@ SELECT type, query FROM system.query_log WHERE log_comment = 'log_comment test' 
 
 Пусть мы записываем столбец URL типа String (средний размер - 60 байт на значение). При записи 8192 строк, будет, в среднем, чуть меньше 500 КБ данных. Так как это больше 65 536 строк, то сжатый блок будет сформирован на каждую засечку. В этом случае, при чтении с диска данных из диапазона в одну засечку, не будет разжато лишних данных.
 
-:::note Предупреждение
-Эта настройка экспертного уровня, не используйте ее, если вы только начинаете работать с Clickhouse.
-:::
+    :::note "Предупреждение"
+    Эта настройка экспертного уровня, не используйте ее, если вы только начинаете работать с Clickhouse.
+    :::
 
 ## max_query_size {#settings-max_query_size}
 
@@ -1177,9 +1176,9 @@ SELECT type, query FROM system.query_log WHERE log_comment = 'log_comment test' 
 
 Может быть использована для ограничения скорости сети при репликации данных для добавления или замены новых узлов.
 
-:::note Примечание
-60000000 байт/с примерно соответствует 457 Мбит/с (60000000 / 1024 / 1024 * 8).
-:::
+    :::note
+    60000000 байт/с примерно соответствует 457 Мбит/с (60000000 / 1024 / 1024 * 8).
+    :::
 
 ## max_replicated_sends_network_bandwidth_for_server {#max_replicated_sends_network_bandwidth_for_server}
 
@@ -1198,9 +1197,9 @@ SELECT type, query FROM system.query_log WHERE log_comment = 'log_comment test' 
 
 Может быть использована для ограничения скорости сети при репликации данных для добавления или замены новых узлов.
 
-:::note Примечание
-60000000 байт/с примерно соответствует 457 Мбит/с (60000000 / 1024 / 1024 * 8).
-:::
+    :::note
+    60000000 байт/с примерно соответствует 457 Мбит/с (60000000 / 1024 / 1024 * 8).
+    :::
 
 ## connect_timeout_with_failover_ms {#connect-timeout-with-failover-ms}
 
@@ -1367,9 +1366,8 @@ load_balancing = round_robin
 
 Значение по умолчанию: 1.
 
-:::danger Предупреждение
-Отключайте эту настройку при использовании [max_parallel_replicas](#settings-max_parallel_replicas).
-:::
+:::danger "Warning"
+    Отключайте эту настройку при использовании [max_parallel_replicas](#settings-max_parallel_replicas).
 
 ## totals_mode {#totals-mode}
 
@@ -1398,9 +1396,8 @@ load_balancing = round_robin
 - Ключ сэмплирования является выражением, которое сложно вычисляется.
 - У распределения сетевых задержек в кластере длинный «хвост», из-за чего при параллельных запросах к нескольким серверам увеличивается среднее время задержки.
 
-:::danger Предупреждение
-Параллельное выполнение запроса может привести к неверному результату, если в запросе есть объединение или подзапросы и при этом таблицы не удовлетворяют определенным требованиям. Подробности смотрите в разделе [Распределенные подзапросы и max_parallel_replicas](../../sql-reference/operators/in.md#max_parallel_replica-subqueries).
-:::
+:::danger "Предупреждение"
+    Параллельное выполнение запроса может привести к неверному результату, если в запросе есть объединение или подзапросы и при этом таблицы не удовлетворяют определенным требованиям. Подробности смотрите в разделе [Распределенные подзапросы и max_parallel_replicas](../../sql-reference/operators/in.md#max_parallel_replica-subqueries).
 
 ## compile_expressions {#compile-expressions}
 
@@ -2136,7 +2133,7 @@ SELECT * FROM test_table
 -   [distributed_replica_error_cap](#settings-distributed_replica_error_cap)
 -   [distributed_replica_error_half_life](#settings-distributed_replica_error_half_life)
 
-## distributed_background_insert_sleep_time_ms {#distributed_background_insert_sleep_time_ms}
+## distributed_directory_monitor_sleep_time_ms {#distributed_directory_monitor_sleep_time_ms}
 
 Основной интервал отправки данных движком таблиц [Distributed](../../engines/table-engines/special/distributed.md). Фактический интервал растёт экспоненциально при возникновении ошибок.
 
@@ -2146,9 +2143,9 @@ SELECT * FROM test_table
 
 Значение по умолчанию: 100 миллисекунд.
 
-## distributed_background_insert_max_sleep_time_ms {#distributed_background_insert_max_sleep_time_ms}
+## distributed_directory_monitor_max_sleep_time_ms {#distributed_directory_monitor_max_sleep_time_ms}
 
-Максимальный интервал отправки данных движком таблиц [Distributed](../../engines/table-engines/special/distributed.md). Ограничивает экпоненциальный рост интервала, установленого настройкой [distributed_background_insert_sleep_time_ms](#distributed_background_insert_sleep_time_ms).
+Максимальный интервал отправки данных движком таблиц [Distributed](../../engines/table-engines/special/distributed.md). Ограничивает экпоненциальный рост интервала, установленого настройкой [distributed_directory_monitor_sleep_time_ms](#distributed_directory_monitor_sleep_time_ms).
 
 Возможные значения:
 
@@ -2156,7 +2153,7 @@ SELECT * FROM test_table
 
 Значение по умолчанию: 30000 миллисекунд (30 секунд).
 
-## distributed_background_insert_batch {#distributed_background_insert_batch}
+## distributed_directory_monitor_batch_inserts {#distributed_directory_monitor_batch_inserts}
 
 Включает/выключает пакетную отправку вставленных данных.
 
@@ -2173,8 +2170,8 @@ SELECT * FROM test_table
 
 Устанавливает приоритет ([nice](https://en.wikipedia.org/wiki/Nice_(Unix))) для потоков, исполняющих запросы. Планировщик ОС учитывает эти приоритеты при выборе следующего потока для исполнения на доступном ядре CPU.
 
-:::warning Предупреждение
-Для использования этой настройки необходимо установить свойство `CAP_SYS_NICE`. Пакет `clickhouse-server` устанавливает его во время инсталляции. Некоторые виртуальные окружения не позволяют установить `CAP_SYS_NICE`. В этом случае, `clickhouse-server` выводит сообщение при запуске.
+:::warning "Предупреждение"
+    Для использования этой настройки необходимо установить свойство `CAP_SYS_NICE`. Пакет `clickhouse-server` устанавливает его во время инсталляции. Некоторые виртуальные окружения не позволяют установить `CAP_SYS_NICE`. В этом случае, `clickhouse-server` выводит сообщение при запуске.
 :::
 
 Допустимые значения:
@@ -2249,7 +2246,7 @@ SELECT * FROM test_table
 
 ## input_format_parallel_parsing {#input-format-parallel-parsing}
 
-Включает или отключает режим, при котором входящие данные разбиваются на части, парсинг каждой из которых осуществляется параллельно с сохранением исходного порядка. Поддерживается только для форматов [TSV](../../interfaces/formats.md#tabseparated), [TSKV](../../interfaces/formats.md#tskv), [CSV](../../interfaces/formats.md#csv) и [JSONEachRow](../../interfaces/formats.md#jsoneachrow).
+Включает или отключает режим, при котором входящие данные разбиваются на части, парсинг каждой из которых осуществляется параллельно с сохранением исходного порядка. Поддерживается только для форматов [TSV](../../interfaces/formats.md#tabseparated), [TKSV](../../interfaces/formats.md#tskv), [CSV](../../interfaces/formats.md#csv) и [JSONEachRow](../../interfaces/formats.md#jsoneachrow).
 
 Возможные значения:
 
@@ -2260,7 +2257,7 @@ SELECT * FROM test_table
 
 ## output_format_parallel_formatting {#output-format-parallel-formatting}
 
-Включает или отключает режим, при котором исходящие данные форматируются параллельно с сохранением исходного порядка. Поддерживается только для форматов [TSV](../../interfaces/formats.md#tabseparated), [TSKV](../../interfaces/formats.md#tskv), [CSV](../../interfaces/formats.md#csv) и [JSONEachRow](../../interfaces/formats.md#jsoneachrow).
+Включает или отключает режим, при котором исходящие данные форматируются параллельно с сохранением исходного порядка. Поддерживается только для форматов [TSV](../../interfaces/formats.md#tabseparated), [TKSV](../../interfaces/formats.md#tskv), [CSV](../../interfaces/formats.md#csv) и [JSONEachRow](../../interfaces/formats.md#jsoneachrow).
 
 Возможные значения:
 
@@ -2323,11 +2320,11 @@ SELECT * FROM test_table
 
 Значение по умолчанию: 0.
 
-## distributed_foreground_insert {#distributed_foreground_insert}
+## insert_distributed_sync {#insert_distributed_sync}
 
 Включает или отключает режим синхронного добавления данных в распределенные таблицы (таблицы с движком [Distributed](../../engines/table-engines/special/distributed.md#distributed)).
 
-По умолчанию ClickHouse вставляет данные в распределённую таблицу в асинхронном режиме. Если `distributed_foreground_insert=1`, то данные вставляются сихронно, а запрос `INSERT` считается выполненным успешно, когда данные записаны на все шарды (по крайней мере на одну реплику для каждого шарда, если `internal_replication = true`).
+По умолчанию ClickHouse вставляет данные в распределённую таблицу в асинхронном режиме. Если `insert_distributed_sync=1`, то данные вставляются сихронно, а запрос `INSERT` считается выполненным успешно, когда данные записаны на все шарды (по крайней мере на одну реплику для каждого шарда, если `internal_replication = true`).
 
 Возможные значения:
 
@@ -2796,17 +2793,6 @@ SELECT TOP 3 name, value FROM system.settings;
 3. │ max_block_size          │ 65505   │
    └─────────────────────────┴─────────┘
 ```
-### output_format_pretty_color {#output_format_pretty_color}
-
-Включает/выключает управляющие последовательности ANSI в форматах Pretty. 
-
-Возможные значения:
-
--   `0` — выключена. Не исползует ANSI последовательности в форматах Pretty.
--   `1` — включена. Исползует ANSI последовательности с исключением форматов `NoEscapes`.
--   `auto` - включена если `stdout` является терминалом с исключением форматов `NoEscapes`.
-
-Значение по умолчанию: `auto`
 
 ## system_events_show_zero_values {#system_events_show_zero_values}
 
@@ -3848,18 +3834,6 @@ SELECT * FROM positional_arguments ORDER BY 2,3;
 -   1 — Функции возвращают результаты типа `Date32` или `DateTime64` для аргументов типа `Date32` или `DateTime64` и возвращают `Date` или `DateTime` в других случаях.
 
 Значение по умолчанию: `0`.
-
-## date_time_overflow_behavior {#date_time_overflow_behavior}
-
-Задаёт поведение при преобразовании [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md), [DateTime64](../../sql-reference/data-types/datetime64.md), а также численных типов данных к Date, Date32, DateTime, DateTime64 в случае, если результат выходит за пределы диапазона значений необходимого типа.
-
-Возможные значения:
-
-- `ignore` — Молча игнорирует переполнение. В таком случае, результатом будет случайное значение.
-- `throw` — Выкинуть исключение при переполнении.
-- `saturate` — Молча округлить до ближайшего (то есть наибольшего или наименьшего) значения из диапазона значений результата.
-
-Значение по умолчанию: `ignore`.
 
 ## optimize_move_to_prewhere {#optimize_move_to_prewhere}
 

@@ -20,7 +20,6 @@
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
-#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/checkAndGetLiteralArgument.h>
@@ -80,7 +79,7 @@ StorageExecutable::StorageExecutable(
     : IStorage(table_id_)
     , settings(settings_)
     , input_queries(input_queries_)
-    , log(settings.is_executable_pool ? getLogger("StorageExecutablePool") : getLogger("StorageExecutable"))
+    , log(settings.is_executable_pool ? &Poco::Logger::get("StorageExecutablePool") : &Poco::Logger::get("StorageExecutable"))
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns);
@@ -146,11 +145,8 @@ void StorageExecutable::read(
 
     for (auto & input_query : input_queries)
     {
-        QueryPipelineBuilder builder;
-        if (context->getSettings().allow_experimental_analyzer)
-            builder = InterpreterSelectQueryAnalyzer(input_query, context, {}).buildQueryPipeline();
-        else
-            builder = InterpreterSelectWithUnionQuery(input_query, context, {}).buildQueryPipeline();
+        InterpreterSelectWithUnionQuery interpreter(input_query, context, {});
+        auto builder = interpreter.buildQueryPipeline();
         inputs.emplace_back(QueryPipelineBuilder::getPipe(std::move(builder), resources));
     }
 
