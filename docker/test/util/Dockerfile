@@ -58,8 +58,7 @@ RUN curl -s https://apt.kitware.com/keys/kitware-archive-latest.asc | gpg --dear
     && apt-get clean && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
 # Create symlinks for tools
-RUN ln -f -s /usr/local/bin/clang /usr/local/bin/clang-${LLVM_VERSION} \
-    && ln -f -s /usr/local/bin/clang++ /usr/local/bin/clang++-${LLVM_VERSION} \
+RUN ln -f -s /usr/local/bin/clang++ /usr/local/bin/clang++-${LLVM_VERSION} \
     && ln -f -s /usr/local/bin/ld.lld /usr/local/bin/ld.lld-${LLVM_VERSION} \
     && ln -f -s /usr/local/bin/llvm-as /usr/local/bin/llvm-as-${LLVM_VERSION} \
     && ln -f -s /usr/local/bin/llvm-ar /usr/local/bin/llvm-ar-${LLVM_VERSION} \
