@@ -1692,7 +1692,7 @@ bool TCPHandler::receivePacket()
 
         default:
             // Attempt to reconnect to another replica and resend the query if no data has been returned
-            if (!state.io.pipeline.output)
+            if (state.io.pipeline.completed())
             {
                 LOG_WARNING(log, "Unknown packet {} from client, attempting to reconnect and resend query", toString(packet_type));
                 try
