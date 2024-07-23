@@ -15,10 +15,8 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int ILLEGAL_COLUMN;
 extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-extern const int ZERO_ARRAY_OR_TUPLE_INDEX;
 }
 
 namespace
@@ -86,32 +84,145 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const size_t number_of_arguments = arguments.size();
+        bool three_args = number_of_arguments == 3;
 
-        ColumnPtr column_string = arguments[0].column;
-        ColumnPtr column_offset = arguments[1].column;
+        ColumnPtr column_offset = arguments[2].column;
         ColumnPtr column_length;
-        if (number_of_arguments == 3)
-            column_length = arguments[2].column;
+        if (!three_args)
+            column_length = arguments[3].column;
 
         const ColumnConst * column_offset_const = checkAndGetColumn<ColumnConst>(column_offset.get());
         const ColumnConst * column_length_const = nullptr;
-        if (number_of_arguments == 3)
+        if (!three_args)
             column_length_const = checkAndGetColumn<ColumnConst>(column_length.get());
 
-        Int64 offset = 0;
-        Int64 length = 0;
+        bool offset_is_const = false;
+        bool length_is_const = false;
+        Int64 offset = -1;
+        Int64 length = -1;
         if (column_offset_const)
+        {
             offset = column_offset_const->getInt(0);
+            offset_is_const = true;
+        }
+
         if (column_length_const)
+        {
             length = column_length_const->getInt(0);
+            length_is_const = true;
+        }
+
 
         auto res_col = ColumnString::create();
         auto & res_data = res_col->getChars();
         auto & res_offsets = res_col->getOffsets();
+        res_offsets.resize_exact(input_rows_count);
+
+        ColumnPtr column_input = arguments[0].column;
+        ColumnPtr column_replace = arguments[1].column;
+
+        const auto * column_input_const = checkAndGetColumn<ColumnConst>(column_input.get());
+        const auto * column_input_string = checkAndGetColumn<ColumnString>(column_input.get());
+        if (column_input_const)
+        {
+            StringRef input = column_input_const->getDataAt(0);
+            res_data.reserve(input.size * input_rows_count);
+        }
+        else
+        {
+            res_data.reserve(column_input_string->getChars().size());
+        }
+
+        const auto * column_replace_const = checkAndGetColumn<ColumnConst>(column_replace.get());
+        const auto * column_replace_string = checkAndGetColumn<ColumnString>(column_replace.get());
+        bool input_is_const = column_input_const != nullptr;
+        bool replace_is_const = column_replace_const != nullptr;
+
+#define OVERLAY_EXECUTE_CASE(THREE_ARGS, OFFSET_IS_CONST, LENGTH_IS_CONST) \
+    if (input_is_const && replace_is_const) \
+        constantConstant<THREE_ARGS, OFFSET_IS_CONST, LENGTH_IS_CONST>( \
+            input_rows_count, \
+            column_input_const->getDataAt(0), \
+            column_replace_const->getDataAt(0), \
+            column_offset, \
+            column_length, \
+            offset, \
+            length, \
+            res_data, \
+            res_offsets); \
+    else if (input_is_const) \
+        constantVector<THREE_ARGS, OFFSET_IS_CONST, LENGTH_IS_CONST>( \
+            column_input_const->getDataAt(0), \
+            column_replace_string->getChars(), \
+            column_replace_string->getOffsets(), \
+            column_offset, \
+            column_length, \
+            offset, \
+            length, \
+            res_data, \
+            res_offsets); \
+    else if (replace_is_const) \
+        vectorConstant<THREE_ARGS, OFFSET_IS_CONST, LENGTH_IS_CONST>( \
+            column_input_string->getChars(), \
+            column_input_string->getOffsets(), \
+            column_replace_const->getDataAt(0), \
+            column_offset, \
+            column_length, \
+            offset, \
+            length, \
+            res_data, \
+            res_offsets); \
+    else \
+        vectorVector<THREE_ARGS, OFFSET_IS_CONST, LENGTH_IS_CONST>( \
+            column_input_string->getChars(), \
+            column_input_string->getOffsets(), \
+            column_replace_string->getChars(), \
+            column_replace_string->getOffsets(), \
+            column_offset, \
+            column_length, \
+            offset, \
+            length, \
+            res_data, \
+            res_offsets);
+
+        if (three_args)
+        {
+            if (offset_is_const)
+            {
+                OVERLAY_EXECUTE_CASE(true, true, false)
+            }
+            else
+            {
+                OVERLAY_EXECUTE_CASE(true, false, false)
+            }
+        }
+        else
+        {
+            if (offset_is_const && length_is_const)
+            {
+                OVERLAY_EXECUTE_CASE(false, true, true)
+            }
+            else if (offset_is_const && !length_is_const)
+            {
+                OVERLAY_EXECUTE_CASE(false, true, false)
+            }
+            else if (!offset_is_const && length_is_const)
+            {
+                OVERLAY_EXECUTE_CASE(false, false, true)
+            }
+            else
+            {
+                OVERLAY_EXECUTE_CASE(false, false, false)
+            }
+        }
+#undef OVERLAY_EXECUTE_CASE
+
+        return res_col;
     }
 
+
 private:
-template <bool three_args = false, bool offset_is_const = false, bool length_is_const = false>
+    template <bool three_args, bool offset_is_const, bool length_is_const>
     void constantConstant(
         size_t rows,
         const StringRef & input,
@@ -121,11 +232,12 @@ template <bool three_args = false, bool offset_is_const = false, bool length_is_
         Int64 const_offset,
         Int64 const_length,
         ColumnString::Chars & res_data,
-        ColumnString::Offsets & res_offsets)
+        ColumnString::Offsets & res_offsets) const
     {
         if (!three_args && length_is_const && const_length < 0)
         {
-            constantConstant(input, replace, column_offset, column_length, const_offset, -1, res_data, res_offsets);
+            constantConstant<true, offset_is_const, false>(
+                rows, input, replace, column_offset, column_length, const_offset, -1, res_data, res_offsets);
             return;
         }
 
@@ -194,7 +306,7 @@ template <bool three_args = false, bool offset_is_const = false, bool length_is_
         }
     }
 
-    template <bool three_args = false, bool offset_is_const = false, bool length_is_const = false>
+    template <bool three_args, bool offset_is_const, bool length_is_const>
     void vectorConstant(
         const ColumnString::Chars & input_data,
         const ColumnString::Offsets & input_offsets,
@@ -204,11 +316,12 @@ template <bool three_args = false, bool offset_is_const = false, bool length_is_
         Int64 const_offset,
         Int64 const_length,
         ColumnString::Chars & res_data,
-        ColumnString::Offsets & res_offsets)
+        ColumnString::Offsets & res_offsets) const
     {
         if (!three_args && length_is_const && const_length < 0)
         {
-            vectorConstant(input_data, input_offsets, replace, column_offset, column_length, const_offset, -1, res_data, res_offsets);
+            vectorConstant<true, offset_is_const, false>(
+                input_data, input_offsets, replace, column_offset, column_length, const_offset, -1, res_data, res_offsets);
             return;
         }
 
@@ -281,7 +394,7 @@ template <bool three_args = false, bool offset_is_const = false, bool length_is_
         }
     }
 
-    template <bool three_args = false, bool offset_is_const = false, bool length_is_const = false>
+    template <bool three_args, bool offset_is_const, bool length_is_const>
     void constantVector(
         const StringRef & input,
         const ColumnString::Chars & replace_data,
@@ -291,11 +404,12 @@ template <bool three_args = false, bool offset_is_const = false, bool length_is_
         Int64 const_offset,
         Int64 const_length,
         ColumnString::Chars & res_data,
-        ColumnString::Offsets & res_offsets)
+        ColumnString::Offsets & res_offsets) const
     {
         if (!three_args && length_is_const && const_length < 0)
         {
-            constantVector(input, replace_data, replace_offsets, column_offset, column_length, const_offset, -1, res_data, res_offsets);
+            constantVector<true, offset_is_const, false>(
+                input, replace_data, replace_offsets, column_offset, column_length, const_offset, -1, res_data, res_offsets);
             return;
         }
 
@@ -379,11 +493,11 @@ template <bool three_args = false, bool offset_is_const = false, bool length_is_
         Int64 const_offset,
         Int64 const_length,
         ColumnString::Chars & res_data,
-        ColumnString::Offsets & res_offsets)
+        ColumnString::Offsets & res_offsets) const
     {
         if (!three_args && length_is_const && const_length < 0)
         {
-            vectorVector<true, offset_is_const, true>(
+            vectorVector<true, offset_is_const, false>(
                 input_data,
                 input_offsets,
                 replace_data,
