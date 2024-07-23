@@ -96,11 +96,11 @@ CONFIG_DIR = os.path.join(SCRIPT_DIR, "configs")
 def test_query_cache_size_is_runtime_configurable(start_cluster):
     node.query("SYSTEM DROP QUERY CACHE")
 
-    # the initial config allows at most two query cache entries but we don't mind
+    # The initial config allows at most two query cache entries but we don't mind
     node.query("SELECT 1 SETTINGS use_query_cache = 1, query_cache_ttl = 1")
 
     time.sleep(2)
-    # at this point, the query cache contains one entry and it is stale
+    # At this point, the query cache contains one entry and it is stale
 
     res = node.query(
         "SELECT count(*) FROM system.query_cache",
@@ -138,8 +138,17 @@ def test_query_cache_size_is_runtime_configurable(start_cluster):
     )
     assert res == "0\n"
 
-    # restore the original config
+    # Restore the original config
     node.copy_file_to_container(
         os.path.join(CONFIG_DIR, "default.xml"),
         "/etc/clickhouse-server/config.d/default.xml",
     )
+
+    node.query("SYSTEM RELOAD CONFIG")
+
+    # It is possible to insert entries again
+    node.query("SELECT 4 SETTINGS use_query_cache = 1, query_cache_ttl = 1")
+    res = node.query(
+        "SELECT count(*) FROM system.query_cache",
+    )
+    assert res == "1\n"
