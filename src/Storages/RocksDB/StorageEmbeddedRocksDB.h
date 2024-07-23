@@ -1,14 +1,11 @@
 #pragma once
 
 #include <memory>
-#include <Common/MultiVersion.h>
 #include <Common/SharedMutex.h>
+#include <Storages/IStorage.h>
 #include <Interpreters/IKeyValueEntity.h>
 #include <rocksdb/status.h>
-#include <Storages/IStorage.h>
 #include <Storages/RocksDB/EmbeddedRocksDBSink.h>
-#include <Storages/RocksDB/EmbeddedRocksDBBulkSink.h>
-#include <Storages/RocksDB/RocksDBSettings.h>
 
 
 namespace rocksdb
@@ -30,7 +27,6 @@ class Context;
 class StorageEmbeddedRocksDB final : public IStorage, public IKeyValueEntity, WithContext
 {
     friend class EmbeddedRocksDBSink;
-    friend class EmbeddedRocksDBBulkSink;
     friend class ReadFromEmbeddedRocksDB;
 public:
     StorageEmbeddedRocksDB(const StorageID & table_id_,
@@ -38,7 +34,6 @@ public:
         const StorageInMemoryMetadata & metadata,
         LoadingStrictnessLevel mode,
         ContextPtr context_,
-        std::unique_ptr<RocksDBSettings> settings_,
         const String & primary_key_,
         Int32 ttl_ = 0,
         String rocksdb_dir_ = "",
@@ -64,7 +59,6 @@ public:
     void checkMutationIsPossible(const MutationCommands & commands, const Settings & settings) const override;
     void mutate(const MutationCommands &, ContextPtr) override;
     void drop() override;
-    void alter(const AlterCommands & params, ContextPtr query_context, AlterLockHolder &) override;
 
     bool optimize(
         const ASTPtr & query,
@@ -105,23 +99,10 @@ public:
 
     std::optional<UInt64> totalBytes(const Settings & settings) const override;
 
-    void checkAlterIsPossible(const AlterCommands & commands, ContextPtr /* context */) const override;
-
-    const RocksDBSettings & getSettings() const { return *storage_settings.get(); }
-
-    void setSettings(std::unique_ptr<RocksDBSettings> && settings_) { storage_settings.set(std::move(settings_)); }
-
 private:
-    SinkToStoragePtr getSink(ContextPtr context, const StorageMetadataPtr & metadata_snapshot);
-
-    LoggerPtr log;
-
-    MultiVersion<RocksDBSettings> storage_settings;
     const String primary_key;
-
     using RocksDBPtr = std::unique_ptr<rocksdb::DB>;
     RocksDBPtr rocksdb_ptr;
-
     mutable SharedMutex rocksdb_ptr_mx;
     String rocksdb_dir;
     Int32 ttl;

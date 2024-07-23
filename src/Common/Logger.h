@@ -26,12 +26,12 @@ using LoggerRawPtr = Poco::Logger *;
   * Then it must be destroyed when underlying table is destroyed.
   */
 
-/** Get Logger with specified name. If the Logger does not exist, it is created.
+/** Get Logger with specified name. If the Logger does not exists, it is created.
   * Logger is destroyed, when last shared ptr that refers to Logger with specified name is destroyed.
   */
 LoggerPtr getLogger(const std::string & name);
 
-/** Get Logger with specified name. If the Logger does not exist, it is created.
+/** Get Logger with specified name. If the Logger does not exists, it is created.
   * This overload was added for specific purpose, when logger is constructed from constexpr string.
   * Logger is destroyed only during program shutdown.
   */

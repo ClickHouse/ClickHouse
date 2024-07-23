@@ -54,7 +54,7 @@ Customers | summarize dcount(Education);
 Customers | summarize dcountif(Education, Occupation=='Professional');
 Customers | summarize count_ = count() by bin(Age, 10) | order by count_ asc;
 Customers | summarize job_count = count() by Occupation | where job_count > 0 | order by Occupation;
-Customers | summarize 'Edu Count'=count() by Education | sort by 'Edu Count' desc; -- { clientError SYNTAX_ERROR }
+Customers | summarize 'Edu Count'=count() by Education | sort by 'Edu Count' desc; -- { clientError 62 }
 
 print '-- make_list() --';
 Customers | summarize f_list = make_list(Education) by Occupation | sort by Occupation;

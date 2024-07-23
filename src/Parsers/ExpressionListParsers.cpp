@@ -20,7 +20,7 @@
 #include <Parsers/ParserUnionQueryElement.h>
 #include <Parsers/parseIntervalKind.h>
 #include <Common/assert_cast.h>
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 
 #include <Parsers/ParserSelectWithUnionQuery.h>
 
@@ -146,7 +146,7 @@ static bool parseOperator(IParser::Pos & pos, std::string_view op, Expected & ex
     return false;
 }
 
-enum class SubqueryFunctionType : uint8_t
+enum class SubqueryFunctionType
 {
     NONE,
     ANY,
@@ -457,7 +457,7 @@ namespace
 }
 
 
-enum class Action : uint8_t
+enum class Action
 {
     NONE,
     OPERAND,
@@ -468,7 +468,7 @@ enum class Action : uint8_t
   * Operators can be grouped into some type if they have similar behaviour.
   * Certain operators are unique in terms of their behaviour, so they are assigned a separate type.
   */
-enum class OperatorType : uint8_t
+enum class OperatorType
 {
     None,
     Comparison,
@@ -521,7 +521,7 @@ static std::shared_ptr<ASTFunction> makeASTFunction(Operator & op, Args &&... ar
     return ast_function;
 }
 
-enum class Checkpoint : uint8_t
+enum class Checkpoint
 {
     None,
     Interval,
@@ -2179,7 +2179,7 @@ public:
 
     bool parse(IParser::Pos & pos, Expected & expected, Action & /*action*/) override
     {
-        /// kql('table|project ...')
+        /// kql(table|project ...)
         /// 0. Parse the kql query
         /// 1. Parse closing token
         if (state == 0)

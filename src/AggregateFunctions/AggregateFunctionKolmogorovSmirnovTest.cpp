@@ -31,7 +31,7 @@ namespace
 
 struct KolmogorovSmirnov : public StatisticalSample<Float64, Float64>
 {
-    enum class Alternative : uint8_t
+    enum class Alternative
     {
         TwoSided,
         Less,
@@ -350,7 +350,7 @@ AggregateFunctionPtr createAggregateFunctionKolmogorovSmirnovTest(
 
 void registerAggregateFunctionKolmogorovSmirnovTest(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("kolmogorovSmirnovTest", createAggregateFunctionKolmogorovSmirnovTest, AggregateFunctionFactory::Case::Insensitive);
+    factory.registerFunction("kolmogorovSmirnovTest", createAggregateFunctionKolmogorovSmirnovTest, AggregateFunctionFactory::CaseInsensitive);
 }
 
 }
