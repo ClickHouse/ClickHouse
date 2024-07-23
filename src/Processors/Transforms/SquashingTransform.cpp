@@ -1,12 +1,14 @@
+#include <utility>
 #include <Processors/Transforms/SquashingTransform.h>
 #include <Interpreters/Squashing.h>
+#include "Processors/Chunk.h"
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
-extern const int LOGICAL_ERROR;
+    extern const int LOGICAL_ERROR;
 }
 
 SquashingTransform::SquashingTransform(
@@ -52,49 +54,36 @@ void SquashingTransform::work()
     }
 }
 
-SimpleSquashingTransform::SimpleSquashingTransform(
+SimpleSquashingChunksTransform::SimpleSquashingChunksTransform(
     const Block & header, size_t min_block_size_rows, size_t min_block_size_bytes)
-    : ISimpleTransform(header, header, false)
+    : IInflatingTransform(header, header)
     , squashing(header, min_block_size_rows, min_block_size_bytes)
 {
 }
 
-void SimpleSquashingTransform::transform(Chunk & chunk)
+void SimpleSquashingChunksTransform::consume(Chunk chunk)
 {
-    if (!finished)
-    {
-        chunk = Squashing::squash(squashing.add(std::move(chunk)));
-    }
-    else
-    {
-        if (chunk.hasRows())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Chunk expected to be empty, otherwise it will be lost");
-
-        chunk = Squashing::squash(squashing.flush());
-    }
+    squashed_chunk = Squashing::squash(squashing.add(std::move(chunk)));
 }
 
-IProcessor::Status SimpleSquashingTransform::prepare()
+Chunk SimpleSquashingChunksTransform::generate()
 {
-    if (!finished && input.isFinished())
-    {
-        if (output.isFinished())
-            return Status::Finished;
+    if (squashed_chunk.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't generate chunk in SimpleSquashingChunksTransform");
 
-        if (!output.canPush())
-            return Status::PortFull;
-
-        if (has_output)
-        {
-            output.pushData(std::move(output_data));
-            has_output = false;
-            return Status::PortFull;
-        }
-
-        finished = true;
-        /// On the next call to transform() we will return all data buffered in `squashing` (if any)
-        return Status::Ready;
-    }
-    return ISimpleTransform::prepare();
+    Chunk result;
+    result.swap(squashed_chunk);
+    return result;
 }
+
+bool SimpleSquashingChunksTransform::canGenerate()
+{
+    return !squashed_chunk.empty();
+}
+
+Chunk SimpleSquashingChunksTransform::getRemaining()
+{
+    return Squashing::squash(squashing.flush());
+}
+
 }

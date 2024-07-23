@@ -22,6 +22,7 @@
 #include <Common/quoteString.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/typeid_cast.h>
+#include <Core/Settings.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Core/QueryProcessingStage.h>
@@ -73,6 +74,7 @@
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <Storages/MergeTree/MergeTreeDataPartBuilder.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
 #include <Storages/MergeTree/checkDataPart.h>
@@ -87,6 +89,7 @@
 
 #include <base/insertAtEnd.h>
 #include <base/interpolate.h>
+#include <base/isSharedPtrUnique.h>
 
 #include <algorithm>
 #include <atomic>
@@ -473,7 +476,7 @@ StoragePolicyPtr MergeTreeData::getStoragePolicy() const
 ConditionSelectivityEstimator MergeTreeData::getConditionSelectivityEstimatorByPredicate(
     const StorageSnapshotPtr & storage_snapshot, const ActionsDAGPtr & filter_dag, ContextPtr local_context) const
 {
-    if (!local_context->getSettings().allow_statistics_optimize)
+    if (!local_context->getSettingsRef().allow_statistics_optimize)
         return {};
 
     const auto & parts = assert_cast<const MergeTreeData::SnapshotData &>(*storage_snapshot->data).parts;
@@ -1141,7 +1144,7 @@ std::optional<UInt64> MergeTreeData::totalRowsByPartitionPredicateImpl(
     auto metadata_snapshot = getInMemoryMetadataPtr();
     auto virtual_columns_block = getBlockWithVirtualsForFilter(metadata_snapshot, {parts[0]});
 
-    auto filter_dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), nullptr);
+    auto filter_dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), nullptr, /*allow_non_deterministic_functions=*/ false);
     if (!filter_dag)
         return {};
 
@@ -2464,7 +2467,7 @@ MergeTreeData::DataPartsVector MergeTreeData::grabOldParts(bool force)
             }
 
             /// Grab only parts that are not used by anyone (SELECTs for example).
-            if (!part.unique())
+            if (!isSharedPtrUnique(part))
             {
                 part->removal_state.store(DataPartRemovalState::NON_UNIQUE_OWNERSHIP, std::memory_order_relaxed);
                 skipped_parts.push_back(part->info);
@@ -4360,13 +4363,13 @@ bool MergeTreeData::tryRemovePartImmediately(DataPartPtr && part)
 
             part.reset();
 
-            if (!((*it)->getState() == DataPartState::Outdated && it->unique()))
+            if (!((*it)->getState() == DataPartState::Outdated && isSharedPtrUnique(*it)))
             {
                 if ((*it)->getState() != DataPartState::Outdated)
                     LOG_WARNING(log, "Cannot immediately remove part {} because it's not in Outdated state "
                              "usage counter {}", part_name_with_state, it->use_count());
 
-                if (!it->unique())
+                if (!isSharedPtrUnique(*it))
                     LOG_WARNING(log, "Cannot immediately remove part {} because someone using it right now "
                              "usage counter {}", part_name_with_state, it->use_count());
                 return false;
@@ -4432,7 +4435,7 @@ size_t MergeTreeData::getNumberOfOutdatedPartsWithExpiredRemovalTime() const
     for (const auto & part : outdated_parts_range)
     {
         auto part_remove_time = part->remove_time.load(std::memory_order_relaxed);
-        if (part_remove_time <= time_now && time_now - part_remove_time >= getSettings()->old_parts_lifetime.totalSeconds() && part.unique())
+        if (part_remove_time <= time_now && time_now - part_remove_time >= getSettings()->old_parts_lifetime.totalSeconds() && isSharedPtrUnique(part))
             ++res;
     }
 
@@ -6172,6 +6175,11 @@ bool MergeTreeData::hasProjection() const
     return false;
 }
 
+bool MergeTreeData::areAsynchronousInsertsEnabled() const
+{
+    return getSettings()->async_insert;
+}
+
 MergeTreeData::ProjectionPartsVector MergeTreeData::getAllProjectionPartsVector(MergeTreeData::DataPartStateVector * out_states) const
 {
     ProjectionPartsVector res;
@@ -7077,6 +7085,20 @@ QueryProcessingStage::Enum MergeTreeData::getQueryProcessingStage(
     /// with new analyzer, Planner make decision regarding parallel replicas usage, and so about processing stage on reading
     if (!query_context->getSettingsRef().allow_experimental_analyzer)
     {
+        const auto & settings = query_context->getSettingsRef();
+        if (query_context->canUseParallelReplicasCustomKey())
+        {
+            if (query_context->getClientInfo().distributed_depth > 0)
+                return QueryProcessingStage::FetchColumns;
+
+            if (!supportsReplication() && !settings.parallel_replicas_for_non_replicated_merge_tree)
+                return QueryProcessingStage::Enum::FetchColumns;
+
+            if (to_stage >= QueryProcessingStage::WithMergeableState
+                && query_context->canUseParallelReplicasCustomKeyForCluster(*query_context->getClusterForParallelReplicas()))
+                return QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
+        }
+
         if (query_context->getClientInfo().collaborate_with_initiator)
             return QueryProcessingStage::Enum::FetchColumns;
 
@@ -7088,7 +7110,7 @@ QueryProcessingStage::Enum MergeTreeData::getQueryProcessingStage(
                 return QueryProcessingStage::Enum::WithMergeableState;
 
             /// For non-replicated MergeTree we allow them only if parallel_replicas_for_non_replicated_merge_tree is enabled
-            if (query_context->getSettingsRef().parallel_replicas_for_non_replicated_merge_tree)
+            if (settings.parallel_replicas_for_non_replicated_merge_tree)
                 return QueryProcessingStage::Enum::WithMergeableState;
         }
     }
@@ -7377,6 +7399,13 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
     dst_data_part->loadColumnsChecksumsIndexes(require_part_metadata, true);
     dst_data_part->modification_time = dst_part_storage->getLastModified().epochTime();
     return std::make_pair(dst_data_part, std::move(temporary_directory_lock));
+}
+
+bool MergeTreeData::canUseAdaptiveGranularity() const
+{
+    const auto settings = getSettings();
+    return settings->index_granularity_bytes != 0
+        && (settings->enable_mixed_granularity_parts || !has_non_adaptive_index_granularity_parts);
 }
 
 String MergeTreeData::getFullPathOnDisk(const DiskPtr & disk) const
@@ -8626,7 +8655,7 @@ size_t MergeTreeData::unloadPrimaryKeysOfOutdatedParts()
             /// Outdated part may be hold by SELECT query and still needs the index.
             /// This check requires lock of index_mutex but if outdated part is unique then there is no
             /// contention on it, so it's relatively cheap and it's ok to check under a global parts lock.
-            if (part.unique() && part->isIndexLoaded())
+            if (isSharedPtrUnique(part) && part->isIndexLoaded())
                 parts_to_unload_index.push_back(part);
         }
     }

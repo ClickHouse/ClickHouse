@@ -20,6 +20,8 @@ QueryPlanOptimizationSettings QueryPlanOptimizationSettings::fromSettings(const 
 
     settings.merge_expressions = from.query_plan_enable_optimizations && from.query_plan_merge_expressions;
 
+    settings.merge_filters = from.query_plan_enable_optimizations && from.query_plan_merge_filters;
+
     settings.filter_push_down = from.query_plan_enable_optimizations && from.query_plan_filter_push_down;
 
     settings.convert_outer_join_to_inner_join = from.query_plan_enable_optimizations && from.query_plan_convert_outer_join_to_inner_join;

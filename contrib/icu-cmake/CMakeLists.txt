@@ -5,7 +5,7 @@ else ()
 endif ()
 
 if (NOT ENABLE_ICU)
-    message(STATUS "Not using icu")
+    message(STATUS "Not using ICU")
     return()
 endif()
 
