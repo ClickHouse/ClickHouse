@@ -182,9 +182,7 @@ void listKeys(
     if (enumerate_paths.empty())
         enumerate_paths.push("");
 
-    const bool do_finish = depth == 0;
-    if (depth >= 0)
-        --depth;
+    const bool do_finish = depth >= 0 && --depth < 0;
 
     auto initial_paths = std::move(enumerate_paths);
     enumerate_paths = {};

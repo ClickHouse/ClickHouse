@@ -6,7 +6,6 @@
 #include <Columns/ColumnsCommon.h>
 
 #include <Common/typeid_cast.h>
-#include <Core/SettingsEnums.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <Interpreters/ExpressionActions.h>
 
@@ -50,7 +49,7 @@ Block TotalsHavingTransform::transformHeader(
 
     if (expression)
     {
-        block = expression->updateHeader(block);
+        block = expression->updateHeader(std::move(block));
         if (remove_filter)
             block.erase(filter_column_name);
     }

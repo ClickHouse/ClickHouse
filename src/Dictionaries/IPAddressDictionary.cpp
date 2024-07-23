@@ -1,11 +1,11 @@
 #include "IPAddressDictionary.h"
-
+#include <stack>
+#include <charconv>
 #include <Common/assert_cast.h>
 #include <Common/IPv6ToBinary.h>
 #include <Common/memcmpSmall.h>
 #include <Common/typeid_cast.h>
 #include <Common/logger_useful.h>
-#include <Core/Settings.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesDecimal.h>
@@ -22,9 +22,6 @@
 #include <Dictionaries/DictionaryPipelineExecutor.h>
 #include <Dictionaries/DictionaryFactory.h>
 #include <Functions/FunctionHelpers.h>
-
-#include <stack>
-#include <charconv>
 
 
 namespace DB
@@ -69,7 +66,7 @@ namespace
             return buf;
         }
 
-        UInt8 prefixIPv6() const
+        inline UInt8 prefixIPv6() const
         {
             return isv6 ? prefix : prefix + 96;
         }
@@ -252,27 +249,39 @@ ColumnPtr IPAddressDictionary::getColumn(
         if (is_short_circuit)
         {
             IColumn::Filter & default_mask = std::get<RefFilter>(default_or_filter).get();
+            size_t keys_found = 0;
 
             if constexpr (std::is_same_v<ValueType, Array>)
             {
                 auto * out = column.get();
 
-                getItemsShortCircuitImpl<ValueType>(
-                    attribute, key_columns, [&](const size_t, const Array & value) { out->insert(value); }, default_mask);
+                keys_found = getItemsShortCircuitImpl<ValueType>(
+                    attribute,
+                    key_columns,
+                    [&](const size_t, const Array & value) { out->insert(value); },
+                    default_mask);
             }
             else if constexpr (std::is_same_v<ValueType, StringRef>)
             {
                 auto * out = column.get();
 
-                getItemsShortCircuitImpl<ValueType>(
-                    attribute, key_columns, [&](const size_t, StringRef value) { out->insertData(value.data, value.size); }, default_mask);
+                keys_found = getItemsShortCircuitImpl<ValueType>(
+                    attribute,
+                    key_columns,
+                    [&](const size_t, StringRef value) { out->insertData(value.data, value.size); },
+                    default_mask);
             }
             else
             {
                 auto & out = column->getData();
 
-                getItemsShortCircuitImpl<ValueType>(
-                    attribute, key_columns, [&](const size_t row, const auto value) { return out[row] = value; }, default_mask);
+                keys_found = getItemsShortCircuitImpl<ValueType>(
+                    attribute,
+                    key_columns,
+                    [&](const size_t row, const auto value) { return out[row] = value; },
+                    default_mask);
+
+                out.resize(keys_found);
             }
         }
         else
@@ -774,10 +783,7 @@ size_t IPAddressDictionary::getItemsByTwoKeyColumnsShortCircuitImpl(
                 keys_found++;
             }
             else
-            {
-                set_value(i, AttributeType{});
                 default_mask[i] = 1;
-            }
         }
         return keys_found;
     }
@@ -816,10 +822,7 @@ size_t IPAddressDictionary::getItemsByTwoKeyColumnsShortCircuitImpl(
             keys_found++;
         }
         else
-        {
-            set_value(i, AttributeType{});
             default_mask[i] = 1;
-        }
     }
     return keys_found;
 }
@@ -890,8 +893,11 @@ void IPAddressDictionary::getItemsImpl(
 }
 
 template <typename AttributeType, typename ValueSetter>
-void IPAddressDictionary::getItemsShortCircuitImpl(
-    const Attribute & attribute, const Columns & key_columns, ValueSetter && set_value, IColumn::Filter & default_mask) const
+size_t IPAddressDictionary::getItemsShortCircuitImpl(
+    const Attribute & attribute,
+    const Columns & key_columns,
+    ValueSetter && set_value,
+    IColumn::Filter & default_mask) const
 {
     const auto & first_column = key_columns.front();
     const size_t rows = first_column->size();
@@ -903,8 +909,7 @@ void IPAddressDictionary::getItemsShortCircuitImpl(
         keys_found = getItemsByTwoKeyColumnsShortCircuitImpl<AttributeType>(
             attribute, key_columns, std::forward<ValueSetter>(set_value), default_mask);
         query_count.fetch_add(rows, std::memory_order_relaxed);
-        found_count.fetch_add(keys_found, std::memory_order_relaxed);
-        return;
+        return keys_found;
     }
 
     auto & vec = std::get<ContainerType<AttributeType>>(attribute.maps);
@@ -926,10 +931,7 @@ void IPAddressDictionary::getItemsShortCircuitImpl(
                 default_mask[i] = 0;
             }
             else
-            {
-                set_value(i, AttributeType{});
                 default_mask[i] = 1;
-            }
         }
     }
     else if (type_id == TypeIndex::IPv6 || type_id == TypeIndex::FixedString)
@@ -947,10 +949,7 @@ void IPAddressDictionary::getItemsShortCircuitImpl(
                 default_mask[i] = 0;
             }
             else
-            {
-                set_value(i, AttributeType{});
                 default_mask[i] = 1;
-            }
         }
     }
     else
@@ -958,6 +957,7 @@ void IPAddressDictionary::getItemsShortCircuitImpl(
 
     query_count.fetch_add(rows, std::memory_order_relaxed);
     found_count.fetch_add(keys_found, std::memory_order_relaxed);
+    return keys_found;
 }
 
 template <typename T>

@@ -11,7 +11,7 @@ namespace DB
 class IFunctionOverloadResolver;
 using FunctionOverloadResolverPtr = std::shared_ptr<IFunctionOverloadResolver>;
 
-enum class CastType : uint8_t
+enum class CastType
 {
     nonAccurate,
     accurate,

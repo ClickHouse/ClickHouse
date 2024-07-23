@@ -11,12 +11,6 @@ public:
     DataTypePointName() : DataTypeCustomFixedName("Point") {}
 };
 
-class DataTypeLineStringName : public DataTypeCustomFixedName
-{
-public:
-    DataTypeLineStringName() : DataTypeCustomFixedName("LineString") {}
-};
-
 class DataTypeRingName : public DataTypeCustomFixedName
 {
 public:

@@ -152,7 +152,7 @@ StorageFileLog::StorageFileLog(
 
     if (!fileOrSymlinkPathStartsWith(path, getContext()->getUserFilesPath()))
     {
-        if (LoadingStrictnessLevel::SECONDARY_CREATE <= mode)
+        if (LoadingStrictnessLevel::ATTACH <= mode)
         {
             LOG_ERROR(log, "The absolute data path should be inside `user_files_path`({})", getContext()->getUserFilesPath());
             return;
@@ -416,7 +416,7 @@ void StorageFileLog::drop()
 {
     try
     {
-        (void)std::filesystem::remove_all(metadata_base_path);
+        std::filesystem::remove_all(metadata_base_path);
     }
     catch (...)
     {
@@ -467,7 +467,7 @@ void StorageFileLog::openFilesAndSetPos()
             auto & reader = file_ctx.reader.value();
             assertStreamGood(reader);
 
-            reader.seekg(0, reader.end); /// NOLINT(readability-static-accessed-through-instance)
+            reader.seekg(0, reader.end);
             assertStreamGood(reader);
 
             auto file_end = reader.tellg();
@@ -1009,7 +1009,7 @@ bool StorageFileLog::updateFileInfos()
                     file_infos.meta_by_inode.erase(meta);
 
                 if (std::filesystem::exists(getFullMetaPath(file_name)))
-                    (void)std::filesystem::remove(getFullMetaPath(file_name));
+                    std::filesystem::remove(getFullMetaPath(file_name));
                 file_infos.context_by_name.erase(it);
             }
             else

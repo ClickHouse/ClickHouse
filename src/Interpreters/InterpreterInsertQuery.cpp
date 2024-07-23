@@ -5,7 +5,6 @@
 #include <Access/EnabledQuota.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Columns/ColumnNullable.h>
-#include <Core/Settings.h>
 #include <Processors/Transforms/buildPushingToViewsChain.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -27,8 +26,7 @@
 #include <Processors/Transforms/CountingTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/MaterializingTransform.h>
-#include <Processors/Transforms/SquashingTransform.h>
-#include <Processors/Transforms/PlanSquashingTransform.h>
+#include <Processors/Transforms/SquashingChunksTransform.h>
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -281,8 +279,6 @@ Chain InterpreterInsertQuery::buildChain(
     std::atomic_uint64_t * elapsed_counter_ms,
     bool check_access)
 {
-    IInterpreter::checkStorageSupportsTransactionsIfNeeded(table, getContext());
-
     ProfileEvents::increment(ProfileEvents::InsertQueriesWithSubqueries);
     ProfileEvents::increment(ProfileEvents::QueriesWithSubqueries);
 
@@ -344,10 +340,13 @@ bool InterpreterInsertQuery::shouldAddSquashingFroStorage(const StoragePtr & tab
 {
     auto context_ptr = getContext();
     const Settings & settings = context_ptr->getSettingsRef();
+    const ASTInsertQuery * query = nullptr;
+    if (query_ptr)
+        query = query_ptr->as<ASTInsertQuery>();
 
     /// Do not squash blocks if it is a sync INSERT into Distributed, since it lead to double bufferization on client and server side.
     /// Client-side bufferization might cause excessive timeouts (especially in case of big blocks).
-    return !(settings.distributed_foreground_insert && table->isRemote()) && !async_insert && !no_squash;
+    return !(settings.distributed_foreground_insert && table->isRemote()) && !async_insert && !no_squash && !(query && query->watch);
 }
 
 Chain InterpreterInsertQuery::buildPreSinkChain(
@@ -430,7 +429,7 @@ BlockIO InterpreterInsertQuery::execute()
 
     std::vector<Chain> presink_chains;
     std::vector<Chain> sink_chains;
-    if (!distributed_pipeline)
+    if (!distributed_pipeline || query.watch)
     {
         /// Number of streams works like this:
         ///  * For the SELECT, use `max_threads`, or `max_insert_threads`, or whatever
@@ -523,8 +522,7 @@ BlockIO InterpreterInsertQuery::execute()
                 auto views = DatabaseCatalog::instance().getDependentViews(table_id);
 
                 /// It breaks some views-related tests and we have dedicated `parallel_view_processing` for views, so let's just skip them.
-                /// Also it doesn't make sense to reshuffle data if storage doesn't support parallel inserts.
-                const bool resize_to_max_insert_threads = !table->isView() && views.empty() && table->supportsParallelInsert();
+                const bool resize_to_max_insert_threads = !table->isView() && views.empty();
                 pre_streams_size = resize_to_max_insert_threads ? settings.max_insert_threads
                                                                 : std::min<size_t>(settings.max_insert_threads, pipeline.getNumStreams());
 
@@ -556,15 +554,16 @@ BlockIO InterpreterInsertQuery::execute()
                     {
                         /// Change query sample block columns to Nullable to allow inserting nullable columns, where NULL values will be substituted with
                         /// default column values (in AddingDefaultsTransform), so all values will be cast correctly.
-                        if (isNullableOrLowCardinalityNullable(input_columns[col_idx].type)
-                            && !isNullableOrLowCardinalityNullable(query_columns[col_idx].type)
-                            && !isVariant(query_columns[col_idx].type)
-                            && !isDynamic(query_columns[col_idx].type)
-                            && output_columns.has(query_columns[col_idx].name))
+                        if (isNullableOrLowCardinalityNullable(input_columns[col_idx].type) && !isNullableOrLowCardinalityNullable(query_columns[col_idx].type) && !isVariant(query_columns[col_idx].type) && output_columns.has(query_columns[col_idx].name))
                             query_sample_block.setColumn(col_idx, ColumnWithTypeAndName(makeNullableOrLowCardinalityNullable(query_columns[col_idx].column), makeNullableOrLowCardinalityNullable(query_columns[col_idx].type), query_columns[col_idx].name));
                     }
                 }
             }
+        }
+        else if (query.watch)
+        {
+            InterpreterWatchQuery interpreter_watch{ query.watch, getContext() };
+            pipeline = interpreter_watch.buildQueryPipeline();
         }
 
         ThreadGroupPtr running_group;
@@ -592,7 +591,7 @@ BlockIO InterpreterInsertQuery::execute()
     {
         res.pipeline = std::move(*distributed_pipeline);
     }
-    else if (query.select)
+    else if (query.select || query.watch)
     {
         const auto & header = presink_chains.at(0).getInputHeader();
         auto actions_dag = ActionsDAG::makeConvertingActions(
@@ -627,20 +626,9 @@ BlockIO InterpreterInsertQuery::execute()
         {
             bool table_prefers_large_blocks = table->prefersLargeBlocks();
 
-            size_t threads = presink_chains.size();
-
-            pipeline.resize(1);
-
-            pipeline.addTransform(std::make_shared<PlanSquashingTransform>(
-                    header,
-                    table_prefers_large_blocks ? settings.min_insert_block_size_rows : settings.max_block_size,
-                    table_prefers_large_blocks ? settings.min_insert_block_size_bytes : 0ULL));
-
-            pipeline.resize(threads);
-
             pipeline.addSimpleTransform([&](const Block & in_header) -> ProcessorPtr
             {
-                return std::make_shared<ApplySquashingTransform>(
+                return std::make_shared<SimpleSquashingChunksTransform>(
                     in_header,
                     table_prefers_large_blocks ? settings.min_insert_block_size_rows : settings.max_block_size,
                     table_prefers_large_blocks ? settings.min_insert_block_size_bytes : 0ULL);
@@ -696,19 +684,12 @@ BlockIO InterpreterInsertQuery::execute()
         {
             bool table_prefers_large_blocks = table->prefersLargeBlocks();
 
-            auto squashing = std::make_shared<ApplySquashingTransform>(
-                    chain.getInputHeader(),
-                    table_prefers_large_blocks ? settings.min_insert_block_size_rows : settings.max_block_size,
-                    table_prefers_large_blocks ? settings.min_insert_block_size_bytes : 0ULL);
+            auto squashing = std::make_shared<SimpleSquashingChunksTransform>(
+                chain.getInputHeader(),
+                table_prefers_large_blocks ? settings.min_insert_block_size_rows : settings.max_block_size,
+                table_prefers_large_blocks ? settings.min_insert_block_size_bytes : 0ULL);
 
             chain.addSource(std::move(squashing));
-
-            auto balancing = std::make_shared<PlanSquashingTransform>(
-                    chain.getInputHeader(),
-                    table_prefers_large_blocks ? settings.min_insert_block_size_rows : settings.max_block_size,
-                    table_prefers_large_blocks ? settings.min_insert_block_size_bytes : 0ULL);
-
-            chain.addSource(std::move(balancing));
         }
 
         auto context_ptr = getContext();

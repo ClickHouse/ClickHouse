@@ -48,7 +48,7 @@ namespace
                 {"json", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"},
             };
 
-            validateFunctionArguments(*this, arguments, args);
+            validateFunctionArgumentTypes(*this, arguments, args);
             return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>());
         }
 

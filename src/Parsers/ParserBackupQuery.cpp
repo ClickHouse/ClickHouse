@@ -304,7 +304,7 @@ namespace
             changes = assert_cast<ASTSetQuery *>(settings.get())->changes;
         }
 
-        std::erase_if(changes, [](const SettingChange & change) { return change.name == "async"; }); // NOLINT
+        boost::remove_erase_if(changes, [](const SettingChange & change) { return change.name == "async"; });
         changes.emplace_back("async", async);
 
         auto new_settings = std::make_shared<ASTSetQuery>();

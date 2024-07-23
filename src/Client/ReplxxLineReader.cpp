@@ -297,15 +297,8 @@ ReplxxLineReader::ReplxxLineReader(
     Patterns extenders_,
     Patterns delimiters_,
     const char word_break_characters_[],
-    replxx::Replxx::highlighter_callback_t highlighter_,
-    [[ maybe_unused ]] std::istream & input_stream_,
-    [[ maybe_unused ]] std::ostream & output_stream_,
-    [[ maybe_unused ]] int in_fd_,
-    [[ maybe_unused ]] int out_fd_,
-    [[ maybe_unused ]] int err_fd_
-)
-    : LineReader(history_file_path_, multiline_, std::move(extenders_), std::move(delimiters_), input_stream_, output_stream_, in_fd_)
-    , highlighter(std::move(highlighter_))
+    replxx::Replxx::highlighter_callback_t highlighter_)
+    : LineReader(history_file_path_, multiline_, std::move(extenders_), std::move(delimiters_)), highlighter(std::move(highlighter_))
     , word_break_characters(word_break_characters_)
     , editor(getEditor())
 {
@@ -478,7 +471,7 @@ ReplxxLineReader::ReplxxLineReader(
 
 ReplxxLineReader::~ReplxxLineReader()
 {
-    if (history_file_fd >= 0 && close(history_file_fd))
+    if (close(history_file_fd))
         rx.print("Close of history file failed: %s\n", errnoToString().c_str());
 }
 
@@ -503,7 +496,7 @@ void ReplxxLineReader::addToHistory(const String & line)
     // but replxx::Replxx::history_load() does not
     // and that is why flock() is added here.
     bool locked = false;
-    if (history_file_fd >= 0 && flock(history_file_fd, LOCK_EX))
+    if (flock(history_file_fd, LOCK_EX))
         rx.print("Lock of history file failed: %s\n", errnoToString().c_str());
     else
         locked = true;
@@ -514,7 +507,7 @@ void ReplxxLineReader::addToHistory(const String & line)
     if (!rx.history_save(history_file_path))
         rx.print("Saving history failed: %s\n", errnoToString().c_str());
 
-    if (history_file_fd >= 0 && locked && 0 != flock(history_file_fd, LOCK_UN))
+    if (locked && 0 != flock(history_file_fd, LOCK_UN))
         rx.print("Unlock of history file failed: %s\n", errnoToString().c_str());
 }
 

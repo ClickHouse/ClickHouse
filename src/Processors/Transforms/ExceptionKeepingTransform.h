@@ -28,7 +28,7 @@ protected:
     OutputPort & output;
     Port::Data data;
 
-    enum class Stage : uint8_t
+    enum class Stage
     {
         Start,
         Consume,

@@ -202,10 +202,7 @@ uint64_t readU64(std::string_view & sp)
 {
     SAFE_CHECK(sp.size() >= N, "underflow");
     uint64_t x = 0;
-    if constexpr (std::endian::native == std::endian::little)
-        memcpy(&x, sp.data(), N);
-    else
-        memcpy(reinterpret_cast<char*>(&x) + sizeof(uint64_t) - N, sp.data(), N);
+    memcpy(&x, sp.data(), N);
     sp.remove_prefix(N);
     return x;
 }
