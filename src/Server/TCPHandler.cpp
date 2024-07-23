@@ -666,7 +666,7 @@ void TCPHandler::runImpl()
 // Server should die on std logic errors in debug, like with assert()
 // or ErrorCodes::LOGICAL_ERROR. This helps catch these errors in
 // tests.
-#ifdef ABORT_ON_LOGICAL_ERROR
+#ifdef DEBUG_OR_SANITIZER_BUILD
         catch (const std::logic_error & e)
         {
             state.io.onException();
@@ -888,12 +888,11 @@ AsynchronousInsertQueue::PushResult TCPHandler::processAsyncInsertQuery(Asynchro
 
     while (readDataNext())
     {
-        squashing.header = state.block_for_insert;
-        auto planned_chunk = squashing.add({state.block_for_insert.getColumns(), state.block_for_insert.rows()});
-        if (planned_chunk.hasChunkInfo())
+        squashing.setHeader(state.block_for_insert.cloneEmpty());
+        auto result_chunk = Squashing::squash(squashing.add({state.block_for_insert.getColumns(), state.block_for_insert.rows()}));
+        if (result_chunk)
         {
-            Chunk result_chunk = DB::Squashing::squash(std::move(planned_chunk));
-            auto result = state.block_for_insert.cloneWithColumns(result_chunk.getColumns());
+            auto result = squashing.getHeader().cloneWithColumns(result_chunk.detachColumns());
             return PushResult
             {
                 .status = PushResult::TOO_MUCH_DATA,
@@ -902,12 +901,13 @@ AsynchronousInsertQueue::PushResult TCPHandler::processAsyncInsertQuery(Asynchro
         }
     }
 
-    auto planned_chunk = squashing.flush();
-    Chunk result_chunk;
-    if (planned_chunk.hasChunkInfo())
-        result_chunk = DB::Squashing::squash(std::move(planned_chunk));
+    Chunk result_chunk = Squashing::squash(squashing.flush());
+    if (!result_chunk)
+    {
+        return insert_queue.pushQueryWithBlock(state.parsed_query, squashing.getHeader(), query_context);
+    }
 
-    auto result = squashing.header.cloneWithColumns(result_chunk.getColumns());
+    auto result = squashing.getHeader().cloneWithColumns(result_chunk.detachColumns());
     return insert_queue.pushQueryWithBlock(state.parsed_query, std::move(result), query_context);
 }
 

@@ -60,7 +60,7 @@ using FunctionInitcap = FunctionStringToString<InitcapImpl, NameInitcap>;
 
 REGISTER_FUNCTION(Initcap)
 {
-    factory.registerFunction<FunctionInitcap>({}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionInitcap>({}, FunctionFactory::Case::Insensitive);
 }
 
 }

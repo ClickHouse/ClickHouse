@@ -6,6 +6,8 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 
+#include <Core/Settings.h>
+
 #include <Functions/FunctionFactory.h>
 
 #include <Interpreters/Context.h>
