@@ -98,7 +98,7 @@ def generate_supported_versions() -> str:
             lts.append(version)
             to_append = f"| {version} | ✔️ |"
         if to_append:
-            if len(regular) == max_regular and len(lts) == max_lts:
+            if len(regular) == max_regular or len(lts) == max_lts:
                 supported_year = year
             table.append(to_append)
             continue

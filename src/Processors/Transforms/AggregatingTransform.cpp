@@ -9,7 +9,7 @@
 #include <Common/logger_useful.h>
 #include <Common/formatReadable.h>
 
-#include <Processors/Transforms/SquashingTransform.h>
+#include <Processors/Transforms/SquashingChunksTransform.h>
 
 
 namespace ProfileEvents

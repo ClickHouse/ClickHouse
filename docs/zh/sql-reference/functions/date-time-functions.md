@@ -443,7 +443,7 @@ SELECT toStartOfSecond(dt64, 'Asia/Istanbul');
 `toISOWeek()`是一个兼容函数，等效于`toWeek(date,3)`。
 下表描述了mode参数的工作方式。
 
-| Mode | First day of week | Range | Week 1 is the first week ...    |
+| Mode | First day of week | Range | Week 1 is the first week …    |
 |------|-------------------|-------|-------------------------------|
 | 0    | Sunday            | 0-53  | with a Sunday in this year    |
 | 1    | Monday            | 0-53  | with 4 or more days this year |

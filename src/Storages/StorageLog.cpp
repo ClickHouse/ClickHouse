@@ -4,7 +4,6 @@
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
 #include <Common/typeid_cast.h>
-#include <Core/Settings.h>
 
 #include <Interpreters/evaluateConstantExpression.h>
 
@@ -323,10 +322,6 @@ public:
                 /// Rollback partial writes.
 
                 /// No more writing.
-                for (auto & [_, stream] : streams)
-                {
-                    stream.cancel();
-                }
                 streams.clear();
 
                 /// Truncate files to the older sizes.
@@ -377,12 +372,6 @@ private:
 
             plain->next();
             plain->finalize();
-        }
-
-        void cancel()
-        {
-            compressed.cancel();
-            plain->cancel();
         }
     };
 

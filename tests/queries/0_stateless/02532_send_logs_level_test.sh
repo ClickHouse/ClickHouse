@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-object-storage, no-debug
-# - no-object-storage - S3 has additional logging
+# Tags: no-s3-storage, no-debug
+# - no-s3-storage - S3 has additional logging
 # - no-debug - debug builds also has additional logging
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

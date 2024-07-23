@@ -260,9 +260,7 @@ StoragePtr DatabaseWithOwnTablesBase::detachTableUnlocked(const String & table_n
     res = it->second;
     tables.erase(it);
     res->is_detached = true;
-
-    if (res->isSystemStorage() == false)
-        CurrentMetrics::sub(getAttachedCounterForStorage(res), 1);
+    CurrentMetrics::sub(getAttachedCounterForStorage(res), 1);
 
     auto table_id = res->getStorageID();
     if (table_id.hasUUID())
@@ -303,9 +301,7 @@ void DatabaseWithOwnTablesBase::attachTableUnlocked(const String & table_name, c
     /// It is important to reset is_detached here since in case of RENAME in
     /// non-Atomic database the is_detached is set to true before RENAME.
     table->is_detached = false;
-
-    if (table->isSystemStorage() == false && table_id.database_name != DatabaseCatalog::SYSTEM_DATABASE)
-        CurrentMetrics::add(getAttachedCounterForStorage(table), 1);
+    CurrentMetrics::add(getAttachedCounterForStorage(table), 1);
 }
 
 void DatabaseWithOwnTablesBase::shutdown()

@@ -32,7 +32,7 @@ constexpr void static_for(F && f)
 template <is_enum T>
 struct fmt::formatter<T> : fmt::formatter<std::string_view>
 {
-    constexpr auto format(T value, auto& format_context) const
+    constexpr auto format(T value, auto& format_context)
     {
         return formatter<string_view>::format(magic_enum::enum_name(value), format_context);
     }
