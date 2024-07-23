@@ -185,7 +185,8 @@ public:
     void handleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement)
     {
         if (++sent_initial_requests > replicas_count)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Initiator received more initial requests than there are replicas");
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR, "Initiator received more initial requests than there are replicas: replica_num={}", announcement.replica_num);
 
         doHandleInitialAllRangesAnnouncement(std::move(announcement));
     }

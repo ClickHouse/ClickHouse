@@ -371,7 +371,8 @@ ReadFromParallelRemoteReplicasStep::ReadFromParallelRemoteReplicasStep(
     Tables external_tables_,
     LoggerPtr log_,
     std::shared_ptr<const StorageLimitsList> storage_limits_,
-    bool exclude_local_replica_)
+    std::vector<ConnectionPoolPtr> pools_to_use_,
+    std::optional<size_t> exclude_pool_index_)
     : ISourceStep(DataStream{.header = std::move(header_)})
     , cluster(cluster_)
     , query_ast(query_ast_)
@@ -384,24 +385,20 @@ ReadFromParallelRemoteReplicasStep::ReadFromParallelRemoteReplicasStep(
     , external_tables{external_tables_}
     , storage_limits(std::move(storage_limits_))
     , log(log_)
-    , exclude_local_replica(exclude_local_replica_)
+    , pools_to_use(std::move(pools_to_use_))
+    , exclude_pool_index(exclude_pool_index_)
 {
     chassert(cluster->getShardCount() == 1);
 
     std::vector<String> replicas;
-    replicas.reserve(cluster->getShardsAddresses().front().size());
+    replicas.reserve(pools_to_use.size());
 
-    for (const auto & addr : cluster->getShardsAddresses().front())
+    for (size_t i = 0, l = pools_to_use.size(); i < l; ++i)
     {
-        if (exclude_local_replica && addr.is_local)
+        if (exclude_pool_index.has_value() && i == exclude_pool_index)
             continue;
 
-        /// replace hostname with replica name if the hostname started with replica namespace,
-        /// it makes description shorter and more readable
-        if (!addr.database_replica_name.empty() && addr.host_name.starts_with(addr.database_replica_name))
-            replicas.push_back(fmt::format("{}", addr.database_replica_name));
-        else
-            replicas.push_back(fmt::format("{}", addr.host_name));
+        replicas.push_back(pools_to_use[i]->getAddress());
     }
 
     auto description = fmt::format("Query: {} Replicas: {}", formattedAST(query_ast), fmt::join(replicas, ", "));
@@ -421,86 +418,29 @@ void ReadFromParallelRemoteReplicasStep::enforceAggregationInOrder()
 void ReadFromParallelRemoteReplicasStep::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     Pipes pipes;
-    const Settings & current_settings = context->getSettingsRef();
-    auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings);
-
-    const auto & shard = cluster->getShardsInfo().at(0);
-    size_t max_replicas_to_use = current_settings.max_parallel_replicas;
-    if (max_replicas_to_use > shard.getAllNodeCount())
-    {
-        LOG_INFO(
-            getLogger("ReadFromParallelRemoteReplicasStep"),
-            "The number of replicas requested ({}) is bigger than the real number available in the cluster ({}). "
-            "Will use the latter number to execute the query.",
-            current_settings.max_parallel_replicas,
-            shard.getAllNodeCount());
-        max_replicas_to_use = shard.getAllNodeCount();
-    }
-
-    std::vector<ConnectionPoolWithFailover::Base::ShuffledPool> shuffled_pool;
-    if (max_replicas_to_use < shard.getAllNodeCount())
-    {
-        shuffled_pool = shard.pool->getShuffledPools(current_settings);
-    }
-    else
-    {
-        /// try to preserve replicas order if all replicas in cluster are used for query execution
-        /// it's important for data locality during query execution
-        auto priority_func = [](size_t i) { return Priority{static_cast<Int64>(i)}; };
-        shuffled_pool = shard.pool->getShuffledPools(current_settings, priority_func);
-    }
-
-    std::vector<ConnectionPoolPtr> pools_to_use;
-    pools_to_use.reserve(shuffled_pool.size());
-    for (const auto & pool : shuffled_pool)
-    {
-        if (exclude_local_replica)
-        {
-            const auto & hostname = pool.pool->getHost();
-            auto it = std::find_if(
-                begin(shard.local_addresses),
-                end(shard.local_addresses),
-                [&hostname](const Cluster::Address & local_addr) { return hostname == local_addr.host_name; });
-            if (it == shard.local_addresses.end())
-                pools_to_use.push_back(pool.pool);
-        }
-        else
-        {
-            pools_to_use.push_back(pool.pool);
-        }
-    }
-
-    pools_to_use.resize(std::min(pools_to_use.size(), max_replicas_to_use));
-    // if local plan is used for local replica, we should exclude one remote replica
-    if (exclude_local_replica && !pools_to_use.empty())
-        pools_to_use.resize(max_replicas_to_use - 1);
-
-    LOG_DEBUG(
-        getLogger("ReadFromParallelRemoteReplicasStep"),
-        "Number of pools to use is {}. Originally {}",
-        pools_to_use.size(),
-        shuffled_pool.size());
-
-    if (pools_to_use.empty())
-        return;
 
     std::vector<std::string_view> addresses;
     addresses.reserve(pools_to_use.size());
-    for (const auto & pool : pools_to_use)
-        addresses.emplace_back(pool->getAddress());
+    for (size_t i = 0, l = pools_to_use.size(); i < l; ++i)
+    {
+        if (exclude_pool_index.has_value() && i == exclude_pool_index)
+            continue;
+
+        addresses.emplace_back(pools_to_use[i]->getAddress());
+    }
     LOG_DEBUG(getLogger("ReadFromParallelRemoteReplicasStep"), "Addresses to use: {}", fmt::join(addresses, ", "));
 
-    /// when using local plan for local replica, 0 is assigned to local replica as replica num, - in this case, starting from 1 here
-    size_t replica_num = (exclude_local_replica ? 1 : 0);
-    for (const auto & pool : pools_to_use)
+    for (size_t i = 0, l = pools_to_use.size(); i < l; ++i)
     {
+        if (exclude_pool_index.has_value() && i == exclude_pool_index)
+            continue;
+
         IConnections::ReplicaInfo replica_info{
             /// we should use this number specifically because efficiency of data distribution by consistent hash depends on it.
-            .number_of_current_replica = replica_num,
+            .number_of_current_replica = i,
         };
-        ++replica_num;
 
-        addPipeForSingeReplica(pipes, pool, replica_info);
+        addPipeForSingeReplica(pipes, pools_to_use[i], replica_info);
     }
 
     auto pipe = Pipe::unitePipes(std::move(pipes));

@@ -14,5 +14,6 @@ std::pair<std::unique_ptr<QueryPlan>, bool> createLocalPlanForParallelReplicas(
     ContextPtr context,
     QueryProcessingStage::Enum processed_stage,
     ParallelReplicasReadingCoordinatorPtr coordinator,
-    QueryPlanStepPtr read_from_merge_tree);
+    QueryPlanStepPtr read_from_merge_tree,
+    size_t replica_number);
 }

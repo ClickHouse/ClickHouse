@@ -27,7 +27,8 @@ std::pair<std::unique_ptr<QueryPlan>, bool> createLocalPlanForParallelReplicas(
     ContextPtr context,
     QueryProcessingStage::Enum processed_stage,
     ParallelReplicasReadingCoordinatorPtr coordinator,
-    QueryPlanStepPtr analyzed_read_from_merge_tree)
+    QueryPlanStepPtr analyzed_read_from_merge_tree,
+    size_t replica_number)
 {
     checkStackSize();
 
@@ -84,8 +85,8 @@ std::pair<std::unique_ptr<QueryPlan>, bool> createLocalPlanForParallelReplicas(
     MergeTreeReadTaskCallback read_task_cb = [coordinator](ParallelReadRequest req) -> std::optional<ParallelReadResponse>
     { return coordinator->handleRequest(std::move(req)); };
 
-    auto read_from_merge_tree_parallel_replicas
-        = reading->createLocalParallelReplicasReadingStep(analyzed_result_ptr, std::move(all_ranges_cb), std::move(read_task_cb));
+    auto read_from_merge_tree_parallel_replicas = reading->createLocalParallelReplicasReadingStep(
+        analyzed_result_ptr, std::move(all_ranges_cb), std::move(read_task_cb), replica_number);
     node->step = std::move(read_from_merge_tree_parallel_replicas);
 
     addConvertingActions(*query_plan, header, /*has_missing_objects=*/false);
