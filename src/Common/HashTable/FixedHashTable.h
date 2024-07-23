@@ -352,7 +352,7 @@ public:
             return cend();
 
         Cell * ptr = buf;
-        auto buf_end = std::min(buf + offset + limit, lastPopulatedCell());
+        auto * buf_end = std::min(buf + offset + limit, lastPopulatedCell());
 
         ptr = std::min(buf + offset, lastPopulatedCell());
 
