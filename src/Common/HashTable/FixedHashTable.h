@@ -113,9 +113,6 @@ struct FixedHashTableCalculatedSize
 template <typename Key, typename Cell, typename Size, typename Allocator>
 class FixedHashTable : private boost::noncopyable, protected Allocator, protected Cell::State, protected Size
 {
-protected:
-    static constexpr size_t NUM_CELLS = 1ULL << (sizeof(Key) * 8);
-
     /// We maintain min and max values inserted into the hash table to then limit the amount of cells to traverse to the [min; max] range.
     /// Both values could be efficiently calculated only within `emplace` calls (and not when we populate the hash table in `read` method for example), so we update them only within `emplace` and track if any other method was called.
     bool only_emplace_was_used_to_insert_data = true;
@@ -123,6 +120,8 @@ protected:
     size_t max = 0;
 
 protected:
+    static constexpr size_t NUM_CELLS = 1ULL << (sizeof(Key) * 8);
+
     friend class const_iterator;
     friend class iterator;
     friend class Reader;
