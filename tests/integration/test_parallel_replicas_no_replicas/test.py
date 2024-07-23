@@ -49,8 +49,8 @@ def test_skip_all_replicas(start_cluster, skip_unavailable_shards):
             },
         )
 
-@pytest.mark.parametrize("skip_unavailable_shards", [1, 0])
-def test_skip_all_participating_replicas1(start_cluster, skip_unavailable_shards):
+@pytest.mark.parametrize("max_parallel_replicas", [2, 3, 100])
+def test_skip_all_participating_replicas(start_cluster, max_parallel_replicas):
     cluster_name = "test_1_shard_3_unavaliable_replicas"
     table_name = "tt1"
     create_tables(cluster_name, table_name)
@@ -60,26 +60,8 @@ def test_skip_all_participating_replicas1(start_cluster, skip_unavailable_shards
             f"SELECT key, count() FROM {table_name}  GROUP BY key ORDER BY key",
             settings={
                 "allow_experimental_parallel_reading_from_replicas": 2,
-                "max_parallel_replicas": 3,
+                "max_parallel_replicas": max_parallel_replicas,
                 "cluster_for_parallel_replicas": cluster_name,
-                "skip_unavailable_shards": skip_unavailable_shards,
-                "parallel_replicas_min_number_of_rows_per_replica": 500,
-            },
-        )
-
-@pytest.mark.parametrize("skip_unavailable_shards", [1, 0])
-def test_skip_all_participating_replicas2(start_cluster, skip_unavailable_shards):
-    cluster_name = "test_1_shard_3_unavaliable_replicas"
-    table_name = "tt2"
-    create_tables(cluster_name, table_name)
-
-    with pytest.raises(QueryRuntimeException):
-        initiator.query(
-            f"SELECT key, count() FROM {table_name}  GROUP BY key ORDER BY key",
-            settings={
-                "allow_experimental_parallel_reading_from_replicas": 2,
-                "max_parallel_replicas": 2,
-                "cluster_for_parallel_replicas": cluster_name,
-                "skip_unavailable_shards": skip_unavailable_shards,
+                "skip_unavailable_shards": 1,
             },
         )
