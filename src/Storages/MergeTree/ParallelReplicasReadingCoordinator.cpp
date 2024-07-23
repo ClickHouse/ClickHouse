@@ -435,9 +435,10 @@ void DefaultCoordinator::doHandleInitialAllRangesAnnouncement(InitialAllRangesAn
 {
     LOG_DEBUG(log, "Initial request: {}", announcement.describe());
 
+    const auto replica_num = announcement.replica_num;
+
     initializeReadingState(std::move(announcement));
 
-    const auto replica_num = announcement.replica_num;
     if (replica_num >= stats.size())
         throw Exception(
             ErrorCodes::LOGICAL_ERROR, "Replica number ({}) is bigger than total replicas count ({})", replica_num, stats.size());
