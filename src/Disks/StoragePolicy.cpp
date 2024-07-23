@@ -462,18 +462,15 @@ StoragePolicySelectorPtr StoragePolicySelector::updateFromConfig(const Poco::Uti
     /// First pass, check.
     for (const auto & [name, policy] : policies)
     {
-        if (!name.starts_with(TMP_STORAGE_POLICY_PREFIX))
-        {
-            if (!result->policies.contains(name))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Storage policy {} is missing in new configuration", backQuote(name));
+        if (name.starts_with(TMP_STORAGE_POLICY_PREFIX))
+            continue;
 
-            policy->checkCompatibleWith(result->policies[name]);
-        }
+        if (!result->policies.contains(name))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Storage policy {} is missing in new configuration", backQuote(name));
 
+        policy->checkCompatibleWith(result->policies[name]);
         for (const auto & disk : policy->getDisks())
-        {
             disks_before_reload.insert(disk->getName());
-        }
     }
 
     /// Second pass, load.

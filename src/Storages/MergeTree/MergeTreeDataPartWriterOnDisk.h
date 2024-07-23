@@ -5,6 +5,9 @@
 #include <IO/WriteBufferFromFileBase.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <IO/HashingWriteBuffer.h>
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Disks/IDisk.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/Statistics/Statistics.h>
@@ -94,24 +97,18 @@ public:
 
         void sync() const;
 
-        void addToChecksums(MergeTreeDataPartChecksums & checksums);
+        void addToChecksums(IMergeTreeDataPart::Checksums & checksums);
     };
 
     using StreamPtr = std::unique_ptr<Stream<false>>;
     using StatisticStreamPtr = std::unique_ptr<Stream<true>>;
 
     MergeTreeDataPartWriterOnDisk(
-        const String & data_part_name_,
-        const String & logger_name_,
-        const SerializationByName & serializations_,
-        MutableDataPartStoragePtr data_part_storage_,
-        const MergeTreeIndexGranularityInfo & index_granularity_info_,
-        const MergeTreeSettingsPtr & storage_settings_,
+        const MergeTreeMutableDataPartPtr & data_part_,
         const NamesAndTypesList & columns_list,
         const StorageMetadataPtr & metadata_snapshot_,
-        const VirtualsDescriptionPtr & virtual_columns_,
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
-        const ColumnsStatistics & stats_to_recalc_,
+        const Statistics & stats_to_recalc_,
         const String & marks_file_extension,
         const CompressionCodecPtr & default_codec,
         const MergeTreeWriterSettings & settings,
@@ -136,13 +133,13 @@ protected:
     void calculateAndSerializeStatistics(const Block & stats_block);
 
     /// Finishes primary index serialization: write final primary index row (if required) and compute checksums
-    void fillPrimaryIndexChecksums(MergeTreeDataPartChecksums & checksums);
+    void fillPrimaryIndexChecksums(MergeTreeData::DataPart::Checksums & checksums);
     void finishPrimaryIndexSerialization(bool sync);
     /// Finishes skip indices serialization: write all accumulated data to disk and compute checksums
-    void fillSkipIndicesChecksums(MergeTreeDataPartChecksums & checksums);
+    void fillSkipIndicesChecksums(MergeTreeData::DataPart::Checksums & checksums);
     void finishSkipIndicesSerialization(bool sync);
 
-    void fillStatisticsChecksums(MergeTreeDataPartChecksums & checksums);
+    void fillStatisticsChecksums(MergeTreeData::DataPart::Checksums & checksums);
     void finishStatisticsSerialization(bool sync);
 
     /// Get global number of the current which we are writing (or going to start to write)
@@ -155,7 +152,7 @@ protected:
 
     const MergeTreeIndices skip_indices;
 
-    const ColumnsStatistics stats;
+    const Statistics stats;
     std::vector<StatisticStreamPtr> stats_streams;
 
     const String marks_file_extension;
@@ -173,10 +170,10 @@ protected:
     std::unique_ptr<HashingWriteBuffer> index_source_hashing_stream;
     bool compress_primary_key;
 
-    /// Last block with index columns.
-    /// It's written to index file in the `writeSuffixAndFinalizePart` method.
-    Block last_index_block;
-    Serializations index_serializations;
+    DataTypes index_types;
+    /// Index columns from the last block
+    /// It's written to index file in the `writeSuffixAndFinalizePart` method
+    Columns last_block_index_columns;
 
     bool data_written = false;
 
@@ -193,7 +190,6 @@ private:
     void initStatistics();
 
     virtual void fillIndexGranularity(size_t index_granularity_for_block, size_t rows_in_block) = 0;
-    void calculateAndSerializePrimaryIndexRow(const Block & index_block, size_t row);
 
     struct ExecutionStatistics
     {

@@ -2,9 +2,8 @@
 #include <Storages/StorageFactory.h>
 
 #include <Common/Exception.h>
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Common/typeid_cast.h>
-#include <Core/Settings.h>
 
 #include <Interpreters/evaluateConstantExpression.h>
 
@@ -255,7 +254,7 @@ void LogSource::readData(const NameAndTypePair & name_and_type, ColumnPtr & colu
     if (!deserialize_states.contains(name))
     {
         settings.getter = create_stream_getter(true);
-        serialization->deserializeBinaryBulkStatePrefix(settings, deserialize_states[name], nullptr);
+        serialization->deserializeBinaryBulkStatePrefix(settings, deserialize_states[name]);
     }
 
     settings.getter = create_stream_getter(false);
@@ -323,10 +322,6 @@ public:
                 /// Rollback partial writes.
 
                 /// No more writing.
-                for (auto & [_, stream] : streams)
-                {
-                    stream.cancel();
-                }
                 streams.clear();
 
                 /// Truncate files to the older sizes.
@@ -377,12 +372,6 @@ private:
 
             plain->next();
             plain->finalize();
-        }
-
-        void cancel()
-        {
-            compressed.cancel();
-            plain->cancel();
         }
     };
 
@@ -844,7 +833,8 @@ Pipe StorageLog::read(
     size_t num_marks = marks_with_real_row_count.size();
 
     size_t max_streams = use_marks_file ? num_marks : 1;
-    num_streams = std::min(num_streams, max_streams);
+    if (num_streams > max_streams)
+        num_streams = max_streams;
 
     std::vector<size_t> offsets;
     offsets.resize(num_data_files, 0);

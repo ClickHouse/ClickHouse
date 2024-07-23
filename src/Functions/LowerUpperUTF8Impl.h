@@ -1,10 +1,8 @@
 #pragma once
 #include <Columns/ColumnString.h>
-#include <Functions/LowerUpperImpl.h>
-#include <base/defines.h>
 #include <Poco/UTF8Encoding.h>
-#include <Common/StringUtils.h>
 #include <Common/UTF8Helpers.h>
+#include <base/defines.h>
 
 #ifdef __SSE2__
 #include <emmintrin.h>
@@ -94,15 +92,7 @@ struct LowerUpperUTF8Impl
     {
         if (data.empty())
             return;
-
-        bool all_ascii = isAllASCII(data.data(), data.size());
-        if (all_ascii)
-        {
-            LowerUpperImpl<not_case_lower_bound, not_case_upper_bound>::vector(data, offsets, res_data, res_offsets);
-            return;
-        }
-
-        res_data.resize_exact(data.size());
+        res_data.resize(data.size());
         res_offsets.assign(offsets);
         array(data.data(), data.data() + data.size(), offsets, res_data.data());
     }

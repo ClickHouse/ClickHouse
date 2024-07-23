@@ -21,13 +21,12 @@ limitations under the License. */
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Processors/Executors/PipelineExecutor.h>
-#include <Processors/Transforms/SquashingTransform.h>
+#include <Processors/Transforms/SquashingChunksTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <QueryPipeline/QueryPlanResourceHolder.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 #include <Common/SipHash.h>
-#include <Core/Settings.h>
 #include <base/hex.h>
 
 #include <Storages/LiveView/StorageLiveView.h>
@@ -627,7 +626,7 @@ QueryPipelineBuilder StorageLiveView::completeQuery(Pipes pipes)
     /// and two-level aggregation is triggered).
     builder.addSimpleTransform([&](const Block & cur_header)
     {
-        return std::make_shared<SquashingTransform>(
+        return std::make_shared<SquashingChunksTransform>(
             cur_header,
             getContext()->getSettingsRef().min_insert_block_size_rows,
             getContext()->getSettingsRef().min_insert_block_size_bytes);

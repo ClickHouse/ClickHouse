@@ -120,7 +120,8 @@ struct LargestTriangleThreeBucketsData : public StatisticalSample<Float64, Float
             // the end index of next bucket
             size_t end_index = 1 + static_cast<int>(floor(single_bucket_size * (i + 2)));
             // current bucket is the last bucket
-            end_index = std::min(end_index, this->x.size());
+            if (end_index > this->x.size())
+                end_index = this->x.size();
 
             // Compute the average point in the next bucket
             Float64 avg_x = 0;

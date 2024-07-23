@@ -4,7 +4,6 @@
 
 import argparse
 import logging
-import sys
 from datetime import datetime
 from os import getenv
 from pprint import pformat
@@ -14,20 +13,11 @@ from github.PaginatedList import PaginatedList
 from github.PullRequestReview import PullRequestReview
 from github.WorkflowRun import WorkflowRun
 
-from commit_status_helper import (
-    get_commit_filtered_statuses,
-    get_commit,
-    trigger_mergeable_check,
-    update_upstream_sync_status,
-)
+from commit_status_helper import get_commit_filtered_statuses
 from get_robot_token import get_best_robot_token
 from github_helper import GitHub, NamedUser, PullRequest, Repository
 from pr_info import PRInfo
-from report import SUCCESS, FAILURE
-from env_helper import GITHUB_UPSTREAM_REPOSITORY, GITHUB_REPOSITORY
-from synchronizer_utils import SYNC_BRANCH_PREFIX
-from ci_config import CI
-from ci_utils import Utils
+from report import SUCCESS
 
 # The team name for accepted approvals
 TEAM_NAME = getenv("GITHUB_TEAM_NAME", "core")
@@ -184,17 +174,6 @@ def parse_args() -> argparse.Namespace:
         help="if set, the script won't merge the PR, just check the conditions",
     )
     parser.add_argument(
-        "--set-ci-status",
-        action="store_true",
-        help="if set, only update/set Mergeable Check status",
-    )
-    parser.add_argument(
-        "--wf-status",
-        type=str,
-        default="",
-        help="overall workflow status [success|failure]. used with --set-ci-status only",
-    )
-    parser.add_argument(
         "--check-approved",
         action="store_true",
         help="if set, checks that the PR is approved and no changes required",
@@ -247,97 +226,6 @@ def main():
     token = args.token or get_best_robot_token()
     gh = GitHub(token)
     repo = gh.get_repo(args.repo)
-
-    if args.set_ci_status:
-        assert args.wf_status in (FAILURE, SUCCESS)
-        # set mergeable check status and exit
-        commit = get_commit(gh, args.pr_info.sha)
-        statuses = get_commit_filtered_statuses(commit)
-
-        max_failed_tests_per_job = 0
-        job_name_with_max_failures = None
-        total_failed_tests = 0
-        failed_to_get_info = False
-        has_failed_statuses = False
-        for status in statuses:
-            if not CI.is_required(status.context) or status.context in (
-                CI.StatusNames.SYNC,
-                CI.StatusNames.PR_CHECK,
-            ):
-                # CI.StatusNames.SYNC or CI.StatusNames.PR_CHECK should not be checked
-                continue
-            print(f"Check status [{status.context}], [{status.state}]")
-            if status.state == FAILURE:
-                has_failed_statuses = True
-                failed_cnt = Utils.get_failed_tests_number(status.description)
-                if failed_cnt is None:
-                    failed_to_get_info = True
-                    print(
-                        f"WARNING: failed to get number of failed tests from [{status.description}]"
-                    )
-                else:
-                    if failed_cnt > max_failed_tests_per_job:
-                        job_name_with_max_failures = status.context
-                        max_failed_tests_per_job = failed_cnt
-                    total_failed_tests += failed_cnt
-                    print(
-                        f"Failed test cases in [{status.context}] is [{failed_cnt}], total failures [{total_failed_tests}]"
-                    )
-            elif status.state != SUCCESS and status.context not in (
-                CI.StatusNames.SYNC,
-                CI.StatusNames.PR_CHECK,
-            ):
-                # do not block CI on failures in (CI.StatusNames.SYNC, CI.StatusNames.PR_CHECK)
-                has_failed_statuses = True
-                print(
-                    f"Unexpected status for [{status.context}]: [{status.state}] - block further testing"
-                )
-                failed_to_get_info = True
-
-        can_continue = True
-        if total_failed_tests > CI.MAX_TOTAL_FAILURES_BEFORE_BLOCKING_CI:
-            print(
-                f"Required check has [{total_failed_tests}] failed - block further testing"
-            )
-            can_continue = False
-        if max_failed_tests_per_job > CI.MAX_TOTAL_FAILURES_PER_JOB_BEFORE_BLOCKING_CI:
-            print(
-                f"Job [{job_name_with_max_failures}] has [{max_failed_tests_per_job}] failures - block further testing"
-            )
-            can_continue = False
-        if failed_to_get_info:
-            print("Unexpected commit status state - block further testing")
-            can_continue = False
-        if args.wf_status != SUCCESS and not has_failed_statuses:
-            # workflow failed but reason is unknown as no failed statuses present
-            can_continue = False
-            print(
-                "WARNING: Either the runner is faulty or the operating status is unknown. The first is self-healing, the second requires investigation."
-            )
-
-        if args.wf_status == SUCCESS or has_failed_statuses:
-            # do not set mergeable check status if args.wf_status == failure, apparently it has died runners and is to be restarted
-            state = trigger_mergeable_check(
-                commit,
-                statuses,
-            )
-            # Process upstream StatusNames.SYNC
-            pr_info = PRInfo()
-            if (
-                pr_info.head_ref.startswith(f"{SYNC_BRANCH_PREFIX}/pr/")
-                and GITHUB_REPOSITORY != GITHUB_UPSTREAM_REPOSITORY
-            ):
-                print("Updating upstream statuses")
-                update_upstream_sync_status(pr_info, state)
-        else:
-            print(
-                "Workflow failed but no failed statuses found (died runner?) - cannot set Mergeable Check status"
-            )
-
-        if not can_continue:
-            sys.exit(1)
-        sys.exit(0)
-
     # An ugly and not nice fix to patch the wrong organization URL,
     # see https://github.com/PyGithub/PyGithub/issues/2395#issuecomment-1378629710
     # pylint: disable=protected-access

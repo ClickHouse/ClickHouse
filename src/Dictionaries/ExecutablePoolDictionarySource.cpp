@@ -8,8 +8,6 @@
 #include <Common/LocalDateTime.h>
 #include <Common/filesystemHelpers.h>
 
-#include <Core/Settings.h>
-
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Sources/ShellCommandSource.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>

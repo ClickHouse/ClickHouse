@@ -9,10 +9,8 @@
 #include <Common/SipHash.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ThreadFuzzer.h>
-#include <Core/Settings.h>
 #include <Storages/MergeTree/MergeAlgorithm.h>
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/AsyncBlockIDsCache.h>
 #include <DataTypes/ObjectUtils.h>
 #include <Core/Block.h>
@@ -115,7 +113,7 @@ namespace
     inline String toString(const std::vector<T> & vec)
     {
         size_t size = vec.size();
-        size = std::min<size_t>(size, 50);
+        if (size > 50) size = 50;
         return fmt::format("({})", fmt::join(vec.begin(), vec.begin() + size, ","));
     }
 }
@@ -574,16 +572,6 @@ bool ReplicatedMergeTreeSinkImpl<false>::writeExistingPart(MergeTreeData::Mutabl
         PartLog::addNewPart(storage.getContext(), PartLog::PartLogEntry(part, watch.elapsed(), profile_events_scope.getSnapshot()), ExecutionStatus::fromCurrentException("", true));
         throw;
     }
-}
-
-template<bool async_insert>
-bool ReplicatedMergeTreeSinkImpl<async_insert>::lastBlockIsDuplicate() const
-{
-    /// If MV is responsible for deduplication, block is not considered duplicating.
-    if (context->getSettingsRef().deduplicate_blocks_in_dependent_materialized_views)
-        return false;
-
-    return last_block_is_duplicate;
 }
 
 template<bool async_insert>

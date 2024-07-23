@@ -31,7 +31,7 @@ namespace
 
 struct KolmogorovSmirnov : public StatisticalSample<Float64, Float64>
 {
-    enum class Alternative : uint8_t
+    enum class Alternative
     {
         TwoSided,
         Less,

@@ -3,14 +3,13 @@
 #include <Formats/formatBlock.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/GraceHashJoin.h>
-#include <Interpreters/HashJoin/HashJoin.h>
+#include <Interpreters/HashJoin.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <base/FnTraits.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
 #include <Common/thread_local_rng.h>
-#include <Core/Settings.h>
 
 #include <numeric>
 #include <fmt/format.h>
@@ -109,7 +108,7 @@ namespace
 
 class GraceHashJoin::FileBucket : boost::noncopyable
 {
-    enum class State : uint8_t
+    enum class State : int
     {
         WRITING_BLOCKS,
         JOINING_BLOCKS,
@@ -416,7 +415,7 @@ void GraceHashJoin::addBuckets(const size_t bucket_count)
 void GraceHashJoin::checkTypesOfKeys(const Block & block) const
 {
     chassert(hash_join);
-    hash_join->checkTypesOfKeys(block);
+    return hash_join->checkTypesOfKeys(block);
 }
 
 void GraceHashJoin::initialize(const Block & sample_block)
