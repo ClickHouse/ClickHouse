@@ -406,6 +406,7 @@ JSONCompactStrings
 JSONCompactStringsEachRow
 JSONCompactStringsEachRowWithNames
 JSONCompactStringsEachRowWithNamesAndTypes
+JSONCompactWithProgress
 JSONEachRow
 JSONEachRowWithProgress
 JSONExtract
