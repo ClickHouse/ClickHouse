@@ -169,7 +169,7 @@ using DeleteObjectsRequest = ExtendedRequest<Model::DeleteObjectsRequest>;
 class ComposeObjectRequest : public ExtendedRequest<Aws::S3::S3Request>
 {
 public:
-    const char * GetServiceRequestName() const override { return "ComposeObject"; }
+    inline const char * GetServiceRequestName() const override { return "ComposeObject"; }
 
     AWS_S3_API Aws::String SerializePayload() const override;
 

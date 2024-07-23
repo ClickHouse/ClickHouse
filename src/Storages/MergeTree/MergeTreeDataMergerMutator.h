@@ -20,14 +20,14 @@ namespace DB
 
 class MergeProgressCallback;
 
-enum class SelectPartsDecision : uint8_t
+enum class SelectPartsDecision
 {
     SELECTED = 0,
     CANNOT_SELECT = 1,
     NOTHING_TO_MERGE = 2,
 };
 
-enum class ExecuteTTLType : uint8_t
+enum class ExecuteTTLType
 {
     NONE = 0,
     NORMAL = 1,

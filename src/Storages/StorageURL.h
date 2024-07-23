@@ -257,10 +257,8 @@ public:
     void onFinish() override;
 
 private:
-    void finalizeBuffers();
-    void releaseBuffers();
-    void cancelBuffers();
-
+    void finalize();
+    void release();
     std::unique_ptr<WriteBuffer> write_buf;
     OutputFormatPtr writer;
     std::mutex cancel_mutex;
@@ -296,9 +294,6 @@ public:
     }
 
     bool supportsSubcolumns() const override { return true; }
-    bool supportsOptimizationToSubcolumns() const override { return false; }
-
-    bool supportsDynamicSubcolumns() const override { return true; }
 
     static FormatSettings getFormatSettingsFromArgs(const StorageFactory::Arguments & args);
 

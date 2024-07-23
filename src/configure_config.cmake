@@ -170,8 +170,5 @@ endif()
 if (TARGET ch_contrib::pocketfft)
     set(USE_POCKETFFT 1)
 endif()
-if (TARGET ch_contrib::prometheus_protobufs)
-    set(USE_PROMETHEUS_PROTOBUFS 1)
-endif()
 
 set(SOURCE_DIR ${PROJECT_SOURCE_DIR})

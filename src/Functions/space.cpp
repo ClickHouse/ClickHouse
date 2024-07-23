@@ -27,7 +27,7 @@ private:
     static constexpr auto space = ' ';
 
     /// Safety threshold against DoS.
-    static void checkRepeatTime(size_t repeat_time)
+    static inline void checkRepeatTime(size_t repeat_time)
     {
         static constexpr auto max_repeat_times = 1'000'000uz;
         if (repeat_time > max_repeat_times)
@@ -48,7 +48,7 @@ public:
             {"n", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isInteger), nullptr, "Integer"}
         };
 
-            validateFunctionArguments(*this, arguments, args);
+        validateFunctionArgumentTypes(*this, arguments, args);
 
         return std::make_shared<DataTypeString>();
     }
@@ -57,14 +57,14 @@ public:
     template <typename DataType>
     bool executeConstant(ColumnPtr col_times, ColumnString::Offsets & res_offsets, ColumnString::Chars & res_chars) const
     {
-        const ColumnConst & col_times_const = checkAndGetColumn<ColumnConst>(*col_times);
+        const ColumnConst * col_times_const = checkAndGetColumn<ColumnConst>(col_times.get());
 
-        const ColumnPtr & col_times_const_internal = col_times_const.getDataColumnPtr();
+        const ColumnPtr & col_times_const_internal = col_times_const->getDataColumnPtr();
         if (!checkAndGetColumn<typename DataType::ColumnType>(col_times_const_internal.get()))
             return false;
 
         using T = typename DataType::FieldType;
-        T times = col_times_const.getValue<T>();
+        T times = col_times_const->getValue<T>();
 
         if (times < 1)
             times = 0;

@@ -1,5 +1,4 @@
 #include <Access/ContextAccess.h>
-#include <Core/Settings.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>

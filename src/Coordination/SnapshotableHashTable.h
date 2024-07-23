@@ -3,7 +3,6 @@
 #include <Common/HashTable/HashMap.h>
 #include <Common/ArenaUtils.h>
 
-#include <list>
 
 namespace DB
 {

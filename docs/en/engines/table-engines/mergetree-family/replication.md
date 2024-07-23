@@ -10,7 +10,7 @@ sidebar_label: Data Replication
 In ClickHouse Cloud replication is managed for you. Please create your tables without adding arguments.  For example, in the text below you would replace:
 
 ```sql
-ENGINE = ReplicatedMergeTree(
+ENGINE = ReplicatedReplacingMergeTree(
     '/clickhouse/tables/{shard}/table_name',
     '{replica}',
     ver
@@ -20,7 +20,7 @@ ENGINE = ReplicatedMergeTree(
 with:
 
 ```sql
-ENGINE = ReplicatedMergeTree
+ENGINE = ReplicatedReplacingMergeTree
 ```
 :::
 
@@ -140,11 +140,11 @@ The system monitors data synchronicity on replicas and is able to recover after 
 :::note
 In ClickHouse Cloud replication is managed for you. Please create your tables without adding arguments.  For example, in the text below you would replace:
 ```
-ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/table_name', '{replica}', ver)
+ENGINE = ReplicatedReplacingMergeTree('/clickhouse/tables/{shard}/table_name', '{replica}', ver)
 ```
 with:
 ```
-ENGINE = ReplicatedMergeTree
+ENGINE = ReplicatedReplacingMergeTree
 ```
 :::
 
@@ -177,7 +177,7 @@ CREATE TABLE table_name
     CounterID UInt32,
     UserID UInt32,
     ver UInt16
-) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/table_name', '{replica}', ver)
+) ENGINE = ReplicatedReplacingMergeTree('/clickhouse/tables/{shard}/table_name', '{replica}', ver)
 PARTITION BY toYYYYMM(EventDate)
 ORDER BY (CounterID, EventDate, intHash32(UserID))
 SAMPLE BY intHash32(UserID);

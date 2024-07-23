@@ -1719,7 +1719,9 @@ namespace
             ReadBufferFromString buf{str};
             time_t tm = 0;
             readDateTimeText(tm, buf, lut);
-            return std::max<time_t>(tm, 0);
+            if (tm < 0)
+                tm = 0;
+            return tm;
         }
     };
 
@@ -3789,7 +3791,10 @@ namespace
                 }
                 int max_abs = std::abs(enum_descriptor->value(0)->number());
                 for (int i = 1; i != enum_descriptor->value_count(); ++i)
-                    max_abs = std::max(std::abs(enum_descriptor->value(i)->number()), max_abs);
+                {
+                    if (std::abs(enum_descriptor->value(i)->number()) > max_abs)
+                        max_abs = std::abs(enum_descriptor->value(i)->number());
+                }
                 if (max_abs < 128)
                     return NameAndTypePair{field_descriptor->name(), getEnumDataType<Int8>(enum_descriptor)};
                 else if (max_abs < 32768)
