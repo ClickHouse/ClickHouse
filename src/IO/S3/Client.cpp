@@ -385,7 +385,7 @@ Model::HeadObjectOutcome Client::HeadObject(HeadObjectRequest & request) const
 
     request.overrideURI(std::move(*bucket_uri));
 
-    if (isClientForDisk())
+    if (isClientForDisk() && error.GetErrorType() == Aws::S3::S3Errors::NO_SUCH_KEY)
         CurrentMetrics::add(CurrentMetrics::S3DiskNoKeyErrors);
 
     return enrichErrorMessage(
@@ -410,7 +410,7 @@ Model::ListObjectsOutcome Client::ListObjects(ListObjectsRequest & request) cons
 Model::GetObjectOutcome Client::GetObject(GetObjectRequest & request) const
 {
     auto resp = doRequest(request, [this](const Model::GetObjectRequest & req) { return GetObject(req); });
-    if (!resp.IsSuccess() && isClientForDisk())
+    if (!resp.IsSuccess() && isClientForDisk() && resp.GetError().GetErrorType() == Aws::S3::S3Errors::NO_SUCH_KEY)
         CurrentMetrics::add(CurrentMetrics::S3DiskNoKeyErrors);
 
     return enrichErrorMessage(std::move(resp));
