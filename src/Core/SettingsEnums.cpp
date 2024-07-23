@@ -180,7 +180,7 @@ IMPLEMENT_SETTING_ENUM(LightweightMutationProjectionMode, ErrorCodes::BAD_ARGUME
 IMPLEMENT_SETTING_ENUM(DeduplicateMergeProjectionMode, ErrorCodes::BAD_ARGUMENTS,
     {{"throw", DeduplicateMergeProjectionMode::THROW},
      {"drop", DeduplicateMergeProjectionMode::DROP},
-     {"rebuild", DeduplicateMergeProjectionMode::THROW}})
+     {"rebuild", DeduplicateMergeProjectionMode::REBUILD}})
 
 IMPLEMENT_SETTING_AUTO_ENUM(LocalFSReadMethod, ErrorCodes::BAD_ARGUMENTS)
 
