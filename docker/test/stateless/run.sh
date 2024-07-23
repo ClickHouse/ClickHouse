@@ -11,6 +11,7 @@ MAX_RUN_TIME=$((MAX_RUN_TIME == 0 ? 9000 : MAX_RUN_TIME))
 
 USE_DATABASE_REPLICATED=${USE_DATABASE_REPLICATED:=0}
 USE_SHARED_CATALOG=${USE_SHARED_CATALOG:=0}
+SAVE_INDIVIDUAL_TEST_OUTPUT=${SAVE_INDIVIDUAL_TEST_OUTPUT:=1}
 
 # Choose random timezone for this test run.
 #
@@ -407,3 +408,12 @@ if [[ "$USE_SHARED_CATALOG" -eq 1 ]]; then
 fi
 
 collect_core_dumps
+
+if [[ "$SAVE_INDIVIDUAL_TEST_OUTPUT" -eq 1 ]]; then
+    mkdir /test_output/stdout ||:
+    for i in 'find . -type f -name "*.stdout*" -o -name "*.stderr*"'
+    do
+        mv $i /test_output/stdout/$i ||:
+    done
+    tar -chf /test_output/stdout.tar /test_output/stdout ||:
+fi
