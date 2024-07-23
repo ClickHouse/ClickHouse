@@ -104,6 +104,9 @@ class GHActions:
                 res = json.load(json_file)
             except json.JSONDecodeError as e:
                 print(f"ERROR: json decoder exception {e}")
+                json_file.seek(0)
+                print("    File content:")
+                print(json_file.read())
                 return {}
         return res
 
