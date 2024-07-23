@@ -342,7 +342,7 @@ public:
         if (!buf)
             return cend();
 
-        Cell * ptr = std::min(buf + offset, buf + NUM_CELLS);
+        Cell * ptr = std::min(buf + offset, lastPopulatedCell());
 
         return const_iterator(this, ptr);
     }
@@ -353,9 +353,9 @@ public:
             return cend();
 
         Cell * ptr = buf;
-        auto buf_end = std::min(buf + offset + limit, buf + NUM_CELLS);
+        auto buf_end = std::min(buf + offset + limit, lastPopulatedCell());
 
-        ptr = std::min(buf + offset, buf + NUM_CELLS);
+        ptr = std::min(buf + offset, lastPopulatedCell());
 
         while (ptr < buf_end && ptr->isZero(*this))
             ++ptr;
