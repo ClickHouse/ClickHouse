@@ -523,7 +523,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
               {"ignore_on_cluster_for_replicated_named_collections_queries", false, false, "Ignore ON CLUSTER clause for replicated named collections management queries."},
               {"backup_restore_s3_retry_attempts", 1000,1000, "Setting for Aws::Client::RetryStrategy, Aws::Client does retries itself, 0 means no retries. It takes place only for backup/restore."},
               {"postgresql_connection_attempt_timeout", 2, 2, "Allow to control 'connect_timeout' parameter of PostgreSQL connection."},
-              {"postgresql_connection_pool_retries", 2, 2, "Allow to control the number of retries in PostgreSQL connection pool."}
+              {"postgresql_connection_pool_retries", 2, 2, "Allow to control the number of retries in PostgreSQL connection pool."},
               {"dns_allow_resolve_names_to_ipv4", true, true, "Allows resolve names to ipv4 addresses"},
               {"dns_allow_resolve_names_to_ipv6", true, true, "Allows resolve names to ipv6 addresses"},
               }},

@@ -12,8 +12,7 @@
 #include <atomic>
 #include <optional>
 #include <string_view>
-#include <Core/ServerSettings.h>
-#include <Interpreters/Context.h>
+#include "Common/MultiVersion.h"
 #include <unordered_set>
 #include "DNSPTRResolverProvider.h"
 
@@ -198,14 +197,17 @@ struct DNSResolver::AddressFilter
 {
     struct DNSFilterSettings
     {
-        std::atomic<bool> dns_allow_resolve_names_to_ipv4{true};
-        std::atomic<bool> dns_allow_resolve_names_to_ipv6{true};
+        bool dns_allow_resolve_names_to_ipv4{true};
+        bool dns_allow_resolve_names_to_ipv6{true};
     };
+
+    AddressFilter() : settings(std::make_unique<DNSFilterSettings>()) {}
 
     void performAddressFiltering(DNSResolver::IPAddresses & addresses)
     {
-        bool dns_resolve_ipv4 = settings.dns_allow_resolve_names_to_ipv4;
-        bool dns_resolve_ipv6 = settings.dns_allow_resolve_names_to_ipv6;
+        const auto current_settings = settings.get();
+        bool dns_resolve_ipv4 = current_settings->dns_allow_resolve_names_to_ipv4;
+        bool dns_resolve_ipv6 = current_settings->dns_allow_resolve_names_to_ipv6;
 
         if (dns_resolve_ipv4 && dns_resolve_ipv6)
         {
@@ -215,24 +217,20 @@ struct DNSResolver::AddressFilter
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "DNS can't resolve any address, because dns_resolve_ipv6_interfaces and dns_resolve_ipv4_interfaces both are disabled");
         }
-        addresses.erase(
-            std::remove_if(addresses.begin(), addresses.end(),
-            [dns_resolve_ipv6, dns_resolve_ipv4](const Poco::Net::IPAddress& address)
-            {
-                return (address.family() == Poco::Net::IPAddress::IPv6 && !dns_resolve_ipv6)
-                    || (address.family() == Poco::Net::IPAddress::IPv4 && !dns_resolve_ipv4);
-            }),
-            addresses.end()
-        );
+
+        std::erase_if(addresses, [dns_resolve_ipv6, dns_resolve_ipv4](const Poco::Net::IPAddress& address)
+        {
+            return (address.family() == Poco::Net::IPAddress::IPv6 && !dns_resolve_ipv6)
+                || (address.family() == Poco::Net::IPAddress::IPv4 && !dns_resolve_ipv4);
+        });
     }
 
     void setSettings(bool dns_allow_resolve_names_to_ipv4_, bool dns_allow_resolve_names_to_ipv6_)
     {
-        settings.dns_allow_resolve_names_to_ipv4 =  dns_allow_resolve_names_to_ipv4_;
-        settings.dns_allow_resolve_names_to_ipv6 =  dns_allow_resolve_names_to_ipv6_;
+        settings.set(std::make_unique<DNSFilterSettings>(dns_allow_resolve_names_to_ipv4_, dns_allow_resolve_names_to_ipv6_));
     }
 
-    DNSFilterSettings settings;
+    MultiVersion<DNSFilterSettings> settings;
 };
 
 
