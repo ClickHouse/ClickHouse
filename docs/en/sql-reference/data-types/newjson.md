@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/data-types/json
+slug: /en/sql-reference/data-types/newjson
 sidebar_position: 63
 sidebar_label: JSON
 keywords: [json, data type]
