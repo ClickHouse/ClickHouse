@@ -107,8 +107,7 @@ WriteBufferFromFileDescriptor::~WriteBufferFromFileDescriptor()
 {
     try
     {
-        if (!canceled)
-            finalize();
+        finalize();
     }
     catch (...)
     {

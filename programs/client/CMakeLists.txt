@@ -10,6 +10,7 @@ set (CLICKHOUSE_CLIENT_LINK
         clickhouse_common_io
         clickhouse_functions
         clickhouse_parsers
+        string_utils
 )
 
 if (TARGET ch_rust::skim)

@@ -150,9 +150,9 @@ using FunctionCRC64ECMA = FunctionCRC<CRC64ECMAImpl>;
 
 REGISTER_FUNCTION(CRC)
 {
-    factory.registerFunction<FunctionCRC32ZLib>({}, FunctionFactory::Case::Insensitive);
-    factory.registerFunction<FunctionCRC32IEEE>({}, FunctionFactory::Case::Insensitive);
-    factory.registerFunction<FunctionCRC64ECMA>({}, FunctionFactory::Case::Insensitive);
+    factory.registerFunction<FunctionCRC32ZLib>({}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionCRC32IEEE>({}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionCRC64ECMA>({}, FunctionFactory::CaseInsensitive);
 }
 
 }

@@ -1,5 +1,3 @@
-SET optimize_trivial_insert_select = 1;
-
 DROP TABLE IF EXISTS t_sparse;
 
 CREATE TABLE t_sparse (id UInt64, u UInt64, s String)

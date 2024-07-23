@@ -61,9 +61,6 @@ public:
     /// For tests
     void setFakeTime(std::optional<Int64> t);
 
-    /// RefreshSet will set handle for refresh tasks, to avoid race condition.
-    void setRefreshSetHandleUnlock(RefreshSet::Handle && set_handle_);
-
 private:
     LoggerPtr log = nullptr;
     std::weak_ptr<IStorage> view_to_refresh;
