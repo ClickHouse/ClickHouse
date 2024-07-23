@@ -33,7 +33,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-#if defined(OS_LINUX)
 struct ICgroupsReader
 {
     virtual ~ICgroupsReader() = default;
@@ -44,6 +43,7 @@ struct ICgroupsReader
 namespace
 {
 
+#if defined(OS_LINUX)
 /// Format is
 ///   kernel 5
 ///   rss 15
@@ -269,7 +269,7 @@ uint64_t MemoryWorker::getMemoryUsage()
     switch (source)
     {
         case MemoryUsageSource::Cgroups:
-            return cgroups_reader->readMemoryUsage();
+            return cgroups_reader != nullptr ? cgroups_reader->readMemoryUsage() : 0;
         case MemoryUsageSource::Jemalloc:
 #if USE_JEMALLOC
             return resident_mib.getValue();

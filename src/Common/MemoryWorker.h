@@ -49,9 +49,7 @@ private:
 
     MemoryUsageSource source{MemoryUsageSource::None};
 
-#if defined(OS_LINUX)
     std::shared_ptr<ICgroupsReader> cgroups_reader;
-#endif
 
 #if USE_JEMALLOC
     JemallocMibCache<uint64_t> epoch_mib{"epoch"};
