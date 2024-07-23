@@ -112,8 +112,8 @@ private:
     MemoryStatisticsOS memory_stat TSA_GUARDED_BY(data_mutex);
 #endif
 
-    const bool update_jemalloc_epoch;
-    const bool update_rss;
+    [[maybe_unused]] const bool update_jemalloc_epoch;
+    [[maybe_unused]] const bool update_rss;
 
 #if defined(OS_LINUX)
     std::optional<ReadBufferFromFilePRead> meminfo TSA_GUARDED_BY(data_mutex);
