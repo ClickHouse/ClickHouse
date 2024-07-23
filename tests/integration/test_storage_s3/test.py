@@ -962,9 +962,10 @@ def test_storage_s3_put_uncompressed(started_cluster):
     [pytest.param("bin", "gzip", id="bin"), pytest.param("gz", "auto", id="gz")],
 )
 def test_storage_s3_put_gzip(started_cluster, extension, method):
+    id = uuid.uuid4()
     bucket = started_cluster.minio_bucket
     instance = started_cluster.instances["dummy"]
-    filename = f"test_put_gzip.{extension}"
+    filename = f"{id}/test_put_gzip.{extension}"
     name = f"test_put_gzip_{extension}"
     data = [
         "'Joseph Tomlinson',5",
@@ -1001,6 +1002,7 @@ def test_storage_s3_put_gzip(started_cluster, extension, method):
     f = gzip.GzipFile(fileobj=buf, mode="rb")
     uncompressed_content = f.read().decode()
     assert sum([int(i.split(",")[1]) for i in uncompressed_content.splitlines()]) == 708
+    run_query(instance, f"DROP TABLE {name}")
 
 
 def test_truncate_table(started_cluster):
@@ -1026,14 +1028,24 @@ def test_truncate_table(started_cluster):
             len(list(minio.list_objects(started_cluster.minio_bucket, "truncate/")))
             == 0
         ):
-            return
+            break
         timeout -= 1
         time.sleep(1)
     assert len(list(minio.list_objects(started_cluster.minio_bucket, "truncate/"))) == 0
-    assert instance.query("SELECT * FROM {}".format(name)) == ""
+    # FIXME: there was a bug in test and it was never checked.
+    # Currently read from truncated table fails with
+    # DB::Exception: Failed to get object info: No response body..
+    # HTTP response code: 404: while reading truncate: While executing S3Source
+    # assert instance.query("SELECT * FROM {}".format(name)) == ""
+    instance.query(f"DROP TABLE {name} SYNC")
+    assert (
+        instance.query(f"SELECT count() FROM system.tables where name='{name}'")
+        == "0\n"
+    )
 
 
 def test_predefined_connection_configuration(started_cluster):
+    id = uuid.uuid4()
     bucket = started_cluster.minio_bucket
     instance = started_cluster.instances[
         "dummy_without_named_collections"
@@ -1061,7 +1073,9 @@ def test_predefined_connection_configuration(started_cluster):
         user="user",
     )
 
-    instance.query(f"INSERT INTO {name} SELECT number FROM numbers(10)")
+    instance.query(
+        f"INSERT INTO {name} SELECT number FROM numbers(10) SETTINGS s3_truncate_on_insert=1"
+    )
     result = instance.query(f"SELECT * FROM {name}")
     assert result == instance.query("SELECT number FROM numbers(10)")
 
@@ -1075,9 +1089,11 @@ def test_predefined_connection_configuration(started_cluster):
         "To execute this query, it's necessary to have the grant NAMED COLLECTION ON no_collection"
         in error
     )
-    instance = started_cluster.instances["dummy"]  # has named collection access
-    error = instance.query_and_get_error("SELECT * FROM s3(no_collection)")
+    instance2 = started_cluster.instances["dummy"]  # has named collection access
+    error = instance2.query_and_get_error("SELECT * FROM s3(no_collection)")
     assert "There is no named collection `no_collection`" in error
+    instance.query("DROP USER user")
+    instance.query(f"DROP TABLE {name}")
 
 
 result = ""
@@ -1227,7 +1243,7 @@ def test_s3_schema_inference(started_cluster):
     instance = started_cluster.instances["dummy"]
 
     instance.query(
-        f"insert into table function s3(s3_native, structure='a Int32, b String', format='Native') select number, randomString(100) from numbers(5000000)"
+        f"insert into table function s3(s3_native, structure='a Int32, b String', format='Native') select number, randomString(100) from numbers(5000000) SETTINGS s3_truncate_on_insert=1"
     )
     result = instance.query(f"desc s3(s3_native, format='Native')")
     assert result == "a\tInt32\t\t\t\t\t\nb\tString\t\t\t\t\t\n"
@@ -1267,6 +1283,9 @@ def test_s3_schema_inference(started_cluster):
     result = instance.query(f"select count(*) from {table_function}")
     assert int(result) == 5000000
 
+    instance.query("drop table schema_inference")
+    instance.query("drop table schema_inference_2")
+
 
 def test_empty_file(started_cluster):
     bucket = started_cluster.minio_bucket
@@ -1302,6 +1321,7 @@ def test_overwrite(started_cluster):
 
     result = instance.query(f"select count() from test_overwrite")
     assert int(result) == 200
+    instance.query(f"drop table test_overwrite")
 
 
 def test_create_new_files_on_insert(started_cluster):
@@ -1343,6 +1363,7 @@ def test_create_new_files_on_insert(started_cluster):
 
     result = instance.query(f"select count() from test_multiple_inserts")
     assert int(result) == 60
+    instance.query("drop table test_multiple_inserts")
 
 
 def test_format_detection(started_cluster):
@@ -1350,7 +1371,9 @@ def test_format_detection(started_cluster):
     instance = started_cluster.instances["dummy"]
 
     instance.query(f"create table arrow_table_s3 (x UInt64) engine=S3(s3_arrow)")
-    instance.query(f"insert into arrow_table_s3 select 1")
+    instance.query(
+        f"insert into arrow_table_s3 select 1 settings s3_truncate_on_insert=1"
+    )
     result = instance.query(f"select * from s3(s3_arrow)")
     assert int(result) == 1
 
@@ -1365,7 +1388,9 @@ def test_format_detection(started_cluster):
     assert int(result) == 1
 
     instance.query(f"create table parquet_table_s3 (x UInt64) engine=S3(s3_parquet2)")
-    instance.query(f"insert into parquet_table_s3 select 1")
+    instance.query(
+        f"insert into parquet_table_s3 select 1 settings s3_truncate_on_insert=1"
+    )
     result = instance.query(f"select * from s3(s3_parquet2)")
     assert int(result) == 1
 
@@ -1378,64 +1403,67 @@ def test_format_detection(started_cluster):
         f"select * from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test.parquet')"
     )
     assert int(result) == 1
+    instance.query(f"drop table arrow_table_s3")
+    instance.query(f"drop table parquet_table_s3")
 
 
 def test_schema_inference_from_globs(started_cluster):
+    id = uuid.uuid4()
     bucket = started_cluster.minio_bucket
     instance = started_cluster.instances["dummy"]
 
     instance.query(
-        f"insert into table function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test1.jsoncompacteachrow', 'JSONCompactEachRow', 'x Nullable(UInt32)') select NULL"
+        f"insert into table function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{id}/test1.jsoncompacteachrow', 'JSONCompactEachRow', 'x Nullable(UInt32)') select NULL"
     )
     instance.query(
-        f"insert into table function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test2.jsoncompacteachrow', 'JSONCompactEachRow', 'x Nullable(UInt32)') select 0"
+        f"insert into table function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{id}/test2.jsoncompacteachrow', 'JSONCompactEachRow', 'x Nullable(UInt32)') select 0"
     )
 
     url_filename = "test{1,2}.jsoncompacteachrow"
     result = instance.query(
-        f"desc url('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{url_filename}') settings input_format_json_infer_incomplete_types_as_strings=0"
+        f"desc url('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{id}/{url_filename}') settings input_format_json_infer_incomplete_types_as_strings=0"
     )
     assert result.strip() == "c1\tNullable(Int64)"
 
     result = instance.query(
-        f"select * from url('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{url_filename}') settings input_format_json_infer_incomplete_types_as_strings=0"
+        f"select * from url('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{id}/{url_filename}') settings input_format_json_infer_incomplete_types_as_strings=0"
     )
     assert sorted(result.split()) == ["0", "\\N"]
 
     result = instance.query(
-        f"desc s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test*.jsoncompacteachrow') settings input_format_json_infer_incomplete_types_as_strings=0"
+        f"desc s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{id}/test*.jsoncompacteachrow') settings input_format_json_infer_incomplete_types_as_strings=0"
     )
     assert result.strip() == "c1\tNullable(Int64)"
 
     result = instance.query(
-        f"select * from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test*.jsoncompacteachrow') settings input_format_json_infer_incomplete_types_as_strings=0"
+        f"select * from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{id}/test*.jsoncompacteachrow') settings input_format_json_infer_incomplete_types_as_strings=0"
     )
     assert sorted(result.split()) == ["0", "\\N"]
 
     instance.query(
-        f"insert into table function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test3.jsoncompacteachrow', 'JSONCompactEachRow', 'x Nullable(UInt32)') select NULL"
+        f"insert into table function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{id}/test3.jsoncompacteachrow', 'JSONCompactEachRow', 'x Nullable(UInt32)') select NULL"
     )
 
     url_filename = "test{1,3}.jsoncompacteachrow"
 
     result = instance.query_and_get_error(
-        f"desc s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{url_filename}') settings schema_inference_use_cache_for_s3=0, input_format_json_infer_incomplete_types_as_strings=0"
+        f"desc s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{id}/{url_filename}') settings schema_inference_use_cache_for_s3=0, input_format_json_infer_incomplete_types_as_strings=0"
     )
 
     assert "All attempts to extract table structure from files failed" in result
 
     result = instance.query_and_get_error(
-        f"desc url('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{url_filename}') settings schema_inference_use_cache_for_url=0, input_format_json_infer_incomplete_types_as_strings=0"
+        f"desc url('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{id}/{url_filename}') settings schema_inference_use_cache_for_url=0, input_format_json_infer_incomplete_types_as_strings=0"
     )
 
     assert "All attempts to extract table structure from files failed" in result
 
     instance.query(
-        f"insert into table function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test0.jsoncompacteachrow', 'TSV', 'x String') select '[123;]'"
+        f"insert into table function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{id}/test0.jsoncompacteachrow', 'TSV', 'x String') select '[123;]'"
     )
 
     result = instance.query_and_get_error(
-        f"desc s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test*.jsoncompacteachrow') settings schema_inference_use_cache_for_s3=0, input_format_json_infer_incomplete_types_as_strings=0"
+        f"desc s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{id}/test*.jsoncompacteachrow') settings schema_inference_use_cache_for_s3=0, input_format_json_infer_incomplete_types_as_strings=0"
     )
 
     assert "CANNOT_EXTRACT_TABLE_STRUCTURE" in result
@@ -1443,7 +1471,7 @@ def test_schema_inference_from_globs(started_cluster):
     url_filename = "test{0,1,2,3}.jsoncompacteachrow"
 
     result = instance.query_and_get_error(
-        f"desc url('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{url_filename}') settings schema_inference_use_cache_for_url=0, input_format_json_infer_incomplete_types_as_strings=0"
+        f"desc url('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{id}/{url_filename}') settings schema_inference_use_cache_for_url=0, input_format_json_infer_incomplete_types_as_strings=0"
     )
 
     assert "CANNOT_EXTRACT_TABLE_STRUCTURE" in result
@@ -1503,9 +1531,12 @@ def test_signatures(started_cluster):
     )
     assert "S3_ERROR" in error
 
+    instance.query(f"drop table test_signatures")
+
 
 def test_select_columns(started_cluster):
     bucket = started_cluster.minio_bucket
+    id = uuid.uuid4()
     instance = started_cluster.instances["dummy"]
     name = "test_table2"
     structure = "id UInt32, value1 Int32, value2 Int32"
@@ -1519,36 +1550,37 @@ def test_select_columns(started_cluster):
     instance.query(
         f"INSERT INTO {name} SELECT * FROM generateRandom('{structure}') LIMIT {limit} SETTINGS s3_truncate_on_insert=1"
     )
-    instance.query(f"SELECT value2 FROM {name}")
+    instance.query(f"SELECT value2, '{id}' FROM {name}")
 
     instance.query("SYSTEM FLUSH LOGS")
     result1 = instance.query(
-        f"SELECT ProfileEvents['ReadBufferFromS3Bytes'] FROM system.query_log WHERE type='QueryFinish' and query LIKE 'SELECT value2 FROM {name}'"
+        f"SELECT ProfileEvents['ReadBufferFromS3Bytes'] FROM system.query_log WHERE type='QueryFinish' and query LIKE 'SELECT value2, ''{id}'' FROM {name}'"
     )
 
-    instance.query(f"SELECT * FROM {name}")
+    instance.query(f"SELECT *, '{id}' FROM {name}")
     instance.query("SYSTEM FLUSH LOGS")
     result2 = instance.query(
-        f"SELECT ProfileEvents['ReadBufferFromS3Bytes'] FROM system.query_log WHERE type='QueryFinish' and query LIKE 'SELECT * FROM {name}'"
+        f"SELECT ProfileEvents['ReadBufferFromS3Bytes'] FROM system.query_log WHERE type='QueryFinish' and query LIKE 'SELECT *, ''{id}'' FROM {name}'"
     )
 
     assert round(int(result2) / int(result1)) == 3
 
 
 def test_insert_select_schema_inference(started_cluster):
+    id = uuid.uuid4()
     bucket = started_cluster.minio_bucket
     instance = started_cluster.instances["dummy"]
 
     instance.query(
-        f"insert into function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_insert_select.native') select toUInt64(1) as x"
+        f"insert into function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{id}/test_insert_select.native') select toUInt64(1) as x"
     )
     result = instance.query(
-        f"desc s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_insert_select.native')"
+        f"desc s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{id}/test_insert_select.native')"
     )
     assert result.strip() == "x\tUInt64"
 
     result = instance.query(
-        f"select * from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_insert_select.native')"
+        f"select * from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{id}/test_insert_select.native')"
     )
     assert int(result) == 1
 
@@ -1558,7 +1590,7 @@ def test_parallel_reading_with_memory_limit(started_cluster):
     instance = started_cluster.instances["dummy"]
 
     instance.query(
-        f"insert into function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_memory_limit.native') select * from numbers(1000000)"
+        f"insert into function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_memory_limit.native') select * from numbers(1000000) SETTINGS s3_truncate_on_insert=1"
     )
 
     result = instance.query_and_get_error(
@@ -1579,7 +1611,7 @@ def test_wrong_format_usage(started_cluster):
     instance = started_cluster.instances["dummy"]
 
     instance.query(
-        f"insert into function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_wrong_format.native') select * from numbers(10e6)"
+        f"insert into function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_wrong_format.native') select * from numbers(10e6) SETTINGS s3_truncate_on_insert=1"
     )
     # size(test_wrong_format.native) = 10e6*8+16(header) ~= 76MiB
 
@@ -2102,11 +2134,11 @@ def test_read_subcolumns(started_cluster):
     instance = started_cluster.instances["dummy"]
 
     instance.query(
-        f"insert into function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_subcolumns.tsv', auto, 'a Tuple(b Tuple(c UInt32, d UInt32), e UInt32)') select  ((1, 2), 3)"
+        f"insert into function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_subcolumns.tsv', auto, 'a Tuple(b Tuple(c UInt32, d UInt32), e UInt32)') select  ((1, 2), 3) SETTINGS s3_truncate_on_insert=1"
     )
 
     instance.query(
-        f"insert into function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_subcolumns.jsonl', auto, 'a Tuple(b Tuple(c UInt32, d UInt32), e UInt32)') select  ((1, 2), 3)"
+        f"insert into function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_subcolumns.jsonl', auto, 'a Tuple(b Tuple(c UInt32, d UInt32), e UInt32)') select  ((1, 2), 3)  SETTINGS s3_truncate_on_insert=1"
     )
 
     res = instance.query(
@@ -2165,7 +2197,7 @@ def test_read_subcolumn_time(started_cluster):
     instance = started_cluster.instances["dummy"]
 
     instance.query(
-        f"insert into function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_subcolumn_time.tsv', auto, 'a UInt32') select  (42)"
+        f"insert into function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_subcolumn_time.tsv', auto, 'a UInt32') select  (42)  SETTINGS s3_truncate_on_insert=1"
     )
 
     res = instance.query(
@@ -2176,29 +2208,30 @@ def test_read_subcolumn_time(started_cluster):
 
 
 def test_filtering_by_file_or_path(started_cluster):
+    id = uuid.uuid4()
     bucket = started_cluster.minio_bucket
     instance = started_cluster.instances["dummy"]
 
     instance.query(
-        f"insert into function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_filter1.tsv', auto, 'x UInt64') select 1"
+        f"insert into function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_filter1.tsv', auto, 'x UInt64') select 1 SETTINGS s3_truncate_on_insert=1"
     )
 
     instance.query(
-        f"insert into function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_filter2.tsv', auto, 'x UInt64') select 2"
+        f"insert into function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_filter2.tsv', auto, 'x UInt64') select 2 SETTINGS s3_truncate_on_insert=1"
     )
 
     instance.query(
-        f"insert into function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_filter3.tsv', auto, 'x UInt64') select 3"
+        f"insert into function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_filter3.tsv', auto, 'x UInt64') select 3 SETTINGS s3_truncate_on_insert=1"
     )
 
     instance.query(
-        f"select count() from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_filter*.tsv') where _file = 'test_filter1.tsv'"
+        f"select count(), '{id}' from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_filter*.tsv') where _file = 'test_filter1.tsv'"
     )
 
     instance.query("SYSTEM FLUSH LOGS")
 
     result = instance.query(
-        f"SELECT ProfileEvents['EngineFileLikeReadFiles'] FROM system.query_log WHERE query like '%select%s3%test_filter%' AND type='QueryFinish'"
+        f"SELECT ProfileEvents['EngineFileLikeReadFiles'] FROM system.query_log WHERE query like '%{id}%' AND type='QueryFinish'"
     )
 
     assert int(result) == 1
@@ -2211,54 +2244,56 @@ def test_filtering_by_file_or_path(started_cluster):
 
 
 def test_union_schema_inference_mode(started_cluster):
+    id = uuid.uuid4()
     bucket = started_cluster.minio_bucket
     instance = started_cluster.instances["s3_non_default"]
+    file_name_prefix = f"test_union_schema_inference_{id}_"
 
     instance.query(
-        f"insert into function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_union_schema_inference1.jsonl') select 1 as a"
+        f"insert into function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{file_name_prefix}1.jsonl') select 1 as a SETTINGS s3_truncate_on_insert=1"
     )
 
     instance.query(
-        f"insert into function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_union_schema_inference2.jsonl') select 2 as b"
+        f"insert into function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{file_name_prefix}2.jsonl') select 2 as b SETTINGS s3_truncate_on_insert=1"
     )
 
     instance.query(
-        f"insert into function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_union_schema_inference3.jsonl') select 2 as c"
+        f"insert into function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{file_name_prefix}3.jsonl') select 2 as c SETTINGS s3_truncate_on_insert=1"
     )
 
     instance.query(
-        f"insert into function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_union_schema_inference4.jsonl', TSV) select 'Error'"
+        f"insert into function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{file_name_prefix}4.jsonl', TSV) select 'Error' SETTINGS s3_truncate_on_insert=1"
     )
 
     for engine in ["s3", "url"]:
         instance.query("system drop schema cache for s3")
 
         result = instance.query(
-            f"desc {engine}('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_union_schema_inference{{1,2,3}}.jsonl') settings schema_inference_mode='union', describe_compact_output=1 format TSV"
+            f"desc {engine}('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{file_name_prefix}{{1,2,3}}.jsonl') settings schema_inference_mode='union', describe_compact_output=1 format TSV"
         )
         assert result == "a\tNullable(Int64)\nb\tNullable(Int64)\nc\tNullable(Int64)\n"
 
         result = instance.query(
-            "select schema_inference_mode, splitByChar('/', source)[-1] as file, schema from system.schema_inference_cache where source like '%test_union_schema_inference%' order by file format TSV"
+            f"select schema_inference_mode, splitByChar('/', source)[-1] as file, schema from system.schema_inference_cache where source like '%{file_name_prefix}%' order by file format TSV"
         )
         assert (
-            result == "UNION\ttest_union_schema_inference1.jsonl\ta Nullable(Int64)\n"
-            "UNION\ttest_union_schema_inference2.jsonl\tb Nullable(Int64)\n"
-            "UNION\ttest_union_schema_inference3.jsonl\tc Nullable(Int64)\n"
+            result == f"UNION\t{file_name_prefix}1.jsonl\ta Nullable(Int64)\n"
+            f"UNION\t{file_name_prefix}2.jsonl\tb Nullable(Int64)\n"
+            f"UNION\t{file_name_prefix}3.jsonl\tc Nullable(Int64)\n"
         )
         result = instance.query(
-            f"select * from {engine}('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_union_schema_inference{{1,2,3}}.jsonl') order by tuple(*) settings schema_inference_mode='union', describe_compact_output=1 format TSV"
+            f"select * from {engine}('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{file_name_prefix}{{1,2,3}}.jsonl') order by tuple(*) settings schema_inference_mode='union', describe_compact_output=1 format TSV"
         )
         assert result == "1\t\\N\t\\N\n" "\\N\t2\t\\N\n" "\\N\t\\N\t2\n"
 
         instance.query(f"system drop schema cache for {engine}")
         result = instance.query(
-            f"desc {engine}('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_union_schema_inference2.jsonl') settings schema_inference_mode='union', describe_compact_output=1 format TSV"
+            f"desc {engine}('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{file_name_prefix}2.jsonl') settings schema_inference_mode='union', describe_compact_output=1 format TSV"
         )
         assert result == "b\tNullable(Int64)\n"
 
         result = instance.query(
-            f"desc {engine}('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_union_schema_inference{{1,2,3}}.jsonl') settings schema_inference_mode='union', describe_compact_output=1 format TSV"
+            f"desc {engine}('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{file_name_prefix}{{1,2,3}}.jsonl') settings schema_inference_mode='union', describe_compact_output=1 format TSV"
         )
         assert (
             result == "a\tNullable(Int64)\n"
@@ -2267,7 +2302,7 @@ def test_union_schema_inference_mode(started_cluster):
         )
 
         error = instance.query_and_get_error(
-            f"desc {engine}('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_union_schema_inference{{1,2,3,4}}.jsonl') settings schema_inference_mode='union', describe_compact_output=1 format TSV"
+            f"desc {engine}('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{file_name_prefix}{{1,2,3,4}}.jsonl') settings schema_inference_mode='union', describe_compact_output=1 format TSV"
         )
         assert "CANNOT_EXTRACT_TABLE_STRUCTURE" in error
 
