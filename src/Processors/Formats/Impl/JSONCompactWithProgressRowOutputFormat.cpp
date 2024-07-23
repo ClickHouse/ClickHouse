@@ -55,8 +55,8 @@ void JSONCompactWithProgressRowOutputFormat::writeRowBetweenDelimiter()
 
 void JSONCompactWithProgressRowOutputFormat::writeBeforeTotals()
 {
-    JSONUtils::writeFieldDelimiter(*ostr, 2);
-    JSONUtils::writeCompactArrayStart(*ostr, 1, "totals");
+    JSONUtils::writeCompactObjectStart(*ostr);
+    JSONUtils::writeCompactArrayStart(*ostr, 0, "totals");
 }
 
 void JSONCompactWithProgressRowOutputFormat::writeTotals(const Columns & columns, size_t row_num)
@@ -67,6 +67,8 @@ void JSONCompactWithProgressRowOutputFormat::writeTotals(const Columns & columns
 void JSONCompactWithProgressRowOutputFormat::writeAfterTotals()
 {
     JSONUtils::writeCompactArrayEnd(*ostr);
+    JSONUtils::writeCompactObjectEnd(*ostr);
+    writeCString("}\n", *ostr);
 }
 
 void JSONCompactWithProgressRowOutputFormat::writeExtremesElement(const char * title, const Columns & columns, size_t row_num)
@@ -131,6 +133,7 @@ void JSONCompactWithProgressRowOutputFormat::finalizeImpl()
         JSONUtils::writeException(exception_message, *ostr, settings, 0);
         JSONUtils::writeCompactObjectEnd(*ostr);
     }
+    writeCString("\n", *ostr);
     ostr->next();
 }
 
