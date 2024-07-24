@@ -11,6 +11,7 @@
 #include <base/cgroupsv2.h>
 #include <base/getMemoryAmount.h>
 #include <base/sleep.h>
+#include <fmt/ranges.h>
 
 #include <cstdint>
 

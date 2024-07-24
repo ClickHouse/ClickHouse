@@ -31,6 +31,7 @@ class CIBuddy:
         self.sha = pr_info.sha[:10]
 
     def check_workflow(self):
+        GHActions.print_workflow_results()
         res = GHActions.get_workflow_job_result(GHActions.ActionsNames.RunConfig)
         if res != GHActions.ActionStatuses.SUCCESS:
             self.post_job_error("Workflow Configuration Failed", critical=True)

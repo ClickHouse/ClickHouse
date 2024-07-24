@@ -10,6 +10,8 @@
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
 
+#include <fmt/ranges.h>
+
 #include <filesystem>
 #include <memory>
 #include <optional>
@@ -33,41 +35,41 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-struct ICgroupsReader
-{
-    virtual ~ICgroupsReader() = default;
-
-    virtual uint64_t readMemoryUsage() = 0;
-};
-
+#if defined(OS_LINUX)
 namespace
 {
 
-#if defined(OS_LINUX)
+using Metrics = std::map<std::string, uint64_t>;
+
 /// Format is
 ///   kernel 5
 ///   rss 15
 ///   [...]
-uint64_t readMetricFromStatFile(ReadBufferFromFile & buf, const std::string & key)
+Metrics readAllMetricsFromStatFile(ReadBufferFromFile & buf)
 {
+    Metrics metrics;
     while (!buf.eof())
     {
         std::string current_key;
         readStringUntilWhitespace(current_key, buf);
-        if (current_key != key)
-        {
-            std::string dummy;
-            readStringUntilNewlineInto(dummy, buf);
-            buf.ignore();
-            continue;
-        }
 
         assertChar(' ', buf);
+
         uint64_t value = 0;
         readIntText(value, buf);
-        return value;
-    }
+        assertChar('\n', buf);
 
+        auto [_, inserted] = metrics.emplace(std::move(current_key), value);
+        chassert(inserted, "Duplicate keys in stat file");
+    }
+    return metrics;
+}
+
+uint64_t readMetricFromStatFile(ReadBufferFromFile & buf, const std::string & key)
+{
+    const auto all_metrics = readAllMetricsFromStatFile(buf);
+    if (const auto it = all_metrics.find(key); it != all_metrics.end())
+        return it->second;
     LOG_ERROR(getLogger("CgroupsReader"), "Cannot find '{}' in '{}'", key, buf.getFileName());
     return 0;
 }
@@ -81,6 +83,13 @@ struct CgroupsV1Reader : ICgroupsReader
         std::lock_guard lock(mutex);
         buf.rewind();
         return readMetricFromStatFile(buf, "rss");
+    }
+
+    std::string dumpAllStats() override
+    {
+        std::lock_guard lock(mutex);
+        buf.rewind();
+        return fmt::format("{}", readAllMetricsFromStatFile(buf));
     }
 
 private:
@@ -97,6 +106,13 @@ struct CgroupsV2Reader : ICgroupsReader
         std::lock_guard lock(mutex);
         stat_buf.rewind();
         return readMetricFromStatFile(stat_buf, "anon");
+    }
+
+    std::string dumpAllStats() override
+    {
+        std::lock_guard lock(mutex);
+        stat_buf.rewind();
+        return fmt::format("{}", readAllMetricsFromStatFile(stat_buf));
     }
 
 private:
@@ -147,34 +163,23 @@ std::optional<std::string> getCgroupsV1Path()
     return {default_cgroups_mount / "memory"};
 }
 
-enum class CgroupsVersion : uint8_t
-{
-    V1,
-    V2
-};
-
-std::pair<std::string, CgroupsVersion> getCgroupsPath()
+std::pair<std::string, ICgroupsReader::CgroupsVersion> getCgroupsPath()
 {
     auto v2_path = getCgroupsV2Path();
     if (v2_path.has_value())
-        return {*v2_path, CgroupsVersion::V2};
+        return {*v2_path, ICgroupsReader::CgroupsVersion::V2};
 
     auto v1_path = getCgroupsV1Path();
     if (v1_path.has_value())
-        return {*v1_path, CgroupsVersion::V1};
+        return {*v1_path, ICgroupsReader::CgroupsVersion::V1};
 
     throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Cannot find cgroups v1 or v2 current memory file");
 }
 
-std::shared_ptr<ICgroupsReader> createCgroupsReader()
-{
-    const auto [cgroup_path, version] = getCgroupsPath();
-    LOG_INFO(
-        getLogger("CgroupsReader"),
-        "Will create cgroup reader from '{}' (cgroups version: {})",
-        cgroup_path,
-        (version == CgroupsVersion::V1) ? "v1" : "v2");
+}
 
+std::shared_ptr<ICgroupsReader> ICgroupsReader::createCgroupsReader(ICgroupsReader::CgroupsVersion version, const std::filesystem::path & cgroup_path)
+{
     if (version == CgroupsVersion::V2)
         return std::make_shared<CgroupsV2Reader>(cgroup_path);
     else
@@ -182,9 +187,11 @@ std::shared_ptr<ICgroupsReader> createCgroupsReader()
         chassert(version == CgroupsVersion::V1);
         return std::make_shared<CgroupsV1Reader>(cgroup_path);
     }
-
 }
 #endif
+
+namespace
+{
 
 std::string_view sourceToString(MemoryWorker::MemoryUsageSource source)
 {
@@ -212,7 +219,14 @@ MemoryWorker::MemoryWorker(uint64_t period_ms_)
     {
         static constexpr uint64_t cgroups_memory_usage_tick_ms{50};
 
-        cgroups_reader = createCgroupsReader();
+        const auto [cgroup_path, version] = getCgroupsPath();
+        LOG_INFO(
+            getLogger("CgroupsReader"),
+            "Will create cgroup reader from '{}' (cgroups version: {})",
+            cgroup_path,
+            (version == ICgroupsReader::CgroupsVersion::V1) ? "v1" : "v2");
+
+        cgroups_reader = ICgroupsReader::createCgroupsReader(version, cgroup_path);
         source = MemoryUsageSource::Cgroups;
         if (period_ms == 0)
             period_ms = cgroups_memory_usage_tick_ms;
@@ -284,7 +298,7 @@ uint64_t MemoryWorker::getMemoryUsage()
 void MemoryWorker::backgroundThread()
 {
     std::chrono::milliseconds chrono_period_ms{period_ms};
-    [[maybe_unused]] bool first_run = true;
+    bool first_run = true;
     std::unique_lock lock(mutex);
     while (true)
     {

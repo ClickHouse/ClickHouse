@@ -7,14 +7,31 @@
 namespace DB
 {
 
-struct ICgroupsReader;
+struct ICgroupsReader
+{
+    enum class CgroupsVersion : uint8_t
+    {
+        V1,
+        V2
+    };
 
-/// Correct MemoryTracker based on stats.resident read from jemalloc.
-/// This requires jemalloc built with --enable-stats which we use.
-/// The worker spawns a background thread which moves the jemalloc epoch (updates internal stats),
-/// and fetches the current stats.resident whose value is sent to global MemoryTracker.
-/// Additionally, if the current memory usage is higher than global hard limit,
-/// jemalloc's dirty pages are forcefully purged.
+#if defined(OS_LINUX)
+    static std::shared_ptr<ICgroupsReader>
+    createCgroupsReader(ICgroupsReader::CgroupsVersion version, const std::filesystem::path & cgroup_path);
+#endif
+
+    virtual ~ICgroupsReader() = default;
+
+    virtual uint64_t readMemoryUsage() = 0;
+
+    virtual std::string dumpAllStats() = 0;
+};
+
+
+/// Correct MemoryTracker based on external information (e.g. Cgroups or stats.resident from jemalloc)
+/// The worker spawns a background thread which periodically reads current resident memory from the source,
+/// whose value is sent to global MemoryTracker.
+/// It can do additional things like purging jemalloc dirty pages if the current memory usage is higher than global hard limit.
 class MemoryWorker
 {
 public:
