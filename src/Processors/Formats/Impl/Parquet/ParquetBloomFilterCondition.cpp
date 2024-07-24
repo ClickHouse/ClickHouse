@@ -114,11 +114,7 @@ bool ParquetBloomFilterCondition::mayBeTrueOnRowGroup(const IndexColumnToColumnB
     std::vector<BoolMask> rpn_stack;
     for (const auto & element : rpn)
     {
-        if (element.function == RPNElement::FUNCTION_UNKNOWN)
-        {
-            rpn_stack.emplace_back(true, true);
-        }
-        else if (element.function == RPNElement::FUNCTION_IN_RANGE
+        if (element.function == RPNElement::FUNCTION_IN_RANGE
                  || element.function == RPNElement::FUNCTION_NOT_IN_RANGE)
         {
             if (element.range.left != element.range.right)
@@ -153,6 +149,27 @@ bool ParquetBloomFilterCondition::mayBeTrueOnRowGroup(const IndexColumnToColumnB
                 rpn_stack.back() = !rpn_stack.back();
 
         }
+        else if (element.function == RPNElement::FUNCTION_IN_SET
+                 || element.function == RPNElement::FUNCTION_NOT_IN_SET
+                 || element.function == RPNElement::ALWAYS_FALSE)
+        {
+            if (!column_index_to_column_bf.contains(element.key_column))
+            {
+                rpn_stack.emplace_back(true, true);
+                continue;
+            }
+
+            const auto & set_index = element.set_index;
+            const auto & ordered_set = set_index->getOrderedSet();
+            const auto & set_column = ordered_set[0];
+            const auto hashed = hash(set_column.get(), column_index_to_column_bf.at(element.key_column));
+
+            bool maybe_true = maybeTrueOnBloomFilter(hashed, column_index_to_column_bf.at(element.key_column), false);
+
+            rpn_stack.emplace_back(maybe_true, true);
+            if (element.function == RPNElement::FUNCTION_NOT_IN_SET)
+                rpn_stack.back() = !rpn_stack.back();
+        }
         else if (element.function == RPNElement::FUNCTION_NOT)
         {
             rpn_stack.back() = !rpn_stack.back();
@@ -175,27 +192,10 @@ bool ParquetBloomFilterCondition::mayBeTrueOnRowGroup(const IndexColumnToColumnB
         {
             rpn_stack.emplace_back(true, false);
         }
-        else if (element.function == RPNElement::ALWAYS_FALSE)
-        {
-            rpn_stack.emplace_back(false, true);
-        }
-        else if (element.function == RPNElement::FUNCTION_IN_SET
-                 || element.function == RPNElement::FUNCTION_NOT_IN_SET
-                 || element.function == RPNElement::ALWAYS_FALSE)
-        {
-            const auto & set_index = element.set_index;
-            const auto & ordered_set = set_index->getOrderedSet();
-            const auto & set_column = ordered_set[0];
-            const auto hashed = hash(set_column.get(), column_index_to_column_bf.at(element.key_column));
-
-            bool maybe_true = maybeTrueOnBloomFilter(hashed, column_index_to_column_bf.at(element.key_column), false);
-
-            rpn_stack.emplace_back(maybe_true, true);
-            if (element.function == RPNElement::FUNCTION_NOT_IN_SET)
-                rpn_stack.back() = !rpn_stack.back();
-        }
         else
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected function type in KeyCondition::RPNElement");
+        {
+            rpn_stack.emplace_back(true, true);
+        }
     }
 
     if (rpn_stack.size() != 1)
