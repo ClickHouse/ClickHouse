@@ -17,7 +17,6 @@
 #include <Parsers/MySQL/ASTCreateDefines.h>
 
 #include <DataTypes/DataTypeFactory.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Parsers/MySQL/ASTDeclareIndex.h>
 #include <Common/quoteString.h>
@@ -158,7 +157,7 @@ static ColumnsDescription createColumnsDescription(const NamesAndTypesList & col
     /// (see git blame for details).
     auto column_name_and_type = columns_name_and_type.begin();
     const auto * declare_column_ast = columns_definition->children.begin();
-    for (; column_name_and_type != columns_name_and_type.end(); column_name_and_type++, declare_column_ast++)
+    for (; column_name_and_type != columns_name_and_type.end(); ++column_name_and_type, ++declare_column_ast)
     {
         const auto & declare_column = (*declare_column_ast)->as<MySQLParser::ASTDeclareColumn>();
         String comment;
@@ -177,7 +176,7 @@ static ColumnsDescription createColumnsDescription(const NamesAndTypesList & col
     return columns_description;
 }
 
-static NamesAndTypesList getNames(const ASTDataType & expr, ContextPtr context, const NamesAndTypesList & columns)
+static NamesAndTypesList getNames(const ASTFunction & expr, ContextPtr context, const NamesAndTypesList & columns)
 {
     if (expr.arguments->children.empty())
         return NamesAndTypesList{};
@@ -221,9 +220,9 @@ static std::tuple<NamesAndTypesList, NamesAndTypesList, NamesAndTypesList, NameS
     ASTExpressionList * columns_definition, ASTExpressionList * indices_define, ContextPtr context, NamesAndTypesList & columns)
 {
     NameSet increment_columns;
-    auto keys = makeASTDataType("tuple");
-    auto unique_keys = makeASTDataType("tuple");
-    auto primary_keys = makeASTDataType("tuple");
+    auto keys = makeASTFunction("tuple");
+    auto unique_keys = makeASTFunction("tuple");
+    auto primary_keys = makeASTFunction("tuple");
 
     if (indices_define && !indices_define->children.empty())
     {
