@@ -162,10 +162,9 @@ public:
 
         if (is_join_get)
             added_columns.buildJoinGetOutput();
-        else if (added_columns.output_by_row_list)
-            added_columns.buildOutputFromRowRefList();
         else
-            added_columns.buildOutputFromRowRef();
+            added_columns.buildOutput();
+
         for (size_t i = 0; i < added_columns.size(); ++i)
             block.insert(added_columns.moveColumn(i));
 

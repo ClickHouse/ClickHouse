@@ -119,9 +119,7 @@ public:
 
     size_t size() const { return columns.size(); }
 
-    void buildOutputFromRowRef();
-
-    void buildOutputFromRowRefList();
+    void buildOutput();
 
     void buildJoinGetOutput();
 
@@ -198,57 +196,6 @@ private:
         }
     }
 
-    /** Build output from the blocks that extract from `RowRef` or `RowRefList`, to avoid block cache-miss which may cause performance slow down.
-     *  And This problem would happen it we directly build output from `RowRef` or `RowRefList`.
-     */
-    template<bool from_row_list>
-    void buildOutputFromBlocks()
-    {
-        if (this->size() == 0)
-            return;
-        std::vector<const Block *> blocks;
-        std::vector<UInt32> row_nums;
-        blocks.reserve(lazy_output.row_refs.size());
-        row_nums.reserve(lazy_output.row_refs.size());
-        for (auto row_ref_i : lazy_output.row_refs)
-        {
-            if (row_ref_i)
-            {
-                if constexpr (from_row_list)
-                {
-                    const RowRefList * row_ref_list = reinterpret_cast<const RowRefList *>(row_ref_i);
-                    for (auto it = row_ref_list->begin(); it.ok(); ++it)
-                    {
-                        blocks.emplace_back(it->block);
-                        row_nums.emplace_back(it->row_num);
-                    }
-                }
-                else
-                {
-                    const RowRef * row_ref = reinterpret_cast<const RowRefList *>(row_ref_i);
-                    blocks.emplace_back(row_ref->block);
-                    row_nums.emplace_back(row_ref->row_num);
-                }
-            }
-            else
-            {
-                blocks.emplace_back(nullptr);
-                row_nums.emplace_back(0);
-            }
-        }
-        for (size_t i = 0; i < this->size(); ++i)
-        {
-            auto & col = columns[i];
-            for (size_t j = 0; j < blocks.size(); ++j)
-            {
-                if (blocks[j])
-                    col->insertFrom(*blocks[j]->getByPosition(right_indexes[i]).column, row_nums[j]);
-                else
-                    type_name[i].type->insertDefaultInto(*col);
-            }
-        }
-    }
-
     MutableColumns columns;
     bool is_join_get;
     std::vector<size_t> right_indexes;
@@ -272,6 +219,12 @@ private:
         columns.back()->reserve(src_column.column->size());
         type_name.emplace_back(src_column.type, src_column.name, qualified_name);
     }
+
+    /** Build output from the blocks that extract from `RowRef` or `RowRefList`, to avoid block cache-miss which may cause performance slow down.
+     *  And This problem would happen it we directly build output from `RowRef` or `RowRefList`.
+     */
+    template<bool from_row_list>
+    void buildOutputFromBlocks();
 };
 
 /// Adapter class to pass into addFoundRowAll
