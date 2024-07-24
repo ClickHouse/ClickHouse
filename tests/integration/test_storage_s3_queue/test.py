@@ -823,7 +823,7 @@ def test_multiple_tables_streaming_sync_distributed(started_cluster, mode):
 
 def test_max_set_age(started_cluster):
     node = started_cluster.instances["instance"]
-    table_name = f"max_set_age_{uuid4().hex}"
+    table_name = "max_set_age"
     dst_table_name = f"{table_name}_dst"
     keeper_path = f"/clickhouse/test_{table_name}"
     files_path = f"{table_name}_data"
@@ -848,9 +848,7 @@ def test_max_set_age(started_cluster):
     )
     create_mv(node, table_name, dst_table_name)
 
-    _ = generate_random_files(
-        started_cluster, files_path, files_to_generate, row_num=1
-    )
+    _ = generate_random_files(started_cluster, files_path, files_to_generate, row_num=1)
 
     expected_rows = files_to_generate
 
@@ -869,13 +867,17 @@ def test_max_set_age(started_cluster):
         assert False
 
     wait_for_condition(lambda: get_count() == expected_rows)
-    assert files_to_generate == int(node.query(f"SELECT uniq(_path) from {dst_table_name}"))
+    assert files_to_generate == int(
+        node.query(f"SELECT uniq(_path) from {dst_table_name}")
+    )
 
     time.sleep(max_age + 5)
 
     expected_rows *= 2
     wait_for_condition(lambda: get_count() == expected_rows)
-    assert files_to_generate == int(node.query(f"SELECT uniq(_path) from {dst_table_name}"))
+    assert files_to_generate == int(
+        node.query(f"SELECT uniq(_path) from {dst_table_name}")
+    )
 
     paths_count = [
         int(x)
@@ -888,9 +890,11 @@ def test_max_set_age(started_cluster):
         assert 2 == path_count
 
     def get_object_storage_failures():
-        return int(node.query(
-            "SELECT value FROM system.events WHERE name = 'ObjectStorageQueueFailedFiles' SETTINGS system_events_show_zero_values=1"
-        ))
+        return int(
+            node.query(
+                "SELECT value FROM system.events WHERE name = 'ObjectStorageQueueFailedFiles' SETTINGS system_events_show_zero_values=1"
+            )
+        )
 
     failed_count = get_object_storage_failures()
 
@@ -900,6 +904,8 @@ def test_max_set_age(started_cluster):
     values_csv = (
         "\n".join((",".join(map(str, row)) for row in values)) + "\n"
     ).encode()
+
+    # use a different filename for each test to allow running a bunch of them sequentially with --count
     file_with_error = f"fff_{uuid4().hex}.csv"
     put_s3_file_content(started_cluster, f"{files_path}/{file_with_error}", values_csv)
 
