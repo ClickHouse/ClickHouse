@@ -2969,7 +2969,7 @@ class ClickHouseCluster:
                     "Trying to create Azurite instance by command %s",
                     " ".join(map(str, azurite_start_cmd)),
                 )
-                retry_decorator.retry(
+                retry(
                     log_function=lambda exception: logging.info(
                         f"Azurite initialization failed with error: {exception}"
                     ),
