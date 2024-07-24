@@ -34,6 +34,8 @@ RUN apt-get update \
         git \
         ninja-build \
         clang \
+        libzstd-dev \
+        zlib1g-dev \
         --yes --no-install-recommends --verbose-versions \
         && apt-get clean && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
