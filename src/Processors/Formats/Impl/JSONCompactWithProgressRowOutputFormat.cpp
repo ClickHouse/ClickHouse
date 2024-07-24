@@ -68,7 +68,7 @@ void JSONCompactWithProgressRowOutputFormat::writeAfterTotals()
 {
     JSONUtils::writeCompactArrayEnd(*ostr);
     JSONUtils::writeCompactObjectEnd(*ostr);
-    writeCString("}\n", *ostr);
+    writeCString("\n", *ostr);
 }
 
 void JSONCompactWithProgressRowOutputFormat::writeExtremesElement(const char * title, const Columns & columns, size_t row_num)
