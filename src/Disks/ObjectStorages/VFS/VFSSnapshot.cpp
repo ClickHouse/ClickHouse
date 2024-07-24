@@ -20,25 +20,6 @@ namespace ErrorCodes
 extern const int LOGICAL_ERROR;
 }
 
-/// tmp start
-
-std::pair<WALItems, UInt64> getWalItems(WAL::AppendLog & alog, size_t batch_size)
-{
-    auto alog_entries = alog.readFront(batch_size);
-    WALItems result;
-    UInt64 max_index = 0;
-    result.reserve(alog_entries.size());
-    for (const auto & entry : alog_entries)
-    {
-        String data(entry.data.begin(), entry.data.end());
-        result.emplace_back(WALItem::deserialize(data));
-        max_index = std::max(max_index, entry.index);
-    }
-    return {result, max_index};
-}
-/// tmp end
-
-
 bool VFSSnapshotEntry::operator==(const VFSSnapshotEntry & entry) const
 {
     return remote_path == entry.remote_path && link_count == entry.link_count;
@@ -83,7 +64,7 @@ void VFSSnapshotDataBase::writeEntryInSnaphot(
 }
 
 
-SnapshotMetadata VFSSnapshotDataBase::mergeWithWals(WALItems & wal_items, const SnapshotMetadata & old_snapshot_meta)
+SnapshotMetadata VFSSnapshotDataBase::mergeWithWals(VFSLogItems && wal_items, const SnapshotMetadata & old_snapshot_meta)
 {
     /// For most of object stroges (like s3 or azure) we don't need the object path, it's generated randomly.
     /// But other ones reqiested to set it manually.
@@ -91,7 +72,7 @@ SnapshotMetadata VFSSnapshotDataBase::mergeWithWals(WALItems & wal_items, const 
     auto [new_shapshot_write_buffer, new_object_key] = getShapshotWriteBufferAndSnaphotObject(old_snapshot_meta);
 
     LOG_DEBUG(log, "Going to merge WAL batch(size {}) with snapshot (key {})", wal_items.size(), old_snapshot_meta.object_storage_key);
-    auto entires_to_remove = mergeWithWalsImpl(wal_items, *shapshot_read_buffer, *new_shapshot_write_buffer);
+    auto entires_to_remove = mergeWithWalsImpl(std::move(wal_items), *shapshot_read_buffer, *new_shapshot_write_buffer);
     SnapshotMetadata new_snaphot_meta(new_object_key);
 
     LOG_DEBUG(log, "Merge snapshot have finished, going to remove {} from object storage", entires_to_remove.size());
@@ -100,14 +81,13 @@ SnapshotMetadata VFSSnapshotDataBase::mergeWithWals(WALItems & wal_items, const 
 }
 
 
-VFSSnapshotEntries VFSSnapshotDataBase::mergeWithWalsImpl(WALItems & wal_items, ReadBuffer & read_buffer, WriteBuffer & write_buffer)
+VFSSnapshotEntries VFSSnapshotDataBase::mergeWithWalsImpl(VFSLogItems && wal_items_, ReadBuffer & read_buffer, WriteBuffer & write_buffer)
 {
     VFSSnapshotEntries entries_to_remove;
 
-    std::sort(
-        wal_items.begin(),
-        wal_items.end(),
-        [](const WALItem & left, const WALItem & right) { return left.remote_path < right.remote_path; });
+    auto wal_items = std::move(wal_items_);
+    std::ranges::sort(
+        wal_items, [](const VFSLogItem & left, const VFSLogItem & right) { return left.event.remote_path < right.event.remote_path; });
 
 
     auto current_snapshot_entry = VFSSnapshotEntry::deserialize(read_buffer);
@@ -119,10 +99,22 @@ VFSSnapshotEntries VFSSnapshotDataBase::mergeWithWalsImpl(WALItems & wal_items, 
     for (auto wal_iterator = wal_items.begin(); wal_iterator != wal_items.end();)
     {
         // Combine all wal items with the same remote_path into single one.
-        VFSSnapshotEntry entry_to_merge = {wal_iterator->remote_path, 0};
-        while (wal_iterator != wal_items.end() && wal_iterator->remote_path == entry_to_merge.remote_path)
+        VFSSnapshotEntry entry_to_merge = {wal_iterator->event.remote_path, 0};
+        while (wal_iterator != wal_items.end() && wal_iterator->event.remote_path == entry_to_merge.remote_path)
         {
-            entry_to_merge.link_count += wal_iterator->delta_link_count;
+            int delta_link_count = 0; // TODO: remove delta and save local_path in the snapshot
+            switch (wal_iterator->event.action)
+            {
+                case VFSAction::LINK:
+                case VFSAction::REQUEST:
+                    delta_link_count = 1;
+                    break;
+                case VFSAction::UNLINK:
+                    delta_link_count = -1;
+                    break;
+            }
+
+            entry_to_merge.link_count += delta_link_count;
             ++wal_iterator;
         }
 

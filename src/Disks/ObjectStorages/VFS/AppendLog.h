@@ -1,5 +1,7 @@
 #pragma once
+
 #include <IO/WriteBufferFromFile.h>
+#include <Core/Types.h>
 
 #include <filesystem>
 #include <mutex>
@@ -57,6 +59,8 @@ public:
     UInt64 getStartIndex() const;
     /// Return the number of segments the log contains
     size_t segmentsCount() const;
+    /// Return unique log ID
+    UUID getID() const;
 
 private:
     /// Load all segments from the log directory and clean outdated segments
@@ -83,6 +87,7 @@ private:
     std::unique_ptr<WriteBufferFromFile> log_file TSA_GUARDED_BY(mutex);
     size_t active_segment_size TSA_GUARDED_BY(mutex) = 0;
 
+    UUID log_id TSA_GUARDED_BY(mutex) {};
     /// Index of the next entry to append
     UInt64 next_index TSA_GUARDED_BY(mutex) = 0;
     /// Log working directory

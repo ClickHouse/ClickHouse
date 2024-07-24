@@ -3,6 +3,7 @@
 #include "AppendLog.h"
 #include "IO/ReadHelpers.h"
 #include "VFSShapshotMetadata.h"
+#include "VFSLog.h"
 
 #include <fstream>
 #include <optional>
@@ -14,39 +15,6 @@
 
 namespace DB
 {
-
-/////// START OF TMP
-struct WALItem
-{
-    String remote_path;
-    Int64 delta_link_count;
-    String status;
-    time_t last_update_timestamp;
-    UInt64 last_update_wal_pointer;
-    UInt64 wal_uuid;
-    WALItem(String path, Int64 delta)
-        : remote_path(path), delta_link_count(delta), status(""), last_update_timestamp(0), last_update_wal_pointer(0), wal_uuid(0)
-    {
-    }
-    WALItem() : remote_path(""), delta_link_count(0), status(""), last_update_timestamp(0), last_update_wal_pointer(0), wal_uuid(0) { }
-    static WALItem deserialize(const String & str)
-    {
-        ReadBufferFromString rb(str);
-        WALItem item;
-
-        readStringUntilWhitespace(item.remote_path, rb);
-        checkChar(' ', rb);
-        readIntTextUnsafe(item.delta_link_count, rb);
-        return item;
-    }
-    String serialize() const { return fmt::format("{} {}", remote_path, delta_link_count); }
-};
-
-using WALItems = std::vector<WALItem>;
-
-std::pair<WALItems, UInt64> getWalItems(WAL::AppendLog & alog, size_t batch_size);
-
-/////// END OF TMP
 
 struct VFSSnapshotEntry
 {
@@ -66,12 +34,15 @@ public:
     VFSSnapshotDataBase() : log(getLogger("VFSSnapshotDataBase(unnamed)")) { }
     virtual ~VFSSnapshotDataBase() = default;
 
+    VFSSnapshotDataBase(const VFSSnapshotDataBase &) = delete;
+    VFSSnapshotDataBase(VFSSnapshotDataBase &&) = delete;
+
     /// Apply wal on the current snapshot and returns metadata of the updated one.
-    SnapshotMetadata mergeWithWals(WALItems & wal_items, const SnapshotMetadata & old_snapshot_meta);
+    SnapshotMetadata mergeWithWals(VFSLogItems && wal_items, const SnapshotMetadata & old_snapshot_meta);
 
 private:
     void writeEntryInSnaphot(const VFSSnapshotEntry & entry, WriteBuffer & write_buffer, VFSSnapshotEntries & entries_to_remove);
-    VFSSnapshotEntries mergeWithWalsImpl(WALItems & wal_items, ReadBuffer & read_buffer, WriteBuffer & write_buffer);
+    VFSSnapshotEntries mergeWithWalsImpl(VFSLogItems && wal_items, ReadBuffer & read_buffer, WriteBuffer & write_buffer);
 
     LoggerPtr log;
 
@@ -86,7 +57,6 @@ protected:
 class VFSSnapshotDataFromObjectStorage : public VFSSnapshotDataBase
 {
 public:
-    VFSSnapshotDataFromObjectStorage() = delete;
     VFSSnapshotDataFromObjectStorage(ObjectStoragePtr object_storage_, const String & name_)
         : object_storage(object_storage_), log(getLogger(fmt::format("VFSSnapshotDataFromObjectStorage({})", name_)))
     {
@@ -100,6 +70,7 @@ protected:
 
 private:
     ObjectStoragePtr object_storage;
+    LoggerPtr log;
 };
 
 }

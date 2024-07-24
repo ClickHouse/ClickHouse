@@ -13,7 +13,6 @@
 namespace DB::ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
-//extern const int LOGICAL_ERROR;
 extern const int ARGUMENT_OUT_OF_BOUND;
 extern const int CORRUPTED_DATA;
 extern const int INVALID_STATE;
@@ -115,6 +114,12 @@ AppendLog::AppendLog(const fs::path & log_dir_, const Settings & settings_) : lo
     if (!fs::exists(log_dir))
         fs::create_directories(log_dir);
     load();
+}
+
+UUID AppendLog::getID() const
+{
+    std::lock_guard lock(mutex);
+    return log_id;
 }
 
 

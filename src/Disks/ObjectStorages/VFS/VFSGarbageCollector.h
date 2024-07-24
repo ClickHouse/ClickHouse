@@ -34,7 +34,7 @@ public:
     VFSGarbageCollector(
         const String & gc_name_,
         ObjectStoragePtr object_storage_,
-        WAL::AppendLog & alog,
+        VFSLog & wal_,
         BackgroundSchedulePool & pool,
         const GarbageCollectorSettings & settings_);
 
@@ -54,7 +54,7 @@ private:
     String gc_name;
     ObjectStoragePtr object_storage;
     VFSSnapshotDataFromObjectStorage vfs_shapshot_data;
-    WAL::AppendLog & alog;
+    VFSLog & wal;
 
     const GarbageCollectorSettings settings;
     LoggerPtr log;

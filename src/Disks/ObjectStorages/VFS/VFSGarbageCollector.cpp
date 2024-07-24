@@ -35,13 +35,13 @@ extern const char vfs_gc_optimistic_lock_delay[];
 VFSGarbageCollector::VFSGarbageCollector(
     const String & gc_name_,
     ObjectStoragePtr object_storage_,
-    WAL::AppendLog & alog_,
+    VFSLog & wal_,
     BackgroundSchedulePool & pool,
     const GarbageCollectorSettings & settings_)
     : gc_name(gc_name_)
     , object_storage(object_storage_)
-    , vfs_shapshot_data({object_storage, gc_name})
-    , alog(alog_)
+    , vfs_shapshot_data(object_storage, gc_name)
+    , wal(wal_)
     , settings(settings_)
     , log(getLogger(fmt::format("VFSGC({})", gc_name)))
 {
@@ -139,7 +139,7 @@ void VFSGarbageCollector::updateShapshotMetadata(const SnapshotMetadata & new_sn
 void VFSGarbageCollector::updateSnapshot()
 {
     SnapshotMetadata snapshot_meta = getSnapshotMetadata();
-    auto [wal_items_batch, max_entry_index] = getWalItems(alog, settings.batch_size);
+    auto wal_items_batch = wal.read(settings.batch_size);
     if (wal_items_batch.size() == 0ul)
     {
         LOG_DEBUG(log, "Merge snapshot exit due to empty wal.");
@@ -147,10 +147,10 @@ void VFSGarbageCollector::updateSnapshot()
     }
     LOG_DEBUG(log, "Merge snapshot with {} entries from wal.", wal_items_batch.size());
 
-    auto new_snaphot_meta = vfs_shapshot_data.mergeWithWals(wal_items_batch, snapshot_meta);
+    auto new_snaphot_meta = vfs_shapshot_data.mergeWithWals(std::move(wal_items_batch), snapshot_meta);
 
     updateShapshotMetadata(new_snaphot_meta, snapshot_meta.znode_version);
-    alog.dropUpTo(max_entry_index + 1);
+    wal.dropUpTo(wal_items_batch.back().wal.index + 1);
 
     LOG_DEBUG(log, "Snapshot update finished with new shapshot key {}", new_snaphot_meta.object_storage_key);
 }
