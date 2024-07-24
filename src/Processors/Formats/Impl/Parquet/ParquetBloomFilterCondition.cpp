@@ -131,7 +131,8 @@ bool ParquetBloomFilterCondition::mayBeTrueOnRowGroup(const IndexColumnToColumnB
 
             if (element.key_column >= data_types.size())
             {
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "TODO ARTHUR");
+                rpn_stack.emplace_back(true, true);
+                continue;
             }
 
             const DataTypePtr actual_type = getPrimitiveType(data_types[element.key_column]);
