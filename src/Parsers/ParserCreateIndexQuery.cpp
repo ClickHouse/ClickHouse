@@ -21,7 +21,7 @@ bool ParserCreateIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected 
     ParserToken close_p(TokenType::ClosingRoundBracket);
     ParserOrderByExpressionList order_list_p;
 
-    ParserFunction type_p;
+    ParserExpressionWithOptionalArguments type_p;
     ParserExpression expression_p;
     ParserUnsignedInteger granularity_p;
 
