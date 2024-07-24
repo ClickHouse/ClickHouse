@@ -1148,11 +1148,12 @@ def test_url_reconnect_in_the_middle(started_cluster):
         assert result == "1000000\t3914219105369203805\n"
 
 
-
 # At the time of writing the actual read bytes are respectively 148 and 169, so -10% to not be flaky
-@pytest.mark.parametrize("format_name,expected_bytes_read", [("Parquet", 133), ("ORC", 150)])
+@pytest.mark.parametrize(
+    "format_name,expected_bytes_read", [("Parquet", 133), ("ORC", 150)]
+)
 def test_seekable_formats(started_cluster, format_name, expected_bytes_read):
-    expected_lines=1500000
+    expected_lines = 1500000
     instance = started_cluster.instances["dummy"]  # type: ClickHouseInstance
 
     table_function = f"s3(s3_{format_name.lower()}, structure='a Int32, b String', format='{format_name}')"
@@ -1185,10 +1186,10 @@ def test_seekable_formats(started_cluster, format_name, expected_bytes_read):
 @pytest.mark.parametrize("format_name", ["Parquet", "ORC"])
 def test_seekable_formats_url(started_cluster, format_name):
     bucket = started_cluster.minio_bucket
-    expected_lines=1500000
+    expected_lines = 1500000
     instance = started_cluster.instances["dummy"]  # type: ClickHouseInstance
 
-    format_name_lower=format_name.lower()
+    format_name_lower = format_name.lower()
     table_function = f"s3(s3_{format_name_lower}, structure='a Int32, b String', format='{format_name}')"
     exec_query_with_retry(
         instance,
