@@ -56,7 +56,7 @@ void uniqValidator(const SingleStatisticsDescription &, DataTypePtr data_type)
 {
     data_type = removeNullable(data_type);
     data_type = removeLowCardinalityAndNullable(data_type);
-    if (!data_type->isValueRepresentedByNumber())
+    if (!data_type->isValueRepresentedByNumber() && !isStringOrFixedString(data_type))
         throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "Statistics of type 'uniq' do not support type {}", data_type->getName());
 }
 

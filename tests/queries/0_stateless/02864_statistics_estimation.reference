@@ -14,12 +14,19 @@ Test statistics multi-types:
         Prewhere info
           Prewhere filter
           Prewhere filter column: and(equals(a, \'10000\'), equals(b, 0), less(c, 0)) (removed)
-Test statistics min_max and tdigest:
+Test estimating range condition:
         Prewhere info
           Prewhere filter
           Prewhere filter column: and(less(b, 10), less(c, 0)) (removed)
         Prewhere info
           Prewhere filter
           Prewhere filter column: and(less(b, 10), less(c, 0)) (removed)
+Test estimating equals condition:
+        Prewhere info
+          Prewhere filter
+          Prewhere filter column: and(equals(a, \'0\'), equals(b, 10)) (removed)
+        Prewhere info
+          Prewhere filter
+          Prewhere filter column: and(equals(a, \'0\'), equals(b, 10)) (removed)
 Test LowCardinality and Nullable data type:
 tab2

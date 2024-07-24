@@ -13,12 +13,12 @@ public:
     StatisticsUniq(const SingleStatisticsDescription & stat_, const DataTypePtr & data_type);
     ~StatisticsUniq() override;
 
+    UInt64 estimateCardinality() const override;
+
     void update(const ColumnPtr & column) override;
 
     void serialize(WriteBuffer & buf) override;
     void deserialize(ReadBuffer & buf) override;
-
-    UInt64 estimateCardinality() const override;
 
 private:
     std::unique_ptr<Arena> arena;

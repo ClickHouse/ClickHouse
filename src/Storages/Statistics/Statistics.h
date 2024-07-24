@@ -19,7 +19,6 @@ struct StatisticsUtils
 {
     /// Returns std::nullopt if input Field cannot be converted to a concrete value
     static std::optional<Float64> tryConvertToFloat64(const Field & field);
-    static std::optional<String> tryConvertToString(const Field & field);
 };
 
 /// Statistics describe properties of the values in the column,
@@ -32,11 +31,6 @@ public:
     explicit IStatistics(const SingleStatisticsDescription & stat_);
     virtual ~IStatistics() = default;
 
-    virtual void update(const ColumnPtr & column) = 0;
-
-    virtual void serialize(WriteBuffer & buf) = 0;
-    virtual void deserialize(ReadBuffer & buf) = 0;
-
     /// Estimate the cardinality of the column.
     /// Throws if the statistics object is not able to do a meaningful estimation.
     virtual UInt64 estimateCardinality() const;
@@ -45,6 +39,11 @@ public:
     /// Throws if the statistics object is not able to do a meaningful estimation.
     virtual Float64 estimateEqual(const Field & val) const; /// cardinality of val in the column
     virtual Float64 estimateLess(const Field & val) const;  /// summarized cardinality of values < val in the column
+
+    virtual void update(const ColumnPtr & column) = 0;
+
+    virtual void serialize(WriteBuffer & buf) = 0;
+    virtual void deserialize(ReadBuffer & buf) = 0;
 
 protected:
     SingleStatisticsDescription stat;

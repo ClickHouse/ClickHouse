@@ -32,18 +32,18 @@ Float64 StatisticsMinMax::estimateLess(const Field & val) const
     if (val_converted.isNull())
         return 0;
 
-    auto val_float = applyVisitor(FieldVisitorConvertToNumber<Float64>(), val_converted);
+    auto val_as_float = applyVisitor(FieldVisitorConvertToNumber<Float64>(), val_converted);
 
-    if (val_float < min)
+    if (val_as_float < min)
         return 0;
 
-    if (val_float > max)
+    if (val_as_float > max)
         return row_count;
 
     if (max == min)
         return row_count;
 
-    return ((val_float - min) / (max - min)) * row_count;
+    return ((val_as_float - min) / (max - min)) * row_count;
 }
 
 void StatisticsMinMax::update(const ColumnPtr & column)

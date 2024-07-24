@@ -51,13 +51,6 @@ std::optional<Float64> StatisticsUtils::tryConvertToFloat64(const Field & field)
     }
 }
 
-std::optional<String> StatisticsUtils::tryConvertToString(const DB::Field & field)
-{
-    if (field.getType() == Field::Types::String)
-        return field.get<String>();
-    return {};
-}
-
 IStatistics::IStatistics(const SingleStatisticsDescription & stat_)
     : stat(stat_)
 {
@@ -106,7 +99,7 @@ Float64 ColumnStatistics::estimateLess(const Field & val) const
         return stats.at(StatisticsType::TDigest)->estimateLess(val);
     if (stats.contains(StatisticsType::MinMax))
         return stats.at(StatisticsType::MinMax)->estimateLess(val);
-    return rows * ConditionSelectivityEstimator::default_normal_cond_factor;
+    return rows * ConditionSelectivityEstimator::default_cond_range_factor;
 }
 
 Float64 ColumnStatistics::estimateGreater(const Field & val) const
@@ -116,8 +109,7 @@ Float64 ColumnStatistics::estimateGreater(const Field & val) const
 
 Float64 ColumnStatistics::estimateEqual(const Field & val) const
 {
-    auto float_val = StatisticsUtils::tryConvertToFloat64(val);
-    if (float_val.has_value() && stats.contains(StatisticsType::Uniq) && stats.contains(StatisticsType::TDigest))
+    if (stats_desc.data_type->isValueRepresentedByNumber() && stats.contains(StatisticsType::Uniq) && stats.contains(StatisticsType::TDigest))
     {
         /// 2048 is the default number of buckets in TDigest. In this case, TDigest stores exactly one value (with many rows) for every bucket.
         if (stats.at(StatisticsType::Uniq)->estimateCardinality() < 2048)
@@ -127,10 +119,16 @@ Float64 ColumnStatistics::estimateEqual(const Field & val) const
     if (stats.contains(StatisticsType::CountMinSketch))
         return stats.at(StatisticsType::CountMinSketch)->estimateEqual(val);
 #endif
-    if (!float_val.has_value() && (float_val < - ConditionSelectivityEstimator::threshold || float_val > ConditionSelectivityEstimator::threshold))
-        return rows * ConditionSelectivityEstimator::default_normal_cond_factor;
-    else
-        return rows * ConditionSelectivityEstimator::default_good_cond_factor;
+    if (stats.contains(StatisticsType::Uniq))
+    {
+        auto cardinality = stats.at(StatisticsType::Uniq)->estimateCardinality();
+        if (cardinality == 0)
+            return 0;
+        /// Assume that the value is uniformly distributed among the unique values.
+        return static_cast<Float64>(1) / stats.at(StatisticsType::Uniq)->estimateCardinality();
+    }
+
+    return rows * ConditionSelectivityEstimator::default_cond_equal_factor;
 }
 
 /// -------------------------------------

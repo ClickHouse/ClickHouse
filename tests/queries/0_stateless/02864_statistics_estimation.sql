@@ -68,7 +68,7 @@ WHERE explain LIKE '%Prewhere%' OR explain LIKE '%Filter column%';
 ALTER TABLE tab DROP STATISTICS a, b, c, d;
 
 
-SELECT 'Test statistics min_max and tdigest:';
+SELECT 'Test estimating range condition:';
 
 ALTER TABLE tab ADD STATISTICS b TYPE min_max;
 ALTER TABLE tab MATERIALIZE STATISTICS b;
@@ -84,6 +84,21 @@ WHERE explain LIKE '%Prewhere%' OR explain LIKE '%Filter column%';
 ALTER TABLE tab DROP STATISTICS b;
 
 
+SELECT 'Test estimating equals condition:';
+
+ALTER TABLE tab ADD STATISTICS a TYPE uniq;
+ALTER TABLE tab MATERIALIZE STATISTICS a;
+SELECT replaceRegexpAll(explain, '__table1.|_UInt8|_Int8|_UInt16|_String', '')
+FROM (EXPLAIN actions=1 SELECT count(*) FROM tab WHERE b = 10/*100*/ and a = '0'/*1*/)
+WHERE explain LIKE '%Prewhere%' OR explain LIKE '%Filter column%';
+
+ALTER TABLE tab ADD STATISTICS a TYPE count_min;
+ALTER TABLE tab MATERIALIZE STATISTICS a;
+SELECT replaceRegexpAll(explain, '__table1.|_UInt8|_Int8|_UInt16|_String', '')
+FROM (EXPLAIN actions=1 SELECT count(*) FROM tab WHERE b = 10/*100*/ and a = '0'/*1*/)
+WHERE explain LIKE '%Prewhere%' OR explain LIKE '%Filter column%';
+ALTER TABLE tab DROP STATISTICS a;
+
 DROP TABLE IF EXISTS tab SYNC;
 
 
@@ -93,8 +108,8 @@ SET allow_suspicious_low_cardinality_types=1;
 CREATE TABLE tab2
 (
     a LowCardinality(Int64) STATISTICS(count_min),
-    b Nullable(Int64) STATISTICS(count_min),
-    c LowCardinality(Nullable(Int64)) STATISTICS(count_min),
+    b Nullable(Int64) STATISTICS(min_max, count_min),
+    c LowCardinality(Nullable(Int64)) STATISTICS(min_max, count_min),
     pk String,
 ) Engine = MergeTree() ORDER BY pk;
 
