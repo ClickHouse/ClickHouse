@@ -29,7 +29,7 @@ template<>
 void AddedColumns<true>::buildOutput()
 {
     if (!output_by_row_list)
-        return buildOutputFromBlocks<false>();
+        buildOutputFromBlocks<false>();
     else
     {
         if (join_data_avg_perkey_rows < output_by_row_list_threshold)
