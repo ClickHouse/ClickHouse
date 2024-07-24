@@ -10,11 +10,13 @@ set (SAN_FLAGS "${SAN_FLAGS} -g -fno-omit-frame-pointer -DSANITIZER")
 
 if (SANITIZE)
 
-    execute_process(COMMAND
-        sysctl --binary kernel.randomize_va_space
-        OUTPUT_VARIABLE RANDOMIZE_VA_SPACE)
-    if (NOT ${RANDOMIZE_VA_SPACE} STREQUAL "0")
-        message (FATAL_ERROR "Sanitizer builds require disabled address space layout randomization. Run 'sudo sysctl kernel.randomize_va_space=0' to disable it")
+    if (OS_LINUX)
+        execute_process(COMMAND
+            sysctl --binary kernel.randomize_va_space
+            OUTPUT_VARIABLE RANDOMIZE_VA_SPACE)
+        if (NOT ${RANDOMIZE_VA_SPACE} STREQUAL "0")
+            message (FATAL_ERROR "Sanitizer builds require disabled address space layout randomization. Run 'sudo sysctl kernel.randomize_va_space=0' to disable it")
+        endif()
     endif()
 
     if (SANITIZE STREQUAL "address")
