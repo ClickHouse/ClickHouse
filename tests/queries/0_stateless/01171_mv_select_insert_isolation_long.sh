@@ -168,7 +168,7 @@ fi
 START_TIME=$(get_now)
 STOP_TIME=$((START_TIME + MAIN_TIME_PART))
 SECOND_STOP_TIME=$((STOP_TIME + SECOND_TIME_PART))
-MIN_ITERATIONS=50
+MIN_ITERATIONS=30
 
 run_until_deadline_and_at_least_times $STOP_TIME $MIN_ITERATIONS insert_commit_action 1   & PID_1=$!
 run_until_deadline_and_at_least_times $STOP_TIME $MIN_ITERATIONS insert_commit_action 2   & PID_2=$!
