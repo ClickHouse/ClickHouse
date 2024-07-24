@@ -173,7 +173,7 @@ public:
 
 REGISTER_FUNCTION(Space)
 {
-    factory.registerFunction<FunctionSpace>({}, FunctionFactory::Case::Insensitive);
+    factory.registerFunction<FunctionSpace>({}, {}, FunctionFactory::Case::Insensitive);
 }
 
 }

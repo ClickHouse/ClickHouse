@@ -236,8 +236,8 @@ private:
 
 UserDefinedExecutableFunctionFactory & UserDefinedExecutableFunctionFactory::instance()
 {
-    static UserDefinedExecutableFunctionFactory result;
-    return result;
+    static UserDefinedExecutableFunctionFactory factory;
+    return factory;
 }
 
 FunctionOverloadResolverPtr UserDefinedExecutableFunctionFactory::get(const String & function_name, ContextPtr context, Array parameters)

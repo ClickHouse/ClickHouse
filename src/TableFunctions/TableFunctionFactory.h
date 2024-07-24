@@ -1,6 +1,7 @@
 #pragma once
 
 #include <TableFunctions/ITableFunction.h>
+#include <Common/FunctionDocumentation.h>
 #include <Common/IFactoryWithAliases.h>
 #include <Common/NamePrompter.h>
 
@@ -21,18 +22,8 @@ using TableFunctionCreator = std::function<TableFunctionPtr()>;
 struct TableFunctionFactoryData
 {
     TableFunctionCreator creator;
-    TableFunctionProperties properties;
-
-    TableFunctionFactoryData() = default;
-    TableFunctionFactoryData(const TableFunctionFactoryData &) = default;
-    TableFunctionFactoryData & operator = (const TableFunctionFactoryData &) = default;
-
-    template <typename Creator>
-        requires (!std::is_same_v<Creator, TableFunctionFactoryData>)
-    TableFunctionFactoryData(Creator creator_, TableFunctionProperties properties_ = {}) /// NOLINT
-        : creator(std::forward<Creator>(creator_)), properties(std::move(properties_))
-    {
-    }
+    FunctionDocumentation documentation = {};
+    TableFunctionProperties properties = {};
 };
 
 
@@ -40,6 +31,7 @@ struct TableFunctionFactoryData
   */
 class TableFunctionFactory final: private boost::noncopyable, public IFactoryWithAliases<TableFunctionFactoryData>
 {
+    using Base = IFactoryWithAliases<TableFunctionFactoryData>;
 public:
     static TableFunctionFactory & instance();
 
@@ -51,11 +43,11 @@ public:
         Case case_sensitiveness = Case::Sensitive);
 
     template <typename Function>
-    void registerFunction(TableFunctionProperties properties = {}, Case case_sensitiveness = Case::Sensitive)
+    void registerFunction(FunctionDocumentation documentation = {}, TableFunctionProperties properties = {}, Case case_sensitiveness = Case::Sensitive)
     {
         auto creator = []() -> TableFunctionPtr { return std::make_shared<Function>(); };
         registerFunction(Function::name,
-                         TableFunctionFactoryData{std::move(creator), {std::move(properties)}} ,
+                         TableFunctionFactoryData{std::move(creator), std::move(documentation), {std::move(properties)}} ,
                          case_sensitiveness);
     }
 
@@ -65,6 +57,7 @@ public:
     /// Returns nullptr if not found.
     TableFunctionPtr tryGet(const std::string & name, ContextPtr context) const;
 
+    std::optional<FunctionDocumentation> tryGetDocumentation(const String & name) const;
     std::optional<TableFunctionProperties> tryGetProperties(const String & name) const;
 
     bool isTableFunctionName(const std::string & name) const;
@@ -72,16 +65,16 @@ public:
 private:
     using TableFunctions = std::unordered_map<std::string, Value>;
 
-    const TableFunctions & getMap() const override { return table_functions; }
+    TableFunctions table_functions;
+    TableFunctions case_insensitive_table_functions;
 
-    const TableFunctions & getCaseInsensitiveMap() const override { return case_insensitive_table_functions; }
+    const Base::OriginalNameMap & getOriginalNameMap() const override { return table_functions; }
+    const Base::OriginalNameMap & getOriginalCaseInsensitiveNameMap() const override { return case_insensitive_table_functions; }
 
     String getFactoryName() const override { return "TableFunctionFactory"; }
 
+    std::optional<FunctionDocumentation> tryGetDocumentationImpl(const String & name) const;
     std::optional<TableFunctionProperties> tryGetPropertiesImpl(const String & name) const;
-
-    TableFunctions table_functions;
-    TableFunctions case_insensitive_table_functions;
 };
 
 }

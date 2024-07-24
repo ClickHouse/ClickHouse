@@ -180,8 +180,7 @@ void DataTypeFactory::registerDataType(const String & family_name, Value creator
 void DataTypeFactory::registerSimpleDataType(const String & name, SimpleCreator creator, Case case_sensitiveness)
 {
     if (creator == nullptr)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "DataTypeFactory: the data type {} has been provided  a null constructor",
-            name);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "DataTypeFactory: the data type {} has been provided  a null constructor", name);
 
     registerDataType(name, [name, creator](const ASTPtr & ast)
     {
@@ -219,7 +218,7 @@ const DataTypeFactory::Value * DataTypeFactory::findCreatorByName(const String &
     if (CurrentThread::isInitialized())
         query_context = CurrentThread::get().getQueryContext();
     {
-        DataTypesDictionary::const_iterator it = data_types.find(family_name);
+        auto it = data_types.find(family_name);
         if (data_types.end() != it)
         {
             if (query_context && query_context->getSettingsRef().log_queries)
@@ -231,7 +230,7 @@ const DataTypeFactory::Value * DataTypeFactory::findCreatorByName(const String &
     String family_name_lowercase = Poco::toLower(family_name);
 
     {
-        DataTypesDictionary::const_iterator it = case_insensitive_data_types.find(family_name_lowercase);
+        auto it = case_insensitive_data_types.find(family_name_lowercase);
         if (case_insensitive_data_types.end() != it)
         {
             if (query_context && query_context->getSettingsRef().log_queries)
@@ -249,6 +248,32 @@ const DataTypeFactory::Value * DataTypeFactory::findCreatorByName(const String &
     else
         throw Exception(ErrorCodes::UNKNOWN_TYPE, "Unknown data type family: {}", family_name);
 }
+
+void registerDataTypeNumbers(DataTypeFactory & factory);
+void registerDataTypeDecimal(DataTypeFactory & factory);
+void registerDataTypeDate(DataTypeFactory & factory);
+void registerDataTypeDate32(DataTypeFactory & factory);
+void registerDataTypeDateTime(DataTypeFactory & factory);
+void registerDataTypeString(DataTypeFactory & factory);
+void registerDataTypeFixedString(DataTypeFactory & factory);
+void registerDataTypeEnum(DataTypeFactory & factory);
+void registerDataTypeArray(DataTypeFactory & factory);
+void registerDataTypeTuple(DataTypeFactory & factory);
+void registerDataTypeMap(DataTypeFactory & factory);
+void registerDataTypeNullable(DataTypeFactory & factory);
+void registerDataTypeNothing(DataTypeFactory & factory);
+void registerDataTypeUUID(DataTypeFactory & factory);
+void registerDataTypeIPv4andIPv6(DataTypeFactory & factory);
+void registerDataTypeAggregateFunction(DataTypeFactory & factory);
+void registerDataTypeNested(DataTypeFactory & factory);
+void registerDataTypeInterval(DataTypeFactory & factory);
+void registerDataTypeLowCardinality(DataTypeFactory & factory);
+void registerDataTypeDomainBool(DataTypeFactory & factory);
+void registerDataTypeDomainSimpleAggregateFunction(DataTypeFactory & factory);
+void registerDataTypeDomainGeo(DataTypeFactory & factory);
+void registerDataTypeObject(DataTypeFactory & factory);
+void registerDataTypeVariant(DataTypeFactory & factory);
+void registerDataTypeDynamic(DataTypeFactory & factory);
 
 DataTypeFactory::DataTypeFactory()
 {

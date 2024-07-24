@@ -206,12 +206,12 @@ REGISTER_FUNCTION(Uptime)
 
 REGISTER_FUNCTION(Version)
 {
-    factory.registerFunction<FunctionVersion>({}, FunctionFactory::Case::Insensitive);
+    factory.registerFunction<FunctionVersion>({}, {}, FunctionFactory::Case::Insensitive);
 }
 
 REGISTER_FUNCTION(Revision)
 {
-    factory.registerFunction<FunctionRevision>({}, FunctionFactory::Case::Insensitive);
+    factory.registerFunction<FunctionRevision>({}, {}, FunctionFactory::Case::Insensitive);
 }
 
 REGISTER_FUNCTION(ZooKeeperSessionUptime)

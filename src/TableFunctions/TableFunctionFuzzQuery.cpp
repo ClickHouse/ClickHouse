@@ -45,10 +45,10 @@ StoragePtr TableFunctionFuzzQuery::executeImpl(
 void registerTableFunctionFuzzQuery(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionFuzzQuery>(
-        {.documentation
-         = {.description = "Perturbs a query string with random variations.",
-            .returned_value = "A table object with a single column containing perturbed query strings."},
-         .allow_readonly = true});
+        {.description = "Perturbs a query string with random variations.",
+         .returned_value = "A table object with a single column containing perturbed query strings."},
+        {.allow_readonly = true}
+    );
 }
 
 }

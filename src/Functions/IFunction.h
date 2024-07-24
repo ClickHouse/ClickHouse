@@ -571,4 +571,8 @@ protected:
 
 using FunctionPtr = std::shared_ptr<IFunction>;
 
+struct FunctionProperties
+{
+};
+
 }

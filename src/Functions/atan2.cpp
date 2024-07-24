@@ -16,7 +16,7 @@ using FunctionAtan2 = FunctionMathBinaryFloat64<BinaryFunctionVectorized<Atan2Na
 
 REGISTER_FUNCTION(Atan2)
 {
-    factory.registerFunction<FunctionAtan2>({}, FunctionFactory::Case::Insensitive);
+    factory.registerFunction<FunctionAtan2>({}, {}, FunctionFactory::Case::Insensitive);
 }
 
 }

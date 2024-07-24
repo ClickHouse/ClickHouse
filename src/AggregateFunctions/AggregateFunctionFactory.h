@@ -30,18 +30,18 @@ using DataTypes = std::vector<DataTypePtr>;
  */
 using AggregateFunctionCreator = std::function<AggregateFunctionPtr(const String &, const DataTypes &, const Array &, const Settings *)>;
 
-struct AggregateFunctionWithProperties
+struct AggregateFunctionFactoryData
 {
     AggregateFunctionCreator creator;
     AggregateFunctionProperties properties;
 
-    AggregateFunctionWithProperties() = default;
-    AggregateFunctionWithProperties(const AggregateFunctionWithProperties &) = default;
-    AggregateFunctionWithProperties & operator = (const AggregateFunctionWithProperties &) = default;
+    AggregateFunctionFactoryData() = default;
+    AggregateFunctionFactoryData(const AggregateFunctionFactoryData &) = default;
+    AggregateFunctionFactoryData & operator = (const AggregateFunctionFactoryData &) = default;
 
     template <typename Creator>
-    requires (!std::is_same_v<Creator, AggregateFunctionWithProperties>)
-    AggregateFunctionWithProperties(Creator creator_, AggregateFunctionProperties properties_ = {}) /// NOLINT
+    requires (!std::is_same_v<Creator, AggregateFunctionFactoryData>)
+    AggregateFunctionFactoryData(Creator creator_, AggregateFunctionProperties properties_ = {}) /// NOLINT
         : creator(std::forward<Creator>(creator_)), properties(std::move(properties_))
     {
     }
@@ -50,8 +50,9 @@ struct AggregateFunctionWithProperties
 
 /** Creates an aggregate function by name.
   */
-class AggregateFunctionFactory final : private boost::noncopyable, public IFactoryWithAliases<AggregateFunctionWithProperties>
+class AggregateFunctionFactory final : private boost::noncopyable, public IFactoryWithAliases<AggregateFunctionFactoryData>
 {
+    using Base = IFactoryWithAliases<AggregateFunctionFactoryData>;
 public:
     static AggregateFunctionFactory & instance();
 
@@ -94,22 +95,18 @@ private:
     using ActionMap = std::unordered_map<String, String>;
 
     AggregateFunctions aggregate_functions;
+    AggregateFunctions case_insensitive_aggregate_functions;
     /// Mapping from functions with `RESPECT NULLS` modifier to actual aggregate function names
     /// Example: `any(x) RESPECT NULLS` should be executed as function `any_respect_nulls`
     ActionMap respect_nulls;
     /// Same as above for `IGNORE NULLS` modifier
     ActionMap ignore_nulls;
-    std::optional<AggregateFunctionWithProperties> getAssociatedFunctionByNullsAction(const String & name, NullsAction action) const;
+    std::optional<AggregateFunctionFactoryData> getAssociatedFunctionByNullsAction(const String & name, NullsAction action) const;
 
-    /// Case insensitive aggregate functions will be additionally added here with lowercased name.
-    AggregateFunctions case_insensitive_aggregate_functions;
-
-    const AggregateFunctions & getMap() const override { return aggregate_functions; }
-
-    const AggregateFunctions & getCaseInsensitiveMap() const override { return case_insensitive_aggregate_functions; }
+    const Base::OriginalNameMap & getOriginalNameMap() const override { return aggregate_functions; }
+    const Base::OriginalNameMap & getOriginalCaseInsensitiveNameMap() const override { return case_insensitive_aggregate_functions; }
 
     String getFactoryName() const override { return "AggregateFunctionFactory"; }
-
 };
 
 struct AggregateUtils

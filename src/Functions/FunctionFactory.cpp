@@ -1,16 +1,11 @@
 #include <Functions/FunctionFactory.h>
-
-#include <Interpreters/Context.h>
-
-#include <Common/Exception.h>
-#include <Common/CurrentThread.h>
-#include <Core/Settings.h>
-
-#include <Poco/String.h>
-
-#include <IO/WriteHelpers.h>
-
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <Common/CurrentThread.h>
+#include <Common/Exception.h>
+#include <Core/Settings.h>
+#include <IO/WriteHelpers.h>
+#include <Interpreters/Context.h>
+#include <Poco/String.h>
 
 
 namespace DB
@@ -30,22 +25,21 @@ const String & getFunctionCanonicalNameIfAny(const String & name)
 void FunctionFactory::registerFunction(
     const std::string & name,
     FunctionCreator creator,
-    FunctionDocumentation doc,
+    FunctionDocumentation documentation,
+    FunctionProperties properties,
     Case case_sensitiveness)
 {
-    if (!functions.emplace(name, FunctionFactoryData{creator, doc}).second)
+    if (!functions.emplace(name, FunctionFactoryData{creator, documentation, properties}).second)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "FunctionFactory: the function name '{}' is not unique", name);
 
     String function_name_lowercase = Poco::toLower(name);
     if (isAlias(name) || isAlias(function_name_lowercase))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "FunctionFactory: the function name '{}' is already registered as alias",
-                        name);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "FunctionFactory: the function name '{}' is already registered as alias", name);
 
     if (case_sensitiveness == Case::Insensitive)
     {
-        if (!case_insensitive_functions.emplace(function_name_lowercase, FunctionFactoryData{creator, doc}).second)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "FunctionFactory: the case insensitive function name '{}' is not unique",
-                name);
+        if (!case_insensitive_functions.emplace(function_name_lowercase, FunctionFactoryData{creator, documentation, properties}).second)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "FunctionFactory: the case insensitive function name '{}' is not unique", name);
         case_insensitive_name_mapping[function_name_lowercase] = name;
     }
 }
@@ -53,13 +47,14 @@ void FunctionFactory::registerFunction(
 void FunctionFactory::registerFunction(
     const std::string & name,
     FunctionSimpleCreator creator,
-    FunctionDocumentation doc,
+    FunctionDocumentation documentation,
+    FunctionProperties properties,
     Case case_sensitiveness)
 {
     registerFunction(name, [my_creator = std::move(creator)](ContextPtr context)
     {
         return std::make_unique<FunctionToOverloadResolverAdaptor>(my_creator(context));
-    }, std::move(doc), std::move(case_sensitiveness));
+    }, std::move(documentation), std::move(properties), std::move(case_sensitiveness));
 }
 
 
@@ -71,7 +66,7 @@ FunctionOverloadResolverPtr FunctionFactory::getImpl(
     if (!res)
     {
         String extra_info;
-        if (AggregateFunctionFactory::instance().hasNameOrAlias(name))
+        if (AggregateFunctionFactory::instance().isNameOrAlias(name))
             extra_info = ". There is an aggregate function with the same name, but ordinary function is expected here";
 
         auto hints = this->getHints(name);
@@ -118,13 +113,13 @@ FunctionOverloadResolverPtr FunctionFactory::tryGetImpl(
 
     auto it = functions.find(name);
     if (functions.end() != it)
-        res = it->second.first(context);
+        res = it->second.creator(context);
     else
     {
         name = Poco::toLower(name);
         it = case_insensitive_functions.find(name);
         if (case_insensitive_functions.end() != it)
-            res = it->second.first(context);
+            res = it->second.creator(context);
     }
 
     if (!res)
@@ -144,23 +139,73 @@ FunctionOverloadResolverPtr FunctionFactory::tryGet(
     const std::string & name,
     ContextPtr context) const
 {
-    auto impl = tryGetImpl(name, context);
-    return impl ? std::move(impl) : nullptr;
+    return tryGetImpl(name, context);
+}
+
+FunctionDocumentation FunctionFactory::getDocumentation(const std::string & name) const
+{
+    auto documentation = tryGetDocumentationImpl(name);
+    if (!documentation)
+        throw Exception(ErrorCodes::UNKNOWN_FUNCTION, "Function '{}' is not known", name);
+    return *documentation;
+}
+
+FunctionProperties FunctionFactory::getProperties(const std::string & name) const
+{
+    auto properties = tryGetPropertiesImpl(name);
+    if (!properties)
+        throw Exception(ErrorCodes::UNKNOWN_FUNCTION, "Function '{}' is not known", name);
+    return *properties;
+}
+
+std::optional<FunctionDocumentation> FunctionFactory::tryGetDocumentation(const String & name) const
+{
+    return tryGetDocumentationImpl(name);
+}
+
+std::optional<FunctionProperties> FunctionFactory::tryGetProperties(const String & name) const
+{
+    return tryGetPropertiesImpl(name);
+}
+
+std::optional<FunctionDocumentation> FunctionFactory::tryGetDocumentationImpl(const std::string & name_param) const
+{
+    String name = getAliasToOrName(name_param);
+    Value found;
+
+    if (auto it = functions.find(name); it != functions.end())
+        found = it->second;
+
+    if (auto jt = case_insensitive_functions.find(Poco::toLower(name)); jt != case_insensitive_functions.end())
+        found = jt->second;
+
+    if (found.creator)
+        return found.documentation;
+
+    return {};
+}
+
+std::optional<FunctionProperties> FunctionFactory::tryGetPropertiesImpl(const std::string & name_param) const
+{
+    String name = getAliasToOrName(name_param);
+    Value found;
+
+    if (auto it = functions.find(name); it != functions.end())
+        found = it->second;
+
+    if (auto jt = case_insensitive_functions.find(Poco::toLower(name)); jt != case_insensitive_functions.end())
+        found = jt->second;
+
+    if (found.creator)
+        return found.properties;
+
+    return {};
 }
 
 FunctionFactory & FunctionFactory::instance()
 {
     static FunctionFactory ret;
     return ret;
-}
-
-FunctionDocumentation FunctionFactory::getDocumentation(const std::string & name) const
-{
-    auto it = functions.find(name);
-    if (it == functions.end())
-        throw Exception(ErrorCodes::UNKNOWN_FUNCTION, "Unknown function {}", name);
-
-    return it->second.second;
 }
 
 }
