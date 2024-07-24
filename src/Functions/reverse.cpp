@@ -113,7 +113,7 @@ private:
 
 REGISTER_FUNCTION(Reverse)
 {
-    factory.registerFunction<ReverseOverloadResolver>({}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<ReverseOverloadResolver>({}, FunctionFactory::Case::Insensitive);
 }
 
 }

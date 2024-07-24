@@ -40,6 +40,7 @@ public:
         const std::optional<BackupInfo> & base_backup_info_,
         std::shared_ptr<IBackupReader> reader_,
         const ContextPtr & context_,
+        bool is_internal_backup_,
         bool use_same_s3_credentials_for_base_backup_);
 
     BackupImpl(

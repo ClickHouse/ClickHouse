@@ -2,6 +2,7 @@ DROP TABLE IF EXISTS t1;
 
 SET allow_experimental_statistics = 1;
 SET allow_statistics_optimize = 1;
+SET mutations_sync = 1;
 
 CREATE TABLE t1
 (
@@ -69,3 +70,4 @@ SETTINGS min_bytes_for_wide_part = 0;
 INSERT INTO t3 select number, -number, number/1000, generateUUIDv4() FROM system.numbers LIMIT 10000;
 
 DROP TABLE IF EXISTS t3;
+

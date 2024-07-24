@@ -177,6 +177,7 @@ void registerBackupEnginesFileAndDisk(BackupFactory & factory)
                 params.base_backup_info,
                 reader,
                 params.context,
+                params.is_internal_backup,
                 params.use_same_s3_credentials_for_base_backup);
         }
         else

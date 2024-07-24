@@ -138,7 +138,7 @@ private:
         virtual ~IStage() = default;
     };
 
-    /// By default this context is uninitialed, but some variables has to be set after construction,
+    /// By default this context is uninitialized, but some variables has to be set after construction,
     /// some variables are used in a process of execution
     /// Proper initialization is responsibility of the author
     struct GlobalRuntimeContext : public IStageRuntimeContext
@@ -199,7 +199,7 @@ private:
 
     using GlobalRuntimeContextPtr = std::shared_ptr<GlobalRuntimeContext>;
 
-    /// By default this context is uninitialed, but some variables has to be set after construction,
+    /// By default this context is uninitialized, but some variables has to be set after construction,
     /// some variables are used in a process of execution
     /// Proper initialization is responsibility of the author
     struct ExecuteAndFinalizeHorizontalPartRuntimeContext : public IStageRuntimeContext
@@ -273,7 +273,7 @@ private:
         GlobalRuntimeContextPtr global_ctx;
     };
 
-    /// By default this context is uninitialed, but some variables has to be set after construction,
+    /// By default this context is uninitialized, but some variables has to be set after construction,
     /// some variables are used in a process of execution
     /// Proper initialization is responsibility of the author
     struct VerticalMergeRuntimeContext : public IStageRuntimeContext
@@ -348,7 +348,7 @@ private:
         GlobalRuntimeContextPtr global_ctx;
     };
 
-    /// By default this context is uninitialed, but some variables has to be set after construction,
+    /// By default this context is uninitialized, but some variables has to be set after construction,
     /// some variables are used in a process of execution
     /// Proper initialization is responsibility of the author
     struct MergeProjectionsRuntimeContext : public IStageRuntimeContext
@@ -408,15 +408,8 @@ private:
 
     Stages::const_iterator stages_iterator = stages.begin();
 
-    static bool enabledBlockNumberColumn(GlobalRuntimeContextPtr global_ctx)
-    {
-        return global_ctx->data->getSettings()->enable_block_number_column && global_ctx->metadata_snapshot->getGroupByTTLs().empty();
-    }
-
-    static bool enabledBlockOffsetColumn(GlobalRuntimeContextPtr global_ctx)
-    {
-        return global_ctx->data->getSettings()->enable_block_offset_column && global_ctx->metadata_snapshot->getGroupByTTLs().empty();
-    }
+    static bool enabledBlockNumberColumn(GlobalRuntimeContextPtr global_ctx);
+    static bool enabledBlockOffsetColumn(GlobalRuntimeContextPtr global_ctx);
 
     static void addGatheringColumn(GlobalRuntimeContextPtr global_ctx, const String & name, const DataTypePtr & type);
 };

@@ -45,7 +45,7 @@ public:
             {"time_series", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isArray), nullptr, "Array"},
             {"period", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeUInt), nullptr, "Unsigned Integer"},
         };
-        validateFunctionArgumentTypes(*this, arguments, args);
+        validateFunctionArguments(*this, arguments, args);
 
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeArray>(std::make_shared<DataTypeFloat32>()));
     }

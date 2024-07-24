@@ -10,7 +10,7 @@ create materialized view t_mv Engine = Null AS select now() as ts, max(a) from t
 insert into t select * from numbers_mt(10e6) settings max_threads = 16, max_insert_threads=16, max_block_size=100000;
 system flush logs;
 
-select arrayUniq(thread_ids)>=16 from system.query_log where
+select peak_threads_usage>=16 from system.query_log where
     event_date >= yesterday() and
     current_database = currentDatabase() and
     type = 'QueryFinish' and

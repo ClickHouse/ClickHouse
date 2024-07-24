@@ -2,9 +2,7 @@
 #include <Disks/ObjectStorages/MetadataStorageFromDisk.h>
 #include <Disks/ObjectStorages/MetadataStorageFromPlainObjectStorage.h>
 #include <Disks/ObjectStorages/MetadataStorageFromPlainRewritableObjectStorage.h>
-#ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD
 #include <Disks/ObjectStorages/Web/MetadataStorageFromStaticFilesWebServer.h>
-#endif
 #include <Disks/DiskLocal.h>
 #include <Interpreters/Context.h>
 
@@ -135,7 +133,6 @@ void registerPlainRewritableMetadataStorage(MetadataStorageFactory & factory)
         });
 }
 
-#ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD
 void registerMetadataStorageFromStaticFilesWebServer(MetadataStorageFactory & factory)
 {
     factory.registerMetadataStorageType("web", [](
@@ -147,7 +144,6 @@ void registerMetadataStorageFromStaticFilesWebServer(MetadataStorageFactory & fa
         return std::make_shared<MetadataStorageFromStaticFilesWebServer>(assert_cast<const WebObjectStorage &>(*object_storage));
     });
 }
-#endif
 
 void registerMetadataStorages()
 {
@@ -155,9 +151,7 @@ void registerMetadataStorages()
     registerMetadataStorageFromDisk(factory);
     registerPlainMetadataStorage(factory);
     registerPlainRewritableMetadataStorage(factory);
-#ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD
     registerMetadataStorageFromStaticFilesWebServer(factory);
-#endif
 }
 
 }

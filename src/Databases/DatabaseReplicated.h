@@ -86,6 +86,8 @@ public:
 
     std::vector<UInt8> tryGetAreReplicasActive(const ClusterPtr & cluster_) const;
 
+    void renameDatabase(ContextPtr query_context, const String & new_name) override;
+
     friend struct DatabaseReplicatedTask;
     friend class DatabaseReplicatedDDLWorker;
 private:
@@ -105,6 +107,7 @@ private:
     void fillClusterAuthInfo(String collection_name, const Poco::Util::AbstractConfiguration & config);
 
     void checkQueryValid(const ASTPtr & query, ContextPtr query_context) const;
+    void checkTableEngine(const ASTCreateQuery & query, ASTStorage & storage, ContextPtr query_context) const;
 
     void recoverLostReplica(const ZooKeeperPtr & current_zookeeper, UInt32 our_log_ptr, UInt32 & max_log_ptr);
 

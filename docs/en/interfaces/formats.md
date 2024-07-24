@@ -67,6 +67,7 @@ The supported formats are:
 | [Prometheus](#prometheus)                                                                 | ✗    | ✔     |
 | [Protobuf](#protobuf)                                                                     | ✔    | ✔     |
 | [ProtobufSingle](#protobufsingle)                                                         | ✔    | ✔     |
+| [ProtobufList](#protobuflist)								    | ✔    | ✔     |
 | [Avro](#data-format-avro)                                                                 | ✔    | ✔     |
 | [AvroConfluent](#data-format-avro-confluent)                                              | ✔    | ✗     |
 | [Parquet](#data-format-parquet)                                                           | ✔    | ✔     |
@@ -1490,6 +1491,8 @@ Differs from [PrettySpaceNoEscapes](#prettyspacenoescapes) in that up to 10,000 
 - [output_format_pretty_color](/docs/en/operations/settings/settings-formats.md/#output_format_pretty_color) - use ANSI escape sequences to paint colors in Pretty formats. Default value - `true`.
 - [output_format_pretty_grid_charset](/docs/en/operations/settings/settings-formats.md/#output_format_pretty_grid_charset) - Charset for printing grid borders. Available charsets: ASCII, UTF-8. Default value - `UTF-8`.
 - [output_format_pretty_row_numbers](/docs/en/operations/settings/settings-formats.md/#output_format_pretty_row_numbers) - Add row numbers before each row for pretty output format. Default value - `true`.
+- [output_format_pretty_display_footer_column_names](/docs/en/operations/settings/settings-formats.md/#output_format_pretty_display_footer_column_names) - Display column names in the footer if table contains many rows. Default value - `true`.
+- [output_format_pretty_display_footer_column_names_min_rows](/docs/en/operations/settings/settings-formats.md/#output_format_pretty_display_footer_column_names_min_rows) - Sets the minimum number of rows for which a footer will be displayed if [output_format_pretty_display_footer_column_names](/docs/en/operations/settings/settings-formats.md/#output_format_pretty_display_footer_column_names) is enabled. Default value - 50.
 
 ## RowBinary {#rowbinary}
 
@@ -1533,6 +1536,10 @@ the columns from input data will be mapped to the columns from the table by thei
 Otherwise, the first row will be skipped.
 If setting [input_format_with_types_use_header](/docs/en/operations/settings/settings-formats.md/#input_format_with_types_use_header) is set to 1,
 the types from input data will be compared with the types of the corresponding columns from the table. Otherwise, the second row will be skipped.
+If setting [output_format_binary_encode_types_in_binary_format](/docs/en/operations/settings/settings-formats.md/#output_format_binary_encode_types_in_binary_format) is set to 1,
+the types in header will be written using [binary encoding](/docs/en/sql-reference/data-types/data-types-binary-encoding.md) instead of strings with type names in RowBinaryWithNamesAndTypes output format.
+If setting [input_format_binary_encode_types_in_binary_format](/docs/en/operations/settings/settings-formats.md/#input_format_binary_encode_types_in_binary_format) is set to 1,
+the types in header will be read using [binary encoding](/docs/en/sql-reference/data-types/data-types-binary-encoding.md) instead of strings with type names in RowBinaryWithNamesAndTypes input format.
 :::
 
 ## RowBinaryWithDefaults {#rowbinarywithdefaults}
@@ -1946,6 +1953,35 @@ SYSTEM DROP FORMAT SCHEMA CACHE FOR Protobuf
 
 Same as [Protobuf](#protobuf) but for storing/parsing single Protobuf message without length delimiters.
 
+## ProtobufList {#protobuflist}
+
+Similar to Protobuf but rows are represented as a sequence of sub-messages contained in a message with fixed name "Envelope".
+
+Usage example:
+
+``` sql
+SELECT * FROM test.table FORMAT ProtobufList SETTINGS format_schema = 'schemafile:MessageType'
+```
+
+``` bash
+cat protobuflist_messages.bin | clickhouse-client --query "INSERT INTO test.table FORMAT ProtobufList SETTINGS format_schema='schemafile:MessageType'"
+```
+
+where the file `schemafile.proto` looks like this:
+
+``` capnp
+syntax = "proto3";
+message Envelope {
+  message MessageType {
+    string name = 1;
+    string surname = 2;
+    uint32 birthDate = 3;
+    repeated string phoneNumbers = 4;
+  };
+  MessageType row = 1;
+};
+```
+
 ## Avro {#data-format-avro}
 
 [Apache Avro](https://avro.apache.org/) is a row-oriented data serialization framework developed within Apache’s Hadoop project.
@@ -2167,6 +2203,7 @@ To exchange data with Hadoop, you can use [HDFS table engine](/docs/en/engines/t
 - [output_format_parquet_compression_method](/docs/en/operations/settings/settings-formats.md/#output_format_parquet_compression_method) - compression method used in output Parquet format. Default value - `lz4`.
 - [input_format_parquet_max_block_size](/docs/en/operations/settings/settings-formats.md/#input_format_parquet_max_block_size) - Max block row size for parquet reader. Default value - `65409`.
 - [input_format_parquet_prefer_block_bytes](/docs/en/operations/settings/settings-formats.md/#input_format_parquet_prefer_block_bytes) - Average block bytes output by parquet reader. Default value - `16744704`.
+- [output_format_parquet_write_page_index](/docs/en/operations/settings/settings-formats.md/#input_format_parquet_max_block_size) - Add a possibility to write page index into parquet files. Need to disable `output_format_parquet_use_custom_encoder` at present. Default value - `true`.
 
 ## ParquetMetadata {data-format-parquet-metadata}
 

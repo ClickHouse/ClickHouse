@@ -43,6 +43,7 @@ struct Settings;
     M(UInt64, compact_parts_max_granules_to_buffer, 128, "Only available in ClickHouse Cloud", 0) \
     M(UInt64, compact_parts_merge_max_bytes_to_prefetch_part, 16 * 1024 * 1024, "Only available in ClickHouse Cloud", 0) \
     M(Bool, load_existing_rows_count_for_old_parts, false, "Whether to load existing_rows_count for existing parts. If false, existing_rows_count will be equal to rows_count for existing parts.", 0) \
+    M(Bool, use_compact_variant_discriminators_serialization, true, "Use compact version of Variant discriminators serialization.", 0) \
     \
     /** Merge settings. */ \
     M(UInt64, merge_max_block_size, 8192, "How many rows in blocks should be formed for merge operations. By default has the same value as `index_granularity`.", 0) \
@@ -81,6 +82,8 @@ struct Settings;
     M(UInt64, min_delay_to_mutate_ms, 10, "Min delay of mutating MergeTree table in milliseconds, if there are a lot of unfinished mutations", 0) \
     M(UInt64, max_delay_to_mutate_ms, 1000, "Max delay of mutating MergeTree table in milliseconds, if there are a lot of unfinished mutations", 0) \
     M(Bool, exclude_deleted_rows_for_part_size_in_merge, false, "Use an estimated source part size (excluding lightweight deleted rows) when selecting parts to merge", 0) \
+    M(String, merge_workload, "", "Name of workload to be used to access resources for merges", 0) \
+    M(String, mutation_workload, "", "Name of workload to be used to access resources for mutations", 0) \
     \
     /** Inserts settings. */ \
     M(UInt64, parts_to_delay_insert, 1000, "If table contains at least that many active parts in single partition, artificially slow down insert into table. Disabled if set to 0", 0) \
@@ -265,17 +268,8 @@ struct MergeTreeSettings : public BaseSettings<MergeTreeSettingsTraits>, public 
     /// NOTE: will rewrite the AST to add immutable settings.
     void loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_attach);
 
-    /// We check settings after storage creation
-    static bool isReadonlySetting(const String & name)
-    {
-        return name == "index_granularity" || name == "index_granularity_bytes"
-            || name == "enable_mixed_granularity_parts";
-    }
-
-    static bool isPartFormatSetting(const String & name)
-    {
-        return name == "min_bytes_for_wide_part" || name == "min_rows_for_wide_part";
-    }
+    static bool isReadonlySetting(const String & name);
+    static bool isPartFormatSetting(const String & name);
 
     /// Check that the values are sane taking also query-level settings into account.
     void sanityCheck(size_t background_pool_tasks) const;
@@ -292,4 +286,10 @@ namespace MergeTreeColumnSettings
     void validate(const SettingsChanges & changes);
 }
 
+[[maybe_unused]] static bool needSyncPart(size_t input_rows, size_t input_bytes, const MergeTreeSettings & settings)
+{
+    return (
+        (settings.min_rows_to_fsync_after_merge && input_rows >= settings.min_rows_to_fsync_after_merge)
+        || (settings.min_compressed_bytes_to_fsync_after_merge && input_bytes >= settings.min_compressed_bytes_to_fsync_after_merge));
+}
 }

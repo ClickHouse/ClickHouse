@@ -1,49 +1,48 @@
-#include "Interpreters/AsynchronousInsertQueue.h"
-#include "Interpreters/SquashingTransform.h"
-#include "Parsers/ASTInsertQuery.h"
 #include <algorithm>
 #include <exception>
-#include <iterator>
 #include <memory>
 #include <mutex>
-#include <vector>
 #include <string_view>
-#include <Poco/Net/NetException.h>
-#include <Poco/Net/SocketAddress.h>
-#include <Poco/Util/LayeredConfiguration.h>
-#include <Common/CurrentThread.h>
-#include <Common/Stopwatch.h>
-#include <Common/NetException.h>
-#include <Common/setThreadName.h>
-#include <Common/OpenSSLHelpers.h>
-#include <IO/Progress.h>
+#include <vector>
+#include <Access/AccessControl.h>
+#include <Access/Credentials.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
-#include <IO/ReadBufferFromPocoSocket.h>
-#include <IO/WriteBufferFromPocoSocket.h>
-#include <IO/LimitReadBuffer.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
+#include <Compression/CompressionFactory.h>
+#include <Core/ExternalTable.h>
+#include <Core/ServerSettings.h>
 #include <Formats/NativeReader.h>
 #include <Formats/NativeWriter.h>
-#include <Interpreters/executeQuery.h>
-#include <Interpreters/TablesStatus.h>
+#include <IO/LimitReadBuffer.h>
+#include <IO/Progress.h>
+#include <IO/ReadBufferFromPocoSocket.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteBufferFromPocoSocket.h>
+#include <IO/WriteHelpers.h>
+#include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/Session.h>
+#include <Interpreters/Squashing.h>
+#include <Interpreters/TablesStatus.h>
+#include <Interpreters/executeQuery.h>
+#include <Parsers/ASTInsertQuery.h>
 #include <Server/TCPServer.h>
-#include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
 #include <Storages/ObjectStorage/StorageObjectStorageCluster.h>
-#include <Core/ExternalTable.h>
-#include <Core/ServerSettings.h>
-#include <Access/AccessControl.h>
-#include <Access/Credentials.h>
-#include <Compression/CompressionFactory.h>
-#include <Common/logger_useful.h>
+#include <Storages/StorageReplicatedMergeTree.h>
+#include <Poco/Net/NetException.h>
+#include <Poco/Net/SocketAddress.h>
+#include <Poco/Util/LayeredConfiguration.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/CurrentThread.h>
+#include <Common/NetException.h>
+#include <Common/OpenSSLHelpers.h>
+#include <Common/Stopwatch.h>
+#include <Common/logger_useful.h>
+#include <Common/scope_guard_safe.h>
+#include <Common/setThreadName.h>
 #include <Common/thread_local_rng.h>
-#include <fmt/format.h>
 
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
@@ -61,6 +60,8 @@
 #include "TCPHandler.h"
 
 #include <Common/config_version.h>
+
+#include <fmt/format.h>
 
 using namespace std::literals;
 using namespace DB;
@@ -246,7 +247,6 @@ TCPHandler::~TCPHandler()
 void TCPHandler::runImpl()
 {
     setThreadName("TCPHandler");
-    ThreadStatus thread_status;
 
     extractConnectionSettingsFromContext(server.context());
 
@@ -389,7 +389,7 @@ void TCPHandler::runImpl()
 
             query_scope.emplace(query_context, /* fatal_error_callback */ [this]
             {
-                std::lock_guard lock(fatal_error_mutex);
+                std::lock_guard lock(out_mutex);
                 sendLogs();
             });
 
@@ -477,7 +477,7 @@ void TCPHandler::runImpl()
                 Stopwatch watch;
                 CurrentMetrics::Increment callback_metric_increment(CurrentMetrics::ReadTaskRequestsSent);
 
-                std::lock_guard lock(task_callback_mutex);
+                std::scoped_lock lock(out_mutex, task_callback_mutex);
 
                 if (state.cancellation_status == CancellationStatus::FULLY_CANCELLED)
                     return {};
@@ -493,7 +493,7 @@ void TCPHandler::runImpl()
             {
                 Stopwatch watch;
                 CurrentMetrics::Increment callback_metric_increment(CurrentMetrics::MergeTreeAllRangesAnnouncementsSent);
-                std::lock_guard lock(task_callback_mutex);
+                std::scoped_lock lock(out_mutex, task_callback_mutex);
 
                 if (state.cancellation_status == CancellationStatus::FULLY_CANCELLED)
                     return;
@@ -507,7 +507,7 @@ void TCPHandler::runImpl()
             {
                 Stopwatch watch;
                 CurrentMetrics::Increment callback_metric_increment(CurrentMetrics::MergeTreeReadTaskRequestsSent);
-                std::lock_guard lock(task_callback_mutex);
+                std::scoped_lock lock(out_mutex, task_callback_mutex);
 
                 if (state.cancellation_status == CancellationStatus::FULLY_CANCELLED)
                     return std::nullopt;
@@ -555,7 +555,7 @@ void TCPHandler::runImpl()
                     {
                         auto callback = [this]()
                         {
-                            std::scoped_lock lock(task_callback_mutex, fatal_error_mutex);
+                            std::scoped_lock lock(out_mutex, task_callback_mutex);
 
                             if (getQueryCancellationStatus() == CancellationStatus::FULLY_CANCELLED)
                                 return true;
@@ -574,7 +574,7 @@ void TCPHandler::runImpl()
 
                 finish_or_cancel();
 
-                std::lock_guard lock(task_callback_mutex);
+                std::lock_guard lock(out_mutex);
 
                 /// Send final progress after calling onFinish(), since it will update the progress.
                 ///
@@ -597,7 +597,7 @@ void TCPHandler::runImpl()
                 break;
 
             {
-                std::lock_guard lock(task_callback_mutex);
+                std::lock_guard lock(out_mutex);
                 sendLogs();
                 sendEndOfStream();
             }
@@ -668,7 +668,7 @@ void TCPHandler::runImpl()
 // Server should die on std logic errors in debug, like with assert()
 // or ErrorCodes::LOGICAL_ERROR. This helps catch these errors in
 // tests.
-#ifdef ABORT_ON_LOGICAL_ERROR
+#ifdef DEBUG_OR_SANITIZER_BUILD
         catch (const std::logic_error & e)
         {
             state.io.onException();
@@ -886,13 +886,15 @@ AsynchronousInsertQueue::PushResult TCPHandler::processAsyncInsertQuery(Asynchro
     using PushResult = AsynchronousInsertQueue::PushResult;
 
     startInsertQuery();
-    SquashingTransform squashing(0, query_context->getSettingsRef().async_insert_max_data_size);
+    Squashing squashing(state.input_header, 0, query_context->getSettingsRef().async_insert_max_data_size);
 
     while (readDataNext())
     {
-        auto result = squashing.add(std::move(state.block_for_insert));
-        if (result)
+        squashing.setHeader(state.block_for_insert.cloneEmpty());
+        auto result_chunk = Squashing::squash(squashing.add({state.block_for_insert.getColumns(), state.block_for_insert.rows()}));
+        if (result_chunk)
         {
+            auto result = squashing.getHeader().cloneWithColumns(result_chunk.detachColumns());
             return PushResult
             {
                 .status = PushResult::TOO_MUCH_DATA,
@@ -901,7 +903,13 @@ AsynchronousInsertQueue::PushResult TCPHandler::processAsyncInsertQuery(Asynchro
         }
     }
 
-    auto result = squashing.add({});
+    Chunk result_chunk = Squashing::squash(squashing.flush());
+    if (!result_chunk)
+    {
+        return insert_queue.pushQueryWithBlock(state.parsed_query, squashing.getHeader(), query_context);
+    }
+
+    auto result = squashing.getHeader().cloneWithColumns(result_chunk.detachColumns());
     return insert_queue.pushQueryWithBlock(state.parsed_query, std::move(result), query_context);
 }
 
@@ -1008,7 +1016,7 @@ void TCPHandler::processOrdinaryQuery()
 
     if (query_context->getSettingsRef().allow_experimental_query_deduplication)
     {
-        std::lock_guard lock(task_callback_mutex);
+        std::lock_guard lock(out_mutex);
         sendPartUUIDs();
     }
 
@@ -1018,17 +1026,28 @@ void TCPHandler::processOrdinaryQuery()
 
         if (header)
         {
-            std::lock_guard lock(task_callback_mutex);
+            std::lock_guard lock(out_mutex);
             sendData(header);
         }
     }
 
     /// Defer locking to cover a part of the scope below and everything after it
-    std::unique_lock progress_lock(task_callback_mutex, std::defer_lock);
+    std::unique_lock out_lock(out_mutex, std::defer_lock);
 
     {
         PullingAsyncPipelineExecutor executor(pipeline);
         CurrentMetrics::Increment query_thread_metric_increment{CurrentMetrics::QueryThread};
+
+        /// The following may happen:
+        /// * current thread is holding the lock
+        /// * because of the exception we unwind the stack and call the destructor of `executor`
+        /// * the destructor calls cancel() and waits for all query threads to finish
+        /// * at the same time one of the query threads is trying to acquire the lock, e.g. inside `merge_tree_read_task_callback`
+        /// * deadlock
+        SCOPE_EXIT({
+            if (out_lock.owns_lock())
+                out_lock.unlock();
+        });
 
         Block block;
         while (executor.pull(block, interactive_delay / 1000))
@@ -1050,6 +1069,9 @@ void TCPHandler::processOrdinaryQuery()
                 executor.cancelReading();
             }
 
+            lock.unlock();
+            out_lock.lock();
+
             if (after_send_progress.elapsed() / 1000 >= interactive_delay)
             {
                 /// Some time passed and there is a progress.
@@ -1065,12 +1087,13 @@ void TCPHandler::processOrdinaryQuery()
                 if (!state.io.null_format)
                     sendData(block);
             }
+
+            out_lock.unlock();
         }
 
         /// This lock wasn't acquired before and we make .lock() call here
-        /// so everything under this line is covered even together
-        /// with sendProgress() out of the scope
-        progress_lock.lock();
+        /// so everything under this line is covered.
+        out_lock.lock();
 
         /** If data has run out, we will send the profiling data and total values to
           * the last zero block to be able to use
@@ -1096,6 +1119,7 @@ void TCPHandler::processOrdinaryQuery()
         last_sent_snapshots.clear();
     }
 
+    out_lock.lock();
     sendProgress();
 }
 
@@ -1479,7 +1503,7 @@ void TCPHandler::receiveHello()
             try
             {
                 session->authenticate(
-                    SSLCertificateCredentials{user, secure_socket.peerCertificate().commonName()},
+                    SSLCertificateCredentials{user, extractSSLCertificateSubjects(secure_socket.peerCertificate())},
                     getClientAddress(client_info));
                 return;
             }
@@ -1864,7 +1888,7 @@ void TCPHandler::receiveQuery()
 #endif
     }
 
-    query_context = session->makeQueryContext(std::move(client_info));
+    query_context = session->makeQueryContext(client_info);
 
     /// Sets the default database if it wasn't set earlier for the session context.
     if (is_interserver_mode && !default_database.empty())
@@ -1879,6 +1903,16 @@ void TCPHandler::receiveQuery()
     ///
     /// Settings
     ///
+
+    /// FIXME: Remove when allow_experimental_analyzer will become obsolete.
+    /// Analyzer became Beta in 24.3 and started to be enabled by default.
+    /// We have to disable it for ourselves to make sure we don't have different settings on
+    /// different servers.
+    if (query_kind == ClientInfo::QueryKind::SECONDARY_QUERY
+        && client_info.getVersionNumber() < VersionNumber(23, 3, 0)
+        && !passed_settings.allow_experimental_analyzer.changed)
+        passed_settings.set("allow_experimental_analyzer", false);
+
     auto settings_changes = passed_settings.changes();
     query_kind = query_context->getClientInfo().query_kind;
     if (query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
@@ -2086,6 +2120,7 @@ void TCPHandler::initBlockOutput(const Block & block)
             *state.maybe_compressed_out,
             client_tcp_protocol_version,
             block.cloneEmpty(),
+            std::nullopt,
             !query_settings.low_cardinality_allow_in_native_format);
     }
 }
@@ -2100,6 +2135,7 @@ void TCPHandler::initLogsBlockOutput(const Block & block)
             *out,
             client_tcp_protocol_version,
             block.cloneEmpty(),
+            std::nullopt,
             !query_settings.low_cardinality_allow_in_native_format);
     }
 }
@@ -2114,6 +2150,7 @@ void TCPHandler::initProfileEventsBlockOutput(const Block & block)
             *out,
             client_tcp_protocol_version,
             block.cloneEmpty(),
+            std::nullopt,
             !query_settings.low_cardinality_allow_in_native_format);
     }
 }

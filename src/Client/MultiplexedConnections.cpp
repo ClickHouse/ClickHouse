@@ -2,6 +2,8 @@
 
 #include <Common/thread_local_rng.h>
 #include <Core/Protocol.h>
+#include <Core/Settings.h>
+#include <Interpreters/Context.h>
 #include <IO/ConnectionTimeouts.h>
 #include <IO/Operators.h>
 #include <Interpreters/ClientInfo.h>
@@ -23,8 +25,8 @@ namespace ErrorCodes
 }
 
 
-MultiplexedConnections::MultiplexedConnections(Connection & connection, const Settings & settings_, const ThrottlerPtr & throttler)
-    : settings(settings_)
+MultiplexedConnections::MultiplexedConnections(Connection & connection, ContextPtr context_, const ThrottlerPtr & throttler)
+    : context(std::move(context_)), settings(context->getSettingsRef())
 {
     connection.setThrottler(throttler);
 
@@ -36,9 +38,9 @@ MultiplexedConnections::MultiplexedConnections(Connection & connection, const Se
 }
 
 
-MultiplexedConnections::MultiplexedConnections(std::shared_ptr<Connection> connection_ptr_, const Settings & settings_, const ThrottlerPtr & throttler)
-    : settings(settings_)
-    , connection_ptr(connection_ptr_)
+MultiplexedConnections::MultiplexedConnections(
+    std::shared_ptr<Connection> connection_ptr_, ContextPtr context_, const ThrottlerPtr & throttler)
+    : context(std::move(context_)), settings(context->getSettingsRef()), connection_ptr(connection_ptr_)
 {
     connection_ptr->setThrottler(throttler);
 
@@ -50,9 +52,8 @@ MultiplexedConnections::MultiplexedConnections(std::shared_ptr<Connection> conne
 }
 
 MultiplexedConnections::MultiplexedConnections(
-        std::vector<IConnectionPool::Entry> && connections,
-        const Settings & settings_, const ThrottlerPtr & throttler)
-    : settings(settings_)
+    std::vector<IConnectionPool::Entry> && connections, ContextPtr context_, const ThrottlerPtr & throttler)
+    : context(std::move(context_)), settings(context->getSettingsRef())
 {
     /// If we didn't get any connections from pool and getMany() did not throw exceptions, this means that
     /// `skip_unavailable_shards` was set. Then just return.
@@ -141,27 +142,32 @@ void MultiplexedConnections::sendQuery(
             modified_settings.group_by_two_level_threshold = 0;
             modified_settings.group_by_two_level_threshold_bytes = 0;
         }
-
-        if (replica_info)
-        {
-            client_info.collaborate_with_initiator = true;
-            client_info.count_participating_replicas = replica_info->all_replicas_count;
-            client_info.number_of_current_replica = replica_info->number_of_current_replica;
-        }
     }
 
-    const bool enable_sample_offset_parallel_processing = settings.max_parallel_replicas > 1 && settings.allow_experimental_parallel_reading_from_replicas == 0;
+    if (replica_info)
+    {
+        client_info.collaborate_with_initiator = true;
+        client_info.number_of_current_replica = replica_info->number_of_current_replica;
+    }
+
+    /// FIXME: Remove once we will make `allow_experimental_analyzer` obsolete setting.
+    /// Make the analyzer being set, so it will be effectively applied on the remote server.
+    /// In other words, the initiator always controls whether the analyzer enabled or not for
+    /// all servers involved in the distributed query processing.
+    modified_settings.set("allow_experimental_analyzer", static_cast<bool>(modified_settings.allow_experimental_analyzer));
+
+    const bool enable_offset_parallel_processing = context->canUseOffsetParallelReplicas();
 
     size_t num_replicas = replica_states.size();
     if (num_replicas > 1)
     {
-        if (enable_sample_offset_parallel_processing)
+        if (enable_offset_parallel_processing)
             /// Use multiple replicas for parallel query processing.
             modified_settings.parallel_replicas_count = num_replicas;
 
         for (size_t i = 0; i < num_replicas; ++i)
         {
-            if (enable_sample_offset_parallel_processing)
+            if (enable_offset_parallel_processing)
                 modified_settings.parallel_replica_offset = i;
 
             replica_states[i].connection->sendQuery(
