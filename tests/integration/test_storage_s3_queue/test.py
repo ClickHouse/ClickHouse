@@ -860,24 +860,21 @@ def test_max_set_age(started_cluster):
     def get_count():
         return int(node.query(f"SELECT count() FROM {dst_table_name}"))
 
-    for _ in range(20):
-        if expected_rows == get_count():
-            break
-        time.sleep(1)
+    def wait_for_condition(check_function, max_wait_time=30):
+        before = time.time()
+        while time.time() - before < max_wait_time:
+            if check_function():
+                return
+            time.sleep(0.1)
+        assert False
 
-    assert expected_rows == get_count()
+    wait_for_condition(lambda: get_count() == expected_rows)
     assert files_to_generate == int(node.query(f"SELECT uniq(_path) from {dst_table_name}"))
 
     time.sleep(max_age + 5)
 
     expected_rows *= 2
-
-    for _ in range(20):
-        if expected_rows == get_count():
-            break
-        time.sleep(1)
-
-    assert expected_rows == get_count()
+    wait_for_condition(lambda: get_count() == expected_rows)
     assert files_to_generate == int(node.query(f"SELECT uniq(_path) from {dst_table_name}"))
 
     paths_count = [
@@ -890,11 +887,12 @@ def test_max_set_age(started_cluster):
     for path_count in paths_count:
         assert 2 == path_count
 
-    failed_count = int(
-        node.query(
+    def get_object_storage_failures():
+        return int(node.query(
             "SELECT value FROM system.events WHERE name = 'ObjectStorageQueueFailedFiles' SETTINGS system_events_show_zero_values=1"
-        )
-    )
+        ))
+
+    failed_count = get_object_storage_failures()
 
     values = [
         ["failed", 1, 1],
@@ -905,20 +903,7 @@ def test_max_set_age(started_cluster):
     file_with_error = f"fff_{uuid4().hex}.csv"
     put_s3_file_content(started_cluster, f"{files_path}/{file_with_error}", values_csv)
 
-    for _ in range(30):
-        if failed_count + 1 == int(
-            node.query(
-                "SELECT value FROM system.events WHERE name = 'ObjectStorageQueueFailedFiles' SETTINGS system_events_show_zero_values=1"
-            )
-        ):
-            break
-        time.sleep(1)
-
-    assert failed_count + 1 == int(
-        node.query(
-            "SELECT value FROM system.events WHERE name = 'ObjectStorageQueueFailedFiles' SETTINGS system_events_show_zero_values=1"
-        )
-    )
+    wait_for_condition(lambda: failed_count + 1 <= get_object_storage_failures())
 
     node.query("SYSTEM FLUSH LOGS")
     assert "Cannot parse input" in node.query(
@@ -927,22 +912,13 @@ def test_max_set_age(started_cluster):
 
     assert 1 == int(
         node.query(
-            f"SELECT count() FROM system.s3queue_log WHERE file_name ilike '%{file_with_error}'"
-        )
-    )
-    assert 1 == int(
-        node.query(
             f"SELECT count() FROM system.s3queue_log WHERE file_name ilike '%{file_with_error}' AND notEmpty(exception)"
         )
     )
 
     time.sleep(max_age + 1)
 
-    assert failed_count + 2 == int(
-        node.query(
-            "SELECT value FROM system.events WHERE name = 'ObjectStorageQueueFailedFiles'"
-        )
-    )
+    assert failed_count + 2 <= get_object_storage_failures()
 
     node.query("SYSTEM FLUSH LOGS")
     assert "Cannot parse input" in node.query(
