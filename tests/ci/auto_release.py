@@ -191,7 +191,7 @@ def main():
                     title=f"Auto Release Status for {release_info.release_branch}",
                     body=release_info.to_dict(),
                 )
-    if args.post_auto_release_complete:
+    elif args.post_auto_release_complete:
         assert args.wf_status, "--wf-status Required with --post-auto-release-complete"
         if args.wf_status != SUCCESS:
             CIBuddy(dry_run=False).post_job_error(
