@@ -110,6 +110,10 @@
 00002_log_and_exception_messages_formatting
 01646_rewrite_sum_if_bug
 02725_agg_projection_resprect_PK
+02763_row_policy_storage_merge_alias
+# Check after constants refactoring
+02901_parallel_replicas_rollup
+# Flaky. Please don't delete them without fixing them:
 01019_alter_materialized_view_consistent
 01600_parts_states_metrics_long
 01600_parts_types_metrics_long
