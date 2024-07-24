@@ -2,16 +2,11 @@
 
 #include <base/defines.h>
 #include <base/errnoToString.h>
-#include <Common/CurrentThread.h>
-#include <Common/MemoryTracker.h>
-#include <Core/Settings.h>
 #include <Daemon/BaseDaemon.h>
 #include <Daemon/SentryWriter.h>
-#include <Common/GWPAsan.h>
 
 #include <sys/stat.h>
 #include <sys/types.h>
-#include <sys/time.h>
 #include <sys/wait.h>
 #include <sys/resource.h>
 
@@ -25,9 +20,7 @@
 #include <algorithm>
 #include <typeinfo>
 #include <iostream>
-#include <fstream>
 #include <memory>
-#include <base/scope_guard.h>
 
 #include <Poco/Message.h>
 #include <Poco/Util/Application.h>
@@ -38,17 +31,11 @@
 #include <Common/ErrorHandlers.h>
 #include <Common/SignalHandlers.h>
 #include <base/argsToConfig.h>
-#include <base/getThreadId.h>
 #include <base/coverage.h>
-#include <base/sleep.h>
 
 #include <IO/WriteBufferFromFileDescriptorDiscardOnFailure.h>
-#include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
 #include <Common/Exception.h>
-#include <Common/PipeFDs.h>
-#include <Common/StackTrace.h>
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/Config/ConfigProcessor.h>
@@ -450,13 +437,7 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
     signal_listener_thread.start(*signal_listener);
 
 #if defined(__ELF__) && !defined(OS_FREEBSD)
-    String build_id_hex = SymbolIndex::instance().getBuildIDHex();
-    if (build_id_hex.empty())
-        build_id = "";
-    else
-        build_id = build_id_hex;
-#else
-    build_id = "";
+    build_id = SymbolIndex::instance().getBuildIDHex();
 #endif
 
     git_hash = GIT_HASH;
