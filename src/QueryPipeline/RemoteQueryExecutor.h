@@ -222,13 +222,11 @@ public:
 
     bool isReplicaUnavailable() const { return extension && extension->parallel_reading_coordinator && connections->size() == 0; }
 
-<<<<<<< HEAD
     void reconnect();
     bool isConnectionAlive() const;
-=======
+
     /// return true if parallel replica packet was processed
     bool processParallelReplicaPacketIfAny();
->>>>>>> upstream/master
 
 private:
     RemoteQueryExecutor(
