@@ -411,9 +411,6 @@ collect_core_dumps
 
 if [[ "$SAVE_INDIVIDUAL_TEST_OUTPUT" -eq 1 ]]; then
     mkdir /test_output/stdout ||:
-    for i in $(find . -type f -name "*.stdout*" -o -name "*.stderr*")
-    do
-        mv "$i" "/test_output/stdout/$i" ||:
-    done
+    find . -type f -name "*.stdout*" -o -name "*.stderr*" -exec mv {} "/test_output/stdout/"
     tar -chf /test_output/stdout.tar /test_output/stdout ||:
 fi
