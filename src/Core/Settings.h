@@ -1,5 +1,8 @@
 #pragma once
 
+/// CLion freezes for a minute on every keypress in any file including this.
+#if !defined(__CLION_IDE__)
+
 #include <Common/NamePrompter.h>
 #include <Core/BaseSettings.h>
 #include <Core/SettingsEnums.h>
@@ -1348,3 +1351,5 @@ struct FormatFactorySettings : public BaseSettings<FormatFactorySettingsTraits>
 };
 
 }
+
+#endif
