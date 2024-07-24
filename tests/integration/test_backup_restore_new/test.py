@@ -1239,6 +1239,7 @@ def test_system_users_required_privileges():
 
     instance.query("DROP USER u1")
     instance.query("DROP ROLE r1")
+    instance.query("DROP USER u2")
 
 
 def test_system_users_async():
