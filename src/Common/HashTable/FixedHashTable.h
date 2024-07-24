@@ -186,6 +186,22 @@ protected:
             return static_cast<Derived &>(*this);
         }
 
+        Derived & nextCellBeforeLimit(const iterator_base & rhs)
+        {
+            ++ptr;
+
+            /// Skip empty cells in the main buffer.
+            const auto * buf_end = container->buf + container->NUM_CELLS;
+            if (container->canUseMinMaxOptimization())
+                buf_end = container->buf + container->max + 1;
+
+            buf_end = std::min(buf_end, rhs.ptr);
+            while (ptr < buf_end && ptr->isZero(*container))
+                ++ptr;
+
+            return static_cast<Derived &>(*this);
+        }
+
         auto & operator*()
         {
             if (cell.key != ptr - container->buf)

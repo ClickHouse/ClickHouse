@@ -130,7 +130,7 @@ public:
     template <typename Func, bool>
     void ALWAYS_INLINE mergeToViaEmplaceInRange(auto begin, auto end, Self & that, Func && func)
     {
-        for (auto it = begin; it < end; ++it)
+        for (auto it = begin; it < end; it = it.nextCellBeforeLimit(end))
         {
             typename Self::LookupResult res_it;
             bool inserted;
