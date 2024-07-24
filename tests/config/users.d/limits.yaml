@@ -30,7 +30,6 @@ profiles:
     max_columns_to_read: 20K
     max_temporary_columns: 20K
     max_temporary_non_const_columns: 20K
-    max_sessions_for_user: 1K
     max_rows_in_set: 10G
     max_bytes_in_set: 10G
     max_rows_in_join: 10G
