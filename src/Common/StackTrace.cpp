@@ -4,7 +4,6 @@
 #include <base/constexpr_helpers.h>
 #include <base/demangle.h>
 
-#include "Common/PipeFDs.h"
 #include <Common/scope_guard_safe.h>
 #include <Common/Dwarf.h>
 #include <Common/Elf.h>
@@ -496,8 +495,6 @@ using StackTraceCacheBase = std::map<StackTraceTriple, CacheEntryPtr, std::less<
 
 struct StackTraceCache : public StackTraceCacheBase
 {
-    using StackTraceCacheBase::StackTraceCacheBase;
-
     ~StackTraceCache()
     {
         can_use_cache = false;
