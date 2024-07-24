@@ -423,6 +423,7 @@ void LocalServer::connect()
 {
     connection_parameters = ConnectionParameters(getClientConfiguration(), "localhost");
 
+    /// This is needed for table function input(...).
     ReadBuffer * in;
     auto table_file = getClientConfiguration().getString("table-file", "-");
     if (table_file == "-" || table_file == "stdin")

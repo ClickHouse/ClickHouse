@@ -314,7 +314,8 @@ void StorageEmbeddedRocksDB::mutate(const MutationCommands & commands, ContextPt
     Block block;
     while (executor.pull(block))
     {
-        sink->consume(Chunk{block.getColumns(), block.rows()});
+        auto chunk = Chunk(block.getColumns(), block.rows());
+        sink->consume(chunk);
     }
 }
 
