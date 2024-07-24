@@ -6,7 +6,6 @@
 #include <Common/CurrentThread.h>
 #include <Core/Protocol.h>
 #include <Core/Settings.h>
-#include <Core/Settings.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
@@ -489,17 +488,6 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAsync()
         if (was_cancelled)
             return ReadResult(Block());
 
-        if (has_postponed_packet)
-        {
-            has_postponed_packet = false;
-            auto read_result = processPacket(read_context->getPacket());
-            if (read_result.getType() == ReadResult::Type::Data || read_result.getType() == ReadResult::Type::ParallelReplicasToken)
-                return read_result;
-
-            if (got_duplicated_part_uuids)
-                break;
-        }
-
         read_context->resume();
 
         if (isReplicaUnavailable() || needToSkipUnavailableShard())
@@ -520,9 +508,10 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAsync()
         if (read_context->isInProgress())
             return ReadResult(read_context->getFileDescriptor());
 
-        auto read_result = processPacket(read_context->getPacket());
-        if (read_result.getType() == ReadResult::Type::Data || read_result.getType() == ReadResult::Type::ParallelReplicasToken)
-            return read_result;
+        auto anything = processPacket(read_context->getPacket());
+
+        if (anything.getType() == ReadResult::Type::Data || anything.getType() == ReadResult::Type::ParallelReplicasToken)
+            return anything;
 
         if (got_duplicated_part_uuids)
             break;
@@ -925,37 +914,48 @@ bool RemoteQueryExecutor::needToSkipUnavailableShard() const
     return context->getSettingsRef().skip_unavailable_shards && (0 == connections->size());
 }
 
-bool RemoteQueryExecutor::processParallelReplicaPacketIfAny()
+void RemoteQueryExecutor::reconnect()
 {
-#if defined(OS_LINUX)
-
-    std::lock_guard lock(was_cancelled_mutex);
-    if (was_cancelled)
-        return false;
-
-    if (!read_context || (resent_query && recreate_read_context))
+    // Step 1: Disconnect existing connections
+    if (connections)
     {
-        read_context = std::make_unique<ReadContext>(*this);
-        recreate_read_context = false;
+        connections->disconnect();
     }
 
-    chassert(!has_postponed_packet);
-
-    read_context->resume();
-    if (read_context->isInProgress()) // <- nothing to process
-        return false;
-
-    const auto packet_type = read_context->getPacketType();
-    if (packet_type == Protocol::Server::MergeTreeReadTaskRequest || packet_type == Protocol::Server::MergeTreeAllRangesAnnouncement)
+    // Step 2: Attempt to re-establish connections
+    connections = create_connections(nullptr);
+    if (!connections)
     {
-        processPacket(read_context->getPacket());
-        return true;
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to reconnect to any replica.");
     }
 
-    has_postponed_packet = true;
-
-#endif
-
-    return false;
+    // Step 3: Resend the query if connections are re-established
+    sendQuery();
 }
+
+bool RemoteQueryExecutor::isConnectionAlive() const
+{
+    if (!connections)
+    {
+        return false;
+    }
+
+    // Check the status of each connection in the MultiplexedConnections
+    for (const auto & connection : connections->getConnections())
+    {
+        // A minimal way to check connection health could be a lightweight query
+        try
+        {
+            connection->sendReadTaskResponse("SELECT 1");
+            connection->receivePacket(); // Expecting some form of acknowledgment
+        }
+        catch (const Exception &)
+        {
+            return false;
+        }
+    }
+
+    return true;
+}
+
 }
