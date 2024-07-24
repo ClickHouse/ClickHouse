@@ -1147,6 +1147,8 @@ def main() -> int:
 
     ### RUN action: start
     elif args.run:
+        if args.job_name == CI.BuildNames.BINARY_TIDY:
+            time.sleep(3600)
         assert indata
         job_report = JobReport.load()
         check_name = args.job_name
