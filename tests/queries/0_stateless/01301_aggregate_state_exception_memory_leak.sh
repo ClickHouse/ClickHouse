@@ -8,7 +8,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 start=$SECONDS
 # If the memory leak exists, it will lead to OOM fairly quickly.
 for _ in {1..1000}; do
-    $CLICKHOUSE_CLIENT --max_memory_usage 1G <<< "SELECT uniqExactState(number) FROM system.numbers_mt GROUP BY number % 10";
+    $CLICKHOUSE_CLIENT --max_memory_usage 1G --max_rows_to_read 0 <<< "SELECT uniqExactState(number) FROM system.numbers_mt GROUP BY number % 10";
 
     # NOTE: we cannot use timeout here since this will not guarantee that the query will be executed at least once.
     # (since graceful wait of clickhouse-client had been reverted)

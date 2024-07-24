@@ -15,6 +15,8 @@ SELECT
 FROM system.numbers limit 500000));
 
 
+SET max_rows_to_read = 0;
+
 SELECT roundBankers(result.1, 5), roundBankers(result.2, 5 ) FROM (
 SELECT
      studentTTest(sample, variant) as result
