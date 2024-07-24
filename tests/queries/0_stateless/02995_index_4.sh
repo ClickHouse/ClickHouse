@@ -26,7 +26,7 @@ DETACH TABLE test;
 ATTACH TABLE test;
 "
 
-for i in {1..1000}
+for i in {301..400}
 do
     echo "
 WITH ${i} AS try
