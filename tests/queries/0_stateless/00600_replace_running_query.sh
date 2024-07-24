@@ -8,7 +8,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 TEST_PREFIX=$RANDOM
 ${CLICKHOUSE_CLIENT} -q "drop user if exists u_00600${TEST_PREFIX}"
-${CLICKHOUSE_CLIENT} -q "create user u_00600${TEST_PREFIX} settings max_execution_time=60, readonly=1"
+${CLICKHOUSE_CLIENT} -q "create user u_00600${TEST_PREFIX} settings max_execution_time=60, readonly=1, max_rows_to_read=0"
 ${CLICKHOUSE_CLIENT} -q "grant select on system.numbers to u_00600${TEST_PREFIX}"
 
 function wait_for_query_to_start()
@@ -26,7 +26,7 @@ $CLICKHOUSE_CURL -sS "$CLICKHOUSE_URL&query_id=hello&replace_running_query=1" -d
 # Wait for it to be replaced
 wait
 
-${CLICKHOUSE_CLIENT_BINARY} --user=u_00600${TEST_PREFIX} --query_id=42 --max_rows_to_read=0 --query='SELECT 2, count() FROM system.numbers' 2>&1 | grep -cF 'was cancelled' &
+${CLICKHOUSE_CLIENT_BINARY} --user=u_00600${TEST_PREFIX} --query_id=42 --query='SELECT 2, count() FROM system.numbers' 2>&1 | grep -cF 'was cancelled' &
 wait_for_query_to_start '42'
 
 # Trying to run another query with the same query_id
