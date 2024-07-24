@@ -100,6 +100,7 @@ def test_read_write_storage_with_globs(started_cluster):
     node1.query("drop table HDFSStorageWithQuestionMark")
     node1.query("drop table HDFSStorageWithAsterisk")
 
+
 def test_storage_with_multidirectory_glob(started_cluster):
     hdfs_api = started_cluster.hdfs_api
     for i in ["1", "2"]:
@@ -156,6 +157,7 @@ def test_write_table(started_cluster):
     assert node1.query("select * from OtherHDFSStorage order by id") == result
     node1.query("truncate table OtherHDFSStorage")
     node1.query("drop table OtherHDFSStorage")
+
 
 def test_bad_hdfs_uri(started_cluster):
     try:
@@ -316,6 +318,7 @@ def test_write_gz_storage(started_cluster):
     node1.query("truncate table GZHDFSStorage")
     node1.query("drop table GZHDFSStorage")
 
+
 def test_write_gzip_storage(started_cluster):
     hdfs_api = started_cluster.hdfs_api
 
@@ -346,6 +349,7 @@ def test_virtual_columns(started_cluster):
         == expected
     )
     node1.query("drop table virtual_cols")
+
 
 def test_read_files_with_spaces(started_cluster):
     hdfs_api = started_cluster.hdfs_api
@@ -397,7 +401,9 @@ def test_partition_by(started_cluster):
     file_name = "test_{_partition_id}"
     partition_by = "column3"
     values = "(1, 2, 3), (3, 2, 1), (1, 3, 2)"
-    table_function = f"hdfs('hdfs://hdfs1:9000/{dir}/{file_name}', 'TSV', '{table_format}')"
+    table_function = (
+        f"hdfs('hdfs://hdfs1:9000/{dir}/{file_name}', 'TSV', '{table_format}')"
+    )
 
     node1.query(
         f"insert into table function {table_function} PARTITION BY {partition_by} values {values}"
@@ -496,6 +502,7 @@ def test_schema_inference(started_cluster):
     assert int(result) == 5000000
     node1.query(f"drop table schema_inference")
 
+
 def test_hdfsCluster(started_cluster):
     hdfs_api = started_cluster.hdfs_api
     fs = HdfsClient(hosts=started_cluster.hdfs_ip)
@@ -590,6 +597,7 @@ def test_multiple_inserts(started_cluster):
     assert int(result) == 60
     node1.query(f"drop table test_multiple_inserts")
 
+
 def test_format_detection(started_cluster):
     node1.query(
         f"create table arrow_table (x UInt64) engine=HDFS('hdfs://hdfs1:9000/data.arrow')"
@@ -654,7 +662,7 @@ def test_insert_select_schema_inference(started_cluster):
 
     result = node1.query(f"select * from hdfs('hdfs://hdfs1:9000/test.native.zst')")
     assert int(result) == 1
-    fs.delete('/test.native.zst')
+    fs.delete("/test.native.zst")
 
 
 def test_cluster_join(started_cluster):
@@ -1115,7 +1123,9 @@ def test_format_detection(started_cluster):
         f"desc hdfs('hdfs://hdfs1:9000/{dir}/test_format_detection1', JSONEachRow)"
     )
 
-    desc_result = node.query(f"desc hdfs('hdfs://hdfs1:9000/{dir}/test_format_detection1')")
+    desc_result = node.query(
+        f"desc hdfs('hdfs://hdfs1:9000/{dir}/test_format_detection1')"
+    )
 
     assert expected_desc_result == desc_result
 
