@@ -271,6 +271,8 @@ void StorageBuffer::read(
         }
         else
         {
+            if (processed_stage > QueryProcessingStage::FetchColumns)
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot read from Buffer table with different structure in non-initial stage of query execution");
             /// There is a struct mismatch and we need to convert read blocks from the destination table.
             const Block header = metadata_snapshot->getSampleBlock();
             Names columns_intersection = column_names;
