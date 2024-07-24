@@ -17,7 +17,7 @@ function wait_for_query_to_start()
 }
 
 
-$CLICKHOUSE_CURL -sS "$CLICKHOUSE_URL&query_id=hello&replace_running_query=1" -d 'SELECT 1, count() FROM system.numbers' > /dev/null 2>&1 &
+$CLICKHOUSE_CURL -sS "$CLICKHOUSE_URL&query_id=hello&replace_running_query=1&max_rows_to_read=0" -d 'SELECT 1, count() FROM system.numbers' > /dev/null 2>&1 &
 wait_for_query_to_start 'hello'
 
 # Replace it
@@ -26,7 +26,7 @@ $CLICKHOUSE_CURL -sS "$CLICKHOUSE_URL&query_id=hello&replace_running_query=1" -d
 # Wait for it to be replaced
 wait
 
-${CLICKHOUSE_CLIENT_BINARY} --user=u_00600${TEST_PREFIX} --query_id=42 --query='SELECT 2, count() FROM system.numbers' 2>&1 | grep -cF 'was cancelled' &
+${CLICKHOUSE_CLIENT_BINARY} --user=u_00600${TEST_PREFIX} --query_id=42 --max_rows_to_read=0 --query='SELECT 2, count() FROM system.numbers' 2>&1 | grep -cF 'was cancelled' &
 wait_for_query_to_start '42'
 
 # Trying to run another query with the same query_id
@@ -38,7 +38,7 @@ $CLICKHOUSE_CURL -sS "$CLICKHOUSE_URL&query_id=42&replace_running_query=1" -d 'S
 $CLICKHOUSE_CURL -sS "$CLICKHOUSE_URL" -d "KILL QUERY WHERE query_id = '42' SYNC" > /dev/null
 wait
 
-${CLICKHOUSE_CLIENT} --query_id=42 --query='SELECT 3, count() FROM system.numbers' 2>&1 | grep -cF 'was cancelled' &
+${CLICKHOUSE_CLIENT} --query_id=42 --max_rows_to_read=0 --query='SELECT 3, count() FROM system.numbers' 2>&1 | grep -cF 'was cancelled' &
 wait_for_query_to_start '42'
 ${CLICKHOUSE_CLIENT} --query_id=42 --replace_running_query=1 --replace_running_query_max_wait_ms=500 --query='SELECT 43' 2>&1 | grep -F "can't be stopped" > /dev/null
 wait
