@@ -6,6 +6,7 @@
 #include <Common/CurrentThread.h>
 #include <Core/Protocol.h>
 #include <Core/Settings.h>
+#include <Core/Settings.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
@@ -913,5 +914,51 @@ bool RemoteQueryExecutor::needToSkipUnavailableShard() const
 {
     return context->getSettingsRef().skip_unavailable_shards && (0 == connections->size());
 }
+
+void RemoteQueryExecutor::reconnect()
+{
+    // Step 1: Disconnect existing connections
+    if (connections)
+    {
+        connections->disconnect();
+    }
+
+    // Step 2: Attempt to re-establish connections
+    connections = create_connections(nullptr);
+    if (!connections)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to reconnect to any replica.");
+    }
+
+    // Step 3: Resend the query if connections are re-established
+    sendQuery();
+}
+
+bool RemoteQueryExecutor::isConnectionAlive() const
+{
+    if (!connections)
+    {
+        return false;
+    }
+
+    // Check the status of each connection in the MultiplexedConnections
+    for (const auto & connection : connections->getConnections())
+    {
+        // A minimal way to check connection health could be a lightweight query
+        try
+        {
+            connection->sendReadTaskResponse("SELECT 1");
+            connection->receivePacket(); // Expecting some form of acknowledgment
+        }
+        catch (const Exception &)
+        {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+
 
 }
