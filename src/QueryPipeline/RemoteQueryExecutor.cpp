@@ -941,18 +941,14 @@ bool RemoteQueryExecutor::isConnectionAlive() const
     }
 
     // Check the status of each connection in the MultiplexedConnections
-    for (const auto & connection : connections->getConnections())
+    try
     {
-        // A minimal way to check connection health could be a lightweight query
-        try
-        {
-            connection->sendReadTaskResponse("SELECT 1");
-            connection->receivePacket(); // Expecting some form of acknowledgment
-        }
-        catch (const Exception &)
-        {
-            return false;
-        }
+        connections->sendScalarsData({});  // Sending empty data to check connection health
+        connections->receivePacket(); // Expecting some form of acknowledgment
+    }
+    catch (const Exception &)
+    {
+        return false;
     }
 
     return true;
