@@ -1031,7 +1031,7 @@ void ParallelReplicasReadingCoordinator::markReplicaAsUnavailable(size_t replica
     if (!pimpl)
     {
         unavailable_nodes_registered_before_initialization.push_back(replica_number);
-        if (unavailable_nodes_registered_before_initialization.size() == participating_replicas_count)
+        if (unavailable_nodes_registered_before_initialization.size() == replicas_count)
             throw Exception(ErrorCodes::ALL_CONNECTION_TRIES_FAILED, "Can't connect to any replica chosen for query execution");
     }
     else
@@ -1061,7 +1061,7 @@ void ParallelReplicasReadingCoordinator::initialize(CoordinationMode mode)
 }
 
 ParallelReplicasReadingCoordinator::ParallelReplicasReadingCoordinator(size_t replicas_count_, size_t mark_segment_size_)
-    : replicas_count(replicas_count_), participating_replicas_count(replicas_count_), mark_segment_size(mark_segment_size_)
+    : replicas_count(replicas_count_), mark_segment_size(mark_segment_size_)
 {
 }
 

@@ -30,15 +30,11 @@ public:
     /// needed to report total rows to read
     void setProgressCallback(ProgressCallback callback);
 
-    /// Participating replicas count may be less than replicas count in a shard.
-    void adjustParticipatingReplicasCount(size_t count) { participating_replicas_count = count; }
-
 private:
     void initialize(CoordinationMode mode);
 
     std::mutex mutex;
     const size_t replicas_count{0};
-    size_t participating_replicas_count{0};
     size_t mark_segment_size{0};
     std::unique_ptr<ImplInterface> pimpl;
     ProgressCallback progress_callback; // store the callback only to bypass it to coordinator implementation
