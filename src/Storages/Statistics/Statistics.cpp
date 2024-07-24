@@ -6,6 +6,7 @@
 #include <Storages/Statistics/StatisticsCountMinSketch.h>
 #include <Storages/Statistics/StatisticsTDigest.h>
 #include <Storages/Statistics/StatisticsUniq.h>
+#include <Storages/Statistics/StatisticsMinMax.h>
 #include <Storages/StatisticsDescription.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
@@ -103,6 +104,8 @@ Float64 ColumnStatistics::estimateLess(const Field & val) const
 {
     if (stats.contains(StatisticsType::TDigest))
         return stats.at(StatisticsType::TDigest)->estimateLess(val);
+    if (stats.contains(StatisticsType::MinMax))
+        return stats.at(StatisticsType::MinMax)->estimateLess(val);
     return rows * ConditionSelectivityEstimator::default_normal_cond_factor;
 }
 
@@ -204,6 +207,9 @@ void MergeTreeStatisticsFactory::registerValidator(StatisticsType stats_type, Va
 
 MergeTreeStatisticsFactory::MergeTreeStatisticsFactory()
 {
+    registerValidator(StatisticsType::MinMax, minMaxValidator);
+    registerCreator(StatisticsType::MinMax, minMaxCreator);
+
     registerValidator(StatisticsType::TDigest, tdigestValidator);
     registerCreator(StatisticsType::TDigest, tdigestCreator);
 
@@ -240,7 +246,7 @@ ColumnStatisticsPtr MergeTreeStatisticsFactory::get(const ColumnStatisticsDescri
     {
         auto it = creators.find(type);
         if (it == creators.end())
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "Unknown statistic type '{}'. Available types: 'tdigest' 'uniq' and 'count_min'", type);
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Unknown statistic type '{}'. Available types: 'min_max', 'tdigest' 'uniq' and 'count_min'", type);
         auto stat_ptr = (it->second)(desc, stats.data_type);
         column_stat->stats[type] = stat_ptr;
     }
