@@ -125,23 +125,6 @@ DataTypePtr DataTypeFactory::getImpl(const String & family_name_param, const AST
 {
     String family_name = getAliasToOrName(family_name_param);
 
-    if (endsWith(family_name, "WithDictionary"))
-    {
-        ASTPtr low_cardinality_params = std::make_shared<ASTExpressionList>();
-        String param_name = family_name.substr(0, family_name.size() - strlen("WithDictionary"));
-        if (parameters)
-        {
-            auto func = std::make_shared<ASTFunction>();
-            func->name = param_name;
-            func->arguments = parameters;
-            low_cardinality_params->children.push_back(func);
-        }
-        else
-            low_cardinality_params->children.push_back(std::make_shared<ASTIdentifier>(param_name));
-
-        return getImpl<nullptr_on_error>("LowCardinality", low_cardinality_params);
-    }
-
     const auto * creator = findCreatorByName<nullptr_on_error>(family_name);
     if constexpr (nullptr_on_error)
     {
