@@ -731,6 +731,25 @@ void QueryPipeline::handleFailover()
     }
 }
 
+void QueryPipeline::reconnect()
+{
+    for (auto & processor : *processors)
+    {
+        if (auto * source = dynamic_cast<RemoteSource *>(&*processor))
+        {
+            source->reconnect();
+        }
+        else if (auto * sink = dynamic_cast<SinkToStorage *>(&*processor))
+        {
+            sink->reconnect();
+        }
+        else if (auto * format = dynamic_cast<IOutputFormat *>(&*processor))
+        {
+            format->reconnect();
+        }
+    }
+}
+
 bool QueryPipeline::isConnectionAlive()
 {
     bool connection_status = true;
@@ -740,6 +759,22 @@ bool QueryPipeline::isConnectionAlive()
         if (const auto * source = dynamic_cast<const RemoteSource *>(&*processor))
         {
             if (!source->isConnectionAlive())
+            {
+                connection_status = false;
+                break;
+            }
+        }
+        else if (const auto * sink = dynamic_cast<const SinkToStorage *>(&*processor))
+        {
+            if (!sink->isConnectionAlive())
+            {
+                connection_status = false;
+                break;
+            }
+        }
+        else if (const auto * format = dynamic_cast<const IOutputFormat *>(&*processor))
+        {
+            if (!format->isConnectionAlive())
             {
                 connection_status = false;
                 break;
