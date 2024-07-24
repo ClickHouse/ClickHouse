@@ -1,0 +1,1 @@
+ALTER TABLE columns_with_multiple_streams MODIFY COLUMN `field1` Nullable(tupleElement(x, 2), UInt8)
