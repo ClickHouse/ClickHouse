@@ -641,7 +641,10 @@ LoadTaskPtr DatabaseReplicated::startupDatabaseAsync(AsyncLoader & async_loader,
             if (is_probably_dropped)
                 return;
 
-            ddl_worker = std::make_unique<DatabaseReplicatedDDLWorker>(this, getContext());
+            {
+                std::lock_guard lock{mutex};
+                ddl_worker = std::make_unique<DatabaseReplicatedDDLWorker>(this, getContext());
+            }
             ddl_worker->startup();
             ddl_worker_initialized = true;
         });
