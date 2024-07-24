@@ -65,11 +65,25 @@ Metrics readAllMetricsFromStatFile(ReadBufferFromFile & buf)
     return metrics;
 }
 
-uint64_t readMetricFromStatFile(ReadBufferFromFile & buf, const std::string & key)
+uint64_t readMetricFromStatFile(ReadBufferFromFile & buf, std::string_view key)
 {
-    const auto all_metrics = readAllMetricsFromStatFile(buf);
-    if (const auto it = all_metrics.find(key); it != all_metrics.end())
-        return it->second;
+    while (!buf.eof())
+    {
+        std::string current_key;
+        readStringUntilWhitespace(current_key, buf);
+        if (current_key != key)
+        {
+            std::string dummy;
+            readStringUntilNewlineInto(dummy, buf);
+            buf.ignore();
+            continue;
+        }
+
+        assertChar(' ', buf);
+        uint64_t value = 0;
+        readIntText(value, buf);
+        return value;
+    }
     LOG_ERROR(getLogger("CgroupsReader"), "Cannot find '{}' in '{}'", key, buf.getFileName());
     return 0;
 }
