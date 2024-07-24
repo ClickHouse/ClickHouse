@@ -220,7 +220,7 @@ private:
         type_name.emplace_back(src_column.type, src_column.name, qualified_name);
     }
 
-    /** Build output from the blocks that extract from `RowRef` or `RowRefList`, to avoid block cache-miss which may cause performance slow down.
+    /** Build output from the blocks that extract from `RowRef` or `RowRefList`, to avoid block cache miss which may cause performance slow down.
      *  And This problem would happen it we directly build output from `RowRef` or `RowRefList`.
      */
     template<bool from_row_list>

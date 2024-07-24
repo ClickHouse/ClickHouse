@@ -23,7 +23,7 @@ void AddedColumns<false>::buildJoinGetOutput() {}
 
 template<>
 template<bool from_row_list>
-void AddedColumns<false>::buildOutputFromBlocks();
+void AddedColumns<false>::buildOutputFromBlocks() {}
 
 template<>
 void AddedColumns<true>::buildOutput()
