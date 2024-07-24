@@ -112,41 +112,46 @@ struct RangeWithStep
 {
     UInt64 left;
     UInt64 step;
-    UInt128 size;
+    UInt64 size;
 };
 
 using RangesWithStep = std::vector<RangeWithStep>;
 
-std::optional<RangeWithStep> steppedRangeFromRange(const Range & r, UInt64 step, UInt64 remainder)
+std::optional<RangeWithStep> steppedRangeFromRange(const Range & range, UInt64 step, UInt64 remainder)
 {
-    if ((r.right.get<UInt64>() == 0) && (!r.right_included))
+    if ((range.right.get<UInt64>() == 0) && (!range.right_included))
         return std::nullopt;
-    UInt64 begin = (r.left.get<UInt64>() / step) * step;
+
+    UInt64 begin = (range.left.get<UInt64>() / step) * step;
     if (begin > std::numeric_limits<UInt64>::max() - remainder)
         return std::nullopt;
     begin += remainder;
 
-    while ((r.left_included <= r.left.get<UInt64>()) && (begin <= r.left.get<UInt64>() - r.left_included))
+    while ((range.left_included <= range.left.get<UInt64>())
+        && (begin <= range.left.get<UInt64>() - range.left_included))
     {
         if (std::numeric_limits<UInt64>::max() - step < begin)
             return std::nullopt;
         begin += step;
     }
 
-    if ((begin >= r.right_included) && (begin - r.right_included >= r.right.get<UInt64>()))
+    if ((begin >= range.right_included) && (begin - range.right_included >= range.right.get<UInt64>()))
         return std::nullopt;
-    UInt64 right_edge_included = r.right.get<UInt64>() - (1 - r.right_included);
-    return std::optional{RangeWithStep{begin, step, static_cast<UInt128>(right_edge_included - begin) / step + 1}};
+
+    UInt64 right_edge_included = range.right.get<UInt64>();
+    if (!range.right_included)
+        right_edge_included -= 1;
+
+    return RangeWithStep{begin, step, (right_edge_included - begin) / step + 1};
 }
 
-auto sizeOfRanges(const RangesWithStep & rs)
+UInt64 sizeOfRanges(const RangesWithStep & ranges)
 {
-    UInt128 total_size{};
-    for (const RangeWithStep & r : rs)
-    {
-        /// total_size will never overflow
-        total_size += r.size;
-    }
+    UInt64 total_size = 0;
+    for (const RangeWithStep & range : ranges)
+        if (common::addOverflow(total_size, range.size, total_size))
+            return std::numeric_limits<UInt64>::max();
+
     return total_size;
 };
 
@@ -160,7 +165,7 @@ public:
     struct RangesPos
     {
         size_t offset_in_ranges;
-        UInt128 offset_in_range;
+        UInt64 offset_in_range;
     };
 
     struct RangesState
@@ -188,15 +193,14 @@ public:
     String getName() const override { return "NumbersRange"; }
 
 protected:
-    /// Find the data range in ranges and return how many item found.
+    /// Find the data range in ranges and return how many item were found.
     /// If no data left in ranges return 0.
     UInt64 findRanges(RangesPos & start, RangesPos & end, UInt64 base_block_size_)
     {
         std::lock_guard lock(ranges_state->mutex);
 
-
         UInt64 need = base_block_size_;
-        UInt64 size = 0; /// how many item found.
+        UInt64 size = 0; /// how many items found.
 
         /// find start
         start = ranges_state->pos;
@@ -205,10 +209,10 @@ protected:
         /// find end
         while (need != 0)
         {
-            UInt128 can_provide = end.offset_in_ranges == ranges.size() ? static_cast<UInt128>(0)
-                                                                        : ranges[end.offset_in_ranges].size - end.offset_in_range;
-            if (can_provide == 0)
+            if (end.offset_in_ranges == ranges.size())
                 break;
+
+            UInt64 can_provide = ranges[end.offset_in_ranges].size - end.offset_in_range;
 
             if (can_provide > need)
             {
@@ -218,17 +222,17 @@ protected:
             }
             else if (can_provide == need)
             {
-                end.offset_in_ranges++;
+                ++end.offset_in_ranges;
                 end.offset_in_range = 0;
                 size += need;
                 need = 0;
             }
             else
             {
-                end.offset_in_ranges++;
+                ++end.offset_in_ranges;
                 end.offset_in_range = 0;
-                size += static_cast<UInt64>(can_provide);
-                need -= static_cast<UInt64>(can_provide);
+                size += can_provide;
+                need -= can_provide;
             }
         }
 
@@ -264,7 +268,7 @@ protected:
             UInt64 need = block_size - provided;
             auto & range = ranges[cursor.offset_in_ranges];
 
-            UInt128 can_provide = cursor.offset_in_ranges == end.offset_in_ranges
+            UInt64 can_provide = cursor.offset_in_ranges == end.offset_in_ranges
                 ? end.offset_in_range - cursor.offset_in_range
                 : range.size - cursor.offset_in_range;
 
@@ -329,10 +333,10 @@ protected:
     }
 
 private:
-    /// The ranges is shared between all streams.
+    /// The ranges are shared between all streams.
     RangesWithStep ranges;
 
-    /// Ranges state shared between all streams, actually is the start of the ranges.
+    /// Ranges state is shared between all streams, actually is the start of the ranges.
     RangesStatePtr ranges_state;
 
     /// Base block size, will shrink when data left is not enough.
@@ -367,7 +371,7 @@ void shrinkRanges(RangesWithStep & ranges, size_t size)
         auto range_size = ranges[i].size;
         if (range_size < size)
         {
-            size -= static_cast<UInt64>(range_size);
+            size -= range_size;
             continue;
         }
         else if (range_size == size)
@@ -378,7 +382,7 @@ void shrinkRanges(RangesWithStep & ranges, size_t size)
         else
         {
             auto & range = ranges[i];
-            range.size = static_cast<UInt128>(size);
+            range.size = size;
             last_range_idx = i;
             break;
         }
@@ -501,7 +505,6 @@ Pipe ReadFromSystemNumbersStep::makePipe()
             }
         }
 
-
         /// intersection with overflowed_table_range goes back.
         if (overflowed_table_range.has_value())
         {
@@ -566,20 +569,19 @@ Pipe ReadFromSystemNumbersStep::makePipe()
         return pipe;
     }
 
-    const auto end = std::invoke(
-        [&]() -> std::optional<UInt64>
-        {
-            if (numbers_storage.limit.has_value())
-                return *(numbers_storage.limit) + numbers_storage.offset;
-            return {};
-        });
+    std::optional<UInt64> end;
+    if (numbers_storage.limit.has_value())
+        end = *(numbers_storage.limit) + numbers_storage.offset;
 
     /// Fall back to NumbersSource
+
     /// Range in a single block
-    const auto block_range = max_block_size * numbers_storage.step;
+    UInt64 block_range = max_block_size * numbers_storage.step;
+
     /// Step between chunks in a single source.
     /// It is bigger than block_range in case of multiple threads, because we have to account for other sources as well.
-    const auto step_between_chunks = num_streams * block_range;
+    UInt64 step_between_chunks = num_streams * block_range;
+
     for (size_t i = 0; i < num_streams; ++i)
     {
         const auto source_offset = i * block_range;
