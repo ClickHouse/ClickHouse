@@ -310,15 +310,19 @@ void MemoryWorker::backgroundThread()
             ProfileEvents::increment(ProfileEvents::MemoryAllocatorPurge);
             ProfileEvents::increment(ProfileEvents::MemoryAllocatorPurgeTimeMicroseconds, purge_watch.elapsedMicroseconds());
         }
+#endif
 
         if (unlikely(first_run || total_memory_tracker.get() < 0))
         {
+#if USE_JEMALLOC
             if (source != MemoryUsageSource::Jemalloc)
                 epoch_mib.setValue(0);
 
             MemoryTracker::updateAllocated(allocated_mib.getValue());
-        }
+#elif defined(OS_LINUX)
+            MemoryTracker::updateAllocated(resident);
 #endif
+        }
 
         ProfileEvents::increment(ProfileEvents::MemoryWorkerRun);
         ProfileEvents::increment(ProfileEvents::MemoryWorkerRunElapsedMicroseconds, total_watch.elapsedMicroseconds());
