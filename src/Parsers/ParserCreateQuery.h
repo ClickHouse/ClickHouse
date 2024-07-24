@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTDataType.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTLiteral.h>
@@ -12,6 +13,7 @@
 #include <Parsers/ParserDataType.h>
 #include <Parsers/ParserSetQuery.h>
 #include <Poco/String.h>
+
 
 namespace DB
 {
@@ -268,9 +270,8 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
             auto default_function = std::make_shared<ASTFunction>();
             default_function->name = "defaultValueOfTypeName";
             default_function->arguments = std::make_shared<ASTExpressionList>();
-            // Ephemeral columns don't really have secrets but we need to format
-            // into a String, hence the strange call
-            default_function->arguments->children.emplace_back(std::make_shared<ASTLiteral>(type->as<ASTFunction>()->formatForLogging()));
+            /// Ephemeral columns don't really have secrets but we need to format into a String, hence the strange call
+            default_function->arguments->children.emplace_back(std::make_shared<ASTLiteral>(type->as<ASTDataType>()->formatForLogging()));
             default_expression = default_function;
         }
 
