@@ -41,12 +41,13 @@ function run_until_deadline_and_at_least_times()
     local min_iterations=$1; shift
     local function_to_run=$1; shift
 
-    local started_time=$(get_now)
+    local started_time
+    started_time=$(get_now)
     local i=0
 
     while true
     do
-        $function_to_run $i $@
+        $function_to_run $i "$@"
 
         [[ $(get_now) -lt $deadline ]] || break
 
