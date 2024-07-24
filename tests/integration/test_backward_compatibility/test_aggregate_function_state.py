@@ -1,26 +1,28 @@
 import pytest
 
-from helpers.cluster import ClickHouseCluster, CLICKHOUSE_CI_MIN_TESTED_VERSION
+from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
     "node1",
     with_zookeeper=False,
-    image="clickhouse/clickhouse-server",
-    tag=CLICKHOUSE_CI_MIN_TESTED_VERSION,
+    image="yandex/clickhouse-server",
+    tag="19.16.9.37",
     stay_alive=True,
     with_installed_binary=True,
+    allow_analyzer=False,
 )
 node2 = cluster.add_instance(
     "node2",
     with_zookeeper=False,
-    image="clickhouse/clickhouse-server",
-    tag=CLICKHOUSE_CI_MIN_TESTED_VERSION,
+    image="yandex/clickhouse-server",
+    tag="19.16.9.37",
     stay_alive=True,
     with_installed_binary=True,
+    allow_analyzer=False,
 )
-node3 = cluster.add_instance("node3", with_zookeeper=False, use_old_analyzer=True)
-node4 = cluster.add_instance("node4", with_zookeeper=False, use_old_analyzer=True)
+node3 = cluster.add_instance("node3", with_zookeeper=False, allow_analyzer=False)
+node4 = cluster.add_instance("node4", with_zookeeper=False, allow_analyzer=False)
 
 
 @pytest.fixture(scope="module")

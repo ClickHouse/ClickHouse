@@ -26,6 +26,7 @@ SELECT
     least(1),
     length('1'),
     log(1),
+    position('1', '1'),
     log(1),
     log10(1),
     log2(1),

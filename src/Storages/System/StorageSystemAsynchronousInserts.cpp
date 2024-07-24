@@ -15,26 +15,26 @@ namespace DB
 
 static constexpr auto TIME_SCALE = 6;
 
-ColumnsDescription StorageSystemAsynchronousInserts::getColumnsDescription()
+NamesAndTypesList StorageSystemAsynchronousInserts::getNamesAndTypes()
 {
-    return ColumnsDescription
+    return
     {
-        {"query", std::make_shared<DataTypeString>(), "Query text."},
-        {"database", std::make_shared<DataTypeString>(), "Database name."},
-        {"table", std::make_shared<DataTypeString>(), "Table name."},
-        {"format", std::make_shared<DataTypeString>(), "Format name."},
-        {"first_update", std::make_shared<DataTypeDateTime64>(TIME_SCALE), "First insert time with microseconds resolution."},
-        {"total_bytes", std::make_shared<DataTypeUInt64>(), "Total number of bytes waiting in the queue."},
-        {"entries.query_id", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Array of query ids of the inserts waiting in the queue."},
-        {"entries.bytes", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "Array of bytes of each insert query waiting in the queue."},
+        {"query", std::make_shared<DataTypeString>()},
+        {"database", std::make_shared<DataTypeString>()},
+        {"table", std::make_shared<DataTypeString>()},
+        {"format", std::make_shared<DataTypeString>()},
+        {"first_update", std::make_shared<DataTypeDateTime64>(TIME_SCALE)},
+        {"total_bytes", std::make_shared<DataTypeUInt64>()},
+        {"entries.query_id", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
+        {"entries.bytes", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>())},
     };
 }
 
-void StorageSystemAsynchronousInserts::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
+void StorageSystemAsynchronousInserts::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
 {
     using namespace std::chrono;
 
-    auto * insert_queue = context->tryGetAsynchronousInsertQueue();
+    auto * insert_queue = context->getAsynchronousInsertQueue();
     if (!insert_queue)
         return;
 
@@ -82,7 +82,7 @@ void StorageSystemAsynchronousInserts::fillData(MutableColumns & res_columns, Co
             for (const auto & entry : data->entries)
             {
                 arr_query_id.push_back(entry->query_id);
-                arr_bytes.push_back(entry->chunk.byteSize());
+                arr_bytes.push_back(entry->bytes.size());
             }
 
             res_columns[i++]->insert(arr_query_id);

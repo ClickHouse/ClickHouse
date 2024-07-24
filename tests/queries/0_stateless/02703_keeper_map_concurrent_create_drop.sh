@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-ordinary-database, zookeeper, no-fasttest
+# Tags: no-ordinary-database, zookeeper, no-fasttest, no-parallel
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -15,8 +15,7 @@ function create_drop_loop()
     done
 
     i=0
-    local TIMELIMIT=$((SECONDS+$2))
-    while [ $SECONDS -lt "$TIMELIMIT" ];
+    while true;
     do
         $CLICKHOUSE_CLIENT --query="CREATE TABLE IF NOT EXISTS $table_name (key UInt64, value UInt64) ENGINE = KeeperMap('/02703_keeper_map/$CLICKHOUSE_DATABASE') PRIMARY KEY(key)"
         $CLICKHOUSE_CLIENT --query="INSERT INTO $table_name VALUES ($1, $i)"
@@ -37,11 +36,11 @@ function create_drop_loop()
 export -f create_drop_loop;
 
 THREADS=10
-TIMEOUT=20
+TIMEOUT=30
 
 for i in `seq $THREADS`
 do
-    create_drop_loop $i $TIMEOUT 2> /dev/null &
+    timeout $TIMEOUT bash -c "create_drop_loop $i" 2> /dev/null &
 done
 
 wait

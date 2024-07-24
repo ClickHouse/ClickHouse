@@ -1,4 +1,3 @@
-#include <Core/Settings.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
@@ -8,7 +7,6 @@
 #include <Storages/IStorage.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/DatabaseCatalog.h>
 #include <Storages/getStructureOfRemoteTable.h>
 
 
@@ -89,8 +87,8 @@ ColumnPtr FunctionHasColumnInTable::executeImpl(const ColumnsWithTypeAndName & a
 {
     auto get_string_from_columns = [&](const ColumnWithTypeAndName & column) -> String
     {
-        const ColumnConst & const_column = checkAndGetColumnConst<ColumnString>(*column.column);
-        return const_column.getValue<String>();
+        const ColumnConst * const_column = checkAndGetColumnConst<ColumnString>(column.column.get());
+        return const_column->getValue<String>();
     };
 
     size_t arg = 0;

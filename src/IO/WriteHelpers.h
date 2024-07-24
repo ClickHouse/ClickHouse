@@ -15,10 +15,11 @@
 #include <Common/DateLUT.h>
 #include <Common/LocalDate.h>
 #include <Common/LocalDateTime.h>
-#include <Common/transformEndianness.h>
+#include <Common/TransformEndianness.hpp>
 #include <base/find_symbols.h>
 #include <base/StringRef.h>
 #include <base/DecomposedFloat.h>
+#include <base/EnumReflection.h>
 
 #include <Core/DecimalFunctions.h>
 #include <Core/Types.h>
@@ -26,9 +27,8 @@
 #include <base/IPv4andIPv6.h>
 
 #include <Common/Exception.h>
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Common/NaNUtils.h>
-#include <Common/typeid_cast.h>
 
 #include <IO/CompressionMethod.h>
 #include <IO/WriteBuffer.h>
@@ -36,13 +36,16 @@
 #include <IO/VarInt.h>
 #include <IO/DoubleConverter.h>
 #include <IO/WriteBufferFromString.h>
-#include <IO/WriteBufferFromFileDescriptor.h>
 
+#ifdef __clang__
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wunused-parameter"
 #pragma clang diagnostic ignored "-Wsign-compare"
+#endif
 #include <dragonbox/dragonbox_to_chars.h>
+#ifdef __clang__
 #pragma clang diagnostic pop
+#endif
 
 #include <Formats/FormatSettings.h>
 
@@ -60,7 +63,9 @@ namespace ErrorCodes
 
 inline void writeChar(char x, WriteBuffer & buf)
 {
-    buf.write(x);
+    buf.nextIfAtEnd();
+    *buf.position() = x;
+    ++buf.position();
 }
 
 /// Write the same character n times.
@@ -375,146 +380,6 @@ void writeAnyEscapedString(const char * begin, const char * end, WriteBuffer & b
     }
 }
 
-/// Define special characters in Markdown according to the standards specified by CommonMark.
-inline void writeAnyMarkdownEscapedString(const char * begin, const char * end, WriteBuffer & buf)
-{
-    for (const char * it = begin; it != end; ++it)
-    {
-        switch (*it)
-        {
-            case '!':
-                writeChar('\\', buf);
-                writeChar('!', buf);
-                break;
-            case '"':
-                writeChar('\\', buf);
-                writeChar('"', buf);
-                break;
-            case '#':
-                writeChar('\\', buf);
-                writeChar('#', buf);
-                break;
-            case '$':
-                writeChar('\\', buf);
-                writeChar('$', buf);
-                break;
-            case '%':
-                writeChar('\\', buf);
-                writeChar('%', buf);
-                break;
-            case '&':
-                writeChar('\\', buf);
-                writeChar('&', buf);
-                break;
-            case '\'':
-                writeChar('\\', buf);
-                writeChar('\'', buf);
-                break;
-            case '(':
-                writeChar('\\', buf);
-                writeChar('(', buf);
-                break;
-            case ')':
-                writeChar('\\', buf);
-                writeChar(')', buf);
-                break;
-            case '*':
-                writeChar('\\', buf);
-                writeChar('*', buf);
-                break;
-            case '+':
-                writeChar('\\', buf);
-                writeChar('+', buf);
-                break;
-            case ',':
-                writeChar('\\', buf);
-                writeChar(',', buf);
-                break;
-            case '-':
-                writeChar('\\', buf);
-                writeChar('-', buf);
-                break;
-            case '.':
-                writeChar('\\', buf);
-                writeChar('.', buf);
-                break;
-            case '/':
-                writeChar('\\', buf);
-                writeChar('/', buf);
-                break;
-            case ':':
-                writeChar('\\', buf);
-                writeChar(':', buf);
-                break;
-            case ';':
-                writeChar('\\', buf);
-                writeChar(';', buf);
-                break;
-            case '<':
-                writeChar('\\', buf);
-                writeChar('<', buf);
-                break;
-            case '=':
-                writeChar('\\', buf);
-                writeChar('=', buf);
-                break;
-            case '>':
-                writeChar('\\', buf);
-                writeChar('>', buf);
-                break;
-            case '?':
-                writeChar('\\', buf);
-                writeChar('?', buf);
-                break;
-            case '@':
-                writeChar('\\', buf);
-                writeChar('@', buf);
-                break;
-            case '[':
-                writeChar('\\', buf);
-                writeChar('[', buf);
-                break;
-            case '\\':
-                writeChar('\\', buf);
-                writeChar('\\', buf);
-                break;
-            case ']':
-                writeChar('\\', buf);
-                writeChar(']', buf);
-                break;
-            case '^':
-                writeChar('\\', buf);
-                writeChar('^', buf);
-                break;
-            case '_':
-                writeChar('\\', buf);
-                writeChar('_', buf);
-                break;
-            case '`':
-                writeChar('\\', buf);
-                writeChar('`', buf);
-                break;
-            case '{':
-                writeChar('\\', buf);
-                writeChar('{', buf);
-                break;
-            case '|':
-                writeChar('\\', buf);
-                writeChar('|', buf);
-                break;
-            case '}':
-                writeChar('\\', buf);
-                writeChar('}', buf);
-                break;
-            case '~':
-                writeChar('\\', buf);
-                writeChar('~', buf);
-                break;
-            default:
-                writeChar(*it, buf);
-        }
-    }
-}
 
 inline void writeJSONString(std::string_view s, WriteBuffer & buf, const FormatSettings & settings)
 {
@@ -577,16 +442,6 @@ inline void writeEscapedString(const char * str, size_t size, WriteBuffer & buf)
 inline void writeEscapedString(std::string_view ref, WriteBuffer & buf)
 {
     writeEscapedString(ref.data(), ref.size(), buf);
-}
-
-inline void writeMarkdownEscapedString(const char * str, size_t size, WriteBuffer & buf)
-{
-    writeAnyMarkdownEscapedString(str, str + size, buf);
-}
-
-inline void writeMarkdownEscapedString(std::string_view ref, WriteBuffer & buf)
-{
-    writeMarkdownEscapedString(ref.data(), ref.size(), buf);
 }
 
 template <char quote_character>
@@ -1390,23 +1245,15 @@ struct PcgSerializer
 {
     static void serializePcg32(const pcg32_fast & rng, WriteBuffer & buf)
     {
-        writeText(pcg32_fast::multiplier(), buf);
+        writeText(rng.multiplier(), buf);
         writeChar(' ', buf);
-        writeText(pcg32_fast::increment(), buf);
+        writeText(rng.increment(), buf);
         writeChar(' ', buf);
         writeText(rng.state_, buf);
     }
 };
 
 void writePointerHex(const void * ptr, WriteBuffer & buf);
-
-String fourSpaceIndent(size_t indent);
-
-bool inline isWritingToTerminal(const WriteBuffer & buf)
-{
-    const auto * write_buffer_to_descriptor = typeid_cast<const WriteBufferFromFileDescriptor *>(&buf);
-    return write_buffer_to_descriptor && write_buffer_to_descriptor->getFD() == STDOUT_FILENO && isatty(STDOUT_FILENO);
-}
 
 }
 
@@ -1420,7 +1267,7 @@ struct fmt::formatter<DB::UUID>
     }
 
     template<typename FormatContext>
-    auto format(const DB::UUID & uuid, FormatContext & context) const
+    auto format(const DB::UUID & uuid, FormatContext & context)
     {
         return fmt::format_to(context.out(), "{}", toString(uuid));
     }

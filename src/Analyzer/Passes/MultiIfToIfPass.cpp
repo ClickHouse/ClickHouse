@@ -2,9 +2,7 @@
 
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/FunctionNode.h>
-#include <Core/Settings.h>
 #include <Functions/FunctionFactory.h>
-#include <Functions/if.h>
 
 namespace DB
 {
@@ -35,17 +33,8 @@ public:
         if (function_node->getArguments().getNodes().size() != 3)
             return;
 
-        auto if_function_value = if_function_ptr->build(function_node->getArgumentColumns());
-        if (!if_function_value->getResultType()->equals(*function_node->getResultType()))
-        {
-            /** We faced some corner case, when result type of `if` and `multiIf` are different.
-              * For example, currently `if(NULL`, a, b)` returns type of `a` column,
-              * but multiIf(NULL, a, b) returns supertypetype of `a` and `b`.
-              */
-            return;
-        }
-
-        function_node->resolveAsFunction(std::move(if_function_value));
+        auto result_type = function_node->getResultType();
+        function_node->resolveAsFunction(if_function_ptr->build(function_node->getArgumentColumns()));
     }
 
 private:
@@ -54,10 +43,9 @@ private:
 
 }
 
-void MultiIfToIfPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
+void MultiIfToIfPass::run(QueryTreeNodePtr query_tree_node, ContextPtr context)
 {
-    const auto & settings = context->getSettingsRef();
-    auto if_function_ptr = createInternalFunctionIfOverloadResolver(settings.allow_experimental_variant_type, settings.use_variant_as_common_type);
+    auto if_function_ptr = FunctionFactory::instance().get("if", context);
     MultiIfToIfVisitor visitor(std::move(if_function_ptr), std::move(context));
     visitor.visit(query_tree_node);
 }

@@ -6,7 +6,7 @@
 #include <Parsers/ASTBackupQuery.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/TableLockHolder.h>
-#include <Common/ZooKeeper/ZooKeeperRetries.h>
+#include <Storages/MergeTree/ZooKeeperRetries.h>
 #include <filesystem>
 #include <queue>
 
@@ -21,10 +21,7 @@ class IBackupCoordination;
 class IDatabase;
 using DatabasePtr = std::shared_ptr<IDatabase>;
 struct StorageID;
-enum class AccessEntityType : uint8_t;
-class QueryStatus;
-using QueryStatusPtr = std::shared_ptr<QueryStatus>;
-
+enum class AccessEntityType;
 
 /// Collects backup entries for all databases and tables which should be put to a backup.
 class BackupEntriesCollector : private boost::noncopyable
@@ -34,8 +31,7 @@ public:
                            const BackupSettings & backup_settings_,
                            std::shared_ptr<IBackupCoordination> backup_coordination_,
                            const ReadSettings & read_settings_,
-                           const ContextPtr & context_,
-                           ThreadPool & threadpool_);
+                           const ContextPtr & context_);
     ~BackupEntriesCollector();
 
     /// Collects backup entries and returns the result.
@@ -47,7 +43,6 @@ public:
     std::shared_ptr<IBackupCoordination> getBackupCoordination() const { return backup_coordination; }
     const ReadSettings & getReadSettings() const { return read_settings; }
     ContextPtr getContext() const { return context; }
-    const ZooKeeperRetriesInfo & getZooKeeperRetriesInfo() const { return global_zookeeper_retries_info; }
 
     /// Adds a backup entry which will be later returned by run().
     /// These function can be called by implementations of IStorage::backupData() in inherited storage classes.
@@ -69,8 +64,7 @@ private:
 
     void gatherMetadataAndCheckConsistency();
 
-    void tryGatherMetadataAndCompareWithPrevious(int attempt_no, std::optional<Exception> & inconsistency_error, bool & need_another_attempt);
-    void syncMetadataGatheringWithOtherHosts(int attempt_no, std::optional<Exception> & inconsistency_error, bool & need_another_attempt);
+    bool tryGatherMetadataAndCompareWithPrevious(std::optional<Exception> & inconsistency_error);
 
     void gatherDatabasesMetadata();
 
@@ -87,49 +81,25 @@ private:
     void gatherTablesMetadata();
     std::vector<std::pair<ASTPtr, StoragePtr>> findTablesInDatabase(const String & database_name) const;
     void lockTablesForReading();
-    bool compareWithPrevious(String & mismatch_description);
+    bool compareWithPrevious(std::optional<Exception> & inconsistency_error);
 
     void makeBackupEntriesForDatabasesDefs();
     void makeBackupEntriesForTablesDefs();
     void makeBackupEntriesForTablesData();
     void makeBackupEntriesForTableData(const QualifiedTableName & table_name);
 
-    void addBackupEntryUnlocked(const String & file_name, BackupEntryPtr backup_entry);
-
     void runPostTasks();
 
     Strings setStage(const String & new_stage, const String & message = "");
-
-    /// Throws an exception if the BACKUP query was cancelled.
-    void checkIsQueryCancelled() const;
 
     const ASTBackupQuery::Elements backup_query_elements;
     const BackupSettings backup_settings;
     std::shared_ptr<IBackupCoordination> backup_coordination;
     const ReadSettings read_settings;
     ContextPtr context;
-    QueryStatusPtr process_list_element;
-
-    /// The time a BACKUP ON CLUSTER or RESTORE ON CLUSTER command will wait until all the nodes receive the BACKUP (or RESTORE) query and start working.
-    /// This setting is similar to `distributed_ddl_task_timeout`.
-    const std::chrono::milliseconds on_cluster_first_sync_timeout;
-
-    /// The time a BACKUP command will try to collect the metadata of tables & databases.
-    const std::chrono::milliseconds collect_metadata_timeout;
-
-    /// The number of attempts to collect the metadata before sleeping.
-    const unsigned int attempts_to_collect_metadata_before_sleep;
-
-    /// The minimum time clickhouse will wait after unsuccessful attempt before trying to collect the metadata again.
-    const std::chrono::milliseconds min_sleep_before_next_attempt_to_collect_metadata;
-
-    /// The maximum time clickhouse will wait after unsuccessful attempt before trying to collect the metadata again.
-    const std::chrono::milliseconds max_sleep_before_next_attempt_to_collect_metadata;
-
-    /// Whether we should collect the metadata after a successful attempt one more time and check that nothing has changed.
-    const bool compare_collected_metadata;
-
-    LoggerPtr log;
+    std::chrono::milliseconds on_cluster_first_sync_timeout;
+    std::chrono::milliseconds consistent_metadata_snapshot_timeout;
+    Poco::Logger * log;
     /// Unfortunately we can use ZooKeeper for collecting information for backup
     /// and we need to retry...
     ZooKeeperRetriesInfo global_zookeeper_retries_info;
@@ -164,14 +134,12 @@ private:
         ASTPtr create_table_query;
         String metadata_path_in_backup;
         std::filesystem::path data_path_in_backup;
-        std::optional<String> replicated_table_zk_path;
+        std::optional<String> replicated_table_shared_id;
         std::optional<ASTs> partitions;
     };
 
     String current_stage;
-
-    std::chrono::steady_clock::time_point collect_metadata_end_time;
-
+    std::chrono::steady_clock::time_point consistent_metadata_snapshot_end_time;
     std::unordered_map<String, DatabaseInfo> database_infos;
     std::unordered_map<QualifiedTableName, TableInfo> table_infos;
     std::vector<std::pair<String, String>> previous_databases_metadata;
@@ -180,9 +148,6 @@ private:
     BackupEntries backup_entries;
     std::queue<std::function<void()>> post_tasks;
     std::vector<size_t> access_counters;
-
-    ThreadPool & threadpool;
-    std::mutex mutex;
 };
 
 }

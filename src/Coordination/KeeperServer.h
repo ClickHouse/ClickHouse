@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Coordination/CoordinationSettings.h>
 #include <Coordination/InMemoryLogStore.h>
 #include <Coordination/KeeperStateMachine.h>
 #include <Coordination/KeeperStateManager.h>
@@ -16,15 +17,14 @@ namespace DB
 
 using RaftAppendResult = nuraft::ptr<nuraft::cmd_result<nuraft::ptr<nuraft::buffer>>>;
 
-struct KeeperConfigurationAndSettings;
-using KeeperConfigurationAndSettingsPtr = std::shared_ptr<KeeperConfigurationAndSettings>;
-
 class KeeperServer
 {
 private:
     const int server_id;
 
-    nuraft::ptr<IKeeperStateMachine> state_machine;
+    CoordinationSettingsPtr coordination_settings;
+
+    nuraft::ptr<KeeperStateMachine> state_machine;
 
     nuraft::ptr<KeeperStateManager> state_manager;
 
@@ -44,11 +44,9 @@ private:
     std::condition_variable initialized_cv;
     std::atomic<bool> initial_batch_committed = false;
 
-    std::atomic<uint64_t> last_log_idx_on_disk = 0;
-
     nuraft::ptr<nuraft::cluster_config> last_local_config;
 
-    LoggerPtr log;
+    Poco::Logger * log;
 
     /// Callback func which is called by NuRaft on all internal events.
     /// Used to determine the moment when raft is ready to server new requests
@@ -66,7 +64,7 @@ private:
 
     std::atomic_bool is_recovering = false;
 
-    KeeperContextPtr keeper_context;
+    std::shared_ptr<KeeperContext> keeper_context;
 
     const bool create_snapshot_on_exit;
     const bool enable_reconfiguration;
@@ -79,26 +77,26 @@ public:
         SnapshotsQueue & snapshots_queue_,
         KeeperContextPtr keeper_context_,
         KeeperSnapshotManagerS3 & snapshot_manager_s3,
-        IKeeperStateMachine::CommitCallback commit_callback);
+        KeeperStateMachine::CommitCallback commit_callback);
 
     /// Load state machine from the latest snapshot and load log storage. Start NuRaft with required settings.
     void startup(const Poco::Util::AbstractConfiguration & config, bool enable_ipv6 = true);
 
     /// Put local read request and execute in state machine directly and response into
     /// responses queue
-    void putLocalReadRequest(const KeeperStorageBase::RequestForSession & request);
+    void putLocalReadRequest(const KeeperStorage::RequestForSession & request);
 
     bool isRecovering() const { return is_recovering; }
     bool reconfigEnabled() const { return enable_reconfiguration; }
 
     /// Put batch of requests into Raft and get result of put. Responses will be set separately into
     /// responses_queue.
-    RaftAppendResult putRequestBatch(const KeeperStorageBase::RequestsForSessions & requests);
+    RaftAppendResult putRequestBatch(const KeeperStorage::RequestsForSessions & requests);
 
     /// Return set of the non-active sessions
     std::vector<int64_t> getDeadSessions();
 
-    nuraft::ptr<IKeeperStateMachine> getKeeperStateMachine() const { return state_machine; }
+    nuraft::ptr<KeeperStateMachine> getKeeperStateMachine() const { return state_machine; }
 
     void forceRecovery();
 
@@ -109,8 +107,6 @@ public:
     bool isObserver() const;
 
     bool isLeaderAlive() const;
-
-    bool isExceedingMemorySoftLimit() const;
 
     Keeper4LWInfo getPartiallyFilled4LWInfo() const;
 
@@ -130,16 +126,7 @@ public:
 
     int getServerID() const { return server_id; }
 
-    enum class ConfigUpdateState : uint8_t
-    {
-        Accepted,
-        Declined,
-        WaitBeforeChangingLeader
-    };
-
-    ConfigUpdateState applyConfigUpdate(
-        const ClusterUpdateAction& action,
-        bool last_command_was_leader_change = false);
+    bool applyConfigUpdate(const ClusterUpdateAction& action);
 
     // TODO (myrrc) these functions should be removed once "reconfig" is stabilized
     void applyConfigUpdateWithReconfigDisabled(const ClusterUpdateAction& action);
@@ -151,8 +138,6 @@ public:
     KeeperLogInfo getKeeperLogInfo();
 
     bool requestLeader();
-
-    void yieldLeadership();
 
     void recalculateStorageStats();
 };

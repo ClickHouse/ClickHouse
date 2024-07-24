@@ -38,6 +38,7 @@ def test_skip_unavailable_shards(start_cluster):
             settings={
                 "allow_experimental_parallel_reading_from_replicas": 2,
                 "max_parallel_replicas": 3,
+                "use_hedged_requests": 0,
                 "skip_unavailable_shards": 1,
                 # "async_socket_for_remote" : 0,
                 # "async_query_sending_for_remote" : 0,
@@ -64,6 +65,7 @@ def test_error_on_unavailable_shards(start_cluster):
             settings={
                 "allow_experimental_parallel_reading_from_replicas": 2,
                 "max_parallel_replicas": 3,
+                "use_hedged_requests": 0,
                 "skip_unavailable_shards": 0,
             },
         )

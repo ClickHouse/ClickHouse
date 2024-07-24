@@ -3,8 +3,6 @@
 #include <IO/WriteBufferFromFileBase.h>
 #include <IO/copyData.h>
 #include <Poco/Logger.h>
-#include <Interpreters/Context.h>
-#include <Common/threadPoolCallbackRunner.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include <Core/ServerUUID.h>
@@ -25,21 +23,14 @@ bool IDisk::isDirectoryEmpty(const String & path) const
     return !iterateDirectory(path)->isValid();
 }
 
-void IDisk::copyFile( /// NOLINT
-    const String & from_file_path,
-    IDisk & to_disk,
-    const String & to_file_path,
-    const ReadSettings & read_settings,
-    const WriteSettings & write_settings,
-    const std::function<void()> & cancellation_hook
-    )
+void IDisk::copyFile(const String & from_file_path, IDisk & to_disk, const String & to_file_path, const WriteSettings & settings) /// NOLINT
 {
-    LOG_DEBUG(getLogger("IDisk"), "Copying from {} (path: {}) {} to {} (path: {}) {}.",
+    LOG_DEBUG(&Poco::Logger::get("IDisk"), "Copying from {} (path: {}) {} to {} (path: {}) {}.",
               getName(), getPath(), from_file_path, to_disk.getName(), to_disk.getPath(), to_file_path);
 
-    auto in = readFile(from_file_path, read_settings);
-    auto out = to_disk.writeFile(to_file_path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, write_settings);
-    copyData(*in, *out, cancellation_hook);
+    auto in = readFile(from_file_path);
+    auto out = to_disk.writeFile(to_file_path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, settings);
+    copyData(*in, *out);
     out->finalize();
 }
 
@@ -85,24 +76,36 @@ UInt128 IDisk::getEncryptedFileIV(const String &) const
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "File encryption is not implemented for disk of type {}", getDataSourceDescription().type);
 }
 
-void asyncCopy(
-    IDisk & from_disk,
-    String from_path,
-    IDisk & to_disk,
-    String to_path,
-    ThreadPoolCallbackRunnerLocal<void> & runner,
-    bool copy_root_dir,
-    const ReadSettings & read_settings,
-    const WriteSettings & write_settings,
-    const std::function<void()> & cancellation_hook)
+
+using ResultsCollector = std::vector<std::future<void>>;
+
+void asyncCopy(IDisk & from_disk, String from_path, IDisk & to_disk, String to_path, ThreadPool & pool, ResultsCollector & results, bool copy_root_dir, const WriteSettings & settings)
 {
     if (from_disk.isFile(from_path))
     {
-        runner(
-            [&from_disk, from_path, &to_disk, to_path, &read_settings, &write_settings, &cancellation_hook] {
-                from_disk.copyFile(
-                    from_path, to_disk, fs::path(to_path) / fileName(from_path), read_settings, write_settings, cancellation_hook);
+        auto promise = std::make_shared<std::promise<void>>();
+        auto future = promise->get_future();
+
+        pool.scheduleOrThrowOnError(
+            [&from_disk, from_path, &to_disk, to_path, &settings, promise, thread_group = CurrentThread::getGroup()]()
+            {
+                try
+                {
+                    SCOPE_EXIT_SAFE(if (thread_group) CurrentThread::detachFromGroupIfNotDetached(););
+
+                    if (thread_group)
+                        CurrentThread::attachToGroup(thread_group);
+
+                    from_disk.copyFile(from_path, to_disk, fs::path(to_path) / fileName(from_path), settings);
+                    promise->set_value();
+                }
+                catch (...)
+                {
+                    promise->set_exception(std::current_exception());
+                }
             });
+
+        results.push_back(std::move(future));
     }
     else
     {
@@ -115,44 +118,34 @@ void asyncCopy(
         }
 
         for (auto it = from_disk.iterateDirectory(from_path); it->isValid(); it->next())
-            asyncCopy(from_disk, it->path(), to_disk, dest, runner, true, read_settings, write_settings, cancellation_hook);
+            asyncCopy(from_disk, it->path(), to_disk, dest, pool, results, true, settings);
     }
 }
 
-void IDisk::copyThroughBuffers(
-    const String & from_path,
-    const std::shared_ptr<IDisk> & to_disk,
-    const String & to_path,
-    bool copy_root_dir,
-    const ReadSettings & read_settings,
-    WriteSettings write_settings,
-    const std::function<void()> & cancellation_hook)
+void IDisk::copyThroughBuffers(const String & from_path, const std::shared_ptr<IDisk> & to_disk, const String & to_path, bool copy_root_dir)
 {
-    ThreadPoolCallbackRunnerLocal<void> runner(copying_thread_pool, "AsyncCopy");
+    ResultsCollector results;
 
+    WriteSettings settings;
     /// Disable parallel write. We already copy in parallel.
     /// Avoid high memory usage. See test_s3_zero_copy_ttl/test.py::test_move_and_s3_memory_usage
-    write_settings.s3_allow_parallel_part_upload = false;
-    write_settings.azure_allow_parallel_part_upload = false;
+    settings.s3_allow_parallel_part_upload = false;
 
-    asyncCopy(*this, from_path, *to_disk, to_path, runner, copy_root_dir, read_settings, write_settings, cancellation_hook);
+    asyncCopy(*this, from_path, *to_disk, to_path, copying_thread_pool, results, copy_root_dir, settings);
 
-    runner.waitForAllToFinishAndRethrowFirstError();
+    for (auto & result : results)
+        result.wait();
+    for (auto & result : results)
+        result.get();   /// May rethrow an exception
 }
 
 
-void IDisk::copyDirectoryContent(
-    const String & from_dir,
-    const std::shared_ptr<IDisk> & to_disk,
-    const String & to_dir,
-    const ReadSettings & read_settings,
-    const WriteSettings & write_settings,
-    const std::function<void()> & cancellation_hook)
+void IDisk::copyDirectoryContent(const String & from_dir, const std::shared_ptr<IDisk> & to_disk, const String & to_dir)
 {
     if (!to_disk->exists(to_dir))
         to_disk->createDirectories(to_dir);
 
-    copyThroughBuffers(from_dir, to_disk, to_dir, /* copy_root_dir= */ false, read_settings, write_settings, cancellation_hook);
+    copyThroughBuffers(from_dir, to_disk, to_dir, /* copy_root_dir */ false);
 }
 
 void IDisk::truncateFile(const String &, size_t)
@@ -171,7 +164,7 @@ void IDisk::startup(ContextPtr context, bool skip_access_check)
     {
         if (isReadOnly())
         {
-            LOG_DEBUG(getLogger("IDisk"),
+            LOG_DEBUG(&Poco::Logger::get("IDisk"),
                 "Skip access check for disk {} (read-only disk).",
                 getName());
         }
@@ -186,7 +179,7 @@ void IDisk::checkAccess()
     DB::UUID server_uuid = DB::ServerUUID::get();
     if (server_uuid == DB::UUIDHelpers::Nil)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Server UUID is not initialized");
-    const String path = fmt::format("clickhouse_access_check_{}", toString(server_uuid));
+    const String path = fmt::format("clickhouse_access_check_{}", DB::toString(server_uuid));
 
     checkAccessImpl(path);
 }

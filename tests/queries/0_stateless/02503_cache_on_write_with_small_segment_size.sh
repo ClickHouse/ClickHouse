@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-fasttest, no-object-storage, no-random-settings
+# Tags: no-parallel, no-fasttest, no-s3-storage, no-random-settings
 
 CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=none
 
@@ -22,7 +22,6 @@ SETTINGS min_bytes_for_wide_part = 0,
             type = cache,
             max_size = '128Mi',
             max_file_segment_size = '10Ki',
-            boundary_alignment = '5Ki',
             path = '${CLICKHOUSE_TEST_UNIQUE_NAME}',
             cache_on_write_operations = 1,
             enable_filesystem_query_cache_limit = 1,

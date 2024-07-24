@@ -79,9 +79,9 @@ static bool isBetweenZeroAndOne(Float64 v)
     return v >= 0.0 && v <= 1.0 && fabs(v - 0.0) >= DBL_EPSILON && fabs(v - 1.0) >= DBL_EPSILON;
 }
 
-struct ContinuousImpl
+struct ContinousImpl
 {
-    static constexpr auto name = "minSampleSizeContinuous";
+    static constexpr auto name = "minSampleSizeContinous";
     static constexpr size_t num_args = 5;
     static constexpr size_t const_args[] = {2, 3, 4};
 
@@ -102,14 +102,14 @@ struct ContinuousImpl
         auto baseline_argument = arguments[0];
         baseline_argument.column = baseline_argument.column->convertToFullColumnIfConst();
         auto baseline_column_untyped = castColumnAccurate(baseline_argument, float_64_type);
-        const auto & baseline_column = checkAndGetColumn<ColumnVector<Float64>>(*baseline_column_untyped);
-        const auto & baseline_column_data = baseline_column.getData();
+        const auto * baseline_column = checkAndGetColumn<ColumnVector<Float64>>(*baseline_column_untyped);
+        const auto & baseline_column_data = baseline_column->getData();
 
         auto sigma_argument = arguments[1];
         sigma_argument.column = sigma_argument.column->convertToFullColumnIfConst();
         auto sigma_column_untyped = castColumnAccurate(sigma_argument, float_64_type);
-        const auto & sigma_column = checkAndGetColumn<ColumnVector<Float64>>(*sigma_column_untyped);
-        const auto & sigma_column_data = sigma_column.getData();
+        const auto * sigma_column = checkAndGetColumn<ColumnVector<Float64>>(*sigma_column_untyped);
+        const auto & sigma_column_data = sigma_column->getData();
 
         const IColumn & col_mde = *arguments[2].column;
         const IColumn & col_power = *arguments[3].column;
@@ -284,9 +284,7 @@ struct ConversionImpl
 
 REGISTER_FUNCTION(MinSampleSize)
 {
-    factory.registerFunction<FunctionMinSampleSize<ContinuousImpl>>();
-    /// Needed for backward compatibility
-    factory.registerAlias("minSampleSizeContinous", FunctionMinSampleSize<ContinuousImpl>::name);
+    factory.registerFunction<FunctionMinSampleSize<ContinousImpl>>();
     factory.registerFunction<FunctionMinSampleSize<ConversionImpl>>();
 }
 

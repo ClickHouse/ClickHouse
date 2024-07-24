@@ -7,23 +7,22 @@
 namespace DB
 {
 
-ColumnsDescription StorageSystemAsynchronousMetrics::getColumnsDescription()
+NamesAndTypesList StorageSystemAsynchronousMetrics::getNamesAndTypes()
 {
-    return ColumnsDescription
-    {
-        {"metric", std::make_shared<DataTypeString>(), "Metric name."},
-        {"value", std::make_shared<DataTypeFloat64>(), "Metric value."},
-        {"description", std::make_shared<DataTypeString>(), "Metric description."},
+    return {
+        {"metric", std::make_shared<DataTypeString>()},
+        {"value", std::make_shared<DataTypeFloat64>()},
+        {"description", std::make_shared<DataTypeString>()},
     };
 }
 
 
 StorageSystemAsynchronousMetrics::StorageSystemAsynchronousMetrics(const StorageID & table_id_, const AsynchronousMetrics & async_metrics_)
-    : IStorageSystemOneBlock(table_id_, getColumnsDescription()), async_metrics(async_metrics_)
+    : IStorageSystemOneBlock(table_id_), async_metrics(async_metrics_)
 {
 }
 
-void StorageSystemAsynchronousMetrics::fillData(MutableColumns & res_columns, ContextPtr, const ActionsDAG::Node *, std::vector<UInt8>) const
+void StorageSystemAsynchronousMetrics::fillData(MutableColumns & res_columns, ContextPtr, const SelectQueryInfo &) const
 {
     auto async_metrics_values = async_metrics.getValues();
     for (const auto & name_value : async_metrics_values)

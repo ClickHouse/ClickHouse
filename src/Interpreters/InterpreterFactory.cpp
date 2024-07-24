@@ -19,17 +19,16 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTShowEngineQuery.h>
-#include <Parsers/ASTShowFunctionsQuery.h>
 #include <Parsers/ASTShowProcesslistQuery.h>
 #include <Parsers/ASTShowTablesQuery.h>
 #include <Parsers/ASTShowColumnsQuery.h>
 #include <Parsers/ASTShowIndexesQuery.h>
-#include <Parsers/ASTShowSettingQuery.h>
 #include <Parsers/ASTUseQuery.h>
 #include <Parsers/ASTWatchQuery.h>
 #include <Parsers/ASTCreateNamedCollectionQuery.h>
 #include <Parsers/ASTDropNamedCollectionQuery.h>
 #include <Parsers/ASTAlterNamedCollectionQuery.h>
+#include <Parsers/MySQL/ASTCreateQuery.h>
 #include <Parsers/ASTTransactionControl.h>
 #include <Parsers/TablePropertiesQueriesASTs.h>
 
@@ -49,24 +48,74 @@
 #include <Parsers/Access/ASTShowPrivilegesQuery.h>
 #include <Parsers/ASTDescribeCacheQuery.h>
 
+#include <Interpreters/Context.h>
+#include <Interpreters/InterpreterAlterQuery.h>
+#include <Interpreters/InterpreterBackupQuery.h>
+#include <Interpreters/InterpreterCheckQuery.h>
+#include <Interpreters/InterpreterCreateFunctionQuery.h>
+#include <Interpreters/InterpreterCreateIndexQuery.h>
+#include <Interpreters/InterpreterCreateQuery.h>
+#include <Interpreters/InterpreterCreateNamedCollectionQuery.h>
+#include <Interpreters/InterpreterDropNamedCollectionQuery.h>
+#include <Interpreters/InterpreterAlterNamedCollectionQuery.h>
+#include <Interpreters/InterpreterDeleteQuery.h>
+#include <Interpreters/InterpreterDescribeQuery.h>
+#include <Interpreters/InterpreterDescribeCacheQuery.h>
+#include <Interpreters/InterpreterDropFunctionQuery.h>
+#include <Interpreters/InterpreterDropIndexQuery.h>
+#include <Interpreters/InterpreterDropQuery.h>
+#include <Interpreters/InterpreterUndropQuery.h>
+#include <Interpreters/InterpreterExistsQuery.h>
+#include <Interpreters/InterpreterExplainQuery.h>
+#include <Interpreters/InterpreterExternalDDLQuery.h>
 #include <Interpreters/InterpreterFactory.h>
+#include <Interpreters/InterpreterInsertQuery.h>
+#include <Interpreters/InterpreterSelectIntersectExceptQuery.h>
+#include <Interpreters/InterpreterKillQueryQuery.h>
+#include <Interpreters/InterpreterOptimizeQuery.h>
+#include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
+#include <Interpreters/InterpreterSetQuery.h>
+#include <Interpreters/InterpreterShowCreateQuery.h>
+#include <Interpreters/InterpreterShowEngineQuery.h>
+#include <Interpreters/InterpreterShowProcesslistQuery.h>
+#include <Interpreters/InterpreterShowTablesQuery.h>
+#include <Interpreters/InterpreterShowColumnsQuery.h>
+#include <Interpreters/InterpreterShowIndexesQuery.h>
+#include <Interpreters/InterpreterSystemQuery.h>
+#include <Interpreters/InterpreterUseQuery.h>
 #include <Interpreters/InterpreterWatchQuery.h>
+#include <Interpreters/InterpreterTransactionControlQuery.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 
+#include <Interpreters/Access/InterpreterCreateQuotaQuery.h>
+#include <Interpreters/Access/InterpreterCreateRoleQuery.h>
+#include <Interpreters/Access/InterpreterCreateRowPolicyQuery.h>
+#include <Interpreters/Access/InterpreterCreateSettingsProfileQuery.h>
+#include <Interpreters/Access/InterpreterCreateUserQuery.h>
+#include <Interpreters/Access/InterpreterDropAccessEntityQuery.h>
+#include <Interpreters/Access/InterpreterGrantQuery.h>
+#include <Interpreters/Access/InterpreterMoveAccessEntityQuery.h>
+#include <Interpreters/Access/InterpreterSetRoleQuery.h>
+#include <Interpreters/Access/InterpreterShowAccessEntitiesQuery.h>
+#include <Interpreters/Access/InterpreterShowAccessQuery.h>
+#include <Interpreters/Access/InterpreterShowCreateAccessEntityQuery.h>
+#include <Interpreters/Access/InterpreterShowGrantsQuery.h>
+#include <Interpreters/Access/InterpreterShowPrivilegesQuery.h>
+
 #include <Parsers/ASTSystemQuery.h>
+
+#include <Databases/MySQL/MaterializedMySQLSyncThread.h>
 #include <Parsers/ASTExternalDDLQuery.h>
 #include <Common/ProfileEvents.h>
 #include <Common/typeid_cast.h>
-#include <Core/Settings.h>
 
 
 namespace ProfileEvents
 {
     extern const Event Query;
-    extern const Event InitialQuery;
     extern const Event QueriesWithSubqueries;
     extern const Event SelectQuery;
     extern const Event InsertQuery;
@@ -78,26 +127,13 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNKNOWN_TYPE_OF_QUERY;
-    extern const int LOGICAL_ERROR;
 }
 
-InterpreterFactory & InterpreterFactory::instance()
-{
-    static InterpreterFactory interpreter_fact;
-    return interpreter_fact;
-}
 
-void InterpreterFactory::registerInterpreter(const std::string & name, CreatorFn creator_fn)
-{
-    if (!interpreters.emplace(name, std::move(creator_fn)).second)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "InterpreterFactory: the interpreter name '{}' is not unique", name);
-}
-
-InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, ContextMutablePtr context, const SelectQueryOptions & options)
+std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, ContextMutablePtr context, const SelectQueryOptions & options)
 {
     ProfileEvents::increment(ProfileEvents::Query);
-    if (context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
-        ProfileEvents::increment(ProfileEvents::InitialQuery);
+
     /// SELECT and INSERT query will handle QueriesWithSubqueries on their own.
     if (!(query->as<ASTSelectQuery>() ||
         query->as<ASTSelectWithUnionQuery>() ||
@@ -107,252 +143,250 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
         ProfileEvents::increment(ProfileEvents::QueriesWithSubqueries);
     }
 
-    Arguments arguments
-    {
-        .query = query,
-        .context = context,
-        .options = options
-    };
-
-    String interpreter_name;
-
     if (query->as<ASTSelectQuery>())
     {
         if (context->getSettingsRef().allow_experimental_analyzer)
-            interpreter_name = "InterpreterSelectQueryAnalyzer";
+            return std::make_unique<InterpreterSelectQueryAnalyzer>(query, context, options);
+
         /// This is internal part of ASTSelectWithUnionQuery.
         /// Even if there is SELECT without union, it is represented by ASTSelectWithUnionQuery with single ASTSelectQuery as a child.
-        else
-            interpreter_name = "InterpreterSelectQuery";
+        return std::make_unique<InterpreterSelectQuery>(query, context, options);
     }
     else if (query->as<ASTSelectWithUnionQuery>())
     {
         ProfileEvents::increment(ProfileEvents::SelectQuery);
 
         if (context->getSettingsRef().allow_experimental_analyzer)
-            interpreter_name = "InterpreterSelectQueryAnalyzer";
-        else
-            interpreter_name = "InterpreterSelectWithUnionQuery";
+            return std::make_unique<InterpreterSelectQueryAnalyzer>(query, context, options);
+
+        return std::make_unique<InterpreterSelectWithUnionQuery>(query, context, options);
     }
     else if (query->as<ASTSelectIntersectExceptQuery>())
     {
-        interpreter_name = "InterpreterSelectIntersectExceptQuery";
+        return std::make_unique<InterpreterSelectIntersectExceptQuery>(query, context, options);
     }
     else if (query->as<ASTInsertQuery>())
     {
         ProfileEvents::increment(ProfileEvents::InsertQuery);
         bool allow_materialized = static_cast<bool>(context->getSettingsRef().insert_allow_materialized_columns);
-        arguments.allow_materialized = allow_materialized;
-        interpreter_name = "InterpreterInsertQuery";
+        return std::make_unique<InterpreterInsertQuery>(query, context, allow_materialized);
     }
     else if (query->as<ASTCreateQuery>())
     {
-        interpreter_name = "InterpreterCreateQuery";
+        return std::make_unique<InterpreterCreateQuery>(query, context);
     }
     else if (query->as<ASTDropQuery>())
     {
-        interpreter_name = "InterpreterDropQuery";
+        return std::make_unique<InterpreterDropQuery>(query, context);
     }
     else if (query->as<ASTUndropQuery>())
     {
-        interpreter_name = "InterpreterUndropQuery";
+        return std::make_unique<InterpreterUndropQuery>(query, context);
     }
     else if (query->as<ASTRenameQuery>())
     {
-        interpreter_name = "InterpreterRenameQuery";
+        return std::make_unique<InterpreterRenameQuery>(query, context);
     }
     else if (query->as<ASTShowTablesQuery>())
     {
-        interpreter_name = "InterpreterShowTablesQuery";
+        return std::make_unique<InterpreterShowTablesQuery>(query, context);
     }
     else if (query->as<ASTShowColumnsQuery>())
     {
-        interpreter_name = "InterpreterShowColumnsQuery";
+        return std::make_unique<InterpreterShowColumnsQuery>(query, context);
     }
     else if (query->as<ASTShowIndexesQuery>())
     {
-        interpreter_name = "InterpreterShowIndexesQuery";
-    }
-    else if (query->as<ASTShowSettingQuery>())
-    {
-        interpreter_name = "InterpreterShowSettingQuery";
+        return std::make_unique<InterpreterShowIndexesQuery>(query, context);
     }
     else if (query->as<ASTShowEnginesQuery>())
     {
-        interpreter_name = "InterpreterShowEnginesQuery";
-    }
-    else if (query->as<ASTShowFunctionsQuery>())
-    {
-        interpreter_name = "InterpreterShowFunctionsQuery";
+        return std::make_unique<InterpreterShowEnginesQuery>(query, context);
     }
     else if (query->as<ASTUseQuery>())
     {
-        interpreter_name = "InterpreterUseQuery";
+        return std::make_unique<InterpreterUseQuery>(query, context);
     }
     else if (query->as<ASTSetQuery>())
     {
         /// readonly is checked inside InterpreterSetQuery
-        interpreter_name = "InterpreterSetQuery";
+        return std::make_unique<InterpreterSetQuery>(query, context);
     }
     else if (query->as<ASTSetRoleQuery>())
     {
-        interpreter_name = "InterpreterSetRoleQuery";
+        return std::make_unique<InterpreterSetRoleQuery>(query, context);
     }
     else if (query->as<ASTOptimizeQuery>())
     {
-        interpreter_name = "InterpreterOptimizeQuery";
+        return std::make_unique<InterpreterOptimizeQuery>(query, context);
     }
-    else if (query->as<ASTExistsDatabaseQuery>() || query->as<ASTExistsTableQuery>() || query->as<ASTExistsViewQuery>() || query->as<ASTExistsDictionaryQuery>())
+    else if (query->as<ASTExistsDatabaseQuery>())
     {
-        interpreter_name = "InterpreterExistsQuery";
+        return std::make_unique<InterpreterExistsQuery>(query, context);
     }
-    else if (query->as<ASTShowCreateTableQuery>() || query->as<ASTShowCreateViewQuery>() || query->as<ASTShowCreateDatabaseQuery>() || query->as<ASTShowCreateDictionaryQuery>())
+    else if (query->as<ASTExistsTableQuery>())
     {
-        interpreter_name = "InterpreterShowCreateQuery";
+        return std::make_unique<InterpreterExistsQuery>(query, context);
+    }
+    else if (query->as<ASTExistsViewQuery>())
+    {
+        return std::make_unique<InterpreterExistsQuery>(query, context);
+    }
+    else if (query->as<ASTExistsDictionaryQuery>())
+    {
+        return std::make_unique<InterpreterExistsQuery>(query, context);
+    }
+    else if (query->as<ASTShowCreateTableQuery>())
+    {
+        return std::make_unique<InterpreterShowCreateQuery>(query, context);
+    }
+    else if (query->as<ASTShowCreateViewQuery>())
+    {
+        return std::make_unique<InterpreterShowCreateQuery>(query, context);
+    }
+    else if (query->as<ASTShowCreateDatabaseQuery>())
+    {
+        return std::make_unique<InterpreterShowCreateQuery>(query, context);
+    }
+    else if (query->as<ASTShowCreateDictionaryQuery>())
+    {
+        return std::make_unique<InterpreterShowCreateQuery>(query, context);
     }
     else if (query->as<ASTDescribeQuery>())
     {
-        interpreter_name = "InterpreterDescribeQuery";
+        return std::make_unique<InterpreterDescribeQuery>(query, context);
     }
     else if (query->as<ASTDescribeCacheQuery>())
     {
-        interpreter_name = "InterpreterDescribeCacheQuery";
+        return std::make_unique<InterpreterDescribeCacheQuery>(query, context);
     }
     else if (query->as<ASTExplainQuery>())
     {
-        const auto kind = query->as<ASTExplainQuery>()->getKind();
-        if (kind == ASTExplainQuery::ParsedAST || kind == ASTExplainQuery::AnalyzedSyntax)
-            context->setSetting("allow_experimental_analyzer", false);
-
-        interpreter_name = "InterpreterExplainQuery";
+        return std::make_unique<InterpreterExplainQuery>(query, context);
     }
     else if (query->as<ASTShowProcesslistQuery>())
     {
-        interpreter_name = "InterpreterShowProcesslistQuery";
+        return std::make_unique<InterpreterShowProcesslistQuery>(query, context);
     }
     else if (query->as<ASTAlterQuery>())
     {
-        interpreter_name = "InterpreterAlterQuery";
+        return std::make_unique<InterpreterAlterQuery>(query, context);
     }
     else if (query->as<ASTAlterNamedCollectionQuery>())
     {
-        interpreter_name = "InterpreterAlterNamedCollectionQuery";
+        return std::make_unique<InterpreterAlterNamedCollectionQuery>(query, context);
     }
-    else if (query->as<ASTCheckTableQuery>() || query->as<ASTCheckAllTablesQuery>())
+    else if (query->as<ASTCheckQuery>())
     {
-        interpreter_name = "InterpreterCheckQuery";
+        return std::make_unique<InterpreterCheckQuery>(query, context);
     }
     else if (query->as<ASTKillQueryQuery>())
     {
-        interpreter_name = "InterpreterKillQueryQuery";
+        return std::make_unique<InterpreterKillQueryQuery>(query, context);
     }
     else if (query->as<ASTSystemQuery>())
     {
-        interpreter_name = "InterpreterSystemQuery";
+        return std::make_unique<InterpreterSystemQuery>(query, context);
     }
     else if (query->as<ASTWatchQuery>())
     {
-        interpreter_name = "InterpreterWatchQuery";
+        return std::make_unique<InterpreterWatchQuery>(query, context);
     }
     else if (query->as<ASTCreateUserQuery>())
     {
-        interpreter_name = "InterpreterCreateUserQuery";
+        return std::make_unique<InterpreterCreateUserQuery>(query, context);
     }
     else if (query->as<ASTCreateRoleQuery>())
     {
-        interpreter_name = "InterpreterCreateRoleQuery";
+        return std::make_unique<InterpreterCreateRoleQuery>(query, context);
     }
     else if (query->as<ASTCreateQuotaQuery>())
     {
-        interpreter_name = "InterpreterCreateQuotaQuery";
+        return std::make_unique<InterpreterCreateQuotaQuery>(query, context);
     }
     else if (query->as<ASTCreateRowPolicyQuery>())
     {
-        interpreter_name = "InterpreterCreateRowPolicyQuery";
+        return std::make_unique<InterpreterCreateRowPolicyQuery>(query, context);
     }
     else if (query->as<ASTCreateSettingsProfileQuery>())
     {
-        interpreter_name = "InterpreterCreateSettingsProfileQuery";
+        return std::make_unique<InterpreterCreateSettingsProfileQuery>(query, context);
     }
     else if (query->as<ASTDropAccessEntityQuery>())
     {
-        interpreter_name = "InterpreterDropAccessEntityQuery";
+        return std::make_unique<InterpreterDropAccessEntityQuery>(query, context);
     }
     else if (query->as<ASTMoveAccessEntityQuery>())
     {
-        interpreter_name = "InterpreterMoveAccessEntityQuery";
+        return std::make_unique<InterpreterMoveAccessEntityQuery>(query, context);
     }
     else if (query->as<ASTDropNamedCollectionQuery>())
     {
-        interpreter_name = "InterpreterDropNamedCollectionQuery";
+        return std::make_unique<InterpreterDropNamedCollectionQuery>(query, context);
     }
     else if (query->as<ASTGrantQuery>())
     {
-        interpreter_name = "InterpreterGrantQuery";
+        return std::make_unique<InterpreterGrantQuery>(query, context);
     }
     else if (query->as<ASTShowCreateAccessEntityQuery>())
     {
-        interpreter_name = "InterpreterShowCreateAccessEntityQuery";
+        return std::make_unique<InterpreterShowCreateAccessEntityQuery>(query, context);
     }
     else if (query->as<ASTShowGrantsQuery>())
     {
-        interpreter_name = "InterpreterShowGrantsQuery";
+        return std::make_unique<InterpreterShowGrantsQuery>(query, context);
     }
     else if (query->as<ASTShowAccessEntitiesQuery>())
     {
-        interpreter_name = "InterpreterShowAccessEntitiesQuery";
+        return std::make_unique<InterpreterShowAccessEntitiesQuery>(query, context);
     }
     else if (query->as<ASTShowAccessQuery>())
     {
-        interpreter_name= "InterpreterShowAccessQuery";
+        return std::make_unique<InterpreterShowAccessQuery>(query, context);
     }
     else if (query->as<ASTShowPrivilegesQuery>())
     {
-        interpreter_name = "InterpreterShowPrivilegesQuery";
+        return std::make_unique<InterpreterShowPrivilegesQuery>(query, context);
     }
     else if (query->as<ASTExternalDDLQuery>())
     {
-        interpreter_name = "InterpreterExternalDDLQuery";
+        return std::make_unique<InterpreterExternalDDLQuery>(query, context);
     }
     else if (query->as<ASTTransactionControl>())
     {
-        interpreter_name = "InterpreterTransactionControlQuery";
+        return std::make_unique<InterpreterTransactionControlQuery>(query, context);
     }
     else if (query->as<ASTCreateFunctionQuery>())
     {
-        interpreter_name = "InterpreterCreateFunctionQuery";
+        return std::make_unique<InterpreterCreateFunctionQuery>(query, context);
     }
     else if (query->as<ASTDropFunctionQuery>())
     {
-        interpreter_name = "InterpreterDropFunctionQuery";
+        return std::make_unique<InterpreterDropFunctionQuery>(query, context);
     }
     else if (query->as<ASTCreateIndexQuery>())
     {
-        interpreter_name = "InterpreterCreateIndexQuery";
+        return std::make_unique<InterpreterCreateIndexQuery>(query, context);
     }
     else if (query->as<ASTCreateNamedCollectionQuery>())
     {
-        interpreter_name = "InterpreterCreateNamedCollectionQuery";
+        return std::make_unique<InterpreterCreateNamedCollectionQuery>(query, context);
     }
     else if (query->as<ASTDropIndexQuery>())
     {
-        interpreter_name = "InterpreterDropIndexQuery";
+        return std::make_unique<InterpreterDropIndexQuery>(query, context);
     }
     else if (query->as<ASTBackupQuery>())
     {
-        interpreter_name = "InterpreterBackupQuery";
+        return std::make_unique<InterpreterBackupQuery>(query, context);
     }
     else if (query->as<ASTDeleteQuery>())
     {
-        interpreter_name = "InterpreterDeleteQuery";
+        return std::make_unique<InterpreterDeleteQuery>(query, context);
     }
-
-    if (!interpreters.contains(interpreter_name))
+    else
+    {
         throw Exception(ErrorCodes::UNKNOWN_TYPE_OF_QUERY, "Unknown type of query: {}", query->getID());
-
-    // creator_fn creates and returns a InterpreterPtr with the supplied arguments
-    auto creator_fn = interpreters.at(interpreter_name);
-
-    return creator_fn(arguments);
+    }
 }
 }

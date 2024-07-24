@@ -2,7 +2,6 @@
 
 #if USE_MYSQL || USE_LIBPQXX
 
-#include <Core/Settings.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Parsers/ASTFunction.h>
@@ -65,7 +64,7 @@ void readFinalFromNestedStorage(
 
     if (!query_plan.isInitialized())
     {
-        InterpreterSelectQuery::addEmptySourceToQueryPlan(query_plan, nested_header, query_info);
+        InterpreterSelectQuery::addEmptySourceToQueryPlan(query_plan, nested_header, query_info, context);
         return;
     }
 

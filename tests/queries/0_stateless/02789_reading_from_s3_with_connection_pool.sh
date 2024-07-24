@@ -18,7 +18,10 @@ query="SELECT a, b FROM test_s3"
 query_id=$(${CLICKHOUSE_CLIENT} --query "select queryID() from ($query) limit 1" 2>&1)
 ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS"
 ${CLICKHOUSE_CLIENT} -nm --query "
-SELECT ProfileEvents['DiskConnectionsPreserved'] > 0
+WITH
+    ProfileEvents['ReadBufferFromS3ResetSessions'] AS reset,
+    ProfileEvents['ReadBufferFromS3PreservedSessions'] AS preserved
+SELECT preserved > reset
 FROM system.query_log
 WHERE type = 'QueryFinish'
     AND current_database = currentDatabase()
@@ -48,7 +51,7 @@ select queryID() from(
 " 2>&1)
 ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS"
 ${CLICKHOUSE_CLIENT} -nm --query "
-SELECT ProfileEvents['StorageConnectionsPreserved'] > 0
+SELECT ProfileEvents['ReadWriteBufferFromHTTPPreservedSessions'] > 0
 FROM system.query_log
 WHERE type = 'QueryFinish'
     AND current_database = currentDatabase()

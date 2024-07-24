@@ -2,13 +2,8 @@
 
 set basedir [file dirname $argv0]
 set basename [file tail $argv0]
-if {[info exists env(CLICKHOUSE_TMP)]} {
-    set CLICKHOUSE_TMP $env(CLICKHOUSE_TMP)
-} else {
-    set CLICKHOUSE_TMP "."
-}
-exp_internal -f $CLICKHOUSE_TMP/$basename.debuglog 0
-set history_file $CLICKHOUSE_TMP/$basename.history
+exp_internal -f $env(CLICKHOUSE_TMP)/$basename.debuglog 0
+set history_file $env(CLICKHOUSE_TMP)/$basename.history
 
 log_user 0
 set timeout 60
@@ -26,7 +21,7 @@ spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \
 # (?n) - Do not match new lines
 expect -re "(?n)ClickHouse client version \[\\d\]{2}\.\[\\d\]{1,2}\.\[\\d\]{1,2}\.\[\\d\]{1,}.*\r"
 expect -re "(?n)Connecting to database .* at localhost:9000 as user default\.\r"
-expect -re "(?n)Connected to ClickHouse server version \[\\d\]{2}\.\[\\d\]{1,2}\.\[\\d\]{1,2}\.\r"
+expect -re "(?n)Connected to ClickHouse server version \[\\d\]{2}\.\[\\d\]{1,2}\.\[\\d\]{1,2} revision \[\\d\]{1,}\.\r"
 expect ":) "
 
 send -- ""

@@ -9,31 +9,30 @@
 #include <Access/Common/AccessFlags.h>
 #include <Access/ContextAccess.h>
 #include <Columns/ColumnMap.h>
-#include <Common/NamedCollections/NamedCollectionsFactory.h>
+#include <Common/NamedCollections/NamedCollections.h>
 
 
 namespace DB
 {
 
-ColumnsDescription StorageSystemNamedCollections::getColumnsDescription()
+NamesAndTypesList StorageSystemNamedCollections::getNamesAndTypes()
 {
-    return ColumnsDescription
-    {
-        {"name", std::make_shared<DataTypeString>(), "Name of the collection."},
-        {"collection", std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>()), "Collection internals."},
+    return {
+        {"name", std::make_shared<DataTypeString>()},
+        {"collection", std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>())},
     };
 }
 
 StorageSystemNamedCollections::StorageSystemNamedCollections(const StorageID & table_id_)
-    : IStorageSystemOneBlock(table_id_, getColumnsDescription())
+    : IStorageSystemOneBlock(table_id_)
 {
 }
 
-void StorageSystemNamedCollections::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
+void StorageSystemNamedCollections::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
 {
     const auto & access = context->getAccess();
 
-    NamedCollectionFactory::instance().loadIfNot();
+    NamedCollectionUtils::loadIfNot();
 
     auto collections = NamedCollectionFactory::instance().getAll();
     for (const auto & [name, collection] : collections)

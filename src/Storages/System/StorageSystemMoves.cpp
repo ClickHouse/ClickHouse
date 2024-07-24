@@ -7,23 +7,22 @@
 namespace DB
 {
 
-ColumnsDescription StorageSystemMoves::getColumnsDescription()
+NamesAndTypesList StorageSystemMoves::getNamesAndTypes()
 {
-    return ColumnsDescription
-    {
-        {"database", std::make_shared<DataTypeString>(), "Name of the database."},
-        {"table", std::make_shared<DataTypeString>(), "Name of the table containing moving data part."},
-        {"elapsed", std::make_shared<DataTypeFloat64>(), "Time elapsed (in seconds) since data part movement started."},
-        {"target_disk_name", std::make_shared<DataTypeString>(), "Name of disk to which the data part is moving."},
-        {"target_disk_path", std::make_shared<DataTypeString>(), "Path to the mount point of the disk in the file system."},
-        {"part_name", std::make_shared<DataTypeString>(), "Name of the data part being moved."},
-        {"part_size", std::make_shared<DataTypeUInt64>(), "Data part size."},
-        {"thread_id", std::make_shared<DataTypeUInt64>(), "Identifier of a thread performing the movement."},
+    return {
+        {"database", std::make_shared<DataTypeString>()},
+        {"table", std::make_shared<DataTypeString>()},
+        {"elapsed", std::make_shared<DataTypeFloat64>()},
+        {"target_disk_name", std::make_shared<DataTypeString>()},
+        {"target_disk_path", std::make_shared<DataTypeString>()},
+        {"part_name", std::make_shared<DataTypeString>()},
+        {"part_size", std::make_shared<DataTypeUInt64>()},
+        {"thread_id", std::make_shared<DataTypeUInt64>()},
     };
 }
 
 
-void StorageSystemMoves::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
+void StorageSystemMoves::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
 {
     const auto access = context->getAccess();
     const bool check_access_for_tables = !access->isGranted(AccessType::SHOW_TABLES);

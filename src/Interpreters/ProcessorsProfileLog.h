@@ -4,7 +4,6 @@
 #include <Core/NamesAndTypes.h>
 #include <Core/NamesAndAliases.h>
 #include <Processors/IProcessor.h>
-#include <Storages/ColumnsDescription.h>
 
 namespace DB
 {
@@ -25,11 +24,11 @@ struct ProcessorProfileLogElement
     String processor_name;
 
     /// Milliseconds spend in IProcessor::work()
-    UInt64 elapsed_us{};
+    UInt32 elapsed_us{};
     /// IProcessor::NeedData
-    UInt64 input_wait_elapsed_us{};
+    UInt32 input_wait_elapsed_us{};
     /// IProcessor::PortFull
-    UInt64 output_wait_elapsed_us{};
+    UInt32 output_wait_elapsed_us{};
 
     size_t input_rows{};
     size_t input_bytes{};
@@ -37,9 +36,10 @@ struct ProcessorProfileLogElement
     size_t output_bytes{};
 
     static std::string name() { return "ProcessorsProfileLog"; }
-    static ColumnsDescription getColumnsDescription();
+    static NamesAndTypesList getNamesAndTypes();
     static NamesAndAliases getNamesAndAliases() { return {}; }
     void appendToBlock(MutableColumns & columns) const;
+    static const char * getCustomColumnList() { return nullptr; }
 };
 
 class ProcessorsProfileLog : public SystemLog<ProcessorProfileLogElement>

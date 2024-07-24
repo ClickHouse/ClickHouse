@@ -20,25 +20,14 @@ std::unique_ptr<MergeTreeReaderStream> makeIndexReader(
     auto context = part->storage.getContext();
     auto * load_marks_threadpool = settings.read_settings.load_marks_asynchronously ? &context->getLoadMarksThreadpool() : nullptr;
 
-    auto marks_loader = std::make_shared<MergeTreeMarksLoader>(
+    return std::make_unique<MergeTreeReaderStream>(
         std::make_shared<LoadedMergeTreeDataPartInfoForReader>(part, std::make_shared<AlterConversions>()),
-        mark_cache,
-        part->index_granularity_info.getMarksFilePath(index->getFileName()),
-        marks_count,
-        part->index_granularity_info,
-        settings.save_marks_in_cache,
-        settings.read_settings,
-        load_marks_threadpool,
-        /*num_columns_in_mark=*/ 1);
-
-    marks_loader->startAsyncLoad();
-
-    return std::make_unique<MergeTreeReaderStreamSingleColumn>(
-        part->getDataPartStoragePtr(),
         index->getFileName(), extension, marks_count,
-        all_mark_ranges, std::move(settings), uncompressed_cache,
-        part->getFileSizeOrZero(index->getFileName() + extension), std::move(marks_loader),
-        ReadBufferFromFileBase::ProfileCallback{}, CLOCK_MONOTONIC_COARSE);
+        all_mark_ranges,
+        std::move(settings), mark_cache, uncompressed_cache,
+        part->getFileSizeOrZero(index->getFileName() + extension),
+        &part->index_granularity_info,
+        ReadBufferFromFileBase::ProfileCallback{}, CLOCK_MONOTONIC_COARSE, false, load_marks_threadpool);
 }
 
 }
@@ -67,7 +56,6 @@ MergeTreeIndexReader::MergeTreeIndexReader(
         mark_cache,
         uncompressed_cache,
         std::move(settings));
-
     version = index_format.version;
 
     stream->adjustRightMark(getLastMark(all_mark_ranges_));
@@ -81,12 +69,11 @@ void MergeTreeIndexReader::seek(size_t mark)
     stream->seekToMark(mark);
 }
 
-void MergeTreeIndexReader::read(MergeTreeIndexGranulePtr & granule)
+MergeTreeIndexGranulePtr MergeTreeIndexReader::read()
 {
-    if (granule == nullptr)
-        granule = index->createIndexGranule();
-
+    auto granule = index->createIndexGranule();
     granule->deserializeBinary(*stream->getDataBuffer(), version);
+    return granule;
 }
 
 }

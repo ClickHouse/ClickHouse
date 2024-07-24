@@ -23,6 +23,7 @@ public:
 
     String getEngineName() const override { return "Overlay"; }
 
+public:
     bool isTableExist(const String & table_name, ContextPtr context) const override;
 
     StoragePtr tryGetTable(const String & table_name, ContextPtr context) const override;
@@ -51,7 +52,7 @@ public:
 
     void createTableRestoredFromBackup(const ASTPtr & create_table_query, ContextMutablePtr local_context, std::shared_ptr<IRestoreCoordination> restore_coordination, UInt64 timeout_ms) override;
 
-    DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name, bool skip_not_loaded) const override;
+    DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name) const override;
 
     bool empty() const override;
 
@@ -59,7 +60,7 @@ public:
 
 protected:
     std::vector<DatabasePtr> databases;
-    LoggerPtr log;
+    Poco::Logger * log;
 };
 
 }

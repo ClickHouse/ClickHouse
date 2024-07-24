@@ -29,9 +29,7 @@ PRIMARY KEY CountryID
 SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'date_table' DB 'database_for_range_dict'))
 LIFETIME(MIN 1 MAX 1000)
 LAYOUT(RANGE_HASHED())
-RANGE(MIN StartDate MAX EndDate)
-SETTINGS(dictionary_use_async_executor=1, max_threads=8)
-;
+RANGE(MIN StartDate MAX EndDate);
 
 SELECT 'Dictionary not nullable';
 SELECT 'dictGet';

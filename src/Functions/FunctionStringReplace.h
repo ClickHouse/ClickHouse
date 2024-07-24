@@ -35,12 +35,12 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors args{
-            {"haystack", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String or FixedString"},
-            {"pattern", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"},
-            {"replacement", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"}
+            {"haystack", &isStringOrFixedString<IDataType>, nullptr, "String or FixedString"},
+            {"pattern", &isString<IDataType>, nullptr, "String"},
+            {"replacement", &isString<IDataType>, nullptr, "String"}
         };
 
-        validateFunctionArguments(*this, arguments, args);
+        validateFunctionArgumentTypes(*this, arguments, args);
 
         return std::make_shared<DataTypeString>();
     }

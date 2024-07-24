@@ -49,7 +49,9 @@ inline void copy8(UInt8 * dst, const UInt8 * src)
 inline void wildCopy8(UInt8 * dst, const UInt8 * src, const UInt8 * dst_end)
 {
     /// Unrolling with clang is doing >10% performance degrade.
+#if defined(__clang__)
     #pragma nounroll
+#endif
     do
     {
         copy8(dst, src);
@@ -79,7 +81,7 @@ inline void copyOverlap8(UInt8 * op, const UInt8 *& match, size_t offset)
 }
 
 
-#if defined(__x86_64__) || defined(__PPC__) || defined(__s390x__) || defined(__riscv) || defined(__loongarch64)
+#if defined(__x86_64__) || defined(__PPC__) || defined(__s390x__) || defined(__riscv)
 
 /** We use 'xmm' (128bit SSE) registers here to shuffle 16 bytes.
   *
@@ -232,7 +234,9 @@ inline void copy16(UInt8 * dst, const UInt8 * src)
 inline void wildCopy16(UInt8 * dst, const UInt8 * src, const UInt8 * dst_end)
 {
     /// Unrolling with clang is doing >10% performance degrade.
+#if defined(__clang__)
     #pragma nounroll
+#endif
     do
     {
         copy16(dst, src);
@@ -268,7 +272,7 @@ inline void copyOverlap16(UInt8 * op, const UInt8 *& match, const size_t offset)
 }
 
 
-#if defined(__x86_64__) || defined(__PPC__) || defined(__s390x__) || defined (__riscv) || defined(__loongarch64)
+#if defined(__x86_64__) || defined(__PPC__) || defined(__s390x__) || defined (__riscv)
 
 inline void copyOverlap16Shuffle(UInt8 * op, const UInt8 *& match, const size_t offset)
 {
@@ -367,7 +371,9 @@ inline void copy32(UInt8 * dst, const UInt8 * src)
 inline void wildCopy32(UInt8 * dst, const UInt8 * src, const UInt8 * dst_end)
 {
     /// Unrolling with clang is doing >10% performance degrade.
+#if defined(__clang__)
     #pragma nounroll
+#endif
     do
     {
         copy32(dst, src);
@@ -481,7 +487,9 @@ bool NO_INLINE decompressImpl(const char * const source, char * const dest, size
     UInt8 * const output_end = op + dest_size;
 
     /// Unrolling with clang is doing >10% performance degrade.
+#if defined(__clang__)
     #pragma nounroll
+#endif
     while (true)
     {
         size_t length;
