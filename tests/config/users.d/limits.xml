@@ -1,8 +1,0 @@
-<clickhouse>
-    <profiles>
-        <default>
-            <max_memory_usage>5G</max_memory_usage>
-            <max_rows_to_read>20000000</max_rows_to_read>
-        </default>
-    </profiles>
-</clickhouse>
