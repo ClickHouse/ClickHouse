@@ -27,6 +27,7 @@ RUN apt-get update \
         moreutils \
         nasm \
         xz-utils \
+        bzip2 \
         pigz \
         rename \
         software-properties-common \
