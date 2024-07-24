@@ -689,11 +689,8 @@ bool DatabaseReplicated::checkDigestValid(const ContextPtr & local_context, bool
     LOG_TEST(log, "Current in-memory metadata digest: {}", tables_metadata_digest);
 
     /// Database is probably being dropped
-    {
-        std::lock_guard lock{ddl_worker_mutex};
-        if (!local_context->getZooKeeperMetadataTransaction() && (!ddl_worker || !ddl_worker->isCurrentlyActive()))
-            return true;
-    }
+    if (!local_context->getZooKeeperMetadataTransaction() && (!ddl_worker || !ddl_worker->isCurrentlyActive()))
+        return true;
 
     UInt64 local_digest = 0;
     {
