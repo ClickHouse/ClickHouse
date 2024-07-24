@@ -41,23 +41,6 @@ DataTypeAggregateFunction::DataTypeAggregateFunction(AggregateFunctionPtr functi
     , parameters(parameters_)
     , version(version_)
 {
-    Strings argument_type_names;
-    for (const auto & argument_type : argument_types)
-        argument_type_names.push_back(argument_type->getName());
-
-    Strings function_argument_type_names;
-    const auto & function_argument_types = function->getArgumentTypes();
-    for (const auto & argument_type : function_argument_types)
-        function_argument_type_names.push_back(argument_type->getName());
-
-    size_t argument_types_size = std::max(argument_types.size(), function_argument_types.size());
-    for (size_t i = 0; i < argument_types_size; ++i)
-    {
-        if (argument_types.size() != function_argument_types.size() || !argument_types[i]->equals(*function_argument_types[i]))
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                            "Data type AggregateFunction {} got argument types different from function argument types: [{}] != [{}]",
-                            function->getName(), fmt::join(argument_type_names, ", "), fmt::join(function_argument_type_names, ", "));
-    }
 }
 
 String DataTypeAggregateFunction::getFunctionName() const
