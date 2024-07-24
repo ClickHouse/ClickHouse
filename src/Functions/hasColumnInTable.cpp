@@ -56,8 +56,6 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override;
 
-    bool isDeterministic() const override { return false; }
-
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override;
@@ -162,7 +160,7 @@ ColumnPtr FunctionHasColumnInTable::executeImpl(const ColumnsWithTypeAndName & a
 
 REGISTER_FUNCTION(HasColumnInTable)
 {
-    factory.registerFunction<FunctionHasColumnInTable>();
+    factory.registerFunction<FunctionHasColumnInTable>({}, {.is_deterministic = false});
 }
 
 }

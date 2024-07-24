@@ -10,6 +10,7 @@
 #include <Common/SettingsChanges.h>
 #include <Storages/StatisticsDescription.h>
 #include <Common/Exception.h>
+#include <Common/IFactoryWithAliases.h>
 
 #include <boost/multi_index/member.hpp>
 #include <boost/multi_index/mem_fun.hpp>

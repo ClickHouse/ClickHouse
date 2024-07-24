@@ -31,8 +31,7 @@ void ExpressionInfoMatcher::visit(const ASTFunction & ast_function, const ASTPtr
     // For window functions both don't make sense -- they are not allowed in
     // WHERE or HAVING.
     else if (!ast_function.is_window_function
-        && AggregateFunctionFactory::instance().isAggregateFunctionName(
-            ast_function.name))
+        && AggregateFunctionFactory::instance().isAggregateFunctionName(ast_function.name))
     {
         data.is_aggregate_function = true;
     }
@@ -47,10 +46,11 @@ void ExpressionInfoMatcher::visit(const ASTFunction & ast_function, const ASTPtr
         /// Skip lambda, tuple and other special functions
         if (function)
         {
-            if (function->isStateful())
+            auto function_properties = FunctionFactory::instance().getProperties(ast_function.name);
+            if (function_properties.is_stateful)
                 data.is_stateful_function = true;
 
-            if (!function->isDeterministicInScopeOfQuery())
+            if (!function_properties.is_deterministic_in_scope_of_query)
                 data.is_deterministic_function = false;
         }
     }

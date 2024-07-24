@@ -1,5 +1,6 @@
 #include <Columns/IColumn.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
+#include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ArrayJoinAction.h>
@@ -300,7 +301,9 @@ void enreachFixedColumns(const ActionsDAG & dag, FixedColumns & fixed_columns)
                     }
                     else if (frame.node->type == ActionsDAG::ActionType::FUNCTION)
                     {
-                        if (frame.node->function_base->isDeterministicInScopeOfQuery())
+                        const auto & function_name = frame.node->function_base->getName();
+                        auto function_properties = FunctionFactory::instance().getProperties(function_name);
+                        if (function_properties.is_deterministic_in_scope_of_query)
                         {
                             //std::cerr << "*** enreachFixedColumns check " << frame.node->result_name << std::endl;
                             bool all_args_fixed_or_const = true;

@@ -174,8 +174,6 @@ public:
 
 #endif
 
-    virtual bool isStateful() const { return false; }
-
     /** Should we evaluate this function while constant folding, if arguments are constants?
       * Usually this is true. Notable counterexample is function 'sleep'.
       * If we will call it during query analysis, we will sleep extra amount of time.
@@ -218,28 +216,6 @@ public:
       *       function injective or not is overkill).
       */
     virtual bool isInjective(const ColumnsWithTypeAndName & /*sample_columns*/) const { return false; }
-
-    /** Function is called "deterministic", if it returns same result for same values of arguments.
-      * Most of functions are deterministic. Notable counterexample is rand().
-      * Sometimes, functions are "deterministic" in scope of single query
-      *  (even for distributed query), but not deterministic it general.
-      * Example: now(). Another example: functions that work with periodically updated dictionaries.
-      */
-
-    virtual bool isDeterministic() const { return true; }
-
-    virtual bool isDeterministicInScopeOfQuery() const { return true; }
-
-    /** This is a special flags for functions which return constant value for the server,
-      * but the result could be different for different servers in distributed query.
-      *
-      * This functions can't support constant folding on the initiator, but can on the follower.
-      * We can't apply some optimizations as well (e.g. can't remove constant result from GROUP BY key).
-      * So, it is convenient to have a special flag for them.
-      *
-      * Examples are: "__getScalar" and every function from serverConstants.cpp
-      */
-    virtual bool isServerConstant() const { return false; }
 
     /** Lets you know if the function is monotonic in a range of values.
       * This is used to work with the index in a sorted chunk of data.
@@ -343,12 +319,7 @@ public:
 
     /// TODO: This method should not be duplicated here and in IFunctionBase
     /// See the comment for the same method in IFunctionBase
-    virtual bool isDeterministic() const { return true; }
-    virtual bool isDeterministicInScopeOfQuery() const { return true; }
     virtual bool isInjective(const ColumnsWithTypeAndName &) const { return false; }
-
-    /// Override and return true if function needs to depend on the state of the data.
-    virtual bool isStateful() const { return false; }
 
     /// Override and return true if function could take different number of arguments.
     virtual bool isVariadic() const { return false; }
@@ -497,10 +468,6 @@ public:
     virtual bool isSuitableForConstantFolding() const { return true; }
     virtual ColumnPtr getConstantResultForNonConstArguments(const ColumnsWithTypeAndName & /*arguments*/, const DataTypePtr & /*result_type*/) const { return nullptr; }
     virtual bool isInjective(const ColumnsWithTypeAndName & /*sample_columns*/) const { return false; }
-    virtual bool isDeterministic() const { return true; }
-    virtual bool isDeterministicInScopeOfQuery() const { return true; }
-    virtual bool isServerConstant() const { return false; }
-    virtual bool isStateful() const { return false; }
 
     using ShortCircuitSettings = IFunctionBase::ShortCircuitSettings;
     virtual bool isShortCircuit(ShortCircuitSettings & /*settings*/, size_t /*number_of_arguments*/) const { return false; }
@@ -570,5 +537,25 @@ protected:
 };
 
 using FunctionPtr = std::shared_ptr<IFunction>;
+
+struct FunctionProperties
+{
+    /// A function is called deterministic if it returns same result for the same argument.
+    /// Most functions are deterministic. A notable counterexample is rand().
+    bool is_deterministic = true;
+
+     /// Sometimes, functions are deterministic in the scope of a single query (even for distributed queries) but not deterministic it general.
+     /// Example: now() and functions that work with periodically updated dictionaries.
+    bool is_deterministic_in_scope_of_query = true;
+
+    /// The function returns a constant value depending the current server. Another server may generate another result which is also
+    /// constant in the scope of this single server. In a distributed query, we can't apply constant folding for such functions on the
+    /// initiator, but we on followers. We also can't apply some optimizations, e.g. remove constant result from GROUP BY key.
+    /// Examples: "__getScalar" and every function from serverConstants.cpp
+    bool is_server_constant = false;
+
+    /// If the function depends on the state of the data.
+    bool is_stateful = false;
+};
 
 }

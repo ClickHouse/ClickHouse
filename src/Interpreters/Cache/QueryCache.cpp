@@ -51,8 +51,8 @@ struct HasNonDeterministicFunctionsMatcher
 
         if (const auto * function = node->as<ASTFunction>())
         {
-            const auto func = FunctionFactory::instance().tryGet(function->name, data.context);
-            if (func && !func->isDeterministic())
+            auto func_properties = FunctionFactory::instance().tryGetProperties(function->name);
+            if (func_properties && !func_properties->is_deterministic)
                 data.has_non_deterministic_functions = true;
         }
     }

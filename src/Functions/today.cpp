@@ -50,7 +50,6 @@ public:
         return std::make_unique<ExecutableFunctionToday>(day_value);
     }
 
-    bool isDeterministic() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
 private:
@@ -64,8 +63,6 @@ public:
     static constexpr auto name = "today";
 
     String getName() const override { return name; }
-
-    bool isDeterministic() const override { return false; }
 
     size_t getNumberOfArguments() const override { return 0; }
 
@@ -83,7 +80,7 @@ public:
 
 REGISTER_FUNCTION(Today)
 {
-    factory.registerFunction<TodayOverloadResolver>();
+    factory.registerFunction<TodayOverloadResolver>({}, {.is_deterministic = false});
     factory.registerAlias("current_date", TodayOverloadResolver::name, FunctionFactory::Case::Insensitive);
     factory.registerAlias("curdate", TodayOverloadResolver::name, FunctionFactory::Case::Insensitive);
 }

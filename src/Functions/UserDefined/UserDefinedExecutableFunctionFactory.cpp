@@ -105,8 +105,6 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
     bool useDefaultImplementationForNulls() const override { return false; }
-    bool isDeterministic() const override { return false; }
-    bool isDeterministicInScopeOfQuery() const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes &) const override
     {
@@ -236,8 +234,8 @@ private:
 
 UserDefinedExecutableFunctionFactory & UserDefinedExecutableFunctionFactory::instance()
 {
-    static UserDefinedExecutableFunctionFactory result;
-    return result;
+    static UserDefinedExecutableFunctionFactory factory;
+    return factory;
 }
 
 FunctionOverloadResolverPtr UserDefinedExecutableFunctionFactory::get(const String & function_name, ContextPtr context, Array parameters)

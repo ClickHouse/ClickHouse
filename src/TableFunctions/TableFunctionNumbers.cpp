@@ -121,8 +121,8 @@ UInt64 TableFunctionNumbers<multithreaded>::evaluateArgument(ContextPtr context,
 
 void registerTableFunctionNumbers(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionNumbers<true>>({.documentation = {}, .allow_readonly = true});
-    factory.registerFunction<TableFunctionNumbers<false>>({.documentation = {}, .allow_readonly = true});
+    factory.registerFunction<TableFunctionNumbers<true>>({}, {.allow_readonly = true});
+    factory.registerFunction<TableFunctionNumbers<false>>({}, {.allow_readonly = true});
 }
 
 }

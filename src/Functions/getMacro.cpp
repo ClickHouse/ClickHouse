@@ -46,14 +46,10 @@ public:
         return name;
     }
 
-    bool isDeterministic() const override { return false; }
-
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     /// getMacro may return different values on different shards/replicas, so it's not constant for distributed query
     bool isSuitableForConstantFolding() const override { return !is_distributed; }
-
-    bool isServerConstant() const override { return true; }
 
     size_t getNumberOfArguments() const override
     {
@@ -83,7 +79,7 @@ public:
 
 REGISTER_FUNCTION(GetMacro)
 {
-    factory.registerFunction<FunctionGetMacro>();
+    factory.registerFunction<FunctionGetMacro>({}, {.is_deterministic = false, .is_server_constant = true});
 }
 
 }

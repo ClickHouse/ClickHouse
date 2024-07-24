@@ -33,7 +33,7 @@ public:
 
 REGISTER_FUNCTION(ConnectionId)
 {
-    factory.registerFunction<FunctionConnectionId>({}, FunctionFactory::Case::Insensitive);
+    factory.registerFunction<FunctionConnectionId>({}, {}, FunctionFactory::Case::Insensitive);
     factory.registerAlias("connection_id", "connectionID", FunctionFactory::Case::Insensitive);
 }
 

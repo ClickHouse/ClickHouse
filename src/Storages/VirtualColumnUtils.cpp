@@ -38,10 +38,11 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <IO/WriteHelpers.h>
 #include <Common/typeid_cast.h>
-#include "Functions/FunctionsLogical.h"
-#include "Functions/IFunction.h"
-#include "Functions/IFunctionAdaptors.h"
-#include "Functions/indexHint.h"
+#include <Functions/FunctionsLogical.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/IFunction.h>
+#include <Functions/IFunctionAdaptors.h>
+#include <Functions/indexHint.h>
 #include <Parsers/makeASTForLogicalFunction.h>
 #include <Columns/ColumnSet.h>
 #include <Functions/FunctionHelpers.h>
@@ -262,7 +263,9 @@ bool isDeterministicInScopeOfQuery(const ActionsDAG::Node * node)
     if (node->type != ActionsDAG::ActionType::FUNCTION)
         return true;
 
-    if (!node->function_base->isDeterministicInScopeOfQuery())
+    const auto & function_name = node->function_base->getName();
+    auto function_properties = FunctionFactory::instance().getProperties(function_name);
+    if (!function_properties.is_deterministic_in_scope_of_query)
         return false;
 
     return true;

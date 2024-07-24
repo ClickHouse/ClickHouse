@@ -140,16 +140,15 @@ namespace DB
     void registerTableFunctionLoop(TableFunctionFactory & factory)
     {
         factory.registerFunction<TableFunctionLoop>(
-                {.documentation
-                = {.description=R"(The table function can be used to continuously output query results in an infinite loop.)",
-                                .examples{{"loop", "SELECT * FROM loop((numbers(3)) LIMIT 7", "0"
+                {.description=R"(The table function can be used to continuously output query results in an infinite loop.)",
+                 .examples{{"loop", "SELECT * FROM loop((numbers(3)) LIMIT 7", "0"
                                                                                               "1"
                                                                                               "2"
                                                                                               "0"
                                                                                               "1"
                                                                                               "2"
                                                                                               "0"}}
-                        }});
+                        });
     }
 
 }

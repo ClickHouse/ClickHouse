@@ -50,16 +50,6 @@ public:
 
     size_t getNumberOfArguments() const override { return 0; }
 
-    bool isDeterministic() const override
-    {
-        return false;
-    }
-
-    bool isDeterministicInScopeOfQuery() const override
-    {
-        return false;
-    }
-
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.size() > 1)
@@ -90,7 +80,7 @@ private:
 
 REGISTER_FUNCTION(NowInBlock)
 {
-    factory.registerFunction<FunctionNowInBlock>();
+    factory.registerFunction<FunctionNowInBlock>({}, {.is_deterministic = false, .is_deterministic_in_scope_of_query = false});
 }
 
 }

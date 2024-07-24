@@ -29,7 +29,6 @@ public:
     explicit FunctionGetSetting(ContextPtr context_) : WithContext(context_) {}
 
     String getName() const override { return name; }
-    bool isDeterministic() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     size_t getNumberOfArguments() const override { return 1; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
@@ -68,7 +67,7 @@ private:
 
 REGISTER_FUNCTION(GetSetting)
 {
-    factory.registerFunction<FunctionGetSetting>();
+    factory.registerFunction<FunctionGetSetting>({}, {.is_deterministic = false});
 }
 
 }

@@ -30,8 +30,6 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    inline bool isDeterministic() const override { return false; }
-
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName &,
@@ -51,7 +49,7 @@ public:
 
 REGISTER_FUNCTION(GetFuzzerData)
 {
-    factory.registerFunction<FunctionGetFuzzerData>();
+    factory.registerFunction<FunctionGetFuzzerData>({}, {.is_deterministic = false});
 }
 
 }

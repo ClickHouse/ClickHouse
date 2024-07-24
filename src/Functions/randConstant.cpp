@@ -59,11 +59,6 @@ public:
         return std::make_unique<ExecutableFunctionRandomConstant<ToType, Name>>(value);
     }
 
-    bool isDeterministic() const override
-    {
-        return false;
-    }
-
 private:
     ToType value;
     DataTypes argument_types;
@@ -77,7 +72,6 @@ public:
     static constexpr auto name = Name::name;
     String getName() const override { return name; }
 
-    bool isDeterministic() const override { return false; }
     bool useDefaultImplementationForNulls() const override { return false; }
 
     bool isVariadic() const override { return true; }
@@ -121,7 +115,7 @@ using FunctionBuilderRandConstant = RandomConstantOverloadResolver<UInt32, NameR
 
 REGISTER_FUNCTION(RandConstant)
 {
-    factory.registerFunction<FunctionBuilderRandConstant>();
+    factory.registerFunction<FunctionBuilderRandConstant>({}, {.is_deterministic = false});
 }
 
 }

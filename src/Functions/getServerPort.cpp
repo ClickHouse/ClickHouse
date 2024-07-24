@@ -55,7 +55,6 @@ public:
         return return_type;
     }
 
-    bool isDeterministic() const override { return false; }
     bool isSuitableForConstantFolding() const override { return !is_distributed; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
@@ -87,7 +86,6 @@ public:
 
     size_t getNumberOfArguments() const override { return 1; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
-    bool isDeterministic() const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & data_types) const override
     {
@@ -128,7 +126,7 @@ public:
 
 REGISTER_FUNCTION(GetServerPort)
 {
-    factory.registerFunction<GetServerPortOverloadResolver>();
+    factory.registerFunction<GetServerPortOverloadResolver>({}, {.is_deterministic = false});
 }
 
 }

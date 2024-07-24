@@ -39,8 +39,6 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    bool isDeterministic() const override { return false; }
-
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
@@ -53,7 +51,7 @@ public:
 
 REGISTER_FUNCTION(CurrentDatabase)
 {
-    factory.registerFunction<FunctionCurrentDatabase>();
+    factory.registerFunction<FunctionCurrentDatabase>({}, {.is_deterministic = false});
     factory.registerAlias("DATABASE", FunctionCurrentDatabase::name, FunctionFactory::Case::Insensitive);
     factory.registerAlias("SCHEMA", FunctionCurrentDatabase::name, FunctionFactory::Case::Insensitive);
     factory.registerAlias("current_database", FunctionCurrentDatabase::name, FunctionFactory::Case::Insensitive);

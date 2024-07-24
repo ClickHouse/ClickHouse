@@ -1090,7 +1090,12 @@ bool KeyCondition::canConstantBeWrappedByFunctions(
         out_key_column_num,
         out_key_column_type,
         transform_functions,
-        [](const IFunctionBase & func, const IDataType &) { return func.isDeterministic(); });
+        [](const IFunctionBase & func, const IDataType &)
+        {
+            const auto & func_name = func.getName();
+            auto func_properties = FunctionFactory::instance().getProperties(func_name);
+            return func_properties.is_deterministic;
+        });
 
     if (!can_transform_constant)
         return false;
@@ -1346,10 +1351,6 @@ public:
             return func->prepare(arguments)->execute(arguments, result_type, input_rows_count, dry_run);
     }
 
-    bool isDeterministic() const override { return func->isDeterministic(); }
-
-    bool isDeterministicInScopeOfQuery() const override { return func->isDeterministicInScopeOfQuery(); }
-
     bool hasInformationAboutMonotonicity() const override { return func->hasInformationAboutMonotonicity(); }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & arguments) const override { return func->isSuitableForShortCircuitArgumentsExecution(arguments); }
@@ -1418,7 +1419,12 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctions(
             arguments.push_back({ nullptr, key_column_type, "" });
         auto func = func_builder->build(arguments);
 
-        if (!func || !func->isDeterministicInScopeOfQuery() || (!assume_function_monotonicity && !func->hasInformationAboutMonotonicity()))
+        if (!func)
+            return false;
+
+        const auto & func_name = func->getName();
+        auto func_properties = FunctionFactory::instance().getProperties(func_name);
+        if (!func_properties.is_deterministic_in_scope_of_query || (!assume_function_monotonicity && !func->hasInformationAboutMonotonicity()))
             return false;
 
         key_column_type = func->getResultType();
@@ -1710,7 +1716,9 @@ bool KeyCondition::canSetValuesBeWrappedByFunctions(
         out_functions_chain,
         [](const IFunctionBase & func, const IDataType &)
         {
-            return func.isDeterministic();
+            const auto & func_name = func.getName();
+            auto func_properties = FunctionFactory::instance().getProperties(func_name);
+            return func_properties.is_deterministic;
         });
 }
 

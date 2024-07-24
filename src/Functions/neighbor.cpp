@@ -54,12 +54,6 @@ public:
 
     bool isVariadic() const override { return true; }
 
-    bool isStateful() const override { return true; }
-
-    bool isDeterministic() const override { return false; }
-
-    bool isDeterministicInScopeOfQuery() const override { return false; }
-
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     bool useDefaultImplementationForNulls() const override { return false; }
@@ -216,7 +210,7 @@ public:
 
 REGISTER_FUNCTION(Neighbor)
 {
-    factory.registerFunction<FunctionNeighbor>();
+    factory.registerFunction<FunctionNeighbor>({}, {.is_deterministic = false, .is_deterministic_in_scope_of_query = false, .is_stateful = true});
 }
 
 }

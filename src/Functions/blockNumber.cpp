@@ -29,11 +29,6 @@ public:
         return name;
     }
 
-    bool isStateful() const override
-    {
-        return true;
-    }
-
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override
     {
         return false;
@@ -42,16 +37,6 @@ public:
     size_t getNumberOfArguments() const override
     {
         return 0;
-    }
-
-    bool isDeterministic() const override
-    {
-        return false;
-    }
-
-    bool isDeterministicInScopeOfQuery() const override
-    {
-        return false;
     }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
@@ -70,7 +55,7 @@ public:
 
 REGISTER_FUNCTION(BlockNumber)
 {
-    factory.registerFunction<FunctionBlockNumber>();
+    factory.registerFunction<FunctionBlockNumber>({}, {.is_deterministic = false, .is_deterministic_in_scope_of_query = false, .is_stateful = true});
 }
 
 }

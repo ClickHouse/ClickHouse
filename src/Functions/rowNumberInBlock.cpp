@@ -24,24 +24,9 @@ public:
         return name;
     }
 
-    bool isStateful() const override
-    {
-        return true;
-    }
-
     size_t getNumberOfArguments() const override
     {
         return 0;
-    }
-
-    bool isDeterministic() const override
-    {
-        return false;
-    }
-
-    bool isDeterministicInScopeOfQuery() const override
-    {
-        return false;
     }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
@@ -66,7 +51,8 @@ public:
 
 REGISTER_FUNCTION(RowNumberInBlock)
 {
-    factory.registerFunction<FunctionRowNumberInBlock>();
+    factory.registerFunction<FunctionRowNumberInBlock>({}, {.is_deterministic = false, .is_deterministic_in_scope_of_query = false, .is_stateful = true}
+    );
 }
 
 }

@@ -238,8 +238,6 @@ public:
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return Distribution::getNumberOfArguments(); }
     bool isVariadic() const override { return true; }
-    bool isDeterministic() const override { return false; }
-    bool isDeterministicInScopeOfQuery() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -322,7 +320,9 @@ Typical usage:
     .examples{
         {"typical", "SELECT randUniform(0, 1) FROM numbers(100000);", ""}},
     .categories{"Distribution"}
-    });
+    },
+    {.is_deterministic = false, .is_deterministic_in_scope_of_query = false}
+    );
 
     factory.registerFunction<FunctionRandomDistribution<NormalDistribution>>(
     FunctionDocumentation{
@@ -336,7 +336,9 @@ Typical usage:
     .examples{
         {"typical", "SELECT randNormal(0, 5) FROM numbers(100000);", ""}},
     .categories{"Distribution"}
-    });
+    },
+    {.is_deterministic = false, .is_deterministic_in_scope_of_query = false}
+    );
 
 
     factory.registerFunction<FunctionRandomDistribution<LogNormalDistribution>>(
@@ -351,7 +353,9 @@ Typical usage:
     .examples{
         {"typical", "SELECT randLogNormal(0, 5) FROM numbers(100000);", ""}},
     .categories{"Distribution"}
-    });
+    },
+    {.is_deterministic = false, .is_deterministic_in_scope_of_query = false}
+    );
 
 
     factory.registerFunction<FunctionRandomDistribution<ExponentialDistribution>>(
@@ -366,7 +370,9 @@ Typical usage:
     .examples{
         {"typical", "SELECT randExponential(0, 5) FROM numbers(100000);", ""}},
     .categories{"Distribution"}
-    });
+    },
+    {.is_deterministic = false, .is_deterministic_in_scope_of_query = false}
+    );
 
 
     factory.registerFunction<FunctionRandomDistribution<ChiSquaredDistribution>>(
@@ -381,7 +387,9 @@ Typical usage:
     .examples{
         {"typical", "SELECT randChiSquared(5) FROM numbers(100000);", ""}},
     .categories{"Distribution"}
-    });
+    },
+    {.is_deterministic = false, .is_deterministic_in_scope_of_query = false}
+    );
 
     factory.registerFunction<FunctionRandomDistribution<StudentTDistribution>>(
     FunctionDocumentation{
@@ -395,7 +403,9 @@ Typical usage:
     .examples{
         {"typical", "SELECT randStudentT(5) FROM numbers(100000);", ""}},
     .categories{"Distribution"}
-    });
+    },
+    {.is_deterministic = false, .is_deterministic_in_scope_of_query = false}
+    );
 
 
     factory.registerFunction<FunctionRandomDistribution<FisherFDistribution>>(
@@ -411,7 +421,9 @@ Typical usage:
     .examples{
         {"typical", "SELECT randFisherF(5) FROM numbers(100000);", ""}},
     .categories{"Distribution"}
-    });
+    },
+    {.is_deterministic = false, .is_deterministic_in_scope_of_query = false}
+    );
 
 
     factory.registerFunction<FunctionRandomDistribution<BernoulliDistribution>>(
@@ -426,7 +438,9 @@ Typical usage:
     .examples{
         {"typical", "SELECT randBernoulli(0.1) FROM numbers(100000);", ""}},
     .categories{"Distribution"}
-    });
+    },
+    {.is_deterministic = false, .is_deterministic_in_scope_of_query = false}
+    );
 
 
     factory.registerFunction<FunctionRandomDistribution<BinomialDistribution>>(
@@ -441,7 +455,9 @@ Typical usage:
     .examples{
         {"typical", "SELECT randBinomial(10, 0.1) FROM numbers(100000);", ""}},
     .categories{"Distribution"}
-    });
+    },
+    {.is_deterministic = false, .is_deterministic_in_scope_of_query = false}
+    );
 
 
     factory.registerFunction<FunctionRandomDistribution<NegativeBinomialDistribution>>(
@@ -456,7 +472,9 @@ Typical usage:
     .examples{
         {"typical", "SELECT randNegativeBinomial(10, 0.1) FROM numbers(100000);", ""}},
     .categories{"Distribution"}
-    });
+    },
+    {.is_deterministic = false, .is_deterministic_in_scope_of_query = false}
+    );
 
 
     factory.registerFunction<FunctionRandomDistribution<PoissonDistribution>>(
@@ -471,7 +489,9 @@ Typical usage:
     .examples{
         {"typical", "SELECT randPoisson(3) FROM numbers(100000);", ""}},
     .categories{"Distribution"}
-    });
+    },
+    {.is_deterministic = false, .is_deterministic_in_scope_of_query = false}
+    );
 }
 
 }

@@ -54,7 +54,9 @@ public:
                 /// NOTE It may be an aggregate function, so get(...) may throw.
                 /// However, an aggregate function can be used only in subquery and we do not go into subquery.
                 const auto func = FunctionFactory::instance().get(function->name, data.context);
-                if (!func->isDeterministic())
+                const auto & func_name = func->getName();
+                auto func_properties = FunctionFactory::instance().getProperties(func_name);
+                if (!func_properties.is_deterministic)
                     data.result.nondeterministic_function_name = func->getName();
             }
         }
@@ -97,7 +99,9 @@ public:
         /// It makes sense to execute functions which are deterministic
         /// in scope of query because they are usually constant expressions.
         auto builder = FunctionFactory::instance().get(function.name, data.context);
-        if (builder->isDeterministic() || !builder->isDeterministicInScopeOfQuery())
+        const auto & function_name = builder->getName();
+        auto function_properties = FunctionFactory::instance().getProperties(function_name);
+        if (function_properties.is_deterministic || !function_properties.is_deterministic_in_scope_of_query)
             return;
 
         Field field;

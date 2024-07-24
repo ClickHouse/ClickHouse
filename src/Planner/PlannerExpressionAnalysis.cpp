@@ -23,6 +23,8 @@
 #include <Planner/PlannerWindowFunctions.h>
 #include <Planner/Utils.h>
 
+#include <Functions/FunctionFactory.h>
+
 #include <Core/Settings.h>
 
 namespace DB
@@ -87,7 +89,9 @@ bool canRemoveConstantFromGroupByKey(const ConstantNode & root)
         else if (function_node)
         {
             /// Do not allow removing constants like `hostName()`
-            if (function_node->getFunctionOrThrow()->isServerConstant())
+            const auto & function_name = function_node->getFunctionOrThrow()->getName();
+            auto function_properties = FunctionFactory::instance().getProperties(function_name);
+            if (function_properties.is_server_constant)
                 return false;
 
             for (const auto & child : function_node->getArguments())

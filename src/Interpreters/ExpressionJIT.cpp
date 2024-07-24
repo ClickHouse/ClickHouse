@@ -15,6 +15,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionsComparison.h>
+#include <Functions/FunctionFactory.h>
 #include <DataTypes/Native.h>
 #include <Functions/IFunctionAdaptors.h>
 
@@ -185,24 +186,6 @@ public:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Compiled function was not initialized {}", name);
 
         return std::make_unique<LLVMExecutableFunction>(name, compiled_function_holder);
-    }
-
-    bool isDeterministic() const override
-    {
-        for (const auto & f : nested_functions)
-            if (!f->isDeterministic())
-                return false;
-
-        return true;
-    }
-
-    bool isDeterministicInScopeOfQuery() const override
-    {
-        for (const auto & f : nested_functions)
-            if (!f->isDeterministicInScopeOfQuery())
-                return false;
-
-        return true;
     }
 
     bool isSuitableForConstantFolding() const override
