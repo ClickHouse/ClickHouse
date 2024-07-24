@@ -291,7 +291,8 @@ StoragePtr DatabaseWithOwnTablesBase::detachTableUnlocked(const String & table_n
 
     if (!table_storage->isSystemStorage()
         && database_name != DatabaseCatalog::SYSTEM_DATABASE
-        && database_name != DatabaseCatalog::TEMPORARY_DATABASE) {
+        && database_name != DatabaseCatalog::TEMPORARY_DATABASE)
+    {
         LOG_TEST(log, "Counting detached table {} to database {}", table_name, database_name);
         CurrentMetrics::sub(getAttachedCounterForStorage(table_storage));
     }
@@ -340,7 +341,8 @@ void DatabaseWithOwnTablesBase::attachTableUnlocked(const String & table_name, c
 
     if (!table->isSystemStorage()
         && database_name != DatabaseCatalog::SYSTEM_DATABASE
-        && database_name != DatabaseCatalog::TEMPORARY_DATABASE) {
+        && database_name != DatabaseCatalog::TEMPORARY_DATABASE)
+    {
         LOG_TEST(log, "Counting attached table {} to database {}", table_name, database_name);
         CurrentMetrics::add(getAttachedCounterForStorage(table));
     }
