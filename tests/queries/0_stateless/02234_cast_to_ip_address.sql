@@ -71,7 +71,7 @@ SELECT count() FROM numbers_mt(20000000) WHERE NOT ignore(toIPv6OrZero(randomStr
 
 SELECT '--';
 
-SELECT cast('test' , 'IPv6'); --{serverError CANNOT_PARSE_IPV6}
+SELECT cast('test' , 'IPv6'); -- { serverError CANNOT_PARSE_IPV6 }
 SELECT cast('::ffff:127.0.0.1', 'IPv6');
 
 SELECT '--';

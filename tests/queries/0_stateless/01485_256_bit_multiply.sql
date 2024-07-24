@@ -1,6 +1,6 @@
 -- Tags: no-random-settings, no-asan, no-msan, no-tsan, no-ubsan, no-debug
 
-SET max_rows_to_read = '100M'
+SET max_rows_to_read = '100M';
 
 select count() from
 (
