@@ -16,9 +16,6 @@
 #include <Common/ColumnsHashing.h>
 #include <Common/HashTable/FixedHashMap.h>
 #include <Common/HashTable/HashMap.h>
-#include "Columns/IColumn.h"
-#include "base/defines.h"
-#include "base/scope_guard.h"
 
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
