@@ -48,8 +48,13 @@ static ClientInfo::QueryKind parseQueryKind(const String & query_kind)
 /// This signal handler is set only for SIGINT and SIGQUIT.
 void interruptSignalHandler(int signum)
 {
-    if (ClientApplicationBase::getInstance().tryStopQuery())
-        safeExit(128 + signum);
+    /// Signal handler might be called even before the setup is fully finished
+    /// and client application started to process the query.
+    /// Because of that we have to manually check it.
+    if (auto * instance = ClientApplicationBase::instanceRawPtr(); instance)
+        if (auto * base = dynamic_cast<ClientApplicationBase *>(instance); base)
+            if (base->tryStopQuery())
+                safeExit(128 + signum);
 }
 
 ClientApplicationBase::~ClientApplicationBase()
