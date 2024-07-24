@@ -8,6 +8,7 @@
 #include <Common/HashTable/HashMap.h>
 #include <Common/NaNUtils.h>
 
+#include <numeric>
 
 namespace DB
 {
@@ -128,7 +129,6 @@ struct QuantileExactWeighted
             std::cout << "array[" << i << "]: " << toString(Field(array[i].first)) << ", " << array[i].second << std::endl;
         std::cout << "position: " << position << std::endl;
         */
-
         size_t lower = static_cast<size_t>(std::floor(position));
         size_t higher = static_cast<size_t>(std::ceil(position));
         // std::cout << "lower: " << lower << ", higher: " << higher << std::endl;
@@ -167,7 +167,7 @@ struct QuantileExactWeighted
         }
 
         ::sort(array, array + size, [](const Pair & a, const Pair & b) { return a.first < b.first; });
-        std::partial_sum(array, array + size, array, [](Pair acc, Pair & p) { return Pair(p.first, acc.second + p.second); });
+        std::partial_sum(array, array + size, array, [](const Pair & acc, const Pair & p) { return Pair(p.first, acc.second + p.second); });
         Weight max_position = array[size - 1].second - 1;
         Float64 position = max_position * level;
         return getFloatImpl(array, size, position);
