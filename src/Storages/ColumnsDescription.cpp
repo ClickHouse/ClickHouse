@@ -711,6 +711,7 @@ std::optional<NameAndTypePair> ColumnsDescription::tryGetColumn(const GetColumns
                 return NameAndTypePair(ordinary_column_name, dynamic_subcolumn_name, it->type, dynamic_subcolumn_type);
         }
     }
+
     return {};
 }
 

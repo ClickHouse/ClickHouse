@@ -17,7 +17,7 @@ ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM nbagames WHERE NOT ignore(*)"
 ${CLICKHOUSE_CLIENT} -q "SELECT DISTINCT arrayJoin(JSONAllPathsWithTypes(data)) as path from nbagames order by path"
 ${CLICKHOUSE_CLIENT} -q "SELECT DISTINCT arrayJoin(JSONAllPathsWithTypes(arrayJoin(data.teams[]))) as path from nbagames order by path"
 
-${CLICKHOUSE_CLIENT} -q  \
+${CLICKHOUSE_CLIENT} --allow_experimental_analyzer=1 -q  \
     "SELECT teams.name.:String AS name, sum(teams.won.:Int64) AS wins FROM nbagames \
     ARRAY JOIN data.teams[] AS teams GROUP BY name \
     ORDER BY wins DESC LIMIT 5;"

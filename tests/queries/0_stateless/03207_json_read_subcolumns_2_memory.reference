@@ -1,5 +1,3 @@
-insert
-test
 ('a.b.c','UInt32')
 ('a.b.d','Array(Nullable(String))')
 ('a.b.d','DateTime64(9)')

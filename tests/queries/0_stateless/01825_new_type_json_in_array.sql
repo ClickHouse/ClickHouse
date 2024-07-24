@@ -26,6 +26,8 @@ SELECT id, arr.k1[].k2, arr.k1[].k3, arr.k1[].k4, arr.k5.k6 FROM t_json_array OR
 SELECT arrayJoin(arrayJoin(arr.k1[])) AS k1 FROM t_json_array ORDER BY toString(k1) FORMAT JSONEachRow;
 SELECT DISTINCT arrayJoin(JSONAllPathsWithTypes(arrayJoin(arrayJoin(arr.k1[])))) AS path FROM t_json_array order by path;
 
+SELECT arr.k1 FROM t_json_array GROUP BY arr.k1 ORDER BY toString(arr.k1);
+
 DROP TABLE t_json_array;
 
 SELECT * FROM values('arr Array(JSON)', '[\'{"x" : 1}\']') FORMAT JSONEachRow;

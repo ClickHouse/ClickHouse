@@ -661,6 +661,7 @@ void ColumnObject::serializePathAndValueIntoArena(DB::Arena & arena, const char 
 
 const char * ColumnObject::deserializeAndInsertFromArena(const char * pos)
 {
+    size_t current_size = size();
     /// Deserialize paths and values and insert them into typed paths, dynamic paths or shared data.
     /// Serialized paths could be unsorted, so we will have to sort all paths that will be inserted into shared data.
     std::vector<std::pair<StringRef, StringRef>> paths_and_values_for_shared_data;
@@ -718,6 +719,21 @@ const char * ColumnObject::deserializeAndInsertFromArena(const char * pos)
     }
 
     getSharedDataOffsets().push_back(shared_data_paths->size());
+
+    /// Insert default value in all remaining typed and dynamic paths.
+
+    for (auto & [_, column] : typed_paths)
+    {
+        if (column->size() == current_size)
+            column->insertDefault();
+    }
+
+    for (auto & [_, column] : dynamic_paths_ptrs)
+    {
+        if (column->size() == current_size)
+            column->insertDefault();
+    }
+
     return pos;
 }
 
