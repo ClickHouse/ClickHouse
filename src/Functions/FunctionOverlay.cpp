@@ -218,6 +218,26 @@ public:
 
 
 private:
+    /// input offset is 1-based, maybe negative
+    /// output result is 0-based valid offset, within [0, input_size]
+    static size_t getValidOffset(Int64 offset, size_t input_size)
+    {
+        if (offset > 0)
+        {
+            if (static_cast<size_t>(offset) > input_size + 1) [[unlikely]]
+                return input_size;
+            else
+                return offset - 1;
+        }
+        else
+        {
+            if (input_size < -static_cast<size_t>(offset)) [[unlikely]]
+                return 0;
+            else
+                return input_size + offset;
+        }
+    }
+
     template <bool three_args, bool offset_is_const, bool length_is_const>
     void constantConstant(
         size_t rows,
@@ -237,13 +257,10 @@ private:
             return;
         }
 
-        Int64 offset = 0; // start from 1, maybe negative
+        size_t input_size = input.size;
         size_t valid_offset = 0; // start from 0, not negative
         if constexpr (offset_is_const)
-        {
-            offset = const_offset;
-            valid_offset = offset > 0 ? (offset - 1) : (-offset);
-        }
+            valid_offset = getValidOffset(const_offset, input_size);
 
         size_t replace_size = replace.size;
         Int64 length = 0; // maybe negative
@@ -258,14 +275,14 @@ private:
             valid_length = replace_size;
         }
 
+        Int64 offset = 0; // start from 1, maybe negative
         size_t res_offset = 0;
-        size_t input_size = input.size;
         for (size_t i = 0; i < rows; ++i)
         {
             if constexpr (!offset_is_const)
             {
                 offset = column_offset->getInt(i);
-                valid_offset = offset > 0 ? (offset - 1) : (-offset);
+                valid_offset = getValidOffset(offset, input_size);
             }
 
             if constexpr (!three_args && !length_is_const)
@@ -274,7 +291,7 @@ private:
                 valid_length = length >= 0 ? length : replace_size;
             }
 
-            size_t prefix_size = valid_offset > input_size ? input_size : valid_offset;
+            size_t prefix_size = valid_offset;
             size_t suffix_size = prefix_size + valid_length > input_size ? 0 : input_size - prefix_size - valid_length;
             size_t new_res_size = res_data.size() + prefix_size + replace_size + suffix_size + 1; /// +1 for zero terminator
             res_data.resize(new_res_size);
@@ -321,14 +338,6 @@ private:
             return;
         }
 
-        Int64 offset = 0; // start from 1, maybe negative
-        size_t valid_offset = 0; // start from 0, not negative
-        if constexpr (offset_is_const)
-        {
-            offset = const_offset;
-            valid_offset = offset > 0 ? (offset - 1) : (-offset);
-        }
-
         size_t replace_size = replace.size;
         Int64 length = 0; // maybe negative
         size_t valid_length = 0; // not negative
@@ -343,16 +352,22 @@ private:
         }
 
         size_t rows = input_offsets.size();
+        Int64 offset = 0; // start from 1, maybe negative
+        size_t valid_offset = 0; // start from 0, not negative
         size_t res_offset = 0;
         for (size_t i = 0; i < rows; ++i)
         {
             size_t input_offset = input_offsets[i - 1];
             size_t input_size = input_offsets[i] - input_offsets[i - 1] - 1;
 
-            if constexpr (!offset_is_const)
+            if constexpr (offset_is_const)
+            {
+                valid_offset = getValidOffset(const_offset, input_size);
+            }
+            else
             {
                 offset = column_offset->getInt(i);
-                valid_offset = offset > 0 ? (offset - 1) : (-offset);
+                valid_offset = getValidOffset(offset, input_size);
             }
 
             if constexpr (!three_args && !length_is_const)
@@ -361,7 +376,7 @@ private:
                 valid_length = length >= 0 ? length : replace_size;
             }
 
-            size_t prefix_size = valid_offset > input_size ? input_size : valid_offset;
+            size_t prefix_size = valid_offset;
             size_t suffix_size = prefix_size + valid_length > input_size ? 0 : input_size - prefix_size - valid_length;
             size_t new_res_size = res_data.size() + prefix_size + replace_size + suffix_size + 1; /// +1 for zero terminator
             res_data.resize(new_res_size);
@@ -409,13 +424,10 @@ private:
             return;
         }
 
-        Int64 offset = 0; // start from 1, maybe negative
+        size_t input_size = input.size;
         size_t valid_offset = 0; // start from 0, not negative
         if constexpr (offset_is_const)
-        {
-            offset = const_offset;
-            valid_offset = offset > 0 ? (offset - 1) : (-offset);
-        }
+            valid_offset = getValidOffset(const_offset, input_size);
 
         Int64 length = 0; // maybe negative
         size_t valid_length = 0; // not negative
@@ -426,7 +438,7 @@ private:
         }
 
         size_t rows = replace_offsets.size();
-        size_t input_size = input.size;
+        Int64 offset = 0; // start from 1, maybe negative
         size_t res_offset = 0;
         for (size_t i = 0; i < rows; ++i)
         {
@@ -436,12 +448,11 @@ private:
             if constexpr (!offset_is_const)
             {
                 offset = column_offset->getInt(i);
-                valid_offset = offset > 0 ? (offset - 1) : (-offset);
+                valid_offset = getValidOffset(offset, input_size);
             }
 
             if constexpr (three_args)
             {
-                // length = replace_size;
                 valid_length = replace_size;
             }
             else if constexpr (!length_is_const)
@@ -450,7 +461,7 @@ private:
                 valid_length = length >= 0 ? length : replace_size;
             }
 
-            size_t prefix_size = valid_offset > input_size ? input_size : valid_offset;
+            size_t prefix_size = valid_offset;
             size_t suffix_size = prefix_size + valid_length > input_size ? 0 : input_size - prefix_size - valid_length;
             size_t new_res_size = res_data.size() + prefix_size + replace_size + suffix_size + 1; /// +1 for zero terminator
             res_data.resize(new_res_size);
@@ -507,15 +518,6 @@ private:
             return;
         }
 
-
-        Int64 offset = 0; // start from 1, maybe negative
-        size_t valid_offset = 0; // start from 0, not negative
-        if constexpr (offset_is_const)
-        {
-            offset = const_offset;
-            valid_offset = offset > 0 ? (offset - 1) : (-offset);
-        }
-
         Int64 length = 0; // maybe negative
         size_t valid_length = 0; // not negative
         if constexpr (!three_args && length_is_const)
@@ -525,6 +527,8 @@ private:
         }
 
         size_t rows = input_offsets.size();
+        Int64 offset = 0; // start from 1, maybe negative
+        size_t valid_offset = 0; // start from 0, not negative
         size_t res_offset = 0;
         for (size_t i = 0; i < rows; ++i)
         {
@@ -533,15 +537,18 @@ private:
             size_t replace_offset = replace_offsets[i - 1];
             size_t replace_size = replace_offsets[i] - replace_offsets[i - 1] - 1;
 
-            if constexpr (!offset_is_const)
+            if constexpr (offset_is_const)
+            {
+                valid_offset = getValidOffset(const_offset, input_size);
+            }
+            else
             {
                 offset = column_offset->getInt(i);
-                valid_offset = offset > 0 ? (offset - 1) : (-offset);
+                valid_offset = getValidOffset(offset, input_size);
             }
 
             if constexpr (three_args)
             {
-                // length = replace_size;
                 valid_length = replace_size;
             }
             else if constexpr (!length_is_const)
@@ -550,7 +557,7 @@ private:
                 valid_length = length >= 0 ? length : replace_size;
             }
 
-            size_t prefix_size = valid_offset > input_size ? input_size : valid_offset;
+            size_t prefix_size = valid_offset;
             size_t suffix_size = prefix_size + valid_length > input_size ? 0 : input_size - prefix_size - valid_length;
             size_t new_res_size = res_data.size() + prefix_size + replace_size + suffix_size + 1; /// +1 for zero terminator
             res_data.resize(new_res_size);
