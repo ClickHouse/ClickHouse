@@ -940,10 +940,11 @@ bool RemoteQueryExecutor::isConnectionAlive() const
         return false;
     }
 
+    Scalars empty_scalars;
     // Check the status of each connection in the MultiplexedConnections
     try
     {
-        connections->sendScalarsData({});  // Sending empty data to check connection health
+        connections->sendScalarsData(empty_scalars);  // Sending empty data to check connection health
         connections->receivePacket(); // Expecting some form of acknowledgment
     }
     catch (const Exception &)
