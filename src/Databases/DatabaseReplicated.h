@@ -149,6 +149,7 @@ private:
     std::atomic_bool is_recovering = false;
     std::atomic_bool ddl_worker_initialized = false;
     std::unique_ptr<DatabaseReplicatedDDLWorker> ddl_worker;
+    std::mutex ddl_worker_mutex;
     UInt32 max_log_ptr_at_creation = 0;
 
     /// Usually operation with metadata are single-threaded because of the way replication works,

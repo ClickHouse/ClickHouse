@@ -642,7 +642,7 @@ LoadTaskPtr DatabaseReplicated::startupDatabaseAsync(AsyncLoader & async_loader,
                 return;
 
             {
-                std::lock_guard lock{mutex};
+                std::lock_guard lock{ddl_worker_mutex};
                 ddl_worker = std::make_unique<DatabaseReplicatedDDLWorker>(this, getContext());
             }
             ddl_worker->startup();
