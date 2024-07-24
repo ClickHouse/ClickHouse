@@ -96,6 +96,12 @@ def parse_args(parser: argparse.ArgumentParser) -> argparse.Namespace:
         help="Action that configures ci run. Calculates digests, checks job to be executed, generates json output",
     )
     parser.add_argument(
+        "--workflow",
+        default="",
+        type=str,
+        help="Workflow Name, to be provided with --configure for workflow-specific CI runs",
+    )
+    parser.add_argument(
         "--update-gh-statuses",
         action="store_true",
         help="Action that recreate success GH statuses for jobs that finished successfully in past and will be "
@@ -287,7 +293,10 @@ def _pre_action(s3, job_name, batch, indata, pr_info):
     # for release/master branches reports must be from the same branch
     report_prefix = ""
     if pr_info.is_master or pr_info.is_release:
-        report_prefix = normalize_string(pr_info.head_ref)
+        # do not set report prefix for scheduled or dispatched wf (in case it started from feature branch while
+        #   testing), otherwise reports won't be found
+        if not (pr_info.is_scheduled or pr_info.is_dispatched):
+            report_prefix = normalize_string(pr_info.head_ref)
     print(
         f"Use report prefix [{report_prefix}], pr_num [{pr_info.number}], head_ref [{pr_info.head_ref}]"
     )
@@ -520,6 +529,7 @@ def _configure_jobs(
     pr_info: PRInfo,
     ci_settings: CiSettings,
     skip_jobs: bool,
+    workflow_name: str = "",
     dry_run: bool = False,
 ) -> CiCache:
     """
@@ -537,18 +547,27 @@ def _configure_jobs(
             is_docs_only=pr_info.has_changes_in_documentation_only(),
             is_master=pr_info.is_master,
             is_pr=pr_info.is_pr,
+            workflow_name=workflow_name,
         )
     else:
         job_configs = {}
 
-    # filter jobs in accordance with ci settings
-    job_configs = ci_settings.apply(
-        job_configs,
-        pr_info.is_release,
-        is_pr=pr_info.is_pr,
-        is_mq=pr_info.is_merge_queue,
-        labels=pr_info.labels,
-    )
+    if not workflow_name:
+        # filter jobs in accordance with ci settings
+        job_configs = ci_settings.apply(
+            job_configs,
+            pr_info.is_release,
+            is_pr=pr_info.is_pr,
+            is_mq=pr_info.is_merge_queue,
+            labels=pr_info.labels,
+        )
+
+    # add all job batches to job's to_do batches
+    for _job, job_config in job_configs.items():
+        batches = []
+        for batch in range(job_config.num_batches):
+            batches.append(batch)
+        job_config.batches = batches
 
     # check jobs in ci cache
     ci_cache = CiCache.calc_digests_and_create(
@@ -1102,6 +1121,7 @@ def main() -> int:
             pr_info,
             ci_settings,
             args.skip_jobs,
+            args.workflow,
         )
 
         ci_cache.print_status()
@@ -1111,7 +1131,7 @@ def main() -> int:
 
         if IS_CI and not pr_info.is_merge_queue:
 
-            if pr_info.is_release:
+            if pr_info.is_release and pr_info.is_push_event:
                 print("Release/master: CI Cache add pending records for all todo jobs")
                 ci_cache.push_pending_all(pr_info.is_release)
 
