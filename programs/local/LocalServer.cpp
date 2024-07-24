@@ -743,7 +743,7 @@ void LocalServer::processConfig()
         DatabasePtr database = createClickHouseLocalDatabaseOverlay(default_database, global_context);
         if (UUID uuid = database->getUUID(); uuid != UUIDHelpers::Nil)
             DatabaseCatalog::instance().addUUIDMapping(uuid);
-        DatabaseCatalog::instance().attachDatabase(default_database, std::move(database));
+        DatabaseCatalog::instance().attachDatabase(default_database, database);
     }
     global_context->setCurrentDatabase(default_database);
 
