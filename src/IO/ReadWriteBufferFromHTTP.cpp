@@ -132,6 +132,14 @@ std::optional<size_t> ReadWriteBufferFromHTTP::tryGetFileSize()
         {
             return std::nullopt;
         }
+        catch (const NetException &)
+        {
+            return std::nullopt;
+        }
+        catch (const Poco::Net::NetException &)
+        {
+            return std::nullopt;
+        }
     }
 
     return file_info->file_size;
