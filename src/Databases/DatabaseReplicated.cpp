@@ -559,8 +559,11 @@ void DatabaseReplicated::createEmptyLogEntry(const ZooKeeperPtr & current_zookee
 
 bool DatabaseReplicated::waitForReplicaToProcessAllEntries(UInt64 timeout_ms)
 {
-    if (!ddl_worker_initialized || !ddl_worker || is_probably_dropped)
-        return false;
+    {
+        std::lock_guard lock{ddl_worker_mutex};
+        if (!ddl_worker || is_probably_dropped)
+            return false;
+    }
     return ddl_worker->waitForReplicaToProcessAllEntries(timeout_ms);
 }
 
@@ -686,8 +689,11 @@ bool DatabaseReplicated::checkDigestValid(const ContextPtr & local_context, bool
     LOG_TEST(log, "Current in-memory metadata digest: {}", tables_metadata_digest);
 
     /// Database is probably being dropped
-    if (!local_context->getZooKeeperMetadataTransaction() && (!ddl_worker_initialized || !ddl_worker || !ddl_worker->isCurrentlyActive()))
-        return true;
+    {
+        std::lock_guard lock{ddl_worker_mutex};
+        if (!local_context->getZooKeeperMetadataTransaction() && (!ddl_worker || !ddl_worker->isCurrentlyActive()))
+            return true;
+    }
 
     UInt64 local_digest = 0;
     {
@@ -1414,7 +1420,8 @@ void DatabaseReplicated::renameDatabase(ContextPtr query_context, const String &
 
 void DatabaseReplicated::stopReplication()
 {
-    if (ddl_worker_initialized && ddl_worker)
+    std::lock_guard lock{ddl_worker_mutex};
+    if (ddl_worker)
         ddl_worker->shutdown();
 }
 
