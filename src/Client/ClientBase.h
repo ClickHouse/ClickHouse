@@ -2,6 +2,7 @@
 
 
 #include <Client/Suggest.h>
+#include <Client/QueryFuzzer.h>
 #include <Common/DNSResolver.h>
 #include <Common/InterruptListener.h>
 #include <Common/ProgressIndication.h>
@@ -9,9 +10,13 @@
 #include <Common/Stopwatch.h>
 #include <Core/ExternalTable.h>
 #include <Core/Settings.h>
+#include <Poco/ConsoleChannel.h>
+#include <Poco/SimpleFileChannel.h>
+#include <Poco/SplitterChannel.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Poco/Util/Application.h>
+
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageFile.h>

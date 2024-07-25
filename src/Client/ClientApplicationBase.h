@@ -5,7 +5,6 @@
 #include <Client/ClientBase.h>
 #include <Client/Suggest.h>
 #include <Common/NamePrompter.h>
-#include <Common/QueryFuzzer.h>
 #include <Poco/ConsoleChannel.h>
 #include <Poco/SimpleFileChannel.h>
 #include <Poco/SplitterChannel.h>
