@@ -821,7 +821,10 @@ class SettingsRandomizer:
                 get_localzone(),
             ]
         ),
-        "prefer_warmed_unmerged_parts_seconds": lambda: random.randint(0, 10),
+        # This setting affect part names and their content which can be read from tables in tests.
+        # We have a lot of tests which relies on part names, so it's very unsafe to enable randomization
+        # of this setting
+        # "prefer_warmed_unmerged_parts_seconds": lambda: random.randint(0, 10),
         "use_page_cache_for_disks_without_file_cache": lambda: random.random() < 0.7,
         "page_cache_inject_eviction": lambda: random.random() < 0.5,
         "merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability": lambda: round(
@@ -2168,7 +2171,10 @@ def run_tests_array(all_tests_with_params: Tuple[List[str], int, TestSuite, bool
 
     while True:
         if all_tests:
-            case = all_tests.pop(0)
+            try:
+                case = all_tests.pop(0)
+            except IndexError:
+                break
         else:
             break
 
@@ -2474,18 +2480,16 @@ def do_run_tests(jobs, test_suite: TestSuite):
         # of failures will be nearly the same for all tests from the group.
         random.shuffle(test_suite.parallel_tests)
 
-        batch_size = max(1, (len(test_suite.parallel_tests) // jobs) + 1)
-        parallel_tests_array = []
-        for job in range(jobs):
-            range_ = job * batch_size, job * batch_size + batch_size
-            batch = test_suite.parallel_tests[range_[0] : range_[1]]
-            parallel_tests_array.append((batch, batch_size, test_suite, True))
+        batch_size = len(test_suite.parallel_tests) // jobs
+        manager = multiprocessing.Manager()
+        parallel_tests = manager.list()
+        parallel_tests.extend(test_suite.parallel_tests)
 
         processes = []
-
-        for test_batch in parallel_tests_array:
+        for _ in range(jobs):
             process = multiprocessing.Process(
-                target=run_tests_process, args=(test_batch,)
+                target=run_tests_process,
+                args=((parallel_tests, batch_size, test_suite, True),),
             )
             processes.append(process)
             process.start()

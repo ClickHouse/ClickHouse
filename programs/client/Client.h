@@ -9,10 +9,7 @@ namespace DB
 class Client : public ClientBase
 {
 public:
-    Client()
-    {
-        fuzzer = QueryFuzzer(randomSeed(), &std::cout, &std::cerr);
-    }
+    Client() = default;
 
     void initialize(Poco::Util::Application & self) override;
 
