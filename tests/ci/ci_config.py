@@ -37,10 +37,21 @@ class CI:
     from ci_utils import GHActions as GHActions
     from ci_definitions import Labels as Labels
     from ci_definitions import TRUSTED_CONTRIBUTORS as TRUSTED_CONTRIBUTORS
+    from ci_definitions import WorkFlowNames as WorkFlowNames
     from ci_utils import CATEGORY_TO_LABEL as CATEGORY_TO_LABEL
 
     # Jobs that run for doc related updates
     _DOCS_CHECK_JOBS = [JobNames.DOCS_CHECK, JobNames.STYLE_CHECK]
+
+    WORKFLOW_CONFIGS = {
+        WorkFlowNames.JEPSEN: LabelConfig(
+            run_jobs=[
+                BuildNames.BINARY_RELEASE,
+                JobNames.JEPSEN_KEEPER,
+                JobNames.JEPSEN_SERVER,
+            ]
+        )
+    }  # type: Dict[str, LabelConfig]
 
     TAG_CONFIGS = {
         Tags.DO_NOT_TEST_LABEL: LabelConfig(run_jobs=[JobNames.STYLE_CHECK]),
@@ -68,7 +79,7 @@ class CI:
                 JobNames.STATEFUL_TEST_ASAN,
             ]
         ),
-    }
+    }  # type: Dict[str, LabelConfig]
 
     JOB_CONFIGS: Dict[str, JobConfig] = {
         BuildNames.PACKAGE_RELEASE: CommonJobConfigs.BUILD.with_properties(
@@ -599,16 +610,25 @@ class CI:
 
     @classmethod
     def get_workflow_jobs_with_configs(
-        cls, is_mq: bool, is_docs_only: bool, is_master: bool, is_pr: bool
+        cls,
+        is_mq: bool,
+        is_docs_only: bool,
+        is_master: bool,
+        is_pr: bool,
+        workflow_name: str,
     ) -> Dict[str, JobConfig]:
         """
         get a list of all jobs for a workflow with configs
         """
-        jobs = []
         if is_mq:
             jobs = MQ_JOBS
         elif is_docs_only:
             jobs = cls._DOCS_CHECK_JOBS
+        elif workflow_name:
+            assert (
+                workflow_name in cls.WORKFLOW_CONFIGS
+            ), "Workflow name if provided must be configured in WORKFLOW_CONFIGS"
+            jobs = list(cls.WORKFLOW_CONFIGS[workflow_name].run_jobs)
         else:
             # add all jobs
             jobs = list(cls.JOB_CONFIGS)
