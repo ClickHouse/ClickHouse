@@ -1,5 +1,7 @@
 -- Tags: long, no-tsan, no-msan, no-asan, no-ubsan, no-debug, no-object-storage
 
+SET max_rows_to_read = '51M';
+
 DROP TABLE IF EXISTS t_2354_dist_with_external_aggr;
 
 create table t_2354_dist_with_external_aggr(a UInt64, b String, c FixedString(100)) engine = MergeTree order by tuple() SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';

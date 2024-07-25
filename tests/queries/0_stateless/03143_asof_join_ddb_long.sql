@@ -35,6 +35,7 @@ AS
         3 AS key
     FROM numbers(0, 4000000);
 
+SET max_rows_to_read = 0;
 
 SELECT SUM(value), COUNT(*)
 FROM skewed_probe
