@@ -287,6 +287,15 @@ TEST(AccessRights, Union)
     rhs.grantWildcardWithGrantOption(AccessType::SELECT, "db1", "tb1", "col");
     lhs.makeUnion(rhs);
     ASSERT_EQ(lhs.toString(), "GRANT SELECT(col*) ON db1.tb1 WITH GRANT OPTION, GRANT SELECT(test) ON db1.tb1");
+
+    lhs = {};
+    rhs = {};
+    lhs.grant(AccessType::SELECT);
+    lhs.revoke(AccessType::SELECT, "test");
+    rhs.grant(AccessType::SELECT, "test", "table");
+    lhs.makeUnion(rhs);
+    ASSERT_EQ(lhs.toString(), "GRANT SELECT ON *.*, REVOKE SELECT ON test.*, GRANT SELECT ON test.`table`");
+
 }
 
 

@@ -523,7 +523,11 @@ public:
 
     void makeUnion(const Node & other)
     {
-        makeUnionRec(other);
+        Node result;
+        Node rhs = other;
+        makeUnionRec(result, rhs);
+        children = std::move(result.children);
+        flags |= other.flags;
         optimizeTree();
     }
 
@@ -999,19 +1003,30 @@ private:
         min_flags_with_children &= min_among_children | add_flags;
     }
 
-    void makeUnionRec(const Node & rhs)
+    void makeUnionRec(Node & result, Node & rhs)
     {
         if (rhs.children)
         {
-            for (const auto & rhs_child : *rhs.children)
-                getLeaf(rhs_child.node_name, rhs_child.level, !rhs_child.isLeaf()).makeUnionRec(rhs_child);
+            for (auto & rhs_child : *rhs.children)
+            {
+                auto & result_child = result.getLeaf(rhs_child.node_name, rhs_child.level, !rhs_child.isLeaf());
+                auto & lhs_child = getLeaf(rhs_child.node_name, rhs_child.level, !rhs_child.isLeaf());
+                lhs_child.makeUnionRec(result_child, rhs_child);
+            }
         }
 
-        flags |= rhs.flags;
-        wildcard_grant |= rhs.wildcard_grant;
-
         if (children)
-            addGrantsRec(flags);
+        {
+            for (auto & lhs_child : *children)
+            {
+                auto & result_child = result.getLeaf(lhs_child.node_name, lhs_child.level, !lhs_child.isLeaf());
+                auto & rhs_child = rhs.getLeaf(lhs_child.node_name, lhs_child.level, !lhs_child.isLeaf());
+                rhs_child.makeUnionRec(result_child, lhs_child);
+            }
+        }
+
+        result.flags = flags | rhs.flags;
+        result.wildcard_grant = wildcard_grant || rhs.wildcard_grant;
     }
 
     void makeIntersectionRec(Node & result, Node & rhs)
@@ -1052,6 +1067,9 @@ private:
         }
 
         calculateMinMaxFlags();
+
+        if (!isLeaf())
+            return;
 
         auto new_flags = function(flags, min_flags_with_children, max_flags_with_children, level, grant_option);
 
