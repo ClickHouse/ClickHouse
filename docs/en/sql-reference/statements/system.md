@@ -28,11 +28,14 @@ SYSTEM RELOAD DICTIONARIES [ON CLUSTER cluster_name]
 
 Completely reloads a dictionary `dictionary_name`, regardless of the state of the dictionary (LOADED / NOT_LOADED / FAILED).
 Always returns `Ok.` regardless of the result of updating the dictionary.
-The status of the dictionary can be checked by querying the `system.dictionaries` table.
 
 ``` sql
 SYSTEM RELOAD DICTIONARY [ON CLUSTER cluster_name] dictionary_name
+```
 
+The status of the dictionary can be checked by querying the `system.dictionaries` table.
+
+``` sql
 SELECT name, status FROM system.dictionaries;
 ```
 
