@@ -1210,7 +1210,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
             dropped_dictionaries += table->isDictionary();
             table->flushAndShutdown();
 
-            if (table->getName() == "MaterializedView" || table->getName() == "WindowView")
+            if (table->getName() == "MaterializedView")
             {
                 /// We have to drop MV inner table, so MV will not try to do it implicitly breaking some invariants.
                 /// Also we have to commit metadata transaction, because it's not committed by default for inner tables of MVs.
@@ -1549,7 +1549,7 @@ void DatabaseReplicated::dropTable(ContextPtr local_context, const String & tabl
     }
 
     auto table = tryGetTable(table_name, getContext());
-    if (table->getName() == "MaterializedView" || table->getName() == "WindowView")
+    if (table->getName() == "MaterializedView")
     {
         /// Avoid recursive locking of metadata_mutex
         table->dropInnerTableIfAny(sync, local_context);

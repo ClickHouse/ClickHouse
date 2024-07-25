@@ -70,10 +70,6 @@ QueryPipelineBuilder InterpreterWatchQuery::buildQueryPipeline()
         && !getContext()->getSettingsRef().allow_experimental_live_view)
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                         "Experimental LIVE VIEW feature is not enabled (the setting 'allow_experimental_live_view')");
-    else if (storage_name == "WindowView"
-        && !getContext()->getSettingsRef().allow_experimental_window_view)
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                        "Experimental WINDOW VIEW feature is not enabled (the setting 'allow_experimental_window_view')");
 
     /// List of columns to read to execute the query.
     Names required_columns = storage->getInMemoryMetadataPtr()->getColumns().getNamesOfPhysical();

@@ -1696,7 +1696,6 @@ ORDER BY num_rewrites DESC
 LIMIT 10
 
 ┌─path──────────────────────────────────────────────────┬─num_rewrites─┐
-│ src/Storages/WindowView/StorageWindowView.cpp         │            8 │
 │ src/Functions/array/arrayIndex.h                      │            7 │
 │ src/Dictionaries/CacheDictionary.cpp                  │            6 │
 │ src/Dictionaries/RangeHashedDictionary.cpp            │            5 │
@@ -1708,7 +1707,7 @@ LIMIT 10
 │ src/Functions/polygonsSymDifference.cpp               │            4 │
 └───────────────────────────────────────────────────────┴──────────────┘
 
-10 rows in set. Elapsed: 0.299 sec. Processed 798.15 thousand rows, 31.52 MB (2.67 million rows/s., 105.29 MB/s.)
+9 rows in set. Elapsed: 0.298 sec. Processed 798.15 thousand rows, 31.52 MB (2.67 million rows/s., 105.29 MB/s.)
 ```
 
 ## What weekday does the code have the highest chance to stay in the repository?

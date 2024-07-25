@@ -13,7 +13,6 @@
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Storages/LiveView/StorageLiveView.h>
-#include <Storages/WindowView/StorageWindowView.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeSink.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageValues.h>
@@ -150,20 +149,6 @@ public:
 
 private:
     StorageLiveView & live_view;
-    StoragePtr storage_holder;
-    ContextPtr context;
-};
-
-/// Insert into WindowView.
-class PushingToWindowViewSink final : public SinkToStorage
-{
-public:
-    PushingToWindowViewSink(const Block & header, StorageWindowView & window_view_, StoragePtr storage_holder_, ContextPtr context_);
-    String getName() const override { return "PushingToWindowViewSink"; }
-    void consume(Chunk & chunk) override;
-
-private:
-    StorageWindowView & window_view;
     StoragePtr storage_holder;
     ContextPtr context;
 };
@@ -378,15 +363,6 @@ std::optional<Chain> generateViewChain(
             /* no_destination= */ true,
             thread_status_holder, running_group, view_counter_ms, async_insert, storage_header);
     }
-    else if (auto * window_view = dynamic_cast<StorageWindowView *>(view.get()))
-    {
-        runtime_stats->type = QueryViewsLogElement::ViewType::WINDOW;
-        query = window_view->getMergeableQuery();
-        out = buildPushingToViewsChain(
-            view, view_metadata_snapshot, insert_context, ASTPtr(),
-            /* no_destination= */ true,
-            thread_status_holder, running_group, view_counter_ms, async_insert);
-    }
     else
         out = buildPushingToViewsChain(
             view, view_metadata_snapshot, insert_context, ASTPtr(),
@@ -545,14 +521,6 @@ Chain buildPushingToViewsChain(
     if (auto * live_view = dynamic_cast<StorageLiveView *>(storage.get()))
     {
         auto sink = std::make_shared<PushingToLiveViewSink>(live_view_header, *live_view, storage, context);
-        sink->setRuntimeData(thread_status, elapsed_counter_ms);
-        result_chain.addSource(std::move(sink));
-
-        result_chain.addSource(std::make_shared<DeduplicationToken::DefineSourceWithChunkHashTransform>(result_chain.getInputHeader()));
-    }
-    else if (auto * window_view = dynamic_cast<StorageWindowView *>(storage.get()))
-    {
-        auto sink = std::make_shared<PushingToWindowViewSink>(window_view->getInputHeader(), *window_view, storage, context);
         sink->setRuntimeData(thread_status, elapsed_counter_ms);
         result_chain.addSource(std::move(sink));
 
@@ -796,30 +764,6 @@ void PushingToLiveViewSink::consume(Chunk & chunk)
 {
     Progress local_progress(chunk.getNumRows(), chunk.bytes(), 0);
     live_view.writeBlock(live_view, getHeader().cloneWithColumns(chunk.getColumns()), std::move(chunk.getChunkInfos()), context);
-
-    if (auto process = context->getProcessListElement())
-        process->updateProgressIn(local_progress);
-
-    ProfileEvents::increment(ProfileEvents::SelectedRows, local_progress.read_rows);
-    ProfileEvents::increment(ProfileEvents::SelectedBytes, local_progress.read_bytes);
-}
-
-
-PushingToWindowViewSink::PushingToWindowViewSink(
-    const Block & header, StorageWindowView & window_view_,
-    StoragePtr storage_holder_, ContextPtr context_)
-    : SinkToStorage(header)
-    , window_view(window_view_)
-    , storage_holder(std::move(storage_holder_))
-    , context(std::move(context_))
-{
-}
-
-void PushingToWindowViewSink::consume(Chunk & chunk)
-{
-    Progress local_progress(chunk.getNumRows(), chunk.bytes(), 0);
-    StorageWindowView::writeIntoWindowView(
-        window_view, getHeader().cloneWithColumns(chunk.getColumns()), std::move(chunk.getChunkInfos()), context);
 
     if (auto process = context->getProcessListElement())
         process->updateProgressIn(local_progress);

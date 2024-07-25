@@ -30,8 +30,7 @@ ColumnsDescription QueryViewsLogElement::getColumnsDescription()
     auto view_type_datatype = std::make_shared<DataTypeEnum8>(DataTypeEnum8::Values{
         {"Default", static_cast<Int8>(ViewType::DEFAULT)},
         {"Materialized", static_cast<Int8>(ViewType::MATERIALIZED)},
-        {"Live", static_cast<Int8>(ViewType::LIVE)},
-        {"Window", static_cast<Int8>(ViewType::WINDOW)}});
+        {"Live", static_cast<Int8>(ViewType::LIVE)}});
 
     return ColumnsDescription
     {

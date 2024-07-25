@@ -335,8 +335,6 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
             what = "MATERIALIZED VIEW";
         else if (is_live_view)
             what = "LIVE VIEW";
-        else if (is_window_view)
-            what = "WINDOW VIEW";
 
         settings.ostr << (settings.hilite ? hilite_keyword : "") << action << (settings.hilite ? hilite_none : "");
         settings.ostr << " ";
@@ -485,26 +483,6 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
 
     if (dictionary)
         dictionary->formatImpl(settings, state, frame);
-
-    if (is_watermark_strictly_ascending)
-    {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " WATERMARK STRICTLY_ASCENDING" << (settings.hilite ? hilite_none : "");
-    }
-    else if (is_watermark_ascending)
-    {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " WATERMARK ASCENDING" << (settings.hilite ? hilite_none : "");
-    }
-    else if (is_watermark_bounded)
-    {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " WATERMARK " << (settings.hilite ? hilite_none : "");
-        watermark_function->formatImpl(settings, state, frame);
-    }
-
-    if (allowed_lateness)
-    {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " ALLOWED_LATENESS " << (settings.hilite ? hilite_none : "");
-        lateness_function->formatImpl(settings, state, frame);
-    }
 
     if (is_populate)
         settings.ostr << (settings.hilite ? hilite_keyword : "") << " POPULATE" << (settings.hilite ? hilite_none : "");

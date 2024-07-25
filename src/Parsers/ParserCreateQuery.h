@@ -588,14 +588,6 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
-/// CREATE|ATTACH WINDOW VIEW [IF NOT EXISTS] [db.]name [TO [db.]name] [INNER ENGINE engine] [ENGINE engine] [WATERMARK strategy] [ALLOWED_LATENESS interval_function] [POPULATE] AS SELECT ...
-class ParserCreateWindowViewQuery : public IParserBase
-{
-protected:
-    const char * getName() const override { return "CREATE WINDOW VIEW query"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-};
-
 class ParserTableOverrideDeclaration : public IParserBase
 {
 public:

@@ -1037,7 +1037,6 @@ Welch's
 Werror
 Wether
 WikiStat
-WindowView
 Winkler
 WithCounter
 WithFastCounter

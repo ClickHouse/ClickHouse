@@ -102,10 +102,6 @@ StoragePtr StorageFactory::get(
         {
             name = "MaterializedView";
         }
-        else if (query.is_window_view)
-        {
-            name = "WindowView";
-        }
         else
         {
             if (!query.storage)
@@ -139,12 +135,6 @@ StoragePtr StorageFactory::get(
                 throw Exception(ErrorCodes::INCORRECT_QUERY,
                                 "Direct creation of tables with ENGINE LiveView "
                                 "is not supported, use CREATE LIVE VIEW statement");
-            }
-            else if (name == "WindowView")
-            {
-                throw Exception(ErrorCodes::INCORRECT_QUERY,
-                                "Direct creation of tables with ENGINE WindowView "
-                                "is not supported, use CREATE WINDOW VIEW statement");
             }
 
             auto it = storages.find(name);

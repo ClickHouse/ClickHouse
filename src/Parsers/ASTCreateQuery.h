@@ -96,7 +96,6 @@ public:
     bool is_ordinary_view{false};
     bool is_materialized_view{false};
     bool is_live_view{false};
-    bool is_window_view{false};
     bool is_populate{false};
     bool is_create_empty{false};    /// CREATE TABLE ... EMPTY AS SELECT ...
     bool replace_view{false}; /// CREATE OR REPLACE VIEW
@@ -105,7 +104,6 @@ public:
     ASTColumns * columns_list = nullptr;
     ASTStorage * storage = nullptr;
 
-    ASTPtr watermark_function;
     ASTPtr lateness_function;
     String as_database;
     String as_table;
@@ -122,11 +120,6 @@ public:
     ASTDictionary * dictionary = nullptr; /// dictionary definition (layout, primary key, etc.)
 
     ASTRefreshStrategy * refresh_strategy = nullptr; // For CREATE MATERIALIZED VIEW ... REFRESH ...
-
-    bool is_watermark_strictly_ascending{false}; /// STRICTLY ASCENDING WATERMARK STRATEGY FOR WINDOW VIEW
-    bool is_watermark_ascending{false}; /// ASCENDING WATERMARK STRATEGY FOR WINDOW VIEW
-    bool is_watermark_bounded{false}; /// BOUNDED OUT OF ORDERNESS WATERMARK STRATEGY FOR WINDOW VIEW
-    bool allowed_lateness{false}; /// ALLOWED LATENESS FOR WINDOW VIEW
 
     bool attach_short_syntax{false};
 
@@ -145,7 +138,7 @@ public:
         return removeOnCluster<ASTCreateQuery>(clone(), params.default_database);
     }
 
-    bool isView() const { return is_ordinary_view || is_materialized_view || is_live_view || is_window_view; }
+    bool isView() const { return is_ordinary_view || is_materialized_view || is_live_view; }
 
     bool isParameterizedView() const;
 

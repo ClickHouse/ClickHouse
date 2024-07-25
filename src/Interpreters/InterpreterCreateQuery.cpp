@@ -37,7 +37,6 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/StorageReplicatedMergeTree.h>
-#include <Storages/WindowView/StorageWindowView.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
@@ -966,7 +965,7 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
     if (create.as_table_function)
         return;
 
-    if (create.is_dictionary || create.is_ordinary_view || create.is_live_view || create.is_window_view)
+    if (create.is_dictionary || create.is_ordinary_view || create.is_live_view)
         return;
 
     if (create.temporary)
@@ -1047,9 +1046,6 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
 
         if (as_create.is_live_view)
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Cannot CREATE a table AS {}, it is a Live View", qualified_name);
-
-        if (as_create.is_window_view)
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "Cannot CREATE a table AS {}, it is a Window View", qualified_name);
 
         if (as_create.is_dictionary)
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Cannot CREATE a table AS {}, it is a Dictionary", qualified_name);
@@ -1815,17 +1811,11 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create)
     /// If the query is a CREATE SELECT, insert the data into the table.
     if (create.select && !create.attach && !create.is_create_empty
         && !create.is_ordinary_view && !create.is_live_view
-        && (!(create.is_materialized_view || create.is_window_view) || create.is_populate))
+        && (!create.is_materialized_view || create.is_populate))
     {
         auto insert = std::make_shared<ASTInsertQuery>();
         insert->table_id = {create.getDatabase(), create.getTable(), create.uuid};
-        if (create.is_window_view)
-        {
-            auto table = DatabaseCatalog::instance().getTable(insert->table_id, getContext());
-            insert->select = typeid_cast<StorageWindowView *>(table.get())->getSourceTableSelectQuery();
-        }
-        else
-            insert->select = create.select->clone();
+        insert->select = create.select->clone();
 
         return InterpreterInsertQuery(
             insert,
