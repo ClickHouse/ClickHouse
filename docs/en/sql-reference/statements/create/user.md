@@ -150,6 +150,9 @@ In ClickHouse Cloud, by default, passwords must meet the following complexity re
    CREATE USER user1 IDENTIFIED WITH plaintext_password by '1', bcrypt_password by '2', plaintext_password by '3''
    ```
 
+Note: `no_password` can not co-exist with other authentication methods for security reasons. Therefore, you can only specify
+`no_password` if it is the only authentication method in the query.
+
 ## User Host
 
 User host is a host from which a connection to ClickHouse server could be established. The host can be specified in the `HOST` query section in the following ways:

@@ -63,19 +63,28 @@ Allows the user with `john` account to grant his privileges to the user with `ja
 ALTER USER john GRANTEES jack;
 ```
 
-Adds new authentication methods to the user while keeping the existing ones
+Adds new authentication methods to the user while keeping the existing ones:
 
 ``` sql
-ALTER USER user ADD IDENTIFIED WITH plaintext_password by '1', bcrypt_password by '2', plaintext_password by '3'
+ALTER USER user1 ADD IDENTIFIED WITH plaintext_password by '1', bcrypt_password by '2', plaintext_password by '3'
 ```
 
-Reset authentication methods and adds the ones specified in the query (effect of leading IDENTIFIED without the ADD keyword)
+Note: `no_password` can not co-exist with other authentication methods for security reasons.
+Because of that, it is not possible to `ADD` a `no_password` authentication method. The below query will throw an error:
 
 ``` sql
-ALTER USER user IDENTIFIED WITH plaintext_password by '1', bcrypt_password by '2', plaintext_password by '3'
+ALTER USER user1 ADD IDENTIFIED WITH no_password
 ```
 
-Reset authentication methods and keep the most recent added one
+If you want to drop authentication methods for a user and rely on `no_password`, you must specify in the below replacing form.
+
+Reset authentication methods and adds the ones specified in the query (effect of leading IDENTIFIED without the ADD keyword):
+
 ``` sql
-ALTER USER user RESET AUTHENTICATION METHODS TO NEW
+ALTER USER user1 IDENTIFIED WITH plaintext_password by '1', bcrypt_password by '2', plaintext_password by '3'
+```
+
+Reset authentication methods and keep the most recent added one:
+``` sql
+ALTER USER user1 RESET AUTHENTICATION METHODS TO NEW
 ```
