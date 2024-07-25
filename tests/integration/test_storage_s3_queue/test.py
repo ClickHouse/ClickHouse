@@ -871,7 +871,7 @@ def test_max_set_age(started_cluster):
         node.query(f"SELECT uniq(_path) from {dst_table_name}")
     )
 
-    time.sleep(max_age + 5)
+    time.sleep(max_age + max_age / 2)
 
     expected_rows *= 2
     wait_for_condition(lambda: get_count() == expected_rows)
@@ -922,7 +922,7 @@ def test_max_set_age(started_cluster):
         )
     )
 
-    time.sleep(max_age + 1)
+    time.sleep(max_age + max_age / 2)
 
     assert failed_count + 2 <= get_object_storage_failures()
 
