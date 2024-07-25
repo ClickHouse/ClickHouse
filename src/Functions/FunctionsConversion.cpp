@@ -4086,9 +4086,30 @@ private:
 
         /// Create conversion wrapper for each variant.
         for (const auto & variant_type : variant_types)
-            variant_wrappers.push_back(prepareUnpackDictionaries(variant_type, to_type));
+        {
+            WrapperType wrapper;
+            if (cast_type == CastType::accurateOrNull)
+            {
+                /// With accurateOrNull cast type we should insert default values on variants that cannot be casted.
+                /// We can avoid try/catch here if we will implement check that 2 types can be casted, but it
+                /// requires quite a lot of work. By now let's simply use try/catch.
+                try
+                {
+                    wrapper = prepareUnpackDictionaries(variant_type, to_type);
+                }
+                catch (...)
+                {
+                    /// Leave wrapper empty and check it later.
+                }
+            }
+            else
+            {
+                wrapper = prepareUnpackDictionaries(variant_type, to_type);
+            }
+            variant_wrappers.push_back(wrapper);
+        }
 
-        return [variant_wrappers, variant_types, to_type]
+        return [variant_wrappers, variant_types, to_type, cast_type_ = this->cast_type]
                (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *, size_t input_rows_count) -> ColumnPtr
         {
             const auto & column_variant = assert_cast<const ColumnVariant &>(*arguments.front().column.get());
@@ -4101,7 +4122,30 @@ private:
                 auto variant_col = column_variant.getVariantPtrByGlobalDiscriminator(i);
                 ColumnsWithTypeAndName variant = {{variant_col, variant_types[i], "" }};
                 const auto & variant_wrapper = variant_wrappers[i];
-                casted_variant_columns.push_back(variant_wrapper(variant, result_type, nullptr, variant_col->size()));
+                ColumnPtr casted_variant;
+                /// Check if we have wrapper for this variant.
+                if (variant_wrapper)
+                {
+                    if (cast_type_ == CastType::accurateOrNull)
+                    {
+                        /// With accurateOrNull cast type wrapper should throw an exception
+                        /// only when the cast between types is not supported.
+                        /// In this case we will insert default values on rows with this variant.
+                        try
+                        {
+                            casted_variant = variant_wrapper(variant, result_type, nullptr, variant_col->size());
+                        }
+                        catch (...)
+                        {
+                            /// Do nothing.
+                        }
+                    }
+                    else
+                    {
+                        casted_variant = variant_wrapper(variant, result_type, nullptr, variant_col->size());
+                    }
+                }
+                casted_variant_columns.push_back(std::move(casted_variant));
             }
 
             /// Second, construct resulting column from casted variant columns according to discriminators.
@@ -4111,7 +4155,7 @@ private:
             for (size_t i = 0; i != input_rows_count; ++i)
             {
                 auto global_discr = column_variant.globalDiscriminatorByLocal(local_discriminators[i]);
-                if (global_discr == ColumnVariant::NULL_DISCRIMINATOR)
+                if (global_discr == ColumnVariant::NULL_DISCRIMINATOR || !casted_variant_columns[global_discr])
                     res->insertDefault();
                 else
                     res->insertFrom(*casted_variant_columns[global_discr], column_variant.offsetAt(i));
