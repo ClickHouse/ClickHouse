@@ -143,10 +143,6 @@ public:
 
     struct ScatteredBlock : private boost::noncopyable
     {
-    private:
-        Block block; // TODO: we don't need shared_ptr here since if any changes are made to block, they're supposed to be private
-
-    public:
         ScatteredBlock(const Block & block_) : block(block_), selector(createTrivialSelector(block.rows())) { }
 
         ScatteredBlock(const Block & block_, IColumn::Selector && selector_) : block(block_), selector(std::move(selector_)) { }
@@ -264,14 +260,15 @@ public:
         }
 
     private:
-        IColumn::Selector selector;
-
         IColumn::Selector createTrivialSelector(size_t size)
         {
             IColumn::Selector res(size);
             std::iota(res.begin(), res.end(), 0);
             return res;
         }
+
+        Block block;
+        IColumn::Selector selector;
     };
 
     using ScatteredBlocks = std::vector<ScatteredBlock>;

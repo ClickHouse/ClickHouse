@@ -66,9 +66,10 @@ Block concatenateBlocks(const HashJoin::ScatteredBlocks & blocks)
     return concatenateBlocks(inner_blocks);
 }
 
-Block materializeColumnsFromSampleBlock(const Block & block_, const Block & sample_block)
+Block materializeColumnsFromSampleBlock(const Block & block_, const Block & sample_block, const Names & right_key_names)
 {
     Block block = block_;
+
     for (const auto & sample_column : sample_block.getColumnsWithTypeAndName())
     {
         auto & column = block.getByName(sample_column.name);
@@ -85,6 +86,13 @@ Block materializeColumnsFromSampleBlock(const Block & block_, const Block & samp
         if (sample_column.column->isNullable())
             JoinCommon::convertColumnToNullable(column);
     }
+
+    for (const auto & column_name : right_key_names)
+    {
+        auto & column = block.getByName(column_name).column;
+        column = recursiveRemoveSparse(column->convertToFullColumnIfConst())->convertToFullColumnIfLowCardinality();
+    }
+
     return block;
 }
 }
@@ -200,7 +208,8 @@ ConcurrentHashJoin::~ConcurrentHashJoin()
 bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_limits)
 {
     /// We prematurely materialize columns here to avoid materializing columns multiple times on each thread.
-    Block right_block = materializeColumnsFromSampleBlock(right_block_, hash_joins[0]->data->savedBlockSample());
+    Block right_block = materializeColumnsFromSampleBlock(
+        right_block_, hash_joins[0]->data->savedBlockSample(), table_join->getAllNames(JoinTableSide::Right));
     auto dispatched_blocks = dispatchBlock(table_join->getOnlyClause().key_names_right, right_block);
 
     size_t blocks_left = 0;

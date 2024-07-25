@@ -502,7 +502,6 @@ bool HashJoin::addBlockToJoin(ScatteredBlock & source_block, bool check_limits)
     for (const auto & column_name : right_key_names)
     {
         const auto & column = source_block.getByName(column_name).column;
-        /// TODO: do it once for the original block before splitting
         all_key_columns[column_name] = recursiveRemoveSparse(column->convertToFullColumnIfConst())->convertToFullColumnIfLowCardinality();
     }
 
