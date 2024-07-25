@@ -195,7 +195,7 @@ bool SingleValueDataFixed<T>::isEqualTo(const IColumn & column, size_t index) co
 template <typename T>
 bool SingleValueDataFixed<T>::isEqualTo(const SingleValueDataFixed<T> & to) const
 {
-    return has() && to.value == value;
+    return has() && to.has() && to.value == value;
 }
 
 template <typename T>
@@ -905,7 +905,7 @@ template <typename T>
 bool SingleValueDataNumeric<T>::isEqualTo(const DB::SingleValueDataBase & to) const
 {
     auto const & other = assert_cast<const Self &>(to);
-    return memory.get().isEqualTo(other.memory.get());
+    return to.has() && memory.get().isEqualTo(other.memory.get());
 }
 
 template <typename T>
@@ -1291,7 +1291,7 @@ bool SingleValueDataGeneric::isEqualTo(const IColumn & column, size_t row_num) c
 bool SingleValueDataGeneric::isEqualTo(const DB::SingleValueDataBase & other) const
 {
     auto const & to = assert_cast<const Self &>(other);
-    return has() && to.value == value;
+    return has() && to.has() && to.value == value;
 }
 
 void SingleValueDataGeneric::set(const IColumn & column, size_t row_num, Arena *)
