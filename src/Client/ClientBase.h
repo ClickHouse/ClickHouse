@@ -6,7 +6,6 @@
 #include <Common/ProgressIndication.h>
 #include <Common/InterruptListener.h>
 #include <Common/ShellCommand.h>
-#include <Common/QueryFuzzer.h>
 #include <Common/Stopwatch.h>
 #include <Common/DNSResolver.h>
 #include <Core/ExternalTable.h>
@@ -17,6 +16,7 @@
 #include <Poco/SplitterChannel.h>
 #include <Interpreters/Context.h>
 #include <Client/Suggest.h>
+#include <Client/QueryFuzzer.h>
 #include <boost/program_options.hpp>
 #include <Storages/StorageFile.h>
 #include <Storages/SelectQueryInfo.h>

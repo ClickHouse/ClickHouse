@@ -15,6 +15,7 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
+    extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
 }
 
 class FunctionChar : public IFunction
@@ -36,7 +37,7 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.empty())
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+            throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION,
                             "Number of arguments for function {} can't be {}, should be at least 1",
                             getName(), arguments.size());
 

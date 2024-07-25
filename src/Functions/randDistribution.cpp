@@ -24,6 +24,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 namespace
@@ -246,7 +247,7 @@ public:
     {
         auto desired = Distribution::getNumberOfArguments();
         if (arguments.size() != desired && arguments.size() != desired + 1)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                             "Wrong number of arguments for function {}. Should be {} or {}",
                             getName(), desired, desired + 1);
 
