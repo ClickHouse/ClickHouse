@@ -904,8 +904,9 @@ bool SingleValueDataNumeric<T>::isEqualTo(const DB::IColumn & column, size_t ind
 template <typename T>
 bool SingleValueDataNumeric<T>::isEqualTo(const DB::SingleValueDataBase & to) const
 {
+    /// to.has() is checked in memory.get().isEqualTo
     auto const & other = assert_cast<const Self &>(to);
-    return to.has() && memory.get().isEqualTo(other.memory.get());
+    return memory.get().isEqualTo(other.memory.get());
 }
 
 template <typename T>
@@ -917,6 +918,7 @@ void SingleValueDataNumeric<T>::set(const DB::IColumn & column, size_t row_num, 
 template <typename T>
 void SingleValueDataNumeric<T>::set(const DB::SingleValueDataBase & to, DB::Arena * arena)
 {
+    /// to.has() is checked in memory.get().set
     auto const & other = assert_cast<const Self &>(to);
     return memory.get().set(other.memory.get(), arena);
 }
@@ -924,6 +926,7 @@ void SingleValueDataNumeric<T>::set(const DB::SingleValueDataBase & to, DB::Aren
 template <typename T>
 bool SingleValueDataNumeric<T>::setIfSmaller(const DB::SingleValueDataBase & to, DB::Arena * arena)
 {
+    /// to.has() is checked in memory.get().setIfSmaller
     auto const & other = assert_cast<const Self &>(to);
     return memory.get().setIfSmaller(other.memory.get(), arena);
 }
@@ -931,6 +934,7 @@ bool SingleValueDataNumeric<T>::setIfSmaller(const DB::SingleValueDataBase & to,
 template <typename T>
 bool SingleValueDataNumeric<T>::setIfGreater(const DB::SingleValueDataBase & to, DB::Arena * arena)
 {
+    /// to.has() is checked in memory.get().setIfGreater
     auto const & other = assert_cast<const Self &>(to);
     return memory.get().setIfGreater(other.memory.get(), arena);
 }
