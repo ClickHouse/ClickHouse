@@ -262,7 +262,7 @@ namespace Util
         /// Throws a NullPointerException if no Application instance exists.
 
         static Application * instanceRawPtr();
-        /// Returns a raw pointer to the Application sigleton.
+        /// Returns a raw pointer to the Application singleton.
         ///
         /// The caller should check whether the result is nullptr.
 
