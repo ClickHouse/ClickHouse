@@ -295,7 +295,7 @@ namespace
             WhichDataType which(type);
             if (which.isInt64() || which.isUInt64())
             {
-                const auto & new_type = std::make_shared<DataTypeFloat64>();
+                auto new_type = std::make_shared<DataTypeFloat64>();
                 if (json_info && json_info->numbers_parsed_from_json_strings.erase(type.get()))
                     json_info->numbers_parsed_from_json_strings.insert(new_type.get());
                 type = new_type;

@@ -1404,7 +1404,7 @@ public:
         String & error) const override
     {
         auto & column_dynamic = assert_cast<ColumnDynamic &>(column);
-        /// First, check if element is NULL.
+        /// Check if element is NULL.
         if (element.isNull())
         {
             column_dynamic.insertDefault();
@@ -1414,7 +1414,7 @@ public:
         auto & variant_column = column_dynamic.getVariantColumn();
         const auto & variant_info = column_dynamic.getVariantInfo();
 
-        /// First, try to insert element into current variants but with no types conversion.
+        /// Try to insert element into current variants but with no types conversion.
         /// We want to avoid inferring the type on each row, so if we can insert this element into
         /// any existing variant with no types conversion (like Integer -> String, Double -> Integer, etc)
         /// we will do it and won't try to infer the type.
