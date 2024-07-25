@@ -33,7 +33,7 @@ namespace DB
 namespace
 {
 #if defined(OS_LINUX)
-    //thread_local size_t write_trace_iteration = 0;
+    thread_local size_t write_trace_iteration = 0;
 #endif
     /// Even after timer_delete() the signal can be delivered,
     /// since it does not do anything with pending signals.
