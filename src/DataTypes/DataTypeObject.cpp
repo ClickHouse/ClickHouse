@@ -112,9 +112,17 @@ SerializationPtr DataTypeObject::doGetDefaultSerialization() const
                 path_regexps_to_skip,
                 buildJSONExtractTree<SimdJSONParser>(getPtr(), "JSON serialization"));
 #elif USE_RAPIDJSON
-            return std::make_shared<SerializationJSON<RapidJSONParser>>(std::move(typed_path_serializations), paths_to_skip, buildJSONExtractTree<RapidJSONParser>(getPtr(), "JSON serialization"));
+            return std::make_shared<SerializationJSON<RapidJSONParser>>(
+                std::move(typed_path_serializations),
+                paths_to_skip,
+                path_regexps_to_skip,
+                buildJSONExtractTree<RapidJSONParser>(getPtr(), "JSON serialization"));
 #else
-            return std::make_shared<SerializationJSON<DummyJSONParser>>(std::move(typed_path_serializations), paths_to_skip, buildJSONExtractTree<DummyJSONParser>(getPtr(), "JSON serialization"));
+            return std::make_shared<SerializationJSON<DummyJSONParser>>(
+                std::move(typed_path_serializations),
+                paths_to_skip,
+                path_regexps_to_skip,
+                buildJSONExtractTree<DummyJSONParser>(getPtr(), "JSON serialization"));
 #endif
     }
 }
