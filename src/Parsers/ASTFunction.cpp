@@ -539,9 +539,17 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
                             settings.ostr << '(';
 
                         if (is_tuple_literal_with_alias)
+                        {
+                            settings.ostr << '(';
                             settings.ostr << (settings.hilite ? hilite_function : "") << "tuple" << (settings.hilite ? hilite_none : "");
+                            arguments->children[0]->formatImpl(settings, state, nested_dont_need_parens);
+                            settings.ostr << ')';
+                        }
+                        else
+                        {
+                            arguments->children[0]->formatImpl(settings, state, nested_need_parens);
+                        }
 
-                        arguments->children[0]->formatImpl(settings, state, nested_need_parens);
                         settings.ostr << (settings.hilite ? hilite_operator : "") << "." << (settings.hilite ? hilite_none : "");
                         arguments->children[1]->formatImpl(settings, state, nested_dont_need_parens);
                         written = true;
