@@ -1525,7 +1525,7 @@ void ReadFromMergeTree::applyFilters(ActionDAGNodes added_filter_nodes)
         /// TODO: Get rid of filter_actions_dag in query_info after we move analysis of
         /// parallel replicas and unused shards into optimization, similar to projection analysis.
         if (filter_actions_dag)
-            query_info.filter_actions_dag = std::make_shared<const ActionsDAG>(std::move(*filter_actions_dag));
+            query_info.filter_actions_dag = std::make_shared<const ActionsDAG>(filter_actions_dag->clone());
 
         buildIndexes(
             indexes,
