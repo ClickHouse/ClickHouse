@@ -17,13 +17,19 @@
 namespace DB
 {
 
-IInterpreterUnionOrSelectQuery::IInterpreterUnionOrSelectQuery(const DB::ASTPtr& query_ptr_,
-        const DB::ContextMutablePtr& context_, const DB::SelectQueryOptions& options_)
-        : query_ptr(query_ptr_)
-        , context(context_)
-        , options(options_)
-        , max_streams(context->getSettingsRef().max_threads)
+IInterpreterUnionOrSelectQuery::IInterpreterUnionOrSelectQuery(const ASTPtr & query_ptr_,
+    const ContextMutablePtr & context_, const SelectQueryOptions & options_)
+    : query_ptr(query_ptr_)
+    , context(context_)
+    , options(options_)
+    , max_streams(context->getSettingsRef().max_threads)
 {
+    /// FIXME All code here will work with the old analyzer, however for views over Distributed tables
+    /// it's possible that new analyzer will be enabled in ::getQueryProcessingStage method
+    /// of the underlying storage when all other parts of infrastructure are not ready for it
+    /// (built with old analyzer).
+    context->setSetting("allow_experimental_analyzer", false);
+
     if (options.shard_num)
         context->addSpecialScalar(
                 "_shard_num",

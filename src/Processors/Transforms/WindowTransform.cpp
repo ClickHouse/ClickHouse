@@ -56,7 +56,10 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int NOT_IMPLEMENTED;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
+    extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
 }
 
 // Interface for true window functions. It's not much of an interface, they just
@@ -1710,7 +1713,7 @@ struct WindowFunctionExponentialTimeDecayedSum final : public StatefulWindowFunc
     {
         if (parameters_.size() != 1)
         {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                 "Function {} takes exactly one parameter", name_);
         }
         return applyVisitor(FieldVisitorConvertToNumber<Float64>(), parameters_[0]);
@@ -1723,7 +1726,7 @@ struct WindowFunctionExponentialTimeDecayedSum final : public StatefulWindowFunc
     {
         if (argument_types.size() != 2)
         {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                 "Function {} takes exactly two arguments", name_);
         }
 
@@ -1807,7 +1810,7 @@ struct WindowFunctionExponentialTimeDecayedMax final : public WindowFunction
     {
         if (parameters_.size() != 1)
         {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                 "Function {} takes exactly one parameter", name_);
         }
         return applyVisitor(FieldVisitorConvertToNumber<Float64>(), parameters_[0]);
@@ -1820,7 +1823,7 @@ struct WindowFunctionExponentialTimeDecayedMax final : public WindowFunction
     {
         if (argument_types.size() != 2)
         {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                 "Function {} takes exactly two arguments", name_);
         }
 
@@ -1882,7 +1885,7 @@ struct WindowFunctionExponentialTimeDecayedCount final : public StatefulWindowFu
     {
         if (parameters_.size() != 1)
         {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                 "Function {} takes exactly one parameter", name_);
         }
         return applyVisitor(FieldVisitorConvertToNumber<Float64>(), parameters_[0]);
@@ -1895,7 +1898,7 @@ struct WindowFunctionExponentialTimeDecayedCount final : public StatefulWindowFu
     {
         if (argument_types.size() != 1)
         {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                 "Function {} takes exactly one argument", name_);
         }
 
@@ -1968,7 +1971,7 @@ struct WindowFunctionExponentialTimeDecayedAvg final : public StatefulWindowFunc
     {
         if (parameters_.size() != 1)
         {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                 "Function {} takes exactly one parameter", name_);
         }
         return applyVisitor(FieldVisitorConvertToNumber<Float64>(), parameters_[0]);
@@ -1981,7 +1984,7 @@ struct WindowFunctionExponentialTimeDecayedAvg final : public StatefulWindowFunc
     {
         if (argument_types.size() != 2)
         {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                 "Function {} takes exactly two arguments", name_);
         }
 
@@ -2116,7 +2119,7 @@ struct WindowFunctionNtile final : public StatefulWindowFunction<NtileState>
         : StatefulWindowFunction<NtileState>(name_, argument_types_, parameters_, std::make_shared<DataTypeUInt64>())
     {
         if (argument_types.size() != 1)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function {} takes exactly one argument", name_);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} takes exactly one argument", name_);
 
         auto type_id = argument_types[0]->getTypeId();
         if (type_id != TypeIndex::UInt8 && type_id != TypeIndex::UInt16 && type_id != TypeIndex::UInt32 && type_id != TypeIndex::UInt64)
@@ -2191,7 +2194,7 @@ namespace
 
             if (!buckets)
             {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument of 'ntile' funtcion must be greater than zero");
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument of 'ntile' function must be greater than zero");
             }
         }
         // new partition
@@ -2404,7 +2407,7 @@ struct WindowFunctionLagLeadInFrame final : public WindowFunction
 
         if (argument_types.size() > 3)
         {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            throw Exception(ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION,
                 "Function '{}' accepts at most 3 arguments, {} given",
                 name, argument_types.size());
         }
@@ -2414,7 +2417,7 @@ struct WindowFunctionLagLeadInFrame final : public WindowFunction
     {
         if (argument_types_.empty())
         {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION,
                 "Function {} takes at least one argument", name_);
         }
 
@@ -2504,7 +2507,7 @@ struct WindowFunctionNthValue final : public WindowFunction
     {
         if (argument_types_.size() != 2)
         {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                 "Function {} takes exactly two arguments", name_);
         }
 
@@ -2578,7 +2581,7 @@ struct NonNegativeDerivativeParams
 
         if (argument_types.size() != 2 && argument_types.size() != 3)
         {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                             "Function {} takes 2 or 3 arguments", name_);
         }
 

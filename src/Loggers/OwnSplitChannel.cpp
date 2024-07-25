@@ -16,8 +16,18 @@
 namespace DB
 {
 
+static constinit std::atomic<bool> allow_logging{true};
+
+void OwnSplitChannel::disableLogging()
+{
+    allow_logging = false;
+}
+
 void OwnSplitChannel::log(const Poco::Message & msg)
 {
+    if (!allow_logging)
+        return;
+
 #ifndef WITHOUT_TEXT_LOG
     auto logs_queue = CurrentThread::getInternalTextLogsQueue();
 
