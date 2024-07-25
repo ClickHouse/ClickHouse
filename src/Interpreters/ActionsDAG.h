@@ -11,9 +11,6 @@
 namespace DB
 {
 
-class ActionsDAG;
-using ActionsDAGPtr = std::unique_ptr<ActionsDAG>;
-
 class IExecutableFunction;
 using ExecutableFunctionPtr = std::shared_ptr<IExecutableFunction>;
 

@@ -6,9 +6,6 @@
 namespace DB
 {
 
-class ActionsDAG;
-using ActionsDAGPtr = std::unique_ptr<ActionsDAG>;
-
 enum class TotalsMode : uint8_t;
 
 /// Execute HAVING and calculate totals. See TotalsHavingTransform.

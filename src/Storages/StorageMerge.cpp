@@ -1279,7 +1279,7 @@ void ReadFromMerge::RowPolicyData::extendNames(Names & names) const
 
 void ReadFromMerge::RowPolicyData::addStorageFilter(SourceStepWithFilter * step) const
 {
-    step->addFilter(std::make_unique<ActionsDAG>(actions_dag.clone()), filter_column_name);
+    step->addFilter(actions_dag.clone(), filter_column_name);
 }
 
 void ReadFromMerge::RowPolicyData::addFilterTransform(QueryPlan & plan) const

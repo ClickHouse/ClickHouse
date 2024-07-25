@@ -10,6 +10,9 @@
 namespace DB
 {
 
+class ActionsDAG;
+using ActionsDAGPtr = std::unique_ptr<ActionsDAG>;
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;

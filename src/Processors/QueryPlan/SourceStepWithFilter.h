@@ -45,9 +45,9 @@ public:
 
     const Names & requiredSourceColumns() const { return required_source_columns; }
 
-    void addFilter(ActionsDAGPtr filter_dag, std::string column_name)
+    void addFilter(ActionsDAG filter_dag, std::string column_name)
     {
-        filter_nodes.nodes.push_back(&filter_dag->findInOutputs(column_name));
+        filter_nodes.nodes.push_back(&filter_dag.findInOutputs(column_name));
         filter_dags.push_back(std::move(filter_dag));
     }
 
@@ -86,7 +86,7 @@ protected:
 private:
     /// Will be cleared after applyFilters() is called.
     ActionDAGNodes filter_nodes;
-    std::vector<ActionsDAGPtr> filter_dags;
+    std::vector<ActionsDAG> filter_dags;
 };
 
 }

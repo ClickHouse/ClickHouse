@@ -18,9 +18,6 @@ namespace DB
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
-class ActionsDAG;
-using ActionsDAGPtr = std::unique_ptr<ActionsDAG>;
-
 struct PrewhereInfo;
 using PrewhereInfoPtr = std::shared_ptr<PrewhereInfo>;
 

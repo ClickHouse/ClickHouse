@@ -6,9 +6,6 @@
 namespace DB
 {
 
-class ActionsDAG;
-using ActionsDAGPtr = std::unique_ptr<ActionsDAG>;
-
 class WindowTransform;
 
 class WindowStep : public ITransformingStep

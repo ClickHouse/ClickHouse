@@ -696,22 +696,22 @@ const std::unordered_map<String, KeyCondition::SpaceFillingCurveType> KeyConditi
     {"hilbertEncode", SpaceFillingCurveType::Hilbert}
 };
 
-ActionsDAGPtr KeyCondition::cloneASTWithInversionPushDown(ActionsDAG::NodeRawConstPtrs nodes, const ContextPtr & context)
+ActionsDAG KeyCondition::cloneASTWithInversionPushDown(ActionsDAG::NodeRawConstPtrs nodes, const ContextPtr & context)
 {
-    auto res = std::make_unique<ActionsDAG>();
+    ActionsDAG res;
 
     std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> to_inverted;
 
     for (auto & node : nodes)
-        node = &DB::cloneASTWithInversionPushDown(*node, *res, to_inverted, context, false);
+        node = &DB::cloneASTWithInversionPushDown(*node, res, to_inverted, context, false);
 
     if (nodes.size() > 1)
     {
         auto function_builder = FunctionFactory::instance().get("and", context);
-        nodes = {&res->addFunction(function_builder, std::move(nodes), "")};
+        nodes = {&res.addFunction(function_builder, std::move(nodes), "")};
     }
 
-    res->getOutputs().swap(nodes);
+    res.getOutputs().swap(nodes);
 
     return res;
 }
@@ -826,9 +826,9 @@ KeyCondition::KeyCondition(
       * are pushed down and applied (when possible) to leaf nodes.
       */
     auto inverted_dag = cloneASTWithInversionPushDown({filter_dag->getOutputs().at(0)}, context);
-    assert(inverted_dag->getOutputs().size() == 1);
+    assert(inverted_dag.getOutputs().size() == 1);
 
-    const auto * inverted_dag_filter_node = inverted_dag->getOutputs()[0];
+    const auto * inverted_dag_filter_node = inverted_dag.getOutputs()[0];
 
     RPNBuilder<RPNElement> builder(inverted_dag_filter_node, context, [&](const RPNBuilderTreeNode & node, RPNElement & out)
     {
