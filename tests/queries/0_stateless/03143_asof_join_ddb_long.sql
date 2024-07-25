@@ -11,7 +11,7 @@ AS
         toDateTime('1990-03-21 13:00:00') + INTERVAL number MINUTE AS begin,
         number % 4 AS key,
         number AS value
-    FROM numbers(0, 10000000);
+    FROM numbers(0, 4000000);
 
 CREATE TABLE skewed_probe ENGINE = MergeTree ORDER BY (key, begin)
 AS
@@ -33,7 +33,7 @@ AS
     SELECT
         toDateTime('1990-03-21 13:00:01') + INTERVAL number MINUTE AS begin,
         3 AS key
-    FROM numbers(0, 10000000);
+    FROM numbers(0, 4000000);
 
 
 SELECT SUM(value), COUNT(*)
