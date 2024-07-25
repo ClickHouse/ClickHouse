@@ -1868,6 +1868,7 @@ joinGet
 json
 jsonMergePatch
 jsonasstring
+jsonasobject
 jsoncolumns
 jsoncolumnsmonoblock
 jsoncompact
