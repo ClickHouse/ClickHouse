@@ -499,8 +499,9 @@ ConditionSelectivityEstimator MergeTreeData::getConditionSelectivityEstimatorByP
         {
             auto stats = part->loadStatistics();
             /// TODO: We only have one stats file for every part.
+            result.addRows(part->rows_count);
             for (const auto & stat : stats)
-                result.merge(part->info.getPartNameV1(), part->rows_count, stat);
+                result.merge(part->info.getPartNameV1(), stat);
         }
         catch (...)
         {
@@ -515,8 +516,9 @@ ConditionSelectivityEstimator MergeTreeData::getConditionSelectivityEstimatorByP
             if (!partition_pruner.canBePruned(*part))
             {
                 auto stats = part->loadStatistics();
+                result.addRows(part->rows_count);
                 for (const auto & stat : stats)
-                    result.merge(part->info.getPartNameV1(), part->rows_count, stat);
+                    result.merge(part->info.getPartNameV1(), stat);
             }
         }
         catch (...)
@@ -1144,7 +1146,7 @@ std::optional<UInt64> MergeTreeData::totalRowsByPartitionPredicateImpl(
     auto metadata_snapshot = getInMemoryMetadataPtr();
     auto virtual_columns_block = getBlockWithVirtualsForFilter(metadata_snapshot, {parts[0]});
 
-    auto filter_dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), nullptr);
+    auto filter_dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), nullptr, /*allow_non_deterministic_functions=*/ false);
     if (!filter_dag)
         return {};
 

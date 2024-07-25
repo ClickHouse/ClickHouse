@@ -1,3 +1,4 @@
+import json
 import os
 import re
 import subprocess
@@ -11,6 +12,9 @@ import requests
 
 class Envs:
     GITHUB_REPOSITORY = os.getenv("GITHUB_REPOSITORY", "ClickHouse/ClickHouse")
+    WORKFLOW_RESULT_FILE = os.getenv(
+        "WORKFLOW_RESULT_FILE", "/tmp/workflow_results.json"
+    )
 
 
 LABEL_CATEGORIES = {
@@ -79,6 +83,47 @@ def normalize_string(string: str) -> str:
 
 
 class GHActions:
+    class ActionsNames:
+        RunConfig = "RunConfig"
+
+    class ActionStatuses:
+        ERROR = "error"
+        FAILURE = "failure"
+        PENDING = "pending"
+        SUCCESS = "success"
+
+    @classmethod
+    def _get_workflow_results(cls):
+        if not Path(Envs.WORKFLOW_RESULT_FILE).exists():
+            print(
+                f"ERROR: Failed to get workflow results from file [{Envs.WORKFLOW_RESULT_FILE}]"
+            )
+            return {}
+        with open(Envs.WORKFLOW_RESULT_FILE, "r", encoding="utf-8") as json_file:
+            try:
+                res = json.load(json_file)
+            except json.JSONDecodeError as e:
+                print(f"ERROR: json decoder exception {e}")
+                json_file.seek(0)
+                print("    File content:")
+                print(json_file.read())
+                return {}
+        return res
+
+    @classmethod
+    def print_workflow_results(cls):
+        res = cls._get_workflow_results()
+        results = [f"{job}: {data['result']}" for job, data in res.items()]
+        cls.print_in_group("Workflow results", results)
+
+    @classmethod
+    def get_workflow_job_result(cls, wf_job_name: str) -> Optional[str]:
+        res = cls._get_workflow_results()
+        if wf_job_name in res:
+            return res[wf_job_name]["result"]  # type: ignore
+        else:
+            return None
+
     @staticmethod
     def print_in_group(group_name: str, lines: Union[Any, List[Any]]) -> None:
         lines = list(lines)
@@ -182,10 +227,11 @@ class Shell:
             check=False,
         )
         if result.returncode == 0:
+            print(f"stdout: {result.stdout.strip()}")
             res = result.stdout
         else:
             print(
-                f"ERROR: stdout {result.stdout.strip()}, stderr {result.stderr.strip()}"
+                f"ERROR: stdout: {result.stdout.strip()}, stderr: {result.stderr.strip()}"
             )
             if check:
                 assert result.returncode == 0

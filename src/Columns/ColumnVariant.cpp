@@ -595,7 +595,7 @@ void ColumnVariant::insertManyFromImpl(const DB::IColumn & src_, size_t position
     }
 }
 
-#if !defined(ABORT_ON_LOGICAL_ERROR)
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
 void ColumnVariant::insertFrom(const IColumn & src_, size_t n)
 #else
 void ColumnVariant::doInsertFrom(const IColumn & src_, size_t n)
@@ -604,7 +604,7 @@ void ColumnVariant::doInsertFrom(const IColumn & src_, size_t n)
     insertFromImpl(src_, n, nullptr);
 }
 
-#if !defined(ABORT_ON_LOGICAL_ERROR)
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
 void ColumnVariant::insertRangeFrom(const IColumn & src_, size_t start, size_t length)
 #else
 void ColumnVariant::doInsertRangeFrom(const IColumn & src_, size_t start, size_t length)
@@ -613,7 +613,7 @@ void ColumnVariant::doInsertRangeFrom(const IColumn & src_, size_t start, size_t
     insertRangeFromImpl(src_, start, length, nullptr);
 }
 
-#if !defined(ABORT_ON_LOGICAL_ERROR)
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
 void ColumnVariant::insertManyFrom(const DB::IColumn & src_, size_t position, size_t length)
 #else
 void ColumnVariant::doInsertManyFrom(const DB::IColumn & src_, size_t position, size_t length)
@@ -1175,7 +1175,7 @@ bool ColumnVariant::hasEqualValues() const
     return local_discriminators->hasEqualValues() && variants[localDiscriminatorAt(0)]->hasEqualValues();
 }
 
-#if !defined(ABORT_ON_LOGICAL_ERROR)
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
 int ColumnVariant::compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const
 #else
 int ColumnVariant::doCompareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const
