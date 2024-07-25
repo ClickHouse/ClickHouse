@@ -437,7 +437,7 @@ void updatePrewhereOutputsIfNeeded(SelectQueryInfo & table_expression_query_info
 
     std::unordered_set<const ActionsDAG::Node *> required_output_nodes;
 
-    for (const auto * input : prewhere_actions->getInputs())
+    for (const auto * input : prewhere_actions.getInputs())
     {
         if (required_columns.contains(input->result_name))
             required_output_nodes.insert(input);
@@ -446,7 +446,7 @@ void updatePrewhereOutputsIfNeeded(SelectQueryInfo & table_expression_query_info
     if (required_output_nodes.empty())
         return;
 
-    auto & prewhere_outputs = prewhere_actions->getOutputs();
+    auto & prewhere_outputs = prewhere_actions.getOutputs();
     for (const auto & output : prewhere_outputs)
     {
         auto required_output_node_it = required_output_nodes.find(output);
@@ -801,10 +801,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     if (storage->canMoveConditionsToPrewhere() && optimize_move_to_prewhere && (!supported_prewhere_columns || supported_prewhere_columns->contains(filter_info.column_name)))
                     {
                         if (!prewhere_info)
-                            prewhere_info = std::make_shared<PrewhereInfo>();
-
-                        if (!prewhere_info->prewhere_actions)
                         {
+                            prewhere_info = std::make_shared<PrewhereInfo>();
                             prewhere_info->prewhere_actions = std::move(filter_info.actions);
                             prewhere_info->prewhere_column_name = filter_info.column_name;
                             prewhere_info->remove_prewhere_column = filter_info.do_remove_column;

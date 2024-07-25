@@ -56,7 +56,7 @@ void optimizePrewhere(Stack & stack, QueryPlan::Nodes &)
         return;
 
     const auto & storage_prewhere_info = source_step_with_filter->getPrewhereInfo();
-    if (storage_prewhere_info && storage_prewhere_info->prewhere_actions)
+    if (storage_prewhere_info)
         return;
 
     /// TODO: We can also check for UnionStep, such as StorageBuffer and local distributed plans.
@@ -165,16 +165,16 @@ void optimizePrewhere(Stack & stack, QueryPlan::Nodes &)
     {
         prewhere_info->prewhere_column_name = conditions.front()->result_name;
         if (prewhere_info->remove_prewhere_column)
-            prewhere_info->prewhere_actions->getOutputs().push_back(conditions.front());
+            prewhere_info->prewhere_actions.getOutputs().push_back(conditions.front());
     }
     else
     {
         prewhere_info->remove_prewhere_column = true;
 
         FunctionOverloadResolverPtr func_builder_and = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
-        const auto * node = &prewhere_info->prewhere_actions->addFunction(func_builder_and, std::move(conditions), {});
+        const auto * node = &prewhere_info->prewhere_actions.addFunction(func_builder_and, std::move(conditions), {});
         prewhere_info->prewhere_column_name = node->result_name;
-        prewhere_info->prewhere_actions->getOutputs().push_back(node);
+        prewhere_info->prewhere_actions.getOutputs().push_back(node);
     }
 
     source_step_with_filter->updatePrewhereInfo(prewhere_info);

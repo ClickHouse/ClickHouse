@@ -2230,12 +2230,11 @@ void ExpressionAnalysisResult::checkActions() const
     /// Check that PREWHERE doesn't contain unusual actions. Unusual actions are that can change number of rows.
     if (hasPrewhere())
     {
-        auto check_actions = [](const std::optional<ActionsDAG> & actions)
+        auto check_actions = [](ActionsDAG & actions)
         {
-            if (actions)
-                for (const auto & node : actions->getNodes())
-                    if (node.type == ActionsDAG::ActionType::ARRAY_JOIN)
-                        throw Exception(ErrorCodes::ILLEGAL_PREWHERE, "PREWHERE cannot contain ARRAY JOIN action");
+            for (const auto & node : actions.getNodes())
+                if (node.type == ActionsDAG::ActionType::ARRAY_JOIN)
+                    throw Exception(ErrorCodes::ILLEGAL_PREWHERE, "PREWHERE cannot contain ARRAY JOIN action");
         };
 
         check_actions(prewhere_info->prewhere_actions);

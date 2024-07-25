@@ -216,11 +216,11 @@ const ActionsDAG::Node & addAndTrue(
 /// 8. Add computation of the remaining outputs to the last step with the procedure similar to 4
 bool tryBuildPrewhereSteps(PrewhereInfoPtr prewhere_info, const ExpressionActionsSettings & actions_settings, PrewhereExprInfo & prewhere)
 {
-    if (!prewhere_info || !prewhere_info->prewhere_actions)
+    if (!prewhere_info)
         return true;
 
     /// 1. List all condition nodes that are combined with AND into PREWHERE condition
-    const auto & condition_root = prewhere_info->prewhere_actions->findInOutputs(prewhere_info->prewhere_column_name);
+    const auto & condition_root = prewhere_info->prewhere_actions.findInOutputs(prewhere_info->prewhere_column_name);
     const bool is_conjunction = (condition_root.type == ActionsDAG::ActionType::FUNCTION && condition_root.function_base->getName() == "and");
     if (!is_conjunction)
         return false;
@@ -306,7 +306,7 @@ bool tryBuildPrewhereSteps(PrewhereInfoPtr prewhere_info, const ExpressionAction
     }
 
     /// 6. Find all outputs of the original DAG
-    auto original_outputs = prewhere_info->prewhere_actions->getOutputs();
+    auto original_outputs = prewhere_info->prewhere_actions.getOutputs();
     /// 7. Find all outputs that were computed in the already built DAGs, mark these nodes as outputs in the steps where they were computed
     /// 8. Add computation of the remaining outputs to the last step with the procedure similar to 4
     NameSet all_output_names;

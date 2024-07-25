@@ -59,7 +59,7 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
 
     if (prewhere_info)
         LOG_TEST(log, "Original PREWHERE DAG:\n{}\nPREWHERE actions:\n{}",
-            (prewhere_info->prewhere_actions ? prewhere_info->prewhere_actions->dumpDAG(): std::string("<nullptr>")),
+            prewhere_info->prewhere_actions.dumpDAG(),
             (!prewhere_actions.steps.empty() ? prewhere_actions.dump() : std::string("<nullptr>")));
 }
 
@@ -96,7 +96,7 @@ PrewhereExprInfo MergeTreeSelectProcessor::getPrewhereActions(PrewhereInfoPtr pr
             PrewhereExprStep prewhere_step
             {
                 .type = PrewhereExprStep::Filter,
-                .actions = std::make_shared<ExpressionActions>(prewhere_info->prewhere_actions->clone(), actions_settings),
+                .actions = std::make_shared<ExpressionActions>(prewhere_info->prewhere_actions.clone(), actions_settings),
                 .filter_column_name = prewhere_info->prewhere_column_name,
                 .remove_filter_column = prewhere_info->remove_prewhere_column,
                 .need_filter = prewhere_info->need_filter,
