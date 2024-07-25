@@ -245,6 +245,9 @@ void DistributedAsyncInsertBatch::sendBatch(const SettingsChanges & settings_cha
                 connection = std::move(result.front().entry);
                 compression_expected = connection->getCompression() == Protocol::Compression::Enable;
 
+                if (connection.isNull())
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty connection");
+
                 LOG_DEBUG(parent.log, "Sending a batch of {} files to {} ({} rows, {} bytes).",
                     files.size(),
                     connection->getDescription(),
@@ -302,6 +305,9 @@ void DistributedAsyncInsertBatch::sendSeparateFiles(const SettingsChanges & sett
             auto result = parent.pool->getManyCheckedForInsert(timeouts, insert_settings, PoolMode::GET_ONE, parent.storage.remote_storage.getQualifiedName());
             auto connection = std::move(result.front().entry);
             bool compression_expected = connection->getCompression() == Protocol::Compression::Enable;
+
+            if (connection.isNull())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty connection");
 
             RemoteInserter remote(*connection, timeouts,
                 distributed_header.insert_query,
