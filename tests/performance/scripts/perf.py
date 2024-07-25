@@ -349,9 +349,7 @@ for query_index in queries_to_run:
         try:
             c.execute("SYSTEM JEMALLOC PURGE")
 
-            print(
-                f"purging jemalloc arenas\t{conn_index}\t{c.last_query.elapsed}"
-            )
+            print(f"purging jemalloc arenas\t{conn_index}\t{c.last_query.elapsed}")
         except KeyboardInterrupt:
             raise
         except:
