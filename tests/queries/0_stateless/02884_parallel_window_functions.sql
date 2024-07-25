@@ -66,7 +66,7 @@ ORDER BY nw ASC, R DESC
 LIMIT 10
 SETTINGS max_threads = 1;
 
-SET max_rows_to_read = 30000000;
+SET max_rows_to_read = 40000000;
 
 SELECT
     nw,
