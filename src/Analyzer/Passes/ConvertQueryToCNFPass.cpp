@@ -10,6 +10,8 @@
 #include <Analyzer/Utils.h>
 #include <Analyzer/HashUtils.h>
 
+#include <Core/Settings.h>
+
 #include <Storages/IStorage.h>
 
 #include <Functions/FunctionFactory.h>

@@ -3,7 +3,7 @@
 #include <Common/ProfileEvents.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/NamesAndAliases.h>
-#include <Core/Settings.h>
+#include <Core/QueryLogElementType.h>
 #include <Interpreters/Cache/QueryCache.h>
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/SystemLog.h>
@@ -21,6 +21,8 @@ namespace ProfileEvents
 
 namespace DB
 {
+
+struct Settings;
 
 
 /** Allows to log information about queries execution:

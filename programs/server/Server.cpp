@@ -68,6 +68,7 @@
 #include <Interpreters/registerInterpreters.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Access/AccessControl.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/System/attachSystemTables.h>
 #include <Storages/System/attachInformationSchemaTables.h>
@@ -584,6 +585,54 @@ static void sanityChecks(Server & server)
         server.context()->addWarningMessage("The setting 'allow_remote_fs_zero_copy_replication' is enabled for MergeTree tables."
             " But the feature of 'zero-copy replication' is under development and is not ready for production."
             " The usage of this feature can lead to data corruption and loss. The setting should be disabled in production.");
+    }
+}
+
+void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, ContextMutablePtr context, Poco::Logger * log)
+{
+    try
+    {
+        Poco::Util::AbstractConfiguration::Keys keys;
+        config.keys("startup_scripts", keys);
+
+        SetResultDetailsFunc callback;
+        for (const auto & key : keys)
+        {
+            std::string full_prefix = "startup_scripts." + key;
+
+            if (config.has(full_prefix + ".condition"))
+            {
+                auto condition = config.getString(full_prefix + ".condition");
+                auto condition_read_buffer = ReadBufferFromString(condition);
+                auto condition_write_buffer = WriteBufferFromOwnString();
+
+                LOG_DEBUG(log, "Checking startup query condition `{}`", condition);
+                executeQuery(condition_read_buffer, condition_write_buffer, true, context, callback, QueryFlags{ .internal = true }, std::nullopt, {});
+
+                auto result = condition_write_buffer.str();
+
+                if (result != "1\n" && result != "true\n")
+                {
+                    if (result != "0\n" && result != "false\n")
+                        context->addWarningMessage(fmt::format("The condition query returned `{}`, which can't be interpreted as a boolean (`0`, `false`, `1`, `true`). Will skip this query.", result));
+
+                    continue;
+                }
+
+                LOG_DEBUG(log, "Condition is true, will execute the query next");
+            }
+
+            auto query = config.getString(full_prefix + ".query");
+            auto read_buffer = ReadBufferFromString(query);
+            auto write_buffer = WriteBufferFromOwnString();
+
+            LOG_DEBUG(log, "Executing query `{}`", query);
+            executeQuery(read_buffer, write_buffer, true, context, callback, QueryFlags{ .internal = true }, std::nullopt, {});
+        }
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, "Failed to parse startup scripts file");
     }
 }
 
@@ -1990,6 +2039,11 @@ try
         /// otherwise there is a race condition between the system database initialization
         /// and creation of new tables in the database.
         waitLoad(TablesLoaderForegroundPoolId, system_startup_tasks);
+
+        /// Startup scripts can depend on the system log tables.
+        if (config().has("startup_scripts") && !server_settings.prepare_system_log_tables_on_startup.changed)
+            global_context->setServerSetting("prepare_system_log_tables_on_startup", true);
+
         /// After attaching system databases we can initialize system log.
         global_context->initializeSystemLogs();
         global_context->setSystemZooKeeperLogAfterInitializationIfNeeded();
@@ -2138,6 +2192,9 @@ try
         load_metadata_tasks.clear();
         load_metadata_tasks.shrink_to_fit();
 
+        if (config().has("startup_scripts"))
+            loadStartupScripts(config(), global_context, log);
+
         {
             std::lock_guard lock(servers_lock);
             for (auto & server : servers)
@@ -2156,6 +2213,7 @@ try
         CannotAllocateThreadFaultInjector::setFaultProbability(server_settings.cannot_allocate_thread_fault_injection_probability);
 
 #if USE_GWP_ASAN
+        GWPAsan::initFinished();
         GWPAsan::setForceSampleProbability(server_settings.gwp_asan_force_sample_probability);
 #endif
 
@@ -2674,8 +2732,7 @@ void Server::createInterserverServers(
 
 void Server::stopServers(
     std::vector<ProtocolServerAdapter> & servers,
-    const ServerType & server_type
-) const
+    const ServerType & server_type) const
 {
     LoggerRawPtr log = &logger();
 

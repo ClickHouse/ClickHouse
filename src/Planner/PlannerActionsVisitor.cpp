@@ -30,6 +30,8 @@
 #include <Planner/TableExpressionData.h>
 #include <Planner/Utils.h>
 
+#include <Core/Settings.h>
+
 
 namespace DB
 {
