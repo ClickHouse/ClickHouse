@@ -217,6 +217,13 @@ TEST(AccessRights, GrantWildcard)
     root.revoke(AccessType::SHOW_NAMED_COLLECTIONS, "collection1");
     ASSERT_EQ(root.isGranted(AccessType::SHOW_NAMED_COLLECTIONS, "collection1"), false);
     ASSERT_EQ(root.isGranted(AccessType::SHOW_NAMED_COLLECTIONS, "collection2"), true);
+
+    root = {};
+    root.grant(AccessType::SHOW_NAMED_COLLECTIONS);
+    root.revokeWildcard(AccessType::SHOW_NAMED_COLLECTIONS, "collection");
+    ASSERT_EQ(root.isGranted(AccessType::SHOW_NAMED_COLLECTIONS, "collection1"), false);
+    ASSERT_EQ(root.isGranted(AccessType::SHOW_NAMED_COLLECTIONS, "collection2"), false);
+    ASSERT_EQ(root.isGranted(AccessType::SHOW_NAMED_COLLECTIONS, "foo"), true);
 }
 
 TEST(AccessRights, Union)
