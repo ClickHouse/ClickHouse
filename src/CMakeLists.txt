@@ -659,6 +659,10 @@ if (TARGET ch_contrib::usearch)
     dbms_target_link_libraries(PUBLIC ch_contrib::usearch)
 endif()
 
+if (TARGET ch_contrib::sz3)
+    dbms_target_link_libraries (PUBLIC ch_contrib::sz3)
+endif()
+
 if (TARGET ch_contrib::prometheus_protobufs)
     dbms_target_link_libraries (PUBLIC ch_contrib::prometheus_protobufs)
 endif()
