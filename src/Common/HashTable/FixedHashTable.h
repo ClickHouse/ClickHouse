@@ -52,7 +52,7 @@ struct FixedHashTableCell
 template <typename Cell>
 struct FixedHashTableStoredSize
 {
-    std::atomic<size_t> m_size = 0;
+    size_t m_size = 0;
 
     size_t getSize(const Cell *, const typename Cell::State &, size_t) const { return m_size; }
     bool isEmpty(const Cell *, const typename Cell::State &, size_t) const { return m_size == 0; }
@@ -116,6 +116,7 @@ class FixedHashTable : private boost::noncopyable, protected Allocator, protecte
     /// We maintain min and max values inserted into the hash table to then limit the amount of cells to traverse to the [min; max] range.
     /// Both values could be efficiently calculated only within `emplace` calls (and not when we populate the hash table in `read` method for example), so we update them only within `emplace` and track if any other method was called.
     bool only_emplace_was_used_to_insert_data = true;
+    std::mutex lock;
     size_t min = NUM_CELLS - 1;
     size_t max = 0;
 
@@ -392,9 +393,14 @@ public:
 
         new (&buf[x]) Cell(x, *this);
         inserted = true;
-        if (x < min) min = x;
-        if (x > max) max = x;
-        this->increaseSize();
+        {
+            std::lock_guard mutex(lock);
+            if (x < min)
+                min = x;
+            if (x > max)
+                max = x;
+            this->increaseSize();
+        }
     }
 
     std::pair<LookupResult, bool> ALWAYS_INLINE insert(const value_type & x)
