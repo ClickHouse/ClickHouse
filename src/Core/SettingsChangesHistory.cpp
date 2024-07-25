@@ -63,7 +63,6 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
               {"output_format_native_encode_types_in_binary_format", false, false, "Added new setting to allow to write type names in binary format in Native output format"},
               {"input_format_native_decode_types_in_binary_format", false, false, "Added new setting to allow to read type names in binary format in Native output format"},
               {"read_in_order_use_buffering", false, true, "Use buffering before merging while reading in order of primary key"},
-              {"optimize_functions_to_subcolumns", false, true, "Enable optimization by default"},
               {"enable_named_columns_in_function_tuple", false, true, "Generate named tuples in function tuple() when all names are unique and can be treated as unquoted identifiers."},
               {"input_format_json_ignore_key_case", false, false, "Ignore json key case while read json field from string."},
               {"optimize_trivial_insert_select", true, false, "The optimization does not make sense in many cases."},
