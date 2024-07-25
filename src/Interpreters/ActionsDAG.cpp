@@ -3111,7 +3111,6 @@ ActionsDAG::NodeRawConstPtrs ActionsDAG::filterNodesByAllowedInputs(
 }
 
 FindOriginalNodeForOutputName::FindOriginalNodeForOutputName(const ActionsDAG & actions_)
-    //: actions(actions_)
 {
     const auto & actions_outputs = actions_.getOutputs();
     for (const auto * output_node : actions_outputs)
