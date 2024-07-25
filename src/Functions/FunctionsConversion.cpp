@@ -4078,6 +4078,26 @@ private:
         };
     }
 
+    /// Create wrapper only if we support this conversion.
+    WrapperType createWrapperIfCanConvert(const DataTypePtr & from, const DataTypePtr & to) const
+    {
+        try
+        {
+            /// We can avoid try/catch here if we will implement check that 2 types can be casted, but it
+            /// requires quite a lot of work. By now let's simply use try/catch.
+            /// First, check that we can create a wrapper.
+            WrapperType wrapper = prepareUnpackDictionaries(from, to);
+            /// Second, check if we can perform a conversion on empty columns.
+            ColumnsWithTypeAndName column_from = {{from->createColumn(), from, "" }};
+            wrapper(column_from, to, nullptr, 0);
+            return wrapper;
+        }
+        catch (...)
+        {
+            return {};
+        }
+    }
+
     WrapperType createVariantToColumnWrapper(const DataTypeVariant & from_variant, const DataTypePtr & to_type) const
     {
         const auto & variant_types = from_variant.getVariants();
@@ -4090,17 +4110,8 @@ private:
             WrapperType wrapper;
             if (cast_type == CastType::accurateOrNull)
             {
-                /// With accurateOrNull cast type we should insert default values on variants that cannot be casted.
-                /// We can avoid try/catch here if we will implement check that 2 types can be casted, but it
-                /// requires quite a lot of work. By now let's simply use try/catch.
-                try
-                {
-                    wrapper = prepareUnpackDictionaries(variant_type, to_type);
-                }
-                catch (...)
-                {
-                    /// Leave wrapper empty and check it later.
-                }
+                /// Create wrapper only if we support conversion from variant to the resulting type.
+                wrapper = createWrapperIfCanConvert(variant_type, to_type);
             }
             else
             {
@@ -4109,7 +4120,7 @@ private:
             variant_wrappers.push_back(wrapper);
         }
 
-        return [variant_wrappers, variant_types, to_type, cast_type_ = this->cast_type]
+        return [variant_wrappers, variant_types, to_type]
                (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *, size_t input_rows_count) -> ColumnPtr
         {
             const auto & column_variant = assert_cast<const ColumnVariant &>(*arguments.front().column.get());
@@ -4125,26 +4136,7 @@ private:
                 ColumnPtr casted_variant;
                 /// Check if we have wrapper for this variant.
                 if (variant_wrapper)
-                {
-                    if (cast_type_ == CastType::accurateOrNull)
-                    {
-                        /// With accurateOrNull cast type wrapper should throw an exception
-                        /// only when the cast between types is not supported.
-                        /// In this case we will insert default values on rows with this variant.
-                        try
-                        {
-                            casted_variant = variant_wrapper(variant, result_type, nullptr, variant_col->size());
-                        }
-                        catch (...)
-                        {
-                            /// Do nothing.
-                        }
-                    }
-                    else
-                    {
-                        casted_variant = variant_wrapper(variant, result_type, nullptr, variant_col->size());
-                    }
-                }
+                    casted_variant = variant_wrapper(variant, result_type, nullptr, variant_col->size());
                 casted_variant_columns.push_back(std::move(casted_variant));
             }
 
