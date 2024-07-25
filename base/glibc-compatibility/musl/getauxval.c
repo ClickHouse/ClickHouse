@@ -102,7 +102,7 @@ static unsigned long NO_SANITIZE_THREAD __auxv_init_procfs(unsigned long type)
     /// most global variables aren't initialized or available yet, so we can't initiate the auxiliary vector.
     /// Normal glibc / musl getauxval doesn't have this problem since they initiate their auxval vector at the very
     /// start of __libc_start_main (just keeping track of argv+argc+1), but we don't have such option (otherwise
-    // this complexity of reading "/proc/self/auxv" or using __environ would not be necessary).
+    /// this complexity of reading "/proc/self/auxv" or using __environ would not be necessary).
 
     /// To avoid this crashes on the re-exec call (see above how it would fail when creating `aux`, and if we used
     /// __auxv_init_environ then it would SIGSEV on READing `__environ`) we capture this call for `AT_EXECFN` and
@@ -237,7 +237,7 @@ static unsigned long NO_SANITIZE_THREAD __auxv_init_environ(unsigned long type)
 // - __auxv_init_procfs -> __auxv_init_environ -> __getauxval_environ
 static void * volatile getauxval_func = (void *)__auxv_init_procfs;
 
-unsigned long getauxval(unsigned long type)
+unsigned long NO_SANITIZE_THREAD getauxval(unsigned long type)
 {
     return ((unsigned long (*)(unsigned long))getauxval_func)(type);
 }
