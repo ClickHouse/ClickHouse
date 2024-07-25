@@ -136,6 +136,12 @@ private:
     GetPriorityForLoadBalancing::Func makeGetPriorityFunc(const Settings & settings);
 
     GetPriorityForLoadBalancing get_priority_load_balancing;
+
+    // New members for reconnection logic
+    Poco::Timespan socket_read_timeout;
+    Poco::Timespan socket_write_timeout;
+    Poco::Timespan connection_timeout;
+    Poco::Timespan tcp_keep_alive;
 };
 
 using ConnectionPoolWithFailoverPtr = std::shared_ptr<ConnectionPoolWithFailover>;

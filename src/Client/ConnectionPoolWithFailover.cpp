@@ -13,7 +13,6 @@
 
 #include <IO/ConnectionTimeouts.h>
 
-
 namespace DB
 {
 
@@ -22,7 +21,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int ALL_CONNECTION_TRIES_FAILED;
 }
-
 
 ConnectionPoolWithFailover::ConnectionPoolWithFailover(
         ConnectionPoolPtrs nested_pools_,
@@ -42,6 +40,12 @@ ConnectionPoolWithFailover::ConnectionPoolWithFailover(
         get_priority_load_balancing.hostname_prefix_distance[i] = getHostNamePrefixDistance(local_hostname, connection_pool.getHost());
         get_priority_load_balancing.hostname_levenshtein_distance[i] = getHostNameLevenshteinDistance(local_hostname, connection_pool.getHost());
     }
+
+    // Initialize the timeout settings
+    socket_read_timeout = Poco::Timespan(settings.socket_read_timeout.totalMilliseconds() * Poco::Timespan::MILLISECONDS);
+    socket_write_timeout = Poco::Timespan(settings.socket_write_timeout.totalMilliseconds() * Poco::Timespan::MILLISECONDS);
+    connection_timeout = Poco::Timespan(settings.connection_timeout.totalMilliseconds() * Poco::Timespan::MILLISECONDS);
+    tcp_keep_alive = Poco::Timespan(settings.tcp_keep_alive.totalMilliseconds() * Poco::Timespan::MILLISECONDS);
 }
 
 IConnectionPool::Entry ConnectionPoolWithFailover::get(const ConnectionTimeouts & timeouts)
@@ -263,6 +267,21 @@ ConnectionPoolWithFailover::tryGetEntry(
     ConnectionEstablisher connection_establisher(pool, &timeouts, settings, log, table_to_check);
     TryResult result;
     connection_establisher.run(result, fail_message);
+
+    // If connection is not established, retry
+    if (!result.entry || !result.entry->isConnected())
+    {
+        Poco::Timespan retry_timeout = settings.retry_timeout;
+        for (size_t attempt = 0; attempt < settings.distributed_query_retries; ++attempt)
+        {
+            connection_establisher.run(result, fail_message);
+            if (result.entry && result.entry->isConnected())
+                break;
+
+            std::this_thread::sleep_for(std::chrono::milliseconds(retry_timeout.totalMilliseconds()));
+        }
+    }
+
     return result;
 }
 
