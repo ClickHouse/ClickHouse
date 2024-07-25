@@ -933,19 +933,19 @@ void addPreliminarySortOrDistinctOrLimitStepsIfNeeded(QueryPlan & query_plan,
 
 void addWindowSteps(QueryPlan & query_plan,
     const PlannerContextPtr & planner_context,
-    const WindowAnalysisResult & window_analysis_result)
+    WindowAnalysisResult & window_analysis_result)
 {
     const auto & query_context = planner_context->getQueryContext();
     const auto & settings = query_context->getSettingsRef();
 
-    const auto & window_descriptions = window_analysis_result.window_descriptions;
-    auto perm = sortWindowDescriptions(window_descriptions);
+    auto & window_descriptions = window_analysis_result.window_descriptions;
+    sortWindowDescriptions(window_descriptions);
 
     size_t window_descriptions_size = window_descriptions.size();
 
     for (size_t i = 0; i < window_descriptions_size; ++i)
     {
-        const auto & window_description = window_descriptions[perm[i]];
+        const auto & window_description = window_descriptions[i];
 
         /** We don't need to sort again if the input from previous window already
           * has suitable sorting. Also don't create sort steps when there are no
@@ -958,9 +958,8 @@ void addWindowSteps(QueryPlan & query_plan,
         bool need_sort = !window_description.full_sort_description.empty();
         if (need_sort && i != 0)
         {
-            auto prev = perm[i - 1];
-            need_sort = !sortDescriptionIsPrefix(window_description.full_sort_description, window_descriptions[prev].full_sort_description)
-                        || (settings.max_threads != 1 && window_description.partition_by.size() != window_descriptions[prev].partition_by.size());
+            need_sort = !sortDescriptionIsPrefix(window_description.full_sort_description, window_descriptions[i - 1].full_sort_description)
+                        || (settings.max_threads != 1 && window_description.partition_by.size() != window_descriptions[i - 1].partition_by.size());
         }
         if (need_sort)
         {

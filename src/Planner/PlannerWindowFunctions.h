@@ -15,6 +15,6 @@ std::vector<WindowDescription> extractWindowDescriptions(const QueryTreeNodes & 
 /** Try to sort window descriptions in such an order that the window with the longest
   * sort description goes first, and all window that use its prefixes follow.
   */
-std::vector<size_t> sortWindowDescriptions(const std::vector<WindowDescription> & window_descriptions);
+void sortWindowDescriptions(std::vector<WindowDescription> & window_descriptions);
 
 }
