@@ -62,7 +62,7 @@ Alias: `MAP_FROM_ARRAYS(keys, values)`
 
 **Arguments**
 
-- `keys` —  Array of keys to create the map from. [Array(T)](../data-types/array.md) where `T` can be any type supported by [Map](../data-types/map.md) as key type.
+- `keys` —  Array or map of keys to create the map from. [Array(T)](../data-types/array.md) where `T` can be any type supported by [Map](../data-types/map.md) as key type.
 - `values`  - Array or map of values to create the map from. [Array](../data-types/array.md) or [Map](../data-types/map.md).
 
 **Returned value**
