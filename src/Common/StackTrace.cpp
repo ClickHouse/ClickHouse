@@ -489,11 +489,22 @@ struct CacheEntry
 
 using CacheEntryPtr = std::shared_ptr<CacheEntry>;
 
-using StackTraceCache = std::map<StackTraceTriple, CacheEntryPtr, std::less<>>;
+static constinit std::atomic<bool> can_use_cache = false;
+
+using StackTraceCacheBase = std::map<StackTraceTriple, CacheEntryPtr, std::less<>>;
+
+struct StackTraceCache : public StackTraceCacheBase
+{
+    ~StackTraceCache()
+    {
+        can_use_cache = false;
+    }
+};
 
 static StackTraceCache & cacheInstance()
 {
     static StackTraceCache cache;
+    can_use_cache = true;
     return cache;
 }
 
@@ -502,6 +513,13 @@ static DB::SharedMutex stacktrace_cache_mutex;
 String toStringCached(const StackTrace::FramePointers & pointers, size_t offset, size_t size)
 {
     const StackTraceRefTriple key{pointers, offset, size};
+
+    if (!can_use_cache)
+    {
+        DB::WriteBufferFromOwnString out;
+        toStringEveryLineImpl(false, key, [&](std::string_view str) { out << str << '\n'; });
+        return out.str();
+    }
 
     /// Calculation of stack trace text is extremely slow.
     /// We use cache because otherwise the server could be overloaded by trash queries.
