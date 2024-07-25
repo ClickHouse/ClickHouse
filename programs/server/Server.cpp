@@ -140,6 +140,11 @@
 #   include <azure/core/diagnostics/logger.hpp>
 #endif
 
+#if USE_NUMACTL
+#include <numa.h>
+#endif
+
+
 #include <incbin.h>
 /// A minimal file used when the server is run without installation
 INCBIN(resource_embedded_xml, SOURCE_DIR "/programs/server/embedded.xml");
@@ -753,6 +758,28 @@ try
         const auto config_dir = std::filesystem::path{config_path}.replace_filename("openssl.conf");
         setenv("OPENSSL_CONF", config_dir.c_str(), true); /// NOLINT
     }
+
+#if USE_NUMACTL
+    if (numa_available() != -1)
+    {
+        auto * membind = numa_get_membind();
+        if (!numa_bitmask_equal(membind, numa_all_nodes_ptr))
+        {
+            uint64_t total_numa_memory = 0;
+            auto max_node = numa_max_node();
+            for (int i = 0; i <= max_node; ++i)
+            {
+                if (numa_bitmask_isbitset(membind, i))
+                    total_numa_memory += numa_node_size(i, nullptr);
+            }
+
+            LOG_INFO(
+                log,
+                "ClickHouse is bound to a subset of NUMA nodes. Total memory of all available nodes {}",
+                ReadableSize(total_numa_memory));
+        }
+    }
+#endif
 
     registerInterpreters();
     registerFunctions();
