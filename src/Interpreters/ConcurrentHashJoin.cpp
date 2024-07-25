@@ -210,8 +210,8 @@ bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_l
     /// We prematurely materialize columns here to avoid materializing columns multiple times on each thread.
     Block right_block = materializeColumnsFromSampleBlock(
         right_block_, hash_joins[0]->data->savedBlockSample(), table_join->getAllNames(JoinTableSide::Right));
-    auto dispatched_blocks = dispatchBlock(table_join->getOnlyClause().key_names_right, right_block);
 
+    auto dispatched_blocks = dispatchBlock(table_join->getOnlyClause().key_names_right, right_block);
     size_t blocks_left = 0;
     for (const auto & block : dispatched_blocks)
     {
@@ -254,6 +254,9 @@ bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_l
 
 void ConcurrentHashJoin::joinBlock(Block & block, std::shared_ptr<ExtraBlock> & /*not_processed*/)
 {
+    if (hash_joins[0]->data->getKind() == JoinKind::Right || hash_joins[0]->data->getKind() == JoinKind::Full)
+        materializeBlockInplace(block);
+
     auto dispatched_blocks = dispatchBlock(table_join->getOnlyClause().key_names_left, block);
     block = {};
     for (size_t i = 0; i < dispatched_blocks.size(); ++i)

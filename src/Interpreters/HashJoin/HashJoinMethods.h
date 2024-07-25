@@ -146,7 +146,6 @@ public:
           */
         if constexpr (join_features.right || join_features.full)
         {
-            /// TODO: do materialization once before scattering the source block by hash
             materializeBlockInplace(source_block);
         }
 
