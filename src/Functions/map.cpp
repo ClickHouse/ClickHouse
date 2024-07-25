@@ -236,7 +236,6 @@ public:
         ColumnPtr data_keys = col_keys->getDataPtr();
         if (isColumnNullableOrLowCardinalityNullable(*data_keys))
         {
-            std::cout << "data keys is nullable" << std::endl;
             const NullMap * null_map = nullptr;
             if (const auto * nullable = checkAndGetColumn<ColumnNullable>(data_keys.get()))
             {
@@ -263,9 +262,7 @@ public:
 
         const auto & data_values = col_values->getDataPtr();
         const auto & offsets = col_keys->getOffsetsPtr();
-        std::cout << "before create array:" << "offsets:" << offsets->getName() << std::endl;
         auto nested_column = ColumnArray::create(ColumnTuple::create(Columns{std::move(data_keys), data_values}), offsets);
-        std::cout << "after create array:" << "offsets:" << offsets->getName() << std::endl;
         return ColumnMap::create(nested_column);
     }
 };
