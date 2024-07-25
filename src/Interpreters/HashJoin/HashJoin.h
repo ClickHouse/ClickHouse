@@ -29,6 +29,8 @@
 #include <Interpreters/IKeyValueEntity.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 
+#include <boost/core/noncopyable.hpp>
+
 namespace DB
 {
 
@@ -137,10 +139,137 @@ public:
         return std::make_shared<HashJoin>(table_join_, right_sample_block_, any_take_last_row, reserve_num, instance_id);
     }
 
+    struct ScatteredBlock : private boost::noncopyable
+    {
+        BlockPtr block; // TODO: we don't need shared_ptr here since if any changes are made to block, they're supposed to be private
+        IColumn::Selector selector;
+
+        ScatteredBlock(const Block & block_) : block(std::make_shared<Block>(block_)), selector(createTrivialSelector(block->rows())) { }
+
+        ScatteredBlock(const Block & block_, IColumn::Selector && selector_)
+            : block(std::make_shared<Block>(block_)), selector(std::move(selector_))
+        {
+        }
+
+        ScatteredBlock(ScatteredBlock && other) noexcept : block(std::move(other.block)), selector(std::move(other.selector))
+        {
+            other.block = nullptr;
+            other.selector.clear();
+        }
+
+        ScatteredBlock & operator=(ScatteredBlock && other) noexcept
+        {
+            if (this != &other)
+            {
+                block = std::move(other.block);
+                selector = std::move(other.selector);
+
+                other.block = nullptr;
+                other.selector.clear();
+            }
+            return *this;
+        }
+
+        operator bool() const { return block && *block; }
+
+        /// Accounts only selected rows
+        size_t rows() const { return selector.size(); }
+
+        /// Whether block was scattered, i.e. has non-trivial selector
+        bool wasScattered() const
+        {
+            chassert(block);
+            return selector.size() != block->rows();
+        }
+
+        const ColumnWithTypeAndName & getByName(const std::string & name) const
+        {
+            chassert(block);
+            return block->getByName(name);
+        }
+
+        /// Filters selector by mask discarding rows for which filter is false
+        void filter(const IColumn::Filter & filter)
+        {
+            chassert(block && block->rows() == filter.size());
+            auto it = std::remove_if(selector.begin(), selector.end(), [&](size_t idx) { return !filter[idx]; });
+            selector.resize(std::distance(selector.begin(), it));
+        }
+
+        /// Applies selector to block in place
+        void filterBySelector()
+        {
+            chassert(block);
+            auto columns = block->getColumns();
+            for (auto & col : columns)
+            {
+                auto c = col->cloneEmpty();
+                c->reserve(selector.size());
+                /// TODO: create new method in IColumnHelper to devirtualize
+                for (const auto idx : selector)
+                    c->insertFrom(*col, idx);
+                col = std::move(c);
+            }
+
+            *this = ScatteredBlock{block->cloneWithColumns(std::move(columns))};
+        }
+
+        /// Cut first num_rows rows from block in place and returns block with remaining rows
+        ScatteredBlock cut(size_t num_rows)
+        {
+            SCOPE_EXIT(filterBySelector());
+
+            if (num_rows >= rows())
+                return Block{};
+
+            chassert(block);
+
+            IColumn::Selector remaining_selector(selector.begin() + num_rows, selector.end());
+            auto remaining = ScatteredBlock{*block, std::move(remaining_selector)};
+
+            selector.erase(selector.begin() + num_rows, selector.end());
+
+            return remaining;
+        }
+
+        void replicate(const IColumn::Offsets & offsets, size_t existing_columns, const std::vector<size_t> & right_keys_to_replicate)
+        {
+            chassert(block);
+            chassert(offsets.size() == rows());
+
+            auto columns = block->getColumns();
+            for (size_t i = 0; i < existing_columns; ++i)
+            {
+                auto c = columns[i]->replicate(offsets);
+                columns[i] = std::move(c);
+            }
+            for (size_t pos : right_keys_to_replicate)
+            {
+                auto c = columns[pos]->replicate(offsets);
+                columns[pos] = std::move(c);
+            }
+
+            *this = ScatteredBlock{block->cloneWithColumns(std::move(columns))};
+        }
+
+        // private:
+        IColumn::Selector createTrivialSelector(size_t size)
+        {
+            IColumn::Selector res(size);
+            std::iota(res.begin(), res.end(), 0);
+            return res;
+        }
+    };
+
+    using ScatteredBlocks = std::vector<ScatteredBlock>;
+
     /** Add block of data from right hand of JOIN to the map.
       * Returns false, if some limit was exceeded and you should not insert more data.
       */
     bool addBlockToJoin(const Block & source_block_, bool check_limits) override;
+
+    /// Called directly from ConcurrentJoin::addBlockToJoin
+    bool addBlockToJoin(ScatteredBlock & source_block_, bool check_limits);
 
     void checkTypesOfKeys(const Block & block) const override;
 
@@ -148,6 +277,9 @@ public:
       * Could be called from different threads in parallel.
       */
     void joinBlock(Block & block, ExtraBlockPtr & not_processed) override;
+
+    /// Called directly from ConcurrentJoin::joinBlock
+    void joinBlock(ScatteredBlock & block, ExtraBlockPtr & not_processed);
 
     /// Check joinGet arguments and infer the return type.
     DataTypePtr joinGetCheckAndGetReturnType(const DataTypes & data_types, const String & column_name, bool or_null) const;

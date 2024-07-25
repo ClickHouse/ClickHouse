@@ -441,15 +441,21 @@ Block HashJoin::prepareRightBlock(const Block & block) const
     return prepareRightBlock(block, savedBlockSample());
 }
 
-bool HashJoin::addBlockToJoin(const Block & source_block_, bool check_limits)
+bool HashJoin::addBlockToJoin(const Block & source_block, bool check_limits)
+{
+    auto scattered_block = ScatteredBlock{source_block};
+    return addBlockToJoin(scattered_block, check_limits);
+}
+
+bool HashJoin::addBlockToJoin(ScatteredBlock & source_block, bool check_limits)
 {
     if (!data)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Join data was released");
 
     /// RowRef::SizeT is uint32_t (not size_t) for hash table Cell memory efficiency.
     /// It's possible to split bigger blocks and insert them by parts here. But it would be a dead code.
-    if (unlikely(source_block_.rows() > std::numeric_limits<RowRef::SizeT>::max()))
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Too many rows in right table block for HashJoin: {}", source_block_.rows());
+    if (unlikely(source_block.rows() > std::numeric_limits<RowRef::SizeT>::max()))
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Too many rows in right table block for HashJoin: {}", source_block.rows());
 
     /** We do not allocate memory for stored blocks inside HashJoin, only for hash table.
       * In case when we have all the blocks allocated before the first `addBlockToJoin` call, will already be quite high.
@@ -458,7 +464,6 @@ bool HashJoin::addBlockToJoin(const Block & source_block_, bool check_limits)
     if (!memory_usage_before_adding_blocks)
         memory_usage_before_adding_blocks = getCurrentQueryMemoryUsage();
 
-    Block source_block = source_block_;
     if (strictness == JoinStrictness::Asof)
     {
         chassert(kind == JoinKind::Left || kind == JoinKind::Inner);
@@ -485,8 +490,7 @@ bool HashJoin::addBlockToJoin(const Block & source_block_, bool check_limits)
                 for (size_t i = 0; i < asof_column_nullable.size(); ++i)
                     negative_null_map[i] = !asof_column_nullable[i];
 
-                for (auto & column : source_block)
-                    column.column = column.column->filter(negative_null_map, -1);
+                source_block.filter(negative_null_map);
             }
         }
     }
@@ -498,10 +502,11 @@ bool HashJoin::addBlockToJoin(const Block & source_block_, bool check_limits)
     for (const auto & column_name : right_key_names)
     {
         const auto & column = source_block.getByName(column_name).column;
+        /// TODO: do it once for the original block before splitting
         all_key_columns[column_name] = recursiveRemoveSparse(column->convertToFullColumnIfConst())->convertToFullColumnIfLowCardinality();
     }
 
-    Block block_to_save = prepareRightBlock(source_block);
+    Block block_to_save = prepareRightBlock(*source_block.block);
     if (shrink_blocks)
         block_to_save = block_to_save.shrinkToFit();
 
@@ -512,6 +517,7 @@ bool HashJoin::addBlockToJoin(const Block & source_block_, bool check_limits)
         && (tmp_stream || (max_bytes_in_join && getTotalByteCount() + block_to_save.allocatedBytes() >= max_bytes_in_join)
             || (max_rows_in_join && getTotalRowCount() + block_to_save.rows() >= max_rows_in_join)))
     {
+        chassert(!source_block.wasScattered()); /// We don't run parallel_hash for cross join
         if (tmp_stream == nullptr)
         {
             tmp_stream = &tmp_data->createStream(right_sample_block);
@@ -535,11 +541,14 @@ bool HashJoin::addBlockToJoin(const Block & source_block_, bool check_limits)
             && ((min_bytes_to_compress && getTotalByteCount() >= min_bytes_to_compress)
                 || (min_rows_to_compress && getTotalRowCount() >= min_rows_to_compress)))
         {
+            chassert(!source_block.wasScattered()); /// We don't run parallel_hash for cross join
             block_to_save = block_to_save.compress();
             have_compressed = true;
         }
 
-        data->blocks_allocated_size += block_to_save.allocatedBytes();
+        /// In case of scattered block we account proportional share of the source block bytes.
+        /// For not scattered columns it will be trivial (bytes * N / N) calculation.
+        data->blocks_allocated_size += block_to_save.rows() ? block_to_save.allocatedBytes() * rows / block_to_save.rows() : 0;
         data->blocks.emplace_back(std::move(block_to_save));
         Block * stored_block = &data->blocks.back();
 
@@ -567,7 +576,7 @@ bool HashJoin::addBlockToJoin(const Block & source_block_, bool check_limits)
                     save_nullmap |= (*null_map)[i];
             }
 
-            auto join_mask_col = JoinCommon::getColumnAsMask(source_block, onexprs[onexpr_idx].condColumnNames().second);
+            auto join_mask_col = JoinCommon::getColumnAsMask(*source_block.block, onexprs[onexpr_idx].condColumnNames().second);
             /// Save blocks that do not hold conditions in ON section
             ColumnUInt8::MutablePtr not_joined_map = nullptr;
             if (!flag_per_row && isRightOrFull(kind) && join_mask_col.hasData())
@@ -592,27 +601,31 @@ bool HashJoin::addBlockToJoin(const Block & source_block_, bool check_limits)
             bool is_inserted = false;
             if (kind != JoinKind::Cross)
             {
-                joinDispatch(kind, strictness, data->maps[onexpr_idx], [&](auto kind_, auto strictness_, auto & map)
-                {
-                    size_t size = HashJoinMethods<kind_, strictness_, std::decay_t<decltype(map)>>::insertFromBlockImpl(
+                joinDispatch(
+                    kind,
+                    strictness,
+                    data->maps[onexpr_idx],
+                    [&](auto kind_, auto strictness_, auto & map)
+                    {
+                        size_t size = HashJoinMethods<kind_, strictness_, std::decay_t<decltype(map)>>::insertFromBlockImpl(
                             *this,
                             data->type,
                             map,
-                            rows,
                             key_columns,
                             key_sizes[onexpr_idx],
                             stored_block,
+                            source_block.selector,
                             null_map,
                             join_mask_col.getData(),
                             data->pool,
                             is_inserted);
 
-                    if (flag_per_row)
-                        used_flags->reinit<kind_, strictness_>(stored_block);
-                    else if (is_inserted)
-                        /// Number of buckets + 1 value from zero storage
-                        used_flags->reinit<kind_, strictness_>(size + 1);
-                });
+                        if (flag_per_row)
+                            used_flags->reinit<kind_, strictness_>(stored_block);
+                        else if (is_inserted)
+                            /// Number of buckets + 1 value from zero storage
+                            used_flags->reinit<kind_, strictness_>(size + 1);
+                    });
             }
 
             if (!flag_per_row && save_nullmap && is_inserted)
@@ -931,6 +944,50 @@ void HashJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong JOIN combination: {} {}", strictness, kind);
     }
+}
+
+void HashJoin::joinBlock(ScatteredBlock & block, ExtraBlockPtr & not_processed)
+{
+    if (!data)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot join after data has been released");
+
+    for (const auto & onexpr : table_join->getClauses())
+    {
+        auto cond_column_name = onexpr.condColumnNames();
+        JoinCommon::checkTypesOfKeys(
+            *block.block,
+            onexpr.key_names_left,
+            cond_column_name.first,
+            right_sample_block,
+            onexpr.key_names_right,
+            cond_column_name.second);
+    }
+
+    chassert(kind == JoinKind::Left || kind == JoinKind::Inner);
+
+    std::vector<const std::decay_t<decltype(data->maps[0])> *> maps_vector;
+    for (size_t i = 0; i < table_join->getClauses().size(); ++i)
+        maps_vector.push_back(&data->maps[i]);
+
+    if (joinDispatch(
+            kind,
+            strictness,
+            maps_vector,
+            [&](auto kind_, auto strictness_, auto & maps_vector_)
+            {
+                using MapType = typename MapGetter<kind_, strictness_>::Map;
+                ScatteredBlock remaining_block = HashJoinMethods<kind_, strictness_, MapType>::joinBlockImpl(
+                    *this, block, sample_block_with_columns_to_add, maps_vector_);
+                if (remaining_block.rows())
+                    not_processed = std::make_shared<ExtraBlock>(ExtraBlock{std::move(*remaining_block.block)});
+                else
+                    not_processed.reset();
+            }))
+    {
+        /// Joined
+    }
+    else
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong JOIN combination: {} {}", strictness, kind);
 }
 
 HashJoin::~HashJoin()

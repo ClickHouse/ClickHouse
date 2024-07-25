@@ -24,6 +24,8 @@
 #include <Common/setThreadName.h>
 #include <Common/typeid_cast.h>
 
+using namespace DB;
+
 namespace ProfileEvents
 {
 extern const Event HashJoinPreallocatedElementsInHashTables;
@@ -51,6 +53,19 @@ void updateStatistics(const auto & hash_joins, const DB::StatsCollectingParams &
     std::nth_element(sizes.begin(), median_size, sizes.end());
     if (auto sum_of_sizes = std::accumulate(sizes.begin(), sizes.end(), 0ull))
         DB::getHashTablesStatistics().update(sum_of_sizes, *median_size, params);
+}
+
+Block concatenateBlocks(const HashJoin::ScatteredBlocks & blocks)
+{
+    Blocks inner_blocks;
+    for (const auto & block : blocks)
+    {
+        chassert(!block.wasScattered());
+        if (block.wasScattered())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Not scattered block is expected here");
+        inner_blocks.push_back(*block.block);
+    }
+    return concatenateBlocks(inner_blocks);
 }
 
 }
@@ -165,7 +180,7 @@ ConcurrentHashJoin::~ConcurrentHashJoin()
 
 bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block, bool check_limits)
 {
-    Blocks dispatched_blocks = dispatchBlock(table_join->getOnlyClause().key_names_right, right_block);
+    auto dispatched_blocks = dispatchBlock(table_join->getOnlyClause().key_names_right, right_block);
 
     size_t blocks_left = 0;
     for (const auto & block : dispatched_blocks)
@@ -193,7 +208,7 @@ bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block, bool check_li
 
                 bool limit_exceeded = !hash_join->data->addBlockToJoin(dispatched_block, check_limits);
 
-                dispatched_block = {};
+                dispatched_block = Block{};
                 blocks_left--;
 
                 if (limit_exceeded)
@@ -209,7 +224,7 @@ bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block, bool check_li
 
 void ConcurrentHashJoin::joinBlock(Block & block, std::shared_ptr<ExtraBlock> & /*not_processed*/)
 {
-    Blocks dispatched_blocks = dispatchBlock(table_join->getOnlyClause().key_names_left, block);
+    auto dispatched_blocks = dispatchBlock(table_join->getOnlyClause().key_names_left, block);
     block = {};
     for (size_t i = 0; i < dispatched_blocks.size(); ++i)
     {
@@ -221,7 +236,7 @@ void ConcurrentHashJoin::joinBlock(Block & block, std::shared_ptr<ExtraBlock> & 
             throw Exception(ErrorCodes::LOGICAL_ERROR, "not_processed should be empty");
     }
 
-    block = concatenateBlocks(dispatched_blocks);
+    block = ::concatenateBlocks(dispatched_blocks);
 }
 
 void ConcurrentHashJoin::checkTypesOfKeys(const Block & block) const
@@ -300,10 +315,9 @@ static ALWAYS_INLINE IColumn::Selector hashToSelector(const WeakHash32 & hash, s
     return selector;
 }
 
-IColumn::Selector ConcurrentHashJoin::selectDispatchBlock(const Strings & key_columns_names, const Block & from_block)
+IColumn::Selector selectDispatchBlock(size_t num_shards, const Strings & key_columns_names, const Block & from_block)
 {
     size_t num_rows = from_block.rows();
-    size_t num_shards = hash_joins.size();
 
     WeakHash32 hash(num_rows);
     for (const auto & key_name : key_columns_names)
@@ -315,27 +329,22 @@ IColumn::Selector ConcurrentHashJoin::selectDispatchBlock(const Strings & key_co
     return hashToSelector(hash, num_shards);
 }
 
-Blocks ConcurrentHashJoin::dispatchBlock(const Strings & key_columns_names, const Block & from_block)
+HashJoin::ScatteredBlocks ConcurrentHashJoin::dispatchBlock(const Strings & key_columns_names, const Block & from_block)
 {
-    /// TODO: use JoinCommon::scatterBlockByHash
     size_t num_shards = hash_joins.size();
-    size_t num_cols = from_block.columns();
-
-    IColumn::Selector selector = selectDispatchBlock(key_columns_names, from_block);
-
-    Blocks result(num_shards);
+    IColumn::Selector selector = selectDispatchBlock(num_shards, key_columns_names, from_block);
+    std::vector<IColumn::Selector> selectors(num_shards);
     for (size_t i = 0; i < num_shards; ++i)
-        result[i] = from_block.cloneEmpty();
-
-    for (size_t i = 0; i < num_cols; ++i)
+        selectors[i].reserve(selector.size() / num_shards + 1);
+    for (size_t i = 0; i < selector.size(); ++i)
     {
-        auto dispatched_columns = from_block.getByPosition(i).column->scatter(num_shards, selector);
-        assert(result.size() == dispatched_columns.size());
-        for (size_t block_index = 0; block_index < num_shards; ++block_index)
-        {
-            result[block_index].getByPosition(i).column = std::move(dispatched_columns[block_index]);
-        }
+        const size_t shard = selector[i];
+        selectors[shard].push_back(i);
     }
+    HashJoin::ScatteredBlocks result;
+    result.reserve(num_shards);
+    for (size_t i = 0; i < num_shards; ++i)
+        result.emplace_back(from_block, std::move(selectors[i]));
     return result;
 }
 
