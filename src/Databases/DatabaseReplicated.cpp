@@ -559,8 +559,11 @@ void DatabaseReplicated::createEmptyLogEntry(const ZooKeeperPtr & current_zookee
 
 bool DatabaseReplicated::waitForReplicaToProcessAllEntries(UInt64 timeout_ms)
 {
-    if (!ddl_worker || is_probably_dropped)
-        return false;
+    {
+        std::lock_guard lock{ddl_worker_mutex};
+        if (!ddl_worker || is_probably_dropped)
+            return false;
+    }
     return ddl_worker->waitForReplicaToProcessAllEntries(timeout_ms);
 }
 
@@ -641,7 +644,10 @@ LoadTaskPtr DatabaseReplicated::startupDatabaseAsync(AsyncLoader & async_loader,
             if (is_probably_dropped)
                 return;
 
-            ddl_worker = std::make_unique<DatabaseReplicatedDDLWorker>(this, getContext());
+            {
+                std::lock_guard lock{ddl_worker_mutex};
+                ddl_worker = std::make_unique<DatabaseReplicatedDDLWorker>(this, getContext());
+            }
             ddl_worker->startup();
             ddl_worker_initialized = true;
         });
@@ -671,92 +677,96 @@ void DatabaseReplicated::stopLoading()
     DatabaseAtomic::stopLoading();
 }
 
-bool DatabaseReplicated::checkDigestValid(const ContextPtr & local_context, bool debug_check /* = true */) const
+void DatabaseReplicated::dumpLocalTablesForDebugOnly(const ContextPtr & local_context) const
 {
-    if (debug_check)
+    auto table_names = getAllTableNames(context.lock());
+    for (const auto & table_name : table_names)
     {
-        /// Reduce number of debug checks
-        if (thread_local_rng() % 16)
-            return true;
+        auto ast_ptr = tryGetCreateTableQuery(table_name, local_context);
+        if (ast_ptr)
+            LOG_DEBUG(log, "[local] Table {} create query is {}", table_name, queryToString(ast_ptr));
+        else
+            LOG_DEBUG(log, "[local] Table {} has no create query", table_name);
     }
-
-    LOG_TEST(log, "Current in-memory metadata digest: {}", tables_metadata_digest);
-
-    /// Database is probably being dropped
-    if (!local_context->getZooKeeperMetadataTransaction() && (!ddl_worker || !ddl_worker->isCurrentlyActive()))
-        return true;
-
-    UInt64 local_digest = 0;
-    {
-        std::lock_guard lock{mutex};
-        for (const auto & table : TSA_SUPPRESS_WARNING_FOR_READ(tables))
-            local_digest += getMetadataHash(table.first);
-    }
-
-    if (local_digest != tables_metadata_digest)
-    {
-        LOG_ERROR(log, "Digest of local metadata ({}) is not equal to in-memory digest ({})", local_digest, tables_metadata_digest);
-        return false;
-    }
-
-    /// Do not check digest in Keeper after internal subquery, it's probably not committed yet
-    if (local_context->isInternalSubquery())
-        return true;
-
-    /// Check does not make sense to check digest in Keeper during recovering
-    if (is_recovering)
-        return true;
-
-    String zk_digest = getZooKeeper()->get(replica_path + "/digest");
-    String local_digest_str = toString(local_digest);
-    if (zk_digest != local_digest_str)
-    {
-        LOG_ERROR(log, "Digest of local metadata ({}) is not equal to digest in Keeper ({})", local_digest_str, zk_digest);
-        return false;
-    }
-
-    return true;
 }
 
-void DatabaseReplicated::checkQueryValid(const ASTPtr & query, ContextPtr query_context) const
+void DatabaseReplicated::dumpTablesInZooKeeperForDebugOnly() const
 {
-    /// Replicas will set correct name of current database in query context (database name can be different on replicas)
-    if (auto * ddl_query = dynamic_cast<ASTQueryWithTableAndOutput *>(query.get()))
+    UInt32 max_log_ptr;
+    auto table_name_to_metadata = tryGetConsistentMetadataSnapshot(getZooKeeper(), max_log_ptr);
+    for (const auto & [table_name, create_table_query] : table_name_to_metadata)
     {
-        if (ddl_query->getDatabase() != getDatabaseName())
-            throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database was renamed");
-        ddl_query->database.reset();
-
-        if (auto * create = query->as<ASTCreateQuery>())
+        auto query_ast = parseQueryFromMetadataInZooKeeper(table_name, create_table_query);
+        if (query_ast)
         {
-            if (create->storage)
-                checkTableEngine(*create, *create->storage, query_context);
+            LOG_DEBUG(log, "[zookeeper] Table {} create query is {}", table_name, queryToString(query_ast));
+        }
+        else
+        {
+            LOG_DEBUG(log, "[zookeeper] Table {} has no create query", table_name);
+        }
+    }
+}
 
-            if (create->targets)
+void DatabaseReplicated::tryCompareLocalAndZooKeeperTablesAndDumpDiffForDebugOnly(const ContextPtr & local_context) const
+{
+    UInt32 max_log_ptr;
+    auto table_name_to_metadata_in_zk = tryGetConsistentMetadataSnapshot(getZooKeeper(), max_log_ptr);
+    auto table_names_local = getAllTableNames(local_context);
+
+    if (table_name_to_metadata_in_zk.size() != table_names_local.size())
+        LOG_DEBUG(log, "Amount of tables in zk {} locally {}", table_name_to_metadata_in_zk.size(), table_names_local.size());
+
+    std::unordered_set<std::string> checked_tables;
+
+    for (const auto & table_name : table_names_local)
+    {
+        auto local_ast_ptr = tryGetCreateTableQuery(table_name, local_context);
+        if (table_name_to_metadata_in_zk.contains(table_name))
+        {
+            checked_tables.insert(table_name);
+            auto create_table_query_in_zk = table_name_to_metadata_in_zk[table_name];
+            auto zk_ast_ptr = parseQueryFromMetadataInZooKeeper(table_name, create_table_query_in_zk);
+
+            if (local_ast_ptr == nullptr && zk_ast_ptr == nullptr)
             {
-                for (const auto & inner_table_engine : create->targets->getInnerEngines())
-                    checkTableEngine(*create, *inner_table_engine, query_context);
+                LOG_DEBUG(log, "AST for table {} is the same (nullptr) in local and ZK", table_name);
+            }
+            else if (local_ast_ptr != nullptr && zk_ast_ptr != nullptr && queryToString(local_ast_ptr) != queryToString(zk_ast_ptr))
+            {
+                LOG_DEBUG(log, "AST differs for table {}, local {}, in zookeeper {}", table_name, queryToString(local_ast_ptr), queryToString(zk_ast_ptr));
+            }
+            else if (local_ast_ptr == nullptr)
+            {
+                LOG_DEBUG(log, "AST differs for table {}, local nullptr, in zookeeper {}", table_name, queryToString(zk_ast_ptr));
+            }
+            else if (zk_ast_ptr == nullptr)
+            {
+                LOG_DEBUG(log, "AST differs for table {}, local {}, in zookeeper nullptr", table_name, queryToString(local_ast_ptr));
+            }
+            else
+            {
+                LOG_DEBUG(log, "AST for table {} is the same in local and ZK", table_name);
             }
         }
-    }
-
-    if (const auto * query_alter = query->as<ASTAlterQuery>())
-    {
-        for (const auto & command : query_alter->command_list->children)
+        else
         {
-            if (!isSupportedAlterTypeForOnClusterDDLQuery(command->as<ASTAlterCommand&>().type))
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported type of ALTER query");
+            if (local_ast_ptr == nullptr)
+                LOG_DEBUG(log, "Table {} exists locally, but missing in ZK", table_name);
+            else
+                LOG_DEBUG(log, "Table {} exists locally with AST {}, but missing in ZK", table_name, queryToString(local_ast_ptr));
         }
     }
-
-    if (auto * query_drop = query->as<ASTDropQuery>())
+    for (const auto & [table_name, table_metadata] : table_name_to_metadata_in_zk)
     {
-        if (query_drop->kind == ASTDropQuery::Kind::Detach && query_context->getSettingsRef().database_replicated_always_detach_permanently)
-            query_drop->permanently = true;
-        if (query_drop->kind == ASTDropQuery::Kind::Detach && !query_drop->permanently)
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "DETACH TABLE is not allowed for Replicated databases. "
-                                                         "Use DETACH TABLE PERMANENTLY or SYSTEM RESTART REPLICA or set "
-                                                         "database_replicated_always_detach_permanently to 1");
+        if (!checked_tables.contains(table_name))
+        {
+            auto zk_ast_ptr = parseQueryFromMetadataInZooKeeper(table_name, table_metadata);
+            if (zk_ast_ptr == nullptr)
+                LOG_DEBUG(log, "Table {} exists in ZK with AST {}, but missing locally", table_name, queryToString(zk_ast_ptr));
+            else
+                LOG_DEBUG(log, "Table {} exists in ZK, but missing locally", table_name);
+        }
     }
 }
 
@@ -837,6 +847,107 @@ void DatabaseReplicated::checkTableEngine(const ASTCreateQuery & query, ASTStora
                     "Explicit zookeeper_path and replica_name are specified in ReplicatedMergeTree arguments. "
                     "If you really want to specify it explicitly, then you should use some macros "
                     "to distinguish different shards and replicas");
+}
+
+bool DatabaseReplicated::checkDigestValid(const ContextPtr & local_context, bool debug_check /* = true */) const
+{
+    if (debug_check)
+    {
+        /// Reduce number of debug checks
+        if (thread_local_rng() % 16)
+            return true;
+    }
+
+    LOG_TEST(log, "Current in-memory metadata digest: {}", tables_metadata_digest);
+
+    /// Database is probably being dropped
+    if (!local_context->getZooKeeperMetadataTransaction() && (!ddl_worker || !ddl_worker->isCurrentlyActive()))
+        return true;
+
+    UInt64 local_digest = 0;
+    {
+        std::lock_guard lock{mutex};
+        for (const auto & table : TSA_SUPPRESS_WARNING_FOR_READ(tables))
+            local_digest += getMetadataHash(table.first);
+    }
+
+    if (local_digest != tables_metadata_digest)
+    {
+        LOG_ERROR(log, "Digest of local metadata ({}) is not equal to in-memory digest ({})", local_digest, tables_metadata_digest);
+
+#ifndef NDEBUG
+        dumpLocalTablesForDebugOnly(local_context);
+        dumpTablesInZooKeeperForDebugOnly();
+        tryCompareLocalAndZooKeeperTablesAndDumpDiffForDebugOnly(local_context);
+#endif
+
+        return false;
+    }
+
+    /// Do not check digest in Keeper after internal subquery, it's probably not committed yet
+    if (local_context->isInternalSubquery())
+        return true;
+
+    /// Check does not make sense to check digest in Keeper during recovering
+    if (is_recovering)
+        return true;
+
+    String zk_digest = getZooKeeper()->get(replica_path + "/digest");
+    String local_digest_str = toString(local_digest);
+    if (zk_digest != local_digest_str)
+    {
+        LOG_ERROR(log, "Digest of local metadata ({}) is not equal to digest in Keeper ({})", local_digest_str, zk_digest);
+#ifndef NDEBUG
+        dumpLocalTablesForDebugOnly(local_context);
+        dumpTablesInZooKeeperForDebugOnly();
+        tryCompareLocalAndZooKeeperTablesAndDumpDiffForDebugOnly(local_context);
+#endif
+        return false;
+    }
+
+    return true;
+}
+
+void DatabaseReplicated::checkQueryValid(const ASTPtr & query, ContextPtr query_context) const
+{
+    /// Replicas will set correct name of current database in query context (database name can be different on replicas)
+    if (auto * ddl_query = dynamic_cast<ASTQueryWithTableAndOutput *>(query.get()))
+    {
+        if (ddl_query->getDatabase() != getDatabaseName())
+            throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database was renamed");
+        ddl_query->database.reset();
+
+        if (auto * create = query->as<ASTCreateQuery>())
+        {
+            if (create->storage)
+                checkTableEngine(*create, *create->storage, query_context);
+
+            if (create->targets)
+            {
+                for (const auto & inner_table_engine : create->targets->getInnerEngines())
+                    checkTableEngine(*create, *inner_table_engine, query_context);
+            }
+        }
+    }
+
+    if (const auto * query_alter = query->as<ASTAlterQuery>())
+    {
+        for (const auto & command : query_alter->command_list->children)
+        {
+            if (!isSupportedAlterTypeForOnClusterDDLQuery(command->as<ASTAlterCommand&>().type))
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported type of ALTER query");
+        }
+    }
+
+    if (auto * query_drop = query->as<ASTDropQuery>())
+    {
+        if (query_drop->kind == ASTDropQuery::Kind::Detach && query_context->getSettingsRef().database_replicated_always_detach_permanently)
+            query_drop->permanently = true;
+        if (query_drop->kind == ASTDropQuery::Kind::Detach && !query_drop->permanently)
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "DETACH TABLE is not allowed for Replicated databases. "
+                                                         "Use DETACH TABLE PERMANENTLY or SYSTEM RESTART REPLICA or set "
+                                                         "database_replicated_always_detach_permanently to 1");
+    }
 }
 
 BlockIO DatabaseReplicated::tryEnqueueReplicatedDDL(const ASTPtr & query, ContextPtr query_context, QueryFlags flags)
@@ -1253,7 +1364,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
     current_zookeeper->set(replica_path + "/digest", toString(tables_metadata_digest));
 }
 
-std::map<String, String> DatabaseReplicated::tryGetConsistentMetadataSnapshot(const ZooKeeperPtr & zookeeper, UInt32 & max_log_ptr)
+std::map<String, String> DatabaseReplicated::tryGetConsistentMetadataSnapshot(const ZooKeeperPtr & zookeeper, UInt32 & max_log_ptr) const
 {
     return getConsistentMetadataSnapshotImpl(zookeeper, {}, /* max_retries= */ 10, max_log_ptr);
 }
@@ -1314,7 +1425,7 @@ std::map<String, String> DatabaseReplicated::getConsistentMetadataSnapshotImpl(
     return table_name_to_metadata;
 }
 
-ASTPtr DatabaseReplicated::parseQueryFromMetadataInZooKeeper(const String & node_name, const String & query)
+ASTPtr DatabaseReplicated::parseQueryFromMetadataInZooKeeper(const String & node_name, const String & query) const
 {
     ParserCreateQuery parser;
     String description = "in ZooKeeper " + zookeeper_path + "/metadata/" + node_name;
@@ -1411,6 +1522,7 @@ void DatabaseReplicated::renameDatabase(ContextPtr query_context, const String &
 
 void DatabaseReplicated::stopReplication()
 {
+    std::lock_guard lock{ddl_worker_mutex};
     if (ddl_worker)
         ddl_worker->shutdown();
 }
