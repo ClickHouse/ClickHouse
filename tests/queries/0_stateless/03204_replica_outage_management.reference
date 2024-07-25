@@ -1,8 +1,9 @@
--- failover_test.reference
-
-1	data1	more_data1
-2	data2	more_data2
-3	data3	more_data3
-1	data1	more_data1
-2	data2	more_data2
-3	data3	more_data3
+1    data1    more_data1
+2    data2    more_data2
+3    data3    more_data3
+1    data1    more_data1
+2    data2    more_data2
+3    data3    more_data3
+1    data1    more_data1
+2    data2    more_data2
+3    data3    more_data3

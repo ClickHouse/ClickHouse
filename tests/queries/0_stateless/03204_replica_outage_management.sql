@@ -1,5 +1,7 @@
 -- failover_test.sql
 
+-- Ensure that all nodes are running before starting this test
+
 -- Create a local table on each node
 CREATE TABLE local_table ON CLUSTER my_cluster
 (
@@ -27,7 +29,15 @@ SELECT * FROM distributed_table ORDER BY column1;
 
 -- Simulate server unavailability
 -- This should be done manually or via a separate script/command
--- E.g., stopping a ClickHouse server node
+-- For example, stop a ClickHouse server node:
+-- sudo systemctl stop clickhouse-server
 
 -- Perform another query to trigger the failover mechanism
+-- This query should trigger the failover if the node is down
+SELECT * FROM distributed_table ORDER BY column1;
+
+-- Restore server availability
+-- sudo systemctl start clickhouse-server
+
+-- Query data again to ensure the failover mechanism worked
 SELECT * FROM distributed_table ORDER BY column1;
