@@ -271,13 +271,13 @@ ConnectionPoolWithFailover::tryGetEntry(
     connection_establisher.run(result, fail_message);
 
     // If connection is not established, retry
-    if (!result.entry || !result.entry->isConnected())
+    if (!result.entry.isValid() || !result.entry->isConnected())
     {
         Poco::Timespan retry_timeout = settings.retry_timeout;
         for (size_t attempt = 0; attempt < settings.distributed_query_retries; ++attempt)
         {
             connection_establisher.run(result, fail_message);
-            if (result.entry && result.entry->isConnected())
+            if (result.entry.isValid() && result.entry->isConnected())
                 break;
 
             std::this_thread::sleep_for(std::chrono::milliseconds(retry_timeout.totalMilliseconds()));
