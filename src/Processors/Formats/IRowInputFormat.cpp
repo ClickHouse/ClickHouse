@@ -124,10 +124,6 @@ Chunk IRowInputFormat::read()
             return getChunkForCount(num_rows);
         }
 
-        /// Reserve params.max_block_size rows in advance.
-        for (auto & column : columns)
-            column->reserve(params.max_block_size);
-
         RowReadExtension info;
         bool continue_reading = true;
         for (size_t rows = 0; (rows < params.max_block_size || num_rows == 0) && continue_reading; ++rows)

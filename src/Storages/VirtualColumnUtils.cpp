@@ -290,7 +290,6 @@ static const ActionsDAG::Node * splitFilterNodeForAllowedInputs(
                 else if (!allow_non_deterministic_functions)
                     return nullptr;
 
-
             if (node_copy.children.empty())
                 return nullptr;
 
