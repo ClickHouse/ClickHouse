@@ -211,6 +211,12 @@ TEST(AccessRights, GrantWildcard)
     root.grant(AccessType::SELECT, "db", "table");
     root.revoke(AccessType::SELECT, "db", "table", "a");
     ASSERT_EQ(root.isGranted(AccessType::SELECT, "db", "table", "a"), false);
+
+    root = {};
+    root.grant(AccessType::SHOW_NAMED_COLLECTIONS);
+    root.revoke(AccessType::SHOW_NAMED_COLLECTIONS, "collection1");
+    ASSERT_EQ(root.isGranted(AccessType::SHOW_NAMED_COLLECTIONS, "collection1"), false);
+    ASSERT_EQ(root.isGranted(AccessType::SHOW_NAMED_COLLECTIONS, "collection2"), true);
 }
 
 TEST(AccessRights, Union)
@@ -295,9 +301,7 @@ TEST(AccessRights, Union)
     rhs.grant(AccessType::SELECT, "test", "table");
     lhs.makeUnion(rhs);
     ASSERT_EQ(lhs.toString(), "GRANT SELECT ON *.*, REVOKE SELECT ON test.*, GRANT SELECT ON test.`table`");
-
 }
-
 
 TEST(AccessRights, Intersection)
 {

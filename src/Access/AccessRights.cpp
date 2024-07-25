@@ -997,7 +997,7 @@ private:
         max_flags_with_children |= max_among_children;
 
         AccessFlags add_flags;
-        if (level != Level::COLUMN_LEVEL)
+        if (level != Level::COLUMN_LEVEL && isLeaf())
             add_flags = getAllGrantableFlags() - getChildAllGrantableFlags();
 
         min_flags_with_children &= min_among_children | add_flags;
