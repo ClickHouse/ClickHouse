@@ -252,7 +252,7 @@ public:
             *this = ScatteredBlock{block->cloneWithColumns(std::move(columns))};
         }
 
-        // private:
+    private:
         IColumn::Selector createTrivialSelector(size_t size)
         {
             IColumn::Selector res(size);
