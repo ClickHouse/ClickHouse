@@ -1,5 +1,8 @@
 #pragma once
 
+#include <base/defines.h>
+
+#if defined(SANITIZER_BUILD)
 #include <stdexcept>
 #include <cstddef>
 #include <cstdlib>
@@ -62,4 +65,10 @@ bool operator!=(const AllocatorWithMemoryTracking <T> &, const AllocatorWithMemo
 {
     return false;
 }
+#else
+#include <memory>
+
+template<typename T>
+using AllocatorWithMemoryTracking = std::allocator<T>;
+#endif
 
