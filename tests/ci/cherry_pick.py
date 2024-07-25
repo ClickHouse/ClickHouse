@@ -420,7 +420,9 @@ class Backport:
             fetch_release_prs = self.gh.get_release_pulls(self._fetch_from)
             fetch_release_branches = [pr.head.ref for pr in fetch_release_prs]
             self.labels_to_backport = [
-                f"v{branch if self._repo_name == "ClickHouse/ClickHouse" else branch.replace('release/','')}-must-backport"
+                f"v{branch}-must-backport"
+                if self._repo_name == "ClickHouse/ClickHouse"
+                else f"v{branch.replace('release/','')}-must-backport"
                 for branch in fetch_release_branches
             ]
 
@@ -501,7 +503,7 @@ class Backport:
                 ReleaseBranch(
                     (
                         br
-                        if self._repo_name == "ClickHouse/clickhouse"
+                        if self._repo_name == "ClickHouse/Clickhouse"
                         else f"release/{br}"
                     ),
                     pr,
