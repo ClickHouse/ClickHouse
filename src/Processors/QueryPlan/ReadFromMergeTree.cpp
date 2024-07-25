@@ -943,6 +943,8 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
 
     PoolSettings pool_settings
     {
+        .threads = num_streams,
+        .sum_marks = parts_with_ranges.getMarksCountAllParts(),
         .min_marks_for_concurrent_read = info.min_marks_for_concurrent_read,
         .preferred_block_size_bytes = settings.preferred_block_size_bytes,
         .use_uncompressed_cache = info.use_uncompressed_cache,

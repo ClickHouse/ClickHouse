@@ -125,23 +125,6 @@ DataTypePtr DataTypeFactory::getImpl(const String & family_name_param, const AST
 {
     String family_name = getAliasToOrName(family_name_param);
 
-    if (endsWith(family_name, "WithDictionary"))
-    {
-        ASTPtr low_cardinality_params = std::make_shared<ASTExpressionList>();
-        String param_name = family_name.substr(0, family_name.size() - strlen("WithDictionary"));
-        if (parameters)
-        {
-            auto func = std::make_shared<ASTFunction>();
-            func->name = param_name;
-            func->arguments = parameters;
-            low_cardinality_params->children.push_back(func);
-        }
-        else
-            low_cardinality_params->children.push_back(std::make_shared<ASTIdentifier>(param_name));
-
-        return getImpl<nullptr_on_error>("LowCardinality", low_cardinality_params);
-    }
-
     const auto * creator = findCreatorByName<nullptr_on_error>(family_name);
     if constexpr (nullptr_on_error)
     {
@@ -175,7 +158,7 @@ DataTypePtr DataTypeFactory::getCustom(DataTypeCustomDescPtr customization) cons
 }
 
 
-void DataTypeFactory::registerDataType(const String & family_name, Value creator, CaseSensitiveness case_sensitiveness)
+void DataTypeFactory::registerDataType(const String & family_name, Value creator, Case case_sensitiveness)
 {
     if (creator == nullptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "DataTypeFactory: the data type family {} has been provided  a null constructor", family_name);
@@ -189,12 +172,12 @@ void DataTypeFactory::registerDataType(const String & family_name, Value creator
         throw Exception(ErrorCodes::LOGICAL_ERROR, "DataTypeFactory: the data type family name '{}' is not unique",
             family_name);
 
-    if (case_sensitiveness == CaseInsensitive
+    if (case_sensitiveness == Case::Insensitive
         && !case_insensitive_data_types.emplace(family_name_lowercase, creator).second)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "DataTypeFactory: the case insensitive data type family name '{}' is not unique", family_name);
 }
 
-void DataTypeFactory::registerSimpleDataType(const String & name, SimpleCreator creator, CaseSensitiveness case_sensitiveness)
+void DataTypeFactory::registerSimpleDataType(const String & name, SimpleCreator creator, Case case_sensitiveness)
 {
     if (creator == nullptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "DataTypeFactory: the data type {} has been provided  a null constructor",
@@ -208,7 +191,7 @@ void DataTypeFactory::registerSimpleDataType(const String & name, SimpleCreator 
     }, case_sensitiveness);
 }
 
-void DataTypeFactory::registerDataTypeCustom(const String & family_name, CreatorWithCustom creator, CaseSensitiveness case_sensitiveness)
+void DataTypeFactory::registerDataTypeCustom(const String & family_name, CreatorWithCustom creator, Case case_sensitiveness)
 {
     registerDataType(family_name, [creator](const ASTPtr & ast)
     {
@@ -219,7 +202,7 @@ void DataTypeFactory::registerDataTypeCustom(const String & family_name, Creator
     }, case_sensitiveness);
 }
 
-void DataTypeFactory::registerSimpleDataTypeCustom(const String & name, SimpleCreatorWithCustom creator, CaseSensitiveness case_sensitiveness)
+void DataTypeFactory::registerSimpleDataTypeCustom(const String & name, SimpleCreatorWithCustom creator, Case case_sensitiveness)
 {
     registerDataTypeCustom(name, [name, creator](const ASTPtr & ast)
     {
