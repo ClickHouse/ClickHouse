@@ -53,6 +53,9 @@
     </proto_caps>
     -->
 
+    <!-- Do not send clickhouse-client to background on C-z -->
+    <!-- <ignore_shell_suspend>true</ignore_shell_suspend> -->
+
     <!--
         Settings adjustable via command-line parameters
         can take their defaults from that config file, see examples:
