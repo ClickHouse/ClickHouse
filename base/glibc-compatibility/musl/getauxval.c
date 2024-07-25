@@ -99,12 +99,12 @@ static unsigned long NO_SANITIZE_THREAD __auxv_init_procfs(unsigned long type)
     /// #8 0x5622c0d6b7cd in _start (./ClickHouse/build_msan/contrib/google-protobuf-cmake/protoc+0x22c7cd) (BuildId: 6411d3c88b898ba3f7d49760555977d3e61f0741)
 
     /// The source of the issue above is that, at this point in time during __msan_init, we can't really do much as
-    /// most global variables aren't initialized or available yet, so we we can't initiate the auxiliary vector.
+    /// most global variables aren't initialized or available yet, so we can't initiate the auxiliary vector.
     /// Normal glibc / musl getauxval doesn't have this problem since they initiate their auxval vector at the very
     /// start of __libc_start_main (just keeping track of argv+argc+1), but we don't have such option (otherwise
     // this complexity of reading "/proc/self/auxv" or using __environ would not be necessary).
 
-    /// To avoid this crashes on the re-exec call (see above how it would fail when creating `aux`, and it we used
+    /// To avoid this crashes on the re-exec call (see above how it would fail when creating `aux`, and if we used
     /// __auxv_init_environ then it would SIGSEV on READing `__environ`) we capture this call for `AT_EXECFN` and
     /// unconditionally return "/proc/self/exe" without any preparation. Theoretically this should be fine in
     /// our case, as we don't load any libraries. That's the theory at least.
