@@ -131,7 +131,7 @@ Types for which `0` is returned:
 - String representations of ordinary Float32/64 values.
 - String representations of Float values `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toInt8OrZero('0xc0fe');`.
-- If the input value cannot be represented within the bounds of [toInt16](../data-types/int-uint.md), and the result over or under flows.
+- If the input value cannot be represented within the bounds of [Int8](../data-types/int-uint.md), and the result over or under flows.
 
 **Returned value**
 
@@ -186,7 +186,7 @@ Types for which `\N` is returned:
 - String representations of ordinary Float32/64 values.
 - String representations of Float values `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toInt8OrNull('0xc0fe');`.
-- If the input value cannot be represented within the bounds of [Int16](../data-types/int-uint.md), and the result over or under flows.
+- If the input value cannot be represented within the bounds of [Int8](../data-types/int-uint.md), and the result over or under flows.
 
 **Returned value**
 
@@ -300,7 +300,7 @@ Unsupported types:
 - String representations of binary and hexadecimal values, e.g. `SELECT toInt16('0xc0fe');`
 
 :::note
-If the input value cannot be represented within the bounds of [toInt16](../data-types/int-uint.md), the result over or under flows. This is not considered an error.  
+If the input value cannot be represented within the bounds of [Int16](../data-types/int-uint.md), the result over or under flows. This is not considered an error.  
 For example: `SELECT toInt16(32768) == -32768;`, `SELECT toInt16(32768) == -32768;`,  `SELECT toInt16('32768') == -32768;`.
 :::
 
@@ -527,7 +527,7 @@ Unsupported types:
 - String representations of binary and hexadecimal values, e.g. `SELECT toInt32('0xc0fe');`
 
 :::note
-If the input value cannot be represented within the bounds of [toInt16](../data-types/int-uint.md), the result over or under flows. This is not considered an error.  
+If the input value cannot be represented within the bounds of [Int32](../data-types/int-uint.md), the result over or under flows. This is not considered an error.  
 For example: 
 ```
 SELECT toInt32(2147483648) == -2147483648;
@@ -755,7 +755,7 @@ Unsupported types:
 - String representations of binary and hexadecimal values, e.g. `SELECT toInt64('0xc0fe');`
 
 :::note
-If the input value cannot be represented within the bounds of [Int16](../data-types/int-uint.md), the result over or under flows. This is not considered an error.  
+If the input value cannot be represented within the bounds of [Int64](../data-types/int-uint.md), the result over or under flows. This is not considered an error.  
 For example: 
 
 ```
@@ -1386,7 +1386,7 @@ Supported types:
 
 Types for which the default value is returned:
 - Float values `NaN` and `Inf` return the default value.
-- String representations of binary and hexadecimal values, e.g. `SELECT toInt128OrDefault('0xc0fe', CAST('-1', 'Int256'));`
+- String representations of binary and hexadecimal values, e.g. `SELECT toInt256OrDefault('0xc0fe', CAST('-1', 'Int256'));`
 - If the input value cannot be represented within the bounds of [Int256](../data-types/int-uint.md) and the result over or under flows.
 
 **Returned value**
