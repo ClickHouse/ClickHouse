@@ -330,7 +330,11 @@ ColumnPtr ColumnAggregateFunction::filter(const Filter & filter, ssize_t result_
 
 void ColumnAggregateFunction::expand(const Filter & mask, bool inverted)
 {
-    expandDataByMask<char *>(data, mask, inverted);
+    ensureOwnership();
+    Arena & arena = createOrGetArena();
+    char * default_ptr = arena.alignedAlloc(func->sizeOfData(), func->alignOfData());
+    func->create(default_ptr);
+    expandDataByMask<char *>(data, mask, inverted, default_ptr);
 }
 
 ColumnPtr ColumnAggregateFunction::permute(const Permutation & perm, size_t limit) const
