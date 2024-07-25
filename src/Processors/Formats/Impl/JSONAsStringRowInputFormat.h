@@ -16,19 +16,14 @@ class ReadBuffer;
 class JSONAsRowInputFormat : public JSONEachRowRowInputFormat
 {
 public:
-    JSONAsRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings);
-
-    void setReadBuffer(ReadBuffer & in_) override;
-    void resetReadBuffer() override;
+    JSONAsRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_);
 
 private:
-    JSONAsRowInputFormat(const Block & header_, std::unique_ptr<PeekableReadBuffer> buf_, Params params_, const FormatSettings & format_settings);
-
     bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
 
 protected:
     virtual void readJSONObject(IColumn & column) = 0;
-    std::unique_ptr<PeekableReadBuffer> buf;
+    size_t json_column_index = 0;
 };
 
 /// Each JSON object is parsed as a whole to string.
@@ -36,11 +31,17 @@ protected:
 class JSONAsStringRowInputFormat final : public JSONAsRowInputFormat
 {
 public:
-    JSONAsStringRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings);
+    JSONAsStringRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_);
     String getName() const override { return "JSONAsStringRowInputFormat"; }
 
+    void setReadBuffer(ReadBuffer & in_) override;
+    void resetReadBuffer() override;
+
 private:
+    JSONAsStringRowInputFormat(const Block & header_, std::unique_ptr<PeekableReadBuffer> buf_, Params params_, const FormatSettings & format_settings_);
+
     void readJSONObject(IColumn & column) override;
+    std::unique_ptr<PeekableReadBuffer> buf;
 };
 
 
@@ -53,7 +54,6 @@ public:
     String getName() const override { return "JSONAsObjectRowInputFormat"; }
 
 private:
-    Chunk getChunkForCount(size_t rows) override;
     void readJSONObject(IColumn & column) override;
 };
 

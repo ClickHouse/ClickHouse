@@ -32,6 +32,7 @@ The supported formats are:
 | [Vertical](#vertical)                                                                     | ✗    | ✔     |
 | [JSON](#json)                                                                             | ✔    | ✔     |
 | [JSONAsString](#jsonasstring)                                                             | ✔    | ✗     |
+| [JSONAsObject](#jsonasobject)                                                             | ✔    | ✗     |
 | [JSONStrings](#jsonstrings)                                                               | ✔    | ✔     |
 | [JSONColumns](#jsoncolumns)                                                               | ✔    | ✔     |
 | [JSONColumnsWithMetadata](#jsoncolumnsmonoblock)                                          | ✔    | ✔     |
@@ -67,7 +68,7 @@ The supported formats are:
 | [Prometheus](#prometheus)                                                                 | ✗    | ✔     |
 | [Protobuf](#protobuf)                                                                     | ✔    | ✔     |
 | [ProtobufSingle](#protobufsingle)                                                         | ✔    | ✔     |
-| [ProtobufList](#protobuflist)								    | ✔    | ✔     |
+| [ProtobufList](#protobuflist)								                                                     | ✔    | ✔     |
 | [Avro](#data-format-avro)                                                                 | ✔    | ✔     |
 | [AvroConfluent](#data-format-avro-confluent)                                              | ✔    | ✗     |
 | [Parquet](#data-format-parquet)                                                           | ✔    | ✔     |
@@ -779,7 +780,7 @@ the types from metadata in input data will be compared with the types of the cor
 
 In this format, a single JSON object is interpreted as a single value. If the input has several JSON objects (comma separated), they are interpreted as separate rows. If the input data is enclosed in square brackets, it is interpreted as an array of JSONs.
 
-This format can only be parsed for a table with a single field of type [String](/docs/en/sql-reference/data-types/string.md). The remaining columns must be set to [DEFAULT](/docs/en/sql-reference/statements/create/table.md/#default) or [MATERIALIZED](/docs/en/sql-reference/statements/create/table.md/#materialized), or omitted. Once you collect the whole JSON object to string you can use [JSON functions](/docs/en/sql-reference/functions/json-functions.md) to process it.
+This format can only be parsed for a table with a column of type [String](/docs/en/sql-reference/data-types/string.md). The remaining columns will be filled with default values (you can use [DEFAULT](/docs/en/sql-reference/statements/create/table.md/#default) expression for them on table creation or use [MATERIALIZED](/docs/en/sql-reference/statements/create/table.md/#materialized) columns).
 
 **Examples**
 
@@ -821,6 +822,86 @@ Result:
 │ {"id": 2, "name": "name2"} │
 └────────────────────────────┘
 ```
+
+**Columns with default values**
+
+```sql
+CREATE TABLE json_as_string (json String, time DateTime DEFAULT now()) ENGINE = Memory;
+INSERT INTO json_as_string (json) FORMAT JSONAsString {"foo":{"bar":{"x":"y"},"baz":1}};
+INSERT INTO json_as_string (json) FORMAT JSONAsString {};
+INSERT INTO json_as_string (json) FORMAT JSONAsString {"any json stucture":1}
+SELECT * FROM json_as_string
+```
+
+```resonse
+┌─json──────────────────────────────┬────────────────time─┐
+│ {"foo":{"bar":{"x":"y"},"baz":1}} │ 2024-07-25 17:04:05 │
+│ {}                                │ 2024-07-25 17:04:07 │
+│ {"any json stucture":1}           │ 2024-07-25 17:04:10 │
+└───────────────────────────────────┴─────────────────────┘
+```
+
+## JSONAsObject {#jsonasobject}
+
+In this format, a single JSON object is interpreted as a single [Object('json')](/docs/en/sql-reference/data-types/json.md) value. If the input has several JSON objects (comma separated), they are interpreted as separate rows. If the input data is enclosed in square brackets, it is interpreted as an array of JSONs.
+
+This format can only be parsed for a table that has a column of type [Object('json')](/docs/en/sql-reference/data-types/json.md). The remaining columns will be filled with default values (you can use [DEFAULT](/docs/en/sql-reference/statements/create/table.md/#default) expression for them on table creation or use [MATERIALIZED](/docs/en/sql-reference/statements/create/table.md/#materialized) columns).
+
+**Examples**
+
+Query:
+
+``` sql
+SET allow_experimental_object_type = 1;
+CREATE TABLE json_as_object (json Object('json')) ENGINE = Memory;
+INSERT INTO json_as_object (json) FORMAT JSONAsObject {"foo":{"bar":{"x":"y"},"baz":1}},{},{"any json stucture":1}
+SELECT * FROM json_as_object FORMAT JSONEachRow;
+```
+
+Result:
+
+``` response
+{"json":{"any json stucture":0,"foo":{"bar":{"x":"y"},"baz":1}}}
+{"json":{"any json stucture":0,"foo":{"bar":{"x":""},"baz":0}}}
+{"json":{"any json stucture":1,"foo":{"bar":{"x":""},"baz":0}}}
+```
+
+**An array of JSON objects**
+
+Query:
+
+``` sql
+SET allow_experimental_object_type = 1;
+CREATE TABLE json_square_brackets (field Object('json')) ENGINE = Memory;
+INSERT INTO json_square_brackets FORMAT JSONAsObject [{"id": 1, "name": "name1"}, {"id": 2, "name": "name2"}];
+
+SELECT * FROM json_square_brackets FORMAT JSONEachRow;
+```
+
+Result:
+
+```response
+{"field":{"id":1,"name":"name1"}}
+{"field":{"id":2,"name":"name2"}}
+```
+
+**Columns with default values**
+
+```sql
+SET allow_experimental_object_type = 1;
+CREATE TABLE json_as_object (json Object('json'), time DateTime DEFAULT now()) ENGINE = Memory;
+INSERT INTO json_as_object (json) FORMAT JSONAsObject {"foo":{"bar":{"x":"y"},"baz":1}};
+INSERT INTO json_as_object (json) FORMAT JSONAsObject {};
+INSERT INTO json_as_object (json) FORMAT JSONAsObject {"any json stucture":1}
+SELECT * FROM json_as_object FORMAT JSONEachRow
+```
+
+```resonse
+{"json":{"any json stucture":0,"foo":{"bar":{"x":""},"baz":0}},"time":"2024-07-25 17:02:47"}
+{"json":{"any json stucture":1,"foo":{"bar":{"x":""},"baz":0}},"time":"2024-07-25 17:02:50"}
+{"json":{"any json stucture":0,"foo":{"bar":{"x":"y"},"baz":1}},"time":"2024-07-25 17:02:45"}
+```
+
 
 ## JSONCompact {#jsoncompact}
 

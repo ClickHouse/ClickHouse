@@ -15,73 +15,87 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
-JSONAsRowInputFormat::JSONAsRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_)
-    : JSONAsRowInputFormat(header_, std::make_unique<PeekableReadBuffer>(in_), params_, format_settings_) {}
-
-JSONAsRowInputFormat::JSONAsRowInputFormat(const Block & header_, std::unique_ptr<PeekableReadBuffer> buf_, Params params_, const FormatSettings & format_settings_) :
-    JSONEachRowRowInputFormat(*buf_, header_, std::move(params_), format_settings_, false), buf(std::move(buf_))
+JSONAsRowInputFormat::JSONAsRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_) :
+    JSONEachRowRowInputFormat(in_, header_, std::move(params_), format_settings_, false)
 {
-    if (header_.columns() > 1)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "This input format is only suitable for tables with a single column of type String or Object, but the number of columns is {}",
-            header_.columns());
 }
 
-
-void JSONAsRowInputFormat::setReadBuffer(ReadBuffer & in_)
+bool JSONAsRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & extension)
 {
-    buf = std::make_unique<PeekableReadBuffer>(in_);
-    JSONEachRowRowInputFormat::setReadBuffer(*buf);
-}
-
-void JSONAsRowInputFormat::resetReadBuffer()
-{
-    buf.reset();
-    JSONEachRowRowInputFormat::resetReadBuffer();
-}
-
-bool JSONAsRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &)
-{
-    assert(columns.size() == 1);
-    assert(serializations.size() == 1);
-
     if (!allow_new_rows)
         return false;
 
-    skipWhitespaceIfAny(*buf);
-    if (!buf->eof())
+    skipWhitespaceIfAny(*in);
+    if (!in->eof())
     {
-        if (!data_in_square_brackets && *buf->position() == ';')
+        if (!data_in_square_brackets && *in->position() == ';')
         {
             /// ';' means the end of query, but it cannot be before ']'.
             return allow_new_rows = false;
         }
-        else if (data_in_square_brackets && *buf->position() == ']')
+        else if (data_in_square_brackets && *in->position() == ']')
         {
             /// ']' means the end of query.
             return allow_new_rows = false;
         }
     }
 
-    if (!buf->eof())
-        readJSONObject(*columns[0]);
+    if (!in->eof())
+    {
+        readJSONObject(*columns[json_column_index]);
+        extension.read_columns.resize(columns.size(), true);
+        for (size_t i = 0; i != columns.size(); ++i)
+        {
+            if (i != json_column_index)
+            {
+                columns[i]->insertDefault();
+                extension.read_columns[i] = false;
+            }
+        }
+    }
 
-    skipWhitespaceIfAny(*buf);
-    if (!buf->eof() && *buf->position() == ',')
-        ++buf->position();
-    skipWhitespaceIfAny(*buf);
+    skipWhitespaceIfAny(*in);
+    if (!in->eof() && *in->position() == ',')
+        ++in->position();
+    skipWhitespaceIfAny(*in);
 
-    return !buf->eof();
+    return !in->eof();
 }
 
 JSONAsStringRowInputFormat::JSONAsStringRowInputFormat(
     const Block & header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_)
-    : JSONAsRowInputFormat(header_, in_, params_, format_settings_)
+    : JSONAsStringRowInputFormat(header_, std::make_unique<PeekableReadBuffer>(in_), params_, format_settings_)
 {
-    if (!isString(removeNullable(removeLowCardinality(header_.getByPosition(0).type))))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "This input format is only suitable for tables with a single column of type String but the column type is {}",
-            header_.getByPosition(0).type->getName());
+}
+
+JSONAsStringRowInputFormat::JSONAsStringRowInputFormat(
+    const DB::Block & header_, std::unique_ptr<PeekableReadBuffer> buf_, DB::IRowInputFormat::Params params_, const DB::FormatSettings & format_settings_)
+    : JSONAsRowInputFormat(header_, *buf_, params_, format_settings_), buf(std::move(buf_))
+{
+    auto header_types = header_.getDataTypes();
+    size_t i = 0;
+    for (; i != header_types.size(); ++i)
+    {
+        if (isString(removeNullable(removeLowCardinality(header_types[i]))))
+            break;
+    }
+
+    if (i == header_types.size())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "JSONAsString input format is only suitable for tables with a column of type String but there are no such column");
+
+    json_column_index = i;
+}
+
+void JSONAsStringRowInputFormat::setReadBuffer(ReadBuffer & in_)
+{
+    buf = std::make_unique<PeekableReadBuffer>(in_);
+    JSONAsRowInputFormat::setReadBuffer(*buf);
+}
+
+void JSONAsStringRowInputFormat::resetReadBuffer()
+{
+    buf.reset();
+    JSONAsRowInputFormat::resetReadBuffer();
 }
 
 void JSONAsStringRowInputFormat::readJSONObject(IColumn & column)
@@ -166,22 +180,23 @@ JSONAsObjectRowInputFormat::JSONAsObjectRowInputFormat(
     const Block & header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_)
     : JSONAsRowInputFormat(header_, in_, params_, format_settings_)
 {
-    if (!isObject(header_.getByPosition(0).type))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Input format JSONAsObject is only suitable for tables with a single column of type Object but the column type is {}",
-            header_.getByPosition(0).type->getName());
+    auto header_types = header_.getDataTypes();
+    size_t i = 0;
+    for (; i != header_types.size(); ++i)
+    {
+        if (isObject(header_types[i]))
+            break;
+    }
+
+    if (i == header_types.size())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Input format JSONAsObject is only suitable for tables with a column of type Object but there are no such columns");
+
+    json_column_index = i;
 }
 
 void JSONAsObjectRowInputFormat::readJSONObject(IColumn & column)
 {
-    serializations[0]->deserializeTextJSON(column, *buf, format_settings);
-}
-
-Chunk JSONAsObjectRowInputFormat::getChunkForCount(size_t rows)
-{
-    auto object_type = getPort().getHeader().getDataTypes()[0];
-    ColumnPtr column = object_type->createColumnConst(rows, Field(Object()));
-    return Chunk({std::move(column)}, rows);
+    serializations[json_column_index]->deserializeTextJSON(column, *in, format_settings);
 }
 
 JSONAsObjectExternalSchemaReader::JSONAsObjectExternalSchemaReader(const FormatSettings & settings)
