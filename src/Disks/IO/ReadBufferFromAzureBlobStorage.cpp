@@ -261,7 +261,7 @@ std::optional<size_t> ReadBufferFromAzureBlobStorage::tryGetFileSize()
     if (!file_size)
         file_size = blob_client->GetProperties().Value.BlobSize;
 
-    return *file_size;
+    return file_size;
 }
 
 size_t ReadBufferFromAzureBlobStorage::readBigAt(char * to, size_t n, size_t range_begin, const std::function<bool(size_t)> & /*progress_callback*/) const
