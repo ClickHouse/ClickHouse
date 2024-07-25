@@ -559,8 +559,11 @@ void DatabaseReplicated::createEmptyLogEntry(const ZooKeeperPtr & current_zookee
 
 bool DatabaseReplicated::waitForReplicaToProcessAllEntries(UInt64 timeout_ms)
 {
-    if (!ddl_worker || is_probably_dropped)
-        return false;
+    {
+        std::lock_guard lock{ddl_worker_mutex};
+        if (!ddl_worker || is_probably_dropped)
+            return false;
+    }
     return ddl_worker->waitForReplicaToProcessAllEntries(timeout_ms);
 }
 
@@ -641,7 +644,10 @@ LoadTaskPtr DatabaseReplicated::startupDatabaseAsync(AsyncLoader & async_loader,
             if (is_probably_dropped)
                 return;
 
-            ddl_worker = std::make_unique<DatabaseReplicatedDDLWorker>(this, getContext());
+            {
+                std::lock_guard lock{ddl_worker_mutex};
+                ddl_worker = std::make_unique<DatabaseReplicatedDDLWorker>(this, getContext());
+            }
             ddl_worker->startup();
             ddl_worker_initialized = true;
         });
@@ -1516,6 +1522,7 @@ void DatabaseReplicated::renameDatabase(ContextPtr query_context, const String &
 
 void DatabaseReplicated::stopReplication()
 {
+    std::lock_guard lock{ddl_worker_mutex};
     if (ddl_worker)
         ddl_worker->shutdown();
 }
