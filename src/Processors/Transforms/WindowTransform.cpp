@@ -2385,22 +2385,11 @@ struct WindowFunctionLagLeadInFrame final : public WindowFunction
             return;
         }
 
-        const auto supertype = getLeastSupertype(DataTypes{argument_types[0], argument_types[2]});
-        if (!supertype)
-        {
+        if (!argument_types[0]->equals(*argument_types[2]))
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "There is no supertype for the argument type '{}' and the default value type '{}'",
+                "Argument type '{}' and the default value type '{}' are different",
                 argument_types[0]->getName(),
                 argument_types[2]->getName());
-        }
-        if (!argument_types[0]->equals(*supertype))
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "The supertype '{}' for the argument type '{}' and the default value type '{}' is not the same as the argument type",
-                supertype->getName(),
-                argument_types[0]->getName(),
-                argument_types[2]->getName());
-        }
 
         if (argument_types.size() > 3)
         {
