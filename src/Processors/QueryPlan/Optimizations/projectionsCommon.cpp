@@ -41,12 +41,19 @@ bool canUseProjectionForReadingStep(ReadFromMergeTree * reading)
     if (reading->readsInOrder())
         return false;
 
+    const auto & query_settings = reading->getContext()->getSettingsRef();
+
     // Currently projection don't support deduplication when moving parts between shards.
-    if (reading->getContext()->getSettingsRef().allow_experimental_query_deduplication)
+    if (query_settings.allow_experimental_query_deduplication)
         return false;
 
     // Currently projection don't support settings which implicitly modify aggregate functions.
-    if (reading->getContext()->getSettingsRef().aggregate_functions_null_for_empty)
+    if (query_settings.aggregate_functions_null_for_empty)
+        return false;
+
+    /// Don't use projections if have mutations to apply
+    /// because we need to apply them on original data.
+    if (query_settings.apply_mutations_on_fly && reading->getMutationsSnapshot()->hasDataMutations())
         return false;
 
     return true;

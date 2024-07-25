@@ -443,7 +443,7 @@ public:
 
     bool areAsynchronousInsertsEnabled() const override;
 
-    bool supportsTrivialCountOptimization(const StorageSnapshotPtr & storage_snapshot, ContextPtr) const override;
+    bool supportsTrivialCountOptimization(const StorageSnapshotPtr & storage_snapshot, ContextPtr query_context) const override;
 
     /// A snapshot of pending mutations that weren't applied to some of the parts yet
     /// and should be applied on the fly (i.e. when reading from the part).

@@ -8444,10 +8444,16 @@ void MergeTreeData::updateObjectColumns(const DataPartPtr & part, const DataPart
     DB::updateObjectColumns(object_columns, columns, part->getColumns());
 }
 
-bool MergeTreeData::supportsTrivialCountOptimization(const StorageSnapshotPtr & storage_snapshot, ContextPtr) const
+bool MergeTreeData::supportsTrivialCountOptimization(const StorageSnapshotPtr & storage_snapshot, ContextPtr query_context) const
 {
+    if (hasLightweightDeletedMask())
+        return false;
+
+    if (!storage_snapshot)
+        return !query_context->getSettingsRef().apply_mutations_on_fly;
+
     const auto & snapshot_data = assert_cast<const MergeTreeData::SnapshotData &>(*storage_snapshot->data);
-    return !hasLightweightDeletedMask() && !snapshot_data.mutations_snapshot->hasDataMutations();
+    return !snapshot_data.mutations_snapshot->hasDataMutations();
 }
 
 Int64 MergeTreeData::getMinMetadataVersion(const DataPartsVector & parts)
