@@ -95,7 +95,7 @@ public:
     virtual ~ClientBase();
 
     bool tryStopQuery() { return query_interrupt_handler.tryStop(); }
-    void stopQuery() { return query_interrupt_handler.stop(); }
+    void stopQuery() { query_interrupt_handler.stop(); }
 
     ASTPtr parseQuery(const char *& pos, const char * end, const Settings & settings, bool allow_multi_statements);
 
