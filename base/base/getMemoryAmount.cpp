@@ -84,6 +84,7 @@ uint64_t getMemoryAmountOrZero()
 
             memory_amount = total_numa_memory;
         }
+        numa_bitmask_free(membind);
     }
 #endif
 

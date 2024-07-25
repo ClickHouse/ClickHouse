@@ -778,6 +778,8 @@ try
                 "ClickHouse is bound to a subset of NUMA nodes. Total memory of all available nodes {}",
                 ReadableSize(total_numa_memory));
         }
+
+        numa_bitmask_free(membind);
     }
 #endif
 
