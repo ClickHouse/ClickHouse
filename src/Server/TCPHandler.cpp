@@ -56,9 +56,6 @@
 #   include <Poco/Net/SecureStreamSocketImpl.h>
 #endif
 
-
-
-
 #include <Core/Protocol.h>
 #include <Storages/MergeTree/RequestResponse.h>
 #include "TCPHandler.h"
