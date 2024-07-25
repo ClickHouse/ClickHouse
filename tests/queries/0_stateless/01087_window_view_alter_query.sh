@@ -8,41 +8,43 @@ opts=(
     "--allow_experimental_analyzer=0"
 )
 
+db="$(random_str 10)"
+
 $CLICKHOUSE_CLIENT "${opts[@]}" --multiquery <<EOF
 SET allow_experimental_window_view = 1;
-DROP TABLE IF EXISTS mt;
-DROP TABLE IF EXISTS wv;
+DROP DATABASE IF EXISTS ${db};
+CREATE DATABASE ${db};
 
-CREATE TABLE mt(a Int32, market Int64, timestamp DateTime) ENGINE=MergeTree ORDER BY tuple();
+CREATE TABLE ${db}.mt(a Int32, market Int64, timestamp DateTime) ENGINE=MergeTree ORDER BY tuple();
 
-CREATE WINDOW VIEW wv ENGINE Memory WATERMARK=ASCENDING AS SELECT count(a) AS count, market, tumbleEnd(wid) AS w_end FROM mt GROUP BY tumble(timestamp, INTERVAL '5' SECOND, 'US/Samoa') AS wid, market;
+CREATE WINDOW VIEW ${db}.wv ENGINE Memory WATERMARK=ASCENDING AS SELECT count(a) AS count, market, tumbleEnd(wid) AS w_end FROM ${db}.mt GROUP BY tumble(timestamp, INTERVAL '5' SECOND, 'US/Samoa') AS wid, market;
 
-INSERT INTO mt VALUES (1, 1, toDateTime('1990/01/01 12:00:00', 'US/Samoa'));
-INSERT INTO mt VALUES (1, 2, toDateTime('1990/01/01 12:00:01', 'US/Samoa'));
-INSERT INTO mt VALUES (1, 3, toDateTime('1990/01/01 12:00:02', 'US/Samoa'));
-INSERT INTO mt VALUES (1, 4, toDateTime('1990/01/01 12:00:05', 'US/Samoa'));
-INSERT INTO mt VALUES (1, 5, toDateTime('1990/01/01 12:00:06', 'US/Samoa'));
+INSERT INTO ${db}.mt VALUES (1, 1, toDateTime('1990/01/01 12:00:00', 'US/Samoa'));
+INSERT INTO ${db}.mt VALUES (1, 2, toDateTime('1990/01/01 12:00:01', 'US/Samoa'));
+INSERT INTO ${db}.mt VALUES (1, 3, toDateTime('1990/01/01 12:00:02', 'US/Samoa'));
+INSERT INTO ${db}.mt VALUES (1, 4, toDateTime('1990/01/01 12:00:05', 'US/Samoa'));
+INSERT INTO ${db}.mt VALUES (1, 5, toDateTime('1990/01/01 12:00:06', 'US/Samoa'));
 EOF
 
 while true; do
-	$CLICKHOUSE_CLIENT "${opts[@]}" --query="SELECT count(*) FROM wv" | grep -q "3" && break || sleep .5 ||:
+	$CLICKHOUSE_CLIENT "${opts[@]}" --query="SELECT count(*) FROM ${db}.wv" | grep -q "3" && break || sleep .5 ||:
 done
 
-$CLICKHOUSE_CLIENT "${opts[@]}" --query="SELECT * FROM wv ORDER BY market, w_end;"
+$CLICKHOUSE_CLIENT "${opts[@]}" --query="SELECT * FROM ${db}.wv ORDER BY market, w_end;"
 $CLICKHOUSE_CLIENT "${opts[@]}" --query="SELECT '----ALTER TABLE...MODIFY QUERY----';"
 
 $CLICKHOUSE_CLIENT "${opts[@]}" --multiquery <<EOF
-ALTER TABLE wv MODIFY QUERY SELECT count(a) AS count, mt.market * 2 as market, tumbleEnd(wid) AS w_end FROM mt GROUP BY tumble(timestamp, INTERVAL '5' SECOND, 'US/Samoa') AS wid, mt.market;
+ALTER TABLE ${db}.wv MODIFY QUERY SELECT count(a) AS count, ${db}.mt.market * 2 as market, tumbleEnd(wid) AS w_end FROM ${db}.mt GROUP BY tumble(timestamp, INTERVAL '5' SECOND, 'US/Samoa') AS wid, ${db}.mt.market;
 
-INSERT INTO mt VALUES (1, 6, toDateTime('1990/01/01 12:00:10', 'US/Samoa'));
-INSERT INTO mt VALUES (1, 7, toDateTime('1990/01/01 12:00:11', 'US/Samoa'));
-INSERT INTO mt VALUES (1, 8, toDateTime('1990/01/01 12:00:30', 'US/Samoa'));
+INSERT INTO ${db}.mt VALUES (1, 6, toDateTime('1990/01/01 12:00:10', 'US/Samoa'));
+INSERT INTO ${db}.mt VALUES (1, 7, toDateTime('1990/01/01 12:00:11', 'US/Samoa'));
+INSERT INTO ${db}.mt VALUES (1, 8, toDateTime('1990/01/01 12:00:30', 'US/Samoa'));
 EOF
 
 while true; do
-	$CLICKHOUSE_CLIENT "${opts[@]}" --query="SELECT count(*) FROM wv" | grep -q "5" && break || sleep .5 ||:
+	$CLICKHOUSE_CLIENT "${opts[@]}" --query="SELECT count(*) FROM ${db}.wv" | grep -q "5" && break || sleep .5 ||:
 done
 
-$CLICKHOUSE_CLIENT "${opts[@]}" --query="SELECT count, market, w_end FROM wv ORDER BY market, w_end;"
-$CLICKHOUSE_CLIENT "${opts[@]}" --query="DROP TABLE wv"
-$CLICKHOUSE_CLIENT "${opts[@]}" --query="DROP TABLE mt"
+$CLICKHOUSE_CLIENT "${opts[@]}" --query="SELECT count, market, w_end FROM ${db}.wv ORDER BY market, w_end;"
+
+$CLICKHOUSE_CLIENT --query="DROP DATABASE ${db}"

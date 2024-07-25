@@ -8,26 +8,26 @@ opts=(
     "--allow_experimental_analyzer=0"
 )
 
+db="$(random_str 10)"
+
 $CLICKHOUSE_CLIENT "${opts[@]}" --multiquery <<EOF
 SET allow_experimental_window_view = 1;
-DROP TABLE IF EXISTS mt;
-DROP TABLE IF EXISTS dst;
-DROP TABLE IF EXISTS wv;
+DROP DATABASE IF EXISTS ${db};
+CREATE DATABASE ${db};
 
-CREATE TABLE dst(count UInt64, w_end DateTime) Engine=MergeTree ORDER BY tuple();
-CREATE TABLE mt(a Int32) ENGINE=MergeTree ORDER BY tuple();
+CREATE TABLE ${db}.dst(count UInt64, w_end DateTime) Engine=MergeTree ORDER BY tuple();
+CREATE TABLE ${db}.mt(a Int32) ENGINE=MergeTree ORDER BY tuple();
 
-INSERT INTO mt VALUES (1);
+INSERT INTO ${db}.mt VALUES (1);
 
-CREATE WINDOW VIEW wv TO dst POPULATE AS SELECT count(a) AS count, tumbleEnd(wid) FROM mt GROUP BY tumble(now('US/Samoa'), INTERVAL '5' SECOND, 'US/Samoa') AS wid;
+CREATE WINDOW VIEW ${db}.wv TO ${db}.dst POPULATE AS SELECT count(a) AS count, tumbleEnd(wid) FROM ${db}.mt GROUP BY tumble(now('US/Samoa'), INTERVAL '5' SECOND, 'US/Samoa') AS wid;
 EOF
 
 for _ in {1..100}; do
-	$CLICKHOUSE_CLIENT "${opts[@]}" --query="SELECT count(*) FROM dst" | grep -q "1" && echo 'OK' && break
+	$CLICKHOUSE_CLIENT "${opts[@]}" --query="SELECT count(*) FROM ${db}.dst" | grep -q "1" && echo 'OK' && break
 	sleep .5
 done
 
-$CLICKHOUSE_CLIENT "${opts[@]}" --query="SELECT count FROM dst"
-$CLICKHOUSE_CLIENT "${opts[@]}" --query="DROP TABLE wv"
-$CLICKHOUSE_CLIENT "${opts[@]}" --query="DROP TABLE mt"
-$CLICKHOUSE_CLIENT "${opts[@]}" --query="DROP TABLE dst"
+$CLICKHOUSE_CLIENT "${opts[@]}" --query="SELECT count FROM ${db}.dst"
+
+$CLICKHOUSE_CLIENT --query="DROP DATABASE ${db}"
