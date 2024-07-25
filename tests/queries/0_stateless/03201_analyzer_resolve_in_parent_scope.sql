@@ -23,18 +23,6 @@ from
 WITH leftPad('abc', 4, '0') as paddedval
 SELECT * FROM (SELECT paddedval);
 
-WITH sum(bytes) as s,
-data as (
-SELECT
-    formatReadableSize(s),
-    table
-FROM system.parts
-GROUP BY table
-ORDER BY s
-)
-select * from data
-FORMAT Null;
-
 with ('408','420') as some_tuple
 select '408' in some_tuple as flag;
 
