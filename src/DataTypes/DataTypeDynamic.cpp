@@ -90,6 +90,10 @@ void registerDataTypeDynamic(DataTypeFactory & factory)
 namespace
 {
 
+/// Split Dynamic subcolumn name into 2 parts: type name and subcolumn of this type.
+/// We cannot simply split by '.' because type name can also contain dots. For example: Tuple(`a.b` UInt32).
+/// But in all such cases this '.' will be inside back quotes. To split subcolumn name correctly
+/// we search for the first '.' that is not inside back quotes.
 std::pair<std::string_view, std::string_view> splitSubcolumnName(std::string_view subcolumn_name)
 {
     bool inside_quotes = false;
