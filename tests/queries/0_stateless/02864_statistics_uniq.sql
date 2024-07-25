@@ -70,3 +70,4 @@ SETTINGS min_bytes_for_wide_part = 0;
 INSERT INTO t3 select number, -number, number/1000, generateUUIDv4() FROM system.numbers LIMIT 10000;
 
 DROP TABLE IF EXISTS t3;
+

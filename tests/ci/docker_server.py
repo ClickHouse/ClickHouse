@@ -21,7 +21,7 @@ from env_helper import (
     TEMP_PATH,
 )
 from git_helper import Git
-from pr_info import PRInfo, EventType
+from pr_info import PRInfo
 from report import FAILURE, SUCCESS, JobReport, TestResult, TestResults
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
@@ -375,25 +375,23 @@ def main():
     tags = gen_tags(args.version, args.release_type)
     repo_urls = {}
     direct_urls: Dict[str, List[str]] = {}
-    if pr_info.event_type == EventType.PULL_REQUEST:
-        release_or_pr = str(pr_info.number)
-        sha = pr_info.sha
-    elif pr_info.event_type == EventType.PUSH and pr_info.is_master:
-        release_or_pr = str(0)
-        sha = pr_info.sha
-    else:
-        release_or_pr = f"{args.version.major}.{args.version.minor}"
-        sha = args.sha
-        assert sha
 
     for arch, build_name in zip(ARCH, ("package_release", "package_aarch64")):
-        if not args.bucket_prefix:
+        if args.bucket_prefix:
+            assert not args.allow_build_reuse
+            repo_urls[arch] = f"{args.bucket_prefix}/{build_name}"
+        elif args.sha:
+            # CreateRelease workflow only. TODO
+            version = args.version
             repo_urls[arch] = (
                 f"{S3_DOWNLOAD}/{S3_BUILDS_BUCKET}/"
-                f"{release_or_pr}/{sha}/{build_name}"
+                f"{version.major}.{version.minor}/{args.sha}/{build_name}"
             )
         else:
-            repo_urls[arch] = f"{args.bucket_prefix}/{build_name}"
+            # In all other cases urls must be fetched from build reports. TODO: script needs refactoring
+            repo_urls[arch] = ""
+            assert args.allow_build_reuse
+
         if args.allow_build_reuse:
             # read s3 urls from pre-downloaded build reports
             if "clickhouse-server" in image_repo:
@@ -431,7 +429,6 @@ def main():
             )
             if test_results[-1].status != "OK":
                 status = FAILURE
-    pr_info = pr_info or PRInfo()
 
     description = f"Processed tags: {', '.join(tags)}"
     JobReport(

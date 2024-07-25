@@ -505,24 +505,24 @@ Int64 StorageMergeTree::startMutation(const MutationCommands & commands, Context
         additional_info = fmt::format(" (TID: {}; TIDH: {})", current_tid, current_tid.getHash());
     }
 
-    Int64 version;
+    MergeTreeMutationEntry entry(commands, disk, relative_data_path, insert_increment.get(), current_tid, getContext()->getWriteSettings());
+    Int64 version = increment.get();
+    entry.commit(version);
+    String mutation_id = entry.file_name;
+    if (txn)
+        txn->addMutation(shared_from_this(), mutation_id);
+
     {
         std::lock_guard lock(currently_processing_in_background_mutex);
-
-        MergeTreeMutationEntry entry(commands, disk, relative_data_path, insert_increment.get(), current_tid, getContext()->getWriteSettings());
-        version = increment.get();
-        entry.commit(version);
-        String mutation_id = entry.file_name;
-        if (txn)
-            txn->addMutation(shared_from_this(), mutation_id);
 
         auto [it, inserted] = current_mutations_by_version.try_emplace(version, std::move(entry));
         if (!inserted)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Mutation {} already exists, it's a bug", version);
 
         incrementMutationsCounters(num_data_mutations_to_apply, num_metadata_mutations_to_apply, *it->second.commands, lock);
-        LOG_INFO(log, "Added mutation: {}{}", mutation_id, additional_info);
     }
+
+    LOG_INFO(log, "Added mutation: {}{}", mutation_id, additional_info);
     background_operations_assignee.trigger();
     return version;
 }
