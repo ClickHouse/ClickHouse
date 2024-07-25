@@ -117,8 +117,8 @@ public:
         auto ret = joinBlockImpl(join, scattered_block, block_with_columns_to_add, maps_, is_join_get);
         ret.filterBySelector();
         scattered_block.filterBySelector();
-        block = std::move(*scattered_block.block);
-        return *ret.block;
+        block = std::move(scattered_block.getSourceBlock());
+        return ret.getSourceBlock();
     }
 
     static HashJoin::ScatteredBlock joinBlockImpl(
@@ -137,7 +137,8 @@ public:
             const auto & key_names = !is_join_get ? onexprs[i].key_names_left : onexprs[i].key_names_right;
             join_on_keys.emplace_back(block, key_names, onexprs[i].condColumnNames().first, join.key_sizes[i]);
         }
-        size_t existing_columns = block.block->columns();
+        auto & source_block = block.getSourceBlock();
+        size_t existing_columns = source_block.columns();
 
         /** If you use FULL or RIGHT JOIN, then the columns from the "left" table must be materialized.
           * Because if they are constants, then in the "not joined" rows, they may have different values
@@ -146,7 +147,7 @@ public:
         if constexpr (join_features.right || join_features.full)
         {
             /// TODO: do materialization once before scattering the source block by hash
-            materializeBlockInplace(*block.block);
+            materializeBlockInplace(source_block);
         }
 
         /** For LEFT/INNER JOIN, the saved blocks do not contain keys.
@@ -184,7 +185,7 @@ public:
         block.filterBySelector();
 
         for (size_t i = 0; i < added_columns.size(); ++i)
-            block.block->insert(added_columns.moveColumn(i));
+            source_block.insert(added_columns.moveColumn(i));
 
         std::vector<size_t> right_keys_to_replicate [[maybe_unused]];
 
@@ -201,7 +202,7 @@ public:
                 const auto & left_column = block.getByName(join.required_right_keys_sources[i]);
                 const auto & right_col_name = join.getTableJoin().renamedRightColumnName(right_key.name);
                 auto right_col = copyLeftKeyColumnToRight(right_key.type, right_col_name, left_column);
-                block.block->insert(std::move(right_col));
+                source_block.insert(std::move(right_col));
             }
         }
         else if (has_required_right_keys)
@@ -217,10 +218,10 @@ public:
 
                 const auto & left_column = block.getByName(join.required_right_keys_sources[i]);
                 auto right_col = copyLeftKeyColumnToRight(right_key.type, right_col_name, left_column, &added_columns.filter);
-                block.block->insert(std::move(right_col));
+                source_block.insert(std::move(right_col));
 
                 if constexpr (join_features.need_replication)
-                    right_keys_to_replicate.push_back(block.block->getPositionByName(right_col_name));
+                    right_keys_to_replicate.push_back(source_block.getPositionByName(right_col_name));
             }
         }
 
@@ -428,7 +429,7 @@ private:
         size_t i = 0;
         for (; i < rows; ++i)
         {
-            const auto ind = block.selector[i];
+            const auto ind = block.getSelector()[i];
 
             if constexpr (join_features.need_replication)
             {

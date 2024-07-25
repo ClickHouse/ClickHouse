@@ -60,10 +60,8 @@ Block concatenateBlocks(const HashJoin::ScatteredBlocks & blocks)
     Blocks inner_blocks;
     for (const auto & block : blocks)
     {
-        chassert(!block.wasScattered());
-        if (block.wasScattered())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Not scattered block is expected here");
-        inner_blocks.push_back(*block.block);
+        chassert(!block.wasScattered(), "Not scattered block is expected here");
+        inner_blocks.push_back(block.getSourceBlock());
     }
     return concatenateBlocks(inner_blocks);
 }

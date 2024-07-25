@@ -34,7 +34,7 @@ struct JoinOnKeyColumns
 
     bool isRowFiltered(size_t i) const
     {
-        chassert(std::ranges::find(block.selector, i) != block.selector.end(), fmt::format("Row {} is not in block", i));
+        chassert(std::ranges::find(block.getSelector(), i) != block.getSelector().end(), fmt::format("Row {} is not in block", i));
         return join_mask_column.isRowFiltered(i);
     }
 };
@@ -71,7 +71,7 @@ public:
         bool is_asof_join,
         bool is_join_get_)
         : src_block(left_block_)
-        , left_block(*left_block_.block)
+        , left_block(left_block_.getSourceBlock())
         , join_on_keys(join_on_keys_)
         , additional_filter_expression(additional_filter_expression_)
         , rows_to_add(left_block.rows())

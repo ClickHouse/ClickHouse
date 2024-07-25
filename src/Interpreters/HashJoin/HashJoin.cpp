@@ -506,7 +506,7 @@ bool HashJoin::addBlockToJoin(ScatteredBlock & source_block, bool check_limits)
         all_key_columns[column_name] = recursiveRemoveSparse(column->convertToFullColumnIfConst())->convertToFullColumnIfLowCardinality();
     }
 
-    Block block_to_save = prepareRightBlock(*source_block.block);
+    Block block_to_save = prepareRightBlock(source_block.getSourceBlock());
     if (shrink_blocks)
         block_to_save = block_to_save.shrinkToFit();
 
@@ -576,7 +576,7 @@ bool HashJoin::addBlockToJoin(ScatteredBlock & source_block, bool check_limits)
                     save_nullmap |= (*null_map)[i];
             }
 
-            auto join_mask_col = JoinCommon::getColumnAsMask(*source_block.block, onexprs[onexpr_idx].condColumnNames().second);
+            auto join_mask_col = JoinCommon::getColumnAsMask(source_block.getSourceBlock(), onexprs[onexpr_idx].condColumnNames().second);
             /// Save blocks that do not hold conditions in ON section
             ColumnUInt8::MutablePtr not_joined_map = nullptr;
             if (!flag_per_row && isRightOrFull(kind) && join_mask_col.hasData())
@@ -614,7 +614,7 @@ bool HashJoin::addBlockToJoin(ScatteredBlock & source_block, bool check_limits)
                             key_columns,
                             key_sizes[onexpr_idx],
                             stored_block,
-                            source_block.selector,
+                            source_block.getSelector(),
                             null_map,
                             join_mask_col.getData(),
                             data->pool,
@@ -955,7 +955,7 @@ void HashJoin::joinBlock(ScatteredBlock & block, ExtraBlockPtr & not_processed)
     {
         auto cond_column_name = onexpr.condColumnNames();
         JoinCommon::checkTypesOfKeys(
-            *block.block,
+            block.getSourceBlock(),
             onexpr.key_names_left,
             cond_column_name.first,
             right_sample_block,
@@ -979,7 +979,7 @@ void HashJoin::joinBlock(ScatteredBlock & block, ExtraBlockPtr & not_processed)
                 ScatteredBlock remaining_block = HashJoinMethods<kind_, strictness_, MapType>::joinBlockImpl(
                     *this, block, sample_block_with_columns_to_add, maps_vector_);
                 if (remaining_block.rows())
-                    not_processed = std::make_shared<ExtraBlock>(ExtraBlock{std::move(*remaining_block.block)});
+                    not_processed = std::make_shared<ExtraBlock>(std::move(remaining_block).getSourceBlock());
                 else
                     not_processed.reset();
             }))
