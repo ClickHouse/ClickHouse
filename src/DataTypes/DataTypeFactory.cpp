@@ -228,7 +228,6 @@ template <bool nullptr_on_error>
 const DataTypeFactory::Value * DataTypeFactory::findCreatorByName(const String & family_name) const
 {
     {
-        (void)query_context->getSettingsRef().sz3_algorithm;
         DataTypesDictionary::const_iterator it = data_types.find(family_name);
         if (data_types.end() != it)
         {
