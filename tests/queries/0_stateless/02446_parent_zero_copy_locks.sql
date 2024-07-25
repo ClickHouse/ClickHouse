@@ -36,8 +36,8 @@ select 1, * from rmt1 order by n;
 system sync replica rmt1;
 select 2, * from rmt2 order by n;
 
--- wait for outdated parts to be removed
-select throwIf(count() = 0) from (
+-- wait for outdated parts to be removed (do not ignore _state column, so it will count Deleting parts as well)
+select throwIf(count() = 0), groupArray(_state) from (
 select *, _state from system.parts where database=currentDatabase() and table like 'rmt%' and active=0
 ) format Null; -- { retry 30 until serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
 
