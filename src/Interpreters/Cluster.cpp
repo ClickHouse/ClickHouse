@@ -898,6 +898,19 @@ bool Cluster::maybeCrossReplication() const
     return false;
 }
 
+void Cluster::reconnectToReplica(size_t index, const Settings & settings)
+{
+    auto & shard_info = shards_info[index];
+    for (const auto & address : addresses_with_failover[index])
+    {
+        if (!isConnectionAlive(shard_info.pool, settings))
+        {
+            reconnect(shard_info.pool, address, settings);
+        }
+    }
+}
+
+
 void Cluster::handleDynamicReplicas(const Settings & settings)
 {
     for (size_t i = 0; i < shards_info.size(); ++i)
@@ -921,9 +934,8 @@ bool Cluster::isConnectionAlive(const std::shared_ptr<ConnectionPoolWithFailover
     }
     catch (const DB::Exception &)
     {
-        // Log the error
         LOG_ERROR(&Poco::Logger::get("Cluster"), "Failed to check if connection is alive");
-        throw; // Rethrow the current exception
+        return false;
     }
 }
 
@@ -956,9 +968,8 @@ void Cluster::reconnect(std::shared_ptr<ConnectionPoolWithFailover> & pool, cons
     }
     catch (const DB::Exception &)
     {
-        // Log the error
         LOG_ERROR(&Poco::Logger::get("Cluster"), "Failed to reconnect to replica");
-        throw; // Rethrow the current exception
+        throw;
     }
 }
 
