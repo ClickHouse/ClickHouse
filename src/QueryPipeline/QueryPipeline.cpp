@@ -5,7 +5,6 @@
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/IProcessor.h>
 #include <Processors/LimitTransform.h>
-#include <Interpreters/Cluster.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ExpressionActions.h>
 #include <QueryPipeline/ReadProgressCallback.h>
@@ -28,8 +27,6 @@
 #include <Processors/Transforms/TotalsHavingTransform.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 
-#include <Common/Exception.h>
-#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -340,7 +337,6 @@ QueryPipeline::QueryPipeline(
 
 QueryPipeline::QueryPipeline(Pipe pipe)
 {
-    handleFailover();
     if (pipe.numOutputPorts() > 0)
     {
         pipe.resize(1);
@@ -363,7 +359,6 @@ QueryPipeline::QueryPipeline(Chain chain)
     , input(&chain.getInputPort())
     , num_threads(chain.getNumThreads())
 {
-    handleFailover();
     processors->reserve(chain.getProcessors().size() + 1);
     for (auto processor : chain.getProcessors())
         processors->emplace_back(std::move(processor));
@@ -463,7 +458,6 @@ void QueryPipeline::complete(std::shared_ptr<SinkToStorage> sink)
 
 void QueryPipeline::complete(Pipe pipe)
 {
-    handleFailover();
     if (!pushing())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline must be pushing to be completed with pipe");
 
@@ -490,8 +484,6 @@ static void addMaterializing(OutputPort *& output, Processors & processors)
 
 void QueryPipeline::complete(std::shared_ptr<IOutputFormat> format)
 {
-    handleFailover();
-
     if (!pulling())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline must be pulling to be completed with output format");
 
@@ -576,8 +568,6 @@ void QueryPipeline::setLimitsAndQuota(const StreamLocalLimits & limits, std::sha
             ErrorCodes::LOGICAL_ERROR,
             "It is possible to set limits and quota only to pulling QueryPipeline");
 
-    handleFailover();
-
     auto transform = std::make_shared<LimitsCheckingTransform>(output->getHeader(), limits);
     transform->setQuota(quota_);
     connect(*output, transform->getInputPort());
@@ -597,8 +587,6 @@ bool QueryPipeline::tryGetResultRowsAndBytes(UInt64 & result_rows, UInt64 & resu
 
 void QueryPipeline::writeResultIntoQueryCache(std::shared_ptr<QueryCache::Writer> query_cache_writer)
 {
-    handleFailover();
-
     assert(pulling());
 
     /// Attach a special transform to all output ports (result + possibly totals/extremes). The only purpose of the transform is
@@ -641,8 +629,6 @@ void QueryPipeline::readFromQueryCache(
         std::unique_ptr<SourceFromChunks> source_totals,
         std::unique_ptr<SourceFromChunks> source_extremes)
 {
-    handleFailover();
-
     /// Construct the pipeline from the input source processors. The processors are provided by the query cache to produce chunks of a
     /// previous query result.
 
@@ -695,8 +681,6 @@ void QueryPipeline::convertStructureTo(const ColumnsWithTypeAndName & columns)
     if (!pulling())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline must be pulling to convert header");
 
-    handleFailover();
-
     auto converting = ActionsDAG::makeConvertingActions(
         output->getHeader().getColumnsWithTypeAndName(),
         columns,
@@ -707,7 +691,6 @@ void QueryPipeline::convertStructureTo(const ColumnsWithTypeAndName & columns)
     addExpression(totals, actions, *processors);
     addExpression(extremes, actions, *processors);
 }
-
 
 std::unique_ptr<ReadProgressCallback> QueryPipeline::getReadProgressCallback() const
 {
@@ -721,44 +704,6 @@ std::unique_ptr<ReadProgressCallback> QueryPipeline::getReadProgressCallback() c
         callback->disableProfileEventUpdate();
 
     return callback;
-}
-
-void QueryPipeline::handleFailover()
-{
-    if (!isConnectionAlive())
-    {
-        reconnect();
-    }
-}
-
-void QueryPipeline::reconnect()
-{
-    for (auto & processor : *processors)
-    {
-        if (auto * source = dynamic_cast<RemoteSource *>(&*processor))
-        {
-            source->reconnect();
-        }
-    }
-}
-
-bool QueryPipeline::isConnectionAlive()
-{
-    bool connection_status = true;
-
-    for (const auto & processor : *processors)
-    {
-        if (const auto * source = dynamic_cast<const RemoteSource *>(&*processor))
-        {
-            if (!source->isConnectionAlive())
-            {
-                connection_status = false;
-                break;
-            }
-        }
-    }
-
-    return connection_status;
 }
 
 }

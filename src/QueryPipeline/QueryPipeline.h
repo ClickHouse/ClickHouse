@@ -169,10 +169,6 @@ private:
     friend class CompletedPipelineExecutor;
     friend class RefreshTask;
     friend class QueryPipelineBuilder;
-
-    void handleFailover();
-    void reconnect();
-    bool isConnectionAlive();
 };
 
 }

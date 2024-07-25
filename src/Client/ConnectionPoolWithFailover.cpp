@@ -3,6 +3,7 @@
 
 #include <Poco/Net/NetException.h>
 #include <Poco/Net/DNS.h>
+#include <Poco/Timespan.h>
 
 #include <Common/BitHelpers.h>
 #include <Common/quoteString.h>
@@ -42,6 +43,7 @@ ConnectionPoolWithFailover::ConnectionPoolWithFailover(
     }
 
     // Initialize the timeout settings
+    Settings settings; // Declare settings object
     socket_read_timeout = Poco::Timespan(settings.socket_read_timeout.totalMilliseconds() * Poco::Timespan::MILLISECONDS);
     socket_write_timeout = Poco::Timespan(settings.socket_write_timeout.totalMilliseconds() * Poco::Timespan::MILLISECONDS);
     connection_timeout = Poco::Timespan(settings.connection_timeout.totalMilliseconds() * Poco::Timespan::MILLISECONDS);

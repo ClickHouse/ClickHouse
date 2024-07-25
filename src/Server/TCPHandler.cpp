@@ -33,6 +33,7 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Poco/Net/NetException.h>
 #include <Poco/Net/SocketAddress.h>
+#include <Poco/Net/StreamSocket.h>
 #include <Poco/Util/LayeredConfiguration.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
@@ -54,6 +55,9 @@
 #   include <Poco/Net/SecureStreamSocket.h>
 #   include <Poco/Net/SecureStreamSocketImpl.h>
 #endif
+
+
+
 
 #include <Core/Protocol.h>
 #include <Storages/MergeTree/RequestResponse.h>
@@ -253,6 +257,12 @@ void TCPHandler::runImpl()
     socket().setReceiveTimeout(Poco::Timespan(30, 0));  // Lowered timeout
     socket().setSendTimeout(Poco::Timespan(30, 0));     // Lowered timeout
     socket().setNoDelay(true);
+
+    // Set TCP keep-alive options
+    socket().setKeepAlive(true);
+    socket().setOption(IPPROTO_TCP, TCP_KEEPIDLE, 30);  // Idle time before starting keep-alive probes (in seconds)
+    socket().setOption(IPPROTO_TCP, TCP_KEEPINTVL, 10); // Interval between keep-alive probes (in seconds)
+    socket().setOption(IPPROTO_TCP, TCP_KEEPCNT, 3);    // Number of keep-alive probes before declaring the connection dead
 
     in = std::make_shared<ReadBufferFromPocoSocket>(socket(), read_event);
     out = std::make_shared<WriteBufferFromPocoSocket>(socket(), write_event);
