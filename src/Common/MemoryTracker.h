@@ -120,6 +120,11 @@ public:
         return amount.load(std::memory_order_relaxed);
     }
 
+    Int64 getRSS() const
+    {
+        return rss.load(std::memory_order_relaxed);
+    }
+
     // Merges and mutations may pass memory ownership to other threads thus in the end of execution
     // MemoryTracker for background task may have a non-zero counter.
     // This method is intended to fix the counter inside of background_memory_tracker.
