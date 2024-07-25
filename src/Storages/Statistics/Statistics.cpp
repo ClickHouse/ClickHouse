@@ -103,7 +103,7 @@ Float64 ColumnStatistics::estimateEqual(const Field & val) const
         if (cardinality == 0)
             return 0;
         /// Assume that the value is uniformly distributed among the unique values.
-        return static_cast<Float64>(1) / stats.at(StatisticsType::Uniq)->estimateCardinality();
+        return static_cast<Float64>(1) / stats.at(StatisticsType::Uniq)->estimateCardinality() * rows;
     }
 
     return rows * ConditionSelectivityEstimator::default_cond_equal_factor;
