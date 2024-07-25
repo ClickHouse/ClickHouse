@@ -34,7 +34,9 @@ def create_tables(cluster, table_name):
 
 @pytest.mark.parametrize("skip_unavailable_shards", [1, 0])
 @pytest.mark.parametrize("max_parallel_replicas", [2, 3, 100])
-def test_skip_all_replicas(start_cluster, skip_unavailable_shards, max_parallel_replicas):
+def test_skip_all_replicas(
+    start_cluster, skip_unavailable_shards, max_parallel_replicas
+):
     cluster_name = "test_1_shard_3_unavaliable_replicas"
     table_name = "tt"
     create_tables(cluster_name, table_name)
