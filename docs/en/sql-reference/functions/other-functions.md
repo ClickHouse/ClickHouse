@@ -2102,14 +2102,14 @@ Result:
 └─────────────────┘
 ```
 
-## filesystemFree
+## filesystemUnreserved
 
-Returns the total amount of the free space on the filesystem hosting the database persistence. See also `filesystemAvailable`
+Returns the total amount of the free space on the filesystem hosting the database persistence. (previously `filesystemFree`). See also [`filesystemAvailable`](#filesystemavailable).
 
 **Syntax**
 
 ```sql
-filesystemFree()
+filesystemUnreserved()
 ```
 
 **Returned value**
@@ -2121,7 +2121,7 @@ filesystemFree()
 Query:
 
 ```sql
-SELECT formatReadableSize(filesystemFree()) AS "Free space";
+SELECT formatReadableSize(filesystemUnreserved()) AS "Free space";
 ```
 
 Result:
