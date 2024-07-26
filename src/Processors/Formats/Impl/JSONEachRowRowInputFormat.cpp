@@ -46,7 +46,7 @@ JSONEachRowRowInputFormat::JSONEachRowRowInputFormat(
 {
     const auto & header = getPort().getHeader();
     name_map = header.getNamesToIndexesMap();
-    if (format_settings_.json.ignore_key_case)
+    if (format_settings_.json.case_insensitive_column_matching)
     {
         for (auto & it : name_map)
         {
@@ -181,7 +181,7 @@ void JSONEachRowRowInputFormat::readJSONObject(MutableColumns & columns)
             continue;
         }
         size_t column_index = 0;
-        if (format_settings.json.ignore_key_case)
+        if (format_settings.json.case_insensitive_column_matching)
         {
             String lower_case_name = transformFieldNameToLowerCase(name_ref);
             StringRef field_name_ref = lower_case_name_map[lower_case_name];
