@@ -309,9 +309,16 @@ public:
 
 ClientBase::~ClientBase()
 {
-    writeSignalIDtoSignalPipe(SignalListener::StopThread);
-    signal_listener_thread.join();
-    HandledSignals::instance().reset();
+    try
+    {
+        writeSignalIDtoSignalPipe(SignalListener::StopThread);
+        signal_listener_thread.join();
+        HandledSignals::instance().reset();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
 }
 
 ClientBase::ClientBase(

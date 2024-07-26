@@ -2,8 +2,6 @@
 # Tags: atomic-database
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-# reset --log_comment
-CLICKHOUSE_LOG_COMMENT=
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
@@ -140,7 +138,7 @@ while [ "`$CLICKHOUSE_CLIENT -nq "select status, next_refresh_time from refreshe
 do
     sleep 0.5
 done
-sleep 1
+
 $CLICKHOUSE_CLIENT -nq "
     select '<14: waiting for next cycle>', view, status, remaining_dependencies, next_refresh_time from refreshes;
     truncate src;

@@ -20,13 +20,13 @@ $CLICKHOUSE_CLIENT -nq "
     create table src (x Int8) engine Memory as select 1;
     create materialized view c refresh every 1 second (x Int64) engine Memory empty as select * from src;
     drop table src;"
-while [ "`$CLICKHOUSE_CLIENT -nq "select last_refresh_result from refreshes -- $LINENO" | xargs`" != 'Error' ]
+while [ "`$CLICKHOUSE_CLIENT -nq "select last_refresh_result from refreshes where view = 'c' -- $LINENO" | xargs`" != 'Error' ]
 do
     sleep 0.5
 done
 # Check exception, create src, expect successful refresh.
 $CLICKHOUSE_CLIENT -nq "
-    select '<19: exception>', exception ilike '%UNKNOWN_TABLE%' from refreshes;
+    select '<19: exception>', exception ilike '%UNKNOWN_TABLE%' ? '1' : exception from refreshes where view = 'c';
     create table src (x Int64) engine Memory as select 1;
     system refresh view c;"
 while [ "`$CLICKHOUSE_CLIENT -nq "select last_refresh_result from refreshes -- $LINENO" | xargs`" != 'Finished' ]
@@ -72,22 +72,21 @@ done
 $CLICKHOUSE_CLIENT -nq "
     rename table e to f;
     select '<24: rename during refresh>', * from f;
-    select '<25: rename during refresh>', view, status from refreshes;
+    select '<25: rename during refresh>', view, status from refreshes where view = 'f';
     alter table f modify refresh after 10 year;"
-sleep 2 # make it likely that at least one row was processed
+
 # Cancel.
 $CLICKHOUSE_CLIENT -nq "
     system cancel view f;"
-while [ "`$CLICKHOUSE_CLIENT -nq "select last_refresh_result from refreshes -- $LINENO" | xargs`" != 'Cancelled' ]
+while [ "`$CLICKHOUSE_CLIENT -nq "select last_refresh_result from refreshes where view = 'f' -- $LINENO" | xargs`" != 'Cancelled' ]
 do
     sleep 0.5
 done
 # Check that another refresh doesn't immediately start after the cancelled one.
-sleep 1
 $CLICKHOUSE_CLIENT -nq "
-    select '<27: cancelled>', view, status from refreshes;
+    select '<27: cancelled>', view, status from refreshes where view = 'f';
     system refresh view f;"
-while [ "`$CLICKHOUSE_CLIENT -nq "select status from refreshes -- $LINENO" | xargs`" != 'Running' ]
+while [ "`$CLICKHOUSE_CLIENT -nq "select status from refreshes where view = 'f' -- $LINENO" | xargs`" != 'Running' ]
 do
     sleep 0.5
 done

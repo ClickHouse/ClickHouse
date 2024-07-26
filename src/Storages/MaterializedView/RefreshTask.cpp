@@ -328,7 +328,7 @@ void RefreshTask::refreshTask()
                 info.exception_message = *exception;
                 Int64 attempt_number = num_retries + 1;
                 scheduleRetryOrSkipToNextRefresh(now);
-                LOG_ERROR(log, "Refresh failed (attempt {}/{}): {}", attempt_number, refresh_settings.refresh_retries + 1, *exception);
+                LOG_ERROR(log, "Refresh view {} failed (attempt {}/{}): {}", view->getStorageID().getFullTableName(), attempt_number, refresh_settings.refresh_retries + 1, *exception);
             }
             else if (!refreshed)
             {
