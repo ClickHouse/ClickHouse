@@ -847,11 +847,8 @@ void StorageDistributed::read(
         /** For distributed tables we do not need constants in header, since we don't send them to remote servers.
           * Moreover, constants can break some functions like `hostName` that are constants only for local queries.
           */
-        if (processed_stage != QueryProcessingStage::Complete)
-        {
-            for (auto & column : header)
-                column.column = column.column->convertToFullColumnIfConst();
-        }
+        for (auto & column : header)
+            column.column = column.column->convertToFullColumnIfConst();
         modified_query_info.query = queryNodeToDistributedSelectQuery(query_tree_distributed);
 
         modified_query_info.query_tree = std::move(query_tree_distributed);
