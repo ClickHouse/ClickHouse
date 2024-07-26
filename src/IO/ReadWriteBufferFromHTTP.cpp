@@ -700,6 +700,14 @@ std::optional<time_t> ReadWriteBufferFromHTTP::tryGetLastModificationTime()
         {
             return std::nullopt;
         }
+        catch (const NetException &)
+        {
+            return std::nullopt;
+        }
+        catch (const Poco::Net::NetException &)
+        {
+            return std::nullopt;
+        }
     }
 
     return file_info->last_modified;
