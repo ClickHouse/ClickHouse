@@ -775,8 +775,15 @@ try
 
             LOG_INFO(
                 log,
-                "ClickHouse is bound to a subset of NUMA nodes. Total memory of all available nodes {}",
+                "ClickHouse is bound to a subset of NUMA nodes. Total memory of all available nodes: {}",
                 ReadableSize(total_numa_memory));
+        }
+        else
+        {
+            LOG_TRACE(
+                log,
+                "All NUMA nodes are used. Detected NUMA nodes: {}",
+                numa_num_configured_nodes());
         }
 
         numa_bitmask_free(membind);
