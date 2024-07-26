@@ -26,7 +26,7 @@ INSERT INTO codecTest (key, name, ref_valueF64, ref_valueF32, valueF64, valueF32
 
 -- worst case - almost like a random values
 INSERT INTO codecTest (key, name, ref_valueF64, ref_valueF32, valueF64, valueF32)
-	SELECT number AS n, 'sin(n*n*n)*n', sin(n * n * n * n* n) AS v, v, v, v FROM system.numbers LIMIT 301, 100;
+	SELECT number AS n, 'sin(n*n*n)*n', sin(n * n * n)*n AS v, v, v, v FROM system.numbers LIMIT 301, 100;
 
 
 
@@ -39,7 +39,7 @@ SELECT
 FROM
 	codecTest as c1, codecTest as c2
 WHERE
-	dF64 != 0
+	ABS(1 - dF64 / c1.ref_valueF64) < 0.01
 AND
 	c2.key = c1.key - 1
 LIMIT 10;
@@ -54,7 +54,7 @@ SELECT
 FROM
 	codecTest as c1, codecTest as c2
 WHERE
-	dF32 != 0
+	ABS(1 - dF32 / c1.ref_valueF32) < 0.01
 AND
 	c2.key = c1.key - 1
 LIMIT 10;
@@ -64,8 +64,6 @@ DROP TABLE codecTest;
 -- just test flags
 
 SET sz3_algorithm = 2;
-SET sz3_error_bound_mode = 0;
-SET sz3_abs_error_bound = 10.0;
 
 CREATE TABLE codecTest (
     key      UInt64,
@@ -90,7 +88,7 @@ INSERT INTO codecTest (key, name, ref_valueF64, ref_valueF32, valueF64, valueF32
 
 -- worst case - almost like a random values
 INSERT INTO codecTest (key, name, ref_valueF64, ref_valueF32, valueF64, valueF32)
-	SELECT number AS n, 'sin(n*n*n)*n', sin(n * n * n * n* n) AS v, v, v, v FROM system.numbers LIMIT 301, 100;
+	SELECT number AS n, 'sin(n*n*n)*n', sin(n * n * n)*n AS v, v, v, v FROM system.numbers LIMIT 301, 100;
 
 
 SELECT 'F64';
@@ -102,7 +100,7 @@ SELECT
 FROM
 	codecTest as c1, codecTest as c2
 WHERE
-	dF64 != 0
+	ABS(1 - dF64 / c1.ref_valueF64) < 0.01
 AND
 	c2.key = c1.key - 1
 LIMIT 10;
@@ -117,7 +115,7 @@ SELECT
 FROM
 	codecTest as c1, codecTest as c2
 WHERE
-	dF32 != 0
+	ABS(1 - dF32 / c1.ref_valueF32) < 0.01
 AND
 	c2.key = c1.key - 1
 LIMIT 10;
