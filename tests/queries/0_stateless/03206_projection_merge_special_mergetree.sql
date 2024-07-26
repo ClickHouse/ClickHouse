@@ -1,5 +1,37 @@
 DROP TABLE IF EXISTS tp;
 
+-- test regular merge tree
+CREATE TABLE tp (
+    type Int32,
+    eventcnt UInt64,
+    PROJECTION p (select sum(eventcnt), type group by type)
+) engine = MergeTree order by type;
+
+INSERT INTO tp SELECT number%3, 1 FROM numbers(3);
+
+OPTIMIZE TABLE tp DEDUPLICATE;  -- { serverError NOT_IMPLEMENTED }
+
+DROP TABLE tp;
+
+CREATE TABLE tp (
+    type Int32,
+    eventcnt UInt64,
+    PROJECTION p (select sum(eventcnt), type group by type)
+) engine = MergeTree order by type
+SETTINGS deduplicate_merge_projection_mode = 'drop';
+
+INSERT INTO tp SELECT number%3, 1 FROM numbers(3);
+
+OPTIMIZE TABLE tp DEDUPLICATE;
+
+ALTER TABLE tp MODIFY SETTING deduplicate_merge_projection_mode = 'throw';
+
+OPTIMIZE TABLE tp DEDUPLICATE;  -- { serverError NOT_IMPLEMENTED }
+
+DROP TABLE tp;
+
+
+-- test irregular merge tree
 CREATE TABLE tp (
     type Int32,
     eventcnt UInt64,

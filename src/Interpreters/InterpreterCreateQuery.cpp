@@ -1281,30 +1281,6 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     /// Set and retrieve list of columns, indices and constraints. Set table engine if needed. Rewrite query in canonical way.
     TableProperties properties = getTablePropertiesAndNormalizeCreateQuery(create, mode);
 
-    /// Projection is only supported in (Replictaed)MergeTree.
-    if (create.storage && create.storage->engine)
-    {
-        if (std::string_view engine_name(create.storage->engine->name);
-            !properties.projections.empty() && engine_name != "MergeTree" && engine_name != "ReplicatedMergeTree")
-        {
-            bool projection_support = false;
-            if (auto * setting = create.storage->settings; setting != nullptr)
-            {
-                for (const auto & change : setting->changes)
-                {
-                    if (change.name == "deduplicate_merge_projection_mode" && change.value != Field("throw"))
-                    {
-                        projection_support = true;
-                        break;
-                    }
-                }
-            }
-            if (!projection_support)
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                    "Projection is only supported in (Replictaed)MergeTree. Consider drop or rebuild option of deduplicate_merge_projection_mode.");
-        }
-    }
-
     /// Check type compatible for materialized dest table and select columns
     if (create.select && create.is_materialized_view && create.to_table_id && mode <= LoadingStrictnessLevel::CREATE)
     {

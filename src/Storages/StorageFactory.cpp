@@ -20,6 +20,7 @@ namespace ErrorCodes
     extern const int FUNCTION_CANNOT_HAVE_PARAMETERS;
     extern const int BAD_ARGUMENTS;
     extern const int DATA_TYPE_CANNOT_BE_USED_IN_TABLES;
+    extern const int NOT_IMPLEMENTED;
 }
 
 
@@ -196,9 +197,36 @@ StoragePtr StorageFactory::get(
                     [](StorageFeatures features) { return features.supports_skipping_indices; });
 
             if (query.columns_list && query.columns_list->projections && !query.columns_list->projections->children.empty())
+            {
                 check_feature(
                     "projections",
                     [](StorageFeatures features) { return features.supports_projections; });
+
+                /// Now let's handle the merge tree family, projection is fully supported in (Replictaed)MergeTree,
+                /// but also allowed in non-throw mode with other mergetree family members.
+                chassert(query.storage->engine);
+                if (std::string_view engine_name(query.storage->engine->name);
+                    engine_name != "MergeTree" && engine_name != "ReplicatedMergeTree")
+                {
+                    /// default throw mode in deduplicate_merge_projection_mode
+                    bool projection_allowed = false;
+                    if (auto * setting = query.storage->settings; setting != nullptr)
+                    {
+                        for (const auto & change : setting->changes)
+                        {
+                            if (change.name == "deduplicate_merge_projection_mode" && change.value != Field("throw"))
+                            {
+                                projection_allowed = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (!projection_allowed)
+                        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                            "Projection is fully supported in (Replictaed)MergeTree, but also allowed in non-throw mode with other"
+                            " mergetree family members. Consider drop or rebuild option of deduplicate_merge_projection_mode.");
+                }
+            }
         }
     }
 
