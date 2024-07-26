@@ -1,20 +1,18 @@
 #include <Client/ClientBase.h>
-
 #include <Core/BaseSettingsProgramOptions.h>
 
 namespace DB
 {
 
 /**
- * Program ptions parsing is very slow in debug builds and it affects .sh tests
+ * Program options parsing is very slow in debug builds and it affects .sh tests
  * causing them to timeout sporadically.
  * It seems impossible to enable optimizations for a single function (only to disable them), so
  * instead we extract the code to a separate source file and compile it with different options.
  */
-
-/// 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int UNRECOGNIZED_ARGUMENTS;
 }
 
