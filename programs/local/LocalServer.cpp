@@ -184,6 +184,11 @@ void LocalServer::initialize(Poco::Util::Application & self)
         cleanup_threads,
         0, // We don't need any threads one all the parts will be deleted
         cleanup_threads);
+
+    getDatabaseCatalogDropTablesThreadPool().initialize(
+        server_settings.database_catalog_drop_table_concurrency,
+        0, // We don't need any threads if there are no DROP queries.
+        server_settings.database_catalog_drop_table_concurrency);
 }
 
 
