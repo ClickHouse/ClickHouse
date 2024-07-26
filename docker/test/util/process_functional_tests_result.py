@@ -180,7 +180,6 @@ def process_result(result_path, broken_tests):
             for result in test_results:
                 if result[1] == "FAIL":
                     result[1] = "SERVER_DIED"
-
             test_results.append(["Server died", "FAIL", "0", ""])
         elif not success_finish:
             description = "Tests are not finished, "
