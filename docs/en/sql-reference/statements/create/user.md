@@ -150,8 +150,10 @@ In ClickHouse Cloud, by default, passwords must meet the following complexity re
    CREATE USER user1 IDENTIFIED WITH plaintext_password by '1', bcrypt_password by '2', plaintext_password by '3''
    ```
 
-Note: `no_password` can not co-exist with other authentication methods for security reasons. Therefore, you can only specify
-`no_password` if it is the only authentication method in the query.
+Note:
+1. Older versions of ClickHouse might not support the syntax of multiple authentication methods. Therefore, if the ClickHouse server contains such users and is downgraded to a version that does not support it, such users will become unusable and some user related operations will be broken. In order to downgrade gracefully, one must set all users to contain a single authentication method prior to downgrading. Alternatively, if the server was downgraded without the proper procedure, the faulty users should be dropped.
+2. `no_password` can not co-exist with other authentication methods for security reasons. Therefore, you can only specify
+`no_password` if it is the only authentication method in the query. 
 
 ## User Host
 
