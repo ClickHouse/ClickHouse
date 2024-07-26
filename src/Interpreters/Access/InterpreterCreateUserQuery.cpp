@@ -73,7 +73,7 @@ namespace
                                                              return authentication_method.getType() == AuthenticationType::NO_PASSWORD;
                                                          }) != user.authentication_methods.end();
 
-        // 1. a leading IDENTIFIED WITH will drop existing authentication methods in favor of new ones.
+        // 1. an IDENTIFIED WITH will drop existing authentication methods in favor of new ones.
         // 2. if the user contains an auth method of type NO_PASSWORD and another one is being added, NO_PASSWORD must be dropped
         if (replace_authentication_methods || (has_no_password_authentication_method && !authentication_methods.empty()))
         {
