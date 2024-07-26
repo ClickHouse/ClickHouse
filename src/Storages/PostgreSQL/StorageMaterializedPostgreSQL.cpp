@@ -571,6 +571,7 @@ void registerStorageMaterializedPostgreSQL(StorageFactory & factory)
         StorageInMemoryMetadata metadata;
         metadata.setColumns(args.columns);
         metadata.setConstraints(args.constraints);
+        metadata.setComment(args.comment);
 
         if (args.mode <= LoadingStrictnessLevel::CREATE
             && !args.getLocalContext()->getSettingsRef().allow_experimental_materialized_postgresql_table)
