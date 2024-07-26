@@ -22,7 +22,9 @@ STATE_MAP = {
 def run_with_timeout(func, args, timeout):
     for _ in range(5):
         state = multiprocessing.Value("i", -1)
-        process = multiprocessing.Process(target=func, args=args, kwargs={"state": state})
+        process = multiprocessing.Process(
+            target=func, args=args, kwargs={"state": state}
+        )
         process.start()
         process.join(timeout)
 
