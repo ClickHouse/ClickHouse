@@ -398,9 +398,8 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
             if (query.if_empty)
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "DROP IF EMPTY is not implemented for databases");
 
-            if (database->hasReplicationThread())
+            if (!truncate && database->hasReplicationThread())
                 database->stopReplication();
-
 
             if (database->shouldBeEmptyOnDetach())
             {
