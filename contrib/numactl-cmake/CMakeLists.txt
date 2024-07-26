@@ -1,4 +1,14 @@
-option (ENABLE_NUMACTL "Enable numactl" ${ENABLE_LIBRARIES})
+if (NOT (
+    OS_LINUX AND (ARCH_AMD64 OR ARCH_AARCH64 OR ARCH_LOONGARCH64))
+)
+    if (ENABLE_NUMACTL)
+        message (${RECONFIGURE_MESSAGE_LEVEL}
+            "numactl is disabled implicitly because the OS or architecture is not supported. Use -DENABLE_NUMACTL=0")
+    endif ()
+    set (ENABLE_NUMACTL OFF)
+else()
+    option (ENABLE_NUMACTL "Enable numactl" ${ENABLE_LIBRARIES})
+endif()
 
 if (NOT ENABLE_NUMACTL)
     message (STATUS "Not using numactl")
