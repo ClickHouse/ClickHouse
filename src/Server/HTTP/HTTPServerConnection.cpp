@@ -97,6 +97,18 @@ void HTTPServerConnection::run()
         {
             sendErrorResponse(session, Poco::Net::HTTPResponse::HTTP_BAD_REQUEST);
         }
+        catch (const Poco::Net::NetException & e)
+        {
+            /// Do not spam logs with messages related to connection reset by peer.
+            if (e.code() == POCO_ENOTCONN)
+                break;
+
+            if (session.networkException())
+                session.networkException()->rethrow();
+            else
+                throw;
+        }
+
         catch (const Poco::Exception &)
         {
             if (session.networkException())
