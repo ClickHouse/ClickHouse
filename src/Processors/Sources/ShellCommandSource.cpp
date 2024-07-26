@@ -8,13 +8,15 @@
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 
-#include <QueryPipeline/Pipe.h>
-#include <Processors/ISimpleTransform.h>
-#include <Processors/Formats/IOutputFormat.h>
-#include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Interpreters/Context.h>
+#include <Processors/Executors/CompletedPipelineExecutor.h>
+#include <Processors/Formats/IOutputFormat.h>
+#include <Processors/ISimpleTransform.h>
+#include <QueryPipeline/Pipe.h>
+
 #include <boost/circular_buffer.hpp>
 
+#include <ranges>
 
 namespace DB
 {
@@ -137,9 +139,15 @@ public:
 
         while (!bytes_read)
         {
+            LOG_TRACE(
+                getLogger("TimeoutReadBufferFromFileDescriptor"),
+                "Starting polling on descriptors ({}) with timeout {} ms",
+                fmt::join(std::span(pfds, pfds + num_pfds) | std::views::transform([](const auto & pollfd) { return pollfd.fd; }), ", "),
+                timeout_milliseconds);
             pfds[0].revents = 0;
             pfds[1].revents = 0;
             size_t num_events = pollWithTimeout(pfds, num_pfds, timeout_milliseconds);
+            LOG_TRACE(getLogger("TimeoutReadBufferFromFileDescriptor"), "Poll returned with num_events={}", num_events);
             if (0 == num_events)
                 throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Pipe read timeout exceeded {} milliseconds", timeout_milliseconds);
 
