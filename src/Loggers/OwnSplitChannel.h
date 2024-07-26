@@ -41,6 +41,8 @@ public:
 
     static void disableLogging();
 
+    static bool isLoggingEnabled();
+
 private:
     void logSplit(const Poco::Message & msg);
     void tryLogSplit(const Poco::Message & msg);

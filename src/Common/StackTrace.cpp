@@ -489,7 +489,7 @@ struct CacheEntry
 
 using CacheEntryPtr = std::shared_ptr<CacheEntry>;
 
-static constinit std::atomic<bool> can_use_cache = false;
+static constinit bool can_use_cache = false;
 
 using StackTraceCacheBase = std::map<StackTraceTriple, CacheEntryPtr, std::less<>>;
 
