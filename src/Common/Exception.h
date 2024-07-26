@@ -244,6 +244,15 @@ private:
     const char * className() const noexcept override { return "DB::ErrnoException"; }
 };
 
+/// An exception to use in unit tests to test interfaces.
+/// It is distinguished from others, so it does not have to be logged.
+class TestException : public Exception
+{
+public:
+    using Exception::Exception;
+};
+
+
 using Exceptions = std::vector<std::exception_ptr>;
 
 /** Try to write an exception to the log (and forget about it).

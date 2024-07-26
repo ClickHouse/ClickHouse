@@ -15,7 +15,7 @@ from env_helper import (
     GITHUB_SERVER_URL,
     GITHUB_UPSTREAM_REPOSITORY,
 )
-from lambda_shared_package.lambda_shared.pr import Labels
+from ci_config import Labels
 from get_robot_token import get_best_robot_token
 from github_helper import GitHub
 
@@ -296,13 +296,16 @@ class PRInfo:
         else:
             if "schedule" in github_event:
                 self.event_type = EventType.SCHEDULE
-            else:
+            elif "inputs" in github_event:
                 # assume this is a dispatch
                 self.event_type = EventType.DISPATCH
-            logging.warning(
-                "event.json does not match pull_request or push:\n%s",
-                json.dumps(github_event, sort_keys=True, indent=4),
-            )
+                print("PR Info:")
+                print(self)
+            else:
+                logging.warning(
+                    "event.json does not match pull_request or push:\n%s",
+                    json.dumps(github_event, sort_keys=True, indent=4),
+                )
             self.sha = os.getenv(
                 "GITHUB_SHA", "0000000000000000000000000000000000000000"
             )
@@ -333,6 +336,10 @@ class PRInfo:
             assert self.number
             return True
         return False
+
+    @property
+    def is_push_event(self) -> bool:
+        return self.event_type == EventType.PUSH
 
     @property
     def is_scheduled(self) -> bool:

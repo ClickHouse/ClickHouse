@@ -21,6 +21,7 @@
 #include <Common/StringUtils.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/NetException.h>
+#include <Common/SignalHandlers.h>
 #include <Common/tryGetFileNameByFileDescriptor.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
@@ -79,6 +80,10 @@
 
 #include <Common/config_version.h>
 #include "config.h"
+
+#if USE_GWP_ASAN
+#    include <Common/GWPAsan.h>
+#endif
 
 
 namespace fs = std::filesystem;
@@ -302,7 +307,20 @@ public:
 };
 
 
-ClientBase::~ClientBase() = default;
+ClientBase::~ClientBase()
+{
+    try
+    {
+        writeSignalIDtoSignalPipe(SignalListener::StopThread);
+        signal_listener_thread.join();
+        HandledSignals::instance().reset();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+}
+
 ClientBase::ClientBase(
     int in_fd_,
     int out_fd_,
@@ -2223,6 +2241,8 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
     ASTPtr parsed_query;
     std::unique_ptr<Exception> current_exception;
 
+    size_t retries_count = 0;
+
     while (true)
     {
         auto stage = analyzeMultiQueryText(this_query_begin, this_query_end, all_queries_end,
@@ -2303,7 +2323,12 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                 // Check whether the error (or its absence) matches the test hints
                 // (or their absence).
                 bool error_matches_hint = true;
-                if (have_error)
+                bool need_retry = test_hint.needRetry(server_exception, &retries_count);
+                if (need_retry)
+                {
+                    std::this_thread::sleep_for(std::chrono::seconds(1));
+                }
+                else if (have_error)
                 {
                     if (test_hint.hasServerErrors())
                     {
@@ -2397,7 +2422,8 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                 if (have_error && !ignore_error)
                     return is_interactive;
 
-                this_query_begin = this_query_end;
+                if (!need_retry)
+                    this_query_begin = this_query_end;
                 break;
             }
         }
@@ -3072,6 +3098,8 @@ void ClientBase::init(int argc, char ** argv)
         ("max_memory_usage_in_client", po::value<std::string>(), "Set memory limit in client/local server")
 
         ("fuzzer-args", po::value<std::string>(), "Command line arguments for the LLVM's libFuzzer driver. Only relevant if the application is compiled with libFuzzer.")
+
+        ("client_logs_file", po::value<std::string>(), "Path to a file for writing client logs. Currently we only have fatal logs (when the client crashes)")
     ;
 
     addOptions(options_description);
@@ -3236,6 +3264,30 @@ void ClientBase::init(int argc, char ** argv)
         total_memory_tracker.setDescription("(total)");
         total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
     }
+
+    /// Print stacktrace in case of crash
+    HandledSignals::instance().setupTerminateHandler();
+    HandledSignals::instance().setupCommonDeadlySignalHandlers();
+    /// We don't setup signal handlers for SIGINT, SIGQUIT, SIGTERM because we don't
+    /// have an option for client to shutdown gracefully.
+
+    fatal_channel_ptr = new Poco::SplitterChannel;
+    fatal_console_channel_ptr = new Poco::ConsoleChannel;
+    fatal_channel_ptr->addChannel(fatal_console_channel_ptr);
+    if (options.count("client_logs_file"))
+    {
+        fatal_file_channel_ptr = new Poco::SimpleFileChannel(options["client_logs_file"].as<std::string>());
+        fatal_channel_ptr->addChannel(fatal_file_channel_ptr);
+    }
+
+    fatal_log = createLogger("ClientBase", fatal_channel_ptr.get(), Poco::Message::PRIO_FATAL);
+    signal_listener = std::make_unique<SignalListener>(nullptr, fatal_log);
+    signal_listener_thread.start(*signal_listener);
+
+#if USE_GWP_ASAN
+    GWPAsan::initFinished();
+#endif
+
 }
 
 }
