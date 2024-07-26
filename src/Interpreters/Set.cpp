@@ -6,6 +6,7 @@
 #include <Columns/ColumnTuple.h>
 
 #include <Common/typeid_cast.h>
+#include <Columns/FilterDescription.h>
 #include <DataTypes/IDataType.h>
 
 #include <DataTypes/DataTypeTuple.h>
@@ -279,14 +280,17 @@ void Set::checkIsCreated() const
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to use set before it has been built.");
 }
 
-ColumnPtr returnIfEquals(const ColumnPtr & lhs, const ColumnPtr & rhs)
+ColumnPtr returnFilteredColumn(const ColumnPtr & first, const ColumnPtr & second)
 {
-    if (rhs->size() != lhs->size())
+    ConstantFilterDescription second_const_descr(*second);
+    if (second_const_descr.always_true)
+        return second;
+
+    if (second_const_descr.always_false)
         return nullptr;
-    for (size_t i = 0; i < lhs->size(); i++)
-        if (lhs->getDataAt(i) != rhs->getDataAt(i))
-            return nullptr;
-    return lhs;
+
+    FilterDescription filter_descr(*second);
+    return first->filter(*filter_descr.data, 0);
 }
 
 ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) const
@@ -343,8 +347,8 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
         }
 
         ColumnPtr col_to_emplace; /// If we cast DateTime64 column to other type, we lose its precision. if we have this case, we should not let this cast happen
-        if (returnIfEquals(column_before_cast.column, result) == nullptr && isDateTime64(column_before_cast.column->getDataType()))
-            col_to_emplace = column_before_cast.column;
+        if (isDateTime64(column_before_cast.column->getDataType()))
+            col_to_emplace = returnFilteredColumn(column_before_cast.column, res->getPtr());
         else
             col_to_emplace = result;
 
