@@ -39,3 +39,5 @@ INSERT INTO grouparray_string Select groupArrayIntersectState([tuple(['2', '4', 
 SELECT 'c', arraySort(groupArrayIntersectMerge(v)) FROM grouparray_string;
 INSERT INTO grouparray_string Select groupArrayIntersectState([tuple(['2', '4', '6', '8', '10', '20']), tuple(['2', '4', '6', '8', '10', '14'])]);
 SELECT 'd', arraySort(groupArrayIntersectMerge(v)) FROM grouparray_string;
+INSERT INTO grouparray_string Select groupArrayIntersectState([]::Array(Tuple(Array(String))));
+SELECT 'e', arraySort(groupArrayIntersectMerge(v)) FROM grouparray_string;
