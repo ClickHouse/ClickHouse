@@ -16,6 +16,9 @@ namespace DB
 /// Write data to Rados, if data exceeds max_chunk_size, it will be split into multiple chunk
 /// Each chunk is a physical object in Rados. The HEAD chunk contains metadata about the ClickHouse
 /// object. Method names are similar to WriteBufferFromS3 (using `part` instead of `chunk`).
+/// TODO: use async IO from RadosContext. Not to implement async write int this class.
+/// The only concern is in async write we need to keep the data buffer alive until the write is finished.
+/// But it's not obvious how to do it now.
 class WriteBufferFromRados : public WriteBufferFromFileBase
 {
 public:
@@ -25,63 +28,33 @@ public:
         size_t buf_size_,
         const OSDSettings & osd_settings_,
         const WriteSettings & write_settings_,
-        std::optional<std::map<String, String>> object_metadata_ = std::nullopt,
-        ThreadPoolCallbackRunnerUnsafe<void> schedule_ = {});
+        std::optional<std::map<String, String>> object_metadata_ = std::nullopt);
 
     ~WriteBufferFromRados() override;
     void nextImpl() override;
-    void preFinalize() override;
     std::string getFileName() const override { return object_id; }
     void sync() override { next(); }
 
 private:
     void finalizeImpl() override;
-
-    String getVerboseLogDetails() const;
-    String getShortLogDetails() const;
-
-    struct PartData;
-    void hidePartialData();
-    void reallocateFirstBuffer();
-    void detachBuffer();
-    void allocateBuffer();
-    void allocateFirstBuffer();
-    void setFakeBufferWhenPreFinalized();
-
-    void writePart(PartData && data);
-    void writeMultipartUpload();
-    void tryToAbortMultipartUpload();
+    void startNewChunk();
+    void tryAbortWrittenChunks();
 
     std::shared_ptr<RadosIOContext> io_ctx;
     String object_id;
-    size_t chunk_count = 0;
     OSDSettings osd_settings;
     WriteSettings write_settings;
     const std::optional<std::map<String, String>> object_metadata;
     LoggerPtr log = getLogger("WriteBufferFromRados");
-    LogSeriesLimiterPtr limitedLog = std::make_shared<LogSeriesLimiter>(log, 1, 5);
 
-    BufferAllocationPolicyPtr buffer_allocation_policy;
+    size_t chunk_count = 0;
 
-    /// Track that multipart upload is finished
-    bool multipart_upload_finished = false;
-    /// Track that prefinalize() is called only once
-    bool is_prefinalized = false;
+    String current_chunk_name;
+    size_t current_chunk_size_bytes = INT64_MAX;
+    bool all_chunks_finished = true;
+    size_t writeImpl(const char * begin, size_t len);
 
-    /// First fully filled buffer has to be delayed
-    /// There are two ways after:
-    /// First is to call prefinalize/finalize, which leads to single part upload
-    /// Second is to write more data, which leads to multi part upload
-    std::deque<PartData> detached_part_data;
-    char fake_buffer_when_prefinalized[1] = {};
-
-    /// offset() and count() are unstable inside nextImpl
-    /// For example nextImpl changes position hence offset() and count() is changed
-    /// This vars are dedicated to store information about sizes when offset() and count() are unstable
     size_t total_size = 0;
-    size_t hidden_size = 0;
-
-    std::unique_ptr<TaskTracker> task_tracker;
 };
 
 }

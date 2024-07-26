@@ -82,7 +82,11 @@ def test_rados_disk_stripper(cluster):
         node.query("DROP TABLE ceph_big_table SYNC")
         # Test that all data in pool `clickhouse` is deleted
         ceph_instance_id = cluster.get_instance_docker_id("ceph1")
-        logging.error(cluster.exec_in_container(ceph_instance_id, ["rados", "--pool", "clickhouse", "df"]))
+        logging.error(
+            cluster.exec_in_container(
+                ceph_instance_id, ["rados", "--pool", "clickhouse", "df"]
+            )
+        )
         assert (
             cluster.exec_in_container(
                 ceph_instance_id, ["rados", "--pool", "clickhouse", "--all", "ls"]
@@ -91,3 +95,29 @@ def test_rados_disk_stripper(cluster):
         )
     finally:
         node.query("DROP TABLE IF EXISTS ceph_big_table")
+
+
+def test_rados_disk_spare_column(cluster):
+    try:
+        node = cluster.instances["node"]
+        node.query(
+            """
+            CREATE TABLE ceph_spare_table (
+                id Int64,
+                data String
+            ) ENGINE=MergeTree()
+            PARTITION BY id
+            ORDER BY tuple()
+            SETTINGS
+                storage_policy='ceph', min_bytes_for_wide_part=32
+            """
+        )
+
+        node.query("INSERT INTO ceph_spare_table SELECT 0, '' FROM numbers(8192)")
+        node.query("OPTIMIZE TABLE ceph_spare_table FINAL")
+        assert node.query("SELECT count() FROM ceph_spare_table") == "8192\n"
+        assert (
+            node.query("SELECT * FROM ceph_spare_table WHERE id = 0 LIMIT 1") == "0\t\n"
+        )
+    finally:
+        node.query("DROP TABLE IF EXISTS ceph_spare_table")

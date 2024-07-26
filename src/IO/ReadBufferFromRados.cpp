@@ -129,9 +129,7 @@ struct ReadBufferFromRados::Impl : public BufferWithOwnMemory<SeekableReadBuffer
             num_bytes_to_read = internal_buffer.size();
         }
 
-        LOG_DEBUG(log, "Reading {} bytes from offset {}", num_bytes_to_read, file_offset);
         auto bytes_read = readImpl(internal_buffer.begin(), num_bytes_to_read, file_offset);
-        LOG_DEBUG(log, "Read {} bytes from offset {}", bytes_read, file_offset);
         if (bytes_read)
         {
             working_buffer = internal_buffer;
