@@ -2424,7 +2424,7 @@ struct WindowFunctionLagLeadInFrame final : public WindowFunction
                 argument_types[0]->getName(),
                 argument_types[2]->getName());
         }
-    
+
         const auto from_name = argument_types[2]->getName();
         const auto to_name = argument_types[0]->getName();
         ColumnsWithTypeAndName arguments
