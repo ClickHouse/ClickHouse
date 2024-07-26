@@ -2,6 +2,7 @@
 #include <Server/TCPServer.h>
 
 #include <Poco/Net/NetException.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -101,7 +102,10 @@ void HTTPServerConnection::run()
         {
             /// Do not spam logs with messages related to connection reset by peer.
             if (e.code() == POCO_ENOTCONN)
+            {
+                LOG_DEBUG(LogFrequencyLimiter(getLogger("HTTPServerConnection"), 10), "Connection reset by peer while processing HTTP request: {}", e.message());
                 break;
+            }
 
             if (session.networkException())
                 session.networkException()->rethrow();
