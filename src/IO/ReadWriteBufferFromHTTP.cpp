@@ -140,6 +140,10 @@ std::optional<size_t> ReadWriteBufferFromHTTP::tryGetFileSize()
         {
             return std::nullopt;
         }
+        catch (const Poco::IOException &)
+        {
+            return std::nullopt;
+        }
     }
 
     return file_info->file_size;
@@ -324,12 +328,12 @@ void ReadWriteBufferFromHTTP::doWithRetries(std::function<void()> && callable,
             error_message = e.displayText();
             exception = std::current_exception();
         }
-        catch (DB::NetException & e)
+        catch (NetException & e)
         {
             error_message = e.displayText();
             exception = std::current_exception();
         }
-        catch (DB::HTTPException & e)
+        catch (HTTPException & e)
         {
             if (!isRetriableError(e.getHTTPStatus()))
                 is_retriable = false;
@@ -337,7 +341,7 @@ void ReadWriteBufferFromHTTP::doWithRetries(std::function<void()> && callable,
             error_message = e.displayText();
             exception = std::current_exception();
         }
-        catch (DB::Exception & e)
+        catch (Exception & e)
         {
             is_retriable = false;
 
@@ -705,6 +709,10 @@ std::optional<time_t> ReadWriteBufferFromHTTP::tryGetLastModificationTime()
             return std::nullopt;
         }
         catch (const Poco::Net::NetException &)
+        {
+            return std::nullopt;
+        }
+        catch (const Poco::IOException &)
         {
             return std::nullopt;
         }
