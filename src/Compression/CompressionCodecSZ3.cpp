@@ -55,10 +55,6 @@ private:
 
 namespace ErrorCodes
 {
-    extern const int CANNOT_COMPRESS;
-    extern const int CANNOT_DECOMPRESS;
-    extern const int ILLEGAL_SYNTAX_FOR_CODEC_TYPE;
-    extern const int ILLEGAL_CODEC_PARAMETER;
     extern const int BAD_ARGUMENTS;
 }
 
@@ -108,7 +104,7 @@ UInt32 CompressionCodecSZ3::doCompressData(const char * source, UInt32 source_si
     char* source_compressed = new char[source_size];
     memcpy(source_compressed, source, source_size);
 
-    switch (type) 
+    switch (type)
     {
         case DataType::FLOAT32:
         {
@@ -121,7 +117,7 @@ UInt32 CompressionCodecSZ3::doCompressData(const char * source, UInt32 source_si
             break;
         }
     }
-    
+
     SZ3::Config conf(src_size);
     ContextPtr query_context;
     if (CurrentThread::isInitialized())
@@ -144,7 +140,7 @@ UInt32 CompressionCodecSZ3::doCompressData(const char * source, UInt32 source_si
         conf.l2normErrorBound = query_context->getSettingsRef().sz3_l2_norm_error_bound;
     }
 
-    switch (type) 
+    switch (type)
     {
         case DataType::FLOAT32:
         {
@@ -157,19 +153,19 @@ UInt32 CompressionCodecSZ3::doCompressData(const char * source, UInt32 source_si
             break;
         }
     }
-    
+
 
     memcpy(dest, res, src_size);
     delete[] source_compressed;
     return static_cast<UInt32>(src_size);
 }
 
-void CompressionCodecSZ3::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const 
+void CompressionCodecSZ3::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const
 {
     SZ3::Config conf;
     char* copy_compressed = new char[source_size];
     memcpy(copy_compressed, source, source_size);
-    switch (type) 
+    switch (type)
     {
         case DataType::FLOAT32:
         {
