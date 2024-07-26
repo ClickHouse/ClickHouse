@@ -136,7 +136,7 @@ void ZooKeeper::init(ZooKeeperArgs args_, std::unique_ptr<Coordination::IKeeper>
             LOG_TRACE(log, "Initialized, hosts: {}, chroot: {}", fmt::join(args.hosts, ","), args.chroot);
 
         /// If the balancing strategy has an optimal node then it will be the first in the list
-        bool connected_to_suboptimal_node = node_idx && *node_idx != shuffled_hosts[0].original_index;
+        bool connected_to_suboptimal_node = node_idx && static_cast<UInt8>(*node_idx) != shuffled_hosts[0].original_index;
         bool respect_az = args.prefer_local_availability_zone && !args.client_availability_zone.empty();
         bool may_benefit_from_reconnecting = respect_az || args.get_priority_load_balancing.hasOptimalNode();
         if (connected_to_suboptimal_node && may_benefit_from_reconnecting)
