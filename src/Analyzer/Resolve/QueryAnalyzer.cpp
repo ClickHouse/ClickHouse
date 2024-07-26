@@ -3239,13 +3239,11 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
         auto action = function_node_ptr->getNullsAction();
         std::string aggregate_function_name = rewriteAggregateFunctionNameIfNeeded(function_name, action, scope.context);
-        std::cerr << "==================== " << function_name << " -> " << aggregate_function_name << std::endl;
-
 
         AggregateFunctionProperties properties;
         auto aggregate_function
             = AggregateFunctionFactory::instance().get(aggregate_function_name, action, argument_types, parameters, properties);
-        std::cerr << aggregate_function->getName()  << ' ' << aggregate_function->getResultType()->getName() << std::endl;
+
         function_node.resolveAsAggregateFunction(std::move(aggregate_function));
 
         return result_projection_names;
