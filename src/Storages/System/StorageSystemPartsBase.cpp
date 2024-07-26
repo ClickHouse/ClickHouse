@@ -124,7 +124,7 @@ StoragesInfoStream::StoragesInfoStream(std::optional<ActionsDAG> filter_by_datab
 
         /// Filter block_to_filter with column 'database'.
         if (filter_by_database)
-            VirtualColumnUtils::filterBlockWithDAG(std::move(*filter_by_database), block_to_filter, context);
+            VirtualColumnUtils::filterBlockWithExpression(VirtualColumnUtils::buildFilterExpression(std::move(*filter_by_database), context), block_to_filter);
         rows = block_to_filter.rows();
 
         /// Block contains new columns, update database_column.
@@ -204,7 +204,7 @@ StoragesInfoStream::StoragesInfoStream(std::optional<ActionsDAG> filter_by_datab
     {
         /// Filter block_to_filter with columns 'database', 'table', 'engine', 'active'.
         if (filter_by_other_columns)
-            VirtualColumnUtils::filterBlockWithDAG(std::move(*filter_by_other_columns), block_to_filter, context);
+            VirtualColumnUtils::filterBlockWithExpression(VirtualColumnUtils::buildFilterExpression(std::move(*filter_by_other_columns), context), block_to_filter);
         rows = block_to_filter.rows();
     }
 

@@ -75,7 +75,7 @@ StoragesDroppedInfoStream::StoragesDroppedInfoStream(std::optional<ActionsDAG> f
     {
         /// Filter block_to_filter with columns 'database', 'table', 'engine', 'active'.
         if (filter)
-            VirtualColumnUtils::filterBlockWithDAG(std::move(*filter), block_to_filter, context);
+            VirtualColumnUtils::filterBlockWithExpression(VirtualColumnUtils::buildFilterExpression(std::move(*filter), context), block_to_filter);
         rows = block_to_filter.rows();
     }
 

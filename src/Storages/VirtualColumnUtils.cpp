@@ -77,11 +77,10 @@ void buildSetsForDAG(const ActionsDAG & dag, const ContextPtr & context)
     }
 }
 
-void filterBlockWithDAG(ActionsDAG dag, Block & block, ContextPtr context)
+ExpressionActionsPtr buildFilterExpression(ActionsDAG dag, ContextPtr context)
 {
     buildSetsForDAG(dag, context);
-    auto actions = std::make_shared<ExpressionActions>(std::move(dag));
-    filterBlockWithExpression(actions, block);
+    return std::make_shared<ExpressionActions>(std::move(dag));
 }
 
 void filterBlockWithExpression(const ExpressionActionsPtr & actions, Block & block)
@@ -384,7 +383,7 @@ void filterBlockWithPredicate(const ActionsDAG::Node * predicate, Block & block,
 {
     auto dag = splitFilterDagForAllowedInputs(predicate, &block,  /*allow_non_deterministic_functions=*/ false);
     if (dag)
-        filterBlockWithDAG(std::move(*dag), block, context);
+        filterBlockWithExpression(buildFilterExpression(std::move(*dag), context), block);
 }
 
 }
