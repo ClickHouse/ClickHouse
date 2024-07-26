@@ -316,7 +316,7 @@ static String removeTupleElementsFromSubcolumn(String subcolumn_name, const Name
     {
         auto pos = subcolumn_name.find(elem + ".");
         if (pos != std::string::npos)
-            subcolumn_name.erase(pos, elem.size());
+            subcolumn_name.erase(pos, elem.size() + 1);
     }
 
     if (subcolumn_name.ends_with("."))
@@ -395,7 +395,6 @@ void fillMissingColumns(
 
         if (!current_offsets.empty())
         {
-
             Names tuple_elements;
             auto serialization = IDataType::getSerialization(*requested_column);
 
