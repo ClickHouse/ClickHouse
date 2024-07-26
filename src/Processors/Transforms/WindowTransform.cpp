@@ -16,6 +16,9 @@
 #include <Common/Arena.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
+#include <Functions/CastOverloadResolver.h>
+#include <Functions/IFunction.h>
+#include <DataTypes/DataTypeString.h>
 
 #include <Poco/Logger.h>
 #include <Common/logger_useful.h>
@@ -74,6 +77,8 @@ public:
         size_t function_index) const = 0;
 
     virtual std::optional<WindowFrame> getDefaultFrame() const { return {}; }
+
+    virtual ColumnPtr castColumn(const Columns &, const std::vector<size_t> &) { return nullptr; }
 
     /// Is the frame type supported by this function.
     virtual bool checkWindowFrameType(const WindowTransform * /*transform*/) const { return true; }
@@ -1171,6 +1176,9 @@ void WindowTransform::appendChunk(Chunk & chunk)
         // Initialize output columns.
         for (auto & ws : workspaces)
         {
+            if (ws.window_function_impl)
+                block.casted_columns.push_back(ws.window_function_impl->castColumn(block.input_columns, ws.argument_column_indices));
+
             block.output_columns.push_back(ws.aggregate_function->getResultType()
                 ->createColumn());
             block.output_columns.back()->reserve(block.rows);
@@ -2358,6 +2366,8 @@ public:
 template <bool is_lead>
 struct WindowFunctionLagLeadInFrame final : public WindowFunction
 {
+    FunctionBasePtr func_cast = nullptr;
+
     WindowFunctionLagLeadInFrame(const std::string & name_,
             const DataTypes & argument_types_, const Array & parameters_)
         : WindowFunction(name_, argument_types_, parameters_, createResultType(argument_types_, name_))
@@ -2385,18 +2395,71 @@ struct WindowFunctionLagLeadInFrame final : public WindowFunction
             return;
         }
 
-        if (!argument_types[0]->equals(*argument_types[2]))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Argument type '{}' and the default value type '{}' are different",
-                argument_types[0]->getName(),
-                argument_types[2]->getName());
-
         if (argument_types.size() > 3)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Function '{}' accepts at most 3 arguments, {} given",
                 name, argument_types.size());
         }
+
+        if (argument_types[0]->equals(*argument_types[2]))
+            return;
+
+        const auto supertype = getLeastSupertype(DataTypes{argument_types[0], argument_types[2]});
+        if (!supertype)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "There is no supertype for the argument type '{}' and the default value type '{}'",
+                argument_types[0]->getName(),
+                argument_types[2]->getName());
+        }
+        if (!argument_types[0]->equals(*supertype))
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "The supertype '{}' for the argument type '{}' and the default value type '{}' is not the same as the argument type",
+                supertype->getName(),
+                argument_types[0]->getName(),
+                argument_types[2]->getName());
+        }
+    
+        const auto from_name = argument_types[2]->getName();
+        const auto to_name = argument_types[0]->getName();
+        ColumnsWithTypeAndName arguments
+        {
+            { argument_types[2], "" },
+            {
+                DataTypeString().createColumnConst(0, to_name),
+                std::make_shared<DataTypeString>(),
+                ""
+            }
+        };
+
+        auto get_cast_func = [&arguments]
+        {
+            FunctionOverloadResolverPtr func_builder_cast = createInternalCastOverloadResolver(CastType::accurate, {});
+            return func_builder_cast->build(arguments);
+        };
+
+        func_cast = get_cast_func();
+
+    }
+
+    ColumnPtr castColumn(const Columns & columns, const std::vector<size_t> & idx) override
+    {
+        if (!func_cast)
+            return nullptr;
+
+        ColumnsWithTypeAndName arguments
+        {
+            { columns[idx[2]], argument_types[2], "" },
+            {
+                DataTypeString().createColumnConst(columns[idx[2]]->size(), argument_types[0]->getName()),
+                std::make_shared<DataTypeString>(),
+                ""
+            }
+        };
+
+        return func_cast->execute(arguments, argument_types[0], columns[idx[2]]->size());
     }
 
     static DataTypePtr createResultType(const DataTypes & argument_types_, const std::string & name_)
@@ -2446,12 +2509,11 @@ struct WindowFunctionLagLeadInFrame final : public WindowFunction
             if (argument_types.size() > 2)
             {
                 // Column with default values is specified.
-                // The conversion through Field is inefficient, but we accept
-                // subtypes of the argument type as a default value (for convenience),
-                // and it's a pain to write conversion that respects ColumnNothing
-                // and ColumnConst and so on.
-                const IColumn & default_column = *current_block.input_columns[
-                    workspace.argument_column_indices[2]].get();
+                const IColumn & default_column =
+                    current_block.casted_columns[function_index] ?
+                        *current_block.casted_columns[function_index].get() :
+                        *current_block.input_columns[workspace.argument_column_indices[2]].get();
+
                 to.insert(default_column[transform->current_row.row]);
             }
             else
