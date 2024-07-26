@@ -25,6 +25,6 @@ select a, b, c, sum(a) as s
 from remote('127.0.0.{2,3}', currentDatabase(), t_2354_dist_with_external_aggr)
 group by a, b, c
 format Null
-settings max_memory_usage = '5Gi';
+settings max_memory_usage = '5Gi', max_result_rows = 0, max_result_bytes = 0;
 
 DROP TABLE t_2354_dist_with_external_aggr;
