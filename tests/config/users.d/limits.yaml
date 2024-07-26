@@ -34,7 +34,6 @@ profiles:
     max_bytes_in_set: 10G
     max_rows_in_join: 10G
     max_bytes_in_join: 10G
-    max_rows_in_set_to_optimize_join: 1G
     max_rows_to_transfer: 1G
     max_bytes_to_transfer: 1G
     max_rows_in_distinct: 10G
