@@ -416,7 +416,7 @@ void DistributedAsyncInsertDirectoryQueue::processFile(std::string & file_path, 
         auto connection = std::move(result.front().entry);
 
         if (connection.isNull())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty connection");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty connection");
 
         LOG_DEBUG(log, "Sending `{}` to {} ({} rows, {} bytes)",
             file_path,

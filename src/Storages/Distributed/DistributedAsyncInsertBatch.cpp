@@ -28,6 +28,7 @@ namespace ErrorCodes
     extern const int TOO_MANY_PARTITIONS;
     extern const int DISTRIBUTED_TOO_MANY_PENDING_BYTES;
     extern const int ARGUMENT_OUT_OF_BOUND;
+    extern const int LOGICAL_ERROR;
 }
 
 /// Can the batch be split and send files from batch one-by-one instead?
@@ -246,7 +247,7 @@ void DistributedAsyncInsertBatch::sendBatch(const SettingsChanges & settings_cha
                 compression_expected = connection->getCompression() == Protocol::Compression::Enable;
 
                 if (connection.isNull())
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty connection");
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty connection");
 
                 LOG_DEBUG(parent.log, "Sending a batch of {} files to {} ({} rows, {} bytes).",
                     files.size(),
@@ -307,7 +308,7 @@ void DistributedAsyncInsertBatch::sendSeparateFiles(const SettingsChanges & sett
             bool compression_expected = connection->getCompression() == Protocol::Compression::Enable;
 
             if (connection.isNull())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty connection");
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty connection");
 
             RemoteInserter remote(*connection, timeouts,
                 distributed_header.insert_query,

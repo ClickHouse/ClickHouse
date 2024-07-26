@@ -378,6 +378,8 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
                     /// (anyway fallback_to_stale_replicas_for_distributed_queries=true by default)
                     auto results = shard_info.pool->getManyCheckedForInsert(timeouts, settings, PoolMode::GET_ONE, storage.remote_storage.getQualifiedName());
                     job.connection_entry = std::move(results.front().entry);
+                    if (job.connection_entry.isNull())
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty connection");
                 }
                 else
                 {
