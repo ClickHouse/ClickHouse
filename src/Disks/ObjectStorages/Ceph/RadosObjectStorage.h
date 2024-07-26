@@ -57,10 +57,17 @@ namespace RadosStriper
     }
 }
 
+/// Some of important Ceph options, it can be in global_options map but we extract it here
+/// for easier access
 struct OSDSettings
 {
+    /// Maximum osd object size in bytes
     UInt64 osd_max_object_size = 128 * 1024 * 1024; /// 128M - default ceph setting value
+    /// Maximum size of a single write to OSD
     UInt64 osd_max_write_size = 90 * 1024 * 1024; /// 90M - default ceph setting value
+    /// Object is Ceph's term, here simply understanding as maximum number of operations that
+    /// a single rados client can queue before throttling
+    UInt64 objecter_inflight_ops = 1024; /// 1024 - default ceph setting value
 };
 
 struct RadosObjectStorageSettings
@@ -82,10 +89,15 @@ struct RadosObjectStorageSettings
         if (config.has(config_prefix + ".options"))
             global_options.loadFromConfig(config, config_prefix + ".options");
         global_options.validate();
+
+        /// Extract OSDSettings
         if (global_options.contains("osd_max_object_size"))
             osd_settings.osd_max_object_size = std::stoull(global_options.at("osd_max_object_size"));
         if (global_options.contains("osd_max_write_size"))
             osd_settings.osd_max_write_size = std::stoull(global_options.at("osd_max_write_size")) * 1024 * 1024;
+        if (global_options.contains("objecter_inflight_ops"))
+            osd_settings.objecter_inflight_ops = std::stoull(global_options.at("objecter_inflight_ops"));
+
         read_only = config.getBool(config_prefix + ".read_only", read_only);
     }
 

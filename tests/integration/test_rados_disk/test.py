@@ -26,29 +26,29 @@ def cluster():
         cluster.shutdown()
 
 
-# def test_rados_disk_simple(cluster):
-#     try:
-#         node = cluster.instances["node"]
-#         node.query(
-#             """
-#             CREATE TABLE ceph_simple_table (
-#                 id Int64,
-#                 data String
-#             ) ENGINE=MergeTree()
-#             ORDER BY id
-#             SETTINGS
-#                 storage_policy='ceph', min_bytes_for_wide_part=32
-#             """
-#         )
+def test_rados_disk_simple(cluster):
+    try:
+        node = cluster.instances["node"]
+        node.query(
+            """
+            CREATE TABLE ceph_simple_table (
+                id Int64,
+                data String
+            ) ENGINE=MergeTree()
+            ORDER BY id
+            SETTINGS
+                storage_policy='ceph', min_bytes_for_wide_part=32
+            """
+        )
 
-#         node.query("INSERT INTO ceph_simple_table VALUES (1, 'hello')")
-#         assert node.query("SELECT * FROM ceph_simple_table") == "1\thello\n"
-#         node.query("INSERT INTO ceph_simple_table SELECT number, toString(number) FROM numbers(2, 128)")
-#         for i in range(2, 128):
-#             assert node.query("SELECT * FROM ceph_simple_table WHERE id = {}".format(i)) == "{}\t{}\n".format(i, i)
-#         node.query("DROP TABLE ceph_simple_table SYNC")
-#     finally:
-#         node.query("DROP TABLE IF EXISTS ceph_simple_table")
+        node.query("INSERT INTO ceph_simple_table VALUES (1, 'hello')")
+        assert node.query("SELECT * FROM ceph_simple_table") == "1\thello\n"
+        node.query("INSERT INTO ceph_simple_table SELECT number, toString(number) FROM numbers(2, 128)")
+        for i in range(2, 128):
+            assert node.query("SELECT * FROM ceph_simple_table WHERE id = {}".format(i)) == "{}\t{}\n".format(i, i)
+        node.query("DROP TABLE ceph_simple_table SYNC")
+    finally:
+        node.query("DROP TABLE IF EXISTS ceph_simple_table")
 
 
 def test_rados_disk_stripper(cluster):

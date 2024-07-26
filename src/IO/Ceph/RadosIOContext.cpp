@@ -166,6 +166,7 @@ void RadosIOContext::remove(const std::vector<String> & oids)
                 c->wait_for_complete(); /// No checking of return code, because we already have an error
             throw Exception(ErrorCodes::CEPH_ERROR, "Cannot remove object `{}:{}`. Error: {}", pool, oid, strerror(-ec));
         }
+        completions.emplace_back(std::move(completion));
     }
     std::optional<Exception> exception;
     for (auto & c : completions)

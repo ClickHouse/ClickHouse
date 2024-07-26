@@ -164,10 +164,19 @@ void WriteBufferFromRados::tryAbortWrittenChunks()
 {
     try
     {
+        auto remove_batch_size = osd_settings.objecter_inflight_ops;
         Strings chunk_names;
         for (size_t i = 1; i < chunk_count; ++i)
+        {
             chunk_names.push_back(RadosStriper::getChunkName(object_id, i));
-        io_ctx->remove(chunk_names);
+            if (chunk_names.size() >= remove_batch_size)
+            {
+                io_ctx->remove(chunk_names);
+                chunk_names.clear();
+            }
+        }
+        if (!chunk_names.empty())
+            io_ctx->remove(chunk_names);
         /// The HEAD chunk
         io_ctx->remove(object_id, true);
     }

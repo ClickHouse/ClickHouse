@@ -143,13 +143,9 @@ std::unique_ptr<WriteBufferFromFileBase> RadosObjectStorage::writeObject( /// NO
     if (mode != WriteMode::Rewrite)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Ceph does not support append mode");
 
-    ThreadPoolCallbackRunnerUnsafe<void> scheduler;
-    if (write_settings.rados_allow_parallel_part_write)
-        scheduler = threadPoolCallbackRunnerUnsafe<void>(getThreadPoolWriter(), "VFSWrite");
-
     WriteSettings disk_write_settings = patchSettings(write_settings);
     return std::make_unique<WriteBufferFromRados>(
-        io_ctx, object.remote_path, buf_size, ceph_settings.get()->osd_settings, patchSettings(write_settings), attributes, scheduler);
+        io_ctx, object.remote_path, buf_size, ceph_settings.get()->osd_settings, patchSettings(write_settings), attributes);
 }
 
 ObjectStorageIteratorPtr RadosObjectStorage::iterate(const std::string & path_prefix, size_t max_keys) const
@@ -174,14 +170,22 @@ void RadosObjectStorage::listObjects(const std::string & path, RelativePathsWith
 void RadosObjectStorage::removeObjectImpl(const StoredObject & object, bool if_exists)
 {
     auto rados_objects = getRadosObjects({object}, if_exists, false);
+    auto remove_batch_size = ceph_settings.get()->osd_settings.objecter_inflight_ops;
 
-    /// Removing the HEAD object last
+    /// First, removing non-head objects
     Strings names;
     for (ssize_t i = rados_objects.size() - 1; i > 0; --i)
-        names.push_back(rados_objects[i].remote_path);
+    {
+        names.push_back(std::move(rados_objects[i].remote_path));
+        if (names.size() >= remove_batch_size)
+        {
+            /// Except for the HEAD object, remove only if it exists. Non-head objects can be missing
+            /// because of many reasons, e.g. crash on write, exception on remove...
+            io_ctx->remove(names);
+            names.clear();
+        }
+    }
 
-    /// Except for the HEAD object, remove only if it exists. Non-head objects can be missing
-    /// because of many reasons, e.g. crash on write, crash on remove
     if (!names.empty())
         io_ctx->remove(names);
 
