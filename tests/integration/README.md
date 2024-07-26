@@ -127,10 +127,10 @@ On the CI, we run a number of parallel runners (5 at the time of this writing), 
 Docker container. These runner containers spawn more containers for the services needed such as
 ZooKeeper, MySQL, PostgreSQL and minio, among others. Within each runner, tests are parallelized
 using [pytest-xdist](https://pytest-xdist.readthedocs.io/en/stable/). We're using `--dist=loadfile`
-to [distribute the load](https://pytest-xdist.readthedocs.io/en/stable/distribution.html). In other
-words: tests are grouped by module for test functions and by class for test methods. This means that
-any test within the same module (or any class) will never execute their tests in parallel. They'll
-be executed on the same worker one after the other.
+to [distribute the load](https://pytest-xdist.readthedocs.io/en/stable/distribution.html). In the
+documentation words: this guarantees that all tests in a file run in the same worker. This means
+that any test within the same file will never execute their tests in parallel. They'll be executed
+on the same worker one after the other.
 
 If the test supports parallel and repeated execution, you can run a bunch of them in parallel to
 look for flakiness. We use [pytest-repeat](https://pypi.org/project/pytest-repeat/) to set the
