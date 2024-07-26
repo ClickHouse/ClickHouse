@@ -638,6 +638,7 @@ if (ENABLE_TESTS)
         dbms
         clickhouse_common_config
         clickhouse_common_zookeeper
+        loggers
         hilite_comparator)
 
     if (TARGET ch_contrib::simdjson)
