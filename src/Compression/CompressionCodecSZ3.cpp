@@ -102,14 +102,34 @@ CompressionCodecSZ3::DataType getDataType(const IDataType & column_type)
 
 UInt32 CompressionCodecSZ3::doCompressData(const char * source, UInt32 source_size, char * dest) const
 {
-    SZ3::Config conf(source_size);
+    char* res;
+    size_t src_size;
+
+    char* source_compressed = new char[source_size];
+    memcpy(source_compressed, source, source_size);
+
+    switch (type) 
+    {
+        case DataType::FLOAT32:
+        {
+            src_size = static_cast<size_t>(source_size) / sizeof(float);
+            break;
+        }
+        case DataType::FLOAT64:
+        {
+            src_size = static_cast<size_t>(source_size) / sizeof(double);
+            break;
+        }
+    }
+    
+    SZ3::Config conf(src_size);
     ContextPtr query_context;
     if (CurrentThread::isInitialized())
         query_context = CurrentThread::get().getQueryContext();
 
-    // Default settings
     if (!query_context)
     {
+        // Default settings
         conf.cmprAlgo = SZ3::ALGO_INTERP_LORENZO;
         conf.errorBoundMode = SZ3::EB_REL;
         conf.relErrorBound = 1E-2;
@@ -124,34 +144,27 @@ UInt32 CompressionCodecSZ3::doCompressData(const char * source, UInt32 source_si
         conf.l2normErrorBound = query_context->getSettingsRef().sz3_l2_norm_error_bound;
     }
 
-    char* res;
-    size_t src_size;
-
-    char* source_compressed = new char[source_size];
-    memcpy(source_compressed, source, source_size);
-
     switch (type) 
     {
         case DataType::FLOAT32:
         {
-            src_size = static_cast<size_t>(source_size) / sizeof(float);
             res = SZ_compress(conf, reinterpret_cast<float*>(source_compressed), src_size);
             break;
         }
         case DataType::FLOAT64:
         {
-            src_size = static_cast<size_t>(source_size) / sizeof(double);
             res = SZ_compress(conf, reinterpret_cast<double*>(source_compressed), src_size);
             break;
         }
     }
     
-    memcpy(dest, res, source_size);
+
+    memcpy(dest, res, src_size);
     delete[] source_compressed;
     return static_cast<UInt32>(src_size);
 }
 
-void CompressionCodecSZ3::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32) const 
+void CompressionCodecSZ3::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const 
 {
     SZ3::Config conf;
     char* copy_compressed = new char[source_size];
@@ -162,18 +175,17 @@ void CompressionCodecSZ3::doDecompressData(const char * source, UInt32 source_si
         {
             auto* res = reinterpret_cast<float*>(dest);
             res = SZ_decompress<float>(conf, copy_compressed, source_size);
-            dest = reinterpret_cast<char*>(res);
+            memcpy(dest, reinterpret_cast<char*>(res), static_cast<size_t>(uncompressed_size));
             break;
         }
         case DataType::FLOAT64:
         {
             auto* res = reinterpret_cast<double*>(dest);
             res = SZ_decompress<double>(conf, copy_compressed, source_size);
-            dest = reinterpret_cast<char*>(res);
+            memcpy(dest, reinterpret_cast<char*>(res), static_cast<size_t>(uncompressed_size));
             break;
         }
     }
-
     delete[] copy_compressed;
 }
 

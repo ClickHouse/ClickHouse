@@ -756,7 +756,6 @@ void registerCodecT64(CompressionCodecFactory & factory)
     auto reg_func = [&](const ASTPtr & arguments, const IDataType * type) -> CompressionCodecPtr
     {
         Variant variant = Variant::Byte;
-
         if (arguments && !arguments->children.empty())
         {
             if (arguments->children.size() > 1)
