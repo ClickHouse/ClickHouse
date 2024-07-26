@@ -571,7 +571,7 @@ Result:
 
 ## toInt32OrZero
 
-Like [`toInt32`](#toint32), this function converts an input value to a value of type [Int8](../data-types/int-uint.md) but returns `0` in case of an error.
+Like [`toInt32`](#toint32), this function converts an input value to a value of type [Int32](../data-types/int-uint.md) but returns `0` in case of an error.
 
 **Syntax**
 
@@ -767,7 +767,7 @@ SELECT toInt64('9223372036854775808') == --9223372036854775808;
 
 **Returned value**
 
-- 64-bit integer value. [Int64](../data-types/int-uint.md). [Int64](../data-types/int-uint.md).
+- 64-bit integer value. [Int64](../data-types/int-uint.md).
 
 :::note
 The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
@@ -800,7 +800,7 @@ Result:
 
 ## toInt64OrZero
 
-Like [`toInt64`](#toint64), this function converts an input value to a value of type [Int8](../data-types/int-uint.md) but returns `0` in case of an error.
+Like [`toInt64`](#toint64), this function converts an input value to a value of type [Int64](../data-types/int-uint.md) but returns `0` in case of an error.
 
 **Syntax**
 
@@ -878,7 +878,7 @@ Types for which `\N` is returned:
 
 **Returned value**
 
-- Integer value of type `Int64` if successful, otherwise `NULL`. [Int64](../data-types/int-uint.md) / [NULL](../data-types/nullable.md).
+- 64-bit integer value if successful, otherwise `NULL`. [Int64](../data-types/int-uint.md) / [NULL](../data-types/nullable.md).
 
 :::note
 The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
@@ -935,7 +935,7 @@ Types for which the default value is returned:
 
 **Returned value**
 
-- Integer value of type `Int64` if successful, otherwise returns the default value. [Int64](../data-types/int-uint.md).
+- 64-bit integer value if successful, otherwise returns the default value. [Int64](../data-types/int-uint.md).
 
 :::note
 - The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
@@ -1028,7 +1028,7 @@ Result:
 
 ## toInt128OrZero
 
-Like [`toInt128`](#toint128), this function converts an input value to a value of type [Int8](../data-types/int-uint.md) but returns `0` in case of an error.
+Like [`toInt128`](#toint128), this function converts an input value to a value of type [Int128](../data-types/int-uint.md) but returns `0` in case of an error.
 
 **Syntax**
 
@@ -1256,7 +1256,7 @@ Result:
 
 ## toInt256OrZero
 
-Like [`toInt256`](#toint256), this function converts an input value to a value of type [Int8](../data-types/int-uint.md) but returns `0` in case of an error.
+Like [`toInt256`](#toint256), this function converts an input value to a value of type [Int256](../data-types/int-uint.md) but returns `0` in case of an error.
 
 **Syntax**
 
