@@ -1,5 +1,7 @@
 #include <Planner/PlannerJoinTree.h>
 
+#include <Core/Settings.h>
+
 #include <Common/scope_guard_safe.h>
 
 #include <Columns/ColumnAggregateFunction.h>
@@ -75,7 +77,6 @@ namespace ErrorCodes
     extern const int INVALID_JOIN_ON_EXPRESSION;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
-    extern const int SYNTAX_ERROR;
     extern const int ACCESS_DENIED;
     extern const int PARAMETER_OUT_OF_BOUND;
     extern const int TOO_MANY_COLUMNS;
@@ -647,7 +648,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
         auto table_expression_query_info = select_query_info;
         table_expression_query_info.table_expression = table_expression;
         table_expression_query_info.filter_actions_dag = table_expression_data.getFilterActions();
-        table_expression_query_info.analyzer_can_use_parallel_replicas_on_follower = table_node == planner_context->getGlobalPlannerContext()->parallel_replicas_table;
+        table_expression_query_info.current_table_chosen_for_reading_with_parallel_replicas
+            = table_node == planner_context->getGlobalPlannerContext()->parallel_replicas_table;
 
         size_t max_streams = settings.max_threads;
         size_t max_threads_execute_query = settings.max_threads;
@@ -861,6 +863,15 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
 
                 from_stage = storage->getQueryProcessingStage(
                     query_context, select_query_options.to_stage, storage_snapshot, table_expression_query_info);
+
+                /// It is just a safety check needed until we have a proper sending plan to replicas.
+                /// If we have a non-trivial storage like View it might create its own Planner inside read(), run findTableForParallelReplicas()
+                /// and find some other table that might be used for reading with parallel replicas. It will lead to errors.
+                const bool other_table_already_chosen_for_reading_with_parallel_replicas
+                    = planner_context->getGlobalPlannerContext()->parallel_replicas_table
+                    && !table_expression_query_info.current_table_chosen_for_reading_with_parallel_replicas;
+                if (other_table_already_chosen_for_reading_with_parallel_replicas)
+                    planner_context->getMutableQueryContext()->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
 
                 storage->read(
                     query_plan,
@@ -1385,12 +1396,7 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
             {
                 if (!join_clause.hasASOF())
                     throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
-                        "JOIN {} no inequality in ASOF JOIN ON section.",
-                        join_node.formatASTForErrorMessage());
-
-                if (table_join_clause.key_names_left.size() <= 1)
-                    throw Exception(ErrorCodes::SYNTAX_ERROR,
-                        "JOIN {} ASOF join needs at least one equi-join column",
+                        "JOIN {} no inequality in ASOF JOIN ON section",
                         join_node.formatASTForErrorMessage());
             }
 
@@ -1512,7 +1518,9 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
         {
             const auto & join_clause = table_join->getOnlyClause();
 
-            bool kind_allows_filtering = isInner(join_kind) || isLeft(join_kind) || isRight(join_kind);
+            bool join_type_allows_filtering = (join_strictness == JoinStrictness::All || join_strictness == JoinStrictness::Any)
+                                            && (isInner(join_kind) || isLeft(join_kind) || isRight(join_kind));
+
 
             auto has_non_const = [](const Block & block, const auto & keys)
             {
@@ -1532,7 +1540,7 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
             bool has_non_const_keys = has_non_const(left_plan.getCurrentDataStream().header, join_clause.key_names_left)
                 && has_non_const(right_plan.getCurrentDataStream().header, join_clause.key_names_right);
 
-            if (settings.max_rows_in_set_to_optimize_join > 0 && kind_allows_filtering && has_non_const_keys)
+            if (settings.max_rows_in_set_to_optimize_join > 0 && join_type_allows_filtering && has_non_const_keys)
             {
                 auto * left_set = add_create_set(left_plan, join_clause.key_names_left, JoinTableSide::Left);
                 auto * right_set = add_create_set(right_plan, join_clause.key_names_right, JoinTableSide::Right);

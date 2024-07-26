@@ -20,6 +20,7 @@
 #include <Common/noexcept_scope.h>
 #include <Common/DateLUT.h>
 #include <Common/logger_useful.h>
+#include <Core/Settings.h>
 #include <base/errnoToString.h>
 #include <Core/ServerSettings.h>
 

@@ -28,6 +28,7 @@
 #include <Disks/ObjectStorages/createMetadataStorageMetrics.h>
 #include <Interpreters/Context.h>
 #include <Common/Macros.h>
+#include <Core/Settings.h>
 
 #include <filesystem>
 

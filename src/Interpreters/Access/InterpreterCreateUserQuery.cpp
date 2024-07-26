@@ -114,6 +114,34 @@ namespace
         else if (query.grantees)
             user.grantees = *query.grantees;
     }
+
+    time_t getValidUntilFromAST(ASTPtr valid_until, ContextPtr context)
+    {
+        if (context)
+            valid_until = evaluateConstantExpressionAsLiteral(valid_until, context);
+
+        const String valid_until_str = checkAndGetLiteralArgument<String>(valid_until, "valid_until");
+
+        if (valid_until_str == "infinity")
+            return 0;
+
+        time_t time = 0;
+        ReadBufferFromString in(valid_until_str);
+
+        if (context)
+        {
+            const auto & time_zone = DateLUT::instance("");
+            const auto & utc_time_zone = DateLUT::instance("UTC");
+
+            parseDateTimeBestEffort(time, in, time_zone, utc_time_zone);
+        }
+        else
+        {
+            readDateTimeText(time, in);
+        }
+
+        return time;
+    }
 }
 
 BlockIO InterpreterCreateUserQuery::execute()
@@ -134,23 +162,7 @@ BlockIO InterpreterCreateUserQuery::execute()
 
     std::optional<time_t> valid_until;
     if (query.valid_until)
-    {
-        const ASTPtr valid_until_literal = evaluateConstantExpressionAsLiteral(query.valid_until, getContext());
-        const String valid_until_str = checkAndGetLiteralArgument<String>(valid_until_literal, "valid_until");
-
-        time_t time = 0;
-
-        if (valid_until_str != "infinity")
-        {
-            const auto & time_zone = DateLUT::instance("");
-            const auto & utc_time_zone = DateLUT::instance("UTC");
-
-            ReadBufferFromString in(valid_until_str);
-            parseDateTimeBestEffort(time, in, time_zone, utc_time_zone);
-        }
-
-        valid_until = time;
-    }
+        valid_until = getValidUntilFromAST(query.valid_until, getContext());
 
     std::optional<RolesOrUsersSet> default_roles_from_query;
     if (query.default_roles)
@@ -259,7 +271,11 @@ void InterpreterCreateUserQuery::updateUserFromQuery(User & user, const ASTCreat
     if (query.auth_data)
         auth_data = AuthenticationData::fromAST(*query.auth_data, {}, !query.attach);
 
-    updateUserFromQueryImpl(user, query, auth_data, {}, {}, {}, {}, {}, allow_no_password, allow_plaintext_password, true);
+    std::optional<time_t> valid_until;
+    if (query.valid_until)
+        valid_until = getValidUntilFromAST(query.valid_until, {});
+
+    updateUserFromQueryImpl(user, query, auth_data, {}, {}, {}, {}, valid_until, allow_no_password, allow_plaintext_password, true);
 }
 
 void registerInterpreterCreateUserQuery(InterpreterFactory & factory)

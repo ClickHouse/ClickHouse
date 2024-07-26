@@ -106,7 +106,7 @@ The factorial of 0 is 1. Likewise, the factorial() function returns 1 for any ne
 )",
             .examples{{"factorial", "SELECT factorial(10)", ""}},
             .categories{"Mathematical"}},
-        FunctionFactory::CaseInsensitive);
+        FunctionFactory::Case::Insensitive);
 }
 
 }
