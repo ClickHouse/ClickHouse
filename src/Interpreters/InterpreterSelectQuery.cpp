@@ -2055,9 +2055,9 @@ void InterpreterSelectQuery::addEmptySourceToQueryPlan(QueryPlan & query_plan, c
     {
         auto & prewhere_info = *query_info.prewhere_info;
 
-        auto row_level_actions = std::make_shared<ExpressionActions>(prewhere_info.row_level_filter->clone());
         if (prewhere_info.row_level_filter)
         {
+            auto row_level_actions = std::make_shared<ExpressionActions>(prewhere_info.row_level_filter->clone());
             pipe.addSimpleTransform([&](const Block & header)
             {
                 return std::make_shared<FilterTransform>(header,
