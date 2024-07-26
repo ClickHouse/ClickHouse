@@ -304,7 +304,7 @@ Session::~Session()
         LOG_DEBUG(log, "{} Logout, user_id: {}", toString(auth_id), toString(*user_id));
         if (auto session_log = getSessionLog())
         {
-            session_log->addLogOut(auth_id, user, getClientInfo());
+            session_log->addLogOut(auth_id, user, user_authenticated_with, getClientInfo());
         }
     }
 }

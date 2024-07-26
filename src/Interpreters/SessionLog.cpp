@@ -258,15 +258,19 @@ void SessionLog::addLoginFailure(
     add(std::move(log_entry));
 }
 
-void SessionLog::addLogOut(const UUID & auth_id, const UserPtr & login_user, const ClientInfo & client_info)
+void SessionLog::addLogOut(
+    const UUID & auth_id,
+    const UserPtr & login_user,
+    const AuthenticationData & user_authenticated_with,
+    const ClientInfo & client_info)
 {
     auto log_entry = SessionLogElement(auth_id, SESSION_LOGOUT);
     if (login_user)
     {
         log_entry.user = login_user->getName();
-        log_entry.user_identified_with = login_user->authentication_methods.back().getType();
+        log_entry.user_identified_with = user_authenticated_with.getType();
     }
-    log_entry.external_auth_server = login_user ? login_user->authentication_methods.back().getLDAPServerName() : "";
+    log_entry.external_auth_server = user_authenticated_with.getLDAPServerName();
     log_entry.client_info = client_info;
 
     add(std::move(log_entry));

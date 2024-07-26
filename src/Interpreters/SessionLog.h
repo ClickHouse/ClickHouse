@@ -82,7 +82,11 @@ public:
                          const AuthenticationData & user_authenticated_with);
 
     void addLoginFailure(const UUID & auth_id, const ClientInfo & info, const std::optional<String> & user, const Exception & reason);
-    void addLogOut(const UUID & auth_id, const UserPtr & login_user, const ClientInfo & client_info);
+    void addLogOut(
+        const UUID & auth_id,
+        const UserPtr & login_user,
+        const AuthenticationData & user_authenticated_with,
+        const ClientInfo & client_info);
 };
 
 }
