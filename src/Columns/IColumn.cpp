@@ -46,7 +46,11 @@ String IColumn::dumpStructure() const
     return res.str();
 }
 
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
 void IColumn::insertFrom(const IColumn & src, size_t n)
+#else
+void IColumn::doInsertFrom(const IColumn & src, size_t n)
+#endif
 {
     insert(src[n]);
 }

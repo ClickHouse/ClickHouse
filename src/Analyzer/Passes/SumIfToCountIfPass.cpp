@@ -1,19 +1,16 @@
 #include <Analyzer/Passes/SumIfToCountIfPass.h>
 
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeNullable.h>
-
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/IAggregateFunction.h>
-#include <Analyzer/Utils.h>
-
-#include <Functions/FunctionFactory.h>
-
-#include <Interpreters/Context.h>
-
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
+#include <Analyzer/Utils.h>
+#include <Core/Settings.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <Functions/FunctionFactory.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
@@ -33,7 +30,7 @@ public:
             return;
 
         auto * function_node = node->as<FunctionNode>();
-        if (!function_node || !function_node->isAggregateFunction())
+        if (!function_node || !function_node->isAggregateFunction() || !function_node->getResultType()->equals(DataTypeUInt64()))
             return;
 
         auto function_name = function_node->getFunctionName();

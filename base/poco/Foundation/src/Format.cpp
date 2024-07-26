@@ -51,8 +51,8 @@ namespace
 		}
 		if (width != 0) str.width(width);
 	}
-	
-	
+
+
 	void parsePrec(std::ostream& str, std::string::const_iterator& itFmt, const std::string::const_iterator& endFmt)
 	{
 		if (itFmt != endFmt && *itFmt == '.')
@@ -67,7 +67,7 @@ namespace
 			if (prec >= 0) str.precision(prec);
 		}
 	}
-	
+
 	char parseMod(std::string::const_iterator& itFmt, const std::string::const_iterator& endFmt)
 	{
 		char mod = 0;
@@ -77,13 +77,13 @@ namespace
 			{
 			case 'l':
 			case 'h':
-			case 'L': 
+			case 'L':
 			case '?': mod = *itFmt++; break;
 			}
 		}
 		return mod;
 	}
-	
+
 	std::size_t parseIndex(std::string::const_iterator& itFmt, const std::string::const_iterator& endFmt)
 	{
 		int index = 0;
@@ -110,8 +110,8 @@ namespace
 		case 'f': str << std::fixed; break;
 		}
 	}
-	
-	
+
+
 	void writeAnyInt(std::ostream& str, const Any& any)
 	{
 		if (any.type() == typeid(char))
@@ -201,7 +201,7 @@ namespace
 					str << RefAnyCast<std::string>(*itVal++);
 					break;
 				case 'z':
-					str << AnyCast<std::size_t>(*itVal++); 
+					str << AnyCast<std::size_t>(*itVal++);
 					break;
 				case 'I':
 				case 'D':
@@ -303,7 +303,7 @@ void format(std::string& result, const std::string& fmt, const Any& value)
 {
 	std::vector<Any> args;
 	args.push_back(value);
-	format(result, fmt, args);
+	formatVector(result, fmt, args);
 }
 
 
@@ -312,7 +312,7 @@ void format(std::string& result, const std::string& fmt, const Any& value1, cons
 	std::vector<Any> args;
 	args.push_back(value1);
 	args.push_back(value2);
-	format(result, fmt, args);
+	formatVector(result, fmt, args);
 }
 
 
@@ -322,7 +322,7 @@ void format(std::string& result, const std::string& fmt, const Any& value1, cons
 	args.push_back(value1);
 	args.push_back(value2);
 	args.push_back(value3);
-	format(result, fmt, args);
+	formatVector(result, fmt, args);
 }
 
 
@@ -333,7 +333,7 @@ void format(std::string& result, const std::string& fmt, const Any& value1, cons
 	args.push_back(value2);
 	args.push_back(value3);
 	args.push_back(value4);
-	format(result, fmt, args);
+	formatVector(result, fmt, args);
 }
 
 
@@ -345,7 +345,7 @@ void format(std::string& result, const std::string& fmt, const Any& value1, cons
 	args.push_back(value3);
 	args.push_back(value4);
 	args.push_back(value5);
-	format(result, fmt, args);
+	formatVector(result, fmt, args);
 }
 
 
@@ -358,7 +358,7 @@ void format(std::string& result, const std::string& fmt, const Any& value1, cons
 	args.push_back(value4);
 	args.push_back(value5);
 	args.push_back(value6);
-	format(result, fmt, args);
+	formatVector(result, fmt, args);
 }
 
 
@@ -372,7 +372,7 @@ void format(std::string& result, const std::string& fmt, const Any& value1, cons
 	args.push_back(value5);
 	args.push_back(value6);
 	args.push_back(value7);
-	format(result, fmt, args);
+	formatVector(result, fmt, args);
 }
 
 
@@ -387,7 +387,7 @@ void format(std::string& result, const std::string& fmt, const Any& value1, cons
 	args.push_back(value6);
 	args.push_back(value7);
 	args.push_back(value8);
-	format(result, fmt, args);
+	formatVector(result, fmt, args);
 }
 
 
@@ -403,7 +403,7 @@ void format(std::string& result, const std::string& fmt, const Any& value1, cons
 	args.push_back(value7);
 	args.push_back(value8);
 	args.push_back(value9);
-	format(result, fmt, args);
+	formatVector(result, fmt, args);
 }
 
 
@@ -420,16 +420,16 @@ void format(std::string& result, const std::string& fmt, const Any& value1, cons
 	args.push_back(value8);
 	args.push_back(value9);
 	args.push_back(value10);
-	format(result, fmt, args);
+	formatVector(result, fmt, args);
 }
 
 
-void format(std::string& result, const std::string& fmt, const std::vector<Any>& values)
+void formatVector(std::string& result, const std::string& fmt, const std::vector<Any>& values)
 {
 	std::string::const_iterator itFmt  = fmt.begin();
 	std::string::const_iterator endFmt = fmt.end();
 	std::vector<Any>::const_iterator itVal  = values.begin();
-	std::vector<Any>::const_iterator endVal = values.end(); 
+	std::vector<Any>::const_iterator endVal = values.end();
 	while (itFmt != endFmt)
 	{
 		switch (*itFmt)

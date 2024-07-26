@@ -361,9 +361,9 @@ void registerAggregateFunctionsAny(AggregateFunctionFactory & factory)
     AggregateFunctionProperties default_properties = {.returns_default_when_only_null = false, .is_order_dependent = true};
 
     factory.registerFunction("any", {createAggregateFunctionAny, default_properties});
-    factory.registerAlias("any_value", "any", AggregateFunctionFactory::CaseInsensitive);
-    factory.registerAlias("first_value", "any", AggregateFunctionFactory::CaseInsensitive);
+    factory.registerAlias("any_value", "any", AggregateFunctionFactory::Case::Insensitive);
+    factory.registerAlias("first_value", "any", AggregateFunctionFactory::Case::Insensitive);
     factory.registerFunction("anyLast", {createAggregateFunctionAnyLast, default_properties});
-    factory.registerAlias("last_value", "anyLast", AggregateFunctionFactory::CaseInsensitive);
+    factory.registerAlias("last_value", "anyLast", AggregateFunctionFactory::Case::Insensitive);
 }
 }

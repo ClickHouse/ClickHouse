@@ -14,3 +14,9 @@ rules:
     comments:
         min-spaces-from-content: 1
     document-start: disable
+    colons: disable
+    indentation: disable
+    line-length: disable
+    trailing-spaces: disable
+    truthy: disable
+    new-line-at-end-of-file: disable

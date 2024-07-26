@@ -5,6 +5,7 @@
 #include <Columns/ColumnString.h>
 #include <Interpreters/Context.h>
 #include <Core/Field.h>
+#include <Core/Settings.h>
 
 
 namespace DB

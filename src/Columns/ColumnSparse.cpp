@@ -174,7 +174,11 @@ const char * ColumnSparse::skipSerializedInArena(const char * pos) const
     return values->skipSerializedInArena(pos);
 }
 
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
 void ColumnSparse::insertRangeFrom(const IColumn & src, size_t start, size_t length)
+#else
+void ColumnSparse::doInsertRangeFrom(const IColumn & src, size_t start, size_t length)
+#endif
 {
     if (length == 0)
         return;
@@ -248,7 +252,11 @@ bool ColumnSparse::tryInsert(const Field & x)
     return true;
 }
 
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
 void ColumnSparse::insertFrom(const IColumn & src, size_t n)
+#else
+void ColumnSparse::doInsertFrom(const IColumn & src, size_t n)
+#endif
 {
     if (const auto * src_sparse = typeid_cast<const ColumnSparse *>(&src))
     {
@@ -446,7 +454,11 @@ ColumnPtr ColumnSparse::indexImpl(const PaddedPODArray<Type> & indexes, size_t l
     return ColumnSparse::create(std::move(res_values), std::move(res_offsets), limit);
 }
 
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
 int ColumnSparse::compareAt(size_t n, size_t m, const IColumn & rhs_, int null_direction_hint) const
+#else
+int ColumnSparse::doCompareAt(size_t n, size_t m, const IColumn & rhs_, int null_direction_hint) const
+#endif
 {
     if (const auto * rhs_sparse = typeid_cast<const ColumnSparse *>(&rhs_))
         return values->compareAt(getValueIndex(n), rhs_sparse->getValueIndex(m), rhs_sparse->getValuesColumn(), null_direction_hint);
@@ -666,20 +678,22 @@ void ColumnSparse::updateHashWithValue(size_t n, SipHash & hash) const
     values->updateHashWithValue(getValueIndex(n), hash);
 }
 
-void ColumnSparse::updateWeakHash32(WeakHash32 & hash) const
+WeakHash32 ColumnSparse::getWeakHash32() const
 {
-    if (hash.getData().size() != _size)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of WeakHash32 does not match size of column: "
-        "column size is {}, hash size is {}", _size, hash.getData().size());
+    WeakHash32 values_hash = values->getWeakHash32();
+    WeakHash32 hash(size());
+
+    auto & hash_data = hash.getData();
+    auto & values_hash_data = values_hash.getData();
 
     auto offset_it = begin();
-    auto & hash_data = hash.getData();
     for (size_t i = 0; i < _size; ++i, ++offset_it)
     {
         size_t value_index = offset_it.getValueIndex();
-        auto data_ref = values->getDataAt(value_index);
-        hash_data[i] = ::updateWeakHash32(reinterpret_cast<const UInt8 *>(data_ref.data), data_ref.size, hash_data[i]);
+        hash_data[i] = values_hash_data[value_index];
     }
+
+    return hash;
 }
 
 void ColumnSparse::updateHashFast(SipHash & hash) const

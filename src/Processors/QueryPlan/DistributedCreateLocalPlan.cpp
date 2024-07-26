@@ -1,6 +1,7 @@
 #include <Processors/QueryPlan/DistributedCreateLocalPlan.h>
 
 #include <Common/checkStackSize.h>
+#include <Core/Settings.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>

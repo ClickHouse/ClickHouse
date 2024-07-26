@@ -545,7 +545,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         catch (Exception & e)
         {
             if (e.code() == ErrorCodes::UNEXPECTED_DATA_AFTER_PARSED_VALUE)
-                throw Exception(ErrorCodes::TYPE_MISMATCH, "Cannot convert string {} to type {}", src.get<String>(), type.getName());
+                throw Exception(ErrorCodes::TYPE_MISMATCH, "Cannot convert string '{}' to type {}", src.get<String>(), type.getName());
 
             e.addMessage(fmt::format("while converting '{}' to {}", src.get<String>(), type.getName()));
             throw;

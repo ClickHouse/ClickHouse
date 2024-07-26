@@ -286,7 +286,6 @@ CREATE TABLE system.functions
 (
     `name` String,
     `is_aggregate` UInt8,
-    `is_deterministic` Nullable(UInt8),
     `case_insensitive` UInt8,
     `alias_to` String,
     `create_query` String,

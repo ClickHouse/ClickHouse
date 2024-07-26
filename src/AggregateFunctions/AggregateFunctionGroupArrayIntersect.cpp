@@ -150,8 +150,18 @@ public:
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
     {
-        readVarUInt(this->data(place).version, buf);
-        this->data(place).value.read(buf);
+        auto & set = this->data(place).value;
+        auto & version = this->data(place).version;
+        size_t size;
+        readVarUInt(version, buf);
+        readVarUInt(size, buf);
+        set.reserve(size);
+        for (size_t i = 0; i < size; ++i)
+        {
+            int key;
+            readIntBinary(key, buf);
+            set.insert(key);
+        }
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
@@ -292,7 +302,7 @@ public:
                 }
                 return new_map;
             };
-            auto new_map = rhs_value.size() < set.size() ? create_new_map(rhs_value, set) : create_new_map(set, rhs_value);
+            auto new_map = create_new_map(set, rhs_value);
             set = std::move(new_map);
         }
     }
@@ -316,11 +326,9 @@ public:
         readVarUInt(version, buf);
         readVarUInt(size, buf);
         set.reserve(size);
-        UInt64 elem_version;
         for (size_t i = 0; i < size; ++i)
         {
             auto key = readStringBinaryInto(*arena, buf);
-            readVarUInt(elem_version, buf);
             set.insert(key);
         }
     }

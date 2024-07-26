@@ -109,7 +109,7 @@ void ScatterByPartitionTransform::generateOutputChunks()
     hash.reset(num_rows);
 
     for (const auto & column_number : key_columns)
-        columns[column_number]->updateWeakHash32(hash);
+        hash.update(columns[column_number]->getWeakHash32());
 
     const auto & hash_data = hash.getData();
     IColumn::Selector selector(num_rows);

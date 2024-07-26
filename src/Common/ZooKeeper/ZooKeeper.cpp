@@ -13,14 +13,14 @@
 #include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/randomSeed.h>
-#include <base/find_symbols.h>
 #include <base/sort.h>
+#include <base/map.h>
 #include <base/getFQDNOrHostName.h>
 #include <Core/ServerUUID.h>
 #include <Core/BackgroundSchedulePool.h>
-#include "Common/ZooKeeper/IKeeper.h"
-#include <Common/DNSResolver.h>
+#include <Common/ZooKeeper/IKeeper.h>
 #include <Common/StringUtils.h>
+#include <Common/quoteString.h>
 #include <Common/Exception.h>
 #include <Interpreters/Context.h>
 
@@ -114,7 +114,11 @@ void ZooKeeper::init(ZooKeeperArgs args_, std::unique_ptr<Coordination::IKeeper>
             /// availability_zones is empty on server startup or after config reloading
             /// We will keep the az info when starting new sessions
             availability_zones = args.availability_zones;
-            LOG_TEST(log, "Availability zones from config: [{}], client: {}", fmt::join(availability_zones, ", "), args.client_availability_zone);
+
+            LOG_TEST(log, "Availability zones from config: [{}], client: {}",
+                fmt::join(collections::map(availability_zones, [](auto s){ return DB::quoteString(s); }), ", "),
+                DB::quoteString(args.client_availability_zone));
+
             if (args.availability_zone_autodetect)
                 updateAvailabilityZones();
         }

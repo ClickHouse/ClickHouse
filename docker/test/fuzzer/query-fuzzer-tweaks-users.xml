@@ -20,7 +20,7 @@
                 </max_execution_time>
 
                 <max_memory_usage>
-                    <max>10G</max>
+                    <max>5G</max>
                 </max_memory_usage>
 
                 <table_function_remote_max_addresses>

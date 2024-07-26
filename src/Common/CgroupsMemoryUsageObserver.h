@@ -14,6 +14,8 @@ struct ICgroupsReader
     virtual ~ICgroupsReader() = default;
 
     virtual uint64_t readMemoryUsage() = 0;
+
+    virtual std::string dumpAllStats() = 0;
 };
 
 /// Does two things:
@@ -80,6 +82,9 @@ private:
     ThreadFromGlobalPool thread;
     bool quit = false;
 };
+
+std::unique_ptr<ICgroupsReader>
+createCgroupsReader(CgroupsMemoryUsageObserver::CgroupsVersion version, const std::filesystem::path & cgroup_path);
 
 #else
 class CgroupsMemoryUsageObserver

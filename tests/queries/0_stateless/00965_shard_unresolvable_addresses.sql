@@ -1,4 +1,4 @@
--- Tags: shard
+-- Tags: shard, no-parallel
 
 SET prefer_localhost_replica = 1;
 

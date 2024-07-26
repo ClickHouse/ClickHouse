@@ -3,6 +3,7 @@
 #include <Server/IServer.h>
 
 #include <Compression/CompressedWriteBuffer.h>
+#include <Core/ServerSettings.h>
 #include <IO/ReadBufferFromIStream.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterserverIOHandler.h>

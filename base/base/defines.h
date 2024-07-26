@@ -87,10 +87,13 @@
 #   define ASAN_POISON_MEMORY_REGION(a, b)
 #endif
 
-#if !defined(ABORT_ON_LOGICAL_ERROR)
-    #if !defined(NDEBUG) || defined(ADDRESS_SANITIZER) || defined(THREAD_SANITIZER) || defined(MEMORY_SANITIZER) || defined(UNDEFINED_BEHAVIOR_SANITIZER)
-        #define ABORT_ON_LOGICAL_ERROR
-    #endif
+/// We used to have only ABORT_ON_LOGICAL_ERROR macro, but most of its uses were actually in places where we didn't care about logical errors
+/// but wanted to check exactly if the current build type is debug or with sanitizer. This new macro is introduced to fix those places.
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
+#    if !defined(NDEBUG) || defined(ADDRESS_SANITIZER) || defined(THREAD_SANITIZER) || defined(MEMORY_SANITIZER) \
+        || defined(UNDEFINED_BEHAVIOR_SANITIZER)
+#        define DEBUG_OR_SANITIZER_BUILD
+#    endif
 #endif
 
 /// chassert(x) is similar to assert(x), but:
@@ -101,7 +104,7 @@
 /// Also it makes sense to call abort() instead of __builtin_unreachable() in debug builds,
 /// because SIGABRT is easier to debug than SIGTRAP (the second one makes gdb crazy)
 #if !defined(chassert)
-    #if defined(ABORT_ON_LOGICAL_ERROR)
+#    if defined(DEBUG_OR_SANITIZER_BUILD)
         // clang-format off
         #include <base/types.h>
         namespace DB

@@ -3,6 +3,7 @@
 import csv
 import logging
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -17,6 +18,18 @@ from pr_info import PRInfo
 from report import ERROR, JobReport, TestResults, read_test_results
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
+
+
+class SensitiveFormatter(logging.Formatter):
+    @staticmethod
+    def _filter(s):
+        return re.sub(
+            r"(.*)(AZURE_CONNECTION_STRING.*\')(.*)", r"\1AZURE_CONNECTION_STRING\3", s
+        )
+
+    def format(self, record):
+        original = logging.Formatter.format(self, record)
+        return self._filter(original)
 
 
 def get_additional_envs(check_name: str) -> List[str]:
@@ -117,6 +130,9 @@ def process_results(
 
 def run_stress_test(docker_image_name: str) -> None:
     logging.basicConfig(level=logging.INFO)
+    for handler in logging.root.handlers:
+        # pylint: disable=protected-access
+        handler.setFormatter(SensitiveFormatter(handler.formatter._fmt))  # type: ignore
 
     stopwatch = Stopwatch()
     temp_path = Path(TEMP_PATH)

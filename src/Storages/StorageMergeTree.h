@@ -211,7 +211,6 @@ private:
         bool optimize_skip_merged_partitions = false,
         SelectPartsDecision * select_decision_out = nullptr);
 
-
     MergeMutateSelectedEntryPtr selectPartsToMutate(
         const StorageMetadataPtr & metadata_snapshot, PreformattedMessage & disable_reason,
         TableLockHolder & table_lock_holder, std::unique_lock<std::mutex> & currently_processing_in_background_mutex_lock);
@@ -310,6 +309,7 @@ private:
     };
 
 protected:
+    /// Collect mutations that have to be applied on the fly: currently they are only RENAME COLUMN.
     MutationCommands getAlterMutationCommandsForPart(const DataPartPtr & part) const override;
 };
 

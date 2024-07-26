@@ -7,19 +7,20 @@ namespace DB
 /// Kind of a temporal interval.
 struct IntervalKind
 {
+    /// note: The order and numbers are important and used in binary encoding, append new interval kinds to the end of list.
     enum class Kind : uint8_t
     {
-        Nanosecond,
-        Microsecond,
-        Millisecond,
-        Second,
-        Minute,
-        Hour,
-        Day,
-        Week,
-        Month,
-        Quarter,
-        Year,
+        Nanosecond = 0x00,
+        Microsecond = 0x01,
+        Millisecond = 0x02,
+        Second = 0x03,
+        Minute = 0x04,
+        Hour = 0x05,
+        Day = 0x06,
+        Week = 0x07,
+        Month = 0x08,
+        Quarter = 0x09,
+        Year = 0x0A,
     };
     Kind kind = Kind::Second;
 

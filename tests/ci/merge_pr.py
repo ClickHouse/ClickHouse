@@ -26,6 +26,7 @@ from pr_info import PRInfo
 from report import SUCCESS, FAILURE
 from env_helper import GITHUB_UPSTREAM_REPOSITORY, GITHUB_REPOSITORY
 from synchronizer_utils import SYNC_BRANCH_PREFIX
+from ci_config import CI
 
 # The team name for accepted approvals
 TEAM_NAME = getenv("GITHUB_TEAM_NAME", "core")
@@ -247,29 +248,45 @@ def main():
     repo = gh.get_repo(args.repo)
 
     if args.set_ci_status:
+        # set Mergeable check status and exit
         assert args.wf_status in (FAILURE, SUCCESS)
-        # set mergeable check status and exit
         commit = get_commit(gh, args.pr_info.sha)
         statuses = get_commit_filtered_statuses(commit)
-        state = trigger_mergeable_check(
-            commit,
-            statuses,
-            workflow_failed=(args.wf_status != "success"),
-        )
 
-        # Process upstream StatusNames.SYNC
-        pr_info = PRInfo()
-        if (
-            pr_info.head_ref.startswith(f"{SYNC_BRANCH_PREFIX}/pr/")
-            and GITHUB_REPOSITORY != GITHUB_UPSTREAM_REPOSITORY
-        ):
-            print("Updating upstream statuses")
-            update_upstream_sync_status(pr_info, state)
+        has_failed_statuses = False
+        has_native_failed_status = False
+        for status in statuses:
+            print(f"Check status [{status.context}], [{status.state}]")
+            if CI.is_required(status.context) and status.state != SUCCESS:
+                print(f"WARNING: Failed status [{status.context}], [{status.state}]")
+                has_failed_statuses = True
+                if status.context != CI.StatusNames.SYNC:
+                    has_native_failed_status = True
 
-        if args.wf_status != "success":
-            # exit with 1 to rerun on workflow failed job restart
+        if args.wf_status == SUCCESS or has_failed_statuses:
+            # set Mergeable check if workflow is successful (green)
+            # or if we have GH statuses with failures (red)
+            #    to avoid false-green on a died runner
+            state = trigger_mergeable_check(
+                commit,
+                statuses,
+            )
+            # Process upstream StatusNames.SYNC
+            pr_info = PRInfo()
+            if (
+                pr_info.head_ref.startswith(f"{SYNC_BRANCH_PREFIX}/pr/")
+                and GITHUB_REPOSITORY != GITHUB_UPSTREAM_REPOSITORY
+            ):
+                print("Updating upstream statuses")
+                update_upstream_sync_status(pr_info, state)
+        else:
+            print(
+                "Workflow failed but no failed statuses found (died runner?) - cannot set Mergeable Check status"
+            )
+        if args.wf_status == SUCCESS and not has_native_failed_status:
+            sys.exit(0)
+        else:
             sys.exit(1)
-        sys.exit(0)
 
     # An ugly and not nice fix to patch the wrong organization URL,
     # see https://github.com/PyGithub/PyGithub/issues/2395#issuecomment-1378629710

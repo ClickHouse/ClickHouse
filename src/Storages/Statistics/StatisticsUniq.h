@@ -27,7 +27,7 @@ private:
 
 };
 
-void UniqValidator(const SingleStatisticsDescription &, DataTypePtr data_type);
-StatisticsPtr UniqCreator(const SingleStatisticsDescription & stat, DataTypePtr data_type);
+void uniqValidator(const SingleStatisticsDescription &, DataTypePtr data_type);
+StatisticsPtr uniqCreator(const SingleStatisticsDescription & stat, DataTypePtr data_type);
 
 }

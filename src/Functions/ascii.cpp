@@ -45,9 +45,7 @@ struct AsciiImpl
         size_t size = data.size() / n;
 
         for (size_t i = 0; i < size; ++i)
-        {
             res[i] = doAscii(data, i * n, n);
-        }
     }
 
     [[noreturn]] static void array(const ColumnString::Offsets & /*offsets*/, PaddedPODArray<ReturnType> & /*res*/)
@@ -90,7 +88,7 @@ If s is empty, the result is 0. If the first character is not an ASCII character
         )",
         .examples{{"ascii", "SELECT ascii('234')", ""}},
         .categories{"String"}
-        }, FunctionFactory::CaseInsensitive);
+        }, FunctionFactory::Case::Insensitive);
 }
 
 }

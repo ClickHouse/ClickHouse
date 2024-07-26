@@ -25,7 +25,6 @@ private:
     mutable std::optional<size_t> version;
 
     String getNameImpl(bool with_version) const;
-    size_t getVersion() const;
 
 public:
     static constexpr bool is_parametric = true;
@@ -38,6 +37,8 @@ public:
         , version(version_)
     {
     }
+
+    size_t getVersion() const;
 
     String getFunctionName() const;
     AggregateFunctionPtr getFunction() const { return function; }

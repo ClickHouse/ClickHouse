@@ -52,6 +52,10 @@
 #    include <Server/CertificateReloader.h>
 #endif
 
+#if USE_GWP_ASAN
+#    include <Common/GWPAsan.h>
+#endif
+
 #include <Server/ProtocolServerAdapter.h>
 #include <Server/KeeperTCPHandlerFactory.h>
 
@@ -264,6 +268,35 @@ HTTPContextPtr httpContext()
     return std::make_shared<KeeperHTTPContext>(Context::getGlobalContextInstance());
 }
 
+String getKeeperPath(Poco::Util::LayeredConfiguration & config)
+{
+    String path;
+    if (config.has("keeper_server.storage_path"))
+    {
+        path = config.getString("keeper_server.storage_path");
+    }
+    else if (config.has("keeper_server.log_storage_path"))
+    {
+        path = std::filesystem::path(config.getString("keeper_server.log_storage_path")).parent_path();
+    }
+    else if (config.has("keeper_server.snapshot_storage_path"))
+    {
+        path = std::filesystem::path(config.getString("keeper_server.snapshot_storage_path")).parent_path();
+    }
+    else if (std::filesystem::is_directory(std::filesystem::path{config.getString("path", DBMS_DEFAULT_PATH)} / "coordination"))
+    {
+        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG,
+                        "By default 'keeper_server.storage_path' could be assigned to {}, but the directory {} already exists. Please specify 'keeper_server.storage_path' in the keeper configuration explicitly",
+                        KEEPER_DEFAULT_PATH, String{std::filesystem::path{config.getString("path", DBMS_DEFAULT_PATH)} / "coordination"});
+    }
+    else
+    {
+        path = KEEPER_DEFAULT_PATH;
+    }
+    return path;
+}
+
+
 }
 
 int Keeper::main(const std::vector<std::string> & /*args*/)
@@ -316,31 +349,7 @@ try
 
     updateMemorySoftLimitInConfig(config());
 
-    std::string path;
-
-    if (config().has("keeper_server.storage_path"))
-    {
-        path = config().getString("keeper_server.storage_path");
-    }
-    else if (config().has("keeper_server.log_storage_path"))
-    {
-        path = std::filesystem::path(config().getString("keeper_server.log_storage_path")).parent_path();
-    }
-    else if (config().has("keeper_server.snapshot_storage_path"))
-    {
-        path = std::filesystem::path(config().getString("keeper_server.snapshot_storage_path")).parent_path();
-    }
-    else if (std::filesystem::is_directory(std::filesystem::path{config().getString("path", DBMS_DEFAULT_PATH)} / "coordination"))
-    {
-        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG,
-                        "By default 'keeper_server.storage_path' could be assigned to {}, but the directory {} already exists. Please specify 'keeper_server.storage_path' in the keeper configuration explicitly",
-                        KEEPER_DEFAULT_PATH, String{std::filesystem::path{config().getString("path", DBMS_DEFAULT_PATH)} / "coordination"});
-    }
-    else
-    {
-        path = KEEPER_DEFAULT_PATH;
-    }
-
+    std::string path = getKeeperPath(config());
     std::filesystem::create_directories(path);
 
     /// Check that the process user id matches the owner of the data.
@@ -554,7 +563,7 @@ try
     auto main_config_reloader = std::make_unique<ConfigReloader>(
         config_path,
         extra_paths,
-        config().getString("path", KEEPER_DEFAULT_PATH),
+        getKeeperPath(config()),
         std::move(unused_cache),
         unused_event,
         [&](ConfigurationPtr config, bool /* initial_loading */)
@@ -633,6 +642,10 @@ try
     {
         tryLogCurrentException(log, "Disabling cgroup memory observer because of an error during initialization");
     }
+
+#if USE_GWP_ASAN
+    GWPAsan::initFinished();
+#endif
 
 
     LOG_INFO(log, "Ready for connections.");

@@ -257,6 +257,9 @@ public:
 
         bool position_independent_encoding = true;
 
+        /// True if data type names should be serialized in binary encoding.
+        bool data_types_binary_encoding = false;
+
         bool use_compact_variant_discriminators_serialization = false;
 
         enum class DynamicStatisticsMode
@@ -277,6 +280,9 @@ public:
         bool continuous_reading = true;
 
         bool position_independent_encoding = true;
+
+        /// True if data type names should be deserialized in binary encoding.
+        bool data_types_binary_encoding = false;
 
         bool native_format = false;
 

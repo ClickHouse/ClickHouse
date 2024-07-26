@@ -1,4 +1,4 @@
--- Tags: no-replicated-database, no-parallel
+-- Tags: no-replicated-database
 
 drop table if exists test;
 drop table if exists file;

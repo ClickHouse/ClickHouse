@@ -23,8 +23,9 @@ std::optional<uint64_t> getCgroupsV2MemoryLimit()
     if (!cgroupsV2MemoryControllerEnabled())
         return {};
 
-    std::string cgroup = cgroupV2OfProcess();
-    auto current_cgroup = cgroup.empty() ? default_cgroups_mount : (default_cgroups_mount / cgroup);
+    std::filesystem::path current_cgroup = cgroupV2PathOfProcess();
+    if (current_cgroup.empty())
+        return {};
 
     /// Open the bottom-most nested memory limit setting file. If there is no such file at the current
     /// level, try again at the parent level as memory settings are inherited.

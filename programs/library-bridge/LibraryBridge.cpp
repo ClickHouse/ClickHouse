@@ -1,5 +1,7 @@
 #include "LibraryBridge.h"
 
+#include <iostream>
+
 int mainEntryClickHouseLibraryBridge(int argc, char ** argv)
 {
     DB::LibraryBridge app;

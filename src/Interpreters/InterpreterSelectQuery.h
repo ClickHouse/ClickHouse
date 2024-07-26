@@ -26,7 +26,6 @@ class Logger;
 namespace DB
 {
 
-class SubqueryForSet;
 class InterpreterSelectWithUnionQuery;
 class Context;
 class QueryPlan;

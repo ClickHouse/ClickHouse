@@ -2,6 +2,7 @@
 
 #if USE_MYSQL
 #include <Core/Block.h>
+#include <Core/Settings.h>
 #include <Databases/MySQL/FetchTablesColumnsList.h>
 #include <DataTypes/convertMySQLDataType.h>
 #include <DataTypes/DataTypeString.h>

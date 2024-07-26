@@ -76,7 +76,7 @@ WHERE macro = 'test';
 └───────┴──────────────┘
 ```
 
-## FQDN
+## fqdn
 
 Returns the fully qualified domain name of the ClickHouse server.
 
@@ -86,7 +86,7 @@ Returns the fully qualified domain name of the ClickHouse server.
 fqdn();
 ```
 
-Aliases: `fullHostName`, 'FQDN'. 
+Aliases: `fullHostName`, `FQDN`. 
 
 **Returned value**
 
@@ -2983,6 +2983,66 @@ Result:
 │ 1       │
 └─────────┘
 ```
+
+## partitionID
+
+Computes the [partition ID](../../engines/table-engines/mergetree-family/custom-partitioning-key.md).
+
+:::note
+This function is slow and should not be called for large amount of rows.
+:::
+
+**Syntax**
+
+```sql
+partitionID(x[, y, ...]);
+```
+
+**Arguments**
+
+- `x` — Column for which to return the partition ID.
+- `y, ...` — Remaining N columns for which to return the partition ID (optional).
+
+**Returned Value**
+
+- Partition ID that the row would belong to. [String](../data-types/string.md).
+
+**Example**
+
+Query:
+
+```sql
+DROP TABLE IF EXISTS tab;
+
+CREATE TABLE tab
+(
+  i int,
+  j int
+)
+ENGINE = MergeTree
+PARTITION BY i
+ORDER BY tuple();
+
+INSERT INTO tab VALUES (1, 1), (1, 2), (1, 3), (2, 4), (2, 5), (2, 6);
+
+SELECT i, j, partitionID(i), _partition_id FROM tab ORDER BY i, j;
+```
+
+Result:
+
+```response
+┌─i─┬─j─┬─partitionID(i)─┬─_partition_id─┐
+│ 1 │ 1 │ 1              │ 1             │
+│ 1 │ 2 │ 1              │ 1             │
+│ 1 │ 3 │ 1              │ 1             │
+└───┴───┴────────────────┴───────────────┘
+┌─i─┬─j─┬─partitionID(i)─┬─_partition_id─┐
+│ 2 │ 4 │ 2              │ 2             │
+│ 2 │ 5 │ 2              │ 2             │
+│ 2 │ 6 │ 2              │ 2             │
+└───┴───┴────────────────┴───────────────┘
+```
+
 
 ## shardNum
 

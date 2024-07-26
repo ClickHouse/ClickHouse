@@ -29,7 +29,8 @@ CLICKHOUSE_BINARY_PATH = "usr/bin/clickhouse"
 CLICKHOUSE_ODBC_BRIDGE_BINARY_PATH = "usr/bin/clickhouse-odbc-bridge"
 CLICKHOUSE_LIBRARY_BRIDGE_BINARY_PATH = "usr/bin/clickhouse-library-bridge"
 
-FLAKY_TRIES_COUNT = 10
+FLAKY_TRIES_COUNT = 10  # run whole pytest several times
+FLAKY_REPEAT_COUNT = 5  # runs test case in single module several times
 MAX_TIME_SECONDS = 3600
 
 MAX_TIME_IN_SANDBOX = 20 * 60  # 20 minutes
@@ -568,6 +569,7 @@ class ClickhouseIntegrationTestsRunner:
         tests_in_group,
         num_tries,
         num_workers,
+        repeat_count,
     ):
         try:
             return self.run_test_group(
@@ -576,6 +578,7 @@ class ClickhouseIntegrationTestsRunner:
                 tests_in_group,
                 num_tries,
                 num_workers,
+                repeat_count,
             )
         except Exception as e:
             logging.info("Failed to run %s:\n%s", test_group, e)
@@ -598,6 +601,7 @@ class ClickhouseIntegrationTestsRunner:
         tests_in_group,
         num_tries,
         num_workers,
+        repeat_count,
     ):
         counters = {
             "ERROR": [],
@@ -639,6 +643,7 @@ class ClickhouseIntegrationTestsRunner:
 
             test_cmd = " ".join([shlex.quote(test) for test in sorted(test_names)])
             parallel_cmd = f" --parallel {num_workers} " if num_workers > 0 else ""
+            repeat_cmd = f" --count {repeat_count} " if repeat_count > 0 else ""
             # -r -- show extra test summary:
             # -f -- (f)ailed
             # -E -- (E)rror
@@ -647,7 +652,7 @@ class ClickhouseIntegrationTestsRunner:
             cmd = (
                 f"cd {repo_path}/tests/integration && "
                 f"timeout --signal=KILL 1h ./runner {self._get_runner_opts()} "
-                f"{image_cmd} -t {test_cmd} {parallel_cmd} -- -rfEps --run-id={i} "
+                f"{image_cmd} -t {test_cmd} {parallel_cmd} {repeat_cmd} -- -rfEps --run-id={i} "
                 f"--color=no --durations=0 {_get_deselect_option(self.should_skip_tests())} "
                 f"| tee {info_path}"
             )
@@ -784,7 +789,12 @@ class ClickhouseIntegrationTestsRunner:
             final_retry += 1
             logging.info("Running tests for the %s time", i)
             counters, tests_times, log_paths = self.try_run_test_group(
-                repo_path, "bugfix" if should_fail else "flaky", tests_to_run, 1, 1
+                repo_path,
+                "bugfix" if should_fail else "flaky",
+                tests_to_run,
+                1,
+                1,
+                FLAKY_REPEAT_COUNT,
             )
             logs += log_paths
             if counters["FAILED"]:
@@ -919,7 +929,7 @@ class ClickhouseIntegrationTestsRunner:
         for group, tests in items_to_run:
             logging.info("Running test group %s containing %s tests", group, len(tests))
             group_counters, group_test_times, log_paths = self.try_run_test_group(
-                repo_path, group, tests, MAX_RETRY, NUM_WORKERS
+                repo_path, group, tests, MAX_RETRY, NUM_WORKERS, 0
             )
             total_tests = 0
             for counter, value in group_counters.items():

@@ -80,8 +80,8 @@ Requires a boolean parameter, but it is ignored actually. It is required just fo
              {"common", "SELECT current_schemas(true);", "['default']"}
         }
         },
-        FunctionFactory::CaseInsensitive);
-    factory.registerAlias("current_schemas", FunctionCurrentSchemas::name, FunctionFactory::CaseInsensitive);
+        FunctionFactory::Case::Insensitive);
+    factory.registerAlias("current_schemas", FunctionCurrentSchemas::name, FunctionFactory::Case::Insensitive);
 
 }
 

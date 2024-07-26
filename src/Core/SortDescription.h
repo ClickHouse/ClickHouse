@@ -1,14 +1,15 @@
 #pragma once
 
-#include <vector>
-#include <memory>
-#include <cstddef>
-#include <string>
+
 #include <Core/Field.h>
-#include <Core/SettingsEnums.h>
 #include <Common/IntervalKind.h>
 #include <DataTypes/IDataType.h>
 #include <Columns/Collator.h>
+
+#include <cstddef>
+#include <string>
+#include <memory>
+#include <vector>
 
 namespace DB
 {

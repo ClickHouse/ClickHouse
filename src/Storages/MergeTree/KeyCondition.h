@@ -14,6 +14,7 @@
 
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/MergeTree/RPNBuilder.h>
+#include "DataTypes/Serializations/ISerialization.h"
 
 
 namespace DB
@@ -253,13 +254,12 @@ private:
         DataTypePtr & out_key_column_type,
         std::vector<RPNBuilderFunctionTreeNode> & out_functions_chain);
 
-    bool transformConstantWithValidFunctions(
+    bool extractMonotonicFunctionsChainFromKey(
         ContextPtr context,
         const String & expr_name,
         size_t & out_key_column_num,
         DataTypePtr & out_key_column_type,
-        Field & out_value,
-        DataTypePtr & out_type,
+        MonotonicFunctionsChain & out_functions_chain,
         std::function<bool(const IFunctionBase &, const IDataType &)> always_monotonic) const;
 
     bool canConstantBeWrappedByMonotonicFunctions(
@@ -276,13 +276,25 @@ private:
         Field & out_value,
         DataTypePtr & out_type);
 
+    /// Checks if node is a subexpression of any of key columns expressions,
+    /// wrapped by deterministic functions, and if so, returns `true`, and
+    /// specifies key column position / type. Besides that it produces the
+    /// chain of functions which should be executed on set, to transform it
+    /// into key column values.
+    bool canSetValuesBeWrappedByFunctions(
+        const RPNBuilderTreeNode & node,
+        size_t & out_key_column_num,
+        DataTypePtr & out_key_res_column_type,
+        MonotonicFunctionsChain & out_functions_chain);
+
     /// If it's possible to make an RPNElement
     /// that will filter values (possibly tuples) by the content of 'prepared_set',
     /// do it and return true.
     bool tryPrepareSetIndex(
         const RPNBuilderFunctionTreeNode & func,
         RPNElement & out,
-        size_t & out_key_column_num);
+        size_t & out_key_column_num,
+        bool & is_constant_transformed);
 
     /// Checks that the index can not be used.
     ///

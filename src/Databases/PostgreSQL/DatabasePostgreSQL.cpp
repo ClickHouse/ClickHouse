@@ -22,6 +22,7 @@
 #include <Common/quoteString.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/logger_useful.h>
+#include <Core/Settings.h>
 #include <filesystem>
 
 namespace fs = std::filesystem;
@@ -545,8 +546,9 @@ void registerDatabasePostgreSQL(DatabaseFactory & factory)
             configuration,
             settings.postgresql_connection_pool_size,
             settings.postgresql_connection_pool_wait_timeout,
-            POSTGRESQL_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES,
-            settings.postgresql_connection_pool_auto_close_connection);
+            settings.postgresql_connection_pool_retries,
+            settings.postgresql_connection_pool_auto_close_connection,
+            settings.postgresql_connection_attempt_timeout);
 
         return std::make_shared<DatabasePostgreSQL>(
             args.context,

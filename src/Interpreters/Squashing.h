@@ -8,9 +8,18 @@
 namespace DB
 {
 
-struct ChunksToSquash : public ChunkInfo
+class ChunksToSquash : public ChunkInfoCloneable<ChunksToSquash>
 {
-    mutable std::vector<Chunk> chunks = {};
+public:
+    ChunksToSquash() = default;
+    ChunksToSquash(const ChunksToSquash & other)
+    {
+        chunks.reserve(other.chunks.size());
+        for (const auto & chunk: other.chunks)
+           chunks.push_back(chunk.clone());
+    }
+
+    std::vector<Chunk> chunks = {};
 };
 
 /** Merging consecutive passed blocks to specified minimum size.
@@ -36,34 +45,37 @@ public:
     static Chunk squash(Chunk && input_chunk);
     Chunk flush();
 
-    bool isDataLeft()
-    {
-        return !chunks_to_merge_vec.empty();
-    }
+    void setHeader(Block header_) { header = std::move(header_); }
+    const Block & getHeader() const { return header; }
 
-    Block header;
 private:
-    struct CurrentSize
+    struct CurrentData
     {
+        std::vector<Chunk> chunks = {};
         size_t rows = 0;
         size_t bytes = 0;
+
+        explicit operator bool () const { return !chunks.empty(); }
+        size_t getRows() const { return rows; }
+        size_t getBytes() const { return bytes; }
+        void add(Chunk && chunk);
     };
 
-    std::vector<Chunk> chunks_to_merge_vec = {};
-    size_t min_block_size_rows;
-    size_t min_block_size_bytes;
+    const size_t min_block_size_rows;
+    const size_t min_block_size_bytes;
+    Block header;
 
-    CurrentSize accumulated_size;
+    CurrentData accumulated;
 
-    static const ChunksToSquash * getInfoFromChunk(const Chunk & chunk);
+    static Chunk squash(std::vector<Chunk> && input_chunks, Chunk::ChunkInfoCollection && infos);
 
-    static Chunk squash(std::vector<Chunk> & input_chunks);
-
-    void expandCurrentSize(size_t rows, size_t bytes);
-    void changeCurrentSize(size_t rows, size_t bytes);
+    bool isEnoughSize() const;
     bool isEnoughSize(size_t rows, size_t bytes) const;
+    bool isEnoughSize(const Chunk & chunk) const;
 
-    Chunk convertToChunk(std::vector<Chunk> && chunks) const;
+    CurrentData extract();
+
+    Chunk convertToChunk(CurrentData && data) const;
 };
 
 }

@@ -28,11 +28,14 @@ namespace ErrorCodes
     extern const int PARAMETER_OUT_OF_BOUND;
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
     extern const int NOT_IMPLEMENTED;
-    extern const int LOGICAL_ERROR;
 }
 
 template <is_decimal T>
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
 int ColumnDecimal<T>::compareAt(size_t n, size_t m, const IColumn & rhs_, int) const
+#else
+int ColumnDecimal<T>::doCompareAt(size_t n, size_t m, const IColumn & rhs_, int) const
+#endif
 {
     auto & other = static_cast<const Self &>(rhs_);
     const T & a = data[n];
@@ -72,13 +75,10 @@ void ColumnDecimal<T>::updateHashWithValue(size_t n, SipHash & hash) const
 }
 
 template <is_decimal T>
-void ColumnDecimal<T>::updateWeakHash32(WeakHash32 & hash) const
+WeakHash32 ColumnDecimal<T>::getWeakHash32() const
 {
     auto s = data.size();
-
-    if (hash.getData().size() != s)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of WeakHash32 does not match size of column: "
-                        "column size is {}, hash size is {}", std::to_string(s), std::to_string(hash.getData().size()));
+    WeakHash32 hash(s);
 
     const T * begin = data.data();
     const T * end = begin + s;
@@ -90,6 +90,8 @@ void ColumnDecimal<T>::updateWeakHash32(WeakHash32 & hash) const
         ++begin;
         ++hash_data;
     }
+
+    return hash;
 }
 
 template <is_decimal T>
@@ -331,7 +333,11 @@ void ColumnDecimal<T>::insertData(const char * src, size_t /*length*/)
 }
 
 template <is_decimal T>
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
 void ColumnDecimal<T>::insertRangeFrom(const IColumn & src, size_t start, size_t length)
+#else
+void ColumnDecimal<T>::doInsertRangeFrom(const IColumn & src, size_t start, size_t length)
+#endif
 {
     const ColumnDecimal & src_vec = assert_cast<const ColumnDecimal &>(src);
 

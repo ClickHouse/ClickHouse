@@ -125,7 +125,7 @@ HashJoin::HashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_s
     if (isCrossOrComma(kind))
     {
         data->type = Type::CROSS;
-        sample_block_with_columns_to_add = right_sample_block;
+        sample_block_with_columns_to_add = materializeBlock(right_sample_block);
     }
     else if (table_join->getClauses().empty())
     {
