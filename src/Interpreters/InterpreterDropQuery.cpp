@@ -438,7 +438,8 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
                 for (const auto & [name, _] : tables_to_drop)
                 {
                     auto table_ptr = DatabaseCatalog::instance().getTable(name, table_context);
-                    runner([my_table_ptr = std::move(table_ptr)](){
+                    runner([my_table_ptr = std::move(table_ptr)]()
+                    {
                         my_table_ptr->flushAndPrepareForShutdown();
                     });
                 }

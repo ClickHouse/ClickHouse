@@ -50,9 +50,6 @@
 namespace CurrentMetrics
 {
     extern const Metric TablesToDropQueueSize;
-    extern const Metric DatabaseCatalogThreads;
-    extern const Metric DatabaseCatalogThreadsActive;
-    extern const Metric DatabaseCatalogThreadsScheduled;
 }
 
 namespace DB
