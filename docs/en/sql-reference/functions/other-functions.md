@@ -346,12 +346,42 @@ Result:
 ## materialize
 
 Turns a constant into a full column containing a single value.
-Full columns and constants are represented differently in memory. Functions usually execute different code for normal and constant arguments, although the result should typically be the same. This function can be used to debug this behavior.
+Full columns and constants are represented differently in memory.
+Functions usually execute different code for normal and constant arguments, although the result should typically be the same. 
+This function can be used to debug this behavior.
 
 **Syntax**
 
 ```sql
 materialize(x)
+```
+
+**Parameters**
+
+- `x` — A constant. [Constant](../functions/index.md/#constants).
+
+**Returned value**
+
+- A column containing a single value `x`.
+
+**Example**
+
+In the example below the `countMatches` function expects a constant second argument. 
+This behaviour can be debugged by using the `materialize` function to turn a constant into a full column, 
+verifying that the function throws an error for a non-constant argument.
+
+Query:
+
+```sql
+SELECT countMatches('foobarfoo', 'foo');
+SELECT countMatches('foobarfoo', materialize('foo'));
+```
+
+Result:
+
+```response
+2
+Code: 44. DB::Exception: Received from localhost:9000. DB::Exception: Illegal type of argument #2 'pattern' of function countMatches, expected constant String, got String
 ```
 
 ## ignore
