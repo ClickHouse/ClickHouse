@@ -104,10 +104,13 @@ bool isRetryableException(std::exception_ptr exception_ptr)
     {
         return true;
     }
-
-    /// In fact, there can be other similar situations.
-    /// But it is OK, because there is a safety guard against deleting too many parts.
-    return false;
+    catch (...)
+    {
+        /// In fact, there can be other similar situations.
+        /// But it is OK, because there is a safety guard against deleting too many parts.
+        return false;
+    }
+    UNREACHABLE();
 }
 
 

@@ -34,3 +34,23 @@ def test_flushes_async_insert_queue():
     )
     node.restart_clickhouse()
     assert node.query("SELECT * FROM flush_test") == "world\t23456\n"
+
+
+def test_serialization_json_broken(start_cluster):
+    node.query("DROP TABLE IF EXISTS test")
+
+    node.query(
+        "CREATE TABLE test( a int, b  Map(String, String)) Engine = MergeTree() order by a"
+    )
+    node.query("INSERT INTO test SELECT number, map('aaa', 'bbb') from numbers(10)")
+
+    metadata_path = node.query(
+        "SELECT arrayJoin(data_paths) FROM system.tables WHERE table='test'"
+    ).split("\n")
+
+    node.exec_in_container(
+        ["bash", "-c", f"echo '' > {metadata_path[0]}all_1_1_0/serialization.json"]
+    )
+    node.restart_clickhouse()
+
+    node.query("SELECT 1")
