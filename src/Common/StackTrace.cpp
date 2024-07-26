@@ -495,18 +495,19 @@ using StackTraceCacheBase = std::map<StackTraceTriple, CacheEntryPtr, std::less<
 
 struct StackTraceCache : public StackTraceCacheBase
 {
+    StackTraceCache()
+        : StackTraceCacheBase()
+    {
+        can_use_cache = true;
+    }
+
     ~StackTraceCache()
     {
         can_use_cache = false;
     }
 };
 
-static StackTraceCache & cacheInstance()
-{
-    static StackTraceCache cache;
-    can_use_cache = true;
-    return cache;
-}
+static StackTraceCache cache;
 
 static DB::SharedMutex stacktrace_cache_mutex;
 
@@ -524,7 +525,6 @@ String toStringCached(const StackTrace::FramePointers & pointers, size_t offset,
     /// Calculation of stack trace text is extremely slow.
     /// We use cache because otherwise the server could be overloaded by trash queries.
     /// Note that this cache can grow unconditionally, but practically it should be small.
-    StackTraceCache & cache = cacheInstance();
     CacheEntryPtr cache_entry;
 
     // Optimistic try for cache hit to avoid any contention whatsoever, should be the main hot code route
@@ -576,7 +576,7 @@ std::string StackTrace::toString(void * const * frame_pointers_raw, size_t offse
 void StackTrace::dropCache()
 {
     std::lock_guard lock{stacktrace_cache_mutex};
-    cacheInstance().clear();
+    cache.clear();
 }
 
 
