@@ -12,7 +12,7 @@ FROM
         AVG(wg) AS WR,
         ac,
         nw
-    FROM window_funtion_threading
+    FROM window_function_threading
     GROUP BY ac, nw
 )
 GROUP BY nw
@@ -32,7 +32,7 @@ FROM
         AVG(wg) AS WR,
         ac,
         nw
-    FROM window_funtion_threading
+    FROM window_function_threading
     GROUP BY ac, nw
 )
 GROUP BY nw
@@ -53,7 +53,7 @@ FROM
         AVG(wg) AS WR,
         ac,
         nw
-    FROM window_funtion_threading
+    FROM window_function_threading
     WHERE (ac % 4) = 0
     GROUP BY
         ac,
@@ -64,7 +64,7 @@ FROM
         AVG(wg) AS WR,
         ac,
         nw
-    FROM window_funtion_threading
+    FROM window_function_threading
     WHERE (ac % 4) = 1
     GROUP BY
         ac,
@@ -75,7 +75,7 @@ FROM
         AVG(wg) AS WR,
         ac,
         nw
-    FROM window_funtion_threading
+    FROM window_function_threading
     WHERE (ac % 4) = 2
     GROUP BY
         ac,
@@ -86,7 +86,7 @@ FROM
         AVG(wg) AS WR,
         ac,
         nw
-    FROM window_funtion_threading
+    FROM window_function_threading
     WHERE (ac % 4) = 3
     GROUP BY
         ac,

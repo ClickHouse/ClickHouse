@@ -1,6 +1,6 @@
 -- Tags: long, no-tsan, no-msan, no-asan, no-ubsan, no-debug, no-object-storage
 
-SET max_rows_to_read = '51M';
+SET max_rows_to_read = '101M';
 
 DROP TABLE IF EXISTS t_2354_dist_with_external_aggr;
 

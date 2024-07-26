@@ -14,7 +14,7 @@ MAX_PROCESS_WAIT=5
 
 # TCP CLIENT: As of today (02/12/21) uses PullingAsyncPipelineExecutor
 ### Should be cancelled after 1 second and return a 159 exception (timeout)
-timeout -s KILL $MAX_PROCESS_WAIT $CLICKHOUSE_CLIENT --max_execution_time 1 -q \
+timeout -s KILL $MAX_PROCESS_WAIT $CLICKHOUSE_CLIENT --max_result_rows 0 --max_result_bytes 0 --max_execution_time 1 -q \
     "SELECT * FROM
     (
         SELECT a.name as n
@@ -31,7 +31,7 @@ timeout -s KILL $MAX_PROCESS_WAIT $CLICKHOUSE_CLIENT --max_execution_time 1 -q \
     FORMAT Null" 2>&1 | grep -o "Code: 159" | sort | uniq
 
 ### Should stop pulling data and return what has been generated already (return code 0)
-timeout -s KILL $MAX_PROCESS_WAIT $CLICKHOUSE_CLIENT -q \
+timeout -s KILL $MAX_PROCESS_WAIT $CLICKHOUSE_CLIENT --max_result_rows 0 --max_result_bytes 0 -q \
     "SELECT a.name as n
      FROM
      (
@@ -48,7 +48,7 @@ echo $?
 
 # HTTP CLIENT: As of today (02/12/21) uses PullingPipelineExecutor
 ### Should be cancelled after 1 second and return a 159 exception (timeout)
-${CLICKHOUSE_CURL} -q --max-time $MAX_PROCESS_WAIT -sS "$CLICKHOUSE_URL&max_execution_time=1" -d \
+${CLICKHOUSE_CURL} -q --max-time $MAX_PROCESS_WAIT -sS "$CLICKHOUSE_URL&max_result_rows=0&max_result_bytes=0&max_execution_time=1" -d \
     "SELECT * FROM
     (
         SELECT a.name as n
@@ -66,7 +66,7 @@ ${CLICKHOUSE_CURL} -q --max-time $MAX_PROCESS_WAIT -sS "$CLICKHOUSE_URL&max_exec
 
 
 ### Should stop pulling data and return what has been generated already (return code 0)
-${CLICKHOUSE_CURL} -q --max-time $MAX_PROCESS_WAIT -sS "$CLICKHOUSE_URL" -d \
+${CLICKHOUSE_CURL} -q --max-time $MAX_PROCESS_WAIT -sS "$CLICKHOUSE_URL&max_result_rows=0&max_result_bytes=0" -d \
     "SELECT a.name as n
           FROM
           (
