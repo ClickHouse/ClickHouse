@@ -16,18 +16,6 @@
 namespace DB
 {
 
-static constinit std::atomic<bool> allow_logging{true};
-
-bool OwnSplitChannel::isLoggingEnabled()
-{
-    return allow_logging;
-}
-
-void OwnSplitChannel::disableLogging()
-{
-    allow_logging = false;
-}
-
 void OwnSplitChannel::log(const Poco::Message & msg)
 {
     if (!isLoggingEnabled())

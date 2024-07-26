@@ -39,10 +39,6 @@ public:
 
     void setLevel(const std::string & name, int level);
 
-    static void disableLogging();
-
-    static bool isLoggingEnabled();
-
 private:
     void logSplit(const Poco::Message & msg);
     void tryLogSplit(const Poco::Message & msg);

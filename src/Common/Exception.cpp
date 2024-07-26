@@ -3,12 +3,12 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <Loggers/OwnSplitChannel.h>
 #include <base/demangle.h>
 #include <Common/AtomicLogger.h>
 #include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
 #include <Common/LockMemoryExceptionInThread.h>
+#include <Common/Logger.h>
 #include <Common/MemorySanitizer.h>
 #include <Common/SensitiveDataMasker.h>
 #include <Common/config_version.h>
@@ -253,7 +253,7 @@ void Exception::setThreadFramePointers(ThreadFramePointersBase frame_pointers)
 
 static void tryLogCurrentExceptionImpl(Poco::Logger * logger, const std::string & start_of_message)
 {
-    if (!OwnSplitChannel::isLoggingEnabled())
+    if (!isLoggingEnabled())
         return;
 
     try
@@ -271,7 +271,7 @@ static void tryLogCurrentExceptionImpl(Poco::Logger * logger, const std::string 
 
 void tryLogCurrentException(const char * log_name, const std::string & start_of_message)
 {
-    if (!OwnSplitChannel::isLoggingEnabled())
+    if (!isLoggingEnabled())
         return;
 
     /// Under high memory pressure, new allocations throw a
