@@ -77,7 +77,7 @@ void CompressionCodecSZ3::updateHash(SipHash & hash) const
 
 UInt32 CompressionCodecSZ3::getMaxCompressedDataSize(UInt32 uncompressed_size) const
 {
-    return uncompressed_size;
+    return uncompressed_size + 1;
 }
 
 CompressionCodecSZ3::DataType getDataType(const IDataType & column_type)
@@ -109,11 +109,15 @@ UInt32 CompressionCodecSZ3::doCompressData(const char * source, UInt32 source_si
         case DataType::FLOAT32:
         {
             src_size = static_cast<size_t>(source_size) / sizeof(float);
+            dest[0] = 0;
+            ++dest;
             break;
         }
         case DataType::FLOAT64:
         {
             src_size = static_cast<size_t>(source_size) / sizeof(double);
+            dest[0] = 1;
+            ++dest;
             break;
         }
     }
@@ -154,30 +158,31 @@ UInt32 CompressionCodecSZ3::doCompressData(const char * source, UInt32 source_si
         }
     }
 
-
     memcpy(dest, res, src_size);
     delete[] source_compressed;
-    return static_cast<UInt32>(src_size);
+    return static_cast<UInt32>(src_size) + 1;
 }
 
 void CompressionCodecSZ3::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const
 {
     SZ3::Config conf;
+    --source_size;
+    DataType decoded_type = static_cast<DataType>(source[0]);
+    ++source;
     char* copy_compressed = new char[source_size];
     memcpy(copy_compressed, source, source_size);
-    switch (type)
+
+    switch (decoded_type)
     {
         case DataType::FLOAT32:
         {
-            auto* res = reinterpret_cast<float*>(dest);
-            res = SZ_decompress<float>(conf, copy_compressed, source_size);
+            auto* res = SZ_decompress<float>(conf, copy_compressed, source_size);
             memcpy(dest, reinterpret_cast<char*>(res), static_cast<size_t>(uncompressed_size));
             break;
         }
         case DataType::FLOAT64:
         {
-            auto* res = reinterpret_cast<double*>(dest);
-            res = SZ_decompress<double>(conf, copy_compressed, source_size);
+            auto* res = SZ_decompress<double>(conf, copy_compressed, source_size);
             memcpy(dest, reinterpret_cast<char*>(res), static_cast<size_t>(uncompressed_size));
             break;
         }
