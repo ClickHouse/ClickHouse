@@ -63,18 +63,19 @@ toInt8(expr)
 
 - `expr` — Expression returning a number or a string representation of a number. [Expression](../syntax.md/#syntax-expressions).
 
-Supported types:
-- (U)Int8/16/32/64/128/256
-- Float*
-- String representations of (U)Int8/16/32/128/256
+Supported arguments:
+- Values of type (U)Int8/16/32/64/128/256.
+- Values of type Float32/64.
+- String representations of (U)Int8/16/32/128/256.
 
-Unsupported types:
-- Float values `NaN` and `Inf` throw an exception.
-- String representations of binary and hexadecimal values, e.g. `SELECT toInt8('0xc0fe');`
+Unsupported arguments:
+- String representations of Float32/64 values, including `NaN` and `Inf`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toInt8('0xc0fe');`.
 
 :::note
-If the input value cannot be represented within the bounds of [Int8](../data-types/int-uint.md), the result over or under flows. This is not considered an error.  
-For example: `SELECT toInt8(128) == -128;`, `SELECT toInt8(128.0) == -128;`,  `SELECT toInt8('128') == -128;`.
+If the input value cannot be represented within the bounds of [Int8](../data-types/int-uint.md), overflow or underflow of the result occurs. 
+This is not considered an error.  
+For example: `SELECT toInt8(128) == -128;`.
 :::
 
 **Returned value**
@@ -93,15 +94,18 @@ Query:
 SELECT
     toInt8(-8),
     toInt8(-8.8),
-    toInt8('-8');
+    toInt8('-8')
+FORMAT vertical;
 ```
 
 Result:
 
 ```response
-   ┌─toInt8(-8)─┬─toInt8(-8.8)─┬─toInt8('-8')─┐
-1. │         -8 │           -8 │           -8 │
-   └────────────┴──────────────┴──────────────┘
+Row 1:
+──────
+toInt8(-8):   -8
+toInt8(-8.8): -8
+toInt8('-8'): -8
 ```
 
 **See also**
@@ -124,14 +128,17 @@ toInt8OrZero(x)
 
 - `x` — A String representation of a number. [String](../data-types/string.md).
 
-Supported types:
-- String representations of (U)Int8/16/32/128/256
+Supported arguments:
+- String representations of (U)Int8/16/32/128/256.
 
-Types for which `0` is returned:
-- String representations of ordinary Float32/64 values.
-- String representations of Float values `NaN` and `Inf`.
+Unsupported arguments (return `0`):
+- String representations of ordinary Float32/64 values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toInt8OrZero('0xc0fe');`.
-- If the input value cannot be represented within the bounds of [Int8](../data-types/int-uint.md), and the result over or under flows.
+
+:::note
+If the input value cannot be represented within the bounds of [Int8](../data-types/int-uint.md), overflow or underflow of the result occurs.
+This is not considered an error.
+:::
 
 **Returned value**
 
@@ -148,15 +155,17 @@ Query:
 ``` sql
 SELECT
     toInt8OrZero('-8'),
-    toInt8OrZero('abc');
+    toInt8OrZero('abc')
+FORMAT vertical;
 ```
 
 Result:
 
 ```response
-   ┌─toInt8OrZero('-8')─┬─toInt8OrZero('abc')─┐
-1. │                 -8 │                   0 │
-   └────────────────────┴─────────────────────┘
+Row 1:
+──────
+toInt8OrZero('-8'):  -8
+toInt8OrZero('abc'): 0
 ```
 
 **See also**
@@ -167,7 +176,7 @@ Result:
 
 ## toInt8OrNull
 
-Like [`toInt8`](#toint8), takes an argument of type [String](../data-types/string.md) and tries to parse it to type [`Int8`](../data-types/int-uint.md). If unsuccessful, returns [`NULL`](../data-types/nullable.md).
+Like [`toInt8`](#toint8), this function converts an input value to a value of type [Int8](../data-types/int-uint.md) but returns `NULL` in case of an error.
 
 **Syntax**
 
@@ -179,14 +188,17 @@ toInt8OrNull(x)
 
 - `x` — A String representation of a number. [String](../data-types/string.md).
 
-Supported types:
-- String representations of (U)Int8/16/32/128/256
+Supported arguments:
+- String representations of (U)Int8/16/32/128/256.
 
-Types for which `\N` is returned:
-- String representations of ordinary Float32/64 values.
-- String representations of Float values `NaN` and `Inf`.
+Unsupported arguments (return `\N`)
+- String representations of Float32/64 values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toInt8OrNull('0xc0fe');`.
-- If the input value cannot be represented within the bounds of [Int8](../data-types/int-uint.md), and the result over or under flows.
+
+:::note
+If the input value cannot be represented within the bounds of [Int8](../data-types/int-uint.md), overflow or underflow of the result occurs.
+This is not considered an error.
+:::
 
 **Returned value**
 
@@ -201,15 +213,19 @@ The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding
 Query:
 
 ``` sql
-SELECT toInt8OrNull('-8'), toInt8OrNull('abc');
+SELECT
+    toInt8OrNull('-8'),
+    toInt8OrNull('abc')
+FORMAT vertical;
 ```
 
 Result:
 
 ```response
-   ┌─toInt8OrNull('-8')─┬─toInt8OrNull('abc')─┐
-1. │                 -8 │                ᴺᵁᴸᴸ │
-   └────────────────────┴─────────────────────┘
+Row 1:
+──────
+toInt8OrNull('-8'):  -8
+toInt8OrNull('abc'): ᴺᵁᴸᴸ
 ```
 
 **See also**
@@ -233,15 +249,19 @@ toInt8OrDefault(expr, def)
 - `expr` — Expression returning a number or a string representation of a number. [Expression](../syntax.md/#syntax-expressions) / [String](../data-types/string.md).
 - `def` — The default value to return if parsing to type `Int8` is unsuccessful. [Int8](../data-types/int-uint.md).
 
-Supported types:
-- (U)Int8/16/32/64/128/256
-- Float*
-- String representations of (U)Int8/16/32/128/256
+Supported arguments:
+- Values of type (U)Int8/16/32/64/128/256.
+- Values of type Float32/64.
+- String representations of (U)Int8/16/32/128/256.
 
-Types for which the default value is returned:
-- Float values `NaN` and `Inf` return the default value.
-- String representations of binary and hexadecimal values, e.g. `SELECT toInt8OrDefault('0xc0fe', CAST('-1', 'Int8'));`
-- If the input value cannot be represented within the bounds of [Int8](../data-types/int-uint.md) and the result over or under flows.
+Arguments for which the default value is returned:
+- String representations of Float32/64 values, including `NaN` and `Inf`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toInt8OrDefault('0xc0fe', CAST('-1', 'Int8'));`.
+
+:::note
+If the input value cannot be represented within the bounds of [Int8](../data-types/int-uint.md), overflow or underflow of the result occurs.
+This is not considered an error.
+:::
 
 **Returned value**
 
@@ -259,15 +279,17 @@ Query:
 ``` sql
 SELECT
     toInt8OrDefault('-8', CAST('-1', 'Int8')),
-    toInt8OrDefault('abc', CAST('-1', 'Int8'));
+    toInt8OrDefault('abc', CAST('-1', 'Int8'))
+FORMAT vertical;
 ```
 
 Result:
 
 ```response
-   ┌─toInt8OrDefault('-8', CAST('-1', 'Int8'))─┬─toInt8OrDefault('abc', CAST('-1', 'Int8'))─┐
-1. │                                        -8 │                                         -1 │
-   └───────────────────────────────────────────┴────────────────────────────────────────────┘
+Row 1:
+──────
+toInt8OrDefault('-8', CAST('-1', 'Int8')):  -8
+toInt8OrDefault('abc', CAST('-1', 'Int8')): -1
 ```
 
 **See also**
@@ -290,18 +312,19 @@ toInt16(expr)
 
 - `expr` — Expression returning a number or a string representation of a number. [Expression](../syntax.md/#syntax-expressions).
 
-Supported types:
-- (U)Int8/16/32/64/128/256
-- Float*
-- String representations of (U)Int8/16/32/128/256
+Supported arguments:
+- Values of type (U)Int8/16/32/64/128/256.
+- Values of type Float32/64.
+- String representations of (U)Int8/16/32/128/256.
 
-Unsupported types:
-- Float values `NaN` and `Inf` throw an exception.
-- String representations of binary and hexadecimal values, e.g. `SELECT toInt16('0xc0fe');`
+Unsupported arguments:
+- String representations of Float32/64 values, including `NaN` and `Inf`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toInt16('0xc0fe');`.
 
 :::note
-If the input value cannot be represented within the bounds of [Int16](../data-types/int-uint.md), the result over or under flows. This is not considered an error.  
-For example: `SELECT toInt16(32768) == -32768;`, `SELECT toInt16(32768) == -32768;`,  `SELECT toInt16('32768') == -32768;`.
+If the input value cannot be represented within the bounds of [Int16](../data-types/int-uint.md), overflow or underflow of the result occurs.
+This is not considered an error.  
+For example: `SELECT toInt16(32768) == -32768;`.
 :::
 
 **Returned value**
@@ -320,15 +343,18 @@ Query:
 SELECT
     toInt16(-16),
     toInt16(-16.16),
-    toInt16('-16');
+    toInt16('-16')
+FORMAT vertical;
 ```
 
 Result:
 
 ```response
-   ┌─toInt16(-16)─┬─toInt16(-16.16)─┬─toInt16('-16')─┐
-1. │          -16 │             -16 │            -16 │
-   └──────────────┴─────────────────┴────────────────┘
+Row 1:
+──────
+toInt16(-16):    -16
+toInt16(-16.16): -16
+toInt16('-16'):  -16
 ```
 
 **See also**
@@ -351,14 +377,17 @@ toInt16OrZero(x)
 
 - `x` — A String representation of a number. [String](../data-types/string.md).
 
-Supported types:
-- String representations of (U)Int8/16/32/128/256
+Supported arguments:
+- String representations of (U)Int8/16/32/128/256.
 
-Types for which `0` is returned:
-- String representations of ordinary Float32/64 values.
-- String representations of Float values `NaN` and `Inf`.
+Unsupported arguments (return `0`):
+- String representations of Float32/64 values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toInt16OrZero('0xc0fe');`.
-- If the input value cannot be represented within the bounds of [Int16](../data-types/int-uint.md) and the result over or under flows.
+
+:::note
+If the input value cannot be represented within the bounds of [Int16](../data-types/int-uint.md), overflow or underflow of the result occurs.
+This is not considered as an error.
+:::
 
 **Returned value**
 
@@ -375,15 +404,17 @@ Query:
 ``` sql
 SELECT
     toInt16OrZero('-16'),
-    toInt16OrZero('abc');
+    toInt16OrZero('abc')
+FORMAT vertical;
 ```
 
 Result:
 
 ```response
-   ┌─toInt16OrZero('-16')─┬─toInt16OrZero('abc')─┐
-1. │                  -16 │                    0 │
-   └──────────────────────┴──────────────────────┘
+Row 1:
+──────
+toInt16OrZero('-16'): -16
+toInt16OrZero('abc'): 0
 ```
 
 **See also**
@@ -394,7 +425,7 @@ Result:
 
 ## toInt16OrNull
 
-Like [`toInt16`](#toint16), takes an argument of type [String](../data-types/string.md) and tries to parse it to type [`Int16`](../data-types/int-uint.md). If unsuccessful, returns [`NULL`](../data-types/nullable.md).
+Like [`toInt16`](#toint16), this function converts an input value to a value of type [Int16](../data-types/int-uint.md) but returns `NULL` in case of an error.
 
 **Syntax**
 
@@ -406,14 +437,17 @@ toInt16OrNull(x)
 
 - `x` — A String representation of a number. [String](../data-types/string.md).
 
-Supported types:
-- String representations of (U)Int8/16/32/128/256
+Supported arguments:
+- String representations of (U)Int8/16/32/128/256.
 
-Types for which `\N` is returned:
-- String representations of ordinary Float32/64 values.
-- String representations of Float values `NaN` and `Inf`.
+Unsupported arguments (return `\N`)
+- String representations of Float32/64 values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toInt16OrNull('0xc0fe');`.
-- If the input value cannot be represented within the bounds of [Int16](../data-types/int-uint.md) and the result over or under flows.
+
+:::note
+If the input value cannot be represented within the bounds of [Int16](../data-types/int-uint.md), overflow or underflow of the result occurs. 
+This is not considered an error.
+:::
 
 **Returned value**
 
@@ -430,15 +464,17 @@ Query:
 ``` sql
 SELECT
     toInt16OrNull('-16'),
-    toInt16OrNull('abc');
+    toInt16OrNull('abc')
+FORMAT vertical;
 ```
 
 Result:
 
 ```response
-   ┌─toInt16OrNull('-16')─┬─toInt16OrNull('abc')─┐
-1. │                  -16 │                 ᴺᵁᴸᴸ │
-   └──────────────────────┴──────────────────────┘
+Row 1:
+──────
+toInt16OrNull('-16'): -16
+toInt16OrNull('abc'): ᴺᵁᴸᴸ
 ```
 
 **See also**
@@ -449,7 +485,7 @@ Result:
 
 ## toInt16OrDefault
 
-Like [`toInt16`](#toint16), takes an argument of type [String](../data-types/string.md) and tries to parse it to type [`Int16`](../data-types/int-uint.md). If unsuccessful, returns the default type value.
+Like [`toInt16`](#toint16), this function converts an input value to a value of type [Int16](../data-types/int-uint.md) but returns the default value in case of an error.
 
 **Syntax**
 
@@ -462,15 +498,19 @@ toInt16OrDefault(expr, def)
 - `expr` — Expression returning a number or a string representation of a number. [Expression](../syntax.md/#syntax-expressions) / [String](../data-types/string.md).
 - `def` — The default value to return if parsing to type `Int16` is unsuccessful. [Int8](../data-types/int-uint.md).
 
-Supported types:
-- (U)Int8/16/32/64/128/256
-- Float*
-- String representations of (U)Int8/16/32/128/256
+Supported arguments:
+- Values of type (U)Int8/16/32/64/128/256.
+- Values of type Float32/64.
+- String representations of (U)Int8/16/32/128/256.
 
-Types for which the default value is returned:
-- Float values `NaN` and `Inf` return the default value.
-- String representations of binary and hexadecimal values, e.g. `SELECT toInt16OrDefault('0xc0fe', CAST('-1', 'Int16'));`
-- If the input value cannot be represented within the bounds of [Int16](../data-types/int-uint.md) and the result over or under flows.
+Arguments for which the default value is returned:
+- String representations of Float32/64 values, including `NaN` and `Inf`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toInt16OrDefault('0xc0fe', CAST('-1', 'Int16'));`.
+
+:::note
+If the input value cannot be represented within the bounds of [Int16](../data-types/int-uint.md), overflow or underflow of the result occurs. 
+This is not considered an error.
+:::
 
 **Returned value**
 
@@ -486,15 +526,19 @@ Types for which the default value is returned:
 Query:
 
 ``` sql
-SELECT toInt16OrDefault('-16', cast('-1' as Int16)), toInt16OrDefault('abc', cast('-1' as Int16));
+SELECT
+    toInt16OrDefault('-16', CAST('-1', 'Int16')),
+    toInt16OrDefault('abc', CAST('-1', 'Int16'))
+FORMAT vertical;
 ```
 
 Result:
 
 ```response
-   ┌─toInt16OrDefault('-16', CAST('-1', 'Int16'))─┬─toInt16OrDefault('abc', CAST('-1', 'Int16'))─┐
-1. │                                          -16 │                                           -1 │
-   └──────────────────────────────────────────────┴──────────────────────────────────────────────┘
+Row 1:
+──────
+toInt16OrDefault('-16', CAST('-1', 'Int16')): -16
+toInt16OrDefault('abc', CAST('-1', 'Int16')): -1
 ```
 
 **See also**
@@ -517,23 +561,19 @@ toInt32(expr)
 
 - `expr` — Expression returning a number or a string representation of a number. [Expression](../syntax.md/#syntax-expressions).
 
-Supported types:
-- (U)Int8/16/32/64/128/256
-- Float*
-- String representations of (U)Int8/16/32/128/256
+Supported arguments:
+- Values of type (U)Int8/16/32/64/128/256.
+- Values of type Float32/64.
+- String representations of (U)Int8/16/32/128/256.
 
-Unsupported types:
-- Float values `NaN` and `Inf` throw an exception.
-- String representations of binary and hexadecimal values, e.g. `SELECT toInt32('0xc0fe');`
+Unsupported arguments:
+- String representations of Float32/64 values, including `NaN` and `Inf`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toInt32('0xc0fe');`.
 
 :::note
-If the input value cannot be represented within the bounds of [Int32](../data-types/int-uint.md), the result over or under flows. This is not considered an error.  
-For example: 
-```
-SELECT toInt32(2147483648) == -2147483648;
-SELECT toInt32(2147483648.0) == -2147483648;
-SELECT toInt32('2147483648') == -2147483648;
-```
+If the input value cannot be represented within the bounds of [Int32](../data-types/int-uint.md), the result over or under flows. 
+This is not considered an error.  
+For example: `SELECT toInt32(2147483648) == -2147483648;`
 :::
 
 **Returned value**
@@ -553,14 +593,17 @@ SELECT
     toInt32(-32),
     toInt32(-32.32),
     toInt32('-32')
+FORMAT vertical;
 ```
 
 Result:
 
 ```response
-   ┌─toInt32(-32)─┬─toInt32(-32.32)─┬─toInt32('-32')─┐
-1. │          -32 │             -32 │            -32 │
-   └──────────────┴─────────────────┴────────────────┘
+Row 1:
+──────
+toInt32(-32):    -32
+toInt32(-32.32): -32
+toInt32('-32'):  -32
 ```
 
 **See also**
@@ -583,15 +626,17 @@ toInt32OrZero(x)
 
 - `x` — A String representation of a number. [String](../data-types/string.md).
 
-Supported types:
-- String representations of (U)Int8/16/32/128/256
+Supported arguments:
+- String representations of (U)Int8/16/32/128/256.
 
-Types for which `0` is returned:
-- String representations of ordinary Float32/64 values.
-- String representations of Float values `NaN` and `Inf`.
+Unsupported arguments (return `0`):
+- String representations of Float32/64 values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toInt32OrZero('0xc0fe');`.
-- If the input value cannot be represented within the bounds of [Int32](../data-types/int-uint.md) and the result over or under flows.
 
+:::note
+If the input value cannot be represented within the bounds of [Int32](../data-types/int-uint.md), overflow or underflow of the result occurs. 
+This is not considered an error.
+:::
 
 **Returned value**
 
@@ -606,15 +651,19 @@ The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding
 Query:
 
 ``` sql
-SELECT toInt32OrZero('-32'), toInt32OrZero('abc');
+SELECT
+    toInt32OrZero('-32'),
+    toInt32OrZero('abc')
+FORMAT vertical;
 ```
 
 Result:
 
 ```response
-   ┌─toInt32OrZero('-32')─┬─toInt32OrZero('abc')─┐
-1. │                  -32 │                    0 │
-   └──────────────────────┴──────────────────────┘
+Row 1:
+──────
+toInt32OrZero('-32'): -32
+toInt32OrZero('abc'): 0
 ```
 **See also**
 
@@ -624,7 +673,7 @@ Result:
 
 ## toInt32OrNull
 
-Like [`toInt32`](#toint32), takes an argument of type [String](../data-types/string.md) and tries to parse it to type [`Int32`](../data-types/int-uint.md). If unsuccessful, returns [`NULL`](../data-types/nullable.md).
+Like [`toInt32`](#toint32), this function converts an input value to a value of type [Int32](../data-types/int-uint.md) but returns `NULL` in case of an error.
 
 **Syntax**
 
@@ -636,14 +685,17 @@ toInt32OrNull(x)
 
 - `x` — A String representation of a number. [String](../data-types/string.md).
 
-Supported types:
-- String representations of (U)Int8/16/32/128/256
+Supported arguments:
+- String representations of (U)Int8/16/32/128/256.
 
-Types for which `\N` is returned:
-- String representations of ordinary Float32/64 values.
-- String representations of Float values `NaN` and `Inf`.
+Unsupported arguments (return `\N`)
+- String representations of Float32/64 values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toInt32OrNull('0xc0fe');`.
-- If the input value cannot be represented within the bounds of [Int32](../data-types/int-uint.md) and the result over or under flows.
+
+:::note
+If the input value cannot be represented within the bounds of [Int32](../data-types/int-uint.md), overflow or underflow of the result occurs. 
+This is not considered an error.
+:::
 
 **Returned value**
 
@@ -658,15 +710,19 @@ The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding
 Query:
 
 ``` sql
-SELECT toInt32OrNull('-32'), toInt32OrNull('abc');
+SELECT
+    toInt32OrNull('-32'),
+    toInt32OrNull('abc')
+FORMAT vertical;
 ```
 
 Result:
 
 ```response
-   ┌─toInt32OrNull('-32')─┬─toInt32OrNull('abc')─┐
-1. │                  -32 │                 ᴺᵁᴸᴸ │
-   └──────────────────────┴──────────────────────┘
+Row 1:
+──────
+toInt32OrNull('-32'): -32
+toInt32OrNull('abc'): ᴺᵁᴸᴸ
 ```
 
 **See also**
@@ -677,7 +733,7 @@ Result:
 
 ## toInt32OrDefault
 
-Like [`toInt32`](#toint32), takes an argument of type [String](../data-types/string.md) and tries to parse it to type [`Int32`](../data-types/int-uint.md). If unsuccessful, returns the default type value.
+Like [`toInt32`](#toint32), this function converts an input value to a value of type [Int32](../data-types/int-uint.md) but returns the default value in case of an error.
 
 **Syntax**
 
@@ -690,15 +746,19 @@ toInt32OrDefault(expr, def)
 - `expr` — Expression returning a number or a string representation of a number. [Expression](../syntax.md/#syntax-expressions) / [String](../data-types/string.md).
 - `def` — The default value to return if parsing to type `Int32` is unsuccessful. [Int32](../data-types/int-uint.md).
 
-Supported types:
-- (U)Int8/16/32/64/128/256
-- Float*
-- String representations of (U)Int8/16/32/128/256
+Supported arguments:
+- Values of type (U)Int8/16/32/64/128/256.
+- Values of type Float32/64.
+- String representations of (U)Int8/16/32/128/256.
 
-Types for which the default value is returned:
-- Float values `NaN` and `Inf` return the default value.
-- String representations of binary and hexadecimal values, e.g. `SELECT toInt32OrDefault('0xc0fe', CAST('-1', 'Int32'));`
-- If the input value cannot be represented within the bounds of [Int32](../data-types/int-uint.md) and the result over or under flows.
+Arguments for which the default value is returned:
+- String representations of Float32/64 values, including `NaN` and `Inf`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toInt32OrDefault('0xc0fe', CAST('-1', 'Int32'));`.
+
+:::note
+If the input value cannot be represented within the bounds of [Int32](../data-types/int-uint.md), overflow or underflow of the result occurs. 
+This is not considered an error.
+:::
 
 **Returned value**
 
@@ -714,15 +774,19 @@ Types for which the default value is returned:
 Query:
 
 ``` sql
-SELECT toInt32OrDefault('-32', cast('-1' as Int32)), toInt32OrDefault('abc', cast('-1' as Int32));
+SELECT
+    toInt32OrDefault('-32', CAST('-1', 'Int32')),
+    toInt32OrDefault('abc', CAST('-1', 'Int32'))
+FORMAT vertical;
 ```
 
 Result:
 
 ```response
-   ┌─toInt32OrDefault('-32', CAST('-1', 'Int32'))─┬─toInt32OrDefault('abc', CAST('-1', 'Int32'))─┐
-1. │                                          -32 │                                           -1 │
-   └──────────────────────────────────────────────┴──────────────────────────────────────────────┘
+Row 1:
+──────
+toInt32OrDefault('-32', CAST('-1', 'Int32')): -32
+toInt32OrDefault('abc', CAST('-1', 'Int32')): -1
 ```
 
 **See also**
@@ -745,24 +809,19 @@ toInt64(expr)
 
 - `expr` — Expression returning a number or a string representation of a number. [Expression](../syntax.md/#syntax-expressions).
 
-Supported types:
-- (U)Int8/16/32/64/128/256
-- Float*
-- String representations of (U)Int8/16/32/128/256
+Supported arguments:
+- Values of type (U)Int8/16/32/64/128/256.
+- Values of type Float32/64.
+- String representations of (U)Int8/16/32/128/256.
 
 Unsupported types:
-- Float values `NaN` and `Inf` throw an exception.
-- String representations of binary and hexadecimal values, e.g. `SELECT toInt64('0xc0fe');`
+- String representations of Float32/64 values, including `NaN` and `Inf`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toInt64('0xc0fe');`.
 
 :::note
-If the input value cannot be represented within the bounds of [Int64](../data-types/int-uint.md), the result over or under flows. This is not considered an error.  
-For example: 
-
-```
-SELECT toInt64(9223372036854775808) == -9223372036854775808;
-SELECT toInt64(9223372036854775808.0) == -9223372036854775808;
-SELECT toInt64('9223372036854775808') == --9223372036854775808;
-```
+If the input value cannot be represented within the bounds of [Int64](../data-types/int-uint.md), the result over or under flows. 
+This is not considered an error.  
+For example: `SELECT toInt64(9223372036854775808) == -9223372036854775808;`
 :::
 
 **Returned value**
@@ -781,15 +840,18 @@ Query:
 SELECT
     toInt64(-64),
     toInt64(-64.64),
-    toInt64('-64');
+    toInt64('-64')
+FORMAT vertical;
 ```
 
 Result:
 
 ```response
-   ┌─toInt64(-64)─┬─toInt64(-64.64)─┬─toInt64('-64')─┐
-1. │          -64 │             -64 │            -64 │
-   └──────────────┴─────────────────┴────────────────┘
+Row 1:
+──────
+toInt64(-64):    -64
+toInt64(-64.64): -64
+toInt64('-64'):  -64
 ```
 
 **See also**
@@ -812,14 +874,17 @@ toInt64OrZero(x)
 
 - `x` — A String representation of a number. [String](../data-types/string.md).
 
-Supported types:
-- String representations of (U)Int8/16/32/128/256
+Supported arguments:
+- String representations of (U)Int8/16/32/128/256.
 
-Types for which `0` is returned:
-- String representations of ordinary Float32/64 values.
-- String representations of Float values `NaN` and `Inf`.
+Unsupported arguments (return `0`):
+- String representations of Float32/64 values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toInt64OrZero('0xc0fe');`.
-- If the input value cannot be represented within the bounds of [Int64](../data-types/int-uint.md) and the result over or under flows.
+
+:::note
+If the input value cannot be represented within the bounds of [Int64](../data-types/int-uint.md), overflow or underflow of the result occurs. 
+This is not considered an error.
+:::
 
 **Returned value**
 
@@ -836,15 +901,17 @@ Query:
 ``` sql
 SELECT
     toInt64OrZero('-64'),
-    toInt64OrZero('abc');
+    toInt64OrZero('abc')
+FORMAT vertical;
 ```
 
 Result:
 
 ```response
-   ┌─toInt64OrZero('-64')─┬─toInt64OrZero('abc')─┐
-1. │                  -64 │                    0 │
-   └──────────────────────┴──────────────────────┘
+Row 1:
+──────
+toInt64OrZero('-64'): -64
+toInt64OrZero('abc'): 0
 ```
 
 **See also**
@@ -855,7 +922,7 @@ Result:
 
 ## toInt64OrNull
 
-Like [`toInt64`], takes an argument of type [String](../data-types/string.md) and tries to parse it to type [`Int64`](../data-types/nullable.md). If unsuccessful, returns [`NULL`](../data-types/nullable.md).
+Like [`toInt64`](#toint64), this function converts an input value to a value of type [Int64](../data-types/int-uint.md) but returns `NULL` in case of an error.
 
 **Syntax**
 
@@ -867,14 +934,17 @@ toInt64OrNull(x)
 
 - `x` — A String representation of a number. [Expression](../syntax.md/#syntax-expressions) / [String](../data-types/string.md).
 
-Supported types:
-- String representations of (U)Int8/16/32/128/256
+Supported arguments:
+- String representations of (U)Int8/16/32/128/256.
 
-Types for which `\N` is returned:
-- String representations of ordinary Float32/64 values.
-- String representations of Float values `NaN` and `Inf`.
+Unsupported arguments (return `\N`)
+- String representations of Float32/64 values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toInt64OrNull('0xc0fe');`.
-- If the input value cannot be represented within the bounds of [Int64](../data-types/int-uint.md) and the result over or under flows.
+
+:::note
+If the input value cannot be represented within the bounds of [Int64](../data-types/int-uint.md), overflow or underflow of the result occurs. 
+This is not considered an error.
+:::
 
 **Returned value**
 
@@ -891,15 +961,17 @@ Query:
 ``` sql
 SELECT
     toInt64OrNull('-64'),
-    toInt64OrNull('abc');
+    toInt64OrNull('abc')
+FORMAT vertical;
 ```
 
 Result:
 
 ```response
-   ┌─toInt64OrNull('-64')─┬─toInt64OrNull('abc')─┐
-1. │                  -64 │                 ᴺᵁᴸᴸ │
-   └──────────────────────┴──────────────────────┘
+Row 1:
+──────
+toInt64OrNull('-64'): -64
+toInt64OrNull('abc'): ᴺᵁᴸᴸ
 ```
 
 **See also**
@@ -910,7 +982,7 @@ Result:
 
 ## toInt64OrDefault
 
-Like [`toInt64`](#toint64), takes an argument of type [String](../data-types/string.md) and tries to parse it to type [`Int64`](../data-types/nullable.md). If unsuccessful, returns the default type value.
+Like [`toInt64`](#toint64), this function converts an input value to a value of type [Int64](../data-types/int-uint.md) but returns the default value in case of an error.
 
 **Syntax**
 
@@ -923,15 +995,19 @@ toInt64OrDefault(expr, def)
 - `expr` — Expression returning a number or a string representation of a number. [Expression](../syntax.md/#syntax-expressions) / [String](../data-types/string.md).
 - `def` — The default value to return if parsing to type `Int64` is unsuccessful. [Int64](../data-types/int-uint.md).
 
-Supported types:
-- (U)Int8/16/32/64/128/256
-- Float*
-- String representations of (U)Int8/16/32/128/256
+Supported arguments:
+- Values of type (U)Int8/16/32/64/128/256.
+- Values of type Float32/64.
+- String representations of (U)Int8/16/32/128/256.
 
-Types for which the default value is returned:
-- Float values `NaN` and `Inf` return the default value.
-- String representations of binary and hexadecimal values, e.g. `SELECT toInt64OrDefault('0xc0fe', CAST('-1', 'Int64'));`
-- If the input value cannot be represented within the bounds of [Int64](../data-types/int-uint.md) and the result over or under flows.
+Arguments for which the default value is returned:
+- String representations of Float32/64 values, including `NaN` and `Inf`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toInt64OrDefault('0xc0fe', CAST('-1', 'Int64'));`.
+
+:::note
+If the input value cannot be represented within the bounds of [Int64](../data-types/int-uint.md), overflow or underflow of the result occurs.
+This is not considered an error.
+:::
 
 **Returned value**
 
@@ -949,15 +1025,17 @@ Query:
 ``` sql
 SELECT
     toInt64OrDefault('-64', CAST('-1', 'Int64')),
-    toInt64OrDefault('abc', CAST('-1', 'Int64'));
+    toInt64OrDefault('abc', CAST('-1', 'Int64'))
+FORMAT vertical;
 ```
 
 Result:
 
 ```response
-   ┌─toInt64OrDefault('-64', CAST('-1', 'Int64'))─┬─toInt64OrDefault('abc', CAST('-1', 'Int64'))─┐
-1. │                                          -64 │                                           -1 │
-   └──────────────────────────────────────────────┴──────────────────────────────────────────────┘
+Row 1:
+──────
+toInt64OrDefault('-64', CAST('-1', 'Int64')): -64
+toInt64OrDefault('abc', CAST('-1', 'Int64')): -1
 ```
 
 **See also**
@@ -980,17 +1058,18 @@ toInt128(expr)
 
 - `expr` — Expression returning a number or a string representation of a number. [Expression](../syntax.md/#syntax-expressions).
 
-Supported types:
-- (U)Int8/16/32/64/128/256
-- Float*
-- String representations of (U)Int8/16/32/128/256
+Supported arguments:
+- Values of type (U)Int8/16/32/64/128/256.
+- Values of type Float32/64.
+- String representations of (U)Int8/16/32/128/256.
 
-Unsupported types:
-- Float values `NaN` and `Inf` throw an exception.
-- String representations of binary and hexadecimal values, e.g. `SELECT toInt128('0xc0fe');`
+Unsupported arguments:
+- String representations of Float32/64 values, including `NaN` and `Inf`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toInt128('0xc0fe');`.
 
 :::note
-If the input value cannot be represented within the bounds of [Int128](../data-types/int-uint.md), the result over or under flows. This is not considered an error.
+If the input value cannot be represented within the bounds of [Int128](../data-types/int-uint.md), the result over or under flows. 
+This is not considered an error.
 :::
 
 **Returned value**
@@ -1009,15 +1088,18 @@ Query:
 SELECT
     toInt128(-128),
     toInt128(-128.8),
-    toInt128('-128'),
+    toInt128('-128')
+FORMAT vertical;
 ```
 
 Result:
 
 ```response
-   ┌─toInt128(-128)─┬─toInt128(-128.8)─┬─toInt128('-128')─┐
-1. │           -128 │             -128 │             -128 │
-   └────────────────┴──────────────────┴──────────────────┘
+Row 1:
+──────
+toInt128(-128):   -128
+toInt128(-128.8): -128
+toInt128('-128'): -128
 ```
 
 **See also**
@@ -1040,14 +1122,17 @@ toInt128OrZero(expr)
 
 - `expr` — Expression returning a number or a string representation of a number. [Expression](../syntax.md/#syntax-expressions) / [String](../data-types/string.md).
 
-Supported types:
-- String representations of (U)Int8/16/32/128/256
+Supported arguments:
+- String representations of (U)Int8/16/32/128/256.
 
-Types for which `0` is returned:
-- String representations of ordinary Float32/64 values.
-- String representations of Float values `NaN` and `Inf`.
+Unsupported arguments (return `0`):
+- String representations of Float32/64 values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toInt128OrZero('0xc0fe');`.
-- If the input value cannot be represented within the bounds of [Int128](../data-types/int-uint.md) and the result over or under flows.
+
+:::note
+If the input value cannot be represented within the bounds of [Int128](../data-types/int-uint.md), overflow or underflow of the result occurs.
+This is not considered an error.
+:::
 
 **Returned value**
 
@@ -1064,15 +1149,17 @@ Query:
 ``` sql
 SELECT
     toInt128OrZero('-128'),
-    toInt128OrZero('abc');
+    toInt128OrZero('abc')
+FORMAT vertical;
 ```
 
 Result:
 
 ```response
-   ┌─toInt128OrZero('-128')─┬─toInt128OrZero('abc')─┐
-1. │                   -128 │                     0 │
-   └────────────────────────┴───────────────────────┘
+Row 1:
+──────
+toInt128OrZero('-128'): -128
+toInt128OrZero('abc'):  0
 ```
 
 **See also**
@@ -1083,7 +1170,7 @@ Result:
 
 ## toInt128OrNull
 
-Like [`toInt128`](#toint128), takes an argument of type [String](../data-types/string.md) and tries to parse it to type [`Int128`](../data-types/int-uint.md). If unsuccessful, returns [`NULL`](../data-types/nullable.md).
+Like [`toInt128`](#toint128), this function converts an input value to a value of type [Int128](../data-types/int-uint.md) but returns `NULL` in case of an error.
 
 **Syntax**
 
@@ -1095,14 +1182,17 @@ toInt128OrNull(x)
 
 - `x` — A String representation of a number. [Expression](../syntax.md/#syntax-expressions) / [String](../data-types/string.md).
 
-Supported types:
-- String representations of (U)Int8/16/32/128/256
+Supported arguments:
+- String representations of (U)Int8/16/32/128/256.
 
-Types for which `\N` is returned:
-- String representations of ordinary Float32/64 values.
-- String representations of Float values `NaN` and `Inf`.
+Unsupported arguments (return `\N`)
+- String representations of Float32/64 values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toInt128OrNull('0xc0fe');`.
-- If the input value cannot be represented within the bounds of [Int128](../data-types/int-uint.md) and the result over or under flows.
+
+:::note
+If the input value cannot be represented within the bounds of [Int128](../data-types/int-uint.md), overflow or underflow of the result occurs. 
+This is not considered an error.
+:::
 
 **Returned value**
 
@@ -1119,15 +1209,17 @@ Query:
 ``` sql
 SELECT
     toInt128OrNull('-128'),
-    toInt128OrNull('abc');
+    toInt128OrNull('abc')
+FORMAT vertical;
 ```
 
 Result:
 
 ```response
-   ┌─toInt128OrNull('-128')─┬─toInt128OrNull('abc')─┐
-1. │                   -128 │                  ᴺᵁᴸᴸ │
-   └────────────────────────┴───────────────────────┘
+Row 1:
+──────
+toInt128OrNull('-128'): -128
+toInt128OrNull('abc'):  ᴺᵁᴸᴸ
 ```
 
 **See also**
@@ -1138,7 +1230,7 @@ Result:
 
 ## toInt128OrDefault
 
-Like [`toInt128`](#toint128), takes an argument of type [String](../data-types/string.md) and tries to parse it to type [`Int128`](../data-types/int-uint.md). If unsuccessful, returns the default type value.
+Like [`toInt128`](#toint128), this function converts an input value to a value of type [Int128](../data-types/int-uint.md) but returns the default value in case of an error.
 
 **Syntax**
 
@@ -1151,15 +1243,19 @@ toInt128OrDefault(expr, def)
 - `expr` — Expression returning a number or a string representation of a number. [Expression](../syntax.md/#syntax-expressions) / [String](../data-types/string.md).
 - `def` — The default value to return if parsing to type `Int128` is unsuccessful. [Int128](../data-types/int-uint.md).
 
-Supported types:
-- (U)Int8/16/32/64/128/256
-- Float*
-- String representations of (U)Int8/16/32/128/256
+Supported arguments:
+- (U)Int8/16/32/64/128/256.
+- Float32/64.
+- String representations of (U)Int8/16/32/128/256.
 
-Types for which the default value is returned:
-- Float values `NaN` and `Inf` return the default value.
-- String representations of binary and hexadecimal values, e.g. `SELECT toInt128OrDefault('0xc0fe', CAST('-1', 'Int128'));`
-- If the input value cannot be represented within the bounds of [Int128](../data-types/int-uint.md) and the result over or under flows.
+Arguments for which the default value is returned:
+- String representations of Float32/64 values, including `NaN` and `Inf`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toInt128OrDefault('0xc0fe', CAST('-1', 'Int128'));`.
+
+:::note
+If the input value cannot be represented within the bounds of [Int128](../data-types/int-uint.md), overflow or underflow of the result occurs. 
+This is not considered an error.
+:::
 
 **Returned value**
 
@@ -1177,15 +1273,17 @@ Query:
 ``` sql
 SELECT
     toInt128OrDefault('-128', CAST('-1', 'Int128')),
-    toInt128OrDefault('abc', CAST('-1', 'Int128'));
+    toInt128OrDefault('abc', CAST('-1', 'Int128'))
+FORMAT vertical;
 ```
 
 Result:
 
 ```response
-   ┌─toInt128OrDefault('-128', CAST('-1', 'Int128'))─┬─toInt128OrDefault('abc', CAST('-1', 'Int128'))─┐
-1. │                                            -128 │                                             -1 │
-   └─────────────────────────────────────────────────┴────────────────────────────────────────────────┘
+Row 1:
+──────
+toInt128OrDefault('-128', CAST('-1', 'Int128')): -128
+toInt128OrDefault('abc', CAST('-1', 'Int128')):  -1
 ```
 
 **See also**
@@ -1208,17 +1306,18 @@ toInt256(expr)
 
 - `expr` — Expression returning a number or a string representation of a number. [Expression](../syntax.md/#syntax-expressions).
 
-Supported types:
-- (U)Int8/16/32/64/128/256
-- Float*
-- String representations of (U)Int8/16/32/128/256
+Supported arguments:
+- Values of type (U)Int8/16/32/64/128/256.
+- Values of type Float32/64.
+- String representations of (U)Int8/16/32/128/256.
 
-Unsupported types:
-- Float values `NaN` and `Inf` throw an exception.
-- String representations of binary and hexadecimal values, e.g. `SELECT toInt256('0xc0fe');`
+Unsupported arguments:
+- String representations of Float32/64 values, including `NaN` and `Inf`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toInt256('0xc0fe');`.
 
 :::note
-If the input value cannot be represented within the bounds of [Int256](../data-types/int-uint.md), the result over or under flows. This is not considered an error.
+If the input value cannot be represented within the bounds of [Int256](../data-types/int-uint.md), the result over or under flows. 
+This is not considered an error.
 :::
 
 **Returned value**
@@ -1237,15 +1336,18 @@ Query:
 SELECT
     toInt256(-256),
     toInt256(-256.256),
-    toInt256('-256');
+    toInt256('-256')
+FORMAT vertical;
 ```
 
 Result:
 
 ```response
-   ┌─toInt256(-256)─┬─toInt256(-256.256)─┬─toInt256('-256')─┐
-1. │           -256 │               -256 │             -256 │
-   └────────────────┴────────────────────┴──────────────────┘
+Row 1:
+──────
+toInt256(-256):     -256
+toInt256(-256.256): -256
+toInt256('-256'):   -256
 ```
 
 **See also**
@@ -1268,14 +1370,17 @@ toInt256OrZero(x)
 
 - `x` — A String representation of a number. [String](../data-types/string.md).
 
-Supported types:
-- String representations of (U)Int8/16/32/128/256
+Supported arguments:
+- String representations of (U)Int8/16/32/128/256.
 
-Types for which `0` is returned:
-- String representations of ordinary Float32/64 values.
-- String representations of Float values `NaN` and `Inf`.
+Unsupported arguments (return `0`):
+- String representations of Float32/64 values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toInt256OrZero('0xc0fe');`.
-- If the input value cannot be represented within the bounds of [Int256](../data-types/int-uint.md) and the result over or under flows.
+
+:::note
+If the input value cannot be represented within the bounds of [Int256](../data-types/int-uint.md), overflow or underflow of the result occurs. 
+This is not considered an error.
+:::
 
 **Returned value**
 
@@ -1292,15 +1397,17 @@ Query:
 ``` sql
 SELECT
     toInt256OrZero('-256'),
-    toInt256OrZero('abc');
+    toInt256OrZero('abc')
+FORMAT vertical;
 ```
 
 Result:
 
 ```response
-   ┌─toInt256OrZero('-256')─┬─toInt256OrZero('abc')─┐
-1. │                   -256 │                     0 │
-   └────────────────────────┴───────────────────────┘
+Row 1:
+──────
+toInt256OrZero('-256'): -256
+toInt256OrZero('abc'):  0
 ```
 
 **See also**
@@ -1311,7 +1418,7 @@ Result:
 
 ## toInt256OrNull
 
-Like [`toInt256`](#toint256), takes an argument of type [String](../data-types/string.md) and tries to parse it to type [`Int256`](../data-types/int-uint.md). If unsuccessful, returns [`NULL`](../data-types/nullable.md).
+Like [`toInt256`](#toint256), this function converts an input value to a value of type [Int256](../data-types/int-uint.md) but returns `NULL` in case of an error.
 
 **Syntax**
 
@@ -1323,14 +1430,17 @@ toInt256OrNull(x)
 
 - `x` — A String representation of a number. [String](../data-types/string.md).
 
-Supported types:
-- String representations of (U)Int8/16/32/128/256
+Supported arguments:
+- String representations of (U)Int8/16/32/128/256.
 
-Types for which `\N` is returned:
-- String representations of ordinary Float32/64 values.
-- String representations of Float values `NaN` and `Inf`.
+Unsupported arguments (return `\N`)
+- String representations of Float32/64 values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toInt256OrNull('0xc0fe');`.
-- If the input value cannot be represented within the bounds of [Int256](../data-types/int-uint.md) and the result over or under flows.
+
+:::note
+If the input value cannot be represented within the bounds of [Int256](../data-types/int-uint.md), overflow or underflow of the result occurs. 
+This is not considered an error.
+:::
 
 **Returned value**
 
@@ -1347,15 +1457,17 @@ Query:
 ``` sql
 SELECT
     toInt256OrNull('-256'),
-    toInt256OrNull('abc');
+    toInt256OrNull('abc')
+FORMAT vertical;
 ```
 
 Result:
 
 ```response
-   ┌─toInt256OrNull('-256')─┬─toInt256OrNull('abc')─┐
-1. │                   -256 │                  ᴺᵁᴸᴸ  │
-   └────────────────────────┴───────────────────────┘
+Row 1:
+──────
+toInt256OrNull('-256'): -256
+toInt256OrNull('abc'):  ᴺᵁᴸᴸ
 ```
 
 **See also**
@@ -1366,7 +1478,7 @@ Result:
 
 ## toInt256OrDefault
 
-Like [`toInt256`](#toint256), takes an argument of type [String](../data-types/string.md) and tries to parse it to type [`Int256`](../data-types/int-uint.md). If unsuccessful, returns the default type value.
+Like [`toInt256`](#toint256), this function converts an input value to a value of type [Int256](../data-types/int-uint.md) but returns the default value in case of an error.
 
 **Syntax**
 
@@ -1379,15 +1491,19 @@ toInt256OrDefault(expr, def)
 - `expr` — Expression returning a number or a string representation of a number. [Expression](../syntax.md/#syntax-expressions) / [String](../data-types/string.md).
 - `def` — The default value to return if parsing to type `Int256` is unsuccessful. [Int256](../data-types/int-uint.md).
 
-Supported types:
-- (U)Int8/16/32/64/128/256
-- Float*
-- String representations of (U)Int8/16/32/128/256
+Supported arguments:
+- Values of type (U)Int8/16/32/64/128/256.
+- Values of type Float32/64.
+- String representations of (U)Int8/16/32/128/256.
 
-Types for which the default value is returned:
-- Float values `NaN` and `Inf` return the default value.
+Arguments for which the default value is returned:
+- String representations of Float32/64 values, including `NaN` and `Inf`
 - String representations of binary and hexadecimal values, e.g. `SELECT toInt256OrDefault('0xc0fe', CAST('-1', 'Int256'));`
-- If the input value cannot be represented within the bounds of [Int256](../data-types/int-uint.md) and the result over or under flows.
+
+:::note
+If the input value cannot be represented within the bounds of [Int256](../data-types/int-uint.md), overflow or underflow of the result occurs.
+This is not considered an error.
+:::
 
 **Returned value**
 
@@ -1405,15 +1521,17 @@ Query:
 ``` sql
 SELECT
     toInt256OrDefault('-256', CAST('-1', 'Int256')),
-    toInt256OrDefault('abc', CAST('-1', 'Int256'));
+    toInt256OrDefault('abc', CAST('-1', 'Int256'))
+FORMAT vertical;
 ```
 
 Result:
 
 ```response
-   ┌─toInt256OrDefault('-256', CAST('-1', 'Int256'))─┬─toInt256OrDefault('abc', CAST('-1', 'Int256'))─┐
-1. │                                            -256 │                                             -1 │
-   └─────────────────────────────────────────────────┴────────────────────────────────────────────────┘
+Row 1:
+──────
+toInt256OrDefault('-256', CAST('-1', 'Int256')): -256
+toInt256OrDefault('abc', CAST('-1', 'Int256')):  -1
 ```
 
 **See also**
