@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-ubsan, no-fasttest, no-tsan
+# Tags: no-ubsan, no-fasttest, no-tsan, no-msan, no-asan
 # It is too slow under TSan
+# It eats too much memory under ASan or MSan
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
