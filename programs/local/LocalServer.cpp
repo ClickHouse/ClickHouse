@@ -735,11 +735,13 @@ void LocalServer::processConfig()
     /// there is separate context for Buffer tables).
     adjustSettings();
     applySettingsOverridesForLocal(global_context);
+    applyCmdOptions(global_context);
 
     /// Load global settings from default_profile and system_profile.
     global_context->setDefaultProfiles(getClientConfiguration());
 
-    applyCmdOptions(global_context);
+    /// Command-line parameters can override settings from the default profile.
+    applyCmdSettings(global_context);
 
     /// We load temporary database first, because projections need it.
     DatabaseCatalog::instance().initializeAndLoadTemporaryDatabase();
