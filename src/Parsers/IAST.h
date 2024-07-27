@@ -66,7 +66,7 @@ public:
     /** Set the alias. */
     virtual void setAlias(const String & /*to*/)
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't set alias of {}", getColumnName());
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't set alias of {} of {}", getColumnName(), getID());
     }
 
     /** Get the text that identifies this element. */
