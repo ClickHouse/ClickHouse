@@ -39,7 +39,6 @@ TimerDescriptor & TimerDescriptor::operator=(DB::TimerDescriptor && other) noexc
 
 TimerDescriptor::~TimerDescriptor()
 {
-    /// Do not check for result cause cannot throw exception.
     if (timer_fd != -1)
     {
         if (0 != ::close(timer_fd))
