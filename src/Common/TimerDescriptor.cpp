@@ -18,9 +18,9 @@ namespace ErrorCodes
     extern const int CANNOT_READ_FROM_SOCKET;
 }
 
-TimerDescriptor::TimerDescriptor(int clockid, int flags)
+TimerDescriptor::TimerDescriptor()
 {
-    timer_fd = timerfd_create(clockid, flags | TFD_NONBLOCK);
+    timer_fd = timerfd_create(CLOCK_MONOTONIC, TFD_NONBLOCK | TFD_CLOEXEC);
     if (timer_fd == -1)
         throw ErrnoException(ErrorCodes::CANNOT_CREATE_TIMER, "Cannot create timer_fd descriptor");
 }
