@@ -154,14 +154,14 @@ void ZooKeeper::init(ZooKeeperArgs args_, std::unique_ptr<Coordination::IKeeper>
                     ShuffleHosts node{optimal_host};
                     std::unique_ptr<Coordination::IKeeper> new_impl = std::make_unique<Coordination::ZooKeeper>(node, args, zk_log);
 
-                    if (auto new_node_idx = new_impl->getConnectedNodeIdx(); new_node_idx)
+                    auto new_node_idx = new_impl->getConnectedNodeIdx();
+                    chassert(new_node_idx.has_value());
+
+                    /// Maybe the node was unavailable when getting AZs first time, update just in case
+                    if (args.availability_zone_autodetect && availability_zones[*new_node_idx].empty())
                     {
-                        /// Maybe the node was unavailable when getting AZs first time, update just in case
-                        if (args.availability_zone_autodetect && availability_zones[*new_node_idx].empty())
-                        {
-                            availability_zones[*new_node_idx] = new_impl->tryGetAvailabilityZone();
-                            LOG_DEBUG(log, "Got availability zone for {}: {}", optimal_host.host, availability_zones[*new_node_idx]);
-                        }
+                        availability_zones[*new_node_idx] = new_impl->tryGetAvailabilityZone();
+                        LOG_DEBUG(log, "Got availability zone for {}: {}", optimal_host.host, availability_zones[*new_node_idx]);
                     }
 
                     optimal_impl = std::move(new_impl);
