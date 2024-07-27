@@ -492,28 +492,12 @@ try
     registerDisks(/* global_skip_access_check= */ true);
     registerFormats();
 
-    processConfig();
+    createContext();
 
     SCOPE_EXIT({ cleanup(); });
 
     initTTYBuffer(toProgressOption(getClientConfiguration().getString("progress", "default")));
     ASTAlterCommand::setFormatAlterCommandsWithParentheses(true);
-
-    /// try to load user defined executable functions, throw on error and die
-    try
-    {
-        global_context->loadOrReloadUserDefinedExecutableFunctions(getClientConfiguration());
-    }
-    catch (...)
-    {
-        tryLogCurrentException(&logger(), "Caught exception while loading user defined executable functions.");
-        throw;
-    }
-
-    /// Must be called after we stopped initializing the global context and changing its settings.
-    /// After this point the global context must be stayed almost unchanged till shutdown,
-    /// and all necessary changes must be made to the client context instead.
-    createClientContext();
 
     if (is_interactive)
     {
@@ -611,32 +595,11 @@ void LocalServer::processConfig()
         buildLoggers(getClientConfiguration(), logger(), "clickhouse-local");
     }
 
-    shared_context = Context::createShared();
-    global_context = Context::createGlobal(shared_context.get());
-
-    global_context->makeGlobalContext();
-    global_context->setApplicationType(Context::ApplicationType::LOCAL);
-
-    tryInitPath();
-
     LoggerRawPtr log = &logger();
-
-    /// Maybe useless
-    if (getClientConfiguration().has("macros"))
-        global_context->setMacros(std::make_unique<Macros>(getClientConfiguration(), "macros", log));
 
     setDefaultFormatsAndCompressionFromConfiguration();
 
-    /// Sets external authenticators config (LDAP, Kerberos).
-    global_context->setExternalAuthenticatorsConfig(getClientConfiguration());
-
-    setupUsers();
-
-    /// Limit on total number of concurrently executing queries.
-    /// There is no need for concurrent queries, override max_concurrent_queries.
-    global_context->getProcessList().setMaxSize(0);
-
-    const size_t physical_server_memory = getMemoryAmount();
+    physical_server_memory = getMemoryAmount();
 
     size_t max_server_memory_usage = server_settings.max_server_memory_usage;
     double max_server_memory_usage_to_ram_ratio = server_settings.max_server_memory_usage_to_ram_ratio;
@@ -667,6 +630,41 @@ void LocalServer::processConfig()
     total_memory_tracker.setHardLimit(max_server_memory_usage);
     total_memory_tracker.setDescription("(total)");
     total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
+
+#if USE_EMBEDDED_COMPILER
+    size_t compiled_expression_cache_max_size_in_bytes = server_settings.compiled_expression_cache_size;
+    size_t compiled_expression_cache_max_elements = server_settings.compiled_expression_cache_elements_size;
+    CompiledExpressionCacheFactory::instance().init(compiled_expression_cache_max_size_in_bytes, compiled_expression_cache_max_elements);
+#endif
+
+    server_display_name = getClientConfiguration().getString("display_name", "");
+    prompt_by_server_display_name = getClientConfiguration().getRawString("prompt_by_server_display_name.default", ":) ");
+}
+
+void LocalServer::createContext()
+{
+    LoggerRawPtr log = &logger();
+
+    shared_context = Context::createShared();
+    global_context = Context::createGlobal(shared_context.get());
+
+    global_context->makeGlobalContext();
+    global_context->setApplicationType(Context::ApplicationType::LOCAL);
+
+    tryInitPath();
+
+    /// Maybe useless
+    if (getClientConfiguration().has("macros"))
+        global_context->setMacros(std::make_unique<Macros>(getClientConfiguration(), "macros", log));
+
+    /// Sets external authenticators config (LDAP, Kerberos).
+    global_context->setExternalAuthenticatorsConfig(getClientConfiguration());
+
+    setupUsers();
+
+    /// Limit on total number of concurrently executing queries.
+    /// There is no need for concurrent queries, override max_concurrent_queries.
+    global_context->getProcessList().setMaxSize(0);
 
     const double cache_size_to_ram_max_ratio = server_settings.cache_size_to_ram_max_ratio;
     const size_t max_cache_size = static_cast<size_t>(physical_server_memory * cache_size_to_ram_max_ratio);
@@ -724,12 +722,6 @@ void LocalServer::processConfig()
     /// Initialize a dummy query cache.
     global_context->setQueryCache(0, 0, 0, 0);
 
-#if USE_EMBEDDED_COMPILER
-    size_t compiled_expression_cache_max_size_in_bytes = server_settings.compiled_expression_cache_size;
-    size_t compiled_expression_cache_max_elements = server_settings.compiled_expression_cache_elements_size;
-    CompiledExpressionCacheFactory::instance().init(compiled_expression_cache_max_size_in_bytes, compiled_expression_cache_max_elements);
-#endif
-
     /// NOTE: it is important to apply any overrides before
     /// setDefaultProfiles() calls since it will copy current context (i.e.
     /// there is separate context for Buffer tables).
@@ -784,10 +776,23 @@ void LocalServer::processConfig()
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE));
     }
 
-    server_display_name = getClientConfiguration().getString("display_name", "");
-    prompt_by_server_display_name = getClientConfiguration().getRawString("prompt_by_server_display_name.default", ":) ");
-}
+    /// try to load user defined executable functions, throw on error and die
+    try
+    {
+        global_context->loadOrReloadUserDefinedExecutableFunctions(getClientConfiguration());
+    }
+    catch (...)
+    {
+        tryLogCurrentException(&logger(), "Caught exception while loading user defined executable functions.");
+        throw;
+    }
 
+    /// In case of clickhouse-local it's necessary to create a separate context for client-related purposes.
+    /// After this point the global context must be stayed almost unchanged till shutdown
+    /// because the global context is used in background tasks (for example, in merges) which don't expect that it can change.
+    client_context = Context::createCopy(global_context);
+    initClientContext();
+}
 
 [[ maybe_unused ]] static std::string getHelpHeader()
 {
@@ -861,16 +866,6 @@ void LocalServer::applyCmdOptions(ContextMutablePtr context)
 {
     context->setDefaultFormat(getClientConfiguration().getString("output-format", getClientConfiguration().getString("format", is_interactive ? "PrettyCompact" : "TSV")));
     applyCmdSettings(context);
-}
-
-
-void LocalServer::createClientContext()
-{
-    /// In case of clickhouse-local it's necessary to use a separate context for client-related purposes.
-    /// We can't just change the global context because it is used in background tasks (for example, in merges)
-    /// which don't expect that the global context can suddenly change.
-    client_context = Context::createCopy(global_context);
-    initClientContext();
 }
 
 

@@ -154,6 +154,8 @@ protected:
         std::vector<Arguments> & external_tables_arguments,
         std::vector<Arguments> & hosts_and_ports_arguments) = 0;
 
+    virtual void createContext() = 0;
+
     void setInsertionTable(const ASTInsertQuery & insert_query);
 
     void addMultiquery(std::string_view query, Arguments & common_arguments) const;

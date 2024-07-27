@@ -779,6 +779,9 @@ void ClientBase::initClientContext()
     client_context->setQueryKindInitial();
     client_context->setQueryKind(query_kind);
     client_context->setQueryParameters(query_parameters);
+
+    if (auto query_id = config().getString("query_id", ""); !query_id.empty())
+        client_context->setCurrentQueryId(query_id);
 }
 
 bool ClientBase::isRegularFile(int fd)
@@ -851,18 +854,17 @@ void ClientBase::setDefaultFormatsAndCompressionFromConfiguration()
             default_input_format = "TSV";
     }
 
-    format_max_block_size = getClientConfiguration().getUInt64("format_max_block_size",
-        global_context->getSettingsRef().max_block_size);
+    format_max_block_size = getClientConfiguration().getUInt64("format_max_block_size", cmd_settings.max_block_size);
 
     /// Setting value from cmd arg overrides one from config
-    if (global_context->getSettingsRef().max_insert_block_size.changed)
+    if (cmd_settings.max_insert_block_size.changed)
     {
-        insert_format_max_block_size = global_context->getSettingsRef().max_insert_block_size;
+        insert_format_max_block_size = cmd_settings.max_insert_block_size;
     }
     else
     {
         insert_format_max_block_size = getClientConfiguration().getUInt64("insert_format_max_block_size",
-            global_context->getSettingsRef().max_insert_block_size);
+                                                                          cmd_settings.max_insert_block_size);
     }
 }
 
@@ -3099,6 +3101,8 @@ void ClientBase::init(int argc, char ** argv)
     }
 
     clearPasswordFromCommandLine(argc, argv);
+
+    processConfig();
 
     /// Limit on total memory usage
     std::string max_client_memory_usage = getClientConfiguration().getString("max_memory_usage_in_client", "0" /*default value*/);

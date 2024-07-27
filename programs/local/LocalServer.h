@@ -47,9 +47,12 @@ protected:
                         const std::vector<Arguments> &, const std::vector<Arguments> &) override;
 
     void processConfig() override;
+
     void readArguments(int argc, char ** argv, Arguments & common_arguments, std::vector<Arguments> &, std::vector<Arguments> &) override;
 
     void updateLoggerLevel(const String & logs_level) override;
+
+    void createContext() override;
 
 private:
     /** Composes CREATE subquery based on passed arguments (--structure --file --table and --input-format)
@@ -65,9 +68,8 @@ private:
     void applyCmdOptions(ContextMutablePtr context);
     void applyCmdSettings(ContextMutablePtr context);
 
-    void createClientContext();
-
     ServerSettings server_settings;
+    size_t physical_server_memory;
 
     std::optional<StatusFile> status;
     std::optional<std::filesystem::path> temporary_directory_to_delete;

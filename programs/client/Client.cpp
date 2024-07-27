@@ -305,22 +305,6 @@ void Client::initialize(Poco::Util::Application & self)
     const char * env_password = getenv("CLICKHOUSE_PASSWORD"); // NOLINT(concurrency-mt-unsafe)
     if (env_password && !config().has("password"))
         config().setString("password", env_password);
-
-    /// settings and limits could be specified in config file, but passed settings has higher priority
-    for (const auto & setting : global_context->getSettingsRef().allUnchanged())
-    {
-        const auto & name = setting.getName();
-        if (config().has(name))
-            global_context->setSetting(name, config().getString(name));
-    }
-
-    /// Set path for format schema files
-    if (config().has("format_schema_path"))
-        global_context->setFormatSchemaPath(fs::weakly_canonical(config().getString("format_schema_path")));
-
-    /// Set the path for google proto files
-    if (config().has("google_protos_path"))
-        global_context->setGoogleProtosPath(fs::weakly_canonical(config().getString("google_protos_path")));
 }
 
 
@@ -328,7 +312,7 @@ int Client::main(const std::vector<std::string> & /*args*/)
 try
 {
     UseSSL use_ssl;
-    auto & thread_status = MainThreadStatus::getInstance();
+    MainThreadStatus::getInstance();
     setupSignalHandler();
 
     std::cout << std::fixed << std::setprecision(3);
@@ -338,18 +322,10 @@ try
     registerFunctions();
     registerAggregateFunctions();
 
-    processConfig();
-    adjustSettings();
+    createContext();
+
     initTTYBuffer(toProgressOption(config().getString("progress", "default")));
     ASTAlterCommand::setFormatAlterCommandsWithParentheses(true);
-
-    {
-        // All that just to set DB::CurrentThread::get().getGlobalContext()
-        // which is required for client timezone (pushed from server) to work.
-        auto thread_group = std::make_shared<ThreadGroup>();
-        const_cast<ContextWeakPtr&>(thread_group->global_context) = global_context;
-        thread_status.attachToGroup(thread_group, false);
-    }
 
     /// Includes delayed_interactive.
     if (is_interactive)
@@ -1063,17 +1039,9 @@ void Client::processOptions(const OptionsDescription & options_description,
 
     send_external_tables = true;
 
-    shared_context = Context::createShared();
-    global_context = Context::createGlobal(shared_context.get());
-
-    global_context->makeGlobalContext();
-    global_context->setApplicationType(Context::ApplicationType::CLIENT);
-
-    global_context->setSettings(cmd_settings);
-
     /// Copy settings-related program options to config.
     /// TODO: Is this code necessary?
-    for (const auto & setting : global_context->getSettingsRef().all())
+    for (const auto & setting : cmd_settings.all())
     {
         const auto & name = setting.getName();
         if (options.count(name))
@@ -1148,21 +1116,69 @@ void Client::processOptions(const OptionsDescription & options_description,
         config().setBool("multiquery", true);
         // Ignore errors in parsing queries.
         config().setBool("ignore-error", true);
-
-        global_context->setSetting("allow_suspicious_low_cardinality_types", true);
         ignore_error = true;
+
+        config().setBool("allow_suspicious_low_cardinality_types", true);
     }
 
     if (options.count("opentelemetry-traceparent"))
+        config().setString("opentelemetry-traceparent", options["opentelemetry-traceparent"].as<std::string>());
+
+    if (options.count("opentelemetry-tracestate"))
+        config().setString("opentelemetry-tracestate", options["opentelemetry-tracestate"].as<std::string>());
+}
+
+
+void Client::createContext()
+{
+    shared_context = Context::createShared();
+    global_context = Context::createGlobal(shared_context.get());
+
+    global_context->makeGlobalContext();
+    global_context->setApplicationType(Context::ApplicationType::CLIENT);
+
+    global_context->setSettings(cmd_settings);
+
+    global_context->setSetting("allow_suspicious_low_cardinality_types",
+                               config().getBool("allow_suspicious_low_cardinality_types", false));
+
+    if (config().has("opentelemetry-traceparent"))
     {
-        String traceparent = options["opentelemetry-traceparent"].as<std::string>();
+        String traceparent = config().getString("opentelemetry-traceparent");
         String error;
         if (!global_context->getClientTraceContext().parseTraceparentHeader(traceparent, error))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse OpenTelemetry traceparent '{}': {}", traceparent, error);
     }
 
-    if (options.count("opentelemetry-tracestate"))
-        global_context->getClientTraceContext().tracestate = options["opentelemetry-tracestate"].as<std::string>();
+    if (config().has("opentelemetry-tracestate"))
+        global_context->getClientTraceContext().tracestate = config().getString("opentelemetry-tracestate");
+
+    /// settings and limits could be specified in config file, but passed settings has higher priority
+    for (const auto & setting : global_context->getSettingsRef().allUnchanged())
+    {
+        const auto & name = setting.getName();
+        if (config().has(name))
+            global_context->setSetting(name, config().getString(name));
+    }
+
+    /// Set path for format schema files
+    if (config().has("format_schema_path"))
+        global_context->setFormatSchemaPath(fs::weakly_canonical(config().getString("format_schema_path")));
+
+    /// Set the path for google proto files
+    if (config().has("google_protos_path"))
+        global_context->setGoogleProtosPath(fs::weakly_canonical(config().getString("google_protos_path")));
+
+    {
+        // All that just to set DB::CurrentThread::get().getGlobalContext()
+        // which is required for client timezone (pushed from server) to work.
+        auto & thread_status = MainThreadStatus::getInstance();
+        auto thread_group = std::make_shared<ThreadGroup>();
+        const_cast<ContextWeakPtr&>(thread_group->global_context) = global_context;
+        thread_status.attachToGroup(thread_group, false);
+    }
+
+    adjustSettings();
 
     /// In case of clickhouse-client the `client_context` can be just an alias for the `global_context`.
     /// (There is no need to copy the context because clickhouse-client has no background tasks so it won't use that context in parallel.)
@@ -1194,10 +1210,6 @@ void Client::processConfig()
     {
         echo_queries = config().getBool("echo", false);
         ignore_error = config().getBool("ignore-error", false);
-
-        auto query_id = config().getString("query_id", "");
-        if (!query_id.empty())
-            global_context->setCurrentQueryId(query_id);
     }
     print_stack_trace = config().getBool("stacktrace", false);
 
