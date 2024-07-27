@@ -115,7 +115,7 @@ static rocksdb::Options getRocksDBOptionsFromConfig(const Poco::Util::AbstractCo
         }
     }
 
-    /// For compatibility with current rocksdb 6.29, currently we use checksum type 3 and format_version 4 by default
+    /// For compatibility with current rocksdb 6.29, currently we use checksum type 3 and format_version 5 by default
     /// TODO: @canhld94 once verify that the new rocksdb version is stable, we remove this and use default rocksdb 9.2.2 value (checksum type -> 4 and format_version -> 6)
     table_options.checksum = rocksdb::ChecksumType::kxxHash64;
     table_options.format_version = 5;
