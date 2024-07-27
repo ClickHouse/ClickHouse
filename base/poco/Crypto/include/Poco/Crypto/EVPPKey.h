@@ -21,6 +21,7 @@
 
 #include <sstream>
 #include <typeinfo>
+#include <openssl/compat_types.h>
 #include <openssl/ec.h>
 #include <openssl/evp.h>
 #include <openssl/pem.h>

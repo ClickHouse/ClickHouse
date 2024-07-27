@@ -148,7 +148,7 @@ set (SRCS
     "${LIBRARY_DIR}/lib/vtls/hostcheck.c"
     "${LIBRARY_DIR}/lib/vtls/keylog.c"
     "${LIBRARY_DIR}/lib/vtls/mbedtls.c"
-    "${LIBRARY_DIR}/lib/vtls/openssl.c"
+    # "${LIBRARY_DIR}/lib/vtls/wolfssl.c"
     "${LIBRARY_DIR}/lib/vtls/schannel.c"
     "${LIBRARY_DIR}/lib/vtls/schannel_verify.c"
     "${LIBRARY_DIR}/lib/vtls/sectransp.c"
@@ -165,6 +165,7 @@ target_compile_definitions (_curl PRIVATE
     BUILDING_LIBCURL
     CURL_HIDDEN_SYMBOLS
     libcurl_EXPORTS
+    USE_WOLFSSL
     OS="${CMAKE_SYSTEM_NAME}"
 )
 

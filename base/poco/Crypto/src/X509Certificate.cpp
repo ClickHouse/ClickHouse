@@ -19,6 +19,7 @@
 #include "Poco/DateTimeParser.h"
 #include "Poco/Format.h"
 #include <sstream>
+#include <openssl/ssl.h>
 #include <openssl/pem.h>
 #include <openssl/x509v3.h>
 #include <openssl/err.h>
@@ -56,10 +57,10 @@ X509Certificate::X509Certificate(X509* pCert, bool shared):
 	_pCert(pCert)
 {
 	poco_check_ptr(_pCert);
-	
+
 	if (shared)
 	{
-#if OPENSSL_VERSION_NUMBER >= 0x10100000L
+#if OPENSSL_VERSION_NUMBER >= 0x10100000L || 1
 		X509_up_ref(_pCert);
 #else
 		_pCert->references++;
@@ -150,7 +151,7 @@ void X509Certificate::save(std::ostream& stream) const
 	if (!pBIO) throw Poco::IOException("Cannot create BIO for writing certificate");
 	try
 	{
-		if (!PEM_write_bio_X509(pBIO, _pCert)) 
+		if (!PEM_write_bio_X509(pBIO, _pCert))
 			throw Poco::IOException("Failed to write certificate to stream");
 
 		char *pData;
@@ -178,7 +179,7 @@ void X509Certificate::save(const std::string& path) const
 	}
 	try
 	{
-		if (!PEM_write_bio_X509(pBIO, _pCert)) 
+		if (!PEM_write_bio_X509(pBIO, _pCert))
 			throw Poco::WriteFileException("Failed to write certificate to file", path);
 	}
 	catch (...)
@@ -243,7 +244,7 @@ std::string X509Certificate::subjectName(NID nid) const
 
 void X509Certificate::extractNames(std::string& cmnName, std::set<std::string>& domainNames) const
 {
-	domainNames.clear(); 
+	domainNames.clear();
 	if (STACK_OF(GENERAL_NAME)* names = static_cast<STACK_OF(GENERAL_NAME)*>(X509_get_ext_d2i(_pCert, NID_subject_alt_name, 0, 0)))
 	{
 		for (int i = 0; i < sk_GENERAL_NAME_num(names); ++i)
@@ -258,7 +259,7 @@ void X509Certificate::extractNames(std::string& cmnName, std::set<std::string>& 
 		}
 		GENERAL_NAMES_free(names);
 	}
- 
+
 	cmnName = commonName();
 	if (!cmnName.empty() && domainNames.empty())
 	{
@@ -275,7 +276,7 @@ Poco::DateTime X509Certificate::validFrom() const
 	return DateTimeParser::parse("%y%m%d%H%M%S", dateTime, tzd);
 }
 
-	
+
 Poco::DateTime X509Certificate::expiresOn() const
 {
 	ASN1_TIME* certTime = X509_get_notAfter(_pCert);
@@ -309,7 +310,7 @@ std::string X509Certificate::signatureAlgorithm() const
 {
 	int sigNID = NID_undef;
 
-#if (OPENSSL_VERSION_NUMBER >=  0x1010000fL) && !defined(LIBRESSL_VERSION_NUMBER)
+#if (OPENSSL_VERSION_NUMBER >=  0x1010000fL) && !defined(LIBRESSL_VERSION_NUMBER) || 1
 	sigNID = X509_get_signature_nid(_pCert);
 #else
 	poco_check_ptr(_pCert->sig_alg);

@@ -4,6 +4,7 @@
 
 #if USE_SSL
 #include <Core/Types.h>
+#include <wolfssl/options.h>
 #include <openssl/evp.h>
 
 namespace DB

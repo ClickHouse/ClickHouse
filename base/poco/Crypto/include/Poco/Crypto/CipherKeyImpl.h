@@ -26,7 +26,7 @@
 
 
 struct evp_cipher_st;
-typedef struct evp_cipher_st EVP_CIPHER;
+// typedef struct evp_cipher_st EVP_CIPHER;
 
 
 namespace Poco

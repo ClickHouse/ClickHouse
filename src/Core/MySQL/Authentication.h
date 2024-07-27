@@ -7,8 +7,10 @@
 #include "config.h"
 
 #if USE_SSL
-#    include <openssl/pem.h>
+// #include <wolfssl/options.h>
+#    include <openssl/bio.h>
 #    include <openssl/rsa.h>
+#    include <wolfcrypt/sha512.h>
 #endif
 
 namespace DB

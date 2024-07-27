@@ -117,7 +117,7 @@ void MySQLHandlerFactory::generateRSAKeys()
     if (!BN_set_word(e, 65537) || !RSA_generate_key_ex(public_key.get(), 2048, e, nullptr))
         throw Exception(ErrorCodes::OPENSSL_ERROR, "Failed to generate RSA key. Error: {}", getOpenSSLErrors());
 
-    private_key.reset(RSAPrivateKey_dup(public_key.get()));
+    // private_key.reset(RSAPrivateKey_dup(public_key.get()));
     if (!private_key)
         throw Exception(ErrorCodes::OPENSSL_ERROR, "Failed to copy RSA key. Error: {}", getOpenSSLErrors());
 }

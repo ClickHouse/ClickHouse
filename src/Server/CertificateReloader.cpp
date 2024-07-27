@@ -38,7 +38,7 @@ int CertificateReloader::setCertificate(SSL * ssl, const CertificateReloader::Mu
     if (current->certs_chain.empty())
         return -1;
 
-    if (auto err = SSL_clear_chain_certs(ssl); err != 1)
+    if (auto err = SSL_clear(ssl); err != 1)
     {
         LOG_ERROR(log, "Clear certificates {}", Poco::Net::Utility::getLastError());
         return -1;

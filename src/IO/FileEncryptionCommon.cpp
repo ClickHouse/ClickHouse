@@ -12,6 +12,7 @@
 #    include <cassert>
 #    include <boost/algorithm/string/predicate.hpp>
 
+#include <openssl/compat_types.h>
 #    include <openssl/err.h>
 #    include <openssl/rand.h>
 

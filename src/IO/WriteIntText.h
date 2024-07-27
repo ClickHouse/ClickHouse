@@ -26,7 +26,7 @@ namespace DB
 namespace detail
 {
     template <typename T>
-    void NO_INLINE writeUIntTextFallback(T x, WriteBuffer & buf)
+    void __attribute__((__noinline__)) writeUIntTextFallback(T x, WriteBuffer & buf)
     {
         char tmp[max_int_width<T>];
         char * end = itoa(x, tmp);

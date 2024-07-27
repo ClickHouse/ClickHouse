@@ -7,6 +7,7 @@
 #include "config.h"
 
 #if USE_SSL
+#   include <wolfssl/options.h>
 #   include <Poco/Net/Context.h>
 #   include <Poco/Net/SecureStreamSocket.h>
 #   include <Poco/Net/SSLManager.h>
