@@ -1,6 +1,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionStringToString.h>
-#include "domain.h"
+#include <Functions/URL/domain.h>
 
 namespace DB
 {

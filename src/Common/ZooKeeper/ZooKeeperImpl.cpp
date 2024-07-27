@@ -1014,9 +1014,6 @@ void ZooKeeper::finalize(bool error_send, bool error_receive, const String & rea
     LOG_INFO(log, "Finalizing session {}. finalization_started: {}, queue_finished: {}, reason: '{}'",
              session_id, already_started, requests_queue.isFinished(), reason);
 
-    /// Reset the original index.
-    original_index = -1;
-
     auto expire_session_if_not_expired = [&]
     {
         /// No new requests will appear in queue after finish()
