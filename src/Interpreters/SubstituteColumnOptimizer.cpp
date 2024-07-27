@@ -237,6 +237,9 @@ void SubstituteColumnOptimizer::perform()
 
     const auto & compare_graph = metadata_snapshot->getConstraints().getGraph();
 
+    if (compare_graph.getNumOfComponents() == 0)
+        return;
+
     auto run_for_all = [&](const auto func)
     {
         if (select_query->where())
