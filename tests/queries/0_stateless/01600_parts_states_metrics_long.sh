@@ -17,13 +17,13 @@ verify()
 {
     for i in {1..100}
     do
-        result=$( $CLICKHOUSE_CLIENT -m --query="$verify_sql" )
+        result=$( $CLICKHOUSE_CLIENT --query="$verify_sql" )
         [ "$result" = "1" ] && echo "$result" && break
         sleep 0.1
 
         if [[ $i -eq 100 ]]
         then
-            $CLICKHOUSE_CLIENT --query "
+            $CLICKHOUSE_CLIENT --multiquery "
               SELECT sumIf(value, metric = 'PartsActive'), sumIf(value, metric = 'PartsOutdated') FROM system.metrics;
               SELECT sum(active), sum(NOT active) FROM system.parts;
               SELECT sum(active), sum(NOT active) FROM system.projection_parts;
