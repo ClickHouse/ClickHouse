@@ -1,5 +1,6 @@
 #include <Parsers/ParserDataType.h>
 
+#include <boost/algorithm/string/case_conv.hpp>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIdentifier_fwd.h>
@@ -103,11 +104,27 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         return false;
     tryGetIdentifierNameInto(identifier, type_name);
 
-    /// Don't accept things like Array(`x.y`).
+    /// When parsing we accept quoted type names (e.g. `UInt64`), but when formatting we print them
+    /// unquoted (e.g. UInt64). This introduces problems when the string in the quotes is garbage:
+    ///  * Array(`x.y`) -> Array(x.y) -> fails to parse
+    ///  * `Null` -> Null -> parses as keyword instead of type name
+    /// Here we check for these cases and reject.
     if (!std::all_of(type_name.begin(), type_name.end(), [](char c) { return isWordCharASCII(c) || c == '$'; }))
     {
         expected.add(pos, "type name");
         return false;
+    }
+    /// Keywords that IParserColumnDeclaration recognizes before the type name.
+    /// E.g. reject CREATE TABLE a (x `Null`) because in "x Null" the Null would be parsed as
+    /// column attribute rather than type name.
+    {
+        String n = type_name;
+        boost::to_upper(n);
+        if (n == "NOT" || n == "NULL" || n == "DEFAULT" || n == "MATERIALIZED" || n == "EPHEMERAL" || n == "ALIAS" || n == "AUTO" || n == "PRIMARY" || n == "COMMENT" || n == "CODEC")
+        {
+            expected.add(pos, "type name");
+            return false;
+        }
     }
 
     String type_name_upper = Poco::toUpper(type_name);

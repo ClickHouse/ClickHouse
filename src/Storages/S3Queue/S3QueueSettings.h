@@ -19,7 +19,7 @@ class ASTStorage;
       0) \
     M(S3QueueAction, after_processing, S3QueueAction::KEEP, "Delete or keep file in S3 after successful processing", 0) \
     M(String, keeper_path, "", "Zookeeper node path", 0) \
-    M(UInt32, s3queue_loading_retries, 0, "Retry loading up to specified number of times", 0) \
+    M(UInt32, s3queue_loading_retries, 10, "Retry loading up to specified number of times", 0) \
     M(UInt32, s3queue_processing_threads_num, 1, "Number of processing threads", 0) \
     M(UInt32, s3queue_enable_logging_to_s3queue_log, 1, "Enable logging to system table system.s3queue_log", 0) \
     M(String, s3queue_last_processed_path, "", "For Ordered mode. Files that have lexicographically smaller file name are considered already processed", 0) \
@@ -31,6 +31,10 @@ class ASTStorage;
     M(UInt32, s3queue_cleanup_interval_min_ms, 60000, "For unordered mode. Polling backoff min for cleanup", 0) \
     M(UInt32, s3queue_cleanup_interval_max_ms, 60000, "For unordered mode. Polling backoff max for cleanup", 0) \
     M(UInt32, s3queue_buckets, 0, "Number of buckets for Ordered mode parallel processing", 0) \
+    M(UInt32, s3queue_max_processed_files_before_commit, 100, "Number of files which can be processed before being committed to keeper", 0) \
+    M(UInt32, s3queue_max_processed_rows_before_commit, 0, "Number of rows which can be processed before being committed to keeper", 0) \
+    M(UInt32, s3queue_max_processed_bytes_before_commit, 0, "Number of bytes which can be processed before being committed to keeper", 0) \
+    M(UInt32, s3queue_max_processing_time_sec_before_commit, 0, "Timeout in seconds after which to commit files committed to keeper", 0) \
 
 #define LIST_OF_S3QUEUE_SETTINGS(M, ALIAS) \
     S3QUEUE_RELATED_SETTINGS(M, ALIAS) \

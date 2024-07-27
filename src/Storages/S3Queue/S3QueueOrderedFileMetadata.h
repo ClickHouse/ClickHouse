@@ -36,7 +36,8 @@ public:
     static BucketHolderPtr tryAcquireBucket(
         const std::filesystem::path & zk_path,
         const Bucket & bucket,
-        const Processor & processor);
+        const Processor & processor,
+        LoggerPtr log_);
 
     static S3QueueOrderedFileMetadata::Bucket getBucketForPath(const std::string & path, size_t buckets_num);
 
@@ -72,19 +73,23 @@ private:
         bool ignore_if_exists);
 };
 
-struct S3QueueOrderedFileMetadata::BucketHolder
+struct S3QueueOrderedFileMetadata::BucketHolder : private boost::noncopyable
 {
     BucketHolder(
         const Bucket & bucket_,
         int bucket_version_,
         const std::string & bucket_lock_path_,
         const std::string & bucket_lock_id_path_,
-        zkutil::ZooKeeperPtr zk_client_);
+        zkutil::ZooKeeperPtr zk_client_,
+        LoggerPtr log_);
 
     ~BucketHolder();
 
     Bucket getBucket() const { return bucket_info->bucket; }
     BucketInfoPtr getBucketInfo() const { return bucket_info; }
+
+    void setFinished() { finished = true; }
+    bool isFinished() const { return finished; }
 
     void release();
 
@@ -92,6 +97,8 @@ private:
     BucketInfoPtr bucket_info;
     const zkutil::ZooKeeperPtr zk_client;
     bool released = false;
+    bool finished = false;
+    LoggerPtr log;
 };
 
 }

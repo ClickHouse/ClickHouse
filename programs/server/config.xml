@@ -29,7 +29,14 @@
           -->
         <size>1000M</size>
         <count>10</count>
+
         <!-- <console>1</console> --> <!-- Default behavior is autodetection (log to console if not daemon mode and is tty) -->
+        <!-- <console_log_level>trace</console_log_level> -->
+
+        <!-- <use_syslog>0</use_syslog> -->
+        <!-- <syslog_level>trace</syslog_level> -->
+
+        <!-- <stream_compress>0</stream_compress> -->
 
         <!-- Per level overrides (legacy):
 
@@ -408,13 +415,11 @@
 
     <!-- Approximate size of mark cache, used in tables of MergeTree family.
          In bytes. Cache is single for server. Memory is allocated only on demand.
-         You should not lower this value.
-      -->
-    <mark_cache_size>5368709120</mark_cache_size>
+         You should not lower this value. -->
+    <!-- <mark_cache_size>5368709120</mark_cache_size> -->
 
-    <!-- For marks of secondary indices.
-      -->
-    <index_mark_cache_size>5368709120</index_mark_cache_size>
+    <!-- For marks of secondary indices. -->
+    <!-- <index_mark_cache_size>5368709120</index_mark_cache_size> -->
 
     <!-- If you enable the `min_bytes_to_use_mmap_io` setting,
          the data in MergeTree tables can be read with mmap to avoid copying from kernel to userspace.
@@ -432,13 +437,23 @@
          The cache is dropped (the files are closed) automatically on removal of old parts in MergeTree,
          also it can be dropped manually by the SYSTEM DROP MMAP CACHE query.
       -->
-    <mmap_cache_size>1000</mmap_cache_size>
+    <!-- <mmap_cache_size>1024</mmap_cache_size> -->
 
     <!-- Cache size in bytes for compiled expressions.-->
-    <compiled_expression_cache_size>134217728</compiled_expression_cache_size>
+    <!-- <compiled_expression_cache_size>134217728</compiled_expression_cache_size> -->
 
     <!-- Cache size in elements for compiled expressions.-->
-    <compiled_expression_cache_elements_size>10000</compiled_expression_cache_elements_size>
+    <!-- <compiled_expression_cache_elements_size>10000</compiled_expression_cache_elements_size> -->
+
+    <!-- Configuration for the query cache -->
+    <!--
+    <query_cache>
+        <max_size_in_bytes>1073741824</max_size_in_bytes>
+        <max_entries>1024</max_entries>
+        <max_entry_size_in_bytes>1048576</max_entry_size_in_bytes>
+        <max_entry_size_in_rows>30000000</max_entry_size_in_rows>
+    </query_cache>
+    -->
 
     <!-- Cache path for custom (created from SQL) cached disks -->
     <custom_cached_disks_base_directory>/var/lib/clickhouse/caches/</custom_cached_disks_base_directory>
@@ -1641,14 +1656,6 @@
         </consumer>
         -->
     <!-- </kafka> -->
-
-    <!-- Configuration for the query cache -->
-    <query_cache>
-        <max_size_in_bytes>1073741824</max_size_in_bytes>
-        <max_entries>1024</max_entries>
-        <max_entry_size_in_bytes>1048576</max_entry_size_in_bytes>
-        <max_entry_size_in_rows>30000000</max_entry_size_in_rows>
-    </query_cache>
 
     <backups>
         <allowed_path>backups</allowed_path>

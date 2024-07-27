@@ -86,6 +86,8 @@ public:
 
     std::vector<UInt8> tryGetAreReplicasActive(const ClusterPtr & cluster_) const;
 
+    void renameDatabase(ContextPtr query_context, const String & new_name) override;
+
     friend struct DatabaseReplicatedTask;
     friend class DatabaseReplicatedDDLWorker;
 private:

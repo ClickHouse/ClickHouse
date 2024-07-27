@@ -146,11 +146,11 @@ jobs:
   # Reports should run even if Builds_1/2 fail - run them separately (not in Tests_1/2/3)
   Builds_Report:
     # run report check for failed builds to indicate the CI error
-    if: ${{ !cancelled() && needs.RunConfig.result == 'success' && contains(fromJson(needs.RunConfig.outputs.data).jobs_data.jobs_to_do, 'ClickHouse build check') }}
+    if: ${{ !cancelled() && needs.RunConfig.result == 'success' && contains(fromJson(needs.RunConfig.outputs.data).jobs_data.jobs_to_do, 'Builds') }}
     needs: [RunConfig, StyleCheck, Builds_1, Builds_2]
     uses: ./.github/workflows/reusable_test.yml
     with:
-      test_name: ClickHouse build check
+      test_name: Builds
       runner_type: style-checker-aarch64
       data: ${{ needs.RunConfig.outputs.data }}
 

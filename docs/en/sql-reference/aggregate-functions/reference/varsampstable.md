@@ -1,7 +1,7 @@
 ---
 title: "varSampStable"
 slug: /en/sql-reference/aggregate-functions/reference/varsampstable
-sidebar_position: 33
+sidebar_position: 213
 ---
 
 ## varSampStable

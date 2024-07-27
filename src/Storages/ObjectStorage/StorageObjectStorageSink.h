@@ -35,8 +35,9 @@ private:
     bool cancelled = false;
     std::mutex cancel_mutex;
 
-    void finalize();
-    void release();
+    void finalizeBuffers();
+    void releaseBuffers();
+    void cancelBuffers();
 };
 
 class PartitionedStorageObjectStorageSink : public PartitionedSink

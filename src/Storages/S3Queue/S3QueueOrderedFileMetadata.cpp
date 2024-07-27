@@ -45,13 +45,15 @@ S3QueueOrderedFileMetadata::BucketHolder::BucketHolder(
     int bucket_version_,
     const std::string & bucket_lock_path_,
     const std::string & bucket_lock_id_path_,
-    zkutil::ZooKeeperPtr zk_client_)
+    zkutil::ZooKeeperPtr zk_client_,
+    LoggerPtr log_)
     : bucket_info(std::make_shared<BucketInfo>(BucketInfo{
         .bucket = bucket_,
         .bucket_version = bucket_version_,
         .bucket_lock_path = bucket_lock_path_,
         .bucket_lock_id_path = bucket_lock_id_path_}))
     , zk_client(zk_client_)
+    , log(log_)
 {
 }
 
@@ -61,7 +63,9 @@ void S3QueueOrderedFileMetadata::BucketHolder::release()
         return;
 
     released = true;
-    LOG_TEST(getLogger("S3QueueBucketHolder"), "Releasing bucket {}", bucket_info->bucket);
+
+    LOG_TEST(log, "Releasing bucket {}, version {}",
+             bucket_info->bucket, bucket_info->bucket_version);
 
     Coordination::Requests requests;
     /// Check that bucket lock version has not changed
@@ -72,11 +76,24 @@ void S3QueueOrderedFileMetadata::BucketHolder::release()
 
     Coordination::Responses responses;
     const auto code = zk_client->tryMulti(requests, responses);
+
+    if (code == Coordination::Error::ZOK)
+        LOG_TEST(log, "Released bucket {}, version {}",
+                 bucket_info->bucket, bucket_info->bucket_version);
+    else
+        LOG_TRACE(log,
+                  "Failed to release bucket {}, version {}: {}. "
+                  "This is normal if keeper session expired.",
+                  bucket_info->bucket, bucket_info->bucket_version, code);
+
     zkutil::KeeperMultiException::check(code, requests, responses);
 }
 
 S3QueueOrderedFileMetadata::BucketHolder::~BucketHolder()
 {
+    if (!released)
+        LOG_TEST(log, "Releasing bucket ({}) holder in destructor", bucket_info->bucket);
+
     try
     {
         release();
@@ -154,7 +171,8 @@ S3QueueOrderedFileMetadata::Bucket S3QueueOrderedFileMetadata::getBucketForPath(
 S3QueueOrderedFileMetadata::BucketHolderPtr S3QueueOrderedFileMetadata::tryAcquireBucket(
     const std::filesystem::path & zk_path,
     const Bucket & bucket,
-    const Processor & processor)
+    const Processor & processor,
+    LoggerPtr log_)
 {
     const auto zk_client = getZooKeeper();
     const auto bucket_lock_path = zk_path / "buckets" / toString(bucket) / "lock";
@@ -183,7 +201,7 @@ S3QueueOrderedFileMetadata::BucketHolderPtr S3QueueOrderedFileMetadata::tryAcqui
         const auto bucket_lock_version = set_response->stat.version;
 
         LOG_TEST(
-            getLogger("S3QueueOrderedFileMetadata"),
+            log_,
             "Processor {} acquired bucket {} for processing (bucket lock version: {})",
             processor, bucket, bucket_lock_version);
 
@@ -192,7 +210,8 @@ S3QueueOrderedFileMetadata::BucketHolderPtr S3QueueOrderedFileMetadata::tryAcqui
             bucket_lock_version,
             bucket_lock_path,
             bucket_lock_id_path,
-            zk_client);
+            zk_client,
+            log_);
     }
 
     if (code == Coordination::Error::ZNODEEXISTS)
@@ -384,8 +403,11 @@ void S3QueueOrderedFileMetadata::setProcessedImpl()
         auto code = zk_client->tryMulti(requests, responses);
         if (code == Coordination::Error::ZOK)
         {
-            if (max_loading_retries)
-                zk_client->tryRemove(failed_node_path + ".retriable", -1);
+            if (max_loading_retries
+                && zk_client->tryRemove(failed_node_path + ".retriable", -1) == Coordination::Error::ZOK)
+            {
+                LOG_TEST(log, "Removed node {}.retriable", failed_node_path);
+            }
             return;
         }
 

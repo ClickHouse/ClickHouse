@@ -2,6 +2,7 @@ DROP TABLE IF EXISTS t1;
 
 SET allow_experimental_statistics = 1;
 SET allow_statistics_optimize = 1;
+SET mutations_sync = 1;
 
 CREATE TABLE t1
 (

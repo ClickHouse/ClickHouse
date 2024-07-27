@@ -26,6 +26,7 @@ ColumnsDescription StorageSystemS3Queue::getColumnsDescription()
     return ColumnsDescription
     {
         {"zookeeper_path", std::make_shared<DataTypeString>(), "Path in zookeeper to S3Queue metadata"},
+        {"file_path", std::make_shared<DataTypeString>(), "File path of a file which is being processed by S3Queue"},
         {"file_name", std::make_shared<DataTypeString>(), "File name of a file which is being processed by S3Queue"},
         {"rows_processed", std::make_shared<DataTypeUInt64>(), "Currently processed number of rows"},
         {"status", std::make_shared<DataTypeString>(), "Status of processing: Processed, Processing, Failed"},
@@ -45,11 +46,12 @@ void StorageSystemS3Queue::fillData(MutableColumns & res_columns, ContextPtr, co
 {
     for (const auto & [zookeeper_path, metadata] : S3QueueMetadataFactory::instance().getAll())
     {
-        for (const auto & [file_name, file_status] : metadata->getFileStatuses())
+        for (const auto & [file_path, file_status] : metadata->getFileStatuses())
         {
             size_t i = 0;
             res_columns[i++]->insert(zookeeper_path);
-            res_columns[i++]->insert(file_name);
+            res_columns[i++]->insert(file_path);
+            res_columns[i++]->insert(std::filesystem::path(file_path).filename().string());
 
             res_columns[i++]->insert(file_status->processed_rows.load());
             res_columns[i++]->insert(magic_enum::enum_name(file_status->state.load()));

@@ -428,6 +428,23 @@ void SSLManager::initCertificateHandler(bool server)
 }
 
 
+Context::Ptr SSLManager::getCustomServerContext(const std::string & name)
+{
+	Poco::FastMutex::ScopedLock lock(_mutex);
+	auto it = _mapPtrServerContexts.find(name);
+	if (it != _mapPtrServerContexts.end())
+		return it->second;
+	return nullptr;
+}
+
+Context::Ptr SSLManager::setCustomServerContext(const std::string & name, Context::Ptr ctx)
+{
+	Poco::FastMutex::ScopedLock lock(_mutex);
+	ctx = _mapPtrServerContexts.insert({name, ctx}).first->second;
+	return ctx;
+}
+
+
 Poco::Util::AbstractConfiguration& SSLManager::appConfig()
 {
 	try

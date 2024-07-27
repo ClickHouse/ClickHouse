@@ -133,6 +133,9 @@ S3QueueMetadata::S3QueueMetadata(const fs::path & zookeeper_path_, const S3Queue
             generateRescheduleInterval(
                 settings.s3queue_cleanup_interval_min_ms, settings.s3queue_cleanup_interval_max_ms));
     }
+    LOG_TRACE(log, "Mode: {}, buckets: {}, processing threads: {}, result buckets num: {}",
+              settings.mode.toString(), settings.s3queue_buckets, settings.s3queue_processing_threads_num, buckets_num);
+
 }
 
 S3QueueMetadata::~S3QueueMetadata()
@@ -219,7 +222,7 @@ S3QueueMetadata::Bucket S3QueueMetadata::getBucketForPath(const std::string & pa
 S3QueueOrderedFileMetadata::BucketHolderPtr
 S3QueueMetadata::tryAcquireBucket(const Bucket & bucket, const Processor & processor)
 {
-    return S3QueueOrderedFileMetadata::tryAcquireBucket(zookeeper_path, bucket, processor);
+    return S3QueueOrderedFileMetadata::tryAcquireBucket(zookeeper_path, bucket, processor, log);
 }
 
 void S3QueueMetadata::initialize(

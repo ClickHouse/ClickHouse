@@ -214,6 +214,7 @@ public:
 
 #if USE_AWS_S3
     std::shared_ptr<const S3::Client> getS3StorageClient() const override;
+    std::shared_ptr<const S3::Client> tryGetS3StorageClient() const override;
 #endif
 
 private:

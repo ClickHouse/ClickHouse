@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/aggregate-functions/reference/median
-sidebar_position: 212
+sidebar_position: 167
 ---
 
 # median

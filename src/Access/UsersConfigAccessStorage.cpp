@@ -880,8 +880,7 @@ void UsersConfigAccessStorage::load(
             Settings::checkNoSettingNamesAtTopLevel(*new_config, users_config_path);
             parseFromConfig(*new_config);
             access_control.getChangesNotifier().sendNotifications();
-        },
-        /* already_loaded = */ false);
+        });
 }
 
 void UsersConfigAccessStorage::startPeriodicReloading()

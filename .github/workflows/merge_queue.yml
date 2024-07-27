@@ -96,20 +96,15 @@ jobs:
       stage: Tests_1
       data: ${{ needs.RunConfig.outputs.data }}
 
-  ################################# Stage Final #################################
-  #
-  FinishCheck:
-    if: ${{ !cancelled() }}
+  CheckReadyForMerge:
+    if: ${{ !cancelled() && needs.StyleCheck.result == 'success' }}
+    # Test_2 or Test_3 must not have jobs required for Mergeable check
     needs: [RunConfig, BuildDockers, StyleCheck, FastTest, Builds_1, Tests_1]
     runs-on: [self-hosted, style-checker-aarch64]
     steps:
       - name: Check out repository code
         uses: ClickHouse/checkout@v1
-      - name: Check sync status
+      - name: Check and set merge status
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
-          python3 sync_pr.py --status
-      - name: Finish label
-        run: |
-          cd "$GITHUB_WORKSPACE/tests/ci"
-          python3 finish_check.py --wf-status ${{ contains(needs.*.result, 'failure') && 'failure' || 'success' }}
+          python3 merge_pr.py --set-ci-status --wf-status ${{ contains(needs.*.result, 'failure') && 'failure' || 'success' }}

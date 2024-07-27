@@ -6,6 +6,7 @@ tests/ci/cancel_and_rerun_workflow_lambda/app.py
 -->
 ### Changelog category (leave one):
 - New Feature
+- Experimental Feature
 - Improvement
 - Performance Improvement
 - Backward Incompatible Change
