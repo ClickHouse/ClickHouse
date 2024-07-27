@@ -339,7 +339,6 @@ void NumberDictionaryReader<DataType>::nextIdxBatchIfEmpty(size_t rows_to_read)
     idx_decoder.GetBatch(state.idx_buffer.data(), static_cast<int>(rows_to_read));
 }
 
-
 template <typename DataType>
 void NumberDictionaryReader<DataType>::computeRowSet(RowSet & row_set, size_t rows_to_read)
 {
@@ -421,7 +420,7 @@ void NumberDictionaryReader<DataType>::read(MutableColumnPtr & column, RowSet & 
         plain_decoder->decodeFixedValue(data, row_set, rows_to_read);
     else
     {
-        dict_decoder->decodeFixedValue(data, row_set, rows_to_read);
+        dict_decoder->decodeFixedValue(dict, data, row_set, rows_to_read);
     }
 }
 
@@ -436,7 +435,7 @@ void NumberDictionaryReader<DataType>::readSpace(
     if (plain)
         plain_decoder->decodeFixedValueSpace(data, row_set, null_map, rows_to_read);
     else
-        dict_decoder->decodeFixedValueSpace(data, row_set, null_map, rows_to_read);
+        dict_decoder->decodeFixedValueSpace(dict, data, row_set, null_map, rows_to_read);
 }
 
 template <typename DataType>
@@ -481,7 +480,7 @@ size_t NumberDictionaryReader<DataType>::skipValuesInCurrentPage(size_t rows_to_
 template <typename DataType>
 void NumberDictionaryReader<DataType>::createDictDecoder()
 {
-    dict_decoder = std::make_unique<DictDecoder<typename DataType::FieldType>>(dict, state.idx_buffer, state.remain_rows);
+    dict_decoder = std::make_unique<DictDecoder>(state.idx_buffer, state.remain_rows);
 }
 
 template <typename DataType>
@@ -490,6 +489,7 @@ void NumberDictionaryReader<DataType>::downgradeToPlain()
     dict.resize(0);
     dict_decoder.reset();
 }
+
 
 size_t OptionalColumnReader::currentRemainRows() const
 {
@@ -519,20 +519,6 @@ void OptionalColumnReader::computeRowSet(RowSet & row_set, size_t rows_to_read)
 {
     applyLazySkip();
     nextBatchNullMapIfNeeded(rows_to_read);
-    if (scan_spec.filter)
-    {
-        for (size_t i = 0; i < rows_to_read; i++)
-        {
-            if (cur_null_map[i])
-            {
-                row_set.set(i, scan_spec.filter->testNull());
-            }
-            else
-            {
-                row_set.set(i, scan_spec.filter->testNotNull());
-            }
-        }
-    }
     if (cur_null_count)
         child->computeRowSetSpace(row_set, cur_null_map, cur_null_count, rows_to_read);
     else
@@ -643,6 +629,13 @@ SelectiveColumnReaderPtr SelectiveColumnReaderFactory::createLeafColumnReader(
         else
             return std::make_shared<NumberDictionaryReader<DataTypeFloat64>>(std::move(page_reader), scan_spec);
     }
+    else if (column_desc->physical_type() == parquet::Type::BYTE_ARRAY)
+    {
+        if (!column_metadata.has_dictionary_page())
+            return std::make_shared<StringDirectReader>(std::move(page_reader), scan_spec);
+        else
+            return std::make_shared<StringDictionaryReader>(std::move(page_reader), scan_spec);
+    }
     else
     {
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Unsupported column type");
@@ -665,8 +658,45 @@ template class NumberDictionaryReader<DataTypeInt64>;
 template class NumberDictionaryReader<DataTypeFloat32>;
 template class NumberDictionaryReader<DataTypeFloat64>;
 
-template class DictDecoder<Int32>;
-template class DictDecoder<Int64>;
-template class DictDecoder<Float32>;
-template class DictDecoder<Float64>;
+Int32 loadLength(const uint8_t * data)
+{
+    auto value_len = arrow::util::SafeLoadAs<Int32>(data);
+    if (unlikely(value_len < 0 || value_len > INT32_MAX - 4))
+    {
+        throw Exception(ErrorCodes::PARQUET_EXCEPTION, "Invalid or corrupted value_len '{}'", value_len);
+    }
+    return value_len;
+}
+void computeRowSetPlainString(const uint8_t * start, RowSet & row_set, ColumnFilterPtr filter, size_t rows_to_read)
+{
+    if (!filter)
+        return;
+    size_t offset = 0;
+    for (size_t i = 0; i < rows_to_read; i++)
+    {
+        auto len = loadLength(start + offset);
+        offset += 4;
+        row_set.set(i, filter->testString(String(reinterpret_cast<const char *>(start + offset), len)));
+        offset += len;
+    }
+}
+void computeRowSetPlainStringSpace(
+    const uint8_t * start, RowSet & row_set, ColumnFilterPtr filter, size_t rows_to_read, PaddedPODArray<UInt8, 4096> & null_map)
+{
+    if (!filter)
+        return;
+    size_t offset = 0;
+    for (size_t i = 0; i < rows_to_read; i++)
+    {
+        if (null_map[i])
+        {
+            row_set.set(i, filter->testNull());
+            continue;
+        }
+        auto len = loadLength(start + offset);
+        offset += 4;
+        row_set.set(i, filter->testString(String(reinterpret_cast<const char *>(start + offset), len)));
+        offset += len;
+    }
+}
 }

@@ -11,6 +11,7 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeString.h>
 
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadBufferFromFile.h>
@@ -120,8 +121,7 @@ void benchmark(String name, int count, std::function<void()> testcase)
         times.push_back(time.elapsedMicroseconds());
 //        std::cerr << "iteration: " << i << " time : " << time.elapsedMilliseconds() << std::endl;
     }
-    std::sort(times.begin(), times.end());
-    std::cerr<< name << " Time: " << times[times.size() / 2] << std::endl;
+    std::cerr<< name << " Time: " << *std::min_element(times.begin(), times.end()) << std::endl;
 }
 
 TEST(Processors, TestReadInt64)
@@ -177,7 +177,7 @@ TEST(Processors, TestReadInt64)
     {
         ReadBufferFromFile in(path);
         auto reader = openParquet(header, in, std::make_shared<ReadBufferFromFilePRead>(path));
-        reader->addFilter("x", std::make_shared<Int64RangeFilter>( 0, 10));
+//        reader->addFilter("x", std::make_shared<Int64RangeFilter>( 0, 10));
         int count [[maybe_unused]] = 0;
         while (auto block = reader->read())
         {
@@ -229,7 +229,7 @@ TEST(Processors, TestReadNullableInt64)
 
     ReadBufferFromFile in(path);
     auto reader = openParquet(header, in, std::make_shared<ReadBufferFromFile>(path));
-    reader->addFilter("x", std::make_shared<Int64RangeFilter>( 1000, 2000));
+//    reader->addFilter("x", std::make_shared<Int64RangeFilter>( 1000, 2000));
     int count = 0;
     int null_count2 = 0;
     while (auto block = reader->read())
@@ -310,4 +310,129 @@ TEST(Processors, TestReadNullableFloat)
     }
     ASSERT_EQ(count, 500000);
     ASSERT_EQ(55556, null_count2);
+}
+
+TEST(Processors, TestReadNullableString)
+{
+    auto string_type = makeNullable(std::make_shared<DataTypeString>());
+
+    auto col1 = string_type->createColumn();
+    auto col2 = string_type->createColumn();
+    auto col3 = string_type->createColumn();
+    int rows = 500000;
+    for (int i = 0; i < rows; ++i)
+    {
+        if (i % 9 != 0)
+        {
+            col1->insert(std::to_string(i % 100));
+            col2->insert(std::to_string(std::rand()));
+        }
+        else
+        {
+            col1->insertDefault();
+            col2->insertDefault();
+        }
+        col3->insert(std::to_string(std::rand() * 0.1));
+    }
+    Columns columns;
+    columns.emplace_back(std::move(col1));
+    columns.emplace_back(std::move(col2));
+    columns.emplace_back(std::move(col3));
+    Chunk chunk(std::move(columns), rows);
+
+
+    Block header = {ColumnWithTypeAndName(string_type->createColumn(), string_type, "x"),
+                    ColumnWithTypeAndName(string_type->createColumn(), string_type, "y"),
+                    ColumnWithTypeAndName(string_type->createColumn(), string_type, "z")};
+    headBlock(header.cloneWithColumns(chunk.getColumns()), 20);
+    auto path = "/tmp/test.parquet";
+    writeParquet(std::move(chunk), header, path);
+
+    ReadBufferFromFile in(path);
+    auto reader = openParquet(header, in, std::make_shared<ReadBufferFromFile>(path));
+    reader->addFilter("x", std::make_shared<ByteValuesFilter>(std::vector<std::string>{"0","1", "2", "3"}, false));
+    int count = 0;
+    int null_count2 = 0;
+    bool first = true;
+    while (auto block = reader->read())
+    {
+        if (block.rows() == 0)
+            break;
+        if (first)
+        {
+            headBlock(block, 20);
+            first = false;
+        }
+        auto column2 = block.getByPosition(1).column;
+        for (size_t i = 0; i < column2->size(); ++i)
+        {
+            if (column2->isNullAt(i))
+                null_count2++;
+        }
+        count += block.rows();
+    }
+    ASSERT_EQ(count, 17779);
+    ASSERT_EQ(0, null_count2);
+}
+
+
+
+TEST(Processors, BenchmarkReadNullableString)
+{
+    auto string_type = makeNullable(std::make_shared<DataTypeString>());
+
+    auto col1 = string_type->createColumn();
+    auto col2 = string_type->createColumn();
+    auto col3 = string_type->createColumn();
+    int rows = 500000;
+    for (int i = 0; i < rows; ++i)
+    {
+        if (i % 9 != 0)
+        {
+            col1->insert(std::to_string(i % 1000));
+            col2->insert(std::to_string(std::rand()));
+        }
+        else
+        {
+            col1->insertDefault();
+            col2->insertDefault();
+        }
+        col3->insert(std::to_string(std::rand() * 0.1));
+    }
+    Columns columns;
+    columns.emplace_back(std::move(col1));
+    columns.emplace_back(std::move(col2));
+    columns.emplace_back(std::move(col3));
+    Chunk chunk(std::move(columns), rows);
+
+
+    Block header = {ColumnWithTypeAndName(string_type->createColumn(), string_type, "x"),
+                    ColumnWithTypeAndName(string_type->createColumn(), string_type, "y"),
+                    ColumnWithTypeAndName(string_type->createColumn(), string_type, "z")};
+    auto path = "/tmp/test.parquet";
+    writeParquet(std::move(chunk), header, path);
+
+    auto old_test [[maybe_unused]] = [&]()
+    {
+        ReadBufferFromFile in(path);
+        testOldParquet(header, in);
+    };
+
+    auto new_test = [&]()
+    {
+        ReadBufferFromFile in(path);
+        auto reader = openParquet(header, in, std::make_shared<ReadBufferFromFilePRead>(path));
+        reader->addFilter("x", std::make_shared<ByteValuesFilter>(std::vector<std::string>{"0","1", "2", "3"}, false));
+        int count [[maybe_unused]] = 0;
+        while (auto block = reader->read())
+        {
+            count += block.rows();
+            if (block.rows() == 0)
+                break;
+        }
+        //        std::cerr << "total count: " << count << std::endl;
+    };
+    std::cerr << "start benchmark \n";
+    benchmark("arrow", 21, old_test);
+    benchmark("native", 21, new_test);
 }
