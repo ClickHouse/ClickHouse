@@ -1069,11 +1069,6 @@ void Client::processOptions(const OptionsDescription & options_description,
     global_context->makeGlobalContext();
     global_context->setApplicationType(Context::ApplicationType::CLIENT);
 
-    /// In case of clickhouse-client the `client_context` can be just an alias for the `global_context`.
-    /// (There is no need to copy the context because clickhouse-client has no background tasks so it won't use that context in parallel.)
-    client_context = global_context;
-    initClientContext();
-
     global_context->setSettings(cmd_settings);
 
     /// Copy settings-related program options to config.
@@ -1168,6 +1163,11 @@ void Client::processOptions(const OptionsDescription & options_description,
 
     if (options.count("opentelemetry-tracestate"))
         global_context->getClientTraceContext().tracestate = options["opentelemetry-tracestate"].as<std::string>();
+
+    /// In case of clickhouse-client the `client_context` can be just an alias for the `global_context`.
+    /// (There is no need to copy the context because clickhouse-client has no background tasks so it won't use that context in parallel.)
+    client_context = global_context;
+    initClientContext();
 }
 
 
