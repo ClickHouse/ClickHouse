@@ -67,6 +67,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
               {"input_format_json_case_insensitive_column_matching", false, false, "Ignore case when matching JSON keys with CH columns."},
               {"optimize_trivial_insert_select", true, false, "The optimization does not make sense in many cases."},
               {"input_format_try_infer_variants", false, false, "Try to infer Variant type in text formats when there is more than one possible type for column/array elements"},
+              {"input_format_json_ignore_key_case", false, false, "Ignore json key case while read json field from string."},
               {"dictionary_validate_primary_key_type", false, false, "Validate primary key type for dictionaries. By default id type for simple layouts will be implicitly converted to UInt64."},
               {"collect_hash_table_stats_during_joins", false, true, "New setting."},
               {"max_size_to_preallocate_for_joins", 0, 100'000'000, "New setting."},
