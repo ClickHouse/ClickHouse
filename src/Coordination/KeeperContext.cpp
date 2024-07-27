@@ -22,6 +22,7 @@
 #include "config.h"
 #if USE_ROCKSDB
 #include <rocksdb/table.h>
+#include <rocksdb/statistics.h>
 #include <rocksdb/convenience.h>
 #include <rocksdb/utilities/db_ttl.h>
 #endif
@@ -88,7 +89,7 @@ static rocksdb::Options getRocksDBOptionsFromConfig(const Poco::Util::AbstractCo
     if (config.has("keeper_server.rocksdb.options"))
     {
         auto config_options = getOptionsFromConfig(config, "keeper_server.rocksdb.options");
-        status = rocksdb::GetDBOptionsFromMap(merged, config_options, &merged);
+        status = rocksdb::GetDBOptionsFromMap({}, merged, config_options, &merged);
         if (!status.ok())
         {
             throw Exception(ErrorCodes::ROCKSDB_ERROR, "Fail to merge rocksdb options from 'rocksdb.options' : {}",
@@ -98,7 +99,7 @@ static rocksdb::Options getRocksDBOptionsFromConfig(const Poco::Util::AbstractCo
     if (config.has("rocksdb.column_family_options"))
     {
         auto column_family_options = getOptionsFromConfig(config, "rocksdb.column_family_options");
-        status = rocksdb::GetColumnFamilyOptionsFromMap(merged, column_family_options, &merged);
+        status = rocksdb::GetColumnFamilyOptionsFromMap({}, merged, column_family_options, &merged);
         if (!status.ok())
         {
             throw Exception(ErrorCodes::ROCKSDB_ERROR, "Fail to merge rocksdb options from 'rocksdb.column_family_options' at: {}", status.ToString());
@@ -107,12 +108,17 @@ static rocksdb::Options getRocksDBOptionsFromConfig(const Poco::Util::AbstractCo
     if (config.has("rocksdb.block_based_table_options"))
     {
         auto block_based_table_options = getOptionsFromConfig(config, "rocksdb.block_based_table_options");
-        status = rocksdb::GetBlockBasedTableOptionsFromMap(table_options, block_based_table_options, &table_options);
+        status = rocksdb::GetBlockBasedTableOptionsFromMap({}, table_options, block_based_table_options, &table_options);
         if (!status.ok())
         {
             throw Exception(ErrorCodes::ROCKSDB_ERROR, "Fail to merge rocksdb options from 'rocksdb.block_based_table_options' at: {}", status.ToString());
         }
     }
+
+    /// For compatibility with current rocksdb 6.29, currently we use checksum type 3 and format_version 4 by default
+    /// TODO: @canhld94 once verify that the new rocksdb version is stable, we remove this and use default rocksdb 9.2.2 value (checksum type -> 4 and format_version -> 6)
+    table_options.checksum = rocksdb::ChecksumType::kxxHash64;
+    table_options.format_version = 4;
 
     merged.table_factory.reset(rocksdb::NewBlockBasedTableFactory(table_options));
     return merged;

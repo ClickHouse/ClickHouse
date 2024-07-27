@@ -300,7 +300,6 @@ set(SOURCES
     ${ROCKSDB_SOURCE_DIR}/util/murmurhash.cc
     ${ROCKSDB_SOURCE_DIR}/util/random.cc
     ${ROCKSDB_SOURCE_DIR}/util/rate_limiter.cc
-    ${ROCKSDB_SOURCE_DIR}/util/regex.cc
     ${ROCKSDB_SOURCE_DIR}/util/ribbon_config.cc
     ${ROCKSDB_SOURCE_DIR}/util/slice.cc
     ${ROCKSDB_SOURCE_DIR}/util/file_checksum_helper.cc
@@ -398,7 +397,7 @@ set(SOURCES
     ${ROCKSDB_SOURCE_DIR}/env/fs_on_demand.cc
     ${ROCKSDB_SOURCE_DIR}/env/fs_posix.cc
     ${ROCKSDB_SOURCE_DIR}/env/io_posix.cc
-    rocksdb_build_version.cc)
+    build_version.cc)
 
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(powerpc|ppc)64")
   list(APPEND SOURCES

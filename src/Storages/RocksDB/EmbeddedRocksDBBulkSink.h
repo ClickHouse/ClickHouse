@@ -63,7 +63,6 @@ private:
     size_t file_counter = 0;
     static constexpr auto TMP_INSERT_PREFIX = "tmp_insert_";
     String insert_directory_queue;
-    rocksdb::Options table_options;
 };
 
 }

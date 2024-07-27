@@ -438,16 +438,6 @@ void StorageEmbeddedRocksDB::initDB()
 
     rocksdb::Options merged = base;
     rocksdb::BlockBasedTableOptions table_options;
-    /// For backward compatibility with rocksdb 6.26, currently we use checksum type 3 and format_version 5 by default
-    /// TODO: @canhld94 once verify that the new rocksdb version is stable, we can change the default value (checksum type -> 4 and format_version -> 6)
-    if (getSettings().rocksdb_buildin_block_based_table_options_checksum.value > static_cast<UInt32>(rocksdb::ChecksumType::kXXH3))
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Invalid checksum type for block based table options: {}, max value: {}",
-            getSettings().rocksdb_buildin_block_based_table_options_checksum.value,
-            static_cast<UInt32>(rocksdb::ChecksumType::kXXH3));
-    table_options.checksum = static_cast<rocksdb::ChecksumType>(getSettings().rocksdb_buildin_block_based_table_options_checksum.value);
-    table_options.format_version = getSettings().rocksdb_buildin_block_based_table_options_format_version;
 
     const auto & config = getContext()->getConfigRef();
     if (config.has("rocksdb.options"))
@@ -531,6 +521,11 @@ void StorageEmbeddedRocksDB::initDB()
             }
         }
     }
+
+    /// For compatibility with current rocksdb 6.29, currently we use checksum type 3 and format_version 4 by default
+    /// TODO: @canhld94 once verify that the new rocksdb version is stable, we remove this and use default rocksdb 9.2.2 value (checksum type -> 4 and format_version -> 6)
+    table_options.checksum = rocksdb::ChecksumType::kxxHash64;
+    table_options.format_version = 4;
 
     merged.info_log = std::make_shared<StorageEmbeddedRocksDBLogger>(merged.info_log_level, log.get());
     merged.table_factory.reset(rocksdb::NewBlockBasedTableFactory(table_options));

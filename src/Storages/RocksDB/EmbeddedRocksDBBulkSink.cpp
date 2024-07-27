@@ -233,8 +233,8 @@ void EmbeddedRocksDBBulkSink::consume(Chunk & chunk_)
         = storage.ttl > 0 ? serializeChunks<true>(std::move(chunks_to_write)) : serializeChunks<false>(std::move(chunks_to_write));
     auto sst_file_path = getTemporarySSTFilePath();
     LOG_DEBUG(getLogger("EmbeddedRocksDBBulkSink"), "Writing {} rows from {} chunks to SST file {}", serialized_key_column->size(), num_chunks, sst_file_path);
-    const auto & table_options = storage.rocksdb_ptr->GetOptions().table_options;
-    if (auto status = buildSSTFile(sst_file_path, *serialized_key_column, *serialized_value_column); !status.ok())
+    const auto & table_options = storage.rocksdb_ptr->GetOptions();
+    if (auto status = buildSSTFile(sst_file_path, table_options, *serialized_key_column, *serialized_value_column); !status.ok())
         throw Exception(ErrorCodes::ROCKSDB_ERROR, "RocksDB write error: {}", status.ToString());
 
     /// Ingest the SST file
