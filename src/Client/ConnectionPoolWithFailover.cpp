@@ -30,6 +30,10 @@ ConnectionPoolWithFailover::ConnectionPoolWithFailover(
     size_t max_error_cap_)
     : Base(std::move(nested_pools_), decrease_error_period_, max_error_cap_, getLogger("ConnectionPoolWithFailover"))
     , get_priority_load_balancing(load_balancing)
+    , socket_read_timeout(Poco::Timespan(0)) // Initialize with default values
+    , socket_write_timeout(Poco::Timespan(0))
+    , connection_timeout(Poco::Timespan(0))
+    , tcp_keep_alive(Poco::Timespan(0))
 {
     const std::string & local_hostname = getFQDNOrHostName();
 
@@ -41,13 +45,6 @@ ConnectionPoolWithFailover::ConnectionPoolWithFailover(
         get_priority_load_balancing.hostname_prefix_distance[i] = getHostNamePrefixDistance(local_hostname, connection_pool.getHost());
         get_priority_load_balancing.hostname_levenshtein_distance[i] = getHostNameLevenshteinDistance(local_hostname, connection_pool.getHost());
     }
-
-    // // Initialize the timeout settings using existing settings
-    // Settings settings;
-    // socket_read_timeout = Poco::Timespan(settings.receive_timeout.totalMilliseconds() * Poco::Timespan::MILLISECONDS);
-    // socket_write_timeout = Poco::Timespan(settings.send_timeout.totalMilliseconds() * Poco::Timespan::MILLISECONDS);
-    // connection_timeout = Poco::Timespan(settings.connect_timeout.totalMilliseconds() * Poco::Timespan::MILLISECONDS);
-    // tcp_keep_alive = Poco::Timespan(settings.tcp_keep_alive_timeout.totalMilliseconds() * Poco::Timespan::MILLISECONDS);
 }
 
 IConnectionPool::Entry ConnectionPoolWithFailover::get(const ConnectionTimeouts & timeouts)
