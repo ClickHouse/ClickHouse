@@ -24,8 +24,8 @@ select splitByString('IN', query)[-1] from system.query_log where
     query like concat('%', currentDatabase(), '%AS%id_no%') and
     type = 'QueryFinish'
 order by query;
- (0, 2)
- (0, 2)
+ _CAST((0, 2), \'Tuple(UInt8, UInt8)\')
+ _CAST((0, 2), \'Tuple(UInt8, UInt8)\')
 --
 -- w/ optimize_skip_unused_shards_rewrite_in=1
 --
@@ -45,8 +45,8 @@ select splitByString('IN', query)[-1] from system.query_log where
     query like concat('%', currentDatabase(), '%AS%id_02%') and
     type = 'QueryFinish'
 order by query;
- tuple(0)
- tuple(2)
+ _CAST(tuple(0), \'Tuple(UInt8)\')
+ _CAST(tuple(2), \'Tuple(UInt8)\')
 select 'optimize_skip_unused_shards_rewrite_in(2,)';
 optimize_skip_unused_shards_rewrite_in(2,)
 with (select currentDatabase()) as id_2 select *, ignore(id_2) from dist_01756 where dummy in (2,);
@@ -59,7 +59,7 @@ select splitByString('IN', query)[-1] from system.query_log where
     query like concat('%', currentDatabase(), '%AS%id_2%') and
     type = 'QueryFinish'
 order by query;
- tuple(2)
+ _CAST(tuple(2), \'Tuple(UInt8)\')
 select 'optimize_skip_unused_shards_rewrite_in(0,)';
 optimize_skip_unused_shards_rewrite_in(0,)
 with (select currentDatabase()) as id_00 select *, ignore(id_00) from dist_01756 where dummy in (0,);
@@ -73,7 +73,7 @@ select splitByString('IN', query)[-1] from system.query_log where
     query like concat('%', currentDatabase(), '%AS%id_00%') and
     type = 'QueryFinish'
 order by query;
- tuple(0)
+ _CAST(tuple(0), \'Tuple(UInt8)\')
 -- signed column
 select 'signed column';
 signed column
@@ -88,8 +88,8 @@ select splitByString('IN', query)[-1] from system.query_log where
     query like concat('%', currentDatabase(), '%AS%key_signed%') and
     type = 'QueryFinish'
 order by query;
- tuple(-1)
- tuple(-2)
+ _CAST(tuple(-1), \'Tuple(Int8)\')
+ _CAST(tuple(-2), \'Tuple(Int8)\')
 -- not tuple
 select * from dist_01756 where dummy in (0);
 0
