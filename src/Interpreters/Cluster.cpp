@@ -513,7 +513,7 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
 
     initMisc();
     // Handle dynamic replicas
-    handleDynamicReplicas(settings);
+    // handleDynamicReplicas(settings);
 }
 
 
