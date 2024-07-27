@@ -1,5 +1,3 @@
--- failover_test.sql
-
 -- Ensure that all nodes are running before starting this test
 
 -- Create a local table on each node
