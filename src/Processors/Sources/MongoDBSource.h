@@ -4,6 +4,8 @@
 
 #if USE_MONGODB
 #include <Processors/ISource.h>
+#include <Interpreters/Context.h>
+#include <Common/JSONBuilder.h>
 
 #include <mongocxx/client.hpp>
 #include <mongocxx/collection.hpp>
@@ -44,6 +46,7 @@ private:
     std::unordered_map<size_t, std::pair<size_t, std::pair<DataTypePtr, Field>>> arrays_info;
     const UInt64 max_block_size;
 
+    JSONBuilder::FormatSettings json_format_settings = {{}, 0, true, true};
     bool all_read = false;
 };
 

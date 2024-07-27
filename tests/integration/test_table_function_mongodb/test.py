@@ -10,7 +10,7 @@ from helpers.cluster import ClickHouseCluster
 def started_cluster(request):
     try:
         cluster = ClickHouseCluster(__file__)
-        node = cluster.add_instance(
+        cluster.add_instance(
             "node",
             with_mongo=True,
             main_configs=[
@@ -32,12 +32,9 @@ def get_mongo_connection(started_cluster, secure=False, with_credentials=True):
             )
         )
     if with_credentials:
-        return pymongo.MongoClient(
-            "mongodb://root:clickhouse@localhost:{}".format(started_cluster.mongo_port)
-        )
-    return pymongo.MongoClient(
-        "mongodb://localhost:{}".format(started_cluster.mongo_no_cred_port)
-    )
+        return pymongo.MongoClient("mongodb://root:clickhouse@localhost:{}".format(started_cluster.mongo_port))
+
+    return pymongo.MongoClient("mongodb://localhost:{}".format(started_cluster.mongo_no_cred_port))
 
 
 def test_simple_select(started_cluster):

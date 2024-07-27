@@ -8,6 +8,7 @@
 #include <Common/KnownObjectNames.h>
 #include <Common/SipHash.h>
 #include <Common/typeid_cast.h>
+#include <Common/maskURIPassword.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
@@ -715,8 +716,19 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
                         assert_cast<const ASTFunction *>(argument.get())->arguments->children[0]->formatImpl(settings, state, nested_dont_need_parens);
                         settings.ostr << (settings.hilite ? hilite_operator : "") << " = " << (settings.hilite ? hilite_none : "");
                     }
-                    settings.ostr << "'[HIDDEN]'";
-                    if (size <= secret_arguments.start + secret_arguments.count && !secret_arguments.are_named)
+                    if (secret_arguments.is_uri)
+                    {
+                        WriteBufferFromOwnString temp_buf;
+                        FormatSettings tmp_settings(temp_buf, settings.one_line);
+                        FormatState tmp_state;
+                        argument->formatImpl(tmp_settings, tmp_state, nested_dont_need_parens);
+
+                        maskURIPassword(&temp_buf.str());
+                        settings.ostr << temp_buf.str();
+                    }
+                    else
+                        settings.ostr << "'[HIDDEN]'";
+                    if (size <= secret_arguments.start + secret_arguments.count && !secret_arguments.are_named && !secret_arguments.is_uri)
                         break; /// All other arguments should also be hidden.
                     continue;
                 }

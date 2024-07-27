@@ -13,6 +13,7 @@ struct FormatSettings
     const DB::FormatSettings & settings;
     size_t indent = 2;
     bool print_simple_arrays_in_single_row = true;
+    bool solid = false;
 };
 
 struct FormatContext
@@ -109,6 +110,12 @@ public:
 
 private:
     std::vector<Pair> values;
+};
+
+class JSONNull : public IItem
+{
+public:
+    void format(const FormatSettings & settings, FormatContext & context) override;
 };
 
 }

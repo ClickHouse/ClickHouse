@@ -935,7 +935,7 @@ class IColumn;
     M(Bool, iceberg_engine_ignore_schema_evolution, false, "Ignore schema evolution in Iceberg table engine and read all data using latest schema saved on table creation. Note that it can lead to incorrect result", 0) \
     M(Bool, allow_deprecated_error_prone_window_functions, false, "Allow usage of deprecated error prone window functions (neighbor, runningAccumulate, runningDifferenceStartingWithFirstValue, runningDifference)", 0) \
     M(Bool, uniform_snowflake_conversion_functions, true, "Enables functions snowflakeIDToDateTime[64] and dateTime[64]ToSnowflakeID while disabling functions snowflakeToDateTime[64] and dateTime[64]ToSnowflake.", 0) \
-    M(Bool, mongodb_fail_on_query_build_error, true, "If enabled, MongoDB tables will return an error when a MongoDB query can't be built. Not applied for the legacy implementation, or if the new analyzer is used.", 0) \
+    M(Bool, mongodb_fail_on_query_build_error, true, "If enabled, MongoDB tables will return an error when a MongoDB query can't be built. Not applied for the legacy implementation, or when 'allow_experimental_analyzer=0`.", 0) \
 
 // End of COMMON_SETTINGS
 // Please add settings related to formats into the FORMAT_FACTORY_SETTINGS, move obsolete settings to OBSOLETE_SETTINGS and obsolete format settings to OBSOLETE_FORMAT_SETTINGS.

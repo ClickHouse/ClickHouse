@@ -32,6 +32,7 @@ If key not found in MongoDB document, default value or null(if the column is nul
 
 ## Supported clauses
 **You can disable all these restriction, see [mongodb_fail_on_query_build_error](../../../operations/settings/settings.md#mongodb_fail_on_query_build_error).**
+*If `allow_experimental_analyzer=0`, ClickHouse will not try to build MongoDB query, sort and limit.*
 
 *Hint: you can use MongoDB table in CTE to perform any clauses, but be aware, that in some cases, performance will be significantly degraded.*
 
@@ -116,11 +117,11 @@ CREATE TABLE mongo_table
 (
     key UInt64,
     data String
-) ENGINE = MongoDB('mongo1:27017', 'test', 'simple_table', 'testuser', 'clickhouse');
+) ENGINE = MongoDB('mongo1:27017', 'test', 'simple_table', 'testuser', 'password');
 ```
 or
 ``` sql
-ENGINE = MongoDB('mongodb://testuser:clickhouse@mongo1:27017/test', 'simple_table');
+ENGINE = MongoDB('mongodb://testuser:password@mongo1:27017/test', 'simple_table');
 ```
 
 To read from an SSL secured MongoDB server:
@@ -130,7 +131,7 @@ CREATE TABLE mongo_table_ssl
 (
     key UInt64,
     data String
-) ENGINE = MongoDB('mongo2:27017', 'test', 'simple_table', 'testuser', 'clickhouse', 'ssl=true');
+) ENGINE = MongoDB('mongo2:27017', 'test', 'simple_table', 'testuser', 'password', 'ssl=true');
 ```
 
 Query:
@@ -152,7 +153,7 @@ CREATE TABLE mongo_table
 (
     key UInt64,
     data String
-) ENGINE = MongoDB('mongo2:27017', 'test', 'simple_table', 'testuser', 'clickhouse', 'connectTimeoutMS=100000');
+) ENGINE = MongoDB('mongo2:27017', 'test', 'simple_table', 'testuser', 'password', 'connectTimeoutMS=100000');
 ```
 
 ## Troubleshooting

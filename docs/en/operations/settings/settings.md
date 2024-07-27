@@ -5593,6 +5593,6 @@ Default value: `1GiB`.
 
 If enabled, MongoDB tables will return an error when a MongoDB query can't be built.
 
-Not applied for the legacy implementation, or if the new analyzer is used.
+Not applied for the legacy implementation, or when 'allow_experimental_analyzer=0`.
 
 Default value: `true`.

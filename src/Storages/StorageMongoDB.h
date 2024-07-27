@@ -21,7 +21,7 @@ struct MongoDBConfiguration
     std::unique_ptr<mongocxx::uri> uri;
     String collection;
 
-    void checkHosts(ContextPtr context) const
+    void checkHosts(const ContextPtr & context) const
     {
         // Because domain records will be resolved inside the driver, we can't check IPs for our restrictions.
         for (const auto & host : uri->hosts())
@@ -60,8 +60,8 @@ public:
         size_t num_streams) override;
 
 private:
-    static bsoncxx::document::value visitWhereFunction(ContextPtr context, const ASTFunction * func);
-    bsoncxx::document::value buildMongoDBQuery(ContextPtr context, mongocxx::options::find & options, const SelectQueryInfo & query, const Block & sample_block);
+    static bsoncxx::document::value visitWhereFunction(const ContextPtr & context, const FunctionNode * func);
+    bsoncxx::document::value buildMongoDBQuery(const ContextPtr & context, mongocxx::options::find & options, const SelectQueryInfo & query, const Block & sample_block);
 
     const MongoDBConfiguration configuration;
     LoggerPtr log;
