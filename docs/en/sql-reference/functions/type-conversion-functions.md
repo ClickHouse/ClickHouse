@@ -496,7 +496,7 @@ toInt16OrDefault(expr, def)
 **Arguments**
 
 - `expr` — Expression returning a number or a string representation of a number. [Expression](../syntax.md/#syntax-expressions) / [String](../data-types/string.md).
-- `def` — The default value to return if parsing to type `Int16` is unsuccessful. [Int8](../data-types/int-uint.md).
+- `def` — The default value to return if parsing to type `Int16` is unsuccessful. [Int16](../data-types/int-uint.md).
 
 Supported arguments:
 - Values of type (U)Int8/16/32/64/128/256.
