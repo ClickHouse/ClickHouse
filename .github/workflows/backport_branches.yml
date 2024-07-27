@@ -269,10 +269,7 @@ jobs:
       - name: Check Workflow results
         run: |
           export WORKFLOW_RESULT_FILE="/tmp/workflow_results.json"
-          cat >> "$WORKFLOW_RESULT_FILE" << 'EOF'
+          cat > "$WORKFLOW_RESULT_FILE" << 'EOF'
           ${{ toJson(needs) }}
           EOF
-          echo "::group::Workflow results"
-          python3 -m json.tool "$WORKFLOW_RESULT_FILE"
-          echo "::endgroup::"
           python3 ./tests/ci/ci_buddy.py --check-wf-status
