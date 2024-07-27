@@ -14,7 +14,6 @@ namespace ErrorCodes
 {
     extern const int CANNOT_CREATE_TIMER;
     extern const int CANNOT_SET_TIMER_PERIOD;
-    extern const int CANNOT_FCNTL;
     extern const int CANNOT_READ_FROM_SOCKET;
 }
 
