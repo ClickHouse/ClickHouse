@@ -94,6 +94,8 @@ void TimerDescriptor::drain() const
 
             throw ErrnoException(ErrorCodes::CANNOT_READ_FROM_SOCKET, "Cannot drain timer_fd");
         }
+
+        chassert(res == sizeof(buf));
     }
 }
 
