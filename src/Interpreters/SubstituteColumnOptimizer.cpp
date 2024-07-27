@@ -237,17 +237,6 @@ void SubstituteColumnOptimizer::perform()
 
     const auto & compare_graph = metadata_snapshot->getConstraints().getGraph();
 
-    // Fill aliases
-    if (select_query->select())
-    {
-        auto * list = select_query->refSelect()->as<ASTExpressionList>();
-        if (!list)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "List of selected columns must be ASTExpressionList");
-
-        for (ASTPtr & ast : list->children)
-            ast->setAlias(ast->getAliasOrColumnName());
-    }
-
     auto run_for_all = [&](const auto func)
     {
         if (select_query->where())
