@@ -338,10 +338,6 @@ class PRInfo:
         return False
 
     @property
-    def is_push_event(self) -> bool:
-        return self.event_type == EventType.PUSH
-
-    @property
     def is_scheduled(self) -> bool:
         return self.event_type == EventType.SCHEDULE
 

@@ -11,7 +11,6 @@
 #include <base/cgroupsv2.h>
 #include <base/getMemoryAmount.h>
 #include <base/sleep.h>
-#include <fmt/ranges.h>
 
 #include <cstdint>
 #include <filesystem>
@@ -46,33 +45,26 @@ namespace
 ///   kernel 5
 ///   rss 15
 ///   [...]
-using Metrics = std::map<std::string, uint64_t>;
-
-Metrics readAllMetricsFromStatFile(ReadBufferFromFile & buf)
+uint64_t readMetricFromStatFile(ReadBufferFromFile & buf, const std::string & key)
 {
-    Metrics metrics;
     while (!buf.eof())
     {
         std::string current_key;
         readStringUntilWhitespace(current_key, buf);
+        if (current_key != key)
+        {
+            std::string dummy;
+            readStringUntilNewlineInto(dummy, buf);
+            buf.ignore();
+            continue;
+        }
 
         assertChar(' ', buf);
-
         uint64_t value = 0;
         readIntText(value, buf);
-        assertChar('\n', buf);
-
-        auto [_, inserted] = metrics.emplace(std::move(current_key), value);
-        chassert(inserted, "Duplicate keys in stat file");
+        return value;
     }
-    return metrics;
-}
 
-uint64_t readMetricFromStatFile(ReadBufferFromFile & buf, const std::string & key)
-{
-    const auto all_metrics = readAllMetricsFromStatFile(buf);
-    if (const auto it = all_metrics.find(key); it != all_metrics.end())
-        return it->second;
     throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot find '{}' in '{}'", key, buf.getFileName());
 }
 
@@ -85,13 +77,6 @@ struct CgroupsV1Reader : ICgroupsReader
         std::lock_guard lock(mutex);
         buf.rewind();
         return readMetricFromStatFile(buf, "rss");
-    }
-
-    std::string dumpAllStats() override
-    {
-        std::lock_guard lock(mutex);
-        buf.rewind();
-        return fmt::format("{}", readAllMetricsFromStatFile(buf));
     }
 
 private:
@@ -119,13 +104,6 @@ struct CgroupsV2Reader : ICgroupsReader
         mem_usage -= readMetricFromStatFile(stat_buf, "inactive_file");
         chassert(mem_usage >= 0, "Negative memory usage");
         return mem_usage;
-    }
-
-    std::string dumpAllStats() override
-    {
-        std::lock_guard lock(mutex);
-        stat_buf.rewind();
-        return fmt::format("{}", readAllMetricsFromStatFile(stat_buf));
     }
 
 private:
@@ -200,7 +178,10 @@ CgroupsMemoryUsageObserver::CgroupsMemoryUsageObserver(std::chrono::seconds wait
 {
     const auto [cgroup_path, version] = getCgroupsPath();
 
-    cgroup_reader = createCgroupsReader(version, cgroup_path);
+    if (version == CgroupsVersion::V2)
+        cgroup_reader = std::make_unique<CgroupsV2Reader>(cgroup_path);
+    else
+        cgroup_reader = std::make_unique<CgroupsV1Reader>(cgroup_path);
 
     LOG_INFO(
         log,
@@ -253,12 +234,7 @@ void CgroupsMemoryUsageObserver::setMemoryUsageLimits(uint64_t hard_limit_, uint
 #    endif
             /// Reset current usage in memory tracker. Expect zero for free_memory_in_allocator_arenas as we just purged them.
             uint64_t memory_usage = cgroup_reader->readMemoryUsage();
-            LOG_TRACE(
-                log,
-                "Read current memory usage {} bytes ({}) from cgroups, full available stats: {}",
-                memory_usage,
-                ReadableSize(memory_usage),
-                cgroup_reader->dumpAllStats());
+            LOG_TRACE(log, "Read current memory usage {} bytes ({}) from cgroups", memory_usage, ReadableSize(memory_usage));
             MemoryTracker::setRSS(memory_usage, 0);
 
             LOG_INFO(log, "Purged jemalloc arenas. Current memory usage is {}", ReadableSize(memory_usage));
@@ -362,13 +338,6 @@ void CgroupsMemoryUsageObserver::runThread()
     }
 }
 
-std::unique_ptr<ICgroupsReader> createCgroupsReader(CgroupsMemoryUsageObserver::CgroupsVersion version, const fs::path & cgroup_path)
-{
-    if (version == CgroupsMemoryUsageObserver::CgroupsVersion::V2)
-        return std::make_unique<CgroupsV2Reader>(cgroup_path);
-    else
-        return std::make_unique<CgroupsV1Reader>(cgroup_path);
-}
 }
 
 #endif

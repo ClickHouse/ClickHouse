@@ -418,11 +418,8 @@ namespace
 }
 
 StorageKafka::StorageKafka(
-    const StorageID & table_id_,
-    ContextPtr context_,
-    const ColumnsDescription & columns_,
-    const String & comment,
-    std::unique_ptr<KafkaSettings> kafka_settings_,
+    const StorageID & table_id_, ContextPtr context_,
+    const ColumnsDescription & columns_, std::unique_ptr<KafkaSettings> kafka_settings_,
     const String & collection_name_)
     : IStorage(table_id_)
     , WithContext(context_->getGlobalContext())
@@ -454,7 +451,6 @@ StorageKafka::StorageKafka(
 
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
-    storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
     setVirtuals(createVirtuals(kafka_settings->kafka_handle_error_mode));
 
@@ -1321,7 +1317,7 @@ void registerStorageKafka(StorageFactory & factory)
                                                        "See https://clickhouse.com/docs/en/engines/table-engines/integrations/kafka/#configuration");
         }
 
-        return std::make_shared<StorageKafka>(args.table_id, args.getContext(), args.columns, args.comment, std::move(kafka_settings), collection_name);
+        return std::make_shared<StorageKafka>(args.table_id, args.getContext(), args.columns, std::move(kafka_settings), collection_name);
     };
 
     factory.registerStorage("Kafka", creator_fn, StorageFactory::StorageFeatures{ .supports_settings = true, });

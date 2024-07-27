@@ -5,7 +5,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
-#include <Functions/URL/domain.h>
+#include "domain.h"
 
 
 namespace DB

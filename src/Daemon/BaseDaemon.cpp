@@ -146,19 +146,10 @@ BaseDaemon::BaseDaemon() = default;
 
 BaseDaemon::~BaseDaemon()
 {
-    try
-    {
-        writeSignalIDtoSignalPipe(SignalListener::StopThread);
-        signal_listener_thread.join();
-        HandledSignals::instance().reset();
-        SentryWriter::resetInstance();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(&logger());
-    }
-
-    OwnSplitChannel::disableLogging();
+    writeSignalIDtoSignalPipe(SignalListener::StopThread);
+    signal_listener_thread.join();
+    HandledSignals::instance().reset();
+    SentryWriter::resetInstance();
 }
 
 

@@ -1622,7 +1622,6 @@ filesystem
 filesystemAvailable
 filesystemCapacity
 filesystemFree
-filesystemUnreserved
 filesystems
 finalizeAggregation
 fips
@@ -1866,7 +1865,6 @@ jdbc
 jemalloc
 jeprof
 joinGet
-joinGetOrNull
 json
 jsonMergePatch
 jsonasstring

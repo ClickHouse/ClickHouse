@@ -427,9 +427,7 @@ namespace
                 {
                     for (const auto & path : paths)
                     {
-                        auto format_from_path = FormatFactory::instance().tryGetFormatFromFileName(path);
-                        /// Use this format only if we have a schema reader for it.
-                        if (format_from_path && FormatFactory::instance().checkIfFormatHasAnySchemaReader(*format_from_path))
+                        if (auto format_from_path = FormatFactory::instance().tryGetFormatFromFileName(path))
                         {
                             format = format_from_path;
                             break;
@@ -718,9 +716,7 @@ namespace
                     /// If format is unknown we can try to determine it by the file name.
                     if (!format)
                     {
-                        auto format_from_file = FormatFactory::instance().tryGetFormatFromFileName(*filename);
-                        /// Use this format only if we have a schema reader for it.
-                        if (format_from_file && FormatFactory::instance().checkIfFormatHasAnySchemaReader(*format_from_file))
+                        if (auto format_from_file = FormatFactory::instance().tryGetFormatFromFileName(*filename))
                             format = format_from_file;
                     }
 

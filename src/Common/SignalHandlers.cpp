@@ -605,14 +605,7 @@ void HandledSignals::reset()
 
 HandledSignals::~HandledSignals()
 {
-    try
-    {
-        reset();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
+    reset();
 };
 
 HandledSignals & HandledSignals::instance()

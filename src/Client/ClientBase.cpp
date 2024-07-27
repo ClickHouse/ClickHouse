@@ -309,16 +309,9 @@ public:
 
 ClientBase::~ClientBase()
 {
-    try
-    {
-        writeSignalIDtoSignalPipe(SignalListener::StopThread);
-        signal_listener_thread.join();
-        HandledSignals::instance().reset();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
+    writeSignalIDtoSignalPipe(SignalListener::StopThread);
+    signal_listener_thread.join();
+    HandledSignals::instance().reset();
 }
 
 ClientBase::ClientBase(
@@ -2241,8 +2234,6 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
     ASTPtr parsed_query;
     std::unique_ptr<Exception> current_exception;
 
-    size_t retries_count = 0;
-
     while (true)
     {
         auto stage = analyzeMultiQueryText(this_query_begin, this_query_end, all_queries_end,
@@ -2323,12 +2314,7 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                 // Check whether the error (or its absence) matches the test hints
                 // (or their absence).
                 bool error_matches_hint = true;
-                bool need_retry = test_hint.needRetry(server_exception, &retries_count);
-                if (need_retry)
-                {
-                    std::this_thread::sleep_for(std::chrono::seconds(1));
-                }
-                else if (have_error)
+                if (have_error)
                 {
                     if (test_hint.hasServerErrors())
                     {
@@ -2422,8 +2408,7 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                 if (have_error && !ignore_error)
                     return is_interactive;
 
-                if (!need_retry)
-                    this_query_begin = this_query_end;
+                this_query_begin = this_query_end;
                 break;
             }
         }

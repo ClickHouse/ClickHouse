@@ -1,5 +1,4 @@
 ### Table of Contents
-**[ClickHouse release v24.7, 2024-07-30](#247)**<br/>
 **[ClickHouse release v24.6, 2024-07-01](#246)**<br/>
 **[ClickHouse release v24.5, 2024-05-30](#245)**<br/>
 **[ClickHouse release v24.4, 2024-04-30](#244)**<br/>

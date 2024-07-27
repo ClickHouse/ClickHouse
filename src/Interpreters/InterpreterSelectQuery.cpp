@@ -75,6 +75,7 @@
 
 #include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
 #include <Storages/StorageDistributed.h>
+#include <Storages/StorageDummy.h>
 #include <Storages/StorageMerge.h>
 #include <Storages/StorageValues.h>
 #include <Storages/StorageView.h>
@@ -213,11 +214,11 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 {}
 
 InterpreterSelectQuery::InterpreterSelectQuery(
-    const ASTPtr & query_ptr_,
-    const ContextPtr & context_,
-    Pipe input_pipe_,
-    const SelectQueryOptions & options_)
-    : InterpreterSelectQuery(query_ptr_, context_, std::move(input_pipe_), nullptr, options_.copy().noSubquery())
+        const ASTPtr & query_ptr_,
+        const ContextPtr & context_,
+        Pipe input_pipe_,
+        const SelectQueryOptions & options_)
+        : InterpreterSelectQuery(query_ptr_, context_, std::move(input_pipe_), nullptr, options_.copy().noSubquery())
 {}
 
 InterpreterSelectQuery::InterpreterSelectQuery(
@@ -226,15 +227,18 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     const StoragePtr & storage_,
     const StorageMetadataPtr & metadata_snapshot_,
     const SelectQueryOptions & options_)
-    : InterpreterSelectQuery(query_ptr_, context_, std::nullopt, storage_, options_.copy().noSubquery(), {}, metadata_snapshot_)
-{}
+    : InterpreterSelectQuery(
+        query_ptr_, context_, std::nullopt, storage_, options_.copy().noSubquery(), {}, metadata_snapshot_)
+{
+}
 
 InterpreterSelectQuery::InterpreterSelectQuery(
     const ASTPtr & query_ptr_,
     const ContextPtr & context_,
     const SelectQueryOptions & options_,
     PreparedSetsPtr prepared_sets_)
-    : InterpreterSelectQuery(query_ptr_, context_, std::nullopt, nullptr, options_, {}, {}, prepared_sets_)
+    : InterpreterSelectQuery(
+        query_ptr_, context_, std::nullopt, nullptr, options_, {}, {}, prepared_sets_)
 {}
 
 InterpreterSelectQuery::~InterpreterSelectQuery() = default;
