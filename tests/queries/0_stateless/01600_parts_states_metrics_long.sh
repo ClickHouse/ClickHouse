@@ -15,13 +15,22 @@ verify_sql="SELECT
 # In case of test failure, this code will do infinite loop and timeout.
 verify()
 {
-    while true
+    for i in {1..100}
     do
-        result=$( $CLICKHOUSE_CLIENT -m --query="$verify_sql" )
-        [ "$result" = "1" ] && break
+        result=$( $CLICKHOUSE_CLIENT --query="$verify_sql" )
+        [ "$result" = "1" ] && echo "$result" && break
         sleep 0.1
+
+        if [[ $i -eq 100 ]]
+        then
+            $CLICKHOUSE_CLIENT --multiquery "
+              SELECT sumIf(value, metric = 'PartsActive'), sumIf(value, metric = 'PartsOutdated') FROM system.metrics;
+              SELECT sum(active), sum(NOT active) FROM system.parts;
+              SELECT sum(active), sum(NOT active) FROM system.projection_parts;
+              SELECT count() FROM system.dropped_tables_parts;
+            "
+        fi
     done
-    echo 1
 }
 
 $CLICKHOUSE_CLIENT --database_atomic_wait_for_drop_and_detach_synchronously=1 --query="DROP TABLE IF EXISTS test_table"
