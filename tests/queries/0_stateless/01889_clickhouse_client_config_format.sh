@@ -12,7 +12,9 @@ XML_config=$CLICKHOUSE_TMP/config_$CLICKHOUSE_DATABASE.XML
 conf_config=$CLICKHOUSE_TMP/config_$CLICKHOUSE_DATABASE.conf
 yml_config=$CLICKHOUSE_TMP/config_$CLICKHOUSE_DATABASE.yml
 yaml_config=$CLICKHOUSE_TMP/config_$CLICKHOUSE_DATABASE.yaml
-ini_config=$CLICKHOUSE_TMP/config_$CLICKHOUSE_DATABASE.ini
+autodetect_xml_with_leading_whitespace_config=$CLICKHOUSE_TMP/config_$CLICKHOUSE_DATABASE.config
+autodetect_xml_non_leading_whitespace_config=$CLICKHOUSE_TMP/config_$CLICKHOUSE_DATABASE.cfg
+autodetect_yaml_config=$CLICKHOUSE_TMP/config_$CLICKHOUSE_DATABASE.properties
 
 function cleanup()
 {
@@ -22,7 +24,9 @@ function cleanup()
     rm "${conf_config:?}"
     rm "${yml_config:?}"
     rm "${yaml_config:?}"
-    rm "${ini_config:?}"
+    rm "${autodetect_xml_with_leading_whitespace_config:?}"
+    rm "${autodetect_xml_non_leading_whitespace_config:?}"
+    rm "${autodetect_yaml_config:?}"
 }
 trap cleanup EXIT
 
@@ -52,9 +56,19 @@ EOL
 cat > "$yaml_config" <<EOL
 max_threads: 2
 EOL
-cat > "$ini_config" <<EOL
-[config]
-max_threads=2
+cat > "$autodetect_xml_with_leading_whitespace_config" <<EOL
+
+    <config>
+        <max_threads>2</max_threads>
+    </config>
+EOL
+cat > "$autodetect_xml_non_leading_whitespace_config" <<EOL
+<config>
+    <max_threads>2</max_threads>
+</config>
+EOL
+cat > "$autodetect_yaml_config" <<EOL
+max_threads: 2
 EOL
 
 echo 'default'
@@ -74,5 +88,10 @@ echo 'yml'
 $CLICKHOUSE_CLIENT --config "$yml_config" -q "select getSetting('max_threads')"
 echo 'yaml'
 $CLICKHOUSE_CLIENT --config "$yaml_config" -q "select getSetting('max_threads')"
-echo 'ini'
-$CLICKHOUSE_CLIENT --config "$ini_config" -q "select getSetting('max_threads')" 2>&1 |& sed -e "s#$CLICKHOUSE_TMP##" -e "s#DB::Exception: ##"
+
+echo 'autodetect xml (with leading whitespaces)'
+$CLICKHOUSE_CLIENT --config "$autodetect_xml_with_leading_whitespace_config" -q "select getSetting('max_threads')"
+echo 'autodetect xml (non leading whitespaces)'
+$CLICKHOUSE_CLIENT --config "$autodetect_xml_non_leading_whitespace_config" -q "select getSetting('max_threads')"
+echo 'autodetect yaml'
+$CLICKHOUSE_CLIENT --config "$autodetect_yaml_config" -q "select getSetting('max_threads')"

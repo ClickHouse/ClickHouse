@@ -12,5 +12,9 @@ yml
 2
 yaml
 2
-ini
-Code: 347. Unknown format of '/config_default.ini' config. (CANNOT_LOAD_CONFIG)
+autodetect xml (with leading whitespaces)
+2
+autodetect xml (non leading whitespaces)
+2
+autodetect yaml
+2
