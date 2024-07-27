@@ -2,6 +2,8 @@
 # Tags: no-random-settings
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# reset --log_comment, because the test has to use the readonly mode
+CLICKHOUSE_LOG_COMMENT=
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
