@@ -18,8 +18,6 @@
 #include <Common/BSONCXXHelper.h>
 #include <base/range.h>
 
-#include <bsoncxx/document/element.hpp>
-
 namespace DB
 {
 
@@ -208,14 +206,7 @@ Chunk MongoDBSource::generate()
             auto & sample_column = sample_block.getByPosition(idx);
             auto value = doc[sample_column.name];
 
-            if (!value || value.type() == bsoncxx::type::k_null)
-            {
-                insertDefaultValue(*columns[idx], *sample_column.column);
-
-                if (sample_column.type->isNullable())
-                    assert_cast<ColumnNullable &>(*columns[idx]).getNullMapData().back() = true;
-            }
-            else
+            if (value && value.type() != bsoncxx::type::k_null)
             {
                 if (sample_column.type->isNullable())
                 {
@@ -223,11 +214,13 @@ Chunk MongoDBSource::generate()
                     const auto & type_nullable = assert_cast<const DataTypeNullable &>(*sample_column.type);
 
                     insertValue(column_nullable.getNestedColumn(), idx, type_nullable.getNestedType(), sample_column.name, value);
-                    column_nullable.getNullMapData().emplace_back(false);
+                    column_nullable.getNullMapData().emplace_back(0);
                 }
                 else
                     insertValue(*columns[idx], idx, sample_column.type, sample_column.name, value);
             }
+            else
+                insertDefaultValue(*columns[idx], *sample_column.column);
         }
 
         if (++num_rows == max_block_size)

@@ -20,14 +20,15 @@
 #include <Common/parseAddress.h>
 #include <Common/ErrorCodes.h>
 #include <Common/BSONCXXHelper.h>
+#include <Core/Settings.h>
 
-#include <bsoncxx/builder/basic/document.hpp>
 #include <bsoncxx/json.hpp>
 
 using bsoncxx::builder::basic::document;
 using bsoncxx::builder::basic::make_document;
 using bsoncxx::builder::basic::make_array;
 using bsoncxx::builder::basic::kvp;
+using bsoncxx::to_json;
 
 namespace DB
 {
@@ -181,44 +182,16 @@ bsoncxx::document::value StorageMongoDB::visitWhereFunction(const ContextPtr & c
 {
     if (!func->getArguments().getNodes().empty())
     {
-        const auto & column = func->getArguments().getNodes().at(0)->as<ColumnNode>();
-        if (!column)
-        {
-            auto arr = bsoncxx::builder::basic::array{};
-            for (const auto & elem : func->getArguments().getNodes())
-            {
-                if (const auto & elem_func = elem->as<FunctionNode>())
-                    arr.append(visitWhereFunction(context, elem_func));
-            }
-            if (!arr.view().empty())
-                return make_document(kvp(mongoFuncName(func->getFunctionName()), arr));
-        }
-        else
+        if (const auto & column = func->getArguments().getNodes().at(0)->as<ColumnNode>())
         {
             if (func->getFunctionName() == "isNull")
-                return make_document(kvp(
-                    column->getColumnName(),
-                    make_document(kvp(
-                        "$eq",
-                        bsoncxx::types::b_null{}))));
+                return make_document(kvp(column->getColumnName(), make_document(kvp("$eq", bsoncxx::types::b_null{}))));
             if (func->getFunctionName() == "isNotNull")
-                return make_document(kvp(
-                    column->getColumnName(),
-                    make_document(kvp(
-                        "$ne",
-                        bsoncxx::types::b_null{}))));
+                return make_document(kvp(column->getColumnName(), make_document(kvp("$ne", bsoncxx::types::b_null{}))));
             if (func->getFunctionName() == "empty")
-                return make_document(kvp(
-                    column->getColumnName(),
-                    make_document(kvp(
-                        "$in",
-                        make_array(bsoncxx::types::b_null{}, "")))));
+                return make_document(kvp(column->getColumnName(), make_document(kvp("$in", make_array(bsoncxx::types::b_null{}, "")))));
             if (func->getFunctionName() == "notEmpty")
-                return make_document(kvp(
-                    column->getColumnName(),
-                    make_document(kvp(
-                        "$nin",
-                        make_array(bsoncxx::types::b_null{}, "")))));
+                return make_document(kvp(column->getColumnName(), make_document(kvp("$nin", make_array(bsoncxx::types::b_null{}, "")))));
 
             if (func->getArguments().getNodes().size() == 2)
             {
@@ -238,16 +211,24 @@ bsoncxx::document::value StorageMongoDB::visitWhereFunction(const ContextPtr & c
                     if (func_name == "$nin" && func_value->view().type() != bsoncxx::v_noabi::type::k_array)
                         func_name = "$ne";
 
-                    return make_document(kvp(
-                        column->getColumnName(),
-                        make_document(kvp(
-                            func_name,
-                            std::move(*func_value)))));
+                    return make_document(kvp(column->getColumnName(), make_document(kvp(func_name, std::move(*func_value)))));
                 }
 
                 if (const auto & func_value = value->as<FunctionNode>())
-                    return make_document(kvp(column->getColumnName(), make_document(kvp(func_name, visitWhereFunction(context, func_value)))));
+                    return make_document(
+                        kvp(column->getColumnName(), make_document(kvp(func_name, visitWhereFunction(context, func_value)))));
             }
+        }
+        else
+        {
+            auto arr = bsoncxx::builder::basic::array{};
+            for (const auto & elem : func->getArguments().getNodes())
+            {
+                if (const auto & elem_func = elem->as<FunctionNode>())
+                    arr.append(visitWhereFunction(context, elem_func));
+            }
+            if (!arr.view().empty())
+                return make_document(kvp(mongoFuncName(func->getFunctionName()), arr));
         }
     }
 
@@ -265,7 +246,6 @@ bsoncxx::document::value StorageMongoDB::buildMongoDBQuery(const ContextPtr & co
     if (!context->getSettingsRef().allow_experimental_analyzer)
         return make_document();
     auto & query_tree = query.query_tree->as<QueryNode &>();
-    std::cout << query_tree.dumpTree() << std::endl << std::endl;
 
     if (context->getSettingsRef().mongodb_fail_on_query_build_error)
     {
@@ -337,10 +317,13 @@ bsoncxx::document::value StorageMongoDB::buildMongoDBQuery(const ContextPtr & co
             std::optional<bsoncxx::document::value> filter{};
             if (const auto & func = query_tree.getWhere()->as<FunctionNode>())
                 filter = visitWhereFunction(context, func);
-            else if (const auto & const_expr = query_tree.getWhere()->as<ConstantNode>(); const_expr->hasSourceExpression())
+            else if (const auto & const_expr = query_tree.getWhere()->as<ConstantNode>())
             {
-                if (const auto & func_expr = const_expr->getSourceExpression()->as<FunctionNode>())
-                    filter = visitWhereFunction(context, func_expr);
+                if (const_expr->hasSourceExpression())
+                {
+                    if (const auto & func_expr = const_expr->getSourceExpression()->as<FunctionNode>())
+                        filter = visitWhereFunction(context, func_expr);
+                }
             }
 
             if (!filter.has_value())

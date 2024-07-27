@@ -5,9 +5,6 @@
 #if USE_MONGODB
 #include <Common/Base64.h>
 #include <DataTypes/FieldToDataType.h>
-#include <bsoncxx/builder/basic/array.hpp>
-#include <bsoncxx/builder/basic/document.hpp>
-#include <bsoncxx/json.hpp>
 
 using bsoncxx::builder::basic::array;
 using bsoncxx::builder::basic::document;
@@ -95,7 +92,7 @@ static JSONBuilder::ItemPtr BSONElementAsJSON(const T & value)
             return std::make_unique<JSONBuilder::JSONString>(value.get_oid().value.to_string());
         case bsoncxx::type::k_binary:
             return std::make_unique<JSONBuilder::JSONString>(
-                std::string(reinterpret_cast<const char *>(value.get_binary().bytes), value.get_binary().size));
+                base64Encode(std::string(reinterpret_cast<const char *>(value.get_binary().bytes), value.get_binary().size)));
         case bsoncxx::type::k_bool:
             return std::make_unique<JSONBuilder::JSONBool>(value.get_bool());
         case bsoncxx::type::k_int32:
@@ -147,7 +144,7 @@ static std::string BSONElementAsString(const T & value, const JSONBuilder::Forma
         case bsoncxx::type::k_oid:
             return value.get_oid().value.to_string();
         case bsoncxx::type::k_binary:
-            return base64Encode(std::string(reinterpret_cast<const char *>(value.get_binary().bytes), value.get_binary().size));
+            return std::string(reinterpret_cast<const char *>(value.get_binary().bytes), value.get_binary().size);
         case bsoncxx::type::k_bool:
             return value.get_bool().value ? "true" : "false";
         case bsoncxx::type::k_int32:
@@ -172,7 +169,6 @@ static std::string BSONElementAsString(const T & value, const JSONBuilder::Forma
             WriteBufferFromOwnString buf;
             auto format_context = JSONBuilder::FormatContext{.out = buf};
             BSONElementAsJSON(value)->format(json_format_settings, format_context);
-            std::cout << buf.str() << std::endl;
             return buf.str();
         }
         case bsoncxx::type::k_undefined:

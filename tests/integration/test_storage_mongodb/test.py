@@ -35,9 +35,13 @@ def get_mongo_connection(started_cluster, secure=False, with_credentials=True):
             )
         )
     if with_credentials:
-        return pymongo.MongoClient("mongodb://root:clickhouse@localhost:{}".format(started_cluster.mongo_port))
+        return pymongo.MongoClient(
+            "mongodb://root:clickhouse@localhost:{}".format(started_cluster.mongo_port)
+        )
 
-    return pymongo.MongoClient("mongodb://localhost:{}".format(started_cluster.mongo_no_cred_port))
+    return pymongo.MongoClient(
+        "mongodb://localhost:{}".format(started_cluster.mongo_no_cred_port)
+    )
 
 
 def test_simple_select(started_cluster):
@@ -56,8 +60,14 @@ def test_simple_select(started_cluster):
     )
 
     assert node.query("SELECT COUNT() FROM simple_mongo_table") == "100\n"
-    assert node.query("SELECT sum(key) FROM simple_mongo_table") == str(sum(range(0, 100))) + "\n"
-    assert node.query("SELECT data from simple_mongo_table where key = 42") == hex(42 * 42) + "\n"
+    assert (
+        node.query("SELECT sum(key) FROM simple_mongo_table")
+        == str(sum(range(0, 100))) + "\n"
+    )
+    assert (
+        node.query("SELECT data from simple_mongo_table where key = 42")
+        == hex(42 * 42) + "\n"
+    )
 
     node.query("DROP TABLE simple_mongo_table")
     simple_mongo_table.drop()
@@ -79,8 +89,14 @@ def test_simple_select_uri(started_cluster):
     )
 
     assert node.query("SELECT COUNT() FROM simple_table_uri") == "100\n"
-    assert node.query("SELECT sum(key) FROM simple_table_uri") == str(sum(range(0, 100))) + "\n"
-    assert node.query("SELECT data from simple_table_uri where key = 42") == hex(42 * 42) + "\n"
+    assert (
+        node.query("SELECT sum(key) FROM simple_table_uri")
+        == str(sum(range(0, 100))) + "\n"
+    )
+    assert (
+        node.query("SELECT data from simple_table_uri where key = 42")
+        == hex(42 * 42) + "\n"
+    )
 
     node.query("DROP TABLE simple_table_uri")
     simple_mongo_table.drop()
@@ -105,8 +121,14 @@ def test_simple_select_from_view(started_cluster):
     )
 
     assert node.query("SELECT COUNT() FROM simple_mongo_table") == "100\n"
-    assert node.query("SELECT sum(key) FROM simple_mongo_table") == str(sum(range(0, 100))) + "\n"
-    assert node.query("SELECT data from simple_mongo_table where key = 42") == hex(42 * 42) + "\n"
+    assert (
+        node.query("SELECT sum(key) FROM simple_mongo_table")
+        == str(sum(range(0, 100))) + "\n"
+    )
+    assert (
+        node.query("SELECT data from simple_mongo_table where key = 42")
+        == hex(42 * 42) + "\n"
+    )
 
     node.query("DROP TABLE simple_mongo_table")
     simple_mongo_table_view.drop()
@@ -206,26 +228,71 @@ def test_arrays(started_cluster):
     assert node.query("SELECT COUNT() FROM arrays_mongo_table") == "100\n"
 
     for column_name in ["arr_int64", "arr_int32", "arr_int16", "arr_int8"]:
-        assert node.query(f"SELECT {column_name} FROM arrays_mongo_table WHERE key = 42") == "[-43,-44,-45]\n"
+        assert (
+            node.query(f"SELECT {column_name} FROM arrays_mongo_table WHERE key = 42")
+            == "[-43,-44,-45]\n"
+        )
 
     for column_name in ["arr_uint64", "arr_uint32", "arr_uint16", "arr_uint8"]:
-        assert node.query(f"SELECT {column_name} FROM arrays_mongo_table WHERE key = 42") == "[43,44,45]\n"
+        assert (
+            node.query(f"SELECT {column_name} FROM arrays_mongo_table WHERE key = 42")
+            == "[43,44,45]\n"
+        )
 
     for column_name in ["arr_float32", "arr_float64"]:
-        assert node.query(f"SELECT {column_name} FROM arrays_mongo_table WHERE key = 42") == "[43.125,44.5,45.75]\n"
+        assert (
+            node.query(f"SELECT {column_name} FROM arrays_mongo_table WHERE key = 42")
+            == "[43.125,44.5,45.75]\n"
+        )
 
-    assert node.query(f"SELECT arr_date FROM arrays_mongo_table WHERE key = 42") == "['2002-10-27','2024-01-08']\n"
-    assert node.query(f"SELECT arr_date32 FROM arrays_mongo_table WHERE key = 42") == "['2002-10-27','2024-01-08']\n"
-    assert node.query(f"SELECT arr_datetime FROM arrays_mongo_table WHERE key = 42") == "['2023-03-31 06:03:12','1999-02-28 12:46:34']\n"
-    assert node.query(f"SELECT arr_datetime64 FROM arrays_mongo_table WHERE key = 42") == "['2023-03-31 06:03:12.000','1999-02-28 12:46:34.000']\n"
-    assert node.query(f"SELECT arr_string FROM arrays_mongo_table WHERE key = 42") == "['43','44','45']\n"
-    assert node.query(f"SELECT arr_uuid FROM arrays_mongo_table WHERE key = 42") == "['f0e77736-91d1-48ce-8f01-15123ca1c7ed','93376a07-c044-4281-a76e-ad27cf6973c5']\n"
-    assert node.query(f"SELECT arr_arr_bool FROM arrays_mongo_table WHERE key = 42") == "[[true,false,true],[true],[false],[false]]\n"
-    assert node.query(f"SELECT arr_arr_bool_nullable FROM arrays_mongo_table WHERE key = 42") == "[[true,false,true],[true,NULL],[NULL],[false]]\n"
-    assert node.query(f"SELECT arr_empty FROM arrays_mongo_table WHERE key = 42") == "[]\n"
-    assert node.query(f"SELECT arr_null FROM arrays_mongo_table WHERE key = 42") == "[]\n"
-    assert node.query(f"SELECT arr_arr_null FROM arrays_mongo_table WHERE key = 42") == "[]\n"
-    assert node.query(f"SELECT arr_nullable FROM arrays_mongo_table WHERE key = 42") == "[]\n"
+    assert (
+        node.query(f"SELECT arr_date FROM arrays_mongo_table WHERE key = 42")
+        == "['2002-10-27','2024-01-08']\n"
+    )
+    assert (
+        node.query(f"SELECT arr_date32 FROM arrays_mongo_table WHERE key = 42")
+        == "['2002-10-27','2024-01-08']\n"
+    )
+    assert (
+        node.query(f"SELECT arr_datetime FROM arrays_mongo_table WHERE key = 42")
+        == "['2023-03-31 06:03:12','1999-02-28 12:46:34']\n"
+    )
+    assert (
+        node.query(f"SELECT arr_datetime64 FROM arrays_mongo_table WHERE key = 42")
+        == "['2023-03-31 06:03:12.000','1999-02-28 12:46:34.000']\n"
+    )
+    assert (
+        node.query(f"SELECT arr_string FROM arrays_mongo_table WHERE key = 42")
+        == "['43','44','45']\n"
+    )
+    assert (
+        node.query(f"SELECT arr_uuid FROM arrays_mongo_table WHERE key = 42")
+        == "['f0e77736-91d1-48ce-8f01-15123ca1c7ed','93376a07-c044-4281-a76e-ad27cf6973c5']\n"
+    )
+    assert (
+        node.query(f"SELECT arr_arr_bool FROM arrays_mongo_table WHERE key = 42")
+        == "[[true,false,true],[true],[false],[false]]\n"
+    )
+    assert (
+        node.query(
+            f"SELECT arr_arr_bool_nullable FROM arrays_mongo_table WHERE key = 42"
+        )
+        == "[[true,false,true],[true,NULL],[NULL],[false]]\n"
+    )
+    assert (
+        node.query(f"SELECT arr_empty FROM arrays_mongo_table WHERE key = 42") == "[]\n"
+    )
+    assert (
+        node.query(f"SELECT arr_null FROM arrays_mongo_table WHERE key = 42") == "[]\n"
+    )
+    assert (
+        node.query(f"SELECT arr_arr_null FROM arrays_mongo_table WHERE key = 42")
+        == "[]\n"
+    )
+    assert (
+        node.query(f"SELECT arr_nullable FROM arrays_mongo_table WHERE key = 42")
+        == "[]\n"
+    )
 
     node.query("DROP TABLE arrays_mongo_table")
     arrays_mongo_table.drop()
@@ -247,8 +314,14 @@ def test_complex_data_type(started_cluster):
     )
 
     assert node.query("SELECT COUNT() FROM incomplete_mongo_table") == "100\n"
-    assert node.query("SELECT sum(key) FROM incomplete_mongo_table") == str(sum(range(0, 100))) + "\n"
-    assert node.query("SELECT data from incomplete_mongo_table where key = 42") == hex(42 * 42) + "\n"
+    assert (
+        node.query("SELECT sum(key) FROM incomplete_mongo_table")
+        == str(sum(range(0, 100))) + "\n"
+    )
+    assert (
+        node.query("SELECT data from incomplete_mongo_table where key = 42")
+        == hex(42 * 42) + "\n"
+    )
 
     node.query("DROP TABLE incomplete_mongo_table")
     incomplete_mongo_table.drop()
@@ -269,8 +342,14 @@ def test_secure_connection(started_cluster):
     )
 
     assert node.query("SELECT COUNT() FROM simple_mongo_table") == "100\n"
-    assert node.query("SELECT sum(key) FROM simple_mongo_table") == str(sum(range(0, 100))) + "\n"
-    assert node.query("SELECT data from simple_mongo_table where key = 42") == hex(42 * 42) + "\n"
+    assert (
+        node.query("SELECT sum(key) FROM simple_mongo_table")
+        == str(sum(range(0, 100))) + "\n"
+    )
+    assert (
+        node.query("SELECT data from simple_mongo_table where key = 42")
+        == hex(42 * 42) + "\n"
+    )
 
     node.query("DROP TABLE simple_mongo_table")
     simple_mongo_table.drop()
@@ -312,8 +391,14 @@ def test_secure_connection_uri(started_cluster):
     )
 
     assert node.query("SELECT COUNT() FROM test_secure_connection_uri") == "100\n"
-    assert node.query("SELECT sum(key) FROM test_secure_connection_uri") == str(sum(range(0, 100))) + "\n"
-    assert node.query("SELECT data from test_secure_connection_uri where key = 42") == hex(42 * 42) + "\n"
+    assert (
+        node.query("SELECT sum(key) FROM test_secure_connection_uri")
+        == str(sum(range(0, 100))) + "\n"
+    )
+    assert (
+        node.query("SELECT data from test_secure_connection_uri where key = 42")
+        == hex(42 * 42) + "\n"
+    )
 
     node.query("DROP TABLE test_secure_connection_uri")
     simple_mongo_table.drop()
@@ -482,8 +567,14 @@ def test_missing_columns(started_cluster):
            ) ENGINE = MongoDB(mongo1)"""
     )
 
-    assert node.query("SELECT count() FROM simple_mongo_table WHERE isNull(data)") == "10\n"
-    assert node.query("SELECT count() FROM simple_mongo_table WHERE isNull(not_exists)") == "0\n"
+    assert (
+        node.query("SELECT count() FROM simple_mongo_table WHERE isNull(data)")
+        == "10\n"
+    )
+    assert (
+        node.query("SELECT count() FROM simple_mongo_table WHERE isNull(not_exists)")
+        == "0\n"
+    )
 
     node.query("DROP TABLE IF EXISTS simple_mongo_table")
     simple_mongo_table.drop()
@@ -553,10 +644,16 @@ def test_string_casting(started_cluster):
     assert node.query("SELECT k_doubleP FROM strings_table") == "6.660000\n"
     assert node.query("SELECT k_doubleN FROM strings_table") == "-6.660000\n"
     assert node.query("SELECT k_date FROM strings_table") == "1999-02-28 00:00:00\n"
-    assert node.query("SELECT k_timestamp FROM strings_table") == "1999-02-28 12:46:34\n"
+    assert (
+        node.query("SELECT k_timestamp FROM strings_table") == "1999-02-28 12:46:34\n"
+    )
     assert node.query("SELECT k_string FROM strings_table") == "ClickHouse\n"
-    assert json.dumps(json.loads(node.query("SELECT k_document FROM strings_table"))) == json.dumps(data["k_document"])
-    assert json.dumps(json.loads(node.query("SELECT k_array FROM strings_table"))) == json.dumps(data["k_array"])
+    assert json.dumps(
+        json.loads(node.query("SELECT k_document FROM strings_table"))
+    ) == json.dumps(data["k_document"])
+    assert json.dumps(
+        json.loads(node.query("SELECT k_array FROM strings_table"))
+    ) == json.dumps(data["k_array"])
 
     node.query("DROP TABLE strings_table")
     string_mongo_table.drop()
@@ -586,7 +683,10 @@ def test_dates_casting(started_cluster):
     )
 
     assert node.query("SELECT COUNT() FROM dates_table") == "1\n"
-    assert node.query("SELECT * FROM dates_table") == "1999-02-28 11:23:16\t1999-02-28 11:23:16.000\t1999-02-28\t1999-02-28\n"
+    assert (
+        node.query("SELECT * FROM dates_table")
+        == "1999-02-28 11:23:16\t1999-02-28 11:23:16.000\t1999-02-28\t1999-02-28\n"
+    )
 
     node.query("DROP TABLE dates_table")
     dates_mongo_table.drop()
@@ -622,10 +722,26 @@ def test_order_by(started_cluster):
 
     assert node.query("SELECT COUNT() FROM sort_table") == "900\n"
     assert node.query("SELECT keyInt FROM sort_table ORDER BY keyInt LIMIT 1") == "1\n"
-    assert node.query("SELECT keyInt FROM sort_table ORDER BY keyInt DESC LIMIT 1") == "30\n"
-    assert node.query("SELECT keyInt, keyFloat FROM sort_table ORDER BY keyInt, keyFloat DESC LIMIT 1") == "1\t1.03\n"
-    assert node.query("SELECT keyDateTime FROM sort_table ORDER BY keyDateTime DESC LIMIT 1") == "1999-12-30 11:23:16\n"
-    assert node.query("SELECT keyDate FROM sort_table ORDER BY keyDate DESC LIMIT 1") == "1999-12-30\n"
+    assert (
+        node.query("SELECT keyInt FROM sort_table ORDER BY keyInt DESC LIMIT 1")
+        == "30\n"
+    )
+    assert (
+        node.query(
+            "SELECT keyInt, keyFloat FROM sort_table ORDER BY keyInt, keyFloat DESC LIMIT 1"
+        )
+        == "1\t1.03\n"
+    )
+    assert (
+        node.query(
+            "SELECT keyDateTime FROM sort_table ORDER BY keyDateTime DESC LIMIT 1"
+        )
+        == "1999-12-30 11:23:16\n"
+    )
+    assert (
+        node.query("SELECT keyDate FROM sort_table ORDER BY keyDate DESC LIMIT 1")
+        == "1999-12-30\n"
+    )
 
     with pytest.raises(QueryRuntimeException):
         node.query("SELECT * FROM sort_table ORDER BY keyInt WITH FILL")
@@ -677,41 +793,116 @@ def test_where(started_cluster):
 
     assert node.query("SELECT COUNT() FROM where_table") == "4\n"
 
-    assert node.query("SELECT keyString FROM where_table WHERE id = '11'") == "1string\n"
-    assert node.query("SELECT keyString FROM where_table WHERE id != '11' ORDER BY keyFloat") == "2string\n1string\n2string\n"
-    assert node.query("SELECT keyString FROM where_table WHERE id = '11' AND keyString = '1string'") == "1string\n"
-    assert node.query("SELECT id FROM where_table WHERE keyInt = 1 AND keyFloat = 1.001") == "11\n"
-    assert node.query("SELECT id FROM where_table WHERE keyInt = 0 OR keyFloat = 1.001") == "11\n"
+    assert (
+        node.query("SELECT keyString FROM where_table WHERE id = '11'") == "1string\n"
+    )
+    assert (
+        node.query(
+            "SELECT keyString FROM where_table WHERE id != '11' ORDER BY keyFloat"
+        )
+        == "2string\n1string\n2string\n"
+    )
+    assert (
+        node.query(
+            "SELECT keyString FROM where_table WHERE id = '11' AND keyString = '1string'"
+        )
+        == "1string\n"
+    )
+    assert (
+        node.query("SELECT id FROM where_table WHERE keyInt = 1 AND keyFloat = 1.001")
+        == "11\n"
+    )
+    assert (
+        node.query("SELECT id FROM where_table WHERE keyInt = 0 OR keyFloat = 1.001")
+        == "11\n"
+    )
 
-    assert node.query("SELECT id FROM where_table WHERE keyInt BETWEEN 1 AND 2") == "11\n12\n21\n22\n"
+    assert (
+        node.query("SELECT id FROM where_table WHERE keyInt BETWEEN 1 AND 2")
+        == "11\n12\n21\n22\n"
+    )
     assert node.query("SELECT id FROM where_table WHERE keyInt > 10") == ""
-    assert node.query("SELECT id FROM where_table WHERE keyInt < 10.1 ORDER BY keyFloat") == "11\n12\n21\n22\n"
+    assert (
+        node.query("SELECT id FROM where_table WHERE keyInt < 10.1 ORDER BY keyFloat")
+        == "11\n12\n21\n22\n"
+    )
 
     assert node.query("SELECT id FROM where_table WHERE id IN ('11')") == "11\n"
     assert node.query("SELECT id FROM where_table WHERE id IN ['11']") == "11\n"
     assert node.query("SELECT id FROM where_table WHERE id IN ('11', 100)") == "11\n"
-    assert node.query("SELECT id FROM where_table WHERE id IN ('11', '22') ORDER BY keyFloat") == "11\n22\n"
-    assert node.query("SELECT id FROM where_table WHERE id IN ['11', '22'] ORDER BY keyFloat") == "11\n22\n"
+    assert (
+        node.query(
+            "SELECT id FROM where_table WHERE id IN ('11', '22') ORDER BY keyFloat"
+        )
+        == "11\n22\n"
+    )
+    assert (
+        node.query(
+            "SELECT id FROM where_table WHERE id IN ['11', '22'] ORDER BY keyFloat"
+        )
+        == "11\n22\n"
+    )
 
-    assert node.query("SELECT id FROM where_table WHERE id NOT IN ('11') ORDER BY keyFloat") == "12\n21\n22\n"
-    assert node.query("SELECT id FROM where_table WHERE id NOT IN ['11'] ORDER BY keyFloat") == "12\n21\n22\n"
-    assert node.query("SELECT id FROM where_table WHERE id NOT IN ('11', 100) ORDER BY keyFloat") == "12\n21\n22\n"
-    assert node.query("SELECT id FROM where_table WHERE id NOT IN ('11') AND id IN ('12')") == "12\n"
-    assert node.query("SELECT id FROM where_table WHERE id NOT IN ['11'] AND id IN ('12')") == "12\n"
+    assert (
+        node.query(
+            "SELECT id FROM where_table WHERE id NOT IN ('11') ORDER BY keyFloat"
+        )
+        == "12\n21\n22\n"
+    )
+    assert (
+        node.query(
+            "SELECT id FROM where_table WHERE id NOT IN ['11'] ORDER BY keyFloat"
+        )
+        == "12\n21\n22\n"
+    )
+    assert (
+        node.query(
+            "SELECT id FROM where_table WHERE id NOT IN ('11', 100) ORDER BY keyFloat"
+        )
+        == "12\n21\n22\n"
+    )
+    assert (
+        node.query("SELECT id FROM where_table WHERE id NOT IN ('11') AND id IN ('12')")
+        == "12\n"
+    )
+    assert (
+        node.query("SELECT id FROM where_table WHERE id NOT IN ['11'] AND id IN ('12')")
+        == "12\n"
+    )
 
     with pytest.raises(QueryRuntimeException):
-        assert node.query("SELECT id FROM where_table WHERE id NOT IN ['11', 100] ORDER BY keyFloat") == "12\n21\n22\n"
+        assert (
+            node.query(
+                "SELECT id FROM where_table WHERE id NOT IN ['11', 100] ORDER BY keyFloat"
+            )
+            == "12\n21\n22\n"
+        )
 
     assert node.query("SELECT id FROM where_table WHERE keyDateTime > now()") == ""
-    assert node.query("SELECT keyInt FROM where_table WHERE keyDateTime < now() AND keyString = '1string' AND keyInt IS NOT NULL ORDER BY keyInt") == "1\n2\n"
+    assert (
+        node.query(
+            "SELECT keyInt FROM where_table WHERE keyDateTime < now() AND keyString = '1string' AND keyInt IS NOT NULL ORDER BY keyInt"
+        )
+        == "1\n2\n"
+    )
 
     assert node.query("SELECT count() FROM where_table WHERE isNotNull(id)") == "4\n"
-    assert node.query("SELECT count() FROM where_table WHERE isNotNull(keyNull)") == "0\n"
+    assert (
+        node.query("SELECT count() FROM where_table WHERE isNotNull(keyNull)") == "0\n"
+    )
     assert node.query("SELECT count() FROM where_table WHERE isNull(keyNull)") == "4\n"
-    assert node.query("SELECT count() FROM where_table WHERE isNotNull(keyNotExists)") == "0\n"
-    assert node.query("SELECT count() FROM where_table WHERE isNull(keyNotExists)") == "4\n"
+    assert (
+        node.query("SELECT count() FROM where_table WHERE isNotNull(keyNotExists)")
+        == "0\n"
+    )
+    assert (
+        node.query("SELECT count() FROM where_table WHERE isNull(keyNotExists)")
+        == "4\n"
+    )
     assert node.query("SELECT count() FROM where_table WHERE keyNotExists = 0") == "0\n"
-    assert node.query("SELECT count() FROM where_table WHERE keyNotExists != 0") == "0\n"
+    assert (
+        node.query("SELECT count() FROM where_table WHERE keyNotExists != 0") == "0\n"
+    )
 
     with pytest.raises(QueryRuntimeException):
         node.query("SELECT * FROM where_table WHERE keyInt = keyFloat")
@@ -854,13 +1045,32 @@ def test_oid(started_cluster):
     assert node.query("SELECT COUNT() FROM oid_table") == "5\n"
 
     assert node.query(f"SELECT key FROM oid_table WHERE _id = '{oid[0]}'") == "a\n"
-    assert node.query(f"SELECT * FROM oid_table WHERE _id = '{oid[2]}'") == f"{oid[2]}\tc\n"
+    assert (
+        node.query(f"SELECT * FROM oid_table WHERE _id = '{oid[2]}'")
+        == f"{oid[2]}\tc\n"
+    )
     assert node.query(f"SELECT COUNT() FROM oid_table WHERE _id != '{oid[0]}'") == "4\n"
 
-    assert node.query(f"SELECT key FROM oid_table WHERE _id in ('{oid[0]}', '{oid[1]}') ORDER BY key") == "a\nb\n"
-    assert node.query(f"SELECT key FROM oid_table WHERE _id in ['{oid[0]}', '{oid[1]}'] ORDER BY key") == "a\nb\n"
-    assert node.query(f"SELECT key FROM oid_table WHERE _id in ('{oid[0]}') ORDER BY key") == "a\n"
-    assert node.query(f"SELECT key FROM oid_table WHERE _id in ['{oid[1]}'] ORDER BY key") == "b\n"
+    assert (
+        node.query(
+            f"SELECT key FROM oid_table WHERE _id in ('{oid[0]}', '{oid[1]}') ORDER BY key"
+        )
+        == "a\nb\n"
+    )
+    assert (
+        node.query(
+            f"SELECT key FROM oid_table WHERE _id in ['{oid[0]}', '{oid[1]}'] ORDER BY key"
+        )
+        == "a\nb\n"
+    )
+    assert (
+        node.query(f"SELECT key FROM oid_table WHERE _id in ('{oid[0]}') ORDER BY key")
+        == "a\n"
+    )
+    assert (
+        node.query(f"SELECT key FROM oid_table WHERE _id in ['{oid[1]}'] ORDER BY key")
+        == "b\n"
+    )
 
     with pytest.raises(QueryRuntimeException):
         node.query("SELECT * FROM oid_table WHERE _id = 'invalidOID'")
@@ -895,7 +1105,10 @@ def test_uuid(started_cluster):
         """
     )
 
-    assert node.query(f"SELECT kUUID FROM uuid_table WHERE isValid = 1") == "f0e77736-91d1-48ce-8f01-15123ca1c7ed\n"
+    assert (
+        node.query(f"SELECT kUUID FROM uuid_table WHERE isValid = 1")
+        == "f0e77736-91d1-48ce-8f01-15123ca1c7ed\n"
+    )
 
     with pytest.raises(QueryRuntimeException):
         node.query("SELECT * FROM uuid_table WHERE isValid = 0")
@@ -922,10 +1135,18 @@ def test_no_fail_on_unsupported_clauses(started_cluster):
         """
     )
 
-    node.query(f"SELECT * FROM unsupported_clauses WHERE a > rand() SETTINGS mongodb_fail_on_query_build_error = 0")
-    node.query(f"SELECT * FROM unsupported_clauses WHERE a / 1000 > 0 SETTINGS mongodb_fail_on_query_build_error = 0")
-    node.query(f"SELECT * FROM unsupported_clauses WHERE toFloat64(a) < 6.66 > rand() SETTINGS mongodb_fail_on_query_build_error = 0")
-    node.query(f"SELECT * FROM unsupported_clauses ORDER BY a, b LIMIT 2 BY a SETTINGS mongodb_fail_on_query_build_error = 0")
+    node.query(
+        f"SELECT * FROM unsupported_clauses WHERE a > rand() SETTINGS mongodb_fail_on_query_build_error = 0"
+    )
+    node.query(
+        f"SELECT * FROM unsupported_clauses WHERE a / 1000 > 0 SETTINGS mongodb_fail_on_query_build_error = 0"
+    )
+    node.query(
+        f"SELECT * FROM unsupported_clauses WHERE toFloat64(a) < 6.66 > rand() SETTINGS mongodb_fail_on_query_build_error = 0"
+    )
+    node.query(
+        f"SELECT * FROM unsupported_clauses ORDER BY a, b LIMIT 2 BY a SETTINGS mongodb_fail_on_query_build_error = 0"
+    )
 
     node.query("DROP TABLE unsupported_clauses")
     unsupported_clauses_table.drop()
