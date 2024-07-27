@@ -287,7 +287,7 @@ ColumnPtr returnFilteredColumn(const ColumnPtr & first, const ColumnPtr & second
         return second;
 
     if (second_const_descr.always_false)
-        return nullptr;
+        return first;
 
     FilterDescription filter_descr(*second);
     return first->filter(*filter_descr.data, 0);
