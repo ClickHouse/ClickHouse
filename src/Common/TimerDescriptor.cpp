@@ -51,11 +51,7 @@ void TimerDescriptor::reset() const
     if (timer_fd == -1)
         return;
 
-    itimerspec spec;
-    spec.it_interval.tv_nsec = 0;
-    spec.it_interval.tv_sec = 0;
-    spec.it_value.tv_sec = 0;
-    spec.it_value.tv_nsec = 0;
+    itimerspec spec{};
 
     if (-1 == timerfd_settime(timer_fd, 0 /*relative timer */, &spec, nullptr))
         throw ErrnoException(ErrorCodes::CANNOT_SET_TIMER_PERIOD, "Cannot reset timer_fd");
