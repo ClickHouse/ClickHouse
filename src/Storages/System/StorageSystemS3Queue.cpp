@@ -11,9 +11,9 @@
 #include <Interpreters/Cache/FileCacheFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ProfileEventsExt.h>
-#include <Storages/S3Queue/S3QueueMetadata.h>
-#include <Storages/S3Queue/S3QueueMetadataFactory.h>
-#include <Storages/S3Queue/StorageS3Queue.h>
+#include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadata.h>
+#include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadataFactory.h>
+#include <Storages/ObjectStorageQueue/StorageObjectStorageQueue.h>
 #include <Disks/IDisk.h>
 
 
@@ -32,7 +32,6 @@ ColumnsDescription StorageSystemS3Queue::getColumnsDescription()
         {"status", std::make_shared<DataTypeString>(), "Status of processing: Processed, Processing, Failed"},
         {"processing_start_time", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>()), "Time at which processing of the file started"},
         {"processing_end_time", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>()), "Time at which processing of the file ended"},
-        {"ProfileEvents", std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeUInt64>()), "Profile events collected during processing of the file"},
         {"exception", std::make_shared<DataTypeString>(), "Exception which happened during processing"},
     };
 }
@@ -44,7 +43,7 @@ StorageSystemS3Queue::StorageSystemS3Queue(const StorageID & table_id_)
 
 void StorageSystemS3Queue::fillData(MutableColumns & res_columns, ContextPtr, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
-    for (const auto & [zookeeper_path, metadata] : S3QueueMetadataFactory::instance().getAll())
+    for (const auto & [zookeeper_path, metadata] : ObjectStorageQueueMetadataFactory::instance().getAll())
     {
         for (const auto & [file_path, file_status] : metadata->getFileStatuses())
         {
@@ -64,8 +63,6 @@ void StorageSystemS3Queue::fillData(MutableColumns & res_columns, ContextPtr, co
                 res_columns[i++]->insert(file_status->processing_end_time.load());
             else
                 res_columns[i++]->insertDefault();
-
-            ProfileEvents::dumpToMapColumn(file_status->profile_counters.getPartiallyAtomicSnapshot(), res_columns[i++].get(), true);
 
             res_columns[i++]->insert(file_status->getException());
         }

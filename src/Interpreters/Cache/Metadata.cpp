@@ -944,14 +944,7 @@ KeyMetadata::iterator LockedKey::removeFileSegmentImpl(
     try
     {
         const auto path = key_metadata->getFileSegmentPath(*file_segment);
-        if (file_segment->segment_kind == FileSegmentKind::Temporary)
-        {
-            /// FIXME: For temporary file segment the requirement is not as strong because
-            /// the implementation of "temporary data in cache" creates files in advance.
-            if (fs::exists(path))
-                fs::remove(path);
-        }
-        else if (file_segment->downloaded_size == 0)
+        if (file_segment->downloaded_size == 0)
         {
             chassert(!fs::exists(path));
         }
@@ -970,7 +963,7 @@ KeyMetadata::iterator LockedKey::removeFileSegmentImpl(
         }
         else if (!can_be_broken)
         {
-#ifdef ABORT_ON_LOGICAL_ERROR
+#ifdef DEBUG_OR_SANITIZER_BUILD
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected path {} to exist", path);
 #else
             LOG_WARNING(key_metadata->logger(), "Expected path {} to exist, while removing {}:{}",

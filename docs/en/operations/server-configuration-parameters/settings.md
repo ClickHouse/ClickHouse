@@ -498,6 +498,8 @@ Default: 0.9
 Interval in seconds during which the server's maximum allowed memory consumption is adjusted by the corresponding threshold in cgroups. (see
 settings `cgroup_memory_watcher_hard_limit_ratio` and `cgroup_memory_watcher_soft_limit_ratio`).
 
+To disable the cgroup observer, set this value to `0`.
+
 Type: UInt64
 
 Default: 15

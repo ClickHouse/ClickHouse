@@ -235,7 +235,13 @@ void ASTTableJoin::formatImplAfterTable(const FormatSettings & settings, FormatS
     else if (on_expression)
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << " ON " << (settings.hilite ? hilite_none : "");
+        /// If there is an alias for the whole expression parens should be added, otherwise it will be invalid syntax
+        bool on_has_alias = !on_expression->tryGetAlias().empty();
+        if (on_has_alias)
+            settings.ostr << "(";
         on_expression->formatImpl(settings, state, frame);
+        if (on_has_alias)
+            settings.ostr << ")";
     }
 }
 
@@ -243,7 +249,7 @@ void ASTTableJoin::formatImplAfterTable(const FormatSettings & settings, FormatS
 void ASTTableJoin::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     formatImplBeforeTable(settings, state, frame);
-    settings.ostr << " ... ";
+    settings.ostr << " ...";
     formatImplAfterTable(settings, state, frame);
 }
 

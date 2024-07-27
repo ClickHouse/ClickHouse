@@ -191,6 +191,20 @@ PostgreSQLSource<T>::~PostgreSQLSource()
     {
         try
         {
+            if (stream)
+            {
+                /** Internally libpqxx::stream_from runs PostgreSQL copy query `COPY query TO STDOUT`.
+                  * During transaction abort we try to execute PostgreSQL `ROLLBACK` command and if
+                  * copy query is not cancelled, we wait until it finishes.
+                  */
+                tx->conn().cancel_query();
+
+                /** If stream is not closed, libpqxx::stream_from closes stream in destructor, but that way
+                  * exception is added into transaction pending error and we can potentially ignore exception message.
+                  */
+                stream->close();
+            }
+
             stream.reset();
             tx.reset();
         }

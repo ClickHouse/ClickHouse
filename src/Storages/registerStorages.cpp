@@ -43,6 +43,10 @@ void registerStorageIceberg(StorageFactory & factory);
 #endif
 #endif
 
+#if USE_AZURE_BLOB_STORAGE
+void registerStorageAzureQueue(StorageFactory & factory);
+#endif
+
 #if USE_HDFS
 #if USE_HIVE
 void registerStorageHive(StorageFactory & factory);
@@ -128,6 +132,10 @@ void registerStorages(bool use_legacy_mongodb_integration [[maybe_unused]])
     registerStorageLoop(factory);
 #if USE_RAPIDJSON || USE_SIMDJSON
     registerStorageFuzzJSON(factory);
+#endif
+
+#if USE_AZURE_BLOB_STORAGE
+    registerStorageAzureQueue(factory);
 #endif
 
 #if USE_AWS_S3

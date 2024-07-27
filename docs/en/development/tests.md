@@ -28,7 +28,7 @@ run, for example, the test `01428_hash_set_nan_key`, change to the repository
 folder and run the following command:
 
 ```
-PATH=$PATH:<path to clickhouse-client> tests/clickhouse-test 01428_hash_set_nan_key
+PATH=<path to clickhouse-client>:$PATH tests/clickhouse-test 01428_hash_set_nan_key
 ```
 
 Test results (`stderr` and `stdout`) are written to files `01428_hash_set_nan_key.[stderr|stdout]` which

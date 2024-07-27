@@ -24,7 +24,7 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/GraceHashJoin.h>
-#include <Interpreters/HashJoin.h>
+#include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/JoinSwitcher.h>
 #include <Interpreters/MergeJoin.h>
 #include <Interpreters/DirectJoin.h>
@@ -986,7 +986,8 @@ static std::shared_ptr<IJoin> tryCreateJoin(
         const auto & settings = context->getSettings();
 
         if (analyzed_join->allowParallelHashJoin())
-            return std::make_shared<ConcurrentHashJoin>(context, analyzed_join, settings.max_threads, right_sample_block);
+            return std::make_shared<ConcurrentHashJoin>(
+                context, analyzed_join, settings.max_threads, right_sample_block, StatsCollectingParams{});
         return std::make_shared<HashJoin>(analyzed_join, right_sample_block);
     }
 

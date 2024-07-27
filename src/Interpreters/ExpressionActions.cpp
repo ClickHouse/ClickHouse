@@ -195,6 +195,10 @@ static void setLazyExecutionInfo(
             }
 
             lazy_execution_info.short_circuit_ancestors_info[parent].insert(indexes.begin(), indexes.end());
+            /// After checking arguments_with_disabled_lazy_execution, if there is no relation with parent,
+            /// disable the current node.
+            if (indexes.empty())
+                lazy_execution_info.can_be_lazy_executed = false;
         }
         else
             /// If lazy execution is disabled for one of parents, we should disable it for current node.
@@ -292,9 +296,9 @@ static std::unordered_set<const ActionsDAG::Node *> processShortCircuitFunctions
 
     /// Firstly, find all short-circuit functions and get their settings.
     std::unordered_map<const ActionsDAG::Node *, IFunctionBase::ShortCircuitSettings> short_circuit_nodes;
-    IFunctionBase::ShortCircuitSettings short_circuit_settings;
     for (const auto & node : nodes)
     {
+        IFunctionBase::ShortCircuitSettings short_circuit_settings;
         if (node.type == ActionsDAG::ActionType::FUNCTION && node.function_base->isShortCircuit(short_circuit_settings, node.children.size()) && !node.children.empty())
             short_circuit_nodes[&node] = short_circuit_settings;
     }
