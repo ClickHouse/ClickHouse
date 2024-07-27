@@ -38,7 +38,7 @@ profiles:
     max_bytes_to_transfer: 1G
     max_rows_in_distinct: 10G
     max_bytes_in_distinct: 10G
-    max_memory_usage_for_user: 10G
+    max_memory_usage_for_user: 32G
     max_network_bandwidth: 100G
     max_network_bytes: 1T
     max_network_bandwidth_for_user: 100G
