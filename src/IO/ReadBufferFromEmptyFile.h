@@ -20,6 +20,7 @@ private:
     off_t seek(off_t /*off*/, int /*whence*/) override { return 0; }
     off_t getPosition() override { return 0; }
     std::optional<size_t> tryGetFileSize() override { return 0; }
+    size_t getFileOffsetOfBufferEnd() const override { return 0; }
 };
 
 }
