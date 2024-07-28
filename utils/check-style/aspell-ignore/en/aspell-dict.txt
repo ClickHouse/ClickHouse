@@ -1866,6 +1866,7 @@ jdbc
 jemalloc
 jeprof
 joinGet
+joinGetOrNull
 json
 jsonMergePatch
 jsonasstring

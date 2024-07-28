@@ -91,7 +91,7 @@ void signalHandler(int sig, siginfo_t * info, void * context)
     writePODBinary(*info, out);
     writePODBinary(signal_context, out);
     writePODBinary(stack_trace, out);
-    writeVectorBinary(Exception::enable_job_stack_trace ? Exception::thread_frame_pointers : std::vector<StackTrace::FramePointers>{}, out);
+    writeVectorBinary(Exception::enable_job_stack_trace ? Exception::getThreadFramePointers() : std::vector<StackTrace::FramePointers>{}, out);
     writeBinary(static_cast<UInt32>(getThreadId()), out);
     writePODBinary(current_thread, out);
 
