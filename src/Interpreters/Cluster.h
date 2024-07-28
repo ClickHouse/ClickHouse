@@ -276,10 +276,10 @@ public:
     const String & getName() const { return name; }
 
     /// Handle connection loss and attempt reconnection
-    void handleConnectionLoss(const ShardInfo & shard_info, const Settings & settings);
+    void handleConnectionLoss(ShardInfo & shard_info, const Settings & settings);
 
     /// Execute query with failover mechanism
-    Block executeQueryWithFailover(const String & query);
+    Block executeQueryWithFailover(const String & query, const Settings & settings);
 
 private:
     SlotToShard slot_to_shard;

@@ -908,7 +908,7 @@ bool Cluster::maybeCrossReplication() const
     return false;
 }
 
-void Cluster::handleConnectionLoss(const ShardInfo & shard_info, const Settings & settings)
+void Cluster::handleConnectionLoss(ShardInfo & shard_info, const Settings & settings)
 {
     for (const auto & address : shard_info.local_addresses)
     {
@@ -929,20 +929,21 @@ void Cluster::handleConnectionLoss(const ShardInfo & shard_info, const Settings 
 
 Block Cluster::executeQueryWithFailover(const String & query, const Settings & settings)
 {
+    ConnectionTimeouts timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(settings);
     for (auto & shard_info : shards_info)
     {
         try
         {
-            // Use the actual method to execute the query
-            return shard_info.pool->get(query);  // Example method, replace with actual one
+            auto entry = shard_info.pool->get(timeouts, settings, true);
+            return entry->get()->sendQuery(query); // Ensure sendQuery method is available and returns Block
         }
         catch (const Exception & e)
         {
             if (e.code() == ErrorCodes::NETWORK_ERROR)
             {
                 handleConnectionLoss(shard_info, settings);
-                // Use the actual method to execute the query
-                return shard_info.pool->get(query);  // Example method, replace with actual one
+                auto entry = shard_info.pool->get(timeouts, settings, true);
+                return entry->get()->sendQuery(query); // Retry with new connection
             }
             else
             {
@@ -953,6 +954,7 @@ Block Cluster::executeQueryWithFailover(const String & query, const Settings & s
 
     throw Exception(ErrorCodes::SHARD_HAS_NO_CONNECTIONS, "Failed to execute query on all replicas");
 }
+
 
 ConnectionPoolWithFailoverPtr Cluster::createFailoverPool(const Addresses & addresses, const Settings & settings)
 {
