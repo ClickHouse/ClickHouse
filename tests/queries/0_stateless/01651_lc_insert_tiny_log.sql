@@ -8,7 +8,7 @@ INSERT INTO perf_lc_num (num) SELECT toUInt8(number) FROM numbers(10000000);
 select sum(length(arr)) from perf_lc_num;
 select sum(length(arr)), sum(num) from perf_lc_num;
 
-INSERT INTO perf_lc_num (num) SELECT toUInt8(number) FROM numbers(10000000);
+INSERT INTO perf_lc_num (num) SELECT toUInt8(number) FROM numbers(10000000, 20000000);
 
 select sum(length(arr)) from perf_lc_num;
 select sum(length(arr)), sum(num) from perf_lc_num;
@@ -23,7 +23,7 @@ INSERT INTO perf_lc_num (num) SELECT toUInt8(number) FROM numbers(10000000);
 select sum(length(arr)) from perf_lc_num;
 select sum(length(arr)), sum(num) from perf_lc_num;
 
-INSERT INTO perf_lc_num (num) SELECT toUInt8(number) FROM numbers(10000000);
+INSERT INTO perf_lc_num (num) SELECT toUInt8(number) FROM numbers(10000000, 20000000);
 
 select sum(length(arr)) from perf_lc_num;
 select sum(length(arr)), sum(num) from perf_lc_num;
@@ -38,7 +38,7 @@ INSERT INTO perf_lc_num (num) SELECT toUInt8(number) FROM numbers(10000000);
 select sum(length(arr)) from perf_lc_num;
 select sum(length(arr)), sum(num) from perf_lc_num;
 
-INSERT INTO perf_lc_num (num) SELECT toUInt8(number) FROM numbers(10000000);
+INSERT INTO perf_lc_num (num) SELECT toUInt8(number) FROM numbers(10000000, 20000000);
 
 select sum(length(arr)) from perf_lc_num;
 select sum(length(arr)), sum(num) from perf_lc_num;

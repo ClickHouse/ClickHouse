@@ -106,6 +106,14 @@ class Tags(metaclass=WithIter):
     libFuzzer = "libFuzzer"
 
 
+class WorkFlowNames(metaclass=WithIter):
+    """
+    CI WorkFlow Names for custom CI runs
+    """
+
+    JEPSEN = "JepsenWorkflow"
+
+
 class BuildNames(metaclass=WithIter):
     """
     Build' job names
