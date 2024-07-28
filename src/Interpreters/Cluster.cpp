@@ -939,82 +939,39 @@ Block Cluster::executeQueryWithFailover(const String & query, const Settings & s
     ClientInfo client_info; // Default client info
     bool with_pending_data = false; // No pending data to send
 
-    for (auto & shard_info : shards_info)
+    if (shards_info.empty())
     {
+        throw Exception(ErrorCodes::SHARD_HAS_NO_CONNECTIONS, "No shards available for query execution");
+    }
+
+    for (size_t i = 0; i < shards_info.size(); ++i)
+    {
+        auto & shard_info = shards_info[i];
         try
         {
             auto entry = shard_info.pool->get(timeouts, settings, true);
             entry->sendQuery(timeouts, query, query_parameters, query_id, stage, &settings, &client_info, with_pending_data, nullptr);
-
-            while (true)
-            {
-                if (entry->hasReadPendingData())
-                {
-                    result = entry->receivePacket().block; // Use receivePacket() to get the block
-                    return result;
-                }
-
-                // Implement the logic for network connection hangs or ping packets
-                try
-                {
-                    if (!entry->checkConnected(timeouts)) // Use checkConnected() instead of ping()
-                    {
-                        entry = shard_info.pool->get(timeouts, settings, true);
-                        entry->sendQuery(timeouts, query, query_parameters, query_id, stage, &settings, &client_info, with_pending_data, nullptr);
-                    }
-                }
-                catch (const Exception & e)
-                {
-                    if (e.code() == ErrorCodes::SOCKET_TIMEOUT)
-                    {
-                        entry->disconnect(); // Disconnect the current connection
-                        entry = shard_info.pool->get(timeouts, settings, true); // Get a new connection
-                        entry->sendQuery(timeouts, query, query_parameters, query_id, stage, &settings, &client_info, with_pending_data, nullptr);
-                    }
-                    else
-                    {
-                        throw;
-                    }
-                }
-            }
+            result = waitForQueryResult(entry, shard_info, query, timeouts, settings, query_parameters, query_id, stage, client_info, with_pending_data);
+            return result;
         }
         catch (const Exception & e)
         {
             if (e.code() == ErrorCodes::NETWORK_ERROR)
             {
                 handleConnectionLoss(shard_info, settings);
-                auto entry = shard_info.pool->get(timeouts, settings, true);
-                entry->sendQuery(timeouts, query, query_parameters, query_id, stage, &settings, &client_info, with_pending_data, nullptr);
-
-                while (true)
+                try
                 {
-                    if (entry->hasReadPendingData())
+                    auto entry = shard_info.pool->get(timeouts, settings, true);
+                    entry->sendQuery(timeouts, query, query_parameters, query_id, stage, &settings, &client_info, with_pending_data, nullptr);
+                    result = waitForQueryResult(entry, shard_info, query, timeouts, settings, query_parameters, query_id, stage, client_info, with_pending_data);
+                    return result;
+                }
+                catch (const Exception &)
+                {
+                    // Log the error and continue to the next shard if available
+                    if (i == shards_info.size() - 1)
                     {
-                        result = entry->receivePacket().block; // Use receivePacket() to get the block
-                        return result;
-                    }
-
-                    // Implement the logic for network connection hangs or ping packets
-                    try
-                    {
-                        if (!entry->checkConnected(timeouts)) // Use checkConnected() instead of ping()
-                        {
-                            entry = shard_info.pool->get(timeouts, settings, true);
-                            entry->sendQuery(timeouts, query, query_parameters, query_id, stage, &settings, &client_info, with_pending_data, nullptr);
-                        }
-                    }
-                    catch (const Exception & e)
-                    {
-                        if (e.code() == ErrorCodes::SOCKET_TIMEOUT)
-                        {
-                            entry->disconnect(); // Disconnect the current connection
-                            entry = shard_info.pool->get(timeouts, settings, true); // Get a new connection
-                            entry->sendQuery(timeouts, query, query_parameters, query_id, stage, &settings, &client_info, with_pending_data, nullptr);
-                        }
-                        else
-                        {
-                            throw;
-                        }
+                        throw Exception(ErrorCodes::SHARD_HAS_NO_CONNECTIONS, "Failed to execute query on all replicas after retries");
                     }
                 }
             }
