@@ -1289,6 +1289,7 @@ StoragePtr create(const StorageFactory::Arguments & args)
     StorageInMemoryMetadata metadata;
     metadata.setColumns(args.columns);
     metadata.setConstraints(args.constraints);
+    metadata.setComment(args.comment);
 
     if (!args.storage_def->primary_key)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "StorageKeeperMap requires one column in primary key");
