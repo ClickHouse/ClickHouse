@@ -943,40 +943,33 @@ Block Cluster::executeQueryWithFailover(const String & query, const Settings & s
         throw Exception(ErrorCodes::SHARD_HAS_NO_CONNECTIONS, "No shards available for query execution");
     }
 
-    for (size_t i = 0; i < shards_info.size(); ++i)
+    // Iterate over the shards and attempt to execute the query
+    for (auto & shard_info : shards_info)
     {
-        auto & shard_info = shards_info[i];
-        try
+        bool retry = true;
+
+        while (retry)
         {
-            auto entry = shard_info.pool->get(timeouts, settings, true);
-            entry->sendQuery(timeouts, query, query_parameters, query_id, stage, &settings, &client_info, with_pending_data, nullptr);
-            result = waitForQueryResult(entry, shard_info, query, timeouts, settings, query_parameters, query_id, stage, client_info, with_pending_data);
-            return result;
-        }
-        catch (const Exception & e)
-        {
-            if (e.code() == ErrorCodes::NETWORK_ERROR)
+            retry = false;
+
+            try
             {
-                handleConnectionLoss(shard_info, settings);
-                try
-                {
-                    auto entry = shard_info.pool->get(timeouts, settings, true);
-                    entry->sendQuery(timeouts, query, query_parameters, query_id, stage, &settings, &client_info, with_pending_data, nullptr);
-                    result = waitForQueryResult(entry, shard_info, query, timeouts, settings, query_parameters, query_id, stage, client_info, with_pending_data);
-                    return result;
-                }
-                catch (const Exception &)
-                {
-                    // Log the error and continue to the next shard if available
-                    if (i == shards_info.size() - 1)
-                    {
-                        throw Exception(ErrorCodes::SHARD_HAS_NO_CONNECTIONS, "Failed to execute query on all replicas after retries");
-                    }
-                }
+                auto entry = shard_info.pool->get(timeouts, settings, true);
+                entry->sendQuery(timeouts, query, query_parameters, query_id, stage, &settings, &client_info, with_pending_data, nullptr);
+                result = entry->receivePacket().block;
+                return result;
             }
-            else
+            catch (const Exception & e)
             {
-                throw;
+                if (e.code() == ErrorCodes::NETWORK_ERROR)
+                {
+                    handleConnectionLoss(shard_info, settings);
+                    retry = true;
+                }
+                else
+                {
+                    throw;
+                }
             }
         }
     }
