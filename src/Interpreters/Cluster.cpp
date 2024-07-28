@@ -41,7 +41,6 @@ namespace ErrorCodes
     extern const int NO_SUCH_REPLICA;
     extern const int BAD_ARGUMENTS;
     extern const int NETWORK_ERROR;
-    extern const int SOCKET_TIMEOUT;
 }
 
 namespace
