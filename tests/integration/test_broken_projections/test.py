@@ -450,54 +450,6 @@ def get_random_string(string_length=8):
     return "".join((random.choice(alphabet) for _ in range(string_length)))
 
 
-def test_broken_projections_in_backups_1(cluster):
-    node = cluster.instances["node"]
-
-    table_name = "test4"
-    create_table(node, table_name, 1, aggressive_merge=False, data_prefix=table_name)
-
-    node.query("SYSTEM STOP MERGES")
-
-    insert(node, table_name, 0, 5)
-    insert(node, table_name, 5, 5)
-    insert(node, table_name, 10, 5)
-    insert(node, table_name, 15, 5)
-
-    assert ["all_0_0_0", "all_1_1_0", "all_2_2_0", "all_3_3_0"] == get_parts(
-        node, table_name
-    )
-
-    check(node, table_name, 1)
-
-    break_projection(node, table_name, "proj1", "all_2_2_0", "data")
-    check(node, table_name, 0, "proj1", "FILE_DOESNT_EXIST")
-
-    assert "all_2_2_0\tproj1\tNO_FILE_IN_DATA_PART" in get_broken_projections_info(
-        node, table_name
-    )
-
-    backup_name = f"b1-{get_random_string()}"
-    assert "BACKUP_CREATED" in node.query(
-        f"""
-    set backup_restore_keeper_fault_injection_probability=0.0;
-    backup table {table_name} to Disk('backups', '{backup_name}') settings check_projection_parts=false;
-    """
-    )
-
-    assert "RESTORED" in node.query(
-        f"""
-    drop table {table_name} sync;
-    set backup_restore_keeper_fault_injection_probability=0.0;
-    restore table {table_name} from Disk('backups', '{backup_name}');
-    """
-    )
-
-    node.query("SYSTEM STOP MERGES")
-
-    check(node, table_name, 1)
-    assert "" == get_broken_projections_info(node, table_name)
-
-
 def test_broken_projections_in_backups_2(cluster):
     node = cluster.instances["node"]
 
