@@ -57,6 +57,7 @@ String ClickHouseVersion::toString() const
 /// Note: please check if the key already exists to prevent duplicate entries.
 static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory::SettingsChanges>> settings_changes_history_initializer =
 {
+    {"24.8", {{"input_format_json_max_depth", 1000000, 1000, "It was unlimited in previous versions, but that was unsafe."}}},
     {"24.7", {{"output_format_parquet_write_page_index", false, true, "Add a possibility to write page index into parquet files."},
               {"output_format_binary_encode_types_in_binary_format", false, false, "Added new setting to allow to write type names in binary format in RowBinaryWithNamesAndTypes output format"},
               {"input_format_binary_decode_types_in_binary_format", false, false, "Added new setting to allow to read type names in binary format in RowBinaryWithNamesAndTypes input format"},
