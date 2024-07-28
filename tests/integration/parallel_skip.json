@@ -161,5 +161,5 @@
   "test_storage_kafka/test.py::test_system_kafka_consumers_rebalance",
   "test_storage_kafka/test.py::test_system_kafka_consumers_rebalance_mv",
   "test_storage_kafka/test.py::test_formats_errors",
-  "test_storage_kafka/test.py::test_multiple_read_in_materialized_views",
+  "test_storage_kafka/test.py::test_multiple_read_in_materialized_views"
 ]
