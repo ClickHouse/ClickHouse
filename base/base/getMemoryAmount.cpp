@@ -2,19 +2,13 @@
 
 #include <base/cgroupsv2.h>
 #include <base/getPageSize.h>
+#include <base/Numa.h>
 
 #include <fstream>
 
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/param.h>
-
-#include "config.h"
-
-#if USE_NUMACTL
-#include <numa.h>
-#endif
-
 
 namespace
 {
@@ -68,25 +62,8 @@ uint64_t getMemoryAmountOrZero()
 
     uint64_t memory_amount = num_pages * page_size;
 
-#if USE_NUMACTL
-    if (numa_available() != -1)
-    {
-        auto * membind = numa_get_membind();
-        if (!numa_bitmask_equal(membind, numa_all_nodes_ptr))
-        {
-            uint64_t total_numa_memory = 0;
-            auto max_node = numa_max_node();
-            for (int i = 0; i <= max_node; ++i)
-            {
-                if (numa_bitmask_isbitset(membind, i))
-                    total_numa_memory += numa_node_size(i, nullptr);
-            }
-
-            memory_amount = total_numa_memory;
-        }
-        numa_bitmask_free(membind);
-    }
-#endif
+    if (auto total_numa_memory = DB::getNumaNodesTotalMemory(); total_numa_memory.has_value())
+        memory_amount = *total_numa_memory;
 
     /// Respect the memory limit set by cgroups v2.
     auto limit_v2 = getCgroupsV2MemoryLimit();

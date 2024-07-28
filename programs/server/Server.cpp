@@ -22,6 +22,7 @@
 #include <base/coverage.h>
 #include <base/getFQDNOrHostName.h>
 #include <base/safeExit.h>
+#include <base/Numa.h>
 #include <Common/PoolId.h>
 #include <Common/MemoryTracker.h>
 #include <Common/ClickHouseRevision.h>
@@ -138,10 +139,6 @@
 #if USE_AZURE_BLOB_STORAGE
 #   include <azure/storage/common/internal/xml_wrapper.hpp>
 #   include <azure/core/diagnostics/logger.hpp>
-#endif
-
-#if USE_NUMACTL
-#include <numa.h>
 #endif
 
 
@@ -759,36 +756,11 @@ try
         setenv("OPENSSL_CONF", config_dir.c_str(), true); /// NOLINT
     }
 
-#if USE_NUMACTL
-    if (numa_available() != -1)
+    if (auto total_numa_memory = getNumaNodesTotalMemory(); total_numa_memory.has_value())
     {
-        auto * membind = numa_get_membind();
-        if (!numa_bitmask_equal(membind, numa_all_nodes_ptr))
-        {
-            uint64_t total_numa_memory = 0;
-            auto max_node = numa_max_node();
-            for (int i = 0; i <= max_node; ++i)
-            {
-                if (numa_bitmask_isbitset(membind, i))
-                    total_numa_memory += numa_node_size(i, nullptr);
-            }
-
-            LOG_INFO(
-                log,
-                "ClickHouse is bound to a subset of NUMA nodes. Total memory of all available nodes: {}",
-                ReadableSize(total_numa_memory));
-        }
-        else
-        {
-            LOG_TRACE(
-                log,
-                "All NUMA nodes are used. Detected NUMA nodes: {}",
-                numa_num_configured_nodes());
-        }
-
-        numa_bitmask_free(membind);
+        LOG_INFO(
+            log, "ClickHouse is bound to a subset of NUMA nodes. Total memory of all available nodes: {}", ReadableSize(*total_numa_memory));
     }
-#endif
 
     registerInterpreters();
     registerFunctions();

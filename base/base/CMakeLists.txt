@@ -32,6 +32,7 @@ set (SRCS
     StringRef.cpp
     safeExit.cpp
     throwError.cpp
+    Numa.cpp
 )
 
 add_library (common ${SRCS})
