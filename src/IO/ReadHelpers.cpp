@@ -10,7 +10,6 @@
 #include <IO/PeekableReadBuffer.h>
 #include <IO/readFloatText.h>
 #include <IO/Operators.h>
-#include <base/find_symbols.h>
 #include <cstdlib>
 #include <bit>
 
@@ -40,6 +39,7 @@ namespace ErrorCodes
     extern const int ATTEMPT_TO_READ_AFTER_EOF;
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
+    extern const int TOO_DEEP_RECURSION;
 }
 
 template <size_t num_bytes, typename IteratorSrc, typename IteratorDst>
@@ -1502,7 +1502,7 @@ ReturnType skipJSONFieldImpl(ReadBuffer & buf, StringRef name_of_field, const Fo
     if (unlikely(current_depth > settings.max_depth))
     {
         if constexpr (throw_exception)
-            throw Exception(ErrorCodes::INCORRECT_DATA, "JSON is too deep for key '{}'", name_of_field.toString());
+            throw Exception(ErrorCodes::TOO_DEEP_RECURSION, "JSON is too deep for key '{}'", name_of_field.toString());
         return ReturnType(false);
     }
 
