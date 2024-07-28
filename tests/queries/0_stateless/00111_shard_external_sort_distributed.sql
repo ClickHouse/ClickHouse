@@ -1,4 +1,4 @@
--- Tags: distributed
+-- Tags: distributed, long
 
 SET max_memory_usage = 150000000;
 SET max_bytes_before_external_sort = 10000000;
