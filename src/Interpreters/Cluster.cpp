@@ -370,9 +370,11 @@ void Clusters::updateClusters(const Poco::Util::AbstractConfiguration & new_conf
 
         /// If old config is set and cluster config wasn't changed, don't update this cluster.
         if (!old_config || !isSameConfiguration(new_config, *old_config, config_prefix + "." + key))
+        {
             auto cluster = std::make_shared<Cluster>(new_config, settings, config_prefix, key);
             cluster->initialize(settings);
-            impl[key] = cluster
+            impl[key] = cluster;
+        }
     }
 }
 
@@ -937,22 +939,6 @@ void Cluster::handleDynamicReplicas(const Settings & settings)
     }
 }
 
-void Cluster::reconnectToReplica(size_t index, const Settings & settings)
-{
-    if (index >= shards_info.size() || index >= addresses_with_failover.size())
-    {
-        return; // Safely return if the index is out of bounds.
-    }
-
-    auto & shard_info = shards_info[index];
-    for (const auto & address : addresses_with_failover[index])
-    {
-        if (!isConnectionAlive(shard_info.pool, settings))
-        {
-            reconnect(shard_info.pool, address, settings);
-        }
-    }
-}
 bool Cluster::isConnectionAlive(const std::shared_ptr<ConnectionPoolWithFailover> & pool, const Settings & settings)
 {
     if (!pool)
