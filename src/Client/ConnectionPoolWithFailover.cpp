@@ -66,8 +66,8 @@ IConnectionPool::Entry ConnectionPoolWithFailover::get(const ConnectionTimeouts 
     TryGetEntryFunc try_get_entry = [&](const NestedPoolPtr & pool, std::string & fail_message)
     {
         auto entry = tryGetEntry(pool, timeouts, fail_message, settings);
-        setSocketTimeouts(entry, timeouts.receive_timeout, timeouts.send_timeout);
-        enableKeepAlive(entry, Poco::Timespan(10, 0)); // Example interval for keep-alive
+        entry->setSocketTimeouts(timeouts.receive_timeout, timeouts.send_timeout);
+        entry->enableKeepAlive(Poco::Timespan(10, 0)); // Example interval for keep-alive
         return entry;
     };
 
@@ -279,14 +279,23 @@ ConnectionPoolWithFailover::getShuffledPools(const Settings & settings, GetPrior
     return Base::getShuffledPools(max_ignored_errors, priority_func, use_slowdown_count);
 }
 
-void ConnectionPoolWithFailover::setSocketTimeouts(ConnectionPtr connection, const Poco::Timespan & receive_timeout, const Poco::Timespan & send_timeout)
+void ConnectionPoolWithFailover::setSocketTimeouts(const Poco::Timespan & receive_timeout, const Poco::Timespan & send_timeout)
 {
-    connection->setSocketTimeouts(receive_timeout, send_timeout);
+    for (const auto & pool : nested_pools)
+    {
+        auto connection = pool->get();
+        connection->setSocketTimeouts(receive_timeout, send_timeout);
+    }
 }
 
-void ConnectionPoolWithFailover::enableKeepAlive(ConnectionPtr connection, const Poco::Timespan & interval)
+void ConnectionPoolWithFailover::enableKeepAlive(const Poco::Timespan & interval)
 {
-    connection->enableKeepAlive(interval);
+    for (const auto & pool : nested_pools)
+    {
+        auto connection = pool->get();
+        connection->enableKeepAlive(interval);
+    }
 }
+
 
 }

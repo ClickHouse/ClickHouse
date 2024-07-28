@@ -112,10 +112,7 @@ public:
         return tryGetEntry(nullptr, timeouts, fail_message, settings);
     }
 
-    // Method to set socket timeouts
-    void setSocketTimeouts(const Poco::Timespan & read_timeout, const Poco::Timespan & write_timeout);
-
-    // Method to enable keep-alive
+    void setSocketTimeouts(const Poco::Timespan & receive_timeout, const Poco::Timespan & send_timeout);
     void enableKeepAlive(const Poco::Timespan & interval);
 
 private:

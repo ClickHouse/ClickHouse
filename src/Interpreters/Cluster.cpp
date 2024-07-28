@@ -676,8 +676,12 @@ void Cluster::initMisc()
 
     for (auto & shard_info : shards_info)
     {
-        shard_info.pool->setSocketTimeouts(read_timeout, write_timeout);
-        shard_info.pool->enableKeepAlive(keep_alive_interval);
+        if (shard_info.pool)
+        {
+            auto connection = shard_info.pool->get();
+            connection->setSocketTimeouts(read_timeout, write_timeout);
+            connection->enableKeepAlive(keep_alive_interval);
+        }
     }
 }
 
