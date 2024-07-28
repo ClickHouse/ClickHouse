@@ -318,9 +318,10 @@ struct RemoveRecursiveObjectStorageOperation final : public IDiskObjectStorageOp
     const NameSet file_names_remove_metadata_only;
     const UInt64 batch_size;
 
-    /// map from local_path to its remote objects with hardlinks counter
+    /// local_path and related remote objects with hardlinks counter
     /// local_path is the path inside 'this->path'
-    std::unordered_map<std::string, ObjectsToRemove> objects_to_remove_by_path;
+    std::vector<std::string> local_paths_to_remove;
+    std::vector<ObjectsToRemove> objects_to_remove;
 
     RemoveRecursiveObjectStorageOperation(
         IObjectStorage & object_storage_,
@@ -344,7 +345,7 @@ struct RemoveRecursiveObjectStorageOperation final : public IDiskObjectStorageOp
     void removeMetadataRecursive(MetadataTransactionPtr tx, const std::string & path_to_remove)
     {
         checkStackSize(); /// This is needed to prevent stack overflow in case of cyclic symlinks.
-        if (objects_to_remove_by_path.size() == batch_size)
+        if (local_paths_to_remove.size() == batch_size)
             return;
 
         if (metadata_storage.isFile(path_to_remove))
@@ -359,8 +360,8 @@ struct RemoveRecursiveObjectStorageOperation final : public IDiskObjectStorageOp
 
                 if (unlink_outcome && !file_names_remove_metadata_only.contains(rel_path))
                 {
-                    objects_to_remove_by_path[std::move(rel_path)]
-                        = ObjectsToRemove{std::move(objects_paths), std::move(unlink_outcome)};
+                    local_paths_to_remove.push_back(std::move(rel_path));
+                    objects_to_remove.push_back({std::move(objects_paths), std::move(unlink_outcome)});
                 }
             }
             catch (const Exception & e)
@@ -388,12 +389,12 @@ struct RemoveRecursiveObjectStorageOperation final : public IDiskObjectStorageOp
         {
             for (auto it = metadata_storage.iterateDirectory(path_to_remove); it->isValid(); it->next())
             {
-                if (objects_to_remove_by_path.size() == batch_size)
+                if (local_paths_to_remove.size() == batch_size)
                     return;
                 removeMetadataRecursive(tx, it->path());
             }
             /// Do not delete in case directory contains >= batch_size files
-            if (objects_to_remove_by_path.size() < batch_size)
+            if (local_paths_to_remove.size() < batch_size)
                 tx->removeDirectory(path_to_remove);
         }
     }
@@ -414,15 +415,17 @@ struct RemoveRecursiveObjectStorageOperation final : public IDiskObjectStorageOp
         if (!keep_all_batch_data)
         {
             std::vector<String> total_removed_paths;
-            total_removed_paths.reserve(objects_to_remove_by_path.size());
+            total_removed_paths.reserve(local_paths_to_remove.size());
 
             StoredObjects remove_from_remote;
-            for (auto && [local_path, objects_to_remove] : objects_to_remove_by_path)
+            for (size_t i = 0; i < local_paths_to_remove.size(); ++i)
             {
+                std::string local_path = local_paths_to_remove[i];
+                ObjectsToRemove objects_to_remove_for_path = objects_to_remove[i];
                 chassert(!file_names_remove_metadata_only.contains(local_path));
-                if (objects_to_remove.unlink_outcome->num_hardlinks == 0)
+                if (objects_to_remove_for_path.unlink_outcome->num_hardlinks == 0)
                 {
-                    std::move(objects_to_remove.objects.begin(), objects_to_remove.objects.end(), std::back_inserter(remove_from_remote));
+                    std::move(objects_to_remove_for_path.objects.begin(), objects_to_remove_for_path.objects.end(), std::back_inserter(remove_from_remote));
                     total_removed_paths.push_back(local_path);
                 }
             }
