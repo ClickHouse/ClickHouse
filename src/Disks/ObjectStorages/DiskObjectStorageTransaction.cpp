@@ -37,6 +37,17 @@ DiskObjectStorageTransaction::DiskObjectStorageTransaction(
     , metadata_helper(metadata_helper_)
 {}
 
+DiskObjectStorageTransaction::DiskObjectStorageTransaction(
+    IObjectStorage & object_storage_,
+    IMetadataStorage & metadata_storage_,
+    DiskObjectStorageRemoteMetadataRestoreHelper * metadata_helper_,
+    UInt64 remove_shared_recursive_batch_size_)
+    : IDiskTransaction(remove_shared_recursive_batch_size_)
+    , object_storage(object_storage_)
+    , metadata_storage(metadata_storage_)
+    , metadata_transaction(metadata_storage.createTransaction())
+    , metadata_helper(metadata_helper_)
+{}
 
 DiskObjectStorageTransaction::DiskObjectStorageTransaction(
     IObjectStorage & object_storage_,
@@ -44,6 +55,19 @@ DiskObjectStorageTransaction::DiskObjectStorageTransaction(
     DiskObjectStorageRemoteMetadataRestoreHelper * metadata_helper_,
     MetadataTransactionPtr metadata_transaction_)
     : object_storage(object_storage_)
+    , metadata_storage(metadata_storage_)
+    , metadata_transaction(metadata_transaction_)
+    , metadata_helper(metadata_helper_)
+{}
+
+DiskObjectStorageTransaction::DiskObjectStorageTransaction(
+    IObjectStorage & object_storage_,
+    IMetadataStorage & metadata_storage_,
+    DiskObjectStorageRemoteMetadataRestoreHelper * metadata_helper_,
+    MetadataTransactionPtr metadata_transaction_,
+    UInt64 remove_shared_recursive_batch_size_)
+    : IDiskTransaction(remove_shared_recursive_batch_size_)
+    , object_storage(object_storage_)
     , metadata_storage(metadata_storage_)
     , metadata_transaction(metadata_transaction_)
     , metadata_helper(metadata_helper_)
@@ -292,6 +316,7 @@ struct RemoveRecursiveObjectStorageOperation final : public IDiskObjectStorageOp
     const bool keep_all_batch_data;
     /// paths inside the 'this->path'
     const NameSet file_names_remove_metadata_only;
+    const UInt64 batch_size;
 
     /// map from local_path to its remote objects with hardlinks counter
     /// local_path is the path inside 'this->path'
@@ -302,11 +327,13 @@ struct RemoveRecursiveObjectStorageOperation final : public IDiskObjectStorageOp
         IMetadataStorage & metadata_storage_,
         const std::string & path_,
         bool keep_all_batch_data_,
-        const NameSet & file_names_remove_metadata_only_)
+        const NameSet & file_names_remove_metadata_only_,
+        UInt64 batch_size_)
         : IDiskObjectStorageOperation(object_storage_, metadata_storage_)
         , path(path_)
         , keep_all_batch_data(keep_all_batch_data_)
         , file_names_remove_metadata_only(file_names_remove_metadata_only_)
+        , batch_size(batch_size_)
     {}
 
     std::string getInfoForLog() const override
@@ -317,6 +344,8 @@ struct RemoveRecursiveObjectStorageOperation final : public IDiskObjectStorageOp
     void removeMetadataRecursive(MetadataTransactionPtr tx, const std::string & path_to_remove)
     {
         checkStackSize(); /// This is needed to prevent stack overflow in case of cyclic symlinks.
+        if (objects_to_remove_by_path.size() == batch_size)
+            return;
 
         if (metadata_storage.isFile(path_to_remove))
         {
@@ -358,9 +387,14 @@ struct RemoveRecursiveObjectStorageOperation final : public IDiskObjectStorageOp
         else
         {
             for (auto it = metadata_storage.iterateDirectory(path_to_remove); it->isValid(); it->next())
+            {
+                if (objects_to_remove_by_path.size() == batch_size)
+                    return;
                 removeMetadataRecursive(tx, it->path());
-
-            tx->removeDirectory(path_to_remove);
+            }
+            /// Do not delete in case directory contains >= batch_size files
+            if (objects_to_remove_by_path.size() < batch_size)
+                tx->removeDirectory(path_to_remove);
         }
     }
 
@@ -683,7 +717,7 @@ void DiskObjectStorageTransaction::removeSharedRecursive(
     const std::string & path, bool keep_all_shared_data, const NameSet & file_names_remove_metadata_only)
 {
     auto operation = std::make_unique<RemoveRecursiveObjectStorageOperation>(
-        object_storage, metadata_storage, path, keep_all_shared_data, file_names_remove_metadata_only);
+        object_storage, metadata_storage, path, keep_all_shared_data, file_names_remove_metadata_only, remove_shared_recursive_batch_size);
     operations_to_execute.emplace_back(std::move(operation));
 }
 

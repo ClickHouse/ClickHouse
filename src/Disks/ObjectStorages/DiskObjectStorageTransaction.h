@@ -69,11 +69,24 @@ protected:
         DiskObjectStorageRemoteMetadataRestoreHelper * metadata_helper_,
         MetadataTransactionPtr metadata_transaction_);
 
+    DiskObjectStorageTransaction(
+        IObjectStorage & object_storage_,
+        IMetadataStorage & metadata_storage_,
+        DiskObjectStorageRemoteMetadataRestoreHelper * metadata_helper_,
+        MetadataTransactionPtr metadata_transaction_,
+        UInt64 remove_shared_recursive_batch_size);
+
 public:
     DiskObjectStorageTransaction(
         IObjectStorage & object_storage_,
         IMetadataStorage & metadata_storage_,
         DiskObjectStorageRemoteMetadataRestoreHelper * metadata_helper_);
+
+    DiskObjectStorageTransaction(
+        IObjectStorage & object_storage_,
+        IMetadataStorage & metadata_storage_,
+        DiskObjectStorageRemoteMetadataRestoreHelper * metadata_helper_,
+        UInt64 remove_shared_recursive_batch_size);
 
     void commit() override;
     void undo() override;

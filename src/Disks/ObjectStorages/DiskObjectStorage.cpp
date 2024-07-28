@@ -41,7 +41,8 @@ DiskTransactionPtr DiskObjectStorage::createObjectStorageTransaction()
     return std::make_shared<DiskObjectStorageTransaction>(
         *object_storage,
         *metadata_storage,
-        send_metadata ? metadata_helper.get() : nullptr);
+        send_metadata ? metadata_helper.get() : nullptr,
+        remove_shared_recursive_batch_size);
 }
 
 DiskTransactionPtr DiskObjectStorage::createObjectStorageTransactionToAnotherDisk(DiskObjectStorage& to_disk)
@@ -373,9 +374,12 @@ void DiskObjectStorage::removeSharedFileIfExists(const String & path, bool delet
 void DiskObjectStorage::removeSharedRecursive(
     const String & path, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only)
 {
-    auto transaction = createObjectStorageTransaction();
-    transaction->removeSharedRecursive(path, keep_all_batch_data, file_names_remove_metadata_only);
-    transaction->commit();
+    while (exists(path))
+    {
+        auto transaction = createObjectStorageTransaction();
+        transaction->removeSharedRecursive(path, keep_all_batch_data, file_names_remove_metadata_only);
+        transaction->commit();
+    }
 }
 
 bool DiskObjectStorage::tryReserve(UInt64 bytes)

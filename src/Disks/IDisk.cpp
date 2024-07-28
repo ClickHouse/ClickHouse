@@ -251,6 +251,7 @@ catch (Exception & e)
 void IDisk::applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr /*context*/, const String & config_prefix, const DisksMap & /*map*/)
 {
     copying_thread_pool.setMaxThreads(config.getInt(config_prefix + ".thread_pool_size", 16));
+    remove_shared_recursive_batch_size = config.getInt(config_prefix + ".remove_shared_recursive_batch_size", S3::DEFAULT_REMOVE_SHARED_RECURSIVE_BATCH_SIZE);
 }
 
 }

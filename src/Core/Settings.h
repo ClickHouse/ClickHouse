@@ -891,6 +891,7 @@ class IColumn;
     M(Bool, optimize_distinct_in_order, true, "Enable DISTINCT optimization if some columns in DISTINCT form a prefix of sorting. For example, prefix of sorting key in merge tree or ORDER BY statement", 0) \
     M(Bool, keeper_map_strict_mode, false, "Enforce additional checks during operations on KeeperMap. E.g. throw an exception on an insert for already existing key", 0) \
     M(UInt64, extract_key_value_pairs_max_pairs_per_row, 1000, "Max number of pairs that can be produced by the `extractKeyValuePairs` function. Used as a safeguard against consuming too much memory.", 0) ALIAS(extract_kvp_max_pairs_per_row) \
+    M(UInt64, object_storage_remove_recursive_batch_size, S3::DEFAULT_REMOVE_SHARED_RECURSIVE_BATCH_SIZE, "Max number of files to collect for removal in one transaction. Used to reduce memory usage.", 0) \
     \
     \
     /* ###################################### */ \

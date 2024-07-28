@@ -32,6 +32,10 @@ using RemoveBatchRequest = std::vector<RemoveRequest>;
 struct IDiskTransaction : private boost::noncopyable
 {
 public:
+    IDiskTransaction(): remove_shared_recursive_batch_size(S3::DEFAULT_REMOVE_SHARED_RECURSIVE_BATCH_SIZE) {}
+
+    explicit IDiskTransaction(UInt64 remove_shared_recursive_batch_size_): remove_shared_recursive_batch_size(remove_shared_recursive_batch_size_) {}
+
     /// Tries to commit all accumulated operations simultaneously.
     /// If something fails rollback and throw exception.
     virtual void commit() = 0;
@@ -131,6 +135,9 @@ public:
 
     /// Truncate file to the target size.
     virtual void truncateFile(const std::string & src_path, size_t target_size) = 0;
+
+protected:
+    UInt64 remove_shared_recursive_batch_size;
 };
 
 using DiskTransactionPtr = std::shared_ptr<IDiskTransaction>;
