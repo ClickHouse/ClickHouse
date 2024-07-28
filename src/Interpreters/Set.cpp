@@ -290,7 +290,9 @@ ColumnPtr returnFilteredColumn(const ColumnPtr & first, const ColumnPtr & second
         return first;
 
     FilterDescription filter_descr(*second);
-    return first->filter(*filter_descr.data, 0);
+    if (filter_descr.data)
+        return first->filter(*filter_descr.data, 0);
+    return nullptr;
 }
 
 ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) const
