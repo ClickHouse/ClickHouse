@@ -930,12 +930,35 @@ void Cluster::handleConnectionLoss(ShardInfo & shard_info, const Settings & sett
 Block Cluster::executeQueryWithFailover(const String & query, const Settings & settings)
 {
     ConnectionTimeouts timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(settings);
+    Block result;
+    NameToNameMap query_parameters; // Empty for now, add parameters if needed
+    String query_id = ""; // Use an empty string if no specific ID is needed
+    UInt64 stage = QueryProcessingStage::Complete; // Set to complete processing stage
+    ClientInfo client_info; // Default client info
+    bool with_pending_data = false; // No pending data to send
+
     for (auto & shard_info : shards_info)
     {
         try
         {
             auto entry = shard_info.pool->get(timeouts, settings, true);
-            return entry->sendQuery(query); // Ensure sendQuery method is available and returns Block
+            entry->sendQuery(timeouts, query, query_parameters, query_id, stage, &settings, &client_info, with_pending_data, nullptr);
+
+            while (true)
+            {
+                if (entry->hasPendingData())
+                {
+                    result = entry->receiveData();
+                    return result;
+                }
+
+                // Implement the logic for network connection hangs or ping packets
+                if (!entry->ping(timeouts))
+                {
+                    entry = shard_info.pool->get(timeouts, settings, true);
+                    entry->sendQuery(timeouts, query, query_parameters, query_id, stage, &settings, &client_info, with_pending_data, nullptr);
+                }
+            }
         }
         catch (const Exception & e)
         {
@@ -943,7 +966,23 @@ Block Cluster::executeQueryWithFailover(const String & query, const Settings & s
             {
                 handleConnectionLoss(shard_info, settings);
                 auto entry = shard_info.pool->get(timeouts, settings, true);
-                return entry->sendQuery(query); // Retry with new connection
+                entry->sendQuery(timeouts, query, query_parameters, query_id, stage, &settings, &client_info, with_pending_data, nullptr);
+
+                while (true)
+                {
+                    if (entry->hasPendingData())
+                    {
+                        result = entry->receiveData();
+                        return result;
+                    }
+
+                    // Implement the logic for network connection hangs or ping packets
+                    if (!entry->ping(timeouts))
+                    {
+                        entry = shard_info.pool->get(timeouts, settings, true);
+                        entry->sendQuery(timeouts, query, query_parameters, query_id, stage, &settings, &client_info, with_pending_data, nullptr);
+                    }
+                }
             }
             else
             {
