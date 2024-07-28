@@ -745,6 +745,7 @@ PromQL
 Promql
 Promtail
 Protobuf
+ProtobufList
 ProtobufSingle
 ProxySQL
 Punycode
@@ -1621,6 +1622,7 @@ filesystem
 filesystemAvailable
 filesystemCapacity
 filesystemFree
+filesystemUnreserved
 filesystems
 finalizeAggregation
 fips
@@ -1653,6 +1655,7 @@ formated
 formatschema
 formatter
 formatters
+fqdn
 frac
 freezed
 fromDaysSinceYearZero
@@ -1863,6 +1866,7 @@ jdbc
 jemalloc
 jeprof
 joinGet
+joinGetOrNull
 json
 jsonMergePatch
 jsonasstring
@@ -2285,6 +2289,7 @@ prometheus
 proportionsZTest
 proto
 protobuf
+protobuflist
 protobufsingle
 protocol
 proxied
@@ -2538,6 +2543,7 @@ sqlite
 sqrt
 src
 srcReplicas
+sshkey
 stackoverflow
 stacktrace
 stacktraces

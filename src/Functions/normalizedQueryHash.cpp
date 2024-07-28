@@ -27,13 +27,13 @@ struct Impl
     static void vector(
         const ColumnString::Chars & data,
         const ColumnString::Offsets & offsets,
-        PaddedPODArray<UInt64> & res_data)
+        PaddedPODArray<UInt64> & res_data,
+        size_t input_rows_count)
     {
-        size_t size = offsets.size();
-        res_data.resize(size);
+        res_data.resize(input_rows_count);
 
         ColumnString::Offset prev_src_offset = 0;
-        for (size_t i = 0; i < size; ++i)
+        for (size_t i = 0; i < input_rows_count; ++i)
         {
             ColumnString::Offset curr_src_offset = offsets[i];
             res_data[i] = normalizedQueryHash(
@@ -77,15 +77,15 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const ColumnPtr column = arguments[0].column;
         if (const ColumnString * col = checkAndGetColumn<ColumnString>(column.get()))
         {
             auto col_res = ColumnUInt64::create();
             typename ColumnUInt64::Container & vec_res = col_res->getData();
-            vec_res.resize(col->size());
-            Impl<keep_names>::vector(col->getChars(), col->getOffsets(), vec_res);
+            vec_res.resize(input_rows_count);
+            Impl<keep_names>::vector(col->getChars(), col->getOffsets(), vec_res, input_rows_count);
             return col_res;
         }
         else
