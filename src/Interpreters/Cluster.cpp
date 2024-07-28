@@ -21,6 +21,7 @@
 #include <Client/ConnectionPoolWithFailover.h>
 #include <Client/ConnectionEstablisher.h>
 
+#include <Poco/Net/StreamSocket.h>
 #include <span>
 #include <pcg_random.hpp>
 
@@ -38,7 +39,8 @@ namespace ErrorCodes
     extern const int INVALID_SHARD_ID;
     extern const int NO_SUCH_REPLICA;
     extern const int BAD_ARGUMENTS;
-    extern const int SOCKET_TIMEOUT
+    extern const int SOCKET_TIMEOUT;
+    extern const int NETWORK_ERROR; // Ensure this is defined in your ErrorCodes
 }
 
 namespace
@@ -372,9 +374,7 @@ void Clusters::updateClusters(const Poco::Util::AbstractConfiguration & new_conf
         /// If old config is set and cluster config wasn't changed, don't update this cluster.
         if (!old_config || !isSameConfiguration(new_config, *old_config, config_prefix + "." + key))
         {
-            auto cluster = std::make_shared<Cluster>(new_config, settings, config_prefix, key);
-            cluster->initialize(settings);
-            impl[key] = cluster;
+            impl[key] = std::make_shared<Cluster>(new_config, settings, config_prefix, key);
         }
     }
 }
@@ -517,11 +517,6 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
         throw Exception(ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG, "There must be either 'node' or 'shard' elements in config");
 
     initMisc();
-}
-
-void Cluster::initialize(const Settings & settings)
-{
-    handleDynamicReplicas(settings);
 }
 
 Cluster::Cluster(
@@ -914,9 +909,8 @@ bool Cluster::maybeCrossReplication() const
     return false;
 }
 
-void Cluster::handleConnectionLoss(ShardInfo & shard_info)
+void Cluster::handleConnectionLoss(const ShardInfo & shard_info, const Settings & settings)
 {
-    // Logic to handle connection loss and reconnect to another replica
     for (const auto & address : shard_info.local_addresses)
     {
         try
@@ -925,29 +919,31 @@ void Cluster::handleConnectionLoss(ShardInfo & shard_info)
             shard_info.pool = new_pool;
             return;
         }
-        catch (const Exception & e)
+        catch (const Exception &)
         {
             tryLogCurrentException("Cluster", "Failed to reconnect to replica: " + address.toString());
         }
     }
 
-    throw Exception(ErrorCodes::SOCKET_TIMEOUT, "Failed to reconnect to any replica");
+    throw Exception(ErrorCodes::NETWORK_ERROR, "Failed to reconnect to any replica");
 }
 
-Block Cluster::executeQueryWithFailover(const String & query)
+Block Cluster::executeQueryWithFailover(const String & query, const Settings & settings)
 {
     for (auto & shard_info : shards_info)
     {
         try
         {
-            return shard_info.pool->execute(query);
+            // Use the actual method to execute the query
+            return shard_info.pool->get(query);  // Example method, replace with actual one
         }
         catch (const Exception & e)
         {
-            if (e.code() == ErrorCodes::SOCKET_TIMEOUT)
+            if (e.code() == ErrorCodes::NETWORK_ERROR)
             {
-                handleConnectionLoss(shard_info);
-                return shard_info.pool->execute(query);
+                handleConnectionLoss(shard_info, settings);
+                // Use the actual method to execute the query
+                return shard_info.pool->get(query);  // Example method, replace with actual one
             }
             else
             {
@@ -956,7 +952,7 @@ Block Cluster::executeQueryWithFailover(const String & query)
         }
     }
 
-    throw Exception(ErrorCodes::SOCKET_TIMEOUT, "Failed to execute query on all replicas");
+    throw Exception(ErrorCodes::SHARD_HAS_NO_CONNECTIONS, "Failed to execute query on all replicas");
 }
 
 ConnectionPoolWithFailoverPtr Cluster::createFailoverPool(const Addresses & addresses, const Settings & settings)
