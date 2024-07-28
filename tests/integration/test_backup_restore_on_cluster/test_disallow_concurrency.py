@@ -111,10 +111,10 @@ def create_and_fill_table():
         nodes[i].query(f"INSERT INTO tbl SELECT number FROM numbers(40000000)")
 
 
-def wait_for_fail_backup(node, backup_id, backup_name):
+def wait_for_fail_backup(node, backup_id):
     expected_errors = [
         "Concurrent backups not supported",
-        f"Backup {backup_name} already exists",
+        "BACKUP_ALREADY_EXISTS",
     ]
     status = node.query(
         f"SELECT status FROM system.backups WHERE id == '{backup_id}'"
@@ -137,7 +137,7 @@ def wait_for_fail_backup(node, backup_id, backup_name):
         error = node.query(
             f"SELECT error FROM system.backups WHERE id == '{backup_id}'"
         ).rstrip("\n")
-        assert re.search(f"Backup {backup_name} already exists", error)
+        assert any([expected_error in error for expected_error in expected_errors])
         return
     else:
         assert False, "Concurrent backups both passed, when one is expected to fail"
@@ -207,10 +207,10 @@ def test_concurrent_backups_on_same_node():
 
     expected_errors = [
         "Concurrent backups not supported",
-        f"Backup {backup_name} already exists",
+        "BACKUP_ALREADY_EXISTS",
     ]
     if not error:
-        wait_for_fail_backup(nodes[0], id, backup_name)
+        wait_for_fail_backup(nodes[0], id)
 
     assert any([expected_error in error for expected_error in expected_errors])
 
@@ -257,11 +257,11 @@ def test_concurrent_backups_on_different_nodes():
 
     expected_errors = [
         "Concurrent backups not supported",
-        f"Backup {backup_name} already exists",
+        "BACKUP_ALREADY_EXISTS",
     ]
 
     if not error:
-        wait_for_fail_backup(nodes[1], id, backup_name)
+        wait_for_fail_backup(nodes[1], id)
 
     assert any([expected_error in error for expected_error in expected_errors])
 
