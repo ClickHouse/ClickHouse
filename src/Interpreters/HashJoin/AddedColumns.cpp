@@ -15,73 +15,62 @@ JoinOnKeyColumns::JoinOnKeyColumns(const Block & block, const Names & key_names_
 {
 }
 
-template<> void AddedColumns<false>::buildOutputFromRowRef() {}
+template<>
+void AddedColumns<false>::buildOutput() {}
 
-template<> void AddedColumns<false>::buildOutputFromRowRefList() {}
+template<>
+void AddedColumns<false>::buildJoinGetOutput() {}
 
-template<> void AddedColumns<false>::buildOutputFromSortedRowRefList() {}
-
-template<> void AddedColumns<false>::buildOutputFromBlocks() {}
-
-template<> void AddedColumns<false>::buildJoinGetOutput() {}
-
-template<> void AddedColumns<true>::buildOutputFromRowRef()
+template<>
+void AddedColumns<true>::buildOutput()
 {
-    for (size_t i = 0; i < this->size(); ++i)
+    if (!output_by_row_list)
+        buildOutputFromBlocks<false>();
+    else
     {
-        auto & col = columns[i];
-        for (auto row_ref_i : lazy_output.row_refs)
+        if (join_data_avg_perkey_rows < sort_right_perkey_rows_threshold)
+            buildOutputFromBlocks<true>();
+        else if (join_data_sorted)
         {
-            if (row_ref_i)
+            for (size_t i = 0; i < this->size(); ++i)
             {
-                const RowRef * row_ref = reinterpret_cast<const RowRef *>(row_ref_i);
-                col->insertFrom(*row_ref->block->getByPosition(right_indexes[i]).column, row_ref->row_num);
+                auto & col = columns[i];
+                for (auto row_ref_i : lazy_output.row_refs)
+                {
+                    if (row_ref_i)
+                    {
+                        const RowRefList * row_ref_list = reinterpret_cast<const RowRefList *>(row_ref_i);
+                        col->insertRangeFrom(*row_ref_list->block->getByPosition(right_indexes[i]).column, row_ref_list->row_num, row_ref_list->rows);
+                    }
+                    else
+                        type_name[i].type->insertDefaultInto(*col);
+                }
             }
-            else
-                type_name[i].type->insertDefaultInto(*col);
+        }
+        else
+        {
+            for (size_t i = 0; i < this->size(); ++i)
+            {
+                auto & col = columns[i];
+                for (auto row_ref_i : lazy_output.row_refs)
+                {
+                    if (row_ref_i)
+                    {
+                        const RowRefList * row_ref_list = reinterpret_cast<const RowRefList *>(row_ref_i);
+                        for (auto it = row_ref_list->begin(); it.ok(); ++it)
+                            col->insertFrom(*it->block->getByPosition(right_indexes[i]).column, it->row_num);
+                    }
+                    else
+                        type_name[i].type->insertDefaultInto(*col);
+                }
+            }
         }
     }
 }
 
-template<> void AddedColumns<true>::buildOutputFromRowRefList()
-{
-    for (size_t i = 0; i < this->size(); ++i)
-    {
-        auto & col = columns[i];
-        for (auto row_ref_i : lazy_output.row_refs)
-        {
-            if (row_ref_i)
-            {
-                const RowRefList * row_ref_list = reinterpret_cast<const RowRefList *>(row_ref_i);
-                for (auto it = row_ref_list->begin(); it.ok(); ++it)
-                    col->insertFrom(*it->block->getByPosition(right_indexes[i]).column, it->row_num);
-            }
-            else
-                type_name[i].type->insertDefaultInto(*col);
-        }
-    }
-}
-
-template<> void AddedColumns<true>::buildOutputFromSortedRowRefList()
-{
-    for (size_t i = 0; i < this->size(); ++i)
-    {
-        auto & col = columns[i];
-        for (auto row_ref_i : lazy_output.row_refs)
-        {
-            if (row_ref_i)
-            {
-                const RowRefList * row_ref_list = reinterpret_cast<const RowRefList *>(row_ref_i);
-                col->insertRangeFrom(*row_ref_list->block->getByPosition(right_indexes[i]).column, row_ref_list->row_num, row_ref_list->rows);
-            }
-            else
-                type_name[i].type->insertDefaultInto(*col);
-        }
-    }
-}
-
-
-template<> void AddedColumns<true>::buildOutputFromBlocks()
+template<>
+template<bool from_row_list>
+void AddedColumns<true>::buildOutputFromBlocks()
 {
     std::vector<const Block *> blocks;
     std::vector<UInt32> row_nums;
@@ -91,11 +80,20 @@ template<> void AddedColumns<true>::buildOutputFromBlocks()
     {
         if (row_ref_i)
         {
-            const RowRefList * row_ref_list = reinterpret_cast<const RowRefList *>(row_ref_i);
-            for (auto it = row_ref_list->begin(); it.ok(); ++it)
+            if constexpr (from_row_list)
             {
-                blocks.emplace_back(it->block);
-                row_nums.emplace_back(it->row_num);
+                const RowRefList * row_ref_list = reinterpret_cast<const RowRefList *>(row_ref_i);
+                for (auto it = row_ref_list->begin(); it.ok(); ++it)
+                {
+                    blocks.emplace_back(it->block);
+                    row_nums.emplace_back(it->row_num);
+                }
+            }
+            else
+            {
+                const RowRef * row_ref = reinterpret_cast<const RowRefList *>(row_ref_i);
+                blocks.emplace_back(row_ref->block);
+                row_nums.emplace_back(row_ref->row_num);
             }
         }
         else
@@ -117,7 +115,8 @@ template<> void AddedColumns<true>::buildOutputFromBlocks()
     }
 }
 
-template<> void AddedColumns<true>::buildJoinGetOutput()
+template<>
+void AddedColumns<true>::buildJoinGetOutput()
 {
     for (size_t i = 0; i < this->size(); ++i)
     {

@@ -113,17 +113,14 @@ public:
             if (columns[j]->isNullable() && !saved_column->isNullable())
                 nullable_column_ptrs[j] = typeid_cast<ColumnNullable *>(columns[j].get());
         }
+        join_data_avg_perkey_rows = join.getJoinedData()->avgPerKeyRows();
+        sort_right_perkey_rows_threshold = join.getTableJoin().sortRightPerkeyRowsThreshold();
+        join_data_sorted = join.getJoinedData()->sorted;
     }
 
     size_t size() const { return columns.size(); }
 
-    void buildOutputFromRowRef();
-
-    void buildOutputFromRowRefList();
-
-    void buildOutputFromSortedRowRefList();
-
-    void buildOutputFromBlocks();
+    void buildOutput();
 
     void buildJoinGetOutput();
 
@@ -151,7 +148,9 @@ public:
     std::unique_ptr<IColumn::Offsets> offsets_to_replicate;
     bool need_filter = false;
     bool output_by_row_list = false;
-    bool output_by_blocks = false;
+    bool join_data_sorted = false;
+    size_t join_data_avg_perkey_rows = 0;
+    size_t sort_right_perkey_rows_threshold = 0;
     IColumn::Filter filter;
 
     void reserve(bool need_replicate)
@@ -199,6 +198,12 @@ private:
         }
     }
 
+     /** Build output from the blocks that extract from `RowRef` or `RowRefList`, to avoid block cache miss which may cause performance slow down.
+     *  And This problem would happen it we directly build output from `RowRef` or `RowRefList`.
+     */
+    template<bool from_row_list>
+    void buildOutputFromBlocks();
+
     MutableColumns columns;
     bool is_join_get;
     std::vector<size_t> right_indexes;
@@ -230,7 +235,7 @@ private:
 class PreSelectedRows : public std::vector<const RowRef *>
 {
 public:
-    void appendFromBlock(const RowRef * row_ref, bool /* has_default */) { this->emplace_back(row_ref); }
+     void appendFromBlock(const RowRef * row_ref, bool /* has_default */) { this->emplace_back(row_ref); }
     static constexpr bool isLazy() { return false; }
 };
 
