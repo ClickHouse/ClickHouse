@@ -9,7 +9,6 @@
 #include <Interpreters/ExpressionActions.h>
 #include <QueryPipeline/ReadProgressCallback.h>
 #include <QueryPipeline/Pipe.h>
-#include <QueryPipeline/printPipeline.h>
 #include <Processors/Sinks/EmptySink.h>
 #include <Processors/Sinks/NullSink.h>
 #include <Processors/Sinks/SinkToStorage.h>
@@ -54,19 +53,13 @@ static void checkInput(const InputPort & input, const ProcessorPtr & processor)
             processor->getName());
 }
 
-static void checkOutput(const OutputPort & output, const ProcessorPtr & processor, const Processors & processors = {})
+static void checkOutput(const OutputPort & output, const ProcessorPtr & processor)
 {
     if (!output.isConnected())
-    {
-        WriteBufferFromOwnString out;
-        if (!processors.empty())
-            printPipeline(processors, out);
-
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
-            "Cannot create QueryPipeline because {} {} has disconnected output: {}",
-            processor->getName(), processor->getDescription(), out.str());
-    }
+            "Cannot create QueryPipeline because {} has disconnected output",
+            processor->getName());
 }
 
 static void checkPulling(
@@ -107,7 +100,7 @@ static void checkPulling(
             else if (extremes && &out == extremes)
                 found_extremes = true;
             else
-                checkOutput(out, processor, processors);
+                checkOutput(out, processor);
         }
     }
 
@@ -343,6 +336,7 @@ QueryPipeline::QueryPipeline(Pipe pipe)
         output = pipe.getOutputPort(0);
         totals = pipe.getTotalsPort();
         extremes = pipe.getExtremesPort();
+
         processors = std::move(pipe.processors);
         checkPulling(*processors, output, totals, extremes);
     }

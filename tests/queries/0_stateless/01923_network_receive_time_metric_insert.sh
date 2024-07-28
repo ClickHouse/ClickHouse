@@ -9,7 +9,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 ${CLICKHOUSE_CLIENT} --multiquery --query "DROP TABLE IF EXISTS t; CREATE TABLE t (x UInt64) ENGINE = Memory;"
 
 # Rate limit is chosen for operation to spent more than one second.
-seq 1 1000 | pv --quiet --rate-limit 400 | ${CLICKHOUSE_CLIENT} --query "INSERT INTO t FORMAT TSV"
+seq 1 1000 | pv --quiet --rate-limit 500 | ${CLICKHOUSE_CLIENT} --query "INSERT INTO t FORMAT TSV"
 
 # We check that the value of NetworkReceiveElapsedMicroseconds correctly includes the time spent waiting data from the client.
 ${CLICKHOUSE_CLIENT} --multiquery --query "SYSTEM FLUSH LOGS;

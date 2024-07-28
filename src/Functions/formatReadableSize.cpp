@@ -1,6 +1,5 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/formatReadable.h>
-#include <Common/formatReadable.h>
 
 
 namespace DB
@@ -22,7 +21,6 @@ namespace
 REGISTER_FUNCTION(FormatReadableSize)
 {
     factory.registerFunction<FunctionFormatReadable<Impl>>();
-    factory.registerAlias("FORMAT_BYTES", Impl::name, FunctionFactory::Case::Insensitive);
 }
 
 }

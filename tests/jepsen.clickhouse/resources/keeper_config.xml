@@ -33,7 +33,6 @@
     <keeper_server>
         <tcp_port>9181</tcp_port>
         <server_id>{id}</server_id>
-        <digest_enabled>1</digest_enabled>
 
         <coordination_settings>
             <operation_timeout_ms>10000</operation_timeout_ms>
@@ -48,7 +47,6 @@
             <snapshot_distance>{snapshot_distance}</snapshot_distance>
             <stale_log_gap>{stale_log_gap}</stale_log_gap>
             <reserved_log_items>{reserved_log_items}</reserved_log_items>
-            <async_replication>1</async_replication>
         </coordination_settings>
 
         <raft_configuration>

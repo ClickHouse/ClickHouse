@@ -22,13 +22,6 @@ from pathlib import Path
 from requests.exceptions import ConnectionError
 from urllib3.util.retry import Retry
 
-script_dir = os.path.dirname(os.path.realpath(__file__))
-grpc_protocol_pb2_dir = os.path.join(script_dir, "grpc_protocol_pb2")
-if grpc_protocol_pb2_dir not in sys.path:
-    sys.path.append(grpc_protocol_pb2_dir)
-import clickhouse_grpc_pb2, clickhouse_grpc_pb2_grpc  # Execute grpc_protocol_pb2/generate.py to generate these modules.
-
-
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
     "instance",
@@ -49,6 +42,22 @@ instance = cluster.add_instance(
 
 
 LOADS_QUERY = "SELECT value FROM system.events WHERE event = 'MainConfigLoads'"
+
+
+# Use grpcio-tools to generate *pb2.py files from *.proto.
+
+proto_dir = Path(__file__).parent / "protos"
+gen_dir = Path(__file__).parent / "_gen"
+gen_dir.mkdir(exist_ok=True)
+run_and_check(
+    f"python3 -m grpc_tools.protoc -I{proto_dir!s} --python_out={gen_dir!s} --grpc_python_out={gen_dir!s} \
+    {proto_dir!s}/clickhouse_grpc.proto",
+    shell=True,
+)
+
+sys.path.append(str(gen_dir))
+import clickhouse_grpc_pb2
+import clickhouse_grpc_pb2_grpc
 
 
 @pytest.fixture(name="cluster", scope="module")

@@ -63,7 +63,7 @@ public:
     QueryPipeline getStreamForBlock(const Block & block);
 
 private:
-    LoggerPtr log;
+    Poco::Logger * log;
     time_t update_time = 0;
     const DictionaryStructure dict_struct;
     const Configuration configuration;

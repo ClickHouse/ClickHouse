@@ -44,14 +44,12 @@ set (SRCS_IOSTREAMS
     "${LIBRARY_DIR}/libs/iostreams/src/gzip.cpp"
     "${LIBRARY_DIR}/libs/iostreams/src/mapped_file.cpp"
     "${LIBRARY_DIR}/libs/iostreams/src/zlib.cpp"
-    "${LIBRARY_DIR}/libs/iostreams/src/zstd.cpp"
 )
 
 add_library (_boost_iostreams ${SRCS_IOSTREAMS})
 add_library (boost::iostreams ALIAS _boost_iostreams)
 target_include_directories (_boost_iostreams PRIVATE ${LIBRARY_DIR})
 target_link_libraries (_boost_iostreams PRIVATE ch_contrib::zlib)
-target_link_libraries (_boost_iostreams PRIVATE ch_contrib::zstd)
 
 # program_options
 
@@ -139,12 +137,6 @@ elseif (ARCH_RISCV64)
         "${LIBRARY_DIR}/libs/context/src/asm/jump_riscv64_sysv_elf_gas.S"
         "${LIBRARY_DIR}/libs/context/src/asm/make_riscv64_sysv_elf_gas.S"
         "${LIBRARY_DIR}/libs/context/src/asm/ontop_riscv64_sysv_elf_gas.S"
-    )
-elseif (ARCH_LOONGARCH64)
-    set (SRCS_CONTEXT ${SRCS_CONTEXT}
-        "${LIBRARY_DIR}/libs/context/src/asm/jump_loongarch64_sysv_elf_gas.S"
-        "${LIBRARY_DIR}/libs/context/src/asm/make_loongarch64_sysv_elf_gas.S"
-        "${LIBRARY_DIR}/libs/context/src/asm/ontop_loongarch64_sysv_elf_gas.S"
     )
 elseif(OS_DARWIN)
     set (SRCS_CONTEXT ${SRCS_CONTEXT}

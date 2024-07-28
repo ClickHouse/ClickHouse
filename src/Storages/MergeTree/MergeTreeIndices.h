@@ -1,16 +1,18 @@
 #pragma once
 
 #include <string>
+#include <map>
 #include <unordered_map>
 #include <vector>
 #include <memory>
+#include <utility>
+#include <mutex>
 #include <Core/Block.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/MergeTree/GinIndexStore.h>
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/MergeTree/MarkRange.h>
-#include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Interpreters/ExpressionActions.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -157,19 +159,20 @@ struct IMergeTreeIndex
         return {0 /*unknown*/, ""};
     }
 
+    /// Checks whether the column is in data skipping index.
+    virtual bool mayBenefitFromIndexForIn(const ASTPtr & node) const = 0;
+
     virtual MergeTreeIndexGranulePtr createIndexGranule() const = 0;
 
-    virtual MergeTreeIndexAggregatorPtr createIndexAggregator(const MergeTreeWriterSettings & settings) const = 0;
+    virtual MergeTreeIndexAggregatorPtr createIndexAggregator() const = 0;
 
-    virtual MergeTreeIndexAggregatorPtr createIndexAggregatorForPart(const GinIndexStorePtr & /*store*/, const MergeTreeWriterSettings & settings) const
+    virtual MergeTreeIndexAggregatorPtr createIndexAggregatorForPart([[maybe_unused]]const GinIndexStorePtr &store) const
     {
-        return createIndexAggregator(settings);
+        return createIndexAggregator();
     }
 
     virtual MergeTreeIndexConditionPtr createIndexCondition(
-        const ActionsDAGPtr & filter_actions_dag, ContextPtr context) const = 0;
-
-    virtual bool isVectorSearch() const { return false; }
+        const SelectQueryInfo & query_info, ContextPtr context) const = 0;
 
     virtual MergeTreeIndexMergedConditionPtr createIndexMergedCondition(
         const SelectQueryInfo & /*query_info*/, StorageMetadataPtr /*storage_metadata*/) const
@@ -221,11 +224,11 @@ void minmaxIndexValidator(const IndexDescription & index, bool attach);
 MergeTreeIndexPtr setIndexCreator(const IndexDescription & index);
 void setIndexValidator(const IndexDescription & index, bool attach);
 
-MergeTreeIndexPtr bloomFilterIndexTextCreator(const IndexDescription & index);
-void bloomFilterIndexTextValidator(const IndexDescription & index, bool attach);
-
 MergeTreeIndexPtr bloomFilterIndexCreator(const IndexDescription & index);
 void bloomFilterIndexValidator(const IndexDescription & index, bool attach);
+
+MergeTreeIndexPtr bloomFilterIndexCreatorNew(const IndexDescription & index);
+void bloomFilterIndexValidatorNew(const IndexDescription & index, bool attach);
 
 MergeTreeIndexPtr hypothesisIndexCreator(const IndexDescription & index);
 void hypothesisIndexValidator(const IndexDescription & index, bool attach);
@@ -240,7 +243,7 @@ MergeTreeIndexPtr usearchIndexCreator(const IndexDescription& index);
 void usearchIndexValidator(const IndexDescription& index, bool attach);
 #endif
 
-MergeTreeIndexPtr fullTextIndexCreator(const IndexDescription& index);
-void fullTextIndexValidator(const IndexDescription& index, bool attach);
+MergeTreeIndexPtr invertedIndexCreator(const IndexDescription& index);
+void invertedIndexValidator(const IndexDescription& index, bool attach);
 
 }

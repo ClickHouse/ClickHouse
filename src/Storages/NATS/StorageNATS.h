@@ -23,16 +23,15 @@ public:
         const StorageID & table_id_,
         ContextPtr context_,
         const ColumnsDescription & columns_,
-        const String & comment,
         std::unique_ptr<NATSSettings> nats_settings_,
-        LoadingStrictnessLevel mode);
+        bool is_attach_);
 
     std::string getName() const override { return "NATS"; }
 
     bool noPushingToViews() const override { return true; }
 
     void startup() override;
-    void shutdown(bool is_drop) override;
+    void shutdown() override;
 
     /// This is a bad way to let storage know in shutdown() that table is going to be dropped. There are some actions which need
     /// to be done only when table is dropped (not when detached). Also connection must be closed only in shutdown, but those
@@ -62,6 +61,7 @@ public:
     NATSConsumerPtr popConsumer(std::chrono::milliseconds timeout);
 
     const String & getFormatName() const { return format_name; }
+    NamesAndTypesList getVirtuals() const override;
 
     void incrementReader();
     void decrementReader();
@@ -78,7 +78,7 @@ private:
     size_t num_consumers;
     size_t max_rows_per_message;
 
-    LoggerPtr log;
+    Poco::Logger * log;
 
     NATSConnectionManagerPtr connection; /// Connection for all consumers
     NATSConfiguration configuration;
@@ -117,7 +117,7 @@ private:
     std::mutex loop_mutex;
 
     mutable bool drop_table = false;
-    bool throw_on_startup_failure;
+    bool is_attach;
 
     NATSConsumerPtr createConsumer();
 
@@ -137,7 +137,6 @@ private:
 
     static Names parseList(const String & list, char delim);
     static String getTableBasedName(String name, const StorageID & table_id);
-    static VirtualColumnsDescription createVirtuals(StreamingHandleErrorMode handle_error_mode);
 
     ContextMutablePtr addSettings(ContextPtr context) const;
     size_t getMaxBlockSize() const;

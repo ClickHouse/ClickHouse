@@ -22,8 +22,7 @@ public:
         const ExecutableSettings & settings,
         const std::vector<ASTPtr> & input_queries,
         const ColumnsDescription & columns,
-        const ConstraintsDescription & constraints,
-        const String & comment);
+        const ConstraintsDescription & constraints);
 
     String getName() const override
     {
@@ -46,7 +45,7 @@ public:
 private:
     ExecutableSettings settings;
     std::vector<ASTPtr> input_queries;
-    LoggerPtr log;
+    Poco::Logger * log;
     std::unique_ptr<ShellCommandSourceCoordinator> coordinator;
 };
 

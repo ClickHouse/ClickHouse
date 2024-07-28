@@ -20,7 +20,7 @@ friend class TableFunctionDictionary;
 
 public:
     /// Specifies where the table is located relative to the dictionary.
-    enum class Location : uint8_t
+    enum class Location
     {
         /// Table was created automatically as an element of a database with the Dictionary engine.
         DictionaryDatabase,
@@ -80,10 +80,11 @@ public:
 
     std::shared_ptr<const IDictionary> getDictionary() const;
 
-    static NamesAndTypesList getNamesAndTypes(const DictionaryStructure & dictionary_structure, bool validate_id_type);
+    static NamesAndTypesList getNamesAndTypes(const DictionaryStructure & dictionary_structure);
+    static String generateNamesAndTypesDescription(const NamesAndTypesList & list);
 
     bool isDictionary() const override { return true; }
-    void shutdown(bool is_drop) override;
+    void shutdown() override;
     void startup() override;
 
     void renameInMemory(const StorageID & new_table_id) override;
@@ -92,6 +93,7 @@ public:
 
     void alter(const AlterCommands & params, ContextPtr alter_context, AlterLockHolder &) override;
 
+    Poco::Timestamp getUpdateTime() const;
     LoadablesConfigurationPtr getConfiguration() const;
 
     String getDictionaryName() const { return dictionary_name; }
@@ -101,7 +103,8 @@ private:
     const Location location;
 
     mutable std::mutex dictionary_config_mutex;
-    LoadablesConfigurationPtr configuration TSA_GUARDED_BY(dictionary_config_mutex);
+    Poco::Timestamp update_time;
+    LoadablesConfigurationPtr configuration;
 
     scope_guard remove_repository_callback;
 

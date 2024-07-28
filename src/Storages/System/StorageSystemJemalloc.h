@@ -15,7 +15,7 @@ public:
 
     std::string getName() const override { return "SystemJemallocBins"; }
 
-    static ColumnsDescription getColumnsDescription();
+    static NamesAndTypesList getNamesAndTypes();
 
     Pipe read(
         const Names & column_names,

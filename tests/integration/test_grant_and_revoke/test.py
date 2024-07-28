@@ -5,8 +5,9 @@ from helpers.test_tools import TSV
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
     "instance",
-    main_configs=["configs/config.xml"],
-    user_configs=["configs/users.d/users.xml"],
+    user_configs=[
+        "configs/users.d/users.xml",
+    ],
 )
 
 
@@ -76,53 +77,53 @@ def test_revoke_requires_grant_option():
     instance.query("CREATE USER B")
 
     instance.query("GRANT SELECT ON test.table TO B")
-    assert instance.query("SHOW GRANTS FOR B") == "GRANT SELECT ON test.`table` TO B\n"
+    assert instance.query("SHOW GRANTS FOR B") == "GRANT SELECT ON test.table TO B\n"
 
     expected_error = "Not enough privileges"
     assert expected_error in instance.query_and_get_error(
         "REVOKE SELECT ON test.table FROM B", user="A"
     )
-    assert instance.query("SHOW GRANTS FOR B") == "GRANT SELECT ON test.`table` TO B\n"
+    assert instance.query("SHOW GRANTS FOR B") == "GRANT SELECT ON test.table TO B\n"
 
     instance.query("GRANT SELECT ON test.table TO A")
     expected_error = "privileges have been granted, but without grant option"
     assert expected_error in instance.query_and_get_error(
         "REVOKE SELECT ON test.table FROM B", user="A"
     )
-    assert instance.query("SHOW GRANTS FOR B") == "GRANT SELECT ON test.`table` TO B\n"
+    assert instance.query("SHOW GRANTS FOR B") == "GRANT SELECT ON test.table TO B\n"
 
     instance.query("GRANT SELECT ON test.table TO A WITH GRANT OPTION")
-    assert instance.query("SHOW GRANTS FOR B") == "GRANT SELECT ON test.`table` TO B\n"
+    assert instance.query("SHOW GRANTS FOR B") == "GRANT SELECT ON test.table TO B\n"
     instance.query("REVOKE SELECT ON test.table FROM B", user="A")
     assert instance.query("SHOW GRANTS FOR B") == ""
 
     instance.query("GRANT SELECT ON test.table TO B")
-    assert instance.query("SHOW GRANTS FOR B") == "GRANT SELECT ON test.`table` TO B\n"
+    assert instance.query("SHOW GRANTS FOR B") == "GRANT SELECT ON test.table TO B\n"
     instance.query("REVOKE SELECT ON test.* FROM B", user="A")
     assert instance.query("SHOW GRANTS FOR B") == ""
 
     instance.query("GRANT SELECT ON test.table TO B")
-    assert instance.query("SHOW GRANTS FOR B") == "GRANT SELECT ON test.`table` TO B\n"
+    assert instance.query("SHOW GRANTS FOR B") == "GRANT SELECT ON test.table TO B\n"
     instance.query("REVOKE ALL ON test.* FROM B", user="A")
     assert instance.query("SHOW GRANTS FOR B") == ""
 
     instance.query("GRANT SELECT ON test.table TO B")
-    assert instance.query("SHOW GRANTS FOR B") == "GRANT SELECT ON test.`table` TO B\n"
+    assert instance.query("SHOW GRANTS FOR B") == "GRANT SELECT ON test.table TO B\n"
     instance.query("REVOKE ALL ON *.* FROM B", user="A")
     assert instance.query("SHOW GRANTS FOR B") == ""
 
     instance.query("REVOKE GRANT OPTION FOR ALL ON *.* FROM A")
     instance.query("GRANT SELECT ON test.table TO B")
-    assert instance.query("SHOW GRANTS FOR B") == "GRANT SELECT ON test.`table` TO B\n"
+    assert instance.query("SHOW GRANTS FOR B") == "GRANT SELECT ON test.table TO B\n"
     expected_error = "privileges have been granted, but without grant option"
     assert expected_error in instance.query_and_get_error(
         "REVOKE SELECT ON test.table FROM B", user="A"
     )
-    assert instance.query("SHOW GRANTS FOR B") == "GRANT SELECT ON test.`table` TO B\n"
+    assert instance.query("SHOW GRANTS FOR B") == "GRANT SELECT ON test.table TO B\n"
 
     instance.query("GRANT SELECT ON test.* TO A WITH GRANT OPTION")
     instance.query("GRANT SELECT ON test.table TO B")
-    assert instance.query("SHOW GRANTS FOR B") == "GRANT SELECT ON test.`table` TO B\n"
+    assert instance.query("SHOW GRANTS FOR B") == "GRANT SELECT ON test.table TO B\n"
     instance.query("REVOKE SELECT ON test.table FROM B", user="A")
     assert instance.query("SHOW GRANTS FOR B") == ""
 
@@ -185,7 +186,10 @@ def test_grant_all_on_table():
     instance.query("GRANT ALL ON test.table TO B", user="A")
     assert (
         instance.query("SHOW GRANTS FOR B")
-        == "GRANT SHOW TABLES, SHOW COLUMNS, SHOW DICTIONARIES, SELECT, INSERT, ALTER TABLE, ALTER VIEW, CREATE TABLE, CREATE VIEW, CREATE DICTIONARY, DROP TABLE, DROP VIEW, DROP DICTIONARY, UNDROP TABLE, TRUNCATE, OPTIMIZE, BACKUP, CREATE ROW POLICY, ALTER ROW POLICY, DROP ROW POLICY, SHOW ROW POLICIES, SYSTEM MERGES, SYSTEM TTL MERGES, SYSTEM FETCHES, SYSTEM MOVES, SYSTEM PULLING REPLICATION LOG, SYSTEM CLEANUP, SYSTEM VIEWS, SYSTEM SENDS, SYSTEM REPLICATION QUEUES, SYSTEM VIRTUAL PARTS UPDATE, SYSTEM DROP REPLICA, SYSTEM SYNC REPLICA, SYSTEM RESTART REPLICA, SYSTEM RESTORE REPLICA, SYSTEM WAIT LOADING PARTS, SYSTEM FLUSH DISTRIBUTED, SYSTEM UNLOAD PRIMARY KEY, dictGet ON test.`table` TO B\n"
+        == "GRANT SHOW TABLES, SHOW COLUMNS, SHOW DICTIONARIES, SELECT, INSERT, ALTER TABLE, ALTER VIEW, CREATE TABLE, CREATE VIEW, CREATE DICTIONARY, "
+        "DROP TABLE, DROP VIEW, DROP DICTIONARY, UNDROP TABLE, TRUNCATE, OPTIMIZE, BACKUP, CREATE ROW POLICY, ALTER ROW POLICY, DROP ROW POLICY, SHOW ROW POLICIES, "
+        "SYSTEM MERGES, SYSTEM TTL MERGES, SYSTEM FETCHES, SYSTEM MOVES, SYSTEM PULLING REPLICATION LOG, SYSTEM SENDS, SYSTEM REPLICATION QUEUES, SYSTEM DROP REPLICA, SYSTEM SYNC REPLICA, "
+        "SYSTEM RESTART REPLICA, SYSTEM RESTORE REPLICA, SYSTEM WAIT LOADING PARTS, SYSTEM FLUSH DISTRIBUTED, dictGet ON test.table TO B\n"
     )
     instance.query("REVOKE ALL ON test.table FROM B", user="A")
     assert instance.query("SHOW GRANTS FOR B") == ""
@@ -215,9 +219,7 @@ def test_implicit_show_grants():
     )
 
     instance.query("GRANT SELECT(x) ON test.table TO A")
-    assert (
-        instance.query("SHOW GRANTS FOR A") == "GRANT SELECT(x) ON test.`table` TO A\n"
-    )
+    assert instance.query("SHOW GRANTS FOR A") == "GRANT SELECT(x) ON test.table TO A\n"
     assert (
         instance.query(
             "select count() FROM system.databases WHERE name='test'", user="A"
@@ -240,7 +242,7 @@ def test_implicit_show_grants():
     )
 
     instance.query("GRANT SELECT ON test.table TO A")
-    assert instance.query("SHOW GRANTS FOR A") == "GRANT SELECT ON test.`table` TO A\n"
+    assert instance.query("SHOW GRANTS FOR A") == "GRANT SELECT ON test.table TO A\n"
     assert (
         instance.query(
             "select count() FROM system.databases WHERE name='test'", user="A"
@@ -369,7 +371,6 @@ def test_implicit_create_temporary_table_grant():
     )
 
     instance.query("GRANT CREATE TABLE ON test.* TO A")
-    instance.query("GRANT TABLE ENGINE ON Memory TO A")
     instance.query("CREATE TEMPORARY TABLE tmp(name String)", user="A")
 
     instance.query("REVOKE CREATE TABLE ON *.* FROM A")
@@ -394,12 +395,12 @@ def test_introspection():
         [
             "CREATE USER A",
             "CREATE USER B",
-            "CREATE USER default IDENTIFIED WITH plaintext_password SETTINGS PROFILE `default`",
+            "CREATE USER default IDENTIFIED WITH plaintext_password SETTINGS PROFILE default",
         ]
     )
 
     assert instance.query("SHOW GRANTS FOR A") == TSV(
-        ["GRANT SELECT ON test.`table` TO A"]
+        ["GRANT SELECT ON test.table TO A"]
     )
     assert instance.query("SHOW GRANTS FOR B") == TSV(
         ["GRANT CREATE ON *.* TO B WITH GRANT OPTION"]
@@ -409,40 +410,40 @@ def test_introspection():
     )
     assert instance.query("SHOW GRANTS FOR A,B") == TSV(
         [
-            "GRANT SELECT ON test.`table` TO A",
+            "GRANT SELECT ON test.table TO A",
             "GRANT CREATE ON *.* TO B WITH GRANT OPTION",
         ]
     )
     assert instance.query("SHOW GRANTS FOR B,A") == TSV(
         [
-            "GRANT SELECT ON test.`table` TO A",
+            "GRANT SELECT ON test.table TO A",
             "GRANT CREATE ON *.* TO B WITH GRANT OPTION",
         ]
     )
     assert instance.query("SHOW GRANTS FOR ALL") == TSV(
         [
-            "GRANT SELECT ON test.`table` TO A",
+            "GRANT SELECT ON test.table TO A",
             "GRANT CREATE ON *.* TO B WITH GRANT OPTION",
             "GRANT ALL ON *.* TO default WITH GRANT OPTION",
         ]
     )
 
     assert instance.query("SHOW GRANTS", user="A") == TSV(
-        ["GRANT SELECT ON test.`table` TO A"]
+        ["GRANT SELECT ON test.table TO A"]
     )
     assert instance.query("SHOW GRANTS", user="B") == TSV(
         ["GRANT CREATE ON *.* TO B WITH GRANT OPTION"]
     )
 
     assert instance.query("SHOW GRANTS FOR ALL", user="A") == TSV(
-        ["GRANT SELECT ON test.`table` TO A"]
+        ["GRANT SELECT ON test.table TO A"]
     )
     assert instance.query("SHOW GRANTS FOR ALL", user="B") == TSV(
         ["GRANT CREATE ON *.* TO B WITH GRANT OPTION"]
     )
     assert instance.query("SHOW GRANTS FOR ALL") == TSV(
         [
-            "GRANT SELECT ON test.`table` TO A",
+            "GRANT SELECT ON test.table TO A",
             "GRANT CREATE ON *.* TO B WITH GRANT OPTION",
             "GRANT ALL ON *.* TO default WITH GRANT OPTION",
         ]
@@ -454,10 +455,10 @@ def test_introspection():
     expected_access1 = (
         "CREATE USER A\n"
         "CREATE USER B\n"
-        "CREATE USER default IDENTIFIED WITH plaintext_password SETTINGS PROFILE `default`"
+        "CREATE USER default IDENTIFIED WITH plaintext_password SETTINGS PROFILE default"
     )
     expected_access2 = (
-        "GRANT SELECT ON test.`table` TO A\n"
+        "GRANT SELECT ON test.table TO A\n"
         "GRANT CREATE ON *.* TO B WITH GRANT OPTION\n"
         "GRANT ALL ON *.* TO default WITH GRANT OPTION\n"
     )
@@ -512,10 +513,10 @@ def test_current_database():
     instance.query("GRANT SELECT ON table TO A", database="test")
 
     assert instance.query("SHOW GRANTS FOR A") == TSV(
-        ["GRANT SELECT ON test.`table` TO A"]
+        ["GRANT SELECT ON test.table TO A"]
     )
     assert instance.query("SHOW GRANTS FOR A", database="test") == TSV(
-        ["GRANT SELECT ON test.`table` TO A"]
+        ["GRANT SELECT ON test.table TO A"]
     )
 
     assert instance.query("SELECT * FROM test.table", user="A") == "1\t5\n2\t10\n"
@@ -536,12 +537,12 @@ def test_grant_with_replace_option():
     instance.query("CREATE USER A")
     instance.query("GRANT SELECT ON test.table TO A")
     assert instance.query("SHOW GRANTS FOR A") == TSV(
-        ["GRANT SELECT ON test.`table` TO A"]
+        ["GRANT SELECT ON test.table TO A"]
     )
 
     instance.query("GRANT INSERT ON test.table TO A WITH REPLACE OPTION")
     assert instance.query("SHOW GRANTS FOR A") == TSV(
-        ["GRANT INSERT ON test.`table` TO A"]
+        ["GRANT INSERT ON test.table TO A"]
     )
 
     instance.query("GRANT NONE ON *.* TO A WITH REPLACE OPTION")
@@ -551,41 +552,41 @@ def test_grant_with_replace_option():
     instance.query("GRANT SELECT ON test.table TO B")
     assert instance.query("SHOW GRANTS FOR A") == TSV([])
     assert instance.query("SHOW GRANTS FOR B") == TSV(
-        ["GRANT SELECT ON test.`table` TO B"]
+        ["GRANT SELECT ON test.table TO B"]
     )
 
     expected_error = (
-        "it's necessary to have the grant INSERT ON test.`table` WITH GRANT OPTION"
+        "it's necessary to have the grant INSERT ON test.table WITH GRANT OPTION"
     )
     assert expected_error in instance.query_and_get_error(
-        "GRANT INSERT ON test.`table` TO B WITH REPLACE OPTION", user="A"
+        "GRANT INSERT ON test.table TO B WITH REPLACE OPTION", user="A"
     )
     assert instance.query("SHOW GRANTS FOR A") == TSV([])
     assert instance.query("SHOW GRANTS FOR B") == TSV(
-        ["GRANT SELECT ON test.`table` TO B"]
+        ["GRANT SELECT ON test.table TO B"]
     )
 
     instance.query("GRANT INSERT ON test.table TO A WITH GRANT OPTION")
     expected_error = (
-        "it's necessary to have the grant SELECT ON test.`table` WITH GRANT OPTION"
+        "it's necessary to have the grant SELECT ON test.table WITH GRANT OPTION"
     )
     assert expected_error in instance.query_and_get_error(
-        "GRANT INSERT ON test.`table` TO B WITH REPLACE OPTION", user="A"
+        "GRANT INSERT ON test.table TO B WITH REPLACE OPTION", user="A"
     )
     assert instance.query("SHOW GRANTS FOR A") == TSV(
-        ["GRANT INSERT ON test.`table` TO A WITH GRANT OPTION"]
+        ["GRANT INSERT ON test.table TO A WITH GRANT OPTION"]
     )
     assert instance.query("SHOW GRANTS FOR B") == TSV(
-        ["GRANT SELECT ON test.`table` TO B"]
+        ["GRANT SELECT ON test.table TO B"]
     )
 
-    instance.query("GRANT SELECT ON test.`table` TO A WITH GRANT OPTION")
-    instance.query("GRANT INSERT ON test.`table` TO B WITH REPLACE OPTION", user="A")
+    instance.query("GRANT SELECT ON test.table TO A WITH GRANT OPTION")
+    instance.query("GRANT INSERT ON test.table TO B WITH REPLACE OPTION", user="A")
     assert instance.query("SHOW GRANTS FOR A") == TSV(
-        ["GRANT SELECT, INSERT ON test.`table` TO A WITH GRANT OPTION"]
+        ["GRANT SELECT, INSERT ON test.table TO A WITH GRANT OPTION"]
     )
     assert instance.query("SHOW GRANTS FOR B") == TSV(
-        ["GRANT INSERT ON test.`table` TO B"]
+        ["GRANT INSERT ON test.table TO B"]
     )
 
 
@@ -631,7 +632,7 @@ def test_grant_current_grants_with_partial_revoke():
             "GRANT CREATE TABLE ON *.* TO A",
             "GRANT SELECT ON *.* TO A WITH GRANT OPTION",
             "REVOKE SELECT, CREATE TABLE ON test.* FROM A",
-            "GRANT SELECT, CREATE TABLE ON test.`table` TO A WITH GRANT OPTION",
+            "GRANT SELECT, CREATE TABLE ON test.table TO A WITH GRANT OPTION",
             "GRANT SELECT ON test.table2 TO A",
         ]
     )
@@ -642,7 +643,7 @@ def test_grant_current_grants_with_partial_revoke():
         [
             "GRANT SELECT ON *.* TO B",
             "REVOKE SELECT ON test.* FROM B",
-            "GRANT SELECT, CREATE TABLE ON test.`table` TO B",
+            "GRANT SELECT, CREATE TABLE ON test.table TO B",
         ]
     )
 
@@ -653,7 +654,7 @@ def test_grant_current_grants_with_partial_revoke():
         [
             "GRANT SELECT ON *.* TO B WITH GRANT OPTION",
             "REVOKE SELECT ON test.* FROM B",
-            "GRANT SELECT, CREATE TABLE ON test.`table` TO B WITH GRANT OPTION",
+            "GRANT SELECT, CREATE TABLE ON test.table TO B WITH GRANT OPTION",
         ]
     )
 
@@ -664,7 +665,7 @@ def test_grant_current_grants_with_partial_revoke():
     assert instance.query("SHOW GRANTS FOR C") == TSV(
         [
             "GRANT SELECT ON *.* TO C",
-            "GRANT CREATE TABLE ON test.`table` TO C",
+            "GRANT CREATE TABLE ON test.table TO C",
         ]
     )
 
@@ -673,7 +674,7 @@ def test_grant_current_grants_with_partial_revoke():
     instance.query("GRANT CURRENT GRANTS ON test.* TO B WITH GRANT OPTION", user="A")
     assert instance.query("SHOW GRANTS FOR B") == TSV(
         [
-            "GRANT SELECT, CREATE TABLE ON test.`table` TO B WITH GRANT OPTION",
+            "GRANT SELECT, CREATE TABLE ON test.table TO B WITH GRANT OPTION",
         ]
     )
 
@@ -692,7 +693,7 @@ def test_current_grants_override():
     instance.query("CREATE USER B")
     instance.query("GRANT SELECT ON test.table TO B")
     assert instance.query("SHOW GRANTS FOR B") == TSV(
-        ["GRANT SELECT ON test.`table` TO B"]
+        ["GRANT SELECT ON test.table TO B"]
     )
 
     instance.query("GRANT CURRENT GRANTS ON *.* TO B", user="A")
@@ -700,7 +701,7 @@ def test_current_grants_override():
         [
             "GRANT SELECT ON *.* TO B",
             "REVOKE SELECT ON test.* FROM B",
-            "GRANT SELECT ON test.`table` TO B",
+            "GRANT SELECT ON test.table TO B",
         ]
     )
 
@@ -708,7 +709,7 @@ def test_current_grants_override():
     instance.query("CREATE USER B")
     instance.query("GRANT SELECT ON test.table TO B")
     assert instance.query("SHOW GRANTS FOR B") == TSV(
-        ["GRANT SELECT ON test.`table` TO B"]
+        ["GRANT SELECT ON test.table TO B"]
     )
 
     instance.query("GRANT CURRENT GRANTS ON *.* TO B WITH REPLACE OPTION", user="A")
@@ -718,74 +719,3 @@ def test_current_grants_override():
             "REVOKE SELECT ON test.* FROM B",
         ]
     )
-
-
-def test_table_engine_grant_and_revoke():
-    instance.query("DROP USER IF EXISTS A")
-    instance.query("CREATE USER A")
-    instance.query("GRANT CREATE TABLE ON test.table1 TO A")
-    assert "Not enough privileges" in instance.query_and_get_error(
-        "CREATE TABLE test.table1(a Integer) engine=TinyLog", user="A"
-    )
-
-    instance.query("GRANT TABLE ENGINE ON TinyLog TO A")
-
-    instance.query("CREATE TABLE test.table1(a Integer) engine=TinyLog", user="A")
-
-    assert instance.query("SHOW GRANTS FOR A") == TSV(
-        [
-            "GRANT TABLE ENGINE ON TinyLog TO A",
-            "GRANT CREATE TABLE ON test.table1 TO A",
-        ]
-    )
-
-    instance.query("REVOKE TABLE ENGINE ON TinyLog FROM A")
-
-    assert "Not enough privileges" in instance.query_and_get_error(
-        "CREATE TABLE test.table1(a Integer) engine=TinyLog", user="A"
-    )
-
-    instance.query("REVOKE CREATE TABLE ON test.table1 FROM A")
-    instance.query("DROP TABLE test.table1")
-
-    assert instance.query("SHOW GRANTS FOR A") == TSV([])
-
-
-def test_table_engine_and_source_grant():
-    instance.query("DROP USER IF EXISTS A")
-    instance.query("CREATE USER A")
-    instance.query("GRANT CREATE TABLE ON test.table1 TO A")
-
-    instance.query("GRANT TABLE ENGINE ON PostgreSQL TO A")
-
-    instance.query(
-        """
-        CREATE TABLE test.table1(a Integer)
-        engine=PostgreSQL('localhost:5432', 'dummy', 'dummy', 'dummy', 'dummy');
-        """,
-        user="A",
-    )
-
-    instance.query("DROP TABLE test.table1")
-
-    instance.query("REVOKE TABLE ENGINE ON PostgreSQL FROM A")
-
-    assert "Not enough privileges" in instance.query_and_get_error(
-        """
-        CREATE TABLE test.table1(a Integer)
-        engine=PostgreSQL('localhost:5432', 'dummy', 'dummy', 'dummy', 'dummy');
-        """,
-        user="A",
-    )
-
-    instance.query("GRANT SOURCES ON *.* TO A")
-
-    instance.query(
-        """
-        CREATE TABLE test.table1(a Integer)
-        engine=PostgreSQL('localhost:5432', 'dummy', 'dummy', 'dummy', 'dummy');
-        """,
-        user="A",
-    )
-
-    instance.query("DROP TABLE test.table1")

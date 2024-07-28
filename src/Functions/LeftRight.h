@@ -26,7 +26,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
-enum class SubstringDirection : uint8_t
+enum class SubstringDirection
 {
     Left,
     Right

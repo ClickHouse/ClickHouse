@@ -1,5 +1,4 @@
 #include <Common/typeid_cast.h>
-#include <Core/Settings.h>
 #include <IO/WriteHelpers.h>
 
 #include <Storages/IStorage.h>
@@ -11,10 +10,9 @@
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 
-#include <Interpreters/Context.h>
-#include <Interpreters/DatabaseAndTableWithAlias.h>
-#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/interpretSubquery.h>
+#include <Interpreters/DatabaseAndTableWithAlias.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {

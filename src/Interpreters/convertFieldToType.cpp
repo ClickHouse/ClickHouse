@@ -16,8 +16,6 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
-#include <DataTypes/DataTypeVariant.h>
-#include <DataTypes/DataTypeDynamic.h>
 
 #include <Core/AccurateComparison.h>
 
@@ -253,21 +251,8 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
 
         if (which_type.isDateTime64() && src.getType() == Field::Types::Decimal64)
         {
-            const auto & from_type = src.get<Decimal64>();
-            const auto & to_type = static_cast<const DataTypeDateTime64 &>(type);
-
-            const auto scale_from = from_type.getScale();
-            const auto scale_to = to_type.getScale();
-            const auto scale_multiplier_diff = scale_from > scale_to ? from_type.getScaleMultiplier() / to_type.getScaleMultiplier() : to_type.getScaleMultiplier() / from_type.getScaleMultiplier();
-
-            if (scale_multiplier_diff == 1) /// Already in needed type.
-                return src;
-
-            /// in case if we need to make DateTime64(a) from DateTime64(b), a != b, we need to convert datetime value to the right scale
-            const UInt64 value = scale_from > scale_to ? from_type.getValue().value / scale_multiplier_diff : from_type.getValue().value * scale_multiplier_diff;
-            return DecimalField(
-                DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(value, 0, 1),
-                scale_to);
+            /// Already in needed type.
+            return src;
         }
 
         /// For toDate('xxx') in 1::Int64, we CAST `src` to UInt64, which may
@@ -297,11 +282,6 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         {
             /// Already in needed type.
             return src;
-        }
-        if (which_type.isIPv4() && src.getType() == Field::Types::UInt64)
-        {
-            /// convert to UInt32 which is the underlying type for native IPv4
-            return convertNumericType<UInt32>(src, type);
         }
     }
     else if (which_type.isUUID() && src.getType() == Field::Types::UUID)
@@ -502,35 +482,15 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             return object;
         }
     }
-    else if (const DataTypeVariant * type_variant = typeid_cast<const DataTypeVariant *>(&type))
-    {
-        /// If we have type hint and Variant contains such type, no need to convert field.
-        if (from_type_hint && type_variant->tryGetVariantDiscriminator(from_type_hint->getName()))
-            return src;
-
-        /// Create temporary column and check if we can insert this field to the variant.
-        /// If we can insert, no need to convert anything.
-        auto col = type_variant->createColumn();
-        if (col->tryInsert(src))
-            return src;
-    }
-    else if (isDynamic(type))
-    {
-        /// We can insert any field to Dynamic column.
-        return src;
-    }
 
     /// Conversion from string by parsing.
     if (src.getType() == Field::Types::String)
     {
         /// Promote data type to avoid overflows. Note that overflows in the largest data type are still possible.
-        /// But don't promote Float32, since we want to keep the exact same value
-        /// Also don't promote domain types (like bool) because we would otherwise use the serializer of the promoted type (e.g. UInt64 for
-        /// bool, which does not allow 'true' and 'false' as input values)
         const IDataType * type_to_parse = &type;
         DataTypePtr holder;
 
-        if (type.canBePromoted() && !which_type.isFloat32() && !type.getCustomSerialization())
+        if (type.canBePromoted())
         {
             holder = type.promoteNumericType();
             type_to_parse = holder.get();
@@ -545,7 +505,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         catch (Exception & e)
         {
             if (e.code() == ErrorCodes::UNEXPECTED_DATA_AFTER_PARSED_VALUE)
-                throw Exception(ErrorCodes::TYPE_MISMATCH, "Cannot convert string '{}' to type {}", src.get<String>(), type.getName());
+                throw Exception(ErrorCodes::TYPE_MISMATCH, "Cannot convert string {} to type {}", src.get<String>(), type.getName());
 
             e.addMessage(fmt::format("while converting '{}' to {}", src.get<String>(), type.getName()));
             throw;
@@ -615,9 +575,9 @@ static bool decimalEqualsFloat(Field field, Float64 float_value)
     return decimal_to_float == float_value;
 }
 
-std::optional<Field> convertFieldToTypeStrict(const Field & from_value, const IDataType & from_type, const IDataType & to_type)
+std::optional<Field> convertFieldToTypeStrict(const Field & from_value, const IDataType & to_type)
 {
-    Field result_value = convertFieldToType(from_value, to_type, &from_type);
+    Field result_value = convertFieldToType(from_value, to_type);
 
     if (Field::isDecimal(from_value.getType()) && Field::isDecimal(result_value.getType()))
     {

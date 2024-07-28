@@ -8,7 +8,7 @@
 namespace postgres
 {
 
-ConnectionInfo formatConnectionString(String dbname, String host, UInt16 port, String user, String password, UInt64 timeout)
+ConnectionInfo formatConnectionString(String dbname, String host, UInt16 port, String user, String password)
 {
     DB::WriteBufferFromOwnString out;
     out << "dbname=" << DB::quote << dbname
@@ -16,7 +16,7 @@ ConnectionInfo formatConnectionString(String dbname, String host, UInt16 port, S
         << " port=" << port
         << " user=" << DB::quote << user
         << " password=" << DB::quote << password
-        << " connect_timeout=" << timeout;
+        << " connect_timeout=10";
     return {out.str(), host + ':' + DB::toString(port)};
 }
 

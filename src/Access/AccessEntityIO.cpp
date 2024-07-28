@@ -62,7 +62,7 @@ AccessEntityPtr deserializeAccessEntityImpl(const String & definition)
     const char * end = begin + definition.size();
     while (pos < end)
     {
-        queries.emplace_back(parseQueryAndMovePosition(parser, pos, end, "", true, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS));
+        queries.emplace_back(parseQueryAndMovePosition(parser, pos, end, "", true, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH));
         while (isWhitespaceASCII(*pos) || *pos == ';')
             ++pos;
     }
@@ -144,7 +144,8 @@ AccessEntityPtr deserializeAccessEntity(const String & definition, const String 
     catch (Exception & e)
     {
         e.addMessage("Could not parse " + file_path);
-        throw;
+        e.rethrow();
+        UNREACHABLE();
     }
 }
 

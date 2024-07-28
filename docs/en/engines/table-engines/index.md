@@ -67,6 +67,7 @@ Engines in the family:
 Engines in the family:
 
 - [Distributed](../../engines/table-engines/special/distributed.md#distributed)
+- [MaterializedView](../../engines/table-engines/special/materializedview.md#materializedview)
 - [Dictionary](../../engines/table-engines/special/dictionary.md#dictionary)
 - [Merge](../../engines/table-engines/special/merge.md#merge)
 - [File](../../engines/table-engines/special/file.md#file)

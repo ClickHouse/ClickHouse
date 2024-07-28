@@ -1,8 +1,7 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
-#include <Common/Exception.h>
-#include <Common/thread_local_rng.h>
+#include "Common/Exception.h"
 #include <Common/NaNUtils.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsNumber.h>
@@ -24,7 +23,6 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 namespace
@@ -198,7 +196,7 @@ struct PoissonDistribution
   * Accepts only constant arguments
   * Similar to the functions rand and rand64 an additional 'tag' argument could be added to the
   * end of arguments list (this argument will be ignored) which will guarantee that functions are not sticked together
-  * during optimizations.
+  * during optimisations.
   * Example: SELECT randNormal(0, 1, 1), randNormal(0, 1, 2) FROM numbers(10)
   * This query will return two different columns
   */
@@ -247,7 +245,7 @@ public:
     {
         auto desired = Distribution::getNumberOfArguments();
         if (arguments.size() != desired && arguments.size() != desired + 1)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
                             "Wrong number of arguments for function {}. Should be {} or {}",
                             getName(), desired, desired + 1);
 

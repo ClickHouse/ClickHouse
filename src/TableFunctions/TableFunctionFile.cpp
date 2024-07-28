@@ -1,17 +1,16 @@
-#include <Interpreters/parseColumnsListForTableFunction.h>
-#include <TableFunctions/ITableFunctionFileLike.h>
 #include <TableFunctions/TableFunctionFile.h>
+#include <Interpreters/parseColumnsListForTableFunction.h>
 
+#include "Parsers/IAST_fwd.h"
 #include "registerTableFunctions.h"
 #include <Access/Common/AccessFlags.h>
-#include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/StorageFile.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Formats/FormatFactory.h>
-
+#include <Parsers/ASTIdentifier_fwd.h>
 
 namespace DB
 {
@@ -55,12 +54,12 @@ void TableFunctionFile::parseFirstArguments(const ASTPtr & arg, const ContextPtr
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "The first argument of table function '{}' mush be path or file descriptor", getName());
 }
 
-std::optional<String> TableFunctionFile::tryGetFormatFromFirstArgument()
+String TableFunctionFile::getFormatFromFirstArgument()
 {
     if (fd >= 0)
-        return FormatFactory::instance().tryGetFormatFromFileDescriptor(fd);
+        return FormatFactory::instance().getFormatFromFileDescriptor(fd);
     else
-        return FormatFactory::instance().tryGetFormatFromFileName(filename);
+        return FormatFactory::instance().getFormatFromFileName(filename, true);
 }
 
 StoragePtr TableFunctionFile::getStorage(const String & source,
@@ -86,7 +85,7 @@ StoragePtr TableFunctionFile::getStorage(const String & source,
     if (fd >= 0)
         return std::make_shared<StorageFile>(fd, args);
 
-    return std::make_shared<StorageFile>(source, global_context->getUserFilesPath(), false, args);
+    return std::make_shared<StorageFile>(source, global_context->getUserFilesPath(), args);
 }
 
 ColumnsDescription TableFunctionFile::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
@@ -105,10 +104,9 @@ ColumnsDescription TableFunctionFile::getActualTableStructure(ContextPtr context
             archive_info
                 = StorageFile::getArchiveInfo(path_to_archive, filename, context->getUserFilesPath(), context, total_bytes_to_read);
 
-        if (format == "auto")
-            return StorageFile::getTableStructureAndFormatFromFile(paths, compression_method, std::nullopt, context, archive_info).first;
         return StorageFile::getTableStructureFromFile(format, paths, compression_method, std::nullopt, context, archive_info);
     }
+
 
     return parseColumnsListFromString(structure, context);
 }

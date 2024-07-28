@@ -173,10 +173,9 @@ $ echo 'DROP TABLE t' | curl 'http://localhost:8123/' --data-binary @-
 Для отправки сжатого запроса `POST` добавьте заголовок `Content-Encoding: compression_method`.
 Чтобы ClickHouse сжимал ответ, разрешите сжатие настройкой [enable_http_compression](../operations/settings/settings.md#settings-enable_http_compression) и добавьте заголовок `Accept-Encoding: compression_method`. Уровень сжатия данных для всех методов сжатия можно задать с помощью настройки [http_zlib_compression_level](../operations/settings/settings.md#settings-http_zlib_compression_level).
 
-:::note Примечание
-Некоторые HTTP-клиенты могут по умолчанию распаковывать данные (`gzip` и `deflate`) с сервера в фоновом режиме и вы можете получить распакованные данные, даже если правильно используете настройки сжатия.
-:::
-
+    :::note "Примечание"
+    Некоторые HTTP-клиенты могут по умолчанию распаковывать данные (`gzip` и `deflate`) с сервера в фоновом режиме и вы можете получить распакованные данные, даже если правильно используете настройки сжатия.
+    :::
 **Примеры**
 
 ``` bash
@@ -366,7 +365,7 @@ $ curl -v 'http://localhost:8123/predefined_query'
 < X-ClickHouse-Query-Id: 96fe0052-01e6-43ce-b12a-6b7370de6e8a
 < X-ClickHouse-Format: Template
 < X-ClickHouse-Timezone: Asia/Shanghai
-< Keep-Alive: timeout=10
+< Keep-Alive: timeout=3
 < X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0"}
 <
 # HELP "Query" "Number of executing queries"
@@ -414,8 +413,6 @@ $ curl -v 'http://localhost:8123/predefined_query'
 
     -   `content_type` — используется со всеми типами, возвращает [content-type](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Type).
 
-    -   `http_response_headers` — используется со всеми типами чтобы добавить кастомные хедеры в ответ. Может использоваться в том числе для задания хедера `Content-Type` вместо `content_type`.
-
     -   `response_content` — используется с типом`static`, содержимое ответа, отправленное клиенту, при использовании префикса ‘file://’ or ‘config://’, находит содержимое из файла или конфигурации, отправленного клиенту.
 
 Далее приведены методы настройки для различных типов.
@@ -428,26 +425,24 @@ $ curl -v 'http://localhost:8123/predefined_query'
 
 В следующем примере определяются настройки [max_threads](../operations/settings/settings.md#settings-max_threads) и `max_final_threads`, а затем запрашивается системная таблица, чтобы проверить, были ли эти параметры успешно установлены.
 
-:::note Предупреждение
-Чтобы сохранить стандартные `handlers` такие как `query`, `play`, `ping`, используйте правило `<defaults/>`.
-:::
+    :::note "Предупреждение"
+    Чтобы сохранить стандартные `handlers` такие как `query`, `play`, `ping`, используйте правило `<defaults/>`.
+    :::
 Пример:
 
 ``` xml
 <http_handlers>
     <rule>
-        <url><![CDATA[regex:/query_param_with_url/(?P<name_1>[^/]+)]]></url>
+        <url><![CDATA[regex:/query_param_with_url/\w+/(?P<name_1>[^/]+)(/(?P<name_2>[^/]+))?]]></url>
         <methods>GET</methods>
         <headers>
             <XXX>TEST_HEADER_VALUE</XXX>
-            <PARAMS_XXX><![CDATA[regex:(?P<name_2>[^/]+)]]></PARAMS_XXX>
+            <PARAMS_XXX><![CDATA[(?P<name_1>[^/]+)(/(?P<name_2>[^/]+))?]]></PARAMS_XXX>
         </headers>
         <handler>
             <type>predefined_query_handler</type>
-            <query>
-                SELECT name, value FROM system.settings
-                WHERE name IN ({name_1:String}, {name_2:String})
-            </query>
+            <query>SELECT value FROM system.settings WHERE name = {name_1:String}</query>
+            <query>SELECT name, value FROM system.settings WHERE name = {name_2:String}</query>
         </handler>
     </rule>
     <defaults/>
@@ -455,14 +450,14 @@ $ curl -v 'http://localhost:8123/predefined_query'
 ```
 
 ``` bash
-$ curl -H 'XXX:TEST_HEADER_VALUE' -H 'PARAMS_XXX:max_final_threads' 'http://localhost:8123/query_param_with_url/max_threads?max_threads=1&max_final_threads=2'
-max_final_threads	2
-max_threads	1
+$ curl -H 'XXX:TEST_HEADER_VALUE' -H 'PARAMS_XXX:max_threads' 'http://localhost:8123/query_param_with_url/1/max_threads/max_final_threads?max_threads=1&max_final_threads=2'
+1
+max_final_threads   2
 ```
 
-:::note Предупреждение
-В одном `predefined_query_handler` поддерживается только один запрос.
-:::
+    :::note "Предупреждение"
+    В одном `predefined_query_handler` поддерживается только один запрос типа `INSERT`.
+    :::
 ### dynamic_query_handler {#dynamic_query_handler}
 
 В `dynamic_query_handler`, запрос пишется в виде параметров HTTP-запроса. Разница в том, что в `predefined_query_handler`, запрос записывается в конфигурационный файл. Вы можете настроить `query_param_name` в `dynamic_query_handler`.
@@ -511,33 +506,6 @@ max_final_threads   2
                 <type>static</type>
                 <status>402</status>
                 <content_type>text/html; charset=UTF-8</content_type>
-                <http_response_headers>
-                    <Content-Language>en</Content-Language>
-                    <X-My-Custom-Header>43</X-My-Custom-Header>
-                </http_response_headers>
-                <response_content>Say Hi!</response_content>
-            </handler>
-        </rule>
-        <defaults/>
-</http_handlers>
-```
-
-`http_response_headers` так же может использоваться для определения `Content-Type` вместо `content_type`.
-
-``` xml
-<http_handlers>
-        <rule>
-            <methods>GET</methods>
-            <headers><XXX>xxx</XXX></headers>
-            <url>/hi</url>
-            <handler>
-                <type>static</type>
-                <status>402</status>
-                <http_response_headers>
-                    <Content-Type>text/html; charset=UTF-8</Content-Type>
-                    <Content-Language>en</Content-Language>
-                    <X-My-Custom-Header>43</X-My-Custom-Header>
-                </http_response_headers>
                 <response_content>Say Hi!</response_content>
             </handler>
         </rule>
@@ -560,7 +528,7 @@ $ curl -vv  -H 'XXX:xxx' 'http://localhost:8123/hi'
 < Connection: Keep-Alive
 < Content-Type: text/html; charset=UTF-8
 < Transfer-Encoding: chunked
-< Keep-Alive: timeout=10
+< Keep-Alive: timeout=3
 < X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0","elapsed_ns":"662334"}
 <
 * Connection #0 to host localhost left intact
@@ -600,7 +568,7 @@ $ curl -v  -H 'XXX:xxx' 'http://localhost:8123/get_config_static_handler'
 < Connection: Keep-Alive
 < Content-Type: text/plain; charset=UTF-8
 < Transfer-Encoding: chunked
-< Keep-Alive: timeout=10
+< Keep-Alive: timeout=3
 < X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0","elapsed_ns":"662334"}
 <
 * Connection #0 to host localhost left intact
@@ -618,9 +586,6 @@ $ curl -v  -H 'XXX:xxx' 'http://localhost:8123/get_config_static_handler'
             <handler>
                 <type>static</type>
                 <content_type>text/html; charset=UTF-8</content_type>
-                <http_response_headers>
-                    <ETag>737060cd8c284d8af7ad3082f209582d</ETag>
-                </http_response_headers>
                 <response_content>file:///absolute_path_file.html</response_content>
             </handler>
         </rule>
@@ -631,9 +596,6 @@ $ curl -v  -H 'XXX:xxx' 'http://localhost:8123/get_config_static_handler'
             <handler>
                 <type>static</type>
                 <content_type>text/html; charset=UTF-8</content_type>
-                <http_response_headers>
-                    <ETag>737060cd8c284d8af7ad3082f209582d</ETag>
-                </http_response_headers>
                 <response_content>file://./relative_path_file.html</response_content>
             </handler>
         </rule>
@@ -658,7 +620,7 @@ $ curl -vv -H 'XXX:xxx' 'http://localhost:8123/get_absolute_path_static_handler'
 < Connection: Keep-Alive
 < Content-Type: text/html; charset=UTF-8
 < Transfer-Encoding: chunked
-< Keep-Alive: timeout=10
+< Keep-Alive: timeout=3
 < X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0","elapsed_ns":"662334"}
 <
 <html><body>Absolute Path File</body></html>
@@ -677,7 +639,7 @@ $ curl -vv -H 'XXX:xxx' 'http://localhost:8123/get_relative_path_static_handler'
 < Connection: Keep-Alive
 < Content-Type: text/html; charset=UTF-8
 < Transfer-Encoding: chunked
-< Keep-Alive: timeout=10
+< Keep-Alive: timeout=3
 < X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0","elapsed_ns":"662334"}
 <
 <html><body>Relative Path File</body></html>

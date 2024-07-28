@@ -32,11 +32,10 @@ public:
     String getName() const override { return "JSONEachRowRowInputFormat"; }
     void resetParser() override;
 
-protected:
+private:
     void readPrefix() override;
     void readSuffix() override;
 
-private:
     bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
     bool allowSyncAfterError() const override { return true; }
     void syncAfterError() override;
@@ -55,13 +54,7 @@ private:
 
     virtual void readRowStart(MutableColumns &) {}
     virtual void skipRowStart() {}
-    String transformFieldNameToLowerCase(const StringRef & field_name)
-    {
-        String field_name_str = field_name.toString();
-        std::transform(field_name_str.begin(), field_name_str.end(), field_name_str.begin(),
-            [](unsigned char c) { return std::tolower(c); });
-        return field_name_str;
-    }
+
     /// Buffer for the read from the stream field name. Used when you have to copy it.
     /// Also, if processing of Nested data is in progress, it holds the common prefix
     /// of the nested column names (so that appending the field name to it produces
@@ -80,8 +73,7 @@ private:
 
     /// Hash table match `field name -> position in the block`. NOTE You can use perfect hash map.
     Block::NameMap name_map;
-    /// Hash table match `lower_case field name -> field name in the block`.
-    std::unordered_map<String, StringRef> lower_case_name_map;
+
     /// Cached search results for previous row (keyed as index in JSON object) - used as a hint.
     std::vector<Block::NameMap::const_iterator> prev_positions;
 
@@ -96,8 +88,6 @@ protected:
     std::vector<UInt8> read_columns;
     /// Set of columns which already met in row. Exception is thrown if there are more than one column with the same name.
     std::vector<UInt8> seen_columns;
-    size_t seen_columns_count = 0;
-    size_t total_columns = 0;
 
     /// This flag is needed to know if data is in square brackets.
     bool data_in_square_brackets = false;
@@ -113,7 +103,6 @@ public:
 private:
     NamesAndTypesList readRowAndGetNamesAndDataTypes(bool & eof) override;
     void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) override;
-    void transformTypesFromDifferentFilesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) override;
     void transformFinalTypeIfNeeded(DataTypePtr & type) override;
 
     bool first_row = true;

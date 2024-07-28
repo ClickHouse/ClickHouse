@@ -214,37 +214,22 @@ def test_create_or_drop_tables_during_backup(db_engine, table_engine):
         while time.time() < end_time:
             table_name = f"mydb.tbl{randint(1, num_nodes)}"
             node = nodes[randint(0, num_nodes - 1)]
-            # "DROP TABLE IF EXISTS" still can throw some errors (e.g. "WRITE locking attempt on node0 has timed out!")
-            # So we use query_and_get_answer_with_error() to ignore any errors.
-            # `lock_acquire_timeout` is reduced because we don't wait our test to wait too long.
-            node.query_and_get_answer_with_error(
-                f"DROP TABLE IF EXISTS {table_name} SYNC",
-                settings={"lock_acquire_timeout": 10},
-            )
+            node.query(f"DROP TABLE IF EXISTS {table_name} SYNC")
 
     def rename_tables():
         while time.time() < end_time:
             table_name1 = f"mydb.tbl{randint(1, num_nodes)}"
             table_name2 = f"mydb.tbl{randint(1, num_nodes)}"
             node = nodes[randint(0, num_nodes - 1)]
-            # `lock_acquire_timeout` is reduced because we don't wait our test to wait too long.
             node.query_and_get_answer_with_error(
-                f"RENAME TABLE {table_name1} TO {table_name2}",
-                settings={"lock_acquire_timeout": 10},
+                f"RENAME TABLE {table_name1} TO {table_name2}"
             )
 
     def truncate_tables():
         while time.time() < end_time:
             table_name = f"mydb.tbl{randint(1, num_nodes)}"
             node = nodes[randint(0, num_nodes - 1)]
-            # "TRUNCATE TABLE IF EXISTS" still can throw some errors
-            # (e.g. "WRITE locking attempt on node0 has timed out!" if the table engine is "Log").
-            # So we use query_and_get_answer_with_error() to ignore any errors.
-            # `lock_acquire_timeout` is reduced because we don't wait our test to wait too long.
-            node.query_and_get_answer_with_error(
-                f"TRUNCATE TABLE IF EXISTS {table_name} SYNC",
-                settings={"lock_acquire_timeout": 10},
-            )
+            node.query(f"TRUNCATE TABLE IF EXISTS {table_name} SYNC")
 
     def make_backups():
         ids = []
@@ -276,10 +261,15 @@ def test_create_or_drop_tables_during_backup(db_engine, table_engine):
     for node in nodes:
         assert_eq_with_retry(
             node,
-            f"SELECT status, error from system.backups "
-            f"WHERE id IN {ids_list} AND ((status == 'CREATING_BACKUP') OR (status == 'BACKUP_FAILED'))",
+            f"SELECT status from system.backups WHERE id IN {ids_list} AND (status == 'CREATING_BACKUP')",
             "",
-            retry_count=100,
+        )
+
+    for node in nodes:
+        assert_eq_with_retry(
+            node,
+            f"SELECT status, error from system.backups WHERE id IN {ids_list} AND (status == 'BACKUP_FAILED')",
+            "",
         )
 
     backup_names = {}

@@ -45,22 +45,6 @@ Number of threads in the Aggregator thread pool.
 
 Number of threads in the Aggregator thread pool running a task.
 
-### TablesLoaderForegroundThreads
-
-Number of threads in the async loader foreground thread pool.
-
-### TablesLoaderForegroundThreadsActive
-
-Number of threads in the async loader foreground thread pool running a task.
-
-### TablesLoaderBackgroundThreads
-
-Number of threads in the async loader background thread pool.
-
-### TablesLoaderBackgroundThreadsActive
-
-Number of threads in the async loader background thread pool running a task.
-
 ### AsyncInsertCacheSize
 
 Number of async insert hash id in cache
@@ -213,6 +197,14 @@ Number of threads in the DatabaseOnDisk thread pool.
 
 Number of threads in the DatabaseOnDisk thread pool running a task.
 
+### DatabaseOrdinaryThreads
+
+Number of threads in the Ordinary database thread pool.
+
+### DatabaseOrdinaryThreadsActive
+
+Number of threads in the Ordinary database thread pool running a task.
+
 ### DelayedInserts
 
 Number of INSERT queries that are throttled due to high number of active data parts for partition in a MergeTree table.
@@ -287,7 +279,7 @@ Number of threads in the HashedDictionary thread pool running a task.
 
 ### IOPrefetchThreads
 
-Number of threads in the IO prefetch thread pool.
+Number of threads in the IO prefertch thread pool.
 
 ### IOPrefetchThreadsActive
 
@@ -357,7 +349,7 @@ Number of currently running inserts to Kafka
 
 Number of alive connections
 
-### KeeperOutstandingRequests
+### KeeperOutstandingRequets
 
 Number of outstanding requests
 
@@ -513,6 +505,10 @@ Part was moved to another disk and should be deleted in own destructor.
 
 Not active data part with identity refcounter, it is deleting right now by a cleaner.
 
+### PartsInMemory
+
+In-memory parts.
+
 ### PartsOutdated
 
 Not active data part, but could be used by only current SELECTs, could be deleted after SELECTs finishes.
@@ -629,6 +625,14 @@ Number of connections that are sending data for external tables to remote server
 
 Number of connections that are sending data for scalars to remote servers.
 
+### StartupSystemTablesThreads
+
+Number of threads in the StartupSystemTables thread pool.
+
+### StartupSystemTablesThreadsActive
+
+Number of threads in the StartupSystemTables thread pool running a task.
+
 ### StorageBufferBytes
 
 Number of bytes in buffers of Buffer tables
@@ -672,6 +676,14 @@ Number of threads in the system.replicas thread pool running a task.
 ### TCPConnection
 
 Number of connections to TCP server (clients with native interface), also included server-server distributed query connections
+
+### TablesLoaderThreads
+
+Number of threads in the tables loader thread pool.
+
+### TablesLoaderThreadsActive
+
+Number of threads in the tables loader thread pool running a task.
 
 ### TablesToDropQueueSize
 

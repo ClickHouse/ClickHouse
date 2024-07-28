@@ -43,12 +43,10 @@ void ASTDropIndexQuery::formatQueryImpl(const FormatSettings & settings, FormatS
     {
         if (database)
         {
-            database->formatImpl(settings, state, frame);
-            settings.ostr << '.';
+            settings.ostr << indent_str << backQuoteIfNeed(getDatabase());
+            settings.ostr << ".";
         }
-
-        chassert(table);
-        table->formatImpl(settings, state, frame);
+        settings.ostr << indent_str << backQuoteIfNeed(getTable());
     }
 
     formatOnCluster(settings);
@@ -57,11 +55,9 @@ void ASTDropIndexQuery::formatQueryImpl(const FormatSettings & settings, FormatS
 ASTPtr ASTDropIndexQuery::convertToASTAlterCommand() const
 {
     auto command = std::make_shared<ASTAlterCommand>();
-
     command->type = ASTAlterCommand::DROP_INDEX;
+    command->index = index_name->clone();
     command->if_exists = if_exists;
-
-    command->index = command->children.emplace_back(index_name).get();
 
     return command;
 }

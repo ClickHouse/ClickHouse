@@ -165,7 +165,7 @@ public:
                         std::uniform_int_distribution<intptr_t>(0x100000000000UL, 0x700000000000UL)(thread_local_rng));
                     void * map = mmap(hint, 4096, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
                     if (MAP_FAILED == map)
-                        throw ErrnoException(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Allocator: Cannot mmap");
+                        throwFromErrno("Allocator: Cannot mmap", ErrorCodes::CANNOT_ALLOCATE_MEMORY);
                     maps.push_back(map);
                 }
             }
@@ -177,7 +177,7 @@ public:
             }
             else if (mode == "logical error")
             {
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Trap");
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: trap");
             }
             else
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown trap mode");

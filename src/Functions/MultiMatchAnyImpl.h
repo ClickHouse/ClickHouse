@@ -32,7 +32,7 @@ namespace ErrorCodes
 /// For more readable instantiations of MultiMatchAnyImpl<>
 struct MultiMatchTraits
 {
-enum class Find : uint8_t
+enum class Find
 {
     Any,
     AnyIndex
@@ -212,7 +212,7 @@ struct MultiMatchAnyImpl
         size_t prev_haystack_offset = 0;
         size_t prev_needles_offset = 0;
 
-        const ColumnString & needles_data_string = checkAndGetColumn<ColumnString>(needles_data);
+        const ColumnString * needles_data_string = checkAndGetColumn<ColumnString>(&needles_data);
 
         std::vector<std::string_view> needles;
 
@@ -221,7 +221,7 @@ struct MultiMatchAnyImpl
             needles.reserve(needles_offsets[i] - prev_needles_offset);
 
             for (size_t j = prev_needles_offset; j < needles_offsets[i]; ++j)
-                needles.emplace_back(needles_data_string.getDataAt(j).toView());
+                needles.emplace_back(needles_data_string->getDataAt(j).toView());
 
             if (needles.empty())
             {
@@ -341,7 +341,7 @@ struct MultiMatchAnyImpl
             {
                 String needle(needles[j]);
 
-                const auto & regexp = OptimizedRegularExpression(Regexps::createRegexp</*like*/ false, /*no_capture*/ true, /*case_insensitive*/ false>(needle));
+                const auto & regexp = Regexps::Regexp(Regexps::createRegexp</*like*/ false, /*no_capture*/ true, /*case_insensitive*/ false>(needle));
 
                 String required_substr;
                 bool is_trivial;
@@ -364,7 +364,7 @@ struct MultiMatchAnyImpl
                                 {reinterpret_cast<const char *>(cur_haystack_data), cur_haystack_length},
                                 0,
                                 cur_haystack_length,
-                                re2::RE2::UNANCHORED,
+                                re2_st::RE2::UNANCHORED,
                                 nullptr,
                                 0);
                         if constexpr (FindAny)
@@ -401,7 +401,7 @@ struct MultiMatchAnyImpl
                                     {reinterpret_cast<const char *>(cur_haystack_data), cur_haystack_length},
                                     start_pos,
                                     end_pos,
-                                    re2::RE2::UNANCHORED,
+                                    re2_st::RE2::UNANCHORED,
                                     nullptr,
                                     0);
                             if constexpr (FindAny)

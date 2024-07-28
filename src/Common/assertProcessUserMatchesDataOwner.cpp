@@ -31,8 +31,7 @@ namespace
         const auto error = getpwuid_r(user_id, &passwd_entry, buffer.data(), buffer_size, &result);
 
         if (error)
-            ErrnoException::throwWithErrno(
-                ErrorCodes::FAILED_TO_GETPWUID, error, "Failed to find user name for {}", std::to_string(user_id));
+            throwFromErrno("Failed to find user name for " + std::to_string(user_id), ErrorCodes::FAILED_TO_GETPWUID, error);
         else if (result)
             return result->pw_name;
         return std::to_string(user_id);

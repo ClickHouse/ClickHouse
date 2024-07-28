@@ -1,4 +1,4 @@
-if (NOT OS_FREEBSD AND NOT OS_DARWIN)
+if (NOT OS_FREEBSD AND NOT (OS_DARWIN AND COMPILER_CLANG))
     option (ENABLE_SENTRY "Enable Sentry" ${ENABLE_LIBRARIES})
 else()
     option (ENABLE_SENTRY "Enable Sentry" OFF)
@@ -13,7 +13,6 @@ set (SRC_DIR "${ClickHouse_SOURCE_DIR}/contrib/sentry-native")
 
 set (SRCS
     ${SRC_DIR}/vendor/mpack.c
-    ${SRC_DIR}/vendor/stb_sprintf.c
     ${SRC_DIR}/src/sentry_alloc.c
     ${SRC_DIR}/src/sentry_backend.c
     ${SRC_DIR}/src/sentry_core.c
@@ -22,7 +21,6 @@ set (SRCS
     ${SRC_DIR}/src/sentry_json.c
     ${SRC_DIR}/src/sentry_logger.c
     ${SRC_DIR}/src/sentry_options.c
-    ${SRC_DIR}/src/sentry_os.c
     ${SRC_DIR}/src/sentry_random.c
     ${SRC_DIR}/src/sentry_ratelimiter.c
     ${SRC_DIR}/src/sentry_scope.c
@@ -31,7 +29,6 @@ set (SRCS
     ${SRC_DIR}/src/sentry_string.c
     ${SRC_DIR}/src/sentry_sync.c
     ${SRC_DIR}/src/sentry_transport.c
-    ${SRC_DIR}/src/sentry_tracing.c
     ${SRC_DIR}/src/sentry_utils.c
     ${SRC_DIR}/src/sentry_uuid.c
     ${SRC_DIR}/src/sentry_value.c

@@ -31,8 +31,8 @@ LocalDirectorySyncGuard::LocalDirectorySyncGuard(const String & full_path)
     : fd(::open(full_path.c_str(), O_DIRECTORY))
 {
     if (-1 == fd)
-        ErrnoException::throwFromPath(
-            errno == ENOENT ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE, full_path, "Cannot open file {}", full_path);
+        throwFromErrnoWithPath("Cannot open file " + full_path, full_path,
+            errno == ENOENT ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE);
 }
 
 LocalDirectorySyncGuard::~LocalDirectorySyncGuard()
@@ -45,7 +45,7 @@ LocalDirectorySyncGuard::~LocalDirectorySyncGuard()
 
 #if defined(OS_DARWIN)
         if (fcntl(fd, F_FULLFSYNC, 0))
-            throw ErrnoException(ErrorCodes::CANNOT_FSYNC, "Cannot fcntl(F_FULLFSYNC)");
+            throwFromErrno("Cannot fcntl(F_FULLFSYNC)", ErrorCodes::CANNOT_FSYNC);
 #else
         if (-1 == ::fdatasync(fd))
             throw Exception(ErrorCodes::CANNOT_FSYNC, "Cannot fdatasync");

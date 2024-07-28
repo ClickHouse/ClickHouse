@@ -19,16 +19,14 @@ public:
     bool ephemeral_default = false;
     ASTPtr comment;
     ASTPtr codec;
-    ASTPtr statistics_desc;
     ASTPtr ttl;
     ASTPtr collation;
-    ASTPtr settings;
     bool primary_key_specifier = false;
 
     String getID(char delim) const override { return "ColumnDeclaration" + (delim + name); }
 
     ASTPtr clone() const override;
-    void formatImpl(const FormatSettings & format_settings, FormatState & state, FormatStateStacked frame) const override;
+    void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 };
 
 }

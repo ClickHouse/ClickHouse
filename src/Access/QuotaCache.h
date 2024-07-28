@@ -28,8 +28,7 @@ public:
         const boost::container::flat_set<UUID> & enabled_roles,
         const Poco::Net::IPAddress & address,
         const String & forwarded_address,
-        const String & client_key,
-        bool throw_if_client_key_empty);
+        const String & client_key);
 
     std::vector<QuotaUsage> getAllQuotasUsage() const;
 
@@ -42,7 +41,7 @@ private:
         QuotaInfo(const QuotaPtr & quota_, const UUID & quota_id_) { setQuota(quota_, quota_id_); }
         void setQuota(const QuotaPtr & quota_, const UUID & quota_id_);
 
-        String calculateKey(const EnabledQuota & enabled_quota, bool throw_if_client_key_empty) const;
+        String calculateKey(const EnabledQuota & enabled_quota) const;
         boost::shared_ptr<const Intervals> getOrBuildIntervals(const String & key);
         boost::shared_ptr<const Intervals> rebuildIntervals(const String & key, std::chrono::system_clock::time_point current_time);
         void rebuildAllIntervals();
@@ -57,7 +56,7 @@ private:
     void quotaAddedOrChanged(const UUID & quota_id, const std::shared_ptr<const Quota> & new_quota);
     void quotaRemoved(const UUID & quota_id);
     void chooseQuotaToConsume();
-    void chooseQuotaToConsumeFor(EnabledQuota & enabled_quota, bool throw_if_client_key_empty);
+    void chooseQuotaToConsumeFor(EnabledQuota & enabled_quota);
 
     const AccessControl & access_control;
     mutable std::mutex mutex;

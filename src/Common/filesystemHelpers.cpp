@@ -42,23 +42,14 @@ namespace ErrorCodes
     extern const int CANNOT_CREATE_FILE;
 }
 
-struct statvfs getStatVFS(String path)
+struct statvfs getStatVFS(const String & path)
 {
     struct statvfs fs;
     while (statvfs(path.c_str(), &fs) != 0)
     {
         if (errno == EINTR)
             continue;
-
-        /// Sometimes we create directories lazily, so we can request free space in a directory that yet to be created.
-        auto fs_path = std::filesystem::path(path);
-        if (errno == ENOENT && fs_path.has_parent_path())
-        {
-            path = fs_path.parent_path();
-            continue;
-        }
-
-        ErrnoException::throwFromPath(ErrorCodes::CANNOT_STATVFS, path, "Could not calculate available disk space (statvfs)");
+        throwFromErrnoWithPath("Could not calculate available disk space (statvfs)", path, ErrorCodes::CANNOT_STATVFS);
     }
     return fs;
 }
@@ -88,7 +79,7 @@ String getBlockDeviceId([[maybe_unused]] const String & path)
 #if defined(OS_LINUX)
     struct stat sb;
     if (lstat(path.c_str(), &sb))
-        DB::ErrnoException::throwFromPath(DB::ErrorCodes::CANNOT_STAT, path, "Cannot lstat {}", path);
+        throwFromErrnoWithPath("Cannot lstat " + path, path, ErrorCodes::CANNOT_STAT);
     WriteBufferFromOwnString ss;
     ss << major(sb.st_dev) << ":" << minor(sb.st_dev);
     return ss.str();
@@ -173,7 +164,7 @@ std::filesystem::path getMountPoint(std::filesystem::path absolute_path)
     {
         struct stat st;
         if (stat(p.c_str(), &st))   /// NOTE: man stat does not list EINTR as possible error
-            DB::ErrnoException::throwFromPath(DB::ErrorCodes::SYSTEM_ERROR, p.string(), "Cannot stat {}", p.string());
+            throwFromErrnoWithPath("Cannot stat " + p.string(), p.string(), ErrorCodes::SYSTEM_ERROR);
         return st.st_dev;
     };
 
@@ -259,8 +250,10 @@ size_t getSizeFromFileDescriptor(int fd, const String & file_name)
     int res = fstat(fd, &buf);
     if (-1 == res)
     {
-        DB::ErrnoException::throwFromPath(
-            DB::ErrorCodes::CANNOT_FSTAT, file_name, "Cannot execute fstat{}", file_name.empty() ? "" : " file: " + file_name);
+        throwFromErrnoWithPath(
+            "Cannot execute fstat" + (file_name.empty() ? "" : " file: " + file_name),
+            file_name,
+            ErrorCodes::CANNOT_FSTAT);
     }
     return buf.st_size;
 }
@@ -270,7 +263,10 @@ Int64 getINodeNumberFromPath(const String & path)
     struct stat file_stat;
     if (stat(path.data(), &file_stat))
     {
-        DB::ErrnoException::throwFromPath(DB::ErrorCodes::CANNOT_STAT, path, "Cannot execute stat for file {}", path);
+        throwFromErrnoWithPath(
+            "Cannot execute stat for file " + path,
+            path,
+            ErrorCodes::CANNOT_STAT);
     }
     return file_stat.st_ino;
 }
@@ -306,7 +302,7 @@ bool createFile(const std::string & path)
         close(n);
         return true;
     }
-    DB::ErrnoException::throwFromPath(DB::ErrorCodes::CANNOT_CREATE_FILE, path, "Cannot create file: {}", path);
+    DB::throwFromErrnoWithPath("Cannot create file: " + path, path, DB::ErrorCodes::CANNOT_CREATE_FILE);
 }
 
 bool exists(const std::string & path)
@@ -321,7 +317,7 @@ bool canRead(const std::string & path)
         return true;
     if (errno == EACCES)
         return false;
-    DB::ErrnoException::throwFromPath(DB::ErrorCodes::PATH_ACCESS_DENIED, path, "Cannot check read access to file: {}", path);
+    DB::throwFromErrnoWithPath("Cannot check read access to file: " + path, path, DB::ErrorCodes::PATH_ACCESS_DENIED);
 }
 
 bool canWrite(const std::string & path)
@@ -331,7 +327,7 @@ bool canWrite(const std::string & path)
         return true;
     if (errno == EACCES)
         return false;
-    DB::ErrnoException::throwFromPath(DB::ErrorCodes::PATH_ACCESS_DENIED, path, "Cannot check write access to file: {}", path);
+    DB::throwFromErrnoWithPath("Cannot check write access to file: " + path, path, DB::ErrorCodes::PATH_ACCESS_DENIED);
 }
 
 bool canExecute(const std::string & path)
@@ -341,7 +337,7 @@ bool canExecute(const std::string & path)
         return true;
     if (errno == EACCES)
         return false;
-    DB::ErrnoException::throwFromPath(DB::ErrorCodes::PATH_ACCESS_DENIED, path, "Cannot check execute access to file: {}", path);
+    DB::throwFromErrnoWithPath("Cannot check write access to file: " + path, path, DB::ErrorCodes::PATH_ACCESS_DENIED);
 }
 
 time_t getModificationTime(const std::string & path)
@@ -373,7 +369,7 @@ void setModificationTime(const std::string & path, time_t time)
     tb.actime  = time;
     tb.modtime = time;
     if (utime(path.c_str(), &tb) != 0)
-        DB::ErrnoException::throwFromPath(DB::ErrorCodes::PATH_ACCESS_DENIED, path, "Cannot set modification time to file: {}", path);
+        DB::throwFromErrnoWithPath("Cannot set modification time for file: " + path, path, DB::ErrorCodes::PATH_ACCESS_DENIED);
 }
 
 bool isSymlink(const fs::path & path)

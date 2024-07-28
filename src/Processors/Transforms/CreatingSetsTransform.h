@@ -63,7 +63,7 @@ private:
     size_t bytes_to_transfer = 0;
 
     using Logger = Poco::Logger;
-    LoggerPtr log = getLogger("CreatingSetsTransform");
+    Poco::Logger * log = &Poco::Logger::get("CreatingSetsTransform");
 
     bool is_initialized = false;
 

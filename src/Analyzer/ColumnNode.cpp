@@ -1,12 +1,14 @@
 #include <Analyzer/ColumnNode.h>
-#include <Analyzer/TableNode.h>
-#include <IO/Operators.h>
+
+#include <Common/SipHash.h>
+
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
-#include <Parsers/ASTIdentifier.h>
-#include <Common/SipHash.h>
-#include <Common/assert_cast.h>
+#include <IO/Operators.h>
 
+#include <Parsers/ASTIdentifier.h>
+
+#include <Analyzer/TableNode.h>
 
 namespace DB
 {
@@ -68,26 +70,20 @@ void ColumnNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & state, size_t 
     }
 }
 
-bool ColumnNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions compare_options) const
+bool ColumnNode::isEqualImpl(const IQueryTreeNode & rhs) const
 {
     const auto & rhs_typed = assert_cast<const ColumnNode &>(rhs);
-    if (column.name != rhs_typed.column.name)
-        return false;
-
-    return !compare_options.compare_types || column.type->equals(*rhs_typed.column.type);
+    return column == rhs_typed.column;
 }
 
-void ColumnNode::updateTreeHashImpl(HashState & hash_state, CompareOptions compare_options) const
+void ColumnNode::updateTreeHashImpl(HashState & hash_state) const
 {
     hash_state.update(column.name.size());
     hash_state.update(column.name);
 
-    if (compare_options.compare_types)
-    {
-        const auto & column_type_name = column.type->getName();
-        hash_state.update(column_type_name.size());
-        hash_state.update(column_type_name);
-    }
+    const auto & column_type_name = column.type->getName();
+    hash_state.update(column_type_name.size());
+    hash_state.update(column_type_name);
 }
 
 QueryTreeNodePtr ColumnNode::cloneImpl() const
