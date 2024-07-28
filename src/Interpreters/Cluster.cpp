@@ -370,7 +370,9 @@ void Clusters::updateClusters(const Poco::Util::AbstractConfiguration & new_conf
 
         /// If old config is set and cluster config wasn't changed, don't update this cluster.
         if (!old_config || !isSameConfiguration(new_config, *old_config, config_prefix + "." + key))
-            impl[key] = std::make_shared<Cluster>(new_config, settings, config_prefix, key);
+            auto cluster = std::make_shared<Cluster>(new_config, settings, config_prefix, key);
+            cluster->initialize(settings);
+            impl[key] = cluster
     }
 }
 
@@ -512,10 +514,12 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
         throw Exception(ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG, "There must be either 'node' or 'shard' elements in config");
 
     initMisc();
-    // Handle dynamic replicas
-    handleDynamicReplicas(settings);
 }
 
+void Cluster::initialize(const Settings & settings)
+{
+    handleDynamicReplicas(settings);
+}
 
 Cluster::Cluster(
     const Settings & settings,
@@ -961,7 +965,7 @@ bool Cluster::isConnectionAlive(const std::shared_ptr<ConnectionPoolWithFailover
         ConnectionTimeouts timeouts;
         std::string fail_message;
         auto result = pool->getEntryWithSettings(timeouts, fail_message, settings); // Initialize connection
-        return result.entry && result.entry->isConnected();
+        return result.entry.isValid() && result.entry->isConnected();
     }
     catch (const DB::Exception &)
     {
@@ -1003,7 +1007,7 @@ void Cluster::reconnect(std::shared_ptr<ConnectionPoolWithFailover> & pool, cons
         ConnectionTimeouts timeouts;
         std::string fail_message;
         auto result = pool->getEntryWithSettings(timeouts, fail_message, settings); // Initialize connection
-        if (!result.entry || !result.entry->isConnected())
+        if (!result.entry.isValid() || !result.entry->isConnected())
         {
             // Handle connection failure if necessary
         }
