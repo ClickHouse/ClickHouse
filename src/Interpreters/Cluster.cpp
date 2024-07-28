@@ -39,7 +39,7 @@ namespace ErrorCodes
     extern const int INVALID_SHARD_ID;
     extern const int NO_SUCH_REPLICA;
     extern const int BAD_ARGUMENTS;
-    extern const int NETWORK_ERROR; // Ensure this is defined in your ErrorCodes
+    extern const int NETWORK_ERROR;
 }
 
 namespace
@@ -935,7 +935,7 @@ Block Cluster::executeQueryWithFailover(const String & query, const Settings & s
         try
         {
             auto entry = shard_info.pool->get(timeouts, settings, true);
-            return entry->get()->sendQuery(query); // Ensure sendQuery method is available and returns Block
+            return entry->sendQuery(query); // Ensure sendQuery method is available and returns Block
         }
         catch (const Exception & e)
         {
@@ -943,7 +943,7 @@ Block Cluster::executeQueryWithFailover(const String & query, const Settings & s
             {
                 handleConnectionLoss(shard_info, settings);
                 auto entry = shard_info.pool->get(timeouts, settings, true);
-                return entry->get()->sendQuery(query); // Retry with new connection
+                return entry->sendQuery(query); // Retry with new connection
             }
             else
             {
