@@ -121,34 +121,6 @@ jobs:
       runner_type: style-checker-aarch64
       data: ${{ needs.RunConfig.outputs.data }}
 
-  MarkReleaseReady:
-    if: ${{ !failure() && !cancelled() }}
-    needs: [RunConfig, Builds_1, Builds_2]
-    runs-on: [self-hosted, style-checker-aarch64]
-    steps:
-      - name: Debug
-        run: |
-          echo need with different filters
-          cat << 'EOF'
-          ${{ toJSON(needs) }}
-          ${{ toJSON(needs.*.result) }}
-          no failures ${{ !contains(needs.*.result, 'failure') }}
-          no skips ${{ !contains(needs.*.result, 'skipped') }}
-          no both ${{ !(contains(needs.*.result, 'skipped') || contains(needs.*.result, 'failure')) }}
-          EOF
-      - name: Not ready
-        # fail the job to be able to restart it
-        if: ${{ contains(needs.*.result, 'skipped') || contains(needs.*.result, 'failure') }}
-        run: exit 1
-      - name: Check out repository code
-        if: ${{ ! (contains(needs.*.result, 'skipped') || contains(needs.*.result, 'failure')) }}
-        uses: ClickHouse/checkout@v1
-      - name: Mark Commit Release Ready
-        if: ${{ ! (contains(needs.*.result, 'skipped') || contains(needs.*.result, 'failure')) }}
-        run: |
-          cd "$GITHUB_WORKSPACE/tests/ci"
-          python3 mark_release_ready.py
-
   FinishCheck:
     if: ${{ !cancelled() }}
     needs: [RunConfig, Builds_1, Builds_2, Builds_Report, Tests_1, Tests_2, Tests_3]
@@ -160,3 +132,10 @@ jobs:
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
           python3 finish_check.py --wf-status ${{ contains(needs.*.result, 'failure') && 'failure' || 'success' }}
+      - name: Check Workflow results
+        run: |
+          export WORKFLOW_RESULT_FILE="/tmp/workflow_results.json"
+          cat > "$WORKFLOW_RESULT_FILE" << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          python3 ./tests/ci/ci_buddy.py --check-wf-status
