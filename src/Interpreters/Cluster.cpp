@@ -13,6 +13,7 @@
 #include <Core/Settings.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
+#include <IO/ConnectionTimeouts.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Util/Application.h>
 #include <Poco/Logger.h>
@@ -673,12 +674,13 @@ void Cluster::initMisc()
     Poco::Timespan write_timeout(30, 0); // 30 seconds
     Poco::Timespan keep_alive_interval(10, 0); // 10 seconds
 
+    ConnectionTimeouts timeouts(read_timeout, write_timeout, Poco::Timespan(0, 0)); // Example timeout initialization
 
     for (auto & shard_info : shards_info)
     {
         if (shard_info.pool)
         {
-            auto connection = shard_info.pool->get();
+            auto connection = shard_info.pool->get(timeouts);
             connection->setSocketTimeouts(read_timeout, write_timeout);
             connection->enableKeepAlive(keep_alive_interval);
         }
