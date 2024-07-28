@@ -39,7 +39,6 @@ namespace ErrorCodes
     extern const int INVALID_SHARD_ID;
     extern const int NO_SUCH_REPLICA;
     extern const int BAD_ARGUMENTS;
-    extern const int SOCKET_TIMEOUT;
     extern const int NETWORK_ERROR; // Ensure this is defined in your ErrorCodes
 }
 
