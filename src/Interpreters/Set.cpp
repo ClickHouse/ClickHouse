@@ -346,14 +346,14 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
             result = castColumnAccurate(column_to_cast, data_types[i], cast_cache.get());
         }
 
-        if (!col_to_emplace)
-            col_to_emplace = column_before_cast.column;
-
         ColumnPtr col_to_emplace; /// If we cast DateTime64 column to other type, we lose its precision. if we have this case, we should not let this cast happen
         if (isDateTime64(column_before_cast.column->getDataType()))
             col_to_emplace = returnFilteredColumn(column_before_cast.column, res->getPtr());
         else
             col_to_emplace = result;
+
+        if (!col_to_emplace)
+            col_to_emplace = column_before_cast.column;
 
         materialized_columns.emplace_back() = col_to_emplace;
         key_columns.emplace_back() = materialized_columns.back().get();
