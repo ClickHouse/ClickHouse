@@ -112,7 +112,19 @@ public:
         return tryGetEntry(nullptr, timeouts, fail_message, settings);
     }
 
+    // Method to set socket timeouts
+    void setSocketTimeouts(const Poco::Timespan & read_timeout, const Poco::Timespan & write_timeout);
+
+    // Method to enable keep-alive
+    void enableKeepAlive(const Poco::Timespan & interval);
+
 private:
+
+    // New members for reconnection logic
+    Poco::Timespan socket_read_timeout;
+    Poco::Timespan socket_write_timeout;
+    Poco::Timespan tcp_keep_alive;
+
     /// Get the values of relevant settings and call Base::getMany()
     std::vector<TryResult> getManyImpl(
         const Settings & settings,
@@ -137,11 +149,6 @@ private:
 
     GetPriorityForLoadBalancing get_priority_load_balancing;
 
-    // New members for reconnection logic
-    Poco::Timespan socket_read_timeout;
-    Poco::Timespan socket_write_timeout;
-    Poco::Timespan connection_timeout;
-    Poco::Timespan tcp_keep_alive;
 };
 
 using ConnectionPoolWithFailoverPtr = std::shared_ptr<ConnectionPoolWithFailover>;

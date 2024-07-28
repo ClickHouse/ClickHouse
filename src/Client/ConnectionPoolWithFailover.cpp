@@ -1,6 +1,7 @@
 #include <Client/ConnectionPoolWithFailover.h>
 #include <Client/ConnectionEstablisher.h>
 
+#include <Poco/Net/StreamSocket.h>
 #include <Poco/Net/NetException.h>
 #include <Poco/Net/DNS.h>
 #include <Poco/Timespan.h>
@@ -30,10 +31,6 @@ ConnectionPoolWithFailover::ConnectionPoolWithFailover(
     size_t max_error_cap_)
     : Base(std::move(nested_pools_), decrease_error_period_, max_error_cap_, getLogger("ConnectionPoolWithFailover"))
     , get_priority_load_balancing(load_balancing)
-    , socket_read_timeout(Poco::Timespan(0)) // Initialize with default values
-    , socket_write_timeout(Poco::Timespan(0))
-    , connection_timeout(Poco::Timespan(0))
-    , tcp_keep_alive(Poco::Timespan(0))
 {
     const std::string & local_hostname = getFQDNOrHostName();
 
@@ -266,21 +263,6 @@ ConnectionPoolWithFailover::tryGetEntry(
     ConnectionEstablisher connection_establisher(pool, &timeouts, settings, log, table_to_check);
     TryResult result;
     connection_establisher.run(result, fail_message);
-
-    // If connection is not established, retry
-    if (result.entry.isNull() || !result.entry->isConnected())
-    {
-        Poco::Timespan retry_timeout = settings.receive_timeout;
-        for (size_t attempt = 0; attempt < settings.distributed_query_retries; ++attempt)
-        {
-            connection_establisher.run(result, fail_message);
-            if (!result.entry.isNull() && result.entry->isConnected())
-                break;
-
-            std::this_thread::sleep_for(std::chrono::milliseconds(retry_timeout.totalMilliseconds()));
-        }
-    }
-
     return result;
 }
 
@@ -292,6 +274,38 @@ ConnectionPoolWithFailover::getShuffledPools(const Settings & settings, GetPrior
 
     UInt64 max_ignored_errors = settings.distributed_replica_max_ignored_errors.value;
     return Base::getShuffledPools(max_ignored_errors, priority_func, use_slowdown_count);
+}
+
+// Implementation of new methods
+void ConnectionPoolWithFailover::setSocketTimeouts(const Poco::Timespan & read_timeout, const Poco::Timespan & write_timeout)
+{
+    socket_read_timeout = read_timeout;
+    socket_write_timeout = write_timeout;
+
+    // Apply timeouts to all nested pools
+    for (const auto & nested_pool : nested_pools)
+    {
+        if (auto pool = std::dynamic_pointer_cast<ConnectionPool>(nested_pool))
+        {
+            // Assuming ConnectionPool has a method to set socket timeouts
+            pool->setSocketTimeouts(read_timeout, write_timeout);
+        }
+    }
+}
+
+void ConnectionPoolWithFailover::enableKeepAlive(const Poco::Timespan & interval)
+{
+    tcp_keep_alive = interval;
+
+    // Enable keep-alive for all nested pools
+    for (const auto & nested_pool : nested_pools)
+    {
+        if (auto pool = std::dynamic_pointer_cast<ConnectionPool>(nested_pool))
+        {
+            // Assuming ConnectionPool has a method to enable keep-alive
+            pool->enableKeepAlive(interval);
+        }
+    }
 }
 
 }

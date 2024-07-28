@@ -614,11 +614,9 @@ void Cluster::addShard(
         if (replica.is_local && !treat_local_as_remote)
             shard_local_addresses.push_back(replica);
     }
-    ConnectionPoolWithFailoverPtr shard_pool = std::make_shared<ConnectionPoolWithFailover>(
-        all_replicas_pools,
-        settings.load_balancing,
-        settings.distributed_replica_error_half_life.totalSeconds(),
-        settings.distributed_replica_error_cap);
+
+    // Create ConnectionPoolWithFailover with reconnection logic
+    ConnectionPoolWithFailoverPtr shard_pool = createFailoverPool(addresses, settings);
 
     if (weight)
         slot_to_shard.insert(std::end(slot_to_shard), weight, shards_info.size());
@@ -673,6 +671,17 @@ void Cluster::initMisc()
             any_remote_shard_info = &shard_info;
             break;
         }
+    }
+
+    Poco::Timespan read_timeout(30, 0);  // 30 seconds
+    Poco::Timespan write_timeout(30, 0); // 30 seconds
+    Poco::Timespan keep_alive_interval(10, 0); // 10 seconds
+
+
+    for (auto & shard_info : shards_info)
+    {
+        shard_info.pool->setSocketTimeouts(read_timeout, write_timeout);
+        shard_info.pool->enableKeepAlive(keep_alive_interval);
     }
 }
 
@@ -904,105 +913,81 @@ bool Cluster::maybeCrossReplication() const
     return false;
 }
 
-void Cluster::reconnectToReplica(size_t index, const Settings & settings)
+void Cluster::handleConnectionLoss(ShardInfo & shard_info)
 {
-    if (index >= shards_info.size() || index >= addresses_with_failover.size())
+    // Logic to handle connection loss and reconnect to another replica
+    for (const auto & address : shard_info.local_addresses)
     {
-        return; // Safely return if the index is out of bounds.
-    }
-
-    auto & shard_info = shards_info[index];
-    for (const auto & address : addresses_with_failover[index])
-    {
-        if (!isConnectionAlive(shard_info.pool, settings))
+        try
         {
-            reconnect(shard_info.pool, address, settings);
-        }
-    }
-}
-
-
-void Cluster::handleDynamicReplicas(const Settings & settings)
-{
-    if (shards_info.empty())
-    {
-        return; // Return early if there are no shards.
-    }
-
-    for (size_t i = 0; i < shards_info.size(); ++i)
-    {
-        const auto & shard = shards_info[i];
-        if (!shard.isLocal() && shard.hasRemoteConnections())
-        {
-            reconnectToReplica(i, settings);
-        }
-    }
-}
-
-bool Cluster::isConnectionAlive(const std::shared_ptr<ConnectionPoolWithFailover> & pool, const Settings & settings)
-{
-    if (!pool)
-    {
-        return false;
-    }
-
-    try
-    {
-        ConnectionTimeouts timeouts;
-        std::string fail_message;
-        auto result = pool->getEntryWithSettings(timeouts, fail_message, settings); // Initialize connection
-        return !result.entry.isNull() && result.entry->isConnected();
-    }
-    catch (const DB::Exception &)
-    {
-        return false;
-    }
-}
-
-void Cluster::reconnect(std::shared_ptr<ConnectionPoolWithFailover> & pool, const Address & address, const Settings & settings)
-{
-    try
-    {
-        auto new_pool = std::make_shared<ConnectionPoolWithFailover>(
-            ConnectionPoolPtrs{ConnectionPoolFactory::instance().get(
-                static_cast<unsigned>(settings.distributed_connections_pool_size),
-                address.host_name,
-                address.port,
-                address.default_database,
-                address.user,
-                address.password,
-                address.quota_key,
-                address.cluster,
-                address.cluster_secret,
-                "server",
-                address.compression,
-                address.secure,
-                address.priority)},
-            settings.load_balancing,
-            settings.distributed_replica_error_half_life.totalSeconds(),
-            settings.distributed_replica_error_cap
-        );
-
-        if (!new_pool)
-        {
+            auto new_pool = createFailoverPool({address}, settings);
+            shard_info.pool = new_pool;
             return;
         }
-
-        pool = new_pool;
-
-        ConnectionTimeouts timeouts;
-        std::string fail_message;
-        auto result = pool->getEntryWithSettings(timeouts, fail_message, settings); // Initialize connection
-        if (result.entry.isNull() || !result.entry->isConnected())
+        catch (const Exception & e)
         {
-            // Handle connection failure if necessary
+            tryLogCurrentException("Cluster", "Failed to reconnect to replica: " + address.toString());
         }
     }
-    catch (const DB::Exception &)
+
+    throw Exception(ErrorCodes::SHARD_HAS_NO_CONNECTIONS, "Failed to reconnect to any replica");
+}
+
+Block Cluster::executeQueryWithFailover(const String & query)
+{
+    for (auto & shard_info : shards_info)
     {
-        // Handle exception if necessary
-        throw;
+        try
+        {
+            return shard_info.pool->execute(query);
+        }
+        catch (const Exception & e)
+        {
+            if (e.code() == ErrorCodes::CONNECTION_LOST)
+            {
+                handleConnectionLoss(shard_info);
+                return shard_info.pool->execute(query);
+            }
+            else
+            {
+                throw;
+            }
+        }
     }
+
+    throw Exception(ErrorCodes::SHARD_HAS_NO_CONNECTIONS, "Failed to execute query on all replicas");
+}
+
+ConnectionPoolWithFailoverPtr Cluster::createFailoverPool(const Addresses & addresses, const Settings & settings)
+{
+    ConnectionPoolPtrs all_replicas_pools;
+    all_replicas_pools.reserve(addresses.size());
+
+    for (const auto & replica : addresses)
+    {
+        auto replica_pool = ConnectionPoolFactory::instance().get(
+            static_cast<unsigned>(settings.distributed_connections_pool_size),
+            replica.host_name,
+            replica.port,
+            replica.default_database,
+            replica.user,
+            replica.password,
+            replica.quota_key,
+            replica.cluster,
+            replica.cluster_secret,
+            "server",
+            replica.compression,
+            replica.secure,
+            replica.priority);
+
+        all_replicas_pools.emplace_back(replica_pool);
+    }
+
+    return std::make_shared<ConnectionPoolWithFailover>(
+        all_replicas_pools,
+        settings.load_balancing,
+        settings.distributed_replica_error_half_life.totalSeconds(),
+        settings.distributed_replica_error_cap);
 }
 
 }

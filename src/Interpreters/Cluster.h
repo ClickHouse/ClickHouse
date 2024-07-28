@@ -11,6 +11,7 @@
 #include <map>
 #include <string>
 #include <unordered_set>
+#include <memory>
 
 namespace Poco
 {
@@ -273,11 +274,12 @@ public:
     bool areDistributedDDLQueriesAllowed() const { return allow_distributed_ddl_queries; }
 
     const String & getName() const { return name; }
-    void handleDynamicReplicas(const Settings & settings);
-    void reconnectToReplica(size_t index, const Settings & settings);
-    bool isConnectionAlive(const std::shared_ptr<ConnectionPoolWithFailover> & pool, const Settings & settings);
-    void reconnect(std::shared_ptr<ConnectionPoolWithFailover> & pool, const Address & address, const Settings & settings);
-    void initialize(const Settings & settings);
+
+    /// Handle connection loss and attempt reconnection
+    void handleConnectionLoss(const ShardInfo & shard_info);
+
+    /// Execute query with failover mechanism
+    Block executeQueryWithFailover(const String & query);
 
 private:
     SlotToShard slot_to_shard;
@@ -287,6 +289,11 @@ public:
 
 private:
     void initMisc();
+
+    /// Create a failover connection pool
+    ConnectionPoolWithFailoverPtr createFailoverPool(const Addresses & addresses, const Settings & settings);
+
+    using ConnectionPoolWithFailoverPtr = std::shared_ptr<ConnectionPoolWithFailover>;
 
     /// For getClusterWithMultipleShards implementation.
     struct SubclusterTag {};
