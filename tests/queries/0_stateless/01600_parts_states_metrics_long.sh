@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Tags: long
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -34,7 +35,7 @@ verify()
 }
 
 $CLICKHOUSE_CLIENT --database_atomic_wait_for_drop_and_detach_synchronously=1 --query="DROP TABLE IF EXISTS test_table"
-$CLICKHOUSE_CLIENT --query="CREATE TABLE test_table(data Date) ENGINE = MergeTree  PARTITION BY toYear(data) ORDER BY data;"
+$CLICKHOUSE_CLIENT --query="CREATE TABLE test_table (data Date) ENGINE = MergeTree PARTITION BY toYear(data) ORDER BY data;"
 
 $CLICKHOUSE_CLIENT --query="INSERT INTO test_table VALUES ('1992-01-01')"
 verify
