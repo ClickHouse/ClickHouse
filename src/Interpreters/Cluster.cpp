@@ -670,18 +670,25 @@ void Cluster::initMisc()
         }
     }
 
-    Poco::Timespan read_timeout(30, 0);  // 30 seconds
-    Poco::Timespan write_timeout(30, 0); // 30 seconds
+    Poco::Timespan connection_timeout(30, 0);  // 30 seconds
+    Poco::Timespan send_timeout(30, 0);        // 30 seconds
+    Poco::Timespan receive_timeout(30, 0);     // 30 seconds
     Poco::Timespan keep_alive_interval(10, 0); // 10 seconds
 
-    ConnectionTimeouts timeouts(read_timeout, write_timeout, Poco::Timespan(0, 0)); // Example timeout initialization
+    ConnectionTimeouts timeouts(
+        connection_timeout,   // connect_timeout
+        send_timeout,         // send_timeout
+        receive_timeout,      // receive_timeout
+        Poco::Timespan(0, 0), // sync_request_timeout (example, adjust as needed)
+        Poco::Timespan(0, 0)  // tcp_keep_alive_timeout (example, adjust as needed)
+    );
 
     for (auto & shard_info : shards_info)
     {
         if (shard_info.pool)
         {
             auto connection = shard_info.pool->get(timeouts);
-            connection->setSocketTimeouts(read_timeout, write_timeout);
+            connection->setSocketTimeouts(receive_timeout, send_timeout);
             connection->enableKeepAlive(keep_alive_interval);
         }
     }
