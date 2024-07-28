@@ -930,9 +930,8 @@ void Cluster::handleConnectionLoss(ShardInfo & shard_info)
         }
     }
 
-    throw Exception(ErrorCodes::SHARD_HAS_NO_CONNECTIONS, "Failed to reconnect to any replica");
+    throw Exception(ErrorCodes::NETWORK_ERROR, "Failed to reconnect to any replica");
 }
-
 Block Cluster::executeQueryWithFailover(const String & query)
 {
     for (auto & shard_info : shards_info)
@@ -943,7 +942,7 @@ Block Cluster::executeQueryWithFailover(const String & query)
         }
         catch (const Exception & e)
         {
-            if (e.code() == ErrorCodes::CONNECTION_LOST)
+            if (e.code() == ErrorCodes::NETWORK_ERROR)
             {
                 handleConnectionLoss(shard_info);
                 return shard_info.pool->execute(query);
@@ -955,7 +954,7 @@ Block Cluster::executeQueryWithFailover(const String & query)
         }
     }
 
-    throw Exception(ErrorCodes::SHARD_HAS_NO_CONNECTIONS, "Failed to execute query on all replicas");
+    throw Exception(ErrorCodes::NETWORK_ERROR, "Failed to execute query on all replicas");
 }
 
 ConnectionPoolWithFailoverPtr Cluster::createFailoverPool(const Addresses & addresses, const Settings & settings)
