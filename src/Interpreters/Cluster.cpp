@@ -38,6 +38,7 @@ namespace ErrorCodes
     extern const int INVALID_SHARD_ID;
     extern const int NO_SUCH_REPLICA;
     extern const int BAD_ARGUMENTS;
+    extern const int SOCKET_TIMEOUT
 }
 
 namespace
@@ -930,8 +931,9 @@ void Cluster::handleConnectionLoss(ShardInfo & shard_info)
         }
     }
 
-    throw Exception(ErrorCodes::NETWORK_ERROR, "Failed to reconnect to any replica");
+    throw Exception(ErrorCodes::SOCKET_TIMEOUT, "Failed to reconnect to any replica");
 }
+
 Block Cluster::executeQueryWithFailover(const String & query)
 {
     for (auto & shard_info : shards_info)
@@ -942,7 +944,7 @@ Block Cluster::executeQueryWithFailover(const String & query)
         }
         catch (const Exception & e)
         {
-            if (e.code() == ErrorCodes::NETWORK_ERROR)
+            if (e.code() == ErrorCodes::SOCKET_TIMEOUT)
             {
                 handleConnectionLoss(shard_info);
                 return shard_info.pool->execute(query);
@@ -954,7 +956,7 @@ Block Cluster::executeQueryWithFailover(const String & query)
         }
     }
 
-    throw Exception(ErrorCodes::NETWORK_ERROR, "Failed to execute query on all replicas");
+    throw Exception(ErrorCodes::SOCKET_TIMEOUT, "Failed to execute query on all replicas");
 }
 
 ConnectionPoolWithFailoverPtr Cluster::createFailoverPool(const Addresses & addresses, const Settings & settings)
