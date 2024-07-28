@@ -647,12 +647,13 @@ LoadTaskPtr DatabaseReplicated::startupDatabaseAsync(AsyncLoader & async_loader,
             {
                 std::lock_guard lock{ddl_worker_mutex};
                 ddl_worker = std::make_unique<DatabaseReplicatedDDLWorker>(this, getContext());
+                ddl_worker->startup();
+                ddl_worker_initialized = true;
             }
-            ddl_worker->startup();
-            ddl_worker_initialized = true;
         });
     std::scoped_lock lock(mutex);
-    return startup_replicated_database_task = makeLoadTask(async_loader, {job});
+    startup_replicated_database_task = makeLoadTask(async_loader, {job});
+    return startup_replicated_database_task;
 }
 
 void DatabaseReplicated::waitDatabaseStarted() const
@@ -1530,8 +1531,11 @@ void DatabaseReplicated::stopReplication()
 void DatabaseReplicated::shutdown()
 {
     stopReplication();
-    ddl_worker_initialized = false;
-    ddl_worker = nullptr;
+    {
+        std::lock_guard lock{ddl_worker_mutex};
+        ddl_worker_initialized = false;
+        ddl_worker = nullptr;
+    }
     DatabaseAtomic::shutdown();
 }
 
@@ -1679,6 +1683,7 @@ bool DatabaseReplicated::canExecuteReplicatedMetadataAlter() const
     /// It may update the metadata digest (both locally and in ZooKeeper)
     /// before DatabaseReplicatedDDLWorker::initializeReplication() has finished.
     /// We should not update metadata until the database is initialized.
+    std::lock_guard lock{ddl_worker_mutex};
     return ddl_worker_initialized && ddl_worker->isCurrentlyActive();
 }
 

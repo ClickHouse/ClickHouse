@@ -31,7 +31,6 @@ public:
     int main(const std::vector<String> & /*args*/) override;
 
 protected:
-
     Poco::Util::LayeredConfiguration & getClientConfiguration() override;
 
     void connect() override;
@@ -50,7 +49,6 @@ protected:
     void processConfig() override;
     void readArguments(int argc, char ** argv, Arguments & common_arguments, std::vector<Arguments> &, std::vector<Arguments> &) override;
 
-
     void updateLoggerLevel(const String & logs_level) override;
 
 private:
@@ -66,6 +64,8 @@ private:
 
     void applyCmdOptions(ContextMutablePtr context);
     void applyCmdSettings(ContextMutablePtr context);
+
+    void createClientContext();
 
     ServerSettings server_settings;
 

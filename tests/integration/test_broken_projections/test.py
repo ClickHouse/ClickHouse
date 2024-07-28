@@ -433,6 +433,7 @@ def test_broken_ignored_replicated(cluster):
     check(node, table_name, 1)
 
     create_table(node, table_name2, 2, table_name)
+    node.query(f"system sync replica {table_name}")
     check(node, table_name2, 1)
 
     break_projection(node, table_name, "proj1", "all_0_0_0", "data")

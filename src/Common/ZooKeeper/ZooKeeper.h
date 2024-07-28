@@ -620,7 +620,7 @@ public:
 
     void setServerCompletelyStarted();
 
-    Int8 getConnectedHostIdx() const;
+    std::optional<int8_t> getConnectedHostIdx() const;
     String getConnectedHostPort() const;
     int32_t getConnectionXid() const;
 

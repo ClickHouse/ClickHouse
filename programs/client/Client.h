@@ -16,7 +16,6 @@ public:
     int main(const std::vector<String> & /*args*/) override;
 
 protected:
-
     Poco::Util::LayeredConfiguration & getClientConfiguration() override;
 
     bool processWithFuzzing(const String & full_query) override;

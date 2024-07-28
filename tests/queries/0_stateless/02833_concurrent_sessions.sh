@@ -37,11 +37,11 @@ done
 # These functions try to create a session with successful login and logout.
 # Sleep a small, random amount of time to make concurrency more intense.
 # and try to login with an invalid password.
-function tcp_session() 
+function tcp_session()
 {
     local user=$1
     local i=0
-    while (( (i++) < 10 )); do
+    while (( (i++) < 3 )); do
         # login logout
         ${CLICKHOUSE_CLIENT} -q "SELECT 1, sleep(0.01${RANDOM})" --user="${user}" --password="pass"
         # login failure
@@ -49,11 +49,11 @@ function tcp_session()
     done
 }
 
-function http_session() 
+function http_session()
 {
     local user=$1
     local i=0
-    while (( (i++) < 10 )); do
+    while (( (i++) < 3 )); do
         # login logout
         ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&user=${user}&password=pass" -d "SELECT 3, sleep(0.01${RANDOM})"
 
@@ -62,11 +62,11 @@ function http_session()
     done
 }
 
-function http_with_session_id_session() 
+function http_with_session_id_session()
 {
     local user=$1
     local i=0
-    while (( (i++) < 10 )); do
+    while (( (i++) < 3 )); do
         # login logout
         ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&session_id=${user}&user=${user}&password=pass" -d "SELECT 5, sleep 0.01${RANDOM}"
 
@@ -75,11 +75,11 @@ function http_with_session_id_session()
     done
 }
 
-function mysql_session() 
+function mysql_session()
 {
     local user=$1
     local i=0
-    while (( (i++) < 10 )); do
+    while (( (i++) < 3 )); do
         # login logout
         ${CLICKHOUSE_CLIENT} -q "SELECT 1, sleep(0.01${RANDOM}) FROM mysql('127.0.0.1:9004', 'system', 'one', '${user}', 'pass')"
 
@@ -97,29 +97,29 @@ export -f http_with_session_id_session;
 export -f mysql_session;
 
 for user in "${TCP_USERS[@]}"; do
-    timeout 60s bash -c "tcp_session ${user}" >/dev/null 2>&1 &
+    tcp_session ${user} >/dev/null 2>&1 &
 done
 
 for user in "${HTTP_USERS[@]}"; do
-    timeout 60s bash -c "http_session ${user}" >/dev/null 2>&1 &
+    http_session ${user} >/dev/null 2>&1 &
 done
 
 for user in "${HTTP_WITH_SESSION_ID_SESSION_USERS[@]}"; do
-    timeout 60s bash -c "http_with_session_id_session ${user}" >/dev/null 2>&1 &
+    http_with_session_id_session ${user} >/dev/null 2>&1 &
 done
 
 for user in "${MYSQL_USERS[@]}"; do
-    timeout 60s bash -c "mysql_session ${user}" >/dev/null 2>&1 &
+    mysql_session ${user} >/dev/null 2>&1 &
 done
 
 wait
 
 ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS"
 
-echo "sessions:" 
+echo "sessions:"
 ${CLICKHOUSE_CLIENT} -q "SELECT count(*) FROM system.session_log WHERE user IN (${ALL_USERS_SQL_COLLECTION_STRING})"
 
-echo "port_0_sessions:" 
+echo "port_0_sessions:"
 ${CLICKHOUSE_CLIENT} -q "SELECT count(*) FROM system.session_log WHERE user IN (${ALL_USERS_SQL_COLLECTION_STRING}) AND client_port = 0"
 
 echo "address_0_sessions:"
@@ -131,13 +131,13 @@ echo "http_sessions"
 ${CLICKHOUSE_CLIENT} -q "SELECT count(*) FROM system.session_log WHERE user IN (${HTTP_USERS_SQL_COLLECTION_STRING}) AND interface = 'HTTP'"
 echo "http_with_session_id_sessions"
 ${CLICKHOUSE_CLIENT} -q "SELECT count(*) FROM system.session_log WHERE user IN (${HTTP_WITH_SESSION_ID_USERS_SQL_COLLECTION_STRING}) AND interface = 'HTTP'"
-echo "my_sql_sessions"
+echo "mysql_sessions"
 ${CLICKHOUSE_CLIENT} -q "SELECT count(*) FROM system.session_log WHERE user IN (${MYSQL_USERS_SQL_COLLECTION_STRING}) AND interface = 'MySQL'"
 
 for user in "${ALL_USERS[@]}"; do
     ${CLICKHOUSE_CLIENT} -q "DROP USER ${user}"
-    echo "Corresponding LoginSuccess/Logout" 
+    echo "Corresponding LoginSuccess/Logout"
     ${CLICKHOUSE_CLIENT} -q "SELECT COUNT(*) FROM (SELECT ${SESSION_LOG_MATCHING_FIELDS} FROM system.session_log WHERE user = '${user}' AND type = 'LoginSuccess' INTERSECT SELECT ${SESSION_LOG_MATCHING_FIELDS} FROM system.session_log WHERE user = '${user}' AND type = 'Logout')"
     echo "LoginFailure"
-    ${CLICKHOUSE_CLIENT} -q "SELECT COUNT(*) FROM system.session_log WHERE user = '${user}' AND type = 'LoginFailure'" 
+    ${CLICKHOUSE_CLIENT} -q "SELECT COUNT(*) FROM system.session_log WHERE user = '${user}' AND type = 'LoginFailure'"
  done

@@ -32,10 +32,10 @@
 1
 1
 0
-SELECT count() AS `count()`
+SELECT count()
 FROM constraint_test_constants
 WHERE (b > 100) OR (c > 100)
-SELECT count() AS `count()`
+SELECT count()
 FROM constraint_test_constants
 WHERE c > 100
 QUERY id: 0
@@ -53,7 +53,7 @@ QUERY id: 0
           COLUMN id: 6, column_name: c, result_type: Int64, source_id: 3
           CONSTANT id: 7, constant_value: UInt64_100, constant_value_type: UInt8
   SETTINGS allow_experimental_analyzer=1
-SELECT count() AS `count()`
+SELECT count()
 FROM constraint_test_constants
 WHERE c > 100
 QUERY id: 0
@@ -71,7 +71,7 @@ QUERY id: 0
           COLUMN id: 6, column_name: c, result_type: Int64, source_id: 3
           CONSTANT id: 7, constant_value: UInt64_100, constant_value_type: UInt8
   SETTINGS allow_experimental_analyzer=1
-SELECT count() AS `count()`
+SELECT count()
 FROM constraint_test_constants
 QUERY id: 0
   PROJECTION COLUMNS

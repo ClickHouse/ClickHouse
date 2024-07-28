@@ -12,6 +12,7 @@ UNKNOWN_SIGN = "[ UNKNOWN "
 SKIPPED_SIGN = "[ SKIPPED "
 HUNG_SIGN = "Found hung queries in processlist"
 SERVER_DIED_SIGN = "Server died, terminating all processes"
+SERVER_DIED_SIGN2 = "Server does not respond to health check"
 DATABASE_SIGN = "Database: "
 
 SUCCESS_FINISH_SIGNS = ["All tests have finished", "No tests were run"]
@@ -43,7 +44,7 @@ def process_test_log(log_path, broken_tests):
             if HUNG_SIGN in line:
                 hung = True
                 break
-            if SERVER_DIED_SIGN in line:
+            if SERVER_DIED_SIGN in line or SERVER_DIED_SIGN2 in line:
                 server_died = True
             if RETRIES_SIGN in line:
                 retries = True
@@ -111,12 +112,12 @@ def process_test_log(log_path, broken_tests):
     # Python does not support TSV, so we have to escape '\t' and '\n' manually
     # and hope that complex escape sequences will not break anything
     test_results = [
-        (
+        [
             test[0],
             test[1],
             test[2],
             "".join(test[3])[:4096].replace("\t", "\\t").replace("\n", "\\n"),
-        )
+        ]
         for test in test_results
     ]
 
@@ -170,18 +171,23 @@ def process_result(result_path, broken_tests):
         if hung:
             description = "Some queries hung, "
             state = "failure"
-            test_results.append(("Some queries hung", "FAIL", "0", ""))
+            test_results.append(["Some queries hung", "FAIL", "0", ""])
         elif server_died:
             description = "Server died, "
             state = "failure"
-            test_results.append(("Server died", "FAIL", "0", ""))
+            # When ClickHouse server crashes, some tests are still running
+            # and fail because they cannot connect to server
+            for result in test_results:
+                if result[1] == "FAIL":
+                    result[1] = "SERVER_DIED"
+            test_results.append(["Server died", "FAIL", "0", ""])
         elif not success_finish:
             description = "Tests are not finished, "
             state = "failure"
-            test_results.append(("Tests are not finished", "FAIL", "0", ""))
+            test_results.append(["Tests are not finished", "FAIL", "0", ""])
         elif retries:
             description = "Some tests restarted, "
-            test_results.append(("Some tests restarted", "SKIPPED", "0", ""))
+            test_results.append(["Some tests restarted", "SKIPPED", "0", ""])
         else:
             description = ""
 
@@ -233,11 +239,12 @@ if __name__ == "__main__":
         # sort by status then by check name
         order = {
             "FAIL": 0,
-            "Timeout": 1,
-            "NOT_FAILED": 2,
-            "BROKEN": 3,
-            "OK": 4,
-            "SKIPPED": 5,
+            "SERVER_DIED": 1,
+            "Timeout": 2,
+            "NOT_FAILED": 3,
+            "BROKEN": 4,
+            "OK": 5,
+            "SKIPPED": 6,
         }
         return order.get(item[1], 10), str(item[0]), item[1]
 

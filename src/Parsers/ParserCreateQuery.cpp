@@ -1207,6 +1207,7 @@ bool ParserCreateWindowViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
     if (!select_p.parse(pos, select, expected))
         return false;
 
+    auto comment = parseComment(pos, expected);
 
     auto query = std::make_shared<ASTCreateQuery>();
     node = query;
@@ -1225,6 +1226,8 @@ bool ParserCreateWindowViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
         query->children.push_back(query->database);
     if (query->table)
         query->children.push_back(query->table);
+    if (comment)
+        query->set(query->comment, comment);
 
     query->set(query->columns_list, columns_list);
 

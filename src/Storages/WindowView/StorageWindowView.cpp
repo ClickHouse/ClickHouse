@@ -1188,6 +1188,7 @@ StorageWindowView::StorageWindowView(
     ContextPtr context_,
     const ASTCreateQuery & query,
     const ColumnsDescription & columns_,
+    const String & comment,
     LoadingStrictnessLevel mode)
     : IStorage(table_id_)
     , WithContext(context_->getGlobalContext())
@@ -1206,6 +1207,7 @@ StorageWindowView::StorageWindowView(
 
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
+    storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
 
     /// If the target table is not set, use inner target table
@@ -1764,7 +1766,7 @@ void registerStorageWindowView(StorageFactory & factory)
                             "Experimental WINDOW VIEW feature "
                             "is not enabled (the setting 'allow_experimental_window_view')");
 
-        return std::make_shared<StorageWindowView>(args.table_id, args.getLocalContext(), args.query, args.columns, args.mode);
+        return std::make_shared<StorageWindowView>(args.table_id, args.getLocalContext(), args.query, args.columns, args.comment, args.mode);
     });
 }
 

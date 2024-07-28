@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
 
+# Tags: no-parallel
+# no-parallel: This test is not parallel because when we execute system-wide SYSTEM DROP REPLICA,
+#  other tests might shut down the storage in parallel and the test will fail.
+
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh

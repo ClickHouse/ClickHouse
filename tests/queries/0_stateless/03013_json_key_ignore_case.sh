@@ -13,6 +13,6 @@ cp "$CURDIR"/data_json/key_ignore_case.json $USER_FILES_PATH/
 
 $CLICKHOUSE_CLIENT -q "drop table if exists test_tbl"
 $CLICKHOUSE_CLIENT -q "create table test_tbl (id UInt16, reqid UInt32, name String) engine=MergeTree order by id"
-$CLICKHOUSE_CLIENT -q "INSERT INTO test_tbl SELECT * FROM file('key_ignore_case.json', 'JSONEachRow') SETTINGS input_format_json_ignore_key_case=true"
+$CLICKHOUSE_CLIENT -q "INSERT INTO test_tbl SELECT * FROM file('key_ignore_case.json', 'JSONEachRow') SETTINGS input_format_json_case_insensitive_column_matching=true"
 $CLICKHOUSE_CLIENT -q "select * from test_tbl"
 $CLICKHOUSE_CLIENT -q "drop table test_tbl"

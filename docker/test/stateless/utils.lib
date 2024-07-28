@@ -45,9 +45,12 @@ function timeout_with_logging() {
 
     timeout -s TERM --preserve-status "${@}" || exit_code="${?}"
 
+    echo "Checking if it is a timeout. The code 124 will indicate a timeout."
     if [[ "${exit_code}" -eq "124" ]]
     then
-      echo "The command 'timeout ${*}' has been killed by timeout"
+        echo "The command 'timeout ${*}' has been killed by timeout."
+    else
+        echo "No, it isn't a timeout."
     fi
 
     return $exit_code

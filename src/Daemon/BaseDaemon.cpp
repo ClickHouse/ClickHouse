@@ -158,7 +158,7 @@ BaseDaemon::~BaseDaemon()
         tryLogCurrentException(&logger());
     }
 
-    OwnSplitChannel::disableLogging();
+    disableLogging();
 }
 
 
