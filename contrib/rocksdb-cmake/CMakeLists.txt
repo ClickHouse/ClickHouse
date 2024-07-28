@@ -6,7 +6,6 @@ if (NOT ENABLE_ROCKSDB)
 endif ()
 
 set (ROCKSDB_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/rocksdb")
-list (APPEND CMAKE_MODULE_PATH "${ROCKSDB_SOURCE_DIR}/cmake/modules/")
 
 ## Platform specific compiler flags - no need to do, see cpu_features.cmake
 
