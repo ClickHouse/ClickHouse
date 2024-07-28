@@ -1341,6 +1341,24 @@ void Connection::throwUnexpectedPacket(UInt64 packet_type, const char * expected
                        getDescription(), expected, String(Protocol::Server::toString(packet_type)));
 }
 
+void Connection::setSocketTimeouts(const Poco::Timespan & receive_timeout, const Poco::Timespan & send_timeout)
+{
+    if (socket)
+    {
+        socket->setReceiveTimeout(receive_timeout);
+        socket->setSendTimeout(send_timeout);
+    }
+}
+
+void Connection::enableKeepAlive(const Poco::Timespan & interval)
+{
+    if (socket)
+    {
+        socket->setKeepAlive(true);
+        socket->setOption(SOL_SOCKET, SO_KEEPALIVE, interval.totalSeconds());
+    }
+}
+
 ServerConnectionPtr Connection::createConnection(const ConnectionParameters & parameters, ContextPtr)
 {
     return std::make_unique<Connection>(

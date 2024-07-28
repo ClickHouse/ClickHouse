@@ -65,7 +65,10 @@ IConnectionPool::Entry ConnectionPoolWithFailover::get(const ConnectionTimeouts 
 
     TryGetEntryFunc try_get_entry = [&](const NestedPoolPtr & pool, std::string & fail_message)
     {
-        return tryGetEntry(pool, timeouts, fail_message, settings);
+        auto entry = tryGetEntry(pool, timeouts, fail_message, settings);
+        setSocketTimeouts(entry, timeouts.receive_timeout, timeouts.send_timeout);
+        enableKeepAlive(entry, Poco::Timespan(10, 0)); // Example interval for keep-alive
+        return entry;
     };
 
     const size_t offset = settings.load_balancing_first_offset % nested_pools.size();
@@ -276,36 +279,14 @@ ConnectionPoolWithFailover::getShuffledPools(const Settings & settings, GetPrior
     return Base::getShuffledPools(max_ignored_errors, priority_func, use_slowdown_count);
 }
 
-// Implementation of new methods
-void ConnectionPoolWithFailover::setSocketTimeouts(const Poco::Timespan & read_timeout, const Poco::Timespan & write_timeout)
+void ConnectionPoolWithFailover::setSocketTimeouts(ConnectionPtr connection, const Poco::Timespan & receive_timeout, const Poco::Timespan & send_timeout)
 {
-    socket_read_timeout = read_timeout;
-    socket_write_timeout = write_timeout;
-
-    // Apply timeouts to all nested pools
-    for (const auto & nested_pool : nested_pools)
-    {
-        if (auto pool = std::dynamic_pointer_cast<ConnectionPool>(nested_pool))
-        {
-            // Assuming ConnectionPool has a method to set socket timeouts
-            pool->setSocketTimeouts(read_timeout, write_timeout);
-        }
-    }
+    connection->setSocketTimeouts(receive_timeout, send_timeout);
 }
 
-void ConnectionPoolWithFailover::enableKeepAlive(const Poco::Timespan & interval)
+void ConnectionPoolWithFailover::enableKeepAlive(ConnectionPtr connection, const Poco::Timespan & interval)
 {
-    tcp_keep_alive = interval;
-
-    // Enable keep-alive for all nested pools
-    for (const auto & nested_pool : nested_pools)
-    {
-        if (auto pool = std::dynamic_pointer_cast<ConnectionPool>(nested_pool))
-        {
-            // Assuming ConnectionPool has a method to enable keep-alive
-            pool->enableKeepAlive(interval);
-        }
-    }
+    connection->enableKeepAlive(interval);
 }
 
 }
