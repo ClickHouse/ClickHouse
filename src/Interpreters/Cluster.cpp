@@ -513,7 +513,7 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
 
     initMisc();
     // Handle dynamic replicas
-    // handleDynamicReplicas(settings);
+    handleDynamicReplicas(settings);
 }
 
 
@@ -900,6 +900,11 @@ bool Cluster::maybeCrossReplication() const
 
 void Cluster::reconnectToReplica(size_t index, const Settings & settings)
 {
+    if (index >= shards_info.size() || index >= addresses_with_failover.size())
+    {
+        return; // Safely return if the index is out of bounds.
+    }
+
     auto & shard_info = shards_info[index];
     for (const auto & address : addresses_with_failover[index])
     {
@@ -913,6 +918,11 @@ void Cluster::reconnectToReplica(size_t index, const Settings & settings)
 
 void Cluster::handleDynamicReplicas(const Settings & settings)
 {
+    if (shards_info.empty())
+    {
+        return; // Return early if there are no shards.
+    }
+
     for (size_t i = 0; i < shards_info.size(); ++i)
     {
         const auto & shard = shards_info[i];
@@ -923,18 +933,38 @@ void Cluster::handleDynamicReplicas(const Settings & settings)
     }
 }
 
+void Cluster::reconnectToReplica(size_t index, const Settings & settings)
+{
+    if (index >= shards_info.size() || index >= addresses_with_failover.size())
+    {
+        return; // Safely return if the index is out of bounds.
+    }
+
+    auto & shard_info = shards_info[index];
+    for (const auto & address : addresses_with_failover[index])
+    {
+        if (!isConnectionAlive(shard_info.pool, settings))
+        {
+            reconnect(shard_info.pool, address, settings);
+        }
+    }
+}
 bool Cluster::isConnectionAlive(const std::shared_ptr<ConnectionPoolWithFailover> & pool, const Settings & settings)
 {
+    if (!pool)
+    {
+        return false;
+    }
+
     try
     {
         ConnectionTimeouts timeouts;
         std::string fail_message;
         auto result = pool->getEntryWithSettings(timeouts, fail_message, settings); // Initialize connection
-        return result.entry->isConnected();
+        return result.entry && result.entry->isConnected();
     }
     catch (const DB::Exception &)
     {
-        LOG_ERROR(&Poco::Logger::get("Cluster"), "Failed to check if connection is alive");
         return false;
     }
 }
@@ -943,7 +973,7 @@ void Cluster::reconnect(std::shared_ptr<ConnectionPoolWithFailover> & pool, cons
 {
     try
     {
-        pool = std::make_shared<ConnectionPoolWithFailover>(
+        auto new_pool = std::make_shared<ConnectionPoolWithFailover>(
             ConnectionPoolPtrs{ConnectionPoolFactory::instance().get(
                 static_cast<unsigned>(settings.distributed_connections_pool_size),
                 address.host_name,
@@ -962,13 +992,25 @@ void Cluster::reconnect(std::shared_ptr<ConnectionPoolWithFailover> & pool, cons
             settings.distributed_replica_error_half_life.totalSeconds(),
             settings.distributed_replica_error_cap
         );
+
+        if (!new_pool)
+        {
+            return;
+        }
+
+        pool = new_pool;
+
         ConnectionTimeouts timeouts;
         std::string fail_message;
-        pool->getEntryWithSettings(timeouts, fail_message, settings); // Initialize connection
+        auto result = pool->getEntryWithSettings(timeouts, fail_message, settings); // Initialize connection
+        if (!result.entry || !result.entry->isConnected())
+        {
+            // Handle connection failure if necessary
+        }
     }
     catch (const DB::Exception &)
     {
-        LOG_ERROR(&Poco::Logger::get("Cluster"), "Failed to reconnect to replica");
+        // Handle exception if necessary
         throw;
     }
 }
