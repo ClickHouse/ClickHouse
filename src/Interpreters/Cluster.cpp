@@ -1,4 +1,5 @@
 #include <Interpreters/Cluster.h>
+#include <Interpreters/ClientInfo.h>
 #include <Common/DNSResolver.h>
 #include <Common/escapeForFileName.h>
 #include <Common/isLocalAddress.h>
@@ -946,17 +947,33 @@ Block Cluster::executeQueryWithFailover(const String & query, const Settings & s
 
             while (true)
             {
-                if (entry->hasPendingData())
+                if (entry->hasReadPendingData())
                 {
-                    result = entry->receiveData();
+                    result = entry->receivePacket().block; // Use receivePacket() to get the block
                     return result;
                 }
 
                 // Implement the logic for network connection hangs or ping packets
-                if (!entry->ping(timeouts))
+                try
                 {
-                    entry = shard_info.pool->get(timeouts, settings, true);
-                    entry->sendQuery(timeouts, query, query_parameters, query_id, stage, &settings, &client_info, with_pending_data, nullptr);
+                    if (!entry->checkConnected(timeouts)) // Use checkConnected() instead of ping()
+                    {
+                        entry = shard_info.pool->get(timeouts, settings, true);
+                        entry->sendQuery(timeouts, query, query_parameters, query_id, stage, &settings, &client_info, with_pending_data, nullptr);
+                    }
+                }
+                catch (const Exception & e)
+                {
+                    if (e.code() == ErrorCodes::SOCKET_TIMEOUT)
+                    {
+                        entry->disconnect(); // Disconnect the current connection
+                        entry = shard_info.pool->get(timeouts, settings, true); // Get a new connection
+                        entry->sendQuery(timeouts, query, query_parameters, query_id, stage, &settings, &client_info, with_pending_data, nullptr);
+                    }
+                    else
+                    {
+                        throw;
+                    }
                 }
             }
         }
@@ -970,17 +987,33 @@ Block Cluster::executeQueryWithFailover(const String & query, const Settings & s
 
                 while (true)
                 {
-                    if (entry->hasPendingData())
+                    if (entry->hasReadPendingData())
                     {
-                        result = entry->receiveData();
+                        result = entry->receivePacket().block; // Use receivePacket() to get the block
                         return result;
                     }
 
                     // Implement the logic for network connection hangs or ping packets
-                    if (!entry->ping(timeouts))
+                    try
                     {
-                        entry = shard_info.pool->get(timeouts, settings, true);
-                        entry->sendQuery(timeouts, query, query_parameters, query_id, stage, &settings, &client_info, with_pending_data, nullptr);
+                        if (!entry->checkConnected(timeouts)) // Use checkConnected() instead of ping()
+                        {
+                            entry = shard_info.pool->get(timeouts, settings, true);
+                            entry->sendQuery(timeouts, query, query_parameters, query_id, stage, &settings, &client_info, with_pending_data, nullptr);
+                        }
+                    }
+                    catch (const Exception & e)
+                    {
+                        if (e.code() == ErrorCodes::SOCKET_TIMEOUT)
+                        {
+                            entry->disconnect(); // Disconnect the current connection
+                            entry = shard_info.pool->get(timeouts, settings, true); // Get a new connection
+                            entry->sendQuery(timeouts, query, query_parameters, query_id, stage, &settings, &client_info, with_pending_data, nullptr);
+                        }
+                        else
+                        {
+                            throw;
+                        }
                     }
                 }
             }
