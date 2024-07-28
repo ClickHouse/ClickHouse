@@ -951,7 +951,7 @@ bool Cluster::isConnectionAlive(const std::shared_ptr<ConnectionPoolWithFailover
         ConnectionTimeouts timeouts;
         std::string fail_message;
         auto result = pool->getEntryWithSettings(timeouts, fail_message, settings); // Initialize connection
-        return result.entry.isValid() && result.entry->isConnected();
+        return !result.entry.isNull() && result.entry->isConnected();
     }
     catch (const DB::Exception &)
     {
@@ -993,7 +993,7 @@ void Cluster::reconnect(std::shared_ptr<ConnectionPoolWithFailover> & pool, cons
         ConnectionTimeouts timeouts;
         std::string fail_message;
         auto result = pool->getEntryWithSettings(timeouts, fail_message, settings); // Initialize connection
-        if (!result.entry.isValid() || !result.entry->isConnected())
+        if (result.entry.isNull() || !result.entry->isConnected())
         {
             // Handle connection failure if necessary
         }

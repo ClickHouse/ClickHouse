@@ -277,7 +277,7 @@ public:
     void reconnectToReplica(size_t index, const Settings & settings);
     bool isConnectionAlive(const std::shared_ptr<ConnectionPoolWithFailover> & pool, const Settings & settings);
     void reconnect(std::shared_ptr<ConnectionPoolWithFailover> & pool, const Address & address, const Settings & settings);
-
+    void initialize(const Settings & settings);
 
 private:
     SlotToShard slot_to_shard;
@@ -340,7 +340,6 @@ public:
 
     ClusterPtr getCluster(const std::string & cluster_name) const;
     void setCluster(const String & cluster_name, const ClusterPtr & cluster);
-    void initialize(const Settings & settings);
 
     void updateClusters(const Poco::Util::AbstractConfiguration & new_config, const Settings & settings, const String & config_prefix, Poco::Util::AbstractConfiguration * old_config = nullptr);
 
