@@ -335,8 +335,8 @@ def test_create_user():
         instance.query(
             "SELECT name, auth_type, auth_params FROM system.users WHERE name IN ['emma', 'lucy'] ORDER BY name"
         )
-        == 'emma\tssl_certificate\t{"common_names":["client2"]}\n'
-        'lucy\tssl_certificate\t{"common_names":["client2","client3"]}\n'
+        == "emma\t['ssl_certificate']\t['{\"common_names\":[\"client2\"]}']\n"
+        'lucy\t[\'ssl_certificate\']\t[\'{"common_names":["client2","client3"]}\']\n'
     )
 
 
@@ -355,7 +355,7 @@ def test_x509_san_support():
         instance.query(
             "SELECT name, auth_type, auth_params FROM system.users WHERE name='jerome'"
         )
-        == 'jerome\tssl_certificate\t{"subject_alt_names":["URI:spiffe:\\\\/\\\\/foo.com\\\\/bar","URI:spiffe:\\\\/\\\\/foo.com\\\\/baz"]}\n'
+        == 'jerome\t[\'ssl_certificate\']\t[\'{"subject_alt_names":["URI:spiffe:\\\\/\\\\/foo.com\\\\/bar","URI:spiffe:\\\\/\\\\/foo.com\\\\/baz"]}\']\n'
     )
     # user `jerome` is configured via xml config, but `show create` should work regardless.
     assert (

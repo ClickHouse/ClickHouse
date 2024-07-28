@@ -483,8 +483,8 @@ def test_introspection():
             [
                 "A",
                 "local_directory",
-                "no_password",
-                "{}",
+                "['no_password']",
+                "['{}']",
                 "['::/0']",
                 "[]",
                 "[]",
@@ -496,8 +496,8 @@ def test_introspection():
             [
                 "B",
                 "local_directory",
-                "no_password",
-                "{}",
+                "['no_password']",
+                "['{}']",
                 "['::/0']",
                 "[]",
                 "[]",
