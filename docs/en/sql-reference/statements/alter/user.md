@@ -70,7 +70,7 @@ ALTER USER user1 ADD IDENTIFIED WITH plaintext_password by '1', bcrypt_password 
 ```
 
 Notes:
-1. Older versions of ClickHouse might not support the syntax of multiple authentication methods. Therefore, if the ClickHouse server contains such users and is downgraded to a version that does not support it, such users will become unusable and some user related operations will be broken. In order to downgrade gracefully, one must set all users to contain a single authentication method prior to downgrading. Alternatively, if the server was downgraded without the proper procedure, the faulty users should be dropped. 
+1. Older versions of ClickHouse might not support the syntax of multiple authentication methods. Therefore, if the ClickHouse server contains such users and is downgraded to a version that does not support it, such users will become unusable and some user related operations will be broken. In order to downgrade gracefully, one must set all users to contain a single authentication method prior to downgrading. Alternatively, if the server was downgraded without the proper procedure, the faulty users should be dropped.
 2. `no_password` can not co-exist with other authentication methods for security reasons.
 Because of that, it is not possible to `ADD` a `no_password` authentication method. The below query will throw an error:
 
