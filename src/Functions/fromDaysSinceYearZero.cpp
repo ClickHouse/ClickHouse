@@ -125,7 +125,7 @@ The calculation is the same as in MySQL's FROM_DAYS() function.
         .examples{{"typical", "SELECT fromDaysSinceYearZero32(713569)", "2023-09-08"}},
         .categories{"Dates and Times"}});
 
-    factory.registerAlias("FROM_DAYS", FunctionFromDaysSinceYearZero<DateTraits>::name, FunctionFactory::CaseInsensitive);
+    factory.registerAlias("FROM_DAYS", FunctionFromDaysSinceYearZero<DateTraits>::name, FunctionFactory::Case::Insensitive);
 }
 
 }

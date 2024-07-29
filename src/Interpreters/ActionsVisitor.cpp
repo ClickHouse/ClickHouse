@@ -8,6 +8,7 @@
 
 #include <Core/ColumnNumbers.h>
 #include <Core/ColumnWithTypeAndName.h>
+#include <Core/Settings.h>
 
 #include <Functions/grouping.h>
 #include <Functions/FunctionFactory.h>
@@ -405,10 +406,6 @@ Block createBlockForSet(
 
 }
 
-ScopeStack::Level::Level() = default;
-ScopeStack::Level::~Level() = default;
-ScopeStack::Level::Level(Level &&) noexcept = default;
-
 FutureSetPtr makeExplicitSet(
     const ASTFunction * node, const ActionsDAG & actions, ContextPtr context, PreparedSets & prepared_sets)
 {
@@ -446,7 +443,7 @@ FutureSetPtr makeExplicitSet(
     else
         block = createBlockForSet(left_arg_type, right_arg, set_element_types, context);
 
-    return prepared_sets.addFromTuple(set_key, block, context->getSettings());
+    return prepared_sets.addFromTuple(set_key, block, context->getSettingsRef());
 }
 
 class ScopeStack::Index
@@ -462,6 +459,7 @@ public:
         for (const auto * node : index)
             map.emplace(node->result_name, node);
     }
+    ~Index() = default;
 
     void addNode(const ActionsDAG::Node * node)
     {
@@ -501,6 +499,10 @@ public:
         return result;
     }
 };
+
+ScopeStack::Level::Level() = default;
+ScopeStack::Level::~Level() = default;
+ScopeStack::Level::Level(Level &&) noexcept = default;
 
 ActionsMatcher::Data::Data(
     ContextPtr context_,

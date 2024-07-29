@@ -1358,11 +1358,24 @@ Connection pool size for PostgreSQL table engine and database engine.
 
 Default value: 16
 
+## postgresql_connection_attempt_timeout {#postgresql-connection-attempt-timeout}
+
+Connection timeout in seconds of a single attempt to connect PostgreSQL end-point.
+The value is passed as a `connect_timeout` parameter of the connection URL.
+
+Default value: `2`.
+
 ## postgresql_connection_pool_wait_timeout {#postgresql-connection-pool-wait-timeout}
 
 Connection pool push/pop timeout on empty pool for PostgreSQL table engine and database engine. By default it will block on empty pool.
 
 Default value: 5000
+
+## postgresql_connection_pool_retries {#postgresql-connection-pool-retries}
+
+The maximum number of retries to establish a connection with the PostgreSQL end-point.
+
+Default value: `2`.
 
 ## postgresql_connection_pool_auto_close_connection {#postgresql-connection-pool-auto-close-connection}
 
