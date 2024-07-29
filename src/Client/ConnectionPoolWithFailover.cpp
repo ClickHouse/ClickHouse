@@ -279,34 +279,35 @@ ConnectionPoolWithFailover::getShuffledPools(const Settings & settings, GetPrior
     return Base::getShuffledPools(max_ignored_errors, priority_func, use_slowdown_count);
 }
 
-void ConnectionPoolWithFailover::setSocketTimeouts(ConnectionPtr connection, const Poco::Timespan & receive_timeout, const Poco::Timespan & send_timeout)
-{
-    connection->setSocketTimeouts(receive_timeout, send_timeout);
-}
-
-void ConnectionPoolWithFailover::enableKeepAlive(ConnectionPtr connection, const Poco::Timespan & interval)
-{
-    connection->enableKeepAlive(interval);
-}
-
-
-// void ConnectionPoolWithFailover::setSocketTimeouts(const Poco::Timespan & receive_timeout, const Poco::Timespan & send_timeout)
+// void ConnectionPoolWithFailover::setSocketTimeouts(ConnectionPtr connection, const Poco::Timespan & receive_timeout, const Poco::Timespan & send_timeout)
 // {
-//     for (const auto & pool : nested_pools)
-//     {
-//         auto connection = pool->get();
-//         connection->setSocketTimeouts(receive_timeout, send_timeout);
-//     }
+//     connection->setSocketTimeouts(receive_timeout, send_timeout);
 // }
 
-// void ConnectionPoolWithFailover::enableKeepAlive(const Poco::Timespan & interval)
+// void ConnectionPoolWithFailover::enableKeepAlive(ConnectionPtr connection, const Poco::Timespan & interval)
 // {
-//     for (const auto & pool : nested_pools)
-//     {
-//         auto connection = pool->get();
-//         connection->enableKeepAlive(interval);
-//     }
+//     connection->enableKeepAlive(interval);
 // }
+
+
+void ConnectionPoolWithFailover::setSocketTimeouts(const Poco::Timespan & receive_timeout, const Poco::Timespan & send_timeout)
+{
+    for (const auto & pool : nested_pools)
+    {
+        auto entry = pool->get(ConnectionTimeouts()); // Use appropriate timeouts if needed
+        entry->setSocketTimeouts(receive_timeout, send_timeout);
+    }
+}
+
+void ConnectionPoolWithFailover::enableKeepAlive(const Poco::Timespan & interval)
+{
+    for (const auto & pool : nested_pools)
+    {
+        auto entry = pool->get(ConnectionTimeouts()); // Use appropriate timeouts if needed
+        entry->enableKeepAlive(interval);
+    }
+}
+
 
 
 }

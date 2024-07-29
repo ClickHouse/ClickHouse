@@ -21,6 +21,7 @@
 #include <base/sort.h>
 #include <boost/range/algorithm_ext/erase.hpp>
 #include <Client/ConnectionPoolWithFailover.h>
+#include <Client/ConnectionPool.h>
 #include <Client/ConnectionEstablisher.h>
 
 #include <Poco/Net/StreamSocket.h>
@@ -676,20 +677,20 @@ void Cluster::initMisc()
     Poco::Timespan sync_request_timeout(0, 0); // Example value, adjust as needed
     Poco::Timespan tcp_keep_alive_timeout(10, 0); // 10 seconds
 
-    ConnectionTimeouts timeouts;
-    timeouts.withConnectionTimeout(connection_timeout)
-            .withSendTimeout(send_timeout)
-            .withReceiveTimeout(receive_timeout)
-            .withSyncRequestTimeout(sync_request_timeout)
-            .withTCPKeepAliveTimeout(tcp_keep_alive_timeout);
+    ConnectionTimeouts timeouts(
+        connection_timeout,
+        send_timeout,
+        receive_timeout,
+        sync_request_timeout,
+        tcp_keep_alive_timeout
+    );
 
     for (auto & shard_info : shards_info)
     {
         if (shard_info.pool)
         {
-            auto entry = shard_info.pool->get(timeouts);
-            shard_info.pool->setSocketTimeouts(entry, receive_timeout, send_timeout);
-            shard_info.pool->enableKeepAlive(entry, tcp_keep_alive_timeout);
+            shard_info.pool->setSocketTimeouts(receive_timeout, send_timeout);
+            shard_info.pool->enableKeepAlive(tcp_keep_alive_timeout);
         }
     }
 }
