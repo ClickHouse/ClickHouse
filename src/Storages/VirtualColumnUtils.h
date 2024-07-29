@@ -32,7 +32,15 @@ void buildSetsForDAG(const ActionsDAG & dag, const ContextPtr & context);
 bool isDeterministicInScopeOfQuery(const ActionsDAG::Node * node);
 
 /// Extract a part of predicate that can be evaluated using only columns from input_names.
-ActionsDAGPtr splitFilterDagForAllowedInputs(const ActionsDAG::Node * predicate, const Block * allowed_inputs);
+/// When allow_non_deterministic_functions is true then even if the predicate contains non-deterministic
+/// functions, we still allow to extract a part of the predicate, otherwise we return nullptr.
+/// allow_non_deterministic_functions must be false when we are going to use the result to filter parts in
+/// MergeTreeData::totalRowsByPartitionPredicateImp. For example, if the query is
+/// `SELECT count() FROM table  WHERE _partition_id = '0' AND rowNumberInBlock() = 1`
+/// The predicate will be `_partition_id = '0' AND rowNumberInBlock() = 1`, and `rowNumberInBlock()` is
+/// non-deterministic. If we still extract the part `_partition_id = '0'` for filtering parts, then trivial
+/// count optimization will be mistakenly applied to the query.
+ActionsDAGPtr splitFilterDagForAllowedInputs(const ActionsDAG::Node * predicate, const Block * allowed_inputs, bool allow_non_deterministic_functions = true);
 
 /// Extract from the input stream a set of `name` column values
 template <typename T>
