@@ -365,12 +365,6 @@ void TCPHandler::runImpl()
 
         try
         {
-            /// If a user passed query-local timeouts, reset socket to initial state at the end of the query
-            SCOPE_EXIT({
-                std::scoped_lock lock(in_mutex, out_mutex);
-                state.timeout_setter.reset();
-            });
-
             /** If Query - process it. If Ping or Cancel - go back to the beginning.
              *  There may come settings for a separate query that modify `query_context`.
              *  It's possible to receive part uuids packet before the query, so then receivePacket has to be called twice.
@@ -633,6 +627,8 @@ void TCPHandler::runImpl()
             state.io.onException();
             exception.reset(e.clone());
 
+            state.timeout_setter.reset();
+
             if (e.code() == ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT)
                 throw;
 
@@ -782,8 +778,6 @@ void TCPHandler::extractConnectionSettingsFromContext(const ContextPtr & context
 
 bool TCPHandler::readDataNext()
 {
-    std::scoped_lock lock(in_mutex);
-
     Stopwatch watch(CLOCK_MONOTONIC_COARSE);
 
     /// Poll interval should not be greater than receive_timeout

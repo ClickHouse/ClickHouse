@@ -229,9 +229,6 @@ private:
     /// `out_mutex` protects `out` (WriteBuffer).
     /// So it is used for method sendData(), sendProgress(), sendLogs(), etc.
     std::mutex out_mutex;
-    /// `in_mutex` protects `in` (ReadBuffer)
-    /// Used in readDataNext() and to protect socket timeout settings
-    std::mutex in_mutex;
     /// `task_callback_mutex` protects tasks callbacks.
     /// Inside these callbacks we might also change cancellation status,
     /// so it also protects cancellation status checks.
