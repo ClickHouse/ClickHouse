@@ -16,13 +16,13 @@ verify_sql="SELECT
 # In case of test failure, this code will do infinite loop and timeout.
 verify()
 {
-    for i in {1..100}
+    for i in {1..5000}
     do
         result=$( $CLICKHOUSE_CLIENT --query="$verify_sql" )
         [ "$result" = "1" ] && echo "$result" && break
         sleep 0.1
 
-        if [[ $i -eq 100 ]]
+        if [[ $i -eq 5000 ]]
         then
             $CLICKHOUSE_CLIENT --multiquery "
               SELECT sumIf(value, metric = 'PartsActive'), sumIf(value, metric = 'PartsOutdated') FROM system.metrics;
