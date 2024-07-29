@@ -1336,7 +1336,7 @@ void DatabaseCatalog::dropTablesParallel(std::vector<DatabaseCatalog::TablesMark
         catch (...)
         {
             tryLogCurrentException(log, "Cannot drop tables. Will retry later.");
-            break;
+            throw;
         }
     }
 
@@ -1347,6 +1347,7 @@ void DatabaseCatalog::dropTablesParallel(std::vector<DatabaseCatalog::TablesMark
     catch (...)
     {
         tryLogCurrentException(log, "Cannot drop tables. Will retry later.");
+        throw;
     }
 }
 
