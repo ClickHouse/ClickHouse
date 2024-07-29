@@ -66,8 +66,11 @@ IConnectionPool::Entry ConnectionPoolWithFailover::get(const ConnectionTimeouts 
     TryGetEntryFunc try_get_entry = [&](const NestedPoolPtr & pool, std::string & fail_message)
     {
         auto entry = tryGetEntry(pool, timeouts, fail_message, settings);
-        entry->setSocketTimeouts(timeouts.receive_timeout, timeouts.send_timeout);
-        entry->enableKeepAlive(Poco::Timespan(10, 0)); // Example interval for keep-alive
+        if (!entry.isNull())
+        {
+            entry->setSocketTimeouts(timeouts.receive_timeout, timeouts.send_timeout);
+            entry->enableKeepAlive(Poco::Timespan(10, 0)); // Example interval for keep-alive
+        }
         return entry;
     };
 
@@ -81,6 +84,7 @@ IConnectionPool::Entry ConnectionPoolWithFailover::get(const ConnectionTimeouts 
 
     return Base::get(max_ignored_errors, fallback_to_stale_replicas, try_get_entry, get_priority);
 }
+
 
 ConnectionPoolWithFailover::Status ConnectionPoolWithFailover::getStatus() const
 {
