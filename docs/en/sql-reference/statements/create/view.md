@@ -16,6 +16,7 @@ Syntax:
 CREATE [OR REPLACE] VIEW [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster_name] 
 [DEFINER = { user | CURRENT_USER }] [SQL SECURITY { DEFINER | INVOKER | NONE }] 
 AS SELECT ...
+[COMMENT 'comment']
 ```
 
 Normal views do not store any data. They just perform a read from another table on each access. In other words, a normal view is nothing more than a saved query. When reading from a view, this saved query is used as a subquery in the [FROM](../../../sql-reference/statements/select/from.md) clause.
@@ -57,6 +58,7 @@ SELECT * FROM view(column1=value1, column2=value2 ...)
 CREATE MATERIALIZED VIEW [IF NOT EXISTS] [db.]table_name [ON CLUSTER] [TO[db.]name] [ENGINE = engine] [POPULATE] 
 [DEFINER = { user | CURRENT_USER }] [SQL SECURITY { DEFINER | INVOKER | NONE }] 
 AS SELECT ...
+[COMMENT 'comment']
 ```
 
 :::tip
@@ -161,6 +163,7 @@ RANDOMIZE FOR interval
 DEPENDS ON [db.]name [, [db.]name [, ...]]
 [TO[db.]name] [(columns)] [ENGINE = engine] [EMPTY]
 AS SELECT ...
+[COMMENT 'comment']
 ```
 where `interval` is a sequence of simple intervals:
 ```sql
@@ -267,7 +270,10 @@ This is an experimental feature that may change in backwards-incompatible ways i
 :::
 
 ``` sql
-CREATE WINDOW VIEW [IF NOT EXISTS] [db.]table_name [TO [db.]table_name] [INNER ENGINE engine] [ENGINE engine] [WATERMARK strategy] [ALLOWED_LATENESS interval_function] [POPULATE] AS SELECT ... GROUP BY time_window_function
+CREATE WINDOW VIEW [IF NOT EXISTS] [db.]table_name [TO [db.]table_name] [INNER ENGINE engine] [ENGINE engine] [WATERMARK strategy] [ALLOWED_LATENESS interval_function] [POPULATE]
+AS SELECT ...
+GROUP BY time_window_function
+[COMMENT 'comment']
 ```
 
 Window view can aggregate data by time window and output the results when the window is ready to fire. It stores the partial aggregation results in an inner(or specified) table to reduce latency and can push the processing result to a specified table or push notifications using the WATCH query.

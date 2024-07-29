@@ -1951,6 +1951,18 @@ The maximum allowed size for String in RowBinary format. It prevents allocating 
 
 Default value: `1GiB`.
 
+### output_format_binary_encode_types_in_binary_format {#output_format_binary_encode_types_in_binary_format}
+
+Write data types in [binary format](../../sql-reference/data-types/data-types-binary-encoding.md) instead of type names in RowBinaryWithNamesAndTypes output format.
+
+Disabled by default.
+
+### input_format_binary_decode_types_in_binary_format {#input_format_binary_decode_types_in_binary_format}
+
+Read data types in [binary format](../../sql-reference/data-types/data-types-binary-encoding.md) instead of type names in RowBinaryWithNamesAndTypes input format.
+
+Disabled by default.
+
 ## Native format settings {#native-format-settings}
 
 ### input_format_native_allow_types_conversion {#input_format_native_allow_types_conversion}
@@ -1958,3 +1970,15 @@ Default value: `1GiB`.
 Allow types conversion in Native input format between columns from input data and requested columns.
 
 Enabled by default.
+
+### output_format_native_encode_types_in_binary_format {#output_format_native_encode_types_in_binary_format}
+
+Write data types in [binary format](../../sql-reference/data-types/data-types-binary-encoding.md) instead of type names in Native output format.
+
+Disabled by default.
+
+### input_format_native_decode_types_in_binary_format {#input_format_native_decode_types_in_binary_format}
+
+Read data types in [binary format](../../sql-reference/data-types/data-types-binary-encoding.md) instead of type names in Native input format.
+
+Disabled by default.

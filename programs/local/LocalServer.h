@@ -3,11 +3,12 @@
 #include <Client/ClientBase.h>
 #include <Client/LocalConnection.h>
 
-#include <Common/StatusFile.h>
-#include <Common/InterruptListener.h>
-#include <Loggers/Loggers.h>
+#include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
+#include <Loggers/Loggers.h>
+#include <Common/InterruptListener.h>
+#include <Common/StatusFile.h>
 
 #include <filesystem>
 #include <memory>
@@ -30,7 +31,6 @@ public:
     int main(const std::vector<String> & /*args*/) override;
 
 protected:
-
     Poco::Util::LayeredConfiguration & getClientConfiguration() override;
 
     void connect() override;
@@ -49,7 +49,6 @@ protected:
     void processConfig() override;
     void readArguments(int argc, char ** argv, Arguments & common_arguments, std::vector<Arguments> &, std::vector<Arguments> &) override;
 
-
     void updateLoggerLevel(const String & logs_level) override;
 
 private:
@@ -65,6 +64,8 @@ private:
 
     void applyCmdOptions(ContextMutablePtr context);
     void applyCmdSettings(ContextMutablePtr context);
+
+    void createClientContext();
 
     ServerSettings server_settings;
 

@@ -41,6 +41,6 @@ public:
 REGISTER_FUNCTION(QueryID)
 {
     factory.registerFunction<FunctionQueryID>();
-    factory.registerAlias("query_id", FunctionQueryID::name, FunctionFactory::CaseInsensitive);
+    factory.registerAlias("query_id", FunctionQueryID::name, FunctionFactory::Case::Insensitive);
 }
 }

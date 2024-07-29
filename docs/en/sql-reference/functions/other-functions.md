@@ -76,7 +76,7 @@ WHERE macro = 'test';
 └───────┴──────────────┘
 ```
 
-## FQDN
+## fqdn
 
 Returns the fully qualified domain name of the ClickHouse server.
 
@@ -86,7 +86,7 @@ Returns the fully qualified domain name of the ClickHouse server.
 fqdn();
 ```
 
-Aliases: `fullHostName`, 'FQDN'. 
+Aliases: `fullHostName`, `FQDN`. 
 
 **Returned value**
 
@@ -2102,14 +2102,14 @@ Result:
 └─────────────────┘
 ```
 
-## filesystemFree
+## filesystemUnreserved
 
-Returns the total amount of the free space on the filesystem hosting the database persistence. See also `filesystemAvailable`
+Returns the total amount of the free space on the filesystem hosting the database persistence. (previously `filesystemFree`). See also [`filesystemAvailable`](#filesystemavailable).
 
 **Syntax**
 
 ```sql
-filesystemFree()
+filesystemUnreserved()
 ```
 
 **Returned value**
@@ -2121,7 +2121,7 @@ filesystemFree()
 Query:
 
 ```sql
-SELECT formatReadableSize(filesystemFree()) AS "Free space";
+SELECT formatReadableSize(filesystemUnreserved()) AS "Free space";
 ```
 
 Result:
@@ -2449,11 +2449,11 @@ As you can see, `runningAccumulate` merges states for each group of rows separat
 
 ## joinGet
 
-The function lets you extract data from the table the same way as from a [dictionary](../../sql-reference/dictionaries/index.md).
+The function lets you extract data from the table the same way as from a [dictionary](../../sql-reference/dictionaries/index.md). Gets the data from [Join](../../engines/table-engines/special/join.md#creating-a-table) tables using the specified join key.
 
-Gets the data from [Join](../../engines/table-engines/special/join.md#creating-a-table) tables using the specified join key.
-
+:::note
 Only supports tables created with the `ENGINE = Join(ANY, LEFT, <join_keys>)` statement.
+:::
 
 **Syntax**
 
@@ -2463,26 +2463,32 @@ joinGet(join_storage_table_name, `value_column`, join_keys)
 
 **Arguments**
 
-- `join_storage_table_name` — an [identifier](../../sql-reference/syntax.md#syntax-identifiers) indicating where the search is performed. The identifier is searched in the default database (see setting `default_database` in the config file). To override the default database, use `USE db_name` or specify the database and the table through the separator `db_name.db_table` as in the example.
+- `join_storage_table_name` — an [identifier](../../sql-reference/syntax.md#syntax-identifiers) indicating where the search is performed.
 - `value_column` — name of the column of the table that contains required data.
 - `join_keys` — list of keys.
 
+:::note
+The identifier is searched for in the default database (see setting `default_database` in the config file). To override the default database, use `USE db_name` or specify the database and the table through the separator `db_name.db_table` as in the example.
+:::
+
 **Returned value**
 
-Returns a list of values corresponded to list of keys.
+- Returns a list of values corresponded to the list of keys.
 
-If certain does not exist in source table then `0` or `null` will be returned based on [join_use_nulls](../../operations/settings/settings.md#join_use_nulls) setting.
-
+:::note
+If a certain key does not exist in source table then `0` or `null` will be returned based on [join_use_nulls](../../operations/settings/settings.md#join_use_nulls) setting during table creation.
 More info about `join_use_nulls` in [Join operation](../../engines/table-engines/special/join.md).
+:::
 
 **Example**
 
 Input table:
 
 ```sql
-CREATE DATABASE db_test
-CREATE TABLE db_test.id_val(`id` UInt32, `val` UInt32) ENGINE = Join(ANY, LEFT, id) SETTINGS join_use_nulls = 1
-INSERT INTO db_test.id_val VALUES (1,11)(2,12)(4,13)
+CREATE DATABASE db_test;
+CREATE TABLE db_test.id_val(`id` UInt32, `val` UInt32) ENGINE = Join(ANY, LEFT, id);
+INSERT INTO db_test.id_val VALUES (1, 11)(2, 12)(4, 13);
+SELECT * FROM db_test.id_val;
 ```
 
 ```text
@@ -2496,18 +2502,116 @@ INSERT INTO db_test.id_val VALUES (1,11)(2,12)(4,13)
 Query:
 
 ```sql
-SELECT joinGet(db_test.id_val, 'val', toUInt32(number)) from numbers(4) SETTINGS join_use_nulls = 1
+SELECT number, joinGet(db_test.id_val, 'val', toUInt32(number)) from numbers(4);
 ```
 
 Result:
 
 ```text
-┌─joinGet(db_test.id_val, 'val', toUInt32(number))─┐
-│                                                0 │
-│                                               11 │
-│                                               12 │
-│                                                0 │
-└──────────────────────────────────────────────────┘
+   ┌─number─┬─joinGet('db_test.id_val', 'val', toUInt32(number))─┐
+1. │      0 │                                                  0 │
+2. │      1 │                                                 11 │
+3. │      2 │                                                 12 │
+4. │      3 │                                                  0 │
+   └────────┴────────────────────────────────────────────────────┘
+```
+
+Setting `join_use_nulls` can be used during table creation to change the behaviour of what gets returned if no key exists in the source table.
+
+```sql
+CREATE DATABASE db_test;
+CREATE TABLE db_test.id_val_nulls(`id` UInt32, `val` UInt32) ENGINE = Join(ANY, LEFT, id) SETTINGS join_use_nulls=1;
+INSERT INTO db_test.id_val_nulls VALUES (1, 11)(2, 12)(4, 13);
+SELECT * FROM db_test.id_val_nulls;
+```
+
+```text
+┌─id─┬─val─┐
+│  4 │  13 │
+│  2 │  12 │
+│  1 │  11 │
+└────┴─────┘
+```
+
+Query:
+
+```sql
+SELECT number, joinGet(db_test.id_val_nulls, 'val', toUInt32(number)) from numbers(4);
+```
+
+Result:
+
+```text
+   ┌─number─┬─joinGet('db_test.id_val_nulls', 'val', toUInt32(number))─┐
+1. │      0 │                                                     ᴺᵁᴸᴸ │
+2. │      1 │                                                       11 │
+3. │      2 │                                                       12 │
+4. │      3 │                                                     ᴺᵁᴸᴸ │
+   └────────┴──────────────────────────────────────────────────────────┘
+```
+
+## joinGetOrNull
+
+Like [joinGet](#joinget) but returns `NULL` when the key is missing instead of returning the default value.
+
+**Syntax**
+
+```sql
+joinGetOrNull(join_storage_table_name, `value_column`, join_keys)
+```
+
+**Arguments**
+
+- `join_storage_table_name` — an [identifier](../../sql-reference/syntax.md#syntax-identifiers) indicating where the search is performed. 
+- `value_column` — name of the column of the table that contains required data.
+- `join_keys` — list of keys.
+
+:::note
+The identifier is searched for in the default database (see setting `default_database` in the config file). To override the default database, use `USE db_name` or specify the database and the table through the separator `db_name.db_table` as in the example.
+:::
+
+**Returned value**
+
+- Returns a list of values corresponded to the list of keys.
+
+:::note
+If a certain key does not exist in source table then `NULL` is returned for that key.
+:::
+
+**Example**
+
+Input table:
+
+```sql
+CREATE DATABASE db_test;
+CREATE TABLE db_test.id_val(`id` UInt32, `val` UInt32) ENGINE = Join(ANY, LEFT, id);
+INSERT INTO db_test.id_val VALUES (1, 11)(2, 12)(4, 13);
+SELECT * FROM db_test.id_val;
+```
+
+```text
+┌─id─┬─val─┐
+│  4 │  13 │
+│  2 │  12 │
+│  1 │  11 │
+└────┴─────┘
+```
+
+Query:
+
+```sql
+SELECT number, joinGetOrNull(db_test.id_val, 'val', toUInt32(number)) from numbers(4);
+```
+
+Result:
+
+```text
+   ┌─number─┬─joinGetOrNull('db_test.id_val', 'val', toUInt32(number))─┐
+1. │      0 │                                                     ᴺᵁᴸᴸ │
+2. │      1 │                                                       11 │
+3. │      2 │                                                       12 │
+4. │      3 │                                                     ᴺᵁᴸᴸ │
+   └────────┴──────────────────────────────────────────────────────────┘
 ```
 
 ## catboostEvaluate
@@ -2983,6 +3087,66 @@ Result:
 │ 1       │
 └─────────┘
 ```
+
+## partitionID
+
+Computes the [partition ID](../../engines/table-engines/mergetree-family/custom-partitioning-key.md).
+
+:::note
+This function is slow and should not be called for large amount of rows.
+:::
+
+**Syntax**
+
+```sql
+partitionID(x[, y, ...]);
+```
+
+**Arguments**
+
+- `x` — Column for which to return the partition ID.
+- `y, ...` — Remaining N columns for which to return the partition ID (optional).
+
+**Returned Value**
+
+- Partition ID that the row would belong to. [String](../data-types/string.md).
+
+**Example**
+
+Query:
+
+```sql
+DROP TABLE IF EXISTS tab;
+
+CREATE TABLE tab
+(
+  i int,
+  j int
+)
+ENGINE = MergeTree
+PARTITION BY i
+ORDER BY tuple();
+
+INSERT INTO tab VALUES (1, 1), (1, 2), (1, 3), (2, 4), (2, 5), (2, 6);
+
+SELECT i, j, partitionID(i), _partition_id FROM tab ORDER BY i, j;
+```
+
+Result:
+
+```response
+┌─i─┬─j─┬─partitionID(i)─┬─_partition_id─┐
+│ 1 │ 1 │ 1              │ 1             │
+│ 1 │ 2 │ 1              │ 1             │
+│ 1 │ 3 │ 1              │ 1             │
+└───┴───┴────────────────┴───────────────┘
+┌─i─┬─j─┬─partitionID(i)─┬─_partition_id─┐
+│ 2 │ 4 │ 2              │ 2             │
+│ 2 │ 5 │ 2              │ 2             │
+│ 2 │ 6 │ 2              │ 2             │
+└───┴───┴────────────────┴───────────────┘
+```
+
 
 ## shardNum
 
