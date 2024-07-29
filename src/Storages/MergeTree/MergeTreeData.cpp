@@ -4405,25 +4405,25 @@ bool MergeTreeData::tryRemovePartImmediately(DataPartPtr && part)
 
 size_t MergeTreeData::getTotalActiveSizeInBytes() const
 {
-    return total_active_size_bytes.load(std::memory_order_acquire);
+    return total_active_size_bytes.load();
 }
 
 
 size_t MergeTreeData::getTotalActiveSizeInRows() const
 {
-    return total_active_size_rows.load(std::memory_order_acquire);
+    return total_active_size_rows.load();
 }
 
 
 size_t MergeTreeData::getActivePartsCount() const
 {
-    return total_active_size_parts.load(std::memory_order_acquire);
+    return total_active_size_parts.load();
 }
 
 
 size_t MergeTreeData::getOutdatedPartsCount() const
 {
-    return total_outdated_parts_count.load(std::memory_order_relaxed);
+    return total_outdated_parts_count.load();
 }
 
 size_t MergeTreeData::getNumberOfOutdatedPartsWithExpiredRemovalTime() const
@@ -8184,16 +8184,16 @@ void MergeTreeData::removePartContributionToDataVolume(const DataPartPtr & part)
 
 void MergeTreeData::increaseDataVolume(ssize_t bytes, ssize_t rows, ssize_t parts)
 {
-    total_active_size_bytes.fetch_add(bytes, std::memory_order_acq_rel);
-    total_active_size_rows.fetch_add(rows, std::memory_order_acq_rel);
-    total_active_size_parts.fetch_add(parts, std::memory_order_acq_rel);
+    total_active_size_bytes.fetch_add(bytes);
+    total_active_size_rows.fetch_add(rows);
+    total_active_size_parts.fetch_add(parts);
 }
 
 void MergeTreeData::setDataVolume(size_t bytes, size_t rows, size_t parts)
 {
-    total_active_size_bytes.store(bytes, std::memory_order_release);
-    total_active_size_rows.store(rows, std::memory_order_release);
-    total_active_size_parts.store(parts, std::memory_order_release);
+    total_active_size_bytes.store(bytes);
+    total_active_size_rows.store(rows);
+    total_active_size_parts.store(parts);
 }
 
 bool MergeTreeData::insertQueryIdOrThrow(const String & query_id, size_t max_queries) const
