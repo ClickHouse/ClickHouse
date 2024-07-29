@@ -2408,7 +2408,7 @@ struct WindowFunctionLagLeadInFrame final : public WindowFunction
         if (argument_types[0]->equals(*argument_types[2]))
             return;
 
-        const auto supertype = getLeastSupertype(DataTypes{argument_types[0], argument_types[2]});
+        const auto supertype = tryGetLeastSupertype(DataTypes{argument_types[0], argument_types[2]});
         if (!supertype)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
