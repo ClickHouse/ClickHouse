@@ -4,6 +4,7 @@
 
 #if USE_SSL
 
+#include <chrono>
 #include <string>
 #include <filesystem>
 #include <list>
@@ -18,6 +19,7 @@
 #include <Poco/Crypto/X509Certificate.h>
 #include <Common/MultiVersion.h>
 #include <Common/Logger.h>
+#include <Server/CertificateIssuer.h>
 
 
 namespace DB
@@ -57,7 +59,7 @@ public:
     {
         SSL_CTX * ctx = nullptr;
         MultiVersion<Data> data;
-        bool init_was_not_made = true;
+        bool initialized = false;
 
         File cert_file{"certificate"};
         File key_file{"key"};

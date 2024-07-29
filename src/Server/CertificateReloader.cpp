@@ -32,11 +32,18 @@ int callSetCertificate(SSL * ssl, void * arg)
 int CertificateReloader::setCertificate(SSL * ssl, const CertificateReloader::MultiData * pdata)
 {
     auto current = pdata->data.get();
+
     if (!current)
         return -1;
 
     if (current->certs_chain.empty())
         return -1;
+
+    // auto letsencrypt_configuration = let_encrypt_configuration_data.get();
+    // if (letsencrypt_configuration
+    //     && current->certs_chain.expiresOn().timestamp()
+    //         <= Poco::Timestamp() + Poco::Timespan(3600ll * letsencrypt_configuration->reissue_hours_before, 0))
+    //     CertificateIssuer::instance().UpdateCertificates(*letsencrypt_configuration, callReloadCertificates);
 
     if (auto err = SSL_clear_chain_certs(ssl); err != 1)
     {
@@ -75,9 +82,9 @@ void CertificateReloader::init(MultiData * pdata)
     LOG_DEBUG(log, "Initializing certificate reloader.");
 
     /// Set a callback for OpenSSL to allow get the updated cert and key.
-
     SSL_CTX_set_cert_cb(pdata->ctx, callSetCertificate, reinterpret_cast<void *>(pdata));
-    pdata->init_was_not_made = false;
+
+    pdata->initialized = true;
 }
 
 
@@ -119,6 +126,10 @@ void CertificateReloader::tryLoadImpl(const Poco::Util::AbstractConfiguration & 
     std::string new_cert_path = config.getString(prefix + "certificateFile", "");
     std::string new_key_path = config.getString(prefix + "privateKeyFile", "");
 
+    // Fetching configuration for possible reissuing let's encrypt certificates
+    // if (config.getBool("LetsEncrypt.enableAutomaticIssue", false))
+    //     let_encrypt_configuration_data.set(std::make_unique<const LetsEncryptConfigurationData>(config));
+
     /// For empty paths (that means, that user doesn't want to use certificates)
     /// no processing required
 
@@ -128,6 +139,8 @@ void CertificateReloader::tryLoadImpl(const Poco::Util::AbstractConfiguration & 
     }
     else
     {
+        CertificateIssuer::instance().UpdateCertificatesIfNeeded(config);
+
         try
         {
             auto it = findOrInsert(ctx, prefix);
@@ -138,13 +151,15 @@ void CertificateReloader::tryLoadImpl(const Poco::Util::AbstractConfiguration & 
             if (cert_file_changed || key_file_changed)
             {
                 LOG_DEBUG(log, "Reloading certificate ({}) and key ({}).", it->cert_file.path, it->key_file.path);
+
                 std::string pass_phrase = config.getString(prefix + "privateKeyPassphraseHandler.options.password", "");
                 it->data.set(std::make_unique<const Data>(it->cert_file.path, it->key_file.path, pass_phrase));
+
                 LOG_INFO(log, "Reloaded certificate ({}) and key ({}).", it->cert_file.path, it->key_file.path);
             }
 
             /// If callback is not set yet
-            if (it->init_was_not_made)
+            if (!it->initialized)
                 init(&*it);
         }
         catch (...)
@@ -175,8 +190,12 @@ bool CertificateReloader::File::changeIfModified(std::string new_path, LoggerPtr
     std::filesystem::file_time_type new_modification_time = std::filesystem::last_write_time(new_path, ec);
     if (ec)
     {
-        LOG_ERROR(logger, "Cannot obtain modification time for {} file {}, skipping update. {}",
-            description, new_path, errnoToString(ec.value()));
+        LOG_ERROR(
+            logger,
+            "Cannot obtain modification time for {} file {}, skipping update. {}",
+            description,
+            new_path,
+            errnoToString(ec.value()));
         return false;
     }
 
