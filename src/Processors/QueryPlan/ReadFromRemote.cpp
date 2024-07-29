@@ -21,8 +21,13 @@
 #include <Client/ConnectionPoolWithFailover.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Parsers/ASTFunction.h>
+<<<<<<< HEAD
 
 #include <fmt/format.h>
+=======
+#include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
+#include <boost/algorithm/string/join.hpp>
+>>>>>>> origin/master
 
 namespace DB
 {

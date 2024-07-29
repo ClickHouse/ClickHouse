@@ -247,12 +247,22 @@ function run_tests()
 
     try_run_with_retry 10 clickhouse-client -q "insert into system.zookeeper (name, path, value) values ('auxiliary_zookeeper2', '/test/chroot/', '')"
 
+    TIMEOUT=$((MAX_RUN_TIME - 800 > 8400 ? 8400 : MAX_RUN_TIME - 800))
+    START_TIME=${SECONDS}
     set +e
-    timeout -k 60m -s TERM --preserve-status 140m  clickhouse-test --testname --shard --zookeeper --check-zookeeper-session --hung-check --print-time \
-         --no-drop-if-fail --test-runs "$NUM_TRIES" "${ADDITIONAL_OPTIONS[@]}" 2>&1 \
+    timeout --preserve-status --signal TERM --kill-after 60m ${TIMEOUT}s \
+        clickhouse-test --testname --shard --zookeeper --check-zookeeper-session --hung-check --print-time \
+            --no-drop-if-fail --test-runs "$NUM_TRIES" "${ADDITIONAL_OPTIONS[@]}" 2>&1 \
     | ts '%Y-%m-%d %H:%M:%S' \
     | tee -a test_output/test_result.txt
     set -e
+    DURATION=$((START_TIME - SECONDS))
+
+    echo "Elapsed ${DURATION} seconds."
+    if [[ $DURATION -ge $TIMEOUT ]]
+    then
+        echo "It looks like the command is terminated by the timeout, which is ${TIMEOUT} seconds."
+    fi
 }
 
 export -f run_tests
@@ -264,7 +274,7 @@ if [ "$NUM_TRIES" -gt "1" ]; then
     # We don't run tests with Ordinary database in PRs, only in master.
     # So run new/changed tests with Ordinary at least once in flaky check.
     timeout_with_logging "$TIMEOUT" bash -c 'NUM_TRIES=1; USE_DATABASE_ORDINARY=1; run_tests' \
-      | sed 's/All tests have finished//' | sed 's/No tests were run//' ||:
+      | sed 's/All tests have finished/Redacted: a message about tests finish is deleted/' | sed 's/No tests were run/Redacted: a message about no tests run is deleted/' ||:
 fi
 
 timeout_with_logging "$TIMEOUT" bash -c run_tests ||:
