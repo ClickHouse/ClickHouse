@@ -24,7 +24,9 @@ public:
                           const QualifiedTableName * table_to_check = nullptr);
 
     /// Establish connection and save it in result, write possible exception message in fail_message.
-    void run(TryResult & result, std::string & fail_message);
+    /// The connection is returned from the pool, it can be stale. Use force_connected flag
+    /// to ensure that connection is working one
+    void run(TryResult & result, std::string & fail_message, bool force_connected = false);
 
     /// Set async callback that will be called when reading from socket blocks.
     void setAsyncCallback(AsyncCallback async_callback_) { async_callback = std::move(async_callback_); }
