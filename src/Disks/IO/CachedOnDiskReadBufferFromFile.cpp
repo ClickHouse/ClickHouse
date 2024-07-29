@@ -59,7 +59,7 @@ CachedOnDiskReadBufferFromFile::CachedOnDiskReadBufferFromFile(
     std::optional<size_t> read_until_position_,
     std::shared_ptr<FilesystemCacheLog> cache_log_)
     : ReadBufferFromFileBase(use_external_buffer_ ? 0 : settings_.remote_fs_buffer_size, nullptr, 0, file_size_)
-#ifdef ABORT_ON_LOGICAL_ERROR
+#ifdef DEBUG_OR_SANITIZER_BUILD
     , log(getLogger(fmt::format("CachedOnDiskReadBufferFromFile({})", cache_key_)))
 #else
     , log(getLogger("CachedOnDiskReadBufferFromFile"))
@@ -452,7 +452,7 @@ CachedOnDiskReadBufferFromFile::getImplementationBuffer(FileSegment & file_segme
     {
         case ReadType::CACHED:
         {
-#ifdef ABORT_ON_LOGICAL_ERROR
+#ifdef DEBUG_OR_SANITIZER_BUILD
             size_t file_size = getFileSizeFromReadBuffer(*read_buffer_for_file_segment);
             if (file_size == 0 || range.left + file_size <= file_offset_of_buffer_end)
                 throw Exception(
@@ -810,6 +810,7 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
 {
     last_caller_id = FileSegment::getCallerId();
 
+    chassert(file_offset_of_buffer_end <= read_until_position);
     if (file_offset_of_buffer_end == read_until_position)
         return false;
 
@@ -937,7 +938,7 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
 
     if (!result)
     {
-#ifdef ABORT_ON_LOGICAL_ERROR
+#ifdef DEBUG_OR_SANITIZER_BUILD
         if (read_type == ReadType::CACHED)
         {
             size_t cache_file_size = getFileSizeFromReadBuffer(*implementation_buffer);
@@ -1051,7 +1052,11 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
 
         if (download_current_segment && download_current_segment_succeeded)
             chassert(file_segment.getCurrentWriteOffset() >= file_offset_of_buffer_end);
-        chassert(file_offset_of_buffer_end <= read_until_position);
+
+        chassert(
+            file_offset_of_buffer_end <= read_until_position,
+            fmt::format("Expected {} <= {} (size: {}, read range: {})",
+                        file_offset_of_buffer_end, read_until_position, size, current_read_range.toString()));
     }
 
     swap(*implementation_buffer);

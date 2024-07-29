@@ -745,6 +745,7 @@ PromQL
 Promql
 Promtail
 Protobuf
+ProtobufList
 ProtobufSingle
 ProxySQL
 Punycode
@@ -761,6 +762,7 @@ QueryCacheMisses
 QueryPreempted
 QueryThread
 QuickAssist
+QuickSight
 QuoteMeta
 RBAC
 RClickHouse
@@ -1620,6 +1622,7 @@ filesystem
 filesystemAvailable
 filesystemCapacity
 filesystemFree
+filesystemUnreserved
 filesystems
 finalizeAggregation
 fips
@@ -1652,6 +1655,7 @@ formated
 formatschema
 formatter
 formatters
+fqdn
 frac
 freezed
 fromDaysSinceYearZero
@@ -1862,6 +1866,7 @@ jdbc
 jemalloc
 jeprof
 joinGet
+joinGetOrNull
 json
 jsonMergePatch
 jsonasstring
@@ -2200,6 +2205,8 @@ parseReadableSizeOrZero
 parseTimeDelta
 parseable
 parsers
+partitionId
+partitionID
 pathFull
 pclmulqdq
 pcre
@@ -2282,6 +2289,7 @@ prometheus
 proportionsZTest
 proto
 protobuf
+protobuflist
 protobufsingle
 protocol
 proxied
@@ -2535,6 +2543,7 @@ sqlite
 sqrt
 src
 srcReplicas
+sshkey
 stackoverflow
 stacktrace
 stacktraces

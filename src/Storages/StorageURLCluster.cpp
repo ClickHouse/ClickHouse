@@ -3,6 +3,7 @@
 #include <Storages/StorageURLCluster.h>
 
 #include <Core/QueryProcessingStage.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeString.h>
 #include <Interpreters/getHeaderForProcessingStage.h>
 #include <Interpreters/InterpreterSelectQuery.h>

@@ -125,7 +125,7 @@ html {{ min-height: 100%; font-family: "DejaVu Sans", "Noto Sans", Arial, sans-s
 h1 {{ margin-left: 10px; }}
 th, td {{ padding: 5px 10px 5px 10px; text-align: left; vertical-align: top; line-height: 1.5; border: 1px solid var(--table-border-color); }}
 td {{ background: var(--td-background); }}
-th {{ background: var(--th-background); }}
+th {{ background: var(--th-background); white-space: nowrap; }}
 a {{ color: var(--link-color); text-decoration: none; }}
 a:hover, a:active {{ color: var(--link-hover-color); text-decoration: none; }}
 table {{ box-shadow: 0 8px 25px -5px rgba(0, 0, 0, var(--shadow-intensity)); border-collapse: collapse; border-spacing: 0; }}
@@ -135,6 +135,7 @@ th {{ cursor: pointer; }}
 tr:hover {{ filter: var(--tr-hover-filter); }}
 .expandable {{ cursor: pointer; }}
 .expandable-content {{ display: none; }}
+pre {{ white-space: pre-wrap; }}
 #fish {{ display: none; float: right; position: relative; top: -20em; right: 2vw; margin-bottom: -20em; width: 30vw; filter: brightness(7%); z-index: -1; }}
 
 .themes {{
@@ -247,6 +248,9 @@ BASE_HEADERS = ["Test name", "Test status"]
 # should not be in TEMP directory or any directory that may be cleaned during the job execution
 JOB_REPORT_FILE = Path(GITHUB_WORKSPACE) / "job_report.json"
 
+JOB_STARTED_TEST_NAME = "STARTED"
+JOB_FINISHED_TEST_NAME = "COMPLETED"
+
 
 @dataclass
 class TestResult:
@@ -304,14 +308,19 @@ class JobReport:
     exit_code: int = -1
 
     @staticmethod
-    def create_pre_report() -> "JobReport":
+    def get_start_time_from_current():
+        return datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+
+    @classmethod
+    def create_pre_report(cls, status: str, job_skipped: bool) -> "JobReport":
         return JobReport(
-            status=ERROR,
+            status=status,
             description="",
             test_results=[],
-            start_time=datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"),
+            start_time=cls.get_start_time_from_current(),
             duration=0.0,
             additional_files=[],
+            job_skipped=job_skipped,
             pre_report=True,
         )
 

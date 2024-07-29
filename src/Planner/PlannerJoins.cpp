@@ -43,6 +43,7 @@
 #include <Planner/PlannerContext.h>
 #include <Planner/Utils.h>
 
+#include <Core/Settings.h>
 #include <Core/ServerSettings.h>
 
 namespace DB
@@ -812,7 +813,7 @@ static std::shared_ptr<IJoin> tryCreateJoin(JoinAlgorithm algorithm,
                 query_context->getServerSettings().max_entries_for_hash_table_stats,
                 settings.max_size_to_preallocate_for_joins};
             return std::make_shared<ConcurrentHashJoin>(
-                query_context, table_join, query_context->getSettings().max_threads, right_table_expression_header, params);
+                query_context, table_join, query_context->getSettingsRef().max_threads, right_table_expression_header, params);
         }
 
         return std::make_shared<HashJoin>(table_join, right_table_expression_header, query_context->getSettingsRef().join_any_take_last_row);

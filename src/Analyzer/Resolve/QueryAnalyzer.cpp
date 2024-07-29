@@ -64,6 +64,8 @@
 #include <Analyzer/Resolve/TableExpressionsAliasVisitor.h>
 #include <Analyzer/Resolve/ReplaceColumnsVisitor.h>
 
+#include <Core/Settings.h>
+
 namespace ProfileEvents
 {
     extern const Event ScalarSubqueriesGlobalCacheHit;
@@ -1738,7 +1740,7 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveQualifiedMatcher(Qu
         const auto * tuple_data_type = typeid_cast<const DataTypeTuple *>(result_type.get());
         if (!tuple_data_type)
             throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                "Qualified matcher {} find non compound expression {} with type {}. Expected tuple or array of tuples. In scope {}",
+                "Qualified matcher {} found a non-compound expression {} with type {}. Expected a tuple or an array of tuples. In scope {}",
                 matcher_node->formatASTForErrorMessage(),
                 expression_query_tree_node->formatASTForErrorMessage(),
                 expression_query_tree_node->getResultType()->getName(),
@@ -2917,6 +2919,17 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
             resolveExpressionNode(in_second_argument, scope, false /*allow_lambda_expression*/, true /*allow_table_expression*/);
         }
+
+        /// Edge case when the first argument of IN is scalar subquery.
+        auto & in_first_argument = function_in_arguments_nodes[0];
+        auto first_argument_type = in_first_argument->getNodeType();
+        if (first_argument_type == QueryTreeNodeType::QUERY || first_argument_type == QueryTreeNodeType::UNION)
+        {
+            IdentifierResolveScope subquery_scope(in_first_argument, &scope /*parent_scope*/);
+            subquery_scope.subquery_depth = scope.subquery_depth + 1;
+
+            evaluateScalarSubqueryIfNeeded(in_first_argument, subquery_scope);
+        }
     }
 
     /// Initialize function argument columns
@@ -3414,14 +3427,14 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             function_base = function->build(argument_columns);
 
         /// Do not constant fold get scalar functions
-        bool disable_constant_folding = function_name == "__getScalar" || function_name == "shardNum" ||
-            function_name == "shardCount" || function_name == "hostName" || function_name == "tcpPort";
+        // bool disable_constant_folding = function_name == "__getScalar" || function_name == "shardNum" ||
+        //     function_name == "shardCount" || function_name == "hostName" || function_name == "tcpPort";
 
         /** If function is suitable for constant folding try to convert it to constant.
           * Example: SELECT plus(1, 1);
           * Result: SELECT 2;
           */
-        if (function_base->isSuitableForConstantFolding() && !disable_constant_folding)
+        if (function_base->isSuitableForConstantFolding()) // && !disable_constant_folding)
         {
             auto result_type = function_base->getResultType();
             auto executable_function = function_base->prepare(argument_columns);
@@ -3830,6 +3843,10 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
                 node->convertToNullable();
                 break;
             }
+
+            /// Check parent scopes until find current query scope.
+            if (scope_ptr->scope_node->getNodeType() == QueryTreeNodeType::QUERY)
+                break;
         }
     }
 

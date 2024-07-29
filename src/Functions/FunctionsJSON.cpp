@@ -10,6 +10,7 @@
 #include <Common/assert_cast.h>
 
 #include <Core/AccurateComparison.h>
+#include <Core/Settings.h>
 
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnLowCardinality.h>
@@ -738,7 +739,8 @@ public:
     {
         NumberType value;
 
-        tryGetNumericValueFromJSONElement<JSONParser, NumberType>(value, element, convert_bool_to_integer, error);
+        if (!tryGetNumericValueFromJSONElement<JSONParser, NumberType>(value, element, convert_bool_to_integer, error))
+            return false;
         auto & col_vec = assert_cast<ColumnVector<NumberType> &>(dest);
         col_vec.insertValue(value);
         return true;
