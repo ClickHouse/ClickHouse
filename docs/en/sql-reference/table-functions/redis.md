@@ -11,28 +11,30 @@ This table function allows integrating ClickHouse with [Redis](https://redis.io/
 **Syntax**
 
 ```sql
-redis(host:port, key, structure[, db_index[, password[, pool_size]]])
+redis(host:port, key, structure, primary[, db_index[, password[, pool_size]]])
 ```
 
 **Arguments**
 
-- `host:port` — Redis server address, you can ignore port and default Redis port 6379 will be used.
+- `host:port` — Redis server address. If port is omitted, the default Redis port 6379 will be used.
 
-- `key` — any column name in the column list.
+- `key` — The name of the column to be used as the Redis key.
 
 - `structure` — The schema for the ClickHouse table returned from this function.
 
-- `db_index` — Redis db index range from 0 to 15, default is 0.
+- `primary` — The column to be used as the primary key. Only one column can be specified as the primary key. This column will be serialized in binary as the Redis key.
 
-- `password` — User password, default is blank string.
+- `db_index` — Redis database index, ranging from 0 to 15, default is 0.
+
+- `password` — User password, default is an empty string.
 
 - `pool_size` — Redis max connection pool size, default is 16.
 
-- `primary` must be specified, it supports only one column in the primary key. The primary key will be serialized in binary as a Redis key.
+**Notes**
 
-- columns other than the primary key will be serialized in binary as Redis value in corresponding order.
-
-- queries with key equals or in filtering will be optimized to multi keys lookup from Redis. If queries without filtering key full table scan will happen which is a heavy operation.
+- Columns other than the primary key will be serialized in binary as Redis values in the corresponding order.
+- Queries with key equality or 'in' filtering will be optimized for multi-key lookup from Redis.
+- Queries without key filtering will result in a full table scan, which can be a heavy operation.
 
 [Named collections](/docs/en/operations/named-collections.md) are not supported for `redis` table function at the moment.
 
