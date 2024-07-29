@@ -17,14 +17,14 @@ $CLICKHOUSE_CLIENT -nm -q "
 while true
 do
     $CLICKHOUSE_CLIENT -nm -q "INSERT INTO $database_name.02911_backup_restore_keeper_map2 SELECT number, 'test' || toString(number) FROM system.numbers LIMIT 5000;
-    " | grep -q "KEEPER_EXCEPTION" && sleep 1 && continue
+    " 2>&1 | grep -q "KEEPER_EXCEPTION" && sleep 1 && continue
     break
 done
 
 while true
 do
     $CLICKHOUSE_CLIENT -nm -q "INSERT INTO $database_name.02911_backup_restore_keeper_map3 SELECT number, 'test' || toString(number) FROM system.numbers LIMIT 3000;
-    " | grep -q "KEEPER_EXCEPTION" && sleep 1 && continue
+    "  2>&1 | grep -q "KEEPER_EXCEPTION" && sleep 1 && continue
     break
 done
 
