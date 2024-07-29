@@ -122,7 +122,7 @@ struct QuantileExactWeighted
         }
     }
 
-    Float64 getFloatImpl(const Pair * array, size_t size, Float64 position) const
+    Float64 NO_SANITIZE_UNDEFINED getFloatImpl(const Pair * array, size_t size, Float64 position) const
     {
         /*
         for (size_t i = 0; i < size; ++i)
