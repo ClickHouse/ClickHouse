@@ -8,6 +8,7 @@
 #include <Common/Exception.h>
 #include <Disks/DiskType.h>
 #include <IO/ReadSettings.h>
+#include <IO/S3Defines.h>
 #include <IO/WriteSettings.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Disks/WriteMode.h>
