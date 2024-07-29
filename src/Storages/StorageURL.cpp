@@ -737,7 +737,9 @@ namespace
                     {
                         for (const auto & url : options)
                         {
-                            if (auto format_from_file_name = FormatFactory::instance().tryGetFormatFromFileName(url))
+                            auto format_from_file_name = FormatFactory::instance().tryGetFormatFromFileName(url);
+                            /// Use this format only if we have a schema reader for it.
+                            if (format_from_file_name && FormatFactory::instance().checkIfFormatHasAnySchemaReader(*format_from_file_name))
                             {
                                 format = format_from_file_name;
                                 break;
