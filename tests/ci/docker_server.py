@@ -63,6 +63,12 @@ def parse_args() -> argparse.Namespace:
         "tag ('refs/tags/' is removed automatically) or a normal 22.2.2.2 format",
     )
     parser.add_argument(
+        "--sha",
+        type=str,
+        default="",
+        help="sha of the commit to use packages from",
+    )
+    parser.add_argument(
         "--release-type",
         type=str,
         choices=("auto", "latest", "major", "minor", "patch", "head"),
@@ -395,13 +401,17 @@ def main():
             assert not args.allow_build_reuse
             repo_urls[arch] = f"{args.bucket_prefix}/{build_name}"
             print(f"Bucket prefix is set: Fetching packages from [{repo_urls}]")
-        else:
+        elif args.sha:
             version = args.version
             repo_urls[arch] = (
                 f"{S3_DOWNLOAD}/{S3_BUILDS_BUCKET}/"
-                f"{version.major}.{version.minor}/{git.sha}/{build_name}"
+                f"{version.major}.{version.minor}/{args.sha}/{build_name}"
             )
             print(f"Fetching packages from [{repo_urls}]")
+        else:
+            assert (
+                False
+            ), "--sha, --bucket_prefix or --allow-build-reuse (to fetch packages from build report) must be provided"
 
     if push:
         docker_login()
