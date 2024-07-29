@@ -10,6 +10,7 @@
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/IAST.h>
+#include <Core/Settings.h>
 
 
 namespace DB
@@ -104,7 +105,7 @@ ASTPtr DatabaseDictionary::getCreateTableQueryImpl(const String & table_name, Co
             return {};
         }
 
-        auto names_and_types = StorageDictionary::getNamesAndTypes(ExternalDictionariesLoader::getDictionaryStructure(*load_result.config));
+        auto names_and_types = StorageDictionary::getNamesAndTypes(ExternalDictionariesLoader::getDictionaryStructure(*load_result.config), false);
         buffer << "CREATE TABLE " << backQuoteIfNeed(getDatabaseName()) << '.' << backQuoteIfNeed(table_name) << " (";
         buffer << names_and_types.toNamesAndTypesDescription();
         buffer << ") Engine = Dictionary(" << backQuoteIfNeed(table_name) << ")";

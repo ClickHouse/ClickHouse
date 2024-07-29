@@ -408,15 +408,8 @@ private:
 
     Stages::const_iterator stages_iterator = stages.begin();
 
-    static bool enabledBlockNumberColumn(GlobalRuntimeContextPtr global_ctx)
-    {
-        return global_ctx->data->getSettings()->enable_block_number_column && global_ctx->metadata_snapshot->getGroupByTTLs().empty();
-    }
-
-    static bool enabledBlockOffsetColumn(GlobalRuntimeContextPtr global_ctx)
-    {
-        return global_ctx->data->getSettings()->enable_block_offset_column && global_ctx->metadata_snapshot->getGroupByTTLs().empty();
-    }
+    static bool enabledBlockNumberColumn(GlobalRuntimeContextPtr global_ctx);
+    static bool enabledBlockOffsetColumn(GlobalRuntimeContextPtr global_ctx);
 
     static void addGatheringColumn(GlobalRuntimeContextPtr global_ctx, const String & name, const DataTypePtr & type);
 };

@@ -8,6 +8,7 @@
 
 #include <Core/ColumnNumbers.h>
 #include <Core/ColumnWithTypeAndName.h>
+#include <Core/Settings.h>
 
 #include <Functions/grouping.h>
 #include <Functions/FunctionFactory.h>
@@ -442,7 +443,7 @@ FutureSetPtr makeExplicitSet(
     else
         block = createBlockForSet(left_arg_type, right_arg, set_element_types, context);
 
-    return prepared_sets.addFromTuple(set_key, block, context->getSettings());
+    return prepared_sets.addFromTuple(set_key, block, context->getSettingsRef());
 }
 
 class ScopeStack::Index
@@ -1023,7 +1024,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         dag.project(args);
 
         auto index_hint = std::make_shared<FunctionIndexHint>();
-        index_hint->setActions(std::make_shared<ActionsDAG>(std::move(dag)));
+        index_hint->setActions(std::move(dag));
 
         // Arguments are removed. We add function instead of constant column to avoid constant folding.
         data.addFunction(std::make_unique<FunctionToOverloadResolverAdaptor>(index_hint), {}, column_name);
@@ -1286,7 +1287,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                     lambda_dag.removeUnusedActions(Names(1, result_name));
 
                     auto lambda_actions = std::make_shared<ExpressionActions>(
-                        std::make_shared<ActionsDAG>(std::move(lambda_dag)),
+                        std::move(lambda_dag),
                         ExpressionActionsSettings::fromContext(data.getContext(), CompileExpressions::yes));
 
                     DataTypePtr result_type = lambda_actions->getSampleBlock().getByName(result_name).type;

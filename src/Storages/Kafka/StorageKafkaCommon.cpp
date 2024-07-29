@@ -634,7 +634,7 @@ void registerStorageKafka(StorageFactory & factory)
 
         if (!has_keeper_path && !has_replica_name)
             return std::make_shared<StorageKafka>(
-                args.table_id, args.getContext(), args.columns, std::move(kafka_settings), collection_name);
+                args.table_id, args.getContext(), args.columns, args.comment, std::move(kafka_settings), collection_name);
 
         if (!args.getLocalContext()->getSettingsRef().allow_experimental_kafka_offsets_storage_in_keeper && !args.query.attach)
             throw Exception(
@@ -697,7 +697,8 @@ void registerStorageKafka(StorageFactory & factory)
         info.table_id.uuid = UUIDHelpers::Nil;
         kafka_settings->kafka_replica_name.value = context->getMacros()->expand(kafka_settings->kafka_replica_name.value, info);
 
-        return std::make_shared<StorageKafka2>(args.table_id, args.getContext(), args.columns, std::move(kafka_settings), collection_name);
+        return std::make_shared<StorageKafka2>(
+            args.table_id, args.getContext(), args.columns, args.comment, std::move(kafka_settings), collection_name);
     };
 
     factory.registerStorage(

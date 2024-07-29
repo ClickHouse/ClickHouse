@@ -93,6 +93,7 @@ StorageKafka2::StorageKafka2(
     const StorageID & table_id_,
     ContextPtr context_,
     const ColumnsDescription & columns_,
+    const String & comment,
     std::unique_ptr<KafkaSettings> kafka_settings_,
     const String & collection_name_)
     : IStorage(table_id_)
@@ -130,6 +131,7 @@ StorageKafka2::StorageKafka2(
     }
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
+    storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
     setVirtuals(StorageKafkaUtils::createVirtuals(kafka_settings->kafka_handle_error_mode));
 
@@ -1205,7 +1207,13 @@ std::optional<size_t> StorageKafka2::streamFromConsumer(ConsumerAndAssignmentInf
 
     // Create a stream for each consumer and join them in a union stream
     // Only insert into dependent views and expect that input blocks contain virtual columns
-    InterpreterInsertQuery interpreter(insert, kafka_context, false, true, true);
+    InterpreterInsertQuery interpreter(
+        insert,
+        kafka_context,
+        /* allow_materialized */ false,
+        /* no_squash */ true,
+        /* no_destination */ true,
+        /* async_insert */ false);
     auto block_io = interpreter.execute();
 
     auto & topic_partition = consumer_info.topic_partitions[consumer_info.consume_from_topic_partition_index];

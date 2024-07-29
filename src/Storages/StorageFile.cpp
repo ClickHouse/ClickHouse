@@ -53,6 +53,8 @@
 #include <Common/ProfileEvents.h>
 #include <Common/re2.h>
 
+#include <Core/Settings.h>
+
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
@@ -425,7 +427,9 @@ namespace
                 {
                     for (const auto & path : paths)
                     {
-                        if (auto format_from_path = FormatFactory::instance().tryGetFormatFromFileName(path))
+                        auto format_from_path = FormatFactory::instance().tryGetFormatFromFileName(path);
+                        /// Use this format only if we have a schema reader for it.
+                        if (format_from_path && FormatFactory::instance().checkIfFormatHasAnySchemaReader(*format_from_path))
                         {
                             format = format_from_path;
                             break;
@@ -714,7 +718,9 @@ namespace
                     /// If format is unknown we can try to determine it by the file name.
                     if (!format)
                     {
-                        if (auto format_from_file = FormatFactory::instance().tryGetFormatFromFileName(*filename))
+                        auto format_from_file = FormatFactory::instance().tryGetFormatFromFileName(*filename);
+                        /// Use this format only if we have a schema reader for it.
+                        if (format_from_file && FormatFactory::instance().checkIfFormatHasAnySchemaReader(*format_from_file))
                             format = format_from_file;
                     }
 
@@ -1128,12 +1134,16 @@ StorageFileSource::FilesIterator::FilesIterator(
     bool distributed_processing_)
     : WithContext(context_), files(files_), archive_info(std::move(archive_info_)), distributed_processing(distributed_processing_)
 {
-    ActionsDAGPtr filter_dag;
+    std::optional<ActionsDAG> filter_dag;
     if (!distributed_processing && !archive_info && !files.empty())
         filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns);
 
     if (filter_dag)
-        VirtualColumnUtils::filterByPathOrFile(files, files, filter_dag, virtual_columns, context_);
+    {
+        VirtualColumnUtils::buildSetsForDAG(*filter_dag, context_);
+        auto actions = std::make_shared<ExpressionActions>(std::move(*filter_dag));
+        VirtualColumnUtils::filterByPathOrFile(files, files, actions, virtual_columns);
+    }
 }
 
 String StorageFileSource::FilesIterator::next()
@@ -1242,7 +1252,7 @@ StorageFileSource::~StorageFileSource()
     beforeDestroy();
 }
 
-void StorageFileSource::setKeyCondition(const ActionsDAGPtr & filter_actions_dag, ContextPtr context_)
+void StorageFileSource::setKeyCondition(const std::optional<ActionsDAG> & filter_actions_dag, ContextPtr context_)
 {
     setKeyConditionImpl(filter_actions_dag, context_, block_for_format);
 }
@@ -1787,12 +1797,12 @@ public:
 
     String getName() const override { return "StorageFileSink"; }
 
-    void consume(Chunk chunk) override
+    void consume(Chunk & chunk) override
     {
         std::lock_guard cancel_lock(cancel_mutex);
         if (cancelled)
             return;
-        writer->write(getHeader().cloneWithColumns(chunk.detachColumns()));
+        writer->write(getHeader().cloneWithColumns(chunk.getColumns()));
     }
 
     void onCancel() override

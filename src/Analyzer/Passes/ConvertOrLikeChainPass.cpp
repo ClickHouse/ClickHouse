@@ -22,6 +22,8 @@
 #include <Analyzer/HashUtils.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 
+#include <Core/Settings.h>
+
 namespace DB
 {
 
