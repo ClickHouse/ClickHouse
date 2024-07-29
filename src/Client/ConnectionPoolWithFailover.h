@@ -112,8 +112,11 @@ public:
         return tryGetEntry(nullptr, timeouts, fail_message, settings);
     }
 
-    void setSocketTimeouts(const Poco::Timespan & receive_timeout, const Poco::Timespan & send_timeout);
-    void enableKeepAlive(const Poco::Timespan & interval);
+    void setSocketTimeouts(ConnectionPtr connection, const Poco::Timespan & receive_timeout, const Poco::Timespan & send_timeout);
+    void enableKeepAlive(ConnectionPtr connection, const Poco::Timespan & interval);
+
+    // void setSocketTimeouts(const Poco::Timespan & receive_timeout, const Poco::Timespan & send_timeout);
+    // void enableKeepAlive(const Poco::Timespan & interval);
 
 private:
 
