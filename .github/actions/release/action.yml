@@ -145,7 +145,9 @@ runs:
         cd "./tests/ci"
         python3 ./create_release.py --set-progress-started --progress "docker server release"
         export CHECK_NAME="Docker server image"
-        python3 docker_server.py --release-type auto --version ${{ env.RELEASE_TAG }} --check-name "$CHECK_NAME" --sha ${{ env.COMMIT_SHA }} ${{ ! inputs.dry-run && '--push' || '' }}
+        git checkout ${{ env.RELEASE_TAG }}
+        python3 docker_server.py --release-type auto --version ${{ env.RELEASE_TAG }} --check-name "$CHECK_NAME" ${{ ! inputs.dry-run && '--push' || '' }}
+        git checkout -
         python3 ./create_release.py --set-progress-completed
     - name: Docker clickhouse/clickhouse-keeper building
       if: ${{ inputs.type == 'patch' }}
@@ -154,15 +156,19 @@ runs:
         cd "./tests/ci"
         python3 ./create_release.py --set-progress-started --progress "docker keeper release"
         export CHECK_NAME="Docker keeper image"
-        python3 docker_server.py --release-type auto --version ${{ env.RELEASE_TAG }} --check-name "$CHECK_NAME" --sha ${{ env.COMMIT_SHA }} ${{ ! inputs.dry-run && '--push'  || '' }}
+        git checkout ${{ env.RELEASE_TAG }}
+        python3 docker_server.py --release-type auto --version ${{ env.RELEASE_TAG }} --check-name "$CHECK_NAME" ${{ ! inputs.dry-run && '--push'  || '' }}
+        git checkout -
         python3 ./create_release.py --set-progress-completed
     - name: Set current Release progress to Completed with OK
       shell: bash
       run: |
+        git checkout "$GITHUB_REF_NAME"
         python3 ./tests/ci/create_release.py --set-progress-started --progress "completed"
         python3 ./tests/ci/create_release.py --set-progress-completed
     - name: Post Slack Message
       if: ${{ !cancelled() }}
       shell: bash
       run: |
+        git checkout "$GITHUB_REF_NAME"
         python3 ./tests/ci/create_release.py --post-status ${{ inputs.dry-run && '--dry-run' || '' }}
