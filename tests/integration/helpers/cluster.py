@@ -52,6 +52,7 @@ from helpers.client import QueryRuntimeException
 import docker
 
 from .client import Client
+from .retry_decorator import retry
 
 from .config_cluster import *
 
@@ -2690,15 +2691,12 @@ class ClickHouseCluster:
 
             images_pull_cmd = self.base_cmd + ["pull"]
             # sometimes dockerhub/proxy can be flaky
-            for i in range(5):
-                try:
-                    run_and_check(images_pull_cmd)
-                    break
-                except Exception as ex:
-                    if i == 4:
-                        raise ex
-                    logging.info("Got exception pulling images: %s", ex)
-                    time.sleep(i * 3)
+
+            retry(
+                log_function=lambda exception: logging.info(
+                    "Got exception pulling images: %s", exception
+                ),
+            )(run_and_check)(images_pull_cmd)
 
             if self.with_zookeeper_secure and self.base_zookeeper_cmd:
                 logging.debug("Setup ZooKeeper Secure")
@@ -2971,7 +2969,11 @@ class ClickHouseCluster:
                     "Trying to create Azurite instance by command %s",
                     " ".join(map(str, azurite_start_cmd)),
                 )
-                run_and_check(azurite_start_cmd)
+                retry(
+                    log_function=lambda exception: logging.info(
+                        f"Azurite initialization failed with error: {exception}"
+                    ),
+                )(run_and_check)(azurite_start_cmd)
                 self.up_called = True
                 logging.info("Trying to connect to Azurite")
                 self.wait_azurite_to_start()

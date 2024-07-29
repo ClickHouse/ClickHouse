@@ -427,7 +427,9 @@ namespace
                 {
                     for (const auto & path : paths)
                     {
-                        if (auto format_from_path = FormatFactory::instance().tryGetFormatFromFileName(path))
+                        auto format_from_path = FormatFactory::instance().tryGetFormatFromFileName(path);
+                        /// Use this format only if we have a schema reader for it.
+                        if (format_from_path && FormatFactory::instance().checkIfFormatHasAnySchemaReader(*format_from_path))
                         {
                             format = format_from_path;
                             break;
@@ -716,7 +718,9 @@ namespace
                     /// If format is unknown we can try to determine it by the file name.
                     if (!format)
                     {
-                        if (auto format_from_file = FormatFactory::instance().tryGetFormatFromFileName(*filename))
+                        auto format_from_file = FormatFactory::instance().tryGetFormatFromFileName(*filename);
+                        /// Use this format only if we have a schema reader for it.
+                        if (format_from_file && FormatFactory::instance().checkIfFormatHasAnySchemaReader(*format_from_file))
                             format = format_from_file;
                     }
 
@@ -1789,12 +1793,12 @@ public:
 
     String getName() const override { return "StorageFileSink"; }
 
-    void consume(Chunk chunk) override
+    void consume(Chunk & chunk) override
     {
         std::lock_guard cancel_lock(cancel_mutex);
         if (cancelled)
             return;
-        writer->write(getHeader().cloneWithColumns(chunk.detachColumns()));
+        writer->write(getHeader().cloneWithColumns(chunk.getColumns()));
     }
 
     void onCancel() override
