@@ -202,11 +202,12 @@ StoragePtr StorageFactory::get(
                     "projections",
                     [](StorageFeatures features) { return features.supports_projections; });
 
-                /// Now let's handle the merge tree family, projection is fully supported in (Replictaed)MergeTree,
-                /// but also allowed in non-throw mode with other mergetree family members.
+                /// Now let's handle the merge tree family. Note we only handle in the mode of CREATE due to backward compatibility.
+                /// Otherwise, it would fail to start in the case of existing projections with special mergetree.
+                /// Projection is fully supported in (Replictaed)MergeTree, but also allowed in non-throw mode with other mergetree family members.
                 chassert(query.storage->engine);
-                if (std::string_view engine_name(query.storage->engine->name);
-                    engine_name != "MergeTree" && engine_name != "ReplicatedMergeTree")
+                if (std::string_view engine_name(query.storage->engine->name); mode == LoadingStrictnessLevel::CREATE
+                    && engine_name != "MergeTree" && engine_name != "ReplicatedMergeTree")
                 {
                     /// default throw mode in deduplicate_merge_projection_mode
                     bool projection_allowed = false;
