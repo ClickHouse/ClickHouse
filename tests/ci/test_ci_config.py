@@ -211,7 +211,7 @@ class TestCIConfig(unittest.TestCase):
                 else:
                     self.assertTrue(
                         CI.get_job_ci_stage(job)
-                        in (CI.WorkflowStages.TESTS_1, CI.WorkflowStages.TESTS_3),
+                        in (CI.WorkflowStages.TESTS_1, CI.WorkflowStages.TESTS_2),
                         msg=f"Stage for [{job}] is not correct",
                     )
 
@@ -242,7 +242,7 @@ class TestCIConfig(unittest.TestCase):
                 else:
                     self.assertTrue(
                         CI.get_job_ci_stage(job, non_blocking_ci=True)
-                        in (CI.WorkflowStages.TESTS_1, CI.WorkflowStages.TESTS_2),
+                        in (CI.WorkflowStages.TESTS_1, CI.WorkflowStages.TESTS_2_WW),
                         msg=f"Stage for [{job}] is not correct",
                     )
 
