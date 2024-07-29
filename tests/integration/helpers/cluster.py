@@ -18,6 +18,7 @@ import traceback
 import urllib.parse
 import shlex
 import urllib3
+import random
 import requests
 from contextlib import closing
 
@@ -128,13 +129,19 @@ def run_and_check(
             )
     return out
 
-
-# Based on https://stackoverflow.com/questions/1365265/on-localhost-how-do-i-pick-a-free-port-number
-# and https://stackoverflow.com/questions/19196105/how-to-check-if-a-network-port-is-open
+# Based on:
+# - https://stackoverflow.com/questions/1365265/on-localhost-how-do-i-pick-a-free-port-number
+# - https://stackoverflow.com/questions/19196105/how-to-check-if-a-network-port-is-open
+# and heuristics
 def get_free_port():
+    PORT_MIN = 49500
+    PORT_MAX = 65000
     while True:
         with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as s:
-            s.bind(('', 0))
+            # Generate the port in advance to avoid collisions as much as possible
+            random.seed(time.time())
+            port = random.randint(PORT_MIN, PORT_MAX)
+            s.bind(('', port))
             s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             address = s.getsockname()
             # Try to connect to the port and if we failed - retry binding
