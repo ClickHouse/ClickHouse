@@ -715,7 +715,7 @@ private:
     using ToType = typename Impl::ReturnType;
 
     template <typename FromType>
-    ColumnPtr executeType(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
+    ColumnPtr executeType(const ColumnsWithTypeAndName & arguments) const
     {
         using ColVecType = ColumnVectorOrDecimal<FromType>;
 
@@ -726,8 +726,9 @@ private:
             const typename ColVecType::Container & vec_from = col_from->getData();
             typename ColumnVector<ToType>::Container & vec_to = col_to->getData();
 
-            vec_to.resize(input_rows_count);
-            for (size_t i = 0; i < input_rows_count; ++i)
+            size_t size = vec_from.size();
+            vec_to.resize(size);
+            for (size_t i = 0; i < size; ++i)
                 vec_to[i] = Impl::apply(vec_from[i]);
 
             return col_to;
@@ -758,39 +759,39 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
         const IDataType * from_type = arguments[0].type.get();
         WhichDataType which(from_type);
 
         if (which.isUInt8())
-            return executeType<UInt8>(arguments, input_rows_count);
+            return executeType<UInt8>(arguments);
         else if (which.isUInt16())
-            return executeType<UInt16>(arguments, input_rows_count);
+            return executeType<UInt16>(arguments);
         else if (which.isUInt32())
-            return executeType<UInt32>(arguments, input_rows_count);
+            return executeType<UInt32>(arguments);
         else if (which.isUInt64())
-            return executeType<UInt64>(arguments, input_rows_count);
+            return executeType<UInt64>(arguments);
         else if (which.isInt8())
-            return executeType<Int8>(arguments, input_rows_count);
+            return executeType<Int8>(arguments);
         else if (which.isInt16())
-            return executeType<Int16>(arguments, input_rows_count);
+            return executeType<Int16>(arguments);
         else if (which.isInt32())
-            return executeType<Int32>(arguments, input_rows_count);
+            return executeType<Int32>(arguments);
         else if (which.isInt64())
-            return executeType<Int64>(arguments, input_rows_count);
+            return executeType<Int64>(arguments);
         else if (which.isDate())
-            return executeType<UInt16>(arguments, input_rows_count);
+            return executeType<UInt16>(arguments);
         else if (which.isDate32())
-            return executeType<Int32>(arguments, input_rows_count);
+            return executeType<Int32>(arguments);
         else if (which.isDateTime())
-            return executeType<UInt32>(arguments, input_rows_count);
+            return executeType<UInt32>(arguments);
         else if (which.isDecimal32())
-            return executeType<Decimal32>(arguments, input_rows_count);
+            return executeType<Decimal32>(arguments);
         else if (which.isDecimal64())
-            return executeType<Decimal64>(arguments, input_rows_count);
+            return executeType<Decimal64>(arguments);
         else if (which.isIPv4())
-            return executeType<IPv4>(arguments, input_rows_count);
+            return executeType<IPv4>(arguments);
         else
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
                 arguments[0].type->getName(), getName());
@@ -842,7 +843,7 @@ private:
     using ToType = typename Impl::ReturnType;
 
     template <typename FromType, bool first>
-    void executeIntType(const KeyColumnsType & key_cols, const IColumn * column, typename ColumnVector<ToType>::Container & vec_to, size_t input_rows_count) const
+    void executeIntType(const KeyColumnsType & key_cols, const IColumn * column, typename ColumnVector<ToType>::Container & vec_to) const
     {
         using ColVecType = ColumnVectorOrDecimal<FromType>;
         KeyType key{};
@@ -852,7 +853,8 @@ private:
         if (const ColVecType * col_from = checkAndGetColumn<ColVecType>(column))
         {
             const typename ColVecType::Container & vec_from = col_from->getData();
-            for (size_t i = 0; i < input_rows_count; ++i)
+            const size_t size = vec_from.size();
+            for (size_t i = 0; i < size; ++i)
             {
                 ToType hash;
 
@@ -892,7 +894,7 @@ private:
                 if (!key_cols.is_const)
                 {
                     ColumnPtr full_column = col_from_const->convertToFullColumn();
-                    return executeIntType<FromType, first>(key_cols, full_column.get(), vec_to, input_rows_count);
+                    return executeIntType<FromType, first>(key_cols, full_column.get(), vec_to);
                 }
             }
             auto value = col_from_const->template getValue<FromType>();
@@ -936,7 +938,7 @@ private:
     }
 
     template <typename FromType, bool first>
-    void executeBigIntType(const KeyColumnsType & key_cols, const IColumn * column, typename ColumnVector<ToType>::Container & vec_to, size_t input_rows_count) const
+    void executeBigIntType(const KeyColumnsType & key_cols, const IColumn * column, typename ColumnVector<ToType>::Container & vec_to) const
     {
         using ColVecType = ColumnVectorOrDecimal<FromType>;
         KeyType key{};
@@ -956,7 +958,8 @@ private:
         if (const ColVecType * col_from = checkAndGetColumn<ColVecType>(column))
         {
             const typename ColVecType::Container & vec_from = col_from->getData();
-            for (size_t i = 0; i < input_rows_count; ++i)
+            size_t size = vec_from.size();
+            for (size_t i = 0; i < size; ++i)
             {
                 ToType hash;
                 if constexpr (Keyed)
@@ -984,7 +987,7 @@ private:
                 if (!key_cols.is_const)
                 {
                     ColumnPtr full_column = col_from_const->convertToFullColumn();
-                    return executeBigIntType<FromType, first>(key_cols, full_column.get(), vec_to, input_rows_count);
+                    return executeBigIntType<FromType, first>(key_cols, full_column.get(), vec_to);
                 }
             }
             auto value = col_from_const->template getValue<FromType>();
@@ -1011,12 +1014,12 @@ private:
     }
 
     template <bool first>
-    void executeGeneric(const KeyColumnsType & key_cols, const IColumn * column, typename ColumnVector<ToType>::Container & vec_to, size_t input_rows_count) const
+    void executeGeneric(const KeyColumnsType & key_cols, const IColumn * column, typename ColumnVector<ToType>::Container & vec_to) const
     {
         KeyType key{};
         if constexpr (Keyed)
             key = Impl::getKey(key_cols, 0);
-        for (size_t i = 0, size = input_rows_count; i < size; ++i)
+        for (size_t i = 0, size = column->size(); i < size; ++i)
         {
             if constexpr (Keyed)
                 if (!key_cols.is_const && i != 0)
@@ -1031,7 +1034,7 @@ private:
     }
 
     template <bool first>
-    void executeString(const KeyColumnsType & key_cols, const IColumn * column, typename ColumnVector<ToType>::Container & vec_to, size_t input_rows_count) const
+    void executeString(const KeyColumnsType & key_cols, const IColumn * column, typename ColumnVector<ToType>::Container & vec_to) const
     {
         KeyType key{};
         if constexpr (Keyed)
@@ -1040,9 +1043,10 @@ private:
         {
             const typename ColumnString::Chars & data = col_from->getChars();
             const typename ColumnString::Offsets & offsets = col_from->getOffsets();
+            size_t size = offsets.size();
 
             ColumnString::Offset current_offset = 0;
-            for (size_t i = 0; i < input_rows_count; ++i)
+            for (size_t i = 0; i < size; ++i)
             {
                 if constexpr (Keyed)
                     if (!key_cols.is_const && i != 0)
@@ -1063,8 +1067,9 @@ private:
         {
             const typename ColumnString::Chars & data = col_from_fixed->getChars();
             size_t n = col_from_fixed->getN();
+            size_t size = data.size() / n;
 
-            for (size_t i = 0; i < input_rows_count; ++i)
+            for (size_t i = 0; i < size; ++i)
             {
                 if constexpr (Keyed)
                     if (!key_cols.is_const && i != 0)
@@ -1083,7 +1088,7 @@ private:
                 if (!key_cols.is_const)
                 {
                     ColumnPtr full_column = col_from_const->convertToFullColumn();
-                    return executeString<first>(key_cols, full_column.get(), vec_to, input_rows_count);
+                    return executeString<first>(key_cols, full_column.get(), vec_to);
                 }
             }
             String value = col_from_const->getValue<String>();
@@ -1109,7 +1114,7 @@ private:
     }
 
     template <bool first>
-    void executeArray(const KeyColumnsType & key_cols, const IDataType * type, const IColumn * column, typename ColumnVector<ToType>::Container & vec_to, size_t input_rows_count) const
+    void executeArray(const KeyColumnsType & key_cols, const IDataType * type, const IColumn * column, typename ColumnVector<ToType>::Container & vec_to) const
     {
         const IDataType * nested_type = typeid_cast<const DataTypeArray &>(*type).getNestedType().get();
 
@@ -1126,16 +1131,18 @@ private:
             {
                 KeyColumnsType key_cols_tmp{key_cols};
                 key_cols_tmp.offsets = &offsets;
-                executeForArgument(key_cols_tmp, nested_type, nested_column, vec_temp, nested_is_first, input_rows_count);
+                executeForArgument(key_cols_tmp, nested_type, nested_column, vec_temp, nested_is_first);
             }
             else
-                executeForArgument(key_cols, nested_type, nested_column, vec_temp, nested_is_first, input_rows_count);
+                executeForArgument(key_cols, nested_type, nested_column, vec_temp, nested_is_first);
+
+            const size_t size = offsets.size();
 
             ColumnArray::Offset current_offset = 0;
             KeyType key{};
             if constexpr (Keyed)
                 key = Impl::getKey(key_cols, 0);
-            for (size_t i = 0; i < input_rows_count; ++i)
+            for (size_t i = 0; i < size; ++i)
             {
                 if constexpr (Keyed)
                     if (!key_cols.is_const && i != 0)
@@ -1163,7 +1170,7 @@ private:
         {
             /// NOTE: here, of course, you can do without the materialization of the column.
             ColumnPtr full_column = col_from_const->convertToFullColumn();
-            executeArray<first>(key_cols, type, full_column.get(), vec_to, input_rows_count);
+            executeArray<first>(key_cols, type, full_column.get(), vec_to);
         }
         else
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
@@ -1171,7 +1178,7 @@ private:
     }
 
     template <bool first>
-    void executeAny(const KeyColumnsType & key_cols, const IDataType * from_type, const IColumn * icolumn, typename ColumnVector<ToType>::Container & vec_to, size_t input_rows_count) const
+    void executeAny(const KeyColumnsType & key_cols, const IDataType * from_type, const IColumn * icolumn, typename ColumnVector<ToType>::Container & vec_to) const
     {
         WhichDataType which(from_type);
 
@@ -1183,43 +1190,43 @@ private:
             if (key_cols.size() != vec_to.size() && key_cols.size() != 1)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Key column size {} doesn't match result column size {} of function {}", key_cols.size(), vec_to.size(), getName());
 
-        if      (which.isUInt8()) executeIntType<UInt8, first>(key_cols, icolumn, vec_to, input_rows_count);
-        else if (which.isUInt16()) executeIntType<UInt16, first>(key_cols, icolumn, vec_to, input_rows_count);
-        else if (which.isUInt32()) executeIntType<UInt32, first>(key_cols, icolumn, vec_to, input_rows_count);
-        else if (which.isUInt64()) executeIntType<UInt64, first>(key_cols, icolumn, vec_to, input_rows_count);
-        else if (which.isUInt128()) executeBigIntType<UInt128, first>(key_cols, icolumn, vec_to, input_rows_count);
-        else if (which.isUInt256()) executeBigIntType<UInt256, first>(key_cols, icolumn, vec_to, input_rows_count);
-        else if (which.isInt8()) executeIntType<Int8, first>(key_cols, icolumn, vec_to, input_rows_count);
-        else if (which.isInt16()) executeIntType<Int16, first>(key_cols, icolumn, vec_to, input_rows_count);
-        else if (which.isInt32()) executeIntType<Int32, first>(key_cols, icolumn, vec_to, input_rows_count);
-        else if (which.isInt64()) executeIntType<Int64, first>(key_cols, icolumn, vec_to, input_rows_count);
-        else if (which.isInt128()) executeBigIntType<Int128, first>(key_cols, icolumn, vec_to, input_rows_count);
-        else if (which.isInt256()) executeBigIntType<Int256, first>(key_cols, icolumn, vec_to, input_rows_count);
-        else if (which.isUUID()) executeBigIntType<UUID, first>(key_cols, icolumn, vec_to, input_rows_count);
-        else if (which.isIPv4()) executeIntType<IPv4, first>(key_cols, icolumn, vec_to, input_rows_count);
-        else if (which.isIPv6()) executeBigIntType<IPv6, first>(key_cols, icolumn, vec_to, input_rows_count);
-        else if (which.isEnum8()) executeIntType<Int8, first>(key_cols, icolumn, vec_to, input_rows_count);
-        else if (which.isEnum16()) executeIntType<Int16, first>(key_cols, icolumn, vec_to, input_rows_count);
-        else if (which.isDate()) executeIntType<UInt16, first>(key_cols, icolumn, vec_to, input_rows_count);
-        else if (which.isDate32()) executeIntType<Int32, first>(key_cols, icolumn, vec_to, input_rows_count);
-        else if (which.isDateTime()) executeIntType<UInt32, first>(key_cols, icolumn, vec_to, input_rows_count);
+        if      (which.isUInt8()) executeIntType<UInt8, first>(key_cols, icolumn, vec_to);
+        else if (which.isUInt16()) executeIntType<UInt16, first>(key_cols, icolumn, vec_to);
+        else if (which.isUInt32()) executeIntType<UInt32, first>(key_cols, icolumn, vec_to);
+        else if (which.isUInt64()) executeIntType<UInt64, first>(key_cols, icolumn, vec_to);
+        else if (which.isUInt128()) executeBigIntType<UInt128, first>(key_cols, icolumn, vec_to);
+        else if (which.isUInt256()) executeBigIntType<UInt256, first>(key_cols, icolumn, vec_to);
+        else if (which.isInt8()) executeIntType<Int8, first>(key_cols, icolumn, vec_to);
+        else if (which.isInt16()) executeIntType<Int16, first>(key_cols, icolumn, vec_to);
+        else if (which.isInt32()) executeIntType<Int32, first>(key_cols, icolumn, vec_to);
+        else if (which.isInt64()) executeIntType<Int64, first>(key_cols, icolumn, vec_to);
+        else if (which.isInt128()) executeBigIntType<Int128, first>(key_cols, icolumn, vec_to);
+        else if (which.isInt256()) executeBigIntType<Int256, first>(key_cols, icolumn, vec_to);
+        else if (which.isUUID()) executeBigIntType<UUID, first>(key_cols, icolumn, vec_to);
+        else if (which.isIPv4()) executeIntType<IPv4, first>(key_cols, icolumn, vec_to);
+        else if (which.isIPv6()) executeBigIntType<IPv6, first>(key_cols, icolumn, vec_to);
+        else if (which.isEnum8()) executeIntType<Int8, first>(key_cols, icolumn, vec_to);
+        else if (which.isEnum16()) executeIntType<Int16, first>(key_cols, icolumn, vec_to);
+        else if (which.isDate()) executeIntType<UInt16, first>(key_cols, icolumn, vec_to);
+        else if (which.isDate32()) executeIntType<Int32, first>(key_cols, icolumn, vec_to);
+        else if (which.isDateTime()) executeIntType<UInt32, first>(key_cols, icolumn, vec_to);
         /// TODO: executeIntType() for Decimal32/64 leads to incompatible result
-        else if (which.isDecimal32()) executeBigIntType<Decimal32, first>(key_cols, icolumn, vec_to, input_rows_count);
-        else if (which.isDecimal64()) executeBigIntType<Decimal64, first>(key_cols, icolumn, vec_to, input_rows_count);
-        else if (which.isDecimal128()) executeBigIntType<Decimal128, first>(key_cols, icolumn, vec_to, input_rows_count);
-        else if (which.isDecimal256()) executeBigIntType<Decimal256, first>(key_cols, icolumn, vec_to, input_rows_count);
-        else if (which.isFloat32()) executeIntType<Float32, first>(key_cols, icolumn, vec_to, input_rows_count);
-        else if (which.isFloat64()) executeIntType<Float64, first>(key_cols, icolumn, vec_to, input_rows_count);
-        else if (which.isString()) executeString<first>(key_cols, icolumn, vec_to, input_rows_count);
-        else if (which.isFixedString()) executeString<first>(key_cols, icolumn, vec_to, input_rows_count);
-        else if (which.isArray()) executeArray<first>(key_cols, from_type, icolumn, vec_to, input_rows_count);
-        else executeGeneric<first>(key_cols, icolumn, vec_to, input_rows_count);
+        else if (which.isDecimal32()) executeBigIntType<Decimal32, first>(key_cols, icolumn, vec_to);
+        else if (which.isDecimal64()) executeBigIntType<Decimal64, first>(key_cols, icolumn, vec_to);
+        else if (which.isDecimal128()) executeBigIntType<Decimal128, first>(key_cols, icolumn, vec_to);
+        else if (which.isDecimal256()) executeBigIntType<Decimal256, first>(key_cols, icolumn, vec_to);
+        else if (which.isFloat32()) executeIntType<Float32, first>(key_cols, icolumn, vec_to);
+        else if (which.isFloat64()) executeIntType<Float64, first>(key_cols, icolumn, vec_to);
+        else if (which.isString()) executeString<first>(key_cols, icolumn, vec_to);
+        else if (which.isFixedString()) executeString<first>(key_cols, icolumn, vec_to);
+        else if (which.isArray()) executeArray<first>(key_cols, from_type, icolumn, vec_to);
+        else executeGeneric<first>(key_cols, icolumn, vec_to);
     }
 
     /// Return a fixed random-looking magic number when input is empty.
     static constexpr auto filler = 0xe28dbde7fe22e41c;
 
-    void executeForArgument(const KeyColumnsType & key_cols, const IDataType * type, const IColumn * column, typename ColumnVector<ToType>::Container & vec_to, bool & is_first, size_t input_rows_count) const
+    void executeForArgument(const KeyColumnsType & key_cols, const IDataType * type, const IColumn * column, typename ColumnVector<ToType>::Container & vec_to, bool & is_first) const
     {
         /// Flattening of tuples.
         if (const ColumnTuple * tuple = typeid_cast<const ColumnTuple *>(column))
@@ -1233,7 +1240,7 @@ private:
                     hash = static_cast<ToType>(filler);
 
             for (size_t i = 0; i < tuple_size; ++i)
-                executeForArgument(key_cols, tuple_types[i].get(), tuple_columns[i].get(), vec_to, is_first, input_rows_count);
+                executeForArgument(key_cols, tuple_types[i].get(), tuple_columns[i].get(), vec_to, is_first);
         }
         else if (const ColumnTuple * tuple_const = checkAndGetColumnConstData<ColumnTuple>(column))
         {
@@ -1248,24 +1255,24 @@ private:
             for (size_t i = 0; i < tuple_size; ++i)
             {
                 auto tmp = ColumnConst::create(tuple_columns[i], column->size());
-                executeForArgument(key_cols, tuple_types[i].get(), tmp.get(), vec_to, is_first, input_rows_count);
+                executeForArgument(key_cols, tuple_types[i].get(), tmp.get(), vec_to, is_first);
             }
         }
         else if (const auto * map = checkAndGetColumn<ColumnMap>(column))
         {
             const auto & type_map = assert_cast<const DataTypeMap &>(*type);
-            executeForArgument(key_cols, type_map.getNestedType().get(), map->getNestedColumnPtr().get(), vec_to, is_first, input_rows_count);
+            executeForArgument(key_cols, type_map.getNestedType().get(), map->getNestedColumnPtr().get(), vec_to, is_first);
         }
         else if (const auto * const_map = checkAndGetColumnConst<ColumnMap>(column))
         {
-            executeForArgument(key_cols, type, const_map->convertToFullColumnIfConst().get(), vec_to, is_first, input_rows_count);
+            executeForArgument(key_cols, type, const_map->convertToFullColumnIfConst().get(), vec_to, is_first);
         }
         else
         {
             if (is_first)
-                executeAny<true>(key_cols, type, column, vec_to, input_rows_count);
+                executeAny<true>(key_cols, type, column, vec_to);
             else
-                executeAny<false>(key_cols, type, column, vec_to, input_rows_count);
+                executeAny<false>(key_cols, type, column, vec_to);
         }
 
         is_first = false;
@@ -1318,7 +1325,7 @@ public:
             for (size_t i = first_data_argument; i < arguments.size(); ++i)
             {
                 const auto & col = arguments[i];
-                executeForArgument(key_cols, col.type.get(), col.column.get(), vec_to, is_first_argument, input_rows_count);
+                executeForArgument(key_cols, col.type.get(), col.column.get(), vec_to, is_first_argument);
             }
         }
 
