@@ -54,7 +54,7 @@ class ExtractKeyValuePairs : public IFunction
         return builder.build();
     }
 
-    ColumnPtr extract(ColumnPtr data_column, std::shared_ptr<KeyValuePairExtractor> extractor) const
+    ColumnPtr extract(ColumnPtr data_column, std::shared_ptr<KeyValuePairExtractor> extractor, size_t input_rows_count) const
     {
         auto offsets = ColumnUInt64::create();
 
@@ -63,7 +63,7 @@ class ExtractKeyValuePairs : public IFunction
 
         uint64_t offset = 0u;
 
-        for (auto i = 0u; i < data_column->size(); i++)
+        for (auto i = 0u; i < input_rows_count; i++)
         {
             auto row = data_column->getDataAt(i).toView();
 
@@ -97,13 +97,13 @@ public:
         return std::make_shared<ExtractKeyValuePairs>(context);
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         auto parsed_arguments = ArgumentExtractor::extract(arguments);
 
         auto extractor = getExtractor(parsed_arguments);
 
-        return extract(parsed_arguments.data_column, extractor);
+        return extract(parsed_arguments.data_column, extractor, input_rows_count);
     }
 
     DataTypePtr getReturnTypeImpl(const DataTypes &) const override
