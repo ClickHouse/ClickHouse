@@ -335,7 +335,7 @@ toUInt8OrNull('abc'): ᴺᵁᴸᴸ
 
 ## toUInt8OrDefault
 
-Like [`toUInt8`](#touint8), takes an argument of type [String](../data-types/string.md) and tries to parse it to type [`UInt8`](../data-types/int-uint.md). If unsuccessful, returns the default type value.
+Like [`toUInt8`](#touint8), this function converts an input value to a value of type [UInt8](../data-types/int-uint.md) but returns the default value in case of an error.
 
 **Syntax**
 
@@ -589,7 +589,7 @@ Like [`toUInt16`](#touint16), this function converts an input value to a value o
 **Syntax**
 
 ```sql
-toInt16OrDefault(expr, def)
+toUInt16OrDefault(expr, def)
 ```
 
 **Arguments**
