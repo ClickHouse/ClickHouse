@@ -236,7 +236,7 @@ toInt8OrNull('abc'): ᴺᵁᴸᴸ
 
 ## toInt8OrDefault
 
-Like [`toInt8`](#toint8), takes an argument of type [String](../data-types/string.md) and tries to parse it to type [`Int8`](../data-types/int-uint.md). If unsuccessful, returns the default type value.
+Like [`toInt8`](#toint8), this function converts an input value to a value of type [Int8](../data-types/int-uint.md) but returns the default value in case of an error.
 
 **Syntax**
 
