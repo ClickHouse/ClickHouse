@@ -3,8 +3,11 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 from helpers.network import PartitionManager
 
+import os
+
 
 cluster = ClickHouseCluster(__file__)
+CONFIG_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), "configs")
 
 node = cluster.add_instance(
     "node",
@@ -54,7 +57,12 @@ def test_startup_with_small_bg_pool_partitioned(started_cluster):
     assert_values()
     with PartitionManager() as pm:
         pm.drop_instance_zk_connections(node)
-        node.restart_clickhouse(stop_start_wait_sec=300)
+        node.stop_clickhouse(stop_wait_sec=150)
+        node.copy_file_to_container(
+            os.path.join(CONFIG_DIR, "fault_injection.xml"),
+            "/etc/clickhouse-server/config.d/fault_injection.xml",
+        )
+        node.start_clickhouse(start_wait_sec=150)
         assert_values()
 
     # check that we activate it in the end
