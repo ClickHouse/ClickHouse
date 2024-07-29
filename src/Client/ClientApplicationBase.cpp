@@ -31,7 +31,6 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_SET_SIGNAL_HANDLER;
-    extern const int UNRECOGNIZED_ARGUMENTS;
 }
 
 static ClientInfo::QueryKind parseQueryKind(const String & query_kind)
