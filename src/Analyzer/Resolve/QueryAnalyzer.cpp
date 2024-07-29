@@ -1740,7 +1740,7 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveQualifiedMatcher(Qu
         const auto * tuple_data_type = typeid_cast<const DataTypeTuple *>(result_type.get());
         if (!tuple_data_type)
             throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                "Qualified matcher {} find non compound expression {} with type {}. Expected tuple or array of tuples. In scope {}",
+                "Qualified matcher {} found a non-compound expression {} with type {}. Expected a tuple or an array of tuples. In scope {}",
                 matcher_node->formatASTForErrorMessage(),
                 expression_query_tree_node->formatASTForErrorMessage(),
                 expression_query_tree_node->getResultType()->getName(),
@@ -4124,9 +4124,7 @@ void QueryAnalyzer::resolveInterpolateColumnsNodeList(QueryTreeNodePtr & interpo
 
         auto * column_to_interpolate = interpolate_node_typed.getExpression()->as<IdentifierNode>();
         if (!column_to_interpolate)
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "INTERPOLATE can work only for identifiers, but {} is found",
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "INTERPOLATE can work only for indentifiers, but {} is found",
                 interpolate_node_typed.getExpression()->formatASTForErrorMessage());
         auto column_to_interpolate_name = column_to_interpolate->getIdentifier().getFullName();
 

@@ -234,8 +234,8 @@ struct FormatSettings
         bool infer_incomplete_types_as_strings = true;
         bool throw_on_bad_escape_sequence = true;
         bool ignore_unnecessary_fields = true;
-        bool ignore_key_case = false;
         bool type_json_skip_duplicated_paths = false;
+        bool case_insensitive_column_matching = false;
     } json{};
 
     struct
