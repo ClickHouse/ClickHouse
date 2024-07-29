@@ -308,6 +308,4 @@ void ConnectionPoolWithFailover::enableKeepAlive(const Poco::Timespan & interval
     }
 }
 
-
-
 }
