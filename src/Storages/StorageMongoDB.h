@@ -60,7 +60,7 @@ public:
         size_t num_streams) override;
 
 private:
-    static bsoncxx::document::value visitWhereFunction(const ContextPtr & context, const FunctionNode * func);
+    std::optional<bsoncxx::document::value> visitWhereFunction(const ContextPtr & context, const FunctionNode * func);
     bsoncxx::document::value buildMongoDBQuery(const ContextPtr & context, mongocxx::options::find & options, const SelectQueryInfo & query, const Block & sample_block);
 
     const MongoDBConfiguration configuration;

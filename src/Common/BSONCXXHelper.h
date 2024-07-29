@@ -28,40 +28,38 @@ static bsoncxx::types::bson_value::value fieldAsBSONValue(const Field & field, c
     switch (type->getTypeId())
     {
         case TypeIndex::String:
-            return field.safeGet<String>();
+            return bsoncxx::types::b_string{field.safeGet<String>()};
         case TypeIndex::UInt8: {
             if (isBool(type))
-                return field.safeGet<UInt8>() != 0;
-            return static_cast<Int32>(field.safeGet<UInt8>());
+                return bsoncxx::types::b_bool{field.safeGet<UInt8>() != 0};
+            return bsoncxx::types::b_int32{static_cast<Int32>(field.safeGet<UInt8 &>())};
         }
         case TypeIndex::UInt16:
-            return static_cast<Int32>(field.safeGet<UInt16>());
+            return bsoncxx::types::b_int32{static_cast<Int32>(field.safeGet<UInt16 &>())};
         case TypeIndex::UInt32:
-            return static_cast<Int32>(field.safeGet<UInt32>());
+            return bsoncxx::types::b_int64{static_cast<Int64>(field.safeGet<UInt32 &>())};
         case TypeIndex::UInt64:
-            return static_cast<Int64>(field.safeGet<UInt64>());
+            return bsoncxx::types::b_double{static_cast<Float64>(field.safeGet<UInt64 &>())};
         case TypeIndex::Int8:
-            return field.safeGet<Int8 &>();
+            return bsoncxx::types::b_int32{static_cast<Int32>(field.safeGet<Int8 &>())};
         case TypeIndex::Int16:
-            return field.safeGet<Int16>();
+            return bsoncxx::types::b_int32{static_cast<Int32>(field.safeGet<Int16 &>())};
         case TypeIndex::Int32:
-            return field.safeGet<Int32>();
+            return bsoncxx::types::b_int32{static_cast<Int32>(field.safeGet<Int32 &>())};
         case TypeIndex::Int64:
-            return field.safeGet<Int64>();
+            return bsoncxx::types::b_int64{field.safeGet<Int64 &>()};
         case TypeIndex::Float32:
-            return field.safeGet<Float32>();
+            return bsoncxx::types::b_double{field.safeGet<Float32 &>()};
         case TypeIndex::Float64:
-            return field.safeGet<Float64>();
+            return bsoncxx::types::b_double{field.safeGet<Float64 &>()};
         case TypeIndex::Date:
-            return std::chrono::milliseconds(field.safeGet<UInt16>() * 1000);
+            return bsoncxx::types::b_date{std::chrono::seconds{field.safeGet<UInt16 &>() * 86400}};
         case TypeIndex::Date32:
-            return std::chrono::milliseconds(field.safeGet<Int32>() * 1000);
+            return bsoncxx::types::b_date{std::chrono::seconds{field.safeGet<Int32 &>() * 86400}};
         case TypeIndex::DateTime:
-            return std::chrono::milliseconds(field.safeGet<UInt32>() * 1000);
-        case TypeIndex::DateTime64:
-            return std::chrono::milliseconds(field.safeGet<Decimal64>().getValue());
+            return bsoncxx::types::b_date{std::chrono::seconds{field.safeGet<UInt32 &>()}};
         case TypeIndex::UUID:
-            return static_cast<String>(formatUUID(field.safeGet<UUID>()));
+            return bsoncxx::types::b_string{static_cast<String>(formatUUID(field.safeGet<UUID &>()))};
         case TypeIndex::Tuple: {
             auto arr = array();
             for (const auto & elem : field.safeGet<Tuple &>())

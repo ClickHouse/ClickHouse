@@ -8,6 +8,7 @@
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/SortNode.h>
+#include <Analyzer/TableNode.h>
 #include <Formats/BSONTypes.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTIdentifier.h>
@@ -178,61 +179,79 @@ std::string mongoFuncName(const std::string & func)
     throw Exception(ErrorCodes::FAILED_TO_BUILD_MONGODB_QUERY, "Function '{}' is not supported. You can disable this error with 'SET mongodb_fail_on_query_build_error=0', but this may cause poor performance, and is highly not recommended.", func);
 }
 
-bsoncxx::document::value StorageMongoDB::visitWhereFunction(const ContextPtr & context, const FunctionNode * func)
+std::optional<bsoncxx::document::value> StorageMongoDB::visitWhereFunction(const ContextPtr & context, const FunctionNode * func)
 {
-    if (!func->getArguments().getNodes().empty())
+    if (func->getArguments().getNodes().empty())
+        return {};
+
+    std::cout << func->dumpTree() << std::endl;
+    if (const auto & column = func->getArguments().getNodes().at(0)->as<ColumnNode>())
     {
-        if (const auto & column = func->getArguments().getNodes().at(0)->as<ColumnNode>())
+        std::cout << column->dumpTree() << std::endl;
+        // Skip unknows columns, which don't belong to the table.
+        const auto & table = column->getColumnSource()->as<TableNode>();
+        if (!table)
+            return {};
+
+        std::cout << table->getStorage()->getStorageID().getFullTableName() << std::endl;
+        std::cout << this->getStorageID().getFullTableName() << std::endl;
+        // Skip columns from other tables in JOIN queries.
+        if (table->getStorage()->getStorageID().getFullTableName() != this->getStorageID().getFullTableName())
+            return {};
+
+        // Only these function can have exactly one argument and be passed to MongoDB.
+        if (func->getFunctionName() == "isNull")
+            return make_document(kvp(column->getColumnName(), make_document(kvp("$eq", bsoncxx::types::b_null{}))));
+        if (func->getFunctionName() == "isNotNull")
+            return make_document(kvp(column->getColumnName(), make_document(kvp("$ne", bsoncxx::types::b_null{}))));
+        if (func->getFunctionName() == "empty")
+            return make_document(kvp(column->getColumnName(), make_document(kvp("$in", make_array(bsoncxx::types::b_null{}, "")))));
+        if (func->getFunctionName() == "notEmpty")
+            return make_document(kvp(column->getColumnName(), make_document(kvp("$nin", make_array(bsoncxx::types::b_null{}, "")))));
+
+        auto func_name = mongoFuncName(func->getFunctionName());
+        if (func->getArguments().getNodes().size() == 2)
         {
-            if (func->getFunctionName() == "isNull")
-                return make_document(kvp(column->getColumnName(), make_document(kvp("$eq", bsoncxx::types::b_null{}))));
-            if (func->getFunctionName() == "isNotNull")
-                return make_document(kvp(column->getColumnName(), make_document(kvp("$ne", bsoncxx::types::b_null{}))));
-            if (func->getFunctionName() == "empty")
-                return make_document(kvp(column->getColumnName(), make_document(kvp("$in", make_array(bsoncxx::types::b_null{}, "")))));
-            if (func->getFunctionName() == "notEmpty")
-                return make_document(kvp(column->getColumnName(), make_document(kvp("$nin", make_array(bsoncxx::types::b_null{}, "")))));
+            const auto & value = func->getArguments().getNodes().at(1);
 
-            if (func->getArguments().getNodes().size() == 2)
+            if (const auto & const_value = value->as<ConstantNode>())
             {
-                auto func_name = mongoFuncName(func->getFunctionName());
+                std::optional<bsoncxx::types::bson_value::value> func_value{};
+                if (column->getColumnName() == "_id")
+                    func_value = fieldAsOID(const_value->getValue());
+                else
+                    func_value = fieldAsBSONValue(const_value->getValue(), const_value->getResultType());
 
-                const auto & value = func->getArguments().getNodes().at(1);
-                if (const auto & const_value = value->as<ConstantNode>())
-                {
-                    std::optional<bsoncxx::types::bson_value::value> func_value{};
-                    if (column->getColumnName() == "_id")
-                        func_value = fieldAsOID(const_value->getValue());
-                    else
-                        func_value = fieldAsBSONValue(const_value->getValue(), const_value->getResultType());
+                if (func_name == "$in" && func_value->view().type() != bsoncxx::v_noabi::type::k_array)
+                    func_name = "$eq";
+                if (func_name == "$nin" && func_value->view().type() != bsoncxx::v_noabi::type::k_array)
+                    func_name = "$ne";
 
-                    if (func_name == "$in" && func_value->view().type() != bsoncxx::v_noabi::type::k_array)
-                        func_name = "$eq";
-                    if (func_name == "$nin" && func_value->view().type() != bsoncxx::v_noabi::type::k_array)
-                        func_name = "$ne";
-
-                    return make_document(kvp(column->getColumnName(), make_document(kvp(func_name, std::move(*func_value)))));
-                }
-
-                if (const auto & func_value = value->as<FunctionNode>())
-                    return make_document(
-                        kvp(column->getColumnName(), make_document(kvp(func_name, visitWhereFunction(context, func_value)))));
+                return make_document(kvp(column->getColumnName(), make_document(kvp(func_name, std::move(*func_value)))));
             }
-        }
-        else
-        {
-            auto arr = bsoncxx::builder::basic::array{};
-            for (const auto & elem : func->getArguments().getNodes())
-            {
-                if (const auto & elem_func = elem->as<FunctionNode>())
-                    arr.append(visitWhereFunction(context, elem_func));
-            }
-            if (!arr.view().empty())
-                return make_document(kvp(mongoFuncName(func->getFunctionName()), arr));
+
+            if (const auto & func_value = value->as<FunctionNode>())
+                if (const auto & res_value = visitWhereFunction(context, func_value); res_value.has_value())
+                    return make_document(kvp(column->getColumnName(), make_document(kvp(func_name, *res_value))));
         }
     }
+    else
+    {
+        auto arr = bsoncxx::builder::basic::array{};
+        for (const auto & elem : func->getArguments().getNodes())
+        {
+            if (const auto & elem_func = elem->as<FunctionNode>())
+                if (const auto & res_value = visitWhereFunction(context, elem_func); res_value.has_value())
+                    arr.append(*res_value);
+        }
+        if (!arr.view().empty())
+            return make_document(kvp(mongoFuncName(func->getFunctionName()), arr));
+    }
 
-    throw Exception(ErrorCodes::FAILED_TO_BUILD_MONGODB_QUERY, "Only constant expressions are supported in WHERE section. You can disable this error with 'SET mongodb_fail_on_query_build_error=0', but this may cause poor performance, and is highly not recommended.");
+    throw Exception(
+        ErrorCodes::FAILED_TO_BUILD_MONGODB_QUERY,
+        "Only constant expressions are supported in WHERE section. You can disable this error with 'SET "
+        "mongodb_fail_on_query_build_error=0', but this may cause poor performance, and is highly not recommended.");
 }
 
 bsoncxx::document::value StorageMongoDB::buildMongoDBQuery(const ContextPtr & context, mongocxx::options::find & options, const SelectQueryInfo & query, const Block & sample_block)
@@ -326,11 +345,11 @@ bsoncxx::document::value StorageMongoDB::buildMongoDBQuery(const ContextPtr & co
                 }
             }
 
-            if (!filter.has_value())
-                throw Exception(ErrorCodes::FAILED_TO_BUILD_MONGODB_QUERY, "Only constant expressions are supported in WHERE section. You can disable this error with 'SET mongodb_fail_on_query_build_error=0', but this may cause poor performance, and is highly not recommended.");
-
-            LOG_DEBUG(log, "MongoDB query has built: '{}'.", bsoncxx::to_json(*filter));
-            return std::move(*filter);
+            if (filter.has_value())
+            {
+                LOG_DEBUG(log, "MongoDB query has built: '{}'.", bsoncxx::to_json(*filter));
+                return std::move(*filter);
+            }
         }
         catch (Exception & e)
         {

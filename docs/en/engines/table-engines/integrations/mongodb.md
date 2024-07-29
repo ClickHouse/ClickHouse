@@ -55,6 +55,18 @@ Only constant literals are allowed.
 
 PREWHERE and HAVING are not supported.
 
+#### Note:
+It's always better to explicitly set type of literal because Mongo requires strict typed filters.\
+For example you want to filter by `Date`:
+```sql
+SELECT * FROM mongo_table WHERE date = '2024-01-01'
+```
+This will not work because Mongo will not cast string to `Date`, so you need to cast it manually:
+```sql
+SELECT * FROM mongo_table WHERE date = '2024-01-01'::Date OR date = toDate('2024-01-01')
+```
+This applied for `Date`, `Date32`, `DateTime`, `Bool`, `UUID`.
+
 ### LIMIT and OFFSET
 Only `LIMIT` is supported.
 
