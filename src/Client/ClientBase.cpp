@@ -21,6 +21,7 @@
 #include <Common/StringUtils.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/NetException.h>
+#include <Common/SignalHandlers.h>
 #include <Common/tryGetFileNameByFileDescriptor.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
@@ -80,6 +81,11 @@
 #include <Common/config_version.h>
 #include "config.h"
 
+#if USE_GWP_ASAN
+#    include <Common/GWPAsan.h>
+#endif
+
+
 namespace fs = std::filesystem;
 using namespace std::literals;
 
@@ -102,13 +108,13 @@ namespace ErrorCodes
     extern const int UNEXPECTED_PACKET_FROM_SERVER;
     extern const int INVALID_USAGE_OF_INPUT;
     extern const int CANNOT_SET_SIGNAL_HANDLER;
-    extern const int UNRECOGNIZED_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_OPEN_FILE;
     extern const int FILE_ALREADY_EXISTS;
     extern const int USER_SESSION_LIMIT_EXCEEDED;
     extern const int NOT_IMPLEMENTED;
     extern const int CANNOT_READ_FROM_FILE_DESCRIPTOR;
+    extern const int USER_EXPIRED;
 }
 
 }
@@ -300,9 +306,43 @@ public:
 };
 
 
-ClientBase::~ClientBase() = default;
-ClientBase::ClientBase() = default;
+ClientBase::~ClientBase()
+{
+    try
+    {
+        writeSignalIDtoSignalPipe(SignalListener::StopThread);
+        signal_listener_thread.join();
+        HandledSignals::instance().reset();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+}
 
+ClientBase::ClientBase(
+    int in_fd_,
+    int out_fd_,
+    int err_fd_,
+    std::istream & input_stream_,
+    std::ostream & output_stream_,
+    std::ostream & error_stream_
+)
+    : std_in(in_fd_)
+    , std_out(out_fd_)
+    , progress_indication(output_stream_, in_fd_, err_fd_)
+    , in_fd(in_fd_)
+    , out_fd(out_fd_)
+    , err_fd(err_fd_)
+    , input_stream(input_stream_)
+    , output_stream(output_stream_)
+    , error_stream(error_stream_)
+{
+    stdin_is_a_tty = isatty(in_fd);
+    stdout_is_a_tty = isatty(out_fd);
+    stderr_is_a_tty = isatty(err_fd);
+    terminal_width = getTerminalWidth(in_fd, err_fd);
+}
 
 void ClientBase::setupSignalHandler()
 {
@@ -329,7 +369,7 @@ void ClientBase::setupSignalHandler()
 }
 
 
-ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Settings & settings, bool allow_multi_statements, bool is_interactive, bool ignore_error)
+ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Settings & settings, bool allow_multi_statements)
 {
     std::unique_ptr<IParserBase> parser;
     ASTPtr res;
@@ -358,7 +398,7 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
 
         if (!res)
         {
-            std::cerr << std::endl << message << std::endl << std::endl;
+            error_stream << std::endl << message << std::endl << std::endl;
             return nullptr;
         }
     }
@@ -372,11 +412,11 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
 
     if (is_interactive)
     {
-        std::cout << std::endl;
-        WriteBufferFromOStream res_buf(std::cout, 4096);
+        output_stream << std::endl;
+        WriteBufferFromOStream res_buf(output_stream, 4096);
         formatAST(*res, res_buf);
         res_buf.finalize();
-        std::cout << std::endl << std::endl;
+        output_stream << std::endl << std::endl;
     }
 
     return res;
@@ -437,7 +477,7 @@ void ClientBase::sendExternalTables(ASTPtr parsed_query)
 
     std::vector<ExternalTableDataPtr> data;
     for (auto & table : external_tables)
-        data.emplace_back(table.getData(global_context));
+        data.emplace_back(table.getData(client_context));
 
     connection->sendExternalTablesData(data);
 }
@@ -480,7 +520,7 @@ void ClientBase::onData(Block & block, ASTPtr parsed_query)
     if (need_render_progress && tty_buf)
     {
         if (select_into_file && !select_into_file_and_stdout)
-            std::cerr << "\r";
+            error_stream << "\r";
         progress_indication.writeProgress(*tty_buf);
     }
 }
@@ -650,10 +690,10 @@ try
         /// intermixed with data with parallel formatting.
         /// It may increase code complexity significantly.
         if (!extras_into_stdout || select_only_into_file)
-            output_format = global_context->getOutputFormatParallelIfPossible(
+            output_format = client_context->getOutputFormatParallelIfPossible(
                 current_format, out_file_buf ? *out_file_buf : *out_buf, block);
         else
-            output_format = global_context->getOutputFormat(
+            output_format = client_context->getOutputFormat(
                 current_format, out_file_buf ? *out_file_buf : *out_buf, block);
 
         output_format->setAutoFlush();
@@ -732,6 +772,15 @@ void ClientBase::adjustSettings()
     global_context->setSettings(settings);
 }
 
+void ClientBase::initClientContext()
+{
+    client_context->setClientName(std::string(DEFAULT_CLIENT_NAME));
+    client_context->setQuotaClientKey(getClientConfiguration().getString("quota_key", ""));
+    client_context->setQueryKindInitial();
+    client_context->setQueryKind(query_kind);
+    client_context->setQueryParameters(query_parameters);
+}
+
 bool ClientBase::isRegularFile(int fd)
 {
     struct stat file_stat;
@@ -740,17 +789,17 @@ bool ClientBase::isRegularFile(int fd)
 
 void ClientBase::setDefaultFormatsAndCompressionFromConfiguration()
 {
-    if (config().has("output-format"))
+    if (getClientConfiguration().has("output-format"))
     {
-        default_output_format = config().getString("output-format");
+        default_output_format = getClientConfiguration().getString("output-format");
         is_default_format = false;
     }
-    else if (config().has("format"))
+    else if (getClientConfiguration().has("format"))
     {
-        default_output_format = config().getString("format");
+        default_output_format = getClientConfiguration().getString("format");
         is_default_format = false;
     }
-    else if (config().has("vertical"))
+    else if (getClientConfiguration().has("vertical"))
     {
         default_output_format = "Vertical";
         is_default_format = false;
@@ -776,17 +825,17 @@ void ClientBase::setDefaultFormatsAndCompressionFromConfiguration()
         default_output_format = "TSV";
     }
 
-    if (config().has("input-format"))
+    if (getClientConfiguration().has("input-format"))
     {
-        default_input_format = config().getString("input-format");
+        default_input_format = getClientConfiguration().getString("input-format");
     }
-    else if (config().has("format"))
+    else if (getClientConfiguration().has("format"))
     {
-        default_input_format = config().getString("format");
+        default_input_format = getClientConfiguration().getString("format");
     }
-    else if (config().getString("table-file", "-") != "-")
+    else if (getClientConfiguration().getString("table-file", "-") != "-")
     {
-        auto file_name = config().getString("table-file");
+        auto file_name = getClientConfiguration().getString("table-file");
         std::optional<String> format_from_file_name = FormatFactory::instance().tryGetFormatFromFileName(file_name);
         if (format_from_file_name)
             default_input_format = *format_from_file_name;
@@ -802,7 +851,7 @@ void ClientBase::setDefaultFormatsAndCompressionFromConfiguration()
             default_input_format = "TSV";
     }
 
-    format_max_block_size = config().getUInt64("format_max_block_size",
+    format_max_block_size = getClientConfiguration().getUInt64("format_max_block_size",
         global_context->getSettingsRef().max_block_size);
 
     /// Setting value from cmd arg overrides one from config
@@ -812,7 +861,7 @@ void ClientBase::setDefaultFormatsAndCompressionFromConfiguration()
     }
     else
     {
-        insert_format_max_block_size = config().getUInt64("insert_format_max_block_size",
+        insert_format_max_block_size = getClientConfiguration().getUInt64("insert_format_max_block_size",
             global_context->getSettingsRef().max_insert_block_size);
     }
 }
@@ -922,10 +971,8 @@ void ClientBase::processTextAsSingleQuery(const String & full_query)
     /// client-side. Thus we need to parse the query.
     const char * begin = full_query.data();
     auto parsed_query = parseQuery(begin, begin + full_query.size(),
-        global_context->getSettingsRef(),
-        /*allow_multi_statements=*/ false,
-        is_interactive,
-        ignore_error);
+        client_context->getSettingsRef(),
+        /*allow_multi_statements=*/ false);
 
     if (!parsed_query)
         return;
@@ -947,7 +994,7 @@ void ClientBase::processTextAsSingleQuery(const String & full_query)
     /// But for asynchronous inserts we don't extract data, because it's needed
     /// to be done on server side in that case (for coalescing the data from multiple inserts on server side).
     const auto * insert = parsed_query->as<ASTInsertQuery>();
-    if (insert && isSyncInsertWithData(*insert, global_context))
+    if (insert && isSyncInsertWithData(*insert, client_context))
         query_to_execute = full_query.substr(0, insert->data - full_query.data());
     else
         query_to_execute = full_query;
@@ -1065,7 +1112,7 @@ void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr pa
         }
     }
 
-    const auto & settings = global_context->getSettingsRef();
+    const auto & settings = client_context->getSettingsRef();
     const Int32 signals_before_stop = settings.partial_result_on_first_cancel ? 2 : 1;
 
     int retries_left = 10;
@@ -1080,10 +1127,10 @@ void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr pa
                 connection_parameters.timeouts,
                 query,
                 query_parameters,
-                global_context->getCurrentQueryId(),
+                client_context->getCurrentQueryId(),
                 query_processing_stage,
-                &global_context->getSettingsRef(),
-                &global_context->getClientInfo(),
+                &client_context->getSettingsRef(),
+                &client_context->getClientInfo(),
                 true,
                 [&](const Progress & progress) { onProgress(progress); });
 
@@ -1099,7 +1146,7 @@ void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr pa
             /// has been received yet.
             if (processed_rows == 0 && e.code() == ErrorCodes::DEADLOCK_AVOIDED && --retries_left)
             {
-                std::cerr << "Got a transient error from the server, will"
+                error_stream << "Got a transient error from the server, will"
                         << " retry (" << retries_left << " retries left)";
             }
             else
@@ -1153,7 +1200,7 @@ void ClientBase::receiveResult(ASTPtr parsed_query, Int32 signals_before_stop, b
                     double elapsed = receive_watch.elapsedSeconds();
                     if (break_on_timeout && elapsed > receive_timeout.totalSeconds())
                     {
-                        std::cout << "Timeout exceeded while receiving data from server."
+                        output_stream << "Timeout exceeded while receiving data from server."
                                     << " Waited for " << static_cast<size_t>(elapsed) << " seconds,"
                                     << " timeout is " << receive_timeout.totalSeconds() << " seconds." << std::endl;
 
@@ -1186,11 +1233,8 @@ void ClientBase::receiveResult(ASTPtr parsed_query, Int32 signals_before_stop, b
     if (local_format_error)
         std::rethrow_exception(local_format_error);
 
-    if (cancelled && is_interactive)
-    {
-        std::cout << "Query was cancelled." << std::endl;
-        cancelled_printed = true;
-    }
+    if (cancelled && is_interactive && !cancelled_printed.exchange(true))
+        output_stream << "Query was cancelled." << std::endl;
 }
 
 
@@ -1273,7 +1317,7 @@ void ClientBase::onProgress(const Progress & value)
 
 void ClientBase::onTimezoneUpdate(const String & tz)
 {
-    global_context->setSetting("session_timezone", tz);
+    client_context->setSetting("session_timezone", tz);
 }
 
 
@@ -1306,10 +1350,10 @@ void ClientBase::onEndOfStream()
 
     if (is_interactive)
     {
-        if (cancelled && !cancelled_printed)
-            std::cout << "Query was cancelled." << std::endl;
+        if (cancelled && !cancelled_printed.exchange(true))
+            output_stream << "Query was cancelled." << std::endl;
         else if (!written_first_block)
-            std::cout << "Ok." << std::endl;
+            output_stream << "Ok." << std::endl;
     }
 }
 
@@ -1469,13 +1513,13 @@ bool ClientBase::receiveSampleBlock(Block & out, ColumnsDescription & columns_de
 
 void ClientBase::setInsertionTable(const ASTInsertQuery & insert_query)
 {
-    if (!global_context->hasInsertionTable() && insert_query.table)
+    if (!client_context->hasInsertionTable() && insert_query.table)
     {
         String table = insert_query.table->as<ASTIdentifier &>().shortName();
         if (!table.empty())
         {
             String database = insert_query.database ? insert_query.database->as<ASTIdentifier &>().shortName() : "";
-            global_context->setInsertionTable(StorageID(database, table));
+            client_context->setInsertionTable(StorageID(database, table));
         }
     }
 }
@@ -1526,7 +1570,7 @@ void ClientBase::processInsertQuery(const String & query_to_execute, ASTPtr pars
     const auto & parsed_insert_query = parsed_query->as<ASTInsertQuery &>();
     if ((!parsed_insert_query.data && !parsed_insert_query.infile) && (is_interactive || (!stdin_is_a_tty && !isStdinNotEmptyAndValid(std_in))))
     {
-        const auto & settings = global_context->getSettingsRef();
+        const auto & settings = client_context->getSettingsRef();
         if (settings.throw_if_no_data_to_insert)
             throw Exception(ErrorCodes::NO_DATA_TO_INSERT, "No data to insert");
         else
@@ -1540,10 +1584,10 @@ void ClientBase::processInsertQuery(const String & query_to_execute, ASTPtr pars
         connection_parameters.timeouts,
         query,
         query_parameters,
-        global_context->getCurrentQueryId(),
+        client_context->getCurrentQueryId(),
         query_processing_stage,
-        &global_context->getSettingsRef(),
-        &global_context->getClientInfo(),
+        &client_context->getSettingsRef(),
+        &client_context->getClientInfo(),
         true,
         [&](const Progress & progress) { onProgress(progress); });
 
@@ -1591,7 +1635,7 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
 
         /// Set callback to be called on file progress.
         if (tty_buf)
-            progress_indication.setFileProgressCallback(global_context, *tty_buf);
+            progress_indication.setFileProgressCallback(client_context, *tty_buf);
     }
 
     /// If data fetched from file (maybe compressed file)
@@ -1625,10 +1669,10 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
         }
 
         StorageFile::CommonArguments args{
-            WithContext(global_context),
+            WithContext(client_context),
             parsed_insert_query->table_id,
             current_format,
-            getFormatSettings(global_context),
+            getFormatSettings(client_context),
             compression_method,
             columns_for_storage_file,
             ConstraintsDescription{},
@@ -1636,7 +1680,7 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
             {},
             String{},
         };
-        StoragePtr storage = std::make_shared<StorageFile>(in_file, global_context->getUserFilesPath(), args);
+        StoragePtr storage = std::make_shared<StorageFile>(in_file, client_context->getUserFilesPath(), args);
         storage->startup();
         SelectQueryInfo query_info;
 
@@ -1647,16 +1691,16 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
             storage->read(
                     plan,
                     sample.getNames(),
-                    storage->getStorageSnapshot(metadata, global_context),
+                    storage->getStorageSnapshot(metadata, client_context),
                     query_info,
-                    global_context,
+                    client_context,
                     {},
-                    global_context->getSettingsRef().max_block_size,
+                    client_context->getSettingsRef().max_block_size,
                     getNumberOfPhysicalCPUCores());
 
             auto builder = plan.buildQueryPipeline(
-                QueryPlanOptimizationSettings::fromContext(global_context),
-                BuildQueryPipelineSettings::fromContext(global_context));
+                QueryPlanOptimizationSettings::fromContext(client_context),
+                BuildQueryPipelineSettings::fromContext(client_context));
 
             QueryPlanResourceHolder resources;
             auto pipe = QueryPipelineBuilder::getPipe(std::move(*builder), resources);
@@ -1717,14 +1761,14 @@ void ClientBase::sendDataFrom(ReadBuffer & buf, Block & sample, const ColumnsDes
             current_format = insert->format;
     }
 
-    auto source = global_context->getInputFormat(current_format, buf, sample, insert_format_max_block_size);
+    auto source = client_context->getInputFormat(current_format, buf, sample, insert_format_max_block_size);
     Pipe pipe(source);
 
     if (columns_description.hasDefaults())
     {
         pipe.addSimpleTransform([&](const Block & header)
         {
-            return std::make_shared<AddingDefaultsTransform>(header, columns_description, *source, global_context);
+            return std::make_shared<AddingDefaultsTransform>(header, columns_description, *source, client_context);
         });
     }
 
@@ -1862,7 +1906,7 @@ void ClientBase::cancelQuery()
         progress_indication.clearProgressOutput(*tty_buf);
 
     if (is_interactive)
-        std::cout << "Cancelling query." << std::endl;
+        output_stream << "Cancelling query." << std::endl;
 
     cancelled = true;
 }
@@ -1886,12 +1930,12 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
 
     if (is_interactive)
     {
-        global_context->setCurrentQueryId("");
+        client_context->setCurrentQueryId("");
         // Generate a new query_id
         for (const auto & query_id_format : query_id_formats)
         {
             writeString(query_id_format.first, std_out);
-            writeString(fmt::format(fmt::runtime(query_id_format.second), fmt::arg("query_id", global_context->getCurrentQueryId())), std_out);
+            writeString(fmt::format(fmt::runtime(query_id_format.second), fmt::arg("query_id", client_context->getCurrentQueryId())), std_out);
             writeChar('\n', std_out);
             std_out.next();
         }
@@ -1918,7 +1962,7 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
                 auto password = auth_data->getPassword();
 
                 if (password)
-                    global_context->getAccessControl().checkPasswordComplexityRules(*password);
+                    client_context->getAccessControl().checkPasswordComplexityRules(*password);
             }
         }
     }
@@ -1933,15 +1977,15 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
         std::optional<Settings> old_settings;
         SCOPE_EXIT_SAFE({
             if (old_settings)
-                global_context->setSettings(*old_settings);
+                client_context->setSettings(*old_settings);
         });
 
         auto apply_query_settings = [&](const IAST & settings_ast)
         {
             if (!old_settings)
-                old_settings.emplace(global_context->getSettingsRef());
-            global_context->applySettingsChanges(settings_ast.as<ASTSetQuery>()->changes);
-            global_context->resetSettingsToDefaultValue(settings_ast.as<ASTSetQuery>()->default_settings);
+                old_settings.emplace(client_context->getSettingsRef());
+            client_context->applySettingsChanges(settings_ast.as<ASTSetQuery>()->changes);
+            client_context->resetSettingsToDefaultValue(settings_ast.as<ASTSetQuery>()->default_settings);
         };
 
         const auto * insert = parsed_query->as<ASTInsertQuery>();
@@ -1974,7 +2018,7 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
         if (insert && insert->select)
             insert->tryFindInputFunction(input_function);
 
-        bool is_async_insert_with_inlined_data = global_context->getSettingsRef().async_insert && insert && insert->hasInlinedData();
+        bool is_async_insert_with_inlined_data = client_context->getSettingsRef().async_insert && insert && insert->hasInlinedData();
 
         if (is_async_insert_with_inlined_data)
         {
@@ -2009,9 +2053,9 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
                 if (change.name == "profile")
                     current_profile = change.value.safeGet<String>();
                 else
-                    global_context->applySettingChange(change);
+                    client_context->applySettingChange(change);
             }
-            global_context->resetSettingsToDefaultValue(set_query->default_settings);
+            client_context->resetSettingsToDefaultValue(set_query->default_settings);
 
             /// Query parameters inside SET queries should be also saved on the client side
             ///  to override their previous definitions set with --param_* arguments
@@ -2019,13 +2063,13 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
             for (const auto & [name, value] : set_query->query_parameters)
                 query_parameters.insert_or_assign(name, value);
 
-            global_context->addQueryParameters(NameToNameMap{set_query->query_parameters.begin(), set_query->query_parameters.end()});
+            client_context->addQueryParameters(NameToNameMap{set_query->query_parameters.begin(), set_query->query_parameters.end()});
         }
         if (const auto * use_query = parsed_query->as<ASTUseQuery>())
         {
             const String & new_database = use_query->getDatabase();
             /// If the client initiates the reconnection, it takes the settings from the config.
-            config().setString("database", new_database);
+            getClientConfiguration().setString("database", new_database);
             /// If the connection initiates the reconnection, it uses its variable.
             connection->setDefaultDatabase(new_database);
         }
@@ -2045,21 +2089,30 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
 
     if (is_interactive)
     {
-        std::cout << std::endl;
+        output_stream << std::endl;
         if (!server_exception || processed_rows != 0)
-            std::cout << processed_rows << " row" << (processed_rows == 1 ? "" : "s") << " in set. ";
-        std::cout << "Elapsed: " << progress_indication.elapsedSeconds() << " sec. ";
+            output_stream << processed_rows << " row" << (processed_rows == 1 ? "" : "s") << " in set. ";
+        output_stream << "Elapsed: " << progress_indication.elapsedSeconds() << " sec. ";
         progress_indication.writeFinalProgress();
-        std::cout << std::endl << std::endl;
+        output_stream << std::endl << std::endl;
     }
-    else if (print_time_to_stderr)
+    else
     {
-        std::cerr << progress_indication.elapsedSeconds() << "\n";
+        const auto & config = getClientConfiguration();
+        if (config.getBool("print-time-to-stderr", false))
+            error_stream << progress_indication.elapsedSeconds() << "\n";
+
+        const auto & print_memory_mode = config.getString("print-memory-to-stderr", "");
+        auto peak_memeory_usage = std::max<Int64>(progress_indication.getMemoryUsage().peak, 0);
+        if (print_memory_mode == "default")
+            error_stream << peak_memeory_usage << "\n";
+        else if (print_memory_mode == "readable")
+            error_stream << formatReadableSizeWithBinarySuffix(peak_memeory_usage) << "\n";
     }
 
-    if (!is_interactive && print_num_processed_rows)
+    if (!is_interactive && getClientConfiguration().getBool("print-num-processed-rows", false))
     {
-        std::cout << "Processed rows: " << processed_rows << "\n";
+        output_stream << "Processed rows: " << processed_rows << "\n";
     }
 
     if (have_error && report_error)
@@ -2087,8 +2140,8 @@ MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
     if (this_query_begin >= all_queries_end)
         return MultiQueryProcessingStage::QUERIES_END;
 
-    unsigned max_parser_depth = static_cast<unsigned>(global_context->getSettingsRef().max_parser_depth);
-    unsigned max_parser_backtracks = static_cast<unsigned>(global_context->getSettingsRef().max_parser_backtracks);
+    unsigned max_parser_depth = static_cast<unsigned>(client_context->getSettingsRef().max_parser_depth);
+    unsigned max_parser_backtracks = static_cast<unsigned>(client_context->getSettingsRef().max_parser_backtracks);
 
     // If there are only comments left until the end of file, we just
     // stop. The parser can't handle this situation because it always
@@ -2108,10 +2161,8 @@ MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
     try
     {
         parsed_query = parseQuery(this_query_end, all_queries_end,
-            global_context->getSettingsRef(),
-            /*allow_multi_statements=*/ true,
-            is_interactive,
-            ignore_error);
+            client_context->getSettingsRef(),
+            /*allow_multi_statements=*/ true);
     }
     catch (const Exception & e)
     {
@@ -2153,7 +2204,7 @@ MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
     {
         this_query_end = find_first_symbols<'\n'>(insert_ast->data, all_queries_end);
         insert_ast->end = this_query_end;
-        query_to_execute_end = isSyncInsertWithData(*insert_ast, global_context) ? insert_ast->data : this_query_end;
+        query_to_execute_end = isSyncInsertWithData(*insert_ast, client_context) ? insert_ast->data : this_query_end;
     }
 
     query_to_execute = all_queries_text.substr(this_query_begin - all_queries_text.data(), query_to_execute_end - this_query_begin);
@@ -2197,6 +2248,8 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
     String query_to_execute;
     ASTPtr parsed_query;
     std::unique_ptr<Exception> current_exception;
+
+    size_t retries_count = 0;
 
     while (true)
     {
@@ -2270,7 +2323,7 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                 catch (...)
                 {
                     // Surprisingly, this is a client error. A server error would
-                    // have been reported without throwing (see onReceiveSeverException()).
+                    // have been reported without throwing (see onReceiveExceptionFromServer()).
                     client_exception = std::make_unique<Exception>(getCurrentExceptionMessageAndPattern(print_stack_trace), getCurrentExceptionCode());
                     have_error = true;
                 }
@@ -2278,7 +2331,12 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                 // Check whether the error (or its absence) matches the test hints
                 // (or their absence).
                 bool error_matches_hint = true;
-                if (have_error)
+                bool need_retry = test_hint.needRetry(server_exception, &retries_count);
+                if (need_retry)
+                {
+                    std::this_thread::sleep_for(std::chrono::seconds(1));
+                }
+                else if (have_error)
                 {
                     if (test_hint.hasServerErrors())
                     {
@@ -2355,13 +2413,13 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                 // , where the inline data is delimited by semicolon and not by a
                 // newline.
                 auto * insert_ast = parsed_query->as<ASTInsertQuery>();
-                if (insert_ast && isSyncInsertWithData(*insert_ast, global_context))
+                if (insert_ast && isSyncInsertWithData(*insert_ast, client_context))
                 {
                     this_query_end = insert_ast->end;
                     adjustQueryEnd(
                         this_query_end, all_queries_end,
-                        static_cast<unsigned>(global_context->getSettingsRef().max_parser_depth),
-                        static_cast<unsigned>(global_context->getSettingsRef().max_parser_backtracks));
+                        static_cast<unsigned>(client_context->getSettingsRef().max_parser_depth),
+                        static_cast<unsigned>(client_context->getSettingsRef().max_parser_backtracks));
                 }
 
                 // Report error.
@@ -2372,7 +2430,8 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                 if (have_error && !ignore_error)
                     return is_interactive;
 
-                this_query_begin = this_query_end;
+                if (!need_retry)
+                    this_query_begin = this_query_end;
                 break;
             }
         }
@@ -2427,12 +2486,12 @@ void ClientBase::initQueryIdFormats()
         return;
 
     /// Initialize query_id_formats if any
-    if (config().has("query_id_formats"))
+    if (getClientConfiguration().has("query_id_formats"))
     {
         Poco::Util::AbstractConfiguration::Keys keys;
-        config().keys("query_id_formats", keys);
+        getClientConfiguration().keys("query_id_formats", keys);
         for (const auto & name : keys)
-            query_id_formats.emplace_back(name + ":", config().getString("query_id_formats." + name));
+            query_id_formats.emplace_back(name + ":", getClientConfiguration().getString("query_id_formats." + name));
     }
 
     if (query_id_formats.empty())
@@ -2477,9 +2536,9 @@ bool ClientBase::addMergeTreeSettings(ASTCreateQuery & ast_create)
 
 void ClientBase::runInteractive()
 {
-    if (config().has("query_id"))
+    if (getClientConfiguration().has("query_id"))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "query_id could be specified only in non-interactive mode");
-    if (print_time_to_stderr)
+    if (getClientConfiguration().getBool("print-time-to-stderr", false))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "time option could be specified only in non-interactive mode");
 
     initQueryIdFormats();
@@ -2491,10 +2550,10 @@ void ClientBase::runInteractive()
     if (load_suggestions)
     {
         /// Load suggestion data from the server.
-        if (global_context->getApplicationType() == Context::ApplicationType::CLIENT)
-            suggest->load<Connection>(global_context, connection_parameters, config().getInt("suggestion_limit"), wait_for_suggestions_to_load);
-        else if (global_context->getApplicationType() == Context::ApplicationType::LOCAL)
-            suggest->load<LocalConnection>(global_context, connection_parameters, config().getInt("suggestion_limit"), wait_for_suggestions_to_load);
+        if (client_context->getApplicationType() == Context::ApplicationType::CLIENT)
+            suggest->load<Connection>(client_context, connection_parameters, getClientConfiguration().getInt("suggestion_limit"), wait_for_suggestions_to_load);
+        else if (client_context->getApplicationType() == Context::ApplicationType::LOCAL)
+            suggest->load<LocalConnection>(client_context, connection_parameters, getClientConfiguration().getInt("suggestion_limit"), wait_for_suggestions_to_load);
     }
 
     if (home_path.empty())
@@ -2505,8 +2564,8 @@ void ClientBase::runInteractive()
     }
 
     /// Load command history if present.
-    if (config().has("history_file"))
-        history_file = config().getString("history_file");
+    if (getClientConfiguration().has("history_file"))
+        history_file = getClientConfiguration().getString("history_file");
     else
     {
         auto * history_file_from_env = getenv("CLICKHOUSE_HISTORY_FILE"); // NOLINT(concurrency-mt-unsafe)
@@ -2527,7 +2586,7 @@ void ClientBase::runInteractive()
         {
             if (e.getErrno() != EEXIST)
             {
-                std::cerr << getCurrentExceptionMessage(false) << '\n';
+                error_stream << getCurrentExceptionMessage(false) << '\n';
             }
         }
     }
@@ -2538,24 +2597,24 @@ void ClientBase::runInteractive()
 
 #if USE_REPLXX
     replxx::Replxx::highlighter_callback_t highlight_callback{};
-    if (config().getBool("highlight", true))
+    if (getClientConfiguration().getBool("highlight", true))
         highlight_callback = highlight;
 
     ReplxxLineReader lr(
         *suggest,
         history_file,
-        config().has("multiline"),
+        getClientConfiguration().has("multiline"),
         query_extenders,
         query_delimiters,
         word_break_characters,
         highlight_callback);
 #else
+    (void)word_break_characters;
     LineReader lr(
         history_file,
-        config().has("multiline"),
+        getClientConfiguration().has("multiline"),
         query_extenders,
-        query_delimiters,
-        word_break_characters);
+        query_delimiters);
 #endif
 
     static const std::initializer_list<std::pair<String, String>> backslash_aliases =
@@ -2632,7 +2691,7 @@ void ClientBase::runInteractive()
         {
             // If a separate connection loading suggestions failed to open a new session,
             // use the main session to receive them.
-            suggest->load(*connection, connection_parameters.timeouts, config().getInt("suggestion_limit"), global_context->getClientInfo());
+            suggest->load(*connection, connection_parameters.timeouts, getClientConfiguration().getInt("suggestion_limit"), client_context->getClientInfo());
         }
 
         try
@@ -2643,8 +2702,11 @@ void ClientBase::runInteractive()
         }
         catch (const Exception & e)
         {
+            if (e.code() == ErrorCodes::USER_EXPIRED)
+                break;
+
             /// We don't need to handle the test hints in the interactive mode.
-            std::cerr << "Exception on client:" << std::endl << getExceptionMessage(e, print_stack_trace, true) << std::endl << std::endl;
+            error_stream << "Exception on client:" << std::endl << getExceptionMessage(e, print_stack_trace, true) << std::endl << std::endl;
             client_exception.reset(e.clone());
         }
 
@@ -2661,11 +2723,11 @@ void ClientBase::runInteractive()
     while (true);
 
     if (isNewYearMode())
-        std::cout << "Happy new year." << std::endl;
+        output_stream << "Happy new year." << std::endl;
     else if (isChineseNewYearMode(local_tz))
-        std::cout << "Happy Chinese new year. 春节快乐!" << std::endl;
+        output_stream << "Happy Chinese new year. 春节快乐!" << std::endl;
     else
-        std::cout << "Bye." << std::endl;
+        output_stream << "Bye." << std::endl;
 }
 
 
@@ -2676,12 +2738,12 @@ bool ClientBase::processMultiQueryFromFile(const String & file_name)
     ReadBufferFromFile in(file_name);
     readStringUntilEOF(queries_from_file, in);
 
-    if (!has_log_comment)
+    if (!getClientConfiguration().has("log_comment"))
     {
-        Settings settings = global_context->getSettings();
+        Settings settings = client_context->getSettings();
         /// NOTE: cannot use even weakly_canonical() since it fails for /dev/stdin due to resolving of "pipe:[X]"
         settings.log_comment = fs::absolute(fs::path(file_name));
-        global_context->setSettings(settings);
+        client_context->setSettings(settings);
     }
 
     return executeMultiQuery(queries_from_file);
@@ -2785,173 +2847,14 @@ void ClientBase::clearTerminal()
     /// It is needed if garbage is left in terminal.
     /// Show cursor. It can be left hidden by invocation of previous programs.
     /// A test for this feature: perl -e 'print "x"x100000'; echo -ne '\033[0;0H\033[?25l'; clickhouse-client
-    std::cout << "\033[0J" "\033[?25h";
+    output_stream << "\033[0J" "\033[?25h";
 }
 
 
 void ClientBase::showClientVersion()
 {
-    std::cout << VERSION_NAME << " " + getName() + " version " << VERSION_STRING << VERSION_OFFICIAL << "." << std::endl;
+    output_stream << VERSION_NAME << " " + getName() + " version " << VERSION_STRING << VERSION_OFFICIAL << "." << std::endl;
 }
-
-namespace
-{
-
-/// Define transparent hash to we can use
-/// std::string_view with the containers
-struct TransparentStringHash
-{
-    using is_transparent = void;
-    size_t operator()(std::string_view txt) const
-    {
-        return std::hash<std::string_view>{}(txt);
-    }
-};
-
-/*
- * This functor is used to parse command line arguments and replace dashes with underscores,
- * allowing options to be specified using either dashes or underscores.
- */
-class OptionsAliasParser
-{
-public:
-    explicit OptionsAliasParser(const boost::program_options::options_description& options)
-    {
-        options_names.reserve(options.options().size());
-        for (const auto& option : options.options())
-            options_names.insert(option->long_name());
-    }
-
-    /*
-     * Parses arguments by replacing dashes with underscores, and matches the resulting name with known options
-     * Implements boost::program_options::ext_parser logic
-     */
-    std::pair<std::string, std::string> operator()(const std::string & token) const
-    {
-        if (!token.starts_with("--"))
-            return {};
-        std::string arg = token.substr(2);
-
-        // divide token by '=' to separate key and value if options style=long_allow_adjacent
-        auto pos_eq = arg.find('=');
-        std::string key = arg.substr(0, pos_eq);
-
-        if (options_names.contains(key))
-            // option does not require any changes, because it is already correct
-            return {};
-
-        std::replace(key.begin(), key.end(), '-', '_');
-        if (!options_names.contains(key))
-            // after replacing '-' with '_' argument is still unknown
-            return {};
-
-        std::string value;
-        if (pos_eq != std::string::npos && pos_eq < arg.size())
-            value = arg.substr(pos_eq + 1);
-
-        return {key, value};
-    }
-
-private:
-    std::unordered_set<std::string> options_names;
-};
-
-}
-
-
-void ClientBase::parseAndCheckOptions(OptionsDescription & options_description, po::variables_map & options, Arguments & arguments)
-{
-    if (allow_repeated_settings)
-        addProgramOptionsAsMultitokens(cmd_settings, options_description.main_description.value());
-    else
-        addProgramOptions(cmd_settings, options_description.main_description.value());
-
-    if (allow_merge_tree_settings)
-    {
-        /// Add merge tree settings manually, because names of some settings
-        /// may clash. Query settings have higher priority and we just
-        /// skip ambiguous merge tree settings.
-        auto & main_options = options_description.main_description.value();
-
-        std::unordered_set<std::string, TransparentStringHash, std::equal_to<>> main_option_names;
-        for (const auto & option : main_options.options())
-            main_option_names.insert(option->long_name());
-
-        for (const auto & setting : cmd_merge_tree_settings.all())
-        {
-            const auto add_setting = [&](const std::string_view name)
-            {
-                if (auto it = main_option_names.find(name); it != main_option_names.end())
-                    return;
-
-                if (allow_repeated_settings)
-                    addProgramOptionAsMultitoken(cmd_merge_tree_settings, main_options, name, setting);
-                else
-                    addProgramOption(cmd_merge_tree_settings, main_options, name, setting);
-            };
-
-            const auto & setting_name = setting.getName();
-
-            add_setting(setting_name);
-
-            const auto & settings_to_aliases = MergeTreeSettings::Traits::settingsToAliases();
-            if (auto it = settings_to_aliases.find(setting_name); it != settings_to_aliases.end())
-            {
-                for (const auto alias : it->second)
-                {
-                    add_setting(alias);
-                }
-            }
-        }
-    }
-
-    /// Parse main commandline options.
-    auto parser = po::command_line_parser(arguments)
-                      .options(options_description.main_description.value())
-                      .extra_parser(OptionsAliasParser(options_description.main_description.value()))
-                      .allow_unregistered();
-    po::parsed_options parsed = parser.run();
-
-    /// Check unrecognized options without positional options.
-    auto unrecognized_options = po::collect_unrecognized(parsed.options, po::collect_unrecognized_mode::exclude_positional);
-    if (!unrecognized_options.empty())
-    {
-        auto hints = this->getHints(unrecognized_options[0]);
-        if (!hints.empty())
-            throw Exception(ErrorCodes::UNRECOGNIZED_ARGUMENTS, "Unrecognized option '{}'. Maybe you meant {}",
-                            unrecognized_options[0], toString(hints));
-
-        throw Exception(ErrorCodes::UNRECOGNIZED_ARGUMENTS, "Unrecognized option '{}'", unrecognized_options[0]);
-    }
-
-    /// Check positional options.
-    for (const auto & op : parsed.options)
-    {
-        if (!op.unregistered && op.string_key.empty() && !op.original_tokens[0].starts_with("--")
-            && !op.original_tokens[0].empty() && !op.value.empty())
-        {
-            /// Two special cases for better usability:
-            /// - if the option contains a whitespace, it might be a query: clickhouse "SELECT 1"
-            /// These are relevant for interactive usage - user-friendly, but questionable in general.
-            /// In case of ambiguity or for scripts, prefer using proper options.
-
-            const auto & token = op.original_tokens[0];
-            po::variable_value value(boost::any(op.value), false);
-
-            const char * option;
-            if (token.contains(' '))
-                option = "query";
-            else
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Positional option `{}` is not supported.", token);
-
-            if (!options.emplace(option, value).second)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Positional option `{}` is not supported.", token);
-        }
-    }
-
-    po::store(parsed, options);
-}
-
 
 void ClientBase::init(int argc, char ** argv)
 {
@@ -3014,6 +2917,7 @@ void ClientBase::init(int argc, char ** argv)
         ("disable_suggestion,A", "Disable loading suggestion data. Note that suggestion data is loaded asynchronously through a second connection to ClickHouse server. Also it is reasonable to disable suggestion if you want to paste a query with TAB characters. Shorthand option -A is for those who get used to mysql client.")
         ("wait_for_suggestions_to_load", "Load suggestion data synchonously.")
         ("time,t", "print query execution time to stderr in non-interactive mode (for benchmarks)")
+        ("memory-usage", po::value<std::string>()->implicit_value("default")->default_value("none"), "print memory usage to stderr in non-interactive mode (for benchmarks). Values: 'none', 'default', 'readable'")
 
         ("echo", "in batch mode, print query before execution")
 
@@ -3040,6 +2944,8 @@ void ClientBase::init(int argc, char ** argv)
         ("max_memory_usage_in_client", po::value<std::string>(), "Set memory limit in client/local server")
 
         ("fuzzer-args", po::value<std::string>(), "Command line arguments for the LLVM's libFuzzer driver. Only relevant if the application is compiled with libFuzzer.")
+
+        ("client_logs_file", po::value<std::string>(), "Path to a file for writing client logs. Currently we only have fatal logs (when the client crashes)")
     ;
 
     addOptions(options_description);
@@ -3076,18 +2982,18 @@ void ClientBase::init(int argc, char ** argv)
 
     if (options.count("version-clean"))
     {
-        std::cout << VERSION_STRING;
+        output_stream << VERSION_STRING;
         exit(0); // NOLINT(concurrency-mt-unsafe)
     }
 
     if (options.count("verbose"))
-        config().setBool("verbose", true);
+        getClientConfiguration().setBool("verbose", true);
 
     /// Output of help message.
     if (options.count("help")
         || (options.count("host") && options["host"].as<std::string>() == "elp")) /// If user writes -help instead of --help.
     {
-        if (config().getBool("verbose", false))
+        if (getClientConfiguration().getBool("verbose", false))
             printHelpMessage(options_description, true);
         else
             printHelpMessage(options_description_non_verbose, false);
@@ -3095,72 +3001,83 @@ void ClientBase::init(int argc, char ** argv)
     }
 
     /// Common options for clickhouse-client and clickhouse-local.
+
+    /// Output execution time to stderr in batch mode.
     if (options.count("time"))
-        print_time_to_stderr = true;
+        getClientConfiguration().setBool("print-time-to-stderr", true);
+    if (options.count("memory-usage"))
+    {
+        const auto & memory_usage_mode = options["memory-usage"].as<std::string>();
+        if (memory_usage_mode != "none" && memory_usage_mode != "default" && memory_usage_mode != "readable")
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown memory-usage mode: {}", memory_usage_mode);
+        getClientConfiguration().setString("print-memory-to-stderr", memory_usage_mode);
+    }
+
     if (options.count("query"))
         queries = options["query"].as<std::vector<std::string>>();
     if (options.count("query_id"))
-        config().setString("query_id", options["query_id"].as<std::string>());
+        getClientConfiguration().setString("query_id", options["query_id"].as<std::string>());
     if (options.count("database"))
-        config().setString("database", options["database"].as<std::string>());
+        getClientConfiguration().setString("database", options["database"].as<std::string>());
     if (options.count("config-file"))
-        config().setString("config-file", options["config-file"].as<std::string>());
+        getClientConfiguration().setString("config-file", options["config-file"].as<std::string>());
     if (options.count("queries-file"))
         queries_files = options["queries-file"].as<std::vector<std::string>>();
     if (options.count("multiline"))
-        config().setBool("multiline", true);
+        getClientConfiguration().setBool("multiline", true);
     if (options.count("multiquery"))
-        config().setBool("multiquery", true);
+        getClientConfiguration().setBool("multiquery", true);
     if (options.count("ignore-error"))
-        config().setBool("ignore-error", true);
+        getClientConfiguration().setBool("ignore-error", true);
     if (options.count("format"))
-        config().setString("format", options["format"].as<std::string>());
+        getClientConfiguration().setString("format", options["format"].as<std::string>());
     if (options.count("output-format"))
-        config().setString("output-format", options["output-format"].as<std::string>());
+        getClientConfiguration().setString("output-format", options["output-format"].as<std::string>());
     if (options.count("vertical"))
-        config().setBool("vertical", true);
+        getClientConfiguration().setBool("vertical", true);
     if (options.count("stacktrace"))
-        config().setBool("stacktrace", true);
+        getClientConfiguration().setBool("stacktrace", true);
     if (options.count("print-profile-events"))
-        config().setBool("print-profile-events", true);
+        getClientConfiguration().setBool("print-profile-events", true);
     if (options.count("profile-events-delay-ms"))
-        config().setUInt64("profile-events-delay-ms", options["profile-events-delay-ms"].as<UInt64>());
+        getClientConfiguration().setUInt64("profile-events-delay-ms", options["profile-events-delay-ms"].as<UInt64>());
+    /// Whether to print the number of processed rows at
     if (options.count("processed-rows"))
-        print_num_processed_rows = true;
+        getClientConfiguration().setBool("print-num-processed-rows", true);
     if (options.count("progress"))
     {
         switch (options["progress"].as<ProgressOption>())
         {
             case DEFAULT:
-                config().setString("progress", "default");
+                getClientConfiguration().setString("progress", "default");
                 break;
             case OFF:
-                config().setString("progress", "off");
+                getClientConfiguration().setString("progress", "off");
                 break;
             case TTY:
-                config().setString("progress", "tty");
+                getClientConfiguration().setString("progress", "tty");
                 break;
             case ERR:
-                config().setString("progress", "err");
+                getClientConfiguration().setString("progress", "err");
                 break;
         }
     }
     if (options.count("echo"))
-        config().setBool("echo", true);
+        getClientConfiguration().setBool("echo", true);
     if (options.count("disable_suggestion"))
-        config().setBool("disable_suggestion", true);
+        getClientConfiguration().setBool("disable_suggestion", true);
     if (options.count("wait_for_suggestions_to_load"))
-        config().setBool("wait_for_suggestions_to_load", true);
+        getClientConfiguration().setBool("wait_for_suggestions_to_load", true);
     if (options.count("suggestion_limit"))
-        config().setInt("suggestion_limit", options["suggestion_limit"].as<int>());
+        getClientConfiguration().setInt("suggestion_limit", options["suggestion_limit"].as<int>());
     if (options.count("highlight"))
-        config().setBool("highlight", options["highlight"].as<bool>());
+        getClientConfiguration().setBool("highlight", options["highlight"].as<bool>());
     if (options.count("history_file"))
-        config().setString("history_file", options["history_file"].as<std::string>());
+        getClientConfiguration().setString("history_file", options["history_file"].as<std::string>());
     if (options.count("interactive"))
-        config().setBool("interactive", true);
+        getClientConfiguration().setBool("interactive", true);
     if (options.count("pager"))
-        config().setString("pager", options["pager"].as<std::string>());
+        getClientConfiguration().setString("pager", options["pager"].as<std::string>());
 
     if (options.count("log-level"))
         Poco::Logger::root().setLevel(options["log-level"].as<std::string>());
@@ -3178,13 +3095,13 @@ void ClientBase::init(int argc, char ** argv)
         alias_names.reserve(options_description.main_description->options().size());
         for (const auto& option : options_description.main_description->options())
             alias_names.insert(option->long_name());
-        argsToConfig(common_arguments, config(), 100, &alias_names);
+        argsToConfig(common_arguments, getClientConfiguration(), 100, &alias_names);
     }
 
     clearPasswordFromCommandLine(argc, argv);
 
     /// Limit on total memory usage
-    std::string max_client_memory_usage = config().getString("max_memory_usage_in_client", "0" /*default value*/);
+    std::string max_client_memory_usage = getClientConfiguration().getString("max_memory_usage_in_client", "0" /*default value*/);
     if (max_client_memory_usage != "0")
     {
         UInt64 max_client_memory_usage_int = parseWithSizeSuffix<UInt64>(max_client_memory_usage.c_str(), max_client_memory_usage.length());
@@ -3194,7 +3111,29 @@ void ClientBase::init(int argc, char ** argv)
         total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
     }
 
-    has_log_comment = config().has("log_comment");
+    /// Print stacktrace in case of crash
+    HandledSignals::instance().setupTerminateHandler();
+    HandledSignals::instance().setupCommonDeadlySignalHandlers();
+    /// We don't setup signal handlers for SIGINT, SIGQUIT, SIGTERM because we don't
+    /// have an option for client to shutdown gracefully.
+
+    fatal_channel_ptr = new Poco::SplitterChannel;
+    fatal_console_channel_ptr = new Poco::ConsoleChannel;
+    fatal_channel_ptr->addChannel(fatal_console_channel_ptr);
+    if (options.count("client_logs_file"))
+    {
+        fatal_file_channel_ptr = new Poco::SimpleFileChannel(options["client_logs_file"].as<std::string>());
+        fatal_channel_ptr->addChannel(fatal_file_channel_ptr);
+    }
+
+    fatal_log = createLogger("ClientBase", fatal_channel_ptr.get(), Poco::Message::PRIO_FATAL);
+    signal_listener = std::make_unique<SignalListener>(nullptr, fatal_log);
+    signal_listener_thread.start(*signal_listener);
+
+#if USE_GWP_ASAN
+    GWPAsan::initFinished();
+#endif
+
 }
 
 }

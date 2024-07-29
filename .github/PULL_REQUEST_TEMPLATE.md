@@ -6,6 +6,7 @@ tests/ci/cancel_and_rerun_workflow_lambda/app.py
 -->
 ### Changelog category (leave one):
 - New Feature
+- Experimental Feature
 - Improvement
 - Performance Improvement
 - Backward Incompatible Change
@@ -49,7 +50,6 @@ At a minimum, the following information should be added (but add more as needed)
 - [ ] <!---ci_include_integration--> Allow: Integration Tests
 - [ ] <!---ci_include_performance--> Allow: Performance tests
 - [ ] <!---ci_set_builds--> Allow: All Builds
-- [ ] <!---ci_set_non_required--> Allow: All NOT Required Checks
 - [ ] <!---batch_0_1--> Allow: batch 1, 2 for multi-batch jobs
 - [ ] <!---batch_2_3--> Allow: batch 3, 4, 5, 6 for multi-batch jobs
 ---
@@ -60,6 +60,7 @@ At a minimum, the following information should be added (but add more as needed)
 - [ ] <!---ci_exclude_aarch64|release|debug--> Exclude: All with aarch64, release, debug
 ---
 - [ ] <!---do_not_test--> Do not test
+- [ ] <!---woolen_wolfdog--> Woolen Wolfdog
 - [ ] <!---upload_all--> Upload binaries for special builds
 - [ ] <!---no_merge_commit--> Disable merge-commit
 - [ ] <!---no_ci_cache--> Disable CI cache

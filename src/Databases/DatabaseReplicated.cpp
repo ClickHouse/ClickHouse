@@ -13,6 +13,8 @@
 #include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/PoolId.h>
+#include <Core/ServerSettings.h>
+#include <Core/Settings.h>
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Databases/DatabaseReplicatedWorker.h>
@@ -65,6 +67,7 @@ static constexpr const char * REPLICATED_DATABASE_MARK = "DatabaseReplicated";
 static constexpr const char * DROPPED_MARK = "DROPPED";
 static constexpr const char * BROKEN_TABLES_SUFFIX = "_broken_tables";
 static constexpr const char * BROKEN_REPLICATED_TABLES_SUFFIX = "_broken_replicated_tables";
+static constexpr const char * FIRST_REPLICA_DATABASE_NAME = "first_replica_database_name";
 
 static constexpr size_t METADATA_FILE_BUFFER_SIZE = 32768;
 
@@ -73,9 +76,10 @@ zkutil::ZooKeeperPtr DatabaseReplicated::getZooKeeper() const
     return getContext()->getZooKeeper();
 }
 
-static inline String getHostID(ContextPtr global_context, const UUID & db_uuid)
+static inline String getHostID(ContextPtr global_context, const UUID & db_uuid, bool secure)
 {
-    return Cluster::Address::toString(getFQDNOrHostName(), global_context->getTCPPort()) + ':' + toString(db_uuid);
+    UInt16 port = secure ? global_context->getTCPPortSecure().value_or(DBMS_DEFAULT_SECURE_PORT) : global_context->getTCPPort();
+    return Cluster::Address::toString(getFQDNOrHostName(), port) + ':' + toString(db_uuid);
 }
 
 static inline UInt64 getMetadataHash(const String & table_name, const String & metadata)
@@ -415,13 +419,23 @@ void DatabaseReplicated::tryConnectToZooKeeperAndInitDatabase(LoadingStrictnessL
                 return;
             }
 
-            String host_id = getHostID(getContext(), db_uuid);
-            if (is_create_query || replica_host_id != host_id)
+            String host_id = getHostID(getContext(), db_uuid, cluster_auth_info.cluster_secure_connection);
+            String host_id_default = getHostID(getContext(), db_uuid, false);
+
+            if (is_create_query || (replica_host_id != host_id && replica_host_id != host_id_default))
             {
                 throw Exception(
                     ErrorCodes::REPLICA_ALREADY_EXISTS,
                     "Replica {} of shard {} of replicated database at {} already exists. Replica host ID: '{}', current host ID: '{}'",
                     replica_name, shard_name, zookeeper_path, replica_host_id, host_id);
+            }
+
+            /// Before 24.6 we always created host_id with insecure port, even if cluster_auth_info.cluster_secure_connection was true.
+            /// So not to break compatibility, we need to update host_id to secure one if cluster_auth_info.cluster_secure_connection is true.
+            if (host_id != host_id_default && replica_host_id == host_id_default)
+            {
+                current_zookeeper->set(replica_path, host_id, -1);
+                createEmptyLogEntry(current_zookeeper);
             }
 
             /// Check that replica_group_name in ZooKeeper matches the local one and change it if necessary.
@@ -453,6 +467,13 @@ void DatabaseReplicated::tryConnectToZooKeeperAndInitDatabase(LoadingStrictnessL
             is_probably_dropped = true;
             return;
         }
+
+        /// If not exist, create a node with the database name for introspection.
+        /// Technically, the database may have different names on different replicas, but this is not a usual case and we only save the first one
+        auto db_name_path = fs::path(zookeeper_path) / FIRST_REPLICA_DATABASE_NAME;
+        auto error_code = current_zookeeper->trySet(db_name_path, getDatabaseName());
+        if (error_code == Coordination::Error::ZNONODE)
+            current_zookeeper->tryCreate(db_name_path, getDatabaseName(), zkutil::CreateMode::Persistent);
 
         is_readonly = false;
     }
@@ -538,8 +559,11 @@ void DatabaseReplicated::createEmptyLogEntry(const ZooKeeperPtr & current_zookee
 
 bool DatabaseReplicated::waitForReplicaToProcessAllEntries(UInt64 timeout_ms)
 {
-    if (!ddl_worker || is_probably_dropped)
-        return false;
+    {
+        std::lock_guard lock{ddl_worker_mutex};
+        if (!ddl_worker || is_probably_dropped)
+            return false;
+    }
     return ddl_worker->waitForReplicaToProcessAllEntries(timeout_ms);
 }
 
@@ -550,7 +574,7 @@ void DatabaseReplicated::createReplicaNodesInZooKeeper(const zkutil::ZooKeeperPt
                         "already contains some data and it does not look like Replicated database path.", zookeeper_path);
 
     /// Write host name to replica_path, it will protect from multiple replicas with the same name
-    auto host_id = getHostID(getContext(), db_uuid);
+    auto host_id = getHostID(getContext(), db_uuid, cluster_auth_info.cluster_secure_connection);
 
     for (int attempts = 10; attempts > 0; --attempts)
     {
@@ -620,12 +644,16 @@ LoadTaskPtr DatabaseReplicated::startupDatabaseAsync(AsyncLoader & async_loader,
             if (is_probably_dropped)
                 return;
 
-            ddl_worker = std::make_unique<DatabaseReplicatedDDLWorker>(this, getContext());
-            ddl_worker->startup();
-            ddl_worker_initialized = true;
+            {
+                std::lock_guard lock{ddl_worker_mutex};
+                ddl_worker = std::make_unique<DatabaseReplicatedDDLWorker>(this, getContext());
+                ddl_worker->startup();
+                ddl_worker_initialized = true;
+            }
         });
     std::scoped_lock lock(mutex);
-    return startup_replicated_database_task = makeLoadTask(async_loader, {job});
+    startup_replicated_database_task = makeLoadTask(async_loader, {job});
+    return startup_replicated_database_task;
 }
 
 void DatabaseReplicated::waitDatabaseStarted() const
@@ -648,6 +676,178 @@ void DatabaseReplicated::stopLoading()
     }
     stop_startup_replicated_database.reset();
     DatabaseAtomic::stopLoading();
+}
+
+void DatabaseReplicated::dumpLocalTablesForDebugOnly(const ContextPtr & local_context) const
+{
+    auto table_names = getAllTableNames(context.lock());
+    for (const auto & table_name : table_names)
+    {
+        auto ast_ptr = tryGetCreateTableQuery(table_name, local_context);
+        if (ast_ptr)
+            LOG_DEBUG(log, "[local] Table {} create query is {}", table_name, queryToString(ast_ptr));
+        else
+            LOG_DEBUG(log, "[local] Table {} has no create query", table_name);
+    }
+}
+
+void DatabaseReplicated::dumpTablesInZooKeeperForDebugOnly() const
+{
+    UInt32 max_log_ptr;
+    auto table_name_to_metadata = tryGetConsistentMetadataSnapshot(getZooKeeper(), max_log_ptr);
+    for (const auto & [table_name, create_table_query] : table_name_to_metadata)
+    {
+        auto query_ast = parseQueryFromMetadataInZooKeeper(table_name, create_table_query);
+        if (query_ast)
+        {
+            LOG_DEBUG(log, "[zookeeper] Table {} create query is {}", table_name, queryToString(query_ast));
+        }
+        else
+        {
+            LOG_DEBUG(log, "[zookeeper] Table {} has no create query", table_name);
+        }
+    }
+}
+
+void DatabaseReplicated::tryCompareLocalAndZooKeeperTablesAndDumpDiffForDebugOnly(const ContextPtr & local_context) const
+{
+    UInt32 max_log_ptr;
+    auto table_name_to_metadata_in_zk = tryGetConsistentMetadataSnapshot(getZooKeeper(), max_log_ptr);
+    auto table_names_local = getAllTableNames(local_context);
+
+    if (table_name_to_metadata_in_zk.size() != table_names_local.size())
+        LOG_DEBUG(log, "Amount of tables in zk {} locally {}", table_name_to_metadata_in_zk.size(), table_names_local.size());
+
+    std::unordered_set<std::string> checked_tables;
+
+    for (const auto & table_name : table_names_local)
+    {
+        auto local_ast_ptr = tryGetCreateTableQuery(table_name, local_context);
+        if (table_name_to_metadata_in_zk.contains(table_name))
+        {
+            checked_tables.insert(table_name);
+            auto create_table_query_in_zk = table_name_to_metadata_in_zk[table_name];
+            auto zk_ast_ptr = parseQueryFromMetadataInZooKeeper(table_name, create_table_query_in_zk);
+
+            if (local_ast_ptr == nullptr && zk_ast_ptr == nullptr)
+            {
+                LOG_DEBUG(log, "AST for table {} is the same (nullptr) in local and ZK", table_name);
+            }
+            else if (local_ast_ptr != nullptr && zk_ast_ptr != nullptr && queryToString(local_ast_ptr) != queryToString(zk_ast_ptr))
+            {
+                LOG_DEBUG(log, "AST differs for table {}, local {}, in zookeeper {}", table_name, queryToString(local_ast_ptr), queryToString(zk_ast_ptr));
+            }
+            else if (local_ast_ptr == nullptr)
+            {
+                LOG_DEBUG(log, "AST differs for table {}, local nullptr, in zookeeper {}", table_name, queryToString(zk_ast_ptr));
+            }
+            else if (zk_ast_ptr == nullptr)
+            {
+                LOG_DEBUG(log, "AST differs for table {}, local {}, in zookeeper nullptr", table_name, queryToString(local_ast_ptr));
+            }
+            else
+            {
+                LOG_DEBUG(log, "AST for table {} is the same in local and ZK", table_name);
+            }
+        }
+        else
+        {
+            if (local_ast_ptr == nullptr)
+                LOG_DEBUG(log, "Table {} exists locally, but missing in ZK", table_name);
+            else
+                LOG_DEBUG(log, "Table {} exists locally with AST {}, but missing in ZK", table_name, queryToString(local_ast_ptr));
+        }
+    }
+    for (const auto & [table_name, table_metadata] : table_name_to_metadata_in_zk)
+    {
+        if (!checked_tables.contains(table_name))
+        {
+            auto zk_ast_ptr = parseQueryFromMetadataInZooKeeper(table_name, table_metadata);
+            if (zk_ast_ptr == nullptr)
+                LOG_DEBUG(log, "Table {} exists in ZK with AST {}, but missing locally", table_name, queryToString(zk_ast_ptr));
+            else
+                LOG_DEBUG(log, "Table {} exists in ZK, but missing locally", table_name);
+        }
+    }
+}
+
+void DatabaseReplicated::checkTableEngine(const ASTCreateQuery & query, ASTStorage & storage, ContextPtr query_context) const
+{
+    bool replicated_table = storage.engine &&
+        (startsWith(storage.engine->name, "Replicated") || startsWith(storage.engine->name, "Shared"));
+    if (!replicated_table || !storage.engine->arguments)
+        return;
+
+    ASTs & args_ref = storage.engine->arguments->children;
+    ASTs args = args_ref;
+    if (args.size() < 2)
+        return;
+
+    /// It can be a constant expression. Try to evaluate it, ignore exception if we cannot.
+    bool has_expression_argument = args_ref[0]->as<ASTFunction>() || args_ref[1]->as<ASTFunction>();
+    if (has_expression_argument)
+    {
+        try
+        {
+            args[0] = evaluateConstantExpressionAsLiteral(args_ref[0]->clone(), query_context);
+            args[1] = evaluateConstantExpressionAsLiteral(args_ref[1]->clone(), query_context);
+        }
+        catch (...) // NOLINT(bugprone-empty-catch)
+        {
+        }
+    }
+
+    ASTLiteral * arg1 = args[0]->as<ASTLiteral>();
+    ASTLiteral * arg2 = args[1]->as<ASTLiteral>();
+    if (!arg1 || !arg2 || arg1->value.getType() != Field::Types::String || arg2->value.getType() != Field::Types::String)
+        return;
+
+    String maybe_path = arg1->value.get<String>();
+    String maybe_replica = arg2->value.get<String>();
+
+    /// Looks like it's ReplicatedMergeTree with explicit zookeeper_path and replica_name arguments.
+    /// Let's ensure that some macros are used.
+    /// NOTE: we cannot check here that substituted values will be actually different on shards and replicas.
+
+    Macros::MacroExpansionInfo info;
+    info.table_id = {getDatabaseName(), query.getTable(), query.uuid};
+    info.shard = getShardName();
+    info.replica = getReplicaName();
+    query_context->getMacros()->expand(maybe_path, info);
+    bool maybe_shard_macros = info.expanded_other;
+    info.expanded_other = false;
+    query_context->getMacros()->expand(maybe_replica, info);
+    bool maybe_replica_macros = info.expanded_other;
+    bool enable_functional_tests_helper = getContext()->getConfigRef().has("_functional_tests_helper_database_replicated_replace_args_macros");
+
+    if (!enable_functional_tests_helper)
+    {
+        if (query_context->getSettingsRef().database_replicated_allow_replicated_engine_arguments)
+            LOG_WARNING(log, "It's not recommended to explicitly specify zookeeper_path and replica_name in ReplicatedMergeTree arguments");
+        else
+            throw Exception(ErrorCodes::INCORRECT_QUERY,
+                            "It's not allowed to specify explicit zookeeper_path and replica_name "
+                            "for ReplicatedMergeTree arguments in Replicated database. If you really want to "
+                            "specify them explicitly, enable setting "
+                            "database_replicated_allow_replicated_engine_arguments.");
+    }
+
+    if (maybe_shard_macros && maybe_replica_macros)
+        return;
+
+    if (enable_functional_tests_helper && !has_expression_argument)
+    {
+        if (maybe_path.empty() || maybe_path.back() != '/')
+            maybe_path += '/';
+        args_ref[0]->as<ASTLiteral>()->value = maybe_path + "auto_{shard}";
+        args_ref[1]->as<ASTLiteral>()->value = maybe_replica + "auto_{replica}";
+        return;
+    }
+
+    throw Exception(ErrorCodes::INCORRECT_QUERY,
+                    "Explicit zookeeper_path and replica_name are specified in ReplicatedMergeTree arguments. "
+                    "If you really want to specify it explicitly, then you should use some macros "
+                    "to distinguish different shards and replicas");
 }
 
 bool DatabaseReplicated::checkDigestValid(const ContextPtr & local_context, bool debug_check /* = true */) const
@@ -675,6 +875,13 @@ bool DatabaseReplicated::checkDigestValid(const ContextPtr & local_context, bool
     if (local_digest != tables_metadata_digest)
     {
         LOG_ERROR(log, "Digest of local metadata ({}) is not equal to in-memory digest ({})", local_digest, tables_metadata_digest);
+
+#ifndef NDEBUG
+        dumpLocalTablesForDebugOnly(local_context);
+        dumpTablesInZooKeeperForDebugOnly();
+        tryCompareLocalAndZooKeeperTablesAndDumpDiffForDebugOnly(local_context);
+#endif
+
         return false;
     }
 
@@ -691,6 +898,11 @@ bool DatabaseReplicated::checkDigestValid(const ContextPtr & local_context, bool
     if (zk_digest != local_digest_str)
     {
         LOG_ERROR(log, "Digest of local metadata ({}) is not equal to digest in Keeper ({})", local_digest_str, zk_digest);
+#ifndef NDEBUG
+        dumpLocalTablesForDebugOnly(local_context);
+        dumpTablesInZooKeeperForDebugOnly();
+        tryCompareLocalAndZooKeeperTablesAndDumpDiffForDebugOnly(local_context);
+#endif
         return false;
     }
 
@@ -708,81 +920,14 @@ void DatabaseReplicated::checkQueryValid(const ASTPtr & query, ContextPtr query_
 
         if (auto * create = query->as<ASTCreateQuery>())
         {
-            bool replicated_table = create->storage && create->storage->engine &&
-                (startsWith(create->storage->engine->name, "Replicated") || startsWith(create->storage->engine->name, "Shared"));
-            if (!replicated_table || !create->storage->engine->arguments)
-                return;
+            if (create->storage)
+                checkTableEngine(*create, *create->storage, query_context);
 
-            ASTs & args_ref = create->storage->engine->arguments->children;
-            ASTs args = args_ref;
-            if (args.size() < 2)
-                return;
-
-            /// It can be a constant expression. Try to evaluate it, ignore exception if we cannot.
-            bool has_expression_argument = args_ref[0]->as<ASTFunction>() || args_ref[1]->as<ASTFunction>();
-            if (has_expression_argument)
+            if (create->targets)
             {
-                try
-                {
-                    args[0] = evaluateConstantExpressionAsLiteral(args_ref[0]->clone(), query_context);
-                    args[1] = evaluateConstantExpressionAsLiteral(args_ref[1]->clone(), query_context);
-                }
-                catch (...) // NOLINT(bugprone-empty-catch)
-                {
-                }
+                for (const auto & inner_table_engine : create->targets->getInnerEngines())
+                    checkTableEngine(*create, *inner_table_engine, query_context);
             }
-
-            ASTLiteral * arg1 = args[0]->as<ASTLiteral>();
-            ASTLiteral * arg2 = args[1]->as<ASTLiteral>();
-            if (!arg1 || !arg2 || arg1->value.getType() != Field::Types::String || arg2->value.getType() != Field::Types::String)
-                return;
-
-            String maybe_path = arg1->value.get<String>();
-            String maybe_replica = arg2->value.get<String>();
-
-            /// Looks like it's ReplicatedMergeTree with explicit zookeeper_path and replica_name arguments.
-            /// Let's ensure that some macros are used.
-            /// NOTE: we cannot check here that substituted values will be actually different on shards and replicas.
-
-            Macros::MacroExpansionInfo info;
-            info.table_id = {getDatabaseName(), create->getTable(), create->uuid};
-            info.shard = getShardName();
-            info.replica = getReplicaName();
-            query_context->getMacros()->expand(maybe_path, info);
-            bool maybe_shard_macros = info.expanded_other;
-            info.expanded_other = false;
-            query_context->getMacros()->expand(maybe_replica, info);
-            bool maybe_replica_macros = info.expanded_other;
-            bool enable_functional_tests_helper = getContext()->getConfigRef().has("_functional_tests_helper_database_replicated_replace_args_macros");
-
-            if (!enable_functional_tests_helper)
-            {
-                if (query_context->getSettingsRef().database_replicated_allow_replicated_engine_arguments)
-                    LOG_WARNING(log, "It's not recommended to explicitly specify zookeeper_path and replica_name in ReplicatedMergeTree arguments");
-                else
-                    throw Exception(ErrorCodes::INCORRECT_QUERY,
-                                    "It's not allowed to specify explicit zookeeper_path and replica_name "
-                                    "for ReplicatedMergeTree arguments in Replicated database. If you really want to "
-                                    "specify them explicitly, enable setting "
-                                    "database_replicated_allow_replicated_engine_arguments.");
-            }
-
-            if (maybe_shard_macros && maybe_replica_macros)
-                return;
-
-            if (enable_functional_tests_helper && !has_expression_argument)
-            {
-                if (maybe_path.empty() || maybe_path.back() != '/')
-                    maybe_path += '/';
-                args_ref[0]->as<ASTLiteral>()->value = maybe_path + "auto_{shard}";
-                args_ref[1]->as<ASTLiteral>()->value = maybe_replica + "auto_{replica}";
-                return;
-            }
-
-            throw Exception(ErrorCodes::INCORRECT_QUERY,
-                            "Explicit zookeeper_path and replica_name are specified in ReplicatedMergeTree arguments. "
-                            "If you really want to specify it explicitly, then you should use some macros "
-                            "to distinguish different shards and replicas");
         }
     }
 
@@ -1146,7 +1291,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         /// And QualifiedTableName::parseFromString doesn't handle this.
         auto qualified_name = QualifiedTableName{.database = getDatabaseName(), .table = table_name};
         auto query_ast = parseQueryFromMetadataInZooKeeper(table_name, create_table_query);
-        tables_dependencies.addDependencies(qualified_name, getDependenciesFromCreateQuery(getContext(), qualified_name, query_ast));
+        tables_dependencies.addDependencies(qualified_name, getDependenciesFromCreateQuery(getContext()->getGlobalContext(), qualified_name, query_ast, getContext()->getCurrentDatabase()));
     }
 
     tables_dependencies.checkNoCyclicDependencies();
@@ -1220,7 +1365,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
     current_zookeeper->set(replica_path + "/digest", toString(tables_metadata_digest));
 }
 
-std::map<String, String> DatabaseReplicated::tryGetConsistentMetadataSnapshot(const ZooKeeperPtr & zookeeper, UInt32 & max_log_ptr)
+std::map<String, String> DatabaseReplicated::tryGetConsistentMetadataSnapshot(const ZooKeeperPtr & zookeeper, UInt32 & max_log_ptr) const
 {
     return getConsistentMetadataSnapshotImpl(zookeeper, {}, /* max_retries= */ 10, max_log_ptr);
 }
@@ -1281,7 +1426,7 @@ std::map<String, String> DatabaseReplicated::getConsistentMetadataSnapshotImpl(
     return table_name_to_metadata;
 }
 
-ASTPtr DatabaseReplicated::parseQueryFromMetadataInZooKeeper(const String & node_name, const String & query)
+ASTPtr DatabaseReplicated::parseQueryFromMetadataInZooKeeper(const String & node_name, const String & query) const
 {
     ParserCreateQuery parser;
     String description = "in ZooKeeper " + zookeeper_path + "/metadata/" + node_name;
@@ -1291,11 +1436,9 @@ ASTPtr DatabaseReplicated::parseQueryFromMetadataInZooKeeper(const String & node
     if (create.uuid == UUIDHelpers::Nil || create.getTable() != TABLE_WITH_UUID_NAME_PLACEHOLDER || create.database)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Got unexpected query from {}: {}", node_name, query);
 
-    bool is_materialized_view_with_inner_table = create.is_materialized_view && create.to_table_id.empty();
-
     create.setDatabase(getDatabaseName());
     create.setTable(unescapeForFileName(node_name));
-    create.attach = is_materialized_view_with_inner_table;
+    create.attach = create.is_materialized_view_with_inner_table();
 
     return ast;
 }
@@ -1371,8 +1514,16 @@ void DatabaseReplicated::drop(ContextPtr context_)
     }
 }
 
+void DatabaseReplicated::renameDatabase(ContextPtr query_context, const String & new_name)
+{
+    DatabaseAtomic::renameDatabase(query_context, new_name);
+    auto db_name_path = fs::path(zookeeper_path) / FIRST_REPLICA_DATABASE_NAME;
+    getZooKeeper()->set(db_name_path, getDatabaseName());
+}
+
 void DatabaseReplicated::stopReplication()
 {
+    std::lock_guard lock{ddl_worker_mutex};
     if (ddl_worker)
         ddl_worker->shutdown();
 }
@@ -1380,8 +1531,11 @@ void DatabaseReplicated::stopReplication()
 void DatabaseReplicated::shutdown()
 {
     stopReplication();
-    ddl_worker_initialized = false;
-    ddl_worker = nullptr;
+    {
+        std::lock_guard lock{ddl_worker_mutex};
+        ddl_worker_initialized = false;
+        ddl_worker = nullptr;
+    }
     DatabaseAtomic::shutdown();
 }
 
@@ -1529,6 +1683,7 @@ bool DatabaseReplicated::canExecuteReplicatedMetadataAlter() const
     /// It may update the metadata digest (both locally and in ZooKeeper)
     /// before DatabaseReplicatedDDLWorker::initializeReplication() has finished.
     /// We should not update metadata until the database is initialized.
+    std::lock_guard lock{ddl_worker_mutex};
     return ddl_worker_initialized && ddl_worker->isCurrentlyActive();
 }
 

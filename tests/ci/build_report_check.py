@@ -64,11 +64,14 @@ def main():
             + ci_config["jobs_data"]["jobs_to_do"]
         )
         builds_for_check = [job for job in CI.BuildNames if job in all_ci_jobs]
-        print(f"NOTE: following build reports will be checked: [{builds_for_check}]")
+        print("NOTE: builds for check taken from ci configuration")
     else:
         builds_for_check = parse_args().reports
         for job in builds_for_check:
             assert job in CI.BuildNames, "Builds must be known build job names"
+        print("NOTE: builds for check taken from input arguments")
+
+    print(f"NOTE: following build reports will be checked: [{builds_for_check}]")
 
     required_builds = len(builds_for_check)
     missing_builds = 0

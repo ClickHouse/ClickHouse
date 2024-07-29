@@ -16,6 +16,11 @@ SELECT groupConcat(p_int) FROM test_groupConcat;
 SELECT groupConcat(p_string) FROM test_groupConcat;
 SELECT groupConcat(p_array) FROM test_groupConcat;
 
+SELECT groupConcat('', 1)(p_array) FROM test_groupConcat;
+SELECT groupConcat('', 3)(p_string) FROM test_groupConcat;
+SELECT groupConcat('', 2)(p_int) FROM test_groupConcat;
+SELECT groupConcat('\n', 3)(p_int) FROM test_groupConcat;
+
 SELECT groupConcat(',')(p_int) FROM test_groupConcat;
 SELECT groupConcat(',')(p_string) FROM test_groupConcat;
 SELECT groupConcat(',', 2)(p_array) FROM test_groupConcat;
@@ -36,5 +41,17 @@ SELECT groupConcat(',', -1)(number) FROM numbers(10); -- { serverError BAD_ARGUM
 SELECT groupConcat(',', 3, 3)(number) FROM numbers(10); -- { serverError TOO_MANY_ARGUMENTS_FOR_FUNCTION }
 
 SELECT length(groupConcat(number)) FROM numbers(100000);
+
+DROP TABLE IF EXISTS test_groupConcat;
+
+CREATE TABLE test_groupConcat
+(
+    id UInt64,
+    p_int Int32,
+) ENGINE = MergeTree ORDER BY id;
+
+INSERT INTO test_groupConcat SELECT number, number FROM numbers(100000) SETTINGS min_insert_block_size_rows = 2000;
+
+SELECT length(groupConcat(p_int)) FROM test_groupConcat;
 
 DROP TABLE IF EXISTS test_groupConcat;

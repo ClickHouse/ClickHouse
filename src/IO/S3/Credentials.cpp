@@ -9,6 +9,21 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_METHOD;
 }
 
+namespace S3
+{
+    std::string tryGetRunningAvailabilityZone()
+    {
+        try
+        {
+            return getRunningAvailabilityZone();
+        }
+        catch (...)
+        {
+            tryLogCurrentException("tryGetRunningAvailabilityZone");
+            return "";
+        }
+    }
+}
 }
 
 #if USE_AWS_S3

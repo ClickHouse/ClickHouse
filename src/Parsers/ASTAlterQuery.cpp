@@ -60,6 +60,8 @@ ASTPtr ASTAlterCommand::clone() const
         res->settings_resets = res->children.emplace_back(settings_resets->clone()).get();
     if (select)
         res->select = res->children.emplace_back(select->clone()).get();
+    if (sql_security)
+        res->sql_security = res->children.emplace_back(sql_security->clone()).get();
     if (rename_to)
         res->rename_to = res->children.emplace_back(rename_to->clone()).get();
 
@@ -522,6 +524,7 @@ void ASTAlterCommand::forEachPointerToChild(std::function<void(void**)> f)
     f(reinterpret_cast<void **>(&settings_changes));
     f(reinterpret_cast<void **>(&settings_resets));
     f(reinterpret_cast<void **>(&select));
+    f(reinterpret_cast<void **>(&sql_security));
     f(reinterpret_cast<void **>(&rename_to));
 }
 

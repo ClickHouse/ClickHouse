@@ -12,6 +12,7 @@
 #include <Analyzer/Utils.h>
 #include <Columns/ColumnSet.h>
 #include <Columns/ColumnString.h>
+#include <Core/Settings.h>
 #include <Core/SortDescription.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/IDataType.h>
@@ -889,6 +890,8 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
 
     SelectQueryInfo modified_query_info = query_info;
 
+    modified_query_info.merge_storage_snapshot = merge_storage_snapshot;
+
     if (modified_query_info.planner_context)
         modified_query_info.planner_context = std::make_shared<PlannerContext>(modified_context, modified_query_info.planner_context);
 
@@ -974,7 +977,7 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
                 }
 
                 PlannerActionsVisitor actions_visitor(modified_query_info.planner_context, false /*use_column_identifier_as_action_node_name*/);
-                actions_visitor.visit(filter_actions_dag, column_node);
+                actions_visitor.visit(*filter_actions_dag, column_node);
             }
             column_names_as_aliases = filter_actions_dag->getRequiredColumnsNames();
             if (column_names_as_aliases.empty())
@@ -1198,7 +1201,10 @@ ReadFromMerge::ChildPlan ReadFromMerge::createPlanForTable(
 
         if (allow_experimental_analyzer)
         {
-            InterpreterSelectQueryAnalyzer interpreter(modified_query_info.query_tree,
+            /// Converting query to AST because types might be different in the source table.
+            /// Need to resolve types again.
+            auto ast = modified_query_info.query_tree->toAST();
+            InterpreterSelectQueryAnalyzer interpreter(ast,
                 modified_context,
                 SelectQueryOptions(processed_stage));
 
@@ -1480,7 +1486,7 @@ void ReadFromMerge::convertAndFilterSourceStream(
             query_analysis_pass.run(query_tree, local_context);
 
             PlannerActionsVisitor actions_visitor(modified_query_info.planner_context, false /*use_column_identifier_as_action_node_name*/);
-            const auto & nodes = actions_visitor.visit(actions_dag, query_tree);
+            const auto & nodes = actions_visitor.visit(*actions_dag, query_tree);
 
             if (nodes.size() != 1)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected to have 1 output but got {}", nodes.size());

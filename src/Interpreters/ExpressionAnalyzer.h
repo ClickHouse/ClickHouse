@@ -115,10 +115,10 @@ public:
 
     /// If `ast` is not a SELECT query, just gets all the actions to evaluate the expression.
     /// If add_aliases, only the calculated values in the desired order and add aliases.
-    ///     If also project_result, than only aliases remain in the output block.
+    ///     If also remove_unused_result, than only aliases remain in the output block.
     /// Otherwise, only temporary columns will be deleted from the block.
-    ActionsDAGPtr getActionsDAG(bool add_aliases, bool project_result = true);
-    ExpressionActionsPtr getActions(bool add_aliases, bool project_result = true, CompileExpressions compile_expressions = CompileExpressions::no);
+    ActionsDAGPtr getActionsDAG(bool add_aliases, bool remove_unused_result = true);
+    ExpressionActionsPtr getActions(bool add_aliases, bool remove_unused_result = true, CompileExpressions compile_expressions = CompileExpressions::no);
 
     /// Get actions to evaluate a constant expression. The function adds constants and applies functions that depend only on constants.
     /// Does not execute subqueries.
@@ -139,7 +139,7 @@ public:
     const WindowDescriptions & windowDescriptions() const { return window_descriptions; }
 
     void makeWindowDescriptionFromAST(const Context & context, const WindowDescriptions & existing_descriptions, WindowDescription & desc, const IAST * ast);
-    void makeWindowDescriptions(ActionsDAGPtr actions);
+    void makeWindowDescriptions(ActionsDAG & actions);
 
     /** Checks if subquery is not a plain StorageSet.
       * Because while making set we will read data from StorageSet which is not allowed.
@@ -172,34 +172,34 @@ protected:
     /// Find global subqueries in the GLOBAL IN/JOIN sections. Fills in external_tables.
     void initGlobalSubqueriesAndExternalTables(bool do_global, bool is_explain);
 
-    ArrayJoinActionPtr addMultipleArrayJoinAction(ActionsDAGPtr & actions, bool is_left) const;
+    ArrayJoinActionPtr addMultipleArrayJoinAction(ActionsDAG & actions, bool is_left) const;
 
-    void getRootActions(const ASTPtr & ast, bool no_makeset_for_subqueries, ActionsDAGPtr & actions, bool only_consts = false);
+    void getRootActions(const ASTPtr & ast, bool no_makeset_for_subqueries, ActionsDAG & actions, bool only_consts = false);
 
     /** Similar to getRootActions but do not make sets when analyzing IN functions. It's used in
       * analyzeAggregation which happens earlier than analyzing PREWHERE and WHERE. If we did, the
       * prepared sets would not be applicable for MergeTree index optimization.
       */
-    void getRootActionsNoMakeSet(const ASTPtr & ast, ActionsDAGPtr & actions, bool only_consts = false);
+    void getRootActionsNoMakeSet(const ASTPtr & ast, ActionsDAG & actions, bool only_consts = false);
 
-    void getRootActionsForHaving(const ASTPtr & ast, bool no_makeset_for_subqueries, ActionsDAGPtr & actions, bool only_consts = false);
+    void getRootActionsForHaving(const ASTPtr & ast, bool no_makeset_for_subqueries, ActionsDAG & actions, bool only_consts = false);
 
-    void getRootActionsForWindowFunctions(const ASTPtr & ast, bool no_makeset_for_subqueries, ActionsDAGPtr & actions);
+    void getRootActionsForWindowFunctions(const ASTPtr & ast, bool no_makeset_for_subqueries, ActionsDAG & actions);
 
     /** Add aggregation keys to aggregation_keys, aggregate functions to aggregate_descriptions,
       * Create a set of columns aggregated_columns resulting after the aggregation, if any,
       *  or after all the actions that are normally performed before aggregation.
       * Set has_aggregation = true if there is GROUP BY or at least one aggregate function.
       */
-    void analyzeAggregation(ActionsDAGPtr & temp_actions);
-    void makeAggregateDescriptions(ActionsDAGPtr & actions, AggregateDescriptions & descriptions);
+    void analyzeAggregation(ActionsDAG & temp_actions);
+    void makeAggregateDescriptions(ActionsDAG & actions, AggregateDescriptions & descriptions);
 
     const ASTSelectQuery * getSelectQuery() const;
 
     bool isRemoteStorage() const;
 
-    NamesAndTypesList getColumnsAfterArrayJoin(ActionsDAGPtr & actions, const NamesAndTypesList & src_columns);
-    NamesAndTypesList analyzeJoin(ActionsDAGPtr & actions, const NamesAndTypesList & src_columns);
+    NamesAndTypesList getColumnsAfterArrayJoin(ActionsDAG & actions, const NamesAndTypesList & src_columns);
+    NamesAndTypesList analyzeJoin(ActionsDAG & actions, const NamesAndTypesList & src_columns);
 
     AggregationKeysInfo getAggregationKeysInfo() const noexcept
     {
@@ -231,20 +231,20 @@ struct ExpressionAnalysisResult
 
     bool use_grouping_set_key = false;
 
-    ActionsDAGPtr before_array_join;
+    ActionsAndProjectInputsFlagPtr before_array_join;
     ArrayJoinActionPtr array_join;
-    ActionsDAGPtr before_join;
-    ActionsDAGPtr converting_join_columns;
+    ActionsAndProjectInputsFlagPtr before_join;
+    ActionsAndProjectInputsFlagPtr converting_join_columns;
     JoinPtr join;
-    ActionsDAGPtr before_where;
-    ActionsDAGPtr before_aggregation;
-    ActionsDAGPtr before_having;
+    ActionsAndProjectInputsFlagPtr before_where;
+    ActionsAndProjectInputsFlagPtr before_aggregation;
+    ActionsAndProjectInputsFlagPtr before_having;
     String having_column_name;
     bool remove_having_filter = false;
-    ActionsDAGPtr before_window;
-    ActionsDAGPtr before_order_by;
-    ActionsDAGPtr before_limit_by;
-    ActionsDAGPtr final_projection;
+    ActionsAndProjectInputsFlagPtr before_window;
+    ActionsAndProjectInputsFlagPtr before_order_by;
+    ActionsAndProjectInputsFlagPtr before_limit_by;
+    ActionsAndProjectInputsFlagPtr final_projection;
 
     /// Columns from the SELECT list, before renaming them to aliases. Used to
     /// perform SELECT DISTINCT.
@@ -351,12 +351,12 @@ public:
     /// Tables that will need to be sent to remote servers for distributed query processing.
     const TemporaryTablesMapping & getExternalTables() const { return external_tables; }
 
-    ActionsDAGPtr simpleSelectActions();
+    ActionsAndProjectInputsFlagPtr simpleSelectActions();
 
     /// These appends are public only for tests
     void appendSelect(ExpressionActionsChain & chain, bool only_types);
     /// Deletes all columns except mentioned by SELECT, arranges the remaining columns and renames them to aliases.
-    ActionsDAGPtr appendProjectResult(ExpressionActionsChain & chain) const;
+    ActionsAndProjectInputsFlagPtr appendProjectResult(ExpressionActionsChain & chain) const;
 
 private:
     StorageMetadataPtr metadata_snapshot;
@@ -386,13 +386,13 @@ private:
       */
 
     /// Before aggregation:
-    ArrayJoinActionPtr appendArrayJoin(ExpressionActionsChain & chain, ActionsDAGPtr & before_array_join, bool only_types);
+    ArrayJoinActionPtr appendArrayJoin(ExpressionActionsChain & chain, ActionsAndProjectInputsFlagPtr & before_array_join, bool only_types);
     bool appendJoinLeftKeys(ExpressionActionsChain & chain, bool only_types);
-    JoinPtr appendJoin(ExpressionActionsChain & chain, ActionsDAGPtr & converting_join_columns);
+    JoinPtr appendJoin(ExpressionActionsChain & chain, ActionsAndProjectInputsFlagPtr & converting_join_columns);
 
     /// remove_filter is set in ExpressionActionsChain::finalize();
     /// Columns in `additional_required_columns` will not be removed (they can be used for e.g. sampling or FINAL modifier).
-    ActionsDAGPtr appendPrewhere(ExpressionActionsChain & chain, bool only_types);
+    ActionsAndProjectInputsFlagPtr appendPrewhere(ExpressionActionsChain & chain, bool only_types);
     bool appendWhere(ExpressionActionsChain & chain, bool only_types);
     bool appendGroupBy(ExpressionActionsChain & chain, bool only_types, bool optimize_aggregation_in_order, ManyExpressionActions &);
     void appendAggregateFunctionsArguments(ExpressionActionsChain & chain, bool only_types);
@@ -401,12 +401,12 @@ private:
     void appendExpressionsAfterWindowFunctions(ExpressionActionsChain & chain, bool only_types);
     void appendSelectSkipWindowExpressions(ExpressionActionsChain::Step & step, ASTPtr const & node);
 
-    void appendGroupByModifiers(ActionsDAGPtr & before_aggregation, ExpressionActionsChain & chain, bool only_types);
+    void appendGroupByModifiers(ActionsDAG & before_aggregation, ExpressionActionsChain & chain, bool only_types);
 
     /// After aggregation:
     bool appendHaving(ExpressionActionsChain & chain, bool only_types);
     ///  appendSelect
-    ActionsDAGPtr appendOrderBy(ExpressionActionsChain & chain, bool only_types, bool optimize_read_in_order, ManyExpressionActions &);
+    ActionsAndProjectInputsFlagPtr appendOrderBy(ExpressionActionsChain & chain, bool only_types, bool optimize_read_in_order, ManyExpressionActions &);
     bool appendLimitBy(ExpressionActionsChain & chain, bool only_types);
     ///  appendProjectResult
 };

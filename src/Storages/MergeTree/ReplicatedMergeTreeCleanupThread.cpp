@@ -1,13 +1,14 @@
+#include <Interpreters/Context.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeCleanupThread.h>
 #include <Storages/StorageReplicatedMergeTree.h>
-#include <Poco/Timestamp.h>
-#include <Interpreters/Context.h>
 #include <Common/ZooKeeper/KeeperException.h>
 
 #include <random>
 #include <unordered_set>
 
 #include <base/sort.h>
+#include <Poco/Timestamp.h>
 
 
 namespace DB
@@ -174,6 +175,8 @@ Float32 ReplicatedMergeTreeCleanupThread::iterate()
         cleaned_other += clearOldMutations();
         cleaned_part_like += storage.clearEmptyParts();
     }
+
+    cleaned_part_like += storage.unloadPrimaryKeysOfOutdatedParts();
 
     /// We need to measure the number of removed objects somehow (for better scheduling),
     /// but just summing the number of removed async blocks, logs, and empty parts does not make any sense.

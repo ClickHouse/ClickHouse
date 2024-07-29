@@ -1,4 +1,4 @@
--- Tags: no-s3-storage
+-- Tags: no-object-storage
 
 -- produces different pipeline if enabled
 set enable_memory_bound_merging_of_aggregation_results = 0;

@@ -29,6 +29,7 @@ class CiSettings:
     no_ci_cache: bool = False
     upload_all: bool = False
     no_merge_commit: bool = False
+    woolen_wolfdog: bool = False
 
     def as_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -108,6 +109,9 @@ class CiSettings:
             elif match == CI.Tags.NO_MERGE_COMMIT:
                 res.no_merge_commit = True
                 print("NOTE: Merge Commit will be disabled")
+            elif match == CI.Tags.WOOLEN_WOLFDOG_LABEL:
+                res.woolen_wolfdog = True
+                print("NOTE: Woolen Wolfdog mode enabled")
             elif match.startswith("batch_"):
                 batches = []
                 try:
@@ -156,7 +160,8 @@ class CiSettings:
             else:
                 return False
 
-        if self.exclude_keywords:
+        # do not exclude builds
+        if self.exclude_keywords and not CI.is_build_job(job):
             for keyword in self.exclude_keywords:
                 if keyword in normalize_string(job):
                     print(f"Job [{job}] matches Exclude keyword [{keyword}] - deny")
@@ -164,7 +169,8 @@ class CiSettings:
 
         to_deny = False
         if self.include_keywords:
-            if job == CI.JobNames.STYLE_CHECK:
+            # do not exclude builds
+            if job == CI.JobNames.STYLE_CHECK or CI.is_build_job(job):
                 # never exclude Style Check by include keywords
                 return True
             for keyword in self.include_keywords:
@@ -227,12 +233,5 @@ class CiSettings:
                     print(f"Job [{job}] requires [{parent_job}] - add")
         for job in add_parents:
             res[job] = job_configs[job]
-
-        for job, job_config in res.items():
-            batches = []
-            for batch in range(job_config.num_batches):
-                if not self.job_batches or batch in self.job_batches:
-                    batches.append(batch)
-            job_config.batches = batches
 
         return res

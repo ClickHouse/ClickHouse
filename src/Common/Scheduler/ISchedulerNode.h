@@ -406,13 +406,19 @@ private:
     void processQueue(std::unique_lock<std::mutex> && lock)
     {
         if (events.empty())
-            return processActivation(std::move(lock));
+        {
+            processActivation(std::move(lock));
+            return;
+        }
         if (activations.empty())
-            return processEvent(std::move(lock));
+        {
+            processEvent(std::move(lock));
+            return;
+        }
         if (activations.front().activation_event_id < events.front().event_id)
-            return processActivation(std::move(lock));
+            processActivation(std::move(lock));
         else
-            return processEvent(std::move(lock));
+            processEvent(std::move(lock));
     }
 
     void processActivation(std::unique_lock<std::mutex> && lock)

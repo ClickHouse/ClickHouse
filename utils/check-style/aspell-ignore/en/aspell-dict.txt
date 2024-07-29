@@ -1,4 +1,4 @@
-personal_ws-1.1 en 2758
+personal_ws-1.1 en 2942 
 AArch
 ACLs
 ALTERs
@@ -222,7 +222,6 @@ DatabaseOrdinaryThreadsActive
 DateTime
 DateTimes
 DbCL
-deallocated
 Decrypted
 Deduplicate
 Deduplication
@@ -294,7 +293,6 @@ FilesystemMainPathUsedBytes
 FilesystemMainPathUsedINodes
 FixedString
 FlameGraph
-flameGraph
 Flink
 ForEach
 FreeBSD
@@ -451,7 +449,7 @@ Kahan
 Kaser
 KeeperAliveConnections
 KeeperMap
-KeeperOutstandingRequets
+KeeperOutstandingRequests
 Kerberos
 Khanna
 KittenHouse
@@ -469,7 +467,7 @@ LOCALTIME
 LOCALTIMESTAMP
 LONGLONG
 LOONGARCH
-Lemir
+Lemire
 Levenshtein
 Liao
 LibFuzzer
@@ -574,6 +572,7 @@ MySQLDump
 MySQLThreads
 NATS
 NCHAR
+NDJSON
 NEKUDOTAYIM
 NEWDATE
 NEWDECIMAL
@@ -716,6 +715,8 @@ PlantUML
 PointDistKm
 PointDistM
 PointDistRads
+PostHistory
+PostLink
 PostgreSQLConnection
 PostgreSQLThreads
 Postgres
@@ -744,6 +745,7 @@ PromQL
 Promql
 Promtail
 Protobuf
+ProtobufList
 ProtobufSingle
 ProxySQL
 Punycode
@@ -760,6 +762,7 @@ QueryCacheMisses
 QueryPreempted
 QueryThread
 QuickAssist
+QuickSight
 QuoteMeta
 RBAC
 RClickHouse
@@ -963,6 +966,7 @@ ToGeoBoundary
 ToIPv
 ToParent
 ToSnowflake
+ToSnowflakeID
 ToString
 ToUnicode
 Toolset
@@ -990,6 +994,8 @@ UPDATEs
 URIs
 URL
 URL's
+URLDecode
+URLEncode
 URLHash
 URLHierarchy
 URLPathHierarchy
@@ -1011,8 +1017,6 @@ Updatable
 Uppercased
 Uptime
 Uptrace
-UrlDecode
-UrlEncode
 UserID
 Util
 VARCHAR
@@ -1096,6 +1100,8 @@ aggregatefunction
 aggregatingmergetree
 aggregatio
 aggretate
+aggthrow
+aggThrow
 aiochclient
 allocator
 alphaTokens
@@ -1218,6 +1224,7 @@ basename
 bcrypt
 benchmarking
 bfloat
+bigrams
 binlog
 bitAnd
 bitCount
@@ -1314,6 +1321,12 @@ cfg
 cgroup
 cgroups
 chadmin
+changeDay
+changeHour
+changeMinute
+changeMonth
+changeSecond
+changeYear
 changelog
 changelogs
 charset
@@ -1458,6 +1471,7 @@ datatypes
 dateName
 dateTime
 dateTimeToSnowflake
+dateTimeToSnowflakeID
 datetime
 datetimes
 dayofyear
@@ -1466,6 +1480,7 @@ dbeaver
 dbgen
 dbms
 ddl
+deallocated
 deallocation
 deallocations
 debian
@@ -1508,6 +1523,8 @@ detectCharset
 detectLanguage
 detectLanguageMixed
 detectLanguageUnknown
+detectProgrammingLanguage
+detectTonality
 determinator
 deterministically
 dictGet
@@ -1523,6 +1540,7 @@ dictIsIn
 disableProtocols
 disjunction
 disjunctions
+displayName
 displaySecretsInShowAndSelect
 distro
 divideDecimal
@@ -1541,6 +1559,7 @@ dumpColumnStructure
 durations
 ecto
 editDistance
+editDistanceUTF
 embeddings
 emptyArray
 emptyArrayDate
@@ -1572,6 +1591,10 @@ evalMLMethod
 exFAT
 expiryMsec
 exponentialMovingAverage
+exponentialTimeDecayedAvg
+exponentialTimeDecayedCount
+exponentialTimeDecayedMax
+exponentialTimeDecayedSum
 exponentialmovingaverage
 expr
 exprN
@@ -1599,6 +1622,7 @@ filesystem
 filesystemAvailable
 filesystemCapacity
 filesystemFree
+filesystemUnreserved
 filesystems
 finalizeAggregation
 fips
@@ -1609,6 +1633,7 @@ firstSignificantSubdomainCustom
 firstSignificantSubdomainCustomRFC
 firstSignificantSubdomainRFC
 fixedstring
+flameGraph
 flamegraph
 flatbuffers
 flattenTuple
@@ -1630,6 +1655,7 @@ formated
 formatschema
 formatter
 formatters
+fqdn
 frac
 freezed
 fromDaysSinceYearZero
@@ -1642,6 +1668,7 @@ fsync
 func
 fuzzBits
 fuzzJSON
+fuzzQuery
 fuzzer
 fuzzers
 gRPC
@@ -1706,7 +1733,6 @@ groupBitmap
 groupBitmapAnd
 groupBitmapOr
 groupBitmapXor
-groupConcat
 groupUniqArray
 grouparray
 grouparrayinsertat
@@ -1723,7 +1749,6 @@ groupbitmapor
 groupbitmapxor
 groupbitor
 groupbitxor
-groupconcat
 groupuniqarray
 grpc
 grpcio
@@ -1794,6 +1819,7 @@ indexHint
 indexOf
 infi
 inflight
+infty
 initcap
 initcapUTF
 initialQueryID
@@ -1840,6 +1866,7 @@ jdbc
 jemalloc
 jeprof
 joinGet
+joinGetOrNull
 json
 jsonMergePatch
 jsonasstring
@@ -1884,11 +1911,13 @@ kurtosis
 kurtpop
 kurtsamp
 laion
+lagInFrame
 lang
 laravel
 largestTriangleThreeBuckets
 latencies
 ldap
+leadInFrame
 leftPad
 leftPadUTF
 leftUTF
@@ -1900,6 +1929,7 @@ lessOrEquals
 lessorequals
 levenshtein
 levenshteinDistance
+levenshteinDistanceUTF
 lexicographically
 lgamma
 libFuzzer
@@ -1940,9 +1970,9 @@ loghouse
 london
 lookups
 loongarch
-lowcardinality
 lowCardinalityIndices
 lowCardinalityKeys
+lowcardinality
 lowerUTF
 lowercased
 lttb
@@ -1965,6 +1995,8 @@ mapExtractKeyLike
 mapFilter
 mapFromArrays
 mapKeys
+mapPartialReverseSort
+mapPartialSort
 mapPopulateSeries
 mapReverseSort
 mapSort
@@ -1981,6 +2013,7 @@ maxMap
 maxintersections
 maxintersectionsposition
 maxmap
+minMappedArrays
 maxmind
 mdadm
 meanZTest
@@ -1998,6 +2031,7 @@ metrica
 metroHash
 mfedotov
 minMap
+minMappedArrays
 minSampleSizeContinuous
 minSampleSizeConversion
 mindsdb
@@ -2105,8 +2139,10 @@ noaa
 nonNegativeDerivative
 noop
 normalizeQuery
+normalizeQueryKeepNames
 normalizeUTF
 normalizedQueryHash
+normalizedQueryHashKeepNames
 notEmpty
 notEquals
 notILike
@@ -2169,6 +2205,8 @@ parseReadableSizeOrZero
 parseTimeDelta
 parseable
 parsers
+partitionId
+partitionID
 pathFull
 pclmulqdq
 pcre
@@ -2251,7 +2289,9 @@ prometheus
 proportionsZTest
 proto
 protobuf
+protobuflist
 protobufsingle
+protocol
 proxied
 pseudorandom
 pseudorandomize
@@ -2478,6 +2518,7 @@ skewpop
 skewsamp
 skippingerrors
 sleepEachRow
+snowflakeIDToDateTime
 snowflakeToDateTime
 socketcache
 soundex
@@ -2502,6 +2543,8 @@ sqlite
 sqrt
 src
 srcReplicas
+sshkey
+stackoverflow
 stacktrace
 stacktraces
 startsWith
@@ -2741,6 +2784,9 @@ topLevelDomain
 topLevelDomainRFC
 topk
 topkweighted
+transactionID
+transactionLatestSnapshot
+transactionOldestSnapshot
 transactional
 transactionally
 translateUTF
@@ -2774,6 +2820,7 @@ tupleModulo
 tupleModuloByNumber
 tupleMultiply
 tupleMultiplyByNumber
+tupleNames
 tupleNegate
 tuplePlus
 tupleToNameValuePairs
@@ -2794,6 +2841,7 @@ unescaping
 unhex
 unicode
 unidimensional
+unigrams
 unintuitive
 uniq
 uniqCombined
@@ -2840,6 +2888,7 @@ userver
 utils
 uuid
 uuidv
+vCPU
 varPop
 varPopStable
 varSamp
@@ -2849,7 +2898,9 @@ variantElement
 variantType
 varint
 varpop
+varpopstable
 varsamp
+varsampstable
 vectorized
 vectorscan
 vendoring
