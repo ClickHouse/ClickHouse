@@ -91,7 +91,7 @@ std::optional<EvaluateConstantExpressionResult> evaluateConstantExpressionImpl(c
     ColumnPtr result_column;
     DataTypePtr result_type;
     String result_name = ast->getColumnName();
-    for (const auto & action_node : actions->getOutputs())
+    for (const auto & action_node : actions.getOutputs())
     {
         if ((action_node->result_name == result_name) && action_node->column)
         {
@@ -679,9 +679,9 @@ std::optional<ConstantVariants> evaluateExpressionOverConstantCondition(
     size_t max_elements)
 {
     auto inverted_dag = KeyCondition::cloneASTWithInversionPushDown({predicate}, context);
-    auto matches = matchTrees(expr, *inverted_dag, false);
+    auto matches = matchTrees(expr, inverted_dag, false);
 
-    auto predicates = analyze(inverted_dag->getOutputs().at(0), matches, context, max_elements);
+    auto predicates = analyze(inverted_dag.getOutputs().at(0), matches, context, max_elements);
 
     if (!predicates)
         return {};

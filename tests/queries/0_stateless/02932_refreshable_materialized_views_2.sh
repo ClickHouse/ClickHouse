@@ -45,7 +45,7 @@ $CLICKHOUSE_CLIENT -nq "
 $CLICKHOUSE_CLIENT -nq "
     drop table d;
     truncate src;
-    insert into src values (1)
+    insert into src values (1);
     create materialized view e refresh every 1 second (x Int64) engine MergeTree order by x empty as select x + sleepEachRow(1) as x from src settings max_block_size = 1;"
 while [ "`$CLICKHOUSE_CLIENT -nq "select last_refresh_result from refreshes -- $LINENO" | xargs`" != 'Finished' ]
 do
@@ -140,7 +140,7 @@ $CLICKHOUSE_CLIENT -nq "system wait view h2;" 2>/dev/null && echo "SYSTEM WAIT V
 $CLICKHOUSE_CLIENT -nq "
     select '<31.5: will retry>', last_refresh_result, retry > 0 from refreshes;
     create table src2 (x Int8) engine Memory;
-    insert into src2 values (1)
+    insert into src2 values (1);
     exchange tables src and src2;
     drop table src2;"
 while [ "`$CLICKHOUSE_CLIENT -nq "select last_refresh_result, retry from refreshes -- $LINENO" | xargs`" != 'Finished 0' ]
