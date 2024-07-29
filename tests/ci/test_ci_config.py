@@ -211,7 +211,7 @@ class TestCIConfig(unittest.TestCase):
                 else:
                     self.assertTrue(
                         CI.get_job_ci_stage(job)
-                        in (CI.WorkflowStages.TESTS_1, CI.WorkflowStages.TESTS_3),
+                        in (CI.WorkflowStages.TESTS_1, CI.WorkflowStages.TESTS_2),
                         msg=f"Stage for [{job}] is not correct",
                     )
 
@@ -242,7 +242,7 @@ class TestCIConfig(unittest.TestCase):
                 else:
                     self.assertTrue(
                         CI.get_job_ci_stage(job, non_blocking_ci=True)
-                        in (CI.WorkflowStages.TESTS_1, CI.WorkflowStages.TESTS_2),
+                        in (CI.WorkflowStages.TESTS_1, CI.WorkflowStages.TESTS_2_WW),
                         msg=f"Stage for [{job}] is not correct",
                     )
 
@@ -416,6 +416,32 @@ class TestCIConfig(unittest.TestCase):
             "Fast test",
             "binary_release",
             "Unit tests (release)",
+        ]
+        self.assertCountEqual(expected_jobs_to_do, actual_jobs_to_do)
+
+    def test_ci_py_for_specific_workflow(self):
+        """
+        checks ci.py job configuration
+        """
+        settings = CiSettings()
+        settings.no_ci_cache = True
+        pr_info = PRInfo(github_event=_TEST_EVENT_JSON)
+        # make it merge_queue
+        pr_info.event_type = EventType.SCHEDULE
+        assert pr_info.number == 0 and not pr_info.is_merge_queue and not pr_info.is_pr
+        ci_cache = CIPY._configure_jobs(
+            S3Helper(),
+            pr_info,
+            settings,
+            skip_jobs=False,
+            dry_run=True,
+            workflow_name=CI.WorkFlowNames.JEPSEN,
+        )
+        actual_jobs_to_do = list(ci_cache.jobs_to_do)
+        expected_jobs_to_do = [
+            CI.BuildNames.BINARY_RELEASE,
+            CI.JobNames.JEPSEN_KEEPER,
+            CI.JobNames.JEPSEN_SERVER,
         ]
         self.assertCountEqual(expected_jobs_to_do, actual_jobs_to_do)
 
