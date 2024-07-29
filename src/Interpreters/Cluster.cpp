@@ -673,17 +673,23 @@ void Cluster::initMisc()
     Poco::Timespan connection_timeout(30, 0);  // 30 seconds
     Poco::Timespan send_timeout(30, 0);        // 30 seconds
     Poco::Timespan receive_timeout(30, 0);     // 30 seconds
-    Poco::Timespan keep_alive_interval(10, 0); // 10 seconds
+    Poco::Timespan sync_request_timeout(0, 0); // Example value, adjust as needed
+    Poco::Timespan tcp_keep_alive_timeout(10, 0); // 10 seconds
 
-    ConnectionTimeouts timeouts(connection_timeout, send_timeout, receive_timeout, Poco::Timespan(0, 0), Poco::Timespan(0, 0));
+    ConnectionTimeouts timeouts;
+    timeouts.withConnectionTimeout(connection_timeout)
+            .withSendTimeout(send_timeout)
+            .withReceiveTimeout(receive_timeout)
+            .withSyncRequestTimeout(sync_request_timeout)
+            .withTCPKeepAliveTimeout(tcp_keep_alive_timeout);
 
     for (auto & shard_info : shards_info)
     {
         if (shard_info.pool)
         {
             auto connection = shard_info.pool->get(timeouts);
-            connection->setSocketTimeouts(receive_timeout, send_timeout);
-            connection->enableKeepAlive(keep_alive_interval);
+            connection->setSocketTimeouts(timeouts.receive_timeout, timeouts.send_timeout);
+            connection->enableKeepAlive(tcp_keep_alive_timeout);
         }
     }
 }
