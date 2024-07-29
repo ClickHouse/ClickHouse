@@ -3211,6 +3211,16 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                             queryToString(mutation_commands.ast()));
     }
 
+    /// Block the case of alter table add projection for special merge trees.
+    if (std::any_of(commands.begin(), commands.end(), [](const AlterCommand & c) { return c.type == AlterCommand::ADD_PROJECTION; }))
+    {
+        if (auto storage_name = getName(); storage_name != "MergeTree" && storage_name != "ReplicatedMergeTree"
+            && settings_from_storage->deduplicate_merge_projection_mode == DeduplicateMergeProjectionMode::THROW)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Projection is fully supported in (Replictaed)MergeTree, but also allowed in non-throw mode with other"
+                " mergetree family members. Consider drop or rebuild option of deduplicate_merge_projection_mode.");
+    }
+
     commands.apply(new_metadata, local_context);
 
     if (AlterCommands::hasFullTextIndex(new_metadata) && !settings.allow_experimental_full_text_index)
