@@ -354,6 +354,14 @@ void StorageMerge::read(
     /// What will be result structure depending on query processed stage in source tables?
     Block common_header = getHeaderForProcessingStage(column_names, storage_snapshot, query_info, local_context, processed_stage);
 
+    if (local_context->getSettingsRef().allow_experimental_analyzer && processed_stage == QueryProcessingStage::Complete)
+    {
+        /// Remove constants.
+        /// For StorageDistributed some functions like `hostName` that are constants only for local queries.
+        for (auto & column : common_header)
+            column.column = column.column->convertToFullColumnIfConst();
+    }
+
     auto step = std::make_unique<ReadFromMerge>(
         common_header,
         std::move(selected_tables),
