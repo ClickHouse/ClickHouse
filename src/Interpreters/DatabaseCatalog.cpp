@@ -1329,26 +1329,10 @@ void DatabaseCatalog::dropTablesParallel(std::vector<DatabaseCatalog::TablesMark
             }
         };
 
-        try
-        {
-            runner(std::move(job));
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log, "Cannot drop tables. Will retry later.");
-            throw;
-        }
+        runner(std::move(job));
     }
 
-    try
-    {
-        runner.waitForAllToFinishAndRethrowFirstError();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(log, "Cannot drop tables. Will retry later.");
-        throw;
-    }
+    runner.waitForAllToFinishAndRethrowFirstError();
 }
 
 void DatabaseCatalog::dropTableDataTask()
@@ -1365,7 +1349,15 @@ void DatabaseCatalog::dropTableDataTask()
         LOG_INFO(log, "Have {} tables in drop queue ({} of them are in use), will try drop {} tables",
             drop_tables_count, drop_tables_in_use_count, tables_to_drop.size());
 
-        dropTablesParallel(tables_to_drop);
+        try
+        {
+            dropTablesParallel(tables_to_drop);
+        }
+        catch (...)
+        {
+            /// We don't re-throw expection, because we are in a background pool.
+            tryLogCurrentException(log, "Cannot drop tables. Will retry later.");
+        }
     }
 
     rescheduleDropTableTask();
