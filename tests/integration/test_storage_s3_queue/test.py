@@ -1437,7 +1437,9 @@ select splitByChar('/', file_name)[-1] as file from system.s3queue where zookeep
     ]
 
     if len(res1) + len(res2) != total_rows or len(res1) <= 0 or len(res2) <= 0 or True:
-        logging.debug(f"res1 size: {len(res1)}, res2 size: {len(res2)}, total_rows: {total_rows}")
+        logging.debug(
+            f"res1 size: {len(res1)}, res2 size: {len(res2)}, total_rows: {total_rows}"
+        )
         print_debug_info()
 
     assert len(res1) + len(res2) == total_rows
