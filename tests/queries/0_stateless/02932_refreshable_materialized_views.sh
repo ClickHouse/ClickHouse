@@ -164,10 +164,12 @@ $CLICKHOUSE_CLIENT -nq "
     select '<18: removed dependency>', view, status, remaining_dependencies, last_refresh_time,next_refresh_time, refresh_count from refreshes where view = 'b';
     show create b;"
 
-# Select from a table that doesn't exist, get an exception.
 $CLICKHOUSE_CLIENT -nq "
     drop table a;
-    drop table b;
+    drop table b;"
+sleep 1
+# Select from a table that doesn't exist, get an exception.
+$CLICKHOUSE_CLIENT -nq "
     create materialized view c refresh every 1 second (x Int64) engine Memory empty as select * from src;
     drop table src;"
 while [ "`$CLICKHOUSE_CLIENT -nq "select last_refresh_result from refreshes where view = 'c' -- $LINENO" | xargs`" != 'Exception' ]
