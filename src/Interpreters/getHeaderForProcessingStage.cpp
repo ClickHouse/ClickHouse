@@ -141,7 +141,7 @@ Block getHeaderForProcessingStage(
 
             Block result;
 
-            if (context->getSettingsRef().enable_analyzer)
+            if (context->getSettingsRef().allow_experimental_analyzer)
             {
                 auto storage = std::make_shared<StorageDummy>(storage_snapshot->storage.getStorageID(),
                                                                                         storage_snapshot->getAllColumnsDescription(),

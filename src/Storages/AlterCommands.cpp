@@ -806,7 +806,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
         metadata.select = SelectQueryDescription::getSelectQueryFromASTForMatView(select, metadata.refresh != nullptr, context);
         Block as_select_sample;
 
-        if (context->getSettingsRef().enable_analyzer)
+        if (context->getSettingsRef().allow_experimental_analyzer)
         {
             as_select_sample = InterpreterSelectQueryAnalyzer::getSampleBlock(select->clone(), context);
         }

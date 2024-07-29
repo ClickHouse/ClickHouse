@@ -189,7 +189,7 @@ bool isStorageTouchedByMutations(
     std::optional<InterpreterSelectQuery> interpreter_select_query;
     BlockIO io;
 
-    if (context->getSettingsRef().enable_analyzer)
+    if (context->getSettingsRef().allow_experimental_analyzer)
     {
         auto select_query_tree = prepareQueryAffectedQueryTree(commands, storage.shared_from_this(), context);
         InterpreterSelectQueryAnalyzer interpreter(select_query_tree, context, SelectQueryOptions().ignoreLimits());
@@ -415,9 +415,9 @@ MutationsInterpreter::MutationsInterpreter(
     , logger(getLogger("MutationsInterpreter(" + source.getStorage()->getStorageID().getFullTableName() + ")"))
 {
     auto new_context = Context::createCopy(context_);
-    if (new_context->getSettingsRef().enable_analyzer)
+    if (new_context->getSettingsRef().allow_experimental_analyzer)
     {
-        new_context->setSetting("enable_analyzer", false);
+        new_context->setSetting("allow_experimental_analyzer", false);
         LOG_DEBUG(logger, "Will use old analyzer to prepare mutation");
     }
     context = std::move(new_context);

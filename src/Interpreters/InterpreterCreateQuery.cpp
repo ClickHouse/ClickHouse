@@ -834,7 +834,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
 
         Block as_select_sample;
 
-        if (getContext()->getSettingsRef().enable_analyzer)
+        if (getContext()->getSettingsRef().allow_experimental_analyzer)
         {
             as_select_sample = InterpreterSelectQueryAnalyzer::getSampleBlock(create.select->clone(), getContext());
         }
@@ -1327,7 +1327,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         {
             Block input_block;
 
-            if (getContext()->getSettingsRef().enable_analyzer)
+            if (getContext()->getSettingsRef().allow_experimental_analyzer)
             {
                 input_block = InterpreterSelectQueryAnalyzer::getSampleBlock(create.select->clone(), getContext());
             }

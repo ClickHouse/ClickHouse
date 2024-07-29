@@ -172,7 +172,7 @@ static ExpressionAndSets buildExpressionAndSets(ASTPtr & ast, const NamesAndType
     /// with subqueries it's possible that new analyzer will be enabled in ::read method
     /// of underlying storage when all other parts of infra are not ready for it
     /// (built with old analyzer).
-    context_copy->setSetting("enable_analyzer", false);
+    context_copy->setSetting("allow_experimental_analyzer", false);
     auto syntax_analyzer_result = TreeRewriter(context_copy).analyze(ast, columns);
     ExpressionAnalyzer analyzer(ast, syntax_analyzer_result, context_copy);
     auto dag = analyzer.getActionsDAG(false);

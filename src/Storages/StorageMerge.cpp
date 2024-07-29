@@ -590,7 +590,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
         auto modified_query_info
             = getModifiedQueryInfo(modified_context, table, nested_storage_snaphsot, real_column_names, column_names_as_aliases, aliases);
 
-        if (!context->getSettingsRef().enable_analyzer)
+        if (!context->getSettingsRef().allow_experimental_analyzer)
         {
             auto storage_columns = storage_metadata_snapshot->getColumns();
             auto syntax_result = TreeRewriter(context).analyzeSelect(
@@ -1047,13 +1047,13 @@ void ReadFromMerge::addVirtualColumns(
     const StorageWithLockAndName & storage_with_lock) const
 {
     const auto & [database_name, _, storage, table_name] = storage_with_lock;
-    bool enable_analyzer = context->getSettingsRef().enable_analyzer;
+    bool allow_experimental_analyzer = context->getSettingsRef().allow_experimental_analyzer;
 
     /// Add virtual columns if we don't already have them.
 
     Block plan_header = child.plan.getCurrentDataStream().header;
 
-    if (enable_analyzer)
+    if (allow_experimental_analyzer)
     {
         String table_alias = modified_query_info.query_tree->as<QueryNode>()->getJoinTree()->as<TableNode>()->getAlias();
 
@@ -1133,8 +1133,8 @@ QueryPipelineBuilderPtr ReadFromMerge::buildPipeline(
     if (!builder->initialized())
         return builder;
 
-    bool enable_analyzer = context->getSettingsRef().enable_analyzer;
-    if (processed_stage > child.stage || (enable_analyzer && processed_stage != QueryProcessingStage::FetchColumns))
+    bool allow_experimental_analyzer = context->getSettingsRef().allow_experimental_analyzer;
+    if (processed_stage > child.stage || (allow_experimental_analyzer && processed_stage != QueryProcessingStage::FetchColumns))
     {
         /** Materialization is needed, since from distributed storage the constants come materialized.
           * If you do not do this, different types (Const and non-Const) columns will be produced in different threads,
@@ -1168,7 +1168,7 @@ ReadFromMerge::ChildPlan ReadFromMerge::createPlanForTable(
         modified_select.setFinal();
     }
 
-    bool enable_analyzer = modified_context->getSettingsRef().enable_analyzer;
+    bool allow_experimental_analyzer = modified_context->getSettingsRef().allow_experimental_analyzer;
 
     auto storage_stage = storage->getQueryProcessingStage(modified_context,
         processed_stage,
@@ -1201,13 +1201,13 @@ ReadFromMerge::ChildPlan ReadFromMerge::createPlanForTable(
                 row_policy_data_opt->addStorageFilter(source_step_with_filter);
         }
     }
-    else if (processed_stage > storage_stage || enable_analyzer)
+    else if (processed_stage > storage_stage || allow_experimental_analyzer)
     {
         /// Maximum permissible parallelism is streams_num
         modified_context->setSetting("max_threads", streams_num);
         modified_context->setSetting("max_streams_to_max_threads_ratio", 1);
 
-        if (enable_analyzer)
+        if (allow_experimental_analyzer)
         {
             /// Converting query to AST because types might be different in the source table.
             /// Need to resolve types again.
@@ -1479,7 +1479,7 @@ void ReadFromMerge::convertAndFilterSourceStream(
     auto storage_sample_block = snapshot->metadata->getSampleBlock();
     auto pipe_columns = before_block_header.getNamesAndTypesList();
 
-    if (local_context->getSettingsRef().enable_analyzer)
+    if (local_context->getSettingsRef().allow_experimental_analyzer)
     {
         for (const auto & alias : aliases)
         {
@@ -1522,7 +1522,7 @@ void ReadFromMerge::convertAndFilterSourceStream(
 
     ActionsDAG::MatchColumnsMode convert_actions_match_columns_mode = ActionsDAG::MatchColumnsMode::Name;
 
-    if (local_context->getSettingsRef().enable_analyzer
+    if (local_context->getSettingsRef().allow_experimental_analyzer
         && (child.stage != QueryProcessingStage::FetchColumns || dynamic_cast<const StorageDistributed *>(&snapshot->storage) != nullptr))
         convert_actions_match_columns_mode = ActionsDAG::MatchColumnsMode::Position;
 

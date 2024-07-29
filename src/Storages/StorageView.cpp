@@ -164,7 +164,7 @@ void StorageView::read(
 
     auto options = SelectQueryOptions(QueryProcessingStage::Complete, 0, false, query_info.settings_limit_offset_done);
 
-    if (context->getSettingsRef().enable_analyzer)
+    if (context->getSettingsRef().allow_experimental_analyzer)
     {
         InterpreterSelectQueryAnalyzer interpreter(current_inner_query, getViewContext(context, storage_snapshot), options, column_names);
         interpreter.addStorageLimits(*query_info.storage_limits);

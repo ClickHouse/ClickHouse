@@ -319,7 +319,7 @@ std::optional<Chain> generateViewChain(
         Block header;
 
         /// Get list of columns we get from select query.
-        if (select_context->getSettingsRef().enable_analyzer)
+        if (select_context->getSettingsRef().allow_experimental_analyzer)
             header = InterpreterSelectQueryAnalyzer::getSampleBlock(query, select_context);
         else
             header = InterpreterSelectQuery(query, select_context, SelectQueryOptions()).getSampleBlock();
@@ -613,7 +613,7 @@ static QueryPipeline process(Block block, ViewRuntimeData & view, const ViewsDat
 
     QueryPipelineBuilder pipeline;
 
-    if (local_context->getSettingsRef().enable_analyzer)
+    if (local_context->getSettingsRef().allow_experimental_analyzer)
     {
         InterpreterSelectQueryAnalyzer interpreter(view.query, local_context, local_context->getViewSource(), SelectQueryOptions().ignoreAccessCheck());
         pipeline = interpreter.buildQueryPipeline();

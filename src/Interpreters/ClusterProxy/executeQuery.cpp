@@ -300,7 +300,7 @@ void executeQuery(
 
     const size_t shards = cluster->getShardCount();
 
-    if (context->getSettingsRef().enable_analyzer)
+    if (context->getSettingsRef().allow_experimental_analyzer)
     {
         for (size_t i = 0, s = cluster->getShardsInfo().size(); i < s; ++i)
         {
@@ -581,7 +581,7 @@ void executeQueryWithParallelReplicasCustomKey(
     /// Return directly (with correct header) if no shard to query.
     if (query_info.getCluster()->getShardsInfo().empty())
     {
-        if (context->getSettingsRef().enable_analyzer)
+        if (context->getSettingsRef().allow_experimental_analyzer)
             return;
 
         Pipe pipe(std::make_shared<NullSource>(header));
