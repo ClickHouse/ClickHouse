@@ -80,7 +80,13 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
               {"ignore_on_cluster_for_replicated_named_collections_queries", false, false, "Ignore ON CLUSTER clause for replicated named collections management queries."},
               {"backup_restore_s3_retry_attempts", 1000,1000, "Setting for Aws::Client::RetryStrategy, Aws::Client does retries itself, 0 means no retries. It takes place only for backup/restore."},
               {"postgresql_connection_attempt_timeout", 2, 2, "Allow to control 'connect_timeout' parameter of PostgreSQL connection."},
-              {"postgresql_connection_pool_retries", 2, 2, "Allow to control the number of retries in PostgreSQL connection pool."}
+              {"postgresql_connection_pool_retries", 2, 2, "Allow to control the number of retries in PostgreSQL connection pool."},
+              {"sz3_algorithm", 1, 1, "Mode for sz3 algorithm. 0 means ALGO_INTERP, 1 means ALGO_INTERP_LORENZO, 2 means ALGO_LORENZO_REG. Read more about modes - https://github.com/szcompressor/SZ3/blob/master/include/SZ3/api/sz.hpp#L17"},
+              {"sz3_error_bound_mode", 1, 1, "Error bound mode for SZ3 compression. 0 means absolute error, 1 means relative error, 2 means psnr, 3 means l2 norm, 4 means both absolute and relative, 5 means absolute or relative"},
+              {"sz3_abs_error_bound", 0, 0, "Absolute error bound for SZ3 compression."},
+              {"sz3_rel_error_bound", 0.01f, 0.01f, "Relative error bound for SZ3 compression."},
+              {"sz3_psnr_error_bound", 0, 0, "PSNR error bound for SZ3 compression."},
+              {"sz3_l2_norm_error_bound", 0, 0, "L2 norm error bound for SZ3 compression."}
               }},
     {"24.6", {{"materialize_skip_indexes_on_insert", true, true, "Added new setting to allow to disable materialization of skip indexes on insert"},
               {"materialize_statistics_on_insert", true, true, "Added new setting to allow to disable materialization of statistics on insert"},
