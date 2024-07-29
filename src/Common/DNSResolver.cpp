@@ -225,9 +225,9 @@ struct DNSResolver::AddressFilter
         });
     }
 
-    void setSettings(bool dns_allow_resolve_names_to_ipv4_, bool dns_allow_resolve_names_to_ipv6_)
+    void setSettings(bool dns_allow_resolve_names_to_ipv4, bool dns_allow_resolve_names_to_ipv6)
     {
-        settings.set(std::make_unique<DNSFilterSettings>(dns_allow_resolve_names_to_ipv4_, dns_allow_resolve_names_to_ipv6_));
+        settings.set(std::make_unique<DNSFilterSettings>(dns_allow_resolve_names_to_ipv4, dns_allow_resolve_names_to_ipv6));
     }
 
     MultiVersion<DNSFilterSettings> settings;
@@ -264,9 +264,9 @@ Poco::Net::IPAddress DNSResolver::resolveHost(const std::string & host)
     return pickAddress(resolveHostAll(host)); // random order -> random pick
 }
 
-void DNSResolver::setFilterSettings(bool dns_allow_resolve_names_to_ipv4_, bool dns_allow_resolve_names_to_ipv6_)
+void DNSResolver::setFilterSettings(bool dns_allow_resolve_names_to_ipv4, bool dns_allow_resolve_names_to_ipv6)
 {
-    addressFilter->setSettings(dns_allow_resolve_names_to_ipv4_, dns_allow_resolve_names_to_ipv6_);
+    addressFilter->setSettings(dns_allow_resolve_names_to_ipv4, dns_allow_resolve_names_to_ipv6);
 }
 
 DNSResolver::IPAddresses DNSResolver::resolveHostAllInOriginOrder(const std::string & host)
