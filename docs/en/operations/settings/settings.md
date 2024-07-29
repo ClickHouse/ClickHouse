@@ -5617,6 +5617,6 @@ Default value: `False`
 
 ## restore_replace_external_table_functions_to_null
 
-For testing purposes. Replaces all external engines to Null to not initiate external connections.
+For testing purposes. Replaces all external table functions to Null to not initiate external connections.
 
 Default value: `False`

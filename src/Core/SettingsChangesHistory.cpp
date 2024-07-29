@@ -82,7 +82,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
               {"postgresql_connection_attempt_timeout", 2, 2, "Allow to control 'connect_timeout' parameter of PostgreSQL connection."},
               {"postgresql_connection_pool_retries", 2, 2, "Allow to control the number of retries in PostgreSQL connection pool."},
               {"restore_replace_external_table_functions_to_null", false, false, "New setting."},
-              {"restore_replace_external_engins_to_null", false, false, "New setting."}
+              {"restore_replace_external_engines_to_null", false, false, "New setting."}
               }},
     {"24.6", {{"materialize_skip_indexes_on_insert", true, true, "Added new setting to allow to disable materialization of skip indexes on insert"},
               {"materialize_statistics_on_insert", true, true, "Added new setting to allow to disable materialization of statistics on insert"},

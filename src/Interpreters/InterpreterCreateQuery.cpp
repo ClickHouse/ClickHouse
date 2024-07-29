@@ -960,7 +960,7 @@ namespace
         storage.set(storage.engine, engine_ast);
     }
 
-    void setNullTableEngine(ASTStorage &storage)
+    void setNullTableEngine(ASTStorage & storage)
     {
         auto engine_ast = std::make_shared<ASTFunction>();
         engine_ast->name = "Null";
@@ -972,7 +972,6 @@ namespace
 
 void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
 {
-
     if (create.as_table_function)
     {
         if (getContext()->getSettingsRef().restore_replace_external_table_functions_to_null)
@@ -1031,6 +1030,13 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
             {
                 /// Some part of storage definition (such as PARTITION BY) is specified, but ENGINE is not: just set default one.
                 setDefaultTableEngine(*to_engine, getContext()->getSettingsRef().default_table_engine.value);
+            }
+            /// For external tables with restore_replace_external_engine_to_null setting we replace external engines to
+            /// Null table engine.
+            else if (getContext()->getSettingsRef().restore_replace_external_engines_to_null)
+            {
+                if (StorageFactory::instance().getStorageFeatures(create.storage->engine->name).source_access_type != AccessType::NONE)
+                    setNullTableEngine(*create.storage);
             }
             return;
         }
