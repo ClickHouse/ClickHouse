@@ -19,6 +19,7 @@ import urllib.parse
 import shlex
 import urllib3
 import requests
+from contextlib import closing
 
 try:
     # Please, add modules that required for specific tests only here.
@@ -128,11 +129,17 @@ def run_and_check(
     return out
 
 
-# Based on https://stackoverflow.com/a/1365284/3706827
+# Based on https://stackoverflow.com/questions/1365265/on-localhost-how-do-i-pick-a-free-port-number
+# and https://stackoverflow.com/questions/19196105/how-to-check-if-a-network-port-is-open
 def get_free_port():
-    with socket.socket() as s:
-        s.bind(("", 0))
-        return s.getsockname()[1]
+    while True:
+        with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as s:
+            s.bind(('', 0))
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            address = s.getsockname()
+            # Try to connect to the port and if we failed - retry binding
+            if s.connect_ex(address) == 0:
+                return address[1]
 
 
 def retry_exception(num, delay, func, exception=Exception, *args, **kwargs):
