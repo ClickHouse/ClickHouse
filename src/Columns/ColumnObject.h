@@ -36,15 +36,36 @@ private:
     friend class COWHelper<IColumnHelper<ColumnObject>, ColumnObject>;
 
     ColumnObject(std::unordered_map<String, MutableColumnPtr> typed_paths_, size_t max_dynamic_paths_, size_t max_dynamic_types_);
-    ColumnObject(std::unordered_map<String, MutableColumnPtr> typed_paths_, std::unordered_map<String, MutableColumnPtr> dynamic_paths_, MutableColumnPtr shared_data_, size_t max_dynamic_paths_, size_t max_dynamic_types_, const Statistics & statistics_ = {});
+    ColumnObject(
+        std::unordered_map<String, MutableColumnPtr> typed_paths_,
+        std::unordered_map<String, MutableColumnPtr> dynamic_paths_,
+        MutableColumnPtr shared_data_,
+        size_t max_dynamic_paths_,
+        size_t max_dynamic_types_,
+        const Statistics & statistics_ = {});
 
 public:
     /** Create immutable column using immutable arguments. This arguments may be shared with other columns.
       * Use mutate in order to make mutable column and mutate shared nested columns.
       */
     using Base = COWHelper<IColumnHelper<ColumnObject>, ColumnObject>;
-    static Ptr create(const std::unordered_map<String, ColumnPtr> & typed_paths_, const std::unordered_map<String, ColumnPtr> & dynamic_paths_, const ColumnPtr & shared_data_, size_t max_dynamic_paths_, size_t max_dynamic_types_, const Statistics & statistics_ = {});
-    static MutablePtr create(std::unordered_map<String, MutableColumnPtr> typed_paths_, std::unordered_map<String, MutableColumnPtr> dynamic_paths_, MutableColumnPtr shared_data_, size_t max_dynamic_paths_, size_t max_dynamic_types_, const Statistics & statistics_ = {});
+
+    static Ptr create(
+        const std::unordered_map<String, ColumnPtr> & typed_paths_,
+        const std::unordered_map<String, ColumnPtr> & dynamic_paths_,
+        const ColumnPtr & shared_data_,
+        size_t max_dynamic_paths_,
+        size_t max_dynamic_types_,
+        const Statistics & statistics_ = {});
+
+    static MutablePtr create(
+        std::unordered_map<String, MutableColumnPtr> typed_paths_,
+        std::unordered_map<String, MutableColumnPtr> dynamic_paths_,
+        MutableColumnPtr shared_data_,
+        size_t max_dynamic_paths_,
+        size_t max_dynamic_types_,
+        const Statistics & statistics_ = {});
+
     static MutablePtr create(std::unordered_map<String, MutableColumnPtr> typed_paths_, size_t max_dynamic_paths_, size_t max_dynamic_types_);
 
     std::string getName() const override;
@@ -191,7 +212,7 @@ public:
     static void fillPathColumnFromSharedData(IColumn & path_column, StringRef path, const ColumnPtr & shared_data_column, size_t start, size_t end);
 
 private:
-    void insertFromSharedDataAndFillRemainingDynamicPaths(const ColumnObject & src_object_column, std::vector<String> & src_dynamic_paths_for_shared_data, size_t start, size_t length);
+    void insertFromSharedDataAndFillRemainingDynamicPaths(const ColumnObject & src_object_column, std::vector<String> && src_dynamic_paths_for_shared_data, size_t start, size_t length);
     void serializePathAndValueIntoArena(Arena & arena, const char *& begin, StringRef path, StringRef value, StringRef & res) const;
 
     /// Map path -> column for paths with explicitly specified types.
