@@ -6,7 +6,6 @@
 #include <Common/ProgressIndication.h>
 #include <Common/InterruptListener.h>
 #include <Common/ShellCommand.h>
-#include <Common/QueryFuzzer.h>
 #include <Common/Stopwatch.h>
 #include <Common/DNSResolver.h>
 #include <Core/ExternalTable.h>
@@ -17,6 +16,7 @@
 #include <Poco/SplitterChannel.h>
 #include <Interpreters/Context.h>
 #include <Client/Suggest.h>
+#include <Client/QueryFuzzer.h>
 #include <boost/program_options.hpp>
 #include <Storages/StorageFile.h>
 #include <Storages/SelectQueryInfo.h>
@@ -206,6 +206,9 @@ protected:
     /// Adjust some settings after command line options and config had been processed.
     void adjustSettings();
 
+    /// Initializes the client context.
+    void initClientContext();
+
     void setDefaultFormatsAndCompressionFromConfiguration();
 
     void initTTYBuffer(ProgressOption progress);
@@ -214,6 +217,9 @@ protected:
     /// since other members can use them.
     SharedContextHolder shared_context;
     ContextMutablePtr global_context;
+
+    /// Client context is a context used only by the client to parse queries, process query parameters and to connect to clickhouse-server.
+    ContextMutablePtr client_context;
 
     LoggerPtr fatal_log;
     Poco::AutoPtr<Poco::SplitterChannel> fatal_channel_ptr;

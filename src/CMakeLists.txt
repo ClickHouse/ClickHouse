@@ -226,6 +226,9 @@ add_object_library(clickhouse_storages_windowview Storages/WindowView)
 add_object_library(clickhouse_storages_s3queue Storages/ObjectStorageQueue)
 add_object_library(clickhouse_storages_materializedview Storages/MaterializedView)
 add_object_library(clickhouse_client Client)
+# Always compile this file with the highest possible level of optimizations, even in Debug builds.
+# https://github.com/ClickHouse/ClickHouse/issues/65745
+set_source_files_properties(Client/ClientBaseOptimizedParts.cpp PROPERTIES COMPILE_FLAGS "-O3")
 add_object_library(clickhouse_bridge BridgeHelper)
 add_object_library(clickhouse_server Server)
 add_object_library(clickhouse_server_http Server/HTTP)
@@ -419,9 +422,6 @@ dbms_target_link_libraries (
         boost::circular_buffer
         boost::heap)
 
-target_include_directories(clickhouse_common_io PUBLIC "${CMAKE_CURRENT_BINARY_DIR}/Core/include") # uses some includes from core
-dbms_target_include_directories(PUBLIC "${CMAKE_CURRENT_BINARY_DIR}/Core/include")
-
 target_link_libraries(clickhouse_common_io PUBLIC
     ch_contrib::miniselect
     ch_contrib::pdqsort)
@@ -546,7 +546,7 @@ if (TARGET ch_contrib::libpqxx)
 endif()
 
 if (TARGET ch_contrib::datasketches)
-    target_link_libraries (clickhouse_aggregate_functions PRIVATE ch_contrib::datasketches)
+    dbms_target_link_libraries(PUBLIC ch_contrib::datasketches)
 endif ()
 
 target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::lz4)
