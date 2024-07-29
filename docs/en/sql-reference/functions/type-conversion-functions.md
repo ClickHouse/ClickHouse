@@ -237,17 +237,18 @@ toInt8OrNull('abc'): ᴺᵁᴸᴸ
 ## toInt8OrDefault
 
 Like [`toInt8`](#toint8), this function converts an input value to a value of type [Int8](../data-types/int-uint.md) but returns the default value in case of an error.
+If no `default` value is passed then `0` is returned in case of an error.
 
 **Syntax**
 
 ```sql
-toInt8OrDefault(expr, def)
+toInt8OrDefault(expr[, default])
 ```
 
 **Arguments**
 
 - `expr` — Expression returning a number or a string representation of a number. [Expression](../syntax.md/#syntax-expressions) / [String](../data-types/string.md).
-- `def` — The default value to return if parsing to type `Int8` is unsuccessful. [Int8](../data-types/int-uint.md).
+- `default` (optional) — The default value to return if parsing to type `Int8` is unsuccessful. [Int8](../data-types/int-uint.md).
 
 Supported arguments:
 - Values of type (U)Int8/16/32/64/128/256.
@@ -265,7 +266,7 @@ This is not considered an error.
 
 **Returned value**
 
-- 8-bit integer value if successful, otherwise returns the default value. [Int8](../data-types/int-uint.md).
+- 8-bit integer value if successful, otherwise returns the default value if passed or `0` if not. [Int8](../data-types/int-uint.md).
 
 :::note
 - The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
@@ -486,17 +487,18 @@ toInt16OrNull('abc'): ᴺᵁᴸᴸ
 ## toInt16OrDefault
 
 Like [`toInt16`](#toint16), this function converts an input value to a value of type [Int16](../data-types/int-uint.md) but returns the default value in case of an error.
+If no `default` value is passed then `0` is returned in case of an error.
 
 **Syntax**
 
 ```sql
-toInt16OrDefault(expr, def)
+toInt16OrDefault(expr[, default])
 ```
 
 **Arguments**
 
 - `expr` — Expression returning a number or a string representation of a number. [Expression](../syntax.md/#syntax-expressions) / [String](../data-types/string.md).
-- `def` — The default value to return if parsing to type `Int16` is unsuccessful. [Int16](../data-types/int-uint.md).
+- `default` (optional) — The default value to return if parsing to type `Int16` is unsuccessful. [Int16](../data-types/int-uint.md).
 
 Supported arguments:
 - Values of type (U)Int8/16/32/64/128/256.
@@ -514,7 +516,7 @@ This is not considered an error.
 
 **Returned value**
 
-- 16-bit integer value if successful, otherwise returns the default value. [Int16](../data-types/int-uint.md).
+- 16-bit integer value if successful, otherwise returns the default value if passed or `0` if not. [Int16](../data-types/int-uint.md).
 
 :::note
 - The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
@@ -734,17 +736,18 @@ toInt32OrNull('abc'): ᴺᵁᴸᴸ
 ## toInt32OrDefault
 
 Like [`toInt32`](#toint32), this function converts an input value to a value of type [Int32](../data-types/int-uint.md) but returns the default value in case of an error.
+If no `default` value is passed then `0` is returned in case of an error.
 
 **Syntax**
 
 ```sql
-toInt32OrDefault(expr, def)
+toInt32OrDefault(expr[, default])
 ```
 
 **Arguments**
 
 - `expr` — Expression returning a number or a string representation of a number. [Expression](../syntax.md/#syntax-expressions) / [String](../data-types/string.md).
-- `def` — The default value to return if parsing to type `Int32` is unsuccessful. [Int32](../data-types/int-uint.md).
+- `default` (optional) — The default value to return if parsing to type `Int32` is unsuccessful. [Int32](../data-types/int-uint.md).
 
 Supported arguments:
 - Values of type (U)Int8/16/32/64/128/256.
@@ -762,7 +765,7 @@ This is not considered an error.
 
 **Returned value**
 
-- 32-bit integer value if successful, otherwise returns the default value. [Int32](../data-types/int-uint.md).
+- 32-bit integer value if successful, otherwise returns the default value if passed or `0` if not. [Int32](../data-types/int-uint.md).
 
 :::note
 - The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
@@ -983,17 +986,18 @@ toInt64OrNull('abc'): ᴺᵁᴸᴸ
 ## toInt64OrDefault
 
 Like [`toInt64`](#toint64), this function converts an input value to a value of type [Int64](../data-types/int-uint.md) but returns the default value in case of an error.
+If no `default` value is passed then `0` is returned in case of an error.
 
 **Syntax**
 
 ```sql
-toInt64OrDefault(expr, def)
+toInt64OrDefault(expr[, default])
 ```
 
 **Arguments**
 
 - `expr` — Expression returning a number or a string representation of a number. [Expression](../syntax.md/#syntax-expressions) / [String](../data-types/string.md).
-- `def` — The default value to return if parsing to type `Int64` is unsuccessful. [Int64](../data-types/int-uint.md).
+- `default` (optional) — The default value to return if parsing to type `Int64` is unsuccessful. [Int64](../data-types/int-uint.md).
 
 Supported arguments:
 - Values of type (U)Int8/16/32/64/128/256.
@@ -1011,7 +1015,7 @@ This is not considered an error.
 
 **Returned value**
 
-- 64-bit integer value if successful, otherwise returns the default value. [Int64](../data-types/int-uint.md).
+- 64-bit integer value if successful, otherwise returns the default value if passed or `0` if not. [Int64](../data-types/int-uint.md).
 
 :::note
 - The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
@@ -1231,17 +1235,18 @@ toInt128OrNull('abc'):  ᴺᵁᴸᴸ
 ## toInt128OrDefault
 
 Like [`toInt128`](#toint128), this function converts an input value to a value of type [Int128](../data-types/int-uint.md) but returns the default value in case of an error.
+If no `default` value is passed then `0` is returned in case of an error.
 
 **Syntax**
 
 ```sql
-toInt128OrDefault(expr, def)
+toInt128OrDefault(expr[, default])
 ```
 
 **Arguments**
 
 - `expr` — Expression returning a number or a string representation of a number. [Expression](../syntax.md/#syntax-expressions) / [String](../data-types/string.md).
-- `def` — The default value to return if parsing to type `Int128` is unsuccessful. [Int128](../data-types/int-uint.md).
+- `default` (optional) — The default value to return if parsing to type `Int128` is unsuccessful. [Int128](../data-types/int-uint.md).
 
 Supported arguments:
 - (U)Int8/16/32/64/128/256.
@@ -1259,7 +1264,7 @@ This is not considered an error.
 
 **Returned value**
 
-- 128-bit integer value if successful, otherwise returns the default value. [Int128](../data-types/int-uint.md).
+- 128-bit integer value if successful, otherwise returns the default value if passed or `0` if not. [Int128](../data-types/int-uint.md).
 
 :::note
 - The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
@@ -1479,17 +1484,18 @@ toInt256OrNull('abc'):  ᴺᵁᴸᴸ
 ## toInt256OrDefault
 
 Like [`toInt256`](#toint256), this function converts an input value to a value of type [Int256](../data-types/int-uint.md) but returns the default value in case of an error.
+If no `default` value is passed then `0` is returned in case of an error.
 
 **Syntax**
 
 ```sql
-toInt256OrDefault(expr, def)
+toInt256OrDefault(expr[, default])
 ```
 
 **Arguments**
 
 - `expr` — Expression returning a number or a string representation of a number. [Expression](../syntax.md/#syntax-expressions) / [String](../data-types/string.md).
-- `def` — The default value to return if parsing to type `Int256` is unsuccessful. [Int256](../data-types/int-uint.md).
+- `default` (optional) — The default value to return if parsing to type `Int256` is unsuccessful. [Int256](../data-types/int-uint.md).
 
 Supported arguments:
 - Values of type (U)Int8/16/32/64/128/256.
@@ -1507,7 +1513,7 @@ This is not considered an error.
 
 **Returned value**
 
-- 256-bit integer value if successful, otherwise returns the default value. [Int256](../data-types/int-uint.md).
+- 256-bit integer value if successful, otherwise returns the default value if passed or `0` if not. [Int256](../data-types/int-uint.md).
 
 :::note
 - The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
